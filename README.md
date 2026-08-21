@@ -21,6 +21,7 @@ This repository is the clean-room architecture contract for rebuilding the Space
 4. `APP_CONTRACTS.md` — rules every rebuilt app must follow.
 5. `OPERATIONS.md` — build order, cost clock, gates, migration, and rollback.
 6. `DOCUMENT_REVIEW.md` — what should be kept, merged, archived, or removed.
+7. `BASE_MODELS.md` — frozen application source commits, cleanup results, verification gates, and quarantine status.
 
 The `evidence/raw/` directory preserves 294 document-like source files copied from:
 
@@ -32,4 +33,3 @@ The copied evidence is read-only historical input. Nothing inside it is automati
 ## Governing rule
 
 Write the contract first. Build the new system to satisfy the contract. If implementation teaches us that the contract is wrong, record and approve a decision before changing the architecture.
-
