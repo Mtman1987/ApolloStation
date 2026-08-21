@@ -23,7 +23,7 @@ This repository is the clean-room architecture contract for rebuilding the Space
 6. `DOCUMENT_REVIEW.md` — what should be kept, merged, archived, or removed.
 7. `BASE_MODELS.md` — frozen application source commits, cleanup results, verification gates, and quarantine status.
 8. `OWNER_ACTIONS.md` — the exact account recovery, credential rotation, verification, and clean-repository handoff checklist.
-9. `DEVELOPER_PLATFORM.md` — how first-party apps prove and document the same SDK, CLI, MCP, API, event, webhook, and companion capabilities offered to developers.
+9. `DEVELOPER_PLATFORM.md` — how first-party apps prove the developer tools and discover approved apps/modules dynamically across every shared Apps surface.
 
 The `evidence/raw/` directory preserves 294 document-like source files copied from:
 
