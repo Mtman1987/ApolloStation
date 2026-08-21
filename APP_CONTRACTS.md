@@ -27,6 +27,10 @@ Every rebuilt app and worker must satisfy these rules before it can join the new
 - Use the documented CLI and MCP tools for operator/agent workflows instead of private maintenance endpoints.
 - Use versioned events, webhooks, WebSocket streams, or durable jobs for asynchronous cross-app work instead of reading another app's storage.
 - Register the app and its capabilities through the same manifest, OAuth client, scopes, and review metadata expected from an approved external developer.
+- Render every Apps/catalog/launcher surface from the canonical registry discovery contract; do not maintain a separate hand-coded app list.
+- Use registry parent/module relationships and surface/category filters for apps that contain their own Apps pages or sub-app catalogs.
+- Keep catalog approval/visibility separate from runtime readiness; a cold or degraded approved app remains discoverable with truthful status unless policy explicitly hides it.
+- Subscribe to registry-change events for fast propagation and use revision/ETag refresh as the missed-event recovery path.
 - Do not give first-party callers undocumented scopes, magic headers, database access, or tenant authority.
 - Version all durable contracts.
 - Validate payloads at the boundary.
@@ -74,6 +78,8 @@ Every request/job carries correlation ID, tenant ID, app/module ID, version, and
 - shared facts match the canonical source;
 - no legacy auth or Firebase path is exercised;
 - all applicable developer-platform paths pass the parity matrix in `DEVELOPER_PLATFORM.md`;
+- an approved fixture app appears on every applicable shared Apps surface without changing those surfaces' source code;
+- registry health-state changes update visible status without accidentally deleting the approved listing;
 - no first-party-only route or privilege exists without an approved, documented exception;
 - the app contributes at least one executable example that an external developer can run against a test tenant;
 - cost and latency budgets are measured;
