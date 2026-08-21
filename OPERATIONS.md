@@ -34,18 +34,19 @@ Exit: no material architecture question is hidden inside an implementation ticke
 
 - build the always-available gateway/static shell;
 - build canonical identity, tenant, authorization, app registry, and audit contracts;
+- publish the versioned SDK/API schemas, CLI, MCP server, webhook/event contracts, test-tenant flow, and executable contract-test harness before first-party apps depend on them;
 - provision the chosen canonical database/object storage and independent recovery authority with restore proof;
 - build workspace/theme fan-out as the first end-to-end shared-fact proof;
 - build canonical points ledger and reconciliation tools without choosing disputed balances automatically;
 - add health, metrics, cost attribution, idempotency, and migration tooling.
 
-Exit: a test tenant can sign in once, open the shell or a standalone app, change a background once, see it everywhere, and receive one idempotent point award everywhere. The primary storage authority can also be fenced, the recovery authority promoted, new writes accepted once, and the repaired primary rebuilt and restored without split brain.
+Exit: a test tenant can sign in once, open the shell or a standalone app, change a background once, see it everywhere, and receive one idempotent point award everywhere using the published SDK/API contracts. The same flows pass through the CLI or MCP where operator control applies, an external sample app passes the contract harness, and the primary storage authority can be fenced, the recovery authority promoted, new writes accepted once, and the repaired primary rebuilt and restored without split brain.
 
 ### Phase 2 — inference, workers, and bots
 
 - build the durable job/lease contract and reconciler;
 - build the inference router and weighted quota ledger;
-- connect a companion capability path;
+- connect the companion through the published capability protocol and SDK contracts;
 - add CPU-local model/TTS/STT workers only after benchmark evidence;
 - add paid API fallback and circuit breakers;
 - prove Xbox N-active-plus-one-ready behavior;
@@ -55,7 +56,7 @@ Exit: failure, scale-up, scale-down, abandoned lease, quota, and fallback tests 
 
 ### Phase 3 — apps on the base
 
-Recommended first vertical slice: rebuild ChatTag's proven core game without bundling every other game into it. Attach it to canonical identity, points, themes, cards, and events. Add other games as separately bounded modules only after the core regression suite stays green.
+Recommended first vertical slice: rebuild ChatTag's proven core game without bundling every other game into it. Attach it to canonical identity, points, themes, cards, and events exclusively through the developer platform. Publish ChatTag as the first complete sample application with a manifest, OAuth/scopes, SDK calls, event/webhook handling, test-tenant instructions, and executable contract tests. Add other games as separately bounded modules only after the core regression suite stays green.
 
 Then migrate apps one at a time based on tenant value, breakage, and dependency risk. Each app completes `APP_CONTRACTS.md` before the next cutover.
 
@@ -79,6 +80,7 @@ Then migrate apps one at a time based on tenant value, breakage, and dependency 
 | Restore | Scheduled backup, integrity verification, isolated restore, promotion, failover writes, rebuild, and failback completed and timed |
 | Identity | One user maps consistently across every tested app/provider |
 | Authorization | Allowed/denied scope matrix and two-tenant isolation pass |
+| Developer parity | First-party UI and worker flows use documented public contracts; SDK, raw API, CLI/MCP, events/webhooks, examples, and external-client contract tests agree |
 | Data | Counts, hashes, samples, and disputed-record report reviewed |
 | Points | Same balance and provenance on every surface |
 | Lifecycle | Cold start, warm start, drain, crash, and abandoned lease pass |
