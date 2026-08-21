@@ -22,6 +22,7 @@ This repository is the clean-room architecture contract for rebuilding the Space
 5. `OPERATIONS.md` — build order, cost clock, gates, migration, and rollback.
 6. `DOCUMENT_REVIEW.md` — what should be kept, merged, archived, or removed.
 7. `BASE_MODELS.md` — frozen application source commits, cleanup results, verification gates, and quarantine status.
+8. `OWNER_ACTIONS.md` — the exact account recovery, credential rotation, verification, and clean-repository handoff checklist.
 
 The `evidence/raw/` directory preserves 294 document-like source files copied from:
 
