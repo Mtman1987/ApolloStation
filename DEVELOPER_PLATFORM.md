@@ -2,6 +2,21 @@
 
 Status: **accepted governing decisions under D-29 and D-30**
 
+## Implementation checkpoint — 2026-08-21
+
+The first local, non-production reference slice is implemented in the isolated SPMT and SpaceMountain rebuild bases:
+
+- `app-registry.v1` now uses one shared TypeScript contract for the SPMT authority and SDK.
+- HTTP `GET /api/apps`, SDK `apps.list/get`, CLI `spmt apps list/get`, and MCP `spmt.apps.list/get` expose the same approved registry.
+- Surface, parent, category, and capability filters work; deterministic revisions and HTTP ETags support conditional polling.
+- Approval publishes `app.registry.changed` with the new revision.
+- The duplicate static app catalog was retired to a compatibility pointer.
+- SpaceMountain Shipyard reads the canonical registry while signed in or signed out, preserves a bounded last-known snapshot, and visibly reports API state, revision, and approved-app count.
+
+Local verification passed TypeScript checks, both production builds, four registry unit/contract tests, SpaceMountain's shell contract and 30-check workspace/proxy smoke, HTTP conditional-fetch integration, MCP parity, and CLI discovery. No production repository, Fly app, Machine, volume, database, secret, or tenant was changed.
+
+This is not full D-29/D-30 completion. Still open are live health ingestion, monotonic persisted revision sequencing, signed webhook delivery/retry, SDK/CLI watch helpers, compatibility/cursor filters, denial and two-tenant entitlement fixtures, Companion and remaining first-party Apps surfaces, and live deployment verification.
+
 ## Principle
 
 The SpaceMountain application suite is the first customer, proof of concept, test fleet, and reference implementation for the SPMT developer platform.
