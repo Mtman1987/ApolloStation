@@ -54,6 +54,7 @@ Nothing marked `OPEN` is authorized for implementation. Facts such as “Firebas
 | D-26 | Parallel production window | Time-box blue/green operation with daily cost visibility and automatic expiry reviews. | A hard clock can force risky migration decisions. | OPEN |
 | D-27 | Cutover unit | Migrate one bounded capability/tenant cohort at a time, not all apps at once. | Cross-app contracts may be easier to validate in a single coordinated switch. | OPEN |
 | D-28 | Old-system retirement | Require backup, reconciliation, observation, and rollback gates before stopping old apps; delay repo deletion longer. | Carrying old systems costs money and leaves confusing artifacts. | OPEN |
+| D-29 | First-party developer-platform parity | Require owner-operated apps to use every applicable documented SDK, CLI, MCP, API, event, webhook, job, and companion contract. Each app becomes an executable reference implementation; private shortcuts require a narrow documented exception. | Public-contract discipline adds SDK and documentation work to every feature and can be slower than direct internal coupling. | ACCEPT |
 
 ## Debate record template
 
