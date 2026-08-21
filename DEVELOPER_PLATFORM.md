@@ -1,6 +1,6 @@
 # First-Party Developer Platform Contract
 
-Status: **accepted governing decision under D-29**
+Status: **accepted governing decisions under D-29 and D-30**
 
 ## Principle
 
@@ -21,6 +21,34 @@ First-party apps use every developer surface that is applicable to their job. Th
 | Durable jobs | Slow, costly, or wakeable work | Accepted job ID, status, cancellation, idempotency, lease/timeout, result, and cost attribution |
 | App manifest/registry | Discovery, launch, scopes, callbacks, and capabilities | Validated manifest, review metadata, health URL, standalone URL, and version compatibility |
 | Companion capability protocol | Authorized local CPU/GPU, OBS, device, camera, audio, and background execution | Device pairing, capability grant, revocation, heartbeat, local consent, and cloud fallback behavior |
+
+## Dynamic app discovery
+
+The canonical registry is the only source for shared app discovery. SpaceMountain, SPMT/Shipyard, Companion, embedded launchers, and every first-party app with an Apps page query the same logical `apps.list` operation. A product may choose its own visual layout and filters, but it may not maintain a competing list of application identities or launch URLs.
+
+The logical discovery operation is exposed consistently:
+
+| Client | Discovery surface |
+| --- | --- |
+| SDK | Typed app-list, app-get, and app-watch helpers |
+| HTTP API | Versioned registry query with surface, parent, category, capability, compatibility, and cursor filters |
+| CLI | Structured app list, get, and watch commands |
+| MCP | Typed app discovery and inspection tools |
+| Events | Versioned registry-change notification carrying the new registry revision, not secret manifest contents |
+
+Each approved registry record includes a stable app ID, display metadata, ownership/review state, visibility, parent/module relationship, categories, declared capabilities, supported contract versions, standalone and embedded launch targets, required scopes, entitlement policy, health/readiness reference, and monotonically increasing registry revision.
+
+Approval, availability, and access are evaluated separately:
+
+- **Catalog state:** draft, under review, approved, suspended, or revoked.
+- **Runtime state:** starting, ready, degraded, draining, or unavailable.
+- **User access:** available, installed, entitled, locked, incompatible, or audience-restricted.
+
+An approved but stopped app remains visible with an honest starting/offline state and a safe launch or retry path. A health failure must never look like the app was deleted. Suspension or revocation follows explicit policy and audit rules. Nested modules use `parentAppId` and surface/category metadata so an app-owned Apps page discovers its approved children without a code deployment.
+
+Registry-change events provide immediate refresh. Every consumer also stores the last accepted revision, performs conditional revision/ETag refresh, rejects older revisions, and periodically reconciles so a missed event cannot leave a permanent stale catalog. A bounded last-known approved snapshot may render during SPMT disruption, visibly marked stale; it cannot authorize a new install, entitlement, or mutation.
+
+This is also a visual health proof. Shared surfaces expose the registry revision and compact integration state. An automated fixture proves that approval creates a tile everywhere, manifest updates change it everywhere, health transitions change its badge everywhere, entitlement changes affect only the intended tenant, and suspension/revocation applies consistently—without editing any consuming UI.
 
 ## Non-negotiable rules
 
@@ -53,7 +81,7 @@ Each product demonstrates a different part of the same platform while sharing id
 | Application | Required reference proof |
 | --- | --- |
 | SpaceMountain | Registry discovery, manifest rendering, OAuth launch/session restore, readiness-aware app launch, workspace read, and safe public snapshot |
-| SPMT | SDK/API source of truth, OAuth and service-token authority, scopes, CLI, MCP, manifests, events, webhooks, jobs, audit, test tenant, and developer portal |
+| SPMT | SDK/API source of truth, OAuth and service-token authority, scopes, canonical registry/revisions, CLI, MCP, manifests, events, webhooks, jobs, audit, test tenant, and developer portal |
 | Chat Tag | Small complete sample app: manifest, standalone OAuth, SDK points/theme/card reads, idempotent game outcomes, event publication, webhook consumption, and two-tenant tests |
 | StreamWeaver | High-volume event/stream consumer, durable automation jobs, quota-aware inference, companion negotiation, overlays, CLI diagnostics, and reconnect/replay behavior |
 | DiscordStreamHub | Provider linking, scoped bot operations, signed webhook/event ingestion, member/points projections, durable media jobs, and public integration examples |
@@ -77,6 +105,8 @@ For every new cross-app capability:
 8. Build the first-party UI/worker using those same surfaces.
 9. Run parity, two-tenant isolation, idempotency, retry, degraded-mode, and cost tests.
 10. Publish documentation and compatibility information before marking the feature complete.
+
+For an application or module submission, this sequence also includes manifest validation, review, approval, publication of a new registry revision, registry-change delivery, and cross-surface discovery verification.
 
 ## Required developer experience
 
@@ -106,5 +136,7 @@ A first-party feature is not done until all applicable answers are **yes**:
 - Are latency, provider use, and cost attributable?
 - Are secrets and private data redacted?
 - Is every internal exception documented and approved?
+- Does an approved app/module appear dynamically on every applicable Apps surface without a consumer code change?
+- Do health and entitlement changes update status/access without corrupting catalog approval state?
 
 This gate turns the application suite into evidence. A working Chat Tag game proves points, identity, events, and standalone OAuth. A working Rotator proves MCP, CLI, approvals, jobs, and lifecycle control. A working Companion proves local capability delegation. Together the apps show developers what the environment can actually do rather than describing a platform that first-party code does not use.
