@@ -12,6 +12,7 @@ Status: proposed; subject to `DECISIONS.md`.
 6. Local-first AI where it is useful, paid APIs where required.
 7. Every cost, request, mutation, and migration attributable to a tenant.
 8. No silent fallback, fake success, or shadow database.
+9. First-party apps are the reference implementations for the public developer platform.
 
 ## Logical architecture
 
@@ -29,6 +30,18 @@ flowchart TD
 ```
 
 SPMT is one **logical** application and API doorway. Its storage-authority process can own and mount the authoritative Fly Volume and the tools needed to index, search, store, retrieve, and serve that data. Other apps never mount that volume directly; they reach the authority through supported SDK, API, CLI, MCP, WebSocket, event, or job contracts.
+
+## First-party apps prove the developer platform
+
+The owner-operated applications are the platform's first customers. They use the same versioned developer surfaces available to an approved external application instead of private database access, made-up shared secrets, or undocumented one-off routes.
+
+For TypeScript application code, `@spmt/sdk` is the default integration boundary. Raw HTTP is reserved for unsupported runtimes, diagnostics, and proving the wire contract. Operator and automation workflows use the `spmt` CLI or MCP tools. Asynchronous integration uses versioned events, webhooks, WebSocket streams, and durable jobs rather than polling another app's private storage.
+
+Every important first-party capability must leave behind a reusable developer asset: a versioned contract, SDK method, CLI command or MCP tool where appropriate, scoped authorization, an executable example, contract tests, and observable success/failure behavior. A feature demonstrated only through a private first-party UI is incomplete.
+
+This is parity of capability and policy, not identical deployment privilege. SPMT's storage adapter, same-process implementation details, and fenced recovery operations may remain internal, but they must sit behind the same authorization, tenant, validation, idempotency, audit, and error semantics seen by public clients. Any exception is documented, narrowly scoped, tested, and reviewed.
+
+`DEVELOPER_PLATFORM.md` defines the proof matrix and release gate.
 
 ## SpaceMountain: always-available front door
 
@@ -120,6 +133,7 @@ The target is one SPMT account, not one omnipotent shared secret.
 
 - Humans: SPMT authorization code flow with secure browser session, PKCE where applicable, exact redirects, state validation, short-lived access, refresh rotation, and revocation.
 - First-party services: one registered service identity per deployable, using least-privilege scopes and short-lived tokens.
+- First-party integrations: the same OAuth, SDK, API, event, webhook, job, CLI, or MCP contract used by an equivalent external client; first-party ownership alone grants no implicit tenant authority.
 - Provider credentials: Twitch, Discord, Xbox, and paid AI credentials remain real secrets because SPMT cannot invent replacements for third-party credentials.
 - Internal same-process calls: direct modules, not HTTP plus made-up secrets.
 - Tenant/user context: explicit and separately authorized; never inferred from a service secret alone.
