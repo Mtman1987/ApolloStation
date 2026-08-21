@@ -23,12 +23,19 @@ Every rebuilt app and worker must satisfy these rules before it can join the new
 
 ## APIs and events
 
+- Use `@spmt/sdk` as the default TypeScript boundary; use raw HTTP only for an unsupported runtime, diagnostics, or an explicit wire-contract test.
+- Use the documented CLI and MCP tools for operator/agent workflows instead of private maintenance endpoints.
+- Use versioned events, webhooks, WebSocket streams, or durable jobs for asynchronous cross-app work instead of reading another app's storage.
+- Register the app and its capabilities through the same manifest, OAuth client, scopes, and review metadata expected from an approved external developer.
+- Do not give first-party callers undocumented scopes, magic headers, database access, or tenant authority.
 - Version all durable contracts.
 - Validate payloads at the boundary.
 - Require tenant context and least-privilege scope.
 - Make retries safe.
 - Use transactional outbox semantics when a database mutation must publish an event.
 - Return accepted job IDs for asynchronous work; do not claim completion early.
+- Make each important UI capability available through a documented developer contract unless the capability is inherently visual or local-only.
+- Ship an executable example and a contract test for every newly introduced developer capability.
 
 ## Lifecycle
 
@@ -66,5 +73,8 @@ Every request/job carries correlation ID, tenant ID, app/module ID, version, and
 - cold start, readiness, drain, and rollback pass;
 - shared facts match the canonical source;
 - no legacy auth or Firebase path is exercised;
+- all applicable developer-platform paths pass the parity matrix in `DEVELOPER_PLATFORM.md`;
+- no first-party-only route or privilege exists without an approved, documented exception;
+- the app contributes at least one executable example that an external developer can run against a test tenant;
 - cost and latency budgets are measured;
 - old app remains available until the observation gate closes.
