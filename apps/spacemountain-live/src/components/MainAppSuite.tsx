@@ -1,0 +1,321 @@
+import React, { useState, useEffect } from 'react';
+import { motion } from 'motion/react';
+import { Download } from 'lucide-react';
+import { CommunityTool, DashboardStats, EmbeddedAppTarget } from '../types';
+import { toolEmbedTarget } from '../lib/app-surfaces';
+import { UserPreferences } from '../types';
+
+interface MainAppSuiteProps {
+  tools: CommunityTool[];
+  onTriggerAction: (toolId: string) => void;
+  accentColor: string; // The selected theme's glow/accent hex color!
+  preferences: UserPreferences;
+  stats: DashboardStats;
+  onDock: (target: EmbeddedAppTarget) => void;
+}
+
+export default function MainAppSuite({ tools, onTriggerAction, accentColor, preferences, stats, onDock }: MainAppSuiteProps) {
+  const [clickCount, setClickCount] = useState(0);
+  const [cooldownEnd, setCooldownEnd] = useState<number>(0);
+  const [cooldownText, setCooldownText] = useState('');
+  const [installPrompt, setInstallPrompt] = useState<any>(null);
+
+  // Cooldown timer display
+  useEffect(() => {
+    if (cooldownEnd <= Date.now()) { setCooldownText(''); return; }
+    const interval = setInterval(() => {
+      const remaining = Math.max(0, cooldownEnd - Date.now());
+      if (remaining <= 0) { setCooldownText(''); setClickCount(0); clearInterval(interval); return; }
+      const mins = Math.floor(remaining / 60000);
+      const secs = Math.floor((remaining % 60000) / 1000);
+      setCooldownText(`${mins}:${secs.toString().padStart(2, '0')}`);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [cooldownEnd]);
+
+  useEffect(() => {
+    const onBeforeInstallPrompt = (event: Event) => {
+      event.preventDefault();
+      setInstallPrompt(event);
+    };
+    window.addEventListener('beforeinstallprompt', onBeforeInstallPrompt);
+    return () => window.removeEventListener('beforeinstallprompt', onBeforeInstallPrompt);
+  }, []);
+
+  const handleTileClick = (toolId: string, isInternal: boolean, isComingSoon: boolean) => {
+    if (!isInternal && !isComingSoon) return; // external apps don't award XP
+    if (cooldownEnd > Date.now()) return; // on cooldown
+
+    const newCount = clickCount + 1;
+    setClickCount(newCount);
+    if (newCount >= 5) {
+      setCooldownEnd(Date.now() + 5 * 60 * 1000);
+    }
+    onTriggerAction(toolId);
+  };
+
+  const handleInstall = async (event: React.MouseEvent, appLink: string, isExternal: boolean) => {
+    event.stopPropagation();
+    if (!isExternal && installPrompt) {
+      await installPrompt.prompt();
+      setInstallPrompt(null);
+      return;
+    }
+    window.open(appLink, '_blank');
+  };
+  // Mapping tools to their unique unicode icons from testing.html
+  const appIcons: Record<string, string> = {
+    'streamweaver': '◌',
+    'chat-tag': '🎮',
+    'discord-hub': '☯',
+    'hearmeout': '♫',
+    'mountainview': '◒',
+    'mail': '✉',
+    'forums': '☷',
+    'builder': '⌗',
+    'companion': '▣',
+  };
+
+  const realLogos: Record<string, string> = {
+    'chat-tag': '/assets/app-chat-tag.png',
+    'discord-hub': '/assets/app-discord-hub.png',
+    'streamweaver': '/assets/app-streamweaver.png',
+    'hearmeout': '/assets/app-hearmeout.png',
+  };
+
+  const densityClass = preferences.uiDensity === 'compact'
+    ? 'gap-2.5'
+    : preferences.uiDensity === 'spacious'
+      ? 'gap-5'
+      : 'gap-3.5';
+  const tileMinHeight = preferences.uiDensity === 'compact'
+    ? 'min-h-[146px]'
+    : preferences.uiDensity === 'spacious'
+      ? 'min-h-[184px]'
+      : 'min-h-[168px]';
+  const logoBoxClass = preferences.uiDensity === 'compact'
+    ? 'w-[82px] h-[82px]'
+    : preferences.uiDensity === 'spacious'
+      ? 'w-[104px] h-[104px]'
+      : 'w-[92px] h-[92px]';
+  const tabFrameClass = preferences.tabStyle === 'cards'
+    ? 'bg-black/20'
+    : preferences.tabStyle === 'underline'
+      ? 'rounded-none border-x-0 border-t-0 bg-transparent'
+      : 'rounded-2xl';
+
+  return (
+    <div className="w-full select-none">
+      {/* Title Divider matching '✦ YOUR APP SUITE ✦' exactly */}
+      <div className="flex items-center justify-center gap-4 mb-6">
+        <div className="h-[1px] flex-1 bg-gradient-to-r from-transparent via-zinc-850 to-zinc-700" />
+        <span className="text-[11px] font-mono tracking-[0.22em] text-zinc-400 font-bold uppercase flex items-center gap-1.5 select-none">
+          <span style={{ color: accentColor }}>✦</span> YOUR APP SUITE <span style={{ color: accentColor }}>✦</span>
+        </span>
+        <div className="h-[1px] flex-1 bg-gradient-to-l from-transparent via-zinc-850 to-zinc-700" />
+      </div>
+
+      {/* Grid of app launchers. The click/XP behavior stays on the whole tile. */}
+      <div className={`grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-8 ${densityClass}`}>
+        {tools.map((tool) => {
+          const icon = appIcons[tool.id] || '✦';
+          const label = tool.miniLabel || 'Sub Module';
+          const isDesktop = tool.distribution === 'windows-desktop';
+          const appLink = (isDesktop ? tool.downloadUrl : null) || tool.appUrl || tool.authUrl || tool.route;
+          const embedTarget = toolEmbedTarget(tool.id);
+          const isExternal = isDesktop || Boolean(tool.appUrl || tool.authUrl);
+          const isLive = tool.statusType === 'live';
+          const isAvailable = isLive || !tool.healthUrl;
+
+          return (
+            <motion.div
+              key={tool.id}
+              whileHover={{ 
+                scale: 1.04,
+                y: -4,
+              }}
+              whileTap={{ scale: 0.96 }}
+              className={`group cursor-pointer relative overflow-visible rounded-2xl px-1.5 py-2 flex flex-col items-center text-center justify-between transition-all duration-300 ${tileMinHeight}`}
+              style={{
+                borderColor: `${accentColor}25`,
+              }}
+              onClick={() => {
+                if (isExternal) {
+                  window.open(appLink, '_blank');
+                } else if (isAvailable) {
+                  handleTileClick(tool.id, true, false);
+                  window.location.href = appLink;
+                } else {
+                  handleTileClick(tool.id, false, true);
+                }
+              }}
+            >
+              {/* Dynamic Theme Glow effect on hover */}
+              <div 
+                className="absolute -inset-px rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none border"
+                style={{
+                  borderColor: `${accentColor}30`,
+                  boxShadow: `0 0 18px ${accentColor}24`
+                }}
+              />
+
+              {/* Glowing Icon Container with color matching selected theme */}
+              <div 
+                className={`${logoBoxClass} flex items-center justify-center text-4xl border mb-2 transition-all duration-300 group-hover:scale-105 font-mono font-bold leading-none select-none overflow-hidden relative ${tabFrameClass}`}
+                style={{
+                  color: accentColor,
+                  borderColor: `${accentColor}55`,
+                  backgroundColor: preferences.tabStyle === 'cards' ? `${accentColor}08` : 'transparent',
+                  boxShadow: `0 0 18px ${accentColor}1f`
+                }}
+              >
+                {realLogos[tool.id] ? (
+                  <img 
+                    src={realLogos[tool.id]} 
+                    alt={tool.name} 
+                    className="w-full h-full object-contain p-2"
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  icon
+                )}
+              </div>
+
+              {/* Title & Static/Database Labels matching the image layout */}
+              <div className="flex flex-col items-center w-full min-w-0">
+                <span className="font-sans font-bold text-xs text-white tracking-wide block truncate w-full">
+                  {tool.name}
+                </span>
+                <span className="text-[9px] font-sans font-semibold text-zinc-400 mt-1 block leading-normal truncate w-full">
+                  {label}
+                </span>
+              </div>
+
+              {/* Status badge + flow indicator */}
+              <div className="mt-2 w-full flex items-center justify-between text-[8px] font-mono border-t border-white/5 pt-2 text-zinc-500">
+                {isLive ? (
+                  <span className="text-emerald-400 font-bold">LIVE</span>
+                ) : tool.healthUrl ? (
+                  <span className="text-amber-500/80 font-bold tracking-wide">CHECK</span>
+                ) : (
+                  <span className="text-zinc-400 font-bold">LOCAL</span>
+                )}
+                <span className="text-zinc-300 font-bold flex items-center gap-1">
+                  <span 
+                    className={`w-1.5 h-1.5 rounded-full inline-block ${isLive ? 'animate-ping' : ''}`}
+                    style={{ backgroundColor: accentColor }}
+                  />
+                  {tool.installed === false ? 'AVAILABLE' : tool.enabled === false ? 'DISABLED' : tool.statusText}
+                </span>
+              </div>
+              {/* Cooldown indicator */}
+              {cooldownText && !isExternal && (
+                <div className="w-full text-center text-[7px] font-mono text-amber-500/70 mt-1">
+                  ⏳ {cooldownText}
+                </div>
+              )}
+
+              <div className="mt-2 grid w-full grid-cols-2 gap-1">
+                <button
+                  type="button"
+                  onClick={(event) => handleInstall(event, tool.popoutUrl || appLink, isExternal)}
+                  className="inline-flex items-center justify-center gap-1 rounded-lg border border-white/10 bg-black/25 px-2 py-1 text-[8px] font-mono font-bold text-zinc-300 hover:text-white hover:bg-white/10"
+                  title={isDesktop
+                    ? tool.signed === false
+                      ? `Download the unsigned portable ${tool.name} ZIP`
+                      : `Download the signed ${tool.name} installer`
+                    : `Open ${tool.name} in a signed-in popout`}
+                >
+                  <Download size={10} /> {isDesktop && tool.signed === false ? 'Unsigned ZIP' : isDesktop ? 'Download' : 'Open'}
+                </button>
+                <button
+                  type="button"
+                  disabled={isDesktop || !embedTarget}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    if (embedTarget) onDock(embedTarget);
+                  }}
+                  className="inline-flex items-center justify-center rounded-lg border border-white/10 bg-black/25 px-2 py-1 text-[8px] font-mono font-bold text-zinc-300 hover:text-white hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-35"
+                  title={isDesktop ? 'Desktop apps cannot be docked' : embedTarget ? `Dock ${embedTarget.title}` : 'This app opens as a full page'}
+                >
+                  Dock
+                </button>
+              </div>
+            </motion.div>
+          );
+        })}
+      </div>
+
+      {/* Sub statistics section matching bottom labels: '12+ Powerful Apps', '50K+ Active Users', '1M+ Connections Made', 'Infinite Possibilities' */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6 p-4 rounded-2xl bg-white/[0.01] border border-white/5 backdrop-blur-sm">
+        <div className="flex items-center gap-3 justify-center md:justify-start">
+          <div 
+            className="w-8 h-8 rounded-lg border flex items-center justify-center text-xs shadow-sm"
+            style={{ 
+              borderColor: `${accentColor}30`,
+              boxShadow: `0 0 10px ${accentColor}15`,
+              backgroundColor: `${accentColor}08`
+            }}
+          >
+            🚀
+          </div>
+          <div className="flex flex-col">
+            <span className="text-xs font-bold text-white leading-none">{stats.totalTools}</span>
+            <span className="text-[10px] text-zinc-400 mt-1 font-sans">Registered Apps</span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3 justify-center">
+          <div 
+            className="w-8 h-8 rounded-lg border flex items-center justify-center text-xs shadow-sm"
+            style={{ 
+              borderColor: `${accentColor}30`,
+              boxShadow: `0 0 10px ${accentColor}15`,
+              backgroundColor: `${accentColor}08`
+            }}
+          >
+            👥
+          </div>
+          <div className="flex flex-col">
+            <span className="text-xs font-bold text-white leading-none">{stats.totalUsers}</span>
+            <span className="text-[10px] text-zinc-400 mt-1 font-sans">Local Users</span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3 justify-center">
+          <div 
+            className="w-8 h-8 rounded-lg border flex items-center justify-center text-xs shadow-sm"
+            style={{ 
+              borderColor: `${accentColor}30`,
+              boxShadow: `0 0 10px ${accentColor}15`,
+              backgroundColor: `${accentColor}08`
+            }}
+          >
+            ⚡
+          </div>
+          <div className="flex flex-col">
+            <span className="text-xs font-bold text-white leading-none">{stats.onlineApps}/{stats.checkedApps}</span>
+            <span className="text-[10px] text-zinc-400 mt-1 font-sans">Online Checks</span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3 justify-center md:justify-end">
+          <div 
+            className="w-8 h-8 rounded-lg border flex items-center justify-center text-xs shadow-sm"
+            style={{ 
+              borderColor: `${accentColor}30`,
+              boxShadow: `0 0 10px ${accentColor}15`,
+              backgroundColor: `${accentColor}08`
+            }}
+          >
+            ∞
+          </div>
+          <div className="flex flex-col">
+            <span className="text-xs font-bold text-white leading-none">{stats.pointsAwarded.toLocaleString()}</span>
+            <span className="text-[10px] text-zinc-400 mt-1 font-sans">Earned Points</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

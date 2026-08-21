@@ -1,0 +1,15 @@
+{
+  "schema": "spmt.clean-bases.v1",
+  "generatedAt": "2026-08-21",
+  "purpose": "Temporary staging while repository-owner access is being recovered",
+  "productionAuthorized": false,
+  "apps": [
+    {"name": "spmt-live", "path": "apps/spmt-live", "sourceCommit": "deaf26ec3a696072caccbf2e21e492912e533c39", "files": 290, "trackedBytes": 2326238},
+    {"name": "spacemountain-live", "path": "apps/spacemountain-live", "sourceCommit": "498cb7fc6e79dcd73c5da32940a5b9f43b016de2", "files": 266, "trackedBytes": 26672385},
+    {"name": "streamweaver", "path": "apps/streamweaver", "sourceCommit": "31ac686e8cd8907a1e4d8ac110afe38be30c9ccb", "files": 1384, "trackedBytes": 116764730},
+    {"name": "DiscordStreamHub", "path": "apps/DiscordStreamHub", "sourceCommit": "953f3a7dd504f8101e8fa7aeed253066a3037a25", "files": 459, "trackedBytes": 4660062},
+    {"name": "hearmeout-main", "path": "apps/hearmeout-main", "sourceCommit": "43b72fcce676ce5654c5ca1f1338e9f0677267d9", "files": 334, "trackedBytes": 3688490},
+    {"name": "chat-tag", "path": "apps/chat-tag", "sourceCommit": "6b67baaa2a9639116f104c758cec968a09e0b6a2", "files": 317, "trackedBytes": 14961507},
+    {"name": "fly-machine-rotator", "path": "apps/fly-machine-rotator", "sourceCommit": "184a07488d4250cce18c84e1c69dda4ffe64d8a7", "files": 175, "trackedBytes": 4723432}
+  ]
+}

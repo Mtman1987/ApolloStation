@@ -1,0 +1,102 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# Dependencies
+/node_modules
+/companion/node_modules/
+/.pnp
+.pnp.js
+.yarn/
+
+# Build artifacts
+/dist
+/build
+/.next/
+/.next-release/
+/out/
+
+# Local Environment Variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Never keep env files under public/ (public is web-served)
+/public/.env
+
+# Logs (only the root logs/ directory, not src/components/logs/)
+/logs/*
+!/logs/.gitkeep
+*.log
+!src/components/logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# OS-generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Caches
+.npm
+.yarn-cache
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+
+# IDX / local dev environment metadata
+.idx/
+.launcher-install.json
+
+# Local secrets (never commit)
+*service-account*.json
+*.pem
+*.key
+
+# Genkit (local runtime state)
+.genkit/
+/.allai/*.db
+
+# Local app data (non-secret but machine-specific)
+/tokens/*
+!/tokens/.gitkeep
+!/tokens/*.example.json
+/src/data/public-chat-*.json
+
+# Runtime data (user-specific, synced via Discord)
+/data/*
+!/data/.gitkeep
+!/data/runtime/
+/data/runtime/*
+!/data/runtime/global/
+/data/runtime/global/*
+!/data/runtime/global/world-lore.json
+!/data/overlays/
+/data/overlays/*
+!/data/overlays/.gitkeep
+/MasterStats/
+/config/
+/public/avatars/New folder/
+/public/avatars/New folder.zip
+
+spcmtn-pokemon_assets-prod-main/
+carddb-uploader/
+
+ChatAndConquer/dist/
+ChatAndConquer/node_modules/
+
+ChatAndConquer/dist/
+ChatAndConquer/node_modules/
+
+.next/
+carddb-uploader/cards/database/*.jpg
+*.log
+*.tsbuildinfo

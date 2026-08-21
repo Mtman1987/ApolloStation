@@ -1,0 +1,66 @@
+app = "mtman-machine-rotator"
+primary_region = "ord"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  FLY_API_HOSTNAME = "https://api.machines.dev"
+  FLY_ORG = "mtman-new"
+  PUBLIC_DASHBOARD_URL = "https://mtman-machine-rotator.fly.dev/"
+  HEALTH_TIMEOUT_MS = "300000"
+  HEALTH_POLL_INTERVAL_MS = "5000"
+  STOP_TIMEOUT_SECONDS = "60"
+  REQUIRE_HEALTH_CHECKS = "false"
+  ALLOW_MULTI_MACHINE_SERVICES = "true"
+  API_MIN_INTERVAL_MS = "1200"
+  API_MAX_RETRIES = "8"
+  ROTATION_HISTORY_FILE = "/data/rotation-history.json"
+  DISCORD_ROTATION_REPORT_MESSAGE_FILE = "/data/discord-rotation-report-message.json"
+  LOG_MONITOR_ENABLED = "true"
+  LOG_ERROR_DEDUPE_FILE = "/data/error-fingerprints.json"
+  LOG_ERROR_HISTORY_FILE = "/data/error-history.json"
+  LOG_OBSERVATION_HISTORY_FILE = "/data/observed-incidents.json"
+  ROTATOR_ATHENA_ATTEMPTS_FILE = "/data/athena-incident-attempts.json"
+  DISCORD_ERROR_REPORT_MESSAGE_FILE = "/data/discord-error-report-message.json"
+  LOG_CONTEXT_LINES = "8"
+  LOG_SAMPLE_DURATION_MS = "15000"
+  LOG_POLL_INTERVAL_MS = "60000"
+  RESTART_UNSAFE_APPS = "true"
+  ROTATOR_RUNTIME_STATE_FILE = "/data/runtime-state.json"
+  MOUNTAINVIEW_AUTH_DISABLED = "false"
+  CODEX_FIXER_DATA_DIR = "/data/codex-fixer"
+  CODEX_FIXER_WORK_DIR = "/tmp/athena-coder"
+  CODEX_FIXER_MODEL = "gpt-5.6-sol"
+  SPMT_BASE_URL = "https://spmt.live"
+  ROTATOR_COMPANION_DIAGNOSTICS_ENABLED = "true"
+  COMPANION_DIAGNOSTICS_MODE = "verbose"
+  COMPANION_DIAGNOSTICS_INTERVAL_MS = "300000"
+  COMPANION_DIAGNOSTICS_SAMPLE_MS = "5000"
+  COMPANION_DIAGNOSTICS_LOG_LIMIT = "200"
+  SPACEMOUNTAIN_BASE_URL = "https://spacemountain.live"
+  SPMT_LLM_BASE_URL = "http://spmt-llm-worker.internal:8080/v1"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    grace_period = "15s"
+    interval = "30s"
+    method = "GET"
+    path = "/healthz"
+    protocol = "http"
+    timeout = "5s"
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 2048
+
+[mounts]
+  source = "rotator_data"
+  destination = "/data"

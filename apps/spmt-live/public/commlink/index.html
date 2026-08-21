@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Cosmo Commlink | SPMT</title>
+  <link rel="stylesheet" href="/commlink/commlink.css">
+</head>
+<body>
+  <div class="space-background" aria-hidden="true">
+    <div class="nebula nebula-one"></div>
+    <div class="nebula nebula-two"></div>
+    <div class="stars"></div>
+  </div>
+
+  <div class="prototype-banner">
+    <span>SPMT-owned Commlink workspace</span>
+    <span id="feed-banner-detail">Checking account sources, show controls, and device capabilities</span>
+  </div>
+
+  <main class="app-shell" id="app-shell">
+    <aside class="space-rail" aria-label="Saved ChatSpaces">
+      <button class="brand" id="cosmo-logo" type="button" aria-label="Cosmo">
+        <span class="brand-orbit" aria-hidden="true"><span>✦</span></span>
+        <span><strong>Cosmo</strong><small>Commlink</small></span>
+      </button>
+
+      <button class="create-space" id="create-space" type="button">
+        <span>＋</span> New ChatSpace
+      </button>
+
+      <div class="rail-heading">
+        <span>Saved ChatSpaces</span>
+        <button class="icon-button" type="button" aria-label="Sort ChatSpaces">↕</button>
+      </div>
+      <nav class="space-list" id="space-list"></nav>
+
+      <div class="rail-heading desk-heading">
+        <span>Saved Desks</span>
+        <button class="icon-button" id="create-desk" type="button" aria-label="Create Desk">＋</button>
+      </div>
+      <nav class="desk-list" id="desk-list"></nav>
+      <button class="desk-card secret-bot hidden" id="count-puzzle-card" type="button">
+        <span class="desk-icon">?</span>
+        <span><strong>Count Puzzle</strong><small>Hidden personality unlocked</small></span>
+      </button>
+
+      <div class="discovery-progress" id="discovery-progress" aria-label="Hidden signal progress">
+        <span class="discovery-dot"></span><span class="discovery-dot"></span><span class="discovery-dot"></span>
+        <small id="discovery-summary">Hidden signals are quiet</small>
+      </div>
+
+      <div class="account-card">
+        <span class="account-avatar" id="account-avatar">?</span>
+        <span><strong id="account-title">SPMT account</strong><small id="account-auth-status">Checking SPMT identity…</small><small id="account-provider-status">Provider identities are separate from your SPMT account.</small><button class="account-session-action" id="account-session-action" type="button">Sign in</button><small id="account-xp">Loading account XP…</small><small id="sync-summary">Checking SPMT sync…</small></span>
+        <span class="presence-dot" title="Online"></span>
+      </div>
+    </aside>
+
+    <section class="workspace">
+      <header class="topbar">
+        <div class="workspace-title">
+          <button class="mobile-rail-toggle icon-button" id="mobile-rail-toggle" type="button" aria-label="Toggle ChatSpaces">☰</button>
+          <div>
+            <div class="eyebrow">Commlink Desk / <span id="desk-name">Account</span></div>
+            <h1 id="space-title">All messages</h1>
+          </div>
+        </div>
+        <div class="topbar-actions">
+          <div class="view-switch" aria-label="Workspace layout">
+            <button class="active" type="button" data-view="focus">Focus</button>
+            <button type="button" data-view="desk">Desk</button>
+          </div>
+          <button class="top-action" id="search-button" type="button" aria-label="Search messages">⌕</button>
+          <button class="top-action production-button" id="production-button" type="button" aria-label="Open production dock">LIVE</button>
+          <button class="top-action" id="settings-button" type="button" aria-label="Open appearance settings">⚙</button>
+          <button class="avatar-action" id="topbar-account-avatar" type="button" aria-label="Open SPMT account" title="Open SPMT account">?</button>
+        </div>
+      </header>
+
+      <section class="source-strip" aria-label="Connected sources">
+        <div class="source-summary">
+          <span class="live-pulse"></span>
+          <strong id="source-count">Loading account sources…</strong>
+          <span id="workspace-state">Loading saved workspace…</span>
+          <span id="source-health-summary">Checking source health…</span>
+        </div>
+        <div class="source-chips" id="source-chips"></div>
+        <button class="add-source" type="button" id="add-source">Manage connections</button>
+      </section>
+
+      <section class="focus-view" id="focus-view">
+        <div class="conversation-pane">
+          <div class="feed-toolbar">
+            <div class="filter-tabs" id="filter-tabs">
+              <button class="active" type="button" data-filter="all">All</button>
+              <button type="button" data-filter="chat">Chat</button>
+              <button type="button" data-filter="events">Events</button>
+              <button type="button" data-filter="streamweaver">StreamWeaver</button>
+              <button type="button" data-filter="queued">Queue <span id="queue-count">0</span></button>
+            </div>
+            <div class="feed-actions">
+              <button class="toolbar-button" id="command-button" type="button">⌘ Commands</button>
+              <button class="toolbar-button" id="compact-toggle" type="button">Compact</button>
+              <button class="toolbar-button" id="replay-button" type="button">↻ Replay 5m</button>
+            </div>
+          </div>
+
+          <div class="message-feed" id="message-feed" aria-live="polite"></div>
+
+          <div class="composer">
+            <div class="destination-row">
+              <span class="destination-label">Destinations</span>
+              <div class="destination-chips" id="destination-chips"></div>
+              <span class="routing-note" id="routing-note">Replies remain source-locked</span>
+            </div>
+            <div class="compose-row">
+              <button class="compose-tool" id="emoji-button" type="button" aria-label="Insert emoji">☺</button>
+              <div class="compose-input-wrap">
+                <textarea id="compose-input" rows="1" placeholder="Message selected destinations… Type @ to target one channel" aria-label="Compose message"></textarea>
+                <div class="mention-menu hidden" id="mention-menu"></div>
+                <div class="emoji-menu hidden" id="emoji-menu"></div>
+              </div>
+              <button class="compose-tool mic-tool" id="voice-input" type="button" aria-label="Voice to text">🎙</button>
+              <button class="preview-button" id="preview-send" type="button">
+                <span>Send</span>
+                <strong id="send-label">Choose destination</strong>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <aside class="context-panel" id="context-panel" aria-label="Message context">
+          <div class="context-empty" id="context-empty">
+            <span class="context-orbit">◎</span>
+            <h2>Select a message</h2>
+            <p>Inspect identity, badges, SPMT XP, recent activity, and available actions.</p>
+          </div>
+          <div class="context-content hidden" id="context-content"></div>
+        </aside>
+      </section>
+
+      <section class="desk-view hidden" id="desk-view">
+        <div class="desk-tabs" id="desk-tabs"></div>
+        <div class="desk-grid" id="desk-grid"></div>
+      </section>
+    </section>
+  </main>
+
+  <section class="stream-dock hidden" id="stream-dock" aria-label="Stream player">
+    <header>
+      <span><strong id="stream-dock-title">Stream</strong><small id="stream-dock-mode">Audio and video</small></span>
+      <div>
+        <button type="button" id="stream-audio-mode">Audio</button>
+        <button type="button" id="stream-video-mode">Video</button>
+        <button type="button" id="stream-close" aria-label="Close stream">×</button>
+      </div>
+    </header>
+    <iframe id="stream-frame" title="Connected channel stream player" allow="autoplay; fullscreen" referrerpolicy="strict-origin-when-cross-origin"></iframe>
+  </section>
+
+  <div class="modal-backdrop hidden" id="workspace-modal" role="dialog" aria-modal="true" aria-labelledby="workspace-modal-title">
+    <div class="workspace-modal-card">
+      <button class="modal-close" id="close-workspace-modal" type="button" aria-label="Close workspace editor">×</button>
+      <span class="eyebrow">Synced workspace structure</span>
+      <h2 id="workspace-modal-title">Edit ChatSpace</h2>
+      <label class="workspace-field"><span>Name</span><input id="workspace-name" maxlength="60"></label>
+      <p class="setting-help" id="workspace-modal-help"></p>
+      <div id="workspace-source-editor" class="workspace-source-editor"></div>
+      <div id="workspace-panel-editor" class="workspace-panel-editor"></div>
+      <div class="safety-note"><span>↔</span> Bridge membership combines only the highlighted chats. Other connected chats remain separate and independently replyable.</div>
+      <div class="modal-actions">
+        <button class="secondary-button" id="delete-workspace-item" type="button">Delete</button>
+        <button class="primary-button" id="save-workspace-item" type="button">Save workspace</button>
+      </div>
+    </div>
+  </div>
+
+  <aside class="history-search hidden" id="history-search" aria-label="Search bounded Commlink history">
+    <div class="drawer-header">
+      <div>
+        <span class="eyebrow">Read-only history</span>
+        <h2>Search Commlink</h2>
+      </div>
+      <button class="icon-button" id="close-search" type="button" aria-label="Close search">×</button>
+    </div>
+    <form class="history-search-form" id="history-search-form">
+      <label for="history-query">Search the latest 500 StreamWeaver events and recent SPMT records</label>
+      <div>
+        <input id="history-query" type="search" minlength="2" maxlength="120" placeholder="Name, channel, message, event…" autocomplete="off">
+        <button class="primary-button" type="submit">Search</button>
+      </div>
+    </form>
+    <div class="history-search-status" id="history-search-status">Search is account-scoped and never triggers chat actions.</div>
+    <button class="secondary-button" id="clear-search" type="button">Return to live feed</button>
+  </aside>
+
+  <aside class="production-drawer hidden" id="production-drawer" aria-label="Commlink production dock">
+    <div class="drawer-header">
+      <div>
+        <span class="eyebrow">Passes 5–7</span>
+        <h2>Production dock</h2>
+      </div>
+      <button class="icon-button" id="close-production" type="button" aria-label="Close production dock">×</button>
+    </div>
+    <div class="production-status" id="operator-health">
+      <span class="live-pulse"></span>
+      <span><strong>Checking StreamWeaver controls</strong><small>Pin, queue, feature, TTS, and OBS remain tenant scoped.</small></span>
+    </div>
+    <div class="settings-scroll production-scroll">
+      <section class="setting-section">
+        <div class="between"><h3>Panel role & sync</h3><span class="truth-badge">SPMT synced</span></div>
+        <div class="two-column-settings">
+          <label><span>Access mode</span><select id="panel-role"><option>owner</option><option>operator</option><option>helper</option><option>view-only</option><option>queue-only</option><option>pinned-only</option></select></label>
+          <label><span>Sync group</span><input id="sync-group" maxlength="60" value="show-queue" placeholder="None"></label>
+        </div>
+        <p class="setting-help">A panel joins synchronized show state only when both panels use the same named group.</p>
+      </section>
+
+      <section class="setting-section">
+        <div class="between"><h3>Smart staging</h3><span class="truth-badge guarded">Guarded</span></div>
+        <label class="inline-toggle"><span><strong>Enable typed staging</strong><small>Live feed only; replay never triggers actions</small></span><input id="staging-enabled" type="checkbox"></label>
+        <div class="two-column-settings">
+          <label><span>Typed trigger</span><select id="staging-trigger"><option value="reward">Redeems</option><option value="donation">Donations</option><option value="membership">Memberships</option><option value="raid">Raids</option><option value="first-time">First-time chatters</option></select></label>
+          <label><span>Safe action</span><select id="staging-action"><option value="queue">Queue</option><option value="pin">Pin</option></select></label>
+        </div>
+        <button class="secondary-button full-button" id="dry-run-rule" type="button">Dry run against this feed</button>
+        <div class="rule-result" id="rule-result">No rule has run yet.</div>
+      </section>
+
+      <section class="setting-section">
+        <div class="between"><h3>Show queue</h3><span class="truth-badge" id="queue-health">Loading</span></div>
+        <div class="show-stats" id="show-stats"></div>
+        <div class="button-grid">
+          <button class="secondary-button" id="feature-next" type="button">Feature next</button>
+          <button class="secondary-button" id="clear-feature" type="button">Clear feature</button>
+        </div>
+        <label><span>TTS text</span><textarea id="tts-text" rows="2" maxlength="2000" placeholder="Read a show note through the active tenant mixer…"></textarea></label>
+        <button class="primary-button full-button" id="speak-tts" type="button">Queue tenant TTS</button>
+        <p class="setting-help">Paid TTS is skipped with an explicit receipt when no tenant listener is active.</p>
+      </section>
+
+      <section class="setting-section">
+        <div class="between"><h3>Typed event panel</h3><span class="truth-badge">Events only</span></div>
+        <div class="event-metrics" id="event-metrics"></div>
+      </section>
+
+      <section class="setting-section">
+        <div class="between"><h3>Named outputs</h3><span class="truth-badge">Read only</span></div>
+        <div id="named-outputs" class="output-list"><p class="setting-help">Waiting for the tenant output contract.</p></div>
+        <button class="secondary-button full-button" id="open-popout" type="button">Open this ChatSpace pop-out</button>
+      </section>
+
+      <section class="setting-section">
+        <div class="between"><h3>Stream Deck · Companion · MIDI</h3><span class="truth-badge guarded">Allowlisted</span></div>
+        <div class="two-column-settings">
+          <label><span>Input</span><select id="control-input"><option value="streamdeck:1">Stream Deck key 1</option><option value="midi:60">MIDI note 60</option><option value="companion:test">Companion test</option></select></label>
+          <label><span>Action</span><select id="control-action"><option value="feature-next">Feature next</option><option value="clear-feature">Clear feature</option><option value="popout.show">Show Companion pop-out 1</option><option value="companion.status">Check Companion status</option></select></label>
+        </div>
+        <div class="button-grid">
+          <button class="secondary-button" id="save-binding" type="button">Save binding</button>
+          <button class="primary-button" id="run-binding" type="button">Run safely</button>
+        </div>
+        <div class="rule-result" id="companion-status">No paired device checked.</div>
+      </section>
+
+      <section class="setting-section">
+        <div class="between"><h3>Bots, voice & presentation</h3><span class="truth-badge">Owner surfaces</span></div>
+        <div class="capability-launches">
+          <a href="https://streamweaver-new.fly.dev/private-chat" target="_blank" rel="noopener">Bot & AI <small>StreamWeaver memory/persona</small></a>
+          <a href="https://streamweaver-new.fly.dev/voice-reply" target="_blank" rel="noopener">Voice & STT <small>Private readback workflow</small></a>
+          <a href="https://streamweaver-new.fly.dev/dashboard" target="_blank" rel="noopener">Translation <small>Tenant-owned settings</small></a>
+          <a href="https://streamweaver-new.fly.dev/dashboard" target="_blank" rel="noopener">Avatar & subtitles <small>Presentation owner</small></a>
+        </div>
+      </section>
+
+      <section class="setting-section">
+        <div class="between"><h3>Cutover & rollback</h3><span class="truth-badge">Commlink primary</span></div>
+        <p class="setting-help">New messaging opens here. The legacy inbox remains available during the observation window and no historical records are deleted.</p>
+        <div class="integration-list" id="integration-list"><p class="setting-help">Checking app adapter ownership…</p></div>
+        <a class="secondary-button full-button link-button" href="/?legacyMessages=1#messages">Open legacy inbox rollback</a>
+      </section>
+    </div>
+  </aside>
+
+  <aside class="settings-drawer hidden" id="settings-drawer" aria-label="Appearance and sync settings">
+    <div class="drawer-header">
+      <div>
+        <span class="eyebrow">Portable SPMT workspace</span>
+        <h2>Appearance & sync</h2>
+      </div>
+      <button class="icon-button" id="close-settings" type="button" aria-label="Close settings">×</button>
+    </div>
+    <div class="sync-card" id="sync-card">
+      <span class="sync-indicator"></span>
+      <span><strong id="sync-title">Loading workspace</strong><small id="sync-detail">Checking this browser’s SPMT session.</small></span>
+      <button id="reload-profile" type="button">Reload</button>
+    </div>
+
+    <div class="settings-scroll">
+      <section class="setting-section">
+        <h3>Theme presets</h3>
+        <div class="theme-grid" id="theme-grid">
+          <button type="button" data-theme="solar-flare"><span style="--swatch:#fb923c"></span>Solar Flare</button>
+          <button type="button" data-theme="nebula-purple"><span style="--swatch:#a78bfa"></span>Nebula Purple</button>
+          <button type="button" data-theme="oceanic-blue"><span style="--swatch:#38bdf8"></span>Oceanic Blue</button>
+          <button type="button" data-theme="aurora-green"><span style="--swatch:#34d399"></span>Aurora Green</button>
+        </div>
+      </section>
+
+      <section class="setting-section">
+        <h3>Space & glass</h3>
+        <label class="range-setting"><span>Glow intensity <output id="glow-output">80%</output></span><input id="glow-input" type="range" min="0" max="100" value="80"></label>
+        <label class="range-setting"><span>Star density <output id="stars-output">70%</output></span><input id="stars-input" type="range" min="0" max="100" value="70"></label>
+        <label class="range-setting"><span>Glass opacity <output id="glass-output">65%</output></span><input id="glass-input" type="range" min="0" max="100" value="65"></label>
+        <label class="range-setting"><span>Blur strength <output id="blur-output">22px</output></span><input id="blur-input" type="range" min="0" max="60" value="22"></label>
+      </section>
+
+      <section class="setting-section two-column-settings">
+        <label><span>UI density</span><select id="density-select"><option value="compact">Compact</option><option value="comfortable" selected>Comfortable</option><option value="spacious">Spacious</option></select></label>
+        <label><span>Corner radius</span><select id="radius-select"><option value="sm">Small</option><option value="md" selected>Medium</option><option value="lg">Large</option><option value="full">Round</option></select></label>
+        <label><span>Sidebar position</span><select id="sidebar-position"><option value="left">Left</option><option value="right">Right</option></select></label>
+        <label><span>Tab style</span><select id="tab-style"><option value="pills">Pills</option><option value="underline">Underline</option><option value="cards">Cards</option></select></label>
+      </section>
+
+      <section class="setting-section toggle-list">
+        <label><span><strong>Show avatars</strong><small>Names and roles always remain visible</small></span><input id="avatars-toggle" type="checkbox" checked></label>
+        <label><span><strong>UI animations</strong><small>Automatically honors reduced motion</small></span><input id="animations-toggle" type="checkbox" checked></label>
+        <label><span><strong>Particle stars</strong><small>Cosmic background decoration</small></span><input id="particles-toggle" type="checkbox" checked></label>
+        <label><span><strong>Shooting stars</strong><small>Occasional background accents</small></span><input id="shooting-toggle" type="checkbox" checked></label>
+      </section>
+    </div>
+
+    <div class="drawer-footer">
+      <span id="save-note">Changes are local until saved to your SPMT account.</span>
+      <button class="secondary-button" id="reset-preview" type="button">Reset unsaved changes</button>
+      <button class="primary-button" id="save-profile" type="button">Save to SPMT</button>
+    </div>
+  </aside>
+
+  <div class="modal-backdrop hidden" id="send-modal" role="dialog" aria-modal="true" aria-labelledby="send-modal-title">
+    <div class="send-modal-card">
+      <button class="modal-close" id="close-send-modal" type="button" aria-label="Close preview">×</button>
+      <span class="eyebrow">Destination review</span>
+      <h2 id="send-modal-title">Preview message routing</h2>
+      <p class="modal-message" id="modal-message"></p>
+      <div class="modal-destinations" id="modal-destinations"></div>
+      <div class="safety-note" id="send-safety-note"><span>✓</span> Every destination receives its own idempotent request and receipt. Partial failure never appears as a complete send.</div>
+      <div class="modal-actions">
+        <button class="secondary-button" id="cancel-send" type="button">Keep editing</button>
+        <button class="primary-button" id="simulate-send" type="button">Send deliberately</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="black-hole-game hidden" id="black-hole-game" role="dialog" aria-modal="true" aria-labelledby="black-hole-title">
+    <button class="black-hole-close" id="black-hole-close" type="button" aria-label="Escape the black hole">×</button>
+    <div class="black-hole-copy">
+      <span class="eyebrow">Unknown gravitational signal</span>
+      <h2 id="black-hole-title">The Cosmo Black Hole</h2>
+      <p>Guide the three drifting station artifacts into the singularity before the signal collapses.</p>
+      <strong id="black-hole-count">0 / 3 captured</strong>
+    </div>
+    <div class="singularity" aria-hidden="true"><span></span></div>
+    <button class="cosmic-artifact artifact-planet" type="button" data-artifact="planet" aria-label="Capture the drifting planet">◉</button>
+    <button class="cosmic-artifact artifact-rocket" type="button" data-artifact="rocket" aria-label="Capture the drifting rocket">▲</button>
+    <button class="cosmic-artifact artifact-asteroid" type="button" data-artifact="asteroid" aria-label="Capture the drifting asteroid">◆</button>
+  </div>
+
+  <div class="unlock-overlay hidden" id="unlock-overlay" role="dialog" aria-modal="true" aria-labelledby="unlock-title">
+    <div class="unlock-card">
+      <span class="unlock-glyph">✦ ? ✦</span>
+      <span class="eyebrow">All hidden signals aligned</span>
+      <h2 id="unlock-title">Lord Puzzler</h2>
+      <p>Count Puzzle, the gothic riddle-smith and useful stowaway, has appeared in your Commlink collection.</p>
+      <button class="primary-button" id="accept-unlock" type="button">Enter the hidden orbit</button>
+    </div>
+  </div>
+
+  <div class="toast-region" id="toast-region" aria-live="polite"></div>
+  <script src="/commlink/commlink.js" defer></script>
+  <script src="/commlink/black-hole-puzzle.js" defer></script>
+</body>
+</html>

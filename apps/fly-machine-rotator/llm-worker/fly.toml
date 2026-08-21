@@ -1,0 +1,35 @@
+app = "spmt-llm-worker"
+primary_region = "ord"
+
+# Athena uses this HTTP server only over Fly's encrypted 6PN private network.
+# Deliberately omit [http_service] and [[services]] so Fly Proxy cannot expose
+# the worker to the public internet or require a second application API key.
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  LLAMA_ARG_HOST = "::"
+  LLAMA_ARG_PORT = "8080"
+  LLAMA_ARG_HF_REPO = "Qwen/Qwen3-8B-GGUF:Q4_K_M"
+  LLAMA_ARG_ALIAS = "spmt-qwen3-8b"
+  # llama.cpp divides total context across parallel server slots. 32K total
+  # keeps two concurrent slots while giving each request about 16K tokens.
+  LLAMA_ARG_CTX_SIZE = "32768"
+  LLAMA_ARG_THREADS = "8"
+  LLAMA_ARG_THREADS_HTTP = "4"
+  LLAMA_ARG_N_PARALLEL = "2"
+  LLAMA_ARG_JINJA = "1"
+  LLAMA_ARG_NO_WEBUI = "1"
+  LLAMA_ARG_METRICS = "1"
+  LLAMA_ARG_TIMEOUT = "120"
+  LLAMA_CACHE = "/models"
+
+[mounts]
+  source = "spmt_llm_models"
+  destination = "/models"
+  initial_size = "10gb"
+
+[[vm]]
+  cpu_kind = "performance"
+  cpus = 8
+  memory_mb = 16384

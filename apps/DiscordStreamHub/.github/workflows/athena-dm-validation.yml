@@ -1,0 +1,33 @@
+name: Athena DM Validation
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-private-spmt-routing:
+    name: Test private SPMT routing
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Run private routing tests
+        run: node --import tsx --test tests/discord-dm-spmt-routing.test.ts
+      - name: Run Twitch ban blacklist tests
+        run: node --import tsx --test tests/twitch-ban-blacklist.test.ts
+      - name: Run linking channel recovery test
+        run: node --import tsx --test tests/linking-channel-recovery.test.ts
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Production build
+        run: DSH_BUILD_DB=1 npm run build

@@ -1,0 +1,1463 @@
+const {
+  AndroidConfig,
+  createRunOncePlugin,
+  withAndroidManifest,
+  withAppBuildGradle,
+  withDangerousMod,
+  withMainApplication,
+  withSettingsGradle
+} = require("@expo/config-plugins");
+const fs = require("node:fs");
+const path = require("node:path");
+
+const META_MAVEN = "https://maven.pkg.github.com/facebook/meta-wearables-dat-android";
+const PACKAGE_NAME = "live.spacemountain.mountainviewai.meta";
+
+function withMetaWearablesAndroid(config, props = {}) {
+  const mwdatVersion = props.mwdatVersion || "0.7.0";
+  const applicationId = props.applicationId || "${MOUNTAINVIEW_META_APP_ID}";
+  const analyticsOptOut = props.analyticsOptOut !== false;
+  const enableMetaDat = props.enableMetaDat === true;
+
+  if (enableMetaDat) {
+    config = withSettingsGradle(config, (mod) => {
+      if (!mod.modResults.contents.includes(META_MAVEN)) {
+        mod.modResults.contents = mod.modResults.contents.replace(
+          /dependencyResolutionManagement\s*\{/,
+          `dependencyResolutionManagement {\n  repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)\n  repositories {\n    google()\n    mavenCentral()\n    maven {\n      url = uri("${META_MAVEN}")\n      credentials {\n        username = ""\n        password = System.getenv("GITHUB_TOKEN") ?: providers.gradleProperty("github_token").orNull\n      }\n    }\n  }`
+        );
+      }
+      return mod;
+    });
+
+    config = withAppBuildGradle(config, (mod) => {
+      const lines = [
+        `implementation("com.meta.wearable:mwdat-core:${mwdatVersion}")`,
+        `implementation("com.meta.wearable:mwdat-camera:${mwdatVersion}")`,
+        `debugImplementation("com.meta.wearable:mwdat-mockdevice:${mwdatVersion}")`
+      ];
+      for (const line of lines) {
+        if (!mod.modResults.contents.includes(line)) {
+          mod.modResults.contents = mod.modResults.contents.replace(/dependencies\s*\{/, `dependencies {\n    ${line}`);
+        }
+      }
+      return mod;
+    });
+  }
+
+  config = withAndroidManifest(config, (mod) => {
+    const mainApplication = AndroidConfig.Manifest.getMainApplicationOrThrow(mod.modResults);
+    mainApplication["meta-data"] = mainApplication["meta-data"] || [];
+    mainApplication.receiver = mainApplication.receiver || [];
+    mainApplication.service = mainApplication.service || [];
+    mod.modResults.manifest["uses-permission"] = mod.modResults.manifest["uses-permission"] || [];
+    const permissions = mod.modResults.manifest["uses-permission"];
+    for (const permission of ["android.permission.RECORD_AUDIO", "android.permission.FOREGROUND_SERVICE", "android.permission.FOREGROUND_SERVICE_MICROPHONE", "android.permission.POST_NOTIFICATIONS"]) {
+      if (!permissions.some((item) => item.$?.["android:name"] === permission)) permissions.push({ $: { "android:name": permission } });
+    }
+    upsertReceiver(mainApplication, `${PACKAGE_NAME}.MountainViewBluetoothLaunchReceiver`);
+    upsertService(mainApplication, `${PACKAGE_NAME}.MountainViewAthenaWakeService`);
+    if (enableMetaDat) {
+      upsertMetaData(mainApplication, "com.meta.wearable.mwdat.APPLICATION_ID", applicationId);
+      upsertMetaData(mainApplication, "com.meta.wearable.mwdat.ANALYTICS_OPT_OUT", String(analyticsOptOut));
+    }
+    return mod;
+  });
+
+  config = withMainApplication(config, (mod) => {
+    if (!mod.modResults.contents.includes("MountainViewMetaWearablesPackage")) {
+      mod.modResults.contents = mod.modResults.contents
+        .replace(/^import /m, `import ${PACKAGE_NAME}.MountainViewMetaWearablesPackage\nimport `)
+        .replace(
+          /PackageList\(this\)\.packages/,
+          `PackageList(this).packages.apply { add(MountainViewMetaWearablesPackage()) }`
+        );
+    }
+    return mod;
+  });
+
+  config = withDangerousMod(config, ["android", (mod) => {
+    const appPackage = config.android?.package || "live.spacemountain.mountainviewai";
+    const baseDir = path.join(mod.modRequest.platformProjectRoot, "app", "src", "main", "java", ...PACKAGE_NAME.split("."));
+    fs.mkdirSync(baseDir, { recursive: true });
+    fs.writeFileSync(path.join(baseDir, "MountainViewMetaWearablesModule.kt"), renderModule(appPackage));
+    fs.writeFileSync(path.join(baseDir, "MountainViewMetaWearablesPackage.kt"), renderPackage());
+    fs.writeFileSync(path.join(baseDir, "MountainViewBluetoothLaunchReceiver.kt"), renderBluetoothLaunchReceiver(appPackage));
+    fs.writeFileSync(path.join(baseDir, "MountainViewAthenaWakeService.kt"), renderAthenaWakeService(appPackage));
+    return mod;
+  }]);
+
+  return config;
+}
+
+function upsertMetaData(application, name, value) {
+  const items = application["meta-data"];
+  const existing = items.find((item) => item.$["android:name"] === name);
+  if (existing) {
+    existing.$["android:value"] = value;
+    return;
+  }
+  items.push({ $: { "android:name": name, "android:value": value } });
+}
+
+function upsertReceiver(application, name) {
+  const existing = application.receiver.find((item) => item.$["android:name"] === name);
+  const intentFilter = {
+    action: [
+      { $: { "android:name": "android.bluetooth.device.action.ACL_CONNECTED" } },
+      { $: { "android:name": "android.bluetooth.device.action.BOND_STATE_CHANGED" } }
+    ]
+  };
+  if (existing) {
+    existing.$["android:exported"] = "false";
+    existing["intent-filter"] = existing["intent-filter"] || [intentFilter];
+    return;
+  }
+  application.receiver.push({
+    $: {
+      "android:name": name,
+      "android:enabled": "true",
+      "android:exported": "false"
+    },
+    "intent-filter": [intentFilter]
+  });
+}
+
+function upsertService(application, name) {
+  const existing = application.service.find((item) => item.$["android:name"] === name);
+  const config = {
+    $: {
+      "android:name": name,
+      "android:enabled": "true",
+      "android:exported": "false",
+      "android:foregroundServiceType": "microphone"
+    }
+  };
+  if (existing) Object.assign(existing.$, config.$);
+  else application.service.push(config);
+}
+
+function renderPackage() {
+  return `package ${PACKAGE_NAME}
+
+import com.facebook.react.ReactPackage
+import com.facebook.react.bridge.NativeModule
+import com.facebook.react.bridge.ReactApplicationContext
+import com.facebook.react.uimanager.ViewManager
+
+class MountainViewMetaWearablesPackage : ReactPackage {
+  override fun createNativeModules(reactContext: ReactApplicationContext): MutableList<NativeModule> =
+    mutableListOf(MountainViewMetaWearablesModule(reactContext))
+
+  override fun createViewManagers(reactContext: ReactApplicationContext): MutableList<ViewManager<*, *>> =
+    mutableListOf()
+}
+`;
+}
+
+function renderBluetoothLaunchReceiver(appPackage) {
+  return `package ${PACKAGE_NAME}
+
+import android.bluetooth.BluetoothDevice
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.os.Build
+import android.util.Log
+import java.util.Locale
+
+class MountainViewBluetoothLaunchReceiver : BroadcastReceiver() {
+  override fun onReceive(context: Context, intent: Intent) {
+    val action = intent.action ?: return
+    if (action != BluetoothDevice.ACTION_ACL_CONNECTED && action != BluetoothDevice.ACTION_BOND_STATE_CHANGED) return
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    if (!prefs.getBoolean(PREF_ENABLED, false)) return
+
+    val expectedAddress = prefs.getString(PREF_DEVICE_ADDRESS, "")?.uppercase(Locale.US).orEmpty()
+    val device = if (Build.VERSION.SDK_INT >= 33) {
+      intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE, BluetoothDevice::class.java)
+    } else {
+      @Suppress("DEPRECATION")
+      intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
+    }
+    val address = device?.address?.uppercase(Locale.US).orEmpty()
+    if (expectedAddress.isNotBlank() && address != expectedAddress) return
+
+    prefs.edit()
+      .putLong(PREF_LAST_LAUNCH_ATTEMPT_AT, System.currentTimeMillis())
+      .putString(PREF_LAST_LAUNCH_DEVICE, address)
+      .putString(PREF_LAST_LAUNCH_ACTION, action)
+      .apply()
+
+    try {
+      val launchIntent = context.packageManager.getLaunchIntentForPackage("${appPackage}") ?: Intent().setClassName("${appPackage}", "${appPackage}.MainActivity")
+      launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+      launchIntent.putExtra("mountainview_launch_reason", "glasses-bluetooth-connected")
+      launchIntent.putExtra("mountainview_device_address", address)
+      context.startActivity(launchIntent)
+    } catch (error: Exception) {
+      Log.w("MountainViewLaunch", "Could not open MountainView from Bluetooth connect", error)
+    }
+  }
+
+  companion object {
+    const val PREFS_NAME = "mountainview_glasses_launch"
+    const val PREF_ENABLED = "enabled"
+    const val PREF_DEVICE_ADDRESS = "device_address"
+    const val PREF_LAST_LAUNCH_ATTEMPT_AT = "last_launch_attempt_at"
+    const val PREF_LAST_LAUNCH_DEVICE = "last_launch_device"
+    const val PREF_LAST_LAUNCH_ACTION = "last_launch_action"
+  }
+}
+`;
+}
+
+function renderAthenaWakeService(appPackage) {
+  return `package ${PACKAGE_NAME}
+
+import android.Manifest
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.Service
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
+import android.os.IBinder
+import android.os.Looper
+import android.os.Handler
+import android.speech.RecognitionListener
+import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
+import androidx.core.app.NotificationCompat
+
+class MountainViewAthenaWakeService : Service(), RecognitionListener {
+  private var recognizer: SpeechRecognizer? = null
+  private val handler = Handler(Looper.getMainLooper())
+  private var running = true
+
+  override fun onCreate() {
+    super.onCreate()
+    createChannel()
+    val notification = NotificationCompat.Builder(this, CHANNEL_ID)
+      .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+      .setContentTitle("MountainView · Athena wake")
+      .setContentText("Listening for Hey Athena from your glasses")
+      .setOngoing(true)
+      .setPriority(NotificationCompat.PRIORITY_LOW)
+      .build()
+    startForeground(NOTIFICATION_ID, notification)
+    startListeningSoon(250)
+  }
+
+  override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+    running = true
+    startListeningSoon(150)
+    return START_STICKY
+  }
+
+  override fun onDestroy() {
+    running = false
+    handler.removeCallbacksAndMessages(null)
+    recognizer?.destroy()
+    recognizer = null
+    super.onDestroy()
+  }
+
+  override fun onBind(intent: Intent?): IBinder? = null
+
+  private fun startListeningSoon(delay: Long) {
+    if (!running) return
+    handler.removeCallbacksAndMessages(null)
+    handler.postDelayed({ startListening() }, delay)
+  }
+
+  private fun startListening() {
+    if (!running) return
+    if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+      stopSelf()
+      return
+    }
+    if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+      startListeningSoon(5000)
+      return
+    }
+    if (recognizer == null) {
+      recognizer = SpeechRecognizer.createSpeechRecognizer(this)
+      recognizer?.setRecognitionListener(this)
+    }
+    val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+      putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+      putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+      putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
+      putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, packageName)
+    }
+    try { recognizer?.startListening(intent) } catch (_: Exception) { startListeningSoon(1500) }
+  }
+
+  private fun inspect(text: String) {
+    val match = Regex("(?i)\\b(?:hey\\s+)?(?:athena|annie)\\b[:,]?\\s*(.*)$").find(text.trim()) ?: return
+    val command = match.groupValues.getOrNull(1)?.trim().orEmpty().ifBlank { text.trim() }
+    getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+      .putString(PENDING_COMMAND, command)
+      .putString(PENDING_TRANSCRIPT, text.trim())
+      .putLong(PENDING_AT, System.currentTimeMillis())
+      .apply()
+    val launch = packageManager.getLaunchIntentForPackage("${appPackage}") ?: Intent().setClassName("${appPackage}", "${appPackage}.MainActivity")
+    launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+    launch.putExtra("mountainview_launch_reason", "athena-foreground-wake")
+    launch.putExtra("mountainview_wake_command", command)
+    try { startActivity(launch) } catch (_: Exception) {}
+  }
+
+  override fun onResults(results: android.os.Bundle?) {
+    results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.forEach { inspect(it) }
+    startListeningSoon(300)
+  }
+  override fun onPartialResults(partialResults: android.os.Bundle?) {
+    partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.forEach { inspect(it) }
+  }
+  override fun onError(error: Int) { startListeningSoon(if (error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) 1500 else 500) }
+  override fun onReadyForSpeech(params: android.os.Bundle?) {}
+  override fun onBeginningOfSpeech() {}
+  override fun onRmsChanged(rmsdB: Float) {}
+  override fun onBufferReceived(buffer: ByteArray?) {}
+  override fun onEndOfSpeech() {}
+  override fun onEvent(eventType: Int, params: android.os.Bundle?) {}
+
+  private fun createChannel() {
+    if (Build.VERSION.SDK_INT >= 26) {
+      val manager = getSystemService(NotificationManager::class.java)
+      manager.createNotificationChannel(NotificationChannel(CHANNEL_ID, "Athena wake", NotificationManager.IMPORTANCE_LOW))
+    }
+  }
+
+  companion object {
+    const val CHANNEL_ID = "mountainview-athena-wake"
+    const val NOTIFICATION_ID = 8712
+    const val PREFS = "mountainview_athena_wake"
+    const val PENDING_COMMAND = "pending_command"
+    const val PENDING_TRANSCRIPT = "pending_transcript"
+    const val PENDING_AT = "pending_at"
+  }
+}
+`;
+}
+
+function renderModule(appPackage) {
+  return `package ${PACKAGE_NAME}
+
+import com.facebook.react.bridge.Promise
+import com.facebook.react.bridge.ReactApplicationContext
+import com.facebook.react.bridge.ReactContextBaseJavaModule
+import com.facebook.react.bridge.ReactMethod
+import com.facebook.react.bridge.WritableNativeArray
+import com.facebook.react.bridge.WritableNativeMap
+import com.facebook.react.modules.core.DeviceEventManagerModule
+import com.facebook.react.modules.core.PermissionAwareActivity
+import com.facebook.react.modules.core.PermissionListener
+import android.Manifest
+import android.annotation.SuppressLint
+import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothGatt
+import android.bluetooth.BluetoothGattCallback
+import android.bluetooth.BluetoothGattCharacteristic
+import android.bluetooth.BluetoothGattDescriptor
+import android.bluetooth.BluetoothGattService
+import android.bluetooth.BluetoothManager
+import android.bluetooth.le.ScanCallback
+import android.bluetooth.le.ScanResult
+import android.bluetooth.le.ScanSettings
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.media.AudioDeviceInfo
+import android.media.AudioManager
+import android.media.session.MediaSession
+import android.media.session.PlaybackState
+import android.media.ToneGenerator
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
+import android.os.Bundle
+import android.speech.RecognitionListener
+import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
+import android.util.Log
+import android.view.KeyEvent
+import java.util.Locale
+import java.util.UUID
+
+class MountainViewMetaWearablesModule(
+  private val reactContext: ReactApplicationContext
+) : ReactContextBaseJavaModule(reactContext), PermissionListener {
+  private var pendingPermissionPromise: Promise? = null
+  private var pendingPermissionLabel: String = "permissions"
+  private val mainHandler = Handler(Looper.getMainLooper())
+  private val discoveredDevices = linkedMapOf<String, WritableNativeMap>()
+  private val researchLog = mutableListOf<String>()
+  private val mediaButtonLog = mutableListOf<String>()
+  private var activeGatt: BluetoothGatt? = null
+  private var activeRdGlassWriteCharacteristic: BluetoothGattCharacteristic? = null
+  private var rdGlassSequence: Int = 0
+  private var mediaSession: MediaSession? = null
+  private var speechRecognizer: SpeechRecognizer? = null
+  private var speechPromise: Promise? = null
+  private val pendingDescriptorWrites = ArrayDeque<PendingDescriptorWrite>()
+  private var descriptorWriteInFlight = false
+
+  override fun getName(): String = "MountainViewMetaWearables"
+
+  @ReactMethod
+  fun enableGlassesAutoLaunch(address: String, enabled: Boolean, promise: Promise) {
+    try {
+      val normalizedAddress = address.trim().uppercase(Locale.US)
+      val prefs = reactContext.getSharedPreferences(MountainViewBluetoothLaunchReceiver.PREFS_NAME, Context.MODE_PRIVATE)
+      prefs.edit()
+        .putBoolean(MountainViewBluetoothLaunchReceiver.PREF_ENABLED, enabled)
+        .putString(MountainViewBluetoothLaunchReceiver.PREF_DEVICE_ADDRESS, normalizedAddress)
+        .apply()
+      val result = WritableNativeMap()
+      result.putBoolean("androidNativeBridge", true)
+      result.putString("state", if (enabled) "auto-launch-enabled" else "auto-launch-disabled")
+      result.putString("deviceAddress", normalizedAddress)
+      result.putString("note", "MountainView will try to open when Android reports this Bluetooth device connected. Some Android builds restrict background app launches; if blocked, keep the app recent or use the foreground notification path next.")
+      appendMediaButtonLog("glasses auto launch " + (if (enabled) "enabled " else "disabled ") + normalizedAddress)
+      promise.resolve(result)
+    } catch (error: Exception) {
+      promise.reject("AUTO_LAUNCH_SETUP_FAILED", error.message ?: "Could not configure glasses auto launch.", error)
+    }
+  }
+
+  @ReactMethod
+  fun startAthenaForegroundWake(promise: Promise) {
+    try {
+      if (reactContext.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+        promise.reject("VOICE_PERMISSION_REQUIRED", "Grant microphone permission before enabling Athena foreground wake.")
+        return
+      }
+      val intent = Intent(reactContext, MountainViewAthenaWakeService::class.java)
+      if (Build.VERSION.SDK_INT >= 26) reactContext.startForegroundService(intent) else reactContext.startService(intent)
+      val result = WritableNativeMap()
+      result.putBoolean("androidNativeBridge", true)
+      result.putString("state", "foreground-wake-started")
+      result.putString("note", "Native foreground service is listening for Athena/Annie wake phrases.")
+      promise.resolve(result)
+    } catch (error: Exception) {
+      promise.reject("ATHENA_WAKE_START_FAILED", error.message ?: "Could not start Athena wake service.", error)
+    }
+  }
+
+  @ReactMethod
+  fun stopAthenaForegroundWake(promise: Promise) {
+    try {
+      reactContext.stopService(Intent(reactContext, MountainViewAthenaWakeService::class.java))
+      val result = WritableNativeMap()
+      result.putBoolean("androidNativeBridge", true)
+      result.putString("state", "foreground-wake-stopped")
+      promise.resolve(result)
+    } catch (error: Exception) {
+      promise.reject("ATHENA_WAKE_STOP_FAILED", error.message ?: "Could not stop Athena wake service.", error)
+    }
+  }
+
+  @ReactMethod
+  fun consumePendingWakeCommand(promise: Promise) {
+    try {
+      val prefs = reactContext.getSharedPreferences(MountainViewAthenaWakeService.PREFS, Context.MODE_PRIVATE)
+      val command = prefs.getString(MountainViewAthenaWakeService.PENDING_COMMAND, "").orEmpty()
+      val transcript = prefs.getString(MountainViewAthenaWakeService.PENDING_TRANSCRIPT, "").orEmpty()
+      val capturedAt = prefs.getLong(MountainViewAthenaWakeService.PENDING_AT, 0L)
+      prefs.edit().remove(MountainViewAthenaWakeService.PENDING_COMMAND).remove(MountainViewAthenaWakeService.PENDING_TRANSCRIPT).remove(MountainViewAthenaWakeService.PENDING_AT).apply()
+      val result = WritableNativeMap()
+      result.putBoolean("androidNativeBridge", true)
+      result.putString("state", if (command.isBlank()) "empty" else "captured")
+      result.putString("command", command)
+      result.putString("transcript", transcript)
+      result.putDouble("capturedAt", capturedAt.toDouble())
+      promise.resolve(result)
+    } catch (error: Exception) {
+      promise.reject("ATHENA_WAKE_CONSUME_FAILED", error.message ?: "Could not consume Athena wake command.", error)
+    }
+  }
+
+  @ReactMethod
+  fun playTone(name: String, promise: Promise) {
+    try {
+      val tone = when (name.lowercase(Locale.US)) {
+        "listen" -> ToneGenerator.TONE_PROP_BEEP
+        "capture" -> ToneGenerator.TONE_PROP_ACK
+        "ready" -> ToneGenerator.TONE_PROP_PROMPT
+        "command" -> ToneGenerator.TONE_PROP_BEEP2
+        "dispatch" -> ToneGenerator.TONE_PROP_ACK
+        "stop" -> ToneGenerator.TONE_PROP_NACK
+        else -> ToneGenerator.TONE_PROP_BEEP
+      }
+      val durationMs = when (name.lowercase(Locale.US)) {
+        "ready" -> 180
+        "stop" -> 160
+        else -> 120
+      }
+      val generator = ToneGenerator(AudioManager.STREAM_MUSIC, 35)
+      generator.startTone(tone, durationMs)
+      mainHandler.postDelayed({ generator.release() }, (durationMs + 80).toLong())
+      val result = WritableNativeMap()
+      result.putString("state", "played")
+      result.putString("tone", name)
+      promise.resolve(result)
+    } catch (error: Exception) {
+      promise.reject("MW_TONE_FAILED", error.message, error)
+    }
+  }
+
+  @ReactMethod
+  fun prepareLocalVoiceOutput(promise: Promise) {
+    try {
+      val audioManager = reactContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+      @Suppress("DEPRECATION")
+      audioManager.requestAudioFocus(null, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
+      @Suppress("DEPRECATION")
+      audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
+      @Suppress("DEPRECATION")
+      audioManager.isSpeakerphoneOn = true
+      var selectedDevice = "speakerphone"
+      if (Build.VERSION.SDK_INT >= 31) {
+        val speaker = audioManager.availableCommunicationDevices.firstOrNull {
+          it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+        }
+        if (speaker != null && audioManager.setCommunicationDevice(speaker)) {
+          selectedDevice = "built-in-speaker"
+        }
+      }
+      val result = WritableNativeMap()
+      result.putBoolean("androidNativeBridge", true)
+      result.putString("state", "local-voice-output-prepared")
+      result.putString("selectedDevice", selectedDevice)
+      result.putString("note", "Requested phone-local speech output before Athena speaks. Android may still honor the user's active media-output picker for some TTS engines.")
+      appendMediaButtonLog("local voice output prepared " + selectedDevice)
+      promise.resolve(result)
+    } catch (error: Exception) {
+      promise.reject("LOCAL_VOICE_OUTPUT_FAILED", error.message ?: "Could not prepare local voice output.")
+    }
+  }
+
+  @ReactMethod
+  fun getSdkStatus(promise: Promise) {
+    val result = WritableNativeMap()
+    result.putBoolean("androidNativeBridge", true)
+    result.putString("packageName", "${appPackage}")
+    result.putString("sdk", "MountainView Android native bridge")
+    result.putString("state", "installed-plus-rdglass-research")
+    result.putString("note", "Native module shell is installed. AiMB/RDGlass testing uses Android Bluetooth audio, BLE research, media buttons, speech recognition, and RDGlass command logging. Meta DAT is optional and disabled unless explicitly enabled.")
+    result.putBoolean("flashControlSupported", false)
+    result.putBoolean("wakePhraseSupported", false)
+    result.putString("wakePhraseNote", "Android can request microphone/foreground-service permissions, but always-on custom wake phrases require a foreground service or vendor SDK support.")
+    result.putString("rdGlassPackage", "com.rd.rdglass")
+    result.putString("rdGlassVersionObserved", "1.2.6")
+    result.putString("rdGlassProtocol", "Confirmed RDGlass service 0000fa00, notify 0000ea01, write 0000ea02, framed command prefix ED 40.")
+    result.putString("rdGlassAudioHint", "RDGlass APK exposes AI, media trigger, image-data, camera-test, and flashlight-test commands.")
+    result.putString("genericBleHint", "Look for AiMB/RDGlass/MA08/MA15 devices plus service 0000fa00-0000-1000-8000-00805f9b34fb.")
+    result.putBoolean("rdGlassCommandSupported", true)
+    result.putBoolean("mediaButtonCommandModeSupported", true)
+    result.putString("mediaButtonNote", "Glasses media/headset buttons can be captured while MountainView command mode owns an Android MediaSession.")
+    promise.resolve(result)
+  }
+
+  @ReactMethod
+  fun addListener(eventName: String) {
+  }
+
+  @ReactMethod
+  fun removeListeners(count: Int) {
+  }
+
+  @ReactMethod
+  fun startMediaButtonCommandMode(promise: Promise) {
+    try {
+      val session = mediaSession ?: MediaSession(reactContext, "MountainViewAiGlassesCommand").also { mediaSession = it }
+      session.setCallback(object : MediaSession.Callback() {
+        override fun onMediaButtonEvent(mediaButtonIntent: Intent): Boolean {
+          val keyEvent = if (Build.VERSION.SDK_INT >= 33) {
+            mediaButtonIntent.getParcelableExtra(Intent.EXTRA_KEY_EVENT, KeyEvent::class.java)
+          } else {
+            @Suppress("DEPRECATION")
+            mediaButtonIntent.getParcelableExtra(Intent.EXTRA_KEY_EVENT)
+          }
+          if (keyEvent != null) {
+            recordMediaButton("media-button", keyEvent.keyCode, keyEvent.action, keyEvent.repeatCount)
+          }
+          return true
+        }
+
+        override fun onPlay() {
+          recordMediaButton("media-session-play", KeyEvent.KEYCODE_MEDIA_PLAY, KeyEvent.ACTION_DOWN, 0)
+        }
+
+        override fun onPause() {
+          recordMediaButton("media-session-pause", KeyEvent.KEYCODE_MEDIA_PAUSE, KeyEvent.ACTION_DOWN, 0)
+        }
+
+        override fun onSkipToNext() {
+          recordMediaButton("media-session-next", KeyEvent.KEYCODE_MEDIA_NEXT, KeyEvent.ACTION_DOWN, 0)
+        }
+
+        override fun onSkipToPrevious() {
+          recordMediaButton("media-session-previous", KeyEvent.KEYCODE_MEDIA_PREVIOUS, KeyEvent.ACTION_DOWN, 0)
+        }
+      })
+      session.setFlags(MediaSession.FLAG_HANDLES_MEDIA_BUTTONS or MediaSession.FLAG_HANDLES_TRANSPORT_CONTROLS)
+      session.setPlaybackState(
+        PlaybackState.Builder()
+          .setActions(
+            PlaybackState.ACTION_PLAY or
+              PlaybackState.ACTION_PAUSE or
+              PlaybackState.ACTION_PLAY_PAUSE or
+              PlaybackState.ACTION_SKIP_TO_NEXT or
+              PlaybackState.ACTION_SKIP_TO_PREVIOUS
+          )
+          .setState(PlaybackState.STATE_PLAYING, 0L, 1.0f)
+          .build()
+      )
+      session.isActive = true
+      appendMediaButtonLog("command mode active")
+      val result = WritableNativeMap()
+      result.putBoolean("androidNativeBridge", true)
+      result.putString("state", "media-button-command-mode-active")
+      result.putString("note", "Press play/pause or headset buttons on the glasses while MountainView is active. Events are logged and emitted to React Native.")
+      promise.resolve(result)
+    } catch (error: Exception) {
+      promise.reject("MEDIA_BUTTON_MODE_FAILED", error.message ?: "Could not start media button command mode.")
+    }
+  }
+
+  @ReactMethod
+  fun stopMediaButtonCommandMode(promise: Promise) {
+    mediaSession?.isActive = false
+    appendMediaButtonLog("command mode inactive")
+    val result = WritableNativeMap()
+    result.putBoolean("androidNativeBridge", true)
+    result.putString("state", "media-button-command-mode-inactive")
+    promise.resolve(result)
+  }
+
+  @ReactMethod
+  fun getMediaButtonLog(promise: Promise) {
+    val result = WritableNativeMap()
+    result.putBoolean("androidNativeBridge", true)
+    result.putString("state", "media-button-log")
+    result.putArray("entries", stringArray(mediaButtonLog.takeLast(160)))
+    promise.resolve(result)
+  }
+
+  @ReactMethod
+  fun requestVoiceWakePermissions(promise: Promise) {
+    requestPermissions(promise, "voice", voicePermissions())
+  }
+
+  @ReactMethod
+  fun recognizeSpeechOnce(promise: Promise) {
+    if (reactContext.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+      promise.reject("VOICE_PERMISSION_REQUIRED", "Grant microphone permission before speech recognition.")
+      return
+    }
+    if (!SpeechRecognizer.isRecognitionAvailable(reactContext)) {
+      promise.reject("SPEECH_RECOGNIZER_UNAVAILABLE", "Android speech recognition is not available on this device.")
+      return
+    }
+    if (speechPromise != null) {
+      promise.reject("SPEECH_RECOGNITION_ACTIVE", "Speech recognition is already active.")
+      return
+    }
+    speechPromise = promise
+    mainHandler.post {
+      try {
+        val recognizer = speechRecognizer ?: SpeechRecognizer.createSpeechRecognizer(reactContext).also { speechRecognizer = it }
+        recognizer.setRecognitionListener(object : RecognitionListener {
+          override fun onReadyForSpeech(params: Bundle?) {
+            appendMediaButtonLog("speech ready")
+          }
+
+          override fun onBeginningOfSpeech() {
+            appendMediaButtonLog("speech started")
+          }
+
+          override fun onRmsChanged(rmsdB: Float) {}
+          override fun onBufferReceived(buffer: ByteArray?) {}
+
+          override fun onEndOfSpeech() {
+            appendMediaButtonLog("speech ended")
+          }
+
+          override fun onError(error: Int) {
+            val result = WritableNativeMap()
+            result.putBoolean("androidNativeBridge", true)
+            result.putString("state", "speech-error")
+            result.putInt("errorCode", error)
+            result.putString("error", speechErrorName(error))
+            appendMediaButtonLog("speech error " + speechErrorName(error))
+            speechPromise?.resolve(result)
+            speechPromise = null
+          }
+
+          override fun onResults(results: Bundle?) {
+            resolveSpeechResults("speech-result", results)
+          }
+
+          override fun onPartialResults(partialResults: Bundle?) {
+            appendMediaButtonLog("speech partial")
+          }
+
+          override fun onEvent(eventType: Int, params: Bundle?) {}
+        })
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+          putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+          putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
+          putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
+          putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
+          putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak to Athena")
+        }
+        appendMediaButtonLog("speech listening")
+        recognizer.startListening(intent)
+      } catch (error: Exception) {
+        val pending = speechPromise
+        speechPromise = null
+        pending?.reject("SPEECH_RECOGNITION_FAILED", error.message ?: "Speech recognition failed.")
+      }
+    }
+  }
+
+  @ReactMethod
+  fun requestBleResearchPermissions(promise: Promise) {
+    requestPermissions(promise, "ble-research", blePermissions())
+  }
+
+  private fun requestPermissions(promise: Promise, label: String, permissions: List<String>) {
+    val activity = currentActivity
+    if (activity !is PermissionAwareActivity) {
+      promise.reject("NO_PERMISSION_ACTIVITY", "Current activity cannot request Android runtime permissions.")
+      return
+    }
+    val alreadyGranted = permissions.all {
+      reactContext.checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED
+    }
+    if (alreadyGranted) {
+      val result = WritableNativeMap()
+      result.putBoolean("androidNativeBridge", true)
+      result.putString("state", "permissions-result")
+      result.putString("scope", label)
+      permissions.forEach { permission -> result.putBoolean(permission, true) }
+      promise.resolve(result)
+      return
+    }
+    if (pendingPermissionPromise != null) {
+      promise.reject("PERMISSION_REQUEST_ACTIVE", "A permission request is already active.")
+      return
+    }
+    pendingPermissionPromise = promise
+    pendingPermissionLabel = label
+    activity.requestPermissions(permissions.toTypedArray(), 4107, this)
+  }
+
+  override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray): Boolean {
+    if (requestCode != 4107) return false
+    val result = WritableNativeMap()
+    result.putBoolean("androidNativeBridge", true)
+    result.putString("state", "permissions-result")
+    result.putString("scope", pendingPermissionLabel)
+    permissions.forEachIndexed { index, permission ->
+      result.putBoolean(permission, grantResults.getOrNull(index) == android.content.pm.PackageManager.PERMISSION_GRANTED)
+    }
+    result.putString("note", "Permissions are ready for push-to-talk, foreground wake testing, and generic BLE discovery where supported by Android.")
+    pendingPermissionPromise?.resolve(result)
+    pendingPermissionPromise = null
+    return true
+  }
+
+  @SuppressLint("MissingPermission")
+  @ReactMethod
+  fun scanGenericBleDevices(promise: Promise) {
+    if (!hasBlePermissions()) {
+      promise.reject("BLE_PERMISSION_REQUIRED", "Grant Bluetooth scan/connect permissions before scanning.")
+      return
+    }
+    val scanner = bluetoothManager()?.adapter?.bluetoothLeScanner
+    if (scanner == null) {
+      promise.reject("BLE_SCANNER_UNAVAILABLE", "Bluetooth LE scanner is unavailable or Bluetooth is disabled.")
+      return
+    }
+    discoveredDevices.clear()
+    appendResearchLog("scan started")
+    val callback = object : ScanCallback() {
+      override fun onScanResult(callbackType: Int, result: ScanResult) {
+        recordScanResult(result)
+      }
+
+      override fun onBatchScanResults(results: MutableList<ScanResult>) {
+        results.forEach { recordScanResult(it) }
+      }
+
+      override fun onScanFailed(errorCode: Int) {
+        appendResearchLog("scan failed: " + errorCode)
+      }
+    }
+    val settings = ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build()
+    try {
+      scanner.startScan(null, settings, callback)
+      mainHandler.postDelayed({
+        try {
+          scanner.stopScan(callback)
+        } catch (_: Exception) {
+        }
+        appendResearchLog("scan stopped with " + discoveredDevices.size + " devices")
+        val result = WritableNativeMap()
+        result.putBoolean("androidNativeBridge", true)
+        result.putString("state", "scan-complete")
+        result.putArray("devices", mapValues(discoveredDevices.values.toList()))
+        result.putArray("hints", stringArray(listOf("AiMB", "RDGlass", "MA08", "MA15", "6E40AB01-B5A3-F393-E0A9-E50E24DCCA9E")))
+        promise.resolve(result)
+      }, 8500)
+    } catch (error: Exception) {
+      promise.reject("BLE_SCAN_FAILED", error.message ?: "BLE scan failed.")
+    }
+  }
+
+  @SuppressLint("MissingPermission")
+  @ReactMethod
+  fun getBondedBluetoothDevices(promise: Promise) {
+    if (!hasBlePermissions()) {
+      promise.reject("BLE_PERMISSION_REQUIRED", "Grant Bluetooth connect permissions before reading paired devices.")
+      return
+    }
+    val adapter = bluetoothManager()?.adapter
+    if (adapter == null) {
+      promise.reject("BLUETOOTH_UNAVAILABLE", "Bluetooth adapter is unavailable.")
+      return
+    }
+    try {
+      val devices = adapter.bondedDevices?.map { bondedDeviceMap(it) } ?: emptyList()
+      appendResearchLog("bonded device lookup returned " + devices.size + " devices")
+      val result = WritableNativeMap()
+      result.putBoolean("androidNativeBridge", true)
+      result.putString("state", "bonded-devices")
+      result.putArray("devices", mapValues(devices))
+      promise.resolve(result)
+    } catch (error: Exception) {
+      promise.reject("BONDED_DEVICE_LOOKUP_FAILED", error.message ?: "Could not read paired Bluetooth devices.")
+    }
+  }
+
+  @SuppressLint("MissingPermission")
+  @ReactMethod
+  fun connectGenericBleDevice(address: String, promise: Promise) {
+    if (!hasBlePermissions()) {
+      promise.reject("BLE_PERMISSION_REQUIRED", "Grant Bluetooth connect permissions before connecting.")
+      return
+    }
+    try {
+      val device = bluetoothManager()?.adapter?.getRemoteDevice(address)
+      if (device == null) {
+        promise.reject("BLE_DEVICE_NOT_FOUND", "No Bluetooth device for address " + address)
+        return
+      }
+      appendResearchLog("connect requested: " + safeName(device) + " " + address)
+      activeGatt?.close()
+      activeRdGlassWriteCharacteristic = null
+      activeGatt = device.connectGatt(reactContext, false, gattCallback)
+      val result = WritableNativeMap()
+      result.putBoolean("androidNativeBridge", true)
+      result.putString("state", "connecting")
+      result.putString("address", address)
+      result.putString("name", safeName(device))
+      result.putString("next", "Tap Discover services after Android reports connection in the log.")
+      promise.resolve(result)
+    } catch (error: Exception) {
+      promise.reject("BLE_CONNECT_FAILED", error.message ?: "BLE connect failed.")
+    }
+  }
+
+  @SuppressLint("MissingPermission")
+  @ReactMethod
+  fun discoverGenericBleServices(promise: Promise) {
+    if (!hasBlePermissions()) {
+      promise.reject("BLE_PERMISSION_REQUIRED", "Grant Bluetooth connect permissions before service discovery.")
+      return
+    }
+    val gatt = activeGatt
+    if (gatt == null) {
+      promise.reject("BLE_NOT_CONNECTED", "Connect to a BLE device first.")
+      return
+    }
+    val started = gatt.discoverServices()
+    appendResearchLog("discoverServices requested: " + started)
+    val result = WritableNativeMap()
+    result.putBoolean("androidNativeBridge", true)
+    result.putString("state", if (started) "discovering" else "discover-failed")
+    result.putString("note", "Service details will appear in the research log after Android completes discovery.")
+    promise.resolve(result)
+  }
+
+  @SuppressLint("MissingPermission")
+  @ReactMethod
+  fun subscribeGenericBleNotifications(promise: Promise) {
+    if (!hasBlePermissions()) {
+      promise.reject("BLE_PERMISSION_REQUIRED", "Grant Bluetooth connect permissions before subscribing to BLE notifications.")
+      return
+    }
+    val gatt = activeGatt
+    if (gatt == null) {
+      promise.reject("BLE_NOT_CONNECTED", "Connect to a BLE device first.")
+      return
+    }
+    val count = subscribeToNotifyCharacteristics(gatt)
+    val result = WritableNativeMap()
+    result.putBoolean("androidNativeBridge", true)
+    result.putString("state", if (count > 0) "ble-notifications-subscribed" else "no-notify-characteristics")
+    result.putInt("subscribedCount", count)
+    result.putString("note", "Press the glasses AI/talk/photo buttons, then load the BLE research log to compare notify bytes.")
+    promise.resolve(result)
+  }
+
+  @ReactMethod
+  fun getGenericBleLog(promise: Promise) {
+    val result = WritableNativeMap()
+    result.putBoolean("androidNativeBridge", true)
+    result.putString("state", "log")
+    result.putArray("entries", stringArray(researchLog.takeLast(120)))
+    promise.resolve(result)
+  }
+
+  @SuppressLint("MissingPermission")
+  @ReactMethod
+  fun sendRdGlassCommand(commandId: Int, payloadHex: String, promise: Promise) {
+    try {
+      sendRdGlassCommandInternal(commandId, parseHexPayload(payloadHex), "manual-rdglass-command", promise)
+    } catch (error: IllegalArgumentException) {
+      promise.reject("RDGLASS_BAD_PAYLOAD", error.message ?: "Invalid RDGlass payload hex.")
+    }
+  }
+
+  @SuppressLint("MissingPermission")
+  @ReactMethod
+  fun testRdGlassCamera(promise: Promise) {
+    sendRdGlassCommandInternal(0x1303, byteArrayOf(), "rdglass-test-camera", promise)
+  }
+
+  @SuppressLint("MissingPermission")
+  @ReactMethod
+  fun testRdGlassFlashlight(promise: Promise) {
+    sendRdGlassCommandInternal(0x130b, byteArrayOf(0x01.toByte()), "rdglass-test-flashlight", promise)
+  }
+
+  @SuppressLint("MissingPermission")
+  @ReactMethod
+  fun triggerRdGlassIntent(intent: Int, promise: Promise) {
+    if (intent !in 0..2) {
+      promise.reject("RDGLASS_BAD_INTENT", "RDGlass AI intent must be 0 Command, 1 VisualQA, or 2 PhotoRecognition.")
+      return
+    }
+    sendRdGlassCommandInternal(0x120a, byteArrayOf(intent.toByte()), "rdglass-ai-intent", promise)
+  }
+
+  @SuppressLint("MissingPermission")
+  @ReactMethod
+  fun setRdGlassMediaTrigger(task: Int, enabled: Boolean, promise: Promise) {
+    if (task !in 0..5) {
+      promise.reject("RDGLASS_BAD_MEDIA_TASK", "RDGlass media task must be 0 NONE, 1 Photo, 2 Video, 3 Audio, 4 Recognize, or 5 AI.")
+      return
+    }
+    sendRdGlassCommandInternal(0x120e, byteArrayOf(task.toByte(), if (enabled) 0x01.toByte() else 0x00.toByte()), "rdglass-media-trigger", promise)
+  }
+
+  private val gattCallback = object : BluetoothGattCallback() {
+    @SuppressLint("MissingPermission")
+    override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
+      appendResearchLog("connection state " + newState + " status " + status + " for " + safeName(gatt.device))
+      activeGatt = gatt
+      if (newState == android.bluetooth.BluetoothProfile.STATE_CONNECTED && hasBlePermissions()) {
+        gatt.discoverServices()
+      }
+    }
+
+    override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
+      appendResearchLog("services discovered status " + status + " count " + gatt.services.size)
+      gatt.services.forEach { service ->
+        appendResearchLog("service " + service.uuid.toString())
+        service.characteristics.forEach { characteristic ->
+          if (service.uuid == RDGLASS_SERVICE_UUID && characteristic.uuid == RDGLASS_WRITE_UUID) {
+            activeRdGlassWriteCharacteristic = characteristic
+            appendResearchLog("rdglass write characteristic armed " + characteristic.uuid.toString())
+          }
+          appendResearchLog("  characteristic " + characteristic.uuid.toString() + " props " + characteristicProperties(characteristic.properties))
+        }
+      }
+      if (status == BluetoothGatt.GATT_SUCCESS && hasBlePermissions()) {
+        val count = subscribeToNotifyCharacteristics(gatt)
+        appendResearchLog("auto notification subscribe count " + count)
+      }
+    }
+
+    override fun onCharacteristicChanged(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic) {
+      val bytes = if (Build.VERSION.SDK_INT >= 33) characteristic.value else characteristic.value
+      recordBleNotification(characteristic.uuid.toString(), bytes ?: byteArrayOf())
+    }
+
+    override fun onCharacteristicChanged(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, value: ByteArray) {
+      recordBleNotification(characteristic.uuid.toString(), value)
+    }
+
+    @SuppressLint("MissingPermission")
+    override fun onDescriptorWrite(gatt: BluetoothGatt, descriptor: BluetoothGattDescriptor, status: Int) {
+      appendResearchLog("descriptor write complete " + descriptor.characteristic.uuid.toString() + " status " + status)
+      descriptorWriteInFlight = false
+      writeNextPendingDescriptor(gatt)
+    }
+  }
+
+  private fun voicePermissions(): List<String> {
+    val permissions = mutableListOf(Manifest.permission.RECORD_AUDIO)
+    if (Build.VERSION.SDK_INT >= 33) {
+      permissions.add(Manifest.permission.POST_NOTIFICATIONS)
+    }
+    return permissions
+  }
+
+  private fun blePermissions(): List<String> {
+    val permissions = mutableListOf<String>()
+    if (Build.VERSION.SDK_INT >= 31) {
+      permissions.add(Manifest.permission.BLUETOOTH_SCAN)
+      permissions.add(Manifest.permission.BLUETOOTH_CONNECT)
+    } else {
+      permissions.add(Manifest.permission.ACCESS_FINE_LOCATION)
+      permissions.add(Manifest.permission.BLUETOOTH)
+      permissions.add(Manifest.permission.BLUETOOTH_ADMIN)
+    }
+    if (Build.VERSION.SDK_INT >= 33) {
+      permissions.add(Manifest.permission.POST_NOTIFICATIONS)
+    }
+    return permissions
+  }
+
+  private fun hasBlePermissions(): Boolean {
+    return blePermissions().all {
+      reactContext.checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED
+    }
+  }
+
+  private fun bluetoothManager(): BluetoothManager? =
+    reactContext.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
+
+  private fun recordScanResult(result: ScanResult) {
+    val device = result.device ?: return
+    val address = device.address ?: return
+    if (discoveredDevices.containsKey(address)) return
+    val item = WritableNativeMap()
+    item.putString("address", address)
+    item.putString("name", safeName(device))
+    item.putInt("rssi", result.rssi)
+    item.putString("kindHint", classifyDeviceName(safeName(device)))
+    item.putArray("serviceUuids", stringArray(result.scanRecord?.serviceUuids?.map { it.uuid.toString() } ?: emptyList()))
+    discoveredDevices[address] = item
+    appendResearchLog("scan hit " + safeName(device) + " " + address + " rssi " + result.rssi)
+  }
+
+  @SuppressLint("MissingPermission")
+  private fun bondedDeviceMap(device: BluetoothDevice): WritableNativeMap {
+    val item = WritableNativeMap()
+    item.putString("address", device.address ?: "unknown")
+    item.putString("name", safeName(device))
+    item.putString("kindHint", classifyDeviceName(safeName(device)))
+    item.putString("bondState", bondStateName(device.bondState))
+    item.putString("bluetoothType", bluetoothTypeName(device.type))
+    item.putArray("serviceUuids", stringArray(device.uuids?.map { it.uuid.toString() } ?: emptyList()))
+    return item
+  }
+
+  private fun classifyDeviceName(name: String): String {
+    val lower = name.lowercase(Locale.US)
+    return when {
+      lower.contains("aimb") -> "AiMB candidate"
+      lower.contains("rdglass") -> "RDGlass candidate"
+      lower.contains("ma08") || lower.contains("ma15") -> "RDGlass model candidate"
+      lower.contains("glass") -> "glasses candidate"
+      else -> "unknown"
+    }
+  }
+
+  @SuppressLint("MissingPermission")
+  private fun safeName(device: BluetoothDevice): String {
+    return try {
+      device.name ?: "Unnamed BLE device"
+    } catch (_: SecurityException) {
+      "Permission-gated BLE device"
+    }
+  }
+
+  private fun appendResearchLog(message: String) {
+    Log.d("MountainViewBLE", message)
+    researchLog.add(System.currentTimeMillis().toString() + " " + message)
+    if (researchLog.size > 300) researchLog.removeAt(0)
+  }
+
+  @SuppressLint("MissingPermission")
+  private fun subscribeToNotifyCharacteristics(gatt: BluetoothGatt): Int {
+    var count = 0
+    pendingDescriptorWrites.clear()
+    descriptorWriteInFlight = false
+    gatt.services.forEach { service ->
+      service.characteristics.forEach { characteristic ->
+        val canNotify = characteristic.properties and BluetoothGattCharacteristic.PROPERTY_NOTIFY != 0
+        val canIndicate = characteristic.properties and BluetoothGattCharacteristic.PROPERTY_INDICATE != 0
+        if (!canNotify && !canIndicate) return@forEach
+        val enabled = gatt.setCharacteristicNotification(characteristic, true)
+        val descriptor = characteristic.getDescriptor(CLIENT_CHARACTERISTIC_CONFIG_UUID)
+        if (descriptor != null) {
+          val value = if (canNotify) BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE else BluetoothGattDescriptor.ENABLE_INDICATION_VALUE
+          pendingDescriptorWrites.add(PendingDescriptorWrite(descriptor, value))
+          appendResearchLog("subscribe queued " + characteristic.uuid.toString() + " enabled " + enabled)
+        } else {
+          appendResearchLog("subscribe " + characteristic.uuid.toString() + " enabled " + enabled + " no cccd")
+        }
+        if (enabled) count += 1
+      }
+    }
+    writeNextPendingDescriptor(gatt)
+    return count
+  }
+
+  @SuppressLint("MissingPermission")
+  private fun writeNextPendingDescriptor(gatt: BluetoothGatt) {
+    if (descriptorWriteInFlight) return
+    val next = pendingDescriptorWrites.removeFirstOrNull()
+    if (next == null) {
+      appendResearchLog("descriptor queue drained")
+      return
+    }
+    descriptorWriteInFlight = true
+    next.descriptor.value = next.value
+    val wrote = gatt.writeDescriptor(next.descriptor)
+    appendResearchLog("descriptor write " + next.descriptor.characteristic.uuid.toString() + " started " + wrote)
+    if (!wrote) {
+      descriptorWriteInFlight = false
+      writeNextPendingDescriptor(gatt)
+    }
+  }
+
+  private fun recordBleNotification(uuid: String, bytes: ByteArray) {
+    val hex = bytesToHex(bytes)
+    appendResearchLog("notify " + uuid + " " + hex)
+    val event = WritableNativeMap()
+    event.putString("uuid", uuid)
+    event.putString("hex", hex)
+    event.putInt("byteLength", bytes.size)
+    event.putDouble("timestamp", System.currentTimeMillis().toDouble())
+    decodeRdGlassFrame(bytes)?.let { frame ->
+      event.putString("rdCommand", frame.commandName)
+      event.putInt("rdCommandId", frame.commandId)
+      event.putString("rdPayloadHex", bytesToHex(frame.payload))
+      appendResearchLog("rdglass notify " + frame.commandName + " 0x" + frame.commandId.toString(16) + " payload " + bytesToHex(frame.payload))
+    }
+    reactContext
+      .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+      .emit("MountainViewBleNotification", event)
+    val action = classifyBleButtonAction(uuid, hex)
+    if (action != null) {
+      appendResearchLog("ble button ai-talk " + action + " " + hex)
+      val buttonEvent = WritableNativeMap()
+      buttonEvent.putString("source", "ble-notify")
+      buttonEvent.putString("button", "ai-talk")
+      buttonEvent.putString("action", action)
+      buttonEvent.putString("uuid", uuid)
+      buttonEvent.putString("hex", hex)
+      buttonEvent.putInt("byteLength", bytes.size)
+      buttonEvent.putDouble("timestamp", System.currentTimeMillis().toDouble())
+      reactContext
+        .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+        .emit("MountainViewBleButton", buttonEvent)
+    }
+  }
+
+  private fun classifyBleButtonAction(uuid: String, hex: String): String? {
+    val normalizedUuid = uuid.lowercase(Locale.US)
+    if (!normalizedUuid.startsWith("0000ea01")) return null
+    return when {
+      hex.contains("12 04 00") -> "ai-talk-tap"
+      hex.contains("12 0d 03 02") -> "ai-talk-long-start"
+      hex.contains("12 0d 03 01") -> "ai-talk-long-active"
+      hex.contains("12 0d 00 00") -> "ai-talk-stop"
+      hex.contains("12 03 00 05 00 02 00 01") -> "ai-talk-state"
+      else -> null
+    }
+  }
+
+  private fun recordMediaButton(source: String, keyCode: Int, action: Int, repeatCount: Int) {
+    val keyName = KeyEvent.keyCodeToString(keyCode)
+    appendMediaButtonLog(source + " " + keyName + " action " + action + " repeat " + repeatCount)
+    if (action != KeyEvent.ACTION_DOWN || repeatCount > 0) return
+    val event = WritableNativeMap()
+    event.putString("source", source)
+    event.putString("keyName", keyName)
+    event.putInt("keyCode", keyCode)
+    event.putInt("action", action)
+    event.putInt("repeatCount", repeatCount)
+    event.putDouble("timestamp", System.currentTimeMillis().toDouble())
+    reactContext
+      .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+      .emit("MountainViewMediaButton", event)
+  }
+
+  private fun resolveSpeechResults(state: String, results: Bundle?) {
+    val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION) ?: arrayListOf()
+    val array = WritableNativeArray()
+    matches.forEach { array.pushString(it) }
+    val result = WritableNativeMap()
+    result.putBoolean("androidNativeBridge", true)
+    result.putString("state", state)
+    result.putString("transcript", matches.firstOrNull() ?: "")
+    result.putArray("matches", array)
+    appendMediaButtonLog("speech result " + (matches.firstOrNull() ?: "empty"))
+    speechPromise?.resolve(result)
+    speechPromise = null
+  }
+
+  private fun speechErrorName(error: Int): String {
+    return when (error) {
+      SpeechRecognizer.ERROR_AUDIO -> "audio"
+      SpeechRecognizer.ERROR_CLIENT -> "client"
+      SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "insufficient-permissions"
+      SpeechRecognizer.ERROR_NETWORK -> "network"
+      SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "network-timeout"
+      SpeechRecognizer.ERROR_NO_MATCH -> "no-match"
+      SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "recognizer-busy"
+      SpeechRecognizer.ERROR_SERVER -> "server"
+      SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "speech-timeout"
+      else -> "unknown-" + error
+    }
+  }
+
+  private fun appendMediaButtonLog(message: String) {
+    mediaButtonLog.add(System.currentTimeMillis().toString() + " " + message)
+    if (mediaButtonLog.size > 300) mediaButtonLog.removeAt(0)
+  }
+
+  private fun mapValues(values: List<WritableNativeMap>): WritableNativeArray {
+    val array = WritableNativeArray()
+    values.forEach { array.pushMap(it) }
+    return array
+  }
+
+  private fun stringArray(values: List<String>): WritableNativeArray {
+    val array = WritableNativeArray()
+    values.forEach { array.pushString(it) }
+    return array
+  }
+
+  private fun characteristicProperties(properties: Int): String {
+    val names = mutableListOf<String>()
+    if (properties and BluetoothGattCharacteristic.PROPERTY_READ != 0) names.add("read")
+    if (properties and BluetoothGattCharacteristic.PROPERTY_WRITE != 0) names.add("write")
+    if (properties and BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE != 0) names.add("write-no-response")
+    if (properties and BluetoothGattCharacteristic.PROPERTY_NOTIFY != 0) names.add("notify")
+    if (properties and BluetoothGattCharacteristic.PROPERTY_INDICATE != 0) names.add("indicate")
+    return names.joinToString("|").ifEmpty { properties.toString() }
+  }
+
+  private fun bondStateName(state: Int): String {
+    return when (state) {
+      BluetoothDevice.BOND_BONDED -> "bonded"
+      BluetoothDevice.BOND_BONDING -> "bonding"
+      BluetoothDevice.BOND_NONE -> "none"
+      else -> state.toString()
+    }
+  }
+
+  private fun bluetoothTypeName(type: Int): String {
+    return when (type) {
+      BluetoothDevice.DEVICE_TYPE_CLASSIC -> "classic"
+      BluetoothDevice.DEVICE_TYPE_LE -> "le"
+      BluetoothDevice.DEVICE_TYPE_DUAL -> "dual"
+      BluetoothDevice.DEVICE_TYPE_UNKNOWN -> "unknown"
+      else -> type.toString()
+    }
+  }
+
+  @SuppressLint("MissingPermission")
+  private fun sendRdGlassCommandInternal(commandId: Int, payload: ByteArray, label: String, promise: Promise) {
+    if (!hasBlePermissions()) {
+      promise.reject("BLE_PERMISSION_REQUIRED", "Grant Bluetooth connect permissions before sending RDGlass commands.")
+      return
+    }
+    val gatt = activeGatt
+    if (gatt == null) {
+      promise.reject("BLE_NOT_CONNECTED", "Connect to the RDGlass/AiMB BLE device first.")
+      return
+    }
+    val characteristic = activeRdGlassWriteCharacteristic ?: findRdGlassWriteCharacteristic(gatt)
+    if (characteristic == null) {
+      promise.reject("RDGLASS_WRITE_NOT_FOUND", "RDGlass write characteristic 0000ea02 was not discovered.")
+      return
+    }
+    activeRdGlassWriteCharacteristic = characteristic
+    val frame = buildRdGlassFrame(commandId, payload)
+    val writeType = if (characteristic.properties and BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE != 0) {
+      BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
+    } else {
+      BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+    }
+    val wrote = if (Build.VERSION.SDK_INT >= 33) {
+      gatt.writeCharacteristic(characteristic, frame, writeType) == 0
+    } else {
+      characteristic.writeType = writeType
+      characteristic.value = frame
+      gatt.writeCharacteristic(characteristic)
+    }
+    appendResearchLog(label + " send " + rdGlassCommandName(commandId) + " frame " + bytesToHex(frame) + " wrote " + wrote)
+    val result = WritableNativeMap()
+    result.putBoolean("androidNativeBridge", true)
+    result.putString("state", if (wrote) "rdglass-command-sent" else "rdglass-command-write-failed")
+    result.putString("label", label)
+    result.putInt("commandId", commandId)
+    result.putString("commandName", rdGlassCommandName(commandId))
+    result.putString("payloadHex", bytesToHex(payload))
+    result.putString("frameHex", bytesToHex(frame))
+    result.putString("writeCharacteristic", characteristic.uuid.toString())
+    promise.resolve(result)
+  }
+
+  private fun findRdGlassWriteCharacteristic(gatt: BluetoothGatt): BluetoothGattCharacteristic? {
+    val service = gatt.getService(RDGLASS_SERVICE_UUID) ?: return null
+    return service.getCharacteristic(RDGLASS_WRITE_UUID) ?: service.characteristics.firstOrNull {
+      it.properties and BluetoothGattCharacteristic.PROPERTY_WRITE != 0 ||
+        it.properties and BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE != 0
+    }
+  }
+
+  private fun buildRdGlassFrame(commandId: Int, payload: ByteArray): ByteArray {
+    val commandPayload = ByteArray(2 + payload.size)
+    commandPayload[0] = ((commandId shr 8) and 0xff).toByte()
+    commandPayload[1] = (commandId and 0xff).toByte()
+    payload.copyInto(commandPayload, 2)
+    val crc = rdGlassCrc(commandPayload)
+    val seq = rdGlassSequence and 0xff
+    rdGlassSequence = (rdGlassSequence + 1) and 0xff
+    val length = commandPayload.size
+    val frame = ByteArray(6 + length)
+    frame[0] = 0xed.toByte()
+    frame[1] = 0x40.toByte()
+    frame[2] = seq.toByte()
+    frame[3] = crc.toByte()
+    frame[4] = ((length shr 8) and 0xff).toByte()
+    frame[5] = (length and 0xff).toByte()
+    commandPayload.copyInto(frame, 6)
+    return frame
+  }
+
+  private fun rdGlassCrc(bytes: ByteArray): Int {
+    var crc = 255
+    bytes.forEach { item ->
+      crc = crc xor (item.toInt() and 255)
+      repeat(8) {
+        val lsb = crc and 1
+        crc = crc ushr 1
+        if (lsb != 0) crc = crc xor 184
+      }
+    }
+    return crc and 255
+  }
+
+  private fun parseHexPayload(hex: String): ByteArray {
+    val clean = hex.replace(Regex("[^0-9a-fA-F]"), "")
+    if (clean.isEmpty()) return byteArrayOf()
+    if (clean.length % 2 != 0) throw IllegalArgumentException("Hex payload must have an even number of digits.")
+    return ByteArray(clean.length / 2) { index ->
+      clean.substring(index * 2, index * 2 + 2).toInt(16).toByte()
+    }
+  }
+
+  private fun decodeRdGlassFrame(bytes: ByteArray): RdGlassFrame? {
+    if (bytes.size < 8) return null
+    if ((bytes[0].toInt() and 255) != 0xed) return null
+    val length = ((bytes[4].toInt() and 255) shl 8) or (bytes[5].toInt() and 255)
+    if (length < 2 || bytes.size < 6 + length) return null
+    val commandId = ((bytes[6].toInt() and 255) shl 8) or (bytes[7].toInt() and 255)
+    val payload = bytes.copyOfRange(8, 6 + length)
+    return RdGlassFrame(commandId, rdGlassCommandName(commandId), payload)
+  }
+
+  private fun rdGlassCommandName(commandId: Int): String {
+    return when (commandId) {
+      0x1120 -> "BKGetNetworkStatus"
+      0x1121 -> "BKScanWiFi"
+      0x1122 -> "BKWiFiList"
+      0x1123 -> "BKConnectWiFi"
+      0x1124 -> "BKControlWifi"
+      0x1201 -> "BKSetAccessToken"
+      0x1203 -> "BKMediaChanges"
+      0x1204 -> "BKRequestAI"
+      0x1205 -> "BKRecordControl"
+      0x1206 -> "BKRecordData"
+      0x1207 -> "BKStopRecord"
+      0x1208 -> "BKResumeRecord"
+      0x1209 -> "BKWearingDetection"
+      0x120a -> "BKAIIntent"
+      0x120b -> "BKIntentImageData"
+      0x120c -> "BKServerVAD"
+      0x120d -> "BKGetMediaTrigger"
+      0x120e -> "BKSetMediaTrigger"
+      0x1210 -> "BKReliableImageDataTransfer"
+      0x1212 -> "BKMediaControl"
+      0x1303 -> "BKTestCamera"
+      0x130b -> "BKTestFlashlight"
+      0x1401 -> "XKEnterWiFiMode"
+      0x1402 -> "XKExitWiFiMode"
+      else -> "RDGlassCommand0x" + commandId.toString(16)
+    }
+  }
+
+  private fun bytesToHex(bytes: ByteArray): String =
+    bytes.take(64).joinToString(" ") { "%02x".format(it) }
+
+  companion object {
+    private val CLIENT_CHARACTERISTIC_CONFIG_UUID: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
+    private val RDGLASS_SERVICE_UUID: UUID = UUID.fromString("0000fa00-0000-1000-8000-00805f9b34fb")
+    private val RDGLASS_WRITE_UUID: UUID = UUID.fromString("0000ea02-0000-1000-8000-00805f9b34fb")
+  }
+
+  data class PendingDescriptorWrite(
+    val descriptor: BluetoothGattDescriptor,
+    val value: ByteArray
+  )
+
+  data class RdGlassFrame(
+    val commandId: Int,
+    val commandName: String,
+    val payload: ByteArray
+  )
+
+  @ReactMethod
+  fun startRegistration(promise: Promise) {
+    promise.reject("RDGLASS_REGISTRATION_NOT_REQUIRED", "AiMB/RDGlass testing does not use Meta DAT registration. Pair the glasses in Android Bluetooth, then use BLE auto-arm or media button mode.")
+  }
+
+  @ReactMethod
+  fun capturePhoto(promise: Promise) {
+    promise.reject("RDGLASS_CAMERA_NOT_MAPPED", "Direct glasses photo capture is not mapped yet. Use RDGlass camera diagnostics, BLE logs, or phone-side image relay while mapping the command channel.")
+  }
+
+  @ReactMethod
+  fun startAudioStream(promise: Promise) {
+    promise.reject("RDGLASS_AUDIO_STREAM_NOT_MAPPED", "Direct glasses audio streaming is not mapped yet. Bluetooth audio output and Android speech recognition are available for command testing.")
+  }
+
+  @ReactMethod
+  fun startVideoStream(promise: Promise) {
+    promise.reject("RDGLASS_VIDEO_STREAM_NOT_MAPPED", "Direct glasses video streaming is not mapped yet. Use snapshot polling and RDGlass media trigger logs while mapping the command channel.")
+  }
+
+  @ReactMethod
+  fun setFlashlight(enabled: Boolean, promise: Promise) {
+    promise.reject("RDGLASS_TORCH_NOT_MAPPED", "Steady AiMB/RDGlass torch control is not mapped yet. Use BKTestFlashlight retries and BLE logs for research.")
+  }
+}
+`;
+}
+
+module.exports = createRunOncePlugin(withMetaWearablesAndroid, "withMetaWearablesAndroid", "0.1.0");

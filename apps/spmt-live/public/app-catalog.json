@@ -1,0 +1,6 @@
+{
+  "deprecated": true,
+  "registryUrl": "/api/apps",
+  "version": "app-registry.v1",
+  "message": "This compatibility path no longer contains a duplicate catalog. Query the canonical SPMT registry URL."
+}

@@ -1,0 +1,34 @@
+FROM node:22-alpine AS deps
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+
+FROM node:22-alpine AS build
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY package*.json tsconfig.json tsconfig.build.json ./
+COPY scripts ./scripts
+COPY assets ./assets
+COPY src ./src
+COPY mobile ./mobile
+RUN npm run build && npm prune --omit=dev
+
+FROM node:22-alpine
+ARG GITHUB_SHA=unknown
+ARG GH_SHA=unknown
+ARG BUILD_SHA=unknown
+LABEL GITHUB_SHA=$GITHUB_SHA
+LABEL GH_SHA=$GH_SHA
+LABEL BUILD_SHA=$BUILD_SHA
+WORKDIR /app
+ENV NODE_ENV=production
+ENV FLYCTL_INSTALL=/root/.fly
+ENV PATH=/root/.fly/bin:$PATH
+RUN apk add --no-cache bash ca-certificates curl git && curl -L https://fly.io/install.sh | sh
+COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/package.json ./package.json
+COPY --from=build /app/assets ./assets
+COPY --from=build /app/dist ./dist
+COPY --from=build /app/scripts/athena-code.mjs ./scripts/athena-code.mjs
+COPY llm-worker ./llm-worker
+CMD ["node", "dist/index.js", "monitor"]

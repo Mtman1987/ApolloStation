@@ -1,0 +1,305 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 232 41% 6%;
+    --foreground: 210 40% 98%;
+    --card: 228 34% 12%;
+    --card-foreground: 210 40% 98%;
+    --popover: 228 34% 12%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 263 84% 68%;
+    --primary-foreground: 225 54% 10%;
+    --secondary: 230 28% 18%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 230 23% 21%;
+    --muted-foreground: 220 18% 72%;
+    --accent: 189 82% 53%;
+    --accent-foreground: 228 54% 10%;
+    --destructive: 343 89% 69%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 230 20% 24%;
+    --input: 230 20% 24%;
+    --ring: 189 82% 53%;
+    --radius: 1rem;
+  }
+
+  .dark {
+    --background: 232 41% 6%;
+    --foreground: 210 40% 98%;
+    --card: 228 34% 12%;
+    --card-foreground: 210 40% 98%;
+    --popover: 228 34% 12%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 263 84% 68%;
+    --primary-foreground: 225 54% 10%;
+    --secondary: 230 28% 18%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 230 23% 21%;
+    --muted-foreground: 220 18% 72%;
+    --accent: 189 82% 53%;
+    --accent-foreground: 228 54% 10%;
+    --destructive: 343 51% 33%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 230 20% 24%;
+    --input: 230 20% 24%;
+    --ring: 189 82% 53%;
+  }
+
+  :root[data-app-theme="aurora"],
+  .dark[data-app-theme="aurora"] {
+    --primary: 168 83% 56%;
+    --primary-foreground: 220 54% 10%;
+    --accent: 191 95% 48%;
+    --accent-foreground: 220 54% 10%;
+    --ring: 168 83% 56%;
+  }
+
+  :root[data-app-theme="ember"],
+  .dark[data-app-theme="ember"] {
+    --primary: 22 93% 61%;
+    --primary-foreground: 220 54% 10%;
+    --accent: 343 89% 69%;
+    --accent-foreground: 220 54% 10%;
+    --ring: 22 93% 61%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    background:
+      radial-gradient(circle at top left, hsl(var(--primary) / calc(0.22 * var(--workspace-glow-intensity, 1))), transparent 30%),
+      radial-gradient(circle at top right, hsl(var(--accent) / calc(0.18 * var(--workspace-nebula-intensity, 1))), transparent 28%),
+      radial-gradient(circle at bottom center, rgba(99, 102, 241, 0.16), transparent 32%),
+      hsl(var(--background));
+  }
+
+  :root[data-workspace-topbar-style='glass'] header {
+    background: hsl(var(--card) / var(--workspace-glass-opacity, 0.65));
+    backdrop-filter: blur(var(--workspace-blur-strength, 22px));
+  }
+
+  :root[data-workspace-theme] :is(.rounded-md, .rounded-lg, .rounded-xl, .rounded-2xl, .cosmic-card, .cosmic-panel) {
+    border-radius: var(--radius);
+  }
+
+  :root[data-workspace-motion='off'] *,
+  :root[data-workspace-smooth-transitions='false'] * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  html:has(body.overlay-route),
+  body.overlay-route,
+  body.overlay-route > div {
+    background: transparent;
+  }
+}
+
+@layer components {
+  .cosmic-shell {
+    @apply relative min-h-screen;
+  }
+
+  .cosmic-shell::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background:
+      radial-gradient(circle at 16% 12%, hsl(var(--primary) / calc(0.2 * var(--workspace-glow-intensity, 1))), transparent 16rem),
+      radial-gradient(circle at 84% 10%, hsl(var(--accent) / calc(0.18 * var(--workspace-nebula-intensity, 1))), transparent 16rem),
+      radial-gradient(circle at 50% 92%, rgba(124, 58, 237, 0.12), transparent 22rem);
+  }
+
+  .cosmic-page {
+    @apply relative z-10 mx-auto w-full max-w-[1500px] space-y-6 px-4 pb-10 pt-6 md:px-8;
+  }
+
+  .cosmic-hero {
+    @apply grid gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)];
+  }
+
+  .cosmic-card {
+    @apply rounded-[1.5rem] border border-white/10 bg-white/[0.05] p-6 shadow-[0_24px_80px_rgba(3,8,24,0.35)] backdrop-blur-xl;
+  }
+
+  .cosmic-panel {
+    @apply rounded-[1.5rem] border border-white/10 bg-[linear-gradient(180deg,rgba(23,27,49,0.92),rgba(11,15,30,0.92))] p-6 shadow-[0_24px_80px_rgba(3,8,24,0.4)];
+  }
+
+  .cosmic-status {
+    @apply inline-flex items-center rounded-full border border-emerald-300/30 bg-emerald-300/15 px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-emerald-200;
+  }
+
+  .cosmic-title {
+    @apply font-headline text-4xl font-bold tracking-tight text-white md:text-5xl;
+  }
+
+  .cosmic-subtitle {
+    @apply max-w-3xl text-sm leading-7 text-slate-300 md:text-base;
+  }
+
+  .cosmic-grid {
+    @apply grid gap-4 md:grid-cols-2 xl:grid-cols-3;
+  }
+
+  .cosmic-tile {
+    @apply rounded-[1.125rem] border border-white/10 bg-black/20 p-5 text-slate-200 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)];
+  }
+
+  .cosmic-kpi {
+    @apply mb-3 font-headline text-3xl font-bold text-white;
+  }
+
+  .cosmic-note {
+    @apply rounded-2xl border border-cyan-300/25 bg-cyan-300/10 p-4 text-sm leading-6 text-cyan-50;
+  }
+
+  .mock-window {
+    @apply overflow-hidden rounded-2xl border border-white/10 bg-slate-950/70;
+  }
+
+  .mock-head {
+    @apply flex gap-2 border-b border-white/10 bg-slate-950/70 px-4 py-3;
+  }
+
+  .mock-dot {
+    @apply h-2.5 w-2.5 rounded-full;
+  }
+
+  .mock-dot-red {
+    @apply bg-red-500;
+  }
+
+  .mock-dot-amber {
+    @apply bg-amber-400;
+  }
+
+  .mock-dot-green {
+    @apply bg-emerald-400;
+  }
+
+  .mock-body {
+    @apply space-y-3 px-4 py-4;
+  }
+
+  .mock-row {
+    @apply flex items-center justify-between gap-4 border-b border-white/10 py-3 text-sm text-slate-300 last:border-b-0 last:pb-0;
+  }
+}
+
+@keyframes animated-stars {
+  from {
+    transform: translateY(0px);
+  }
+
+  to {
+    transform: translateY(-2000px);
+  }
+}
+
+/* SpaceMountain workspace appearance adapters. */
+:root[data-workspace-density='compact'] [data-workspace-main] { padding: 0.75rem !important; }
+:root[data-workspace-density='spacious'] [data-workspace-main] { padding: 2rem !important; }
+:root[data-workspace-topbar-style='transparent'] [data-workspace-topbar] { background: transparent !important; backdrop-filter: none !important; }
+:root[data-workspace-topbar-style='glass'] [data-workspace-topbar] {
+  background: hsl(var(--card) / var(--workspace-glass-opacity, 0.65)) !important;
+  border-color: hsl(var(--border) / var(--workspace-border-strength, 0.6));
+  backdrop-filter: blur(var(--workspace-blur-strength, 22px));
+}
+:root[data-workspace-tab-style='underline'] [data-workspace-tabs] {
+  border-radius: 0 !important;
+  background: transparent !important;
+  border-bottom: 1px solid hsl(var(--border) / var(--workspace-border-strength, 0.6));
+}
+:root[data-workspace-tab-style='underline'] [data-workspace-tabs] > :is([role='tab'], a) {
+  border-radius: 0 !important;
+  border-color: transparent !important;
+  border-bottom: 2px solid transparent !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+:root[data-workspace-tab-style='underline'] [data-workspace-tabs] > :is([role='tab'][data-state='active'], a[aria-current='page']) { border-bottom-color: hsl(var(--accent)) !important; }
+:root[data-workspace-tab-style='cards'] [data-workspace-tabs] { gap: 0.4rem; height: auto; padding: 0; background: transparent !important; }
+:root[data-workspace-tab-style='cards'] [data-workspace-tabs] > :is([role='tab'], a) {
+  border: 1px solid hsl(var(--border) / var(--workspace-border-strength, 0.6));
+  border-radius: var(--radius) !important;
+  background: hsl(var(--card) / var(--workspace-glass-opacity, 0.65));
+}
+:root[data-workspace-tab-style='pills'] [data-workspace-tabs],
+:root[data-workspace-tab-style='pills'] [data-workspace-tabs] > :is([role='tab'], a) { border-radius: 9999px !important; }
+:root[data-workspace-tab-position='top'] [data-workspace-tabs-root],
+:root[data-workspace-tab-position='bottom'] [data-workspace-tabs-root] { display: flex; flex-direction: column; }
+:root[data-workspace-tab-position='bottom'] [data-workspace-tabs-root] { flex-direction: column-reverse; }
+:root[data-workspace-tab-position='left'] [data-workspace-tabs-root],
+:root[data-workspace-tab-position='right'] [data-workspace-tabs-root] { display: flex; align-items: flex-start; gap: 1rem; }
+:root[data-workspace-tab-position='right'] [data-workspace-tabs-root] { flex-direction: row-reverse; }
+:root[data-workspace-tab-position='left'] [data-workspace-tabs-root] > [data-workspace-tabs],
+:root[data-workspace-tab-position='right'] [data-workspace-tabs-root] > [data-workspace-tabs] {
+  display: flex !important;
+  height: auto !important;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: stretch;
+}
+:root[data-workspace-show-avatars='false'] [data-workspace-avatar] { display: none !important; }
+:root[data-workspace-particles='false'] [data-workspace-particles] { display: none !important; }
+:root[data-workspace-theme] :is(.cosmic-card, .cosmic-panel, .cosmic-tile) {
+  border-color: hsl(var(--border) / var(--workspace-border-strength, 0.6));
+  background-color: hsl(var(--card) / var(--workspace-glass-opacity, 0.65));
+  backdrop-filter: blur(var(--workspace-blur-strength, 22px));
+}
+:root[data-workspace-shooting-stars='true'] [data-workspace-shell]::after {
+  content: '';
+  position: fixed;
+  top: 12%;
+  left: -16rem;
+  z-index: 0;
+  width: 13rem;
+  height: 2px;
+  pointer-events: none;
+  opacity: var(--workspace-star-density, 0.7);
+  background: linear-gradient(90deg, transparent, hsl(var(--accent) / 0.9), white);
+  filter: drop-shadow(0 0 8px hsl(var(--accent) / 0.75));
+  transform: rotate(-18deg);
+  animation: workspace-shooting-star var(--workspace-shooting-star-duration, 12s) linear infinite;
+}
+@keyframes workspace-shooting-star {
+  0%, 72% { transform: translate3d(0, 0, 0) rotate(-18deg); opacity: 0; }
+  74% { opacity: 1; }
+  82%, 100% { transform: translate3d(130vw, 38vh, 0) rotate(-18deg); opacity: 0; }
+}
+
+/* The settings controls are the important content; the decorative preview was hiding them below the fold. */
+[data-route='/settings'] .cosmic-hero {
+  display: none;
+}
+
+[data-route='/settings'] .cosmic-page {
+  padding-top: 1rem;
+}
+
+/* Keep the Quackverse full-card reader centered in the current viewport and scroll inside it. */
+div.fixed.right-4.top-4.z-50[class*="w-[min(22rem"] {
+  left: 50% !important;
+  right: auto !important;
+  top: 50% !important;
+  bottom: auto !important;
+  width: min(24rem, calc(100vw - 1.5rem)) !important;
+  max-height: calc(100dvh - 1.5rem) !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  transform: translate(-50%, -50%) !important;
+}

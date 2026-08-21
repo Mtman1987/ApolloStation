@@ -1,0 +1,41 @@
+app = "hmo-dj-worker"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "3002"
+  MUSIC_CACHE_DIR = "/data/music"
+  WATCH_HLS_DIR = "/data/watch-hls"
+  WATCH_HLS_BUDGET_BYTES = "8589934592"
+  WATCH_HLS_DELETE_THRESHOLD = "10"
+  WATCH_HLS_LIST_SIZE = "50"
+  WATCH_HLS_SEGMENT_SECONDS = "6"
+  APP_URL = "https://hearmeout-main.fly.dev"
+  NEXT_PUBLIC_LIVEKIT_URL = "wss://streamweaver-7atx04ct.livekit.cloud"
+
+[mounts]
+  source = "data"
+  destination = "/data"
+  initial_size = "10gb"
+
+[http_service]
+  internal_port = 3002
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "10s"
+    grace_period = "60s"
+    method = "GET"
+    path = "/health"
+
+[[vm]]
+  memory = "4gb"
+  cpu_kind = "shared"
+  cpus = 4

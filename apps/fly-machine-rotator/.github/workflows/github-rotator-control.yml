@@ -1,0 +1,126 @@
+name: GitHub Rotator Control
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: github-rotator-control
+  cancel-in-progress: false
+
+jobs:
+  control:
+    if: >-
+      github.event.issue.number == 72 &&
+      github.event.comment.user.login == 'Mtman1987' &&
+      startsWith(github.event.comment.body, '/rotator ')
+    runs-on: ubuntu-latest
+    env:
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse bounded owner command
+        id: parse
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = String(context.payload.comment.body || '').trim();
+            const match = body.match(/^\/rotator\s+(rotate|states|signal|logs|repair|chatqueue|chatjob|chatdone)(?:\s+([\s\S]*))?$/i);
+            if (!match) core.setFailed('Unsupported Rotator command syntax.');
+            const command = String(match?.[1] || '').toLowerCase();
+            const rest = String(match?.[2] || '').trim();
+            const payload = { command };
+
+            if (command === 'states') {
+              if (rest) payload.appName = rest.split(/\s+/)[0].slice(0, 120);
+            } else if (command === 'signal') {
+              if (rest) payload.limit = Number(rest.split(/\s+/)[0]);
+            } else if (command === 'logs') {
+              const parts = rest ? rest.split(/\s+/) : [];
+              if (parts[0] && !/^\d+$/.test(parts[0]) && parts[0].toLowerCase() !== 'errors') payload.appName = parts.shift().slice(0, 120);
+              const numeric = parts.find((part) => /^\d+$/.test(part));
+              if (numeric) payload.limit = Number(numeric);
+              payload.errorsOnly = parts.some((part) => part.toLowerCase() === 'errors');
+            } else if (command === 'repair') {
+              const firstSpace = rest.indexOf(' ');
+              if (firstSpace <= 0) core.setFailed('repair requires: /rotator repair <app> <problem>');
+              payload.appName = rest.slice(0, firstSpace).trim().slice(0, 120);
+              payload.description = rest.slice(firstSpace + 1).trim().slice(0, 4000);
+              if (!payload.description) core.setFailed('repair requires a problem description.');
+            } else if (command === 'chatqueue') {
+              if (rest) payload.limit = Number(rest.split(/\s+/)[0]);
+            } else if (command === 'chatjob') {
+              if (!rest) core.setFailed('chatjob requires: /rotator chatjob <handoff-id>');
+              payload.id = rest.split(/\s+/)[0].slice(0, 120);
+            } else if (command === 'chatdone') {
+              if (!rest) core.setFailed('chatdone requires: /rotator chatdone <handoff-id> [success|failed] [resolution]');
+              const parts = rest.split(/\s+/);
+              payload.id = String(parts.shift() || '').slice(0, 120);
+              const maybeOutcome = String(parts[0] || '').toLowerCase();
+              payload.outcome = maybeOutcome === 'failed' || maybeOutcome === 'success' ? String(parts.shift()).toLowerCase() : 'success';
+              payload.resolution = parts.join(' ').trim().slice(0, 4000) || 'Resolved by ChatGPT conversation.';
+            }
+
+            const encoded = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64');
+            core.setOutput('payload', encoded);
+            core.setOutput('command', command);
+
+      - uses: superfly/flyctl-actions/setup-flyctl@v1
+
+      - name: Execute bounded command through Fly
+        id: execute
+        continue-on-error: true
+        env:
+          CONTROL_PAYLOAD: ${{ steps.parse.outputs.payload }}
+          COMMAND_NAME: ${{ steps.parse.outputs.command }}
+        run: |
+          set +e
+          if [ "$COMMAND_NAME" = "signal" ]; then
+            node scripts/github-control-signal.mjs "$CONTROL_PAYLOAD" > control-result.txt 2>&1
+          elif [ "$COMMAND_NAME" = "chatqueue" ] || [ "$COMMAND_NAME" = "chatjob" ] || [ "$COMMAND_NAME" = "chatdone" ]; then
+            node scripts/github-control-chat.mjs "$CONTROL_PAYLOAD" > control-result.txt 2>&1
+          else
+            node scripts/github-control-direct.mjs "$CONTROL_PAYLOAD" > control-result.txt 2>&1
+          fi
+          code=$?
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Normalize failure result
+        if: always()
+        env:
+          EXEC_EXIT_CODE: ${{ steps.execute.outputs.exit_code }}
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const file = 'control-result.txt';
+          const raw = fs.existsSync(file) ? fs.readFileSync(file, 'utf8').trim() : '';
+          let payload;
+          try { payload = JSON.parse(raw || '{}'); }
+          catch { payload = { ok: false, error: 'Control runner returned malformed output.', exitCode: Number(process.env.EXEC_EXIT_CODE || 1) }; }
+          fs.writeFileSync(file, JSON.stringify(payload, null, 2).slice(0, 55000));
+          NODE
+
+      - name: Post result to control issue
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          COMMAND_NAME: ${{ steps.parse.outputs.command }}
+        with:
+          script: |
+            const fs = require('fs');
+            const result = fs.existsSync('control-result.txt')
+              ? fs.readFileSync('control-result.txt', 'utf8')
+              : JSON.stringify({ ok: false, error: 'No result file was produced.' }, null, 2);
+            const command = String(process.env.COMMAND_NAME || 'unknown');
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: 72,
+              body: `### Rotator result: ${command}\n\n\`\`\`json\n${result}\n\`\`\``,
+            });

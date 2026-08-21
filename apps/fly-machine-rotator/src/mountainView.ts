@@ -1,0 +1,4376 @@
+import { spmtSharedUiHead, spmtSharedUiScript } from "./spmtSharedUi.js";
+import Database from "better-sqlite3";
+import QRCode from "qrcode";
+import { createCipheriv, createDecipheriv, createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
+import { IncomingMessage, ServerResponse } from "node:http";
+
+type JsonRecord = Record<string, unknown>;
+type MountainViewUser = { id: string; email: string; role: string };
+type CommandRoutingProfile = {
+  requiredContext: string[];
+  optionalContext: string[];
+  riskLevel: "low" | "medium" | "high";
+  confirmBeforeRun: boolean;
+  testReadiness: "ready" | "dry-run-first" | "needs-context" | "needs-token" | "future";
+  naturalExamples: string[];
+};
+
+const DEFAULT_STREAMWEAVER_TENANT_ID = "94371378";
+const DEFAULT_STREAMWEAVER_USERNAME = "mtman1987";
+const DEFAULT_CHAT_TAG_USER_ID = "user_94371378";
+const DEFAULT_DISCORD_GUILD_ID = "1240832965865635881";
+const DEFAULT_DISCORD_CHANNEL_ID = "1463633163673927732";
+const DEFAULT_DISCORD_OWNER_ID = "767875979561009173";
+const DEFAULT_HEARMEOUT_ROOM_ID = "spacemountain";
+
+type MountainViewConfig = {
+  services: Array<{
+    id: string;
+    name: string;
+    baseUrl: string;
+    defaultHeaders?: Record<string, string>;
+  }>;
+  metaWearables: {
+    toolkitStatus: string;
+    flashControlSupported: boolean;
+    notes: string[];
+  };
+};
+
+const defaultConfig: MountainViewConfig = {
+  services: [
+    { id: "mountainview", name: "MountainView AI", baseUrl: "https://mtman-machine-rotator.fly.dev/mountainview" },
+    { id: "streamweaver", name: "StreamWeaver", baseUrl: "https://streamweaver-new.fly.dev" },
+    { id: "discordstreamhub", name: "DiscordStreamHub", baseUrl: "https://discord-stream-hub-new.fly.dev" },
+    { id: "chat-tag", name: "Chat-Tag", baseUrl: "https://chat-tag-new.fly.dev" },
+    { id: "hearmeout", name: "HearMeOut", baseUrl: "https://hearmeout-main.fly.dev" },
+    { id: "spmt", name: "SPMT / Athena OS", baseUrl: "https://spmt.live" },
+    { id: "edenai", name: "EdenAI Router", baseUrl: "https://api.edenai.run" }
+  ],
+  metaWearables: {
+    toolkitStatus: "Android-native AiMB/RDGlass bridge. Current hardware path uses Bluetooth audio, BLE notifications, Android media buttons, speech recognition, and RDGlass command research.",
+    flashControlSupported: false,
+    notes: [
+      "Face/profile memory is explicit and owner-controlled.",
+      "Image analysis can be delegated to EdenAI, StreamWeaver, or configured Spacemountain services.",
+      "Direct glasses live streaming and steady flash control are capability-gated until the AiMB/RDGlass command channel exposes stable media APIs.",
+      "RDGlass/AiMB research mode can scan BLE, discover GATT services, and log characteristics without sending unknown control packets."
+    ]
+  }
+};
+
+const EDEN_AI_FEATURE_ENDPOINTS: Record<string, string> = {
+  face_detection: "/v2/image/face_detection/",
+  face_recognition: "/v2/image/face_recognition/recognize/",
+  logo_detection: "/v2/image/logo_detection/",
+  object_detection: "/v2/image/object_detection/",
+  ocr: "/v2/ocr/ocr",
+  question_answer: "/v2/image/question_answer/"
+};
+
+export async function handleMountainViewRequest(request: IncomingMessage, response: ServerResponse, env: NodeJS.ProcessEnv): Promise<boolean> {
+  const method = request.method ?? "GET";
+  const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
+  if (!url.pathname.startsWith("/mountainview")) return false;
+
+  const apiPath = url.pathname.replace(/^\/mountainview\/api/, "/api");
+  const context = await MountainViewContext.create(env);
+  let contextClosed = false;
+  const closeContext = () => {
+    if (contextClosed) return;
+    contextClosed = true;
+    context.close();
+  };
+  response.once("finish", closeContext);
+  response.once("close", closeContext);
+
+  if (method === "GET" && (url.pathname === "/mountainview/apk" || url.pathname === "/mountainview/download-apk")) {
+    await streamLatestMountainViewApk(response, env);
+    return true;
+  }
+
+  if (method === "GET" && (url.pathname === "/mountainview" || url.pathname === "/mountainview/")) {
+    html(response, renderMountainViewHtml());
+    return true;
+  }
+
+  if (method === "GET" && apiPath === "/api/status") {
+    const oauthConfigured = Boolean(String(env.MOUNTAINVIEW_CLIENT_SECRET || "").trim());
+    const tokenStorageConfigured = Boolean(String(env.MOUNTAINVIEW_TOKEN_ENCRYPTION_KEY || "").trim());
+    const imageAnalysisConfigured = Boolean(
+      String(env.EDENAI_API_KEY || env.GEMINI_API_KEY || env.OPENAI_API_KEY || "").trim(),
+    );
+    return json(response, {
+      ok: true,
+      app: "MountainView AI",
+      status: oauthConfigured && tokenStorageConfigured ? "configured" : "degraded",
+      capabilities: {
+        spmtAuthentication: oauthConfigured ? "configured" : "unavailable",
+        encryptedTokenStorage: tokenStorageConfigured ? "ready" : "unavailable",
+        imageAnalysis: imageAnalysisConfigured ? "configured" : "unavailable",
+        directGlassesConnection: "unavailable",
+        glassesLiveStreaming: "unavailable",
+        flashControl: "unavailable",
+        commandRouting: "configured",
+      },
+      device: {
+        connected: false,
+        bridgeMode: "phone-side",
+        supportedEvents: ["voice-command", "image", "command-trigger", "audio-event"],
+        metaWearables: context.config.metaWearables
+      }
+    });
+  }
+
+  if (method === "GET" && url.pathname === "/mountainview/auth/login") {
+    const state = randomBytes(24).toString("base64url");
+    const target = url.searchParams.get("client") === "mobile" ? "mobile" : "web";
+    const next = url.searchParams.get("next") === "/" ? "/" : "/mountainview";
+    setCookie(response, "mountainview_oauth_state", state, { maxAge: 600, path: "/", secure: isProduction(env) });
+    setCookie(response, "mountainview_oauth_target", target, { maxAge: 600, path: "/", secure: isProduction(env) });
+    setCookie(response, "mountainview_oauth_next", next, { maxAge: 600, path: "/", secure: isProduction(env) });
+    const authorizeUrl = new URL("/api/oauth/authorize", context.serviceBaseUrl("spmt"));
+    authorizeUrl.searchParams.set("client_id", "mountainview");
+    authorizeUrl.searchParams.set("redirect_uri", context.oauthRedirectUri());
+    authorizeUrl.searchParams.set("state", state);
+    return redirect(response, authorizeUrl.toString());
+  }
+
+  if (method === "GET" && url.pathname === "/mountainview/auth/callback") {
+    const cookies = parseCookies(request.headers.cookie);
+    const state = url.searchParams.get("state") ?? "";
+    const code = url.searchParams.get("code") ?? "";
+    if (!state || !code || !safeSecretEqual(state, cookies.mountainview_oauth_state ?? "")) {
+      throw new HttpError(400, "Invalid or expired MountainView sign-in state.");
+    }
+    const session = await context.exchangeSpmtCode(code);
+    clearCookie(response, "mountainview_oauth_state", "/", isProduction(env));
+    clearCookie(response, "mountainview_oauth_target", "/", isProduction(env));
+    clearCookie(response, "mountainview_oauth_next", "/", isProduction(env));
+    if (cookies.mountainview_oauth_target === "mobile") {
+      response.setHeader("cache-control", "no-store");
+      const handoffCode = context.createMobileAuthHandoff(session.token);
+      html(response, renderMobileAuthHandoff(handoffCode));
+      return true;
+    }
+    setCookie(response, "mountainview_session", session.token, { maxAge: 30 * 24 * 60 * 60, path: "/", secure: isProduction(env) });
+    return redirect(response, cookies.mountainview_oauth_next === "/" ? "/" : "/mountainview");
+  }
+
+  // MOUNTAINVIEW_MOBILE_AUTH_V1
+  if (method === "POST" && apiPath === "/api/auth/mobile/exchange") {
+    const body = await readJson(request);
+    const code = String(body.code ?? "").trim();
+    if (!code) throw new HttpError(400, "Mobile sign-in code is required.");
+    return json(response, { ok: true, token: context.exchangeMobileAuthHandoff(code) });
+  }
+
+  if (method === "POST" && apiPath === "/api/logout") {
+    const token = context.readSessionToken(request);
+    context.logout(token);
+    clearCookie(response, "mountainview_session", "/mountainview", isProduction(env));
+    return json(response, { ok: true });
+  }
+
+  if (method === "POST" && apiPath === "/api/login") {
+    throw new HttpError(410, "Password login was removed. Sign in with SPMT.");
+  }
+
+  if (method === "GET" && apiPath === "/api/bootstrap") {
+    const user = context.requireAuth(request);
+    return json(response, {
+      user,
+      workspace: await context.loadWorkspace(user.id),
+      config: context.publicConfig(),
+      commands: context.listCommands(user.id),
+      memory: context.searchMemory(user.id, "", ""),
+      people: context.listPeople(user.id),
+      visualProfiles: context.listVisualProfiles(user.id),
+      mediaEvents: context.listGlassesMediaEvents(user.id),
+      devices: context.listDevices(user.id),
+      pollingProfiles: context.listPollingProfiles(user.id),
+      logoProfiles: context.listLogoProfiles(user.id),
+      qrTriggers: await context.listQrTriggers(user.id),
+      roadmap: context.listRoadmap(),
+      logs: context.listLogs(user.id)
+    });
+  }
+
+  if (method === "GET" && apiPath === "/api/commands") {
+    const user = context.requireAuth(request);
+    return json(response, { commands: context.listCommands(user.id) });
+  }
+
+  if (method === "POST" && apiPath === "/api/commands") {
+    const user = context.requireAuth(request);
+    const body = await readJson(request);
+    return json(response, context.saveCommand(user.id, body));
+  }
+
+  if (method === "POST" && apiPath === "/api/commands/execute") {
+    const user = context.requireAuth(request);
+    const body = await readJson(request);
+    const result = await context.executeCommand(user.id, String(body.commandId ?? ""), asRecord(body.payload));
+    return json(response, result);
+  }
+
+  if (method === "POST" && apiPath === "/api/voice/route") {
+    const user = context.requireAuth(request);
+    const body = await readJson(request);
+    return json(response, await context.routeVoiceCommand(user.id, body));
+  }
+
+  if (method === "POST" && apiPath === "/api/private-assistant") {
+    const user = context.requireAuth(request);
+    const body = await readJson(request);
+    return json(response, await context.runPrivateAssistant(user.id, body));
+  }
+
+  if (method === "GET" && apiPath === "/api/voice/logs") {
+    const user = context.requireAuth(request);
+    return json(response, context.listVoiceLogs(user.id));
+  }
+
+  if (method === "POST" && apiPath === "/api/media/streamweaver") {
+    const user = context.requireAuth(request);
+    const body = await readJson(request, 20 * 1024 * 1024);
+    const result = await context.relayImageToStreamWeaver(user.id, body);
+    return json(response, result);
+  }
+
+  if (method === "POST" && apiPath === "/api/glasses/media-event") {
+    const user = context.requireAuth(request);
+    const body = await readJson(request, 20 * 1024 * 1024);
+    const result = await context.recordGlassesMediaEvent(user.id, body);
+    return json(response, result);
+  }
+
+  if (method === "POST" && apiPath === "/api/vision/analyze") {
+    const user = context.requireAuth(request);
+    const body = await readJson(request, 25 * 1024 * 1024);
+    return json(response, await context.analyzeVision(user.id, body));
+  }
+
+  if (method === "POST" && apiPath === "/api/vision/route") {
+    const user = context.requireAuth(request);
+    const body = await readJson(request, 25 * 1024 * 1024);
+    return json(response, context.routeVisualTarget(user.id, body));
+  }
+
+  if (method === "POST" && apiPath === "/api/vision/smart-capture") {
+    const user = context.requireAuth(request);
+    const body = await readJson(request, 25 * 1024 * 1024);
+    return json(response, await context.smartCapture(user.id, body));
+  }
+
+  if (method === "GET" && apiPath === "/api/people") {
+    const user = context.requireAuth(request);
+    return json(response, { people: context.listPeople(user.id, url.searchParams.get("q") ?? "") });
+  }
+
+  if (method === "POST" && apiPath === "/api/people") {
+    const user = context.requireAuth(request);
+    const body = await readJson(request);
+    return json(response, context.savePersonProfile(user.id, body));
+  }
+
+  if (method === "POST" && apiPath === "/api/people/remember") {
+    const user = context.requireAuth(request);
+    const body = await readJson(request);
+    return json(response, context.rememberPerson(user.id, body));
+  }
+
+  if (method === "GET" && apiPath === "/api/visual-profiles") {
+    const user = context.requireAuth(request);
+    return json(response, { visualProfiles: context.listVisualProfiles(user.id, url.searchParams.get("q") ?? "") });
+  }
+
+  if (method === "POST" && apiPath === "/api/visual-profiles") {
+    const user = context.requireAuth(request);
+    const body = await readJson(request, 25 * 1024 * 1024);
+    return json(response, context.saveVisualProfile(user.id, body));
+  }
+
+  if (method === "POST" && apiPath === "/api/visual-profiles/match") {
+    const user = context.requireAuth(request);
+    const body = await readJson(request, 25 * 1024 * 1024);
+    return json(response, context.matchVisualProfile(user.id, body));
+  }
+
+  if (method === "POST" && apiPath === "/api/media/generate") {
+    const user = context.requireAuth(request);
+    const body = await readJson(request, 5 * 1024 * 1024);
+    return json(response, await context.generateMedia(user.id, body));
+  }
+
+  if (method === "GET" && apiPath === "/api/memory") {
+    const user = context.requireAuth(request);
+    return json(response, {
+      records: context.searchMemory(user.id, url.searchParams.get("q") ?? "", url.searchParams.get("tag") ?? "")
+    });
+  }
+
+  if (method === "POST" && apiPath === "/api/memory") {
+    const user = context.requireAuth(request);
+    const body = await readJson(request);
+    return json(response, context.saveMemory(user.id, body));
+  }
+
+  if (method === "GET" && apiPath === "/api/logs") {
+    const user = context.requireAuth(request);
+    return json(response, { logs: context.listLogs(user.id) });
+  }
+
+  if (method === "GET" && apiPath === "/api/devices") {
+    const user = context.requireAuth(request);
+    return json(response, { devices: context.listDevices(user.id) });
+  }
+
+  if (method === "POST" && apiPath === "/api/devices") {
+    const user = context.requireAuth(request);
+    const body = await readJson(request);
+    return json(response, context.saveDevice(user.id, body));
+  }
+
+  if (method === "GET" && apiPath === "/api/polling-profiles") {
+    const user = context.requireAuth(request);
+    return json(response, { pollingProfiles: context.listPollingProfiles(user.id) });
+  }
+
+  if (method === "POST" && apiPath === "/api/polling-profiles") {
+    const user = context.requireAuth(request);
+    const body = await readJson(request);
+    return json(response, context.savePollingProfile(user.id, body));
+  }
+
+  if (method === "GET" && apiPath === "/api/logo-profiles") {
+    const user = context.requireAuth(request);
+    return json(response, { logoProfiles: context.listLogoProfiles(user.id) });
+  }
+
+  if (method === "POST" && apiPath === "/api/logo-profiles") {
+    const user = context.requireAuth(request);
+    const body = await readJson(request);
+    return json(response, context.saveLogoProfile(user.id, body));
+  }
+
+  if (method === "POST" && apiPath === "/api/logo-profiles/match") {
+    const user = context.requireAuth(request);
+    const body = await readJson(request);
+    return json(response, context.matchLogoProfile(user.id, body));
+  }
+
+  if (method === "GET" && apiPath === "/api/qr-triggers") {
+    const user = context.requireAuth(request);
+    return json(response, { qrTriggers: await context.listQrTriggers(user.id) });
+  }
+
+  if (method === "POST" && apiPath === "/api/qr-triggers") {
+    const user = context.requireAuth(request);
+    const body = await readJson(request);
+    return json(response, { ok: true, qrTrigger: await context.saveQrTrigger(user.id, body) });
+  }
+
+  if (method === "GET" && apiPath === "/api/roadmap") {
+    return json(response, { roadmap: context.listRoadmap() });
+  }
+
+  if (method === "GET" && apiPath === "/api/admin/integrations") {
+    const user = context.requireAuth(request, true);
+    return json(response, { integrations: context.listIntegrations(user.id) });
+  }
+
+  if (method === "POST" && apiPath === "/api/admin/integrations") {
+    const user = context.requireAuth(request, true);
+    const body = await readJson(request);
+    return json(response, context.saveIntegration(user.id, body));
+  }
+
+  if (method === "POST" && apiPath === "/api/settings/token") {
+    const user = context.requireAuth(request, true);
+    const body = await readJson(request);
+    return json(response, context.saveServiceToken(user.id, String(body.serviceId ?? ""), String(body.token ?? "")));
+  }
+
+  if (method === "POST" && apiPath === "/api/athena/chat") {
+    const user = context.requireAuth(request);
+    const body = await readJson(request);
+    return json(response, await context.athenaChatCompletion(user, body, env));
+  }
+
+  response.writeHead(404, { "content-type": "application/json; charset=utf-8" });
+  response.end(JSON.stringify({ ok: false, error: "MountainView route not found" }));
+  return true;
+}
+
+class MountainViewContext {
+  private readonly db: Database.Database;
+  private readonly tokenKey: Buffer;
+
+  private constructor(
+    readonly env: NodeJS.ProcessEnv,
+    readonly config: MountainViewConfig
+  ) {
+    const dbFile = env.MOUNTAINVIEW_DB_FILE ?? "/data/mountainview.db";
+    this.db = new Database(dbFile);
+    this.db.pragma("journal_mode = WAL");
+    const encryptionKey = env.MOUNTAINVIEW_TOKEN_ENCRYPTION_KEY;
+    if (!encryptionKey && env.NODE_ENV === "production") {
+      throw new Error("MOUNTAINVIEW_TOKEN_ENCRYPTION_KEY is required in production.");
+    }
+    this.tokenKey = createHash("sha256").update(encryptionKey || "mountainview-local-dev-key").digest();
+    this.migrate();
+    this.seedDefaults();
+  }
+
+  static async create(env: NodeJS.ProcessEnv): Promise<MountainViewContext> {
+    const configFile = env.MOUNTAINVIEW_CONFIG_FILE ?? "/data/mountainview-config.json";
+    const config = await loadRuntimeConfig(configFile);
+    return new MountainViewContext(env, config);
+  }
+
+  close(): void {
+    if (this.db.open) this.db.close();
+  }
+
+  serviceBaseUrl(serviceId: string): string {
+    const service = this.config.services.find((candidate) => candidate.id === serviceId);
+    if (!service?.baseUrl) throw new HttpError(503, `MountainView service ${serviceId} is not configured.`);
+    return service.baseUrl;
+  }
+
+  oauthRedirectUri(): string {
+    return new URL("/mountainview/auth/callback", this.serviceBaseUrl("mountainview")).toString();
+  }
+
+  async exchangeSpmtCode(code: string): Promise<{ token: string; user: MountainViewUser }> {
+    const clientSecret = this.env.MOUNTAINVIEW_CLIENT_SECRET;
+    if (!clientSecret) throw new HttpError(503, "MountainView SPMT OAuth is not configured.");
+    const response = await fetch(new URL("/api/oauth/token", this.serviceBaseUrl("spmt")), {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({
+        code,
+        client_id: "mountainview",
+        client_secret: clientSecret,
+        redirect_uri: this.oauthRedirectUri()
+      })
+    });
+    const payload = asRecord(await response.json().catch(() => ({})));
+    if (!response.ok) throw new HttpError(502, `SPMT OAuth exchange failed: ${readText(payload, "error") || response.status}`);
+    const spmtUser = asRecord(payload.user);
+    const id = readText(spmtUser, "id");
+    const email = readText(spmtUser, "email");
+    if (!id || !email) throw new HttpError(502, "SPMT OAuth returned an incomplete identity.");
+    const isAdmin = spmtUser.isAdmin === true || spmtUser.is_admin === true;
+    const localSession = this.createSession({ id, email, role: isAdmin ? "admin" : "user" });
+    const accessToken = readText(payload, "access_token") || readText(payload, "token");
+    const refreshToken = readText(payload, "refresh_token");
+    if (accessToken) this.saveServiceToken(id, "spmt", accessToken);
+    if (refreshToken) this.saveServiceToken(id, "spmt-refresh", refreshToken);
+    return localSession;
+  }
+
+  createMobileAuthHandoff(sessionToken: string): string {
+    const code = randomBytes(32).toString("base64url");
+    const now = new Date();
+    this.db.prepare("DELETE FROM mobile_auth_handoffs WHERE expires_at <= ?").run(now.toISOString());
+    this.db.prepare("INSERT INTO mobile_auth_handoffs (code_hash, encrypted_session_token, created_at, expires_at) VALUES (?, ?, ?, ?)")
+      .run(hashToken(code), this.encrypt(sessionToken), now.toISOString(), new Date(now.getTime() + 2 * 60 * 1000).toISOString());
+    return code;
+  }
+
+  exchangeMobileAuthHandoff(code: string): string {
+    const codeHash = hashToken(code);
+    const row = this.db.prepare("SELECT encrypted_session_token, expires_at FROM mobile_auth_handoffs WHERE code_hash = ?").get(codeHash) as { encrypted_session_token: string; expires_at: string } | undefined;
+    this.db.prepare("DELETE FROM mobile_auth_handoffs WHERE code_hash = ?").run(codeHash);
+    if (!row || Date.parse(row.expires_at) <= Date.now()) throw new HttpError(401, "Mobile sign-in code is invalid or expired.");
+    return this.decrypt(row.encrypted_session_token);
+  }
+
+  createSession(user: MountainViewUser): { token: string; user: MountainViewUser } {
+    const now = new Date().toISOString();
+    this.db.prepare(`
+      INSERT INTO users (id, email, role, created_at)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET email = excluded.email, role = excluded.role
+    `).run(user.id, user.email, user.role, now);
+    const token = randomBytes(32).toString("base64url");
+    const tokenHash = hashToken(token);
+    this.db.prepare("INSERT INTO sessions (token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)")
+      .run(tokenHash, user.id, now, new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString());
+    return { token, user };
+  }
+
+  readSessionToken(request: IncomingMessage): string {
+    const bearer = request.headers.authorization?.replace(/^Bearer\s+/i, "") ?? "";
+    return bearer || parseCookies(request.headers.cookie).mountainview_session || "";
+  }
+
+  logout(token: string): void {
+    if (token) this.db.prepare("DELETE FROM sessions WHERE token_hash = ?").run(hashToken(token));
+  }
+
+  requireAuth(request: IncomingMessage, admin = false): MountainViewUser {
+    if (this.env.MOUNTAINVIEW_AUTH_DISABLED === "true") {
+      const now = new Date().toISOString();
+      this.db.prepare(`
+        INSERT INTO users (id, email, role, created_at)
+        VALUES ('owner', 'owner@spacemountain.live', 'admin', ?)
+        ON CONFLICT(id) DO UPDATE SET email = excluded.email, role = excluded.role
+      `).run(now);
+      return { id: "owner", email: "owner@spacemountain.live", role: "admin" };
+    }
+    const token = this.readSessionToken(request);
+    const tokenHash = hashToken(token);
+    const row = this.db.prepare(`
+      SELECT users.id, users.email, users.role
+      FROM sessions
+      JOIN users ON users.id = sessions.user_id
+      WHERE sessions.token_hash = ? AND sessions.expires_at > ?
+    `).get(tokenHash, new Date().toISOString()) as { id: string; email: string; role: string } | undefined;
+    if (!row) throw new HttpError(401, "Unauthorized.");
+    if (admin && row.role !== "admin") throw new HttpError(403, "Admin access required.");
+    return row;
+  }
+
+  publicConfig(): MountainViewConfig {
+    return this.config;
+  }
+
+  listCommands(userId: string): JsonRecord[] {
+    const rows = this.db.prepare("SELECT * FROM command_definitions WHERE user_id = ? OR user_id = 'system' ORDER BY updated_at DESC")
+      .all(userId) as JsonRecord[];
+    const unsupportedVoiceCommands = new Set([
+      "cmd_hearmeout_voice_room",
+      "cmd_hearmeout_voice_peers",
+      "cmd_hearmeout_watch_request",
+      "cmd_hearmeout_watch_control",
+      "cmd_hearmeout_discord_message",
+    ]);
+    return rows
+      .filter((row) => !unsupportedVoiceCommands.has(String(row.id ?? "")))
+      .map((row) => enrichCommandForVoice(normalizeRow(row)));
+  }
+
+  saveCommand(userId: string, input: JsonRecord): JsonRecord {
+    const id = String(input.id ?? `cmd_${Date.now()}`);
+    const now = new Date().toISOString();
+    this.db.prepare(`
+      INSERT INTO command_definitions (id, user_id, app_id, name, phrase, method, url_template, payload_template, retry_count, enabled, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        app_id = excluded.app_id,
+        name = excluded.name,
+        phrase = excluded.phrase,
+        method = excluded.method,
+        url_template = excluded.url_template,
+        payload_template = excluded.payload_template,
+        retry_count = excluded.retry_count,
+        enabled = excluded.enabled,
+        updated_at = excluded.updated_at
+    `).run(
+      id,
+      userId,
+      String(input.app_id ?? input.appId ?? "streamweaver"),
+      String(input.name ?? "Custom command"),
+      String(input.phrase ?? ""),
+      String(input.method ?? "POST").toUpperCase(),
+      String(input.url_template ?? input.urlTemplate ?? "/api/events"),
+      JSON.stringify(input.payload_template ?? input.payloadTemplate ?? {}),
+      Number(input.retry_count ?? input.retryCount ?? 1),
+      input.enabled === false ? 0 : 1,
+      now
+    );
+    return { ok: true, command: this.db.prepare("SELECT * FROM command_definitions WHERE id = ?").get(id) as JsonRecord };
+  }
+
+  async executeCommand(userId: string, commandId: string, payload: JsonRecord): Promise<JsonRecord> {
+    const command = this.db.prepare("SELECT * FROM command_definitions WHERE id = ? AND (user_id = ? OR user_id = 'system')")
+      .get(commandId, userId) as JsonRecord | undefined;
+    if (!command) throw new HttpError(404, "Command not found.");
+    if (Number(command.enabled) !== 1) throw new HttpError(400, "Command is disabled.");
+    const effectivePayload = await this.prepareCommandPayload(userId, commandId, payload);
+    const integration = this.getIntegration(String(command.app_id));
+    const url = new URL(renderTemplate(String(command.url_template), effectivePayload), integration.baseUrl).toString();
+    const method = String(command.method);
+    const bodyPayload = renderJsonTemplate(String(command.payload_template ?? "{}"), effectivePayload);
+    const started = Date.now();
+    const retries = Math.max(0, Number(command.retry_count ?? 1));
+    let lastError = "";
+    let status = 0;
+    let responseText = "";
+
+    for (let attempt = 0; attempt <= retries; attempt += 1) {
+      try {
+        const headers = await this.authHeaders(userId, String(command.app_id), integration.defaultHeaders);
+        const fetchResult = await fetch(url, {
+          method,
+          headers,
+          body: method === "GET" ? undefined : JSON.stringify(bodyPayload)
+        });
+        status = fetchResult.status;
+        responseText = await fetchResult.text();
+        if (fetchResult.ok) {
+          const parsed = parseMaybeJson(responseText);
+          const enriched = enrichCommandResponse(commandId, parsed);
+          this.logCommand(userId, commandId, String(command.app_id), method, url, "success", status, Date.now() - started, JSON.stringify(enriched).slice(0, 4000), "");
+          return { ok: true, status, response: enriched };
+        }
+        lastError = `HTTP ${fetchResult.status}`;
+      } catch (error) {
+        lastError = error instanceof Error ? error.message : String(error);
+      }
+    }
+
+    this.logCommand(userId, commandId, String(command.app_id), method, url, "error", status, Date.now() - started, responseText.slice(0, 4000), lastError);
+    const fallback = this.recordLocalWorkflowFallback(userId, commandId, command, effectivePayload, {
+      url,
+      method,
+      status,
+      error: lastError,
+      response: parseMaybeJson(responseText)
+    });
+    return {
+      ok: false,
+      localOnly: true,
+      queued: true,
+      command: fallback.event,
+      status,
+      error: lastError,
+      response: {
+        reply: fallback.reply,
+        externalStatus: status,
+        externalError: lastError,
+        externalResponse: parseMaybeJson(responseText)
+      }
+    };
+  }
+
+  async routeVoiceCommand(userId: string, input: JsonRecord): Promise<JsonRecord> {
+    const transcript = readText(input, "transcript") || readText(input, "message");
+    if (!transcript) throw new HttpError(400, "Transcript is required.");
+    let context = asRecord(input.context);
+    const workspaceIdentity = await this.loadWorkspace(userId);
+    const scopedTenant = readText(asRecord(workspaceIdentity), "tenant");
+    if (scopedTenant) {
+      context = {
+        ...context,
+        tenantId: readText(context, "tenantId") || scopedTenant,
+        username: readText(context, "username") || scopedTenant,
+        twitchUsername: readText(context, "twitchUsername") || scopedTenant,
+        channel: readText(context, "channel") || scopedTenant,
+      };
+    }
+    const heuristicDecision = this.decideVoiceRoute(userId, transcript, context);
+    const decision = await this.refineVoiceDecisionWithAi(userId, transcript, context, heuristicDecision);
+    const decisionPayload = asRecord(decision.payload);
+    const decisionTranscript = String(decision.transcript ?? transcript);
+    const payload: JsonRecord = {
+      ...context,
+      ...decisionPayload,
+      message: decisionTranscript,
+      transcript: decisionTranscript,
+      routingDecision: decision,
+      payload: {
+        ...asRecord(context.payload),
+        ...decisionPayload,
+        message: decisionTranscript,
+        transcript: decisionTranscript,
+        routingDecision: decision
+      }
+    };
+    const clarification = this.findMissingCommandContext(decision, payload);
+    if (clarification) {
+      Object.assign(payload, clarification);
+      payload.payload = {
+        ...asRecord(payload.payload),
+        ...clarification
+      };
+    }
+    if (input.dryRun === true || context.dryRun === true) {
+      this.recordGlassesMediaEvent(userId, {
+        kind: "voice-route-dry-run",
+        source: "mountainview-router",
+        targetApp: String(decision.appId ?? "streamweaver"),
+        status: String(decision.mode ?? "conversation"),
+        metadata: { transcript, decision, payload }
+      });
+      return { ok: true, dryRun: true, decision, payload };
+    }
+    const result = asRecord(payload).needsClarification === true
+      ? this.recordVoiceClarificationWorkflow(userId, decision, payload)
+      : String(decision.commandId) === "cmd_streamweaver_twitch_chat_session"
+        ? this.recordLocalVoiceSessionWorkflow(userId, decision, payload)
+        : await this.executeCommand(userId, String(decision.commandId), payload);
+    this.applyVoiceSessionDecision(userId, decision, payload, result);
+    this.recordGlassesMediaEvent(userId, {
+      kind: "voice-route-decision",
+      source: "mountainview-router",
+      targetApp: String(decision.appId ?? "streamweaver"),
+      status: String(decision.mode ?? "conversation"),
+      metadata: { transcript, decision, result: summarizeCommandResult(result) }
+    });
+    return { ok: result.ok !== false, decision, result };
+  }
+
+  listVoiceLogs(userId: string): JsonRecord {
+    const rows = this.db.prepare(`
+      SELECT * FROM glasses_media_events
+      WHERE user_id = ? AND kind IN ('voice-route-decision', 'voice-route-dry-run', 'voice-session-start', 'voice-session-stop', 'voice-session-dictation')
+      ORDER BY created_at DESC
+      LIMIT 1000
+    `).all(userId) as JsonRecord[];
+    const activeSession = this.getActiveVoiceSession(userId);
+    return {
+      ok: true,
+      activeSession,
+      logs: rows.map((row) => ({
+        id: row.id,
+        kind: row.kind,
+        source: row.source,
+        targetApp: row.target_app,
+        status: row.status,
+        createdAt: row.created_at,
+        metadata: parseJsonObject(String(row.metadata_json ?? "{}"))
+      }))
+    };
+  }
+
+  async relayImageToStreamWeaver(userId: string, input: JsonRecord): Promise<JsonRecord> {
+    const integration = this.getIntegration("streamweaver");
+    const endpoint = String(input.endpoint ?? "/api/mountainview/image-relay");
+    const url = new URL(endpoint, integration.baseUrl).toString();
+    const metadata = asRecord(input.metadata);
+    const payload = {
+      source: "mountainview-ai",
+      imageBase64: String(input.imageBase64 ?? ""),
+      imageUrl: input.imageUrl ? String(input.imageUrl) : undefined,
+      metadata
+    };
+    const started = Date.now();
+    let status = 0;
+    let responseText = "";
+    let state = "error";
+    let error = "";
+    try {
+      const result = await fetch(url, {
+        method: "POST",
+        headers: await this.authHeaders(userId, "streamweaver"),
+        body: JSON.stringify(payload)
+      });
+      status = result.status;
+      responseText = await result.text();
+      state = result.ok ? "uploaded" : "error";
+      error = result.ok ? "" : `HTTP ${result.status}`;
+    } catch (caught) {
+      error = caught instanceof Error ? caught.message : String(caught);
+    }
+    const now = new Date().toISOString();
+    this.db.prepare(`
+      INSERT INTO media_uploads (id, user_id, service_id, endpoint, status, metadata_json, response_status, response_body, error, created_at)
+      VALUES (?, ?, 'streamweaver', ?, ?, ?, ?, ?, ?, ?)
+    `).run(`media_${Date.now()}`, userId, url, state, JSON.stringify(metadata), status, responseText.slice(0, 4000), error, now);
+    this.logCommand(userId, "streamweaver-image-relay", "streamweaver", "POST", url, state === "uploaded" ? "success" : "error", status, Date.now() - started, responseText.slice(0, 4000), error);
+    return { ok: state === "uploaded", status, response: parseMaybeJson(responseText), error };
+  }
+
+  recordGlassesMediaEvent(userId: string, input: JsonRecord): JsonRecord {
+    const id = `glasses_media_${Date.now()}`;
+    const kind = String(input.kind ?? "event");
+    const source = String(input.source ?? "android-glasses");
+    const targetApp = String(input.targetApp ?? input.target_app ?? "streamweaver");
+    const status = String(input.status ?? "received");
+    const metadata = asRecord(input.metadata);
+    const now = new Date().toISOString();
+    this.db.prepare(`
+      INSERT INTO glasses_media_events (id, user_id, kind, source, target_app, status, metadata_json, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, userId, kind, source, targetApp, status, JSON.stringify(metadata), now);
+    this.logCommand(userId, `glasses-${kind}`, targetApp, "EVENT", source, "success", 0, 0, JSON.stringify(metadata).slice(0, 4000), "");
+    return { ok: true, event: { id, kind, source, targetApp, status, metadata, created_at: now } };
+  }
+
+  async analyzeVision(userId: string, input: JsonRecord): Promise<JsonRecord> {
+    const features = normalizeVisionFeatures(input.features ?? input.feature ?? ["ocr", "logo_detection", "object_detection"]);
+    const providers = String(input.providers ?? "google,amazon").trim();
+    const question = String(input.question ?? "What is visible in this image?").trim();
+    const results: JsonRecord = {};
+    for (const feature of features) {
+      results[feature] = await this.callEdenAiFeature(userId, feature, {
+        ...input,
+        providers,
+        question
+      });
+    }
+    const labels = extractVisionLabels(results);
+    const route = this.routeVisualTarget(userId, { ...input, labels, vision: results });
+    const logoText = labels.join(" ");
+    const logoMatch = this.matchLogoProfile(userId, { observedText: logoText });
+    const logoRoute = asRecord(logoMatch.route);
+    const routeDevice = asRecord(route.device);
+    const event = this.recordGlassesMediaEvent(userId, {
+      kind: "vision-analysis",
+      source: String(input.source ?? "mountainview-vision"),
+      targetApp: String(logoRoute.appId ?? routeDevice.id ?? "mountainview"),
+      status: "analyzed",
+      metadata: { features, providers, labels, route, logoMatch, results }
+    });
+    return { ok: true, features, providers, labels, route, logoMatch, results, event: event.event };
+  }
+
+  routeVisualTarget(userId: string, input: JsonRecord): JsonRecord {
+    const text = [
+      String(input.observedText ?? ""),
+      String(input.text ?? ""),
+      String(input.message ?? ""),
+      ...normalizeTags(input.labels),
+      ...extractVisionLabels(input.vision)
+    ].join(" ").toLowerCase();
+    const devices = this.listDevices(userId);
+    const preferredId =
+      /\b(tablet|ipad|android tablet)\b/.test(text) ? "device_tablet" :
+      /\b(obs|stream machine|stream pc|overlay)\b/.test(text) ? "device_obs" :
+      /\b(computer|monitor|desktop|pc|laptop|screen)\b/.test(text) ? "device_pc" :
+      /\b(phone|mobile)\b/.test(text) ? "device_phone" :
+      "";
+    const device = devices.find((item) => String(item.id) === preferredId)
+      ?? devices.find((item) => String(item.kind).includes("computer"))
+      ?? devices[0]
+      ?? null;
+    const route = {
+      targetDeviceId: device ? String(device.id) : "",
+      targetDeviceName: device ? String(device.name) : "",
+      channel: device ? String(device.connection_hint ?? "local") : "local",
+      reason: preferredId ? "visual-device-match" : "default-companion-display"
+    };
+    this.recordGlassesMediaEvent(userId, {
+      kind: "visual-route",
+      source: String(input.source ?? "mountainview-vision"),
+      targetApp: "mountainview",
+      status: "routed",
+      metadata: { text, route, device }
+    });
+    return { ok: true, route, device };
+  }
+
+  listPeople(userId: string, query = ""): JsonRecord[] {
+    const rows = this.db.prepare("SELECT * FROM person_profiles WHERE user_id = ? ORDER BY updated_at DESC LIMIT 100").all(userId) as JsonRecord[];
+    const q = query.trim().toLowerCase();
+    return rows.map(normalizeRow).filter((row) => {
+      if (!q) return true;
+      const haystack = `${row.display_name ?? ""} ${row.notes ?? ""} ${JSON.stringify(row.usernames ?? {})} ${JSON.stringify(row.aliases ?? [])}`.toLowerCase();
+      return haystack.includes(q);
+    });
+  }
+
+  savePersonProfile(userId: string, input: JsonRecord): JsonRecord {
+    const now = new Date().toISOString();
+    const displayName = String(input.displayName ?? input.display_name ?? input.name ?? input.username ?? "Unknown person").trim();
+    const id = String(input.id ?? `person_${slugify(displayName)}_${Date.now()}`);
+    const usernames = asRecord(input.usernames);
+    for (const key of ["twitchUsername", "discordUsername", "kickUsername", "youtubeUsername"]) {
+      const value = input[key];
+      if (value) usernames[key.replace("Username", "")] = String(value).replace(/^@+/, "");
+    }
+    const reminders = normalizeReminderList(input.reminders ?? input.meetings ?? []);
+    const context = {
+      relationship: String(input.relationship ?? ""),
+      preferences: normalizeTags(input.preferences),
+      boundaries: normalizeTags(input.boundaries),
+      topics: normalizeTags(input.topics),
+      streamLogo: String(input.streamLogo ?? input.stream_logo ?? ""),
+      avatarUrl: String(input.avatarUrl ?? input.avatar_url ?? ""),
+      lastSeenContext: String(input.lastSeenContext ?? input.last_seen_context ?? ""),
+      source: String(input.source ?? "mountainview")
+    };
+    this.db.prepare(`
+      INSERT INTO person_profiles (id, user_id, display_name, aliases_json, usernames_json, context_json, reminders_json, notes, consent_mode, updated_at, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        display_name = excluded.display_name,
+        aliases_json = excluded.aliases_json,
+        usernames_json = excluded.usernames_json,
+        context_json = excluded.context_json,
+        reminders_json = excluded.reminders_json,
+        notes = excluded.notes,
+        consent_mode = excluded.consent_mode,
+        updated_at = excluded.updated_at
+    `).run(
+      id,
+      userId,
+      displayName,
+      JSON.stringify(normalizeTags(input.aliases)),
+      JSON.stringify(usernames),
+      JSON.stringify(context),
+      JSON.stringify(reminders),
+      String(input.notes ?? input.note ?? ""),
+      String(input.consentMode ?? input.consent_mode ?? "owner-memory"),
+      now,
+      now
+    );
+    const person = normalizeRow(this.db.prepare("SELECT * FROM person_profiles WHERE id = ?").get(id) as JsonRecord);
+    this.saveMemory(userId, {
+      kind: "person-profile",
+      title: `Profile: ${displayName}`,
+      body: buildPersonMemorySummary(person),
+      tags: ["person", "profile", ...Object.values(usernames).map(String).filter(Boolean)],
+      metadata: { personId: id, person }
+    });
+    return { ok: true, person };
+  }
+
+  rememberPerson(userId: string, input: JsonRecord): JsonRecord {
+    const person = this.savePersonProfile(userId, input);
+    const displayName = String((person.person as JsonRecord).display_name ?? input.displayName ?? input.name ?? "that person");
+    const memory = this.saveMemory(userId, {
+      kind: "person-note",
+      title: String(input.title ?? `Remember ${displayName}`),
+      body: String(input.note ?? input.notes ?? input.body ?? `Remember context for ${displayName}.`),
+      tags: ["person", "meeting", "glasses", ...normalizeTags(input.tags)],
+      metadata: { personId: (person.person as JsonRecord).id, source: "people/remember" }
+    });
+    return { ok: true, person: person.person, memory: memory.record };
+  }
+
+  listVisualProfiles(userId: string, query = ""): JsonRecord[] {
+    const rows = this.db.prepare("SELECT * FROM visual_profiles WHERE user_id = ? ORDER BY updated_at DESC LIMIT 150").all(userId) as JsonRecord[];
+    const q = query.trim().toLowerCase();
+    return rows.map(normalizeRow).filter((row) => {
+      if (!q) return true;
+      const haystack = `${row.name ?? ""} ${row.target_app ?? ""} ${row.command_id ?? ""} ${JSON.stringify(row.aliases ?? [])} ${JSON.stringify(row.match_text ?? [])} ${JSON.stringify(row.default_payload ?? {})}`.toLowerCase();
+      return haystack.includes(q);
+    });
+  }
+
+  saveVisualProfile(userId: string, input: JsonRecord): JsonRecord {
+    const now = new Date().toISOString();
+    const name = String(input.name ?? input.displayName ?? input.label ?? "Saved visual profile").trim();
+    const defaultPayload = {
+      ...asRecord(input.defaultPayload),
+      ...asRecord(input.default_payload)
+    };
+    const twitchUsername = String(input.twitchUsername ?? input.twitch_username ?? defaultPayload.twitchUsername ?? defaultPayload.channel ?? "").replace(/^@+/, "").trim();
+    if (twitchUsername) {
+      defaultPayload.twitchUsername = twitchUsername;
+      defaultPayload.channel = String(defaultPayload.channel ?? twitchUsername);
+      defaultPayload.targetName = String(defaultPayload.targetName ?? name);
+    }
+    const visionLabels = extractVisionLabels(input.vision ?? input.results ?? input.analysis);
+    const matchText = [
+      ...normalizeTags(input.matchText ?? input.match_text),
+      ...normalizeTags(input.labels),
+      ...visionLabels,
+      name,
+      twitchUsername,
+      String(input.url ?? input.pageUrl ?? input.imageUrl ?? "")
+    ].filter(Boolean);
+    const imageRef = String(input.imageUrl ?? input.image_ref ?? input.imageRef ?? "");
+    const id = String(input.id ?? `visual_${slugify(name)}_${Date.now()}`);
+    this.db.prepare(`
+      INSERT INTO visual_profiles (id, user_id, name, target_app, command_id, aliases_json, match_text_json, default_payload_json, image_ref, metadata_json, updated_at, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        name = excluded.name,
+        target_app = excluded.target_app,
+        command_id = excluded.command_id,
+        aliases_json = excluded.aliases_json,
+        match_text_json = excluded.match_text_json,
+        default_payload_json = excluded.default_payload_json,
+        image_ref = excluded.image_ref,
+        metadata_json = excluded.metadata_json,
+        updated_at = excluded.updated_at
+    `).run(
+      id,
+      userId,
+      name,
+      String(input.targetApp ?? input.target_app ?? "streamweaver"),
+      String(input.commandId ?? input.command_id ?? "cmd_streamweaver_twitch_chat_send"),
+      JSON.stringify(normalizeTags(input.aliases)),
+      JSON.stringify([...new Set(matchText.map(String).filter(Boolean))]),
+      JSON.stringify(defaultPayload),
+      imageRef,
+      JSON.stringify({
+        source: String(input.source ?? "mountainview"),
+        notes: String(input.notes ?? input.note ?? ""),
+        savedAt: now
+      }),
+      now,
+      now
+    );
+    const profile = normalizeRow(this.db.prepare("SELECT * FROM visual_profiles WHERE id = ?").get(id) as JsonRecord);
+    this.saveMemory(userId, {
+      kind: "visual-profile",
+      title: `Visual profile: ${name}`,
+      body: buildVisualProfileSummary(profile),
+      tags: ["visual", "profile", String(profile.target_app), twitchUsername].filter(Boolean),
+      metadata: { visualProfileId: id, profile }
+    });
+    return { ok: true, visualProfile: profile };
+  }
+
+  matchVisualProfile(userId: string, input: JsonRecord): JsonRecord {
+    const observed = [
+      String(input.observedText ?? input.text ?? input.message ?? ""),
+      ...normalizeTags(input.labels),
+      ...extractVisionLabels(input.vision ?? input.results ?? input.analysis)
+    ].join(" ").toLowerCase();
+    const profiles = this.listVisualProfiles(userId);
+    const scored = profiles.map((profile) => {
+      const terms = [
+        String(profile.name ?? ""),
+        ...normalizeTags(profile.aliases),
+        ...normalizeTags(profile.match_text),
+        ...Object.values(asRecord(profile.default_payload)).map(String)
+      ].map((term) => term.toLowerCase()).filter((term) => term.length >= 3);
+      const hits = terms.filter((term) => observed.includes(term) || term.includes(observed)).length;
+      const score = terms.length ? hits / Math.min(terms.length, 8) : 0;
+      return { profile, score, hits };
+    }).sort((a, b) => b.score - a.score);
+    const best = scored.find((item) => item.score >= Number(input.threshold ?? 0.18) || item.hits >= 2);
+    const route = best ? {
+      appId: best.profile.target_app,
+      commandId: best.profile.command_id,
+      defaultPayload: best.profile.default_payload,
+      visualContext: buildVisualContextFromProfile(best.profile),
+      reason: "visual-profile-match",
+      confidence: Math.min(0.98, Math.max(0.55, best.score))
+    } : null;
+    this.logCommand(userId, "visual-profile-match", String(best?.profile.target_app ?? "mountainview"), "EVENT", "visual-polling", best ? "success" : "miss", 0, 0, JSON.stringify({ observed, route }).slice(0, 4000), "");
+    return { ok: Boolean(best), matched: Boolean(best), profile: best?.profile ?? null, route };
+  }
+
+  async smartCapture(userId: string, input: JsonRecord): Promise<JsonRecord> {
+    const vision = await this.analyzeVision(userId, {
+      ...input,
+      features: input.features ?? ["ocr", "logo_detection", "object_detection", "face_detection"]
+    });
+    const visualProfile = input.saveVisualProfile || input.visualProfileName
+      ? this.saveVisualProfile(userId, {
+        ...input,
+        name: String(input.visualProfileName ?? input.name ?? input.displayName ?? "Saved screen"),
+        vision,
+        source: "vision-smart-capture",
+        matchText: extractVisionLabels(vision)
+      })
+      : null;
+    const profile = input.savePerson || input.displayName || input.twitchUsername
+      ? this.rememberPerson(userId, {
+        ...input,
+        source: "vision-smart-capture",
+        lastSeenContext: extractVisionLabels(vision).slice(0, 8).join(", ")
+      })
+      : null;
+    return {
+      ok: true,
+      vision,
+      visualProfile,
+      profile,
+      reply: buildSmartCaptureReply(vision, profile, visualProfile)
+    };
+  }
+
+  async generateMedia(userId: string, input: JsonRecord): Promise<JsonRecord> {
+    const kind = String(input.kind ?? "image").toLowerCase();
+    const prompt = String(input.prompt ?? input.message ?? "Create a stream-ready visual from the current glasses context.").trim();
+    const commandId = kind === "video" ? "cmd_eden_video_generation" : "cmd_streamweaver_image_generate";
+    return this.executeCommand(userId, commandId, {
+      ...input,
+      prompt,
+      message: prompt,
+      payload: { ...asRecord(input.payload), prompt }
+    });
+  }
+
+  private async callEdenAiFeature(userId: string, feature: string, input: JsonRecord): Promise<JsonRecord> {
+    const endpoint = EDEN_AI_FEATURE_ENDPOINTS[feature];
+    if (!endpoint) return { ok: false, error: `Unsupported EdenAI feature: ${feature}` };
+    const token = this.getServiceToken(userId, "edenai") || this.env.EDENAI_API_KEY || this.env.EDEN_AI_API_KEY || "";
+    if (!token) {
+      return { ok: false, feature, error: "EdenAI token is not configured. Store it under service 'edenai' in MountainView settings." };
+    }
+    const integration = this.getIntegration("edenai");
+    const url = new URL(endpoint, integration.baseUrl).toString();
+    const started = Date.now();
+    let status = 0;
+    let responseText = "";
+    try {
+      const form = new FormData();
+      form.set("providers", String(input.providers ?? "google,amazon"));
+      if (feature === "question_answer") form.set("question", String(input.question ?? "What is visible in this image?"));
+      const imageUrl = String(input.imageUrl ?? input.image_url ?? "").trim();
+      const imageBase64 = String(input.imageBase64 ?? input.image ?? input.file ?? "").trim();
+      if (imageUrl) {
+        form.set("file_url", imageUrl);
+      } else if (imageBase64) {
+        const image = decodeBase64Media(imageBase64);
+        form.set("file", new Blob([image.buffer], { type: image.mimeType }), image.filename);
+      } else {
+        return { ok: false, feature, error: "imageBase64 or imageUrl is required." };
+      }
+      const result = await fetch(url, {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}` },
+        body: form
+      });
+      status = result.status;
+      responseText = await result.text();
+      const parsed = parseMaybeJson(responseText);
+      this.logCommand(userId, `edenai-${feature}`, "edenai", "POST", url, result.ok ? "success" : "error", status, Date.now() - started, responseText.slice(0, 4000), result.ok ? "" : `HTTP ${status}`);
+      return { ok: result.ok, feature, status, response: parsed };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logCommand(userId, `edenai-${feature}`, "edenai", "POST", url, "error", status, Date.now() - started, responseText.slice(0, 4000), message);
+      return { ok: false, feature, status, error: message, response: parseMaybeJson(responseText) };
+    }
+  }
+
+  private async prepareCommandPayload(userId: string, commandId: string, payload: JsonRecord): Promise<JsonRecord> {
+    const commandWorkspace = await this.loadWorkspace(userId);
+    const scopedTenant = readText(asRecord(commandWorkspace), "tenant");
+    const scopedPayload = scopedTenant ? {
+      ...payload,
+      tenantId: readText(payload, "tenantId") || scopedTenant,
+      username: readText(payload, "username") || scopedTenant,
+      twitchUsername: readText(payload, "twitchUsername") || scopedTenant,
+      channel: readText(payload, "channel") || scopedTenant,
+    } : payload;
+    const next = withCommandDefaults(commandId, scopedPayload);
+    const companionContracts: Record<string, { capability: string; action: string }> = {
+      cmd_companion_status: { capability: "companion.status", action: "companion.status" },
+      cmd_companion_overlay_show: { capability: "overlay.control", action: "overlay.show" },
+      cmd_companion_overlay_hide: { capability: "overlay.control", action: "overlay.hide" },
+      cmd_companion_popout_show: { capability: "overlay.control", action: "popout.show" },
+      cmd_companion_popout_hide: { capability: "overlay.control", action: "popout.hide" },
+      cmd_companion_obs_scene: { capability: "obs.control", action: "obs.scene.set" },
+      cmd_companion_obs_media: { capability: "obs.control", action: "obs.media.play" },
+      cmd_companion_audio_mute: { capability: "audio.control", action: "audio.mute" },
+      cmd_companion_audio_volume: { capability: "audio.control", action: "audio.volume" },
+      cmd_companion_media_transcode: { capability: "media.write", action: "media.transcode" },
+      cmd_companion_workflow: { capability: "workflow.run", action: "workflow.run" },
+    };
+    const companionContract = companionContracts[commandId];
+    if (companionContract) {
+      const deviceId = await this.resolveCompanionDevice(userId, companionContract.capability, readText(next, "deviceId"));
+      return { ...next, deviceId, capability: companionContract.capability, action: companionContract.action };
+    }
+
+    if (commandId !== "cmd_chat_tag_tag" || readText(next, "targetUserId")) return next;
+
+    const targetName = readText(next, "targetName")
+      || readText(next, "target")
+      || extractChatTagTarget(readText(next, "message") || readText(next, "transcript"));
+    if (!targetName) return next;
+
+    try {
+      const integration = this.getIntegration("chat-tag");
+      const result = await fetch(new URL("/api/tag", integration.baseUrl).toString(), {
+        method: "GET",
+        headers: await this.authHeaders(userId, "chat-tag", integration.defaultHeaders)
+      });
+      if (!result.ok) return { ...next, targetName, targetLookupError: `Chat-Tag lookup failed: HTTP ${result.status}` };
+      const data = await result.json() as JsonRecord;
+      const player = findChatTagPlayer(data.players, targetName);
+      if (!player) return { ...next, targetName, targetLookupError: `No Chat-Tag player matched ${targetName}` };
+      return {
+        ...next,
+        targetName,
+        targetUserId: readText(player, "id"),
+        targetUsername: readText(player, "twitchUsername") || readText(player, "username") || targetName
+      };
+    } catch (error) {
+      return {
+        ...next,
+        targetName,
+        targetLookupError: error instanceof Error ? error.message : String(error)
+      };
+    }
+  }
+
+  private recordLocalWorkflowFallback(userId: string, commandId: string, command: JsonRecord, payload: JsonRecord, external: JsonRecord): { event: JsonRecord; reply: string } {
+    const appId = String(command.app_id);
+    const commandName = String(command.name ?? commandId);
+    const now = new Date().toISOString();
+    const id = `local_workflow_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    const metadata = {
+      commandId,
+      commandName,
+      payload,
+      external,
+      note: "Remote app endpoint did not complete, so MountainView kept this as a local workflow event for glasses/mobile testing."
+    };
+    this.db.prepare(`
+      INSERT INTO glasses_media_events (id, user_id, kind, source, target_app, status, metadata_json, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, userId, "command-fallback", "mountainview-ai", appId, "queued-local", JSON.stringify(metadata), now);
+    const reply = `${commandName} is queued locally for ${appDisplayName(appId)}. The live app route did not answer, but MountainView captured the action.`;
+    this.logCommand(userId, `${commandId}:local-fallback`, appId, "EVENT", "mountainview-local-workflow", "success", 0, 0, JSON.stringify(metadata).slice(0, 4000), "");
+    return {
+      event: { id, commandId, appId, commandName, status: "queued-local", metadata, created_at: now },
+      reply
+    };
+  }
+
+  listGlassesMediaEvents(userId: string): JsonRecord[] {
+    const rows = this.db.prepare("SELECT * FROM glasses_media_events WHERE user_id = ? ORDER BY created_at DESC LIMIT 100").all(userId) as JsonRecord[];
+    return rows.map(normalizeRow);
+  }
+
+  listDevices(userId: string): JsonRecord[] {
+    const rows = this.db.prepare("SELECT * FROM devices WHERE user_id = ? ORDER BY updated_at DESC").all(userId) as JsonRecord[];
+    return rows.map(normalizeRow);
+  }
+
+  saveDevice(userId: string, input: JsonRecord): JsonRecord {
+    const id = String(input.id ?? `device_${Date.now()}`);
+    const now = new Date().toISOString();
+    this.db.prepare(`
+      INSERT INTO devices (id, user_id, name, kind, pairing_code, connection_hint, status, capabilities_json, last_seen_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        name = excluded.name,
+        kind = excluded.kind,
+        pairing_code = excluded.pairing_code,
+        connection_hint = excluded.connection_hint,
+        status = excluded.status,
+        capabilities_json = excluded.capabilities_json,
+        last_seen_at = excluded.last_seen_at,
+        updated_at = excluded.updated_at
+    `).run(
+      id,
+      userId,
+      String(input.name ?? "New device"),
+      String(input.kind ?? "companion-display"),
+      String(input.pairingCode ?? input.pairing_code ?? ""),
+      String(input.connectionHint ?? input.connection_hint ?? "qr"),
+      String(input.status ?? "registered"),
+      JSON.stringify(input.capabilities ?? ["display", "commands"]),
+      String(input.lastSeenAt ?? input.last_seen_at ?? now),
+      now
+    );
+    return { ok: true, device: normalizeRow(this.db.prepare("SELECT * FROM devices WHERE id = ?").get(id) as JsonRecord) };
+  }
+
+  listPollingProfiles(userId: string): JsonRecord[] {
+    const rows = this.db.prepare("SELECT * FROM visual_polling_profiles WHERE user_id = ? ORDER BY updated_at DESC").all(userId) as JsonRecord[];
+    return rows.map(normalizeRow);
+  }
+
+  savePollingProfile(userId: string, input: JsonRecord): JsonRecord {
+    const id = String(input.id ?? `poll_${Date.now()}`);
+    const now = new Date().toISOString();
+    const intervalSeconds = Math.max(10, Number(input.intervalSeconds ?? input.interval_seconds ?? 60));
+    this.db.prepare(`
+      INSERT INTO visual_polling_profiles (id, user_id, name, interval_seconds, battery_mode, trigger_targets_json, enabled, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        name = excluded.name,
+        interval_seconds = excluded.interval_seconds,
+        battery_mode = excluded.battery_mode,
+        trigger_targets_json = excluded.trigger_targets_json,
+        enabled = excluded.enabled,
+        updated_at = excluded.updated_at
+    `).run(
+      id,
+      userId,
+      String(input.name ?? "Visual trigger polling"),
+      intervalSeconds,
+      String(input.batteryMode ?? input.battery_mode ?? "balanced"),
+      JSON.stringify(input.triggerTargets ?? input.trigger_targets ?? ["qr", "device-marker", "scene-change"]),
+      input.enabled === false ? 0 : 1,
+      now
+    );
+    return { ok: true, pollingProfile: normalizeRow(this.db.prepare("SELECT * FROM visual_polling_profiles WHERE id = ?").get(id) as JsonRecord) };
+  }
+
+  listLogoProfiles(userId: string): JsonRecord[] {
+    const rows = this.db.prepare("SELECT * FROM app_logo_profiles WHERE user_id IN (?, 'system') ORDER BY app_id, name").all(userId) as JsonRecord[];
+    return rows.map(normalizeRow);
+  }
+
+  saveLogoProfile(userId: string, input: JsonRecord): JsonRecord {
+    const id = String(input.id ?? `logo_${Date.now()}`);
+    const now = new Date().toISOString();
+    this.db.prepare(`
+      INSERT INTO app_logo_profiles (id, user_id, app_id, name, aliases_json, command_id, confidence_threshold, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        app_id = excluded.app_id,
+        name = excluded.name,
+        aliases_json = excluded.aliases_json,
+        command_id = excluded.command_id,
+        confidence_threshold = excluded.confidence_threshold,
+        updated_at = excluded.updated_at
+    `).run(
+      id,
+      userId,
+      String(input.appId ?? input.app_id ?? "streamweaver"),
+      String(input.name ?? "App logo"),
+      JSON.stringify(normalizeTags(input.aliases ?? input.aliases_json ?? [])),
+      String(input.commandId ?? input.command_id ?? ""),
+      Number(input.confidenceThreshold ?? input.confidence_threshold ?? 0.78),
+      now
+    );
+    return { ok: true, logoProfile: normalizeRow(this.db.prepare("SELECT * FROM app_logo_profiles WHERE id = ?").get(id) as JsonRecord) };
+  }
+
+  matchLogoProfile(userId: string, input: JsonRecord): JsonRecord {
+    const observedText = String(input.observedText ?? input.text ?? input.label ?? "").toLowerCase();
+    const requestedApp = String(input.appId ?? input.app_id ?? "").toLowerCase();
+    const profiles = this.listLogoProfiles(userId);
+    const match = profiles.find((profile) => {
+      const aliases = Array.isArray(profile.aliases) ? profile.aliases.map((alias) => String(alias).toLowerCase()) : [];
+      const names = [String(profile.name ?? "").toLowerCase(), String(profile.app_id ?? "").toLowerCase(), ...aliases].filter(Boolean);
+      return names.some((name) => (observedText && observedText.includes(name)) || (requestedApp && requestedApp === name));
+    });
+    const now = new Date().toISOString();
+    this.logCommand(userId, "logo-recognition-test", String(match?.app_id ?? "mountainview"), "EVENT", "visual-polling", match ? "success" : "miss", 0, 0, JSON.stringify({ observedText, requestedApp, match }).slice(0, 4000), "");
+    return {
+      ok: Boolean(match),
+      matched: Boolean(match),
+      profile: match ?? null,
+      route: match ? { appId: match.app_id, commandId: match.command_id, reason: "logo-profile-match" } : null,
+      created_at: now
+    };
+  }
+
+  async listQrTriggers(userId: string): Promise<JsonRecord[]> {
+    const rows = this.db.prepare("SELECT * FROM qr_triggers WHERE user_id IN (?, 'system') ORDER BY updated_at DESC").all(userId) as JsonRecord[];
+    return Promise.all(rows.map(async (row) => this.withQrSvg(normalizeRow(row))));
+  }
+
+  async saveQrTrigger(userId: string, input: JsonRecord): Promise<JsonRecord> {
+    const id = String(input.id ?? `qr_${Date.now()}`);
+    const now = new Date().toISOString();
+    const payload = String(input.payload ?? `mountainview://trigger/${id}`);
+    this.db.prepare(`
+      INSERT INTO qr_triggers (id, user_id, name, target_app, command_id, payload, action_type, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        name = excluded.name,
+        target_app = excluded.target_app,
+        command_id = excluded.command_id,
+        payload = excluded.payload,
+        action_type = excluded.action_type,
+        updated_at = excluded.updated_at
+    `).run(
+      id,
+      userId,
+      String(input.name ?? "MountainView QR trigger"),
+      String(input.targetApp ?? input.target_app ?? "streamweaver"),
+      String(input.commandId ?? input.command_id ?? "cmd_chat_tag_qr"),
+      payload,
+      String(input.actionType ?? input.action_type ?? "command"),
+      now
+    );
+    return this.withQrSvg(normalizeRow(this.db.prepare("SELECT * FROM qr_triggers WHERE id = ?").get(id) as JsonRecord));
+  }
+
+  private async withQrSvg(row: JsonRecord): Promise<JsonRecord> {
+    const payload = String(row.payload ?? "");
+    const qrSvg = await QRCode.toString(payload, { type: "svg", margin: 1, width: 180, color: { dark: "#050712", light: "#f8fbff" } });
+    return { ...row, qr_svg: qrSvg };
+  }
+
+  listRoadmap(): JsonRecord[] {
+    return [
+      { title: "Companion HUD", status: "available", description: "Phone/tablet/browser display for glasses results, commands, memory, and transcripts." },
+      { title: "Device Mesh", status: "available", description: "QR/Bluetooth/Wi-Fi pairing records for phone, tablet, PC, OBS, and stream machines." },
+      { title: "Visual Polling", status: "available-config", description: "Battery-aware snapshot schedules for QR, device, and scene triggers without 24/7 streaming." },
+      { title: "App Logo Recognition", status: "test-bed", description: "Polling snapshots can route detected app logos to StreamWeaver, HearMeOut, DiscordStreamHub, or Chat-Tag commands." },
+      { title: "QR Trigger Maker", status: "available", description: "Create scannable QR commands for AR avatars, phone/tablet pairing, stream overlays, tags, and room actions." },
+      { title: "Screen Read", status: "test-bed", description: "Route a glasses/phone snapshot to StreamWeaver or EdenAI OCR so the app can read visible screen text." },
+      { title: "Twitch Screen Assist", status: "test-bed", description: "When a Twitch logo is detected, MountainView can route speech-to-text, posting, and stream actions through StreamWeaver or another token-owning app." },
+      { title: "StreamWeaver Flow Runner", status: "available", description: "Run StreamWeaver commands and flow endpoints from glasses voice or snapshot events." },
+      { title: "HearMeOut Voice Bridge", status: "available", description: "Route glasses audio events toward rooms, chats, song requests, audiobooks, and watch-party controls." },
+      { title: "RDGlass / AiMB BLE Discovery", status: "test-bed", description: "Android research mode scans candidate glasses, connects by MAC, discovers services, and logs BLE characteristics for the direct connection path." },
+      { title: "EdenAI Vision Lab", status: "coming-soon", description: "Provider picker for scene analysis, OCR, image editing, avatar insertion, and generation." },
+      { title: "On-Device Recognition", status: "coming-soon", description: "Local device/person/context matching with explicit profile controls." },
+      { title: "Glasses Flashlight", status: "sdk-gated", description: "UI is ready, but current public DAT docs do not expose glasses torch control." },
+      { title: "Always-On Stream", status: "battery-risk", description: "Reserved for short sessions. Default design favors polling and event-triggered capture." }
+    ];
+  }
+
+  saveMemory(userId: string, input: JsonRecord): JsonRecord {
+    const id = `mem_${Date.now()}`;
+    const now = new Date().toISOString();
+    const tags = normalizeTags(input.tags);
+    this.db.prepare(`
+      INSERT INTO memory_records (id, user_id, kind, title, body, tags_json, metadata_json, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, userId, String(input.kind ?? "note"), String(input.title ?? "Untitled memory"), String(input.body ?? ""), JSON.stringify(tags), JSON.stringify(asRecord(input.metadata)), now);
+    return { ok: true, record: normalizeRow(this.db.prepare("SELECT * FROM memory_records WHERE id = ?").get(id) as JsonRecord) };
+  }
+
+  searchMemory(userId: string, query: string, tag: string): JsonRecord[] {
+    const rows = this.db.prepare("SELECT * FROM memory_records WHERE user_id = ? ORDER BY created_at DESC LIMIT 100").all(userId) as JsonRecord[];
+    return rows.map(normalizeRow).filter((row) => {
+      const haystack = `${row.title ?? ""} ${row.body ?? ""}`.toLowerCase();
+      const tags = Array.isArray(row.tags) ? row.tags.map(String) : [];
+      return (!query || haystack.includes(query.toLowerCase())) && (!tag || tags.includes(tag));
+    });
+  }
+
+  listLogs(userId: string): JsonRecord[] {
+    const rows = this.db.prepare("SELECT * FROM command_logs WHERE user_id = ? ORDER BY created_at DESC LIMIT 100").all(userId) as JsonRecord[];
+    return rows.map(normalizeRow);
+  }
+
+  listIntegrations(_userId: string): JsonRecord[] {
+    const rows = this.db.prepare("SELECT id, name, base_url, default_headers_json, updated_at FROM service_integrations ORDER BY name").all() as JsonRecord[];
+    return rows.map(normalizeRow);
+  }
+
+  saveIntegration(_userId: string, input: JsonRecord): JsonRecord {
+    const id = String(input.id ?? "").trim();
+    if (!id) throw new HttpError(400, "Integration id is required.");
+    const now = new Date().toISOString();
+    this.db.prepare(`
+      INSERT INTO service_integrations (id, name, base_url, default_headers_json, updated_at)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET name = excluded.name, base_url = excluded.base_url, default_headers_json = excluded.default_headers_json, updated_at = excluded.updated_at
+    `).run(id, String(input.name ?? id), String(input.baseUrl ?? input.base_url ?? ""), JSON.stringify(asRecord(input.defaultHeaders ?? input.default_headers)), now);
+    return { ok: true, integration: normalizeRow(this.db.prepare("SELECT * FROM service_integrations WHERE id = ?").get(id) as JsonRecord) };
+  }
+
+  saveServiceToken(userId: string, serviceId: string, token: string): JsonRecord {
+    if (!serviceId || !token) throw new HttpError(400, "serviceId and token are required.");
+    this.db.prepare(`
+      INSERT INTO service_tokens (user_id, service_id, encrypted_token, updated_at)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(user_id, service_id) DO UPDATE SET encrypted_token = excluded.encrypted_token, updated_at = excluded.updated_at
+    `).run(userId, serviceId, this.encrypt(token), new Date().toISOString());
+    return { ok: true };
+  }
+
+  private getServiceToken(userId: string, serviceId: string): string {
+    const row = this.db.prepare("SELECT encrypted_token FROM service_tokens WHERE user_id = ? AND service_id = ?").get(userId, serviceId) as { encrypted_token: string } | undefined;
+    return row ? this.decrypt(row.encrypted_token) : "";
+  }
+
+  async loadWorkspace(userId: string): Promise<JsonRecord | null> {
+    const accessToken = this.getServiceToken(userId, "spmt");
+    if (!accessToken) return null;
+    const base = this.serviceBaseUrl("spmt").replace(/\/$/, "");
+    const headers = { authorization: `Bearer ${accessToken}`, accept: "application/json" };
+    try {
+      const [profileResponse, surfacesResponse, personalResponse, sceneResponse] = await Promise.all([
+        fetch(`${base}/api/workspace-profile`, { headers, signal: AbortSignal.timeout(10_000) }),
+        fetch(`${base}/api/platform/surfaces`, { headers, signal: AbortSignal.timeout(10_000) }),
+        fetch(`${base}/api/personal-overlay-launch`, { headers, signal: AbortSignal.timeout(10_000) }),
+        fetch(`${base}/api/tenant-scene?output=personal`, { headers, signal: AbortSignal.timeout(10_000) }),
+      ]);
+      if (!profileResponse.ok) return null;
+      const profile = asRecord(await profileResponse.json().catch(() => ({})));
+      const surfacePayload = await surfacesResponse.json().catch(() => ([]));
+      const surfaces = Array.isArray(surfacePayload) ? surfacePayload : Array.isArray(asRecord(surfacePayload).surfaces) ? asRecord(surfacePayload).surfaces as unknown[] : [];
+      const personal = personalResponse.ok ? asRecord(await personalResponse.json().catch(() => ({}))) : {};
+      const scene = sceneResponse.ok ? asRecord(await sceneResponse.json().catch(() => ({}))) : {};
+      const tenant = String(scene.tenant || personal.tenant || "").trim().toLowerCase();
+      const outputs = asRecord(scene.urls);
+      const buildSurfaceUrl = (id: string, mode: string) => {
+        const item = surfaces.find((entry) => String(asRecord(entry).id || "") === id);
+        const record = asRecord(item);
+        const raw = String(record.url || record.path || "").trim();
+        if (!raw) return "";
+        try {
+          const target = new URL(raw, base);
+          target.searchParams.set("mode", mode);
+          target.searchParams.set("app", "mountainview-mobile");
+          if (id === "overlays") target.searchParams.set("output", "personal");
+          return target.toString();
+        } catch {
+          return "";
+        }
+      };
+      return {
+        tenant,
+        profile: profile.profile ?? null,
+        outputs,
+        personalLayout: scene.layout ?? null,
+        canonical: {
+          origin: base,
+          surfaces,
+          surfaceUrls: {
+            worktray: buildSurfaceUrl("worktray", "full"),
+            overlays: buildSurfaceUrl("overlays", "full"),
+            settings: buildSurfaceUrl("settings", "full"),
+          },
+          personalOverlayUrl: String(personal.url || outputs.personal || ""),
+        },
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  private async refreshMountainViewSpmtAccessToken(userId: string): Promise<string> {
+    const refreshToken = this.getServiceToken(userId, "spmt-refresh");
+    const clientSecret = String(this.env.MOUNTAINVIEW_CLIENT_SECRET || "").trim();
+    if (!refreshToken || !clientSecret) {
+      throw new HttpError(401, "MountainView SPMT session needs to be renewed. Sign in with SPMT again.");
+    }
+    const response = await fetch(new URL("/api/oauth/token", this.serviceBaseUrl("spmt")), {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({
+        grant_type: "refresh_token",
+        refresh_token: refreshToken,
+        client_id: "mountainview",
+        client_secret: clientSecret
+      })
+    });
+    const payload = asRecord(await response.json().catch(() => ({})));
+    if (!response.ok) {
+      throw new HttpError(401, "MountainView SPMT refresh failed: " + (readText(payload, "error") || response.status));
+    }
+    const accessToken = readText(payload, "access_token") || readText(payload, "token");
+    const nextRefreshToken = readText(payload, "refresh_token") || refreshToken;
+    if (!accessToken) throw new HttpError(502, "SPMT refresh returned no access token.");
+    this.saveServiceToken(userId, "spmt", accessToken);
+    if (nextRefreshToken) this.saveServiceToken(userId, "spmt-refresh", nextRefreshToken);
+    return accessToken;
+  }
+
+  private async createHearMeOutLaunchCode(userId: string): Promise<string> {
+    const spmtBase = this.serviceBaseUrl("spmt").replace(/\/$/, "");
+    const hearMeOutOrigin = new URL(this.serviceBaseUrl("hearmeout")).origin;
+    let accessToken = this.getServiceToken(userId, "spmt");
+    if (!accessToken) {
+      throw new HttpError(401, "MountainView does not have an SPMT session for this user. Sign in with SPMT again.");
+    }
+    const launch = (token: string) => fetch(spmtBase + "/api/embed/launch", {
+      method: "POST",
+      headers: {
+        authorization: "Bearer " + token,
+        "content-type": "application/json",
+        accept: "application/json"
+      },
+      body: JSON.stringify({ client_id: "hearmeout", target_origin: hearMeOutOrigin })
+    });
+    let response = await launch(accessToken);
+    if (response.status === 401) {
+      accessToken = await this.refreshMountainViewSpmtAccessToken(userId);
+      response = await launch(accessToken);
+    }
+    const payload = asRecord(await response.json().catch(() => ({})));
+    if (!response.ok) {
+      throw new HttpError(response.status >= 400 && response.status < 500 ? response.status : 502, "SPMT HearMeOut launch failed: " + (readText(payload, "error") || response.status));
+    }
+    const code = readText(payload, "code");
+    if (!code) throw new HttpError(502, "SPMT HearMeOut launch returned no one-time code.");
+    return code;
+  }
+
+  async runPrivateAssistant(userId: string, input: JsonRecord): Promise<JsonRecord> {
+    const action = String(input.action || "ensure").trim().toLowerCase();
+    const text = String(input.text || input.command || input.transcript || "").trim();
+    if (action !== "ensure" && action !== "utterance") {
+      throw new HttpError(400, "Private assistant action must be ensure or utterance.");
+    }
+    if (action === "utterance" && !text) throw new HttpError(400, "Private assistant utterance text is required.");
+
+    const launchCode = await this.createHearMeOutLaunchCode(userId);
+    const hearMeOutBase = this.serviceBaseUrl("hearmeout").replace(/\/$/, "");
+    const response = await fetch(hearMeOutBase + "/api/private-assistant", {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ launchCode, action, text })
+    });
+    const payload = asRecord(await response.json().catch(() => ({})));
+    if (!response.ok || payload.ok === false) {
+      const message = readText(payload, "error") || "HearMeOut private assistant returned HTTP " + response.status;
+      throw new HttpError(response.status >= 400 && response.status < 500 ? response.status : 502, message);
+    }
+    this.logCommand(
+      userId,
+      action === "ensure" ? "private-athena-room-ensure" : "private-athena-room-utterance",
+      "hearmeout",
+      "POST",
+      hearMeOutBase + "/api/private-assistant",
+      "success",
+      response.status,
+      0,
+      JSON.stringify({ status: payload.status, roomId: payload.roomId, persona: payload.persona }).slice(0, 2000),
+      ""
+    );
+    return payload;
+  }
+
+  async athenaChatCompletion(user: MountainViewUser, body: JsonRecord, env: NodeJS.ProcessEnv): Promise<JsonRecord> {
+    const OWNER_TENANT_ID = "94371378";
+    const isOwner = user.role === "admin" || user.id === "owner" || user.id === OWNER_TENANT_ID;
+    const requestedMode = String(body.mode ?? "standard");
+    const mode = requestedMode === "adult" && isOwner ? "adult" : "standard";
+
+    // Qwen URL comes from mountainview-config.json service entry, no new env needed
+    const qwenService = this.config.services.find((s) => s.id === "qwen");
+    const qwenUrl = qwenService?.baseUrl || "http://localhost:11434";
+
+    const systemPrompt = String(body.systemPrompt ?? "").trim();
+    const messages = Array.isArray(body.messages) ? body.messages as Array<{ role: string; content: string }> : [];
+    const tenantId = String(body.tenantId ?? OWNER_TENANT_ID);
+
+    // Inject MountainView context: recent memory + recent logs
+    const recentMemory = this.searchMemory(user.id, "", "").slice(0, 6)
+      .map((m) => `[memory] ${m.title}: ${String(m.body ?? "").slice(0, 200)}`).join("\n");
+    const recentLogs = this.listLogs(user.id).slice(0, 5)
+      .map((l) => `[log] ${l.command_id} → ${l.status} (${l.app_id})`).join("\n");
+    const modeNote = mode === "adult"
+      ? "\n[Private owner session. Adult mode active. No content restrictions apply.]" : "";
+    const contextBlock = [
+      recentMemory ? `Recent memory:\n${recentMemory}` : "",
+      recentLogs ? `Recent command logs:\n${recentLogs}` : "",
+      `Tenant: ${tenantId}`,
+      modeNote
+    ].filter(Boolean).join("\n");
+
+    const fullSystem = [systemPrompt, contextBlock].filter(Boolean).join("\n\n");
+
+    const started = Date.now();
+    let responseText = "";
+    let upstreamStatus = 0;
+    try {
+      const res = await fetch(`${qwenUrl}/api/chat`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          model: String(body.model ?? "qwen2.5"),
+          stream: false,
+          messages: [
+            { role: "system", content: fullSystem },
+            ...messages
+          ]
+        })
+      });
+      upstreamStatus = res.status;
+      const raw = await res.text();
+      if (!res.ok) {
+        this.logCommand(user.id, "athena-chat", "qwen", "POST", qwenUrl, "error", upstreamStatus, Date.now() - started, raw.slice(0, 2000), `HTTP ${upstreamStatus}`);
+        return { ok: false, upstreamStatus, error: `Qwen returned HTTP ${upstreamStatus}` };
+      }
+      const data = JSON.parse(raw) as { message?: { content?: string }; error?: string };
+      responseText = data?.message?.content?.trim() ?? "";
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logCommand(user.id, "athena-chat", "qwen", "POST", qwenUrl, "error", 0, Date.now() - started, "", msg);
+      return { ok: false, error: msg };
+    }
+
+    this.logCommand(user.id, "athena-chat", "qwen", "POST", qwenUrl, "success", upstreamStatus, Date.now() - started, responseText.slice(0, 2000), "");
+    this.saveMemory(user.id, {
+      kind: "athena-chat",
+      title: `Athena chat (${mode})`,
+      body: messages.at(-1)?.content?.slice(0, 300) ?? "",
+      tags: ["athena", "private-chat", mode],
+      metadata: { tenantId, mode, responseSnippet: responseText.slice(0, 200) }
+    });
+    return { ok: true, text: responseText, mode, provider: "qwen" };
+  }
+
+  private migrate(): void {
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, email TEXT NOT NULL, role TEXT NOT NULL, created_at TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL, created_at TEXT NOT NULL, expires_at TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS mobile_auth_handoffs (code_hash TEXT PRIMARY KEY, encrypted_session_token TEXT NOT NULL, created_at TEXT NOT NULL, expires_at TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS service_integrations (id TEXT PRIMARY KEY, name TEXT NOT NULL, base_url TEXT NOT NULL, default_headers_json TEXT NOT NULL DEFAULT '{}', updated_at TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS service_tokens (user_id TEXT NOT NULL, service_id TEXT NOT NULL, encrypted_token TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY (user_id, service_id));
+      CREATE TABLE IF NOT EXISTS command_definitions (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        app_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        phrase TEXT NOT NULL,
+        method TEXT NOT NULL,
+        url_template TEXT NOT NULL,
+        payload_template TEXT NOT NULL,
+        retry_count INTEGER NOT NULL,
+        enabled INTEGER NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS command_logs (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        command_id TEXT NOT NULL,
+        app_id TEXT NOT NULL,
+        method TEXT NOT NULL,
+        url TEXT NOT NULL,
+        status TEXT NOT NULL,
+        response_status INTEGER NOT NULL,
+        duration_ms INTEGER NOT NULL,
+        response_body TEXT NOT NULL,
+        error TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS memory_records (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        title TEXT NOT NULL,
+        body TEXT NOT NULL,
+        tags_json TEXT NOT NULL,
+        metadata_json TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS person_profiles (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        display_name TEXT NOT NULL,
+        aliases_json TEXT NOT NULL,
+        usernames_json TEXT NOT NULL,
+        context_json TEXT NOT NULL,
+        reminders_json TEXT NOT NULL,
+        notes TEXT NOT NULL,
+        consent_mode TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS visual_profiles (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        target_app TEXT NOT NULL,
+        command_id TEXT NOT NULL,
+        aliases_json TEXT NOT NULL,
+        match_text_json TEXT NOT NULL,
+        default_payload_json TEXT NOT NULL,
+        image_ref TEXT NOT NULL,
+        metadata_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS media_uploads (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        service_id TEXT NOT NULL,
+        endpoint TEXT NOT NULL,
+        status TEXT NOT NULL,
+        metadata_json TEXT NOT NULL,
+        response_status INTEGER NOT NULL,
+        response_body TEXT NOT NULL,
+        error TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS glasses_media_events (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        source TEXT NOT NULL,
+        target_app TEXT NOT NULL,
+        status TEXT NOT NULL,
+        metadata_json TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS voice_sessions (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        mode TEXT NOT NULL,
+        target_app TEXT NOT NULL,
+        target_channel TEXT NOT NULL,
+        target_name TEXT NOT NULL,
+        status TEXT NOT NULL,
+        metadata_json TEXT NOT NULL,
+        started_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        ended_at TEXT NOT NULL DEFAULT ''
+      );
+      CREATE TABLE IF NOT EXISTS devices (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        pairing_code TEXT NOT NULL,
+        connection_hint TEXT NOT NULL,
+        status TEXT NOT NULL,
+        capabilities_json TEXT NOT NULL,
+        last_seen_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS visual_polling_profiles (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        interval_seconds INTEGER NOT NULL,
+        battery_mode TEXT NOT NULL,
+        trigger_targets_json TEXT NOT NULL,
+        enabled INTEGER NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS app_logo_profiles (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        app_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        aliases_json TEXT NOT NULL,
+        command_id TEXT NOT NULL,
+        confidence_threshold REAL NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS qr_triggers (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        target_app TEXT NOT NULL,
+        command_id TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        action_type TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `);
+  }
+
+  private seedDefaults(): void {
+    const now = new Date().toISOString();
+    for (const service of this.config.services) {
+      this.db.prepare(`
+        INSERT INTO service_integrations (id, name, base_url, default_headers_json, updated_at)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO NOTHING
+      `).run(service.id, service.name, service.baseUrl, JSON.stringify(service.defaultHeaders ?? {}), now);
+    }
+    const defaults = [
+      ["cmd_vision_smart_capture", "mountainview", "Smart glasses vision capture", "smart capture what i see", "POST", "/api/vision/smart-capture", { source: "mountainview-ai", imageBase64: "{{imageBase64}}", imageUrl: "{{imageUrl}}", features: "{{features}}", providers: "{{providers}}", question: "{{question}}", message: "{{message}}", savePerson: "{{savePerson}}", displayName: "{{displayName}}", twitchUsername: "{{twitchUsername}}" }],
+      ["cmd_vision_route_device", "mountainview", "Route visual result to best device", "send this where i am looking", "POST", "/api/vision/route", { source: "mountainview-ai", observedText: "{{message}}", labels: "{{labels}}", vision: "{{vision}}" }],
+      ["cmd_vision_face_detect", "mountainview", "Detect faces with EdenAI", "detect faces", "POST", "/api/vision/analyze", { source: "mountainview-ai", imageBase64: "{{imageBase64}}", imageUrl: "{{imageUrl}}", features: ["face_detection"], providers: "{{providers}}" }],
+      ["cmd_vision_logo_detect", "mountainview", "Detect stream/app logos with EdenAI", "detect logo", "POST", "/api/vision/analyze", { source: "mountainview-ai", imageBase64: "{{imageBase64}}", imageUrl: "{{imageUrl}}", features: ["logo_detection"], providers: "{{providers}}" }],
+      ["cmd_vision_object_detect", "mountainview", "Detect objects with EdenAI", "detect objects", "POST", "/api/vision/analyze", { source: "mountainview-ai", imageBase64: "{{imageBase64}}", imageUrl: "{{imageUrl}}", features: ["object_detection"], providers: "{{providers}}" }],
+      ["cmd_vision_screen_read", "mountainview", "Read visible screen with EdenAI OCR", "read what i see", "POST", "/api/vision/analyze", { source: "mountainview-ai", imageBase64: "{{imageBase64}}", imageUrl: "{{imageUrl}}", features: ["ocr"], providers: "{{providers}}" }],
+      ["cmd_profile_save_person", "mountainview", "Save person/profile memory", "save this person", "POST", "/api/people/remember", { source: "mountainview-ai", displayName: "{{displayName}}", twitchUsername: "{{twitchUsername}}", discordUsername: "{{discordUsername}}", relationship: "{{relationship}}", notes: "{{message}}", reminders: "{{reminders}}", topics: "{{topics}}", preferences: "{{preferences}}", boundaries: "{{boundaries}}", avatarUrl: "{{avatarUrl}}", streamLogo: "{{streamLogo}}" }],
+      ["cmd_profile_meeting_reminder", "mountainview", "Save meeting reminder for person", "remember meeting with this person", "POST", "/api/people/remember", { source: "mountainview-ai", displayName: "{{displayName}}", notes: "{{message}}", reminders: [{ "kind": "meeting", "when": "{{meetingWhen}}", "note": "{{message}}" }], topics: "{{topics}}" }],
+      ["cmd_streamweaver_image", "streamweaver", "Send image to StreamWeaver", "send image to streamweaver", "POST", "/api/mountainview/image-relay", { source: "android-glasses", prompt: "{{prompt}}", tenantId: "{{tenantId}}", username: "{{username}}", imageBase64: "{{imageBase64}}", imageUrl: "{{imageUrl}}", metadata: { "scene": "{{message}}", "providerOverride": "{{providerOverride}}", "providerParams": "{{providerParams}}" } }],
+      ["cmd_streamweaver_image_generate", "streamweaver", "Generate StreamWeaver image", "generate stream image", "POST", "/api/mountainview/voice-commander", { source: "mountainview-ai", transcript: "!img {{prompt}}", destination: "{{destination}}", wakeWord: "{{wakeWord}}", tenantId: "{{tenantId}}", username: "{{username}}", payload: { "voiceMode": "{{voiceMode}}", "providerOverride": "{{providerOverride}}", "resolution": "{{resolution}}", "numImages": "{{numImages}}", "providerParams": "{{providerParams}}" } }],
+      ["cmd_streamweaver_image_regenerate", "streamweaver", "Regenerate image from glasses context", "regenerate this image", "POST", "/api/mountainview/voice-commander", { source: "mountainview-ai", transcript: "!img {{prompt}}", destination: "{{destination}}", wakeWord: "{{wakeWord}}", tenantId: "{{tenantId}}", username: "{{username}}", payload: { "voiceMode": "{{voiceMode}}", "mode": "regenerate", "contextImage": "{{imageBase64}}", "scene": "{{message}}", "providerParams": "{{providerParams}}" } }],
+      ["cmd_streamweaver_tts", "streamweaver", "Speak Athena through StreamWeaver", "speak on stream", "POST", "/api/tts", { source: "mountainview-ai", text: "{{message}}", tenantId: "{{tenantId}}", voice: "{{voice}}" }],
+      ["cmd_streamweaver_tts_play", "streamweaver", "Play Athena TTS audio", "play athena audio", "GET", "/api/tts/play?text={{message}}&tenantId={{tenantId}}", {}],
+      ["cmd_stream_start", "streamweaver", "Start Twitch client workflow", "start stream workflow", "POST", "/api/twitch/start", { source: "mountainview-ai", tenantId: "{{tenantId}}", payload: "{{payload}}" }],
+      ["cmd_stream_stop", "streamweaver", "Stop stream workflow", "stop stream workflow", "POST", "/api/stream/stop", { source: "mountainview-ai", payload: "{{payload}}" }],
+      ["cmd_stream_audio", "streamweaver", "Start glasses audio relay", "start glasses audio", "POST", "/api/glasses/audio-stream/start", { source: "mountainview-ai", device: "{{device}}", roomId: "{{roomId}}", payload: "{{payload}}" }],
+      ["cmd_stream_video", "streamweaver", "Start glasses video relay", "start glasses video", "POST", "/api/glasses/video-stream/start", { source: "mountainview-ai", device: "{{device}}", roomId: "{{roomId}}", payload: "{{payload}}" }],
+      ["cmd_stream_overlay", "streamweaver", "Trigger stream overlay/event", "trigger stream overlay", "POST", "/api/stream/overlay", { source: "mountainview-ai", event: "{{payload}}" }],
+      ["cmd_streamweaver_obs_scenes", "streamweaver", "Read StreamWeaver OBS scenes", "what obs scenes do i have", "GET", "/api/obs/scenes", {}],
+      ["cmd_streamweaver_overlay_data", "streamweaver", "Read StreamWeaver overlay data", "show overlay data", "GET", "/api/overlay/{{overlayType}}?tenant={{tenantId}}", {}],
+      ["cmd_streamweaver_voice_commander", "streamweaver", "Run StreamWeaver voice commander", "run voice commander", "POST", "/api/mountainview/voice-commander", { source: "mountainview-ai", transcript: "{{transcript}}", destination: "{{destination}}", wakeWord: "{{wakeWord}}", tenantId: "{{tenantId}}", username: "{{username}}", payload: "{{payload}}" }],
+      ["cmd_streamweaver_twitch_chat_send", "streamweaver", "Send Twitch chat through StreamWeaver", "type into twitch chat", "POST", "/api/twitch/send-message", { source: "mountainview-ai", message: "{{message}}", as: "{{as}}", targetChannel: "{{channel}}", channel: "{{channel}}", tenantId: "{{tenantId}}", bridgeToDiscord: "{{bridgeToDiscord}}" }],
+      ["cmd_streamweaver_twitch_chat_session", "streamweaver", "Start or stop Twitch chat dictation session", "read twitch chat out loud", "POST", "/api/mountainview/voice-commander", { source: "mountainview-ai", transcript: "{{transcript}}", destination: "twitch", wakeWord: "{{wakeWord}}", tenantId: "{{tenantId}}", username: "{{username}}", channel: "{{channel}}", payload: { "mode": "twitch-chat-session", "action": "{{action}}", "channel": "{{channel}}", "targetName": "{{targetName}}", "readAloud": "{{readAloud}}", "dictation": "{{dictation}}" } }],
+      ["cmd_twitch_stream_assist", "streamweaver", "Start Twitch screen assist", "start twitch assist", "POST", "/api/twitch/screen-assist/start", { source: "mountainview-ai", trigger: "twitch-logo", transcript: "{{transcript}}", payload: "{{payload}}" }],
+      ["cmd_discord_event", "discordstreamhub", "Push Twitch event to DiscordStreamHub", "push event to discord", "POST", "/api/twitch/events", { source: "mountainview-ai", type: "{{eventType}}", serverId: "{{serverId}}", twitchLogin: "{{twitchUsername}}", username: "{{username}}", channel: "{{channel}}", message: "{{message}}" }],
+      ["cmd_discord_message", "discordstreamhub", "Send DiscordStreamHub channel message", "send discord stream message", "POST", "/api/discord/send-as-user", { source: "mountainview-ai", channelId: "{{channelId}}", content: "{{message}}", username: "{{username}}", avatarUrl: "{{avatarUrl}}" }],
+      ["cmd_dsh_calendar_add_mission", "discordstreamhub", "Add DiscordStreamHub calendar mission", "add calendar mission", "POST", "/api/calendar/add-mission", { source: "mountainview-ai", serverId: "{{serverId}}", userId: "{{discordUserId}}", missionName: "{{missionName}}", missionDate: "{{missionDate}}", missionTime: "{{missionTime}}", missionDescription: "{{missionDescription}}" }],
+      ["cmd_dsh_calendar_post", "discordstreamhub", "Post DiscordStreamHub calendar", "post calendar to discord", "POST", "/api/calendar/post", { source: "mountainview-ai", serverId: "{{serverId}}", channelId: "{{channelId}}" }],
+      ["cmd_dsh_calendar_generate", "discordstreamhub", "Generate DiscordStreamHub calendar embed", "generate calendar embed", "POST", "/api/calendar/generate", { source: "mountainview-ai", serverId: "{{serverId}}", channelId: "{{channelId}}", includeButtons: "{{includeButtons}}" }],
+      ["cmd_spmt_athena_command", "spmt", "Ask Athena OS to control SpaceMountain apps", "ask athena os", "POST", "/api/athena/commands", { source: "mountainview-ai", transcript: "{{transcript}}", message: "{{message}}", intent: "{{intent}}", destination: "{{destination}}", route: "{{route}}", context: { "visualContext": "{{visualContext}}", "voiceMode": "{{voiceMode}}", "tenantId": "{{tenantId}}", "username": "{{username}}", "payload": "{{payload}}" } }],
+      ["cmd_spmt_athena_search", "spmt", "Search Athena and SpaceMountain context", "search athena", "GET", "/api/search?q={{query}}&source=mountainview", {}],
+      ["cmd_spmt_athena_memory", "spmt", "Save Athena memory from glasses", "remember this in athena", "POST", "/api/athena/memory", { source: "mountainview-ai", content: "{{message}}", transcript: "{{transcript}}", context: "{{visualContext}}", tags: ["mountainview", "glasses"] }],
+      ["cmd_spmt_platform_event", "spmt", "Publish MountainView platform event", "publish mountainview event", "POST", "/api/platform/events", { sourceApp: "mountainview", type: "mountainview.voice_command", summary: "{{message}}", payload: { "transcript": "{{transcript}}", "visualContext": "{{visualContext}}", "destination": "{{destination}}", "voiceMode": "{{voiceMode}}", "route": "{{route}}" } }],
+      ["cmd_spmt_apps", "spmt", "List SpaceMountain apps registered in SPMT", "what apps can i control", "GET", "/api/apps", {}],
+      ["cmd_companion_status", "spmt", "Check paired PC Companion status", "is my pc companion connected", "POST", "/api/companion/commands", { deviceId: "{{deviceId}}", capability: "companion.status", action: "companion.status", payload: {} }],
+      ["cmd_companion_overlay_show", "spmt", "Show Personal overlay on paired PC Companion", "show my personal overlay on the pc", "POST", "/api/companion/commands", { deviceId: "{{deviceId}}", capability: "overlay.control", action: "overlay.show", payload: {} }],
+      ["cmd_companion_overlay_hide", "spmt", "Hide Personal overlay on paired PC Companion", "hide my personal overlay on the pc", "POST", "/api/companion/commands", { deviceId: "{{deviceId}}", capability: "overlay.control", action: "overlay.hide", payload: {} }],
+      ["cmd_companion_popout_show", "spmt", "Show a Companion popout", "show companion popout one", "POST", "/api/companion/commands", { deviceId: "{{deviceId}}", capability: "overlay.control", action: "popout.show", payload: { id: "{{id}}" } }],
+      ["cmd_companion_popout_hide", "spmt", "Hide a Companion popout", "hide companion popout one", "POST", "/api/companion/commands", { deviceId: "{{deviceId}}", capability: "overlay.control", action: "popout.hide", payload: { id: "{{id}}" } }],
+      ["cmd_companion_obs_scene", "spmt", "Set OBS scene through paired PC Companion", "switch obs to brb", "POST", "/api/companion/commands", { deviceId: "{{deviceId}}", capability: "obs.control", action: "obs.scene.set", payload: { sceneName: "{{sceneName}}" } }],
+      ["cmd_companion_obs_media", "spmt", "Play approved OBS media through paired PC Companion", "play approved media in obs", "POST", "/api/companion/commands", { deviceId: "{{deviceId}}", capability: "obs.control", action: "obs.media.play", payload: { mediaName: "{{mediaName}}", obsInputName: "{{obsInputName}}", title: "{{title}}" } }],
+      ["cmd_companion_audio_mute", "spmt", "Mute or unmute Companion audio", "mute the pc companion", "POST", "/api/companion/commands", { deviceId: "{{deviceId}}", capability: "audio.control", action: "audio.mute", payload: { muted: "{{muted}}" } }],
+      ["cmd_companion_audio_volume", "spmt", "Set Companion audio volume", "set pc companion volume to fifty percent", "POST", "/api/companion/commands", { deviceId: "{{deviceId}}", capability: "audio.control", action: "audio.volume", payload: { volume: "{{volume}}" } }],
+      ["cmd_companion_media_transcode", "spmt", "Run an approved Companion media transcode", "transcode my approved media file", "POST", "/api/companion/commands", { deviceId: "{{deviceId}}", capability: "media.write", action: "media.transcode", payload: { inputName: "{{inputName}}", preset: "{{preset}}" } }],
+      ["cmd_companion_workflow", "spmt", "Run an allowlisted Companion workflow", "run companion workflow", "POST", "/api/companion/commands", { deviceId: "{{deviceId}}", capability: "workflow.run", action: "workflow.run", payload: { workflowId: "{{workflowId}}", input: "{{input}}" } }],
+
+      ["cmd_chat_tag_current_it", "chat-tag", "Ask Chat-Tag who is currently it", "who is currently it", "GET", "/api/tag", {}],
+      ["cmd_chat_tag_live_members", "chat-tag", "Ask Chat-Tag who is live", "who is live", "GET", "/api/discord/live-members", {}],
+      ["cmd_discord_live_members", "chat-tag", "List everyone in the connected Discord community who is live", "who is live", "GET", "/api/discord/live-members", {}],
+      ["cmd_chat_tag_spmt_live", "chat-tag", "List live Chat-Tag players (SPMT live)", "who is active in chat tag", "GET", "/api/tag/live", {}],
+
+      ["cmd_chat_tag_rank", "chat-tag", "Read my Chat-Tag rank", "what is my rank", "GET", "/api/tag", {}],
+      ["cmd_chat_tag_quackverse_pack", "chat-tag", "Open a Quackverse booster pack", "pull a quackverse booster pack", "POST", "/api/quackverse/pack", { source: "mountainview-ai", userId: "{{userId}}", twitchUsername: "{{twitchUsername}}", username: "{{username}}", platform: "mountainview-glasses" }],
+      ["cmd_chat_tag_state", "chat-tag", "Read Chat-Tag game state", "chat tag status", "GET", "/api/tag", {}],
+      ["cmd_chat_tag_join", "chat-tag", "Join Chat-Tag from glasses", "join chat tag", "POST", "/api/tag", { source: "mountainview-ai", action: "join", userId: "{{userId}}", twitchUsername: "{{twitchUsername}}", username: "{{username}}", performedBy: "{{performedBy}}" }],
+      ["cmd_chat_tag_tag", "chat-tag", "Tag a Chat-Tag player from glasses", "tag player", "POST", "/api/tag", { source: "mountainview-ai", action: "tag", userId: "{{userId}}", twitchUsername: "{{twitchUsername}}", targetUserId: "{{targetUserId}}", streamerId: "{{streamerId}}", performedBy: "{{performedBy}}", targetLookupError: "{{targetLookupError}}" }],
+      ["cmd_chat_tag", "chat-tag", "Tag a Chat-Tag player from glasses", "trigger chat tag", "POST", "/api/tag", { source: "mountainview-ai", action: "tag", userId: "{{userId}}", twitchUsername: "{{twitchUsername}}", targetUserId: "{{targetUserId}}", streamerId: "{{streamerId}}", performedBy: "{{performedBy}}", targetLookupError: "{{targetLookupError}}" }],
+      ["cmd_chat_tag_qr", "chat-tag", "Trigger QR Chat-Tag join/state workflow", "scan qr trigger", "POST", "/api/tag", { source: "mountainview-ai", action: "{{action}}", userId: "{{userId}}", twitchUsername: "{{twitchUsername}}", username: "{{username}}", performedBy: "{{performedBy}}" }],
+      ["cmd_hearmeout", "hearmeout", "Read HearMeOut music session", "trigger hear me out", "GET", "/api/music/session/state", {}],
+      ["cmd_hearmeout_voice_room", "hearmeout", "Register MountainView in HearMeOut voice room", "join voice room", "POST", "/api/peer-voice/register", { source: "mountainview-ai", roomId: "{{roomId}}", peerId: "{{peerId}}" }],
+      ["cmd_hearmeout_voice_peers", "hearmeout", "List HearMeOut voice room peers", "who is in hearmeout room", "GET", "/api/peer-voice/peers?roomId={{roomId}}", {}],
+      ["cmd_hearmeout_music_control", "hearmeout", "Control HearMeOut music session", "control hear me out music", "POST", "/api/music/session/control", { source: "mountainview-ai", action: "{{action}}", position: "{{position}}" }],
+      ["cmd_hearmeout_song_request", "hearmeout", "Request HearMeOut song", "request song", "POST", "/api/music/session/request", { source: "mountainview-ai", query: "{{query}}", username: "{{username}}", platform: "{{platform}}" }],
+      ["cmd_hearmeout_audiobook_request", "hearmeout", "Request HearMeOut audiobook/search item", "request audiobook", "POST", "/api/music/session/request", { source: "mountainview-ai", query: "{{query}}", username: "{{username}}", platform: "{{platform}}", mediaType: "audiobook" }],
+      ["cmd_hearmeout_watch_request", "hearmeout", "Request HearMeOut watch item", "request watch party item", "POST", "/api/watch/sessions/{{sessionId}}/request", { source: "mountainview-ai", query: "{{query}}", itemId: "{{itemId}}", userId: "{{userId}}", username: "{{username}}" }],
+      ["cmd_hearmeout_watch_control", "hearmeout", "Control HearMeOut watch party", "control watch party", "POST", "/api/watch/sessions/{{sessionId}}/control", { source: "mountainview-ai", action: "{{action}}", position: "{{position}}", targetIndex: "{{targetIndex}}" }],
+      ["cmd_hearmeout_discord_message", "hearmeout", "Send HearMeOut Discord chat message", "send hearmeout chat message", "POST", "/api/discord/send", { source: "mountainview-ai", channelId: "{{channelId}}", content: "{{message}}", username: "{{username}}", avatarUrl: "{{avatarUrl}}" }],
+      ["cmd_eden_scene", "edenai", "Analyze current scene with EdenAI", "ask ai what am i looking at", "POST", "/v2/image/explicit_content", { source: "mountainview-ai", image: "{{imageBase64}}", providers: "{{providers}}" }],
+      ["cmd_eden_screen_read", "edenai", "Read visible screen text", "read my screen", "POST", "/v2/ocr/ocr", { source: "mountainview-ai", file: "{{imageBase64}}", providers: "{{providers}}", fallbackRoute: "streamweaver" }],
+      ["cmd_eden_image_generation", "edenai", "Generate image from glasses context", "generate image from what i see", "POST", "/v2/image/generation", { source: "mountainview-ai", prompt: "{{prompt}}", contextImage: "{{imageBase64}}", providers: "{{providers}}" }],
+      ["cmd_eden_video_generation", "edenai", "Generate video from glasses context", "generate video from what i see", "POST", "/v2/video/generation", { source: "mountainview-ai", prompt: "{{prompt}}", image: "{{imageBase64}}", providers: "{{providers}}" }],
+      ["cmd_person_memory_note", "streamweaver", "Save consent-based person memory note", "save note about this person", "POST", "/api/memory/person-note", { source: "mountainview-ai", personId: "{{personId}}", note: "{{note}}", consent: "{{consent}}", payload: "{{payload}}" }]
+    ] as const;
+    for (const command of defaults) {
+      this.db.prepare(`
+        INSERT INTO command_definitions (id, user_id, app_id, name, phrase, method, url_template, payload_template, retry_count, enabled, updated_at)
+        VALUES (?, 'system', ?, ?, ?, ?, ?, ?, 2, 1, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          app_id = excluded.app_id,
+          name = excluded.name,
+          phrase = excluded.phrase,
+          method = excluded.method,
+          url_template = excluded.url_template,
+          payload_template = excluded.payload_template,
+          retry_count = excluded.retry_count,
+          enabled = excluded.enabled,
+          updated_at = excluded.updated_at
+        WHERE command_definitions.user_id = 'system'
+      `).run(command[0], command[1], command[2], command[3], command[4], command[5], JSON.stringify(command[6]), now);
+    }
+    const devices = [
+      ["device_phone", "MountainView Phone", "phone", "phone-companion", "local", ["display", "camera", "commands", "notifications"]],
+      ["device_rdglass_aimb", "AiMB / RDGlass Glasses", "glasses", "ble-scan", "android-ble-research", ["ble-scan", "gatt-discovery", "voice-event-research", "image-event-research"]],
+      ["device_tablet", "Companion Tablet", "tablet", "tablet-hud", "qr", ["display", "companion-hud", "commands"]],
+      ["device_pc", "Stream PC", "computer", "stream-pc", "qr-bluetooth", ["obs", "streamweaver", "browser-display"]],
+      ["device_obs", "OBS / Stream Machine", "stream-machine", "obs-control", "local-network", ["obs-scenes", "overlays", "stream-control"]]
+    ] as const;
+    for (const device of devices) {
+      this.db.prepare(`
+        INSERT INTO devices (id, user_id, name, kind, pairing_code, connection_hint, status, capabilities_json, last_seen_at, updated_at)
+        VALUES (?, 'owner', ?, ?, ?, ?, 'ready', ?, ?, ?)
+        ON CONFLICT(id) DO NOTHING
+      `).run(device[0], device[1], device[2], device[3], device[4], JSON.stringify(device[5]), now, now);
+    }
+    const pollingProfiles = [
+      ["poll_balanced_qr", "Balanced QR/device scan", 60, "balanced", ["qr", "device-marker", "screen-marker", "app-logo"]],
+      ["poll_fast_trigger", "Fast command trigger scan", 15, "high-power", ["qr", "scene-change", "stream-overlay", "screen-read"]],
+      ["poll_low_power_memory", "Low power memory assist", 180, "battery-saver", ["person-card", "place", "meeting-context"]]
+    ] as const;
+    for (const profile of pollingProfiles) {
+      this.db.prepare(`
+        INSERT INTO visual_polling_profiles (id, user_id, name, interval_seconds, battery_mode, trigger_targets_json, enabled, updated_at)
+        VALUES (?, 'owner', ?, ?, ?, ?, 1, ?)
+        ON CONFLICT(id) DO NOTHING
+      `).run(profile[0], profile[1], profile[2], profile[3], JSON.stringify(profile[4]), now);
+    }
+    const logoProfiles = [
+      ["logo_streamweaver", "streamweaver", "StreamWeaver", ["streamweaver", "stream weaver", "spacemountain stream"], "cmd_streamweaver_voice_commander", 0.78],
+      ["logo_hearmeout", "hearmeout", "HearMeOut", ["hearmeout", "hear me out", "voice room"], "cmd_hearmeout", 0.78],
+      ["logo_discordstreamhub", "discordstreamhub", "DiscordStreamHub", ["discordstreamhub", "discord stream hub", "discord"], "cmd_dsh_calendar_add_mission", 0.78],
+      ["logo_chattag", "chat-tag", "Chat-Tag", ["chat-tag", "chat tag", "tag trigger"], "cmd_chat_tag_live_members", 0.78],
+      ["logo_edenai", "edenai", "EdenAI", ["edenai", "eden ai", "ai router"], "cmd_eden_scene", 0.78],
+      ["logo_spmt", "spmt", "SPMT / Athena OS", ["spmt", "athena os", "space mountain", "command bridge", "launchpad"], "cmd_spmt_athena_command", 0.78],
+      ["logo_twitch", "twitch", "Twitch", ["twitch", "twitch.tv", "purple chat", "live channel"], "cmd_twitch_stream_assist", 0.78],
+      ["logo_discord", "discord", "Discord", ["discord", "discord app", "discord chat", "discord server"], "cmd_discord_message", 0.78]
+    ] as const;
+    for (const logo of logoProfiles) {
+      this.db.prepare(`
+        INSERT INTO app_logo_profiles (id, user_id, app_id, name, aliases_json, command_id, confidence_threshold, updated_at)
+        VALUES (?, 'system', ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO NOTHING
+      `).run(logo[0], logo[1], logo[2], JSON.stringify(logo[3]), logo[4], logo[5], now);
+    }
+    const qrTriggers = [
+      ["qr_stream_overlay", "Stream overlay trigger", "streamweaver", "cmd_stream_overlay", "mountainview://streamweaver/overlay/default", "stream-overlay"],
+      ["qr_ar_avatar", "AR avatar room anchor", "streamweaver", "cmd_eden_image_generation", "mountainview://avatar/room-anchor/default", "ar-avatar"],
+      ["qr_hearmeout_audiobook", "HearMeOut audiobook request", "hearmeout", "cmd_hearmeout_audiobook_request", "mountainview://hearmeout/audiobook/request", "media-request"],
+      ["qr_chat_tag_join", "Chat-Tag join trigger", "chat-tag", "cmd_chat_tag_qr", "mountainview://chat-tag/join/default", "tag-join"],
+      ["qr_discord_calendar", "DiscordStreamHub calendar trigger", "discordstreamhub", "cmd_dsh_calendar_add_mission", "mountainview://discordstreamhub/calendar/add", "calendar-event"]
+    ] as const;
+    for (const trigger of qrTriggers) {
+      this.db.prepare(`
+        INSERT INTO qr_triggers (id, user_id, name, target_app, command_id, payload, action_type, updated_at)
+        VALUES (?, 'system', ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO NOTHING
+      `).run(trigger[0], trigger[1], trigger[2], trigger[3], trigger[4], trigger[5], now);
+    }
+  }
+
+  private getIntegration(serviceId: string): { id: string; name: string; baseUrl: string; defaultHeaders: Record<string, string> } {
+    const row = this.db.prepare("SELECT * FROM service_integrations WHERE id = ?").get(serviceId) as JsonRecord | undefined;
+    if (!row) throw new HttpError(404, `Integration ${serviceId} not found.`);
+    return {
+      id: String(row.id),
+      name: String(row.name),
+      baseUrl: String(row.base_url),
+      defaultHeaders: parseJsonObject(String(row.default_headers_json ?? "{}")) as Record<string, string>
+    };
+  }
+
+
+  private async resolveCompanionDevice(userId: string, capability: string, requestedDeviceId = ""): Promise<string> {
+    const token = this.getServiceToken(userId, "spmt");
+    if (!token) throw new HttpError(401, "Reconnect MountainView to SPMT before controlling the PC Companion.");
+    const base = this.serviceBaseUrl("spmt").replace(/\/$/, "");
+    const response = await fetch(base + "/api/companion/devices", {
+      headers: { authorization: "Bearer " + token, accept: "application/json" },
+      signal: AbortSignal.timeout(10_000),
+    });
+    const payload = asRecord(await response.json().catch(() => ({})));
+    if (!response.ok) throw new HttpError(response.status, readText(payload, "error") || "Could not read paired Companion devices.");
+    const devices = Array.isArray(payload.devices) ? payload.devices.map(asRecord) : [];
+    const capable = devices.filter((device) => {
+      const raw = device.capabilities;
+      const capabilities = Array.isArray(raw) ? raw.map(String) : String(raw || "").split(",").map((value) => value.trim()).filter(Boolean);
+      return capabilities.includes(capability);
+    });
+    const requested = requestedDeviceId ? capable.find((device) => readText(device, "id") === requestedDeviceId) : undefined;
+    const online = requested || capable.find((device) => /^(online|connected)$/i.test(readText(device, "status")));
+    if (!online || !/^(online|connected)$/i.test(readText(online, "status"))) {
+      throw new HttpError(409, "No online paired PC Companion currently grants " + capability + ". Open Companion on the PC and verify its SPMT pairing.");
+    }
+    return readText(online, "id");
+  }
+  private async authHeaders(userId: string, serviceId: string, defaults: Record<string, string> = {}): Promise<Record<string, string>> {
+    const headers: Record<string, string> = { "content-type": "application/json", ...defaults };
+    const signedInSpmtToken = this.getServiceToken(userId, "spmt");
+    if (signedInSpmtToken && (serviceId === "spmt" || serviceId === "hearmeout")) {
+      headers.authorization = "Bearer " + signedInSpmtToken;
+      headers["x-spacemountain-source"] = "mountainview-ai";
+    }
+
+    if (serviceId === "streamweaver") {
+      headers["x-mountainview-bridge"] = "1";
+    }
+    if (serviceId === "chat-tag") {
+      const chatTagSecret = this.env.CHAT_TAG_BOT_SECRET || this.env.CHAT_TAG_SECRET || this.env.BOT_SECRET_KEY;
+      if (chatTagSecret) {
+        headers["x-bot-secret"] = chatTagSecret;
+        headers["x-mountainview-bridge"] = "1";
+      }
+    }
+    if (serviceId === "spmt" && !headers.authorization) {
+      const spmtKey = this.env.SPMT_API_KEY || this.env.SPMT_PLATFORM_API_KEY || this.env.ATHENA_OS_API_KEY;
+      if (spmtKey) {
+        headers.authorization = `Bearer ${spmtKey}`;
+        headers["x-api-key"] = spmtKey;
+        headers["x-spacemountain-source"] = "mountainview-ai";
+      }
+    }
+    const row = this.db.prepare("SELECT encrypted_token FROM service_tokens WHERE user_id = ? AND service_id = ?").get(userId, serviceId) as { encrypted_token: string } | undefined;
+    if (row) headers.authorization = `Bearer ${this.decrypt(row.encrypted_token)}`;
+    if (serviceId === "streamweaver") {
+      const bridgeSecret = String(this.env.MOUNTAINVIEW_STREAMWEAVER_SECRET || "").trim();
+      if (!bridgeSecret) throw new HttpError(503, "MountainView to StreamWeaver bridge is not configured.");
+      headers.authorization = `Bearer ${bridgeSecret}`;
+    }
+    return headers;
+  }
+
+  private hasSpmtBridgeAuth(): boolean {
+    return Boolean(this.env.SPMT_API_KEY || this.env.SPMT_PLATFORM_API_KEY || this.env.ATHENA_OS_API_KEY);
+  }
+
+  private async refineVoiceDecisionWithAi(userId: string, transcript: string, context: JsonRecord, heuristicDecision: JsonRecord): Promise<JsonRecord> {
+    const apiKey = this.env.OPENAI_API_KEY;
+    if (!apiKey || this.env.MOUNTAINVIEW_AI_ROUTER_DISABLED === "true") return heuristicDecision;
+    if (Number(heuristicDecision.confidence ?? 0) >= 0.94 && String(heuristicDecision.reason ?? "").includes("previous")) return heuristicDecision;
+    const commandMode = context.commandMode === true || readText(context, "mode") === "command" || readText(context, "routeMode") === "command";
+    if (Number(heuristicDecision.confidence ?? 0) >= 0.95 && String(heuristicDecision.commandId ?? "") !== "cmd_streamweaver_voice_commander") {
+      return heuristicDecision;
+    }
+
+    const commands = this.listCommands(userId)
+      .filter((command) => Number(command.enabled ?? 1) === 1)
+      .map((command) => {
+        const profile = getCommandRoutingProfile(String(command.id ?? ""), String(command.app_id ?? ""));
+        return {
+          commandId: command.id,
+          appId: command.app_id,
+          name: command.name,
+          phrase: command.phrase,
+          requiredContext: profile.requiredContext,
+          optionalContext: profile.optionalContext,
+          examples: profile.naturalExamples
+        };
+      });
+    const threshold = Number(this.env.MOUNTAINVIEW_AI_ROUTER_THRESHOLD ?? 0.72);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), Number(this.env.MOUNTAINVIEW_AI_ROUTER_TIMEOUT_MS ?? 6000));
+    try {
+      const result = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${apiKey}`,
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          model: this.env.MOUNTAINVIEW_AI_ROUTER_MODEL || "gpt-5.6",
+          temperature: 0,
+          response_format: { type: "json_object" },
+          messages: [
+            {
+              role: "system",
+              content: [
+                "You route MountainView smart-glasses speech to app commands.",
+                "Return JSON only: {mode, commandId, appId, confidence, transcript, payload, missingFields, reason}.",
+                "Pick one command from the provided command list only.",
+                commandMode
+                  ? "Command mode is active: prefer tool/action routing when any app intent is plausible, and use missingFields instead of guessing required values."
+                  : "Chat mode is active: if the user is just chatting with Athena or intent is ambiguous, choose cmd_streamweaver_voice_commander as conversation.",
+                "If an action is clear but required context is missing, include missingFields and a concise reason."
+              ].join(" ")
+            },
+            {
+              role: "user",
+              content: JSON.stringify({
+                transcript,
+                context,
+                commandMode,
+                heuristicDecision,
+                spmtBridgeAuthConfigured: this.hasSpmtBridgeAuth(),
+                commands
+              })
+            }
+          ]
+        }),
+        signal: controller.signal
+      });
+      clearTimeout(timeout);
+      if (!result.ok) return heuristicDecision;
+      const data = await result.json() as JsonRecord;
+      const content = String(asRecord(Array.isArray(data.choices) ? asRecord(data.choices[0]).message : {}).content ?? "");
+      const ai = parseMaybeJson(content) as JsonRecord;
+      const commandId = readText(ai, "commandId");
+      const command = commands.find((entry) => String(entry.commandId) === commandId);
+      const confidence = Number(ai.confidence ?? 0);
+      if (!command || confidence < threshold) {
+        if (!commandMode) {
+          return voiceDecision({
+            mode: "conversation",
+            commandId: "cmd_streamweaver_voice_commander",
+            appId: "streamweaver",
+            transcript,
+            confidence: Math.max(0.5, confidence),
+            reason: "AI router did not find a command above threshold, so MountainView treated this as just chatting.",
+            payload: {
+              destination: normalizeVoiceDestination(readText(context, "destination")) || "ai",
+              voiceMode: normalizeVoiceMode(readText(context, "voiceMode")) || "reply",
+              tenantId: readText(context, "tenantId") || DEFAULT_STREAMWEAVER_TENANT_ID,
+              username: readText(context, "username") || DEFAULT_STREAMWEAVER_USERNAME,
+              aiRouter: { threshold, rejectedCommandId: commandId || "", rejectedConfidence: confidence }
+            }
+          });
+        }
+        return heuristicDecision;
+      }
+      const payload: JsonRecord = {
+        ...asRecord(ai.payload),
+        aiRouter: {
+          threshold,
+          heuristicCommandId: heuristicDecision.commandId,
+          heuristicConfidence: heuristicDecision.confidence
+        }
+      };
+      const missingFields = Array.isArray(ai.missingFields) ? ai.missingFields.map(String).filter(Boolean) : [];
+      if (missingFields.length) {
+        payload.needsClarification = true;
+        payload.missing = missingFields[0];
+        payload.missingRequirement = missingFields[0];
+        payload.clarificationPrompt = clarificationPromptFor(commandId, String(command.appId), missingFields[0], payload);
+      }
+      return voiceDecision({
+        mode: normalizeDecisionMode(readText(ai, "mode")) || normalizeDecisionMode(String(heuristicDecision.mode ?? "action")) || "action",
+        commandId,
+        appId: String(command.appId),
+        transcript: readText(ai, "transcript") || transcript,
+        confidence,
+        reason: readText(ai, "reason") || "AI router selected this command from the MountainView tool catalog.",
+        payload
+      });
+    } catch {
+      clearTimeout(timeout);
+      return heuristicDecision;
+    }
+  }
+
+  private logCommand(userId: string, commandId: string, appId: string, method: string, url: string, status: string, responseStatus: number, durationMs: number, responseBody: string, error: string): void {
+    this.db.prepare(`
+      INSERT INTO command_logs (id, user_id, command_id, app_id, method, url, status, response_status, duration_ms, response_body, error, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(`log_${Date.now()}_${Math.random().toString(16).slice(2)}`, userId, commandId, appId, method, url, status, responseStatus, durationMs, responseBody, error, new Date().toISOString());
+  }
+
+  private decideVoiceRoute(userId: string, transcript: string, context: JsonRecord): JsonRecord {
+    const lower = transcript.toLowerCase();
+    const requestedDestination = normalizeVoiceDestination(readText(context, "destination"));
+    const requestedMode = normalizeVoiceMode(readText(context, "voiceMode"));
+    const username = readText(context, "username") || readText(context, "tenantId");
+    const tenantId = readText(context, "tenantId") || username;
+    const visualContext = readText(context, "visualContext");
+    const visualProfileContext = asRecord(context.visualProfile);
+    const visualProfilePayload = {
+      ...asRecord(visualProfileContext.default_payload),
+      ...asRecord(visualProfileContext.defaultPayload)
+    };
+    const activeSession = this.getActiveVoiceSession(userId);
+
+    if (activeSession && (String(activeSession.mode) === "pending-command-context" || String(activeSession.mode) === "pending-hearmeout-media-request")) {
+      const pending = asRecord(activeSession.metadata);
+      if (/\b(cancel|never mind|nevermind|stop|forget it)\b/.test(lower)) {
+        return voiceDecision({
+          mode: "action",
+          commandId: "cmd_streamweaver_voice_commander",
+          appId: "streamweaver",
+          transcript: "Cancelled the pending command.",
+          confidence: 0.96,
+          reason: "User cancelled the pending MountainView command clarification.",
+          payload: { destination: requestedDestination || "ai", voiceMode: requestedMode || "reply", tenantId, username, endPendingSession: true }
+        });
+      }
+      const pendingCommandId = readText(pending, "commandId") || "cmd_streamweaver_voice_commander";
+      const missingField = readText(pending, "missing") || "message";
+      const pendingPayload = asRecord(pending.payload);
+      const filledValue = cleanPendingContextValue(pendingCommandId, missingField, transcript);
+      return voiceDecision({
+        mode: "action",
+        commandId: pendingCommandId,
+        appId: readText(pending, "appId") || "streamweaver",
+        transcript,
+        confidence: 0.94,
+        reason: "User answered MountainView's previous clarification, so the reply fills the missing command context.",
+        payload: {
+          ...pendingPayload,
+          [missingField]: filledValue,
+          tenantId,
+          username,
+          pendingSessionId: activeSession.id,
+          mediaType: readText(pending, "mediaType") || readText(pendingPayload, "mediaType")
+        }
+      });
+    }
+
+    const chatSession = extractTwitchChatSessionIntent(transcript);
+
+    if (activeSession && /\b(stop|end|cancel|leave|quit)\b/.test(lower) && /\b(chat|dictation|reply|reading|stream)\b/.test(lower)) {
+      return voiceDecision({
+        mode: "action",
+        commandId: "cmd_streamweaver_twitch_chat_session",
+        appId: "streamweaver",
+        transcript,
+        confidence: 0.96,
+        reason: "User asked to stop the active Twitch chat dictation/listening session.",
+        payload: { action: "stop", destination: "twitch", voiceMode: "dictation", channel: activeSession.targetChannel, targetName: activeSession.targetName, tenantId, username, readAloud: true, dictation: false, activeSession }
+      });
+    }
+
+    if (chatSession) {
+      const channel = resolveSpokenTwitchAlias(chatSession.targetName || chatSession.channel || readText(context, "channel") || extractTwitchChannel(visualContext) || username, this.env);
+      return voiceDecision({
+        mode: "action",
+        commandId: "cmd_streamweaver_twitch_chat_session",
+        appId: "streamweaver",
+        transcript,
+        confidence: 0.92,
+        reason: "User asked Athena to read or monitor a Twitch chat and keep replies as dictation until stopped.",
+        payload: { action: "start", destination: "twitch", voiceMode: "dictation", channel, targetName: chatSession.targetName, tenantId, username, readAloud: chatSession.readAloud, dictation: true }
+      });
+    }
+
+    if (activeSession && String(activeSession.mode) === "twitch-chat-dictation") {
+      return voiceDecision({
+        mode: "action",
+        commandId: "cmd_streamweaver_twitch_chat_send",
+        appId: "streamweaver",
+        transcript,
+        confidence: 0.93,
+        reason: "Active Twitch chat dictation session is running, so MountainView sent the utterance directly to the locked StreamWeaver Twitch chat tool.",
+        payload: { destination: "twitch", voiceMode: "dictation", dispatch: true, channel: activeSession.targetChannel, targetName: activeSession.targetName, tenantId, username, as: "broadcaster", bridgeToDiscord: true, activeSession }
+      });
+    }
+
+    const bodylessMessage = extractBodylessMessageIntent(transcript);
+    if (bodylessMessage) {
+      const commandId = bodylessMessage.destination === "discord"
+        ? "cmd_discord_message"
+        : bodylessMessage.destination === "hearmeout"
+          ? "cmd_hearmeout_discord_message"
+          : "cmd_streamweaver_twitch_chat_send";
+      return voiceDecision({
+        mode: "action",
+        commandId,
+        appId: commandId === "cmd_discord_message" ? "discordstreamhub" : commandId === "cmd_hearmeout_discord_message" ? "hearmeout" : "streamweaver",
+        transcript,
+        confidence: 0.9,
+        reason: "User asked to send a message but did not dictate the body yet, so MountainView opened a clarification turn instead of posting the command itself.",
+        payload: {
+          destination: bodylessMessage.destination,
+          tenantId,
+          username,
+          needsClarification: true,
+          missing: "message",
+          clarificationPrompt: bodylessMessage.destination === "discord"
+            ? "What should I send to Discord, Commander?"
+            : bodylessMessage.destination === "hearmeout"
+              ? "What should I send to HearMeOut, Commander?"
+              : "What should I send to Twitch chat, Commander?"
+        }
+      });
+    }
+
+    const discordCommand = extractDiscordCommandIntent(transcript);
+    if (discordCommand) {
+      return voiceDecision({
+        mode: "action",
+        commandId: discordCommand.commandId,
+        appId: "discordstreamhub",
+        transcript,
+        confidence: 0.93,
+        reason: discordCommand.reason,
+        payload: { destination: "discord", dispatch: true, tenantId, username, twitchUsername: username, channel: readText(context, "channel") || username, channelId: readText(context, "channelId"), serverId: readText(context, "serverId") }
+      });
+    }
+
+    const directMessage = extractDirectMessageIntent(transcript);
+    if (directMessage) {
+      const target = resolveMessageTarget({
+        spokenTarget: directMessage.targetName,
+        context,
+        visualContext,
+        visualProfilePayload,
+        username,
+        env: this.env
+      });
+      const channel = directMessage.channel || target.channel;
+      const destination = directMessage.destination || requestedDestination || "twitch";
+      const commandId = readText(visualProfileContext, "commandId") || readText(visualProfileContext, "command_id") || (destination === "discord"
+        ? "cmd_discord_message"
+        : destination === "hearmeout" || destination === "private"
+          ? "cmd_hearmeout_discord_message"
+          : "cmd_streamweaver_twitch_chat_send");
+      const appId = commandId === "cmd_discord_message"
+        ? "discordstreamhub"
+        : commandId === "cmd_hearmeout_discord_message"
+          ? "hearmeout"
+          : readText(visualProfileContext, "targetApp") || readText(visualProfileContext, "target_app") || "streamweaver";
+      return voiceDecision({
+        mode: "action",
+        commandId,
+        appId,
+        transcript: directMessage.message,
+        confidence: 0.94,
+        reason: `Natural language asked to send/post/type a message, so MountainView selected a concrete chat-send tool. Target resolved by ${target.reason}.`,
+        payload: { ...visualProfilePayload, destination, voiceMode: "dictation", dispatch: true, channel, channelId: readText(context, "channelId") || readText(visualProfilePayload, "channelId"), tenantId, username, targetName: target.targetName, targetResolution: target, as: "broadcaster", bridgeToDiscord: true, visualProfile: visualProfileContext }
+      });
+    }
+
+    const hearMeOutRoomIntent = extractHearMeOutRoomIntent(transcript);
+    if (hearMeOutRoomIntent) {
+      return voiceDecision({
+        mode: "action",
+        commandId: String(hearMeOutRoomIntent.commandId),
+        appId: "hearmeout",
+        transcript,
+        confidence: Number(hearMeOutRoomIntent.confidence),
+        reason: String(hearMeOutRoomIntent.reason),
+        payload: { ...asRecord(hearMeOutRoomIntent.payload), tenantId, username, platform: "mountainview-glasses" }
+      });
+    }
+
+    const mediaIntent = extractHearMeOutMediaIntent(transcript, requestedDestination);
+    if (mediaIntent) {
+      return voiceDecision({
+        mode: "action",
+        commandId: String(mediaIntent.commandId),
+        appId: "hearmeout",
+        transcript,
+        confidence: Number(mediaIntent.confidence),
+        reason: String(mediaIntent.reason),
+        payload: { ...asRecord(mediaIntent.payload), tenantId, username }
+      });
+    }
+
+
+    // Explicit PC Companion / OBS intents win before fuzzy catalog or AI routing.
+    const obsSceneMatch = transcript.match(/\b(?:switch|change|set|go)(?:\s+obs)?(?:\s+scene)?(?:\s+to)?\s+(.+)$/i);
+    const commonObsScene = /\b(brb|gameplay|starting soon|ending|intermission|just chatting)\b/i.test(lower);
+    if (obsSceneMatch && (/\bobs\b|\bscene\b/i.test(lower) || commonObsScene)) {
+      const sceneName = String(obsSceneMatch[1] || "").replace(/\bscene\b$/i, "").trim();
+      if (sceneName) return voiceDecision({ mode: "action", commandId: "cmd_companion_obs_scene", appId: "spmt", transcript, confidence: 0.99, reason: "Explicit OBS scene language maps only to the paired PC Companion.", payload: { sceneName } });
+    }
+    if (/\b(?:is|check|show|tell me).*(?:pc |desktop )?companion.*(?:online|connected|status)|\bcompanion status\b/i.test(lower)) {
+      return voiceDecision({ mode: "action", commandId: "cmd_companion_status", appId: "spmt", transcript, confidence: 0.99, reason: "Explicit Companion status request.", payload: {} });
+    }
+    if (/\b(?:show|hide).*(?:personal )?overlay.*(?:pc|companion)|(?:pc|companion).*(?:show|hide).*(?:personal )?overlay\b/i.test(lower)) {
+      const show = /\bshow\b/i.test(lower) && !/\bhide\b/i.test(lower);
+      return voiceDecision({ mode: "action", commandId: show ? "cmd_companion_overlay_show" : "cmd_companion_overlay_hide", appId: "spmt", transcript, confidence: 0.99, reason: "Explicit PC Companion overlay control.", payload: {} });
+    }
+    if (/\b(?:mute|unmute).*(?:pc|desktop|companion)|(?:pc|desktop|companion).*(?:mute|unmute)\b/i.test(lower)) {
+      return voiceDecision({ mode: "action", commandId: "cmd_companion_audio_mute", appId: "spmt", transcript, confidence: 0.99, reason: "Explicit Companion audio mute control.", payload: { muted: !/\bunmute\b/i.test(lower) } });
+    }
+    const companionVolumeMatch = lower.match(/\b(?:pc|desktop|companion)(?:\s+audio)?\s+volume(?:\s+to)?\s+(\d{1,3})\s*%?/i) || lower.match(/\bvolume(?:\s+on)?\s+(?:the\s+)?(?:pc|desktop|companion)(?:\s+to)?\s+(\d{1,3})\s*%?/i);
+    if (companionVolumeMatch) {
+      const percent = Math.max(0, Math.min(100, Number(companionVolumeMatch[1])));
+      return voiceDecision({ mode: "action", commandId: "cmd_companion_audio_volume", appId: "spmt", transcript, confidence: 0.99, reason: "Explicit Companion volume control.", payload: { volume: percent / 100 } });
+    }
+
+    // Generic live status means the whole connected Discord/community roster unless Chat Tag is named.
+    if (!/\b(?:chat[-\s]?tag|chattag|spmt)\b/i.test(lower) && /\b(?:who(?: is|'s)? live|who is streaming|who(?: is|'s)? streaming|which (?:people|members|streamers) are live)\b/i.test(lower)) {
+      return voiceDecision({ mode: "action", commandId: "cmd_discord_live_members", appId: "chat-tag", transcript, confidence: 0.99, reason: "Generic live-status questions mean everyone in the connected Discord/community roster.", payload: {} });
+    }
+
+    // Chat Tag-specific live/active language is the SPMT live game command semantics.
+    if (/\bspmt\s+live\b/i.test(lower) || (/\b(?:chat[-\s]?tag|chattag)\b/i.test(lower) && /\b(?:live|active|streaming)\b/i.test(lower))) {
+      return voiceDecision({ mode: "action", commandId: "cmd_chat_tag_spmt_live", appId: "chat-tag", transcript, confidence: 0.99, reason: "Chat Tag live/active language maps to SPMT live players only.", payload: {} });
+    }
+    if (
+      /\b(be right back|brb|back from break|stop brb|shout\s*out|shoutout)\b/.test(lower) ||
+      (/\b(generate|make|create)\b/.test(lower) && /\b(image|picture|photo|avatar)\b/.test(lower))
+    ) {
+      return voiceDecision({
+        mode: "action",
+        commandId: "cmd_streamweaver_voice_commander",
+        appId: "streamweaver",
+        transcript,
+        confidence: 0.91,
+        reason: "StreamWeaver voice commander already owns built-in stream actions like shoutout, BRB, and !img image flows.",
+        payload: { destination: requestedDestination || "ai", voiceMode: requestedMode || "reply", tenantId, username }
+      });
+    }
+
+    if (/\b(calendar|meeting|appointment|event|reminder|schedule|date)\b/.test(lower)) {
+      return voiceDecision({
+        mode: "action",
+        commandId: "cmd_dsh_calendar_add_mission",
+        appId: "discordstreamhub",
+        transcript,
+        confidence: 0.9,
+        reason: "Calendar/date language maps to the DiscordStreamHub mission calendar command.",
+        payload: { destination: "discord", tenantId, username }
+      });
+    }
+
+    if (/\b(chat[-\s]?tag|battle\s?arena|quackverse|booster\s+pack|pack|currently\s+it|who'?s\s+it|what'?s\s+my\s+rank|rank|who is live|who'?s live|partners?\s+live|crew\s+group|join chat tag|tag\s+(?:player|game))\b/.test(lower)) {
+      const tagAction = /\b(quackverse|booster\s+pack|pull .*pack|open .*pack|pack)\b/.test(lower) ? "cmd_chat_tag_quackverse_pack"
+        : /\b(currently\s+it|who'?s\s+it|who is it)\b/.test(lower) ? "cmd_chat_tag_current_it"
+          : /\b(rank|leaderboard|score)\b/.test(lower) ? "cmd_chat_tag_rank"
+            : /\bjoin\b/.test(lower) ? "cmd_chat_tag_join"
+              : /\btag\b/.test(lower) && !/\bchat[-\s]?tag\b/.test(lower) ? "cmd_chat_tag_tag"
+                : /\b(?:live|active|streaming)\b/.test(lower) ? "cmd_chat_tag_spmt_live" : "cmd_chat_tag_state";
+      return voiceDecision({
+        mode: "action",
+        commandId: tagAction,
+        appId: "chat-tag",
+        transcript,
+        confidence: 0.89,
+        reason: "Chat-Tag, Battle Arena, rank, live crew, and Quackverse language maps to the game command bridge.",
+        payload: { destination: requestedDestination || "ai", tenantId, username, twitchUsername: username, userId: readText(context, "userId"), targetName: extractChatTagTarget(transcript), query: transcript }
+      });
+    }
+
+    if (/\b(song|audiobook|audio book|music|track|queue|request|play)\b/.test(lower) && /\b(hearmeout|hear me out|song|audiobook|audio book|music|track)\b/.test(lower)) {
+      const commandId = /\b(audiobook|audio book)\b/.test(lower) ? "cmd_hearmeout_audiobook_request" : "cmd_hearmeout_song_request";
+      return voiceDecision({
+        mode: "action",
+        commandId,
+        appId: "hearmeout",
+        transcript,
+        confidence: 0.88,
+        reason: "Media queue language maps to HearMeOut request routes.",
+        payload: { query: transcript, tenantId, username }
+      });
+    }
+
+    if (/\b(remember|save this|save note|make a note|store this)\b/.test(lower) && /\b(athena|memory|context|spmt|space mountain|this)\b/.test(lower)) {
+      if (!this.hasSpmtBridgeAuth()) {
+        return voiceDecision({
+          mode: "action",
+          commandId: "cmd_streamweaver_voice_commander",
+          appId: "streamweaver",
+          transcript,
+          confidence: 0.87,
+          reason: "SPMT/Athena OS bridge auth is not configured, so MountainView routed memory-style speech to the working StreamWeaver voice commander instead of a 401-only SPMT endpoint.",
+          payload: { destination: requestedDestination || "private", voiceMode: requestedMode || "reply", tenantId, username, visualContext }
+        });
+      }
+      return voiceDecision({
+        mode: "action",
+        commandId: "cmd_spmt_athena_memory",
+        appId: "spmt",
+        transcript,
+        confidence: 0.9,
+        reason: "Memory language maps to Athena OS shared memory owned by SPMT.",
+        payload: { message: transcript, transcript, visualContext, tenantId, username, destination: requestedDestination || "private", voiceMode: requestedMode || "reply" }
+      });
+    }
+
+    if (/\b(search|find|look up|what do you remember|recall|history|messages|context)\b/.test(lower) && /\b(athena|spmt|space mountain|memory|commlink|apps?|messages?|context)\b/.test(lower)) {
+      if (!this.hasSpmtBridgeAuth()) {
+        return voiceDecision({
+          mode: "action",
+          commandId: "cmd_streamweaver_voice_commander",
+          appId: "streamweaver",
+          transcript,
+          confidence: 0.84,
+          reason: "SPMT/Athena OS search auth is not configured, so MountainView routed recall/search speech to StreamWeaver's working AI path.",
+          payload: { destination: requestedDestination || "ai", voiceMode: requestedMode || "reply", tenantId, username, visualContext }
+        });
+      }
+      return voiceDecision({
+        mode: "action",
+        commandId: "cmd_spmt_athena_search",
+        appId: "spmt",
+        transcript,
+        confidence: 0.88,
+        reason: "Search and recall language maps to SPMT search so Athena can look across ecosystem context.",
+        payload: { query: transcript, message: transcript, transcript, visualContext, tenantId, username, destination: requestedDestination || "ai", voiceMode: requestedMode || "reply" }
+      });
+    }
+
+    if (/\b(athena os|spmt|space mountain|command bridge|launchpad|shipyard|apps?|control everything|all apps|open app|launch app|dashboard)\b/.test(lower)) {
+      if (!this.hasSpmtBridgeAuth()) {
+        return voiceDecision({
+          mode: "action",
+          commandId: "cmd_streamweaver_voice_commander",
+          appId: "streamweaver",
+          transcript,
+          confidence: 0.82,
+          reason: "SPMT/Athena OS command bridge auth is not configured, so MountainView used StreamWeaver's voice commander as the current Athena runtime.",
+          payload: { destination: requestedDestination || "ai", voiceMode: requestedMode || "reply", tenantId, username, visualContext }
+        });
+      }
+      return voiceDecision({
+        mode: "action",
+        commandId: "cmd_spmt_athena_command",
+        appId: "spmt",
+        transcript,
+        confidence: 0.87,
+        reason: "Cross-app control belongs to SPMT/Athena OS, which owns identity, app registry, search, and command routing.",
+        payload: { message: transcript, transcript, intent: "cross-app-control", route: "athena-os", visualContext, tenantId, username, destination: requestedDestination || "ai", voiceMode: requestedMode || "reply" }
+      });
+    }
+
+    const catalog = this.bestCatalogMatch(userId, transcript, context);
+    if (catalog && Number(catalog.confidence) >= 0.62) {
+      const commandId = String(catalog.commandId);
+      const appId = String(catalog.appId);
+      const profile = getCommandRoutingProfile(commandId, appId);
+      return voiceDecision({
+        mode: "action",
+        commandId,
+        appId,
+        transcript,
+        confidence: Number(catalog.confidence),
+        reason: `Matched command catalog phrase/name: ${catalog.reason}`,
+        payload: { tenantId, username, destination: defaultCommandDestination(commandId, appId) || requestedDestination || "ai", voiceMode: requestedMode || "reply", routingProfile: profile }
+      });
+    }
+
+    return voiceDecision({
+      mode: "conversation",
+      commandId: "cmd_streamweaver_voice_commander",
+      appId: "streamweaver",
+      transcript,
+      confidence: 0.62,
+      reason: "No high-confidence app action matched, so MountainView kept the utterance in Athena's conversational runtime.",
+      payload: { message: transcript, transcript, intent: "conversation", route: "athena-chat", visualContext, destination: requestedDestination || "ai", voiceMode: requestedMode || "reply", tenantId, username }
+    });
+  }
+
+  private getActiveVoiceSession(userId: string): JsonRecord | null {
+    const row = this.db.prepare(`
+      SELECT * FROM voice_sessions
+      WHERE user_id = ? AND status = 'active'
+      ORDER BY updated_at DESC
+      LIMIT 1
+    `).get(userId) as JsonRecord | undefined;
+    if (!row) return null;
+    return {
+      id: row.id,
+      mode: row.mode,
+      targetApp: row.target_app,
+      targetChannel: row.target_channel,
+      targetName: row.target_name,
+      status: row.status,
+      startedAt: row.started_at,
+      updatedAt: row.updated_at,
+      metadata: parseJsonObject(String(row.metadata_json ?? "{}"))
+    };
+  }
+
+  private recordLocalVoiceSessionWorkflow(userId: string, decision: JsonRecord, payload: JsonRecord): JsonRecord {
+    const action = readText(payload, "action") || "start";
+    const channel = readText(payload, "channel") || DEFAULT_STREAMWEAVER_USERNAME;
+    const targetName = readText(payload, "targetName") || channel;
+    return {
+      ok: true,
+      localOnly: true,
+      queued: true,
+      status: 202,
+      response: {
+        reply: action === "stop"
+          ? `Stopped Twitch chat dictation for ${channel}.`
+          : `Started local Twitch chat dictation mode for ${channel}. StreamWeaver chat read-aloud is not enabled until the dedicated listener endpoint is added.`,
+        action,
+        channel,
+        targetName,
+        nextEndpoint: "streamweaver:/api/mountainview/twitch-chat/session",
+        decision
+      },
+      command: {
+        commandId: String(decision.commandId ?? "cmd_streamweaver_twitch_chat_session"),
+        appId: "streamweaver",
+        status: "queued-local",
+        payload,
+        userId
+      }
+    };
+  }
+
+  private findMissingCommandContext(decision: JsonRecord, payload: JsonRecord): JsonRecord | null {
+    if (asRecord(payload).needsClarification === true || readText(payload, "pendingSessionId")) return null;
+    const commandId = String(decision.commandId ?? "");
+    const appId = String(decision.appId ?? "");
+    if (!commandId) return null;
+    const effectivePayload = withCommandDefaults(commandId, payload);
+    const missingRequirement = findMissingRequirement(commandId, appId, effectivePayload);
+    if (!missingRequirement) return null;
+    const missing = preferredMissingField(commandId, missingRequirement);
+    return {
+      needsClarification: true,
+      missing,
+      missingRequirement,
+      clarificationPrompt: clarificationPromptFor(commandId, appId, missing, effectivePayload),
+      pendingPayload: scrubPendingPayload(effectivePayload)
+    };
+  }
+
+  private recordVoiceClarificationWorkflow(userId: string, decision: JsonRecord, payload: JsonRecord): JsonRecord {
+    const reply = readText(payload, "clarificationPrompt") || "What would you like me to use for that command?";
+    return {
+      ok: true,
+      localOnly: true,
+      needsClarification: true,
+      status: 202,
+      response: {
+        reply,
+        commandId: String(decision.commandId ?? ""),
+        appId: String(decision.appId ?? ""),
+        missing: readText(payload, "missing") || "query",
+        decision
+      },
+      command: {
+        commandId: String(decision.commandId ?? ""),
+        appId: String(decision.appId ?? ""),
+        status: "waiting-for-context",
+        payload,
+        userId
+      }
+    };
+  }
+
+  private applyVoiceSessionDecision(userId: string, decision: JsonRecord, payload: JsonRecord, result: JsonRecord): void {
+    const commandId = String(decision.commandId ?? "");
+    const action = readText(payload, "action") || readText(asRecord(payload.payload), "action");
+    if (readText(payload, "pendingSessionId")) {
+      const now = new Date().toISOString();
+      this.db.prepare("UPDATE voice_sessions SET status = 'ended', ended_at = ?, updated_at = ? WHERE id = ? AND user_id = ?")
+        .run(now, now, readText(payload, "pendingSessionId"), userId);
+    }
+    if (asRecord(payload).needsClarification === true) {
+      const now = new Date().toISOString();
+      const id = `voice_session_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+      this.db.prepare("UPDATE voice_sessions SET status = 'ended', ended_at = ?, updated_at = ? WHERE user_id = ? AND status = 'active'")
+        .run(now, now, userId);
+      this.db.prepare(`
+        INSERT INTO voice_sessions (id, user_id, mode, target_app, target_channel, target_name, status, metadata_json, started_at, updated_at, ended_at)
+        VALUES (?, ?, 'pending-command-context', ?, ?, ?, 'active', ?, ?, ?, '')
+      `).run(id, userId, String(decision.appId ?? "mountainview"), readText(payload, "channel") || String(decision.appId ?? "mountainview"), readText(payload, "missing") || "query", JSON.stringify({
+        commandId,
+        appId: String(decision.appId ?? ""),
+        mediaType: readText(payload, "mediaType"),
+        missing: readText(payload, "missing") || "query",
+        originalTranscript: readText(payload, "transcript"),
+        payload: asRecord(payload.pendingPayload),
+        result: summarizeCommandResult(result)
+      }), now, now);
+      this.recordGlassesMediaEvent(userId, {
+        kind: "voice-session-start",
+        source: "mountainview-router",
+        targetApp: String(decision.appId ?? "mountainview"),
+        status: "waiting-for-context",
+        metadata: { sessionId: id, commandId, missing: readText(payload, "missing") || "query", payload, result: summarizeCommandResult(result) }
+      });
+      return;
+    }
+    if (asRecord(payload).endPendingSession === true) {
+      const now = new Date().toISOString();
+      this.db.prepare("UPDATE voice_sessions SET status = 'ended', ended_at = ?, updated_at = ? WHERE user_id = ? AND status = 'active'")
+        .run(now, now, userId);
+    }
+    if (commandId === "cmd_streamweaver_twitch_chat_session" && action === "start") {
+      const now = new Date().toISOString();
+      const channel = readText(payload, "channel") || DEFAULT_STREAMWEAVER_USERNAME;
+      const targetName = readText(payload, "targetName") || channel;
+      const id = `voice_session_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+      this.db.prepare("UPDATE voice_sessions SET status = 'ended', ended_at = ?, updated_at = ? WHERE user_id = ? AND status = 'active'")
+        .run(now, now, userId);
+      this.db.prepare(`
+        INSERT INTO voice_sessions (id, user_id, mode, target_app, target_channel, target_name, status, metadata_json, started_at, updated_at, ended_at)
+        VALUES (?, ?, 'twitch-chat-dictation', 'streamweaver', ?, ?, 'active', ?, ?, ?, '')
+      `).run(id, userId, channel, targetName, JSON.stringify({ payload, result: summarizeCommandResult(result) }), now, now);
+      this.recordGlassesMediaEvent(userId, {
+        kind: "voice-session-start",
+        source: "mountainview-router",
+        targetApp: "streamweaver",
+        status: "active",
+        metadata: { sessionId: id, channel, targetName, payload, result: summarizeCommandResult(result) }
+      });
+      return;
+    }
+    if (commandId === "cmd_streamweaver_twitch_chat_session" && action === "stop") {
+      const now = new Date().toISOString();
+      this.db.prepare("UPDATE voice_sessions SET status = 'ended', ended_at = ?, updated_at = ? WHERE user_id = ? AND status = 'active'")
+        .run(now, now, userId);
+      this.recordGlassesMediaEvent(userId, {
+        kind: "voice-session-stop",
+        source: "mountainview-router",
+        targetApp: "streamweaver",
+        status: "ended",
+        metadata: { payload, result: summarizeCommandResult(result) }
+      });
+      return;
+    }
+    if ((commandId === "cmd_streamweaver_voice_commander" || commandId === "cmd_streamweaver_twitch_chat_send") && asRecord(payload).activeSession) {
+      this.recordGlassesMediaEvent(userId, {
+        kind: "voice-session-dictation",
+        source: "mountainview-router",
+        targetApp: "streamweaver",
+        status: "dictated",
+        metadata: { transcript: readText(payload, "transcript"), channel: readText(payload, "channel"), result: summarizeCommandResult(result) }
+      });
+    }
+  }
+
+  private bestCatalogMatch(userId: string, transcript: string, context: JsonRecord): JsonRecord | undefined {
+    const lower = transcript.toLowerCase();
+    const terms = tokenizeCommandText(lower);
+    if (terms.length === 0) return undefined;
+    let best: JsonRecord | undefined;
+    for (const command of this.listCommands(userId)) {
+      if (Number(command.enabled ?? 1) !== 1) continue;
+      const commandId = String(command.id ?? "");
+      if (commandId === "cmd_streamweaver_voice_commander") continue;
+      const phrase = String(command.phrase ?? "");
+      const haystack = `${command.name ?? ""} ${phrase} ${command.app_id ?? ""} ${command.url_template ?? ""}`.toLowerCase();
+      const commandTerms = tokenizeCommandText(haystack);
+      if (commandTerms.length === 0) continue;
+      const overlap = terms.filter((term) => commandTerms.includes(term)).length;
+      let score = overlap / Math.max(terms.length, 4);
+      if (phrase && lower.includes(phrase.toLowerCase())) score += 0.35;
+      score += scoreCommandContextFit(command, context);
+      if (String(command.app_id) === "streamweaver" && /\b(stream|twitch|voice|image|overlay|tts|shout|brb)\b/.test(lower)) score += 0.08;
+      if (String(command.app_id) === "hearmeout" && /\b(hear|song|audio|room|watch|movie)\b/.test(lower)) score += 0.08;
+      if (String(command.app_id) === "chat-tag" && /\b(tag|game|card|join)\b/.test(lower)) score += 0.08;
+      if (!best || score > Number(best.confidence)) {
+        best = { commandId: command.id, appId: command.app_id, confidence: Math.min(0.86, score), reason: `${command.name ?? command.id}` };
+      }
+    }
+    return best;
+  }
+
+  private encrypt(value: string): string {
+    const iv = randomBytes(12);
+    const cipher = createCipheriv("aes-256-gcm", this.tokenKey, iv);
+    const encrypted = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]);
+    const tag = cipher.getAuthTag();
+    return Buffer.concat([iv, tag, encrypted]).toString("base64url");
+  }
+
+  private decrypt(value: string): string {
+    const payload = Buffer.from(value, "base64url");
+    const iv = payload.subarray(0, 12);
+    const tag = payload.subarray(12, 28);
+    const encrypted = payload.subarray(28);
+    const decipher = createDecipheriv("aes-256-gcm", this.tokenKey, iv);
+    decipher.setAuthTag(tag);
+    return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString("utf8");
+  }
+}
+
+async function loadRuntimeConfig(file: string): Promise<MountainViewConfig> {
+  try {
+    const stored = JSON.parse(await readFile(file, "utf8")) as Partial<MountainViewConfig>;
+    const config = normalizeRuntimeConfig(stored);
+    await writeFile(file, JSON.stringify(config, null, 2));
+    return config;
+  } catch {
+    await mkdir(dirname(file), { recursive: true });
+    await writeFile(file, JSON.stringify(defaultConfig, null, 2));
+    return defaultConfig;
+  }
+}
+
+function normalizeRuntimeConfig(stored: Partial<MountainViewConfig>): MountainViewConfig {
+  const storedServices = Array.isArray(stored.services) ? stored.services : [];
+  const services = defaultConfig.services.map((service) => ({
+    ...service,
+    ...(storedServices.find((candidate) => candidate?.id === service.id) ?? {})
+  }));
+  for (const service of storedServices) {
+    if (service?.id && !services.some((candidate) => candidate.id === service.id)) services.push(service);
+  }
+
+  const extraNotes = Array.isArray(stored.metaWearables?.notes)
+    ? stored.metaWearables.notes.filter((note) =>
+      typeof note === "string" &&
+      !note.includes("does not run face recognition") &&
+      !note.includes("Image analysis is delegated to StreamWeaver or configured Spacemountain services")
+    )
+    : [];
+  const notes = [...defaultConfig.metaWearables.notes];
+  for (const note of extraNotes) {
+    if (!notes.includes(note)) notes.push(note);
+  }
+
+  return {
+    services,
+    metaWearables: {
+      ...defaultConfig.metaWearables,
+      ...(stored.metaWearables ?? {}),
+      notes
+    }
+  };
+}
+
+async function readJson(request: IncomingMessage, limit = 1024 * 1024): Promise<JsonRecord> {
+  const body = await readBody(request, limit);
+  return body ? asRecord(JSON.parse(body)) : {};
+}
+
+function readBody(request: IncomingMessage, limit: number): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    request.on("data", (chunk) => {
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      size += buffer.length;
+      if (size > limit) {
+        reject(new HttpError(413, "Request body is too large."));
+        request.destroy();
+        return;
+      }
+      chunks.push(buffer);
+    });
+    request.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+    request.on("error", reject);
+  });
+}
+
+function asRecord(value: unknown): JsonRecord {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : {};
+}
+
+function withCommandDefaults(commandId: string, payload: JsonRecord): JsonRecord {
+  const nestedPayload = asRecord(payload.payload);
+  const message = readText(payload, "message") || readText(payload, "transcript") || readText(nestedPayload, "message") || readText(nestedPayload, "transcript");
+  const explicitUsername = readText(payload, "username") || readText(nestedPayload, "username");
+  const tenantId = readText(payload, "tenantId") || readText(nestedPayload, "tenantId") || explicitUsername;
+  const username = explicitUsername || tenantId;
+  const twitchUsername = readText(payload, "twitchUsername") || readText(nestedPayload, "twitchUsername") || username;
+  const channel = readText(payload, "channel") || readText(nestedPayload, "channel") || username;
+  const base = {
+    ...payload,
+    message,
+    transcript: readText(payload, "transcript") || message,
+    tenantId,
+    username,
+    twitchUsername,
+    channel,
+    payload: {
+      ...nestedPayload,
+      message,
+      tenantId,
+      username,
+      twitchUsername,
+      channel
+    }
+  };
+
+  if (commandId === "cmd_streamweaver_voice_commander") {
+    return base;
+  }
+
+  if (commandId === "cmd_streamweaver_twitch_chat_send") {
+    const target = readText(base, "channel") || readText(base, "targetChannel") || readText(base, "targetName") || username;
+    const channel = resolveSpokenTwitchAlias(target, process.env);
+    return {
+      ...base,
+      message,
+      as: readText(base, "as") || "broadcaster",
+      channel,
+      targetChannel: channel,
+      bridgeToDiscord: payload.bridgeToDiscord ?? nestedPayload.bridgeToDiscord ?? true,
+      destination: "twitch",
+      voiceMode: readText(base, "voiceMode") || "dictation"
+    };
+  }
+
+  if (commandId === "cmd_streamweaver_twitch_chat_session") {
+    const channel = resolveSpokenTwitchAlias(readText(base, "channel") || readText(base, "targetName") || message, process.env);
+    return {
+      ...base,
+      action: readText(base, "action") || "start",
+      destination: "twitch",
+      voiceMode: "dictation",
+      channel,
+      targetName: readText(base, "targetName") || channel,
+      readAloud: payload.readAloud ?? true,
+      dictation: payload.dictation ?? true
+    };
+  }
+
+  if (commandId.startsWith("cmd_spmt_")) {
+    const spmtMessage = message || readText(payload, "query") || "MountainView glasses command";
+    return {
+      ...base,
+      source: "mountainview-ai",
+      message: spmtMessage,
+      transcript: readText(base, "transcript") || spmtMessage,
+      query: readText(base, "query") || spmtMessage,
+      intent: readText(base, "intent") || "cross-app-control",
+      route: readText(base, "route") || "athena-os",
+      destination: readText(base, "destination") || "ai",
+      voiceMode: readText(base, "voiceMode") || "reply",
+      visualContext: readText(base, "visualContext") || "No visual target locked.",
+      payload: {
+        ...nestedPayload,
+        message: spmtMessage,
+        transcript: readText(base, "transcript") || spmtMessage,
+        tenantId,
+        username
+      }
+    };
+  }
+
+  if (commandId.startsWith("cmd_vision_")) {
+    const feature = commandId.includes("face") ? ["face_detection"]
+      : commandId.includes("logo") ? ["logo_detection"]
+        : commandId.includes("object") ? ["object_detection"]
+          : commandId.includes("screen") ? ["ocr"]
+            : ["ocr", "logo_detection", "object_detection", "face_detection"];
+    return {
+      ...base,
+      features: Array.isArray(payload.features) ? payload.features : feature,
+      providers: readText(base, "providers") || "google,amazon",
+      question: readText(base, "question") || "What is visible in this image?",
+      imageBase64: readText(base, "imageBase64"),
+      imageUrl: readText(base, "imageUrl"),
+      labels: payload.labels ?? [],
+      vision: payload.vision ?? {},
+      savePerson: payload.savePerson ?? false,
+      displayName: readText(base, "displayName") || extractProfileName(message)
+    };
+  }
+
+  if (commandId.startsWith("cmd_profile_")) {
+    const profileName = readText(base, "displayName") || extractProfileName(message) || "Unknown person";
+    return {
+      ...base,
+      displayName: profileName,
+      meetingWhen: readText(base, "meetingWhen") || extractMeetingWhen(message),
+      reminders: payload.reminders ?? [],
+      topics: normalizeTags(payload.topics).length ? normalizeTags(payload.topics) : extractTopics(message),
+      preferences: payload.preferences ?? [],
+      boundaries: payload.boundaries ?? []
+    };
+  }
+
+  if (commandId === "cmd_streamweaver_image" || commandId === "cmd_streamweaver_image_generate" || commandId === "cmd_streamweaver_image_regenerate") {
+    return {
+      ...base,
+      prompt: readText(base, "prompt") || message || "Create a stream-ready image from the current glasses context.",
+      providerOverride: readText(base, "providerOverride") || "eden",
+      resolution: readText(base, "resolution") || "1024x1024",
+      numImages: Number(payload.numImages ?? nestedPayload.numImages ?? 1),
+      providerParams: payload.providerParams ?? nestedPayload.providerParams ?? {}
+    };
+  }
+
+  if (commandId === "cmd_streamweaver_tts" || commandId === "cmd_streamweaver_tts_play") {
+    return {
+      ...base,
+      voice: readText(base, "voice"),
+      message: message || "Athena is connected to the stream."
+    };
+  }
+
+  if (commandId === "cmd_streamweaver_overlay_data") {
+    return {
+      ...base,
+      overlayType: readText(base, "overlayType") || "stream"
+    };
+  }
+
+  if (commandId === "cmd_discord_event") {
+    return {
+      ...base,
+      destination: "discord",
+      serverId: readText(base, "serverId") || DEFAULT_DISCORD_GUILD_ID,
+      eventType: readText(base, "eventType") || "chat_activity"
+    };
+  }
+
+  if (commandId === "cmd_discord_message" || commandId === "cmd_hearmeout_discord_message") {
+    return {
+      ...base,
+      destination: "discord",
+      channelId: readText(base, "channelId") || DEFAULT_DISCORD_CHANNEL_ID,
+      content: readText(base, "content") || message,
+      username: readText(base, "username") || "Athena via MountainView",
+      avatarUrl: readText(base, "avatarUrl")
+    };
+  }
+
+  if (commandId.startsWith("cmd_dsh_calendar_")) {
+    const calendar = extractCalendarFields(message);
+    return {
+      ...base,
+      serverId: readText(base, "serverId") || DEFAULT_DISCORD_GUILD_ID,
+      channelId: readText(base, "channelId") || DEFAULT_DISCORD_CHANNEL_ID,
+      discordUserId: readText(base, "discordUserId") || DEFAULT_DISCORD_OWNER_ID,
+      missionName: readText(base, "missionName") || readText(base, "title") || calendar.title,
+      missionDate: readText(base, "missionDate") || readText(base, "date") || calendar.date,
+      missionTime: readText(base, "missionTime") || readText(base, "time") || calendar.time,
+      missionDescription: readText(base, "missionDescription") || readText(base, "description") || message || calendar.title,
+      includeButtons: payload.includeButtons ?? nestedPayload.includeButtons ?? true
+    };
+  }
+
+  if (commandId.startsWith("cmd_chat_tag")) {
+    const action = commandId === "cmd_chat_tag_join" ? "join"
+      : commandId === "cmd_chat_tag_quackverse_pack" ? "pack"
+        : readText(base, "action") || (commandId === "cmd_chat_tag_qr" ? "join" : "tag");
+    const targetName = readText(base, "targetName") || readText(base, "target") || extractChatTagTarget(message);
+    return {
+      ...base,
+      action,
+      userId: readText(base, "userId"),
+      twitchUsername,
+      streamerId: readText(base, "streamerId") || twitchUsername,
+      performedBy: readText(base, "performedBy") || "mountainview-ai",
+      targetName,
+      targetUserId: readText(base, "targetUserId")
+    };
+  }
+
+  if (commandId === "cmd_hearmeout" || commandId === "cmd_hearmeout_song_request" || commandId === "cmd_hearmeout_audiobook_request") {
+    return {
+      ...base,
+      query: readText(base, "query") || message,
+      platform: readText(base, "platform") || "mountainview-glasses"
+    };
+  }
+
+  if (commandId === "cmd_hearmeout_voice_room" || commandId === "cmd_hearmeout_voice_peers") {
+    return {
+      ...base,
+      roomId: readText(base, "roomId") || DEFAULT_HEARMEOUT_ROOM_ID,
+      peerId: readText(base, "peerId") || `mountainview-${username}`
+    };
+  }
+
+  if (commandId === "cmd_hearmeout_music_control") {
+    return {
+      ...base,
+      action: readText(base, "action") || extractMusicAction(message),
+      position: Number(payload.position ?? nestedPayload.position ?? 0)
+    };
+  }
+
+  if (commandId === "cmd_hearmeout_watch_request") {
+    return {
+      ...base,
+      sessionId: readText(base, "sessionId") || DEFAULT_HEARMEOUT_ROOM_ID,
+      query: readText(base, "query") || message,
+      itemId: readText(base, "itemId"),
+      userId: readText(base, "userId")
+    };
+  }
+
+  if (commandId === "cmd_hearmeout_watch_control") {
+    return {
+      ...base,
+      sessionId: readText(base, "sessionId") || DEFAULT_HEARMEOUT_ROOM_ID,
+      action: readText(base, "action") || extractMusicAction(message),
+      position: Number(payload.position ?? nestedPayload.position ?? 0),
+      targetIndex: Number(payload.targetIndex ?? nestedPayload.targetIndex ?? 0)
+    };
+  }
+
+  if (commandId === "cmd_eden_video_generation" || commandId === "cmd_eden_image_generation") {
+    return {
+      ...base,
+      prompt: readText(base, "prompt") || message || "Generate media from the current glasses context.",
+      providers: readText(base, "providers") || "replicate"
+    };
+  }
+
+  return {
+    ...base
+  };
+}
+
+function voiceDecision(input: {
+  mode: "conversation" | "action";
+  commandId: string;
+  appId: string;
+  transcript: string;
+  confidence: number;
+  reason: string;
+  payload: JsonRecord;
+}): JsonRecord {
+  const profile = getCommandRoutingProfile(input.commandId, input.appId);
+  return {
+    mode: input.mode,
+    commandId: input.commandId,
+    appId: input.appId,
+    transcript: input.transcript,
+    confidence: input.confidence,
+    reason: input.reason,
+    routingProfile: profile,
+    payload: input.payload,
+    createdAt: new Date().toISOString()
+  };
+}
+
+function enrichCommandForVoice(command: JsonRecord): JsonRecord {
+  const profile = getCommandRoutingProfile(String(command.id ?? ""), String(command.app_id ?? ""));
+  return {
+    ...command,
+    voiceRouting: profile,
+    requiredContext: profile.requiredContext,
+    riskLevel: profile.riskLevel,
+    confirmBeforeRun: profile.confirmBeforeRun,
+    testReadiness: profile.testReadiness,
+    naturalExamples: profile.naturalExamples
+  };
+}
+
+function getCommandRoutingProfile(commandId: string, appId: string): CommandRoutingProfile {
+  if (commandId.startsWith("cmd_companion_")) {
+    if (commandId === "cmd_companion_obs_scene") return profile(["sceneName"], ["deviceId"], "low", false, "ready", ["switch OBS to BRB", "go to the gameplay scene", "change scene to Starting Soon"]);
+    if (commandId === "cmd_companion_obs_media") return profile(["mediaName", "obsInputName"], ["title", "deviceId"], "medium", true, "ready", ["play the approved intro clip in OBS"]);
+    if (commandId === "cmd_companion_audio_mute") return profile(["muted"], ["deviceId"], "low", false, "ready", ["mute the PC companion", "unmute the companion"]);
+    if (commandId === "cmd_companion_audio_volume") return profile(["volume"], ["deviceId"], "low", false, "ready", ["set PC companion volume to 50 percent"]);
+    if (commandId === "cmd_companion_popout_show" || commandId === "cmd_companion_popout_hide") return profile(["id"], ["deviceId"], "low", false, "ready", ["show companion popout one", "hide companion popout two"]);
+    if (commandId === "cmd_companion_media_transcode") return profile(["inputName", "preset"], ["deviceId"], "medium", false, "ready", ["transcode my approved clip to mp4 web"]);
+    if (commandId === "cmd_companion_workflow") return profile(["workflowId"], ["input", "deviceId"], "medium", true, "ready", ["run the companion test echo workflow"]);
+    return profile([], ["deviceId"], "low", false, "ready", ["is my PC companion online", "show my personal overlay on the PC"]);
+  }
+  if (commandId.startsWith("cmd_spmt_") || appId === "spmt") {
+    if (commandId === "cmd_spmt_apps" || commandId === "cmd_spmt_athena_search") {
+      return profile(commandId === "cmd_spmt_athena_search" ? ["query"] : [], ["source", "visualContext"], "low", false, "ready", [
+        "search Athena for my last stream notes",
+        "what apps can I control"
+      ]);
+    }
+    if (commandId === "cmd_spmt_athena_memory") {
+      return profile(["message"], ["visualContext", "tags"], "medium", false, "ready", [
+        "remember this in Athena",
+        "save a note that the glasses can control StreamWeaver"
+      ]);
+    }
+    return profile(["transcript"], ["intent", "destination", "visualContext", "payload"], "medium", false, "ready", [
+      "Athena OS open StreamWeaver",
+      "control every SpaceMountain app from my glasses",
+      "launch the Shipyard"
+    ]);
+  }
+  if (commandId === "cmd_streamweaver_voice_commander") {
+    return profile(["transcript"], ["destination", "voiceMode", "channel", "visualContext"], "low", false, "ready", [
+      "Athena what do you remember about my stream today",
+      "shoutout mamafeisty",
+      "be right back",
+      "generate an image of Athena standing in my room"
+    ]);
+  }
+  if (commandId === "cmd_streamweaver_twitch_chat_send") {
+    return profile(["message", "channel"], ["tenantId", "as", "bridgeToDiscord"], "medium", false, "ready", [
+      "type in fatkids chat hey buddy what's new",
+      "send hello to mamafeisty twitch chat"
+    ]);
+  }
+  if (commandId.includes("image") || commandId.includes("vision") || commandId.includes("eden")) {
+    return profile(["imageBase64 or imageUrl"], ["prompt", "providers", "visualContext", "displayName"], commandId.includes("face") ? "medium" : "low", commandId.includes("face"), "needs-context", [
+      "read what I see",
+      "detect the logo on this screen",
+      "generate an image from what I am looking at"
+    ]);
+  }
+  if (commandId.startsWith("cmd_dsh_calendar_")) {
+    return profile(["serverId", "discordUserId", "missionName", "missionDate"], ["missionTime", "channelId", "missionDescription"], "medium", commandId !== "cmd_dsh_calendar_add_mission", "dry-run-first", [
+      "add a calendar event for Friday at 8 pm mod meeting",
+      "post the calendar to Discord"
+    ]);
+  }
+  if (commandId === "cmd_discord_message" || commandId === "cmd_discord_event" || commandId === "cmd_hearmeout_discord_message") {
+    return profile(["channelId or serverId", "message"], ["twitchUsername", "eventType"], "medium", true, "dry-run-first", [
+      "send a Discord message that says stream is starting",
+      "push this event to DiscordStreamHub"
+    ]);
+  }
+  if (commandId.startsWith("cmd_chat_tag")) {
+    const needsTarget = commandId === "cmd_chat_tag" || commandId === "cmd_chat_tag_tag";
+    return profile(needsTarget ? ["userId", "targetUserId or targetName"] : ["userId"], ["twitchUsername", "streamerId", "performedBy"], needsTarget ? "medium" : "low", needsTarget, needsTarget ? "needs-context" : "ready", [
+      "who is live in chat tag",
+      "join chat tag",
+      "tag player professor evie"
+    ]);
+  }
+  if (commandId.startsWith("cmd_hearmeout")) {
+    if (commandId.includes("request")) {
+      return profile(["query", "username"], ["roomId", "sessionId", "mediaType", "platform"], "low", false, "ready", [
+        "request the song never gonna give you up in HearMeOut",
+        "request the audiobook dune in HearMeOut"
+      ]);
+    }
+    if (commandId.includes("control")) {
+      return profile(["action"], ["position", "targetIndex", "sessionId"], "medium", true, "dry-run-first", [
+        "pause HearMeOut",
+        "skip to the next watch party item"
+      ]);
+    }
+    return profile(["roomId or sessionId"], ["peerId"], "low", false, "ready", [
+      "who is in the HearMeOut room",
+      "join the HearMeOut voice room"
+    ]);
+  }
+  if (commandId.startsWith("cmd_stream_")) {
+    const highRisk = commandId.includes("stop") || commandId.includes("start");
+    return profile(highRisk ? ["tenantId"] : ["payload"], ["device", "roomId", "event"], highRisk ? "high" : "medium", highRisk, "dry-run-first", [
+      "start stream workflow",
+      "stop stream workflow",
+      "trigger stream overlay"
+    ]);
+  }
+  if (commandId.startsWith("cmd_streamweaver_tts")) {
+    return profile(["message"], ["tenantId", "voice"], "low", false, "ready", [
+      "speak on stream that we are testing MountainView"
+    ]);
+  }
+  if (commandId === "cmd_streamweaver_obs_scenes" || commandId === "cmd_streamweaver_overlay_data") {
+    return profile(["tenantId"], ["overlayType"], "low", false, "ready", [
+      "what OBS scenes do I have",
+      "show overlay data"
+    ]);
+  }
+  if (commandId.startsWith("cmd_profile_") || commandId.includes("person")) {
+    return profile(["displayName or personId", "notes"], ["reminders", "topics", "avatarUrl"], "medium", true, "needs-context", [
+      "save a note about this person",
+      "remember I have a meeting with Alex next Tuesday"
+    ]);
+  }
+  if (appId === "edenai") {
+    return profile(["providers", "prompt or imageBase64"], ["imageUrl"], "medium", true, "needs-token", [
+      "ask EdenAI what I am looking at"
+    ]);
+  }
+  return profile(["transcript"], ["payload"], "medium", true, "dry-run-first", [
+    "run this command from MountainView"
+  ]);
+}
+
+function profile(
+  requiredContext: string[],
+  optionalContext: string[],
+  riskLevel: CommandRoutingProfile["riskLevel"],
+  confirmBeforeRun: boolean,
+  testReadiness: CommandRoutingProfile["testReadiness"],
+  naturalExamples: string[]
+): CommandRoutingProfile {
+  return { requiredContext, optionalContext, riskLevel, confirmBeforeRun, testReadiness, naturalExamples };
+}
+
+function scoreCommandContextFit(command: JsonRecord, context: JsonRecord): number {
+  const profile = getCommandRoutingProfile(String(command.id ?? ""), String(command.app_id ?? ""));
+  const available = new Set(Object.entries(context).filter(([, value]) => value != null && String(value).trim()).map(([key]) => key.toLowerCase()));
+  let score = 0;
+  for (const requirement of profile.requiredContext) {
+    const alternatives = requirement.toLowerCase().split(/\s+or\s+/);
+    if (alternatives.some((key) => available.has(key))) score += 0.04;
+    else score -= 0.04;
+  }
+  if (profile.testReadiness === "ready") score += 0.03;
+  if (profile.confirmBeforeRun) score -= 0.03;
+  if (profile.riskLevel === "high") score -= 0.08;
+  return score;
+}
+
+function findMissingRequirement(commandId: string, appId: string, payload: JsonRecord): string {
+  const profile = getCommandRoutingProfile(commandId, appId);
+  for (const requirement of profile.requiredContext) {
+    const alternatives = requirement.toLowerCase().split(/\s+or\s+/);
+    if (!alternatives.some((key) => hasContextField(payload, key))) return requirement;
+  }
+  if (commandId === "cmd_hearmeout_song_request" || commandId === "cmd_hearmeout_audiobook_request" || commandId === "cmd_hearmeout_watch_request") {
+    const query = readText(payload, "query") || readText(payload, "message") || readText(payload, "transcript");
+    if (isGenericMediaQuery(query)) return "query";
+  }
+  if (commandId === "cmd_chat_tag_tag" || commandId === "cmd_chat_tag") {
+    if (!readText(payload, "targetUserId") && !readText(payload, "targetName")) return "targetName";
+  }
+  if (commandId === "cmd_dsh_calendar_add_mission") {
+    if (!readText(payload, "missionName")) return "missionName";
+    if (!readText(payload, "missionDate")) return "missionDate";
+  }
+  if (commandId === "cmd_streamweaver_twitch_chat_send" || commandId === "cmd_discord_message" || commandId === "cmd_hearmeout_discord_message") {
+    const message = readText(payload, "message") || readText(payload, "content");
+    if (!message || /^(send|post|type|message)$/i.test(message)) return "message";
+  }
+  return "";
+}
+
+function hasContextField(payload: JsonRecord, key: string): boolean {
+  const normalized = key.replace(/\s+/g, "");
+  if (normalized === "imagebase64orimageurl") return Boolean(readText(payload, "imageBase64") || readText(payload, "imageUrl"));
+  if (normalized === "targetuseridortargetname") return Boolean(readText(payload, "targetUserId") || readText(payload, "targetName"));
+  if (normalized === "channelidorserverid") return Boolean(readText(payload, "channelId") || readText(payload, "serverId"));
+  if (normalized === "roomidorsessionid") return Boolean(readText(payload, "roomId") || readText(payload, "sessionId"));
+  if (normalized === "displaynameorpersonid") return Boolean(readText(payload, "displayName") || readText(payload, "personId"));
+  if (normalized === "promptorimagebase64") return Boolean(readText(payload, "prompt") || readText(payload, "imageBase64"));
+  return Boolean(readTextAnyCase(payload, key));
+}
+
+function preferredMissingField(commandId: string, requirement: string): string {
+  const normalized = requirement.toLowerCase();
+  if (commandId.startsWith("cmd_hearmeout") && normalized.includes("query")) return "query";
+  if (commandId.startsWith("cmd_chat_tag") && normalized.includes("target")) return "targetName";
+  if (commandId.startsWith("cmd_dsh_calendar") && normalized.includes("missiondate")) return "missionDate";
+  if (normalized.includes("message") || normalized.includes("content")) return "message";
+  if (normalized.includes("image")) return "imageBase64";
+  if (normalized.includes("channel")) return "channelId";
+  return requirement.split(/\s+or\s+/i)[0].trim();
+}
+
+function clarificationPromptFor(commandId: string, appId: string, missing: string, payload: JsonRecord): string {
+  if (commandId.startsWith("cmd_hearmeout")) {
+    const mediaType = readText(payload, "mediaType");
+    if (mediaType === "watch" || commandId.includes("watch")) return "What would you like to watch, Commander?";
+    if (mediaType === "audiobook" || commandId.includes("audiobook")) return "What audiobook would you like, Commander?";
+    return "What song would you like, Commander?";
+  }
+  if (commandId.startsWith("cmd_chat_tag") && missing.toLowerCase().includes("target")) return "Who should I target in Chat-Tag, Commander?";
+  if (commandId.startsWith("cmd_dsh_calendar")) {
+    if (missing === "missionDate") return "What date should I put on the calendar, Commander?";
+    if (missing === "missionName") return "What should I call the calendar event, Commander?";
+    return "What calendar detail is missing, Commander?";
+  }
+  if (commandId === "cmd_streamweaver_twitch_chat_send") return "What should I send to Twitch chat, Commander?";
+  if (appId === "discordstreamhub" || commandId === "cmd_discord_message") return "What should I send to Discord, Commander?";
+  if (missing.toLowerCase().includes("image")) return "I need an image first. Should I capture or upload one?";
+  return `What ${missing} should I use for that command, Commander?`;
+}
+
+function scrubPendingPayload(payload: JsonRecord): JsonRecord {
+  const copy = { ...payload };
+  delete copy.routingDecision;
+  delete copy.needsClarification;
+  delete copy.clarificationPrompt;
+  delete copy.pendingPayload;
+  return copy;
+}
+
+function cleanPendingContextValue(commandId: string, missingField: string, transcript: string): string {
+  if (commandId.startsWith("cmd_hearmeout") && missingField === "query") return cleanHearMeOutQuery(transcript) || transcript.trim();
+  return transcript.trim();
+}
+
+function isGenericMediaQuery(value: string): boolean {
+  const cleaned = cleanHearMeOutQuery(value || value.trim());
+  return !cleaned || /^(a|the|some)?\s*(song|music|track|playlist|audiobook|audio book|book|movie|video|show|episode)?\s*$/i.test(cleaned);
+}
+
+function summarizeCommandResult(result: JsonRecord): JsonRecord {
+  const response = asRecord(result.response);
+  return {
+    ok: result.ok,
+    status: result.status,
+    routed: response.routed,
+    handled: response.handled,
+    dispatched: response.dispatched,
+    command: response.command
+  };
+}
+
+function defaultCommandDestination(commandId: string, appId: string): string {
+  if (commandId === "cmd_discord_message" || commandId === "cmd_discord_event" || commandId === "cmd_hearmeout_discord_message") return "discord";
+  if (commandId.startsWith("cmd_dsh_calendar_") || appId === "discordstreamhub") return "discord";
+  if (commandId === "cmd_streamweaver_twitch_chat_send" || commandId === "cmd_streamweaver_twitch_chat_session") return "twitch";
+  return "";
+}
+
+function normalizeVoiceDestination(value: string): string {
+  return ["ai", "private", "twitch", "discord"].includes(value) ? value : "";
+}
+
+function normalizeVoiceMode(value: string): string {
+  return ["reply", "dictation", "translation"].includes(value) ? value : "";
+}
+
+function normalizeDecisionMode(value: string): "conversation" | "action" | "" {
+  return value === "conversation" || value === "action" ? value : "";
+}
+
+function tokenizeCommandText(value: string): string[] {
+  const stop = new Set(["the", "and", "that", "with", "from", "this", "please", "athena", "annie", "command", "trigger"]);
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9_ ]+/g, " ")
+    .split(/\s+/)
+    .map((term) => term.trim())
+    .filter((term) => term.length >= 3 && !stop.has(term));
+}
+
+const MESSAGE_PLATFORM_PATTERN = "(?:discord(?:\\s+stream\\s+hub)?|discordstreamhub|dsh|twitch|kick|hearmeout|hear\\s?me\\s?out)";
+
+function extractMessageDestination(text: string): string {
+  if (/\b(?:hear\s?me\s?out|hearmeout)\b/i.test(text)) return "hearmeout";
+  if (/\b(?:discord(?:\s+stream\s+hub)?|discordstreamhub|dsh|server|guild)\b/i.test(text)) return "discord";
+  return "twitch";
+}
+
+function extractDiscordCommandIntent(text: string): { commandId: string; reason: string } | undefined {
+  const lower = text.toLowerCase();
+  if (!/\b(?:discord(?:\s+stream\s+hub)?|discordstreamhub|dsh|server)\b/.test(lower)) return undefined;
+  if (/\bcalendar\b/.test(lower)) {
+    if (/\b(?:generate|render|build|create|make)\b/.test(lower) && /\b(?:embed|image|card)\b/.test(lower)) {
+      return { commandId: "cmd_dsh_calendar_generate", reason: "Calendar embed language maps to the DiscordStreamHub calendar embed generator." };
+    }
+    if (/\b(?:post|share|show|publish|put|drop)\b/.test(lower)) {
+      return { commandId: "cmd_dsh_calendar_post", reason: "Posting the calendar maps to the DiscordStreamHub calendar post command, not a plain channel message." };
+    }
+  }
+  if (/\b(?:push|send|forward|mirror|relay)\b/.test(lower) && /\b(?:event|events|alert|raid|follow|sub|subscription|cheer)\b/.test(lower)) {
+    return { commandId: "cmd_discord_event", reason: "Twitch event language targeted at Discord maps to the DiscordStreamHub event bridge." };
+  }
+  return undefined;
+}
+
+function extractBodylessMessageIntent(text: string): { destination: string } | undefined {
+  const bare = new RegExp(
+    `^\\s*(?:athena[,\\s]+)?(?:please\\s+)?(?:send|post|type|write|drop|shoot)\\s+(?:a|an|the|another|new)?\\s*(?:${MESSAGE_PLATFORM_PATTERN}\\s+)?(?:chat\\s+|stream\\s+|server\\s+|channel\\s+)?message\\s*[.!?]?\\s*$`,
+    "i"
+  );
+  if (!bare.test(text)) return undefined;
+  return { destination: extractMessageDestination(text) };
+}
+
+function extractDirectMessageIntent(text: string): { message: string; targetName: string; channel: string; destination: string } | undefined {
+  const destination = extractMessageDestination(text);
+  const build = (message: string, spokenTarget: string) => {
+    const targetName = cleanSpokenTarget(spokenTarget);
+    return {
+      message: message.trim().replace(/^(?:chat|server|channel|guild)\s*[:,-]\s*/i, "").trim(),
+      targetName,
+      channel: resolveSpokenTwitchAlias(targetName, process.env),
+      destination
+    };
+  };
+
+  const typeInChat = text.match(/\b(?:send|post|type|say)\s+(?:in|into|to)\s+(.+?)\s+(?:twitch\s+)?chat\s+["“](.+?)["”]\s*$/i);
+  if (typeInChat?.[2]?.trim()) return build(typeInChat[2], typeInChat[1] ?? "");
+
+  const platformMessage = new RegExp(
+    `\\b(?:send|post|type|say|write|drop|shoot)\\s+(?:a|an|the|another|new)?\\s*(?:${MESSAGE_PLATFORM_PATTERN}\\s+)?(?:chat\\s+|stream\\s+|server\\s+|channel\\s+)?message(?:\\s+(?:to|in|into|on)\\s+(.+?))?\\s+(?:that\\s+says|saying|which\\s+says|says|with|:)\\s+["“]?(.+?)["”]?\\s*$`,
+    "i"
+  );
+  const quoted = text.match(platformMessage);
+  if (quoted?.[2]?.trim()) return build(quoted[2], quoted[1] ?? "");
+
+  const announce = new RegExp(
+    `\\b(?:post|announce|say|shout|write|drop)\\s+(?:in|to|on)\\s+(?:my\\s+|the\\s+)?(${MESSAGE_PLATFORM_PATTERN})(?:\\s+(?:chat|server|channel))?\\s+(?:that\\s+|saying\\s+)?["“]?(.+?)["”]?\\s*$`,
+    "i"
+  );
+  const announced = text.match(announce);
+  if (announced?.[2]?.trim()) return build(announced[2], announced[1] ?? "");
+
+  const notify = new RegExp(
+    `\\b(?:tell|notify|alert|let)\\s+(?:my\\s+|the\\s+)?(${MESSAGE_PLATFORM_PATTERN})(?:\\s+(?:chat|server|channel|know))?\\s+(?:that\\s+)?["“]?(.+?)["”]?\\s*$`,
+    "i"
+  );
+  const notified = text.match(notify);
+  if (notified?.[2]?.trim()) return build(notified[2], notified[1] ?? "");
+
+  const plainMessage = new RegExp(
+    `\\b(?:send|post|type|say|write|drop)\\s+(?:a|an|the)?\\s*(?:${MESSAGE_PLATFORM_PATTERN}\\s+)?(?:chat\\s+|stream\\s+|server\\s+|channel\\s+)?message(?:\\s+(?:to|in|into|on)\\s+(\\S+))?\\s+["“]?(.+?)["”]?\\s*$`,
+    "i"
+  );
+  const plain = text.match(plainMessage);
+  if (plain?.[2]?.trim()) return build(plain[2], plain[1] ?? "");
+
+  const simple = text.match(/\b(?:send|post|type)\s+["“]?(.+?)["”]?\s+(?:to|in|into)\s+(.+?)(?:\s+(?:chat|twitch|discord))?\s*$/i);
+  if (simple?.[1]?.trim()) return build(simple[1], simple[2] ?? "");
+
+  return undefined;
+}
+
+function extractHearMeOutMediaIntent(text: string, requestedDestination = ""): JsonRecord | undefined {
+  const lower = text.toLowerCase();
+  const mentionsHearMeOut = /\bhear\s?me\s?out|hearmeout\b/.test(lower) || requestedDestination === "hearmeout";
+  const hasMediaWord = /\b(song|music|playlist|track|album|audiobook|audio book|book|movie|video|show|episode|watch party|queue)\b/.test(lower);
+  const hasMediaVerb = /\b(play|resume|continue|restart|start|pause|hold|skip|next|stop|end|queue|request|add|put on|throw on|how about|how 'bout|listen to|watch)\b/.test(lower);
+  if (!mentionsHearMeOut && !(hasMediaWord && hasMediaVerb)) return undefined;
+
+  if (/\b(pause|hold|skip|next|stop|end|resume|continue|restart|where we left off)\b/.test(lower)) {
+    return {
+      commandId: /\b(movie|video|show|episode|watch party)\b/.test(lower) ? "cmd_hearmeout_watch_control" : "cmd_hearmeout_music_control",
+      confidence: 0.9,
+      reason: "Natural media-control language maps to a HearMeOut play/pause/resume/skip control command.",
+      payload: {
+        action: extractMusicAction(text),
+        platform: "mountainview-glasses"
+      }
+    };
+  }
+
+  const mediaType = /\b(audiobook|audio book|book)\b/.test(lower) ? "audiobook"
+    : /\b(movie|video|show|episode|watch party)\b/.test(lower) ? "watch"
+      : "song";
+  const query = cleanHearMeOutQuery(text);
+  const isGeneric = !query || /^(a|the|some)?\s*(song|music|track|playlist|audiobook|audio book|book|movie|video|show|episode)?\s*$/i.test(query);
+  if (isGeneric) {
+    return {
+      commandId: mediaType === "audiobook" ? "cmd_hearmeout_audiobook_request" : mediaType === "watch" ? "cmd_hearmeout_watch_request" : "cmd_hearmeout_song_request",
+      confidence: 0.86,
+      reason: "User asked for a HearMeOut media action but did not provide the title yet, so MountainView opened a clarification turn.",
+      payload: {
+        needsClarification: true,
+        missing: "query",
+        mediaType,
+        platform: "mountainview-glasses",
+        clarificationPrompt: mediaType === "watch"
+          ? "What would you like to watch, Commander?"
+          : mediaType === "audiobook"
+            ? "What audiobook would you like, Commander?"
+            : "What song would you like, Commander?"
+      }
+    };
+  }
+
+  return {
+    commandId: mediaType === "audiobook" ? "cmd_hearmeout_audiobook_request" : mediaType === "watch" ? "cmd_hearmeout_watch_request" : "cmd_hearmeout_song_request",
+    confidence: 0.99,
+    reason: "Concrete natural media request language maps deterministically to the HearMeOut queue.",
+    payload: {
+      query,
+      mediaType: mediaType === "song" ? "" : mediaType,
+      platform: "mountainview-glasses"
+    }
+  };
+}
+
+function extractHearMeOutRoomIntent(text: string): JsonRecord | undefined {
+  const lower = text.toLowerCase();
+  if (!/\bhear\s?me\s?out|hearmeout|room|voice room|watch party\b/.test(lower)) return undefined;
+  if (/\b(what|which|list|show|open)\b/.test(lower) && /\b(room|rooms|voice rooms|watch parties)\b/.test(lower)) {
+    return {
+      commandId: "cmd_hearmeout",
+      confidence: 0.96,
+      reason: "User asked for open HearMeOut rooms, so MountainView routed to the session state/listing command instead of treating it as a song request.",
+      payload: {
+        roomId: DEFAULT_HEARMEOUT_ROOM_ID,
+        intent: "list-rooms"
+      }
+    };
+  }
+  const join = text.match(/\b(?:join|enter|open)\s+(?:the\s+)?(?:hear\s?me\s?out\s+)?(?:room|voice room|watch party)?\s*(?:called|named)?\s*["“]?([a-z0-9 _-]{2,48})["”]?/i);
+  if (join?.[1]?.trim()) {
+    const roomName = cleanRoomName(join[1]);
+    return {
+      commandId: "cmd_hearmeout_voice_room",
+      confidence: 0.9,
+      reason: "User asked to join/register into a HearMeOut room.",
+      payload: {
+        roomId: roomName || DEFAULT_HEARMEOUT_ROOM_ID,
+        roomName,
+        intent: "join-room"
+      }
+    };
+  }
+  const create = text.match(/\b(?:create|make|start)\s+(?:a\s+)?(?:new\s+)?(?:hear\s?me\s?out\s+)?(?:room|voice room|watch party)\s*(?:called|named)?\s*["“]?([a-z0-9 _-]{2,48})["”]?/i);
+  if (create?.[1]?.trim()) {
+    const roomName = cleanRoomName(create[1]);
+    return {
+      commandId: "cmd_hearmeout_voice_room",
+      confidence: 0.86,
+      reason: "User asked to create a HearMeOut room. MountainView can register into the room now and carries create-room intent for the next HearMeOut route upgrade.",
+      payload: {
+        roomId: roomName || DEFAULT_HEARMEOUT_ROOM_ID,
+        roomName,
+        createIfMissing: true,
+        intent: "create-room"
+      }
+    };
+  }
+  return undefined;
+}
+
+function cleanRoomName(value: string): string {
+  return value
+    .replace(/\b(?:and|then|please|thanks|thank you|join it|go there)\b.*$/i, "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64);
+}
+
+function cleanHearMeOutQuery(text: string): string {
+  const cleaned = text
+    .replace(/\b(?:hey\s+)?(?:athena|annie)\b/ig, "")
+    .replace(/\bhear\s?me\s?out|hearmeout\b/ig, "")
+    .replace(/\b(?:app|through|from|in|on|please|thank you|thanks|commander)\b/ig, " ")
+    .replace(/\b(?:can you|could you|would you|i want you to|how about|how 'bout)\b/ig, " ")
+    .replace(/\b(?:play|resume|continue|restart|start|queue|request|add|put on|throw on|listen to|watch)\b/ig, " ")
+    .replace(/\b(?:me|my|a|the|some)\b/ig, " ")
+    .replace(/\b(?:song|music|track|playlist|audiobook|audio book|book|movie|video|show|episode|watch party)\b/ig, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^["“]+|["”]+$/g, "")
+    .trim();
+  return /^(me|my|a|the|some|please)$/i.test(cleaned) ? "" : cleaned;
+}
+
+function extractTwitchChatSessionIntent(text: string): { targetName: string; channel: string; readAloud: boolean } | undefined {
+  const readChat = text.match(/\b(?:read|listen\s+to|monitor|open)\s+(.+?)\s+(?:twitch\s+)?chat\s+(?:out\s+loud|aloud)?/i);
+  if (readChat?.[1]?.trim()) {
+    const targetName = cleanSpokenTarget(readChat[1]);
+    return { targetName, channel: resolveSpokenTwitchAlias(targetName, process.env), readAloud: true };
+  }
+  const watchStream = text.match(/\b(?:play|watch|listen\s+to)\s+(.+?)\s+(?:stream|twitch\s+stream)\b/i);
+  if (watchStream?.[1]?.trim()) {
+    const targetName = cleanSpokenTarget(watchStream[1]);
+    return { targetName, channel: resolveSpokenTwitchAlias(targetName, process.env), readAloud: false };
+  }
+  return undefined;
+}
+
+function cleanSpokenTarget(value: string): string {
+  return value
+    .replace(/\b(?:twitch|discord|chat|channel|server|user)\b/ig, "")
+    .replace(/^@/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function resolveMessageTarget(input: {
+  spokenTarget: string;
+  context: JsonRecord;
+  visualContext: string;
+  visualProfilePayload: JsonRecord;
+  username: string;
+  env: NodeJS.ProcessEnv;
+}): { channel: string; targetName: string; reason: string } {
+  const direct = cleanSpokenTarget(input.spokenTarget);
+  const visualProfileChannel = readText(input.visualProfilePayload, "channel") || readText(input.visualProfilePayload, "twitchUsername") || readText(input.visualProfilePayload, "targetChannel");
+  const explicitChannel = readText(input.context, "channel") || readText(input.context, "targetChannel");
+  const visualChannel = extractTwitchChannel(input.visualContext);
+  const visualName = extractKnownTargetName(input.visualContext);
+  const contextName = readText(input.visualProfilePayload, "targetName") || readText(input.visualProfilePayload, "name");
+  const targetName = direct || contextName || visualName || visualProfileChannel || explicitChannel || visualChannel || input.username;
+  const rawChannel = direct || visualProfileChannel || explicitChannel || visualChannel || visualName || input.username;
+  const channel = resolveSpokenTwitchAlias(rawChannel, input.env) || normalizeTwitchChannel(input.username);
+  const reason = direct ? "spoken target"
+    : visualProfileChannel || contextName ? "locked visual profile"
+      : explicitChannel ? "app context"
+        : visualChannel || visualName ? "visual context"
+          : "default username";
+  return { channel, targetName, reason };
+}
+
+function extractKnownTargetName(text: string): string {
+  const lower = text.toLowerCase();
+  const known = ["mamafeisty", "mtman1987", "fatkid4ev4", "lovesnightmare"];
+  return known.find((name) => lower.includes(name)) ?? "";
+}
+
+function normalizeTwitchChannel(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/^@/, "")
+    .replace(/[^a-z0-9_]+/g, "")
+    .slice(0, 25);
+}
+
+function resolveSpokenTwitchAlias(value: string, env: NodeJS.ProcessEnv): string {
+  const normalized = normalizeTwitchChannel(value);
+  const aliases: Record<string, string> = {
+    fatkids: "fatkid4ev4",
+    fatkid: "fatkid4ev4",
+    fatkid4eva: "fatkid4ev4",
+    mama: "mamafeisty",
+    mamafeisty: "mamafeisty",
+    mamafiesty: "mamafeisty",
+    lovesnightmare: "lovesnightmare",
+    lovesnightmares: "lovesnightmare",
+  };
+  try {
+    const configured = JSON.parse(env.MOUNTAINVIEW_TWITCH_ALIASES || "{}");
+    if (configured && typeof configured === "object") {
+      for (const [key, target] of Object.entries(configured)) aliases[normalizeTwitchChannel(key)] = normalizeTwitchChannel(String(target));
+    }
+  } catch {
+    // Bad alias config should not break voice routing.
+  }
+  return aliases[normalized] || normalized;
+}
+
+function extractTwitchChannel(text: string): string {
+  const direct = text.match(/(?:https?:\/\/)?(?:www\.)?twitch\.tv\/([a-z0-9_]{3,25})/i);
+  if (direct?.[1]) return direct[1].toLowerCase();
+  const named = text.match(/\b(?:watching|locked|target|channel)\s+@?([a-z0-9_]{3,25})(?:'s)?\s+(?:twitch\s+)?(?:stream|chat)\b/i);
+  return named?.[1]?.toLowerCase() ?? "";
+}
+
+function readText(source: JsonRecord, key: string): string {
+  const value = source[key];
+  return typeof value === "string" ? value.trim() : value == null ? "" : String(value).trim();
+}
+
+function readTextAnyCase(source: JsonRecord, key: string): string {
+  const direct = readText(source, key);
+  if (direct) return direct;
+  const normalized = key.replace(/[^a-z0-9]/gi, "").toLowerCase();
+  const found = Object.keys(source).find((sourceKey) => sourceKey.replace(/[^a-z0-9]/gi, "").toLowerCase() === normalized);
+  return found ? readText(source, found) : "";
+}
+
+function normalizeLookupName(value: unknown): string {
+  return String(value ?? "").trim().toLowerCase().replace(/^@+/, "").replace(/[^a-z0-9_]/g, "");
+}
+
+function extractChatTagTarget(message: string): string {
+  const match = message.match(/\b(?:tag|use\s+pass\s+on|pass\s+to)\s+@?([a-z0-9_][a-z0-9_.-]{1,30})/i);
+  return match?.[1]?.replace(/[.,!?]+$/, "") ?? "";
+}
+
+function findChatTagPlayer(players: unknown, targetName: string): JsonRecord | null {
+  if (!Array.isArray(players)) return null;
+  const target = normalizeLookupName(targetName);
+  if (!target) return null;
+  for (const player of players) {
+    const record = asRecord(player);
+    const names = [
+      record.id,
+      record.twitchUsername,
+      record.username,
+      record.displayName,
+      record.discordUsername,
+      record.kickUsername
+    ].map(normalizeLookupName).filter(Boolean);
+    if (names.includes(target)) return record;
+  }
+  return null;
+}
+
+function extractCalendarFields(message: string): { title: string; date: string; time: string } {
+  const now = new Date();
+  const lower = message.toLowerCase();
+  const date = extractIsoDate(message)
+    || formatDateOnly(new Date(now.getTime() + (lower.includes("tomorrow") ? 1 : 0) * 24 * 60 * 60 * 1000));
+  const time = extractClockTime(message);
+  const cleanedTitle = message
+    .replace(/\b(add|create|put|schedule)\b/ig, "")
+    .replace(/\b(to|on|in)\s+(my\s+)?(discord\s+stream\s+hub|discordstreamhub|calendar)\b/ig, "")
+    .replace(/\b(today|tomorrow)\b/ig, "")
+    .replace(/\b\d{4}-\d{2}-\d{2}\b/g, "")
+    .replace(/\b\d{1,2}:\d{2}\s*(am|pm)?\b/ig, "")
+    .replace(/\b\d{1,2}\s*(am|pm)\b/ig, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return {
+    title: cleanedTitle || "MountainView reminder",
+    date,
+    time
+  };
+}
+
+function extractIsoDate(message: string): string {
+  const iso = message.match(/\b(\d{4}-\d{2}-\d{2})\b/);
+  if (iso) return iso[1];
+  const slash = message.match(/\b(\d{1,2})[\/.-](\d{1,2})(?:[\/.-](\d{2,4}))?\b/);
+  if (!slash) return "";
+  const now = new Date();
+  const month = Number(slash[1]);
+  const day = Number(slash[2]);
+  const year = slash[3] ? Number(slash[3].length === 2 ? `20${slash[3]}` : slash[3]) : now.getFullYear();
+  if (month < 1 || month > 12 || day < 1 || day > 31) return "";
+  return formatDateOnly(new Date(year, month - 1, day));
+}
+
+function extractClockTime(message: string): string {
+  const match = message.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/i);
+  if (!match) return "";
+  let hour = Number(match[1]);
+  const minute = Number(match[2] ?? 0);
+  const suffix = match[3]?.toLowerCase();
+  if (suffix === "pm" && hour < 12) hour += 12;
+  if (suffix === "am" && hour === 12) hour = 0;
+  if (hour > 23 || minute > 59) return "";
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
+function formatDateOnly(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function extractMusicAction(message: string): string {
+  const lower = message.toLowerCase();
+  if (/\b(pause|hold)\b/.test(lower)) return "pause";
+  if (/\b(resume|play|start)\b/.test(lower)) return "play";
+  if (/\b(skip|next)\b/.test(lower)) return "skip";
+  if (/\b(stop|end)\b/.test(lower)) return "stop";
+  return "play";
+}
+
+function normalizeRow(row: JsonRecord): JsonRecord {
+  const normalized = { ...row };
+  for (const [key, value] of Object.entries(row)) {
+    if (key.endsWith("_json") && typeof value === "string") {
+      normalized[key.replace(/_json$/, "")] = parseMaybeJson(value);
+    }
+  }
+  return normalized;
+}
+
+function normalizeTags(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map(String).filter(Boolean);
+  if (typeof value === "string") return value.split(",").map((item) => item.trim()).filter(Boolean);
+  return [];
+}
+
+function normalizeVisionFeatures(value: unknown): string[] {
+  const requested = normalizeTags(value);
+  const features = requested.length ? requested : ["ocr", "logo_detection", "object_detection"];
+  return features
+    .map((feature) => feature.toLowerCase().replace(/[-\s]+/g, "_"))
+    .filter((feature) => Boolean(EDEN_AI_FEATURE_ENDPOINTS[feature]));
+}
+
+function decodeBase64Media(value: string): { buffer: Buffer; mimeType: string; filename: string } {
+  const match = value.match(/^data:([^;]+);base64,(.+)$/);
+  const mimeType = match?.[1] || "image/jpeg";
+  const raw = match?.[2] || value;
+  const ext = mimeType.includes("png") ? "png" : mimeType.includes("webp") ? "webp" : "jpg";
+  return { buffer: Buffer.from(raw, "base64"), mimeType, filename: `mountainview.${ext}` };
+}
+
+function extractVisionLabels(value: unknown): string[] {
+  const labels = new Set<string>();
+  const visit = (node: unknown) => {
+    if (node == null) return;
+    if (typeof node === "string") {
+      const trimmed = node.trim();
+      if (trimmed && trimmed.length <= 120) labels.add(trimmed);
+      return;
+    }
+    if (typeof node !== "object") return;
+    if (Array.isArray(node)) {
+      node.slice(0, 60).forEach(visit);
+      return;
+    }
+    const record = asRecord(node);
+    for (const key of ["label", "name", "text", "description", "brand", "object", "category", "displayName", "twitchUsername"]) {
+      if (record[key]) visit(record[key]);
+    }
+    for (const key of ["items", "logos", "objects", "faces", "textAnnotations", "detections", "results"]) {
+      if (record[key]) visit(record[key]);
+    }
+    if (record.response) visit(record.response);
+  };
+  visit(value);
+  return [...labels].slice(0, 80);
+}
+
+function normalizeReminderList(value: unknown): JsonRecord[] {
+  if (Array.isArray(value)) return value.map(asRecord).filter((item) => Object.keys(item).length > 0);
+  if (typeof value === "string" && value.trim()) return [{ kind: "note", note: value.trim() }];
+  return [];
+}
+
+function slugify(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "person";
+}
+
+function buildPersonMemorySummary(person: JsonRecord): string {
+  const usernames = asRecord(person.usernames);
+  const context = asRecord(person.context);
+  const reminders = Array.isArray(person.reminders) ? person.reminders : [];
+  const handles = Object.entries(usernames).map(([key, value]) => `${key}: ${value}`).join(", ");
+  const topics = Array.isArray(context.topics) ? context.topics.join(", ") : "";
+  const preferences = Array.isArray(context.preferences) ? context.preferences.join(", ") : "";
+  return [
+    `Name: ${person.display_name}`,
+    handles ? `Handles: ${handles}` : "",
+    context.relationship ? `Relationship: ${context.relationship}` : "",
+    topics ? `Topics: ${topics}` : "",
+    preferences ? `Preferences: ${preferences}` : "",
+    reminders.length ? `Reminders: ${JSON.stringify(reminders)}` : "",
+    person.notes ? `Notes: ${person.notes}` : ""
+  ].filter(Boolean).join("\n");
+}
+
+function enrichCommandResponse(commandId: string, response: unknown): unknown {
+  if (commandId === "cmd_chat_tag_spmt_live") {
+    const record = asRecord(response);
+    const players = Array.isArray(record.livePlayers) ? record.livePlayers.map(asRecord) : [];
+    const names = players.map((player) => readText(player, "displayName") || readText(player, "twitchUsername")).filter(Boolean);
+    return { ...record, response: names.length ? "Chat Tag live now (" + names.length + "): " + names.join(", ") : "No Chat Tag players are live right now." };
+  }
+  if (commandId === "cmd_chat_tag_live_members" || commandId === "cmd_discord_live_members") {
+    const record = asRecord(response);
+    const liveMembers = Array.isArray(record.liveMembers) ? record.liveMembers.map(asRecord) : [];
+    const names = liveMembers
+      .map((member) => readText(member, "twitchDisplayName") || readText(member, "discordDisplayName") || readText(member, "twitchUsername"))
+      .filter(Boolean);
+    const sample = names.slice(0, 6).join(", ");
+    return {
+      ...record,
+      reply: names.length
+        ? `${names.length} crew members are live: ${sample}${names.length > 6 ? ", and more." : "."}`
+        : "I checked Chat-Tag live members and no tracked crew members are live right now.",
+      liveCount: names.length,
+      liveNames: names
+    };
+  }
+  return response;
+}
+
+function buildVisualProfileSummary(profile: JsonRecord): string {
+  const payload = asRecord(profile.default_payload);
+  const aliases = Array.isArray(profile.aliases) ? profile.aliases.join(", ") : "";
+  const matchText = Array.isArray(profile.match_text) ? profile.match_text.slice(0, 12).join(", ") : "";
+  return [
+    `Name: ${profile.name}`,
+    `Target: ${profile.target_app} / ${profile.command_id}`,
+    payload.channel ? `Channel: ${payload.channel}` : "",
+    payload.twitchUsername ? `Twitch: ${payload.twitchUsername}` : "",
+    aliases ? `Aliases: ${aliases}` : "",
+    matchText ? `Visual terms: ${matchText}` : ""
+  ].filter(Boolean).join("\n");
+}
+
+function buildVisualContextFromProfile(profile: JsonRecord): string {
+  const payload = asRecord(profile.default_payload);
+  return [
+    `Visual profile matched: ${profile.name}`,
+    `targetApp=${profile.target_app}`,
+    `command=${profile.command_id}`,
+    payload.channel ? `channel=${payload.channel}` : "",
+    payload.twitchUsername ? `twitch=${payload.twitchUsername}` : ""
+  ].filter(Boolean).join(". ");
+}
+
+function buildSmartCaptureReply(vision: JsonRecord, profile: JsonRecord | null, visualProfile: JsonRecord | null = null): string {
+  const labels = Array.isArray(vision.labels) ? vision.labels.slice(0, 6).join(", ") : "";
+  const route = asRecord(vision.route).route as JsonRecord | undefined;
+  const profileName = profile ? String(asRecord(profile.person).display_name ?? "") : "";
+  const visualName = visualProfile ? String(asRecord(visualProfile.visualProfile).name ?? "") : "";
+  return [
+    labels ? `I recognized: ${labels}.` : "I captured the scene.",
+    route?.targetDeviceName ? `Routing to ${route.targetDeviceName}.` : "",
+    profileName ? `Saved profile memory for ${profileName}.` : "",
+    visualName ? `Saved visual profile for ${visualName}.` : ""
+  ].filter(Boolean).join(" ");
+}
+
+function extractProfileName(message: string): string {
+  const match = message.match(/\b(?:person|profile|about|meeting with|remember)\s+@?([a-z0-9_][a-z0-9_. -]{1,50})/i);
+  return match?.[1]?.replace(/\b(tomorrow|today|at|on|with)\b.*$/i, "").trim() ?? "";
+}
+
+function extractMeetingWhen(message: string): string {
+  const lower = message.toLowerCase();
+  if (lower.includes("tomorrow")) return "tomorrow";
+  if (lower.includes("today")) return "today";
+  const iso = message.match(/\b\d{4}-\d{2}-\d{2}\b/);
+  if (iso) return iso[0];
+  return "";
+}
+
+function extractTopics(message: string): string[] {
+  return ["meeting", "stream", "collab", "sponsor", "mod", "support", "watch party", "song request"]
+    .filter((topic) => message.toLowerCase().includes(topic));
+}
+
+function parseJsonObject(value: string): JsonRecord {
+  const parsed = parseMaybeJson(value);
+  return asRecord(parsed);
+}
+
+function parseMaybeJson(value: string): unknown {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}
+
+function renderTemplate(template: string, payload: JsonRecord): string {
+  return template.replace(/\{\{([a-zA-Z0-9_.-]+)\}\}/g, (_match, key: string) => {
+    const value = readPath(payload, key);
+    return encodeURIComponent(value == null ? "" : String(value));
+  });
+}
+
+function renderJsonTemplate(template: string, payload: JsonRecord): unknown {
+  const withRawJsonValues = template.replace(/"\{\{([a-zA-Z0-9_.-]+)\}\}"/g, (_match, key: string) => {
+    const value = readPath(payload, key);
+    return typeof value === "string" ? JSON.stringify(value) : JSON.stringify(value ?? "");
+  });
+  return parseMaybeJson(withRawJsonValues.replace(/\{\{([a-zA-Z0-9_.-]+)\}\}/g, (_match, key: string) => {
+    const value = readPath(payload, key);
+    return typeof value === "string" ? value : JSON.stringify(value ?? "");
+  }));
+}
+
+function readPath(source: JsonRecord, path: string): unknown {
+  return path.split(".").reduce<unknown>((value, key) => asRecord(value)[key], source);
+}
+
+function hashToken(token: string): string {
+  return createHash("sha256").update(token).digest("base64url");
+}
+
+export function safeSecretEqual(left: string, right: string): boolean {
+  const leftBuffer = Buffer.from(left);
+  const rightBuffer = Buffer.from(right);
+  return leftBuffer.length === rightBuffer.length && timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+function isProduction(env: NodeJS.ProcessEnv): boolean {
+  return env.NODE_ENV === "production" || Boolean(env.FLY_APP_NAME);
+}
+
+export function parseCookies(header: string | undefined): Record<string, string> {
+  if (!header) return {};
+  return Object.fromEntries(header.split(";").map((part) => {
+    const separator = part.indexOf("=");
+    const key = separator >= 0 ? part.slice(0, separator).trim() : part.trim();
+    const value = separator >= 0 ? part.slice(separator + 1).trim() : "";
+    try {
+      return [key, decodeURIComponent(value)];
+    } catch {
+      return [key, value];
+    }
+  }).filter(([key]) => Boolean(key)));
+}
+
+function setCookie(
+  response: ServerResponse,
+  name: string,
+  value: string,
+  options: { maxAge: number; path: string; secure: boolean }
+): void {
+  const parts = [
+    `${name}=${encodeURIComponent(value)}`,
+    `Path=${options.path}`,
+    `Max-Age=${options.maxAge}`,
+    "HttpOnly",
+    "SameSite=Lax"
+  ];
+  if (options.secure) parts.push("Secure");
+  const existing = response.getHeader("set-cookie");
+  const cookies = Array.isArray(existing) ? [...existing, parts.join("; ")] : existing ? [String(existing), parts.join("; ")] : [parts.join("; ")];
+  response.setHeader("set-cookie", cookies);
+}
+
+function clearCookie(response: ServerResponse, name: string, path: string, secure: boolean): void {
+  setCookie(response, name, "", { maxAge: 0, path, secure });
+}
+
+function redirect(response: ServerResponse, location: string): true {
+  response.writeHead(302, { location, "cache-control": "no-store" });
+  response.end();
+  return true;
+}
+
+export function renderMobileAuthHandoff(code: string): string {
+  const target = `mountainviewai://auth?code=${encodeURIComponent(code)}`;
+  const escapedTarget = JSON.stringify(target).replace(/</g, "\\u003c");
+  return `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>MountainView connected</title></head><body><p>SPMT sign-in complete. Returning to MountainView...</p><p><a href=${JSON.stringify(target)}>Return to MountainView</a></p><script>window.location.replace(${escapedTarget});</script></body></html>`;
+}
+
+function json(response: ServerResponse, payload: unknown): true {
+  response.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+  response.end(JSON.stringify(payload));
+  return true;
+}
+
+function html(response: ServerResponse, value: string): void {
+  response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+  response.end(value);
+}
+
+async function streamLatestMountainViewApk(response: ServerResponse, env: NodeJS.ProcessEnv): Promise<void> {
+  const token = env.GITHUB_TOKEN;
+  if (!token) throw new HttpError(503, "GITHUB_TOKEN is not configured for APK downloads.");
+
+  const release = await fetch("https://api.github.com/repos/Mtman1987/fly-machine-rotator/releases/tags/mountainview-latest", {
+    headers: {
+      authorization: `Bearer ${token}`,
+      accept: "application/vnd.github+json",
+      "user-agent": "mountainview-ai"
+    }
+  });
+  if (!release.ok) throw new HttpError(502, `GitHub release lookup failed: ${release.status}`);
+
+  const releaseJson = await release.json() as { assets?: Array<{ name?: string; url?: string; size?: number }> };
+  const asset = releaseJson.assets?.find((item) => item.name === "MountainView-Android.apk") || releaseJson.assets?.find((item) => item.name === "app-release.apk");
+  if (!asset?.url) throw new HttpError(404, "MountainView APK release asset was not found.");
+
+  const apk = await fetch(asset.url, {
+    headers: {
+      authorization: `Bearer ${token}`,
+      accept: "application/octet-stream",
+      "user-agent": "mountainview-ai"
+    }
+  });
+  if (!apk.ok) throw new HttpError(502, `GitHub APK download failed: ${apk.status}`);
+
+  const body = Buffer.from(await apk.arrayBuffer());
+  response.writeHead(200, {
+    "content-type": "application/vnd.android.package-archive",
+    "content-disposition": 'attachment; filename="mountainview-ai.apk"',
+    "content-length": String(body.length),
+    "cache-control": "no-store"
+  });
+  response.end(body);
+}
+
+class HttpError extends Error {
+  constructor(
+    readonly statusCode: number,
+    message: string
+  ) {
+    super(message);
+  }
+}
+
+function appDisplayName(appId: string): string {
+  switch (appId) {
+    case "streamweaver":
+      return "StreamWeaver";
+    case "hearmeout":
+      return "HearMeOut";
+    case "discordstreamhub":
+      return "DiscordStreamHub";
+    case "chat-tag":
+      return "Chat-Tag";
+    case "edenai":
+      return "EdenAI";
+    default:
+      return appId;
+  }
+}
+
+export function renderMountainViewHtml(): string {
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MountainView AI</title>
+  <style>
+    :root { color-scheme: dark; --bg:#050712; --panel:#10172a; --panel2:#111c35; --line:rgba(255,255,255,.12); --text:#f8fbff; --muted:#9fb1cc; --blue:#20d5ff; --violet:#8b5cf6; --good:#32d583; --bad:#ff6b8a; --warn:#ffd166; }
+    *{box-sizing:border-box} body{margin:0;min-height:100vh;background:radial-gradient(circle at 15% 0%,rgba(32,213,255,.18),transparent 26%),radial-gradient(circle at 88% 10%,rgba(139,92,246,.2),transparent 30%),linear-gradient(180deg,#050712,#090d1c 60%,#050712);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,Segoe UI,Arial,sans-serif}
+    body:before{content:"";position:fixed;inset:0;background-image:radial-gradient(circle,rgba(255,255,255,.2) 1px,transparent 1px);background-size:38px 38px;opacity:.16;pointer-events:none}
+    button,input,textarea,select{font:inherit} button,.link-btn{border:0;border-radius:8px;padding:10px 12px;color:#00131a;background:linear-gradient(135deg,var(--blue),#b9f4ff);font-weight:800;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;justify-content:center} button.secondary,.link-btn.secondary{background:rgba(255,255,255,.07);color:var(--text);border:1px solid var(--line)} button.danger{background:rgba(255,107,138,.16);color:#ffdce4;border:1px solid rgba(255,107,138,.35)}
+    .shell{position:relative;z-index:1;max-width:1180px;margin:0 auto;padding:20px 14px 90px}.top{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:18px}.top-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.brand{display:flex;align-items:center;gap:12px}.mark{width:38px;height:38px;border-radius:10px;background:linear-gradient(135deg,var(--violet),var(--blue));box-shadow:0 0 34px rgba(32,213,255,.35)}h1{margin:0;font-size:24px;letter-spacing:0} .sub{color:var(--muted);font-size:13px}.grid{display:grid;grid-template-columns:1.1fr .9fr;gap:14px}.panel{background:linear-gradient(180deg,rgba(255,255,255,.075),rgba(255,255,255,.035));border:1px solid var(--line);border-radius:8px;padding:16px;box-shadow:0 18px 60px rgba(0,0,0,.28);backdrop-filter:blur(12px)}.hero{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:stretch}.stat{border:1px solid var(--line);border-radius:8px;padding:13px;background:rgba(255,255,255,.045)}.label{text-transform:uppercase;letter-spacing:.13em;color:var(--muted);font-size:10px}.value{font-size:24px;font-weight:900;margin-top:4px}.good{color:var(--good)}.warn{color:var(--warn)}.bad{color:var(--bad)}.cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.cmd{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid var(--line);border-radius:8px;padding:12px;background:rgba(255,255,255,.045)}.cmd strong{display:block}.cmd span{font-size:12px;color:var(--muted)}.qr{display:grid;grid-template-columns:180px 1fr;gap:12px;align-items:start}.qr svg{width:180px;height:180px;border-radius:8px;background:#f8fbff}.tabs{position:fixed;left:50%;bottom:14px;transform:translateX(-50%);z-index:5;display:flex;gap:6px;background:rgba(8,12,25,.86);border:1px solid var(--line);padding:6px;border-radius:12px;backdrop-filter:blur(14px)}.tabs button{padding:9px 10px;background:transparent;color:var(--muted);border-radius:8px}.tabs button.active{background:rgba(32,213,255,.16);color:white}.screen{display:none}.screen.active{display:block}.row{display:grid;grid-template-columns:140px 1fr;gap:8px;align-items:center;margin:8px 0}input,textarea,select{width:100%;border-radius:8px;border:1px solid var(--line);background:rgba(255,255,255,.06);color:var(--text);padding:10px}textarea{min-height:88px}.log{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px;white-space:pre-wrap;color:#d9e8ff;background:rgba(0,0,0,.25);border-radius:8px;border:1px solid var(--line);padding:12px;max-height:260px;overflow:auto}.timeline{display:grid;gap:10px}.memory{border-left:2px solid var(--blue);padding:8px 0 8px 12px;background:rgba(255,255,255,.035);border-radius:0 8px 8px 0}.split{display:grid;grid-template-columns:1fr 1fr;gap:12px}@media(max-width:820px){.grid,.hero,.split,.qr{grid-template-columns:1fr}.cards{grid-template-columns:1fr}.top{align-items:flex-start;flex-direction:column}.top-actions{width:100%;justify-content:stretch}.top-actions>*{flex:1}.tabs{width:calc(100% - 20px);overflow:auto}.tabs button{white-space:nowrap}.row{grid-template-columns:1fr}}
+  </style>
+${spmtSharedUiHead("mountainview")}<style id="spmt-suite-background">
+html[data-spmt-theme="solar-flare"]{--spmt-suite-bg-image:url("https://spacemountain.live/assets/theme-solar-flare-background.webp")}
+html[data-spmt-theme="nebula-purple"]{--spmt-suite-bg-image:url("https://spacemountain.live/assets/theme-nebula-purple-background.webp")}
+html[data-spmt-theme="oceanic-blue"]{--spmt-suite-bg-image:url("https://spacemountain.live/assets/theme-oceanic-blue-background.webp")}
+html[data-spmt-theme="aurora-green"]{--spmt-suite-bg-image:url("https://spacemountain.live/assets/theme-aurora-green-background.webp")}
+body.spmt-host-shell:before{content:"";position:fixed;inset:-3%;z-index:-3;pointer-events:none;background-image:linear-gradient(180deg,rgba(2,6,18,.28),rgba(2,6,18,.72)),var(--spmt-suite-bg-image);background-size:cover;background-position:center;background-repeat:no-repeat;transform:scale(1.035)}
+body.spmt-host-shell:after{background:radial-gradient(circle at 10% 0%,rgba(var(--spmt-accent-rgb),calc(.25 * var(--spmt-nebula))),transparent 36rem),radial-gradient(circle at 92% 86%,rgba(var(--spmt-accent-rgb),calc(.12 * var(--spmt-nebula))),transparent 34rem)!important}
+</style></head>
+<body>
+  <main class="shell">
+    <div class="top">
+      <div class="brand"><div class="mark"></div><div><h1>MountainView AI</h1><div class="sub">Spacemountain.live mobile command bridge</div></div></div>
+      <div class="top-actions">
+        <a class="link-btn" href="/mountainview/apk">Download APK</a>
+        <a class="link-btn secondary" href="/">Rotator dashboard</a>
+        <button class="secondary" onclick="login()">Sign in with SPMT</button>
+      </div>
+    </div>
+
+    <section id="home" class="screen active">
+      <div class="grid">
+        <div class="panel">
+          <div class="hero">
+            <div>
+              <div class="label">AiMB / RDGlass bridge</div>
+              <div class="value warn" id="deviceState">Native</div>
+              <p class="sub">Phone-side bridge for Bluetooth audio, BLE events, media buttons, voice commands, images, and command triggers.</p>
+            </div>
+            <div class="stat"><div class="label">No face recognition</div><div class="value good">Relay only</div><p class="sub">StreamWeaver handles AI image processing.</p></div>
+            <div class="stat"><div class="label">Live stream</div><div class="value">Ready</div><p class="sub">Control plane prepared for future direct media feeds.</p></div>
+            <div class="stat"><div class="label">Flashlight</div><div class="value bad">Research</div><p class="sub">RDGlass test command is logged; steady torch control is still being mapped.</p></div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="label">Quick actions</div>
+          <div class="cards" id="quickCommands"></div>
+        </div>
+      </div>
+      <div class="grid" style="margin-top:14px;">
+        <div class="panel"><div class="label">Companion HUD</div><div class="value">Phone / tablet / browser display</div><p class="sub">Use paired devices as the display your glasses do not have: memory cards, command output, transcripts, QR targets, and stream controls.</p><button class="secondary" onclick="show('devices', document.querySelector('[data-tab=devices]'))">Open device mesh</button></div>
+        <div class="panel"><div class="label">Visual trigger polling</div><div class="value">Snapshot mode</div><p class="sub">Battery-aware scheduled photo checks for QR codes, device markers, scene changes, and memory prompts without continuous video streaming.</p><button class="secondary" onclick="show('polling', document.querySelector('[data-tab=polling]'))">Configure polling</button></div>
+        <div class="panel"><div class="label">App logo recognition</div><div class="value">Screen routing</div><p class="sub">Use polling snapshots to identify Spacemountain app logos on screens and link to the right command flow.</p><button class="secondary" onclick="show('logos', document.querySelector('[data-tab=logos]'))">Open logo tests</button></div>
+        <div class="panel"><div class="label">QR trigger maker</div><div class="value">AR actions</div><p class="sub">Generate scannable triggers for avatars, tags, stream overlays, rooms, and audiobook requests.</p><button class="secondary" onclick="show('qr', document.querySelector('[data-tab=qr]'))">Make QR triggers</button></div>
+      </div>
+    </section>
+
+    <section id="commands" class="screen">
+      <div class="split">
+        <div class="panel"><div class="label">Command center</div><div id="commandGroups" class="timeline"></div><div id="commandList" class="timeline"></div></div>
+        <div class="panel">
+          <div class="label">Create command</div>
+          <div class="row"><span>Name</span><input id="cmdName" value="Ask MountainView AI"></div>
+          <div class="row"><span>Target app</span><select id="cmdApp"><option value="streamweaver">StreamWeaver</option><option value="discordstreamhub">DiscordStreamHub</option><option value="chat-tag">Chat-Tag</option><option value="hearmeout">HearMeOut</option></select></div>
+          <div class="row"><span>Method</span><select id="cmdMethod"><option>POST</option><option>GET</option></select></div>
+          <div class="row"><span>URL</span><input id="cmdUrl" value="/api/events"></div>
+          <div class="row"><span>Payload</span><textarea id="cmdPayload">{"source":"mountainview-ai","message":"{{message}}"}</textarea></div>
+          <button onclick="saveCommand()">Save command</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="relay" class="screen">
+      <div class="split">
+        <div class="panel">
+          <div class="label">StreamWeaver image relay</div>
+          <textarea id="imageBase64" placeholder="Paste base64 image payload from glasses or phone capture"></textarea>
+          <div class="row"><span>Image URL</span><input id="imageUrl" placeholder="Optional image URL"></div>
+          <button onclick="sendImage()">Send to StreamWeaver</button>
+        </div>
+        <div class="panel"><div class="label">Upload status</div><div class="log" id="relayStatus">Waiting for image.</div></div>
+      </div>
+    </section>
+
+    <section id="memory" class="screen">
+      <div class="split">
+        <div class="panel"><div class="label">AI memory</div><div class="row"><span>Title</span><input id="memTitle" value="Voice note"></div><textarea id="memBody" placeholder="Save note, command context, image metadata, or app activity"></textarea><div class="row"><span>Tags</span><input id="memTags" value="glasses,stream"></div><button onclick="saveMemory()">Save memory</button></div>
+        <div class="panel"><div class="label">Timeline</div><input id="memSearch" placeholder="Search memory" oninput="loadMemory()"><div id="memoryList" class="timeline"></div></div>
+      </div>
+    </section>
+
+    <section id="stream" class="screen">
+      <div class="panel"><div class="label">Live stream controls</div><div class="cards">
+        <button onclick="runSystemCommand('cmd_stream_start')">Start stream</button><button class="secondary" onclick="runSystemCommand('cmd_stream_stop')">Stop stream</button><button class="secondary" onclick="runSystemCommand('cmd_stream_audio')">Start glasses audio relay</button><button class="secondary" onclick="runSystemCommand('cmd_stream_video')">Start glasses video relay</button><button class="secondary" onclick="sendImage()">Send current image/frame</button><button class="secondary" onclick="runSystemCommand('cmd_stream_overlay')">Trigger stream overlay/event</button>
+      </div><p class="sub">Glasses audio/video are treated as input streams. StreamWeaver, HearMeOut, DiscordStreamHub, Chat-Tag, and EdenAI do the workflow work behind the bridge.</p></div>
+    </section>
+
+    <section id="devices" class="screen">
+      <div class="split">
+        <div class="panel"><div class="label">Device mesh</div><div id="deviceList" class="timeline"></div></div>
+        <div class="panel">
+          <div class="label">Register device</div>
+          <div class="row"><span>Name</span><input id="deviceName" value="Companion Display"></div>
+          <div class="row"><span>Kind</span><select id="deviceKind"><option value="tablet">Tablet</option><option value="computer">Computer</option><option value="phone">Phone</option><option value="stream-machine">Stream machine</option><option value="browser-display">Browser display</option></select></div>
+          <div class="row"><span>Pairing code</span><input id="devicePairing" value="qr-command-portal"></div>
+          <button onclick="saveDevice()">Save device</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="polling" class="screen">
+      <div class="split">
+        <div class="panel"><div class="label">Visual polling profiles</div><div id="pollingList" class="timeline"></div></div>
+        <div class="panel">
+          <div class="label">Create polling profile</div>
+          <div class="row"><span>Name</span><input id="pollName" value="QR and device trigger scan"></div>
+          <div class="row"><span>Interval</span><select id="pollInterval"><option value="15">15 seconds</option><option value="60" selected>60 seconds</option><option value="180">3 minutes</option><option value="300">5 minutes</option></select></div>
+          <div class="row"><span>Battery mode</span><select id="pollBattery"><option value="balanced">Balanced</option><option value="battery-saver">Battery saver</option><option value="high-power">High power</option></select></div>
+          <div class="row"><span>Targets</span><input id="pollTargets" value="qr,device-marker,scene-change"></div>
+          <button onclick="savePollingProfile()">Save polling profile</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="logos" class="screen">
+      <div class="split">
+        <div class="panel"><div class="label">App logo recognition profiles</div><div id="logoProfileList" class="timeline"></div></div>
+        <div class="panel">
+          <div class="label">Add logo route</div>
+          <div class="row"><span>Name</span><input id="logoName" value="StreamWeaver"></div>
+          <div class="row"><span>Target app</span><select id="logoApp"><option value="streamweaver">StreamWeaver</option><option value="hearmeout">HearMeOut</option><option value="discordstreamhub">DiscordStreamHub</option><option value="chat-tag">Chat-Tag</option><option value="edenai">EdenAI</option></select></div>
+          <div class="row"><span>Aliases</span><input id="logoAliases" value="streamweaver,stream weaver"></div>
+          <div class="row"><span>Command</span><input id="logoCommand" value="cmd_streamweaver_voice_commander"></div>
+          <button onclick="saveLogoProfile()">Save logo route</button>
+          <div class="row"><span>Test text</span><input id="logoObserved" value="I see the StreamWeaver logo on my tablet"></div>
+          <button class="secondary" onclick="testLogoMatch()">Test polling match</button>
+          <div class="log" id="logoMatchStatus">Waiting for logo test.</div>
+        </div>
+      </div>
+    </section>
+
+    <section id="qr" class="screen">
+      <div class="split">
+        <div class="panel"><div class="label">QR trigger maker</div><div id="qrTriggerList" class="timeline"></div></div>
+        <div class="panel">
+          <div class="label">Create QR trigger</div>
+          <div class="row"><span>Name</span><input id="qrName" value="AR avatar room anchor"></div>
+          <div class="row"><span>Target app</span><select id="qrApp"><option value="streamweaver">StreamWeaver</option><option value="hearmeout">HearMeOut</option><option value="discordstreamhub">DiscordStreamHub</option><option value="chat-tag">Chat-Tag</option><option value="edenai">EdenAI</option></select></div>
+          <div class="row"><span>Command</span><input id="qrCommand" value="cmd_eden_image_generation"></div>
+          <div class="row"><span>Action</span><input id="qrAction" value="ar-avatar"></div>
+          <div class="row"><span>Payload</span><input id="qrPayload" value="mountainview://avatar/room-anchor/default"></div>
+          <button onclick="saveQrTrigger()">Generate QR trigger</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="roadmap" class="screen">
+      <div class="panel"><div class="label">Coming soon and test beds</div><div id="roadmapList" class="cards"></div></div>
+    </section>
+
+    <section id="settings" class="screen">
+      <div class="split">
+        <div class="panel"><div class="label">Service token storage</div><div class="row"><span>Service</span><select id="tokenService"><option value="streamweaver">StreamWeaver</option><option value="discordstreamhub">DiscordStreamHub</option><option value="chat-tag">Chat-Tag</option><option value="hearmeout">HearMeOut</option></select></div><div class="row"><span>Token</span><input id="serviceToken" type="password"></div><button onclick="saveToken()">Store encrypted token</button></div>
+        <div class="panel"><div class="label">Activity logs</div><div class="log" id="activityLog"></div></div>
+      </div>
+    </section>
+  </main>
+  <nav class="tabs"><button data-tab="home" class="active" onclick="show('home',this)">Home</button><button data-tab="commands" onclick="show('commands',this)">Commands</button><button data-tab="relay" onclick="show('relay',this)">Relay</button><button data-tab="memory" onclick="show('memory',this)">Memory</button><button data-tab="stream" onclick="show('stream',this)">Stream</button><button data-tab="devices" onclick="show('devices',this)">Devices</button><button data-tab="polling" onclick="show('polling',this)">Polling</button><button data-tab="logos" onclick="show('logos',this)">Logos</button><button data-tab="qr" onclick="show('qr',this)">QR</button><button data-tab="roadmap" onclick="show('roadmap',this)">Roadmap</button><button data-tab="settings" onclick="show('settings',this)">Settings</button></nav>
+  <script>
+    let state = {commands:[], memory:[], logs:[]};
+    const api = async (path, options={}) => { const res = await fetch('/mountainview/api' + path, { ...options, credentials:'same-origin', headers: { 'content-type':'application/json', ...(options.headers||{}) } }); const data = await res.json(); if(!res.ok || data.error) throw new Error(data.error || 'Request failed'); return data; };
+    async function login(){ window.location.assign('/mountainview/auth/login'); }
+    async function load(){ const data = await api('/bootstrap'); state=data; renderCommands(); renderMemory(); renderDevices(); renderPolling(); renderLogoProfiles(); renderQrTriggers(); renderRoadmap(); renderLogs(); }
+    function show(id, btn){ document.querySelectorAll('.screen').forEach(x=>x.classList.remove('active')); document.getElementById(id).classList.add('active'); document.querySelectorAll('.tabs button').forEach(x=>x.classList.remove('active')); btn.classList.add('active'); if(id==='memory') loadMemory(); }
+    function renderCommands(){ const commands=state.commands||[]; const html = commands.map(c=>'<div class="cmd"><div><strong>'+esc(c.name)+'</strong><span>'+esc(c.app_id)+' • '+esc(c.method)+' '+esc(c.url_template)+'</span></div><button class="secondary" onclick="runSystemCommand(\\''+esc(c.id)+'\\')">Run</button></div>').join(''); commandList.innerHTML=html; quickCommands.innerHTML=commands.slice(0,8).map(c=>'<div class="cmd"><div><strong>'+esc(c.name)+'</strong><span>'+esc(c.app_id)+'</span></div><button class="secondary" onclick="runSystemCommand(\\''+esc(c.id)+'\\')">Run</button></div>').join(''); const groups={StreamWeaver:commands.filter(c=>c.app_id==='streamweaver'),HearMeOut:commands.filter(c=>c.app_id==='hearmeout'),DiscordStreamHub:commands.filter(c=>c.app_id==='discordstreamhub'),'Chat-Tag':commands.filter(c=>c.app_id==='chat-tag'),EdenAI:commands.filter(c=>c.app_id==='edenai')}; commandGroups.innerHTML=Object.entries(groups).map(([name,items])=>'<div class="memory"><strong>'+esc(name)+'</strong><div class="sub">'+items.length+' commands ready</div></div>').join(''); }
+    async function runSystemCommand(id){ const message = prompt('Payload message', 'MountainView trigger') || ''; const data = await api('/commands/execute',{method:'POST',body:JSON.stringify({commandId:id,payload:{message,payload:{message},metadata:{source:'dashboard'}}})}); appendLog(JSON.stringify(data,null,2)); await load(); }
+    async function saveCommand(){ await api('/commands',{method:'POST',body:JSON.stringify({name:cmdName.value,appId:cmdApp.value,method:cmdMethod.value,urlTemplate:cmdUrl.value,payloadTemplate:JSON.parse(cmdPayload.value),phrase:cmdName.value.toLowerCase()})}); await load(); }
+    async function sendImage(){ relayStatus.textContent='Uploading...'; const data = await api('/media/streamweaver',{method:'POST',body:JSON.stringify({imageBase64:imageBase64.value,imageUrl:imageUrl.value,metadata:{sentAt:new Date().toISOString(),source:'mountainview-dashboard'}})}); relayStatus.textContent=JSON.stringify(data,null,2); await load(); }
+    async function saveMemory(){ await api('/memory',{method:'POST',body:JSON.stringify({title:memTitle.value,body:memBody.value,tags:memTags.value})}); memBody.value=''; await loadMemory(); }
+    async function loadMemory(){ const data = await api('/memory?q='+encodeURIComponent(memSearch?.value||'')); state.memory=data.records; renderMemory(); }
+    function renderMemory(){ memoryList.innerHTML=(state.memory||[]).map(m=>'<div class="memory"><strong>'+esc(m.title)+'</strong><div class="sub">'+esc(m.body)+'</div><div class="sub">'+esc((m.tags||[]).join(', '))+'</div></div>').join('') || '<p class="sub">No memory records yet.</p>'; }
+    function renderLogs(){ activityLog.textContent=(state.logs||[]).map(l=>l.created_at+' '+l.app_id+' '+l.status+' '+l.method+' '+l.url+'\\n'+(l.error||'')).join('\\n\\n') || 'No activity yet.'; }
+    async function saveToken(){ await api('/settings/token',{method:'POST',body:JSON.stringify({serviceId:tokenService.value,token:serviceToken.value})}); serviceToken.value=''; appendLog('Stored encrypted token for '+tokenService.value); }
+    async function saveDevice(){ await api('/devices',{method:'POST',body:JSON.stringify({name:deviceName.value,kind:deviceKind.value,pairingCode:devicePairing.value,capabilities:['display','commands','companion-hud']})}); await load(); }
+    async function savePollingProfile(){ await api('/polling-profiles',{method:'POST',body:JSON.stringify({name:pollName.value,intervalSeconds:Number(pollInterval.value),batteryMode:pollBattery.value,triggerTargets:pollTargets.value.split(',').map(x=>x.trim()).filter(Boolean)})}); await load(); }
+    async function saveLogoProfile(){ await api('/logo-profiles',{method:'POST',body:JSON.stringify({name:logoName.value,appId:logoApp.value,aliases:logoAliases.value,commandId:logoCommand.value})}); await load(); }
+    async function testLogoMatch(){ const data = await api('/logo-profiles/match',{method:'POST',body:JSON.stringify({observedText:logoObserved.value})}); logoMatchStatus.textContent=JSON.stringify(data,null,2); await load(); }
+    async function saveQrTrigger(){ await api('/qr-triggers',{method:'POST',body:JSON.stringify({name:qrName.value,targetApp:qrApp.value,commandId:qrCommand.value,actionType:qrAction.value,payload:qrPayload.value})}); await load(); }
+    function renderDevices(){ deviceList.innerHTML=(state.devices||[]).map(d=>'<div class="memory"><strong>'+esc(d.name)+'</strong><div class="sub">'+esc(d.kind)+' • '+esc(d.status)+' • '+esc(d.connection_hint)+'</div><div class="sub">Pairing: '+esc(d.pairing_code||'local')+'</div><div class="sub">'+esc((d.capabilities||[]).join(', '))+'</div></div>').join('') || '<p class="sub">No devices registered.</p>'; }
+    function renderPolling(){ pollingList.innerHTML=(state.pollingProfiles||[]).map(p=>'<div class="memory"><strong>'+esc(p.name)+'</strong><div class="sub">'+esc(p.interval_seconds)+'s • '+esc(p.battery_mode)+' • '+(p.enabled ? 'enabled' : 'paused')+'</div><div class="sub">'+esc((p.trigger_targets||[]).join(', '))+'</div></div>').join('') || '<p class="sub">No polling profiles yet.</p>'; }
+    function renderLogoProfiles(){ logoProfileList.innerHTML=(state.logoProfiles||[]).map(p=>'<div class="memory"><strong>'+esc(p.name)+'</strong><div class="sub">'+esc(p.app_id)+' • '+esc(p.command_id)+' • threshold '+esc(p.confidence_threshold)+'</div><div class="sub">'+esc((p.aliases||[]).join(', '))+'</div></div>').join('') || '<p class="sub">No logo profiles yet.</p>'; }
+    function renderQrTriggers(){ qrTriggerList.innerHTML=(state.qrTriggers||[]).map(q=>'<div class="memory qr"><div>'+String(q.qr_svg||'')+'</div><div><strong>'+esc(q.name)+'</strong><div class="sub">'+esc(q.target_app)+' • '+esc(q.command_id)+' • '+esc(q.action_type)+'</div><div class="sub">'+esc(q.payload)+'</div></div></div>').join('') || '<p class="sub">No QR triggers yet.</p>'; }
+    function renderRoadmap(){ roadmapList.innerHTML=(state.roadmap||[]).map(r=>'<div class="stat"><div class="label">'+esc(r.status)+'</div><div class="value" style="font-size:18px">'+esc(r.title)+'</div><p class="sub">'+esc(r.description)+'</p></div>').join(''); }
+    function appendLog(text){ activityLog.textContent = new Date().toISOString()+' '+text+'\\n\\n'+activityLog.textContent; }
+    function esc(v){ return String(v ?? '').replace(/[&<>"]/g, s=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[s])); }
+    load().catch(()=>{});
+  </script>
+${spmtSharedUiScript("mountainview", "/mountainview/api/bootstrap")}</body>
+</html>`;
+}
+
+export async function hasMountainViewAdminSession(request: IncomingMessage, env: NodeJS.ProcessEnv): Promise<boolean> {
+  const context = await MountainViewContext.create(env);
+  try {
+    context.requireAuth(request, true);
+    return true;
+  } catch {
+    return false;
+  } finally {
+    context.close();
+  }
+}

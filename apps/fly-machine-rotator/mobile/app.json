@@ -1,0 +1,38 @@
+{
+  "expo": {
+    "name": "SpaceMountain Companion",
+    "slug": "mountainview-ai",
+    "scheme": "mountainviewai",
+    "version": "0.3.3",
+    "orientation": "portrait",
+    "ios": {
+      "bundleIdentifier": "live.spacemountain.mountainviewai",
+      "infoPlist": {
+        "NSCameraUsageDescription": "SpaceMountain Companion can relay user-selected images to StreamWeaver.",
+        "NSMicrophoneUsageDescription": "SpaceMountain Companion can receive voice command input for configured workflows."
+      }
+    },
+    "android": {
+      "package": "live.spacemountain.mountainviewai",
+      "versionCode": 33,
+      "permissions": ["CAMERA", "RECORD_AUDIO"],
+      "config": {
+        "metaWearablesAndroidAppId": "${MOUNTAINVIEW_META_APP_ID}"
+      }
+    },
+    "plugins": [
+      [
+        "./plugins/withMetaWearablesAndroid",
+        {
+          "mwdatVersion": "0.7.0",
+          "applicationId": "${MOUNTAINVIEW_META_APP_ID}",
+          "analyticsOptOut": true
+        }
+      ],
+      "./plugins/withAlwaysOnTopPip"
+    ],
+    "extra": {
+      "mountainViewApiBaseUrl": "https://mtman-machine-rotator.fly.dev/mountainview/api"
+    }
+  }
+}

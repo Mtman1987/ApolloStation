@@ -1,0 +1,21 @@
+FROM node:20-alpine
+WORKDIR /app
+ARG GITHUB_SHA=unknown
+ARG GH_SHA=unknown
+ARG BUILD_SHA=unknown
+LABEL org.opencontainers.image.revision=$GITHUB_SHA
+LABEL com.github.sha=$GH_SHA
+LABEL app.build_sha=$BUILD_SHA
+LABEL GITHUB_SHA=$GITHUB_SHA
+LABEL GH_SHA=$GH_SHA
+LABEL BUILD_SHA=$BUILD_SHA
+COPY package*.json ./
+RUN npm ci --only=production
+COPY bot.js ./
+COPY scripts/patch-game-hub-bot.mjs ./scripts/patch-game-hub-bot.mjs
+COPY src/lib/chat-tag-command-text.js ./src/lib/chat-tag-command-text.js
+COPY src/lib/chat-tag-player-lookup.js ./src/lib/chat-tag-player-lookup.js
+COPY src/lib/chat-tag-crowns.js ./src/lib/chat-tag-crowns.js
+RUN node scripts/patch-game-hub-bot.mjs
+RUN node -e "require('./src/lib/chat-tag-crowns')"
+CMD ["node", "bot.js"]

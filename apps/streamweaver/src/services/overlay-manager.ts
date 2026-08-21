@@ -1,0 +1,114 @@
+// ╔═══════════════════════════════════════════════════════════════════════╗
+// ║  🎨 MODULAR OVERLAY MANAGER                                           ║
+// ║  Clean, minimal overlays that actually work                           ║
+// ╚═══════════════════════════════════════════════════════════════════════╝
+
+import * as fs from 'fs/promises';
+import * as path from 'path';
+import { setBrowserSource } from './obs';
+import { getAppConfig } from '../lib/app-config';
+import { getConfiguredAppUrl } from '../lib/runtime-origin';
+import { tenantPath } from '../lib/tenant';
+
+function overlayDir(tenantId?: string): string {
+  if (tenantId) return path.join(tenantPath(tenantId, 'data'), 'overlays');
+  return path.resolve(process.cwd(), 'data', 'overlays');
+}
+
+interface OverlayConfig {
+  scene: string;
+  source: string;
+  duration: number;
+  position?: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center';
+}
+
+async function getOverlaysConfig(): Promise<Record<string, OverlayConfig>> {
+  const cfg = await getAppConfig();
+  const gambleScene = cfg.gambleOverlayScene || process.env.GAMBLE_OVERLAY_SCENE || 'Alerts';
+  const gambleSource = cfg.gambleOverlaySource || process.env.GAMBLE_OVERLAY_SOURCE || 'gamble';
+
+  return {
+    gamble: {
+      scene: gambleScene,
+      source: gambleSource,
+      duration: 5000,
+      position: 'center'
+    },
+    'space-mountain': {
+      scene: gambleScene,
+      source: 'space-mountain-overlay',
+      duration: 6000,
+      position: 'center'
+    },
+    'classic-gamble': {
+      scene: gambleScene,
+      source: 'classic-gamble-overlay',
+      duration: 5000,
+      position: 'center'
+    },
+    notification: {
+      scene: process.env.NOTIFICATION_SCENE || 'Alerts',
+      source: 'notification-overlay',
+      duration: 3000,
+      position: 'top-right'
+    }
+  };
+}
+
+export async function showOverlay(
+  type: string,
+  data: any,
+  tenantId?: string
+): Promise<void> {
+  const overlays = await getOverlaysConfig();
+  const config = overlays[type];
+  if (!config) {
+    console.warn(`[Overlay] Unknown overlay type: ${type}`);
+    return;
+  }
+
+  try {
+    // Write data to JSON file
+    const dataPath = path.join(overlayDir(tenantId), `${type}.json`);
+    await fs.mkdir(overlayDir(tenantId), { recursive: true });
+    await fs.writeFile(dataPath, JSON.stringify({ ...data, timestamp: Date.now() }, null, 2));
+
+    const url = `${getConfiguredAppUrl()}/overlay/${type}`;
+    await setBrowserSource(config.scene, config.source, url);
+
+    // Auto-hide after 15 seconds
+    setTimeout(async () => {
+      await setBrowserSource(config.scene, config.source, 'about:blank');
+    }, 15000);
+
+    console.log(`[Overlay] Showed ${type} for 15000ms`);
+  } catch (error) {
+    console.error(`[Overlay] Failed to show ${type}:`, error);
+  }
+}
+
+export async function getOverlayData(type: string, tenantId?: string): Promise<any> {
+  try {
+    const dataPath = path.join(overlayDir(tenantId), `${type}.json`);
+    const data = await fs.readFile(dataPath, 'utf-8');
+    return JSON.parse(data);
+  } catch {
+    return null;
+  }
+}
+
+export async function writeOverlayData(type: string, data: any, tenantId?: string): Promise<void> {
+  const dir = overlayDir(tenantId);
+  await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(path.join(dir, `${type}.json`), JSON.stringify({ ...data, timestamp: Date.now() }, null, 2));
+}
+
+export function getOverlayConfig(type: string): OverlayConfig | null {
+  const fallback: Record<string, OverlayConfig> = {
+    gamble: { scene: 'Alerts', source: 'gamble', duration: 5000, position: 'center' },
+    'space-mountain': { scene: 'Alerts', source: 'space-mountain-overlay', duration: 6000, position: 'center' },
+    'classic-gamble': { scene: 'Alerts', source: 'classic-gamble-overlay', duration: 5000, position: 'center' },
+    notification: { scene: 'Alerts', source: 'notification-overlay', duration: 3000, position: 'top-right' },
+  };
+  return fallback[type] || null;
+}

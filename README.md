@@ -4,6 +4,8 @@ Status: **proposal for owner debate — not approved for implementation**
 
 This repository is the clean-room architecture contract for rebuilding the SpaceMountain ecosystem beside the current production system. It does not replace production documentation or authorize a deployment until the decisions in `DECISIONS.md` are accepted.
 
+The temporary `codex/clean-ecosystem-monorepo-2026-08-21` branch also stages the seven cleaned application bases under `apps/` while the owner recovers normal GitHub access. See `TEMPORARY_MONOREPO.md` for the exact source commits and safety boundary. This staging branch does not deploy or replace any production application.
+
 ## What this package does
 
 - freezes the source documentation from the two current live repositories;

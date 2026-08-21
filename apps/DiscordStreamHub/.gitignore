@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+
+# Output
+.next/
+.next-build-data/
+dist/
+build/
+
+# Env / secrets
+.env
+.env.local*
+.env.*
+*.key
+*.p12
+*service-account*.json
+credentials/
+/.allai/*.db
+/*.zip
+
+# OS / tooling
+.DS_Store
+Thumbs.db
+npm-debug.log*
+package-lock.json.LOCK
+
+# Generated configs
+*.tsbuildinfo
+
+# Space Mountain launcher artifacts
+.launcher-install.json
+.space-mountain/

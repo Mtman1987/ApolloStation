@@ -1,0 +1,158 @@
+# See https://fly.io/docs/app-guides/continuous-deployment-with-github-actions/
+
+name: Fly Deploy
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  branch-housekeeping:
+    name: Retain newest merged branch backup
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete older branches already contained in main
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const defaultBranch = context.payload.repository?.default_branch || 'main';
+            const branches = await github.paginate(github.rest.repos.listBranches, {
+              owner, repo, per_page: 100,
+            });
+            const merged = [];
+            for (const branch of branches) {
+              if (!branch?.name || branch.name === defaultBranch) continue;
+              const comparison = await github.rest.repos.compareCommits({
+                owner, repo, base: branch.name, head: defaultBranch,
+              });
+              if (!['ahead', 'identical'].includes(comparison.data.status)) {
+                core.notice(`Retaining unmerged branch ${branch.name}.`);
+                continue;
+              }
+              const commit = await github.rest.repos.getCommit({ owner, repo, ref: branch.commit.sha });
+              const date = commit.data.commit.committer?.date || commit.data.commit.author?.date || '1970-01-01T00:00:00Z';
+              merged.push({ name: branch.name, sha: branch.commit.sha, date });
+            }
+            merged.sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
+            const newest = merged[0];
+            if (newest) core.notice(`Keeping newest merged branch backup ${newest.name} (${newest.sha}).`);
+            for (const branch of merged.slice(1)) {
+              try {
+                await github.rest.git.deleteRef({ owner, repo, ref: `heads/${branch.name}` });
+                core.notice(`Deleted older merged branch ${branch.name}.`);
+              } catch (error) {
+                if (error.status === 404 || error.status === 422) {
+                  core.warning(`Could not delete ${branch.name}; it may be protected or already absent.`);
+                  continue;
+                }
+                throw error;
+              }
+            }
+  test:
+    name: Test auth routing and workspace shell
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Run auth routing regression tests
+        run: npm run test:auth-routing
+      - name: Run durable player history tests
+        run: node --import tsx --test tests/player-history.test.ts
+      - name: Run canonical Personal overlay regression
+        run: node --import tsx --test tests/canonical-personal-overlay.test.ts tests/admin-shell-parity.test.ts tests/layout-cleanup.test.ts
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Production build
+        run: npm run build
+
+  deploy-web:
+    name: Deploy web app
+    if: github.event_name != 'pull_request'
+    needs: [test, branch-housekeeping]
+    runs-on: ubuntu-latest
+    concurrency: fly-deploy-web
+    env:
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: superfly/flyctl-actions/setup-flyctl@v1
+      - name: Check Fly token
+        run: |
+          if [ -z "$FLY_API_TOKEN" ]; then
+            echo "FLY_API_TOKEN is not set"
+            exit 1
+          fi
+      - name: Deploy chat-tag-new
+        run: flyctl deploy --remote-only --config fly.toml --ha=false
+      - name: Verify chat-tag-new
+        run: |
+          set -euo pipefail
+          flyctl status --app chat-tag-new
+
+          base_url="https://chat-tag-new.fly.dev"
+          curl --fail --show-error --retry 6 --retry-delay 5 --retry-all-errors \
+            "$base_url/api/health"
+
+          curl --fail --show-error --retry 6 --retry-delay 5 --retry-all-errors \
+            "$base_url/api/tag" \
+            --output /tmp/chat-tag-roster.json
+          node -e "const fs=require('fs');const data=JSON.parse(fs.readFileSync('/tmp/chat-tag-roster.json','utf8'));if(!Array.isArray(data.players))throw new Error('Public Chat Tag roster is unavailable');console.log('Public roster players:',data.players.length);"
+
+          curl --fail --show-error --retry 6 --retry-delay 5 --retry-all-errors \
+            --request POST \
+            --header 'Content-Type: application/json' \
+            --data '{"usernames":["twitch"]}' \
+            "$base_url/api/twitch/live" \
+            --output /tmp/chat-tag-live.json
+          node -e "const fs=require('fs');const data=JSON.parse(fs.readFileSync('/tmp/chat-tag-live.json','utf8'));if(!Array.isArray(data.liveUsers)||!Array.isArray(data.allUsers))throw new Error('Twitch live lookup is unavailable');console.log('Twitch lookup users:',data.allUsers.length,'live:',data.liveUsers.length);"
+
+          anonymous_write_status="$(curl --silent --show-error \
+            --request POST \
+            --header 'Content-Type: application/json' \
+            --data '{"action":"tag"}' \
+            --output /tmp/chat-tag-anonymous-write.json \
+            --write-out '%{http_code}' \
+            "$base_url/api/tag")"
+          if [ "$anonymous_write_status" != "401" ]; then
+            echo "Expected anonymous tag write to return 401, got $anonymous_write_status"
+            cat /tmp/chat-tag-anonymous-write.json
+            exit 1
+          fi
+
+  deploy-bot:
+    name: Deploy bot app
+    runs-on: ubuntu-latest
+    concurrency: fly-deploy-bot
+    needs: deploy-web
+    env:
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: superfly/flyctl-actions/setup-flyctl@v1
+      - name: Check Fly token
+        run: |
+          if [ -z "$FLY_API_TOKEN" ]; then
+            echo "FLY_API_TOKEN is not set"
+            exit 1
+          fi
+      - name: Deploy chat-tag-bot-new
+        run: flyctl deploy --remote-only --config fly-bot.toml --ha=false
+      - name: Verify chat-tag-bot-new
+        run: |
+          flyctl status --app chat-tag-bot-new
+          curl --fail --show-error --retry 6 --retry-delay 5 --retry-all-errors \
+            https://chat-tag-bot-new.fly.dev/health

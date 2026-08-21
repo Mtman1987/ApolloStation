@@ -1,0 +1,40 @@
+{
+  "name": "fly-machine-rotator",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "patch:spmt-llm": "node scripts/patch-spmt-local-llm.mjs",
+    "patch:workspace-parity": "node scripts/patch-ecosystem-workspace-parity.mjs && node scripts/patch-private-athena-room.mjs && node scripts/patch-athena-room-coder-control.mjs && node scripts/patch-mountainview-command-parity.mjs && node scripts/patch-mountainview-ai-router.mjs && node scripts/patch-session-cache.mjs && node scripts/patch-ecosystem-header.mjs && node scripts/patch-mobile-presence.mjs && node scripts/patch-native-athena-foreground-wake.mjs && node scripts/patch-mobile-spmt-browser-auth.mjs",
+    "patch:athena-repair": "node scripts/patch-athena-repair-gates.mjs && node scripts/patch-mtfixit-service-auth.mjs && node scripts/patch-athena-repair-audit.mjs && node scripts/patch-canonical-owner-auth.mjs && node scripts/patch-athena-provider-escalation.mjs && node scripts/patch-athena-coder-v2.mjs && node scripts/patch-athena-chatgpt-handoff.mjs && node scripts/patch-chatgpt-handoff-dsh.mjs && node scripts/patch-mtfixit-chatgpt-review.mjs && node scripts/patch-owner-runtime-mcp.mjs && node scripts/patch-mcp-oauth-discovery.mjs",
+    "prebuild": "npm run patch:spmt-llm && npm run patch:workspace-parity && npm run patch:athena-repair",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/index.js run",
+    "monitor": "node dist/index.js monitor",
+    "predev": "npm run patch:spmt-llm && npm run patch:workspace-parity && npm run patch:athena-repair",
+    "dev": "tsx src/index.ts run",
+    "dry-run": "tsx src/index.ts run --dry-run",
+    "athena": "node scripts/athena-code.mjs",
+    "pretest": "npm run patch:spmt-llm && npm run patch:workspace-parity && npm run patch:athena-repair",
+    "test": "vitest run",
+    "pretypecheck": "npm run patch:spmt-llm && npm run patch:workspace-parity && npm run patch:athena-repair",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@openai/codex-sdk": "^0.146.0",
+    "better-sqlite3": "^12.11.1",
+    "nats": "^2.29.3",
+    "qrcode": "^1.5.4"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^22.15.18",
+    "@types/qrcode": "^1.5.4",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3",
+    "vitest": "^3.1.3"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

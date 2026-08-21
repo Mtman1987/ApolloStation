@@ -1,0 +1,50 @@
+{
+  "name": "react-example",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "patch:session-cache": "node scripts/patch-session-cache.mjs",
+    "patch:runtime-contracts": "npm run patch:session-cache && node scripts/patch-dsh-community-status-resilience.mjs",
+    "predev": "npm run patch:runtime-contracts",
+    "dev": "tsx server.ts",
+    "prebuild": "npm run patch:runtime-contracts",
+    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "start": "node dist/server.cjs",
+    "lint": "tsc --noEmit",
+    "test:workspace": "tsx scripts/workspace-profile-smoke.ts",
+    "test:shell": "node scripts/shell-ui-smoke.mjs",
+    "test:rocket-easter-egg": "node scripts/rocket-easter-egg-reliability-smoke.mjs",
+    "test:community-resilience": "node scripts/dsh-community-status-resilience-smoke.mjs",
+    "pretest": "npm run patch:runtime-contracts",
+    "test": "npm run lint && npm run test:workspace && npm run test:shell && npm run test:rocket-easter-egg && npm run test:community-resilience && npm run build"
+  },
+  "dependencies": {
+    "@google/genai": "^2.4.0",
+    "@spmt/sdk": "https://spmt.live/sdk/spmt-sdk-0.1.4.tgz",
+    "@tailwindcss/vite": "^4.1.14",
+    "@vitejs/plugin-react": "^5.0.4",
+    "better-sqlite3": "^12.11.1",
+    "dotenv": "^17.2.3",
+    "drizzle-orm": "^0.45.2",
+    "express": "^4.21.2",
+    "lucide-react": "^0.546.0",
+    "motion": "^12.23.24",
+    "react": "^19.0.1",
+    "react-dom": "^19.0.1",
+    "vite": "^6.2.3"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.14.0",
+    "autoprefixer": "^10.4.21",
+    "esbuild": "^0.25.0",
+    "tailwindcss": "^4.1.14",
+    "tsx": "^4.21.0",
+    "typescript": "~5.8.2"
+  }
+}

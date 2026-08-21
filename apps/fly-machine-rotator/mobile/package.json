@@ -1,0 +1,35 @@
+{
+  "name": "mountainview-ai-mobile",
+  "version": "0.1.0",
+  "private": true,
+  "main": "expo/AppEntry.js",
+  "scripts": {
+    "prestart": "node ../scripts/patch-ecosystem-workspace-parity.mjs && node ../scripts/patch-session-cache.mjs && node ../scripts/patch-mobile-presence.mjs",
+    "start": "expo start",
+    "preprebuild:android": "node ../scripts/patch-ecosystem-workspace-parity.mjs && node ../scripts/patch-session-cache.mjs && node ../scripts/patch-mobile-presence.mjs",
+    "prebuild:android": "expo prebuild --platform android",
+    "preios": "node ../scripts/patch-ecosystem-workspace-parity.mjs && node ../scripts/patch-session-cache.mjs && node ../scripts/patch-mobile-presence.mjs",
+    "ios": "expo run:ios",
+    "preandroid": "node ../scripts/patch-ecosystem-workspace-parity.mjs && node ../scripts/patch-session-cache.mjs && node ../scripts/patch-mobile-presence.mjs",
+    "android": "expo run:android"
+  },
+  "dependencies": {
+    "@expo/vector-icons": "~14.0.4",
+    "expo": "^52.0.0",
+    "expo-asset": "~11.0.5",
+    "expo-constants": "~17.0.8",
+    "expo-dev-client": "~5.0.20",
+    "expo-font": "~13.0.4",
+    "expo-image-picker": "~16.0.6",
+    "expo-secure-store": "~14.0.1",
+    "expo-speech": "~13.0.1",
+    "react": "18.3.1",
+    "react-native": "0.76.9",
+    "react-native-webview": "^13.12.5"
+  },
+  "devDependencies": {
+    "@expo/config-plugins": "~9.0.0",
+    "@types/react": "~18.3.12",
+    "typescript": "^5.8.3"
+  }
+}

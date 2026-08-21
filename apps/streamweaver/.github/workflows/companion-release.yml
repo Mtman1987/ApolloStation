@@ -1,0 +1,115 @@
+name: Companion Windows Release
+
+on:
+  push:
+    tags:
+      - "companion-v*"
+    branches:
+      - main
+    paths:
+      - "companion/**"
+      - "scripts/patch-companion-presence-always-on-top.mjs"
+      - "scripts/package-companion-runtime.mjs"
+      - "scripts/smoke-companion-runtime.mjs"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/companion-release.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm ci
+        working-directory: companion
+      - run: npm run companion:check
+      - run: node --test tests/companion-tenant-bootstrap-contract.test.mjs
+      - run: npm run package:companion-runtime
+      - run: npm run smoke:companion-runtime
+      - run: npm run dist:win
+        working-directory: companion
+
+      - name: Write unsigned update metadata and checksum
+        id: companion-version
+        shell: pwsh
+        run: |
+          $artifact = Get-Item "dist/companion/SpaceMountain-Companion-Setup.exe"
+          $sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $artifact.FullName).Hash.ToLowerInvariant()
+          $sha512Bytes = [System.Security.Cryptography.SHA512]::HashData([System.IO.File]::ReadAllBytes($artifact.FullName))
+          $sha512 = [Convert]::ToBase64String($sha512Bytes)
+          $version = node -p "require('./companion/package.json').version"
+          "package=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "$sha256  $($artifact.Name)" | Set-Content -LiteralPath "$($artifact.FullName).sha256"
+          @"
+          version: $version
+          files:
+            - url: $($artifact.Name)
+              sha512: $sha512
+              size: $($artifact.Length)
+          path: $($artifact.Name)
+          sha512: $sha512
+          releaseDate: '$(Get-Date -AsUTC -Format o)'
+          "@ | Set-Content -LiteralPath "dist/companion/latest.yml"
+
+      - name: Wait for matching StreamWeaver tenant-bootstrap deployment
+        shell: pwsh
+        run: |
+          $expected = "${{ github.sha }}"
+          for ($attempt = 1; $attempt -le 30; $attempt++) {
+            try {
+              $health = Invoke-RestMethod -Uri "https://streamweaver-new.fly.dev/api/health" -TimeoutSec 10
+              if ($health.status -eq "ok" -and $health.buildSha -eq $expected) {
+                Write-Host "StreamWeaver tenant-bootstrap route is live at $expected"
+                exit 0
+              }
+              Write-Host "Attempt $attempt/30: live build is $($health.buildSha), waiting for $expected"
+            } catch {
+              Write-Host "Attempt $attempt/30: StreamWeaver health is not ready yet"
+            }
+            Start-Sleep -Seconds 10
+          }
+          throw "StreamWeaver $expected was not live before Companion release publication"
+
+      - name: Publish direct installer release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          if ("${{ github.ref }}" -like "refs/tags/companion-v*") {
+            $tag = "${{ github.ref_name }}"
+          } else {
+            $tag = "companion-v${{ steps.companion-version.outputs.package }}"
+          }
+
+          $notes = @"
+          SpaceMountain Companion for Windows.
+
+          Download SpaceMountain-Companion-Setup.exe and run it. No ZIP extraction is required.
+
+          This installer is currently unsigned because the SignPath Foundation application was not approved. Windows may show an Unknown publisher or Microsoft Defender SmartScreen warning.
+          "@
+
+          $assets = @(
+            "dist/companion/SpaceMountain-Companion-Setup.exe",
+            "dist/companion/SpaceMountain-Companion-Setup.exe.sha256",
+            "dist/companion/latest.yml"
+          )
+
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag $assets --clobber
+            gh release edit $tag --title "SpaceMountain Companion $tag" --notes $notes --latest
+          } else {
+            gh release create $tag $assets --target "${{ github.sha }}" --title "SpaceMountain Companion $tag" --notes $notes --latest
+          }

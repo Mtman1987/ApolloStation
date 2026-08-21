@@ -1,0 +1,199 @@
+'use client';
+
+import React, { useState, useEffect } from 'react';
+import { useLocalParticipant, useRoomContext } from '@livekit/components-react';
+import { Participant } from 'livekit-client';
+import { Button } from '@/components/ui/button';
+import { Bot, Mic, MicOff, LogOut, Volume2, VolumeX } from 'lucide-react';
+import { DraggableContainer } from './DraggableContainer';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Slider } from '@/components/ui/slider';
+import { parsePersonaMetadata } from '@/app/rooms/[roomId]/_components/PersonaCard';
+
+interface VoiceRoomWidgetProps {
+  id: string;
+  position: { x: number; y: number };
+  size: { width: number; height: number };
+  // eslint-disable-next-line no-unused-vars
+  onPositionChange: (pos: { x: number; y: number }) => void;
+  // eslint-disable-next-line no-unused-vars
+  onSizeChange: (size: { width: number; height: number }) => void;
+  onClose: () => void;
+}
+
+export function VoiceRoomWidget({
+  id,
+  position,
+  size,
+  onPositionChange,
+  onSizeChange,
+  onClose,
+}: VoiceRoomWidgetProps) {
+  const room = useRoomContext();
+  const { localParticipant, isMicrophoneEnabled } = useLocalParticipant();
+  const [participants, setParticipants] = useState<Participant[]>([]);
+  const isMuted = !isMicrophoneEnabled;
+
+  useEffect(() => {
+    if (!room) return;
+
+    const updateParticipants = () => {
+      const allParticipants: Participant[] = [];
+      
+      if (room.localParticipant) {
+        allParticipants.push(room.localParticipant);
+      }
+      
+      if (room.remoteParticipants) {
+        allParticipants.push(...Array.from(room.remoteParticipants.values()));
+      }
+      
+      setParticipants(allParticipants);
+    };
+
+    updateParticipants();
+
+    room.on('participantConnected', updateParticipants);
+    room.on('participantDisconnected', updateParticipants);
+    room.on('trackSubscribed', updateParticipants);
+    room.on('trackUnsubscribed', updateParticipants);
+
+    return () => {
+      room.off('participantConnected', updateParticipants);
+      room.off('participantDisconnected', updateParticipants);
+      room.off('trackSubscribed', updateParticipants);
+      room.off('trackUnsubscribed', updateParticipants);
+    };
+  }, [room]);
+
+  const handleToggleMute = async () => {
+    if (localParticipant) {
+      try {
+        await localParticipant.setMicrophoneEnabled(isMuted);
+      } catch (error) {
+        console.error('Error toggling microphone:', error);
+      }
+    }
+  };
+
+  const handleLeave = async () => {
+    if (room) {
+      try {
+        await room.disconnect();
+      } catch (error) {
+        console.error('Error disconnecting:', error);
+      } finally {
+        onClose();
+      }
+    }
+  };
+
+  return (
+    <DraggableContainer
+      id={id}
+      position={position}
+      size={size}
+      onPositionChange={onPositionChange}
+      onSizeChange={onSizeChange}
+      onClose={onClose}
+      title="🎤 Voice Room"
+    >
+      <div className="flex flex-col overflow-hidden flex-1 p-3 gap-2">
+        {/* Participant Count */}
+        <div className="text-xs font-semibold text-muted-foreground px-1">
+          Active Users: {participants.length}
+        </div>
+
+        {/* Participants List */}
+        <div className="space-y-1 flex-1 overflow-y-auto">
+          {participants.length === 0 ? (
+            <div className="text-xs text-muted-foreground text-center py-4">
+              No active participants
+            </div>
+          ) : (
+            participants.map((participant) => (
+              <ParticipantItem key={participant.sid} participant={participant} />
+            ))
+          )}
+        </div>
+
+        {/* Controls */}
+        <div className="flex gap-2 pt-2 border-t">
+          <Button
+            size="sm"
+            variant={isMuted ? 'destructive' : 'default'}
+            onClick={handleToggleMute}
+            className="flex-1 text-xs"
+          >
+            {isMuted ? (
+              <MicOff className="w-3 h-3 mr-1" />
+            ) : (
+              <Mic className="w-3 h-3 mr-1" />
+            )}
+            {isMuted ? 'Muted' : 'Live'}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleLeave}
+            className="flex-1 text-xs"
+          >
+            <LogOut className="w-3 h-3 mr-1" />
+            Leave
+          </Button>
+        </div>
+      </div>
+    </DraggableContainer>
+  );
+}
+
+function ParticipantItem({ participant }: { participant: Participant }) {
+  const isSpeaking = participant.isSpeaking;
+  const isMuted = !participant.isMicrophoneEnabled;
+  const persona = parsePersonaMetadata(participant.metadata);
+  const displayName = persona?.displayName || participant.name || 'User';
+  const avatar = (isSpeaking ? persona?.talkingAvatar : persona?.idleAvatar) || persona?.avatar || '';
+  const [volume, setVolume] = React.useState(1);
+  const lastVolume = React.useRef(1);
+
+  React.useEffect(() => {
+    if (participant.isLocal) return;
+    if (volume > 0) lastVolume.current = volume;
+    const remote = participant as import('livekit-client').RemoteParticipant;
+    if (typeof remote.setVolume === 'function') remote.setVolume(volume);
+  }, [participant, volume]);
+
+  return (
+    <div
+      className={`text-xs px-2 py-1.5 rounded transition-all ${
+        isSpeaking
+          ? 'bg-green-500/20 text-green-700 dark:text-green-400 border border-green-500/50'
+          : 'bg-muted text-muted-foreground border border-transparent'
+      }`}
+    >
+      <div className="flex items-center gap-2">
+        <Avatar className={`h-8 w-8 ${isSpeaking ? 'ring-2 ring-green-500' : ''}`}>
+          {avatar ? <AvatarImage src={avatar} alt={displayName} /> : null}
+          <AvatarFallback>{persona ? <Bot className="h-4 w-4" /> : displayName.charAt(0).toUpperCase()}</AvatarFallback>
+        </Avatar>
+        <span className="truncate font-medium flex-1">{displayName}</span>
+        {isMuted && (
+          <span className="flex-shrink-0 text-red-500 text-xs" title="Muted">
+            🔇
+          </span>
+        )}
+        {isSpeaking && (
+          <Volume2 className="w-3 h-3 flex-shrink-0 text-green-500" />
+        )}
+      </div>
+      {!participant.isLocal && (
+        <div className="mt-1.5 flex items-center gap-2">
+          <button type="button" aria-label={`${displayName} local mute`} onClick={() => setVolume((current) => current > 0 ? 0 : lastVolume.current)}>
+            {volume > 0 ? <Volume2 className="h-3 w-3" /> : <VolumeX className="h-3 w-3" />}
+          </button>
+          <Slider aria-label={`${displayName} volume`} value={[volume]} onValueChange={(next) => setVolume(next[0])} max={1} step={0.05} />
+        </div>
+      )}
+    </div>
+  );
+}

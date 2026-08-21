@@ -1,0 +1,203 @@
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { afterEach, describe, expect, it } from "vitest";
+import { DedupeStore, ERROR_DEDUPE_COOLDOWN_MS, isBeforeObservationBaseline, isNonActionableErrorMessage, looksLikeError, ObservationBaselineStore, suggestFix } from "../src/logMonitor.js";
+
+const tempDirs: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(tempDirs.splice(0).map((path) => rm(path, { recursive: true, force: true })));
+});
+
+describe("log monitor repeat suppression", () => {
+  it("does not re-ingest retained Fly logs from before a cleared observation baseline", () => {
+    const baseline = "2026-07-19T05:09:57.304Z";
+    expect(isBeforeObservationBaseline("2026-07-18T17:03:33.248Z", baseline)).toBe(true);
+    expect(isBeforeObservationBaseline(baseline, baseline)).toBe(true);
+    expect(isBeforeObservationBaseline("2026-07-19T05:09:57.305Z", baseline)).toBe(false);
+    expect(isBeforeObservationBaseline(undefined, baseline)).toBe(false);
+  });
+
+  it("detects a dashboard clear so the monitor can reset its in-memory stores", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "rotator-baseline-"));
+    tempDirs.push(directory);
+    const path = join(directory, "baseline.json");
+    await writeFile(path, JSON.stringify({ startedAt: "2026-07-19T05:09:57.304Z" }));
+    const store = await ObservationBaselineStore.load(path);
+
+    expect(await store.inspect("2026-07-19T05:09:57.000Z")).toEqual({ excludes: true, changed: false });
+    await writeFile(path, JSON.stringify({ startedAt: "2026-07-20T10:13:59.997Z" }));
+    expect(await store.inspect("2026-07-19T05:09:57.000Z")).toEqual({ excludes: true, changed: true });
+    expect(await store.inspect("2026-07-20T10:14:00.000Z")).toEqual({ excludes: false, changed: false });
+  });
+
+  it("allows a fingerprint to be reported again after the bounded cooldown", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "rotator-dedupe-"));
+    tempDirs.push(directory);
+    const store = await DedupeStore.load(join(directory, "fingerprints.json"));
+    const reportedAt = Date.parse("2026-07-18T08:00:00.000Z");
+
+    store.add("repeat-error", reportedAt);
+
+    expect(store.has("repeat-error", reportedAt + ERROR_DEDUPE_COOLDOWN_MS - 1)).toBe(true);
+    expect(store.has("repeat-error", reportedAt + ERROR_DEDUPE_COOLDOWN_MS)).toBe(false);
+  });
+
+  it("migrates permanent legacy fingerprints as expired and saves timestamped records", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "rotator-dedupe-"));
+    tempDirs.push(directory);
+    const path = join(directory, "fingerprints.json");
+    await writeFile(path, JSON.stringify(["legacy-error"]));
+    const store = await DedupeStore.load(path);
+
+    expect(store.has("legacy-error")).toBe(false);
+    store.add("current-error");
+    await store.save();
+
+    const saved = JSON.parse(await readFile(path, "utf8")) as Array<Record<string, string>>;
+    expect(saved).toHaveLength(1);
+    expect(saved[0]?.fingerprint).toBe("current-error");
+    expect(Date.parse(saved[0]?.reportedAt ?? "")).not.toBeNaN();
+  });
+
+  it("honors dashboard removal from the volume-backed dedupe file", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "rotator-dedupe-"));
+    tempDirs.push(directory);
+    const path = join(directory, "fingerprints.json");
+    const store = await DedupeStore.load(path);
+    store.add("handled-error");
+    await store.save();
+    await writeFile(path, "[]");
+
+    await store.syncFromDisk();
+    expect(store.has("handled-error")).toBe(false);
+  });
+});
+
+describe("log monitor noise filtering", () => {
+  it.each([
+    '[API Error] /api/tag: 400 {"error":"tigerflakes420 is immune (20-min cooldown)"}',
+    '[API Error] /api/tag: 400 {"error":"You are not it! chronic_medusa is it."}',
+    '[Bot] Tag API response: {"error":"You are not it! lippyyybish is it.","__ok":false,"__status":400}',
+    '[Bot] Tag API response: {"error":"fultztrain420 is immune (no-tagback)","__ok":false,"__status":400}',
+    "[Bot] Tag error: mtman1987 is away/offline",
+    "[Bot] Auto-rotate failed (1/3): no other live eligible players",
+    "[Bot] Auto-rotate failed 3 times for fatkid4ev4; triggering FFA fallback",
+    '[API Error] /api/quackverse/pack: 429 {"packsRemaining":0,"dailyLimit":3}',
+    '[PM01] machines API returned an error: "machine still attempting to start"',
+    '[PM01] machines API returned an error: "rate limit exceeded"',
+    "[PM08] machine is in a non-startable state: stopping",
+    '[PM01] machines API returned an error: "machine ID 32870570a60738 lease currently held by 21609dbf-3b65-5861-a8b6-c1dd95cfdd5b@tokens.fly.io, expires at 2026-05-19T05:45:22Z"',
+    "[PM05] failed to connect to machine: gave up after 15 attempts (in 8.261252872s)",
+    "[PC07] failed to connect to instance after 6 attempts",
+    "[PR03] could not find a good candidate within 1 attempts at load balancing. last error: [PM05] failed to connect to machine: gave up after 15 attempts (in 8.199409689s)",
+    '[PR03] could not find a good candidate within 1 attempts at load balancing. last error: [PM01] machines API returned an error: "rate limit exceeded"',
+    "[PU02] could not complete HTTP request to instance: legacy hyper error: client error (SendRequest), caused by: connection error, caused by: fly-proxy-p2p/tls/http-multihop: connection reset",
+    "\u001b[31mERROR\u001b[0m error umounting /data: EBUSY: Device or resource busy, retrying in a bit",
+    '[TTS] inworld failed (voice: Snik), falling back to EdenAI: Inworld TTS failed: 402 {"code":7}',
+    '[TTS] OpenAI failed (voice: openai:nova), falling back to EdenAI edenai:openai:FEMALE: OpenAI TTS failed: 429 {',
+    '[Bot] Join result: {"error":"Already in game","__ok":false,"__status":400}',
+    '[API Error] /api/tag: 400 {"error":"Already in game"}',
+    '[API Error] /api/tag: 404 {"error":"You are not in the game! Use \\"spmt join\\" first."}',
+    '[Bot] Tag API response: {"error":"You are not in the game! Use \\"spmt join\\" first.","__ok":false,"__status":404}',
+    '[Bot] Tag error: You are not in the game! Use "spmt join" first.',
+    '[Bot] Failed joining x3_selegna: msg_banned',
+    '[Bot] Auto-blacklisting banned channel: x3_selegna',
+    '[Bot] Join failed nrdedan: account exists (id=416571103) but IRC timed out - may have chat disabled, followers-only, or Twitch IRC issue',
+    '[Dispatcher] Non-command message from gpplayhouse, checking mentions. lowerMessage: "panic turned 41"',
+    "[BRB] Playing clip: All Panic all the time (15.7s) for gpplayhouse"
+  ])("ignores expected or non-actionable rotator report noise: %s", (message) => {
+    expect(looksLikeError(message)).toBe(false);
+  });
+
+  it("ignores Fly platform lifecycle noise", () => {
+    const messages = [
+      "[PM07] failed to change machine state: machine getting replaced, refusing to start",
+      "[PM07] failed to change machine state: unable to start machine from current state: 'created'",
+      "ERROR error signaling (SIGTERM) main child process: ESRCH: No such process",
+      "Error: failed to pipe response",
+      "⨯ Error: failed to pipe response",
+      "  [cause]: TypeError: terminated",
+      "    [cause]: Error [SocketError]: other side closed",
+      "[PU05] could not finish reading HTTP body from instance: error reading a body from connection",
+      "Health check 'servicecheck-00-http-3000' on port 3000 has failed. Your app is not responding properly. Services exposed on ports [80, 443] will have intermittent failures until the health check passes.",
+      "[Kick] ❌ Pusher connection error for fatkid4ev4: { type: 'PusherError', data: { code: 1006, message: undefined } }"
+    ];
+
+    for (const message of messages) {
+      expect(isNonActionableErrorMessage(message)).toBe(true);
+      expect(looksLikeError(message)).toBe(false);
+    }
+  });
+
+  it("ignores TTS preview lines that only echo failure text", () => {
+    const message = "  textPreview: `Oh, my magnificent Commander! \"Failed\"? Oh, Annie's circuits just gave a tiny *f`,";
+    expect(looksLikeError(message)).toBe(false);
+  });
+
+  it("ignores received-message and banned-channel echoes", () => {
+    expect(looksLikeError("[DiscordChat] Received: {\"message\":\"this gives me an error\"}")).toBe(false);
+    expect(looksLikeError("[Twitch:community-bot] Failed to join #infuse_carnage: msg_banned")).toBe(false);
+  });
+
+  it.each([
+    '[API Error] /api/tag: 400 {"error":"Channel is blacklisted/opted out and cannot rejoin."}',
+    '[Bot] Join result: {"error":"Channel is blacklisted/opted out and cannot rejoin.","__ok":false,"__status":400}',
+    "[HTTP /api/twitch/send-message] Sending as 'broadcaster': Pokémon Center, Computer Error | Balance: 993135 pts",
+    "[Next.js ERROR] [Discord Cleanup] Message delete failed: {\"status\":404,\"error\":\"Discord API 404: Unknown Message\"}",
+    "Read more: https://nextjs.org/docs/messages/failed-to-find-server-action",
+    "    'Read more: https://nextjs.org/docs/messages/failed-to-find-server-action',",
+    "    error: {",
+    "    \"error\": {",
+    "    error: \"Expected ',' or '}' after property value in JSON at position 1622\"",
+    "    \"message\": \"You exceeded your current quota. Please check your plan.\",",
+    "    message: \"Discord API 404: Unknown Channel\"",
+    "    reason: 'api-error',",
+    '[DiscordTrace] {"traceId":"1529967135605129369","service":"streamweaver-fanout","stage":"complete","streamweaverFanout":{"ok":true,"replyCount":0,"deliveredCount":0,"context":null,"botResponded":false,"error":null}}',
+    "[WalkOnRecovery] Simple fallback failed for nephalem2: Shared chat source-only send failed",
+    "Failed to fetch Twitch channel info for user: kyouya66",
+    "[Twitch] Channel metadata unavailable for kyouya66 (503); using no-game fallback.",
+    "[11:57] error: Reconnecting in 11 seconds..",
+    "[11:57] error: Unable to connect.",
+    "[Bot] Failed joining kyouya66: Not connected to server.",
+    "[Bot] Join failed kyouya66: not connected to server.",
+    "    [Symbol(undici.error.UND_ERR_CONNECT_TIMEOUT)]: true",
+    "      Error.captureStackTrace(err);",
+    "[SPMT] XP award failed {"
+  ])("ignores exact successful, expected-state, and context-only error echoes: %s", (message) => {
+    expect(looksLikeError(message)).toBe(false);
+  });
+
+  it("keeps real app failures actionable", () => {
+    expect(looksLikeError("[Next.js ERROR] [AI Image] Error: Custom SeaArt models require modelNo:modelVerNo.")).toBe(true);
+  });
+
+  it.each([
+    "[DiscordInteractions] Signature verification failed { bodyLength: 736, timestamp: '1783403924' }",
+    "Failed to delete message 123 in 456: 503",
+    "<title>503 Server Error</title>",
+    "Failed to fetch Twitch user: 429 Too Many Requests",
+    "[22:03] error: Ping timeout.",
+    "ERROR unexpected error executing command error=\"exec: powershell: executable file not found in $PATH\""
+  ])("never auto-ignores security, dependency, rate-limit, or platform-code failures: %s", (message) => {
+    expect(isNonActionableErrorMessage(message)).toBe(false);
+    expect(looksLikeError(message)).toBe(true);
+  });
+
+  it("does not mistake chatroom for an out-of-memory signal", () => {
+    const suggestion = suggestFix("Could not resolve chatroom ID for ladyheidi. Re-authorize Kick Broadcaster to fix.");
+    expect(suggestion).toContain("re-authorize");
+    expect(suggestion).toContain("do not add");
+    expect(suggestion).not.toContain("memory usage");
+  });
+
+  it.each([
+    "Out of memory: Killed process",
+    "[18:43] error: Login authentication failed",
+    "[XtreamCache] Cache failed for VOD 936395: Xtream cache upstream returned 551",
+    "Health check 'servicecheck-00-http-8091' on port 8091 has failed."
+  ])("keeps actionable production failures: %s", (message) => {
+    expect(looksLikeError(message)).toBe(true);
+  });
+});

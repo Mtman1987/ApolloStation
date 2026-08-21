@@ -1,0 +1,134 @@
+name: Android APK
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/android-debug-apk.yml"
+      - "mobile/**"
+      - "src/mountainView.ts"
+      - "src/publicCodexFixer.ts"
+      - "scripts/patch-ecosystem-workspace-parity.mjs"
+      - "scripts/patch-private-athena-room.mjs"
+      - "scripts/patch-athena-room-coder-control.mjs"
+      - "scripts/patch-native-athena-foreground-wake.mjs"
+      - "scripts/patch-native-athena-wake-regex.mjs"
+      - "scripts/patch-mobile-spmt-browser-auth.mjs"
+      - "scripts/patch-mountainview-command-parity.mjs"
+      - "scripts/patch-mountainview-ai-router.mjs"
+      - "scripts/patch-session-cache.mjs"
+      - "scripts/patch-mobile-presence.mjs"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/android-debug-apk.yml"
+      - "mobile/**"
+      - "src/mountainView.ts"
+      - "src/publicCodexFixer.ts"
+      - "scripts/patch-ecosystem-workspace-parity.mjs"
+      - "scripts/patch-private-athena-room.mjs"
+      - "scripts/patch-athena-room-coder-control.mjs"
+      - "scripts/patch-native-athena-foreground-wake.mjs"
+      - "scripts/patch-native-athena-wake-regex.mjs"
+      - "scripts/patch-mobile-spmt-browser-auth.mjs"
+      - "scripts/patch-mountainview-command-parity.mjs"
+      - "scripts/patch-mountainview-ai-router.mjs"
+      - "scripts/patch-session-cache.mjs"
+      - "scripts/patch-mobile-presence.mjs"
+
+concurrency:
+  group: android-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  debug:
+    name: Build SpaceMountain Companion Android debug APK
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Install dependencies
+        run: npm ci
+      - name: Apply current SPMT Companion, private Athena room, Coder control, native wake, browser auth, cache, command, and presence parity
+        run: cd .. && node scripts/patch-ecosystem-workspace-parity.mjs && node scripts/patch-private-athena-room.mjs && node scripts/patch-athena-room-coder-control.mjs && node scripts/patch-mountainview-command-parity.mjs && node scripts/patch-mountainview-ai-router.mjs && node scripts/patch-session-cache.mjs && node scripts/patch-mobile-presence.mjs && node scripts/patch-native-athena-foreground-wake.mjs && node scripts/patch-native-athena-wake-regex.mjs && node scripts/patch-mobile-spmt-browser-auth.mjs
+      - name: Typecheck
+        run: npx tsc --noEmit
+      - name: Generate Android project
+        run: npx expo prebuild --platform android --no-install
+        env:
+          MOUNTAINVIEW_ENABLE_META_DAT: "false"
+      - name: Build debug APK
+        run: ./gradlew assembleDebug
+        working-directory: mobile/android
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: spacemountain-companion-debug-apk
+          path: mobile/android/app/build/outputs/apk/debug/app-debug.apk
+
+  release:
+    name: Build SpaceMountain Companion Android release APK
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Install dependencies
+        run: npm ci
+      - name: Apply current SPMT Companion, private Athena room, Coder control, native wake, browser auth, cache, command, and presence parity
+        run: cd .. && node scripts/patch-ecosystem-workspace-parity.mjs && node scripts/patch-private-athena-room.mjs && node scripts/patch-athena-room-coder-control.mjs && node scripts/patch-mountainview-command-parity.mjs && node scripts/patch-mountainview-ai-router.mjs && node scripts/patch-session-cache.mjs && node scripts/patch-mobile-presence.mjs && node scripts/patch-native-athena-foreground-wake.mjs && node scripts/patch-native-athena-wake-regex.mjs && node scripts/patch-mobile-spmt-browser-auth.mjs
+      - name: Typecheck
+        run: npx tsc --noEmit
+      - name: Generate Android project
+        run: npx expo prebuild --platform android --no-install
+        env:
+          MOUNTAINVIEW_ENABLE_META_DAT: "false"
+      - name: Build release APK
+        run: ./gradlew assembleRelease
+        working-directory: mobile/android
+      - name: Stage public APK names
+        run: |
+          cp android/app/build/outputs/apk/release/app-release.apk android/app/build/outputs/apk/release/MountainView-Android.apk
+          cp android/app/build/outputs/apk/release/app-release.apk android/app/build/outputs/apk/release/SpaceMountain-Companion.apk
+      - name: Upload release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: spacemountain-companion-release-apk
+          path: mobile/android/app/build/outputs/apk/release/SpaceMountain-Companion.apk
+      - name: Publish latest APK release
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: mountainview-latest
+          name: SpaceMountain Companion Latest Android APK
+          body: Latest installable SpaceMountain Companion Android APK for testing. Uses browser-based SPMT sign-in with a one-time mobile handoff, the signed-in SPMT tenant, canonical Workspace/Overlay Bay/Settings surfaces, tenant-scoped Personal HUD controls, paired-PC Companion command routing, persistent private HearMeOut Athena rooms for authenticated glasses wake/reconnect, native foreground Hey Athena/Annie listening, private-room Athena Coder controls with explicit draft-PR confirmation, deterministic voice intents, GPT-5.6 Sol fallback for ambiguous natural language, cache-first workspace restore, and canonical ecosystem presence. Legacy MountainView APK filenames remain available for existing testers.
+          prerelease: true
+          files: |
+            mobile/android/app/build/outputs/apk/release/SpaceMountain-Companion.apk
+            mobile/android/app/build/outputs/apk/release/MountainView-Android.apk
+            mobile/android/app/build/outputs/apk/release/app-release.apk
