@@ -45,7 +45,9 @@ This is parity of capability and policy, not identical deployment privilege. SPM
 
 ## SpaceMountain: always-available front door
 
-SpaceMountain serves the real navigation, app catalog, last-known public snapshot, account state, and loading/error surfaces. It does not pretend that a stopped backend accepted a mutation.
+SpaceMountain serves the real navigation, app catalog, last-known public snapshot, account state, and loading/error surfaces. Its app catalog is rendered from the canonical SPMT registry, not a hardcoded list. The same rule applies to SPMT Shipyard, embedded launchers, Companion, and every first-party product that has an Apps page. Approved applications and modules appear through registry discovery as soon as the registry version propagates. It does not pretend that a stopped backend accepted a mutation.
+
+Registry approval and runtime health are separate facts. An approved app does not disappear merely because its runtime is cold or degraded; shared surfaces show `starting`, `ready`, `degraded`, or `unavailable` honestly and retain a safe launch/retry/status path. Suspended, revoked, incompatible, or audience-restricted apps follow explicit catalog policy. Registry change events drive immediate refresh, while revision/ETag polling provides recovery if an event is missed.
 
 When an app is cold:
 
@@ -64,6 +66,7 @@ SPMT owns:
 - canonical identity, sessions, linked providers, tenants, roles, and consent;
 - OAuth clients, short-lived access tokens, refresh/revocation, and scoped service identities;
 - app registry, installs, entitlements, plans, quotas, and device registry;
+- registry revision, approval, visibility, compatibility, parent/module relationships, declared capabilities, launch targets, and health metadata used by every shared Apps surface;
 - canonical shared facts and mutation contracts;
 - append-only events, audit records, idempotency, and reconciliation provenance;
 - routing metadata, readiness, job submission, and usage/cost records.
