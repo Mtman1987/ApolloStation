@@ -34,13 +34,14 @@ Exit: no material architecture question is hidden inside an implementation ticke
 
 - build the always-available gateway/static shell;
 - build canonical identity, tenant, authorization, app registry, and audit contracts;
+- build registry discovery across SDK, API, CLI, MCP, and registry-change events; include revision/ETag caching, parent/module queries, visibility policy, compatibility, entitlements, and truthful runtime-health status;
 - publish the versioned SDK/API schemas, CLI, MCP server, webhook/event contracts, test-tenant flow, and executable contract-test harness before first-party apps depend on them;
 - provision the chosen canonical database/object storage and independent recovery authority with restore proof;
 - build workspace/theme fan-out as the first end-to-end shared-fact proof;
 - build canonical points ledger and reconciliation tools without choosing disputed balances automatically;
 - add health, metrics, cost attribution, idempotency, and migration tooling.
 
-Exit: a test tenant can sign in once, open the shell or a standalone app, change a background once, see it everywhere, and receive one idempotent point award everywhere using the published SDK/API contracts. The same flows pass through the CLI or MCP where operator control applies, an external sample app passes the contract harness, and the primary storage authority can be fenced, the recovery authority promoted, new writes accepted once, and the repaired primary rebuilt and restored without split brain.
+Exit: a test tenant can sign in once, open the shell or a standalone app, change a background once, see it everywhere, and receive one idempotent point award everywhere using the published SDK/API contracts. Approving a fixture app makes it appear on every applicable Apps surface without a source change; changing its health updates every visible status; suspending it applies the approved catalog policy. The same flows pass through the CLI or MCP where operator control applies, an external sample app passes the contract harness, and the primary storage authority can be fenced, the recovery authority promoted, new writes accepted once, and the repaired primary rebuilt and restored without split brain.
 
 ### Phase 2 — inference, workers, and bots
 
@@ -81,6 +82,7 @@ Then migrate apps one at a time based on tenant value, breakage, and dependency 
 | Identity | One user maps consistently across every tested app/provider |
 | Authorization | Allowed/denied scope matrix and two-tenant isolation pass |
 | Developer parity | First-party UI and worker flows use documented public contracts; SDK, raw API, CLI/MCP, events/webhooks, examples, and external-client contract tests agree |
+| Registry discovery | Approval, update, health change, entitlement, suspension, and nested-module fixtures propagate consistently to every shared Apps surface without a surface-specific code edit |
 | Data | Counts, hashes, samples, and disputed-record report reviewed |
 | Points | Same balance and provenance on every surface |
 | Lifecycle | Cold start, warm start, drain, crash, and abandoned lease pass |
