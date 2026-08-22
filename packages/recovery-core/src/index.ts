@@ -10,6 +10,20 @@ export interface RecoveryInventoryV1 {
   platformEvents: number;
   auditRecords: number;
   serviceIdentities: number;
+  tenants: number;
+  apps: number;
+  appInstalls: number;
+  entitlements: number;
+  userProfiles: number;
+  userCredentials: number;
+  oauthClients: number;
+  oauthCodes: number;
+  commlinkConversations: number;
+  commlinkMessages: number;
+  notifications: number;
+  webhooks: number;
+  athenaContext: number;
+  athenaCommands: number;
 }
 
 export interface RecoverySnapshotDescriptorV1 {
@@ -153,13 +167,10 @@ export class FileRecoveryVault {
   }
 
   private async readManifest(recoveryId: string): Promise<RecoveryPointManifestV1> {
-    const id = validateRecoveryId(recoveryId);
-    const manifest = JSON.parse(await readFile(this.manifestPath(id), "utf8")) as RecoveryPointManifestV1;
-    if (manifest.schemaVersion !== 1 || manifest.metadata?.schemaVersion !== 1 || manifest.metadata.recoveryId !== id) {
-      throw new RecoveryVerificationError("Recovery manifest is invalid");
-    }
-    validateDescriptor(manifest.metadata);
-    return manifest;
+    const safe = validateRecoveryId(recoveryId);
+    const parsed = JSON.parse((await readFile(this.manifestPath(safe))).toString("utf8")) as RecoveryPointManifestV1;
+    validateManifest(parsed, safe);
+    return parsed;
   }
 
   private decrypt(manifest: RecoveryPointManifestV1, ciphertext: Buffer) {
@@ -173,31 +184,27 @@ export class FileRecoveryVault {
     }
   }
 
-  private manifestPath(id: string) { return join(this.rootDir, `${id}.manifest.json`); }
-  private cipherPath(id: string) { return join(this.rootDir, `${id}.snapshot.enc`); }
+  private manifestPath(recoveryId: string) { return join(this.rootDir, `${validateRecoveryId(recoveryId)}.manifest.json`); }
+  private cipherPath(recoveryId: string) { return join(this.rootDir, `${validateRecoveryId(recoveryId)}.snapshot.enc`); }
 }
 
-async function atomicWrite(path: string, data: Uint8Array) {
-  await mkdir(dirname(path), { recursive: true });
-  const temp = join(dirname(path), `.${basename(path)}.${randomBytes(6).toString("hex")}.tmp`);
-  await writeFile(temp, data, { mode: 0o600 });
-  await rename(temp, path);
-}
-
+function sha256(value: Uint8Array) { return createHash("sha256").update(value).digest("hex"); }
 function validateRecoveryId(value: string) {
-  if (!/^[A-Za-z0-9._-]{3,120}$/.test(value)) throw new Error("Recovery ID is invalid");
+  if (!/^[A-Za-z0-9._-]{1,120}$/.test(value)) throw new Error("Recovery ID is invalid");
   return value;
 }
-
 function validateDescriptor(value: RecoverySnapshotDescriptorV1) {
-  if (!value.format || value.integrity !== "ok") throw new RecoveryVerificationError("Recovery source integrity is not ok");
-  if (!Number.isSafeInteger(value.authorityEpoch) || value.authorityEpoch < 1) throw new RecoveryVerificationError("Authority epoch is invalid");
-  if (!Number.isSafeInteger(value.journalSequence) || value.journalSequence < 0) throw new RecoveryVerificationError("Journal sequence is invalid");
-  for (const count of Object.values(value.inventory)) {
-    if (!Number.isSafeInteger(count) || count < 0) throw new RecoveryVerificationError("Recovery inventory is invalid");
-  }
+  if (!value || value.integrity !== "ok" || !Number.isSafeInteger(value.authorityEpoch) || value.authorityEpoch < 1 || !Number.isSafeInteger(value.journalSequence) || value.journalSequence < 0) throw new Error("Recovery snapshot descriptor is invalid");
+  for (const count of Object.values(value.inventory)) if (!Number.isSafeInteger(count) || count < 0) throw new Error("Recovery inventory is invalid");
 }
-
-function sha256(data: Uint8Array) {
-  return createHash("sha256").update(data).digest("hex");
+function validateManifest(value: RecoveryPointManifestV1, recoveryId: string) {
+  if (value?.schemaVersion !== 1 || value.metadata?.schemaVersion !== 1 || value.metadata?.recoveryId !== recoveryId || value.encryption?.algorithm !== "aes-256-gcm") throw new RecoveryVerificationError("Recovery manifest is invalid");
+  validateDescriptor(value.metadata);
+  if (!/^[0-9a-f]{64}$/.test(value.metadata.plaintextSha256) || !/^[0-9a-f]{64}$/.test(value.encryption.ciphertextSha256)) throw new RecoveryVerificationError("Recovery digest is invalid");
+}
+async function atomicWrite(path: string, bytes: Uint8Array) {
+  await mkdir(dirname(path), { recursive: true });
+  const temp = join(dirname(path), `.${basename(path)}.${process.pid}.${randomBytes(6).toString("hex")}.tmp`);
+  await writeFile(temp, bytes, { flag: "wx" });
+  await rename(temp, path);
 }
