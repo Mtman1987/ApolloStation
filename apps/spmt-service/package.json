@@ -1,11 +1,12 @@
 {
   "name": "@spmt/service",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "main": "./dist/index.js",
   "scripts": { "build": "tsc -b", "start": "node dist/index.js" },
   "dependencies": {
+    "@spmt/account-recovery-core": "0.1.0",
     "@spmt/api-adapter": "0.3.0",
     "@spmt/authority-core": "0.2.0",
     "@spmt/authority-sqlite": "0.4.0",
