@@ -1,0 +1,15 @@
+{
+  "name": "@spmt/spacemountain-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/server.js",
+  "scripts": {
+    "build": "tsc -b",
+    "start": "node dist/server.js"
+  },
+  "dependencies": {
+    "@spmt/sdk": "0.1.0",
+    "@spmt/spacemountain": "0.2.0"
+  }
+}

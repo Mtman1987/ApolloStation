@@ -28,6 +28,35 @@ test("SpaceMountain visible shell exposes canonical home, Shipyard, Commlink and
   assert.match(source, /\[0, 1, 2\]\.map/);
 });
 
+test("Commlink renders separate canonical account feeds and does not fake live chat", () => {
+  assert.match(source, /data-commlink-tab/);
+  assert.match(source, /Notifications/);
+  assert.match(source, /App Events/);
+  assert.match(source, /chat-gateway-live-chat/);
+  assert.match(source, /provider-neutral Chat Gateway/);
+  assert.match(source, /no fabricated data/);
+  assert.match(source, /data-notification-read/);
+  assert.match(source, /data-open-conversation/);
+});
+
+test("Stellar Core stays persona-neutral while Stella and configured personas remain presentation identities", () => {
+  assert.match(source, /Stellar Core/);
+  assert.match(source, /Stella is the default ecosystem assistant/);
+  assert.match(source, /configured StreamWeaver personas use the same public contracts/);
+  assert.match(source, /stellar-core-inference/);
+  assert.doesNotMatch(source, /label: "Athena"/);
+});
+
+test("Mission Control renders consolidated scoped evidence and a truthful coder handoff", () => {
+  assert.match(source, /label: "Operations"/);
+  assert.match(source, /Ecosystem operations/);
+  assert.match(source, /CONSOLIDATED EVIDENCE/);
+  assert.match(source, /data-coder-log/);
+  assert.match(source, /Draft-only handoff/);
+  assert.match(source, /Prepared drafts do not change code/);
+  assert.match(source, /there is no hidden first-party data path/i);
+});
+
 test("mobile layout removes shell-header dependency from bottom dock without hiding content", () => {
   assert.match(SPACE_MOUNTAIN_CSS, /@media\(max-width:900px\)/);
   assert.match(SPACE_MOUNTAIN_CSS, /\.spmt-rocket-dock\{left:10px;right:10px;top:auto;bottom:/);

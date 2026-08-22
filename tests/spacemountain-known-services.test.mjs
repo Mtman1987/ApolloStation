@@ -4,7 +4,12 @@ import { SpaceMountainShellController, buildAppFrameTarget } from "../apps/space
 
 function fakeClient(overrides = {}) {
   const base = {
-    getSession: async () => ({ actorType: "user", actorId: "user-1", tenantIds: ["tenant-a"] }),
+    getSession: async () => ({
+      actorType: "user",
+      actorId: "user-1",
+      tenantIds: ["tenant-a"],
+      scopes: ["operations:logs:read", "operations:coder:read", "operations:coder:invoke"],
+    }),
     getWorkspaceProfile: async () => ({ tenantId: "tenant-a", revision: 4, appearance: { theme: "dark" }, dockSlots: ["streamweaver", null, "chat-tag"] }),
     getXpBalance: async () => ({ tenantId: "tenant-a", userId: "user-1", balance: 42 }),
     listApps: async () => [
@@ -13,10 +18,14 @@ function fakeClient(overrides = {}) {
     ],
     listInstalls: async () => [{ tenantId: "tenant-a", appId: "streamweaver", enabled: true, grantedScopes: ["chat:read"] }],
     listEntitlements: async () => [{ tenantId: "tenant-a", appId: "streamweaver", key: "tier", value: "standard" }],
+    listEvents: async () => [{ id: "evt-1", tenantId: "tenant-a", sourceAppId: "streamweaver", type: "stream.ready", payload: { ready: true } }],
     listConversations: async () => [{ id: "conv-1", tenantId: "tenant-a" }],
     listNotifications: async () => [{ id: "note-1", tenantId: "tenant-a", title: "Welcome" }],
-    listAthenaContext: async () => [{ id: "ctx-1", text: "Creator context" }],
-    listAthenaCommands: async () => [{ id: "help", availability: "available" }, { id: "voice", availability: "unavailable", unavailableReason: "runtime not connected" }],
+    listStellarContext: async () => [{ id: "ctx-1", text: "Creator context" }],
+    listStellarCapabilities: async () => [{ id: "help", availability: "available" }, { id: "voice", availability: "unavailable", unavailableReason: "runtime not connected" }],
+    listOperationsLogs: async () => [{ schemaVersion: 1, id: "oplog-1", tenantId: "tenant-a", sourceAppId: "streamweaver", reporterId: "streamweaver", level: "warn", kind: "runtime.health", summary: "Worker is cold", labels: [], occurredAt: "2026-08-22T12:00:00.000Z", recordedAt: "2026-08-22T12:00:00.000Z" }],
+    getCoderDescriptor: async () => ({ schemaVersion: 1, id: "spmt.operations.coder", executionOwner: "mtman-machine-rotator", availability: "unavailable", requiredScopes: ["operations:logs:read", "operations:coder:invoke"], unavailableReason: "worker not connected" }),
+    listCoderJobs: async () => [],
     request: async (path) => path === "/v1/auth/setup-options" ? { options: [{ id: "spacemountain-invite", primary: true }, { id: "discord-dm-reset", primary: false }] } : {},
     installApp: async () => ({}), disableApp: async () => ({}), updateWorkspaceProfile: async () => ({}), markNotificationRead: async () => ({}),
   };
@@ -30,22 +39,55 @@ test("SpaceMountain loads canonical known services into one ready shell snapshot
   assert.equal(snapshot.xp.balance, 42);
   assert.equal(snapshot.apps.length, 2);
   assert.equal(snapshot.apps.find((app) => app.appId === "streamweaver")?.enabled, true);
-  assert.equal(snapshot.apps.find((app) => app.appId === "chat-tag")?.installed, false);
-  assert.equal(snapshot.conversations.length, 1);
-  assert.equal(snapshot.notifications.length, 1);
-  assert.equal(snapshot.athena.commands[1].unavailableReason, "runtime not connected");
+    assert.equal(snapshot.apps.find((app) => app.appId === "chat-tag")?.installed, false);
+    assert.equal(snapshot.events[0].type, "stream.ready");
+    assert.equal(snapshot.conversations.length, 1);
+    assert.equal(snapshot.notifications.length, 1);
+    assert.equal(snapshot.stellar.capabilities[1].unavailableReason, "runtime not connected");
+    assert.equal(snapshot.operations.logs[0].sourceAppId, "streamweaver");
+    assert.equal(snapshot.operations.coder.availability, "unavailable");
   assert.equal(snapshot.setupOptions.length, 2);
   assert.ok(Object.values(snapshot.sources).every((entry) => entry.state === "ready"));
 });
 
 test("optional service failure degrades only the shell while session/workspace remain usable", async () => {
-  const controller = new SpaceMountainShellController(fakeClient({ listAthenaCommands: async () => { throw new Error("Athena catalog unavailable"); } }));
+  const controller = new SpaceMountainShellController(fakeClient({ listStellarCapabilities: async () => { throw new Error("Stellar Core catalog unavailable"); } }));
   const snapshot = await controller.load({ tenantId: "tenant-a", userId: "user-1" });
   assert.equal(snapshot.state, "degraded");
-  assert.equal(snapshot.sources.athena.state, "degraded");
-  assert.match(snapshot.sources.athena.detail, /catalog unavailable/);
+  assert.equal(snapshot.sources.stellar.state, "degraded");
+  assert.match(snapshot.sources.stellar.detail, /catalog unavailable/);
   assert.equal(snapshot.sources.workspace.state, "ready");
   assert.equal(snapshot.workspace.revision, 4);
+});
+
+test("operations failure degrades only Mission Control and preserves the front door", async () => {
+  const controller = new SpaceMountainShellController(fakeClient({ listOperationsLogs: async () => { throw new Error("Rotator projection unavailable"); } }));
+  const snapshot = await controller.load({ tenantId: "tenant-a", userId: "user-1" });
+  assert.equal(snapshot.state, "degraded");
+  assert.equal(snapshot.sources.operations.state, "degraded");
+  assert.match(snapshot.sources.operations.detail, /Rotator projection unavailable/);
+  assert.equal(snapshot.sources.session.state, "ready");
+});
+
+test("ordinary sessions without operator grants never call or expose Mission Control", async () => {
+  const denied = async () => { throw new Error("operations endpoint must not be called"); };
+  const controller = new SpaceMountainShellController(fakeClient({
+    getSession: async () => ({ actorType: "user", actorId: "user-1", tenantIds: ["tenant-a"], scopes: ["workspace:read"] }),
+    listOperationsLogs: denied,
+    getCoderDescriptor: denied,
+    listCoderJobs: denied,
+  }));
+  const snapshot = await controller.load({ tenantId: "tenant-a", userId: "user-1" });
+  assert.equal(snapshot.state, "ready");
+  assert.equal(snapshot.sources.operations.state, "ready");
+  assert.deepEqual(snapshot.operations, {
+    canReadLogs: false,
+    canReadCoder: false,
+    canInvokeCoder: false,
+    logs: [],
+    coder: null,
+    jobs: [],
+  });
 });
 
 test("session or workspace failure makes SpaceMountain honestly unavailable", async () => {

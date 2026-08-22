@@ -1,4 +1,4 @@
-import type { AppFrameLaunchV1, RuntimeStateV1, SurfaceModeV1 } from "@spmt/contracts";
+import type { AppFrameLaunchV1, CoderDescriptorV1, CoderJobV1, OperationsLogV1, RuntimeStateV1, SurfaceModeV1 } from "@spmt/contracts";
 import { SpmtClient } from "@spmt/sdk";
 
 export const SPACEMOUNTAIN_APP_ID = "spacemountain";
@@ -10,9 +10,11 @@ export type SpaceMountainSource =
   | "shipyard"
   | "installs"
   | "entitlements"
+  | "events"
   | "commlink"
   | "notifications"
-  | "athena"
+  | "stellar"
+  | "operations"
   | "setup";
 
 export interface SourceStateV1 {
@@ -47,11 +49,20 @@ export interface SpaceMountainShellSnapshotV1 {
   xp?: { tenantId: string; userId: string; balance: number };
   apps: SpaceMountainAppCardV1[];
   entitlements: Array<Record<string, unknown>>;
+  events: Array<Record<string, unknown>>;
   conversations: Array<Record<string, unknown>>;
   notifications: Array<Record<string, unknown>>;
-  athena: {
+  stellar: {
     context: Array<Record<string, unknown>>;
-    commands: Array<Record<string, unknown>>;
+    capabilities: Array<Record<string, unknown>>;
+  };
+  operations: {
+    canReadLogs: boolean;
+    canReadCoder: boolean;
+    canInvokeCoder: boolean;
+    logs: OperationsLogV1[];
+    coder: CoderDescriptorV1 | null;
+    jobs: CoderJobV1[];
   };
   setupOptions: Array<Record<string, unknown>>;
   sources: Record<SpaceMountainSource, SourceStateV1>;
@@ -70,17 +81,28 @@ export class SpaceMountainShellController {
     requireId(input.tenantId, "tenantId");
     requireId(input.userId, "userId");
 
+    const sessionTask = this.spmt.getSession();
+    const operationsAccessTask = sessionTask.then((session) => ({
+      canReadLogs: sessionHasScope(session, "operations:logs:read"),
+      canReadCoder: sessionHasScope(session, "operations:coder:read"),
+      canInvokeCoder: sessionHasScope(session, "operations:logs:read") && sessionHasScope(session, "operations:coder:invoke"),
+    }));
     const tasks = {
-      session: this.spmt.getSession(),
+      session: sessionTask,
       workspace: this.spmt.getWorkspaceProfile(input.tenantId),
       xp: this.spmt.getXpBalance(input.tenantId, input.userId),
       shipyard: this.spmt.listApps(),
       installs: this.spmt.listInstalls(input.tenantId),
       entitlements: this.spmt.listEntitlements(input.tenantId),
+      events: this.spmt.listEvents(input.tenantId, { limit: 100 }),
       commlink: this.spmt.listConversations(input.tenantId, input.userId),
       notifications: this.spmt.listNotifications(input.tenantId, input.userId),
-      athenaContext: this.spmt.listAthenaContext(input.tenantId, input.userId),
-      athenaCommands: this.spmt.listAthenaCommands(),
+      stellarContext: this.spmt.listStellarContext(input.tenantId, input.userId),
+      stellarCapabilities: this.spmt.listStellarCapabilities(),
+      operationsAccess: operationsAccessTask,
+      operationsLogs: operationsAccessTask.then((access) => access.canReadLogs ? this.spmt.listOperationsLogs(input.tenantId, { limit: 100 }) : []),
+      operationsCoder: operationsAccessTask.then((access) => access.canReadCoder ? this.spmt.getCoderDescriptor(input.tenantId) : null),
+      operationsCoderJobs: operationsAccessTask.then((access) => access.canReadCoder ? this.spmt.listCoderJobs(input.tenantId, { limit: 50 }) : []),
       setup: this.spmt.request<{ options?: Array<Record<string, unknown>> }>("/v1/auth/setup-options"),
     };
 
@@ -107,9 +129,11 @@ export class SpaceMountainShellController {
       shipyard: source(failures, ["shipyard"]),
       installs: source(failures, ["installs"]),
       entitlements: source(failures, ["entitlements"]),
+      events: source(failures, ["events"]),
       commlink: source(failures, ["commlink"]),
       notifications: source(failures, ["notifications"]),
-      athena: source(failures, ["athenaContext", "athenaCommands"]),
+      stellar: source(failures, ["stellarContext", "stellarCapabilities"]),
+      operations: source(failures, ["operationsAccess", "operationsLogs", "operationsCoder", "operationsCoderJobs"]),
       setup: source(failures, ["setup"]),
     };
 
@@ -118,6 +142,7 @@ export class SpaceMountainShellController {
       : failures.size > 0 ? "degraded" : "ready";
 
     const setupPayload = record(values.get("setup"));
+    const operationsAccess = operationAccess(values.get("operationsAccess"));
     return {
       state,
       tenantId: input.tenantId,
@@ -127,9 +152,11 @@ export class SpaceMountainShellController {
       ...(isXp(values.get("xp")) ? { xp: values.get("xp") as { tenantId: string; userId: string; balance: number } } : {}),
       apps,
       entitlements: records(values.get("entitlements")),
+      events: records(values.get("events")),
       conversations: records(values.get("commlink")),
       notifications: records(values.get("notifications")),
-      athena: { context: records(values.get("athenaContext")), commands: records(values.get("athenaCommands")) },
+      stellar: { context: records(values.get("stellarContext")), capabilities: records(values.get("stellarCapabilities")) },
+      operations: { ...operationsAccess, logs: operationsLogs(values.get("operationsLogs")), coder: coderDescriptor(values.get("operationsCoder")), jobs: coderJobs(values.get("operationsCoderJobs")) },
       setupOptions: Array.isArray(setupPayload?.options) ? setupPayload.options.filter(isRecord) : [],
       sources,
     };
@@ -149,6 +176,38 @@ export class SpaceMountainShellController {
 
   async markNotificationRead(tenantId: string, notificationId: string, userId?: string) {
     return this.spmt.markNotificationRead(tenantId, notificationId, userId);
+  }
+
+  async loadConversationMessages(tenantId: string, conversationId: string) {
+    requireId(tenantId, "tenantId");
+    requireId(conversationId, "conversationId");
+    return this.spmt.listMessages(tenantId, conversationId);
+  }
+
+  async searchCommlink(tenantId: string, query: string, userId?: string) {
+    requireId(tenantId, "tenantId");
+    if (!query.trim() || query.length > 200) throw new Error("query is invalid");
+    if (userId !== undefined) requireId(userId, "userId");
+    return this.spmt.searchCommlink(tenantId, query, userId);
+  }
+
+  async sendCommlinkMessage(tenantId: string, conversationId: string, recipientUserIds: string[], text: string) {
+    requireId(tenantId, "tenantId");
+    requireId(conversationId, "conversationId");
+    if (!recipientUserIds.length) throw new Error("recipientUserIds is required");
+    recipientUserIds.forEach((userId) => requireId(userId, "recipientUserId"));
+    if (!text.trim() || text.length > 8000) throw new Error("message text is invalid");
+    return this.spmt.sendCommlinkMessage(tenantId, conversationId, recipientUserIds, text);
+  }
+
+  async prepareCoderDraft(tenantId: string, targetAppId: string, prompt: string, evidenceLogIds: string[], idempotencyKey: string) {
+    requireId(tenantId, "tenantId");
+    requireId(targetAppId, "targetAppId");
+    if (!prompt.trim() || prompt.length > 4000) throw new Error("coder prompt is invalid");
+    if (!evidenceLogIds.length || evidenceLogIds.length > 20) throw new Error("coder evidence is invalid");
+    evidenceLogIds.forEach((logId) => requireId(logId, "evidenceLogId"));
+    requireId(idempotencyKey, "idempotencyKey");
+    return this.spmt.createCoderJob(tenantId, targetAppId, prompt, evidenceLogIds, idempotencyKey);
   }
 }
 
@@ -173,8 +232,8 @@ export function buildAppFrameTarget(app: SpaceMountainAppCardV1, tenantId: strin
 }
 
 export const DEFERRED_RUNTIME_SOURCES = Object.freeze([
-  { id: "streamweaver-live-chat", owner: "streamweaver", presentation: "Commlink Live Chat", requiredForShell: false },
-  { id: "athena-inference", owner: "streamweaver-workers", presentation: "Athena runtime", requiredForShell: false },
+  { id: "chat-gateway-live-chat", owner: "chat-gateway", presentation: "Commlink Live Chat", requiredForShell: false },
+  { id: "stellar-core-inference", owner: "stellar-core-workers", presentation: "Stellar Core inference", requiredForShell: false },
   { id: "companion-device-relay", owner: "companion-mountainview", presentation: "Companion devices", requiredForShell: false },
 ]);
 
@@ -208,5 +267,10 @@ function isRecord(value: unknown): value is Record<string, unknown> { return Boo
 function strings(value: unknown) { return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []; }
 function surfaceModes(value: unknown): SurfaceModeV1[] { const allowed = new Set<SurfaceModeV1>(["shell", "standalone", "overlay", "popout"]); return strings(value).filter((item): item is SurfaceModeV1 => allowed.has(item as SurfaceModeV1)); }
 function isXp(value: unknown): value is { tenantId: string; userId: string; balance: number } { return isRecord(value) && typeof value.tenantId === "string" && typeof value.userId === "string" && typeof value.balance === "number"; }
+function operationsLogs(value: unknown) { return Array.isArray(value) ? value.filter((item): item is OperationsLogV1 => isRecord(item) && item.schemaVersion === 1 && typeof item.id === "string" && typeof item.sourceAppId === "string") : []; }
+function coderJobs(value: unknown) { return Array.isArray(value) ? value.filter((item): item is CoderJobV1 => isRecord(item) && item.schemaVersion === 1 && typeof item.id === "string" && typeof item.targetAppId === "string") : []; }
+function coderDescriptor(value: unknown) { return isRecord(value) && value.schemaVersion === 1 && value.id === "spmt.operations.coder" ? value as unknown as CoderDescriptorV1 : null; }
+function operationAccess(value: unknown) { return isRecord(value) ? { canReadLogs: value.canReadLogs === true, canReadCoder: value.canReadCoder === true, canInvokeCoder: value.canInvokeCoder === true } : { canReadLogs: false, canReadCoder: false, canInvokeCoder: false }; }
+function sessionHasScope(value: unknown, required: string) { if (!isRecord(value) || !Array.isArray(value.scopes)) return false; const scopes=value.scopes.filter((item):item is string=>typeof item==="string");if(scopes.includes("*")||scopes.includes(required))return true;const parts=required.split(":");for(let index=parts.length-1;index>0;index-=1)if(scopes.includes(`${parts.slice(0,index).join(":")}:*`))return true;return false; }
 function errorDetail(value: unknown) { return value instanceof Error ? value.message : String(value ?? "unknown error"); }
 function requireId(value: string, name: string) { if (!value || value.trim() !== value || value.length > 200 || !/^[A-Za-z0-9._:@/-]+$/.test(value)) throw new Error(`${name} is invalid`); return value; }

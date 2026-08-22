@@ -5,6 +5,107 @@ export type SurfaceModeV1 = (typeof SURFACE_MODES)[number];
 
 export type RuntimeStateV1 = "starting" | "ready" | "degraded" | "draining" | "unavailable";
 
+export const COMMUNITY_ASSISTANT_ID = "spmt.community-assistant" as const;
+export const COMMUNITY_ASSISTANT_DISPLAY_NAME = "Stella" as const;
+export const ASSISTANT_SURFACES = ["app", "commlink", "stream", "standalone", "developer"] as const;
+export type AssistantSurfaceV1 = (typeof ASSISTANT_SURFACES)[number];
+
+export interface CommunityAssistantDescriptorV1 {
+  schemaVersion: 1;
+  id: typeof COMMUNITY_ASSISTANT_ID;
+  displayName: typeof COMMUNITY_ASSISTANT_DISPLAY_NAME;
+  role: "community-assistant";
+  executionOwner: "stellar-core";
+  availability: "available" | "unavailable";
+  requiredScopes: ["assistants:invoke"];
+  unavailableReason?: string;
+}
+
+export interface CommunityAssistantInvocationV1 {
+  schemaVersion: 1;
+  tenantId: string;
+  userId: string;
+  callerAppId: string;
+  message: string;
+  surface: AssistantSurfaceV1;
+  idempotencyKey: string;
+  conversationId?: string;
+  correlationId?: string;
+}
+
+export type CommunityAssistantInvocationResultV1 =
+  | {
+      schemaVersion: 1;
+      assistantId: typeof COMMUNITY_ASSISTANT_ID;
+      displayName: typeof COMMUNITY_ASSISTANT_DISPLAY_NAME;
+      status: "accepted";
+      jobId: string;
+    }
+  | {
+      schemaVersion: 1;
+      assistantId: typeof COMMUNITY_ASSISTANT_ID;
+      displayName: typeof COMMUNITY_ASSISTANT_DISPLAY_NAME;
+      status: "unavailable";
+      reason: string;
+    };
+
+export const OPERATIONS_LOG_LEVELS = ["info", "warn", "error", "critical"] as const;
+export type OperationsLogLevelV1 = (typeof OPERATIONS_LOG_LEVELS)[number];
+
+export interface OperationsLogV1 {
+  schemaVersion: 1;
+  id: string;
+  tenantId: string;
+  sourceAppId: string;
+  reporterId: string;
+  level: OperationsLogLevelV1;
+  kind: string;
+  summary: string;
+  detail?: string;
+  labels: string[];
+  correlationId?: string;
+  occurredAt: string;
+  recordedAt: string;
+}
+
+export interface CoderEvidenceV1 {
+  logId: string;
+  sourceAppId: string;
+  level: OperationsLogLevelV1;
+  kind: string;
+  summary: string;
+  occurredAt: string;
+  correlationId?: string;
+}
+
+export const CODER_JOB_STATES = ["draft", "queued", "running", "succeeded", "failed", "cancelled"] as const;
+export type CoderJobStateV1 = (typeof CODER_JOB_STATES)[number];
+
+export interface CoderJobV1 {
+  schemaVersion: 1;
+  id: string;
+  tenantId: string;
+  targetAppId: string;
+  requestedByType: "user" | "service";
+  requestedById: string;
+  prompt: string;
+  evidence: CoderEvidenceV1[];
+  state: CoderJobStateV1;
+  runtimeJobId?: string;
+  unavailableReason?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CoderDescriptorV1 {
+  schemaVersion: 1;
+  id: "spmt.operations.coder";
+  executionOwner: "mtman-machine-rotator";
+  availability: "available" | "unavailable";
+  requiredScopes: ["operations:logs:read", "operations:coder:invoke"];
+  unavailableReason?: string;
+}
+
 export interface ShellLayoutMetricsV1 {
   schemaVersion: 1;
   headerHeight: number;

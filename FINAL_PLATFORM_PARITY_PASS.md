@@ -9,7 +9,7 @@ Compared revisions:
 - Blue `Mtman1987/spmt-live`: `5d8aa7b2c3ac34538691bb8035b1cfe98b3b0acc`
 - Blue `Mtman1987/spacemountain-live`: `1dc2c1f02a7eb7bb9ddade3460c43ffa87858f43`
 
-Final SPMT parity implementation was validated by the Green shared-contract CI suite on PR #14 after the OAuth, Commlink, webhook, Athena, developer-surface and recovery-inventory additions. Blue remained untouched.
+Final SPMT parity implementation was validated by the Green shared-contract CI suite on PR #14 after the OAuth, Commlink, webhook, context/capability, developer-surface and recovery-inventory additions. Those generic context/capability contracts are now named Stellar Core. D-31/D-40 subsequently named Stella as the app-neutral Community Assistant and restricted Athena to the owner's configured StreamWeaver persona. Blue remained untouched.
 
 This document is a classification decision, not permission to delete Blue. Unclassified donor behavior still defaults to `VERIFY` under `PARITY_LEDGER.md`.
 
@@ -28,11 +28,11 @@ This document is a classification decision, not permission to delete Blue. Uncla
 | Legacy overlay-workspace blob | REMOVE AFTER MIGRATION | Replaced by versioned workspace + scene/widget contracts. Retain only as migration input until zero-use. |
 | Canonical XP | KEEP / GREEN READY | Green append-only tenant-scoped ledger replaces competing balances. Never max/sum old ledgers automatically. |
 | Platform events | KEEP / GREEN READY | Green event write + idempotency + transactional outbox is the canonical async boundary. |
-| Commlink conversations/messages/notifications/search | KEEP / GREEN READY | Blue proves this is shared account data and SpaceMountain presents it. Live-chat transport remains StreamWeaver-owned later. |
+| Commlink conversations/messages/notifications/search | KEEP / GREEN READY | Blue proves this is shared account data and SpaceMountain presents it. Provider-neutral live chat moves behind the Chat Gateway contract. |
 | Developer webhooks | KEEP / GREEN READY | HTTPS registration, one-time secret display, encrypted-at-rest signing secrets, HMAC signatures and durable outbox/retry integration are implemented. |
-| Athena context/memory summaries | KEEP / GREEN READY | SPMT owns bounded useful creator/app context; model inference does not. |
-| Athena command/capability catalog | KEEP / GREEN READY | SpaceMountain and developer tools can advertise only commands that really exist; unavailable commands carry an explicit reason. |
-| Athena inference/persona/model execution | DEFER TO STREAMWEAVER/WORKERS | Runtime AI load, routing and persona execution is not shared data authority. |
+| Stellar Core context/memory summaries | KEEP / GREEN READY | SPMT owns bounded useful creator/app context; model inference does not. Stella and configured personas consume it through scoped contracts and isolated memory policy. |
+| Stellar Core capability catalog | KEEP / GREEN READY | SpaceMountain and developer tools can advertise only capabilities that really exist; unavailable capabilities carry an explicit reason. |
+| Stella and configured-persona execution | DEFER TO STELLAR CORE/STREAMWEAVER WORKERS | Stella is the default app-neutral Community Assistant; Athena is only the owner's configured StreamWeaver persona. Runtime AI load and routing remain persona-neutral Stellar Core concerns. |
 | Companion/device pairing/revoke/commands/relay | KEEP / DEFER TO COMPANION-MOUNTAINVIEW | The authority belongs in the ecosystem, but implementing it without the real device relay would create a fake stub. Build it with the device vertical and expose it through SPMT contracts. |
 | Plugin/app submission workflow | VERIFY / DEFER | Keep discoverability and app manifests now. Rebuild submissions when there is a real review/publish workflow and active callers. |
 | Universal `SYSTEM_API_KEY` and provider-token internal auth | REMOVE | Violates scoped service-identity contract and increases blast radius. |
@@ -46,8 +46,8 @@ This document is a classification decision, not permission to delete Blue. Uncla
 
 - Dashboard/home shell.
 - Shipyard app discovery, installed-app state and launch controls.
-- Commlink presentation: Mail, Notifications and App Events from SPMT; Live Chat later from StreamWeaver.
-- Athena panel backed by truthful context/capability APIs.
+- Commlink presentation: Mail, Notifications and App Events from SPMT; Live Chat later from the provider-neutral Chat Gateway.
+- Stellar Core panel backed by truthful context/capability APIs; Stella is the default Community Assistant and configured StreamWeaver personas remain tenant-specific.
 - Docs/developer experience.
 - Notifications.
 - three RocketDock slots.
@@ -70,7 +70,7 @@ This document is a classification decision, not permission to delete Blue. Uncla
 - local auth/bootstrap scripts -> SPMT session/OAuth restore.
 - localStorage/iframe query identity or theme bridges -> shared embed/session/theme contracts.
 - local or duplicate XP -> SPMT canonical XP.
-- optimistic/fake Athena action success -> declared capability + real result/degraded/error state.
+- optimistic/fake system action success -> declared Stellar Core capability + real result/degraded/error state.
 
 ### REMOVE from Green product source
 
@@ -113,7 +113,7 @@ The final Green SPMT pass now has tested coverage for:
 - app registry/install/entitlement paths through public developer contracts;
 - canonical tenant/user-isolated Commlink account data;
 - protected webhook registration/signing secrets and durable outbox delivery;
-- bounded Athena context and truthful command catalog;
+- bounded Stellar Core context and truthful capability catalog;
 - API/SDK/CLI/MCP developer-facing paths;
 - no production fallback DB and no universal internal key.
 
@@ -128,10 +128,10 @@ SpaceMountain is complete enough to move on only when a test user can:
 3. see and change the one canonical workspace/theme/background/docks;
 4. discover/install/disable apps through Shipyard using public SPMT contracts;
 5. open embedded apps through the one AppFrame/EmbedBridge path;
-6. use Commlink shared account data and see Live Chat as a separately owned source when StreamWeaver is available;
-7. see Athena context/capabilities without fabricated actions;
+6. use Commlink shared account data and see Live Chat as a separately owned source when Chat Gateway is available;
+7. see Stellar Core context/capabilities without fabricated actions and invoke Stella through the same scoped public contracts available to standalone apps, Commlink, StreamWeaver, CLI, and MCP;
 8. render shell, sidebar, dialogs, popovers, editor and overlay previews without anything hiding behind the shared header;
 9. open standalone/popout/headless overlay surfaces with the correct zero/nonzero shell inset;
 10. pass desktop/mobile/tall-header, account-switch, tenant-isolation, cold/degraded-state and developer-conformance tests.
 
-Only after this gate should Green move to StreamWeaver, DSH, HearMeOut, ChatTag/Games or Companion implementation batches.
+Only after this gate should Green move to Chat Gateway/StreamWeaver, DSH, HearMeOut, Nebula Arcade, or Companion implementation batches.

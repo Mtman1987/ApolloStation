@@ -115,11 +115,34 @@ Components use semantic layer tokens. They do not compete by adding larger arbit
 ### Messaging / Commlink
 
 - SPMT owns Mail, Notifications, and App Event account data.
-- StreamWeaver owns normalized live-chat runtime/feed behavior.
+- SPMT owns authorized shared live-chat history; the provider-neutral Chat Gateway owns provider connections, normalization, cursors, and reconnect behavior.
+- StreamWeaver consumes normalized live chat for configured personas and commands; it does not own a private ecosystem chat contract.
 - SpaceMountain owns the combined Commlink workspace presentation.
 - Apps publish/consume through versioned messaging/event SDK/API contracts rather than embedding unrelated bespoke inboxes for shared messages.
 
 An app may have product-specific chat or room UI where the conversation itself belongs to that product, but shared ecosystem messages still use the Commlink contracts.
+
+### AI presentation and invocation
+
+- Stellar Core owns provider-neutral execution, routing, durable jobs, health, usage, and structured results. It does not own or select a public persona.
+- `spmt.community-assistant` is the stable technical identity for the default Community Assistant; **Stella** is its public display name.
+- Stella is an SPMT ecosystem capability, not a feature locked to SpaceMountain or StreamWeaver. Authorized shell, standalone, Commlink, StreamWeaver, and external clients invoke her through equivalent versioned SDK, HTTP API, CLI, MCP, event/job, and live-result contracts.
+- StreamWeaver may choose Stella as its community bot or use a tenant/user-configured persona. Athena identifies only the owner's StreamWeaver persona.
+- Invocation must enforce SPMT tenant/user or delegated-user authority, app grants, scopes, provider/routing entitlements, memory boundaries, retention, correlation, and audit uniformly across every client.
+- An unavailable inference route produces a truthful unavailable/degraded result. No UI or developer adapter invents a reply.
+- App registration alone grants no ingestion. Apps or users initiate calls/events unless a separately authorized subscription, import, synchronization, or feed contract says otherwise.
+
+The first public Stella vertical uses one operation contract through every adapter:
+
+| Developer surface | Discovery | Invocation |
+|---|---|---|
+| SDK | `getCommunityAssistant(tenantId)` | `invokeCommunityAssistant(tenantId, input, idempotencyKey)` |
+| HTTP | `GET /v1/assistants/community` | `POST /v1/assistants/community/invocations` |
+| CLI | `assistant show TENANT` or `stella show TENANT` | `assistant invoke TENANT JSON IDEMPOTENCY_KEY` or the `stella` alias |
+| MCP | `spmt.assistants.community.get` | `spmt.assistants.community.invoke` |
+| Commlink/app UI | read the same descriptor | submit the same scoped invocation and follow its returned job ID |
+
+The invocation never returns fabricated completion. With no worker it returns `status: unavailable` and a reason. With a connected durable runtime it returns `status: accepted` plus `jobId`; progress and the final structured result must use the normal authenticated job/event delivery contract.
 
 ### Overlays
 
@@ -145,6 +168,8 @@ Every first-party flagship app must integrate with SPMT through the same public/
 
 A first-party app must not use direct shared-database access, undocumented cross-app HTTP endpoints, copied provider secrets, or private local files simply because both apps are owned by SpaceMountain.
 
+The operations console follows the same rule. Apps publish redacted structured operational evidence and prepare coder handoffs through the public SDK/API/CLI/MCP contracts. Your SpaceMountain view can consolidate every app covered by your owner/maintainer grants; another developer receives the same operations capability limited to their own approved apps and tenants. Rotator-wide `:any` scopes remain private high-risk maintenance grants, not a different API.
+
 Same-process modules may call each other directly when they are deliberately packaged as one deployable, but the externally meaningful capability must still have a versioned contract if another app or developer could need it.
 
 ## 7. Flagship/reference implementation requirement
@@ -154,14 +179,15 @@ For every major developer capability, at least one first-party app is the tested
 Examples:
 
 - SPMT login/session restore → all flagship apps;
-- workspace/theme SDK → StreamWeaver, DSH, HearMeOut, ChatTag;
-- messaging/events → DSH and ChatTag producing events, SpaceMountain/Commlink consuming them;
-- live feed/WebSocket/SSE → StreamWeaver and Commlink;
-- overlay widget manifest → StreamWeaver, DSH, HearMeOut, ChatTag;
-- jobs/worker SDK → StreamWeaver worker, DSH clip worker, HMO DJ/media worker, ChatTag bot/worker;
+- workspace/theme SDK → StreamWeaver, DSH, HearMeOut, and Nebula Arcade;
+- messaging/events → DSH and Nebula Arcade producing events, SpaceMountain/Commlink consuming them;
+- live feed/WebSocket/SSE → Chat Gateway, StreamWeaver, and Commlink;
+- overlay widget manifest → StreamWeaver, DSH, HearMeOut, and Nebula Arcade;
+- jobs/worker SDK → Stellar Core/Stella, StreamWeaver worker, DSH clip worker, HMO DJ/media worker, and Nebula Arcade bot/worker;
 - device API → Companion/MountainView;
 - CLI → local developer bootstrap, conformance and deployment inspection;
-- MCP → Athena/developer/operator read/action flows with normal scopes.
+- MCP → Stella, configured StreamWeaver personas, developer, and operator read/action flows through normal Stellar Core/SPMT scopes; Athena is only the owner's configured persona.
+- operations/coder contracts → each app proves self-scoped logging and coder handoff; SpaceMountain Mission Control proves owner-scoped consolidation; the Rotator proves separately approved cross-app maintenance scopes.
 
 Documentation examples should be generated from, or continuously tested against, these real reference integrations whenever practical.
 
@@ -190,6 +216,7 @@ Test `shell`, `standalone`, `overlay`, and `popout` modes separately. Cross-orig
 - first-party runtime network calls are traceable to documented SDK/API/event contracts;
 - scopes and tenant context are enforced exactly as for third-party callers;
 - SDK and raw API contract tests agree;
+- operations evidence is redacted before persistence, app-service callers cannot cross app boundaries, owner/developer consolidation follows tenant/maintenance grants, and a disconnected coder produces only a truthful draft;
 - CLI and MCP cannot perform an action that their underlying authenticated/scoped API would reject;
 - reference examples run in CI against the same schemas used by the flagship apps.
 

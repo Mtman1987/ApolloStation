@@ -1,6 +1,6 @@
-# Proposed Blueprint
+# SPMT Ecosystem Core Blueprint
 
-Status: proposed; subject to `DECISIONS.md`.
+Status: accepted for isolated Green implementation under `DECISIONS.md`; Blue production remains authoritative until cutover gates pass.
 
 ## Design goals
 
@@ -136,7 +136,7 @@ Fly Machines belong to Fly apps; unrelated Fly apps do not opportunistically sha
 - SpaceMountain gateway/shell: minimum healthy capacity to keep the front door available.
 - SPMT API/control plane: minimum redundant healthy capacity.
 - canonical data service: availability appropriate to tenant-loss risk.
-- small scheduler/queue authority and monitoring path.
+- Mtman Machine Rotator reconciler/monitoring path: minimum elected authority plus a fenced standby or measured recovery equivalent.
 
 ### Scale to zero or near zero
 
@@ -156,6 +156,12 @@ Fly Proxy autostart starts existing Machines; it does not create limitless Machi
 - Long-lived bots and provider sockets: activity-aware process group managed by heartbeat/lease, not ordinary HTTP autostop.
 
 Every lease has an owner, TTL, heartbeat, state, maximum, drain rule, and cleanup rule. A reconciler repairs abandoned leases.
+
+### Rotator fleet reconciliation
+
+The Mtman Machine Rotator is the private operational control plane for this runtime model. It consumes SPMT-approved manifests and runtime policies, observes Fly and workload health/demand, enforces capacity/cost/lease bounds, performs idempotent lifecycle actions, and reports truthful runtime projections back to SPMT. It never becomes the app registry, entitlement authority, canonical product database, or public AI persona.
+
+Controlled periodic restart remains part of the always-on maintenance policy, but it is rolling, drain-aware, readiness-gated, minimum-capacity-safe, and stopped by duplicate-consumer or error thresholds. Elastic workloads instead start, scale, drain, and stop from measured traffic, queue, room/session, socket, lease, capacity, and cost signals. The full boundary and production proof are defined in `ROTATOR_FLEET_CONTRACT.md`.
 
 ## AI and media generation
 

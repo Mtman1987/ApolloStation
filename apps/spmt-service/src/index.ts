@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { resolve } from "node:path";
+import { basename, isAbsolute, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { AccountRecoveryService, AccountSetupError, SqliteAccountSetupStore } from "@spmt/account-recovery-core";
 import { AuthorityService } from "@spmt/authority-core";
@@ -10,11 +10,12 @@ import { ControlService } from "@spmt/control-core";
 import { OutboxDispatcher } from "@spmt/outbox-core";
 import { PlatformDataError, PlatformDataService, type OAuthClientV1 } from "@spmt/platform-data-core";
 import { SqlitePlatformDataStore } from "@spmt/platform-data-sqlite";
-import { PlatformOperations } from "@spmt/platform-ops";
+import { PlatformOperations, type CoderRuntimeV1 } from "@spmt/platform-ops";
 import { PlatformApiAdapter } from "@spmt/api-adapter";
 import { HealthRegistry } from "@spmt/runtime";
 
-const USER_SCOPES = ["workspace:read","workspace:write","xp:read","apps:read","apps:install","entitlements:read","commlink:read","commlink:write","notifications:read","notifications:write","webhooks:read","webhooks:write","athena:context:read","athena:context:write","athena:commands:read"];
+const USER_SCOPES = ["workspace:read","workspace:write","xp:read","apps:read","apps:install","entitlements:read","events:read","commlink:read","commlink:write","notifications:read","notifications:write","webhooks:read","webhooks:write","assistants:read","assistants:invoke","stellar:context:read","stellar:context:write","stellar:capabilities:read"];
+const SANDBOX_OWNER_OPERATIONS_SCOPES = ["operations:logs:read","operations:coder:read","operations:coder:invoke"];
 
 export interface SpmtServiceOptions {
   databasePath: string;
@@ -28,9 +29,17 @@ export interface SpmtServiceOptions {
   twitchClientSecret?: string;
   discordBotToken?: string;
   sendDiscordDm?: (discordUserId: string, message: { title: string; description: string; url: string }) => Promise<void>;
+  runtimeMode?: "production" | "sandbox";
+  sandboxFixtures?: boolean;
+  coderRuntime?: CoderRuntimeV1;
 }
 
 export function createSpmtService(options: SpmtServiceOptions) {
+  const runtimeMode = options.runtimeMode ?? "production";
+  if (runtimeMode === "sandbox" && (options.twitchClientId || options.twitchClientSecret || options.discordBotToken || options.sendDiscordDm)) {
+    throw new Error("Sandbox mode rejects Twitch and Discord provider integrations");
+  }
+  if (options.sandboxFixtures && runtimeMode !== "sandbox") throw new Error("Sandbox fixtures require sandbox runtime mode");
   const store = new SqliteAuthorityStore(options.databasePath);
   const platformStore = new SqlitePlatformDataStore(options.databasePath);
   const setupStore = new SqliteAccountSetupStore(options.databasePath);
@@ -39,13 +48,16 @@ export function createSpmtService(options: SpmtServiceOptions) {
   const control = new ControlService({ store });
   const data = new PlatformDataService({ store: platformStore, auth, webhookKey: options.webhookKey });
   const accounts = new AccountRecoveryService({ authority, authorityStore: store, control, platformStore, setupStore });
-  const operations = new PlatformOperations(auth, authority, control, data);
+  const operations = new PlatformOperations(auth, authority, control, data, undefined, options.coderRuntime);
   const api = new PlatformApiAdapter(operations);
   const health = new HealthRegistry();
   health.setDependency("authority-storage", "ready", `sqlite:${store.journalMode()}`);
+  health.setDependency("outbound-integrations", runtimeMode === "sandbox" ? "degraded" : "ready", runtimeMode === "sandbox" ? "disabled by sandbox contract" : "enabled");
   const fetchImpl = options.fetchImpl ?? fetch;
   const publicBaseUrl = (options.publicBaseUrl ?? "https://spmt.live").replace(/\/$/, "");
   const sendDiscordDm = options.sendDiscordDm ?? (options.discordBotToken ? createDiscordDmSender(options.discordBotToken, fetchImpl) : undefined);
+
+  if (options.sandboxFixtures) seedSandboxFixtures(control, data, publicBaseUrl);
 
   const outbox = new OutboxDispatcher({
     authority,
@@ -53,6 +65,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
     deliver: async (record) => data.deliverWebhookEvent(
       { eventId: record.eventId, tenantId: record.tenantId, type: record.topic, payload: record.payload },
       async (url, body, headers) => {
+        if (runtimeMode === "sandbox") throw new Error("Sandbox mode blocks outbound webhook delivery");
         const response = await fetchImpl(url, { method: "POST", headers, body });
         if (!response.ok) throw new Error(`Webhook delivery failed with ${response.status}`);
       },
@@ -64,14 +77,14 @@ export function createSpmtService(options: SpmtServiceOptions) {
       const path = request.url ?? "/";
       const url = new URL(`http://spmt.local${path}`);
 
-      if (request.method === "GET" && url.pathname === "/health/live") return json(response, 200, { live: true, service: "spmt", buildSha: options.buildSha ?? "dev" });
+      if (request.method === "GET" && url.pathname === "/health/live") return json(response, 200, { live: true, service: "spmt", runtimeMode, outboundIntegrations: runtimeMode === "sandbox" ? "disabled" : "enabled", buildSha: options.buildSha ?? "dev" });
       if (request.method === "GET" && url.pathname === "/health/ready") {
         const probe = store.probe();
         if (!probe.ready) health.setDependency("authority-storage", "unavailable", "authority epoch unavailable");
         else health.setDependency("authority-storage", "ready", `sqlite:${probe.journalMode}`);
         const state = health.snapshot();
         const ready = probe.ready && state.state !== "unavailable";
-        return json(response, ready ? 200 : 503, { ...state, storage: probe, buildSha: options.buildSha ?? "dev" });
+        return json(response, ready ? 200 : 503, { ...state, storage: probe, runtimeMode, outboundIntegrations: runtimeMode === "sandbox" ? "disabled" : "enabled", sandboxFixtures: Boolean(options.sandboxFixtures), buildSha: options.buildSha ?? "dev" });
       }
 
       if (request.method === "GET" && url.pathname === "/v1/auth/setup-options") {
@@ -225,6 +238,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
         control.registerTenant({ tenantId, ownerUserId: userId, displayName });
         authority.getOrCreateWorkspace(tenantId);
         const profile = data.registerUser({ userId, username, displayName, password, tenantIds: [tenantId] });
+        if (options.sandboxFixtures) seedSandboxOperationsLog(data, tenantId);
         return json(response, 201, { profile, tenantId });
       }
 
@@ -236,9 +250,13 @@ export function createSpmtService(options: SpmtServiceOptions) {
           return json(response, 409, { error: "setup_required", flow: "first-time-setup", next: "spacemountain-invite", optionsUrl: "/v1/auth/setup-options", tenantId: inspection.tenantId });
         }
         try {
-          const result = data.login(username, str(body.password, "password"), USER_SCOPES);
+          const result = data.login(username, str(body.password, "password"), runtimeMode === "sandbox" ? [...USER_SCOPES, ...SANDBOX_OWNER_OPERATIONS_SCOPES] : USER_SCOPES);
           return json(response, 200, result, { "set-cookie": sessionCookie(result.tokens.accessToken) });
         } catch { return json(response, 401, { error: "invalid_credentials" }); }
+      }
+
+      if (request.method === "POST" && url.pathname === "/v1/auth/logout") {
+        return json(response, 200, { ok: true }, { "set-cookie": clearCookie("spmt_token") });
       }
 
       if (request.method === "POST" && url.pathname === "/v1/auth/refresh") {
@@ -316,6 +334,73 @@ export function createSpmtService(options: SpmtServiceOptions) {
   };
 }
 
+export function validateSandboxServiceEnvironment(environment: NodeJS.ProcessEnv) {
+  if (environment.SPMT_RUNTIME_MODE !== "sandbox") throw new Error("SPMT_RUNTIME_MODE=sandbox is required");
+  if (environment.SPMT_OUTBOUND_MODE !== "disabled") throw new Error("SPMT_OUTBOUND_MODE=disabled is required");
+  if (!environment.SPMT_SANDBOX_ID || !/^[a-z0-9-]{3,80}$/.test(environment.SPMT_SANDBOX_ID)) throw new Error("SPMT_SANDBOX_ID must be a lowercase sandbox namespace");
+  const forbidden = ["TWITCH_CLIENT_ID", "TWITCH_CLIENT_SECRET", "TWITCH_BOT_OAUTH_TOKEN", "DISCORD_CLIENT_ID", "DISCORD_BOT_TOKEN", "DISCORD_CLIENT_SECRET", "KICK_CLIENT_ID", "KICK_CLIENT_SECRET", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET", "FIREBASE_PRIVATE_KEY", "FIREBASE_CLIENT_EMAIL", "FIREBASE_PROJECT_ID", "NEXT_PUBLIC_YOUTUBE_INNERTUBE_API_KEY", "YOUTUBE_API_KEY", "FLY_API_TOKEN", "SPRITES_TOKEN"].filter((name) => Boolean(environment[name]));
+  if (forbidden.length) throw new Error(`Sandbox SPMT rejects provider or infrastructure credentials: ${forbidden.join(", ")}`);
+  const databasePath = environment.DATABASE_PATH;
+  if (!databasePath || !isAbsolute(databasePath) || !basename(databasePath).toLowerCase().includes("sandbox")) throw new Error("DATABASE_PATH must be an absolute sandbox-named SQLite path");
+  const publicBaseUrl = requireSandboxPublicUrl(environment.SPMT_PUBLIC_URL);
+  const host = environment.SPMT_HOST ?? "127.0.0.1";
+  if (!["127.0.0.1", "localhost", "::1"].includes(host)) throw new Error("Sandbox SPMT must bind only to loopback through SPMT_HOST");
+  if (environment.SPMT_SANDBOX_FIXTURES !== "1") throw new Error("SPMT_SANDBOX_FIXTURES=1 is required for the first isolated proof");
+  return { databasePath, publicBaseUrl, host };
+}
+
+function seedSandboxFixtures(control: ControlService, data: PlatformDataService, publicBaseUrl: string) {
+  registerFixture(control, {
+    appId: "spacemountain",
+    name: "SpaceMountain",
+    description: "The Green command bridge for SPMT identity, Shipyard, Commlink, workspace, and Stellar Core surfaces.",
+    version: "0.1.0-sandbox",
+    launchUrl: new URL("/", publicBaseUrl).toString(),
+    allowedScopes: ["workspace:read", "xp:read", "apps:read", "apps:install", "entitlements:read", "events:read", "commlink:read", "notifications:read", "assistants:read", "assistants:invoke", "stellar:context:read", "stellar:capabilities:read", "operations:logs:read", "operations:coder:read", "operations:coder:invoke"],
+    surfaces: ["shell", "standalone"],
+    status: "active",
+  });
+  registerFixture(control, {
+    appId: "orbit-beacon",
+    name: "Orbit Beacon",
+    description: "An inert registry fixture proving that an approved app appears and launches without a hardcoded SpaceMountain tile.",
+    version: "1.0.0-sandbox",
+    launchUrl: new URL("/sandbox/beacon", publicBaseUrl).toString(),
+    allowedScopes: [],
+    surfaces: ["standalone"],
+    status: "active",
+  });
+  const capability = data.listStellarCapabilities().find((item) => item.id === "sandbox.registry.inspect");
+  if (!capability) data.upsertStellarCapability({ id: "sandbox.registry.inspect", sourceAppId: "spmt", title: "Inspect the sandbox app registry", description: "Read the isolated Green registry and verify dynamic SpaceMountain discovery without provider access.", requiredScopes: ["apps:read"], availability: "available" });
+  const communityAssistant = data.listStellarCapabilities().find((item) => item.id === "spmt.community-assistant");
+  if (!communityAssistant) data.upsertStellarCapability({ id: "spmt.community-assistant", sourceAppId: "spmt", title: "Stella Community Assistant", description: "Invoke the app-neutral SPMT Community Assistant through the public developer contracts.", requiredScopes: ["assistants:invoke"], availability: "unavailable", unavailableReason: "The isolated Green sandbox has no Stellar Core inference provider or worker connected." });
+  const operationsLogs = data.listStellarCapabilities().find((item) => item.id === "spmt.operations.logs");
+  if (!operationsLogs) data.upsertStellarCapability({ id: "spmt.operations.logs", sourceAppId: "spmt", title: "Consolidated operations evidence", description: "Read redacted, tenant-scoped app and Rotator operational records through the public developer contracts.", requiredScopes: ["operations:logs:read"], availability: "available" });
+  const operationsCoder = data.listStellarCapabilities().find((item) => item.id === "spmt.operations.coder");
+  if (!operationsCoder) data.upsertStellarCapability({ id: "spmt.operations.coder", sourceAppId: "spmt", title: "Rotator AI coder", description: "Prepare a bounded coder job from selected operational evidence without granting repository or deployment authority.", requiredScopes: ["operations:logs:read", "operations:coder:invoke"], availability: "unavailable", unavailableReason: "The isolated Green sandbox has no Rotator coder worker connected." });
+}
+
+function seedSandboxOperationsLog(data: PlatformDataService, tenantId: string) {
+  data.createOperationsLog({ tenantId, sourceAppId: "spacemountain", reporterId: "spmt-sandbox", level: "info", kind: "sandbox.fixture", summary: "Synthetic sandbox fixture: the consolidated operations-log path is available; no Fly runtime or Rotator worker is connected.", labels: ["sandbox", "synthetic"], idempotencyKey: "sandbox-operations-fixture-v1" });
+}
+
+function registerFixture(control: ControlService, manifest: Parameters<ControlService["registerApp"]>[0]) {
+  let existing: ReturnType<ControlService["getApp"]> | undefined;
+  try { existing = control.getApp(manifest.appId); } catch { existing = undefined; }
+  if (existing && existing.name === manifest.name && existing.description === manifest.description && existing.version === manifest.version && existing.launchUrl === new URL(manifest.launchUrl).toString() && existing.status === manifest.status && JSON.stringify(existing.allowedScopes) === JSON.stringify([...manifest.allowedScopes].sort()) && JSON.stringify(existing.surfaces) === JSON.stringify(manifest.surfaces)) return existing;
+  return control.registerApp(manifest);
+}
+
+function requireSandboxPublicUrl(value: string | undefined) {
+  if (!value) throw new Error("SPMT_PUBLIC_URL is required in sandbox mode");
+  let url: URL;
+  try { url = new URL(value); } catch { throw new Error("SPMT_PUBLIC_URL must be an absolute URL"); }
+  const local = url.hostname === "localhost" || url.hostname === "127.0.0.1";
+  if ((!local && url.protocol !== "https:") || (!local && !url.hostname.endsWith(".sprites.app"))) throw new Error("SPMT_PUBLIC_URL must be the private Sprite HTTPS URL or localhost");
+  if (url.username || url.password || url.pathname !== "/" || url.search || url.hash) throw new Error("SPMT_PUBLIC_URL must be a credential-free origin");
+  return url.origin;
+}
+
 async function readBody(request: IncomingMessage): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = []; let total = 0;
   for await (const chunk of request) { const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk); total += buffer.byteLength; if (total > 1024 * 1024) throw new Error("request body too large"); chunks.push(buffer); }
@@ -352,7 +437,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   if (!databasePath) throw new Error("DATABASE_PATH is required; SPMT will not fall back to a local production database");
   if (!key) throw new Error("SPMT_WEBHOOK_KEY is required");
   const buildSha = process.env.BUILD_SHA;
-  const publicBaseUrl = process.env.SPMT_PUBLIC_URL ?? "https://spmt.live";
+  const runtimeMode = process.env.SPMT_RUNTIME_MODE === "sandbox" ? "sandbox" : "production";
+  const checked = runtimeMode === "sandbox" ? validateSandboxServiceEnvironment(process.env) : undefined;
+  const publicBaseUrl = checked?.publicBaseUrl ?? process.env.SPMT_PUBLIC_URL ?? "https://spmt.live";
   const twitchClientId = process.env.TWITCH_CLIENT_ID;
   const twitchClientSecret = process.env.TWITCH_CLIENT_SECRET;
   const discordBotToken = process.env.DISCORD_BOT_TOKEN;
@@ -361,6 +448,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     webhookKey: decodeKey(key),
     port: Number(process.env.PORT ?? 3000),
     publicBaseUrl,
+    runtimeMode,
+    sandboxFixtures: runtimeMode === "sandbox" && process.env.SPMT_SANDBOX_FIXTURES === "1",
+    ...(checked?.host ? { host: checked.host } : {}),
     ...(buildSha ? { buildSha } : {}),
     ...(twitchClientId ? { twitchClientId } : {}),
     ...(twitchClientSecret ? { twitchClientSecret } : {}),

@@ -73,8 +73,8 @@ function inventory(db: DatabaseSync): RecoveryInventoryV1 {
     commlinkMessages: count(db, "commlink_messages"),
     notifications: count(db, "notifications"),
     webhooks: count(db, "webhooks"),
-    athenaContext: count(db, "athena_context"),
-    athenaCommands: count(db, "athena_commands"),
+    stellarContext: count(db, "stellar_context"),
+    stellarCapabilities: count(db, "stellar_capabilities"),
   };
 }
 
@@ -82,7 +82,7 @@ function count(db: DatabaseSync, table: string) {
   const allowed = new Set([
     "users", "provider_links", "workspaces", "xp_events", "platform_events", "audit_records", "service_identities",
     "tenants", "apps", "app_installs", "entitlements", "user_profiles", "user_credentials", "oauth_clients", "oauth_codes",
-    "commlink_conversations", "commlink_messages", "notifications", "webhooks", "athena_context", "athena_commands",
+    "commlink_conversations", "commlink_messages", "notifications", "webhooks", "stellar_context", "stellar_capabilities",
   ]);
   if (!allowed.has(table)) throw new Error("Unknown recovery inventory table");
   const exists = db.prepare("SELECT 1 AS present FROM sqlite_master WHERE type='table' AND name=?").get(table) as { present?: number } | undefined;

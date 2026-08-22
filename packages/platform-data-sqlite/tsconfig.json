@@ -1,6 +1,6 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": { "composite": true, "rootDir": "src", "outDir": "dist", "tsBuildInfoFile": "dist/.tsbuildinfo", "lib": ["ES2022"], "types": ["node"] },
-  "references": [{ "path": "../platform-data-core" }],
+  "references": [{ "path": "../contracts" }, { "path": "../platform-data-core" }],
   "include": ["src/**/*.ts"]
 }

@@ -1,0 +1,11 @@
+{
+  "rules": [
+    { "domain": "github.com", "action": "allow" },
+    { "domain": "*.github.com", "action": "allow" },
+    { "domain": "githubusercontent.com", "action": "allow" },
+    { "domain": "*.githubusercontent.com", "action": "allow" },
+    { "domain": "npmjs.org", "action": "allow" },
+    { "domain": "*.npmjs.org", "action": "allow" },
+    { "domain": "*", "action": "deny" }
+  ]
+}

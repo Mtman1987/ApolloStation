@@ -64,6 +64,11 @@ test("platform events are idempotent and tenant-scoped", () => {
   assert.equal(first.duplicate, false);
   assert.equal(again.duplicate, true);
   assert.deepEqual(again.value.payload, { channel: "example" });
+  authority.publishEvent({ tenantId: "tenant-a", sourceAppId: "streamweaver", type: "chat.message", payload: { messageId: "1" }, idempotencyKey: "chat:1" });
+  authority.publishEvent({ tenantId: "tenant-b", sourceAppId: "streamweaver", type: "chat.message", payload: { messageId: "2" }, idempotencyKey: "chat:2" });
+  assert.deepEqual(authority.listEvents("tenant-a", { limit: 1 }).map((event) => event.type), ["chat.message"]);
+  assert.deepEqual(authority.listEvents("tenant-a", { sourceAppId: "discord-stream-hub" }).map((event) => event.id), [first.value.id]);
+  assert.equal(authority.listEvents("tenant-b").length, 1);
 });
 
 test("audit records preserve actor/action/outcome without becoming business state", () => {
