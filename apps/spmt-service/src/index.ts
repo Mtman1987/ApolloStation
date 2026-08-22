@@ -25,4 +25,10 @@ export function createSpmtService(options: SpmtServiceOptions) {
 }
 async function readBody(request: IncomingMessage): Promise<Record<string, unknown>> { const chunks: Buffer[] = []; let total = 0; for await (const chunk of request) { const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk); total += buffer.byteLength; if (total > 1024 * 1024) throw new Error("request body too large"); chunks.push(buffer); } if (!chunks.length) return {}; const parsed = JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown; if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("JSON object required"); return parsed as Record<string, unknown>; }
 function json(response: ServerResponse, status: number, body: unknown) { const encoded = JSON.stringify(body); response.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "content-length": Buffer.byteLength(encoded) }); response.end(encoded); }
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) { const databasePath = process.env.DATABASE_PATH; if (!databasePath) throw new Error("DATABASE_PATH is required; SPMT will not fall back to a local production database"); const service = createSpmtService({ databasePath, port: Number(process.env.PORT ?? 3000), buildSha: process.env.BUILD_SHA }); await service.listen(); }
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  const databasePath = process.env.DATABASE_PATH;
+  if (!databasePath) throw new Error("DATABASE_PATH is required; SPMT will not fall back to a local production database");
+  const buildSha = process.env.BUILD_SHA;
+  const service = createSpmtService({ databasePath, port: Number(process.env.PORT ?? 3000), ...(buildSha ? { buildSha } : {}) });
+  await service.listen();
+}
