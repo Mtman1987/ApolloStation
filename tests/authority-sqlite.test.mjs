@@ -1,0 +1,57 @@
+import assert from "node:assert/strict";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import test from "node:test";
+import { AuthorityConflictError, AuthorityService } from "../packages/authority-core/dist/index.js";
+import { SqliteAuthorityStore } from "../packages/authority-sqlite/dist/index.js";
+
+function tempDb() {
+  const dir = mkdtempSync(join(tmpdir(), "spmt-authority-"));
+  return { dir, path: join(dir, "authority.db") };
+}
+
+test("SQLite authority survives reopen with workspace, XP, idempotency, and journal intact", () => {
+  const { dir, path } = tempDb();
+  try {
+    let store = new SqliteAuthorityStore(path);
+    let authority = new AuthorityService({ store, idFactory: (prefix) => `${prefix}_fixed` });
+    authority.ensureUser("user-a");
+    authority.linkProvider("user-a", "twitch", "123");
+    authority.getOrCreateWorkspace("tenant-a");
+    authority.updateWorkspace("tenant-a", 1, { appearance: { theme: "dark" } });
+    const award = { tenantId: "tenant-a", userId: "user-a", delta: 10, sourceAppId: "chat-tag", reason: "test", idempotencyKey: "award-1" };
+    assert.equal(authority.awardXp(award).duplicate, false);
+    assert.equal(authority.awardXp(award).duplicate, true);
+    const before = store.listJournal();
+    assert.ok(before.length >= 5);
+    store.close();
+
+    store = new SqliteAuthorityStore(path);
+    authority = new AuthorityService({ store, idFactory: (prefix) => `${prefix}_after` });
+    assert.equal(authority.getXpBalance("tenant-a", "user-a"), 10);
+    assert.equal(authority.awardXp(award).duplicate, true);
+    assert.equal(store.getWorkspace("tenant-a")?.appearance.theme, "dark");
+    assert.equal(store.getProviderLink("twitch", "123")?.userId, "user-a");
+    assert.equal(store.listJournal().length, before.length);
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("authority epoch only moves forward and new journal entries carry promoted epoch", () => {
+  const { dir, path } = tempDb();
+  try {
+    const store = new SqliteAuthorityStore(path);
+    const authority = new AuthorityService({ store });
+    assert.equal(store.getAuthorityEpoch(), 1);
+    assert.equal(store.promoteAuthorityEpoch(2), 2);
+    assert.throws(() => store.promoteAuthorityEpoch(2), AuthorityConflictError);
+    authority.getOrCreateWorkspace("tenant-b");
+    assert.equal(store.listJournal().at(-1)?.epoch, 2);
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
