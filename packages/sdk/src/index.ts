@@ -1,64 +1,23 @@
 import type { OverlayWidgetManifestV1, RuntimeStateV1 } from "@spmt/contracts";
-
-export interface SpmtClientOptions {
-  baseUrl: string;
-  fetchImpl?: typeof fetch;
-  getAccessToken?: () => string | Promise<string | undefined> | undefined;
-  appId: string;
-}
+export interface SpmtClientOptions { baseUrl: string; fetchImpl?: typeof fetch; getAccessToken?: () => string | Promise<string | undefined> | undefined; appId: string; }
 export interface ApiRequestOptions extends RequestInit { tenantId?: string; correlationId?: string; }
-
 export class SpmtClient {
-  readonly baseUrl: string;
-  readonly appId: string;
-  private readonly fetchImpl: typeof fetch;
-  private readonly getAccessToken?: SpmtClientOptions["getAccessToken"];
-
-  constructor(options: SpmtClientOptions) {
-    this.baseUrl = options.baseUrl.replace(/\/$/, "");
-    this.appId = options.appId;
-    this.fetchImpl = options.fetchImpl ?? fetch;
-    this.getAccessToken = options.getAccessToken;
-  }
-
-  async request<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
-    const headers = new Headers(options.headers);
-    headers.set("accept", "application/json");
-    headers.set("x-spmt-app", this.appId);
-    if (options.tenantId) headers.set("x-spmt-tenant", options.tenantId);
-    if (options.correlationId) headers.set("x-correlation-id", options.correlationId);
-    const token = await this.getAccessToken?.();
-    if (token) headers.set("authorization", `Bearer ${token}`);
-    const response = await this.fetchImpl(`${this.baseUrl}${path}`, { ...options, headers });
-    if (!response.ok) throw new SpmtApiError(response.status, await response.text());
-    if (response.status === 204) return undefined as T;
-    return (await response.json()) as T;
-  }
-
-  getSession() {
-    return this.request<{ actorType: "user" | "service"; actorId: string; scopes: string[]; tenantMode: string; tenantIds: string[] }>("/v1/session");
-  }
+  readonly baseUrl: string; readonly appId: string; private readonly fetchImpl: typeof fetch; private readonly getAccessToken?: SpmtClientOptions["getAccessToken"];
+  constructor(options: SpmtClientOptions) { this.baseUrl = options.baseUrl.replace(/\/$/, ""); this.appId = options.appId; this.fetchImpl = options.fetchImpl ?? fetch; this.getAccessToken = options.getAccessToken; }
+  async request<T>(path: string, options: ApiRequestOptions = {}): Promise<T> { const headers = new Headers(options.headers); headers.set("accept", "application/json"); headers.set("x-spmt-app", this.appId); if (options.tenantId) headers.set("x-spmt-tenant", options.tenantId); if (options.correlationId) headers.set("x-correlation-id", options.correlationId); const token = await this.getAccessToken?.(); if (token) headers.set("authorization", `Bearer ${token}`); const response = await this.fetchImpl(`${this.baseUrl}${path}`, { ...options, headers }); if (!response.ok) throw new SpmtApiError(response.status, await response.text()); if (response.status === 204) return undefined as T; return await response.json() as T; }
+  getSession() { return this.request<{ actorType: "user" | "service"; actorId: string; scopes: string[]; tenantMode: string; tenantIds: string[] }>("/v1/session"); }
   getWorkspaceProfile(tenantId: string) { return this.request<Record<string, unknown>>("/v1/workspace/profile", { tenantId }); }
-  updateWorkspaceProfile(tenantId: string, expectedRevision: number, patch: Record<string, unknown>) {
-    return this.request<Record<string, unknown>>("/v1/workspace/profile", { method: "PATCH", tenantId, headers: { "content-type": "application/json" }, body: JSON.stringify({ expectedRevision, patch }) });
-  }
-  getXpBalance(tenantId: string, userId: string) {
-    return this.request<{ tenantId: string; userId: string; balance: number }>(`/v1/xp/balance?userId=${encodeURIComponent(userId)}`, { tenantId });
-  }
-  awardXp(tenantId: string, userId: string, delta: number, reason: string, idempotencyKey: string) {
-    return this.request<{ duplicate: boolean; event: Record<string, unknown> }>("/v1/xp/awards", { method: "POST", tenantId, headers: { "content-type": "application/json", "idempotency-key": idempotencyKey }, body: JSON.stringify({ userId, delta, reason }) });
-  }
-  publishEvent<T extends Record<string, unknown>>(tenantId: string, type: string, payload: T, idempotencyKey: string) {
-    return this.request<{ duplicate: boolean; event: Record<string, unknown> }>("/v1/events", { method: "POST", tenantId, headers: { "content-type": "application/json", "idempotency-key": idempotencyKey }, body: JSON.stringify({ type, payload }) });
-  }
-  registerOverlayWidget(tenantId: string, manifest: OverlayWidgetManifestV1) {
-    return this.request<{ widgetId: string }>("/v1/overlay/widgets", { method: "PUT", tenantId, headers: { "content-type": "application/json" }, body: JSON.stringify(manifest) });
-  }
-  reportRuntimeState(tenantId: string, state: RuntimeStateV1, detail?: string) {
-    return this.request<void>("/v1/runtime/state", { method: "POST", tenantId, headers: { "content-type": "application/json" }, body: JSON.stringify({ state, detail }) });
-  }
+  updateWorkspaceProfile(tenantId: string, expectedRevision: number, patch: Record<string, unknown>) { return this.request<Record<string, unknown>>("/v1/workspace/profile", { method: "PATCH", tenantId, headers: { "content-type": "application/json" }, body: JSON.stringify({ expectedRevision, patch }) }); }
+  getXpBalance(tenantId: string, userId: string) { return this.request<{ tenantId: string; userId: string; balance: number }>(`/v1/xp/balance?userId=${encodeURIComponent(userId)}`, { tenantId }); }
+  awardXp(tenantId: string, userId: string, delta: number, reason: string, idempotencyKey: string) { return this.request<{ duplicate: boolean; event: Record<string, unknown> }>("/v1/xp/awards", { method: "POST", tenantId, headers: { "content-type": "application/json", "idempotency-key": idempotencyKey }, body: JSON.stringify({ userId, delta, reason }) }); }
+  publishEvent<T extends Record<string, unknown>>(tenantId: string, type: string, payload: T, idempotencyKey: string) { return this.request<{ duplicate: boolean; event: Record<string, unknown> }>("/v1/events", { method: "POST", tenantId, headers: { "content-type": "application/json", "idempotency-key": idempotencyKey }, body: JSON.stringify({ type, payload }) }); }
+  listApps() { return this.request<Array<Record<string, unknown>>>("/v1/apps"); }
+  getApp(appId: string) { return this.request<Record<string, unknown>>(`/v1/apps/${encodeURIComponent(appId)}`); }
+  installApp(tenantId: string, appId: string, grantedScopes?: string[]) { return this.request<Record<string, unknown>>(`/v1/apps/${encodeURIComponent(appId)}/install`, { method: "POST", tenantId, headers: { "content-type": "application/json" }, body: JSON.stringify({ grantedScopes }) }); }
+  disableApp(tenantId: string, appId: string) { return this.request<Record<string, unknown>>(`/v1/apps/${encodeURIComponent(appId)}/disable`, { method: "POST", tenantId }); }
+  listInstalls(tenantId: string) { return this.request<Array<Record<string, unknown>>>("/v1/apps/installs", { tenantId }); }
+  listEntitlements(tenantId: string, appId?: string) { return this.request<Array<Record<string, unknown>>>(`/v1/entitlements${appId ? `?appId=${encodeURIComponent(appId)}` : ""}`, { tenantId }); }
+  registerOverlayWidget(tenantId: string, manifest: OverlayWidgetManifestV1) { return this.request<{ widgetId: string }>("/v1/overlay/widgets", { method: "PUT", tenantId, headers: { "content-type": "application/json" }, body: JSON.stringify(manifest) }); }
+  reportRuntimeState(tenantId: string, state: RuntimeStateV1, detail?: string) { return this.request<void>("/v1/runtime/state", { method: "POST", tenantId, headers: { "content-type": "application/json" }, body: JSON.stringify({ state, detail }) }); }
 }
-
-export class SpmtApiError extends Error {
-  constructor(public readonly status: number, public readonly responseBody: string) { super(`SPMT API request failed with status ${status}`); this.name = "SpmtApiError"; }
-}
+export class SpmtApiError extends Error { constructor(public readonly status: number, public readonly responseBody: string) { super(`SPMT API request failed with status ${status}`); this.name = "SpmtApiError"; } }

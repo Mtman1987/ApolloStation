@@ -1,14 +1,10 @@
 {
-  "name": "@spmt/platform-ops",
-  "version": "0.2.0",
+  "name": "@spmt/outbox-core",
+  "version": "0.1.0",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
-  "dependencies": {
-    "@spmt/auth-core": "0.1.0",
-    "@spmt/authority-core": "0.2.0",
-    "@spmt/control-core": "0.1.0"
-  },
+  "dependencies": { "@spmt/authority-core": "0.2.0" },
   "scripts": { "build": "tsc -b" }
 }
