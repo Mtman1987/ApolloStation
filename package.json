@@ -10,7 +10,6 @@
     "clean": "tsc -b packages/contracts packages/embed packages/sdk packages/runtime packages/ui apps/reference-app --clean"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
-    "typescript": "^6.0.0"
+    "typescript": "^5.9.2"
   }
 }
