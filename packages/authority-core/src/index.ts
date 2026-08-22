@@ -98,6 +98,10 @@ export class AuthorityValidationError extends Error {
   }
 }
 
+/**
+ * Deterministic test/reference adapter only. Production code must bind a
+ * durable AuthorityStore and must never silently fall back to this store.
+ */
 export class MemoryAuthorityStore implements AuthorityStore {
   private readonly users = new Map<string, UserRecordV1>();
   private readonly providerLinks = new Map<string, ProviderLinkV1>();
@@ -107,20 +111,20 @@ export class MemoryAuthorityStore implements AuthorityStore {
   private readonly events: PlatformEventV1[] = [];
   private readonly audits: AuditRecordV1[] = [];
 
-  getUser(userId: string) { return clone(this.users.get(userId)); }
-  putUser(user: UserRecordV1) { this.users.set(user.id, clone(user)); }
-  getProviderLink(provider: ProviderKindV1, providerUserId: string) { return clone(this.providerLinks.get(`${provider}:${providerUserId}`)); }
-  putProviderLink(link: ProviderLinkV1) { this.providerLinks.set(`${link.provider}:${link.providerUserId}`, clone(link)); }
-  getWorkspace(tenantId: string) { return clone(this.workspaces.get(tenantId)); }
-  putWorkspace(profile: WorkspaceProfileV1) { this.workspaces.set(profile.tenantId, clone(profile)); }
-  findIdempotent<T>(namespace: string, tenantId: string, key: string) { return clone(this.idempotency.get(`${namespace}:${tenantId}:${key}`)) as T | undefined; }
-  putIdempotent<T>(namespace: string, tenantId: string, key: string, value: T) { this.idempotency.set(`${namespace}:${tenantId}:${key}`, clone(value)); }
-  appendXp(event: XpEventV1) { this.xp.push(clone(event)); }
-  listXp(tenantId: string, userId: string) { return this.xp.filter((item) => item.tenantId === tenantId && item.userId === userId).map((item) => clone(item)); }
-  appendEvent(event: PlatformEventV1) { this.events.push(clone(event)); }
-  listEvents(tenantId: string) { return this.events.filter((item) => item.tenantId === tenantId).map((item) => clone(item)); }
-  appendAudit(record: AuditRecordV1) { this.audits.push(clone(record)); }
-  listAudit(tenantId?: string) { return this.audits.filter((item) => tenantId === undefined || item.tenantId === tenantId).map((item) => clone(item)); }
+  getUser(userId: string) { return cloneJson(this.users.get(userId)); }
+  putUser(user: UserRecordV1) { this.users.set(user.id, cloneJson(user)); }
+  getProviderLink(provider: ProviderKindV1, providerUserId: string) { return cloneJson(this.providerLinks.get(`${provider}:${providerUserId}`)); }
+  putProviderLink(link: ProviderLinkV1) { this.providerLinks.set(`${link.provider}:${link.providerUserId}`, cloneJson(link)); }
+  getWorkspace(tenantId: string) { return cloneJson(this.workspaces.get(tenantId)); }
+  putWorkspace(profile: WorkspaceProfileV1) { this.workspaces.set(profile.tenantId, cloneJson(profile)); }
+  findIdempotent<T>(namespace: string, tenantId: string, key: string) { return cloneJson(this.idempotency.get(`${namespace}:${tenantId}:${key}`)) as T | undefined; }
+  putIdempotent<T>(namespace: string, tenantId: string, key: string, value: T) { this.idempotency.set(`${namespace}:${tenantId}:${key}`, cloneJson(value)); }
+  appendXp(event: XpEventV1) { this.xp.push(cloneJson(event)); }
+  listXp(tenantId: string, userId: string) { return this.xp.filter((item) => item.tenantId === tenantId && item.userId === userId).map((item) => cloneJson(item)); }
+  appendEvent(event: PlatformEventV1) { this.events.push(cloneJson(event)); }
+  listEvents(tenantId: string) { return this.events.filter((item) => item.tenantId === tenantId).map((item) => cloneJson(item)); }
+  appendAudit(record: AuditRecordV1) { this.audits.push(cloneJson(record)); }
+  listAudit(tenantId?: string) { return this.audits.filter((item) => tenantId === undefined || item.tenantId === tenantId).map((item) => cloneJson(item)); }
 }
 
 export interface AuthorityServiceOptions {
@@ -188,7 +192,7 @@ export class AuthorityService {
     if (patch.dockSlots && patch.dockSlots.length !== 3) throw new AuthorityValidationError("Workspace must contain exactly three dock slots");
     const next: WorkspaceProfileV1 = {
       ...current,
-      ...clone(patch),
+      ...cloneJson(patch),
       tenantId,
       revision: current.revision + 1,
       updatedAt: this.now(),
@@ -205,7 +209,7 @@ export class AuthorityService {
     if (!Number.isSafeInteger(input.delta) || input.delta === 0) throw new AuthorityValidationError("XP delta must be a non-zero safe integer");
     const existing = this.store.findIdempotent<XpEventV1>("xp", input.tenantId, input.idempotencyKey);
     if (existing) return { duplicate: true, value: existing };
-    const event: XpEventV1 = { ...clone(input), id: this.idFactory("xp"), createdAt: this.now() };
+    const event: XpEventV1 = { ...cloneJson(input), id: this.idFactory("xp"), createdAt: this.now() };
     this.store.appendXp(event);
     this.store.putIdempotent("xp", input.tenantId, input.idempotencyKey, event);
     return { duplicate: false, value: event };
@@ -222,7 +226,7 @@ export class AuthorityService {
     requireId(input.idempotencyKey, "idempotencyKey");
     const existing = this.store.findIdempotent<PlatformEventV1>("event", input.tenantId, input.idempotencyKey);
     if (existing) return { duplicate: true, value: existing };
-    const event: PlatformEventV1 = { ...clone(input), id: this.idFactory("evt"), createdAt: this.now() };
+    const event: PlatformEventV1 = { ...cloneJson(input), id: this.idFactory("evt"), createdAt: this.now() };
     this.store.appendEvent(event);
     this.store.putIdempotent("event", input.tenantId, input.idempotencyKey, event);
     return { duplicate: false, value: event };
@@ -231,7 +235,7 @@ export class AuthorityService {
   audit(input: Omit<AuditRecordV1, "id" | "createdAt">): AuditRecordV1 {
     requireId(input.actorId, "actorId");
     requireId(input.action, "action");
-    const record: AuditRecordV1 = { ...clone(input), id: this.idFactory("audit"), createdAt: this.now() };
+    const record: AuditRecordV1 = { ...cloneJson(input), id: this.idFactory("audit"), createdAt: this.now() };
     this.store.appendAudit(record);
     return record;
   }
@@ -241,7 +245,7 @@ function requireId(value: string, name: string) {
   if (!value || value.trim() !== value || value.length > 200) throw new AuthorityValidationError(`${name} is invalid`);
 }
 
-function clone<T>(value: T): T {
+function cloneJson<T>(value: T): T {
   if (value === undefined) return value;
-  return structuredClone(value);
+  return JSON.parse(JSON.stringify(value)) as T;
 }
