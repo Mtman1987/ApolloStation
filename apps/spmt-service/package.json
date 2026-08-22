@@ -1,17 +1,20 @@
 {
   "name": "@spmt/service",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "main": "./dist/index.js",
   "scripts": { "build": "tsc -b", "start": "node dist/index.js" },
   "dependencies": {
-    "@spmt/api-adapter": "0.2.0",
+    "@spmt/api-adapter": "0.3.0",
     "@spmt/authority-core": "0.2.0",
     "@spmt/authority-sqlite": "0.4.0",
     "@spmt/auth-core": "0.1.0",
     "@spmt/control-core": "0.1.0",
-    "@spmt/platform-ops": "0.2.0",
+    "@spmt/outbox-core": "0.1.0",
+    "@spmt/platform-data-core": "0.1.0",
+    "@spmt/platform-data-sqlite": "0.1.0",
+    "@spmt/platform-ops": "0.3.0",
     "@spmt/runtime": "0.1.0"
   }
 }
