@@ -61,12 +61,32 @@ function inventory(db: DatabaseSync): RecoveryInventoryV1 {
     platformEvents: count(db, "platform_events"),
     auditRecords: count(db, "audit_records"),
     serviceIdentities: count(db, "service_identities"),
+    tenants: count(db, "tenants"),
+    apps: count(db, "apps"),
+    appInstalls: count(db, "app_installs"),
+    entitlements: count(db, "entitlements"),
+    userProfiles: count(db, "user_profiles"),
+    userCredentials: count(db, "user_credentials"),
+    oauthClients: count(db, "oauth_clients"),
+    oauthCodes: count(db, "oauth_codes"),
+    commlinkConversations: count(db, "commlink_conversations"),
+    commlinkMessages: count(db, "commlink_messages"),
+    notifications: count(db, "notifications"),
+    webhooks: count(db, "webhooks"),
+    athenaContext: count(db, "athena_context"),
+    athenaCommands: count(db, "athena_commands"),
   };
 }
 
 function count(db: DatabaseSync, table: string) {
-  const allowed = new Set(["users", "provider_links", "workspaces", "xp_events", "platform_events", "audit_records", "service_identities"]);
+  const allowed = new Set([
+    "users", "provider_links", "workspaces", "xp_events", "platform_events", "audit_records", "service_identities",
+    "tenants", "apps", "app_installs", "entitlements", "user_profiles", "user_credentials", "oauth_clients", "oauth_codes",
+    "commlink_conversations", "commlink_messages", "notifications", "webhooks", "athena_context", "athena_commands",
+  ]);
   if (!allowed.has(table)) throw new Error("Unknown recovery inventory table");
+  const exists = db.prepare("SELECT 1 AS present FROM sqlite_master WHERE type='table' AND name=?").get(table) as { present?: number } | undefined;
+  if (!exists) return 0;
   const row = db.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get() as { count?: number | bigint } | undefined;
   return Number(row?.count ?? 0);
 }
