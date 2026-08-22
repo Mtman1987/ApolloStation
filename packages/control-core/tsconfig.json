@@ -5,14 +5,7 @@
     "rootDir": "src",
     "outDir": "dist",
     "tsBuildInfoFile": "dist/.tsbuildinfo",
-    "lib": ["ES2022"],
-    "types": ["node"]
+    "lib": ["ES2022"]
   },
-  "references": [
-    { "path": "../authority-core" },
-    { "path": "../auth-core" },
-    { "path": "../control-core" },
-    { "path": "../recovery-core" }
-  ],
   "include": ["src/**/*.ts"]
 }

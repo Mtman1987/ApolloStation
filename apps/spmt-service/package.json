@@ -1,0 +1,17 @@
+{
+  "name": "@spmt/service",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "scripts": { "build": "tsc -b", "start": "node dist/index.js" },
+  "dependencies": {
+    "@spmt/api-adapter": "0.2.0",
+    "@spmt/authority-core": "0.2.0",
+    "@spmt/authority-sqlite": "0.4.0",
+    "@spmt/auth-core": "0.1.0",
+    "@spmt/control-core": "0.1.0",
+    "@spmt/platform-ops": "0.2.0",
+    "@spmt/runtime": "0.1.0"
+  }
+}

@@ -27,10 +27,26 @@ export interface AuditRecordV1 {
   outcome: "accepted" | "denied" | "duplicate" | "conflict";
   correlationId?: string; createdAt: string;
 }
+export type OutboxStateV1 = "pending" | "leased" | "delivered" | "dead";
+export interface OutboxRecordV1 {
+  id: string;
+  eventId: string;
+  tenantId: string;
+  topic: string;
+  payload: Record<string, unknown>;
+  state: OutboxStateV1;
+  attempts: number;
+  availableAt: string;
+  createdAt: string;
+  leaseOwner?: string;
+  leaseUntil?: string;
+  deliveredAt?: string;
+  lastError?: string;
+}
 export interface AuthorityJournalEntryV1 {
   sequence: number;
   epoch: number;
-  kind: "user" | "provider-link" | "workspace" | "xp" | "event" | "audit" | "service-identity";
+  kind: "user" | "provider-link" | "workspace" | "xp" | "event" | "audit" | "service-identity" | "outbox" | "tenant" | "app" | "install" | "entitlement";
   tenantId?: string;
   recordId: string;
   payload: Record<string, unknown>;
@@ -54,6 +70,10 @@ export interface AuthorityStore {
   listEvents(tenantId: string): PlatformEventV1[];
   appendAudit(record: AuditRecordV1): void;
   listAudit(tenantId?: string): AuditRecordV1[];
+  getOutbox(id: string): OutboxRecordV1 | undefined;
+  putOutbox(record: OutboxRecordV1): void;
+  listClaimableOutbox(now: string, limit: number): OutboxRecordV1[];
+  listOutbox(): OutboxRecordV1[];
   getAuthorityEpoch(): number;
   promoteAuthorityEpoch(nextEpoch: number): number;
   listJournal(afterSequence?: number): AuthorityJournalEntryV1[];
@@ -75,6 +95,7 @@ export class MemoryAuthorityStore implements AuthorityStore {
   private readonly xp: XpEventV1[] = [];
   private readonly events: PlatformEventV1[] = [];
   private readonly audits: AuditRecordV1[] = [];
+  private readonly outbox = new Map<string, OutboxRecordV1>();
   private readonly journal: AuthorityJournalEntryV1[] = [];
   private epoch = 1;
   private journalSequence = 0;
@@ -94,6 +115,12 @@ export class MemoryAuthorityStore implements AuthorityStore {
   listEvents(tenantId: string) { return this.events.filter((item) => item.tenantId === tenantId).map(cloneJson); }
   appendAudit(record: AuditRecordV1) { this.audits.push(cloneJson(record)); this.writeJournal("audit", record.id, record, record.tenantId); }
   listAudit(tenantId?: string) { return this.audits.filter((item) => tenantId === undefined || item.tenantId === tenantId).map(cloneJson); }
+  getOutbox(id: string) { return cloneJson(this.outbox.get(id)); }
+  putOutbox(record: OutboxRecordV1) { this.outbox.set(record.id, cloneJson(record)); this.writeJournal("outbox", record.id, record, record.tenantId); }
+  listClaimableOutbox(now: string, limit: number) {
+    return [...this.outbox.values()].filter((item) => item.state === "pending" ? item.availableAt <= now : item.state === "leased" && Boolean(item.leaseUntil) && item.leaseUntil! <= now).sort((a, b) => a.createdAt.localeCompare(b.createdAt)).slice(0, limit).map(cloneJson);
+  }
+  listOutbox() { return [...this.outbox.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt)).map(cloneJson); }
   getAuthorityEpoch() { return this.epoch; }
   promoteAuthorityEpoch(nextEpoch: number) {
     if (!Number.isSafeInteger(nextEpoch) || nextEpoch <= this.epoch) throw new AuthorityConflictError("Authority epoch must increase monotonically");
@@ -103,15 +130,7 @@ export class MemoryAuthorityStore implements AuthorityStore {
   listJournal(afterSequence = 0) { return this.journal.filter((entry) => entry.sequence > afterSequence).map(cloneJson); }
 
   private writeJournal(kind: AuthorityJournalEntryV1["kind"], recordId: string, payload: object, tenantId?: string) {
-    this.journal.push({
-      sequence: ++this.journalSequence,
-      epoch: this.epoch,
-      kind,
-      ...(tenantId ? { tenantId } : {}),
-      recordId,
-      payload: cloneJson(payload) as Record<string, unknown>,
-      createdAt: new Date().toISOString(),
-    });
+    this.journal.push({ sequence: ++this.journalSequence, epoch: this.epoch, kind, ...(tenantId ? { tenantId } : {}), recordId, payload: cloneJson(payload) as Record<string, unknown>, createdAt: new Date().toISOString() });
   }
 }
 
@@ -156,10 +175,7 @@ export class AuthorityService {
     return this.store.transaction(() => {
       const existing = this.store.getWorkspace(tenantId);
       if (existing) return existing;
-      const profile: WorkspaceProfileV1 = {
-        tenantId, revision: 1, appearance: { theme: "system" }, dockSlots: [null, null, null],
-        ttsSubscriptionIds: [], appThemes: {}, updatedAt: this.now(),
-      };
+      const profile: WorkspaceProfileV1 = { tenantId, revision: 1, appearance: { theme: "system" }, dockSlots: [null, null, null], ttsSubscriptionIds: [], appThemes: {}, updatedAt: this.now() };
       this.store.putWorkspace(profile);
       return profile;
     });
@@ -201,10 +217,58 @@ export class AuthorityService {
       requireId(input.type, "type"); requireId(input.idempotencyKey, "idempotencyKey");
       const existing = this.store.findIdempotent<PlatformEventV1>("event", input.tenantId, input.idempotencyKey);
       if (existing) return { duplicate: true, value: existing };
-      const event: PlatformEventV1 = { ...cloneJson(input), id: this.idFactory("evt"), createdAt: this.now() };
+      const now = this.now();
+      const event: PlatformEventV1 = { ...cloneJson(input), id: this.idFactory("evt"), createdAt: now };
+      const outbox: OutboxRecordV1 = { id: `outbox_${event.id}`, eventId: event.id, tenantId: event.tenantId, topic: event.type, payload: cloneJson(event) as unknown as Record<string, unknown>, state: "pending", attempts: 0, availableAt: now, createdAt: now };
       this.store.appendEvent(event);
+      this.store.putOutbox(outbox);
       this.store.putIdempotent("event", input.tenantId, input.idempotencyKey, event);
       return { duplicate: false, value: event };
+    });
+  }
+
+  listOutbox() { return this.store.listOutbox(); }
+
+  claimOutbox(workerId: string, leaseSeconds = 30, limit = 50): OutboxRecordV1[] {
+    requireId(workerId, "workerId");
+    if (!Number.isSafeInteger(leaseSeconds) || leaseSeconds < 1 || leaseSeconds > 3600) throw new AuthorityValidationError("leaseSeconds is invalid");
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 500) throw new AuthorityValidationError("limit is invalid");
+    return this.store.transaction(() => {
+      const now = this.now();
+      const leaseUntil = new Date(Date.parse(now) + leaseSeconds * 1000).toISOString();
+      const claimable = this.store.listClaimableOutbox(now, limit);
+      return claimable.map((record) => {
+        const next: OutboxRecordV1 = { ...record, state: "leased", attempts: record.attempts + 1, leaseOwner: workerId, leaseUntil };
+        this.store.putOutbox(next);
+        return next;
+      });
+    });
+  }
+
+  completeOutbox(outboxId: string, workerId: string): OutboxRecordV1 {
+    return this.store.transaction(() => {
+      const record = this.requireLease(outboxId, workerId);
+      const next: OutboxRecordV1 = { ...record, state: "delivered", deliveredAt: this.now() };
+      delete next.leaseOwner; delete next.leaseUntil; delete next.lastError;
+      this.store.putOutbox(next);
+      return next;
+    });
+  }
+
+  failOutbox(outboxId: string, workerId: string, error: string, retrySeconds = 15, maxAttempts = 10): OutboxRecordV1 {
+    return this.store.transaction(() => {
+      const record = this.requireLease(outboxId, workerId);
+      const now = this.now();
+      const dead = record.attempts >= maxAttempts;
+      const next: OutboxRecordV1 = {
+        ...record,
+        state: dead ? "dead" : "pending",
+        availableAt: dead ? record.availableAt : new Date(Date.parse(now) + retrySeconds * 1000).toISOString(),
+        lastError: String(error || "delivery failed").slice(0, 1000),
+      };
+      delete next.leaseOwner; delete next.leaseUntil;
+      this.store.putOutbox(next);
+      return next;
     });
   }
 
@@ -215,6 +279,14 @@ export class AuthorityService {
       this.store.appendAudit(record);
       return record;
     });
+  }
+
+  private requireLease(outboxId: string, workerId: string) {
+    requireId(outboxId, "outboxId"); requireId(workerId, "workerId");
+    const record = this.store.getOutbox(outboxId);
+    if (!record) throw new AuthorityConflictError(`Outbox ${outboxId} does not exist`);
+    if (record.state !== "leased" || record.leaseOwner !== workerId) throw new AuthorityConflictError(`Outbox ${outboxId} is not leased by ${workerId}`);
+    return record;
   }
 
   private ensureUserInTransaction(userId: string) {
@@ -230,7 +302,6 @@ export class AuthorityService {
 function requireId(value: string, name: string) {
   if (!value || value.trim() !== value || value.length > 200) throw new AuthorityValidationError(`${name} is invalid`);
 }
-
 function cloneJson<T>(value: T): T {
   if (value === undefined) return value;
   return JSON.parse(JSON.stringify(value)) as T;
