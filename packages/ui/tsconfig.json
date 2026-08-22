@@ -8,10 +8,8 @@
     "lib": ["ES2022", "DOM", "DOM.Iterable"]
   },
   "references": [
-    { "path": "../../packages/contracts" },
-    { "path": "../../packages/embed" },
-    { "path": "../../packages/sdk" },
-    { "path": "../../packages/ui" }
+    { "path": "../contracts" },
+    { "path": "../embed" }
   ],
   "include": ["src/**/*.ts"]
 }
