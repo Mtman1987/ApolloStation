@@ -1,26 +1,31 @@
 # SPMT Ecosystem Rebuild Blueprint
 
-Status: **proposal for owner debate — not approved for implementation**
+Status: **foundation approved for Green implementation; Blue production remains authoritative until cutover gates pass**
 
-This repository is the clean-room architecture contract for rebuilding the SpaceMountain ecosystem beside the current production system. It does not replace production documentation or authorize a deployment until the decisions in `DECISIONS.md` are accepted.
+This repository is the clean-room architecture and migration contract for rebuilding the SpaceMountain ecosystem beside the current production system.
+
+Owner approval recorded 2026-08-21 closes the foundation decision pack in `DECISIONS.md`. Measurement-dependent decisions remain open and are resolved only when their implementation phase has real benchmark or workload evidence. Approval here authorizes work on the isolated Green/Sprites rebuild only; it does not authorize changing production DNS, production data authority, or shutting down a live app.
 
 ## What this package does
 
-- freezes the source documentation from the two current live repositories;
+- freezes donor documentation from the current live repositories as read-only evidence;
 - separates observed facts from old plans and unverified claims;
-- proposes one coherent identity, data, runtime, AI, and Fly.io model;
+- defines one coherent identity, data, runtime, worker, AI, and Fly.io model for Green;
+- records accepted architecture decisions and the few decisions deliberately deferred to measurement;
+- tracks donor-to-Green feature parity so a clean rebuild cannot silently become feature loss;
 - lists every material removal or rewrite with a defense and counterargument;
 - defines a reversible, cost-bounded parallel cutover;
 - keeps Firebase and other retired architecture out of the new design.
 
 ## Read in this order
 
-1. `CURRENT_STATE.md` — what is known, inconsistent, and still unverified.
-2. `BLUEPRINT.md` — the proposed target architecture.
-3. `DECISIONS.md` — the debate ledger. This is where approval happens.
-4. `APP_CONTRACTS.md` — rules every rebuilt app must follow.
-5. `OPERATIONS.md` — build order, cost clock, gates, migration, and rollback.
-6. `DOCUMENT_REVIEW.md` — what should be kept, merged, archived, or removed.
+1. `CURRENT_STATE.md` — what is known, inconsistent, and still unverified in the donor/live system.
+2. `DECISIONS.md` — accepted foundation decisions plus the small deferred decision set.
+3. `BLUEPRINT.md` — target architecture governed by the accepted decisions.
+4. `PARITY_LEDGER.md` — donor capability/state ownership mapped to Green disposition and proof.
+5. `APP_CONTRACTS.md` — rules every rebuilt app and worker must follow.
+6. `OPERATIONS.md` — implementation batches, build order, cost clock, gates, migration, and rollback.
+7. `DOCUMENT_REVIEW.md` — what should be kept, merged, archived, or removed.
 
 The `evidence/raw/` directory preserves 294 document-like source files copied from:
 
@@ -29,7 +34,11 @@ The `evidence/raw/` directory preserves 294 document-like source files copied fr
 
 The copied evidence is read-only historical input. Nothing inside it is automatically a current requirement.
 
-## Governing rule
+## Governing rules
 
-Write the contract first. Build the new system to satisfy the contract. If implementation teaches us that the contract is wrong, record and approve a decision before changing the architecture.
-
+1. Accepted decisions are the Green architecture contract.
+2. Live production is donor evidence and the rollback system, not the place to build Green.
+3. No donor capability is silently dropped. If it has not been classified in `PARITY_LEDGER.md`, it defaults to `VERIFY`, never `REMOVE`.
+4. Build one shared contract or bounded product slice at a time, with tests proving parity or an explicit approved removal.
+5. Blue stays available until Green passes identity, data, reliability, load, recovery, observation, and rollback gates.
+6. If implementation proves an accepted contract wrong, record the evidence and change the decision before changing the architecture.
