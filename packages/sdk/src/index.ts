@@ -6,11 +6,7 @@ export interface SpmtClientOptions {
   getAccessToken?: () => string | Promise<string | undefined> | undefined;
   appId: string;
 }
-
-export interface ApiRequestOptions extends RequestInit {
-  tenantId?: string;
-  correlationId?: string;
-}
+export interface ApiRequestOptions extends RequestInit { tenantId?: string; correlationId?: string; }
 
 export class SpmtClient {
   readonly baseUrl: string;
@@ -33,7 +29,6 @@ export class SpmtClient {
     if (options.correlationId) headers.set("x-correlation-id", options.correlationId);
     const token = await this.getAccessToken?.();
     if (token) headers.set("authorization", `Bearer ${token}`);
-
     const response = await this.fetchImpl(`${this.baseUrl}${path}`, { ...options, headers });
     if (!response.ok) throw new SpmtApiError(response.status, await response.text());
     if (response.status === 204) return undefined as T;
@@ -41,44 +36,29 @@ export class SpmtClient {
   }
 
   getSession() {
-    return this.request<{ authenticated: boolean; userId?: string; tenantId?: string }>("/v1/session");
+    return this.request<{ actorType: "user" | "service"; actorId: string; scopes: string[]; tenantMode: string; tenantIds: string[] }>("/v1/session");
   }
-
-  getWorkspaceProfile(tenantId: string) {
-    return this.request<Record<string, unknown>>("/v1/workspace/profile", { tenantId });
+  getWorkspaceProfile(tenantId: string) { return this.request<Record<string, unknown>>("/v1/workspace/profile", { tenantId }); }
+  updateWorkspaceProfile(tenantId: string, expectedRevision: number, patch: Record<string, unknown>) {
+    return this.request<Record<string, unknown>>("/v1/workspace/profile", { method: "PATCH", tenantId, headers: { "content-type": "application/json" }, body: JSON.stringify({ expectedRevision, patch }) });
   }
-
+  getXpBalance(tenantId: string, userId: string) {
+    return this.request<{ tenantId: string; userId: string; balance: number }>(`/v1/xp/balance?userId=${encodeURIComponent(userId)}`, { tenantId });
+  }
+  awardXp(tenantId: string, userId: string, delta: number, reason: string, idempotencyKey: string) {
+    return this.request<{ duplicate: boolean; event: Record<string, unknown> }>("/v1/xp/awards", { method: "POST", tenantId, headers: { "content-type": "application/json", "idempotency-key": idempotencyKey }, body: JSON.stringify({ userId, delta, reason }) });
+  }
   publishEvent<T extends Record<string, unknown>>(tenantId: string, type: string, payload: T, idempotencyKey: string) {
-    return this.request<{ eventId: string }>("/v1/events", {
-      method: "POST",
-      tenantId,
-      headers: { "content-type": "application/json", "idempotency-key": idempotencyKey },
-      body: JSON.stringify({ type, payload }),
-    });
+    return this.request<{ duplicate: boolean; event: Record<string, unknown> }>("/v1/events", { method: "POST", tenantId, headers: { "content-type": "application/json", "idempotency-key": idempotencyKey }, body: JSON.stringify({ type, payload }) });
   }
-
   registerOverlayWidget(tenantId: string, manifest: OverlayWidgetManifestV1) {
-    return this.request<{ widgetId: string }>("/v1/overlay/widgets", {
-      method: "PUT",
-      tenantId,
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(manifest),
-    });
+    return this.request<{ widgetId: string }>("/v1/overlay/widgets", { method: "PUT", tenantId, headers: { "content-type": "application/json" }, body: JSON.stringify(manifest) });
   }
-
   reportRuntimeState(tenantId: string, state: RuntimeStateV1, detail?: string) {
-    return this.request<void>("/v1/runtime/state", {
-      method: "POST",
-      tenantId,
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ state, detail }),
-    });
+    return this.request<void>("/v1/runtime/state", { method: "POST", tenantId, headers: { "content-type": "application/json" }, body: JSON.stringify({ state, detail }) });
   }
 }
 
 export class SpmtApiError extends Error {
-  constructor(public readonly status: number, public readonly responseBody: string) {
-    super(`SPMT API request failed with status ${status}`);
-    this.name = "SpmtApiError";
-  }
+  constructor(public readonly status: number, public readonly responseBody: string) { super(`SPMT API request failed with status ${status}`); this.name = "SpmtApiError"; }
 }
