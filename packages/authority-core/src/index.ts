@@ -146,6 +146,11 @@ export class AuthorityService {
     });
   }
 
+  getWorkspace(tenantId: string): WorkspaceProfileV1 | undefined {
+    requireId(tenantId, "tenantId");
+    return this.store.getWorkspace(tenantId);
+  }
+
   getOrCreateWorkspace(tenantId: string): WorkspaceProfileV1 {
     requireId(tenantId, "tenantId");
     return this.store.transaction(() => {
