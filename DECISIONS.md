@@ -1,6 +1,6 @@
 # Decision and Debate Ledger
 
-Updated: 2026-08-21
+Updated: 2026-08-22
 
 Status values: `ACCEPT`, `REJECT`, `CHANGE`, or `OPEN`.
 
@@ -25,6 +25,10 @@ The following wording governs implementation where it is more specific than the 
 - **D-19:** Shared media metadata belongs to SPMT; durable bytes use object storage or a clearly owned private store as appropriate. Apps get scoped/signed access and may keep replaceable caches.
 - **D-25:** Use **ApolloStation as the Green implementation monorepo** unless later evidence proves a security or operational boundary requires a separate repository. The monorepo may still produce multiple independent Fly deployables/process groups.
 - **D-26 through D-28:** Blue/Green is time-boxed and cost-visible. Cut over one bounded capability or tenant cohort at a time. Old compute stops only after observation and rollback gates; old data and source are retained for the approved rollback/source-retention windows before deletion.
+- **D-29:** First-party apps must use every applicable public SDK, API, CLI, MCP, event, webhook, job, registry, and companion contract. A private first-party shortcut is evidence that the public developer platform is incomplete.
+- **D-30:** Approved apps and modules are dynamically discovered from the canonical SPMT registry by every Apps surface. Approval, runtime health, compatibility, entitlement, and visibility remain separate states; an approved cold or degraded app does not silently disappear.
+- **D-31:** **Athena is the user-facing bot persona**, not the name of the generic platform subsystem. The generic Green context, capability-catalog, and inference foundation is **Stellar Core**. Athena and future personas may use Stellar Core through normal scoped contracts. Former Green `athena` developer names remain deprecated transition aliases until instrumented zero-use evidence permits removal.
+- **D-32:** **ChatTag is a temporary donor/product name.** Chat Tag remains the name of its original game, but the broader multi-game product must receive a distinct Games Hub name during its Green vertical. No capability is removed or renamed blindly before that inventory.
 
 ### Deliberately deferred decisions
 
@@ -90,6 +94,15 @@ They must be resolved before the phase that exposes the affected behavior to pro
 | D-26 | Parallel production window | Time-box blue/green operation with daily cost visibility and automatic expiry reviews. | A hard clock can force risky migration decisions. | ACCEPT |
 | D-27 | Cutover unit | Migrate one bounded capability/tenant cohort at a time, not all apps at once. | Cross-app contracts may be easier to validate in a single coordinated switch. | ACCEPT |
 | D-28 | Old-system retirement | Require backup, reconciliation, observation, and rollback gates before stopping old apps; delay data/source deletion longer. | Carrying old systems costs money and leaves confusing artifacts. | ACCEPT |
+| D-29 | First-party developer-platform parity | First-party apps use the same scoped, documented contracts available to outside developers. | Private shortcuts can be faster for code owned by one team. | ACCEPT |
+| D-30 | Dynamic app discovery | Every Apps surface consumes the canonical registry and reacts to approved registry revisions without source edits or redeployment. | Static menus are simpler and can hide partially ready apps. | ACCEPT |
+
+## Product naming debates
+
+| ID | Decision | Recommendation and defense | Strongest counterargument | Status |
+|---|---|---|---|---|
+| D-31 | Athena versus generic AI/system infrastructure | Reserve Athena for the bot persona; name the shared context, capability, and inference subsystem Stellar Core. Preserve former Green `athena` contract names only as deprecated aliases during measured migration. | Reusing Athena everywhere creates one familiar name and requires fewer code changes. | ACCEPT |
+| D-32 | ChatTag product name | Keep Chat Tag as the original game name, but select a broader Games Hub product name during its Green vertical after its full capability audit. | Keeping the existing product name avoids migration and recognition work. | ACCEPT |
 
 ## Change record template
 

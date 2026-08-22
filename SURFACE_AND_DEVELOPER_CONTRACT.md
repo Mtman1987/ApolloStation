@@ -161,7 +161,7 @@ Examples:
 - jobs/worker SDK → StreamWeaver worker, DSH clip worker, HMO DJ/media worker, ChatTag bot/worker;
 - device API → Companion/MountainView;
 - CLI → local developer bootstrap, conformance and deployment inspection;
-- MCP → Athena/developer/operator read/action flows with normal scopes.
+- MCP → Athena bot-persona, developer, and operator read/action flows through normal Stellar Core/SPMT scopes.
 
 Documentation examples should be generated from, or continuously tested against, these real reference integrations whenever practical.
 

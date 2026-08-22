@@ -14,7 +14,7 @@ import { PlatformOperations } from "@spmt/platform-ops";
 import { PlatformApiAdapter } from "@spmt/api-adapter";
 import { HealthRegistry } from "@spmt/runtime";
 
-const USER_SCOPES = ["workspace:read","workspace:write","xp:read","apps:read","apps:install","entitlements:read","commlink:read","commlink:write","notifications:read","notifications:write","webhooks:read","webhooks:write","athena:context:read","athena:context:write","athena:commands:read"];
+const USER_SCOPES = ["workspace:read","workspace:write","xp:read","apps:read","apps:install","entitlements:read","events:read","commlink:read","commlink:write","notifications:read","notifications:write","webhooks:read","webhooks:write","stellar:context:read","stellar:context:write","stellar:capabilities:read"];
 
 export interface SpmtServiceOptions {
   databasePath: string;

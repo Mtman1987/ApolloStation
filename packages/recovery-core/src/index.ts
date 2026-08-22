@@ -22,8 +22,8 @@ export interface RecoveryInventoryV1 {
   commlinkMessages: number;
   notifications: number;
   webhooks: number;
-  athenaContext: number;
-  athenaCommands: number;
+  stellarContext: number;
+  stellarCapabilities: number;
 }
 
 export interface RecoverySnapshotDescriptorV1 {

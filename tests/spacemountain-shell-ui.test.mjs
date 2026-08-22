@@ -28,6 +28,23 @@ test("SpaceMountain visible shell exposes canonical home, Shipyard, Commlink and
   assert.match(source, /\[0, 1, 2\]\.map/);
 });
 
+test("Commlink renders separate canonical account feeds and does not fake live chat", () => {
+  assert.match(source, /data-commlink-tab/);
+  assert.match(source, /Notifications/);
+  assert.match(source, /App Events/);
+  assert.match(source, /streamweaver-live-chat/);
+  assert.match(source, /no fabricated data/);
+  assert.match(source, /data-notification-read/);
+  assert.match(source, /data-open-conversation/);
+});
+
+test("Stellar Core owns generic system capabilities while Athena remains a persona", () => {
+  assert.match(source, /Stellar Core/);
+  assert.match(source, /Athena remains your bot persona/);
+  assert.match(source, /stellar-core-inference/);
+  assert.doesNotMatch(source, /label: "Athena"/);
+});
+
 test("mobile layout removes shell-header dependency from bottom dock without hiding content", () => {
   assert.match(SPACE_MOUNTAIN_CSS, /@media\(max-width:900px\)/);
   assert.match(SPACE_MOUNTAIN_CSS, /\.spmt-rocket-dock\{left:10px;right:10px;top:auto;bottom:/);

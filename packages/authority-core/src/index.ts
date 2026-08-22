@@ -227,6 +227,24 @@ export class AuthorityService {
     });
   }
 
+  listEvents(
+    tenantId: string,
+    options: { type?: string; sourceAppId?: string; limit?: number } = {},
+  ): PlatformEventV1[] {
+    requireId(tenantId, "tenantId");
+    if (options.type !== undefined) requireId(options.type, "type");
+    if (options.sourceAppId !== undefined) requireId(options.sourceAppId, "sourceAppId");
+    const limit = options.limit ?? 100;
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 200) {
+      throw new AuthorityValidationError("event limit must be an integer from 1 through 200");
+    }
+    return this.store.listEvents(tenantId)
+      .filter((event) => options.type === undefined || event.type === options.type)
+      .filter((event) => options.sourceAppId === undefined || event.sourceAppId === options.sourceAppId)
+      .slice(-limit)
+      .reverse();
+  }
+
   listOutbox() { return this.store.listOutbox(); }
 
   claimOutbox(workerId: string, leaseSeconds = 30, limit = 50): OutboxRecordV1[] {

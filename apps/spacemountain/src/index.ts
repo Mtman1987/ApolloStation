@@ -10,9 +10,10 @@ export type SpaceMountainSource =
   | "shipyard"
   | "installs"
   | "entitlements"
+  | "events"
   | "commlink"
   | "notifications"
-  | "athena"
+  | "stellar"
   | "setup";
 
 export interface SourceStateV1 {
@@ -47,11 +48,12 @@ export interface SpaceMountainShellSnapshotV1 {
   xp?: { tenantId: string; userId: string; balance: number };
   apps: SpaceMountainAppCardV1[];
   entitlements: Array<Record<string, unknown>>;
+  events: Array<Record<string, unknown>>;
   conversations: Array<Record<string, unknown>>;
   notifications: Array<Record<string, unknown>>;
-  athena: {
+  stellar: {
     context: Array<Record<string, unknown>>;
-    commands: Array<Record<string, unknown>>;
+    capabilities: Array<Record<string, unknown>>;
   };
   setupOptions: Array<Record<string, unknown>>;
   sources: Record<SpaceMountainSource, SourceStateV1>;
@@ -77,10 +79,11 @@ export class SpaceMountainShellController {
       shipyard: this.spmt.listApps(),
       installs: this.spmt.listInstalls(input.tenantId),
       entitlements: this.spmt.listEntitlements(input.tenantId),
+      events: this.spmt.listEvents(input.tenantId, { limit: 100 }),
       commlink: this.spmt.listConversations(input.tenantId, input.userId),
       notifications: this.spmt.listNotifications(input.tenantId, input.userId),
-      athenaContext: this.spmt.listAthenaContext(input.tenantId, input.userId),
-      athenaCommands: this.spmt.listAthenaCommands(),
+      stellarContext: this.spmt.listStellarContext(input.tenantId, input.userId),
+      stellarCapabilities: this.spmt.listStellarCapabilities(),
       setup: this.spmt.request<{ options?: Array<Record<string, unknown>> }>("/v1/auth/setup-options"),
     };
 
@@ -107,9 +110,10 @@ export class SpaceMountainShellController {
       shipyard: source(failures, ["shipyard"]),
       installs: source(failures, ["installs"]),
       entitlements: source(failures, ["entitlements"]),
+      events: source(failures, ["events"]),
       commlink: source(failures, ["commlink"]),
       notifications: source(failures, ["notifications"]),
-      athena: source(failures, ["athenaContext", "athenaCommands"]),
+      stellar: source(failures, ["stellarContext", "stellarCapabilities"]),
       setup: source(failures, ["setup"]),
     };
 
@@ -127,9 +131,10 @@ export class SpaceMountainShellController {
       ...(isXp(values.get("xp")) ? { xp: values.get("xp") as { tenantId: string; userId: string; balance: number } } : {}),
       apps,
       entitlements: records(values.get("entitlements")),
+      events: records(values.get("events")),
       conversations: records(values.get("commlink")),
       notifications: records(values.get("notifications")),
-      athena: { context: records(values.get("athenaContext")), commands: records(values.get("athenaCommands")) },
+      stellar: { context: records(values.get("stellarContext")), capabilities: records(values.get("stellarCapabilities")) },
       setupOptions: Array.isArray(setupPayload?.options) ? setupPayload.options.filter(isRecord) : [],
       sources,
     };
@@ -149,6 +154,28 @@ export class SpaceMountainShellController {
 
   async markNotificationRead(tenantId: string, notificationId: string, userId?: string) {
     return this.spmt.markNotificationRead(tenantId, notificationId, userId);
+  }
+
+  async loadConversationMessages(tenantId: string, conversationId: string) {
+    requireId(tenantId, "tenantId");
+    requireId(conversationId, "conversationId");
+    return this.spmt.listMessages(tenantId, conversationId);
+  }
+
+  async searchCommlink(tenantId: string, query: string, userId?: string) {
+    requireId(tenantId, "tenantId");
+    if (!query.trim() || query.length > 200) throw new Error("query is invalid");
+    if (userId !== undefined) requireId(userId, "userId");
+    return this.spmt.searchCommlink(tenantId, query, userId);
+  }
+
+  async sendCommlinkMessage(tenantId: string, conversationId: string, recipientUserIds: string[], text: string) {
+    requireId(tenantId, "tenantId");
+    requireId(conversationId, "conversationId");
+    if (!recipientUserIds.length) throw new Error("recipientUserIds is required");
+    recipientUserIds.forEach((userId) => requireId(userId, "recipientUserId"));
+    if (!text.trim() || text.length > 8000) throw new Error("message text is invalid");
+    return this.spmt.sendCommlinkMessage(tenantId, conversationId, recipientUserIds, text);
   }
 }
 
@@ -174,7 +201,7 @@ export function buildAppFrameTarget(app: SpaceMountainAppCardV1, tenantId: strin
 
 export const DEFERRED_RUNTIME_SOURCES = Object.freeze([
   { id: "streamweaver-live-chat", owner: "streamweaver", presentation: "Commlink Live Chat", requiredForShell: false },
-  { id: "athena-inference", owner: "streamweaver-workers", presentation: "Athena runtime", requiredForShell: false },
+  { id: "stellar-core-inference", owner: "stellar-core-workers", presentation: "Stellar Core inference", requiredForShell: false },
   { id: "companion-device-relay", owner: "companion-mountainview", presentation: "Companion devices", requiredForShell: false },
 ]);
 

@@ -27,7 +27,7 @@ This ledger is **not yet a claim that every donor route has been audited**. It i
 | Commlink Live Chat | SPMT UI + StreamWeaver feed | StreamWeaver feed + SpaceMountain UI | PRESERVE | signed/scoped feed contract | simultaneous source test |
 | Commlink Notifications | SPMT | SPMT + SpaceMountain UI | PRESERVE | migrate notification records if needed | read/unread/action test |
 | Commlink App Events | SPMT | SPMT event projections | PRESERVE | version event schemas | event idempotency/replay test |
-| Athena panel/UI | SpaceMountain/SPMT | SpaceMountain UI + SPMT jobs | IMPROVE | remove fake-success behavior | queued/running/succeeded/failed test |
+| Generic context/capability panel | SpaceMountain/SPMT | SpaceMountain Stellar Core UI + SPMT jobs | IMPROVE | reserve Athena for the bot persona; remove fake-success behavior | available/unavailable plus queued/running/succeeded/failed tests |
 | SPMT identity/users/tenants | SPMT | SPMT | PRESERVE | idempotent migration by immutable IDs | two-user/provider matrix |
 | Browser sessions / OAuth | SPMT + app compatibility | SPMT | IMPROVE | legacy sessions instrumented then retired | direct/embed/login/logout/refresh test |
 | Linked Twitch/Discord/Xbox providers | SPMT/apps | SPMT grants | PRESERVE | never merge by display name | disconnect/relink/isolation test |
@@ -45,7 +45,7 @@ This ledger is **not yet a claim that every donor route has been audited**. It i
 | Rocket arena/easter-egg surfaces | SpaceMountain | TBD product module | VERIFY | no removal until code/usage audit | owner keep/remove decision |
 | Retired `space-mountain-dashboard` | archived repo | none | REMOVE | no Green deploy | assert no launch target depends on it |
 
-## StreamWeaver / Athena runtime
+## StreamWeaver / Athena bot persona runtime
 
 | Donor surface/capability | Donor owner | Green owner | Disposition | Compatibility/migration | Proof required |
 |---|---|---|---|---|---|
@@ -98,7 +98,9 @@ This ledger is **not yet a claim that every donor route has been audited**. It i
 | Legacy duplicate media routes | HearMeOut | canonical media/session routes | REPLACE | telemetry/compat window before removal | zero-use evidence |
 | Voice device volume/noise/PTT preferences | browser/device | local client/Companion | PRESERVE | never centralize hardware-only choice | device-local isolation test |
 
-## ChatTag / Games Hub
+## ChatTag donor / future Games Hub product
+
+`ChatTag` remains the temporary donor/product label until this vertical's full inventory is available. The original Chat Tag game keeps its name; the broader product must receive a distinct owner-approved Games Hub name under D-32.
 
 | Donor surface/capability | Donor owner | Green owner | Disposition | Compatibility/migration | Proof required |
 |---|---|---|---|---|---|
@@ -119,7 +121,7 @@ This ledger is **not yet a claim that every donor route has been audited**. It i
 |---|---|---|---|---|---|
 | 12-hour machine rotation | Rotator | Green scheduler/lease/reconciler | REPLACE | preserve useful health/cleanup intent, not forced restart pattern | lifecycle/load tests |
 | Fleet health/log diagnostics | Rotator | operations module | PRESERVE | ingest Green health/job metadata | fault injection test |
-| Error classification/repair audit | Rotator/Athena Coder | operations/Athena tooling | IMPROVE | no autonomous production write without approved policy | dry-run/audit/rollback test |
+| Error classification/repair audit | Rotator/Athena Coder | operations/Stellar Core capability used by the Athena persona | IMPROVE | no autonomous production write without approved policy | dry-run/audit/rollback test |
 | GitHub bridge / operator controls | Rotator | operations module | VERIFY | preserve only needed owner workflows | auth/action audit |
 | MCP/API/CLI operational surfaces | Rotator/SPMT | versioned SPMT/ops contracts | IMPROVE | eliminate duplicate authority | conformance test |
 | MountainView device records | Rotator/MountainView | SPMT device authority + MountainView module | IMPROVE | migrate paired devices/tokens safely | pairing/revocation test |

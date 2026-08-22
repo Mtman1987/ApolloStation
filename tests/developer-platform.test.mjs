@@ -19,7 +19,7 @@ function setup() {
   authority.ensureUser("viewer-1");
   authority.getOrCreateWorkspace("tenant-a");
   const auth = new AuthService({ store, now: () => "2026-08-22T02:40:00.000Z" });
-  auth.registerServiceIdentity({ serviceId: "reference-app", credential: "reference-app-green-secret-12345", scopes: ["workspace:read", "workspace:write", "xp:read", "xp:write", "events:write"], tenantMode: "allow-list", tenantIds: ["tenant-a"] });
+  auth.registerServiceIdentity({ serviceId: "reference-app", credential: "reference-app-green-secret-12345", scopes: ["workspace:read", "workspace:write", "xp:read", "xp:write", "events:read", "events:write"], tenantMode: "allow-list", tenantIds: ["tenant-a"] });
   const accessToken = auth.issueServiceAccess("reference-app", "reference-app-green-secret-12345").accessToken;
   const operations = new PlatformOperations(auth, authority);
   const api = new PlatformApiAdapter(operations);
@@ -56,11 +56,48 @@ test("API and modern stateless MCP converge on one workspace authority", async (
     const mcp = new SpmtMcpServer(env.operations);
     const list = mcp.handle({ jsonrpc: "2.0", id: 1, method: "tools/list" }, { accessToken: env.accessToken, protocolVersion: SPMT_MCP_PROTOCOL_VERSION });
     assert.ok(list.result.tools.some((item) => item.name === "spmt.workspace.get"));
+    assert.ok(list.result.tools.some((item) => item.name === "spmt.athena.context.list" && /Deprecated/.test(item.description)));
     const read = mcp.handle({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "spmt.workspace.get", arguments: { tenantId: "tenant-a" } } }, { accessToken: env.accessToken, protocolVersion: SPMT_MCP_PROTOCOL_VERSION });
     assert.equal(read.result.structuredContent.revision, 2);
     assert.equal(read.result.structuredContent.appearance.theme, "dark");
     const oldInitialize = mcp.handle({ jsonrpc: "2.0", id: 3, method: "initialize" }, { accessToken: env.accessToken, protocolVersion: SPMT_MCP_PROTOCOL_VERSION });
     assert.equal(oldInitialize.error.code, -32601);
+  } finally { cleanup(env); }
+});
+
+test("deprecated Athena CLI names remain transition aliases for Stellar Core", async () => {
+  const seen = [];
+  const client = {
+    listAthenaContext: (...args) => { seen.push(["context-list", ...args]); return args; },
+    upsertAthenaContext: (...args) => { seen.push(["context-upsert", ...args]); return args; },
+    listAthenaCommands: (...args) => { seen.push(["commands", ...args]); return args; },
+    upsertAthenaCommand: (...args) => { seen.push(["command-upsert", ...args]); return args; },
+  };
+  await runSpmtCli(["athena", "context-list", "tenant-a", "user-a"], client);
+  await runSpmtCli(["athena", "context-upsert", "tenant-a", '{"text":"legacy"}'], client);
+  await runSpmtCli(["athena", "commands"], client);
+  await runSpmtCli(["athena", "command-upsert", '{"id":"legacy.command"}'], client);
+  assert.deepEqual(seen.map(([name]) => name), ["context-list", "context-upsert", "commands", "command-upsert"]);
+});
+
+test("SDK, CLI, API and MCP expose one scoped App Events projection", async () => {
+  const env = setup();
+  try {
+    await env.client.publishEvent("tenant-a", "workspace.changed", { revision: 2 }, "event-read-1");
+    await env.client.publishEvent("tenant-a", "app.ready", { appId: "reference-app" }, "event-read-2");
+    const sdk = await env.client.listEvents("tenant-a", { limit: 1 });
+    assert.equal(sdk.length, 1);
+    assert.equal(sdk[0].type, "app.ready");
+    const cli = await runSpmtCli(["event", "list", "tenant-a", "10", "workspace.changed"], env.client);
+    assert.equal(cli.length, 1);
+    assert.equal(cli[0].idempotencyKey, "event-read-1");
+    const api = env.api.handle({ method: "GET", path: "/v1/events?sourceAppId=reference-app&limit=10", headers: { authorization: `Bearer ${env.accessToken}`, "x-spmt-tenant": "tenant-a" } });
+    assert.equal(api.status, 200);
+    assert.equal(api.body.length, 2);
+    const mcp = new SpmtMcpServer(env.operations);
+    const read = mcp.handle({ jsonrpc: "2.0", id: 5, method: "tools/call", params: { name: "spmt.events.list", arguments: { tenantId: "tenant-a", type: "app.ready" } } }, { accessToken: env.accessToken, protocolVersion: SPMT_MCP_PROTOCOL_VERSION });
+    assert.equal(read.result.structuredContent.length, 1);
+    assert.equal(read.result.structuredContent[0].type, "app.ready");
   } finally { cleanup(env); }
 });
 

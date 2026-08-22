@@ -13,10 +13,11 @@ function fakeClient(overrides = {}) {
     ],
     listInstalls: async () => [{ tenantId: "tenant-a", appId: "streamweaver", enabled: true, grantedScopes: ["chat:read"] }],
     listEntitlements: async () => [{ tenantId: "tenant-a", appId: "streamweaver", key: "tier", value: "standard" }],
+    listEvents: async () => [{ id: "evt-1", tenantId: "tenant-a", sourceAppId: "streamweaver", type: "stream.ready", payload: { ready: true } }],
     listConversations: async () => [{ id: "conv-1", tenantId: "tenant-a" }],
     listNotifications: async () => [{ id: "note-1", tenantId: "tenant-a", title: "Welcome" }],
-    listAthenaContext: async () => [{ id: "ctx-1", text: "Creator context" }],
-    listAthenaCommands: async () => [{ id: "help", availability: "available" }, { id: "voice", availability: "unavailable", unavailableReason: "runtime not connected" }],
+    listStellarContext: async () => [{ id: "ctx-1", text: "Creator context" }],
+    listStellarCapabilities: async () => [{ id: "help", availability: "available" }, { id: "voice", availability: "unavailable", unavailableReason: "runtime not connected" }],
     request: async (path) => path === "/v1/auth/setup-options" ? { options: [{ id: "spacemountain-invite", primary: true }, { id: "discord-dm-reset", primary: false }] } : {},
     installApp: async () => ({}), disableApp: async () => ({}), updateWorkspaceProfile: async () => ({}), markNotificationRead: async () => ({}),
   };
@@ -30,20 +31,21 @@ test("SpaceMountain loads canonical known services into one ready shell snapshot
   assert.equal(snapshot.xp.balance, 42);
   assert.equal(snapshot.apps.length, 2);
   assert.equal(snapshot.apps.find((app) => app.appId === "streamweaver")?.enabled, true);
-  assert.equal(snapshot.apps.find((app) => app.appId === "chat-tag")?.installed, false);
-  assert.equal(snapshot.conversations.length, 1);
-  assert.equal(snapshot.notifications.length, 1);
-  assert.equal(snapshot.athena.commands[1].unavailableReason, "runtime not connected");
+    assert.equal(snapshot.apps.find((app) => app.appId === "chat-tag")?.installed, false);
+    assert.equal(snapshot.events[0].type, "stream.ready");
+    assert.equal(snapshot.conversations.length, 1);
+    assert.equal(snapshot.notifications.length, 1);
+    assert.equal(snapshot.stellar.capabilities[1].unavailableReason, "runtime not connected");
   assert.equal(snapshot.setupOptions.length, 2);
   assert.ok(Object.values(snapshot.sources).every((entry) => entry.state === "ready"));
 });
 
 test("optional service failure degrades only the shell while session/workspace remain usable", async () => {
-  const controller = new SpaceMountainShellController(fakeClient({ listAthenaCommands: async () => { throw new Error("Athena catalog unavailable"); } }));
+  const controller = new SpaceMountainShellController(fakeClient({ listStellarCapabilities: async () => { throw new Error("Stellar Core catalog unavailable"); } }));
   const snapshot = await controller.load({ tenantId: "tenant-a", userId: "user-1" });
   assert.equal(snapshot.state, "degraded");
-  assert.equal(snapshot.sources.athena.state, "degraded");
-  assert.match(snapshot.sources.athena.detail, /catalog unavailable/);
+  assert.equal(snapshot.sources.stellar.state, "degraded");
+  assert.match(snapshot.sources.stellar.detail, /catalog unavailable/);
   assert.equal(snapshot.sources.workspace.state, "ready");
   assert.equal(snapshot.workspace.revision, 4);
 });
