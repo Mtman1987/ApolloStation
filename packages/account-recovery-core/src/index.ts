@@ -177,10 +177,11 @@ export class AccountRecoveryService {
     const username = normalizeUsername(identifier);
     const profile = this.platformStore.getUserProfileByUsername(username);
     if (!profile) return { state: "not-found" };
+    const tenantId = profile.tenantIds[0];
     return {
       state: this.platformStore.getUserCredential(profile.userId) ? "password-set" : "setup-required",
       userId: profile.userId,
-      tenantId: profile.tenantIds[0],
+      ...(tenantId ? { tenantId } : {}),
     };
   }
 
@@ -215,14 +216,13 @@ export class AccountRecoveryService {
     const ticket = this.requireTicket(ticketToken, "first-time-setup");
     if (!ticket.oauthStateHash || ticket.oauthStateHash !== sha256(state)) throw new AccountSetupError("Twitch verification state is invalid or expired");
     this.authority.linkProvider(ticket.userId, "twitch", requireId(twitch.id, "twitch.id"));
+    const { oauthStateHash: _oauthStateHash, ...rest } = ticket;
     const next: AccountSetupTicketV1 = {
-      ...ticket,
+      ...rest,
       twitchUserId: twitch.id,
       ...(twitch.username ? { twitchUsername: twitch.username } : {}),
       twitchVerifiedAt: this.now(),
-      oauthStateHash: undefined,
     };
-    delete next.oauthStateHash;
     this.setupStore.putTicket(next);
     return { userId: next.userId, tenantId: next.tenantId, readyForPassword: true };
   }
