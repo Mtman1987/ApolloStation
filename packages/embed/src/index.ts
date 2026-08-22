@@ -122,7 +122,7 @@ export function measureShellLayout(options: ShellLayoutObserverOptions): ShellLa
 export function observeShellLayout(options: ShellLayoutObserverOptions) {
   const viewport = options.viewport ?? window;
   const publish = () => options.onChange(measureShellLayout(options));
-  const ResizeObserverCtor = viewport.ResizeObserver;
+  const ResizeObserverCtor = typeof ResizeObserver === "undefined" ? undefined : ResizeObserver;
   const observer = ResizeObserverCtor ? new ResizeObserverCtor(publish) : undefined;
   observer?.observe(options.header);
   viewport.addEventListener("resize", publish);
