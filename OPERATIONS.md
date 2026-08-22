@@ -8,6 +8,8 @@ This is a parallel blue/green rebuild. “Blue” is current production. “Gree
 
 No old repository, app, Machine, volume, database, secret, or DNS route is deleted merely because Green deploys successfully.
 
+`SURFACE_AND_DEVELOPER_CONTRACT.md` is a required Green contract. Workspace/embed behavior, shell layout/header safety, overlay ownership, and first-party developer-platform dogfooding are architecture gates rather than post-build UI cleanup.
+
 ## Cost clock
 
 Before creating the first Green Fly resource:
@@ -27,24 +29,42 @@ The rebuild should move in large enough slices to avoid dozens of tiny patches, 
 
 | Batch | Scope | May be bulked together | Exit condition |
 |---|---|---|---|
-| 1 | Foundation contract | accepted decisions, parity ledger, monorepo/package boundaries, shared naming | no hidden architecture choice blocks scaffolding |
-| 2 | Green scaffold | workspace tooling, shared types/SDK, config classification, logging/correlation, health/readiness, test harness, Fly templates | every package can build/test with common contracts |
+| 1 | Foundation contract | accepted decisions, parity ledger, monorepo/package boundaries, shared naming, surface/developer contract | no hidden architecture choice blocks scaffolding |
+| 2 | Green scaffold | workspace tooling, shared types/SDK, `SurfaceModeV1`, `AppFrameV1`, `EmbedBridgeV1`, shared layout/safe-inset tokens, semantic layer scale, overlay widget manifest types, developer conformance harness, config classification, logging/correlation, health/readiness, test harness, Fly templates | every package can build/test with common contracts; one shared embed path and header-safe layout tests exist before product UIs are added |
 | 3 | SPMT authority + recovery | identity, tenants, sessions, scoped services, canonical storage boundary, audit, idempotency, outbox/events, `spmt-vault` foundation | authority + isolated restore/promotion fixture passes |
-| 4 | SpaceMountain + first shared facts | front door, session restore, app registry, workspace/theme, canonical XP, honest cold/degraded UI | test tenant signs in once, changes shared state once, sees it everywhere |
+| 4 | SpaceMountain + first shared facts | front door, session restore, app registry, canonical AppFrame host, workspace/theme, canonical XP, Commlink shell, Overlay editor shell, honest cold/degraded UI | test tenant signs in once, changes shared state once, sees it everywhere; shell surfaces pass header/inset tests |
 | 5 | Jobs + elastic worker framework | durable jobs, leases, heartbeat, retries, dead letters, reconciler, worker SDK, bounded scaling controls | scale/failure/abandoned-lease/idempotency tests pass |
-| 6 | StreamWeaver vertical | Twitch/Discord ingestion, bot dispatch, Athena runtime, TTS, commands, overlays, shared chat, StreamWeaver worker | concurrent-tenant and burst-load matrix passes without duplicate replies |
-| 7 | Discord Stream Hub vertical | community/live/shoutout/calendar/moderation, XP producer/view, clip worker | DSH product + worker contract suite passes |
-| 8A | HearMeOut vertical | rooms, LiveKit, Activity auth, DJ/music/watch/media, OBS output, DJ/media worker | media/voice truth-path and multi-user tests pass |
-| 8B | ChatTag/Games vertical | ChatTag core, Quackverse/Bingo/catalog modules, durable actions, overlays, XP, bot worker | per-game + two-player + bot reconnect tests pass |
-| 9 | Parity/cutover hardening | donor compatibility, migrations, shadow compare, full deep audit, load/fault tests, recovery rehearsal, cohort cutover tooling | every Blue retirement gate in `PARITY_LEDGER.md` passes |
+| 6 | StreamWeaver vertical | Twitch/Discord ingestion, bot dispatch, Athena runtime, TTS, commands, overlays, shared chat, StreamWeaver worker, flagship SDK/event/feed integration | concurrent-tenant and burst-load matrix passes without duplicate replies; app passes AppFrame/layout/developer conformance |
+| 7 | Discord Stream Hub vertical | community/live/shoutout/calendar/moderation, XP producer/view, clip worker, flagship events/overlay-manifest integration | DSH product + worker + surface/developer contract suite passes |
+| 8A | HearMeOut vertical | rooms, LiveKit, Activity auth, DJ/music/watch/media, OBS output, DJ/media worker, flagship realtime/device/overlay integration | media/voice truth-path and multi-user tests plus surface/developer conformance pass |
+| 8B | ChatTag/Games vertical | ChatTag core, Quackverse/Bingo/catalog modules, durable actions, overlays, XP, bot worker, flagship game/event/overlay integration | per-game + two-player + bot reconnect tests plus surface/developer conformance pass |
+| 9 | Parity/cutover hardening | donor compatibility, migrations, shadow compare, full deep audit, load/fault tests, recovery rehearsal, cross-app surface matrix, developer platform conformance, cohort cutover tooling | every Blue retirement gate in `PARITY_LEDGER.md` passes |
 
 Do not bury a failing vertical inside the next batch. Fix or explicitly defer it before proceeding.
+
+## Batch 2 non-negotiable scaffold outputs
+
+Batch 2 is not complete until the monorepo contains working, tested shared primitives for:
+
+1. `SurfaceModeV1` (`shell`, `standalone`, `overlay`, `popout`);
+2. one `AppFrameV1` host and one cross-origin-capable `EmbedBridgeV1` protocol;
+3. dynamic shell/header/safe-area measurement and shared layout tokens;
+4. a semantic layer/z-index token scale used by shared UI primitives;
+5. shared portal roots/components for dialogs, drawers, menus/popovers, toasts, and floating controls that automatically honor shell usable bounds;
+6. `OverlayWidgetManifestV1` and a clear split between editor/preview surfaces and controls-free outputs;
+7. a versioned SPMT SDK covering the first shared contracts, with raw HTTP schemas generated from the same source where practical;
+8. developer conformance fixtures showing SDK/API/events/WebSocket use plus CLI/MCP adapters over the same scoped operations;
+9. automated visual/layout geometry tests at multiple viewport sizes and simulated header heights, including a wrapped/tall header;
+10. a reference/sample app that uses the exact same AppFrame, SDK, scopes, theme, messaging/event, overlay-manifest, and lifecycle contracts that third-party developers receive.
+
+No flagship product should implement its own workspace or shared-header workaround before these primitives exist.
 
 ## Build order
 
 ### Phase 0 — decision lock and evidence
 
 - foundation decision pack is approved in `DECISIONS.md`;
+- shared surface/developer contract is approved in `SURFACE_AND_DEVELOPER_CONTRACT.md`;
 - resolve the remaining open decision only when its implementation phase requires it;
 - capture live Fly, auth, data, route, cost, and error inventories;
 - complete the donor deep-audit queue in `PARITY_LEDGER.md` as each product becomes active work;
@@ -58,11 +78,12 @@ Exit: no material architecture question for Phase 1 is hidden inside an implemen
 - build the always-available gateway/static shell;
 - build canonical identity, tenant, authorization, app registry, and audit contracts;
 - provision the chosen canonical database/object storage behind the storage-authority boundary and independent recovery authority with restore proof;
+- build the canonical AppFrame/EmbedBridge and header-safe shell contract before embedding product UIs;
 - build workspace/theme fan-out as the first end-to-end shared-fact proof;
 - build canonical points ledger and reconciliation tools without choosing disputed balances automatically;
 - add health, metrics, cost attribution, idempotency, and migration tooling.
 
-Exit: a test tenant can sign in once, open the shell or a standalone app, change a background once, see it everywhere, and receive one idempotent point award everywhere. The primary storage authority can also be fenced, the recovery authority promoted, new writes accepted once, and the repaired primary rebuilt and restored without split brain.
+Exit: a test tenant can sign in once, open the shell or a standalone app, change a background once, see it everywhere, and receive one idempotent point award everywhere. The primary storage authority can also be fenced, the recovery authority promoted, new writes accepted once, and the repaired primary rebuilt and restored without split brain. Sidebars, drawers, dialogs, menus/popovers, toast stacks, docks, and editor controls remain reachable at normal, mobile, safe-area, and wrapped-header sizes.
 
 ### Phase 2 — inference, workers, and bots
 
@@ -70,7 +91,7 @@ Exit: a test tenant can sign in once, open the shell or a standalone app, change
 - resolve D-20 through D-24 before exposing production AI quota/provider/privacy behavior;
 - build the durable job/lease contract and reconciler;
 - build the inference router and weighted quota ledger with policy remaining configurable until approved;
-- connect a companion capability path;
+- connect a companion capability path through the public device/job contracts;
 - add CPU-local model/TTS/STT workers only after benchmark evidence;
 - add paid API fallback and circuit breakers;
 - prove the approved Xbox active/standby behavior;
@@ -82,15 +103,17 @@ Exit: failure, scale-up, scale-down, abandoned lease, quota, and fallback tests 
 
 Recommended first vertical slice: rebuild ChatTag's proven core game without bundling every other game into it. Attach it to canonical identity, points, themes, cards, and events. Add other games as separately bounded modules only after the core regression suite stays green.
 
-The operational batch order may put StreamWeaver before ChatTag because StreamWeaver exercises the shared worker/queue model and is a high-concurrency dependency. Whichever vertical runs first must complete `APP_CONTRACTS.md` and its `PARITY_LEDGER.md` rows before the next product is considered cutover-ready.
+The operational batch order may put StreamWeaver before ChatTag because StreamWeaver exercises the shared worker/queue model and is a high-concurrency dependency. Whichever vertical runs first must complete `APP_CONTRACTS.md`, `SURFACE_AND_DEVELOPER_CONTRACT.md`, and its `PARITY_LEDGER.md` rows before the next product is considered cutover-ready.
 
-Then migrate apps one at a time based on tenant value, breakage, and dependency risk. Each app completes `APP_CONTRACTS.md` before the next cutover.
+Each first-party app is also a flagship developer example. Prefer the same public SDK/API/event/WebSocket contracts an external app would use. Use CLI/MCP where they naturally fit developer/operator/AI workflows; do not force them into runtime call paths just to claim coverage.
+
+Then migrate apps one at a time based on tenant value, breakage, and dependency risk. Each app completes the contracts before the next cutover.
 
 ### Phase 4 — cutover and retirement
 
 - shadow-read and compare where safe;
 - migrate a small tenant cohort;
-- observe errors, latency, costs, and data parity;
+- observe errors, latency, costs, data parity, layout regressions, and developer-contract violations;
 - expand cohorts only when gates stay green;
 - move DNS/routes with immediate rollback available;
 - freeze old writes, take final backups, reconcile, and retain read-only rollback;
@@ -102,8 +125,10 @@ Then migrate apps one at a time based on tenant value, breakage, and dependency 
 
 | Gate | Must be true |
 |---|---|
-| Architecture | Required decisions accepted and contracts versioned |
+| Architecture | Required decisions and shared surface/developer contracts accepted and versioned |
 | Parity | Every discovered donor capability classified and all required Green replacements proven |
+| Surface | One AppFrame/EmbedBridge path; header/safe-area geometry tests pass across page, sidebar, portal, popup, dock, editor, standalone, overlay, and popout surfaces |
+| Developer platform | Flagship apps use documented SDK/API/event/WebSocket contracts where appropriate; CLI/MCP enforce the same scopes; reference integrations and conformance fixtures pass |
 | Restore | Scheduled backup, integrity verification, isolated restore, promotion, failover writes, rebuild, and failback completed and timed |
 | Identity | One user maps consistently across every tested app/provider |
 | Authorization | Allowed/denied scope matrix and two-tenant isolation pass |
@@ -118,7 +143,7 @@ Then migrate apps one at a time based on tenant value, breakage, and dependency 
 
 ## Stop conditions
 
-Pause expansion immediately for unexplained data loss/drift, identity collision, tenant crossover, double awards, duplicate bot replies, unrecoverable writes, secrets in output, cost runaway, or a rollback that has not been proven.
+Pause expansion immediately for unexplained data loss/drift, identity collision, tenant crossover, double awards, duplicate bot replies, unrecoverable writes, secrets in output, cost runaway, hidden/unreachable interactive UI under shell chrome, an app-specific replacement for the canonical workspace/embed path, a first-party private cross-app shortcut with no public contract, or a rollback that has not been proven.
 
 ## Recovery runbook contract
 
