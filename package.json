@@ -1,13 +1,13 @@
 {
   "name": "spmt-green",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "private": true,
   "workspaces": ["packages/*", "apps/*"],
   "scripts": {
-    "build": "tsc -b packages/contracts packages/embed packages/sdk packages/runtime packages/ui packages/authority-core packages/auth-core packages/control-core packages/outbox-core packages/authority-sqlite packages/recovery-core packages/platform-ops packages/api-adapter packages/cli packages/mcp apps/reference-app apps/spmt-service",
+    "build": "tsc -b packages/contracts packages/embed packages/sdk packages/runtime packages/ui packages/authority-core packages/auth-core packages/control-core packages/outbox-core packages/platform-data-core packages/platform-data-sqlite packages/authority-sqlite packages/recovery-core packages/platform-ops packages/api-adapter packages/cli packages/mcp apps/reference-app apps/spmt-service",
     "test": "npm run build && node --test tests/*.test.mjs",
-    "typecheck": "tsc -b packages/contracts packages/embed packages/sdk packages/runtime packages/ui packages/authority-core packages/auth-core packages/control-core packages/outbox-core packages/authority-sqlite packages/recovery-core packages/platform-ops packages/api-adapter packages/cli packages/mcp apps/reference-app apps/spmt-service --pretty false",
-    "clean": "tsc -b packages/contracts packages/embed packages/sdk packages/runtime packages/ui packages/authority-core packages/auth-core packages/control-core packages/outbox-core packages/authority-sqlite packages/recovery-core packages/platform-ops packages/api-adapter packages/cli packages/mcp apps/reference-app apps/spmt-service --clean"
+    "typecheck": "tsc -b packages/contracts packages/embed packages/sdk packages/runtime packages/ui packages/authority-core packages/auth-core packages/control-core packages/outbox-core packages/platform-data-core packages/platform-data-sqlite packages/authority-sqlite packages/recovery-core packages/platform-ops packages/api-adapter packages/cli packages/mcp apps/reference-app apps/spmt-service --pretty false",
+    "clean": "tsc -b packages/contracts packages/embed packages/sdk packages/runtime packages/ui packages/authority-core packages/auth-core packages/control-core packages/outbox-core packages/platform-data-core packages/platform-data-sqlite packages/authority-sqlite packages/recovery-core packages/platform-ops packages/api-adapter packages/cli packages/mcp apps/reference-app apps/spmt-service --clean"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",
