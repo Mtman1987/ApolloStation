@@ -4,8 +4,9 @@ import type {
   ProviderLinkV1, UserRecordV1, WorkspaceProfileV1, XpEventV1,
 } from "@spmt/authority-core";
 import { AuthorityConflictError } from "@spmt/authority-core";
+import type { AccessSessionV1, AuthStore, RefreshTokenV1, ServiceIdentityV1 } from "@spmt/auth-core";
 
-export class SqliteAuthorityStore implements AuthorityStore {
+export class SqliteAuthorityStore implements AuthorityStore, AuthStore {
   private readonly db: DatabaseSync;
   private transactionDepth = 0;
 
@@ -36,8 +37,8 @@ export class SqliteAuthorityStore implements AuthorityStore {
 
   getUser(userId: string) { return this.oneJson<UserRecordV1>("SELECT body FROM users WHERE id = ?", userId); }
   putUser(user: UserRecordV1) {
-    this.db.prepare("INSERT INTO users(id, body) VALUES(?, ?) ON CONFLICT(id) DO NOTHING").run(user.id, json(user));
-    this.journal("user", user.id, user);
+    const changed = Number(this.db.prepare("INSERT INTO users(id, body) VALUES(?, ?) ON CONFLICT(id) DO NOTHING").run(user.id, json(user)).changes) > 0;
+    if (changed) this.journal("user", user.id, user);
   }
 
   getProviderLink(provider: ProviderKindV1, providerUserId: string) {
@@ -83,6 +84,37 @@ export class SqliteAuthorityStore implements AuthorityStore {
       : this.allJson<AuditRecordV1>("SELECT body FROM audit_records WHERE tenant_id = ? ORDER BY rowid", tenantId);
   }
 
+  getServiceIdentity(serviceId: string) {
+    return this.oneJson<ServiceIdentityV1>("SELECT body FROM service_identities WHERE id = ?", serviceId);
+  }
+  putServiceIdentity(identity: ServiceIdentityV1) {
+    this.db.prepare("INSERT INTO service_identities(id, body) VALUES(?, ?) ON CONFLICT(id) DO UPDATE SET body=excluded.body").run(identity.id, json(identity));
+    this.journal("service-identity", identity.id, identity);
+  }
+  listServiceIdentities() {
+    return this.allJson<ServiceIdentityV1>("SELECT body FROM service_identities ORDER BY id");
+  }
+  getAccessSessionByTokenHash(tokenHash: string) {
+    return this.oneJson<AccessSessionV1>("SELECT body FROM access_sessions WHERE token_hash = ?", tokenHash);
+  }
+  putAccessSession(session: AccessSessionV1) {
+    this.db.prepare("INSERT INTO access_sessions(id, token_hash, expires_at, body) VALUES(?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET token_hash=excluded.token_hash, expires_at=excluded.expires_at, body=excluded.body").run(session.id, session.tokenHash, session.expiresAt, json(session));
+  }
+  getRefreshTokenByTokenHash(tokenHash: string) {
+    return this.oneJson<RefreshTokenV1>("SELECT body FROM refresh_tokens WHERE token_hash = ?", tokenHash);
+  }
+  putRefreshToken(token: RefreshTokenV1) {
+    this.db.prepare("INSERT INTO refresh_tokens(id, token_hash, family_id, expires_at, body) VALUES(?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET body=excluded.body").run(token.id, token.tokenHash, token.familyId, token.expiresAt, json(token));
+  }
+  revokeRefreshFamily(familyId: string, revokedAt: string) {
+    const rows = this.db.prepare("SELECT id, body FROM refresh_tokens WHERE family_id = ?").all(familyId) as Array<{ id: string; body: string }>;
+    const update = this.db.prepare("UPDATE refresh_tokens SET body = ? WHERE id = ?");
+    for (const row of rows) {
+      const token = JSON.parse(row.body) as RefreshTokenV1;
+      if (!token.revokedAt) update.run(json({ ...token, revokedAt }), row.id);
+    }
+  }
+
   getAuthorityEpoch() {
     const row = this.db.prepare("SELECT value FROM authority_meta WHERE key = 'epoch'").get() as { value: string } | undefined;
     return Number(row?.value ?? 1);
@@ -117,6 +149,10 @@ export class SqliteAuthorityStore implements AuthorityStore {
       CREATE TABLE IF NOT EXISTS xp_events(id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, user_id TEXT NOT NULL, idempotency_key TEXT NOT NULL, delta INTEGER NOT NULL, body TEXT NOT NULL, UNIQUE(tenant_id, idempotency_key)) STRICT;
       CREATE TABLE IF NOT EXISTS platform_events(id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, idempotency_key TEXT NOT NULL, body TEXT NOT NULL, UNIQUE(tenant_id, idempotency_key)) STRICT;
       CREATE TABLE IF NOT EXISTS audit_records(id TEXT PRIMARY KEY, tenant_id TEXT, body TEXT NOT NULL) STRICT;
+      CREATE TABLE IF NOT EXISTS service_identities(id TEXT PRIMARY KEY, body TEXT NOT NULL) STRICT;
+      CREATE TABLE IF NOT EXISTS access_sessions(id TEXT PRIMARY KEY, token_hash TEXT NOT NULL UNIQUE, expires_at TEXT NOT NULL, body TEXT NOT NULL) STRICT;
+      CREATE TABLE IF NOT EXISTS refresh_tokens(id TEXT PRIMARY KEY, token_hash TEXT NOT NULL UNIQUE, family_id TEXT NOT NULL, expires_at TEXT NOT NULL, body TEXT NOT NULL) STRICT;
+      CREATE INDEX IF NOT EXISTS refresh_tokens_family ON refresh_tokens(family_id);
       CREATE TABLE IF NOT EXISTS authority_journal(sequence INTEGER PRIMARY KEY AUTOINCREMENT, epoch INTEGER NOT NULL, kind TEXT NOT NULL, tenant_id TEXT, record_id TEXT NOT NULL, body TEXT NOT NULL, created_at TEXT NOT NULL) STRICT;
     `);
   }

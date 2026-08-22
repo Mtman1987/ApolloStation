@@ -30,7 +30,7 @@ export interface AuditRecordV1 {
 export interface AuthorityJournalEntryV1 {
   sequence: number;
   epoch: number;
-  kind: "user" | "provider-link" | "workspace" | "xp" | "event" | "audit";
+  kind: "user" | "provider-link" | "workspace" | "xp" | "event" | "audit" | "service-identity";
   tenantId?: string;
   recordId: string;
   payload: Record<string, unknown>;
@@ -161,10 +161,9 @@ export class AuthorityService {
   }
 
   updateWorkspace(tenantId: string, expectedRevision: number, patch: Partial<Omit<WorkspaceProfileV1, "tenantId" | "revision" | "updatedAt">>): WorkspaceProfileV1 {
-    requireId(tenantId, "tenantId");
     return this.store.transaction(() => {
       const current = this.store.getWorkspace(tenantId);
-      if (!current) throw new AuthorityConflictError("Workspace must be created before revisioned update");
+      if (!current) throw new AuthorityConflictError(`Workspace ${tenantId} does not exist; create it before revisioned updates`);
       if (expectedRevision !== current.revision) throw new AuthorityConflictError(`Workspace revision conflict: expected ${expectedRevision}, current ${current.revision}`);
       if (patch.dockSlots && patch.dockSlots.length !== 3) throw new AuthorityValidationError("Workspace must contain exactly three dock slots");
       const next: WorkspaceProfileV1 = { ...current, ...cloneJson(patch), tenantId, revision: current.revision + 1, updatedAt: this.now() };
@@ -174,9 +173,10 @@ export class AuthorityService {
   }
 
   awardXp(input: Omit<XpEventV1, "id" | "createdAt">): IdempotentResultV1<XpEventV1> {
-    requireId(input.tenantId, "tenantId"); requireId(input.userId, "userId"); requireId(input.sourceAppId, "sourceAppId"); requireId(input.idempotencyKey, "idempotencyKey");
-    if (!Number.isSafeInteger(input.delta) || input.delta === 0) throw new AuthorityValidationError("XP delta must be a non-zero safe integer");
     return this.store.transaction(() => {
+      requireId(input.tenantId, "tenantId"); requireId(input.userId, "userId");
+      requireId(input.sourceAppId, "sourceAppId"); requireId(input.idempotencyKey, "idempotencyKey");
+      if (!Number.isSafeInteger(input.delta) || input.delta === 0) throw new AuthorityValidationError("XP delta must be a non-zero safe integer");
       const existing = this.store.findIdempotent<XpEventV1>("xp", input.tenantId, input.idempotencyKey);
       if (existing) return { duplicate: true, value: existing };
       const event: XpEventV1 = { ...cloneJson(input), id: this.idFactory("xp"), createdAt: this.now() };
@@ -186,11 +186,14 @@ export class AuthorityService {
     });
   }
 
-  getXpBalance(tenantId: string, userId: string) { return this.store.listXp(tenantId, userId).reduce((total, item) => total + item.delta, 0); }
+  getXpBalance(tenantId: string, userId: string) {
+    return this.store.listXp(tenantId, userId).reduce((total, item) => total + item.delta, 0);
+  }
 
   publishEvent(input: Omit<PlatformEventV1, "id" | "createdAt">): IdempotentResultV1<PlatformEventV1> {
-    requireId(input.tenantId, "tenantId"); requireId(input.sourceAppId, "sourceAppId"); requireId(input.type, "type"); requireId(input.idempotencyKey, "idempotencyKey");
     return this.store.transaction(() => {
+      requireId(input.tenantId, "tenantId"); requireId(input.sourceAppId, "sourceAppId");
+      requireId(input.type, "type"); requireId(input.idempotencyKey, "idempotencyKey");
       const existing = this.store.findIdempotent<PlatformEventV1>("event", input.tenantId, input.idempotencyKey);
       if (existing) return { duplicate: true, value: existing };
       const event: PlatformEventV1 = { ...cloneJson(input), id: this.idFactory("evt"), createdAt: this.now() };
@@ -209,7 +212,7 @@ export class AuthorityService {
     });
   }
 
-  private ensureUserInTransaction(userId: string): UserRecordV1 {
+  private ensureUserInTransaction(userId: string) {
     requireId(userId, "userId");
     const existing = this.store.getUser(userId);
     if (existing) return existing;
@@ -222,4 +225,8 @@ export class AuthorityService {
 function requireId(value: string, name: string) {
   if (!value || value.trim() !== value || value.length > 200) throw new AuthorityValidationError(`${name} is invalid`);
 }
-function cloneJson<T>(value: T): T { if (value === undefined) return value; return JSON.parse(JSON.stringify(value)) as T; }
+
+function cloneJson<T>(value: T): T {
+  if (value === undefined) return value;
+  return JSON.parse(JSON.stringify(value)) as T;
+}
