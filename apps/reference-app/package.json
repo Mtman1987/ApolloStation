@@ -1,0 +1,12 @@
+{
+  "name": "@spmt/reference-app",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": { "build": "tsc -b" },
+  "dependencies": {
+    "@spmt/contracts": "0.1.0",
+    "@spmt/embed": "0.1.0",
+    "@spmt/sdk": "0.1.0"
+  }
+}

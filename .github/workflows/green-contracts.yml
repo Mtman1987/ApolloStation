@@ -1,0 +1,31 @@
+name: Green shared contracts
+
+on:
+  pull_request:
+    paths:
+      - "packages/**"
+      - "apps/reference-app/**"
+      - "tests/**"
+      - "package.json"
+      - "tsconfig.base.json"
+      - ".github/workflows/green-contracts.yml"
+  push:
+    branches: [main]
+    paths:
+      - "packages/**"
+      - "apps/reference-app/**"
+      - "tests/**"
+      - "package.json"
+      - "tsconfig.base.json"
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install --ignore-scripts
+      - run: npm test
