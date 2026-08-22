@@ -1,0 +1,117 @@
+export const SPMT_PROTOCOL_VERSION = 1 as const;
+
+export const SURFACE_MODES = ["shell", "standalone", "overlay", "popout"] as const;
+export type SurfaceModeV1 = (typeof SURFACE_MODES)[number];
+
+export type RuntimeStateV1 = "starting" | "ready" | "degraded" | "draining" | "unavailable";
+
+export interface ShellLayoutMetricsV1 {
+  schemaVersion: 1;
+  headerHeight: number;
+  safeTop: number;
+  safeRight: number;
+  safeBottom: number;
+  safeLeft: number;
+  availableWidth: number;
+  availableHeight: number;
+  measuredAt: string;
+}
+
+export interface ThemeTokensV1 {
+  schemaVersion: 1;
+  background: string;
+  surface: string;
+  text: string;
+  accent: string;
+  radius: string;
+  density: "compact" | "comfortable" | "spacious";
+  motion: "full" | "reduced" | "none";
+}
+
+export interface ScopeGrantV1 {
+  scope: string;
+  granted: boolean;
+}
+
+export interface AppFrameLaunchV1 {
+  schemaVersion: 1;
+  launchId: string;
+  appId: string;
+  surfaceMode: SurfaceModeV1;
+  tenantId?: string;
+  requestedScopes: string[];
+}
+
+export type OverlayWidgetKindV1 = "iframe" | "native" | "media" | "text" | "status";
+
+export interface OverlayWidgetManifestV1 {
+  schemaVersion: 1;
+  appId: string;
+  widgetId: string;
+  title: string;
+  kind: OverlayWidgetKindV1;
+  rendererUrl: string;
+  previewUrl?: string;
+  requiredScopes: string[];
+  supportsAudio: boolean;
+  supportsInteraction: boolean;
+  defaultAspectRatio?: string;
+}
+
+export type EmbedBridgeMessageV1 =
+  | { protocol: "spmt.embed"; version: 1; type: "host.hello"; launch: AppFrameLaunchV1 }
+  | { protocol: "spmt.embed"; version: 1; type: "child.ready"; appId: string }
+  | { protocol: "spmt.embed"; version: 1; type: "session.changed"; authenticated: boolean; userId?: string; tenantId?: string }
+  | { protocol: "spmt.embed"; version: 1; type: "theme.changed"; theme: ThemeTokensV1 }
+  | { protocol: "spmt.embed"; version: 1; type: "layout.changed"; layout: ShellLayoutMetricsV1 }
+  | { protocol: "spmt.embed"; version: 1; type: "capabilities.changed"; grants: ScopeGrantV1[] }
+  | { protocol: "spmt.embed"; version: 1; type: "runtime.changed"; state: RuntimeStateV1; detail?: string }
+  | { protocol: "spmt.embed"; version: 1; type: "navigation.open"; url: string; target: "shell" | "direct" | "popout" };
+
+export function isSurfaceModeV1(value: unknown): value is SurfaceModeV1 {
+  return typeof value === "string" && (SURFACE_MODES as readonly string[]).includes(value);
+}
+
+export function isShellLayoutMetricsV1(value: unknown): value is ShellLayoutMetricsV1 {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Record<string, unknown>;
+  return candidate.schemaVersion === 1 &&
+    ["headerHeight", "safeTop", "safeRight", "safeBottom", "safeLeft", "availableWidth", "availableHeight"].every(
+      (key) => typeof candidate[key] === "number" && Number.isFinite(candidate[key]) && (candidate[key] as number) >= 0,
+    ) && typeof candidate.measuredAt === "string";
+}
+
+export function isEmbedBridgeMessageV1(value: unknown): value is EmbedBridgeMessageV1 {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Record<string, unknown>;
+  if (candidate.protocol !== "spmt.embed" || candidate.version !== 1 || typeof candidate.type !== "string") return false;
+  switch (candidate.type) {
+    case "host.hello":
+      return !!candidate.launch && typeof candidate.launch === "object";
+    case "child.ready":
+      return typeof candidate.appId === "string";
+    case "session.changed":
+      return typeof candidate.authenticated === "boolean";
+    case "theme.changed":
+      return !!candidate.theme && typeof candidate.theme === "object";
+    case "layout.changed":
+      return isShellLayoutMetricsV1(candidate.layout);
+    case "capabilities.changed":
+      return Array.isArray(candidate.grants);
+    case "runtime.changed":
+      return typeof candidate.state === "string";
+    case "navigation.open":
+      return typeof candidate.url === "string" && typeof candidate.target === "string";
+    default:
+      return false;
+  }
+}
+
+export function assertOverlayWidgetManifestV1(value: OverlayWidgetManifestV1): OverlayWidgetManifestV1 {
+  if (value.schemaVersion !== 1) throw new Error("Unsupported overlay widget manifest version");
+  if (!value.appId || !value.widgetId || !value.title || !value.rendererUrl) throw new Error("Overlay widget manifest is incomplete");
+  if (!value.rendererUrl.startsWith("https://") && !value.rendererUrl.startsWith("http://localhost")) {
+    throw new Error("Overlay rendererUrl must be HTTPS outside local development");
+  }
+  return value;
+}

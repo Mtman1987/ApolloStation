@@ -1,0 +1,15 @@
+{
+  "name": "spmt-green",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": ["packages/*", "apps/*"],
+  "scripts": {
+    "build": "tsc -b packages/contracts packages/embed packages/sdk apps/reference-app",
+    "test": "npm run build && node --test tests/*.test.mjs",
+    "typecheck": "tsc -b packages/contracts packages/embed packages/sdk apps/reference-app --pretty false",
+    "clean": "tsc -b packages/contracts packages/embed packages/sdk apps/reference-app --clean"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.2"
+  }
+}
