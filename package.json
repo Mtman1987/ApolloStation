@@ -1,13 +1,13 @@
 {
   "name": "spmt-green",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "workspaces": ["packages/*", "apps/*"],
   "scripts": {
-    "build": "tsc -b packages/contracts packages/embed packages/sdk packages/runtime packages/ui apps/reference-app",
+    "build": "tsc -b packages/contracts packages/embed packages/sdk packages/runtime packages/ui packages/authority-core apps/reference-app",
     "test": "npm run build && node --test tests/*.test.mjs",
-    "typecheck": "tsc -b packages/contracts packages/embed packages/sdk packages/runtime packages/ui apps/reference-app --pretty false",
-    "clean": "tsc -b packages/contracts packages/embed packages/sdk packages/runtime packages/ui apps/reference-app --clean"
+    "typecheck": "tsc -b packages/contracts packages/embed packages/sdk packages/runtime packages/ui packages/authority-core apps/reference-app --pretty false",
+    "clean": "tsc -b packages/contracts packages/embed packages/sdk packages/runtime packages/ui packages/authority-core apps/reference-app --clean"
   },
   "devDependencies": {
     "typescript": "^5.9.2"
