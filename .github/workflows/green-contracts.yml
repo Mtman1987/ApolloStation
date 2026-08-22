@@ -17,6 +17,7 @@ on:
       - "tests/**"
       - "package.json"
       - "tsconfig.base.json"
+      - ".github/workflows/green-contracts.yml"
 
 jobs:
   contracts:
@@ -26,6 +27,5 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
       - run: npm install --ignore-scripts
       - run: npm test
