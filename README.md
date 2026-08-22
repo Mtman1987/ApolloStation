@@ -11,7 +11,7 @@ Owner approval recorded 2026-08-21 closes the foundation decision pack in `DECIS
 - freezes donor documentation from the current live repositories as read-only evidence;
 - separates observed facts from old plans and unverified claims;
 - defines one coherent identity, data, runtime, worker, AI, and Fly.io model for Green;
-- records accepted architecture decisions and the few decisions deliberately deferred to measurement;
+- records the accepted architecture decisions and keeps measured configuration changes inside their approved boundaries;
 - tracks donor-to-Green feature parity so a clean rebuild cannot silently become feature loss;
 - lists every material removal or rewrite with a defense and counterargument;
 - defines a reversible, cost-bounded parallel cutover;

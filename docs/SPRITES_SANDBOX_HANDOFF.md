@@ -14,7 +14,8 @@ This runbook opens only the Green SPMT authority and SpaceMountain browser shell
 - [x] Twitch, Discord, Kick, LiveKit, Firebase, Fly, and Sprites credentials are rejected by sandbox startup guards.
 - [x] Webhook delivery is blocked in sandbox mode.
 - [x] Orbit Beacon proves registry-driven discovery without a hardcoded tile.
-- [x] Athena remains the bot persona; Stellar Core remains the generic system capability surface.
+- [x] Stellar Core remains persona-neutral; Stella is the app-neutral Community Assistant; Athena is only the owner's configured StreamWeaver persona.
+- [x] Stella discovery/invocation is exposed through SDK, HTTP API, CLI, and MCP; this provider-free sandbox truthfully returns `unavailable` instead of a fabricated reply.
 - [x] The Sprite network policy allows GitHub/npm only and then denies `*`.
 - [x] The supervised runner creates its webhook-encryption key in memory and stops SPMT and SpaceMountain together.
 - [x] No `sprite-env services create` command exists in the runner.

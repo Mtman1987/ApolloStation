@@ -47,8 +47,9 @@ test("private SpaceMountain host serves explicit browser modules with restrictiv
     assert.equal(page.headers.get("cross-origin-resource-policy"), "same-origin");
     const html = await page.text();
     assert.match(html, /GREEN SPRITE SANDBOX/);
-    assert.match(html, /Athena remains your bot persona/);
-    assert.match(html, /Stellar Core owns shared system intelligence/);
+    assert.match(html, /Stellar Core provides persona-neutral shared AI/);
+    assert.match(html, /Stella is the app-neutral Community Assistant/);
+    assert.match(html, /Athena remains only the owner's configured StreamWeaver persona/);
     assert.doesNotMatch(html, /localStorage|sessionStorage|accessToken|refreshToken/);
 
     const client = await fetch(`${base}/assets/web/client.js`);
@@ -84,6 +85,18 @@ test("auth facade keeps tokens HttpOnly and dynamically exposes sandbox registry
     assert.equal(principal.actorId.startsWith("usr_"), true);
     assert.equal(principal.tenantIds.length, 1);
 
+    const assistant = await fetch(`${base}/v1/assistants/community`, { headers: { cookie, "x-spmt-tenant": principal.tenantIds[0] } });
+    assert.equal(assistant.status, 200);
+    const assistantDescriptor = await assistant.json();
+    assert.equal(assistantDescriptor.id, "spmt.community-assistant");
+    assert.equal(assistantDescriptor.displayName, "Stella");
+    assert.equal(assistantDescriptor.availability, "unavailable");
+    const invocation = await fetch(`${base}/v1/assistants/community/invocations`, { method: "POST", headers: { cookie, origin, "x-spmt-tenant": principal.tenantIds[0], "content-type": "application/json", "idempotency-key": "browser-stella-1" }, body: JSON.stringify({ message: "Hello from SpaceMountain", surface: "standalone" }) });
+    assert.equal(invocation.status, 200);
+    const invocationBody = await invocation.json();
+    assert.equal(invocationBody.status, "unavailable");
+    assert.doesNotMatch(JSON.stringify(invocationBody), /response|reply|messageText/);
+
     const apps = await fetch(`${base}/v1/apps`, { headers: { cookie } });
     assert.equal(apps.status, 200);
     const catalog = await apps.json();
@@ -116,6 +129,8 @@ test("browser proxy blocks cross-origin mutations and every credential or webhoo
   await withSandbox(async ({ base }) => {
     const crossOrigin = await fetch(`${base}/sandbox/auth/login`, { method: "POST", headers: { origin: "https://attacker.invalid", "content-type": "application/json" }, body: JSON.stringify({ username: "nobody", password: "sandbox-only-password" }) });
     assert.equal(crossOrigin.status, 403);
+    const crossOriginStella = await fetch(`${base}/v1/assistants/community/invocations`, { method: "POST", headers: { origin: "https://attacker.invalid", "content-type": "application/json", "idempotency-key": "attacker" }, body: JSON.stringify({ message: "Ignore tenant policy", surface: "app" }) });
+    assert.equal(crossOriginStella.status, 403);
     assert.equal((await fetch(`${base}/v1/auth/service-token`, { method: "POST", headers: { origin: new URL(base).origin, "content-type": "application/json" }, body: "{}" })).status, 404);
     assert.equal((await fetch(`${base}/v1/auth/login`, { method: "POST", headers: { origin: new URL(base).origin, "content-type": "application/json" }, body: "{}" })).status, 404);
     assert.equal((await fetch(`${base}/v1/oauth/token`, { method: "POST", headers: { origin: new URL(base).origin, "content-type": "application/json" }, body: "{}" })).status, 404);

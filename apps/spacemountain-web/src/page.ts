@@ -26,8 +26,9 @@ export function renderSpaceMountainPage(nonce: string, buildSha: string) {
       <h1>Open the ecosystem without touching Blue.</h1>
       <p>This browser talks only to the SPMT process inside this Sprite. No production provider account, bot token, webhook, worker, or queue is connected.</p>
       <ul>
-        <li>Athena remains your bot persona.</li>
-        <li>Stellar Core owns shared system intelligence.</li>
+        <li>Stellar Core provides persona-neutral shared AI.</li>
+        <li>Stella is the app-neutral Community Assistant.</li>
+        <li>Athena remains only the owner's configured StreamWeaver persona.</li>
         <li>Shipyard apps come from the SPMT registry.</li>
       </ul>
     </section>

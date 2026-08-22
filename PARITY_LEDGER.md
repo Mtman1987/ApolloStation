@@ -1,6 +1,6 @@
 # Donor → Green Parity Ledger
 
-Updated: 2026-08-21
+Updated: 2026-08-22
 
 Purpose: prevent the clean-room rebuild from silently dropping useful production behavior while still allowing deliberate removal of legacy architecture, duplicate authority, and bloat.
 
@@ -24,10 +24,12 @@ This ledger is **not yet a claim that every donor route has been audited**. It i
 | SpaceMountain command bridge / suite shell | SpaceMountain | SpaceMountain | PRESERVE | Keep public navigation model during Green | shell/direct-app smoke |
 | Shipyard/app launcher | SpaceMountain + SPMT registry | SpaceMountain UI + SPMT registry | IMPROVE | Preserve installed-app/launch intent | Green browser host proves hot-added registry visibility, install persistence, and inert launch; provider-connected launch still requires later sandbox proof |
 | Commlink Mail | SPMT | SPMT + SpaceMountain UI | PRESERVE | migrate conversations/messages | two-account message test |
-| Commlink Live Chat | SPMT UI + StreamWeaver feed | StreamWeaver feed + SpaceMountain UI | PRESERVE | signed/scoped feed contract | simultaneous source test |
+| Commlink Live Chat | SPMT UI + StreamWeaver feed | SPMT shared history + provider-neutral Chat Gateway + SpaceMountain UI | IMPROVE | preserve provider connections/history behind public chat SDK/API/events; StreamWeaver becomes a consumer, not the private contract owner | simultaneous provider, reconnect, dedupe, and external-client tests |
 | Commlink Notifications | SPMT | SPMT + SpaceMountain UI | PRESERVE | migrate notification records if needed | read/unread/action test |
 | Commlink App Events | SPMT | SPMT event projections | PRESERVE | version event schemas | event idempotency/replay test |
-| Generic context/capability panel | SpaceMountain/SPMT | SpaceMountain Stellar Core UI + SPMT jobs | IMPROVE | reserve Athena for the bot persona; remove fake-success behavior | available/unavailable plus queued/running/succeeded/failed tests |
+| Forums / Discord bridge | SPMT + DSH/Discord | SPMT forum authority + DSH bridge + SpaceMountain source-labeled view | IMPROVE | migrate canonical threads/replies and preserve immutable origin/provider IDs | web↔Discord edit/delete/reply, permission, and loop-deduplication tests |
+| Generic context/capability panel | SpaceMountain/SPMT | SpaceMountain Stellar Core UI + SPMT jobs | IMPROVE | keep execution persona-neutral and remove fake-success behavior | available/unavailable plus queued/running/succeeded/failed tests |
+| Default ecosystem AI assistant | global Athena/public AI scaffolds | Stella presentation + SPMT developer contracts + Stellar Core execution | IMPROVE | stable role `spmt.community-assistant`; no StreamWeaver or SpaceMountain session dependency; do not migrate any tenant's Athena identity into the default | SDK/API/CLI/MCP/event-job/Commlink parity, unavailable-state, two-tenant memory, and standalone-app tests |
 | SPMT identity/users/tenants | SPMT | SPMT | PRESERVE | idempotent migration by immutable IDs | two-user/provider matrix |
 | Browser sessions / OAuth | SPMT + app compatibility | SPMT | IMPROVE | legacy sessions instrumented then retired | direct/embed/login/logout/refresh test |
 | Linked Twitch/Discord/Xbox providers | SPMT/apps | SPMT grants | PRESERVE | never merge by display name | disconnect/relink/isolation test |
@@ -36,34 +38,37 @@ This ledger is **not yet a claim that every donor route has been audited**. It i
 | WorkspaceProfile/theme/backgrounds | SPMT | SPMT | PRESERVE | migrate one authoritative profile | device A→B round trip |
 | Three dock slots | SPMT/SpaceMountain | SPMT + SpaceMountain | PRESERVE | migrate URLs/state, no secrets | collapse/volume/mute/device test |
 | Personal overlay / Overlay Bay | SpaceMountain/SPMT | SpaceMountain renderer + SPMT scene metadata | IMPROVE | stable read-only output grants | OBS renderer + revoke test |
+| Web/image/text/camera/screen/Xbox overlay sources | SPMT/SpaceMountain/app renderers | capability-specific browser/Companion/isolated Xbox renderers behind public scene contracts | IMPROVE | sandbox HTTPS web sources; block credentials/private networks; local permissioned camera/screen by default; preserve independent visibility/interaction/opacity/layer/revoke controls | source-by-source consent, isolation, OBS, revoke, and private-network tests |
 | Canonical XP/level | SPMT plus legacy producers | SPMT append-only ledger | IMPROVE | reconcile provenance; never sum/max | cross-surface exact balance test |
 | Cards/collection ownership | StreamWeaver/shared use | SPMT shared catalog/ownership | IMPROVE | preserve collection, trade/deck semantics | ownership/migration sample tests |
 | Developer APIs / SDK / webhooks | SPMT | SPMT | IMPROVE | version contracts and scopes | conformance suite |
-| Plugins/app submissions | SPMT | SPMT | VERIFY | retain only real supported lifecycle | app-install canary |
+| Plugins/app submissions | SPMT | SPMT reviewed developer marketplace | IMPROVE | first-party conformance, one external canary, automated validation, manual publishing/high-risk-scope review, signed versions, and immediate suspension/revocation | submit→test tenant→review→publish→update→revoke canary |
 | Device pairing/revocation/commands | SPMT + Companion | SPMT device gateway | PRESERVE | migrate/re-pair as contract requires | pair/revoke/replay/expiry test |
-| Legacy overlay workspace/builder blobs | SPMT/SpaceMountain | versioned scene/workflow contracts | REPLACE | import as disabled/validated records | import/rollback test |
-| Rocket arena/easter-egg surfaces | SpaceMountain | TBD product module | VERIFY | no removal until code/usage audit | owner keep/remove decision |
+| Legacy overlay workspace blobs | SPMT/SpaceMountain | versioned scene contracts | REPLACE | import as disabled/validated scene records | import/rollback test |
+| Nonfunctional block-style Builder/page/QR/flow claims | SpaceMountain | none; developers build registered apps using SDK/API/CLI/MCP/events/webhooks/jobs | REMOVE | no workflow/page data is treated as authoritative; a future third-party builder must use public contracts and normal review | assert no real caller/data dependency and remove fake-success UI/routes |
+| Rocket Arena/easter-egg surfaces | SpaceMountain | Nebula Arcade Arena module | IMPROVE | preserve match-local kill score and settle capped completion/win/milestone XP, badges, or cosmetics once per verified match; no per-kill canonical XP | match/reward/idempotency/cap/leaderboard tests |
+| Shop/catalog surface | SpaceMountain | SpaceMountain registry surface + verified external storefront | IMPROVE | preserve product discovery; remove fabricated order/capture behavior; accept only authenticated idempotent provider events | catalog→provider checkout→signed event→entitlement test |
 | Retired `space-mountain-dashboard` | archived repo | none | REMOVE | no Green deploy | assert no launch target depends on it |
 
-## StreamWeaver / Athena bot persona runtime
+## StreamWeaver / tenant-configured bot persona runtime
 
 | Donor surface/capability | Donor owner | Green owner | Disposition | Compatibility/migration | Proof required |
 |---|---|---|---|---|---|
-| Twitch tenant connections/listening | StreamWeaver | StreamWeaver coordinator | PRESERVE | migrate tenant grants/config | concurrent-tenant socket test |
-| Discord bot/chat bridge behavior | StreamWeaver | StreamWeaver coordinator | PRESERVE | preserve proven sender paths | Discord/Twitch cross-path test |
+| Twitch tenant connections/listening | StreamWeaver | provider-neutral Chat Gateway | IMPROVE | migrate tenant grants/cursors without making StreamWeaver the private connection owner | concurrent-tenant socket, reconnect, and external-client tests |
+| Discord bot/chat bridge behavior | StreamWeaver | Chat Gateway provider I/O + StreamWeaver command/persona consumer | IMPROVE | preserve proven sender paths behind the public normalized-chat contract | Discord/Twitch cross-path, loop, and scope tests |
 | Tenant bot dispatch | StreamWeaver | StreamWeaver | PRESERVE | explicit tenant context | two-tenant invoke isolation |
-| Athena/personality/model routing | StreamWeaver | StreamWeaver runtime | IMPROVE | separate job execution from sender | ordered conversation test |
-| TTS generation/playback | StreamWeaver | StreamWeaver + elastic worker | IMPROVE | preserve subscriptions/voice choices | queue/replay/fallback test |
+| Tenant persona/personality/model requests (Athena for the owner) | StreamWeaver | StreamWeaver persona runtime + shared Stellar Core execution | IMPROVE | migrate each tenant/user persona name, behavior, voice, memory policy, and capabilities without creating per-name infrastructure | two-tenant distinct-persona, memory-isolation, routing-entitlement, and ordered-conversation tests |
+| TTS generation/playback | StreamWeaver | StreamWeaver persona UX/playback + Stellar Core TTS jobs/adapters | IMPROVE | preserve subscriptions/voice choices while removing generic provider/model execution from StreamWeaver | queue/replay/provider-fallback/local-Companion test |
 | Commands/actions/redeems | StreamWeaver | StreamWeaver | PRESERVE | route-by-route inventory required | command regression matrix |
 | Points commands/display | StreamWeaver | SPMT XP read + StreamWeaver producer where appropriate | REPLACE | migrate display semantics | same balance everywhere |
-| Shared normalized chat feed | StreamWeaver | StreamWeaver | PRESERVE | version event contract | dedupe/reconnect/replay test |
+| Shared normalized chat feed | StreamWeaver | provider-neutral Chat Gateway | IMPROVE | version the SDK/API/event contract and migrate StreamWeaver into an ordinary scoped consumer | dedupe/reconnect/replay plus first-party/external-client conformance test |
 | Pin/queue/feature/featured-message output | StreamWeaver/Commlink | StreamWeaver runtime + SpaceMountain UI | PRESERVE | maintain stable OBS output | timed clear/queue advance test |
 | Public overlays/browser sources | StreamWeaver | StreamWeaver/SpaceMountain renderer by ownership | VERIFY | route inventory before consolidation | transparent/OBS smoke per route |
 | Pokémon commands/decks/trades/battles | StreamWeaver | StreamWeaver rules + SPMT ownership | IMPROVE | keep game rules, centralize shared ownership | collection/deck/trade fixture |
 | Voice Commander | StreamWeaver | StreamWeaver + device/voice adapters | VERIFY | preserve only real supported actions | voice intent/action test |
-| Research Mode / knowledge packs | StreamWeaver | StreamWeaver inference/runtime | PRESERVE | migrate tenant policy/config | tenant isolation/source test |
+| Research Mode / knowledge packs | StreamWeaver | StreamWeaver persona UX + Stellar Core research jobs | IMPROVE | migrate tenant policy/config and execute through public scoped job contracts | tenant isolation/source/citation/job-state test |
 | Companion source currently inside repo | StreamWeaver | ApolloStation Companion package | IMPROVE | preserve capabilities, separate deploy/runtime boundary | desktop/device suite |
-| StreamWeaver elastic helper tier | none | StreamWeaver worker pool | ADD | no donor compatibility required | queue/load/duplicate-reply test |
+| Persona AI elastic helper tier | none | Stellar Core bounded worker pool; StreamWeaver remains the persona/request consumer | ADD | no donor compatibility required; provider/model execution stays persona-neutral | queue/load/routing-entitlement/duplicate-reply test |
 | Direct worker writes to tenant volume | n/a/legacy risk | none | REMOVE | workers return results through job contract | failure/retry idempotency test |
 
 ## Discord Stream Hub
@@ -98,18 +103,18 @@ This ledger is **not yet a claim that every donor route has been audited**. It i
 | Legacy duplicate media routes | HearMeOut | canonical media/session routes | REPLACE | telemetry/compat window before removal | zero-use evidence |
 | Voice device volume/noise/PTT preferences | browser/device | local client/Companion | PRESERVE | never centralize hardware-only choice | device-local isolation test |
 
-## ChatTag donor / future Games Hub product
+## ChatTag donor / Nebula Arcade
 
-`ChatTag` remains the temporary donor/product label until this vertical's full inventory is available. The original Chat Tag game keeps its name; the broader product must receive a distinct owner-approved Games Hub name under D-32.
+`ChatTag` remains the donor repository label. The original Chat Tag game keeps its name; the broader modular product is **Nebula Arcade** under D-32. No game capability is removed merely because ownership, package boundaries, or the suite name changes.
 
 | Donor surface/capability | Donor owner | Green owner | Disposition | Compatibility/migration | Proof required |
 |---|---|---|---|---|---|
 | Original Chat Tag game | ChatTag | ChatTag core module | PRESERVE | route/command compatibility | two-player game test |
 | Quackverse | ChatTag | ChatTag bounded game module | PRESERVE | preserve overlay/profile behavior | game/overlay test |
 | Bingo | ChatTag | ChatTag bounded game module | PRESERVE | deep audit required | game regression test |
-| Games Hub catalog | ChatTag | separate bounded game modules sharing game SDK | IMPROVE | do not make one giant runtime | per-game contract suite |
+| Nebula Arcade catalog | ChatTag | separate bounded game modules sharing the public game SDK | IMPROVE | do not make one giant runtime; publish modules through the canonical registry | per-game contract and dynamic-discovery suite |
 | Durable per-channel game runtime actions | ChatTag | ChatTag runtime | PRESERVE | migrate active state only when safe | action replay/dedupe test |
-| Games Hub overlay profiles | ChatTag | ChatTag/SpaceMountain scene integration | PRESERVE | import profile references | OBS/profile test |
+| Nebula Arcade overlay profiles | ChatTag | game module/SpaceMountain scene integration | PRESERVE | import profile references | OBS/profile test |
 | Bot worker | `chat-tag-bot-new` | elastic/lease-aware ChatTag bot worker | IMPROVE | bot owns no canonical state | reconnect/duplicate command test |
 | Game-specific state | ChatTag | ChatTag private authority | PRESERVE | classify retention/limits | restart/restore test |
 | XP/rewards | ChatTag + SPMT | SPMT ledger; ChatTag emits outcomes | IMPROVE | migrate provenance/idempotency | one-award-only test |
@@ -121,7 +126,7 @@ This ledger is **not yet a claim that every donor route has been audited**. It i
 |---|---|---|---|---|---|
 | 12-hour machine rotation | Rotator | Green scheduler/lease/reconciler | REPLACE | preserve useful health/cleanup intent, not forced restart pattern | lifecycle/load tests |
 | Fleet health/log diagnostics | Rotator | operations module | PRESERVE | ingest Green health/job metadata | fault injection test |
-| Error classification/repair audit | Rotator/Athena Coder | operations/Stellar Core capability used by the Athena persona | IMPROVE | no autonomous production write without approved policy | dry-run/audit/rollback test |
+| Error classification/repair audit | Rotator/Athena Coder | operations/Stellar Core capability; Athena is the owner's configured presentation | IMPROVE | no autonomous production write without approved policy; other users/apps select Stella or their configured persona | dry-run/audit/rollback/identity-isolation test |
 | GitHub bridge / operator controls | Rotator | operations module | VERIFY | preserve only needed owner workflows | auth/action audit |
 | MCP/API/CLI operational surfaces | Rotator/SPMT | versioned SPMT/ops contracts | IMPROVE | eliminate duplicate authority | conformance test |
 | MountainView device records | Rotator/MountainView | SPMT device authority + MountainView module | IMPROVE | migrate paired devices/tokens safely | pairing/revocation test |
@@ -131,7 +136,7 @@ This ledger is **not yet a claim that every donor route has been audited**. It i
 | OBS WebSocket controls | Companion | Companion | PRESERVE | explicit capability/confirmation | approved-action test |
 | Local media library + bounded FFmpeg jobs | Companion | Companion | PRESERVE | maintain local ownership and review | transcode/restart test |
 | Signed installer/update path | Companion | Companion release pipeline | IMPROVE | no cutover dependency for web, required for desktop release | clean install/update/uninstall proof |
-| `spmt-vault` independent recovery | none | recovery app | ADD | separate app/region/credentials | promotion/failback drill |
+| `spmt-vault` independent recovery | none | recovery app | ADD | separate app/region/credentials; 15-minute primary RPO, 60-minute normal RTO, four-hour provider-boundary RTO, tiered 30-daily/12-weekly/12-monthly retention | quarterly restore, promotion, integrity, and failback drill |
 
 ## Explicit removals — no parity obligation
 
@@ -147,6 +152,7 @@ These are architecture debt, not user features. Green must not recreate them.
 | direct app mounts of shared authoritative volume | REMOVE | one storage authority behind versioned contracts |
 | silent fallback to local production database | REMOVE | fail readiness and show recoverable degraded state |
 | fake AI/job/shell success | REMOVE | real accepted-job and result states only |
+| nonfunctional block-style Builder/page/QR/flow product | REMOVE | developers build real registered apps and integrations through the public SDK/API/CLI/MCP/events/webhooks/jobs |
 | one ordinary Machine per AI persona | REMOVE | pooled inference by default; isolation only when justified |
 | permanent compatibility routes with no callers | REMOVE after evidence | zero-use window + rollback checkpoint |
 | tracked duplicate docs/spec mirrors in Green | REMOVE | one source, generated published output |

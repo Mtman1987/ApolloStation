@@ -14,7 +14,7 @@ import { PlatformOperations } from "@spmt/platform-ops";
 import { PlatformApiAdapter } from "@spmt/api-adapter";
 import { HealthRegistry } from "@spmt/runtime";
 
-const USER_SCOPES = ["workspace:read","workspace:write","xp:read","apps:read","apps:install","entitlements:read","events:read","commlink:read","commlink:write","notifications:read","notifications:write","webhooks:read","webhooks:write","stellar:context:read","stellar:context:write","stellar:capabilities:read"];
+const USER_SCOPES = ["workspace:read","workspace:write","xp:read","apps:read","apps:install","entitlements:read","events:read","commlink:read","commlink:write","notifications:read","notifications:write","webhooks:read","webhooks:write","assistants:read","assistants:invoke","stellar:context:read","stellar:context:write","stellar:capabilities:read"];
 
 export interface SpmtServiceOptions {
   databasePath: string;
@@ -353,7 +353,7 @@ function seedSandboxFixtures(control: ControlService, data: PlatformDataService,
     description: "The Green command bridge for SPMT identity, Shipyard, Commlink, workspace, and Stellar Core surfaces.",
     version: "0.1.0-sandbox",
     launchUrl: new URL("/", publicBaseUrl).toString(),
-    allowedScopes: ["workspace:read", "xp:read", "apps:read", "apps:install", "entitlements:read", "events:read", "commlink:read", "notifications:read", "stellar:context:read", "stellar:capabilities:read"],
+    allowedScopes: ["workspace:read", "xp:read", "apps:read", "apps:install", "entitlements:read", "events:read", "commlink:read", "notifications:read", "assistants:read", "assistants:invoke", "stellar:context:read", "stellar:capabilities:read"],
     surfaces: ["shell", "standalone"],
     status: "active",
   });
@@ -369,6 +369,8 @@ function seedSandboxFixtures(control: ControlService, data: PlatformDataService,
   });
   const capability = data.listStellarCapabilities().find((item) => item.id === "sandbox.registry.inspect");
   if (!capability) data.upsertStellarCapability({ id: "sandbox.registry.inspect", sourceAppId: "spmt", title: "Inspect the sandbox app registry", description: "Read the isolated Green registry and verify dynamic SpaceMountain discovery without provider access.", requiredScopes: ["apps:read"], availability: "available" });
+  const communityAssistant = data.listStellarCapabilities().find((item) => item.id === "spmt.community-assistant");
+  if (!communityAssistant) data.upsertStellarCapability({ id: "spmt.community-assistant", sourceAppId: "spmt", title: "Stella Community Assistant", description: "Invoke the app-neutral SPMT Community Assistant through the public developer contracts.", requiredScopes: ["assistants:invoke"], availability: "unavailable", unavailableReason: "The isolated Green sandbox has no Stellar Core inference provider or worker connected." });
 }
 
 function registerFixture(control: ControlService, manifest: Parameters<ControlService["registerApp"]>[0]) {

@@ -200,7 +200,7 @@ export function buildAppFrameTarget(app: SpaceMountainAppCardV1, tenantId: strin
 }
 
 export const DEFERRED_RUNTIME_SOURCES = Object.freeze([
-  { id: "streamweaver-live-chat", owner: "streamweaver", presentation: "Commlink Live Chat", requiredForShell: false },
+  { id: "chat-gateway-live-chat", owner: "chat-gateway", presentation: "Commlink Live Chat", requiredForShell: false },
   { id: "stellar-core-inference", owner: "stellar-core-workers", presentation: "Stellar Core inference", requiredForShell: false },
   { id: "companion-device-relay", owner: "companion-mountainview", presentation: "Companion devices", requiredForShell: false },
 ]);

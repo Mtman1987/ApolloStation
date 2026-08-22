@@ -32,15 +32,17 @@ test("Commlink renders separate canonical account feeds and does not fake live c
   assert.match(source, /data-commlink-tab/);
   assert.match(source, /Notifications/);
   assert.match(source, /App Events/);
-  assert.match(source, /streamweaver-live-chat/);
+  assert.match(source, /chat-gateway-live-chat/);
+  assert.match(source, /provider-neutral Chat Gateway/);
   assert.match(source, /no fabricated data/);
   assert.match(source, /data-notification-read/);
   assert.match(source, /data-open-conversation/);
 });
 
-test("Stellar Core owns generic system capabilities while Athena remains a persona", () => {
+test("Stellar Core stays persona-neutral while Stella and configured personas remain presentation identities", () => {
   assert.match(source, /Stellar Core/);
-  assert.match(source, /Athena remains your bot persona/);
+  assert.match(source, /Stella is the default ecosystem assistant/);
+  assert.match(source, /configured StreamWeaver personas use the same public contracts/);
   assert.match(source, /stellar-core-inference/);
   assert.doesNotMatch(source, /label: "Athena"/);
 });

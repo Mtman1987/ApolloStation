@@ -23,6 +23,7 @@ The Green shell consumes those facts through `@spmt/sdk`. It must not recreate t
 - Commlink conversations.
 - notifications.
 - Stellar Core bounded context and capability catalog.
+- Stella Community Assistant descriptor and truthful invocation state.
 - first-time setup choices from the new SPMT onboarding contract.
 
 Every source has an explicit `ready`/`degraded` state. Session or workspace failure makes the shell unavailable; optional panel failure degrades only that part of the shell.
@@ -41,9 +42,10 @@ Every source has an explicit `ready`/`degraded` state. Session or workspace fail
 
 These remain visible as separately owned sources instead of being faked inside SpaceMountain:
 
-- StreamWeaver live-chat transport -> Commlink Live Chat presentation.
+- provider-neutral Chat Gateway -> Commlink Live Chat presentation.
 - Stellar Core generic inference -> bounded worker pool.
-- Athena bot persona and delivery behavior -> StreamWeaver using Stellar Core contracts.
+- Stella Community Assistant -> app-neutral SPMT developer contracts backed by Stellar Core.
+- configured StreamWeaver personas, including the owner's Athena configuration -> StreamWeaver using the same Stellar Core contracts.
 - Companion/MountainView device relay -> Companion surface.
 
 Their absence must produce an honest degraded/unavailable panel state later, never fabricated data.
@@ -65,7 +67,7 @@ The first-time account setup flow remains owned by SPMT. SpaceMountain supplies 
 - separate Commlink Mail, Notifications, App Events, and honestly deferred Live Chat panels.
 - Stellar Core context/capability panel with generic execution honestly deferred.
 
-Mail, Notifications, and App Events consume the same scoped public SPMT contracts available to developer applications. App Events now have one read projection across HTTP, SDK, CLI, and MCP. The Live Chat panel does not synthesize messages while StreamWeaver is disconnected.
+Mail, Notifications, and App Events consume the same scoped public SPMT contracts available to developer applications. App Events now have one read projection across HTTP, SDK, CLI, and MCP. The Live Chat panel does not synthesize messages while Chat Gateway is disconnected.
 
 The former generic `/v1/athena/*`, SDK, CLI, MCP, scope, SQLite, and recovery names are handled as migration inputs or deprecated public aliases. New storage and product surfaces use Stellar Core. Those aliases may be removed only after caller instrumentation shows zero use and the normal compatibility rollback gate passes.
 
@@ -77,7 +79,7 @@ The donor visual pieces can now be ported onto this model in this order:
 2. one Workspace/Overlay editor host.
 3. AppFrame component for embedded flagship apps.
 4. first-time setup/sign-in screens.
-5. Green StreamWeaver Live Chat adapter.
-6. Stellar Core worker adapter; Athena remains the bot persona, not the subsystem.
+5. Green provider-neutral Chat Gateway adapter, with StreamWeaver as an ordinary scoped consumer.
+6. Stellar Core worker adapter plus app-neutral Stella invocation through SDK/API/CLI/MCP/Commlink; configured StreamWeaver personas use the same execution path.
 
-Arena/shop/easter-egg surfaces remain VERIFY items and should not shape the shell architecture until their product intent is confirmed.
+Arena follows D-38's local-score/capped-settlement model, Shop follows D-37's verified external-storefront model, and the nonfunctional Builder is removed under D-36. Those product surfaces still must not distort the shared shell architecture.

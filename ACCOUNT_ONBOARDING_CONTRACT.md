@@ -48,6 +48,6 @@ Standalone Twitch recovery is not a third public option. Twitch verification sti
 
 ## App integration rule
 
-ChatTag (temporary donor product name), Discord Stream Hub, StreamWeaver, HearMeOut, SpaceMountain, Companion and future first-party apps must provision identity whenever they have a valid tenant/user association. They use a scoped service identity with `identity:provision`; the SpaceMountain welcome interaction additionally uses `identity:onboard`.
+Nebula Arcade (including the original Chat Tag game), Discord Stream Hub, StreamWeaver, HearMeOut, SpaceMountain, Companion, and future first-party apps must provision identity whenever they have a valid tenant/user association. They use a scoped service identity with `identity:provision`; the SpaceMountain welcome interaction additionally uses `identity:onboard`.
 
 No product app owns a second account database, generated default password, provider-token shortcut, or local recovery implementation.

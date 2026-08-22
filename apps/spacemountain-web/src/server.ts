@@ -131,6 +131,7 @@ async function proxy(response: ServerResponse, request: IncomingMessage, url: UR
   if (request.headers.cookie) headers.set("cookie", request.headers.cookie);
   if (typeof request.headers["x-spmt-tenant"] === "string") headers.set("x-spmt-tenant", request.headers["x-spmt-tenant"]);
   if (typeof request.headers["x-correlation-id"] === "string") headers.set("x-correlation-id", request.headers["x-correlation-id"]);
+  if (typeof request.headers["idempotency-key"] === "string") headers.set("idempotency-key", request.headers["idempotency-key"]);
   const body = ["GET", "HEAD"].includes(method) ? undefined : await readBody(request);
   const upstream = await fetchImpl(`${origin}${url.pathname}${url.search}`, {
     method,
@@ -153,11 +154,11 @@ async function proxy(response: ServerResponse, request: IncomingMessage, url: UR
 
 function browserProxyAllowed(method: string, pathname: string) {
   if (method === "GET") {
-    if (["/health/live", "/health/ready", "/v1/session", "/v1/auth/setup-options", "/v1/workspace/profile", "/v1/apps", "/v1/apps/installs", "/v1/entitlements", "/v1/events", "/v1/commlink/conversations", "/v1/commlink/messages", "/v1/commlink/search", "/v1/notifications", "/v1/stellar/context", "/v1/stellar/capabilities"].includes(pathname)) return true;
+    if (["/health/live", "/health/ready", "/v1/session", "/v1/auth/setup-options", "/v1/workspace/profile", "/v1/apps", "/v1/apps/installs", "/v1/entitlements", "/v1/events", "/v1/commlink/conversations", "/v1/commlink/messages", "/v1/commlink/search", "/v1/notifications", "/v1/assistants/community", "/v1/stellar/context", "/v1/stellar/capabilities"].includes(pathname)) return true;
     return /^\/v1\/apps\/[^/]+$/.test(pathname);
   }
   if (method === "PATCH" && pathname === "/v1/workspace/profile") return true;
-  if (method === "POST") return /^\/v1\/apps\/[^/]+\/(?:install|disable)$/.test(pathname) || /^\/v1\/notifications\/[^/]+\/read$/.test(pathname) || pathname === "/v1/commlink/messages";
+  if (method === "POST") return /^\/v1\/apps\/[^/]+\/(?:install|disable)$/.test(pathname) || /^\/v1\/notifications\/[^/]+\/read$/.test(pathname) || pathname === "/v1/commlink/messages" || pathname === "/v1/assistants/community/invocations";
   return false;
 }
 

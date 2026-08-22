@@ -34,6 +34,7 @@ Every rebuilt app and worker must satisfy these rules before it can join the new
 - First-party apps use documented/versioned SPMT SDK/API/event/WebSocket contracts for cross-app behavior whenever those interfaces naturally fit.
 - CLI and MCP are first-class developer/operator clients of the same scoped contracts; they do not bypass authorization or become awkward runtime dependencies when SDK/API calls are the correct interface.
 - If a flagship app requires an undocumented private endpoint for a normal integration, treat that as a developer-platform defect and improve the shared contract rather than normalizing the shortcut.
+- Prefer caller-initiated integration: an app invokes a documented contract or publishes a scoped event. Registration alone does not authorize SPMT or Stellar Core to crawl the app's content.
 
 ## Shared surfaces
 
@@ -49,9 +50,18 @@ Every rebuilt app and worker must satisfy these rules before it can join the new
 ## Shared workspace, messaging, and overlay ownership
 
 - SPMT owns portable workspace/profile state; SpaceMountain owns the canonical workspace host/editor UI.
-- SPMT owns shared Mail, Notifications, and App Event account data; StreamWeaver owns normalized live-chat runtime/feed behavior; SpaceMountain owns the combined Commlink presentation.
+- SPMT owns shared Mail, Notifications, App Event, and authorized live-chat history; the provider-neutral Chat Gateway owns live provider connections, normalization, cursors, and reconnects; SpaceMountain owns the combined Commlink presentation; StreamWeaver is a scoped persona/command consumer.
 - SPMT owns canonical overlay scene/profile metadata and grants; SpaceMountain owns the general overlay editor; product apps publish `OverlayWidgetManifestV1` plus focused controls-free renderers.
 - Apps may own product-specific room/chat/game/editor state where it is genuinely product-specific, but must not create a second authority for shared ecosystem state.
+
+## Shared AI identity and invocation
+
+- Stellar Core is persona-neutral execution infrastructure and never chooses the public speaker name.
+- `spmt.community-assistant` is the stable platform role; **Stella** is its public display name.
+- Any authorized shell, standalone app, StreamWeaver tenant, Commlink client, or external developer app can invoke Stella through the same public SDK/API/CLI/MCP/event/job contracts. No caller must sign into or keep StreamWeaver open first.
+- StreamWeaver may present Stella as a community bot or present a tenant/user-configured persona. Athena is only the owner's configured StreamWeaver persona.
+- Every invocation carries tenant, user/delegation, caller app, conversation/surface, scope, correlation, retention, and audit context. An app cannot borrow another tenant's persona or memory.
+- If no inference route is available, developer surfaces return an explicit unavailable/degraded result; they never fabricate a Stella reply.
 
 ## Lifecycle
 

@@ -1,6 +1,6 @@
 # Rebuild and Cutover Operations
 
-Updated: 2026-08-21
+Updated: 2026-08-22
 
 ## Safety model
 
@@ -34,10 +34,10 @@ The rebuild should move in large enough slices to avoid dozens of tiny patches, 
 | 3 | SPMT authority + recovery | identity, tenants, sessions, scoped services, canonical storage boundary, audit, idempotency, outbox/events, `spmt-vault` foundation | authority + isolated restore/promotion fixture passes |
 | 4 | SpaceMountain + first shared facts | front door, session restore, app registry, canonical AppFrame host, workspace/theme, canonical XP, Commlink shell, Overlay editor shell, honest cold/degraded UI | test tenant signs in once, changes shared state once, sees it everywhere; shell surfaces pass header/inset tests |
 | 5 | Jobs + elastic worker framework | durable jobs, leases, heartbeat, retries, dead letters, reconciler, worker SDK, bounded scaling controls | scale/failure/abandoned-lease/idempotency tests pass |
-| 6 | StreamWeaver vertical | Twitch/Discord ingestion, bot dispatch, Athena bot persona on Stellar Core, TTS, commands, overlays, shared chat, StreamWeaver worker, flagship SDK/event/feed integration | concurrent-tenant and burst-load matrix passes without duplicate replies; app passes AppFrame/layout/developer conformance |
+| 6 | Chat Gateway + StreamWeaver/Stella vertical | provider-neutral Twitch/Discord connections and normalized feed; app-neutral Stella invocation; tenant-configured StreamWeaver personas (Athena only for the owner); TTS, commands, overlays, workers, and flagship SDK/API/CLI/MCP/event/job/feed integration | Stella works from standalone, Commlink, StreamWeaver, and developer clients without app-session dependency; concurrent-tenant and burst-load tests pass without duplicate replies |
 | 7 | Discord Stream Hub vertical | community/live/shoutout/calendar/moderation, XP producer/view, clip worker, flagship events/overlay-manifest integration | DSH product + worker + surface/developer contract suite passes |
 | 8A | HearMeOut vertical | rooms, LiveKit, Activity auth, DJ/music/watch/media, OBS output, DJ/media worker, flagship realtime/device/overlay integration | media/voice truth-path and multi-user tests plus surface/developer conformance pass |
-| 8B | Games Hub vertical (current donor name: ChatTag) | original Chat Tag game, Quackverse/Bingo/catalog modules, durable actions, overlays, XP, bot worker, flagship game/event/overlay integration; choose the broader product name before public release | per-game + two-player + bot reconnect tests plus surface/developer conformance pass |
+| 8B | Nebula Arcade vertical (donor repository: ChatTag) | original Chat Tag game, Quackverse/Bingo/Arena/catalog modules, durable actions, overlays, XP, bot worker, and flagship game/event/overlay integration | per-game + two-player + bot reconnect tests plus surface/developer conformance pass |
 | 9 | Parity/cutover hardening | donor compatibility, migrations, shadow compare, full deep audit, load/fault tests, recovery rehearsal, cross-app surface matrix, developer platform conformance, cohort cutover tooling | every Blue retirement gate in `PARITY_LEDGER.md` passes |
 
 Do not bury a failing vertical inside the next batch. Fix or explicitly defer it before proceeding.
@@ -65,7 +65,7 @@ No flagship product should implement its own workspace or shared-header workarou
 
 - foundation decision pack is approved in `DECISIONS.md`;
 - shared surface/developer contract is approved in `SURFACE_AND_DEVELOPER_CONTRACT.md`;
-- resolve the remaining open decision only when its implementation phase requires it;
+- implement only the accepted decisions in `DECISIONS.md`; tune measured configuration values only inside their approved boundaries;
 - capture live Fly, auth, data, route, cost, and error inventories;
 - complete the donor deep-audit queue in `PARITY_LEDGER.md` as each product becomes active work;
 - produce a signed-off domain ownership table;
@@ -87,8 +87,8 @@ Exit: a test tenant can sign in once, open the shell or a standalone app, change
 
 ### Phase 2 — inference, workers, and bots
 
-- resolve D-08/D-09 when Xbox lifecycle measurements exist;
-- resolve D-20 through D-24 before exposing production AI quota/provider/privacy behavior;
+- implement D-08/D-09's accepted stop/suspend boundaries and use Xbox measurements only to tune permitted capacity;
+- implement D-20 through D-24 before exposing production AI quota/provider/privacy behavior;
 - build the durable job/lease contract and reconciler;
 - build the inference router and weighted quota ledger with policy remaining configurable until approved;
 - connect a companion capability path through the public device/job contracts;
@@ -101,9 +101,9 @@ Exit: failure, scale-up, scale-down, abandoned lease, quota, and fallback tests 
 
 ### Phase 3 — apps on the base
 
-Recommended first vertical slice: rebuild the original Chat Tag game's proven core without naming the entire Games Hub after that one game or bundling every other game into it. Attach it to canonical identity, points, themes, cards, and events. Add other games as separately bounded modules only after the core regression suite stays green.
+Recommended first Nebula Arcade vertical slice: rebuild the original Chat Tag game's proven core without naming the entire hub after that one game or bundling every other game into it. Attach it to canonical identity, points, themes, cards, and events. Add other games as separately bounded modules only after the core regression suite stays green.
 
-The operational batch order may put StreamWeaver before ChatTag because StreamWeaver exercises the shared worker/queue model and is a high-concurrency dependency. Whichever vertical runs first must complete `APP_CONTRACTS.md`, `SURFACE_AND_DEVELOPER_CONTRACT.md`, and its `PARITY_LEDGER.md` rows before the next product is considered cutover-ready.
+The operational batch order may put Chat Gateway/StreamWeaver before Nebula Arcade because it exercises the shared worker/queue model and is a high-concurrency dependency. Whichever vertical runs first must complete `APP_CONTRACTS.md`, `SURFACE_AND_DEVELOPER_CONTRACT.md`, and its `PARITY_LEDGER.md` rows before the next product is considered cutover-ready.
 
 Each first-party app is also a flagship developer example. Prefer the same public SDK/API/event/WebSocket contracts an external app would use. Use CLI/MCP where they naturally fit developer/operator/AI workflows; do not force them into runtime call paths just to claim coverage.
 

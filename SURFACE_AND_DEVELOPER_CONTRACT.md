@@ -115,11 +115,34 @@ Components use semantic layer tokens. They do not compete by adding larger arbit
 ### Messaging / Commlink
 
 - SPMT owns Mail, Notifications, and App Event account data.
-- StreamWeaver owns normalized live-chat runtime/feed behavior.
+- SPMT owns authorized shared live-chat history; the provider-neutral Chat Gateway owns provider connections, normalization, cursors, and reconnect behavior.
+- StreamWeaver consumes normalized live chat for configured personas and commands; it does not own a private ecosystem chat contract.
 - SpaceMountain owns the combined Commlink workspace presentation.
 - Apps publish/consume through versioned messaging/event SDK/API contracts rather than embedding unrelated bespoke inboxes for shared messages.
 
 An app may have product-specific chat or room UI where the conversation itself belongs to that product, but shared ecosystem messages still use the Commlink contracts.
+
+### AI presentation and invocation
+
+- Stellar Core owns provider-neutral execution, routing, durable jobs, health, usage, and structured results. It does not own or select a public persona.
+- `spmt.community-assistant` is the stable technical identity for the default Community Assistant; **Stella** is its public display name.
+- Stella is an SPMT ecosystem capability, not a feature locked to SpaceMountain or StreamWeaver. Authorized shell, standalone, Commlink, StreamWeaver, and external clients invoke her through equivalent versioned SDK, HTTP API, CLI, MCP, event/job, and live-result contracts.
+- StreamWeaver may choose Stella as its community bot or use a tenant/user-configured persona. Athena identifies only the owner's StreamWeaver persona.
+- Invocation must enforce SPMT tenant/user or delegated-user authority, app grants, scopes, provider/routing entitlements, memory boundaries, retention, correlation, and audit uniformly across every client.
+- An unavailable inference route produces a truthful unavailable/degraded result. No UI or developer adapter invents a reply.
+- App registration alone grants no ingestion. Apps or users initiate calls/events unless a separately authorized subscription, import, synchronization, or feed contract says otherwise.
+
+The first public Stella vertical uses one operation contract through every adapter:
+
+| Developer surface | Discovery | Invocation |
+|---|---|---|
+| SDK | `getCommunityAssistant(tenantId)` | `invokeCommunityAssistant(tenantId, input, idempotencyKey)` |
+| HTTP | `GET /v1/assistants/community` | `POST /v1/assistants/community/invocations` |
+| CLI | `assistant show TENANT` or `stella show TENANT` | `assistant invoke TENANT JSON IDEMPOTENCY_KEY` or the `stella` alias |
+| MCP | `spmt.assistants.community.get` | `spmt.assistants.community.invoke` |
+| Commlink/app UI | read the same descriptor | submit the same scoped invocation and follow its returned job ID |
+
+The invocation never returns fabricated completion. With no worker it returns `status: unavailable` and a reason. With a connected durable runtime it returns `status: accepted` plus `jobId`; progress and the final structured result must use the normal authenticated job/event delivery contract.
 
 ### Overlays
 
@@ -154,14 +177,14 @@ For every major developer capability, at least one first-party app is the tested
 Examples:
 
 - SPMT login/session restore → all flagship apps;
-- workspace/theme SDK → StreamWeaver, DSH, HearMeOut, ChatTag;
-- messaging/events → DSH and ChatTag producing events, SpaceMountain/Commlink consuming them;
-- live feed/WebSocket/SSE → StreamWeaver and Commlink;
-- overlay widget manifest → StreamWeaver, DSH, HearMeOut, ChatTag;
-- jobs/worker SDK → StreamWeaver worker, DSH clip worker, HMO DJ/media worker, ChatTag bot/worker;
+- workspace/theme SDK → StreamWeaver, DSH, HearMeOut, and Nebula Arcade;
+- messaging/events → DSH and Nebula Arcade producing events, SpaceMountain/Commlink consuming them;
+- live feed/WebSocket/SSE → Chat Gateway, StreamWeaver, and Commlink;
+- overlay widget manifest → StreamWeaver, DSH, HearMeOut, and Nebula Arcade;
+- jobs/worker SDK → Stellar Core/Stella, StreamWeaver worker, DSH clip worker, HMO DJ/media worker, and Nebula Arcade bot/worker;
 - device API → Companion/MountainView;
 - CLI → local developer bootstrap, conformance and deployment inspection;
-- MCP → Athena bot-persona, developer, and operator read/action flows through normal Stellar Core/SPMT scopes.
+- MCP → Stella, configured StreamWeaver personas, developer, and operator read/action flows through normal Stellar Core/SPMT scopes; Athena is only the owner's configured persona.
 
 Documentation examples should be generated from, or continuously tested against, these real reference integrations whenever practical.
 
