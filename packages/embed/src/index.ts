@@ -2,8 +2,11 @@ import {
   isEmbedBridgeMessageV1,
   type AppFrameLaunchV1,
   type EmbedBridgeMessageV1,
+  type RuntimeStateV1,
+  type ScopeGrantV1,
   type ShellLayoutMetricsV1,
   type SurfaceModeV1,
+  type ThemeTokensV1,
 } from "@spmt/contracts";
 
 export const LAYER = Object.freeze({
@@ -31,11 +34,7 @@ export function effectiveShellTopInset(mode: SurfaceModeV1, layout: ShellLayoutM
   return mode === "shell" ? layout.headerHeight + layout.safeTop : layout.safeTop;
 }
 
-export function applyShellLayoutMetrics(
-  target: HTMLElement,
-  mode: SurfaceModeV1,
-  layout: ShellLayoutMetricsV1,
-): void {
+export function applyShellLayoutMetrics(target: HTMLElement, mode: SurfaceModeV1, layout: ShellLayoutMetricsV1): void {
   const topInset = effectiveShellTopInset(mode, layout);
   target.style.setProperty(SHELL_LAYOUT_VARS.headerHeight, `${layout.headerHeight}px`);
   target.style.setProperty(SHELL_LAYOUT_VARS.safeTop, `${layout.safeTop}px`);
@@ -70,12 +69,14 @@ export function childReady(appId: string): EmbedBridgeMessageV1 {
 export interface BridgeEndpointOptions {
   allowedOrigin: string;
   targetWindow: Window;
+  sourceWindow?: Window;
   onMessage?: (message: EmbedBridgeMessageV1) => void;
 }
 
 export function createBridgeEndpoint(options: BridgeEndpointOptions) {
   const listener = (event: MessageEvent<unknown>) => {
     if (event.origin !== options.allowedOrigin) return;
+    if (options.sourceWindow && event.source !== options.sourceWindow) return;
     if (!isEmbedBridgeMessageV1(event.data)) return;
     options.onMessage?.(event.data);
   };
@@ -84,5 +85,118 @@ export function createBridgeEndpoint(options: BridgeEndpointOptions) {
     start() { window.addEventListener("message", listener); },
     stop() { window.removeEventListener("message", listener); },
     send(message: EmbedBridgeMessageV1) { options.targetWindow.postMessage(message, options.allowedOrigin); },
+  };
+}
+
+export interface SafeAreaInsetsV1 {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+}
+
+export interface ShellLayoutObserverOptions {
+  header: HTMLElement;
+  onChange: (layout: ShellLayoutMetricsV1) => void;
+  viewport?: Window;
+  readSafeArea?: () => Partial<SafeAreaInsetsV1>;
+}
+
+export function measureShellLayout(options: ShellLayoutObserverOptions): ShellLayoutMetricsV1 {
+  const viewport = options.viewport ?? window;
+  const safe = options.readSafeArea?.() ?? {};
+  const headerHeight = Math.max(0, options.header.getBoundingClientRect().height);
+  return {
+    schemaVersion: 1,
+    headerHeight,
+    safeTop: Math.max(0, safe.top ?? 0),
+    safeRight: Math.max(0, safe.right ?? 0),
+    safeBottom: Math.max(0, safe.bottom ?? 0),
+    safeLeft: Math.max(0, safe.left ?? 0),
+    availableWidth: Math.max(0, viewport.innerWidth),
+    availableHeight: Math.max(0, viewport.innerHeight),
+    measuredAt: new Date().toISOString(),
+  };
+}
+
+export function observeShellLayout(options: ShellLayoutObserverOptions) {
+  const viewport = options.viewport ?? window;
+  const publish = () => options.onChange(measureShellLayout(options));
+  const ResizeObserverCtor = viewport.ResizeObserver;
+  const observer = ResizeObserverCtor ? new ResizeObserverCtor(publish) : undefined;
+  observer?.observe(options.header);
+  viewport.addEventListener("resize", publish);
+  viewport.visualViewport?.addEventListener("resize", publish);
+  publish();
+  return () => {
+    observer?.disconnect();
+    viewport.removeEventListener("resize", publish);
+    viewport.visualViewport?.removeEventListener("resize", publish);
+  };
+}
+
+export interface AppFrameHostStateV1 {
+  authenticated: boolean;
+  userId?: string;
+  tenantId?: string;
+  theme?: ThemeTokensV1;
+  layout: ShellLayoutMetricsV1;
+  grants: ScopeGrantV1[];
+  runtimeState: RuntimeStateV1;
+  runtimeDetail?: string;
+}
+
+export interface AppFrameHostOptions {
+  frame: HTMLIFrameElement;
+  allowedOrigin: string;
+  launch: AppFrameLaunchV1;
+  getState: () => AppFrameHostStateV1;
+  onMessage?: (message: EmbedBridgeMessageV1) => void;
+}
+
+export function createAppFrameHost(options: AppFrameHostOptions) {
+  const childWindow = options.frame.contentWindow;
+  if (!childWindow) throw new Error("AppFrame iframe has no contentWindow");
+
+  const bridge = createBridgeEndpoint({
+    allowedOrigin: options.allowedOrigin,
+    targetWindow: childWindow,
+    sourceWindow: childWindow,
+    onMessage(message) {
+      if (message.type === "child.ready") sendSnapshot();
+      options.onMessage?.(message);
+    },
+  });
+
+  function sendSnapshot() {
+    const state = options.getState();
+    bridge.send(hostHello(options.launch));
+    bridge.send({
+      protocol: "spmt.embed", version: 1, type: "session.changed", authenticated: state.authenticated,
+      ...(state.userId ? { userId: state.userId } : {}),
+      ...(state.tenantId ? { tenantId: state.tenantId } : {}),
+    });
+    if (state.theme) bridge.send({ protocol: "spmt.embed", version: 1, type: "theme.changed", theme: state.theme });
+    bridge.send({ protocol: "spmt.embed", version: 1, type: "layout.changed", layout: state.layout });
+    bridge.send({ protocol: "spmt.embed", version: 1, type: "capabilities.changed", grants: state.grants });
+    bridge.send({
+      protocol: "spmt.embed", version: 1, type: "runtime.changed", state: state.runtimeState,
+      ...(state.runtimeDetail ? { detail: state.runtimeDetail } : {}),
+    });
+  }
+
+  const onLoad = () => sendSnapshot();
+  return {
+    start() {
+      bridge.start();
+      options.frame.addEventListener("load", onLoad);
+      sendSnapshot();
+    },
+    stop() {
+      bridge.stop();
+      options.frame.removeEventListener("load", onLoad);
+    },
+    sync: sendSnapshot,
+    send: bridge.send,
   };
 }

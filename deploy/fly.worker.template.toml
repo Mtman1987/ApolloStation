@@ -1,0 +1,14 @@
+# Green elastic worker template. Workers own no canonical shared state.
+app = "REPLACE_ME_WORKER"
+primary_region = "iad"
+
+[env]
+  SPMT_RUNTIME_MODE = "worker"
+
+# Worker lifecycle is controlled by the Green job/lease reconciler in Batch 5.
+# No authoritative SPMT volume is mounted here.
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 512
