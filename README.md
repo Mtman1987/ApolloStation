@@ -42,3 +42,9 @@ The copied evidence is read-only historical input. Nothing inside it is automati
 4. Build one shared contract or bounded product slice at a time, with tests proving parity or an explicit approved removal.
 5. Blue stays available until Green passes identity, data, reliability, load, recovery, observation, and rollback gates.
 6. If implementation proves an accepted contract wrong, record the evidence and change the decision before changing the architecture.
+
+## Green Sprite sandbox checkpoint
+
+The first browser-open Green sandbox slice now runs SPMT on loopback and exposes SpaceMountain through one private Sprite HTTPS surface. Sandbox startup rejects provider credentials, blocks outbound webhook delivery, keeps access tokens in an HttpOnly cookie, and uses an inert `Orbit Beacon` registry fixture to prove dynamic discovery and launch.
+
+No Sprite, service, Fly App, Machine, provider identity, or production data source is created by the repository scripts. Follow [`docs/SPRITES_SANDBOX_HANDOFF.md`](docs/SPRITES_SANDBOX_HANDOFF.md) and stop at every owner/manual gate.

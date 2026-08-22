@@ -3,3 +3,5 @@ node_modules/
 coverage/
 *.tsbuildinfo
 .DS_Store
+.sprite
+.sprites/

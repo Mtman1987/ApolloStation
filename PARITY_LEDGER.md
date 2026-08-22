@@ -22,7 +22,7 @@ This ledger is **not yet a claim that every donor route has been audited**. It i
 | Donor surface/capability | Donor owner | Green owner | Disposition | Compatibility/migration | Proof required |
 |---|---|---|---|---|---|
 | SpaceMountain command bridge / suite shell | SpaceMountain | SpaceMountain | PRESERVE | Keep public navigation model during Green | shell/direct-app smoke |
-| Shipyard/app launcher | SpaceMountain + SPMT registry | SpaceMountain UI + SPMT registry | IMPROVE | Preserve installed-app/launch intent | registry + launch contract test |
+| Shipyard/app launcher | SpaceMountain + SPMT registry | SpaceMountain UI + SPMT registry | IMPROVE | Preserve installed-app/launch intent | Green browser host proves hot-added registry visibility, install persistence, and inert launch; provider-connected launch still requires later sandbox proof |
 | Commlink Mail | SPMT | SPMT + SpaceMountain UI | PRESERVE | migrate conversations/messages | two-account message test |
 | Commlink Live Chat | SPMT UI + StreamWeaver feed | StreamWeaver feed + SpaceMountain UI | PRESERVE | signed/scoped feed contract | simultaneous source test |
 | Commlink Notifications | SPMT | SPMT + SpaceMountain UI | PRESERVE | migrate notification records if needed | read/unread/action test |
