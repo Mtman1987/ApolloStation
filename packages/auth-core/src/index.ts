@@ -213,31 +213,35 @@ export class AuthService {
   }
 
   rotateHumanRefresh(refreshToken: string, accessTtlSeconds = 900): IssuedAccessV1 {
+    const tokenHash = hashToken(refreshToken);
+    const current = this.store.getRefreshTokenByTokenHash(tokenHash);
+    if (!current) throw new AuthDeniedError("Invalid refresh token");
+    const now = this.now();
+    if (current.revokedAt || isExpired(current.expiresAt, now)) throw new AuthDeniedError("Refresh token is expired or revoked");
+    if (current.usedAt) {
+      this.store.transaction(() => this.store.revokeRefreshFamily(current.familyId, now));
+      throw new AuthDeniedError("Refresh token replay detected; token family revoked");
+    }
+
     return this.store.transaction(() => {
-      const tokenHash = hashToken(refreshToken);
-      const current = this.store.getRefreshTokenByTokenHash(tokenHash);
-      if (!current) throw new AuthDeniedError("Invalid refresh token");
-      const now = this.now();
-      if (current.revokedAt || isExpired(current.expiresAt, now)) throw new AuthDeniedError("Refresh token is expired or revoked");
-      if (current.usedAt) {
-        this.store.revokeRefreshFamily(current.familyId, now);
-        throw new AuthDeniedError("Refresh token replay detected; token family revoked");
-      }
-      this.store.putRefreshToken({ ...current, usedAt: now });
+      const latest = this.store.getRefreshTokenByTokenHash(tokenHash);
+      if (!latest || latest.revokedAt || isExpired(latest.expiresAt, now)) throw new AuthDeniedError("Refresh token is expired or revoked");
+      if (latest.usedAt) throw new AuthDeniedError("Refresh token replay detected; token family revoked");
+      this.store.putRefreshToken({ ...latest, usedAt: now });
       const access = this.issueAccess({
         actorType: "user",
-        actorId: current.actorId,
-        scopes: current.scopes,
+        actorId: latest.actorId,
+        scopes: latest.scopes,
         tenantMode: "allow-list",
-        tenantIds: current.tenantIds,
+        tenantIds: latest.tenantIds,
         ttlSeconds: clampTtl(accessTtlSeconds, 60, 3600),
       });
-      const remainingSeconds = Math.max(300, Math.floor((Date.parse(current.expiresAt) - Date.parse(now)) / 1000));
+      const remainingSeconds = Math.max(300, Math.floor((Date.parse(latest.expiresAt) - Date.parse(now)) / 1000));
       const refresh = this.issueRefresh({
-        familyId: current.familyId,
-        actorId: current.actorId,
-        scopes: current.scopes,
-        tenantIds: current.tenantIds,
+        familyId: latest.familyId,
+        actorId: latest.actorId,
+        scopes: latest.scopes,
+        tenantIds: latest.tenantIds,
         ttlSeconds: remainingSeconds,
       });
       return { ...access, refreshToken: refresh.token, refreshExpiresAt: refresh.record.expiresAt };
