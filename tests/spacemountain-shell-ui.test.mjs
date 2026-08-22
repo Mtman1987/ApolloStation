@@ -7,7 +7,7 @@ const source = readFileSync(new URL("../apps/spacemountain/src/shell-ui.ts", imp
 
 test("SpaceMountain shell UI uses measured shared header inset everywhere", () => {
   assert.match(source, /observeShellLayout/);
-  assert.match(source, /applyShellLayoutMetrics\(this\.root, "shell", layout\)/);
+  assert.match(source, /applyShellLayoutMetrics\(this\.options\.root, "shell", layout\)/);
   assert.match(SPACE_MOUNTAIN_CSS, /--spmt-shell-top-inset/);
   assert.match(SPACE_MOUNTAIN_CSS, /\.spmt-rocket-dock\{[^}]*top:calc\(var\(--spmt-shell-top-inset/);
   assert.match(SPACE_MOUNTAIN_CSS, /\.spmt-space-main\{[^}]*padding:calc\(var\(--spmt-shell-top-inset/);
