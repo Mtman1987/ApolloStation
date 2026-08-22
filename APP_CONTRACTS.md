@@ -2,6 +2,8 @@
 
 Every rebuilt app and worker must satisfy these rules before it can join the new ecosystem.
 
+`SURFACE_AND_DEVELOPER_CONTRACT.md` is normative. The app contracts below do not permit an app-specific workspace/embed/header solution or a private cross-app shortcut that contradicts that shared contract.
+
 ## Identity
 
 - Use immutable SPMT user and tenant IDs.
@@ -29,6 +31,27 @@ Every rebuilt app and worker must satisfy these rules before it can join the new
 - Make retries safe.
 - Use transactional outbox semantics when a database mutation must publish an event.
 - Return accepted job IDs for asynchronous work; do not claim completion early.
+- First-party apps use documented/versioned SPMT SDK/API/event/WebSocket contracts for cross-app behavior whenever those interfaces naturally fit.
+- CLI and MCP are first-class developer/operator clients of the same scoped contracts; they do not bypass authorization or become awkward runtime dependencies when SDK/API calls are the correct interface.
+- If a flagship app requires an undocumented private endpoint for a normal integration, treat that as a developer-platform defect and improve the shared contract rather than normalizing the shortcut.
+
+## Shared surfaces
+
+- Declare one `SurfaceModeV1`: `shell`, `standalone`, `overlay`, or `popout`.
+- Use the one shared `AppFrameV1`/`EmbedBridgeV1` workspace integration path; do not invent app-specific iframe/postMessage/localStorage bridges.
+- Consume shared theme, identity, lifecycle, capability, and layout metrics through the canonical contracts.
+- In `shell` mode, all content roots, sidebars, fixed/sticky regions, portal roots, dialogs, drawers, menus, popovers, toasts, docks, editor controls, and other interactive floating surfaces must honor the measured shared-header and safe-area inset.
+- Never hard-code a duplicate header height or solve header collision with a one-off app padding value.
+- `overlay` and `popout` surfaces that do not render the SpaceMountain header use zero shell-header inset plus any real device/output safe area.
+- OBS/headless output routes do not include workspace/header chrome unless the output contract explicitly requires it.
+- Use the shared semantic layer scale; do not escalate arbitrary z-index values to fight other ecosystem components.
+
+## Shared workspace, messaging, and overlay ownership
+
+- SPMT owns portable workspace/profile state; SpaceMountain owns the canonical workspace host/editor UI.
+- SPMT owns shared Mail, Notifications, and App Event account data; StreamWeaver owns normalized live-chat runtime/feed behavior; SpaceMountain owns the combined Commlink presentation.
+- SPMT owns canonical overlay scene/profile metadata and grants; SpaceMountain owns the general overlay editor; product apps publish `OverlayWidgetManifestV1` plus focused controls-free renderers.
+- Apps may own product-specific room/chat/game/editor state where it is genuinely product-specific, but must not create a second authority for shared ecosystem state.
 
 ## Lifecycle
 
@@ -67,4 +90,9 @@ Every request/job carries correlation ID, tenant ID, app/module ID, version, and
 - shared facts match the canonical source;
 - no legacy auth or Firebase path is exercised;
 - cost and latency budgets are measured;
+- all four relevant surface modes pass their layout contract tests;
+- shell-integrated sidebars, drawers, dialogs, menus/popovers, toast stacks, docks, editor controls, and portal roots pass header/safe-area collision tests at responsive and wrapped-header heights;
+- the app uses the common `AppFrameV1`/`EmbedBridgeV1` rather than an app-specific workspace bridge;
+- first-party integration calls are traceable to documented SDK/API/event/WebSocket contracts and pass the same scope/tenant checks as third-party calls;
+- the app serves as a passing reference implementation for every developer-platform capability it claims;
 - old app remains available until the observation gate closes.
