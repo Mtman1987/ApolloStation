@@ -59,3 +59,11 @@ Before implementation, record these without exposing secret values or tenant con
 - all workloads requiring persistent connections, high CPU, isolation, or local companion capability.
 
 Until that capture exists, statements copied from old production documents are hypotheses, not live truth.
+
+## Green production-app parity checkpoint
+
+ApolloStation branch `feat/production-app-parity` now contains the first donor-backed product implementation slice. The original Chat Tag core was audited against `Mtman1987/chat-tag` commit `8170c51` and implemented inside the bounded Nebula Arcade module.
+
+The implemented slice covers persistent tenant game state, join/leave, the current-it/free-for-all transition, local game scoring, immunity, sleep/wake, earned passes, moderator controls, command replay protection, restart snapshots, tenant-scoped SPMT events and XP awards, and Discord Stream Hub event consumption. It does not copy donor authentication, shared-secret, direct-call, Firebase, or shared-volume architecture.
+
+The repository currently passes 82 tests, including the new two-player, two-tenant, restart, replay, immunity, pass, moderator, SPMT contract, and DSH projection cases. Provider ingress, timers, overlay rendering, crowns, and live state migration remain explicit child slices and Blue production remains authoritative.

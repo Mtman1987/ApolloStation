@@ -109,7 +109,7 @@ This ledger is **not yet a claim that every donor route has been audited**. It i
 
 | Donor surface/capability | Donor owner | Green owner | Disposition | Compatibility/migration | Proof required |
 |---|---|---|---|---|---|
-| Original Chat Tag game | ChatTag | ChatTag core module | PRESERVE | route/command compatibility | two-player game test |
+| Original Chat Tag game | ChatTag | ChatTag core module | PRESERVE | Core persistent game state, join/leave, it/FFA transfer, scoring, immunity, sleep/wake, pass, command replay, and public SPMT event/XP boundary implemented from donor commit `8170c51`; provider adapters, timers, overlays, crowns, and migration remain child slices | two-player, two-tenant, immunity, pass, replay, restart, and public-contract tests |
 | Quackverse | ChatTag | ChatTag bounded game module | PRESERVE | preserve overlay/profile behavior | game/overlay test |
 | Bingo | ChatTag | ChatTag bounded game module | PRESERVE | deep audit required | game regression test |
 | Nebula Arcade catalog | ChatTag | separate bounded game modules sharing the public game SDK | IMPROVE | do not make one giant runtime; publish modules through the canonical registry | per-game contract and dynamic-discovery suite |
@@ -185,7 +185,7 @@ Audit state:
 | `Mtman1987/streamweaver` | PENDING | yes |
 | `Mtman1987/DiscordStreamHub` | PENDING | yes |
 | `Mtman1987/hearmeout-main` | PENDING | yes |
-| `Mtman1987/chat-tag` | PENDING | yes |
+| `Mtman1987/chat-tag` | IN PROGRESS — original Chat Tag core audited at `8170c51`; provider, timer, overlay, crown, Quackverse, Bingo, and wider Game Hub slices remain | yes |
 | `Mtman1987/fly-machine-rotator` | PENDING | yes for retained operational/device capabilities |
 | Companion source/package | PENDING | yes for desktop/device cutover |
 
