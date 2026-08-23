@@ -106,6 +106,7 @@ async function loadShell() {
       onInstallApp: (app) => void installApp(app),
       onLaunchApp: (app) => launchApp(app),
       onOpenConversation: (conversation) => void openConversation(conversation),
+      onSearchCommlink: (query) => void searchCommlink(query),
       onMarkNotificationRead: (notification) => void markNotificationRead(notification),
       onUnlinkProvider: (link) => void unlinkProvider(link),
       onSaveWorkspace: (expectedRevision, patch) => void saveWorkspace(expectedRevision, patch),
@@ -150,9 +151,56 @@ async function openConversation(conversation: Record<string, unknown>) {
     dialogTitle.textContent = typeof conversation.title === "string" ? conversation.title : "Commlink conversation";
     dialogBody.replaceChildren(...messages.map(messageCard));
     if (!messages.length) dialogBody.append(textBlock("No messages yet."));
-    dialog.showModal();
+    const reply = conversationReplyForm(conversation, principal.actorId);
+    if (reply) dialogBody.append(reply);
+    if (!dialog.open) dialog.showModal();
     setStatus("Sandbox open · Commlink data came from SPMT.", "ready");
   } catch (error) { setStatus(message(error), "error"); }
+}
+
+async function searchCommlink(query: string) {
+  const principal = requirePrincipal();
+  setStatus(`Searching canonical Commlink history for “${query}”…`, "working");
+  try {
+    const results = await controller.searchCommlink(principal.tenantIds[0]!, query, principal.actorId) as Array<Record<string, unknown>>;
+    dialogTitle.textContent = `Commlink search · ${query}`;
+    dialogBody.replaceChildren(...results.map(messageCard));
+    if (!results.length) dialogBody.append(textBlock("No matching messages."));
+    if (!dialog.open) dialog.showModal();
+    setStatus(`${results.length} canonical message match${results.length === 1 ? "" : "es"}.`, "ready");
+  } catch (error) { setStatus(message(error), "error"); }
+}
+
+function conversationReplyForm(conversation: Record<string, unknown>, actorId: string) {
+  const recipients = Array.isArray(conversation.participantUserIds) ? conversation.participantUserIds.filter((item): item is string => typeof item === "string" && item !== actorId) : [];
+  const conversationId = typeof conversation.id === "string" ? conversation.id : "";
+  if (!conversationId || !recipients.length) return undefined;
+  const form = document.createElement("form");
+  form.className = "dialog-reply";
+  const textarea = document.createElement("textarea");
+  textarea.name = "reply";
+  textarea.required = true;
+  textarea.maxLength = 8000;
+  textarea.placeholder = "Reply to this conversation";
+  const button = document.createElement("button");
+  button.type = "submit";
+  button.textContent = "Send reply";
+  form.append(textarea, button);
+  form.addEventListener("submit", (event) => void (async () => {
+    event.preventDefault();
+    const principal = requirePrincipal();
+    const text = textarea.value.trim();
+    if (!text) return;
+    button.disabled = true;
+    setStatus("Sending through the public SPMT Commlink contract…", "working");
+    try {
+      await controller.sendCommlinkMessage(principal.tenantIds[0]!, conversationId, recipients, text);
+      await openConversation(conversation);
+      setStatus("Reply stored in canonical Commlink history.", "ready");
+    } catch (error) { setStatus(message(error), "error"); }
+    finally { button.disabled = false; }
+  })());
+  return form;
 }
 
 async function markNotificationRead(notification: Record<string, unknown>) {

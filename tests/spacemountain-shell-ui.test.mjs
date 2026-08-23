@@ -50,6 +50,8 @@ test("Commlink renders separate canonical account feeds and does not fake live c
   assert.match(source, /no fabricated data/);
   assert.match(source, /data-notification-read/);
   assert.match(source, /data-open-conversation/);
+  assert.match(source, /data-commlink-search/);
+  assert.match(source, /Search your canonical message history/);
 });
 
 test("Stellar Core stays persona-neutral while Stella and configured personas remain presentation identities", () => {

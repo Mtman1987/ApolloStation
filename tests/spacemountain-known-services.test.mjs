@@ -109,6 +109,19 @@ test("SpaceMountain saves one revisioned canonical workspace through the public 
   assert.equal(result.revision, 5);
 });
 
+test("SpaceMountain reads, searches, and replies through one Commlink contract", async () => {
+  const calls = [];
+  const controller = new SpaceMountainShellController(fakeClient({
+    listMessages: async (...args) => { calls.push(["list", ...args]); return [{ id: "msg-1", text: "hello" }]; },
+    searchCommlink: async (...args) => { calls.push(["search", ...args]); return [{ id: "msg-1", text: "hello" }]; },
+    sendCommlinkMessage: async (...args) => { calls.push(["send", ...args]); return { id: "msg-2" }; },
+  }));
+  assert.equal((await controller.loadConversationMessages("tenant-a", "conv-1"))[0].id, "msg-1");
+  assert.equal((await controller.searchCommlink("tenant-a", "hello", "user-1"))[0].id, "msg-1");
+  assert.equal((await controller.sendCommlinkMessage("tenant-a", "conv-1", ["user-2"], "reply" )).id, "msg-2");
+  assert.deepEqual(calls, [["list", "tenant-a", "conv-1"], ["search", "tenant-a", "hello", "user-1"], ["send", "tenant-a", "conv-1", ["user-2"], "reply"]]);
+});
+
 test("AppFrame target carries identity and grants in the bridge launch, never the iframe URL", () => {
   const target = buildAppFrameTarget({
     appId: "streamweaver", name: "StreamWeaver", description: "", version: "1",

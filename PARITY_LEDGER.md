@@ -25,7 +25,7 @@ This ledger is **not yet a claim that every donor route has been audited**. It i
 |---|---|---|---|---|---|
 | SpaceMountain command bridge / suite shell | SpaceMountain | SpaceMountain | PRESERVE | Keep public navigation model during Green | shell/direct-app smoke |
 | Shipyard/app launcher | SpaceMountain + SPMT registry | SpaceMountain UI + SPMT registry | IMPROVE | Preserve installed-app/launch intent | Green browser host proves hot-added registry visibility, install persistence, and inert launch; provider-connected launch still requires later sandbox proof |
-| Commlink Mail | SPMT | SPMT + SpaceMountain UI | PRESERVE | migrate conversations/messages | two-account message test |
+| Commlink Mail | SPMT | SPMT + SpaceMountain UI | PRESERVE | Green SpaceMountain lists conversations, opens stored messages, searches canonical history, and replies to existing participants through the public SPMT contract; compose/recipient discovery, sent/read state and donor migration remain | two-account compose/reply/search/read-state migration test |
 | Commlink Live Chat | SPMT UI + StreamWeaver feed | SPMT shared history + provider-neutral Chat Gateway + SpaceMountain UI | IMPROVE | preserve provider connections/history behind public chat SDK/API/events; StreamWeaver becomes a consumer, not the private contract owner | simultaneous provider, reconnect, dedupe, and external-client tests |
 | Commlink Notifications | SPMT | SPMT + SpaceMountain UI | PRESERVE | migrate notification records if needed | read/unread/action test |
 | Commlink App Events | SPMT | SPMT event projections | PRESERVE | version event schemas | event idempotency/replay test |

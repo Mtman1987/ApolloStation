@@ -101,6 +101,14 @@ test("auth facade keeps tokens HttpOnly and dynamically exposes sandbox registry
     assert.equal(workspaceAfter.appearance.backgroundUrl, "https://images.example/station.jpg");
     assert.deepEqual(workspaceAfter.dockSlots, ["spacemountain", null, null]);
 
+    const conversation = spmt.data.createConversation({ tenantId: principal.tenantIds[0], participantUserIds: [principal.actorId, "user-recipient"], kind: "direct", title: "Green parity conversation" });
+    const messageResponse = await fetch(`${base}/v1/commlink/messages`, { method: "POST", headers: { cookie, origin, "x-spmt-tenant": principal.tenantIds[0], "content-type": "application/json" }, body: JSON.stringify({ conversationId: conversation.id, recipientUserIds: ["user-recipient"], text: "canonical green reply" }) });
+    assert.equal(messageResponse.status, 200);
+    const message = await messageResponse.json();
+    assert.equal(message.text, "canonical green reply");
+    const searchResults = await (await fetch(`${base}/v1/commlink/search?q=green%20reply&userId=${encodeURIComponent(principal.actorId)}`, { headers: { cookie, "x-spmt-tenant": principal.tenantIds[0] } })).json();
+    assert.equal(searchResults[0].id, message.id);
+
     const assistant = await fetch(`${base}/v1/assistants/community`, { headers: { cookie, "x-spmt-tenant": principal.tenantIds[0] } });
     assert.equal(assistant.status, 200);
     const assistantDescriptor = await assistant.json();

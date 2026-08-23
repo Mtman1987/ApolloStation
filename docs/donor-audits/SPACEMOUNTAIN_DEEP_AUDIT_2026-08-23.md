@@ -41,7 +41,7 @@ The server startup implementation declares 29 primary routes covering health, lo
 | One SPMT session and provider accounts | IMPROVE | secure session exists; active linked providers now render and can be unlinked through public SPMT SDK/API | provider link/claim/relink, callback, recovery, account-switch and migrated-user tests |
 | Shipyard and app launching | PRESERVE/IMPROVE | canonical registry/install data and safe launch target exist | all production app manifests, standalone/embed/overlay launches, grants and revocation |
 | Workspace/theme/background/dock | PRESERVE | canonical theme/accent/background rendering and revision-safe editor plus exactly three registry-backed dock slots implemented | complete donor profile migration, dock runtime controls, every-app reader and device round trip |
-| Commlink Mail/Notifications/Events | PRESERVE | canonical lists, message reading and notification read-state exist | compose/reply/sent/search/actions and migrated two-account history |
+| Commlink Mail/Notifications/Events | PRESERVE | canonical lists, message reading, search, existing-conversation replies and notification read-state exist | compose/recipient discovery, sent/read state, actions and migrated two-account history |
 | Commlink Live Chat | IMPROVE | truthful unavailable panel only | provider-neutral Chat Gateway, reconnect/replay/dedupe and external client |
 | Forums/Discord bridge | PRESERVE/IMPROVE | missing | SPMT forum authority plus DSH bridge and source/provenance UI |
 | HearMeOut rooms/voice | PRESERVE/IMPROVE | missing | public HearMeOut app contract and standalone/embedded media tests |
