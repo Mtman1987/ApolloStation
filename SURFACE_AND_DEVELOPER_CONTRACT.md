@@ -152,6 +152,20 @@ The invocation never returns fabricated completion. With no worker it returns `s
 - Apps may expose focused product controls/previews, but they do not create competing general-purpose overlay editors.
 - One widget/source has one stable ownership contract even if it is rendered in OBS, SpaceMountain, Companion, or a standalone preview.
 
+The implemented widget/runtime registration vertical uses one operation contract through every adapter:
+
+| Capability | SDK | HTTP | CLI | MCP |
+|---|---|---|---|---|
+| Register widget | `registerOverlayWidget(tenantId, manifest)` | `PUT /v1/overlay/widgets` | `overlay register TENANT MANIFEST_JSON` | `spmt.overlay.widgets.register` |
+| List widgets | `listOverlayWidgets(tenantId, appId?)` | `GET /v1/overlay/widgets` | `overlay list TENANT [APP_ID]` | `spmt.overlay.widgets.list` |
+| Issue output | `issueOverlayOutput(tenantId, appId, widgetId, viewerUserId?, ttlMs?)` | `POST /v1/overlay/outputs` | `overlay issue TENANT APP_ID WIDGET_ID [VIEWER_USER_ID] [TTL_MS]` | `spmt.overlay.outputs.issue` |
+| List outputs | `listOverlayOutputs(tenantId, appId?)` | `GET /v1/overlay/outputs` | `overlay outputs TENANT [APP_ID]` | `spmt.overlay.outputs.list` |
+| Revoke output | `revokeOverlayOutput(tenantId, grantId)` | `POST /v1/overlay/outputs/{grantId}/revoke` | `overlay revoke TENANT GRANT_ID` | `spmt.overlay.outputs.revoke` |
+| Report runtime | `reportRuntimeState(tenantId, state, detail?)` | `POST /v1/runtime/state` | `runtime report TENANT STATE [DETAIL]` | `spmt.runtime.state.report` |
+| List runtime | `listRuntimeStates(tenantId, appId?)` | `GET /v1/runtime/state` | `runtime list TENANT [APP_ID]` | `spmt.runtime.state.list` |
+
+Widget registration requires an enabled tenant install, validates HTTPS renderer/preview URLs and app-declared scopes, and derives the caller app from the authenticated service identity rather than `x-spmt-app`. Ordinary app services can write and read only their own widget/runtime records. Cross-app maintenance requires an explicit `overlay:widgets:any` or `runtime:any` grant. Output grants are tenant-owner-only, require a registered widget on an enabled install, return an opaque browser-source URL once, persist only the token hash, expire and revoke closed, and resolve server-side to a verified tenant/app/widget/viewer principal without a redirect or caller-controlled identity parameters. Output inventory never returns the bearer URL. A product's private runtime state remains owned by that product.
+
 ## 6. First-party apps dogfood the developer platform
 
 Every first-party flagship app must integrate with SPMT through the same public/versioned developer surface an external developer would use whenever that surface is appropriate.

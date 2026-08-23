@@ -1,6 +1,7 @@
 import { assertAppModuleManifestV1, type AppModuleManifestV1 } from "@spmt/contracts";
 import { SpmtClient } from "@spmt/sdk";
 import { DISCORD_ANNOUNCEMENT_REQUESTED } from "@spmt/discord-stream-hub";
+export * from "./chat-gateway-consumer.js";
 export const STREAMWEAVER_OVERLAY_CUE="streamweaver.overlay.cue.requested.v1";
 export const manifest=assertAppModuleManifestV1({schemaVersion:1,manifestVersion:"spmt.app-manifest/v1",id:"streamweaver",name:"StreamWeaver",description:"Tenant-configured personas, commands, automation, TTS, normalized chat consumption, and stream outputs.",capabilities:["personas","commands","actions","redeems","tts","chat-consumer","overlays","research"],surfaces:["shell","standalone","overlay","popout"],requiredScopes:["events:read","events:write","assistants:invoke","stellar:invoke","overlay:widgets:write"],eventTypes:[STREAMWEAVER_OVERLAY_CUE],integration:{identity:"connected",events:"native",commlink:"connected",stellar:"connected",workspace:"connected"},workers:[]} satisfies AppModuleManifestV1);
 export async function cueAnnouncementOverlays(client:SpmtClient,tenantId:string){const events=await client.listEvents(tenantId,{type:DISCORD_ANNOUNCEMENT_REQUESTED,sourceAppId:"discord-stream-hub",limit:100});for(const event of events){const id=String(event.id??event.eventId??"");if(!id)continue;await client.publishEvent(tenantId,STREAMWEAVER_OVERLAY_CUE,{schemaVersion:1,sourceEventId:id,renderer:"community-announcement",payload:event.payload??{}},`streamweaver-announcement:${id}`);}return{observed:events.length};}

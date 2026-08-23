@@ -46,7 +46,7 @@ export interface OutboxRecordV1 {
 export interface AuthorityJournalEntryV1 {
   sequence: number;
   epoch: number;
-  kind: "user" | "provider-link" | "workspace" | "xp" | "event" | "audit" | "service-identity" | "outbox" | "tenant" | "app" | "install" | "entitlement";
+  kind: "user" | "provider-link" | "workspace" | "xp" | "event" | "audit" | "service-identity" | "outbox" | "tenant" | "app" | "install" | "entitlement" | "overlay-widget" | "overlay-output-grant" | "runtime-projection";
   tenantId?: string;
   recordId: string;
   payload: Record<string, unknown>;

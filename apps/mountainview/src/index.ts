@@ -1,2 +1,3 @@
 import { assertAppModuleManifestV1, type AppModuleManifestV1 } from "@spmt/contracts";
+export * from "./voice-router.js";
 export const manifest=assertAppModuleManifestV1({schemaVersion:1,manifestVersion:"spmt.app-manifest/v1",id:"mountainview",name:"MountainView",description:"Phone, Bluetooth headset or glasses camera, voice, image, and media-control relay.",capabilities:["device-pairing","voice-relay","camera-relay","media-control","operator-tools"],surfaces:["shell","standalone"],requiredScopes:["devices:read","devices:command","events:write","stellar:invoke"],eventTypes:["mountainview.voice.received.v1","mountainview.image.received.v1"],integration:{identity:"connected",events:"native",stellar:"connected",devices:"native"},workers:[]} satisfies AppModuleManifestV1);

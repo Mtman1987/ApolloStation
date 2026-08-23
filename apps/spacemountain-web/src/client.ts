@@ -11,6 +11,7 @@ const shellRoot = element<HTMLElement>("spacemountain-root");
 const status = element<HTMLElement>("sandbox-status");
 const refreshButton = element<HTMLButtonElement>("refresh-shell");
 const logoutButton = element<HTMLButtonElement>("logout");
+const publishCandidateButton = document.querySelector<HTMLButtonElement>("#publish-candidate") ?? undefined;
 const loginForm = element<HTMLFormElement>("login-form");
 const registerForm = element<HTMLFormElement>("register-form");
 const dialog = element<HTMLDialogElement>("record-dialog");
@@ -32,6 +33,7 @@ loginForm.addEventListener("submit", (event) => void submitLogin(event));
 registerForm.addEventListener("submit", (event) => void submitRegistration(event));
 refreshButton.addEventListener("click", () => void loadShell().catch((error) => setStatus(message(error), "error")));
 logoutButton.addEventListener("click", () => void logout());
+publishCandidateButton?.addEventListener("click", () => void publishCandidate());
 window.setInterval(() => void watchRegistry(), 20_000);
 
 void boot();
@@ -99,6 +101,7 @@ async function loadShell() {
     shellView.hidden = false;
     refreshButton.hidden = false;
     logoutButton.hidden = false;
+    if (publishCandidateButton) publishCandidateButton.hidden = snapshot.apps.some((app) => app.appId === "chat-tag");
     if (shellUi) shellUi.update(snapshot);
     else shellUi = new SpaceMountainShellUi({
       root: shellRoot,
@@ -117,6 +120,20 @@ async function loadShell() {
   } finally {
     loading = false;
   }
+}
+
+async function publishCandidate() {
+  if (!currentPrincipal || !publishCandidateButton) return;
+  publishCandidateButton.disabled = true;
+  setStatus("Publishing Chat Tag through the public SPMT SDK…", "working");
+  try {
+    const response = await fetch("/sandbox/candidate-app", { credentials: "same-origin", cache: "no-store" });
+    if (!response.ok) throw new Error("The sandbox candidate manifest is unavailable.");
+    await spmt.registerApp(await response.json());
+    await loadShell();
+    setStatus("Chat Tag published through the SDK · exactly one app is now visible.", "ready");
+  } catch (error) { setStatus(message(error), "error"); }
+  finally { publishCandidateButton.disabled = false; }
 }
 
 async function installApp(app: SpaceMountainAppCardV1) {
@@ -276,6 +293,7 @@ function showAuth(detail: string) {
   authView.hidden = false;
   refreshButton.hidden = true;
   logoutButton.hidden = true;
+  if (publishCandidateButton) publishCandidateButton.hidden = true;
   setStatus(detail, detail.toLowerCase().includes("error") ? "error" : "working");
 }
 

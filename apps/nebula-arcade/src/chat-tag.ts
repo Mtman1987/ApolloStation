@@ -144,11 +144,12 @@ export interface ChatTagRulesV1 {
 export interface ChatTagRotationRulesV1 {
   rotateAfterMs: number;
   forceRandomAfterMs: number;
+  freeForAllReminderMs: number;
 }
 
 export interface ChatTagRotationPlanV1 {
   action: "none" | "assign" | "free-for-all";
-  reason: "not-due" | "no-players" | "initial-assignment" | "active-holder-timeout" | "inactive-holder-timeout" | "forced-timeout" | "no-eligible-player";
+  reason: "not-due" | "no-players" | "initial-assignment" | "active-holder-timeout" | "inactive-holder-timeout" | "forced-timeout" | "free-for-all-reminder" | "no-eligible-player";
   command?: ChatTagCommandV1;
 }
 
@@ -162,8 +163,9 @@ export const DEFAULT_CHAT_TAG_RULES: ChatTagRulesV1 = {
 };
 
 export const DEFAULT_CHAT_TAG_ROTATION_RULES: ChatTagRotationRulesV1 = {
-  rotateAfterMs: 60 * 60 * 1_000,
-  forceRandomAfterMs: 4 * 60 * 60 * 1_000,
+  rotateAfterMs: 40 * 60 * 1_000,
+  forceRandomAfterMs: 5 * 60 * 60 * 1_000,
+  freeForAllReminderMs: 60 * 60 * 1_000,
 };
 
 export type ChatTagParsedCommandV1 =
@@ -385,11 +387,12 @@ export function planChatTagRotation(
   const nowMs = Date.parse(input.now);
   if (!Number.isFinite(nowMs)) throw new Error("now must be an ISO timestamp");
   const rules = input.rules ?? DEFAULT_CHAT_TAG_ROTATION_RULES;
-  if (rules.rotateAfterMs < 1 || rules.forceRandomAfterMs < rules.rotateAfterMs) throw new Error("rotation rules are invalid");
+  if (rules.rotateAfterMs < 1 || rules.forceRandomAfterMs < rules.rotateAfterMs || rules.freeForAllReminderMs < 1) throw new Error("rotation rules are invalid");
   const players = Object.values(state.players);
   if (!players.length) return { action: "none", reason: "no-players" };
   const elapsed = state.lastTagAt ? nowMs - Date.parse(state.lastTagAt) : Number.POSITIVE_INFINITY;
-  if (state.lastTagAt && elapsed < rules.rotateAfterMs) return { action: "none", reason: "not-due" };
+  const dueAfterMs = state.currentItUserId ? rules.rotateAfterMs : rules.freeForAllReminderMs;
+  if (state.lastTagAt && elapsed < dueAfterMs) return { action: "none", reason: "not-due" };
   const live = new Set(input.liveUserIds ?? []);
   const current = state.currentItUserId ? state.players[state.currentItUserId] : undefined;
   const eligible = players.filter((player) => player.userId !== current?.userId && !player.sleeping && !player.offline);
@@ -410,6 +413,9 @@ export function planChatTagRotation(
   if (!current && !state.lastTagAt && pool.length) {
     const target = chooseRotationPlayer(pool, input.random);
     return { action: "assign", reason: "initial-assignment", command: { ...commandBase, kind: "set-it", targetUserId: target.userId } };
+  }
+  if (!current && state.lastTagAt) {
+    return { action: "free-for-all", reason: "free-for-all-reminder", command: { ...commandBase, kind: "trigger-ffa" } };
   }
   if ((forced || holderActive) && pool.length) {
     const target = chooseRotationPlayer(pool, input.random);

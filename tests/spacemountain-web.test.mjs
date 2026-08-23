@@ -7,6 +7,8 @@ import { join } from "node:path";
 import test from "node:test";
 import { createSpmtService, validateSandboxServiceEnvironment } from "../apps/spmt-service/dist/index.js";
 import { createSpaceMountainWebHost, validateSandboxWebEnvironment } from "../apps/spacemountain-web/dist/server.js";
+import { chatTagCatalogRegistration } from "../apps/nebula-arcade/dist/index.js";
+import { SpmtClient } from "../packages/sdk/dist/index.js";
 
 async function withSandbox(run) {
   const directory = mkdtempSync(join(tmpdir(), "spmt-web-sandbox-"));
@@ -59,6 +61,26 @@ test("private SpaceMountain host serves explicit browser modules with restrictiv
     assert.equal((await fetch(`${base}/assets/../../package.json`)).status, 404);
     assert.equal((await fetch(`${base}/sandbox/beacon`)).status, 200);
   });
+});
+
+test("empty ecosystem publishes exactly Chat Tag through the SDK", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "spmt-empty-catalog-"));
+  const spmt = createSpmtService({ databasePath: join(directory, "spmt-empty.sqlite"), webhookKey: Buffer.alloc(32, 8), host: "127.0.0.1", port: 0, publicBaseUrl: "https://test-green.sprites.app", runtimeMode: "sandbox", sandboxFixtures: false });
+  let web;
+  try {
+    await spmt.listen(); const spmtAddress = spmt.server.address(); assert.ok(spmtAddress && typeof spmtAddress !== "string");
+    const candidate = chatTagCatalogRegistration("https://test-green.sprites.app");
+    web = createSpaceMountainWebHost({ spmtOrigin: `http://127.0.0.1:${spmtAddress.port}`, host: "127.0.0.1", port: 0, candidateManifest: candidate });
+    await web.listen(); const webAddress = web.server.address(); assert.ok(webAddress && typeof webAddress !== "string"); const base = `http://127.0.0.1:${webAddress.port}`; const origin = new URL(base).origin;
+    const registration = await fetch(`${base}/sandbox/auth/register`, { method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify({ displayName: "Empty Captain", username: "empty-captain", password: "sandbox-only-password" }) });
+    const cookie = (registration.headers.get("set-cookie") ?? "").split(";")[0]; assert.ok(cookie);
+    const client = new SpmtClient({ baseUrl: base, appId: "spacemountain", fetchImpl: (input, init = {}) => { const headers = new Headers(init.headers); headers.set("cookie", cookie); if (init.method === "POST") headers.set("origin", origin); return fetch(input, { ...init, headers }); } });
+    assert.deepEqual(await client.listApps(), []);
+    assert.equal((await (await fetch(`${base}/sandbox/candidate-app`)).json()).appId, "chat-tag");
+    const published = await client.registerApp(candidate);
+    assert.equal(published.appId, "chat-tag");
+    assert.deepEqual((await client.listApps()).map((app) => app.appId), ["chat-tag"]);
+  } finally { if (web) await web.close(); await spmt.close(); rmSync(directory, { recursive: true, force: true }); }
 });
 
 test("auth facade keeps tokens HttpOnly and dynamically exposes sandbox registry fixtures", async () => {
@@ -194,6 +216,8 @@ test("sandbox environment guards fail closed before a process can reach a provid
     SPMT_HOST: "127.0.0.1",
   };
   assert.equal(validateSandboxServiceEnvironment(service).host, "127.0.0.1");
+  assert.equal(validateSandboxServiceEnvironment({ ...service, SPMT_SANDBOX_FIXTURES: "0" }).host, "127.0.0.1");
+  assert.throws(() => validateSandboxServiceEnvironment({ ...service, SPMT_SANDBOX_FIXTURES: "yes" }), /must be 0 or 1/);
   assert.throws(() => validateSandboxServiceEnvironment({ ...service, DISCORD_BOT_TOKEN: "forbidden" }), /rejects provider/);
   assert.throws(() => validateSandboxServiceEnvironment({ ...service, NEXT_PUBLIC_YOUTUBE_INNERTUBE_API_KEY: "forbidden" }), /rejects provider/);
   assert.throws(() => validateSandboxServiceEnvironment({ ...service, SPMT_PUBLIC_URL: "https://spmt.live" }), /private Sprite/);
@@ -270,11 +294,49 @@ test("supervised runner makes both layers healthy and stops both children togeth
     const web = await (await fetch(`http://127.0.0.1:${webPort}/sandbox/health`)).json();
     assert.equal(spmt.runtimeMode, "sandbox");
     assert.equal(spmt.outboundIntegrations, "disabled");
+    assert.equal(spmt.sandboxFixtures, false);
     assert.equal(web.ready, true);
+    assert.doesNotMatch(await (await fetch(`http://127.0.0.1:${webPort}/`)).text(), /Publish Chat Tag through SDK/);
     child.kill("SIGTERM");
     const exit = await new Promise((done) => child.once("exit", (code, signal) => done({ code, signal })));
     assert.deepEqual(exit, { code: 0, signal: null });
     await waitUntil(async () => !(await reachable(spmtPort)) && !(await reachable(webPort)), 5_000, () => "A supervised child port remained reachable after termination");
+  } finally {
+    if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("supervised runner exposes a hidden Chat Tag candidate and publishes zero to exactly one app through the SDK", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "spmt-supervised-candidate-"));
+  const ports = new Set();
+  while (ports.size < 3) ports.add(await freePort());
+  const [spmtPort, webPort, chatTagPort] = ports;
+  const base = `http://127.0.0.1:${webPort}`;
+  const child = spawn(process.execPath, ["scripts/sprites/run-supervised-sandbox.mjs", "--candidate-app", "chat-tag", "--public-url", `http://localhost:${webPort}`, "--data-root", directory, "--build-sha", "candidate-test", "--spmt-port", String(spmtPort), "--web-port", String(webPort), "--chat-tag-port", String(chatTagPort)], { cwd: new URL("..", import.meta.url), stdio: ["ignore", "pipe", "pipe"] });
+  let output = "";
+  child.stdout.setEncoding("utf8");
+  child.stderr.setEncoding("utf8");
+  child.stdout.on("data", (chunk) => { output += chunk; });
+  child.stderr.on("data", (chunk) => { output += chunk; });
+  try {
+    await waitUntil(() => output.includes("Chat Tag is available only through the SDK publish control"), 20_000, () => `Runner output:\n${output}`);
+    assert.match(await (await fetch(`${base}/`)).text(), /Publish Chat Tag through SDK/);
+    assert.equal((await fetch(`${base}/apps/chat-tag`)).status, 200);
+    const origin = new URL(base).origin;
+    const registration = await fetch(`${base}/sandbox/auth/register`, { method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify({ displayName: "Candidate Captain", username: "candidate-captain", password: "sandbox-only-password" }) });
+    assert.equal(registration.status, 201);
+    const cookie = (registration.headers.get("set-cookie") ?? "").split(";")[0];
+    assert.ok(cookie);
+    const client = new SpmtClient({ baseUrl: base, appId: "spacemountain", fetchImpl: (input, init = {}) => { const headers = new Headers(init.headers); headers.set("cookie", cookie); if (init.method === "POST") headers.set("origin", origin); return fetch(input, { ...init, headers }); } });
+    assert.deepEqual(await client.listApps(), []);
+    const candidate = await (await fetch(`${base}/sandbox/candidate-app`)).json();
+    await client.registerApp(candidate);
+    assert.deepEqual((await client.listApps()).map((app) => app.appId), ["chat-tag"]);
+    child.kill("SIGTERM");
+    const exit = await new Promise((done) => child.once("exit", (code, signal) => done({ code, signal })));
+    assert.deepEqual(exit, { code: 0, signal: null });
+    await waitUntil(async () => !(await reachable(spmtPort)) && !(await reachable(webPort)) && !(await reachable(chatTagPort)), 5_000, () => "A supervised candidate port remained reachable after termination");
   } finally {
     if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
     rmSync(directory, { recursive: true, force: true });

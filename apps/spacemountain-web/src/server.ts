@@ -4,6 +4,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { renderSpaceMountainPage, SANDBOX_BEACON_HTML, SANDBOX_CSS } from "./page.js";
+import type { AppCatalogRegistrationV1 } from "@spmt/contracts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPOSITORY_ROOT = resolve(HERE, "../../..");
@@ -30,22 +31,30 @@ export interface SpaceMountainWebHostOptions {
   host?: string;
   buildSha?: string;
   fetchImpl?: typeof fetch;
+  candidateManifest?: AppCatalogRegistrationV1;
+  chatTagOrigin?: string;
 }
 
 export function createSpaceMountainWebHost(options: SpaceMountainWebHostOptions) {
   const spmtOrigin = requireLoopbackOrigin(options.spmtOrigin);
   const fetchImpl = options.fetchImpl ?? fetch;
   const buildSha = options.buildSha ?? "dev";
+  const chatTagOrigin = options.chatTagOrigin ? requireLoopbackOrigin(options.chatTagOrigin) : undefined;
   const server = createServer(async (request, response) => {
     const nonce = randomBytes(18).toString("base64url");
     applySecurityHeaders(response, nonce);
     try {
       const url = new URL(request.url ?? "/", "http://spacemountain.local");
-      if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/first-time-setup")) return html(response, 200, renderSpaceMountainPage(nonce, buildSha));
+      if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/first-time-setup")) return html(response, 200, renderSpaceMountainPage(nonce, buildSha, Boolean(options.candidateManifest)));
       if (request.method === "GET" && url.pathname === "/assets/web/sandbox.css") return textResponse(response, 200, SANDBOX_CSS, "text/css; charset=utf-8", "public, max-age=300");
       if (request.method === "GET" && url.pathname === "/sandbox/beacon") return html(response, 200, SANDBOX_BEACON_HTML);
       if (request.method === "GET" && ASSETS.has(url.pathname)) return serveAsset(response, ASSETS.get(url.pathname)!);
       if (request.method === "GET" && url.pathname === "/sandbox/health") return sandboxHealth(response, spmtOrigin, fetchImpl, buildSha);
+      if (request.method === "GET" && url.pathname === "/sandbox/candidate-app" && options.candidateManifest) return json(response, 200, options.candidateManifest);
+      if (chatTagOrigin && chatTagProxyPath(url.pathname)) {
+        if (!['GET', 'HEAD'].includes(request.method ?? 'GET')) requireSameOrigin(request);
+        return proxyChatTag(response, request, url, chatTagOrigin, fetchImpl);
+      }
       if (request.method === "POST" && url.pathname === "/sandbox/auth/logout") {
         requireSameOrigin(request);
         return json(response, 200, { ok: true }, { "set-cookie": clearSessionCookie() });
@@ -81,7 +90,7 @@ export function validateSandboxWebEnvironment(environment: NodeJS.ProcessEnv) {
   if (!environment.SPMT_SANDBOX_ID || !/^[a-z0-9-]{3,80}$/.test(environment.SPMT_SANDBOX_ID)) throw new Error("SPMT_SANDBOX_ID must be a lowercase sandbox namespace");
   const present = PROVIDER_ENV_NAMES.filter((name) => Boolean(environment[name]));
   if (present.length) throw new Error(`Sandbox web host rejects provider or infrastructure credentials: ${present.join(", ")}`);
-  return { spmtOrigin: requireLoopbackOrigin(environment.SPMT_ORIGIN ?? "http://127.0.0.1:3000") };
+  return { spmtOrigin: requireLoopbackOrigin(environment.SPMT_ORIGIN ?? "http://127.0.0.1:3000"), ...(environment.CHAT_TAG_ORIGIN ? { chatTagOrigin: requireLoopbackOrigin(environment.CHAT_TAG_ORIGIN) } : {}), ...(environment.SPMT_SANDBOX_CANDIDATE_MANIFEST ? { candidateManifest: candidateManifest(environment.SPMT_SANDBOX_CANDIDATE_MANIFEST) } : {}) };
 }
 
 async function serveAsset(response: ServerResponse, asset: { file: string; type: string }) {
@@ -152,6 +161,31 @@ async function proxy(response: ServerResponse, request: IncomingMessage, url: UR
   response.end(encoded);
 }
 
+async function proxyChatTag(response: ServerResponse, request: IncomingMessage, url: URL, origin: string, fetchImpl: typeof fetch) {
+  const method = request.method ?? "GET";
+  const pathname = url.pathname === "/apps/chat-tag" ? "/" : url.pathname;
+  const headers = new Headers({ accept: request.headers.accept ?? "*/*" });
+  if (request.headers["content-type"]) headers.set("content-type", request.headers["content-type"]);
+  if (!["GET", "HEAD"].includes(method)) headers.set("origin", origin);
+  const body = ["GET", "HEAD"].includes(method) ? undefined : await readBody(request);
+  const upstream = await fetchImpl(`${origin}${pathname}${url.search}`, { method, headers, ...(body ? { body } : {}), redirect: "manual", signal: AbortSignal.timeout(10000) });
+  const encoded = await limitedResponseBody(upstream);
+  response.removeHeader("x-frame-options");
+  response.removeHeader("content-security-policy");
+  response.writeHead(upstream.status, {
+    "content-type": upstream.headers.get("content-type") ?? "application/octet-stream",
+    "content-length": encoded.byteLength,
+    "cache-control": upstream.headers.get("cache-control") ?? "no-store",
+    "content-security-policy": upstream.headers.get("content-security-policy") ?? "default-src 'none'; frame-ancestors 'self'",
+    "x-content-type-options": "nosniff",
+  });
+  response.end(encoded);
+}
+
+function chatTagProxyPath(pathname: string) {
+  return pathname === "/apps/chat-tag" || pathname.startsWith("/assets/chat-tag-sandbox.") || pathname.startsWith("/v1/chat-tag/") || pathname === "/v1/chat-tag/state" || pathname.startsWith("/v1/nebula/chat-tag/overlay");
+}
+
 function browserProxyAllowed(method: string, pathname: string) {
   if (method === "GET") {
     if (["/health/live", "/health/ready", "/v1/session", "/v1/auth/setup-options", "/v1/identity/providers", "/v1/workspace/profile", "/v1/apps", "/v1/apps/installs", "/v1/entitlements", "/v1/events", "/v1/commlink/conversations", "/v1/commlink/messages", "/v1/commlink/search", "/v1/notifications", "/v1/assistants/community", "/v1/stellar/context", "/v1/stellar/capabilities", "/v1/operations/logs", "/v1/operations/coder", "/v1/operations/coder/jobs"].includes(pathname)) return true;
@@ -159,7 +193,7 @@ function browserProxyAllowed(method: string, pathname: string) {
   }
   if (method === "PATCH" && pathname === "/v1/workspace/profile") return true;
   if (method === "DELETE" && /^\/v1\/identity\/providers\/[^/]+\/[^/]+$/.test(pathname)) return true;
-  if (method === "POST") return /^\/v1\/apps\/[^/]+\/(?:install|disable)$/.test(pathname) || /^\/v1\/notifications\/[^/]+\/read$/.test(pathname) || pathname === "/v1/commlink/messages" || pathname === "/v1/assistants/community/invocations" || pathname === "/v1/operations/coder/jobs";
+  if (method === "POST") return pathname === "/v1/apps" || /^\/v1\/apps\/[^/]+\/(?:install|disable)$/.test(pathname) || /^\/v1\/notifications\/[^/]+\/read$/.test(pathname) || pathname === "/v1/commlink/messages" || pathname === "/v1/assistants/community/invocations" || pathname === "/v1/operations/coder/jobs";
   return false;
 }
 
@@ -191,6 +225,18 @@ function requireLoopbackOrigin(value: string) {
   return url.origin;
 }
 
+function candidateManifest(source: string): AppCatalogRegistrationV1 {
+  let value: unknown;
+  try { value = JSON.parse(source); } catch { throw new Error("SPMT_SANDBOX_CANDIDATE_MANIFEST must be JSON"); }
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("SPMT_SANDBOX_CANDIDATE_MANIFEST must be an object");
+  const item = value as AppCatalogRegistrationV1;
+  if (item.appId !== "chat-tag" || item.status !== "active" || !Array.isArray(item.allowedScopes) || !Array.isArray(item.surfaces)) throw new Error("Sandbox candidate manifest is invalid");
+  const launch = new URL(item.launchUrl);
+  const local = launch.hostname === "localhost" || launch.hostname === "127.0.0.1";
+  if ((!local && launch.protocol !== "https:") || (!local && !launch.hostname.endsWith(".sprites.app")) || launch.pathname !== "/apps/chat-tag") throw new Error("Sandbox candidate launch URL is invalid");
+  return structuredClone(item);
+}
+
 async function readJsonBody(request: IncomingMessage) { const body = await readBody(request); const parsed = JSON.parse(body.toString("utf8")) as unknown; if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new WebHostError(400, "A JSON object is required"); return parsed as Record<string, unknown>; }
 async function readBody(request: IncomingMessage) { const chunks: Buffer[] = []; let total = 0; for await (const chunk of request) { const part = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk); total += part.byteLength; if (total > MAX_BODY_BYTES) throw new WebHostError(413, "Request body is too large"); chunks.push(part); } return Buffer.concat(chunks); }
 async function limitedResponseBody(response: Response) { const declared = Number(response.headers.get("content-length") ?? 0); if (declared > MAX_RESPONSE_BYTES) throw new WebHostError(502, "SPMT response is too large"); const body = Buffer.from(await response.arrayBuffer()); if (body.byteLength > MAX_RESPONSE_BYTES) throw new WebHostError(502, "SPMT response is too large"); return body; }
@@ -210,6 +256,6 @@ class WebHostError extends Error { constructor(readonly status: number, message:
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   const checked = validateSandboxWebEnvironment(process.env);
-  const host = createSpaceMountainWebHost({ spmtOrigin: checked.spmtOrigin, port: Number(process.env.PORT ?? 8080), host: process.env.HOST ?? "0.0.0.0", buildSha: process.env.BUILD_SHA ?? "dev" });
+  const host = createSpaceMountainWebHost({ spmtOrigin: checked.spmtOrigin, port: Number(process.env.PORT ?? 8080), host: process.env.HOST ?? "0.0.0.0", buildSha: process.env.BUILD_SHA ?? "dev", ...(checked.chatTagOrigin ? { chatTagOrigin: checked.chatTagOrigin } : {}), ...(checked.candidateManifest ? { candidateManifest: checked.candidateManifest } : {}) });
   await host.listen();
 }

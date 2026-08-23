@@ -6,11 +6,12 @@ import { manifest as nebulaManifest, completeChatTagRound } from "../apps/nebula
 import { manifest as hearmeoutManifest } from "../apps/hearmeout/dist/index.js";
 import { manifest as mountainviewManifest } from "../apps/mountainview/dist/index.js";
 import { manifest as companionManifest } from "../apps/companion/dist/index.js";
+import { manifest as chatGatewayManifest } from "../apps/chat-gateway/dist/index.js";
 import { SpmtClient } from "../packages/sdk/dist/index.js";
 
 test("every production product has a bounded Apollo module manifest",()=>{
-  const manifests=[streamweaverManifest,dshManifest,nebulaManifest,hearmeoutManifest,mountainviewManifest,companionManifest];
-  assert.deepEqual(manifests.map((item)=>item.id).sort(),["companion","discord-stream-hub","hearmeout","mountainview","nebula-arcade","streamweaver"]);
+  const manifests=[streamweaverManifest,dshManifest,nebulaManifest,hearmeoutManifest,mountainviewManifest,companionManifest,chatGatewayManifest];
+  assert.deepEqual(manifests.map((item)=>item.id).sort(),["chat-gateway","companion","discord-stream-hub","hearmeout","mountainview","nebula-arcade","streamweaver"]);
   for(const manifest of manifests){assert.equal(manifest.manifestVersion,"spmt.app-manifest/v1");assert.ok(manifest.capabilities.length>0);assert.ok(manifest.requiredScopes.length>0);assert.ok(manifest.surfaces.length>0);assert.ok(manifest.workers.every((worker)=>worker.canonicalAuthority===false));}
 });
 

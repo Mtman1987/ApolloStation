@@ -228,6 +228,20 @@ export class ChatTagRuntime {
 
   async ingest(message: ChatTagInboundMessageV1): Promise<ChatTagMessagePlanV1 | (StoredChatTagCommandV1 & { kind: "result"; delivery: ChatTagDeliveryReportV1 })> {
     const plan = planChatTagMessage(this.store.getState(message.tenantId).state, message);
+    if (plan.kind === "ignored") {
+      const state = this.store.getState(message.tenantId).state;
+      if (!state.players[message.userId]) return plan;
+      const applied = await this.execute({
+        schemaVersion: 1,
+        tenantId: message.tenantId,
+        commandId: `${message.provider}:${message.messageId}:activity`,
+        actorUserId: message.userId,
+        occurredAt: message.occurredAt,
+        channelId: message.channelId,
+        kind: "record-activity",
+      });
+      return { kind: "result", ...applied };
+    }
     if (plan.kind !== "command") return plan;
     const applied = await this.execute(plan.command);
     return { kind: "result", ...applied };

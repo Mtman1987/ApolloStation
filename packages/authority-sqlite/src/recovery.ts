@@ -65,6 +65,9 @@ function inventory(db: DatabaseSync): RecoveryInventoryV1 {
     apps: count(db, "apps"),
     appInstalls: count(db, "app_installs"),
     entitlements: count(db, "entitlements"),
+    overlayWidgets: count(db, "overlay_widgets"),
+    overlayOutputGrants: count(db, "overlay_output_grants"),
+    runtimeProjections: count(db, "runtime_projections"),
     userProfiles: count(db, "user_profiles"),
     userCredentials: count(db, "user_credentials"),
     oauthClients: count(db, "oauth_clients"),
@@ -81,7 +84,7 @@ function inventory(db: DatabaseSync): RecoveryInventoryV1 {
 function count(db: DatabaseSync, table: string) {
   const allowed = new Set([
     "users", "provider_links", "workspaces", "xp_events", "platform_events", "audit_records", "service_identities",
-    "tenants", "apps", "app_installs", "entitlements", "user_profiles", "user_credentials", "oauth_clients", "oauth_codes",
+    "tenants", "apps", "app_installs", "entitlements", "overlay_widgets", "overlay_output_grants", "runtime_projections", "user_profiles", "user_credentials", "oauth_clients", "oauth_codes",
     "commlink_conversations", "commlink_messages", "notifications", "webhooks", "stellar_context", "stellar_capabilities",
   ]);
   if (!allowed.has(table)) throw new Error("Unknown recovery inventory table");

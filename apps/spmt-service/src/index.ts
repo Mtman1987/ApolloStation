@@ -15,7 +15,7 @@ import { PlatformApiAdapter } from "@spmt/api-adapter";
 import { HealthRegistry } from "@spmt/runtime";
 
 const USER_SCOPES = ["identity:read","identity:write","workspace:read","workspace:write","xp:read","apps:read","apps:install","entitlements:read","events:read","commlink:read","commlink:write","notifications:read","notifications:write","webhooks:read","webhooks:write","assistants:read","assistants:invoke","stellar:context:read","stellar:context:write","stellar:capabilities:read"];
-const SANDBOX_OWNER_OPERATIONS_SCOPES = ["operations:logs:read","operations:coder:read","operations:coder:invoke"];
+const SANDBOX_OWNER_SCOPES = ["apps:register","operations:logs:read","operations:coder:read","operations:coder:invoke"];
 
 export interface SpmtServiceOptions {
   databasePath: string;
@@ -250,7 +250,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
           return json(response, 409, { error: "setup_required", flow: "first-time-setup", next: "spacemountain-invite", optionsUrl: "/v1/auth/setup-options", tenantId: inspection.tenantId });
         }
         try {
-          const result = data.login(username, str(body.password, "password"), runtimeMode === "sandbox" ? [...USER_SCOPES, ...SANDBOX_OWNER_OPERATIONS_SCOPES] : USER_SCOPES);
+          const result = data.login(username, str(body.password, "password"), runtimeMode === "sandbox" ? [...USER_SCOPES, ...SANDBOX_OWNER_SCOPES] : USER_SCOPES);
           return json(response, 200, result, { "set-cookie": sessionCookie(result.tokens.accessToken) });
         } catch { return json(response, 401, { error: "invalid_credentials" }); }
       }
@@ -345,7 +345,7 @@ export function validateSandboxServiceEnvironment(environment: NodeJS.ProcessEnv
   const publicBaseUrl = requireSandboxPublicUrl(environment.SPMT_PUBLIC_URL);
   const host = environment.SPMT_HOST ?? "127.0.0.1";
   if (!["127.0.0.1", "localhost", "::1"].includes(host)) throw new Error("Sandbox SPMT must bind only to loopback through SPMT_HOST");
-  if (environment.SPMT_SANDBOX_FIXTURES !== "1") throw new Error("SPMT_SANDBOX_FIXTURES=1 is required for the first isolated proof");
+  if (!["0", "1"].includes(environment.SPMT_SANDBOX_FIXTURES ?? "")) throw new Error("SPMT_SANDBOX_FIXTURES must be 0 or 1");
   return { databasePath, publicBaseUrl, host };
 }
 

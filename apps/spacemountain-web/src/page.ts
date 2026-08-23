@@ -1,4 +1,4 @@
-export function renderSpaceMountainPage(nonce: string, buildSha: string) {
+export function renderSpaceMountainPage(nonce: string, buildSha: string, candidateApp = false) {
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -16,6 +16,7 @@ export function renderSpaceMountainPage(nonce: string, buildSha: string) {
     <div><strong>GREEN SPRITE SANDBOX</strong><span>private · isolated database · outbound actions off</span></div>
     <nav aria-label="Sandbox controls">
       <button id="refresh-shell" type="button" hidden>Refresh</button>
+      ${candidateApp ? '<button id="publish-candidate" type="button" hidden>Publish Chat Tag through SDK</button>' : ""}
       <button id="logout" type="button" hidden>Sign out</button>
     </nav>
   </header>
