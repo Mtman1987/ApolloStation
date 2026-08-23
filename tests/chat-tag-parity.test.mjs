@@ -2,8 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   CHAT_TAG_TAG_COMPLETED,
+  CHAT_TAG_CROWN_SET,
   assertChatTagStateV1,
+  crownAwardKey,
+  crownMonthKey,
+  crownXpReward,
   createChatTagState,
+  decorateChatTagCrowns,
   executeChatTagCommand,
   getChatTagLeaderboard,
   getChatTagStatus,
@@ -159,4 +164,33 @@ test("Discord Stream Hub consumes only the public production Chat Tag event", as
   assert.equal(calls[1].body.payload.kind, "chat-tag");
   assert.equal(calls[1].headers["idempotency-key"], "dsh-chat-tag:event-tag-a-b");
   assert.ok(calls.every((call) => call.headers["x-spmt-tenant"] === TENANT));
+});
+
+test("monthly crowns preserve fixed donor rewards and never schedule the same payout twice", () => {
+  let state = createChatTagState(TENANT);
+  ({ state } = apply(state, command("join", "join-winner", "user-winner", 0, { username: "Van_Braak" })));
+  const crowned = apply(state, command("set-winner", "crown-first", "owner", 1, { targetUserId: "user-winner", place: 1, isModerator: true }));
+  state = crowned.state;
+  assert.equal(crowned.result.event.type, CHAT_TAG_CROWN_SET);
+  assert.equal(crowned.result.xpAward.delta, 500);
+  assert.equal(crowned.result.xpAward.idempotencyKey, "crown:2026-08:1:user-winner");
+  assert.deepEqual(state.monthlyWinners.map((winner) => [winner.place, winner.username]), [[1, "van_braak"]]);
+
+  const reset = apply(state, command("set-winner", "crown-reset", "owner", 2, { targetUserId: "user-winner", place: 1, isModerator: true }));
+  assert.equal(reset.result.status, "applied");
+  assert.equal(reset.result.code, "winner-updated");
+  assert.equal(reset.result.xpAward, undefined);
+  assert.equal(reset.state.crownAwardKeys.length, 1);
+  assert.equal(crownXpReward(2), 250);
+  assert.equal(crownXpReward(3), 100);
+  assert.equal(crownXpReward(4), 0);
+  assert.equal(crownMonthKey(new Date("2026-12-31T23:59:59Z")), "2026-12");
+  assert.equal(crownAwardKey("user-winner", 1, "2026-08"), "crown:2026-08:1:user-winner");
+});
+
+test("crown decoration preserves mentions, skips URLs, and does not double-crown", () => {
+  const winners = [{ userId: "u1", username: "van_braak", place: 1, monthKey: "2026-08", selectedAt: at(0) }];
+  assert.equal(decorateChatTagCrowns("@van_braak tagged van braak", winners), "👑@van_braak tagged 👑van braak");
+  assert.equal(decorateChatTagCrowns("👑van_braak wins", winners), "👑van_braak wins");
+  assert.equal(decorateChatTagCrowns("https://twitch.tv/van_braak", winners), "https://twitch.tv/van_braak");
 });

@@ -7,6 +7,8 @@ export const CHAT_TAG_TAG_COMPLETED = "nebula.chat-tag.tag.completed.v1";
 export const CHAT_TAG_FREE_FOR_ALL_STARTED = "nebula.chat-tag.free-for-all.started.v1";
 export const CHAT_TAG_PLAYER_AVAILABILITY_CHANGED = "nebula.chat-tag.player.availability.changed.v1";
 export const CHAT_TAG_PASS_GRANTED = "nebula.chat-tag.pass.granted.v1";
+export const CHAT_TAG_CROWN_SET = "nebula.chat-tag.crown.set.v1";
+export const CHAT_TAG_CROWNS_CLEARED = "nebula.chat-tag.crowns.cleared.v1";
 
 export const CHAT_TAG_EVENT_TYPES = [
   CHAT_TAG_PLAYER_JOINED,
@@ -15,6 +17,8 @@ export const CHAT_TAG_EVENT_TYPES = [
   CHAT_TAG_FREE_FOR_ALL_STARTED,
   CHAT_TAG_PLAYER_AVAILABILITY_CHANGED,
   CHAT_TAG_PASS_GRANTED,
+  CHAT_TAG_CROWN_SET,
+  CHAT_TAG_CROWNS_CLEARED,
 ] as const;
 
 export interface ChatTagPlayerStateV1 {
@@ -47,8 +51,16 @@ export interface ChatTagHistoryEntryV1 {
 export interface ChatTagXpAwardV1 {
   userId: string;
   delta: number;
-  reason: "chat-tag.tag" | "chat-tag.pass";
+  reason: "chat-tag.tag" | "chat-tag.pass" | "chat-tag.crown";
   idempotencyKey: string;
+}
+
+export interface ChatTagMonthlyWinnerV1 {
+  userId: string;
+  username: string;
+  place: 1 | 2 | 3;
+  monthKey: string;
+  selectedAt: string;
 }
 
 export interface ChatTagPublicEventV1 {
@@ -67,7 +79,9 @@ export type ChatTagCommandKindV1 =
   | "record-activity"
   | "grant-pass"
   | "set-it"
-  | "trigger-ffa";
+  | "trigger-ffa"
+  | "set-winner"
+  | "clear-winners";
 
 interface ChatTagCommandBaseV1 {
   schemaVersion: 1;
@@ -89,7 +103,9 @@ export type ChatTagCommandV1 =
   | (ChatTagCommandBaseV1 & { kind: "record-activity" })
   | (ChatTagCommandBaseV1 & { kind: "grant-pass"; targetUserId: string })
   | (ChatTagCommandBaseV1 & { kind: "set-it"; targetUserId: string })
-  | (ChatTagCommandBaseV1 & { kind: "trigger-ffa" });
+  | (ChatTagCommandBaseV1 & { kind: "trigger-ffa" })
+  | (ChatTagCommandBaseV1 & { kind: "set-winner"; targetUserId: string; place: 1 | 2 | 3 })
+  | (ChatTagCommandBaseV1 & { kind: "clear-winners" });
 
 export interface ChatTagCommandResultV1 {
   schemaVersion: 1;
@@ -111,6 +127,8 @@ export interface ChatTagStateV1 {
   lastTagAt: string | null;
   players: Record<string, ChatTagPlayerStateV1>;
   history: ChatTagHistoryEntryV1[];
+  monthlyWinners: ChatTagMonthlyWinnerV1[];
+  crownAwardKeys: string[];
   appliedCommands: Record<string, ChatTagCommandResultV1>;
 }
 
@@ -217,6 +235,8 @@ export function createChatTagState(tenantId: string): ChatTagStateV1 {
     lastTagAt: null,
     players: {},
     history: [],
+    monthlyWinners: [],
+    crownAwardKeys: [],
     appliedCommands: {},
   };
 }
@@ -227,7 +247,10 @@ export function assertChatTagStateV1(value: unknown, tenantId?: string): ChatTag
   if (state.schemaVersion !== CHAT_TAG_STATE_VERSION) throw new Error("Unsupported Chat Tag state version");
   if (!state.tenantId || (tenantId && state.tenantId !== tenantId)) throw new Error("Chat Tag tenant mismatch");
   if (!state.players || !state.history || !state.appliedCommands) throw new Error("Chat Tag state is incomplete");
-  return cloneState(state);
+  const normalized = cloneState(state);
+  normalized.monthlyWinners = Array.isArray(normalized.monthlyWinners) ? normalized.monthlyWinners : [];
+  normalized.crownAwardKeys = Array.isArray(normalized.crownAwardKeys) ? normalized.crownAwardKeys : [];
+  return normalized;
 }
 
 export function parseChatTagCommandText(message: string): ChatTagParsedCommandV1 | null {
@@ -295,6 +318,8 @@ export function executeChatTagCommand(
     command.kind === "grant-pass" ||
     command.kind === "set-it" ||
     command.kind === "trigger-ffa" ||
+    command.kind === "set-winner" ||
+    command.kind === "clear-winners" ||
     ((command.kind === "sleep" || command.kind === "wake") && command.targetUserId !== undefined)
   );
   if (!actor && !moderatorMayActWithoutMembership) {
@@ -372,6 +397,61 @@ export function executeChatTagCommand(
     target.passCount += 1;
     const result = remember(state, resultFor(command, "applied", "pass-granted", `${target.username} received a Chat Tag pass.`, {
       event: eventFor(command, CHAT_TAG_PASS_GRANTED, { userId: target.userId, username: target.username, passCount: target.passCount }),
+    }));
+    return { state, result };
+  }
+
+  if (command.kind === "set-winner" || command.kind === "clear-winners") {
+    const denied = requireModerator(command);
+    if (denied) {
+      const result = remember(state, denied);
+      return { state, result };
+    }
+    if (command.kind === "clear-winners") {
+      state.monthlyWinners = [];
+      const result = remember(state, resultFor(command, "applied", "crowns-cleared", "The displayed Chat Tag crowns were cleared.", {
+        event: eventFor(command, CHAT_TAG_CROWNS_CLEARED, {}),
+      }));
+      return { state, result };
+    }
+    if (![1, 2, 3].includes(command.place)) throw new Error("place must be 1, 2, or 3");
+    const target = state.players[command.targetUserId];
+    if (!target) {
+      const result = remember(state, resultFor(command, "rejected", "target-not-a-player", "The target is not in Chat Tag."));
+      return { state, result };
+    }
+    const monthKey = crownMonthKey(new Date(command.occurredAt));
+    const awardKey = crownAwardKey(target.userId, command.place, monthKey);
+    const alreadyAwarded = state.crownAwardKeys.includes(awardKey);
+    state.monthlyWinners = state.monthlyWinners
+      .filter((winner) => winner.place !== command.place && winner.userId !== target.userId)
+      .concat({
+        userId: target.userId,
+        username: target.username,
+        place: command.place,
+        monthKey,
+        selectedAt: command.occurredAt,
+      })
+      .sort((left, right) => left.place - right.place);
+    if (!alreadyAwarded) state.crownAwardKeys.push(awardKey);
+    const reward = crownXpReward(command.place);
+    const result = remember(state, resultFor(command, "applied", alreadyAwarded ? "winner-updated" : "winner-crowned", `${target.username} is the #${command.place} Chat Tag winner for ${monthKey}.`, {
+      event: eventFor(command, CHAT_TAG_CROWN_SET, {
+        userId: target.userId,
+        username: target.username,
+        place: command.place,
+        monthKey,
+        xpAward: reward,
+        alreadyAwarded,
+      }),
+      ...(!alreadyAwarded ? {
+        xpAward: {
+          userId: target.userId,
+          delta: reward,
+          reason: "chat-tag.crown",
+          idempotencyKey: awardKey,
+        },
+      } : {}),
     }));
     return { state, result };
   }
@@ -515,6 +595,36 @@ export function getChatTagLeaderboard(state: ChatTagStateV1): ChatTagPlayerState
   return Object.values(state.players)
     .map((player) => structuredClone(player))
     .sort((left, right) => right.score - left.score || right.tagsMade - left.tagsMade || left.username.localeCompare(right.username));
+}
+
+export function crownXpReward(place: number): number {
+  return place === 1 ? 500 : place === 2 ? 250 : place === 3 ? 100 : 0;
+}
+
+export function crownMonthKey(date: Date = new Date()): string {
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+export function crownAwardKey(userId: string, place: number, monthKey: string): string {
+  return `crown:${monthKey}:${place}:${userId}`;
+}
+
+export function decorateChatTagCrowns(text: string, winners: ChatTagMonthlyWinnerV1[]): string {
+  let output = text;
+  for (const winner of winners) {
+    if (winner.username.length < 3) continue;
+    const pattern = winner.username
+      .split(/[\s_]+/)
+      .filter(Boolean)
+      .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+      .join("[\\s_]*");
+    const matcher = new RegExp(`(^|[^\\w@./\\uD83D\\uDC51])(@?)(${pattern})(?![\\w])`, "gi");
+    output = output.replace(matcher, (match, prefix: string, at: string, name: string, offset: number, full: string) => {
+      const before = full.slice(0, offset + prefix.length);
+      return /👑\s*#?\d*\s*@?$/.test(before) ? match : `${prefix}👑${at}${name}`;
+    });
+  }
+  return output;
 }
 
 export async function publishChatTagCommandResult(client: SpmtClient, result: ChatTagCommandResultV1): Promise<{ eventPublished: boolean; xpAwarded: boolean }> {

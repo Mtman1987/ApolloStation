@@ -1,6 +1,7 @@
 import { assertAppModuleManifestV1, type AppModuleManifestV1 } from "@spmt/contracts";
 import { SpmtClient } from "@spmt/sdk";
 export * from "./chat-tag.js";
+export * from "./chat-tag-runtime.js";
 import { CHAT_TAG_EVENT_TYPES } from "./chat-tag.js";
 
 export const CHAT_TAG_ROUND_COMPLETED = "nebula.chat-tag.round.completed.v1";

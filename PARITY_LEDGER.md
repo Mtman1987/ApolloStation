@@ -111,7 +111,7 @@ This ledger is **not yet a claim that every donor route has been audited**. It i
 
 | Donor surface/capability | Donor owner | Green owner | Disposition | Compatibility/migration | Proof required |
 |---|---|---|---|---|---|
-| Original Chat Tag game | ChatTag | ChatTag core module | PRESERVE | Core persistent game state, join/leave, it/FFA transfer, scoring, immunity, sleep/wake, pass, command replay, and public SPMT event/XP boundary implemented from donor commit `8170c51`; provider adapters, timers, overlays, crowns, and migration remain child slices | two-player, two-tenant, immunity, pass, replay, restart, and public-contract tests |
+| Original Chat Tag game | ChatTag | ChatTag core module | PRESERVE | Core game state, join/leave, it/FFA transfer, scoring, immunity, sleep/wake, passes and fixed monthly crown rewards are implemented from donor commit `8170c51`; Nebula Arcade persists tenant-isolated state and permanent command/crown dedupe in its private SQLite authority and uses a durable idempotent outbox for SPMT events/XP. Provider adapters, timers, overlays and donor-state migration remain child slices | two-player, two-tenant, immunity, pass, crown, replay, restart and SPMT outage/retry tests now pass; provider/overlay/migration matrix remains |
 | Quackverse | ChatTag | ChatTag bounded game module | PRESERVE | preserve overlay/profile behavior | game/overlay test |
 | Bingo | ChatTag | ChatTag bounded game module | PRESERVE | deep audit required | game regression test |
 | Nebula Arcade catalog | ChatTag | separate bounded game modules sharing the public game SDK | IMPROVE | do not make one giant runtime; publish modules through the canonical registry | per-game contract and dynamic-discovery suite |
