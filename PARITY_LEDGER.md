@@ -37,8 +37,8 @@ This ledger is **not yet a claim that every donor route has been audited**. It i
 | Linked Twitch/Discord/Xbox providers | SPMT/apps | SPMT grants | PRESERVE | human-only active-link list/unlink now shares one API/SDK/CLI/MCP contract and records revocation tombstones; verified provider claim/relink and donor migration remain; never merge by display name | disconnect/relink/isolation test |
 | Service authentication | mixed keys/provider tokens | SPMT scoped service identities | REPLACE | zero-use window for legacy headers | allowed/denied scope matrix |
 | App registry / installs / permissions | SPMT | SPMT | PRESERVE | migrate canonical records | install/revoke/launch test |
-| WorkspaceProfile/theme/backgrounds | SPMT | SPMT | PRESERVE | migrate one authoritative profile | device A→B round trip |
-| Three dock slots | SPMT/SpaceMountain | SPMT + SpaceMountain | PRESERVE | migrate URLs/state, no secrets | collapse/volume/mute/device test |
+| WorkspaceProfile/theme/backgrounds | SPMT | SPMT | PRESERVE | Green SpaceMountain now reads, renders and revision-safely edits theme/accent/background and writes only the canonical SPMT profile; migrate the complete donor profile and connect every app as a reader | device A→B exact round trip plus cross-app rendering |
+| Three dock slots | SPMT/SpaceMountain | SPMT + SpaceMountain | PRESERVE | Green SpaceMountain now edits exactly three canonical slots, retains unknown legacy slot values during transition, and offers installed registry apps; migrate URLs/state, no secrets | collapse/volume/mute/device test |
 | Personal overlay / Overlay Bay | SpaceMountain/SPMT | SpaceMountain renderer + SPMT scene metadata | IMPROVE | stable read-only output grants | OBS renderer + revoke test |
 | Web/image/text/camera/screen/Xbox overlay sources | SPMT/SpaceMountain/app renderers | capability-specific browser/Companion/isolated Xbox renderers behind public scene contracts | IMPROVE | sandbox HTTPS web sources; block credentials/private networks; local permissioned camera/screen by default; preserve independent visibility/interaction/opacity/layer/revoke controls | source-by-source consent, isolation, OBS, revoke, and private-network tests |
 | Canonical XP/level | SPMT plus legacy producers | SPMT append-only ledger | IMPROVE | reconcile provenance; never sum/max | cross-surface exact balance test |
@@ -183,7 +183,7 @@ Audit state:
 | Donor repo | Deep audit | Retirement blocker |
 |---|---|---|
 | `Mtman1987/spmt-live` | IN PROGRESS — production startup chain, route domains, schema families, patch debt, and Green gap captured in `docs/donor-audits/SPMT_DEEP_AUDIT_2026-08-23.md`; route-by-route caller/migration proof and retained implementations remain | yes |
-| `Mtman1987/spacemountain-live` | PENDING | yes |
+| `Mtman1987/spacemountain-live` | IN PROGRESS — production runtime, visible routes, local duplicate state, private cross-app calls, patch debt, capability dispositions, and Green gaps captured in `docs/donor-audits/SPACEMOUNTAIN_DEEP_AUDIT_2026-08-23.md`; linked-provider Settings is now on the public SPMT contract, while the remaining retained pages and migrations are incomplete | yes |
 | `Mtman1987/streamweaver` | PENDING | yes |
 | `Mtman1987/DiscordStreamHub` | PENDING | yes |
 | `Mtman1987/hearmeout-main` | PENDING | yes |

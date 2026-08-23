@@ -26,6 +26,19 @@ test("SpaceMountain visible shell exposes canonical home, Shipyard, Commlink and
   assert.match(source, /Registry, install state, granted scopes, and entitlements come directly from SPMT/);
   assert.match(source, /Three persistent dock slots/);
   assert.match(source, /\[0, 1, 2\]\.map/);
+  assert.match(source, /data-workspace-settings/);
+  assert.match(source, /Save canonical workspace/);
+  assert.match(source, /Background image URL/);
+  assert.match(source, /onSaveWorkspace/);
+  assert.match(source, /root\.style\.backgroundImage/);
+  assert.match(source, /root\.style\.setProperty\("--accent"/);
+});
+
+test("Settings exposes canonical SPMT provider links without browser-owned auth state", () => {
+  assert.match(source, /LINKED ACCOUNTS/);
+  assert.match(source, /data-provider-unlink/);
+  assert.match(source, /this\.snapshot\.sources\.identity/);
+  assert.match(source, /same SPMT user identity/);
 });
 
 test("Commlink renders separate canonical account feeds and does not fake live chat", () => {

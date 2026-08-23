@@ -10,6 +10,7 @@ function fakeClient(overrides = {}) {
       tenantIds: ["tenant-a"],
       scopes: ["operations:logs:read", "operations:coder:read", "operations:coder:invoke"],
     }),
+    listProviderLinks: async () => [{ userId: "user-1", provider: "twitch", providerUserId: "twitch-1", linkedAt: "2026-08-23T00:00:00.000Z" }],
     getWorkspaceProfile: async () => ({ tenantId: "tenant-a", revision: 4, appearance: { theme: "dark" }, dockSlots: ["streamweaver", null, "chat-tag"] }),
     getXpBalance: async () => ({ tenantId: "tenant-a", userId: "user-1", balance: 42 }),
     listApps: async () => [
@@ -27,7 +28,7 @@ function fakeClient(overrides = {}) {
     getCoderDescriptor: async () => ({ schemaVersion: 1, id: "spmt.operations.coder", executionOwner: "mtman-machine-rotator", availability: "unavailable", requiredScopes: ["operations:logs:read", "operations:coder:invoke"], unavailableReason: "worker not connected" }),
     listCoderJobs: async () => [],
     request: async (path) => path === "/v1/auth/setup-options" ? { options: [{ id: "spacemountain-invite", primary: true }, { id: "discord-dm-reset", primary: false }] } : {},
-    installApp: async () => ({}), disableApp: async () => ({}), updateWorkspaceProfile: async () => ({}), markNotificationRead: async () => ({}),
+    installApp: async () => ({}), disableApp: async () => ({}), updateWorkspaceProfile: async () => ({}), markNotificationRead: async () => ({}), unlinkProvider: async () => ({}),
   };
   return { ...base, ...overrides };
 }
@@ -37,6 +38,7 @@ test("SpaceMountain loads canonical known services into one ready shell snapshot
   const snapshot = await controller.load({ tenantId: "tenant-a", userId: "user-1" });
   assert.equal(snapshot.state, "ready");
   assert.equal(snapshot.xp.balance, 42);
+  assert.equal(snapshot.providerLinks[0].provider, "twitch");
   assert.equal(snapshot.apps.length, 2);
   assert.equal(snapshot.apps.find((app) => app.appId === "streamweaver")?.enabled, true);
     assert.equal(snapshot.apps.find((app) => app.appId === "chat-tag")?.installed, false);
@@ -96,6 +98,15 @@ test("session or workspace failure makes SpaceMountain honestly unavailable", as
   assert.equal(snapshot.state, "unavailable");
   assert.equal(snapshot.sources.workspace.state, "degraded");
   assert.match(snapshot.sources.workspace.detail, /authority offline/);
+});
+
+test("SpaceMountain saves one revisioned canonical workspace through the public SDK", async () => {
+  let received;
+  const controller = new SpaceMountainShellController(fakeClient({ updateWorkspaceProfile: async (...args) => { received = args; return { revision: 5 }; } }));
+  const patch = { appearance: { theme: "dark", accent: "#ff7a18", backgroundUrl: "https://images.example/station.jpg" }, dockSlots: ["streamweaver", null, "chat-tag"] };
+  const result = await controller.saveWorkspace("tenant-a", 4, patch);
+  assert.deepEqual(received, ["tenant-a", 4, patch]);
+  assert.equal(result.revision, 5);
 });
 
 test("AppFrame target carries identity and grants in the bridge launch, never the iframe URL", () => {

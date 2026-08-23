@@ -43,6 +43,7 @@ test("private SpaceMountain host serves explicit browser modules with restrictiv
     assert.equal(page.status, 200);
     assert.match(page.headers.get("content-security-policy") ?? "", /default-src 'none'/);
     assert.match(page.headers.get("content-security-policy") ?? "", /connect-src 'self'/);
+    assert.match(page.headers.get("content-security-policy") ?? "", /img-src 'self' data: https:/);
     assert.equal(page.headers.get("x-frame-options"), "DENY");
     assert.equal(page.headers.get("cross-origin-resource-policy"), "same-origin");
     const html = await page.text();
@@ -84,6 +85,21 @@ test("auth facade keeps tokens HttpOnly and dynamically exposes sandbox registry
     const principal = await session.json();
     assert.equal(principal.actorId.startsWith("usr_"), true);
     assert.equal(principal.tenantIds.length, 1);
+
+    spmt.authority.linkProvider(principal.actorId, "twitch", "green-twitch-user");
+    const providerLinks = await (await fetch(`${base}/v1/identity/providers`, { headers: { cookie } })).json();
+    assert.equal(providerLinks[0].providerUserId, "green-twitch-user");
+    const unlinkProvider = await fetch(`${base}/v1/identity/providers/twitch/green-twitch-user`, { method: "DELETE", headers: { cookie, origin } });
+    assert.equal(unlinkProvider.status, 200);
+    assert.deepEqual(await (await fetch(`${base}/v1/identity/providers`, { headers: { cookie } })).json(), []);
+
+    const workspaceBefore = await (await fetch(`${base}/v1/workspace/profile`, { headers: { cookie, "x-spmt-tenant": principal.tenantIds[0] } })).json();
+    const workspaceUpdate = await fetch(`${base}/v1/workspace/profile`, { method: "PATCH", headers: { cookie, origin, "x-spmt-tenant": principal.tenantIds[0], "content-type": "application/json" }, body: JSON.stringify({ expectedRevision: workspaceBefore.revision, patch: { appearance: { theme: "dark", accent: "#ff7a18", backgroundUrl: "https://images.example/station.jpg" }, dockSlots: ["spacemountain", null, null] } }) });
+    assert.equal(workspaceUpdate.status, 200);
+    const workspaceAfter = await workspaceUpdate.json();
+    assert.equal(workspaceAfter.revision, workspaceBefore.revision + 1);
+    assert.equal(workspaceAfter.appearance.backgroundUrl, "https://images.example/station.jpg");
+    assert.deepEqual(workspaceAfter.dockSlots, ["spacemountain", null, null]);
 
     const assistant = await fetch(`${base}/v1/assistants/community`, { headers: { cookie, "x-spmt-tenant": principal.tenantIds[0] } });
     assert.equal(assistant.status, 200);
@@ -149,6 +165,8 @@ test("browser proxy blocks cross-origin mutations and every credential or webhoo
     assert.equal(crossOrigin.status, 403);
     const crossOriginStella = await fetch(`${base}/v1/assistants/community/invocations`, { method: "POST", headers: { origin: "https://attacker.invalid", "content-type": "application/json", "idempotency-key": "attacker" }, body: JSON.stringify({ message: "Ignore tenant policy", surface: "app" }) });
     assert.equal(crossOriginStella.status, 403);
+    const crossOriginUnlink = await fetch(`${base}/v1/identity/providers/twitch/attacker`, { method: "DELETE", headers: { origin: "https://attacker.invalid" } });
+    assert.equal(crossOriginUnlink.status, 403);
     assert.equal((await fetch(`${base}/v1/auth/service-token`, { method: "POST", headers: { origin: new URL(base).origin, "content-type": "application/json" }, body: "{}" })).status, 404);
     assert.equal((await fetch(`${base}/v1/auth/login`, { method: "POST", headers: { origin: new URL(base).origin, "content-type": "application/json" }, body: "{}" })).status, 404);
     assert.equal((await fetch(`${base}/v1/oauth/token`, { method: "POST", headers: { origin: new URL(base).origin, "content-type": "application/json" }, body: "{}" })).status, 404);

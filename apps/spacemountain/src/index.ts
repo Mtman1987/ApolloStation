@@ -5,6 +5,7 @@ export const SPACEMOUNTAIN_APP_ID = "spacemountain";
 
 export type SpaceMountainSource =
   | "session"
+  | "identity"
   | "workspace"
   | "xp"
   | "shipyard"
@@ -45,6 +46,7 @@ export interface SpaceMountainShellSnapshotV1 {
   tenantId: string;
   userId: string;
   session?: Record<string, unknown>;
+  providerLinks: Array<Record<string, unknown>>;
   workspace?: Record<string, unknown>;
   xp?: { tenantId: string; userId: string; balance: number };
   apps: SpaceMountainAppCardV1[];
@@ -89,6 +91,7 @@ export class SpaceMountainShellController {
     }));
     const tasks = {
       session: sessionTask,
+      providerLinks: this.spmt.listProviderLinks(),
       workspace: this.spmt.getWorkspaceProfile(input.tenantId),
       xp: this.spmt.getXpBalance(input.tenantId, input.userId),
       shipyard: this.spmt.listApps(),
@@ -124,6 +127,7 @@ export class SpaceMountainShellController {
     const apps = joinApps(rawApps, rawInstalls);
     const sources: Record<SpaceMountainSource, SourceStateV1> = {
       session: source(failures, ["session"]),
+      identity: source(failures, ["providerLinks"]),
       workspace: source(failures, ["workspace"]),
       xp: source(failures, ["xp"]),
       shipyard: source(failures, ["shipyard"]),
@@ -148,6 +152,7 @@ export class SpaceMountainShellController {
       tenantId: input.tenantId,
       userId: input.userId,
       ...(session ? { session } : {}),
+      providerLinks: records(values.get("providerLinks")),
       ...(workspace ? { workspace } : {}),
       ...(isXp(values.get("xp")) ? { xp: values.get("xp") as { tenantId: string; userId: string; balance: number } } : {}),
       apps,
@@ -176,6 +181,12 @@ export class SpaceMountainShellController {
 
   async markNotificationRead(tenantId: string, notificationId: string, userId?: string) {
     return this.spmt.markNotificationRead(tenantId, notificationId, userId);
+  }
+
+  async unlinkProvider(provider: string, providerUserId: string) {
+    if (!["twitch", "discord", "xbox", "github", "other"].includes(provider)) throw new Error("provider is invalid");
+    requireId(providerUserId, "providerUserId");
+    return this.spmt.unlinkProvider(provider as "twitch" | "discord" | "xbox" | "github" | "other", providerUserId);
   }
 
   async loadConversationMessages(tenantId: string, conversationId: string) {

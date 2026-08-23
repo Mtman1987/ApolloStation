@@ -107,6 +107,8 @@ async function loadShell() {
       onLaunchApp: (app) => launchApp(app),
       onOpenConversation: (conversation) => void openConversation(conversation),
       onMarkNotificationRead: (notification) => void markNotificationRead(notification),
+      onUnlinkProvider: (link) => void unlinkProvider(link),
+      onSaveWorkspace: (expectedRevision, patch) => void saveWorkspace(expectedRevision, patch),
       onPrepareCoderLog: (log) => void prepareCoderLog(log),
     }).mount();
     const degraded = Object.entries(snapshot.sources).filter(([, source]) => source.state !== "ready").map(([name]) => name);
@@ -160,6 +162,29 @@ async function markNotificationRead(notification: Record<string, unknown>) {
   try {
     await controller.markNotificationRead(principal.tenantIds[0]!, id, principal.actorId);
     await loadShell();
+  } catch (error) { setStatus(message(error), "error"); }
+}
+
+async function unlinkProvider(link: Record<string, unknown>) {
+  const provider = typeof link.provider === "string" ? link.provider : "";
+  const providerUserId = typeof link.providerUserId === "string" ? link.providerUserId : typeof link.provider_user_id === "string" ? link.provider_user_id : "";
+  if (!provider || !providerUserId) return;
+  if (!window.confirm(`Unlink ${provider} account ${providerUserId}? You may lose that sign-in path until it is verified and linked again.`)) return;
+  setStatus(`Unlinking ${provider} through the public SPMT identity contract…`, "working");
+  try {
+    await controller.unlinkProvider(provider, providerUserId);
+    await loadShell();
+    setStatus(`${provider} account unlinked from this SPMT identity.`, "ready");
+  } catch (error) { setStatus(message(error), "error"); }
+}
+
+async function saveWorkspace(expectedRevision: number, patch: Record<string, unknown>) {
+  const principal = requirePrincipal();
+  setStatus("Saving the canonical SPMT workspace…", "working");
+  try {
+    await controller.saveWorkspace(principal.tenantIds[0]!, expectedRevision, patch);
+    await loadShell();
+    setStatus("Workspace saved once and published for every authorized app.", "ready");
   } catch (error) { setStatus(message(error), "error"); }
 }
 

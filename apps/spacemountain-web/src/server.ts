@@ -154,16 +154,17 @@ async function proxy(response: ServerResponse, request: IncomingMessage, url: UR
 
 function browserProxyAllowed(method: string, pathname: string) {
   if (method === "GET") {
-    if (["/health/live", "/health/ready", "/v1/session", "/v1/auth/setup-options", "/v1/workspace/profile", "/v1/apps", "/v1/apps/installs", "/v1/entitlements", "/v1/events", "/v1/commlink/conversations", "/v1/commlink/messages", "/v1/commlink/search", "/v1/notifications", "/v1/assistants/community", "/v1/stellar/context", "/v1/stellar/capabilities", "/v1/operations/logs", "/v1/operations/coder", "/v1/operations/coder/jobs"].includes(pathname)) return true;
+    if (["/health/live", "/health/ready", "/v1/session", "/v1/auth/setup-options", "/v1/identity/providers", "/v1/workspace/profile", "/v1/apps", "/v1/apps/installs", "/v1/entitlements", "/v1/events", "/v1/commlink/conversations", "/v1/commlink/messages", "/v1/commlink/search", "/v1/notifications", "/v1/assistants/community", "/v1/stellar/context", "/v1/stellar/capabilities", "/v1/operations/logs", "/v1/operations/coder", "/v1/operations/coder/jobs"].includes(pathname)) return true;
     return /^\/v1\/apps\/[^/]+$/.test(pathname);
   }
   if (method === "PATCH" && pathname === "/v1/workspace/profile") return true;
+  if (method === "DELETE" && /^\/v1\/identity\/providers\/[^/]+\/[^/]+$/.test(pathname)) return true;
   if (method === "POST") return /^\/v1\/apps\/[^/]+\/(?:install|disable)$/.test(pathname) || /^\/v1\/notifications\/[^/]+\/read$/.test(pathname) || pathname === "/v1/commlink/messages" || pathname === "/v1/assistants/community/invocations" || pathname === "/v1/operations/coder/jobs";
   return false;
 }
 
 function applySecurityHeaders(response: ServerResponse, nonce: string) {
-  response.setHeader("content-security-policy", `default-src 'none'; script-src 'self' 'nonce-${nonce}'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'`);
+  response.setHeader("content-security-policy", `default-src 'none'; script-src 'self' 'nonce-${nonce}'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self'; font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'`);
   response.setHeader("cross-origin-opener-policy", "same-origin");
   response.setHeader("cross-origin-resource-policy", "same-origin");
   response.setHeader("permissions-policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), bluetooth=()");

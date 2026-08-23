@@ -207,6 +207,8 @@ export class AuthorityService {
       if (!current) throw new AuthorityConflictError(`Workspace ${tenantId} does not exist; create it before revisioned updates`);
       if (expectedRevision !== current.revision) throw new AuthorityConflictError(`Workspace revision conflict: expected ${expectedRevision}, current ${current.revision}`);
       if (patch.dockSlots && patch.dockSlots.length !== 3) throw new AuthorityValidationError("Workspace must contain exactly three dock slots");
+      if (patch.dockSlots) patch.dockSlots.forEach((slot) => { if (slot !== null) requireWorkspaceValue(slot, "dock slot", 2048); });
+      if (patch.appearance) validateAppearance(patch.appearance);
       const next: WorkspaceProfileV1 = { ...current, ...cloneJson(patch), tenantId, revision: current.revision + 1, updatedAt: this.now() };
       this.store.putWorkspace(next);
       return next;
@@ -339,6 +341,19 @@ export class AuthorityService {
 
 function requireId(value: string, name: string) {
   if (!value || value.trim() !== value || value.length > 200) throw new AuthorityValidationError(`${name} is invalid`);
+}
+function requireWorkspaceValue(value: string, name: string, max: number) {
+  if (!value.trim() || value.length > max || /[\u0000-\u001f\u007f]/.test(value)) throw new AuthorityValidationError(`${name} is invalid`);
+}
+function validateAppearance(value: AppearanceV1) {
+  if (!["system", "light", "dark"].includes(value.theme)) throw new AuthorityValidationError("Workspace theme is invalid");
+  if (value.accent !== undefined && !/^#[0-9a-fA-F]{6}$/.test(value.accent)) throw new AuthorityValidationError("Workspace accent is invalid");
+  if (value.backgroundUrl !== undefined) {
+    requireWorkspaceValue(value.backgroundUrl, "background URL", 2048);
+    let url: URL;
+    try { url = new URL(value.backgroundUrl); } catch { throw new AuthorityValidationError("Workspace background URL is invalid"); }
+    if (url.protocol !== "https:" || url.username || url.password) throw new AuthorityValidationError("Workspace background URL must be credential-free HTTPS");
+  }
 }
 function cloneJson<T>(value: T): T {
   if (value === undefined) return value;

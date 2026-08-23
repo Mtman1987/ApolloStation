@@ -37,6 +37,10 @@ test("workspace uses one revisioned authority and exactly three dock slots", () 
   const updated = authority.updateWorkspace("tenant-a", 1, { dockSlots: ["https://a.example", null, null] });
   assert.equal(updated.revision, 2);
   assert.throws(() => authority.updateWorkspace("tenant-a", 1, { appearance: { theme: "dark" } }), AuthorityConflictError);
+  const themed = authority.updateWorkspace("tenant-a", 2, { appearance: { theme: "dark", accent: "#ff7a18", backgroundUrl: "https://images.example/station.jpg" } });
+  assert.equal(themed.appearance.backgroundUrl, "https://images.example/station.jpg");
+  assert.throws(() => authority.updateWorkspace("tenant-a", 3, { appearance: { theme: "night" } }), /theme is invalid/);
+  assert.throws(() => authority.updateWorkspace("tenant-a", 3, { appearance: { theme: "dark", backgroundUrl: "http://insecure.example/image.jpg" } }), /credential-free HTTPS/);
 });
 
 test("XP awards are idempotent per tenant and never double count", () => {
