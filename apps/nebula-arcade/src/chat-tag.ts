@@ -154,6 +154,26 @@ export type ChatTagParsedCommandV1 =
   | { kind: "join" | "leave" | "status" | "score" | "rank" | "players" | "sleep" | "wake" | "toggle-away" | "rules" | "help" | "info" }
   | { kind: "tag" | "pass" | "grant-pass"; targetUsername: string };
 
+export interface ChatTagInboundMessageV1 {
+  schemaVersion: 1;
+  provider: "twitch" | "discord" | "kick";
+  tenantId: string;
+  channelId: string;
+  messageId: string;
+  userId: string;
+  username: string;
+  text: string;
+  occurredAt: string;
+  roles?: Array<"broadcaster" | "moderator" | "member">;
+  mentions?: Array<{ token: string; userId: string; username: string }>;
+}
+
+export type ChatTagMessagePlanV1 =
+  | { kind: "ignored" }
+  | { kind: "response"; code: string; message: string }
+  | { kind: "rejected"; code: string; message: string }
+  | { kind: "command"; command: ChatTagCommandV1 };
+
 function normalizeUsername(value: string): string {
   return value.trim().toLowerCase().replace(/^@+/, "");
 }
@@ -256,7 +276,10 @@ export function assertChatTagStateV1(value: unknown, tenantId?: string): ChatTag
 export function parseChatTagCommandText(message: string): ChatTagParsedCommandV1 | null {
   const tokens = message.trim().split(/\s+/);
   if (tokens.length < 2 || tokens[0]?.toLowerCase() !== "spmt") return null;
-  const name = tokens[1]?.toLowerCase();
+  const modular = ["chattag", "taggame"].includes(tokens[1]?.toLowerCase() ?? "");
+  if (modular && tokens.length === 2) return { kind: "join" };
+  const commandIndex = modular ? 2 : 1;
+  const name = tokens[commandIndex]?.toLowerCase();
   if (!name) return null;
   if (["join", "leave", "status", "score", "rank", "players", "sleep", "wake", "rules", "help", "info"].includes(name)) {
     return { kind: name as Exclude<ChatTagParsedCommandV1["kind"], "tag" | "pass" | "grant-pass" | "toggle-away"> };
@@ -265,11 +288,77 @@ export function parseChatTagCommandText(message: string): ChatTagParsedCommandV1
   if (name === "stats") return { kind: "score" };
   if (name === "away") return { kind: "toggle-away" };
   if (name === "tag" || name === "pass" || name === "givepass") {
-    const targetUsername = normalizeUsername(tokens[2] ?? "");
+    const targetUsername = normalizeUsername(tokens[commandIndex + 1] ?? "");
     if (!targetUsername) return null;
     return { kind: name === "givepass" ? "grant-pass" : name, targetUsername };
   }
   return null;
+}
+
+export function planChatTagMessage(stateValue: ChatTagStateV1, message: ChatTagInboundMessageV1): ChatTagMessagePlanV1 {
+  const state = assertChatTagStateV1(stateValue, message.tenantId);
+  const mentionMap = new Map((message.mentions ?? []).map((mention) => [mention.token, `@${mention.username}`]));
+  const normalizedText = message.text.split(/(\s+)/).map((part) => mentionMap.get(part) ?? part).join("");
+  const parsed = parseChatTagCommandText(normalizedText);
+  if (!parsed) return { kind: "ignored" };
+  const actor = state.players[message.userId];
+  const isModerator = Boolean(message.roles?.some((role) => role === "broadcaster" || role === "moderator"));
+  const base = {
+    schemaVersion: 1 as const,
+    tenantId: message.tenantId,
+    commandId: `${message.provider}:${message.messageId}`,
+    actorUserId: message.userId,
+    occurredAt: message.occurredAt,
+    channelId: message.channelId,
+    isModerator,
+  };
+
+  if (parsed.kind === "status") {
+    const status = getChatTagStatus(state);
+    return { kind: "response", code: "status", message: status.freeForAll ? `Chat Tag is free for all with ${status.playerCount} players.` : `${status.currentItUsername} is it. ${status.playerCount} players are joined.` };
+  }
+  if (parsed.kind === "score") {
+    return actor
+      ? { kind: "response", code: "score", message: `${actor.username}: ${actor.score} points, ${actor.tagsMade} tags, ${actor.passCount} passes.` }
+      : { kind: "rejected", code: "not-a-player", message: "Join Chat Tag first with spmt join." };
+  }
+  if (parsed.kind === "rank") {
+    const leaders = getChatTagLeaderboard(state).slice(0, 3);
+    return { kind: "response", code: "rank", message: leaders.length ? leaders.map((player, index) => `#${index + 1} ${player.username} ${player.score}`).join(" | ") : "No Chat Tag players yet." };
+  }
+  if (parsed.kind === "players") {
+    const players = Object.values(state.players).filter((player) => !player.sleeping && !player.offline);
+    return { kind: "response", code: "players", message: players.length ? players.map((player) => player.username).join(", ") : "No available Chat Tag players." };
+  }
+  if (parsed.kind === "rules" || parsed.kind === "help" || parsed.kind === "info") {
+    return { kind: "response", code: parsed.kind, message: '"spmt join" | "spmt tag @user" | "spmt pass @user" | "spmt status" | "spmt score" | "spmt rank" | "spmt away"' };
+  }
+  if (parsed.kind === "join") return { kind: "command", command: { ...base, kind: "join", username: message.username } };
+  if (parsed.kind === "leave") return { kind: "command", command: { ...base, kind: "leave" } };
+  if (parsed.kind === "sleep" || parsed.kind === "wake") return { kind: "command", command: { ...base, kind: parsed.kind } };
+  if (parsed.kind === "toggle-away") return { kind: "command", command: { ...base, kind: actor?.sleeping || actor?.offline ? "wake" : "sleep" } };
+  if (parsed.kind !== "tag" && parsed.kind !== "pass" && parsed.kind !== "grant-pass") return { kind: "ignored" };
+
+  const target = resolveChatTagTarget(state, parsed.targetUsername);
+  if (target.kind !== "found") return { kind: "rejected", code: target.kind === "ambiguous" ? "target-ambiguous" : "target-not-a-player", message: target.kind === "ambiguous" ? `More than one player matches ${parsed.targetUsername}.` : `${parsed.targetUsername} is not in Chat Tag.` };
+  if (parsed.kind === "grant-pass") return { kind: "command", command: { ...base, kind: "grant-pass", targetUserId: target.userId } };
+  return { kind: "command", command: { ...base, kind: parsed.kind, targetUserId: target.userId } };
+}
+
+export function resolveChatTagTarget(state: ChatTagStateV1, rawTarget: string): { kind: "found"; userId: string } | { kind: "ambiguous" | "not-found" } {
+  const target = normalizeUsername(rawTarget);
+  const players = Object.values(state.players);
+  const exact = players.find((player) => normalizeUsername(player.username) === target);
+  if (exact) return { kind: "found", userId: exact.userId };
+  const compactTarget = target.replaceAll("_", "");
+  const compact = players.filter((player) => normalizeUsername(player.username).replaceAll("_", "") === compactTarget);
+  if (compact.length === 1) return { kind: "found", userId: compact[0]!.userId };
+  if (target.length >= 4) {
+    const prefix = players.filter((player) => normalizeUsername(player.username).startsWith(target));
+    if (prefix.length === 1) return { kind: "found", userId: prefix[0]!.userId };
+    if (prefix.length > 1) return { kind: "ambiguous" };
+  }
+  return { kind: "not-found" };
 }
 
 export function executeChatTagCommand(

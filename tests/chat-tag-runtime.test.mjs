@@ -97,3 +97,22 @@ test("failed SPMT delivery stays durable and retries with the same idempotency k
     rmSync(item.directory, { recursive: true, force: true });
   }
 });
+
+test("normalized provider ingress executes once per provider message id", async () => {
+  const item = fixture();
+  const inbound = (messageId, userId, username, text, minute) => ({ schemaVersion: 1, provider: "twitch", tenantId: "tenant-ingress", channelId: "mtman1987", messageId, userId, username, text, occurredAt: at(minute), roles: ["member"] });
+  try {
+    await item.runtime.ingest(inbound("join-alpha", "user-alpha", "Alpha", "spmt join", 0));
+    await item.runtime.ingest(inbound("join-beta", "user-beta", "Beta", "spmt chattag", 1));
+    const first = await item.runtime.ingest(inbound("tag-1", "user-alpha", "Alpha", "spmt tag beta", 2));
+    const duplicate = await item.runtime.ingest(inbound("tag-1", "user-alpha", "Alpha", "spmt tag beta", 2));
+    assert.equal(first.kind, "result");
+    assert.equal(first.result.status, "applied");
+    assert.equal(duplicate.kind, "result");
+    assert.equal(duplicate.result.status, "duplicate");
+    assert.equal(duplicate.state.history.length, 1);
+  } finally {
+    item.store.close();
+    rmSync(item.directory, { recursive: true, force: true });
+  }
+});

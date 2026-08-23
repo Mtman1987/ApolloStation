@@ -6,10 +6,13 @@ import {
   createChatTagState,
   executeChatTagCommand,
   publishChatTagCommandResult,
+  planChatTagMessage,
   type ChatTagCommandResultV1,
   type ChatTagCommandV1,
   type ChatTagRulesV1,
   type ChatTagStateV1,
+  type ChatTagInboundMessageV1,
+  type ChatTagMessagePlanV1,
 } from "./chat-tag.js";
 
 export interface StoredChatTagStateV1 {
@@ -196,6 +199,13 @@ export class ChatTagRuntime {
     const applied = this.store.applyCommand(command, this.rules);
     const delivery = await this.flushPending(command.tenantId);
     return { ...applied, delivery };
+  }
+
+  async ingest(message: ChatTagInboundMessageV1): Promise<ChatTagMessagePlanV1 | (StoredChatTagCommandV1 & { kind: "result"; delivery: ChatTagDeliveryReportV1 })> {
+    const plan = planChatTagMessage(this.store.getState(message.tenantId).state, message);
+    if (plan.kind !== "command") return plan;
+    const applied = await this.execute(plan.command);
+    return { kind: "result", ...applied };
   }
 
   async flushPending(tenantId: string, limit = 100): Promise<ChatTagDeliveryReportV1> {
