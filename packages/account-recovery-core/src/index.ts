@@ -1,6 +1,6 @@
 import { createHash, randomBytes, scryptSync } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
-import type { AuthorityStore, ProviderKindV1 } from "@spmt/authority-core";
+import type { AuthorityStore, ProviderKindV1, ProviderLinkV1 } from "@spmt/authority-core";
 import { AuthorityService } from "@spmt/authority-core";
 import { ControlNotFoundError, ControlService } from "@spmt/control-core";
 import type { PlatformDataStore, UserProfileV1 } from "@spmt/platform-data-core";
@@ -83,8 +83,8 @@ export class SqliteAccountSetupStore {
       .run(value.tokenHash, value.purpose, value.userId, value.tenantId, value.expiresAt, value.usedAt ?? null, JSON.stringify(value));
   }
   findProviderUserId(userId: string, provider: ProviderKindV1) {
-    const row = this.db.prepare("SELECT provider_user_id FROM provider_links WHERE user_id=? AND provider=? ORDER BY provider_user_id LIMIT 1").get(userId, provider) as { provider_user_id?: string } | undefined;
-    return row?.provider_user_id;
+    const rows = this.db.prepare("SELECT body FROM provider_links WHERE user_id=? AND provider=? ORDER BY provider_user_id").all(userId, provider) as Array<{ body: string }>;
+    return rows.map((row) => JSON.parse(row.body) as ProviderLinkV1).find((link) => !link.revokedAt)?.providerUserId;
   }
 }
 
@@ -120,8 +120,10 @@ export class AccountRecoveryService {
   provisionAccount(input: AccountProvisionInputV1): AccountProvisionResultV1 {
     const tenantId = requireId(input.tenantId, "tenantId");
     requireId(input.sourceAppId, "sourceAppId");
-    const discordLink = input.discord?.id ? this.authorityStore.getProviderLink("discord", requireId(input.discord.id, "discord.id")) : undefined;
-    const twitchLink = input.twitch?.id ? this.authorityStore.getProviderLink("twitch", requireId(input.twitch.id, "twitch.id")) : undefined;
+    const rawDiscordLink = input.discord?.id ? this.authorityStore.getProviderLink("discord", requireId(input.discord.id, "discord.id")) : undefined;
+    const rawTwitchLink = input.twitch?.id ? this.authorityStore.getProviderLink("twitch", requireId(input.twitch.id, "twitch.id")) : undefined;
+    const discordLink = rawDiscordLink?.revokedAt ? undefined : rawDiscordLink;
+    const twitchLink = rawTwitchLink?.revokedAt ? undefined : rawTwitchLink;
     const providerUsers = new Set([discordLink?.userId, twitchLink?.userId].filter((value): value is string => Boolean(value)));
     if (providerUsers.size > 1) throw new AccountSetupError("Discord and Twitch are already linked to different SPMT accounts");
 

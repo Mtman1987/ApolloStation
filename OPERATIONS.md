@@ -38,7 +38,12 @@ The rebuild should move in large enough slices to avoid dozens of tiny patches, 
 | 7 | Discord Stream Hub vertical | community/live/shoutout/calendar/moderation, XP producer/view, clip worker, flagship events/overlay-manifest integration | DSH product + worker + surface/developer contract suite passes |
 | 8A | HearMeOut vertical | rooms, LiveKit, Activity auth, DJ/music/watch/media, OBS output, DJ/media worker, flagship realtime/device/overlay integration | media/voice truth-path and multi-user tests plus surface/developer conformance pass |
 | 8B | Nebula Arcade vertical (donor repository: ChatTag) | original Chat Tag game, Quackverse/Bingo/Arena/catalog modules, durable actions, overlays, XP, bot worker, and flagship game/event/overlay integration | per-game + two-player + bot reconnect tests plus surface/developer conformance pass |
-| 9 | Parity/cutover hardening | donor compatibility, migrations, shadow compare, full deep audit, load/fault tests, recovery rehearsal, cross-app surface matrix, developer platform conformance, cohort cutover tooling | every Blue retirement gate in `PARITY_LEDGER.md` passes |
+| 8C | MountainView vertical | phone/Bluetooth/camera/voice/media bridge, paired-device flows, mobile surfaces, and Companion relay integration | real-device or faithful hardware-fixture, pairing/revoke, reconnect, background/wake, and surface tests pass |
+| 8D | Companion vertical | desktop and Android relay, OBS control, universal overlay/popouts, local media/FFmpeg, local AI capability, pairing, and signed update boundaries | desktop/mobile/device/OBS/restart/local-compute suites pass |
+| 8E | Operations and support vertical | Rotator fleet reconciliation, Athena Coder/`!mtfixit` intake, GitHub operator controls, recovery app, and app lifecycle self-service | dry-run, approval, audit, rollback, recovery, lease, scale, and cost-bound tests pass |
+| 9 | Full-suite parity hardening | donor compatibility, migrations, full deep audit, load/fault tests, recovery rehearsal, cross-app surface matrix, developer platform conformance, and complete standalone/embedded app matrix | every retained capability works and every app satisfies `APP_CONTRACTS.md`; no scaffold is counted as parity |
+| 10 | Integrated Sprite/Fly sandbox | deploy the complete Green suite together behind isolated sandbox routes and data; exercise real Machine lifecycle and cost policy while Blue remains untouched | suite-level user journeys, state reconciliation, worker scaling, recovery, latency, cost, and rollback tests pass after tuning |
+| 11 | Cutover preparation | shadow compare, cohort tooling, final migration, observation, rollback, and selective route/DNS plan | every Blue retirement gate in `PARITY_LEDGER.md` passes and owner explicitly approves cutover |
 
 Do not bury a failing vertical inside the next batch. Fix or explicitly defer it before proceeding.
 
@@ -108,6 +113,19 @@ The operational batch order may put Chat Gateway/StreamWeaver before Nebula Arca
 Each first-party app is also a flagship developer example. Prefer the same public SDK/API/event/WebSocket contracts an external app would use. Use CLI/MCP where they naturally fit developer/operator/AI workflows; do not force them into runtime call paths just to claim coverage.
 
 Then migrate apps one at a time based on tenant value, breakage, and dependency risk. Each app completes the contracts before the next cutover.
+
+This phase ends only after StreamWeaver, Discord Stream Hub, HearMeOut, Nebula Arcade including every retained game, MountainView, Companion, Rotator/operations, their bots, and their workers are usable replacements for their current deployed donors. Registering each package in Apollo is necessary but does not satisfy this phase.
+
+### Phase 3.5 — complete-suite Sprite/Fly sandbox
+
+- deploy all Green apps, bots, workers, storage authorities, recovery services, and lifecycle controls together under isolated sandbox names and routes;
+- use sandbox identities and copied/reconciled fixtures rather than authoritative Blue writes;
+- test the same user journeys through SpaceMountain, direct standalone app URLs, overlays, bots, device relays, SDK/API/CLI/MCP clients, and cross-app events;
+- tune Machine sizes, autostop/autostart, warm pools, queue thresholds, caches, latency, and cost using measured behavior;
+- keep broken experiments inside the sandbox and fold only tested corrections back into the canonical Apollo code;
+- do not select features for omission merely because a scaffold failed to include them; omissions require parity evidence and explicit approval.
+
+Early local or inert Sprite previews may prove shell and contract behavior, but they are not the integrated Fly sandbox and cannot satisfy this phase.
 
 ### Phase 4 — cutover and retirement
 

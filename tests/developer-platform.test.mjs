@@ -65,6 +65,37 @@ test("API and modern stateless MCP converge on one workspace authority", async (
   } finally { cleanup(env); }
 });
 
+test("linked provider accounts use one human-only SDK, CLI, API and MCP contract", async () => {
+  const env = setup();
+  try {
+    env.authority.linkProvider("viewer-1", "discord", "discord-100");
+    env.authority.linkProvider("viewer-1", "twitch", "twitch-200");
+    const humanToken = env.auth.issueHumanSession({ userId: "viewer-1", scopes: ["identity:read", "identity:write"], tenantIds: ["tenant-a"] }).accessToken;
+    const client = new SpmtClient({ baseUrl: "https://green.spmt.invalid", appId: "space-mountain", getAccessToken: () => humanToken, fetchImpl: async (url, init = {}) => {
+      const parsed = new URL(String(url));
+      const headers = Object.fromEntries(new Headers(init.headers).entries());
+      const response = env.api.handle({ method: init.method ?? "GET", path: `${parsed.pathname}${parsed.search}`, headers });
+      return new Response(JSON.stringify(response.body), { status: response.status, headers: { "content-type": "application/json" } });
+    } });
+
+    assert.equal((await client.listProviderLinks()).length, 2);
+    assert.equal((await runSpmtCli(["identity", "providers"], client)).length, 2);
+    const mcp = new SpmtMcpServer(env.operations);
+    const tools = mcp.handle({ jsonrpc: "2.0", id: 20, method: "tools/list" }, { accessToken: humanToken, protocolVersion: SPMT_MCP_PROTOCOL_VERSION });
+    assert.deepEqual(tools.result.tools.find((item) => item.name === "spmt.identity.providers.unlink").inputSchema.required, ["provider", "providerUserId"]);
+    const listed = mcp.handle({ jsonrpc: "2.0", id: 21, method: "tools/call", params: { name: "spmt.identity.providers.list", arguments: {} } }, { accessToken: humanToken, protocolVersion: SPMT_MCP_PROTOCOL_VERSION });
+    assert.equal(listed.result.structuredContent.length, 2);
+
+    const unlinked = await client.unlinkProvider("discord", "discord-100");
+    assert.ok(unlinked.revokedAt);
+    assert.deepEqual((await client.listProviderLinks()).map((item) => item.provider), ["twitch"]);
+    assert.ok(env.store.listAudit().some((item) => item.action === "identity.providers.unlink" && item.actorId === "viewer-1"));
+
+    const serviceDenied = env.api.handle({ method: "GET", path: "/v1/identity/providers", headers: { authorization: `Bearer ${env.accessToken}` } });
+    assert.equal(serviceDenied.status, 403);
+  } finally { cleanup(env); }
+});
+
 test("deprecated Athena CLI names remain transition aliases for Stellar Core", async () => {
   const seen = [];
   const client = {

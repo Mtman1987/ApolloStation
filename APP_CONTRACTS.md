@@ -4,6 +4,22 @@ Every rebuilt app and worker must satisfy these rules before it can join the new
 
 `SURFACE_AND_DEVELOPER_CONTRACT.md` is normative. The app contracts below do not permit an app-specific workspace/embed/header solution or a private cross-app shortcut that contradicts that shared contract.
 
+## What counts as a port
+
+An app manifest, package boundary, route placeholder, mock response, isolated contract test, or single cross-app vertical is **scaffolding**, not parity and not a ported app.
+
+A production app counts as ported only when:
+
+- its current deployed donor commit has a machine-checkable inventory of routes, commands, events, sockets, overlays, workers, jobs, state, auth, providers, and operational behavior;
+- every discovered user capability is implemented in Green or has an explicit owner-approved `REMOVE` decision;
+- retained behavior works through the public SPMT SDK/API/event/WebSocket/job/device contracts instead of a new private shortcut;
+- app-private durable state, cache, staging, and outbox data have real bounded storage adapters and restart/restore proof;
+- shell, standalone, overlay, popout, bot, and worker surfaces required by the donor all operate;
+- compatibility, two-tenant isolation, duplicate/replay, restart, dependency-failure, and cross-app tests pass;
+- no fake success, donor-only hardcoded secret, duplicate shared authority, retired Firebase path, or unexplained dead route remains.
+
+Refactoring may change implementation, package layout, process boundaries, and route internals. It must preserve the real user capability and its supported public entry points unless removal is explicitly approved. The purpose is the same usable app with clean platform plumbing, not a thinner demonstration of the app.
+
 ## Identity
 
 - Use immutable SPMT user and tenant IDs.

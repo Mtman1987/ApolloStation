@@ -16,6 +16,19 @@ test("provider identities cannot silently merge two SPMT users", () => {
   assert.throws(() => authority.linkProvider("user-b", "twitch", "123"), AuthorityConflictError);
 });
 
+test("provider unlink is audited as a tombstone and a verified identity can be linked again", () => {
+  const authority = service();
+  authority.linkProvider("user-a", "discord", "discord-123");
+  assert.equal(authority.listProviderLinks("user-a").length, 1);
+  const revoked = authority.unlinkProvider("user-a", "discord", "discord-123");
+  assert.ok(revoked.revokedAt);
+  assert.deepEqual(authority.listProviderLinks("user-a"), []);
+  assert.throws(() => authority.unlinkProvider("user-b", "discord", "discord-123"), AuthorityConflictError);
+  const relinked = authority.linkProvider("user-b", "discord", "discord-123");
+  assert.equal(relinked.userId, "user-b");
+  assert.equal(relinked.revokedAt, undefined);
+});
+
 test("workspace uses one revisioned authority and exactly three dock slots", () => {
   const authority = service();
   const initial = authority.getOrCreateWorkspace("tenant-a");

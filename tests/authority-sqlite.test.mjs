@@ -33,7 +33,16 @@ test("SQLite authority survives reopen with workspace, XP, idempotency, and jour
     assert.equal(authority.awardXp(award).duplicate, true);
     assert.equal(store.getWorkspace("tenant-a")?.appearance.theme, "dark");
     assert.equal(store.getProviderLink("twitch", "123")?.userId, "user-a");
-    assert.equal(store.listJournal().length, before.length);
+    assert.equal(authority.listProviderLinks("user-a").length, 1);
+    authority.unlinkProvider("user-a", "twitch", "123");
+    assert.equal(authority.listProviderLinks("user-a").length, 0);
+    store.close();
+
+    store = new SqliteAuthorityStore(path);
+    authority = new AuthorityService({ store });
+    assert.equal(authority.listProviderLinks("user-a").length, 0);
+    assert.ok(store.getProviderLink("twitch", "123")?.revokedAt);
+    assert.equal(store.listJournal().length, before.length + 1);
     store.close();
   } finally {
     rmSync(dir, { recursive: true, force: true });

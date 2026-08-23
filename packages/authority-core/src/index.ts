@@ -1,7 +1,7 @@
 export type ProviderKindV1 = "twitch" | "discord" | "xbox" | "github" | "other";
 
 export interface UserRecordV1 { id: string; createdAt: string; }
-export interface ProviderLinkV1 { provider: ProviderKindV1; providerUserId: string; userId: string; linkedAt: string; }
+export interface ProviderLinkV1 { provider: ProviderKindV1; providerUserId: string; userId: string; linkedAt: string; revokedAt?: string; }
 export interface AppearanceV1 { theme: "system" | "light" | "dark"; accent?: string; backgroundUrl?: string; }
 export interface WorkspaceProfileV1 {
   tenantId: string;
@@ -59,6 +59,7 @@ export interface AuthorityStore {
   getUser(userId: string): UserRecordV1 | undefined;
   putUser(user: UserRecordV1): void;
   getProviderLink(provider: ProviderKindV1, providerUserId: string): ProviderLinkV1 | undefined;
+  listProviderLinks(userId: string): ProviderLinkV1[];
   putProviderLink(link: ProviderLinkV1): void;
   getWorkspace(tenantId: string): WorkspaceProfileV1 | undefined;
   putWorkspace(profile: WorkspaceProfileV1): void;
@@ -104,6 +105,7 @@ export class MemoryAuthorityStore implements AuthorityStore {
   getUser(userId: string) { return cloneJson(this.users.get(userId)); }
   putUser(user: UserRecordV1) { this.users.set(user.id, cloneJson(user)); this.writeJournal("user", user.id, user); }
   getProviderLink(provider: ProviderKindV1, providerUserId: string) { return cloneJson(this.providerLinks.get(`${provider}:${providerUserId}`)); }
+  listProviderLinks(userId: string) { return [...this.providerLinks.values()].filter((item) => item.userId === userId).sort((a, b) => `${a.provider}:${a.providerUserId}`.localeCompare(`${b.provider}:${b.providerUserId}`)).map(cloneJson); }
   putProviderLink(link: ProviderLinkV1) { this.providerLinks.set(`${link.provider}:${link.providerUserId}`, cloneJson(link)); this.writeJournal("provider-link", `${link.provider}:${link.providerUserId}`, link); }
   getWorkspace(tenantId: string) { return cloneJson(this.workspaces.get(tenantId)); }
   putWorkspace(profile: WorkspaceProfileV1) { this.workspaces.set(profile.tenantId, cloneJson(profile)); this.writeJournal("workspace", profile.tenantId, profile, profile.tenantId); }
@@ -157,11 +159,29 @@ export class AuthorityService {
       this.ensureUserInTransaction(userId);
       requireId(providerUserId, "providerUserId");
       const existing = this.store.getProviderLink(provider, providerUserId);
-      if (existing && existing.userId !== userId) throw new AuthorityConflictError(`Provider identity ${provider}:${providerUserId} is already linked to another SPMT user`);
-      if (existing) return existing;
+      if (existing && !existing.revokedAt && existing.userId !== userId) throw new AuthorityConflictError(`Provider identity ${provider}:${providerUserId} is already linked to another SPMT user`);
+      if (existing && !existing.revokedAt) return existing;
       const link = { provider, providerUserId, userId, linkedAt: this.now() };
       this.store.putProviderLink(link);
       return link;
+    });
+  }
+
+  listProviderLinks(userId: string): ProviderLinkV1[] {
+    requireId(userId, "userId");
+    return this.store.listProviderLinks(userId).filter((item) => !item.revokedAt);
+  }
+
+  unlinkProvider(userId: string, provider: ProviderKindV1, providerUserId: string): ProviderLinkV1 {
+    return this.store.transaction(() => {
+      requireId(userId, "userId");
+      requireId(providerUserId, "providerUserId");
+      const existing = this.store.getProviderLink(provider, providerUserId);
+      if (!existing || existing.userId !== userId) throw new AuthorityConflictError(`Provider identity ${provider}:${providerUserId} is not linked to this SPMT user`);
+      if (existing.revokedAt) return existing;
+      const revoked = { ...existing, revokedAt: this.now() };
+      this.store.putProviderLink(revoked);
+      return revoked;
     });
   }
 

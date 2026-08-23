@@ -14,7 +14,7 @@ import { PlatformOperations, type CoderRuntimeV1 } from "@spmt/platform-ops";
 import { PlatformApiAdapter } from "@spmt/api-adapter";
 import { HealthRegistry } from "@spmt/runtime";
 
-const USER_SCOPES = ["workspace:read","workspace:write","xp:read","apps:read","apps:install","entitlements:read","events:read","commlink:read","commlink:write","notifications:read","notifications:write","webhooks:read","webhooks:write","assistants:read","assistants:invoke","stellar:context:read","stellar:context:write","stellar:capabilities:read"];
+const USER_SCOPES = ["identity:read","identity:write","workspace:read","workspace:write","xp:read","apps:read","apps:install","entitlements:read","events:read","commlink:read","commlink:write","notifications:read","notifications:write","webhooks:read","webhooks:write","assistants:read","assistants:invoke","stellar:context:read","stellar:context:write","stellar:capabilities:read"];
 const SANDBOX_OWNER_OPERATIONS_SCOPES = ["operations:logs:read","operations:coder:read","operations:coder:invoke"];
 
 export interface SpmtServiceOptions {

@@ -1,6 +1,6 @@
 # Donor → Green Parity Ledger
 
-Updated: 2026-08-22
+Updated: 2026-08-23
 
 Purpose: prevent the clean-room rebuild from silently dropping useful production behavior while still allowing deliberate removal of legacy architecture, duplicate authority, and bloat.
 
@@ -17,6 +17,8 @@ This ledger is **not yet a claim that every donor route has been audited**. It i
 
 **Safety default:** anything discovered in donor source that is not classified here is `VERIFY`, never `REMOVE`.
 
+**Completion rule:** a registered Apollo module, manifest, mock route, or one working vertical is not app parity. A donor app remains incomplete until every discovered retained capability has working Green code and its required standalone, embedded, bot, worker, overlay, state, migration, restart, tenant-isolation, and cross-app proofs. The full Green suite enters the integrated Sprite/Fly sandbox only after all app rows meet that rule.
+
 ## Platform and shared authority
 
 | Donor surface/capability | Donor owner | Green owner | Disposition | Compatibility/migration | Proof required |
@@ -32,7 +34,7 @@ This ledger is **not yet a claim that every donor route has been audited**. It i
 | Default ecosystem AI assistant | global Athena/public AI scaffolds | Stella presentation + SPMT developer contracts + Stellar Core execution | IMPROVE | stable role `spmt.community-assistant`; no StreamWeaver or SpaceMountain session dependency; do not migrate any tenant's Athena identity into the default | SDK/API/CLI/MCP/event-job/Commlink parity, unavailable-state, two-tenant memory, and standalone-app tests |
 | SPMT identity/users/tenants | SPMT | SPMT | PRESERVE | idempotent migration by immutable IDs | two-user/provider matrix |
 | Browser sessions / OAuth | SPMT + app compatibility | SPMT | IMPROVE | legacy sessions instrumented then retired | direct/embed/login/logout/refresh test |
-| Linked Twitch/Discord/Xbox providers | SPMT/apps | SPMT grants | PRESERVE | never merge by display name | disconnect/relink/isolation test |
+| Linked Twitch/Discord/Xbox providers | SPMT/apps | SPMT grants | PRESERVE | human-only active-link list/unlink now shares one API/SDK/CLI/MCP contract and records revocation tombstones; verified provider claim/relink and donor migration remain; never merge by display name | disconnect/relink/isolation test |
 | Service authentication | mixed keys/provider tokens | SPMT scoped service identities | REPLACE | zero-use window for legacy headers | allowed/denied scope matrix |
 | App registry / installs / permissions | SPMT | SPMT | PRESERVE | migrate canonical records | install/revoke/launch test |
 | WorkspaceProfile/theme/backgrounds | SPMT | SPMT | PRESERVE | migrate one authoritative profile | device A→B round trip |
@@ -180,7 +182,7 @@ Audit state:
 
 | Donor repo | Deep audit | Retirement blocker |
 |---|---|---|
-| `Mtman1987/spmt-live` | PENDING | yes |
+| `Mtman1987/spmt-live` | IN PROGRESS — production startup chain, route domains, schema families, patch debt, and Green gap captured in `docs/donor-audits/SPMT_DEEP_AUDIT_2026-08-23.md`; route-by-route caller/migration proof and retained implementations remain | yes |
 | `Mtman1987/spacemountain-live` | PENDING | yes |
 | `Mtman1987/streamweaver` | PENDING | yes |
 | `Mtman1987/DiscordStreamHub` | PENDING | yes |
