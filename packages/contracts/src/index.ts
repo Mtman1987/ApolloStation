@@ -5,6 +5,39 @@ export type SurfaceModeV1 = (typeof SURFACE_MODES)[number];
 
 export type RuntimeStateV1 = "starting" | "ready" | "degraded" | "draining" | "unavailable";
 
+export type AppIntegrationStateV1 = "native" | "connected" | "declared" | "unavailable" | "not-applicable";
+
+export interface AppWorkerManifestV1 {
+  id: string;
+  role: string;
+  execution: "anchored" | "leased" | "elastic" | "local";
+  canonicalAuthority: false;
+}
+
+export interface AppModuleManifestV1 {
+  schemaVersion: 1;
+  manifestVersion: "spmt.app-manifest/v1";
+  id: string;
+  name: string;
+  description: string;
+  capabilities: string[];
+  surfaces: SurfaceModeV1[];
+  requiredScopes: string[];
+  eventTypes: string[];
+  integration: Record<string, AppIntegrationStateV1>;
+  workers: AppWorkerManifestV1[];
+}
+
+export function assertAppModuleManifestV1(value: AppModuleManifestV1): AppModuleManifestV1 {
+  if (value.schemaVersion !== 1 || value.manifestVersion !== "spmt.app-manifest/v1") throw new Error("Unsupported app manifest version");
+  if (!value.id || !value.name || !value.description) throw new Error("App manifest identity is incomplete");
+  for (const field of [value.capabilities, value.surfaces, value.requiredScopes, value.eventTypes]) {
+    if (!Array.isArray(field) || new Set(field).size !== field.length) throw new Error("App manifest arrays must contain unique values");
+  }
+  if (value.workers.some((worker) => worker.canonicalAuthority !== false)) throw new Error("Workers cannot own canonical ecosystem state");
+  return value;
+}
+
 export const COMMUNITY_ASSISTANT_ID = "spmt.community-assistant" as const;
 export const COMMUNITY_ASSISTANT_DISPLAY_NAME = "Stella" as const;
 export const ASSISTANT_SURFACES = ["app", "commlink", "stream", "standalone", "developer"] as const;

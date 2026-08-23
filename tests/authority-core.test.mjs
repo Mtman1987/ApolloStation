@@ -16,6 +16,19 @@ test("provider identities cannot silently merge two SPMT users", () => {
   assert.throws(() => authority.linkProvider("user-b", "twitch", "123"), AuthorityConflictError);
 });
 
+test("provider unlink is audited as a tombstone and a verified identity can be linked again", () => {
+  const authority = service();
+  authority.linkProvider("user-a", "discord", "discord-123");
+  assert.equal(authority.listProviderLinks("user-a").length, 1);
+  const revoked = authority.unlinkProvider("user-a", "discord", "discord-123");
+  assert.ok(revoked.revokedAt);
+  assert.deepEqual(authority.listProviderLinks("user-a"), []);
+  assert.throws(() => authority.unlinkProvider("user-b", "discord", "discord-123"), AuthorityConflictError);
+  const relinked = authority.linkProvider("user-b", "discord", "discord-123");
+  assert.equal(relinked.userId, "user-b");
+  assert.equal(relinked.revokedAt, undefined);
+});
+
 test("workspace uses one revisioned authority and exactly three dock slots", () => {
   const authority = service();
   const initial = authority.getOrCreateWorkspace("tenant-a");
@@ -24,6 +37,10 @@ test("workspace uses one revisioned authority and exactly three dock slots", () 
   const updated = authority.updateWorkspace("tenant-a", 1, { dockSlots: ["https://a.example", null, null] });
   assert.equal(updated.revision, 2);
   assert.throws(() => authority.updateWorkspace("tenant-a", 1, { appearance: { theme: "dark" } }), AuthorityConflictError);
+  const themed = authority.updateWorkspace("tenant-a", 2, { appearance: { theme: "dark", accent: "#ff7a18", backgroundUrl: "https://images.example/station.jpg" } });
+  assert.equal(themed.appearance.backgroundUrl, "https://images.example/station.jpg");
+  assert.throws(() => authority.updateWorkspace("tenant-a", 3, { appearance: { theme: "night" } }), /theme is invalid/);
+  assert.throws(() => authority.updateWorkspace("tenant-a", 3, { appearance: { theme: "dark", backgroundUrl: "http://insecure.example/image.jpg" } }), /credential-free HTTPS/);
 });
 
 test("XP awards are idempotent per tenant and never double count", () => {

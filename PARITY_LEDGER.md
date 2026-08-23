@@ -1,6 +1,6 @@
 # Donor → Green Parity Ledger
 
-Updated: 2026-08-22
+Updated: 2026-08-23
 
 Purpose: prevent the clean-room rebuild from silently dropping useful production behavior while still allowing deliberate removal of legacy architecture, duplicate authority, and bloat.
 
@@ -17,13 +17,15 @@ This ledger is **not yet a claim that every donor route has been audited**. It i
 
 **Safety default:** anything discovered in donor source that is not classified here is `VERIFY`, never `REMOVE`.
 
+**Completion rule:** a registered Apollo module, manifest, mock route, or one working vertical is not app parity. A donor app remains incomplete until every discovered retained capability has working Green code and its required standalone, embedded, bot, worker, overlay, state, migration, restart, tenant-isolation, and cross-app proofs. The full Green suite enters the integrated Sprite/Fly sandbox only after all app rows meet that rule.
+
 ## Platform and shared authority
 
 | Donor surface/capability | Donor owner | Green owner | Disposition | Compatibility/migration | Proof required |
 |---|---|---|---|---|---|
 | SpaceMountain command bridge / suite shell | SpaceMountain | SpaceMountain | PRESERVE | Keep public navigation model during Green | shell/direct-app smoke |
 | Shipyard/app launcher | SpaceMountain + SPMT registry | SpaceMountain UI + SPMT registry | IMPROVE | Preserve installed-app/launch intent | Green browser host proves hot-added registry visibility, install persistence, and inert launch; provider-connected launch still requires later sandbox proof |
-| Commlink Mail | SPMT | SPMT + SpaceMountain UI | PRESERVE | migrate conversations/messages | two-account message test |
+| Commlink Mail | SPMT | SPMT + SpaceMountain UI | PRESERVE | Green SpaceMountain lists conversations, opens stored messages, searches canonical history, and replies to existing participants through the public SPMT contract; compose/recipient discovery, sent/read state and donor migration remain | two-account compose/reply/search/read-state migration test |
 | Commlink Live Chat | SPMT UI + StreamWeaver feed | SPMT shared history + provider-neutral Chat Gateway + SpaceMountain UI | IMPROVE | preserve provider connections/history behind public chat SDK/API/events; StreamWeaver becomes a consumer, not the private contract owner | simultaneous provider, reconnect, dedupe, and external-client tests |
 | Commlink Notifications | SPMT | SPMT + SpaceMountain UI | PRESERVE | migrate notification records if needed | read/unread/action test |
 | Commlink App Events | SPMT | SPMT event projections | PRESERVE | version event schemas | event idempotency/replay test |
@@ -32,11 +34,11 @@ This ledger is **not yet a claim that every donor route has been audited**. It i
 | Default ecosystem AI assistant | global Athena/public AI scaffolds | Stella presentation + SPMT developer contracts + Stellar Core execution | IMPROVE | stable role `spmt.community-assistant`; no StreamWeaver or SpaceMountain session dependency; do not migrate any tenant's Athena identity into the default | SDK/API/CLI/MCP/event-job/Commlink parity, unavailable-state, two-tenant memory, and standalone-app tests |
 | SPMT identity/users/tenants | SPMT | SPMT | PRESERVE | idempotent migration by immutable IDs | two-user/provider matrix |
 | Browser sessions / OAuth | SPMT + app compatibility | SPMT | IMPROVE | legacy sessions instrumented then retired | direct/embed/login/logout/refresh test |
-| Linked Twitch/Discord/Xbox providers | SPMT/apps | SPMT grants | PRESERVE | never merge by display name | disconnect/relink/isolation test |
+| Linked Twitch/Discord/Xbox providers | SPMT/apps | SPMT grants | PRESERVE | human-only active-link list/unlink now shares one API/SDK/CLI/MCP contract and records revocation tombstones; verified provider claim/relink and donor migration remain; never merge by display name | disconnect/relink/isolation test |
 | Service authentication | mixed keys/provider tokens | SPMT scoped service identities | REPLACE | zero-use window for legacy headers | allowed/denied scope matrix |
 | App registry / installs / permissions | SPMT | SPMT | PRESERVE | migrate canonical records | install/revoke/launch test |
-| WorkspaceProfile/theme/backgrounds | SPMT | SPMT | PRESERVE | migrate one authoritative profile | device A→B round trip |
-| Three dock slots | SPMT/SpaceMountain | SPMT + SpaceMountain | PRESERVE | migrate URLs/state, no secrets | collapse/volume/mute/device test |
+| WorkspaceProfile/theme/backgrounds | SPMT | SPMT | PRESERVE | Green SpaceMountain now reads, renders and revision-safely edits theme/accent/background and writes only the canonical SPMT profile; migrate the complete donor profile and connect every app as a reader | device A→B exact round trip plus cross-app rendering |
+| Three dock slots | SPMT/SpaceMountain | SPMT + SpaceMountain | PRESERVE | Green SpaceMountain now edits exactly three canonical slots, retains unknown legacy slot values during transition, and offers installed registry apps; migrate URLs/state, no secrets | collapse/volume/mute/device test |
 | Personal overlay / Overlay Bay | SpaceMountain/SPMT | SpaceMountain renderer + SPMT scene metadata | IMPROVE | stable read-only output grants | OBS renderer + revoke test |
 | Web/image/text/camera/screen/Xbox overlay sources | SPMT/SpaceMountain/app renderers | capability-specific browser/Companion/isolated Xbox renderers behind public scene contracts | IMPROVE | sandbox HTTPS web sources; block credentials/private networks; local permissioned camera/screen by default; preserve independent visibility/interaction/opacity/layer/revoke controls | source-by-source consent, isolation, OBS, revoke, and private-network tests |
 | Canonical XP/level | SPMT plus legacy producers | SPMT append-only ledger | IMPROVE | reconcile provenance; never sum/max | cross-surface exact balance test |
@@ -109,7 +111,7 @@ This ledger is **not yet a claim that every donor route has been audited**. It i
 
 | Donor surface/capability | Donor owner | Green owner | Disposition | Compatibility/migration | Proof required |
 |---|---|---|---|---|---|
-| Original Chat Tag game | ChatTag | ChatTag core module | PRESERVE | route/command compatibility | two-player game test |
+| Original Chat Tag game | ChatTag | ChatTag core module | PRESERVE | Core persistent game state, join/leave, it/FFA transfer, scoring, immunity, sleep/wake, pass, command replay, and public SPMT event/XP boundary implemented from donor commit `8170c51`; provider adapters, timers, overlays, crowns, and migration remain child slices | two-player, two-tenant, immunity, pass, replay, restart, and public-contract tests |
 | Quackverse | ChatTag | ChatTag bounded game module | PRESERVE | preserve overlay/profile behavior | game/overlay test |
 | Bingo | ChatTag | ChatTag bounded game module | PRESERVE | deep audit required | game regression test |
 | Nebula Arcade catalog | ChatTag | separate bounded game modules sharing the public game SDK | IMPROVE | do not make one giant runtime; publish modules through the canonical registry | per-game contract and dynamic-discovery suite |
@@ -180,12 +182,12 @@ Audit state:
 
 | Donor repo | Deep audit | Retirement blocker |
 |---|---|---|
-| `Mtman1987/spmt-live` | PENDING | yes |
-| `Mtman1987/spacemountain-live` | PENDING | yes |
+| `Mtman1987/spmt-live` | IN PROGRESS — production startup chain, route domains, schema families, patch debt, and Green gap captured in `docs/donor-audits/SPMT_DEEP_AUDIT_2026-08-23.md`; route-by-route caller/migration proof and retained implementations remain | yes |
+| `Mtman1987/spacemountain-live` | IN PROGRESS — production runtime, visible routes, local duplicate state, private cross-app calls, patch debt, capability dispositions, and Green gaps captured in `docs/donor-audits/SPACEMOUNTAIN_DEEP_AUDIT_2026-08-23.md`; linked-provider Settings is now on the public SPMT contract, while the remaining retained pages and migrations are incomplete | yes |
 | `Mtman1987/streamweaver` | PENDING | yes |
 | `Mtman1987/DiscordStreamHub` | PENDING | yes |
 | `Mtman1987/hearmeout-main` | PENDING | yes |
-| `Mtman1987/chat-tag` | PENDING | yes |
+| `Mtman1987/chat-tag` | IN PROGRESS — original Chat Tag core audited at `8170c51`; provider, timer, overlay, crown, Quackverse, Bingo, and wider Game Hub slices remain | yes |
 | `Mtman1987/fly-machine-rotator` | PENDING | yes for retained operational/device capabilities |
 | Companion source/package | PENDING | yes for desktop/device cutover |
 
