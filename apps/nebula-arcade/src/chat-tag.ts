@@ -141,6 +141,17 @@ export interface ChatTagRulesV1 {
   passSpendWindowMs: number;
 }
 
+export interface ChatTagRotationRulesV1 {
+  rotateAfterMs: number;
+  forceRandomAfterMs: number;
+}
+
+export interface ChatTagRotationPlanV1 {
+  action: "none" | "assign" | "free-for-all";
+  reason: "not-due" | "no-players" | "initial-assignment" | "active-holder-timeout" | "inactive-holder-timeout" | "forced-timeout" | "no-eligible-player";
+  command?: ChatTagCommandV1;
+}
+
 export const DEFAULT_CHAT_TAG_RULES: ChatTagRulesV1 = {
   tagSuccessPoints: 100,
   taggedPenaltyPoints: 50,
@@ -148,6 +159,11 @@ export const DEFAULT_CHAT_TAG_RULES: ChatTagRulesV1 = {
   maxPasses: 3,
   passSpendLimit: 3,
   passSpendWindowMs: 24 * 60 * 60 * 1_000,
+};
+
+export const DEFAULT_CHAT_TAG_ROTATION_RULES: ChatTagRotationRulesV1 = {
+  rotateAfterMs: 60 * 60 * 1_000,
+  forceRandomAfterMs: 4 * 60 * 60 * 1_000,
 };
 
 export type ChatTagParsedCommandV1 =
@@ -361,6 +377,53 @@ export function resolveChatTagTarget(state: ChatTagStateV1, rawTarget: string): 
   return { kind: "not-found" };
 }
 
+export function planChatTagRotation(
+  stateValue: ChatTagStateV1,
+  input: { now: string; channelId: string; liveUserIds?: string[]; random?: () => number; rules?: ChatTagRotationRulesV1 },
+): ChatTagRotationPlanV1 {
+  const state = assertChatTagStateV1(stateValue);
+  const nowMs = Date.parse(input.now);
+  if (!Number.isFinite(nowMs)) throw new Error("now must be an ISO timestamp");
+  const rules = input.rules ?? DEFAULT_CHAT_TAG_ROTATION_RULES;
+  if (rules.rotateAfterMs < 1 || rules.forceRandomAfterMs < rules.rotateAfterMs) throw new Error("rotation rules are invalid");
+  const players = Object.values(state.players);
+  if (!players.length) return { action: "none", reason: "no-players" };
+  const elapsed = state.lastTagAt ? nowMs - Date.parse(state.lastTagAt) : Number.POSITIVE_INFINITY;
+  if (state.lastTagAt && elapsed < rules.rotateAfterMs) return { action: "none", reason: "not-due" };
+  const live = new Set(input.liveUserIds ?? []);
+  const current = state.currentItUserId ? state.players[state.currentItUserId] : undefined;
+  const eligible = players.filter((player) => player.userId !== current?.userId && !player.sleeping && !player.offline);
+  const liveEligible = eligible.filter((player) => live.has(player.userId));
+  const holderRecentlyActive = current ? nowMs - Date.parse(current.lastActiveAt) < rules.rotateAfterMs : false;
+  const holderActive = current ? live.has(current.userId) || holderRecentlyActive : false;
+  const forced = Boolean(current) && elapsed >= rules.forceRandomAfterMs;
+  const pool = liveEligible.length ? liveEligible : eligible;
+  const commandBase = {
+    schemaVersion: 1 as const,
+    tenantId: state.tenantId,
+    commandId: `rotation:${state.lastTagAt ?? "initial"}`,
+    actorUserId: "system:chat-tag-rotation",
+    occurredAt: input.now,
+    channelId: input.channelId,
+    isModerator: true,
+  };
+  if (!current && !state.lastTagAt && pool.length) {
+    const target = chooseRotationPlayer(pool, input.random);
+    return { action: "assign", reason: "initial-assignment", command: { ...commandBase, kind: "set-it", targetUserId: target.userId } };
+  }
+  if ((forced || holderActive) && pool.length) {
+    const target = chooseRotationPlayer(pool, input.random);
+    return { action: "assign", reason: forced ? "forced-timeout" : "active-holder-timeout", command: { ...commandBase, kind: "set-it", targetUserId: target.userId } };
+  }
+  return { action: "free-for-all", reason: pool.length ? "inactive-holder-timeout" : "no-eligible-player", command: { ...commandBase, kind: "trigger-ffa" } };
+}
+
+function chooseRotationPlayer(players: ChatTagPlayerStateV1[], random: (() => number) | undefined): ChatTagPlayerStateV1 {
+  const ordered = [...players].sort((left, right) => left.userId.localeCompare(right.userId));
+  const raw = random ? random() : Math.random();
+  return ordered[Math.max(0, Math.min(ordered.length - 1, Math.floor(raw * ordered.length)))]!;
+}
+
 export function executeChatTagCommand(
   inputState: ChatTagStateV1,
   command: ChatTagCommandV1,
@@ -396,7 +459,10 @@ export function executeChatTagCommand(
       timedImmunityUntil: null,
       noTagbackFromUserId: null,
     };
-    if (!state.currentItUserId) state.currentItUserId = command.actorUserId;
+    if (!state.currentItUserId) {
+      state.currentItUserId = command.actorUserId;
+      state.lastTagAt = command.occurredAt;
+    }
     const result = remember(state, resultFor(command, "applied", "joined", `${username} joined Chat Tag.`, {
       event: eventFor(command, CHAT_TAG_PLAYER_JOINED, { userId: command.actorUserId, username }),
     }));
@@ -558,8 +624,11 @@ export function executeChatTagCommand(
         return { state, result };
       }
       state.currentItUserId = target.userId;
+      state.lastTagAt = command.occurredAt;
       target.sleeping = false;
       target.offline = false;
+      target.timedImmunityUntil = null;
+      target.noTagbackFromUserId = null;
       const result = remember(state, resultFor(command, "applied", "it-assigned", `${target.username} is now it.`, {
         event: eventFor(command, CHAT_TAG_PLAYER_AVAILABILITY_CHANGED, { userId: target.userId, isIt: true }),
       }));

@@ -7,12 +7,14 @@ import {
   executeChatTagCommand,
   publishChatTagCommandResult,
   planChatTagMessage,
+  planChatTagRotation,
   type ChatTagCommandResultV1,
   type ChatTagCommandV1,
   type ChatTagRulesV1,
   type ChatTagStateV1,
   type ChatTagInboundMessageV1,
   type ChatTagMessagePlanV1,
+  type ChatTagRotationPlanV1,
 } from "./chat-tag.js";
 
 export interface StoredChatTagStateV1 {
@@ -43,6 +45,7 @@ export interface ChatTagStore {
   listPendingDeliveries(tenantId: string, limit?: number): PendingChatTagDeliveryV1[];
   markDeliveryComplete(id: string): void;
   markDeliveryFailed(id: string, message: string): void;
+  importState(state: ChatTagStateV1, migrationId: string): StoredChatTagStateV1 & { duplicate: boolean };
 }
 
 /**
@@ -151,6 +154,22 @@ export class SqliteChatTagStore implements ChatTagStore {
     `).run(safeError(message), id);
   }
 
+  importState(stateValue: ChatTagStateV1, migrationId: string): StoredChatTagStateV1 & { duplicate: boolean } {
+    const state = assertChatTagStateV1(stateValue);
+    requireId(migrationId, "migrationId");
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const prior = this.db.prepare("SELECT 1 FROM chat_tag_migrations WHERE tenant_id=? AND migration_id=?").get(state.tenantId, migrationId);
+      if (prior) { const current = this.getState(state.tenantId); this.db.exec("COMMIT"); return { ...current, duplicate: true }; }
+      const current = this.getState(state.tenantId);
+      if (current.revision !== 0) throw new Error("Chat Tag state already exists for this tenant");
+      this.db.prepare("INSERT INTO chat_tag_state(tenant_id,revision,updated_at,body) VALUES(?,?,?,?)").run(state.tenantId, 1, new Date().toISOString(), JSON.stringify(state));
+      this.db.prepare("INSERT INTO chat_tag_migrations(tenant_id,migration_id,imported_at) VALUES(?,?,?)").run(state.tenantId, migrationId, new Date().toISOString());
+      this.db.exec("COMMIT");
+      return { revision: 1, state, duplicate: false };
+    } catch (error) { this.db.exec("ROLLBACK"); throw error; }
+  }
+
   private migrate(): void {
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS chat_tag_state(
@@ -180,6 +199,12 @@ export class SqliteChatTagStore implements ChatTagStore {
       ) STRICT;
       CREATE INDEX IF NOT EXISTS chat_tag_outbox_pending
         ON chat_tag_outbox(tenant_id, created_at);
+      CREATE TABLE IF NOT EXISTS chat_tag_migrations(
+        tenant_id TEXT NOT NULL,
+        migration_id TEXT NOT NULL,
+        imported_at TEXT NOT NULL,
+        PRIMARY KEY(tenant_id, migration_id)
+      ) STRICT;
     `);
   }
 }
@@ -206,6 +231,13 @@ export class ChatTagRuntime {
     if (plan.kind !== "command") return plan;
     const applied = await this.execute(plan.command);
     return { kind: "result", ...applied };
+  }
+
+  async reconcileRotation(input: { tenantId: string; channelId: string; now: string; liveUserIds?: string[]; random?: () => number }): Promise<ChatTagRotationPlanV1 | (StoredChatTagCommandV1 & { kind: "result"; rotation: ChatTagRotationPlanV1; delivery: ChatTagDeliveryReportV1 })> {
+    const rotation = planChatTagRotation(this.store.getState(input.tenantId).state, input);
+    if (!rotation.command) return rotation;
+    const applied = await this.execute(rotation.command);
+    return { kind: "result", rotation, ...applied };
   }
 
   async flushPending(tenantId: string, limit = 100): Promise<ChatTagDeliveryReportV1> {
