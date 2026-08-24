@@ -1,7 +1,7 @@
 import { createSpmtServiceWithProviderIdentity } from "./provider-identity-host.js";
 
 const port = Number(process.env.PORT ?? 3000);
-const databasePath = process.env.SPMT_DATABASE_PATH ?? "./data/spmt.sqlite";
+const databasePath = process.env.SPMT_DATABASE_PATH ?? process.env.DATABASE_PATH ?? "./data/spmt.sqlite";
 const publicBaseUrl = process.env.SPMT_PUBLIC_URL ?? `http://127.0.0.1:${port}`;
 const service = createSpmtServiceWithProviderIdentity({
   databasePath,
