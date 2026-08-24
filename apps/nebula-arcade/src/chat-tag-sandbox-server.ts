@@ -11,13 +11,15 @@ import { ChatTagRuntime, SqliteChatTagStore } from "./chat-tag-runtime.js";
 import { NEBULA_ARCADE_GAMES } from "./game-hub.js";
 import { NEBULA_THEME_CSS } from "./nebula-theme-css.js";
 import { NEBULA_ARCADE_BASE_CSS, NEBULA_ARCADE_BROWSER_JS, NEBULA_OVERLAY_CSS, renderNebulaArcadePage, renderNebulaOverlayOutput, type NebulaArcadeViewV1 } from "./nebula-arcade-page.js";
-import { SqliteNebulaOverlaySceneStore, type NebulaOverlayLayerV1 } from "./overlay-scenes.js";
+import { SqliteNebulaOverlaySceneStore, type NebulaOverlayLayerV1, type NebulaOverlaySceneV1 } from "./overlay-scenes.js";
 
 const MAX_BODY_BYTES = 64 * 1_024;
 const HERE = dirname(fileURLToPath(import.meta.url));
 const NEBULA_ARCADE_BACKGROUND = resolve(HERE, "../assets/nebula-arcade-solar-system.webp");
+const APP_PATH = "/apps/nebula-arcade";
 const PROVIDER_ENV_NAMES = ["TWITCH_CLIENT_ID", "TWITCH_CLIENT_SECRET", "TWITCH_BOT_OAUTH_TOKEN", "DISCORD_BOT_TOKEN", "KICK_CLIENT_ID", "KICK_CLIENT_SECRET", "FLY_API_TOKEN"] as const;
 const GAME_IDS = new Set(NEBULA_ARCADE_GAMES.map((game) => game.id));
+const OVERLAY_FLOW_FIX_CSS = `body{display:flex;flex-direction:column;align-items:flex-end;justify-content:flex-end;gap:10px;padding:24px}.nebula-output-layer{z-index:auto}.nebula-output-placeholder{position:relative;inset:auto;width:auto;height:auto;flex:0 0 auto}`;
 
 export interface ChatTagSandboxHostOptions { databasePath: string; tenantId: string; channelId: string; pinUserId?: string; port?: number; host?: string; buildSha?: string; }
 
@@ -38,23 +40,45 @@ export function createChatTagSandboxHost(options: ChatTagSandboxHostOptions) {
       const url = new URL(request.url ?? "/", "http://chat-tag.sandbox");
       if (request.method === "GET" && url.pathname === "/health/ready") return json(response, 200, { ready: true, app: "nebula-arcade", runtimeMode: "sandbox", outboundIntegrations: "disabled", buildSha: options.buildSha ?? "dev" });
 
-      if (request.method === "GET" && url.pathname === "/") {
+      if (url.pathname === APP_PATH && url.searchParams.get("action") === "overlay-scenes") {
+        if (request.method === "GET") return json(response, 200, { scenes: sceneStore.list(options.tenantId) });
+        if (request.method === "POST") {
+          requireSameOrigin(request);
+          const scene = sceneStore.save(options.tenantId, sceneInput(await readJson(request)), new Date().toISOString());
+          return json(response, 200, { scene, outputUrl: overlayOutputUrl(scene.id) });
+        }
+        if (request.method === "DELETE") {
+          requireSameOrigin(request);
+          const sceneId = url.searchParams.get("scene") ?? "";
+          requireSceneId(sceneId);
+          return json(response, sceneStore.delete(options.tenantId, sceneId) ? 200 : 404, { deleted: sceneId });
+        }
+      }
+
+      if (request.method === "GET" && (url.pathname === "/" || url.pathname === APP_PATH)) {
+        const sceneId = url.searchParams.get("scene");
+        if (url.searchParams.get("surface") === "overlay" && sceneId) {
+          requireSceneId(sceneId);
+          const scene = sceneStore.get(options.tenantId, sceneId);
+          if (!scene) return html(response, 404, "<!doctype html><title>Overlay not found</title><p>Saved Nebula Arcade overlay not found.</p>");
+          return html(response, 200, proxySafeOverlayPage(scene));
+        }
         const shellSurface = url.searchParams.get("surface") === "shell";
         const page = renderNebulaArcadePage({ nonce, tenantId: options.tenantId, channelId: options.channelId, shellSurface, view: arcadeView(url.searchParams.get("view")), ...(url.searchParams.get("game") ? { gameId: url.searchParams.get("game")! } : {}) });
         return html(response, 200, page.replace('<a href="/?view=spmt">SpaceMountain</a>', '<a href="/">SpaceMountain</a>'));
       }
 
       if (request.method === "GET" && url.pathname === "/assets/chat-tag-sandbox.css") return text(response, 200, `${PRODUCT_UI_CSS}${NEBULA_ARCADE_BASE_CSS}${NEBULA_THEME_CSS}`, "text/css; charset=utf-8", "public, max-age=300");
-      if (request.method === "GET" && url.pathname === "/assets/chat-tag-sandbox.js") return text(response, 200, NEBULA_ARCADE_BROWSER_JS, "text/javascript; charset=utf-8", "public, max-age=300");
-      if (request.method === "GET" && url.pathname === "/assets/nebula-overlay.css") return text(response, 200, NEBULA_OVERLAY_CSS, "text/css; charset=utf-8", "public, max-age=300");
+      if (request.method === "GET" && url.pathname === "/assets/chat-tag-sandbox.js") return text(response, 200, proxySafeBrowserScript(), "text/javascript; charset=utf-8", "public, max-age=300");
+      if (request.method === "GET" && (url.pathname === "/assets/nebula-overlay.css" || url.pathname === "/assets/nebula-arcade/overlay.css")) return text(response, 200, `${NEBULA_OVERLAY_CSS}${OVERLAY_FLOW_FIX_CSS}`, "text/css; charset=utf-8", "public, max-age=300");
       if (request.method === "GET" && url.pathname === "/assets/nebula-arcade/solar-system.webp") return binary(response, 200, await readFile(NEBULA_ARCADE_BACKGROUND), "image/webp", "public, max-age=86400");
 
+      // Canonical direct-service API remains available; the browser uses APP_PATH aliases so the existing SpaceMountain shell proxy can carry it unchanged.
       if (request.method === "GET" && url.pathname === "/v1/nebula/overlay-scenes") return json(response, 200, { scenes: sceneStore.list(options.tenantId) });
       if (request.method === "POST" && url.pathname === "/v1/nebula/overlay-scenes") {
         requireSameOrigin(request);
-        const body = await readJson(request);
-        const scene = sceneStore.save(options.tenantId, sceneInput(body), new Date().toISOString());
-        return json(response, 200, { scene, outputUrl: `/overlay/${encodeURIComponent(scene.id)}` });
+        const scene = sceneStore.save(options.tenantId, sceneInput(await readJson(request)), new Date().toISOString());
+        return json(response, 200, { scene, outputUrl: overlayOutputUrl(scene.id) });
       }
       if (request.method === "DELETE" && url.pathname.startsWith("/v1/nebula/overlay-scenes/")) {
         requireSameOrigin(request);
@@ -67,7 +91,7 @@ export function createChatTagSandboxHost(options: ChatTagSandboxHostOptions) {
         requireSceneId(sceneId);
         const scene = sceneStore.get(options.tenantId, sceneId);
         if (!scene) return html(response, 404, "<!doctype html><title>Overlay not found</title><p>Saved Nebula Arcade overlay not found.</p>");
-        return html(response, 200, renderNebulaOverlayOutput(scene));
+        return html(response, 200, proxySafeOverlayPage(scene));
       }
 
       if (request.method === "GET" && url.pathname === "/v1/chat-tag/state") return json(response, 200, runtime.getState(options.tenantId));
@@ -115,30 +139,28 @@ export function validateChatTagSandboxEnvironment(environment: NodeJS.ProcessEnv
   return { databasePath: resolve(environment.CHAT_TAG_DATABASE_PATH ?? ".sandbox-data/chat-tag-green-sandbox.sqlite"), tenantId: safeId(environment.CHAT_TAG_TENANT_ID ?? "chat-tag-sandbox", "CHAT_TAG_TENANT_ID"), channelId: safeId(environment.CHAT_TAG_CHANNEL_ID ?? "sandbox-channel", "CHAT_TAG_CHANNEL_ID") };
 }
 
-function arcadeView(value: string | null): NebulaArcadeViewV1 {
-  return value === "games" || value === "game" || value === "overlay" || value === "stats" ? value : "home";
+function arcadeView(value: string | null): NebulaArcadeViewV1 { return value === "games" || value === "game" || value === "overlay" || value === "stats" ? value : "home"; }
+function overlayOutputUrl(sceneId: string) { return `${APP_PATH}?surface=overlay&scene=${encodeURIComponent(sceneId)}`; }
+function proxySafeOverlayPage(scene: NebulaOverlaySceneV1) { return renderNebulaOverlayOutput(scene).replace("/assets/nebula-overlay.css", "/assets/nebula-arcade/overlay.css").replace(/\sstyle="--layer:\d+"/g, ""); }
+function proxySafeBrowserScript() {
+  return NEBULA_ARCADE_BROWSER_JS
+    .replace("fetch('/v1/nebula/overlay-scenes/'+encodeURIComponent(id),{method:'DELETE'", "fetch('/apps/nebula-arcade?action=overlay-scenes&scene='+encodeURIComponent(id),{method:'DELETE'")
+    .replaceAll("'/v1/nebula/overlay-scenes'", "'/apps/nebula-arcade?action=overlay-scenes'")
+    .replace("const output='/overlay/'+encodeURIComponent(scene.id);", "const output='/apps/nebula-arcade?surface=overlay&scene='+encodeURIComponent(scene.id);")
+    .replace("location.origin+'/overlay/'+value.scene.id", "location.origin+'/apps/nebula-arcade?surface=overlay&scene='+encodeURIComponent(value.scene.id)");
 }
-
 function sceneInput(body: Record<string, unknown>): { id: string; name: string; layers: NebulaOverlayLayerV1[] } {
-  const id = textField(body.id, "id", 80).toLowerCase();
-  requireSceneId(id);
+  const id = textField(body.id, "id", 80).toLowerCase(); requireSceneId(id);
   const name = textField(body.name, "name", 100);
   if (!Array.isArray(body.gameIds) || body.gameIds.length > NEBULA_ARCADE_GAMES.length) throw new SandboxError(400, "gameIds is invalid");
   const ids = body.gameIds.map((value) => textField(value, "gameId", 80));
   if (new Set(ids).size !== ids.length || ids.some((gameId) => !GAME_IDS.has(gameId))) throw new SandboxError(400, "gameIds contains an unknown or duplicate game");
-  const layers = ids.map((gameId, zIndex) => ({ gameId, enabled: true, zIndex }));
-  return { id, name, layers };
+  return { id, name, layers: ids.map((gameId, zIndex) => ({ gameId, enabled: true, zIndex })) };
 }
-
-function requireSceneId(value: string): void {
-  if (!/^[a-z0-9][a-z0-9-]{0,79}$/.test(value)) throw new SandboxError(400, "sceneId is invalid");
-}
-
+function requireSceneId(value: string): void { if (!/^[a-z0-9][a-z0-9-]{0,79}$/.test(value)) throw new SandboxError(400, "sceneId is invalid"); }
 function applyHeaders(response: ServerResponse, nonce: string) {
   response.setHeader("content-security-policy", `default-src 'none'; script-src 'self' 'nonce-${nonce}'; style-src 'self'; connect-src 'self'; img-src 'self' data: https:; frame-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'self'`);
-  response.setHeader("referrer-policy", "no-referrer");
-  response.setHeader("x-content-type-options", "nosniff");
-  response.setHeader("permissions-policy", "camera=(), microphone=(), geolocation=()");
+  response.setHeader("referrer-policy", "no-referrer"); response.setHeader("x-content-type-options", "nosniff"); response.setHeader("permissions-policy", "camera=(), microphone=(), geolocation=()");
 }
 function requireSameOrigin(request: IncomingMessage) { const origin = request.headers.origin; const host = request.headers.host; if (!origin || !host) throw new SandboxError(403, "A same-origin browser request is required"); let parsed: URL; try { parsed = new URL(origin); } catch { throw new SandboxError(403, "Origin is invalid"); } if (parsed.host !== host) throw new SandboxError(403, "Cross-origin mutation is blocked"); }
 async function readJson(request: IncomingMessage) { const chunks: Buffer[] = []; let total = 0; for await (const chunk of request) { const part = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk); total += part.byteLength; if (total > MAX_BODY_BYTES) throw new SandboxError(413, "Request body is too large"); chunks.push(part); } let value: unknown; try { value = JSON.parse(Buffer.concat(chunks).toString("utf8")); } catch { throw new SandboxError(400, "A JSON object is required"); } if (!value || typeof value !== "object" || Array.isArray(value)) throw new SandboxError(400, "A JSON object is required"); return value as Record<string, unknown>; }
