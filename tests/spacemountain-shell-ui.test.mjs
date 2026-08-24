@@ -165,14 +165,19 @@ test("SPMT does not duplicate the existing sidebar destinations", () => {
   assert.doesNotMatch(source, /requested === "spmt" \? "help"/);
 });
 
-test("canonical appearance normalizes every front-facing surface after legacy styles", () => {
+test("canonical appearance flattens layout wrappers and assigns progressively lighter nested surfaces", () => {
   assert.match(source, /\$\{COSMO_COMMLINK_CSS\}\$\{THEMED_SURFACE_CSS\}/);
-  assert.match(THEMED_SURFACE_CSS, /--theme-panel:/);
-  assert.match(THEMED_SURFACE_CSS, /\.spmt-cosmic-header,\.spmt-rocket-dock,\.spmt-hero/);
-  assert.match(THEMED_SURFACE_CSS, /\.cosmo-rail,\.cosmo-topbar,\.cosmo-sources/);
+  assert.match(THEMED_SURFACE_CSS, /--theme-depth-1:/);
+  assert.match(THEMED_SURFACE_CSS, /--theme-depth-4:/);
+  assert.match(THEMED_SURFACE_CSS, /\.spmt-cosmic-header,\.spmt-rocket-dock,\.spmt-app-card/);
+  assert.match(THEMED_SURFACE_CSS, /\.spmt-hero,\.spmt-section,\.spmt-quick-grid[^}]*background:transparent/);
+  assert.match(THEMED_SURFACE_CSS, /\.cosmo-commlink\{border:0;background:transparent;box-shadow:none;backdrop-filter:none\}/);
+  assert.match(THEMED_SURFACE_CSS, /\.cosmo-rail,\.cosmo-feed-pane,\.cosmo-context,\.cosmo-desk-panel[^}]*background:var\(--theme-depth-1\)/);
+  assert.match(THEMED_SURFACE_CSS, /\.cosmo-topbar,\.cosmo-sources,\.cosmo-toolbar,\.cosmo-composer[^}]*background:var\(--theme-depth-2\)/);
+  assert.match(THEMED_SURFACE_CSS, /\.cosmo-message\{[^}]*background:var\(--theme-depth-3\)/);
   assert.match(THEMED_SURFACE_CSS, /\.spmt-space-root button:not\(\.primary\)/);
   assert.match(THEMED_SURFACE_CSS, /filter:grayscale\(1\) saturate\(0\)/);
-  assert.match(THEMED_SURFACE_CSS, /\.spmt-page-title\{[^}]*border:1px solid/);
+  assert.match(THEMED_SURFACE_CSS, /\.spmt-page-title\{[^}]*border:0/);
   assert.match(THEMED_SURFACE_CSS, /\.spmt-space-root \.spmt-brand,[^}]*background:transparent!important/);
   assert.match(source, /data-workspace-theme/);
   assert.match(source, /accentInput\.value = resolveProductTheme\(themeSelect\.value\)\.accent/);
