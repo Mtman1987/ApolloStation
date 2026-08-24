@@ -35,7 +35,10 @@ test("Sprite deployment verifies, tests, switches atomically, and rolls back", a
   assert.match(script, /Deployment failed; restoring/);
   assert.match(script, /sprite-env services restart "\$service_name"/);
   assert.match(script, /sprite-env services stop "\$bootstrap_service_name"/);
+  assert.match(script, /Refusing to replace an unexpected bootstrap service definition/);
+  assert.match(script, /sprite-env services delete "\$bootstrap_service_name"/);
   assert.match(script, /Deployment failed; restoring bootstrap service/);
-  assert.match(script, /sprite-env services start "\$bootstrap_service_name"/);
+  assert.match(script, /sprite-env services delete "\$service_name"/);
+  assert.match(script, /sprite-env services create "\$bootstrap_service_name"/);
   assert.match(script, /grep -Fq "\$BUILD_SHA"/);
 });

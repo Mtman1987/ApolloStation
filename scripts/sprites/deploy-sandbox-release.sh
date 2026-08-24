@@ -35,7 +35,7 @@ service_name="apollo-sandbox"
 bootstrap_service_name="webtmux"
 previous_release=""
 switched=0
-bootstrap_service_stopped=0
+bootstrap_service_removed=0
 
 mkdir -p "$releases_root" "$data_root"
 if [[ -L "$current_link" ]]; then
@@ -50,10 +50,15 @@ rollback() {
     mv -Tf "$next_link" "$current_link"
     sprite-env services restart "$service_name" --duration 15s || true
   fi
-  if (( status != 0 && bootstrap_service_stopped == 1 )); then
+  if (( status != 0 && bootstrap_service_removed == 1 )); then
     echo "Deployment failed; restoring bootstrap service $bootstrap_service_name" >&2
     sprite-env services stop "$service_name" || true
-    sprite-env services start "$bootstrap_service_name" --duration 15s || true
+    sprite-env services delete "$service_name" || true
+    sprite-env services create "$bootstrap_service_name" \
+      --cmd /usr/local/bin/webtmux \
+      --args '-w,--no-auth,tmux,new-session,-A,-s,main' \
+      --http-port 8080 \
+      --duration 15s || true
   fi
   exit "$status"
 }
@@ -100,8 +105,14 @@ else
     sleep 0.2
   done
   if sprite-env services get "$bootstrap_service_name" >/dev/null 2>&1; then
+    bootstrap_definition="$(sprite-env services get "$bootstrap_service_name")"
+    if ! grep -Fq '"cmd":"/usr/local/bin/webtmux"' <<<"$bootstrap_definition" || ! grep -Fq '"http_port":8080' <<<"$bootstrap_definition"; then
+      echo "Refusing to replace an unexpected bootstrap service definition" >&2
+      exit 1
+    fi
     sprite-env services stop "$bootstrap_service_name"
-    bootstrap_service_stopped=1
+    sprite-env services delete "$bootstrap_service_name"
+    bootstrap_service_removed=1
   fi
   sprite-env services create "$service_name" \
     --cmd node \
