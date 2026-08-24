@@ -48,13 +48,17 @@ test("shared surfaces use fewer layers and progressively lower opacity with dept
   assert.match(nebulaThemeSource, /\.overlay-layer[^}]*background:var\(--nebula-depth-3\)/);
 });
 
-test("embedded Nebula shell is truly transparent and cannot drift behind the shared header", () => {
+test("every app keeps the SpaceMountain home viewport while owning only internal scroll", () => {
   assert.match(nebulaThemeSource, /:root\{background:transparent\}/);
   assert.match(nebulaThemeSource, /data-surface="shell"\]\{height:100%;min-height:0;overflow:hidden;background:transparent\}/);
   assert.match(nebulaThemeSource, /data-surface="shell"\] main\{[^}]*height:100%[^}]*overflow-y:auto[^}]*overscroll-behavior:contain/);
-  assert.match(themedSource, /data-spmt-view="app"\]\{height:calc\(100dvh - var\(--guard-height,0px\)\);min-height:0;overflow:hidden\}/);
-  assert.match(themedSource, /data-spmt-view="app"\] \.spmt-space-main\{height:100%;min-height:0;box-sizing:border-box;overflow:hidden\}/);
-  assert.match(themedSource, /data-spmt-view="app"\] \.spmt-embedded-app-shell\{height:100%;min-height:0;overflow:hidden\}/);
+  assert.match(nebulaThemeSource, /data-view="home"\] main\{overflow:hidden;scrollbar-gutter:auto\}/);
+  assert.match(nebulaThemeSource, /data-view="home"\] \.hero\{height:100%;min-height:0/);
+  assert.match(themedSource, /data-spmt-view="home"\],\.spmt-space-root\[data-spmt-view="app"\]\{height:calc\(100dvh - var\(--guard-height,0px\)\);min-height:0;overflow:hidden\}/);
+  assert.match(themedSource, /data-spmt-view="home"\] \.spmt-space-main,\.spmt-space-root\[data-spmt-view="app"\] \.spmt-space-main\{width:min\(1500px,100%\);height:100%;min-height:0;margin:0 auto;box-sizing:border-box;padding-bottom:18px;overflow:hidden\}/);
+  assert.match(themedSource, /data-spmt-view="app"\] \.spmt-embedded-app-shell\{width:100%;height:100%;min-height:0;overflow:hidden\}/);
+  assert.match(themedSource, /data-spmt-app="commlink"\] \.spmt-space-main\{display:grid;grid-template-rows:auto minmax\(0,1fr\)\}/);
+  assert.match(themedSource, /data-spmt-app="stellar-core"\] \.spmt-space-main,[^}]*data-spmt-app="mission-control"[^}]*overflow-y:auto/);
 });
 
 test("workspace colors tint one stable app scene and preserve a safe custom override", () => {
