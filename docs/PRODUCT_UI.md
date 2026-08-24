@@ -34,8 +34,22 @@ Every full first-party app uses the same product grammar without becoming a copy
 4. The app supplies its own navigation items, routes, content, logo, and specialized controls. It must not fork the shared rocket-navigation behavior.
 5. A saved `backgroundUrl` remains an explicit user override. When it is blank, every app returns to its own default artwork.
 6. `overlay` and chrome-free `popout` outputs omit the background, stars, header, and rocket navigation unless their output contract explicitly requires them.
+7. **Use the fewest visible surface layers necessary.** Layout wrappers are transparent unless they genuinely need to be a readable/interactive surface.
+8. **Every deeper visual layer becomes more translucent.** The global Glass control sets the strength of the first functional layer; depth two, three, and four are automatically capped lower so nesting never turns an app into stacked opaque rectangles.
 
-This makes the suite feel like one ship with different rooms: familiar controls and color behavior, distinct imagery and purpose.
+The shared depth ladder is intentionally simple:
+
+| Depth | Purpose | Multiplier of Glass setting |
+|---|---|---:|
+| 0 | Layout/background only | transparent |
+| 1 | Primary functional card/panel | 0.90 |
+| 2 | Section inside a functional panel | 0.68 |
+| 3 | Nested row/message/content surface | 0.48 |
+| 4 | Deep control/field surface | 0.32 |
+
+For example, at an 80% Glass setting the effective surface alpha trends about 72% → 54% → 38% → 26% as depth increases. Apps may use fewer layers, but they must not make deeper layers more opaque than their parents. Opacity is applied to the surface background/tint, never the entire element, so text and controls stay crisp.
+
+This makes the suite feel like one ship with different rooms: familiar controls and color behavior, distinct imagery and purpose, and enough background visibility to preserve each app's cosmic scene.
 
 ### Scene direction
 
@@ -52,6 +66,16 @@ This makes the suite feel like one ship with different rooms: familiar controls 
 | Stellar Core | A deep stellar furnace and intelligent constellation network |
 
 These are art requirements, not hardcoded catalog entries. Each app owns its asset and passes its descriptor to the shared resolver.
+
+## Nebula Arcade composition rule
+
+Nebula Arcade is the Games Hub, not a renamed Chat Tag screen. Its twenty games are equal catalog peers. Chat Tag may be enabled by default because its runtime is currently the most complete, but it receives no featured/priority visual status.
+
+The Arcade home is logo/hero-first with three primary destinations: Games, Overlay Bay, and Stats. The Games catalog leads to a full game page containing truthful runtime status, commands/examples, overlay capabilities, screenshots/placeholders, README-style documentation, and a reserved attributions/social/source section.
+
+Overlay Bay owns reusable Arcade overlay scenes. A saved scene contains an ordered set of game layers and exposes one stable browser-source URL. Multiple games may therefore share one OBS/browser source without requiring SpaceMountain's workspace to understand each game's private state.
+
+Generic chat commands remain natural. When exactly one enabled game matches a command it may execute immediately. When multiple enabled games share that command, Nebula Arcade must ask the chatter which game they intended instead of firing every matching game.
 
 ## Theme presets
 
