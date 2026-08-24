@@ -1,15 +1,18 @@
 import { randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { isIP } from "node:net";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { renderSpaceMountainPage, SANDBOX_BEACON_HTML, SANDBOX_CSS } from "./page.js";
+import { DEVELOPER_DOCS_CSS, DEVELOPER_MANIFEST_EXAMPLE, renderDeveloperDocsPage } from "./developer-docs.js";
 import type { AppCatalogRegistrationV1 } from "@spmt/contracts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPOSITORY_ROOT = resolve(HERE, "../../..");
 const MAX_BODY_BYTES = 1024 * 1024;
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
+const MAX_MANIFEST_BYTES = 128 * 1024;
 const PROVIDER_ENV_NAMES = Object.freeze([
   "DISCORD_CLIENT_ID", "DISCORD_BOT_TOKEN", "DISCORD_CLIENT_SECRET", "TWITCH_CLIENT_ID", "TWITCH_CLIENT_SECRET", "TWITCH_BOT_OAUTH_TOKEN",
   "KICK_CLIENT_ID", "KICK_CLIENT_SECRET", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET", "FIREBASE_PRIVATE_KEY", "FIREBASE_CLIENT_EMAIL", "FIREBASE_PROJECT_ID",
@@ -47,10 +50,17 @@ export function createSpaceMountainWebHost(options: SpaceMountainWebHostOptions)
       const url = new URL(request.url ?? "/", "http://spacemountain.local");
       if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/first-time-setup")) return html(response, 200, renderSpaceMountainPage(nonce, buildSha, Boolean(options.candidateManifest)));
       if (request.method === "GET" && url.pathname === "/assets/web/sandbox.css") return textResponse(response, 200, SANDBOX_CSS, "text/css; charset=utf-8", "public, max-age=300");
+      if (request.method === "GET" && url.pathname === "/assets/web/developer-docs.css") return textResponse(response, 200, DEVELOPER_DOCS_CSS, "text/css; charset=utf-8", "public, max-age=300");
+      if (request.method === "GET" && url.pathname === "/docs/developers") return html(response, 200, renderDeveloperDocsPage(buildSha));
+      if (request.method === "GET" && url.pathname === "/docs/examples/app-manifest.json") return json(response, 200, DEVELOPER_MANIFEST_EXAMPLE);
       if (request.method === "GET" && url.pathname === "/sandbox/beacon") return html(response, 200, SANDBOX_BEACON_HTML);
       if (request.method === "GET" && ASSETS.has(url.pathname)) return serveAsset(response, ASSETS.get(url.pathname)!);
       if (request.method === "GET" && url.pathname === "/sandbox/health") return sandboxHealth(response, spmtOrigin, fetchImpl, buildSha);
       if (request.method === "GET" && url.pathname === "/sandbox/candidate-app" && options.candidateManifest) return json(response, 200, options.candidateManifest);
+      if (request.method === "POST" && url.pathname === "/sandbox/developer/import-manifest") {
+        requireSameOrigin(request);
+        return importDeveloperManifest(response, request, spmtOrigin, fetchImpl, await readJsonBody(request), options.candidateManifest);
+      }
       if (chatTagOrigin && chatTagProxyPath(url.pathname)) {
         if (!['GET', 'HEAD'].includes(request.method ?? 'GET')) requireSameOrigin(request);
         return proxyChatTag(response, request, url, chatTagOrigin, fetchImpl);
@@ -125,6 +135,97 @@ async function register(response: ServerResponse, origin: string, fetchImpl: typ
   const signedIn = await upstreamJson(fetchImpl, `${origin}/v1/auth/login`, credentials);
   if (!signedIn.response.ok) return json(response, 502, { error: "sandbox_login_failed", message: "The account was created, but the isolated session could not be opened." });
   return json(response, 201, { profile: record(created.body)?.profile ?? null, tenantId: record(created.body)?.tenantId ?? null }, sessionHeaders(signedIn.response));
+}
+
+async function importDeveloperManifest(response: ServerResponse, request: IncomingMessage, origin: string, fetchImpl: typeof fetch, body: Record<string, unknown>, candidate?: AppCatalogRegistrationV1) {
+  await requireCatalogPublisher(request, origin, fetchImpl);
+  const source = requiredText(body.manifestUrl, "manifestUrl", 2048);
+  if (source === "/sandbox/candidate-app") {
+    if (!candidate) throw new WebHostError(404, "The sandbox example manifest is unavailable");
+    return json(response, 200, normalizeDeveloperManifest(candidate));
+  }
+  let manifestUrl: URL;
+  try { manifestUrl = new URL(source); } catch { throw new WebHostError(400, "manifestUrl must be an absolute HTTPS URL"); }
+  if (manifestUrl.protocol !== "https:") throw new WebHostError(400, "manifestUrl must use HTTPS");
+  if (manifestUrl.username || manifestUrl.password) throw new WebHostError(400, "manifestUrl may not contain embedded credentials");
+  if (manifestUrl.port && manifestUrl.port !== "443") throw new WebHostError(400, "manifestUrl may not use a nonstandard port");
+  if (manifestUrl.hash) throw new WebHostError(400, "manifestUrl may not contain a fragment");
+  if (privateManifestHostname(manifestUrl.hostname)) throw new WebHostError(400, "manifestUrl may not target a local or private host");
+  let upstream: Response;
+  try {
+    upstream = await fetchImpl(manifestUrl, { headers: { accept: "application/json" }, redirect: "manual", signal: AbortSignal.timeout(7000) });
+  } catch (error) {
+    throw new WebHostError(502, `Manifest fetch failed: ${error instanceof Error ? error.message : "network unavailable"}`);
+  }
+  if (upstream.status >= 300 && upstream.status < 400) throw new WebHostError(400, "Manifest redirects are not allowed");
+  if (!upstream.ok) throw new WebHostError(502, `Manifest host returned HTTP ${upstream.status}`);
+  const contentType = upstream.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() ?? "";
+  if (contentType !== "application/json" && !contentType.endsWith("+json")) throw new WebHostError(400, "Manifest response must use a JSON content type");
+  const encoded = await limitedBody(upstream, MAX_MANIFEST_BYTES, "Manifest response is too large");
+  let parsed: unknown;
+  try { parsed = JSON.parse(encoded.toString("utf8")); } catch { throw new WebHostError(400, "Manifest response is not valid JSON"); }
+  return json(response, 200, normalizeDeveloperManifest(parsed));
+}
+
+async function requireCatalogPublisher(request: IncomingMessage, origin: string, fetchImpl: typeof fetch) {
+  if (!request.headers.cookie) throw new WebHostError(401, "Sign in before importing a manifest");
+  const upstream = await fetchImpl(`${origin}/v1/session`, { headers: { accept: "application/json", cookie: request.headers.cookie, "x-spmt-app": "spacemountain" }, redirect: "manual", signal: AbortSignal.timeout(5000) });
+  const encoded = await limitedResponseBody(upstream);
+  if (!upstream.ok) throw new WebHostError(upstream.status === 401 || upstream.status === 403 ? upstream.status : 502, "The SPMT session could not be verified");
+  const principal = record(parseJson(encoded));
+  const scopes = Array.isArray(principal?.scopes) ? principal.scopes.filter((scope): scope is string => typeof scope === "string") : [];
+  if (!scopes.includes("apps:register")) throw new WebHostError(403, "Only an authorized catalog publisher may import a manifest");
+}
+
+function normalizeDeveloperManifest(value: unknown): AppCatalogRegistrationV1 {
+  const item = record(value);
+  if (!item) throw new WebHostError(400, "The manifest must be a JSON object");
+  const appId = manifestText(item.appId, "appId", 200);
+  if (!/^[A-Za-z0-9._:@/-]+$/.test(appId)) throw new WebHostError(400, "appId contains unsupported characters");
+  const name = manifestText(item.name, "name", 120);
+  const description = manifestText(item.description, "description", 1000);
+  const version = manifestText(item.version, "version", 80);
+  const launchUrl = manifestLaunchUrl(item.launchUrl, "launchUrl");
+  const iconUrl = item.iconUrl === undefined || item.iconUrl === "" ? undefined : manifestLaunchUrl(item.iconUrl, "iconUrl");
+  const allowedScopes = manifestArray(item.allowedScopes, "allowedScopes").map((scope) => scope.trim()).filter(Boolean);
+  if (allowedScopes.some((scope) => scope.length > 120 || !/^[A-Za-z0-9.*:_-]+$/.test(scope))) throw new WebHostError(400, "allowedScopes contains an invalid scope");
+  const declaredSurfaces = manifestArray(item.surfaces, "surfaces");
+  const validSurfaces = new Set(["shell", "standalone", "overlay", "popout"]);
+  if (!declaredSurfaces.length || declaredSurfaces.some((surface) => !validSurfaces.has(surface))) throw new WebHostError(400, "surfaces must contain at least one supported surface");
+  if (item.status !== "active" && item.status !== "disabled") throw new WebHostError(400, "status must be active or disabled");
+  return { appId, name, description, version, launchUrl, ...(iconUrl ? { iconUrl } : {}), allowedScopes: [...new Set(allowedScopes)].sort(), surfaces: [...new Set(declaredSurfaces)] as AppCatalogRegistrationV1["surfaces"], status: item.status };
+}
+
+function manifestText(value: unknown, name: string, max: number) {
+  if (typeof value !== "string" || !value.trim() || value.trim() !== value || value.length > max) throw new WebHostError(400, `${name} is required and must be at most ${max} characters`);
+  return value;
+}
+
+function manifestArray(value: unknown, name: string) {
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) throw new WebHostError(400, `${name} must be an array of strings`);
+  return value as string[];
+}
+
+function manifestLaunchUrl(value: unknown, name: string) {
+  const text = manifestText(value, name, 2048);
+  let url: URL;
+  try { url = new URL(text); } catch { throw new WebHostError(400, `${name} must be an absolute URL`); }
+  const local = url.hostname === "localhost" || url.hostname === "127.0.0.1";
+  if (url.protocol !== "https:" && !local) throw new WebHostError(400, `${name} must use HTTPS outside localhost`);
+  if (url.username || url.password) throw new WebHostError(400, `${name} may not contain embedded credentials`);
+  return url.toString();
+}
+
+function privateManifestHostname(hostname: string) {
+  const normalized = hostname.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "");
+  if (normalized === "localhost" || normalized === "metadata.google.internal" || normalized.endsWith(".localhost") || normalized.endsWith(".local") || normalized.endsWith(".internal") || normalized.endsWith(".lan") || normalized.endsWith(".home") || normalized.endsWith(".arpa")) return true;
+  const version = isIP(normalized);
+  if (version === 4) {
+    const [a = 0, b = 0] = normalized.split(".").map(Number);
+    return a === 0 || a === 10 || a === 127 || a >= 224 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127);
+  }
+  if (version === 6) return normalized === "::" || normalized === "::1" || normalized.startsWith("fc") || normalized.startsWith("fd") || normalized.startsWith("fe8") || normalized.startsWith("fe9") || normalized.startsWith("fea") || normalized.startsWith("feb");
+  return false;
 }
 
 async function upstreamJson(fetchImpl: typeof fetch, url: string, body: Record<string, unknown>) {
@@ -239,7 +340,23 @@ function candidateManifest(source: string): AppCatalogRegistrationV1 {
 
 async function readJsonBody(request: IncomingMessage) { const body = await readBody(request); const parsed = JSON.parse(body.toString("utf8")) as unknown; if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new WebHostError(400, "A JSON object is required"); return parsed as Record<string, unknown>; }
 async function readBody(request: IncomingMessage) { const chunks: Buffer[] = []; let total = 0; for await (const chunk of request) { const part = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk); total += part.byteLength; if (total > MAX_BODY_BYTES) throw new WebHostError(413, "Request body is too large"); chunks.push(part); } return Buffer.concat(chunks); }
-async function limitedResponseBody(response: Response) { const declared = Number(response.headers.get("content-length") ?? 0); if (declared > MAX_RESPONSE_BYTES) throw new WebHostError(502, "SPMT response is too large"); const body = Buffer.from(await response.arrayBuffer()); if (body.byteLength > MAX_RESPONSE_BYTES) throw new WebHostError(502, "SPMT response is too large"); return body; }
+async function limitedResponseBody(response: Response) { return limitedBody(response, MAX_RESPONSE_BYTES, "SPMT response is too large"); }
+async function limitedBody(response: Response, maximum: number, errorMessage: string) {
+  const declared = Number(response.headers.get("content-length") ?? 0);
+  if (declared > maximum) throw new WebHostError(502, errorMessage);
+  if (!response.body) return Buffer.alloc(0);
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maximum) { await reader.cancel(errorMessage); throw new WebHostError(502, errorMessage); }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk)), total);
+}
 
 function credentialsFrom(body: Record<string, unknown>) { return { username: requiredText(body.username, "username", 120), password: requiredText(body.password, "password", 256, false) }; }
 function requiredText(value: unknown, name: string, max: number, trim = true) { if (typeof value !== "string") throw new WebHostError(400, `${name} is required`); const result = trim ? value.trim() : value; if (!result || result.length > max) throw new WebHostError(400, `${name} is invalid`); if (name === "password" && result.length < 12) throw new WebHostError(400, "Use a sandbox-only password of at least 12 characters"); return result; }

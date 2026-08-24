@@ -83,7 +83,7 @@ spmt.once("exit", (code, signal) => { if (!stopping) void stop(signal === "SIGIN
 await waitForUrl(web, `http://127.0.0.1:${webPort}/sandbox/health`, "SpaceMountain web");
 
 process.stdout.write(`\nGreen sandbox is supervised and ready at ${publicUrl}\n`);
-process.stdout.write(`The SPMT app catalog starts empty.${candidateApp === "chat-tag" ? " Chat Tag is available only through the SDK publish control." : ""}\n`);
+process.stdout.write(`The SPMT app catalog starts empty.${candidateApp === "chat-tag" ? " Chat Tag is available as an editable Developer Console example manifest." : ""}\n`);
 process.stdout.write("Outbound provider actions are disabled. No Sprite service has been registered.\n");
 process.stdout.write("Press Ctrl+C once to stop the supervised cohort.\n\n");
 

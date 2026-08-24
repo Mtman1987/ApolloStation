@@ -53,6 +53,9 @@ test("private SpaceMountain host serves explicit browser modules with restrictiv
     assert.match(html, /Stellar Core provides persona-neutral shared AI/);
     assert.match(html, /Stella is the app-neutral Community Assistant/);
     assert.match(html, /Athena remains only the owner's configured StreamWeaver persona/);
+    assert.match(html, /Add developer app/);
+    assert.match(html, /Developer docs/);
+    assert.doesNotMatch(html, /Publish Chat Tag through SDK/);
     assert.doesNotMatch(html, /localStorage|sessionStorage|accessToken|refreshToken/);
 
     const client = await fetch(`${base}/assets/web/client.js`);
@@ -60,10 +63,21 @@ test("private SpaceMountain host serves explicit browser modules with restrictiv
     assert.match(client.headers.get("content-type") ?? "", /text\/javascript/);
     assert.equal((await fetch(`${base}/assets/../../package.json`)).status, 404);
     assert.equal((await fetch(`${base}/sandbox/beacon`)).status, 200);
+
+    const docs = await fetch(`${base}/docs/developers`);
+    assert.equal(docs.status, 200);
+    const docsHtml = await docs.text();
+    assert.match(docsHtml, /Register through the human-facing UI/);
+    assert.match(docsHtml, /SpmtClient\.registerApp/);
+    assert.match(docsHtml, /Registration is not installation/);
+    assert.match(docsHtml, /TROUBLESHOOTING/);
+    assert.equal((await fetch(`${base}/assets/web/developer-docs.css`)).status, 200);
+    const example = await (await fetch(`${base}/docs/examples/app-manifest.json`)).json();
+    assert.equal(example.appId, "my-community-app");
   });
 });
 
-test("empty ecosystem publishes exactly Chat Tag through the SDK", async () => {
+test("developer console exposes an editable candidate but registers only through the SDK", async () => {
   const directory = mkdtempSync(join(tmpdir(), "spmt-empty-catalog-"));
   const spmt = createSpmtService({ databasePath: join(directory, "spmt-empty.sqlite"), webhookKey: Buffer.alloc(32, 8), host: "127.0.0.1", port: 0, publicBaseUrl: "https://test-green.sprites.app", runtimeMode: "sandbox", sandboxFixtures: false });
   let web;
@@ -74,9 +88,22 @@ test("empty ecosystem publishes exactly Chat Tag through the SDK", async () => {
     await web.listen(); const webAddress = web.server.address(); assert.ok(webAddress && typeof webAddress !== "string"); const base = `http://127.0.0.1:${webAddress.port}`; const origin = new URL(base).origin;
     const registration = await fetch(`${base}/sandbox/auth/register`, { method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify({ displayName: "Empty Captain", username: "empty-captain", password: "sandbox-only-password" }) });
     const cookie = (registration.headers.get("set-cookie") ?? "").split(";")[0]; assert.ok(cookie);
+    const page = await (await fetch(base)).text();
+    assert.match(page, /Add developer app/);
+    assert.match(page, /Load Chat Tag example/);
+    assert.doesNotMatch(page, /Publish Chat Tag through SDK/);
     const client = new SpmtClient({ baseUrl: base, appId: "spacemountain", fetchImpl: (input, init = {}) => { const headers = new Headers(init.headers); headers.set("cookie", cookie); if (init.method === "POST") headers.set("origin", origin); return fetch(input, { ...init, headers }); } });
     assert.deepEqual(await client.listApps(), []);
     assert.equal((await (await fetch(`${base}/sandbox/candidate-app`)).json()).appId, "chat-tag");
+    const unauthenticatedImport = await fetch(`${base}/sandbox/developer/import-manifest`, { method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify({ manifestUrl: "/sandbox/candidate-app" }) });
+    assert.equal(unauthenticatedImport.status, 401);
+    const crossOriginImport = await fetch(`${base}/sandbox/developer/import-manifest`, { method: "POST", headers: { cookie, origin: "https://attacker.invalid", "content-type": "application/json" }, body: JSON.stringify({ manifestUrl: "/sandbox/candidate-app" }) });
+    assert.equal(crossOriginImport.status, 403);
+    const imported = await fetch(`${base}/sandbox/developer/import-manifest`, { method: "POST", headers: { cookie, origin, "content-type": "application/json" }, body: JSON.stringify({ manifestUrl: "/sandbox/candidate-app" }) });
+    assert.equal(imported.status, 200);
+    assert.equal((await imported.json()).appId, "chat-tag");
+    const blockedPrivateImport = await fetch(`${base}/sandbox/developer/import-manifest`, { method: "POST", headers: { cookie, origin, "content-type": "application/json" }, body: JSON.stringify({ manifestUrl: "https://127.0.0.1/app.json" }) });
+    assert.equal(blockedPrivateImport.status, 400);
     const published = await client.registerApp(candidate);
     assert.equal(published.appId, "chat-tag");
     assert.deepEqual((await client.listApps()).map((app) => app.appId), ["chat-tag"]);
@@ -274,6 +301,9 @@ test("Sprite artifacts are deny-by-default and the supervised runner cannot regi
   assert.match(client, /document\.visibilityState !== "visible"/);
   assert.match(client, /await spmt\.listApps\(\)/);
   assert.match(client, /next !== registryFingerprint/);
+  assert.match(client, /await spmt\.registerApp\(manifest\)/);
+  assert.match(client, /\/sandbox\/developer\/import-manifest/);
+  assert.doesNotMatch(client, /function publishCandidate/);
   assert.doesNotMatch(client, /localStorage|sessionStorage/);
 });
 
@@ -296,7 +326,7 @@ test("supervised runner makes both layers healthy and stops both children togeth
     assert.equal(spmt.outboundIntegrations, "disabled");
     assert.equal(spmt.sandboxFixtures, false);
     assert.equal(web.ready, true);
-    assert.doesNotMatch(await (await fetch(`http://127.0.0.1:${webPort}/`)).text(), /Publish Chat Tag through SDK/);
+    assert.match(await (await fetch(`http://127.0.0.1:${webPort}/`)).text(), /Add developer app/);
     child.kill("SIGTERM");
     const exit = await new Promise((done) => child.once("exit", (code, signal) => done({ code, signal })));
     assert.deepEqual(exit, { code: 0, signal: null });
@@ -307,7 +337,7 @@ test("supervised runner makes both layers healthy and stops both children togeth
   }
 });
 
-test("supervised runner exposes a hidden Chat Tag candidate and publishes zero to exactly one app through the SDK", async () => {
+test("supervised runner exposes Chat Tag as an editable example and publishes zero to exactly one app through the SDK", async () => {
   const directory = mkdtempSync(join(tmpdir(), "spmt-supervised-candidate-"));
   const ports = new Set();
   while (ports.size < 3) ports.add(await freePort());
@@ -320,8 +350,11 @@ test("supervised runner exposes a hidden Chat Tag candidate and publishes zero t
   child.stdout.on("data", (chunk) => { output += chunk; });
   child.stderr.on("data", (chunk) => { output += chunk; });
   try {
-    await waitUntil(() => output.includes("Chat Tag is available only through the SDK publish control"), 20_000, () => `Runner output:\n${output}`);
-    assert.match(await (await fetch(`${base}/`)).text(), /Publish Chat Tag through SDK/);
+    await waitUntil(() => output.includes("Chat Tag is available as an editable Developer Console example manifest"), 20_000, () => `Runner output:\n${output}`);
+    const page = await (await fetch(`${base}/`)).text();
+    assert.match(page, /Add developer app/);
+    assert.match(page, /Load Chat Tag example/);
+    assert.doesNotMatch(page, /Publish Chat Tag through SDK/);
     assert.equal((await fetch(`${base}/apps/chat-tag`)).status, 200);
     const origin = new URL(base).origin;
     const registration = await fetch(`${base}/sandbox/auth/register`, { method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify({ displayName: "Candidate Captain", username: "candidate-captain", password: "sandbox-only-password" }) });
