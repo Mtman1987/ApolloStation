@@ -59,7 +59,7 @@ export function createSpaceMountainWebHost(options: SpaceMountainWebHostOptions)
       if (request.method === "GET" && url.pathname === "/sandbox/candidate-app" && options.candidateManifest) return json(response, 200, options.candidateManifest);
       if (request.method === "POST" && url.pathname === "/sandbox/developer/import-manifest") {
         requireSameOrigin(request);
-        return importDeveloperManifest(response, request, spmtOrigin, fetchImpl, await readJsonBody(request), options.candidateManifest);
+        return await importDeveloperManifest(response, request, spmtOrigin, fetchImpl, await readJsonBody(request), options.candidateManifest);
       }
       if (chatTagOrigin && chatTagProxyPath(url.pathname)) {
         if (!['GET', 'HEAD'].includes(request.method ?? 'GET')) requireSameOrigin(request);
