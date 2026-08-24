@@ -6,7 +6,8 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
-    "./provider-identity-ops": { "types": "./dist/provider-identity-ops.d.ts", "default": "./dist/provider-identity-ops.js" }
+    "./provider-identity-ops": { "types": "./dist/provider-identity-ops.d.ts", "default": "./dist/provider-identity-ops.js" },
+    "./provider-identity-api": { "types": "./dist/provider-identity-api.d.ts", "default": "./dist/provider-identity-api.js" }
   },
   "dependencies": {
     "@spmt/authority-core": "0.2.0",
