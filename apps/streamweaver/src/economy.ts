@@ -163,7 +163,7 @@ export class StreamWeaverEconomy {
     if (targetWallet.spendableXp < amount) return { success: false, duplicate: false, message: `@${fromName}, @${toName} only has ${formatCompactPointAmount(targetWallet.spendableXp)} points!` };
 
     const roll = this.random() * 100;
-    const scenario = HEIST_SCENARIOS[Math.min(HEIST_SCENARIOS.length - 1, Math.floor(this.random() * HEIST_SCENARIOS.length))];
+    const scenario = HEIST_SCENARIOS[Math.min(HEIST_SCENARIOS.length - 1, Math.floor(this.random() * HEIST_SCENARIOS.length))]!;
     let outcome: "success" | "partial" | "fail" | "critical-fail" | "catastrophic-fail";
     let pointsChanged = 0;
     let message: string;
