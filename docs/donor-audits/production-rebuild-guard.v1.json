@@ -128,12 +128,17 @@
         "ai-bot": 13,
         "links": 11,
         "welcome": 9,
+        "deprecated-app-owned": 8,
         "pokemon": 8,
         "deathcounter": 6,
         "chat-bridge": 5,
         "game-pack": 5,
+        "toolkits": 5,
         "clips": 4,
+        "internal-support": 4,
+        "secret-legacy": 3,
         "music": 2,
+        "tiktok": 2,
         "translation": 2,
         "discord": 1,
         "kick": 1
@@ -188,6 +193,7 @@
     }
   },
   "discoveryQueue": {
+    "expectedRepositoryCount": 23,
     "workerOrAssetCandidates": ["hmo-dj-worker", "spcmtn-pokemon_assets-prod", "clipconvertetr"],
     "productOrReleaseCandidates": ["Cosmo", "Nebula-Link", "Cosmic-Forge", "Avatar-Ace", "lottie-ai-stream", "CosmicRaid", "SentientStudio-", "fireforgeai", "Injekt-Prompt-Manager"],
     "predecessorOrExperimentCandidates": ["nexus-hub1.1", "studio", "cosmo2.0", "cosmo2.0-main", "StreamWeave", "streamweaver-v2", "streamweaver3.0", "streamweaver4ev4", "hearmeout", "codespaces-blank"],
