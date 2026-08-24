@@ -44,7 +44,7 @@ fi
 
 create_apollo_service() {
   local release_sha="$1"
-  local runner_args="scripts/sprites/run-supervised-sandbox.mjs,--app,platform,--candidate-app,nebula-arcade,--public-url,$SPRITE_PUBLIC_URL,--data-root,$data_root,--build-sha,$release_sha,--owner-username,mtman1987"
+  local runner_args="scripts/sprites/run-supervised-sandbox.mjs,--app,platform,--candidate-app,nebula-arcade,--catalog,current,--public-url,$SPRITE_PUBLIC_URL,--data-root,$data_root,--build-sha,$release_sha,--owner-username,mtman1987"
   sprite-env services create "$service_name" \
     --cmd node \
     --args "$runner_args" \
