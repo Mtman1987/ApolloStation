@@ -57,29 +57,50 @@ test("Nebula Arcade sandbox exposes the cosmic hub, game pages, saved overlay sc
     const createdBody = await created.json();
     assert.equal(createdBody.scene.name, "Main Stream");
     assert.deepEqual(createdBody.scene.layers.map((layer) => layer.gameId), ["chat-tag", "chatgarden"]);
-    assert.equal(createdBody.outputUrl, "/overlay/main-stream");
+    assert.equal(createdBody.outputUrl, "/apps/nebula-arcade?surface=overlay&scene=main-stream");
 
     const listed = await (await fetch(`${origin}/v1/nebula/overlay-scenes`)).json();
     assert.equal(listed.scenes.length, 1);
-    const output = await (await fetch(`${origin}/overlay/main-stream`)).text();
-    assert.match(output, /Chat Tag overlay/);
-    assert.match(output, /Chat Garden/);
-    assert.match(output, /runtime widget pending/);
+
+    const appAliasList = await (await fetch(`${origin}/apps/nebula-arcade?action=overlay-scenes`)).json();
+    assert.equal(appAliasList.scenes.length, 1);
+    const proxyNormalizedList = await (await fetch(`${origin}/?action=overlay-scenes`)).json();
+    assert.equal(proxyNormalizedList.scenes.length, 1);
+
+    const directOutput = await (await fetch(`${origin}/overlay/main-stream`)).text();
+    assert.match(directOutput, /Chat Tag overlay/);
+    assert.match(directOutput, /Chat Garden/);
+    assert.match(directOutput, /runtime widget pending/);
+
+    const appOutput = await (await fetch(`${origin}/apps/nebula-arcade?surface=overlay&scene=main-stream`)).text();
+    assert.match(appOutput, /\/assets\/nebula-arcade\/overlay\.css/);
+    assert.match(appOutput, /Chat Tag overlay/);
+    assert.match(appOutput, /Chat Garden/);
+    assert.doesNotMatch(appOutput, /style="--layer:/);
+    const proxyNormalizedOutput = await (await fetch(`${origin}/?surface=overlay&scene=main-stream`)).text();
+    assert.match(proxyNormalizedOutput, /Chat Tag overlay/);
+    assert.match(proxyNormalizedOutput, /Chat Garden/);
 
     const browserScript = await (await fetch(`${origin}/assets/chat-tag-sandbox.js`)).text();
     assert.match(browserScript, /\/v1\/workspace\/profile/);
-    assert.match(browserScript, /\/v1\/nebula\/overlay-scenes/);
+    assert.match(browserScript, /\/apps\/nebula-arcade\?action=overlay-scenes/);
+    assert.match(browserScript, /surface=overlay&scene=/);
+    assert.doesNotMatch(browserScript, /\/v1\/nebula\/overlay-scenes/);
     assert.match(browserScript, /x-spmt-tenant/);
     assert.match(browserScript, /--spmt-glass-opacity/);
     assert.match(browserScript, /response\.status===409/);
     assert.match(browserScript, /Workspace changed elsewhere; reconciling the latest revision/);
+
     const themeCss = await (await fetch(`${origin}/assets/chat-tag-sandbox.css`)).text();
     assert.match(themeCss, /--spmt-depth-4-alpha/);
     assert.match(themeCss, /--nebula-depth-4/);
     assert.match(themeCss, /\.hero,.view-heading,.games,.overlay-bay/);
     assert.match(themeCss, /data-surface="shell"/);
+    const overlayCss = await (await fetch(`${origin}/assets/nebula-arcade/overlay.css`)).text();
+    assert.match(overlayCss, /display:flex/);
+    assert.match(overlayCss, /nebula-output-placeholder\{position:relative/);
 
-    const shellPage = await (await fetch(`${origin}/?surface=shell`)).text();
+    const shellPage = await (await fetch(`${origin}/apps/nebula-arcade?surface=shell`)).text();
     assert.match(shellPage, /data-surface="shell"/);
     const background = await fetch(`${origin}/assets/nebula-arcade/solar-system.webp`);
     assert.equal(background.status, 200);
@@ -97,9 +118,9 @@ test("Nebula Arcade sandbox exposes the cosmic hub, game pages, saved overlay sc
     const snapshot = await fetch(`${origin}/v1/nebula/chat-tag/overlay/state`);
     assert.equal((await snapshot.json()).snapshot.playerCount, 1);
 
-    const deleted = await fetch(`${origin}/v1/nebula/overlay-scenes/main-stream`, { method: "DELETE", headers: { origin } });
+    const deleted = await fetch(`${origin}/apps/nebula-arcade?action=overlay-scenes&scene=main-stream`, { method: "DELETE", headers: { origin } });
     assert.equal(deleted.status, 200);
-    assert.equal((await (await fetch(`${origin}/v1/nebula/overlay-scenes`)).json()).scenes.length, 0);
+    assert.equal((await (await fetch(`${origin}/?action=overlay-scenes`)).json()).scenes.length, 0);
 
     const blocked = await fetch(`${origin}/v1/chat-tag/message`, { method: "POST", headers: { origin: "https://attacker.invalid", "content-type": "application/json" }, body: "{}" });
     assert.equal(blocked.status, 403);
