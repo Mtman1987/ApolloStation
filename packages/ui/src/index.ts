@@ -3,6 +3,64 @@ import { LAYER, SHELL_LAYOUT_VARS } from "@spmt/embed";
 
 export type PortalKindV1 = "floating" | "modal" | "toast" | "emergency";
 
+export type ProductThemeIdV1 = "solar-flare" | "nebula-purple" | "oceanic-blue" | "aurora-green";
+
+export interface ProductThemeV1 {
+  id: ProductThemeIdV1;
+  name: string;
+  accent: string;
+  accentSecondary: string;
+  backgroundUrl: string;
+}
+
+export const PRODUCT_THEME_PRESETS: Readonly<Record<ProductThemeIdV1, ProductThemeV1>> = Object.freeze({
+  "solar-flare": Object.freeze({ id: "solar-flare", name: "Solar", accent: "#f97316", accentSecondary: "#fbbf24", backgroundUrl: "/assets/product/theme-solar-flare-background.webp" }),
+  "nebula-purple": Object.freeze({ id: "nebula-purple", name: "Nebula", accent: "#a855f7", accentSecondary: "#e879f9", backgroundUrl: "/assets/product/theme-nebula-purple-background.webp" }),
+  "oceanic-blue": Object.freeze({ id: "oceanic-blue", name: "Oceanic", accent: "#3b82f6", accentSecondary: "#22d3ee", backgroundUrl: "/assets/product/theme-oceanic-blue-background.webp" }),
+  "aurora-green": Object.freeze({ id: "aurora-green", name: "Aurora", accent: "#10b981", accentSecondary: "#a3e635", backgroundUrl: "/assets/product/theme-aurora-green-background.webp" }),
+});
+
+export function resolveProductTheme(theme: unknown, customAccent?: unknown): ProductThemeV1 {
+  const key = typeof theme === "string" && theme in PRODUCT_THEME_PRESETS ? theme as ProductThemeIdV1 : "solar-flare";
+  const preset = PRODUCT_THEME_PRESETS[key];
+  if (typeof customAccent !== "string" || !/^#[0-9a-f]{6}$/i.test(customAccent)) return preset;
+  return { ...preset, accent: customAccent };
+}
+
+export const PRODUCT_UI_CSS = `
+.spmt-product-surface {
+  --spmt-accent: #f97316;
+  --spmt-accent-secondary: #fbbf24;
+  --spmt-ink: #f8fafc;
+  --spmt-muted: #a8adbb;
+  --spmt-panel: rgba(8,10,17,.76);
+  --spmt-panel-strong: rgba(8,10,17,.9);
+  --spmt-border: rgba(255,255,255,.11);
+  --spmt-shadow: 0 24px 80px rgba(0,0,0,.42);
+  color: var(--spmt-ink);
+  font-family: Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+.spmt-product-surface button,.spmt-product-surface input,.spmt-product-surface select,.spmt-product-surface textarea { font: inherit; }
+.spmt-product-surface button { cursor: pointer; }
+.spmt-product-surface :focus-visible { outline: 2px solid var(--spmt-accent-secondary); outline-offset: 3px; }
+.spmt-product-glass { border: 1px solid var(--spmt-border); background: var(--spmt-panel); box-shadow: var(--spmt-shadow); backdrop-filter: blur(24px) saturate(135%); }
+.spmt-product-kicker { color: var(--spmt-accent-secondary); font-size: 10px; font-weight: 900; letter-spacing: .19em; text-transform: uppercase; }
+.spmt-product-status { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--spmt-border); border-radius: 999px; padding: 5px 9px; font-size: 9px; font-weight: 900; letter-spacing: .12em; text-transform: uppercase; }
+.spmt-product-status::before { width: 6px; height: 6px; border-radius: 50%; background: currentColor; box-shadow: 0 0 14px currentColor; content: ""; }
+@media (prefers-reduced-motion: reduce) { .spmt-product-surface * { scroll-behavior: auto !important; animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; } }
+`;
+
+export function installProductUiStyles(doc: Document, styleId = "spmt-product-ui-v1") {
+  const existing = doc.getElementById(styleId);
+  if (existing) return existing as HTMLStyleElement;
+  const style = doc.createElement("style");
+  style.id = styleId;
+  style.textContent = PRODUCT_UI_CSS;
+  doc.head.append(style);
+  return style;
+}
+
 const layerForPortal: Record<PortalKindV1, number> = {
   floating: LAYER.floating,
   modal: LAYER.modal,

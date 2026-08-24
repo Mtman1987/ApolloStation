@@ -29,6 +29,7 @@ Owner approval recorded 2026-08-21 closes the foundation decision pack in `DECIS
 6. `ROTATOR_FLEET_CONTRACT.md` — private fleet reconciliation, scaling, restart, access, logging, and safety boundaries.
 7. `OPERATIONS.md` — implementation batches, build order, cost clock, gates, migration, and rollback.
 8. `DOCUMENT_REVIEW.md` — what should be kept, merged, archived, or removed.
+9. `docs/PRODUCT_UI.md` — framework-neutral product tokens, theme presets, adoption, and UI authority boundaries.
 
 The `evidence/raw/` directory preserves 294 document-like source files copied from:
 

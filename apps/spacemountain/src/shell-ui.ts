@@ -1,6 +1,8 @@
 import { applyShellLayoutMetrics, observeShellLayout } from "@spmt/embed";
 import type { OperationsLogV1 } from "@spmt/contracts";
+import { PRODUCT_UI_CSS, resolveProductTheme } from "@spmt/ui";
 import { DEFERRED_RUNTIME_SOURCES, type SourceStateV1, type SpaceMountainAppCardV1, type SpaceMountainShellSnapshotV1 } from "./index.js";
+import { POLISHED_SPACE_MOUNTAIN_CSS } from "./product-shell-css.js";
 
 export type SpaceMountainViewV1 = "home" | "apps" | "inbox" | "stellar" | "operations" | "workspace" | "settings" | "help";
 export type CommlinkTabV1 = "mail" | "notifications" | "events" | "live";
@@ -18,15 +20,15 @@ export interface SpaceMountainUiOptions {
   onPrepareCoderLog?: (log: OperationsLogV1) => void;
 }
 
-const NAV: Array<{ id: SpaceMountainViewV1; label: string; glyph: string }> = [
-  { id: "home", label: "Home", glyph: "⌂" },
-  { id: "apps", label: "Shipyard", glyph: "◇" },
-  { id: "inbox", label: "Commlink", glyph: "✉" },
-  { id: "stellar", label: "Stellar Core", glyph: "✦" },
-  { id: "operations", label: "Operations", glyph: "◎" },
-  { id: "workspace", label: "Workspace", glyph: "▦" },
-  { id: "settings", label: "Settings", glyph: "⚙" },
-  { id: "help", label: "Help", glyph: "?" },
+const NAV: Array<{ id: SpaceMountainViewV1; label: string; icon: IconName }> = [
+  { id: "home", label: "Home", icon: "home" },
+  { id: "apps", label: "Shipyard", icon: "grid" },
+  { id: "inbox", label: "Commlink", icon: "mail" },
+  { id: "stellar", label: "Stellar Core", icon: "spark" },
+  { id: "operations", label: "Operations", icon: "pulse" },
+  { id: "workspace", label: "Workspace", icon: "layout" },
+  { id: "settings", label: "Settings", icon: "settings" },
+  { id: "help", label: "Help", icon: "help" },
 ];
 
 export class SpaceMountainShellUi {
@@ -39,7 +41,7 @@ export class SpaceMountainShellUi {
     this.snapshot = options.snapshot;
   }
 
-  mount() { this.options.root.classList.add("spmt-space-root"); this.render(); return this; }
+  mount() { this.options.root.classList.add("spmt-space-root", "spmt-product-surface"); this.render(); return this; }
   update(snapshot: SpaceMountainShellSnapshotV1) { this.snapshot = snapshot; this.render(); }
   destroy() { this.stopLayout?.(); this.stopLayout = undefined; this.options.root.replaceChildren(); }
 
@@ -57,13 +59,18 @@ export class SpaceMountainShellUi {
     const appearance = recordObject(this.snapshot.workspace, "appearance");
     const accent = recordText(appearance, ["accent"]);
     const backgroundUrl = recordText(appearance, ["backgroundUrl", "background_url"]);
-    root.dataset.theme = recordText(appearance, ["theme"]) ?? "system";
-    if (accent && /^#[0-9a-fA-F]{6}$/.test(accent)) root.style.setProperty("--accent", accent);
-    else root.style.removeProperty("--accent");
-    root.style.backgroundImage = backgroundUrl ? `linear-gradient(rgba(5,7,16,.72),rgba(5,7,16,.9)),url(${JSON.stringify(backgroundUrl)})` : "";
-    root.style.backgroundSize = backgroundUrl ? "cover" : "";
-    root.style.backgroundAttachment = backgroundUrl ? "fixed" : "";
-    root.innerHTML = `<style data-spmt-space-style>${SPACE_MOUNTAIN_CSS}${WORKSPACE_SETTINGS_CSS}${COMMLINK_FORM_CSS}</style><div class="spmt-space-shell">${this.header()}${this.dock()}<main class="spmt-space-main">${this.body()}</main></div>`;
+    const configuredTheme = recordText(appearance, ["theme"]);
+    const theme = resolveProductTheme(configuredTheme, accent);
+    root.dataset.theme = theme.id;
+    root.style.setProperty("--accent", theme.accent);
+    root.style.setProperty("--accent2", theme.accentSecondary);
+    root.style.setProperty("--spmt-accent", theme.accent);
+    root.style.setProperty("--spmt-accent-secondary", theme.accentSecondary);
+    root.style.backgroundImage = `linear-gradient(rgba(3,4,8,.36),rgba(3,4,8,.78)),url(${JSON.stringify(backgroundUrl || theme.backgroundUrl)})`;
+    root.style.backgroundSize = "cover";
+    root.style.backgroundPosition = "center";
+    root.style.backgroundAttachment = "fixed";
+    root.innerHTML = `<style data-spmt-space-style>${PRODUCT_UI_CSS}${SPACE_MOUNTAIN_CSS}${POLISHED_SPACE_MOUNTAIN_CSS}${WORKSPACE_SETTINGS_CSS}${COMMLINK_FORM_CSS}</style><div class="spmt-space-shell">${this.header()}${this.dock()}<main class="spmt-space-main">${this.body()}</main></div>`;
     root.querySelectorAll<HTMLElement>("[data-nav]").forEach((node) => node.addEventListener("click", () => this.navigate(node.dataset.nav as SpaceMountainViewV1)));
     root.querySelectorAll<HTMLElement>("[data-launch-app]").forEach((node) => node.addEventListener("click", () => { const app = this.snapshot.apps.find((item) => item.appId === node.dataset.launchApp); if (app) this.options.onLaunchApp?.(app); }));
     root.querySelectorAll<HTMLElement>("[data-install-app]").forEach((node) => node.addEventListener("click", () => { const app = this.snapshot.apps.find((item) => item.appId === node.dataset.installApp); if (app) this.options.onInstallApp?.(app); }));
@@ -90,12 +97,13 @@ export class SpaceMountainShellUi {
   private header() {
     const unread = this.snapshot.notifications.filter((item) => !item.readAt && !item.read_at).length;
     const user = recordText(this.snapshot.session, ["displayName", "display_name", "username"]) ?? "Captain";
-    return `<header class="spmt-cosmic-header" data-spmt-shell-header><button class="spmt-brand" data-nav="home"><span>▲</span><strong>SPACEMOUNTAIN<em>.LIVE</em></strong></button><div class="spmt-header-status"><b class="state-${this.snapshot.state}">${escapeHtml(this.snapshot.state)}</b><span>${(this.snapshot.xp?.balance ?? 0).toLocaleString()} XP</span></div><div class="spmt-header-actions"><button data-nav="inbox" class="spmt-icon-button">✉${unread ? `<i>${Math.min(unread, 9)}${unread > 9 ? "+" : ""}</i>` : ""}</button><button data-nav="settings" class="spmt-account">${escapeHtml(user)}</button></div></header>`;
+    const nodes = [{ label: "SPMT", state: this.snapshot.state }, { label: "SPACE", state: this.snapshot.state }, { label: "STELLAR", state: this.snapshot.sources.stellar.state }, { label: "COMMLINK", state: this.snapshot.sources.commlink.state }, ...this.snapshot.apps.slice(0, 5).map((app) => ({ label: app.name, state: app.installed && app.enabled ? "ready" : "available" }))];
+    return `<header class="spmt-shell-header-stack" data-spmt-shell-header><div class="spmt-telemetry"><span class="spmt-telemetry-title">ECOSYSTEM</span>${nodes.map((node) => `<span class="spmt-node state-${escapeHtml(node.state)}"><i></i>${escapeHtml(node.label)}</span>`).join("")}<span class="spmt-telemetry-clock">LIVE · ${new Date().toISOString().slice(11, 16)} UTC</span></div><div class="spmt-cosmic-header spmt-product-glass"><button class="spmt-brand" data-nav="home" aria-label="SpaceMountain home"><img src="/assets/product/space-logo-header.png" alt=""><strong>SPACEMOUNTAIN<em>.LIVE</em></strong></button><nav class="spmt-header-links" aria-label="Product shortcuts"><a href="/docs/developers">Docs</a><button data-nav="apps">Explore apps</button></nav><div class="spmt-header-status"><b class="spmt-product-status state-${this.snapshot.state}">${escapeHtml(this.snapshot.state)}</b><span>${(this.snapshot.xp?.balance ?? 0).toLocaleString()} XP</span></div><div class="spmt-header-actions"><button data-nav="inbox" class="spmt-icon-button" aria-label="Open Commlink">${icon("mail")}${unread ? `<i>${Math.min(unread, 9)}${unread > 9 ? "+" : ""}</i>` : ""}</button><button data-nav="settings" class="spmt-account"><span class="spmt-avatar">${escapeHtml(initials(user))}</span><span>${escapeHtml(user)}</span></button></div></div></header>`;
   }
 
   private dock() {
     const nav = NAV.filter((item) => item.id !== "operations" || this.snapshot.operations.canReadLogs || this.snapshot.operations.canReadCoder);
-    return `<aside class="spmt-rocket-dock"><div class="spmt-dock-orbit">▲</div><nav>${nav.map((item) => `<button data-nav="${item.id}" class="${this.view === item.id ? "active" : ""}"><span>${item.glyph}</span><label>${item.label}</label></button>`).join("")}</nav><footer><small>SPMT</small><strong>${this.snapshot.state.toUpperCase()}</strong></footer></aside>`;
+    return `<aside class="spmt-rocket-dock spmt-product-glass"><div class="spmt-dock-orbit"><span></span><img src="/assets/product/model-rocket.png" alt="SpaceMountain rocket"></div><nav>${nav.map((item) => `<button data-nav="${item.id}" class="${this.view === item.id ? "active" : ""}" title="${escapeHtml(item.label)}">${icon(item.icon)}<label>${item.label}</label></button>`).join("")}</nav><footer><small>SPMT CORE</small><strong>${this.snapshot.state.toUpperCase()}</strong></footer></aside>`;
   }
 
   private body() {
@@ -113,8 +121,10 @@ export class SpaceMountainShellUi {
     const installed = this.snapshot.apps.filter((app) => app.installed && app.enabled);
     const unread = this.snapshot.notifications.filter((item) => !item.readAt && !item.read_at).length;
     const slots = workspaceDockSlots(this.snapshot.workspace);
+    const appearance = recordObject(this.snapshot.workspace, "appearance");
+    const theme = resolveProductTheme(recordText(appearance, ["theme"]), recordText(appearance, ["accent"]));
     const operationsQuick = this.snapshot.operations.canReadLogs || this.snapshot.operations.canReadCoder ? quick("Operations", "Consolidated app health, Rotator evidence, and coder drafts.", "operations") : "";
-    return `<section class="spmt-hero"><div><span class="kicker">THE UNIVERSE ONLINE</span><h1>One station for your creator ecosystem.</h1><p>Launch apps, check Commlink, and continue the same portable workspace from one canonical SPMT identity.</p><div class="actions"><button data-nav="apps" class="primary">Open Shipyard</button><button data-nav="inbox">Open Commlink</button></div></div><div class="spmt-metrics">${metric("Apps ready", `${installed.length}/${this.snapshot.apps.length}`)}${metric("Unread", String(unread))}${metric("Dock slots", `${slots.filter(Boolean).length}/3`)}${metric("Runtime", this.snapshot.state)}</div></section><section class="spmt-section"><header><div><span>YOUR APP SUITE</span><h2>Launch what you use most</h2></div><button data-nav="apps">View all</button></header><div class="spmt-app-grid">${installed.slice(0, 4).map(appCard).join("") || empty("Installed apps will appear here after Shipyard loads.")}</div></section><section class="spmt-quick-grid">${quick("Shipyard", "Install, launch, and manage ecosystem apps.", "apps")}${quick("Commlink", "Shared mail, notifications, and app events.", "inbox")}${operationsQuick}${quick("Workspace", "Three canonical dock slots and overlays.", "workspace")}</section>`;
+    return `<section class="spmt-hero spmt-product-glass"><div class="spmt-hero-copy"><img class="spmt-hero-logo" src="/assets/product/space-logo-main.png" alt="SpaceMountain"><span class="kicker spmt-product-kicker">THE UNIVERSE ONLINE</span><h1>One command bridge for every creator tool.</h1><p>Launch apps, check Commlink, and carry the same portable workspace across your ecosystem through one canonical SPMT identity.</p><div class="actions"><button data-nav="apps" class="primary">${icon("rocket")}Open Shipyard</button><button data-nav="inbox">${icon("mail")}Open Commlink</button></div></div><div class="spmt-metrics">${metric("Apps online", `${installed.length}/${this.snapshot.apps.length}`)}${metric("Unread", String(unread))}${metric("Docked", `${slots.filter(Boolean).length}/3`)}${metric("Theme", theme.name)}</div></section><section class="spmt-section spmt-product-glass"><header><div><span>YOUR APP SUITE</span><h2>Everything in your orbit</h2></div><button data-nav="apps">View all ${icon("arrow")}</button></header><div class="spmt-app-grid">${installed.slice(0, 4).map(appCard).join("") || empty("Your station is ready. Add a developer app, then install it from Shipyard to place it in orbit.", "apps")}</div></section><section class="spmt-quick-grid">${quick("Shipyard", "Install, launch, and manage ecosystem apps.", "apps", "grid")}${quick("Commlink", "Shared mail, notifications, and app events.", "inbox", "mail")}${operationsQuick}${quick("Workspace", "Three canonical dock slots and overlays.", "workspace", "layout")}</section>`;
   }
 
   private shipyard() { return `${page("Apps and capabilities", "Registry, install state, granted scopes, and entitlements come directly from SPMT.", "SHIPYARD")}<div class="spmt-app-grid wide">${this.snapshot.apps.map(appCard).join("") || empty("No registered apps are available yet.")}</div>`; }
@@ -169,7 +179,7 @@ export class SpaceMountainShellUi {
     const accent = recordText(appearance, ["accent"]) ?? "#ff7a18";
     const backgroundUrl = recordText(appearance, ["backgroundUrl", "background_url"]) ?? "";
     const appOptions = this.snapshot.apps.filter((app) => app.installed && app.enabled).map((app) => ({ value: app.appId, label: app.name }));
-    return `${page("Portable station layout", "One workspace profile. Three persistent dock slots. No per-app copies.", "WORKSPACE")}${sourceNotice("Workspace", this.snapshot.sources.workspace)}<form class="spmt-settings-form" data-workspace-settings><section><header><span>APPEARANCE</span><h2>Shared across the suite</h2></header><div class="spmt-field-grid"><label>Theme<select name="theme">${selectOption("system", theme, "System")}${selectOption("dark", theme, "Dark")}${selectOption("light", theme, "Light")}</select></label><label>Accent<input name="accent" type="color" value="${escapeHtml(accent)}"></label><label class="wide">Background image URL<input name="backgroundUrl" type="url" inputmode="url" placeholder="https://…" value="${escapeHtml(backgroundUrl)}"></label></div></section><section><header><span>DOCK</span><h2>Three persistent app slots</h2></header><div class="spmt-field-grid">${slots.map((slot, index) => `<label>Slot ${index + 1}<select name="dockSlot${index}">${selectOption("", slot ?? "", "Empty")}${slot && !appOptions.some((option) => option.value === slot) ? selectOption(slot, slot, `Existing: ${slot}`) : ""}${appOptions.map((option) => selectOption(option.value, slot ?? "", option.label)).join("")}</select></label>`).join("")}</div></section><button type="submit" class="primary">Save canonical workspace</button><small>Revision ${recordNumber(profile, "revision") ?? "unavailable"} · changes are written once to SPMT and read by every authorized app.</small></form>`;
+    return `${page("Portable station layout", "One workspace profile. Three persistent dock slots. No per-app copies.", "WORKSPACE")}${sourceNotice("Workspace", this.snapshot.sources.workspace)}<form class="spmt-settings-form" data-workspace-settings><section><header><span>APPEARANCE</span><h2>Shared across the suite</h2></header><div class="spmt-field-grid"><label>Theme<select name="theme">${selectOption("solar-flare", theme, "Solar flare")}${selectOption("nebula-purple", theme, "Nebula purple")}${selectOption("oceanic-blue", theme, "Oceanic blue")}${selectOption("aurora-green", theme, "Aurora green")}${!theme.includes("-") ? selectOption(theme, theme, `Existing: ${theme}`) : ""}</select></label><label>Accent<input name="accent" type="color" value="${escapeHtml(accent)}"></label><label class="wide">Background image URL<input name="backgroundUrl" type="url" inputmode="url" placeholder="https://…" value="${escapeHtml(backgroundUrl)}"></label></div></section><section><header><span>DOCK</span><h2>Three persistent app slots</h2></header><div class="spmt-field-grid">${slots.map((slot, index) => `<label>Slot ${index + 1}<select name="dockSlot${index}">${selectOption("", slot ?? "", "Empty")}${slot && !appOptions.some((option) => option.value === slot) ? selectOption(slot, slot, `Existing: ${slot}`) : ""}${appOptions.map((option) => selectOption(option.value, slot ?? "", option.label)).join("")}</select></label>`).join("")}</div></section><button type="submit" class="primary">Save canonical workspace</button><small>Revision ${recordNumber(profile, "revision") ?? "unavailable"} · changes are written once to SPMT and read by every authorized app.</small></form>`;
   }
   private settings() {
     const links = this.snapshot.providerLinks.slice().sort((left, right) => providerLinkKey(left).localeCompare(providerLinkKey(right)));
@@ -185,11 +195,11 @@ function isUnread(item: Record<string, unknown>) { return !recordText(item, ["re
 function recordStrings(value: unknown, key: string) { if (!value || typeof value !== "object" || Array.isArray(value)) return []; const raw = (value as Record<string, unknown>)[key]; return Array.isArray(raw) ? raw.filter((item): item is string => typeof item === "string") : []; }
 function payloadKeySummary(value: unknown) { if (!value || typeof value !== "object" || Array.isArray(value)) return "No structured payload fields"; const keys = Object.keys(value as Record<string, unknown>).sort(); return keys.length ? `Payload fields: ${keys.slice(0, 12).join(", ")}${keys.length > 12 ? "…" : ""}` : "No structured payload fields"; }
 function formatRecordTime(value: string | undefined) { if (!value) return "Time unavailable"; const timestamp = Date.parse(value); if (!Number.isFinite(timestamp)) return value; return new Date(timestamp).toISOString().replace("T", " ").replace(".000Z", " UTC"); }
-function appCard(app: SpaceMountainAppCardV1) { const action = app.installed && app.enabled ? `<button class="primary" data-launch-app="${escapeHtml(app.appId)}">Launch</button>` : `<button data-install-app="${escapeHtml(app.appId)}">Install</button>`; return `<article class="spmt-app-card"><div class="app-icon">${escapeHtml(app.name.slice(0, 2).toUpperCase())}</div><span>${app.installed ? (app.enabled ? "INSTALLED" : "DISABLED") : "AVAILABLE"}</span><h3>${escapeHtml(app.name)}</h3><p>${escapeHtml(app.description || "SpaceMountain ecosystem application")}</p><footer>${action}<small>${escapeHtml(app.version || "unversioned")}</small></footer></article>`; }
+function appCard(app: SpaceMountainAppCardV1) { const action = app.installed && app.enabled ? `<button class="primary" data-launch-app="${escapeHtml(app.appId)}">Launch ${icon("arrow")}</button>` : `<button data-install-app="${escapeHtml(app.appId)}">Install</button>`; const art = app.iconUrl ? `<img src="${escapeHtml(app.iconUrl)}" alt="" loading="lazy">` : `<span>${escapeHtml(initials(app.name))}</span>`; return `<article class="spmt-app-card"><div class="app-icon">${art}</div><div class="spmt-app-status"><span>${app.installed ? (app.enabled ? "INSTALLED" : "DISABLED") : "AVAILABLE"}</span><small>v${escapeHtml(app.version || "—")}</small></div><h3>${escapeHtml(app.name)}</h3><p>${escapeHtml(app.description || "SpaceMountain ecosystem application")}</p><footer>${action}<small>${escapeHtml(app.surfaces.join(" · ") || "standalone")}</small></footer></article>`; }
 function metric(label: string, value: string) { return `<div><strong>${escapeHtml(value)}</strong><span>${escapeHtml(label)}</span></div>`; }
-function quick(title: string, body: string, nav: SpaceMountainViewV1) { return `<button data-nav="${nav}"><strong>${title}</strong><span>${body}</span></button>`; }
+function quick(title: string, body: string, nav: SpaceMountainViewV1, iconName: IconName = "pulse") { return `<button data-nav="${nav}"><i>${icon(iconName)}</i><strong>${title}</strong><span>${body}</span><em>${icon("arrow")}</em></button>`; }
 function page(title: string, body: string, kicker = "SPACEMOUNTAIN") { return `<section class="spmt-page-title"><span>${kicker}</span><h1>${escapeHtml(title)}</h1><p>${escapeHtml(body)}</p></section>`; }
-function empty(message: string) { return `<div class="spmt-empty">${escapeHtml(message)}</div>`; }
+function empty(message: string, nav?: SpaceMountainViewV1) { return `<div class="spmt-empty"><i>${icon("spark")}</i><strong>Clear orbit</strong><span>${escapeHtml(message)}</span>${nav ? `<button data-nav="${nav}">Open ${nav === "apps" ? "Shipyard" : escapeHtml(nav)}</button>` : ""}</div>`; }
 function recordText(value: unknown, keys: string[]) { if (!value || typeof value !== "object" || Array.isArray(value)) return undefined; const record = value as Record<string, unknown>; for (const key of keys) if (typeof record[key] === "string" && record[key]) return record[key] as string; return undefined; }
 function recordNumber(value: unknown, key: string) { if (!value || typeof value !== "object" || Array.isArray(value)) return undefined; const result = (value as Record<string, unknown>)[key]; return typeof result === "number" && Number.isFinite(result) ? result : undefined; }
 function recordObject(value: unknown, key: string) { if (!value || typeof value !== "object" || Array.isArray(value)) return undefined; const result = (value as Record<string, unknown>)[key]; return result && typeof result === "object" && !Array.isArray(result) ? result as Record<string, unknown> : undefined; }
@@ -197,6 +207,9 @@ function providerLinkKey(value: unknown) { return `${recordText(value, ["provide
 function selectOption(value: string, selected: string, label: string) { return `<option value="${escapeHtml(value)}"${value === selected ? " selected" : ""}>${escapeHtml(label)}</option>`; }
 function workspaceDockSlots(value: unknown): Array<string | null> { if (!value || typeof value !== "object" || Array.isArray(value)) return [null, null, null]; const raw = (value as Record<string, unknown>).dockSlots; if (!Array.isArray(raw)) return [null, null, null]; return [0, 1, 2].map((index) => typeof raw[index] === "string" ? raw[index] as string : null); }
 function escapeHtml(value: string) { return value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char] ?? char); }
+function initials(value: string) { return value.trim().split(/\s+/).slice(0, 2).map((part) => part[0] ?? "").join("").toUpperCase() || "SP"; }
+type IconName = "home" | "grid" | "mail" | "spark" | "pulse" | "layout" | "settings" | "help" | "rocket" | "arrow";
+function icon(name: IconName) { const paths: Record<IconName, string> = { home: '<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5M9 21v-7h6v7"/>', grid: '<rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/>', mail: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>', spark: '<path d="m12 3 1.6 5.4L19 10l-5.4 1.6L12 17l-1.6-5.4L5 10l5.4-1.6L12 3Z"/><path d="m19 16 .7 2.3L22 19l-2.3.7L19 22l-.7-2.3L16 19l2.3-.7L19 16Z"/>', pulse: '<path d="M3 12h4l2-6 4 12 2-6h6"/>', layout: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M9 10h12"/>', settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3A1.7 1.7 0 0 0 10 3V2.8h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"/>', help: '<circle cx="12" cy="12" r="9"/><path d="M9.8 9a2.3 2.3 0 1 1 3.7 1.8c-1 .7-1.5 1.1-1.5 2.2M12 17h.01"/>', rocket: '<path d="M14 4c3-2 5-1 6-1 0 1 1 3-1 6l-5 5-4-1-1-4 5-5Z"/><path d="m9 9-4 1-2 3 5 1M14 14l-1 5-3 2-1-5M8 16l-3 3"/>', arrow: '<path d="M5 12h14M13 6l6 6-6 6"/>' }; return `<svg class="spmt-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${paths[name]}</svg>`; }
 
 const WORKSPACE_SETTINGS_CSS = `.spmt-settings-form{display:grid;gap:16px}.spmt-settings-form>section{border:1px solid var(--border);border-radius:20px;background:var(--panel);padding:18px}.spmt-settings-form header span{font-size:10px;letter-spacing:.18em;font-weight:900;color:var(--accent2)}.spmt-settings-form h2{margin:5px 0 16px}.spmt-field-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.spmt-field-grid label{display:grid;gap:7px;color:#b7b9c4;font-size:11px;font-weight:800}.spmt-field-grid label.wide{grid-column:span 2}.spmt-field-grid input,.spmt-field-grid select{width:100%;border:1px solid var(--border);border-radius:11px;background:#080b17;color:white;padding:10px;font:inherit}.spmt-field-grid input[type=color]{min-height:40px;padding:4px}.spmt-settings-form>button{justify-self:start;border:0;border-radius:12px;padding:11px 15px;font-weight:900}.spmt-settings-form>small{color:#8d90a0}@media(max-width:700px){.spmt-field-grid{grid-template-columns:1fr}.spmt-field-grid label.wide{grid-column:auto}}`;
 const COMMLINK_FORM_CSS = `.spmt-commlink-search{display:flex;gap:9px;margin-bottom:14px}.spmt-commlink-search label{flex:1;display:grid;gap:5px;color:#9b9eac;font-size:10px;font-weight:800}.spmt-commlink-search input{width:100%;border:1px solid var(--border);border-radius:11px;background:#080b17;color:white;padding:10px;font:inherit}.spmt-commlink-search button{align-self:end;border:1px solid var(--border);border-radius:11px;background:rgba(255,255,255,.05);color:white;padding:10px 14px;font-weight:800}.dialog-reply{display:grid;gap:9px;margin-top:10px;padding-top:14px;border-top:1px solid rgba(255,255,255,.1)}.dialog-reply textarea{min-height:96px;resize:vertical;border:1px solid rgba(255,255,255,.15);border-radius:11px;background:#060b18;color:white;padding:11px;font:inherit}.dialog-reply button{justify-self:end}`;

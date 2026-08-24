@@ -34,6 +34,7 @@ export interface SpaceMountainAppCardV1 {
   description: string;
   version: string;
   launchUrl: string;
+  iconUrl?: string;
   surfaces: SurfaceModeV1[];
   allowedScopes: string[];
   installed: boolean;
@@ -259,6 +260,7 @@ function joinApps(apps: Array<Record<string, unknown>>, installs: Array<Record<s
       description: String(app.description ?? ""),
       version: String(app.version ?? ""),
       launchUrl: String(app.launchUrl ?? ""),
+      ...(typeof app.iconUrl === "string" && app.iconUrl ? { iconUrl: app.iconUrl } : {}),
       surfaces: surfaceModes(app.surfaces),
       allowedScopes: strings(app.allowedScopes),
       installed: Boolean(install),

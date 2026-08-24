@@ -4,7 +4,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { isIP } from "node:net";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { renderSpaceMountainPage, SANDBOX_BEACON_HTML, SANDBOX_CSS } from "./page.js";
+import { renderSpaceMountainPage, SANDBOX_BEACON_HTML, SANDBOX_CSS, SANDBOX_POLISH_CSS } from "./page.js";
 import { DEVELOPER_DOCS_CSS, DEVELOPER_MANIFEST_EXAMPLE, renderDeveloperDocsPage } from "./developer-docs.js";
 import type { AppCatalogRegistrationV1 } from "@spmt/contracts";
 
@@ -24,8 +24,17 @@ const ASSETS = new Map<string, { file: string; type: string }>([
   ["/assets/contracts/index.js", { file: resolve(REPOSITORY_ROOT, "packages/contracts/dist/index.js"), type: "text/javascript; charset=utf-8" }],
   ["/assets/embed/index.js", { file: resolve(REPOSITORY_ROOT, "packages/embed/dist/index.js"), type: "text/javascript; charset=utf-8" }],
   ["/assets/sdk/index.js", { file: resolve(REPOSITORY_ROOT, "packages/sdk/dist/index.js"), type: "text/javascript; charset=utf-8" }],
+  ["/assets/ui/index.js", { file: resolve(REPOSITORY_ROOT, "packages/ui/dist/index.js"), type: "text/javascript; charset=utf-8" }],
   ["/assets/spacemountain/index.js", { file: resolve(REPOSITORY_ROOT, "apps/spacemountain/dist/index.js"), type: "text/javascript; charset=utf-8" }],
   ["/assets/spacemountain/shell-ui.js", { file: resolve(REPOSITORY_ROOT, "apps/spacemountain/dist/shell-ui.js"), type: "text/javascript; charset=utf-8" }],
+  ["/assets/spacemountain/product-shell-css.js", { file: resolve(REPOSITORY_ROOT, "apps/spacemountain/dist/product-shell-css.js"), type: "text/javascript; charset=utf-8" }],
+  ["/assets/product/model-rocket.png", { file: resolve(REPOSITORY_ROOT, "apps/spacemountain-web/assets/model-rocket.png"), type: "image/png" }],
+  ["/assets/product/space-logo-header.png", { file: resolve(REPOSITORY_ROOT, "apps/spacemountain-web/assets/space-logo-header.png"), type: "image/png" }],
+  ["/assets/product/space-logo-main.png", { file: resolve(REPOSITORY_ROOT, "apps/spacemountain-web/assets/space-logo-main.png"), type: "image/png" }],
+  ["/assets/product/theme-aurora-green-background.webp", { file: resolve(REPOSITORY_ROOT, "apps/spacemountain-web/assets/theme-aurora-green-background.webp"), type: "image/webp" }],
+  ["/assets/product/theme-nebula-purple-background.webp", { file: resolve(REPOSITORY_ROOT, "apps/spacemountain-web/assets/theme-nebula-purple-background.webp"), type: "image/webp" }],
+  ["/assets/product/theme-oceanic-blue-background.webp", { file: resolve(REPOSITORY_ROOT, "apps/spacemountain-web/assets/theme-oceanic-blue-background.webp"), type: "image/webp" }],
+  ["/assets/product/theme-solar-flare-background.webp", { file: resolve(REPOSITORY_ROOT, "apps/spacemountain-web/assets/theme-solar-flare-background.webp"), type: "image/webp" }],
 ]);
 
 export interface SpaceMountainWebHostOptions {
@@ -49,7 +58,7 @@ export function createSpaceMountainWebHost(options: SpaceMountainWebHostOptions)
     try {
       const url = new URL(request.url ?? "/", "http://spacemountain.local");
       if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/first-time-setup")) return html(response, 200, renderSpaceMountainPage(nonce, buildSha, Boolean(options.candidateManifest)));
-      if (request.method === "GET" && url.pathname === "/assets/web/sandbox.css") return textResponse(response, 200, SANDBOX_CSS, "text/css; charset=utf-8", "public, max-age=300");
+      if (request.method === "GET" && url.pathname === "/assets/web/sandbox.css") return textResponse(response, 200, SANDBOX_CSS + SANDBOX_POLISH_CSS, "text/css; charset=utf-8", "public, max-age=300");
       if (request.method === "GET" && url.pathname === "/assets/web/developer-docs.css") return textResponse(response, 200, DEVELOPER_DOCS_CSS, "text/css; charset=utf-8", "public, max-age=300");
       if (request.method === "GET" && url.pathname === "/docs/developers") return html(response, 200, renderDeveloperDocsPage(buildSha));
       if (request.method === "GET" && url.pathname === "/docs/examples/app-manifest.json") return json(response, 200, DEVELOPER_MANIFEST_EXAMPLE);
