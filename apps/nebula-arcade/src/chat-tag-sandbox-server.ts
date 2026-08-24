@@ -5,37 +5,71 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { SpmtClient } from "@spmt/sdk";
 import { PRODUCT_UI_CSS } from "@spmt/ui";
-import { NEBULA_THEME_CSS } from "./nebula-theme-css.js";
 import { ChatTagExperienceService, SqliteChatTagExperienceStore } from "./chat-tag-experience.js";
 import { ChatTagOverlayHttpAdapter } from "./chat-tag-overlay-http.js";
 import { ChatTagRuntime, SqliteChatTagStore } from "./chat-tag-runtime.js";
 import { NEBULA_ARCADE_GAMES } from "./game-hub.js";
+import { NEBULA_THEME_CSS } from "./nebula-theme-css.js";
+import { NEBULA_ARCADE_BASE_CSS, NEBULA_ARCADE_BROWSER_JS, NEBULA_OVERLAY_CSS, renderNebulaArcadePage, renderNebulaOverlayOutput, type NebulaArcadeViewV1 } from "./nebula-arcade-page.js";
+import { SqliteNebulaOverlaySceneStore, type NebulaOverlayLayerV1 } from "./overlay-scenes.js";
 
 const MAX_BODY_BYTES = 64 * 1_024;
 const HERE = dirname(fileURLToPath(import.meta.url));
 const NEBULA_ARCADE_BACKGROUND = resolve(HERE, "../assets/nebula-arcade-solar-system.webp");
 const PROVIDER_ENV_NAMES = ["TWITCH_CLIENT_ID", "TWITCH_CLIENT_SECRET", "TWITCH_BOT_OAUTH_TOKEN", "DISCORD_BOT_TOKEN", "KICK_CLIENT_ID", "KICK_CLIENT_SECRET", "FLY_API_TOKEN"] as const;
+const GAME_IDS = new Set(NEBULA_ARCADE_GAMES.map((game) => game.id));
 
 export interface ChatTagSandboxHostOptions { databasePath: string; tenantId: string; channelId: string; pinUserId?: string; port?: number; host?: string; buildSha?: string; }
 
 export function createChatTagSandboxHost(options: ChatTagSandboxHostOptions) {
   const gameStore = new SqliteChatTagStore(options.databasePath);
   const experienceStore = new SqliteChatTagExperienceStore(options.databasePath);
+  const sceneStore = new SqliteNebulaOverlaySceneStore(options.databasePath);
   const spmt = new SpmtClient({ baseUrl: "http://sandbox-disabled.invalid", appId: "nebula-arcade", fetchImpl: async () => Response.json({ sandbox: true, outbound: "disabled" }) });
   const runtime = new ChatTagRuntime(gameStore, spmt);
   const experience = new ChatTagExperienceService(runtime, experienceStore, options.pinUserId ?? "provider:twitch:pin", () => new Date().toISOString());
   const overlay = new ChatTagOverlayHttpAdapter(gameStore, () => new Date().toISOString(), experienceStore);
   const principal = { schemaVersion: 1 as const, tenantId: options.tenantId, appId: "nebula-arcade" as const, widgetId: "chat-tag" as const, channelId: options.channelId };
+
   const server = createServer(async (request, response) => {
     const nonce = randomBytes(18).toString("base64url");
     applyHeaders(response, nonce);
     try {
       const url = new URL(request.url ?? "/", "http://chat-tag.sandbox");
       if (request.method === "GET" && url.pathname === "/health/ready") return json(response, 200, { ready: true, app: "nebula-arcade", runtimeMode: "sandbox", outboundIntegrations: "disabled", buildSha: options.buildSha ?? "dev" });
-      if (request.method === "GET" && url.pathname === "/") return html(response, 200, renderSandboxPage(nonce, options.tenantId, options.channelId, url.searchParams.get("surface") === "shell").replace('<a href="/?view=spmt">SPMT hub</a>', '<a href="/">SpaceMountain</a>'));
-      if (request.method === "GET" && url.pathname === "/assets/chat-tag-sandbox.css") return text(response, 200, `${SANDBOX_CSS}${NEBULA_THEME_CSS}`, "text/css; charset=utf-8", "public, max-age=300");
-      if (request.method === "GET" && url.pathname === "/assets/chat-tag-sandbox.js") return text(response, 200, SANDBOX_JS, "text/javascript; charset=utf-8", "public, max-age=300");
+
+      if (request.method === "GET" && url.pathname === "/") {
+        const shellSurface = url.searchParams.get("surface") === "shell";
+        const page = renderNebulaArcadePage({ nonce, tenantId: options.tenantId, channelId: options.channelId, shellSurface, view: arcadeView(url.searchParams.get("view")), ...(url.searchParams.get("game") ? { gameId: url.searchParams.get("game")! } : {}) });
+        return html(response, 200, page.replace('<a href="/?view=spmt">SpaceMountain</a>', '<a href="/">SpaceMountain</a>'));
+      }
+
+      if (request.method === "GET" && url.pathname === "/assets/chat-tag-sandbox.css") return text(response, 200, `${PRODUCT_UI_CSS}${NEBULA_ARCADE_BASE_CSS}${NEBULA_THEME_CSS}`, "text/css; charset=utf-8", "public, max-age=300");
+      if (request.method === "GET" && url.pathname === "/assets/chat-tag-sandbox.js") return text(response, 200, NEBULA_ARCADE_BROWSER_JS, "text/javascript; charset=utf-8", "public, max-age=300");
+      if (request.method === "GET" && url.pathname === "/assets/nebula-overlay.css") return text(response, 200, NEBULA_OVERLAY_CSS, "text/css; charset=utf-8", "public, max-age=300");
       if (request.method === "GET" && url.pathname === "/assets/nebula-arcade/solar-system.webp") return binary(response, 200, await readFile(NEBULA_ARCADE_BACKGROUND), "image/webp", "public, max-age=86400");
+
+      if (request.method === "GET" && url.pathname === "/v1/nebula/overlay-scenes") return json(response, 200, { scenes: sceneStore.list(options.tenantId) });
+      if (request.method === "POST" && url.pathname === "/v1/nebula/overlay-scenes") {
+        requireSameOrigin(request);
+        const body = await readJson(request);
+        const scene = sceneStore.save(options.tenantId, sceneInput(body), new Date().toISOString());
+        return json(response, 200, { scene, outputUrl: `/overlay/${encodeURIComponent(scene.id)}` });
+      }
+      if (request.method === "DELETE" && url.pathname.startsWith("/v1/nebula/overlay-scenes/")) {
+        requireSameOrigin(request);
+        const sceneId = decodeURIComponent(url.pathname.slice("/v1/nebula/overlay-scenes/".length));
+        requireSceneId(sceneId);
+        return json(response, sceneStore.delete(options.tenantId, sceneId) ? 200 : 404, { deleted: sceneId });
+      }
+      if (request.method === "GET" && url.pathname.startsWith("/overlay/")) {
+        const sceneId = decodeURIComponent(url.pathname.slice("/overlay/".length));
+        requireSceneId(sceneId);
+        const scene = sceneStore.get(options.tenantId, sceneId);
+        if (!scene) return html(response, 404, "<!doctype html><title>Overlay not found</title><p>Saved Nebula Arcade overlay not found.</p>");
+        return html(response, 200, renderNebulaOverlayOutput(scene));
+      }
+
       if (request.method === "GET" && url.pathname === "/v1/chat-tag/state") return json(response, 200, runtime.getState(options.tenantId));
       if (request.method === "GET" && url.pathname === "/v1/chat-tag/support") return json(response, 200, experienceStore.listSupportTickets(options.tenantId));
       if (request.method === "GET" && url.pathname === "/v1/nebula/chat-tag/overlay/messages") {
@@ -43,12 +77,15 @@ export function createChatTagSandboxHost(options: ChatTagSandboxHostOptions) {
         return json(response, 200, { messages: experienceStore.listOverlayMessages(options.tenantId, options.channelId, after) });
       }
       if (request.method === "POST" && url.pathname === "/v1/chat-tag/message") {
-        requireSameOrigin(request); const body = await readJson(request); const occurredAt = optionalIso(body.occurredAt) ?? new Date().toISOString();
+        requireSameOrigin(request);
+        const body = await readJson(request);
+        const occurredAt = optionalIso(body.occurredAt) ?? new Date().toISOString();
         const outcome = await experience.ingest({ schemaVersion: 1, provider: provider(body.provider), tenantId: options.tenantId, channelId: options.channelId, messageId: textField(body.messageId, "messageId", 200), userId: textField(body.userId, "userId", 200), username: textField(body.username, "username", 120), text: normalizeSandboxChatTagCommand(textField(body.text, "text", 500)), occurredAt, roles: roles(body.roles) }, { liveUserIds: stringArray(body.liveUserIds, 200) });
         return json(response, 200, { outcome, stored: runtime.getState(options.tenantId) });
       }
       if (request.method === "POST" && url.pathname === "/v1/chat-tag/rotation") {
-        requireSameOrigin(request); const body = await readJson(request);
+        requireSameOrigin(request);
+        const body = await readJson(request);
         const outcome = await runtime.reconcileRotation({ tenantId: options.tenantId, channelId: options.channelId, now: optionalIso(body.now) ?? new Date().toISOString(), liveUserIds: stringArray(body.liveUserIds, 200) });
         return json(response, 200, { outcome, stored: runtime.getState(options.tenantId) });
       }
@@ -57,12 +94,16 @@ export function createChatTagSandboxHost(options: ChatTagSandboxHostOptions) {
         return textWithHeaders(response, adapted.status, adapted.body, adapted.headers);
       }
       return json(response, 404, { error: "not_found" });
-    } catch (error) { const status = error instanceof SandboxError ? error.status : 500; return json(response, status, { error: status === 500 ? "internal" : "invalid_request", message: error instanceof Error ? error.message : "unknown error" }); }
+    } catch (error) {
+      const status = error instanceof SandboxError ? error.status : error instanceof Error && /invalid|requires|contains/i.test(error.message) ? 400 : 500;
+      return json(response, status, { error: status === 500 ? "internal" : "invalid_request", message: error instanceof Error ? error.message : "unknown error" });
+    }
   });
+
   return {
     server,
     listen: () => new Promise<void>((done, reject) => { server.once("error", reject); server.listen(options.port ?? 8080, options.host ?? "0.0.0.0", () => { server.off("error", reject); done(); }); }),
-    close: () => new Promise<void>((done, reject) => server.close((error) => { gameStore.close(); experienceStore.close(); error ? reject(error) : done(); })),
+    close: () => new Promise<void>((done, reject) => server.close((error) => { sceneStore.close(); gameStore.close(); experienceStore.close(); error ? reject(error) : done(); })),
   };
 }
 
@@ -74,27 +115,31 @@ export function validateChatTagSandboxEnvironment(environment: NodeJS.ProcessEnv
   return { databasePath: resolve(environment.CHAT_TAG_DATABASE_PATH ?? ".sandbox-data/chat-tag-green-sandbox.sqlite"), tenantId: safeId(environment.CHAT_TAG_TENANT_ID ?? "chat-tag-sandbox", "CHAT_TAG_TENANT_ID"), channelId: safeId(environment.CHAT_TAG_CHANNEL_ID ?? "sandbox-channel", "CHAT_TAG_CHANNEL_ID") };
 }
 
-function renderSandboxPage(nonce: string, tenantId: string, channelId: string, shellSurface: boolean) {
-  const games = NEBULA_ARCADE_GAMES.map((game) => `<article data-game="${escapeHtml(game.id)}"><span>COMMUNITY GAME</span><h2>${escapeHtml(game.name)}</h2><small>${game.commands.map((command) => `!${escapeHtml(command)}`).join(" · ")}</small></article>`).join("");
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Nebula Arcade · Games Hub</title><link rel="stylesheet" href="/assets/chat-tag-sandbox.css"><script src="/assets/chat-tag-sandbox.js" defer nonce="${nonce}"></script></head><body class="nebula-arcade-surface spmt-product-surface" data-surface="${shellSurface ? "shell" : "standalone"}"><div class="spmt-product-backdrop" aria-hidden="true"><span class="spmt-product-backdrop-image"></span><span class="spmt-product-backdrop-tint"></span><span class="spmt-product-backdrop-shade"></span><span class="spmt-star-layer"><i></i><i></i><i></i></span></div><header><div><b>NEBULA ARCADE</b><span>Games Hub · private Sprite sandbox · outbound providers off</span></div><nav><a href="/?view=spmt">SPMT hub</a><button id="open-settings" type="button">Settings</button><a href="/v1/nebula/chat-tag/overlay" target="_blank" rel="noreferrer">Chat Tag OBS</a></nav></header><aside class="nebula-rocket-dock" aria-label="Nebula Arcade navigation"><a href="#games" aria-label="Games">Games</a><a href="#game-console" aria-label="Play Chat Tag">Play</a><a href="#leaderboard-panel" aria-label="Leaderboard">Scores</a></aside><main><section class="hero"><p>GAMES HUB · 20 EQUAL TITLES</p><h1>Choose what your community plays.</h1><span>Tenant ${escapeHtml(tenantId)} · Channel ${escapeHtml(channelId)}</span></section><section id="games" class="games" aria-label="Nebula Arcade game catalog">${games}</section><section id="game-console" class="console"><header><div><b>CHAT TAG</b><span>Selected game console</span></div></header><form id="command"><label>User ID<input name="userId" value="player-alpha" required></label><label>Username<input name="username" value="Alpha" required></label><label>Role<select name="role"><option value="member">Player</option><option value="moderator">Moderator</option><option value="broadcaster">Broadcaster</option></select></label><label class="wide">Chat message<input name="text" value="!join" required></label><button>Send</button></form><div class="quick"><button data-command="!join">Join</button><button data-command="spmt status">Status</button><button data-command="spmt score">Score</button><button data-command="spmt players">Players</button><button data-command="spmt live">Live</button><button data-command="spmt sleep">Sleep</button><button data-command="spmt wake">Wake</button><button data-command="spmt pinrank">Pin rank</button></div><pre id="reply" aria-live="polite">Ready.</pre></section><section class="state"><div><span>Current IT</span><strong id="it">—</strong></div><div><span>Players</span><strong id="players">0</strong></div><div><span>Last tag</span><strong id="last">—</strong></div></section><section id="leaderboard-panel" class="leaderboard-panel"><h2>Chat Tag leaderboard</h2><ol id="leaderboard"></ol></section></main><dialog id="nebula-settings"><form id="workspace-settings"><header><div><span>CANONICAL WORKSPACE</span><h2>Nebula Arcade settings</h2></div><button id="close-settings" type="button" aria-label="Close settings">×</button></header><p>Nebula Arcade reads the same theme, accent, stars, glass, blur, and scene override used across your authorized ecosystem apps.</p><div class="settings-grid"><label>Theme<select name="theme"><option value="solar-flare">Solar flare</option><option value="nebula-purple">Nebula purple</option><option value="oceanic-blue">Oceanic blue</option><option value="aurora-green">Aurora green</option><option value="system">System</option></select></label><label>Accent<input name="accent" type="color" value="#a855f7"></label><label>Star density <output>70</output><input name="starDensity" type="range" min="0" max="100" value="70"></label><label>Glass opacity <output>76</output><input name="glassOpacity" type="range" min="0" max="100" value="76"></label><label>Blur strength <output>18</output><input name="blurStrength" type="range" min="0" max="100" value="18"></label><label class="wide">Custom scene override<input name="backgroundUrl" type="url" maxlength="2048" placeholder="https://… (leave blank for Nebula Arcade artwork)"></label></div><footer><output id="settings-status">Loading your SPMT workspace…</output><button id="save-settings" class="primary" type="submit">Save ecosystem settings</button></footer></form></dialog></body></html>`;
+function arcadeView(value: string | null): NebulaArcadeViewV1 {
+  return value === "games" || value === "game" || value === "overlay" || value === "stats" ? value : "home";
 }
 
-const SANDBOX_CSS = `${PRODUCT_UI_CSS}:root{color-scheme:dark;font-family:Inter,ui-sans-serif,system-ui;background:#050816;color:#eef6ff}*{box-sizing:border-box}.nebula-arcade-surface{--spmt-accent:#a855f7;--spmt-accent-secondary:#e879f9;--spmt-stars:.7;--spmt-blur:18px;--nebula-glass:.76;--nebula-scene:url('/assets/nebula-arcade/solar-system.webp');margin:0;min-height:100vh;background:#050816}.nebula-arcade-surface .spmt-product-backdrop-image{background-image:var(--nebula-scene);background-position:center;background-size:cover}.nebula-arcade-surface .spmt-product-backdrop-tint{opacity:.25}.nebula-arcade-surface .spmt-product-backdrop-shade{background:linear-gradient(rgba(3,4,12,.16),rgba(3,4,12,.74))}body>header{display:flex;justify-content:space-between;align-items:center;padding:1rem 4vw;border-bottom:1px solid color-mix(in srgb,var(--spmt-accent) 48%,transparent);background:rgba(7,16,32,var(--nebula-glass));position:sticky;top:0;z-index:5;backdrop-filter:blur(var(--spmt-blur))}body>header nav{display:flex;align-items:center;gap:.55rem;flex-wrap:wrap}header div{display:flex;flex-direction:column}header b,.hero p,.games span,#nebula-settings header span{color:var(--spmt-accent-secondary);letter-spacing:.14em}header span{color:#b6b8d5;font-size:.8rem}a,button{color:#fff;background:var(--spmt-accent);border:1px solid color-mix(in srgb,var(--spmt-accent-secondary) 68%,transparent);border-radius:.7rem;padding:.7rem 1rem;text-decoration:none;cursor:pointer}main{position:relative;z-index:1;width:min(1180px,92vw);margin:3rem auto}.hero h1{font-size:clamp(2.2rem,7vw,5.8rem);line-height:.9;margin:.4rem 0 1rem;max-width:900px}.hero span{color:#c2c4dd}.games{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.8rem;margin:3rem 0}.games article{min-height:135px;padding:1rem;border:1px solid color-mix(in srgb,var(--spmt-accent) 44%,transparent);border-radius:1rem;background:rgba(9,19,39,var(--nebula-glass));backdrop-filter:blur(var(--spmt-blur))}.games span{font-size:.62rem}.games h2{margin:.65rem 0;font-size:1.1rem}.games small{color:#b4b5d0;font-size:.68rem;line-height:1.5}.console{margin:3rem 0;padding:1.4rem;border:1px solid color-mix(in srgb,var(--spmt-accent) 45%,transparent);border-radius:1.2rem;background:rgba(9,19,39,var(--nebula-glass));box-shadow:0 0 50px color-mix(in srgb,var(--spmt-accent) 28%,transparent);backdrop-filter:blur(var(--spmt-blur))}.console>header{margin:-1.4rem -1.4rem 1.4rem;padding:1rem 1.4rem;border-bottom:1px solid color-mix(in srgb,var(--spmt-accent) 45%,transparent)}.console form{display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem}label{display:flex;flex-direction:column;gap:.4rem;color:#b6b8d5;font-size:.8rem}.wide{grid-column:1/4}input,select{width:100%;background:#030816;color:#fff;border:1px solid color-mix(in srgb,var(--spmt-accent) 42%,#34384a);border-radius:.6rem;padding:.8rem;font:inherit}.console form>button{grid-column:1/4}.quick{display:flex;flex-wrap:wrap;gap:.5rem;margin:1rem 0}.quick button{background:#0c203b;border-color:#4a5688;padding:.5rem .75rem}pre{white-space:pre-wrap;min-height:4rem;padding:1rem;border-radius:.7rem;background:#02050d;color:#7fffd4}.state{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem}.state div{padding:1.2rem;border:1px solid color-mix(in srgb,var(--spmt-accent) 38%,transparent);border-radius:1rem;background:rgba(8,17,33,var(--nebula-glass));backdrop-filter:blur(var(--spmt-blur))}.state span{display:block;color:#aaaac6;font-size:.75rem;text-transform:uppercase}.state strong{font-size:1.4rem}ol{display:grid;gap:.6rem;padding-left:1.5rem}li{padding:.7rem 1rem;background:rgba(10,22,42,var(--nebula-glass));border-radius:.6rem}#nebula-settings{width:min(680px,calc(100vw - 28px));padding:0;border:1px solid color-mix(in srgb,var(--spmt-accent) 58%,transparent);border-radius:1.4rem;background:#070b18f5;color:#fff;box-shadow:0 32px 100px #000d}#nebula-settings::backdrop{background:#02040bd9;backdrop-filter:blur(8px)}#workspace-settings{display:grid;gap:1.1rem;padding:1.4rem}#workspace-settings>header{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem}#workspace-settings h2{margin:.35rem 0 0;font-size:1.8rem}#workspace-settings>p{margin:0;color:#b6b8d5;line-height:1.6}.settings-grid{display:grid;grid-template-columns:1fr 1fr;gap:1rem}.settings-grid label{display:grid;grid-template-columns:1fr auto;align-items:center}.settings-grid label input,.settings-grid label select{grid-column:1/-1}.settings-grid input[type=range]{accent-color:var(--spmt-accent)}#workspace-settings>footer{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding-top:1rem;border-top:1px solid #ffffff18}#settings-status{color:#aeb4c9;font-size:.75rem}.primary{color:#16091f;background:linear-gradient(135deg,var(--spmt-accent-secondary),var(--spmt-accent));font-weight:900}@media(max-width:900px){.games{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:650px){.console form,.state,.games,.settings-grid{grid-template-columns:1fr}.wide,.console form>button{grid-column:auto}body>header{align-items:flex-start;gap:1rem}body>header nav{justify-content:flex-end}header a,header button{font-size:.75rem;padding:.55rem .7rem}#workspace-settings>footer{align-items:stretch;flex-direction:column}}`;
-const SANDBOX_JS = `(()=>{'use strict';
-const form=document.getElementById('command'),reply=document.getElementById('reply'),it=document.getElementById('it'),players=document.getElementById('players'),last=document.getElementById('last'),leaderboard=document.getElementById('leaderboard'),settingsDialog=document.getElementById('nebula-settings'),settingsForm=document.getElementById('workspace-settings'),settingsStatus=document.getElementById('settings-status');
-const themes={'solar-flare':['#f97316','#fbbf24'],'nebula-purple':['#a855f7','#e879f9'],'oceanic-blue':['#3b82f6','#22d3ee'],'aurora-green':['#10b981','#a3e635']};let serial=0,workspace,tenantId;
-function render(stored){const s=stored.state;it.textContent=s.currentItUserId?(s.players[s.currentItUserId]?.username||s.currentItUserId):'FREE FOR ALL';players.textContent=Object.keys(s.players).length;last.textContent=s.lastTagAt||'—';leaderboard.replaceChildren(...Object.values(s.players).sort((a,b)=>b.score-a.score).map(p=>{const li=document.createElement('li');li.textContent=p.username+' · '+p.score+' pts · '+p.tagsMade+' tags';return li;}));}
-function applyAppearance(value={}){const preset=themes[value.theme]||themes['solar-flare'],intensity=value.nebulaIntensity??55,border=value.borderStrength??35,depth=value.parallaxDepth??35;document.body.style.setProperty('--spmt-accent',value.accent||preset[0]);document.body.style.setProperty('--spmt-accent-secondary',preset[1]);document.body.style.setProperty('--spmt-stars',String((value.starDensity??70)/100));document.body.style.setProperty('--nebula-glass',String((value.glassOpacity??76)/100));document.body.style.setProperty('--spmt-blur',(value.blurStrength??18)+'px');document.body.style.setProperty('--nebula-tint',String(.5+intensity*.0036));document.body.style.setProperty('--nebula-surface-tint',Math.round(8+intensity*.12)+'%');document.body.style.setProperty('--nebula-border-mix',Math.round(10+border*.45)+'%');document.body.style.setProperty('--nebula-scene-scale',String(1.015+depth/2000));document.body.style.setProperty('--nebula-scene',value.backgroundUrl?'url('+JSON.stringify(value.backgroundUrl)+')':"url('/assets/nebula-arcade/solar-system.webp')");}
-function fillSettings(value={}){settingsForm.elements.theme.value=value.theme||'solar-flare';settingsForm.elements.accent.value=value.accent||themes[value.theme]?.[0]||'#f97316';settingsForm.elements.starDensity.value=String(value.starDensity??70);settingsForm.elements.glassOpacity.value=String(value.glassOpacity??76);settingsForm.elements.blurStrength.value=String(value.blurStrength??18);settingsForm.elements.backgroundUrl.value=value.backgroundUrl||'';settingsForm.querySelectorAll('input[type=range]').forEach(input=>{input.parentElement.querySelector('output').value=input.value;});}
-async function refresh(){const r=await fetch('/v1/chat-tag/state',{cache:'no-store'});render(await r.json());}
-async function loadWorkspace(){try{const sessionResponse=await fetch('/v1/session',{credentials:'same-origin',cache:'no-store'});if(!sessionResponse.ok)throw new Error('Open Nebula Arcade from a signed-in SpaceMountain session to use shared settings.');const session=await sessionResponse.json();tenantId=session.tenantIds?.[0];if(!tenantId)throw new Error('No canonical SPMT tenant is available.');const response=await fetch('/v1/workspace/profile',{credentials:'same-origin',cache:'no-store',headers:{'x-spmt-tenant':tenantId}});if(!response.ok)throw new Error('The canonical workspace could not be loaded.');workspace=await response.json();applyAppearance(workspace.appearance);fillSettings(workspace.appearance);settingsStatus.value='SPMT workspace revision '+workspace.revision+' loaded.';}catch(error){settingsStatus.value=error.message;}}
-async function saveAppearance(appearance){const request=revision=>fetch('/v1/workspace/profile',{method:'PATCH',credentials:'same-origin',headers:{'content-type':'application/json','x-spmt-tenant':tenantId},body:JSON.stringify({expectedRevision:revision,patch:{appearance}})});let response=await request(workspace.revision);if(response.status===409){settingsStatus.value='Workspace changed elsewhere; reconciling the latest revision…';const latestResponse=await fetch('/v1/workspace/profile',{credentials:'same-origin',cache:'no-store',headers:{'x-spmt-tenant':tenantId}});if(!latestResponse.ok)throw new Error('The latest workspace revision could not be loaded.');workspace=await latestResponse.json();response=await request(workspace.revision);}const value=await response.json();if(!response.ok){if(response.status===409)throw new Error('The workspace changed again while saving. Refresh and submit the theme once more.');throw new Error(value.message||'Settings could not be saved.');}workspace=value;applyAppearance(workspace.appearance);fillSettings(workspace.appearance);settingsStatus.value='Saved to SPMT revision '+workspace.revision+'.';}
-form.addEventListener('submit',async e=>{e.preventDefault();const data=new FormData(form);reply.textContent='Sending…';const body={messageId:'sandbox-'+Date.now()+'-'+(++serial),userId:data.get('userId'),username:data.get('username'),text:data.get('text'),roles:[data.get('role')]};try{const r=await fetch('/v1/chat-tag/message',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)}),value=await r.json();if(!r.ok)throw new Error(value.message||'Request failed');reply.textContent=value.outcome.message||value.outcome.code;render(value.stored);}catch(error){reply.textContent=error.message;}});
-settingsForm.addEventListener('submit',async e=>{e.preventDefault();if(!workspace||!tenantId)return settingsStatus.value='Open this app from your signed-in SpaceMountain account first.';const data=new FormData(settingsForm),appearance={...workspace.appearance,theme:String(data.get('theme')),accent:String(data.get('accent')),starDensity:Number(data.get('starDensity')),glassOpacity:Number(data.get('glassOpacity')),blurStrength:Number(data.get('blurStrength'))};const backgroundUrl=String(data.get('backgroundUrl')||'').trim();if(backgroundUrl)appearance.backgroundUrl=backgroundUrl;else delete appearance.backgroundUrl;settingsStatus.value='Saving canonical workspace…';try{await saveAppearance(appearance);}catch(error){settingsStatus.value=error.message;}});
-settingsForm.elements.theme.addEventListener('change',()=>{const theme=String(settingsForm.elements.theme.value),preset=themes[theme]||themes['solar-flare'];settingsForm.elements.accent.value=preset[0];applyAppearance({...workspace?.appearance,theme,accent:preset[0]});});settingsForm.elements.accent.addEventListener('input',()=>applyAppearance({...workspace?.appearance,theme:String(settingsForm.elements.theme.value),accent:String(settingsForm.elements.accent.value)}));
-document.getElementById('open-settings').addEventListener('click',()=>settingsDialog.showModal());document.getElementById('close-settings').addEventListener('click',()=>settingsDialog.close());settingsForm.querySelectorAll('input[type=range]').forEach(input=>input.addEventListener('input',()=>{input.parentElement.querySelector('output').value=input.value;}));document.querySelectorAll('[data-command]').forEach(button=>button.addEventListener('click',()=>{form.elements.text.value=button.dataset.command;form.requestSubmit();}));refresh();loadWorkspace();})();`;
+function sceneInput(body: Record<string, unknown>): { id: string; name: string; layers: NebulaOverlayLayerV1[] } {
+  const id = textField(body.id, "id", 80).toLowerCase();
+  requireSceneId(id);
+  const name = textField(body.name, "name", 100);
+  if (!Array.isArray(body.gameIds) || body.gameIds.length > NEBULA_ARCADE_GAMES.length) throw new SandboxError(400, "gameIds is invalid");
+  const ids = body.gameIds.map((value) => textField(value, "gameId", 80));
+  if (new Set(ids).size !== ids.length || ids.some((gameId) => !GAME_IDS.has(gameId))) throw new SandboxError(400, "gameIds contains an unknown or duplicate game");
+  const layers = ids.map((gameId, zIndex) => ({ gameId, enabled: true, zIndex }));
+  return { id, name, layers };
+}
 
-function applyHeaders(response: ServerResponse, nonce: string) { response.setHeader("content-security-policy", `default-src 'none'; script-src 'self' 'nonce-${nonce}'; style-src 'self'; connect-src 'self'; img-src 'self' data: https:; base-uri 'none'; form-action 'self'; frame-ancestors 'self'`); response.setHeader("referrer-policy", "no-referrer"); response.setHeader("x-content-type-options", "nosniff"); response.setHeader("permissions-policy", "camera=(), microphone=(), geolocation=()"); }
+function requireSceneId(value: string): void {
+  if (!/^[a-z0-9][a-z0-9-]{0,79}$/.test(value)) throw new SandboxError(400, "sceneId is invalid");
+}
+
+function applyHeaders(response: ServerResponse, nonce: string) {
+  response.setHeader("content-security-policy", `default-src 'none'; script-src 'self' 'nonce-${nonce}'; style-src 'self'; connect-src 'self'; img-src 'self' data: https:; frame-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'self'`);
+  response.setHeader("referrer-policy", "no-referrer");
+  response.setHeader("x-content-type-options", "nosniff");
+  response.setHeader("permissions-policy", "camera=(), microphone=(), geolocation=()");
+}
 function requireSameOrigin(request: IncomingMessage) { const origin = request.headers.origin; const host = request.headers.host; if (!origin || !host) throw new SandboxError(403, "A same-origin browser request is required"); let parsed: URL; try { parsed = new URL(origin); } catch { throw new SandboxError(403, "Origin is invalid"); } if (parsed.host !== host) throw new SandboxError(403, "Cross-origin mutation is blocked"); }
 async function readJson(request: IncomingMessage) { const chunks: Buffer[] = []; let total = 0; for await (const chunk of request) { const part = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk); total += part.byteLength; if (total > MAX_BODY_BYTES) throw new SandboxError(413, "Request body is too large"); chunks.push(part); } let value: unknown; try { value = JSON.parse(Buffer.concat(chunks).toString("utf8")); } catch { throw new SandboxError(400, "A JSON object is required"); } if (!value || typeof value !== "object" || Array.isArray(value)) throw new SandboxError(400, "A JSON object is required"); return value as Record<string, unknown>; }
 function textField(value: unknown, name: string, max: number) { if (typeof value !== "string" || !value.trim() || value.length > max) throw new SandboxError(400, `${name} is invalid`); return value.trim(); }
@@ -104,7 +149,6 @@ function provider(value: unknown): "twitch" | "discord" | "kick" { const result 
 function optionalIso(value: unknown) { if (value === undefined) return undefined; if (typeof value !== "string" || !Number.isFinite(Date.parse(value))) throw new SandboxError(400, "timestamp is invalid"); return value; }
 function normalizeSandboxChatTagCommand(value: string) { const match = /^!(join|leave|status|score|tag|pass|players|live|sleep|wake|pinrank)(\s+.*)?$/i.exec(value); return match ? `spmt ${match[1]!.toLowerCase()}${match[2] ?? ""}` : value; }
 function safeId(value: string, name: string) { if (!value || value.trim() !== value || value.length > 200 || !/^[A-Za-z0-9._:@/-]+$/.test(value)) throw new Error(`${name} is invalid`); return value; }
-function escapeHtml(value: string) { return value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]!); }
 function html(response: ServerResponse, status: number, body: string) { text(response, status, body, "text/html; charset=utf-8", "no-store"); }
 function text(response: ServerResponse, status: number, body: string, contentType: string, cache: string) { const encoded = Buffer.from(body); response.writeHead(status, { "content-type": contentType, "content-length": encoded.byteLength, "cache-control": cache }); response.end(encoded); }
 function binary(response: ServerResponse, status: number, body: Buffer, contentType: string, cache: string) { response.writeHead(status, { "content-type": contentType, "content-length": body.byteLength, "cache-control": cache, "x-content-type-options": "nosniff" }); response.end(body); }
