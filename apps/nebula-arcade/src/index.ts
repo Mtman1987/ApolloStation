@@ -22,7 +22,7 @@ export function nebulaArcadeCatalogRegistration(publicOrigin: string): AppCatalo
     name: "Nebula Arcade",
     description: "Cosmic Games Hub for twenty equal community games and reusable layered stream overlays.",
     version: "0.1.0-green",
-    launchUrl: new URL("/apps/nebula-arcade", origin).toString(),
+    launchUrl: new URL("/apps/nebula-arcade?surface=workspace", origin).toString(),
     allowedScopes: ["events:write", "xp:write", "overlay:widgets:write"],
     surfaces: ["shell", "standalone", "overlay"],
     status: "active",
