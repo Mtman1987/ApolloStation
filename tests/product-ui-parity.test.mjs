@@ -5,6 +5,8 @@ import { PRODUCT_STAR_FIELDS, PRODUCT_THEME_PRESETS, PRODUCT_UI_CSS, bindProduct
 import { POLISHED_SPACE_MOUNTAIN_CSS } from "../apps/spacemountain/dist/product-shell-css.js";
 
 const shellSource = readFileSync(new URL("../apps/spacemountain/src/shell-ui.ts", import.meta.url), "utf8");
+const themedSource = readFileSync(new URL("../apps/spacemountain/src/themed-surface-css.ts", import.meta.url), "utf8");
+const nebulaThemeSource = readFileSync(new URL("../apps/nebula-arcade/src/nebula-theme-css.ts", import.meta.url), "utf8");
 const hostSource = readFileSync(new URL("../apps/spacemountain-web/src/page.ts", import.meta.url), "utf8");
 const clientSource = readFileSync(new URL("../apps/spacemountain-web/src/client.ts", import.meta.url), "utf8");
 const serverSource = readFileSync(new URL("../apps/spacemountain-web/src/server.ts", import.meta.url), "utf8");
@@ -28,6 +30,22 @@ test("shared product UI exposes stable framework-neutral themes and accessible p
   assert.doesNotMatch(PRODUCT_UI_CSS, /background-size:\s*67px 61px/);
   assert.match(PRODUCT_UI_CSS, /\.spmt-product-backdrop-tint/);
   assert.equal(typeof bindProductRocketNavigation, "function");
+});
+
+test("shared surfaces use fewer layers and progressively lower opacity with depth", () => {
+  assert.match(PRODUCT_UI_CSS, /--spmt-glass-opacity:\s*\.76/);
+  assert.match(PRODUCT_UI_CSS, /--spmt-depth-1-alpha:[^;]*\* \.9/);
+  assert.match(PRODUCT_UI_CSS, /--spmt-depth-2-alpha:[^;]*\* \.68/);
+  assert.match(PRODUCT_UI_CSS, /--spmt-depth-3-alpha:[^;]*\* \.48/);
+  assert.match(PRODUCT_UI_CSS, /--spmt-depth-4-alpha:[^;]*\* \.32/);
+  assert.match(PRODUCT_UI_CSS, /data-spmt-depth="0"[\s\S]*background:\s*transparent/);
+  assert.match(themedSource, /\.cosmo-commlink\{border:0;background:transparent;box-shadow:none;backdrop-filter:none\}/);
+  assert.match(themedSource, /\.cosmo-message\{[^}]*background:var\(--theme-depth-3\)/);
+  assert.match(themedSource, /\.cosmo-composer\{[^}]*background:var\(--theme-depth-2\)/);
+  assert.match(themedSource, /\.spmt-page-title\{[^}]*border:0/);
+  assert.match(nebulaThemeSource, /\.hero,.view-heading,.games,.overlay-bay,.arcade-stats,.game-detail[^}]*background:transparent/);
+  assert.match(nebulaThemeSource, /\.console,.overlay-editor[^}]*background:var\(--nebula-depth-2\)/);
+  assert.match(nebulaThemeSource, /\.overlay-layer[^}]*background:var\(--nebula-depth-3\)/);
 });
 
 test("workspace colors tint one stable app scene and preserve a safe custom override", () => {
