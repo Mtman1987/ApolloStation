@@ -31,10 +31,10 @@ jobs:
       cancel-in-progress: true
     environment: sprite-review
     env:
-      SPRITE_ORG: testing-968
-      SPRITE_NAME: ${{ vars.SPRITES_REVIEW_NAME }}
-      EXPECTED_SPRITE_ID: ${{ vars.SPRITES_REVIEW_ID }}
-      SPRITE_PUBLIC_URL: ${{ vars.SPRITES_REVIEW_URL }}
+      SPRITE_ORG: mtman-new
+      SPRITE_NAME: web-terminal
+      EXPECTED_SPRITE_ID: sprite-2249fee2-ecf3-4b10-8bc1-314f4b9e5bcc
+      SPRITE_PUBLIC_URL: https://web-terminal-bpp4n.sprites.app
       DEPLOY_ROLE: review
       BUILD_SHA: ${{ github.sha }}
       REPOSITORY_URL: https://github.com/${{ github.repository }}.git
@@ -47,12 +47,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for name in SPRITE_NAME EXPECTED_SPRITE_ID SPRITE_PUBLIC_URL SPRITES_TOKEN; do
-            if [[ -z "${!name:-}" ]]; then
-              echo "Missing required review deployment setting: $name" >&2
-              exit 1
-            fi
-          done
+          if [[ -z "${SPRITES_TOKEN:-}" ]]; then
+            echo "Missing SPRITES_TOKEN in the sprite-review environment." >&2
+            exit 1
+          fi
 
       - name: Install Sprites CLI
         shell: bash

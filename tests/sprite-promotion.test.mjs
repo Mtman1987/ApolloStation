@@ -12,8 +12,9 @@ test("Sprite promotion keeps review and release targets isolated", async () => {
   assert.match(workflow, /SPRITES_AUTODEPLOY_ENABLED == 'true'/);
   assert.match(workflow, /environment: sprite-review/);
   assert.match(workflow, /environment: sprite-release/);
-  assert.match(workflow, /SPRITES_REVIEW_ID/);
-  assert.match(workflow, /SPRITES_REVIEW_URL/);
+  assert.match(workflow, /SPRITE_ORG: mtman-new/);
+  assert.match(workflow, /EXPECTED_SPRITE_ID: sprite-2249fee2-ecf3-4b10-8bc1-314f4b9e5bcc/);
+  assert.match(workflow, /SPRITE_PUBLIC_URL: https:\/\/web-terminal-bpp4n\.sprites\.app/);
   assert.match(workflow, /SPRITE_NAME: web-terminal/);
   assert.match(workflow, /EXPECTED_SPRITE_ID: sprite-fec8d6f2-49f0-4e28-bc6d-e8a7ae364280/);
   assert.match(workflow, /SPRITE_PUBLIC_URL: https:\/\/web-terminal-bvesa\.sprites\.app/);

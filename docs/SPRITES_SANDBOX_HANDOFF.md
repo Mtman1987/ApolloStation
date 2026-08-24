@@ -8,21 +8,21 @@ ApolloStation uses two private, structurally equal Sprite sandboxes with isolate
 
 | Tier | Git trigger | Purpose |
 |---|---|---|
-| Review Sprite | Push to `work/**` | Rapid review of the newest work commit with provider actions disabled |
+| Review Sprite (`mtman-new/web-terminal`) | Push to `work/**` | Rapid review of the newest work commit with provider actions disabled |
 | Release Sprite (`web-terminal`) | Push/merge to `main` | Protected production-like verification of an agreed and reviewed commit |
 
 `.github/workflows/sprite-promotion.yml` implements both routes. The workflow is intentionally gated by the repository variable `SPRITES_AUTODEPLOY_ENABLED=true`; until the one-time credentials and Review Sprite identity are configured, pushes skip deployment rather than targeting an unverified environment.
 
 Required GitHub configuration:
 
-- Environment `sprite-review` with secret `SPRITES_TOKEN` and variables `SPRITES_REVIEW_NAME`, `SPRITES_REVIEW_ID`, and `SPRITES_REVIEW_URL`.
-- Environment `sprite-release` with secret `SPRITES_TOKEN`. Its name, ID, and private URL are pinned in the workflow.
+- Environment `sprite-review` with the `mtman-new` token stored as secret `SPRITES_TOKEN`.
+- Environment `sprite-release` with the `testing-968` token stored as secret `SPRITES_TOKEN`.
 - Repository variable `SPRITES_AUTODEPLOY_ENABLED=true` only after both environments have been verified.
 - The secret must be a Sprites API token in `org-slug/org-id/token-id/token-value` format, not a Fly organization token.
 
 Each deployment verifies the target identity and private URL mode, creates a checkpoint, installs the exact Git SHA in a versioned release directory, runs typecheck and the full test suite inside the target Sprite, atomically switches the active release, restarts the supervised service, and verifies that runtime health reports the expected SHA. A failed health check restores the prior release symlink and restarts it.
 
-The two tiers use `/home/sprite/data/review` and `/home/sprite/data/release`; they never share a database. The Review Sprite is the only additional Sprite authorized by this contract. Do not create a Sprite per branch.
+The two tiers use separate organizations and `/home/sprite/data/review` versus `/home/sprite/data/release`; they never share a database. The Review Sprite is pinned to ID `sprite-2249fee2-ecf3-4b10-8bc1-314f4b9e5bcc` and private URL `https://web-terminal-bpp4n.sprites.app`. The Release Sprite remains pinned to ID `sprite-fec8d6f2-49f0-4e28-bc6d-e8a7ae364280` and private URL `https://web-terminal-bvesa.sprites.app`. Do not create a Sprite per branch.
 
 ## Approved existing sandbox target
 
