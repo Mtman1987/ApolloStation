@@ -14,6 +14,7 @@ const buildSha = argumentsMap.get("build-sha") ?? "sprite-local";
 const spmtPort = requirePort(argumentsMap.get("spmt-port") ?? "3000", "spmt-port");
 const webPort = requirePort(argumentsMap.get("web-port") ?? "8080", "web-port");
 const chatTagPort = requirePort(argumentsMap.get("chat-tag-port") ?? "3100", "chat-tag-port");
+const ownerUsername = requireUsername(argumentsMap.get("owner-username") ?? "mtman1987");
 const databasePath = resolve(dataRoot, "spmt-empty-catalog-sandbox.sqlite");
 await mkdir(dataRoot, { recursive: true, mode: 0o700 });
 
@@ -52,6 +53,7 @@ const spmt = start("SPMT", "apps/spmt-service/dist/index.js", {
   SPMT_PUBLIC_URL: publicUrl,
   SPMT_HOST: "127.0.0.1",
   SPMT_SANDBOX_FIXTURES: "0",
+  SPMT_SANDBOX_OWNER_USERNAME: ownerUsername,
   PORT: String(spmtPort),
 });
 
@@ -149,8 +151,14 @@ function parseArguments(values) {
     if (!flag?.startsWith("--") || !value) throw new Error("Arguments must be --name value pairs");
     result.set(flag.slice(2), value);
   }
-  for (const name of result.keys()) if (!["app", "candidate-app", "public-url", "data-root", "build-sha", "spmt-port", "web-port", "chat-tag-port", "tenant-id", "channel-id"].includes(name)) throw new Error(`Unknown argument --${name}`);
+  for (const name of result.keys()) if (!["app", "candidate-app", "public-url", "data-root", "build-sha", "spmt-port", "web-port", "chat-tag-port", "tenant-id", "channel-id", "owner-username"].includes(name)) throw new Error(`Unknown argument --${name}`);
   return result;
+}
+
+function requireUsername(value) {
+  const username = value.trim().toLowerCase();
+  if (!/^[a-z0-9][a-z0-9._-]{2,79}$/.test(username)) throw new Error("--owner-username is invalid");
+  return username;
 }
 
 function requirePort(value, name) {

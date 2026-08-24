@@ -17,6 +17,8 @@ Reuse this Sprite. Do **not** create a second Sprite for ApolloStation unless th
 
 The supervised runner now has two explicit cohorts: `platform` (the Green SPMT authority and SpaceMountain shell) and `chat-tag` (the first completed product app). Chat Tag starts only its private SQLite authority, same-origin gameplay console, and OBS renderer. A cohort must pass its simulated-provider, restart, tenant-isolation, and migration fixtures before any live provider grant is introduced.
 
+The supervised sandbox designates the normalized username `mtman1987` as its sole human catalog/operator account. Register that username once with a sandbox-only password and use it for owner testing. Every other locally registered captain receives ordinary user scopes: they can use Stella, install approved apps, and manage their own tenant workspace, but they cannot register catalog apps or open Mission Control. This is an isolated test bootstrap, not the production owner-identity mechanism.
+
 This runbook opens only the Green SPMT authority and SpaceMountain browser shell. It does not deploy a Fly App or Machine, register a Sprite service, start a bot/worker/scheduler, or connect a production provider identity.
 
 ## Already completed in code
@@ -188,6 +190,7 @@ sprite exec --no-port-forward --dir /home/sprite/ApolloStation -- node scripts/s
 
 - [ ] Open `$SpriteUrl` while signed into the correct Fly/Sprites organization.
 - [ ] Register or sign in with a sandbox-only account.
+- [ ] Use `mtman1987` only for the owner/operator pass; verify a second made-up captain cannot see **Add developer app** or Mission Control and receives `403` from catalog publication.
 - [ ] The Shipyard/app catalog shows zero apps.
 - [ ] Select **Publish Chat Tag through SDK** once.
 - [ ] The status confirms exactly one app and the catalog contains only **Chat Tag**.

@@ -20,6 +20,7 @@ async function withSandbox(run) {
     publicBaseUrl: "https://test-green.sprites.app",
     runtimeMode: "sandbox",
     sandboxFixtures: true,
+    sandboxOwnerUsername: "mtman1987",
     buildSha: "test-green",
   });
   let web;
@@ -83,14 +84,18 @@ test("private SpaceMountain host serves explicit browser modules with restrictiv
 
 test("developer console exposes an editable candidate but registers only through the SDK", async () => {
   const directory = mkdtempSync(join(tmpdir(), "spmt-empty-catalog-"));
-  const spmt = createSpmtService({ databasePath: join(directory, "spmt-empty.sqlite"), webhookKey: Buffer.alloc(32, 8), host: "127.0.0.1", port: 0, publicBaseUrl: "https://test-green.sprites.app", runtimeMode: "sandbox", sandboxFixtures: false });
+  const spmt = createSpmtService({ databasePath: join(directory, "spmt-empty.sqlite"), webhookKey: Buffer.alloc(32, 8), host: "127.0.0.1", port: 0, publicBaseUrl: "https://test-green.sprites.app", runtimeMode: "sandbox", sandboxFixtures: false, sandboxOwnerUsername: "mtman1987" });
   let web;
   try {
     await spmt.listen(); const spmtAddress = spmt.server.address(); assert.ok(spmtAddress && typeof spmtAddress !== "string");
     const candidate = chatTagCatalogRegistration("https://test-green.sprites.app");
     web = createSpaceMountainWebHost({ spmtOrigin: `http://127.0.0.1:${spmtAddress.port}`, host: "127.0.0.1", port: 0, candidateManifest: candidate });
     await web.listen(); const webAddress = web.server.address(); assert.ok(webAddress && typeof webAddress !== "string"); const base = `http://127.0.0.1:${webAddress.port}`; const origin = new URL(base).origin;
-    const registration = await fetch(`${base}/sandbox/auth/register`, { method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify({ displayName: "Empty Captain", username: "empty-captain", password: "sandbox-only-password" }) });
+    const ordinaryRegistration = await fetch(`${base}/sandbox/auth/register`, { method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify({ displayName: "Empty Captain", username: "empty-captain", password: "sandbox-only-password" }) });
+    const ordinaryCookie = (ordinaryRegistration.headers.get("set-cookie") ?? "").split(";")[0]; assert.ok(ordinaryCookie);
+    const ordinaryImport = await fetch(`${base}/sandbox/developer/import-manifest`, { method: "POST", headers: { cookie: ordinaryCookie, origin, "content-type": "application/json" }, body: JSON.stringify({ manifestUrl: "/sandbox/candidate-app" }) });
+    assert.equal(ordinaryImport.status, 403);
+    const registration = await fetch(`${base}/sandbox/auth/register`, { method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify({ displayName: "Mtman1987", username: "mtman1987", password: "sandbox-owner-password" }) });
     const cookie = (registration.headers.get("set-cookie") ?? "").split(";")[0]; assert.ok(cookie);
     const page = await (await fetch(base)).text();
     assert.match(page, /Add developer app/);

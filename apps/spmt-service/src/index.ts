@@ -31,6 +31,7 @@ export interface SpmtServiceOptions {
   sendDiscordDm?: (discordUserId: string, message: { title: string; description: string; url: string }) => Promise<void>;
   runtimeMode?: "production" | "sandbox";
   sandboxFixtures?: boolean;
+  sandboxOwnerUsername?: string;
   coderRuntime?: CoderRuntimeV1;
 }
 
@@ -250,7 +251,9 @@ export function createSpmtService(options: SpmtServiceOptions) {
           return json(response, 409, { error: "setup_required", flow: "first-time-setup", next: "spacemountain-invite", optionsUrl: "/v1/auth/setup-options", tenantId: inspection.tenantId });
         }
         try {
-          const result = data.login(username, str(body.password, "password"), runtimeMode === "sandbox" ? [...USER_SCOPES, ...SANDBOX_OWNER_SCOPES] : USER_SCOPES);
+          const ownerUsername = options.sandboxOwnerUsername?.trim().toLowerCase();
+          const isSandboxOwner = runtimeMode === "sandbox" && Boolean(ownerUsername) && username.trim().toLowerCase() === ownerUsername;
+          const result = data.login(username, str(body.password, "password"), isSandboxOwner ? [...USER_SCOPES, ...SANDBOX_OWNER_SCOPES] : USER_SCOPES);
           return json(response, 200, result, { "set-cookie": sessionCookie(result.tokens.accessToken) });
         } catch { return json(response, 401, { error: "invalid_credentials" }); }
       }
@@ -346,7 +349,9 @@ export function validateSandboxServiceEnvironment(environment: NodeJS.ProcessEnv
   const host = environment.SPMT_HOST ?? "127.0.0.1";
   if (!["127.0.0.1", "localhost", "::1"].includes(host)) throw new Error("Sandbox SPMT must bind only to loopback through SPMT_HOST");
   if (!["0", "1"].includes(environment.SPMT_SANDBOX_FIXTURES ?? "")) throw new Error("SPMT_SANDBOX_FIXTURES must be 0 or 1");
-  return { databasePath, publicBaseUrl, host };
+  const sandboxOwnerUsername = environment.SPMT_SANDBOX_OWNER_USERNAME?.trim().toLowerCase();
+  if (sandboxOwnerUsername && !/^[a-z0-9][a-z0-9._-]{2,79}$/.test(sandboxOwnerUsername)) throw new Error("SPMT_SANDBOX_OWNER_USERNAME is invalid");
+  return { databasePath, publicBaseUrl, host, ...(sandboxOwnerUsername ? { sandboxOwnerUsername } : {}) };
 }
 
 function seedSandboxFixtures(control: ControlService, data: PlatformDataService, publicBaseUrl: string) {
@@ -450,6 +455,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     publicBaseUrl,
     runtimeMode,
     sandboxFixtures: runtimeMode === "sandbox" && process.env.SPMT_SANDBOX_FIXTURES === "1",
+    ...(checked?.sandboxOwnerUsername ? { sandboxOwnerUsername: checked.sandboxOwnerUsername } : {}),
     ...(checked?.host ? { host: checked.host } : {}),
     ...(buildSha ? { buildSha } : {}),
     ...(twitchClientId ? { twitchClientId } : {}),
