@@ -63,6 +63,19 @@ export interface WorkspaceProfileV1 {
 export interface XpEventV1 {
   id: string; tenantId: string; userId: string; delta: number; sourceAppId: string;
   reason: string; idempotencyKey: string; createdAt: string;
+  eventType?: string; metadata?: Record<string, unknown>;
+}
+export interface XpWalletV1 {
+  tenantId: string; userId: string; spendableXp: number; currentXp: number;
+  lifetimeXp: number; totalXp: number; rank: number; level: number;
+}
+export interface XpLeaderboardEntryV1 extends XpWalletV1 { rank: number; }
+export interface XpTransferResultV1 { transferred: boolean; duplicate: boolean; amount: number; from: XpWalletV1; to: XpWalletV1; }
+export interface XpSpendResultV1 { spent: boolean; duplicate: boolean; amount: number; wallet: XpWalletV1; event?: XpEventV1; }
+export interface XpGambleSettlementV1 {
+  settled: boolean; duplicate: boolean; wager: number; payout: number; refill: number;
+  overflow: number; compressed: number; matchedGrowth: number; discardedOverflow: number;
+  before: XpWalletV1; wallet: XpWalletV1;
 }
 export interface PlatformEventV1 {
   id: string; tenantId: string; sourceAppId: string; type: string;
@@ -267,6 +280,7 @@ export class AuthorityService {
       requireId(input.tenantId, "tenantId"); requireId(input.userId, "userId");
       requireId(input.sourceAppId, "sourceAppId"); requireId(input.idempotencyKey, "idempotencyKey");
       if (!Number.isSafeInteger(input.delta) || input.delta === 0) throw new AuthorityValidationError("XP delta must be a non-zero safe integer");
+      if (input.eventType !== undefined) requireId(input.eventType, "eventType");
       const existing = this.store.findIdempotent<XpEventV1>("xp", input.tenantId, input.idempotencyKey);
       if (existing) return { duplicate: true, value: existing };
       const event: XpEventV1 = { ...cloneJson(input), id: this.idFactory("xp"), createdAt: this.now() };
@@ -278,6 +292,86 @@ export class AuthorityService {
 
   getXpBalance(tenantId: string, userId: string) {
     return this.store.listXp(tenantId, userId).reduce((total, item) => total + item.delta, 0);
+  }
+
+  getXpLedger(tenantId: string, userId: string, limit = 100): XpEventV1[] {
+    requireId(tenantId, "tenantId"); requireId(userId, "userId");
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 500) throw new AuthorityValidationError("XP ledger limit must be from 1 through 500");
+    return this.store.listXp(tenantId, userId).slice(-limit).reverse();
+  }
+
+  getXpWallet(tenantId: string, userId: string): XpWalletV1 {
+    requireId(tenantId, "tenantId"); requireId(userId, "userId");
+    const events = this.store.listXp(tenantId, userId);
+    const spendableXp = Math.max(0, events.reduce((total, item) => total + item.delta, 0));
+    const lifetimeXp = Math.max(0, events.reduce((total, item) => total + (item.delta > 0 && item.metadata?.lifetimeEligible !== false ? item.delta : 0), 0));
+    const rank = 1 + this.xpLifetimeTotals(tenantId).filter((item) => item.lifetimeXp > lifetimeXp).length;
+    return { tenantId, userId, spendableXp, currentXp: spendableXp, lifetimeXp, totalXp: lifetimeXp, rank, level: Math.floor(Math.sqrt(lifetimeXp / 100)) + 1 };
+  }
+
+  getXpLeaderboard(tenantId: string, limit = 10): XpLeaderboardEntryV1[] {
+    requireId(tenantId, "tenantId");
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new AuthorityValidationError("XP leaderboard limit must be from 1 through 100");
+    return this.xpLifetimeTotals(tenantId).slice(0, limit).map((item, index) => ({ tenantId, userId: item.userId, spendableXp: item.spendableXp, currentXp: item.spendableXp, lifetimeXp: item.lifetimeXp, totalXp: item.lifetimeXp, rank: index + 1, level: Math.floor(Math.sqrt(item.lifetimeXp / 100)) + 1 }));
+  }
+
+  spendXp(input: { tenantId: string; userId: string; amount: number; sourceAppId: string; eventType?: string; reason?: string; idempotencyKey: string; metadata?: Record<string, unknown> }): XpSpendResultV1 {
+    return this.store.transaction(() => {
+      requirePositiveBoundedAmount(input.amount, "amount", 1_000_000);
+      const existing = this.store.findIdempotent<XpEventV1>("xp", input.tenantId, input.idempotencyKey);
+      if (existing) return { spent: false, duplicate: true, amount: input.amount, wallet: this.getXpWallet(input.tenantId, input.userId), event: existing };
+      const wallet = this.getXpWallet(input.tenantId, input.userId);
+      if (wallet.spendableXp < input.amount) throw new AuthorityConflictError("Insufficient spendable XP");
+      const result = this.awardXp({ tenantId: input.tenantId, userId: input.userId, delta: -input.amount, sourceAppId: input.sourceAppId, reason: input.reason ?? input.eventType ?? "wallet-spend", idempotencyKey: input.idempotencyKey, ...(input.eventType ? { eventType: input.eventType } : {}), metadata: { ...(input.metadata ?? {}), lifetimeEligible: false, walletAction: "spend" } });
+      return { spent: true, duplicate: result.duplicate, amount: input.amount, wallet: this.getXpWallet(input.tenantId, input.userId), event: result.value };
+    });
+  }
+
+  transferXp(input: { tenantId: string; fromUserId: string; toUserId: string; amount: number; sourceAppId: string; eventType?: string; reason?: string; idempotencyKey: string; metadata?: Record<string, unknown> }): XpTransferResultV1 {
+    return this.store.transaction(() => {
+      requireId(input.tenantId, "tenantId"); requireId(input.fromUserId, "fromUserId"); requireId(input.toUserId, "toUserId"); requireId(input.sourceAppId, "sourceAppId"); requireId(input.idempotencyKey, "idempotencyKey");
+      if (input.fromUserId === input.toUserId) throw new AuthorityValidationError("XP transfer requires two different users");
+      requirePositiveBoundedAmount(input.amount, "amount", 1_000_000);
+      const prior = this.store.findIdempotent<{ amount: number; fromUserId: string; toUserId: string }>("xp-transfer", input.tenantId, input.idempotencyKey);
+      if (prior) return { transferred: false, duplicate: true, amount: prior.amount, from: this.getXpWallet(input.tenantId, prior.fromUserId), to: this.getXpWallet(input.tenantId, prior.toUserId) };
+      const debitKey = `${input.idempotencyKey}:debit`; const creditKey = `${input.idempotencyKey}:credit`;
+      if (this.store.findIdempotent("xp", input.tenantId, debitKey) || this.store.findIdempotent("xp", input.tenantId, creditKey)) throw new AuthorityConflictError("XP transfer idempotency key collides with an existing partial operation");
+      if (this.getXpWallet(input.tenantId, input.fromUserId).spendableXp < input.amount) throw new AuthorityConflictError("Insufficient spendable XP");
+      const metadata = { ...(input.metadata ?? {}), lifetimeEligible: false, walletAction: "transfer" };
+      const eventType = input.eventType ?? "wallet-transfer"; const reason = input.reason ?? eventType;
+      this.awardXp({ tenantId: input.tenantId, userId: input.fromUserId, delta: -input.amount, sourceAppId: input.sourceAppId, reason, idempotencyKey: debitKey, eventType, metadata: { ...metadata, direction: "debit", otherUserId: input.toUserId } });
+      this.awardXp({ tenantId: input.tenantId, userId: input.toUserId, delta: input.amount, sourceAppId: input.sourceAppId, reason, idempotencyKey: creditKey, eventType, metadata: { ...metadata, direction: "credit", otherUserId: input.fromUserId } });
+      this.store.putIdempotent("xp-transfer", input.tenantId, input.idempotencyKey, { amount: input.amount, fromUserId: input.fromUserId, toUserId: input.toUserId });
+      return { transferred: true, duplicate: false, amount: input.amount, from: this.getXpWallet(input.tenantId, input.fromUserId), to: this.getXpWallet(input.tenantId, input.toUserId) };
+    });
+  }
+
+  settleXpGamble(input: { tenantId: string; userId: string; wager: number; payout: number; sourceAppId: string; eventType?: string; idempotencyKey: string; metadata?: Record<string, unknown> }): XpGambleSettlementV1 {
+    return this.store.transaction(() => {
+      requireId(input.tenantId, "tenantId"); requireId(input.userId, "userId"); requireId(input.sourceAppId, "sourceAppId"); requireId(input.idempotencyKey, "idempotencyKey");
+      requireNonNegativeBoundedAmount(input.wager, "wager", 1_000_000); requireNonNegativeBoundedAmount(input.payout, "payout", 100_000_000);
+      const prior = this.store.findIdempotent<{ wager: number; payout: number; refill: number; overflow: number; compressed: number; matchedGrowth: number; discardedOverflow: number; before: XpWalletV1 }>("xp-gamble", input.tenantId, input.idempotencyKey);
+      if (prior) return { settled: false, duplicate: true, ...prior, wallet: this.getXpWallet(input.tenantId, input.userId) };
+      const before = this.getXpWallet(input.tenantId, input.userId);
+      if (before.spendableXp < input.wager) throw new AuthorityConflictError("Insufficient spendable XP");
+      const afterWager = before.spendableXp - input.wager;
+      const missingToLifetime = Math.max(0, before.lifetimeXp - afterWager);
+      const refill = Math.min(input.payout, missingToLifetime);
+      const overflow = Math.max(0, input.payout - refill);
+      const compressed = Math.floor(overflow / 10);
+      const matchedGrowth = Math.floor(compressed / 2);
+      const discardedOverflow = overflow - (matchedGrowth * 2);
+      const eventType = input.eventType ?? "gamble-settle";
+      const metadata = input.metadata ?? {};
+      const debitKey = `${input.idempotencyKey}:wager`; const refillKey = `${input.idempotencyKey}:refill`; const growthKey = `${input.idempotencyKey}:growth`;
+      for (const key of [debitKey, refillKey, growthKey]) if (this.store.findIdempotent("xp", input.tenantId, key)) throw new AuthorityConflictError("XP gamble idempotency key collides with an existing partial operation");
+      if (input.wager > 0) this.awardXp({ tenantId: input.tenantId, userId: input.userId, delta: -input.wager, sourceAppId: input.sourceAppId, reason: eventType, idempotencyKey: debitKey, eventType, metadata: { ...metadata, lifetimeEligible: false, walletAction: "gamble-wager", wager: input.wager, payout: input.payout } });
+      if (refill > 0) this.awardXp({ tenantId: input.tenantId, userId: input.userId, delta: refill, sourceAppId: input.sourceAppId, reason: eventType, idempotencyKey: refillKey, eventType, metadata: { ...metadata, lifetimeEligible: false, walletAction: "gamble-refill", wager: input.wager, payout: input.payout, refill } });
+      if (matchedGrowth > 0) this.awardXp({ tenantId: input.tenantId, userId: input.userId, delta: matchedGrowth, sourceAppId: input.sourceAppId, reason: eventType, idempotencyKey: growthKey, eventType, metadata: { ...metadata, lifetimeEligible: true, walletAction: "gamble-growth", wager: input.wager, payout: input.payout, overflow, compressed, matchedGrowth } });
+      const receipt = { wager: input.wager, payout: input.payout, refill, overflow, compressed, matchedGrowth, discardedOverflow, before };
+      this.store.putIdempotent("xp-gamble", input.tenantId, input.idempotencyKey, receipt);
+      return { settled: true, duplicate: false, ...receipt, wallet: this.getXpWallet(input.tenantId, input.userId) };
+    });
   }
 
   publishEvent(input: Omit<PlatformEventV1, "id" | "createdAt">): IdempotentResultV1<PlatformEventV1> {
@@ -368,6 +462,20 @@ export class AuthorityService {
     });
   }
 
+  private xpLifetimeTotals(tenantId: string) {
+    const totals = new Map<string, { userId: string; spendableXp: number; lifetimeXp: number }>();
+    for (const entry of this.store.listJournal()) {
+      if (entry.kind !== "xp" || entry.tenantId !== tenantId) continue;
+      const event = entry.payload as unknown as XpEventV1;
+      if (!event.userId || !Number.isSafeInteger(event.delta)) continue;
+      const current = totals.get(event.userId) ?? { userId: event.userId, spendableXp: 0, lifetimeXp: 0 };
+      current.spendableXp += event.delta;
+      if (event.delta > 0 && event.metadata?.lifetimeEligible !== false) current.lifetimeXp += event.delta;
+      totals.set(event.userId, current);
+    }
+    return [...totals.values()].map((item) => ({ ...item, spendableXp: Math.max(0, item.spendableXp), lifetimeXp: Math.max(0, item.lifetimeXp) })).sort((a, b) => b.lifetimeXp - a.lifetimeXp || a.userId.localeCompare(b.userId));
+  }
+
   private requireLease(outboxId: string, workerId: string) {
     requireId(outboxId, "outboxId"); requireId(workerId, "workerId");
     const record = this.store.getOutbox(outboxId);
@@ -406,11 +514,17 @@ function validateCommlinkWorkspace(workspace: CommlinkWorkspaceV1) {
     if (!Array.isArray(desk.chatSpaceIds) || desk.chatSpaceIds.length < 1 || desk.chatSpaceIds.length > 6 || desk.chatSpaceIds.some((id) => !spaceIds.has(id))) throw new AuthorityValidationError("Commlink Desk panels are invalid");
   }
   if (!spaceIds.has(workspace.activeChatSpaceId) || !deskIds.has(workspace.activeDeskId)) throw new AuthorityValidationError("Commlink active workspace selection is invalid");
-  if (!['focus', 'desk'].includes(workspace.view) || !['all', 'chat', 'events', 'streamweaver', 'queued'].includes(workspace.filter) || typeof workspace.compact !== 'boolean') throw new AuthorityValidationError("Commlink workspace controls are invalid");
+  if (!["focus", "desk"].includes(workspace.view) || !["all", "chat", "events", "streamweaver", "queued"].includes(workspace.filter) || typeof workspace.compact !== "boolean") throw new AuthorityValidationError("Commlink workspace controls are invalid");
 }
 
 function requireId(value: string, name: string) {
   if (!value || value.trim() !== value || value.length > 200) throw new AuthorityValidationError(`${name} is invalid`);
+}
+function requirePositiveBoundedAmount(value: number, name: string, max: number) {
+  if (!Number.isSafeInteger(value) || value <= 0 || value > max) throw new AuthorityValidationError(`${name} must be a positive whole number no greater than ${max}`);
+}
+function requireNonNegativeBoundedAmount(value: number, name: string, max: number) {
+  if (!Number.isSafeInteger(value) || value < 0 || value > max) throw new AuthorityValidationError(`${name} must be a non-negative whole number no greater than ${max}`);
 }
 function requireWorkspaceValue(value: string, name: string, max: number) {
   if (!value.trim() || value.length > max || /[\u0000-\u001f\u007f]/.test(value)) throw new AuthorityValidationError(`${name} is invalid`);
