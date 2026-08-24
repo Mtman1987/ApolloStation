@@ -3,6 +3,8 @@ import { SpmtClient } from "@spmt/sdk";
 import { DISCORD_ANNOUNCEMENT_REQUESTED } from "@spmt/discord-stream-hub";
 export * from "./chat-gateway-consumer.js";
 export * from "./economy.js";
+export * from "./economy-admin.js";
+export * from "./command-router.js";
 export const STREAMWEAVER_OVERLAY_CUE="streamweaver.overlay.cue.requested.v1";
 export const manifest=assertAppModuleManifestV1({schemaVersion:1,manifestVersion:"spmt.app-manifest/v1",id:"streamweaver",name:"StreamWeaver",description:"Tenant-configured personas, commands, automation, TTS, normalized chat consumption, canonical economy, and stream outputs.",capabilities:["personas","commands","actions","redeems","economy","gamble","points-transfer","tts","chat-consumer","overlays","research"],surfaces:["shell","standalone","overlay","popout"],requiredScopes:["events:read","events:write","assistants:invoke","stellar:invoke","overlay:widgets:write","xp:read","xp:write"],eventTypes:[STREAMWEAVER_OVERLAY_CUE],integration:{identity:"connected",events:"native",commlink:"connected",stellar:"connected",workspace:"connected"},workers:[]} satisfies AppModuleManifestV1);
 export function streamweaverCatalogRegistration(publicOrigin:string):AppCatalogRegistrationV1{const origin=catalogOrigin(publicOrigin,"StreamWeaver");return{appId:manifest.id,name:manifest.name,description:manifest.description,version:"0.1.0-green",launchUrl:new URL("/apps/streamweaver?surface=workspace",origin).toString(),allowedScopes:[...manifest.requiredScopes],surfaces:["shell","standalone","overlay","popout"],status:"active"};}
