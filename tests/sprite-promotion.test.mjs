@@ -19,6 +19,9 @@ test("Sprite promotion keeps review and release targets isolated", async () => {
   assert.match(workflow, /EXPECTED_SPRITE_ID: sprite-fec8d6f2-49f0-4e28-bc6d-e8a7ae364280/);
   assert.match(workflow, /SPRITE_PUBLIC_URL: https:\/\/web-terminal-bvesa\.sprites\.app/);
   assert.match(workflow, /grep -Eiq 'auth\[\^\[:alnum:\]\]\+sprite\|sprite\[\^\[:alnum:\]\]\+auth'/);
+  assert.match(workflow, /sprite exec --no-port-forward/);
+  assert.match(workflow, /--file scripts\/sprites\/deploy-sandbox-release\.sh:\/tmp\/deploy-sandbox-release\.sh/);
+  assert.doesNotMatch(workflow, /sprite exec --http-post/);
 });
 
 test("Sprite deployment verifies, tests, switches atomically, and rolls back", async () => {

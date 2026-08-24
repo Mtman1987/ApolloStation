@@ -80,7 +80,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sprite exec --http-post --no-port-forward \
+          sprite exec --no-port-forward \
             -o "$SPRITE_ORG" -s "$SPRITE_NAME" \
             --file scripts/sprites/deploy-sandbox-release.sh:/tmp/deploy-sandbox-release.sh \
             --env "DEPLOY_ROLE=$DEPLOY_ROLE,BUILD_SHA=$BUILD_SHA,REPOSITORY_URL=$REPOSITORY_URL,SPRITE_PUBLIC_URL=$SPRITE_PUBLIC_URL" \
@@ -163,7 +163,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sprite exec --http-post --no-port-forward \
+          sprite exec --no-port-forward \
             -o "$SPRITE_ORG" -s "$SPRITE_NAME" \
             --file scripts/sprites/deploy-sandbox-release.sh:/tmp/deploy-sandbox-release.sh \
             --env "DEPLOY_ROLE=$DEPLOY_ROLE,BUILD_SHA=$BUILD_SHA,REPOSITORY_URL=$REPOSITORY_URL,SPRITE_PUBLIC_URL=$SPRITE_PUBLIC_URL" \
