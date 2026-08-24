@@ -1,6 +1,6 @@
 # SpaceMountain product UI
 
-`@spmt/ui` is the reusable visual contract for the ecosystem. It is framework-neutral: apps may use plain DOM, React, or another renderer while sharing the same product tokens and accessibility behavior.
+`@spmt/ui` is the reusable visual contract for the ecosystem. It is framework-neutral: apps may use plain DOM, React, or another renderer while sharing the same product tokens, viewport behavior, and accessibility rules.
 
 ## Adopt it in an app
 
@@ -47,7 +47,22 @@ The shared depth ladder is intentionally simple:
 | 3 | Nested row/message/content surface | 0.48 |
 | 4 | Deep control/field surface | 0.32 |
 
-For example, at an 80% Glass setting the effective surface alpha trends about 72% → 54% → 38% → 26% as depth increases. Apps may use fewer layers, but they must not make deeper layers more opaque than their parents. Opacity is applied to the surface background/tint, never the entire element, so text and controls stay crisp.
+For example, at an 80% Glass setting the effective surface alpha trends about 72% -> 54% -> 38% -> 26% as depth increases. Apps may use fewer layers, but they must not make deeper layers more opaque than their parents. Opacity is applied to the surface background/tint, never the entire element, so text and controls stay crisp.
+
+## Shared viewport and scrolling rule
+
+SpaceMountain Home defines the canonical usable content rectangle. Every other shell page and every opened app uses that exact same rectangle.
+
+- The shared header and rocket/sidebar chrome stay fixed.
+- The content rectangle starts below the measured shared header and ends above the bottom safe area/build guard.
+- Home screens fit inside the rectangle and do not scroll.
+- Shipyard, Workspace, Settings, and other long SpaceMountain pages scroll **inside** the rectangle.
+- Embedded apps keep the same outer rectangle. They may own an internal scroll region but must not scroll the browser document or slide behind the shared header.
+- Shell-rendered long apps such as Stellar Core or Mission Control may scroll the shared content pane. Commlink keeps its workspace fixed and scrolls the feed or other intended inner region.
+- Do not create a scrollable top padding spacer to clear the header; that spacer scrolls away. The scroll container itself must begin below the header.
+- Use `overscroll-behavior: contain` on internal long-page scrollers so wheel/touch momentum does not hand control back to the outer document.
+
+Switching between apps must therefore feel stationary: the header, sidebar, content top edge, width, and bottom edge do not jump.
 
 This makes the suite feel like one ship with different rooms: familiar controls and color behavior, distinct imagery and purpose, and enough background visibility to preserve each app's cosmic scene.
 
@@ -56,7 +71,7 @@ This makes the suite feel like one ship with different rooms: familiar controls 
 | Surface | Default scene direction |
 |---|---|
 | SpaceMountain | Command bridge framed by the existing cosmic mountain/solar horizon |
-| Nebula Arcade / Game Hub | A busy inhabited solar system with multiplayer routes, ships, and game activity |
+| Nebula Arcade / Games Hub | A busy inhabited solar system with multiplayer routes, ships, and game activity |
 | Commlink | A massive planet surrounded by a constellation of communication satellites and relay paths |
 | StreamWeaver | Streaming signal lanes and broadcast relays crossing an active star system |
 | Discord Stream Hub | A connected orbital community with live broadcast beacons |
@@ -69,13 +84,15 @@ These are art requirements, not hardcoded catalog entries. Each app owns its ass
 
 ## Nebula Arcade composition rule
 
-Nebula Arcade is the Games Hub, not a renamed Chat Tag screen. Its twenty games are equal catalog peers. Chat Tag may be enabled by default because its runtime is currently the most complete, but it receives no featured/priority visual status.
+Nebula Arcade is the Games Hub. Its twenty games are equal catalog peers. A game module may be enabled by default for compatibility or readiness, but it receives no featured/priority product status.
 
 The Arcade home is logo/hero-first with three primary destinations: Games, Overlay Bay, and Stats. The Games catalog leads to a full game page containing truthful runtime status, commands/examples, overlay capabilities, screenshots/placeholders, README-style documentation, and a reserved attributions/social/source section.
 
 Overlay Bay owns reusable Arcade overlay scenes. A saved scene contains an ordered set of game layers and exposes one stable browser-source URL. Multiple games may therefore share one OBS/browser source without requiring SpaceMountain's workspace to understand each game's private state.
 
 Generic chat commands remain natural. When exactly one enabled game matches a command it may execute immediately. When multiple enabled games share that command, Nebula Arcade must ask the chatter which game they intended instead of firing every matching game.
+
+Chat Tag remains a bounded game module inside Nebula Arcade for its own commands, runtime, compatibility, persistence, scoring, and overlay behavior. It is not a separate public ecosystem product surface.
 
 ## Theme presets
 

@@ -1,12 +1,28 @@
 # SPMT Ecosystem Core
 
-Status: **foundation approved for Green implementation; Blue production remains authoritative until cutover gates pass**
+Status: **the shared Green base is approved for main promotion; Blue production remains authoritative until cutover gates pass**
 
 This repository is the clean-room implementation monorepo, architecture, and migration contract for rebuilding the SpaceMountain ecosystem beside the current production system.
 
-**Naming boundary:** SPMT Ecosystem Core is the complete shared foundation in this repository. SPMT is its identity, data, policy, and developer authority; SpaceMountain is its front door and shared workspace; Stellar Core is its persona-neutral AI subsystem; and the Mtman Machine Rotator is its private fleet and operations controller. `ApolloStation` remains the repository/codename. Commlink, Stellar Core's Stella surface, and owner-only Mission Control are registered first-party applications discovered through the same catalog as every other app; Coder and Rotator remain workers behind Mission Control rather than user plugins. Apps use the documented SDK, HTTP API, CLI, MCP, event, webhook, and job contracts.
+**Naming boundary:** SPMT Ecosystem Core is the complete shared foundation in this repository. SPMT is its identity, data, policy, and developer authority; SpaceMountain is its front door and shared workspace; Stellar Core is its persona-neutral AI subsystem; and the Mtman Machine Rotator is its private fleet and operations controller. `ApolloStation` remains the repository/codename. Commlink, Stellar Core's Stella surface, Mission Control, and Nebula Arcade are registered first-party applications discovered through the same catalog contract used by every other app. Product-specific workers stay behind their owning app rather than becoming separate user-facing products.
 
-Owner approval recorded 2026-08-21 closes the foundation decision pack in `DECISIONS.md`. Measurement-dependent decisions remain open and are resolved only when their implementation phase has real benchmark or workload evidence. Approval here authorizes work on the isolated Green/Sprites rebuild only; it does not authorize changing production DNS, production data authority, or shutting down a live app.
+Owner approval recorded 2026-08-21 closes the foundation decision pack in `DECISIONS.md`. The reviewed shared UI/app baseline was approved for main promotion on 2026-08-24. Blue production still remains the donor and rollback authority until identity, data, provider, output, load, recovery, observation, and rollback gates pass.
+
+## Current Green baseline
+
+The reusable base now includes:
+
+- one SpaceMountain shell viewport shared by Home, Shipyard, Workspace, Settings, and every opened app;
+- a fixed shared header/sidebar with all long-page scrolling contained inside the content rectangle below the header;
+- one theme/background/star system with app-owned scene art and depth-aware translucent surfaces;
+- registry-driven first-party apps rather than hardcoded special cases;
+- canonical SPMT identity, workspace, XP, events, app registration, overlay grants, runtime health, CLI, MCP, and SDK contracts;
+- Commlink as the shared communication app, Stellar Core as the persona-neutral AI app, and owner-only Mission Control for operations;
+- Nebula Arcade as the cosmic Games Hub with twenty equal game entries, full game detail pages, saved multi-game overlay scenes, and one command-collision router;
+- Chat Tag retained as a bounded Nebula Arcade game module and compatibility/runtime implementation, not as a separate public-facing ecosystem app;
+- isolated Review and Release Sprite promotion paths with checkpoint, test, atomic switch, and rollback behavior.
+
+The next implementation phase is deliberately repetitive: plug the remaining donor apps into these established contracts, then run logs -> fix -> logs, click every control, exercise every command/output, and only then promote the verified Green system toward production.
 
 ## What this package does
 
@@ -29,14 +45,10 @@ Owner approval recorded 2026-08-21 closes the foundation decision pack in `DECIS
 6. `ROTATOR_FLEET_CONTRACT.md` — private fleet reconciliation, scaling, restart, access, logging, and safety boundaries.
 7. `OPERATIONS.md` — implementation batches, build order, cost clock, gates, migration, and rollback.
 8. `DOCUMENT_REVIEW.md` — what should be kept, merged, archived, or removed.
-9. `docs/PRODUCT_UI.md` — framework-neutral product tokens, theme presets, adoption, and UI authority boundaries.
+9. `docs/PRODUCT_UI.md` — shared viewport, depth/translucency, theme, scene, navigation, and app UI rules.
+10. `docs/SPRITES_SANDBOX_HANDOFF.md` — review/release Sprite promotion and verification contract.
 
-The `evidence/raw/` directory preserves 294 document-like source files copied from:
-
-- `Mtman1987/spacemountain-live` at `1dc2c1f02a7eb7bb9ddade3460c43ffa87858f43`
-- `Mtman1987/spmt-live` at `5d8aa7b2c3ac34538691bb8035b1cfe98b3b0acc`
-
-The copied evidence is read-only historical input. Nothing inside it is automatically a current requirement.
+The `evidence/raw/` directory preserves historical source documents copied from the live donor repositories. That evidence is read-only historical input; nothing inside it is automatically a current requirement.
 
 ## Governing rules
 
@@ -44,11 +56,7 @@ The copied evidence is read-only historical input. Nothing inside it is automati
 2. Live production is donor evidence and the rollback system, not the place to build Green.
 3. No donor capability is silently dropped. If it has not been classified in `PARITY_LEDGER.md`, it defaults to `VERIFY`, never `REMOVE`.
 4. Build one shared contract or bounded product slice at a time, with tests proving parity or an explicit approved removal.
-5. Blue stays available until Green passes identity, data, reliability, load, recovery, observation, and rollback gates.
-6. If implementation proves an accepted contract wrong, record the evidence and change the decision before changing the architecture.
-
-## Green Sprite sandbox checkpoint
-
-The first browser-open Green sandbox slice now runs SPMT on loopback and exposes SpaceMountain through one private Sprite HTTPS surface. Sandbox startup rejects provider credentials, blocks outbound webhook delivery, keeps access tokens in an HttpOnly cookie, and uses an inert `Orbit Beacon` registry fixture to prove dynamic discovery and launch. Mission Control also proves redacted tenant/app-scoped operations consolidation and a persistent coder evidence handoff; with no Rotator worker connected, coder jobs remain truthful drafts and cannot change code or deploy.
-
-No Sprite, service, Fly App, Machine, provider identity, or production data source is created by the repository scripts. Follow [`docs/SPRITES_SANDBOX_HANDOFF.md`](docs/SPRITES_SANDBOX_HANDOFF.md) and stop at every owner/manual gate.
+5. Use the fewest visual layers necessary; deeper surfaces become more translucent, never more opaque.
+6. Every app occupies the same SpaceMountain content viewport. Home screens fit without scrolling; longer screens scroll only inside that rectangle and never behind the shared header.
+7. Blue stays available until Green passes identity, data, reliability, load, recovery, observation, and rollback gates.
+8. If implementation proves an accepted contract wrong, record the evidence and change the decision before changing the architecture.

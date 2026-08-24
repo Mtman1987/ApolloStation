@@ -41,7 +41,7 @@ jobs:
       SPRITES_TOKEN: ${{ secrets.SPRITES_TOKEN }}
     steps:
       - name: Check out deployment tooling
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Validate deployment configuration
         shell: bash
@@ -124,7 +124,7 @@ jobs:
           exit 1
 
       - name: Check out deployment tooling
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Validate deployment configuration
         shell: bash

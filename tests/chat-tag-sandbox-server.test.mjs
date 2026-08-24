@@ -29,28 +29,37 @@ test("Nebula Arcade sandbox exposes the cosmic hub, game pages, saved overlay sc
     assert.match(home, /data-surface="standalone"/);
     assert.match(home, /class="nebula-rocket-dock"/);
     assert.match(home, />SpaceMountain<\/a>/);
-    assert.doesNotMatch(home, /SPMT hub/);
+    assert.doesNotMatch(home, /SPMT hub|private review runtime|Tenant tenant-sandbox/);
 
     const games = await (await fetch(`${origin}/?view=games`)).text();
     assert.equal((games.match(/data-game=/g) ?? []).length, 20);
     assert.match(games, /Choose a game/);
     assert.match(games, /Chat Garden/);
     assert.match(games, /catalog ready/);
+    assert.doesNotMatch(games, /most complete runtime|not a privileged product surface/);
 
     const chatTagPage = await (await fetch(`${origin}/?view=game&game=chat-tag`)).text();
-    assert.match(chatTagPage, /Playable in Review/);
+    assert.match(chatTagPage, /<h2>Playable<\/h2>/);
+    assert.match(chatTagPage, /Chat Tag game module/);
     assert.match(chatTagPage, /id="game-console"/);
+    assert.match(chatTagPage, /Game module console/);
     assert.match(chatTagPage, /Screenshots &amp; use examples|Screenshots & use examples/);
     assert.match(chatTagPage, /Attributions, socials &amp; sources|Attributions, socials & sources/);
 
     const catalogOnlyPage = await (await fetch(`${origin}/?view=game&game=chatgarden`)).text();
     assert.match(catalogOnlyPage, /Catalog registered/);
-    assert.match(catalogOnlyPage, /deliberately does not fake gameplay/);
+    assert.match(catalogOnlyPage, /This page does not fake gameplay/);
 
     const overlayBay = await (await fetch(`${origin}/?view=overlay`)).text();
     assert.match(overlayBay, /One URL\. Any combination of games\./);
+    assert.match(overlayBay, /Select one or more games/);
     assert.match(overlayBay, /id="overlay-scene-form"/);
     assert.equal((overlayBay.match(/name="gameId"/g) ?? []).length, 20);
+
+    const stats = await (await fetch(`${origin}/?view=stats`)).text();
+    assert.match(stats, /CONNECTED PLAYERS/);
+    assert.match(stats, /Connected game leaderboard/);
+    assert.doesNotMatch(stats, /CHAT TAG PLAYERS|connected review runtime/);
 
     const created = await fetch(`${origin}/v1/nebula/overlay-scenes`, { method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify({ id: "main-stream", name: "Main Stream", gameIds: ["chat-tag", "chatgarden"] }) });
     assert.equal(created.status, 200);
@@ -70,7 +79,8 @@ test("Nebula Arcade sandbox exposes the cosmic hub, game pages, saved overlay sc
     const directOutput = await (await fetch(`${origin}/overlay/main-stream`)).text();
     assert.match(directOutput, /Chat Tag overlay/);
     assert.match(directOutput, /Chat Garden/);
-    assert.match(directOutput, /runtime widget pending/);
+    assert.match(directOutput, /Runtime widget pending/);
+    assert.doesNotMatch(directOutput, /Review overlay layer/);
 
     const appOutput = await (await fetch(`${origin}/apps/nebula-arcade?surface=overlay&scene=main-stream`)).text();
     assert.match(appOutput, /\/assets\/nebula-arcade\/overlay\.css/);
