@@ -5,7 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { createChatTagSandboxHost, validateChatTagSandboxEnvironment } from "../apps/nebula-arcade/dist/chat-tag-sandbox-server.js";
 
-test("Nebula Arcade sandbox runs the Chat Tag module and OBS smoke path", async () => {
+test("Nebula Arcade sandbox exposes the cosmic hub, game pages, saved overlay scenes, and Chat Tag runtime", async () => {
   const directory = mkdtempSync(join(tmpdir(), "apollo-chat-tag-host-"));
   const host = createChatTagSandboxHost({ databasePath: join(directory, "chat-tag.sqlite"), tenantId: "tenant-sandbox", channelId: "channel-sandbox", port: 0, host: "127.0.0.1", buildSha: "test-sha" });
   try {
@@ -15,44 +15,78 @@ test("Nebula Arcade sandbox runs the Chat Tag module and OBS smoke path", async 
     const origin = `http://127.0.0.1:${address.port}`;
     const health = await fetch(`${origin}/health/ready`);
     assert.deepEqual(await health.json(), { ready: true, app: "nebula-arcade", runtimeMode: "sandbox", outboundIntegrations: "disabled", buildSha: "test-sha" });
-    const page = await (await fetch(origin)).text();
-    assert.match(page, /NEBULA ARCADE/);
-    assert.match(page, /GAMES HUB · 20 EQUAL TITLES/);
-    assert.match(page, /spmt-product-backdrop/);
-    assert.match(page, /spmt-star-layer/);
-    assert.match(page, /Nebula Arcade settings/);
-    assert.match(page, /id="workspace-settings"/);
-    assert.match(page, /data-surface="standalone"/);
-    assert.match(page, /class="nebula-rocket-dock"/);
-    assert.match(page, /id="games"/);
-    assert.match(page, /id="game-console"/);
-    assert.match(page, /id="leaderboard-panel"/);
-    assert.match(page, />SpaceMountain<\/a>/);
-    assert.doesNotMatch(page, /SPMT hub/);
-    assert.equal((page.match(/data-game=/g) ?? []).length, 20);
+
+    const home = await (await fetch(origin)).text();
+    assert.match(home, /NEBULA ARCADE/);
+    assert.match(home, /GAMES HUB · 20 EQUAL TITLES/);
+    assert.match(home, /class="hero-logo"/);
+    assert.match(home, />Games<\/a>/);
+    assert.match(home, />Overlay Bay<\/a>/);
+    assert.match(home, />Arcade Stats<\/a>/);
+    assert.match(home, /spmt-product-backdrop/);
+    assert.match(home, /spmt-star-layer/);
+    assert.match(home, /Nebula Arcade settings/);
+    assert.match(home, /data-surface="standalone"/);
+    assert.match(home, /class="nebula-rocket-dock"/);
+    assert.match(home, />SpaceMountain<\/a>/);
+    assert.doesNotMatch(home, /SPMT hub/);
+
+    const games = await (await fetch(`${origin}/?view=games`)).text();
+    assert.equal((games.match(/data-game=/g) ?? []).length, 20);
+    assert.match(games, /Choose a game/);
+    assert.match(games, /Chat Garden/);
+    assert.match(games, /catalog ready/);
+
+    const chatTagPage = await (await fetch(`${origin}/?view=game&game=chat-tag`)).text();
+    assert.match(chatTagPage, /Playable in Review/);
+    assert.match(chatTagPage, /id="game-console"/);
+    assert.match(chatTagPage, /Screenshots &amp; use examples|Screenshots & use examples/);
+    assert.match(chatTagPage, /Attributions, socials &amp; sources|Attributions, socials & sources/);
+
+    const catalogOnlyPage = await (await fetch(`${origin}/?view=game&game=chatgarden`)).text();
+    assert.match(catalogOnlyPage, /Catalog registered/);
+    assert.match(catalogOnlyPage, /deliberately does not fake gameplay/);
+
+    const overlayBay = await (await fetch(`${origin}/?view=overlay`)).text();
+    assert.match(overlayBay, /One URL\. Any combination of games\./);
+    assert.match(overlayBay, /id="overlay-scene-form"/);
+    assert.equal((overlayBay.match(/name="gameId"/g) ?? []).length, 20);
+
+    const created = await fetch(`${origin}/v1/nebula/overlay-scenes`, { method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify({ id: "main-stream", name: "Main Stream", gameIds: ["chat-tag", "chatgarden"] }) });
+    assert.equal(created.status, 200);
+    const createdBody = await created.json();
+    assert.equal(createdBody.scene.name, "Main Stream");
+    assert.deepEqual(createdBody.scene.layers.map((layer) => layer.gameId), ["chat-tag", "chatgarden"]);
+    assert.equal(createdBody.outputUrl, "/overlay/main-stream");
+
+    const listed = await (await fetch(`${origin}/v1/nebula/overlay-scenes`)).json();
+    assert.equal(listed.scenes.length, 1);
+    const output = await (await fetch(`${origin}/overlay/main-stream`)).text();
+    assert.match(output, /Chat Tag overlay/);
+    assert.match(output, /Chat Garden/);
+    assert.match(output, /runtime widget pending/);
+
     const browserScript = await (await fetch(`${origin}/assets/chat-tag-sandbox.js`)).text();
     assert.match(browserScript, /\/v1\/workspace\/profile/);
+    assert.match(browserScript, /\/v1\/nebula\/overlay-scenes/);
     assert.match(browserScript, /x-spmt-tenant/);
-    assert.match(browserScript, /applyAppearance/);
-    assert.match(browserScript, /--nebula-tint/);
+    assert.match(browserScript, /--spmt-glass-opacity/);
     assert.match(browserScript, /response\.status===409/);
     assert.match(browserScript, /Workspace changed elsewhere; reconciling the latest revision/);
-    assert.match(browserScript, /request\(workspace\.revision\)/);
-    assert.match(browserScript, /settingsForm\.elements\.theme\.addEventListener\('change'/);
-    assert.match(browserScript, /settingsForm\.elements\.accent\.value=preset\[0\]/);
-    const themeCss = await (await fetch(`${origin}\/assets\/chat-tag-sandbox.css`)).text();
-    assert.match(themeCss, /--nebula-surface:/);
-    assert.match(themeCss, /filter:grayscale\(1\) saturate\(0\)/);
-    assert.match(themeCss, /--nebula-muted:/);
-    assert.match(themeCss, /body>header,.hero,.games article,.console/);
+    const themeCss = await (await fetch(`${origin}/assets/chat-tag-sandbox.css`)).text();
+    assert.match(themeCss, /--spmt-depth-4-alpha/);
+    assert.match(themeCss, /--nebula-depth-4/);
+    assert.match(themeCss, /\.hero,.view-heading,.games,.overlay-bay/);
     assert.match(themeCss, /data-surface="shell"/);
+
     const shellPage = await (await fetch(`${origin}/?surface=shell`)).text();
     assert.match(shellPage, /data-surface="shell"/);
     const background = await fetch(`${origin}/assets/nebula-arcade/solar-system.webp`);
     assert.equal(background.status, 200);
     assert.equal(background.headers.get("content-type"), "image/webp");
     assert.ok((await background.arrayBuffer()).byteLength > 50_000);
-    const joined = await fetch(`${origin}/v1/chat-tag/message`, { method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify({ messageId: "join-1", userId: "alpha", username: "Alpha", text: "spmt join", roles: ["member"] }) });
+
+    const joined = await fetch(`${origin}/v1/chat-tag/message`, { method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify({ messageId: "join-1", userId: "alpha", username: "Alpha", text: "!join", roles: ["member"] }) });
     assert.equal(joined.status, 200);
     const joinedBody = await joined.json();
     assert.equal(joinedBody.outcome.kind, "executed");
@@ -62,6 +96,11 @@ test("Nebula Arcade sandbox runs the Chat Tag module and OBS smoke path", async 
     assert.match(await overlay.text(), /Chat Tag Overlay/);
     const snapshot = await fetch(`${origin}/v1/nebula/chat-tag/overlay/state`);
     assert.equal((await snapshot.json()).snapshot.playerCount, 1);
+
+    const deleted = await fetch(`${origin}/v1/nebula/overlay-scenes/main-stream`, { method: "DELETE", headers: { origin } });
+    assert.equal(deleted.status, 200);
+    assert.equal((await (await fetch(`${origin}/v1/nebula/overlay-scenes`)).json()).scenes.length, 0);
+
     const blocked = await fetch(`${origin}/v1/chat-tag/message`, { method: "POST", headers: { origin: "https://attacker.invalid", "content-type": "application/json" }, body: "{}" });
     assert.equal(blocked.status, 403);
   } finally { await host.close(); rmSync(directory, { recursive: true, force: true }); }
