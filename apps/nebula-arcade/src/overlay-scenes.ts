@@ -48,7 +48,7 @@ export class SqliteNebulaOverlaySceneStore {
       FROM nebula_overlay_scenes
       WHERE tenant_id=?
       ORDER BY updated_at DESC, scene_id
-    `).all(tenantId) as SceneRow[];
+    `).all(tenantId) as unknown as SceneRow[];
     return rows.map(fromRow);
   }
 
@@ -59,7 +59,7 @@ export class SqliteNebulaOverlaySceneStore {
       SELECT tenant_id, scene_id, name, layers, created_at, updated_at
       FROM nebula_overlay_scenes
       WHERE tenant_id=? AND scene_id=?
-    `).get(tenantId, sceneId) as SceneRow | undefined;
+    `).get(tenantId, sceneId) as unknown as SceneRow | undefined;
     return row ? fromRow(row) : undefined;
   }
 
@@ -70,7 +70,7 @@ export class SqliteNebulaOverlaySceneStore {
     if (!name || name.length > 100) throw new Error("Overlay scene name is invalid");
     if (!Number.isFinite(Date.parse(now))) throw new Error("Overlay scene timestamp is invalid");
     const layers = normalizeLayers(input.layers);
-    const prior = this.db.prepare("SELECT created_at FROM nebula_overlay_scenes WHERE tenant_id=? AND scene_id=?").get(tenantId, input.id) as { created_at: string } | undefined;
+    const prior = this.db.prepare("SELECT created_at FROM nebula_overlay_scenes WHERE tenant_id=? AND scene_id=?").get(tenantId, input.id) as unknown as { created_at: string } | undefined;
     const createdAt = prior?.created_at ?? now;
     this.db.prepare(`
       INSERT INTO nebula_overlay_scenes(tenant_id, scene_id, name, layers, created_at, updated_at)
