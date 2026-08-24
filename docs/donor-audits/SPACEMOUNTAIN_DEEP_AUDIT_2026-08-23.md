@@ -51,8 +51,10 @@ The server startup implementation declares 29 primary routes covering health, lo
 | Shop/catalog | IMPROVE | not production complete | verified external checkout and signed idempotent entitlement event |
 | Rocket Arena | MOVE/IMPROVE | assigned to Nebula Arcade, incomplete | game state, capped settlement, idempotency, overlay and leaderboard tests |
 | Companion/MountainView | PRESERVE/IMPROVE | bounded package groundwork only | pairing, command relay, desktop installer and real-device proof |
-| Block-style Builder | REMOVE | not ported | prove no authoritative workflow/page data and no live caller; keep developer platform as replacement |
+| Block-style Builder | VERIFY / REPLACE ONLY AFTER OWNER APPROVAL | not ported | inventory authoritative workflow/page data and all live callers; prove zero required use before proposing replacement; owner must approve any removal |
 | Help/developer docs | PRESERVE/IMPROVE | placeholder only | canonical generated docs, capability explorer, diagnostics and link checks |
+
+A `VERIFY` or replacement candidate is still preservation work. It is not removal approval. `docs/donor-audits/production-rebuild-guard.v1.json` is the current cutover guard and requires explicit owner approval plus zero-use evidence for any donor behavior proposed for removal.
 
 ## Duplicate state and private coupling to remove
 
