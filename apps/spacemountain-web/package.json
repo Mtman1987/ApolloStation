@@ -3,10 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "main": "./dist/server.js",
+  "main": "./dist/integrated-server.js",
   "scripts": {
     "build": "tsc -b",
-    "start": "node dist/server.js"
+    "start": "node dist/integrated-server.js"
   },
   "dependencies": {
     "@spmt/sdk": "0.1.0",
