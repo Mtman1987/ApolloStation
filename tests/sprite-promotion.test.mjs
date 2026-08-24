@@ -30,9 +30,12 @@ test("Sprite deployment verifies, tests, switches atomically, and rolls back", a
   assert.match(script, /actual_sha=.*git -C "\$release_dir" rev-parse HEAD/);
   assert.match(script, /npm ci --ignore-scripts/);
   assert.match(script, /npm run typecheck/);
-  assert.match(script, /npm test/);
+  assert.match(script, /timeout --signal=TERM --kill-after=15s 10m npm test/);
   assert.match(script, /mv -Tf "\$next_link" "\$current_link"/);
   assert.match(script, /Deployment failed; restoring/);
   assert.match(script, /sprite-env services restart "\$service_name"/);
+  assert.match(script, /sprite-env services stop "\$bootstrap_service_name"/);
+  assert.match(script, /Deployment failed; restoring bootstrap service/);
+  assert.match(script, /sprite-env services start "\$bootstrap_service_name"/);
   assert.match(script, /grep -Fq "\$BUILD_SHA"/);
 });

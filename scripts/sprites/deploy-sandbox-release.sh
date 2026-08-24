@@ -32,8 +32,10 @@ current_link="$deployment_root/current"
 next_link="$deployment_root/current.next"
 data_root="/home/sprite/data/$DEPLOY_ROLE"
 service_name="apollo-sandbox"
+bootstrap_service_name="webtmux"
 previous_release=""
 switched=0
+bootstrap_service_stopped=0
 
 mkdir -p "$releases_root" "$data_root"
 if [[ -L "$current_link" ]]; then
@@ -47,6 +49,11 @@ rollback() {
     ln -sfn "$previous_release" "$next_link"
     mv -Tf "$next_link" "$current_link"
     sprite-env services restart "$service_name" --duration 15s || true
+  fi
+  if (( status != 0 && bootstrap_service_stopped == 1 )); then
+    echo "Deployment failed; restoring bootstrap service $bootstrap_service_name" >&2
+    sprite-env services stop "$service_name" || true
+    sprite-env services start "$bootstrap_service_name" --duration 15s || true
   fi
   exit "$status"
 }
@@ -75,7 +82,7 @@ fi
 cd "$release_dir"
 npm ci --ignore-scripts
 npm run typecheck
-npm test
+timeout --signal=TERM --kill-after=15s 10m npm test
 
 ln -sfn "$release_dir" "$next_link"
 mv -Tf "$next_link" "$current_link"
@@ -92,6 +99,10 @@ else
     fi
     sleep 0.2
   done
+  if sprite-env services get "$bootstrap_service_name" >/dev/null 2>&1; then
+    sprite-env services stop "$bootstrap_service_name"
+    bootstrap_service_stopped=1
+  fi
   sprite-env services create "$service_name" \
     --cmd node \
     --args "$runner_args" \

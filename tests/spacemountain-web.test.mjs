@@ -179,22 +179,33 @@ test("auth facade keeps tokens HttpOnly and dynamically exposes sandbox registry
     assert.equal(invocationBody.status, "unavailable");
     assert.doesNotMatch(JSON.stringify(invocationBody), /response|reply|messageText/);
 
-    const operationsLogsResponse = await fetch(`${base}/v1/operations/logs`, { headers: { cookie, "x-spmt-tenant": principal.tenantIds[0] } });
+    const ordinaryOperationsLogsResponse = await fetch(`${base}/v1/operations/logs`, { headers: { cookie, "x-spmt-tenant": principal.tenantIds[0] } });
+    assert.equal(ordinaryOperationsLogsResponse.status, 403, "ordinary captains must not see owner operations evidence");
+
+    const ownerRegistration = await fetch(`${base}/sandbox/auth/register`, { method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify({ displayName: "Mtman1987", username: "mtman1987", password: "sandbox-owner-password" }) });
+    assert.equal(ownerRegistration.status, 201);
+    const ownerCookie = (ownerRegistration.headers.get("set-cookie") ?? "").split(";")[0];
+    assert.ok(ownerCookie);
+    const ownerPrincipal = await (await fetch(`${base}/v1/session`, { headers: { cookie: ownerCookie } })).json();
+    const ownerTenantId = ownerPrincipal.tenantIds[0];
+    assert.ok(ownerTenantId);
+
+    const operationsLogsResponse = await fetch(`${base}/v1/operations/logs`, { headers: { cookie: ownerCookie, "x-spmt-tenant": ownerTenantId } });
     assert.equal(operationsLogsResponse.status, 200);
     const operationsLogs = await operationsLogsResponse.json();
     assert.equal(operationsLogs.length, 1);
     assert.equal(operationsLogs[0].kind, "sandbox.fixture");
     assert.match(operationsLogs[0].summary, /Synthetic sandbox fixture/);
-    const coderDescriptor = await (await fetch(`${base}/v1/operations/coder`, { headers: { cookie, "x-spmt-tenant": principal.tenantIds[0] } })).json();
+    const coderDescriptor = await (await fetch(`${base}/v1/operations/coder`, { headers: { cookie: ownerCookie, "x-spmt-tenant": ownerTenantId } })).json();
     assert.equal(coderDescriptor.executionOwner, "mtman-machine-rotator");
     assert.equal(coderDescriptor.availability, "unavailable");
-    const coderDraftResponse = await fetch(`${base}/v1/operations/coder/jobs`, { method: "POST", headers: { cookie, origin, "x-spmt-tenant": principal.tenantIds[0], "content-type": "application/json", "idempotency-key": "browser-coder-draft-1" }, body: JSON.stringify({ targetAppId: "spacemountain", prompt: "Inspect the synthetic operations path without changing code", evidenceLogIds: [operationsLogs[0].id] }) });
+    const coderDraftResponse = await fetch(`${base}/v1/operations/coder/jobs`, { method: "POST", headers: { cookie: ownerCookie, origin, "x-spmt-tenant": ownerTenantId, "content-type": "application/json", "idempotency-key": "browser-coder-draft-1" }, body: JSON.stringify({ targetAppId: "spacemountain", prompt: "Inspect the synthetic operations path without changing code", evidenceLogIds: [operationsLogs[0].id] }) });
     assert.equal(coderDraftResponse.status, 200);
     const coderDraft = await coderDraftResponse.json();
     assert.equal(coderDraft.job.state, "draft");
     assert.match(coderDraft.job.unavailableReason, /not connected/);
     assert.doesNotMatch(JSON.stringify(coderDraft), /diff|patch|deployed/);
-    const coderJobs = await (await fetch(`${base}/v1/operations/coder/jobs`, { headers: { cookie, "x-spmt-tenant": principal.tenantIds[0] } })).json();
+    const coderJobs = await (await fetch(`${base}/v1/operations/coder/jobs`, { headers: { cookie: ownerCookie, "x-spmt-tenant": ownerTenantId } })).json();
     assert.equal(coderJobs.length, 1);
 
     const apps = await fetch(`${base}/v1/apps`, { headers: { cookie } });
@@ -373,8 +384,15 @@ test("supervised runner exposes Chat Tag as an editable example and publishes ze
     const client = new SpmtClient({ baseUrl: base, appId: "spacemountain", fetchImpl: (input, init = {}) => { const headers = new Headers(init.headers); headers.set("cookie", cookie); if (init.method === "POST") headers.set("origin", origin); return fetch(input, { ...init, headers }); } });
     assert.deepEqual(await client.listApps(), []);
     const candidate = await (await fetch(`${base}/sandbox/candidate-app`)).json();
-    await client.registerApp(candidate);
-    assert.deepEqual((await client.listApps()).map((app) => app.appId), ["chat-tag"]);
+    await assert.rejects(() => client.registerApp(candidate), (error) => error?.status === 403);
+
+    const ownerRegistration = await fetch(`${base}/sandbox/auth/register`, { method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify({ displayName: "Mtman1987", username: "mtman1987", password: "sandbox-owner-password" }) });
+    assert.equal(ownerRegistration.status, 201);
+    const ownerCookie = (ownerRegistration.headers.get("set-cookie") ?? "").split(";")[0];
+    assert.ok(ownerCookie);
+    const ownerClient = new SpmtClient({ baseUrl: base, appId: "spacemountain", fetchImpl: (input, init = {}) => { const headers = new Headers(init.headers); headers.set("cookie", ownerCookie); if (init.method === "POST") headers.set("origin", origin); return fetch(input, { ...init, headers }); } });
+    await ownerClient.registerApp(candidate);
+    assert.deepEqual((await ownerClient.listApps()).map((app) => app.appId), ["chat-tag"]);
     child.kill("SIGTERM");
     const exit = await new Promise((done) => child.once("exit", (code, signal) => done({ code, signal })));
     assert.deepEqual(exit, { code: 0, signal: null });
