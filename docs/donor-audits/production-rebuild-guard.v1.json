@@ -1,0 +1,197 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-08-24",
+  "status": "CUTOVER_BLOCKED",
+  "purpose": "Prevent a clean Apollo rebuild from silently losing working production behavior while donor applications remain available as read-only evidence.",
+  "policy": {
+    "unclassifiedDisposition": "VERIFY",
+    "manifestIsNotParity": true,
+    "catalogIngestionIsNotPortCompletion": true,
+    "donorRetirementRequiresOwnerApproval": true,
+    "sharedOperationClients": ["sdk", "api", "cli", "mcp"],
+    "runtimeIntegrationContracts": ["sdk", "api", "events", "websocket", "jobs", "device"],
+    "requiredCapabilityFamilies": [
+      "discord",
+      "twitch",
+      "xp-points-wallet",
+      "identity-provider-links",
+      "commands-actions-redeems",
+      "events-websockets-chat-gateway",
+      "overlays-obs",
+      "workers-schedulers-processes",
+      "durable-state-cache-outbox-migrations",
+      "auth-recovery-oauth",
+      "tenant-isolation-replay-restart",
+      "health-readiness-drain-rollback"
+    ],
+    "retirementGate": [
+      "machine-checkable donor inventory exists",
+      "every retained capability has Green implementation evidence",
+      "shared operations use documented public SPMT contracts",
+      "app-private durable state has migration and restart-restore evidence",
+      "provider ingress and egress have credential-scoped live tests",
+      "two-tenant isolation and duplicate-replay tests pass",
+      "production data reconciliation passes",
+      "owner accepts cutover and rollback checkpoint",
+      "any removal has explicit owner approval and zero-use evidence"
+    ]
+  },
+  "firstPartyApps": [
+    "commlink",
+    "companion",
+    "discord-stream-hub",
+    "hearmeout",
+    "mission-control",
+    "mountainview",
+    "nebula-arcade",
+    "stellar-core",
+    "streamweaver"
+  ],
+  "donors": [
+    {
+      "product": "spmt-authority",
+      "repository": "Mtman1987/spmt-live",
+      "frozenHead": "bbd335ce8083b540ba9c7f8468edbfbfa46fc5d5",
+      "currentMain": "bbd335ce8083b540ba9c7f8468edbfbfa46fc5d5",
+      "disposition": "VERIFY",
+      "notes": "Authority, identity, recovery, OAuth, XP, messaging, overlays, developer platform, Xbox and device gateway donor."
+    },
+    {
+      "product": "spacemountain-front-door",
+      "repository": "Mtman1987/spacemountain-live",
+      "frozenHead": "1dc2c1f02a7eb7bb9ddade3460c43ffa87858f43",
+      "currentMain": "1dc2c1f02a7eb7bb9ddade3460c43ffa87858f43",
+      "disposition": "VERIFY",
+      "notes": "Public front door, shell, shared UI, auth/session presentation and app launch donor."
+    },
+    {
+      "product": "streamweaver",
+      "repository": "Mtman1987/streamweaver",
+      "frozenHead": "387acf70552f9a6a557a83e8804c328245932961",
+      "currentMain": "387acf70552f9a6a557a83e8804c328245932961",
+      "disposition": "VERIFY",
+      "notes": "Tenant personas, provider chat, commands, actions, redeems, economy, overlays, TTS, automations and nested Companion donor."
+    },
+    {
+      "product": "discord-stream-hub",
+      "repository": "Mtman1987/DiscordStreamHub",
+      "frozenHead": "e35a1b06479adf73565da9b3a7eff4dc27ebe38b",
+      "currentMain": "e35a1b06479adf73565da9b3a7eff4dc27ebe38b",
+      "disposition": "VERIFY",
+      "notes": "Discord community workflows, Twitch monitoring/linking/chat, points/wallet/leaderboards, raid/spotlight and clip worker donor."
+    },
+    {
+      "product": "hearmeout",
+      "repository": "Mtman1987/hearmeout-main",
+      "frozenHead": "686d237fbb5bfa56f2356dba9dfdb7c023d5ac23",
+      "currentMain": "686d237fbb5bfa56f2356dba9dfdb7c023d5ac23",
+      "disposition": "VERIFY",
+      "notes": "LiveKit rooms, watch/music media, Discord Activity/chat/invites/voice bridge and hmo-dj-worker donor."
+    },
+    {
+      "product": "nebula-arcade-chat-tag",
+      "repository": "Mtman1987/chat-tag",
+      "frozenHead": "8170c51b04598774cbaa67981888e30b0c51f2fd",
+      "currentMain": "c4b99179eff47e41e920603f96f6342b04390eee",
+      "currentAheadBy": 10,
+      "preserveUnion": true,
+      "disposition": "VERIFY",
+      "notes": "Frozen production baseline plus all later main changes must be audited. Later commits include Quackverse image-generation fixes and the wider Nebula Arcade launch."
+    },
+    {
+      "product": "rotator-mountainview-local-ai",
+      "repository": "Mtman1987/fly-machine-rotator",
+      "frozenHead": "66e66b8b8502a6cf1dd94aee0163c443459a6d08",
+      "currentMain": "66e66b8b8502a6cf1dd94aee0163c443459a6d08",
+      "disposition": "VERIFY",
+      "notes": "Rotator operations, MtFixIt/Coder lifecycle, MountainView server/mobile and local LLM worker donor."
+    }
+  ],
+  "knownProductionEvidence": {
+    "fly": {
+      "provenNamedApps": 11,
+      "separateProcessGroups": ["spmt-live:xbox"],
+      "inventoryComplete": false,
+      "rule": "Capture remaining live Fly app and Machine names before production inventory is called complete."
+    },
+    "streamweaver": {
+      "commands": 71,
+      "actions": 176,
+      "totalBehaviors": 247,
+      "moduleCounts": {
+        "economy": 37,
+        "redeem-pack": 28,
+        "starter-social": 27,
+        "core-utility": 25,
+        "event-hooks": 22,
+        "menu-mode": 19,
+        "ai-bot": 13,
+        "links": 11,
+        "welcome": 9,
+        "pokemon": 8,
+        "deathcounter": 6,
+        "chat-bridge": 5,
+        "game-pack": 5,
+        "clips": 4,
+        "music": 2,
+        "translation": 2,
+        "discord": 1,
+        "kick": 1
+      }
+    },
+    "discordStreamHub": {
+      "pointsOperations": [
+        "balance",
+        "add",
+        "set",
+        "update",
+        "user-rank",
+        "leaderboard",
+        "add-to-all",
+        "set-to-all",
+        "gamble-settle",
+        "tenant-balances",
+        "spmt-xp-bridge"
+      ],
+      "twitchFamilies": [
+        "api-service",
+        "oauth",
+        "account-linking",
+        "bot-linking",
+        "chat",
+        "polling",
+        "live-status",
+        "ban-blacklist"
+      ]
+    },
+    "hearmeout": {
+      "livekit": ["token", "health", "room-media", "audio-device"],
+      "discordFamilies": [
+        "oauth",
+        "activity",
+        "guilds",
+        "channels",
+        "messages",
+        "chat",
+        "embeds",
+        "invites",
+        "interactions",
+        "voice-bridge",
+        "pcm-jitter"
+      ]
+    },
+    "spmt": {
+      "donorUniqueMethodPathPairs": 190,
+      "greenMethodPathShapesAtAudit": 60,
+      "xpStillRequired": ["spend", "transfer", "gamble-settlement", "leaderboard-projection", "migration-reconciliation"],
+      "otherKnownGaps": ["presence-live-community", "forums-discord-bridge", "complete-overlay-scenes", "companion-device-gateway", "cloud-xbox-worker-pool", "complete-developer-surface"]
+    }
+  },
+  "discoveryQueue": {
+    "workerOrAssetCandidates": ["hmo-dj-worker", "spcmtn-pokemon_assets-prod", "clipconvertetr"],
+    "productOrReleaseCandidates": ["Cosmo", "Nebula-Link", "Cosmic-Forge", "Avatar-Ace", "lottie-ai-stream", "CosmicRaid", "SentientStudio-", "fireforgeai", "Injekt-Prompt-Manager"],
+    "predecessorOrExperimentCandidates": ["nexus-hub1.1", "studio", "cosmo2.0", "cosmo2.0-main", "StreamWeave", "streamweaver-v2", "streamweaver3.0", "streamweaver4ev4", "hearmeout", "codespaces-blank"],
+    "archived": ["space-mountain-dashboard"],
+    "rule": "No candidate is removed from the preservation queue until deployment/import/use evidence and owner disposition classify it."
+  }
+}
