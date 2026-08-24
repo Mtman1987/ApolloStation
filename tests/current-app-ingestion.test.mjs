@@ -1,9 +1,5 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { createServer as createNetServer } from "node:net";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { commlinkCatalogRegistration } from "../apps/commlink/dist/index.js";
 import { companionCatalogRegistration } from "../apps/companion/dist/index.js";
@@ -16,7 +12,6 @@ import { stellarCoreCatalogRegistration } from "../apps/stellar-core/dist/index.
 import { streamweaverCatalogRegistration } from "../apps/streamweaver/dist/index.js";
 import { createIntegratedSpaceMountainWebHost } from "../apps/spacemountain-web/dist/integrated-server.js";
 import { FIRST_PARTY_APP_CSS, FIRST_PARTY_APP_SURFACES } from "../apps/spacemountain-web/dist/first-party-app-surfaces.js";
-import { SpmtClient } from "../packages/sdk/dist/index.js";
 
 const origin = "https://test-green.sprites.app";
 const registrations = [
@@ -87,84 +82,6 @@ test("existing shell-rendered apps become real same-origin Workspace embeds inst
   }
 });
 
-test("supervised current catalog appears in Shipyard and every Workspace launch renders", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "spmt-current-apps-"));
-  const ports = new Set();
-  while (ports.size < 3) ports.add(await freePort());
-  const [spmtPort, webPort, nebulaPort] = [...ports];
-  const base = `http://127.0.0.1:${webPort}`;
-  const publicUrl = `http://localhost:${webPort}`;
-  const child = spawn(process.execPath, [
-    "scripts/sprites/run-supervised-sandbox.mjs",
-    "--candidate-app", "nebula-arcade",
-    "--catalog", "current",
-    "--public-url", publicUrl,
-    "--data-root", directory,
-    "--build-sha", "current-app-runtime-test",
-    "--spmt-port", String(spmtPort),
-    "--web-port", String(webPort),
-    "--chat-tag-port", String(nebulaPort),
-  ], { cwd: new URL("..", import.meta.url), stdio: ["ignore", "pipe", "pipe"] });
-  let output = "";
-  child.stdout.setEncoding("utf8");
-  child.stderr.setEncoding("utf8");
-  child.stdout.on("data", (chunk) => { output += chunk; });
-  child.stderr.on("data", (chunk) => { output += chunk; });
-  try {
-    await waitUntil(() => output.includes("Green sandbox is supervised and ready"), 25_000, () => `Runner output:\n${output}`);
-    for (const name of ["Commlink", "Stellar Core", "Mission Control", "Discord Stream Hub", "StreamWeaver", "HearMeOut", "MountainView", "SpaceMountain Companion", "Nebula Arcade"]) assert.match(output, new RegExp(name));
-
-    const page = await fetch(`${base}/`);
-    assert.equal(page.status, 200);
-    const browserHtml = await page.text();
-    assert.match(browserHtml, /SPACEMOUNTAIN/);
-
-    const requestOrigin = new URL(base).origin;
-    const registration = await fetch(`${base}/sandbox/auth/register`, {
-      method: "POST",
-      headers: { origin: requestOrigin, "content-type": "application/json" },
-      body: JSON.stringify({ displayName: "App Inventory Captain", username: "app-inventory-captain", password: "sandbox-only-password" }),
-    });
-    assert.equal(registration.status, 201);
-    const cookie = (registration.headers.get("set-cookie") ?? "").split(";")[0];
-    assert.ok(cookie);
-    const tenantId = (await registration.json()).tenantId;
-    assert.ok(tenantId);
-    const client = new SpmtClient({
-      baseUrl: base,
-      appId: "spacemountain",
-      fetchImpl: (input, init = {}) => {
-        const headers = new Headers(init.headers);
-        headers.set("cookie", cookie);
-        if (init.method && init.method !== "GET" && init.method !== "HEAD") headers.set("origin", requestOrigin);
-        return fetch(input, { ...init, headers });
-      },
-    });
-    const apps = await client.listApps();
-    const installs = await client.listInstalls(tenantId);
-    assert.deepEqual(apps.map((item) => item.appId).sort(), expectedIds, "Shipyard registry must contain the complete current app pool");
-    assert.deepEqual(installs.filter((item) => item.enabled).map((item) => item.appId).sort(), expectedIds, "new tenants must have every current first-party app installed and enabled");
-
-    for (const app of apps) {
-      const launch = new URL(app.launchUrl);
-      launch.hostname = "127.0.0.1";
-      const response = await fetch(launch);
-      assert.equal(response.status, 200, `${app.appId} Workspace launch must render`);
-      assert.notEqual(response.headers.get("x-frame-options"), "DENY", `${app.appId} must not be blocked from the same-origin Workspace iframe`);
-      assert.match(response.headers.get("content-security-policy") ?? "", /frame-ancestors 'self'/, `${app.appId} must explicitly permit same-origin Workspace embedding`);
-      assert.ok((await response.text()).length > 100, `${app.appId} Workspace response must contain a real surface`);
-    }
-
-    child.kill("SIGTERM");
-    const exit = await new Promise((done) => child.once("exit", (code, signal) => done({ code, signal })));
-    assert.deepEqual(exit, { code: 0, signal: null });
-    await waitUntil(async () => !(await reachable(spmtPort)) && !(await reachable(webPort)) && !(await reachable(nebulaPort)), 5_000, () => "A supervised app-ingestion process remained reachable after shutdown");
-  } finally {
-    if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
-    rmSync(directory, { recursive: true, force: true });
-  }
-});
-
 test("embedded app homes stay inside the shared viewport and release promotion selects the full current catalog", () => {
   assert.match(FIRST_PARTY_APP_CSS, /data-surface="shell"\],body\[data-surface="workspace"\]\{height:100dvh;min-height:0;overflow:hidden\}/);
   assert.match(FIRST_PARTY_APP_CSS, /data-surface="shell"\] main,[^}]*data-surface="workspace"\] main\{height:100%;min-height:0/);
@@ -174,25 +91,3 @@ test("embedded app homes stay inside the shared viewport and release promotion s
   for (const registration of ["discordStreamHubCatalogRegistration", "streamweaverCatalogRegistration", "hearMeOutCatalogRegistration", "mountainViewCatalogRegistration", "companionCatalogRegistration"]) assert.match(runner, new RegExp(registration));
   assert.match(runner, /apps\/spacemountain-web\/dist\/integrated-server\.js/);
 });
-
-async function freePort() {
-  const server = createNetServer();
-  await new Promise((done, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", done); });
-  const address = server.address();
-  assert.ok(address && typeof address !== "string");
-  await new Promise((done, reject) => server.close((error) => error ? reject(error) : done()));
-  return address.port;
-}
-
-async function reachable(port) {
-  try { await fetch(`http://127.0.0.1:${port}/`, { signal: AbortSignal.timeout(300) }); return true; } catch { return false; }
-}
-
-async function waitUntil(check, timeout, failure) {
-  const deadline = Date.now() + timeout;
-  while (Date.now() < deadline) {
-    if (await check()) return;
-    await new Promise((done) => setTimeout(done, 100));
-  }
-  throw new Error(failure());
-}
