@@ -28,6 +28,7 @@ const ASSETS = new Map<string, { file: string; type: string }>([
   ["/assets/spacemountain/index.js", { file: resolve(REPOSITORY_ROOT, "apps/spacemountain/dist/index.js"), type: "text/javascript; charset=utf-8" }],
   ["/assets/spacemountain/shell-ui.js", { file: resolve(REPOSITORY_ROOT, "apps/spacemountain/dist/shell-ui.js"), type: "text/javascript; charset=utf-8" }],
   ["/assets/spacemountain/product-shell-css.js", { file: resolve(REPOSITORY_ROOT, "apps/spacemountain/dist/product-shell-css.js"), type: "text/javascript; charset=utf-8" }],
+  ["/assets/spacemountain/themed-surface-css.js", { file: resolve(REPOSITORY_ROOT, "apps/spacemountain/dist/themed-surface-css.js"), type: "text/javascript; charset=utf-8" }],
   ["/assets/product/model-rocket.png", { file: resolve(REPOSITORY_ROOT, "apps/spacemountain-web/assets/model-rocket.png"), type: "image/png" }],
   ["/assets/product/space-logo-header.png", { file: resolve(REPOSITORY_ROOT, "apps/spacemountain-web/assets/space-logo-header.png"), type: "image/png" }],
   ["/assets/product/space-logo-main.png", { file: resolve(REPOSITORY_ROOT, "apps/spacemountain-web/assets/space-logo-main.png"), type: "image/png" }],

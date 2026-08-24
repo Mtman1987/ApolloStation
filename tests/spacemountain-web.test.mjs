@@ -64,6 +64,7 @@ test("private SpaceMountain host serves explicit browser modules with restrictiv
     assert.match(client.headers.get("content-type") ?? "", /text\/javascript/);
     assert.equal((await fetch(`${base}/assets/ui/index.js`)).status, 200);
     assert.equal((await fetch(`${base}/assets/spacemountain/product-shell-css.js`)).status, 200);
+    assert.equal((await fetch(`${base}/assets/spacemountain/themed-surface-css.js`)).status, 200);
     assert.match((await fetch(`${base}/assets/product/space-logo-main.png`)).headers.get("content-type") ?? "", /image\/png/);
     assert.match((await fetch(`${base}/assets/product/theme-solar-flare-background.webp`)).headers.get("content-type") ?? "", /image\/webp/);
     assert.equal((await fetch(`${base}/assets/../../package.json`)).status, 404);
