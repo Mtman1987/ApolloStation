@@ -383,7 +383,7 @@ test("supervised runner makes both layers healthy and stops both children togeth
   }
 });
 
-test("supervised runner registers, installs, and launches Nebula Arcade as a bundled review app", async () => {
+test("supervised runner seeds the canonical first-party app pool and launches Nebula Arcade", async () => {
   const directory = mkdtempSync(join(tmpdir(), "spmt-supervised-candidate-"));
   const ports = new Set();
   while (ports.size < 3) ports.add(await freePort());
@@ -396,20 +396,23 @@ test("supervised runner registers, installs, and launches Nebula Arcade as a bun
   child.stdout.on("data", (chunk) => { output += chunk; });
   child.stderr.on("data", (chunk) => { output += chunk; });
   try {
-    await waitUntil(() => output.includes("Nebula Arcade is registered, installed, and launchable"), 20_000, () => `Runner output:\n${output}`);
+    await waitUntil(() => output.includes("The canonical app pool contains Commlink, Stellar Core, Mission Control, Nebula Arcade."), 20_000, () => `Runner output:\n${output}`);
     const page = await (await fetch(`${base}/`)).text();
     assert.match(page, /Add developer app/);
     assert.match(page, /Load Nebula Arcade example/);
     assert.doesNotMatch(page, /Publish Nebula Arcade through SDK/);
     assert.equal((await fetch(`${base}/apps/nebula-arcade`)).status, 200);
+    assert.equal((await fetch(`${base}/apps/commlink`)).status, 200);
+    assert.equal((await fetch(`${base}/apps/stellar-core`)).status, 200);
+    assert.equal((await fetch(`${base}/apps/mission-control`)).status, 200);
     const origin = new URL(base).origin;
     const registration = await fetch(`${base}/sandbox/auth/register`, { method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify({ displayName: "Candidate Captain", username: "candidate-captain", password: "sandbox-only-password" }) });
     assert.equal(registration.status, 201);
     const cookie = (registration.headers.get("set-cookie") ?? "").split(";")[0];
     assert.ok(cookie);
     const client = new SpmtClient({ baseUrl: base, appId: "spacemountain", fetchImpl: (input, init = {}) => { const headers = new Headers(init.headers); headers.set("cookie", cookie); if (init.method === "POST") headers.set("origin", origin); return fetch(input, { ...init, headers }); } });
-    assert.deepEqual((await client.listApps()).map((app) => app.appId), ["nebula-arcade"]);
-    assert.deepEqual((await client.listInstalls((await registration.json()).tenantId)).map((install) => ({ appId: install.appId, enabled: install.enabled })), [{ appId: "nebula-arcade", enabled: true }]);
+    assert.deepEqual((await client.listApps()).map((app) => app.appId).sort(), ["commlink", "mission-control", "nebula-arcade", "stellar-core"]);
+    assert.deepEqual((await client.listInstalls((await registration.json()).tenantId)).map((install) => install.appId).sort(), ["commlink", "mission-control", "nebula-arcade", "stellar-core"]);
     const candidate = await (await fetch(`${base}/sandbox/candidate-app`)).json();
     await assert.rejects(() => client.registerApp(candidate), (error) => error?.status === 403);
 
@@ -418,7 +421,7 @@ test("supervised runner registers, installs, and launches Nebula Arcade as a bun
     const ownerCookie = (ownerRegistration.headers.get("set-cookie") ?? "").split(";")[0];
     assert.ok(ownerCookie);
     const ownerClient = new SpmtClient({ baseUrl: base, appId: "spacemountain", fetchImpl: (input, init = {}) => { const headers = new Headers(init.headers); headers.set("cookie", ownerCookie); if (init.method === "POST") headers.set("origin", origin); return fetch(input, { ...init, headers }); } });
-    assert.deepEqual((await ownerClient.listApps()).map((app) => app.appId), ["nebula-arcade"]);
+    assert.deepEqual((await ownerClient.listApps()).map((app) => app.appId).sort(), ["commlink", "mission-control", "nebula-arcade", "stellar-core"]);
     child.kill("SIGTERM");
     const exit = await new Promise((done) => child.once("exit", (code, signal) => done({ code, signal })));
     assert.deepEqual(exit, { code: 0, signal: null });

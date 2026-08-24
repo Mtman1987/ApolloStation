@@ -31,6 +31,17 @@ if (candidateApp === "nebula-arcade") {
   const module = await import("../../apps/nebula-arcade/dist/index.js");
   candidateManifest = module.nebulaArcadeCatalogRegistration(publicUrl);
 }
+const [{ commlinkCatalogRegistration }, { stellarCoreCatalogRegistration }, { missionControlCatalogRegistration }] = await Promise.all([
+  import("../../apps/commlink/dist/index.js"),
+  import("../../apps/stellar-core/dist/index.js"),
+  import("../../apps/mission-control/dist/index.js"),
+]);
+const sandboxManifests = [
+  commlinkCatalogRegistration(publicUrl),
+  stellarCoreCatalogRegistration(publicUrl),
+  missionControlCatalogRegistration(publicUrl),
+  ...(candidateManifest ? [candidateManifest] : []),
+];
 const children = new Set();
 let stopping = false;
 
@@ -59,7 +70,7 @@ const spmt = start("SPMT", "apps/spmt-service/dist/index.js", {
   SPMT_HOST: "127.0.0.1",
   SPMT_SANDBOX_FIXTURES: "0",
   SPMT_SANDBOX_OWNER_USERNAME: ownerUsername,
-  ...(candidateManifest ? { SPMT_SANDBOX_APPS: JSON.stringify([candidateManifest]) } : {}),
+  SPMT_SANDBOX_APPS: JSON.stringify(sandboxManifests),
   PORT: String(spmtPort),
 });
 
@@ -88,7 +99,7 @@ spmt.once("exit", (code, signal) => { if (!stopping) void stop(signal === "SIGIN
 await waitForUrl(web, `http://127.0.0.1:${webPort}/sandbox/health`, "SpaceMountain web");
 
 process.stdout.write(`\nGreen sandbox is supervised and ready at ${publicUrl}\n`);
-process.stdout.write(candidateApp === "nebula-arcade" ? "Nebula Arcade is registered, installed, and launchable for every isolated sandbox captain.\n" : "The SPMT app catalog starts empty.\n");
+process.stdout.write(`The canonical app pool contains ${sandboxManifests.map((item) => item.name).join(", ")}.\n`);
 process.stdout.write("Outbound provider actions are disabled. No Sprite service has been registered.\n");
 process.stdout.write("Press Ctrl+C once to stop the supervised cohort.\n\n");
 

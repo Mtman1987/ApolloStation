@@ -69,7 +69,7 @@ Refactoring may change implementation, package layout, process boundaries, and r
 ## Shared workspace, messaging, and overlay ownership
 
 - SPMT owns portable workspace/profile state; SpaceMountain owns the canonical workspace host/editor UI.
-- SPMT owns shared Mail, Notifications, App Event, and authorized live-chat history; the provider-neutral Chat Gateway owns live provider connections, normalization, cursors, and reconnects; SpaceMountain owns the combined Commlink presentation; StreamWeaver is a scoped persona/command consumer.
+- SPMT owns shared Mail, Notifications, App Event, and authorized live-chat history; the provider-neutral Chat Gateway owns live provider connections, normalization, cursors, and reconnects; the registered Commlink app owns the combined presentation; SpaceMountain discovers and launches it through the same registry contract used for every other app; StreamWeaver is a scoped persona/command consumer.
 - SPMT owns canonical overlay scene/profile metadata and grants; SpaceMountain owns the general overlay editor; product apps publish `OverlayWidgetManifestV1` plus focused controls-free renderers.
 - Apps may own product-specific room/chat/game/editor state where it is genuinely product-specific, but must not create a second authority for shared ecosystem state.
 

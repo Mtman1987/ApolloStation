@@ -5,7 +5,7 @@ import { DEFERRED_RUNTIME_SOURCES, type SourceStateV1, type SpaceMountainAppCard
 import { POLISHED_SPACE_MOUNTAIN_CSS } from "./product-shell-css.js";
 import { THEMED_SURFACE_CSS } from "./themed-surface-css.js";
 
-export type SpaceMountainViewV1 = "home" | "apps" | "inbox" | "stellar" | "operations" | "workspace" | "settings";
+export type SpaceMountainViewV1 = "home" | "apps" | "workspace" | "settings";
 type CommlinkFilterV1 = "all" | "chat" | "events" | "streamweaver" | "queued";
 interface CommlinkWorkspaceUiV1 {
   schemaVersion: 1;
@@ -39,12 +39,10 @@ export interface SpaceMountainUiOptions {
 const NAV: Array<{ id: SpaceMountainViewV1; label: string; description: string; icon: IconName }> = [
   { id: "home", label: "Home", description: "SpaceMountain ecosystem home.", icon: "home" },
   { id: "apps", label: "Shipyard", description: "Install, launch, and manage ecosystem apps.", icon: "grid" },
-  { id: "inbox", label: "Commlink", description: "Shared desks, chat spaces, mail, notifications, and app events.", icon: "mail" },
-  { id: "stellar", label: "Stellar Core", description: "Speak with Stella through the ecosystem AI layer.", icon: "spark" },
-  { id: "operations", label: "Operations", description: "Work with Coder and review consolidated app health.", icon: "pulse" },
   { id: "workspace", label: "Workspace", description: "Canonical overlays, scenes, appearance, and three persistent slots.", icon: "layout" },
   { id: "settings", label: "Settings", description: "Manage your canonical SPMT identity and linked accounts.", icon: "settings" },
 ];
+const SHELL_APP_RENDERERS = new Set(["commlink", "stellar-core", "mission-control"]);
 
 const SPACEMOUNTAIN_SCENE: ProductSceneV1 = Object.freeze({
   appId: "spacemountain",
@@ -55,6 +53,7 @@ const SPACEMOUNTAIN_SCENE: ProductSceneV1 = Object.freeze({
 export class SpaceMountainShellUi {
   private snapshot: SpaceMountainShellSnapshotV1;
   private view: SpaceMountainViewV1 = "home";
+  private activeAppId: string | undefined;
   private stopLayout: (() => void) | undefined;
   private clockTimer: number | undefined;
   private workspaceTray: HTMLElement | undefined;
@@ -66,13 +65,14 @@ export class SpaceMountainShellUi {
     this.snapshot = options.snapshot;
     if (typeof window !== "undefined") {
       const requested = new URLSearchParams(window.location.search).get("view");
-      const alias = requested === "commlink" ? "inbox" : requested;
-      if (NAV.some((item) => item.id === alias)) this.view = alias as SpaceMountainViewV1;
+      if (NAV.some((item) => item.id === requested)) this.view = requested as SpaceMountainViewV1;
+      const matchedApp = window.location.pathname.match(/^\/apps\/([^/]+)$/)?.[1];
+      if (matchedApp) this.activeAppId = decodeURIComponent(matchedApp);
     }
   }
 
   mount() { this.options.root.classList.add("spmt-space-root", "spmt-product-surface"); this.render(); return this; }
-  update(snapshot: SpaceMountainShellSnapshotV1) { this.snapshot = snapshot; this.commlinkDraft = undefined; this.render(); }
+  update(snapshot: SpaceMountainShellSnapshotV1) { this.snapshot = snapshot; this.commlinkDraft = undefined; if (this.activeAppId && !this.shellApp(this.activeAppId)) this.activeAppId = undefined; this.render(); }
   destroy() { this.stopLayout?.(); this.stopLayout = undefined; if (this.clockTimer !== undefined) window.clearInterval(this.clockTimer); this.clockTimer = undefined; this.options.root.replaceChildren(); }
 
   private bindLayout() {
@@ -82,7 +82,23 @@ export class SpaceMountainShellUi {
     this.stopLayout = observeShellLayout({ header, onChange: (layout) => applyShellLayoutMetrics(this.options.root, "shell", layout) });
   }
 
-  private navigate(view: SpaceMountainViewV1) { this.view = view; this.options.onNavigate?.(view); this.render(); }
+  private navigate(view: SpaceMountainViewV1) {
+    this.activeAppId = undefined;
+    this.view = view;
+    if (typeof window !== "undefined") window.history.pushState(null, "", view === "home" ? "/" : `/?view=${view}`);
+    this.options.onNavigate?.(view);
+    this.render();
+  }
+
+  private openApp(app: SpaceMountainAppCardV1) {
+    if (!this.shellApp(app.appId)) return this.options.onLaunchApp?.(app);
+    this.activeAppId = app.appId;
+    if (typeof window !== "undefined") {
+      const target = new URL(app.launchUrl);
+      if (target.origin === window.location.origin) window.history.pushState(null, "", target.pathname);
+    }
+    this.render();
+  }
 
   private render() {
     const root = this.options.root;
@@ -92,7 +108,8 @@ export class SpaceMountainShellUi {
     const configuredTheme = recordText(appearance, ["theme"]);
     const backdrop = resolveProductBackdrop(SPACEMOUNTAIN_SCENE, configuredTheme, accent, backgroundUrl);
     const theme = backdrop.theme;
-    root.dataset.spmtView = this.view;
+    root.dataset.spmtView = this.activeAppId ? "app" : this.view;
+    if (this.activeAppId) root.dataset.spmtApp = this.activeAppId; else delete root.dataset.spmtApp;
     root.dataset.theme = theme.id;
     root.style.setProperty("--accent", theme.accent);
     root.style.setProperty("--accent2", theme.accentSecondary);
@@ -120,7 +137,7 @@ export class SpaceMountainShellUi {
     installProductBackdrop(root, backdrop);
     bindProductRocketNavigation(root, NAV, this.view, (view) => this.navigate(view));
     root.querySelectorAll<HTMLElement>("[data-nav]").forEach((node) => node.addEventListener("click", () => this.navigate(node.dataset.nav as SpaceMountainViewV1)));
-    root.querySelectorAll<HTMLElement>("[data-launch-app]").forEach((node) => node.addEventListener("click", () => { const app = this.snapshot.apps.find((item) => item.appId === node.dataset.launchApp); if (app) this.options.onLaunchApp?.(app); }));
+    root.querySelectorAll<HTMLElement>("[data-launch-app]").forEach((node) => node.addEventListener("click", () => { const app = this.snapshot.apps.find((item) => item.appId === node.dataset.launchApp); if (app) this.openApp(app); }));
     root.querySelectorAll<HTMLElement>("[data-install-app]").forEach((node) => node.addEventListener("click", () => { const app = this.snapshot.apps.find((item) => item.appId === node.dataset.installApp); if (app) this.options.onInstallApp?.(app); }));
     root.querySelectorAll<HTMLElement>("[data-commlink-space]").forEach((node) => node.addEventListener("click", () => this.updateCommlink({ activeChatSpaceId: node.dataset.commlinkSpace ?? "", view: "focus" })));
     root.querySelectorAll<HTMLElement>("[data-commlink-desk]").forEach((node) => node.addEventListener("click", () => this.updateCommlink({ activeDeskId: node.dataset.commlinkDesk ?? "", view: "desk" })));
@@ -258,26 +275,43 @@ export class SpaceMountainShellUi {
     });
   }
 
+  private appVisible(app: SpaceMountainAppCardV1) {
+    return app.appId !== "mission-control" || this.snapshot.operations.canReadLogs || this.snapshot.operations.canReadCoder;
+  }
+
+  private sidebarApps() {
+    return this.snapshot.apps.filter((app) => app.installed && app.enabled && this.appVisible(app));
+  }
+
+  private shellApp(appId: string) {
+    if (!SHELL_APP_RENDERERS.has(appId)) return undefined;
+    return this.snapshot.apps.find((app) => app.appId === appId && app.installed && app.enabled && this.appVisible(app));
+  }
+
   private header() {
     const unread = this.snapshot.notifications.filter((item) => !item.readAt && !item.read_at).length;
     const user = recordText(this.snapshot.session, ["displayName", "display_name", "username"]) ?? "Captain";
     const live = ecosystemPresence(this.snapshot.events, this.snapshot.apps);
-    const connectedApps = this.snapshot.apps.filter((app) => app.installed && app.enabled);
+    const connectedApps = this.sidebarApps();
     const appsTray = `<section id="spmt-apps-tray" class="spmt-apps-tray spmt-product-glass" data-apps-tray hidden><header><strong>Connected apps</strong><span>${connectedApps.length} enabled</span></header><div>${connectedApps.map((app) => { const active = connectedAppUsage(this.snapshot.events, app.appId); const art = app.iconUrl ? `<img src="${escapeHtml(app.iconUrl)}" alt="" loading="lazy">` : `<span>${escapeHtml(initials(app.name))}</span>`; return `<button type="button" data-launch-app="${escapeHtml(app.appId)}" title="Launch ${escapeHtml(app.name)}"><i>${art}</i><span><strong>${escapeHtml(app.name)}</strong><small>${escapeHtml(app.description || "SpaceMountain ecosystem application")}</small></span><b aria-label="${active} active now">${active}<small>live</small></b></button>`; }).join("") || `<p>No connected apps are enabled for this account.</p>`}</div><footer><button type="button" data-nav="apps">Manage apps in Shipyard</button></footer></section>`;
     const liveTray = `<section id="spmt-live-tray" class="spmt-live-tray spmt-product-glass" data-live-tray hidden><header><strong>Live now</strong><span>${live.length} creator${live.length === 1 ? "" : "s"}</span></header><div>${live.map((person) => `<article><span class="spmt-live-dot"></span><div><strong>${escapeHtml(person.name)}</strong><small>${escapeHtml(person.sources.join(" + "))}</small></div></article>`).join("") || `<p>No creators are live across the installed app pool.</p>`}</div></section>`;
-    return `<header class="spmt-shell-header-stack" data-spmt-shell-header><div class="spmt-cosmic-header spmt-product-glass"><div class="spmt-brand-cluster"><button class="spmt-brand" data-spmt-black-hole-trigger aria-label="SpaceMountain home; double-click for the Black Hole"><img src="/assets/product/space-logo-header.png" alt=""><strong>SPACEMOUNTAIN<em>.LIVE</em></strong></button><div class="spmt-header-clocks" aria-label="Local and UTC time"><span><time data-spmt-local-clock></time><small>LOCAL</small></span><span><time data-spmt-utc-clock></time><small>UTC</small></span></div></div><div class="spmt-header-actions"><button data-apps-toggle class="spmt-icon-button" aria-label="Explore connected apps" aria-controls="spmt-apps-tray" aria-expanded="false">${icon("grid")}</button><button data-workspace-toggle class="spmt-icon-button" aria-label="Open canonical workspace">${icon("layout")}</button><button data-live-toggle class="spmt-icon-button spmt-live-button" aria-label="Show creators live across the installed app pool" aria-controls="spmt-live-tray" aria-expanded="false">${icon("broadcast")}${live.length ? `<i>${Math.min(live.length, 9)}${live.length > 9 ? "+" : ""}</i>` : ""}</button><button data-nav="inbox" class="spmt-icon-button" aria-label="Open Commlink">${icon("mail")}${unread ? `<i>${Math.min(unread, 9)}${unread > 9 ? "+" : ""}</i>` : ""}</button><button data-nav="settings" class="spmt-account"><span class="spmt-avatar">${escapeHtml(initials(user))}</span><span class="spmt-account-copy"><strong>${escapeHtml(user)}</strong><small>${(this.snapshot.xp?.balance ?? 0).toLocaleString()} XP</small></span></button></div></div>${appsTray}${liveTray}</header>`;
+    return `<header class="spmt-shell-header-stack" data-spmt-shell-header><div class="spmt-cosmic-header spmt-product-glass"><div class="spmt-brand-cluster"><button class="spmt-brand" data-spmt-black-hole-trigger aria-label="SpaceMountain home; double-click for the Black Hole"><img src="/assets/product/space-logo-header.png" alt=""><strong>SPACEMOUNTAIN<em>.LIVE</em></strong></button><div class="spmt-header-clocks" aria-label="Local and UTC time"><span><time data-spmt-local-clock></time><small>LOCAL</small></span><span><time data-spmt-utc-clock></time><small>UTC</small></span></div></div><div class="spmt-header-actions"><button data-apps-toggle class="spmt-icon-button" aria-label="Explore connected apps" aria-controls="spmt-apps-tray" aria-expanded="false">${icon("grid")}</button><button data-workspace-toggle class="spmt-icon-button" aria-label="Open canonical workspace">${icon("layout")}</button><button data-live-toggle class="spmt-icon-button spmt-live-button" aria-label="Show creators live across the installed app pool" aria-controls="spmt-live-tray" aria-expanded="false">${icon("broadcast")}${live.length ? `<i>${Math.min(live.length, 9)}${live.length > 9 ? "+" : ""}</i>` : ""}</button><button data-launch-app="commlink" class="spmt-icon-button" aria-label="Open Commlink">${icon("mail")}${unread ? `<i>${Math.min(unread, 9)}${unread > 9 ? "+" : ""}</i>` : ""}</button><button data-nav="settings" class="spmt-account"><span class="spmt-avatar">${escapeHtml(initials(user))}</span><span class="spmt-account-copy"><strong>${escapeHtml(user)}</strong><small>${(this.snapshot.xp?.balance ?? 0).toLocaleString()} XP</small></span></button></div></div>${appsTray}${liveTray}</header>`;
   }
 
   private dock() {
-    const nav = NAV.filter((item) => item.id !== "operations" || this.snapshot.operations.canReadLogs || this.snapshot.operations.canReadCoder);
-    return `<aside class="spmt-rocket-dock spmt-product-glass"><div id="rocketLauncher" class="spmt-dock-orbit docked" data-spmt-rocket-trigger title="Double-click the rocket to release it"><span></span><img src="/assets/product/model-rocket.png" alt="SpaceMountain rocket"></div><nav>${nav.map((item) => `<button data-spmt-product-nav="${item.id}" class="${this.view === item.id ? "active" : ""}" title="${escapeHtml(`${item.label} — ${item.description}`)}" aria-label="${escapeHtml(`${item.label}: ${item.description}`)}">${icon(item.icon)}<label>${item.label}</label></button>`).join("")}</nav></aside>`;
+    const core = NAV.filter((item) => item.id === "home" || item.id === "apps");
+    const account = NAV.filter((item) => item.id === "workspace" || item.id === "settings");
+    const apps = this.sidebarApps();
+    const navButtons = (items: typeof NAV) => items.map((item) => `<button data-spmt-product-nav="${item.id}" class="${!this.activeAppId && this.view === item.id ? "active" : ""}" title="${escapeHtml(`${item.label} — ${item.description}`)}" aria-label="${escapeHtml(`${item.label}: ${item.description}`)}">${icon(item.icon)}<label>${item.label}</label></button>`).join("");
+    const appButtons = apps.map((app) => `<button data-launch-app="${escapeHtml(app.appId)}" class="${this.activeAppId === app.appId ? "active" : ""}" title="${escapeHtml(`${app.name} — ${app.description || "SpaceMountain ecosystem application"}`)}" aria-label="${escapeHtml(`${app.name}: ${app.description || "SpaceMountain ecosystem application"}`)}"><i class="spmt-dock-app-icon">${app.iconUrl ? `<img src="${escapeHtml(app.iconUrl)}" alt="" loading="lazy">` : escapeHtml(initials(app.name))}</i><label>${escapeHtml(app.name)}</label></button>`).join("");
+    return `<aside class="spmt-rocket-dock spmt-product-glass"><div id="rocketLauncher" class="spmt-dock-orbit docked" data-spmt-rocket-trigger title="Double-click the rocket to release it"><span></span><img src="/assets/product/model-rocket.png" alt="SpaceMountain rocket"></div><nav class="spmt-dock-nav"><section class="spmt-dock-core" aria-label="SpaceMountain">${navButtons(core)}</section><section class="spmt-dock-apps" aria-label="Installed applications">${appButtons}</section><section class="spmt-dock-account" aria-label="Workspace and account">${navButtons(account)}</section></nav></aside>`;
   }
 
   private body() {
+    if (this.activeAppId === "commlink" && this.shellApp("commlink")) return this.commlink();
+    if (this.activeAppId === "stellar-core" && this.shellApp("stellar-core")) return this.stellar();
+    if (this.activeAppId === "mission-control" && this.shellApp("mission-control")) return this.operations();
     if (this.view === "apps") return this.shipyard();
-    if (this.view === "inbox") return this.commlink();
-    if (this.view === "stellar") return this.stellar();
-    if (this.view === "operations" && (this.snapshot.operations.canReadLogs || this.snapshot.operations.canReadCoder)) return this.operations();
     if (this.view === "workspace") return this.workspace();
     if (this.view === "settings") return this.settings();
     return this.home();
@@ -288,10 +322,10 @@ export class SpaceMountainShellUi {
     const unread = this.snapshot.notifications.filter((item) => !item.readAt && !item.read_at).length;
     const appearance = recordObject(this.snapshot.workspace, "appearance");
     const theme = resolveProductTheme(recordText(appearance, ["theme"]), recordText(appearance, ["accent"]));
-    return `<section class="spmt-hero spmt-product-glass"><div class="spmt-hero-copy"><img class="spmt-hero-logo spmt-hero-logo-large" src="/assets/product/space-logo-main.png" alt="SpaceMountain"><p class="spmt-hero-tagline">One command bridge for every creator tool.</p><div class="actions"><button data-nav="apps" class="primary">${icon("rocket")}Open Shipyard</button><button data-nav="inbox">${icon("mail")}Open Commlink</button></div></div><div class="spmt-metrics">${metric("Apps online", `${installed.length}/${this.snapshot.apps.length}`)}${metric("Unread", String(unread))}${metric("Active apps", String((this.snapshot.runtimeStates ?? []).filter((item) => recordText(item, ["state"]) === "ready").length))}${metric("Theme", theme.name)}</div></section>`;
+    return `<section class="spmt-hero spmt-product-glass"><div class="spmt-hero-copy"><img class="spmt-hero-logo spmt-hero-logo-large" src="/assets/product/space-logo-main.png" alt="SpaceMountain"><p class="spmt-hero-tagline">One command bridge for every creator tool.</p><div class="actions"><button data-nav="apps" class="primary">${icon("rocket")}Open Shipyard</button><button data-launch-app="commlink">${icon("mail")}Open Commlink</button></div></div><div class="spmt-metrics">${metric("Apps online", `${installed.length}/${this.snapshot.apps.length}`)}${metric("Unread", String(unread))}${metric("Active apps", String((this.snapshot.runtimeStates ?? []).filter((item) => recordText(item, ["state"]) === "ready").length))}${metric("Theme", theme.name)}</div></section>`;
   }
 
-  private shipyard() { return `${page("Apps and capabilities", "Registry, install state, granted scopes, and entitlements come directly from SPMT.", "SHIPYARD")}<div class="spmt-app-grid wide">${this.snapshot.apps.map(appCard).join("") || empty("No registered apps are available yet.")}</div>`; }
+  private shipyard() { const apps = this.snapshot.apps.filter((app) => this.appVisible(app)); return `${page("Apps and capabilities", "Registry, install state, granted scopes, and entitlements come directly from SPMT.", "SHIPYARD")}<div class="spmt-app-grid wide">${apps.map(appCard).join("") || empty("No registered apps are available yet.")}</div>`; }
   private commlink() {
     const state = this.commlinkWorkspace();
     const sources = commlinkSources(this.snapshot);

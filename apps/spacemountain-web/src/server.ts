@@ -13,6 +13,7 @@ const REPOSITORY_ROOT = resolve(HERE, "../../..");
 const MAX_BODY_BYTES = 1024 * 1024;
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const MAX_MANIFEST_BYTES = 128 * 1024;
+const SHELL_APP_PATHS = new Set(["/apps/commlink", "/apps/stellar-core", "/apps/mission-control"]);
 const PROVIDER_ENV_NAMES = Object.freeze([
   "DISCORD_CLIENT_ID", "DISCORD_BOT_TOKEN", "DISCORD_CLIENT_SECRET", "TWITCH_CLIENT_ID", "TWITCH_CLIENT_SECRET", "TWITCH_BOT_OAUTH_TOKEN",
   "KICK_CLIENT_ID", "KICK_CLIENT_SECRET", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET", "FIREBASE_PRIVATE_KEY", "FIREBASE_CLIENT_EMAIL", "FIREBASE_PROJECT_ID",
@@ -58,7 +59,7 @@ export function createSpaceMountainWebHost(options: SpaceMountainWebHostOptions)
     applySecurityHeaders(response, nonce);
     try {
       const url = new URL(request.url ?? "/", "http://spacemountain.local");
-      if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/first-time-setup")) return html(response, 200, renderSpaceMountainPage(nonce, buildSha, Boolean(options.candidateManifest)));
+      if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/first-time-setup" || SHELL_APP_PATHS.has(url.pathname))) return html(response, 200, renderSpaceMountainPage(nonce, buildSha, Boolean(options.candidateManifest)));
       if (request.method === "GET" && url.pathname === "/assets/web/sandbox.css") return textResponse(response, 200, SANDBOX_CSS + SANDBOX_POLISH_CSS, "text/css; charset=utf-8", "public, max-age=300");
       if (request.method === "GET" && url.pathname === "/assets/web/developer-docs.css") return textResponse(response, 200, DEVELOPER_DOCS_CSS, "text/css; charset=utf-8", "public, max-age=300");
       if (request.method === "GET" && url.pathname === "/docs/developers") return html(response, 200, renderDeveloperDocsPage(buildSha));

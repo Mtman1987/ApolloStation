@@ -84,6 +84,18 @@ const spmt = new SpmtClient({
 const manifest = ${escapeHtml(manifest)};
 await spmt.registerApp(manifest);</code></pre>
       <p>The authenticated caller needs <code>apps:register</code>. Browser sessions use an HttpOnly cookie; do not put user tokens, provider secrets, OAuth client secrets, or webhook secrets in a manifest.</p>
+      <h3>Equivalent registration surfaces</h3>
+      <pre><code># CLI
+spmt apps register '{"appId":"my-app","name":"My App","description":"My registered app","version":"1.0.0","launchUrl":"https://my-app.example/","allowedScopes":["workspace:read"],"surfaces":["standalone"],"status":"active"}'
+
+# HTTP API
+POST /v1/apps
+Authorization: Bearer &lt;publisher-session&gt;
+Content-Type: application/json
+
+# MCP
+spmt.apps.register { ...manifest }</code></pre>
+      <p>All four paths call the same <code>apps.register</code> operation. Registration adds the catalog record; installation adds it to an authorized tenant. SpaceMountain then discovers the installed app for its header dropdown and scrollable sidebar without a source edit or redeployment.</p>
     </section>
 
     <section id="workspace">

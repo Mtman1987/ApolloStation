@@ -22,7 +22,7 @@ test("SpaceMountain visible shell does not restore private proxy or browser toke
   assert.doesNotMatch(source, /[?&](?:tenant|scopes|token)=/);
 });
 
-test("SpaceMountain visible shell exposes canonical home, Shipyard, Commlink and three-slot workspace", () => {
+test("SpaceMountain visible shell exposes canonical home, Shipyard, registry apps and three-slot workspace", () => {
   assert.match(source, /Open Shipyard/);
   assert.match(source, /Open Commlink/);
   assert.match(source, /Registry, install state, granted scopes, and entitlements come directly from SPMT/);
@@ -35,6 +35,12 @@ test("SpaceMountain visible shell exposes canonical home, Shipyard, Commlink and
   assert.match(source, /onSaveWorkspace/);
   assert.match(source, /installProductBackdrop/);
   assert.match(source, /root\.style\.setProperty\("--accent"/);
+  assert.match(source, /this\.snapshot\.apps\.filter\(\(app\) => app\.installed && app\.enabled/);
+  assert.match(source, /class="spmt-dock-apps" aria-label="Installed applications"/);
+  assert.match(source, /app\.name/);
+  assert.match(source, /app\.description/);
+  assert.doesNotMatch(source, /const NAV[\s\S]*label: "Commlink"[\s\S]*\];/);
+  assert.doesNotMatch(source, /const NAV[\s\S]*label: "Stellar Core"[\s\S]*\];/);
 });
 
 test("Settings exposes canonical SPMT provider links without browser-owned auth state", () => {
@@ -70,7 +76,8 @@ test("Stellar Core stays persona-neutral while Stella and configured personas re
 });
 
 test("Mission Control renders consolidated scoped evidence and a truthful coder handoff", () => {
-  assert.match(source, /label: "Operations"/);
+  assert.match(source, /this\.activeAppId === "mission-control"/);
+  assert.match(source, /app\.appId !== "mission-control" \|\| this\.snapshot\.operations\.canReadLogs \|\| this\.snapshot\.operations\.canReadCoder/);
   assert.match(source, /Ecosystem operations/);
   assert.match(source, /CONSOLIDATED EVIDENCE/);
   assert.match(source, /data-coder-form/);
@@ -85,13 +92,22 @@ test("home avoids duplicate navigation and sidebar hover text carries page descr
   assert.doesNotMatch(source, /<section class="spmt-quick-grid">/);
   assert.match(source, /spmt-hero-tagline/);
   assert.match(source, /item\.description/);
-  assert.match(source, /root\.dataset\.spmtView = this\.view/);
+  assert.match(source, /root\.dataset\.spmtView = this\.activeAppId \? "app" : this\.view/);
   assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /data-spmt-view="home"/);
   assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /height:calc\(100dvh - var\(--guard-height,0px\)\)/);
   assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /overflow-y:hidden/);
   assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /container-type:size/);
   assert.match(THEMED_SURFACE_CSS, /spmt-hero-logo-large\{flex:1 1 0;width:100%;height:100%/);
   assert.match(THEMED_SURFACE_CSS, /max-width:none;max-height:none/);
+});
+
+test("installed app overflow stays inside a themed sidebar region and reveals its scrollbar only on hover", () => {
+  assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /\.spmt-dock-apps\{[^}]*overflow-y:auto/);
+  assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /\.spmt-dock-apps\{[^}]*scrollbar-width:none/);
+  assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /\.spmt-dock-apps:hover\{scrollbar-width:thin\}/);
+  assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /\.spmt-dock-apps::-webkit-scrollbar\{width:0\}/);
+  assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /\.spmt-dock-apps:hover::-webkit-scrollbar\{width:4px\}/);
+  assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /scrollbar-color:color-mix\(in srgb,var\(--accent\)/);
 });
 
 test("released rocket escapes the sidebar stack, follows the pointer, and remains above content", () => {
