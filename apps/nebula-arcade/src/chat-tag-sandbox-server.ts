@@ -40,7 +40,7 @@ export function createChatTagSandboxHost(options: ChatTagSandboxHostOptions) {
       const url = new URL(request.url ?? "/", "http://chat-tag.sandbox");
       if (request.method === "GET" && url.pathname === "/health/ready") return json(response, 200, { ready: true, app: "nebula-arcade", runtimeMode: "sandbox", outboundIntegrations: "disabled", buildSha: options.buildSha ?? "dev" });
 
-      if (url.pathname === APP_PATH && url.searchParams.get("action") === "overlay-scenes") {
+      if ((url.pathname === APP_PATH || url.pathname === "/") && url.searchParams.get("action") === "overlay-scenes") {
         if (request.method === "GET") return json(response, 200, { scenes: sceneStore.list(options.tenantId) });
         if (request.method === "POST") {
           requireSameOrigin(request);
