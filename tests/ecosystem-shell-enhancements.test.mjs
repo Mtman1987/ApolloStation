@@ -25,6 +25,10 @@ test("Black Hole and Rocketship remain hidden double-click ecosystem interaction
   assert.match(shell, /data-spmt-black-hole-trigger/);
   assert.match(shell, /data-spmt-rocket-trigger/);
   assert.match(shell, /addEventListener\("dblclick"/);
+  assert.match(shell, /rocketArenaBlackHole/);
+  assert.match(shell, /ENTER HERE/);
+  assert.match(shell, /Math\.hypot/);
+  assert.match(shell, /data-spmt-signal-trigger/);
   assert.match(client, /ecosystem\.easter-egg\.\$\{egg\}\.completed\.v1/);
   assert.match(client, /blackHole.*rocket.*signal/s);
   assert.match(client, /Lord Puzzler unlocked/);

@@ -5,7 +5,17 @@ import { DEFERRED_RUNTIME_SOURCES, type SourceStateV1, type SpaceMountainAppCard
 import { POLISHED_SPACE_MOUNTAIN_CSS } from "./product-shell-css.js";
 
 export type SpaceMountainViewV1 = "home" | "apps" | "inbox" | "stellar" | "operations" | "workspace" | "settings" | "help";
-export type CommlinkTabV1 = "desks" | "spaces" | "mail" | "notifications" | "events" | "irc";
+type CommlinkFilterV1 = "all" | "chat" | "events" | "streamweaver" | "queued";
+interface CommlinkWorkspaceUiV1 {
+  schemaVersion: 1;
+  chatSpaces: Array<{ id: string; name: string; sourceIds: string[] }>;
+  desks: Array<{ id: string; name: string; chatSpaceIds: string[] }>;
+  activeChatSpaceId: string;
+  activeDeskId: string;
+  view: "focus" | "desk";
+  filter: CommlinkFilterV1;
+  compact: boolean;
+}
 export interface SpaceMountainUiOptions {
   root: HTMLElement;
   snapshot: SpaceMountainShellSnapshotV1;
@@ -14,6 +24,7 @@ export interface SpaceMountainUiOptions {
   onInstallApp?: (app: SpaceMountainAppCardV1) => void;
   onOpenConversation?: (conversation: Record<string, unknown>) => void;
   onSearchCommlink?: (query: string) => void;
+  onSendCommlinkMessage?: (conversation: Record<string, unknown>, text: string) => void;
   onInvokeStella?: (message: string, conversationId: string) => void;
   onMarkNotificationRead?: (notification: Record<string, unknown>) => void;
   onUnlinkProvider?: (link: Record<string, unknown>) => void;
@@ -44,18 +55,19 @@ const SPACEMOUNTAIN_SCENE: ProductSceneV1 = Object.freeze({
 export class SpaceMountainShellUi {
   private snapshot: SpaceMountainShellSnapshotV1;
   private view: SpaceMountainViewV1 = "home";
-  private commlinkTab: CommlinkTabV1 = "desks";
   private stopLayout: (() => void) | undefined;
   private workspaceTray: HTMLElement | undefined;
   private workspaceOpen = false;
   private workspaceTarget = 0;
+  private commlinkDraft: CommlinkWorkspaceUiV1 | undefined;
 
   constructor(private readonly options: SpaceMountainUiOptions) {
     this.snapshot = options.snapshot;
+    if (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("view") === "commlink") this.view = "inbox";
   }
 
   mount() { this.options.root.classList.add("spmt-space-root", "spmt-product-surface"); this.render(); return this; }
-  update(snapshot: SpaceMountainShellSnapshotV1) { this.snapshot = snapshot; this.render(); }
+  update(snapshot: SpaceMountainShellSnapshotV1) { this.snapshot = snapshot; this.commlinkDraft = undefined; this.render(); }
   destroy() { this.stopLayout?.(); this.stopLayout = undefined; this.options.root.replaceChildren(); }
 
   private bindLayout() {
@@ -86,7 +98,7 @@ export class SpaceMountainShellUi {
     root.style.setProperty("--spmt-blur", `${recordNumber(appearance, "blurStrength") ?? 18}px`);
     const retainedTray = this.workspaceTray;
     retainedTray?.remove();
-    root.innerHTML = `<style data-spmt-space-style>${PRODUCT_UI_CSS}${SPACE_MOUNTAIN_CSS}${POLISHED_SPACE_MOUNTAIN_CSS}${WORKSPACE_SETTINGS_CSS}${COMMLINK_FORM_CSS}</style><div class="spmt-space-shell">${this.header()}${this.dock()}<main class="spmt-space-main">${this.body()}</main></div>`;
+    root.innerHTML = `<style data-spmt-space-style>${PRODUCT_UI_CSS}${SPACE_MOUNTAIN_CSS}${POLISHED_SPACE_MOUNTAIN_CSS}${WORKSPACE_SETTINGS_CSS}${COMMLINK_FORM_CSS}${COSMO_COMMLINK_CSS}</style><div class="spmt-space-shell">${this.header()}${this.dock()}<main class="spmt-space-main">${this.body()}</main></div>`;
     this.workspaceTray = retainedTray ?? this.createWorkspaceTray();
     root.append(this.workspaceTray);
     this.syncWorkspaceTray();
@@ -95,7 +107,20 @@ export class SpaceMountainShellUi {
     root.querySelectorAll<HTMLElement>("[data-nav]").forEach((node) => node.addEventListener("click", () => this.navigate(node.dataset.nav as SpaceMountainViewV1)));
     root.querySelectorAll<HTMLElement>("[data-launch-app]").forEach((node) => node.addEventListener("click", () => { const app = this.snapshot.apps.find((item) => item.appId === node.dataset.launchApp); if (app) this.options.onLaunchApp?.(app); }));
     root.querySelectorAll<HTMLElement>("[data-install-app]").forEach((node) => node.addEventListener("click", () => { const app = this.snapshot.apps.find((item) => item.appId === node.dataset.installApp); if (app) this.options.onInstallApp?.(app); }));
-    root.querySelectorAll<HTMLElement>("[data-commlink-tab]").forEach((node) => node.addEventListener("click", () => { this.commlinkTab = node.dataset.commlinkTab as CommlinkTabV1; this.render(); }));
+    root.querySelectorAll<HTMLElement>("[data-commlink-space]").forEach((node) => node.addEventListener("click", () => this.updateCommlink({ activeChatSpaceId: node.dataset.commlinkSpace ?? "", view: "focus" })));
+    root.querySelectorAll<HTMLElement>("[data-commlink-desk]").forEach((node) => node.addEventListener("click", () => this.updateCommlink({ activeDeskId: node.dataset.commlinkDesk ?? "", view: "desk" })));
+    root.querySelectorAll<HTMLElement>("[data-commlink-view]").forEach((node) => node.addEventListener("click", () => this.updateCommlink({ view: node.dataset.commlinkView === "desk" ? "desk" : "focus" })));
+    root.querySelectorAll<HTMLElement>("[data-commlink-filter]").forEach((node) => node.addEventListener("click", () => this.updateCommlink({ filter: node.dataset.commlinkFilter as CommlinkFilterV1 })));
+    root.querySelectorAll<HTMLElement>("[data-commlink-source]").forEach((node) => node.addEventListener("click", () => this.toggleCommlinkSource(node.dataset.commlinkSource ?? "")));
+    root.querySelector<HTMLElement>("[data-commlink-new-space]")?.addEventListener("click", () => this.createChatSpace());
+    root.querySelector<HTMLElement>("[data-commlink-new-desk]")?.addEventListener("click", () => this.createDesk());
+    root.querySelector<HTMLElement>("[data-commlink-edit-space]")?.addEventListener("click", () => this.renameChatSpace());
+    root.querySelector<HTMLElement>("[data-commlink-edit-desk]")?.addEventListener("click", () => this.renameDesk());
+    root.querySelector<HTMLElement>("[data-commlink-delete-space]")?.addEventListener("click", () => this.deleteChatSpace());
+    root.querySelector<HTMLElement>("[data-commlink-delete-desk]")?.addEventListener("click", () => this.deleteDesk());
+    root.querySelector<HTMLElement>("[data-commlink-compact]")?.addEventListener("click", () => { const state = this.commlinkWorkspace(); this.updateCommlink({ compact: !state.compact }); });
+    root.querySelector<HTMLElement>("[data-commlink-popout]")?.addEventListener("click", () => window.open(`${window.location.pathname}?view=commlink`, "spmt-commlink", "popup,width=1440,height=920"));
+    root.querySelector<HTMLFormElement>("[data-commlink-compose]")?.addEventListener("submit", (event) => { event.preventDefault(); const form = event.currentTarget as HTMLFormElement; const text = String(new FormData(form).get("message") ?? "").trim(); const conversation = this.activeCommlinkConversation(); if (text && conversation) { this.options.onSendCommlinkMessage?.(conversation, text); form.reset(); } });
     root.querySelectorAll<HTMLElement>("[data-open-conversation]").forEach((node) => node.addEventListener("click", () => { const item = this.snapshot.conversations.find((conversation) => conversation.id === node.dataset.openConversation); if (item) this.options.onOpenConversation?.(item); }));
     root.querySelector<HTMLFormElement>("[data-commlink-search]")?.addEventListener("submit", (event) => { event.preventDefault(); const query = String(new FormData(event.currentTarget as HTMLFormElement).get("query") ?? "").trim(); if (query) this.options.onSearchCommlink?.(query); });
     root.querySelector<HTMLFormElement>("[data-stella-form]")?.addEventListener("submit", (event) => { event.preventDefault(); const form = event.currentTarget as HTMLFormElement; const message = String(new FormData(form).get("message") ?? "").trim(); if (message) { this.options.onInvokeStella?.(message, `stella-${this.snapshot.userId}`); form.reset(); } });
@@ -166,14 +191,16 @@ export class SpaceMountainShellUi {
   private header() {
     const unread = this.snapshot.notifications.filter((item) => !item.readAt && !item.read_at).length;
     const user = recordText(this.snapshot.session, ["displayName", "display_name", "username"]) ?? "Captain";
-    const nodes = [{ label: "SPMT", state: this.snapshot.state }, { label: "SPACE", state: this.snapshot.state }, { label: "STELLAR", state: this.snapshot.sources.stellar.state }, { label: "COMMLINK", state: this.snapshot.sources.commlink.state }, ...this.snapshot.apps.slice(0, 5).map((app) => ({ label: app.name, state: app.installed && app.enabled ? "ready" : "available" }))];
+    const activity = new Map<string, number>();
+    this.snapshot.events.forEach((event) => { const appId = recordText(event, ["sourceAppId", "source_app_id"]) ?? "spacemountain"; activity.set(appId, (activity.get(appId) ?? 0) + 1); });
+    const nodes = [{ label: "SPMT", state: this.snapshot.state, count: this.snapshot.events.length }, { label: "SPACE", state: this.snapshot.state, count: this.snapshot.conversations.length }, { label: "STELLAR", state: this.snapshot.sources.stellar.state, count: this.snapshot.stellar.context.length }, { label: "COMMLINK", state: this.snapshot.sources.commlink.state, count: (this.snapshot.messages ?? []).length }, ...this.snapshot.apps.filter((app) => app.installed && app.enabled).slice(0, 6).map((app) => ({ label: app.name, state: "ready", count: activity.get(app.appId) ?? 0 }))];
     const live = ecosystemPresence(this.snapshot.events);
-    return `<header class="spmt-shell-header-stack" data-spmt-shell-header><div class="spmt-telemetry"><span class="spmt-telemetry-title">ECOSYSTEM</span>${nodes.map((node) => `<span class="spmt-node state-${escapeHtml(node.state)}"><i></i>${escapeHtml(node.label)}</span>`).join("")}<span class="spmt-live-community">${live.map((person) => `<span title="Live via ${escapeHtml(person.sources.join(", "))}"><b>${escapeHtml(person.name)}</b><small>${escapeHtml(person.sources.join(" + "))}</small></span>`).join("")}</span><span class="spmt-telemetry-clock">LIVE · ${new Date().toISOString().slice(11, 16)} UTC</span></div><div class="spmt-cosmic-header spmt-product-glass"><button class="spmt-brand" data-spmt-black-hole-trigger aria-label="SpaceMountain home; double-click for the Black Hole"><img src="/assets/product/space-logo-header.png" alt=""><strong>SPACEMOUNTAIN<em>.LIVE</em></strong></button><nav class="spmt-header-links" aria-label="Product shortcuts"><a href="/docs/developers">Docs</a><button data-nav="apps">Explore apps</button></nav><div class="spmt-header-status"><b class="spmt-product-status state-${this.snapshot.state}">${escapeHtml(this.snapshot.state)}</b><span>${(this.snapshot.xp?.balance ?? 0).toLocaleString()} XP</span></div><div class="spmt-header-actions"><button data-workspace-toggle class="spmt-icon-button" aria-label="Open canonical workspace">${icon("layout")}</button><button data-nav="inbox" class="spmt-icon-button" aria-label="Open Commlink">${icon("mail")}${unread ? `<i>${Math.min(unread, 9)}${unread > 9 ? "+" : ""}</i>` : ""}</button><button data-nav="settings" class="spmt-account"><span class="spmt-avatar">${escapeHtml(initials(user))}</span><span>${escapeHtml(user)}</span></button></div></div></header>`;
+    return `<header class="spmt-shell-header-stack" data-spmt-shell-header><div class="spmt-telemetry"><span class="spmt-telemetry-title">ECOSYSTEM</span>${nodes.map((node) => `<span class="spmt-node state-${escapeHtml(node.state)}"><i></i>${escapeHtml(node.label)}: ${String(node.count).padStart(2, "0")}</span>`).join("")}<span class="spmt-live-community">${live.map((person) => `<span title="Live via ${escapeHtml(person.sources.join(", "))}"><b>${escapeHtml(person.name)}</b><small>${escapeHtml(person.sources.join(" + "))}</small></span>`).join("")}</span><span class="spmt-telemetry-clock">LIVE · ${new Date().toISOString().slice(11, 16)} UTC</span></div><div class="spmt-cosmic-header spmt-product-glass"><button class="spmt-brand" data-spmt-black-hole-trigger aria-label="SpaceMountain home; double-click for the Black Hole"><img src="/assets/product/space-logo-header.png" alt=""><strong>SPACEMOUNTAIN<em>.LIVE</em></strong></button><nav class="spmt-header-links" aria-label="Product shortcuts"><a href="/docs/developers">Docs</a><button data-nav="apps">Explore apps</button></nav><div class="spmt-header-status"><b class="spmt-product-status state-${this.snapshot.state}">${escapeHtml(this.snapshot.state)}</b><span>${(this.snapshot.xp?.balance ?? 0).toLocaleString()} XP</span></div><div class="spmt-header-actions"><button data-workspace-toggle class="spmt-icon-button" aria-label="Open canonical workspace">${icon("layout")}</button><button data-nav="inbox" class="spmt-icon-button" aria-label="Open Commlink">${icon("mail")}${unread ? `<i>${Math.min(unread, 9)}${unread > 9 ? "+" : ""}</i>` : ""}</button><button data-nav="settings" class="spmt-account"><span class="spmt-avatar">${escapeHtml(initials(user))}</span><span>${escapeHtml(user)}</span></button></div></div></header>`;
   }
 
   private dock() {
     const nav = NAV.filter((item) => item.id !== "operations" || this.snapshot.operations.canReadLogs || this.snapshot.operations.canReadCoder);
-    return `<aside class="spmt-rocket-dock spmt-product-glass"><div class="spmt-dock-orbit" data-spmt-rocket-trigger title="Double-click the rocket"><span></span><img src="/assets/product/model-rocket.png" alt="SpaceMountain rocket"></div><nav>${nav.map((item) => `<button data-spmt-product-nav="${item.id}" class="${this.view === item.id ? "active" : ""}" title="${escapeHtml(`${item.label} — ${item.description}`)}" aria-label="${escapeHtml(`${item.label}: ${item.description}`)}">${icon(item.icon)}<label>${item.label}</label></button>`).join("")}</nav><footer><small>SPMT CORE</small><strong>${this.snapshot.state.toUpperCase()}</strong></footer></aside>`;
+    return `<aside class="spmt-rocket-dock spmt-product-glass"><div id="rocketLauncher" class="spmt-dock-orbit docked" data-spmt-rocket-trigger title="Double-click the rocket to release it"><span></span><img src="/assets/product/model-rocket.png" alt="SpaceMountain rocket"></div><nav>${nav.map((item) => `<button data-spmt-product-nav="${item.id}" class="${this.view === item.id ? "active" : ""}" title="${escapeHtml(`${item.label} — ${item.description}`)}" aria-label="${escapeHtml(`${item.label}: ${item.description}`)}">${icon(item.icon)}<label>${item.label}</label></button>`).join("")}</nav><footer><small>SPMT CORE</small><strong>${this.snapshot.state.toUpperCase()}</strong></footer></aside>`;
   }
 
   private body() {
@@ -197,19 +224,104 @@ export class SpaceMountainShellUi {
 
   private shipyard() { return `${page("Apps and capabilities", "Registry, install state, granted scopes, and entitlements come directly from SPMT.", "SHIPYARD")}<div class="spmt-app-grid wide">${this.snapshot.apps.map(appCard).join("") || empty("No registered apps are available yet.")}</div>`; }
   private commlink() {
-    const desks = this.snapshot.conversations.filter((item) => ["direct", "app", "ai", "system"].includes(recordText(item, ["kind"]) ?? ""));
-    const spaces = this.snapshot.conversations.filter((item) => ["room", "forum"].includes(recordText(item, ["kind"]) ?? ""));
-    return `${page("Canonical communications", "One shared Commlink for desks, chat spaces, mail, notifications, app events, and developer IRC.", "COMMLINK")}<nav class="spmt-tabs" aria-label="Commlink sections">${commlinkTab("desks", "Desks", this.commlinkTab, desks.length)}${commlinkTab("spaces", "Chat Spaces", this.commlinkTab, spaces.length)}${commlinkTab("mail", "Mail", this.commlinkTab, this.snapshot.conversations.length)}${commlinkTab("notifications", "Notifications", this.commlinkTab, unreadCount(this.snapshot.notifications))}${commlinkTab("events", "Events", this.commlinkTab, this.snapshot.events.length)}${commlinkTab("irc", "Developer IRC", this.commlinkTab)}</nav>${this.commlinkBody()}`;
+    const state = this.commlinkWorkspace();
+    const sources = commlinkSources(this.snapshot);
+    const activeSpace = state.chatSpaces.find((item) => item.id === state.activeChatSpaceId) ?? state.chatSpaces[0]!;
+    const activeDesk = state.desks.find((item) => item.id === state.activeDeskId) ?? state.desks[0]!;
+    const sourceIds = new Set(activeSpace.sourceIds);
+    const visible = this.commlinkRecords(activeSpace, state.filter);
+    const feed = visible.map((item) => commlinkCard(item)).join("") || empty("No canonical messages or app events match this ChatSpace yet.");
+    const panels = activeDesk.chatSpaceIds.map((spaceId) => state.chatSpaces.find((item) => item.id === spaceId)).filter((item): item is { id: string; name: string; sourceIds: string[] } => Boolean(item)).map((space) => `<section class="cosmo-desk-panel"><header><strong>${escapeHtml(space.name)}</strong><button data-commlink-space="${escapeHtml(space.id)}">Focus</button></header><div>${this.commlinkRecords(space, "all").slice(0, 8).map((item) => commlinkCard(item, true)).join("") || `<p class="cosmo-panel-empty">No records yet</p>`}</div></section>`).join("");
+    const writable = this.activeCommlinkConversation();
+    return `${sourceNotice("Commlink", this.snapshot.sources.commlink)}<section class="cosmo-commlink spmt-product-glass ${state.compact ? "compact" : ""}">
+      <aside class="cosmo-rail"><div class="cosmo-mark"><span>✦</span><div><strong>Cosmo</strong><small>Commlink</small></div></div><button class="cosmo-create" data-commlink-new-space>＋ New ChatSpace</button><header><span>SAVED CHATSPACES</span></header><nav>${state.chatSpaces.map((space) => `<button data-commlink-space="${escapeHtml(space.id)}" class="${space.id === activeSpace.id ? "active" : ""}"><b>${escapeHtml(initials(space.name))}</b><span><strong>${escapeHtml(space.name)}</strong><small>${space.sourceIds.length} source${space.sourceIds.length === 1 ? "" : "s"}</small></span></button>`).join("")}</nav><header><span>SAVED DESKS</span><button data-commlink-new-desk aria-label="Create Desk">＋</button></header><nav>${state.desks.map((desk) => `<button data-commlink-desk="${escapeHtml(desk.id)}" class="${desk.id === activeDesk.id ? "active" : ""}"><b>⌘</b><span><strong>${escapeHtml(desk.name)}</strong><small>${desk.chatSpaceIds.length} ChatSpace${desk.chatSpaceIds.length === 1 ? "" : "s"}</small></span></button>`).join("")}</nav><footer><span class="state-${this.snapshot.sources.commlink.state}"></span><small>Account synced · revision ${recordNumber(this.snapshot.workspace, "revision") ?? "—"}</small></footer></aside>
+      <div class="cosmo-workspace"><header class="cosmo-topbar"><div><span>COMMLINK DESK / ${escapeHtml(activeDesk.name)}</span><h1>${escapeHtml(state.view === "desk" ? activeDesk.name : activeSpace.name)}</h1></div><div class="cosmo-actions"><div class="cosmo-switch"><button data-commlink-view="focus" class="${state.view === "focus" ? "active" : ""}">Focus</button><button data-commlink-view="desk" class="${state.view === "desk" ? "active" : ""}">Desk</button></div><button data-commlink-edit-space title="Rename active ChatSpace">Edit space</button><button data-commlink-delete-space title="Delete active ChatSpace">Delete space</button><button data-commlink-edit-desk title="Rename active Desk">Edit desk</button><button data-commlink-delete-desk title="Delete active Desk">Delete desk</button><button data-commlink-popout>Pop out</button></div></header>
+      <section class="cosmo-sources"><div><i></i><strong>${sources.filter((source) => sourceIds.has(source.id)).length} sources · ${this.snapshot.sources.commlink.state}</strong><span>${this.snapshot.sources.commlink.state === "ready" ? "Canonical account feed" : "Unavailable sources remain visible and explicit"}</span></div><nav>${sources.map((source) => `<button data-commlink-source="${escapeHtml(source.id)}" class="${sourceIds.has(source.id) ? "active" : ""}" title="${escapeHtml(source.detail)}"><b>${escapeHtml(source.short)}</b><span>${escapeHtml(source.label)}</span><i class="state-${escapeHtml(source.state)}"></i></button>`).join("")}</nav></section>
+      ${state.view === "desk" ? `<section class="cosmo-desk-grid">${panels}</section>` : `<section class="cosmo-focus"><div class="cosmo-feed-pane"><div class="cosmo-toolbar"><nav>${(["all", "chat", "events", "streamweaver", "queued"] as CommlinkFilterV1[]).map((filter) => `<button data-commlink-filter="${filter}" class="${state.filter === filter ? "active" : ""}">${filter === "all" ? "All" : filter === "streamweaver" ? "StreamWeaver" : filter[0]!.toUpperCase() + filter.slice(1)}${filter === "queued" ? " 0" : ""}</button>`).join("")}</nav><div><button data-commlink-compact>${state.compact ? "Comfortable" : "Compact"}</button><form data-commlink-search><input name="query" type="search" minlength="2" maxlength="200" required placeholder="Search history"><button>Search</button></form></div></div><div class="cosmo-feed" aria-live="polite">${feed}</div><form class="cosmo-composer" data-commlink-compose><div><span>DESTINATION</span><b>${escapeHtml(writable ? recordText(writable, ["title"]) ?? "SPMT conversation" : "Select a writable SPMT conversation")}</b><small>Replies remain source-locked</small></div><textarea name="message" maxlength="8000" rows="1" ${writable ? "required" : "disabled"} placeholder="${writable ? "Message this canonical conversation…" : "No writable destination in this ChatSpace"}"></textarea><button class="primary" ${writable ? "" : "disabled"}>Send</button></form></div><aside class="cosmo-context"><span>◎</span><h2>Message context</h2><p>Select a conversation card to inspect its canonical history, identity, and available reply actions.</p><button data-open-conversation="${escapeHtml(recordText(writable, ["id"]) ?? "")}" ${writable ? "" : "disabled"}>Open active conversation</button><a href="/docs/developers#commlink">Developer IRC & API</a></aside></section>`}
+      </div></section>`;
   }
 
-  private commlinkBody() {
-    if (this.commlinkTab === "notifications") return this.notificationPanel();
-    if (this.commlinkTab === "events") return this.eventPanel();
-    if (this.commlinkTab === "irc") return `<section class="spmt-stella-chat"><header><span>DEVELOPER TOOLS</span><h2>IRC bridge</h2></header><p>Apps connect to the provider-neutral Chat Gateway over the ecosystem IRC adapter. Twitch, Discord, Kick, and app chat are normalized into one message envelope while source identity is retained.</p><pre><code>wss://spacemountain.live/irc\nCAP REQ :spmt.tags spmt.events\nJOIN #tenant/&lt;tenant-id&gt;</code></pre><small>The Review Sprite keeps provider credentials disconnected; use the SDK/MCP event contracts for isolated testing.</small></section>`;
-    const all = this.snapshot.conversations.slice(0, 50);
-    const items = this.commlinkTab === "desks" ? all.filter((item) => ["direct", "app", "ai", "system"].includes(recordText(item, ["kind"]) ?? "")) : this.commlinkTab === "spaces" ? all.filter((item) => ["room", "forum"].includes(recordText(item, ["kind"]) ?? "")) : all;
-    const label = this.commlinkTab === "desks" ? "Desks" : this.commlinkTab === "spaces" ? "Chat Spaces" : "Mail";
-    return `${sourceNotice(label, this.snapshot.sources.commlink)}<form class="spmt-commlink-search" data-commlink-search><label><span>Search all canonical Commlink history</span><input name="query" type="search" maxlength="200" required placeholder="Search desks, spaces, and mail"></label><button type="submit">Search</button></form><div class="spmt-list spmt-account-list">${items.map((item) => `<article><div><span class="spmt-record-kind">${escapeHtml(recordText(item, ["kind"]) ?? "message")}</span><strong>${escapeHtml(recordText(item, ["title"]) ?? "Conversation")}</strong><small>${escapeHtml(formatRecordTime(recordText(item, ["updatedAt", "updated_at", "createdAt", "created_at"])))}</small></div><button data-open-conversation="${escapeHtml(recordText(item, ["id"]) ?? "")}">Open</button></article>`).join("") || empty(`No ${label.toLowerCase()} yet.`)}</div>`;
+  private commlinkWorkspace(): CommlinkWorkspaceUiV1 {
+    if (this.commlinkDraft) return this.commlinkDraft;
+    const stored = recordObject(this.snapshot.workspace, "commlink");
+    if (isCommlinkWorkspace(stored)) return stored as unknown as CommlinkWorkspaceUiV1;
+    const sources = commlinkSources(this.snapshot).map((source) => source.id);
+    return { schemaVersion: 1, chatSpaces: [{ id: "all-messages", name: "All messages", sourceIds: sources }], desks: [{ id: "account", name: "Account", chatSpaceIds: ["all-messages"] }], activeChatSpaceId: "all-messages", activeDeskId: "account", view: "focus", filter: "all", compact: false };
+  }
+
+  private updateCommlink(patch: Partial<CommlinkWorkspaceUiV1>) {
+    const next = { ...this.commlinkWorkspace(), ...patch };
+    this.commlinkDraft = next;
+    const revision = recordNumber(this.snapshot.workspace, "revision");
+    if (revision) this.options.onSaveWorkspace?.(revision, { commlink: next });
+    this.render();
+  }
+
+  private toggleCommlinkSource(sourceId: string) {
+    const state = this.commlinkWorkspace();
+    const spaces = state.chatSpaces.map((space) => space.id !== state.activeChatSpaceId ? space : { ...space, sourceIds: space.sourceIds.includes(sourceId) ? space.sourceIds.filter((id) => id !== sourceId) : [...space.sourceIds, sourceId] });
+    this.updateCommlink({ chatSpaces: spaces });
+  }
+
+  private createChatSpace() {
+    const name = window.prompt("Name this ChatSpace")?.trim();
+    if (!name) return;
+    const state = this.commlinkWorkspace();
+    const id = `space-${crypto.randomUUID()}`;
+    this.updateCommlink({ chatSpaces: [...state.chatSpaces, { id, name: name.slice(0, 60), sourceIds: commlinkSources(this.snapshot).map((source) => source.id) }], activeChatSpaceId: id, view: "focus" });
+  }
+
+  private createDesk() {
+    const name = window.prompt("Name this Desk")?.trim();
+    if (!name) return;
+    const state = this.commlinkWorkspace();
+    const id = `desk-${crypto.randomUUID()}`;
+    this.updateCommlink({ desks: [...state.desks, { id, name: name.slice(0, 60), chatSpaceIds: state.chatSpaces.slice(0, 6).map((space) => space.id) }], activeDeskId: id, view: "desk" });
+  }
+
+  private renameChatSpace() {
+    const state = this.commlinkWorkspace(); const active = state.chatSpaces.find((space) => space.id === state.activeChatSpaceId); if (!active) return;
+    const name = window.prompt("Rename this ChatSpace", active.name)?.trim(); if (!name) return;
+    this.updateCommlink({ chatSpaces: state.chatSpaces.map((space) => space.id === active.id ? { ...space, name: name.slice(0, 60) } : space) });
+  }
+
+  private renameDesk() {
+    const state = this.commlinkWorkspace(); const active = state.desks.find((desk) => desk.id === state.activeDeskId); if (!active) return;
+    const name = window.prompt("Rename this Desk", active.name)?.trim(); if (!name) return;
+    this.updateCommlink({ desks: state.desks.map((desk) => desk.id === active.id ? { ...desk, name: name.slice(0, 60) } : desk) });
+  }
+
+  private deleteChatSpace() {
+    const state = this.commlinkWorkspace(); if (state.chatSpaces.length === 1) return;
+    const active = state.chatSpaces.find((space) => space.id === state.activeChatSpaceId); if (!active || !window.confirm(`Delete ChatSpace “${active.name}”? Connected accounts will not be disconnected.`)) return;
+    const chatSpaces = state.chatSpaces.filter((space) => space.id !== active.id); const first = chatSpaces[0]!;
+    const desks = state.desks.map((desk) => ({ ...desk, chatSpaceIds: desk.chatSpaceIds.filter((id) => id !== active.id) })).map((desk) => desk.chatSpaceIds.length ? desk : { ...desk, chatSpaceIds: [first.id] });
+    this.updateCommlink({ chatSpaces, desks, activeChatSpaceId: first.id });
+  }
+
+  private deleteDesk() {
+    const state = this.commlinkWorkspace(); if (state.desks.length === 1) return;
+    const active = state.desks.find((desk) => desk.id === state.activeDeskId); if (!active || !window.confirm(`Delete Desk “${active.name}”? Its ChatSpaces will remain saved.`)) return;
+    const desks = state.desks.filter((desk) => desk.id !== active.id); this.updateCommlink({ desks, activeDeskId: desks[0]!.id, view: "focus" });
+  }
+
+  private activeCommlinkConversation() {
+    const state = this.commlinkWorkspace(); const space = state.chatSpaces.find((item) => item.id === state.activeChatSpaceId);
+    return this.snapshot.conversations.find((conversation) => !space || space.sourceIds.includes(commlinkRecordSource(conversation)) || space.sourceIds.includes(`conversation:${recordText(conversation, ["id"]) ?? ""}`));
+  }
+
+  private commlinkRecords(space: { sourceIds: string[] }, filter: CommlinkFilterV1) {
+    const sourceIds = new Set(space.sourceIds);
+    const signalMessageIds = new Set(this.snapshot.events.filter((event) => (recordText(event, ["type"]) ?? "").includes("lost-signal-message.requested")).map((event) => recordText(recordObject(event, "payload"), ["targetMessageId", "target_message_id"])).filter((id): id is string => Boolean(id)));
+    const messages = (this.snapshot.messages ?? []).map((item) => ({ ...item, __recordType: "chat", ...(signalMessageIds.has(recordText(item, ["messageId", "message_id", "id"]) ?? "") ? { hiddenSignal: true } : {}) }));
+    const conversations = this.snapshot.conversations.map((item) => ({ ...item, __recordType: "chat" }));
+    const events = this.snapshot.events.map((item) => ({ ...item, __recordType: "event" }));
+    const notifications = this.snapshot.notifications.map((item) => ({ ...item, __recordType: "event" }));
+    return [...messages, ...conversations, ...events, ...notifications]
+      .filter((item) => !sourceIds.size || sourceIds.has(commlinkRecordSource(item)) || sourceIds.has(`conversation:${recordText(item, ["conversationId", "id"]) ?? ""}`))
+      .filter((item) => filter === "all" || (filter === "chat" && item.__recordType === "chat") || (filter === "events" && item.__recordType === "event") || (filter === "streamweaver" && commlinkRecordSource(item) === "streamweaver") || (filter === "queued" && recordBoolean(item, "queued", false)))
+      .sort((left, right) => Date.parse(recordText(right, ["createdAt", "created_at", "updatedAt", "updated_at"]) ?? "") - Date.parse(recordText(left, ["createdAt", "created_at", "updatedAt", "updated_at"]) ?? ""))
+      .slice(0, 120);
   }
 
   private notificationPanel() {
@@ -266,7 +378,6 @@ export class SpaceMountainShellUi {
   }
 }
 
-function commlinkTab(id: CommlinkTabV1, label: string, active: CommlinkTabV1, count?: number) { return `<button data-commlink-tab="${id}" class="${id === active ? "active" : ""}">${label}${count === undefined ? "" : `<i>${Math.min(count, 999)}</i>`}</button>`; }
 function sourceNotice(label: string, state: SourceStateV1) { if (state.state === "ready") return ""; return `<aside class="spmt-source-notice state-${state.state}"><strong>${escapeHtml(label)} is ${escapeHtml(state.state)}</strong><span>${escapeHtml(state.detail ?? "The source is temporarily unavailable.")}</span></aside>`; }
 function deferredPanel(id: string, body: string) { const source = DEFERRED_RUNTIME_SOURCES.find((item) => item.id === id); return `<aside class="spmt-deferred"><div><span>SEPARATE RUNTIME</span><strong>${escapeHtml(source?.presentation ?? id)}</strong></div><p>${escapeHtml(body)}</p><small>Owner: ${escapeHtml(source?.owner ?? "unassigned")} • no fabricated data</small></aside>`; }
 function unreadCount(items: Array<Record<string, unknown>>) { return items.filter(isUnread).length; }
@@ -285,6 +396,34 @@ function ecosystemPresence(events: Array<Record<string, unknown>>) {
     people.set(canonicalId, existing);
   }
   return [...people.values()].sort((left, right) => left.name.localeCompare(right.name));
+}
+function commlinkSources(snapshot: SpaceMountainShellSnapshotV1) {
+  const sources = new Map<string, { id: string; label: string; short: string; state: "ready" | "degraded" | "unavailable"; detail: string }>();
+  const add = (id: string, label: string, state: "ready" | "degraded" | "unavailable", detail: string) => { if (!sources.has(id)) sources.set(id, { id, label, short: label.slice(0, 1).toUpperCase(), state, detail }); };
+  add("spacemountain", "SPMT", snapshot.sources.commlink.state, "Canonical SPMT conversations, mail, notifications, and events");
+  snapshot.providerLinks.forEach((link) => { const provider = recordText(link, ["provider"]) ?? "provider"; add(provider, provider[0]!.toUpperCase() + provider.slice(1), "degraded", `${provider} identity is linked; the isolated Review Sprite keeps provider delivery disconnected`); });
+  snapshot.apps.filter((app) => app.installed && app.enabled).forEach((app) => add(app.appId, app.name, app.appId === "streamweaver" ? snapshot.sources.commlink.state : "ready", `${app.name} app messages and typed events`));
+  snapshot.conversations.forEach((conversation) => { const id = commlinkRecordSource(conversation); if (id && id !== "spacemountain") add(id, sourceLabel(id), snapshot.sources.commlink.state, `${sourceLabel(id)} canonical conversation source`); });
+  snapshot.events.forEach((event) => { const id = commlinkRecordSource(event); if (id && id !== "spacemountain") add(id, sourceLabel(id), snapshot.sources.events.state, `${sourceLabel(id)} typed app events`); });
+  return [...sources.values()];
+}
+function sourceLabel(value: string) { return value.split(/[-_]/).filter(Boolean).map((part) => part[0]!.toUpperCase() + part.slice(1)).join(" ") || "SPMT"; }
+function commlinkRecordSource(value: Record<string, unknown>) { return recordText(value, ["sourceAppId", "source_app_id", "provider", "source"]) ?? recordText(recordObject(value, "payload"), ["sourceAppId", "source_app_id", "provider", "source"]) ?? "spacemountain"; }
+function isCommlinkWorkspace(value: Record<string, unknown> | undefined) {
+  return Boolean(value && value.schemaVersion === 1 && Array.isArray(value.chatSpaces) && value.chatSpaces.length && Array.isArray(value.desks) && value.desks.length && typeof value.activeChatSpaceId === "string" && typeof value.activeDeskId === "string" && (value.view === "focus" || value.view === "desk"));
+}
+function commlinkCard(item: Record<string, unknown>, small = false) {
+  const source = commlinkRecordSource(item);
+  const kind = recordText(item, ["__recordType", "kind", "type"]) ?? "message";
+  const title = recordText(item, ["displayName", "display_name", "authorName", "senderUserId", "title", "type"]) ?? sourceLabel(source);
+  const body = recordText(item, ["text", "body", "content", "summary", "title"]) ?? payloadKeySummary(item.payload);
+  const conversationId = recordText(item, ["conversationId"]) ?? (recordText(item, ["kind"]) ? recordText(item, ["id"]) : undefined);
+  const signal = isDiscordSignal(item);
+  return `<article class="cosmo-message ${small ? "small" : ""} ${signal ? "signal" : ""}" ${conversationId ? `data-open-conversation="${escapeHtml(conversationId)}"` : ""} ${signal ? "data-spmt-signal-trigger" : ""}><span class="cosmo-message-avatar">${escapeHtml(initials(title))}</span><div><header><strong>${escapeHtml(title)}</strong><b>${escapeHtml(sourceLabel(source))}</b><small>${escapeHtml(formatRecordTime(recordText(item, ["createdAt", "created_at", "updatedAt", "updated_at"])))}</small></header><p>${escapeHtml(body)}</p><footer><span>${escapeHtml(kind)}</span>${signal ? "<button type=\"button\" data-spmt-signal-trigger>Trace signal</button>" : ""}</footer></div></article>`;
+}
+function isDiscordSignal(item: Record<string, unknown>) {
+  const source = commlinkRecordSource(item).toLowerCase(); const payload = recordObject(item, "payload");
+  return source.includes("discord") && (recordText(item, ["easterEgg", "easter_egg"]) === "signal" || recordText(payload, ["easterEgg", "easter_egg", "discoveryId", "discovery_id"]) === "signal" || recordBoolean(item, "hiddenSignal", false) || recordBoolean(payload, "hiddenSignal", false));
 }
 function mountOverlayBay(root: HTMLElement, snapshot: SpaceMountainShellSnapshotV1) {
   const form = root.querySelector<HTMLElement>("[data-workspace-settings]");
@@ -306,20 +445,36 @@ function bindEcosystemEggs(root: HTMLElement) {
   const rocket = root.querySelector<HTMLElement>("[data-spmt-rocket-trigger]");
   rocket?.addEventListener("dblclick", (event) => {
     event.preventDefault();
-    rocket.classList.add("spmt-rocket-free");
+    rocket.classList.remove("docked");
+    rocket.classList.add("spmt-rocket-free", "free");
+    const portal = openRocketPortal(root);
     const follow = (move: PointerEvent) => {
       rocket.style.setProperty("--rocket-x", `${move.clientX}px`);
       rocket.style.setProperty("--rocket-y", `${move.clientY}px`);
-      const target = logo?.getBoundingClientRect();
-      if (target && move.clientX >= target.left && move.clientX <= target.right && move.clientY >= target.top && move.clientY <= target.bottom) {
+      const target = portal.getBoundingClientRect();
+      const centerX = target.left + target.width / 2; const centerY = target.top + target.height / 2;
+      if (Math.hypot(move.clientX - centerX, move.clientY - centerY) <= Math.min(target.width, target.height) * .42) {
         window.removeEventListener("pointermove", follow);
-        rocket.classList.remove("spmt-rocket-free");
+        rocket.classList.remove("spmt-rocket-free", "free");
+        rocket.classList.add("docked");
         rocket.removeAttribute("style");
-        showEggResult(root, "HIDDEN ARENA DISCOVERED", "rocket");
+        portal.remove();
+        openHiddenArena(root);
       }
     };
     window.addEventListener("pointermove", follow);
   });
+  root.querySelectorAll<HTMLElement>("[data-spmt-signal-trigger]").forEach((node) => node.addEventListener("click", (event) => { event.stopPropagation(); showEggResult(root, "LOST SIGNAL FOUND", "signal"); }));
+}
+function openRocketPortal(root: HTMLElement) {
+  root.querySelector("#rocketArenaBlackHole")?.remove();
+  const portal = document.createElement("div"); portal.id = "rocketArenaBlackHole"; portal.setAttribute("aria-label", "Black hole entrance to the Arena");
+  portal.innerHTML = `<span>ENTER HERE</span>`; root.appendChild(portal); return portal;
+}
+function openHiddenArena(root: HTMLElement) {
+  const arena = document.createElement("section"); arena.id = "spmt-hidden-arena";
+  arena.innerHTML = `<button aria-label="Leave the hidden arena">×</button><div><span>ROCKET DISCOVERY</span><h2>Hidden Battle Arena</h2><p>You flew the released rocket through the portal. The Arena signal is retained to your canonical SPMT account.</p><strong>ARENA ENTRANCE UNLOCKED</strong></div>`;
+  root.appendChild(arena); arena.querySelector("button")?.addEventListener("click", () => arena.remove()); showEggResult(root, "HIDDEN ARENA DISCOVERED", "rocket");
 }
 function openBlackHole(root: HTMLElement, mark: HTMLElement) {
   if (root.querySelector("#spmt-black-hole-game")) return;
@@ -379,5 +534,6 @@ function icon(name: IconName) { const paths: Record<IconName, string> = { home: 
 
 const WORKSPACE_SETTINGS_CSS = `.spmt-settings-form{display:grid;gap:16px}.spmt-settings-form>section{border:1px solid var(--border);border-radius:20px;background:var(--panel);padding:18px}.spmt-settings-form header span{font-size:10px;letter-spacing:.18em;font-weight:900;color:var(--accent2)}.spmt-settings-form h2{margin:5px 0 10px}.spmt-appearance-rule{margin:0 0 16px;color:#aeb1c0;font-size:12px;line-height:1.55}.spmt-field-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.spmt-field-grid label{display:grid;gap:7px;color:#b7b9c4;font-size:11px;font-weight:800}.spmt-field-grid label small{color:#858795;font-weight:600}.spmt-field-grid label.wide{grid-column:span 2}.spmt-field-grid input,.spmt-field-grid select{width:100%;border:1px solid var(--border);border-radius:11px;background:#080b17;color:white;padding:10px;font:inherit}.spmt-field-grid input[type=color]{min-height:40px;padding:4px}.spmt-settings-form>button{justify-self:start;border:0;border-radius:12px;padding:11px 15px;font-weight:900}.spmt-settings-form>small{color:#8d90a0}@media(max-width:700px){.spmt-field-grid{grid-template-columns:1fr}.spmt-field-grid label.wide{grid-column:auto}}`;
 const COMMLINK_FORM_CSS = `.spmt-commlink-search{display:flex;gap:9px;margin-bottom:14px}.spmt-commlink-search label{flex:1;display:grid;gap:5px;color:#9b9eac;font-size:10px;font-weight:800}.spmt-commlink-search input{width:100%;border:1px solid var(--border);border-radius:11px;background:#080b17;color:white;padding:10px;font:inherit}.spmt-commlink-search button{align-self:end;border:1px solid var(--border);border-radius:11px;background:rgba(255,255,255,.05);color:white;padding:10px 14px;font-weight:800}.dialog-reply{display:grid;gap:9px;margin-top:10px;padding-top:14px;border-top:1px solid rgba(255,255,255,.1)}.dialog-reply textarea{min-height:96px;resize:vertical;border:1px solid rgba(255,255,255,.15);border-radius:11px;background:#060b18;color:white;padding:11px;font:inherit}.dialog-reply button{justify-self:end}`;
+const COSMO_COMMLINK_CSS = `.cosmo-commlink{min-height:calc(100dvh - var(--spmt-shell-top-inset,124px) - 54px);display:grid;grid-template-columns:260px minmax(0,1fr);overflow:hidden;border:1px solid color-mix(in srgb,var(--accent) 24%,var(--border));border-radius:28px;background:rgba(3,5,14,.9);box-shadow:0 28px 90px #0009}.cosmo-rail{min-height:0;padding:20px 16px;display:flex;flex-direction:column;border-right:1px solid var(--border);background:rgba(3,5,15,.86)}.cosmo-mark{display:flex;align-items:center;gap:11px;padding:2px 4px 18px}.cosmo-mark>span{width:48px;height:48px;display:grid;place-items:center;border:1px solid #a78bfa88;border-radius:50%;color:white;font-size:22px;background:radial-gradient(circle,#ffffff22,transparent 65%);box-shadow:0 0 25px #7c3aed55}.cosmo-mark div{display:grid}.cosmo-mark strong{font-size:20px}.cosmo-mark small{color:#9da0bd;font-size:9px;letter-spacing:.22em;text-transform:uppercase}.cosmo-create{min-height:46px;border:1px solid #8b5cf666;border-radius:16px;background:linear-gradient(90deg,#8b5cf62c,#22d3ee10);color:#fff;font-weight:850}.cosmo-rail>header{display:flex;align-items:center;justify-content:space-between;margin:26px 7px 9px;color:#888da9;font-size:8px;font-weight:900;letter-spacing:.17em}.cosmo-rail>header button{border:0;background:transparent;color:#aeb2ca}.cosmo-rail nav{display:grid;gap:7px}.cosmo-rail nav button{width:100%;min-height:58px;display:flex;align-items:center;gap:10px;border:1px solid transparent;border-radius:14px;background:transparent;color:#c3c6d5;padding:8px;text-align:left}.cosmo-rail nav button>b{width:38px;height:38px;display:grid;place-items:center;border-radius:11px;background:#8b5cf62a;color:#c4b5fd}.cosmo-rail nav button>span{min-width:0;display:grid}.cosmo-rail nav strong{overflow:hidden;text-overflow:ellipsis}.cosmo-rail nav small{margin-top:3px;color:#737892;font-size:8px}.cosmo-rail nav button:hover,.cosmo-rail nav button.active{border-color:#8b5cf666;background:#8b5cf61c;box-shadow:inset 3px 0 #9f7aea}.cosmo-rail footer{margin-top:auto;display:flex;align-items:center;gap:7px;padding:16px 5px 0;color:#858aa3}.cosmo-rail footer>span{width:7px;height:7px;border-radius:50%;background:currentColor;box-shadow:0 0 8px currentColor}.cosmo-rail footer small{font-size:8px}.cosmo-workspace{min-width:0;display:flex;flex-direction:column}.cosmo-topbar{min-height:76px;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 22px;border-bottom:1px solid var(--border);background:#080a1dcc}.cosmo-topbar>div:first-child span{color:#8f94b1;font-size:8px;font-weight:900;letter-spacing:.14em}.cosmo-topbar h1{margin:5px 0 0;font-size:19px}.cosmo-actions{display:flex;align-items:center;gap:7px}.cosmo-actions>button,.cosmo-switch button{min-height:36px;border:1px solid var(--border);border-radius:11px;background:#ffffff08;color:#abb0c6;padding:7px 10px;font-weight:800}.cosmo-switch{display:flex;padding:3px;border:1px solid var(--border);border-radius:13px}.cosmo-switch button{border:0;background:transparent}.cosmo-switch button.active{background:#8b5cf635;color:white}.cosmo-sources{display:flex;align-items:center;gap:14px;min-height:66px;padding:9px 20px;border-bottom:1px solid var(--border);background:#10122b}.cosmo-sources>div{display:grid;grid-template-columns:auto auto;gap:2px 7px;white-space:nowrap}.cosmo-sources>div i{grid-row:1/3;width:8px;height:8px;align-self:center;border-radius:50%;background:#44e6a1;box-shadow:0 0 9px #44e6a1}.cosmo-sources>div strong{font-size:10px}.cosmo-sources>div span{color:#8287a2;font-size:8px}.cosmo-sources nav{display:flex;gap:7px;overflow-x:auto}.cosmo-sources nav button{position:relative;display:flex;align-items:center;gap:6px;white-space:nowrap;border:1px solid var(--border);border-radius:12px;background:#ffffff07;color:#888da5;padding:7px 12px}.cosmo-sources nav button>b{width:20px;height:20px;display:grid;place-items:center;border-radius:7px;background:#7c3aed;color:white;font-size:9px}.cosmo-sources nav button.active{border-color:#8b5cf677;background:#8b5cf621;color:white}.cosmo-sources nav button>i{width:6px;height:6px;border-radius:50%;background:currentColor}.cosmo-focus{min-height:0;flex:1;display:grid;grid-template-columns:minmax(0,1fr) 250px}.cosmo-feed-pane{min-width:0;display:flex;flex-direction:column}.cosmo-toolbar{min-height:54px;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 18px;border-bottom:1px solid var(--border)}.cosmo-toolbar>nav,.cosmo-toolbar>div{display:flex;gap:5px}.cosmo-toolbar button{border:0;border-radius:10px;background:transparent;color:#9297b2;padding:8px 10px;font-size:9px;font-weight:800}.cosmo-toolbar button.active,.cosmo-toolbar button:hover{background:#8b5cf62b;color:#fff}.cosmo-toolbar form{display:flex}.cosmo-toolbar input{width:130px;border:1px solid var(--border);border-radius:9px 0 0 9px;background:#070918;color:white;padding:7px;font-size:9px}.cosmo-toolbar form button{border:1px solid var(--border);border-radius:0 9px 9px 0}.cosmo-feed{min-height:320px;max-height:calc(100dvh - var(--spmt-shell-top-inset,124px) - 250px);overflow:auto;padding:18px;scrollbar-width:thin;scrollbar-color:#8b5cf666 transparent}.cosmo-message{display:flex;gap:11px;margin-bottom:10px;padding:13px 14px;border:1px solid #ffffff10;border-radius:15px;background:#12142e;cursor:pointer}.cosmo-message:hover{border-color:#8b5cf65c}.cosmo-message.signal{border-color:#22d3ee77;box-shadow:0 0 22px #22d3ee18}.cosmo-message-avatar{width:38px;height:38px;flex:0 0 auto;display:grid;place-items:center;border-radius:12px;background:linear-gradient(135deg,#8b5cf6,#4f46e5);font-weight:900}.cosmo-message>div{min-width:0;flex:1}.cosmo-message header{display:flex;align-items:center;gap:7px}.cosmo-message header strong{font-size:11px}.cosmo-message header b{border-radius:6px;background:#0ea5e933;color:#7dd3fc;padding:3px 5px;font-size:7px;text-transform:uppercase}.cosmo-message header small{margin-left:auto;color:#777d98;font-size:8px}.cosmo-message p{margin:7px 0;color:#e4e5ef;font-size:11px;line-height:1.5}.cosmo-message footer{display:flex;gap:8px;color:#767c97;font-size:7px;text-transform:uppercase}.cosmo-message footer button{margin-left:auto;border:0;background:transparent;color:#67e8f9}.cosmo-message.small{margin:7px;padding:9px}.cosmo-message.small .cosmo-message-avatar{width:28px;height:28px}.cosmo-message.small p{font-size:9px}.cosmo-commlink.compact .cosmo-message{margin-bottom:4px;padding:8px 10px}.cosmo-commlink.compact .cosmo-message-avatar{width:29px;height:29px}.cosmo-composer{display:grid;grid-template-columns:minmax(150px,.35fr) minmax(200px,1fr) auto;gap:9px;padding:12px 18px;border-top:1px solid var(--border);background:#090b1d}.cosmo-composer>div{display:grid}.cosmo-composer span{color:#8f95ae;font-size:7px;font-weight:900;letter-spacing:.14em}.cosmo-composer b{font-size:10px}.cosmo-composer small{color:#747a92;font-size:7px}.cosmo-composer textarea{resize:none;border:1px solid var(--border);border-radius:12px;background:#050715;color:white;padding:12px;font:inherit}.cosmo-composer button{border:0;border-radius:12px;padding:9px 17px}.cosmo-context{padding:26px 20px;border-left:1px solid var(--border);background:#080a1a;display:flex;flex-direction:column;align-items:center;text-align:center}.cosmo-context>span{width:54px;height:54px;display:grid;place-items:center;border:1px solid #8b5cf666;border-radius:50%;font-size:25px;color:#a78bfa}.cosmo-context h2{font-size:15px}.cosmo-context p{color:#8d92aa;font-size:10px;line-height:1.55}.cosmo-context button,.cosmo-context a{width:100%;box-sizing:border-box;margin-top:8px;border:1px solid var(--border);border-radius:10px;background:#ffffff07;color:white;padding:9px;text-decoration:none;font-size:9px}.cosmo-desk-grid{min-height:0;flex:1;display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:10px;padding:12px;overflow:auto}.cosmo-desk-panel{min-height:260px;border:1px solid var(--border);border-radius:16px;background:#090b1d;overflow:hidden}.cosmo-desk-panel>header{display:flex;align-items:center;justify-content:space-between;padding:10px 13px;border-bottom:1px solid var(--border)}.cosmo-desk-panel>header button{border:0;background:transparent;color:#a78bfa}.cosmo-panel-empty{padding:30px;color:#7e849c;text-align:center}@media(max-width:1120px){.cosmo-commlink{grid-template-columns:210px minmax(0,1fr)}.cosmo-context{display:none}.cosmo-focus{grid-template-columns:1fr}.cosmo-actions>button:not([data-commlink-popout]){display:none}}@media(max-width:760px){.cosmo-commlink{display:block;border-radius:20px}.cosmo-rail{max-height:235px;border-right:0;border-bottom:1px solid var(--border);overflow:auto}.cosmo-mark,.cosmo-rail footer{display:none}.cosmo-rail>header{margin-top:12px}.cosmo-rail nav{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}.cosmo-topbar{padding:10px 12px}.cosmo-sources{display:block;padding:9px 12px}.cosmo-sources>div{margin-bottom:8px}.cosmo-toolbar{align-items:flex-start;padding:8px;overflow:auto}.cosmo-toolbar>div{display:none}.cosmo-composer{grid-template-columns:1fr auto}.cosmo-composer>div{grid-column:1/-1}.cosmo-feed{max-height:none}}`;
 
 export const SPACE_MOUNTAIN_CSS = `.spmt-space-root{--accent:#ff7a18;--accent2:#ffc857;--panel:rgba(9,12,25,.76);--border:rgba(255,255,255,.1);min-height:100dvh;background:radial-gradient(circle at 15% 10%,rgba(255,122,24,.14),transparent 26%),radial-gradient(circle at 80% 0,rgba(87,54,201,.16),transparent 28%),#050710;color:#f7f7fb;font-family:Inter,ui-sans-serif,system-ui,sans-serif}.spmt-space-shell{min-height:100dvh}.spmt-cosmic-header{position:fixed;top:max(12px,env(safe-area-inset-top));left:clamp(88px,10vw,164px);right:18px;z-index:300;min-height:64px;padding:10px 16px;border:1px solid var(--border);border-radius:20px;background:rgba(5,7,16,.76);backdrop-filter:blur(22px);display:flex;align-items:center;gap:14px;box-shadow:0 14px 40px rgba(0,0,0,.35)}.spmt-brand{border:0;background:none;color:white;display:flex;align-items:center;gap:10px;font-weight:900;letter-spacing:.12em}.spmt-brand>span{display:grid;place-items:center;width:38px;height:38px;border-radius:13px;background:linear-gradient(145deg,var(--accent),#e24718);color:#111}.spmt-brand em{font-style:normal;color:var(--accent)}.spmt-header-status{margin-left:auto;display:flex;gap:10px;align-items:center;font-size:11px;color:#a6a8b4}.spmt-header-status b{border:1px solid var(--border);border-radius:999px;padding:5px 8px;text-transform:uppercase}.state-ready{color:#5ee6a8}.state-degraded{color:#ffd166}.state-unavailable{color:#ff6b6b}.spmt-header-actions{display:flex;gap:8px}.spmt-header-actions button{position:relative;border:1px solid var(--border);border-radius:12px;background:rgba(255,255,255,.04);color:white;padding:9px 11px}.spmt-icon-button i{position:absolute;right:-5px;top:-7px;background:#ffc857;color:#111;border-radius:99px;font-size:9px;min-width:17px;height:17px;display:grid;place-items:center;font-style:normal}.spmt-rocket-dock{position:fixed;left:16px;top:calc(var(--spmt-shell-top-inset,92px) + 8px);bottom:max(16px,env(safe-area-inset-bottom));z-index:100;width:108px;border:1px solid var(--border);border-radius:26px;background:rgba(7,9,19,.78);backdrop-filter:blur(20px);padding:10px;display:flex;flex-direction:column;gap:10px}.spmt-dock-orbit{height:72px;border:1px solid rgba(255,122,24,.24);border-radius:22px;display:grid;place-items:center;color:var(--accent);font-size:28px}.spmt-rocket-dock nav{display:flex;flex-direction:column;gap:4px}.spmt-rocket-dock nav button{border:1px solid transparent;background:transparent;color:#9799a8;border-radius:14px;padding:9px 7px;display:flex;align-items:center;gap:8px;text-align:left}.spmt-rocket-dock nav button.active{color:white;border-color:rgba(255,122,24,.28);background:rgba(255,122,24,.12)}.spmt-rocket-dock nav label{font-size:10px;font-weight:750}.spmt-rocket-dock footer{margin-top:auto;border-top:1px solid var(--border);padding-top:10px;display:flex;flex-direction:column}.spmt-rocket-dock footer small{font-size:8px;color:#777}.spmt-rocket-dock footer strong{font-size:9px;color:#5ee6a8}.spmt-space-main{padding:calc(var(--spmt-shell-top-inset,92px) + 26px) 24px 48px 148px;min-height:var(--spmt-shell-available-height,calc(100dvh - 110px));box-sizing:border-box}.spmt-hero{border:1px solid var(--border);border-radius:28px;background:linear-gradient(135deg,rgba(11,14,28,.88),rgba(4,6,14,.72));padding:clamp(24px,4vw,46px);display:grid;grid-template-columns:minmax(0,1.2fr) minmax(280px,.8fr);gap:28px}.kicker,.spmt-page-title>span,.spmt-section header span,.spmt-app-card>span,.spmt-slot-grid span{font-size:10px;letter-spacing:.18em;font-weight:900;color:var(--accent2)}.spmt-hero h1,.spmt-page-title h1{font-size:clamp(34px,5vw,62px);line-height:1.03;margin:12px 0}.spmt-hero p,.spmt-page-title p{max-width:680px;color:#b7b9c4;line-height:1.65}.actions{display:flex;gap:10px;margin-top:24px}.spmt-hero button,.spmt-section button,.spmt-app-card button{border:1px solid var(--border);border-radius:12px;background:rgba(255,255,255,.05);color:white;padding:10px 14px;font-weight:800}.primary{background:linear-gradient(135deg,var(--accent2),var(--accent))!important;color:#15100a!important;border-color:transparent!important}.spmt-metrics{display:grid;grid-template-columns:1fr 1fr;gap:10px}.spmt-metrics>div{min-height:92px;border:1px solid var(--border);border-radius:18px;background:rgba(0,0,0,.25);padding:15px;display:flex;flex-direction:column;justify-content:flex-end}.spmt-metrics strong{font-size:26px}.spmt-metrics span{font-size:10px;color:#858795;text-transform:uppercase}.spmt-operations-metrics{grid-template-columns:repeat(4,minmax(0,1fr));margin-bottom:14px}.spmt-section{margin-top:18px;border:1px solid var(--border);border-radius:24px;background:var(--panel);padding:22px}.spmt-section>header{display:flex;justify-content:space-between;align-items:end}.spmt-section h2{margin:4px 0}.spmt-app-grid{margin-top:18px;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.spmt-app-grid.wide{grid-template-columns:repeat(3,minmax(0,1fr));margin-top:24px}.spmt-app-card{border:1px solid var(--border);border-radius:20px;background:rgba(4,6,14,.58);padding:16px}.app-icon{width:48px;height:48px;border-radius:14px;background:linear-gradient(145deg,rgba(255,122,24,.22),rgba(87,54,201,.22));display:grid;place-items:center;font-weight:900;margin-bottom:14px}.spmt-app-card h3{margin:5px 0 4px}.spmt-app-card p{font-size:12px;line-height:1.5;color:#9497a6;min-height:36px}.spmt-app-card footer{display:flex;align-items:center;justify-content:space-between;margin-top:14px}.spmt-quick-grid,.spmt-slot-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:18px}.spmt-quick-grid button,.spmt-slot-grid article{border:1px solid var(--border);border-radius:20px;background:rgba(7,9,19,.74);padding:18px;color:white;text-align:left}.spmt-quick-grid span{display:block;color:#9598a7;font-size:12px;line-height:1.5;margin-top:7px}.spmt-page-title{padding:10px 2px 20px}.spmt-page-title h1{font-size:clamp(32px,4vw,48px)}.spmt-list{display:grid;gap:10px}.spmt-list article{border:1px solid var(--border);border-radius:16px;background:var(--panel);padding:15px;display:flex;justify-content:space-between}.spmt-empty{grid-column:1/-1;border:1px dashed var(--border);border-radius:18px;padding:28px;text-align:center;color:#777}.spmt-tabs{display:flex;gap:8px;overflow-x:auto;margin-bottom:14px;padding-bottom:2px}.spmt-tabs button{white-space:nowrap;border:1px solid var(--border);border-radius:999px;background:rgba(255,255,255,.04);color:#a8aab7;padding:9px 13px;font-weight:800}.spmt-tabs button.active{color:white;background:rgba(255,122,24,.16);border-color:rgba(255,122,24,.4)}.spmt-tabs i{display:inline-grid;place-items:center;min-width:18px;height:18px;margin-left:7px;border-radius:99px;background:rgba(255,255,255,.1);font-size:9px;font-style:normal}.spmt-account-list article{align-items:center;gap:18px}.spmt-account-list article>div{min-width:0;display:grid;gap:5px}.spmt-account-list article.unread{border-color:rgba(255,200,87,.35);box-shadow:inset 3px 0 0 var(--accent2)}.spmt-account-list article.level-warn{border-color:rgba(255,209,102,.35)}.spmt-account-list article.level-error,.spmt-account-list article.level-critical{border-color:rgba(255,107,107,.42);box-shadow:inset 3px 0 0 #ff6b6b}.spmt-account-list button{flex:0 0 auto;border:1px solid var(--border);border-radius:11px;background:rgba(255,255,255,.05);color:white;padding:9px 12px}.spmt-account-list p{margin:0;color:#b7b9c4;font-size:12px;line-height:1.5}.spmt-account-list small,.spmt-context-grid small,.spmt-command-grid small{color:#858795;font-size:10px}.spmt-record-kind{color:var(--accent2);font-size:9px;font-weight:900;letter-spacing:.15em;text-transform:uppercase}.spmt-source-notice,.spmt-deferred{border:1px solid var(--border);border-radius:17px;background:rgba(255,255,255,.035);padding:14px 16px;margin-bottom:14px;display:flex;gap:12px;align-items:center}.spmt-source-notice span{color:#b7b9c4;font-size:12px}.spmt-deferred{align-items:flex-start;border-color:rgba(255,200,87,.24)}.spmt-deferred>div{display:grid;min-width:170px}.spmt-deferred>div span,.spmt-account-section header span{font-size:9px;color:var(--accent2);font-weight:900;letter-spacing:.15em}.spmt-deferred p{margin:0;color:#b7b9c4;line-height:1.5;font-size:12px;flex:1}.spmt-deferred small{color:#858795}.spmt-account-section{margin-top:18px}.spmt-account-section h2{margin:4px 0 12px}.spmt-context-grid,.spmt-command-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px}.spmt-context-grid article,.spmt-command-grid article{border:1px solid var(--border);border-radius:18px;background:var(--panel);padding:16px}.spmt-context-grid article>span{color:var(--accent2);font-size:9px;font-weight:900;letter-spacing:.15em;text-transform:uppercase}.spmt-context-grid p,.spmt-command-grid p{color:#b7b9c4;line-height:1.55;font-size:12px}.spmt-command-grid h3{margin:8px 0}.spmt-command-state{font-size:9px;font-weight:900;letter-spacing:.14em}.spmt-command-state.available{color:#5ee6a8}.spmt-command-state.unavailable{color:#ff9b9b}@media(max-width:900px){.spmt-cosmic-header{left:14px;right:14px}.spmt-brand strong{display:none}.spmt-header-status span{display:none}.spmt-rocket-dock{left:10px;right:10px;top:auto;bottom:max(10px,env(safe-area-inset-bottom));width:auto;height:64px;flex-direction:row;align-items:center}.spmt-dock-orbit,.spmt-rocket-dock footer{display:none}.spmt-rocket-dock nav{width:100%;flex-direction:row;justify-content:space-around}.spmt-rocket-dock nav button{flex-direction:column;gap:2px;padding:5px 7px}.spmt-space-main{padding:calc(var(--spmt-shell-top-inset,88px) + 18px) 14px 92px}.spmt-hero{grid-template-columns:1fr}.spmt-app-grid,.spmt-app-grid.wide{grid-template-columns:repeat(2,minmax(0,1fr))}.spmt-operations-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.spmt-deferred{display:grid}}@media(max-width:560px){.spmt-header-status{display:none}.spmt-hero{padding:22px}.spmt-hero h1{font-size:34px}.spmt-app-grid,.spmt-app-grid.wide,.spmt-quick-grid,.spmt-slot-grid{grid-template-columns:1fr}.spmt-rocket-dock nav label{display:none}.spmt-account-list article{align-items:flex-start}.spmt-account-list article>button{margin-left:auto}}`;

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { createChatTagSandboxHost, validateChatTagSandboxEnvironment } from "../apps/nebula-arcade/dist/chat-tag-sandbox-server.js";
 
-test("Chat Tag standalone sandbox runs a complete command and OBS smoke path", async () => {
+test("Nebula Arcade sandbox runs the Chat Tag module and OBS smoke path", async () => {
   const directory = mkdtempSync(join(tmpdir(), "apollo-chat-tag-host-"));
   const host = createChatTagSandboxHost({ databasePath: join(directory, "chat-tag.sqlite"), tenantId: "tenant-sandbox", channelId: "channel-sandbox", port: 0, host: "127.0.0.1", buildSha: "test-sha" });
   try {
@@ -14,9 +14,11 @@ test("Chat Tag standalone sandbox runs a complete command and OBS smoke path", a
     assert.ok(address && typeof address === "object");
     const origin = `http://127.0.0.1:${address.port}`;
     const health = await fetch(`${origin}/health/ready`);
-    assert.deepEqual(await health.json(), { ready: true, app: "chat-tag", runtimeMode: "sandbox", outboundIntegrations: "disabled", buildSha: "test-sha" });
-    const page = await fetch(origin);
-    assert.match(await page.text(), /FIRST COMPLETE APP COHORT/);
+    assert.deepEqual(await health.json(), { ready: true, app: "nebula-arcade", runtimeMode: "sandbox", outboundIntegrations: "disabled", buildSha: "test-sha" });
+    const page = await (await fetch(origin)).text();
+    assert.match(page, /NEBULA ARCADE/);
+    assert.match(page, /GAMES HUB · 20 EQUAL TITLES/);
+    assert.equal((page.match(/data-game=/g) ?? []).length, 20);
     const joined = await fetch(`${origin}/v1/chat-tag/message`, { method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify({ messageId: "join-1", userId: "alpha", username: "Alpha", text: "spmt join", roles: ["member"] }) });
     assert.equal(joined.status, 200);
     const joinedBody = await joined.json();

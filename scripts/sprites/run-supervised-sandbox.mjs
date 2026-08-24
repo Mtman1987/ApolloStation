@@ -30,7 +30,7 @@ const children = new Set();
 let stopping = false;
 
 if (app === "chat-tag") {
-  const chatTag = start("Chat Tag", "apps/nebula-arcade/dist/chat-tag-sandbox-server.js", {
+  const chatTag = start("Nebula Arcade", "apps/nebula-arcade/dist/chat-tag-sandbox-server.js", {
     ...common,
     CHAT_TAG_DATABASE_PATH: resolve(dataRoot, "chat-tag-green-sandbox.sqlite"),
     CHAT_TAG_TENANT_ID: argumentsMap.get("tenant-id") ?? "chat-tag-sandbox",
@@ -38,8 +38,8 @@ if (app === "chat-tag") {
     HOST: "0.0.0.0",
     PORT: String(webPort),
   });
-  await waitForUrl(chatTag, `http://127.0.0.1:${webPort}/health/ready`, "Chat Tag");
-  process.stdout.write(`\nChat Tag Green sandbox is ready at ${publicUrl}\n`);
+  await waitForUrl(chatTag, `http://127.0.0.1:${webPort}/health/ready`, "Nebula Arcade");
+  process.stdout.write(`\nNebula Arcade Green sandbox is ready at ${publicUrl}\n`);
   process.stdout.write("Gameplay, persistent state, support, overlay mode, and OBS output are enabled. Provider egress is disabled.\n");
   process.stdout.write("Press Ctrl+C once to stop the app.\n\n");
   process.on("SIGINT", () => void stop(0));
@@ -62,8 +62,8 @@ let chatTag;
 let candidateManifest;
 if (candidateApp === "chat-tag") {
   const module = await import("../../apps/nebula-arcade/dist/index.js");
-  candidateManifest = module.chatTagCatalogRegistration(publicUrl);
-  chatTag = start("Chat Tag candidate", "apps/nebula-arcade/dist/chat-tag-sandbox-server.js", {
+  candidateManifest = module.nebulaArcadeCatalogRegistration(publicUrl);
+  chatTag = start("Nebula Arcade candidate", "apps/nebula-arcade/dist/chat-tag-sandbox-server.js", {
     ...common,
     CHAT_TAG_DATABASE_PATH: resolve(dataRoot, "chat-tag-green-sandbox.sqlite"),
     CHAT_TAG_TENANT_ID: argumentsMap.get("tenant-id") ?? "chat-tag-sandbox",
@@ -72,7 +72,7 @@ if (candidateApp === "chat-tag") {
     PORT: String(chatTagPort),
   });
   chatTag.once("exit", (code, signal) => { if (!stopping) void stop(signal === "SIGINT" || signal === "SIGTERM" ? 0 : code ?? (signal ? 1 : 0)); });
-  await waitForUrl(chatTag, `http://127.0.0.1:${chatTagPort}/health/ready`, "Chat Tag candidate");
+  await waitForUrl(chatTag, `http://127.0.0.1:${chatTagPort}/health/ready`, "Nebula Arcade candidate");
 }
 const web = start("SpaceMountain web", "apps/spacemountain-web/dist/server.js", {
   ...common,
@@ -85,7 +85,7 @@ spmt.once("exit", (code, signal) => { if (!stopping) void stop(signal === "SIGIN
 await waitForUrl(web, `http://127.0.0.1:${webPort}/sandbox/health`, "SpaceMountain web");
 
 process.stdout.write(`\nGreen sandbox is supervised and ready at ${publicUrl}\n`);
-process.stdout.write(`The SPMT app catalog starts empty.${candidateApp === "chat-tag" ? " Chat Tag is available as an editable Developer Console example manifest." : ""}\n`);
+process.stdout.write(`The SPMT app catalog starts empty.${candidateApp === "chat-tag" ? " Nebula Arcade is available as an editable Developer Console example manifest." : ""}\n`);
 process.stdout.write("Outbound provider actions are disabled. No Sprite service has been registered.\n");
 process.stdout.write("Press Ctrl+C once to stop the supervised cohort.\n\n");
 

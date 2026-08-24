@@ -44,7 +44,7 @@ test("SpaceMountain presentation matches the finished product without hardcoding
   assert.match(shellSource, /bindProductRocketNavigation/);
   assert.match(shellSource, /Custom scene override/);
   assert.match(shellSource, /app\.iconUrl/);
-  assert.match(shellSource, /this\.snapshot\.apps\.slice/);
+  assert.match(shellSource, /this\.snapshot\.apps\.filter/);
   assert.doesNotMatch(shellSource, /app-streamweaver|app-hearmeout|app-discord-hub|app-chat-tag/);
   assert.doesNotMatch(shellSource, /localStorage|sessionStorage|\/api\/spmt/);
   assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /\.spmt-telemetry/);

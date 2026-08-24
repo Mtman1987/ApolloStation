@@ -276,7 +276,7 @@ async function proxy(response: ServerResponse, request: IncomingMessage, url: UR
 
 async function proxyChatTag(response: ServerResponse, request: IncomingMessage, url: URL, origin: string, fetchImpl: typeof fetch) {
   const method = request.method ?? "GET";
-  const pathname = url.pathname === "/apps/chat-tag" ? "/" : url.pathname;
+  const pathname = url.pathname === "/apps/nebula-arcade" || url.pathname === "/apps/chat-tag" ? "/" : url.pathname;
   const headers = new Headers({ accept: request.headers.accept ?? "*/*" });
   if (request.headers["content-type"]) headers.set("content-type", request.headers["content-type"]);
   if (!["GET", "HEAD"].includes(method)) headers.set("origin", origin);
@@ -296,7 +296,7 @@ async function proxyChatTag(response: ServerResponse, request: IncomingMessage, 
 }
 
 function chatTagProxyPath(pathname: string) {
-  return pathname === "/apps/chat-tag" || pathname.startsWith("/assets/chat-tag-sandbox.") || pathname.startsWith("/v1/chat-tag/") || pathname === "/v1/chat-tag/state" || pathname.startsWith("/v1/nebula/chat-tag/overlay");
+  return pathname === "/apps/nebula-arcade" || pathname === "/apps/chat-tag" || pathname.startsWith("/assets/chat-tag-sandbox.") || pathname.startsWith("/v1/chat-tag/") || pathname === "/v1/chat-tag/state" || pathname.startsWith("/v1/nebula/chat-tag/overlay");
 }
 
 function browserProxyAllowed(method: string, pathname: string) {
@@ -343,10 +343,10 @@ function candidateManifest(source: string): AppCatalogRegistrationV1 {
   try { value = JSON.parse(source); } catch { throw new Error("SPMT_SANDBOX_CANDIDATE_MANIFEST must be JSON"); }
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("SPMT_SANDBOX_CANDIDATE_MANIFEST must be an object");
   const item = value as AppCatalogRegistrationV1;
-  if (item.appId !== "chat-tag" || item.status !== "active" || !Array.isArray(item.allowedScopes) || !Array.isArray(item.surfaces)) throw new Error("Sandbox candidate manifest is invalid");
+  if (item.appId !== "nebula-arcade" || item.status !== "active" || !Array.isArray(item.allowedScopes) || !Array.isArray(item.surfaces)) throw new Error("Sandbox candidate manifest is invalid");
   const launch = new URL(item.launchUrl);
   const local = launch.hostname === "localhost" || launch.hostname === "127.0.0.1";
-  if ((!local && launch.protocol !== "https:") || (!local && !launch.hostname.endsWith(".sprites.app")) || launch.pathname !== "/apps/chat-tag") throw new Error("Sandbox candidate launch URL is invalid");
+  if ((!local && launch.protocol !== "https:") || (!local && !launch.hostname.endsWith(".sprites.app")) || launch.pathname !== "/apps/nebula-arcade") throw new Error("Sandbox candidate launch URL is invalid");
   return structuredClone(item);
 }
 

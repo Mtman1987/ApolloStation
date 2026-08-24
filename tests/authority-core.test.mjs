@@ -46,6 +46,15 @@ test("workspace uses one revisioned authority and exactly three dock slots", () 
   assert.throws(() => authority.updateWorkspace("tenant-a", 4, { appearance: { theme: "dark", backgroundUrl: "http://insecure.example/image.jpg" } }), /credential-free HTTPS/);
 });
 
+test("workspace persists a validated canonical Commlink layout", () => {
+  const authority = service();
+  authority.getOrCreateWorkspace("tenant-a");
+  const commlink = { schemaVersion: 1, chatSpaces: [{ id: "all", name: "All messages", sourceIds: ["spacemountain", "discord"] }], desks: [{ id: "show", name: "Live Show", chatSpaceIds: ["all"] }], activeChatSpaceId: "all", activeDeskId: "show", view: "focus", filter: "all", compact: false };
+  const updated = authority.updateWorkspace("tenant-a", 1, { commlink });
+  assert.deepEqual(updated.commlink, commlink);
+  assert.throws(() => authority.updateWorkspace("tenant-a", 2, { commlink: { ...commlink, activeChatSpaceId: "missing" } }), /active workspace selection/);
+});
+
 test("XP awards are idempotent per tenant and never double count", () => {
   const authority = service();
   const input = {

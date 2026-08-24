@@ -132,6 +132,7 @@ async function loadShell() {
       onLaunchApp: (app) => launchApp(app),
       onOpenConversation: (conversation) => void openConversation(conversation),
       onSearchCommlink: (query) => void searchCommlink(query),
+      onSendCommlinkMessage: (conversation, text) => void sendCommlinkMessage(conversation, text),
       onInvokeStella: (message, conversationId) => void invokeStella(message, conversationId),
       onMarkNotificationRead: (notification) => void markNotificationRead(notification),
       onUnlinkProvider: (link) => void unlinkProvider(link),
@@ -189,13 +190,13 @@ function loadPastedManifest() {
 async function loadCandidateExample() {
   if (!loadCandidateButton) return;
   loadCandidateButton.disabled = true;
-  setStatus("Loading the editable Chat Tag example…", "working");
+  setStatus("Loading the editable Nebula Arcade example…", "working");
   try {
     const response = await fetch("/sandbox/candidate-app", { credentials: "same-origin", cache: "no-store" });
     const payload = await response.json().catch(() => ({})) as unknown;
-    if (!response.ok) throw new Error(apiMessage(payload, "The Chat Tag example manifest is unavailable."));
+    if (!response.ok) throw new Error(apiMessage(payload, "The Nebula Arcade example manifest is unavailable."));
     loadManifestIntoForm(payload);
-    setStatus("Chat Tag example loaded. Nothing has been registered yet.", "ready");
+    setStatus("Nebula Arcade example loaded. Nothing has been registered yet.", "ready");
   } catch (error) { setStatus(message(error), "error"); }
   finally { loadCandidateButton.disabled = false; }
 }
@@ -351,6 +352,19 @@ async function searchCommlink(query: string) {
     if (!results.length) dialogBody.append(textBlock("No matching messages."));
     if (!dialog.open) dialog.showModal();
     setStatus(`${results.length} canonical message match${results.length === 1 ? "" : "es"}.`, "ready");
+  } catch (error) { setStatus(message(error), "error"); }
+}
+
+async function sendCommlinkMessage(conversation: Record<string, unknown>, text: string) {
+  const principal = requirePrincipal();
+  const conversationId = typeof conversation.id === "string" ? conversation.id : "";
+  const recipients = Array.isArray(conversation.participantUserIds) ? conversation.participantUserIds.filter((item): item is string => typeof item === "string" && item !== principal.actorId) : [];
+  if (!conversationId || !recipients.length) return setStatus("This Commlink source is read-only for the current account.", "error");
+  setStatus("Sending through the canonical Commlink contract…", "working");
+  try {
+    await controller.sendCommlinkMessage(principal.tenantIds[0]!, conversationId, recipients, text);
+    await loadShell();
+    setStatus("Message stored in canonical Commlink history.", "ready");
   } catch (error) { setStatus(message(error), "error"); }
 }
 

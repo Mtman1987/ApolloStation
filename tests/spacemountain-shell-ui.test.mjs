@@ -42,16 +42,21 @@ test("Settings exposes canonical SPMT provider links without browser-owned auth 
   assert.match(source, /same SPMT user identity/);
 });
 
-test("Commlink renders the canonical desks, spaces, mail, event, and IRC surfaces", () => {
-  assert.match(source, /data-commlink-tab/);
-  assert.match(source, /Chat Spaces/);
-  assert.match(source, /Notifications/);
-  assert.match(source, /Developer IRC/);
-  assert.match(source, /provider-neutral Chat Gateway/);
-  assert.match(source, /data-notification-read/);
+test("Commlink restores functional saved ChatSpaces, Desks, source-aware feed, compose, search, and pop-out", () => {
+  assert.match(source, /data-commlink-space/);
+  assert.match(source, /data-commlink-desk/);
+  assert.match(source, /New ChatSpace/);
+  assert.match(source, /data-commlink-view="focus"/);
+  assert.match(source, /data-commlink-view="desk"/);
+  assert.match(source, /data-commlink-source/);
+  assert.match(source, /data-commlink-filter/);
+  assert.match(source, /data-commlink-compose/);
+  assert.match(source, /onSendCommlinkMessage/);
+  assert.match(source, /data-commlink-popout/);
   assert.match(source, /data-open-conversation/);
   assert.match(source, /data-commlink-search/);
-  assert.match(source, /Search all canonical Commlink history/);
+  assert.match(source, /this\.options\.onSaveWorkspace\?\.\(revision, \{ commlink: next \}\)/);
+  assert.match(source, /data-spmt-signal-trigger/);
 });
 
 test("Stellar Core stays persona-neutral while Stella and configured personas remain presentation identities", () => {

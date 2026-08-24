@@ -7,7 +7,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { createSpmtService, validateSandboxServiceEnvironment } from "../apps/spmt-service/dist/index.js";
 import { createSpaceMountainWebHost, validateSandboxWebEnvironment } from "../apps/spacemountain-web/dist/server.js";
-import { chatTagCatalogRegistration } from "../apps/nebula-arcade/dist/index.js";
+import { nebulaArcadeCatalogRegistration } from "../apps/nebula-arcade/dist/index.js";
 import { SpmtClient } from "../packages/sdk/dist/index.js";
 
 async function withSandbox(run) {
@@ -53,7 +53,7 @@ test("private SpaceMountain host serves explicit browser modules with restrictiv
     assert.match(html, /GREEN SPRITE SANDBOX/);
     assert.match(html, /Stellar Core provides persona-neutral shared AI/);
     assert.match(html, /Stella is the app-neutral Community Assistant/);
-    assert.match(html, /Athena remains only the owner's configured StreamWeaver persona/);
+    assert.match(html, /Tenant personas remain in the separate apps/);
     assert.match(html, /Add developer app/);
     assert.match(html, /Developer docs/);
     assert.doesNotMatch(html, /Publish Chat Tag through SDK/);
@@ -88,7 +88,7 @@ test("developer console exposes an editable candidate but registers only through
   let web;
   try {
     await spmt.listen(); const spmtAddress = spmt.server.address(); assert.ok(spmtAddress && typeof spmtAddress !== "string");
-    const candidate = chatTagCatalogRegistration("https://test-green.sprites.app");
+    const candidate = nebulaArcadeCatalogRegistration("https://test-green.sprites.app");
     web = createSpaceMountainWebHost({ spmtOrigin: `http://127.0.0.1:${spmtAddress.port}`, host: "127.0.0.1", port: 0, candidateManifest: candidate });
     await web.listen(); const webAddress = web.server.address(); assert.ok(webAddress && typeof webAddress !== "string"); const base = `http://127.0.0.1:${webAddress.port}`; const origin = new URL(base).origin;
     const ordinaryRegistration = await fetch(`${base}/sandbox/auth/register`, { method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify({ displayName: "Empty Captain", username: "empty-captain", password: "sandbox-only-password" }) });
@@ -99,23 +99,23 @@ test("developer console exposes an editable candidate but registers only through
     const cookie = (registration.headers.get("set-cookie") ?? "").split(";")[0]; assert.ok(cookie);
     const page = await (await fetch(base)).text();
     assert.match(page, /Add developer app/);
-    assert.match(page, /Load Chat Tag example/);
-    assert.doesNotMatch(page, /Publish Chat Tag through SDK/);
+    assert.match(page, /Load Nebula Arcade example/);
+    assert.doesNotMatch(page, /Publish Nebula Arcade through SDK/);
     const client = new SpmtClient({ baseUrl: base, appId: "spacemountain", fetchImpl: (input, init = {}) => { const headers = new Headers(init.headers); headers.set("cookie", cookie); if (init.method === "POST") headers.set("origin", origin); return fetch(input, { ...init, headers }); } });
     assert.deepEqual(await client.listApps(), []);
-    assert.equal((await (await fetch(`${base}/sandbox/candidate-app`)).json()).appId, "chat-tag");
+    assert.equal((await (await fetch(`${base}/sandbox/candidate-app`)).json()).appId, "nebula-arcade");
     const unauthenticatedImport = await fetch(`${base}/sandbox/developer/import-manifest`, { method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify({ manifestUrl: "/sandbox/candidate-app" }) });
     assert.equal(unauthenticatedImport.status, 401);
     const crossOriginImport = await fetch(`${base}/sandbox/developer/import-manifest`, { method: "POST", headers: { cookie, origin: "https://attacker.invalid", "content-type": "application/json" }, body: JSON.stringify({ manifestUrl: "/sandbox/candidate-app" }) });
     assert.equal(crossOriginImport.status, 403);
     const imported = await fetch(`${base}/sandbox/developer/import-manifest`, { method: "POST", headers: { cookie, origin, "content-type": "application/json" }, body: JSON.stringify({ manifestUrl: "/sandbox/candidate-app" }) });
     assert.equal(imported.status, 200);
-    assert.equal((await imported.json()).appId, "chat-tag");
+    assert.equal((await imported.json()).appId, "nebula-arcade");
     const blockedPrivateImport = await fetch(`${base}/sandbox/developer/import-manifest`, { method: "POST", headers: { cookie, origin, "content-type": "application/json" }, body: JSON.stringify({ manifestUrl: "https://127.0.0.1/app.json" }) });
     assert.equal(blockedPrivateImport.status, 400);
     const published = await client.registerApp(candidate);
-    assert.equal(published.appId, "chat-tag");
-    assert.deepEqual((await client.listApps()).map((app) => app.appId), ["chat-tag"]);
+    assert.equal(published.appId, "nebula-arcade");
+    assert.deepEqual((await client.listApps()).map((app) => app.appId), ["nebula-arcade"]);
   } finally { if (web) await web.close(); await spmt.close(); rmSync(directory, { recursive: true, force: true }); }
 });
 
@@ -357,7 +357,7 @@ test("supervised runner makes both layers healthy and stops both children togeth
   }
 });
 
-test("supervised runner exposes Chat Tag as an editable example and publishes zero to exactly one app through the SDK", async () => {
+test("supervised runner exposes Nebula Arcade as an editable example and publishes zero to exactly one app through the SDK", async () => {
   const directory = mkdtempSync(join(tmpdir(), "spmt-supervised-candidate-"));
   const ports = new Set();
   while (ports.size < 3) ports.add(await freePort());
@@ -370,12 +370,12 @@ test("supervised runner exposes Chat Tag as an editable example and publishes ze
   child.stdout.on("data", (chunk) => { output += chunk; });
   child.stderr.on("data", (chunk) => { output += chunk; });
   try {
-    await waitUntil(() => output.includes("Chat Tag is available as an editable Developer Console example manifest"), 20_000, () => `Runner output:\n${output}`);
+    await waitUntil(() => output.includes("Nebula Arcade is available as an editable Developer Console example manifest"), 20_000, () => `Runner output:\n${output}`);
     const page = await (await fetch(`${base}/`)).text();
     assert.match(page, /Add developer app/);
-    assert.match(page, /Load Chat Tag example/);
-    assert.doesNotMatch(page, /Publish Chat Tag through SDK/);
-    assert.equal((await fetch(`${base}/apps/chat-tag`)).status, 200);
+    assert.match(page, /Load Nebula Arcade example/);
+    assert.doesNotMatch(page, /Publish Nebula Arcade through SDK/);
+    assert.equal((await fetch(`${base}/apps/nebula-arcade`)).status, 200);
     const origin = new URL(base).origin;
     const registration = await fetch(`${base}/sandbox/auth/register`, { method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify({ displayName: "Candidate Captain", username: "candidate-captain", password: "sandbox-only-password" }) });
     assert.equal(registration.status, 201);
@@ -392,7 +392,7 @@ test("supervised runner exposes Chat Tag as an editable example and publishes ze
     assert.ok(ownerCookie);
     const ownerClient = new SpmtClient({ baseUrl: base, appId: "spacemountain", fetchImpl: (input, init = {}) => { const headers = new Headers(init.headers); headers.set("cookie", ownerCookie); if (init.method === "POST") headers.set("origin", origin); return fetch(input, { ...init, headers }); } });
     await ownerClient.registerApp(candidate);
-    assert.deepEqual((await ownerClient.listApps()).map((app) => app.appId), ["chat-tag"]);
+    assert.deepEqual((await ownerClient.listApps()).map((app) => app.appId), ["nebula-arcade"]);
     child.kill("SIGTERM");
     const exit = await new Promise((done) => child.once("exit", (code, signal) => done({ code, signal })));
     assert.deepEqual(exit, { code: 0, signal: null });

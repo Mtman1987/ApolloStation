@@ -27,6 +27,26 @@ export interface AppearanceV1 {
   pushToTalk?: boolean;
   animation?: { speed: number; particles: boolean; shootingStars: boolean };
 }
+export interface CommlinkChatSpaceV1 {
+  id: string;
+  name: string;
+  sourceIds: string[];
+}
+export interface CommlinkDeskV1 {
+  id: string;
+  name: string;
+  chatSpaceIds: string[];
+}
+export interface CommlinkWorkspaceV1 {
+  schemaVersion: 1;
+  chatSpaces: CommlinkChatSpaceV1[];
+  desks: CommlinkDeskV1[];
+  activeChatSpaceId: string;
+  activeDeskId: string;
+  view: "focus" | "desk";
+  filter: "all" | "chat" | "events" | "streamweaver" | "queued";
+  compact: boolean;
+}
 export interface WorkspaceProfileV1 {
   tenantId: string;
   revision: number;
@@ -35,6 +55,7 @@ export interface WorkspaceProfileV1 {
   activeOverlaySceneId?: string;
   ttsSubscriptionIds: string[];
   appThemes: Record<string, string>;
+  commlink?: CommlinkWorkspaceV1;
   updatedAt: string;
 }
 export interface XpEventV1 {
@@ -233,6 +254,7 @@ export class AuthorityService {
       if (patch.dockSlots && patch.dockSlots.length !== 3) throw new AuthorityValidationError("Workspace must contain exactly three dock slots");
       if (patch.dockSlots) patch.dockSlots.forEach((slot) => { if (slot !== null) requireWorkspaceValue(slot, "dock slot", 2048); });
       if (patch.appearance) validateAppearance(patch.appearance);
+      if (patch.commlink) validateCommlinkWorkspace(patch.commlink);
       const next: WorkspaceProfileV1 = { ...current, ...cloneJson(patch), tenantId, revision: current.revision + 1, updatedAt: this.now() };
       this.store.putWorkspace(next);
       return next;
@@ -361,6 +383,29 @@ export class AuthorityService {
     this.store.putUser(user);
     return user;
   }
+}
+
+function validateCommlinkWorkspace(workspace: CommlinkWorkspaceV1) {
+  if (workspace.schemaVersion !== 1) throw new AuthorityValidationError("Commlink workspace schemaVersion is invalid");
+  if (!Array.isArray(workspace.chatSpaces) || workspace.chatSpaces.length < 1 || workspace.chatSpaces.length > 24) throw new AuthorityValidationError("Commlink must contain between 1 and 24 ChatSpaces");
+  if (!Array.isArray(workspace.desks) || workspace.desks.length < 1 || workspace.desks.length > 12) throw new AuthorityValidationError("Commlink must contain between 1 and 12 Desks");
+  const spaceIds = new Set<string>();
+  for (const space of workspace.chatSpaces) {
+    requireWorkspaceValue(space.id, "ChatSpace id", 80); requireWorkspaceValue(space.name, "ChatSpace name", 60);
+    if (spaceIds.has(space.id)) throw new AuthorityValidationError("Commlink ChatSpace ids must be unique");
+    spaceIds.add(space.id);
+    if (!Array.isArray(space.sourceIds) || space.sourceIds.length > 32) throw new AuthorityValidationError("Commlink ChatSpace sources are invalid");
+    space.sourceIds.forEach((id) => requireWorkspaceValue(id, "Commlink source id", 160));
+  }
+  const deskIds = new Set<string>();
+  for (const desk of workspace.desks) {
+    requireWorkspaceValue(desk.id, "Desk id", 80); requireWorkspaceValue(desk.name, "Desk name", 60);
+    if (deskIds.has(desk.id)) throw new AuthorityValidationError("Commlink Desk ids must be unique");
+    deskIds.add(desk.id);
+    if (!Array.isArray(desk.chatSpaceIds) || desk.chatSpaceIds.length < 1 || desk.chatSpaceIds.length > 6 || desk.chatSpaceIds.some((id) => !spaceIds.has(id))) throw new AuthorityValidationError("Commlink Desk panels are invalid");
+  }
+  if (!spaceIds.has(workspace.activeChatSpaceId) || !deskIds.has(workspace.activeDeskId)) throw new AuthorityValidationError("Commlink active workspace selection is invalid");
+  if (!['focus', 'desk'].includes(workspace.view) || !['all', 'chat', 'events', 'streamweaver', 'queued'].includes(workspace.filter) || typeof workspace.compact !== 'boolean') throw new AuthorityValidationError("Commlink workspace controls are invalid");
 }
 
 function requireId(value: string, name: string) {

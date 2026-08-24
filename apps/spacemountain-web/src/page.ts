@@ -31,7 +31,7 @@ export function renderSpaceMountainPage(nonce: string, buildSha: string, candida
       <ul>
         <li>Stellar Core provides persona-neutral shared AI.</li>
         <li>Stella is the app-neutral Community Assistant.</li>
-        <li>Athena remains only the owner's configured StreamWeaver persona.</li>
+        <li>Tenant personas remain in the separate apps that use these developer contracts.</li>
         <li>Shipyard apps come from the SPMT registry.</li>
       </ul>
     </section>
@@ -61,7 +61,7 @@ export function renderSpaceMountainPage(nonce: string, buildSha: string, candida
       <button id="import-developer-manifest" type="button">Import HTTPS manifest</button>
       <label class="wide">Or paste manifest JSON <textarea id="developer-manifest-json" rows="7" spellcheck="false" placeholder='{"appId":"my-app", ...}'></textarea></label>
       <button id="load-developer-json" type="button">Load pasted JSON</button>
-      ${candidateApp ? '<button id="load-candidate-example" type="button">Load Chat Tag example</button>' : ""}
+      ${candidateApp ? '<button id="load-candidate-example" type="button">Load Nebula Arcade example</button>' : ""}
     </section>
     <form id="developer-form">
       <div class="developer-fields">

@@ -11,16 +11,17 @@ function fakeClient(overrides = {}) {
       scopes: ["operations:logs:read", "operations:coder:read", "operations:coder:invoke"],
     }),
     listProviderLinks: async () => [{ userId: "user-1", provider: "twitch", providerUserId: "twitch-1", linkedAt: "2026-08-23T00:00:00.000Z" }],
-    getWorkspaceProfile: async () => ({ tenantId: "tenant-a", revision: 4, appearance: { theme: "dark" }, dockSlots: ["streamweaver", null, "chat-tag"] }),
+    getWorkspaceProfile: async () => ({ tenantId: "tenant-a", revision: 4, appearance: { theme: "dark" }, dockSlots: ["streamweaver", null, "nebula-arcade"] }),
     getXpBalance: async () => ({ tenantId: "tenant-a", userId: "user-1", balance: 42 }),
     listApps: async () => [
       { appId: "streamweaver", name: "StreamWeaver", description: "Automation", version: "1", launchUrl: "https://streamweaver.example/dashboard", surfaces: ["shell", "standalone"], allowedScopes: ["chat:read"] },
-      { appId: "chat-tag", name: "ChatTag", description: "Games", version: "1", launchUrl: "https://chat-tag.example/", surfaces: ["shell", "overlay"], allowedScopes: ["game:read"] },
+      { appId: "nebula-arcade", name: "Nebula Arcade", description: "Games Hub", version: "1", launchUrl: "https://nebula.example/", surfaces: ["shell", "overlay"], allowedScopes: ["game:read"] },
     ],
     listInstalls: async () => [{ tenantId: "tenant-a", appId: "streamweaver", enabled: true, grantedScopes: ["chat:read"] }],
     listEntitlements: async () => [{ tenantId: "tenant-a", appId: "streamweaver", key: "tier", value: "standard" }],
     listEvents: async () => [{ id: "evt-1", tenantId: "tenant-a", sourceAppId: "streamweaver", type: "stream.ready", payload: { ready: true } }],
     listConversations: async () => [{ id: "conv-1", tenantId: "tenant-a" }],
+    listMessages: async () => [],
     listNotifications: async () => [{ id: "note-1", tenantId: "tenant-a", title: "Welcome" }],
     listStellarContext: async () => [{ id: "ctx-1", text: "Creator context" }],
     listStellarCapabilities: async () => [{ id: "help", availability: "available" }, { id: "voice", availability: "unavailable", unavailableReason: "runtime not connected" }],
@@ -41,7 +42,7 @@ test("SpaceMountain loads canonical known services into one ready shell snapshot
   assert.equal(snapshot.providerLinks[0].provider, "twitch");
   assert.equal(snapshot.apps.length, 2);
   assert.equal(snapshot.apps.find((app) => app.appId === "streamweaver")?.enabled, true);
-    assert.equal(snapshot.apps.find((app) => app.appId === "chat-tag")?.installed, false);
+    assert.equal(snapshot.apps.find((app) => app.appId === "nebula-arcade")?.installed, false);
     assert.equal(snapshot.events[0].type, "stream.ready");
     assert.equal(snapshot.conversations.length, 1);
     assert.equal(snapshot.notifications.length, 1);
@@ -103,7 +104,7 @@ test("session or workspace failure makes SpaceMountain honestly unavailable", as
 test("SpaceMountain saves one revisioned canonical workspace through the public SDK", async () => {
   let received;
   const controller = new SpaceMountainShellController(fakeClient({ updateWorkspaceProfile: async (...args) => { received = args; return { revision: 5 }; } }));
-  const patch = { appearance: { theme: "dark", accent: "#ff7a18", backgroundUrl: "https://images.example/station.jpg" }, dockSlots: ["streamweaver", null, "chat-tag"] };
+  const patch = { appearance: { theme: "dark", accent: "#ff7a18", backgroundUrl: "https://images.example/station.jpg" }, dockSlots: ["streamweaver", null, "nebula-arcade"] };
   const result = await controller.saveWorkspace("tenant-a", 4, patch);
   assert.deepEqual(received, ["tenant-a", 4, patch]);
   assert.equal(result.revision, 5);
