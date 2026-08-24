@@ -18,7 +18,13 @@ test("Nebula Arcade sandbox runs the Chat Tag module and OBS smoke path", async 
     const page = await (await fetch(origin)).text();
     assert.match(page, /NEBULA ARCADE/);
     assert.match(page, /GAMES HUB · 20 EQUAL TITLES/);
+    assert.match(page, /spmt-product-backdrop/);
+    assert.match(page, /spmt-star-layer/);
     assert.equal((page.match(/data-game=/g) ?? []).length, 20);
+    const background = await fetch(`${origin}/assets/nebula-arcade/solar-system.webp`);
+    assert.equal(background.status, 200);
+    assert.equal(background.headers.get("content-type"), "image/webp");
+    assert.ok((await background.arrayBuffer()).byteLength > 50_000);
     const joined = await fetch(`${origin}/v1/chat-tag/message`, { method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify({ messageId: "join-1", userId: "alpha", username: "Alpha", text: "spmt join", roles: ["member"] }) });
     assert.equal(joined.status, 200);
     const joinedBody = await joined.json();

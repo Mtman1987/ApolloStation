@@ -96,6 +96,26 @@ export function bindProductRocketNavigation<Id extends string>(root: HTMLElement
   return () => listeners.forEach((remove) => remove());
 }
 
+function seededRandom(seed: number) {
+  let value = seed;
+  return () => {
+    value = (value * 1_664_525 + 1_013_904_223) % 4_294_967_296;
+    return value / 4_294_967_296;
+  };
+}
+
+function seededStarShadow(count: number, seed: number, width = 2_000, height = 2_000) {
+  const random = seededRandom(seed);
+  return Array.from({ length: count }, () => `${Math.floor(random() * width)}px ${Math.floor(random() * height)}px #fff`).join(",");
+}
+
+/** The exact deterministic star distribution used by the live Chat Tag shell. */
+export const PRODUCT_STAR_FIELDS = Object.freeze([
+  Object.freeze({ size: 1, count: 700, seed: 11, durationSeconds: 200, shadow: seededStarShadow(700, 11) }),
+  Object.freeze({ size: 2, count: 200, seed: 23, durationSeconds: 150, shadow: seededStarShadow(200, 23) }),
+  Object.freeze({ size: 3, count: 100, seed: 37, durationSeconds: 100, shadow: seededStarShadow(100, 37) }),
+]);
+
 export const PRODUCT_UI_CSS = `
 .spmt-product-surface {
   --spmt-accent: #f97316;
@@ -118,13 +138,12 @@ export const PRODUCT_UI_CSS = `
 .spmt-product-backdrop-image { inset: -2%; background-image: var(--spmt-app-backdrop-image); background-position: var(--spmt-app-backdrop-position,center); background-size: cover; transform: scale(1.025); }
 .spmt-product-backdrop-tint { background: var(--spmt-accent); opacity: .56; mix-blend-mode: color; }
 .spmt-product-backdrop-shade { background: radial-gradient(circle at 18% 4%,color-mix(in srgb,var(--spmt-accent) 24%,transparent),transparent 42%),linear-gradient(rgba(3,4,8,.2),rgba(3,4,8,.8)); }
-.spmt-star-layer { overflow: hidden; opacity: .82; }
-.spmt-star-layer i { position: absolute; inset: -20%; display: block; background-repeat: repeat; animation: spmt-star-drift 90s linear infinite,spmt-star-pulse 5s ease-in-out infinite alternate; }
-.spmt-star-layer i:nth-child(1) { background-image: radial-gradient(circle,#fff 0 1px,transparent 1.5px); background-size: 67px 61px; opacity: .72; }
-.spmt-star-layer i:nth-child(2) { background-image: radial-gradient(circle,var(--spmt-accent-secondary) 0 1px,transparent 1.8px); background-size: 109px 97px; background-position: 31px 19px; opacity: .55; animation-duration: 125s,7s; animation-direction: reverse,alternate; }
-.spmt-star-layer i:nth-child(3) { background-image: radial-gradient(circle,#fff 0 1.5px,transparent 2.2px); background-size: 191px 173px; background-position: 83px 47px; opacity: .42; animation-duration: 165s,9s; }
-@keyframes spmt-star-drift { to { transform: translate3d(8%,6%,0); } }
-@keyframes spmt-star-pulse { from { filter: brightness(.78); } to { filter: brightness(1.28); } }
+.spmt-star-layer { overflow: hidden; opacity: var(--spmt-stars,.82); }
+.spmt-star-layer i { position: absolute; left: 0; top: 0; display: block; background: transparent; will-change: transform; }
+.spmt-star-layer i:nth-child(1) { width: 1px; height: 1px; box-shadow: ${PRODUCT_STAR_FIELDS[0]!.shadow}; animation: spmt-stars-up 200s linear infinite; }
+.spmt-star-layer i:nth-child(2) { width: 2px; height: 2px; box-shadow: ${PRODUCT_STAR_FIELDS[1]!.shadow}; animation: spmt-stars-up 150s linear infinite; }
+.spmt-star-layer i:nth-child(3) { width: 3px; height: 3px; box-shadow: ${PRODUCT_STAR_FIELDS[2]!.shadow}; animation: spmt-stars-up 100s linear infinite; }
+@keyframes spmt-stars-up { from { transform: translateY(0); } to { transform: translateY(-2000px); } }
 .spmt-product-surface button,.spmt-product-surface input,.spmt-product-surface select,.spmt-product-surface textarea { font: inherit; }
 .spmt-product-surface button { cursor: pointer; }
 .spmt-product-surface :focus-visible { outline: 2px solid var(--spmt-accent-secondary); outline-offset: 3px; }

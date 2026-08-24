@@ -37,6 +37,8 @@ test("Sprite deployment verifies, tests, switches atomically, and rolls back", a
   assert.match(script, /mv -Tf "\$next_link" "\$current_link"/);
   assert.match(script, /Deployment failed; restoring/);
   assert.match(script, /create_apollo_service "\$BUILD_SHA"/);
+  assert.match(script, /--candidate-app,nebula-arcade/);
+  assert.doesNotMatch(script, /--candidate-app,chat-tag/);
   assert.match(script, /create_apollo_service "\$\(basename "\$previous_release"\)"/);
   assert.match(script, /sprite-env services stop "\$bootstrap_service_name"/);
   assert.match(script, /Refusing to replace an unexpected bootstrap service definition/);

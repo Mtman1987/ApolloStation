@@ -201,7 +201,7 @@ This starts the SPMT authority, SpaceMountain shell, and a loopback-only Chat Ta
 ```powershell
 $BuildSha = (sprite exec --dir /home/sprite/ApolloStation -- git rev-parse HEAD).Trim()
 if ($BuildSha -notmatch '^[0-9a-f]{40}$') { throw 'Could not verify the Green commit SHA.' }
-sprite exec --no-port-forward --dir /home/sprite/ApolloStation -- node scripts/sprites/run-supervised-sandbox.mjs --app platform --candidate-app chat-tag --public-url $SpriteUrl --data-root /home/sprite/data --build-sha $BuildSha --tenant-id chat-tag-sandbox --channel-id sandbox-channel
+sprite exec --no-port-forward --dir /home/sprite/ApolloStation -- node scripts/sprites/run-supervised-sandbox.mjs --app platform --candidate-app nebula-arcade --public-url $SpriteUrl --data-root /home/sprite/data --build-sha $BuildSha --tenant-id nebula-arcade-sandbox --channel-id sandbox-channel
 ```
 
 - [ ] The terminal says `Green sandbox is supervised and ready`.

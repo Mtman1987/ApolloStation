@@ -296,7 +296,7 @@ async function proxyChatTag(response: ServerResponse, request: IncomingMessage, 
 }
 
 function chatTagProxyPath(pathname: string) {
-  return pathname === "/apps/nebula-arcade" || pathname === "/apps/chat-tag" || pathname.startsWith("/assets/chat-tag-sandbox.") || pathname.startsWith("/v1/chat-tag/") || pathname === "/v1/chat-tag/state" || pathname.startsWith("/v1/nebula/chat-tag/overlay");
+  return pathname === "/apps/nebula-arcade" || pathname === "/apps/chat-tag" || pathname.startsWith("/assets/chat-tag-sandbox.") || pathname.startsWith("/assets/nebula-arcade/") || pathname.startsWith("/v1/chat-tag/") || pathname === "/v1/chat-tag/state" || pathname.startsWith("/v1/nebula/chat-tag/overlay");
 }
 
 function browserProxyAllowed(method: string, pathname: string) {

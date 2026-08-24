@@ -263,7 +263,7 @@ test("sandbox environment guards fail closed before a process can reach a provid
     SPMT_HOST: "127.0.0.1",
   };
   assert.equal(validateSandboxServiceEnvironment(service).host, "127.0.0.1");
-  assert.equal(validateSandboxServiceEnvironment({ ...service, SPMT_SANDBOX_FIXTURES: "0" }).host, "127.0.0.1");
+  assert.deepEqual(validateSandboxServiceEnvironment({ ...service, SPMT_SANDBOX_FIXTURES: "0" }), { databasePath: service.DATABASE_PATH, publicBaseUrl: service.SPMT_PUBLIC_URL, host: "127.0.0.1", sandboxApps: [] });
   assert.throws(() => validateSandboxServiceEnvironment({ ...service, SPMT_SANDBOX_FIXTURES: "yes" }), /must be 0 or 1/);
   assert.throws(() => validateSandboxServiceEnvironment({ ...service, DISCORD_BOT_TOKEN: "forbidden" }), /rejects provider/);
   assert.throws(() => validateSandboxServiceEnvironment({ ...service, NEXT_PUBLIC_YOUTUBE_INNERTUBE_API_KEY: "forbidden" }), /rejects provider/);
@@ -301,6 +301,31 @@ test("sandbox fixtures are restart-idempotent and outbox delivery cannot reach t
       await reopened.listen();
       assert.equal(reopened.control.getApp("orbit-beacon").updatedAt, fixtureUpdatedAt);
     } finally { await reopened.close(); }
+  } finally {
+    if (first.server.listening) await first.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("bundled review apps are installed into tenants that predate the deployment", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "spmt-sandbox-app-upgrade-"));
+  const databasePath = join(directory, "spmt-green-sandbox.sqlite");
+  const options = { databasePath, webhookKey: Buffer.alloc(32, 4), host: "127.0.0.1", port: 0, publicBaseUrl: "https://upgrade-green.sprites.app", runtimeMode: "sandbox" };
+  const first = createSpmtService(options);
+  try {
+    await first.listen();
+    first.authority.ensureUser("existing-owner");
+    first.control.registerTenant({ tenantId: "existing-tenant", ownerUserId: "existing-owner", displayName: "Existing Captain" });
+    first.authority.getOrCreateWorkspace("existing-tenant");
+    await first.close();
+
+    const manifest = nebulaArcadeCatalogRegistration("https://upgrade-green.sprites.app");
+    const upgraded = createSpmtService({ ...options, sandboxApps: [manifest] });
+    try {
+      await upgraded.listen();
+      assert.deepEqual(upgraded.control.listApps().map((app) => app.appId), ["nebula-arcade"]);
+      assert.deepEqual(upgraded.control.listInstalls("existing-tenant").map((install) => ({ appId: install.appId, enabled: install.enabled })), [{ appId: "nebula-arcade", enabled: true }]);
+    } finally { await upgraded.close(); }
   } finally {
     if (first.server.listening) await first.close();
     rmSync(directory, { recursive: true, force: true });
@@ -357,20 +382,20 @@ test("supervised runner makes both layers healthy and stops both children togeth
   }
 });
 
-test("supervised runner exposes Nebula Arcade as an editable example and publishes zero to exactly one app through the SDK", async () => {
+test("supervised runner registers, installs, and launches Nebula Arcade as a bundled review app", async () => {
   const directory = mkdtempSync(join(tmpdir(), "spmt-supervised-candidate-"));
   const ports = new Set();
   while (ports.size < 3) ports.add(await freePort());
   const [spmtPort, webPort, chatTagPort] = ports;
   const base = `http://127.0.0.1:${webPort}`;
-  const child = spawn(process.execPath, ["scripts/sprites/run-supervised-sandbox.mjs", "--candidate-app", "chat-tag", "--public-url", `http://localhost:${webPort}`, "--data-root", directory, "--build-sha", "candidate-test", "--spmt-port", String(spmtPort), "--web-port", String(webPort), "--chat-tag-port", String(chatTagPort)], { cwd: new URL("..", import.meta.url), stdio: ["ignore", "pipe", "pipe"] });
+  const child = spawn(process.execPath, ["scripts/sprites/run-supervised-sandbox.mjs", "--candidate-app", "nebula-arcade", "--public-url", `http://localhost:${webPort}`, "--data-root", directory, "--build-sha", "candidate-test", "--spmt-port", String(spmtPort), "--web-port", String(webPort), "--chat-tag-port", String(chatTagPort)], { cwd: new URL("..", import.meta.url), stdio: ["ignore", "pipe", "pipe"] });
   let output = "";
   child.stdout.setEncoding("utf8");
   child.stderr.setEncoding("utf8");
   child.stdout.on("data", (chunk) => { output += chunk; });
   child.stderr.on("data", (chunk) => { output += chunk; });
   try {
-    await waitUntil(() => output.includes("Nebula Arcade is available as an editable Developer Console example manifest"), 20_000, () => `Runner output:\n${output}`);
+    await waitUntil(() => output.includes("Nebula Arcade is registered, installed, and launchable"), 20_000, () => `Runner output:\n${output}`);
     const page = await (await fetch(`${base}/`)).text();
     assert.match(page, /Add developer app/);
     assert.match(page, /Load Nebula Arcade example/);
@@ -382,7 +407,8 @@ test("supervised runner exposes Nebula Arcade as an editable example and publish
     const cookie = (registration.headers.get("set-cookie") ?? "").split(";")[0];
     assert.ok(cookie);
     const client = new SpmtClient({ baseUrl: base, appId: "spacemountain", fetchImpl: (input, init = {}) => { const headers = new Headers(init.headers); headers.set("cookie", cookie); if (init.method === "POST") headers.set("origin", origin); return fetch(input, { ...init, headers }); } });
-    assert.deepEqual(await client.listApps(), []);
+    assert.deepEqual((await client.listApps()).map((app) => app.appId), ["nebula-arcade"]);
+    assert.deepEqual((await client.listInstalls((await registration.json()).tenantId)).map((install) => ({ appId: install.appId, enabled: install.enabled })), [{ appId: "nebula-arcade", enabled: true }]);
     const candidate = await (await fetch(`${base}/sandbox/candidate-app`)).json();
     await assert.rejects(() => client.registerApp(candidate), (error) => error?.status === 403);
 
@@ -391,7 +417,6 @@ test("supervised runner exposes Nebula Arcade as an editable example and publish
     const ownerCookie = (ownerRegistration.headers.get("set-cookie") ?? "").split(";")[0];
     assert.ok(ownerCookie);
     const ownerClient = new SpmtClient({ baseUrl: base, appId: "spacemountain", fetchImpl: (input, init = {}) => { const headers = new Headers(init.headers); headers.set("cookie", ownerCookie); if (init.method === "POST") headers.set("origin", origin); return fetch(input, { ...init, headers }); } });
-    await ownerClient.registerApp(candidate);
     assert.deepEqual((await ownerClient.listApps()).map((app) => app.appId), ["nebula-arcade"]);
     child.kill("SIGTERM");
     const exit = await new Promise((done) => child.once("exit", (code, signal) => done({ code, signal })));

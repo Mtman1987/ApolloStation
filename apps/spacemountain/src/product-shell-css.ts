@@ -5,10 +5,9 @@
  * persistence, app inventory, provider state, or product-specific authority.
  */
 export const POLISHED_SPACE_MOUNTAIN_CSS = `
-.spmt-space-root{--panel:var(--spmt-panel);--border:var(--spmt-border);position:relative;isolation:isolate;min-height:100dvh;background-color:#030407;background-repeat:no-repeat;color:var(--spmt-ink);overflow-x:hidden}
+.spmt-space-root{--panel:var(--spmt-panel);--border:var(--spmt-border);position:relative;isolation:isolate;min-height:calc(100dvh - var(--guard-height,0px));background-color:#030407;background-repeat:no-repeat;color:var(--spmt-ink);overflow-x:hidden}
 .spmt-space-root::before{position:fixed;inset:0;z-index:-1;pointer-events:none;background:radial-gradient(circle at 8% 16%,color-mix(in srgb,var(--accent) 22%,transparent),transparent 30%),linear-gradient(90deg,rgba(2,3,7,.1),rgba(2,3,7,.5));content:""}
-.spmt-space-root::after{position:fixed;inset:0;z-index:-1;opacity:.2;pointer-events:none;background-image:radial-gradient(circle at 20% 30%,#fff 0 1px,transparent 1.5px),radial-gradient(circle at 70% 65%,#fff 0 1px,transparent 1.5px);background-size:150px 150px,230px 230px;content:""}
-.spmt-space-shell{min-height:100dvh}
+.spmt-space-shell{min-height:calc(100dvh - var(--guard-height,0px))}
 .spmt-svg{display:block;width:19px;height:19px;flex:0 0 auto}
 .spmt-shell-header-stack{position:fixed;top:calc(var(--guard-height,38px) + 8px);left:142px;right:18px;z-index:300;display:grid;gap:7px}
 .spmt-telemetry{height:25px;display:flex;align-items:center;gap:15px;padding:0 12px;color:#8b8e99;font-size:8px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;overflow:hidden}
@@ -43,6 +42,7 @@ export const POLISHED_SPACE_MOUNTAIN_CSS = `
 .spmt-rocket-dock nav label{font-size:9px;font-weight:800;line-height:1.05;cursor:pointer}
 .spmt-rocket-dock footer{margin:3px 8px 9px;padding-top:10px;border-top:1px solid var(--border);display:flex;flex-direction:column;align-items:center;gap:2px}.spmt-rocket-dock footer small{font-size:7px;color:#777}.spmt-rocket-dock footer strong{font-size:8px;color:#53e6a0}
 .spmt-space-main{width:min(1500px,100%);margin:0 auto;padding:calc(var(--spmt-shell-top-inset,124px) + 34px) 24px 54px 148px;min-height:var(--spmt-shell-available-height,calc(100dvh - 140px))}
+.spmt-space-root[data-spmt-view="home"]{height:calc(100dvh - var(--guard-height,0px));min-height:0;overflow-y:hidden}.spmt-space-root[data-spmt-view="home"] .spmt-space-shell{height:100%;min-height:0}.spmt-space-root[data-spmt-view="home"] .spmt-space-main{height:100%;min-height:0;padding-bottom:18px;display:flex}.spmt-space-root[data-spmt-view="home"] .spmt-hero{flex:1;min-height:0}
 .spmt-hero{min-height:410px;border-radius:34px;padding:clamp(28px,4vw,54px);background:linear-gradient(115deg,rgba(6,7,12,.9),rgba(8,9,14,.62));grid-template-columns:minmax(0,1.35fr) minmax(260px,.65fr);align-items:end;overflow:hidden;position:relative}
 .spmt-hero::after{position:absolute;width:470px;height:470px;right:-210px;top:-270px;border:1px solid color-mix(in srgb,var(--accent) 20%,transparent);border-radius:50%;box-shadow:0 0 100px color-mix(in srgb,var(--accent) 14%,transparent);content:""}
 .spmt-hero-copy{position:relative;z-index:1;display:flex;flex-direction:column;align-items:flex-start}

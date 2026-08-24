@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { PRODUCT_THEME_PRESETS, PRODUCT_UI_CSS, bindProductRocketNavigation, isProductImageUrl, resolveProductBackdrop, resolveProductTheme } from "../packages/ui/dist/index.js";
+import { PRODUCT_STAR_FIELDS, PRODUCT_THEME_PRESETS, PRODUCT_UI_CSS, bindProductRocketNavigation, isProductImageUrl, resolveProductBackdrop, resolveProductTheme } from "../packages/ui/dist/index.js";
 import { POLISHED_SPACE_MOUNTAIN_CSS } from "../apps/spacemountain/dist/product-shell-css.js";
 
 const shellSource = readFileSync(new URL("../apps/spacemountain/src/shell-ui.ts", import.meta.url), "utf8");
@@ -17,6 +17,13 @@ test("shared product UI exposes stable framework-neutral themes and accessible p
   assert.match(PRODUCT_UI_CSS, /:focus-visible/);
   assert.match(PRODUCT_UI_CSS, /prefers-reduced-motion/);
   assert.match(PRODUCT_UI_CSS, /\.spmt-star-layer/);
+  assert.deepEqual(PRODUCT_STAR_FIELDS.map(({ size, count, seed, durationSeconds }) => ({ size, count, seed, durationSeconds })), [
+    { size: 1, count: 700, seed: 11, durationSeconds: 200 },
+    { size: 2, count: 200, seed: 23, durationSeconds: 150 },
+    { size: 3, count: 100, seed: 37, durationSeconds: 100 },
+  ]);
+  assert.match(PRODUCT_UI_CSS, /@keyframes spmt-stars-up[\s\S]*?translateY\(-2000px\)/);
+  assert.doesNotMatch(PRODUCT_UI_CSS, /background-size:\s*67px 61px/);
   assert.match(PRODUCT_UI_CSS, /\.spmt-product-backdrop-tint/);
   assert.equal(typeof bindProductRocketNavigation, "function");
 });
@@ -50,6 +57,7 @@ test("SpaceMountain presentation matches the finished product without hardcoding
   assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /\.spmt-telemetry/);
   assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /\.spmt-rocket-dock/);
   assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /@media\(max-width:900px\)/);
+  assert.doesNotMatch(POLISHED_SPACE_MOUNTAIN_CSS, /background-size:150px 150px,230px 230px/);
 });
 
 test("private host uses the same product chrome and serves only explicit local artwork", () => {

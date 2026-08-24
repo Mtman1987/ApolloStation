@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { SPACE_MOUNTAIN_CSS } from "../apps/spacemountain/dist/shell-ui.js";
+import { POLISHED_SPACE_MOUNTAIN_CSS } from "../apps/spacemountain/dist/product-shell-css.js";
 
 const source = readFileSync(new URL("../apps/spacemountain/src/shell-ui.ts", import.meta.url), "utf8");
 
@@ -83,6 +84,10 @@ test("home avoids duplicate navigation and sidebar hover text carries page descr
   assert.doesNotMatch(source, /<section class="spmt-quick-grid">/);
   assert.match(source, /spmt-hero-tagline/);
   assert.match(source, /item\.description/);
+  assert.match(source, /root\.dataset\.spmtView = this\.view/);
+  assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /data-spmt-view="home"/);
+  assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /height:calc\(100dvh - var\(--guard-height,0px\)\)/);
+  assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /overflow-y:hidden/);
 });
 
 test("mobile layout removes shell-header dependency from bottom dock without hiding content", () => {

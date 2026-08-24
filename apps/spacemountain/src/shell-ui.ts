@@ -87,6 +87,7 @@ export class SpaceMountainShellUi {
     const configuredTheme = recordText(appearance, ["theme"]);
     const backdrop = resolveProductBackdrop(SPACEMOUNTAIN_SCENE, configuredTheme, accent, backgroundUrl);
     const theme = backdrop.theme;
+    root.dataset.spmtView = this.view;
     root.dataset.theme = theme.id;
     root.style.setProperty("--accent", theme.accent);
     root.style.setProperty("--accent2", theme.accentSecondary);

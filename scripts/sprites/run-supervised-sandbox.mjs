@@ -5,9 +5,9 @@ import { spawn } from "node:child_process";
 
 const argumentsMap = parseArguments(process.argv.slice(2));
 const app = argumentsMap.get("app") ?? "platform";
-if (!["platform", "chat-tag"].includes(app)) throw new Error("--app must be platform or chat-tag");
+if (!["platform", "nebula-arcade"].includes(app)) throw new Error("--app must be platform or nebula-arcade");
 const candidateApp = argumentsMap.get("candidate-app") ?? "none";
-if (!["none", "chat-tag"].includes(candidateApp)) throw new Error("--candidate-app must be none or chat-tag");
+if (!["none", "nebula-arcade"].includes(candidateApp)) throw new Error("--candidate-app must be none or nebula-arcade");
 const publicUrl = requireSandboxUrl(argumentsMap.get("public-url") ?? "http://localhost:8080");
 const dataRoot = resolve(argumentsMap.get("data-root") ?? ".sandbox-data");
 const buildSha = argumentsMap.get("build-sha") ?? "sprite-local";
@@ -26,10 +26,15 @@ const common = {
   SPMT_SANDBOX_ID: "spmt-ecosystem-sandbox",
   BUILD_SHA: buildSha,
 };
+let candidateManifest;
+if (candidateApp === "nebula-arcade") {
+  const module = await import("../../apps/nebula-arcade/dist/index.js");
+  candidateManifest = module.nebulaArcadeCatalogRegistration(publicUrl);
+}
 const children = new Set();
 let stopping = false;
 
-if (app === "chat-tag") {
+if (app === "nebula-arcade") {
   const chatTag = start("Nebula Arcade", "apps/nebula-arcade/dist/chat-tag-sandbox-server.js", {
     ...common,
     CHAT_TAG_DATABASE_PATH: resolve(dataRoot, "chat-tag-green-sandbox.sqlite"),
@@ -54,15 +59,13 @@ const spmt = start("SPMT", "apps/spmt-service/dist/index.js", {
   SPMT_HOST: "127.0.0.1",
   SPMT_SANDBOX_FIXTURES: "0",
   SPMT_SANDBOX_OWNER_USERNAME: ownerUsername,
+  ...(candidateManifest ? { SPMT_SANDBOX_APPS: JSON.stringify([candidateManifest]) } : {}),
   PORT: String(spmtPort),
 });
 
 await waitForUrl(spmt, `http://127.0.0.1:${spmtPort}/health/ready`, "SPMT");
 let chatTag;
-let candidateManifest;
-if (candidateApp === "chat-tag") {
-  const module = await import("../../apps/nebula-arcade/dist/index.js");
-  candidateManifest = module.nebulaArcadeCatalogRegistration(publicUrl);
+if (candidateApp === "nebula-arcade") {
   chatTag = start("Nebula Arcade candidate", "apps/nebula-arcade/dist/chat-tag-sandbox-server.js", {
     ...common,
     CHAT_TAG_DATABASE_PATH: resolve(dataRoot, "chat-tag-green-sandbox.sqlite"),
@@ -85,7 +88,7 @@ spmt.once("exit", (code, signal) => { if (!stopping) void stop(signal === "SIGIN
 await waitForUrl(web, `http://127.0.0.1:${webPort}/sandbox/health`, "SpaceMountain web");
 
 process.stdout.write(`\nGreen sandbox is supervised and ready at ${publicUrl}\n`);
-process.stdout.write(`The SPMT app catalog starts empty.${candidateApp === "chat-tag" ? " Nebula Arcade is available as an editable Developer Console example manifest." : ""}\n`);
+process.stdout.write(candidateApp === "nebula-arcade" ? "Nebula Arcade is registered, installed, and launchable for every isolated sandbox captain.\n" : "The SPMT app catalog starts empty.\n");
 process.stdout.write("Outbound provider actions are disabled. No Sprite service has been registered.\n");
 process.stdout.write("Press Ctrl+C once to stop the supervised cohort.\n\n");
 
