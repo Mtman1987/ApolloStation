@@ -8,10 +8,11 @@ export * from "./chat-tag-overlay-http.js";
 export * from "./chat-tag-migration.js";
 export * from "./chat-tag-experience.js";
 export * from "./game-hub.js";
+export * from "./overlay-scenes.js";
 import { CHAT_TAG_EVENT_TYPES } from "./chat-tag.js";
 
 export const CHAT_TAG_ROUND_COMPLETED = "nebula.chat-tag.round.completed.v1";
-export const manifest = assertAppModuleManifestV1({schemaVersion:1,manifestVersion:"spmt.app-manifest/v1",id:"nebula-arcade",name:"Nebula Arcade",description:"Bounded game modules including the original Chat Tag, Quackverse, Bingo, and Arena.",capabilities:["chat-tag","quackverse","bingo","arena","game-overlays"],surfaces:["shell","standalone","overlay","popout"],requiredScopes:["events:write","xp:write","overlay:widgets:write"],eventTypes:[CHAT_TAG_ROUND_COMPLETED,...CHAT_TAG_EVENT_TYPES],integration:{identity:"connected",events:"native",xp:"connected",workspace:"connected"},workers:[{id:"chat-tag-bot",role:"provider-command-ingress",execution:"leased",canonicalAuthority:false}]} satisfies AppModuleManifestV1);
+export const manifest = assertAppModuleManifestV1({schemaVersion:1,manifestVersion:"spmt.app-manifest/v1",id:"nebula-arcade",name:"Nebula Arcade",description:"Cosmic Games Hub containing twenty equal community games, reusable multi-game overlays, and the original Chat Tag game.",capabilities:["chat-tag","quackverse","bingo","arena","game-overlays","overlay-scenes"],surfaces:["shell","standalone","overlay","popout"],requiredScopes:["events:write","xp:write","overlay:widgets:write"],eventTypes:[CHAT_TAG_ROUND_COMPLETED,...CHAT_TAG_EVENT_TYPES],integration:{identity:"connected",events:"native",xp:"connected",workspace:"connected"},workers:[{id:"chat-tag-bot",role:"provider-command-ingress",execution:"leased",canonicalAuthority:false}]} satisfies AppModuleManifestV1);
 
 export function nebulaArcadeCatalogRegistration(publicOrigin: string): AppCatalogRegistrationV1 {
   const origin = new URL(publicOrigin);
@@ -19,7 +20,7 @@ export function nebulaArcadeCatalogRegistration(publicOrigin: string): AppCatalo
   return {
     appId: "nebula-arcade",
     name: "Nebula Arcade",
-    description: "Games Hub for Chat Tag, Quackverse, and eighteen more equal community game titles.",
+    description: "Cosmic Games Hub for twenty equal community games and reusable layered stream overlays.",
     version: "0.1.0-green",
     launchUrl: new URL("/apps/nebula-arcade", origin).toString(),
     allowedScopes: ["events:write", "xp:write", "overlay:widgets:write"],
