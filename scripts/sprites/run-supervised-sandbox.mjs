@@ -8,6 +8,8 @@ const app = argumentsMap.get("app") ?? "platform";
 if (!["platform", "nebula-arcade"].includes(app)) throw new Error("--app must be platform or nebula-arcade");
 const candidateApp = argumentsMap.get("candidate-app") ?? "none";
 if (!["none", "nebula-arcade"].includes(candidateApp)) throw new Error("--candidate-app must be none or nebula-arcade");
+const catalog = argumentsMap.get("catalog") ?? "core";
+if (!["core", "current"].includes(catalog)) throw new Error("--catalog must be core or current");
 const publicUrl = requireSandboxUrl(argumentsMap.get("public-url") ?? "http://localhost:8080");
 const dataRoot = resolve(argumentsMap.get("data-root") ?? ".sandbox-data");
 const buildSha = argumentsMap.get("build-sha") ?? "sprite-local";
@@ -50,15 +52,21 @@ const [
   import("../../apps/mountainview/dist/index.js"),
   import("../../apps/companion/dist/index.js"),
 ]);
-const sandboxManifests = [
+const coreManifests = [
   commlinkCatalogRegistration(publicUrl),
   stellarCoreCatalogRegistration(publicUrl),
   missionControlCatalogRegistration(publicUrl),
+];
+const currentManifests = [
   discordStreamHubCatalogRegistration(publicUrl),
   streamweaverCatalogRegistration(publicUrl),
   hearMeOutCatalogRegistration(publicUrl),
   mountainViewCatalogRegistration(publicUrl),
   companionCatalogRegistration(publicUrl),
+];
+const sandboxManifests = [
+  ...coreManifests,
+  ...(catalog === "current" ? currentManifests : []),
   ...(candidateManifest ? [candidateManifest] : []),
 ];
 const children = new Set();
@@ -184,7 +192,7 @@ function parseArguments(values) {
     if (!flag?.startsWith("--") || !value) throw new Error("Arguments must be --name value pairs");
     result.set(flag.slice(2), value);
   }
-  for (const name of result.keys()) if (!["app", "candidate-app", "public-url", "data-root", "build-sha", "spmt-port", "web-port", "chat-tag-port", "tenant-id", "channel-id", "owner-username"].includes(name)) throw new Error(`Unknown argument --${name}`);
+  for (const name of result.keys()) if (!["app", "candidate-app", "catalog", "public-url", "data-root", "build-sha", "spmt-port", "web-port", "chat-tag-port", "tenant-id", "channel-id", "owner-username"].includes(name)) throw new Error(`Unknown argument --${name}`);
   return result;
 }
 
