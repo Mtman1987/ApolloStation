@@ -465,9 +465,24 @@ async function unlinkProvider(link: Record<string, unknown>) {
 
 async function saveWorkspace(expectedRevision: number, patch: Record<string, unknown>) {
   const principal = requirePrincipal();
+  const tenantId = principal.tenantIds[0]!;
   setStatus("Saving the canonical SPMT workspace…", "working");
   try {
-    await controller.saveWorkspace(principal.tenantIds[0]!, expectedRevision, patch);
+    try {
+      await controller.saveWorkspace(tenantId, expectedRevision, patch);
+    } catch (error) {
+      if (!(error instanceof SpmtApiError) || error.status !== 409) throw error;
+      setStatus("Workspace changed in another ecosystem surface; reconciling the latest revision…", "working");
+      const current = await spmt.getWorkspaceProfile(tenantId);
+      const currentRevision = typeof current.revision === "number" ? current.revision : Number.NaN;
+      if (!Number.isInteger(currentRevision) || currentRevision < 1) throw new Error("The latest workspace revision could not be read. Refresh and try again.");
+      try {
+        await controller.saveWorkspace(tenantId, currentRevision, patch);
+      } catch (retryError) {
+        if (retryError instanceof SpmtApiError && retryError.status === 409) throw new Error("The workspace changed again while saving. Refresh and submit the theme once more.");
+        throw retryError;
+      }
+    }
     await loadShell();
     setStatus("Workspace saved once and published for every authorized app.", "ready");
   } catch (error) { setStatus(message(error), "error"); }
@@ -593,6 +608,14 @@ function messageCard(value: Record<string, unknown>) {
 function textBlock(value: string) { const node = document.createElement("p"); node.textContent = value; return node; }
 function apiMessage(value: unknown, fallback: string) { return value && typeof value === "object" && !Array.isArray(value) && typeof (value as Record<string, unknown>).message === "string" ? String((value as Record<string, unknown>).message) : fallback; }
 function setStatus(value: string, kind: "ready" | "working" | "error") { status.textContent = value; status.dataset.kind = kind; }
-function message(value: unknown) { return value instanceof Error ? value.message : String(value ?? "Unknown error"); }
+function message(value: unknown) {
+  if (value instanceof SpmtApiError) {
+    try {
+      const payload = JSON.parse(value.responseBody) as Record<string, unknown>;
+      if (typeof payload.message === "string" && payload.message) return payload.message;
+    } catch { /* Keep the bounded SDK fallback when the response is not JSON. */ }
+  }
+  return value instanceof Error ? value.message : String(value ?? "Unknown error");
+}
 function escapeText(value: string) { return value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character] ?? character); }
 function element<T extends HTMLElement>(id: string) { const node = document.getElementById(id); if (!node) throw new Error(`Missing #${id}`); return node as T; }

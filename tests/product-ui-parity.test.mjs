@@ -75,3 +75,11 @@ test("private host uses the same product chrome and serves only explicit local a
   assert.match(clientSource, /setStatus\("Sandbox open", "ready"\)/);
   assert.doesNotMatch(clientSource, /Sandbox open · degraded/);
 });
+
+test("shared workspace saves reconcile one stale revision without disabling conflict protection", () => {
+  assert.match(clientSource, /error instanceof SpmtApiError[\s\S]*error\.status !== 409/);
+  assert.match(clientSource, /spmt\.getWorkspaceProfile\(tenantId\)/);
+  assert.match(clientSource, /controller\.saveWorkspace\(tenantId, currentRevision, patch\)/);
+  assert.match(clientSource, /workspace changed again while saving/i);
+  assert.match(clientSource, /JSON\.parse\(value\.responseBody\)/);
+});
