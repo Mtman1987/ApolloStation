@@ -31,15 +31,34 @@ if (candidateApp === "nebula-arcade") {
   const module = await import("../../apps/nebula-arcade/dist/index.js");
   candidateManifest = module.nebulaArcadeCatalogRegistration(publicUrl);
 }
-const [{ commlinkCatalogRegistration }, { stellarCoreCatalogRegistration }, { missionControlCatalogRegistration }] = await Promise.all([
+const [
+  { commlinkCatalogRegistration },
+  { stellarCoreCatalogRegistration },
+  { missionControlCatalogRegistration },
+  { discordStreamHubCatalogRegistration },
+  { streamweaverCatalogRegistration },
+  { hearMeOutCatalogRegistration },
+  { mountainViewCatalogRegistration },
+  { companionCatalogRegistration },
+] = await Promise.all([
   import("../../apps/commlink/dist/index.js"),
   import("../../apps/stellar-core/dist/index.js"),
   import("../../apps/mission-control/dist/index.js"),
+  import("../../apps/discord-stream-hub/dist/index.js"),
+  import("../../apps/streamweaver/dist/index.js"),
+  import("../../apps/hearmeout/dist/index.js"),
+  import("../../apps/mountainview/dist/index.js"),
+  import("../../apps/companion/dist/index.js"),
 ]);
 const sandboxManifests = [
   commlinkCatalogRegistration(publicUrl),
   stellarCoreCatalogRegistration(publicUrl),
   missionControlCatalogRegistration(publicUrl),
+  discordStreamHubCatalogRegistration(publicUrl),
+  streamweaverCatalogRegistration(publicUrl),
+  hearMeOutCatalogRegistration(publicUrl),
+  mountainViewCatalogRegistration(publicUrl),
+  companionCatalogRegistration(publicUrl),
   ...(candidateManifest ? [candidateManifest] : []),
 ];
 const children = new Set();
@@ -88,7 +107,7 @@ if (candidateApp === "nebula-arcade") {
   chatTag.once("exit", (code, signal) => { if (!stopping) void stop(signal === "SIGINT" || signal === "SIGTERM" ? 0 : code ?? (signal ? 1 : 0)); });
   await waitForUrl(chatTag, `http://127.0.0.1:${chatTagPort}/health/ready`, "Nebula Arcade candidate");
 }
-const web = start("SpaceMountain web", "apps/spacemountain-web/dist/server.js", {
+const web = start("SpaceMountain web", "apps/spacemountain-web/dist/integrated-server.js", {
   ...common,
   SPMT_ORIGIN: `http://127.0.0.1:${spmtPort}`,
   HOST: "0.0.0.0",
