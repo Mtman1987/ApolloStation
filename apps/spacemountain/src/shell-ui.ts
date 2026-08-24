@@ -157,12 +157,25 @@ export class SpaceMountainShellUi {
     root.querySelectorAll<HTMLElement>("[data-coder-log]").forEach((node) => node.addEventListener("click", () => { const item = this.snapshot.operations.logs.find((log) => log.id === node.dataset.coderLog); if (item) this.options.onPrepareCoderLog?.(item); }));
     root.querySelector<HTMLFormElement>("[data-coder-form]")?.addEventListener("submit", (event) => { event.preventDefault(); const form = new FormData(event.currentTarget as HTMLFormElement); const appId = String(form.get("appId") ?? "").trim(); const prompt = String(form.get("prompt") ?? "").trim(); if (appId && prompt) this.options.onPrepareCoderPrompt?.(appId, prompt); });
     root.querySelector<HTMLElement>("[data-workspace-toggle]")?.addEventListener("click", () => this.toggleWorkspaceTray());
-    root.querySelector<HTMLElement>("[data-live-toggle]")?.addEventListener("click", (event) => {
+    root.querySelector<HTMLElement>("[data-apps-toggle]")?.addEventListener("click", (event) => {
       const button = event.currentTarget as HTMLElement;
-      const tray = root.querySelector<HTMLElement>("[data-live-tray]");
+      const tray = root.querySelector<HTMLElement>("[data-apps-tray]");
+      const liveTray = root.querySelector<HTMLElement>("[data-live-tray]");
       if (!tray) return;
       tray.hidden = !tray.hidden;
       button.setAttribute("aria-expanded", String(!tray.hidden));
+      if (liveTray) liveTray.hidden = true;
+      root.querySelector<HTMLElement>("[data-live-toggle]")?.setAttribute("aria-expanded", "false");
+    });
+    root.querySelector<HTMLElement>("[data-live-toggle]")?.addEventListener("click", (event) => {
+      const button = event.currentTarget as HTMLElement;
+      const tray = root.querySelector<HTMLElement>("[data-live-tray]");
+      const appsTray = root.querySelector<HTMLElement>("[data-apps-tray]");
+      if (!tray) return;
+      tray.hidden = !tray.hidden;
+      button.setAttribute("aria-expanded", String(!tray.hidden));
+      if (appsTray) appsTray.hidden = true;
+      root.querySelector<HTMLElement>("[data-apps-toggle]")?.setAttribute("aria-expanded", "false");
     });
     root.querySelectorAll<HTMLInputElement>('.spmt-slider-grid input[type="range"]').forEach((input) => input.addEventListener("input", () => { const output = input.parentElement?.querySelector<HTMLOutputElement>("output"); if (output) output.value = input.value; }));
     if (this.view === "workspace") {
@@ -231,8 +244,10 @@ export class SpaceMountainShellUi {
     const unread = this.snapshot.notifications.filter((item) => !item.readAt && !item.read_at).length;
     const user = recordText(this.snapshot.session, ["displayName", "display_name", "username"]) ?? "Captain";
     const live = ecosystemPresence(this.snapshot.events, this.snapshot.apps);
+    const connectedApps = this.snapshot.apps.filter((app) => app.installed && app.enabled);
+    const appsTray = `<section id="spmt-apps-tray" class="spmt-apps-tray spmt-product-glass" data-apps-tray hidden><header><strong>Connected apps</strong><span>${connectedApps.length} enabled</span></header><div>${connectedApps.map((app) => { const active = connectedAppUsage(this.snapshot.events, app.appId); const art = app.iconUrl ? `<img src="${escapeHtml(app.iconUrl)}" alt="" loading="lazy">` : `<span>${escapeHtml(initials(app.name))}</span>`; return `<button type="button" data-launch-app="${escapeHtml(app.appId)}" title="Launch ${escapeHtml(app.name)}"><i>${art}</i><span><strong>${escapeHtml(app.name)}</strong><small>${escapeHtml(app.description || "SpaceMountain ecosystem application")}</small></span><b aria-label="${active} active now">${active}<small>live</small></b></button>`; }).join("") || `<p>No connected apps are enabled for this account.</p>`}</div><footer><button type="button" data-nav="apps">Manage apps in Shipyard</button></footer></section>`;
     const liveTray = `<section id="spmt-live-tray" class="spmt-live-tray spmt-product-glass" data-live-tray hidden><header><strong>Live now</strong><span>${live.length} creator${live.length === 1 ? "" : "s"}</span></header><div>${live.map((person) => `<article><span class="spmt-live-dot"></span><div><strong>${escapeHtml(person.name)}</strong><small>${escapeHtml(person.sources.join(" + "))}</small></div></article>`).join("") || `<p>No creators are live across the installed app pool.</p>`}</div></section>`;
-    return `<header class="spmt-shell-header-stack" data-spmt-shell-header><div class="spmt-cosmic-header spmt-product-glass"><button class="spmt-brand" data-spmt-black-hole-trigger aria-label="SpaceMountain home; double-click for the Black Hole"><img src="/assets/product/space-logo-header.png" alt=""><strong>SPACEMOUNTAIN<em>.LIVE</em></strong></button><nav class="spmt-header-links" aria-label="Product shortcuts"><a href="/docs/developers">Docs</a><button data-nav="apps">Explore apps</button></nav><div class="spmt-header-clocks" aria-label="Local and UTC time"><span><time data-spmt-local-clock></time><small>LOCAL</small></span><span><time data-spmt-utc-clock></time><small>UTC</small></span></div><div class="spmt-header-balance">${(this.snapshot.xp?.balance ?? 0).toLocaleString()} XP</div><div class="spmt-header-actions"><button data-workspace-toggle class="spmt-icon-button" aria-label="Open canonical workspace">${icon("layout")}</button><button data-live-toggle class="spmt-icon-button spmt-live-button" aria-label="Show creators live across the installed app pool" aria-controls="spmt-live-tray" aria-expanded="false">${icon("broadcast")}${live.length ? `<i>${Math.min(live.length, 9)}${live.length > 9 ? "+" : ""}</i>` : ""}</button><button data-nav="inbox" class="spmt-icon-button" aria-label="Open Commlink">${icon("mail")}${unread ? `<i>${Math.min(unread, 9)}${unread > 9 ? "+" : ""}</i>` : ""}</button><button data-nav="settings" class="spmt-account"><span class="spmt-avatar">${escapeHtml(initials(user))}</span><span>${escapeHtml(user)}</span></button></div></div>${liveTray}</header>`;
+    return `<header class="spmt-shell-header-stack" data-spmt-shell-header><div class="spmt-cosmic-header spmt-product-glass"><div class="spmt-brand-cluster"><button class="spmt-brand" data-spmt-black-hole-trigger aria-label="SpaceMountain home; double-click for the Black Hole"><img src="/assets/product/space-logo-header.png" alt=""><strong>SPACEMOUNTAIN<em>.LIVE</em></strong></button><div class="spmt-header-clocks" aria-label="Local and UTC time"><span><time data-spmt-local-clock></time><small>LOCAL</small></span><span><time data-spmt-utc-clock></time><small>UTC</small></span></div></div><div class="spmt-header-actions"><button data-apps-toggle class="spmt-icon-button" aria-label="Explore connected apps" aria-controls="spmt-apps-tray" aria-expanded="false">${icon("grid")}</button><button data-workspace-toggle class="spmt-icon-button" aria-label="Open canonical workspace">${icon("layout")}</button><button data-live-toggle class="spmt-icon-button spmt-live-button" aria-label="Show creators live across the installed app pool" aria-controls="spmt-live-tray" aria-expanded="false">${icon("broadcast")}${live.length ? `<i>${Math.min(live.length, 9)}${live.length > 9 ? "+" : ""}</i>` : ""}</button><button data-nav="inbox" class="spmt-icon-button" aria-label="Open Commlink">${icon("mail")}${unread ? `<i>${Math.min(unread, 9)}${unread > 9 ? "+" : ""}</i>` : ""}</button><button data-nav="settings" class="spmt-account"><span class="spmt-avatar">${escapeHtml(initials(user))}</span><span class="spmt-account-copy"><strong>${escapeHtml(user)}</strong><small>${(this.snapshot.xp?.balance ?? 0).toLocaleString()} XP</small></span></button></div></div>${appsTray}${liveTray}</header>`;
   }
 
   private dock() {
@@ -434,6 +449,18 @@ function ecosystemPresence(events: Array<Record<string, unknown>>, apps: SpaceMo
     people.set(canonicalId, existing);
   }
   return [...people.values()].sort((left, right) => left.name.localeCompare(right.name));
+}
+function connectedAppUsage(events: Array<Record<string, unknown>>, appId: string) {
+  const people = new Set<string>();
+  for (const event of events) {
+    if (!(recordText(event, ["type"])?.toLowerCase() ?? "").includes("live")) continue;
+    const payload = recordObject(event, "payload") ?? event;
+    const sourceId = recordText(event, ["sourceAppId", "source_app_id"]) ?? recordText(payload, ["sourceAppId", "source_app_id", "source"]);
+    if (sourceId !== appId) continue;
+    const personId = recordText(payload, ["canonicalUserId", "canonical_user_id", "userId", "user_id", "providerUserId", "provider_user_id"]);
+    if (personId) people.add(personId);
+  }
+  return people.size;
 }
 function commlinkSources(snapshot: SpaceMountainShellSnapshotV1) {
   const sources = new Map<string, { id: string; label: string; short: string; state: "ready" | "degraded" | "unavailable"; detail: string }>();

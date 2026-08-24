@@ -123,13 +123,22 @@ test("shared header uses catalog-backed live presence, local and UTC clocks, and
   assert.match(source, /data-spmt-utc-clock/);
   assert.match(source, /timeZone: "UTC"/);
   assert.match(source, /data-workspace-toggle[\s\S]*data-live-toggle/);
+  assert.match(source, /data-apps-toggle[\s\S]*data-workspace-toggle/);
+  assert.match(source, /data-apps-tray/);
+  assert.match(source, /connectedAppUsage\(this\.snapshot\.events, app\.appId\)/);
+  assert.match(source, /spmt-account-copy[\s\S]*\.toLocaleString\(\)\} XP/);
   assert.match(source, /Show creators live across the installed app pool/);
+  assert.doesNotMatch(source, /<nav class="spmt-header-links"/);
+  assert.doesNotMatch(source, /<a href="\/docs\/developers">Docs<\/a>/);
   assert.doesNotMatch(source, /const nodes = \[\{ label: "SPMT"/);
   assert.doesNotMatch(source, /spmt-product-status/);
   assert.doesNotMatch(source, /this\.snapshot\.state\.toUpperCase\(\)/);
   assert.doesNotMatch(POLISHED_SPACE_MOUNTAIN_CSS, /\.spmt-telemetry\{/);
   assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /\.spmt-header-clocks\{/);
   assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /\.spmt-live-tray\{/);
+  assert.match(THEMED_SURFACE_CSS, /\.spmt-apps-tray\{/);
+  assert.match(THEMED_SURFACE_CSS, /\.spmt-brand-cluster/);
+  assert.match(THEMED_SURFACE_CSS, /\.spmt-account-copy/);
 });
 
 test("mobile layout removes shell-header dependency from bottom dock without hiding content", () => {

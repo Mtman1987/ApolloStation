@@ -1,3 +1,5 @@
+import { randomBytes } from "node:crypto";
+
 export type ProviderKindV1 = "twitch" | "discord" | "xbox" | "github" | "other";
 
 export interface UserRecordV1 { id: string; createdAt: string; }
@@ -184,7 +186,6 @@ export class MemoryAuthorityStore implements AuthorityStore {
 export interface AuthorityServiceOptions { store: AuthorityStore; now?: () => string; idFactory?: (prefix: string) => string; }
 
 export class AuthorityService {
-  private sequence = 0;
   private readonly store: AuthorityStore;
   private readonly now: () => string;
   private readonly idFactory: (prefix: string) => string;
@@ -192,7 +193,7 @@ export class AuthorityService {
   constructor(options: AuthorityServiceOptions) {
     this.store = options.store;
     this.now = options.now ?? (() => new Date().toISOString());
-    this.idFactory = options.idFactory ?? ((prefix) => `${prefix}_${++this.sequence}`);
+    this.idFactory = options.idFactory ?? ((prefix) => `${prefix}_${randomBytes(12).toString("hex")}`);
   }
 
   ensureUser(userId: string): UserRecordV1 {
