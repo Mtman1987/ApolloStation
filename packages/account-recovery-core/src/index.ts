@@ -8,6 +8,7 @@ import type { PlatformDataStore, UserProfileV1 } from "@spmt/platform-data-core"
 export type CredentialStateV1 = "setup-required" | "password-set";
 export type SignInStateV1 = "not-found" | CredentialStateV1;
 export type SetupPurposeV1 = "first-time-setup" | "dm-password-reset";
+export type GrandfatherProviderV1 = "discord" | "twitch";
 
 export interface AccountProvisionInputV1 {
   tenantId: string;
@@ -25,6 +26,26 @@ export interface AccountProvisionResultV1 {
   credentialState: CredentialStateV1;
   createdUser: boolean;
   createdTenant: boolean;
+}
+
+export interface ProviderGrandfatherInputV1 {
+  sourceAppId: string;
+  provider: GrandfatherProviderV1;
+  providerUserId: string;
+  providerUsername?: string;
+  username?: string;
+  displayName?: string;
+}
+
+export interface ProviderIdentityResultV1 {
+  provider: GrandfatherProviderV1;
+  providerUserId: string;
+  userId: string;
+  profile: UserProfileV1;
+  credentialState: CredentialStateV1;
+  createdUser: boolean;
+  linkedProvider: boolean;
+  recoveredRevokedLink: boolean;
 }
 
 export interface AccountSetupTicketV1 {
@@ -115,6 +136,79 @@ export class AccountRecoveryService {
     this.setupStore = options.setupStore;
     this.now = options.now ?? (() => new Date().toISOString());
     this.tokenFactory = options.tokenFactory ?? (() => randomBytes(32).toString("base64url"));
+  }
+
+  /**
+   * Production-style provider import for trusted first-party services.
+   * This is deliberately global identity creation: it never creates, owns, or joins a tenant.
+   * Provider display names are presentation hints only; the immutable providerUserId is the identity key.
+   */
+  grandfatherProviderIdentity(input: ProviderGrandfatherInputV1): ProviderIdentityResultV1 {
+    requireId(input.sourceAppId, "sourceAppId");
+    const provider = requireGrandfatherProvider(input.provider);
+    const providerUserId = requireProviderUserId(input.providerUserId);
+    const rawLink = this.authorityStore.getProviderLink(provider, providerUserId);
+    const recoveredRevokedLink = Boolean(rawLink?.revokedAt);
+    const userId = rawLink?.userId ?? `usr_provider_${sha256(`${provider}:${providerUserId}`).slice(0, 24)}`;
+    const createdUser = !this.authorityStore.getUser(userId);
+    this.authority.ensureUser(userId);
+
+    let linkedProvider = false;
+    if (!rawLink || rawLink.revokedAt) {
+      this.authority.linkProvider(userId, provider, providerUserId);
+      linkedProvider = true;
+    } else if (rawLink.userId !== userId) {
+      throw new AccountSetupError("Provider identity is already linked to a different SPMT account");
+    }
+
+    let profile = this.platformStore.getUserProfile(userId);
+    const requestedUsername = input.username ?? input.providerUsername;
+    const requestedDisplay = input.displayName ?? input.providerUsername ?? requestedUsername ?? "SpaceMountain member";
+    if (!profile) {
+      const now = this.now();
+      profile = {
+        userId,
+        username: this.availableUsername(requestedUsername, userId),
+        displayName: cleanDisplayName(requestedDisplay),
+        tenantIds: [],
+        createdAt: now,
+        updatedAt: now,
+      };
+      this.platformStore.putUserProfile(profile);
+    } else if (!this.platformStore.getUserCredential(userId) && input.displayName && cleanDisplayName(input.displayName) !== profile.displayName) {
+      profile = { ...profile, displayName: cleanDisplayName(input.displayName), updatedAt: this.now() };
+      this.platformStore.putUserProfile(profile);
+    }
+
+    return {
+      provider,
+      providerUserId,
+      userId,
+      profile,
+      credentialState: this.platformStore.getUserCredential(userId) ? "password-set" : "setup-required",
+      createdUser,
+      linkedProvider,
+      recoveredRevokedLink,
+    };
+  }
+
+  resolveProviderIdentity(providerInput: GrandfatherProviderV1, providerUserIdInput: string): ProviderIdentityResultV1 | undefined {
+    const provider = requireGrandfatherProvider(providerInput);
+    const providerUserId = requireProviderUserId(providerUserIdInput);
+    const link = this.authorityStore.getProviderLink(provider, providerUserId);
+    if (!link || link.revokedAt) return undefined;
+    const profile = this.platformStore.getUserProfile(link.userId);
+    if (!profile) return undefined;
+    return {
+      provider,
+      providerUserId,
+      userId: link.userId,
+      profile,
+      credentialState: this.platformStore.getUserCredential(link.userId) ? "password-set" : "setup-required",
+      createdUser: false,
+      linkedProvider: false,
+      recoveredRevokedLink: false,
+    };
   }
 
   provisionAccount(input: AccountProvisionInputV1): AccountProvisionResultV1 {
@@ -314,6 +408,15 @@ function cleanDisplayName(value: string) {
 }
 function requireId(value: string, name: string) {
   if (!value || value.trim() !== value || value.length > 200 || !/^[A-Za-z0-9._:@/-]+$/.test(value)) throw new AccountSetupError(`${name} is invalid`);
+  return value;
+}
+function requireProviderUserId(value: string) {
+  const normalized = String(value ?? "").trim();
+  if (!normalized || normalized.length > 128 || !/^[A-Za-z0-9:_-]+$/.test(normalized)) throw new AccountSetupError("A valid immutable providerUserId is required");
+  return normalized;
+}
+function requireGrandfatherProvider(value: string): GrandfatherProviderV1 {
+  if (value !== "discord" && value !== "twitch") throw new AccountSetupError("provider must be discord or twitch");
   return value;
 }
 function requirePassword(value: string) {
