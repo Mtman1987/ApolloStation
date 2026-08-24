@@ -10,12 +10,13 @@ import { ControlService } from "@spmt/control-core";
 import { OutboxDispatcher } from "@spmt/outbox-core";
 import { PlatformDataError, PlatformDataService, type OAuthClientV1 } from "@spmt/platform-data-core";
 import { SqlitePlatformDataStore } from "@spmt/platform-data-sqlite";
-import { PlatformOperations, type CoderRuntimeV1 } from "@spmt/platform-ops";
+import { PlatformOperations, type CoderRuntimeV1, type CommunityAssistantRuntimeV1 } from "@spmt/platform-ops";
 import { PlatformApiAdapter } from "@spmt/api-adapter";
 import { HealthRegistry } from "@spmt/runtime";
+import type { AppCatalogRegistrationV1 } from "@spmt/contracts";
 
 const USER_SCOPES = ["identity:read","identity:write","workspace:read","workspace:write","xp:read","apps:read","apps:install","entitlements:read","events:read","commlink:read","commlink:write","notifications:read","notifications:write","webhooks:read","webhooks:write","assistants:read","assistants:invoke","stellar:context:read","stellar:context:write","stellar:capabilities:read"];
-const SANDBOX_OWNER_OPERATIONS_SCOPES = ["operations:logs:read","operations:coder:read","operations:coder:invoke"];
+const SANDBOX_OWNER_SCOPES = ["apps:register","operations:logs:read","operations:coder:read","operations:coder:invoke","overlay:widgets:read","overlay:outputs:read","overlay:outputs:write"];
 
 export interface SpmtServiceOptions {
   databasePath: string;
@@ -31,7 +32,10 @@ export interface SpmtServiceOptions {
   sendDiscordDm?: (discordUserId: string, message: { title: string; description: string; url: string }) => Promise<void>;
   runtimeMode?: "production" | "sandbox";
   sandboxFixtures?: boolean;
+  sandboxOwnerUsername?: string;
+  sandboxApps?: AppCatalogRegistrationV1[];
   coderRuntime?: CoderRuntimeV1;
+  communityAssistant?: CommunityAssistantRuntimeV1;
 }
 
 export function createSpmtService(options: SpmtServiceOptions) {
@@ -40,24 +44,26 @@ export function createSpmtService(options: SpmtServiceOptions) {
     throw new Error("Sandbox mode rejects Twitch and Discord provider integrations");
   }
   if (options.sandboxFixtures && runtimeMode !== "sandbox") throw new Error("Sandbox fixtures require sandbox runtime mode");
+  if (options.sandboxApps?.length && runtimeMode !== "sandbox") throw new Error("Sandbox apps require sandbox runtime mode");
   const store = new SqliteAuthorityStore(options.databasePath);
   const platformStore = new SqlitePlatformDataStore(options.databasePath);
   const setupStore = new SqliteAccountSetupStore(options.databasePath);
   const authority = new AuthorityService({ store });
   const auth = new AuthService({ store });
-  const control = new ControlService({ store });
+  const publicBaseUrl = (options.publicBaseUrl ?? "https://spmt.live").replace(/\/$/, "");
+  const control = new ControlService({ store, outputBaseUrl: publicBaseUrl });
   const data = new PlatformDataService({ store: platformStore, auth, webhookKey: options.webhookKey });
   const accounts = new AccountRecoveryService({ authority, authorityStore: store, control, platformStore, setupStore });
-  const operations = new PlatformOperations(auth, authority, control, data, undefined, options.coderRuntime);
+  const operations = new PlatformOperations(auth, authority, control, data, options.communityAssistant, options.coderRuntime);
   const api = new PlatformApiAdapter(operations);
   const health = new HealthRegistry();
   health.setDependency("authority-storage", "ready", `sqlite:${store.journalMode()}`);
   health.setDependency("outbound-integrations", runtimeMode === "sandbox" ? "degraded" : "ready", runtimeMode === "sandbox" ? "disabled by sandbox contract" : "enabled");
   const fetchImpl = options.fetchImpl ?? fetch;
-  const publicBaseUrl = (options.publicBaseUrl ?? "https://spmt.live").replace(/\/$/, "");
   const sendDiscordDm = options.sendDiscordDm ?? (options.discordBotToken ? createDiscordDmSender(options.discordBotToken, fetchImpl) : undefined);
 
   if (options.sandboxFixtures) seedSandboxFixtures(control, data, publicBaseUrl);
+  if (options.sandboxApps?.length) seedSandboxApps(control, store.listTenants(), options.sandboxApps);
 
   const outbox = new OutboxDispatcher({
     authority,
@@ -238,6 +244,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
         control.registerTenant({ tenantId, ownerUserId: userId, displayName });
         authority.getOrCreateWorkspace(tenantId);
         const profile = data.registerUser({ userId, username, displayName, password, tenantIds: [tenantId] });
+        installSandboxApps(control, tenantId, options.sandboxApps ?? []);
         if (options.sandboxFixtures) seedSandboxOperationsLog(data, tenantId);
         return json(response, 201, { profile, tenantId });
       }
@@ -250,7 +257,9 @@ export function createSpmtService(options: SpmtServiceOptions) {
           return json(response, 409, { error: "setup_required", flow: "first-time-setup", next: "spacemountain-invite", optionsUrl: "/v1/auth/setup-options", tenantId: inspection.tenantId });
         }
         try {
-          const result = data.login(username, str(body.password, "password"), runtimeMode === "sandbox" ? [...USER_SCOPES, ...SANDBOX_OWNER_OPERATIONS_SCOPES] : USER_SCOPES);
+          const ownerUsername = options.sandboxOwnerUsername?.trim().toLowerCase();
+          const isSandboxOwner = runtimeMode === "sandbox" && Boolean(ownerUsername) && username.trim().toLowerCase() === ownerUsername;
+          const result = data.login(username, str(body.password, "password"), isSandboxOwner ? [...USER_SCOPES, ...SANDBOX_OWNER_SCOPES] : USER_SCOPES);
           return json(response, 200, result, { "set-cookie": sessionCookie(result.tokens.accessToken) });
         } catch { return json(response, 401, { error: "invalid_credentials" }); }
       }
@@ -345,8 +354,33 @@ export function validateSandboxServiceEnvironment(environment: NodeJS.ProcessEnv
   const publicBaseUrl = requireSandboxPublicUrl(environment.SPMT_PUBLIC_URL);
   const host = environment.SPMT_HOST ?? "127.0.0.1";
   if (!["127.0.0.1", "localhost", "::1"].includes(host)) throw new Error("Sandbox SPMT must bind only to loopback through SPMT_HOST");
-  if (environment.SPMT_SANDBOX_FIXTURES !== "1") throw new Error("SPMT_SANDBOX_FIXTURES=1 is required for the first isolated proof");
-  return { databasePath, publicBaseUrl, host };
+  if (!["0", "1"].includes(environment.SPMT_SANDBOX_FIXTURES ?? "")) throw new Error("SPMT_SANDBOX_FIXTURES must be 0 or 1");
+  const sandboxOwnerUsername = environment.SPMT_SANDBOX_OWNER_USERNAME?.trim().toLowerCase();
+  if (sandboxOwnerUsername && !/^[a-z0-9][a-z0-9._-]{2,79}$/.test(sandboxOwnerUsername)) throw new Error("SPMT_SANDBOX_OWNER_USERNAME is invalid");
+  const sandboxApps = parseSandboxApps(environment.SPMT_SANDBOX_APPS);
+  return { databasePath, publicBaseUrl, host, sandboxApps, ...(sandboxOwnerUsername ? { sandboxOwnerUsername } : {}) };
+}
+
+function parseSandboxApps(source: string | undefined): AppCatalogRegistrationV1[] {
+  if (!source) return [];
+  let value: unknown;
+  try { value = JSON.parse(source); } catch { throw new Error("SPMT_SANDBOX_APPS must be valid JSON"); }
+  if (!Array.isArray(value) || value.length > 50) throw new Error("SPMT_SANDBOX_APPS must be an array of at most 50 app manifests");
+  return value.map((entry, index) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) throw new Error(`SPMT_SANDBOX_APPS[${index}] must be an app manifest`);
+    const item = entry as Record<string, unknown>;
+    if (typeof item.appId !== "string" || typeof item.name !== "string" || typeof item.description !== "string" || typeof item.version !== "string" || typeof item.launchUrl !== "string" || !Array.isArray(item.allowedScopes) || !Array.isArray(item.surfaces) || (item.status !== "active" && item.status !== "disabled")) throw new Error(`SPMT_SANDBOX_APPS[${index}] is incomplete`);
+    return item as unknown as AppCatalogRegistrationV1;
+  });
+}
+
+function seedSandboxApps(control: ControlService, tenants: Array<{ id: string }>, manifests: AppCatalogRegistrationV1[]) {
+  manifests.forEach((manifest) => registerFixture(control, manifest));
+  tenants.forEach((tenant) => installSandboxApps(control, tenant.id, manifests));
+}
+
+function installSandboxApps(control: ControlService, tenantId: string, manifests: AppCatalogRegistrationV1[]) {
+  manifests.filter((manifest) => manifest.status === "active").forEach((manifest) => control.installApp(tenantId, manifest.appId, manifest.allowedScopes));
 }
 
 function seedSandboxFixtures(control: ControlService, data: PlatformDataService, publicBaseUrl: string) {
@@ -450,6 +484,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     publicBaseUrl,
     runtimeMode,
     sandboxFixtures: runtimeMode === "sandbox" && process.env.SPMT_SANDBOX_FIXTURES === "1",
+    ...(checked?.sandboxOwnerUsername ? { sandboxOwnerUsername: checked.sandboxOwnerUsername } : {}),
+    ...(checked?.sandboxApps.length ? { sandboxApps: checked.sandboxApps } : {}),
     ...(checked?.host ? { host: checked.host } : {}),
     ...(buildSha ? { buildSha } : {}),
     ...(twitchClientId ? { twitchClientId } : {}),

@@ -8,20 +8,24 @@ on:
       - "tests/**"
       - "scripts/**"
       - "sandbox/**"
-      - "docs/SPRITES_SANDBOX_HANDOFF.md"
+      - "docs/**"
+      - "*.md"
       - "package.json"
       - "package-lock.json"
       - "tsconfig.base.json"
       - ".github/workflows/green-contracts.yml"
   push:
-    branches: [main]
+    branches:
+      - main
+      - "work/**"
     paths:
       - "packages/**"
       - "apps/**"
       - "tests/**"
       - "scripts/**"
       - "sandbox/**"
-      - "docs/SPRITES_SANDBOX_HANDOFF.md"
+      - "docs/**"
+      - "*.md"
       - "package.json"
       - "package-lock.json"
       - "tsconfig.base.json"
@@ -31,9 +35,9 @@ jobs:
   contracts:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
-          node-version: 22
+          node-version: 24
       - run: npm ci --ignore-scripts
       - run: npm test

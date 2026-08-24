@@ -1,0 +1,180 @@
+name: Sprite promotion
+
+on:
+  push:
+    branches:
+      - main
+      - "work/**"
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Deploy the current commit to the selected Sprite tier
+        required: true
+        type: choice
+        options:
+          - review
+          - release
+
+permissions:
+  contents: read
+
+jobs:
+  review:
+    name: Deploy review Sprite
+    if: >-
+      vars.SPRITES_AUTODEPLOY_ENABLED == 'true' &&
+      ((github.event_name == 'push' && startsWith(github.ref, 'refs/heads/work/')) ||
+       (github.event_name == 'workflow_dispatch' && inputs.target == 'review'))
+    runs-on: ubuntu-latest
+    concurrency:
+      group: apollo-review-sprite
+      cancel-in-progress: true
+    environment: sprite-review
+    env:
+      SPRITE_ORG: mtman-new
+      SPRITE_NAME: web-terminal
+      EXPECTED_SPRITE_ID: sprite-2249fee2-ecf3-4b10-8bc1-314f4b9e5bcc
+      SPRITE_PUBLIC_URL: https://web-terminal-bpp4n.sprites.app
+      DEPLOY_ROLE: review
+      BUILD_SHA: ${{ github.sha }}
+      REPOSITORY_URL: https://github.com/${{ github.repository }}.git
+      SPRITES_TOKEN: ${{ secrets.SPRITES_TOKEN }}
+    steps:
+      - name: Check out deployment tooling
+        uses: actions/checkout@v5
+
+      - name: Validate deployment configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${SPRITES_TOKEN:-}" ]]; then
+            echo "Missing SPRITES_TOKEN in the sprite-review environment." >&2
+            exit 1
+          fi
+
+      - name: Install Sprites CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL https://sprites.dev/install.sh | bash
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Authenticate and verify exact Sprite
+        shell: bash
+        run: |
+          set -euo pipefail
+          sprite auth setup --token "$SPRITES_TOKEN"
+          actual_id="$(sprite api "/v1/sprites/$SPRITE_NAME" -- --silent | jq -r '.id')"
+          if [[ "$actual_id" != "$EXPECTED_SPRITE_ID" ]]; then
+            echo "Refusing deployment: $SPRITE_NAME resolved to unexpected ID $actual_id" >&2
+            exit 1
+          fi
+          url_details="$(sprite url -o "$SPRITE_ORG" -s "$SPRITE_NAME")"
+          grep -Fq "$SPRITE_PUBLIC_URL" <<<"$url_details"
+          grep -Eiq 'auth[^[:alnum:]]+sprite|sprite[^[:alnum:]]+auth' <<<"$url_details"
+
+      - name: Create pre-deployment checkpoint
+        run: sprite checkpoint create -o "$SPRITE_ORG" -s "$SPRITE_NAME" --comment "Before review $BUILD_SHA"
+
+      - name: Deploy and verify review release
+        shell: bash
+        run: |
+          set -euo pipefail
+          sprite exec --no-port-forward \
+            -o "$SPRITE_ORG" -s "$SPRITE_NAME" \
+            --file scripts/sprites/deploy-sandbox-release.sh:/tmp/deploy-sandbox-release.sh \
+            --env "DEPLOY_ROLE=$DEPLOY_ROLE,BUILD_SHA=$BUILD_SHA,REPOSITORY_URL=$REPOSITORY_URL,SPRITE_PUBLIC_URL=$SPRITE_PUBLIC_URL" \
+            -- /bin/bash /tmp/deploy-sandbox-release.sh
+
+      - name: Record review deployment
+        shell: bash
+        run: |
+          {
+            echo "### Review Sprite"
+            echo "- Commit: \`$BUILD_SHA\`"
+            echo "- Target: \`$SPRITE_ORG/$SPRITE_NAME\`"
+            echo "- URL: $SPRITE_PUBLIC_URL"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  release:
+    name: Promote main to web-terminal
+    if: >-
+      vars.SPRITES_AUTODEPLOY_ENABLED == 'true' &&
+      ((github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+       (github.event_name == 'workflow_dispatch' && inputs.target == 'release'))
+    runs-on: ubuntu-latest
+    concurrency:
+      group: apollo-release-sprite
+      cancel-in-progress: false
+    environment: sprite-release
+    env:
+      SPRITE_ORG: testing-968
+      SPRITE_NAME: web-terminal
+      EXPECTED_SPRITE_ID: sprite-fec8d6f2-49f0-4e28-bc6d-e8a7ae364280
+      SPRITE_PUBLIC_URL: https://web-terminal-bvesa.sprites.app
+      DEPLOY_ROLE: release
+      BUILD_SHA: ${{ github.sha }}
+      REPOSITORY_URL: https://github.com/${{ github.repository }}.git
+      SPRITES_TOKEN: ${{ secrets.SPRITES_TOKEN }}
+    steps:
+      - name: Require main for release promotion
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "Release promotion is permitted only from main." >&2
+          exit 1
+
+      - name: Check out deployment tooling
+        uses: actions/checkout@v5
+
+      - name: Validate deployment configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${SPRITES_TOKEN:-}" ]]; then
+            echo "Missing SPRITES_TOKEN in the sprite-release environment." >&2
+            exit 1
+          fi
+
+      - name: Install Sprites CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL https://sprites.dev/install.sh | bash
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Authenticate and verify protected target
+        shell: bash
+        run: |
+          set -euo pipefail
+          sprite auth setup --token "$SPRITES_TOKEN"
+          actual_id="$(sprite api "/v1/sprites/$SPRITE_NAME" -- --silent | jq -r '.id')"
+          if [[ "$actual_id" != "$EXPECTED_SPRITE_ID" ]]; then
+            echo "Refusing deployment: $SPRITE_NAME resolved to unexpected ID $actual_id" >&2
+            exit 1
+          fi
+          url_details="$(sprite url -o "$SPRITE_ORG" -s "$SPRITE_NAME")"
+          grep -Fq "$SPRITE_PUBLIC_URL" <<<"$url_details"
+          grep -Eiq 'auth[^[:alnum:]]+sprite|sprite[^[:alnum:]]+auth' <<<"$url_details"
+
+      - name: Create protected pre-promotion checkpoint
+        run: sprite checkpoint create -o "$SPRITE_ORG" -s "$SPRITE_NAME" --comment "Before release $BUILD_SHA"
+
+      - name: Promote and verify exact main commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          sprite exec --no-port-forward \
+            -o "$SPRITE_ORG" -s "$SPRITE_NAME" \
+            --file scripts/sprites/deploy-sandbox-release.sh:/tmp/deploy-sandbox-release.sh \
+            --env "DEPLOY_ROLE=$DEPLOY_ROLE,BUILD_SHA=$BUILD_SHA,REPOSITORY_URL=$REPOSITORY_URL,SPRITE_PUBLIC_URL=$SPRITE_PUBLIC_URL" \
+            -- /bin/bash /tmp/deploy-sandbox-release.sh
+
+      - name: Record protected promotion
+        shell: bash
+        run: |
+          {
+            echo "### Release Sprite"
+            echo "- Commit: \`$BUILD_SHA\`"
+            echo "- Target: \`$SPRITE_ORG/$SPRITE_NAME\`"
+            echo "- URL: $SPRITE_PUBLIC_URL"
+          } >> "$GITHUB_STEP_SUMMARY"

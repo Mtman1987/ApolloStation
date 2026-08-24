@@ -1,6 +1,6 @@
 # Decision and Debate Ledger
 
-Updated: 2026-08-22
+Updated: 2026-08-24
 
 Status values: `ACCEPT`, `REJECT`, `CHANGE`, or `OPEN`.
 
@@ -46,6 +46,7 @@ The following wording governs implementation where it is more specific than the 
 - **D-42:** Launch the developer marketplace as a reviewed beta after first-party conformance and one external canary. Require automated manifest/scope/security validation, manual publishing review and high-risk-scope review, signed immutable versions, test-tenant proof, and immediate suspension/revocation. Expand public submission only after the lifecycle is proven.
 - **D-43:** Evolve the Mtman Machine Rotator into the private ecosystem fleet reconciler. It preserves controlled periodic restarts for always-on Machines, maintains a live inventory of observed Fly state, reconciles approved per-workload runtime policy against health, traffic, queues, sessions, leases, capacity, quotas, and cost, and safely starts, drains, stops, replaces, or scales eligible Machines as demand grows and shrinks. SPMT remains authoritative for app approval, declared capabilities, identity, scopes, and desired policy; the Rotator owns operational observation, lifecycle decisions, Fly actions, and their audit evidence, then reports truthful runtime health/capacity back to SPMT. Apps never receive Fly credentials or unrestricted fleet authority. Owner/operator actions and app/developer self-service use separate least-privilege scopes. Every action is bounded, idempotent, leader-fenced, cost-limited, rollback-aware, and recorded with its signals, reason, actor, target, result, and correlation ID.
 - **D-44:** Name the complete shared foundation **SPMT Ecosystem Core**. Keep SPMT as the identity/data/policy/developer authority, SpaceMountain as the front door/workspace, Stellar Core as the persona-neutral AI subsystem, and the Mtman Machine Rotator as the private operations/fleet controller. `ApolloStation` remains the implementation repository/codename. Product apps sit above the core and consume its public developer contracts; the ecosystem name does not create a private first-party integration path.
+- **D-45:** Commlink, the Stellar Core/Stella surface, and Mission Control are registered first-party applications rather than hardcoded SpaceMountain pages. SpaceMountain retains Home, Shipyard, Workspace, and account navigation, then renders every installed/authorized app—including these first-party apps—from the canonical SPMT registry. Mission Control remains owner/operator scoped; Coder and Rotator are workers behind it, while Stellar Core remains the persona-neutral AI service behind Stella. The sidebar's app region scrolls independently with a theme-colored scrollbar revealed only during interaction.
 
 ### Deliberately deferred decisions
 
@@ -107,6 +108,7 @@ The preferred topology is caller-initiated: apps and users call public SPMT/Stel
 | D-28 | Old-system retirement | Require backup, reconciliation, observation, and rollback gates before stopping old apps; delay data/source deletion longer. | Carrying old systems costs money and leaves confusing artifacts. | ACCEPT |
 | D-29 | First-party developer-platform parity | First-party apps use the same scoped, documented contracts available to outside developers. | Private shortcuts can be faster for code owned by one team. | ACCEPT |
 | D-30 | Dynamic app discovery | Every Apps surface consumes the canonical registry and reacts to approved registry revisions without source edits or redeployment. | Static menus are simpler and can hide partially ready apps. | ACCEPT |
+| D-45 | Foundational application surfaces | Register Commlink, Stellar Core, and Mission Control as first-party apps; discover their names, descriptions, launch targets, installation, and visibility through SPMT instead of hardcoding SpaceMountain navigation. | Keeping them as SpaceMountain pages requires less routing and packaging. | ACCEPT |
 
 ## Product naming debates
 

@@ -7,6 +7,8 @@ import { join } from "node:path";
 import test from "node:test";
 import { createSpmtService, validateSandboxServiceEnvironment } from "../apps/spmt-service/dist/index.js";
 import { createSpaceMountainWebHost, validateSandboxWebEnvironment } from "../apps/spacemountain-web/dist/server.js";
+import { nebulaArcadeCatalogRegistration } from "../apps/nebula-arcade/dist/index.js";
+import { SpmtClient } from "../packages/sdk/dist/index.js";
 
 async function withSandbox(run) {
   const directory = mkdtempSync(join(tmpdir(), "spmt-web-sandbox-"));
@@ -18,6 +20,7 @@ async function withSandbox(run) {
     publicBaseUrl: "https://test-green.sprites.app",
     runtimeMode: "sandbox",
     sandboxFixtures: true,
+    sandboxOwnerUsername: "mtman1987",
     buildSha: "test-green",
   });
   let web;
@@ -42,6 +45,7 @@ test("private SpaceMountain host serves explicit browser modules with restrictiv
     const page = await fetch(base);
     assert.equal(page.status, 200);
     assert.match(page.headers.get("content-security-policy") ?? "", /default-src 'none'/);
+    assert.match(page.headers.get("content-security-policy") ?? "", /frame-src 'self'/);
     assert.match(page.headers.get("content-security-policy") ?? "", /connect-src 'self'/);
     assert.match(page.headers.get("content-security-policy") ?? "", /img-src 'self' data: https:/);
     assert.equal(page.headers.get("x-frame-options"), "DENY");
@@ -50,15 +54,74 @@ test("private SpaceMountain host serves explicit browser modules with restrictiv
     assert.match(html, /GREEN SPRITE SANDBOX/);
     assert.match(html, /Stellar Core provides persona-neutral shared AI/);
     assert.match(html, /Stella is the app-neutral Community Assistant/);
-    assert.match(html, /Athena remains only the owner's configured StreamWeaver persona/);
+    assert.match(html, /Tenant personas remain in the separate apps/);
+    assert.match(html, /Add developer app/);
+    assert.match(html, /Developer docs/);
+    assert.doesNotMatch(html, /Publish Chat Tag through SDK/);
     assert.doesNotMatch(html, /localStorage|sessionStorage|accessToken|refreshToken/);
 
     const client = await fetch(`${base}/assets/web/client.js`);
     assert.equal(client.status, 200);
     assert.match(client.headers.get("content-type") ?? "", /text\/javascript/);
+    assert.equal((await fetch(`${base}/assets/ui/index.js`)).status, 200);
+    assert.equal((await fetch(`${base}/assets/spacemountain/product-shell-css.js`)).status, 200);
+    assert.equal((await fetch(`${base}/assets/spacemountain/themed-surface-css.js`)).status, 200);
+    assert.match((await fetch(`${base}/assets/product/space-logo-main.png`)).headers.get("content-type") ?? "", /image\/png/);
+    assert.match((await fetch(`${base}/assets/product/theme-solar-flare-background.webp`)).headers.get("content-type") ?? "", /image\/webp/);
+    assert.match((await fetch(`${base}/assets/product/commlink-communications-background.webp`)).headers.get("content-type") ?? "", /image\/webp/);
+    assert.match((await fetch(`${base}/assets/product/stellar-core-background.webp`)).headers.get("content-type") ?? "", /image\/webp/);
+    assert.match((await fetch(`${base}/assets/product/mission-control-background.webp`)).headers.get("content-type") ?? "", /image\/webp/);
     assert.equal((await fetch(`${base}/assets/../../package.json`)).status, 404);
     assert.equal((await fetch(`${base}/sandbox/beacon`)).status, 200);
+
+    const docs = await fetch(`${base}/docs/developers`);
+    assert.equal(docs.status, 200);
+    const docsHtml = await docs.text();
+    assert.match(docsHtml, /Register through the human-facing UI/);
+    assert.match(docsHtml, /SpmtClient\.registerApp/);
+    assert.match(docsHtml, /Registration is not installation/);
+    assert.match(docsHtml, /TROUBLESHOOTING/);
+    assert.equal((await fetch(`${base}/assets/web/developer-docs.css`)).status, 200);
+    const example = await (await fetch(`${base}/docs/examples/app-manifest.json`)).json();
+    assert.equal(example.appId, "my-community-app");
   });
+});
+
+test("developer console exposes an editable candidate but registers only through the SDK", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "spmt-empty-catalog-"));
+  const spmt = createSpmtService({ databasePath: join(directory, "spmt-empty.sqlite"), webhookKey: Buffer.alloc(32, 8), host: "127.0.0.1", port: 0, publicBaseUrl: "https://test-green.sprites.app", runtimeMode: "sandbox", sandboxFixtures: false, sandboxOwnerUsername: "mtman1987" });
+  let web;
+  try {
+    await spmt.listen(); const spmtAddress = spmt.server.address(); assert.ok(spmtAddress && typeof spmtAddress !== "string");
+    const candidate = nebulaArcadeCatalogRegistration("https://test-green.sprites.app");
+    web = createSpaceMountainWebHost({ spmtOrigin: `http://127.0.0.1:${spmtAddress.port}`, host: "127.0.0.1", port: 0, candidateManifest: candidate });
+    await web.listen(); const webAddress = web.server.address(); assert.ok(webAddress && typeof webAddress !== "string"); const base = `http://127.0.0.1:${webAddress.port}`; const origin = new URL(base).origin;
+    const ordinaryRegistration = await fetch(`${base}/sandbox/auth/register`, { method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify({ displayName: "Empty Captain", username: "empty-captain", password: "sandbox-only-password" }) });
+    const ordinaryCookie = (ordinaryRegistration.headers.get("set-cookie") ?? "").split(";")[0]; assert.ok(ordinaryCookie);
+    const ordinaryImport = await fetch(`${base}/sandbox/developer/import-manifest`, { method: "POST", headers: { cookie: ordinaryCookie, origin, "content-type": "application/json" }, body: JSON.stringify({ manifestUrl: "/sandbox/candidate-app" }) });
+    assert.equal(ordinaryImport.status, 403);
+    const registration = await fetch(`${base}/sandbox/auth/register`, { method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify({ displayName: "Mtman1987", username: "mtman1987", password: "sandbox-owner-password" }) });
+    const cookie = (registration.headers.get("set-cookie") ?? "").split(";")[0]; assert.ok(cookie);
+    const page = await (await fetch(base)).text();
+    assert.match(page, /Add developer app/);
+    assert.match(page, /Load Nebula Arcade example/);
+    assert.doesNotMatch(page, /Publish Nebula Arcade through SDK/);
+    const client = new SpmtClient({ baseUrl: base, appId: "spacemountain", fetchImpl: (input, init = {}) => { const headers = new Headers(init.headers); headers.set("cookie", cookie); if (init.method === "POST") headers.set("origin", origin); return fetch(input, { ...init, headers }); } });
+    assert.deepEqual(await client.listApps(), []);
+    assert.equal((await (await fetch(`${base}/sandbox/candidate-app`)).json()).appId, "nebula-arcade");
+    const unauthenticatedImport = await fetch(`${base}/sandbox/developer/import-manifest`, { method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify({ manifestUrl: "/sandbox/candidate-app" }) });
+    assert.equal(unauthenticatedImport.status, 401);
+    const crossOriginImport = await fetch(`${base}/sandbox/developer/import-manifest`, { method: "POST", headers: { cookie, origin: "https://attacker.invalid", "content-type": "application/json" }, body: JSON.stringify({ manifestUrl: "/sandbox/candidate-app" }) });
+    assert.equal(crossOriginImport.status, 403);
+    const imported = await fetch(`${base}/sandbox/developer/import-manifest`, { method: "POST", headers: { cookie, origin, "content-type": "application/json" }, body: JSON.stringify({ manifestUrl: "/sandbox/candidate-app" }) });
+    assert.equal(imported.status, 200);
+    assert.equal((await imported.json()).appId, "nebula-arcade");
+    const blockedPrivateImport = await fetch(`${base}/sandbox/developer/import-manifest`, { method: "POST", headers: { cookie, origin, "content-type": "application/json" }, body: JSON.stringify({ manifestUrl: "https://127.0.0.1/app.json" }) });
+    assert.equal(blockedPrivateImport.status, 400);
+    const published = await client.registerApp(candidate);
+    assert.equal(published.appId, "nebula-arcade");
+    assert.deepEqual((await client.listApps()).map((app) => app.appId), ["nebula-arcade"]);
+  } finally { if (web) await web.close(); await spmt.close(); rmSync(directory, { recursive: true, force: true }); }
 });
 
 test("auth facade keeps tokens HttpOnly and dynamically exposes sandbox registry fixtures", async () => {
@@ -121,22 +184,33 @@ test("auth facade keeps tokens HttpOnly and dynamically exposes sandbox registry
     assert.equal(invocationBody.status, "unavailable");
     assert.doesNotMatch(JSON.stringify(invocationBody), /response|reply|messageText/);
 
-    const operationsLogsResponse = await fetch(`${base}/v1/operations/logs`, { headers: { cookie, "x-spmt-tenant": principal.tenantIds[0] } });
+    const ordinaryOperationsLogsResponse = await fetch(`${base}/v1/operations/logs`, { headers: { cookie, "x-spmt-tenant": principal.tenantIds[0] } });
+    assert.equal(ordinaryOperationsLogsResponse.status, 403, "ordinary captains must not see owner operations evidence");
+
+    const ownerRegistration = await fetch(`${base}/sandbox/auth/register`, { method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify({ displayName: "Mtman1987", username: "mtman1987", password: "sandbox-owner-password" }) });
+    assert.equal(ownerRegistration.status, 201);
+    const ownerCookie = (ownerRegistration.headers.get("set-cookie") ?? "").split(";")[0];
+    assert.ok(ownerCookie);
+    const ownerPrincipal = await (await fetch(`${base}/v1/session`, { headers: { cookie: ownerCookie } })).json();
+    const ownerTenantId = ownerPrincipal.tenantIds[0];
+    assert.ok(ownerTenantId);
+
+    const operationsLogsResponse = await fetch(`${base}/v1/operations/logs`, { headers: { cookie: ownerCookie, "x-spmt-tenant": ownerTenantId } });
     assert.equal(operationsLogsResponse.status, 200);
     const operationsLogs = await operationsLogsResponse.json();
     assert.equal(operationsLogs.length, 1);
     assert.equal(operationsLogs[0].kind, "sandbox.fixture");
     assert.match(operationsLogs[0].summary, /Synthetic sandbox fixture/);
-    const coderDescriptor = await (await fetch(`${base}/v1/operations/coder`, { headers: { cookie, "x-spmt-tenant": principal.tenantIds[0] } })).json();
+    const coderDescriptor = await (await fetch(`${base}/v1/operations/coder`, { headers: { cookie: ownerCookie, "x-spmt-tenant": ownerTenantId } })).json();
     assert.equal(coderDescriptor.executionOwner, "mtman-machine-rotator");
     assert.equal(coderDescriptor.availability, "unavailable");
-    const coderDraftResponse = await fetch(`${base}/v1/operations/coder/jobs`, { method: "POST", headers: { cookie, origin, "x-spmt-tenant": principal.tenantIds[0], "content-type": "application/json", "idempotency-key": "browser-coder-draft-1" }, body: JSON.stringify({ targetAppId: "spacemountain", prompt: "Inspect the synthetic operations path without changing code", evidenceLogIds: [operationsLogs[0].id] }) });
+    const coderDraftResponse = await fetch(`${base}/v1/operations/coder/jobs`, { method: "POST", headers: { cookie: ownerCookie, origin, "x-spmt-tenant": ownerTenantId, "content-type": "application/json", "idempotency-key": "browser-coder-draft-1" }, body: JSON.stringify({ targetAppId: "spacemountain", prompt: "Inspect the synthetic operations path without changing code", evidenceLogIds: [operationsLogs[0].id] }) });
     assert.equal(coderDraftResponse.status, 200);
     const coderDraft = await coderDraftResponse.json();
     assert.equal(coderDraft.job.state, "draft");
     assert.match(coderDraft.job.unavailableReason, /not connected/);
     assert.doesNotMatch(JSON.stringify(coderDraft), /diff|patch|deployed/);
-    const coderJobs = await (await fetch(`${base}/v1/operations/coder/jobs`, { headers: { cookie, "x-spmt-tenant": principal.tenantIds[0] } })).json();
+    const coderJobs = await (await fetch(`${base}/v1/operations/coder/jobs`, { headers: { cookie: ownerCookie, "x-spmt-tenant": ownerTenantId } })).json();
     assert.equal(coderJobs.length, 1);
 
     const apps = await fetch(`${base}/v1/apps`, { headers: { cookie } });
@@ -194,6 +268,8 @@ test("sandbox environment guards fail closed before a process can reach a provid
     SPMT_HOST: "127.0.0.1",
   };
   assert.equal(validateSandboxServiceEnvironment(service).host, "127.0.0.1");
+  assert.deepEqual(validateSandboxServiceEnvironment({ ...service, SPMT_SANDBOX_FIXTURES: "0" }), { databasePath: service.DATABASE_PATH, publicBaseUrl: service.SPMT_PUBLIC_URL, host: "127.0.0.1", sandboxApps: [] });
+  assert.throws(() => validateSandboxServiceEnvironment({ ...service, SPMT_SANDBOX_FIXTURES: "yes" }), /must be 0 or 1/);
   assert.throws(() => validateSandboxServiceEnvironment({ ...service, DISCORD_BOT_TOKEN: "forbidden" }), /rejects provider/);
   assert.throws(() => validateSandboxServiceEnvironment({ ...service, NEXT_PUBLIC_YOUTUBE_INNERTUBE_API_KEY: "forbidden" }), /rejects provider/);
   assert.throws(() => validateSandboxServiceEnvironment({ ...service, SPMT_PUBLIC_URL: "https://spmt.live" }), /private Sprite/);
@@ -236,6 +312,31 @@ test("sandbox fixtures are restart-idempotent and outbox delivery cannot reach t
   }
 });
 
+test("bundled review apps are installed into tenants that predate the deployment", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "spmt-sandbox-app-upgrade-"));
+  const databasePath = join(directory, "spmt-green-sandbox.sqlite");
+  const options = { databasePath, webhookKey: Buffer.alloc(32, 4), host: "127.0.0.1", port: 0, publicBaseUrl: "https://upgrade-green.sprites.app", runtimeMode: "sandbox" };
+  const first = createSpmtService(options);
+  try {
+    await first.listen();
+    first.authority.ensureUser("existing-owner");
+    first.control.registerTenant({ tenantId: "existing-tenant", ownerUserId: "existing-owner", displayName: "Existing Captain" });
+    first.authority.getOrCreateWorkspace("existing-tenant");
+    await first.close();
+
+    const manifest = nebulaArcadeCatalogRegistration("https://upgrade-green.sprites.app");
+    const upgraded = createSpmtService({ ...options, sandboxApps: [manifest] });
+    try {
+      await upgraded.listen();
+      assert.deepEqual(upgraded.control.listApps().map((app) => app.appId), ["nebula-arcade"]);
+      assert.deepEqual(upgraded.control.listInstalls("existing-tenant").map((install) => ({ appId: install.appId, enabled: install.enabled })), [{ appId: "nebula-arcade", enabled: true }]);
+    } finally { await upgraded.close(); }
+  } finally {
+    if (first.server.listening) await first.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("Sprite artifacts are deny-by-default and the supervised runner cannot register a service", () => {
   const policy = JSON.parse(readFileSync(new URL("../sandbox/sprites/network-policy.json", import.meta.url), "utf8"));
   assert.deepEqual(policy.rules.at(-1), { domain: "*", action: "deny" });
@@ -250,6 +351,9 @@ test("Sprite artifacts are deny-by-default and the supervised runner cannot regi
   assert.match(client, /document\.visibilityState !== "visible"/);
   assert.match(client, /await spmt\.listApps\(\)/);
   assert.match(client, /next !== registryFingerprint/);
+  assert.match(client, /await spmt\.registerApp\(manifest\)/);
+  assert.match(client, /\/sandbox\/developer\/import-manifest/);
+  assert.doesNotMatch(client, /function publishCandidate/);
   assert.doesNotMatch(client, /localStorage|sessionStorage/);
 });
 
@@ -270,11 +374,62 @@ test("supervised runner makes both layers healthy and stops both children togeth
     const web = await (await fetch(`http://127.0.0.1:${webPort}/sandbox/health`)).json();
     assert.equal(spmt.runtimeMode, "sandbox");
     assert.equal(spmt.outboundIntegrations, "disabled");
+    assert.equal(spmt.sandboxFixtures, false);
     assert.equal(web.ready, true);
+    assert.match(await (await fetch(`http://127.0.0.1:${webPort}/`)).text(), /Add developer app/);
     child.kill("SIGTERM");
     const exit = await new Promise((done) => child.once("exit", (code, signal) => done({ code, signal })));
     assert.deepEqual(exit, { code: 0, signal: null });
     await waitUntil(async () => !(await reachable(spmtPort)) && !(await reachable(webPort)), 5_000, () => "A supervised child port remained reachable after termination");
+  } finally {
+    if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("supervised runner seeds the canonical first-party app pool and launches Nebula Arcade", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "spmt-supervised-candidate-"));
+  const ports = new Set();
+  while (ports.size < 3) ports.add(await freePort());
+  const [spmtPort, webPort, chatTagPort] = ports;
+  const base = `http://127.0.0.1:${webPort}`;
+  const child = spawn(process.execPath, ["scripts/sprites/run-supervised-sandbox.mjs", "--candidate-app", "nebula-arcade", "--public-url", `http://localhost:${webPort}`, "--data-root", directory, "--build-sha", "candidate-test", "--spmt-port", String(spmtPort), "--web-port", String(webPort), "--chat-tag-port", String(chatTagPort)], { cwd: new URL("..", import.meta.url), stdio: ["ignore", "pipe", "pipe"] });
+  let output = "";
+  child.stdout.setEncoding("utf8");
+  child.stderr.setEncoding("utf8");
+  child.stdout.on("data", (chunk) => { output += chunk; });
+  child.stderr.on("data", (chunk) => { output += chunk; });
+  try {
+    await waitUntil(() => output.includes("The canonical app pool contains Commlink, Stellar Core, Mission Control, Nebula Arcade."), 20_000, () => `Runner output:\n${output}`);
+    const page = await (await fetch(`${base}/`)).text();
+    assert.match(page, /Add developer app/);
+    assert.match(page, /Load Nebula Arcade example/);
+    assert.doesNotMatch(page, /Publish Nebula Arcade through SDK/);
+    assert.equal((await fetch(`${base}/apps/nebula-arcade`)).status, 200);
+    assert.equal((await fetch(`${base}/apps/commlink`)).status, 200);
+    assert.equal((await fetch(`${base}/apps/stellar-core`)).status, 200);
+    assert.equal((await fetch(`${base}/apps/mission-control`)).status, 200);
+    const origin = new URL(base).origin;
+    const registration = await fetch(`${base}/sandbox/auth/register`, { method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify({ displayName: "Candidate Captain", username: "candidate-captain", password: "sandbox-only-password" }) });
+    assert.equal(registration.status, 201);
+    const cookie = (registration.headers.get("set-cookie") ?? "").split(";")[0];
+    assert.ok(cookie);
+    const client = new SpmtClient({ baseUrl: base, appId: "spacemountain", fetchImpl: (input, init = {}) => { const headers = new Headers(init.headers); headers.set("cookie", cookie); if (init.method === "POST") headers.set("origin", origin); return fetch(input, { ...init, headers }); } });
+    assert.deepEqual((await client.listApps()).map((app) => app.appId).sort(), ["commlink", "mission-control", "nebula-arcade", "stellar-core"]);
+    assert.deepEqual((await client.listInstalls((await registration.json()).tenantId)).map((install) => install.appId).sort(), ["commlink", "mission-control", "nebula-arcade", "stellar-core"]);
+    const candidate = await (await fetch(`${base}/sandbox/candidate-app`)).json();
+    await assert.rejects(() => client.registerApp(candidate), (error) => error?.status === 403);
+
+    const ownerRegistration = await fetch(`${base}/sandbox/auth/register`, { method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify({ displayName: "Mtman1987", username: "mtman1987", password: "sandbox-owner-password" }) });
+    assert.equal(ownerRegistration.status, 201);
+    const ownerCookie = (ownerRegistration.headers.get("set-cookie") ?? "").split(";")[0];
+    assert.ok(ownerCookie);
+    const ownerClient = new SpmtClient({ baseUrl: base, appId: "spacemountain", fetchImpl: (input, init = {}) => { const headers = new Headers(init.headers); headers.set("cookie", ownerCookie); if (init.method === "POST") headers.set("origin", origin); return fetch(input, { ...init, headers }); } });
+    assert.deepEqual((await ownerClient.listApps()).map((app) => app.appId).sort(), ["commlink", "mission-control", "nebula-arcade", "stellar-core"]);
+    child.kill("SIGTERM");
+    const exit = await new Promise((done) => child.once("exit", (code, signal) => done({ code, signal })));
+    assert.deepEqual(exit, { code: 0, signal: null });
+    await waitUntil(async () => !(await reachable(spmtPort)) && !(await reachable(webPort)) && !(await reachable(chatTagPort)), 5_000, () => "A supervised candidate port remained reachable after termination");
   } finally {
     if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
     rmSync(directory, { recursive: true, force: true });

@@ -62,11 +62,14 @@ Refactoring may change implementation, package layout, process boundaries, and r
 - `overlay` and `popout` surfaces that do not render the SpaceMountain header use zero shell-header inset plus any real device/output safe area.
 - OBS/headless output routes do not include workspace/header chrome unless the output contract explicitly requires it.
 - Use the shared semantic layer scale; do not escalate arbitrary z-index values to fight other ecosystem components.
+- Full first-party app surfaces use the shared animated star field, glass tokens, and rocket-navigation implementation from `@spmt/ui`; the app supplies only its navigation descriptor and routes.
+- Keep workspace palette and app artwork separate: the selected theme recolors the app's own stable scene, while a saved custom background remains an explicit user override.
+- Do not render product chrome, background art, or the rocket dock in controls-free `overlay` and `popout` outputs unless their output contract explicitly requires it.
 
 ## Shared workspace, messaging, and overlay ownership
 
 - SPMT owns portable workspace/profile state; SpaceMountain owns the canonical workspace host/editor UI.
-- SPMT owns shared Mail, Notifications, App Event, and authorized live-chat history; the provider-neutral Chat Gateway owns live provider connections, normalization, cursors, and reconnects; SpaceMountain owns the combined Commlink presentation; StreamWeaver is a scoped persona/command consumer.
+- SPMT owns shared Mail, Notifications, App Event, and authorized live-chat history; the provider-neutral Chat Gateway owns live provider connections, normalization, cursors, and reconnects; the registered Commlink app owns the combined presentation; SpaceMountain discovers and launches it through the same registry contract used for every other app; StreamWeaver is a scoped persona/command consumer.
 - SPMT owns canonical overlay scene/profile metadata and grants; SpaceMountain owns the general overlay editor; product apps publish `OverlayWidgetManifestV1` plus focused controls-free renderers.
 - Apps may own product-specific room/chat/game/editor state where it is genuinely product-specific, but must not create a second authority for shared ecosystem state.
 
@@ -122,6 +125,7 @@ Every request/job carries correlation ID, tenant ID, app/module ID, version, and
 - no legacy auth or Firebase path is exercised;
 - cost and latency budgets are measured;
 - all four relevant surface modes pass their layout contract tests;
+- theme switching recolors the same app-owned scene, the shared star/navigation layers are present on full app surfaces, and user background overrides remain reversible;
 - shell-integrated sidebars, drawers, dialogs, menus/popovers, toast stacks, docks, editor controls, and portal roots pass header/safe-area collision tests at responsive and wrapped-header heights;
 - the app uses the common `AppFrameV1`/`EmbedBridgeV1` rather than an app-specific workspace bridge;
 - first-party integration calls are traceable to documented SDK/API/event/WebSocket contracts and pass the same scope/tenant checks as third-party calls;

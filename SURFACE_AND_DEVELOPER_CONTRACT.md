@@ -1,6 +1,6 @@
 # Shared Surface and Developer Platform Contract
 
-Updated: 2026-08-21
+Updated: 2026-08-23
 Status: **required Green contract**
 
 This contract exists to prevent two failures from the Blue system from returning in Green:
@@ -103,6 +103,14 @@ Green defines one semantic layer scale instead of app-specific arbitrary z-index
 
 Components use semantic layer tokens. They do not compete by adding larger arbitrary z-index values.
 
+### Product chrome and scene invariant
+
+Every full first-party app surface uses the shared `@spmt/ui` product grammar: animated ecosystem stars, glass and focus tokens, and the rocket-navigation interaction. Apps provide their own navigation descriptor and routes; they do not copy or fork the navigation implementation. An app may change its logo, content, accent details, and specialized controls without changing the familiar interaction model.
+
+The workspace theme and app artwork are separate inputs. The canonical workspace theme selects the palette and tints every app consistently. Each app owns one default scene image appropriate to its purpose, and that image remains the same when the theme changes. A canonical user background URL is an explicit override, not a replacement for the app-owned default scene contract.
+
+`overlay` and chrome-free `popout` modes omit the product background, star field, shared header, and rocket navigation unless their versioned output contract explicitly requires one of those layers.
+
 ## 5. Shared workspace, messaging, and overlays have one owner each
 
 ### Workspace
@@ -151,6 +159,20 @@ The invocation never returns fabricated completion. With no worker it returns `s
 - Product apps publish versioned `OverlayWidgetManifestV1` capabilities and controls-free renderers.
 - Apps may expose focused product controls/previews, but they do not create competing general-purpose overlay editors.
 - One widget/source has one stable ownership contract even if it is rendered in OBS, SpaceMountain, Companion, or a standalone preview.
+
+The implemented widget/runtime registration vertical uses one operation contract through every adapter:
+
+| Capability | SDK | HTTP | CLI | MCP |
+|---|---|---|---|---|
+| Register widget | `registerOverlayWidget(tenantId, manifest)` | `PUT /v1/overlay/widgets` | `overlay register TENANT MANIFEST_JSON` | `spmt.overlay.widgets.register` |
+| List widgets | `listOverlayWidgets(tenantId, appId?)` | `GET /v1/overlay/widgets` | `overlay list TENANT [APP_ID]` | `spmt.overlay.widgets.list` |
+| Issue output | `issueOverlayOutput(tenantId, appId, widgetId, viewerUserId?, ttlMs?)` | `POST /v1/overlay/outputs` | `overlay issue TENANT APP_ID WIDGET_ID [VIEWER_USER_ID] [TTL_MS]` | `spmt.overlay.outputs.issue` |
+| List outputs | `listOverlayOutputs(tenantId, appId?)` | `GET /v1/overlay/outputs` | `overlay outputs TENANT [APP_ID]` | `spmt.overlay.outputs.list` |
+| Revoke output | `revokeOverlayOutput(tenantId, grantId)` | `POST /v1/overlay/outputs/{grantId}/revoke` | `overlay revoke TENANT GRANT_ID` | `spmt.overlay.outputs.revoke` |
+| Report runtime | `reportRuntimeState(tenantId, state, detail?)` | `POST /v1/runtime/state` | `runtime report TENANT STATE [DETAIL]` | `spmt.runtime.state.report` |
+| List runtime | `listRuntimeStates(tenantId, appId?)` | `GET /v1/runtime/state` | `runtime list TENANT [APP_ID]` | `spmt.runtime.state.list` |
+
+Widget registration requires an enabled tenant install, validates HTTPS renderer/preview URLs and app-declared scopes, and derives the caller app from the authenticated service identity rather than `x-spmt-app`. Ordinary app services can write and read only their own widget/runtime records. Cross-app maintenance requires an explicit `overlay:widgets:any` or `runtime:any` grant. Output grants are tenant-owner-only, require a registered widget on an enabled install, return an opaque browser-source URL once, persist only the token hash, expire and revoke closed, and resolve server-side to a verified tenant/app/widget/viewer principal without a redirect or caller-controlled identity parameters. Output inventory never returns the bearer URL. A product's private runtime state remains owned by that product.
 
 ## 6. First-party apps dogfood the developer platform
 

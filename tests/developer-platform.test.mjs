@@ -7,6 +7,7 @@ import { AuthorityService } from "../packages/authority-core/dist/index.js";
 import { AuthService } from "../packages/auth-core/dist/index.js";
 import { SqliteAuthorityStore } from "../packages/authority-sqlite/dist/index.js";
 import { PlatformOperations } from "../packages/platform-ops/dist/index.js";
+import { ControlService } from "../packages/control-core/dist/index.js";
 import { PlatformApiAdapter } from "../packages/api-adapter/dist/index.js";
 import { SpmtClient } from "../packages/sdk/dist/index.js";
 import { runSpmtCli } from "../packages/cli/dist/index.js";
@@ -21,7 +22,8 @@ function setup(communityAssistant) {
   const auth = new AuthService({ store, now: () => "2026-08-22T02:40:00.000Z" });
   auth.registerServiceIdentity({ serviceId: "reference-app", credential: "reference-app-green-secret-12345", scopes: ["workspace:read", "workspace:write", "xp:read", "xp:write", "events:read", "events:write", "assistants:read", "assistants:invoke"], tenantMode: "allow-list", tenantIds: ["tenant-a"] });
   const accessToken = auth.issueServiceAccess("reference-app", "reference-app-green-secret-12345").accessToken;
-  const operations = new PlatformOperations(auth, authority, undefined, undefined, communityAssistant);
+  const control = new ControlService({ store, now: () => "2026-08-22T02:40:00.000Z" });
+  const operations = new PlatformOperations(auth, authority, control, undefined, communityAssistant);
   const api = new PlatformApiAdapter(operations);
   const fetchImpl = async (url, init = {}) => {
     const parsed = new URL(String(url));
@@ -32,7 +34,7 @@ function setup(communityAssistant) {
     return new Response(response.body === undefined ? null : JSON.stringify(response.body), { status: response.status, headers: { "content-type": "application/json" } });
   };
   const client = new SpmtClient({ baseUrl: "https://green.spmt.invalid", appId: "reference-app", getAccessToken: () => accessToken, fetchImpl });
-  return { dir, store, authority, auth, operations, api, client, accessToken };
+  return { dir, store, authority, auth, control, operations, api, client, accessToken };
 }
 
 function cleanup(env) { env.store.close(); rmSync(env.dir, { recursive: true, force: true }); }
@@ -62,6 +64,34 @@ test("API and modern stateless MCP converge on one workspace authority", async (
     assert.equal(read.result.structuredContent.appearance.theme, "dark");
     const oldInitialize = mcp.handle({ jsonrpc: "2.0", id: 3, method: "initialize" }, { accessToken: env.accessToken, protocolVersion: SPMT_MCP_PROTOCOL_VERSION });
     assert.equal(oldInitialize.error.code, -32601);
+  } finally { cleanup(env); }
+});
+
+test("SDK, HTTP API, CLI and MCP register applications through one catalog authority", async () => {
+  const env = setup();
+  try {
+    const publisherToken = env.auth.issueHumanSession({ userId: "viewer-1", scopes: ["apps:read", "apps:register"], tenantIds: ["tenant-a"] }).accessToken;
+    const publisher = new SpmtClient({ baseUrl: "https://green.spmt.invalid", appId: "developer-console", getAccessToken: () => publisherToken, fetchImpl: async (url, init = {}) => {
+      const parsed = new URL(String(url));
+      const headers = Object.fromEntries(new Headers(init.headers).entries());
+      const body = typeof init.body === "string" && init.body ? JSON.parse(init.body) : undefined;
+      const response = env.api.handle({ method: init.method ?? "GET", path: `${parsed.pathname}${parsed.search}`, headers, ...(body === undefined ? {} : { body }) });
+      return new Response(response.body === undefined ? null : JSON.stringify(response.body), { status: response.status, headers: { "content-type": "application/json" } });
+    } });
+    const manifest = (appId) => ({ appId, name: `App ${appId}`, description: "Catalog-driven test app", version: "1.0.0", launchUrl: `https://${appId}.example/`, allowedScopes: ["workspace:read"], surfaces: ["standalone"], status: "active" });
+
+    await publisher.registerApp(manifest("sdk-app"));
+    await runSpmtCli(["apps", "register", JSON.stringify(manifest("cli-app"))], publisher);
+    const apiResult = env.api.handle({ method: "POST", path: "/v1/apps", headers: { authorization: `Bearer ${publisherToken}`, "x-spmt-app": "developer-console" }, body: manifest("api-app") });
+    assert.equal(apiResult.status, 200);
+    const mcp = new SpmtMcpServer(env.operations);
+    const tools = mcp.handle({ jsonrpc: "2.0", id: 30, method: "tools/list" }, { accessToken: publisherToken, protocolVersion: SPMT_MCP_PROTOCOL_VERSION });
+    assert.ok(tools.result.tools.some((item) => item.name === "spmt.apps.register"));
+    const mcpResult = mcp.handle({ jsonrpc: "2.0", id: 31, method: "tools/call", params: { name: "spmt.apps.register", arguments: manifest("mcp-app") } }, { accessToken: publisherToken, protocolVersion: SPMT_MCP_PROTOCOL_VERSION });
+    assert.equal(mcpResult.result.structuredContent.appId, "mcp-app");
+
+    assert.deepEqual((await publisher.listApps()).map((app) => app.appId).sort(), ["api-app", "cli-app", "mcp-app", "sdk-app"]);
+    assert.equal(env.store.listAudit().filter((item) => item.action === "apps.register" && item.actorId === "viewer-1").length, 4);
   } finally { cleanup(env); }
 });
 

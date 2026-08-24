@@ -11,6 +11,7 @@
   "references": [
     { "path": "../authority-core" },
     { "path": "../auth-core" },
+    { "path": "../contracts" },
     { "path": "../control-core" },
     { "path": "../recovery-core" }
   ],

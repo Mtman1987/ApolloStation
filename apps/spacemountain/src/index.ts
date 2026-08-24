@@ -34,6 +34,7 @@ export interface SpaceMountainAppCardV1 {
   description: string;
   version: string;
   launchUrl: string;
+  iconUrl?: string;
   surfaces: SurfaceModeV1[];
   allowedScopes: string[];
   installed: boolean;
@@ -53,7 +54,11 @@ export interface SpaceMountainShellSnapshotV1 {
   entitlements: Array<Record<string, unknown>>;
   events: Array<Record<string, unknown>>;
   conversations: Array<Record<string, unknown>>;
+  messages?: Array<Record<string, unknown>>;
   notifications: Array<Record<string, unknown>>;
+  overlayWidgets: Array<Record<string, unknown>>;
+  overlayOutputs: Array<Record<string, unknown>>;
+  runtimeStates: Array<Record<string, unknown>>;
   stellar: {
     context: Array<Record<string, unknown>>;
     capabilities: Array<Record<string, unknown>>;
@@ -89,6 +94,17 @@ export class SpaceMountainShellController {
       canReadCoder: sessionHasScope(session, "operations:coder:read"),
       canInvokeCoder: sessionHasScope(session, "operations:logs:read") && sessionHasScope(session, "operations:coder:invoke"),
     }));
+    const conversationsTask = this.spmt.listConversations(input.tenantId, input.userId);
+    const messagesTask = conversationsTask.then(async (conversations) => {
+      const settled = await Promise.allSettled(conversations.slice(0, 40).map(async (conversation) => {
+        const conversationId = typeof conversation.id === "string" ? conversation.id : "";
+        if (!conversationId) return [];
+        const messages = await this.spmt.listMessages(input.tenantId, conversationId);
+        return messages.map((message) => ({ ...message, conversationId }));
+      }));
+      if (settled.length && settled.every((result) => result.status === "rejected")) throw new Error("Commlink message history is unavailable");
+      return settled.flatMap((result) => result.status === "fulfilled" ? result.value : []);
+    });
     const tasks = {
       session: sessionTask,
       providerLinks: this.spmt.listProviderLinks(),
@@ -98,8 +114,12 @@ export class SpaceMountainShellController {
       installs: this.spmt.listInstalls(input.tenantId),
       entitlements: this.spmt.listEntitlements(input.tenantId),
       events: this.spmt.listEvents(input.tenantId, { limit: 100 }),
-      commlink: this.spmt.listConversations(input.tenantId, input.userId),
+      commlink: conversationsTask,
+      commlinkMessages: messagesTask,
       notifications: this.spmt.listNotifications(input.tenantId, input.userId),
+      overlayWidgets: this.spmt.listOverlayWidgets?.(input.tenantId) ?? Promise.resolve([]),
+      overlayOutputs: this.spmt.listOverlayOutputs?.(input.tenantId) ?? Promise.resolve([]),
+      runtimeStates: this.spmt.listRuntimeStates?.(input.tenantId) ?? Promise.resolve([]),
       stellarContext: this.spmt.listStellarContext(input.tenantId, input.userId),
       stellarCapabilities: this.spmt.listStellarCapabilities(),
       operationsAccess: operationsAccessTask,
@@ -134,7 +154,7 @@ export class SpaceMountainShellController {
       installs: source(failures, ["installs"]),
       entitlements: source(failures, ["entitlements"]),
       events: source(failures, ["events"]),
-      commlink: source(failures, ["commlink"]),
+      commlink: source(failures, ["commlink", "commlinkMessages"]),
       notifications: source(failures, ["notifications"]),
       stellar: source(failures, ["stellarContext", "stellarCapabilities"]),
       operations: source(failures, ["operationsAccess", "operationsLogs", "operationsCoder", "operationsCoderJobs"]),
@@ -159,7 +179,11 @@ export class SpaceMountainShellController {
       entitlements: records(values.get("entitlements")),
       events: records(values.get("events")),
       conversations: records(values.get("commlink")),
+      messages: records(values.get("commlinkMessages")),
       notifications: records(values.get("notifications")),
+      overlayWidgets: records(values.get("overlayWidgets")),
+      overlayOutputs: records(values.get("overlayOutputs")),
+      runtimeStates: records(values.get("runtimeStates")),
       stellar: { context: records(values.get("stellarContext")), capabilities: records(values.get("stellarCapabilities")) },
       operations: { ...operationsAccess, logs: operationsLogs(values.get("operationsLogs")), coder: coderDescriptor(values.get("operationsCoder")), jobs: coderJobs(values.get("operationsCoderJobs")) },
       setupOptions: Array.isArray(setupPayload?.options) ? setupPayload.options.filter(isRecord) : [],
@@ -211,14 +235,31 @@ export class SpaceMountainShellController {
     return this.spmt.sendCommlinkMessage(tenantId, conversationId, recipientUserIds, text);
   }
 
+  async invokeStella(tenantId: string, userId: string, message: string, conversationId: string, idempotencyKey: string) {
+    requireId(tenantId, "tenantId");
+    requireId(userId, "userId");
+    requireId(conversationId, "conversationId");
+    requireId(idempotencyKey, "idempotencyKey");
+    if (!message.trim() || message.length > 4000) throw new Error("Stella message is invalid");
+    return this.spmt.invokeCommunityAssistant(tenantId, { userId, message: message.trim(), surface: "app", conversationId }, idempotencyKey);
+  }
+
   async prepareCoderDraft(tenantId: string, targetAppId: string, prompt: string, evidenceLogIds: string[], idempotencyKey: string) {
     requireId(tenantId, "tenantId");
     requireId(targetAppId, "targetAppId");
     if (!prompt.trim() || prompt.length > 4000) throw new Error("coder prompt is invalid");
-    if (!evidenceLogIds.length || evidenceLogIds.length > 20) throw new Error("coder evidence is invalid");
+    if (evidenceLogIds.length > 20) throw new Error("coder evidence is invalid");
     evidenceLogIds.forEach((logId) => requireId(logId, "evidenceLogId"));
     requireId(idempotencyKey, "idempotencyKey");
     return this.spmt.createCoderJob(tenantId, targetAppId, prompt, evidenceLogIds, idempotencyKey);
+  }
+
+  async issueOverlayOutput(tenantId: string, appId: string, widgetId: string, viewerUserId?: string) {
+    return this.spmt.issueOverlayOutput(tenantId, appId, widgetId, viewerUserId, 30 * 24 * 60 * 60 * 1000);
+  }
+
+  async revokeOverlayOutput(tenantId: string, grantId: string) {
+    return this.spmt.revokeOverlayOutput(tenantId, grantId);
   }
 }
 
@@ -259,6 +300,7 @@ function joinApps(apps: Array<Record<string, unknown>>, installs: Array<Record<s
       description: String(app.description ?? ""),
       version: String(app.version ?? ""),
       launchUrl: String(app.launchUrl ?? ""),
+      ...(typeof app.iconUrl === "string" && app.iconUrl ? { iconUrl: app.iconUrl } : {}),
       surfaces: surfaceModes(app.surfaces),
       allowedScopes: strings(app.allowedScopes),
       installed: Boolean(install),

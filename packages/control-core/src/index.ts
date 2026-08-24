@@ -1,3 +1,6 @@
+import { createHash, randomBytes } from "node:crypto";
+import { assertOverlayWidgetManifestV1, type AppRuntimeProjectionV1, type IssuedOverlayOutputGrantV1, type OverlayOutputGrantV1, type OverlayOutputResolutionV1, type OverlayWidgetManifestV1, type RegisteredOverlayWidgetV1, type RuntimeStateV1 } from "@spmt/contracts";
+
 export type TenantStatusV1 = "active" | "suspended";
 export type AppStatusV1 = "active" | "disabled";
 export type AppSurfaceV1 = "shell" | "standalone" | "overlay" | "popout";
@@ -42,6 +45,11 @@ export interface EntitlementV1 {
   updatedAt: string;
 }
 
+/** Internal persistence form. tokenHash is deliberately absent from all public grant contracts. */
+export interface StoredOverlayOutputGrantV1 extends OverlayOutputGrantV1 {
+  tokenHash: string;
+}
+
 export interface ControlStore {
   transaction<T>(work: () => T): T;
   getTenant(tenantId: string): TenantRecordV1 | undefined;
@@ -56,6 +64,16 @@ export interface ControlStore {
   getEntitlement(tenantId: string, appId: string, key: string): EntitlementV1 | undefined;
   putEntitlement(entitlement: EntitlementV1): void;
   listEntitlements(tenantId: string, appId?: string): EntitlementV1[];
+  getOverlayWidget(tenantId: string, appId: string, widgetId: string): RegisteredOverlayWidgetV1 | undefined;
+  putOverlayWidget(widget: RegisteredOverlayWidgetV1): void;
+  listOverlayWidgets(tenantId: string, appId?: string): RegisteredOverlayWidgetV1[];
+  getOverlayOutputGrant(grantId: string): StoredOverlayOutputGrantV1 | undefined;
+  getOverlayOutputGrantByTokenHash(tokenHash: string): StoredOverlayOutputGrantV1 | undefined;
+  putOverlayOutputGrant(grant: StoredOverlayOutputGrantV1): void;
+  listOverlayOutputGrants(tenantId: string, appId?: string): StoredOverlayOutputGrantV1[];
+  getRuntimeProjection(tenantId: string, appId: string): AppRuntimeProjectionV1 | undefined;
+  putRuntimeProjection(projection: AppRuntimeProjectionV1): void;
+  listRuntimeProjections(tenantId: string, appId?: string): AppRuntimeProjectionV1[];
 }
 
 export class ControlConflictError extends Error {
@@ -71,15 +89,21 @@ export class ControlValidationError extends Error {
 export interface ControlServiceOptions {
   store: ControlStore;
   now?: () => string;
+  outputBaseUrl?: string;
+  tokenFactory?: (kind: "grant-id" | "output-token") => string;
 }
 
 export class ControlService {
   private readonly store: ControlStore;
   private readonly now: () => string;
+  private readonly outputBaseUrl: string | undefined;
+  private readonly tokenFactory: (kind: "grant-id" | "output-token") => string;
 
   constructor(options: ControlServiceOptions) {
     this.store = options.store;
     this.now = options.now ?? (() => new Date().toISOString());
+    this.outputBaseUrl = options.outputBaseUrl === undefined ? undefined : outputBaseUrl(options.outputBaseUrl);
+    this.tokenFactory = options.tokenFactory ?? ((kind) => kind === "grant-id" ? `out_${randomBytes(12).toString("base64url")}` : randomBytes(32).toString("base64url"));
   }
 
   registerTenant(input: { tenantId: string; ownerUserId: string; displayName: string }): TenantRecordV1 {
@@ -192,6 +216,156 @@ export class ControlService {
     if (appId) this.getApp(appId);
     return this.store.listEntitlements(tenantId, appId);
   }
+
+  registerOverlayWidget(input: { tenantId: string; manifest: OverlayWidgetManifestV1 }): RegisteredOverlayWidgetV1 {
+    return this.store.transaction(() => {
+      const tenantId = id(input.tenantId, "tenantId");
+      const appId = id(input.manifest.appId, "appId");
+      this.requireEnabledInstall(tenantId, appId);
+      let manifest: OverlayWidgetManifestV1;
+      try { manifest = assertOverlayWidgetManifestV1(input.manifest); }
+      catch (error) { throw new ControlValidationError(error instanceof Error ? error.message : "Overlay widget manifest is invalid"); }
+      const app = this.getApp(appId);
+      const invalidScopes = manifest.requiredScopes.filter((scope) => !app.allowedScopes.includes(scope));
+      if (invalidScopes.length) throw new ControlValidationError(`Overlay widget scopes are not allowed by ${appId}: ${invalidScopes.join(", ")}`);
+      const widgetId = id(manifest.widgetId, "widgetId");
+      const existing = this.store.getOverlayWidget(tenantId, appId, widgetId);
+      const now = this.now();
+      const widget: RegisteredOverlayWidgetV1 = {
+        schemaVersion: 1,
+        tenantId,
+        manifest: { ...manifest, appId, widgetId, requiredScopes: scopes(manifest.requiredScopes) },
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now,
+      };
+      this.store.putOverlayWidget(widget);
+      return widget;
+    });
+  }
+
+  listOverlayWidgets(tenantId: string, appId?: string) {
+    const normalizedTenantId = id(tenantId, "tenantId");
+    this.getTenant(normalizedTenantId);
+    if (appId) this.getApp(id(appId, "appId"));
+    return this.store.listOverlayWidgets(normalizedTenantId, appId);
+  }
+
+  issueOverlayOutputGrant(input: { tenantId: string; appId: string; widgetId: string; createdByUserId: string; viewerUserId?: string; ttlMs?: number }): IssuedOverlayOutputGrantV1 {
+    return this.store.transaction(() => {
+      const tenantId = id(input.tenantId, "tenantId");
+      const appId = id(input.appId, "appId");
+      const widgetId = id(input.widgetId, "widgetId");
+      const createdByUserId = id(input.createdByUserId, "createdByUserId");
+      const tenant = this.getTenant(tenantId);
+      if (tenant.ownerUserId !== createdByUserId) throw new ControlConflictError("Only the tenant owner may issue overlay output grants");
+      this.requireEnabledInstall(tenantId, appId);
+      if (!this.store.getOverlayWidget(tenantId, appId, widgetId)) throw new ControlNotFoundError(`Overlay widget ${appId}/${widgetId} is not registered for tenant ${tenantId}`);
+      if (!this.outputBaseUrl) throw new ControlConflictError("Overlay output base URL is not configured");
+      const ttlMs = outputTtl(input.ttlMs);
+      const createdAt = this.now();
+      const createdTime = Date.parse(createdAt);
+      if (!Number.isFinite(createdTime)) throw new ControlConflictError("Control clock returned an invalid timestamp");
+      const token = opaqueToken(this.tokenFactory("output-token"), "output token");
+      const grantId = id(this.tokenFactory("grant-id"), "grantId");
+      if (this.store.getOverlayOutputGrant(grantId)) throw new ControlConflictError("Overlay output grant ID collision; retry issuance");
+      const grant: StoredOverlayOutputGrantV1 = {
+        schemaVersion: 1,
+        grantId,
+        tenantId,
+        appId,
+        widgetId,
+        ...(input.viewerUserId === undefined ? {} : { viewerUserId: id(input.viewerUserId, "viewerUserId") }),
+        createdByUserId,
+        createdAt,
+        expiresAt: new Date(createdTime + ttlMs).toISOString(),
+        tokenHash: hashOutputToken(token),
+      };
+      this.store.putOverlayOutputGrant(grant);
+      return { schemaVersion: 1, grant: publicOutputGrant(grant), browserSourceUrl: `${this.outputBaseUrl}/o/${encodeURIComponent(token)}` };
+    });
+  }
+
+  listOverlayOutputGrants(tenantId: string, appId?: string): OverlayOutputGrantV1[] {
+    const normalizedTenantId = id(tenantId, "tenantId");
+    this.getTenant(normalizedTenantId);
+    const normalizedAppId = appId === undefined ? undefined : id(appId, "appId");
+    if (normalizedAppId) this.getApp(normalizedAppId);
+    return this.store.listOverlayOutputGrants(normalizedTenantId, normalizedAppId).map(publicOutputGrant);
+  }
+
+  revokeOverlayOutputGrant(input: { tenantId: string; grantId: string; revokedByUserId: string }): OverlayOutputGrantV1 {
+    return this.store.transaction(() => {
+      const tenantId = id(input.tenantId, "tenantId");
+      const revokedByUserId = id(input.revokedByUserId, "revokedByUserId");
+      const tenant = this.getTenant(tenantId);
+      if (tenant.ownerUserId !== revokedByUserId) throw new ControlConflictError("Only the tenant owner may revoke overlay output grants");
+      const grant = this.store.getOverlayOutputGrant(id(input.grantId, "grantId"));
+      if (!grant || grant.tenantId !== tenantId) throw new ControlNotFoundError("Overlay output grant does not exist");
+      if (grant.revokedAt) return publicOutputGrant(grant);
+      const revoked = { ...grant, revokedAt: this.now() };
+      this.store.putOverlayOutputGrant(revoked);
+      return publicOutputGrant(revoked);
+    });
+  }
+
+  resolveOverlayOutputToken(token: string): OverlayOutputResolutionV1 {
+    const normalizedToken = opaqueToken(token, "output token");
+    const grant = this.store.getOverlayOutputGrantByTokenHash(hashOutputToken(normalizedToken));
+    if (!grant) throw new ControlNotFoundError("Overlay output is unavailable");
+    if (grant.revokedAt || Date.parse(grant.expiresAt) <= Date.parse(this.now())) throw new ControlNotFoundError("Overlay output is unavailable");
+    this.requireEnabledInstall(grant.tenantId, grant.appId);
+    const widget = this.store.getOverlayWidget(grant.tenantId, grant.appId, grant.widgetId);
+    if (!widget) throw new ControlNotFoundError("Overlay output is unavailable");
+    return {
+      schemaVersion: 1,
+      principal: {
+        schemaVersion: 1,
+        grantId: grant.grantId,
+        tenantId: grant.tenantId,
+        appId: grant.appId,
+        widgetId: grant.widgetId,
+        ...(grant.viewerUserId === undefined ? {} : { viewerUserId: grant.viewerUserId }),
+      },
+      rendererUrl: widget.manifest.rendererUrl,
+    };
+  }
+
+  reportRuntimeState(input: { tenantId: string; appId: string; state: RuntimeStateV1; detail?: string }): AppRuntimeProjectionV1 {
+    return this.store.transaction(() => {
+      const tenantId = id(input.tenantId, "tenantId");
+      const appId = id(input.appId, "appId");
+      this.requireEnabledInstall(tenantId, appId);
+      const allowed = new Set<RuntimeStateV1>(["starting", "ready", "degraded", "draining", "unavailable"]);
+      if (!allowed.has(input.state)) throw new ControlValidationError("Runtime state is invalid");
+      const projection: AppRuntimeProjectionV1 = {
+        schemaVersion: 1,
+        tenantId,
+        appId,
+        state: input.state,
+        ...(input.detail === undefined ? {} : { detail: text(input.detail, "detail", 1000) }),
+        updatedAt: this.now(),
+      };
+      this.store.putRuntimeProjection(projection);
+      return projection;
+    });
+  }
+
+  listRuntimeProjections(tenantId: string, appId?: string) {
+    const normalizedTenantId = id(tenantId, "tenantId");
+    this.getTenant(normalizedTenantId);
+    if (appId) this.getApp(id(appId, "appId"));
+    return this.store.listRuntimeProjections(normalizedTenantId, appId);
+  }
+
+  private requireEnabledInstall(tenantId: string, appId: string) {
+    const tenant = this.getTenant(tenantId);
+    if (tenant.status !== "active") throw new ControlConflictError(`Tenant ${tenantId} is suspended`);
+    const app = this.getApp(appId);
+    if (app.status !== "active") throw new ControlConflictError(`App ${appId} is disabled`);
+    const install = this.store.getInstall(tenantId, appId);
+    if (!install?.enabled) throw new ControlConflictError(`App ${appId} is not enabled for tenant ${tenantId}`);
+    return install;
+  }
 }
 
 function id(value: string, name: string) {
@@ -220,4 +394,24 @@ function httpsUrl(value: string, name: string) {
   if (url.protocol !== "https:" && url.hostname !== "localhost" && url.hostname !== "127.0.0.1") throw new ControlValidationError(`${name} must use HTTPS`);
   if (url.username || url.password) throw new ControlValidationError(`${name} may not contain embedded credentials`);
   return url.toString();
+}
+function outputBaseUrl(value: string) {
+  const normalized = httpsUrl(value, "outputBaseUrl");
+  const url = new URL(normalized);
+  if (url.search || url.hash) throw new ControlValidationError("outputBaseUrl may not contain a query or fragment");
+  return normalized.replace(/\/$/, "");
+}
+function outputTtl(value?: number) {
+  const ttl = value ?? 30 * 24 * 60 * 60 * 1000;
+  if (!Number.isSafeInteger(ttl) || ttl < 5 * 60 * 1000 || ttl > 90 * 24 * 60 * 60 * 1000) throw new ControlValidationError("Overlay output ttlMs must be between 5 minutes and 90 days");
+  return ttl;
+}
+function opaqueToken(value: string, name: string) {
+  if (typeof value !== "string" || value.length < 24 || value.length > 256 || !/^[A-Za-z0-9_-]+$/.test(value)) throw new ControlValidationError(`${name} is invalid`);
+  return value;
+}
+function hashOutputToken(token: string) { return createHash("sha256").update(token).digest("hex"); }
+function publicOutputGrant(grant: StoredOverlayOutputGrantV1): OverlayOutputGrantV1 {
+  const { tokenHash: _tokenHash, ...value } = grant;
+  return value;
 }

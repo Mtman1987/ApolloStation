@@ -7,6 +7,8 @@ export const CHAT_TAG_TAG_COMPLETED = "nebula.chat-tag.tag.completed.v1";
 export const CHAT_TAG_FREE_FOR_ALL_STARTED = "nebula.chat-tag.free-for-all.started.v1";
 export const CHAT_TAG_PLAYER_AVAILABILITY_CHANGED = "nebula.chat-tag.player.availability.changed.v1";
 export const CHAT_TAG_PASS_GRANTED = "nebula.chat-tag.pass.granted.v1";
+export const CHAT_TAG_CROWN_SET = "nebula.chat-tag.crown.set.v1";
+export const CHAT_TAG_CROWNS_CLEARED = "nebula.chat-tag.crowns.cleared.v1";
 
 export const CHAT_TAG_EVENT_TYPES = [
   CHAT_TAG_PLAYER_JOINED,
@@ -15,6 +17,8 @@ export const CHAT_TAG_EVENT_TYPES = [
   CHAT_TAG_FREE_FOR_ALL_STARTED,
   CHAT_TAG_PLAYER_AVAILABILITY_CHANGED,
   CHAT_TAG_PASS_GRANTED,
+  CHAT_TAG_CROWN_SET,
+  CHAT_TAG_CROWNS_CLEARED,
 ] as const;
 
 export interface ChatTagPlayerStateV1 {
@@ -47,8 +51,16 @@ export interface ChatTagHistoryEntryV1 {
 export interface ChatTagXpAwardV1 {
   userId: string;
   delta: number;
-  reason: "chat-tag.tag" | "chat-tag.pass";
+  reason: "chat-tag.tag" | "chat-tag.pass" | "chat-tag.crown";
   idempotencyKey: string;
+}
+
+export interface ChatTagMonthlyWinnerV1 {
+  userId: string;
+  username: string;
+  place: 1 | 2 | 3;
+  monthKey: string;
+  selectedAt: string;
 }
 
 export interface ChatTagPublicEventV1 {
@@ -67,7 +79,9 @@ export type ChatTagCommandKindV1 =
   | "record-activity"
   | "grant-pass"
   | "set-it"
-  | "trigger-ffa";
+  | "trigger-ffa"
+  | "set-winner"
+  | "clear-winners";
 
 interface ChatTagCommandBaseV1 {
   schemaVersion: 1;
@@ -89,7 +103,9 @@ export type ChatTagCommandV1 =
   | (ChatTagCommandBaseV1 & { kind: "record-activity" })
   | (ChatTagCommandBaseV1 & { kind: "grant-pass"; targetUserId: string })
   | (ChatTagCommandBaseV1 & { kind: "set-it"; targetUserId: string })
-  | (ChatTagCommandBaseV1 & { kind: "trigger-ffa" });
+  | (ChatTagCommandBaseV1 & { kind: "trigger-ffa" })
+  | (ChatTagCommandBaseV1 & { kind: "set-winner"; targetUserId: string; place: 1 | 2 | 3 })
+  | (ChatTagCommandBaseV1 & { kind: "clear-winners" });
 
 export interface ChatTagCommandResultV1 {
   schemaVersion: 1;
@@ -111,6 +127,8 @@ export interface ChatTagStateV1 {
   lastTagAt: string | null;
   players: Record<string, ChatTagPlayerStateV1>;
   history: ChatTagHistoryEntryV1[];
+  monthlyWinners: ChatTagMonthlyWinnerV1[];
+  crownAwardKeys: string[];
   appliedCommands: Record<string, ChatTagCommandResultV1>;
 }
 
@@ -123,6 +141,18 @@ export interface ChatTagRulesV1 {
   passSpendWindowMs: number;
 }
 
+export interface ChatTagRotationRulesV1 {
+  rotateAfterMs: number;
+  forceRandomAfterMs: number;
+  freeForAllReminderMs: number;
+}
+
+export interface ChatTagRotationPlanV1 {
+  action: "none" | "assign" | "free-for-all";
+  reason: "not-due" | "no-players" | "initial-assignment" | "active-holder-timeout" | "inactive-holder-timeout" | "forced-timeout" | "free-for-all-reminder" | "no-eligible-player";
+  command?: ChatTagCommandV1;
+}
+
 export const DEFAULT_CHAT_TAG_RULES: ChatTagRulesV1 = {
   tagSuccessPoints: 100,
   taggedPenaltyPoints: 50,
@@ -132,9 +162,35 @@ export const DEFAULT_CHAT_TAG_RULES: ChatTagRulesV1 = {
   passSpendWindowMs: 24 * 60 * 60 * 1_000,
 };
 
+export const DEFAULT_CHAT_TAG_ROTATION_RULES: ChatTagRotationRulesV1 = {
+  rotateAfterMs: 40 * 60 * 1_000,
+  forceRandomAfterMs: 5 * 60 * 60 * 1_000,
+  freeForAllReminderMs: 60 * 60 * 1_000,
+};
+
 export type ChatTagParsedCommandV1 =
   | { kind: "join" | "leave" | "status" | "score" | "rank" | "players" | "sleep" | "wake" | "toggle-away" | "rules" | "help" | "info" }
   | { kind: "tag" | "pass" | "grant-pass"; targetUsername: string };
+
+export interface ChatTagInboundMessageV1 {
+  schemaVersion: 1;
+  provider: "twitch" | "discord" | "kick";
+  tenantId: string;
+  channelId: string;
+  messageId: string;
+  userId: string;
+  username: string;
+  text: string;
+  occurredAt: string;
+  roles?: Array<"broadcaster" | "moderator" | "member">;
+  mentions?: Array<{ token: string; userId: string; username: string }>;
+}
+
+export type ChatTagMessagePlanV1 =
+  | { kind: "ignored" }
+  | { kind: "response"; code: string; message: string }
+  | { kind: "rejected"; code: string; message: string }
+  | { kind: "command"; command: ChatTagCommandV1 };
 
 function normalizeUsername(value: string): string {
   return value.trim().toLowerCase().replace(/^@+/, "");
@@ -217,6 +273,8 @@ export function createChatTagState(tenantId: string): ChatTagStateV1 {
     lastTagAt: null,
     players: {},
     history: [],
+    monthlyWinners: [],
+    crownAwardKeys: [],
     appliedCommands: {},
   };
 }
@@ -227,13 +285,19 @@ export function assertChatTagStateV1(value: unknown, tenantId?: string): ChatTag
   if (state.schemaVersion !== CHAT_TAG_STATE_VERSION) throw new Error("Unsupported Chat Tag state version");
   if (!state.tenantId || (tenantId && state.tenantId !== tenantId)) throw new Error("Chat Tag tenant mismatch");
   if (!state.players || !state.history || !state.appliedCommands) throw new Error("Chat Tag state is incomplete");
-  return cloneState(state);
+  const normalized = cloneState(state);
+  normalized.monthlyWinners = Array.isArray(normalized.monthlyWinners) ? normalized.monthlyWinners : [];
+  normalized.crownAwardKeys = Array.isArray(normalized.crownAwardKeys) ? normalized.crownAwardKeys : [];
+  return normalized;
 }
 
 export function parseChatTagCommandText(message: string): ChatTagParsedCommandV1 | null {
   const tokens = message.trim().split(/\s+/);
   if (tokens.length < 2 || tokens[0]?.toLowerCase() !== "spmt") return null;
-  const name = tokens[1]?.toLowerCase();
+  const modular = ["chattag", "taggame"].includes(tokens[1]?.toLowerCase() ?? "");
+  if (modular && tokens.length === 2) return { kind: "join" };
+  const commandIndex = modular ? 2 : 1;
+  const name = tokens[commandIndex]?.toLowerCase();
   if (!name) return null;
   if (["join", "leave", "status", "score", "rank", "players", "sleep", "wake", "rules", "help", "info"].includes(name)) {
     return { kind: name as Exclude<ChatTagParsedCommandV1["kind"], "tag" | "pass" | "grant-pass" | "toggle-away"> };
@@ -242,11 +306,128 @@ export function parseChatTagCommandText(message: string): ChatTagParsedCommandV1
   if (name === "stats") return { kind: "score" };
   if (name === "away") return { kind: "toggle-away" };
   if (name === "tag" || name === "pass" || name === "givepass") {
-    const targetUsername = normalizeUsername(tokens[2] ?? "");
+    const targetUsername = normalizeUsername(tokens[commandIndex + 1] ?? "");
     if (!targetUsername) return null;
     return { kind: name === "givepass" ? "grant-pass" : name, targetUsername };
   }
   return null;
+}
+
+export function planChatTagMessage(stateValue: ChatTagStateV1, message: ChatTagInboundMessageV1): ChatTagMessagePlanV1 {
+  const state = assertChatTagStateV1(stateValue, message.tenantId);
+  const mentionMap = new Map((message.mentions ?? []).map((mention) => [mention.token, `@${mention.username}`]));
+  const normalizedText = message.text.split(/(\s+)/).map((part) => mentionMap.get(part) ?? part).join("");
+  const parsed = parseChatTagCommandText(normalizedText);
+  if (!parsed) return { kind: "ignored" };
+  const actor = state.players[message.userId];
+  const isModerator = Boolean(message.roles?.some((role) => role === "broadcaster" || role === "moderator"));
+  const base = {
+    schemaVersion: 1 as const,
+    tenantId: message.tenantId,
+    commandId: `${message.provider}:${message.messageId}`,
+    actorUserId: message.userId,
+    occurredAt: message.occurredAt,
+    channelId: message.channelId,
+    isModerator,
+  };
+
+  if (parsed.kind === "status") {
+    const status = getChatTagStatus(state);
+    return { kind: "response", code: "status", message: status.freeForAll ? `Chat Tag is free for all with ${status.playerCount} players.` : `${status.currentItUsername} is it. ${status.playerCount} players are joined.` };
+  }
+  if (parsed.kind === "score") {
+    return actor
+      ? { kind: "response", code: "score", message: `${actor.username}: ${actor.score} points, ${actor.tagsMade} tags, ${actor.passCount} passes.` }
+      : { kind: "rejected", code: "not-a-player", message: "Join Chat Tag first with spmt join." };
+  }
+  if (parsed.kind === "rank") {
+    const leaders = getChatTagLeaderboard(state).slice(0, 3);
+    return { kind: "response", code: "rank", message: leaders.length ? leaders.map((player, index) => `#${index + 1} ${player.username} ${player.score}`).join(" | ") : "No Chat Tag players yet." };
+  }
+  if (parsed.kind === "players") {
+    const players = Object.values(state.players).filter((player) => !player.sleeping && !player.offline);
+    return { kind: "response", code: "players", message: players.length ? players.map((player) => player.username).join(", ") : "No available Chat Tag players." };
+  }
+  if (parsed.kind === "rules" || parsed.kind === "help" || parsed.kind === "info") {
+    return { kind: "response", code: parsed.kind, message: '"spmt join" | "spmt tag @user" | "spmt pass @user" | "spmt status" | "spmt score" | "spmt rank" | "spmt away"' };
+  }
+  if (parsed.kind === "join") return { kind: "command", command: { ...base, kind: "join", username: message.username } };
+  if (parsed.kind === "leave") return { kind: "command", command: { ...base, kind: "leave" } };
+  if (parsed.kind === "sleep" || parsed.kind === "wake") return { kind: "command", command: { ...base, kind: parsed.kind } };
+  if (parsed.kind === "toggle-away") return { kind: "command", command: { ...base, kind: actor?.sleeping || actor?.offline ? "wake" : "sleep" } };
+  if (parsed.kind !== "tag" && parsed.kind !== "pass" && parsed.kind !== "grant-pass") return { kind: "ignored" };
+
+  const target = resolveChatTagTarget(state, parsed.targetUsername);
+  if (target.kind !== "found") return { kind: "rejected", code: target.kind === "ambiguous" ? "target-ambiguous" : "target-not-a-player", message: target.kind === "ambiguous" ? `More than one player matches ${parsed.targetUsername}.` : `${parsed.targetUsername} is not in Chat Tag.` };
+  if (parsed.kind === "grant-pass") return { kind: "command", command: { ...base, kind: "grant-pass", targetUserId: target.userId } };
+  return { kind: "command", command: { ...base, kind: parsed.kind, targetUserId: target.userId } };
+}
+
+export function resolveChatTagTarget(state: ChatTagStateV1, rawTarget: string): { kind: "found"; userId: string } | { kind: "ambiguous" | "not-found" } {
+  const target = normalizeUsername(rawTarget);
+  const players = Object.values(state.players);
+  const exact = players.find((player) => normalizeUsername(player.username) === target);
+  if (exact) return { kind: "found", userId: exact.userId };
+  const compactTarget = target.replaceAll("_", "");
+  const compact = players.filter((player) => normalizeUsername(player.username).replaceAll("_", "") === compactTarget);
+  if (compact.length === 1) return { kind: "found", userId: compact[0]!.userId };
+  if (target.length >= 4) {
+    const prefix = players.filter((player) => normalizeUsername(player.username).startsWith(target));
+    if (prefix.length === 1) return { kind: "found", userId: prefix[0]!.userId };
+    if (prefix.length > 1) return { kind: "ambiguous" };
+  }
+  return { kind: "not-found" };
+}
+
+export function planChatTagRotation(
+  stateValue: ChatTagStateV1,
+  input: { now: string; channelId: string; liveUserIds?: string[]; random?: () => number; rules?: ChatTagRotationRulesV1 },
+): ChatTagRotationPlanV1 {
+  const state = assertChatTagStateV1(stateValue);
+  const nowMs = Date.parse(input.now);
+  if (!Number.isFinite(nowMs)) throw new Error("now must be an ISO timestamp");
+  const rules = input.rules ?? DEFAULT_CHAT_TAG_ROTATION_RULES;
+  if (rules.rotateAfterMs < 1 || rules.forceRandomAfterMs < rules.rotateAfterMs || rules.freeForAllReminderMs < 1) throw new Error("rotation rules are invalid");
+  const players = Object.values(state.players);
+  if (!players.length) return { action: "none", reason: "no-players" };
+  const elapsed = state.lastTagAt ? nowMs - Date.parse(state.lastTagAt) : Number.POSITIVE_INFINITY;
+  const dueAfterMs = state.currentItUserId ? rules.rotateAfterMs : rules.freeForAllReminderMs;
+  if (state.lastTagAt && elapsed < dueAfterMs) return { action: "none", reason: "not-due" };
+  const live = new Set(input.liveUserIds ?? []);
+  const current = state.currentItUserId ? state.players[state.currentItUserId] : undefined;
+  const eligible = players.filter((player) => player.userId !== current?.userId && !player.sleeping && !player.offline);
+  const liveEligible = eligible.filter((player) => live.has(player.userId));
+  const holderRecentlyActive = current ? nowMs - Date.parse(current.lastActiveAt) < rules.rotateAfterMs : false;
+  const holderActive = current ? live.has(current.userId) || holderRecentlyActive : false;
+  const forced = Boolean(current) && elapsed >= rules.forceRandomAfterMs;
+  const pool = liveEligible.length ? liveEligible : eligible;
+  const commandBase = {
+    schemaVersion: 1 as const,
+    tenantId: state.tenantId,
+    commandId: `rotation:${state.lastTagAt ?? "initial"}`,
+    actorUserId: "system:chat-tag-rotation",
+    occurredAt: input.now,
+    channelId: input.channelId,
+    isModerator: true,
+  };
+  if (!current && !state.lastTagAt && pool.length) {
+    const target = chooseRotationPlayer(pool, input.random);
+    return { action: "assign", reason: "initial-assignment", command: { ...commandBase, kind: "set-it", targetUserId: target.userId } };
+  }
+  if (!current && state.lastTagAt) {
+    return { action: "free-for-all", reason: "free-for-all-reminder", command: { ...commandBase, kind: "trigger-ffa" } };
+  }
+  if ((forced || holderActive) && pool.length) {
+    const target = chooseRotationPlayer(pool, input.random);
+    return { action: "assign", reason: forced ? "forced-timeout" : "active-holder-timeout", command: { ...commandBase, kind: "set-it", targetUserId: target.userId } };
+  }
+  return { action: "free-for-all", reason: pool.length ? "inactive-holder-timeout" : "no-eligible-player", command: { ...commandBase, kind: "trigger-ffa" } };
+}
+
+function chooseRotationPlayer(players: ChatTagPlayerStateV1[], random: (() => number) | undefined): ChatTagPlayerStateV1 {
+  const ordered = [...players].sort((left, right) => left.userId.localeCompare(right.userId));
+  const raw = random ? random() : Math.random();
+  return ordered[Math.max(0, Math.min(ordered.length - 1, Math.floor(raw * ordered.length)))]!;
 }
 
 export function executeChatTagCommand(
@@ -284,7 +465,10 @@ export function executeChatTagCommand(
       timedImmunityUntil: null,
       noTagbackFromUserId: null,
     };
-    if (!state.currentItUserId) state.currentItUserId = command.actorUserId;
+    if (!state.currentItUserId) {
+      state.currentItUserId = command.actorUserId;
+      state.lastTagAt = command.occurredAt;
+    }
     const result = remember(state, resultFor(command, "applied", "joined", `${username} joined Chat Tag.`, {
       event: eventFor(command, CHAT_TAG_PLAYER_JOINED, { userId: command.actorUserId, username }),
     }));
@@ -295,6 +479,8 @@ export function executeChatTagCommand(
     command.kind === "grant-pass" ||
     command.kind === "set-it" ||
     command.kind === "trigger-ffa" ||
+    command.kind === "set-winner" ||
+    command.kind === "clear-winners" ||
     ((command.kind === "sleep" || command.kind === "wake") && command.targetUserId !== undefined)
   );
   if (!actor && !moderatorMayActWithoutMembership) {
@@ -376,6 +562,61 @@ export function executeChatTagCommand(
     return { state, result };
   }
 
+  if (command.kind === "set-winner" || command.kind === "clear-winners") {
+    const denied = requireModerator(command);
+    if (denied) {
+      const result = remember(state, denied);
+      return { state, result };
+    }
+    if (command.kind === "clear-winners") {
+      state.monthlyWinners = [];
+      const result = remember(state, resultFor(command, "applied", "crowns-cleared", "The displayed Chat Tag crowns were cleared.", {
+        event: eventFor(command, CHAT_TAG_CROWNS_CLEARED, {}),
+      }));
+      return { state, result };
+    }
+    if (![1, 2, 3].includes(command.place)) throw new Error("place must be 1, 2, or 3");
+    const target = state.players[command.targetUserId];
+    if (!target) {
+      const result = remember(state, resultFor(command, "rejected", "target-not-a-player", "The target is not in Chat Tag."));
+      return { state, result };
+    }
+    const monthKey = crownMonthKey(new Date(command.occurredAt));
+    const awardKey = crownAwardKey(target.userId, command.place, monthKey);
+    const alreadyAwarded = state.crownAwardKeys.includes(awardKey);
+    state.monthlyWinners = state.monthlyWinners
+      .filter((winner) => winner.place !== command.place && winner.userId !== target.userId)
+      .concat({
+        userId: target.userId,
+        username: target.username,
+        place: command.place,
+        monthKey,
+        selectedAt: command.occurredAt,
+      })
+      .sort((left, right) => left.place - right.place);
+    if (!alreadyAwarded) state.crownAwardKeys.push(awardKey);
+    const reward = crownXpReward(command.place);
+    const result = remember(state, resultFor(command, "applied", alreadyAwarded ? "winner-updated" : "winner-crowned", `${target.username} is the #${command.place} Chat Tag winner for ${monthKey}.`, {
+      event: eventFor(command, CHAT_TAG_CROWN_SET, {
+        userId: target.userId,
+        username: target.username,
+        place: command.place,
+        monthKey,
+        xpAward: reward,
+        alreadyAwarded,
+      }),
+      ...(!alreadyAwarded ? {
+        xpAward: {
+          userId: target.userId,
+          delta: reward,
+          reason: "chat-tag.crown",
+          idempotencyKey: awardKey,
+        },
+      } : {}),
+    }));
+    return { state, result };
+  }
+
   if (command.kind === "set-it" || command.kind === "trigger-ffa") {
     const denied = requireModerator(command);
     if (denied) {
@@ -389,8 +630,11 @@ export function executeChatTagCommand(
         return { state, result };
       }
       state.currentItUserId = target.userId;
+      state.lastTagAt = command.occurredAt;
       target.sleeping = false;
       target.offline = false;
+      target.timedImmunityUntil = null;
+      target.noTagbackFromUserId = null;
       const result = remember(state, resultFor(command, "applied", "it-assigned", `${target.username} is now it.`, {
         event: eventFor(command, CHAT_TAG_PLAYER_AVAILABILITY_CHANGED, { userId: target.userId, isIt: true }),
       }));
@@ -515,6 +759,36 @@ export function getChatTagLeaderboard(state: ChatTagStateV1): ChatTagPlayerState
   return Object.values(state.players)
     .map((player) => structuredClone(player))
     .sort((left, right) => right.score - left.score || right.tagsMade - left.tagsMade || left.username.localeCompare(right.username));
+}
+
+export function crownXpReward(place: number): number {
+  return place === 1 ? 500 : place === 2 ? 250 : place === 3 ? 100 : 0;
+}
+
+export function crownMonthKey(date: Date = new Date()): string {
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+export function crownAwardKey(userId: string, place: number, monthKey: string): string {
+  return `crown:${monthKey}:${place}:${userId}`;
+}
+
+export function decorateChatTagCrowns(text: string, winners: ChatTagMonthlyWinnerV1[]): string {
+  let output = text;
+  for (const winner of winners) {
+    if (winner.username.length < 3) continue;
+    const pattern = winner.username
+      .split(/[\s_]+/)
+      .filter(Boolean)
+      .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+      .join("[\\s_]*");
+    const matcher = new RegExp(`(^|[^\\w@./\\uD83D\\uDC51])(@?)(${pattern})(?![\\w])`, "gi");
+    output = output.replace(matcher, (match, prefix: string, at: string, name: string, offset: number, full: string) => {
+      const before = full.slice(0, offset + prefix.length);
+      return /👑\s*#?\d*\s*@?$/.test(before) ? match : `${prefix}👑${at}${name}`;
+    });
+  }
+  return output;
 }
 
 export async function publishChatTagCommandResult(client: SpmtClient, result: ChatTagCommandResultV1): Promise<{ eventPublished: boolean; xpAwarded: boolean }> {

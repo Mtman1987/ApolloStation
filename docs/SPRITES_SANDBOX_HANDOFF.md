@@ -1,242 +1,113 @@
-# SPMT + SpaceMountain Sprite sandbox handoff
+# ApolloStation staged Sprite handoff
 
-Status: **code-ready locally; stop before Fly/Sprites authentication and paid resource creation**
+Status: **two-stage Sprite promotion is defined; work branches target the isolated Review Sprite and `main` targets the protected Release Sprite**
 
-This runbook opens only the Green SPMT authority and SpaceMountain browser shell. It does not deploy a Fly App or Machine, register a Sprite service, start a bot/worker/scheduler, or connect a production provider identity.
+This runbook describes the current Green deployment path. It supersedes older instructions that treated a single game module as a standalone catalog app.
 
-## Already completed in code
+## Promotion contract
 
-- [x] SpaceMountain has a browser host on port `8080`.
-- [x] SPMT stays on loopback at `127.0.0.1:3000`.
-- [x] Browser API access is same-origin and allowlisted.
-- [x] Login tokens stay in a Secure, HttpOnly, SameSite cookie and are redacted from browser responses.
-- [x] Browser-supplied bearer tokens are discarded by the proxy.
-- [x] Twitch, Discord, Kick, LiveKit, Firebase, Fly, and Sprites credentials are rejected by sandbox startup guards.
-- [x] Webhook delivery is blocked in sandbox mode.
-- [x] Orbit Beacon proves registry-driven discovery without a hardcoded tile.
-- [x] Stellar Core remains persona-neutral; Stella is the app-neutral Community Assistant; Athena is only the owner's configured StreamWeaver persona.
-- [x] Stella discovery/invocation is exposed through SDK, HTTP API, CLI, and MCP; this provider-free sandbox truthfully returns `unavailable` instead of a fabricated reply.
-- [x] Mission Control persists a synthetic, explicitly labeled operations fixture; SDK/API/CLI/MCP share the same scoped log/coder contracts; no Rotator or coder worker is started. The isolated account receives only sandbox-owner test scopes; normal production users do not receive operations access automatically.
-- [x] The Sprite network policy allows GitHub/npm only and then denies `*`.
-- [x] The supervised runner creates its webhook-encryption key in memory and stops SPMT and SpaceMountain together.
-- [x] No `sprite-env services create` command exists in the runner.
+| Tier | Git trigger | Purpose |
+|---|---|---|
+| Review Sprite (`mtman-new/web-terminal`) | Push to `work/**` | Rapid owner review with provider actions disabled |
+| Release Sprite (`testing-968/web-terminal`) | Push/merge to `main` | Protected production-like verification of the approved Green commit |
+
+`.github/workflows/sprite-promotion.yml` owns both routes. Automatic promotion runs only when repository variable `SPRITES_AUTODEPLOY_ENABLED=true` and the matching GitHub environment contains `SPRITES_TOKEN`.
+
+Pinned targets:
+
+| Tier | Sprite ID | Private URL |
+|---|---|---|
+| Review | `sprite-2249fee2-ecf3-4b10-8bc1-314f4b9e5bcc` | `https://web-terminal-bpp4n.sprites.app` |
+| Release | `sprite-fec8d6f2-49f0-4e28-bc6d-e8a7ae364280` | `https://web-terminal-bvesa.sprites.app` |
+
+Do not create a Sprite per branch. Do not make either URL public during Green verification.
+
+## What promotion does
+
+For either tier the deployment workflow:
+
+1. verifies the exact organization, Sprite ID, name, and private URL mode;
+2. creates a pre-deployment checkpoint;
+3. installs the exact Git SHA into a versioned release directory;
+4. runs `npm ci --ignore-scripts`, typecheck, and the complete test suite inside the target Sprite;
+5. atomically switches the active release only after verification succeeds;
+6. restarts the supervised Apollo service;
+7. requires runtime health to report the expected SHA;
+8. restores the previous release automatically when the new release fails health verification.
+
+Review and Release use isolated data roots. They must never share a writable database.
+
+## Current application model
+
+The platform cohort contains the SPMT authority and SpaceMountain shell. First-party applications are discovered through the same registry contract used for future apps.
+
+Nebula Arcade is the registered Games Hub application. It owns the twenty-game catalog, game detail pages, command routing, saved multi-game overlay scenes, and game-private state. **Chat Tag is a bounded game module inside Nebula Arcade** for its own runtime, compatibility, scoring, commands, persistence, and overlay behavior; it is not published as a separate ecosystem app.
+
+Commlink, Stellar Core, Mission Control, and Nebula Arcade use the shared SpaceMountain viewport/theme/navigation contracts. The remaining donor apps are added through the same pattern rather than by expanding the shell with new hardcoded product paths.
+
+## Already required by the Green baseline
+
+- SpaceMountain browser host is exposed through the private Sprite HTTPS surface.
+- SPMT remains loopback-only behind the browser host.
+- Browser API access is same-origin and allowlisted.
+- Login tokens stay in Secure, HttpOnly, SameSite cookies and are redacted from browser responses.
+- Browser-supplied bearer tokens are discarded by the proxy.
+- Provider, Fly, LiveKit, Firebase, and Sprite infrastructure credentials are rejected by sandbox startup guards where they do not belong.
+- Provider/webhook egress remains disabled during isolated Green review.
+- The app catalog is registry-driven; first-party apps are seeded/registered through the canonical app authority rather than hardcoded browser cards.
+- Nebula Arcade starts only its own bounded game/runtime authorities and does not become a second SPMT identity, XP, workspace, or cross-app data authority.
+- The shared shell uses one fixed content rectangle below the measured header. Home pages fit; long pages scroll internally and cannot slide behind the header.
+- The shared surface-depth rule uses the fewest visible layers necessary and progressively lowers opacity for nested surfaces.
+- Mission Control remains owner/operator-only; normal users do not inherit operations access.
+- No deployment script changes Blue production DNS or shuts down a live donor app.
+
+## Main verification after merge
+
+When an approved review branch is merged to `main`:
+
+1. Confirm the `main` SHA is the expected merge result.
+2. Confirm the Green contract workflow passes on that exact main SHA.
+3. Confirm the Release Sprite promotion targets only `testing-968/web-terminal` and the pinned Sprite ID above.
+4. Confirm the release job creates a checkpoint before changing the active release.
+5. Confirm typecheck and the full test suite pass inside the Release Sprite.
+6. Confirm `/health/ready` reports the expected build SHA.
+7. Open the private Release Sprite and click through SpaceMountain Home, Shipyard, Workspace, Settings, Commlink, Stellar Core, Mission Control, and Nebula Arcade.
+8. Verify every home screen fits the common viewport; verify every longer page scrolls inside that viewport and never behind the header.
+9. Exercise Nebula Arcade Games, game pages, Overlay Bay scene creation, stable overlay output URLs, Stats, and the connected game-module runtime.
+10. Pull runtime logs, fix actionable errors, redeploy, and repeat until the release candidate is clean.
+
+Passing CI is necessary but not sufficient for production. Browser interaction, runtime logs, provider/output tests, restart behavior, tenant isolation, and owner acceptance remain required.
+
+## App-by-app plug-in rule
+
+For each remaining donor app:
+
+1. audit the live donor feature/state/output contract;
+2. add the app as a bounded registered module using the existing SDK/API/event/workspace contracts;
+3. give it app-owned scene art while reusing the shared star, theme, depth, navigation, and viewport behavior;
+4. make its Home fit the canonical content rectangle and place long-page scrolling inside that rectangle;
+5. expose only its own product-private state while consuming shared identity/XP/workspace/events from SPMT;
+6. add direct, embedded, restart, tenant-isolation, migration, command/output, and visual regression tests;
+7. verify it in Review before promotion to `main`.
 
 ## STOP conditions
 
-Stop immediately if any of these are true:
+Stop promotion immediately if any of these are true:
 
-- The branch `green-spacemountain-sprite-web-host` is not published and reviewable on GitHub.
-- A command asks for a Discord, Twitch, Kick, LiveKit, Firebase, Fly API, or production database secret.
-- The Sprite URL has been changed to public access.
-- The network policy does not end with `{ "domain": "*", "action": "deny" }`.
-- A provider domain resolves after the deny policy is applied.
-- `sprite-env services list` contains an app service we did not explicitly approve.
-- The SPMT readiness response does not say `runtimeMode: sandbox` and `outboundIntegrations: disabled`.
-- A second consumer, bot, webhook worker, scheduler, or Rotator process appears.
+- the exact Git SHA is not published and reviewable;
+- a deployment resolves either Sprite name to a different pinned ID;
+- the Sprite URL is public instead of organization-authenticated;
+- the network policy permits an unapproved provider destination during isolated testing;
+- a command asks for a provider or production secret that the bounded app does not own;
+- a new app creates duplicate SPMT identity, XP, workspace, authorization, or cross-app event authority;
+- the shared page/document itself scrolls behind the header;
+- tests fail, runtime health reports the wrong SHA, or rollback cannot restore the previous release.
 
-## Manual steps for tonight (Windows PowerShell)
+## Deliberately not authorized by this runbook
 
-Do these only after the Green branch has been published.
-
-On your Windows computer, first clone or update the public ApolloStation branch so the checked-in policy and PowerShell verifier are available locally:
-
-```powershell
-git clone --single-branch --branch green-spacemountain-sprite-web-host https://github.com/Mtman1987/ApolloStation.git ApolloStation-Green-Sandbox
-Set-Location .\ApolloStation-Green-Sandbox
-git status --short --branch
-```
-
-- [ ] The local checkout is on `green-spacemountain-sprite-web-host` and clean.
-
-### 1. Install and authenticate
-
-- [ ] Install the current Sprites CLI using the official Windows instructions.
-- [ ] Run `sprite --help` and confirm the CLI responds.
-- [ ] Run `sprite org auth`.
-- [ ] Complete Fly authentication in the browser. Do not paste credentials or tokens into chat.
-- [ ] Run `sprite org list` and confirm the intended organization is current.
-
-### 2. Create the isolated Sprite
-
-Creating a Sprite is the first paid external mutation in this runbook.
-
-```powershell
-$SpriteName = 'spmt-ecosystem-sandbox'
-sprite create $SpriteName
-sprite use $SpriteName
-sprite url update --auth sprite
-sprite url
-```
-
-- [ ] Confirm the URL authentication mode is `sprite`, not `public`.
-- [ ] Copy the private `https://...sprites.app` URL into a temporary PowerShell variable named `$SpriteUrl`.
-
-### 3. Apply egress denial before code enters the VM
-
-Create a short-lived Sprites API token from the official Sprites account page, then place it only in the current PowerShell process:
-
-```powershell
-$SecureToken = Read-Host 'Sprites API token' -AsSecureString
-$env:SPRITES_TOKEN = [Net.NetworkCredential]::new('', $SecureToken).Password
-.\scripts\sprites\Apply-NetworkPolicy.ps1 -SpriteName $SpriteName
-Remove-Item Env:SPRITES_TOKEN
-Remove-Variable SecureToken
-```
-
-- [ ] The script prints `Verified deny-by-default network policy`.
-- [ ] The environment variable is removed immediately after use.
-- [ ] The token is never saved in the repository, a `.env` file, terminal transcript, screenshot, or chat.
-
-### 4. Prove forbidden egress is blocked
-
-```powershell
-sprite exec -- dig github.com
-sprite exec -- dig registry.npmjs.org
-sprite exec -- dig discord.com
-sprite exec -- dig id.twitch.tv
-sprite exec -- dig api.livekit.io
-```
-
-- [ ] GitHub resolves.
-- [ ] npm resolves.
-- [ ] Discord returns DNS `REFUSED`.
-- [ ] Twitch returns DNS `REFUSED`.
-- [ ] LiveKit returns DNS `REFUSED`.
-
-If a provider domain resolves, **STOP**. Do not clone or run code.
-
-### 5. Clone and verify the exact Green branch
-
-```powershell
-sprite exec -- git clone --single-branch --branch green-spacemountain-sprite-web-host https://github.com/Mtman1987/ApolloStation.git /home/sprite/ApolloStation
-sprite exec --dir /home/sprite/ApolloStation -- git status --short --branch
-sprite exec --dir /home/sprite/ApolloStation -- git rev-parse HEAD
-```
-
-- [ ] The branch is `green-spacemountain-sprite-web-host`.
-- [ ] The working tree is clean.
-- [ ] The commit matches the reviewed handoff commit.
-
-### 6. Install, build, and test without lifecycle scripts
-
-```powershell
-sprite exec --dir /home/sprite/ApolloStation -- npm ci --ignore-scripts
-sprite exec --dir /home/sprite/ApolloStation -- npm run typecheck
-sprite exec --dir /home/sprite/ApolloStation -- npm test
-```
-
-- [ ] `npm ci` succeeds using only allowed npm domains.
-- [ ] TypeScript is clean.
-- [ ] Every test passes, including `spacemountain-web.test.mjs`.
-
-### 7. Create a clean code checkpoint
-
-```powershell
-sprite checkpoint create --comment 'Green code built and tested; no runtime service registered'
-sprite checkpoint list
-```
-
-- [ ] Record the checkpoint version locally.
-
-### 8. Verify there are no registered services
-
-```powershell
-sprite exec -- sprite-env services list
-```
-
-- [ ] No SPMT, SpaceMountain, bot, worker, scheduler, webhook dispatcher, or Rotator service is listed.
-
-### 9. Start the supervised foreground sandbox
-
-This command generates a sandbox-only key in memory. It does not accept provider secrets and does not register a service.
-
-```powershell
-$BuildSha = (sprite exec --dir /home/sprite/ApolloStation -- git rev-parse HEAD).Trim()
-if ($BuildSha -notmatch '^[0-9a-f]{40}$') { throw 'Could not verify the Green commit SHA.' }
-sprite exec --no-port-forward --dir /home/sprite/ApolloStation -- node scripts/sprites/run-supervised-sandbox.mjs --public-url $SpriteUrl --data-root /home/sprite/data --build-sha $BuildSha
-```
-
-- [ ] The terminal says `Green sandbox is supervised and ready`.
-- [ ] The terminal says outbound provider actions are disabled.
-- [ ] Keep this terminal open during the supervised test.
-
-### 10. Open and verify SpaceMountain
-
-- [ ] Open `$SpriteUrl` while signed into the correct Fly/Sprites organization.
-- [ ] The page shows `GREEN SPRITE SANDBOX`.
-- [ ] Create a new sandbox-only account; do not reuse a production password. This account is the isolated tenant owner and receives the sandbox-only Mission Control test grant.
-- [ ] Home, Shipyard, Commlink, Stellar Core, Operations, Workspace, Settings, and Help render.
-- [ ] Shipyard shows both `SpaceMountain` and `Orbit Beacon` from SPMT.
-- [ ] Install Orbit Beacon with no scopes.
-- [ ] Launch Orbit Beacon and confirm it says it came from the SPMT registry.
-- [ ] Refresh SpaceMountain and confirm the installed state persists in the isolated SQLite file.
-- [ ] Stellar Core shows the sandbox registry-inspection capability.
-- [ ] Operations shows one `sandbox.fixture` record that explicitly says it is synthetic and that no Fly runtime or Rotator worker is connected.
-- [ ] Select **Prepare coder** on that record and confirm the warning says it stores a bounded draft only.
-- [ ] Confirm one coder job appears as `draft`, identifies `spacemountain`, contains one evidence record, and says the Rotator coder worker is not connected.
-- [ ] Refresh SpaceMountain and confirm both the operations record and coder draft persist.
-- [ ] Confirm no diff, patch, analysis result, deployment claim, Fly Machine ID, credential, or provider response appears.
-- [ ] No page asks for or displays a provider token.
-
-### 11. Verify runtime health and isolation
-
-From a second PowerShell window:
-
-```powershell
-sprite exec -- curl -fsS http://127.0.0.1:3000/health/ready
-sprite exec -- curl -fsS http://127.0.0.1:8080/sandbox/health
-sprite exec -- sprite-env services list
-```
-
-- [ ] SPMT reports `runtimeMode` as `sandbox`.
-- [ ] SPMT reports `outboundIntegrations` as `disabled`.
-- [ ] SPMT reports `sandboxFixtures` as `true`.
-- [ ] The web health endpoint reports both layers ready.
-- [ ] The services list remains empty.
-
-### 12. Stop cleanly
-
-- [ ] Return to the supervised runner terminal.
-- [ ] Press `Ctrl+C` once.
-- [ ] Confirm both processes exit.
-
-```powershell
-sprite exec -- sh -lc "! pgrep -af 'spmt-service/dist/index.js|spacemountain-web/dist/server.js'"
-sprite exec -- sprite-env services list
-```
-
-- [ ] No SPMT or SpaceMountain process remains.
-- [ ] No service definition exists to restart one later.
-
-## Deliberately not authorized yet
-
-- Registering persistent Sprite services
-- Making the Sprite URL public
-- Adding any provider credential
-- Connecting Blue/production databases, queues, webhooks, tenants, bots, or workers
-- Starting the Machine Rotator
-- Enabling background outbox delivery
-- Deploying a Fly App or Fly Machine
-- Changing production DNS
-
-## Evidence to bring back
-
-Do not include secrets. Record only:
-
-- Sprite name and private URL hostname
-- Git commit SHA
-- Network-policy verification result
-- Test count and pass/fail result
-- Checkpoint version
-- `/health/ready` JSON with no secret values
-- Screenshots of Home, Shipyard, Orbit Beacon, Commlink, Stellar Core, and Operations with the draft-only coder handoff
-- Any STOP condition or unexpected process/service
-
-## Official references checked 2026-08-22
-
-- Sprites quickstart: <https://docs.sprites.dev/quickstart/>
-- CLI authentication: <https://docs.sprites.dev/cli/authentication/>
-- Networking and URL authentication: <https://docs.sprites.dev/concepts/networking/>
-- Services and restart behavior: <https://docs.sprites.dev/concepts/services/>
-- Checkpoints: <https://docs.sprites.dev/concepts/checkpoints/>
-- Network Policy API: <https://sprites.dev/api/sprites/policies>
+- shutting down Blue production;
+- changing production DNS;
+- copying production volumes wholesale into a Sprite;
+- making private Sprite URLs public;
+- granting providers or users broader scopes merely to make a test pass;
+- bypassing the Review -> main -> Release promotion path for ordinary feature work.

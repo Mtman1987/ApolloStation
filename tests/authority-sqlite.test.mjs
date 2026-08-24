@@ -64,3 +64,22 @@ test("authority epoch only moves forward and new journal entries carry promoted 
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("default authority IDs remain unique after a persistent store reopens", () => {
+  const { dir, path } = tempDb();
+  try {
+    let store = new SqliteAuthorityStore(path);
+    let authority = new AuthorityService({ store, now: () => "2026-08-24T12:00:00.000Z" });
+    const first = authority.audit({ actorType: "user", actorId: "owner", action: "workspace.update", target: "tenant-a", outcome: "accepted", tenantId: "tenant-a" });
+    store.close();
+
+    store = new SqliteAuthorityStore(path);
+    authority = new AuthorityService({ store, now: () => "2026-08-24T12:01:00.000Z" });
+    const second = authority.audit({ actorType: "user", actorId: "owner", action: "workspace.update", target: "tenant-a", outcome: "accepted", tenantId: "tenant-a" });
+    assert.notEqual(second.id, first.id);
+    assert.equal(store.listAudit("tenant-a").length, 2);
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

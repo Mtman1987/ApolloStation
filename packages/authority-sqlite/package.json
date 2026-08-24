@@ -11,6 +11,7 @@
   "dependencies": {
     "@spmt/authority-core": "0.2.0",
     "@spmt/auth-core": "0.1.0",
+    "@spmt/contracts": "0.1.0",
     "@spmt/control-core": "0.1.0",
     "@spmt/recovery-core": "0.1.0"
   },
