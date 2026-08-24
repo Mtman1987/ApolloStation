@@ -7,6 +7,7 @@ export * from "./chat-tag-overlay.js";
 export * from "./chat-tag-overlay-http.js";
 export * from "./chat-tag-migration.js";
 export * from "./chat-tag-experience.js";
+export * from "./game-hub.js";
 import { CHAT_TAG_EVENT_TYPES } from "./chat-tag.js";
 
 export const CHAT_TAG_ROUND_COMPLETED = "nebula.chat-tag.round.completed.v1";

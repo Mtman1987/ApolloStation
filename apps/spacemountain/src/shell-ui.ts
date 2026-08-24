@@ -14,6 +14,7 @@ export interface SpaceMountainUiOptions {
   onInstallApp?: (app: SpaceMountainAppCardV1) => void;
   onOpenConversation?: (conversation: Record<string, unknown>) => void;
   onSearchCommlink?: (query: string) => void;
+  onInvokeStella?: (message: string, conversationId: string) => void;
   onMarkNotificationRead?: (notification: Record<string, unknown>) => void;
   onUnlinkProvider?: (link: Record<string, unknown>) => void;
   onSaveWorkspace?: (expectedRevision: number, patch: Record<string, unknown>) => void;
@@ -82,6 +83,7 @@ export class SpaceMountainShellUi {
     root.querySelectorAll<HTMLElement>("[data-commlink-tab]").forEach((node) => node.addEventListener("click", () => { this.commlinkTab = node.dataset.commlinkTab as CommlinkTabV1; this.render(); }));
     root.querySelectorAll<HTMLElement>("[data-open-conversation]").forEach((node) => node.addEventListener("click", () => { const item = this.snapshot.conversations.find((conversation) => conversation.id === node.dataset.openConversation); if (item) this.options.onOpenConversation?.(item); }));
     root.querySelector<HTMLFormElement>("[data-commlink-search]")?.addEventListener("submit", (event) => { event.preventDefault(); const query = String(new FormData(event.currentTarget as HTMLFormElement).get("query") ?? "").trim(); if (query) this.options.onSearchCommlink?.(query); });
+    root.querySelector<HTMLFormElement>("[data-stella-form]")?.addEventListener("submit", (event) => { event.preventDefault(); const form = event.currentTarget as HTMLFormElement; const message = String(new FormData(form).get("message") ?? "").trim(); if (message) { this.options.onInvokeStella?.(message, `stella-${this.snapshot.userId}`); form.reset(); } });
     root.querySelectorAll<HTMLElement>("[data-notification-read]").forEach((node) => node.addEventListener("click", () => { const item = this.snapshot.notifications.find((notification) => notification.id === node.dataset.notificationRead); if (item) this.options.onMarkNotificationRead?.(item); }));
     root.querySelectorAll<HTMLElement>("[data-provider-unlink]").forEach((node) => node.addEventListener("click", () => { const item = this.snapshot.providerLinks.find((link) => providerLinkKey(link) === node.dataset.providerUnlink); if (item) this.options.onUnlinkProvider?.(item); }));
     root.querySelector<HTMLFormElement>("[data-workspace-settings]")?.addEventListener("submit", (event) => {
@@ -96,6 +98,8 @@ export class SpaceMountainShellUi {
       });
     });
     root.querySelectorAll<HTMLElement>("[data-coder-log]").forEach((node) => node.addEventListener("click", () => { const item = this.snapshot.operations.logs.find((log) => log.id === node.dataset.coderLog); if (item) this.options.onPrepareCoderLog?.(item); }));
+    if (this.view === "workspace") mountOverlayBay(root, this.snapshot);
+    bindEcosystemEggs(root);
     this.bindLayout();
   }
 
@@ -103,12 +107,13 @@ export class SpaceMountainShellUi {
     const unread = this.snapshot.notifications.filter((item) => !item.readAt && !item.read_at).length;
     const user = recordText(this.snapshot.session, ["displayName", "display_name", "username"]) ?? "Captain";
     const nodes = [{ label: "SPMT", state: this.snapshot.state }, { label: "SPACE", state: this.snapshot.state }, { label: "STELLAR", state: this.snapshot.sources.stellar.state }, { label: "COMMLINK", state: this.snapshot.sources.commlink.state }, ...this.snapshot.apps.slice(0, 5).map((app) => ({ label: app.name, state: app.installed && app.enabled ? "ready" : "available" }))];
-    return `<header class="spmt-shell-header-stack" data-spmt-shell-header><div class="spmt-telemetry"><span class="spmt-telemetry-title">ECOSYSTEM</span>${nodes.map((node) => `<span class="spmt-node state-${escapeHtml(node.state)}"><i></i>${escapeHtml(node.label)}</span>`).join("")}<span class="spmt-telemetry-clock">LIVE · ${new Date().toISOString().slice(11, 16)} UTC</span></div><div class="spmt-cosmic-header spmt-product-glass"><button class="spmt-brand" data-nav="home" aria-label="SpaceMountain home"><img src="/assets/product/space-logo-header.png" alt=""><strong>SPACEMOUNTAIN<em>.LIVE</em></strong></button><nav class="spmt-header-links" aria-label="Product shortcuts"><a href="/docs/developers">Docs</a><button data-nav="apps">Explore apps</button></nav><div class="spmt-header-status"><b class="spmt-product-status state-${this.snapshot.state}">${escapeHtml(this.snapshot.state)}</b><span>${(this.snapshot.xp?.balance ?? 0).toLocaleString()} XP</span></div><div class="spmt-header-actions"><button data-nav="inbox" class="spmt-icon-button" aria-label="Open Commlink">${icon("mail")}${unread ? `<i>${Math.min(unread, 9)}${unread > 9 ? "+" : ""}</i>` : ""}</button><button data-nav="settings" class="spmt-account"><span class="spmt-avatar">${escapeHtml(initials(user))}</span><span>${escapeHtml(user)}</span></button></div></div></header>`;
+    const live = ecosystemPresence(this.snapshot.events);
+    return `<header class="spmt-shell-header-stack" data-spmt-shell-header><div class="spmt-telemetry"><span class="spmt-telemetry-title">ECOSYSTEM</span>${nodes.map((node) => `<span class="spmt-node state-${escapeHtml(node.state)}"><i></i>${escapeHtml(node.label)}</span>`).join("")}<span class="spmt-live-community">${live.map((person) => `<span title="Live via ${escapeHtml(person.sources.join(", "))}"><b>${escapeHtml(person.name)}</b><small>${escapeHtml(person.sources.join(" + "))}</small></span>`).join("")}</span><span class="spmt-telemetry-clock">LIVE · ${new Date().toISOString().slice(11, 16)} UTC</span></div><div class="spmt-cosmic-header spmt-product-glass"><button class="spmt-brand" data-spmt-black-hole-trigger data-nav="home" aria-label="SpaceMountain home"><img src="/assets/product/space-logo-header.png" alt=""><strong>SPACEMOUNTAIN<em>.LIVE</em></strong></button><nav class="spmt-header-links" aria-label="Product shortcuts"><a href="/docs/developers">Docs</a><button data-nav="apps">Explore apps</button></nav><div class="spmt-header-status"><b class="spmt-product-status state-${this.snapshot.state}">${escapeHtml(this.snapshot.state)}</b><span>${(this.snapshot.xp?.balance ?? 0).toLocaleString()} XP</span></div><div class="spmt-header-actions"><button data-nav="inbox" class="spmt-icon-button" aria-label="Open Commlink">${icon("mail")}${unread ? `<i>${Math.min(unread, 9)}${unread > 9 ? "+" : ""}</i>` : ""}</button><button data-nav="settings" class="spmt-account"><span class="spmt-avatar">${escapeHtml(initials(user))}</span><span>${escapeHtml(user)}</span></button></div></div></header>`;
   }
 
   private dock() {
     const nav = NAV.filter((item) => item.id !== "operations" || this.snapshot.operations.canReadLogs || this.snapshot.operations.canReadCoder);
-    return `<aside class="spmt-rocket-dock spmt-product-glass"><div class="spmt-dock-orbit"><span></span><img src="/assets/product/model-rocket.png" alt="SpaceMountain rocket"></div><nav>${nav.map((item) => `<button data-spmt-product-nav="${item.id}" class="${this.view === item.id ? "active" : ""}" title="${escapeHtml(item.label)}">${icon(item.icon)}<label>${item.label}</label></button>`).join("")}</nav><footer><small>SPMT CORE</small><strong>${this.snapshot.state.toUpperCase()}</strong></footer></aside>`;
+    return `<aside class="spmt-rocket-dock spmt-product-glass"><div class="spmt-dock-orbit" data-spmt-rocket-trigger title="Double-click the rocket"><span></span><img src="/assets/product/model-rocket.png" alt="SpaceMountain rocket"></div><nav>${nav.map((item) => `<button data-spmt-product-nav="${item.id}" class="${this.view === item.id ? "active" : ""}" title="${escapeHtml(item.label)}">${icon(item.icon)}<label>${item.label}</label></button>`).join("")}</nav><footer><small>SPMT CORE</small><strong>${this.snapshot.state.toUpperCase()}</strong></footer></aside>`;
   }
 
   private body() {
@@ -125,11 +130,10 @@ export class SpaceMountainShellUi {
   private home() {
     const installed = this.snapshot.apps.filter((app) => app.installed && app.enabled);
     const unread = this.snapshot.notifications.filter((item) => !item.readAt && !item.read_at).length;
-    const slots = workspaceDockSlots(this.snapshot.workspace);
     const appearance = recordObject(this.snapshot.workspace, "appearance");
     const theme = resolveProductTheme(recordText(appearance, ["theme"]), recordText(appearance, ["accent"]));
     const operationsQuick = this.snapshot.operations.canReadLogs || this.snapshot.operations.canReadCoder ? quick("Operations", "Consolidated app health, Rotator evidence, and coder drafts.", "operations") : "";
-    return `<section class="spmt-hero spmt-product-glass"><div class="spmt-hero-copy"><img class="spmt-hero-logo" src="/assets/product/space-logo-main.png" alt="SpaceMountain"><span class="kicker spmt-product-kicker">THE UNIVERSE ONLINE</span><h1>One command bridge for every creator tool.</h1><p>Launch apps, check Commlink, and carry the same portable workspace across your ecosystem through one canonical SPMT identity.</p><div class="actions"><button data-nav="apps" class="primary">${icon("rocket")}Open Shipyard</button><button data-nav="inbox">${icon("mail")}Open Commlink</button></div></div><div class="spmt-metrics">${metric("Apps online", `${installed.length}/${this.snapshot.apps.length}`)}${metric("Unread", String(unread))}${metric("Docked", `${slots.filter(Boolean).length}/3`)}${metric("Theme", theme.name)}</div></section><section class="spmt-section spmt-product-glass"><header><div><span>YOUR APP SUITE</span><h2>Everything in your orbit</h2></div><button data-nav="apps">View all ${icon("arrow")}</button></header><div class="spmt-app-grid">${installed.slice(0, 4).map(appCard).join("") || empty("Your station is ready. Add a developer app, then install it from Shipyard to place it in orbit.", "apps")}</div></section><section class="spmt-quick-grid">${quick("Shipyard", "Install, launch, and manage ecosystem apps.", "apps", "grid")}${quick("Commlink", "Shared mail, notifications, and app events.", "inbox", "mail")}${operationsQuick}${quick("Workspace", "Three canonical dock slots and overlays.", "workspace", "layout")}</section>`;
+    return `<section class="spmt-hero spmt-product-glass"><div class="spmt-hero-copy"><img class="spmt-hero-logo spmt-hero-logo-large" src="/assets/product/space-logo-main.png" alt="SpaceMountain"><h1>One command bridge for every creator tool.</h1><p class="spmt-hero-small">Launch apps, check Commlink, and carry the same portable workspace across your ecosystem through one canonical SPMT identity.</p><div class="actions"><button data-nav="apps" class="primary">${icon("rocket")}Open Shipyard</button><button data-nav="inbox">${icon("mail")}Open Commlink</button></div></div><div class="spmt-metrics">${metric("Apps online", `${installed.length}/${this.snapshot.apps.length}`)}${metric("Unread", String(unread))}${metric("Active apps", String((this.snapshot.runtimeStates ?? []).filter((item) => recordText(item, ["state"]) === "ready").length))}${metric("Theme", theme.name)}</div></section><section class="spmt-quick-grid">${quick("Shipyard", "Install, launch, and manage ecosystem apps.", "apps", "grid")}${quick("Commlink", "Shared desks, chat spaces, mail, and app events.", "inbox", "mail")}${operationsQuick}${quick("Workspace", "Canonical overlays, scenes, and appearance.", "workspace", "layout")}</section>`;
   }
 
   private shipyard() { return `${page("Apps and capabilities", "Registry, install state, granted scopes, and entitlements come directly from SPMT.", "SHIPYARD")}<div class="spmt-app-grid wide">${this.snapshot.apps.map(appCard).join("") || empty("No registered apps are available yet.")}</div>`; }
@@ -156,10 +160,10 @@ export class SpaceMountainShellUi {
   }
 
   private stellar() {
-    const inference = deferredPanel("stellar-core-inference", "Stellar Core context and declared capabilities are available now. Model execution remains unavailable until the Green worker runtime is connected; Stella and configured StreamWeaver personas will use the same public layer.");
-    const contexts = this.snapshot.stellar.context.slice(0, 50);
+    // Stella is the default ecosystem assistant; configured StreamWeaver personas use the same public contracts.
+    // Runtime capability remains identified as stellar-core-inference and reports unavailable truthfully.
     const capabilities = this.snapshot.stellar.capabilities.slice(0, 100);
-    return `${page("Truthful system capability deck", "Stellar Core owns persona-neutral model execution. Stella is the default ecosystem assistant; configured StreamWeaver personas use the same public contracts.", "STELLAR CORE")}${sourceNotice("Stellar Core catalog", this.snapshot.sources.stellar)}${inference}<section class="spmt-account-section"><header><span>BOUNDED CONTEXT</span><h2>Context available to approved apps and personas</h2></header><div class="spmt-context-grid">${contexts.map((item) => `<article><span>${escapeHtml(recordText(item, ["kind"]) ?? "context")}</span><p>${escapeHtml(recordText(item, ["text"]) ?? "")}</p><small>${escapeHtml(recordStrings(item, "tags").join(" • ") || "No tags")} • ${escapeHtml(recordText(item, ["sourceAppId", "source_app_id"]) ?? "SPMT")}</small></article>`).join("") || empty("No bounded Stellar Core context is stored for this account.")}</div></section><section class="spmt-account-section"><header><span>CAPABILITY CATALOG</span><h2>Declared system capabilities</h2></header><div class="spmt-command-grid">${capabilities.map((item) => { const available = recordText(item, ["availability"]) === "available"; return `<article><div><span class="spmt-command-state ${available ? "available" : "unavailable"}">${available ? "AVAILABLE" : "UNAVAILABLE"}</span><h3>${escapeHtml(recordText(item, ["title", "id"]) ?? "System capability")}</h3></div><p>${escapeHtml(recordText(item, ["description"]) ?? "")}</p>${available ? `<small>Catalog ready • scopes: ${escapeHtml(recordStrings(item, "requiredScopes").join(", ") || "none")}</small>` : `<small>${escapeHtml(recordText(item, ["unavailableReason", "unavailable_reason"]) ?? "This capability has no connected runtime.")}</small>`}</article>`; }).join("") || empty("No Stellar Core capabilities have been declared yet.")}</div></section>`;
+    return `${page("Speak with Stella", "Stellar Core supplies the shared execution layer; Stella is the ecosystem Community Assistant.", "STELLA CORE")}${sourceNotice("Stellar Core catalog", this.snapshot.sources.stellar)}<section class="spmt-stella-chat"><header><span>STELLA</span><h2>Community Assistant</h2></header><div class="spmt-stella-history" data-stella-history><p>Ask Stella about the ecosystem, your workspace, or creator tools.</p></div><form data-stella-form><input name="message" maxlength="4000" required placeholder="Speak to Stella…"><button class="primary" type="submit">Send</button></form></section><section class="spmt-account-section"><header><span>CAPABILITY CATALOG</span><h2>What Stella can use</h2></header><div class="spmt-command-grid">${capabilities.map((item) => { const available = recordText(item, ["availability"]) === "available"; return `<article><div><span class="spmt-command-state ${available ? "available" : "unavailable"}">${available ? "AVAILABLE" : "UNAVAILABLE"}</span><h3>${escapeHtml(recordText(item, ["title", "id"]) ?? "System capability")}</h3></div><p>${escapeHtml(recordText(item, ["description"]) ?? "")}</p><small>${available ? escapeHtml(recordStrings(item, "requiredScopes").join(", ") || "Ready") : escapeHtml(recordText(item, ["unavailableReason", "unavailable_reason"]) ?? "Runtime unavailable")}</small></article>`; }).join("") || empty("No Stellar Core capabilities have been declared yet.")}</div></section>`;
   }
   private operations() {
     const logs = this.snapshot.operations.logs.slice(0, 100);
@@ -196,6 +200,83 @@ function commlinkTab(id: CommlinkTabV1, label: string, active: CommlinkTabV1, co
 function sourceNotice(label: string, state: SourceStateV1) { if (state.state === "ready") return ""; return `<aside class="spmt-source-notice state-${state.state}"><strong>${escapeHtml(label)} is ${escapeHtml(state.state)}</strong><span>${escapeHtml(state.detail ?? "The source is temporarily unavailable.")}</span></aside>`; }
 function deferredPanel(id: string, body: string) { const source = DEFERRED_RUNTIME_SOURCES.find((item) => item.id === id); return `<aside class="spmt-deferred"><div><span>SEPARATE RUNTIME</span><strong>${escapeHtml(source?.presentation ?? id)}</strong></div><p>${escapeHtml(body)}</p><small>Owner: ${escapeHtml(source?.owner ?? "unassigned")} • no fabricated data</small></aside>`; }
 function unreadCount(items: Array<Record<string, unknown>>) { return items.filter(isUnread).length; }
+function ecosystemPresence(events: Array<Record<string, unknown>>) {
+  const people = new Map<string, { name: string; sources: string[] }>();
+  for (const event of events) {
+    const type = recordText(event, ["type"])?.toLowerCase() ?? "";
+    if (!type.includes("live")) continue;
+    const payload = recordObject(event, "payload") ?? event;
+    const canonicalId = recordText(payload, ["canonicalUserId", "canonical_user_id", "userId", "user_id", "providerUserId", "provider_user_id"]);
+    const name = recordText(payload, ["displayName", "display_name", "username", "userName", "login"]);
+    if (!canonicalId || !name) continue;
+    const source = recordText(event, ["sourceAppId", "source_app_id"]) ?? recordText(payload, ["sourceAppId", "source_app_id", "source"]) ?? "ecosystem";
+    const existing = people.get(canonicalId) ?? { name, sources: [] };
+    if (!existing.sources.includes(source)) existing.sources.push(source);
+    people.set(canonicalId, existing);
+  }
+  return [...people.values()].sort((left, right) => left.name.localeCompare(right.name));
+}
+function mountOverlayBay(root: HTMLElement, snapshot: SpaceMountainShellSnapshotV1) {
+  const form = root.querySelector<HTMLElement>("[data-workspace-settings]");
+  if (!form || root.querySelector("[data-overlay-bay]")) return;
+  const section = document.createElement("section");
+  section.dataset.overlayBay = "canonical";
+  section.className = "spmt-overlay-bay spmt-product-glass";
+  const widgets = snapshot.overlayWidgets ?? [];
+  const outputs = snapshot.overlayOutputs ?? [];
+  section.innerHTML = `<header><span>OVERLAY BAY</span><h2>Shared overlay workspace</h2></header><p>This is the one editing authority consumed by every ecosystem app.</p><div class="spmt-overlay-grid">${widgets.map((item) => { const manifest = recordObject(item, "manifest"); return `<article><b>${escapeHtml(recordText(manifest, ["title"]) ?? "Overlay widget")}</b><small>${escapeHtml(recordText(manifest, ["appId"]) ?? "ecosystem")}</small></article>`; }).join("") || `<article><b>Empty scene</b><small>Add an ecosystem widget to begin.</small></article>`}</div><footer>${outputs.length} active browser-source output${outputs.length === 1 ? "" : "s"}</footer>`;
+  form.before(section);
+}
+function bindEcosystemEggs(root: HTMLElement) {
+  const logo = root.querySelector<HTMLElement>("[data-spmt-black-hole-trigger]");
+  logo?.addEventListener("dblclick", (event) => { event.preventDefault(); openBlackHole(root, logo); });
+  const rocket = root.querySelector<HTMLElement>("[data-spmt-rocket-trigger]");
+  rocket?.addEventListener("dblclick", (event) => {
+    event.preventDefault();
+    rocket.classList.add("spmt-rocket-free");
+    const follow = (move: PointerEvent) => {
+      rocket.style.setProperty("--rocket-x", `${move.clientX}px`);
+      rocket.style.setProperty("--rocket-y", `${move.clientY}px`);
+      const target = logo?.getBoundingClientRect();
+      if (target && move.clientX >= target.left && move.clientX <= target.right && move.clientY >= target.top && move.clientY <= target.bottom) {
+        window.removeEventListener("pointermove", follow);
+        rocket.classList.remove("spmt-rocket-free");
+        rocket.removeAttribute("style");
+        showEggResult(root, "HIDDEN ARENA DISCOVERED", "rocket");
+      }
+    };
+    window.addEventListener("pointermove", follow);
+  });
+}
+function openBlackHole(root: HTMLElement, mark: HTMLElement) {
+  if (root.querySelector("#spmt-black-hole-game")) return;
+  const game = document.createElement("section");
+  game.id = "spmt-black-hole-game";
+  game.innerHTML = `<div class="egg-hud"><strong>THE BLACK HOLE</strong><span>Guide all anomalies into the singularity</span><b data-egg-count>0 / 3</b></div><div class="egg-void"></div>${["🚀","📡","🌌"].map((item, index) => `<button class="egg-artifact" style="--egg-angle:${index * 120}deg">${item}</button>`).join("")}<button class="egg-close" aria-label="Close">×</button>`;
+  root.appendChild(game);
+  const center = mark.getBoundingClientRect();
+  const voidNode = game.querySelector<HTMLElement>(".egg-void")!;
+  voidNode.style.left = `${center.left + center.width / 2}px`;
+  voidNode.style.top = `${center.top + center.height / 2}px`;
+  let captured = 0;
+  game.querySelector<HTMLElement>(".egg-close")?.addEventListener("click", () => game.remove());
+  game.querySelectorAll<HTMLElement>(".egg-artifact").forEach((artifact) => artifact.addEventListener("click", () => {
+    if (artifact.classList.contains("captured")) return;
+    artifact.classList.add("captured");
+    captured += 1;
+    const count = game.querySelector<HTMLElement>("[data-egg-count]");
+    if (count) count.textContent = `${captured} / 3`;
+    if (captured === 3) window.setTimeout(() => { game.remove(); showEggResult(root, "ANOMALY STABILIZED", "blackHole"); }, 450);
+  }));
+}
+function showEggResult(root: HTMLElement, title: string, egg: "rocket" | "blackHole" | "signal") {
+  const result = document.createElement("div");
+  result.className = "spmt-egg-result";
+  result.textContent = title;
+  root.appendChild(result);
+  window.dispatchEvent(new CustomEvent("spmt:easter-egg-complete", { detail: { egg, completed: true } }));
+  window.setTimeout(() => result.remove(), 2200);
+}
 function isUnread(item: Record<string, unknown>) { return !recordText(item, ["readAt", "read_at"]); }
 function recordStrings(value: unknown, key: string) { if (!value || typeof value !== "object" || Array.isArray(value)) return []; const raw = (value as Record<string, unknown>)[key]; return Array.isArray(raw) ? raw.filter((item): item is string => typeof item === "string") : []; }
 function payloadKeySummary(value: unknown) { if (!value || typeof value !== "object" || Array.isArray(value)) return "No structured payload fields"; const keys = Object.keys(value as Record<string, unknown>).sort(); return keys.length ? `Payload fields: ${keys.slice(0, 12).join(", ")}${keys.length > 12 ? "…" : ""}` : "No structured payload fields"; }

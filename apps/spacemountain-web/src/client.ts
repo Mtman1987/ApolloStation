@@ -55,6 +55,7 @@ loadJsonButton.addEventListener("click", () => void loadPastedManifest());
 loadCandidateButton?.addEventListener("click", () => void loadCandidateExample());
 resetDeveloperButton.addEventListener("click", () => resetDeveloperForm());
 window.setInterval(() => void watchRegistry(), 20_000);
+window.addEventListener("spmt:easter-egg-complete", (event) => void recordEggCompletion(event as CustomEvent));
 
 void boot();
 
@@ -131,6 +132,7 @@ async function loadShell() {
       onLaunchApp: (app) => launchApp(app),
       onOpenConversation: (conversation) => void openConversation(conversation),
       onSearchCommlink: (query) => void searchCommlink(query),
+      onInvokeStella: (message, conversationId) => void invokeStella(message, conversationId),
       onMarkNotificationRead: (notification) => void markNotificationRead(notification),
       onUnlinkProvider: (link) => void unlinkProvider(link),
       onSaveWorkspace: (expectedRevision, patch) => void saveWorkspace(expectedRevision, patch),
@@ -347,6 +349,38 @@ async function searchCommlink(query: string) {
     if (!dialog.open) dialog.showModal();
     setStatus(`${results.length} canonical message match${results.length === 1 ? "" : "es"}.`, "ready");
   } catch (error) { setStatus(message(error), "error"); }
+}
+
+async function invokeStella(prompt: string, conversationId: string) {
+  const principal = requirePrincipal();
+  setStatus("Stella is thinking through Stellar Core…", "working");
+  try {
+    const result = await controller.invokeStella(principal.tenantIds[0]!, principal.actorId, prompt, conversationId, `stella-${crypto.randomUUID()}`) as Record<string, unknown>;
+    const state = typeof result.status === "string" ? result.status : typeof result.state === "string" ? result.state : "accepted";
+    const detail = typeof result.reason === "string" ? result.reason : typeof result.message === "string" ? result.message : "Your request was accepted by Stellar Core.";
+    setStatus(`Stella · ${state}: ${detail}`, state === "unavailable" || state === "failed" ? "error" : "ready");
+  } catch (error) { setStatus(`Stella unavailable · ${message(error)}`, "error"); }
+}
+
+async function recordEggCompletion(event: CustomEvent) {
+  const principal = requirePrincipal();
+  const egg = event.detail?.egg;
+  if (egg !== "blackHole" && egg !== "rocket" && egg !== "signal") return;
+  const tenantId = principal.tenantIds[0]!;
+  const type = `ecosystem.easter-egg.${egg}.completed.v1`;
+  setStatus(`Retaining ${egg} discovery in canonical SPMT state…`, "working");
+  try {
+    await spmt.publishEvent(tenantId, type, { schemaVersion: 1, userId: principal.actorId, egg, completed: true }, `egg:${principal.actorId}:${egg}`);
+    const events = await spmt.listEvents(tenantId, { limit: 100 });
+    const found = new Set(events.filter((item) => item.payload && typeof item.payload === "object" && (item.payload as Record<string, unknown>).userId === principal.actorId).map((item) => item.type));
+    const all = ["blackHole", "rocket", "signal"].every((name) => found.has(`ecosystem.easter-egg.${name}.completed.v1`));
+    if (all) {
+      const alreadyRewarded = found.has("ecosystem.easter-eggs.completed.v1");
+      await spmt.publishEvent(tenantId, "ecosystem.easter-eggs.completed.v1", { schemaVersion: 1, userId: principal.actorId, reward: "lord-puzzler", assistant: "count-puzzle" }, `egg:${principal.actorId}:complete`);
+      if (!alreadyRewarded) await spmt.createNotification(tenantId, principal.actorId, "achievement", "Lord Puzzler unlocked", "Count Puzzle has joined your ecosystem collection.");
+    }
+    setStatus(all ? "All three signals retained · Lord Puzzler unlocked." : `${egg} discovery retained.`, "ready");
+  } catch (error) { setStatus(`Discovery was not retained · ${message(error)}`, "error"); }
 }
 
 function conversationReplyForm(conversation: Record<string, unknown>, actorId: string) {

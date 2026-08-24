@@ -3,6 +3,7 @@ import { SpmtClient } from "@spmt/sdk";
 import { CHAT_TAG_ROUND_COMPLETED, CHAT_TAG_TAG_COMPLETED } from "@spmt/nebula-arcade";
 export * from "./live-monitor.js";
 export * from "./twitch-live-poller.js";
+export * from "./signal-discovery.js";
 export const DISCORD_ANNOUNCEMENT_REQUESTED="dsh.discord.announcement.requested.v1";
 export const manifest=assertAppModuleManifestV1({schemaVersion:1,manifestVersion:"spmt.app-manifest/v1",id:"discord-stream-hub",name:"Discord Stream Hub",description:"Discord community, shoutout, calendar, moderation, forum bridge, and media workflows.",capabilities:["live-monitoring","shoutouts","spotlight","calendar","moderation","forums","clips"],surfaces:["shell","standalone","overlay"],requiredScopes:["events:read","events:write","identity:read","xp:read"],eventTypes:[DISCORD_ANNOUNCEMENT_REQUESTED],integration:{identity:"connected",events:"native",commlink:"connected",workspace:"connected"},workers:[{id:"dsh-clip-worker",role:"clip-processing",execution:"elastic",canonicalAuthority:false}]} satisfies AppModuleManifestV1);
 export async function requestChatTagAnnouncements(client:SpmtClient,tenantId:string){const events=await client.listEvents(tenantId,{type:CHAT_TAG_ROUND_COMPLETED,sourceAppId:"nebula-arcade",limit:100});for(const event of events){const id=String(event.id??event.eventId??"");if(!id)continue;await client.publishEvent(tenantId,DISCORD_ANNOUNCEMENT_REQUESTED,{schemaVersion:1,sourceEventId:id,kind:"chat-tag-round",payload:event.payload??{}},`dsh-chat-tag:${id}`);}return{observed:events.length};}

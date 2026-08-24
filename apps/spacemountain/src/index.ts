@@ -55,6 +55,9 @@ export interface SpaceMountainShellSnapshotV1 {
   events: Array<Record<string, unknown>>;
   conversations: Array<Record<string, unknown>>;
   notifications: Array<Record<string, unknown>>;
+  overlayWidgets: Array<Record<string, unknown>>;
+  overlayOutputs: Array<Record<string, unknown>>;
+  runtimeStates: Array<Record<string, unknown>>;
   stellar: {
     context: Array<Record<string, unknown>>;
     capabilities: Array<Record<string, unknown>>;
@@ -101,6 +104,9 @@ export class SpaceMountainShellController {
       events: this.spmt.listEvents(input.tenantId, { limit: 100 }),
       commlink: this.spmt.listConversations(input.tenantId, input.userId),
       notifications: this.spmt.listNotifications(input.tenantId, input.userId),
+      overlayWidgets: this.spmt.listOverlayWidgets?.(input.tenantId) ?? Promise.resolve([]),
+      overlayOutputs: this.spmt.listOverlayOutputs?.(input.tenantId) ?? Promise.resolve([]),
+      runtimeStates: this.spmt.listRuntimeStates?.(input.tenantId) ?? Promise.resolve([]),
       stellarContext: this.spmt.listStellarContext(input.tenantId, input.userId),
       stellarCapabilities: this.spmt.listStellarCapabilities(),
       operationsAccess: operationsAccessTask,
@@ -161,6 +167,9 @@ export class SpaceMountainShellController {
       events: records(values.get("events")),
       conversations: records(values.get("commlink")),
       notifications: records(values.get("notifications")),
+      overlayWidgets: records(values.get("overlayWidgets")),
+      overlayOutputs: records(values.get("overlayOutputs")),
+      runtimeStates: records(values.get("runtimeStates")),
       stellar: { context: records(values.get("stellarContext")), capabilities: records(values.get("stellarCapabilities")) },
       operations: { ...operationsAccess, logs: operationsLogs(values.get("operationsLogs")), coder: coderDescriptor(values.get("operationsCoder")), jobs: coderJobs(values.get("operationsCoderJobs")) },
       setupOptions: Array.isArray(setupPayload?.options) ? setupPayload.options.filter(isRecord) : [],
@@ -210,6 +219,15 @@ export class SpaceMountainShellController {
     recipientUserIds.forEach((userId) => requireId(userId, "recipientUserId"));
     if (!text.trim() || text.length > 8000) throw new Error("message text is invalid");
     return this.spmt.sendCommlinkMessage(tenantId, conversationId, recipientUserIds, text);
+  }
+
+  async invokeStella(tenantId: string, userId: string, message: string, conversationId: string, idempotencyKey: string) {
+    requireId(tenantId, "tenantId");
+    requireId(userId, "userId");
+    requireId(conversationId, "conversationId");
+    requireId(idempotencyKey, "idempotencyKey");
+    if (!message.trim() || message.length > 4000) throw new Error("Stella message is invalid");
+    return this.spmt.invokeCommunityAssistant(tenantId, { userId, message: message.trim(), surface: "app", conversationId }, idempotencyKey);
   }
 
   async prepareCoderDraft(tenantId: string, targetAppId: string, prompt: string, evidenceLogIds: string[], idempotencyKey: string) {
