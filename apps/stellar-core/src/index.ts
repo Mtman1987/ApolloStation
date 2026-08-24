@@ -21,7 +21,7 @@ export function stellarCoreCatalogRegistration(publicOrigin: string): AppCatalog
     name: manifest.name,
     description: manifest.description,
     version: "0.1.0-green",
-    launchUrl: new URL("/apps/stellar-core", origin).toString(),
+    launchUrl: new URL("/apps/stellar-core?surface=workspace", origin).toString(),
     allowedScopes: [...manifest.requiredScopes],
     surfaces: ["shell", "standalone"],
     status: "active",
