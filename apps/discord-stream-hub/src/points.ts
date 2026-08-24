@@ -115,7 +115,7 @@ export class DshPointsService {
       await this.client.awardXp(this.tenantId, input.userId, pointsAwarded, customEventType, idempotencyKey, { eventType: customEventType, metadata });
     } else if (mappedEventType) {
       const award = mappedXpAwardV1({ userId: input.userId, mappedEventType, upstreamEventId: input.upstreamEventId, deltaOverride: pointsAwarded, metadata });
-      await this.client.awardXp(this.tenantId, award.userId, award.delta, award.eventType, award.idempotencyKey, { eventType: award.eventType, metadata: award.metadata });
+      await this.client.awardXp(this.tenantId, award.userId, award.delta, award.eventType, award.idempotencyKey, { eventType: award.eventType, ...(award.metadata ? { metadata: award.metadata } : {}) });
     }
     return { pointsAwarded, settingsSnapshot: settings, wallet: await this.client.getXpWallet(this.tenantId, input.userId) };
   }
