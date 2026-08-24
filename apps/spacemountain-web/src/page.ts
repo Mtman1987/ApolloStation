@@ -16,7 +16,6 @@ export function renderSpaceMountainPage(nonce: string, buildSha: string, candida
     <div><strong>GREEN SPRITE SANDBOX</strong><span>private · isolated database · outbound actions off</span></div>
     <nav aria-label="Sandbox controls">
       <span id="sandbox-status" class="sandbox-status" role="status" aria-live="polite">Checking SPMT…</span>
-      <a href="/?view=help">SPMT hub</a>
       <a href="/docs/developers">Developer docs</a>
       <button id="refresh-shell" type="button" hidden>Refresh</button>
       <button id="open-developer-console" type="button" hidden>Add developer app</button>

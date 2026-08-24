@@ -3,8 +3,9 @@ import type { OperationsLogV1 } from "@spmt/contracts";
 import { bindProductRocketNavigation, installProductBackdrop, PRODUCT_UI_CSS, resolveProductBackdrop, resolveProductTheme, type ProductSceneV1 } from "@spmt/ui";
 import { DEFERRED_RUNTIME_SOURCES, type SourceStateV1, type SpaceMountainAppCardV1, type SpaceMountainShellSnapshotV1 } from "./index.js";
 import { POLISHED_SPACE_MOUNTAIN_CSS } from "./product-shell-css.js";
+import { THEMED_SURFACE_CSS } from "./themed-surface-css.js";
 
-export type SpaceMountainViewV1 = "home" | "apps" | "inbox" | "stellar" | "operations" | "workspace" | "settings" | "help";
+export type SpaceMountainViewV1 = "home" | "apps" | "inbox" | "stellar" | "operations" | "workspace" | "settings";
 type CommlinkFilterV1 = "all" | "chat" | "events" | "streamweaver" | "queued";
 interface CommlinkWorkspaceUiV1 {
   schemaVersion: 1;
@@ -43,7 +44,6 @@ const NAV: Array<{ id: SpaceMountainViewV1; label: string; description: string; 
   { id: "operations", label: "Operations", description: "Work with Coder and review consolidated app health.", icon: "pulse" },
   { id: "workspace", label: "Workspace", description: "Canonical overlays, scenes, appearance, and three persistent slots.", icon: "layout" },
   { id: "settings", label: "Settings", description: "Manage your canonical SPMT identity and linked accounts.", icon: "settings" },
-  { id: "help", label: "SPMT", description: "Identity, auth, messages, developer console, docs, SDK, API, CLI, MCP, and IRC.", icon: "help" },
 ];
 
 const SPACEMOUNTAIN_SCENE: ProductSceneV1 = Object.freeze({
@@ -66,7 +66,7 @@ export class SpaceMountainShellUi {
     this.snapshot = options.snapshot;
     if (typeof window !== "undefined") {
       const requested = new URLSearchParams(window.location.search).get("view");
-      const alias = requested === "commlink" ? "inbox" : requested === "spmt" ? "help" : requested;
+      const alias = requested === "commlink" ? "inbox" : requested;
       if (NAV.some((item) => item.id === alias)) this.view = alias as SpaceMountainViewV1;
     }
   }
@@ -102,9 +102,18 @@ export class SpaceMountainShellUi {
     root.style.setProperty("--spmt-stars", String((recordNumber(appearance, "starDensity") ?? 70) / 100));
     root.style.setProperty("--spmt-glass-opacity", String((recordNumber(appearance, "glassOpacity") ?? 76) / 100));
     root.style.setProperty("--spmt-blur", `${recordNumber(appearance, "blurStrength") ?? 18}px`);
+    const nebulaIntensity = recordNumber(appearance, "nebulaIntensity") ?? 55;
+    const borderStrength = recordNumber(appearance, "borderStrength") ?? 35;
+    const chatTransparency = recordNumber(appearance, "chatTransparency") ?? 15;
+    const parallaxDepth = recordNumber(appearance, "parallaxDepth") ?? 35;
+    root.style.setProperty("--spmt-surface-tint", `${Math.round(8 + nebulaIntensity * 0.12)}%`);
+    root.style.setProperty("--spmt-tint-opacity", String(0.5 + nebulaIntensity * 0.0036));
+    root.style.setProperty("--spmt-border-mix", `${Math.round(10 + borderStrength * 0.45)}%`);
+    root.style.setProperty("--spmt-chat-opacity", String(Math.max(0.38, (100 - chatTransparency) / 100)));
+    root.style.setProperty("--spmt-backdrop-scale", String(1.015 + parallaxDepth / 2000));
     const retainedTray = this.workspaceTray;
     retainedTray?.remove();
-    root.innerHTML = `<style data-spmt-space-style>${PRODUCT_UI_CSS}${SPACE_MOUNTAIN_CSS}${POLISHED_SPACE_MOUNTAIN_CSS}${WORKSPACE_SETTINGS_CSS}${COMMLINK_FORM_CSS}${COSMO_COMMLINK_CSS}</style><div class="spmt-space-shell">${this.header()}${this.dock()}<main class="spmt-space-main">${this.body()}</main></div>`;
+    root.innerHTML = `<style data-spmt-space-style>${PRODUCT_UI_CSS}${SPACE_MOUNTAIN_CSS}${POLISHED_SPACE_MOUNTAIN_CSS}${WORKSPACE_SETTINGS_CSS}${COMMLINK_FORM_CSS}${COSMO_COMMLINK_CSS}${THEMED_SURFACE_CSS}</style><div class="spmt-space-shell">${this.header()}${this.dock()}<main class="spmt-space-main">${this.body()}</main></div>`;
     this.workspaceTray = retainedTray ?? this.createWorkspaceTray();
     root.append(this.workspaceTray);
     this.syncWorkspaceTray();
@@ -238,7 +247,6 @@ export class SpaceMountainShellUi {
     if (this.view === "operations" && (this.snapshot.operations.canReadLogs || this.snapshot.operations.canReadCoder)) return this.operations();
     if (this.view === "workspace") return this.workspace();
     if (this.view === "settings") return this.settings();
-    if (this.view === "help") return `${page("SPMT identity and developer hub", "Your canonical account, auth providers, Commlink messages, app publishing tools, and platform documentation are reachable here.", "SPMT LIVE")}<div class="spmt-app-grid wide"><article class="spmt-app-card"><span class="spmt-record-kind">ACCOUNT & AUTH</span><h3>Canonical identity</h3><p>Review your SPMT account and verified provider links without exposing browser-owned tokens.</p><footer><button class="primary" data-nav="settings">Open identity</button></footer></article><article class="spmt-app-card"><span class="spmt-record-kind">MESSAGES</span><h3>Cosmo Commlink</h3><p>Open canonical conversations, saved ChatSpaces, desks, notifications, and app events.</p><footer><button data-nav="inbox">Open messages</button></footer></article><article class="spmt-app-card"><span class="spmt-record-kind">DEVELOPERS</span><h3>Developer Console</h3><p>Register or update an app through the same public SDK operation used by automation.</p><footer><a href="/#developer-console">Open console</a></footer></article><article class="spmt-app-card"><span class="spmt-record-kind">DOCS & SDK</span><h3>Platform documentation</h3><p>Manifest registration, installation, workspace surfaces, browser-source URLs, IRC, Stella, Coder, SDK, API, CLI, and MCP.</p><footer><a class="primary" href="/docs/developers">Open docs</a></footer></article><article class="spmt-app-card"><span class="spmt-record-kind">WORKSPACE</span><h3>Shared settings</h3><p>Manage the appearance and persistent app slots consumed by authorized ecosystem apps.</p><footer><button data-nav="workspace">Open workspace</button></footer></article><article class="spmt-app-card"><span class="spmt-record-kind">DIAGNOSTICS</span><h3>Review health</h3><p>Developer-only readiness evidence for this isolated Sprite build.</p><footer><a href="/sandbox/health" target="_blank" rel="noreferrer">Open health JSON</a></footer></article></div>`;
     return this.home();
   }
 

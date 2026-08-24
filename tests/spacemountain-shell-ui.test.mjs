@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { SPACE_MOUNTAIN_CSS } from "../apps/spacemountain/dist/shell-ui.js";
 import { POLISHED_SPACE_MOUNTAIN_CSS } from "../apps/spacemountain/dist/product-shell-css.js";
+import { THEMED_SURFACE_CSS } from "../apps/spacemountain/dist/themed-surface-css.js";
 
 const source = readFileSync(new URL("../apps/spacemountain/src/shell-ui.ts", import.meta.url), "utf8");
 
@@ -89,7 +90,7 @@ test("home avoids duplicate navigation and sidebar hover text carries page descr
   assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /height:calc\(100dvh - var\(--guard-height,0px\)\)/);
   assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /overflow-y:hidden/);
   assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /container-type:size/);
-  assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /height:clamp\(76px,20cqh,150px\)/);
+  assert.match(THEMED_SURFACE_CSS, /height:clamp\(132px,31cqh,205px\)/);
 });
 
 test("released rocket escapes the sidebar stack, follows the pointer, and remains above content", () => {
@@ -101,14 +102,18 @@ test("released rocket escapes the sidebar stack, follows the pointer, and remain
   assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /@keyframes spmtRocketFlight/);
 });
 
-test("SPMT hub visibly links identity, messages, developer tools, docs, and workspace", () => {
-  assert.match(source, /label: "SPMT"/);
-  assert.match(source, /SPMT identity and developer hub/);
-  assert.match(source, /ACCOUNT & AUTH/);
-  assert.match(source, /Cosmo Commlink/);
-  assert.match(source, /Developer Console/);
-  assert.match(source, /Platform documentation/);
-  assert.match(source, /requested === "spmt" \? "help"/);
+test("SPMT does not duplicate the existing sidebar destinations", () => {
+  assert.doesNotMatch(source, /label: "SPMT"/);
+  assert.doesNotMatch(source, /SPMT identity and developer hub/);
+  assert.doesNotMatch(source, /requested === "spmt" \? "help"/);
+});
+
+test("canonical appearance normalizes every front-facing surface after legacy styles", () => {
+  assert.match(source, /\$\{COSMO_COMMLINK_CSS\}\$\{THEMED_SURFACE_CSS\}/);
+  assert.match(THEMED_SURFACE_CSS, /--theme-panel:/);
+  assert.match(THEMED_SURFACE_CSS, /\.spmt-cosmic-header,\.spmt-rocket-dock,\.spmt-hero/);
+  assert.match(THEMED_SURFACE_CSS, /\.cosmo-rail,\.cosmo-topbar,\.cosmo-sources/);
+  assert.match(THEMED_SURFACE_CSS, /\.spmt-space-root button:not\(\.primary\)/);
 });
 
 test("shared header uses catalog-backed live presence, local and UTC clocks, and no user-facing health strip", () => {

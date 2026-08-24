@@ -69,7 +69,8 @@ test("private host uses the same product chrome and serves only explicit local a
     assert.match(serverSource, new RegExp(asset.replace(".", "\\.")));
   }
   assert.match(hostSource, /isolated from Blue/);
-  assert.match(hostSource, /<span id="sandbox-status"[\s\S]*<a href="\/\?view=help">SPMT hub<\/a>/);
+  assert.match(hostSource, /<span id="sandbox-status"[\s\S]*<a href="\/docs\/developers">Developer docs<\/a>/);
+  assert.doesNotMatch(hostSource, /view=help/);
   assert.doesNotMatch(hostSource, /position:fixed;z-index:1001;top:var\(--guard-height\)/);
   assert.match(clientSource, /setStatus\("Sandbox open", "ready"\)/);
   assert.doesNotMatch(clientSource, /Sandbox open · degraded/);
