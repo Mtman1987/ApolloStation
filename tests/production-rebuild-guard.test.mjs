@@ -71,6 +71,7 @@ test("large donor behavior inventories stay visible to future rebuild work", () 
   assert.equal(streamweaver.actions, 176);
   assert.equal(streamweaver.totalBehaviors, 247);
   assert.equal(streamweaver.commands + streamweaver.actions, streamweaver.totalBehaviors);
+  assert.equal(Object.values(streamweaver.moduleCounts).reduce((sum, value) => sum + value, 0), 247);
   for (const module of ["economy", "redeem-pack", "starter-social", "core-utility", "event-hooks", "chat-bridge", "discord", "kick"]) assert.ok(streamweaver.moduleCounts[module] > 0, module);
 
   const points = guard.knownProductionEvidence.discordStreamHub.pointsOperations;
@@ -90,7 +91,10 @@ test("SPMT parity gap and unresolved deployment discovery remain explicit", () =
   assert.equal(spmt.greenMethodPathShapesAtAudit, 60);
   for (const missing of ["spend", "transfer", "gamble-settlement", "leaderboard-projection", "migration-reconciliation"]) assert.ok(spmt.xpStillRequired.includes(missing), missing);
   assert.equal(guard.knownProductionEvidence.fly.inventoryComplete, false);
-  assert.ok(guard.discoveryQueue.workerOrAssetCandidates.length > 0);
-  assert.ok(guard.discoveryQueue.productOrReleaseCandidates.length > 0);
-  assert.ok(guard.discoveryQueue.predecessorOrExperimentCandidates.length > 0);
+  const discoveryCount = guard.discoveryQueue.workerOrAssetCandidates.length
+    + guard.discoveryQueue.productOrReleaseCandidates.length
+    + guard.discoveryQueue.predecessorOrExperimentCandidates.length
+    + guard.discoveryQueue.archived.length;
+  assert.equal(guard.discoveryQueue.expectedRepositoryCount, 23);
+  assert.equal(discoveryCount, 23);
 });
