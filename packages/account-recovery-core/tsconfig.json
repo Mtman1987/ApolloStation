@@ -10,6 +10,7 @@
   },
   "references": [
     { "path": "../authority-core" },
+    { "path": "../auth-core" },
     { "path": "../control-core" },
     { "path": "../platform-data-core" }
   ],
