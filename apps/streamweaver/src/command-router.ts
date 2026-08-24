@@ -129,7 +129,7 @@ export class StreamWeaverEconomyCommandConsumer {
         case "gamble":
         case "gambel": {
           const result = await this.economy.gamble({ userId: actorId, displayName: actorName, ...(parsed.args[0] ? { bet: parsed.args[0] } : {}), operationId: delivery.deliveryId });
-          text = String(result.message ?? "Gamble settled.");
+          text = "message" in result && typeof result.message === "string" ? result.message : "Gamble settled.";
           break;
         }
         case "roll": {
@@ -137,7 +137,11 @@ export class StreamWeaverEconomyCommandConsumer {
           const wallet = await this.economy.points(actorId);
           const bet = resolveRollBet(parsed.args[0], wallet.spendableXp);
           const result = await this.economy.roll({ userId: actorId, displayName: actorName, bet, operationId: delivery.deliveryId });
-          text = `🎲 @${actorName} rolled ${result.die}: ${result.outcome} (${result.change >= 0 ? "+" : ""}${formatCompactPointAmount(result.change)}). New total: ${formatCompactPointAmount(result.newTotal)}.`;
+          if ("die" in result && typeof result.die === "number" && "outcome" in result && typeof result.outcome === "string" && "change" in result && typeof result.change === "number" && "newTotal" in result && typeof result.newTotal === "number") {
+            text = `🎲 @${actorName} rolled ${result.die}: ${result.outcome} (${result.change >= 0 ? "+" : ""}${formatCompactPointAmount(result.change)}). New total: ${formatCompactPointAmount(result.newTotal)}.`;
+          } else {
+            text = `🎲 @${actorName}, roll settlement already recorded.`;
+          }
           break;
         }
         case "addpoints": {
