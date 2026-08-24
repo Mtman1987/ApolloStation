@@ -33,9 +33,11 @@ test("Nebula Arcade sandbox runs the Chat Tag module and OBS smoke path", async 
     assert.match(browserScript, /response\.status===409/);
     assert.match(browserScript, /Workspace changed elsewhere; reconciling the latest revision/);
     assert.match(browserScript, /request\(workspace\.revision\)/);
+    assert.match(browserScript, /settingsForm\.elements\.theme\.addEventListener\('change'/);
+    assert.match(browserScript, /settingsForm\.elements\.accent\.value=preset\[0\]/);
     const themeCss = await (await fetch(`${origin}\/assets\/chat-tag-sandbox.css`)).text();
     assert.match(themeCss, /--nebula-surface:/);
-    assert.match(themeCss, /filter:grayscale\(\.5\)/);
+    assert.match(themeCss, /filter:grayscale\(1\) saturate\(0\)/);
     const background = await fetch(`${origin}/assets/nebula-arcade/solar-system.webp`);
     assert.equal(background.status, 200);
     assert.equal(background.headers.get("content-type"), "image/webp");

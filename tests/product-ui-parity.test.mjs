@@ -18,6 +18,7 @@ test("shared product UI exposes stable framework-neutral themes and accessible p
   assert.match(PRODUCT_UI_CSS, /:focus-visible/);
   assert.match(PRODUCT_UI_CSS, /prefers-reduced-motion/);
   assert.match(PRODUCT_UI_CSS, /\.spmt-star-layer/);
+  assert.match(PRODUCT_UI_CSS, /filter: grayscale\(1\) saturate\(0\)/);
   assert.deepEqual(PRODUCT_STAR_FIELDS.map(({ size, count, seed, durationSeconds }) => ({ size, count, seed, durationSeconds })), [
     { size: 1, count: 700, seed: 11, durationSeconds: 200 },
     { size: 2, count: 200, seed: 23, durationSeconds: 150 },

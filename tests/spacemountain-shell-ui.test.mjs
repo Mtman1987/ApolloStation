@@ -90,7 +90,8 @@ test("home avoids duplicate navigation and sidebar hover text carries page descr
   assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /height:calc\(100dvh - var\(--guard-height,0px\)\)/);
   assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /overflow-y:hidden/);
   assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /container-type:size/);
-  assert.match(THEMED_SURFACE_CSS, /height:clamp\(132px,31cqh,205px\)/);
+  assert.match(THEMED_SURFACE_CSS, /spmt-hero-logo-large\{flex:1 1 0;width:100%;height:100%/);
+  assert.match(THEMED_SURFACE_CSS, /max-width:none;max-height:none/);
 });
 
 test("released rocket escapes the sidebar stack, follows the pointer, and remains above content", () => {
@@ -114,6 +115,11 @@ test("canonical appearance normalizes every front-facing surface after legacy st
   assert.match(THEMED_SURFACE_CSS, /\.spmt-cosmic-header,\.spmt-rocket-dock,\.spmt-hero/);
   assert.match(THEMED_SURFACE_CSS, /\.cosmo-rail,\.cosmo-topbar,\.cosmo-sources/);
   assert.match(THEMED_SURFACE_CSS, /\.spmt-space-root button:not\(\.primary\)/);
+  assert.match(THEMED_SURFACE_CSS, /filter:grayscale\(1\) saturate\(0\)/);
+  assert.match(THEMED_SURFACE_CSS, /\.spmt-page-title\{[^}]*border:1px solid/);
+  assert.match(THEMED_SURFACE_CSS, /\.spmt-space-root \.spmt-brand,[^}]*background:transparent!important/);
+  assert.match(source, /data-workspace-theme/);
+  assert.match(source, /accentInput\.value = resolveProductTheme\(themeSelect\.value\)\.accent/);
 });
 
 test("shared header uses catalog-backed live presence, local and UTC clocks, and no user-facing health strip", () => {

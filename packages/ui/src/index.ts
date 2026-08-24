@@ -135,7 +135,7 @@ export const PRODUCT_UI_CSS = `
 }
 .spmt-product-backdrop { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; background: #050710; }
 .spmt-product-backdrop-image,.spmt-product-backdrop-tint,.spmt-product-backdrop-shade,.spmt-star-layer { position: absolute; inset: 0; }
-.spmt-product-backdrop-image { inset: -2%; background-image: var(--spmt-app-backdrop-image); background-position: var(--spmt-app-backdrop-position,center); background-size: cover; transform: scale(1.025); }
+.spmt-product-backdrop-image { inset: -2%; background-image: var(--spmt-app-backdrop-image); background-position: var(--spmt-app-backdrop-position,center); background-size: cover; filter: grayscale(1) saturate(0) contrast(1.08) brightness(.84); transform: scale(1.025); }
 .spmt-product-backdrop-tint { background: var(--spmt-accent); opacity: .56; mix-blend-mode: color; }
 .spmt-product-backdrop-shade { background: radial-gradient(circle at 18% 4%,color-mix(in srgb,var(--spmt-accent) 24%,transparent),transparent 42%),linear-gradient(rgba(3,4,8,.2),rgba(3,4,8,.8)); }
 .spmt-star-layer { overflow: hidden; opacity: var(--spmt-stars,.82); }
