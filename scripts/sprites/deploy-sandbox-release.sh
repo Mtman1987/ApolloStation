@@ -42,13 +42,26 @@ if [[ -L "$current_link" ]]; then
   previous_release="$(readlink -f "$current_link")"
 fi
 
+create_apollo_service() {
+  local release_sha="$1"
+  local runner_args="scripts/sprites/run-supervised-sandbox.mjs,--app,platform,--candidate-app,chat-tag,--public-url,$SPRITE_PUBLIC_URL,--data-root,$data_root,--build-sha,$release_sha,--owner-username,mtman1987"
+  sprite-env services create "$service_name" \
+    --cmd node \
+    --args "$runner_args" \
+    --dir "$current_link" \
+    --http-port 8080 \
+    --duration 15s
+}
+
 rollback() {
   status=$?
   if (( status != 0 && switched == 1 )) && [[ -n "$previous_release" && -d "$previous_release" ]]; then
     echo "Deployment failed; restoring $previous_release" >&2
     ln -sfn "$previous_release" "$next_link"
     mv -Tf "$next_link" "$current_link"
-    sprite-env services restart "$service_name" --duration 15s || true
+    sprite-env services stop "$service_name" || true
+    sprite-env services delete "$service_name" || true
+    create_apollo_service "$(basename "$previous_release")" || true
   fi
   if (( status != 0 && bootstrap_service_removed == 1 )); then
     echo "Deployment failed; restoring bootstrap service $bootstrap_service_name" >&2
@@ -93,9 +106,10 @@ ln -sfn "$release_dir" "$next_link"
 mv -Tf "$next_link" "$current_link"
 switched=1
 
-runner_args="scripts/sprites/run-supervised-sandbox.mjs,--app,platform,--candidate-app,chat-tag,--public-url,$SPRITE_PUBLIC_URL,--data-root,$data_root,--build-sha,$BUILD_SHA,--owner-username,mtman1987"
 if sprite-env services get "$service_name" >/dev/null 2>&1; then
-  sprite-env services restart "$service_name" --duration 15s
+  sprite-env services stop "$service_name"
+  sprite-env services delete "$service_name"
+  create_apollo_service "$BUILD_SHA"
 else
   pkill -TERM -f 'scripts/sprites/run-supervised-sandbox\.mjs' 2>/dev/null || true
   for _ in {1..30}; do
@@ -114,12 +128,7 @@ else
     sprite-env services delete "$bootstrap_service_name"
     bootstrap_service_removed=1
   fi
-  sprite-env services create "$service_name" \
-    --cmd node \
-    --args "$runner_args" \
-    --dir "$current_link" \
-    --http-port 8080 \
-    --duration 15s
+  create_apollo_service "$BUILD_SHA"
 fi
 
 ready=0

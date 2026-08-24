@@ -36,7 +36,8 @@ test("Sprite deployment verifies, tests, switches atomically, and rolls back", a
   assert.match(script, /timeout --signal=TERM --kill-after=15s 10m npm test/);
   assert.match(script, /mv -Tf "\$next_link" "\$current_link"/);
   assert.match(script, /Deployment failed; restoring/);
-  assert.match(script, /sprite-env services restart "\$service_name"/);
+  assert.match(script, /create_apollo_service "\$BUILD_SHA"/);
+  assert.match(script, /create_apollo_service "\$\(basename "\$previous_release"\)"/);
   assert.match(script, /sprite-env services stop "\$bootstrap_service_name"/);
   assert.match(script, /Refusing to replace an unexpected bootstrap service definition/);
   assert.match(script, /sprite-env services delete "\$bootstrap_service_name"/);
