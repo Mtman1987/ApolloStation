@@ -89,7 +89,7 @@ if (app === "nebula-arcade") {
   process.on("SIGTERM", () => void stop(0));
   await new Promise((done) => chatTag.once("exit", (code, signal) => { if (!stopping) void stop(signal === "SIGINT" || signal === "SIGTERM" ? 0 : code ?? (signal ? 1 : 0)).then(done); else done(); }));
 } else {
-const spmt = start("SPMT", "apps/spmt-service/dist/index.js", {
+const spmt = start("SPMT", "apps/spmt-service/dist/provider-identity-start.js", {
   ...common,
   DATABASE_PATH: databasePath,
   SPMT_WEBHOOK_KEY: randomBytes(32).toString("base64url"),
