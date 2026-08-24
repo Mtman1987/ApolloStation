@@ -1,6 +1,28 @@
 # ApolloStation staged Sprite sandbox handoff
 
-Status: **existing private Sprite identified; empty-ecosystem plus SDK-published Chat Tag is code-complete and passes 151 local tests; branch publication is required before remote testing**
+Status: **two-stage Sprite promotion is defined; work branches target an isolated Review Sprite and `main` targets the protected release-candidate Sprite**
+
+## Two-stage promotion contract
+
+ApolloStation uses two private, structurally equal Sprite sandboxes with isolated data:
+
+| Tier | Git trigger | Purpose |
+|---|---|---|
+| Review Sprite | Push to `work/**` | Rapid review of the newest work commit with provider actions disabled |
+| Release Sprite (`web-terminal`) | Push/merge to `main` | Protected production-like verification of an agreed and reviewed commit |
+
+`.github/workflows/sprite-promotion.yml` implements both routes. The workflow is intentionally gated by the repository variable `SPRITES_AUTODEPLOY_ENABLED=true`; until the one-time credentials and Review Sprite identity are configured, pushes skip deployment rather than targeting an unverified environment.
+
+Required GitHub configuration:
+
+- Environment `sprite-review` with secret `SPRITES_TOKEN` and variables `SPRITES_REVIEW_NAME`, `SPRITES_REVIEW_ID`, and `SPRITES_REVIEW_URL`.
+- Environment `sprite-release` with secret `SPRITES_TOKEN`. Its name, ID, and private URL are pinned in the workflow.
+- Repository variable `SPRITES_AUTODEPLOY_ENABLED=true` only after both environments have been verified.
+- The secret must be a Sprites API token in `org-slug/org-id/token-id/token-value` format, not a Fly organization token.
+
+Each deployment verifies the target identity and private URL mode, creates a checkpoint, installs the exact Git SHA in a versioned release directory, runs typecheck and the full test suite inside the target Sprite, atomically switches the active release, restarts the supervised service, and verifies that runtime health reports the expected SHA. A failed health check restores the prior release symlink and restarts it.
+
+The two tiers use `/home/sprite/data/review` and `/home/sprite/data/release`; they never share a database. The Review Sprite is the only additional Sprite authorized by this contract. Do not create a Sprite per branch.
 
 ## Approved existing sandbox target
 
