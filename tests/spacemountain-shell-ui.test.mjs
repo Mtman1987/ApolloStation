@@ -90,6 +90,22 @@ test("home avoids duplicate navigation and sidebar hover text carries page descr
   assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /overflow-y:hidden/);
 });
 
+test("shared header uses catalog-backed live presence, local and UTC clocks, and no user-facing health strip", () => {
+  assert.match(source, /ecosystemPresence\(this\.snapshot\.events, this\.snapshot\.apps\)/);
+  assert.match(source, /apps\.filter\(\(app\) => app\.installed && app\.enabled\)\.map\(\(app\) => \[app\.appId, app\.name\]\)/);
+  assert.match(source, /data-spmt-local-clock/);
+  assert.match(source, /data-spmt-utc-clock/);
+  assert.match(source, /timeZone: "UTC"/);
+  assert.match(source, /data-workspace-toggle[\s\S]*data-live-toggle/);
+  assert.match(source, /Show creators live across the installed app pool/);
+  assert.doesNotMatch(source, /const nodes = \[\{ label: "SPMT"/);
+  assert.doesNotMatch(source, /spmt-product-status/);
+  assert.doesNotMatch(source, /this\.snapshot\.state\.toUpperCase\(\)/);
+  assert.doesNotMatch(POLISHED_SPACE_MOUNTAIN_CSS, /\.spmt-telemetry\{/);
+  assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /\.spmt-header-clocks\{/);
+  assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /\.spmt-live-tray\{/);
+});
+
 test("mobile layout removes shell-header dependency from bottom dock without hiding content", () => {
   assert.match(SPACE_MOUNTAIN_CSS, /@media\(max-width:900px\)/);
   assert.match(SPACE_MOUNTAIN_CSS, /\.spmt-rocket-dock\{left:10px;right:10px;top:auto;bottom:/);

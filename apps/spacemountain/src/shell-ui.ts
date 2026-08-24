@@ -56,6 +56,7 @@ export class SpaceMountainShellUi {
   private snapshot: SpaceMountainShellSnapshotV1;
   private view: SpaceMountainViewV1 = "home";
   private stopLayout: (() => void) | undefined;
+  private clockTimer: number | undefined;
   private workspaceTray: HTMLElement | undefined;
   private workspaceOpen = false;
   private workspaceTarget = 0;
@@ -68,7 +69,7 @@ export class SpaceMountainShellUi {
 
   mount() { this.options.root.classList.add("spmt-space-root", "spmt-product-surface"); this.render(); return this; }
   update(snapshot: SpaceMountainShellSnapshotV1) { this.snapshot = snapshot; this.commlinkDraft = undefined; this.render(); }
-  destroy() { this.stopLayout?.(); this.stopLayout = undefined; this.options.root.replaceChildren(); }
+  destroy() { this.stopLayout?.(); this.stopLayout = undefined; if (this.clockTimer !== undefined) window.clearInterval(this.clockTimer); this.clockTimer = undefined; this.options.root.replaceChildren(); }
 
   private bindLayout() {
     this.stopLayout?.();
@@ -143,6 +144,13 @@ export class SpaceMountainShellUi {
     root.querySelectorAll<HTMLElement>("[data-coder-log]").forEach((node) => node.addEventListener("click", () => { const item = this.snapshot.operations.logs.find((log) => log.id === node.dataset.coderLog); if (item) this.options.onPrepareCoderLog?.(item); }));
     root.querySelector<HTMLFormElement>("[data-coder-form]")?.addEventListener("submit", (event) => { event.preventDefault(); const form = new FormData(event.currentTarget as HTMLFormElement); const appId = String(form.get("appId") ?? "").trim(); const prompt = String(form.get("prompt") ?? "").trim(); if (appId && prompt) this.options.onPrepareCoderPrompt?.(appId, prompt); });
     root.querySelector<HTMLElement>("[data-workspace-toggle]")?.addEventListener("click", () => this.toggleWorkspaceTray());
+    root.querySelector<HTMLElement>("[data-live-toggle]")?.addEventListener("click", (event) => {
+      const button = event.currentTarget as HTMLElement;
+      const tray = root.querySelector<HTMLElement>("[data-live-tray]");
+      if (!tray) return;
+      tray.hidden = !tray.hidden;
+      button.setAttribute("aria-expanded", String(!tray.hidden));
+    });
     root.querySelectorAll<HTMLInputElement>('.spmt-slider-grid input[type="range"]').forEach((input) => input.addEventListener("input", () => { const output = input.parentElement?.querySelector<HTMLOutputElement>("output"); if (output) output.value = input.value; }));
     if (this.view === "workspace") {
       mountOverlayBay(root, this.snapshot);
@@ -150,7 +158,24 @@ export class SpaceMountainShellUi {
       root.querySelectorAll<HTMLElement>("[data-overlay-revoke]").forEach((node) => node.addEventListener("click", () => this.options.onRevokeOverlayOutput?.(node.dataset.overlayRevoke ?? "")));
     }
     bindEcosystemEggs(root);
+    this.bindHeaderClock();
     this.bindLayout();
+  }
+
+  private bindHeaderClock() {
+    if (this.clockTimer !== undefined) window.clearInterval(this.clockTimer);
+    const update = () => {
+      const now = new Date();
+      const local = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(now);
+      const utc = new Intl.DateTimeFormat(undefined, { timeZone: "UTC", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }).format(now);
+      const iso = now.toISOString();
+      const localNode = this.options.root.querySelector<HTMLTimeElement>("[data-spmt-local-clock]");
+      const utcNode = this.options.root.querySelector<HTMLTimeElement>("[data-spmt-utc-clock]");
+      if (localNode) { localNode.dateTime = iso; localNode.textContent = local; }
+      if (utcNode) { utcNode.dateTime = iso; utcNode.textContent = utc; }
+    };
+    update();
+    this.clockTimer = window.setInterval(update, 30_000);
   }
 
   private createWorkspaceTray() {
@@ -192,16 +217,14 @@ export class SpaceMountainShellUi {
   private header() {
     const unread = this.snapshot.notifications.filter((item) => !item.readAt && !item.read_at).length;
     const user = recordText(this.snapshot.session, ["displayName", "display_name", "username"]) ?? "Captain";
-    const activity = new Map<string, number>();
-    this.snapshot.events.forEach((event) => { const appId = recordText(event, ["sourceAppId", "source_app_id"]) ?? "spacemountain"; activity.set(appId, (activity.get(appId) ?? 0) + 1); });
-    const nodes = [{ label: "SPMT", state: this.snapshot.state, count: this.snapshot.events.length }, { label: "SPACE", state: this.snapshot.state, count: this.snapshot.conversations.length }, { label: "STELLAR", state: this.snapshot.sources.stellar.state, count: this.snapshot.stellar.context.length }, { label: "COMMLINK", state: this.snapshot.sources.commlink.state, count: (this.snapshot.messages ?? []).length }, ...this.snapshot.apps.filter((app) => app.installed && app.enabled).slice(0, 6).map((app) => ({ label: app.name, state: "ready", count: activity.get(app.appId) ?? 0 }))];
-    const live = ecosystemPresence(this.snapshot.events);
-    return `<header class="spmt-shell-header-stack" data-spmt-shell-header><div class="spmt-telemetry"><span class="spmt-telemetry-title">ECOSYSTEM</span>${nodes.map((node) => `<span class="spmt-node state-${escapeHtml(node.state)}"><i></i>${escapeHtml(node.label)}: ${String(node.count).padStart(2, "0")}</span>`).join("")}<span class="spmt-live-community">${live.map((person) => `<span title="Live via ${escapeHtml(person.sources.join(", "))}"><b>${escapeHtml(person.name)}</b><small>${escapeHtml(person.sources.join(" + "))}</small></span>`).join("")}</span><span class="spmt-telemetry-clock">LIVE · ${new Date().toISOString().slice(11, 16)} UTC</span></div><div class="spmt-cosmic-header spmt-product-glass"><button class="spmt-brand" data-spmt-black-hole-trigger aria-label="SpaceMountain home; double-click for the Black Hole"><img src="/assets/product/space-logo-header.png" alt=""><strong>SPACEMOUNTAIN<em>.LIVE</em></strong></button><nav class="spmt-header-links" aria-label="Product shortcuts"><a href="/docs/developers">Docs</a><button data-nav="apps">Explore apps</button></nav><div class="spmt-header-status"><b class="spmt-product-status state-${this.snapshot.state}">${escapeHtml(this.snapshot.state)}</b><span>${(this.snapshot.xp?.balance ?? 0).toLocaleString()} XP</span></div><div class="spmt-header-actions"><button data-workspace-toggle class="spmt-icon-button" aria-label="Open canonical workspace">${icon("layout")}</button><button data-nav="inbox" class="spmt-icon-button" aria-label="Open Commlink">${icon("mail")}${unread ? `<i>${Math.min(unread, 9)}${unread > 9 ? "+" : ""}</i>` : ""}</button><button data-nav="settings" class="spmt-account"><span class="spmt-avatar">${escapeHtml(initials(user))}</span><span>${escapeHtml(user)}</span></button></div></div></header>`;
+    const live = ecosystemPresence(this.snapshot.events, this.snapshot.apps);
+    const liveTray = `<section id="spmt-live-tray" class="spmt-live-tray spmt-product-glass" data-live-tray hidden><header><strong>Live now</strong><span>${live.length} creator${live.length === 1 ? "" : "s"}</span></header><div>${live.map((person) => `<article><span class="spmt-live-dot"></span><div><strong>${escapeHtml(person.name)}</strong><small>${escapeHtml(person.sources.join(" + "))}</small></div></article>`).join("") || `<p>No creators are live across the installed app pool.</p>`}</div></section>`;
+    return `<header class="spmt-shell-header-stack" data-spmt-shell-header><div class="spmt-cosmic-header spmt-product-glass"><button class="spmt-brand" data-spmt-black-hole-trigger aria-label="SpaceMountain home; double-click for the Black Hole"><img src="/assets/product/space-logo-header.png" alt=""><strong>SPACEMOUNTAIN<em>.LIVE</em></strong></button><nav class="spmt-header-links" aria-label="Product shortcuts"><a href="/docs/developers">Docs</a><button data-nav="apps">Explore apps</button></nav><div class="spmt-header-clocks" aria-label="Local and UTC time"><span><time data-spmt-local-clock></time><small>LOCAL</small></span><span><time data-spmt-utc-clock></time><small>UTC</small></span></div><div class="spmt-header-balance">${(this.snapshot.xp?.balance ?? 0).toLocaleString()} XP</div><div class="spmt-header-actions"><button data-workspace-toggle class="spmt-icon-button" aria-label="Open canonical workspace">${icon("layout")}</button><button data-live-toggle class="spmt-icon-button spmt-live-button" aria-label="Show creators live across the installed app pool" aria-controls="spmt-live-tray" aria-expanded="false">${icon("broadcast")}${live.length ? `<i>${Math.min(live.length, 9)}${live.length > 9 ? "+" : ""}</i>` : ""}</button><button data-nav="inbox" class="spmt-icon-button" aria-label="Open Commlink">${icon("mail")}${unread ? `<i>${Math.min(unread, 9)}${unread > 9 ? "+" : ""}</i>` : ""}</button><button data-nav="settings" class="spmt-account"><span class="spmt-avatar">${escapeHtml(initials(user))}</span><span>${escapeHtml(user)}</span></button></div></div>${liveTray}</header>`;
   }
 
   private dock() {
     const nav = NAV.filter((item) => item.id !== "operations" || this.snapshot.operations.canReadLogs || this.snapshot.operations.canReadCoder);
-    return `<aside class="spmt-rocket-dock spmt-product-glass"><div id="rocketLauncher" class="spmt-dock-orbit docked" data-spmt-rocket-trigger title="Double-click the rocket to release it"><span></span><img src="/assets/product/model-rocket.png" alt="SpaceMountain rocket"></div><nav>${nav.map((item) => `<button data-spmt-product-nav="${item.id}" class="${this.view === item.id ? "active" : ""}" title="${escapeHtml(`${item.label} — ${item.description}`)}" aria-label="${escapeHtml(`${item.label}: ${item.description}`)}">${icon(item.icon)}<label>${item.label}</label></button>`).join("")}</nav><footer><small>SPMT CORE</small><strong>${this.snapshot.state.toUpperCase()}</strong></footer></aside>`;
+    return `<aside class="spmt-rocket-dock spmt-product-glass"><div id="rocketLauncher" class="spmt-dock-orbit docked" data-spmt-rocket-trigger title="Double-click the rocket to release it"><span></span><img src="/assets/product/model-rocket.png" alt="SpaceMountain rocket"></div><nav>${nav.map((item) => `<button data-spmt-product-nav="${item.id}" class="${this.view === item.id ? "active" : ""}" title="${escapeHtml(`${item.label} — ${item.description}`)}" aria-label="${escapeHtml(`${item.label}: ${item.description}`)}">${icon(item.icon)}<label>${item.label}</label></button>`).join("")}</nav></aside>`;
   }
 
   private body() {
@@ -382,7 +405,8 @@ export class SpaceMountainShellUi {
 function sourceNotice(label: string, state: SourceStateV1) { if (state.state === "ready") return ""; return `<aside class="spmt-source-notice state-${state.state}"><strong>${escapeHtml(label)} is ${escapeHtml(state.state)}</strong><span>${escapeHtml(state.detail ?? "The source is temporarily unavailable.")}</span></aside>`; }
 function deferredPanel(id: string, body: string) { const source = DEFERRED_RUNTIME_SOURCES.find((item) => item.id === id); return `<aside class="spmt-deferred"><div><span>SEPARATE RUNTIME</span><strong>${escapeHtml(source?.presentation ?? id)}</strong></div><p>${escapeHtml(body)}</p><small>Owner: ${escapeHtml(source?.owner ?? "unassigned")} • no fabricated data</small></aside>`; }
 function unreadCount(items: Array<Record<string, unknown>>) { return items.filter(isUnread).length; }
-function ecosystemPresence(events: Array<Record<string, unknown>>) {
+function ecosystemPresence(events: Array<Record<string, unknown>>, apps: SpaceMountainAppCardV1[]) {
+  const appPool = new Map(apps.filter((app) => app.installed && app.enabled).map((app) => [app.appId, app.name]));
   const people = new Map<string, { name: string; sources: string[] }>();
   for (const event of events) {
     const type = recordText(event, ["type"])?.toLowerCase() ?? "";
@@ -391,7 +415,8 @@ function ecosystemPresence(events: Array<Record<string, unknown>>) {
     const canonicalId = recordText(payload, ["canonicalUserId", "canonical_user_id", "userId", "user_id", "providerUserId", "provider_user_id"]);
     const name = recordText(payload, ["displayName", "display_name", "username", "userName", "login"]);
     if (!canonicalId || !name) continue;
-    const source = recordText(event, ["sourceAppId", "source_app_id"]) ?? recordText(payload, ["sourceAppId", "source_app_id", "source"]) ?? "ecosystem";
+    const sourceId = recordText(event, ["sourceAppId", "source_app_id"]) ?? recordText(payload, ["sourceAppId", "source_app_id", "source"]) ?? "ecosystem";
+    const source = appPool.get(sourceId) ?? sourceLabel(sourceId);
     const existing = people.get(canonicalId) ?? { name, sources: [] };
     if (!existing.sources.includes(source)) existing.sources.push(source);
     people.set(canonicalId, existing);
@@ -530,8 +555,8 @@ function checkControl(name: string, label: string, checked: boolean) { return `<
 function workspaceDockSlots(value: unknown): Array<string | null> { if (!value || typeof value !== "object" || Array.isArray(value)) return [null, null, null]; const raw = (value as Record<string, unknown>).dockSlots; if (!Array.isArray(raw)) return [null, null, null]; return [0, 1, 2].map((index) => typeof raw[index] === "string" ? raw[index] as string : null); }
 function escapeHtml(value: string) { return value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char] ?? char); }
 function initials(value: string) { return value.trim().split(/\s+/).slice(0, 2).map((part) => part[0] ?? "").join("").toUpperCase() || "SP"; }
-type IconName = "home" | "grid" | "mail" | "spark" | "pulse" | "layout" | "settings" | "help" | "rocket" | "arrow";
-function icon(name: IconName) { const paths: Record<IconName, string> = { home: '<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5M9 21v-7h6v7"/>', grid: '<rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/>', mail: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>', spark: '<path d="m12 3 1.6 5.4L19 10l-5.4 1.6L12 17l-1.6-5.4L5 10l5.4-1.6L12 3Z"/><path d="m19 16 .7 2.3L22 19l-2.3.7L19 22l-.7-2.3L16 19l2.3-.7L19 16Z"/>', pulse: '<path d="M3 12h4l2-6 4 12 2-6h6"/>', layout: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M9 10h12"/>', settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3A1.7 1.7 0 0 0 10 3V2.8h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"/>', help: '<circle cx="12" cy="12" r="9"/><path d="M9.8 9a2.3 2.3 0 1 1 3.7 1.8c-1 .7-1.5 1.1-1.5 2.2M12 17h.01"/>', rocket: '<path d="M14 4c3-2 5-1 6-1 0 1 1 3-1 6l-5 5-4-1-1-4 5-5Z"/><path d="m9 9-4 1-2 3 5 1M14 14l-1 5-3 2-1-5M8 16l-3 3"/>', arrow: '<path d="M5 12h14M13 6l6 6-6 6"/>' }; return `<svg class="spmt-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${paths[name]}</svg>`; }
+type IconName = "home" | "grid" | "mail" | "spark" | "pulse" | "layout" | "settings" | "help" | "rocket" | "arrow" | "broadcast";
+function icon(name: IconName) { const paths: Record<IconName, string> = { home: '<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5M9 21v-7h6v7"/>', grid: '<rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/>', mail: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>', spark: '<path d="m12 3 1.6 5.4L19 10l-5.4 1.6L12 17l-1.6-5.4L5 10l5.4-1.6L12 3Z"/><path d="m19 16 .7 2.3L22 19l-2.3.7L19 22l-.7-2.3L16 19l2.3-.7L19 16Z"/>', pulse: '<path d="M3 12h4l2-6 4 12 2-6h6"/>', layout: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M9 10h12"/>', settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3A1.7 1.7 0 0 0 10 3V2.8h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"/>', help: '<circle cx="12" cy="12" r="9"/><path d="M9.8 9a2.3 2.3 0 1 1 3.7 1.8c-1 .7-1.5 1.1-1.5 2.2M12 17h.01"/>', rocket: '<path d="M14 4c3-2 5-1 6-1 0 1 1 3-1 6l-5 5-4-1-1-4 5-5Z"/><path d="m9 9-4 1-2 3 5 1M14 14l-1 5-3 2-1-5M8 16l-3 3"/>', arrow: '<path d="M5 12h14M13 6l6 6-6 6"/>', broadcast: '<circle cx="12" cy="12" r="2"/><path d="M8.5 8.5a5 5 0 0 0 0 7M15.5 8.5a5 5 0 0 1 0 7M5.5 5.5a9 9 0 0 0 0 13M18.5 5.5a9 9 0 0 1 0 13"/>' }; return `<svg class="spmt-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${paths[name]}</svg>`; }
 
 const WORKSPACE_SETTINGS_CSS = `.spmt-settings-form{display:grid;gap:16px}.spmt-settings-form>section{border:1px solid var(--border);border-radius:20px;background:var(--panel);padding:18px}.spmt-settings-form header span{font-size:10px;letter-spacing:.18em;font-weight:900;color:var(--accent2)}.spmt-settings-form h2{margin:5px 0 10px}.spmt-appearance-rule{margin:0 0 16px;color:#aeb1c0;font-size:12px;line-height:1.55}.spmt-field-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.spmt-field-grid label{display:grid;gap:7px;color:#b7b9c4;font-size:11px;font-weight:800}.spmt-field-grid label small{color:#858795;font-weight:600}.spmt-field-grid label.wide{grid-column:span 2}.spmt-field-grid input,.spmt-field-grid select{width:100%;border:1px solid var(--border);border-radius:11px;background:#080b17;color:white;padding:10px;font:inherit}.spmt-field-grid input[type=color]{min-height:40px;padding:4px}.spmt-settings-form>button{justify-self:start;border:0;border-radius:12px;padding:11px 15px;font-weight:900}.spmt-settings-form>small{color:#8d90a0}@media(max-width:700px){.spmt-field-grid{grid-template-columns:1fr}.spmt-field-grid label.wide{grid-column:auto}}`;
 const COMMLINK_FORM_CSS = `.spmt-commlink-search{display:flex;gap:9px;margin-bottom:14px}.spmt-commlink-search label{flex:1;display:grid;gap:5px;color:#9b9eac;font-size:10px;font-weight:800}.spmt-commlink-search input{width:100%;border:1px solid var(--border);border-radius:11px;background:#080b17;color:white;padding:10px;font:inherit}.spmt-commlink-search button{align-self:end;border:1px solid var(--border);border-radius:11px;background:rgba(255,255,255,.05);color:white;padding:10px 14px;font-weight:800}.dialog-reply{display:grid;gap:9px;margin-top:10px;padding-top:14px;border-top:1px solid rgba(255,255,255,.1)}.dialog-reply textarea{min-height:96px;resize:vertical;border:1px solid rgba(255,255,255,.15);border-radius:11px;background:#060b18;color:white;padding:11px;font:inherit}.dialog-reply button{justify-self:end}`;

@@ -54,7 +54,8 @@ test("SpaceMountain presentation matches the finished product without hardcoding
   assert.match(shellSource, /this\.snapshot\.apps\.filter/);
   assert.doesNotMatch(shellSource, /app-streamweaver|app-hearmeout|app-discord-hub|app-chat-tag/);
   assert.doesNotMatch(shellSource, /localStorage|sessionStorage|\/api\/spmt/);
-  assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /\.spmt-telemetry/);
+  assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /\.spmt-header-clocks/);
+  assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /\.spmt-live-button/);
   assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /\.spmt-rocket-dock/);
   assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /@media\(max-width:900px\)/);
   assert.doesNotMatch(POLISHED_SPACE_MOUNTAIN_CSS, /background-size:150px 150px,230px 230px/);
