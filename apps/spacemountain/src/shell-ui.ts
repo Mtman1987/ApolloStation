@@ -49,6 +49,11 @@ const SPACEMOUNTAIN_SCENE: ProductSceneV1 = Object.freeze({
   imageUrl: "/assets/product/theme-solar-flare-background.webp",
   imagePosition: "center",
 });
+const SHELL_APP_SCENES: Readonly<Record<string, ProductSceneV1>> = Object.freeze({
+  commlink: Object.freeze({ appId: "commlink", imageUrl: "/assets/product/commlink-communications-background.webp", imagePosition: "center" }),
+  "stellar-core": Object.freeze({ appId: "stellar-core", imageUrl: "/assets/product/stellar-core-background.webp", imagePosition: "center" }),
+  "mission-control": Object.freeze({ appId: "mission-control", imageUrl: "/assets/product/mission-control-background.webp", imagePosition: "center" }),
+});
 
 export class SpaceMountainShellUi {
   private snapshot: SpaceMountainShellSnapshotV1;
@@ -58,7 +63,12 @@ export class SpaceMountainShellUi {
   private clockTimer: number | undefined;
   private workspaceTray: HTMLElement | undefined;
   private workspaceOpen = false;
+  private workspaceExpanded = false;
+  private workspaceMaximized = false;
+  private workspaceClickThrough = false;
+  private workspaceOpacity = 92;
   private workspaceTarget = 0;
+  private dockCollapsed = false;
   private commlinkDraft: CommlinkWorkspaceUiV1 | undefined;
 
   constructor(private readonly options: SpaceMountainUiOptions) {
@@ -106,9 +116,11 @@ export class SpaceMountainShellUi {
     const accent = recordText(appearance, ["accent"]);
     const backgroundUrl = recordText(appearance, ["backgroundUrl", "background_url"]);
     const configuredTheme = recordText(appearance, ["theme"]);
-    const backdrop = resolveProductBackdrop(SPACEMOUNTAIN_SCENE, configuredTheme, accent, backgroundUrl);
+    const scene = this.activeAppId ? SHELL_APP_SCENES[this.activeAppId] ?? SPACEMOUNTAIN_SCENE : SPACEMOUNTAIN_SCENE;
+    const backdrop = resolveProductBackdrop(scene, configuredTheme, accent, backgroundUrl);
     const theme = backdrop.theme;
     root.dataset.spmtView = this.activeAppId ? "app" : this.view;
+    root.dataset.spmtDock = this.dockCollapsed ? "collapsed" : "expanded";
     if (this.activeAppId) root.dataset.spmtApp = this.activeAppId; else delete root.dataset.spmtApp;
     root.dataset.theme = theme.id;
     root.style.setProperty("--accent", theme.accent);
@@ -218,7 +230,7 @@ export class SpaceMountainShellUi {
       root.querySelectorAll<HTMLElement>("[data-overlay-issue]").forEach((node) => node.addEventListener("click", () => this.options.onIssueOverlayOutput?.(node.dataset.overlayApp ?? "", node.dataset.overlayIssue ?? "", node.dataset.overlayPersonal === "true")));
       root.querySelectorAll<HTMLElement>("[data-overlay-revoke]").forEach((node) => node.addEventListener("click", () => this.options.onRevokeOverlayOutput?.(node.dataset.overlayRevoke ?? "")));
     }
-    bindEcosystemEggs(root);
+    bindEcosystemEggs(root, (collapsed) => { this.dockCollapsed = collapsed; root.dataset.spmtDock = collapsed ? "collapsed" : "expanded"; });
     this.bindHeaderClock();
     this.bindLayout();
   }
@@ -243,29 +255,47 @@ export class SpaceMountainShellUi {
     const tray = document.createElement("section");
     tray.className = "spmt-workspace-tray";
     tray.setAttribute("aria-label", "SPMT workspace tray");
-    tray.innerHTML = `<header><strong>Canonical workspace</strong><nav>${[0, 1, 2].map((index) => `<button type="button" data-workspace-slot="${index}">Slot ${index + 1}</button>`).join("")}<button type="button" data-workspace-surface="workspace">Overlay Bay</button><button type="button" data-workspace-surface="settings">Settings</button></nav><button type="button" data-workspace-collapse aria-label="Collapse workspace into ecosystem header">×</button></header><div class="spmt-workspace-frames">${[0, 1, 2].map((index) => `<div data-workspace-frame="${index}"><iframe title="Workspace slot ${index + 1}" allow="autoplay; microphone; camera; fullscreen; clipboard-write"></iframe><p>This workspace slot is empty. Assign an installed app in Workspace.</p></div>`).join("")}</div>`;
-    tray.querySelectorAll<HTMLElement>("[data-workspace-slot]").forEach((node) => node.addEventListener("click", () => { this.workspaceTarget = Number(node.dataset.workspaceSlot); this.workspaceOpen = true; this.syncWorkspaceTray(); }));
-    tray.querySelectorAll<HTMLElement>("[data-workspace-surface]").forEach((node) => node.addEventListener("click", () => { this.workspaceOpen = false; this.navigate(node.dataset.workspaceSurface as SpaceMountainViewV1); }));
-    tray.querySelector<HTMLElement>("[data-workspace-collapse]")?.addEventListener("click", () => { this.workspaceOpen = false; this.syncWorkspaceTray(); });
+    tray.innerHTML = `<div class="spmt-workspace-frames" aria-live="polite">${[0, 1, 2].map((index) => `<div data-workspace-frame="${index}"><iframe title="Workspace slot ${index + 1}" allow="autoplay; microphone; camera; fullscreen; clipboard-write"></iframe><p>This workspace slot is empty. Assign an installed app in Workspace.</p></div>`).join("")}</div><footer><strong>${icon("layout")}<span>Workspace</span></strong><nav aria-label="Persistent app slots">${[0, 1, 2].map((index) => `<button type="button" data-workspace-slot="${index}"><span>Slot ${index + 1}</span><small>Empty</small></button>`).join("")}</nav><div class="spmt-workspace-surfaces"><button type="button" data-workspace-surface="workspace">Overlay Bay</button><button type="button" data-workspace-surface="settings">Settings</button></div><div class="spmt-workspace-controls"><button type="button" data-workspace-minimize aria-label="Minimize workspace frame" title="Minimize">−</button><button type="button" data-workspace-maximize aria-label="Maximize workspace frame" title="Maximize">□</button><button type="button" data-workspace-popout aria-label="Pop out active workspace slot" title="Pop out">↗</button><button type="button" data-workspace-clickthrough aria-label="Toggle click-through" title="Click-through">◎</button><label title="Workspace opacity"><span>Opacity</span><input type="range" min="35" max="100" value="92" data-workspace-opacity><output>92%</output></label><button type="button" data-workspace-close aria-label="Close workspace footer" title="Close">×</button></div></footer>`;
+    tray.querySelectorAll<HTMLElement>("[data-workspace-slot]").forEach((node) => node.addEventListener("click", () => { this.workspaceTarget = Number(node.dataset.workspaceSlot); this.workspaceOpen = true; this.workspaceExpanded = true; this.syncWorkspaceTray(); }));
+    tray.querySelectorAll<HTMLElement>("[data-workspace-surface]").forEach((node) => node.addEventListener("click", () => { this.workspaceExpanded = false; this.navigate(node.dataset.workspaceSurface as SpaceMountainViewV1); }));
+    tray.querySelector<HTMLElement>("[data-workspace-minimize]")?.addEventListener("click", () => { this.workspaceExpanded = false; this.workspaceMaximized = false; this.syncWorkspaceTray(); });
+    tray.querySelector<HTMLElement>("[data-workspace-maximize]")?.addEventListener("click", () => { this.workspaceExpanded = true; this.workspaceMaximized = !this.workspaceMaximized; this.syncWorkspaceTray(); });
+    tray.querySelector<HTMLElement>("[data-workspace-popout]")?.addEventListener("click", () => {
+      const frame = tray.querySelector<HTMLIFrameElement>(`[data-workspace-frame="${this.workspaceTarget}"] iframe`);
+      if (frame?.src) window.open(frame.src, `spmt-workspace-${this.workspaceTarget}`, "popup,width=1440,height=920");
+    });
+    tray.querySelector<HTMLElement>("[data-workspace-clickthrough]")?.addEventListener("click", () => { this.workspaceClickThrough = !this.workspaceClickThrough; this.syncWorkspaceTray(); });
+    tray.querySelector<HTMLInputElement>("[data-workspace-opacity]")?.addEventListener("input", (event) => { this.workspaceOpacity = Number((event.currentTarget as HTMLInputElement).value); this.syncWorkspaceTray(); });
+    tray.querySelector<HTMLElement>("[data-workspace-close]")?.addEventListener("click", () => { this.workspaceOpen = false; this.workspaceExpanded = false; this.workspaceMaximized = false; this.syncWorkspaceTray(); });
     return tray;
   }
 
-  private toggleWorkspaceTray() { this.workspaceOpen = !this.workspaceOpen; this.syncWorkspaceTray(); }
+  private toggleWorkspaceTray() { this.workspaceOpen = !this.workspaceOpen; if (!this.workspaceOpen) { this.workspaceExpanded = false; this.workspaceMaximized = false; } this.syncWorkspaceTray(); }
 
   private syncWorkspaceTray() {
     const tray = this.workspaceTray;
     if (!tray) return;
     tray.classList.toggle("open", this.workspaceOpen);
+    tray.classList.toggle("expanded", this.workspaceExpanded);
+    tray.classList.toggle("maximized", this.workspaceMaximized);
+    tray.classList.toggle("click-through", this.workspaceClickThrough);
     tray.hidden = !this.workspaceOpen;
+    tray.style.setProperty("--workspace-opacity", String(this.workspaceOpacity / 100));
+    const opacity = tray.querySelector<HTMLInputElement>("[data-workspace-opacity]");
+    if (opacity && Number(opacity.value) !== this.workspaceOpacity) opacity.value = String(this.workspaceOpacity);
+    const opacityOutput = opacity?.parentElement?.querySelector<HTMLOutputElement>("output");
+    if (opacityOutput) opacityOutput.value = `${this.workspaceOpacity}%`;
+    tray.querySelector<HTMLElement>("[data-workspace-clickthrough]")?.classList.toggle("active", this.workspaceClickThrough);
+    tray.querySelector<HTMLElement>("[data-workspace-maximize]")?.classList.toggle("active", this.workspaceMaximized);
     const slots = workspaceDockSlots(this.snapshot.workspace);
     slots.forEach((appId, index) => {
       const app = this.snapshot.apps.find((item) => item.appId === appId && item.installed && item.enabled);
       const button = tray.querySelector<HTMLElement>(`[data-workspace-slot="${index}"]`);
-      if (button) { button.textContent = app?.name ?? `Slot ${index + 1}`; button.classList.toggle("active", index === this.workspaceTarget); }
+      if (button) { button.innerHTML = `<span>Slot ${index + 1}</span><small>${escapeHtml(app?.name ?? "Empty")}</small>`; button.classList.toggle("active", index === this.workspaceTarget); }
       const panel = tray.querySelector<HTMLElement>(`[data-workspace-frame="${index}"]`);
       const frame = panel?.querySelector<HTMLIFrameElement>("iframe");
       if (!panel || !frame) return;
-      panel.hidden = index !== this.workspaceTarget;
+      panel.hidden = !this.workspaceExpanded || index !== this.workspaceTarget;
       const nextUrl = app?.launchUrl ?? "";
       if (nextUrl && frame.dataset.appId !== app?.appId) { frame.src = nextUrl; frame.dataset.appId = app?.appId ?? ""; }
       if (!nextUrl && frame.dataset.appId) { frame.removeAttribute("src"); delete frame.dataset.appId; }
@@ -304,7 +334,7 @@ export class SpaceMountainShellUi {
     const apps = this.sidebarApps();
     const navButtons = (items: typeof NAV) => items.map((item) => `<button data-spmt-product-nav="${item.id}" class="${!this.activeAppId && this.view === item.id ? "active" : ""}" title="${escapeHtml(`${item.label} — ${item.description}`)}" aria-label="${escapeHtml(`${item.label}: ${item.description}`)}">${icon(item.icon)}<label>${item.label}</label></button>`).join("");
     const appButtons = apps.map((app) => `<button data-launch-app="${escapeHtml(app.appId)}" class="${this.activeAppId === app.appId ? "active" : ""}" title="${escapeHtml(`${app.name} — ${app.description || "SpaceMountain ecosystem application"}`)}" aria-label="${escapeHtml(`${app.name}: ${app.description || "SpaceMountain ecosystem application"}`)}"><i class="spmt-dock-app-icon">${app.iconUrl ? `<img src="${escapeHtml(app.iconUrl)}" alt="" loading="lazy">` : escapeHtml(initials(app.name))}</i><label>${escapeHtml(app.name)}</label></button>`).join("");
-    return `<aside class="spmt-rocket-dock spmt-product-glass"><div id="rocketLauncher" class="spmt-dock-orbit docked" data-spmt-rocket-trigger title="Double-click the rocket to release it"><span></span><img src="/assets/product/model-rocket.png" alt="SpaceMountain rocket"></div><nav class="spmt-dock-nav"><section class="spmt-dock-core" aria-label="SpaceMountain">${navButtons(core)}</section><section class="spmt-dock-apps" aria-label="Installed applications">${appButtons}</section><section class="spmt-dock-account" aria-label="Workspace and account">${navButtons(account)}</section></nav></aside>`;
+    return `<aside class="spmt-rocket-dock spmt-product-glass"><div id="rocketLauncher" class="spmt-dock-orbit docked" data-spmt-rocket-trigger role="button" tabindex="0" aria-label="Open or close app navigation; double-click to launch the rocket" title="Click to open or close navigation · Double-click to launch"><span></span><img src="/assets/product/model-rocket.png" alt="SpaceMountain rocket"></div><nav class="spmt-dock-nav"><section class="spmt-dock-core" aria-label="SpaceMountain">${navButtons(core)}</section><section class="spmt-dock-apps" aria-label="Installed applications">${appButtons}</section><section class="spmt-dock-account" aria-label="Workspace and account">${navButtons(account)}</section></nav></aside>`;
   }
 
   private body() {
@@ -554,38 +584,55 @@ function mountOverlayBay(root: HTMLElement, snapshot: SpaceMountainShellSnapshot
   section.innerHTML = `<header><span>OVERLAY BAY</span><h2>Shared overlay workspace</h2></header><p>This is the one editing authority consumed by every ecosystem app. Overlay Bay issues first-party, revocable browser-source URLs served by SpaceMountain.</p><div class="spmt-overlay-grid">${widgets.map((item) => { const manifest = recordObject(item, "manifest"); const appId = recordText(manifest, ["appId"]) ?? "ecosystem"; const widgetId = recordText(manifest, ["widgetId", "id"]) ?? "widget"; return `<article><b>${escapeHtml(recordText(manifest, ["title"]) ?? "Overlay widget")}</b><small>${escapeHtml(appId)} · ${escapeHtml(widgetId)}</small>${owner ? `<div><button type="button" data-overlay-issue="${escapeHtml(widgetId)}" data-overlay-app="${escapeHtml(appId)}">Create public URL</button><button type="button" data-overlay-issue="${escapeHtml(widgetId)}" data-overlay-app="${escapeHtml(appId)}" data-overlay-personal="true">Create personal URL</button></div>` : ""}</article>`; }).join("") || `<article><b>Empty scene</b><small>Installed apps register widgets here through the public overlay contract.</small></article>`}</div><div class="spmt-list spmt-account-list">${outputs.map((item) => `<article><div><span class="spmt-record-kind">BROWSER SOURCE</span><strong>${escapeHtml(recordText(item, ["appId"]) ?? "ecosystem")} · ${escapeHtml(recordText(item, ["widgetId"]) ?? "widget")}</strong><small>Expires ${escapeHtml(formatRecordTime(recordText(item, ["expiresAt"])))}</small></div>${owner && !recordText(item, ["revokedAt"]) ? `<button type="button" data-overlay-revoke="${escapeHtml(recordText(item, ["grantId"]) ?? "")}">Revoke</button>` : ""}</article>`).join("") || empty("No active browser-source URLs have been issued.")}</div>`;
   form.before(section);
 }
-function bindEcosystemEggs(root: HTMLElement) {
+function bindEcosystemEggs(root: HTMLElement, onDockToggle: (collapsed: boolean) => void) {
   const logo = root.querySelector<HTMLElement>("[data-spmt-black-hole-trigger]");
   let logoClick: number | undefined;
   logo?.addEventListener("click", () => { window.clearTimeout(logoClick); logoClick = window.setTimeout(() => root.querySelector<HTMLElement>('[data-spmt-product-nav="home"]')?.click(), 260); });
   logo?.addEventListener("dblclick", (event) => { event.preventDefault(); window.clearTimeout(logoClick); openBlackHole(root, logo); });
   const rocket = root.querySelector<HTMLElement>("[data-spmt-rocket-trigger]");
+  let rocketClick: number | undefined;
+  let follow: ((move: PointerEvent) => void) | undefined;
+  let portal: HTMLElement | undefined;
+  const dockParent = rocket?.parentNode;
+  const dockNext = rocket?.nextSibling;
+  const restoreRocket = () => {
+    if (!rocket) return;
+    if (follow) window.removeEventListener("pointermove", follow);
+    follow = undefined;
+    portal?.remove();
+    portal = undefined;
+    rocket.classList.remove("spmt-rocket-free", "free");
+    rocket.classList.add("docked");
+    rocket.removeAttribute("style");
+    if (dockParent) dockParent.insertBefore(rocket, dockNext ?? null);
+  };
+  rocket?.addEventListener("click", () => {
+    if (rocket.classList.contains("spmt-rocket-free")) return;
+    window.clearTimeout(rocketClick);
+    rocketClick = window.setTimeout(() => onDockToggle(root.dataset.spmtDock !== "collapsed"), 260);
+  });
+  rocket?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    onDockToggle(root.dataset.spmtDock !== "collapsed");
+  });
   rocket?.addEventListener("dblclick", (event) => {
     event.preventDefault();
-    if (rocket.classList.contains("spmt-rocket-free")) return;
-    const dockParent = rocket.parentNode;
-    const dockNext = rocket.nextSibling;
-    const restoreRocket = () => {
-      rocket.classList.remove("spmt-rocket-free", "free");
-      rocket.classList.add("docked");
-      rocket.removeAttribute("style");
-      if (dockParent) dockParent.insertBefore(rocket, dockNext);
-    };
+    window.clearTimeout(rocketClick);
+    if (rocket.classList.contains("spmt-rocket-free")) { restoreRocket(); return; }
     rocket.classList.remove("docked");
     rocket.classList.add("spmt-rocket-free", "free");
     document.body.appendChild(rocket);
     rocket.style.setProperty("--rocket-x", `${event.clientX}px`);
     rocket.style.setProperty("--rocket-y", `${event.clientY}px`);
-    const portal = openRocketPortal(root);
-    const follow = (move: PointerEvent) => {
+    portal = openRocketPortal(root);
+    follow = (move: PointerEvent) => {
       rocket.style.setProperty("--rocket-x", `${move.clientX}px`);
       rocket.style.setProperty("--rocket-y", `${move.clientY}px`);
-      const target = portal.getBoundingClientRect();
+      const target = portal!.getBoundingClientRect();
       const centerX = target.left + target.width / 2; const centerY = target.top + target.height / 2;
       if (Math.hypot(move.clientX - centerX, move.clientY - centerY) <= Math.min(target.width, target.height) * .42) {
-        window.removeEventListener("pointermove", follow);
         restoreRocket();
-        portal.remove();
         openHiddenArena(root);
       }
     };

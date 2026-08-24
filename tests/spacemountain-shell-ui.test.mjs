@@ -114,9 +114,36 @@ test("released rocket escapes the sidebar stack, follows the pointer, and remain
   assert.match(source, /document\.body\.appendChild\(rocket\)/);
   assert.match(source, /--rocket-x/);
   assert.match(source, /window\.addEventListener\("pointermove", follow\)/);
-  assert.match(source, /dockParent\.insertBefore\(rocket, dockNext\)/);
+  assert.match(source, /dockParent\.insertBefore\(rocket, dockNext \?\? null\)/);
+  assert.match(source, /if \(rocket\.classList\.contains\("spmt-rocket-free"\)\) \{ restoreRocket\(\); return; \}/);
+  assert.match(source, /onDockToggle\(root\.dataset\.spmtDock !== "collapsed"\)/);
   assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /\.spmt-rocket-free\{[^}]*z-index:2147483640!important/);
+  assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /\.spmt-rocket-free\{pointer-events:auto;cursor:pointer/);
+  assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /data-spmt-dock="collapsed"/);
   assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /@keyframes spmtRocketFlight/);
+});
+
+test("workspace icon opens a persistent footer with three retained embeds and window controls", () => {
+  assert.match(source, /class="spmt-workspace-frames"/);
+  assert.match(source, /<footer><strong>\$\{icon\("layout"\)\}/);
+  assert.match(source, /data-workspace-minimize/);
+  assert.match(source, /data-workspace-maximize/);
+  assert.match(source, /data-workspace-popout/);
+  assert.match(source, /data-workspace-clickthrough/);
+  assert.match(source, /data-workspace-opacity/);
+  assert.match(source, /this\.workspaceExpanded = true/);
+  assert.match(source, /frame\.dataset\.appId/);
+  assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /\.spmt-workspace-tray\{[^}]*position:fixed[^}]*bottom:/);
+  assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /\.spmt-workspace-tray\.maximized \.spmt-workspace-frames/);
+  assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /\.spmt-workspace-tray\.click-through/);
+});
+
+test("first-party shell apps keep unique artwork under the shared tint and star layers", () => {
+  assert.match(source, /commlink-communications-background\.webp/);
+  assert.match(source, /stellar-core-background\.webp/);
+  assert.match(source, /mission-control-background\.webp/);
+  assert.match(source, /SHELL_APP_SCENES\[this\.activeAppId\] \?\? SPACEMOUNTAIN_SCENE/);
+  assert.match(source, /resolveProductBackdrop\(scene, configuredTheme, accent, backgroundUrl\)/);
 });
 
 test("SPMT does not duplicate the existing sidebar destinations", () => {

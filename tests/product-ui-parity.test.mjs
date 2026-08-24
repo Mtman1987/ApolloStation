@@ -66,7 +66,7 @@ test("SpaceMountain presentation matches the finished product without hardcoding
 test("private host uses the same product chrome and serves only explicit local artwork", () => {
   assert.match(hostSource, /auth-product-logo/);
   assert.match(hostSource, /PRIVATE PREVIEW/);
-  for (const asset of ["space-logo-main.png", "space-logo-header.png", "model-rocket.png", "theme-solar-flare-background.webp"]) {
+  for (const asset of ["space-logo-main.png", "space-logo-header.png", "model-rocket.png", "theme-solar-flare-background.webp", "commlink-communications-background.webp", "stellar-core-background.webp", "mission-control-background.webp"]) {
     assert.match(serverSource, new RegExp(asset.replace(".", "\\.")));
   }
   assert.match(hostSource, /isolated from Blue/);
