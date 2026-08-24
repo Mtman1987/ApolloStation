@@ -22,6 +22,11 @@ test("Nebula Arcade sandbox runs the Chat Tag module and OBS smoke path", async 
     assert.match(page, /spmt-star-layer/);
     assert.match(page, /Nebula Arcade settings/);
     assert.match(page, /id="workspace-settings"/);
+    assert.match(page, /data-surface="standalone"/);
+    assert.match(page, /class="nebula-rocket-dock"/);
+    assert.match(page, /id="games"/);
+    assert.match(page, /id="game-console"/);
+    assert.match(page, /id="leaderboard-panel"/);
     assert.match(page, />SpaceMountain<\/a>/);
     assert.doesNotMatch(page, /SPMT hub/);
     assert.equal((page.match(/data-game=/g) ?? []).length, 20);
@@ -38,6 +43,11 @@ test("Nebula Arcade sandbox runs the Chat Tag module and OBS smoke path", async 
     const themeCss = await (await fetch(`${origin}\/assets\/chat-tag-sandbox.css`)).text();
     assert.match(themeCss, /--nebula-surface:/);
     assert.match(themeCss, /filter:grayscale\(1\) saturate\(0\)/);
+    assert.match(themeCss, /--nebula-muted:/);
+    assert.match(themeCss, /body>header,.hero,.games article,.console/);
+    assert.match(themeCss, /data-surface="shell"/);
+    const shellPage = await (await fetch(`${origin}/?surface=shell`)).text();
+    assert.match(shellPage, /data-surface="shell"/);
     const background = await fetch(`${origin}/assets/nebula-arcade/solar-system.webp`);
     assert.equal(background.status, 200);
     assert.equal(background.headers.get("content-type"), "image/webp");

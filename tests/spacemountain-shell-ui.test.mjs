@@ -146,6 +146,19 @@ test("first-party shell apps keep unique artwork under the shared tint and star 
   assert.match(source, /resolveProductBackdrop\(scene, configuredTheme, accent, backgroundUrl\)/);
 });
 
+test("catalog shell apps stay under the shared header and receive app-owned rocket navigation", () => {
+  assert.match(source, /app\.surfaces\.includes\("shell"\)/);
+  assert.match(source, /target\.searchParams\.set\("app", app\.appId\)/);
+  assert.match(source, /data-shell-app-frame/);
+  assert.match(source, /target\.searchParams\.set\("surface", "shell"\)/);
+  assert.match(source, /APP_DOCK_NAVIGATION/);
+  assert.match(source, /"nebula-arcade"[\s\S]*label: "Games"[\s\S]*label: "Play"[\s\S]*label: "Scores"[\s\S]*label: "Settings"/);
+  assert.match(source, /data-dock-owner/);
+  assert.match(source, /data-app-dock-target/);
+  assert.match(source, /nebula-arcade\/solar-system\.webp/);
+  assert.doesNotMatch(source, /if \(!SHELL_APP_RENDERERS\.has\(appId\)\) return undefined/);
+});
+
 test("SPMT does not duplicate the existing sidebar destinations", () => {
   assert.doesNotMatch(source, /label: "SPMT"/);
   assert.doesNotMatch(source, /SPMT identity and developer hub/);

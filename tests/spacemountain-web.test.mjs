@@ -45,6 +45,7 @@ test("private SpaceMountain host serves explicit browser modules with restrictiv
     const page = await fetch(base);
     assert.equal(page.status, 200);
     assert.match(page.headers.get("content-security-policy") ?? "", /default-src 'none'/);
+    assert.match(page.headers.get("content-security-policy") ?? "", /frame-src 'self'/);
     assert.match(page.headers.get("content-security-policy") ?? "", /connect-src 'self'/);
     assert.match(page.headers.get("content-security-policy") ?? "", /img-src 'self' data: https:/);
     assert.equal(page.headers.get("x-frame-options"), "DENY");
