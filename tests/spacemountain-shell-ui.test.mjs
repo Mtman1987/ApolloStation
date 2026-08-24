@@ -28,9 +28,10 @@ test("SpaceMountain visible shell exposes canonical home, Shipyard, Commlink and
   assert.match(source, /\[0, 1, 2\]\.map/);
   assert.match(source, /data-workspace-settings/);
   assert.match(source, /Save canonical workspace/);
-  assert.match(source, /Background image URL/);
+  assert.match(source, /Custom scene override/);
+  assert.match(source, /leave blank to use each app's artwork/);
   assert.match(source, /onSaveWorkspace/);
-  assert.match(source, /root\.style\.backgroundImage/);
+  assert.match(source, /installProductBackdrop/);
   assert.match(source, /root\.style\.setProperty\("--accent"/);
 });
 

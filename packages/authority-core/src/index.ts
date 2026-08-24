@@ -2,7 +2,8 @@ export type ProviderKindV1 = "twitch" | "discord" | "xbox" | "github" | "other";
 
 export interface UserRecordV1 { id: string; createdAt: string; }
 export interface ProviderLinkV1 { provider: ProviderKindV1; providerUserId: string; userId: string; linkedAt: string; revokedAt?: string; }
-export interface AppearanceV1 { theme: "system" | "light" | "dark"; accent?: string; backgroundUrl?: string; }
+export type WorkspaceThemeV1 = "system" | "light" | "dark" | "solar-flare" | "nebula-purple" | "oceanic-blue" | "aurora-green";
+export interface AppearanceV1 { theme: WorkspaceThemeV1; accent?: string; backgroundUrl?: string; }
 export interface WorkspaceProfileV1 {
   tenantId: string;
   revision: number;
@@ -346,7 +347,7 @@ function requireWorkspaceValue(value: string, name: string, max: number) {
   if (!value.trim() || value.length > max || /[\u0000-\u001f\u007f]/.test(value)) throw new AuthorityValidationError(`${name} is invalid`);
 }
 function validateAppearance(value: AppearanceV1) {
-  if (!["system", "light", "dark"].includes(value.theme)) throw new AuthorityValidationError("Workspace theme is invalid");
+  if (!["system", "light", "dark", "solar-flare", "nebula-purple", "oceanic-blue", "aurora-green"].includes(value.theme)) throw new AuthorityValidationError("Workspace theme is invalid");
   if (value.accent !== undefined && !/^#[0-9a-fA-F]{6}$/.test(value.accent)) throw new AuthorityValidationError("Workspace accent is invalid");
   if (value.backgroundUrl !== undefined) {
     requireWorkspaceValue(value.backgroundUrl, "background URL", 2048);

@@ -10,14 +10,13 @@ export interface ProductThemeV1 {
   name: string;
   accent: string;
   accentSecondary: string;
-  backgroundUrl: string;
 }
 
 export const PRODUCT_THEME_PRESETS: Readonly<Record<ProductThemeIdV1, ProductThemeV1>> = Object.freeze({
-  "solar-flare": Object.freeze({ id: "solar-flare", name: "Solar", accent: "#f97316", accentSecondary: "#fbbf24", backgroundUrl: "/assets/product/theme-solar-flare-background.webp" }),
-  "nebula-purple": Object.freeze({ id: "nebula-purple", name: "Nebula", accent: "#a855f7", accentSecondary: "#e879f9", backgroundUrl: "/assets/product/theme-nebula-purple-background.webp" }),
-  "oceanic-blue": Object.freeze({ id: "oceanic-blue", name: "Oceanic", accent: "#3b82f6", accentSecondary: "#22d3ee", backgroundUrl: "/assets/product/theme-oceanic-blue-background.webp" }),
-  "aurora-green": Object.freeze({ id: "aurora-green", name: "Aurora", accent: "#10b981", accentSecondary: "#a3e635", backgroundUrl: "/assets/product/theme-aurora-green-background.webp" }),
+  "solar-flare": Object.freeze({ id: "solar-flare", name: "Solar", accent: "#f97316", accentSecondary: "#fbbf24" }),
+  "nebula-purple": Object.freeze({ id: "nebula-purple", name: "Nebula", accent: "#a855f7", accentSecondary: "#e879f9" }),
+  "oceanic-blue": Object.freeze({ id: "oceanic-blue", name: "Oceanic", accent: "#3b82f6", accentSecondary: "#22d3ee" }),
+  "aurora-green": Object.freeze({ id: "aurora-green", name: "Aurora", accent: "#10b981", accentSecondary: "#a3e635" }),
 });
 
 export function resolveProductTheme(theme: unknown, customAccent?: unknown): ProductThemeV1 {
@@ -25,6 +24,76 @@ export function resolveProductTheme(theme: unknown, customAccent?: unknown): Pro
   const preset = PRODUCT_THEME_PRESETS[key];
   if (typeof customAccent !== "string" || !/^#[0-9a-f]{6}$/i.test(customAccent)) return preset;
   return { ...preset, accent: customAccent };
+}
+
+export interface ProductSceneV1 {
+  appId: string;
+  imageUrl: string;
+  imagePosition?: string;
+}
+
+export interface ProductBackdropV1 {
+  scene: ProductSceneV1;
+  theme: ProductThemeV1;
+  imageUrl: string;
+  customImage: boolean;
+}
+
+export interface ProductNavigationItemV1<Id extends string = string> {
+  id: Id;
+  label: string;
+}
+
+export function isProductImageUrl(value: unknown): value is string {
+  if (typeof value !== "string" || value.length > 2048) return false;
+  if (value.startsWith("/") && !value.startsWith("//")) return true;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && !url.username && !url.password;
+  } catch {
+    return false;
+  }
+}
+
+export function resolveProductBackdrop(scene: ProductSceneV1, theme: unknown, customAccent?: unknown, customImageUrl?: unknown): ProductBackdropV1 {
+  if (!scene.appId.trim()) throw new Error("A product scene requires an appId");
+  if (!isProductImageUrl(scene.imageUrl)) throw new Error("A product scene requires a root-relative or HTTPS image URL");
+  const override = isProductImageUrl(customImageUrl) ? customImageUrl : undefined;
+  return { scene, theme: resolveProductTheme(theme, customAccent), imageUrl: override ?? scene.imageUrl, customImage: Boolean(override) };
+}
+
+export function installProductBackdrop(root: HTMLElement, backdrop: ProductBackdropV1) {
+  root.dataset.spmtApp = backdrop.scene.appId;
+  root.dataset.spmtTheme = backdrop.theme.id;
+  root.dataset.spmtCustomBackdrop = backdrop.customImage ? "true" : "false";
+  root.style.setProperty("--spmt-accent", backdrop.theme.accent);
+  root.style.setProperty("--spmt-accent-secondary", backdrop.theme.accentSecondary);
+  root.style.setProperty("--spmt-app-backdrop-image", `url(${JSON.stringify(backdrop.imageUrl)})`);
+  root.style.setProperty("--spmt-app-backdrop-position", backdrop.scene.imagePosition ?? "center");
+
+  const existing = root.querySelector<HTMLElement>(":scope > .spmt-product-backdrop");
+  if (existing) return existing;
+  const layer = root.ownerDocument.createElement("div");
+  layer.className = "spmt-product-backdrop";
+  layer.setAttribute("aria-hidden", "true");
+  layer.innerHTML = '<span class="spmt-product-backdrop-image"></span><span class="spmt-product-backdrop-tint"></span><span class="spmt-product-backdrop-shade"></span><span class="spmt-star-layer"><i></i><i></i><i></i></span>';
+  root.prepend(layer);
+  return layer;
+}
+
+export function bindProductRocketNavigation<Id extends string>(root: HTMLElement, items: ReadonlyArray<ProductNavigationItemV1<Id>>, activeId: Id, onNavigate: (id: Id) => void) {
+  const allowed = new Set(items.map((item) => item.id));
+  const listeners: Array<() => void> = [];
+  root.querySelectorAll<HTMLButtonElement>("[data-spmt-product-nav]").forEach((button) => {
+    const id = button.dataset.spmtProductNav as Id | undefined;
+    if (!id || !allowed.has(id)) return;
+    if (id === activeId) button.setAttribute("aria-current", "page");
+    else button.removeAttribute("aria-current");
+    const navigate = () => onNavigate(id);
+    button.addEventListener("click", navigate);
+    listeners.push(() => button.removeEventListener("click", navigate));
+  });
+  return () => listeners.forEach((remove) => remove());
 }
 
 export const PRODUCT_UI_CSS = `
@@ -38,9 +107,24 @@ export const PRODUCT_UI_CSS = `
   --spmt-border: rgba(255,255,255,.11);
   --spmt-shadow: 0 24px 80px rgba(0,0,0,.42);
   color: var(--spmt-ink);
+  position: relative;
+  isolation: isolate;
+  background: #050710;
   font-family: Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
   -webkit-font-smoothing: antialiased;
 }
+.spmt-product-backdrop { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; background: #050710; }
+.spmt-product-backdrop-image,.spmt-product-backdrop-tint,.spmt-product-backdrop-shade,.spmt-star-layer { position: absolute; inset: 0; }
+.spmt-product-backdrop-image { inset: -2%; background-image: var(--spmt-app-backdrop-image); background-position: var(--spmt-app-backdrop-position,center); background-size: cover; transform: scale(1.025); }
+.spmt-product-backdrop-tint { background: var(--spmt-accent); opacity: .56; mix-blend-mode: color; }
+.spmt-product-backdrop-shade { background: radial-gradient(circle at 18% 4%,color-mix(in srgb,var(--spmt-accent) 24%,transparent),transparent 42%),linear-gradient(rgba(3,4,8,.2),rgba(3,4,8,.8)); }
+.spmt-star-layer { overflow: hidden; opacity: .82; }
+.spmt-star-layer i { position: absolute; inset: -20%; display: block; background-repeat: repeat; animation: spmt-star-drift 90s linear infinite,spmt-star-pulse 5s ease-in-out infinite alternate; }
+.spmt-star-layer i:nth-child(1) { background-image: radial-gradient(circle,#fff 0 1px,transparent 1.5px); background-size: 67px 61px; opacity: .72; }
+.spmt-star-layer i:nth-child(2) { background-image: radial-gradient(circle,var(--spmt-accent-secondary) 0 1px,transparent 1.8px); background-size: 109px 97px; background-position: 31px 19px; opacity: .55; animation-duration: 125s,7s; animation-direction: reverse,alternate; }
+.spmt-star-layer i:nth-child(3) { background-image: radial-gradient(circle,#fff 0 1.5px,transparent 2.2px); background-size: 191px 173px; background-position: 83px 47px; opacity: .42; animation-duration: 165s,9s; }
+@keyframes spmt-star-drift { to { transform: translate3d(8%,6%,0); } }
+@keyframes spmt-star-pulse { from { filter: brightness(.78); } to { filter: brightness(1.28); } }
 .spmt-product-surface button,.spmt-product-surface input,.spmt-product-surface select,.spmt-product-surface textarea { font: inherit; }
 .spmt-product-surface button { cursor: pointer; }
 .spmt-product-surface :focus-visible { outline: 2px solid var(--spmt-accent-secondary); outline-offset: 3px; }
@@ -48,6 +132,8 @@ export const PRODUCT_UI_CSS = `
 .spmt-product-kicker { color: var(--spmt-accent-secondary); font-size: 10px; font-weight: 900; letter-spacing: .19em; text-transform: uppercase; }
 .spmt-product-status { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--spmt-border); border-radius: 999px; padding: 5px 9px; font-size: 9px; font-weight: 900; letter-spacing: .12em; text-transform: uppercase; }
 .spmt-product-status::before { width: 6px; height: 6px; border-radius: 50%; background: currentColor; box-shadow: 0 0 14px currentColor; content: ""; }
+.spmt-rocket-dock [data-spmt-product-nav] { touch-action: manipulation; }
+.spmt-rocket-dock [data-spmt-product-nav][aria-current="page"] { color: var(--spmt-ink); border-color: color-mix(in srgb,var(--spmt-accent) 34%,transparent); background: color-mix(in srgb,var(--spmt-accent) 14%,transparent); }
 @media (prefers-reduced-motion: reduce) { .spmt-product-surface * { scroll-behavior: auto !important; animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; } }
 `;
 

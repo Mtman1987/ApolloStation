@@ -62,6 +62,9 @@ Refactoring may change implementation, package layout, process boundaries, and r
 - `overlay` and `popout` surfaces that do not render the SpaceMountain header use zero shell-header inset plus any real device/output safe area.
 - OBS/headless output routes do not include workspace/header chrome unless the output contract explicitly requires it.
 - Use the shared semantic layer scale; do not escalate arbitrary z-index values to fight other ecosystem components.
+- Full first-party app surfaces use the shared animated star field, glass tokens, and rocket-navigation implementation from `@spmt/ui`; the app supplies only its navigation descriptor and routes.
+- Keep workspace palette and app artwork separate: the selected theme recolors the app's own stable scene, while a saved custom background remains an explicit user override.
+- Do not render product chrome, background art, or the rocket dock in controls-free `overlay` and `popout` outputs unless their output contract explicitly requires it.
 
 ## Shared workspace, messaging, and overlay ownership
 
@@ -122,6 +125,7 @@ Every request/job carries correlation ID, tenant ID, app/module ID, version, and
 - no legacy auth or Firebase path is exercised;
 - cost and latency budgets are measured;
 - all four relevant surface modes pass their layout contract tests;
+- theme switching recolors the same app-owned scene, the shared star/navigation layers are present on full app surfaces, and user background overrides remain reversible;
 - shell-integrated sidebars, drawers, dialogs, menus/popovers, toast stacks, docks, editor controls, and portal roots pass header/safe-area collision tests at responsive and wrapped-header heights;
 - the app uses the common `AppFrameV1`/`EmbedBridgeV1` rather than an app-specific workspace bridge;
 - first-party integration calls are traceable to documented SDK/API/event/WebSocket contracts and pass the same scope/tenant checks as third-party calls;

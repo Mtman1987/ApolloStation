@@ -1,6 +1,6 @@
 # Shared Surface and Developer Platform Contract
 
-Updated: 2026-08-21
+Updated: 2026-08-23
 Status: **required Green contract**
 
 This contract exists to prevent two failures from the Blue system from returning in Green:
@@ -102,6 +102,14 @@ Green defines one semantic layer scale instead of app-specific arbitrary z-index
 7. explicitly authorized whole-shell emergency/blocking surfaces.
 
 Components use semantic layer tokens. They do not compete by adding larger arbitrary z-index values.
+
+### Product chrome and scene invariant
+
+Every full first-party app surface uses the shared `@spmt/ui` product grammar: animated ecosystem stars, glass and focus tokens, and the rocket-navigation interaction. Apps provide their own navigation descriptor and routes; they do not copy or fork the navigation implementation. An app may change its logo, content, accent details, and specialized controls without changing the familiar interaction model.
+
+The workspace theme and app artwork are separate inputs. The canonical workspace theme selects the palette and tints every app consistently. Each app owns one default scene image appropriate to its purpose, and that image remains the same when the theme changes. A canonical user background URL is an explicit override, not a replacement for the app-owned default scene contract.
+
+`overlay` and chrome-free `popout` modes omit the product background, star field, shared header, and rocket navigation unless their versioned output contract explicitly requires one of those layers.
 
 ## 5. Shared workspace, messaging, and overlays have one owner each
 

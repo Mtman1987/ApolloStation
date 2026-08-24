@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { PRODUCT_THEME_PRESETS, PRODUCT_UI_CSS, resolveProductTheme } from "../packages/ui/dist/index.js";
+import { PRODUCT_THEME_PRESETS, PRODUCT_UI_CSS, bindProductRocketNavigation, isProductImageUrl, resolveProductBackdrop, resolveProductTheme } from "../packages/ui/dist/index.js";
 import { POLISHED_SPACE_MOUNTAIN_CSS } from "../apps/spacemountain/dist/product-shell-css.js";
 
 const shellSource = readFileSync(new URL("../apps/spacemountain/src/shell-ui.ts", import.meta.url), "utf8");
@@ -16,6 +16,22 @@ test("shared product UI exposes stable framework-neutral themes and accessible p
   assert.match(PRODUCT_UI_CSS, /\.spmt-product-glass/);
   assert.match(PRODUCT_UI_CSS, /:focus-visible/);
   assert.match(PRODUCT_UI_CSS, /prefers-reduced-motion/);
+  assert.match(PRODUCT_UI_CSS, /\.spmt-star-layer/);
+  assert.match(PRODUCT_UI_CSS, /\.spmt-product-backdrop-tint/);
+  assert.equal(typeof bindProductRocketNavigation, "function");
+});
+
+test("workspace colors tint one stable app scene and preserve a safe custom override", () => {
+  const scene = { appId: "nebula-arcade", imageUrl: "/assets/nebula-arcade/solar-system.webp" };
+  const solar = resolveProductBackdrop(scene, "solar-flare");
+  const oceanic = resolveProductBackdrop(scene, "oceanic-blue");
+  assert.equal(solar.imageUrl, scene.imageUrl);
+  assert.equal(oceanic.imageUrl, scene.imageUrl);
+  assert.notEqual(solar.theme.accent, oceanic.theme.accent);
+  assert.equal(resolveProductBackdrop(scene, "nebula-purple", undefined, "https://images.example/scene.webp").customImage, true);
+  assert.equal(resolveProductBackdrop(scene, "nebula-purple", undefined, "javascript:alert(1)").imageUrl, scene.imageUrl);
+  assert.equal(isProductImageUrl("/assets/app/scene.webp"), true);
+  assert.equal(isProductImageUrl("http://images.example/scene.webp"), false);
 });
 
 test("SpaceMountain presentation matches the finished product without hardcoding an app catalog", () => {
@@ -23,6 +39,10 @@ test("SpaceMountain presentation matches the finished product without hardcoding
   assert.match(shellSource, /space-logo-header\.png/);
   assert.match(shellSource, /space-logo-main\.png/);
   assert.match(shellSource, /model-rocket\.png/);
+  assert.match(shellSource, /SPACEMOUNTAIN_SCENE/);
+  assert.match(shellSource, /installProductBackdrop/);
+  assert.match(shellSource, /bindProductRocketNavigation/);
+  assert.match(shellSource, /Custom scene override/);
   assert.match(shellSource, /app\.iconUrl/);
   assert.match(shellSource, /this\.snapshot\.apps\.slice/);
   assert.doesNotMatch(shellSource, /app-streamweaver|app-hearmeout|app-discord-hub|app-chat-tag/);
