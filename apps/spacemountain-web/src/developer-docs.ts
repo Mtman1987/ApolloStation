@@ -37,7 +37,7 @@ export function renderDeveloperDocsPage(buildSha: string) {
     </section>
 
     <nav class="toc" aria-label="Developer documentation">
-      <a href="#quickstart">UI quickstart</a><a href="#manifest">Manifest</a><a href="#sdk">SDK</a><a href="#lifecycle">Lifecycle</a><a href="#troubleshooting">Troubleshooting</a>
+      <a href="#quickstart">UI quickstart</a><a href="#manifest">Manifest</a><a href="#sdk">SDK</a><a href="#workspace">Workspace</a><a href="#commlink">Commlink + IRC</a><a href="#ai">Stellar + Coder</a><a href="#lifecycle">Lifecycle</a><a href="#troubleshooting">Troubleshooting</a>
     </nav>
 
     <section id="quickstart">
@@ -84,6 +84,41 @@ const spmt = new SpmtClient({
 const manifest = ${escapeHtml(manifest)};
 await spmt.registerApp(manifest);</code></pre>
       <p>The authenticated caller needs <code>apps:register</code>. Browser sessions use an HttpOnly cookie; do not put user tokens, provider secrets, OAuth client secrets, or webhook secrets in a manifest.</p>
+    </section>
+
+    <section id="workspace">
+      <span>CANONICAL WORKSPACE</span><h2>Use one workspace, not an app-owned copy</h2>
+      <p>Read and update <code>/v1/workspace/profile</code> through <code>SpmtClient.getWorkspaceProfile()</code> and <code>updateWorkspaceProfile()</code>. The profile carries the three dock slots, shared appearance and motion controls, and the active overlay scene. Apps should mount the canonical workspace tray in their live header and retain iframe nodes while their own routes change.</p>
+      <h3>Browser-source outputs</h3>
+      <pre><code>const widgets = await spmt.listOverlayWidgets(tenantId);
+const issued = await spmt.issueOverlayOutput(
+  tenantId,
+  widgets[0].manifest.appId,
+  widgets[0].manifest.widgetId,
+);
+// Copy issued.browserSourceUrl now. Its secret token is shown once.
+await spmt.revokeOverlayOutput(tenantId, issued.grant.grantId);</code></pre>
+      <aside>Only the signed-in ecosystem owner can issue, list, or revoke browser-source grants. An app may register its own widgets, but it cannot mint owner output URLs.</aside>
+    </section>
+
+    <section id="commlink">
+      <span>COMMLINK + IRC</span><h2>Desks, chat spaces, mail, and events share one authority</h2>
+      <p>Use Commlink conversations for desks and chat spaces, notifications for addressed account updates, and platform events for app activity. Creator-tool live chat enters through the provider-neutral Chat Gateway. The developer transport is IRC-compatible and preserves the source app/provider in message tags.</p>
+      <pre><code>wss://spacemountain.live/irc
+CAP REQ :spmt.tags spmt.events
+JOIN #tenant/&lt;tenant-id&gt;</code></pre>
+      <p>The isolated Review Sprite intentionally has Discord, Twitch, and Kick credentials disconnected. Test against canonical messages and events there; connect providers only in an authorized deployment environment.</p>
+    </section>
+
+    <section id="ai">
+      <span>STELLAR CORE + CODER</span><h2>Two workers, two deliberately separate contracts</h2>
+      <div class="steps">
+        <article><strong>Stella</strong><p>The default ecosystem assistant. A Stellar Core inference worker accepts scoped requests and may retrieve canonical SPMT context.</p></article>
+        <article><strong>RAG context</strong><p>Workspace, app, Commlink, and capability context is permission-filtered before it reaches the model worker.</p></article>
+        <article><strong>Coder</strong><p>Creates bounded Rotator jobs for a selected app, optionally attaching redacted operational evidence.</p></article>
+        <article><strong>Owner controls</strong><p>Model/platform and Coder operations are visible only when the session carries explicit owner scopes.</p></article>
+      </div>
+      <p>An unavailable descriptor is not a fake response: it means the separate model or Rotator worker has not been connected to that deployment. The SpaceMountain UI remains useful and states that condition directly.</p>
     </section>
 
     <section id="lifecycle">

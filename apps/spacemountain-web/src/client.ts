@@ -137,6 +137,9 @@ async function loadShell() {
       onUnlinkProvider: (link) => void unlinkProvider(link),
       onSaveWorkspace: (expectedRevision, patch) => void saveWorkspace(expectedRevision, patch),
       onPrepareCoderLog: (log) => void prepareCoderLog(log),
+      onPrepareCoderPrompt: (appId, prompt) => void prepareCoderPrompt(appId, prompt),
+      onIssueOverlayOutput: (appId, widgetId, personal) => void issueOverlayOutput(appId, widgetId, personal),
+      onRevokeOverlayOutput: (grantId) => void revokeOverlayOutput(grantId),
     }).mount();
     const degraded = Object.entries(snapshot.sources).filter(([, source]) => source.state !== "ready").map(([name]) => name);
     setStatus(degraded.length ? `Sandbox open · degraded: ${degraded.join(", ")}` : `Sandbox open · ${snapshot.apps.length} registry app${snapshot.apps.length === 1 ? "" : "s"} visible`, degraded.length ? "working" : "ready");
@@ -358,8 +361,17 @@ async function invokeStella(prompt: string, conversationId: string) {
     const result = await controller.invokeStella(principal.tenantIds[0]!, principal.actorId, prompt, conversationId, `stella-${crypto.randomUUID()}`) as Record<string, unknown>;
     const state = typeof result.status === "string" ? result.status : typeof result.state === "string" ? result.state : "accepted";
     const detail = typeof result.reason === "string" ? result.reason : typeof result.message === "string" ? result.message : "Your request was accepted by Stellar Core.";
+    appendAssistantTurn(prompt, detail, state);
     setStatus(`Stella · ${state}: ${detail}`, state === "unavailable" || state === "failed" ? "error" : "ready");
   } catch (error) { setStatus(`Stella unavailable · ${message(error)}`, "error"); }
+}
+
+function appendAssistantTurn(prompt: string, detail: string, state: string) {
+  const history = shellRoot.querySelector<HTMLElement>("[data-stella-history]");
+  if (!history) return;
+  const user = document.createElement("p"); user.innerHTML = `<b>You</b> · ${escapeText(prompt)}`;
+  const stella = document.createElement("p"); stella.innerHTML = `<b>Stella</b> · ${escapeText(detail)} <small>${escapeText(state)}</small>`;
+  history.append(user, stella);
 }
 
 async function recordEggCompletion(event: CustomEvent) {
@@ -460,6 +472,41 @@ async function prepareCoderLog(log: OperationsLogV1) {
   } catch (error) { setStatus(message(error), "error"); }
 }
 
+async function prepareCoderPrompt(appId: string, prompt: string) {
+  const principal = requirePrincipal();
+  setStatus(`Preparing a scoped Coder job for ${appId}…`, "working");
+  try {
+    const result = await controller.prepareCoderDraft(principal.tenantIds[0]!, appId, prompt, [], `coder-chat-${crypto.randomUUID()}`);
+    await loadShell();
+    setStatus(result.job.state === "queued" ? "Coder accepted the job." : "Coder saved the job as a draft; the Rotator worker is not connected yet.", result.job.state === "queued" ? "ready" : "working");
+  } catch (error) { setStatus(message(error), "error"); }
+}
+
+async function issueOverlayOutput(appId: string, widgetId: string, personal: boolean) {
+  const principal = requirePrincipal();
+  if (!currentPrincipal?.scopes.includes("overlay:outputs:write")) return setStatus("Only the ecosystem owner can issue browser-source URLs.", "error");
+  setStatus(`Issuing a ${personal ? "personal" : "public"} browser-source URL…`, "working");
+  try {
+    const issued = await controller.issueOverlayOutput(principal.tenantIds[0]!, appId, widgetId, personal ? principal.actorId : undefined);
+    const browserSourceUrl = issued.browserSourceUrl;
+    dialogTitle.textContent = "Overlay browser-source URL";
+    dialogBody.replaceChildren(textBlock(browserSourceUrl || "The URL was issued but was not returned by the server."));
+    if (browserSourceUrl) {
+      const copy = document.createElement("button"); copy.textContent = "Copy URL"; copy.addEventListener("click", () => void navigator.clipboard.writeText(browserSourceUrl)); dialogBody.append(copy);
+    }
+    if (!dialog.open) dialog.showModal();
+    await loadShell();
+    setStatus("Browser-source URL issued by SpaceMountain. Copy it now; the secret token is shown only once.", "ready");
+  } catch (error) { setStatus(message(error), "error"); }
+}
+
+async function revokeOverlayOutput(grantId: string) {
+  const principal = requirePrincipal();
+  if (!grantId || !window.confirm("Revoke this browser-source URL? Existing OBS/browser sources will stop loading it.")) return;
+  try { await controller.revokeOverlayOutput(principal.tenantIds[0]!, grantId); await loadShell(); setStatus("Browser-source URL revoked.", "ready"); }
+  catch (error) { setStatus(message(error), "error"); }
+}
+
 async function logout() {
   await fetch("/sandbox/auth/logout", { method: "POST", credentials: "same-origin" }).catch(() => undefined);
   shellUi?.destroy();
@@ -534,4 +581,5 @@ function textBlock(value: string) { const node = document.createElement("p"); no
 function apiMessage(value: unknown, fallback: string) { return value && typeof value === "object" && !Array.isArray(value) && typeof (value as Record<string, unknown>).message === "string" ? String((value as Record<string, unknown>).message) : fallback; }
 function setStatus(value: string, kind: "ready" | "working" | "error") { status.textContent = value; status.dataset.kind = kind; }
 function message(value: unknown) { return value instanceof Error ? value.message : String(value ?? "Unknown error"); }
+function escapeText(value: string) { return value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character] ?? character); }
 function element<T extends HTMLElement>(id: string) { const node = document.getElementById(id); if (!node) throw new Error(`Missing #${id}`); return node as T; }

@@ -10,12 +10,12 @@ import { ControlService } from "@spmt/control-core";
 import { OutboxDispatcher } from "@spmt/outbox-core";
 import { PlatformDataError, PlatformDataService, type OAuthClientV1 } from "@spmt/platform-data-core";
 import { SqlitePlatformDataStore } from "@spmt/platform-data-sqlite";
-import { PlatformOperations, type CoderRuntimeV1 } from "@spmt/platform-ops";
+import { PlatformOperations, type CoderRuntimeV1, type CommunityAssistantRuntimeV1 } from "@spmt/platform-ops";
 import { PlatformApiAdapter } from "@spmt/api-adapter";
 import { HealthRegistry } from "@spmt/runtime";
 
 const USER_SCOPES = ["identity:read","identity:write","workspace:read","workspace:write","xp:read","apps:read","apps:install","entitlements:read","events:read","commlink:read","commlink:write","notifications:read","notifications:write","webhooks:read","webhooks:write","assistants:read","assistants:invoke","stellar:context:read","stellar:context:write","stellar:capabilities:read"];
-const SANDBOX_OWNER_SCOPES = ["apps:register","operations:logs:read","operations:coder:read","operations:coder:invoke"];
+const SANDBOX_OWNER_SCOPES = ["apps:register","operations:logs:read","operations:coder:read","operations:coder:invoke","overlay:widgets:read","overlay:outputs:read","overlay:outputs:write"];
 
 export interface SpmtServiceOptions {
   databasePath: string;
@@ -33,6 +33,7 @@ export interface SpmtServiceOptions {
   sandboxFixtures?: boolean;
   sandboxOwnerUsername?: string;
   coderRuntime?: CoderRuntimeV1;
+  communityAssistant?: CommunityAssistantRuntimeV1;
 }
 
 export function createSpmtService(options: SpmtServiceOptions) {
@@ -46,16 +47,16 @@ export function createSpmtService(options: SpmtServiceOptions) {
   const setupStore = new SqliteAccountSetupStore(options.databasePath);
   const authority = new AuthorityService({ store });
   const auth = new AuthService({ store });
-  const control = new ControlService({ store });
+  const publicBaseUrl = (options.publicBaseUrl ?? "https://spmt.live").replace(/\/$/, "");
+  const control = new ControlService({ store, outputBaseUrl: publicBaseUrl });
   const data = new PlatformDataService({ store: platformStore, auth, webhookKey: options.webhookKey });
   const accounts = new AccountRecoveryService({ authority, authorityStore: store, control, platformStore, setupStore });
-  const operations = new PlatformOperations(auth, authority, control, data, undefined, options.coderRuntime);
+  const operations = new PlatformOperations(auth, authority, control, data, options.communityAssistant, options.coderRuntime);
   const api = new PlatformApiAdapter(operations);
   const health = new HealthRegistry();
   health.setDependency("authority-storage", "ready", `sqlite:${store.journalMode()}`);
   health.setDependency("outbound-integrations", runtimeMode === "sandbox" ? "degraded" : "ready", runtimeMode === "sandbox" ? "disabled by sandbox contract" : "enabled");
   const fetchImpl = options.fetchImpl ?? fetch;
-  const publicBaseUrl = (options.publicBaseUrl ?? "https://spmt.live").replace(/\/$/, "");
   const sendDiscordDm = options.sendDiscordDm ?? (options.discordBotToken ? createDiscordDmSender(options.discordBotToken, fetchImpl) : undefined);
 
   if (options.sandboxFixtures) seedSandboxFixtures(control, data, publicBaseUrl);

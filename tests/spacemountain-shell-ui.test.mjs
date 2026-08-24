@@ -24,7 +24,7 @@ test("SpaceMountain visible shell exposes canonical home, Shipyard, Commlink and
   assert.match(source, /Open Shipyard/);
   assert.match(source, /Open Commlink/);
   assert.match(source, /Registry, install state, granted scopes, and entitlements come directly from SPMT/);
-  assert.match(source, /Three persistent dock slots/);
+  assert.match(source, /Three persistent app slots/);
   assert.match(source, /\[0, 1, 2\]\.map/);
   assert.match(source, /data-workspace-settings/);
   assert.match(source, /Save canonical workspace/);
@@ -42,17 +42,16 @@ test("Settings exposes canonical SPMT provider links without browser-owned auth 
   assert.match(source, /same SPMT user identity/);
 });
 
-test("Commlink renders separate canonical account feeds and does not fake live chat", () => {
+test("Commlink renders the canonical desks, spaces, mail, event, and IRC surfaces", () => {
   assert.match(source, /data-commlink-tab/);
+  assert.match(source, /Chat Spaces/);
   assert.match(source, /Notifications/);
-  assert.match(source, /App Events/);
-  assert.match(source, /chat-gateway-live-chat/);
+  assert.match(source, /Developer IRC/);
   assert.match(source, /provider-neutral Chat Gateway/);
-  assert.match(source, /no fabricated data/);
   assert.match(source, /data-notification-read/);
   assert.match(source, /data-open-conversation/);
   assert.match(source, /data-commlink-search/);
-  assert.match(source, /Search your canonical message history/);
+  assert.match(source, /Search all canonical Commlink history/);
 });
 
 test("Stellar Core stays persona-neutral while Stella and configured personas remain presentation identities", () => {
@@ -67,10 +66,18 @@ test("Mission Control renders consolidated scoped evidence and a truthful coder 
   assert.match(source, /label: "Operations"/);
   assert.match(source, /Ecosystem operations/);
   assert.match(source, /CONSOLIDATED EVIDENCE/);
+  assert.match(source, /data-coder-form/);
   assert.match(source, /data-coder-log/);
   assert.match(source, /Draft-only handoff/);
   assert.match(source, /Prepared drafts do not change code/);
-  assert.match(source, /there is no hidden first-party data path/i);
+  assert.match(source, /Work with Coder/);
+});
+
+test("home avoids duplicate navigation and sidebar hover text carries page descriptions", () => {
+  assert.doesNotMatch(source, /Launch apps, check Commlink/);
+  assert.doesNotMatch(source, /<section class="spmt-quick-grid">/);
+  assert.match(source, /spmt-hero-tagline/);
+  assert.match(source, /item\.description/);
 });
 
 test("mobile layout removes shell-header dependency from bottom dock without hiding content", () => {

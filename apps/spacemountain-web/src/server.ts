@@ -86,6 +86,9 @@ export function createSpaceMountainWebHost(options: SpaceMountainWebHostOptions)
         requireSameOrigin(request);
         return register(response, spmtOrigin, fetchImpl, await readJsonBody(request));
       }
+      if ((request.method === "GET" || request.method === "HEAD") && /^\/o\/[A-Za-z0-9_-]{16,512}$/.test(url.pathname)) {
+        return proxy(response, request, url, spmtOrigin, fetchImpl);
+      }
       if ((url.pathname.startsWith("/v1/") || url.pathname.startsWith("/health/")) && browserProxyAllowed(request.method ?? "GET", url.pathname)) {
         if (!["GET", "HEAD"].includes(request.method ?? "GET")) requireSameOrigin(request);
         return proxy(response, request, url, spmtOrigin, fetchImpl);

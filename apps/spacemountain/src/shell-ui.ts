@@ -5,7 +5,7 @@ import { DEFERRED_RUNTIME_SOURCES, type SourceStateV1, type SpaceMountainAppCard
 import { POLISHED_SPACE_MOUNTAIN_CSS } from "./product-shell-css.js";
 
 export type SpaceMountainViewV1 = "home" | "apps" | "inbox" | "stellar" | "operations" | "workspace" | "settings" | "help";
-export type CommlinkTabV1 = "mail" | "notifications" | "events" | "live";
+export type CommlinkTabV1 = "desks" | "spaces" | "mail" | "notifications" | "events" | "irc";
 export interface SpaceMountainUiOptions {
   root: HTMLElement;
   snapshot: SpaceMountainShellSnapshotV1;
@@ -19,17 +19,20 @@ export interface SpaceMountainUiOptions {
   onUnlinkProvider?: (link: Record<string, unknown>) => void;
   onSaveWorkspace?: (expectedRevision: number, patch: Record<string, unknown>) => void;
   onPrepareCoderLog?: (log: OperationsLogV1) => void;
+  onPrepareCoderPrompt?: (appId: string, prompt: string) => void;
+  onIssueOverlayOutput?: (appId: string, widgetId: string, personal: boolean) => void;
+  onRevokeOverlayOutput?: (grantId: string) => void;
 }
 
-const NAV: Array<{ id: SpaceMountainViewV1; label: string; icon: IconName }> = [
-  { id: "home", label: "Home", icon: "home" },
-  { id: "apps", label: "Shipyard", icon: "grid" },
-  { id: "inbox", label: "Commlink", icon: "mail" },
-  { id: "stellar", label: "Stellar Core", icon: "spark" },
-  { id: "operations", label: "Operations", icon: "pulse" },
-  { id: "workspace", label: "Workspace", icon: "layout" },
-  { id: "settings", label: "Settings", icon: "settings" },
-  { id: "help", label: "Help", icon: "help" },
+const NAV: Array<{ id: SpaceMountainViewV1; label: string; description: string; icon: IconName }> = [
+  { id: "home", label: "Home", description: "SpaceMountain ecosystem home.", icon: "home" },
+  { id: "apps", label: "Shipyard", description: "Install, launch, and manage ecosystem apps.", icon: "grid" },
+  { id: "inbox", label: "Commlink", description: "Shared desks, chat spaces, mail, notifications, and app events.", icon: "mail" },
+  { id: "stellar", label: "Stellar Core", description: "Speak with Stella through the ecosystem AI layer.", icon: "spark" },
+  { id: "operations", label: "Operations", description: "Work with Coder and review consolidated app health.", icon: "pulse" },
+  { id: "workspace", label: "Workspace", description: "Canonical overlays, scenes, appearance, and three persistent slots.", icon: "layout" },
+  { id: "settings", label: "Settings", description: "Manage your canonical SPMT identity and linked accounts.", icon: "settings" },
+  { id: "help", label: "Help", description: "Developer docs, SDK, API, CLI, MCP, and IRC references.", icon: "help" },
 ];
 
 const SPACEMOUNTAIN_SCENE: ProductSceneV1 = Object.freeze({
@@ -41,8 +44,11 @@ const SPACEMOUNTAIN_SCENE: ProductSceneV1 = Object.freeze({
 export class SpaceMountainShellUi {
   private snapshot: SpaceMountainShellSnapshotV1;
   private view: SpaceMountainViewV1 = "home";
-  private commlinkTab: CommlinkTabV1 = "mail";
+  private commlinkTab: CommlinkTabV1 = "desks";
   private stopLayout: (() => void) | undefined;
+  private workspaceTray: HTMLElement | undefined;
+  private workspaceOpen = false;
+  private workspaceTarget = 0;
 
   constructor(private readonly options: SpaceMountainUiOptions) {
     this.snapshot = options.snapshot;
@@ -74,7 +80,16 @@ export class SpaceMountainShellUi {
     root.style.setProperty("--accent2", theme.accentSecondary);
     root.style.setProperty("--spmt-accent", theme.accent);
     root.style.setProperty("--spmt-accent-secondary", theme.accentSecondary);
+    root.style.setProperty("--spmt-glow", `${recordNumber(appearance, "glowIntensity") ?? 55}%`);
+    root.style.setProperty("--spmt-stars", String((recordNumber(appearance, "starDensity") ?? 70) / 100));
+    root.style.setProperty("--spmt-glass-opacity", String((recordNumber(appearance, "glassOpacity") ?? 76) / 100));
+    root.style.setProperty("--spmt-blur", `${recordNumber(appearance, "blurStrength") ?? 18}px`);
+    const retainedTray = this.workspaceTray;
+    retainedTray?.remove();
     root.innerHTML = `<style data-spmt-space-style>${PRODUCT_UI_CSS}${SPACE_MOUNTAIN_CSS}${POLISHED_SPACE_MOUNTAIN_CSS}${WORKSPACE_SETTINGS_CSS}${COMMLINK_FORM_CSS}</style><div class="spmt-space-shell">${this.header()}${this.dock()}<main class="spmt-space-main">${this.body()}</main></div>`;
+    this.workspaceTray = retainedTray ?? this.createWorkspaceTray();
+    root.append(this.workspaceTray);
+    this.syncWorkspaceTray();
     installProductBackdrop(root, backdrop);
     bindProductRocketNavigation(root, NAV, this.view, (view) => this.navigate(view));
     root.querySelectorAll<HTMLElement>("[data-nav]").forEach((node) => node.addEventListener("click", () => this.navigate(node.dataset.nav as SpaceMountainViewV1)));
@@ -92,15 +107,60 @@ export class SpaceMountainShellUi {
       if (!revision) return;
       const form = new FormData(event.currentTarget as HTMLFormElement);
       const value = (name: string) => String(form.get(name) ?? "").trim();
+      const number = (name: string) => Math.max(0, Math.min(100, Number(value(name)) || 0));
+      const checked = (name: string) => form.get(name) === "on";
       this.options.onSaveWorkspace?.(revision, {
-        appearance: { theme: value("theme"), ...(value("accent") ? { accent: value("accent") } : {}), ...(value("backgroundUrl") ? { backgroundUrl: value("backgroundUrl") } : {}) },
+        appearance: { theme: value("theme"), ...(value("accent") ? { accent: value("accent") } : {}), ...(value("backgroundUrl") ? { backgroundUrl: value("backgroundUrl") } : {}), glowIntensity: number("glowIntensity"), starDensity: number("starDensity"), glassOpacity: number("glassOpacity"), blurStrength: number("blurStrength"), nebulaIntensity: number("nebulaIntensity"), parallaxDepth: number("parallaxDepth"), borderStrength: number("borderStrength"), chatTransparency: number("chatTransparency"), density: value("density"), sidebarCollapsed: checked("sidebarCollapsed"), sidebarStyle: value("sidebarStyle"), sidebarPosition: value("sidebarPosition"), topbarStyle: value("topbarStyle"), tabStyle: value("tabStyle"), tabPosition: value("tabPosition"), showAvatars: checked("showAvatars"), smoothTransitions: checked("smoothTransitions"), pushToTalk: checked("pushToTalk"), animation: { speed: number("animationSpeed"), particles: checked("particles"), shootingStars: checked("shootingStars") } },
         dockSlots: [value("dockSlot0") || null, value("dockSlot1") || null, value("dockSlot2") || null],
       });
     });
     root.querySelectorAll<HTMLElement>("[data-coder-log]").forEach((node) => node.addEventListener("click", () => { const item = this.snapshot.operations.logs.find((log) => log.id === node.dataset.coderLog); if (item) this.options.onPrepareCoderLog?.(item); }));
-    if (this.view === "workspace") mountOverlayBay(root, this.snapshot);
+    root.querySelector<HTMLFormElement>("[data-coder-form]")?.addEventListener("submit", (event) => { event.preventDefault(); const form = new FormData(event.currentTarget as HTMLFormElement); const appId = String(form.get("appId") ?? "").trim(); const prompt = String(form.get("prompt") ?? "").trim(); if (appId && prompt) this.options.onPrepareCoderPrompt?.(appId, prompt); });
+    root.querySelector<HTMLElement>("[data-workspace-toggle]")?.addEventListener("click", () => this.toggleWorkspaceTray());
+    root.querySelectorAll<HTMLInputElement>('.spmt-slider-grid input[type="range"]').forEach((input) => input.addEventListener("input", () => { const output = input.parentElement?.querySelector<HTMLOutputElement>("output"); if (output) output.value = input.value; }));
+    if (this.view === "workspace") {
+      mountOverlayBay(root, this.snapshot);
+      root.querySelectorAll<HTMLElement>("[data-overlay-issue]").forEach((node) => node.addEventListener("click", () => this.options.onIssueOverlayOutput?.(node.dataset.overlayApp ?? "", node.dataset.overlayIssue ?? "", node.dataset.overlayPersonal === "true")));
+      root.querySelectorAll<HTMLElement>("[data-overlay-revoke]").forEach((node) => node.addEventListener("click", () => this.options.onRevokeOverlayOutput?.(node.dataset.overlayRevoke ?? "")));
+    }
     bindEcosystemEggs(root);
     this.bindLayout();
+  }
+
+  private createWorkspaceTray() {
+    const tray = document.createElement("section");
+    tray.className = "spmt-workspace-tray";
+    tray.setAttribute("aria-label", "SPMT workspace tray");
+    tray.innerHTML = `<header><strong>Canonical workspace</strong><nav>${[0, 1, 2].map((index) => `<button type="button" data-workspace-slot="${index}">Slot ${index + 1}</button>`).join("")}<button type="button" data-workspace-surface="workspace">Overlay Bay</button><button type="button" data-workspace-surface="settings">Settings</button></nav><button type="button" data-workspace-collapse aria-label="Collapse workspace into ecosystem header">×</button></header><div class="spmt-workspace-frames">${[0, 1, 2].map((index) => `<div data-workspace-frame="${index}"><iframe title="Workspace slot ${index + 1}" allow="autoplay; microphone; camera; fullscreen; clipboard-write"></iframe><p>This workspace slot is empty. Assign an installed app in Workspace.</p></div>`).join("")}</div>`;
+    tray.querySelectorAll<HTMLElement>("[data-workspace-slot]").forEach((node) => node.addEventListener("click", () => { this.workspaceTarget = Number(node.dataset.workspaceSlot); this.workspaceOpen = true; this.syncWorkspaceTray(); }));
+    tray.querySelectorAll<HTMLElement>("[data-workspace-surface]").forEach((node) => node.addEventListener("click", () => { this.workspaceOpen = false; this.navigate(node.dataset.workspaceSurface as SpaceMountainViewV1); }));
+    tray.querySelector<HTMLElement>("[data-workspace-collapse]")?.addEventListener("click", () => { this.workspaceOpen = false; this.syncWorkspaceTray(); });
+    return tray;
+  }
+
+  private toggleWorkspaceTray() { this.workspaceOpen = !this.workspaceOpen; this.syncWorkspaceTray(); }
+
+  private syncWorkspaceTray() {
+    const tray = this.workspaceTray;
+    if (!tray) return;
+    tray.classList.toggle("open", this.workspaceOpen);
+    tray.hidden = !this.workspaceOpen;
+    const slots = workspaceDockSlots(this.snapshot.workspace);
+    slots.forEach((appId, index) => {
+      const app = this.snapshot.apps.find((item) => item.appId === appId && item.installed && item.enabled);
+      const button = tray.querySelector<HTMLElement>(`[data-workspace-slot="${index}"]`);
+      if (button) { button.textContent = app?.name ?? `Slot ${index + 1}`; button.classList.toggle("active", index === this.workspaceTarget); }
+      const panel = tray.querySelector<HTMLElement>(`[data-workspace-frame="${index}"]`);
+      const frame = panel?.querySelector<HTMLIFrameElement>("iframe");
+      if (!panel || !frame) return;
+      panel.hidden = index !== this.workspaceTarget;
+      const nextUrl = app?.launchUrl ?? "";
+      if (nextUrl && frame.dataset.appId !== app?.appId) { frame.src = nextUrl; frame.dataset.appId = app?.appId ?? ""; }
+      if (!nextUrl && frame.dataset.appId) { frame.removeAttribute("src"); delete frame.dataset.appId; }
+      frame.hidden = !nextUrl;
+      const emptyState = panel.querySelector<HTMLElement>("p");
+      if (emptyState) emptyState.hidden = Boolean(nextUrl);
+    });
   }
 
   private header() {
@@ -108,12 +168,12 @@ export class SpaceMountainShellUi {
     const user = recordText(this.snapshot.session, ["displayName", "display_name", "username"]) ?? "Captain";
     const nodes = [{ label: "SPMT", state: this.snapshot.state }, { label: "SPACE", state: this.snapshot.state }, { label: "STELLAR", state: this.snapshot.sources.stellar.state }, { label: "COMMLINK", state: this.snapshot.sources.commlink.state }, ...this.snapshot.apps.slice(0, 5).map((app) => ({ label: app.name, state: app.installed && app.enabled ? "ready" : "available" }))];
     const live = ecosystemPresence(this.snapshot.events);
-    return `<header class="spmt-shell-header-stack" data-spmt-shell-header><div class="spmt-telemetry"><span class="spmt-telemetry-title">ECOSYSTEM</span>${nodes.map((node) => `<span class="spmt-node state-${escapeHtml(node.state)}"><i></i>${escapeHtml(node.label)}</span>`).join("")}<span class="spmt-live-community">${live.map((person) => `<span title="Live via ${escapeHtml(person.sources.join(", "))}"><b>${escapeHtml(person.name)}</b><small>${escapeHtml(person.sources.join(" + "))}</small></span>`).join("")}</span><span class="spmt-telemetry-clock">LIVE · ${new Date().toISOString().slice(11, 16)} UTC</span></div><div class="spmt-cosmic-header spmt-product-glass"><button class="spmt-brand" data-spmt-black-hole-trigger data-nav="home" aria-label="SpaceMountain home"><img src="/assets/product/space-logo-header.png" alt=""><strong>SPACEMOUNTAIN<em>.LIVE</em></strong></button><nav class="spmt-header-links" aria-label="Product shortcuts"><a href="/docs/developers">Docs</a><button data-nav="apps">Explore apps</button></nav><div class="spmt-header-status"><b class="spmt-product-status state-${this.snapshot.state}">${escapeHtml(this.snapshot.state)}</b><span>${(this.snapshot.xp?.balance ?? 0).toLocaleString()} XP</span></div><div class="spmt-header-actions"><button data-nav="inbox" class="spmt-icon-button" aria-label="Open Commlink">${icon("mail")}${unread ? `<i>${Math.min(unread, 9)}${unread > 9 ? "+" : ""}</i>` : ""}</button><button data-nav="settings" class="spmt-account"><span class="spmt-avatar">${escapeHtml(initials(user))}</span><span>${escapeHtml(user)}</span></button></div></div></header>`;
+    return `<header class="spmt-shell-header-stack" data-spmt-shell-header><div class="spmt-telemetry"><span class="spmt-telemetry-title">ECOSYSTEM</span>${nodes.map((node) => `<span class="spmt-node state-${escapeHtml(node.state)}"><i></i>${escapeHtml(node.label)}</span>`).join("")}<span class="spmt-live-community">${live.map((person) => `<span title="Live via ${escapeHtml(person.sources.join(", "))}"><b>${escapeHtml(person.name)}</b><small>${escapeHtml(person.sources.join(" + "))}</small></span>`).join("")}</span><span class="spmt-telemetry-clock">LIVE · ${new Date().toISOString().slice(11, 16)} UTC</span></div><div class="spmt-cosmic-header spmt-product-glass"><button class="spmt-brand" data-spmt-black-hole-trigger aria-label="SpaceMountain home; double-click for the Black Hole"><img src="/assets/product/space-logo-header.png" alt=""><strong>SPACEMOUNTAIN<em>.LIVE</em></strong></button><nav class="spmt-header-links" aria-label="Product shortcuts"><a href="/docs/developers">Docs</a><button data-nav="apps">Explore apps</button></nav><div class="spmt-header-status"><b class="spmt-product-status state-${this.snapshot.state}">${escapeHtml(this.snapshot.state)}</b><span>${(this.snapshot.xp?.balance ?? 0).toLocaleString()} XP</span></div><div class="spmt-header-actions"><button data-workspace-toggle class="spmt-icon-button" aria-label="Open canonical workspace">${icon("layout")}</button><button data-nav="inbox" class="spmt-icon-button" aria-label="Open Commlink">${icon("mail")}${unread ? `<i>${Math.min(unread, 9)}${unread > 9 ? "+" : ""}</i>` : ""}</button><button data-nav="settings" class="spmt-account"><span class="spmt-avatar">${escapeHtml(initials(user))}</span><span>${escapeHtml(user)}</span></button></div></div></header>`;
   }
 
   private dock() {
     const nav = NAV.filter((item) => item.id !== "operations" || this.snapshot.operations.canReadLogs || this.snapshot.operations.canReadCoder);
-    return `<aside class="spmt-rocket-dock spmt-product-glass"><div class="spmt-dock-orbit" data-spmt-rocket-trigger title="Double-click the rocket"><span></span><img src="/assets/product/model-rocket.png" alt="SpaceMountain rocket"></div><nav>${nav.map((item) => `<button data-spmt-product-nav="${item.id}" class="${this.view === item.id ? "active" : ""}" title="${escapeHtml(item.label)}">${icon(item.icon)}<label>${item.label}</label></button>`).join("")}</nav><footer><small>SPMT CORE</small><strong>${this.snapshot.state.toUpperCase()}</strong></footer></aside>`;
+    return `<aside class="spmt-rocket-dock spmt-product-glass"><div class="spmt-dock-orbit" data-spmt-rocket-trigger title="Double-click the rocket"><span></span><img src="/assets/product/model-rocket.png" alt="SpaceMountain rocket"></div><nav>${nav.map((item) => `<button data-spmt-product-nav="${item.id}" class="${this.view === item.id ? "active" : ""}" title="${escapeHtml(`${item.label} — ${item.description}`)}" aria-label="${escapeHtml(`${item.label}: ${item.description}`)}">${icon(item.icon)}<label>${item.label}</label></button>`).join("")}</nav><footer><small>SPMT CORE</small><strong>${this.snapshot.state.toUpperCase()}</strong></footer></aside>`;
   }
 
   private body() {
@@ -123,7 +183,7 @@ export class SpaceMountainShellUi {
     if (this.view === "operations" && (this.snapshot.operations.canReadLogs || this.snapshot.operations.canReadCoder)) return this.operations();
     if (this.view === "workspace") return this.workspace();
     if (this.view === "settings") return this.settings();
-    if (this.view === "help") return page("Help", "Developer docs, capability explorer, and diagnostics plug into this shell without creating a second data path.");
+    if (this.view === "help") return `${page("Developer access", "Open the canonical SDK, API, CLI, MCP, IRC, workspace, and deployment references from one place.", "HELP & DOCS")}<div class="spmt-app-grid wide"><article class="spmt-app-card"><span class="spmt-record-kind">START HERE</span><h3>Developer docs</h3><p>Manifest registration, installation, workspace surfaces, browser-source URLs, Commlink IRC, Stella, and Coder.</p><footer><a class="primary" href="/docs/developers">Open docs</a></footer></article><article class="spmt-app-card"><span class="spmt-record-kind">SPMT</span><h3>Developer Console</h3><p>Register or update an app through the same public SDK operation used by automation.</p><footer><a href="/#developer-console">Open console</a></footer></article><article class="spmt-app-card"><span class="spmt-record-kind">DIAGNOSTICS</span><h3>Review health</h3><p>Inspect the web and SPMT readiness state for this isolated Sprite build.</p><footer><a href="/sandbox/health" target="_blank" rel="noreferrer">Open health JSON</a></footer></article></div>`;
     return this.home();
   }
 
@@ -132,21 +192,24 @@ export class SpaceMountainShellUi {
     const unread = this.snapshot.notifications.filter((item) => !item.readAt && !item.read_at).length;
     const appearance = recordObject(this.snapshot.workspace, "appearance");
     const theme = resolveProductTheme(recordText(appearance, ["theme"]), recordText(appearance, ["accent"]));
-    const operationsQuick = this.snapshot.operations.canReadLogs || this.snapshot.operations.canReadCoder ? quick("Operations", "Consolidated app health, Rotator evidence, and coder drafts.", "operations") : "";
-    return `<section class="spmt-hero spmt-product-glass"><div class="spmt-hero-copy"><img class="spmt-hero-logo spmt-hero-logo-large" src="/assets/product/space-logo-main.png" alt="SpaceMountain"><h1>One command bridge for every creator tool.</h1><p class="spmt-hero-small">Launch apps, check Commlink, and carry the same portable workspace across your ecosystem through one canonical SPMT identity.</p><div class="actions"><button data-nav="apps" class="primary">${icon("rocket")}Open Shipyard</button><button data-nav="inbox">${icon("mail")}Open Commlink</button></div></div><div class="spmt-metrics">${metric("Apps online", `${installed.length}/${this.snapshot.apps.length}`)}${metric("Unread", String(unread))}${metric("Active apps", String((this.snapshot.runtimeStates ?? []).filter((item) => recordText(item, ["state"]) === "ready").length))}${metric("Theme", theme.name)}</div></section><section class="spmt-quick-grid">${quick("Shipyard", "Install, launch, and manage ecosystem apps.", "apps", "grid")}${quick("Commlink", "Shared desks, chat spaces, mail, and app events.", "inbox", "mail")}${operationsQuick}${quick("Workspace", "Canonical overlays, scenes, and appearance.", "workspace", "layout")}</section>`;
+    return `<section class="spmt-hero spmt-product-glass"><div class="spmt-hero-copy"><img class="spmt-hero-logo spmt-hero-logo-large" src="/assets/product/space-logo-main.png" alt="SpaceMountain"><p class="spmt-hero-tagline">One command bridge for every creator tool.</p><div class="actions"><button data-nav="apps" class="primary">${icon("rocket")}Open Shipyard</button><button data-nav="inbox">${icon("mail")}Open Commlink</button></div></div><div class="spmt-metrics">${metric("Apps online", `${installed.length}/${this.snapshot.apps.length}`)}${metric("Unread", String(unread))}${metric("Active apps", String((this.snapshot.runtimeStates ?? []).filter((item) => recordText(item, ["state"]) === "ready").length))}${metric("Theme", theme.name)}</div></section>`;
   }
 
   private shipyard() { return `${page("Apps and capabilities", "Registry, install state, granted scopes, and entitlements come directly from SPMT.", "SHIPYARD")}<div class="spmt-app-grid wide">${this.snapshot.apps.map(appCard).join("") || empty("No registered apps are available yet.")}</div>`; }
   private commlink() {
-    return `${page("Shared account communications", "Mail, notifications, and app events are canonical SPMT data. Live chat comes from the separate provider-neutral Chat Gateway.", "COMMLINK")}<nav class="spmt-tabs" aria-label="Commlink sections">${commlinkTab("mail", "Mail", this.commlinkTab, this.snapshot.conversations.length)}${commlinkTab("notifications", "Notifications", this.commlinkTab, unreadCount(this.snapshot.notifications))}${commlinkTab("events", "App Events", this.commlinkTab, this.snapshot.events.length)}${commlinkTab("live", "Live Chat", this.commlinkTab)}</nav>${this.commlinkBody()}`;
+    const desks = this.snapshot.conversations.filter((item) => ["direct", "app", "ai", "system"].includes(recordText(item, ["kind"]) ?? ""));
+    const spaces = this.snapshot.conversations.filter((item) => ["room", "forum"].includes(recordText(item, ["kind"]) ?? ""));
+    return `${page("Canonical communications", "One shared Commlink for desks, chat spaces, mail, notifications, app events, and developer IRC.", "COMMLINK")}<nav class="spmt-tabs" aria-label="Commlink sections">${commlinkTab("desks", "Desks", this.commlinkTab, desks.length)}${commlinkTab("spaces", "Chat Spaces", this.commlinkTab, spaces.length)}${commlinkTab("mail", "Mail", this.commlinkTab, this.snapshot.conversations.length)}${commlinkTab("notifications", "Notifications", this.commlinkTab, unreadCount(this.snapshot.notifications))}${commlinkTab("events", "Events", this.commlinkTab, this.snapshot.events.length)}${commlinkTab("irc", "Developer IRC", this.commlinkTab)}</nav>${this.commlinkBody()}`;
   }
 
   private commlinkBody() {
     if (this.commlinkTab === "notifications") return this.notificationPanel();
     if (this.commlinkTab === "events") return this.eventPanel();
-    if (this.commlinkTab === "live") return deferredPanel("chat-gateway-live-chat", "Live chat will appear here when the Green Chat Gateway feed is connected. StreamWeaver can consume the same public feed, while the account-data panels remain available independently.");
-    const items = this.snapshot.conversations.slice(0, 50);
-    return `${sourceNotice("Mail", this.snapshot.sources.commlink)}<form class="spmt-commlink-search" data-commlink-search><label><span>Search your canonical message history</span><input name="query" type="search" maxlength="200" required placeholder="Search messages"></label><button type="submit">Search</button></form><div class="spmt-list spmt-account-list">${items.map((item) => `<article><div><span class="spmt-record-kind">${escapeHtml(recordText(item, ["kind"]) ?? "message")}</span><strong>${escapeHtml(recordText(item, ["title"]) ?? "Conversation")}</strong><small>${escapeHtml(formatRecordTime(recordText(item, ["updatedAt", "updated_at", "createdAt", "created_at"])))}</small></div><button data-open-conversation="${escapeHtml(recordText(item, ["id"]) ?? "")}">Open</button></article>`).join("") || empty("No conversations yet.")}</div>`;
+    if (this.commlinkTab === "irc") return `<section class="spmt-stella-chat"><header><span>DEVELOPER TOOLS</span><h2>IRC bridge</h2></header><p>Apps connect to the provider-neutral Chat Gateway over the ecosystem IRC adapter. Twitch, Discord, Kick, and app chat are normalized into one message envelope while source identity is retained.</p><pre><code>wss://spacemountain.live/irc\nCAP REQ :spmt.tags spmt.events\nJOIN #tenant/&lt;tenant-id&gt;</code></pre><small>The Review Sprite keeps provider credentials disconnected; use the SDK/MCP event contracts for isolated testing.</small></section>`;
+    const all = this.snapshot.conversations.slice(0, 50);
+    const items = this.commlinkTab === "desks" ? all.filter((item) => ["direct", "app", "ai", "system"].includes(recordText(item, ["kind"]) ?? "")) : this.commlinkTab === "spaces" ? all.filter((item) => ["room", "forum"].includes(recordText(item, ["kind"]) ?? "")) : all;
+    const label = this.commlinkTab === "desks" ? "Desks" : this.commlinkTab === "spaces" ? "Chat Spaces" : "Mail";
+    return `${sourceNotice(label, this.snapshot.sources.commlink)}<form class="spmt-commlink-search" data-commlink-search><label><span>Search all canonical Commlink history</span><input name="query" type="search" maxlength="200" required placeholder="Search desks, spaces, and mail"></label><button type="submit">Search</button></form><div class="spmt-list spmt-account-list">${items.map((item) => `<article><div><span class="spmt-record-kind">${escapeHtml(recordText(item, ["kind"]) ?? "message")}</span><strong>${escapeHtml(recordText(item, ["title"]) ?? "Conversation")}</strong><small>${escapeHtml(formatRecordTime(recordText(item, ["updatedAt", "updated_at", "createdAt", "created_at"])))}</small></div><button data-open-conversation="${escapeHtml(recordText(item, ["id"]) ?? "")}">Open</button></article>`).join("") || empty(`No ${label.toLowerCase()} yet.`)}</div>`;
   }
 
   private notificationPanel() {
@@ -163,7 +226,11 @@ export class SpaceMountainShellUi {
     // Stella is the default ecosystem assistant; configured StreamWeaver personas use the same public contracts.
     // Runtime capability remains identified as stellar-core-inference and reports unavailable truthfully.
     const capabilities = this.snapshot.stellar.capabilities.slice(0, 100);
-    return `${page("Speak with Stella", "Stellar Core supplies the shared execution layer; Stella is the ecosystem Community Assistant.", "STELLA CORE")}${sourceNotice("Stellar Core catalog", this.snapshot.sources.stellar)}<section class="spmt-stella-chat"><header><span>STELLA</span><h2>Community Assistant</h2></header><div class="spmt-stella-history" data-stella-history><p>Ask Stella about the ecosystem, your workspace, or creator tools.</p></div><form data-stella-form><input name="message" maxlength="4000" required placeholder="Speak to Stella…"><button class="primary" type="submit">Send</button></form></section><section class="spmt-account-section"><header><span>CAPABILITY CATALOG</span><h2>What Stella can use</h2></header><div class="spmt-command-grid">${capabilities.map((item) => { const available = recordText(item, ["availability"]) === "available"; return `<article><div><span class="spmt-command-state ${available ? "available" : "unavailable"}">${available ? "AVAILABLE" : "UNAVAILABLE"}</span><h3>${escapeHtml(recordText(item, ["title", "id"]) ?? "System capability")}</h3></div><p>${escapeHtml(recordText(item, ["description"]) ?? "")}</p><small>${available ? escapeHtml(recordStrings(item, "requiredScopes").join(", ") || "Ready") : escapeHtml(recordText(item, ["unavailableReason", "unavailable_reason"]) ?? "Runtime unavailable")}</small></article>`; }).join("") || empty("No Stellar Core capabilities have been declared yet.")}</div></section>`;
+    const owner = sessionHasScope(this.snapshot.session, "apps:register");
+    const runtime = capabilities.find((item) => recordText(item, ["id"]) === "spmt.community-assistant");
+    const runtimeAvailable = recordText(runtime, ["availability"]) === "available";
+    const ownerControls = owner ? `<section class="spmt-account-section spmt-owner-controls"><header><span>OWNER CONTROL</span><h2>Stellar Core model platform</h2></header><div class="spmt-field-grid"><label>Platform<select disabled><option>${runtimeAvailable ? "Connected Stellar Core worker" : "No inference worker connected"}</option></select></label><label>Model<select disabled><option>${runtimeAvailable ? "Runtime-managed model" : "Connect a model deployment"}</option></select></label><label class="spmt-check"><input type="checkbox" checked disabled> Canonical RAG context</label></div><p>Only the ecosystem owner sees model and platform controls. The model worker is deployed separately from this private Review Sprite and receives scoped, redacted SPMT context.</p></section>` : "";
+    return `${page("Speak with Stella", "Stellar Core is the ecosystem AI layer; Stella is its default assistant.", "STELLA CORE")}${sourceNotice("Stellar Core catalog", this.snapshot.sources.stellar)}<section class="spmt-stella-chat"><header><span>STELLA</span><h2>Community Assistant</h2></header><div class="spmt-stella-history" data-stella-history><p>Ask Stella about the ecosystem, your workspace, or creator tools.</p></div><form data-stella-form><input name="message" maxlength="4000" required placeholder="Speak to Stella…"><button class="primary" type="submit">Send</button></form></section>${ownerControls}<section class="spmt-account-section"><header><span>CAPABILITY CATALOG</span><h2>What Stella can use</h2></header><div class="spmt-command-grid">${capabilities.map((item) => { const available = recordText(item, ["availability"]) === "available"; return `<article><div><span class="spmt-command-state ${available ? "available" : "unavailable"}">${available ? "AVAILABLE" : "UNAVAILABLE"}</span><h3>${escapeHtml(recordText(item, ["title", "id"]) ?? "System capability")}</h3></div><p>${escapeHtml(recordText(item, ["description"]) ?? "")}</p><small>${available ? escapeHtml(recordStrings(item, "requiredScopes").join(", ") || "Ready") : escapeHtml(recordText(item, ["unavailableReason", "unavailable_reason"]) ?? "Runtime unavailable")}</small></article>`; }).join("") || empty("No Stellar Core capabilities have been declared yet.")}</div></section>`;
   }
   private operations() {
     const logs = this.snapshot.operations.logs.slice(0, 100);
@@ -178,7 +245,9 @@ export class SpaceMountainShellUi {
       : `<aside class="spmt-deferred"><div><span>ROTATOR CODER</span><strong>Draft-only handoff</strong></div><p>${escapeHtml(coder?.unavailableReason ?? "The Rotator coder worker is not connected. Evidence can be saved as a draft without fabricating analysis.")}</p><small>Prepared drafts do not change code</small></aside>`;
     const logList = logs.map((item) => `<article class="spmt-ops-log level-${escapeHtml(item.level)}"><div><span class="spmt-record-kind">${escapeHtml(item.sourceAppId)} • ${escapeHtml(item.level)}</span><strong>${escapeHtml(item.summary)}</strong>${item.detail ? `<p>${escapeHtml(item.detail)}</p>` : ""}<small>${escapeHtml(item.kind)} • ${escapeHtml(formatRecordTime(item.occurredAt))}${item.correlationId ? ` • ${escapeHtml(item.correlationId)}` : ""}</small></div>${this.snapshot.operations.canInvokeCoder ? `<button data-coder-log="${escapeHtml(item.id)}">Prepare coder</button>` : ""}</article>`).join("");
     const jobList = jobs.map((job) => `<article><div><span class="spmt-record-kind">${escapeHtml(job.targetAppId)} • ${escapeHtml(job.state)}</span><strong>${escapeHtml(job.prompt)}</strong><p>${job.evidence.length} bounded evidence record${job.evidence.length === 1 ? "" : "s"}</p><small>${escapeHtml(formatRecordTime(job.updatedAt))}${job.unavailableReason ? ` • ${escapeHtml(job.unavailableReason)}` : ""}</small></div></article>`).join("");
-    return `${page("Ecosystem operations", "One scoped view of redacted app and Rotator evidence. Your owner/developer grants determine which apps appear; there is no hidden first-party data path.", "MISSION CONTROL")}${sourceNotice("Operations", this.snapshot.sources.operations)}<div class="spmt-metrics spmt-operations-metrics">${metric("Apps reporting", String(apps.size))}${metric("Warnings", String(warnings))}${metric("Errors", String(errors))}${metric("Coder", coderAvailable ? "ready" : "draft only")}</div>${coderNotice}<section class="spmt-account-section"><header><span>CONSOLIDATED EVIDENCE</span><h2>Recent operational records</h2></header><div class="spmt-list spmt-account-list">${logList || empty("No app or Rotator operational records are available for this tenant.")}</div></section><section class="spmt-account-section"><header><span>CODER HANDOFFS</span><h2>Prepared and active coder jobs</h2></header><div class="spmt-list spmt-account-list">${jobList || empty("No coder jobs have been prepared.")}</div></section>`;
+    const appOptions = this.snapshot.apps.map((app) => `<option value="${escapeHtml(app.appId)}">${escapeHtml(app.name)}</option>`).join("");
+    const coderChat = this.snapshot.operations.canInvokeCoder ? `<section class="spmt-stella-chat"><header><span>CODER</span><h2>Work with the ecosystem coder</h2></header><div class="spmt-stella-history">${jobs.slice(0, 5).map((job) => `<p><b>${escapeHtml(job.targetAppId)}</b> · ${escapeHtml(job.prompt)} <small>${escapeHtml(job.state)}</small></p>`).join("") || `<p>Describe a change, test, or investigation. Coder will create a bounded job for the selected app.</p>`}</div><form data-coder-form><select name="appId" required>${appOptions}</select><input name="prompt" maxlength="4000" required placeholder="Ask Coder to inspect, test, or prepare a change…"><button class="primary" type="submit">Send to Coder</button></form></section>` : "";
+    return `${page("Ecosystem operations", "Work with Coder, then inspect the scoped app and Rotator evidence behind each job.", "MISSION CONTROL")}${sourceNotice("Operations", this.snapshot.sources.operations)}${coderChat}<div class="spmt-metrics spmt-operations-metrics">${metric("Apps reporting", String(apps.size))}${metric("Warnings", String(warnings))}${metric("Errors", String(errors))}${metric("Coder", coderAvailable ? "ready" : "draft only")}</div>${coderNotice}<section class="spmt-account-section"><header><span>CONSOLIDATED EVIDENCE</span><h2>Recent operational records</h2></header><div class="spmt-list spmt-account-list">${logList || empty("No app or Rotator operational records are available for this tenant.")}</div></section><section class="spmt-account-section"><header><span>CODER HANDOFFS</span><h2>Prepared and active coder jobs</h2></header><div class="spmt-list spmt-account-list">${jobList || empty("No coder jobs have been prepared.")}</div></section>`;
   }
   private workspace() {
     const profile = this.snapshot.workspace;
@@ -187,8 +256,9 @@ export class SpaceMountainShellUi {
     const theme = recordText(appearance, ["theme"]) ?? "system";
     const accent = recordText(appearance, ["accent"]) ?? "#ff7a18";
     const backgroundUrl = recordText(appearance, ["backgroundUrl", "background_url"]) ?? "";
+    const animation = recordObject(appearance, "animation");
     const appOptions = this.snapshot.apps.filter((app) => app.installed && app.enabled).map((app) => ({ value: app.appId, label: app.name }));
-    return `${page("Portable station layout", "One workspace profile. Three persistent dock slots. No per-app copies.", "WORKSPACE")}${sourceNotice("Workspace", this.snapshot.sources.workspace)}<form class="spmt-settings-form" data-workspace-settings><section><header><span>APPEARANCE</span><h2>One color language, a unique scene in every app</h2></header><p class="spmt-appearance-rule">Your theme recolors each app's own cosmic scene. The shared stars, glass, and navigation remain familiar everywhere.</p><div class="spmt-field-grid"><label>Theme<select name="theme">${selectOption("solar-flare", theme, "Solar flare")}${selectOption("nebula-purple", theme, "Nebula purple")}${selectOption("oceanic-blue", theme, "Oceanic blue")}${selectOption("aurora-green", theme, "Aurora green")}${!theme.includes("-") ? selectOption(theme, theme, `Existing: ${theme}`) : ""}</select></label><label>Accent<input name="accent" type="color" value="${escapeHtml(accent)}"></label><label class="wide">Custom scene override <small>Optional; leave blank to use each app's artwork.</small><input name="backgroundUrl" type="url" inputmode="url" placeholder="https://…" value="${escapeHtml(backgroundUrl)}"></label></div></section><section><header><span>DOCK</span><h2>Three persistent app slots</h2></header><div class="spmt-field-grid">${slots.map((slot, index) => `<label>Slot ${index + 1}<select name="dockSlot${index}">${selectOption("", slot ?? "", "Empty")}${slot && !appOptions.some((option) => option.value === slot) ? selectOption(slot, slot, `Existing: ${slot}`) : ""}${appOptions.map((option) => selectOption(option.value, slot ?? "", option.label)).join("")}</select></label>`).join("")}</div></section><button type="submit" class="primary">Save canonical workspace</button><small>Revision ${recordNumber(profile, "revision") ?? "unavailable"} · changes are written once to SPMT and read by every authorized app.</small></form>`;
+    return `${page("Portable station layout", "One canonical workspace profile, shared overlays, and three persistent app slots.", "WORKSPACE")}${sourceNotice("Workspace", this.snapshot.sources.workspace)}<form class="spmt-settings-form" data-workspace-settings><section><header><span>APPEARANCE</span><h2>One color language, a unique scene in every app</h2></header><p class="spmt-appearance-rule">Your theme recolors each app's own cosmic scene. The shared stars, glass, and navigation remain familiar everywhere.</p><div class="spmt-field-grid"><label>Theme<select name="theme">${selectOption("solar-flare", theme, "Solar flare")}${selectOption("nebula-purple", theme, "Nebula purple")}${selectOption("oceanic-blue", theme, "Oceanic blue")}${selectOption("aurora-green", theme, "Aurora green")}${!theme.includes("-") ? selectOption(theme, theme, `Existing: ${theme}`) : ""}</select></label><label>Accent<input name="accent" type="color" value="${escapeHtml(accent)}"></label><label class="wide">Custom scene override <small>Optional; leave blank to use each app's artwork.</small><input name="backgroundUrl" type="url" inputmode="url" placeholder="https://…" value="${escapeHtml(backgroundUrl)}"></label></div><div class="spmt-slider-grid">${rangeControl("glowIntensity", "Glow", recordNumber(appearance, "glowIntensity") ?? 55)}${rangeControl("starDensity", "Stars", recordNumber(appearance, "starDensity") ?? 70)}${rangeControl("glassOpacity", "Glass", recordNumber(appearance, "glassOpacity") ?? 76)}${rangeControl("blurStrength", "Blur", recordNumber(appearance, "blurStrength") ?? 18)}${rangeControl("nebulaIntensity", "Nebula", recordNumber(appearance, "nebulaIntensity") ?? 55)}${rangeControl("parallaxDepth", "Parallax", recordNumber(appearance, "parallaxDepth") ?? 35)}${rangeControl("borderStrength", "Borders", recordNumber(appearance, "borderStrength") ?? 35)}${rangeControl("chatTransparency", "Chat transparency", recordNumber(appearance, "chatTransparency") ?? 15)}${rangeControl("animationSpeed", "Animation speed", recordNumber(animation, "speed") ?? 50)}</div></section><section><header><span>LAYOUT & MOTION</span><h2>Shared interface behavior</h2></header><div class="spmt-field-grid"><label>Density<select name="density">${selectOption("compact", recordText(appearance, ["density"]) ?? "comfortable", "Compact")}${selectOption("comfortable", recordText(appearance, ["density"]) ?? "comfortable", "Comfortable")}${selectOption("spacious", recordText(appearance, ["density"]) ?? "comfortable", "Spacious")}</select></label><label>Sidebar style<select name="sidebarStyle">${selectOption("glass", recordText(appearance, ["sidebarStyle"]) ?? "glass", "Glass")}${selectOption("solid", recordText(appearance, ["sidebarStyle"]) ?? "glass", "Solid")}${selectOption("minimal", recordText(appearance, ["sidebarStyle"]) ?? "glass", "Minimal")}</select></label><label>Sidebar position<select name="sidebarPosition">${selectOption("left", recordText(appearance, ["sidebarPosition"]) ?? "left", "Left")}${selectOption("right", recordText(appearance, ["sidebarPosition"]) ?? "left", "Right")}</select></label><label>Topbar style<select name="topbarStyle">${selectOption("glass", recordText(appearance, ["topbarStyle"]) ?? "glass", "Glass")}${selectOption("solid", recordText(appearance, ["topbarStyle"]) ?? "glass", "Solid")}${selectOption("minimal", recordText(appearance, ["topbarStyle"]) ?? "glass", "Minimal")}</select></label><label>Tab style<select name="tabStyle">${selectOption("pills", recordText(appearance, ["tabStyle"]) ?? "pills", "Pills")}${selectOption("underline", recordText(appearance, ["tabStyle"]) ?? "pills", "Underline")}${selectOption("cards", recordText(appearance, ["tabStyle"]) ?? "pills", "Cards")}</select></label><label>Tab position<select name="tabPosition">${selectOption("top", recordText(appearance, ["tabPosition"]) ?? "top", "Top")}${selectOption("bottom", recordText(appearance, ["tabPosition"]) ?? "top", "Bottom")}</select></label></div><div class="spmt-toggle-grid">${checkControl("sidebarCollapsed", "Collapse sidebar", recordBoolean(appearance, "sidebarCollapsed", false))}${checkControl("showAvatars", "Show avatars", recordBoolean(appearance, "showAvatars", true))}${checkControl("smoothTransitions", "Smooth transitions", recordBoolean(appearance, "smoothTransitions", true))}${checkControl("pushToTalk", "Push to talk", recordBoolean(appearance, "pushToTalk", false))}${checkControl("particles", "Particles", recordBoolean(animation, "particles", true))}${checkControl("shootingStars", "Shooting stars", recordBoolean(animation, "shootingStars", true))}</div></section><section><header><span>DOCK</span><h2>Three persistent app slots</h2></header><div class="spmt-field-grid">${slots.map((slot, index) => `<label>Slot ${index + 1}<select name="dockSlot${index}">${selectOption("", slot ?? "", "Empty")}${slot && !appOptions.some((option) => option.value === slot) ? selectOption(slot, slot, `Existing: ${slot}`) : ""}${appOptions.map((option) => selectOption(option.value, slot ?? "", option.label)).join("")}</select></label>`).join("")}</div></section><button type="submit" class="primary">Save canonical workspace</button><small>Revision ${recordNumber(profile, "revision") ?? "unavailable"} · changes are written once to SPMT and read by every authorized app.</small></form>`;
   }
   private settings() {
     const links = this.snapshot.providerLinks.slice().sort((left, right) => providerLinkKey(left).localeCompare(providerLinkKey(right)));
@@ -224,12 +294,15 @@ function mountOverlayBay(root: HTMLElement, snapshot: SpaceMountainShellSnapshot
   section.className = "spmt-overlay-bay spmt-product-glass";
   const widgets = snapshot.overlayWidgets ?? [];
   const outputs = snapshot.overlayOutputs ?? [];
-  section.innerHTML = `<header><span>OVERLAY BAY</span><h2>Shared overlay workspace</h2></header><p>This is the one editing authority consumed by every ecosystem app.</p><div class="spmt-overlay-grid">${widgets.map((item) => { const manifest = recordObject(item, "manifest"); return `<article><b>${escapeHtml(recordText(manifest, ["title"]) ?? "Overlay widget")}</b><small>${escapeHtml(recordText(manifest, ["appId"]) ?? "ecosystem")}</small></article>`; }).join("") || `<article><b>Empty scene</b><small>Add an ecosystem widget to begin.</small></article>`}</div><footer>${outputs.length} active browser-source output${outputs.length === 1 ? "" : "s"}</footer>`;
+  const owner = sessionHasScope(snapshot.session, "overlay:outputs:write");
+  section.innerHTML = `<header><span>OVERLAY BAY</span><h2>Shared overlay workspace</h2></header><p>This is the one editing authority consumed by every ecosystem app. Overlay Bay issues first-party, revocable browser-source URLs served by SpaceMountain.</p><div class="spmt-overlay-grid">${widgets.map((item) => { const manifest = recordObject(item, "manifest"); const appId = recordText(manifest, ["appId"]) ?? "ecosystem"; const widgetId = recordText(manifest, ["widgetId", "id"]) ?? "widget"; return `<article><b>${escapeHtml(recordText(manifest, ["title"]) ?? "Overlay widget")}</b><small>${escapeHtml(appId)} · ${escapeHtml(widgetId)}</small>${owner ? `<div><button type="button" data-overlay-issue="${escapeHtml(widgetId)}" data-overlay-app="${escapeHtml(appId)}">Create public URL</button><button type="button" data-overlay-issue="${escapeHtml(widgetId)}" data-overlay-app="${escapeHtml(appId)}" data-overlay-personal="true">Create personal URL</button></div>` : ""}</article>`; }).join("") || `<article><b>Empty scene</b><small>Installed apps register widgets here through the public overlay contract.</small></article>`}</div><div class="spmt-list spmt-account-list">${outputs.map((item) => `<article><div><span class="spmt-record-kind">BROWSER SOURCE</span><strong>${escapeHtml(recordText(item, ["appId"]) ?? "ecosystem")} · ${escapeHtml(recordText(item, ["widgetId"]) ?? "widget")}</strong><small>Expires ${escapeHtml(formatRecordTime(recordText(item, ["expiresAt"])))}</small></div>${owner && !recordText(item, ["revokedAt"]) ? `<button type="button" data-overlay-revoke="${escapeHtml(recordText(item, ["grantId"]) ?? "")}">Revoke</button>` : ""}</article>`).join("") || empty("No active browser-source URLs have been issued.")}</div>`;
   form.before(section);
 }
 function bindEcosystemEggs(root: HTMLElement) {
   const logo = root.querySelector<HTMLElement>("[data-spmt-black-hole-trigger]");
-  logo?.addEventListener("dblclick", (event) => { event.preventDefault(); openBlackHole(root, logo); });
+  let logoClick: number | undefined;
+  logo?.addEventListener("click", () => { window.clearTimeout(logoClick); logoClick = window.setTimeout(() => root.querySelector<HTMLElement>('[data-spmt-product-nav="home"]')?.click(), 260); });
+  logo?.addEventListener("dblclick", (event) => { event.preventDefault(); window.clearTimeout(logoClick); openBlackHole(root, logo); });
   const rocket = root.querySelector<HTMLElement>("[data-spmt-rocket-trigger]");
   rocket?.addEventListener("dblclick", (event) => {
     event.preventDefault();
@@ -252,7 +325,8 @@ function openBlackHole(root: HTMLElement, mark: HTMLElement) {
   if (root.querySelector("#spmt-black-hole-game")) return;
   const game = document.createElement("section");
   game.id = "spmt-black-hole-game";
-  game.innerHTML = `<div class="egg-hud"><strong>THE BLACK HOLE</strong><span>Guide all anomalies into the singularity</span><b data-egg-count>0 / 3</b></div><div class="egg-void"></div>${["🚀","📡","🌌"].map((item, index) => `<button class="egg-artifact" style="--egg-angle:${index * 120}deg">${item}</button>`).join("")}<button class="egg-close" aria-label="Close">×</button>`;
+  const positions = [[18, 28], [78, 34], [48, 78]];
+  game.innerHTML = `<div class="egg-hud"><strong>THE BLACK HOLE</strong><span>Guide all anomalies into the singularity</span><b data-egg-count>0 / 3</b></div><div class="egg-void"></div>${["🚀","📡","🌌"].map((item, index) => `<button class="egg-artifact" style="left:${positions[index]![0]}%;top:${positions[index]![1]}%">${item}</button>`).join("")}<button class="egg-close" aria-label="Close">×</button>`;
   root.appendChild(game);
   const center = mark.getBoundingClientRect();
   const voidNode = game.querySelector<HTMLElement>(".egg-void")!;
@@ -263,6 +337,8 @@ function openBlackHole(root: HTMLElement, mark: HTMLElement) {
   game.querySelectorAll<HTMLElement>(".egg-artifact").forEach((artifact) => artifact.addEventListener("click", () => {
     if (artifact.classList.contains("captured")) return;
     artifact.classList.add("captured");
+    artifact.style.left = "50%";
+    artifact.style.top = "50%";
     captured += 1;
     const count = game.querySelector<HTMLElement>("[data-egg-count]");
     if (count) count.textContent = `${captured} / 3`;
@@ -288,9 +364,13 @@ function page(title: string, body: string, kicker = "SPACEMOUNTAIN") { return `<
 function empty(message: string, nav?: SpaceMountainViewV1) { return `<div class="spmt-empty"><i>${icon("spark")}</i><strong>Clear orbit</strong><span>${escapeHtml(message)}</span>${nav ? `<button data-nav="${nav}">Open ${nav === "apps" ? "Shipyard" : escapeHtml(nav)}</button>` : ""}</div>`; }
 function recordText(value: unknown, keys: string[]) { if (!value || typeof value !== "object" || Array.isArray(value)) return undefined; const record = value as Record<string, unknown>; for (const key of keys) if (typeof record[key] === "string" && record[key]) return record[key] as string; return undefined; }
 function recordNumber(value: unknown, key: string) { if (!value || typeof value !== "object" || Array.isArray(value)) return undefined; const result = (value as Record<string, unknown>)[key]; return typeof result === "number" && Number.isFinite(result) ? result : undefined; }
+function recordBoolean(value: unknown, key: string, fallback: boolean) { if (!value || typeof value !== "object" || Array.isArray(value)) return fallback; const result = (value as Record<string, unknown>)[key]; return typeof result === "boolean" ? result : fallback; }
 function recordObject(value: unknown, key: string) { if (!value || typeof value !== "object" || Array.isArray(value)) return undefined; const result = (value as Record<string, unknown>)[key]; return result && typeof result === "object" && !Array.isArray(result) ? result as Record<string, unknown> : undefined; }
+function sessionHasScope(value: unknown, scope: string) { return recordStrings(value, "scopes").includes(scope); }
 function providerLinkKey(value: unknown) { return `${recordText(value, ["provider"]) ?? ""}:${recordText(value, ["providerUserId", "provider_user_id"]) ?? ""}`; }
 function selectOption(value: string, selected: string, label: string) { return `<option value="${escapeHtml(value)}"${value === selected ? " selected" : ""}>${escapeHtml(label)}</option>`; }
+function rangeControl(name: string, label: string, value: number) { return `<label>${escapeHtml(label)} <output>${Math.round(value)}</output><input type="range" name="${escapeHtml(name)}" min="0" max="100" step="1" value="${Math.round(value)}"></label>`; }
+function checkControl(name: string, label: string, checked: boolean) { return `<label class="spmt-check"><input type="checkbox" name="${escapeHtml(name)}"${checked ? " checked" : ""}>${escapeHtml(label)}</label>`; }
 function workspaceDockSlots(value: unknown): Array<string | null> { if (!value || typeof value !== "object" || Array.isArray(value)) return [null, null, null]; const raw = (value as Record<string, unknown>).dockSlots; if (!Array.isArray(raw)) return [null, null, null]; return [0, 1, 2].map((index) => typeof raw[index] === "string" ? raw[index] as string : null); }
 function escapeHtml(value: string) { return value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char] ?? char); }
 function initials(value: string) { return value.trim().split(/\s+/).slice(0, 2).map((part) => part[0] ?? "").join("").toUpperCase() || "SP"; }

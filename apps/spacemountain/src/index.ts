@@ -234,10 +234,18 @@ export class SpaceMountainShellController {
     requireId(tenantId, "tenantId");
     requireId(targetAppId, "targetAppId");
     if (!prompt.trim() || prompt.length > 4000) throw new Error("coder prompt is invalid");
-    if (!evidenceLogIds.length || evidenceLogIds.length > 20) throw new Error("coder evidence is invalid");
+    if (evidenceLogIds.length > 20) throw new Error("coder evidence is invalid");
     evidenceLogIds.forEach((logId) => requireId(logId, "evidenceLogId"));
     requireId(idempotencyKey, "idempotencyKey");
     return this.spmt.createCoderJob(tenantId, targetAppId, prompt, evidenceLogIds, idempotencyKey);
+  }
+
+  async issueOverlayOutput(tenantId: string, appId: string, widgetId: string, viewerUserId?: string) {
+    return this.spmt.issueOverlayOutput(tenantId, appId, widgetId, viewerUserId, 30 * 24 * 60 * 60 * 1000);
+  }
+
+  async revokeOverlayOutput(tenantId: string, grantId: string) {
+    return this.spmt.revokeOverlayOutput(tenantId, grantId);
   }
 }
 
