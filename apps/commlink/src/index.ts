@@ -21,7 +21,7 @@ export function commlinkCatalogRegistration(publicOrigin: string): AppCatalogReg
     name: manifest.name,
     description: manifest.description,
     version: "0.1.0-green",
-    launchUrl: new URL("/apps/commlink", origin).toString(),
+    launchUrl: new URL("/apps/commlink?surface=workspace", origin).toString(),
     allowedScopes: [...manifest.requiredScopes],
     surfaces: ["shell", "standalone", "popout"],
     status: "active",
