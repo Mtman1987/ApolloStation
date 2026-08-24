@@ -142,8 +142,7 @@ async function loadShell() {
       onIssueOverlayOutput: (appId, widgetId, personal) => void issueOverlayOutput(appId, widgetId, personal),
       onRevokeOverlayOutput: (grantId) => void revokeOverlayOutput(grantId),
     }).mount();
-    const degraded = Object.entries(snapshot.sources).filter(([, source]) => source.state !== "ready").map(([name]) => name);
-    setStatus(degraded.length ? `Sandbox open · degraded: ${degraded.join(", ")}` : `Sandbox open · ${snapshot.apps.length} registry app${snapshot.apps.length === 1 ? "" : "s"} visible`, degraded.length ? "working" : "ready");
+    setStatus("Sandbox open", "ready");
     if (window.location.hash === "#developer-console" && !openDeveloperButton.hidden && !developerDialog.open) openDeveloperConsole();
   } finally {
     loading = false;

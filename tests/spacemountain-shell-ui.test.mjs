@@ -88,6 +88,27 @@ test("home avoids duplicate navigation and sidebar hover text carries page descr
   assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /data-spmt-view="home"/);
   assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /height:calc\(100dvh - var\(--guard-height,0px\)\)/);
   assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /overflow-y:hidden/);
+  assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /container-type:size/);
+  assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /height:clamp\(76px,20cqh,150px\)/);
+});
+
+test("released rocket escapes the sidebar stack, follows the pointer, and remains above content", () => {
+  assert.match(source, /document\.body\.appendChild\(rocket\)/);
+  assert.match(source, /--rocket-x/);
+  assert.match(source, /window\.addEventListener\("pointermove", follow\)/);
+  assert.match(source, /dockParent\.insertBefore\(rocket, dockNext\)/);
+  assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /\.spmt-rocket-free\{[^}]*z-index:2147483640!important/);
+  assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /@keyframes spmtRocketFlight/);
+});
+
+test("SPMT hub visibly links identity, messages, developer tools, docs, and workspace", () => {
+  assert.match(source, /label: "SPMT"/);
+  assert.match(source, /SPMT identity and developer hub/);
+  assert.match(source, /ACCOUNT & AUTH/);
+  assert.match(source, /Cosmo Commlink/);
+  assert.match(source, /Developer Console/);
+  assert.match(source, /Platform documentation/);
+  assert.match(source, /requested === "spmt" \? "help"/);
 });
 
 test("shared header uses catalog-backed live presence, local and UTC clocks, and no user-facing health strip", () => {

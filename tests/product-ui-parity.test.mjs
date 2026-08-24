@@ -6,6 +6,7 @@ import { POLISHED_SPACE_MOUNTAIN_CSS } from "../apps/spacemountain/dist/product-
 
 const shellSource = readFileSync(new URL("../apps/spacemountain/src/shell-ui.ts", import.meta.url), "utf8");
 const hostSource = readFileSync(new URL("../apps/spacemountain-web/src/page.ts", import.meta.url), "utf8");
+const clientSource = readFileSync(new URL("../apps/spacemountain-web/src/client.ts", import.meta.url), "utf8");
 const serverSource = readFileSync(new URL("../apps/spacemountain-web/src/server.ts", import.meta.url), "utf8");
 
 test("shared product UI exposes stable framework-neutral themes and accessible primitives", () => {
@@ -68,4 +69,8 @@ test("private host uses the same product chrome and serves only explicit local a
     assert.match(serverSource, new RegExp(asset.replace(".", "\\.")));
   }
   assert.match(hostSource, /isolated from Blue/);
+  assert.match(hostSource, /<span id="sandbox-status"[\s\S]*<a href="\/\?view=help">SPMT hub<\/a>/);
+  assert.doesNotMatch(hostSource, /position:fixed;z-index:1001;top:var\(--guard-height\)/);
+  assert.match(clientSource, /setStatus\("Sandbox open", "ready"\)/);
+  assert.doesNotMatch(clientSource, /Sandbox open · degraded/);
 });

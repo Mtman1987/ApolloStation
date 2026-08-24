@@ -43,7 +43,7 @@ const NAV: Array<{ id: SpaceMountainViewV1; label: string; description: string; 
   { id: "operations", label: "Operations", description: "Work with Coder and review consolidated app health.", icon: "pulse" },
   { id: "workspace", label: "Workspace", description: "Canonical overlays, scenes, appearance, and three persistent slots.", icon: "layout" },
   { id: "settings", label: "Settings", description: "Manage your canonical SPMT identity and linked accounts.", icon: "settings" },
-  { id: "help", label: "Help", description: "Developer docs, SDK, API, CLI, MCP, and IRC references.", icon: "help" },
+  { id: "help", label: "SPMT", description: "Identity, auth, messages, developer console, docs, SDK, API, CLI, MCP, and IRC.", icon: "help" },
 ];
 
 const SPACEMOUNTAIN_SCENE: ProductSceneV1 = Object.freeze({
@@ -64,7 +64,11 @@ export class SpaceMountainShellUi {
 
   constructor(private readonly options: SpaceMountainUiOptions) {
     this.snapshot = options.snapshot;
-    if (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("view") === "commlink") this.view = "inbox";
+    if (typeof window !== "undefined") {
+      const requested = new URLSearchParams(window.location.search).get("view");
+      const alias = requested === "commlink" ? "inbox" : requested === "spmt" ? "help" : requested;
+      if (NAV.some((item) => item.id === alias)) this.view = alias as SpaceMountainViewV1;
+    }
   }
 
   mount() { this.options.root.classList.add("spmt-space-root", "spmt-product-surface"); this.render(); return this; }
@@ -234,7 +238,7 @@ export class SpaceMountainShellUi {
     if (this.view === "operations" && (this.snapshot.operations.canReadLogs || this.snapshot.operations.canReadCoder)) return this.operations();
     if (this.view === "workspace") return this.workspace();
     if (this.view === "settings") return this.settings();
-    if (this.view === "help") return `${page("Developer access", "Open the canonical SDK, API, CLI, MCP, IRC, workspace, and deployment references from one place.", "HELP & DOCS")}<div class="spmt-app-grid wide"><article class="spmt-app-card"><span class="spmt-record-kind">START HERE</span><h3>Developer docs</h3><p>Manifest registration, installation, workspace surfaces, browser-source URLs, Commlink IRC, Stella, and Coder.</p><footer><a class="primary" href="/docs/developers">Open docs</a></footer></article><article class="spmt-app-card"><span class="spmt-record-kind">SPMT</span><h3>Developer Console</h3><p>Register or update an app through the same public SDK operation used by automation.</p><footer><a href="/#developer-console">Open console</a></footer></article><article class="spmt-app-card"><span class="spmt-record-kind">DIAGNOSTICS</span><h3>Review health</h3><p>Inspect the web and SPMT readiness state for this isolated Sprite build.</p><footer><a href="/sandbox/health" target="_blank" rel="noreferrer">Open health JSON</a></footer></article></div>`;
+    if (this.view === "help") return `${page("SPMT identity and developer hub", "Your canonical account, auth providers, Commlink messages, app publishing tools, and platform documentation are reachable here.", "SPMT LIVE")}<div class="spmt-app-grid wide"><article class="spmt-app-card"><span class="spmt-record-kind">ACCOUNT & AUTH</span><h3>Canonical identity</h3><p>Review your SPMT account and verified provider links without exposing browser-owned tokens.</p><footer><button class="primary" data-nav="settings">Open identity</button></footer></article><article class="spmt-app-card"><span class="spmt-record-kind">MESSAGES</span><h3>Cosmo Commlink</h3><p>Open canonical conversations, saved ChatSpaces, desks, notifications, and app events.</p><footer><button data-nav="inbox">Open messages</button></footer></article><article class="spmt-app-card"><span class="spmt-record-kind">DEVELOPERS</span><h3>Developer Console</h3><p>Register or update an app through the same public SDK operation used by automation.</p><footer><a href="/#developer-console">Open console</a></footer></article><article class="spmt-app-card"><span class="spmt-record-kind">DOCS & SDK</span><h3>Platform documentation</h3><p>Manifest registration, installation, workspace surfaces, browser-source URLs, IRC, Stella, Coder, SDK, API, CLI, and MCP.</p><footer><a class="primary" href="/docs/developers">Open docs</a></footer></article><article class="spmt-app-card"><span class="spmt-record-kind">WORKSPACE</span><h3>Shared settings</h3><p>Manage the appearance and persistent app slots consumed by authorized ecosystem apps.</p><footer><button data-nav="workspace">Open workspace</button></footer></article><article class="spmt-app-card"><span class="spmt-record-kind">DIAGNOSTICS</span><h3>Review health</h3><p>Developer-only readiness evidence for this isolated Sprite build.</p><footer><a href="/sandbox/health" target="_blank" rel="noreferrer">Open health JSON</a></footer></article></div>`;
     return this.home();
   }
 
@@ -471,8 +475,20 @@ function bindEcosystemEggs(root: HTMLElement) {
   const rocket = root.querySelector<HTMLElement>("[data-spmt-rocket-trigger]");
   rocket?.addEventListener("dblclick", (event) => {
     event.preventDefault();
+    if (rocket.classList.contains("spmt-rocket-free")) return;
+    const dockParent = rocket.parentNode;
+    const dockNext = rocket.nextSibling;
+    const restoreRocket = () => {
+      rocket.classList.remove("spmt-rocket-free", "free");
+      rocket.classList.add("docked");
+      rocket.removeAttribute("style");
+      if (dockParent) dockParent.insertBefore(rocket, dockNext);
+    };
     rocket.classList.remove("docked");
     rocket.classList.add("spmt-rocket-free", "free");
+    document.body.appendChild(rocket);
+    rocket.style.setProperty("--rocket-x", `${event.clientX}px`);
+    rocket.style.setProperty("--rocket-y", `${event.clientY}px`);
     const portal = openRocketPortal(root);
     const follow = (move: PointerEvent) => {
       rocket.style.setProperty("--rocket-x", `${move.clientX}px`);
@@ -481,9 +497,7 @@ function bindEcosystemEggs(root: HTMLElement) {
       const centerX = target.left + target.width / 2; const centerY = target.top + target.height / 2;
       if (Math.hypot(move.clientX - centerX, move.clientY - centerY) <= Math.min(target.width, target.height) * .42) {
         window.removeEventListener("pointermove", follow);
-        rocket.classList.remove("spmt-rocket-free", "free");
-        rocket.classList.add("docked");
-        rocket.removeAttribute("style");
+        restoreRocket();
         portal.remove();
         openHiddenArena(root);
       }
