@@ -153,7 +153,7 @@ export class StreamWeaverEconomy {
     if (amount > 1_000_000) return { success: false, duplicate: false, message: `@${fromName}, you can steal at most 1M points at a time!` };
     const now = this.nowMs();
     const lastSteal = this.store.getCooldown(this.tenantId, fromUserId);
-    if (now - lastSteal < STREAMWEAVER_STEAL_COOLDOWN_MS) {
+    if (lastSteal > 0 && now - lastSteal < STREAMWEAVER_STEAL_COOLDOWN_MS) {
       const remaining = Math.ceil((STREAMWEAVER_STEAL_COOLDOWN_MS - (now - lastSteal)) / 60_000);
       return { success: false, duplicate: false, message: `@${fromName}, you're on cooldown! Wait ${remaining} more minutes.` };
     }
