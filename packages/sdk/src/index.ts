@@ -1,3 +1,4 @@
+export * from "./xp.js";
 import type { ProviderKindV1, ProviderLinkV1, XpEventV1, XpGambleSettlementV1, XpLeaderboardEntryV1, XpSpendResultV1, XpTransferResultV1, XpWalletV1 } from "@spmt/authority-core";
 import type { AppCatalogRegistrationV1, AppRuntimeProjectionV1, AssistantSurfaceV1, CoderDescriptorV1, CoderJobStateV1, CoderJobV1, CommunityAssistantDescriptorV1, CommunityAssistantInvocationResultV1, IssuedOverlayOutputGrantV1, OperationsLogLevelV1, OperationsLogV1, OverlayOutputGrantV1, OverlayWidgetManifestV1, RegisteredOverlayWidgetV1, RuntimeStateV1 } from "@spmt/contracts";
 export interface SpmtClientOptions { baseUrl:string; fetchImpl?:typeof fetch; getAccessToken?:()=>string|Promise<string|undefined>|undefined; appId:string; }
