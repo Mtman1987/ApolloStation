@@ -122,8 +122,17 @@ export const PRODUCT_UI_CSS = `
   --spmt-accent-secondary: #fbbf24;
   --spmt-ink: #f8fafc;
   --spmt-muted: #a8adbb;
-  --spmt-panel: rgba(8,10,17,.76);
-  --spmt-panel-strong: rgba(8,10,17,.9);
+  --spmt-glass-opacity: .76;
+  --spmt-depth-1-alpha: calc(var(--spmt-glass-opacity,.76) * .9);
+  --spmt-depth-2-alpha: calc(var(--spmt-glass-opacity,.76) * .68);
+  --spmt-depth-3-alpha: calc(var(--spmt-glass-opacity,.76) * .48);
+  --spmt-depth-4-alpha: calc(var(--spmt-glass-opacity,.76) * .32);
+  --spmt-surface-depth-1: color-mix(in srgb,var(--spmt-accent) 4%,rgb(8 10 17 / var(--spmt-depth-1-alpha)));
+  --spmt-surface-depth-2: color-mix(in srgb,var(--spmt-accent) 4%,rgb(8 10 17 / var(--spmt-depth-2-alpha)));
+  --spmt-surface-depth-3: color-mix(in srgb,var(--spmt-accent) 4%,rgb(8 10 17 / var(--spmt-depth-3-alpha)));
+  --spmt-surface-depth-4: color-mix(in srgb,var(--spmt-accent) 4%,rgb(8 10 17 / var(--spmt-depth-4-alpha)));
+  --spmt-panel: var(--spmt-surface-depth-1);
+  --spmt-panel-strong: color-mix(in srgb,var(--spmt-accent) 6%,rgb(8 10 17 / min(.94,calc(var(--spmt-glass-opacity,.76) * .98))));
   --spmt-border: rgba(255,255,255,.11);
   --spmt-shadow: 0 24px 80px rgba(0,0,0,.42);
   color: var(--spmt-ink);
@@ -137,7 +146,7 @@ export const PRODUCT_UI_CSS = `
 .spmt-product-backdrop-image,.spmt-product-backdrop-tint,.spmt-product-backdrop-shade,.spmt-star-layer { position: absolute; inset: 0; }
 .spmt-product-backdrop-image { inset: -2%; background-image: var(--spmt-app-backdrop-image); background-position: var(--spmt-app-backdrop-position,center); background-size: cover; filter: grayscale(1) saturate(0) contrast(1.08) brightness(.84); transform: scale(1.025); }
 .spmt-product-backdrop-tint { background: var(--spmt-accent); opacity: .56; mix-blend-mode: color; }
-.spmt-product-backdrop-shade { background: radial-gradient(circle at 18% 4%,color-mix(in srgb,var(--spmt-accent) 24%,transparent),transparent 42%),linear-gradient(rgba(3,4,8,.2),rgba(3,4,8,.8)); }
+.spmt-product-backdrop-shade { background: radial-gradient(circle at 18% 4%,color-mix(in srgb,var(--spmt-accent) 24%,transparent),transparent 42%),linear-gradient(rgba(3,4,8,.14),rgba(3,4,8,.58)); }
 .spmt-star-layer { overflow: hidden; opacity: var(--spmt-stars,.82); }
 .spmt-star-layer i { position: absolute; left: 0; top: 0; display: block; background: transparent; will-change: transform; }
 .spmt-star-layer i:nth-child(1) { width: 1px; height: 1px; box-shadow: ${PRODUCT_STAR_FIELDS[0]!.shadow}; animation: spmt-stars-up 200s linear infinite; }
@@ -147,7 +156,12 @@ export const PRODUCT_UI_CSS = `
 .spmt-product-surface button,.spmt-product-surface input,.spmt-product-surface select,.spmt-product-surface textarea { font: inherit; }
 .spmt-product-surface button { cursor: pointer; }
 .spmt-product-surface :focus-visible { outline: 2px solid var(--spmt-accent-secondary); outline-offset: 3px; }
-.spmt-product-glass { border: 1px solid var(--spmt-border); background: var(--spmt-panel); box-shadow: var(--spmt-shadow); backdrop-filter: blur(24px) saturate(135%); }
+.spmt-product-glass { border: 1px solid var(--spmt-border); background: var(--spmt-surface-depth-1); box-shadow: var(--spmt-shadow); backdrop-filter: blur(24px) saturate(135%); }
+.spmt-surface-depth-0,.spmt-product-glass[data-spmt-depth="0"] { border-color: transparent; background: transparent; box-shadow: none; backdrop-filter: none; }
+.spmt-surface-depth-1,.spmt-product-glass[data-spmt-depth="1"] { background: var(--spmt-surface-depth-1); }
+.spmt-surface-depth-2,.spmt-product-glass[data-spmt-depth="2"] { background: var(--spmt-surface-depth-2); box-shadow: 0 16px 50px rgba(0,0,0,.24); }
+.spmt-surface-depth-3,.spmt-product-glass[data-spmt-depth="3"] { background: var(--spmt-surface-depth-3); box-shadow: 0 10px 34px rgba(0,0,0,.18); }
+.spmt-surface-depth-4,.spmt-product-glass[data-spmt-depth="4"] { background: var(--spmt-surface-depth-4); box-shadow: none; }
 .spmt-product-kicker { color: var(--spmt-accent-secondary); font-size: 10px; font-weight: 900; letter-spacing: .19em; text-transform: uppercase; }
 .spmt-product-status { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--spmt-border); border-radius: 999px; padding: 5px 9px; font-size: 9px; font-weight: 900; letter-spacing: .12em; text-transform: uppercase; }
 .spmt-product-status::before { width: 6px; height: 6px; border-radius: 50%; background: currentColor; box-shadow: 0 0 14px currentColor; content: ""; }
