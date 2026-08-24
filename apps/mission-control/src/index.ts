@@ -21,7 +21,7 @@ export function missionControlCatalogRegistration(publicOrigin: string): AppCata
     name: manifest.name,
     description: manifest.description,
     version: "0.1.0-green",
-    launchUrl: new URL("/apps/mission-control", origin).toString(),
+    launchUrl: new URL("/apps/mission-control?surface=workspace", origin).toString(),
     allowedScopes: [...manifest.requiredScopes],
     surfaces: ["shell", "standalone"],
     status: "active",
