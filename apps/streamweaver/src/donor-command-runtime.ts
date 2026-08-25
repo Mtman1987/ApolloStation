@@ -30,6 +30,14 @@ export interface StreamWeaverDonorRuntimeOptionsV1 {
   botNames?: string[];
 }
 
+type DonorInvocationCommonV1 = {
+  delivery: NormalizedChatDeliveryV1;
+  actorId: string | undefined;
+  mention: NormalizedChatMessageV1["mentions"][number] | undefined;
+  targetId: string | undefined;
+  actorName: string;
+};
+
 const ECONOMY_TRIGGERS = new Set(["!points","!pleader","!givepoints","!stealpoints","!gamble","!gambel","!roll","!addpoints","!setpoints","!addtoall","!settoall","!resetallpoints"]);
 const BUILTIN_SOCIAL: Record<string, (actor: string, target?: string) => string> = {
   "!boop": (actor,target) => target ? `${actor} boops ${target}!` : `${actor} sends a boop into chat!`,
@@ -84,7 +92,7 @@ export class StreamWeaverDonorCommandConsumer {
     const cooldown = this.cooldown(command, message.tenantId, actorId ?? message.actor.providerUserId);
     if (cooldown > 0) return { command: canonicalTrigger, text: `@${actorName}, wait ${cooldown}s before using ${displayTrigger(command)} again.` };
 
-    const common = { delivery, actorId, mention, targetId, actorName };
+    const common: DonorInvocationCommonV1 = { delivery, actorId, mention, targetId, actorName };
     const primary = this.invocation(command, common);
     const builtin = this.builtin(primary);
     const primaryResult = normalizeExecution(await this.options.services.execute(primary));
@@ -99,7 +107,7 @@ export class StreamWeaverDonorCommandConsumer {
     return { command: canonicalTrigger, ...(text ? { text } : {}) };
   }
 
-  private invocation(command: StreamWeaverDonorCommandV1, common: { delivery: NormalizedChatDeliveryV1; actorId?: string; mention?: NormalizedChatMessageV1["mentions"][number]; targetId?: string; actorName: string }): StreamWeaverDonorCommandInvocationV1 {
+  private invocation(command: StreamWeaverDonorCommandV1, common: DonorInvocationCommonV1): StreamWeaverDonorCommandInvocationV1 {
     const message = common.delivery.message;
     return {
       tenantId: message.tenantId,
