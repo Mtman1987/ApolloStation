@@ -61,6 +61,14 @@ test("donor regex triggers and configured persona names survive the migration", 
   const f = fixture();
   assert.equal((await f.consumer.route(delivery("the bird is the word"))).text, "secret:secret-bird");
   assert.equal((await f.consumer.route(delivery("hey Athena are you there?"))).text, "persona accepted");
+  assert.equal(f.calls.filter((call) => call.command.family === "persona").length, 1);
+});
+
+test("duplicate lurk definitions preserve chat response and AI automation as distinct effects", async () => {
+  const f = fixture();
+  const result = await f.consumer.route(delivery("!lurk"));
+  assert.equal(result.text, "@Captain is lurking. Thanks for hanging out!");
+  assert.deepEqual(f.calls.filter((call) => call.canonicalTrigger === "!lurk").map((call) => call.command.family), ["social", "persona"]);
 });
 
 test("coinflip is executable without provider dependencies", async () => {
