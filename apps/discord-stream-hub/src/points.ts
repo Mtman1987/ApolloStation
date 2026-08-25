@@ -78,6 +78,17 @@ export interface DshAwardPointsInputV1 {
   metadata?: Record<string, unknown>;
 }
 
+export interface DshTenantBalanceV1 {
+  tenantId: string;
+  spendableXp: number;
+  currentXp: number;
+  lifetimeXp: number;
+  totalXp: number;
+  rank: number;
+  level: number;
+  currentTenant: boolean;
+}
+
 /**
  * DSH keeps its event-to-points rules. SPMT owns the wallet, ledger and rank.
  * userId is always the canonical SPMT user id; provider identity resolution happens before this boundary.
@@ -120,10 +131,33 @@ export class DshPointsService {
     return { pointsAwarded, settingsSnapshot: settings, wallet: await this.client.getXpWallet(this.tenantId, input.userId) };
   }
 
+  /** Donor `/points/update` compatibility without restoring a private DSH points authority. */
+  updatePoints(input: DshAwardPointsInputV1) { return this.awardPoints(input); }
+
   getUserPoints(userId: string) { return this.client.getXpWallet(this.tenantId, userId); }
   getUserRank(userId: string) { return this.client.getXpWallet(this.tenantId, userId).then((wallet) => ({ rank: wallet.rank, points: wallet.spendableXp, lifetimeXp: wallet.lifetimeXp, level: wallet.level })); }
   getLeaderboard(limit = 50) { return this.client.getXpLeaderboard(this.tenantId, limit); }
   getLedger(userId: string, limit = 100) { return this.client.listXpLedger(this.tenantId, userId, limit); }
+
+  async getTenantBalances(tenantIds: string[], userId: string, currentTenantId = this.tenantId): Promise<DshTenantBalanceV1[]> {
+    const orderedTenantIds = uniqueIds([currentTenantId, ...tenantIds]);
+    const balances = await Promise.all(orderedTenantIds.map(async (tenantId) => {
+      const wallet = await this.client.getXpWallet(tenantId, userId);
+      return {
+        tenantId,
+        spendableXp: wallet.spendableXp,
+        currentXp: wallet.currentXp,
+        lifetimeXp: wallet.lifetimeXp,
+        totalXp: wallet.totalXp,
+        rank: wallet.rank,
+        level: wallet.level,
+        currentTenant: tenantId === currentTenantId,
+      } satisfies DshTenantBalanceV1;
+    }));
+    return balances
+      .filter((item) => item.currentTenant || item.spendableXp > 0 || item.lifetimeXp > 0)
+      .sort((a, b) => Number(b.currentTenant) - Number(a.currentTenant) || b.lifetimeXp - a.lifetimeXp || a.tenantId.localeCompare(b.tenantId));
+  }
 
   async addPoints(userId: string, points: number, operationId: string, metadata: Record<string, unknown> = {}) {
     const delta = Math.trunc(Number(points || 0));
