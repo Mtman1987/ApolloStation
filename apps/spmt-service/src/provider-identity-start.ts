@@ -3,12 +3,16 @@ import { createSpmtServiceWithProviderIdentity } from "./provider-identity-host.
 const port = Number(process.env.PORT ?? 3000);
 const databasePath = process.env.SPMT_DATABASE_PATH ?? process.env.DATABASE_PATH ?? "./data/spmt.sqlite";
 const publicBaseUrl = process.env.SPMT_PUBLIC_URL ?? `http://127.0.0.1:${port}`;
+const webhookKeySource = process.env.SPMT_WEBHOOK_KEY;
+if (!webhookKeySource) throw new Error("SPMT_WEBHOOK_KEY is required");
+const webhookKey = Buffer.from(webhookKeySource, "base64url");
+if (webhookKey.byteLength !== 32) throw new Error("SPMT_WEBHOOK_KEY must decode to exactly 32 bytes");
+
 const service = createSpmtServiceWithProviderIdentity({
   databasePath,
   port,
   publicBaseUrl,
-  oauthIssuer: process.env.SPMT_OAUTH_ISSUER ?? new URL("/oauth/", publicBaseUrl).toString().replace(/\/$/, ""),
-  ...(process.env.SPMT_WEBHOOK_KEY ? { webhookKey: process.env.SPMT_WEBHOOK_KEY } : {}),
+  webhookKey,
 });
 
 service.server.listen(port, "0.0.0.0", () => {
