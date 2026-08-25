@@ -78,7 +78,7 @@ test("automatic shoutout tracker is tenant isolated, known-bot aware, excluded-u
   }finally{fx.store.close();}
 });
 
-test("Athena voice shoutout matches current chatters and preserves donor skip-cooldown behavior",async()=>{
+test("Athena voice shoutout bypasses cooldown recording but keeps donor returning-viewer personalization",async()=>{
   const fx=fixture({mode:"chat"});
   try{
     fx.store.record("tenant-1","nightmare89","prior-auto");
@@ -89,7 +89,7 @@ test("Athena voice shoutout matches current chatters and preserves donor skip-co
     assert.deepEqual(result.effects,["chat-greeting","discord"]);
     assert.equal(fx.store.count("tenant-1","nightmare89"),1,"manual/voice skipCooldown must not increment donor auto-welcome tracker");
     assert.equal(fx.published.some(entry=>entry.type===STREAMWEAVER_SHOUTOUT_AUDIT&&entry.payload.donorActionId==="athena-shoutout"),true);
-    assert.equal(fx.effects[0].payload.text,"Fresh hello @Nightmare | Go check out @Nightmare: https://twitch.tv/nightmare89");
+    assert.equal(fx.effects[0].payload.text,"Welcome back @Nightmare | Go check out @Nightmare: https://twitch.tv/nightmare89");
   }finally{fx.store.close();}
 });
 
