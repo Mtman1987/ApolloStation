@@ -70,12 +70,12 @@ test("HearMeOut Discord adapter fails closed before fetch on expired or malforme
   assert.equal(fetchCount, 0);
 });
 
-test("HearMeOut Discord adapter validates Discord identifiers and bounded payloads locally", async () => {
+test("HearMeOut Discord adapter validates Discord identifiers and bounded payloads locally", () => {
   const fx = fixture();
-  await assert.rejects(() => fx.adapter.listGuildChannels("tenant-a", "not-a-snowflake"), /snowflake/);
-  await assert.rejects(() => fx.adapter.listMessages("tenant-a", "123456789012345678", 101), /limit/);
-  await assert.rejects(() => fx.adapter.sendMessage("tenant-a", "123456789012345678", "x".repeat(2001)), /content/);
-  await assert.rejects(() => fx.adapter.postEmbed("tenant-a", "123456789012345678", []), /embed/);
+  assert.throws(() => fx.adapter.listGuildChannels("tenant-a", "not-a-snowflake"), /snowflake/);
+  assert.throws(() => fx.adapter.listMessages("tenant-a", "123456789012345678", 101), /limit/);
+  assert.throws(() => fx.adapter.sendMessage("tenant-a", "123456789012345678", "x".repeat(2001)), /content/);
+  assert.throws(() => fx.adapter.postEmbed("tenant-a", "123456789012345678", []), /embed/);
   assert.equal(fx.requests.length, 0);
 });
 
