@@ -7,6 +7,7 @@ const QUERY_SECRET_PATTERN = /([?&](?:access_token|refresh_token|id_token|token|
 const BEARER_PATTERN = /(\bBearer\s+)[A-Za-z0-9._~+/=-]{12,}/gi;
 const HEADER_SECRET_PATTERN = /(\b(?:authorization|x-api-key|api-key)\s*[:=]\s*)([^\s,;}\]]{8,})/gi;
 const JSON_SECRET_PATTERN = /(["']?(?:access_token|refresh_token|id_token|api_key|apikey|client_secret|password|authorization)["']?\s*[:=]\s*["'])([^"']+)(["'])/gi;
+const PLAIN_SECRET_PATTERN = /(\b(?:access_token|refresh_token|id_token|api[_-]?key|apikey|client_secret|password|token|secret|authorization)\b\s*[:=]\s*)([^\s,;}\]]{4,})/gi;
 
 export interface CompanionFlySnapshotV1 {
   schemaVersion: 1;
@@ -24,6 +25,7 @@ export function redactCompanionText(value: unknown): string {
     .replace(BEARER_PATTERN, "$1[REDACTED]")
     .replace(HEADER_SECRET_PATTERN, "$1[REDACTED]")
     .replace(JSON_SECRET_PATTERN, "$1[REDACTED]$3")
+    .replace(PLAIN_SECRET_PATTERN, "$1[REDACTED]")
     .replace(JWT_PATTERN, "[REDACTED_JWT]");
 }
 
