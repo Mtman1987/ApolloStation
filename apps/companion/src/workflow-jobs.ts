@@ -29,7 +29,7 @@ export interface CompanionWorkflowJobV1 {
 export interface CompanionWorkflowStoreV1 { list(): CompanionWorkflowJobV1[]; put(job: CompanionWorkflowJobV1): void; }
 export class MemoryCompanionWorkflowStore implements CompanionWorkflowStoreV1 {
   private readonly jobs = new Map<string, CompanionWorkflowJobV1>();
-  list() { return [...this.jobs.values()].sort((a,b)=>a.createdAt.localeCompare(b.createdAt)).slice(-200).map(structuredClone); }
+  list(): CompanionWorkflowJobV1[] { return [...this.jobs.values()].sort((a,b)=>a.createdAt.localeCompare(b.createdAt)).slice(-200).map((job)=>structuredClone(job)); }
   put(job: CompanionWorkflowJobV1) { this.jobs.set(job.id, structuredClone(job)); }
 }
 export interface CompanionMediaLibraryV1 { has(name:string):boolean; writeJson(name:string,value:Record<string,unknown>):void; }
