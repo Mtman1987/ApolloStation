@@ -86,6 +86,7 @@ export class StreamWeaverDonorCommandConsumer {
     const matches = this.matchDefinitions(message.text).filter((entry) => !ECONOMY_TRIGGERS.has(canonicalDonorCommandTrigger(entry.trigger)));
     if (!matches.length) return undefined;
     const command = collapseEquivalentDefinitions(matches);
+    if (!command) return undefined;
     const canonicalTrigger = canonicalDonorCommandTrigger(command.trigger);
     const parsed = parseArgs(message.text, command);
     const actorId = message.actor.canonicalUserId ?? await this.options.identities.resolve({ tenantId: message.tenantId, provider: message.provider, providerUserId: message.actor.providerUserId, username: message.actor.username, ...(message.actor.displayName ? { displayName: message.actor.displayName } : {}) });
@@ -177,10 +178,9 @@ function normalizeExecution(value: StreamWeaverDonorCommandExecutionV1 | string 
   if (typeof value === "string") return { handled: true, text: value };
   return value ?? { handled: false };
 }
-function collapseEquivalentDefinitions(matches: StreamWeaverDonorCommandV1[]) {
+function collapseEquivalentDefinitions(matches: StreamWeaverDonorCommandV1[]): StreamWeaverDonorCommandV1 | undefined {
   if (matches.length === 1) return matches[0];
-  const commandMatch = matches.find((entry) => entry.matcher !== "regex") ?? matches[0];
-  return commandMatch;
+  return matches.find((entry) => entry.matcher !== "regex") ?? matches[0];
 }
 function parseArgs(text: string, command: StreamWeaverDonorCommandV1) {
   if (command.matcher === "regex") return [];
