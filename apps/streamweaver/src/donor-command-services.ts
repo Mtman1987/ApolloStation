@@ -11,6 +11,7 @@ export interface DefaultStreamWeaverDonorServicesOptionsV1 {
   twitch?:StreamWeaverTwitchCommandAdapter;
   twitchIdentities?:StreamWeaverTwitchIdentitySourceV1;
   links?:StreamWeaverLinkSourceV1;
+  bic?:StreamWeaverCapabilityExecutorV1;
   socialEffects?:StreamWeaverCapabilityExecutorV1;
   moderation?:StreamWeaverCapabilityExecutorV1;
   community?:StreamWeaverCapabilityExecutorV1;
@@ -85,6 +86,7 @@ export class DefaultStreamWeaverDonorCommandServices implements StreamWeaverDono
   }
 
   private async community(invocation:StreamWeaverDonorCommandInvocationV1){
+    if(invocation.canonicalTrigger==="!bic"&&this.options.bic)return this.delegate(this.options.bic,invocation);
     if(invocation.canonicalTrigger==="!t"&&this.options.translation){
       const text=invocation.args.join(" ").trim(); if(!text)return {handled:true,text:"Usage: !T <text to translate>"};
       try{return {handled:true,text:await this.options.translation.translate({tenantId:invocation.tenantId,text,...(invocation.actor.userId?{requestedByUserId:invocation.actor.userId}:{}),provider:invocation.provider})};}
