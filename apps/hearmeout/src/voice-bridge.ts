@@ -117,7 +117,7 @@ export class HearMeOutVoiceBridgeController {
 
   private requireManager(principal: HearMeOutPrincipalV1, roomId: string) {
     if (!principal?.tenantId || !principal?.userId) throw new Error("HearMeOut principal is required");
-    const room = this.rooms.getRoom(principal.tenantId, cleanId(roomId, "roomId"));
+    const room = this.rooms.getRoom(principal.tenantId, cleanId(roomId, "roomId"), this.now());
     if (!room) throw new Error("HearMeOut room not found");
     if (room.ownerUserId !== principal.userId && !principal.roles.includes("admin")) throw new Error("Only the room owner or an admin can manage the Discord voice bridge");
     return room;
