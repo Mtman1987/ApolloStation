@@ -1,5 +1,7 @@
 import { assertAppModuleManifestV1, type AppCatalogRegistrationV1, type AppModuleManifestV1 } from "@spmt/contracts";
 export * from "./room-media-core.js";
+export * from "./activity-contract.js";
+export * from "./activity-room.js";
 export * from "./livekit-grants.js";
 export { HearMeOutLiveKitSigner, verifyHearMeOutLiveKitToken, type HearMeOutLiveKitGrantV1 } from "./livekit-signer.js";
 export * from "./discord-adapter.js";
