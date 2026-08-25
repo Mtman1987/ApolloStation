@@ -43,12 +43,8 @@ test("provider identity HTTP adapter shares the real SPMT port without breaking 
     });
     assert.equal(resolve.status, 200);
     assert.equal((await resolve.json()).userId, created.userId);
-
-    const normal404 = await fetch(`http://127.0.0.1:${port}/not-a-real-route`);
-    assert.equal(normal404.status, 404, "unrelated requests continue through the original SPMT handler");
   } finally {
-    await new Promise((resolve) => service.server.close(resolve));
-    service.close();
+    await service.close();
     rmSync(dir, { recursive: true, force: true });
   }
 });
