@@ -1,7 +1,7 @@
 import { assertAppModuleManifestV1, type AppCatalogRegistrationV1, type AppModuleManifestV1 } from "@spmt/contracts";
 export * from "./room-media-core.js";
 export * from "./livekit-grants.js";
-export * from "./livekit-signer.js";
+export { HearMeOutLiveKitSigner, verifyHearMeOutLiveKitToken, type HearMeOutLiveKitGrantV1 } from "./livekit-signer.js";
 export * from "./discord-adapter.js";
 export * from "./voice-bridge.js";
 export const manifest=assertAppModuleManifestV1({schemaVersion:1,manifestVersion:"spmt.app-manifest/v1",id:"hearmeout",name:"HearMeOut",description:"Voice rooms, synchronized watch and music sessions, Discord Activity, and OBS media outputs.",capabilities:["voice-rooms","livekit","watch-parties","music-queue","discord-activity","discord-guilds","discord-channels","discord-messages","discord-embeds","discord-invites","discord-voice-bridge","obs-now-playing"],surfaces:["shell","standalone","overlay","popout"],requiredScopes:["events:write","identity:read","devices:read"],eventTypes:["hearmeout.room.changed.v1","hearmeout.media-session.changed.v1"],integration:{identity:"connected",events:"native",workspace:"connected",devices:"connected"},workers:[{id:"hmo-dj-worker",role:"media-resolution-cache-and-discord-voice",execution:"elastic",canonicalAuthority:false}]} satisfies AppModuleManifestV1);
