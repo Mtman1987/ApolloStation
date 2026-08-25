@@ -25,6 +25,7 @@ const ASSETS = new Map<string, { file: string; type: string }>([
   ["/assets/contracts/index.js", { file: resolve(REPOSITORY_ROOT, "packages/contracts/dist/index.js"), type: "text/javascript; charset=utf-8" }],
   ["/assets/embed/index.js", { file: resolve(REPOSITORY_ROOT, "packages/embed/dist/index.js"), type: "text/javascript; charset=utf-8" }],
   ["/assets/sdk/index.js", { file: resolve(REPOSITORY_ROOT, "packages/sdk/dist/index.js"), type: "text/javascript; charset=utf-8" }],
+  ["/assets/sdk/xp.js", { file: resolve(REPOSITORY_ROOT, "packages/sdk/dist/xp.js"), type: "text/javascript; charset=utf-8" }],
   ["/assets/ui/index.js", { file: resolve(REPOSITORY_ROOT, "packages/ui/dist/index.js"), type: "text/javascript; charset=utf-8" }],
   ["/assets/spacemountain/index.js", { file: resolve(REPOSITORY_ROOT, "apps/spacemountain/dist/index.js"), type: "text/javascript; charset=utf-8" }],
   ["/assets/spacemountain/shell-ui.js", { file: resolve(REPOSITORY_ROOT, "apps/spacemountain/dist/shell-ui.js"), type: "text/javascript; charset=utf-8" }],
@@ -76,7 +77,7 @@ export function createSpaceMountainWebHost(options: SpaceMountainWebHostOptions)
         return await importDeveloperManifest(response, request, spmtOrigin, fetchImpl, await readJsonBody(request), options.candidateManifest);
       }
       if (chatTagOrigin && chatTagProxyPath(url.pathname)) {
-        if (!['GET', 'HEAD'].includes(request.method ?? 'GET')) requireSameOrigin(request);
+        if (!["GET", "HEAD"].includes(request.method ?? "GET")) requireSameOrigin(request);
         return proxyChatTag(response, request, url, chatTagOrigin, fetchImpl);
       }
       if (request.method === "POST" && url.pathname === "/sandbox/auth/logout") {
