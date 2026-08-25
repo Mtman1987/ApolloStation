@@ -97,7 +97,9 @@ test("home avoids duplicate navigation and sidebar hover text carries page descr
   assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /height:calc\(100dvh - var\(--guard-height,0px\)\)/);
   assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /overflow-y:hidden/);
   assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /container-type:size/);
-  assert.match(THEMED_SURFACE_CSS, /spmt-hero-logo-large\{flex:1 1 0;width:100%;height:100%/);
+  assert.match(THEMED_SURFACE_CSS, /spmt-hero-copy\{[^}]*display:grid;[^}]*grid-template-rows:minmax\(0,1fr\) auto auto/);
+  assert.match(THEMED_SURFACE_CSS, /spmt-hero-logo-large\{width:100%;height:100%/);
+  assert.doesNotMatch(THEMED_SURFACE_CSS, /spmt-hero-logo-large\{flex:1/);
   assert.match(THEMED_SURFACE_CSS, /max-width:none;max-height:none/);
 });
 
