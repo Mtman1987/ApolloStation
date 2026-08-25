@@ -4,9 +4,9 @@ export type CompanionUpdateStateV1 = "development" | "idle" | "checking" | "down
 export interface CompanionUpdateStatusV1 {
   state: CompanionUpdateStateV1;
   currentVersion: string;
-  availableVersion?: string | null;
-  percent?: number;
-  message?: string;
+  availableVersion?: string | null | undefined;
+  percent?: number | undefined;
+  message?: string | undefined;
 }
 export interface CompanionUpdaterV1 {
   autoDownload: boolean;
