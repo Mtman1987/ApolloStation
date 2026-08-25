@@ -122,7 +122,7 @@ export class StreamWeaverBicRuntime {
 export class StreamWeaverSocialActionExecutor implements StreamWeaverCapabilityExecutorV1 {
   constructor(private readonly client: Pick<SpmtClient, "publishEvent">) {}
   async execute(invocation: StreamWeaverDonorCommandInvocationV1): Promise<string | undefined> {
-    const action = STREAMWEAVER_DONOR_SOCIAL_ACTIONS.find((candidate) => candidate.trigger === invocation.canonicalTrigger && candidate.kind === "interaction");
+    const action = STREAMWEAVER_DONOR_SOCIAL_ACTIONS.find((candidate) => "trigger" in candidate && candidate.trigger === invocation.canonicalTrigger && candidate.kind === "interaction");
     if (!action) return undefined;
     const payload = {
       schemaVersion: 1,
