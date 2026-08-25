@@ -58,7 +58,7 @@ export interface CompanionMediaJobV1 {
   totalBytes?: number | null;
   resumed?: boolean;
   cached?: boolean;
-  detail?: string;
+  detail?: string | undefined;
   error?: string;
 }
 
@@ -373,7 +373,7 @@ export class CompanionMediaJobs {
       let lastUpdateAt = 0;
       for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
         const buffer = Buffer.from(chunk);
-        const currentBytes = job.bytes ?? 0;
+        const currentBytes: number = job.bytes ?? 0;
         if (currentBytes + buffer.length > options.maxBytes) throw new Error("Download exceeded the configured per-file limit");
         if (!writer.write(buffer)) await waitForWritable(writer);
         job.bytes = currentBytes + buffer.length;
@@ -460,7 +460,8 @@ export class CompanionMediaJobs {
       stdio: ["ignore", "ignore", "pipe"],
     });
     child.stderr.on("data", (chunk: Buffer) => {
-      job.detail = String(chunk).split(/\r?\n/).filter(Boolean).at(-1) ?? job.detail;
+      const detail = String(chunk).split(/\r?\n/).filter(Boolean).at(-1);
+      if (detail) job.detail = detail;
       this.emit(job);
     });
     child.on("error", (error: Error) => {
