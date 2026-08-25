@@ -18,7 +18,7 @@ export interface StreamWeaverDonorCommandV1 {
   trigger: string;
   family: StreamWeaverDonorCommandFamilyV1;
   cooldownSeconds: number;
-  aliasFor?: string;
+  aliases?: string[];
   matcher?: "command" | "regex" | "bare";
 }
 
@@ -48,8 +48,7 @@ export const STREAMWEAVER_DONOR_COMMANDS: readonly StreamWeaverDonorCommandV1[] 
   { donorId:"followage", trigger:"!followage", family:"twitch", cooldownSeconds:5 },
   { donorId:"followed", trigger:"!followed", family:"twitch", cooldownSeconds:4 },
   { donorId:"followers", trigger:"!followers", family:"twitch", cooldownSeconds:0 },
-  { donorId:"gamble", trigger:"!gamble", family:"economy", cooldownSeconds:10 },
-  { donorId:"gambel", trigger:"!gambel", family:"economy", cooldownSeconds:10, aliasFor:"!gamble" },
+  { donorId:"gamble", trigger:"!gamble", family:"economy", cooldownSeconds:10, aliases:["!gambel"] },
   { donorId:"givepoints", trigger:"!givepoints", family:"economy", cooldownSeconds:0 },
   { donorId:"headpat", trigger:"!headpat", family:"social", cooldownSeconds:2 },
   { donorId:"highfive", trigger:"!highfive", family:"social", cooldownSeconds:2 },
@@ -109,5 +108,9 @@ export function donorCommandsByFamily(family: StreamWeaverDonorCommandFamilyV1) 
 
 export function canonicalDonorCommandTrigger(trigger: string) {
   const normalized = trigger.trim().toLowerCase();
-  return STREAMWEAVER_DONOR_COMMANDS.find((command) => command.trigger.toLowerCase() === normalized)?.aliasFor ?? normalized;
+  for (const command of STREAMWEAVER_DONOR_COMMANDS) {
+    if (command.trigger.toLowerCase() === normalized) return command.trigger.toLowerCase();
+    if (command.aliases?.some((alias) => alias.toLowerCase() === normalized)) return command.trigger.toLowerCase();
+  }
+  return normalized;
 }
