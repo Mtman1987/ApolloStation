@@ -47,7 +47,7 @@ export class ResilientHearMeOutVoiceBridgeWorker implements HearMeOutVoiceBridge
     return this.worker.status(input);
   }
 
-  start(input: { tenantId: string; roomId: string; guildId: string; voiceChannelId: string; audioProfile: HearMeOutVoiceAudioProfileV1 }) {
+  start(input: { tenantId: string; roomId: string; guildId: string; voiceChannelId: string; audioProfile: HearMeOutVoiceAudioProfileV1; discordReceiveGain: number }) {
     const key = bridgeKey(input.tenantId, input.roomId);
     const existing = this.starts.get(key);
     if (existing) return existing;
@@ -76,6 +76,11 @@ export class ResilientHearMeOutVoiceBridgeWorker implements HearMeOutVoiceBridge
     return this.worker.setAudioProfile(input);
   }
 
+  setDiscordReceiveGain(input: { tenantId: string; roomId: string; discordReceiveGain: number }) {
+    if (!this.worker.setDiscordReceiveGain) return Promise.resolve({ running: false, discordReceiveGain: input.discordReceiveGain });
+    return this.worker.setDiscordReceiveGain(input);
+  }
+
   markDiscordDisconnect(input: { tenantId: string; roomId: string; reason: string }) {
     const key = bridgeKey(input.tenantId, input.roomId);
     const until = this.nowMs() + this.discordJoinCooldownMs;
@@ -92,7 +97,7 @@ export class ResilientHearMeOutVoiceBridgeWorker implements HearMeOutVoiceBridge
     return Math.min(this.reconnectMaxMs, this.reconnectBaseMs * (2 ** (attempt - 1)));
   }
 
-  private async startWithRateLimitRetry(input: { tenantId: string; roomId: string; guildId: string; voiceChannelId: string; audioProfile: HearMeOutVoiceAudioProfileV1 }) {
+  private async startWithRateLimitRetry(input: { tenantId: string; roomId: string; guildId: string; voiceChannelId: string; audioProfile: HearMeOutVoiceAudioProfileV1; discordReceiveGain: number }) {
     let lastError: unknown;
     for (let attempt = 1; attempt <= this.connectMaxAttempts; attempt += 1) {
       try {
