@@ -1,6 +1,7 @@
+import { readFile } from "node:fs/promises";
 import { createServer, request as httpRequest, type IncomingMessage, type ServerResponse } from "node:http";
-import { resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   FIRST_PARTY_APP_BROWSER_JS,
   FIRST_PARTY_APP_CSS,
@@ -10,8 +11,24 @@ import {
 } from "./first-party-app-surfaces.js";
 import { createSpaceMountainWebHost, validateSandboxWebEnvironment, type SpaceMountainWebHostOptions } from "./server.js";
 
+const HERE = dirname(fileURLToPath(import.meta.url));
 const WORKSPACE_SHELL_PATHS = new Set(["/apps/commlink", "/apps/stellar-core", "/apps/mission-control"]);
 const MAX_EMBED_HTML_BYTES = 4 * 1024 * 1024;
+const FIRST_PARTY_SCENE_ASSETS = new Map<string, string>([
+  ["/assets/product/discord-stream-hub-background.webp", resolve(HERE, "../assets/discord-stream-hub-background.webp")],
+  ["/assets/product/streamweaver-background.webp", resolve(HERE, "../assets/streamweaver-background.webp")],
+  ["/assets/product/hearmeout-background.webp", resolve(HERE, "../assets/hearmeout-background.webp")],
+  ["/assets/product/mountainview-background.webp", resolve(HERE, "../assets/mountainview-background.webp")],
+  ["/assets/product/companion-background.webp", resolve(HERE, "../assets/companion-background.webp")],
+]);
+const FIRST_PARTY_REAL_SCENE_CSS = `
+body[data-app="discord-stream-hub"] .scene-art{background:url("/assets/product/discord-stream-hub-background.webp") center/cover no-repeat!important}
+body[data-app="streamweaver"] .scene-art{background:url("/assets/product/streamweaver-background.webp") center/cover no-repeat!important}
+body[data-app="hearmeout"] .scene-art{background:url("/assets/product/hearmeout-background.webp") center/cover no-repeat!important}
+body[data-app="mountainview"] .scene-art{background:url("/assets/product/mountainview-background.webp") center/cover no-repeat!important}
+body[data-app="companion"] .scene-art{background:url("/assets/product/companion-background.webp") center/cover no-repeat!important}
+`;
+const FIRST_PARTY_REAL_SCENE_JS = `;(()=>{const scenes={"discord-stream-hub":"url(\\"/assets/product/discord-stream-hub-background.webp\\")",streamweaver:"url(\\"/assets/product/streamweaver-background.webp\\")",hearmeout:"url(\\"/assets/product/hearmeout-background.webp\\")",mountainview:"url(\\"/assets/product/mountainview-background.webp\\")",companion:"url(\\"/assets/product/companion-background.webp\\")"};const apply=()=>{const scene=scenes[document.body?.dataset.app??""];if(!scene)return;try{const root=window.parent.document.querySelector("[data-spmt-product-shell]");const image=root?.querySelector(":scope > .spmt-product-backdrop .spmt-product-backdrop-image");if(image){image.style.backgroundImage=scene;image.style.backgroundPosition="center";image.style.backgroundSize="cover";}}catch{}};if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",()=>requestAnimationFrame(apply),{once:true});else requestAnimationFrame(apply);})();`;
 
 export interface IntegratedSpaceMountainWebHostOptions extends SpaceMountainWebHostOptions {
   port?: number;
@@ -24,13 +41,17 @@ export function createIntegratedSpaceMountainWebHost(options: IntegratedSpaceMou
   const outer = createServer(async (request, response) => {
     try {
       const url = new URL(request.url ?? "/", "http://spacemountain.integrated");
+      if (request.method === "GET" && FIRST_PARTY_SCENE_ASSETS.has(url.pathname)) {
+        applyAppHeaders(response, false);
+        return sendBuffer(response, 200, await readFile(FIRST_PARTY_SCENE_ASSETS.get(url.pathname)!), "image/webp", "public, max-age=86400");
+      }
       if (request.method === "GET" && url.pathname === "/assets/web/first-party-apps.css") {
         applyAppHeaders(response, false);
-        return send(response, 200, FIRST_PARTY_APP_CSS, "text/css; charset=utf-8", "public, max-age=300");
+        return send(response, 200, FIRST_PARTY_APP_CSS + FIRST_PARTY_REAL_SCENE_CSS, "text/css; charset=utf-8", "public, max-age=300");
       }
       if (request.method === "GET" && url.pathname === "/assets/web/first-party-apps.js") {
         applyAppHeaders(response, false);
-        return send(response, 200, FIRST_PARTY_APP_BROWSER_JS, "text/javascript; charset=utf-8", "public, max-age=300");
+        return send(response, 200, FIRST_PARTY_APP_BROWSER_JS + FIRST_PARTY_REAL_SCENE_JS, "text/javascript; charset=utf-8", "public, max-age=300");
       }
       const appId = appIdFromPath(url.pathname);
       if (request.method === "GET" && appId) {
@@ -138,9 +159,12 @@ function applyAppHeaders(response: ServerResponse, frameable: boolean) {
 }
 
 function send(response: ServerResponse, status: number, body: string, type: string, cache: string) {
-  const encoded = Buffer.from(body);
-  response.writeHead(status, { "content-type": type, "content-length": encoded.byteLength, "cache-control": cache });
-  response.end(encoded);
+  return sendBuffer(response, status, Buffer.from(body), type, cache);
+}
+
+function sendBuffer(response: ServerResponse, status: number, body: Buffer, type: string, cache: string) {
+  response.writeHead(status, { "content-type": type, "content-length": body.byteLength, "cache-control": cache, "x-content-type-options": "nosniff" });
+  response.end(body);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
