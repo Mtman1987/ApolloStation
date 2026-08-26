@@ -6,6 +6,7 @@ export * from "./livekit-grants.js";
 export { HearMeOutLiveKitSigner, verifyHearMeOutLiveKitToken, type HearMeOutLiveKitGrantV1 } from "./livekit-signer.js";
 export * from "./discord-adapter.js";
 export * from "./discord-interactions.js";
+export * from "./discord-receive-audio.js";
 export * from "./voice-bridge.js";
 export * from "./voice-bridge-resilience.js";
 export * from "./worker-media-cache.js";

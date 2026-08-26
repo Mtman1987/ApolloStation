@@ -15,9 +15,10 @@ class FakeVoiceWorker {
   async stop(input) { this.calls.push(["stop", input]); this.running = false; return { running: false }; }
   async setRoomOutbound(input) { this.calls.push(["gate", input]); if (this.failGate) throw new Error("gate failed"); return { running: this.running, roomVoiceOutboundEnabled: input.roomVoiceOutboundEnabled, mode: input.roomVoiceOutboundEnabled ? "two-way" : "listen-only" }; }
   async setAudioProfile(input) { this.calls.push(["profile", input]); return { running: this.running, audioProfile: input.audioProfile }; }
+  async setDiscordReceiveGain(input) { this.calls.push(["gain", input]); return { running: this.running, discordReceiveGain: input.discordReceiveGain }; }
 }
 
-test("HearMeOut voice bridge preserves owner/admin control, privacy gate, profiles and rollback", async () => {
+test("HearMeOut voice bridge preserves owner/admin control, privacy gate, clean audio controls and rollback", async () => {
   const dir = mkdtempSync(join(tmpdir(), "hmo-voice-"));
   const db = join(dir, "hmo.sqlite");
   const rooms = new SqliteHearMeOutRoomMediaRuntime(db);
@@ -31,13 +32,17 @@ test("HearMeOut voice bridge preserves owner/admin control, privacy gate, profil
   const started = await controller.start(owner, { roomId: "room-a", guildId: "123456789012345678", voiceChannelId: "987654321098765432" });
   assert.equal(started.config.enabled, true);
   assert.equal(started.config.roomVoiceOutboundEnabled, true);
-  assert.deepEqual(worker.calls.slice(0, 2).map(([kind]) => kind), ["start", "gate"]);
+  assert.equal(started.config.audioProfile, "clean");
+  assert.equal(started.config.discordReceiveGain, 1);
+  assert.deepEqual(worker.calls.slice(0, 3).map(([kind]) => kind), ["start", "gate", "gain"]);
 
   const listenOnly = await controller.setRoomOutbound(owner, "room-a", false);
   assert.equal(listenOnly.config.roomVoiceOutboundEnabled, false);
   assert.equal(listenOnly.worker.mode, "listen-only");
   const resilient = await controller.setAudioProfile(owner, "room-a", "resilient");
   assert.equal(resilient.config.audioProfile, "resilient");
+  const gain = await controller.setDiscordReceiveGain(owner, "room-a", 1.25);
+  assert.equal(gain.config.discordReceiveGain, 1.25);
   const stopped = await controller.stop(owner, "room-a");
   assert.equal(stopped.config.enabled, false);
 
@@ -48,14 +53,15 @@ test("HearMeOut voice bridge preserves owner/admin control, privacy gate, profil
   store.close(); rooms.close(); rmSync(dir, { recursive: true, force: true });
 });
 
-test("legacy voice bridge defaults stay two-way and balanced until explicitly changed", () => {
+test("new voice bridges default two-way with clean Discord receive audio", () => {
   const dir = mkdtempSync(join(tmpdir(), "hmo-voice-default-"));
   const db = join(dir, "hmo.sqlite");
   const store = new SqliteHearMeOutVoiceBridgeStore(db);
   const config = store.get("tenant-a", "room-a");
   assert.equal(config.enabled, false);
   assert.equal(config.roomVoiceOutboundEnabled, true);
-  assert.equal(config.audioProfile, "balanced");
+  assert.equal(config.audioProfile, "clean");
+  assert.equal(config.discordReceiveGain, 1);
   store.close(); rmSync(dir, { recursive: true, force: true });
 });
 
@@ -65,7 +71,7 @@ test("enabled voice bridge survives process restart and reconciles worker plus p
   let rooms = new SqliteHearMeOutRoomMediaRuntime(db);
   let store = new SqliteHearMeOutVoiceBridgeStore(db);
   rooms.createRoom(captain(), { roomId: "room-a", name: "Room A", privacy: "public", operationId: "create-restart", now: "2026-08-24T19:00:00.000Z" });
-  store.put({ schemaVersion: 1, tenantId: "tenant-a", roomId: "room-a", enabled: true, guildId: "123456789012345678", voiceChannelId: "987654321098765432", roomVoiceOutboundEnabled: false, audioProfile: "resilient", updatedBy: "owner-a", updatedAt: "2026-08-24T19:30:00.000Z" });
+  store.put({ schemaVersion: 1, tenantId: "tenant-a", roomId: "room-a", enabled: true, guildId: "123456789012345678", voiceChannelId: "987654321098765432", roomVoiceOutboundEnabled: false, audioProfile: "resilient", discordReceiveGain: 1.1, updatedBy: "owner-a", updatedAt: "2026-08-24T19:30:00.000Z" });
   store.close(); rooms.close();
 
   rooms = new SqliteHearMeOutRoomMediaRuntime(db);
@@ -74,8 +80,9 @@ test("enabled voice bridge survives process restart and reconciles worker plus p
   const controller = new HearMeOutVoiceBridgeController(rooms, store, worker, () => "2026-08-24T20:00:00.000Z");
   const first = await controller.reconcileEnabled();
   assert.deepEqual(first.map((entry) => entry.outcome), ["resumed"]);
-  assert.deepEqual(worker.calls.map(([kind]) => kind), ["status", "start", "gate"]);
+  assert.deepEqual(worker.calls.map(([kind]) => kind), ["status", "start", "gate", "gain"]);
   assert.equal(worker.calls.find(([kind]) => kind === "start")[1].audioProfile, "resilient");
+  assert.equal(worker.calls.find(([kind]) => kind === "start")[1].discordReceiveGain, 1.1);
   assert.equal(worker.calls.find(([kind]) => kind === "gate")[1].roomVoiceOutboundEnabled, false);
 
   worker.calls.length = 0;
@@ -83,6 +90,7 @@ test("enabled voice bridge survives process restart and reconciles worker plus p
   assert.deepEqual(second.map((entry) => entry.outcome), ["already-running"]);
   assert.equal(worker.calls.some(([kind]) => kind === "start"), false);
   assert.ok(worker.calls.some(([kind]) => kind === "profile"));
+  assert.ok(worker.calls.some(([kind]) => kind === "gain"));
   assert.ok(worker.calls.some(([kind]) => kind === "gate"));
   store.close(); rooms.close(); rmSync(dir, { recursive: true, force: true });
 });
@@ -94,7 +102,7 @@ test("restart reconciliation disables stale rooms, blocks channel collisions, an
   const store = new SqliteHearMeOutVoiceBridgeStore(db);
   rooms.createRoom(captain(), { roomId: "room-a", name: "Room A", privacy: "public", operationId: "create-a", now: "2026-08-24T19:00:00.000Z" });
   rooms.createRoom(captain(), { roomId: "room-b", name: "Room B", privacy: "public", operationId: "create-b", now: "2026-08-24T19:00:00.000Z" });
-  const base = { schemaVersion: 1, tenantId: "tenant-a", enabled: true, guildId: "123456789012345678", voiceChannelId: "987654321098765432", roomVoiceOutboundEnabled: true, audioProfile: "balanced", updatedBy: "owner-a", updatedAt: "2026-08-24T19:30:00.000Z" };
+  const base = { schemaVersion: 1, tenantId: "tenant-a", enabled: true, guildId: "123456789012345678", voiceChannelId: "987654321098765432", roomVoiceOutboundEnabled: true, audioProfile: "balanced", discordReceiveGain: 1, updatedBy: "owner-a", updatedAt: "2026-08-24T19:30:00.000Z" };
   store.put({ ...base, roomId: "room-a" });
   store.put({ ...base, roomId: "room-b" });
   store.put({ ...base, roomId: "missing-room", voiceChannelId: "777777777777777777" });

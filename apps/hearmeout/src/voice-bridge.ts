@@ -1,7 +1,8 @@
 import { DatabaseSync } from "node:sqlite";
 import type { HearMeOutPrincipalV1, SqliteHearMeOutRoomMediaRuntime } from "./room-media-core.js";
+import { clampHearMeOutDiscordReceiveGain, type HearMeOutDiscordReceiveProfileV1 } from "./discord-receive-audio.js";
 
-export type HearMeOutVoiceAudioProfileV1 = "low-latency" | "balanced" | "resilient";
+export type HearMeOutVoiceAudioProfileV1 = HearMeOutDiscordReceiveProfileV1;
 
 export interface HearMeOutVoiceBridgeConfigV1 {
   schemaVersion: 1;
@@ -12,16 +13,18 @@ export interface HearMeOutVoiceBridgeConfigV1 {
   voiceChannelId: string;
   roomVoiceOutboundEnabled: boolean;
   audioProfile: HearMeOutVoiceAudioProfileV1;
+  discordReceiveGain: number;
   updatedBy?: string;
   updatedAt?: string;
 }
 
 export interface HearMeOutVoiceBridgeWorkerV1 {
   status(input: { tenantId: string; roomId: string }): Promise<Record<string, unknown>>;
-  start(input: { tenantId: string; roomId: string; guildId: string; voiceChannelId: string; audioProfile: HearMeOutVoiceAudioProfileV1 }): Promise<Record<string, unknown>>;
+  start(input: { tenantId: string; roomId: string; guildId: string; voiceChannelId: string; audioProfile: HearMeOutVoiceAudioProfileV1; discordReceiveGain: number }): Promise<Record<string, unknown>>;
   stop(input: { tenantId: string; roomId: string }): Promise<Record<string, unknown>>;
   setRoomOutbound(input: { tenantId: string; roomId: string; roomVoiceOutboundEnabled: boolean }): Promise<Record<string, unknown>>;
   setAudioProfile(input: { tenantId: string; roomId: string; audioProfile: HearMeOutVoiceAudioProfileV1 }): Promise<Record<string, unknown>>;
+  setDiscordReceiveGain?(input: { tenantId: string; roomId: string; discordReceiveGain: number }): Promise<Record<string, unknown>>;
 }
 
 export interface HearMeOutVoiceBridgeReconcileResultV1 {
@@ -86,9 +89,10 @@ export class HearMeOutVoiceBridgeController {
     this.assertNoChannelCollision(next);
     this.store.put(next);
     try {
-      const worker = await this.worker.start({ tenantId: principal.tenantId, roomId: room.roomId, guildId: next.guildId, voiceChannelId: next.voiceChannelId, audioProfile: next.audioProfile });
+      const worker = await this.worker.start({ tenantId: principal.tenantId, roomId: room.roomId, guildId: next.guildId, voiceChannelId: next.voiceChannelId, audioProfile: next.audioProfile, discordReceiveGain: next.discordReceiveGain });
       try {
         const gate = await this.worker.setRoomOutbound({ tenantId: principal.tenantId, roomId: room.roomId, roomVoiceOutboundEnabled: next.roomVoiceOutboundEnabled });
+        if (this.worker.setDiscordReceiveGain) await this.worker.setDiscordReceiveGain({ tenantId: principal.tenantId, roomId: room.roomId, discordReceiveGain: next.discordReceiveGain });
         return { success: true as const, config: next, worker, gate };
       } catch (error) {
         await this.worker.stop({ tenantId: principal.tenantId, roomId: room.roomId }).catch(() => undefined);
@@ -128,6 +132,16 @@ export class HearMeOutVoiceBridgeController {
     return { success: true as const, config, worker };
   }
 
+  async setDiscordReceiveGain(principal: HearMeOutPrincipalV1, roomId: string, discordReceiveGain: number) {
+    const room = this.requireManager(principal, roomId);
+    const gain = clampHearMeOutDiscordReceiveGain(discordReceiveGain);
+    const current = this.store.get(principal.tenantId, room.roomId);
+    const config = this.store.put({ ...current, discordReceiveGain: gain, updatedBy: principal.userId, updatedAt: this.now() });
+    if (!current.enabled || !this.worker.setDiscordReceiveGain) return { success: true as const, config, worker: { running: current.enabled, discordReceiveGain: gain } };
+    const worker = await this.worker.setDiscordReceiveGain({ tenantId: principal.tenantId, roomId: room.roomId, discordReceiveGain: gain });
+    return { success: true as const, config, worker };
+  }
+
   /** Reconcile persisted desired bridge state after a process/worker restart. */
   async reconcileEnabled(): Promise<HearMeOutVoiceBridgeReconcileResultV1[]> {
     const results: HearMeOutVoiceBridgeReconcileResultV1[] = [];
@@ -152,12 +166,14 @@ export class HearMeOutVoiceBridgeController {
         const status = await this.worker.status({ tenantId: config.tenantId, roomId: config.roomId });
         if (workerMatches(status, config)) {
           await this.worker.setAudioProfile({ tenantId: config.tenantId, roomId: config.roomId, audioProfile: config.audioProfile });
+          if (this.worker.setDiscordReceiveGain) await this.worker.setDiscordReceiveGain({ tenantId: config.tenantId, roomId: config.roomId, discordReceiveGain: config.discordReceiveGain });
           await this.worker.setRoomOutbound({ tenantId: config.tenantId, roomId: config.roomId, roomVoiceOutboundEnabled: config.roomVoiceOutboundEnabled });
           results.push({ tenantId: config.tenantId, roomId: config.roomId, outcome: "already-running" });
           continue;
         }
-        await this.worker.start({ tenantId: config.tenantId, roomId: config.roomId, guildId: config.guildId, voiceChannelId: config.voiceChannelId, audioProfile: config.audioProfile });
+        await this.worker.start({ tenantId: config.tenantId, roomId: config.roomId, guildId: config.guildId, voiceChannelId: config.voiceChannelId, audioProfile: config.audioProfile, discordReceiveGain: config.discordReceiveGain });
         await this.worker.setRoomOutbound({ tenantId: config.tenantId, roomId: config.roomId, roomVoiceOutboundEnabled: config.roomVoiceOutboundEnabled });
+        if (this.worker.setDiscordReceiveGain) await this.worker.setDiscordReceiveGain({ tenantId: config.tenantId, roomId: config.roomId, discordReceiveGain: config.discordReceiveGain });
         results.push({ tenantId: config.tenantId, roomId: config.roomId, outcome: "resumed" });
       } catch (error) {
         results.push({ tenantId: config.tenantId, roomId: config.roomId, outcome: "retryable-error", message: safeError(error) });
@@ -189,12 +205,12 @@ function workerMatches(status: Record<string, unknown>, config: HearMeOutVoiceBr
   return true;
 }
 function safeError(error: unknown) { const text = error instanceof Error ? error.message : String(error ?? "voice bridge reconciliation failed"); return text.replace(/(?:token|authorization|secret|password)\s*[:=]\s*\S+/gi, "$1=[redacted]").slice(0, 300); }
-function defaultVoiceBridgeConfig(tenantId: string, roomId: string): HearMeOutVoiceBridgeConfigV1 { return { schemaVersion: 1, tenantId: cleanId(tenantId, "tenantId"), roomId: cleanId(roomId, "roomId"), enabled: false, guildId: "", voiceChannelId: "", roomVoiceOutboundEnabled: true, audioProfile: "balanced" }; }
+function defaultVoiceBridgeConfig(tenantId: string, roomId: string): HearMeOutVoiceBridgeConfigV1 { return { schemaVersion: 1, tenantId: cleanId(tenantId, "tenantId"), roomId: cleanId(roomId, "roomId"), enabled: false, guildId: "", voiceChannelId: "", roomVoiceOutboundEnabled: true, audioProfile: "clean", discordReceiveGain: 1 }; }
 function normalizeConfig(input: Partial<HearMeOutVoiceBridgeConfigV1>, tenantId: string, roomId: string): HearMeOutVoiceBridgeConfigV1 {
-  const profile = isAudioProfile(input.audioProfile) ? input.audioProfile : "balanced";
-  return { schemaVersion: 1, tenantId: cleanId(tenantId, "tenantId"), roomId: cleanId(roomId, "roomId"), enabled: Boolean(input.enabled), guildId: input.guildId ? snowflake(input.guildId, "guildId") : "", voiceChannelId: input.voiceChannelId ? snowflake(input.voiceChannelId, "voiceChannelId") : "", roomVoiceOutboundEnabled: typeof input.roomVoiceOutboundEnabled === "boolean" ? input.roomVoiceOutboundEnabled : true, audioProfile: profile, ...(input.updatedBy ? { updatedBy: cleanId(input.updatedBy, "updatedBy") } : {}), ...(input.updatedAt ? { updatedAt: validTimestamp(input.updatedAt, "updatedAt") } : {}) };
+  const profile = isAudioProfile(input.audioProfile) ? input.audioProfile : "clean";
+  return { schemaVersion: 1, tenantId: cleanId(tenantId, "tenantId"), roomId: cleanId(roomId, "roomId"), enabled: Boolean(input.enabled), guildId: input.guildId ? snowflake(input.guildId, "guildId") : "", voiceChannelId: input.voiceChannelId ? snowflake(input.voiceChannelId, "voiceChannelId") : "", roomVoiceOutboundEnabled: typeof input.roomVoiceOutboundEnabled === "boolean" ? input.roomVoiceOutboundEnabled : true, audioProfile: profile, discordReceiveGain: clampHearMeOutDiscordReceiveGain(input.discordReceiveGain ?? 1), ...(input.updatedBy ? { updatedBy: cleanId(input.updatedBy, "updatedBy") } : {}), ...(input.updatedAt ? { updatedAt: validTimestamp(input.updatedAt, "updatedAt") } : {}) };
 }
-function isAudioProfile(value: unknown): value is HearMeOutVoiceAudioProfileV1 { return value === "low-latency" || value === "balanced" || value === "resilient"; }
+function isAudioProfile(value: unknown): value is HearMeOutVoiceAudioProfileV1 { return value === "low-latency" || value === "balanced" || value === "resilient" || value === "clean"; }
 function snowflake(value: string, name: string) { const clean = String(value ?? "").trim(); if (!/^\d{5,30}$/.test(clean)) throw new Error(`${name} must be a Discord snowflake`); return clean; }
 function cleanId(value: string, name: string) { const clean = String(value ?? "").trim(); if (!clean || clean.length > 160 || /[\r\n\0]/.test(clean)) throw new Error(`${name} is invalid`); return clean; }
 function validTimestamp(value: string, name: string) { if (!Number.isFinite(Date.parse(value))) throw new Error(`${name} must be an ISO timestamp`); return new Date(Date.parse(value)).toISOString(); }
