@@ -11,6 +11,7 @@ export * from "./game-hub.js";
 export * from "./game-runtime.js";
 export * from "./overlay-scenes.js";
 export * from "./quackverse-state.js";
+export * from "./quackverse-packs.js";
 export * from "./bingo-game.js";
 import { CHAT_TAG_EVENT_TYPES } from "./chat-tag.js";
 
