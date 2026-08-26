@@ -63,6 +63,22 @@ test("every newly ingested app owns a frameable shared-theme surface", async () 
   }
 });
 
+test("shell and workspace embeds do not paint a second boxed app scene", async () => {
+  const host = createIntegratedSpaceMountainWebHost({ spmtOrigin: "http://127.0.0.1:65534", host: "127.0.0.1", port: 0, buildSha: "backdrop-owner-test" });
+  try {
+    await host.listen();
+    const address = host.server.address();
+    assert.ok(address && typeof address !== "string");
+    const base = `http://127.0.0.1:${address.port}`;
+    const css = await (await fetch(`${base}/assets/web/first-party-apps.css`)).text();
+    assert.match(css, /body\[data-surface="shell"\] \.app-scene,body\[data-surface="workspace"\] \.app-scene\{display:none!important\}/);
+    const js = await (await fetch(`${base}/assets/web/first-party-apps.js`)).text();
+    assert.doesNotMatch(js, /spmt-product-backdrop-image/);
+  } finally {
+    await host.close();
+  }
+});
+
 test("existing shell-rendered apps become real same-origin Workspace embeds instead of blocked frames", async () => {
   const host = createIntegratedSpaceMountainWebHost({ spmtOrigin: "http://127.0.0.1:65534", host: "127.0.0.1", port: 0, buildSha: "workspace-embed-test" });
   try {
@@ -85,6 +101,10 @@ test("existing shell-rendered apps become real same-origin Workspace embeds inst
 test("embedded app homes stay inside the shared viewport and release promotion selects the full current catalog", () => {
   assert.match(FIRST_PARTY_APP_CSS, /data-surface="shell"\],body\[data-surface="workspace"\]\{height:100dvh;min-height:0;overflow:hidden\}/);
   assert.match(FIRST_PARTY_APP_CSS, /data-surface="shell"\] main,[^}]*data-surface="workspace"\] main\{height:100%;min-height:0/);
+  const themed = readFileSync(new URL("../apps/spacemountain/dist/themed-surface-css.js", import.meta.url), "utf8");
+  for (const appId of ["discord-stream-hub", "streamweaver", "hearmeout", "mountainview", "companion"]) {
+    assert.match(themed, new RegExp(`src\\*=["']?/apps/${appId}`));
+  }
   const deploy = readFileSync(new URL("../scripts/sprites/deploy-sandbox-release.sh", import.meta.url), "utf8");
   assert.match(deploy, /--candidate-app,nebula-arcade,--catalog,current/);
   const runner = readFileSync(new URL("../scripts/sprites/run-supervised-sandbox.mjs", import.meta.url), "utf8");
