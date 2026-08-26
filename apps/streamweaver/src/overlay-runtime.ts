@@ -1,0 +1,34 @@
+export type StreamWeaverOverlayIdV1 = "tts-player"|"partner-checkin"|"pokemon-pack"|"pokemon-collection"|"pokemon-trade"|"gym-battle"|"gamble"|"classic-gamble"|"leaderboard"|"shoutout-player"|"brb-player"|"avatar";
+export interface StreamWeaverOverlayDefinitionV1 { id:StreamWeaverOverlayIdV1; path:string; width:number; height:number; events:string[]; transparent:boolean; purpose:string }
+
+export const STREAMWEAVER_OVERLAYS:Readonly<Record<StreamWeaverOverlayIdV1,StreamWeaverOverlayDefinitionV1>>=Object.freeze({
+  "tts-player":{id:"tts-player",path:"/tts-player",width:1920,height:1080,events:["play-tts"],transparent:true,purpose:"Play AI TTS audio and show the configured bot avatar."},
+  "partner-checkin":{id:"partner-checkin",path:"/partner-checkin",width:1920,height:1080,events:["partner-checkin"],transparent:true,purpose:"Partner check-in animations."},
+  "pokemon-pack":{id:"pokemon-pack",path:"/pokemon-pack-overlay",width:1920,height:1080,events:["pokemon-pack"],transparent:true,purpose:"Animated Pokémon pack opening."},
+  "pokemon-collection":{id:"pokemon-collection",path:"/pokemon-collection-overlay",width:1920,height:1080,events:["pokemon-collection"],transparent:true,purpose:"Scrolling Pokémon collection display."},
+  "pokemon-trade":{id:"pokemon-trade",path:"/pokemon-trade-overlay",width:1920,height:1080,events:["pokemon-trade"],transparent:true,purpose:"Animated Pokémon card trade."},
+  "gym-battle":{id:"gym-battle",path:"/gym-battle-overlay",width:1920,height:1080,events:["pokemon-gym-battle"],transparent:true,purpose:"Real-time Pokémon gym battle."},
+  gamble:{id:"gamble",path:"/gamble-overlay",width:1920,height:1080,events:["gamble-result"],transparent:true,purpose:"SpaceMountain gamble result animation."},
+  "classic-gamble":{id:"classic-gamble",path:"/classic-gamble-overlay",width:1920,height:1080,events:["gamble-result"],transparent:true,purpose:"Classic gamble result display."},
+  leaderboard:{id:"leaderboard",path:"/overlay/leaderboard",width:400,height:600,events:["points-leaderboard-update"],transparent:true,purpose:"Live points leaderboard."},
+  "shoutout-player":{id:"shoutout-player",path:"/shoutout-player",width:1920,height:1080,events:["shoutout-play"],transparent:true,purpose:"Play a Twitch clip during shoutout."},
+  "brb-player":{id:"brb-player",path:"/brb-player",width:1920,height:1080,events:["brb-start","brb-stop"],transparent:true,purpose:"BRB clip playback surface."},
+  avatar:{id:"avatar",path:"/overlay/avatar",width:300,height:300,events:["avatar-state"],transparent:true,purpose:"Standalone configured bot avatar."},
+});
+
+export type StreamWeaverRealtimeEventV1 = "twitch-message"|"twitch-status"|"play-tts"|"partner-checkin"|"pokemon-pack"|"pokemon-collection"|"pokemon-trade"|"pokemon-gym-battle"|"points-leaderboard-update"|"welcome-overlay"|"shared-chat-status"|"gamble-result"|"shoutout-play"|"brb-start"|"brb-stop"|"avatar-state";
+const EVENT_NAMES=new Set<StreamWeaverRealtimeEventV1>(Object.values(STREAMWEAVER_OVERLAYS).flatMap((overlay)=>overlay.events) as StreamWeaverRealtimeEventV1[]);
+for(const name of ["twitch-message","twitch-status","welcome-overlay","shared-chat-status"] as const)EVENT_NAMES.add(name);
+
+export interface StreamWeaverRealtimeEnvelopeV1 { schemaVersion:1; tenantId:string; event:StreamWeaverRealtimeEventV1; eventId:string; occurredAt:string; payload:Record<string,unknown> }
+export function streamWeaverOverlayUrl(publicOrigin:string,overlayId:StreamWeaverOverlayIdV1,tenantId:string){const origin=cleanOrigin(publicOrigin),overlay=STREAMWEAVER_OVERLAYS[overlayId];if(!overlay)throw new Error("Unknown StreamWeaver overlay");const url=new URL(overlay.path,origin);url.searchParams.set("tenant",cleanId(tenantId,"tenantId"));return url.toString();}
+export function normalizeStreamWeaverRealtimeEnvelope(input:Partial<StreamWeaverRealtimeEnvelopeV1>):StreamWeaverRealtimeEnvelopeV1{const event=String(input.event??"") as StreamWeaverRealtimeEventV1;if(!EVENT_NAMES.has(event))throw new Error("Unknown StreamWeaver realtime event");const occurredAt=timestamp(String(input.occurredAt??new Date().toISOString()),"occurredAt"),payload=input.payload&&typeof input.payload==="object"&&!Array.isArray(input.payload)?sanitizePayload(input.payload):{};return{schemaVersion:1,tenantId:cleanId(String(input.tenantId??""),"tenantId"),event,eventId:cleanId(String(input.eventId??""),"eventId"),occurredAt,payload};}
+export function overlaysForStreamWeaverEvent(event:StreamWeaverRealtimeEventV1){return Object.values(STREAMWEAVER_OVERLAYS).filter((overlay)=>overlay.events.includes(event)).map((overlay)=>overlay.id);}
+export interface StreamWeaverTtsPlaybackV1 { text:string; audioUrl:string; avatarUrl?:string; voice?:string; provider?:"inworld"|"google"|"openai"|"local"; requestId:string }
+export function normalizeStreamWeaverTtsPlayback(input:StreamWeaverTtsPlaybackV1):StreamWeaverTtsPlaybackV1{const text=cleanText(input.text,"text",2000),audioUrl=safeMediaUrl(input.audioUrl,"audioUrl"),avatarUrl=input.avatarUrl?safeMediaUrl(input.avatarUrl,"avatarUrl"):undefined,voice=input.voice?cleanText(input.voice,"voice",100):undefined,provider=input.provider;if(provider&&!(["inworld","google","openai","local"] as string[]).includes(provider))throw new Error("Unsupported TTS provider");return{text,audioUrl,...(avatarUrl?{avatarUrl}:{}),...(voice?{voice}:{}),...(provider?{provider}:{}),requestId:cleanId(input.requestId,"requestId")};}
+function sanitizePayload(value:Record<string,unknown>){const out:Record<string,unknown>={};for(const[k,v]of Object.entries(value)){if(/token|secret|authorization|password|cookie/i.test(k))continue;if(typeof v==="string")out[k]=v.slice(0,4000);else if(typeof v==="number"||typeof v==="boolean"||v===null)out[k]=v;}return out;}
+function cleanOrigin(value:string){const origin=new URL(value);if(origin.protocol!=="https:"||origin.username||origin.password||origin.pathname!=="/"||origin.search||origin.hash)throw new Error("StreamWeaver public origin must be credential-free HTTPS");return origin;}
+function safeMediaUrl(value:string,name:string){const url=new URL(value);if(!["https:","http:"].includes(url.protocol)||url.username||url.password)throw new Error(`${name} must be HTTP(S)`);return url.toString();}
+function cleanId(value:string,name:string){const clean=String(value??"").trim();if(!clean||clean.length>180||/[\r\n\0]/.test(clean))throw new Error(`${name} is invalid`);return clean;}
+function cleanText(value:string,name:string,max:number){const clean=String(value??"").trim();if(!clean||clean.length>max||/[\0]/.test(clean))throw new Error(`${name} is invalid`);return clean;}
+function timestamp(value:string,name:string){const parsed=Date.parse(value);if(!Number.isFinite(parsed))throw new Error(`${name} must be an ISO timestamp`);return new Date(parsed).toISOString();}
