@@ -18,18 +18,18 @@ test("Nebula shared game runtime survives restart without becoming a second SPMT
   try{
     const first=new SqliteNebulaGameRuntimeStore(file.path);
     first.update("tenant-a",state=>{
-      setNebulaChannelGameRunning(state,"captain","duck-hunt",true,new Date("2026-08-26T12:00:00Z"));
-      const joined=joinNebulaGame(state,{userId:"1",username:"alpha",displayName:"Alpha",gameId:"duck-hunt"},new Date("2026-08-26T12:00:01Z"));
-      recordNebulaGameChatActivity(state,{channel:"captain",userId:"1",username:"alpha",displayName:"Alpha",message:"hello",profileGameIds:["duck-hunt"]},Date.parse("2026-08-26T12:01:00Z"));
-      recordNebulaGameWin(state,joined.player.id,"duck-hunt",2,new Date("2026-08-26T12:01:01Z"));
+      setNebulaChannelGameRunning(state,"captain","wordstorm",true,new Date("2026-08-26T12:00:00Z"));
+      const joined=joinNebulaGame(state,{userId:"1",username:"alpha",displayName:"Alpha",gameId:"wordstorm"},new Date("2026-08-26T12:00:01Z"));
+      recordNebulaGameChatActivity(state,{channel:"captain",userId:"1",username:"alpha",displayName:"Alpha",message:"hello",profileGameIds:["wordstorm"]},Date.parse("2026-08-26T12:01:00Z"));
+      recordNebulaGameWin(state,joined.player.id,"wordstorm",2,new Date("2026-08-26T12:01:01Z"));
     });
     first.close();
     const second=new SqliteNebulaGameRuntimeStore(file.path),state=second.get("tenant-a"),player=state.players["twitch:1"];
-    assert.equal(state.channels.captain.extraGameIds.includes("duck-hunt"),true);
+    assert.equal(state.channels.captain.extraGameIds.includes("wordstorm"),true);
     assert.equal(player.displayName,"Alpha");
-    assert.equal(player.joinedGames["duck-hunt"].active,true);
-    assert.equal(player.joinedGames["duck-hunt"].score,1);
-    assert.equal(player.joinedGames["duck-hunt"].wins,1);
+    assert.equal(player.joinedGames["wordstorm"].active,true);
+    assert.equal(player.joinedGames["wordstorm"].score,1);
+    assert.equal(player.joinedGames["wordstorm"].wins,1);
     assert.equal(player.gamePointsBalance,3);
     assert.equal(state.ledger.length,2);
     second.close();
