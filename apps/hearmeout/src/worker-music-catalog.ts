@@ -100,9 +100,9 @@ export function scoreHearMeOutCatalogTrack(track: Pick<HearMeOutMusicCatalogTrac
   const needle = String(queryInput ?? "").trim().toLowerCase();
   if (!needle) return 1;
   const fields = [track.title, track.artist, track.url, ...(Array.isArray(track.queries) ? track.queries : [])].map((value) => String(value ?? "").toLowerCase());
-  if (fields.some((field) => field === needle)) return 100;
-  if (fields.some((field) => field.includes(needle))) return 80;
   const haystack = fields.join(" ");
+  if (haystack === needle) return 100;
+  if (fields.some((field) => field.includes(needle))) return 80;
   return needle.split(/\s+/).filter(Boolean).reduce((score, word) => score + (haystack.includes(word) ? 10 : 0), 0);
 }
 
