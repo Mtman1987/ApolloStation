@@ -31,13 +31,7 @@ export class SqliteStreamWeaverCommandState implements StreamWeaverCommandStateV
     if (!path) throw new Error("StreamWeaver command database path is required");
     this.db = new DatabaseSync(path, { timeout: 5000 });
     this.db.exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;");
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS streamweaver_command_state(
-        state_key TEXT PRIMARY KEY,
-        body TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-      ) STRICT;
-    `);
+    this.db.exec(`CREATE TABLE IF NOT EXISTS streamweaver_command_state(state_key TEXT PRIMARY KEY,body TEXT NOT NULL,updated_at TEXT NOT NULL) STRICT;`);
   }
   close() { this.db.close(); }
   getCooldown(key: string) { return Number(this.read(`cooldown:${key}`)?.timestamp ?? 0); }
@@ -51,12 +45,14 @@ export class SqliteStreamWeaverCommandState implements StreamWeaverCommandStateV
 export const STREAMWEAVER_ECONOMY_COMMANDS = [
   "points", "pleader", "givepoints", "stealpoints", "gamble", "gambel", "roll",
   "addpoints", "setpoints", "addtoall", "settoall", "resetallpoints",
+  "currency", "currencyname", "exchange",
 ] as const;
 
 const USER_COOLDOWN_MS: Partial<Record<(typeof STREAMWEAVER_ECONOMY_COMMANDS)[number], number>> = {
   gamble: 10_000,
   gambel: 10_000,
   roll: 2_000,
+  exchange: 10_000,
 };
 const GLOBAL_COOLDOWN_MS: Partial<Record<(typeof STREAMWEAVER_ECONOMY_COMMANDS)[number], number>> = { pleader: 15_000 };
 
@@ -90,7 +86,7 @@ export class StreamWeaverEconomyCommandConsumer {
     const command = parsed.command as (typeof STREAMWEAVER_ECONOMY_COMMANDS)[number];
     const actorId = message.actor.canonicalUserId ?? await this.identities.resolve({ tenantId: message.tenantId, provider: message.provider, providerUserId: message.actor.providerUserId, username: message.actor.username, ...(message.actor.displayName ? { displayName: message.actor.displayName } : {}) });
     const actorName = message.actor.displayName ?? message.actor.username;
-    if (!actorId) return { command, text: `@${actorName}, link your SpaceMountain identity before using points commands.` };
+    if (!actorId) return { command, text: `@${actorName}, link your SpaceMountain identity before using StreamWeaver currency commands.` };
 
     const cooldown = this.cooldown(command, message.tenantId, actorId);
     if (cooldown > 0) return { command, text: `@${actorName}, wait ${cooldown}s before using !${command} again.` };
@@ -98,16 +94,32 @@ export class StreamWeaverEconomyCommandConsumer {
     try {
       let text: string;
       switch (command) {
+        case "currency": {
+          const settings = this.economy.getCurrencySettings();
+          text = settings.currencyConfigured
+            ? `${settings.currencyName} is this StreamWeaver's currency. SPMT exchange is ${settings.spmtExchangeEnabled ? "enabled" : "disabled"}.`
+            : "The StreamWeaver owner must choose a custom currency name before economy commands are enabled.";
+          break;
+        }
+        case "currencyname": {
+          if (!isBroadcaster(message)) return { command, text: `@${actorName}, only the broadcaster can rename this StreamWeaver currency.` };
+          const currencyName = parsed.args.join(" ").trim();
+          if (!currencyName) return { command, text: `@${actorName}, usage: !currencyname <custom name>` };
+          const settings = this.economy.configureCurrency({ currencyName });
+          text = `StreamWeaver currency is now ${settings.currencyName}. It remains separate from SPMT XP.`;
+          break;
+        }
         case "points": {
-          const wallet = await this.economy.points(actorId);
-          text = `@${actorName} has ${formatCompactPointAmount(wallet.spendableXp)} points!`;
+          const wallet = this.economy.points(actorId);
+          text = `@${actorName} has ${formatCompactPointAmount(wallet.balance)} ${this.economy.currencyName()}!`;
           break;
         }
         case "pleader": {
-          const entries = await this.economy.leaderboard(10);
+          const entries = this.economy.leaderboard(10);
+          const currencyName = this.economy.currencyName();
           text = entries.length
-            ? `🏆 Points: ${entries.map((entry) => `${entry.rank}. ${entry.userId} — ${formatCompactPointAmount(entry.spendableXp)}`).join(" | ")}`
-            : "🏆 Points leaderboard is empty.";
+            ? `🏆 ${currencyName}: ${entries.map((entry) => `${entry.rank}. ${entry.userId} — ${formatCompactPointAmount(entry.balance)}`).join(" | ")}`
+            : `🏆 ${currencyName} leaderboard is empty.`;
           break;
         }
         case "givepoints": {
@@ -115,7 +127,7 @@ export class StreamWeaverEconomyCommandConsumer {
           const amount = integerToken(parsed.args[1]);
           if (!target || amount === undefined) return { command, text: `@${actorName}, usage: !givepoints @user amount` };
           const result = await this.economy.givePoints({ fromUserId: actorId, toUserId: target.userId, fromDisplayName: actorName, toDisplayName: target.displayName, amount, operationId: delivery.deliveryId });
-          text = String(result.message ?? "Points transfer completed.");
+          text = String(result.message ?? "Currency transfer completed.");
           break;
         }
         case "stealpoints": {
@@ -134,14 +146,23 @@ export class StreamWeaverEconomyCommandConsumer {
         }
         case "roll": {
           if (!parsed.args[0]) return { command, text: `@${actorName}, usage: !roll amount` };
-          const wallet = await this.economy.points(actorId);
-          const bet = resolveRollBet(parsed.args[0], wallet.spendableXp);
+          const wallet = this.economy.points(actorId);
+          const bet = resolveRollBet(parsed.args[0], wallet.balance);
           const result = await this.economy.roll({ userId: actorId, displayName: actorName, bet, operationId: delivery.deliveryId });
           if ("die" in result && typeof result.die === "number" && "outcome" in result && typeof result.outcome === "string" && "change" in result && typeof result.change === "number" && "newTotal" in result && typeof result.newTotal === "number") {
-            text = `🎲 @${actorName} rolled ${result.die}: ${result.outcome} (${result.change >= 0 ? "+" : ""}${formatCompactPointAmount(result.change)}). New total: ${formatCompactPointAmount(result.newTotal)}.`;
+            text = `🎲 @${actorName} rolled ${result.die}: ${result.outcome} (${result.change >= 0 ? "+" : ""}${formatCompactPointAmount(result.change)} ${this.economy.currencyName()}). New total: ${formatCompactPointAmount(result.newTotal)}.`;
           } else {
             text = `🎲 @${actorName}, roll settlement already recorded.`;
           }
+          break;
+        }
+        case "exchange": {
+          if (!parsed.args[0]) return { command, text: `@${actorName}, usage: !exchange amount` };
+          const localAmount = parseStreamWeaverPointAmount(parsed.args[0]);
+          const result = await this.economy.exchangeLocalForSpmt({ userId: actorId, localAmount, operationId: delivery.deliveryId });
+          text = result.success
+            ? `@${actorName} exchanged ${formatCompactPointAmount(result.exchange.localSpent)} ${result.exchange.currencyName} for ${result.exchange.spmtAwarded} SPMT XP.`
+            : `@${actorName}, exchange is reserved and pending retry; no additional ${result.exchange.currencyName} will be deducted.`;
           break;
         }
         case "addpoints": {
@@ -149,7 +170,7 @@ export class StreamWeaverEconomyCommandConsumer {
           const target = await this.target(message); const amount = integerToken(parsed.args[1]);
           if (!target || amount === undefined) return { command, text: `@${actorName}, usage: !addPoints @user amount` };
           const wallet = await this.admin.addPoints(target.userId, amount, delivery.deliveryId, { moderatorUserId: actorId });
-          text = `@${target.displayName} now has ${formatCompactPointAmount(wallet.spendableXp)} pts (${amount > 0 ? "+" : ""}${formatCompactPointAmount(amount)})`;
+          text = `@${target.displayName} now has ${formatCompactPointAmount(wallet.balance)} ${this.economy.currencyName()} (${amount > 0 ? "+" : ""}${formatCompactPointAmount(amount)})`;
           break;
         }
         case "setpoints": {
@@ -157,7 +178,7 @@ export class StreamWeaverEconomyCommandConsumer {
           const target = await this.target(message); const amount = integerToken(parsed.args[1]);
           if (!target || amount === undefined) return { command, text: `@${actorName}, usage: !setPoints @user amount` };
           const wallet = await this.admin.setPoints(target.userId, amount, delivery.deliveryId, { moderatorUserId: actorId });
-          text = `@${target.displayName} points set to ${formatCompactPointAmount(wallet.spendableXp)}`;
+          text = `@${target.displayName} ${this.economy.currencyName()} set to ${formatCompactPointAmount(wallet.balance)}`;
           break;
         }
         case "addtoall": {
@@ -165,7 +186,7 @@ export class StreamWeaverEconomyCommandConsumer {
           const amount = integerToken(parsed.args[0]);
           if (amount === undefined) return { command, text: `@${actorName}, usage: !addToAll amount` };
           const count = await this.admin.addToAll(amount, delivery.deliveryId, { moderatorUserId: actorId });
-          text = `${amount > 0 ? "+" : ""}${formatCompactPointAmount(amount)} pts to ${count} users!`;
+          text = `${amount > 0 ? "+" : ""}${formatCompactPointAmount(amount)} ${this.economy.currencyName()} to ${count} users!`;
           break;
         }
         case "settoall": {
@@ -173,20 +194,20 @@ export class StreamWeaverEconomyCommandConsumer {
           const amount = integerToken(parsed.args[0]);
           if (amount === undefined) return { command, text: `@${actorName}, usage: !setToAll amount` };
           const count = await this.admin.setToAll(amount, delivery.deliveryId, { moderatorUserId: actorId });
-          text = `Set ${count} users to ${formatCompactPointAmount(Math.max(0, amount))} pts`;
+          text = `Set ${count} users to ${formatCompactPointAmount(Math.max(0, amount))} ${this.economy.currencyName()}`;
           break;
         }
         case "resetallpoints": {
           if (!isModerator(message)) return { command, text: `@${actorName}, only mods can use that!` };
           const count = await this.admin.resetAll(delivery.deliveryId, { moderatorUserId: actorId });
-          text = `Reset points for ${count} users to 0`;
+          text = `Reset ${this.economy.currencyName()} for ${count} users to 0`;
           break;
         }
       }
       this.markCooldown(command, message.tenantId, actorId);
       return { command, text };
     } catch (error) {
-      return { command, text: `@${actorName}, ${error instanceof Error ? error.message : "points command failed"}` };
+      return { command, text: `@${actorName}, ${error instanceof Error ? error.message : "StreamWeaver currency command failed"}` };
     }
   }
 
@@ -230,6 +251,7 @@ function parseCommand(text: string) {
   return { command: raw.slice(1).toLowerCase(), args: parts };
 }
 function isModerator(message: NormalizedChatMessageV1) { return message.actor.roles.includes("moderator") || message.actor.roles.includes("broadcaster"); }
+function isBroadcaster(message: NormalizedChatMessageV1) { return message.actor.roles.includes("broadcaster"); }
 function integerToken(value: string | undefined) { if (value === undefined || !/^-?\d+$/.test(value)) return undefined; const parsed = Number(value); return Number.isSafeInteger(parsed) ? parsed : undefined; }
 function strictPositiveIntegerToken(value: string | undefined) { if (value === undefined || !/^\d+$/.test(value)) return undefined; const parsed = Number(value); return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined; }
 function canonicalCooldownCommand(command: string) { return command === "gambel" ? "gamble" : command; }
