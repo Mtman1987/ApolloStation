@@ -39,8 +39,8 @@ function fixture({ now = 1_000_000, configured = true } = {}) {
     currencyName: () => { if (!settings.currencyConfigured) throw new Error("StreamWeaver owner must choose a custom currency name before economy commands can be used"); return settings.currencyName; },
     getCurrencySettings: () => ({ ...settings }),
     configureCurrency: ({ currencyName }) => { settings = { ...settings, currencyName, currencyConfigured: true }; calls.push(["configureCurrency", currencyName]); return { ...settings }; },
-    points: async (userId) => { if (!settings.currencyConfigured) throw new Error("StreamWeaver owner must choose a custom currency name before economy commands can be used"); calls.push(["points", userId]); return { userId, balance: 1200, totalEarned: 2000 }; },
-    leaderboard: async (limit) => { calls.push(["leaderboard", limit]); return [{ rank: 1, userId: "captain", balance: 5000 }, { rank: 2, userId: "friend", balance: 2500 }]; },
+    points: (userId) => { if (!settings.currencyConfigured) throw new Error("StreamWeaver owner must choose a custom currency name before economy commands can be used"); calls.push(["points", userId]); return { userId, balance: 1200, totalEarned: 2000 }; },
+    leaderboard: (limit) => { calls.push(["leaderboard", limit]); return [{ rank: 1, userId: "captain", balance: 5000 }, { rank: 2, userId: "friend", balance: 2500 }]; },
     givePoints: async (input) => { calls.push(["give", input]); return { success: true, message: `gave ${input.amount} Starbits to ${input.toDisplayName}` }; },
     stealPoints: async (input) => { calls.push(["steal", input]); return { success: true, message: `stole ${input.amount} Starbits from ${input.toDisplayName}` }; },
     gamble: async (input) => { calls.push(["gamble", input]); return { success: true, message: `gambled ${input.bet ?? "default"} Starbits` }; },
@@ -77,7 +77,6 @@ test("only broadcaster can choose the StreamWeaver currency name", async () => {
   const denied = fixture({ configured: false });
   assert.match((await denied.consumer.route(delivery("!currencyname Starbits", { roles: ["moderator"], deliveryId: "rename-denied" }))).text, /only the broadcaster/);
   assert.equal(denied.calls.some((entry) => entry[0] === "configureCurrency"), false);
-
   const f = fixture({ configured: false });
   const result = await f.consumer.route(delivery("!currencyname Starbits", { roles: ["broadcaster"], deliveryId: "rename-ok" }));
   assert.match(result.text, /currency is now Starbits/);
@@ -111,7 +110,6 @@ test("givepoints and stealpoints preserve production command vocabulary but use 
   assert.equal(giveCall.fromUserId, "user-1");
   assert.equal(giveCall.toUserId, "target-user");
   assert.equal(giveCall.amount, 125);
-
   const steal = await f.consumer.route(delivery("!stealpoints @friend 200", { mentions: [mention], deliveryId: "steal-1" }));
   assert.equal(steal.text, "stole 200 Starbits from friend");
   assert.equal(f.calls.find((entry) => entry[0] === "steal")[1].amount, 200);
@@ -148,7 +146,6 @@ test("moderator point commands now mutate and report only the local StreamWeaver
   const mention = { token: "@friend", providerUserId: "target-provider", canonicalUserId: "target-user", username: "friend" };
   const denied = fixture();
   assert.match((await denied.consumer.route(delivery("!addpoints @friend 50", { mentions: [mention], deliveryId: "denied" }))).text, /only mods/);
-
   const f = fixture();
   const mod = { roles: ["moderator"], mentions: [mention] };
   assert.equal((await f.consumer.route(delivery("!addpoints @friend 50", { ...mod, deliveryId: "add-1" }))).text, "@friend now has 1.5K Starbits (+50)");
