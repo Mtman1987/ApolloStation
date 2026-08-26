@@ -27,8 +27,9 @@ body[data-app="streamweaver"] .scene-art{background:url("/assets/product/streamw
 body[data-app="hearmeout"] .scene-art{background:url("/assets/product/hearmeout-background.webp") center/cover no-repeat!important}
 body[data-app="mountainview"] .scene-art{background:url("/assets/product/mountainview-background.webp") center/cover no-repeat!important}
 body[data-app="companion"] .scene-art{background:url("/assets/product/companion-background.webp") center/cover no-repeat!important}
+/* In embedded shell/workspace mode the parent SpaceMountain shell owns the full-screen scene and stars. */
+body[data-surface="shell"] .app-scene,body[data-surface="workspace"] .app-scene{display:none!important}
 `;
-const FIRST_PARTY_REAL_SCENE_JS = `;(()=>{const scenes={"discord-stream-hub":"url(\\"/assets/product/discord-stream-hub-background.webp\\")",streamweaver:"url(\\"/assets/product/streamweaver-background.webp\\")",hearmeout:"url(\\"/assets/product/hearmeout-background.webp\\")",mountainview:"url(\\"/assets/product/mountainview-background.webp\\")",companion:"url(\\"/assets/product/companion-background.webp\\")"};const apply=()=>{const scene=scenes[document.body?.dataset.app??""];if(!scene)return;try{const root=window.parent.document.querySelector("[data-spmt-product-shell]");const image=root?.querySelector(":scope > .spmt-product-backdrop .spmt-product-backdrop-image");if(image){image.style.backgroundImage=scene;image.style.backgroundPosition="center";image.style.backgroundSize="cover";}}catch{}};if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",()=>requestAnimationFrame(apply),{once:true});else requestAnimationFrame(apply);})();`;
 
 export interface IntegratedSpaceMountainWebHostOptions extends SpaceMountainWebHostOptions {
   port?: number;
@@ -51,7 +52,7 @@ export function createIntegratedSpaceMountainWebHost(options: IntegratedSpaceMou
       }
       if (request.method === "GET" && url.pathname === "/assets/web/first-party-apps.js") {
         applyAppHeaders(response, false);
-        return send(response, 200, FIRST_PARTY_APP_BROWSER_JS + FIRST_PARTY_REAL_SCENE_JS, "text/javascript; charset=utf-8", "public, max-age=300");
+        return send(response, 200, FIRST_PARTY_APP_BROWSER_JS, "text/javascript; charset=utf-8", "public, max-age=300");
       }
       const appId = appIdFromPath(url.pathname);
       if (request.method === "GET" && appId) {
