@@ -8,6 +8,7 @@ export * from "./chat-tag-overlay-http.js";
 export * from "./chat-tag-migration.js";
 export * from "./chat-tag-experience.js";
 export * from "./game-hub.js";
+export * from "./game-runtime.js";
 export * from "./overlay-scenes.js";
 export * from "./quackverse-state.js";
 export * from "./bingo-game.js";
@@ -30,7 +31,6 @@ export function nebulaArcadeCatalogRegistration(publicOrigin: string): AppCatalo
     status: "active",
   };
 }
-/** Compatibility export for the old sandbox runner; the catalog product is Nebula Arcade. */
 export const chatTagCatalogRegistration = nebulaArcadeCatalogRegistration;
 
 export interface ChatTagRoundResult { tenantId:string; channelId:string; roundId:string; winnerUserId:string; taggedUserId:string; completedAt:string; xpAward:number; }
