@@ -41,9 +41,16 @@ test("StreamWeaver Pokemon trade is tenant scoped, two-party accepted and revali
   a.cards.push({name:"Pikachu",number:"58",setCode:"base1",rarity:"Common"});b.cards.push({name:"Eevee",number:"51",setCode:"base1",rarity:"Common"});
   const trade=initiateStreamWeaverPokemonTrade("tenant-a","Alice","Bob",1000);
   assert.equal(findStreamWeaverPokemonTradeCard(a.cards,"base1-58").length,1);
-  offerStreamWeaverPokemonTradeCard(trade,"alice",a.cards,"base1-58");offerStreamWeaverPokemonTradeCard(trade,"bob",b.cards,"Eevee 51");
+  offerStreamWeaverPokemonTradeCard(trade,"alice",a.cards,"base1-58",1500);offerStreamWeaverPokemonTradeCard(trade,"bob",b.cards,"Eevee 51",1500);
   let result=acceptStreamWeaverPokemonTrade(trade,"alice",{alice:a,bob:b},2000);assert.equal(result.completed,false);
   result=acceptStreamWeaverPokemonTrade(trade,"bob",{alice:a,bob:b},2000);assert.equal(result.completed,true);assert.equal(a.cards[0].name,"Eevee");assert.equal(b.cards[0].name,"Pikachu");
+});
+
+test("StreamWeaver Pokemon trade offer uses the same two-minute clock as initiation and acceptance",()=>{
+  const a=defaultStreamWeaverPokemonCollection();a.cards.push({name:"Pikachu",number:"58",setCode:"base1",rarity:"Common"});
+  const trade=initiateStreamWeaverPokemonTrade("tenant-a","Alice","Bob",1000);
+  assert.doesNotThrow(()=>offerStreamWeaverPokemonTradeCard(trade,"alice",a.cards,"base1-58",1000+STREAMWEAVER_POKEMON_TRADE_TIMEOUT_MS));
+  assert.throws(()=>offerStreamWeaverPokemonTradeCard(trade,"alice",a.cards,"base1-58",1001+STREAMWEAVER_POKEMON_TRADE_TIMEOUT_MS),/expired/);
 });
 
 test("StreamWeaver gym team and queue preserve three-card donor rule",()=>{
