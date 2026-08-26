@@ -30,6 +30,10 @@ body[data-app="companion"] .scene-art{background:url("/assets/product/companion-
 /* In embedded shell/workspace mode the parent SpaceMountain shell owns the full-screen scene and stars. */
 body[data-surface="shell"] .app-scene,body[data-surface="workspace"] .app-scene{display:none!important}
 `;
+const FIRST_PARTY_EMBED_BROWSER_JS = FIRST_PARTY_APP_BROWSER_JS.replace(
+  /const image=root\.querySelector\(':scope > \.spmt-product-backdrop \.spmt-product-backdrop-image'\),scene=shellScenes\[body\.dataset\.app\];if\(image&&scene\)\{image\.style\.backgroundImage=scene;image\.style\.backgroundPosition='center';image\.style\.backgroundSize='cover';\}/,
+  "",
+);
 
 export interface IntegratedSpaceMountainWebHostOptions extends SpaceMountainWebHostOptions {
   port?: number;
@@ -52,7 +56,7 @@ export function createIntegratedSpaceMountainWebHost(options: IntegratedSpaceMou
       }
       if (request.method === "GET" && url.pathname === "/assets/web/first-party-apps.js") {
         applyAppHeaders(response, false);
-        return send(response, 200, FIRST_PARTY_APP_BROWSER_JS, "text/javascript; charset=utf-8", "public, max-age=300");
+        return send(response, 200, FIRST_PARTY_EMBED_BROWSER_JS, "text/javascript; charset=utf-8", "public, max-age=300");
       }
       const appId = appIdFromPath(url.pathname);
       if (request.method === "GET" && appId) {
