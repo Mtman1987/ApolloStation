@@ -10,6 +10,7 @@ export * from "./chat-tag-experience.js";
 export * from "./game-hub.js";
 export * from "./overlay-scenes.js";
 export * from "./quackverse-state.js";
+export * from "./bingo-game.js";
 import { CHAT_TAG_EVENT_TYPES } from "./chat-tag.js";
 
 export const CHAT_TAG_ROUND_COMPLETED = "nebula.chat-tag.round.completed.v1";
