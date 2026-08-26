@@ -36,7 +36,7 @@ export function firstHearMeOutHlsMediaReference(manifest:string){return String(m
 export function isLegacyHearMeOutEventPlaylist(manifest:string){return String(manifest??"").includes("#EXT-X-PLAYLIST-TYPE:EVENT");}
 export function pinHearMeOutHlsManifestToMachine(manifest:string,machineId:unknown){
   const machine=cleanHearMeOutFlyMachineId(machineId);if(!machine)return String(manifest??"");const param=`machine=${encodeURIComponent(machine)}`;
-  return String(manifest??"").split(/\r?\n/).map((line)=>{const t=line.trim();if(/^#EXT-X-MEDIA:/i.test(t)&&/URI="[^"]+"/i.test(line))return line.replace(/URI="([^"]+)"/i,(_m,uri:string)=>`URI="${uri}${/[?&]machine=/.test(uri)?"":`${uri.includes("?")?"&":"?"}${param}`}`);if(!t||t.startsWith("#")||/[?&]machine=/.test(t))return line;return `${line}${line.includes("?")?"&":"?"}${param}`;}).join("\n");
+  return String(manifest??"").split(/\r?\n/).map((line)=>{const t=line.trim();if(/^#EXT-X-MEDIA:/i.test(t)&&/URI="[^"]+"/i.test(line))return line.replace(/URI="([^"]+)"/i,(_m,uri:string)=>{if(/[?&]machine=/.test(uri))return `URI="${uri}"`;return `URI="${uri}${uri.includes("?")?"&":"?"}${param}"`;});if(!t||t.startsWith("#")||/[?&]machine=/.test(t))return line;return `${line}${line.includes("?")?"&":"?"}${param}`;}).join("\n");
 }
 export function hearMeOutHlsContentType(value:unknown){const f=cleanHearMeOutHlsFileName(value);return f.endsWith(".m3u8")?"application/vnd.apple.mpegurl":f.endsWith(".ts")?"video/mp2t":"application/octet-stream";}
 export function hearMeOutHlsCacheControl(value:unknown){return cleanHearMeOutHlsFileName(value).endsWith(".m3u8")?"no-store":"public, max-age=3600";}
