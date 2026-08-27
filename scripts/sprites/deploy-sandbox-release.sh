@@ -83,7 +83,7 @@ rollback() {
     sprite-env services delete "$service_name" || true
     create_apollo_service "$(basename "$previous_release")" || true
   fi
-  if (( status != 0 && bootstrap_service_removed == 1 )); then
+  if (( status != 0 && bootstrap_service_removed == 1 )) && [[ -z "$previous_release" ]]; then
     echo "Deployment failed; restoring bootstrap service $bootstrap_service_name" >&2
     sprite-env services stop "$service_name" || true
     sprite-env services delete "$service_name" || true
@@ -128,30 +128,21 @@ ln -sfn "$release_dir" "$next_link"
 mv -Tf "$next_link" "$current_link"
 switched=1
 
-if sprite-env services get "$service_name" >/dev/null 2>&1; then
-  sprite-env services stop "$service_name"
-  sprite-env services delete "$service_name"
-  create_apollo_service "$BUILD_SHA"
-else
-  pkill -TERM -f 'scripts/sprites/run-supervised-sandbox\.mjs' 2>/dev/null || true
-  for _ in {1..30}; do
-    if ! curl -fsS --max-time 1 http://127.0.0.1:8080/sandbox/health >/dev/null 2>&1; then
-      break
-    fi
-    sleep 0.2
-  done
-  if sprite-env services get "$bootstrap_service_name" >/dev/null 2>&1; then
-    bootstrap_definition="$(sprite-env services get "$bootstrap_service_name")"
-    if ! grep -Fq '"cmd":"/usr/local/bin/webtmux"' <<<"$bootstrap_definition" || ! grep -Fq '"http_port":8080' <<<"$bootstrap_definition"; then
-      echo "Refusing to replace an unexpected bootstrap service definition" >&2
-      exit 1
-    fi
-    sprite-env services stop "$bootstrap_service_name"
-    sprite-env services delete "$bootstrap_service_name"
-    bootstrap_service_removed=1
+pkill -TERM -f 'scripts/sprites/run-supervised-sandbox\.mjs' 2>/dev/null || true
+for stale_service in "$service_name" "$bootstrap_service_name" spmt-qwen; do
+  if sprite-env services get "$stale_service" >/dev/null 2>&1; then
+    sprite-env services stop "$stale_service" || true
+    sprite-env services delete "$stale_service"
+    [[ "$stale_service" == "$bootstrap_service_name" ]] && bootstrap_service_removed=1
   fi
-  create_apollo_service "$BUILD_SHA"
-fi
+done
+for _ in {1..30}; do
+  if ! curl -fsS --max-time 1 http://127.0.0.1:8080/sandbox/health >/dev/null 2>&1; then
+    break
+  fi
+  sleep 0.2
+done
+create_apollo_service "$BUILD_SHA"
 
 ready=0
 for _ in {1..60}; do
