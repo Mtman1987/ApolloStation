@@ -34,7 +34,6 @@ const FIRST_PARTY_EMBED_BROWSER_JS = FIRST_PARTY_APP_BROWSER_JS.replace(
   /const image=root\.querySelector\(':scope > \.spmt-product-backdrop \.spmt-product-backdrop-image'\),scene=shellScenes\[body\.dataset\.app\];if\(image&&scene\)\{image\.style\.backgroundImage=scene;image\.style\.backgroundPosition='center';image\.style\.backgroundSize='cover';\}/,
   "",
 );
-const FIRST_PARTY_SCENE_REQUEST_JS = `;(()=>{if(window.parent===window)return;const app=document.body?.dataset.app??"";const scenes={"discord-stream-hub":"/assets/product/discord-stream-hub-background.webp",streamweaver:"/assets/product/streamweaver-background.webp",hearmeout:"/assets/product/hearmeout-background.webp",mountainview:"/assets/product/mountainview-background.webp",companion:"/assets/product/companion-background.webp"};const positions={"discord-stream-hub":"center center",streamweaver:"center center",hearmeout:"center bottom",mountainview:"center center",companion:"center center"};const scene=scenes[app];if(!scene)return;try{const root=window.parent.document.querySelector('.spmt-space-root');if(!root)return;root.dataset.spmtEmbeddedScene=app;root.style.setProperty('--spmt-app-backdrop-image','url("'+scene+'")');root.style.setProperty('--spmt-app-backdrop-position',positions[app]||'center center');}catch{}})();`;
 
 export interface IntegratedSpaceMountainWebHostOptions extends SpaceMountainWebHostOptions {
   port?: number;
@@ -57,7 +56,7 @@ export function createIntegratedSpaceMountainWebHost(options: IntegratedSpaceMou
       }
       if (request.method === "GET" && url.pathname === "/assets/web/first-party-apps.js") {
         applyAppHeaders(response, false);
-        return send(response, 200, FIRST_PARTY_EMBED_BROWSER_JS + FIRST_PARTY_SCENE_REQUEST_JS, "text/javascript; charset=utf-8", "public, max-age=300");
+        return send(response, 200, FIRST_PARTY_EMBED_BROWSER_JS, "text/javascript; charset=utf-8", "public, max-age=300");
       }
       const appId = appIdFromPath(url.pathname);
       if (request.method === "GET" && appId) {
