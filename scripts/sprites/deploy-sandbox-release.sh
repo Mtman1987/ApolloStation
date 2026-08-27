@@ -32,7 +32,6 @@ current_link="$deployment_root/current"
 next_link="$deployment_root/current.next"
 data_root="/home/sprite/data/$DEPLOY_ROLE"
 service_name="apollo-sandbox"
-llm_service_name="spmt-qwen"
 bootstrap_service_name="webtmux"
 llama_root="/home/sprite/runtime/llama-b6335"
 llama_ref="b6335"
@@ -48,12 +47,11 @@ fi
 
 create_apollo_service() {
   local release_sha="$1"
-  local runner_args="scripts/sprites/run-supervised-sandbox.mjs,--app,platform,--candidate-app,nebula-arcade,--public-url,$SPRITE_PUBLIC_URL,--data-root,$data_root,--build-sha,$release_sha,--owner-username,mtman1987"
+  local runner_args="scripts/sprites/run-supervised-sandbox.mjs,--app,platform,--candidate-app,nebula-arcade,--public-url,$SPRITE_PUBLIC_URL,--data-root,$data_root,--build-sha,$release_sha,--owner-username,mtman1987,--llm-binary,$llama_root/build/bin/llama-server,--llm-cache,/home/sprite/models"
   sprite-env services create "$service_name" \
     --cmd node \
     --args "$runner_args" \
     --dir "$current_link" \
-    --needs "$llm_service_name" \
     --http-port 8080 \
     --duration 15s
 }
@@ -68,19 +66,11 @@ provision_llm_runtime() {
     echo "$llama_archive_sha256  $archive" | sha256sum --check --strict
     python3 -m zipfile -e "$archive" "$llama_root.next"
     rm -f "$archive"
+    chmod +x "$llama_root.next/build/bin/llama-server"
     rm -rf "$llama_root"
     mv "$llama_root.next" "$llama_root"
   fi
 
-  if sprite-env services get "$llm_service_name" >/dev/null 2>&1; then
-    sprite-env services stop "$llm_service_name" || true
-    sprite-env services delete "$llm_service_name"
-  fi
-  sprite-env services create "$llm_service_name" \
-    --cmd "$llama_root/build/bin/llama-server" \
-    --args '--host,127.0.0.1,--port,8081,-hf,Qwen/Qwen3-8B-GGUF:Q4_K_M,--ctx-size,8192,--threads,8,--parallel,1,--jinja,--no-webui' \
-    --env 'LLAMA_CACHE=/home/sprite/models' \
-    --duration 5s
 }
 
 rollback() {
