@@ -11,6 +11,7 @@ export * from "./game-hub.js";
 export * from "./game-runtime.js";
 export * from "./game-runtime-store.js";
 export * from "./overlay-scenes.js";
+export * from "./game-mixes.js";
 export * from "./quackverse-state.js";
 export * from "./quackverse-packs.js";
 export * from "./quackverse-battle.js";
