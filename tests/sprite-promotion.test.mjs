@@ -40,11 +40,11 @@ test("Sprite deployment verifies, tests, switches atomically, rolls back, and la
   assert.match(script, /--candidate-app,nebula-arcade,--catalog,current/);
   assert.doesNotMatch(script, /--candidate-app,chat-tag/);
   assert.match(script, /create_apollo_service "\$\(basename "\$previous_release"\)"/);
-  assert.match(script, /sprite-env services stop "\$bootstrap_service_name"/);
-  assert.match(script, /Refusing to replace an unexpected bootstrap service definition/);
-  assert.match(script, /sprite-env services delete "\$bootstrap_service_name"/);
+  assert.match(script, /for stale_service in "\$service_name" "\$bootstrap_service_name" spmt-qwen/);
   assert.match(script, /Deployment failed; restoring bootstrap service/);
   assert.match(script, /sprite-env services delete "\$service_name"/);
+  assert.match(script, /llama_ref="b6335"/);
+  assert.match(script, /--llm-binary,\$llama_root\/build\/bin\/llama-server/);
   assert.match(script, /sprite-env services create "\$bootstrap_service_name"/);
   assert.match(script, /grep -Fq "\$BUILD_SHA"/);
 });

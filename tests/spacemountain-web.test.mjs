@@ -342,7 +342,7 @@ test("Sprite artifacts are deny-by-default and the supervised runner cannot regi
   assert.deepEqual(policy.rules.at(-1), { domain: "*", action: "deny" });
   assert.equal(policy.rules.some((rule) => rule.include === "defaults"), false);
   const allowed = policy.rules.filter((rule) => rule.action === "allow").map((rule) => rule.domain);
-  assert.deepEqual(allowed, ["github.com", "*.github.com", "githubusercontent.com", "*.githubusercontent.com", "npmjs.org", "*.npmjs.org"]);
+  assert.deepEqual(allowed, ["github.com", "*.github.com", "githubusercontent.com", "*.githubusercontent.com", "npmjs.org", "*.npmjs.org", "huggingface.co", "*.huggingface.co", "hf.co", "*.hf.co"]);
   const runner = readFileSync(new URL("../scripts/sprites/run-supervised-sandbox.mjs", import.meta.url), "utf8");
   assert.doesNotMatch(runner, /sprite-env|services\s+(?:create|start|restart)/);
   assert.match(runner, /SPMT_OUTBOUND_MODE: "disabled"/);
