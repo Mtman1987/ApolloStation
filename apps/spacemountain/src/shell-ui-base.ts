@@ -152,12 +152,13 @@ export class SpaceMountainShellUi {
     const backgroundUrl = recordText(appearance, ["backgroundUrl", "background_url"]);
     const configuredTheme = recordText(appearance, ["theme"]);
     const scene = this.activeAppId ? SHELL_APP_SCENES[this.activeAppId] ?? SPACEMOUNTAIN_SCENE : SPACEMOUNTAIN_SCENE;
-    const backdrop = resolveProductBackdrop(scene, configuredTheme, accent, backgroundUrl);
+    const backdrop = resolveProductBackdrop(scene, configuredTheme, accent, backgroundUrl, accentSecondary);
     const theme = resolveProductTheme(backdrop.theme.id, backdrop.theme.accent, accentSecondary);
     root.dataset.spmtView = this.activeAppId ? "app" : this.view;
     root.dataset.spmtDock = this.dockCollapsed ? "collapsed" : "expanded";
     if (this.activeAppId) root.dataset.spmtApp = this.activeAppId; else delete root.dataset.spmtApp;
     root.dataset.theme = theme.id;
+    root.dataset.spmtTheme = theme.id;
     root.style.setProperty("--accent", theme.accent);
     root.style.setProperty("--accent2", theme.accentSecondary);
     root.style.setProperty("--spmt-accent", theme.accent);

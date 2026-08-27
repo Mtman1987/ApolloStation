@@ -56,11 +56,11 @@ export function isProductImageUrl(value: unknown): value is string {
   }
 }
 
-export function resolveProductBackdrop(scene: ProductSceneV1, theme: unknown, customAccent?: unknown, customImageUrl?: unknown): ProductBackdropV1 {
+export function resolveProductBackdrop(scene: ProductSceneV1, theme: unknown, customAccent?: unknown, customImageUrl?: unknown, customSecondary?: unknown): ProductBackdropV1 {
   if (!scene.appId.trim()) throw new Error("A product scene requires an appId");
   if (!isProductImageUrl(scene.imageUrl)) throw new Error("A product scene requires a root-relative or HTTPS image URL");
   const override = isProductImageUrl(customImageUrl) ? customImageUrl : undefined;
-  return { scene, theme: resolveProductTheme(theme, customAccent), imageUrl: override ?? scene.imageUrl, customImage: Boolean(override) };
+  return { scene, theme: resolveProductTheme(theme, customAccent, customSecondary), imageUrl: override ?? scene.imageUrl, customImage: Boolean(override) };
 }
 
 export function installProductBackdrop(root: HTMLElement, backdrop: ProductBackdropV1) {
@@ -73,12 +73,24 @@ export function installProductBackdrop(root: HTMLElement, backdrop: ProductBackd
   root.style.setProperty("--spmt-app-backdrop-position", backdrop.scene.imagePosition ?? "center");
 
   const existing = root.querySelector<HTMLElement>(":scope > .spmt-product-backdrop");
-  if (existing) return existing;
+  if (existing) {
+    const image = existing.querySelector<HTMLElement>(".spmt-product-backdrop-image");
+    if (image) {
+      image.style.backgroundImage = `url(${JSON.stringify(backdrop.imageUrl)})`;
+      image.style.backgroundPosition = backdrop.scene.imagePosition ?? "center";
+    }
+    return existing;
+  }
   const layer = root.ownerDocument.createElement("div");
   layer.className = "spmt-product-backdrop";
   layer.setAttribute("aria-hidden", "true");
   layer.innerHTML = '<span class="spmt-product-backdrop-image"></span><span class="spmt-product-backdrop-tint"></span><span class="spmt-product-backdrop-shade"></span><span class="spmt-star-layer"><i></i><i></i><i></i></span>';
   root.prepend(layer);
+  const image = layer.querySelector<HTMLElement>(".spmt-product-backdrop-image");
+  if (image) {
+    image.style.backgroundImage = `url(${JSON.stringify(backdrop.imageUrl)})`;
+    image.style.backgroundPosition = backdrop.scene.imagePosition ?? "center";
+  }
   return layer;
 }
 
@@ -107,7 +119,11 @@ function seededRandom(seed: number) {
 
 function seededStarShadow(count: number, seed: number, width = 2_000, height = 2_000) {
   const random = seededRandom(seed);
-  return Array.from({ length: count }, () => `${Math.floor(random() * width)}px ${Math.floor(random() * height)}px #fff`).join(",");
+  return Array.from({ length: count }, (_, index) => {
+    const colorSlot = index % 20;
+    const color = colorSlot < 15 ? "rgba(255,255,255,.94)" : colorSlot < 18 ? "var(--spmt-accent-secondary)" : "var(--spmt-accent)";
+    return `${Math.floor(random() * width)}px ${Math.floor(random() * height)}px ${color}`;
+  }).join(",");
 }
 
 /** The exact deterministic star distribution used by the live Chat Tag shell. */
@@ -120,7 +136,7 @@ export const PRODUCT_STAR_FIELDS = Object.freeze([
 export const PRODUCT_UI_CSS = `
 .spmt-product-surface {
   --spmt-accent: #f97316;
-  --spmt-accent-secondary: #fbbf24;
+  --spmt-accent-secondary: #38bdf8;
   --spmt-ink: #f8fafc;
   --spmt-muted: #a8adbb;
   --spmt-glass-opacity: .76;
@@ -135,7 +151,7 @@ export const PRODUCT_UI_CSS = `
   --spmt-panel: var(--spmt-surface-depth-1);
   --spmt-panel-strong: color-mix(in srgb,var(--spmt-accent) 6%,rgb(8 10 17 / min(.94,calc(var(--spmt-glass-opacity,.76) * .98))));
   --spmt-border: rgba(255,255,255,.11);
-  --spmt-shadow: 0 24px 80px rgba(0,0,0,.42);
+  --spmt-shadow: -12px 18px 60px color-mix(in srgb,var(--spmt-accent) 11%,transparent),12px 22px 72px color-mix(in srgb,var(--spmt-accent-secondary) 9%,rgba(0,0,0,.42));
   color: var(--spmt-ink);
   position: relative;
   isolation: isolate;
@@ -147,7 +163,7 @@ export const PRODUCT_UI_CSS = `
 .spmt-product-backdrop-image,.spmt-product-backdrop-tint,.spmt-product-backdrop-shade,.spmt-star-layer { position: absolute; inset: 0; }
 .spmt-product-backdrop-image { inset: -2%; background-image: var(--spmt-app-backdrop-image); background-position: var(--spmt-app-backdrop-position,center); background-size: cover; filter: grayscale(1) saturate(0) contrast(1.08) brightness(.84); transform: scale(1.025); }
 .spmt-product-backdrop-tint { background: var(--spmt-accent); opacity: .56; mix-blend-mode: color; }
-.spmt-product-backdrop-shade { background: radial-gradient(circle at 18% 4%,color-mix(in srgb,var(--spmt-accent) 24%,transparent),transparent 42%),linear-gradient(rgba(3,4,8,.14),rgba(3,4,8,.58)); }
+.spmt-product-backdrop-shade { background: radial-gradient(circle at 18% 4%,color-mix(in srgb,var(--spmt-accent) 24%,transparent),transparent 42%),radial-gradient(circle at 84% 18%,color-mix(in srgb,var(--spmt-accent-secondary) 12%,transparent),transparent 34%),linear-gradient(rgba(3,4,8,.14),rgba(3,4,8,.58)); }
 .spmt-star-layer { overflow: hidden; opacity: var(--spmt-stars,.82); }
 .spmt-star-layer i { position: absolute; left: 0; top: 0; display: block; background: transparent; will-change: transform; }
 .spmt-star-layer i:nth-child(1) { width: 1px; height: 1px; box-shadow: ${PRODUCT_STAR_FIELDS[0]!.shadow}; animation: spmt-stars-up 200s linear infinite; }
@@ -160,8 +176,8 @@ export const PRODUCT_UI_CSS = `
 .spmt-product-glass { border: 1px solid var(--spmt-border); background: var(--spmt-surface-depth-1); box-shadow: var(--spmt-shadow); backdrop-filter: blur(24px) saturate(135%); }
 .spmt-surface-depth-0,.spmt-product-glass[data-spmt-depth="0"] { border-color: transparent; background: transparent; box-shadow: none; backdrop-filter: none; }
 .spmt-surface-depth-1,.spmt-product-glass[data-spmt-depth="1"] { background: var(--spmt-surface-depth-1); }
-.spmt-surface-depth-2,.spmt-product-glass[data-spmt-depth="2"] { background: var(--spmt-surface-depth-2); box-shadow: 0 16px 50px rgba(0,0,0,.24); }
-.spmt-surface-depth-3,.spmt-product-glass[data-spmt-depth="3"] { background: var(--spmt-surface-depth-3); box-shadow: 0 10px 34px rgba(0,0,0,.18); }
+.spmt-surface-depth-2,.spmt-product-glass[data-spmt-depth="2"] { background: var(--spmt-surface-depth-2); box-shadow: 0 16px 50px rgba(0,0,0,.24),0 0 34px color-mix(in srgb,var(--spmt-accent-secondary) 7%,transparent); }
+.spmt-surface-depth-3,.spmt-product-glass[data-spmt-depth="3"] { background: var(--spmt-surface-depth-3); box-shadow: 0 10px 34px rgba(0,0,0,.18),0 0 24px color-mix(in srgb,var(--spmt-accent) 6%,transparent); }
 .spmt-surface-depth-4,.spmt-product-glass[data-spmt-depth="4"] { background: var(--spmt-surface-depth-4); box-shadow: none; }
 .spmt-product-kicker { color: var(--spmt-accent-secondary); font-size: 10px; font-weight: 900; letter-spacing: .19em; text-transform: uppercase; }
 .spmt-product-status { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--spmt-border); border-radius: 999px; padding: 5px 9px; font-size: 9px; font-weight: 900; letter-spacing: .12em; text-transform: uppercase; }

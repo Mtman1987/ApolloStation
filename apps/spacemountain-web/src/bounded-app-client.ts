@@ -34,7 +34,7 @@ function applyAppearance(root: HTMLElement, sceneUrl: string, appearance: Appear
   const secondary = typeof appearance.accentSecondary === "string" ? appearance.accentSecondary : undefined;
   const theme = resolveProductTheme(themeId, accent, secondary);
   root.style.setProperty("--spmt-accent", theme.accent);
-  root.style.setProperty("--spmt-accent-2", theme.accentSecondary);
+  root.style.setProperty("--spmt-accent-secondary", theme.accentSecondary);
   root.style.setProperty("--spmt-glass-opacity", String(ratio(appearance.glassOpacity, .76)));
   root.style.setProperty("--spmt-blur", `${Math.max(0, Math.min(42, number(appearance.blurStrength, 18)))}px`);
   root.style.setProperty("--spmt-stars", String(ratio(appearance.starDensity, 1)));
@@ -45,7 +45,7 @@ function applyAppearance(root: HTMLElement, sceneUrl: string, appearance: Appear
     image.src = `/assets/product/app-icons/${themeId}/${root.dataset.spmtAppId ?? "app"}.png`;
   });
   document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')?.setAttribute("content", theme.accent);
-  installProductBackdrop(root, resolveProductBackdrop({ appId: root.dataset.spmtAppId ?? "app", imageUrl: sceneUrl }, themeId, accent, customBackground));
+  installProductBackdrop(root, resolveProductBackdrop({ appId: root.dataset.spmtAppId ?? "app", imageUrl: sceneUrl }, themeId, accent, customBackground, secondary));
 }
 
 async function loadSharedAppearance(root: HTMLElement, appId: string, sceneUrl: string) {

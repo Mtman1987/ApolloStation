@@ -20,6 +20,9 @@ test("shared product UI exposes stable framework-neutral themes and accessible p
   for (const { accent, accentSecondary } of palettes) assert.notEqual(accent.toLowerCase(), accentSecondary.toLowerCase());
   assert.match(PRODUCT_UI_CSS, /\.spmt-product-glass/);
   assert.match(PRODUCT_UI_CSS, /:focus-visible/);
+  assert.match(PRODUCT_UI_CSS, /var\(--spmt-accent-secondary\)/);
+  assert.match(PRODUCT_STAR_FIELDS[0].shadow, /var\(--spmt-accent-secondary\)/);
+  assert.match(PRODUCT_STAR_FIELDS[0].shadow, /var\(--spmt-accent\)/);
   assert.ok(PRODUCT_STAR_FIELDS.length >= 1);
 });
 
@@ -31,6 +34,7 @@ test("workspace colors tint one stable app scene and preserve a safe custom over
   assert.equal(oceanic.imageUrl, scene.imageUrl);
   assert.notEqual(solar.theme.accent, oceanic.theme.accent);
   assert.equal(resolveProductBackdrop(scene, "nebula-purple", undefined, "https://images.example/scene.webp").customImage, true);
+  assert.equal(resolveProductBackdrop(scene, "nebula-purple", undefined, undefined, "#FEDCBA").theme.accentSecondary, "#FEDCBA");
   assert.equal(resolveProductBackdrop(scene, "nebula-purple", undefined, "javascript:alert(1)").imageUrl, scene.imageUrl);
   assert.equal(isProductImageUrl("/assets/app/scene.webp"), true);
   assert.equal(isProductImageUrl("http://images.example/scene.webp"), false);

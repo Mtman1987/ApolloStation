@@ -103,7 +103,7 @@ test("embedded app homes stay inside the shared viewport and release promotion s
   assert.match(FIRST_PARTY_APP_CSS, /data-surface="shell"\] main,[^}]*data-surface="workspace"\] main\{height:100%;min-height:0/);
   const themed = readFileSync(new URL("../apps/spacemountain/dist/themed-surface-css.js", import.meta.url), "utf8");
   for (const appId of ["discord-stream-hub", "streamweaver", "hearmeout", "mountainview", "companion"]) {
-    assert.match(themed, new RegExp(`src\\*=["']?/apps/${appId}`));
+    assert.match(themed, new RegExp(`data-spmt-app=["']${appId}["']`));
   }
   const deploy = readFileSync(new URL("../scripts/sprites/deploy-sandbox-release.sh", import.meta.url), "utf8");
   assert.match(deploy, /--candidate-app,nebula-arcade,--catalog,current/);
