@@ -27,7 +27,7 @@ test("XP wallet is reconciled from the append-only canonical ledger rather than 
     authority.spendXp({ tenantId: "tenant-a", userId: "user-a", amount: 30, sourceAppId: "shipyard", idempotencyKey: "spend-1" });
     authority.awardXp({ tenantId: "tenant-a", userId: "user-a", delta: 20, sourceAppId: "migration", reason: "migration-adjustment", idempotencyKey: "adjust-1", metadata: { lifetimeEligible: false } });
 
-    const ledger = authority.listXpLedger("tenant-a", "user-a", 100).reverse();
+    const ledger = authority.getXpLedger("tenant-a", "user-a", 100).reverse();
     const expected = derived(ledger);
     const wallet = authority.getXpWallet("tenant-a", "user-a");
     assert.equal(wallet.spendableXp, expected.spendableXp);
@@ -40,7 +40,7 @@ test("XP wallet is reconciled from the append-only canonical ledger rather than 
 
     store = new SqliteAuthorityStore(path);
     authority = new AuthorityService({ store });
-    const reopenedLedger = authority.listXpLedger("tenant-a", "user-a", 100).reverse();
+    const reopenedLedger = authority.getXpLedger("tenant-a", "user-a", 100).reverse();
     const reopenedExpected = derived(reopenedLedger);
     const reopenedWallet = authority.getXpWallet("tenant-a", "user-a");
     assert.equal(reopenedWallet.spendableXp, reopenedExpected.spendableXp);
@@ -61,8 +61,8 @@ test("XP reconciliation stays tenant-isolated and never maxes or sums another te
     authority.awardXp({ tenantId: "tenant-b", userId: "same-user", delta: 1000, sourceAppId: "dsh", reason: "b", idempotencyKey: "b-1" });
     assert.equal(authority.getXpWallet("tenant-a", "same-user").spendableXp, 10);
     assert.equal(authority.getXpWallet("tenant-b", "same-user").spendableXp, 1000);
-    assert.equal(authority.listXpLedger("tenant-a", "same-user", 100).length, 1);
-    assert.equal(authority.listXpLedger("tenant-b", "same-user", 100).length, 1);
+    assert.equal(authority.getXpLedger("tenant-a", "same-user", 100).length, 1);
+    assert.equal(authority.getXpLedger("tenant-b", "same-user", 100).length, 1);
     store.close();
   } finally {
     rmSync(dir, { recursive: true, force: true });
