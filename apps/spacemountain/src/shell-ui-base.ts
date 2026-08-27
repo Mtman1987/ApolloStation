@@ -148,11 +148,12 @@ export class SpaceMountainShellUi {
     const root = this.options.root;
     const appearance = recordObject(this.snapshot.workspace, "appearance");
     const accent = recordText(appearance, ["accent"]);
+    const accentSecondary = recordText(appearance, ["accentSecondary", "accent_secondary"]);
     const backgroundUrl = recordText(appearance, ["backgroundUrl", "background_url"]);
     const configuredTheme = recordText(appearance, ["theme"]);
     const scene = this.activeAppId ? SHELL_APP_SCENES[this.activeAppId] ?? SPACEMOUNTAIN_SCENE : SPACEMOUNTAIN_SCENE;
     const backdrop = resolveProductBackdrop(scene, configuredTheme, accent, backgroundUrl);
-    const theme = backdrop.theme;
+    const theme = resolveProductTheme(backdrop.theme.id, backdrop.theme.accent, accentSecondary);
     root.dataset.spmtView = this.activeAppId ? "app" : this.view;
     root.dataset.spmtDock = this.dockCollapsed ? "collapsed" : "expanded";
     if (this.activeAppId) root.dataset.spmtApp = this.activeAppId; else delete root.dataset.spmtApp;
@@ -215,7 +216,7 @@ export class SpaceMountainShellUi {
       const number = (name: string) => Math.max(0, Math.min(100, Number(value(name)) || 0));
       const checked = (name: string) => form.get(name) === "on";
       this.options.onSaveWorkspace?.(revision, {
-        appearance: { theme: value("theme"), ...(value("accent") ? { accent: value("accent") } : {}), ...(value("backgroundUrl") ? { backgroundUrl: value("backgroundUrl") } : {}), glowIntensity: number("glowIntensity"), starDensity: number("starDensity"), glassOpacity: number("glassOpacity"), blurStrength: number("blurStrength"), nebulaIntensity: number("nebulaIntensity"), parallaxDepth: number("parallaxDepth"), borderStrength: number("borderStrength"), chatTransparency: number("chatTransparency"), density: value("density"), sidebarCollapsed: checked("sidebarCollapsed"), sidebarStyle: value("sidebarStyle"), sidebarPosition: value("sidebarPosition"), topbarStyle: value("topbarStyle"), tabStyle: value("tabStyle"), tabPosition: value("tabPosition"), showAvatars: checked("showAvatars"), smoothTransitions: checked("smoothTransitions"), pushToTalk: checked("pushToTalk"), animation: { speed: number("animationSpeed"), particles: checked("particles"), shootingStars: checked("shootingStars") } },
+        appearance: { theme: value("theme"), ...(value("accent") ? { accent: value("accent") } : {}), ...(value("accentSecondary") ? { accentSecondary: value("accentSecondary") } : {}), ...(value("backgroundUrl") ? { backgroundUrl: value("backgroundUrl") } : {}), glowIntensity: number("glowIntensity"), starDensity: number("starDensity"), glassOpacity: number("glassOpacity"), blurStrength: number("blurStrength"), nebulaIntensity: number("nebulaIntensity"), parallaxDepth: number("parallaxDepth"), borderStrength: number("borderStrength"), chatTransparency: number("chatTransparency"), density: value("density"), sidebarCollapsed: checked("sidebarCollapsed"), sidebarStyle: value("sidebarStyle"), sidebarPosition: value("sidebarPosition"), topbarStyle: value("topbarStyle"), tabStyle: value("tabStyle"), tabPosition: value("tabPosition"), showAvatars: checked("showAvatars"), smoothTransitions: checked("smoothTransitions"), pushToTalk: checked("pushToTalk"), animation: { speed: number("animationSpeed"), particles: checked("particles"), shootingStars: checked("shootingStars") } },
         dockSlots: [value("dockSlot0") || null, value("dockSlot1") || null, value("dockSlot2") || null],
       });
     });
@@ -245,9 +246,21 @@ export class SpaceMountainShellUi {
     root.querySelectorAll<HTMLInputElement>('.spmt-slider-grid input[type="range"]').forEach((input) => input.addEventListener("input", () => { const output = input.parentElement?.querySelector<HTMLOutputElement>("output"); if (output) output.value = input.value; }));
     const themeSelect = root.querySelector<HTMLSelectElement>("[data-workspace-theme]");
     const accentInput = root.querySelector<HTMLInputElement>("[data-workspace-accent]");
+    let secondaryInput = root.querySelector<HTMLInputElement>("[data-workspace-accent-secondary]");
+    if (accentInput && !secondaryInput) {
+      const label = document.createElement("label");
+      label.textContent = "Logo accent";
+      secondaryInput = document.createElement("input");
+      secondaryInput.name = "accentSecondary";
+      secondaryInput.type = "color";
+      secondaryInput.value = accentSecondary ?? resolveProductTheme(themeSelect?.value).accentSecondary;
+      secondaryInput.dataset.workspaceAccentSecondary = "";
+      label.append(secondaryInput);
+      accentInput.parentElement?.after(label);
+    }
     const previewTheme = () => {
-      if (!themeSelect || !accentInput) return;
-      const next = resolveProductTheme(themeSelect.value, accentInput.value);
+      if (!themeSelect || !accentInput || !secondaryInput) return;
+      const next = resolveProductTheme(themeSelect.value, accentInput.value, secondaryInput.value);
       root.dataset.theme = next.id;
       root.dataset.spmtTheme = next.id;
       root.style.setProperty("--accent", next.accent);
@@ -262,17 +275,22 @@ export class SpaceMountainShellUi {
     };
     themeSelect?.addEventListener("change", () => {
       if (!accentInput) return;
-      accentInput.value = resolveProductTheme(themeSelect.value).accent;
+      const preset = resolveProductTheme(themeSelect.value);
+      accentInput.value = preset.accent;
+      if (secondaryInput) secondaryInput.value = preset.accentSecondary;
       previewTheme();
     });
     root.querySelectorAll<HTMLButtonElement>("[data-theme-choice]").forEach((button) => button.addEventListener("click", () => {
       if (!themeSelect || !accentInput) return;
       themeSelect.value = button.dataset.themeChoice ?? "solar-flare";
-      accentInput.value = resolveProductTheme(themeSelect.value).accent;
+      const preset = resolveProductTheme(themeSelect.value);
+      accentInput.value = preset.accent;
+      if (secondaryInput) secondaryInput.value = preset.accentSecondary;
       root.querySelectorAll<HTMLElement>("[data-theme-choice]").forEach((choice) => choice.setAttribute("aria-pressed", String(choice === button)));
       previewTheme();
     }));
     accentInput?.addEventListener("input", previewTheme);
+    secondaryInput?.addEventListener("input", previewTheme);
     if (this.view === "workspace") {
       mountOverlayBay(root, this.snapshot);
       root.querySelectorAll<HTMLElement>("[data-overlay-issue]").forEach((node) => node.addEventListener("click", () => this.options.onIssueOverlayOutput?.(node.dataset.overlayApp ?? "", node.dataset.overlayIssue ?? "", node.dataset.overlayPersonal === "true")));

@@ -8,6 +8,7 @@ export type WorkspaceThemeV1 = "system" | "light" | "dark" | "solar-flare" | "ne
 export interface AppearanceV1 {
   theme: WorkspaceThemeV1;
   accent?: string;
+  accentSecondary?: string;
   backgroundUrl?: string;
   glowIntensity?: number;
   starDensity?: number;
@@ -532,6 +533,7 @@ function requireWorkspaceValue(value: string, name: string, max: number) {
 function validateAppearance(value: AppearanceV1) {
   if (!["system", "light", "dark", "solar-flare", "nebula-purple", "oceanic-blue", "aurora-green"].includes(value.theme)) throw new AuthorityValidationError("Workspace theme is invalid");
   if (value.accent !== undefined && !/^#[0-9a-fA-F]{6}$/.test(value.accent)) throw new AuthorityValidationError("Workspace accent is invalid");
+  if (value.accentSecondary !== undefined && !/^#[0-9a-fA-F]{6}$/.test(value.accentSecondary)) throw new AuthorityValidationError("Workspace secondary accent is invalid");
   if (value.backgroundUrl !== undefined) {
     requireWorkspaceValue(value.backgroundUrl, "background URL", 2048);
     let url: URL;

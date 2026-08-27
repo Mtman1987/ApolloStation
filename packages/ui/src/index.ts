@@ -13,17 +13,18 @@ export interface ProductThemeV1 {
 }
 
 export const PRODUCT_THEME_PRESETS: Readonly<Record<ProductThemeIdV1, ProductThemeV1>> = Object.freeze({
-  "solar-flare": Object.freeze({ id: "solar-flare", name: "Solar", accent: "#f97316", accentSecondary: "#fbbf24" }),
-  "nebula-purple": Object.freeze({ id: "nebula-purple", name: "Nebula", accent: "#a855f7", accentSecondary: "#e879f9" }),
-  "oceanic-blue": Object.freeze({ id: "oceanic-blue", name: "Oceanic", accent: "#3b82f6", accentSecondary: "#22d3ee" }),
-  "aurora-green": Object.freeze({ id: "aurora-green", name: "Aurora", accent: "#10b981", accentSecondary: "#a3e635" }),
+  "solar-flare": Object.freeze({ id: "solar-flare", name: "Solar", accent: "#f97316", accentSecondary: "#38bdf8" }),
+  "nebula-purple": Object.freeze({ id: "nebula-purple", name: "Nebula", accent: "#a855f7", accentSecondary: "#2dd4bf" }),
+  "oceanic-blue": Object.freeze({ id: "oceanic-blue", name: "Oceanic", accent: "#3b82f6", accentSecondary: "#f59e0b" }),
+  "aurora-green": Object.freeze({ id: "aurora-green", name: "Aurora", accent: "#10b981", accentSecondary: "#fbbf24" }),
 });
 
-export function resolveProductTheme(theme: unknown, customAccent?: unknown): ProductThemeV1 {
+export function resolveProductTheme(theme: unknown, customAccent?: unknown, customSecondary?: unknown): ProductThemeV1 {
   const key = typeof theme === "string" && theme in PRODUCT_THEME_PRESETS ? theme as ProductThemeIdV1 : "solar-flare";
   const preset = PRODUCT_THEME_PRESETS[key];
-  if (typeof customAccent !== "string" || !/^#[0-9a-f]{6}$/i.test(customAccent)) return preset;
-  return { ...preset, accent: customAccent };
+  const accent = typeof customAccent === "string" && /^#[0-9a-f]{6}$/i.test(customAccent) ? customAccent : preset.accent;
+  const accentSecondary = typeof customSecondary === "string" && /^#[0-9a-f]{6}$/i.test(customSecondary) ? customSecondary : preset.accentSecondary;
+  return accent === preset.accent && accentSecondary === preset.accentSecondary ? preset : { ...preset, accent, accentSecondary };
 }
 
 export interface ProductSceneV1 {

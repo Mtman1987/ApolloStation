@@ -14,6 +14,10 @@ test("shared product UI exposes stable framework-neutral themes and accessible p
   assert.deepEqual(Object.keys(PRODUCT_THEME_PRESETS).sort(), ["aurora-green", "nebula-purple", "oceanic-blue", "solar-flare"]);
   assert.equal(resolveProductTheme("unknown").id, "solar-flare");
   assert.equal(resolveProductTheme("oceanic-blue", "#123ABC").accent, "#123ABC");
+  assert.equal(resolveProductTheme("oceanic-blue", "#123ABC", "#FEDCBA").accentSecondary, "#FEDCBA");
+  const palettes = Object.values(PRODUCT_THEME_PRESETS);
+  assert.equal(new Set(palettes.map(({ accentSecondary }) => accentSecondary.toLowerCase())).size, palettes.length);
+  for (const { accent, accentSecondary } of palettes) assert.notEqual(accent.toLowerCase(), accentSecondary.toLowerCase());
   assert.match(PRODUCT_UI_CSS, /\.spmt-product-glass/);
   assert.match(PRODUCT_UI_CSS, /:focus-visible/);
   assert.ok(PRODUCT_STAR_FIELDS.length >= 1);

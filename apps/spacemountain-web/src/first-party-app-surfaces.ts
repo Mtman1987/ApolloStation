@@ -139,7 +139,7 @@ body[data-surface="shell"],body[data-surface="workspace"]{height:100dvh;min-heig
 `;
 
 export const FIRST_PARTY_APP_BROWSER_JS = `(()=>{'use strict';
-const body=document.body,themes={'solar-flare':['#f97316','#fbbf24'],'nebula-purple':['#a855f7','#e879f9'],'oceanic-blue':['#3b82f6','#22d3ee'],'aurora-green':['#10b981','#a3e635']};
+const body=document.body,themes={'solar-flare':['#f97316','#38bdf8'],'nebula-purple':['#a855f7','#2dd4bf'],'oceanic-blue':['#3b82f6','#f59e0b'],'aurora-green':['#10b981','#fbbf24']};
 const shellScenes={
 'discord-stream-hub':'radial-gradient(circle at 76% 28%,rgba(255,255,255,.32) 0 1.4%,transparent 1.6%),radial-gradient(circle at 76% 28%,rgba(255,255,255,.11) 0 12%,transparent 28%),linear-gradient(120deg,transparent 0 52%,rgba(255,255,255,.08) 52.5% 53%,transparent 53.5%),linear-gradient(145deg,#03040a 0 38%,#0a1220 68%,#020308)',
 'streamweaver':'radial-gradient(ellipse at 72% 25%,rgba(255,255,255,.13),transparent 30%),repeating-radial-gradient(ellipse at 72% 25%,transparent 0 34px,rgba(255,255,255,.09) 36px 38px,transparent 40px 70px),linear-gradient(145deg,#03040a,#090516 58%,#02030a)',

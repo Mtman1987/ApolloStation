@@ -4,6 +4,7 @@ import { bindProductRocketNavigation, configureSurfaceRoot, installProductBackdr
 interface AppearanceLike {
   theme?: unknown;
   accent?: unknown;
+  accentSecondary?: unknown;
   backgroundUrl?: unknown;
   glassOpacity?: unknown;
   blurStrength?: unknown;
@@ -30,7 +31,8 @@ function applyAppearance(root: HTMLElement, sceneUrl: string, appearance: Appear
   const themeId = typeof appearance.theme === "string" ? appearance.theme : "solar-flare";
   const accent = typeof appearance.accent === "string" ? appearance.accent : undefined;
   const customBackground = typeof appearance.backgroundUrl === "string" ? appearance.backgroundUrl : undefined;
-  const theme = resolveProductTheme(themeId, accent);
+  const secondary = typeof appearance.accentSecondary === "string" ? appearance.accentSecondary : undefined;
+  const theme = resolveProductTheme(themeId, accent, secondary);
   root.style.setProperty("--spmt-accent", theme.accent);
   root.style.setProperty("--spmt-accent-2", theme.accentSecondary);
   root.style.setProperty("--spmt-glass-opacity", String(ratio(appearance.glassOpacity, .76)));
