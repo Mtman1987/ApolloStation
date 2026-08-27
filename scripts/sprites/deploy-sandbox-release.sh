@@ -34,8 +34,9 @@ data_root="/home/sprite/data/$DEPLOY_ROLE"
 service_name="apollo-sandbox"
 llm_service_name="spmt-qwen"
 bootstrap_service_name="webtmux"
-llama_root="/home/sprite/runtime/llama.cpp"
+llama_root="/home/sprite/runtime/llama-b6335"
 llama_ref="b6335"
+llama_archive_sha256="6ffee01c8fe2481faf8b614bbd8ca9bdaa563f47d4d9e00dc44f423962812d25"
 previous_release=""
 switched=0
 bootstrap_service_removed=0
@@ -61,9 +62,12 @@ provision_llm_runtime() {
   mkdir -p "$(dirname "$llama_root")" /home/sprite/models
   if [[ ! -x "$llama_root/build/bin/llama-server" ]]; then
     rm -rf "$llama_root.next"
-    git clone --depth=1 --branch "$llama_ref" https://github.com/ggml-org/llama.cpp.git "$llama_root.next"
-    cmake -S "$llama_root.next" -B "$llama_root.next/build" -DGGML_NATIVE=OFF -DGGML_OPENMP=ON -DLLAMA_CURL=ON -DCMAKE_BUILD_TYPE=Release
-    cmake --build "$llama_root.next/build" --config Release -j"$(nproc)" --target llama-server
+    mkdir -p "$llama_root.next"
+    archive="$llama_root.next/llama.zip"
+    curl -fsSL "https://github.com/ggml-org/llama.cpp/releases/download/$llama_ref/llama-$llama_ref-bin-ubuntu-x64.zip" -o "$archive"
+    echo "$llama_archive_sha256  $archive" | sha256sum --check --strict
+    python3 -m zipfile -e "$archive" "$llama_root.next"
+    rm -f "$archive"
     rm -rf "$llama_root"
     mv "$llama_root.next" "$llama_root"
   fi
