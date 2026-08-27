@@ -32,7 +32,10 @@ current_link="$deployment_root/current"
 next_link="$deployment_root/current.next"
 data_root="/home/sprite/data/$DEPLOY_ROLE"
 service_name="apollo-sandbox"
+llm_service_name="spmt-qwen"
 bootstrap_service_name="webtmux"
+llama_root="/home/sprite/runtime/llama.cpp"
+llama_ref="b6335"
 previous_release=""
 switched=0
 bootstrap_service_removed=0
@@ -49,8 +52,31 @@ create_apollo_service() {
     --cmd node \
     --args "$runner_args" \
     --dir "$current_link" \
+    --needs "$llm_service_name" \
     --http-port 8080 \
     --duration 15s
+}
+
+provision_llm_runtime() {
+  mkdir -p "$(dirname "$llama_root")" /home/sprite/models
+  if [[ ! -x "$llama_root/build/bin/llama-server" ]]; then
+    rm -rf "$llama_root.next"
+    git clone --depth=1 --branch "$llama_ref" https://github.com/ggml-org/llama.cpp.git "$llama_root.next"
+    cmake -S "$llama_root.next" -B "$llama_root.next/build" -DGGML_NATIVE=OFF -DGGML_OPENMP=ON -DLLAMA_CURL=ON -DCMAKE_BUILD_TYPE=Release
+    cmake --build "$llama_root.next/build" --config Release -j"$(nproc)" --target llama-server
+    rm -rf "$llama_root"
+    mv "$llama_root.next" "$llama_root"
+  fi
+
+  if sprite-env services get "$llm_service_name" >/dev/null 2>&1; then
+    sprite-env services stop "$llm_service_name" || true
+    sprite-env services delete "$llm_service_name"
+  fi
+  sprite-env services create "$llm_service_name" \
+    --cmd "$llama_root/build/bin/llama-server" \
+    --args '--host,127.0.0.1,--port,8081,-hf,Qwen/Qwen3-8B-GGUF:Q4_K_M,--ctx-size,8192,--threads,8,--parallel,1,--jinja,--no-webui' \
+    --env 'LLAMA_CACHE=/home/sprite/models' \
+    --duration 5s
 }
 
 rollback() {
@@ -101,6 +127,8 @@ cd "$release_dir"
 npm ci --ignore-scripts
 npm run typecheck
 timeout --signal=TERM --kill-after=15s 10m npm test
+
+provision_llm_runtime
 
 ln -sfn "$release_dir" "$next_link"
 mv -Tf "$next_link" "$current_link"

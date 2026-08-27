@@ -50,6 +50,7 @@ export interface SpaceMountainWebHostOptions {
   fetchImpl?: typeof fetch;
   candidateManifest?: AppCatalogRegistrationV1;
   chatTagOrigin?: string;
+  llmOrigin?: string;
 }
 
 export function createSpaceMountainWebHost(options: SpaceMountainWebHostOptions) {
@@ -57,6 +58,7 @@ export function createSpaceMountainWebHost(options: SpaceMountainWebHostOptions)
   const fetchImpl = options.fetchImpl ?? fetch;
   const buildSha = options.buildSha ?? "dev";
   const chatTagOrigin = options.chatTagOrigin ? requireLoopbackOrigin(options.chatTagOrigin) : undefined;
+  const llmOrigin = requireLoopbackOrigin(options.llmOrigin ?? "http://127.0.0.1:8081");
   const server = createServer(async (request, response) => {
     const nonce = randomBytes(18).toString("base64url");
     applySecurityHeaders(response, nonce);
@@ -70,6 +72,11 @@ export function createSpaceMountainWebHost(options: SpaceMountainWebHostOptions)
       if (request.method === "GET" && url.pathname === "/sandbox/beacon") return html(response, 200, SANDBOX_BEACON_HTML);
       if (request.method === "GET" && ASSETS.has(url.pathname)) return serveAsset(response, ASSETS.get(url.pathname)!);
       if (request.method === "GET" && url.pathname === "/sandbox/health") return sandboxHealth(response, spmtOrigin, fetchImpl, buildSha);
+      if (url.pathname === "/v1/llm/health" && request.method === "GET") return llmHealth(response, llmOrigin, fetchImpl);
+      if ((url.pathname === "/v1/llm/models" && request.method === "GET") || (url.pathname === "/v1/llm/chat/completions" && request.method === "POST")) {
+        if (request.method === "POST") requireSameOrigin(request);
+        return proxyLlm(response, request, url, llmOrigin, fetchImpl);
+      }
       if (request.method === "GET" && url.pathname === "/sandbox/candidate-app" && options.candidateManifest) return json(response, 200, options.candidateManifest);
       if (request.method === "POST" && url.pathname === "/sandbox/developer/import-manifest") {
         requireSameOrigin(request);
@@ -134,6 +141,44 @@ async function sandboxHealth(response: ServerResponse, origin: string, fetchImpl
   } catch (error) {
     return json(response, 503, { ready: false, web: { ready: true, buildSha }, spmt: { error: error instanceof Error ? error.message : "unavailable" } });
   }
+}
+
+async function llmHealth(response: ServerResponse, origin: string, fetchImpl: typeof fetch) {
+  try {
+    const upstream = await fetchImpl(`${origin}/health`, { signal: AbortSignal.timeout(2000), redirect: "manual" });
+    return json(response, upstream.ok ? 200 : 503, { ready: upstream.ok, provider: "sprite-qwen", model: "Qwen/Qwen3-8B-GGUF:Q4_K_M" });
+  } catch {
+    return json(response, 503, { ready: false, provider: "sprite-qwen", model: "Qwen/Qwen3-8B-GGUF:Q4_K_M" });
+  }
+}
+
+async function proxyLlm(response: ServerResponse, request: IncomingMessage, url: URL, origin: string, fetchImpl: typeof fetch) {
+  await waitForLlm(origin, fetchImpl);
+  const method = request.method ?? "GET";
+  const upstreamPath = url.pathname === "/v1/llm/models" ? "/v1/models" : "/v1/chat/completions";
+  const body = method === "GET" ? undefined : await readBody(request);
+  const upstream = await fetchImpl(`${origin}${upstreamPath}`, {
+    method,
+    headers: { accept: "application/json", ...(body ? { "content-type": "application/json" } : {}) },
+    ...(body ? { body } : {}),
+    redirect: "manual",
+    signal: AbortSignal.timeout(10 * 60 * 1000),
+  });
+  const encoded = await limitedBody(upstream, 8 * 1024 * 1024, "LLM response is too large");
+  response.writeHead(upstream.status, { "content-type": upstream.headers.get("content-type") ?? "application/json; charset=utf-8", "content-length": encoded.byteLength, "cache-control": "no-store" });
+  response.end(encoded);
+}
+
+async function waitForLlm(origin: string, fetchImpl: typeof fetch) {
+  const deadline = Date.now() + 120_000;
+  while (Date.now() < deadline) {
+    try {
+      const health = await fetchImpl(`${origin}/health`, { signal: AbortSignal.timeout(1500), redirect: "manual" });
+      if (health.ok) return;
+    } catch {}
+    await new Promise((done) => setTimeout(done, 500));
+  }
+  throw new WebHostError(503, "The Sprite Qwen worker is still loading; retry shortly");
 }
 
 async function login(response: ServerResponse, origin: string, fetchImpl: typeof fetch, body: Record<string, unknown>) {
