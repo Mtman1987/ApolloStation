@@ -56,9 +56,10 @@ test("legacy saved scene/output APIs remain callable for migration evidence whil
 });
 
 test("sandbox environment validation requires explicit isolated storage and tenant/channel", () => {
-  assert.throws(() => validateChatTagSandboxEnvironment({}), /database path/i);
-  assert.throws(() => validateChatTagSandboxEnvironment({ CHAT_TAG_DATABASE_PATH: "/tmp/test.sqlite" }), /tenant/i);
-  const checked = validateChatTagSandboxEnvironment({ CHAT_TAG_DATABASE_PATH: "/tmp/test.sqlite", CHAT_TAG_TENANT_ID: "tenant", CHAT_TAG_CHANNEL_ID: "channel" });
+  assert.throws(() => validateChatTagSandboxEnvironment({}), /SPMT_RUNTIME_MODE=sandbox/);
+  assert.throws(() => validateChatTagSandboxEnvironment({ SPMT_RUNTIME_MODE: "sandbox" }), /SPMT_OUTBOUND_MODE=disabled/);
+  const checked = validateChatTagSandboxEnvironment({ SPMT_RUNTIME_MODE: "sandbox", SPMT_OUTBOUND_MODE: "disabled", CHAT_TAG_DATABASE_PATH: "/tmp/test.sqlite", CHAT_TAG_TENANT_ID: "tenant", CHAT_TAG_CHANNEL_ID: "channel" });
+  assert.equal(checked.databasePath, "/tmp/test.sqlite");
   assert.equal(checked.tenantId, "tenant");
   assert.equal(checked.channelId, "channel");
 });

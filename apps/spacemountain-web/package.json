@@ -9,7 +9,9 @@
     "start": "node dist/integrated-server.js"
   },
   "dependencies": {
+    "@spmt/contracts": "0.1.0",
     "@spmt/sdk": "0.1.0",
-    "@spmt/spacemountain": "0.2.0"
+    "@spmt/spacemountain": "0.2.0",
+    "@spmt/ui": "0.1.0"
   }
 }

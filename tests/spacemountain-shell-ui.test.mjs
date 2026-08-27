@@ -8,6 +8,7 @@ import { THEMED_SURFACE_CSS } from "../apps/spacemountain/dist/themed-surface-cs
 const base = readFileSync(new URL("../apps/spacemountain/src/shell-ui-base.ts", import.meta.url), "utf8");
 const wrapper = readFileSync(new URL("../apps/spacemountain/src/shell-ui.ts", import.meta.url), "utf8");
 const overlay = readFileSync(new URL("../apps/spacemountain/src/overlay-bay-ui.ts", import.meta.url), "utf8");
+const overlayScenes = readFileSync(new URL("../apps/spacemountain/src/overlay-scenes.ts", import.meta.url), "utf8");
 const source = `${base}\n${wrapper}\n${overlay}`;
 
 test("SpaceMountain wrapper preserves the proven shell and upgrades only Overlay Bay", () => {
@@ -99,7 +100,7 @@ test("shared header and mobile dock remain catalog-backed and viewport-safe", ()
 });
 
 test("Overlay Bay retains donor editor controls and all source families", () => {
-  for (const kind of ["web","image","text","camera","screen","xbox","alert","links","ticker","weather","nebula"]) assert.match(overlay, new RegExp(`\\"${kind}\\"|${kind}`));
+  for (const kind of ["web","image","text","camera","screen","xbox","alert","links","ticker","weather","nebula"]) assert.match(`${overlayScenes}\n${overlay}`, new RegExp(`\\"${kind}\\"|${kind}`));
   for (const feature of [/data-ob-resize/, /data-ob-front/, /data-ob-back/, /data-ob-copy/, /data-ob-remove/, /data-ob-test-alert/, /data-ob-field="opacity"/, /data-ob-field="interactive"/, /data-ob-field="locked"/, /data-ob-game/, /data-ob-game-style/]) assert.match(overlay, feature);
   assert.match(overlay, /NEBULA_GAMES/);
   assert.match(overlay, /\/v1\/overlay\/scenes\/register/);

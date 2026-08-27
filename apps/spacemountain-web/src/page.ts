@@ -5,6 +5,7 @@ export function renderSpaceMountainPage(nonce: string, buildSha: string, candida
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#f97316">
   <meta name="robots" content="noindex,nofollow,noarchive">
   <title>SpaceMountain Green Sandbox</title>
   <link rel="stylesheet" href="/assets/web/sandbox.css">

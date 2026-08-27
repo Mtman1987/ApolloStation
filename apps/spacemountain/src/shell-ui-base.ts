@@ -156,6 +156,7 @@ export class SpaceMountainShellUi {
     root.style.setProperty("--accent2", theme.accentSecondary);
     root.style.setProperty("--spmt-accent", theme.accent);
     root.style.setProperty("--spmt-accent-secondary", theme.accentSecondary);
+    document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')?.setAttribute("content", theme.accent);
     root.style.setProperty("--spmt-glow", `${recordNumber(appearance, "glowIntensity") ?? 55}%`);
     root.style.setProperty("--spmt-stars", String((recordNumber(appearance, "starDensity") ?? 70) / 100));
     root.style.setProperty("--spmt-glass-opacity", String((recordNumber(appearance, "glassOpacity") ?? 76) / 100));
@@ -248,12 +249,21 @@ export class SpaceMountainShellUi {
       root.style.setProperty("--accent2", next.accentSecondary);
       root.style.setProperty("--spmt-accent", next.accent);
       root.style.setProperty("--spmt-accent-secondary", next.accentSecondary);
+      root.querySelectorAll<HTMLImageElement>("[data-theme-logo]").forEach((image) => { image.src = themeLogoUrl(next.id, image.dataset.themeLogo === "name" ? "name" : "hero"); });
+      document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')?.setAttribute("content", next.accent);
     };
     themeSelect?.addEventListener("change", () => {
       if (!accentInput) return;
       accentInput.value = resolveProductTheme(themeSelect.value).accent;
       previewTheme();
     });
+    root.querySelectorAll<HTMLButtonElement>("[data-theme-choice]").forEach((button) => button.addEventListener("click", () => {
+      if (!themeSelect || !accentInput) return;
+      themeSelect.value = button.dataset.themeChoice ?? "solar-flare";
+      accentInput.value = resolveProductTheme(themeSelect.value).accent;
+      root.querySelectorAll<HTMLElement>("[data-theme-choice]").forEach((choice) => choice.setAttribute("aria-pressed", String(choice === button)));
+      previewTheme();
+    }));
     accentInput?.addEventListener("input", previewTheme);
     if (this.view === "workspace") {
       mountOverlayBay(root, this.snapshot);
@@ -406,10 +416,10 @@ export class SpaceMountainShellUi {
     const unread = this.snapshot.notifications.filter((item) => !item.readAt && !item.read_at).length;
     const appearance = recordObject(this.snapshot.workspace, "appearance");
     const theme = resolveProductTheme(recordText(appearance, ["theme"]), recordText(appearance, ["accent"]));
-    return `<section class="spmt-hero spmt-product-glass"><div class="spmt-hero-copy"><img class="spmt-hero-logo spmt-hero-logo-large" src="/assets/product/space-logo-main.png" alt="SpaceMountain"><p class="spmt-hero-tagline">One command bridge for every creator tool.</p><div class="actions"><button data-nav="apps" class="primary">${icon("rocket")}Open Shipyard</button><button data-launch-app="commlink">${icon("mail")}Open Commlink</button></div></div><div class="spmt-metrics">${metric("Apps online", `${installed.length}/${this.snapshot.apps.length}`)}${metric("Unread", String(unread))}${metric("Active apps", String((this.snapshot.runtimeStates ?? []).filter((item) => recordText(item, ["state"]) === "ready").length))}${metric("Theme", theme.name)}</div></section>`;
+    return `<section class="spmt-hero spmt-product-glass"><div class="spmt-hero-copy"><img class="spmt-hero-logo spmt-hero-logo-large" data-theme-logo="hero" src="${themeLogoUrl(theme.id, "hero")}" alt="SpaceMountain"><p class="spmt-hero-tagline">One command bridge for every creator tool.</p><div class="actions"><button data-nav="apps" class="primary">${icon("rocket")}Open Shipyard</button><button data-launch-app="commlink">${icon("mail")}Open Commlink</button></div></div><div class="spmt-metrics">${metric("Apps online", `${installed.length}/${this.snapshot.apps.length}`)}${metric("Unread", String(unread))}${metric("Active apps", String((this.snapshot.runtimeStates ?? []).filter((item) => recordText(item, ["state"]) === "ready").length))}${metric("Theme", theme.name)}</div></section>`;
   }
 
-  private shipyard() { const apps = this.snapshot.apps.filter((app) => this.appVisible(app)); return `${page("Apps and capabilities", "Registry, install state, granted scopes, and entitlements come directly from SPMT.", "SHIPYARD")}<div class="spmt-app-grid wide">${apps.map(appCard).join("") || empty("No registered apps are available yet.")}</div>`; }
+  private shipyard() { const apps = this.snapshot.apps.filter((app) => this.appVisible(app)); const appearance = recordObject(this.snapshot.workspace, "appearance"); const theme = resolveProductTheme(recordText(appearance, ["theme"])).id; return `${page("Apps and capabilities", "Registry, install state, granted scopes, and entitlements come directly from SPMT.", "SHIPYARD")}<div class="spmt-app-grid wide">${apps.map((app) => appCard(app, theme)).join("") || empty("No registered apps are available yet.")}</div>`; }
   private commlink() {
     const state = this.commlinkWorkspace();
     const sources = commlinkSources(this.snapshot);
@@ -740,7 +750,7 @@ function isUnread(item: Record<string, unknown>) { return !recordText(item, ["re
 function recordStrings(value: unknown, key: string) { if (!value || typeof value !== "object" || Array.isArray(value)) return []; const raw = (value as Record<string, unknown>)[key]; return Array.isArray(raw) ? raw.filter((item): item is string => typeof item === "string") : []; }
 function payloadKeySummary(value: unknown) { if (!value || typeof value !== "object" || Array.isArray(value)) return "No structured payload fields"; const keys = Object.keys(value as Record<string, unknown>).sort(); return keys.length ? `Payload fields: ${keys.slice(0, 12).join(", ")}${keys.length > 12 ? "…" : ""}` : "No structured payload fields"; }
 function formatRecordTime(value: string | undefined) { if (!value) return "Time unavailable"; const timestamp = Date.parse(value); if (!Number.isFinite(timestamp)) return value; return new Date(timestamp).toISOString().replace("T", " ").replace(".000Z", " UTC"); }
-function appCard(app: SpaceMountainAppCardV1) { const action = app.installed && app.enabled ? `<button class="primary" data-launch-app="${escapeHtml(app.appId)}">Launch ${icon("arrow")}</button>` : `<button data-install-app="${escapeHtml(app.appId)}">Install</button>`; const art = app.iconUrl ? `<img src="${escapeHtml(app.iconUrl)}" alt="" loading="lazy">` : `<span>${escapeHtml(initials(app.name))}</span>`; return `<article class="spmt-app-card"><div class="app-icon">${art}</div><div class="spmt-app-status"><span>${app.installed ? (app.enabled ? "INSTALLED" : "DISABLED") : "AVAILABLE"}</span><small>v${escapeHtml(app.version || "—")}</small></div><h3>${escapeHtml(app.name)}</h3><p>${escapeHtml(app.description || "SpaceMountain ecosystem application")}</p><footer>${action}<small>${escapeHtml(app.surfaces.join(" · ") || "standalone")}</small></footer></article>`; }
+function appCard(app: SpaceMountainAppCardV1, theme: string) { const action = app.installed && app.enabled ? `<button class="primary" data-launch-app="${escapeHtml(app.appId)}">Launch ${icon("arrow")}</button>` : `<button data-install-app="${escapeHtml(app.appId)}">Install</button>`; const themed = themedAppIconUrl(theme, app.appId); const art = themed ? `<img src="${escapeHtml(themed)}" alt="" loading="lazy">` : app.iconUrl ? `<img src="${escapeHtml(app.iconUrl)}" alt="" loading="lazy">` : `<span>${escapeHtml(initials(app.name))}</span>`; return `<article class="spmt-app-card"><div class="app-icon">${art}</div><div class="spmt-app-status"><span>${app.installed ? (app.enabled ? "INSTALLED" : "DISABLED") : "AVAILABLE"}</span><small>v${escapeHtml(app.version || "—")}</small></div><h3>${escapeHtml(app.name)}</h3><p>${escapeHtml(app.description || "SpaceMountain ecosystem application")}</p><footer>${action}<small>${escapeHtml(app.surfaces.join(" · ") || "standalone")}</small></footer></article>`; }
 function metric(label: string, value: string) { return `<div><strong>${escapeHtml(value)}</strong><span>${escapeHtml(label)}</span></div>`; }
 function quick(title: string, body: string, nav: SpaceMountainViewV1, iconName: IconName = "pulse") { return `<button data-nav="${nav}"><i>${icon(iconName)}</i><strong>${title}</strong><span>${body}</span><em>${icon("arrow")}</em></button>`; }
 function page(title: string, body: string, kicker = "SPACEMOUNTAIN") { return `<section class="spmt-page-title"><span>${kicker}</span><h1>${escapeHtml(title)}</h1><p>${escapeHtml(body)}</p></section>`; }
@@ -751,6 +761,17 @@ function recordBoolean(value: unknown, key: string, fallback: boolean) { if (!va
 function recordObject(value: unknown, key: string) { if (!value || typeof value !== "object" || Array.isArray(value)) return undefined; const result = (value as Record<string, unknown>)[key]; return result && typeof result === "object" && !Array.isArray(result) ? result as Record<string, unknown> : undefined; }
 function sessionHasScope(value: unknown, scope: string) { return recordStrings(value, "scopes").includes(scope); }
 function providerLinkKey(value: unknown) { return `${recordText(value, ["provider"]) ?? ""}:${recordText(value, ["providerUserId", "provider_user_id"]) ?? ""}`; }
+function themeLogoUrl(theme: string, kind: "hero" | "name") {
+  const id = ["solar-flare", "nebula-purple", "oceanic-blue", "aurora-green"].includes(theme) ? theme : "solar-flare";
+  return `/assets/product/themes/${id}-${kind}.png`;
+}
+function themedAppIconUrl(theme: string, appId: string) {
+  const themeId = ["solar-flare", "nebula-purple", "oceanic-blue", "aurora-green"].includes(theme) ? theme : "solar-flare";
+  const aliases: Record<string, string> = { spacemountain: "mission-control", "spacemountain-web": "mission-control", "discord-stream-hub": "discord-stream-hub", dsh: "discord-stream-hub", "chat-tag": "nebula-arcade" };
+  const id = aliases[appId] ?? appId;
+  const supported = new Set(["stellar-core", "shipyard", "commlink", "mission-control", "mountainview", "discord-stream-hub", "streamweaver", "hearmeout", "nebula-arcade", "companion"]);
+  return supported.has(id) ? `/assets/product/app-icons/${themeId}/${id}.png` : undefined;
+}
 function selectOption(value: string, selected: string, label: string) { return `<option value="${escapeHtml(value)}"${value === selected ? " selected" : ""}>${escapeHtml(label)}</option>`; }
 function rangeControl(name: string, label: string, value: number) { return `<label>${escapeHtml(label)} <output>${Math.round(value)}</output><input type="range" name="${escapeHtml(name)}" min="0" max="100" step="1" value="${Math.round(value)}"></label>`; }
 function checkControl(name: string, label: string, checked: boolean) { return `<label class="spmt-check"><input type="checkbox" name="${escapeHtml(name)}"${checked ? " checked" : ""}>${escapeHtml(label)}</label>`; }
