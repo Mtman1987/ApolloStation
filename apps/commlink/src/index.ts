@@ -1,4 +1,5 @@
 import { assertAppModuleManifestV1, type AppCatalogRegistrationV1, type AppModuleManifestV1 } from "@spmt/contracts";
+export * from "./live-chat.js";
 
 export const manifest = assertAppModuleManifestV1({
   schemaVersion: 1,
