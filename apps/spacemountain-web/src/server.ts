@@ -6,6 +6,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { renderSpaceMountainPage, SANDBOX_BEACON_HTML, SANDBOX_CSS, SANDBOX_POLISH_CSS } from "./page.js";
 import { DEVELOPER_DOCS_CSS, DEVELOPER_MANIFEST_EXAMPLE, renderDeveloperDocsPage } from "./developer-docs.js";
+import { BOUNDED_APP_PATHS, renderBoundedAppPage } from "./bounded-app-pages.js";
 import type { AppCatalogRegistrationV1 } from "@spmt/contracts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -64,6 +65,11 @@ export function createSpaceMountainWebHost(options: SpaceMountainWebHostOptions)
     applySecurityHeaders(response, nonce);
     try {
       const url = new URL(request.url ?? "/", "http://spacemountain.local");
+      if (request.method === "GET" && BOUNDED_APP_PATHS.has(url.pathname)) {
+        response.removeHeader("x-frame-options");
+        response.setHeader("content-security-policy", "default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; frame-ancestors 'self'; base-uri 'none'; object-src 'none'");
+        return html(response, 200, renderBoundedAppPage(url.pathname, buildSha));
+      }
       if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/first-time-setup" || SHELL_APP_PATHS.has(url.pathname))) return html(response, 200, renderSpaceMountainPage(nonce, buildSha, Boolean(options.candidateManifest)));
       if (request.method === "GET" && url.pathname === "/assets/web/sandbox.css") return textResponse(response, 200, SANDBOX_CSS + SANDBOX_POLISH_CSS, "text/css; charset=utf-8", "public, max-age=300");
       if (request.method === "GET" && url.pathname === "/assets/web/developer-docs.css") return textResponse(response, 200, DEVELOPER_DOCS_CSS, "text/css; charset=utf-8", "public, max-age=300");
