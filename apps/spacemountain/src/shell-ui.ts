@@ -6,7 +6,7 @@ export type { SpaceMountainUiOptions, SpaceMountainViewV1 } from "./shell-ui-bas
 export class SpaceMountainShellUi {
   private readonly base: BaseShellUi;
   private readonly overlayBay: OverlayBayParityController;
-  private observer?: MutationObserver;
+  private observer: MutationObserver | undefined;
   private snapshot: SpaceMountainShellSnapshotV1;
 
   constructor(private readonly options: SpaceMountainUiOptions) {
