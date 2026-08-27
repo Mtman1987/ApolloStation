@@ -75,6 +75,19 @@ jobs:
       - name: Create pre-deployment checkpoint
         run: sprite checkpoint create -o "$SPRITE_ORG" -s "$SPRITE_NAME" --comment "Before review $BUILD_SHA"
 
+      - name: Apply model-safe deny-by-default network policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsS -X POST "https://api.sprites.dev/v1/sprites/$SPRITE_NAME/policy/network" \
+            -H "Authorization: Bearer $SPRITES_TOKEN" \
+            -H "Content-Type: application/json" \
+            --data-binary @sandbox/sprites/network-policy.json >/tmp/network-policy-response.json
+          curl -fsS "https://api.sprites.dev/v1/sprites/$SPRITE_NAME/policy/network" \
+            -H "Authorization: Bearer $SPRITES_TOKEN" | jq -S . >/tmp/network-policy-actual.json
+          jq -S . sandbox/sprites/network-policy.json >/tmp/network-policy-expected.json
+          diff -u /tmp/network-policy-expected.json /tmp/network-policy-actual.json
+
       - name: Deploy and verify review release
         shell: bash
         run: |
@@ -157,6 +170,19 @@ jobs:
 
       - name: Create protected pre-promotion checkpoint
         run: sprite checkpoint create -o "$SPRITE_ORG" -s "$SPRITE_NAME" --comment "Before release $BUILD_SHA"
+
+      - name: Apply model-safe deny-by-default network policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsS -X POST "https://api.sprites.dev/v1/sprites/$SPRITE_NAME/policy/network" \
+            -H "Authorization: Bearer $SPRITES_TOKEN" \
+            -H "Content-Type: application/json" \
+            --data-binary @sandbox/sprites/network-policy.json >/tmp/network-policy-response.json
+          curl -fsS "https://api.sprites.dev/v1/sprites/$SPRITE_NAME/policy/network" \
+            -H "Authorization: Bearer $SPRITES_TOKEN" | jq -S . >/tmp/network-policy-actual.json
+          jq -S . sandbox/sprites/network-policy.json >/tmp/network-policy-expected.json
+          diff -u /tmp/network-policy-expected.json /tmp/network-policy-actual.json
 
       - name: Promote and verify exact main commit
         shell: bash
