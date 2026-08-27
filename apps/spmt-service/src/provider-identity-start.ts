@@ -1,4 +1,5 @@
 import { createSpmtServiceWithProviderIdentity } from "./provider-identity-host.js";
+import { createSpmtOutputGateway } from "./output-gateway.js";
 import { validateSandboxServiceEnvironment } from "./index.js";
 
 const port = Number(process.env.PORT ?? 3000);
@@ -31,16 +32,17 @@ const service = createSpmtServiceWithProviderIdentity({
   ...(twitchClientSecret ? { twitchClientSecret } : {}),
   ...(discordBotToken ? { discordBotToken } : {}),
 });
+const gateway = createSpmtOutputGateway(service, { port, host: checked?.host ?? process.env.SPMT_HOST ?? "0.0.0.0" });
 
-await service.listen();
-process.stdout.write(`SPMT service with provider identity listening on ${port}\n`);
+await gateway.listen();
+process.stdout.write(`SPMT service with provider identity and overlay output gateway listening on ${port}\n`);
 
 let stopping = false;
 const shutdown = async () => {
   if (stopping) return;
   stopping = true;
   try {
-    await service.close();
+    await gateway.close();
     process.exit(0);
   } catch (error) {
     process.stderr.write(`SPMT shutdown failed: ${error instanceof Error ? error.message : String(error)}\n`);

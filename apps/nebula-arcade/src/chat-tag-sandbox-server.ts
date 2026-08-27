@@ -1,185 +1,100 @@
-import { randomBytes } from "node:crypto";
-import { readFile } from "node:fs/promises";
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
-import { SpmtClient } from "@spmt/sdk";
-import { PRODUCT_UI_CSS } from "@spmt/ui";
-import { ChatTagExperienceService, SqliteChatTagExperienceStore } from "./chat-tag-experience.js";
-import { ChatTagOverlayHttpAdapter } from "./chat-tag-overlay-http.js";
-import { ChatTagRuntime, SqliteChatTagStore } from "./chat-tag-runtime.js";
+import { createServer, request as httpRequest, type IncomingMessage, type ServerResponse } from "node:http";
+import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { NEBULA_ARCADE_GAMES } from "./game-hub.js";
-import { NEBULA_THEME_CSS } from "./nebula-theme-css.js";
-import { NEBULA_ARCADE_BASE_CSS, NEBULA_ARCADE_BROWSER_JS, NEBULA_OVERLAY_CSS, renderNebulaArcadePage, renderNebulaOverlayOutput, type NebulaArcadeViewV1 } from "./nebula-arcade-page.js";
-import { SqliteNebulaOverlaySceneStore, type NebulaOverlayLayerV1, type NebulaOverlaySceneV1 } from "./overlay-scenes.js";
+import { SqliteNebulaGameActionStore, validateNebulaGameAction } from "./game-actions.js";
+import { SqliteNebulaGameMixStore, type NebulaGameMixV1 } from "./game-mixes.js";
+import { getNebulaGameStats, joinNebulaGame, leaveNebulaGame, normalizeNebulaPlayerId, resolveNebulaChannelGameIds, setNebulaChannelGameRunning } from "./game-runtime.js";
+import { SqliteNebulaGameRuntimeStore } from "./game-runtime-store.js";
+import { createChatTagSandboxHost as createLegacyChatTagSandboxHost, validateChatTagSandboxEnvironment, type ChatTagSandboxHostOptions } from "./legacy-chat-tag-sandbox-server.js";
 
-const MAX_BODY_BYTES = 64 * 1_024;
-const HERE = dirname(fileURLToPath(import.meta.url));
-const NEBULA_ARCADE_BACKGROUND = resolve(HERE, "../assets/nebula-arcade-solar-system.webp");
+const MAX_BODY_BYTES = 64 * 1024;
 const APP_PATH = "/apps/nebula-arcade";
-const PROVIDER_ENV_NAMES = ["TWITCH_CLIENT_ID", "TWITCH_CLIENT_SECRET", "TWITCH_BOT_OAUTH_TOKEN", "DISCORD_BOT_TOKEN", "KICK_CLIENT_ID", "KICK_CLIENT_SECRET", "FLY_API_TOKEN"] as const;
 const GAME_IDS = new Set(NEBULA_ARCADE_GAMES.map((game) => game.id));
-const OVERLAY_FLOW_FIX_CSS = `body{display:flex;flex-direction:column;align-items:flex-end;justify-content:flex-end;gap:10px;padding:24px}.nebula-output-layer{z-index:auto}.nebula-output-placeholder{position:relative;inset:auto;width:auto;height:auto;flex:0 0 auto}`;
-
-export interface ChatTagSandboxHostOptions { databasePath: string; tenantId: string; channelId: string; pinUserId?: string; port?: number; host?: string; buildSha?: string; }
 
 export function createChatTagSandboxHost(options: ChatTagSandboxHostOptions) {
-  const gameStore = new SqliteChatTagStore(options.databasePath);
-  const experienceStore = new SqliteChatTagExperienceStore(options.databasePath);
-  const sceneStore = new SqliteNebulaOverlaySceneStore(options.databasePath);
-  const spmt = new SpmtClient({ baseUrl: "http://sandbox-disabled.invalid", appId: "nebula-arcade", fetchImpl: async () => Response.json({ sandbox: true, outbound: "disabled" }) });
-  const runtime = new ChatTagRuntime(gameStore, spmt);
-  const experience = new ChatTagExperienceService(runtime, experienceStore, options.pinUserId ?? "provider:twitch:pin", () => new Date().toISOString());
-  const overlay = new ChatTagOverlayHttpAdapter(gameStore, () => new Date().toISOString(), experienceStore);
-  const principal = { schemaVersion: 1 as const, tenantId: options.tenantId, appId: "nebula-arcade" as const, widgetId: "chat-tag" as const, channelId: options.channelId };
+  const legacy = createLegacyChatTagSandboxHost({ ...options, port: 0, host: "127.0.0.1" });
+  const runtime = new SqliteNebulaGameRuntimeStore(options.databasePath);
+  const actions = new SqliteNebulaGameActionStore(options.databasePath);
+  const mixes = new SqliteNebulaGameMixStore(options.databasePath);
+  let legacyPort = 0;
 
   const server = createServer(async (request, response) => {
-    const nonce = randomBytes(18).toString("base64url");
-    applyHeaders(response, nonce);
     try {
-      const url = new URL(request.url ?? "/", "http://chat-tag.sandbox");
-      if (request.method === "GET" && url.pathname === "/health/ready") return json(response, 200, { ready: true, app: "nebula-arcade", runtimeMode: "sandbox", outboundIntegrations: "disabled", buildSha: options.buildSha ?? "dev" });
-
-      if ((url.pathname === APP_PATH || url.pathname === "/") && url.searchParams.get("action") === "overlay-scenes") {
-        if (request.method === "GET") return json(response, 200, { scenes: sceneStore.list(options.tenantId) });
-        if (request.method === "POST") {
-          requireSameOrigin(request);
-          const scene = sceneStore.save(options.tenantId, sceneInput(await readJson(request)), new Date().toISOString());
-          return json(response, 200, { scene, outputUrl: overlayOutputUrl(scene.id) });
-        }
-        if (request.method === "DELETE") {
-          requireSameOrigin(request);
-          const sceneId = url.searchParams.get("scene") ?? "";
-          requireSceneId(sceneId);
-          return json(response, sceneStore.delete(options.tenantId, sceneId) ? 200 : 404, { deleted: sceneId });
-        }
+      const url = new URL(request.url ?? "/", "http://nebula.green");
+      if (request.method === "GET" && url.pathname === "/assets/nebula-game-mix.js") return javascript(response, GAME_MIX_CLIENT_JS);
+      if (request.method === "GET" && url.pathname === "/v1/nebula/game-actions") return json(response, 200, { actions: actions.list(options.tenantId, { ...(url.searchParams.get("channel") ? { channel: url.searchParams.get("channel")! } : {}), ...(url.searchParams.getAll("gameId").length ? { gameIds: url.searchParams.getAll("gameId") } : {}), ...(url.searchParams.get("after") ? { after: url.searchParams.get("after")! } : {}), ...(url.searchParams.get("limit") ? { limit: Number(url.searchParams.get("limit")) } : {}) }) });
+      if (request.method === "POST" && url.pathname === "/v1/nebula/game-actions") { requireSameOrigin(request); return handleAction(response, await readJson(request), options, runtime, actions); }
+      if (request.method === "GET" && (url.pathname === "/v1/nebula/game-mixes" || (url.pathname === APP_PATH && url.searchParams.get("action") === "game-mixes"))) return json(response, 200, { mixes: mixes.list(options.tenantId) });
+      if (request.method === "POST" && (url.pathname === "/v1/nebula/game-mixes" || (url.pathname === APP_PATH && url.searchParams.get("action") === "game-mixes"))) {
+        requireSameOrigin(request); const body = await readJson(request); const mix = mixes.save(options.tenantId, gameMixInput(body));
+        return json(response, 200, { mix, rendererUrl: `${APP_PATH}?surface=overlay&mix=${encodeURIComponent(mix.id)}` });
       }
-
-      if (request.method === "GET" && (url.pathname === "/" || url.pathname === APP_PATH)) {
-        const sceneId = url.searchParams.get("scene");
-        if (url.searchParams.get("surface") === "overlay" && sceneId) {
-          requireSceneId(sceneId);
-          const scene = sceneStore.get(options.tenantId, sceneId);
-          if (!scene) return html(response, 404, "<!doctype html><title>Overlay not found</title><p>Saved Nebula Arcade overlay not found.</p>");
-          return html(response, 200, proxySafeOverlayPage(scene));
-        }
-        const shellSurface = url.searchParams.get("surface") === "shell";
-        const page = renderNebulaArcadePage({ nonce, tenantId: options.tenantId, channelId: options.channelId, shellSurface, view: arcadeView(url.searchParams.get("view")), ...(url.searchParams.get("game") ? { gameId: url.searchParams.get("game")! } : {}) });
-        return html(response, 200, page.replace('<a href="/?view=spmt">SpaceMountain</a>', '<a href="/">SpaceMountain</a>'));
+      if (request.method === "DELETE" && (url.pathname.startsWith("/v1/nebula/game-mixes/") || (url.pathname === APP_PATH && url.searchParams.get("action") === "game-mixes"))) {
+        requireSameOrigin(request); const mixId = url.pathname.startsWith("/v1/nebula/game-mixes/") ? decodeURIComponent(url.pathname.slice("/v1/nebula/game-mixes/".length)) : url.searchParams.get("mix") ?? "";
+        return json(response, mixes.delete(options.tenantId, mixId) ? 200 : 404, { deleted: mixId });
       }
-
-      if (request.method === "GET" && url.pathname === "/assets/chat-tag-sandbox.css") return text(response, 200, `${PRODUCT_UI_CSS}${NEBULA_ARCADE_BASE_CSS}${NEBULA_THEME_CSS}`, "text/css; charset=utf-8", "public, max-age=300");
-      if (request.method === "GET" && url.pathname === "/assets/chat-tag-sandbox.js") return text(response, 200, proxySafeBrowserScript(), "text/javascript; charset=utf-8", "public, max-age=300");
-      if (request.method === "GET" && (url.pathname === "/assets/nebula-overlay.css" || url.pathname === "/assets/nebula-arcade/overlay.css")) return text(response, 200, `${NEBULA_OVERLAY_CSS}${OVERLAY_FLOW_FIX_CSS}`, "text/css; charset=utf-8", "public, max-age=300");
-      if (request.method === "GET" && url.pathname === "/assets/nebula-arcade/solar-system.webp") return binary(response, 200, await readFile(NEBULA_ARCADE_BACKGROUND), "image/webp", "public, max-age=86400");
-
-      // Canonical direct-service API remains available; the browser uses APP_PATH aliases so the existing SpaceMountain shell proxy can carry it unchanged.
-      if (request.method === "GET" && url.pathname === "/v1/nebula/overlay-scenes") return json(response, 200, { scenes: sceneStore.list(options.tenantId) });
-      if (request.method === "POST" && url.pathname === "/v1/nebula/overlay-scenes") {
-        requireSameOrigin(request);
-        const scene = sceneStore.save(options.tenantId, sceneInput(await readJson(request)), new Date().toISOString());
-        return json(response, 200, { scene, outputUrl: overlayOutputUrl(scene.id) });
+      if (request.method === "GET" && url.pathname === "/v1/nebula/game-mix-state") {
+        const mix = mixes.get(options.tenantId, url.searchParams.get("mix") ?? ""); if (!mix) return json(response, 404, { error: "mix_not_found" });
+        return json(response, 200, gameMixState(options.tenantId, options.channelId, mix, runtime, actions));
       }
-      if (request.method === "DELETE" && url.pathname.startsWith("/v1/nebula/overlay-scenes/")) {
-        requireSameOrigin(request);
-        const sceneId = decodeURIComponent(url.pathname.slice("/v1/nebula/overlay-scenes/".length));
-        requireSceneId(sceneId);
-        return json(response, sceneStore.delete(options.tenantId, sceneId) ? 200 : 404, { deleted: sceneId });
-      }
-      if (request.method === "GET" && url.pathname.startsWith("/overlay/")) {
-        const sceneId = decodeURIComponent(url.pathname.slice("/overlay/".length));
-        requireSceneId(sceneId);
-        const scene = sceneStore.get(options.tenantId, sceneId);
-        if (!scene) return html(response, 404, "<!doctype html><title>Overlay not found</title><p>Saved Nebula Arcade overlay not found.</p>");
-        return html(response, 200, proxySafeOverlayPage(scene));
-      }
-
-      if (request.method === "GET" && url.pathname === "/v1/chat-tag/state") return json(response, 200, runtime.getState(options.tenantId));
-      if (request.method === "GET" && url.pathname === "/v1/chat-tag/support") return json(response, 200, experienceStore.listSupportTickets(options.tenantId));
-      if (request.method === "GET" && url.pathname === "/v1/nebula/chat-tag/overlay/messages") {
-        const after = Number(url.searchParams.get("after") ?? "0");
-        return json(response, 200, { messages: experienceStore.listOverlayMessages(options.tenantId, options.channelId, after) });
-      }
-      if (request.method === "POST" && url.pathname === "/v1/chat-tag/message") {
-        requireSameOrigin(request);
-        const body = await readJson(request);
-        const occurredAt = optionalIso(body.occurredAt) ?? new Date().toISOString();
-        const outcome = await experience.ingest({ schemaVersion: 1, provider: provider(body.provider), tenantId: options.tenantId, channelId: options.channelId, messageId: textField(body.messageId, "messageId", 200), userId: textField(body.userId, "userId", 200), username: textField(body.username, "username", 120), text: normalizeSandboxChatTagCommand(textField(body.text, "text", 500)), occurredAt, roles: roles(body.roles) }, { liveUserIds: stringArray(body.liveUserIds, 200) });
-        return json(response, 200, { outcome, stored: runtime.getState(options.tenantId) });
-      }
-      if (request.method === "POST" && url.pathname === "/v1/chat-tag/rotation") {
-        requireSameOrigin(request);
-        const body = await readJson(request);
-        const outcome = await runtime.reconcileRotation({ tenantId: options.tenantId, channelId: options.channelId, now: optionalIso(body.now) ?? new Date().toISOString(), liveUserIds: stringArray(body.liveUserIds, 200) });
-        return json(response, 200, { outcome, stored: runtime.getState(options.tenantId) });
-      }
-      if (url.pathname === "/v1/nebula/chat-tag/overlay" || url.pathname.startsWith("/v1/nebula/chat-tag/overlay/")) {
-        const adapted = overlay.handle({ method: request.method ?? "GET", path: url.pathname }, principal);
-        return textWithHeaders(response, adapted.status, adapted.body, adapted.headers);
-      }
-      return json(response, 404, { error: "not_found" });
-    } catch (error) {
-      const status = error instanceof SandboxError ? error.status : error instanceof Error && /invalid|requires|contains/i.test(error.message) ? 400 : 500;
-      return json(response, status, { error: status === 500 ? "internal" : "invalid_request", message: error instanceof Error ? error.message : "unknown error" });
-    }
+      const directMix = request.method === "GET" && url.pathname.startsWith("/overlay/game-mix/") ? decodeURIComponent(url.pathname.slice("/overlay/game-mix/".length)) : undefined;
+      const queryMix = request.method === "GET" && url.pathname === APP_PATH && url.searchParams.get("surface") === "overlay" ? url.searchParams.get("mix") ?? undefined : undefined;
+      if (directMix || queryMix) { const mix = mixes.get(options.tenantId, directMix ?? queryMix!); return mix ? html(response, 200, renderGameMix(mix, options.channelId)) : html(response, 404, "<!doctype html><meta charset=utf-8><title>Game Mix not found</title>"); }
+      if (request.method === "GET" && url.pathname === APP_PATH && url.searchParams.get("view") === "overlay" && url.searchParams.get("surface") !== "overlay") return html(response, 200, canonicalOverlayEditorPage());
+      if (request.method === "GET" && (url.pathname === APP_PATH || url.pathname === "/") && url.searchParams.get("surface") !== "overlay") return proxyLegacy(request, response, legacyPort, true);
+      return proxyLegacy(request, response, legacyPort, false);
+    } catch (error) { return json(response, error instanceof NebulaHostError ? error.status : 500, { error: error instanceof NebulaHostError ? "invalid_request" : "internal", message: error instanceof Error ? error.message : "unknown error" }); }
   });
 
   return {
     server,
-    listen: () => new Promise<void>((done, reject) => { server.once("error", reject); server.listen(options.port ?? 8080, options.host ?? "0.0.0.0", () => { server.off("error", reject); done(); }); }),
-    close: () => new Promise<void>((done, reject) => server.close((error) => { sceneStore.close(); gameStore.close(); experienceStore.close(); error ? reject(error) : done(); })),
+    async listen() { await legacy.listen(); const address = legacy.server.address(); if (!address || typeof address === "string") throw new Error("Legacy Chat Tag host did not bind a TCP port"); legacyPort = address.port; await listen(server, options.port ?? 8080, options.host ?? "0.0.0.0"); },
+    async close() { if (server.listening) await close(server); mixes.close(); actions.close(); runtime.close(); await legacy.close(); },
   };
 }
 
-export function validateChatTagSandboxEnvironment(environment: NodeJS.ProcessEnv) {
-  if (environment.SPMT_RUNTIME_MODE !== "sandbox") throw new Error("SPMT_RUNTIME_MODE=sandbox is required");
-  if (environment.SPMT_OUTBOUND_MODE !== "disabled") throw new Error("SPMT_OUTBOUND_MODE=disabled is required");
-  const present = PROVIDER_ENV_NAMES.filter((name) => Boolean(environment[name]));
-  if (present.length) throw new Error(`Chat Tag sandbox rejects provider or infrastructure credentials: ${present.join(", ")}`);
-  return { databasePath: resolve(environment.CHAT_TAG_DATABASE_PATH ?? ".sandbox-data/chat-tag-green-sandbox.sqlite"), tenantId: safeId(environment.CHAT_TAG_TENANT_ID ?? "chat-tag-sandbox", "CHAT_TAG_TENANT_ID"), channelId: safeId(environment.CHAT_TAG_CHANNEL_ID ?? "sandbox-channel", "CHAT_TAG_CHANNEL_ID") };
+function handleAction(response: ServerResponse, body: Record<string, unknown>, options: ChatTagSandboxHostOptions, runtime: SqliteNebulaGameRuntimeStore, actions: SqliteNebulaGameActionStore) {
+  const gameId = string(body.gameId, "gameId", 80).toLowerCase(); if (!GAME_IDS.has(gameId)) throw new NebulaHostError(400, "Unknown Nebula game");
+  const checked = validateNebulaGameAction(gameId, typeof body.action === "string" ? body.action : "join", array(body.args));
+  const channel = string(body.channel ?? options.channelId, "channel", 80).replace(/^#/, "").toLowerCase(), username = string(body.username, "username", 120).toLowerCase(), displayName = string(body.displayName ?? body.username, "displayName", 120), userId = string(body.userId ?? username, "userId", 160);
+  const canControl = body.isBroadcaster === true || body.isModerator === true || body.isAdmin === true || username === channel;
+  if ((checked.action === "start" || checked.action === "stop") && !canControl) throw new NebulaHostError(403, "Only the streamer or a moderator can start or stop a game");
+  const now = new Date();
+  const updated = runtime.update(options.tenantId, (state) => {
+    if (checked.action === "start" || checked.action === "stop") setNebulaChannelGameRunning(state, channel, gameId, checked.action === "start", now);
+    else { const active = resolveNebulaChannelGameIds(state, channel); if (gameId !== "chat-tag" && !active.includes(gameId)) throw new NebulaHostError(409, `${gameId} is not active in #${channel}`); if (checked.action === "leave") leaveNebulaGame(state, normalizeNebulaPlayerId(userId, username), gameId, now); else joinNebulaGame(state, { userId, username, displayName, gameId }, now); }
+    return getNebulaGameStats(state, gameId);
+  }, "default", now);
+  const action = actions.record({ tenantId: options.tenantId, channel, gameId, actorId: userId, username, displayName, action: checked.action, args: checked.args, message: String(body.message ?? "").slice(0,500), occurredAt: now.toISOString() });
+  return json(response, 200, { handled: true, action, game: updated.result, activeGameIds: resolveNebulaChannelGameIds(updated.state, channel) });
 }
 
-function arcadeView(value: string | null): NebulaArcadeViewV1 { return value === "games" || value === "game" || value === "overlay" || value === "stats" ? value : "home"; }
-function overlayOutputUrl(sceneId: string) { return `${APP_PATH}?surface=overlay&scene=${encodeURIComponent(sceneId)}`; }
-function proxySafeOverlayPage(scene: NebulaOverlaySceneV1) { return renderNebulaOverlayOutput(scene).replace("/assets/nebula-overlay.css", "/assets/nebula-arcade/overlay.css").replace(/\sstyle="--layer:\d+"/g, ""); }
-function proxySafeBrowserScript() {
-  return NEBULA_ARCADE_BROWSER_JS
-    .replace("fetch('/v1/nebula/overlay-scenes/'+encodeURIComponent(id),{method:'DELETE'", "fetch('/apps/nebula-arcade?action=overlay-scenes&scene='+encodeURIComponent(id),{method:'DELETE'")
-    .replaceAll("'/v1/nebula/overlay-scenes'", "'/apps/nebula-arcade?action=overlay-scenes'")
-    .replace("const output='/overlay/'+encodeURIComponent(scene.id);", "const output='/apps/nebula-arcade?surface=overlay&scene='+encodeURIComponent(scene.id);")
-    .replace("location.origin+'/overlay/'+value.scene.id", "location.origin+'/apps/nebula-arcade?surface=overlay&scene='+encodeURIComponent(value.scene.id)");
+function gameMixState(tenantId: string, channelId: string, mix: NebulaGameMixV1, runtimeStore: SqliteNebulaGameRuntimeStore, actionStore: SqliteNebulaGameActionStore) {
+  const runtime = runtimeStore.get(tenantId), gameIds = mix.layers.filter((layer) => layer.enabled).map((layer) => layer.gameId), recent = actionStore.list(tenantId, { channel: channelId, gameIds, limit: 100 }), newest = new Map<string, (typeof recent)[number]>();
+  for (const action of recent) newest.set(action.gameId, action);
+  let visibleGameIds = [...gameIds];
+  if (mix.mode === "activity") { const current = [...recent].reverse()[0]; visibleGameIds = current ? [current.gameId] : visibleGameIds.slice(0,1); }
+  else if (mix.mode === "manual") visibleGameIds = mix.activeGameId ? [mix.activeGameId] : visibleGameIds.slice(0,1);
+  else if (mix.mode === "rotate" && visibleGameIds.length) visibleGameIds = [visibleGameIds[Math.floor(Date.now() / (mix.rotationSeconds * 1000)) % visibleGameIds.length]!];
+  return { schemaVersion:1, mix, visibleGameIds, games:Object.fromEntries(gameIds.map((gameId)=>{const stats=getNebulaGameStats(runtime,gameId),action=newest.get(gameId);return[gameId,{playerCount:stats.players.length,leaderboard:stats.leaderboard.slice(0,5),latestAction:action??null}];})) };
 }
-function sceneInput(body: Record<string, unknown>): { id: string; name: string; layers: NebulaOverlayLayerV1[] } {
-  const id = textField(body.id, "id", 80).toLowerCase(); requireSceneId(id);
-  const name = textField(body.name, "name", 100);
-  if (!Array.isArray(body.gameIds) || body.gameIds.length > NEBULA_ARCADE_GAMES.length) throw new SandboxError(400, "gameIds is invalid");
-  const ids = body.gameIds.map((value) => textField(value, "gameId", 80));
-  if (new Set(ids).size !== ids.length || ids.some((gameId) => !GAME_IDS.has(gameId))) throw new SandboxError(400, "gameIds contains an unknown or duplicate game");
-  return { id, name, layers: ids.map((gameId, zIndex) => ({ gameId, enabled: true, zIndex })) };
-}
-function requireSceneId(value: string): void { if (!/^[a-z0-9][a-z0-9-]{0,79}$/.test(value)) throw new SandboxError(400, "sceneId is invalid"); }
-function applyHeaders(response: ServerResponse, nonce: string) {
-  response.setHeader("content-security-policy", `default-src 'none'; script-src 'self' 'nonce-${nonce}'; style-src 'self'; connect-src 'self'; img-src 'self' data: https:; frame-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'self'`);
-  response.setHeader("referrer-policy", "no-referrer"); response.setHeader("x-content-type-options", "nosniff"); response.setHeader("permissions-policy", "camera=(), microphone=(), geolocation=()");
-}
-function requireSameOrigin(request: IncomingMessage) { const origin = request.headers.origin; const host = request.headers.host; if (!origin || !host) throw new SandboxError(403, "A same-origin browser request is required"); let parsed: URL; try { parsed = new URL(origin); } catch { throw new SandboxError(403, "Origin is invalid"); } if (parsed.host !== host) throw new SandboxError(403, "Cross-origin mutation is blocked"); }
-async function readJson(request: IncomingMessage) { const chunks: Buffer[] = []; let total = 0; for await (const chunk of request) { const part = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk); total += part.byteLength; if (total > MAX_BODY_BYTES) throw new SandboxError(413, "Request body is too large"); chunks.push(part); } let value: unknown; try { value = JSON.parse(Buffer.concat(chunks).toString("utf8")); } catch { throw new SandboxError(400, "A JSON object is required"); } if (!value || typeof value !== "object" || Array.isArray(value)) throw new SandboxError(400, "A JSON object is required"); return value as Record<string, unknown>; }
-function textField(value: unknown, name: string, max: number) { if (typeof value !== "string" || !value.trim() || value.length > max) throw new SandboxError(400, `${name} is invalid`); return value.trim(); }
-function stringArray(value: unknown, max: number) { if (value === undefined) return []; if (!Array.isArray(value) || value.length > max || value.some((item) => typeof item !== "string" || !item.trim())) throw new SandboxError(400, "liveUserIds is invalid"); return value as string[]; }
-function roles(value: unknown): Array<"broadcaster" | "moderator" | "member"> { const values = stringArray(value, 3); if (values.some((item) => !["broadcaster", "moderator", "member"].includes(item))) throw new SandboxError(400, "roles is invalid"); return values as Array<"broadcaster" | "moderator" | "member">; }
-function provider(value: unknown): "twitch" | "discord" | "kick" { const result = value ?? "twitch"; if (!["twitch", "discord", "kick"].includes(String(result))) throw new SandboxError(400, "provider is invalid"); return result as "twitch" | "discord" | "kick"; }
-function optionalIso(value: unknown) { if (value === undefined) return undefined; if (typeof value !== "string" || !Number.isFinite(Date.parse(value))) throw new SandboxError(400, "timestamp is invalid"); return value; }
-function normalizeSandboxChatTagCommand(value: string) { const match = /^!(join|leave|status|score|tag|pass|players|live|sleep|wake|pinrank)(\s+.*)?$/i.exec(value); return match ? `spmt ${match[1]!.toLowerCase()}${match[2] ?? ""}` : value; }
-function safeId(value: string, name: string) { if (!value || value.trim() !== value || value.length > 200 || !/^[A-Za-z0-9._:@/-]+$/.test(value)) throw new Error(`${name} is invalid`); return value; }
-function html(response: ServerResponse, status: number, body: string) { text(response, status, body, "text/html; charset=utf-8", "no-store"); }
-function text(response: ServerResponse, status: number, body: string, contentType: string, cache: string) { const encoded = Buffer.from(body); response.writeHead(status, { "content-type": contentType, "content-length": encoded.byteLength, "cache-control": cache }); response.end(encoded); }
-function binary(response: ServerResponse, status: number, body: Buffer, contentType: string, cache: string) { response.writeHead(status, { "content-type": contentType, "content-length": body.byteLength, "cache-control": cache, "x-content-type-options": "nosniff" }); response.end(body); }
-function textWithHeaders(response: ServerResponse, status: number, body: string, headers: Record<string, string>) { const encoded = Buffer.from(body); response.writeHead(status, { ...headers, "content-length": encoded.byteLength }); response.end(encoded); }
-function json(response: ServerResponse, status: number, body: unknown) { const encoded = Buffer.from(JSON.stringify(body)); response.writeHead(status, { "content-type": "application/json; charset=utf-8", "content-length": encoded.byteLength, "cache-control": "no-store" }); response.end(encoded); }
-class SandboxError extends Error { constructor(readonly status: number, message: string) { super(message); } }
+function renderGameMix(mix: NebulaGameMixV1, channelId: string) { const layers=mix.layers.filter((layer)=>layer.enabled).map((layer)=>`<section class="game-layer style-${layer.style}" data-game="${escapeHtml(layer.gameId)}" style="left:${layer.x}%;top:${layer.y}%;width:${layer.width}%;height:${layer.height}%;opacity:${layer.opacity};z-index:${layer.zIndex}"><header><strong>${escapeHtml(gameName(layer.gameId))}</strong><span data-players>0 players</span></header><div class="latest" data-action>Waiting for game activity…</div><ol data-leader></ol></section>`).join(""); return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(mix.name)}</title><style>${MIX_CSS}</style></head><body data-state="/v1/nebula/game-mix-state?mix=${encodeURIComponent(mix.id)}" data-channel="${escapeHtml(channelId)}">${layers}<script src="/assets/nebula-game-mix.js" defer></script></body></html>`; }
+function canonicalOverlayEditorPage() { return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Nebula Arcade Overlay</title><style>${MANAGE_CSS}</style></head><body><main><span>NEBULA ARCADE · GAME MIX</span><h1>Overlay editing lives in Overlay Bay</h1><p>Nebula owns the twenty game runtimes and saved Game Mix data. SpaceMountain Overlay Bay is the single visual editor for choosing games, arranging them, styling them, and issuing the final OBS/browser-source URL.</p><a href="/?view=workspace" target="_top">Manage Nebula in Overlay Bay</a></main></body></html>`; }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  const checked = validateChatTagSandboxEnvironment(process.env);
-  const host = createChatTagSandboxHost({ ...checked, port: Number(process.env.PORT ?? 8080), host: process.env.HOST ?? "0.0.0.0", buildSha: process.env.BUILD_SHA ?? "dev", ...(process.env.CHAT_TAG_PIN_USER_ID ? { pinUserId: process.env.CHAT_TAG_PIN_USER_ID } : {}) });
-  await host.listen();
+function proxyLegacy(request: IncomingMessage, response: ServerResponse, port: number, transformPage: boolean) {
+  if (!port) throw new Error("Legacy Chat Tag runtime is not ready"); const headers={...request.headers};delete headers.connection;
+  const upstream=httpRequest({hostname:"127.0.0.1",port,path:request.url??"/",method:request.method,headers},(incoming)=>{if(!transformPage||!String(incoming.headers["content-type"]??"").includes("text/html")){response.writeHead(incoming.statusCode??502,incoming.headers);incoming.pipe(response);return;}const chunks:Buffer[]=[];incoming.on("data",(chunk:Buffer|string)=>chunks.push(Buffer.isBuffer(chunk)?chunk:Buffer.from(chunk)));incoming.on("end",()=>{let body=Buffer.concat(chunks).toString("utf8");body=body.replaceAll("Catalog registered","Shared runtime ready").replaceAll("Runtime widget pending","Shared runtime connected").replace("The shared Nebula Arcade shell is real; this title's game-specific runtime will plug in behind the same contracts as it is ported.","This title is connected to Nebula Arcade's shared persistent players, scores, Games Points, commands, actions, and overlay runtime.");const encoded=Buffer.from(body),out={...incoming.headers,"content-length":String(encoded.byteLength)};response.writeHead(incoming.statusCode??200,out);response.end(encoded);});});upstream.on("error",(error)=>response.headersSent?response.destroy(error):json(response,502,{error:"legacy_runtime_unavailable"}));request.pipe(upstream);
 }
+function gameMixInput(body:Record<string,unknown>){const layers=Array.isArray(body.layers)?body.layers:Array.isArray(body.gameIds)?body.gameIds.map((gameId,index)=>({gameId,zIndex:index})):[];return{id:string(body.id,"id",80).toLowerCase(),name:string(body.name??body.id,"name",100),...(typeof body.mode==="string"?{mode:body.mode as NebulaGameMixV1["mode"]}:{}),...(typeof body.rotationSeconds==="number"?{rotationSeconds:body.rotationSeconds}:{}),...(typeof body.activeGameId==="string"?{activeGameId:body.activeGameId}:{}),layers:layers as any[]};}
+async function readJson(request:IncomingMessage){const chunks:Buffer[]=[];let total=0;for await(const chunk of request){const part=Buffer.isBuffer(chunk)?chunk:Buffer.from(chunk);total+=part.byteLength;if(total>MAX_BODY_BYTES)throw new NebulaHostError(413,"Request body is too large");chunks.push(part);}let value:unknown;try{value=JSON.parse(Buffer.concat(chunks).toString("utf8"));}catch{throw new NebulaHostError(400,"A JSON object is required");}if(!value||typeof value!=="object"||Array.isArray(value))throw new NebulaHostError(400,"A JSON object is required");return value as Record<string,unknown>;}
+function requireSameOrigin(request:IncomingMessage){const origin=request.headers.origin,host=request.headers.host;if(!origin||!host)throw new NebulaHostError(403,"A same-origin browser request is required");let parsed:URL;try{parsed=new URL(origin);}catch{throw new NebulaHostError(403,"Origin is invalid");}if(parsed.host!==host)throw new NebulaHostError(403,"Cross-origin mutation is blocked");}
+function string(value:unknown,name:string,max:number){if(typeof value!=="string"||!value.trim()||value.length>max)throw new NebulaHostError(400,`${name} is invalid`);return value.trim();}function array(value:unknown){return Array.isArray(value)?value.map((item)=>String(item??"").trim()).filter(Boolean).slice(0,8):[];}function gameName(id:string){return NEBULA_ARCADE_GAMES.find((game)=>game.id===id)?.name??id;}function escapeHtml(value:string){return value.replace(/[&<>"']/g,(char)=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[char]??char);}
+function html(response:ServerResponse,status:number,body:string){const encoded=Buffer.from(body);response.writeHead(status,{"content-type":"text/html; charset=utf-8","content-length":encoded.byteLength,"cache-control":"no-store","content-security-policy":"default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; connect-src 'self'; frame-ancestors *; base-uri 'none'","x-content-type-options":"nosniff"});response.end(encoded);}function javascript(response:ServerResponse,body:string){const encoded=Buffer.from(body);response.writeHead(200,{"content-type":"text/javascript; charset=utf-8","content-length":encoded.byteLength,"cache-control":"public, max-age=300","x-content-type-options":"nosniff"});response.end(encoded);}function json(response:ServerResponse,status:number,body:unknown){const encoded=Buffer.from(JSON.stringify(body));response.writeHead(status,{"content-type":"application/json; charset=utf-8","content-length":encoded.byteLength,"cache-control":"no-store","x-content-type-options":"nosniff"});response.end(encoded);}function listen(server:ReturnType<typeof createServer>,port:number,host:string){return new Promise<void>((done,reject)=>{server.once("error",reject);server.listen(port,host,()=>{server.off("error",reject);done();});});}function close(server:ReturnType<typeof createServer>){return new Promise<void>((done,reject)=>server.close((error)=>error?reject(error):done()));}class NebulaHostError extends Error{constructor(readonly status:number,message:string){super(message);}}
+
+const MIX_CSS=`*{box-sizing:border-box}html,body{width:100%;height:100%;margin:0;overflow:hidden;background:transparent;color:white;font-family:Inter,system-ui,sans-serif}.game-layer{position:absolute;border:1px solid rgba(80,210,255,.52);border-radius:18px;padding:14px;background:linear-gradient(145deg,rgba(5,12,30,.88),rgba(36,11,61,.82));box-shadow:0 0 26px rgba(120,70,255,.22);overflow:hidden}.game-layer[hidden]{display:none}.game-layer header{display:flex;justify-content:space-between;gap:12px;align-items:center}.game-layer strong{font-size:clamp(14px,2vw,28px)}.game-layer span,.latest,li{font-size:clamp(10px,1.1vw,16px)}.latest{margin:10px 0;color:#c9f4ff}.game-layer ol{margin:0;padding-left:22px}.style-minimal ol,.style-minimal .latest{display:none}.style-compact ol li:nth-child(n+3){display:none}`;
+const MANAGE_CSS=`html,body{min-height:100%;margin:0;background:#050916;color:#eef8ff;font-family:Inter,system-ui,sans-serif}body{display:grid;place-items:center;padding:24px}main{max-width:760px;padding:32px;border:1px solid #315b84;border-radius:24px;background:rgba(11,22,45,.9)}span{color:#6de8ff;font-size:12px;letter-spacing:.14em}h1{font-size:clamp(30px,6vw,56px);margin:.35em 0}p{line-height:1.65;color:#bed2e5}a{display:inline-block;margin-top:16px;padding:13px 18px;border-radius:12px;background:#6de8ff;color:#05111d;font-weight:800;text-decoration:none}`;
+const GAME_MIX_CLIENT_JS=`(()=>{'use strict';const url=document.body.dataset.state;async function tick(){try{const r=await fetch(url,{cache:'no-store'});if(!r.ok)return;const s=await r.json(),visible=new Set(s.visibleGameIds||[]);document.querySelectorAll('[data-game]').forEach(node=>{const id=node.dataset.game,g=s.games&&s.games[id];node.hidden=!visible.has(id);if(!g)return;const p=node.querySelector('[data-players]');if(p)p.textContent=g.playerCount+' players';const a=node.querySelector('[data-action]');if(a)a.textContent=g.latestAction?(g.latestAction.displayName+' · '+g.latestAction.action+(g.latestAction.args.length?' '+g.latestAction.args.join(' '):'')):'Waiting for game activity…';const l=node.querySelector('[data-leader]');if(l){l.replaceChildren();for(const item of g.leaderboard||[]){const li=document.createElement('li');li.textContent=item.displayName+' · '+item.score+' pts';l.append(li);}}});}catch{}}tick();setInterval(tick,1000);})();`;
+
+export { validateChatTagSandboxEnvironment }; export type { ChatTagSandboxHostOptions };
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) { const checked=validateChatTagSandboxEnvironment(process.env);const host=createChatTagSandboxHost({...checked,port:Number(process.env.PORT??8080),host:process.env.HOST??"0.0.0.0",buildSha:process.env.BUILD_SHA??"dev",...(process.env.CHAT_TAG_PIN_USER_ID?{pinUserId:process.env.CHAT_TAG_PIN_USER_ID}:{})});await host.listen(); }

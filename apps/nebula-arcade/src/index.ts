@@ -10,6 +10,7 @@ export * from "./chat-tag-experience.js";
 export * from "./game-hub.js";
 export * from "./game-runtime.js";
 export * from "./game-runtime-store.js";
+export * from "./game-actions.js";
 export * from "./overlay-scenes.js";
 export * from "./game-mixes.js";
 export * from "./quackverse-state.js";
