@@ -60,7 +60,7 @@ test("home and app navigation remain singular, dynamic and scene-aware", () => {
   assert.doesNotMatch(base, /Launch apps, check Commlink/);
   assert.doesNotMatch(base, /<section class="spmt-quick-grid">/);
   assert.doesNotMatch(base, /One command bridge for every creator tool/);
-  assert.match(base, /data-theme-logo="hero"/);
+  assert.match(base, /data-theme-logo="hero-secondary"/);
   assert.match(base, /this\.snapshot\.apps\.filter\(\(app\) => app\.installed && app\.enabled/);
   assert.match(base, /APP_DOCK_NAVIGATION/);
   assert.match(base, /"nebula-arcade"[\s\S]*label: "Games"[\s\S]*label: "Play"[\s\S]*label: "Scores"[\s\S]*label: "Settings"/);

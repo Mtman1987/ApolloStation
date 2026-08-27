@@ -5,6 +5,8 @@ import { DEFERRED_RUNTIME_SOURCES, type SourceStateV1, type SpaceMountainAppCard
 import { POLISHED_SPACE_MOUNTAIN_CSS } from "./product-shell-css.js";
 import { THEMED_SURFACE_CSS } from "./themed-surface-css.js";
 
+const VISUAL_FINISH_CSS = `.spmt-header-action-icon{display:block;width:28px;height:28px;object-fit:contain;filter:drop-shadow(0 0 8px color-mix(in srgb,var(--accent2) 55%,transparent))}.spmt-space-root[data-spmt-view="home"] .spmt-hero-logo-large{width:min(820px,100%)!important;height:clamp(180px,48cqh,390px)!important;max-height:66%!important;margin:0!important;object-fit:contain!important;object-position:left center!important;filter:drop-shadow(0 0 26px color-mix(in srgb,var(--accent2) 36%,transparent))}.spmt-theme-native{position:absolute!important;width:1px!important;height:1px!important;overflow:hidden!important;clip:rect(0 0 0 0)!important;white-space:nowrap!important}.spmt-theme-picker{grid-column:1/-1;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.spmt-theme-picker button{min-height:104px;display:grid;place-items:center;gap:4px;padding:10px;border:1px solid var(--border);border-radius:16px;background:linear-gradient(145deg,color-mix(in srgb,var(--accent) 10%,#050713),#050713);color:white}.spmt-theme-picker button:hover,.spmt-theme-picker button[aria-pressed="true"]{border-color:var(--accent2);box-shadow:0 0 24px color-mix(in srgb,var(--accent2) 30%,transparent);transform:translateY(-2px)}.spmt-theme-picker img{width:100%;height:58px;object-fit:contain}.spmt-theme-picker span{font-size:9px;font-weight:900;letter-spacing:.12em;text-transform:uppercase}@media(max-width:800px){.spmt-theme-picker{grid-template-columns:repeat(2,minmax(0,1fr))}}`;
+
 export type SpaceMountainViewV1 = "home" | "apps" | "workspace" | "settings";
 type CommlinkFilterV1 = "all" | "chat" | "events" | "streamweaver" | "queued";
 interface CommlinkWorkspaceUiV1 {
@@ -179,7 +181,7 @@ export class SpaceMountainShellUi {
     root.style.setProperty("--spmt-backdrop-scale", String(1.015 + parallaxDepth / 2000));
     const retainedTray = this.workspaceTray;
     retainedTray?.remove();
-    root.innerHTML = `<style data-spmt-space-style>${PRODUCT_UI_CSS}${SPACE_MOUNTAIN_CSS}${POLISHED_SPACE_MOUNTAIN_CSS}${WORKSPACE_SETTINGS_CSS}${COMMLINK_FORM_CSS}${COSMO_COMMLINK_CSS}${THEMED_SURFACE_CSS}</style><div class="spmt-space-shell">${this.header()}${this.dock()}<main class="spmt-space-main">${this.body()}</main></div>`;
+    root.innerHTML = `<style data-spmt-space-style>${PRODUCT_UI_CSS}${SPACE_MOUNTAIN_CSS}${POLISHED_SPACE_MOUNTAIN_CSS}${WORKSPACE_SETTINGS_CSS}${VISUAL_FINISH_CSS}${COMMLINK_FORM_CSS}${COSMO_COMMLINK_CSS}${THEMED_SURFACE_CSS}</style><div class="spmt-space-shell">${this.header()}${this.dock()}<main class="spmt-space-main">${this.body()}</main></div>`;
     this.workspaceTray = retainedTray ?? this.createWorkspaceTray();
     root.append(this.workspaceTray);
     this.syncWorkspaceTray();
@@ -246,6 +248,25 @@ export class SpaceMountainShellUi {
     });
     root.querySelectorAll<HTMLInputElement>('.spmt-slider-grid input[type="range"]').forEach((input) => input.addEventListener("input", () => { const output = input.parentElement?.querySelector<HTMLOutputElement>("output"); if (output) output.value = input.value; }));
     const themeSelect = root.querySelector<HTMLSelectElement>("[data-workspace-theme]");
+    if (themeSelect && !root.querySelector("[data-theme-picker]")) {
+      const picker = document.createElement("div");
+      picker.className = "spmt-theme-picker";
+      picker.dataset.themePicker = "";
+      picker.setAttribute("role", "group");
+      picker.setAttribute("aria-label", "Theme artwork");
+      for (const choice of ["solar-flare", "nebula-purple", "oceanic-blue", "aurora-green"]) {
+        const preset = resolveProductTheme(choice);
+        const button = document.createElement("button");
+        button.type = "button";
+        button.dataset.themeChoice = choice;
+        button.setAttribute("aria-label", `Use ${preset.name}`);
+        button.setAttribute("aria-pressed", String(choice === themeSelect.value));
+        button.innerHTML = `<img src="${themeLogoUrl(choice, "name")}" alt=""><span>${preset.name}</span>`;
+        picker.append(button);
+      }
+      themeSelect.closest("label")?.after(picker);
+      themeSelect.closest("label")?.classList.add("spmt-theme-native");
+    }
     const accentInput = root.querySelector<HTMLInputElement>("[data-workspace-accent]");
     let secondaryInput = root.querySelector<HTMLInputElement>("[data-workspace-accent-secondary]");
     if (accentInput && !secondaryInput) {
@@ -269,7 +290,7 @@ export class SpaceMountainShellUi {
       root.style.setProperty("--spmt-accent", next.accent);
       root.style.setProperty("--spmt-accent-secondary", next.accentSecondary);
       root.querySelectorAll<HTMLImageElement>("[data-theme-logo]").forEach((image) => {
-        const kind = image.dataset.themeLogo === "name" ? "name" : image.dataset.themeLogo === "spmt" ? "spmt" : "hero";
+        const kind = image.dataset.themeLogo === "name" ? "name" : image.dataset.themeLogo === "spmt" ? "spmt" : image.dataset.themeLogo === "hero-secondary" ? "hero-secondary" : "hero";
         image.src = themeLogoUrl(next.id, kind);
       });
       document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')?.setAttribute("content", next.accent);
@@ -410,7 +431,7 @@ export class SpaceMountainShellUi {
     const theme = resolveProductTheme(recordText(appearance, ["theme"]), recordText(appearance, ["accent"]));
     const appsTray = `<section id="spmt-apps-tray" class="spmt-apps-tray spmt-product-glass" data-apps-tray hidden><header><strong>Connected apps</strong><span>${connectedApps.length} enabled</span></header><div>${connectedApps.map((app) => { const active = connectedAppUsage(this.snapshot.events, app.appId); const themed = themedAppIconUrl(theme.id, app.appId); const art = themed ? `<img src="${escapeHtml(themed)}" alt="" loading="lazy">` : app.iconUrl ? `<img src="${escapeHtml(app.iconUrl)}" alt="" loading="lazy">` : `<span>${escapeHtml(initials(app.name))}</span>`; return `<button type="button" data-launch-app="${escapeHtml(app.appId)}" title="Launch ${escapeHtml(app.name)}"><i>${art}</i><span><strong>${escapeHtml(app.name)}</strong><small>${escapeHtml(app.description || "SpaceMountain ecosystem application")}</small></span><b aria-label="${active} active now">${active}<small>live</small></b></button>`; }).join("") || `<p>No connected apps are enabled for this account.</p>`}</div><footer><button type="button" data-nav="apps">Manage apps in Shipyard</button></footer></section>`;
     const liveTray = `<section id="spmt-live-tray" class="spmt-live-tray spmt-product-glass" data-live-tray hidden><header><strong>Live now</strong><span>${live.length} creator${live.length === 1 ? "" : "s"}</span></header><div>${live.map((person) => `<article><span class="spmt-live-dot"></span><div><strong>${escapeHtml(person.name)}</strong><small>${escapeHtml(person.sources.join(" + "))}</small></div></article>`).join("") || `<p>No creators are live across the installed app pool.</p>`}</div></section>`;
-    return `<header class="spmt-shell-header-stack" data-spmt-shell-header><div class="spmt-cosmic-header spmt-product-glass"><div class="spmt-brand-cluster"><button class="spmt-brand" data-spmt-black-hole-trigger aria-label="SpaceMountain home; double-click for the Black Hole"><img data-theme-logo="spmt" src="${themeLogoUrl(theme.id, "spmt")}" alt=""><strong>SPACEMOUNTAIN<em>.LIVE</em></strong></button><div class="spmt-header-clocks" aria-label="Local and UTC time"><span><time data-spmt-local-clock></time><small>LOCAL</small></span><span><time data-spmt-utc-clock></time><small>UTC</small></span></div></div><div class="spmt-header-actions"><button data-apps-toggle class="spmt-icon-button" aria-label="Explore connected apps" aria-controls="spmt-apps-tray" aria-expanded="false">${icon("grid")}</button><button data-workspace-toggle class="spmt-icon-button" aria-label="Open canonical workspace">${icon("layout")}</button><button data-live-toggle class="spmt-icon-button spmt-live-button" aria-label="Show creators live across the installed app pool" aria-controls="spmt-live-tray" aria-expanded="false">${icon("broadcast")}${live.length ? `<i>${Math.min(live.length, 9)}${live.length > 9 ? "+" : ""}</i>` : ""}</button><button data-launch-app="commlink" class="spmt-icon-button" aria-label="Open Commlink">${icon("mail")}${unread ? `<i>${Math.min(unread, 9)}${unread > 9 ? "+" : ""}</i>` : ""}</button><button data-nav="settings" class="spmt-account"><span class="spmt-avatar">${escapeHtml(initials(user))}</span><span class="spmt-account-copy"><strong>${escapeHtml(user)}</strong><small>${(this.snapshot.xp?.balance ?? 0).toLocaleString()} XP</small></span></button></div></div>${appsTray}${liveTray}</header>`;
+    return `<header class="spmt-shell-header-stack" data-spmt-shell-header><div class="spmt-cosmic-header spmt-product-glass"><div class="spmt-brand-cluster"><button class="spmt-brand" data-spmt-black-hole-trigger aria-label="SpaceMountain home; double-click for the Black Hole"><img data-theme-logo="spmt" src="${themeLogoUrl(theme.id, "spmt")}" alt=""><strong>SPACEMOUNTAIN<em>.LIVE</em></strong></button><div class="spmt-header-clocks" aria-label="Local and UTC time"><span><time data-spmt-local-clock></time><small>LOCAL</small></span><span><time data-spmt-utc-clock></time><small>UTC</small></span></div></div><div class="spmt-header-actions"><button data-apps-toggle class="spmt-icon-button" aria-label="Explore connected apps" aria-controls="spmt-apps-tray" aria-expanded="false">${themedHeaderIcon(theme.id, "shipyard")}</button><button data-workspace-toggle class="spmt-icon-button" aria-label="Open canonical workspace">${themedHeaderIcon(theme.id, "mission-control")}</button><button data-live-toggle class="spmt-icon-button spmt-live-button" aria-label="Show creators live across the installed app pool" aria-controls="spmt-live-tray" aria-expanded="false">${themedHeaderIcon(theme.id, "discord-stream-hub")}${live.length ? `<i>${Math.min(live.length, 9)}${live.length > 9 ? "+" : ""}</i>` : ""}</button><button data-launch-app="commlink" class="spmt-icon-button" aria-label="Open Commlink">${themedHeaderIcon(theme.id, "commlink")}${unread ? `<i>${Math.min(unread, 9)}${unread > 9 ? "+" : ""}</i>` : ""}</button><button data-nav="settings" class="spmt-account"><span class="spmt-avatar">${escapeHtml(initials(user))}</span><span class="spmt-account-copy"><strong>${escapeHtml(user)}</strong><small>${(this.snapshot.xp?.balance ?? 0).toLocaleString()} XP</small></span></button></div></div>${appsTray}${liveTray}</header>`;
   }
 
   private dock() {
@@ -448,10 +469,10 @@ export class SpaceMountainShellUi {
     const unread = this.snapshot.notifications.filter((item) => !item.readAt && !item.read_at).length;
     const appearance = recordObject(this.snapshot.workspace, "appearance");
     const theme = resolveProductTheme(recordText(appearance, ["theme"]), recordText(appearance, ["accent"]));
-    return `<section class="spmt-hero spmt-product-glass"><div class="spmt-hero-copy"><img class="spmt-hero-logo spmt-hero-logo-large" data-theme-logo="hero" src="${themeLogoUrl(theme.id, "hero")}" alt="SpaceMountain"><div class="actions"><button data-nav="apps" class="primary">${icon("rocket")}Open Shipyard</button><button data-launch-app="commlink">${icon("mail")}Open Commlink</button></div></div><div class="spmt-metrics">${metric("Apps online", `${installed.length}/${this.snapshot.apps.length}`)}${metric("Unread", String(unread))}${metric("Active apps", String((this.snapshot.runtimeStates ?? []).filter((item) => recordText(item, ["state"]) === "ready").length))}${metric("Theme", theme.name)}</div></section>`;
+    return `<section class="spmt-hero spmt-product-glass"><div class="spmt-hero-copy"><img class="spmt-hero-logo spmt-hero-logo-large" data-theme-logo="hero-secondary" src="${themeLogoUrl(theme.id, "hero-secondary")}" alt="SpaceMountain"><div class="actions"><button data-nav="apps" class="primary">${icon("rocket")}Open Shipyard</button><button data-launch-app="commlink">${icon("mail")}Open Commlink</button></div></div><div class="spmt-metrics">${metric("Apps online", `${installed.length}/${this.snapshot.apps.length}`)}${metric("Unread", String(unread))}${metric("Active apps", String((this.snapshot.runtimeStates ?? []).filter((item) => recordText(item, ["state"]) === "ready").length))}${metric("Theme", theme.name)}</div></section>`;
   }
 
-  private shipyard() { const apps = this.snapshot.apps.filter((app) => this.appVisible(app)); const appearance = recordObject(this.snapshot.workspace, "appearance"); const theme = resolveProductTheme(recordText(appearance, ["theme"])).id; return `${page("Apps and capabilities", "Registry, install state, granted scopes, and entitlements come directly from SPMT.", "SHIPYARD")}<div class="spmt-app-grid wide">${apps.map((app) => appCard(app, theme)).join("") || empty("No registered apps are available yet.")}</div>`; }
+  private shipyard() { const apps = this.snapshot.apps.filter((app) => this.appVisible(app)); const appearance = recordObject(this.snapshot.workspace, "appearance"); const theme = resolveProductTheme(recordText(appearance, ["theme"])).id; return `${page("Apps and capabilities", "Registry, install state, granted scopes, and entitlements come directly from SPMT.", "SHIPYARD")}<div class="spmt-app-grid wide">${apps.map((app) => appCard(app, theme)).join("")}${overlayBayCard(theme)}</div>`; }
   private commlink() {
     const state = this.commlinkWorkspace();
     const appearance = recordObject(this.snapshot.workspace, "appearance");
@@ -785,6 +806,7 @@ function recordStrings(value: unknown, key: string) { if (!value || typeof value
 function payloadKeySummary(value: unknown) { if (!value || typeof value !== "object" || Array.isArray(value)) return "No structured payload fields"; const keys = Object.keys(value as Record<string, unknown>).sort(); return keys.length ? `Payload fields: ${keys.slice(0, 12).join(", ")}${keys.length > 12 ? "…" : ""}` : "No structured payload fields"; }
 function formatRecordTime(value: string | undefined) { if (!value) return "Time unavailable"; const timestamp = Date.parse(value); if (!Number.isFinite(timestamp)) return value; return new Date(timestamp).toISOString().replace("T", " ").replace(".000Z", " UTC"); }
 function appCard(app: SpaceMountainAppCardV1, theme: string) { const action = app.installed && app.enabled ? `<button class="primary" data-launch-app="${escapeHtml(app.appId)}">Launch ${icon("arrow")}</button>` : `<button data-install-app="${escapeHtml(app.appId)}">Install</button>`; const themed = themedAppIconUrl(theme, app.appId); const art = themed ? `<img src="${escapeHtml(themed)}" alt="" loading="lazy">` : app.iconUrl ? `<img src="${escapeHtml(app.iconUrl)}" alt="" loading="lazy">` : `<span>${escapeHtml(initials(app.name))}</span>`; return `<article class="spmt-app-card"><div class="app-icon">${art}</div><div class="spmt-app-status"><span>${app.installed ? (app.enabled ? "INSTALLED" : "DISABLED") : "AVAILABLE"}</span><small>v${escapeHtml(app.version || "—")}</small></div><h3>${escapeHtml(app.name)}</h3><p>${escapeHtml(app.description || "SpaceMountain ecosystem application")}</p><footer>${action}<small>${escapeHtml(app.surfaces.join(" · ") || "standalone")}</small></footer></article>`; }
+function overlayBayCard(theme: string) { return `<article class="spmt-app-card"><div class="app-icon"><img src="${themedAppIconUrl(theme, "overlay-bay")}" alt="" loading="lazy"></div><div class="spmt-app-status"><span>WORKSPACE TOOL</span><small>canonical</small></div><h3>Overlay Bay</h3><p>Compose app widgets into sandbox-safe OBS scenes and managed outputs.</p><footer><button class="primary" data-nav="workspace">Open ${icon("arrow")}</button><small>workspace · overlay</small></footer></article>`; }
 function metric(label: string, value: string) { return `<div><strong>${escapeHtml(value)}</strong><span>${escapeHtml(label)}</span></div>`; }
 function quick(title: string, body: string, nav: SpaceMountainViewV1, iconName: IconName = "pulse") { return `<button data-nav="${nav}"><i>${icon(iconName)}</i><strong>${title}</strong><span>${body}</span><em>${icon("arrow")}</em></button>`; }
 function page(title: string, body: string, kicker = "SPACEMOUNTAIN") { return `<section class="spmt-page-title"><span>${kicker}</span><h1>${escapeHtml(title)}</h1><p>${escapeHtml(body)}</p></section>`; }
@@ -795,7 +817,7 @@ function recordBoolean(value: unknown, key: string, fallback: boolean) { if (!va
 function recordObject(value: unknown, key: string) { if (!value || typeof value !== "object" || Array.isArray(value)) return undefined; const result = (value as Record<string, unknown>)[key]; return result && typeof result === "object" && !Array.isArray(result) ? result as Record<string, unknown> : undefined; }
 function sessionHasScope(value: unknown, scope: string) { return recordStrings(value, "scopes").includes(scope); }
 function providerLinkKey(value: unknown) { return `${recordText(value, ["provider"]) ?? ""}:${recordText(value, ["providerUserId", "provider_user_id"]) ?? ""}`; }
-function themeLogoUrl(theme: string, kind: "hero" | "name" | "spmt") {
+function themeLogoUrl(theme: string, kind: "hero" | "hero-secondary" | "name" | "spmt") {
   const id = ["solar-flare", "nebula-purple", "oceanic-blue", "aurora-green"].includes(theme) ? theme : "solar-flare";
   return `/assets/product/themes/${id}-${kind}.png`;
 }
@@ -803,9 +825,10 @@ function themedAppIconUrl(theme: string, appId: string) {
   const themeId = ["solar-flare", "nebula-purple", "oceanic-blue", "aurora-green"].includes(theme) ? theme : "solar-flare";
   const aliases: Record<string, string> = { spacemountain: "mission-control", "spacemountain-web": "mission-control", "discord-stream-hub": "discord-stream-hub", dsh: "discord-stream-hub", "chat-tag": "nebula-arcade" };
   const id = aliases[appId] ?? appId;
-  const supported = new Set(["stellar-core", "shipyard", "commlink", "mission-control", "mountainview", "discord-stream-hub", "streamweaver", "hearmeout", "nebula-arcade", "companion"]);
+  const supported = new Set(["stellar-core", "shipyard", "commlink", "mission-control", "mountainview", "discord-stream-hub", "streamweaver", "hearmeout", "nebula-arcade", "companion", "overlay-bay"]);
   return supported.has(id) ? `/assets/product/app-icons/${themeId}/${id}.png` : undefined;
 }
+function themedHeaderIcon(theme: string, appId: string) { return `<img class="spmt-header-action-icon" src="${escapeHtml(themedAppIconUrl(theme, appId) ?? "")}" alt="">`; }
 function selectOption(value: string, selected: string, label: string) { return `<option value="${escapeHtml(value)}"${value === selected ? " selected" : ""}>${escapeHtml(label)}</option>`; }
 function rangeControl(name: string, label: string, value: number) { return `<label>${escapeHtml(label)} <output>${Math.round(value)}</output><input type="range" name="${escapeHtml(name)}" min="0" max="100" step="1" value="${Math.round(value)}"></label>`; }
 function checkControl(name: string, label: string, checked: boolean) { return `<label class="spmt-check"><input type="checkbox" name="${escapeHtml(name)}"${checked ? " checked" : ""}>${escapeHtml(label)}</label>`; }

@@ -50,11 +50,11 @@ const ASSETS = new Map<string, { file: string; type: string }>([
   ["/assets/product/theme-nebula-purple-background.webp", { file: resolve(REPOSITORY_ROOT, "apps/spacemountain-web/assets/theme-nebula-purple-background.webp"), type: "image/webp" }],
   ["/assets/product/theme-oceanic-blue-background.webp", { file: resolve(REPOSITORY_ROOT, "apps/spacemountain-web/assets/theme-oceanic-blue-background.webp"), type: "image/webp" }],
   ["/assets/product/theme-solar-flare-background.webp", { file: resolve(REPOSITORY_ROOT, "apps/spacemountain-web/assets/theme-solar-flare-background.webp"), type: "image/webp" }],
-  ...(["solar-flare", "nebula-purple", "oceanic-blue", "aurora-green"] as const).flatMap((theme) => (["hero", "spmt", "name"] as const).map((kind) => [
+  ...(["solar-flare", "nebula-purple", "oceanic-blue", "aurora-green"] as const).flatMap((theme) => (["hero", "hero-secondary", "spmt", "name"] as const).map((kind) => [
     `/assets/product/themes/${theme}-${kind}.png`,
     { file: resolve(REPOSITORY_ROOT, `apps/spacemountain-web/assets/themes/${theme}-${kind}.png`), type: "image/png" },
   ] as const)),
-  ...(["solar-flare", "nebula-purple", "oceanic-blue", "aurora-green"] as const).flatMap((theme) => (["stellar-core", "shipyard", "commlink", "mission-control", "mountainview", "discord-stream-hub", "streamweaver", "hearmeout", "nebula-arcade", "companion"] as const).map((appId) => [
+  ...(["solar-flare", "nebula-purple", "oceanic-blue", "aurora-green"] as const).flatMap((theme) => (["stellar-core", "shipyard", "commlink", "mission-control", "mountainview", "discord-stream-hub", "streamweaver", "hearmeout", "nebula-arcade", "companion", "overlay-bay"] as const).map((appId) => [
     `/assets/product/app-icons/${theme}/${appId}.png`,
     { file: resolve(REPOSITORY_ROOT, `apps/spacemountain-web/assets/app-icons/${theme}/${appId}.png`), type: "image/png" },
   ] as const)),

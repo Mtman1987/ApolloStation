@@ -5,6 +5,14 @@ const NEBULA_GAMES = [
   ["chat-tag","Chat Tag"],["quackverse","Quackverse"],["bingo","Bingo"],["chaosmode","Chaos Mode"],["chatgarden","Chat Garden"],["chatwars","Chat Wars"],["chickenroyale","Chicken Royale"],["colorsymphony","Color Symphony"],["colorwars","Color Wars"],["dancingparade","Dancing Parade"],["emojirain","Emoji Rain"],["emojitower","Emoji Tower"],["memorylane","Memory Lane"],["petrace","Pet Race"],["phraseguess","Phrase Guess"],["pixelbattle","Pixel Battle"],["rhythmpulse","Rhythm Pulse"],["treasurehunt","Treasure Hunt"],["wordchain","Word Chain"],["wordstorm","Word Storm"],
 ] as const;
 
+function overlayIconUrl(snapshot: SpaceMountainShellSnapshotV1) {
+  const workspace = record(snapshot.workspace);
+  const appearance = record(workspace?.appearance);
+  const raw = text(appearance?.theme);
+  const theme = ["solar-flare", "nebula-purple", "oceanic-blue", "aurora-green"].includes(raw) ? raw : "solar-flare";
+  return `/assets/product/app-icons/${theme}/overlay-bay.png`;
+}
+
 export class OverlayBayParityController {
   private snapshot: SpaceMountainShellSnapshotV1;
   private scenes: OverlaySceneV1[] = [];
@@ -51,7 +59,7 @@ export class OverlayBayParityController {
     if (scene) headActions.push(`<button type="button" data-ob-duplicate>Duplicate</button>`, `<button type="button" data-ob-delete>Delete</button>`);
     const tabs = this.scenes.length ? this.scenes.map((item) => `<button type="button" data-ob-scene="${esc(item.id)}" class="${item.id === this.activeSceneId ? "active" : ""}">${esc(item.name)}</button>`).join("") : `<span>No saved scenes yet.</span>`;
     const body = scene ? this.editor(scene, owner) : `<div class="ob-first"><h3>Create your first overlay scene</h3><p>Combine app widgets, a Nebula Game Mix, URLs, images, text, alerts, camera, screen, Xbox, links, ticker, and weather in one final browser source.</p><button type="button" data-ob-new class="primary">Create scene</button></div>`;
-    bay.innerHTML = `<style>${OVERLAY_EDITOR_CSS}</style><header class="ob-head"><div><span>OVERLAY BAY</span><h2>Canonical stream overlay editor</h2><p>One editor. One final browser-source URL. Apps own their runtime; Overlay Bay owns composition.</p></div><div class="ob-head-actions">${headActions.join("")}</div></header><div class="ob-tabs">${tabs}</div>${body}${this.outputs(owner)}`;
+    bay.innerHTML = `<style>${OVERLAY_EDITOR_CSS}</style><header class="ob-head"><div style="display:flex;align-items:center;gap:14px"><img src="${overlayIconUrl(this.snapshot)}" alt="" style="width:72px;height:72px;object-fit:contain;filter:drop-shadow(0 0 16px var(--accent2))"><div><span>OVERLAY BAY</span><h2>Canonical stream overlay editor</h2><p>One editor. One final browser-source URL. Apps own their runtime; Overlay Bay owns composition.</p></div></div><div class="ob-head-actions">${headActions.join("")}</div></header><div class="ob-tabs">${tabs}</div>${body}${this.outputs(owner)}`;
     this.bind(bay);
   }
 
