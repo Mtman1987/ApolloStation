@@ -2,6 +2,7 @@ import { SpaceMountainShellUi as BaseShellUi, type SpaceMountainUiOptions } from
 import type { SpaceMountainShellSnapshotV1 } from "./index.js";
 import { OverlayBayParityController } from "./overlay-bay-ui.js";
 export type { SpaceMountainUiOptions, SpaceMountainViewV1 } from "./shell-ui-base.js";
+export { SPACE_MOUNTAIN_CSS } from "./shell-ui-base.js";
 
 export class SpaceMountainShellUi {
   private readonly base: BaseShellUi;
@@ -15,24 +16,9 @@ export class SpaceMountainShellUi {
     this.overlayBay = new OverlayBayParityController(options.root, this.snapshot);
   }
 
-  mount() {
-    this.base.mount();
-    this.observe();
-    this.overlayBay.mount();
-    return this;
-  }
-
-  update(snapshot: SpaceMountainShellSnapshotV1) {
-    this.snapshot = snapshot;
-    this.base.update(snapshot);
-    this.overlayBay.update(snapshot);
-  }
-
-  destroy() {
-    this.observer?.disconnect();
-    this.observer = undefined;
-    this.base.destroy();
-  }
+  mount() { this.base.mount(); this.observe(); this.overlayBay.mount(); return this; }
+  update(snapshot: SpaceMountainShellSnapshotV1) { this.snapshot = snapshot; this.base.update(snapshot); this.overlayBay.update(snapshot); }
+  destroy() { this.observer?.disconnect(); this.observer = undefined; this.base.destroy(); }
 
   private observe() {
     this.observer?.disconnect();
