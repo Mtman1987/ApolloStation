@@ -6,6 +6,10 @@
     { "domain": "*.githubusercontent.com", "action": "allow" },
     { "domain": "npmjs.org", "action": "allow" },
     { "domain": "*.npmjs.org", "action": "allow" },
+    { "domain": "huggingface.co", "action": "allow" },
+    { "domain": "*.huggingface.co", "action": "allow" },
+    { "domain": "hf.co", "action": "allow" },
+    { "domain": "*.hf.co", "action": "allow" },
     { "domain": "*", "action": "deny" }
   ]
 }
