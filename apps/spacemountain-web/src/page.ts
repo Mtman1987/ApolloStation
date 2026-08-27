@@ -135,5 +135,5 @@ body{background-attachment:scroll}
 export const SANDBOX_BEACON_HTML = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Orbit Beacon</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#050815;color:#eef5ff;font:18px system-ui}.card{max-width:620px;padding:42px;border:1px solid #72f1b855;border-radius:24px;background:#0b1228;box-shadow:0 25px 80px #000}.dot{display:inline-block;width:12px;height:12px;border-radius:50%;background:#72f1b8;box-shadow:0 0 22px #72f1b8}small{color:#9fb0d1}</style></head><body><main class="card"><span class="dot"></span><h1>Orbit Beacon is ready.</h1><p>This inert fixture came from the SPMT app registry. SpaceMountain discovered and launched it without a hardcoded app tile.</p><small>No provider account, bot, webhook, worker, or queue is connected.</small></main></body></html>`;
 
 function escapeHtml(value: string) {
-  return value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '\"': "&quot;", "'": "&#39;" })[character] ?? character);
+  return value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character] ?? character);
 }
