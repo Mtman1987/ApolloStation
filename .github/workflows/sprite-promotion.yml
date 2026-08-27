@@ -80,7 +80,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          curl -fsS -X PUT "https://api.sprites.dev/v1/sprites/$SPRITE_NAME/policy/network" \
+          curl -fsS -X POST "https://api.sprites.dev/v1/sprites/$SPRITE_NAME/policy/network" \
             -H "Authorization: Bearer $SPRITES_TOKEN" \
             -H "Content-Type: application/json" \
             --data-binary @sandbox/sprites/network-policy.json >/tmp/network-policy-response.json
@@ -176,7 +176,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          curl -fsS -X PUT "https://api.sprites.dev/v1/sprites/$SPRITE_NAME/policy/network" \
+          curl -fsS -X POST "https://api.sprites.dev/v1/sprites/$SPRITE_NAME/policy/network" \
             -H "Authorization: Bearer $SPRITES_TOKEN" \
             -H "Content-Type: application/json" \
             --data-binary @sandbox/sprites/network-policy.json >/tmp/network-policy-response.json
