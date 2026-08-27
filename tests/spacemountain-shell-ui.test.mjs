@@ -100,6 +100,16 @@ test("shared header and mobile dock remain catalog-backed and viewport-safe", ()
   assert.match(SPACE_MOUNTAIN_CSS, /\.spmt-rocket-dock\{left:10px;right:10px;top:auto;bottom:/);
 });
 
+test("header and rocket dock share one complete core navigation icon contract", () => {
+  assert.match(base, /function coreNavIcon\(theme: string, view: SpaceMountainViewV1\)/);
+  assert.match(base, /coreNavIcon\(theme\.id, item\.id\)/);
+  for (const view of ["home", "apps", "workspace", "settings"]) assert.match(base, new RegExp(`coreNavIcon\\(theme\\.id, "${view}"\\)`));
+  assert.match(base, /view === "apps" \? "shipyard" : view === "workspace" \? "overlay-bay"/);
+  assert.doesNotMatch(base, /data-workspace-toggle[\s\S]{0,200}themedHeaderIcon\(theme\.id, "mission-control"\)/);
+  assert.match(base, /data-core-nav-art/);
+  assert.match(base, /data-themed-app-art/);
+});
+
 test("Overlay Bay retains donor editor controls and all source families", () => {
   for (const kind of ["web","image","text","camera","screen","xbox","alert","links","ticker","weather","nebula"]) assert.match(`${overlayScenes}\n${overlay}`, new RegExp(`\\"${kind}\\"|${kind}`));
   for (const feature of [/data-ob-resize/, /data-ob-front/, /data-ob-back/, /data-ob-copy/, /data-ob-remove/, /data-ob-test-alert/, /data-ob-field="opacity"/, /data-ob-field="interactive"/, /data-ob-field="locked"/, /data-ob-game/, /data-ob-game-style/]) assert.match(overlay, feature);
