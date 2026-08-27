@@ -45,9 +45,8 @@ test("Sprite deployment verifies, tests, switches atomically, and rolls back", a
   assert.match(script, /sprite-env services delete "\$bootstrap_service_name"/);
   assert.match(script, /Deployment failed; restoring bootstrap service/);
   assert.match(script, /sprite-env services delete "\$service_name"/);
-  assert.match(script, /llm_service_name="spmt-qwen"/);
-  assert.match(script, /Qwen\/Qwen3-8B-GGUF:Q4_K_M/);
-  assert.match(script, /--needs "\$llm_service_name"/);
+  assert.match(script, /llama_ref="b6335"/);
+  assert.match(script, /--llm-binary,\$llama_root\/build\/bin\/llama-server/);
   assert.match(script, /sprite-env services create "\$bootstrap_service_name"/);
   assert.match(script, /grep -Fq "\$BUILD_SHA"/);
 });

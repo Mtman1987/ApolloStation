@@ -15,6 +15,8 @@ const spmtPort = requirePort(argumentsMap.get("spmt-port") ?? "3000", "spmt-port
 const webPort = requirePort(argumentsMap.get("web-port") ?? "8080", "web-port");
 const chatTagPort = requirePort(argumentsMap.get("chat-tag-port") ?? "3100", "chat-tag-port");
 const ownerUsername = requireUsername(argumentsMap.get("owner-username") ?? "mtman1987");
+const llmBinary = argumentsMap.get("llm-binary");
+const llmCache = resolve(argumentsMap.get("llm-cache") ?? resolve(dataRoot, "models"));
 const databasePath = resolve(dataRoot, "spmt-empty-catalog-sandbox.sqlite");
 await mkdir(dataRoot, { recursive: true, mode: 0o700 });
 
@@ -62,6 +64,10 @@ if (app === "nebula-arcade") {
   process.on("SIGTERM", () => void stop(0));
   await new Promise((done) => chatTag.once("exit", (code, signal) => { if (!stopping) void stop(signal === "SIGINT" || signal === "SIGTERM" ? 0 : code ?? (signal ? 1 : 0)).then(done); else done(); }));
 } else {
+if (llmBinary) {
+  const llm = startCommand("Qwen", resolve(llmBinary), ["--host", "127.0.0.1", "--port", "8081", "-hf", "Qwen/Qwen3-8B-GGUF:Q4_K_M", "--ctx-size", "8192", "--threads", "8", "--parallel", "1", "--jinja", "--no-webui"], { ...common, LLAMA_CACHE: llmCache });
+  llm.once("exit", (code, signal) => { if (!stopping) void stop(signal === "SIGINT" || signal === "SIGTERM" ? 0 : code ?? (signal ? 1 : 0)); });
+}
 const spmt = start("SPMT", "apps/spmt-service/dist/index.js", {
   ...common,
   DATABASE_PATH: databasePath,
@@ -109,7 +115,11 @@ await new Promise((done) => web.once("exit", (code, signal) => { if (!stopping) 
 }
 
 function start(label, script, environment) {
-  const child = spawn(process.execPath, [script], { cwd: process.cwd(), env: environment, stdio: "inherit" });
+  return startCommand(label, process.execPath, [script], environment);
+}
+
+function startCommand(label, command, args, environment) {
+  const child = spawn(command, args, { cwd: process.cwd(), env: environment, stdio: "inherit" });
   children.add(child);
   child.once("exit", () => children.delete(child));
   child.once("error", (error) => { process.stderr.write(`${label} failed to start: ${error.message}\n`); void stop(1); });
@@ -165,7 +175,7 @@ function parseArguments(values) {
     if (!flag?.startsWith("--") || !value) throw new Error("Arguments must be --name value pairs");
     result.set(flag.slice(2), value);
   }
-  for (const name of result.keys()) if (!["app", "candidate-app", "public-url", "data-root", "build-sha", "spmt-port", "web-port", "chat-tag-port", "tenant-id", "channel-id", "owner-username"].includes(name)) throw new Error(`Unknown argument --${name}`);
+  for (const name of result.keys()) if (!["app", "candidate-app", "public-url", "data-root", "build-sha", "spmt-port", "web-port", "chat-tag-port", "tenant-id", "channel-id", "owner-username", "llm-binary", "llm-cache"].includes(name)) throw new Error(`Unknown argument --${name}`);
   return result;
 }
 
