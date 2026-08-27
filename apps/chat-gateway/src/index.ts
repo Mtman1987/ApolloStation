@@ -9,6 +9,7 @@ import {
   type OutboundChatMessageV1,
 } from "@spmt/contracts";
 export * from "./connection-supervisor.js";
+export * from "./provider-drivers.js";
 
 export const manifest = assertAppModuleManifestV1({
   schemaVersion: 1,
