@@ -77,6 +77,11 @@ const SHELL_APP_SCENES: Readonly<Record<string, ProductSceneV1>> = Object.freeze
   "stellar-core": Object.freeze({ appId: "stellar-core", imageUrl: "/assets/product/stellar-core-background.webp", imagePosition: "center" }),
   "mission-control": Object.freeze({ appId: "mission-control", imageUrl: "/assets/product/mission-control-background.webp", imagePosition: "center" }),
   "nebula-arcade": Object.freeze({ appId: "nebula-arcade", imageUrl: "/assets/nebula-arcade/solar-system.webp", imagePosition: "center" }),
+  "discord-stream-hub": Object.freeze({ appId: "discord-stream-hub", imageUrl: "/assets/product/discord-stream-hub-background.webp", imagePosition: "center" }),
+  streamweaver: Object.freeze({ appId: "streamweaver", imageUrl: "/assets/product/streamweaver-background.webp", imagePosition: "center" }),
+  hearmeout: Object.freeze({ appId: "hearmeout", imageUrl: "/assets/product/hearmeout-background.webp", imagePosition: "center" }),
+  mountainview: Object.freeze({ appId: "mountainview", imageUrl: "/assets/product/mountainview-background.webp", imagePosition: "center" }),
+  companion: Object.freeze({ appId: "companion", imageUrl: "/assets/product/companion-background.webp", imagePosition: "center" }),
 });
 
 export class SpaceMountainShellUi {
@@ -166,7 +171,7 @@ export class SpaceMountainShellUi {
     const chatTransparency = recordNumber(appearance, "chatTransparency") ?? 15;
     const parallaxDepth = recordNumber(appearance, "parallaxDepth") ?? 35;
     root.style.setProperty("--spmt-surface-tint", `${Math.round(8 + nebulaIntensity * 0.12)}%`);
-    root.style.setProperty("--spmt-tint-opacity", String(0.5 + nebulaIntensity * 0.0036));
+    root.style.setProperty("--spmt-tint-opacity", String(0.34 + nebulaIntensity * 0.0022));
     root.style.setProperty("--spmt-border-mix", `${Math.round(10 + borderStrength * 0.45)}%`);
     root.style.setProperty("--spmt-chat-opacity", String(Math.max(0.38, (100 - chatTransparency) / 100)));
     root.style.setProperty("--spmt-backdrop-scale", String(1.015 + parallaxDepth / 2000));

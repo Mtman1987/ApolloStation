@@ -32,7 +32,7 @@ const service = createSpmtServiceWithProviderIdentity({
   ...(twitchClientSecret ? { twitchClientSecret } : {}),
   ...(discordBotToken ? { discordBotToken } : {}),
 });
-const gateway = createSpmtOutputGateway(service, { port, host: checked?.host ?? process.env.SPMT_HOST ?? "0.0.0.0" });
+const gateway = createSpmtOutputGateway(service, { port, host: checked?.host ?? process.env.SPMT_HOST ?? "0.0.0.0", publicBaseUrl });
 
 await gateway.listen();
 process.stdout.write(`SPMT service with provider identity and overlay output gateway listening on ${port}\n`);

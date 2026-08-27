@@ -1,11 +1,20 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { createSpmtOutputGateway } from "../apps/spmt-service/dist/output-gateway.js";
 
 function listen(server) { return new Promise((done, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", () => { server.off("error", reject); done(); }); }); }
 function close(server) { return new Promise((done, reject) => server.close((error) => error ? reject(error) : done())); }
 function origin(server) { const address = server.address(); assert.ok(address && typeof address !== "string"); return `http://127.0.0.1:${address.port}`; }
+
+test("Overlay Bay registration derives every app and renderer URL from the configured environment", () => {
+  const source = readFileSync(new URL("../apps/spmt-service/src/output-gateway.ts", import.meta.url), "utf8");
+  assert.match(source, /publicBaseUrl/);
+  assert.match(source, /new URL\("\/\?view=workspace",publicBaseUrl\)/);
+  assert.match(source, /new URL\(`\/_internal\/overlay-scene/);
+  assert.doesNotMatch(source, /launchUrl:"https:\/\/spmt\.live\/overlay-bay"|rendererUrl:`https:\/\/spmt\.live/);
+});
 
 test("SPMT output gateway resolves opaque grants and injects verified renderer principal", async () => {
   let rendererHeaders = {};
