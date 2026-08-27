@@ -33,7 +33,8 @@ test("workspace colors tint one stable app scene and preserve a safe custom over
 });
 
 test("SpaceMountain presentation remains finished and dynamically catalog-backed after shell split", () => {
-  for (const pattern of [/One command bridge for every creator tool/, /space-logo-header\.png/, /themeLogoUrl/, /themedAppIconUrl/, /model-rocket\.png/, /SPACEMOUNTAIN_SCENE/, /installProductBackdrop/, /bindProductRocketNavigation/, /Custom scene override/, /app\.iconUrl/, /this\.snapshot\.apps\.filter/]) assert.match(shellSource, pattern);
+  for (const pattern of [/data-theme-logo="hero"/, /data-theme-logo="spmt"/, /themeLogoUrl/, /themedAppIconUrl/, /model-rocket\.png/, /SPACEMOUNTAIN_SCENE/, /installProductBackdrop/, /bindProductRocketNavigation/, /Custom scene override/, /app\.iconUrl/, /this\.snapshot\.apps\.filter/]) assert.match(shellSource, pattern);
+  assert.doesNotMatch(shellSource, /One command bridge for every creator tool/);
   assert.doesNotMatch(shellSource, /app-streamweaver|app-hearmeout|app-discord-hub|app-chat-tag/);
   assert.doesNotMatch(shellSource, /localStorage|sessionStorage|\/api\/spmt/);
   assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /\.spmt-header-clocks/);

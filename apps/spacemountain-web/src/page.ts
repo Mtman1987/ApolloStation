@@ -25,9 +25,8 @@ export function renderSpaceMountainPage(nonce: string, buildSha: string, candida
   </header>
   <main id="auth-view" class="auth-view" hidden>
     <section class="auth-intro">
-      <img class="auth-product-logo" src="/assets/product/space-logo-main.png" alt="SpaceMountain">
+      <img class="auth-product-logo" src="/assets/product/themes/solar-flare-spmt.png" alt="SPMT">
       <span>THE UNIVERSE ONLINE · PRIVATE PREVIEW</span>
-      <h1>One command bridge for every creator tool.</h1>
       <p>Enter the clean SpaceMountain ecosystem running inside this private Sprite. The visual experience is shared; its data remains fully isolated from Blue.</p>
       <ul>
         <li>Stellar Core provides persona-neutral shared AI.</li>

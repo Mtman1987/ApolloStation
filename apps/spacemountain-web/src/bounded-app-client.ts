@@ -38,6 +38,10 @@ function applyAppearance(root: HTMLElement, sceneUrl: string, appearance: Appear
   root.style.setProperty("--spmt-stars", String(ratio(appearance.starDensity, 1)));
   root.style.setProperty("--spmt-glow", String(ratio(appearance.glowIntensity, .78)));
   root.dataset.spmtDock = appearance.sidebarCollapsed === true ? "collapsed" : "expanded";
+  root.dataset.spmtTheme = themeId;
+  document.querySelectorAll<HTMLImageElement>("[data-themed-app-icon]").forEach((image) => {
+    image.src = `/assets/product/app-icons/${themeId}/${root.dataset.spmtAppId ?? "app"}.png`;
+  });
   document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')?.setAttribute("content", theme.accent);
   installProductBackdrop(root, resolveProductBackdrop({ appId: root.dataset.spmtAppId ?? "app", imageUrl: sceneUrl }, themeId, accent, customBackground));
 }

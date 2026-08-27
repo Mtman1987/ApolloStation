@@ -11,13 +11,15 @@ const EXPECTED = [
   ["/apps/streamweaver", "StreamWeaver", "streamweaver-background.webp"],
 ];
 
-test("bounded donor app pages are explicit, themed, and honest about incomplete parity", () => {
+test("bounded app pages are explicit, themed, and carry app identity without internal release copy", () => {
   for (const [path, name, artwork] of EXPECTED) {
     assert.equal(BOUNDED_APP_PATHS.has(path), true);
     const html = renderBoundedAppPage(path, "abc123def456");
     assert.match(html, new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
     assert.match(html, new RegExp(artwork.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
-    assert.match(html, /remain|requires|gated|complete/i);
+    assert.match(html, new RegExp(`/assets/product/app-icons/solar-flare/${path.split("/").at(-1)}\\.png`));
+    assert.match(html, /data-themed-app-icon/);
+    assert.doesNotMatch(html, /App-owned comic scene|Green donor surface/);
     assert.doesNotMatch(html, /provider actions enabled|production ready/i);
   }
 });

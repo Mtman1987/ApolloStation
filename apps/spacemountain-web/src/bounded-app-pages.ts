@@ -115,7 +115,7 @@ function pageForPath(pathname: string) {
 function nav(page: BoundedAppPage, surface: BoundedAppSurface) {
   if (surface !== "standalone") return "";
   return `<aside class="bounded-rocket-dock spmt-product-glass" data-spmt-depth="1" aria-label="${escapeHtml(page.name)} navigation">
-    <div class="bounded-rocket-orbit" aria-hidden="true"><span></span><img src="/assets/product/model-rocket.png" alt=""></div>
+    <div class="bounded-app-mark"><img data-themed-app-icon src="/assets/product/app-icons/solar-flare/${escapeHtml(page.id)}.png" alt="${escapeHtml(page.name)}"></div>
     <nav>
       <button type="button" data-spmt-product-nav="overview"><span>Overview</span></button>
       <button type="button" data-spmt-product-nav="capabilities"><span>Capabilities</span></button>
@@ -146,14 +146,14 @@ export function renderBoundedAppPage(pathname: string, buildSha: string, nonce: 
     body[data-spmt-surface="shell"]{background:transparent}
     .bounded-app-root{position:relative;z-index:2;width:100%;height:100%;min-height:0;display:grid;grid-template-rows:auto minmax(0,1fr) auto;gap:clamp(10px,1.4vw,16px);padding:clamp(14px,2vw,28px);overflow:hidden}
     body[data-spmt-surface="standalone"] .bounded-app-root{min-height:100dvh;height:auto;padding-left:clamp(88px,9vw,126px);overflow-y:auto;overscroll-behavior:contain}
-    .bounded-hero{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(220px,.65fr);gap:24px;align-items:end;padding:clamp(18px,2.5vw,34px);border:1px solid var(--spmt-border);border-radius:28px;min-height:clamp(170px,25vh,250px);box-shadow:0 24px 60px rgba(0,0,0,.28),0 0 calc(28px * var(--spmt-glow)) color-mix(in srgb,var(--spmt-accent) 18%,transparent)}
-    .bounded-hero h1{margin:8px 0 10px;font-size:clamp(34px,5vw,72px);line-height:.96;letter-spacing:-.045em}.bounded-hero p{max-width:760px;margin:0;color:#c4c7d2;font-size:clamp(11px,1.15vw,14px);line-height:1.65}.bounded-hero-side{display:grid;gap:8px;align-self:end}.bounded-status-chip{display:flex;align-items:center;gap:8px;color:#f8fafc;font-size:11px;font-weight:900}.bounded-status-chip::before{width:8px;height:8px;border-radius:50%;background:var(--spmt-accent);box-shadow:0 0 14px color-mix(in srgb,var(--spmt-accent) 75%,transparent);content:""}.bounded-scene-copy{color:#9296a3!important;font-size:10px!important}
+    .bounded-hero{display:grid;grid-template-columns:1fr;gap:24px;align-items:center;padding:clamp(18px,2.5vw,34px);border:1px solid var(--spmt-border);border-radius:28px;min-height:clamp(170px,25vh,250px);box-shadow:0 24px 60px rgba(0,0,0,.28),0 0 calc(28px * var(--spmt-glow)) color-mix(in srgb,var(--spmt-accent) 18%,transparent)}
+    .bounded-app-identity{display:flex;align-items:center;gap:clamp(18px,3vw,36px)}.bounded-app-identity>img{width:clamp(96px,13vw,176px);height:clamp(96px,13vw,176px);flex:0 0 auto;object-fit:contain;filter:drop-shadow(0 18px 34px rgba(0,0,0,.55))}.bounded-app-identity>div{min-width:0}.bounded-hero h1{margin:8px 0 10px;font-size:clamp(34px,5vw,72px);line-height:.96;letter-spacing:-.045em}.bounded-hero p{max-width:760px;margin:0;color:#c4c7d2;font-size:clamp(11px,1.15vw,14px);line-height:1.65}
     .bounded-feature-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:clamp(9px,1.2vw,14px);min-height:0;align-items:stretch}.bounded-feature{min-width:0;padding:clamp(14px,1.6vw,20px);border:1px solid var(--spmt-border);border-radius:20px;display:flex;flex-direction:column;justify-content:flex-end;box-shadow:0 18px 44px rgba(0,0,0,.2),0 0 calc(18px * var(--spmt-glow)) color-mix(in srgb,var(--spmt-accent) 12%,transparent)}.bounded-feature p{margin:9px 0 0;color:#b5b8c3;font-size:11px;line-height:1.55}.bounded-feature .spmt-product-kicker{color:var(--spmt-accent)}
-    .bounded-runtime{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px;align-items:center;padding:13px 16px;border:1px solid var(--spmt-border);border-radius:18px}.bounded-runtime p{margin:0;color:#a9acb7;font-size:10px;line-height:1.5}.bounded-runtime code{color:var(--spmt-accent);font-size:9px;white-space:nowrap}
-    .bounded-rocket-dock{position:fixed;z-index:20;left:16px;top:50%;width:86px;transform:translateY(-50%);padding:9px 7px;border:1px solid var(--spmt-border);border-radius:34px;box-shadow:0 24px 70px rgba(0,0,0,.42)}.bounded-rocket-orbit{position:relative;width:66px;height:72px;margin:0 auto 6px;border:1px solid color-mix(in srgb,var(--spmt-accent) 38%,transparent);border-radius:50%;display:grid;place-items:center}.bounded-rocket-orbit span{position:absolute;inset:8px;border:1px dashed color-mix(in srgb,var(--spmt-accent-2) 40%,transparent);border-radius:50%}.bounded-rocket-orbit img{position:relative;width:38px;height:62px;object-fit:contain;filter:drop-shadow(0 0 12px color-mix(in srgb,var(--spmt-accent) 55%,transparent))}.bounded-rocket-dock nav{display:grid;gap:4px}.bounded-rocket-dock nav button,.bounded-rocket-dock nav a{min-height:42px;border:1px solid transparent;border-radius:13px;background:transparent;color:#9498a5;text-decoration:none;display:grid;place-items:center;padding:7px 4px;text-align:center;cursor:pointer}.bounded-rocket-dock nav button:hover,.bounded-rocket-dock nav button.active,.bounded-rocket-dock nav a:hover{color:#fff;border-color:color-mix(in srgb,var(--spmt-accent) 38%,transparent);background:color-mix(in srgb,var(--spmt-accent) 13%,transparent)}.bounded-rocket-dock nav span{font-size:8px;font-weight:850;line-height:1.05}
-    body[data-spmt-surface="standalone"][data-spmt-dock="collapsed"] .bounded-rocket-dock{width:68px;padding:5px;border-radius:34px}body[data-spmt-surface="standalone"][data-spmt-dock="collapsed"] .bounded-rocket-dock nav{display:none}body[data-spmt-surface="standalone"][data-spmt-dock="collapsed"] .bounded-rocket-orbit{width:56px;height:64px;margin:0}
+    .bounded-runtime{display:flex;justify-content:flex-end;align-items:center;padding:13px 16px;border:1px solid var(--spmt-border);border-radius:18px}.bounded-runtime code{color:var(--spmt-accent);font-size:9px;white-space:nowrap}
+    .bounded-rocket-dock{position:fixed;z-index:20;left:16px;top:50%;width:86px;transform:translateY(-50%);padding:9px 7px;border:1px solid var(--spmt-border);border-radius:34px;box-shadow:0 24px 70px rgba(0,0,0,.42)}.bounded-app-mark{width:66px;height:66px;margin:0 auto 6px;display:grid;place-items:center}.bounded-app-mark img{width:62px;height:62px;object-fit:contain;filter:drop-shadow(0 0 12px color-mix(in srgb,var(--spmt-accent) 55%,transparent))}.bounded-rocket-dock nav{display:grid;gap:4px}.bounded-rocket-dock nav button,.bounded-rocket-dock nav a{min-height:42px;border:1px solid transparent;border-radius:13px;background:transparent;color:#9498a5;text-decoration:none;display:grid;place-items:center;padding:7px 4px;text-align:center;cursor:pointer}.bounded-rocket-dock nav button:hover,.bounded-rocket-dock nav button.active,.bounded-rocket-dock nav a:hover{color:#fff;border-color:color-mix(in srgb,var(--spmt-accent) 38%,transparent);background:color-mix(in srgb,var(--spmt-accent) 13%,transparent)}.bounded-rocket-dock nav span{font-size:8px;font-weight:850;line-height:1.05}
+    body[data-spmt-surface="standalone"][data-spmt-dock="collapsed"] .bounded-rocket-dock{width:68px;padding:5px;border-radius:34px}body[data-spmt-surface="standalone"][data-spmt-dock="collapsed"] .bounded-rocket-dock nav{display:none}body[data-spmt-surface="standalone"][data-spmt-dock="collapsed"] .bounded-app-mark{width:56px;height:56px;margin:0}
     @media(max-width:980px){.bounded-feature-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.bounded-app-root{overflow-y:auto;overscroll-behavior:contain}.bounded-hero{grid-template-columns:1fr}.bounded-hero-side{grid-template-columns:1fr 1fr}}
-    @media(max-width:640px){.bounded-app-root,body[data-spmt-surface="standalone"] .bounded-app-root{padding:12px 12px calc(92px + env(safe-area-inset-bottom));overflow-y:auto}.bounded-feature-grid{grid-template-columns:1fr}.bounded-runtime{grid-template-columns:1fr}.bounded-rocket-dock{left:50%;top:auto;bottom:max(10px,env(safe-area-inset-bottom));width:min(94vw,440px);transform:translateX(-50%);border-radius:22px}.bounded-rocket-orbit{display:none}.bounded-rocket-dock nav{grid-template-columns:repeat(4,1fr)}.bounded-hero{min-height:0;padding:18px}.bounded-hero h1{font-size:clamp(31px,12vw,52px)}}
+    @media(max-width:640px){.bounded-app-root,body[data-spmt-surface="standalone"] .bounded-app-root{padding:12px 12px calc(92px + env(safe-area-inset-bottom));overflow-y:auto}.bounded-feature-grid{grid-template-columns:1fr}.bounded-app-identity{align-items:flex-start;flex-direction:column;gap:10px}.bounded-app-identity>img{width:clamp(84px,24vw,128px);height:clamp(84px,24vw,128px)}.bounded-rocket-dock{left:50%;top:auto;bottom:max(10px,env(safe-area-inset-bottom));width:min(94vw,440px);transform:translateX(-50%);border-radius:22px}.bounded-app-mark{display:none}.bounded-rocket-dock nav{grid-template-columns:repeat(4,1fr)}.bounded-hero{min-height:0;padding:18px}.bounded-hero h1{font-size:clamp(31px,12vw,52px)}}
     @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
   </style>
   <script type="importmap" nonce="${nonce}">{"imports":{"@spmt/sdk":"/assets/sdk/index.js","@spmt/ui":"/assets/ui/index.js"}}</script>
@@ -163,19 +163,17 @@ export function renderBoundedAppPage(pathname: string, buildSha: string, nonce: 
   ${nav(page, surface)}
   <main id="bounded-app-root" class="bounded-app-root" tabindex="-1">
     <header id="overview" class="bounded-hero spmt-product-glass" data-spmt-depth="1">
-      <div>
-        <span class="spmt-product-kicker">${escapeHtml(page.eyebrow)}</span>
-        <h1>${escapeHtml(page.name)}</h1>
-        <p>${escapeHtml(page.description)}</p>
-      </div>
-      <div class="bounded-hero-side">
-        <span class="bounded-status-chip">${escapeHtml(page.status)}</span>
-        <p class="bounded-scene-copy">App-owned comic scene · shared ecosystem theme, stars, glass, and navigation.</p>
+      <div class="bounded-app-identity">
+        <img data-themed-app-icon src="/assets/product/app-icons/solar-flare/${escapeHtml(page.id)}.png" alt="${escapeHtml(page.name)}">
+        <div>
+          <span class="spmt-product-kicker">${escapeHtml(page.eyebrow)}</span>
+          <h1>${escapeHtml(page.name)}</h1>
+          <p>${escapeHtml(page.description)}</p>
+        </div>
       </div>
     </header>
     <section id="capabilities" class="bounded-feature-grid" aria-label="${escapeHtml(page.name)} capabilities">${featureCards}</section>
     <footer id="status" class="bounded-runtime spmt-product-glass" data-spmt-depth="2">
-      <p>${escapeHtml(page.note)}</p>
       <code>build ${build}</code>
     </footer>
   </main>
