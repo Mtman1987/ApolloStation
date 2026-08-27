@@ -33,6 +33,9 @@ next_link="$deployment_root/current.next"
 data_root="/home/sprite/data/$DEPLOY_ROLE"
 service_name="apollo-sandbox"
 bootstrap_service_name="webtmux"
+llama_root="/home/sprite/runtime/llama-b6335"
+llama_ref="b6335"
+llama_archive_sha256="6ffee01c8fe2481faf8b614bbd8ca9bdaa563f47d4d9e00dc44f423962812d25"
 previous_release=""
 switched=0
 bootstrap_service_removed=0
@@ -44,13 +47,29 @@ fi
 
 create_apollo_service() {
   local release_sha="$1"
-  local runner_args="scripts/sprites/run-supervised-sandbox.mjs,--app,platform,--candidate-app,nebula-arcade,--catalog,current,--public-url,$SPRITE_PUBLIC_URL,--data-root,$data_root,--build-sha,$release_sha,--owner-username,mtman1987"
+  local runner_args="scripts/sprites/run-supervised-sandbox.mjs,--app,platform,--candidate-app,nebula-arcade,--catalog,current,--public-url,$SPRITE_PUBLIC_URL,--data-root,$data_root,--build-sha,$release_sha,--owner-username,mtman1987,--llm-binary,$llama_root/build/bin/llama-server,--llm-cache,/home/sprite/models"
   sprite-env services create "$service_name" \
     --cmd node \
     --args "$runner_args" \
     --dir "$current_link" \
     --http-port 8080 \
     --duration 15s
+}
+
+provision_llm_runtime() {
+  mkdir -p "$(dirname "$llama_root")" /home/sprite/models
+  if [[ ! -x "$llama_root/build/bin/llama-server" ]]; then
+    rm -rf "$llama_root.next"
+    mkdir -p "$llama_root.next"
+    archive="$llama_root.next/llama.zip"
+    curl -fsSL "https://github.com/ggml-org/llama.cpp/releases/download/$llama_ref/llama-$llama_ref-bin-ubuntu-x64.zip" -o "$archive"
+    echo "$llama_archive_sha256  $archive" | sha256sum --check --strict
+    python3 -m zipfile -e "$archive" "$llama_root.next"
+    rm -f "$archive"
+    chmod +x "$llama_root.next/build/bin/llama-server"
+    rm -rf "$llama_root"
+    mv "$llama_root.next" "$llama_root"
+  fi
 }
 
 rollback() {
@@ -63,7 +82,7 @@ rollback() {
     sprite-env services delete "$service_name" || true
     create_apollo_service "$(basename "$previous_release")" || true
   fi
-  if (( status != 0 && bootstrap_service_removed == 1 )); then
+  if (( status != 0 && bootstrap_service_removed == 1 )) && [[ -z "$previous_release" ]]; then
     echo "Deployment failed; restoring bootstrap service $bootstrap_service_name" >&2
     sprite-env services stop "$service_name" || true
     sprite-env services delete "$service_name" || true
@@ -102,34 +121,27 @@ npm ci --ignore-scripts
 npm run typecheck
 timeout --signal=TERM --kill-after=15s 10m npm test
 
+provision_llm_runtime
+
 ln -sfn "$release_dir" "$next_link"
 mv -Tf "$next_link" "$current_link"
 switched=1
 
-if sprite-env services get "$service_name" >/dev/null 2>&1; then
-  sprite-env services stop "$service_name"
-  sprite-env services delete "$service_name"
-  create_apollo_service "$BUILD_SHA"
-else
-  pkill -TERM -f 'scripts/sprites/run-supervised-sandbox\.mjs' 2>/dev/null || true
-  for _ in {1..30}; do
-    if ! curl -fsS --max-time 1 http://127.0.0.1:8080/sandbox/health >/dev/null 2>&1; then
-      break
-    fi
-    sleep 0.2
-  done
-  if sprite-env services get "$bootstrap_service_name" >/dev/null 2>&1; then
-    bootstrap_definition="$(sprite-env services get "$bootstrap_service_name")"
-    if ! grep -Fq '"cmd":"/usr/local/bin/webtmux"' <<<"$bootstrap_definition" || ! grep -Fq '"http_port":8080' <<<"$bootstrap_definition"; then
-      echo "Refusing to replace an unexpected bootstrap service definition" >&2
-      exit 1
-    fi
-    sprite-env services stop "$bootstrap_service_name"
-    sprite-env services delete "$bootstrap_service_name"
-    bootstrap_service_removed=1
+pkill -TERM -f 'scripts/sprites/run-supervised-sandbox\.mjs' 2>/dev/null || true
+for stale_service in "$service_name" "$bootstrap_service_name" spmt-qwen; do
+  if sprite-env services get "$stale_service" >/dev/null 2>&1; then
+    sprite-env services stop "$stale_service" || true
+    sprite-env services delete "$stale_service"
+    [[ "$stale_service" == "$bootstrap_service_name" ]] && bootstrap_service_removed=1
   fi
-  create_apollo_service "$BUILD_SHA"
-fi
+done
+for _ in {1..30}; do
+  if ! curl -fsS --max-time 1 http://127.0.0.1:8080/sandbox/health >/dev/null 2>&1; then
+    break
+  fi
+  sleep 0.2
+done
+create_apollo_service "$BUILD_SHA"
 
 ready=0
 for _ in {1..60}; do
