@@ -10,13 +10,22 @@ This document defines the internal boundary that turns an inbound normalized cha
 |---|---|
 | Twitch, Discord, and Kick socket I/O | Chat Gateway |
 | Provider-to-canonical identity | SPMT identity authority |
-| Persona name, aliases, home channels, summon window | StreamWeaver app-private state |
+| Persona name, aliases, home channels, summon window, instructions, memory policy | StreamWeaver app-private state |
 | Job routing, usage admission, hosted/Companion choice | SPMT + Stellar Core |
 | Prompt execution and result | Stellar Core |
 | Pending provider reply | StreamWeaver app-private SQLite outbox |
 | Provider send | Chat Gateway egress |
 
-Stellar Core remains persona-neutral. StreamWeaver owns the tenant's presentation and routing. Tenant-specific persona instructions and memory policy are a later migration and must not be written into the global Stella identity.
+Stellar Core remains persona-neutral. StreamWeaver owns the tenant's presentation and routing. Tenant-specific persona instructions and memory policy live in versioned StreamWeaver settings and never alter the global Stella identity.
+
+## Persona and memory boundary
+
+- StreamWeaver stores each tenant's stable persona ID, display name, aliases, owner, home channels, summon window, bounded instructions, and `off` or `conversation` memory policy in its app-private SQLite database.
+- The one-way legacy importer writes only an unconfigured tenant record. Replays or newer manual settings are never overwritten.
+- SPMT derives `sourceAppId` from the authenticated service and requires that app to be installed and enabled for the tenant. A human caller cannot submit a presentation, and a service cannot attribute one to another app.
+- The durable job carries the exact bounded presentation snapshot used for deterministic retry. Human job get/list/cancel and personal export responses remove `instructions` and expose only `instructionsConfigured`.
+- Conversation IDs include the StreamWeaver persona ID. Stellar history additionally matches source app and persona ID, while the normal job query already bounds tenant and billed user.
+- `off` sets `remember=false`, loads neither personal context nor earlier turns, and follows the one-hour do-not-remember retention path. `conversation` loads only the matching scoped context and turns.
 
 ## State flow
 
@@ -61,6 +70,5 @@ The outbox stores only delivery coordinates, public display name, job ID, timest
 
 - provider OAuth refresh credentials must enter the SPMT provider-grant authority;
 - Twitch/Discord/Kick connections must pass credentialed two-tenant reconnect and egress rehearsal;
-- tenant persona instructions and memory policies must migrate into versioned StreamWeaver settings;
 - the Chat Gateway/StreamWeaver worker group needs live lease, drain, restart, and rollback evidence;
 - Blue provider bots remain authoritative until those proofs and owner acceptance are recorded.

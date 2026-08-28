@@ -1,5 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
-import type { ExecutionJobV1, NormalizedChatDeliveryV1, NormalizedChatMessageV1, OutboundChatMessageV1 } from "@spmt/contracts";
+import type { AssistantMemoryPolicyV1, CommunityAssistantPresentationInputV1, ExecutionJobV1, NormalizedChatDeliveryV1, NormalizedChatMessageV1, OutboundChatMessageV1 } from "@spmt/contracts";
 
 export interface StreamWeaverPersonaConfigV1 {
   schemaVersion: 1;
@@ -10,6 +10,8 @@ export interface StreamWeaverPersonaConfigV1 {
   ownerCanonicalUserId: string;
   homeChannelIds: string[];
   summonWindowMs: number;
+  instructions: string;
+  memoryPolicy: AssistantMemoryPolicyV1;
 }
 
 export interface StreamWeaverPersonaInvocationV1 {
@@ -24,6 +26,7 @@ export interface StreamWeaverPersonaInvocationV1 {
   conversationId: string;
   idempotencyKey: string;
   occurredAt: string;
+  presentation: CommunityAssistantPresentationInputV1;
 }
 
 export interface StreamWeaverPersonaRuntimeV1 {
@@ -32,7 +35,7 @@ export interface StreamWeaverPersonaRuntimeV1 {
 export interface StreamWeaverChatEgressV1 { send(message: OutboundChatMessageV1): Promise<{ providerMessageId: string }>; }
 export interface StreamWeaverPersonaConfigSourceV1 { get(tenantId: string): StreamWeaverPersonaConfigV1 | undefined | Promise<StreamWeaverPersonaConfigV1 | undefined>; }
 export interface StreamWeaverAssistantClientV1 {
-  invokeCommunityAssistant(tenantId: string, input: { userId: string; message: string; surface: "stream"; conversationId: string; routingPreference: "automatic"; remember: true }, idempotencyKey: string): Promise<{ status: "accepted"; jobId: string } | { status: "unavailable"; reason: string }>;
+  invokeCommunityAssistant(tenantId: string, input: { userId: string; message: string; surface: "stream"; conversationId: string; routingPreference: "automatic"; remember: boolean; presentation: CommunityAssistantPresentationInputV1 }, idempotencyKey: string): Promise<{ status: "accepted"; jobId: string } | { status: "unavailable"; reason: string }>;
   getExecutionJob(tenantId: string, jobId: string): Promise<ExecutionJobV1>;
 }
 
@@ -110,7 +113,7 @@ export class SqliteStreamWeaverSummonStore {
 export class SpmtStreamWeaverPersonaRuntime implements StreamWeaverPersonaRuntimeV1 {
   constructor(private readonly client: Pick<StreamWeaverAssistantClientV1, "invokeCommunityAssistant">) {}
   invoke(input: StreamWeaverPersonaInvocationV1) {
-    return this.client.invokeCommunityAssistant(input.tenantId, { userId: input.userId, message: input.message, surface: "stream", conversationId: input.conversationId, routingPreference: "automatic", remember: true }, input.idempotencyKey);
+    return this.client.invokeCommunityAssistant(input.tenantId, { userId: input.userId, message: input.message, surface: "stream", conversationId: input.conversationId, routingPreference: "automatic", remember: input.presentation.memoryPolicy === "conversation", presentation: input.presentation }, input.idempotencyKey);
   }
 }
 
@@ -188,7 +191,8 @@ export function planStreamWeaverPersonaRoute(delivery: NormalizedChatDeliveryV1,
   if (!owner && !home && !active) return { kind: "ignored", reason: "outside-summon-window" };
   if (owner && !casual) return { kind: "ignored", reason: "not-addressed" };
   const userId = message.actor.canonicalUserId ?? "provider:" + message.provider + ":" + message.actor.providerUserId;
-  const invocation: StreamWeaverPersonaInvocationV1 = { schemaVersion: 1, tenantId: config.tenantId, personaId: config.personaId, userId, message: stripAddress(message.text, config.aliases), surface: "stream", provider: message.provider, channelId: message.channelId, conversationId: "chat:" + message.provider + ":" + message.channelId, idempotencyKey: "streamweaver-persona:" + delivery.deliveryId, occurredAt: message.occurredAt };
+  const presentation:CommunityAssistantPresentationInputV1={personaId:config.personaId,displayName:config.displayName,instructions:config.instructions,memoryPolicy:config.memoryPolicy};
+  const invocation: StreamWeaverPersonaInvocationV1 = { schemaVersion: 1, tenantId: config.tenantId, personaId: config.personaId, userId, message: stripAddress(message.text, config.aliases), surface: "stream", provider: message.provider, channelId: message.channelId, conversationId: "streamweaver:" + config.personaId + ":chat:" + message.provider + ":" + message.channelId, idempotencyKey: "streamweaver-persona:" + delivery.deliveryId, occurredAt: message.occurredAt, presentation };
   const openSummonUntil = owner && !home ? new Date(now + config.summonWindowMs).toISOString() : undefined;
   return { kind: "invoke", invocation, ...(openSummonUntil ? { openSummonUntil } : {}) };
 }
@@ -197,7 +201,7 @@ function mentioned(text: string, aliases: string[]): boolean { return aliases.so
 function addressed(text: string, aliases: string[]): boolean { return aliases.some((alias) => new RegExp("(^|[^a-z0-9_])(?:@|!|hey\\s+)?" + escapeRegex(alias) + "(?:[^a-z0-9_]|$)", "i").test(text)); }
 function stripAddress(text: string, aliases: string[]): string { let value = text.trim(); for (const alias of aliases) value = value.replace(new RegExp("^(?:hey\\s+)?[!@]?" + escapeRegex(alias) + "[,!:;\\s-]*", "i"), ""); return value.trim() || text.trim(); }
 function escapeRegex(value: string): string { return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
-function assertConfig(config: StreamWeaverPersonaConfigV1): void { if (config.schemaVersion !== 1 || !config.tenantId || !config.personaId || !config.displayName || !config.ownerCanonicalUserId || !config.aliases.length || !Number.isSafeInteger(config.summonWindowMs) || config.summonWindowMs < 1) throw new Error("StreamWeaver persona config is invalid"); }
+function assertConfig(config: StreamWeaverPersonaConfigV1): void { if (config.schemaVersion !== 1 || !config.tenantId || !config.personaId || !config.displayName || !config.ownerCanonicalUserId || !config.aliases.length || !Number.isSafeInteger(config.summonWindowMs) || config.summonWindowMs < 1 || !config.instructions.trim() || !["off","conversation"].includes(config.memoryPolicy)) throw new Error("StreamWeaver persona config is invalid"); }
 type ReplyRow = { body: string; state: StreamWeaverPersonaReplyV1["state"]; attempts: number | bigint; availableAt: string; lastError?: string | null; providerMessageId?: string | null; completedAt?: string | null };
 function hydrateReply(row: ReplyRow): StreamWeaverPersonaReplyV1 { const body = replyBody(JSON.parse(row.body) as StreamWeaverPersonaReplyV1); return { ...body, state: row.state, attempts: Number(row.attempts), availableAt: timestamp(row.availableAt, "availableAt"), ...(row.lastError ? { lastError: row.lastError } : {}), ...(row.providerMessageId ? { providerMessageId: row.providerMessageId } : {}), ...(row.completedAt ? { completedAt: timestamp(row.completedAt, "completedAt") } : {}) }; }
 function replyBody(input: Omit<StreamWeaverPersonaReplyV1, "state" | "attempts" | "availableAt"> | StreamWeaverPersonaReplyV1) { return { schemaVersion: 1 as const, tenantId: required(input.tenantId, "tenantId"), deliveryId: required(input.deliveryId, "deliveryId"), jobId: required(input.jobId, "jobId"), displayName: label(input.displayName, "displayName"), provider: input.provider, connectionId: required(input.connectionId, "connectionId"), channelId: required(input.channelId, "channelId"), replyToMessageId: required(input.replyToMessageId, "replyToMessageId"), createdAt: timestamp(input.createdAt, "createdAt") }; }

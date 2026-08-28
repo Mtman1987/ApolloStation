@@ -11,10 +11,11 @@ export class StellarCommunityAssistantRuntime {
   accept(input: CommunityAssistantInvocationV1) {
     if (!this.options.enabled) throw new Error("Stellar Core inference is unavailable");
     const routingPreference = input.routingPreference ?? "automatic";
+    const remember = input.presentation ? input.presentation.memoryPolicy === "conversation" : input.remember !== false;
     const existing = this.jobs.findIdempotent(input.tenantId, "stellar-core", input.requestedById, input.idempotencyKey);
     if (existing) {
-      const replayIdentity = [input.requestedByType, input.userId, input.message, input.callerAppId, input.surface, routingPreference, input.remember !== false, input.conversationId ?? null, input.correlationId ?? null];
-      const originalIdentity = [existing.requestedByType, existing.billedUserId, existing.input.message, existing.input.callerAppId, existing.input.surface, existing.input.routingPreference, existing.input.remember !== false, existing.input.conversationId ?? null, existing.correlationId ?? null];
+      const replayIdentity = [input.requestedByType, input.userId, input.message, input.callerAppId, input.surface, routingPreference, remember, input.conversationId ?? null, input.presentation ?? null, input.correlationId ?? null];
+      const originalIdentity = [existing.requestedByType, existing.billedUserId, existing.input.message, existing.input.callerAppId, existing.input.surface, existing.input.routingPreference, existing.input.remember !== false, existing.input.conversationId ?? null, existing.input.presentation ?? null, existing.correlationId ?? null];
       if (JSON.stringify(replayIdentity) !== JSON.stringify(originalIdentity)) throw new ExecutionJobError("conflict", "Stellar chat idempotency key was reused with different input");
       return { jobId: existing.id, executionTarget: existing.executionTarget, meteringTarget: existing.meteringTarget, routingPreference, ...(typeof existing.input.fallbackReason === "string" ? { fallbackReason: existing.input.fallbackReason } : {}) };
     }
@@ -24,7 +25,7 @@ export class StellarCommunityAssistantRuntime {
       requestedByType: input.requestedByType, requestedById: input.requestedById, billedUserId: input.userId,
       meteredResource: "ai-chat-requests", usageQuantity: 1, executionTarget: route.executionTarget, meteringTarget: route.meteringTarget,
       idempotencyKey: input.idempotencyKey,
-      input: { kind: STELLAR_CHAT_REQUEST_KIND, message: input.message, userId: input.userId, callerAppId: input.callerAppId, surface: input.surface, routingPreference, remember: input.remember !== false, ...(route.fallbackReason ? { fallbackReason: route.fallbackReason } : {}), ...(input.conversationId ? { conversationId: input.conversationId } : {}) },
+      input: { kind: STELLAR_CHAT_REQUEST_KIND, message: input.message, userId: input.userId, callerAppId: input.callerAppId, surface: input.surface, routingPreference, remember, ...(input.presentation ? { presentation: input.presentation } : {}), ...(route.fallbackReason ? { fallbackReason: route.fallbackReason } : {}), ...(input.conversationId ? { conversationId: input.conversationId } : {}) },
       ...(input.correlationId ? { correlationId: input.correlationId } : {}),
     });
     return { jobId: created.job.id, executionTarget: route.executionTarget, meteringTarget: route.meteringTarget, routingPreference, ...(route.fallbackReason ? { fallbackReason: route.fallbackReason } : {}) };

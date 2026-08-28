@@ -21,7 +21,7 @@ export class StellarDataPrivacyService {
       exportedAt,
       retention: { rawDays: 7, doNotRememberHours: 1, metadataDays: 30 },
       context: this.data.listPersonalStellarContext(tenantId, userId),
-      jobs: this.jobs.listForMaintenance(tenantId, { ownerAppId: "stellar-core", billedUserId: userId }),
+      jobs: this.jobs.listForMaintenance(tenantId, { ownerAppId: "stellar-core", billedUserId: userId }).map(publicStellarJob),
     };
   }
 
@@ -57,5 +57,7 @@ export class StellarDataPrivacyService {
 }
 
 function terminal(job: ExecutionJobV1) { return ["succeeded", "failed", "cancelled", "dead-letter"].includes(job.state); }
-function metadataInput(job: ExecutionJobV1, remember: boolean) { return { kind: STELLAR_CHAT_METADATA_KIND, capabilityId: STELLAR_CHAT_CAPABILITY_ID, userId: job.billedUserId, surface: typeof job.input.surface === "string" ? job.input.surface : "unknown", routingPreference: typeof job.input.routingPreference === "string" ? job.input.routingPreference : "automatic", remember, ...(typeof job.input.conversationId === "string" ? { conversationId: job.input.conversationId } : {}), contentMinimized: true }; }
+function metadataInput(job: ExecutionJobV1, remember: boolean) { const presentation=publicPresentation(job.input.presentation); return { kind: STELLAR_CHAT_METADATA_KIND, capabilityId: STELLAR_CHAT_CAPABILITY_ID, userId: job.billedUserId, surface: typeof job.input.surface === "string" ? job.input.surface : "unknown", routingPreference: typeof job.input.routingPreference === "string" ? job.input.routingPreference : "automatic", remember, ...(presentation?{presentation}:{}), ...(typeof job.input.conversationId === "string" ? { conversationId: job.input.conversationId } : {}), contentMinimized: true }; }
 function metadataResult(job: ExecutionJobV1) { const usage = job.result?.usage; return { kind: STELLAR_CHAT_METADATA_KIND, contentMinimized: true, state: job.state, ...(usage && typeof usage === "object" && !Array.isArray(usage) ? { usage } : {}), ...(typeof job.result?.finishReason === "string" ? { finishReason: job.result.finishReason } : {}) }; }
+function publicStellarJob(job:ExecutionJobV1):ExecutionJobV1{const presentation=publicPresentation(job.input.presentation);return presentation?{...job,input:{...job.input,presentation}}:job;}
+function publicPresentation(value:unknown){if(!value||typeof value!=="object"||Array.isArray(value))return undefined;const input=value as Record<string,unknown>;return{...(typeof input.sourceAppId==="string"?{sourceAppId:input.sourceAppId}:{}),...(typeof input.personaId==="string"?{personaId:input.personaId}:{}),...(typeof input.displayName==="string"?{displayName:input.displayName}:{}),...(typeof input.memoryPolicy==="string"?{memoryPolicy:input.memoryPolicy}:{}),instructionsConfigured:input.instructionsConfigured===true||(typeof input.instructions==="string"&&Boolean(input.instructions))};}

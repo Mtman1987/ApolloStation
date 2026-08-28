@@ -6,7 +6,7 @@ import test from "node:test";
 import { SpmtStreamWeaverPersonaRuntime, SqliteStreamWeaverSummonStore, StreamWeaverChatGatewayConsumer, StreamWeaverPersonaReplyReconciler, planStreamWeaverPersonaRoute } from "../apps/streamweaver/dist/index.js";
 
 const at = (minute) => new Date(Date.UTC(2026, 7, 23, 16, minute)).toISOString();
-const config = { schemaVersion: 1, tenantId: "tenant-a", personaId: "persona-athena", displayName: "Athena", aliases: ["athena", "annie", "athenabot87"], ownerCanonicalUserId: "owner-mt", homeChannelIds: ["home-channel"], summonWindowMs: 10 * 60 * 1000 };
+const config = { schemaVersion: 1, tenantId: "tenant-a", personaId: "persona-athena", displayName: "Athena", aliases: ["athena", "annie", "athenabot87"], ownerCanonicalUserId: "owner-mt", homeChannelIds: ["home-channel"], summonWindowMs: 10 * 60 * 1000, instructions: "Use Athena's configured warm, mythic presentation.", memoryPolicy: "conversation" };
 function delivery(id, minute, text, extra = {}) {
   return { schemaVersion: 1, deliveryId: id, consumerId: "streamweaver.persona", attempts: 0, message: { schemaVersion: 1, tenantId: "tenant-a", provider: "twitch", connectionId: "twitch-main", channelId: "guest-channel", messageId: id, text, occurredAt: at(minute), actor: { providerUserId: "provider-user", canonicalUserId: "viewer-1", username: "viewer", isBot: false, roles: ["member"] }, mentions: [], ...extra } };
 }
@@ -44,7 +44,8 @@ test("gateway consumer persists summon scope and invokes the configured persona 
     await consumer.deliver(delivery("viewer-1", 5, "@athena hello"));
     assert.equal(invoked.length, 2);
     assert.equal(invoked[1].idempotencyKey, "streamweaver-persona:viewer-1");
-    assert.equal(invoked[1].conversationId, "chat:twitch:guest-channel");
+    assert.equal(invoked[1].conversationId, "streamweaver:persona-athena:chat:twitch:guest-channel");
+    assert.deepEqual(invoked[1].presentation, { personaId: "persona-athena", displayName: "Athena", instructions: "Use Athena's configured warm, mythic presentation.", memoryPolicy: "conversation" });
     assert.equal(sent.length, 0);
     assert.equal(store.getReply("owner-1").jobId, "job-1");
     assert.equal(store.getReply("viewer-1").state, "pending");
@@ -134,6 +135,6 @@ test("the public SPMT adapter preserves user, conversation, metering, and stable
   const input = planStreamWeaverPersonaRoute(delivery("adapter-1", 0, "@athena status", { channelId: "home-channel" }), config).invocation;
   assert.deepEqual(await runtime.invoke(input), { status: "accepted", jobId: "job-adapter-1" });
   assert.equal(calls[0][0], "tenant-a");
-  assert.deepEqual(calls[0][1], { userId: "viewer-1", message: "status", surface: "stream", conversationId: "chat:twitch:home-channel", routingPreference: "automatic", remember: true });
+  assert.deepEqual(calls[0][1], { userId: "viewer-1", message: "status", surface: "stream", conversationId: "streamweaver:persona-athena:chat:twitch:home-channel", routingPreference: "automatic", remember: true, presentation: { personaId: "persona-athena", displayName: "Athena", instructions: "Use Athena's configured warm, mythic presentation.", memoryPolicy: "conversation" } });
   assert.equal(calls[0][2], "streamweaver-persona:adapter-1");
 });

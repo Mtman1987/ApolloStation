@@ -203,6 +203,14 @@ The preferred topology is caller-initiated: apps and users call public SPMT/Stel
 - **Compatibility:** Frozen donor evidence may retain the historical repository label. Executable compatibility is limited to a private, one-way SQLite/game-ID migration that rewrites old persisted identifiers and never emits or accepts a public legacy route.
 - **Consequences:** Current contracts use `nebula.arcade.*` event names, `nebula-arcade.*` XP reasons, `/v1/nebula-arcade/*` routes, `NEBULA_ARCADE_*` environment variables, and Nebula Arcade worker/service IDs.
 
+## Change record — 2026-08-28 StreamWeaver persona memory implementation
+
+- **Owner position:** Resume functionality porting after the Nebula Arcade naming correction, preserving the accepted distinction between tenant personas and global Stella.
+- **Implemented decisions:** D-24, D-31, and D-40 now cover StreamWeaver's versioned tenant persona settings, authenticated presentation snapshots, and memory policy.
+- **Boundary:** StreamWeaver owns persona identity, instructions, aliases, summon rules, and memory policy. Stellar Core remains persona-neutral execution. SPMT derives presentation ownership from the authenticated app; humans cannot inject a presentation or read its private instructions through job/history/export responses.
+- **Memory:** `off` loads no prior context or turns and follows do-not-remember retention. `conversation` matches tenant, billed user, source app, persona ID, and conversation. The one-way legacy importer never overwrites an already configured tenant.
+- **Production gate:** Live Twitch/Discord/Kick credentialed delivery, worker drain/rollback, voice, and broader persona capabilities remain gated; this implementation does not authorize provider cutover.
+
 ## Change record template
 
 For any future `CHANGE`, `REJECT`, or reopened decision append:

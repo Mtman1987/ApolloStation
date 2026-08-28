@@ -514,6 +514,20 @@ export const COMMUNITY_ASSISTANT_ID = "spmt.community-assistant" as const;
 export const COMMUNITY_ASSISTANT_DISPLAY_NAME = "Stella" as const;
 export const ASSISTANT_SURFACES = ["app", "commlink", "stream", "standalone", "developer"] as const;
 export type AssistantSurfaceV1 = (typeof ASSISTANT_SURFACES)[number];
+export const ASSISTANT_MEMORY_POLICIES = ["off", "conversation"] as const;
+export type AssistantMemoryPolicyV1 = (typeof ASSISTANT_MEMORY_POLICIES)[number];
+
+/** App-owned presentation data. SPMT derives sourceAppId from the authenticated service. */
+export interface CommunityAssistantPresentationInputV1 {
+  personaId: string;
+  displayName: string;
+  instructions: string;
+  memoryPolicy: AssistantMemoryPolicyV1;
+}
+
+export interface CommunityAssistantPresentationV1 extends CommunityAssistantPresentationInputV1 {
+  sourceAppId: string;
+}
 
 export interface CommunityAssistantDescriptorV1 {
   schemaVersion: 1;
@@ -537,6 +551,7 @@ export interface CommunityAssistantInvocationV1 {
   surface: AssistantSurfaceV1;
   routingPreference?: "automatic" | "hosted" | "companion";
   remember?: boolean;
+  presentation?: CommunityAssistantPresentationV1;
   idempotencyKey: string;
   conversationId?: string;
   correlationId?: string;

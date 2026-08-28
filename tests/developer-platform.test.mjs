@@ -23,6 +23,9 @@ function setup(communityAssistant) {
   auth.registerServiceIdentity({ serviceId: "reference-app", credential: "reference-app-green-secret-12345", scopes: ["workspace:read", "workspace:write", "xp:read", "xp:write", "events:read", "events:write", "assistants:read", "assistants:invoke"], tenantMode: "allow-list", tenantIds: ["tenant-a"] });
   const accessToken = auth.issueServiceAccess("reference-app", "reference-app-green-secret-12345").accessToken;
   const control = new ControlService({ store, now: () => "2026-08-22T02:40:00.000Z" });
+  control.registerTenant({ tenantId: "tenant-a", ownerUserId: "viewer-1", displayName: "Tenant A" });
+  control.registerApp({ appId: "reference-app", name: "Reference App", description: "Developer contract fixture", version: "1.0.0", launchUrl: "https://reference-app.example/", allowedScopes: ["assistants:invoke"], surfaces: ["standalone"], status: "active" });
+  control.installApp("tenant-a", "reference-app");
   const operations = new PlatformOperations(auth, authority, control, undefined, communityAssistant);
   const api = new PlatformApiAdapter(operations);
   const fetchImpl = async (url, init = {}) => {
@@ -90,7 +93,7 @@ test("SDK, HTTP API, CLI and MCP register applications through one catalog autho
     const mcpResult = mcp.handle({ jsonrpc: "2.0", id: 31, method: "tools/call", params: { name: "spmt.apps.register", arguments: manifest("mcp-app") } }, { accessToken: publisherToken, protocolVersion: SPMT_MCP_PROTOCOL_VERSION });
     assert.equal(mcpResult.result.structuredContent.appId, "mcp-app");
 
-    assert.deepEqual((await publisher.listApps()).map((app) => app.appId).sort(), ["api-app", "cli-app", "mcp-app", "sdk-app"]);
+    assert.deepEqual((await publisher.listApps()).map((app) => app.appId).sort(), ["api-app", "cli-app", "mcp-app", "reference-app", "sdk-app"]);
     assert.equal(env.store.listAudit().filter((item) => item.action === "apps.register" && item.actorId === "viewer-1").length, 4);
   } finally { cleanup(env); }
 });
@@ -169,6 +172,7 @@ test("Stella is app-neutral across SDK, API, CLI and MCP and stays truthful with
     assert.ok(stellaTool && /Stella/.test(stellaTool.description));
     assert.deepEqual(stellaTool.inputSchema.required, ["tenantId", "message", "surface", "idempotencyKey"]);
     assert.deepEqual(stellaTool.inputSchema.properties.routingPreference.enum, ["automatic", "hosted", "companion"]);
+    assert.deepEqual(stellaTool.inputSchema.properties.presentation.properties.memoryPolicy.enum, ["off", "conversation"]);
     const invoked = mcp.handle({ jsonrpc: "2.0", id: 11, method: "tools/call", params: { name: "spmt.assistants.community.invoke", arguments: { tenantId: "tenant-a", userId: "viewer-1", message: "Help", surface: "developer", idempotencyKey: "stella-unavailable-3" } } }, { accessToken: env.accessToken, protocolVersion: SPMT_MCP_PROTOCOL_VERSION });
     assert.equal(invoked.result.structuredContent.status, "unavailable");
     assert.equal(env.store.listAudit("tenant-a").filter((item) => item.action === "assistants.community.invoke").length, 3);

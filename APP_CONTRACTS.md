@@ -90,6 +90,8 @@ Refactoring may change implementation, package layout, process boundaries, and r
 - Any authorized shell, standalone app, StreamWeaver tenant, Commlink client, or external developer app can invoke Stella through the same public SDK/API/CLI/MCP/event/job contracts. No caller must sign into or keep StreamWeaver open first.
 - StreamWeaver may present Stella as a community bot or present a tenant/user-configured persona. Athena is only the owner's configured StreamWeaver persona.
 - Every invocation carries tenant, user/delegation, caller app, conversation/surface, scope, correlation, retention, and audit context. An app cannot borrow another tenant's persona or memory.
+- App-owned presentations carry a bounded snapshot whose `sourceAppId` is derived from the authenticated service, never trusted from the request. The service app must also be installed and enabled for the tenant. Human job/history/export views redact app-private instructions; Stellar workers receive them only through the fenced job claim.
+- Persona memory must match tenant, user, source app, persona ID, and conversation. A memory-off invocation loads no prior context or turns and uses the do-not-remember retention path.
 - If no inference route is available, developer surfaces return an explicit unavailable/degraded result; they never fabricate a Stella reply.
 
 ## Lifecycle
