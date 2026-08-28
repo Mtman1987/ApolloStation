@@ -1,10 +1,10 @@
 {
-  "name": "@spmt/platform-data-sqlite",
+  "name": "@spmt/provider-grants-core",
   "version": "0.1.0",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
-  "dependencies": { "@spmt/contracts": "0.1.0", "@spmt/execution-core": "0.1.0", "@spmt/platform-data-core": "0.1.0" },
+  "dependencies": { "@spmt/contracts": "0.1.0" },
   "scripts": { "build": "tsc -b" }
 }

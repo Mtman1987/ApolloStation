@@ -52,6 +52,16 @@ Refactoring may change implementation, package layout, process boundaries, and r
 - If a flagship app requires an undocumented private endpoint for a normal integration, treat that as a developer-platform defect and improve the shared contract rather than normalizing the shortcut.
 - Prefer caller-initiated integration: an app invokes a documented contract or publishes a scoped event. Registration alone does not authorize SPMT or Stellar Core to crawl the app's content.
 
+## Functional foundation
+
+- Map every retained capability in `config/capability-wiring.v1.json` before declaring it wired. The row names its entry points, public contract, data owner, execution owner, route mode, migration, metering, and evidence.
+- Use `ExecutionJobV1` for asynchronous AI, image, media, Xbox, clip, coding, or Companion work unless a documented specialized protocol is required. Return the durable job instead of claiming early success.
+- Separate the physical `executionTarget` (`sprite`, `fly`, or `companion`) from the Account `meteringTarget` (`hosted` or `companion`).
+- Never place credentials in job payloads/results. Installed services obtain short-lived, scope- and capability-bounded credentials from the SPMT provider-grant broker.
+- Keep personal profile, plan, billing, and usage in **Account**. Keep normal and advanced product configuration in that app's **Settings** surface using a versioned app-owned settings definition.
+- App-private SQLite stores use the shared migration/checkpoint conventions but remain separately owned databases. Applied migrations are immutable and sensitive settings are encrypted and write-only in public documents.
+- Every job transition emits content-minimized correlation, state, target, duration/attempt, and resource evidence for Mission Control; the Account usage ledger remains the usage authority.
+
 ## Shared surfaces
 
 - Declare one `SurfaceModeV1`: `shell`, `standalone`, `overlay`, or `popout`.

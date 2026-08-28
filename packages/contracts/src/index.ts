@@ -161,6 +161,166 @@ export interface UsageDecisionV1 {
   reason: string;
 }
 
+export const EXECUTION_JOB_STATES = ["queued", "leased", "running", "succeeded", "failed", "cancelled", "dead-letter"] as const;
+export type ExecutionJobStateV1 = (typeof EXECUTION_JOB_STATES)[number];
+
+export interface ExecutionJobProgressV1 {
+  percent: number;
+  message?: string;
+  updatedAt: string;
+}
+
+/**
+ * Shared durable envelope for asynchronous work. App-specific payload and result
+ * contracts remain owned by the app identified by ownerAppId/capabilityId.
+ */
+export interface ExecutionJobV1 {
+  schemaVersion: 1;
+  id: string;
+  tenantId: string;
+  ownerAppId: string;
+  capabilityId: string;
+  executionOwner: string;
+  requestedByType: "user" | "service";
+  requestedById: string;
+  billedUserId: string;
+  planId: BillingPlanIdV1;
+  meteredResource: MeteredResourceV1;
+  usageQuantity: number;
+  executionTarget: ExecutionTargetV1;
+  meteringTarget: "hosted" | "companion";
+  idempotencyKey: string;
+  input: Record<string, unknown>;
+  state: ExecutionJobStateV1;
+  attempt: number;
+  fencingEpoch: number;
+  leaseId?: string;
+  leaseOwner?: string;
+  leaseExpiresAt?: string;
+  progress?: ExecutionJobProgressV1;
+  result?: Record<string, unknown>;
+  error?: { code: string; message: string; retryable: boolean };
+  correlationId?: string;
+  createdAt: string;
+  updatedAt: string;
+  startedAt?: string;
+  completedAt?: string;
+}
+
+export interface ExecutionJobCreateV1 {
+  schemaVersion: 1;
+  ownerAppId: string;
+  capabilityId: string;
+  executionOwner: string;
+  billedUserId?: string;
+  meteredResource: MeteredResourceV1;
+  usageQuantity: number;
+  executionTarget: ExecutionTargetV1;
+  meteringTarget: "hosted" | "companion";
+  input: Record<string, unknown>;
+}
+
+export const PROVIDER_GRANT_PROVIDERS = ["discord", "twitch", "kick", "xbox", "github", "livekit"] as const;
+export type ProviderGrantProviderV1 = (typeof PROVIDER_GRANT_PROVIDERS)[number];
+
+export interface ProviderGrantRequestV1 {
+  schemaVersion: 1;
+  tenantId: string;
+  requesterAppId: string;
+  provider: ProviderGrantProviderV1;
+  providerUserId: string;
+  capabilityId: string;
+  requiredScopes: string[];
+  ttlSeconds?: number;
+}
+
+/** Returned only to the authorized service that requested it. Never persist or log credential. */
+export interface IssuedProviderGrantV1 {
+  schemaVersion: 1;
+  grantId: string;
+  tenantId: string;
+  requesterAppId: string;
+  provider: ProviderGrantProviderV1;
+  providerUserId: string;
+  capabilityId: string;
+  grantedScopes: string[];
+  credential: { accessToken: string; metadata: Record<string, string> };
+  issuedAt: string;
+  expiresAt: string;
+}
+
+export type AppSettingsSubjectV1 = "user" | "tenant";
+export type AppSettingsFieldTypeV1 = "boolean" | "string" | "number" | "enum";
+
+export interface AppSettingsFieldV1 {
+  key: string;
+  label: string;
+  description: string;
+  type: AppSettingsFieldTypeV1;
+  sensitive: boolean;
+  required?: boolean;
+  defaultValue?: boolean | string | number;
+  options?: Array<{ value: string; label: string }>;
+  minimum?: number;
+  maximum?: number;
+}
+
+export interface AppSettingsDefinitionV1 {
+  schemaVersion: 1;
+  appId: string;
+  settingsVersion: number;
+  subject: AppSettingsSubjectV1;
+  fields: AppSettingsFieldV1[];
+}
+
+/** Sensitive values are never returned; configuredSecretKeys reports presence only. */
+export interface AppSettingsDocumentV1 {
+  schemaVersion: 1;
+  appId: string;
+  tenantId: string;
+  subject: AppSettingsSubjectV1;
+  subjectId: string;
+  settingsVersion: number;
+  revision: number;
+  values: Record<string, boolean | string | number>;
+  configuredSecretKeys: string[];
+  updatedAt: string;
+}
+
+export interface AppSettingsPatchV1 {
+  schemaVersion: 1;
+  expectedRevision: number;
+  values?: Record<string, boolean | string | number | null>;
+  secrets?: Record<string, string | null>;
+}
+
+export const CAPABILITY_ROUTE_MODES = ["green-only", "shadow", "green-primary-with-fallback", "disabled"] as const;
+export type CapabilityRouteModeV1 = (typeof CAPABILITY_ROUTE_MODES)[number];
+export const CAPABILITY_WIRING_STATES = ["scaffolded", "wired", "verified", "cutover-ready"] as const;
+export type CapabilityWiringStateV1 = (typeof CAPABILITY_WIRING_STATES)[number];
+
+export interface CapabilityWiringV1 {
+  capabilityId: string;
+  ownerAppId: string;
+  dataOwner: string;
+  executionOwner: string;
+  surfaces: SurfaceModeV1[];
+  entryPoints: string[];
+  contract: string;
+  meteredResource: MeteredResourceV1 | null;
+  executionTargets: ExecutionTargetV1[];
+  routeMode: CapabilityRouteModeV1;
+  state: CapabilityWiringStateV1;
+  migration: string;
+  evidence: string[];
+}
+
+export interface CapabilityWiringManifestV1 {
+  schemaVersion: 1;
+  revision: string;
+  capabilities: CapabilityWiringV1[];
+}
+
 export function assertBillingManifestV1(value: BillingManifestV1): BillingManifestV1 {
   if (value.schemaVersion !== 1 || value.currency !== "USD" || !value.revision || value.revision.trim() !== value.revision || value.revision.length > 200) throw new Error("Billing manifest identity is invalid");
   if (value.warningThresholds.join(",") !== "0.7,0.9,1" || value.plans.length !== BILLING_PLAN_IDS.length) throw new Error("Billing manifest thresholds or plan count is invalid");
@@ -592,3 +752,38 @@ export function assertOverlayWidgetManifestV1(value: OverlayWidgetManifestV1): O
   if (value.previewUrl && !value.previewUrl.startsWith("https://") && !value.previewUrl.startsWith("http://localhost")) throw new Error("Overlay previewUrl must be HTTPS outside local development");
   return value;
 }
+
+export function assertAppSettingsDefinitionV1(value: AppSettingsDefinitionV1): AppSettingsDefinitionV1 {
+  if (value.schemaVersion !== 1 || !contractId(value.appId) || !Number.isSafeInteger(value.settingsVersion) || value.settingsVersion < 1) throw new Error("App settings definition is invalid");
+  if (value.subject !== "user" && value.subject !== "tenant") throw new Error("App settings subject is invalid");
+  if (!Array.isArray(value.fields) || value.fields.length > 100) throw new Error("App settings fields are invalid");
+  const keys = new Set<string>();
+  for (const field of value.fields) {
+    if (!contractId(field.key) || keys.has(field.key) || !field.label?.trim() || !field.description?.trim()) throw new Error("App settings field is invalid or duplicated");
+    keys.add(field.key);
+    if (!["boolean", "string", "number", "enum"].includes(field.type) || typeof field.sensitive !== "boolean") throw new Error("App settings field type is invalid");
+    if (field.sensitive && field.defaultValue !== undefined) throw new Error("Sensitive app settings cannot declare defaults");
+    if (field.type === "enum" && (!field.options?.length || field.options.some((option) => !option.value || !option.label))) throw new Error("Enum app settings require options");
+    if (field.type !== "enum" && field.options !== undefined) throw new Error("Only enum app settings may declare options");
+    if ((field.minimum !== undefined && !Number.isFinite(field.minimum)) || (field.maximum !== undefined && !Number.isFinite(field.maximum)) || (field.minimum !== undefined && field.maximum !== undefined && field.minimum > field.maximum)) throw new Error("App settings numeric bounds are invalid");
+  }
+  return value;
+}
+
+export function assertCapabilityWiringManifestV1(value: CapabilityWiringManifestV1): CapabilityWiringManifestV1 {
+  if (value.schemaVersion !== 1 || !value.revision?.trim() || !Array.isArray(value.capabilities) || !value.capabilities.length) throw new Error("Capability wiring manifest is invalid");
+  const ids = new Set<string>();
+  for (const capability of value.capabilities) {
+    if (!contractId(capability.capabilityId) || ids.has(capability.capabilityId) || !contractId(capability.ownerAppId) || !contractId(capability.dataOwner) || !contractId(capability.executionOwner)) throw new Error("Capability wiring identity is invalid or duplicated");
+    ids.add(capability.capabilityId);
+    if (!Array.isArray(capability.surfaces) || !capability.surfaces.length || capability.surfaces.some((surface) => !isSurfaceModeV1(surface))) throw new Error("Capability surfaces are invalid");
+    if (!contractStrings(capability.entryPoints) || !capability.contract?.trim() || !contractStrings(capability.evidence)) throw new Error("Capability wiring references are invalid");
+    if (capability.meteredResource !== null && !(METERED_RESOURCES as readonly string[]).includes(capability.meteredResource)) throw new Error("Capability metered resource is invalid");
+    if (!Array.isArray(capability.executionTargets) || !capability.executionTargets.length || capability.executionTargets.some((target) => target !== "sprite" && target !== "fly" && target !== "companion")) throw new Error("Capability execution targets are invalid");
+    if (!(CAPABILITY_ROUTE_MODES as readonly string[]).includes(capability.routeMode) || !(CAPABILITY_WIRING_STATES as readonly string[]).includes(capability.state) || !capability.migration?.trim()) throw new Error("Capability wiring state is invalid");
+  }
+  return value;
+}
+
+function contractId(value: unknown): value is string { return typeof value === "string" && /^[A-Za-z0-9._:@/-]{1,200}$/.test(value); }
+function contractStrings(value: unknown): value is string[] { return Array.isArray(value) && value.length > 0 && value.every((item) => typeof item === "string" && item.trim() && item.length <= 500); }

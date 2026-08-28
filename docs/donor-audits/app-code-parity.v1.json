@@ -1,11 +1,12 @@
 {
   "schemaVersion": 1,
-  "updated": "2026-08-27",
-  "branch": "work/remaining-app-ingestion",
+  "updated": "2026-08-28",
+  "branch": "main + work/functional-foundation",
   "appCodeParity": "complete",
   "productionCutover": "blocked",
   "scope": "Retained first-party application behavior and shared application contracts are implemented and regression-tested in ApolloStation. Live-provider credentials, production data reconciliation, DNS promotion, billing migration, and donor shutdown are cutover evidence, not missing application code.",
   "evidence": {
+    "functionalFoundation": ["tests/functional-foundation.test.mjs", "tests/functional-foundation-api.test.mjs", "tests/provider-grant-api.test.mjs", "config/capability-wiring.v1.json"],
     "spmtIdentityAuthDeveloper": ["tests/spmt-final-parity.test.mjs", "tests/developer-platform.test.mjs", "tests/provider-identity-convergence.test.mjs", "tests/provider-grandfather-parity.test.mjs"],
     "spmtXpWalletIntegrity": ["tests/xp-wallet-parity.test.mjs", "tests/xp-ledger-integrity.test.mjs", "tests/dsh-production-points-parity.test.mjs"],
     "overlayAuthority": ["tests/overlay-output-grants.test.mjs", "tests/nebula-overlay-scenes.test.mjs", "tests/streamweaver-overlay-runtime.test.mjs"],

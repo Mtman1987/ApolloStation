@@ -2,6 +2,19 @@
 
 Status: evidence-backed working baseline, requiring live verification before migration.
 
+## Functional foundation added on 2026-08-28
+
+The current implementation now includes the shared scaffolding required before feature-by-feature wiring:
+
+- one durable, metered execution-job envelope across Sprite, Fly, and Companion with leases, fencing, heartbeat progress, retries, cancellation, dead letters, idempotency, tenant isolation, and restart persistence;
+- separate physical execution and Account metering targets so paid Companion-local work is unmetered against hosted caps while remaining visible in personal usage;
+- a public job contract across HTTP, SDK, CLI, and MCP, plus a reference-app example;
+- an SPMT provider-grant broker and public service-only endpoint with installed-app, capability, scope, expiry, audit, and human-denial rules;
+- a versioned app Settings contract and isolated SQLite foundation with encrypted secrets, optimistic revisions, immutable migration checksums, checkpoints, integrity checks, and restart restore;
+- `config/capability-wiring.v1.json`, which records every first-party owner, route mode, wiring state, migration note, machine target, metering category, and evidence.
+
+`Account` is now the personal usage/plan/profile destination. App `Settings` remain owned by each app for its normal and advanced configuration. Production provider refresh adapters, real worker connections, data reconciliation, Fly mutation, and donor retirement remain cutover work rather than being fabricated by this scaffold.
+
 ## What is working conceptually
 
 - SPMT is already described as the canonical identity and platform contract owner.

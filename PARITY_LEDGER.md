@@ -1,6 +1,6 @@
 # Donor → Green Parity Ledger
 
-Updated: 2026-08-23
+Updated: 2026-08-28
 
 Purpose: prevent the clean-room rebuild from silently dropping useful production behavior while still allowing deliberate removal of legacy architecture, duplicate authority, and bloat.
 
@@ -31,6 +31,9 @@ This ledger is **not yet a claim that every donor route has been audited**. It i
 | Commlink App Events | SPMT | SPMT event projections | PRESERVE | version event schemas | event idempotency/replay test |
 | Forums / Discord bridge | SPMT + DSH/Discord | SPMT forum authority + DSH bridge + SpaceMountain source-labeled view | IMPROVE | migrate canonical threads/replies and preserve immutable origin/provider IDs | web↔Discord edit/delete/reply, permission, and loop-deduplication tests |
 | Generic context/capability panel | SpaceMountain/SPMT | SpaceMountain Stellar Core UI + SPMT jobs | IMPROVE | keep execution persona-neutral and remove fake-success behavior | available/unavailable plus queued/running/succeeded/failed tests |
+| Shared asynchronous feature execution | mixed app queues/workers | SPMT `ExecutionJobV1` + app-owned capability contracts | ADD | new work uses metered, idempotent, fenced jobs across Sprite/Fly/Companion; specialized donor jobs migrate one vertical at a time | create/list/lease/fence/progress/retry/dead-letter/cancel/restart/two-tenant/Account-usage tests |
+| App Settings and private migrations | mixed app JSON/SQLite/config routes | each app via `@spmt/app-foundation` | IMPROVE | Account remains personal usage/profile; app settings use versioned definitions, encrypted secrets, optimistic revisions, isolated stores, immutable migrations | defaults/patch/conflict/secret-redaction/restart/integrity/two-subject tests |
+| Provider credential delivery | mixed app token stores | SPMT provider-grant broker | REPLACE | installed service identities receive short-lived app/capability/scope grants; humans, jobs, logs and URLs never receive credentials | allow/deny/expiry/revoke/reauthorization/audit-redaction/live-provider tests |
 | Default ecosystem AI assistant | global Athena/public AI scaffolds | Stella presentation + SPMT developer contracts + Stellar Core execution | IMPROVE | stable role `spmt.community-assistant`; no StreamWeaver or SpaceMountain session dependency; do not migrate any tenant's Athena identity into the default | SDK/API/CLI/MCP/event-job/Commlink parity, unavailable-state, two-tenant memory, and standalone-app tests |
 | SPMT identity/users/tenants | SPMT | SPMT | PRESERVE | idempotent migration by immutable IDs | two-user/provider matrix |
 | Browser sessions / OAuth | SPMT + app compatibility | SPMT | IMPROVE | legacy sessions instrumented then retired | direct/embed/login/logout/refresh test |

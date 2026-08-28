@@ -10,6 +10,7 @@
     "@spmt/auth-core": "0.1.0",
     "@spmt/authority-core": "0.2.0",
     "@spmt/control-core": "0.1.0",
+    "@spmt/execution-core": "0.1.0",
     "@spmt/platform-data-core": "0.1.0"
   },
   "scripts": { "build": "tsc -b" }
