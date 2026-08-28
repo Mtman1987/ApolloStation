@@ -111,6 +111,33 @@ test("authentication failures pause reconnect until SPMT replaces the provider g
   } finally { f.close(); }
 });
 
+test("an active socket authentication rejection asks SPMT to rotate once before pausing the account", async () => {
+  const f = fixture();
+  try {
+    f.connections.put(config("twitch"), t0);
+    const opened = [], recoveries = [];
+    let recovery = { status: "ready", accessToken: "rotated-access", expiresAt: "2026-08-23T13:00:00Z" };
+    const grants = {
+      async getGrant() { return { status: "ready", accessToken: "initial-access", expiresAt: "2026-08-23T13:00:00Z" }; },
+      async recoverAuthentication(connection, reason) { recoveries.push({ connection, reason }); return recovery; },
+    };
+    const supervisor = new ChatProviderConnectionSupervisor("worker-a", f.connections, new ChatGatewayRuntime(f.messages), grants, [fakeDriver("twitch", opened)]);
+    assert.equal((await supervisor.reconcile(t0)).connected, 1);
+    opened[0].onDisconnect({ kind: "authentication", reason: "provider rejected token=do-not-log" });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(recoveries.length, 1);
+    assert.equal(f.connections.get("tenant-a", "twitch", "twitch-main").state, "pending");
+    assert.doesNotMatch(JSON.stringify(f.connections.get("tenant-a", "twitch", "twitch-main")), /do-not-log/);
+    assert.equal((await supervisor.reconcile("2026-08-29T12:00:00Z")).connected, 1);
+    recovery = { status: "reauthorization-required", reason: "refresh token=revoked" };
+    opened[1].onDisconnect({ kind: "authentication", reason: "second rejection" });
+    await new Promise((resolve) => setImmediate(resolve));
+    const stopped = f.connections.get("tenant-a", "twitch", "twitch-main");
+    assert.equal(stopped.state, "reauthorization-required");
+    assert.doesNotMatch(stopped.lastError, /revoked/);
+  } finally { f.close(); }
+});
+
 test("provider backoff preserves the donor fast Twitch and fifteen-second Kick starting delays", () => {
   assert.equal(reconnectDelayMs("discord", 1), 1_000);
   assert.equal(reconnectDelayMs("twitch", 1), 2_000);

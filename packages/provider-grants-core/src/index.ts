@@ -80,3 +80,5 @@ function secret(value: unknown) { if (typeof value !== "string" || value.length 
 function metadata(value: unknown) { if (!value || typeof value !== "object" || Array.isArray(value)) throw new ProviderGrantError("invalid", "Provider grant metadata is invalid"); const output: Record<string, string> = {}; for (const [name, item] of Object.entries(value as Record<string, unknown>)) { id(name, "metadata key"); if (typeof item !== "string" || item.length > 1000) throw new ProviderGrantError("invalid", "Provider grant metadata is invalid"); output[name] = item; } return output; }
 function iso(value: unknown, name: string) { if (typeof value !== "string" || !Number.isFinite(Date.parse(value))) throw new ProviderGrantError("invalid", `${name} is invalid`); return new Date(value).toISOString(); }
 function key(tenantId: string, providerValue: ProviderGrantProviderV1, providerUserId: string) { return `${tenantId}\0${providerValue}\0${providerUserId}`; }
+
+export * from "./credential-authority.js";

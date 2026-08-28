@@ -14,7 +14,14 @@ import { OutboxDispatcher } from "@spmt/outbox-core";
 import { PlatformDataError, PlatformDataService, type OAuthClientV1 } from "@spmt/platform-data-core";
 import { SqlitePlatformDataStore } from "@spmt/platform-data-sqlite";
 import { PlatformOperations, type CoderRuntimeV1, type CommunityAssistantRuntimeV1 } from "@spmt/platform-ops";
-import { ProviderGrantError, type ProviderGrantIssuerV1 } from "@spmt/provider-grants-core";
+import {
+  ProviderGrantBroker,
+  ProviderGrantError,
+  SqliteProviderCredentialAuthority,
+  createFirstPartyProviderRefreshAdapters,
+  type ProviderGrantIssuerV1,
+  type ProviderOAuthClientsV1,
+} from "@spmt/provider-grants-core";
 import { PlatformApiAdapter } from "@spmt/api-adapter";
 import { HealthRegistry } from "@spmt/runtime";
 import { assertBillingManifestV1, BILLING_PLAN_IDS, type AppCatalogRegistrationV1, type BillingManifestV1, type BillingPlanIdV1 } from "@spmt/contracts";
@@ -43,6 +50,8 @@ export interface SpmtServiceOptions {
   communityAssistant?: CommunityAssistantRuntimeV1;
   billingManifest?: BillingManifestV1;
   providerGrants?: ProviderGrantIssuerV1;
+  providerCredentialKey?: Uint8Array;
+  providerOAuthClients?: ProviderOAuthClientsV1;
   stellarChatEnabled?: boolean;
   stellarWorkerCredential?: string;
 }
@@ -52,6 +61,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
   if (runtimeMode === "sandbox" && (options.twitchClientId || options.twitchClientSecret || options.discordBotToken || options.sendDiscordDm)) {
     throw new Error("Sandbox mode rejects Twitch and Discord provider integrations");
   }
+  if (runtimeMode === "sandbox" && options.providerCredentialKey) throw new Error("Sandbox mode rejects the production provider credential authority");
   if (options.sandboxFixtures && runtimeMode !== "sandbox") throw new Error("Sandbox fixtures require sandbox runtime mode");
   if (options.sandboxApps?.length && runtimeMode !== "sandbox") throw new Error("Sandbox apps require sandbox runtime mode");
   const store = new SqliteAuthorityStore(options.databasePath);
@@ -63,6 +73,9 @@ export function createSpmtService(options: SpmtServiceOptions) {
   const control = new ControlService({ store, outputBaseUrl: publicBaseUrl });
   const billing = new MonetizationService(options.billingManifest ?? loadBillingManifest(), store);
   const data = new PlatformDataService({ store: platformStore, auth, webhookKey: options.webhookKey });
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const providerCredentials = options.providerCredentialKey ? new SqliteProviderCredentialAuthority(options.databasePath, options.providerCredentialKey, createFirstPartyProviderRefreshAdapters(fetchImpl), { ...(options.providerOAuthClients ? { clients: options.providerOAuthClients } : {}) }) : undefined;
+  const providerGrants = options.providerGrants ?? (providerCredentials ? new ProviderGrantBroker(providerCredentials) : undefined);
   const accounts = new AccountRecoveryService({ authority, authorityStore: store, control, platformStore, setupStore });
   const executionJobs = new ExecutionJobService({
     store: platformStore,
@@ -79,7 +92,6 @@ export function createSpmtService(options: SpmtServiceOptions) {
   const health = new HealthRegistry();
   health.setDependency("authority-storage", "ready", `sqlite:${store.journalMode()}`);
   health.setDependency("outbound-integrations", runtimeMode === "sandbox" ? "degraded" : "ready", runtimeMode === "sandbox" ? "disabled by sandbox contract" : "enabled");
-  const fetchImpl = options.fetchImpl ?? fetch;
   const sendDiscordDm = options.sendDiscordDm ?? (options.discordBotToken ? createDiscordDmSender(options.discordBotToken, fetchImpl) : undefined);
 
   if (options.sandboxFixtures) seedSandboxFixtures(control, data, publicBaseUrl);
@@ -366,16 +378,37 @@ export function createSpmtService(options: SpmtServiceOptions) {
       if (request.method === "POST" && url.pathname === "/v1/provider-grants") {
         const token = accessToken(request), tenantId = header(request, "x-spmt-tenant");
         if (!token || !tenantId) return json(response, 401, { error: "unauthorized" });
-        if (!options.providerGrants) return json(response, 503, { error: "provider_grants_unavailable" });
+        if (!providerGrants) return json(response, 503, { error: "provider_grants_unavailable" });
         try {
           const principal = auth.authorize(token, "providers:grant", tenantId);
           if (principal.actorType !== "service") return json(response, 403, { error: "service_required" });
           control.getApp(principal.actorId);
           if (!control.listInstalls(tenantId).some((install) => install.appId === principal.actorId && install.enabled)) return json(response, 403, { error: "app_not_installed" });
           const body = await readBody(request);
-          const grant = await options.providerGrants.issue({ schemaVersion: 1, tenantId, requesterAppId: principal.actorId, provider: str(body.provider, "provider") as "discord" | "twitch" | "kick" | "xbox" | "github" | "livekit", providerUserId: str(body.providerUserId, "providerUserId"), capabilityId: str(body.capabilityId, "capabilityId"), requiredScopes: stringValues(body.requiredScopes, "requiredScopes"), ...(body.ttlSeconds === undefined ? {} : { ttlSeconds: safeInteger(body.ttlSeconds, "ttlSeconds") }) });
+          const grant = await providerGrants.issue({ schemaVersion: 1, tenantId, requesterAppId: principal.actorId, provider: str(body.provider, "provider") as "discord" | "twitch" | "kick" | "xbox" | "github" | "livekit", providerUserId: str(body.providerUserId, "providerUserId"), capabilityId: str(body.capabilityId, "capabilityId"), requiredScopes: stringValues(body.requiredScopes, "requiredScopes"), ...(body.ttlSeconds === undefined ? {} : { ttlSeconds: safeInteger(body.ttlSeconds, "ttlSeconds") }) });
           authority.audit({ tenantId, actorType: "service", actorId: principal.actorId, action: "provider-grants.issue", target: `provider:${grant.provider}:${grant.providerUserId}:${grant.capabilityId}`, outcome: "accepted" });
           return json(response, 201, grant);
+        } catch (error) {
+          if (error instanceof ProviderGrantError) return json(response, error.code === "unavailable" ? 503 : error.code === "denied" ? 403 : 400, { error: error.code, message: error.message });
+          return json(response, 403, { error: "forbidden" });
+        }
+      }
+
+      if (request.method === "POST" && url.pathname === "/v1/provider-grants/recover") {
+        const token = accessToken(request), tenantId = header(request, "x-spmt-tenant");
+        if (!token || !tenantId) return json(response, 401, { error: "unauthorized" });
+        if (!providerCredentials) return json(response, 503, { error: "provider_refresh_unavailable" });
+        try {
+          const principal = auth.authorize(token, "providers:grant", tenantId);
+          if (principal.actorType !== "service") return json(response, 403, { error: "service_required" });
+          control.getApp(principal.actorId);
+          if (!control.listInstalls(tenantId).some((install) => install.appId === principal.actorId && install.enabled)) return json(response, 403, { error: "app_not_installed" });
+          const body = await readBody(request);
+          const provider = str(body.provider, "provider") as "discord" | "twitch" | "kick" | "xbox" | "github" | "livekit";
+          const providerUserId = str(body.providerUserId, "providerUserId");
+          const result = await providerCredentials.recover({ tenantId, provider, providerUserId, reason: str(body.reason, "reason") });
+          authority.audit({ tenantId, actorType: "service", actorId: principal.actorId, action: "provider-grants.recover", target: `provider:${provider}:${providerUserId}`, outcome: result.status === "ready" ? "accepted" : "denied" });
+          return json(response, result.status === "unavailable" ? 503 : 200, result);
         } catch (error) {
           if (error instanceof ProviderGrantError) return json(response, error.code === "unavailable" ? 503 : error.code === "denied" ? 403 : 400, { error: error.code, message: error.message });
           return json(response, 403, { error: "forbidden" });
@@ -397,12 +430,12 @@ export function createSpmtService(options: SpmtServiceOptions) {
   });
 
   return {
-    store, platformStore, setupStore, authority, auth, control, billing, data, accounts, executionJobs, stellarPrivacy, operations, outbox, server,
+    store, platformStore, setupStore, authority, auth, control, billing, data, accounts, executionJobs, stellarPrivacy, operations, outbox, providerCredentials, server,
     registerOAuthClient(input: Parameters<PlatformDataService["registerOAuthClient"]>[0]): ReturnType<PlatformDataService["registerOAuthClient"]> { return data.registerOAuthClient(input); },
     runOutboxOnce() { return outbox.runOnce(); },
     runStellarPrivacySweep() { return stellarPrivacy.sweep(store.listTenants().map((tenant) => tenant.id)); },
     listen() { return new Promise<void>((done, reject) => { server.once("error", reject); server.listen(options.port ?? 3000, options.host ?? "0.0.0.0", () => { server.off("error", reject); done(); }); }); },
-    close() { clearInterval(stellarCapabilityTimer); clearInterval(stellarPrivacyTimer); return new Promise<void>((done, reject) => server.close((error) => { setupStore.close(); platformStore.close(); store.close(); error ? reject(error) : done(); })); },
+    close() { clearInterval(stellarCapabilityTimer); clearInterval(stellarPrivacyTimer); return new Promise<void>((done, reject) => server.close((error) => { providerCredentials?.close(); setupStore.close(); platformStore.close(); store.close(); error ? reject(error) : done(); })); },
   };
 }
 
@@ -410,7 +443,7 @@ export function validateSandboxServiceEnvironment(environment: NodeJS.ProcessEnv
   if (environment.SPMT_RUNTIME_MODE !== "sandbox") throw new Error("SPMT_RUNTIME_MODE=sandbox is required");
   if (environment.SPMT_OUTBOUND_MODE !== "disabled") throw new Error("SPMT_OUTBOUND_MODE=disabled is required");
   if (!environment.SPMT_SANDBOX_ID || !/^[a-z0-9-]{3,80}$/.test(environment.SPMT_SANDBOX_ID)) throw new Error("SPMT_SANDBOX_ID must be a lowercase sandbox namespace");
-  const forbidden = ["TWITCH_CLIENT_ID", "TWITCH_CLIENT_SECRET", "TWITCH_BOT_OAUTH_TOKEN", "DISCORD_CLIENT_ID", "DISCORD_BOT_TOKEN", "DISCORD_CLIENT_SECRET", "KICK_CLIENT_ID", "KICK_CLIENT_SECRET", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET", "FIREBASE_PRIVATE_KEY", "FIREBASE_CLIENT_EMAIL", "FIREBASE_PROJECT_ID", "NEXT_PUBLIC_YOUTUBE_INNERTUBE_API_KEY", "YOUTUBE_API_KEY", "FLY_API_TOKEN", "SPRITES_TOKEN"].filter((name) => Boolean(environment[name]));
+  const forbidden = ["SPMT_PROVIDER_CREDENTIAL_KEY", "TWITCH_CLIENT_ID", "TWITCH_CLIENT_SECRET", "TWITCH_BOT_OAUTH_TOKEN", "DISCORD_CLIENT_ID", "DISCORD_BOT_TOKEN", "DISCORD_CLIENT_SECRET", "KICK_CLIENT_ID", "KICK_CLIENT_SECRET", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET", "FIREBASE_PRIVATE_KEY", "FIREBASE_CLIENT_EMAIL", "FIREBASE_PROJECT_ID", "NEXT_PUBLIC_YOUTUBE_INNERTUBE_API_KEY", "YOUTUBE_API_KEY", "FLY_API_TOKEN", "SPRITES_TOKEN"].filter((name) => Boolean(environment[name]));
   if (forbidden.length) throw new Error(`Sandbox SPMT rejects provider or infrastructure credentials: ${forbidden.join(", ")}`);
   const databasePath = environment.DATABASE_PATH;
   if (!databasePath || !isAbsolute(databasePath) || !basename(databasePath).toLowerCase().includes("sandbox")) throw new Error("DATABASE_PATH must be an absolute sandbox-named SQLite path");
@@ -562,6 +595,17 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   const publicBaseUrl = checked?.publicBaseUrl ?? process.env.SPMT_PUBLIC_URL ?? "https://spmt.live";
   const twitchClientId = process.env.TWITCH_CLIENT_ID;
   const twitchClientSecret = process.env.TWITCH_CLIENT_SECRET;
+  const discordClientId = process.env.DISCORD_CLIENT_ID;
+  const discordClientSecret = process.env.DISCORD_CLIENT_SECRET;
+  const kickClientId = process.env.KICK_CLIENT_ID;
+  const kickClientSecret = process.env.KICK_CLIENT_SECRET;
+  const providerCredentialKeySource = process.env.SPMT_PROVIDER_CREDENTIAL_KEY;
+  const providerCredentialKey = providerCredentialKeySource ? decodeKey(providerCredentialKeySource) : undefined;
+  const providerOAuthClients = {
+    ...(twitchClientId && twitchClientSecret ? { twitch: { clientId: twitchClientId, clientSecret: twitchClientSecret } } : {}),
+    ...(discordClientId && discordClientSecret ? { discord: { clientId: discordClientId, clientSecret: discordClientSecret } } : {}),
+    ...(kickClientId && kickClientSecret ? { kick: { clientId: kickClientId, clientSecret: kickClientSecret } } : {}),
+  };
   const discordBotToken = process.env.DISCORD_BOT_TOKEN;
   const stellarWorkerCredential = process.env.STELLAR_WORKER_CREDENTIAL;
   const stellarChatEnabled = process.env.SPMT_STELLAR_CHAT_ENABLED === "1";
@@ -579,6 +623,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     ...(buildSha ? { buildSha } : {}),
     ...(twitchClientId ? { twitchClientId } : {}),
     ...(twitchClientSecret ? { twitchClientSecret } : {}),
+    ...(providerCredentialKey ? { providerCredentialKey, providerOAuthClients } : {}),
     ...(discordBotToken ? { discordBotToken } : {}),
     stellarChatEnabled,
     ...(stellarWorkerCredential ? { stellarWorkerCredential } : {}),

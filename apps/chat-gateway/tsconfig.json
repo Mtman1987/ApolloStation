@@ -8,6 +8,6 @@
     "lib": ["ES2022"],
     "types": ["node"]
   },
-  "references": [{ "path": "../../packages/contracts" }],
+  "references": [{ "path": "../../packages/contracts" }, { "path": "../../packages/sdk" }],
   "include": ["src/**/*.ts"]
 }
