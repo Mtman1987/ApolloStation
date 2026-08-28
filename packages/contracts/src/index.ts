@@ -5,6 +5,77 @@ export type SurfaceModeV1 = (typeof SURFACE_MODES)[number];
 
 export type RuntimeStateV1 = "starting" | "ready" | "degraded" | "draining" | "unavailable";
 
+export const WORKLOAD_CLASSES = ["core", "elastic-http", "queue-worker", "bot-socket", "room-session", "heavy-job"] as const;
+export type WorkloadClassV1 = (typeof WORKLOAD_CLASSES)[number];
+export const EXECUTION_TARGETS = ["sprite", "fly", "companion"] as const;
+export type ExecutionTargetV1 = (typeof EXECUTION_TARGETS)[number];
+
+export interface RuntimePolicyV1 {
+  schemaVersion: 1;
+  revision: string;
+  workloadId: string;
+  ownerAppId: string;
+  class: WorkloadClassV1;
+  executionTarget: ExecutionTargetV1;
+  minimumCapacity: number;
+  maximumCapacity: number;
+  idleSeconds: number;
+  targetConcurrency: number;
+  maximumHourlyCostUsd: number;
+  stopMode: "stop" | "suspend";
+  uniqueConsumer: boolean;
+  maximumLeaseSeconds?: number;
+  restartIntervalSeconds?: number;
+  productionMutationEnabled: boolean;
+}
+
+export interface RuntimeObservationV1 {
+  schemaVersion: 1;
+  workloadId: string;
+  generation: string;
+  observedAt: string;
+  runningCapacity: number;
+  healthyCapacity: number;
+  stoppedCapacity: number;
+  activeRequests: number;
+  requestRate: number;
+  queueDepth: number;
+  activeSessions: number;
+  activeConnections: number;
+  activeLeases: number;
+  oldestDemandSeconds: number;
+  uncheckpointedWork: boolean;
+  duplicateConsumers: boolean;
+  estimatedHourlyCostUsd: number;
+  circuitBreakerOpen: boolean;
+}
+
+export const FLEET_ACTIONS = ["none", "start", "create", "drain-stop", "restart", "blocked", "external"] as const;
+export type FleetActionV1 = (typeof FLEET_ACTIONS)[number];
+export interface FleetDecisionV1 {
+  schemaVersion: 1;
+  workloadId: string;
+  generation: string;
+  policyRevision: string;
+  observedCapacity: number;
+  desiredCapacity: number;
+  action: FleetActionV1;
+  reason: string;
+  idempotencyKey: string;
+  decidedAt: string;
+  productionMutationAllowed: boolean;
+}
+
+export function assertRuntimePolicyV1(value: RuntimePolicyV1): RuntimePolicyV1 {
+  if (value.schemaVersion !== 1 || !(WORKLOAD_CLASSES as readonly string[]).includes(value.class) || !(EXECUTION_TARGETS as readonly string[]).includes(value.executionTarget)) throw new Error("Runtime policy version, class, or target is invalid");
+  for (const field of [value.revision, value.workloadId, value.ownerAppId]) if (!field || field.trim() !== field || field.length > 200) throw new Error("Runtime policy identity is invalid");
+  for (const count of [value.minimumCapacity, value.maximumCapacity, value.idleSeconds, value.targetConcurrency]) if (!Number.isSafeInteger(count) || count < 0) throw new Error("Runtime policy capacity or timing is invalid");
+  if (value.minimumCapacity > value.maximumCapacity || value.targetConcurrency < 1 || !Number.isFinite(value.maximumHourlyCostUsd) || value.maximumHourlyCostUsd < 0) throw new Error("Runtime policy bounds are invalid");
+  if (value.stopMode === "suspend" && value.executionTarget !== "fly") throw new Error("Only a measured Fly workload may use suspend mode");
+  if (value.executionTarget === "companion" && value.productionMutationEnabled) throw new Error("Rotator cannot mutate Companion capacity");
+  return value;
+}
+
 export const CHAT_PROVIDERS = ["twitch", "discord", "kick"] as const;
 export type ChatProviderV1 = (typeof CHAT_PROVIDERS)[number];
 
