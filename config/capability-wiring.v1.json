@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "revision": "apollo-stellar-chat-vertical-2026-08-28",
+  "revision": "apollo-stellar-chat-production-gates-2026-08-28",
   "capabilities": [
     {
       "capabilityId": "spmt.identity-authority",
@@ -98,14 +98,14 @@
       "dataOwner": "spmt",
       "executionOwner": "stellar-core",
       "surfaces": ["shell", "standalone", "popout"],
-      "entryPoints": ["/v1/assistants/community/invocations", "/v1/jobs", "/v1/jobs/claim-any", "SpaceMountain Stella job polling"],
+      "entryPoints": ["/v1/assistants/community/invocations", "/v1/jobs", "/v1/jobs/claim-any", "/v1/jobs/workers/report", "/v1/stellar/me/export", "/v1/stellar/me", "SpaceMountain Stella job polling"],
       "contract": "CommunityAssistantInvocationV1 and ExecutionJobV1",
       "meteredResource": "ai-chat-requests",
       "executionTargets": ["sprite", "companion"],
-      "routeMode": "shadow",
-      "state": "verified",
-      "migration": "Supervised Sprite Qwen and the Companion-ready route now use the shared lease. Production routing remains shadow until retention, live load, and capacity evidence pass their gates.",
-      "evidence": ["tests/developer-platform.test.mjs", "tests/stellar-core-migration.test.mjs", "tests/stellar-chat-vertical.test.mjs", "tests/spacemountain-web.test.mjs"]
+      "routeMode": "green-primary-with-fallback",
+      "state": "cutover-ready",
+      "migration": "Hosted Qwen is Green primary and release readiness fails closed unless its authenticated worker/provider lease is fresh. Companion is selected only for a paid tenant with a fresh tenant-compatible worker lease; otherwise the request visibly falls back to hosted.",
+      "evidence": ["tests/developer-platform.test.mjs", "tests/stellar-core-migration.test.mjs", "tests/stellar-chat-vertical.test.mjs", "tests/stellar-production-gates.test.mjs", "tests/spacemountain-web.test.mjs"]
     },
     {
       "capabilityId": "mission-control.operations-runtime",

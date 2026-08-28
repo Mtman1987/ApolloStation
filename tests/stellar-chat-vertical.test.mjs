@@ -5,7 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { createSpmtService } from "../apps/spmt-service/dist/index.js";
 import { stellarCoreCatalogRegistration } from "../apps/stellar-core/dist/index.js";
-import { StellarChatWorker } from "../apps/stellar-core/dist/worker.js";
+import { StellarChatWorker, StellarProviderError } from "../apps/stellar-core/dist/worker.js";
 import { SpmtClient } from "../packages/sdk/dist/index.js";
 
 test("Stella uses one metered durable job path for hosted Qwen and eligible Companion routing", async () => {
@@ -29,6 +29,8 @@ test("Stella uses one metered durable job path for hosted Qwen and eligible Comp
     const user = new SpmtClient({ baseUrl, appId: "spacemountain", getAccessToken: () => session.tokens.accessToken });
     const workerToken = service.auth.issueServiceAccess("stellar-core", credential).accessToken;
     const workerClient = new SpmtClient({ baseUrl, appId: "stellar-core", getAccessToken: () => workerToken });
+    const startedAt = new Date().toISOString();
+    await workerClient.reportExecutionWorker({ executionOwner: "stellar-core", workerId: "stellar-sprite-test", executionTarget: "sprite", state: "ready", capabilityIds: ["stellar-core.ai-chat.v1"], providerHealthy: true, startedAt, metrics: { coldStartMs: 1250, completedJobs: 0, failedJobs: 0, inputUnits: 0, outputUnits: 0, memoryRssBytes: 2_000_000_000 } });
     await user.upsertStellarContext(tenantId, { kind: "preference", text: "The user prefers concise answers.", tags: ["style"] });
     const calls = [];
     const provider = { healthy: async () => true, complete: async (messages) => { calls.push(messages); return { text: "The durable Stellar path is working.", finishReason: "stop", usage: { inputTokens: 12, outputTokens: 7 } }; } };
@@ -49,6 +51,19 @@ test("Stella uses one metered durable job path for hosted Qwen and eligible Comp
     assert.doesNotMatch(calls[0][0].content, /You are Athena/);
     assert.equal((await user.getPersonalUsage(tenantId)).resources.find((item) => item.resource === "ai-chat-requests").hosted, 1);
 
+    const ephemeralTurn = await user.invokeCommunityAssistant(tenantId, { userId, message: "Do not remember this turn", surface: "app", conversationId: "conversation-a", routingPreference: "hosted", remember: false }, "stellar-ephemeral-1");
+    await new StellarChatWorker(workerClient, provider, { workerId: "stellar-ephemeral-test", executionTarget: "sprite" }).runOnce();
+    assert.equal((await user.getExecutionJob(tenantId, ephemeralTurn.jobId)).input.remember, false);
+    assert.equal(calls[1].some((message) => /Is the new path working\?|durable Stellar path is working/.test(message.content)), false, "do-not-remember turns do not load conversation history");
+
+    const failure = await user.invokeCommunityAssistant(tenantId, { userId, message: "Prove provider failure", surface: "app", conversationId: "conversation-failure", routingPreference: "hosted" }, "stellar-hosted-failure-1");
+    const failingWorker = new StellarChatWorker(workerClient, { healthy: async () => true, complete: async () => { throw new StellarProviderError("provider temporarily unavailable", true); } }, { workerId: "stellar-failure-test", executionTarget: "sprite" });
+    await failingWorker.runOnce();
+    const failedJob = await user.getExecutionJob(tenantId, failure.jobId);
+    assert.equal(failedJob.state, "queued");
+    assert.equal(failedJob.error.retryable, true);
+    assert.equal(failingWorker.metrics().failedJobs, 1);
+
     const freeFallback = await user.invokeCommunityAssistant(tenantId, { userId, message: "Try local", surface: "app", conversationId: "conversation-a", routingPreference: "companion" }, "stellar-free-fallback-1");
     assert.equal(freeFallback.executionTarget, "sprite");
     assert.match(freeFallback.fallbackReason, /paid plan/);
@@ -65,6 +80,11 @@ test("Stella uses one metered durable job path for hosted Qwen and eligible Comp
       user.invokeCommunityAssistant(tenantId, { userId, message: "A different message", surface: "app", conversationId: "conversation-a", routingPreference: "companion" }, "stellar-free-fallback-1"),
       (error) => error?.status === 409 && /idempotency key was reused with different input/.test(error.responseBody),
     );
+    const staleLocal = await user.invokeCommunityAssistant(tenantId, { userId, message: "Do not trust only the app status", surface: "app", conversationId: "conversation-b", routingPreference: "companion" }, "stellar-companion-stale-1");
+    assert.equal(staleLocal.executionTarget, "sprite", "a Companion app status without an authenticated live worker must fall back");
+    assert.match(staleLocal.fallbackReason, /not connected and ready/);
+    await workerClient.reportExecutionWorker({ executionOwner: "stellar-core", workerId: "stellar-companion-test", executionTarget: "companion", state: "ready", capabilityIds: ["stellar-core.ai-chat.v1"], tenantIds: [tenantId], providerHealthy: true, startedAt, metrics: { coldStartMs: 800, completedJobs: 0, failedJobs: 0, inputUnits: 0, outputUnits: 0 } });
+    const beforeLocalUsage = (await user.getPersonalUsage(tenantId)).resources.find((item) => item.resource === "ai-chat-requests");
     const local = await user.invokeCommunityAssistant(tenantId, { userId, message: "Use Companion", surface: "app", conversationId: "conversation-b", routingPreference: "companion" }, "stellar-companion-1");
     assert.equal(local.executionTarget, "companion");
     assert.equal(local.meteringTarget, "companion");
@@ -74,7 +94,8 @@ test("Stella uses one metered durable job path for hosted Qwen and eligible Comp
     const usage = await user.getPersonalUsage(tenantId);
     assert.equal(usage.plan.planId, "pro");
     assert.equal(usage.resources.find((item) => item.resource === "ai-chat-requests").companion, 1);
-    assert.equal(usage.resources.find((item) => item.resource === "ai-chat-requests").percent, 0, "Companion use is visible but does not fill the hosted allowance bar");
+    assert.equal(usage.resources.find((item) => item.resource === "ai-chat-requests").hosted, beforeLocalUsage.hosted, "Companion use does not increase hosted consumption");
+    assert.equal(usage.resources.find((item) => item.resource === "ai-chat-requests").percent, beforeLocalUsage.percent, "Companion use is visible but does not fill the hosted allowance bar");
   } finally {
     await service.close();
     rmSync(directory, { recursive: true, force: true });

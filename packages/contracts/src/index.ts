@@ -207,6 +207,33 @@ export interface ExecutionJobV1 {
   completedAt?: string;
 }
 
+export interface ExecutionWorkerMetricsV1 {
+  coldStartMs?: number;
+  lastLatencyMs?: number;
+  completedJobs: number;
+  failedJobs: number;
+  inputUnits: number;
+  outputUnits: number;
+  throughputUnitsPerSecond?: number;
+  memoryRssBytes?: number;
+}
+
+/** Ephemeral, leased evidence from an authenticated execution worker. */
+export interface ExecutionWorkerProjectionV1 {
+  schemaVersion: 1;
+  executionOwner: string;
+  workerId: string;
+  executionTarget: ExecutionTargetV1;
+  state: RuntimeStateV1;
+  capabilityIds: string[];
+  tenantIds?: string[];
+  providerHealthy: boolean;
+  startedAt: string;
+  lastHeartbeatAt: string;
+  leaseExpiresAt: string;
+  metrics: ExecutionWorkerMetricsV1;
+}
+
 export interface ExecutionJobCreateV1 {
   schemaVersion: 1;
   ownerAppId: string;
@@ -509,6 +536,7 @@ export interface CommunityAssistantInvocationV1 {
   message: string;
   surface: AssistantSurfaceV1;
   routingPreference?: "automatic" | "hosted" | "companion";
+  remember?: boolean;
   idempotencyKey: string;
   conversationId?: string;
   correlationId?: string;

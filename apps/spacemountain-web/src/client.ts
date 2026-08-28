@@ -133,7 +133,9 @@ async function loadShell() {
       onOpenConversation: (conversation) => void openConversation(conversation),
       onSearchCommlink: (query) => void searchCommlink(query),
       onSendCommlinkMessage: (conversation, text) => void sendCommlinkMessage(conversation, text),
-      onInvokeStella: (message, conversationId, routingPreference) => void invokeStella(message, conversationId, routingPreference),
+      onInvokeStella: (message, conversationId, routingPreference, remember) => void invokeStella(message, conversationId, routingPreference, remember),
+      onExportStellarData: () => void exportStellarData(),
+      onDeleteStellarData: () => void deleteStellarData(),
       onMarkNotificationRead: (notification) => void markNotificationRead(notification),
       onUnlinkProvider: (link) => void unlinkProvider(link),
       onSaveWorkspace: (expectedRevision, patch) => void saveWorkspace(expectedRevision, patch),
@@ -367,13 +369,13 @@ async function sendCommlinkMessage(conversation: Record<string, unknown>, text: 
   } catch (error) { setStatus(message(error), "error"); }
 }
 
-async function invokeStella(prompt: string, conversationId: string, routingPreference: "automatic" | "hosted" | "companion") {
+async function invokeStella(prompt: string, conversationId: string, routingPreference: "automatic" | "hosted" | "companion", remember: boolean) {
   const principal = requirePrincipal();
   setStatus("Stella is thinking through Stellar Core…", "working");
   let turn: HTMLElement | undefined;
   try {
     const tenantId = principal.tenantIds[0]!;
-    const result = await controller.invokeStella(tenantId, principal.actorId, prompt, conversationId, `stella-${crypto.randomUUID()}`, routingPreference) as Record<string, unknown>;
+    const result = await controller.invokeStella(tenantId, principal.actorId, prompt, conversationId, `stella-${crypto.randomUUID()}`, routingPreference, remember) as Record<string, unknown>;
     if (result.status === "unavailable") {
       const reason = typeof result.reason === "string" ? result.reason : "Stellar Core is unavailable.";
       appendAssistantTurn(prompt, reason, "unavailable");
@@ -389,6 +391,17 @@ async function invokeStella(prompt: string, conversationId: string, routingPrefe
     if (turn) renderAssistantTurn(turn, detail, "failed"); else appendAssistantTurn(prompt, detail, "failed");
     setStatus(`Stella unavailable · ${detail}`, "error");
   }
+}
+
+async function exportStellarData() {
+  const principal = requirePrincipal(), tenantId = principal.tenantIds[0]!;
+  try { const value = await controller.exportMyStellarData(tenantId); const blob = new Blob([JSON.stringify(value, null, 2)], { type: "application/json" }); const url = URL.createObjectURL(blob); const anchor = document.createElement("a"); anchor.href = url; anchor.download = `stellar-data-${new Date().toISOString().slice(0, 10)}.json`; anchor.click(); URL.revokeObjectURL(url); setStatus("Your private Stella data export is ready.", "ready"); } catch (error) { setStatus(message(error), "error"); }
+}
+
+async function deleteStellarData() {
+  if (!window.confirm("Delete your Stella prompts, answers, and personal Stellar context? This cannot be undone.")) return;
+  const principal = requirePrincipal(), tenantId = principal.tenantIds[0]!;
+  try { await controller.deleteMyStellarData(tenantId); setStatus("Your private Stella data was deleted.", "ready"); await loadShell(); } catch (error) { setStatus(message(error), "error"); }
 }
 
 function appendAssistantTurn(prompt: string, detail: string, state: string) {
