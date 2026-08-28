@@ -107,7 +107,7 @@ export interface OutboxRecordV1 {
 export interface AuthorityJournalEntryV1 {
   sequence: number;
   epoch: number;
-  kind: "user" | "provider-link" | "workspace" | "xp" | "event" | "audit" | "service-identity" | "outbox" | "tenant" | "app" | "install" | "entitlement" | "overlay-widget" | "overlay-output-grant" | "runtime-projection";
+  kind: "user" | "provider-link" | "workspace" | "xp" | "event" | "audit" | "service-identity" | "outbox" | "tenant" | "app" | "install" | "entitlement" | "overlay-widget" | "overlay-output-grant" | "runtime-projection" | "usage";
   tenantId?: string;
   recordId: string;
   payload: Record<string, unknown>;

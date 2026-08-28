@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "revision": "apollo-billing-2026-08-28",
+  "currency": "USD",
+  "warningThresholds": [0.7, 0.9, 1],
+  "plans": [
+    { "schemaVersion": 1, "planId": "free", "name": "Free", "monthlyPriceUsd": 0, "limits": { "workspaces": 1, "connected-providers": 1, "hosted-rooms": 1, "hosted-worker-minutes": 30, "premium-ai-requests": 25, "hosted-voice-minutes": 15, "xbox-session-minutes": 30, "storage-gb": 1 }, "companionLocalProcessing": "fair-use", "hardStopAtLimit": true },
+    { "schemaVersion": 1, "planId": "creator", "name": "Creator", "monthlyPriceUsd": 5, "limits": { "workspaces": 1, "connected-providers": 3, "hosted-rooms": 2, "hosted-worker-minutes": 300, "premium-ai-requests": 250, "hosted-voice-minutes": 90, "xbox-session-minutes": 180, "storage-gb": 5 }, "companionLocalProcessing": "unmetered-local", "hardStopAtLimit": true },
+    { "schemaVersion": 1, "planId": "pro", "name": "Pro", "monthlyPriceUsd": 12, "limits": { "workspaces": 3, "connected-providers": 8, "hosted-rooms": 5, "hosted-worker-minutes": 1200, "premium-ai-requests": 1000, "hosted-voice-minutes": 300, "xbox-session-minutes": 720, "storage-gb": 20 }, "companionLocalProcessing": "unmetered-local", "hardStopAtLimit": true },
+    { "schemaVersion": 1, "planId": "agency", "name": "Agency", "monthlyPriceUsd": 29, "limits": { "workspaces": 10, "connected-providers": 20, "hosted-rooms": 10, "hosted-worker-minutes": 3600, "premium-ai-requests": 3000, "hosted-voice-minutes": 900, "xbox-session-minutes": 2100, "storage-gb": 75 }, "companionLocalProcessing": "unmetered-local", "hardStopAtLimit": true }
+  ]
+}
