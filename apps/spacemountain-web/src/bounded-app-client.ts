@@ -68,6 +68,21 @@ if (sceneUrl) {
   void loadSharedAppearance(root, appId, sceneUrl).catch(() => undefined);
 }
 
+function showPage(target: string) {
+  const pages = [...document.querySelectorAll<HTMLElement>("[data-bounded-page]")];
+  const page = pages.find((candidate) => candidate.dataset.boundedPage === target) ?? pages[0];
+  if (!page) return;
+  pages.forEach((candidate) => { candidate.hidden = candidate !== page; });
+  const pageId = page.dataset.boundedPage ?? "overview";
+  document.querySelector<HTMLElement>("#bounded-app-root")!.dataset.page = pageId;
+  page.scrollTo({ top: 0 });
+  if (window.location.hash !== `#${pageId}`) window.history.replaceState(null, "", `#${pageId}`);
+}
+
+document.querySelectorAll<HTMLElement>("[data-bounded-page-link]").forEach((control) => {
+  control.addEventListener("click", () => showPage(control.dataset.boundedPageLink ?? "overview"));
+});
+
 if (surface === "standalone") {
   const buttons = [...document.querySelectorAll<HTMLButtonElement>("[data-spmt-product-nav]")];
   const items = buttons.flatMap((button) => {
@@ -75,7 +90,9 @@ if (surface === "standalone") {
     return id ? [{ id, label: button.textContent?.trim() || id }] : [];
   });
   bindProductRocketNavigation(root, items, "overview", (target: string) => {
-    const section = document.getElementById(target);
-    section?.scrollIntoView({ behavior: "smooth", block: "start" });
+    showPage(target);
   });
 }
+
+window.addEventListener("hashchange", () => showPage(window.location.hash.slice(1) || "overview"));
+showPage(window.location.hash.slice(1) || "overview");

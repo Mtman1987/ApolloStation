@@ -10,7 +10,7 @@ test("focused first-party apps own real pages and fill the existing rocket dock 
   for (const appId of ["discord-stream-hub", "streamweaver", "hearmeout", "mountainview", "companion"]) assert.match(surfaceSource, new RegExp(`id: "${appId}"`));
   assert.match(surfaceSource, /data-themed-app-icon/);
   assert.doesNotMatch(surfaceSource, /APP CONTRACT|Registered first-party module/);
-  for (const pattern of [/data-focused-nav/, /data-focused-nav-item/, /spmt-dock-owned/, /spmt-dock-app-icon/, /IntersectionObserver/, /scrollIntoView/, /label: "Live"/, /label: "Shoutouts"/, /label: "Calendar"/, /label: "Commands"/, /label: "Economy"/, /label: "Pokémon"/, /label: "Room"/, /label: "Music"/, /label: "Voice Bridge"/, /label: "Scan QR"/, /label: "Camera"/, /label: "Relay"/, /label: "Workflows"/, /label: "Diagnostics"/]) assert.match(surfaceSource, pattern);
+  for (const pattern of [/data-focused-nav/, /data-focused-nav-item/, /data-app-page/, /function showPage/, /spmt-dock-owned/, /spmt-dock-app-icon/, /scrollbar-gutter:stable/, /data-page="overview"/, /label: "Live"/, /label: "Shoutouts"/, /label: "Calendar"/, /label: "Commands"/, /label: "Economy"/, /label: "Pokémon"/, /label: "Room"/, /label: "Music"/, /label: "Voice Bridge"/, /label: "Scan QR"/, /label: "Camera"/, /label: "Relay"/, /label: "Workflows"/, /label: "Diagnostics"/]) assert.match(surfaceSource, pattern);
 });
 
 test("every focused app keeps unique scene art while inheriting shared SpaceMountain appearance", () => {

@@ -150,6 +150,7 @@ export function renderBoundedAppPage(pathname: string, buildSha: string, nonce: 
     .bounded-app-identity{display:flex;align-items:center;gap:clamp(18px,3vw,36px)}.bounded-app-identity>img{width:clamp(96px,13vw,176px);height:clamp(96px,13vw,176px);flex:0 0 auto;object-fit:contain;filter:drop-shadow(0 18px 34px rgba(0,0,0,.55))}.bounded-app-identity>div{min-width:0}.bounded-hero h1{margin:8px 0 10px;font-size:clamp(34px,5vw,72px);line-height:.96;letter-spacing:-.045em}.bounded-hero p{max-width:760px;margin:0;color:#c4c7d2;font-size:clamp(11px,1.15vw,14px);line-height:1.65}
     .bounded-feature-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:clamp(9px,1.2vw,14px);min-height:0;align-items:stretch}.bounded-feature{min-width:0;padding:clamp(14px,1.6vw,20px);border:1px solid var(--spmt-border);border-radius:20px;display:flex;flex-direction:column;justify-content:flex-end;box-shadow:0 18px 44px rgba(0,0,0,.2),0 0 calc(18px * var(--spmt-glow)) color-mix(in srgb,var(--spmt-accent) 12%,transparent)}.bounded-feature p{margin:9px 0 0;color:#b5b8c3;font-size:11px;line-height:1.55}.bounded-feature .spmt-product-kicker{color:var(--spmt-accent)}
     .bounded-runtime{display:flex;justify-content:flex-end;align-items:center;padding:13px 16px;border:1px solid var(--spmt-border);border-radius:18px}.bounded-runtime code{color:var(--spmt-accent);font-size:9px;white-space:nowrap}
+    [data-bounded-page][hidden]{display:none!important}.bounded-app-root{display:block}.bounded-app-root[data-page="overview"]{overflow:hidden}.bounded-app-root[data-page="overview"] .bounded-hero{height:100%}.bounded-page{height:100%;min-height:0;overflow-y:auto;scrollbar-gutter:stable;overscroll-behavior:contain}.bounded-actions{display:flex;flex-wrap:wrap;gap:9px;margin-top:20px}.bounded-actions button,.bounded-actions a{padding:10px 14px;border:1px solid var(--spmt-border);border-radius:14px;background:color-mix(in srgb,var(--spmt-accent) 11%,transparent);color:#fff;text-decoration:none;cursor:pointer}.bounded-feature-grid{align-content:start;padding:4px}.bounded-runtime{align-content:center;justify-content:center}.bounded-runtime code{font-size:12px}
     .bounded-rocket-dock{position:fixed;z-index:20;left:16px;top:50%;width:86px;transform:translateY(-50%);padding:9px 7px;border:1px solid var(--spmt-border);border-radius:34px;box-shadow:0 24px 70px rgba(0,0,0,.42)}.bounded-app-mark{width:66px;height:66px;margin:0 auto 6px;display:grid;place-items:center}.bounded-app-mark img{width:62px;height:62px;object-fit:contain;filter:drop-shadow(0 0 12px color-mix(in srgb,var(--spmt-accent) 55%,transparent))}.bounded-rocket-dock nav{display:grid;gap:4px}.bounded-rocket-dock nav button,.bounded-rocket-dock nav a{min-height:42px;border:1px solid transparent;border-radius:13px;background:transparent;color:#9498a5;text-decoration:none;display:grid;place-items:center;padding:7px 4px;text-align:center;cursor:pointer}.bounded-rocket-dock nav button:hover,.bounded-rocket-dock nav button.active,.bounded-rocket-dock nav a:hover{color:#fff;border-color:color-mix(in srgb,var(--spmt-accent) 38%,transparent);background:color-mix(in srgb,var(--spmt-accent) 13%,transparent)}.bounded-rocket-dock nav span{font-size:8px;font-weight:850;line-height:1.05}
     body[data-spmt-surface="standalone"][data-spmt-dock="collapsed"] .bounded-rocket-dock{width:68px;padding:5px;border-radius:34px}body[data-spmt-surface="standalone"][data-spmt-dock="collapsed"] .bounded-rocket-dock nav{display:none}body[data-spmt-surface="standalone"][data-spmt-dock="collapsed"] .bounded-app-mark{width:56px;height:56px;margin:0}
     @media(max-width:980px){.bounded-feature-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.bounded-app-root{overflow-y:auto;overscroll-behavior:contain}.bounded-hero{grid-template-columns:1fr}.bounded-hero-side{grid-template-columns:1fr 1fr}}
@@ -162,18 +163,19 @@ export function renderBoundedAppPage(pathname: string, buildSha: string, nonce: 
 <body class="spmt-product-surface" data-spmt-surface="${surface}" data-spmt-app-id="${escapeHtml(page.id)}" data-spmt-scene="${escapeHtml(page.scene)}">
   ${nav(page, surface)}
   <main id="bounded-app-root" class="bounded-app-root" tabindex="-1">
-    <header id="overview" class="bounded-hero spmt-product-glass" data-spmt-depth="1">
+    <header id="overview" class="bounded-hero spmt-product-glass" data-bounded-page="overview" data-spmt-depth="1">
       <div class="bounded-app-identity">
         <img data-themed-app-icon src="/assets/product/app-icons/solar-flare/${escapeHtml(page.id)}.png" alt="${escapeHtml(page.name)}">
         <div>
           <span class="spmt-product-kicker">${escapeHtml(page.eyebrow)}</span>
           <h1>${escapeHtml(page.name)}</h1>
           <p>${escapeHtml(page.description)}</p>
+          <div class="bounded-actions"><button type="button" data-bounded-page-link="capabilities">Capabilities</button><button type="button" data-bounded-page-link="status">Runtime status</button><a href="/?view=workspace">Workspace</a></div>
         </div>
       </div>
     </header>
-    <section id="capabilities" class="bounded-feature-grid" aria-label="${escapeHtml(page.name)} capabilities">${featureCards}</section>
-    <footer id="status" class="bounded-runtime spmt-product-glass" data-spmt-depth="2">
+    <section id="capabilities" class="bounded-feature-grid bounded-page" data-bounded-page="capabilities" aria-label="${escapeHtml(page.name)} capabilities" hidden>${featureCards}</section>
+    <footer id="status" class="bounded-runtime bounded-page spmt-product-glass" data-bounded-page="status" data-spmt-depth="2" hidden>
       <code>build ${build}</code>
     </footer>
   </main>
