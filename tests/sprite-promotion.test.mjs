@@ -40,7 +40,9 @@ test("Sprite deployment verifies, tests, switches atomically, rolls back, and la
   assert.match(script, /--candidate-app,nebula-arcade,--catalog,current/);
   assert.doesNotMatch(script, /--candidate-app,chat-tag/);
   assert.match(script, /create_apollo_service "\$\(basename "\$previous_release"\)"/);
-  assert.match(script, /for stale_service in "\$service_name" "\$bootstrap_service_name" spmt-qwen/);
+  assert.match(script, /services_json="\$\(sprite-env services list\)"/);
+  assert.match(script, /select\(\.http_port != null\)/);
+  assert.match(script, /for stale_service in "\$\{http_services\[@\]\}" "\$service_name" "\$bootstrap_service_name" spmt-qwen/);
   assert.match(script, /Deployment failed; restoring bootstrap service/);
   assert.match(script, /sprite-env services delete "\$service_name"/);
   assert.match(script, /llama_ref="b6335"/);

@@ -128,7 +128,17 @@ mv -Tf "$next_link" "$current_link"
 switched=1
 
 pkill -TERM -f 'scripts/sprites/run-supervised-sandbox\.mjs' 2>/dev/null || true
-for stale_service in "$service_name" "$bootstrap_service_name" spmt-qwen; do
+services_json="$(sprite-env services list)"
+mapfile -t http_services < <(
+  jq -r '
+    (if type == "array" then . else (.services // []) end)
+    | .[]
+    | select(.http_port != null)
+    | .name
+  ' <<<"$services_json"
+)
+for stale_service in "${http_services[@]}" "$service_name" "$bootstrap_service_name" spmt-qwen; do
+  [[ -n "$stale_service" ]] || continue
   if sprite-env services get "$stale_service" >/dev/null 2>&1; then
     sprite-env services stop "$stale_service" || true
     sprite-env services delete "$stale_service"
