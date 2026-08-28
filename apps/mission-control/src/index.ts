@@ -1,4 +1,4 @@
-import { assertAppModuleManifestV1, type AppCatalogRegistrationV1, type AppModuleManifestV1 } from "@spmt/contracts";
+import { assertAppModuleManifestV1, type AppCatalogRegistrationV1, type AppModuleManifestV1, type FleetProjectionV1 } from "@spmt/contracts";
 
 export const manifest = assertAppModuleManifestV1({
   schemaVersion: 1,
@@ -25,6 +25,35 @@ export function missionControlCatalogRegistration(publicOrigin: string): AppCata
     allowedScopes: [...manifest.requiredScopes],
     surfaces: ["shell", "standalone"],
     status: "active",
+  };
+}
+
+export interface MissionControlFleetViewV1 {
+  schemaVersion: 1;
+  totalWorkloads: number;
+  ready: number;
+  dryRun: number;
+  blocked: number;
+  changing: number;
+  runningCapacity: number;
+  desiredCapacity: number;
+  productionMutationEnabled: number;
+  workloads: FleetProjectionV1[];
+}
+
+export function missionControlFleetView(projections: FleetProjectionV1[]): MissionControlFleetViewV1 {
+  const workloads = [...projections].sort((a, b) => a.workloadId.localeCompare(b.workloadId));
+  return {
+    schemaVersion: 1,
+    totalWorkloads: workloads.length,
+    ready: workloads.filter((item) => item.state === "verified" || item.state === "observed").length,
+    dryRun: workloads.filter((item) => item.state === "dry-run").length,
+    blocked: workloads.filter((item) => item.state === "blocked" || item.state === "rolled-back").length,
+    changing: workloads.filter((item) => item.state === "applying").length,
+    runningCapacity: workloads.reduce((sum, item) => sum + item.healthyCapacity, 0),
+    desiredCapacity: workloads.reduce((sum, item) => sum + item.desiredCapacity, 0),
+    productionMutationEnabled: workloads.filter((item) => item.productionMutationAllowed).length,
+    workloads,
   };
 }
 

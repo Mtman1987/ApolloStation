@@ -48,6 +48,7 @@ export interface RuntimeObservationV1 {
   duplicateConsumers: boolean;
   estimatedHourlyCostUsd: number;
   circuitBreakerOpen: boolean;
+  restartDue?: boolean;
 }
 
 export const FLEET_ACTIONS = ["none", "start", "create", "drain-stop", "restart", "blocked", "external"] as const;
@@ -64,6 +65,31 @@ export interface FleetDecisionV1 {
   idempotencyKey: string;
   decidedAt: string;
   productionMutationAllowed: boolean;
+}
+
+export interface FleetActionLeaseV1 {
+  schemaVersion: 1;
+  workloadId: string;
+  holderId: string;
+  fencingEpoch: number;
+  acquiredAt: string;
+  expiresAt: string;
+}
+
+export interface FleetProjectionV1 {
+  schemaVersion: 1;
+  workloadId: string;
+  generation: string;
+  policyRevision: string;
+  state: "observed" | "dry-run" | "applying" | "verified" | "rolled-back" | "blocked";
+  observedCapacity: number;
+  desiredCapacity: number;
+  healthyCapacity: number;
+  action: FleetActionV1;
+  reason: string;
+  fencingEpoch?: number;
+  productionMutationAllowed: boolean;
+  updatedAt: string;
 }
 
 export function assertRuntimePolicyV1(value: RuntimePolicyV1): RuntimePolicyV1 {
