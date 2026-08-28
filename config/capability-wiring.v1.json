@@ -158,14 +158,14 @@
       "dataOwner": "streamweaver",
       "executionOwner": "streamweaver",
       "surfaces": ["shell", "standalone", "overlay", "popout"],
-      "entryPoints": ["chat command router", "redeem actions", "tenant persona settings"],
-      "contract": "Chat Gateway consumer, app settings, SPMT events and XP",
+      "entryPoints": ["chat command router", "redeem actions", "tenant persona settings", "durable Stellar result outbox"],
+      "contract": "Chat Gateway consumer, CommunityAssistantInvocationV1, ExecutionJobV1, app settings, SPMT events and XP",
       "meteredResource": "ai-chat-requests",
       "executionTargets": ["fly", "sprite", "companion"],
       "routeMode": "shadow",
       "state": "wired",
-      "migration": "Tenant commands, personas, currencies, and secrets move through app-private migrations.",
-      "evidence": ["tests/streamweaver-donor-command-runtime.test.mjs", "tests/streamweaver-economy-parity.test.mjs", "tests/streamweaver-chat-gateway.test.mjs"]
+      "migration": "Stellar results now return through a restart-safe provider-neutral outbox. Tenant commands, persona instructions and memory policy, currencies, and secrets still move through app-private migrations; live provider credentials remain a cutover gate.",
+      "evidence": ["tests/streamweaver-donor-command-runtime.test.mjs", "tests/streamweaver-economy-parity.test.mjs", "tests/streamweaver-chat-gateway.test.mjs", "tests/functional-foundation-api.test.mjs", "docs/architecture/STREAMWEAVER_STELLAR_REPLY_LOOP.md"]
     },
     {
       "capabilityId": "hearmeout.rooms-media",
