@@ -1,4 +1,4 @@
-import type { RuntimeStateV1 } from "@spmt/contracts";
+import { assertRuntimePolicyV1, type FleetDecisionV1, type RuntimeObservationV1, type RuntimePolicyV1, type RuntimeStateV1 } from "@spmt/contracts";
 
 export const CONFIG_CLASSES = ["secret", "public-runtime", "app-state", "local-debug"] as const;
 export type ConfigClassV1 = (typeof CONFIG_CLASSES)[number];
@@ -131,4 +131,61 @@ export function createLogRecord(
     ...(context.tenantId ? { tenantId: context.tenantId } : {}),
     ...redactRecord(fields),
   };
+}
+
+export interface FleetReconcileOptionsV1 {
+  now?: string;
+  maximumSignalAgeSeconds?: number;
+}
+
+export function reconcileRuntimePolicy(policyInput: RuntimePolicyV1, observation: RuntimeObservationV1, options: FleetReconcileOptionsV1 = {}): FleetDecisionV1 {
+  const policy = assertRuntimePolicyV1(policyInput);
+  if (observation.schemaVersion !== 1 || observation.workloadId !== policy.workloadId) throw new Error("Runtime observation does not match policy");
+  const now = options.now ?? new Date().toISOString();
+  const signalAge = (Date.parse(now) - Date.parse(observation.observedAt)) / 1_000;
+  if (!Number.isFinite(signalAge) || signalAge < 0) throw new Error("Runtime observation time is invalid");
+  const stale = signalAge > (options.maximumSignalAgeSeconds ?? 90);
+  let desired = policy.minimumCapacity;
+  let reason = policy.class === "core" ? "maintain core minimum healthy capacity" : "no current demand";
+
+  if (policy.executionTarget === "companion") return decision(policy, observation, observation.runningCapacity, "external", "Companion owns local capacity and may only be offered eligible jobs", now);
+  if (observation.duplicateConsumers) return decision(policy, observation, observation.runningCapacity, "blocked", "duplicate consumer circuit breaker requires operator repair", now);
+  if (observation.circuitBreakerOpen) return decision(policy, observation, Math.max(policy.minimumCapacity, Math.min(observation.runningCapacity, policy.maximumCapacity)), "blocked", "workload circuit breaker is open", now);
+  if (stale && policy.class !== "core") return decision(policy, observation, Math.max(policy.minimumCapacity, Math.min(observation.runningCapacity, policy.maximumCapacity)), "blocked", "demand signals are stale; preserving bounded current capacity", now);
+
+  const demand = demandUnits(policy, observation);
+  if (demand > 0) {
+    desired = Math.max(policy.minimumCapacity, Math.ceil(demand / policy.targetConcurrency));
+    reason = `${policy.class} demand requires capacity`;
+  }
+  if (observation.oldestDemandSeconds >= policy.idleSeconds && demand === 0) desired = policy.minimumCapacity;
+  if (policy.uniqueConsumer && desired > 0) desired = 1;
+  desired = Math.max(policy.minimumCapacity, Math.min(desired, policy.maximumCapacity));
+
+  const perMachineCost = observation.runningCapacity > 0 ? observation.estimatedHourlyCostUsd / observation.runningCapacity : 0;
+  if (perMachineCost > 0 && desired * perMachineCost > policy.maximumHourlyCostUsd) {
+    desired = Math.max(policy.minimumCapacity, Math.min(desired, Math.floor((policy.maximumHourlyCostUsd + Number.EPSILON * 16) / perMachineCost)));
+    reason = "capacity limited by workload hourly cost ceiling";
+  }
+  if (desired > observation.runningCapacity) return decision(policy, observation, desired, observation.stoppedCapacity > 0 ? "start" : "create", reason, now);
+  if (desired < observation.runningCapacity) {
+    if (observation.activeLeases > 0 || observation.uncheckpointedWork || (policy.uniqueConsumer && observation.activeConnections > 0)) return decision(policy, observation, observation.runningCapacity, "blocked", "scale-down blocked until active leases, unique connections, and work drain", now);
+    return decision(policy, observation, desired, "drain-stop", "idle capacity may drain and stop", now);
+  }
+  return decision(policy, observation, desired, "none", reason, now);
+}
+
+function demandUnits(policy: RuntimePolicyV1, observation: RuntimeObservationV1) {
+  switch (policy.class) {
+    case "core": return Math.max(policy.minimumCapacity, observation.activeRequests);
+    case "elastic-http": return Math.max(observation.activeRequests, Math.ceil(observation.requestRate));
+    case "queue-worker":
+    case "heavy-job": return Math.max(observation.queueDepth, observation.activeLeases);
+    case "bot-socket": return Math.max(observation.activeConnections, observation.activeLeases);
+    case "room-session": return Math.max(observation.activeSessions, observation.activeLeases);
+  }
+}
+
+function decision(policy: RuntimePolicyV1, observation: RuntimeObservationV1, desiredCapacity: number, action: FleetDecisionV1["action"], reason: string, decidedAt: string): FleetDecisionV1 {
+  return { schemaVersion: 1, workloadId: policy.workloadId, generation: observation.generation, policyRevision: policy.revision, observedCapacity: observation.runningCapacity, desiredCapacity, action, reason, idempotencyKey: `${policy.workloadId}:${observation.generation}:${action}:${desiredCapacity}`, decidedAt, productionMutationAllowed: policy.productionMutationEnabled && action !== "blocked" && action !== "external" };
 }
