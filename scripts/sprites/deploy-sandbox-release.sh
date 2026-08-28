@@ -47,7 +47,11 @@ fi
 
 create_apollo_service() {
   local release_sha="$1"
-  local runner_args="scripts/sprites/run-supervised-sandbox.mjs,--app,platform,--candidate-app,nebula-arcade,--catalog,current,--public-url,$SPRITE_PUBLIC_URL,--data-root,$data_root,--build-sha,$release_sha,--owner-username,mtman1987,--llm-binary,$llama_root/build/bin/llama-server,--llm-cache,/home/sprite/models"
+  local enable_stellar="${2:-1}"
+  local runner_args="scripts/sprites/run-supervised-sandbox.mjs,--app,platform,--candidate-app,nebula-arcade,--catalog,current,--public-url,$SPRITE_PUBLIC_URL,--data-root,$data_root,--build-sha,$release_sha,--owner-username,mtman1987"
+  if [[ "$enable_stellar" == "1" ]]; then
+    runner_args="$runner_args,--llm-binary,$llama_root/build/bin/llama-server,--llm-cache,/home/sprite/models"
+  fi
   sprite-env services create "$service_name" \
     --cmd node \
     --args "$runner_args" \
@@ -80,7 +84,7 @@ rollback() {
     mv -Tf "$next_link" "$current_link"
     sprite-env services stop "$service_name" || true
     sprite-env services delete "$service_name" || true
-    create_apollo_service "$(basename "$previous_release")" || true
+    create_apollo_service "$(basename "$previous_release")" 0 || true
   fi
   if (( status != 0 && bootstrap_service_removed == 1 )) && [[ -z "$previous_release" ]]; then
     echo "Deployment failed; restoring bootstrap service $bootstrap_service_name" >&2
@@ -154,7 +158,7 @@ done
 create_apollo_service "$BUILD_SHA"
 
 ready=0
-for _ in {1..60}; do
+for _ in {1..1260}; do
   if health="$(curl -fsS --max-time 2 http://127.0.0.1:8080/sandbox/health 2>/dev/null)"; then
     if grep -Fq "$BUILD_SHA" <<<"$health"; then
       ready=1

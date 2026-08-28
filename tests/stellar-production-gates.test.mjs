@@ -24,6 +24,26 @@ test("worker readiness expires closed and never survives a missed heartbeat", ()
   assert.equal(jobs.listWorkers({ executionOwner: "stellar-core" }).length, 0);
 });
 
+test("a new supervised cohort rotates the durable Stellar worker credential", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "spmt-stellar-rotation-"));
+  const databasePath = join(directory, "stellar.sqlite");
+  const firstCredential = "stellar-worker-first-credential-123456789";
+  const nextCredential = "stellar-worker-next-credential-1234567890";
+  let service = createSpmtService({ databasePath, webhookKey: Buffer.alloc(32, 8), host: "127.0.0.1", port: 0, publicBaseUrl: "https://spmt.test", stellarChatEnabled: true, stellarWorkerCredential: firstCredential });
+  try {
+    await service.listen();
+    assert.ok(service.auth.issueServiceAccess("stellar-core", firstCredential).accessToken);
+    await service.close();
+    service = createSpmtService({ databasePath, webhookKey: Buffer.alloc(32, 8), host: "127.0.0.1", port: 0, publicBaseUrl: "https://spmt.test", stellarChatEnabled: true, stellarWorkerCredential: nextCredential });
+    await service.listen();
+    assert.ok(service.auth.issueServiceAccess("stellar-core", nextCredential).accessToken);
+    assert.throws(() => service.auth.issueServiceAccess("stellar-core", firstCredential), /Invalid service credential/);
+  } finally {
+    await service.close().catch(() => undefined);
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("Stellar privacy minimizes raw content, exports only the caller, and deletes only the caller", async () => {
   const directory = mkdtempSync(join(tmpdir(), "spmt-stellar-privacy-"));
   const service = createSpmtService({ databasePath: join(directory, "stellar.sqlite"), webhookKey: Buffer.alloc(32, 6), host: "127.0.0.1", port: 0, publicBaseUrl: "https://spmt.test" });
