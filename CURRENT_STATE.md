@@ -15,6 +15,14 @@ The current implementation now includes the shared scaffolding required before f
 
 `Account` is now the personal usage/plan/profile destination. App `Settings` remain owned by each app for its normal and advanced configuration. Production provider refresh adapters, real worker connections, data reconciliation, Fly mutation, and donor retirement remain cutover work rather than being fabricated by this scaffold.
 
+## Stellar chat vertical added on 2026-08-28
+
+The first full functional vertical now runs from the SpaceMountain Stella form through the public Community Assistant contract into a metered `ExecutionJobV1`, then through a service-authenticated Stellar worker to a loopback OpenAI-compatible Qwen process. The UI polls durable progress and terminal state, displays provider failures truthfully, and refreshes the signed-in user's Account usage. No browser-accessible Qwen proxy remains.
+
+Hosted Qwen is the automatic route. Paid users may select Companion only when its installed runtime reports ready; Free or unavailable Companion requests visibly fall back to hosted. Companion usage is still recorded personally but does not fill the hosted allowance bar when the plan declares unmetered local processing. Model/provider controls remain owner-only, and Stellar Core remains persona-neutral behind the Stella presentation.
+
+This is verified Green wiring, not production activation. The capability manifest remains in `shadow`; prompt/result retention enforcement, export/deletion controls, live Qwen load and failure measurements, Companion process evidence, production worker credentials, and explicit route promotion remain gates.
+
 ## What is working conceptually
 
 - SPMT is already described as the canonical identity and platform contract owner.

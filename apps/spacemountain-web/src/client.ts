@@ -133,7 +133,7 @@ async function loadShell() {
       onOpenConversation: (conversation) => void openConversation(conversation),
       onSearchCommlink: (query) => void searchCommlink(query),
       onSendCommlinkMessage: (conversation, text) => void sendCommlinkMessage(conversation, text),
-      onInvokeStella: (message, conversationId) => void invokeStella(message, conversationId),
+      onInvokeStella: (message, conversationId, routingPreference) => void invokeStella(message, conversationId, routingPreference),
       onMarkNotificationRead: (notification) => void markNotificationRead(notification),
       onUnlinkProvider: (link) => void unlinkProvider(link),
       onSaveWorkspace: (expectedRevision, patch) => void saveWorkspace(expectedRevision, patch),
@@ -367,24 +367,68 @@ async function sendCommlinkMessage(conversation: Record<string, unknown>, text: 
   } catch (error) { setStatus(message(error), "error"); }
 }
 
-async function invokeStella(prompt: string, conversationId: string) {
+async function invokeStella(prompt: string, conversationId: string, routingPreference: "automatic" | "hosted" | "companion") {
   const principal = requirePrincipal();
   setStatus("Stella is thinking through Stellar Core…", "working");
+  let turn: HTMLElement | undefined;
   try {
-    const result = await controller.invokeStella(principal.tenantIds[0]!, principal.actorId, prompt, conversationId, `stella-${crypto.randomUUID()}`) as Record<string, unknown>;
-    const state = typeof result.status === "string" ? result.status : typeof result.state === "string" ? result.state : "accepted";
-    const detail = typeof result.reason === "string" ? result.reason : typeof result.message === "string" ? result.message : "Your request was accepted by Stellar Core.";
-    appendAssistantTurn(prompt, detail, state);
-    setStatus(`Stella · ${state}: ${detail}`, state === "unavailable" || state === "failed" ? "error" : "ready");
-  } catch (error) { setStatus(`Stella unavailable · ${message(error)}`, "error"); }
+    const tenantId = principal.tenantIds[0]!;
+    const result = await controller.invokeStella(tenantId, principal.actorId, prompt, conversationId, `stella-${crypto.randomUUID()}`, routingPreference) as Record<string, unknown>;
+    if (result.status === "unavailable") {
+      const reason = typeof result.reason === "string" ? result.reason : "Stellar Core is unavailable.";
+      appendAssistantTurn(prompt, reason, "unavailable");
+      return setStatus(`Stella unavailable · ${reason}`, "error");
+    }
+    if (typeof result.jobId !== "string") throw new Error("Stellar Core accepted the request without a job identifier");
+    const queued = typeof result.fallbackReason === "string" ? `${result.fallbackReason} Request queued.` : "Request queued through Stellar Core.";
+    turn = appendAssistantTurn(prompt, queued, "queued");
+    void spmt.getPersonalUsage(tenantId).then((usage) => shellUi?.updatePersonalUsage(usage)).catch(() => undefined);
+    await pollStellaJob(tenantId, result.jobId, turn);
+  } catch (error) {
+    const detail = message(error);
+    if (turn) renderAssistantTurn(turn, detail, "failed"); else appendAssistantTurn(prompt, detail, "failed");
+    setStatus(`Stella unavailable · ${detail}`, "error");
+  }
 }
 
 function appendAssistantTurn(prompt: string, detail: string, state: string) {
   const history = shellRoot.querySelector<HTMLElement>("[data-stella-history]");
-  if (!history) return;
+  if (!history) return undefined;
   const user = document.createElement("p"); user.innerHTML = `<b>You</b> · ${escapeText(prompt)}`;
-  const stella = document.createElement("p"); stella.innerHTML = `<b>Stella</b> · ${escapeText(detail)} <small>${escapeText(state)}</small>`;
+  const stella = document.createElement("p"); renderAssistantTurn(stella, detail, state);
   history.append(user, stella);
+  return stella;
+}
+
+async function pollStellaJob(tenantId: string, jobId: string, turn: HTMLElement | undefined) {
+  const deadline = Date.now() + 10 * 60_000;
+  while (Date.now() < deadline) {
+    const job = await spmt.getExecutionJob(tenantId, jobId);
+    if (job.state === "succeeded") {
+      const detail = job.result?.kind === "stellar-chat-result.v1" && typeof job.result.text === "string" ? job.result.text : "Stellar Core completed without a valid assistant result.";
+      if (turn) renderAssistantTurn(turn, detail, typeof job.result?.text === "string" ? "complete" : "failed");
+      setStatus(typeof job.result?.text === "string" ? "Stella completed the request." : detail, typeof job.result?.text === "string" ? "ready" : "error");
+      return;
+    }
+    if (["failed", "dead-letter", "cancelled"].includes(job.state)) {
+      const detail = job.error?.message ?? `Stellar Core job ${job.state}.`;
+      if (turn) renderAssistantTurn(turn, detail, job.state);
+      setStatus(`Stella · ${job.state}: ${detail}`, "error");
+      return;
+    }
+    const detail = job.progress?.message ?? (job.state === "queued" && job.error?.retryable ? "The worker is retrying this request." : "Waiting for a Stellar Core worker…");
+    if (turn) renderAssistantTurn(turn, detail, job.progress ? `${Math.round(job.progress.percent)}%` : job.state);
+    await new Promise((done) => window.setTimeout(done, 1_000));
+  }
+  if (turn) renderAssistantTurn(turn, "This request is still queued. Its durable job remains available after you leave this page.", "still running");
+  setStatus("Stella is still working on the durable request.", "working");
+}
+
+function renderAssistantTurn(node: HTMLElement, detail: string, state: string) {
+  node.replaceChildren();
+  const name = document.createElement("b"); name.textContent = "Stella";
+  const status = document.createElement("small"); status.textContent = state;
+  node.append(name, document.createTextNode(` · ${detail} `), status);
 }
 
 async function recordEggCompletion(event: CustomEvent) {

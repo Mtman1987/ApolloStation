@@ -6,7 +6,7 @@ import { pathToFileURL } from "node:url";
 import { AccountRecoveryService, AccountSetupError, SqliteAccountSetupStore } from "@spmt/account-recovery-core";
 import { AuthorityService } from "@spmt/authority-core";
 import { SqliteAuthorityStore } from "@spmt/authority-sqlite";
-import { AuthService } from "@spmt/auth-core";
+import { AuthConflictError, AuthService } from "@spmt/auth-core";
 import { ControlService } from "@spmt/control-core";
 import { ExecutionJobService } from "@spmt/execution-core";
 import { MonetizationService } from "@spmt/monetization";
@@ -18,6 +18,7 @@ import { ProviderGrantError, type ProviderGrantIssuerV1 } from "@spmt/provider-g
 import { PlatformApiAdapter } from "@spmt/api-adapter";
 import { HealthRegistry } from "@spmt/runtime";
 import { assertBillingManifestV1, BILLING_PLAN_IDS, type AppCatalogRegistrationV1, type BillingManifestV1, type BillingPlanIdV1 } from "@spmt/contracts";
+import { StellarCommunityAssistantRuntime } from "@spmt/stellar-core";
 
 const USER_SCOPES = ["identity:read","identity:write","workspace:read","workspace:write","xp:read","apps:read","apps:install","entitlements:read","usage:read","events:read","jobs:read","jobs:write","commlink:read","commlink:write","notifications:read","notifications:write","webhooks:read","webhooks:write","assistants:read","assistants:invoke","stellar:context:read","stellar:context:write","stellar:capabilities:read"];
 const SANDBOX_OWNER_SCOPES = ["apps:register","jobs:any","operations:logs:read","operations:coder:read","operations:coder:invoke","overlay:widgets:read","overlay:outputs:read","overlay:outputs:write"];
@@ -42,6 +43,8 @@ export interface SpmtServiceOptions {
   communityAssistant?: CommunityAssistantRuntimeV1;
   billingManifest?: BillingManifestV1;
   providerGrants?: ProviderGrantIssuerV1;
+  stellarChatEnabled?: boolean;
+  stellarWorkerCredential?: string;
 }
 
 export function createSpmtService(options: SpmtServiceOptions) {
@@ -67,7 +70,10 @@ export function createSpmtService(options: SpmtServiceOptions) {
     resolvePlan: (tenantId) => billingPlan(control.listEntitlements(tenantId)),
     onTransition: (job, previousState) => data.createOperationsLog({ tenantId: job.tenantId, sourceAppId: job.ownerAppId, reporterId: "spmt-execution", level: job.state === "failed" || job.state === "dead-letter" ? "error" : job.state === "cancelled" ? "warn" : "info", kind: `execution.${job.state}`, summary: `${job.capabilityId} ${previousState ? `${previousState} -> ` : ""}${job.state} on ${job.executionTarget}`, labels: ["execution-job", job.executionTarget, job.meteredResource], ...(job.correlationId ? { correlationId: job.correlationId } : {}), idempotencyKey: `${job.id}:${job.state}:${job.fencingEpoch}:${job.attempt}:${job.updatedAt}:${job.progress?.percent ?? "none"}` }),
   });
-  const operations = new PlatformOperations(auth, authority, control, data, options.communityAssistant, options.coderRuntime, executionJobs);
+  if (options.stellarChatEnabled && (!options.stellarWorkerCredential || options.stellarWorkerCredential.length < 32)) throw new Error("An enabled Stellar chat runtime requires a 32+ character worker credential");
+  if (options.stellarWorkerCredential) ensureStellarWorkerIdentity(auth, options.stellarWorkerCredential);
+  const communityAssistant = options.communityAssistant ?? new StellarCommunityAssistantRuntime(executionJobs, { enabled: Boolean(options.stellarChatEnabled), resolveRoute: (input) => resolveStellarRoute(control, input.tenantId, input.routingPreference ?? "automatic") });
+  const operations = new PlatformOperations(auth, authority, control, data, communityAssistant, options.coderRuntime, executionJobs);
   const api = new PlatformApiAdapter(operations);
   const health = new HealthRegistry();
   health.setDependency("authority-storage", "ready", `sqlite:${store.journalMode()}`);
@@ -77,6 +83,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
 
   if (options.sandboxFixtures) seedSandboxFixtures(control, data, publicBaseUrl);
   if (options.sandboxApps?.length) seedSandboxApps(control, store.listTenants(), options.sandboxApps);
+  syncCommunityAssistantCapability(data, communityAssistant.status());
 
   const outbox = new OutboxDispatcher({
     authority,
@@ -505,6 +512,21 @@ function billingPlan(entitlements: Array<{ key: string; value: string | number |
   for (const entitlement of entitlements) if (["billing.plan", "billing-plan", "plan", "tier"].includes(entitlement.key) && typeof entitlement.value === "string" && (BILLING_PLAN_IDS as readonly string[]).includes(entitlement.value)) return entitlement.value as BillingPlanIdV1;
   return "free";
 }
+function resolveStellarRoute(control: ControlService, tenantId: string, preference: "automatic" | "hosted" | "companion") {
+  const plan = billingPlan(control.listEntitlements(tenantId));
+  const companionInstalled = control.listInstalls(tenantId).some((install) => install.appId === "companion" && install.enabled);
+  const companionReady = companionInstalled && control.listRuntimeProjections(tenantId, "companion").some((runtime) => runtime.state === "ready");
+  if (preference === "companion" && plan !== "free" && companionReady) return { executionTarget: "companion" as const, meteringTarget: "companion" as const };
+  if (preference === "companion") return { executionTarget: "sprite" as const, meteringTarget: "hosted" as const, fallbackReason: plan === "free" ? "Companion routing requires a paid plan; hosted routing was selected." : "Companion is not connected and ready; hosted routing was selected." };
+  return { executionTarget: "sprite" as const, meteringTarget: "hosted" as const };
+}
+function ensureStellarWorkerIdentity(auth: AuthService, credential: string) {
+  try { auth.registerServiceIdentity({ serviceId: "stellar-core", credential, scopes: ["jobs:read", "jobs:work", "stellar:context:read"], tenantMode: "any" }); }
+  catch (error) { if (!(error instanceof AuthConflictError)) throw error; auth.issueServiceAccess("stellar-core", credential, 60); }
+}
+function syncCommunityAssistantCapability(data: PlatformDataService, status: ReturnType<CommunityAssistantRuntimeV1["status"]>) {
+  data.upsertStellarCapability({ id: "spmt.community-assistant", sourceAppId: "stellar-core", title: "Stella Community Assistant", description: "Invoke the app-neutral SPMT Community Assistant through the durable, metered Stellar Core job contract.", requiredScopes: ["assistants:invoke"], availability: status.availability, ...(status.availability === "unavailable" ? { unavailableReason: status.unavailableReason } : {}) });
+}
 function createDiscordDmSender(botToken: string, fetchImpl: typeof fetch) {
   return async (discordUserId: string, message: { title: string; description: string; url: string }) => {
     const headers = { Authorization: `Bot ${botToken}`, "content-type": "application/json" };
@@ -529,6 +551,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   const twitchClientId = process.env.TWITCH_CLIENT_ID;
   const twitchClientSecret = process.env.TWITCH_CLIENT_SECRET;
   const discordBotToken = process.env.DISCORD_BOT_TOKEN;
+  const stellarWorkerCredential = process.env.STELLAR_WORKER_CREDENTIAL;
+  const stellarChatEnabled = process.env.SPMT_STELLAR_CHAT_ENABLED === "1";
+  if (stellarChatEnabled && !stellarWorkerCredential) throw new Error("SPMT_STELLAR_CHAT_ENABLED=1 requires STELLAR_WORKER_CREDENTIAL");
   const service = createSpmtService({
     databasePath,
     webhookKey: decodeKey(key),
@@ -543,6 +568,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     ...(twitchClientId ? { twitchClientId } : {}),
     ...(twitchClientSecret ? { twitchClientSecret } : {}),
     ...(discordBotToken ? { discordBotToken } : {}),
+    stellarChatEnabled,
+    ...(stellarWorkerCredential ? { stellarWorkerCredential } : {}),
   });
   await service.listen();
 }

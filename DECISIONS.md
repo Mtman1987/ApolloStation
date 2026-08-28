@@ -179,6 +179,14 @@ The preferred topology is caller-initiated: apps and users call public SPMT/Stel
 - **Boundary:** Stellar Core remains the AI subsystem; SPMT, SpaceMountain, and the Mtman Machine Rotator retain their already accepted distinct roles. ApolloStation remains the repository/codename.
 - **Consequences:** Downstream apps consume the documented SDK, HTTP API, CLI, MCP, event, webhook, and job surfaces. The new umbrella name grants no hidden first-party shortcut or additional authority.
 
+## Change record — 2026-08-28 Stellar chat implementation
+
+- **Owner position:** Approve the first functionality-parity chunk using Qwen as the automatic route, plan-aware Companion eligibility, personal Account usage, and the existing shared job/machine foundation.
+- **Implemented decisions:** D-20, D-22, D-31, D-40, D-46, D-47, and D-49. D-24 remains a production gate until retention and user controls are enforced.
+- **Routing:** Free users remain platform-routed to hosted Qwen. Paid users see the Companion route only when Companion is installed and ready. An ineligible explicit Companion request receives a visible hosted fallback reason.
+- **Boundary:** All Stella work enters `ExecutionJobV1`; the browser-to-Qwen bypass is removed. Provider/model controls stay owner-only and Stellar Core does not speak as Athena or another tenant persona.
+- **Production gate:** Keep the capability in shadow until retention/export/deletion enforcement, live capacity/failure evidence, production credentials, and explicit route promotion are approved.
+
 ## Change record template
 
 For any future `CHANGE`, `REJECT`, or reopened decision append:

@@ -25,6 +25,7 @@ export interface ExecutionJobStoreV1 {
   findExecutionJobByIdempotency(tenantId: string, ownerAppId: string, requestedById: string, idempotencyKey: string): ExecutionJobV1 | undefined;
   putExecutionJob(job: ExecutionJobV1): void;
   listExecutionJobs(tenantId: string, options?: ExecutionJobListOptionsV1): ExecutionJobV1[];
+  listExecutionJobTenants(options: { executionOwner: string; executionTarget: ExecutionTargetV1 }): string[];
 }
 
 export class MemoryExecutionJobStore implements ExecutionJobStoreV1 {
@@ -34,6 +35,7 @@ export class MemoryExecutionJobStore implements ExecutionJobStoreV1 {
   findExecutionJobByIdempotency(tenantId: string, ownerAppId: string, requestedById: string, idempotencyKey: string) { return this.values().find((job) => job.tenantId === tenantId && job.ownerAppId === ownerAppId && job.requestedById === requestedById && job.idempotencyKey === idempotencyKey); }
   putExecutionJob(job: ExecutionJobV1) { this.jobs.set(job.id, clone(job)); }
   listExecutionJobs(tenantId: string, options: ExecutionJobListOptionsV1 = {}) { return filterJobs(this.values(), tenantId, options); }
+  listExecutionJobTenants(options: { executionOwner: string; executionTarget: ExecutionTargetV1 }) { const oldest = new Map<string, string>(); for (const job of this.values()) { if (job.executionOwner !== options.executionOwner || job.executionTarget !== options.executionTarget || !["queued", "leased", "running"].includes(job.state)) continue; if (!oldest.has(job.tenantId) || job.createdAt < oldest.get(job.tenantId)!) oldest.set(job.tenantId, job.createdAt); } return [...oldest].sort((left, right) => left[1].localeCompare(right[1]) || left[0].localeCompare(right[0])).map(([tenantId]) => tenantId); }
   private values() { return [...this.jobs.values()].map(clone); }
 }
 
@@ -109,6 +111,7 @@ export class ExecutionJobService {
   }
 
   get(tenantId: string, jobId: string) { const job = this.options.store.getExecutionJob(identifier(jobId, "jobId")); if (!job || job.tenantId !== identifier(tenantId, "tenantId")) throw new ExecutionJobError("not_found", "Execution job was not found"); return job; }
+  findIdempotent(tenantId: string, ownerAppId: string, requestedById: string, idempotencyKey: string) { return this.options.store.findExecutionJobByIdempotency(identifier(tenantId, "tenantId"), identifier(ownerAppId, "ownerAppId"), identifier(requestedById, "requestedById"), boundedText(idempotencyKey, "idempotencyKey", 300)); }
   list(tenantId: string, options: ExecutionJobListOptionsV1 = {}) { return this.options.store.listExecutionJobs(identifier(tenantId, "tenantId"), normalizeList(options)); }
 
   claim(input: { tenantId: string; executionOwner: string; workerId: string; executionTarget: ExecutionTargetV1; capabilityIds?: string[]; leaseMs?: number }): ExecutionJobV1 | undefined {
@@ -123,6 +126,17 @@ export class ExecutionJobService {
       const claimed: ExecutionJobV1 = { ...candidate, state: "leased", attempt: candidate.attempt + 1, fencingEpoch: candidate.fencingEpoch + 1, leaseId: `lease_${randomBytes(12).toString("hex")}`, leaseOwner: workerId, leaseExpiresAt: new Date(Date.parse(now) + leaseMs).toISOString(), updatedAt: now };
       this.options.store.putExecutionJob(claimed); this.emit(claimed, candidate.state); return clone(claimed);
     });
+  }
+
+  claimAny(input: { executionOwner: string; workerId: string; executionTarget: ExecutionTargetV1; tenantIds?: string[]; capabilityIds?: string[]; leaseMs?: number }): ExecutionJobV1 | undefined {
+    const executionOwner = identifier(input.executionOwner, "executionOwner"), executionTarget = target(input.executionTarget);
+    const allowedTenants = input.tenantIds?.map((value) => identifier(value, "tenantId"));
+    const tenants = this.options.store.listExecutionJobTenants({ executionOwner, executionTarget }).filter((tenantId) => !allowedTenants || allowedTenants.includes(tenantId));
+    for (const tenantId of tenants) {
+      const claimed = this.claim({ tenantId, executionOwner, workerId: input.workerId, executionTarget, ...(input.capabilityIds ? { capabilityIds: input.capabilityIds } : {}), ...(input.leaseMs === undefined ? {} : { leaseMs: input.leaseMs }) });
+      if (claimed) return claimed;
+    }
+    return undefined;
   }
 
   heartbeat(input: { tenantId: string; jobId: string; workerId: string; leaseId: string; fencingEpoch: number; leaseMs?: number; progress?: { percent: number; message?: string } }): ExecutionJobV1 {

@@ -23,6 +23,7 @@
     "@spmt/platform-data-sqlite": "0.1.0",
     "@spmt/platform-ops": "0.3.0",
     "@spmt/provider-grants-core": "0.1.0",
-    "@spmt/runtime": "0.1.0"
+    "@spmt/runtime": "0.1.0",
+    "@spmt/stellar-core": "0.1.0"
   }
 }

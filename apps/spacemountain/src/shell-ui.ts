@@ -18,6 +18,7 @@ export class SpaceMountainShellUi {
 
   mount() { this.base.mount(); this.observe(); this.overlayBay.mount(); return this; }
   update(snapshot: SpaceMountainShellSnapshotV1) { this.snapshot = snapshot; this.base.update(snapshot); this.overlayBay.update(snapshot); }
+  updatePersonalUsage(usage: SpaceMountainShellSnapshotV1["usage"]) { this.base.updatePersonalUsage(usage); if (usage) this.snapshot = { ...this.snapshot, usage }; }
   destroy() { this.observer?.disconnect(); this.observer = undefined; this.base.destroy(); }
 
   private observe() {

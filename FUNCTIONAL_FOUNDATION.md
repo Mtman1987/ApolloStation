@@ -31,6 +31,7 @@ Apps submit work through `/v1/jobs`, the SDK, CLI, or MCP. The shared envelope r
 - idempotent job creation consumes usage once;
 - payload keys resembling credentials, passwords, secrets, or tokens are rejected;
 - workers claim by execution owner and target, heartbeat progress, and finish with the same lease ID and fencing epoch;
+- service workers may claim across their authorized tenant set through `/v1/jobs/claim-any`; human sessions cannot use this worker-only operation;
 - stale leases cannot complete work; retryable failures requeue only inside the attempt bound, then dead-letter;
 - every transition emits a content-minimized operations record without the job payload or provider credentials.
 
@@ -89,3 +90,13 @@ For each retained capability, connect one complete path before starting another:
 10. advance the manifest state or route mode only with recorded evidence.
 
 Production credentials, Fly mutation, donor retirement, and DNS promotion remain separate cutover authorities.
+
+## First complete vertical: Stellar chat
+
+Stella now submits `stellar-core.ai-chat.v1` work through the shared job envelope. The supervised Sprite sandbox starts the loopback Qwen process and a separately authenticated Stellar worker; the browser never receives a provider origin, provider credential, raw model endpoint, or worker credential. The old `/v1/llm/*` browser proxy is removed.
+
+The default route is hosted Qwen on the Sprite target. A user may select Companion only when their plan is paid, Companion is installed, and its runtime reports `ready`; otherwise SPMT queues the hosted route and returns a visible fallback reason. Companion work remains visible in Account usage while its local units do not fill the hosted allowance bar under an unmetered-local plan.
+
+SpaceMountain polls the durable job, renders queue/progress/terminal truth, and refreshes the signed-in user's Account usage immediately after acceptance. Worker results are persona-neutral; Stella is the presentation identity, while Athena remains an owner-configured StreamWeaver persona.
+
+The capability stays `shadow` for production. Enabling production still requires the D-24 prompt/result retention sweeper and deletion/export controls, measured Qwen latency and capacity, Companion live-worker evidence, load/failure observation, and an explicit route-mode change.

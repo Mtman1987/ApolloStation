@@ -56,7 +56,7 @@ test("public API and SDK carry one metered job through create, lease, progress, 
     assert.ok(listedTools.result.tools.some((tool) => tool.name === "spmt.jobs.create" && tool.inputSchema.required.includes("meteringTarget")));
     const mcpJobs = mcp.handle({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "spmt.jobs.list", arguments: { tenantId: "tenant-a" } } }, { accessToken: env.userAToken, protocolVersion: SPMT_MCP_PROTOCOL_VERSION });
     assert.equal(mcpJobs.result.structuredContent.length, 1);
-    const claimed = await env.worker.claimExecutionJob("tenant-a", "stellar-instance-1", "sprite", { capabilityIds: ["stellar.chat"] });
+    const claimed = await env.worker.claimAnyExecutionJob("stellar-instance-1", "sprite", { capabilityIds: ["stellar.chat"] });
     assert.equal(claimed.state, "leased");
     await assert.rejects(() => env.otherWorker.heartbeatExecutionJob("tenant-a", claimed.id, "stellar-instance-1", claimed.leaseId, claimed.fencingEpoch, { percent: 5 }), (error) => error instanceof SpmtApiError && error.status === 403);
     const running = await env.worker.heartbeatExecutionJob("tenant-a", claimed.id, "stellar-instance-1", claimed.leaseId, claimed.fencingEpoch, { percent: 60, message: "Generating" });

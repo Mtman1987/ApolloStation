@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "revision": "apollo-functional-foundation-2026-08-28",
+  "revision": "apollo-stellar-chat-vertical-2026-08-28",
   "capabilities": [
     {
       "capabilityId": "spmt.identity-authority",
@@ -23,13 +23,13 @@
       "dataOwner": "spmt",
       "executionOwner": "spmt",
       "surfaces": ["shell", "standalone"],
-      "entryPoints": ["/v1/jobs", "/v1/jobs/claim", "@spmt/sdk execution methods"],
+      "entryPoints": ["/v1/jobs", "/v1/jobs/claim", "/v1/jobs/claim-any", "@spmt/sdk execution methods"],
       "contract": "ExecutionJobV1",
       "meteredResource": "hosted-worker-minutes",
       "executionTargets": ["sprite", "fly", "companion"],
       "routeMode": "green-only",
-      "state": "scaffolded",
-      "migration": "App-specific jobs adopt the envelope one vertical at a time; no hidden dual writes.",
+      "state": "wired",
+      "migration": "Stellar chat is the first complete worker vertical; remaining apps adopt the same envelope without hidden dual writes.",
       "evidence": ["tests/functional-foundation.test.mjs", "tests/functional-foundation-api.test.mjs"]
     },
     {
@@ -93,19 +93,19 @@
       "evidence": ["tests/chat-gateway.test.mjs", "tests/chat-provider-supervisor.test.mjs", "tests/chat-provider-drivers.test.mjs"]
     },
     {
-      "capabilityId": "stellar-core.ai-execution",
+      "capabilityId": "stellar-core.ai-chat.v1",
       "ownerAppId": "stellar-core",
       "dataOwner": "spmt",
       "executionOwner": "stellar-core",
       "surfaces": ["shell", "standalone", "popout"],
-      "entryPoints": ["/v1/assistants/community/invocations", "/v1/jobs"],
+      "entryPoints": ["/v1/assistants/community/invocations", "/v1/jobs", "/v1/jobs/claim-any", "SpaceMountain Stella job polling"],
       "contract": "CommunityAssistantInvocationV1 and ExecutionJobV1",
       "meteredResource": "ai-chat-requests",
       "executionTargets": ["sprite", "companion"],
       "routeMode": "shadow",
-      "state": "wired",
-      "migration": "Connect Qwen and Companion workers through the shared job lease before enabling Green primary.",
-      "evidence": ["tests/developer-platform.test.mjs", "tests/stellar-core-migration.test.mjs"]
+      "state": "verified",
+      "migration": "Supervised Sprite Qwen and the Companion-ready route now use the shared lease. Production routing remains shadow until retention, live load, and capacity evidence pass their gates.",
+      "evidence": ["tests/developer-platform.test.mjs", "tests/stellar-core-migration.test.mjs", "tests/stellar-chat-vertical.test.mjs", "tests/spacemountain-web.test.mjs"]
     },
     {
       "capabilityId": "mission-control.operations-runtime",

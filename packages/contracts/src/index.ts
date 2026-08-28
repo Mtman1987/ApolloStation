@@ -503,9 +503,12 @@ export interface CommunityAssistantInvocationV1 {
   schemaVersion: 1;
   tenantId: string;
   userId: string;
+  requestedByType: "user" | "service";
+  requestedById: string;
   callerAppId: string;
   message: string;
   surface: AssistantSurfaceV1;
+  routingPreference?: "automatic" | "hosted" | "companion";
   idempotencyKey: string;
   conversationId?: string;
   correlationId?: string;
@@ -518,6 +521,10 @@ export type CommunityAssistantInvocationResultV1 =
       displayName: typeof COMMUNITY_ASSISTANT_DISPLAY_NAME;
       status: "accepted";
       jobId: string;
+      executionTarget?: ExecutionTargetV1;
+      meteringTarget?: "hosted" | "companion";
+      routingPreference?: "automatic" | "hosted" | "companion";
+      fallbackReason?: string;
     }
   | {
       schemaVersion: 1;

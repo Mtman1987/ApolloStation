@@ -17,6 +17,9 @@ const buildSha = process.env.BUILD_SHA;
 const twitchClientId = process.env.TWITCH_CLIENT_ID;
 const twitchClientSecret = process.env.TWITCH_CLIENT_SECRET;
 const discordBotToken = process.env.DISCORD_BOT_TOKEN;
+const stellarWorkerCredential = process.env.STELLAR_WORKER_CREDENTIAL;
+const stellarChatEnabled = process.env.SPMT_STELLAR_CHAT_ENABLED === "1";
+if (stellarChatEnabled && !stellarWorkerCredential) throw new Error("SPMT_STELLAR_CHAT_ENABLED=1 requires STELLAR_WORKER_CREDENTIAL");
 const service = createSpmtServiceWithProviderIdentity({
   databasePath,
   webhookKey,
@@ -31,6 +34,8 @@ const service = createSpmtServiceWithProviderIdentity({
   ...(twitchClientId ? { twitchClientId } : {}),
   ...(twitchClientSecret ? { twitchClientSecret } : {}),
   ...(discordBotToken ? { discordBotToken } : {}),
+  stellarChatEnabled,
+  ...(stellarWorkerCredential ? { stellarWorkerCredential } : {}),
 });
 const gateway = createSpmtOutputGateway(service, { port, host: checked?.host ?? process.env.SPMT_HOST ?? "0.0.0.0", publicBaseUrl });
 
