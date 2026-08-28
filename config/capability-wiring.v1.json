@@ -164,8 +164,8 @@
       "executionTargets": ["fly", "sprite", "companion"],
       "routeMode": "shadow",
       "state": "wired",
-      "migration": "Stellar results now return through a restart-safe provider-neutral outbox. Tenant commands, persona instructions and memory policy, currencies, and secrets still move through app-private migrations; live provider credentials remain a cutover gate.",
-      "evidence": ["tests/streamweaver-donor-command-runtime.test.mjs", "tests/streamweaver-economy-parity.test.mjs", "tests/streamweaver-chat-gateway.test.mjs", "tests/functional-foundation-api.test.mjs", "docs/architecture/STREAMWEAVER_STELLAR_REPLY_LOOP.md"]
+      "migration": "Stellar results return through a restart-safe provider-neutral outbox. Persona instructions and off/conversation memory now use versioned app-private settings with a non-overwriting one-way importer, authenticated presentation ownership, human-view redaction, and tenant/user/persona history isolation. Tenant commands, currencies, secrets, and live provider credentials remain later migration/cutover work.",
+      "evidence": ["tests/streamweaver-donor-command-runtime.test.mjs", "tests/streamweaver-economy-parity.test.mjs", "tests/streamweaver-chat-gateway.test.mjs", "tests/streamweaver-persona-memory.test.mjs", "tests/functional-foundation-api.test.mjs", "docs/architecture/STREAMWEAVER_STELLAR_REPLY_LOOP.md"]
     },
     {
       "capabilityId": "hearmeout.rooms-media",

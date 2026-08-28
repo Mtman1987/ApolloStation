@@ -1,11 +1,11 @@
 export * from "./xp.js";
 import type { ProviderKindV1, ProviderLinkV1, XpEventV1, XpGambleSettlementV1, XpLeaderboardEntryV1, XpSpendResultV1, XpTransferResultV1, XpWalletV1 } from "@spmt/authority-core";
-import type { AppCatalogRegistrationV1, AppRuntimeProjectionV1, AssistantSurfaceV1, CoderDescriptorV1, CoderJobStateV1, CoderJobV1, CommunityAssistantDescriptorV1, CommunityAssistantInvocationResultV1, ExecutionJobCreateV1, ExecutionJobStateV1, ExecutionJobV1, ExecutionTargetV1, ExecutionWorkerProjectionV1, IssuedOverlayOutputGrantV1, IssuedProviderGrantV1, OperationsLogLevelV1, OperationsLogV1, OverlayOutputGrantV1, OverlayWidgetManifestV1, PersonalUsageSummaryV1, ProviderGrantProviderV1, RegisteredOverlayWidgetV1, RuntimeStateV1 } from "@spmt/contracts";
+import type { AppCatalogRegistrationV1, AppRuntimeProjectionV1, AssistantSurfaceV1, CoderDescriptorV1, CoderJobStateV1, CoderJobV1, CommunityAssistantDescriptorV1, CommunityAssistantInvocationResultV1, CommunityAssistantPresentationInputV1, ExecutionJobCreateV1, ExecutionJobStateV1, ExecutionJobV1, ExecutionTargetV1, ExecutionWorkerProjectionV1, IssuedOverlayOutputGrantV1, IssuedProviderGrantV1, OperationsLogLevelV1, OperationsLogV1, OverlayOutputGrantV1, OverlayWidgetManifestV1, PersonalUsageSummaryV1, ProviderGrantProviderV1, RegisteredOverlayWidgetV1, RuntimeStateV1 } from "@spmt/contracts";
 export interface SpmtClientOptions { baseUrl:string; fetchImpl?:typeof fetch; getAccessToken?:()=>string|Promise<string|undefined>|undefined; appId:string; }
 export interface ApiRequestOptions extends RequestInit { tenantId?:string; correlationId?:string; }
 export interface ListEventsOptionsV1 { type?:string; sourceAppId?:string; limit?:number; }
 export interface AwardXpOptionsV1 { eventType?:string; metadata?:Record<string,unknown>; }
-export interface InvokeCommunityAssistantInputV1 { userId?:string; message:string; surface:AssistantSurfaceV1; conversationId?:string; routingPreference?:"automatic"|"hosted"|"companion"; remember?:boolean; }
+export interface InvokeCommunityAssistantInputV1 { userId?:string; message:string; surface:AssistantSurfaceV1; conversationId?:string; routingPreference?:"automatic"|"hosted"|"companion"; remember?:boolean; presentation?:CommunityAssistantPresentationInputV1; }
 export interface PublishOperationsLogInputV1 { sourceAppId?:string; level:OperationsLogLevelV1; kind:string; summary:string; detail?:string; labels?:string[]; occurredAt?:string; }
 export interface ListOperationsLogsOptionsV1 { sourceAppId?:string; level?:OperationsLogLevelV1; limit?:number; }
 export interface ListCoderJobsOptionsV1 { targetAppId?:string; state?:CoderJobStateV1; limit?:number; }

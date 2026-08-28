@@ -56,7 +56,7 @@ test("all frozen production donor heads remain pinned until parity is proven", (
   assert.deepEqual([...guard.firstPartyApps].sort(), currentApps);
 });
 
-test("Chat Tag drift after the production freeze cannot be silently discarded", () => {
+test("Nebula Arcade donor drift after the production freeze cannot be silently discarded", () => {
   const donor = donors.get("Mtman1987/chat-tag");
   assert.equal(donor.frozenHead, "8170c51b04598774cbaa67981888e30b0c51f2fd");
   assert.equal(donor.currentMain, "c4b99179eff47e41e920603f96f6342b04390eee");
