@@ -92,8 +92,9 @@ if (app === "nebula-arcade") {
   process.on("SIGTERM", () => void stop(0));
   await new Promise((done) => chatTag.once("exit", (code, signal) => { if (!stopping) void stop(signal === "SIGINT" || signal === "SIGTERM" ? 0 : code ?? (signal ? 1 : 0)).then(done); else done(); }));
 } else {
+let llm;
 if (llmBinary) {
-  const llm = startCommand("Qwen", resolve(llmBinary), ["--host", "127.0.0.1", "--port", "8081", "-hf", "Qwen/Qwen3-8B-GGUF:Q4_K_M", "--ctx-size", "8192", "--threads", "8", "--parallel", "1", "--jinja", "--no-webui"], { ...common, LLAMA_CACHE: llmCache });
+  llm = startCommand("Qwen", resolve(llmBinary), ["--host", "127.0.0.1", "--port", "8081", "-hf", "Qwen/Qwen3-8B-GGUF:Q4_K_M", "--ctx-size", "8192", "--threads", "8", "--parallel", "1", "--jinja", "--no-webui"], { ...common, LLAMA_CACHE: llmCache });
   llm.once("exit", (code, signal) => { if (!stopping) void stop(signal === "SIGINT" || signal === "SIGTERM" ? 0 : code ?? (signal ? 1 : 0)); });
 }
 const spmt = start("SPMT", "apps/spmt-service/dist/provider-identity-start.js", {
@@ -118,8 +119,10 @@ if (stellarWorkerCredential) {
     STELLAR_PROVIDER_MODEL: "Qwen/Qwen3-8B-GGUF:Q4_K_M",
     STELLAR_EXECUTION_TARGET: "sprite",
     STELLAR_WORKER_CREDENTIAL: stellarWorkerCredential,
+    ...(llm?.pid ? { STELLAR_PROVIDER_PID: String(llm.pid) } : {}),
   });
   stellar.once("exit", (code, signal) => { if (!stopping) void stop(signal === "SIGINT" || signal === "SIGTERM" ? 0 : code ?? (signal ? 1 : 0)); });
+  await waitForUrl(stellar, `http://127.0.0.1:${spmtPort}/health/stellar`, "Stellar Core hosted inference", 10 * 60_000);
 }
 let chatTag;
 if (candidateApp === "nebula-arcade") {
@@ -166,8 +169,8 @@ function startCommand(label, command, args, environment) {
   return child;
 }
 
-async function waitForUrl(child, url, label) {
-  const deadline = Date.now() + 15000;
+async function waitForUrl(child, url, label, timeoutMs = 15_000) {
+  const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (child.exitCode !== null) throw new Error(`${label} exited before readiness with code ${child.exitCode}`);
     try {
@@ -177,7 +180,7 @@ async function waitForUrl(child, url, label) {
     await new Promise((done) => setTimeout(done, 150));
   }
   await stop(1);
-  throw new Error(`${label} did not become ready within 15 seconds`);
+  throw new Error(`${label} did not become ready within ${Math.ceil(timeoutMs / 1000)} seconds`);
 }
 
 async function stop(code) {

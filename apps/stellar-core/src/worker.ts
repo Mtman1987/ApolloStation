@@ -1,6 +1,6 @@
 import type { ExecutionJobV1, ExecutionTargetV1 } from "@spmt/contracts";
 import { SpmtApiError, SpmtClient } from "@spmt/sdk";
-import { STELLAR_CHAT_CAPABILITY_ID, STELLAR_CHAT_REQUEST_KIND, STELLAR_CHAT_RESULT_KIND } from "./index.js";
+import { STELLAR_CHAT_CAPABILITY_ID, STELLAR_CHAT_REQUEST_KIND, STELLAR_CHAT_RESULT_KIND } from "./contracts.js";
 
 export interface StellarChatMessageV1 { role: "system" | "user" | "assistant"; content: string; }
 export interface StellarChatCompletionV1 { text: string; finishReason?: string; usage?: { inputTokens?: number; outputTokens?: number } }
@@ -30,6 +30,12 @@ export class OpenAiCompatibleChatProvider implements StellarChatProviderV1 {
 export class StellarChatWorker {
   private readonly workerId: string;
   private readonly executionTarget: ExecutionTargetV1;
+  private completedJobs = 0;
+  private failedJobs = 0;
+  private inputUnits = 0;
+  private outputUnits = 0;
+  private lastLatencyMs: number | undefined;
+  private lastUnits = 0;
   constructor(private readonly client: SpmtClient, private readonly provider: StellarChatProviderV1, options: { workerId: string; executionTarget: ExecutionTargetV1 }) { this.workerId = required(options.workerId, "workerId"); this.executionTarget = options.executionTarget; }
   async runOnce() {
     if (!await this.provider.healthy()) return undefined;
@@ -39,18 +45,28 @@ export class StellarChatWorker {
     return job.id;
   }
   async run(signal: AbortSignal, pollMs = 1_000) { while (!signal.aborted) { const claimed = await this.runOnce(); if (!claimed) await pause(pollMs, signal); } }
+  metrics() { return { completedJobs: this.completedJobs, failedJobs: this.failedJobs, inputUnits: this.inputUnits, outputUnits: this.outputUnits, ...(this.lastLatencyMs === undefined ? {} : { lastLatencyMs: this.lastLatencyMs, throughputUnitsPerSecond: this.lastLatencyMs > 0 ? this.lastUnits / (this.lastLatencyMs / 1_000) : this.lastUnits }) }; }
   private async execute(job: ExecutionJobV1) {
     if (!job.leaseId) throw new Error("Claimed Stellar job has no lease");
     const lease = { tenantId: job.tenantId, jobId: job.id, workerId: this.workerId, leaseId: job.leaseId, fencingEpoch: job.fencingEpoch };
+    let inferenceStartedAt: number | undefined;
     try {
       const request = stellarRequest(job.input);
       await this.client.heartbeatExecutionJob(lease.tenantId, lease.jobId, lease.workerId, lease.leaseId, lease.fencingEpoch, { percent: 10, message: "Preparing scoped context" }, 900_000);
-      const [context, jobs] = await Promise.all([this.client.listStellarContext(job.tenantId, request.userId), this.client.listExecutionJobs(job.tenantId, { ownerAppId: "stellar-core", billedUserId: request.userId, state: "succeeded", limit: 40 })]);
+      const [context, jobs] = await Promise.all([this.client.listStellarContext(job.tenantId, request.userId), request.remember ? this.client.listExecutionJobs(job.tenantId, { ownerAppId: "stellar-core", billedUserId: request.userId, state: "succeeded", limit: 40 }) : Promise.resolve([])]);
       const messages = buildMessages(request, context, jobs);
       await this.client.heartbeatExecutionJob(lease.tenantId, lease.jobId, lease.workerId, lease.leaseId, lease.fencingEpoch, { percent: 35, message: "Running assistant inference" }, 900_000);
+      inferenceStartedAt = Date.now();
       const completion = await this.provider.complete(messages);
+      this.lastLatencyMs = Date.now() - inferenceStartedAt;
+      this.lastUnits = (completion.usage?.inputTokens ?? 0) + (completion.usage?.outputTokens ?? 0);
+      this.inputUnits += completion.usage?.inputTokens ?? 0;
+      this.outputUnits += completion.usage?.outputTokens ?? 0;
       await this.client.succeedExecutionJob(lease.tenantId, lease.jobId, lease.workerId, lease.leaseId, lease.fencingEpoch, { kind: STELLAR_CHAT_RESULT_KIND, text: completion.text, ...(completion.finishReason ? { finishReason: completion.finishReason } : {}), ...(completion.usage ? { usage: { ...(completion.usage.inputTokens === undefined ? {} : { inputUnits: completion.usage.inputTokens }), ...(completion.usage.outputTokens === undefined ? {} : { outputUnits: completion.usage.outputTokens }) } } : {}) });
+      this.completedJobs += 1;
     } catch (error) {
+      if (inferenceStartedAt !== undefined) { this.lastLatencyMs = Date.now() - inferenceStartedAt; this.lastUnits = 0; }
+      this.failedJobs += 1;
       const retryable = error instanceof StellarProviderError ? error.retryable : false;
       await this.client.failExecutionJob(lease.tenantId, lease.jobId, lease.workerId, lease.leaseId, lease.fencingEpoch, error instanceof StellarProviderError ? "provider-failure" : "invalid-request", safeFailure(error), retryable);
     }
@@ -82,7 +98,7 @@ function buildMessages(request: ReturnType<typeof stellarRequest>, context: Arra
 
 function stellarRequest(input: Record<string, unknown>) {
   if (input.kind !== STELLAR_CHAT_REQUEST_KIND || typeof input.message !== "string" || !input.message.trim() || typeof input.userId !== "string") throw new Error("Stellar chat job input is invalid");
-  return { message: input.message, userId: input.userId, conversationId: typeof input.conversationId === "string" ? input.conversationId : undefined };
+  return { message: input.message, userId: input.userId, remember: input.remember !== false, conversationId: typeof input.conversationId === "string" ? input.conversationId : undefined };
 }
 function loopbackOrigin(value: string) { const url = new URL(value); if (url.protocol !== "http:" || !["127.0.0.1", "localhost", "::1"].includes(url.hostname) || url.username || url.password || url.pathname !== "/" || url.search || url.hash) throw new Error("Stellar worker origins must be credential-free loopback HTTP origins"); return url.origin; }
 function required(value: string, name: string) { if (!value || !/^[A-Za-z0-9._:@/-]{1,200}$/.test(value)) throw new Error(`${name} is invalid`); return value; }

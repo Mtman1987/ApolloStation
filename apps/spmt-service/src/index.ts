@@ -18,9 +18,9 @@ import { ProviderGrantError, type ProviderGrantIssuerV1 } from "@spmt/provider-g
 import { PlatformApiAdapter } from "@spmt/api-adapter";
 import { HealthRegistry } from "@spmt/runtime";
 import { assertBillingManifestV1, BILLING_PLAN_IDS, type AppCatalogRegistrationV1, type BillingManifestV1, type BillingPlanIdV1 } from "@spmt/contracts";
-import { StellarCommunityAssistantRuntime } from "@spmt/stellar-core";
+import { STELLAR_CHAT_CAPABILITY_ID, StellarCommunityAssistantRuntime, StellarDataPrivacyService } from "@spmt/stellar-core";
 
-const USER_SCOPES = ["identity:read","identity:write","workspace:read","workspace:write","xp:read","apps:read","apps:install","entitlements:read","usage:read","events:read","jobs:read","jobs:write","commlink:read","commlink:write","notifications:read","notifications:write","webhooks:read","webhooks:write","assistants:read","assistants:invoke","stellar:context:read","stellar:context:write","stellar:capabilities:read"];
+const USER_SCOPES = ["identity:read","identity:write","workspace:read","workspace:write","xp:read","apps:read","apps:install","entitlements:read","usage:read","events:read","jobs:read","jobs:write","commlink:read","commlink:write","notifications:read","notifications:write","webhooks:read","webhooks:write","assistants:read","assistants:invoke","stellar:context:read","stellar:context:write","stellar:capabilities:read","stellar:data:read","stellar:data:write"];
 const SANDBOX_OWNER_SCOPES = ["apps:register","jobs:any","operations:logs:read","operations:coder:read","operations:coder:invoke","overlay:widgets:read","overlay:outputs:read","overlay:outputs:write"];
 
 export interface SpmtServiceOptions {
@@ -72,8 +72,9 @@ export function createSpmtService(options: SpmtServiceOptions) {
   });
   if (options.stellarChatEnabled && (!options.stellarWorkerCredential || options.stellarWorkerCredential.length < 32)) throw new Error("An enabled Stellar chat runtime requires a 32+ character worker credential");
   if (options.stellarWorkerCredential) ensureStellarWorkerIdentity(auth, options.stellarWorkerCredential);
-  const communityAssistant = options.communityAssistant ?? new StellarCommunityAssistantRuntime(executionJobs, { enabled: Boolean(options.stellarChatEnabled), resolveRoute: (input) => resolveStellarRoute(control, input.tenantId, input.routingPreference ?? "automatic") });
-  const operations = new PlatformOperations(auth, authority, control, data, communityAssistant, options.coderRuntime, executionJobs);
+  const communityAssistant = options.communityAssistant ?? new StellarCommunityAssistantRuntime(executionJobs, { enabled: Boolean(options.stellarChatEnabled), resolveRoute: (input) => resolveStellarRoute(control, executionJobs, input.tenantId, input.routingPreference ?? "automatic") });
+  const stellarPrivacy = new StellarDataPrivacyService(executionJobs, data);
+  const operations = new PlatformOperations(auth, authority, control, data, communityAssistant, options.coderRuntime, executionJobs, stellarPrivacy);
   const api = new PlatformApiAdapter(operations);
   const health = new HealthRegistry();
   health.setDependency("authority-storage", "ready", `sqlite:${store.journalMode()}`);
@@ -83,7 +84,12 @@ export function createSpmtService(options: SpmtServiceOptions) {
 
   if (options.sandboxFixtures) seedSandboxFixtures(control, data, publicBaseUrl);
   if (options.sandboxApps?.length) seedSandboxApps(control, store.listTenants(), options.sandboxApps);
-  syncCommunityAssistantCapability(data, communityAssistant.status());
+  let lastCommunityStatusKey = "";
+  const refreshCommunityAssistantCapability = () => { const status = communityAssistant.status(), key = status.availability === "available" ? "available" : `unavailable:${status.unavailableReason}`; if (key === lastCommunityStatusKey) return; syncCommunityAssistantCapability(data, status); lastCommunityStatusKey = key; };
+  refreshCommunityAssistantCapability();
+  stellarPrivacy.sweep(store.listTenants().map((tenant) => tenant.id));
+  const stellarCapabilityTimer = setInterval(refreshCommunityAssistantCapability, 10_000); stellarCapabilityTimer.unref();
+  const stellarPrivacyTimer = setInterval(() => stellarPrivacy.sweep(store.listTenants().map((tenant) => tenant.id)), 15 * 60_000); stellarPrivacyTimer.unref();
 
   const outbox = new OutboxDispatcher({
     authority,
@@ -111,6 +117,11 @@ export function createSpmtService(options: SpmtServiceOptions) {
         const state = health.snapshot();
         const ready = probe.ready && state.state !== "unavailable";
         return json(response, ready ? 200 : 503, { ...state, storage: probe, runtimeMode, outboundIntegrations: runtimeMode === "sandbox" ? "disabled" : "enabled", sandboxFixtures: Boolean(options.sandboxFixtures), buildSha: options.buildSha ?? "dev" });
+      }
+      if (request.method === "GET" && url.pathname === "/health/stellar") {
+        const status = communityAssistant.status();
+        const workers = executionJobs.listWorkers({ executionOwner: "stellar-core", executionTarget: "sprite", capabilityId: STELLAR_CHAT_CAPABILITY_ID, freshOnly: true });
+        return json(response, status.availability === "available" ? 200 : 503, { schemaVersion: 1, availability: status.availability, ...(status.availability === "unavailable" ? { reason: status.unavailableReason } : {}), workers: workers.map((worker) => ({ workerId: worker.workerId, state: worker.state, providerHealthy: worker.providerHealthy, executionTarget: worker.executionTarget, lastHeartbeatAt: worker.lastHeartbeatAt, leaseExpiresAt: worker.leaseExpiresAt, metrics: worker.metrics })), buildSha: options.buildSha ?? "dev" });
       }
 
       if (request.method === "GET" && url.pathname === "/v1/auth/setup-options") {
@@ -386,11 +397,12 @@ export function createSpmtService(options: SpmtServiceOptions) {
   });
 
   return {
-    store, platformStore, setupStore, authority, auth, control, billing, data, accounts, executionJobs, operations, outbox, server,
+    store, platformStore, setupStore, authority, auth, control, billing, data, accounts, executionJobs, stellarPrivacy, operations, outbox, server,
     registerOAuthClient(input: Parameters<PlatformDataService["registerOAuthClient"]>[0]): ReturnType<PlatformDataService["registerOAuthClient"]> { return data.registerOAuthClient(input); },
     runOutboxOnce() { return outbox.runOnce(); },
+    runStellarPrivacySweep() { return stellarPrivacy.sweep(store.listTenants().map((tenant) => tenant.id)); },
     listen() { return new Promise<void>((done, reject) => { server.once("error", reject); server.listen(options.port ?? 3000, options.host ?? "0.0.0.0", () => { server.off("error", reject); done(); }); }); },
-    close() { return new Promise<void>((done, reject) => server.close((error) => { setupStore.close(); platformStore.close(); store.close(); error ? reject(error) : done(); })); },
+    close() { clearInterval(stellarCapabilityTimer); clearInterval(stellarPrivacyTimer); return new Promise<void>((done, reject) => server.close((error) => { setupStore.close(); platformStore.close(); store.close(); error ? reject(error) : done(); })); },
   };
 }
 
@@ -512,10 +524,10 @@ function billingPlan(entitlements: Array<{ key: string; value: string | number |
   for (const entitlement of entitlements) if (["billing.plan", "billing-plan", "plan", "tier"].includes(entitlement.key) && typeof entitlement.value === "string" && (BILLING_PLAN_IDS as readonly string[]).includes(entitlement.value)) return entitlement.value as BillingPlanIdV1;
   return "free";
 }
-function resolveStellarRoute(control: ControlService, tenantId: string, preference: "automatic" | "hosted" | "companion") {
+function resolveStellarRoute(control: ControlService, jobs: ExecutionJobService, tenantId: string, preference: "automatic" | "hosted" | "companion") {
   const plan = billingPlan(control.listEntitlements(tenantId));
   const companionInstalled = control.listInstalls(tenantId).some((install) => install.appId === "companion" && install.enabled);
-  const companionReady = companionInstalled && control.listRuntimeProjections(tenantId, "companion").some((runtime) => runtime.state === "ready");
+  const companionReady = companionInstalled && jobs.hasReadyWorker({ executionOwner: "stellar-core", executionTarget: "companion", capabilityId: STELLAR_CHAT_CAPABILITY_ID, tenantId });
   if (preference === "companion" && plan !== "free" && companionReady) return { executionTarget: "companion" as const, meteringTarget: "companion" as const };
   if (preference === "companion") return { executionTarget: "sprite" as const, meteringTarget: "hosted" as const, fallbackReason: plan === "free" ? "Companion routing requires a paid plan; hosted routing was selected." : "Companion is not connected and ready; hosted routing was selected." };
   return { executionTarget: "sprite" as const, meteringTarget: "hosted" as const };

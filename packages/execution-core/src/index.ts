@@ -6,7 +6,9 @@ import {
   type ExecutionJobStateV1,
   type ExecutionJobV1,
   type ExecutionTargetV1,
+  type ExecutionWorkerProjectionV1,
   type MeteredResourceV1,
+  type RuntimeStateV1,
 } from "@spmt/contracts";
 import { MonetizationService, UsageLimitError } from "@spmt/monetization";
 
@@ -24,7 +26,9 @@ export interface ExecutionJobStoreV1 {
   getExecutionJob(id: string): ExecutionJobV1 | undefined;
   findExecutionJobByIdempotency(tenantId: string, ownerAppId: string, requestedById: string, idempotencyKey: string): ExecutionJobV1 | undefined;
   putExecutionJob(job: ExecutionJobV1): void;
+  deleteExecutionJob(id: string): void;
   listExecutionJobs(tenantId: string, options?: ExecutionJobListOptionsV1): ExecutionJobV1[];
+  listAllExecutionJobs(tenantId: string): ExecutionJobV1[];
   listExecutionJobTenants(options: { executionOwner: string; executionTarget: ExecutionTargetV1 }): string[];
 }
 
@@ -34,7 +38,9 @@ export class MemoryExecutionJobStore implements ExecutionJobStoreV1 {
   getExecutionJob(id: string) { const value = this.jobs.get(id); return value ? clone(value) : undefined; }
   findExecutionJobByIdempotency(tenantId: string, ownerAppId: string, requestedById: string, idempotencyKey: string) { return this.values().find((job) => job.tenantId === tenantId && job.ownerAppId === ownerAppId && job.requestedById === requestedById && job.idempotencyKey === idempotencyKey); }
   putExecutionJob(job: ExecutionJobV1) { this.jobs.set(job.id, clone(job)); }
+  deleteExecutionJob(id: string) { this.jobs.delete(id); }
   listExecutionJobs(tenantId: string, options: ExecutionJobListOptionsV1 = {}) { return filterJobs(this.values(), tenantId, options); }
+  listAllExecutionJobs(tenantId: string) { return this.values().filter((job) => job.tenantId === tenantId).sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id)); }
   listExecutionJobTenants(options: { executionOwner: string; executionTarget: ExecutionTargetV1 }) { const oldest = new Map<string, string>(); for (const job of this.values()) { if (job.executionOwner !== options.executionOwner || job.executionTarget !== options.executionTarget || !["queued", "leased", "running"].includes(job.state)) continue; if (!oldest.has(job.tenantId) || job.createdAt < oldest.get(job.tenantId)!) oldest.set(job.tenantId, job.createdAt); } return [...oldest].sort((left, right) => left[1].localeCompare(right[1]) || left[0].localeCompare(right[0])).map(([tenantId]) => tenantId); }
   private values() { return [...this.jobs.values()].map(clone); }
 }
@@ -74,6 +80,7 @@ export class ExecutionJobService {
   private readonly now: () => string;
   private readonly idFactory: () => string;
   private readonly maximumAttempts: number;
+  private readonly workers = new Map<string, ExecutionWorkerProjectionV1>();
   constructor(private readonly options: ExecutionJobServiceOptionsV1) {
     this.now = options.now ?? (() => new Date().toISOString());
     this.idFactory = options.idFactory ?? (() => `job_${randomBytes(12).toString("hex")}`);
@@ -113,6 +120,74 @@ export class ExecutionJobService {
   get(tenantId: string, jobId: string) { const job = this.options.store.getExecutionJob(identifier(jobId, "jobId")); if (!job || job.tenantId !== identifier(tenantId, "tenantId")) throw new ExecutionJobError("not_found", "Execution job was not found"); return job; }
   findIdempotent(tenantId: string, ownerAppId: string, requestedById: string, idempotencyKey: string) { return this.options.store.findExecutionJobByIdempotency(identifier(tenantId, "tenantId"), identifier(ownerAppId, "ownerAppId"), identifier(requestedById, "requestedById"), boundedText(idempotencyKey, "idempotencyKey", 300)); }
   list(tenantId: string, options: ExecutionJobListOptionsV1 = {}) { return this.options.store.listExecutionJobs(identifier(tenantId, "tenantId"), normalizeList(options)); }
+  listForMaintenance(tenantId: string, options: Omit<ExecutionJobListOptionsV1, "limit"> = {}) { const normalizedTenant = identifier(tenantId, "tenantId"), normalized = normalizeList(options); return filterJobs(this.options.store.listAllExecutionJobs(normalizedTenant), normalizedTenant, { ...normalized, limit: Number.MAX_SAFE_INTEGER }); }
+
+  redactPayloads(tenantId: string, jobId: string, input: Record<string, unknown>, result?: Record<string, unknown>) {
+    return this.options.store.transaction(() => {
+      const current = this.get(tenantId, jobId);
+      if (!["succeeded", "failed", "cancelled", "dead-letter"].includes(current.state)) throw new ExecutionJobError("conflict", "Only terminal execution jobs may be content-minimized");
+      const { result: _previousResult, ...withoutResult } = current;
+      const next: ExecutionJobV1 = { ...withoutResult, input: safeObject(input, "input"), ...(result === undefined ? {} : { result: safeObject(result, "result") }), updatedAt: timestamp(this.now(), "job clock") };
+      this.options.store.putExecutionJob(next);
+      return clone(next);
+    });
+  }
+
+  delete(tenantId: string, jobId: string) {
+    return this.options.store.transaction(() => {
+      const current = this.get(tenantId, jobId);
+      if (!["succeeded", "failed", "cancelled", "dead-letter"].includes(current.state)) throw new ExecutionJobError("conflict", "Only terminal execution jobs may be deleted");
+      this.options.store.deleteExecutionJob(current.id);
+      return current;
+    });
+  }
+
+  reportWorker(input: {
+    executionOwner: string;
+    workerId: string;
+    executionTarget: ExecutionTargetV1;
+    state: RuntimeStateV1;
+    capabilityIds: string[];
+    tenantIds?: string[];
+    providerHealthy: boolean;
+    startedAt: string;
+    leaseMs?: number;
+    metrics: ExecutionWorkerProjectionV1["metrics"];
+  }) {
+    const now = timestamp(this.now(), "worker clock");
+    const leaseMs = boundedInteger(input.leaseMs ?? 30_000, "leaseMs", 5_000, 120_000);
+    const projection: ExecutionWorkerProjectionV1 = {
+      schemaVersion: 1,
+      executionOwner: identifier(input.executionOwner, "executionOwner"),
+      workerId: identifier(input.workerId, "workerId"),
+      executionTarget: target(input.executionTarget),
+      state: runtimeState(input.state),
+      capabilityIds: uniqueIdentifiers(input.capabilityIds, "capabilityId"),
+      ...(input.tenantIds ? { tenantIds: uniqueIdentifiers(input.tenantIds, "tenantId") } : {}),
+      providerHealthy: strictBoolean(input.providerHealthy, "providerHealthy"),
+      startedAt: timestamp(input.startedAt, "startedAt"),
+      lastHeartbeatAt: now,
+      leaseExpiresAt: new Date(Date.parse(now) + leaseMs).toISOString(),
+      metrics: workerMetrics(input.metrics),
+    };
+    this.workers.set(`${projection.executionOwner}\0${projection.workerId}`, clone(projection));
+    return clone(projection);
+  }
+
+  listWorkers(options: { executionOwner?: string; executionTarget?: ExecutionTargetV1; capabilityId?: string; tenantId?: string; freshOnly?: boolean } = {}) {
+    const now = Date.parse(timestamp(this.now(), "worker clock"));
+    return [...this.workers.values()].filter((worker) =>
+      (!options.executionOwner || worker.executionOwner === options.executionOwner) &&
+      (!options.executionTarget || worker.executionTarget === options.executionTarget) &&
+      (!options.capabilityId || worker.capabilityIds.includes(options.capabilityId)) &&
+      (!options.tenantId || !worker.tenantIds || worker.tenantIds.includes(options.tenantId)) &&
+      (options.freshOnly === false || Date.parse(worker.leaseExpiresAt) > now)
+    ).sort((left, right) => left.workerId.localeCompare(right.workerId)).map(clone);
+  }
+
+  hasReadyWorker(input: { executionOwner: string; executionTarget: ExecutionTargetV1; capabilityId: string; tenantId?: string }) {
+    return this.listWorkers({ ...input, freshOnly: true }).some((worker) => worker.state === "ready" && worker.providerHealthy);
+  }
 
   claim(input: { tenantId: string; executionOwner: string; workerId: string; executionTarget: ExecutionTargetV1; capabilityIds?: string[]; leaseMs?: number }): ExecutionJobV1 | undefined {
     const tenantId = identifier(input.tenantId, "tenantId"), executionOwner = identifier(input.executionOwner, "executionOwner"), workerId = identifier(input.workerId, "workerId"), executionTarget = target(input.executionTarget);
@@ -174,10 +249,14 @@ function identifier(value: unknown, name: string) { if (typeof value !== "string
 function boundedText(value: unknown, name: string, maximum: number) { if (typeof value !== "string" || !value.trim() || value.trim() !== value || value.length > maximum) throw new ExecutionJobError("invalid", `${name} is invalid`); return value; }
 function boundedInteger(value: unknown, name: string, minimum: number, maximum: number) { if (!Number.isSafeInteger(value) || (value as number) < minimum || (value as number) > maximum) throw new ExecutionJobError("invalid", `${name} is invalid`); return value as number; }
 function boundedNumber(value: unknown, name: string, minimum: number, maximum: number) { if (typeof value !== "number" || !Number.isFinite(value) || value < minimum || value > maximum) throw new ExecutionJobError("invalid", `${name} is invalid`); return value; }
+function strictBoolean(value: unknown, name: string) { if (typeof value !== "boolean") throw new ExecutionJobError("invalid", `${name} is invalid`); return value; }
 function target(value: unknown): ExecutionTargetV1 { if (value !== "sprite" && value !== "fly" && value !== "companion") throw new ExecutionJobError("invalid", "executionTarget is invalid"); return value; }
 function meteringTarget(value: unknown): "hosted" | "companion" { if (value !== "hosted" && value !== "companion") throw new ExecutionJobError("invalid", "meteringTarget is invalid"); return value; }
 function state(value: unknown): ExecutionJobStateV1 { if (typeof value !== "string" || !(EXECUTION_JOB_STATES as readonly string[]).includes(value)) throw new ExecutionJobError("invalid", "state is invalid"); return value as ExecutionJobStateV1; }
 function meter(value: unknown): MeteredResourceV1 { if (typeof value !== "string" || !(METERED_RESOURCES as readonly string[]).includes(value)) throw new ExecutionJobError("invalid", "meteredResource is invalid"); return value as MeteredResourceV1; }
+function runtimeState(value: unknown): RuntimeStateV1 { if (value !== "starting" && value !== "ready" && value !== "degraded" && value !== "draining" && value !== "unavailable") throw new ExecutionJobError("invalid", "worker state is invalid"); return value; }
+function uniqueIdentifiers(values: string[], name: string) { if (!Array.isArray(values) || values.length < 1 || values.length > 100) throw new ExecutionJobError("invalid", `${name} list is invalid`); return [...new Set(values.map((value) => identifier(value, name)))].sort(); }
+function workerMetrics(value: ExecutionWorkerProjectionV1["metrics"]): ExecutionWorkerProjectionV1["metrics"] { if (!value || typeof value !== "object") throw new ExecutionJobError("invalid", "worker metrics are invalid"); const count = (item: unknown, name: string) => boundedInteger(item, name, 0, Number.MAX_SAFE_INTEGER); const optional = (item: unknown, name: string) => item === undefined ? undefined : boundedNumber(item, name, 0, Number.MAX_SAFE_INTEGER); const coldStartMs=optional(value.coldStartMs,"coldStartMs"),lastLatencyMs=optional(value.lastLatencyMs,"lastLatencyMs"),throughputUnitsPerSecond=optional(value.throughputUnitsPerSecond,"throughputUnitsPerSecond"),memoryRssBytes=optional(value.memoryRssBytes,"memoryRssBytes"); return { completedJobs: count(value.completedJobs, "completedJobs"), failedJobs: count(value.failedJobs, "failedJobs"), inputUnits: count(value.inputUnits, "inputUnits"), outputUnits: count(value.outputUnits, "outputUnits"), ...(coldStartMs === undefined ? {} : { coldStartMs }), ...(lastLatencyMs === undefined ? {} : { lastLatencyMs }), ...(throughputUnitsPerSecond === undefined ? {} : { throughputUnitsPerSecond }), ...(memoryRssBytes === undefined ? {} : { memoryRssBytes }) }; }
 function timestamp(value: string, name: string) { const parsed = Date.parse(value); if (!Number.isFinite(parsed)) throw new ExecutionJobError("invalid", `${name} is invalid`); return new Date(parsed).toISOString(); }
 function invalid(name: string): never { throw new ExecutionJobError("invalid", `${name} is invalid`); }
 function safeObject(value: unknown, name: string): Record<string, unknown> { if (!value || typeof value !== "object" || Array.isArray(value)) throw new ExecutionJobError("invalid", `${name} must be an object`); const copy = structuredClone(value) as Record<string, unknown>; inspectPayload(copy, name, 0); if (Buffer.byteLength(JSON.stringify(copy), "utf8") > 64 * 1024) throw new ExecutionJobError("invalid", `${name} is too large`); return copy; }

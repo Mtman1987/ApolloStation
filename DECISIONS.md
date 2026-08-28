@@ -182,10 +182,19 @@ The preferred topology is caller-initiated: apps and users call public SPMT/Stel
 ## Change record — 2026-08-28 Stellar chat implementation
 
 - **Owner position:** Approve the first functionality-parity chunk using Qwen as the automatic route, plan-aware Companion eligibility, personal Account usage, and the existing shared job/machine foundation.
-- **Implemented decisions:** D-20, D-22, D-31, D-40, D-46, D-47, and D-49. D-24 remains a production gate until retention and user controls are enforced.
+- **Implemented decisions:** D-20, D-22, D-24, D-31, D-40, D-46, D-47, and D-49. D-24 retention and user controls are enforced by the later hosted-cutover record below.
 - **Routing:** Free users remain platform-routed to hosted Qwen. Paid users see the Companion route only when Companion is installed and ready. An ineligible explicit Companion request receives a visible hosted fallback reason.
 - **Boundary:** All Stella work enters `ExecutionJobV1`; the browser-to-Qwen bypass is removed. Provider/model controls stay owner-only and Stellar Core does not speak as Athena or another tenant persona.
-- **Production gate:** Keep the capability in shadow until retention/export/deletion enforcement, live capacity/failure evidence, production credentials, and explicit route promotion are approved.
+- **Production gate:** This record originally kept the capability in shadow; the later hosted-cutover record below closes those gates with fail-closed release evidence and explicit route promotion.
+
+## Change record — 2026-08-28 Stellar hosted cutover
+
+- **Owner position:** Finish the approved Stellar vertical and close its production gates.
+- **Implemented decisions:** D-24 and D-49 are now enforced for Stella. Hosted Qwen is `green-primary-with-fallback`; no browser/provider bypass exists.
+- **Readiness:** An authenticated worker must renew a 30-second lease with live provider health. Sprite promotion waits for `/health/stellar` and fails before cutover when Qwen or its worker is not ready.
+- **Privacy:** Remembered raw content is minimized after seven days, do-not-remember content after one hour, and minimized job metadata is deleted after 30 days. Account export/delete is token-derived and user-isolated.
+- **Companion boundary:** Companion is selected only for paid tenants with a fresh tenant-compatible local worker lease. Installed/runtime-ready status alone never routes a job; absent or disconnected local workers receive visible hosted fallback.
+- **Credentials:** The supervised cohort generates a new 256-bit worker credential at startup and passes it only to loopback SPMT/worker children. It is not committed, persisted, or logged.
 
 ## Change record template
 

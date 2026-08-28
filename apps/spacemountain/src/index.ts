@@ -240,15 +240,18 @@ export class SpaceMountainShellController {
     return this.spmt.sendCommlinkMessage(tenantId, conversationId, recipientUserIds, text);
   }
 
-  async invokeStella(tenantId: string, userId: string, message: string, conversationId: string, idempotencyKey: string, routingPreference: "automatic" | "hosted" | "companion" = "automatic") {
+  async invokeStella(tenantId: string, userId: string, message: string, conversationId: string, idempotencyKey: string, routingPreference: "automatic" | "hosted" | "companion" = "automatic", remember = true) {
     requireId(tenantId, "tenantId");
     requireId(userId, "userId");
     requireId(conversationId, "conversationId");
     requireId(idempotencyKey, "idempotencyKey");
     if (!message.trim() || message.length > 4000) throw new Error("Stella message is invalid");
     if (!["automatic", "hosted", "companion"].includes(routingPreference)) throw new Error("Stella routing preference is invalid");
-    return this.spmt.invokeCommunityAssistant(tenantId, { userId, message: message.trim(), surface: "app", conversationId, routingPreference }, idempotencyKey);
+    return this.spmt.invokeCommunityAssistant(tenantId, { userId, message: message.trim(), surface: "app", conversationId, routingPreference, remember }, idempotencyKey);
   }
+
+  exportMyStellarData(tenantId: string) { requireId(tenantId, "tenantId"); return this.spmt.exportMyStellarData(tenantId); }
+  deleteMyStellarData(tenantId: string) { requireId(tenantId, "tenantId"); return this.spmt.deleteMyStellarData(tenantId); }
 
   async prepareCoderDraft(tenantId: string, targetAppId: string, prompt: string, evidenceLogIds: string[], idempotencyKey: string) {
     requireId(tenantId, "tenantId");

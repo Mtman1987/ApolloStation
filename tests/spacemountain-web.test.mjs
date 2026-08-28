@@ -186,6 +186,9 @@ test("auth facade keeps tokens HttpOnly and dynamically exposes sandbox registry
     const invocationBody = await invocation.json();
     assert.equal(invocationBody.status, "unavailable");
     assert.doesNotMatch(JSON.stringify(invocationBody), /response|reply|messageText/);
+    const stellarDelete = await fetch(`${base}/v1/stellar/me`, { method: "DELETE", headers: { cookie, origin, "x-spmt-tenant": principal.tenantIds[0] } });
+    assert.equal(stellarDelete.status, 200, "a signed-in user can invoke the private Stella deletion route through the browser gateway");
+    assert.equal(typeof (await stellarDelete.json()).deletedJobs, "number");
 
     const ordinaryOperationsLogsResponse = await fetch(`${base}/v1/operations/logs`, { headers: { cookie, "x-spmt-tenant": principal.tenantIds[0] } });
     assert.equal(ordinaryOperationsLogsResponse.status, 403, "ordinary captains must not see owner operations evidence");
@@ -252,6 +255,8 @@ test("browser proxy blocks cross-origin mutations and every credential or webhoo
     assert.equal(crossOriginStella.status, 403);
     const crossOriginUnlink = await fetch(`${base}/v1/identity/providers/twitch/attacker`, { method: "DELETE", headers: { origin: "https://attacker.invalid" } });
     assert.equal(crossOriginUnlink.status, 403);
+    const crossOriginStellarDelete = await fetch(`${base}/v1/stellar/me`, { method: "DELETE", headers: { origin: "https://attacker.invalid" } });
+    assert.equal(crossOriginStellarDelete.status, 403);
     assert.equal((await fetch(`${base}/v1/auth/service-token`, { method: "POST", headers: { origin: new URL(base).origin, "content-type": "application/json" }, body: "{}" })).status, 404);
     assert.equal((await fetch(`${base}/v1/auth/login`, { method: "POST", headers: { origin: new URL(base).origin, "content-type": "application/json" }, body: "{}" })).status, 404);
     assert.equal((await fetch(`${base}/v1/oauth/token`, { method: "POST", headers: { origin: new URL(base).origin, "content-type": "application/json" }, body: "{}" })).status, 404);
