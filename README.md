@@ -12,7 +12,7 @@ Owner approval recorded 2026-08-21 closes the foundation decision pack in `DECIS
 
 The reusable base now includes:
 
-- one SpaceMountain shell viewport shared by Home, Shipyard, Workspace, Settings, and every opened app;
+- one SpaceMountain shell viewport shared by Home, Shipyard, Workspace, Settings, the private header-opened Account, and every opened app;
 - a fixed shared header/sidebar with all long-page scrolling contained inside the content rectangle below the header;
 - one theme/background/star system with app-owned scene art and depth-aware translucent surfaces;
 - registry-driven first-party apps rather than hardcoded special cases;

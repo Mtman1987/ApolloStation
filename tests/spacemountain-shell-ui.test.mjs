@@ -110,6 +110,19 @@ test("header and rocket dock share one complete core navigation icon contract", 
   assert.match(base, /data-themed-app-art/);
 });
 
+test("Account owns personal identity and usage while Settings owns advanced configuration", () => {
+  assert.match(base, /type SpaceMountainViewV1 = "home" \| "apps" \| "workspace" \| "settings" \| "account"/);
+  assert.match(base, /<button type="button" class="spmt-account-summary"[^>]*title="Account and personal usage"/);
+  assert.match(base, /this\.navigate\("account"\)/);
+  assert.match(base, /page\("Your account", "Your plan, personal usage, linked identities, and XP in one private view\./);
+  for (const label of ["AI and creation", "AI chat", "AI coding", "Image generation", "Hosted services and storage", "LINKED IDENTITIES"]) assert.match(base, new RegExp(label));
+  assert.match(base, /role="progressbar"/);
+  assert.match(THEMED_SURFACE_CSS, /\.spmt-usage-track i\{[^}]*linear-gradient\(90deg,var\(--accent\),var\(--accent2\)\)/);
+  assert.match(base, /page\("App and ecosystem settings", "Advanced controls stay with the app or shared system they configure\./);
+  assert.match(base, /Advanced controls by owning app/);
+  assert.match(base, /without mixing them into your personal account/);
+});
+
 test("Overlay Bay retains donor editor controls and all source families", () => {
   for (const kind of ["web","image","text","camera","screen","xbox","alert","links","ticker","weather","nebula"]) assert.match(`${overlayScenes}\n${overlay}`, new RegExp(`\\"${kind}\\"|${kind}`));
   for (const feature of [/data-ob-resize/, /data-ob-front/, /data-ob-back/, /data-ob-copy/, /data-ob-remove/, /data-ob-test-alert/, /data-ob-field="opacity"/, /data-ob-field="interactive"/, /data-ob-field="locked"/, /data-ob-game/, /data-ob-game-style/]) assert.match(overlay, feature);

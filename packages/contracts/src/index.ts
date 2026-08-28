@@ -94,7 +94,7 @@ export interface FleetProjectionV1 {
 
 export const BILLING_PLAN_IDS = ["free", "creator", "pro", "agency"] as const;
 export type BillingPlanIdV1 = (typeof BILLING_PLAN_IDS)[number];
-export const METERED_RESOURCES = ["workspaces", "connected-providers", "hosted-rooms", "hosted-worker-minutes", "premium-ai-requests", "hosted-voice-minutes", "xbox-session-minutes", "storage-gb"] as const;
+export const METERED_RESOURCES = ["workspaces", "connected-providers", "hosted-rooms", "hosted-worker-minutes", "ai-chat-requests", "ai-coding-requests", "image-generations", "hosted-voice-minutes", "xbox-session-minutes", "storage-gb"] as const;
 export type MeteredResourceV1 = (typeof METERED_RESOURCES)[number];
 
 export interface BillingPlanV1 {
@@ -118,6 +118,7 @@ export interface BillingManifestV1 {
 export interface UsageEventV1 {
   schemaVersion: 1;
   tenantId: string;
+  userId: string;
   planId: BillingPlanIdV1;
   period: string;
   resource: MeteredResourceV1;
@@ -126,6 +127,23 @@ export interface UsageEventV1 {
   executionTarget: "hosted" | "companion";
   idempotencyKey: string;
   occurredAt: string;
+}
+
+export interface PersonalUsageResourceV1 {
+  resource: MeteredResourceV1;
+  hosted: number;
+  companion: number;
+  limit: number;
+  percent: number;
+  warning: 0 | 70 | 90 | 100;
+}
+
+export interface PersonalUsageSummaryV1 {
+  schemaVersion: 1;
+  userId: string;
+  period: string;
+  plan: { planId: BillingPlanIdV1; name: string; monthlyPriceUsd: number; companionLocalProcessing: "fair-use" | "unmetered-local" };
+  resources: PersonalUsageResourceV1[];
 }
 
 export interface UsageDecisionV1 {
