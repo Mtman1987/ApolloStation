@@ -4,6 +4,7 @@ import {
   type BillingPlanIdV1,
   type BillingPlanV1,
   type MeteredResourceV1,
+  type PersonalUsageSummaryV1,
   type UsageDecisionV1,
   type UsageEventV1,
 } from "@spmt/contracts";
@@ -13,9 +14,9 @@ const GAUGE_RESOURCES = new Set<MeteredResourceV1>(["workspaces", "connected-pro
 export interface UsageLedgerCommitV1 { duplicate: boolean; used: number; event: UsageEventV1; }
 export interface UsageLedgerStoreV1 {
   find(tenantId: string, idempotencyKey: string): UsageEventV1 | undefined;
-  total(tenantId: string, period: string, resource: MeteredResourceV1, executionTarget: UsageEventV1["executionTarget"]): number;
+  total(tenantId: string, userId: string, period: string, resource: MeteredResourceV1, executionTarget: UsageEventV1["executionTarget"]): number;
   commit(event: UsageEventV1, limit: number | null): UsageLedgerCommitV1;
-  list(tenantId: string, period: string): UsageEventV1[];
+  list(tenantId: string, userId: string, period: string): UsageEventV1[];
 }
 
 export class UsageLimitError extends Error {
@@ -25,23 +26,24 @@ export class UsageLimitError extends Error {
 export class MemoryUsageLedgerStore implements UsageLedgerStoreV1 {
   private readonly events: UsageEventV1[] = [];
   find(tenantId: string, idempotencyKey: string) { return this.events.find((item) => item.tenantId === tenantId && item.idempotencyKey === idempotencyKey); }
-  total(tenantId: string, period: string, resource: MeteredResourceV1, executionTarget: UsageEventV1["executionTarget"]) {
-    return Math.max(0, this.events.filter((item) => item.tenantId === tenantId && item.period === period && item.resource === resource && item.executionTarget === executionTarget).reduce((sum, item) => sum + signed(item), 0));
+  total(tenantId: string, userId: string, period: string, resource: MeteredResourceV1, executionTarget: UsageEventV1["executionTarget"]) {
+    return Math.max(0, this.events.filter((item) => item.tenantId === tenantId && item.userId === userId && item.period === period && item.resource === resource && item.executionTarget === executionTarget).reduce((sum, item) => sum + signed(item), 0));
   }
   commit(event: UsageEventV1, limit: number | null) {
     const prior = this.find(event.tenantId, event.idempotencyKey);
-    if (prior) { assertReplay(prior, event); return { duplicate: true, used: this.total(event.tenantId, event.period, event.resource, event.executionTarget), event: prior }; }
-    const used = this.total(event.tenantId, event.period, event.resource, event.executionTarget);
+    if (prior) { assertReplay(prior, event); return { duplicate: true, used: this.total(event.tenantId, event.userId, event.period, event.resource, event.executionTarget), event: prior }; }
+    const used = this.total(event.tenantId, event.userId, event.period, event.resource, event.executionTarget);
     const next = Math.max(0, used + signed(event));
     if (limit !== null && next > limit) throw new Error("usage-limit-exceeded");
     this.events.push(structuredClone(event));
     return { duplicate: false, used: next, event: structuredClone(event) };
   }
-  list(tenantId: string, period: string) { return this.events.filter((item) => item.tenantId === tenantId && item.period === period).map((item) => structuredClone(item)); }
+  list(tenantId: string, userId: string, period: string) { return this.events.filter((item) => item.tenantId === tenantId && item.userId === userId && item.period === period).map((item) => structuredClone(item)); }
 }
 
 export interface UsageRequestV1 {
   tenantId: string;
+  userId: string;
   planId: BillingPlanIdV1;
   resource: MeteredResourceV1;
   quantity: number;
@@ -62,7 +64,7 @@ export class MonetizationService {
   preflight(input: Omit<UsageRequestV1, "idempotencyKey">): UsageDecisionV1 {
     const event = this.event({ ...input, idempotencyKey: "preflight" });
     const plan = this.plan(event.planId);
-    const used = this.store.total(event.tenantId, event.period, event.resource, event.executionTarget);
+    const used = this.store.total(event.tenantId, event.userId, event.period, event.resource, event.executionTarget);
     return decide(plan, event, used);
   }
 
@@ -73,35 +75,37 @@ export class MonetizationService {
       const committed = this.store.commit(event, applicableLimit(plan, event));
       return { ...decide(plan, { ...event, quantity: 0, operation: "consume" }, committed.used), requested: signed(event) };
     }
-    const before = this.store.total(event.tenantId, event.period, event.resource, event.executionTarget);
+    const before = this.store.total(event.tenantId, event.userId, event.period, event.resource, event.executionTarget);
     const decision = decide(plan, event, before);
     if (!decision.allowed) throw new UsageLimitError(decision);
     try {
       const committed = this.store.commit(event, applicableLimit(plan, event));
       return { ...decide(plan, { ...event, quantity: 0, operation: "consume" }, committed.used), requested: signed(event) };
     } catch (error) {
-      if (error instanceof Error && error.message === "usage-limit-exceeded") throw new UsageLimitError(decide(plan, event, this.store.total(event.tenantId, event.period, event.resource, event.executionTarget)));
+      if (error instanceof Error && error.message === "usage-limit-exceeded") throw new UsageLimitError(decide(plan, event, this.store.total(event.tenantId, event.userId, event.period, event.resource, event.executionTarget)));
       throw error;
     }
   }
 
-  summary(tenantId: string, planId: BillingPlanIdV1, at = this.now()) {
+  summary(tenantId: string, userId: string, planId: BillingPlanIdV1, at = this.now()): PersonalUsageSummaryV1 {
     const period = billingPeriod(at), plan = this.plan(planId);
-    return Object.fromEntries(Object.keys(plan.limits).map((resource) => {
+    const resources = Object.keys(plan.limits).map((resource) => {
       const key = resource as MeteredResourceV1;
-      const hosted = this.store.total(tenantId, period, key, "hosted");
-      const companion = this.store.total(tenantId, period, key, "companion");
-      return [key, { hosted, companion, limit: plan.limits[key], warning: warning(hosted, plan.limits[key]) }];
-    }));
+      const hosted = this.store.total(tenantId, userId, period, key, "hosted");
+      const companion = this.store.total(tenantId, userId, period, key, "companion");
+      const limit = plan.limits[key];
+      return { resource: key, hosted, companion, limit, percent: limit === 0 ? 100 : Math.min(100, Math.round(hosted / limit * 100)), warning: warning(hosted, limit) };
+    });
+    return { schemaVersion: 1, userId, period, plan: { planId: plan.planId, name: plan.name, monthlyPriceUsd: plan.monthlyPriceUsd, companionLocalProcessing: plan.companionLocalProcessing }, resources };
   }
 
   private plan(planId: BillingPlanIdV1) { const plan = this.plans.get(planId); if (!plan) throw new Error("Unknown billing plan"); return plan; }
   private event(input: UsageRequestV1): UsageEventV1 {
     const occurredAt = input.occurredAt ?? this.now(), operation = input.operation ?? "consume";
-    for (const value of [input.tenantId, input.idempotencyKey]) if (!value || value.trim() !== value || value.length > 200) throw new Error("Usage identity is invalid");
+    for (const value of [input.tenantId, input.userId, input.idempotencyKey]) if (!value || value.trim() !== value || value.length > 200) throw new Error("Usage identity is invalid");
     if (!Number.isFinite(Date.parse(occurredAt)) || !Number.isSafeInteger(input.quantity) || input.quantity < 1) throw new Error("Usage quantity or time is invalid");
     if (operation === "release" && !GAUGE_RESOURCES.has(input.resource)) throw new Error("Counter usage cannot be released");
-    return { schemaVersion: 1, tenantId: input.tenantId, planId: input.planId, period: billingPeriod(occurredAt), resource: input.resource, quantity: input.quantity, operation, executionTarget: input.executionTarget, idempotencyKey: input.idempotencyKey, occurredAt };
+    return { schemaVersion: 1, tenantId: input.tenantId, userId: input.userId, planId: input.planId, period: billingPeriod(occurredAt), resource: input.resource, quantity: input.quantity, operation, executionTarget: input.executionTarget, idempotencyKey: input.idempotencyKey, occurredAt };
   }
 }
 

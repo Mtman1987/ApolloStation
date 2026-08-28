@@ -1,4 +1,4 @@
-import type { AppFrameLaunchV1, CoderDescriptorV1, CoderJobV1, OperationsLogV1, RuntimeStateV1, SurfaceModeV1 } from "@spmt/contracts";
+import type { AppFrameLaunchV1, CoderDescriptorV1, CoderJobV1, OperationsLogV1, PersonalUsageSummaryV1, RuntimeStateV1, SurfaceModeV1 } from "@spmt/contracts";
 import { SpmtClient } from "@spmt/sdk";
 
 export const SPACEMOUNTAIN_APP_ID = "spacemountain";
@@ -11,6 +11,7 @@ export type SpaceMountainSource =
   | "shipyard"
   | "installs"
   | "entitlements"
+  | "usage"
   | "events"
   | "commlink"
   | "notifications"
@@ -52,6 +53,7 @@ export interface SpaceMountainShellSnapshotV1 {
   xp?: { tenantId: string; userId: string; balance: number };
   apps: SpaceMountainAppCardV1[];
   entitlements: Array<Record<string, unknown>>;
+  usage?: PersonalUsageSummaryV1;
   events: Array<Record<string, unknown>>;
   conversations: Array<Record<string, unknown>>;
   messages?: Array<Record<string, unknown>>;
@@ -113,6 +115,7 @@ export class SpaceMountainShellController {
       shipyard: this.spmt.listApps(),
       installs: this.spmt.listInstalls(input.tenantId),
       entitlements: this.spmt.listEntitlements(input.tenantId),
+      usage: this.spmt.getPersonalUsage?.(input.tenantId) ?? Promise.reject(new Error("Personal usage is unavailable")),
       events: this.spmt.listEvents(input.tenantId, { limit: 100 }),
       commlink: conversationsTask,
       commlinkMessages: messagesTask,
@@ -153,6 +156,7 @@ export class SpaceMountainShellController {
       shipyard: source(failures, ["shipyard"]),
       installs: source(failures, ["installs"]),
       entitlements: source(failures, ["entitlements"]),
+      usage: source(failures, ["usage"]),
       events: source(failures, ["events"]),
       commlink: source(failures, ["commlink", "commlinkMessages"]),
       notifications: source(failures, ["notifications"]),
@@ -177,6 +181,7 @@ export class SpaceMountainShellController {
       ...(isXp(values.get("xp")) ? { xp: values.get("xp") as { tenantId: string; userId: string; balance: number } } : {}),
       apps,
       entitlements: records(values.get("entitlements")),
+      ...(isPersonalUsage(values.get("usage")) ? { usage: values.get("usage") as PersonalUsageSummaryV1 } : {}),
       events: records(values.get("events")),
       conversations: records(values.get("commlink")),
       messages: records(values.get("commlinkMessages")),
@@ -320,6 +325,7 @@ function isRecord(value: unknown): value is Record<string, unknown> { return Boo
 function strings(value: unknown) { return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []; }
 function surfaceModes(value: unknown): SurfaceModeV1[] { const allowed = new Set<SurfaceModeV1>(["shell", "standalone", "overlay", "popout"]); return strings(value).filter((item): item is SurfaceModeV1 => allowed.has(item as SurfaceModeV1)); }
 function isXp(value: unknown): value is { tenantId: string; userId: string; balance: number } { return isRecord(value) && typeof value.tenantId === "string" && typeof value.userId === "string" && typeof value.balance === "number"; }
+function isPersonalUsage(value: unknown): value is PersonalUsageSummaryV1 { return isRecord(value) && value.schemaVersion === 1 && typeof value.userId === "string" && typeof value.period === "string" && isRecord(value.plan) && Array.isArray(value.resources); }
 function operationsLogs(value: unknown) { return Array.isArray(value) ? value.filter((item): item is OperationsLogV1 => isRecord(item) && item.schemaVersion === 1 && typeof item.id === "string" && typeof item.sourceAppId === "string") : []; }
 function coderJobs(value: unknown) { return Array.isArray(value) ? value.filter((item): item is CoderJobV1 => isRecord(item) && item.schemaVersion === 1 && typeof item.id === "string" && typeof item.targetAppId === "string") : []; }
 function coderDescriptor(value: unknown) { return isRecord(value) && value.schemaVersion === 1 && value.id === "spmt.operations.coder" ? value as unknown as CoderDescriptorV1 : null; }

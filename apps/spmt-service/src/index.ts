@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { readFileSync } from "node:fs";
 import { basename, isAbsolute, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { AccountRecoveryService, AccountSetupError, SqliteAccountSetupStore } from "@spmt/account-recovery-core";
@@ -7,15 +8,16 @@ import { AuthorityService } from "@spmt/authority-core";
 import { SqliteAuthorityStore } from "@spmt/authority-sqlite";
 import { AuthService } from "@spmt/auth-core";
 import { ControlService } from "@spmt/control-core";
+import { MonetizationService } from "@spmt/monetization";
 import { OutboxDispatcher } from "@spmt/outbox-core";
 import { PlatformDataError, PlatformDataService, type OAuthClientV1 } from "@spmt/platform-data-core";
 import { SqlitePlatformDataStore } from "@spmt/platform-data-sqlite";
 import { PlatformOperations, type CoderRuntimeV1, type CommunityAssistantRuntimeV1 } from "@spmt/platform-ops";
 import { PlatformApiAdapter } from "@spmt/api-adapter";
 import { HealthRegistry } from "@spmt/runtime";
-import type { AppCatalogRegistrationV1 } from "@spmt/contracts";
+import { assertBillingManifestV1, BILLING_PLAN_IDS, type AppCatalogRegistrationV1, type BillingManifestV1, type BillingPlanIdV1 } from "@spmt/contracts";
 
-const USER_SCOPES = ["identity:read","identity:write","workspace:read","workspace:write","xp:read","apps:read","apps:install","entitlements:read","events:read","commlink:read","commlink:write","notifications:read","notifications:write","webhooks:read","webhooks:write","assistants:read","assistants:invoke","stellar:context:read","stellar:context:write","stellar:capabilities:read"];
+const USER_SCOPES = ["identity:read","identity:write","workspace:read","workspace:write","xp:read","apps:read","apps:install","entitlements:read","usage:read","events:read","commlink:read","commlink:write","notifications:read","notifications:write","webhooks:read","webhooks:write","assistants:read","assistants:invoke","stellar:context:read","stellar:context:write","stellar:capabilities:read"];
 const SANDBOX_OWNER_SCOPES = ["apps:register","operations:logs:read","operations:coder:read","operations:coder:invoke","overlay:widgets:read","overlay:outputs:read","overlay:outputs:write"];
 
 export interface SpmtServiceOptions {
@@ -36,6 +38,7 @@ export interface SpmtServiceOptions {
   sandboxApps?: AppCatalogRegistrationV1[];
   coderRuntime?: CoderRuntimeV1;
   communityAssistant?: CommunityAssistantRuntimeV1;
+  billingManifest?: BillingManifestV1;
 }
 
 export function createSpmtService(options: SpmtServiceOptions) {
@@ -52,6 +55,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
   const auth = new AuthService({ store });
   const publicBaseUrl = (options.publicBaseUrl ?? "https://spmt.live").replace(/\/$/, "");
   const control = new ControlService({ store, outputBaseUrl: publicBaseUrl });
+  const billing = new MonetizationService(options.billingManifest ?? loadBillingManifest(), store);
   const data = new PlatformDataService({ store: platformStore, auth, webhookKey: options.webhookKey });
   const accounts = new AccountRecoveryService({ authority, authorityStore: store, control, platformStore, setupStore });
   const operations = new PlatformOperations(auth, authority, control, data, options.communityAssistant, options.coderRuntime);
@@ -112,6 +116,18 @@ export function createSpmtService(options: SpmtServiceOptions) {
             },
           ],
         });
+      }
+
+      if (request.method === "GET" && url.pathname === "/v1/usage/me") {
+        const token = accessToken(request), tenantId = header(request, "x-spmt-tenant");
+        if (!token || !tenantId) return json(response, 401, { error: "unauthorized" });
+        try {
+          let principal;
+          try { principal = auth.authorize(token, "usage:read", tenantId); }
+          catch { principal = auth.authorize(token, "entitlements:read", tenantId); }
+          if (principal.actorType !== "user") return json(response, 403, { error: "user_required" });
+          return json(response, 200, billing.summary(tenantId, principal.actorId, billingPlan(control.listEntitlements(tenantId))));
+        } catch { return json(response, 403, { error: "forbidden" }); }
       }
 
       if (request.method === "POST" && url.pathname === "/v1/accounts/provision") {
@@ -335,7 +351,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
   });
 
   return {
-    store, platformStore, setupStore, authority, auth, control, data, accounts, operations, outbox, server,
+    store, platformStore, setupStore, authority, auth, control, billing, data, accounts, operations, outbox, server,
     registerOAuthClient(input: Parameters<PlatformDataService["registerOAuthClient"]>[0]): ReturnType<PlatformDataService["registerOAuthClient"]> { return data.registerOAuthClient(input); },
     runOutboxOnce() { return outbox.runOnce(); },
     listen() { return new Promise<void>((done, reject) => { server.once("error", reject); server.listen(options.port ?? 3000, options.host ?? "0.0.0.0", () => { server.off("error", reject); done(); }); }); },
@@ -390,7 +406,7 @@ function seedSandboxFixtures(control: ControlService, data: PlatformDataService,
     description: "The Green command bridge for SPMT identity, Shipyard, Commlink, workspace, and Stellar Core surfaces.",
     version: "0.1.0-sandbox",
     launchUrl: new URL("/", publicBaseUrl).toString(),
-    allowedScopes: ["workspace:read", "xp:read", "apps:read", "apps:install", "entitlements:read", "events:read", "commlink:read", "notifications:read", "assistants:read", "assistants:invoke", "stellar:context:read", "stellar:capabilities:read", "operations:logs:read", "operations:coder:read", "operations:coder:invoke"],
+    allowedScopes: ["workspace:read", "xp:read", "apps:read", "apps:install", "entitlements:read", "usage:read", "events:read", "commlink:read", "notifications:read", "assistants:read", "assistants:invoke", "stellar:context:read", "stellar:capabilities:read", "operations:logs:read", "operations:coder:read", "operations:coder:invoke"],
     surfaces: ["shell", "standalone"],
     status: "active",
   });
@@ -444,6 +460,7 @@ async function readBody(request: IncomingMessage): Promise<Record<string, unknow
   return parsed as Record<string, unknown>;
 }
 function str(value: unknown, name: string) { if (typeof value !== "string" || !value) throw new Error(`${name} is required`); return value; }
+function header(request: IncomingMessage, name: string) { const value = request.headers[name]; return typeof value === "string" && value.trim() ? value.trim() : undefined; }
 function accessToken(request: IncomingMessage) { const authorization = request.headers.authorization; if (authorization?.startsWith("Bearer ")) return authorization.slice(7); return cookie(request, "spmt_token"); }
 function cookie(request: IncomingMessage, name: string) { const source = request.headers.cookie ?? ""; for (const item of source.split(";")) { const [index, ...rest] = item.trim().split("="); if (index === name) return decodeURIComponent(rest.join("=")); } return undefined; }
 function sessionCookie(token: string) { return `spmt_token=${encodeURIComponent(token)}; Path=/; HttpOnly; Secure; SameSite=Lax`; }
@@ -453,6 +470,11 @@ function isIdentity(value: unknown): value is { id: string; username?: string } 
 function json(response: ServerResponse, status: number, body: unknown, headers: Record<string, string> = {}) { const encoded = JSON.stringify(body); response.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "content-length": Buffer.byteLength(encoded), ...headers }); response.end(encoded); }
 function redirectSetupError(response: ServerResponse, base: string, message: string) { const target = new URL("/first-time-setup", base); target.searchParams.set("setupError", message); response.writeHead(302, { location: target.toString(), "cache-control": "no-store" }); response.end(); }
 function decodeKey(value: string) { const key = Buffer.from(value, "base64url"); if (key.byteLength !== 32) throw new Error("SPMT_WEBHOOK_KEY must be base64url for exactly 32 bytes"); return key; }
+function loadBillingManifest() { return assertBillingManifestV1(JSON.parse(readFileSync(new URL("../../../config/billing-plans.v1.json", import.meta.url), "utf8")) as BillingManifestV1); }
+function billingPlan(entitlements: Array<{ key: string; value: string | number | boolean }>): BillingPlanIdV1 {
+  for (const entitlement of entitlements) if (["billing.plan", "billing-plan", "plan", "tier"].includes(entitlement.key) && typeof entitlement.value === "string" && (BILLING_PLAN_IDS as readonly string[]).includes(entitlement.value)) return entitlement.value as BillingPlanIdV1;
+  return "free";
+}
 function createDiscordDmSender(botToken: string, fetchImpl: typeof fetch) {
   return async (discordUserId: string, message: { title: string; description: string; url: string }) => {
     const headers = { Authorization: `Bot ${botToken}`, "content-type": "application/json" };

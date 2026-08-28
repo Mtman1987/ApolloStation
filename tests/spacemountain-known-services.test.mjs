@@ -19,6 +19,7 @@ function fakeClient(overrides = {}) {
     ],
     listInstalls: async () => [{ tenantId: "tenant-a", appId: "streamweaver", enabled: true, grantedScopes: ["chat:read"] }],
     listEntitlements: async () => [{ tenantId: "tenant-a", appId: "streamweaver", key: "tier", value: "standard" }],
+    getPersonalUsage: async () => ({ schemaVersion: 1, userId: "user-1", period: "2026-08", plan: { planId: "free", name: "Free", monthlyPriceUsd: 0, companionLocalProcessing: "fair-use" }, resources: [{ resource: "ai-chat-requests", hosted: 5, companion: 0, limit: 25, percent: 20, warning: 0 }] }),
     listEvents: async () => [{ id: "evt-1", tenantId: "tenant-a", sourceAppId: "streamweaver", type: "stream.ready", payload: { ready: true } }],
     listConversations: async () => [{ id: "conv-1", tenantId: "tenant-a" }],
     listMessages: async () => [],
@@ -40,6 +41,8 @@ test("SpaceMountain loads canonical known services into one ready shell snapshot
   assert.equal(snapshot.state, "ready");
   assert.equal(snapshot.xp.balance, 42);
   assert.equal(snapshot.providerLinks[0].provider, "twitch");
+  assert.equal(snapshot.usage.userId, "user-1");
+  assert.equal(snapshot.usage.resources[0].percent, 20);
   assert.equal(snapshot.apps.length, 2);
   assert.equal(snapshot.apps.find((app) => app.appId === "streamweaver")?.enabled, true);
     assert.equal(snapshot.apps.find((app) => app.appId === "nebula-arcade")?.installed, false);
