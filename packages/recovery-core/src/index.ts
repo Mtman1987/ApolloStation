@@ -17,6 +17,7 @@ export interface RecoveryInventoryV1 {
   overlayWidgets: number;
   overlayOutputGrants: number;
   runtimeProjections: number;
+  usageEvents: number;
   userProfiles: number;
   userCredentials: number;
   oauthClients: number;

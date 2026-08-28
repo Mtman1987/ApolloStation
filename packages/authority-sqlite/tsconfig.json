@@ -13,6 +13,7 @@
     { "path": "../auth-core" },
     { "path": "../contracts" },
     { "path": "../control-core" },
+    { "path": "../monetization" },
     { "path": "../recovery-core" }
   ],
   "include": ["src/**/*.ts"]

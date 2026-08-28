@@ -92,6 +92,71 @@ export interface FleetProjectionV1 {
   updatedAt: string;
 }
 
+export const BILLING_PLAN_IDS = ["free", "creator", "pro", "agency"] as const;
+export type BillingPlanIdV1 = (typeof BILLING_PLAN_IDS)[number];
+export const METERED_RESOURCES = ["workspaces", "connected-providers", "hosted-rooms", "hosted-worker-minutes", "premium-ai-requests", "hosted-voice-minutes", "xbox-session-minutes", "storage-gb"] as const;
+export type MeteredResourceV1 = (typeof METERED_RESOURCES)[number];
+
+export interface BillingPlanV1 {
+  schemaVersion: 1;
+  planId: BillingPlanIdV1;
+  name: string;
+  monthlyPriceUsd: number;
+  limits: Record<MeteredResourceV1, number>;
+  companionLocalProcessing: "fair-use" | "unmetered-local";
+  hardStopAtLimit: true;
+}
+
+export interface BillingManifestV1 {
+  schemaVersion: 1;
+  revision: string;
+  currency: "USD";
+  warningThresholds: [0.7, 0.9, 1];
+  plans: BillingPlanV1[];
+}
+
+export interface UsageEventV1 {
+  schemaVersion: 1;
+  tenantId: string;
+  planId: BillingPlanIdV1;
+  period: string;
+  resource: MeteredResourceV1;
+  quantity: number;
+  operation: "consume" | "release";
+  executionTarget: "hosted" | "companion";
+  idempotencyKey: string;
+  occurredAt: string;
+}
+
+export interface UsageDecisionV1 {
+  schemaVersion: 1;
+  tenantId: string;
+  planId: BillingPlanIdV1;
+  period: string;
+  resource: MeteredResourceV1;
+  executionTarget: "hosted" | "companion";
+  allowed: boolean;
+  used: number;
+  requested: number;
+  limit: number | null;
+  warning: 0 | 70 | 90 | 100;
+  reason: string;
+}
+
+export function assertBillingManifestV1(value: BillingManifestV1): BillingManifestV1 {
+  if (value.schemaVersion !== 1 || value.currency !== "USD" || !value.revision || value.revision.trim() !== value.revision || value.revision.length > 200) throw new Error("Billing manifest identity is invalid");
+  if (value.warningThresholds.join(",") !== "0.7,0.9,1" || value.plans.length !== BILLING_PLAN_IDS.length) throw new Error("Billing manifest thresholds or plan count is invalid");
+  const seen = new Set<string>();
+  for (const plan of value.plans) {
+    if (plan.schemaVersion !== 1 || !(BILLING_PLAN_IDS as readonly string[]).includes(plan.planId) || seen.has(plan.planId)) throw new Error("Billing plan identity is invalid");
+    seen.add(plan.planId);
+    if (!plan.name || !Number.isFinite(plan.monthlyPriceUsd) || plan.monthlyPriceUsd < 0 || plan.hardStopAtLimit !== true) throw new Error("Billing plan price or stop policy is invalid");
+    for (const resource of METERED_RESOURCES) if (!Number.isSafeInteger(plan.limits[resource]) || plan.limits[resource] < 0) throw new Error(`Billing limit ${resource} is invalid`);
+  }
+  if (BILLING_PLAN_IDS.some((id) => !seen.has(id))) throw new Error("Billing manifest is missing a canonical plan");
+  return value;
+}
+
 export function assertRuntimePolicyV1(value: RuntimePolicyV1): RuntimePolicyV1 {
   if (value.schemaVersion !== 1 || !(WORKLOAD_CLASSES as readonly string[]).includes(value.class) || !(EXECUTION_TARGETS as readonly string[]).includes(value.executionTarget)) throw new Error("Runtime policy version, class, or target is invalid");
   for (const field of [value.revision, value.workloadId, value.ownerAppId]) if (!field || field.trim() !== field || field.length > 200) throw new Error("Runtime policy identity is invalid");

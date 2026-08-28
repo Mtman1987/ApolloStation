@@ -1,4 +1,4 @@
-import { assertAppModuleManifestV1, type AppCatalogRegistrationV1, type AppModuleManifestV1, type FleetProjectionV1 } from "@spmt/contracts";
+import { assertAppModuleManifestV1, BILLING_PLAN_IDS, METERED_RESOURCES, type AppCatalogRegistrationV1, type AppModuleManifestV1, type BillingPlanIdV1, type FleetProjectionV1, type MeteredResourceV1 } from "@spmt/contracts";
 
 export const manifest = assertAppModuleManifestV1({
   schemaVersion: 1,
@@ -55,6 +55,38 @@ export function missionControlFleetView(projections: FleetProjectionV1[]): Missi
     productionMutationEnabled: workloads.filter((item) => item.productionMutationAllowed).length,
     workloads,
   };
+}
+
+export interface MissionControlTenantUsageV1 {
+  planId: BillingPlanIdV1;
+  monthlyPriceUsd: number;
+  resources: Record<MeteredResourceV1, { hosted: number; companion: number; limit: number; warning: 0 | 70 | 90 | 100 }>;
+}
+export interface MissionControlMonetizationViewV1 {
+  schemaVersion: 1;
+  totalTenants: number;
+  monthlyRecurringRevenueUsd: number;
+  planCounts: Record<BillingPlanIdV1, number>;
+  warning70: number;
+  warning90: number;
+  exhausted: number;
+  hostedUsage: Record<MeteredResourceV1, number>;
+  companionUsage: Record<MeteredResourceV1, number>;
+}
+
+export function missionControlMonetizationView(tenants: MissionControlTenantUsageV1[]): MissionControlMonetizationViewV1 {
+  const planCounts = Object.fromEntries(BILLING_PLAN_IDS.map((id) => [id, 0])) as Record<BillingPlanIdV1, number>;
+  const hostedUsage = Object.fromEntries(METERED_RESOURCES.map((id) => [id, 0])) as Record<MeteredResourceV1, number>;
+  const companionUsage = Object.fromEntries(METERED_RESOURCES.map((id) => [id, 0])) as Record<MeteredResourceV1, number>;
+  let warning70 = 0, warning90 = 0, exhausted = 0;
+  for (const tenant of tenants) {
+    planCounts[tenant.planId] += 1;
+    const warnings = METERED_RESOURCES.map((resource) => { hostedUsage[resource] += tenant.resources[resource].hosted; companionUsage[resource] += tenant.resources[resource].companion; return tenant.resources[resource].warning; });
+    if (warnings.includes(100)) exhausted += 1;
+    else if (warnings.includes(90)) warning90 += 1;
+    else if (warnings.includes(70)) warning70 += 1;
+  }
+  return { schemaVersion: 1, totalTenants: tenants.length, monthlyRecurringRevenueUsd: Number(tenants.reduce((sum, tenant) => sum + tenant.monthlyPriceUsd, 0).toFixed(2)), planCounts, warning70, warning90, exhausted, hostedUsage, companionUsage };
 }
 
 function catalogOrigin(value: string, name: string) {
