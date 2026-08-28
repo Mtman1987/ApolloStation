@@ -6,6 +6,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { renderSpaceMountainPage, SANDBOX_BEACON_HTML, SANDBOX_CSS, SANDBOX_POLISH_CSS } from "./page.js";
 import { DEVELOPER_DOCS_CSS, DEVELOPER_MANIFEST_EXAMPLE, renderDeveloperDocsPage } from "./developer-docs.js";
+import { BOUNDED_APP_PATHS, renderBoundedAppPage } from "./bounded-app-pages.js";
 import type { AppCatalogRegistrationV1 } from "@spmt/contracts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -25,9 +26,13 @@ const ASSETS = new Map<string, { file: string; type: string }>([
   ["/assets/contracts/index.js", { file: resolve(REPOSITORY_ROOT, "packages/contracts/dist/index.js"), type: "text/javascript; charset=utf-8" }],
   ["/assets/embed/index.js", { file: resolve(REPOSITORY_ROOT, "packages/embed/dist/index.js"), type: "text/javascript; charset=utf-8" }],
   ["/assets/sdk/index.js", { file: resolve(REPOSITORY_ROOT, "packages/sdk/dist/index.js"), type: "text/javascript; charset=utf-8" }],
+  ["/assets/sdk/xp.js", { file: resolve(REPOSITORY_ROOT, "packages/sdk/dist/xp.js"), type: "text/javascript; charset=utf-8" }],
   ["/assets/ui/index.js", { file: resolve(REPOSITORY_ROOT, "packages/ui/dist/index.js"), type: "text/javascript; charset=utf-8" }],
   ["/assets/spacemountain/index.js", { file: resolve(REPOSITORY_ROOT, "apps/spacemountain/dist/index.js"), type: "text/javascript; charset=utf-8" }],
   ["/assets/spacemountain/shell-ui.js", { file: resolve(REPOSITORY_ROOT, "apps/spacemountain/dist/shell-ui.js"), type: "text/javascript; charset=utf-8" }],
+  ["/assets/spacemountain/shell-ui-base.js", { file: resolve(REPOSITORY_ROOT, "apps/spacemountain/dist/shell-ui-base.js"), type: "text/javascript; charset=utf-8" }],
+  ["/assets/spacemountain/overlay-bay-ui.js", { file: resolve(REPOSITORY_ROOT, "apps/spacemountain/dist/overlay-bay-ui.js"), type: "text/javascript; charset=utf-8" }],
+  ["/assets/spacemountain/overlay-scenes.js", { file: resolve(REPOSITORY_ROOT, "apps/spacemountain/dist/overlay-scenes.js"), type: "text/javascript; charset=utf-8" }],
   ["/assets/spacemountain/product-shell-css.js", { file: resolve(REPOSITORY_ROOT, "apps/spacemountain/dist/product-shell-css.js"), type: "text/javascript; charset=utf-8" }],
   ["/assets/spacemountain/themed-surface-css.js", { file: resolve(REPOSITORY_ROOT, "apps/spacemountain/dist/themed-surface-css.js"), type: "text/javascript; charset=utf-8" }],
   ["/assets/product/model-rocket.png", { file: resolve(REPOSITORY_ROOT, "apps/spacemountain-web/assets/model-rocket.png"), type: "image/png" }],
@@ -36,10 +41,23 @@ const ASSETS = new Map<string, { file: string; type: string }>([
   ["/assets/product/commlink-communications-background.webp", { file: resolve(REPOSITORY_ROOT, "apps/spacemountain-web/assets/commlink-communications-background.webp"), type: "image/webp" }],
   ["/assets/product/stellar-core-background.webp", { file: resolve(REPOSITORY_ROOT, "apps/spacemountain-web/assets/stellar-core-background.webp"), type: "image/webp" }],
   ["/assets/product/mission-control-background.webp", { file: resolve(REPOSITORY_ROOT, "apps/spacemountain-web/assets/mission-control-background.webp"), type: "image/webp" }],
+  ["/assets/product/discord-stream-hub-background.webp", { file: resolve(REPOSITORY_ROOT, "apps/spacemountain-web/assets/discord-stream-hub-background.webp"), type: "image/webp" }],
+  ["/assets/product/hearmeout-background.webp", { file: resolve(REPOSITORY_ROOT, "apps/spacemountain-web/assets/hearmeout-background.webp"), type: "image/webp" }],
+  ["/assets/product/mountainview-background.webp", { file: resolve(REPOSITORY_ROOT, "apps/spacemountain-web/assets/mountainview-background.webp"), type: "image/webp" }],
+  ["/assets/product/companion-background.webp", { file: resolve(REPOSITORY_ROOT, "apps/spacemountain-web/assets/companion-background.webp"), type: "image/webp" }],
+  ["/assets/product/streamweaver-background.webp", { file: resolve(REPOSITORY_ROOT, "apps/spacemountain-web/assets/streamweaver-background.webp"), type: "image/webp" }],
   ["/assets/product/theme-aurora-green-background.webp", { file: resolve(REPOSITORY_ROOT, "apps/spacemountain-web/assets/theme-aurora-green-background.webp"), type: "image/webp" }],
   ["/assets/product/theme-nebula-purple-background.webp", { file: resolve(REPOSITORY_ROOT, "apps/spacemountain-web/assets/theme-nebula-purple-background.webp"), type: "image/webp" }],
   ["/assets/product/theme-oceanic-blue-background.webp", { file: resolve(REPOSITORY_ROOT, "apps/spacemountain-web/assets/theme-oceanic-blue-background.webp"), type: "image/webp" }],
   ["/assets/product/theme-solar-flare-background.webp", { file: resolve(REPOSITORY_ROOT, "apps/spacemountain-web/assets/theme-solar-flare-background.webp"), type: "image/webp" }],
+  ...(["solar-flare", "nebula-purple", "oceanic-blue", "aurora-green"] as const).flatMap((theme) => (["hero", "hero-secondary", "spmt", "name"] as const).map((kind) => [
+    `/assets/product/themes/${theme}-${kind}.png`,
+    { file: resolve(REPOSITORY_ROOT, `apps/spacemountain-web/assets/themes/${theme}-${kind}.png`), type: "image/png" },
+  ] as const)),
+  ...(["solar-flare", "nebula-purple", "oceanic-blue", "aurora-green"] as const).flatMap((theme) => (["stellar-core", "shipyard", "commlink", "mission-control", "mountainview", "discord-stream-hub", "streamweaver", "hearmeout", "nebula-arcade", "companion", "overlay-bay"] as const).map((appId) => [
+    `/assets/product/app-icons/${theme}/${appId}.png`,
+    { file: resolve(REPOSITORY_ROOT, `apps/spacemountain-web/assets/app-icons/${theme}/${appId}.png`), type: "image/png" },
+  ] as const)),
 ]);
 
 export interface SpaceMountainWebHostOptions {
@@ -64,6 +82,14 @@ export function createSpaceMountainWebHost(options: SpaceMountainWebHostOptions)
     applySecurityHeaders(response, nonce);
     try {
       const url = new URL(request.url ?? "/", "http://spacemountain.local");
+      if (request.method === "GET" && BOUNDED_APP_PATHS.has(url.pathname)) {
+        const surface = url.searchParams.get("surface") === "shell" ? "shell" : "standalone";
+        const page = renderBoundedAppPage(url.pathname, buildSha, nonce, surface);
+        if (!page) return textResponse(response, 404, "Not found", "text/plain; charset=utf-8", "no-store");
+        response.removeHeader("x-frame-options");
+        response.setHeader("content-security-policy", `default-src 'none'; script-src 'self' 'nonce-${nonce}'; style-src 'unsafe-inline'; img-src 'self' https:; connect-src 'self'; frame-ancestors 'self'; base-uri 'none'; object-src 'none'`);
+        return html(response, 200, page);
+      }
       if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/first-time-setup" || SHELL_APP_PATHS.has(url.pathname))) return html(response, 200, renderSpaceMountainPage(nonce, buildSha, Boolean(options.candidateManifest)));
       if (request.method === "GET" && url.pathname === "/assets/web/sandbox.css") return textResponse(response, 200, SANDBOX_CSS + SANDBOX_POLISH_CSS, "text/css; charset=utf-8", "public, max-age=300");
       if (request.method === "GET" && url.pathname === "/assets/web/developer-docs.css") return textResponse(response, 200, DEVELOPER_DOCS_CSS, "text/css; charset=utf-8", "public, max-age=300");
@@ -83,7 +109,7 @@ export function createSpaceMountainWebHost(options: SpaceMountainWebHostOptions)
         return await importDeveloperManifest(response, request, spmtOrigin, fetchImpl, await readJsonBody(request), options.candidateManifest);
       }
       if (chatTagOrigin && chatTagProxyPath(url.pathname)) {
-        if (!['GET', 'HEAD'].includes(request.method ?? 'GET')) requireSameOrigin(request);
+        if (!["GET", "HEAD"].includes(request.method ?? "GET")) requireSameOrigin(request);
         return proxyChatTag(response, request, url, chatTagOrigin, fetchImpl);
       }
       if (request.method === "POST" && url.pathname === "/sandbox/auth/logout") {

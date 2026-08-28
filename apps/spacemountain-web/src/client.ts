@@ -471,8 +471,10 @@ async function saveWorkspace(expectedRevision: number, patch: Record<string, unk
     try {
       await controller.saveWorkspace(tenantId, expectedRevision, patch);
     } catch (error) {
-      if (!(error instanceof SpmtApiError) || error.status !== 409) throw error;
-      setStatus("Workspace changed in another ecosystem surface; reconciling the latest revision…", "working");
+      if (!(error instanceof SpmtApiError) || ![409, 502, 503].includes(error.status)) throw error;
+      const reconnecting = error.status === 502 || error.status === 503;
+      setStatus(reconnecting ? "SPMT is reconnecting inside the Sprite; retrying the theme save…" : "Workspace changed in another ecosystem surface; reconciling the latest revision…", "working");
+      if (reconnecting) await new Promise((done) => window.setTimeout(done, 750));
       const current = await spmt.getWorkspaceProfile(tenantId);
       const currentRevision = typeof current.revision === "number" ? current.revision : Number.NaN;
       if (!Number.isInteger(currentRevision) || currentRevision < 1) throw new Error("The latest workspace revision could not be read. Refresh and try again.");
@@ -480,6 +482,7 @@ async function saveWorkspace(expectedRevision: number, patch: Record<string, unk
         await controller.saveWorkspace(tenantId, currentRevision, patch);
       } catch (retryError) {
         if (retryError instanceof SpmtApiError && retryError.status === 409) throw new Error("The workspace changed again while saving. Refresh and submit the theme once more.");
+        if (retryError instanceof SpmtApiError && [502, 503].includes(retryError.status)) throw new Error("SPMT is still restarting inside the Sprite. Wait a moment and save the theme again.");
         throw retryError;
       }
     }

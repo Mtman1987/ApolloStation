@@ -1,4 +1,5 @@
 import { assertAppModuleManifestV1, type AppCatalogRegistrationV1, type AppModuleManifestV1 } from "@spmt/contracts";
+export * from "./live-chat.js";
 
 export const manifest = assertAppModuleManifestV1({
   schemaVersion: 1,
@@ -21,7 +22,7 @@ export function commlinkCatalogRegistration(publicOrigin: string): AppCatalogReg
     name: manifest.name,
     description: manifest.description,
     version: "0.1.0-green",
-    launchUrl: new URL("/apps/commlink", origin).toString(),
+    launchUrl: new URL("/apps/commlink?surface=workspace", origin).toString(),
     allowedScopes: [...manifest.requiredScopes],
     surfaces: ["shell", "standalone", "popout"],
     status: "active",

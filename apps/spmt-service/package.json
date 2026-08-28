@@ -4,7 +4,11 @@
   "private": true,
   "type": "module",
   "main": "./dist/index.js",
-  "scripts": { "build": "tsc -b", "start": "node dist/index.js" },
+  "exports": {
+    ".": "./dist/index.js",
+    "./provider-identity-host": "./dist/provider-identity-host.js"
+  },
+  "scripts": { "build": "tsc -b", "start": "node dist/provider-identity-start.js" },
   "dependencies": {
     "@spmt/account-recovery-core": "0.1.0",
     "@spmt/api-adapter": "0.3.0",

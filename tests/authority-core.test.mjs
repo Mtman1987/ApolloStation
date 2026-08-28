@@ -39,8 +39,9 @@ test("workspace uses one revisioned authority and exactly three dock slots", () 
   assert.throws(() => authority.updateWorkspace("tenant-a", 1, { appearance: { theme: "dark" } }), AuthorityConflictError);
   const themed = authority.updateWorkspace("tenant-a", 2, { appearance: { theme: "dark", accent: "#ff7a18", backgroundUrl: "https://images.example/station.jpg" } });
   assert.equal(themed.appearance.backgroundUrl, "https://images.example/station.jpg");
-  const productThemed = authority.updateWorkspace("tenant-a", 3, { appearance: { theme: "oceanic-blue" } });
+  const productThemed = authority.updateWorkspace("tenant-a", 3, { appearance: { theme: "oceanic-blue", accentSecondary: "#FEDCBA" } });
   assert.equal(productThemed.appearance.theme, "oceanic-blue");
+  assert.equal(productThemed.appearance.accentSecondary, "#FEDCBA");
   assert.equal(productThemed.appearance.backgroundUrl, undefined);
   assert.throws(() => authority.updateWorkspace("tenant-a", 4, { appearance: { theme: "night" } }), /theme is invalid/);
   assert.throws(() => authority.updateWorkspace("tenant-a", 4, { appearance: { theme: "dark", backgroundUrl: "http://insecure.example/image.jpg" } }), /credential-free HTTPS/);

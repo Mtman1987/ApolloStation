@@ -14,6 +14,8 @@ const ACTION_CAPABILITY: Record<string, DeviceCommandCapabilityV1> = {
   "media.play": "media.playback",
   "media.pause": "media.playback",
   "media.seek": "media.playback",
+  "media.volume.set": "media.playback",
+  "media.mute.set": "media.playback",
   "local.transcode.submit": "local.transcode",
 };
 
@@ -63,6 +65,7 @@ export class SqliteCompanionDeviceRelay {
     const device = this.getDevice(command.tenantId, command.targetDeviceId);
     const capability = ACTION_CAPABILITY[command.action];
     if (!device || device.revokedAt || !capability || capability !== command.capability || !device.capabilities.includes(command.capability)) return this.remember(command, "rejected", "Device is unpaired, revoked, or not granted this capability", now);
+    validatePayload(command);
     try {
       const result = await adapter.execute(structuredClone(command));
       const receipt = this.remember(command, "completed", cleanDetail(result.detail), now);
@@ -86,6 +89,14 @@ export class SqliteCompanionDeviceRelay {
   }
 }
 
+function validatePayload(command: DeviceRelayCommandV1): void {
+  if (command.action === "media.volume.set") {
+    const volume = Number(command.payload.volume);
+    if (!Number.isFinite(volume) || volume < 0 || volume > 1) throw new Error("Companion volume must be from 0 through 1");
+  }
+  if (command.action === "media.mute.set" && typeof command.payload.muted !== "boolean") throw new Error("Companion muted must be boolean");
+  if (command.action === "obs.scene.set" && (!String(command.payload.sceneName ?? "").trim() || String(command.payload.sceneName).length > 200)) throw new Error("Companion OBS scene name is invalid");
+}
 function assertAuthority(principal: CompanionAuthorityPrincipalV1, scope: string, appId: string): void { if (!principal.tenantId || principal.appId !== appId || !principal.scopes.includes(scope)) throw new Error("Companion device authority denied"); }
 function cleanDetail(value: string): string { const result = String(value || "completed").replace(/(bearer|token|secret|password|authorization)\s*[:=]\s*\S+/gi, "$1=[redacted]"); return result.slice(0, 500); }
 function redactError(error: unknown): string { return cleanDetail(error instanceof Error ? error.message : String(error)); }

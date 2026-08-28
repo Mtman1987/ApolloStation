@@ -22,9 +22,8 @@ jobs:
   review:
     name: Deploy review Sprite
     if: >-
-      vars.SPRITES_AUTODEPLOY_ENABLED == 'true' &&
-      ((github.event_name == 'push' && startsWith(github.ref, 'refs/heads/work/')) ||
-       (github.event_name == 'workflow_dispatch' && inputs.target == 'review'))
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/work/')) ||
+      (github.event_name == 'workflow_dispatch' && inputs.target == 'review')
     runs-on: ubuntu-latest
     concurrency:
       group: apollo-review-sprite

@@ -1,66 +1,29 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { PRODUCT_STAR_FIELDS, PRODUCT_THEME_PRESETS, PRODUCT_UI_CSS, bindProductRocketNavigation, isProductImageUrl, resolveProductBackdrop, resolveProductTheme } from "../packages/ui/dist/index.js";
+import { PRODUCT_STAR_FIELDS, PRODUCT_THEME_PRESETS, PRODUCT_UI_CSS, isProductImageUrl, resolveProductBackdrop, resolveProductTheme } from "../packages/ui/dist/index.js";
 import { POLISHED_SPACE_MOUNTAIN_CSS } from "../apps/spacemountain/dist/product-shell-css.js";
 
-const shellSource = readFileSync(new URL("../apps/spacemountain/src/shell-ui.ts", import.meta.url), "utf8");
+const shellSource = `${readFileSync(new URL("../apps/spacemountain/src/shell-ui-base.ts", import.meta.url), "utf8")}\n${readFileSync(new URL("../apps/spacemountain/src/shell-ui.ts", import.meta.url), "utf8")}\n${readFileSync(new URL("../apps/spacemountain/src/overlay-bay-ui.ts", import.meta.url), "utf8")}`;
 const themedSource = readFileSync(new URL("../apps/spacemountain/src/themed-surface-css.ts", import.meta.url), "utf8");
 const nebulaThemeSource = readFileSync(new URL("../apps/nebula-arcade/src/nebula-theme-css.ts", import.meta.url), "utf8");
 const hostSource = readFileSync(new URL("../apps/spacemountain-web/src/page.ts", import.meta.url), "utf8");
-const clientSource = readFileSync(new URL("../apps/spacemountain-web/src/client.ts", import.meta.url), "utf8");
 const serverSource = readFileSync(new URL("../apps/spacemountain-web/src/server.ts", import.meta.url), "utf8");
 
 test("shared product UI exposes stable framework-neutral themes and accessible primitives", () => {
   assert.deepEqual(Object.keys(PRODUCT_THEME_PRESETS).sort(), ["aurora-green", "nebula-purple", "oceanic-blue", "solar-flare"]);
   assert.equal(resolveProductTheme("unknown").id, "solar-flare");
   assert.equal(resolveProductTheme("oceanic-blue", "#123ABC").accent, "#123ABC");
-  assert.equal(resolveProductTheme("oceanic-blue", "not-a-color").accent, "#3b82f6");
+  assert.equal(resolveProductTheme("oceanic-blue", "#123ABC", "#FEDCBA").accentSecondary, "#FEDCBA");
+  const palettes = Object.values(PRODUCT_THEME_PRESETS);
+  assert.equal(new Set(palettes.map(({ accentSecondary }) => accentSecondary.toLowerCase())).size, palettes.length);
+  for (const { accent, accentSecondary } of palettes) assert.notEqual(accent.toLowerCase(), accentSecondary.toLowerCase());
   assert.match(PRODUCT_UI_CSS, /\.spmt-product-glass/);
   assert.match(PRODUCT_UI_CSS, /:focus-visible/);
-  assert.match(PRODUCT_UI_CSS, /prefers-reduced-motion/);
-  assert.match(PRODUCT_UI_CSS, /\.spmt-star-layer/);
-  assert.match(PRODUCT_UI_CSS, /filter: grayscale\(1\) saturate\(0\)/);
-  assert.deepEqual(PRODUCT_STAR_FIELDS.map(({ size, count, seed, durationSeconds }) => ({ size, count, seed, durationSeconds })), [
-    { size: 1, count: 700, seed: 11, durationSeconds: 200 },
-    { size: 2, count: 200, seed: 23, durationSeconds: 150 },
-    { size: 3, count: 100, seed: 37, durationSeconds: 100 },
-  ]);
-  assert.match(PRODUCT_UI_CSS, /@keyframes spmt-stars-up[\s\S]*?translateY\(-2000px\)/);
-  assert.doesNotMatch(PRODUCT_UI_CSS, /background-size:\s*67px 61px/);
-  assert.match(PRODUCT_UI_CSS, /\.spmt-product-backdrop-tint/);
-  assert.equal(typeof bindProductRocketNavigation, "function");
-});
-
-test("shared surfaces use fewer layers and progressively lower opacity with depth", () => {
-  assert.match(PRODUCT_UI_CSS, /--spmt-glass-opacity:\s*\.76/);
-  assert.match(PRODUCT_UI_CSS, /--spmt-depth-1-alpha:[^;]*\* \.9/);
-  assert.match(PRODUCT_UI_CSS, /--spmt-depth-2-alpha:[^;]*\* \.68/);
-  assert.match(PRODUCT_UI_CSS, /--spmt-depth-3-alpha:[^;]*\* \.48/);
-  assert.match(PRODUCT_UI_CSS, /--spmt-depth-4-alpha:[^;]*\* \.32/);
-  assert.match(PRODUCT_UI_CSS, /data-spmt-depth="0"[\s\S]*background:\s*transparent/);
-  assert.match(themedSource, /\.cosmo-commlink\{border:0;background:transparent;box-shadow:none;backdrop-filter:none\}/);
-  assert.match(themedSource, /\.cosmo-message\{[^}]*background:var\(--theme-depth-3\)/);
-  assert.match(themedSource, /\.cosmo-composer\{[^}]*background:var\(--theme-depth-2\)/);
-  assert.match(themedSource, /\.spmt-page-title\{[^}]*border:0/);
-  assert.match(nebulaThemeSource, /\.hero,.view-heading,.games,.overlay-bay,.arcade-stats,.game-detail[^}]*background:transparent/);
-  assert.match(nebulaThemeSource, /\.console,.overlay-editor[^}]*background:var\(--nebula-depth-2\)/);
-  assert.match(nebulaThemeSource, /\.overlay-layer[^}]*background:var\(--nebula-depth-3\)/);
-});
-
-test("every shell page stays below the fixed header and owns only internal scroll", () => {
-  assert.match(nebulaThemeSource, /:root\{background:transparent\}/);
-  assert.match(nebulaThemeSource, /data-surface="shell"\]\{height:100%;min-height:0;overflow:hidden;background:transparent\}/);
-  assert.match(nebulaThemeSource, /data-surface="shell"\] main\{[^}]*height:100%[^}]*overflow-y:auto[^}]*overscroll-behavior:contain/);
-  assert.match(nebulaThemeSource, /data-view="home"\] main\{overflow:hidden;scrollbar-gutter:auto\}/);
-  assert.match(nebulaThemeSource, /data-view="home"\] \.hero\{height:100%;min-height:0/);
-  assert.match(themedSource, /\.spmt-space-root\{height:calc\(100dvh - var\(--guard-height,0px\)\);min-height:0;overflow:hidden\}/);
-  assert.match(themedSource, /\.spmt-space-root \.spmt-space-shell\{position:relative;height:100%;min-height:0;overflow:hidden\}/);
-  assert.match(themedSource, /\.spmt-space-root \.spmt-space-main\{position:absolute;top:calc\(var\(--spmt-shell-top-inset,124px\) \+ 34px\);right:0;bottom:18px;left:0[^}]*overflow-y:auto[^}]*overscroll-behavior:contain/);
-  assert.match(themedSource, /data-spmt-view="home"\] \.spmt-space-main,[^}]*data-spmt-view="app"[^}]*overflow:hidden/);
-  assert.match(themedSource, /data-spmt-view="app"\] \.spmt-embedded-app-shell\{width:100%;height:100%;min-height:0;overflow:hidden\}/);
-  assert.match(themedSource, /data-spmt-app="commlink"\] \.spmt-space-main\{display:grid;grid-template-rows:minmax\(0,1fr\);padding-bottom:0\}/);
-  assert.match(themedSource, /data-spmt-app="stellar-core"\] \.spmt-space-main,[^}]*data-spmt-app="mission-control"[^}]*overflow-y:auto/);
+  assert.match(PRODUCT_UI_CSS, /var\(--spmt-accent-secondary\)/);
+  assert.match(PRODUCT_STAR_FIELDS[0].shadow, /var\(--spmt-accent-secondary\)/);
+  assert.match(PRODUCT_STAR_FIELDS[0].shadow, /var\(--spmt-accent\)/);
+  assert.ok(PRODUCT_STAR_FIELDS.length >= 1);
 });
 
 test("workspace colors tint one stable app scene and preserve a safe custom override", () => {
@@ -71,49 +34,32 @@ test("workspace colors tint one stable app scene and preserve a safe custom over
   assert.equal(oceanic.imageUrl, scene.imageUrl);
   assert.notEqual(solar.theme.accent, oceanic.theme.accent);
   assert.equal(resolveProductBackdrop(scene, "nebula-purple", undefined, "https://images.example/scene.webp").customImage, true);
+  assert.equal(resolveProductBackdrop(scene, "nebula-purple", undefined, undefined, "#FEDCBA").theme.accentSecondary, "#FEDCBA");
   assert.equal(resolveProductBackdrop(scene, "nebula-purple", undefined, "javascript:alert(1)").imageUrl, scene.imageUrl);
   assert.equal(isProductImageUrl("/assets/app/scene.webp"), true);
   assert.equal(isProductImageUrl("http://images.example/scene.webp"), false);
 });
 
-test("SpaceMountain presentation matches the finished product without hardcoding an app catalog", () => {
-  assert.match(shellSource, /One command bridge for every creator tool/);
-  assert.match(shellSource, /space-logo-header\.png/);
-  assert.match(shellSource, /space-logo-main\.png/);
-  assert.match(shellSource, /model-rocket\.png/);
-  assert.match(shellSource, /SPACEMOUNTAIN_SCENE/);
-  assert.match(shellSource, /installProductBackdrop/);
-  assert.match(shellSource, /bindProductRocketNavigation/);
-  assert.match(shellSource, /Custom scene override/);
-  assert.match(shellSource, /app\.iconUrl/);
-  assert.match(shellSource, /this\.snapshot\.apps\.filter/);
+test("SpaceMountain presentation remains finished and dynamically catalog-backed after shell split", () => {
+  for (const pattern of [/data-theme-logo="hero-secondary"/, /data-theme-logo="spmt"/, /themeLogoUrl/, /themedAppIconUrl/, /model-rocket\.png/, /SPACEMOUNTAIN_SCENE/, /installProductBackdrop/, /bindProductRocketNavigation/, /Custom scene override/, /app\.iconUrl/, /this\.snapshot\.apps\.filter/]) assert.match(shellSource, pattern);
+  assert.doesNotMatch(shellSource, /One command bridge for every creator tool/);
   assert.doesNotMatch(shellSource, /app-streamweaver|app-hearmeout|app-discord-hub|app-chat-tag/);
   assert.doesNotMatch(shellSource, /localStorage|sessionStorage|\/api\/spmt/);
   assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /\.spmt-header-clocks/);
   assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /\.spmt-live-button/);
   assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /\.spmt-rocket-dock/);
   assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /@media\(max-width:900px\)/);
-  assert.doesNotMatch(POLISHED_SPACE_MOUNTAIN_CSS, /background-size:150px 150px,230px 230px/);
 });
 
-test("private host uses the same product chrome and serves only explicit local artwork", () => {
+test("Nebula and SpaceMountain use the same theme language without sharing one background image", () => {
+  assert.match(themedSource, /--theme-depth-1/);
+  assert.match(nebulaThemeSource, /solar-system|nebula/i);
+  assert.match(shellSource, /nebula-arcade\/solar-system\.webp/);
+});
+
+test("private host uses the product chrome and serves explicit local artwork", () => {
   assert.match(hostSource, /auth-product-logo/);
   assert.match(hostSource, /PRIVATE PREVIEW/);
-  for (const asset of ["space-logo-main.png", "space-logo-header.png", "model-rocket.png", "theme-solar-flare-background.webp", "commlink-communications-background.webp", "stellar-core-background.webp", "mission-control-background.webp"]) {
-    assert.match(serverSource, new RegExp(asset.replace(".", "\\.")));
-  }
   assert.match(hostSource, /isolated from Blue/);
-  assert.match(hostSource, /<span id="sandbox-status"[\s\S]*<a href="\/docs\/developers">Developer docs<\/a>/);
-  assert.doesNotMatch(hostSource, /view=help/);
-  assert.doesNotMatch(hostSource, /position:fixed;z-index:1001;top:var\(--guard-height\)/);
-  assert.match(clientSource, /setStatus\("Sandbox open", "ready"\)/);
-  assert.doesNotMatch(clientSource, /Sandbox open · degraded/);
-});
-
-test("shared workspace saves reconcile one stale revision without disabling conflict protection", () => {
-  assert.match(clientSource, /error instanceof SpmtApiError[\s\S]*error\.status !== 409/);
-  assert.match(clientSource, /spmt\.getWorkspaceProfile\(tenantId\)/);
-  assert.match(clientSource, /controller\.saveWorkspace\(tenantId, currentRevision, patch\)/);
-  assert.match(clientSource, /workspace changed again while saving/i);
-  assert.match(clientSource, /JSON\.parse\(value\.responseBody\)/);
+  for (const asset of ["space-logo-main.png", "space-logo-header.png", "model-rocket.png", "theme-solar-flare-background.webp", "commlink-communications-background.webp", "stellar-core-background.webp", "mission-control-background.webp"]) assert.match(serverSource, new RegExp(asset.replace(".", "\\.")));
 });

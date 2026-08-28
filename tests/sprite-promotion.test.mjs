@@ -24,7 +24,7 @@ test("Sprite promotion keeps review and release targets isolated", async () => {
   assert.doesNotMatch(workflow, /sprite exec --http-post/);
 });
 
-test("Sprite deployment verifies, tests, switches atomically, and rolls back", async () => {
+test("Sprite deployment verifies, tests, switches atomically, rolls back, and launches the current app catalog", async () => {
   const script = await readFile(deployScriptPath, "utf8");
 
   assert.match(script, /DEPLOY_ROLE.*review.*release/);
@@ -37,7 +37,7 @@ test("Sprite deployment verifies, tests, switches atomically, and rolls back", a
   assert.match(script, /mv -Tf "\$next_link" "\$current_link"/);
   assert.match(script, /Deployment failed; restoring/);
   assert.match(script, /create_apollo_service "\$BUILD_SHA"/);
-  assert.match(script, /--candidate-app,nebula-arcade/);
+  assert.match(script, /--candidate-app,nebula-arcade,--catalog,current/);
   assert.doesNotMatch(script, /--candidate-app,chat-tag/);
   assert.match(script, /create_apollo_service "\$\(basename "\$previous_release"\)"/);
   assert.match(script, /for stale_service in "\$service_name" "\$bootstrap_service_name" spmt-qwen/);

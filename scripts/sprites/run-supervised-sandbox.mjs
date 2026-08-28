@@ -8,6 +8,8 @@ const app = argumentsMap.get("app") ?? "platform";
 if (!["platform", "nebula-arcade"].includes(app)) throw new Error("--app must be platform or nebula-arcade");
 const candidateApp = argumentsMap.get("candidate-app") ?? "none";
 if (!["none", "nebula-arcade"].includes(candidateApp)) throw new Error("--candidate-app must be none or nebula-arcade");
+const catalog = argumentsMap.get("catalog") ?? "core";
+if (!["core", "current"].includes(catalog)) throw new Error("--catalog must be core or current");
 const publicUrl = requireSandboxUrl(argumentsMap.get("public-url") ?? "http://localhost:8080");
 const dataRoot = resolve(argumentsMap.get("data-root") ?? ".sandbox-data");
 const buildSha = argumentsMap.get("build-sha") ?? "sprite-local";
@@ -33,15 +35,40 @@ if (candidateApp === "nebula-arcade") {
   const module = await import("../../apps/nebula-arcade/dist/index.js");
   candidateManifest = module.nebulaArcadeCatalogRegistration(publicUrl);
 }
-const [{ commlinkCatalogRegistration }, { stellarCoreCatalogRegistration }, { missionControlCatalogRegistration }] = await Promise.all([
+const [
+  { commlinkCatalogRegistration },
+  { stellarCoreCatalogRegistration },
+  { missionControlCatalogRegistration },
+  { discordStreamHubCatalogRegistration },
+  { streamweaverCatalogRegistration },
+  { hearMeOutCatalogRegistration },
+  { mountainViewCatalogRegistration },
+  { companionCatalogRegistration },
+] = await Promise.all([
   import("../../apps/commlink/dist/index.js"),
   import("../../apps/stellar-core/dist/index.js"),
   import("../../apps/mission-control/dist/index.js"),
+  import("../../apps/discord-stream-hub/dist/index.js"),
+  import("../../apps/streamweaver/dist/index.js"),
+  import("../../apps/hearmeout/dist/index.js"),
+  import("../../apps/mountainview/dist/index.js"),
+  import("../../apps/companion/dist/index.js"),
 ]);
-const sandboxManifests = [
+const coreManifests = [
   commlinkCatalogRegistration(publicUrl),
   stellarCoreCatalogRegistration(publicUrl),
   missionControlCatalogRegistration(publicUrl),
+];
+const currentManifests = [
+  discordStreamHubCatalogRegistration(publicUrl),
+  streamweaverCatalogRegistration(publicUrl),
+  hearMeOutCatalogRegistration(publicUrl),
+  mountainViewCatalogRegistration(publicUrl),
+  companionCatalogRegistration(publicUrl),
+];
+const sandboxManifests = [
+  ...coreManifests,
+  ...(catalog === "current" ? currentManifests : []),
   ...(candidateManifest ? [candidateManifest] : []),
 ];
 const children = new Set();
@@ -68,7 +95,7 @@ if (llmBinary) {
   const llm = startCommand("Qwen", resolve(llmBinary), ["--host", "127.0.0.1", "--port", "8081", "-hf", "Qwen/Qwen3-8B-GGUF:Q4_K_M", "--ctx-size", "8192", "--threads", "8", "--parallel", "1", "--jinja", "--no-webui"], { ...common, LLAMA_CACHE: llmCache });
   llm.once("exit", (code, signal) => { if (!stopping) void stop(signal === "SIGINT" || signal === "SIGTERM" ? 0 : code ?? (signal ? 1 : 0)); });
 }
-const spmt = start("SPMT", "apps/spmt-service/dist/index.js", {
+const spmt = start("SPMT", "apps/spmt-service/dist/provider-identity-start.js", {
   ...common,
   DATABASE_PATH: databasePath,
   SPMT_WEBHOOK_KEY: randomBytes(32).toString("base64url"),
@@ -94,7 +121,7 @@ if (candidateApp === "nebula-arcade") {
   chatTag.once("exit", (code, signal) => { if (!stopping) void stop(signal === "SIGINT" || signal === "SIGTERM" ? 0 : code ?? (signal ? 1 : 0)); });
   await waitForUrl(chatTag, `http://127.0.0.1:${chatTagPort}/health/ready`, "Nebula Arcade candidate");
 }
-const web = start("SpaceMountain web", "apps/spacemountain-web/dist/server.js", {
+const web = start("SpaceMountain web", "apps/spacemountain-web/dist/integrated-server.js", {
   ...common,
   SPMT_ORIGIN: `http://127.0.0.1:${spmtPort}`,
   HOST: "0.0.0.0",
@@ -175,7 +202,7 @@ function parseArguments(values) {
     if (!flag?.startsWith("--") || !value) throw new Error("Arguments must be --name value pairs");
     result.set(flag.slice(2), value);
   }
-  for (const name of result.keys()) if (!["app", "candidate-app", "public-url", "data-root", "build-sha", "spmt-port", "web-port", "chat-tag-port", "tenant-id", "channel-id", "owner-username", "llm-binary", "llm-cache"].includes(name)) throw new Error(`Unknown argument --${name}`);
+  for (const name of result.keys()) if (!["app", "candidate-app", "catalog", "public-url", "data-root", "build-sha", "spmt-port", "web-port", "chat-tag-port", "tenant-id", "channel-id", "owner-username", "llm-binary", "llm-cache"].includes(name)) throw new Error(`Unknown argument --${name}`);
   return result;
 }
 

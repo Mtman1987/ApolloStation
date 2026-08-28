@@ -1,0 +1,115 @@
+import type { OutboundChatMessageV1 } from "@spmt/contracts";
+import type { ChatProviderSenderV1, ProviderChatEnvelopeV1 } from "./index.js";
+import type { ProviderConnectionConfigV1, ProviderConnectionDriverV1, ProviderConnectionHandleV1 } from "./connection-supervisor.js";
+
+export const TWITCH_IRC_WEBSOCKET_URL = "wss://irc-ws.chat.twitch.tv:443";
+export const DISCORD_GATEWAY_URL = "wss://gateway.discord.gg/?v=10&encoding=json";
+export const DISCORD_API_ORIGIN = "https://discord.com/api/v10";
+export const KICK_PUSHER_APP_KEY = "32cbd69e4b950bf97679";
+export const KICK_PUSHER_CLUSTER = "us2";
+export const KICK_PUSHER_WEBSOCKET_URL = `wss://ws-${KICK_PUSHER_CLUSTER}.pusher.com/app/${KICK_PUSHER_APP_KEY}?protocol=7&client=js&version=8.4.0&flash=false`;
+export const KICK_CHAT_API_URL = "https://api.kick.com/public/v1/chat";
+
+export interface ChatWebSocketEventLike { data?: unknown; code?: number; reason?: string; }
+export interface ChatWebSocketLike { readonly readyState: number; send(data: string): void; close(code?: number, reason?: string): void; addEventListener(type: "open" | "message" | "close" | "error", listener: (event: ChatWebSocketEventLike) => void): void; }
+export type ChatWebSocketFactory = (url: string) => ChatWebSocketLike;
+export interface ProviderHttpResponseLike { readonly ok: boolean; readonly status: number; json(): Promise<unknown>; text(): Promise<string>; }
+export type ProviderFetchLike = (url: string, init?: { method?: string; headers?: Record<string, string>; body?: string }) => Promise<ProviderHttpResponseLike>;
+export interface ProviderDriverDependencies { websocketFactory?: ChatWebSocketFactory; fetch?: ProviderFetchLike; handshakeTimeoutMs?: number; now?: () => Date; }
+interface ActiveConnection { connection: ProviderConnectionConfigV1; socket: ChatWebSocketLike; accessToken: string; grantMetadata: Record<string, string>; }
+interface DriverOpenInput { connection: ProviderConnectionConfigV1; accessToken: string; grantExpiresAt: string; grantMetadata: Record<string, string>; resumeCursor?: string; onEnvelope(envelope: ProviderChatEnvelopeV1): void | Promise<void>; onCursor(cursor: string): void; onDisconnect(failure: { kind: "transport" | "authentication"; reason: string }): void; }
+
+export class TwitchIrcProviderDriver implements ProviderConnectionDriverV1, ChatProviderSenderV1 {
+  readonly provider = "twitch" as const;
+  private readonly active = new Map<string, ActiveConnection>();
+  private readonly websocketFactory: ChatWebSocketFactory;
+  private readonly timeoutMs: number;
+  private readonly now: () => Date;
+  constructor(deps: ProviderDriverDependencies = {}) { this.websocketFactory = deps.websocketFactory ?? defaultWebSocketFactory; this.timeoutMs = timeout(deps.handshakeTimeoutMs); this.now = deps.now ?? (() => new Date()); }
+  async open(input: DriverOpenInput): Promise<ProviderConnectionHandleV1> {
+    const socket = this.websocketFactory(TWITCH_IRC_WEBSOCKET_URL), key = connectionKey(input.connection), channel = twitchChannel(input.connection.channelId), username = metadata(input.grantMetadata.username ?? input.connection.providerAccountId, "Twitch username").toLowerCase();
+    let intentional = false, settled = false;
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => finish(new Error("Twitch IRC handshake timed out")), this.timeoutMs);
+      const finish = (error?: Error) => { if (settled) return; settled = true; clearTimeout(timer); error ? reject(error) : resolve(); };
+      socket.addEventListener("open", () => { socket.send("CAP REQ :twitch.tv/tags twitch.tv/commands twitch.tv/membership\r\n"); socket.send(`PASS oauth:${oauth(input.accessToken)}\r\n`); socket.send(`NICK ${username}\r\n`); socket.send(`JOIN #${channel}\r\n`); });
+      socket.addEventListener("message", (event) => { for (const line of socketText(event.data).split(/\r?\n/).filter(Boolean)) { if (line.startsWith("PING")) { socket.send(line.replace(/^PING/, "PONG") + "\r\n"); continue; } if (/ NOTICE [^ ]+ :.*(?:authentication failed|improperly formatted auth|login unsuccessful)/i.test(line)) { finish(new Error("Twitch authorization rejected")); return; } if (/ (?:001|GLOBALUSERSTATE) /.test(` ${line} `) || line.includes(" GLOBALUSERSTATE ")) finish(); const envelope = parseTwitch(line, input.connection, this.now()); if (envelope) { input.onCursor(envelope.messageId); void Promise.resolve(input.onEnvelope(envelope)).catch(() => undefined); } } });
+      socket.addEventListener("error", () => finish(new Error("Twitch IRC transport failed during handshake")));
+      socket.addEventListener("close", (event) => { this.active.delete(key); if (!settled) finish(new Error("Twitch IRC closed during handshake")); if (!intentional && settled) input.onDisconnect({ kind: event.code === 1008 || event.code === 4001 ? "authentication" : "transport", reason: closeReason("Twitch IRC", event) }); });
+    });
+    this.active.set(key, { connection: input.connection, socket, accessToken: input.accessToken, grantMetadata: input.grantMetadata });
+    return { close: () => { intentional = true; this.active.delete(key); safeClose(socket); } };
+  }
+  async send(message: OutboundChatMessageV1): Promise<{ providerMessageId: string }> { const active = this.active.get(connectionKey(message)); if (!active || active.socket.readyState !== 1) throw new Error("Twitch chat connection is unavailable"); const reply = message.replyToMessageId ? `@reply-parent-msg-id=${message.replyToMessageId} ` : ""; active.socket.send(`${reply}PRIVMSG #${twitchChannel(message.channelId)} :${chatText(message.text)}\r\n`); return { providerMessageId: `twitch:${message.idempotencyKey}` }; }
+}
+
+export class DiscordGatewayProviderDriver implements ProviderConnectionDriverV1, ChatProviderSenderV1 {
+  readonly provider = "discord" as const;
+  private readonly active = new Map<string, ActiveConnection>();
+  private readonly websocketFactory: ChatWebSocketFactory;
+  private readonly fetchImpl: ProviderFetchLike;
+  private readonly timeoutMs: number;
+  constructor(deps: ProviderDriverDependencies = {}) { this.websocketFactory = deps.websocketFactory ?? defaultWebSocketFactory; this.fetchImpl = deps.fetch ?? defaultFetch; this.timeoutMs = timeout(deps.handshakeTimeoutMs); }
+  async open(input: DriverOpenInput): Promise<ProviderConnectionHandleV1> {
+    const resume = decodeDiscordCursor(input.resumeCursor), socket = this.websocketFactory(resume?.resumeGatewayUrl ? `${stripQuery(resume.resumeGatewayUrl)}/?v=10&encoding=json` : DISCORD_GATEWAY_URL), key = connectionKey(input.connection);
+    let intentional = false, settled = false, heartbeat: ReturnType<typeof setInterval> | undefined, sequence: number | null = resume?.seq ?? null, sessionId = resume?.sessionId, resumeGatewayUrl = resume?.resumeGatewayUrl;
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => finish(new Error("Discord Gateway handshake timed out")), this.timeoutMs);
+      const finish = (error?: Error) => { if (settled) return; settled = true; clearTimeout(timer); error ? reject(error) : resolve(); };
+      socket.addEventListener("message", (event) => { const p = json(socketText(event.data)); if (!p) return; const op = numberValue(p.op), seq = numberValue(p.s); if (seq !== undefined) sequence = seq; if (op === 10) { const hello = record(p.d), interval = numberValue(hello?.heartbeat_interval) ?? 45_000; if (heartbeat) clearInterval(heartbeat); heartbeat = setInterval(() => socket.send(JSON.stringify({ op: 1, d: sequence })), Math.max(1_000, interval)); socket.send(JSON.stringify(resume?.sessionId && resume.seq !== undefined ? { op: 6, d: { token: input.accessToken, session_id: resume.sessionId, seq: resume.seq } } : { op: 2, d: { token: input.accessToken, intents: 33_281, properties: { os: "linux", browser: "spmt-chat-gateway", device: "spmt-chat-gateway" } } })); return; } if (op === 1) { socket.send(JSON.stringify({ op: 1, d: sequence })); return; } if (op === 7 || op === 9) { input.onDisconnect({ kind: "transport", reason: op === 7 ? "Discord requested reconnect" : "Discord session became invalid" }); return; } if (op !== 0) return; const type = stringValue(p.t); if (type === "READY") { const ready = record(p.d); sessionId = stringValue(ready?.session_id) ?? sessionId; resumeGatewayUrl = stringValue(ready?.resume_gateway_url) ?? resumeGatewayUrl; saveCursor(); finish(); return; } if (type === "RESUMED") { finish(); return; } saveCursor(); if (type === "MESSAGE_CREATE") { const envelope = parseDiscord(p.d, input.connection); if (envelope) void Promise.resolve(input.onEnvelope(envelope)).catch(() => undefined); } function saveCursor() { if (sessionId && sequence !== null) input.onCursor(encodeDiscordCursor({ sessionId, seq: sequence, ...(resumeGatewayUrl ? { resumeGatewayUrl } : {}) })); } });
+      socket.addEventListener("error", () => finish(new Error("Discord Gateway transport failed during handshake")));
+      socket.addEventListener("close", (event) => { if (heartbeat) clearInterval(heartbeat); this.active.delete(key); if (!settled) finish(new Error("Discord Gateway closed during handshake")); if (!intentional && settled) input.onDisconnect({ kind: [4003,4004,4013,4014].includes(event.code ?? 0) ? "authentication" : "transport", reason: closeReason("Discord Gateway", event) }); });
+    });
+    this.active.set(key, { connection: input.connection, socket, accessToken: input.accessToken, grantMetadata: input.grantMetadata });
+    return { close: () => { intentional = true; if (heartbeat) clearInterval(heartbeat); this.active.delete(key); safeClose(socket); } };
+  }
+  async send(message: OutboundChatMessageV1): Promise<{ providerMessageId: string }> { const active = this.active.get(connectionKey(message)); if (!active) throw new Error("Discord chat connection is unavailable"); const body: Record<string, unknown> = { content: chatText(message.text), nonce: message.idempotencyKey, enforce_nonce: true }; if (message.replyToMessageId) body.message_reference = { message_id: message.replyToMessageId, channel_id: message.channelId, fail_if_not_exists: false }; const response = await this.fetchImpl(`${DISCORD_API_ORIGIN}/channels/${encodeURIComponent(message.channelId)}/messages`, { method: "POST", headers: { Authorization: `Bot ${active.accessToken}`, "Content-Type": "application/json" }, body: JSON.stringify(body) }); if (!response.ok) throw new Error(`Discord chat send failed with status ${response.status}`); const id = stringValue(record(await response.json())?.id); if (!id) throw new Error("Discord chat send returned no message id"); return { providerMessageId: id }; }
+}
+
+export class KickPusherProviderDriver implements ProviderConnectionDriverV1, ChatProviderSenderV1 {
+  readonly provider = "kick" as const;
+  private readonly active = new Map<string, ActiveConnection>();
+  private readonly websocketFactory: ChatWebSocketFactory;
+  private readonly fetchImpl: ProviderFetchLike;
+  private readonly timeoutMs: number;
+  private readonly now: () => Date;
+  constructor(deps: ProviderDriverDependencies = {}) { this.websocketFactory = deps.websocketFactory ?? defaultWebSocketFactory; this.fetchImpl = deps.fetch ?? defaultFetch; this.timeoutMs = timeout(deps.handshakeTimeoutMs); this.now = deps.now ?? (() => new Date()); }
+  async open(input: DriverOpenInput): Promise<ProviderConnectionHandleV1> {
+    const socket = this.websocketFactory(KICK_PUSHER_WEBSOCKET_URL), key = connectionKey(input.connection), room = metadata(input.grantMetadata.chatroomId ?? input.grantMetadata.broadcasterUserId ?? input.connection.channelId, "Kick chatroom id"), channel = `chatrooms.${room}.v2`;
+    let intentional = false, settled = false;
+    await new Promise<void>((resolve, reject) => { const timer = setTimeout(() => finish(new Error("Kick Pusher handshake timed out")), this.timeoutMs); const finish = (error?: Error) => { if (settled) return; settled = true; clearTimeout(timer); error ? reject(error) : resolve(); }; socket.addEventListener("message", (event) => { const p = json(socketText(event.data)); if (!p) return; const name = stringValue(p.event); if (name === "pusher:connection_established") { socket.send(JSON.stringify({ event: "pusher:subscribe", data: { auth: "", channel } })); return; } if (name === "pusher:ping") { socket.send(JSON.stringify({ event: "pusher:pong", data: {} })); return; } if (name === "pusher:subscription_succeeded") { finish(); return; } if (name === "pusher:subscription_error") { const status = numberValue(record(parseData(p.data))?.status); finish(new Error(status === 401 || status === 403 ? "Kick authorization rejected" : "Kick chat subscription failed")); return; } if (name === "App\\Events\\ChatMessageEvent") { const envelope = parseKick(parseData(p.data), input.connection, this.now()); if (envelope) { input.onCursor(envelope.messageId); void Promise.resolve(input.onEnvelope(envelope)).catch(() => undefined); } } }); socket.addEventListener("error", () => finish(new Error("Kick Pusher transport failed during handshake"))); socket.addEventListener("close", (event) => { this.active.delete(key); if (!settled) finish(new Error("Kick Pusher closed during handshake")); if (!intentional && settled) input.onDisconnect({ kind: "transport", reason: closeReason("Kick Pusher", event) }); }); });
+    this.active.set(key, { connection: input.connection, socket, accessToken: input.accessToken, grantMetadata: input.grantMetadata });
+    return { close: () => { intentional = true; this.active.delete(key); safeClose(socket); } };
+  }
+  async send(message: OutboundChatMessageV1): Promise<{ providerMessageId: string }> { const active = this.active.get(connectionKey(message)); if (!active) throw new Error("Kick chat connection is unavailable"); const broadcaster = metadata(active.grantMetadata.broadcasterUserId ?? active.connection.providerAccountId, "Kick broadcaster user id"); const response = await this.fetchImpl(KICK_CHAT_API_URL, { method: "POST", headers: { Authorization: `Bearer ${active.accessToken}`, "Content-Type": "application/json" }, body: JSON.stringify({ content: chatText(message.text), type: "user", broadcaster_user_id: numericOrString(broadcaster) }) }); if (!response.ok) throw new Error(`Kick chat send failed with status ${response.status}`); let id = `kick:${message.idempotencyKey}`; try { const payload = record(await response.json()); id = scalarString(payload?.id) ?? scalarString(record(payload?.data)?.id) ?? id; } catch {} return { providerMessageId: id }; }
+}
+
+export function createFirstPartyChatProviderAdapters(deps: ProviderDriverDependencies = {}) { const twitch = new TwitchIrcProviderDriver(deps), discord = new DiscordGatewayProviderDriver(deps), kick = new KickPusherProviderDriver(deps); return { drivers: [twitch, discord, kick] as ProviderConnectionDriverV1[], senders: [twitch, discord, kick] as ChatProviderSenderV1[], twitch, discord, kick }; }
+export interface DiscordResumeCursorV1 { sessionId: string; seq: number; resumeGatewayUrl?: string; }
+export function encodeDiscordCursor(cursor: DiscordResumeCursorV1): string { if (!cursor.sessionId || !Number.isSafeInteger(cursor.seq) || cursor.seq < 0) throw new Error("Discord resume cursor is invalid"); return Buffer.from(JSON.stringify(cursor), "utf8").toString("base64url"); }
+export function decodeDiscordCursor(cursor?: string): DiscordResumeCursorV1 | undefined { if (!cursor) return undefined; try { const r = record(JSON.parse(Buffer.from(cursor, "base64url").toString("utf8"))), sessionId = stringValue(r?.sessionId), seq = numberValue(r?.seq), url = stringValue(r?.resumeGatewayUrl); return sessionId && seq !== undefined && Number.isSafeInteger(seq) && seq >= 0 ? { sessionId, seq, ...(url ? { resumeGatewayUrl: url } : {}) } : undefined; } catch { return undefined; } }
+
+function parseTwitch(line: string, c: ProviderConnectionConfigV1, now: Date): ProviderChatEnvelopeV1 | undefined { const m = /^(?:@([^ ]+) )?:([^! ]+)!.* PRIVMSG #([^ ]+) :(.*)$/.exec(line); if (!m) return; const t = ircTags(m[1] ?? ""), username = m[2] ?? "", channel = m[3] ?? c.channelId, text = m[4] ?? "", providerUserId = t["user-id"] ?? username, messageId = t.id ?? `twitch-${now.getTime()}-${providerUserId}`, badges = new Set((t.badges ?? "").split(",").map(v => v.split("/")[0]).filter(Boolean)), roles: Array<"broadcaster"|"moderator"|"member"> = ["member"]; if (badges.has("broadcaster")) roles.unshift("broadcaster"); else if (badges.has("moderator") || t.mod === "1") roles.unshift("moderator"); const occurredAt = t["tmi-sent-ts"] && Number.isFinite(Number(t["tmi-sent-ts"])) ? new Date(Number(t["tmi-sent-ts"])).toISOString() : now.toISOString(); return { schemaVersion: 1, tenantId: c.tenantId, provider: "twitch", connectionId: c.connectionId, channelId: channel, ...(t["source-room-id"] ? { sourceChannelId: t["source-room-id"] } : {}), messageId, text, occurredAt, providerUserId, username, ...(t["display-name"] ? { displayName: t["display-name"] } : {}), isBot: badges.has("bot"), roles, mentions: [] }; }
+function parseDiscord(value: unknown, c: ProviderConnectionConfigV1): ProviderChatEnvelopeV1 | undefined { const m = record(value); if (!m || scalarString(m.channel_id) !== c.channelId) return; const content = stringValue(m.content), id = scalarString(m.id), author = record(m.author), providerUserId = scalarString(author?.id), username = stringValue(author?.username), timestamp = stringValue(m.timestamp); if (!content || !id || !providerUserId || !username || !timestamp || !Number.isFinite(Date.parse(timestamp))) return; const mentions = Array.isArray(m.mentions) ? m.mentions.flatMap(v => { const x = record(v), mid = scalarString(x?.id), name = stringValue(x?.username); return mid && name ? [{ token: `<@${mid}>`, providerUserId: mid, username: name }] : []; }) : []; return { schemaVersion: 1, tenantId: c.tenantId, provider: "discord", connectionId: c.connectionId, channelId: c.channelId, messageId: id, text: content, occurredAt: new Date(timestamp).toISOString(), providerUserId, username, ...(stringValue(author?.global_name) ? { displayName: stringValue(author?.global_name)! } : {}), isBot: author?.bot === true, roles: ["member"], mentions }; }
+function parseKick(value: unknown, c: ProviderConnectionConfigV1, now: Date): ProviderChatEnvelopeV1 | undefined { const m = record(value), sender = record(m?.sender), id = scalarString(m?.id), content = stringValue(m?.content), providerUserId = scalarString(sender?.id) ?? scalarString(sender?.user_id), username = stringValue(sender?.slug) ?? stringValue(sender?.username); if (!id || !content || !providerUserId || !username) return; const badges = new Set<string>(), identity = record(sender?.identity); if (Array.isArray(identity?.badges)) for (const b of identity.badges) { const type = stringValue(record(b)?.type); if (type) badges.add(type); } const roles: Array<"broadcaster"|"moderator"|"member"> = ["member"]; if (badges.has("broadcaster")) roles.unshift("broadcaster"); else if (badges.has("moderator")) roles.unshift("moderator"); const created = stringValue(m?.created_at), occurredAt = created && Number.isFinite(Date.parse(created)) ? new Date(created).toISOString() : now.toISOString(); return { schemaVersion: 1, tenantId: c.tenantId, provider: "kick", connectionId: c.connectionId, channelId: c.channelId, messageId: id, text: content, occurredAt, providerUserId, username, ...(stringValue(sender?.username) ? { displayName: stringValue(sender?.username)! } : {}), isBot: badges.has("bot"), roles, mentions: [] }; }
+
+function ircTags(raw: string): Record<string,string> { const out: Record<string,string> = {}; for (const f of raw.split(";")) { if (!f) continue; const i = f.indexOf("="); out[i < 0 ? f : f.slice(0,i)] = (i < 0 ? "" : f.slice(i+1)).replace(/\\s/g," ").replace(/\\:/g,";").replace(/\\r/g,"\r").replace(/\\n/g,"\n").replace(/\\\\/g,"\\"); } return out; }
+function defaultWebSocketFactory(url: string): ChatWebSocketLike { const Ctor = (globalThis as unknown as { WebSocket?: new(url:string)=>ChatWebSocketLike }).WebSocket; if (!Ctor) throw new Error("WebSocket is unavailable in this runtime"); return new Ctor(url); }
+async function defaultFetch(url: string, init?: { method?: string; headers?: Record<string,string>; body?: string }): Promise<ProviderHttpResponseLike> { const fn = (globalThis as unknown as { fetch?: ProviderFetchLike }).fetch; if (!fn) throw new Error("fetch is unavailable in this runtime"); return fn(url, init); }
+function timeout(v?: number) { const n = v ?? 20_000; if (!Number.isSafeInteger(n) || n < 100 || n > 120_000) throw new Error("Provider handshake timeout is invalid"); return n; }
+function connectionKey(v: Pick<ProviderConnectionConfigV1,"tenantId"|"provider"|"connectionId">) { return `${v.tenantId}:${v.provider}:${v.connectionId}`; }
+function twitchChannel(v:string) { const x=v.replace(/^#/,"").trim().toLowerCase(); if (!/^[a-z0-9_]{1,50}$/.test(x)) throw new Error("Twitch channel is invalid"); return x; }
+function oauth(v:string) { const x=v.replace(/^oauth:/i,""); if (!x || /[\r\n\s]/.test(x)) throw new Error("Twitch access token is invalid"); return x; }
+function metadata(v:string|undefined,name:string) { if (!v || v.trim()!==v || v.length>300 || /[\r\n]/.test(v)) throw new Error(`${name} is invalid`); return v; }
+function chatText(v:string) { const x=v.replace(/[\r\n]+/g," ").trim(); if (!x) throw new Error("Chat text is empty"); return x.slice(0,8000); }
+function socketText(v:unknown) { if (typeof v==="string") return v; if (v instanceof ArrayBuffer) return Buffer.from(v).toString("utf8"); if (ArrayBuffer.isView(v)) return Buffer.from(v.buffer,v.byteOffset,v.byteLength).toString("utf8"); return String(v??""); }
+function json(v:string): Record<string,unknown>|undefined { try { return record(JSON.parse(v)); } catch { return; } }
+function parseData(v:unknown): unknown { if (typeof v!=="string") return v; try { return JSON.parse(v); } catch { return v; } }
+function record(v:unknown): Record<string,unknown>|undefined { return v && typeof v==="object" && !Array.isArray(v) ? v as Record<string,unknown> : undefined; }
+function stringValue(v:unknown): string|undefined { return typeof v==="string" && v.length ? v : undefined; }
+function scalarString(v:unknown): string|undefined { if (typeof v==="string" && v.length) return v; if (typeof v==="number" && Number.isSafeInteger(v) && v>=0) return String(v); return undefined; }
+function numberValue(v:unknown): number|undefined { return typeof v==="number" && Number.isFinite(v) ? v : undefined; }
+function numericOrString(v:string): number|string { const n=Number(v); return Number.isSafeInteger(n)&&n>0?n:v; }
+function stripQuery(v:string) { return v.replace(/\?.*$/,"").replace(/[/?]+$/,""); }
+function safeClose(s:ChatWebSocketLike) { try { s.close(1000,"supervisor stop"); } catch {} }
+function closeReason(provider:string,e:ChatWebSocketEventLike) { return `${provider} closed (${e.code??1006}): ${typeof e.reason==="string"&&e.reason?e.reason.slice(0,200):"connection closed"}`; }

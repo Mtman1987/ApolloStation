@@ -25,13 +25,42 @@ export function planMountainViewVoiceCommand(transcript: string, context: Mounta
     return { kind: "route", targetAppId: "companion", action: "obs.scene.set", payload: { sceneName, targetDeviceId: context.targetCompanionDeviceId }, risk: "low", requiresConfirmation: false, reason: "OBS controls run only on the paired local Companion" };
   }
 
+  const volume = text.match(/(?:set|turn)(?:\s+the)?\s+(?:pc\s+)?companion(?:\s+(?:audio|volume))?\s+(?:to\s+)?(\d{1,3})(?:\s*percent|\s*%)?/i);
+  if (volume) {
+    if (!context.targetCompanionDeviceId) return { kind: "clarify", reason: "Pair a Companion device before controlling local audio" };
+    const percent = Number(volume[1]);
+    if (!Number.isSafeInteger(percent) || percent < 0 || percent > 100) return { kind: "clarify", reason: "Companion volume must be from 0 through 100 percent" };
+    return { kind: "route", targetAppId: "companion", action: "media.volume.set", payload: { volume: percent / 100, targetDeviceId: context.targetCompanionDeviceId }, risk: "low", requiresConfirmation: false, reason: "Local Companion audio is controlled on the paired device" };
+  }
+
+  if (/\bunmute\b.*\b(?:pc\s+)?companion\b|\b(?:pc\s+)?companion\b.*\bunmute\b/i.test(text)) {
+    if (!context.targetCompanionDeviceId) return { kind: "clarify", reason: "Pair a Companion device before controlling local audio" };
+    return { kind: "route", targetAppId: "companion", action: "media.mute.set", payload: { muted: false, targetDeviceId: context.targetCompanionDeviceId }, risk: "low", requiresConfirmation: false, reason: "Local Companion audio is controlled on the paired device" };
+  }
+  if (/\bmute\b.*\b(?:pc\s+)?companion\b|\b(?:pc\s+)?companion\b.*\bmute\b/i.test(text)) {
+    if (!context.targetCompanionDeviceId) return { kind: "clarify", reason: "Pair a Companion device before controlling local audio" };
+    return { kind: "route", targetAppId: "companion", action: "media.mute.set", payload: { muted: true, targetDeviceId: context.targetCompanionDeviceId }, risk: "low", requiresConfirmation: false, reason: "Local Companion audio is controlled on the paired device" };
+  }
+
   const song = text.match(/^(?:please\s+)?(?:play|request|queue)(?:\s+the)?\s+(?:song\s+)?(.+)$/i);
   if (song && !/\b(movie|show|episode|video|watch)\b/i.test(song[1]!)) {
     return { kind: "route", targetAppId: "hearmeout", action: "media.music.request", payload: { query: song[1]!.trim(), ...(context.hearMeOutRoomId ? { roomId: context.hearMeOutRoomId } : {}) }, risk: "low", requiresConfirmation: false, reason: "Music requests belong to HearMeOut's canonical room queue" };
   }
 
+  const musicControl = lower.match(/^(?:please\s+)?(?:music\s+)?(pause|resume|play|skip|next|stop)(?:\s+(?:the\s+)?music)?$/i);
+  if (musicControl) {
+    const raw = musicControl[1]!;
+    const action = raw === "resume" || raw === "play" ? "play" : raw === "skip" ? "next" : raw;
+    return { kind: "route", targetAppId: "hearmeout", action: `media.music.${action}`, payload: { ...(context.hearMeOutRoomId ? { roomId: context.hearMeOutRoomId } : {}) }, risk: "low", requiresConfirmation: false, reason: "Music playback controls belong to HearMeOut" };
+  }
+
+  const watchRequest = text.match(/^(?:please\s+)?(?:watch|play)(?:\s+the)?\s+(?:movie|show|episode|video)\s+(.+)$/i);
+  if (watchRequest) {
+    return { kind: "route", targetAppId: "hearmeout", action: "media.movie.request", payload: { query: watchRequest[1]!.trim(), ...(context.hearMeOutRoomId ? { roomId: context.hearMeOutRoomId } : {}) }, risk: "low", requiresConfirmation: false, reason: "Watch requests belong to HearMeOut's canonical movie lane" };
+  }
+
   if (/\b(?:who(?:'s| is)?|everyone)\s+live\b|\blive\s+members\b|\b(?:who(?:'s| is)?)\s+active\s+in\s+chat[ -]?tag\b/.test(lower)) {
-    if (/\b(chat[ -]?tag|spmt)\b/.test(lower)) return { kind: "route", targetAppId: "nebula-arcade", action: "chat-tag.live-members.read", payload: {}, risk: "low", requiresConfirmation: false, reason: "The request explicitly scopes active users to Chat Tag" };
+    if (/\b(chat[ -]?tag|spmt)\b/.test(lower)) return { kind: "route", targetAppId: "nebula-arcade", action: "chat-tag.live-members.read", payload: {}, risk: "low", requiresConfirmation: false, reason: "The request explicitly scopes active users to the Chat Tag game module" };
     return { kind: "route", targetAppId: "discord-stream-hub", action: "community.live-members.read", payload: {}, risk: "low", requiresConfirmation: false, reason: "Unscoped live status belongs to the community-wide DSH projection" };
   }
 

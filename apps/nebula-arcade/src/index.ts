@@ -8,7 +8,15 @@ export * from "./chat-tag-overlay-http.js";
 export * from "./chat-tag-migration.js";
 export * from "./chat-tag-experience.js";
 export * from "./game-hub.js";
+export * from "./game-runtime.js";
+export * from "./game-runtime-store.js";
+export * from "./game-actions.js";
 export * from "./overlay-scenes.js";
+export * from "./game-mixes.js";
+export * from "./quackverse-state.js";
+export * from "./quackverse-packs.js";
+export * from "./quackverse-battle.js";
+export * from "./bingo-game.js";
 import { CHAT_TAG_EVENT_TYPES } from "./chat-tag.js";
 
 export const CHAT_TAG_ROUND_COMPLETED = "nebula.chat-tag.round.completed.v1";
@@ -22,13 +30,12 @@ export function nebulaArcadeCatalogRegistration(publicOrigin: string): AppCatalo
     name: "Nebula Arcade",
     description: "Cosmic Games Hub for twenty equal community games and reusable layered stream overlays.",
     version: "0.1.0-green",
-    launchUrl: new URL("/apps/nebula-arcade", origin).toString(),
+    launchUrl: new URL("/apps/nebula-arcade?surface=workspace", origin).toString(),
     allowedScopes: ["events:write", "xp:write", "overlay:widgets:write"],
     surfaces: ["shell", "standalone", "overlay"],
     status: "active",
   };
 }
-/** Compatibility export for the old sandbox runner; the catalog product is Nebula Arcade. */
 export const chatTagCatalogRegistration = nebulaArcadeCatalogRegistration;
 
 export interface ChatTagRoundResult { tenantId:string; channelId:string; roundId:string; winnerUserId:string; taggedUserId:string; completedAt:string; xpAward:number; }
