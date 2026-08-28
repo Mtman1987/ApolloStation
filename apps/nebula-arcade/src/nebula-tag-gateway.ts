@@ -1,23 +1,23 @@
 import type { NormalizedChatDeliveryV1, NormalizedChatMessageV1, OutboundChatMessageV1 } from "@spmt/contracts";
-import type { ChatTagRuntime } from "./chat-tag-runtime.js";
-import type { ChatTagExperienceOutcomeV1 } from "./chat-tag-experience.js";
+import type { NebulaTagRuntime } from "./nebula-tag-runtime.js";
+import type { NebulaTagExperienceOutcomeV1 } from "./nebula-tag-experience.js";
 
-export interface ChatTagGatewayPortV1 {
+export interface NebulaTagGatewayPortV1 {
   send(message: OutboundChatMessageV1): Promise<{ providerMessageId: string }>;
 }
 
-export interface ChatTagGatewayConsumerV1 {
-  id: "nebula.chat-tag";
+export interface NebulaTagGatewayConsumerV1 {
+  id: "nebula.arcade.provider-ingress";
   accepts(message: NormalizedChatMessageV1): boolean;
   deliver(delivery: NormalizedChatDeliveryV1): Promise<void>;
 }
 
-type ChatTagIngressResultV1 = Awaited<ReturnType<ChatTagRuntime["ingest"]>> | ChatTagExperienceOutcomeV1;
-export interface ChatTagIngressPortV1 { ingest(message: Parameters<ChatTagRuntime["ingest"]>[0]): Promise<ChatTagIngressResultV1>; }
+type NebulaTagIngressResultV1 = Awaited<ReturnType<NebulaTagRuntime["ingest"]>> | NebulaTagExperienceOutcomeV1;
+export interface NebulaTagIngressPortV1 { ingest(message: Parameters<NebulaTagRuntime["ingest"]>[0]): Promise<NebulaTagIngressResultV1>; }
 
-export function createChatTagGatewayConsumer(runtime: ChatTagIngressPortV1, gateway: ChatTagGatewayPortV1, options: { acceptsTenant?: (tenantId: string) => boolean } = {}): ChatTagGatewayConsumerV1 {
+export function createNebulaTagGatewayConsumer(runtime: NebulaTagIngressPortV1, gateway: NebulaTagGatewayPortV1, options: { acceptsTenant?: (tenantId: string) => boolean } = {}): NebulaTagGatewayConsumerV1 {
   return {
-    id: "nebula.chat-tag",
+    id: "nebula.arcade.provider-ingress",
     accepts(message) { return !message.actor.isBot && (options.acceptsTenant ? options.acceptsTenant(message.tenantId) : true); },
     async deliver(delivery) {
       const message = delivery.message;
@@ -40,7 +40,7 @@ export function createChatTagGatewayConsumer(runtime: ChatTagIngressPortV1, gate
         await sendReply(gateway, message, delivery.deliveryId, result.code, result.message);
         return;
       }
-      if (result.kind === "command") throw new Error("Chat Tag runtime returned an unexecuted command");
+      if (result.kind === "command") throw new Error("Nebula Arcade tag runtime returned an unexecuted command");
       const reply = result.kind === "result"
         ? { code: result.result.code, message: result.result.message }
         : result;
@@ -50,8 +50,8 @@ export function createChatTagGatewayConsumer(runtime: ChatTagIngressPortV1, gate
   };
 }
 
-async function sendReply(gateway: ChatTagGatewayPortV1, message: NormalizedChatMessageV1, deliveryId: string, code: string, text: string): Promise<void> {
-  await gateway.send({ schemaVersion: 1, tenantId: message.tenantId, provider: message.provider, connectionId: message.connectionId, channelId: message.channelId, text, idempotencyKey: "chat-tag-reply:" + deliveryId + ":" + code, replyToMessageId: message.messageId });
+async function sendReply(gateway: NebulaTagGatewayPortV1, message: NormalizedChatMessageV1, deliveryId: string, code: string, text: string): Promise<void> {
+  await gateway.send({ schemaVersion: 1, tenantId: message.tenantId, provider: message.provider, connectionId: message.connectionId, channelId: message.channelId, text, idempotencyKey: "nebula-arcade-reply:" + deliveryId + ":" + code, replyToMessageId: message.messageId });
 }
 
 function actorKey(message: NormalizedChatMessageV1): string {

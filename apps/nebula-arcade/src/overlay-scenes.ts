@@ -1,5 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
 import { NEBULA_ARCADE_GAMES } from "./game-hub.js";
+import { canonicalNebulaGameId, migrateLegacyNebulaArcadeStorage } from "./legacy-nebula-migration.js";
 
 export interface NebulaOverlayLayerV1 {
   gameId: string;
@@ -25,6 +26,7 @@ export class SqliteNebulaOverlaySceneStore {
   constructor(path: string) {
     if (!path) throw new Error("Nebula overlay database path is required");
     this.db = new DatabaseSync(path, { timeout: 5_000 });
+    migrateLegacyNebulaArcadeStorage(this.db);
     this.db.exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON;");
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS nebula_overlay_scenes (
@@ -69,7 +71,7 @@ export class SqliteNebulaOverlaySceneStore {
     const name = input.name.trim();
     if (!name || name.length > 100) throw new Error("Overlay scene name is invalid");
     if (!Number.isFinite(Date.parse(now))) throw new Error("Overlay scene timestamp is invalid");
-    const layers = normalizeLayers(input.layers);
+    const layers = normalizeLayers(input.layers, false);
     const prior = this.db.prepare("SELECT created_at FROM nebula_overlay_scenes WHERE tenant_id=? AND scene_id=?").get(tenantId, input.id) as unknown as { created_at: string } | undefined;
     const createdAt = prior?.created_at ?? now;
     this.db.prepare(`
@@ -105,19 +107,20 @@ function fromRow(row: SceneRow): NebulaOverlaySceneV1 {
     id: row.scene_id,
     tenantId: row.tenant_id,
     name: row.name,
-    layers: normalizeLayers(JSON.parse(row.layers) as NebulaOverlayLayerV1[]),
+    layers: normalizeLayers(JSON.parse(row.layers) as NebulaOverlayLayerV1[], true),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
 }
 
-function normalizeLayers(value: NebulaOverlayLayerV1[]): NebulaOverlayLayerV1[] {
+function normalizeLayers(value: NebulaOverlayLayerV1[], stored: boolean): NebulaOverlayLayerV1[] {
   if (!Array.isArray(value) || value.length > NEBULA_ARCADE_GAMES.length) throw new Error("Overlay scene layers are invalid");
   const seen = new Set<string>();
   return value.map((layer, index) => {
-    if (!layer || typeof layer !== "object" || !GAME_IDS.has(layer.gameId) || seen.has(layer.gameId)) throw new Error("Overlay scene contains an invalid game layer");
-    seen.add(layer.gameId);
-    return { gameId: layer.gameId, enabled: layer.enabled !== false, zIndex: Number.isSafeInteger(layer.zIndex) ? layer.zIndex : index };
+    const gameId = stored ? canonicalNebulaGameId(layer?.gameId) : String(layer?.gameId ?? "").trim().toLowerCase();
+    if (!layer || typeof layer !== "object" || !GAME_IDS.has(gameId) || seen.has(gameId)) throw new Error("Overlay scene contains an invalid game layer");
+    seen.add(gameId);
+    return { gameId, enabled: layer.enabled !== false, zIndex: Number.isSafeInteger(layer.zIndex) ? layer.zIndex : index };
   }).sort((left, right) => left.zIndex - right.zIndex).map((layer, index) => ({ ...layer, zIndex: index }));
 }
 

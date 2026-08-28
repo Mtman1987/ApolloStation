@@ -854,7 +854,7 @@ function themeLogoUrl(theme: string, kind: "hero" | "hero-secondary" | "name" | 
 }
 function themedAppIconUrl(theme: string, appId: string) {
   const themeId = ["solar-flare", "nebula-purple", "oceanic-blue", "aurora-green"].includes(theme) ? theme : "solar-flare";
-  const aliases: Record<string, string> = { spacemountain: "mission-control", "spacemountain-web": "mission-control", "discord-stream-hub": "discord-stream-hub", dsh: "discord-stream-hub", "chat-tag": "nebula-arcade" };
+  const aliases: Record<string, string> = { spacemountain: "mission-control", "spacemountain-web": "mission-control", "discord-stream-hub": "discord-stream-hub", dsh: "discord-stream-hub" };
   const id = aliases[appId] ?? appId;
   const supported = new Set(["stellar-core", "shipyard", "commlink", "mission-control", "mountainview", "discord-stream-hub", "streamweaver", "hearmeout", "nebula-arcade", "companion", "overlay-bay"]);
   return supported.has(id) ? `/assets/product/app-icons/${themeId}/${id}.png` : undefined;

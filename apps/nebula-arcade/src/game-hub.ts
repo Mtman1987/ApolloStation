@@ -11,7 +11,7 @@ function game(id: string, name: string, summary: string, commands: string[], ove
 }
 
 export const NEBULA_ARCADE_GAMES: readonly NebulaGameV1[] = Object.freeze([
-  game("chat-tag", "Chat Tag", "A live community game of tagging, passing, immunity, crowns, and persistent scores across chat.", ["join", "leave", "status", "score", "tag", "pass"], ["current-it", "scoreboard", "activity"]),
+  game("tag", "Tag", "A live Nebula Arcade game of tagging, passing, immunity, crowns, and persistent scores across chat.", ["join", "leave", "status", "score", "tag", "pass"], ["current-it", "scoreboard", "activity"]),
   game("quackverse", "Quackverse", "Collect, trade, reveal, and battle community duck cards.", ["pack", "quackpack", "collection", "deck", "accept"], ["card-reveal", "collection", "battlefield", "activity"]),
   game("bingo", "Bingo", "A shared chat bingo board that turns stream moments and community prompts into a race.", ["card", "claim", "phrases", "leave", "status"], ["board", "winners"]),
   game("chaosmode", "Chaos Mode", "Timed community chaos events where chat actions modify the active round.", ["chaos", "explode", "glitch", "portal", "shake", "leave", "status"], ["round", "activity"]),
@@ -64,8 +64,8 @@ export function routeNebulaCommand(text: string, enabledGameIds: readonly string
   const parsed = parseCommand(text);
   if (!parsed) return [];
   const { command, args } = parsed;
-  const enabled = new Set(enabledGameIds.map((id) => String(id).toLowerCase()));
-  const pending = new Set(pendingGameIds.map((id) => String(id).toLowerCase()));
+  const enabled = new Set(enabledGameIds.map(normalizeGameId));
+  const pending = new Set(pendingGameIds.map(normalizeGameId));
 
   const directAction = ACTION_ALIASES.get(command);
   if (directAction && enabled.has(directAction.gameId)) return [{ gameId: directAction.gameId, command: directAction.command, args }];
@@ -105,7 +105,11 @@ export function resolveNebulaCommand(text: string, enabledGameIds: readonly stri
 }
 
 export function nebulaGameCommandHelp(gameId: string): string[] {
-  const game = NEBULA_ARCADE_GAMES.find((item) => item.id === gameId);
+  const game = NEBULA_ARCADE_GAMES.find((item) => item.id === normalizeGameId(gameId));
   if (!game) return [];
   return game.commands.map((command) => `!${command}`);
+}
+
+function normalizeGameId(value: unknown): string {
+  return String(value ?? "").trim().toLowerCase();
 }

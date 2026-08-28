@@ -14,11 +14,11 @@ test("Nebula overlay scenes persist multiple ordered game layers", () => {
       id: "main-stream",
       name: "Main Stream",
       layers: [
-        { gameId: "chat-tag", enabled: true, zIndex: 4 },
+        { gameId: "tag", enabled: true, zIndex: 4 },
         { gameId: "chatgarden", enabled: true, zIndex: 2 },
       ],
     }, "2026-08-24T12:00:00.000Z");
-    assert.deepEqual(scene.layers.map((layer) => [layer.gameId, layer.zIndex]), [["chatgarden", 0], ["chat-tag", 1]]);
+    assert.deepEqual(scene.layers.map((layer) => [layer.gameId, layer.zIndex]), [["chatgarden", 0], ["tag", 1]]);
     first.close();
 
     const reopened = new SqliteNebulaOverlaySceneStore(databasePath);
@@ -41,7 +41,7 @@ test("Nebula overlay scenes reject unknown or duplicate game layers", () => {
   const store = new SqliteNebulaOverlaySceneStore(join(directory, "arcade.sqlite"));
   try {
     assert.throws(() => store.save("tenant-a", { id: "bad", name: "Bad", layers: [{ gameId: "not-a-game", enabled: true, zIndex: 0 }] }), /invalid game layer/);
-    assert.throws(() => store.save("tenant-a", { id: "duplicate", name: "Duplicate", layers: [{ gameId: "chat-tag", enabled: true, zIndex: 0 }, { gameId: "chat-tag", enabled: true, zIndex: 1 }] }), /invalid game layer/);
+    assert.throws(() => store.save("tenant-a", { id: "duplicate", name: "Duplicate", layers: [{ gameId: "tag", enabled: true, zIndex: 0 }, { gameId: "tag", enabled: true, zIndex: 1 }] }), /invalid game layer/);
   } finally {
     store.close();
     rmSync(directory, { recursive: true, force: true });

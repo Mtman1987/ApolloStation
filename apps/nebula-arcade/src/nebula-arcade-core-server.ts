@@ -5,9 +5,9 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { SpmtClient } from "@spmt/sdk";
 import { PRODUCT_UI_CSS } from "@spmt/ui";
-import { ChatTagExperienceService, SqliteChatTagExperienceStore } from "./chat-tag-experience.js";
-import { ChatTagOverlayHttpAdapter } from "./chat-tag-overlay-http.js";
-import { ChatTagRuntime, SqliteChatTagStore } from "./chat-tag-runtime.js";
+import { NebulaTagExperienceService, SqliteNebulaTagExperienceStore } from "./nebula-tag-experience.js";
+import { NebulaTagOverlayHttpAdapter } from "./nebula-tag-overlay-http.js";
+import { NebulaTagRuntime, SqliteNebulaTagStore } from "./nebula-tag-runtime.js";
 import { NEBULA_ARCADE_GAMES } from "./game-hub.js";
 import { NEBULA_THEME_CSS } from "./nebula-theme-css.js";
 import { NEBULA_ARCADE_BASE_CSS, NEBULA_ARCADE_BROWSER_JS, NEBULA_OVERLAY_CSS, renderNebulaArcadePage, renderNebulaOverlayOutput, type NebulaArcadeViewV1 } from "./nebula-arcade-page.js";
@@ -21,23 +21,23 @@ const PROVIDER_ENV_NAMES = ["TWITCH_CLIENT_ID", "TWITCH_CLIENT_SECRET", "TWITCH_
 const GAME_IDS = new Set(NEBULA_ARCADE_GAMES.map((game) => game.id));
 const OVERLAY_FLOW_FIX_CSS = `body{display:flex;flex-direction:column;align-items:flex-end;justify-content:flex-end;gap:10px;padding:24px}.nebula-output-layer{z-index:auto}.nebula-output-placeholder{position:relative;inset:auto;width:auto;height:auto;flex:0 0 auto}`;
 
-export interface ChatTagSandboxHostOptions { databasePath: string; tenantId: string; channelId: string; pinUserId?: string; port?: number; host?: string; buildSha?: string; }
+export interface NebulaArcadeSandboxHostOptions { databasePath: string; tenantId: string; channelId: string; pinUserId?: string; port?: number; host?: string; buildSha?: string; }
 
-export function createChatTagSandboxHost(options: ChatTagSandboxHostOptions) {
-  const gameStore = new SqliteChatTagStore(options.databasePath);
-  const experienceStore = new SqliteChatTagExperienceStore(options.databasePath);
+export function createNebulaArcadeSandboxHost(options: NebulaArcadeSandboxHostOptions) {
+  const gameStore = new SqliteNebulaTagStore(options.databasePath);
+  const experienceStore = new SqliteNebulaTagExperienceStore(options.databasePath);
   const sceneStore = new SqliteNebulaOverlaySceneStore(options.databasePath);
   const spmt = new SpmtClient({ baseUrl: "http://sandbox-disabled.invalid", appId: "nebula-arcade", fetchImpl: async () => Response.json({ sandbox: true, outbound: "disabled" }) });
-  const runtime = new ChatTagRuntime(gameStore, spmt);
-  const experience = new ChatTagExperienceService(runtime, experienceStore, options.pinUserId ?? "provider:twitch:pin", () => new Date().toISOString());
-  const overlay = new ChatTagOverlayHttpAdapter(gameStore, () => new Date().toISOString(), experienceStore);
-  const principal = { schemaVersion: 1 as const, tenantId: options.tenantId, appId: "nebula-arcade" as const, widgetId: "chat-tag" as const, channelId: options.channelId };
+  const runtime = new NebulaTagRuntime(gameStore, spmt);
+  const experience = new NebulaTagExperienceService(runtime, experienceStore, options.pinUserId ?? "provider:twitch:pin", () => new Date().toISOString());
+  const overlay = new NebulaTagOverlayHttpAdapter(gameStore, () => new Date().toISOString(), experienceStore);
+  const principal = { schemaVersion: 1 as const, tenantId: options.tenantId, appId: "nebula-arcade" as const, widgetId: "tag" as const, channelId: options.channelId };
 
   const server = createServer(async (request, response) => {
     const nonce = randomBytes(18).toString("base64url");
     applyHeaders(response, nonce);
     try {
-      const url = new URL(request.url ?? "/", "http://chat-tag.sandbox");
+      const url = new URL(request.url ?? "/", "http://nebula-arcade.sandbox");
       if (request.method === "GET" && url.pathname === "/health/ready") return json(response, 200, { ready: true, app: "nebula-arcade", runtimeMode: "sandbox", outboundIntegrations: "disabled", buildSha: options.buildSha ?? "dev" });
 
       if ((url.pathname === APP_PATH || url.pathname === "/") && url.searchParams.get("action") === "overlay-scenes") {
@@ -68,8 +68,8 @@ export function createChatTagSandboxHost(options: ChatTagSandboxHostOptions) {
         return html(response, 200, page.replace('<a href="/?view=spmt">SpaceMountain</a>', '<a href="/">SpaceMountain</a>'));
       }
 
-      if (request.method === "GET" && url.pathname === "/assets/chat-tag-sandbox.css") return text(response, 200, `${PRODUCT_UI_CSS}${NEBULA_ARCADE_BASE_CSS}${NEBULA_THEME_CSS}`, "text/css; charset=utf-8", "public, max-age=300");
-      if (request.method === "GET" && url.pathname === "/assets/chat-tag-sandbox.js") return text(response, 200, proxySafeBrowserScript(), "text/javascript; charset=utf-8", "public, max-age=300");
+      if (request.method === "GET" && url.pathname === "/assets/nebula-arcade-sandbox.css") return text(response, 200, `${PRODUCT_UI_CSS}${NEBULA_ARCADE_BASE_CSS}${NEBULA_THEME_CSS}`, "text/css; charset=utf-8", "public, max-age=300");
+      if (request.method === "GET" && url.pathname === "/assets/nebula-arcade-sandbox.js") return text(response, 200, proxySafeBrowserScript(), "text/javascript; charset=utf-8", "public, max-age=300");
       if (request.method === "GET" && (url.pathname === "/assets/nebula-overlay.css" || url.pathname === "/assets/nebula-arcade/overlay.css")) return text(response, 200, `${NEBULA_OVERLAY_CSS}${OVERLAY_FLOW_FIX_CSS}`, "text/css; charset=utf-8", "public, max-age=300");
       if (request.method === "GET" && url.pathname === "/assets/nebula-arcade/solar-system.webp") return binary(response, 200, await readFile(NEBULA_ARCADE_BACKGROUND), "image/webp", "public, max-age=86400");
 
@@ -94,26 +94,26 @@ export function createChatTagSandboxHost(options: ChatTagSandboxHostOptions) {
         return html(response, 200, proxySafeOverlayPage(scene));
       }
 
-      if (request.method === "GET" && url.pathname === "/v1/chat-tag/state") return json(response, 200, runtime.getState(options.tenantId));
-      if (request.method === "GET" && url.pathname === "/v1/chat-tag/support") return json(response, 200, experienceStore.listSupportTickets(options.tenantId));
-      if (request.method === "GET" && url.pathname === "/v1/nebula/chat-tag/overlay/messages") {
+      if (request.method === "GET" && url.pathname === "/v1/nebula-arcade/tag/state") return json(response, 200, runtime.getState(options.tenantId));
+      if (request.method === "GET" && url.pathname === "/v1/nebula-arcade/support") return json(response, 200, experienceStore.listSupportTickets(options.tenantId));
+      if (request.method === "GET" && url.pathname === "/v1/nebula-arcade/tag/overlay/messages") {
         const after = Number(url.searchParams.get("after") ?? "0");
         return json(response, 200, { messages: experienceStore.listOverlayMessages(options.tenantId, options.channelId, after) });
       }
-      if (request.method === "POST" && url.pathname === "/v1/chat-tag/message") {
+      if (request.method === "POST" && url.pathname === "/v1/nebula-arcade/tag/message") {
         requireSameOrigin(request);
         const body = await readJson(request);
         const occurredAt = optionalIso(body.occurredAt) ?? new Date().toISOString();
-        const outcome = await experience.ingest({ schemaVersion: 1, provider: provider(body.provider), tenantId: options.tenantId, channelId: options.channelId, messageId: textField(body.messageId, "messageId", 200), userId: textField(body.userId, "userId", 200), username: textField(body.username, "username", 120), text: normalizeSandboxChatTagCommand(textField(body.text, "text", 500)), occurredAt, roles: roles(body.roles) }, { liveUserIds: stringArray(body.liveUserIds, 200) });
+        const outcome = await experience.ingest({ schemaVersion: 1, provider: provider(body.provider), tenantId: options.tenantId, channelId: options.channelId, messageId: textField(body.messageId, "messageId", 200), userId: textField(body.userId, "userId", 200), username: textField(body.username, "username", 120), text: normalizeSandboxNebulaTagCommand(textField(body.text, "text", 500)), occurredAt, roles: roles(body.roles) }, { liveUserIds: stringArray(body.liveUserIds, 200) });
         return json(response, 200, { outcome, stored: runtime.getState(options.tenantId) });
       }
-      if (request.method === "POST" && url.pathname === "/v1/chat-tag/rotation") {
+      if (request.method === "POST" && url.pathname === "/v1/nebula-arcade/tag/rotation") {
         requireSameOrigin(request);
         const body = await readJson(request);
         const outcome = await runtime.reconcileRotation({ tenantId: options.tenantId, channelId: options.channelId, now: optionalIso(body.now) ?? new Date().toISOString(), liveUserIds: stringArray(body.liveUserIds, 200) });
         return json(response, 200, { outcome, stored: runtime.getState(options.tenantId) });
       }
-      if (url.pathname === "/v1/nebula/chat-tag/overlay" || url.pathname.startsWith("/v1/nebula/chat-tag/overlay/")) {
+      if (url.pathname === "/v1/nebula-arcade/tag/overlay" || url.pathname.startsWith("/v1/nebula-arcade/tag/overlay/")) {
         const adapted = overlay.handle({ method: request.method ?? "GET", path: url.pathname }, principal);
         return textWithHeaders(response, adapted.status, adapted.body, adapted.headers);
       }
@@ -131,12 +131,12 @@ export function createChatTagSandboxHost(options: ChatTagSandboxHostOptions) {
   };
 }
 
-export function validateChatTagSandboxEnvironment(environment: NodeJS.ProcessEnv) {
+export function validateNebulaArcadeSandboxEnvironment(environment: NodeJS.ProcessEnv) {
   if (environment.SPMT_RUNTIME_MODE !== "sandbox") throw new Error("SPMT_RUNTIME_MODE=sandbox is required");
   if (environment.SPMT_OUTBOUND_MODE !== "disabled") throw new Error("SPMT_OUTBOUND_MODE=disabled is required");
   const present = PROVIDER_ENV_NAMES.filter((name) => Boolean(environment[name]));
-  if (present.length) throw new Error(`Chat Tag sandbox rejects provider or infrastructure credentials: ${present.join(", ")}`);
-  return { databasePath: resolve(environment.CHAT_TAG_DATABASE_PATH ?? ".sandbox-data/chat-tag-green-sandbox.sqlite"), tenantId: safeId(environment.CHAT_TAG_TENANT_ID ?? "chat-tag-sandbox", "CHAT_TAG_TENANT_ID"), channelId: safeId(environment.CHAT_TAG_CHANNEL_ID ?? "sandbox-channel", "CHAT_TAG_CHANNEL_ID") };
+  if (present.length) throw new Error(`Nebula Arcade tag game sandbox rejects provider or infrastructure credentials: ${present.join(", ")}`);
+  return { databasePath: resolve(environment.NEBULA_ARCADE_DATABASE_PATH ?? ".sandbox-data/nebula-arcade-green-sandbox.sqlite"), tenantId: safeId(environment.NEBULA_ARCADE_TENANT_ID ?? "nebula-arcade-sandbox", "NEBULA_ARCADE_TENANT_ID"), channelId: safeId(environment.NEBULA_ARCADE_CHANNEL_ID ?? "sandbox-channel", "NEBULA_ARCADE_CHANNEL_ID") };
 }
 
 function arcadeView(value: string | null): NebulaArcadeViewV1 { return value === "games" || value === "game" || value === "overlay" || value === "stats" ? value : "home"; }
@@ -169,7 +169,7 @@ function stringArray(value: unknown, max: number) { if (value === undefined) ret
 function roles(value: unknown): Array<"broadcaster" | "moderator" | "member"> { const values = stringArray(value, 3); if (values.some((item) => !["broadcaster", "moderator", "member"].includes(item))) throw new SandboxError(400, "roles is invalid"); return values as Array<"broadcaster" | "moderator" | "member">; }
 function provider(value: unknown): "twitch" | "discord" | "kick" { const result = value ?? "twitch"; if (!["twitch", "discord", "kick"].includes(String(result))) throw new SandboxError(400, "provider is invalid"); return result as "twitch" | "discord" | "kick"; }
 function optionalIso(value: unknown) { if (value === undefined) return undefined; if (typeof value !== "string" || !Number.isFinite(Date.parse(value))) throw new SandboxError(400, "timestamp is invalid"); return value; }
-function normalizeSandboxChatTagCommand(value: string) { const match = /^!(join|leave|status|score|tag|pass|players|live|sleep|wake|pinrank)(\s+.*)?$/i.exec(value); return match ? `spmt ${match[1]!.toLowerCase()}${match[2] ?? ""}` : value; }
+function normalizeSandboxNebulaTagCommand(value: string) { const match = /^!(join|leave|status|score|tag|pass|players|live|sleep|wake|pinrank)(\s+.*)?$/i.exec(value); return match ? `spmt ${match[1]!.toLowerCase()}${match[2] ?? ""}` : value; }
 function safeId(value: string, name: string) { if (!value || value.trim() !== value || value.length > 200 || !/^[A-Za-z0-9._:@/-]+$/.test(value)) throw new Error(`${name} is invalid`); return value; }
 function html(response: ServerResponse, status: number, body: string) { text(response, status, body, "text/html; charset=utf-8", "no-store"); }
 function text(response: ServerResponse, status: number, body: string, contentType: string, cache: string) { const encoded = Buffer.from(body); response.writeHead(status, { "content-type": contentType, "content-length": encoded.byteLength, "cache-control": cache }); response.end(encoded); }
@@ -179,7 +179,7 @@ function json(response: ServerResponse, status: number, body: unknown) { const e
 class SandboxError extends Error { constructor(readonly status: number, message: string) { super(message); } }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  const checked = validateChatTagSandboxEnvironment(process.env);
-  const host = createChatTagSandboxHost({ ...checked, port: Number(process.env.PORT ?? 8080), host: process.env.HOST ?? "0.0.0.0", buildSha: process.env.BUILD_SHA ?? "dev", ...(process.env.CHAT_TAG_PIN_USER_ID ? { pinUserId: process.env.CHAT_TAG_PIN_USER_ID } : {}) });
+  const checked = validateNebulaArcadeSandboxEnvironment(process.env);
+  const host = createNebulaArcadeSandboxHost({ ...checked, port: Number(process.env.PORT ?? 8080), host: process.env.HOST ?? "0.0.0.0", buildSha: process.env.BUILD_SHA ?? "dev", ...(process.env.NEBULA_ARCADE_PIN_USER_ID ? { pinUserId: process.env.NEBULA_ARCADE_PIN_USER_ID } : {}) });
   await host.listen();
 }

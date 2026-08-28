@@ -19,9 +19,9 @@ test("MountainView routes concrete music and watch requests to HearMeOut",()=>{
  const movie=planMountainViewVoiceCommand("watch movie The Matrix",context);assert.equal(movie.kind,"route");assert.equal(movie.action,"media.movie.request");assert.equal(movie.payload.query,"The Matrix");
 });
 
-test("MountainView keeps community live status separate from the Chat Tag game module",()=>{
+test("MountainView keeps community live status separate from the Nebula Arcade tag game game module",()=>{
  const everyone=planMountainViewVoiceCommand("who's live",context);assert.equal(everyone.kind,"route");assert.equal(everyone.targetAppId,"discord-stream-hub");assert.equal(everyone.action,"community.live-members.read");
- const game=planMountainViewVoiceCommand("who's active in Chat Tag",context);assert.equal(game.kind,"route");assert.equal(game.targetAppId,"nebula-arcade");assert.equal(game.action,"chat-tag.live-members.read");
+ const game=planMountainViewVoiceCommand("who's active in Nebula Arcade",context);assert.equal(game.kind,"route");assert.equal(game.targetAppId,"nebula-arcade");assert.equal(game.action,"nebula-arcade.tag.live-members.read");
 });
 
 test("MountainView refuses local controls when no Companion is paired",()=>{

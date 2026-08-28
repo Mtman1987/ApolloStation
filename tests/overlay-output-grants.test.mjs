@@ -12,7 +12,7 @@ import { OverlayOutputMountResolver, PlatformApiAdapter } from "../packages/api-
 import { SpmtClient } from "../packages/sdk/dist/index.js";
 import { runSpmtCli } from "../packages/cli/dist/index.js";
 import { SpmtMcpServer, SPMT_MCP_PROTOCOL_VERSION } from "../packages/mcp/dist/index.js";
-import { ChatTagOverlayHttpAdapter, SqliteChatTagStore } from "../apps/nebula-arcade/dist/index.js";
+import { NebulaTagOverlayHttpAdapter, SqliteNebulaTagStore } from "../apps/nebula-arcade/dist/index.js";
 
 function environment() {
   const dir = mkdtempSync(join(tmpdir(), "spmt-overlay-output-"));
@@ -33,7 +33,7 @@ function environment() {
   control.registerTenant({ tenantId: "tenant-a", ownerUserId: "owner-1", displayName: "Tenant A" });
   control.registerApp({ appId: "nebula-arcade", name: "Nebula Arcade", description: "Community games", version: "1.0.0", launchUrl: "https://nebula.spmt.invalid", allowedScopes: ["workspace:read"], surfaces: ["shell", "overlay"], status: "active" });
   control.installApp("tenant-a", "nebula-arcade");
-  control.registerOverlayWidget({ tenantId: "tenant-a", manifest: { schemaVersion: 1, appId: "nebula-arcade", widgetId: "chat-tag", title: "Chat Tag", kind: "native", rendererUrl: "https://nebula.spmt.invalid/v1/nebula/chat-tag/overlay", requiredScopes: ["workspace:read"], supportsAudio: true, supportsInteraction: false } });
+  control.registerOverlayWidget({ tenantId: "tenant-a", manifest: { schemaVersion: 1, appId: "nebula-arcade", widgetId: "tag", title: "Nebula Arcade tag game", kind: "native", rendererUrl: "https://nebula.spmt.invalid/v1/nebula-arcade/tag/overlay", requiredScopes: ["workspace:read"], supportsAudio: true, supportsInteraction: false } });
   let authSequence = 0;
   const auth = new AuthService({ store, now, tokenFactory: (kind) => `${kind}_${++authSequence}_${"x".repeat(32)}` });
   const ownerToken = auth.issueHumanSession({ userId: "owner-1", scopes: ["overlay:outputs:read", "overlay:outputs:write"], tenantIds: ["tenant-a"] }).accessToken;
@@ -59,9 +59,9 @@ function rawAuthorityFiles(path) {
 
 test("opaque overlay outputs work across SDK, CLI, API and MCP without persisting bearer URLs", async () => {
   const e = environment();
-  const chatStore = new SqliteChatTagStore(join(e.dir, "chat-tag.db"));
+  const tagStore = new SqliteNebulaTagStore(join(e.dir, "nebula-arcade.db"));
   try {
-    const issued = await e.client.issueOverlayOutput("tenant-a", "nebula-arcade", "chat-tag", "viewer-7", 600_000);
+    const issued = await e.client.issueOverlayOutput("tenant-a", "nebula-arcade", "tag", "viewer-7", 600_000);
     const outputUrl = new URL(issued.browserSourceUrl);
     const token = decodeURIComponent(outputUrl.pathname.slice(3));
     assert.equal(outputUrl.origin, "https://outputs.spmt.invalid");
@@ -72,13 +72,13 @@ test("opaque overlay outputs work across SDK, CLI, API and MCP without persistin
 
     const resolver = new OverlayOutputMountResolver(e.control);
     const mounted = resolver.resolve(outputUrl.pathname);
-    assert.deepEqual(mounted?.principal, { schemaVersion: 1, grantId: issued.grant.grantId, tenantId: "tenant-a", appId: "nebula-arcade", widgetId: "chat-tag", viewerUserId: "viewer-7" });
-    assert.equal(mounted?.rendererUrl, "https://nebula.spmt.invalid/v1/nebula/chat-tag/overlay");
+    assert.deepEqual(mounted?.principal, { schemaVersion: 1, grantId: issued.grant.grantId, tenantId: "tenant-a", appId: "nebula-arcade", widgetId: "tag", viewerUserId: "viewer-7" });
+    assert.equal(mounted?.rendererUrl, "https://nebula.spmt.invalid/v1/nebula-arcade/tag/overlay");
     assert.equal(resolver.resolve(`${outputUrl.pathname}?tenantId=spoofed`), undefined);
 
-    const rendered = new ChatTagOverlayHttpAdapter(chatStore, e.now).handle({ method: "GET", path: "/v1/nebula/chat-tag/overlay" }, mounted?.principal);
+    const rendered = new NebulaTagOverlayHttpAdapter(tagStore, e.now).handle({ method: "GET", path: "/v1/nebula-arcade/tag/overlay" }, mounted?.principal);
     assert.equal(rendered.status, 200);
-    assert.match(rendered.body, /Chat Tag Overlay/);
+    assert.match(rendered.body, /Nebula Arcade tag game Overlay/);
 
     const listedByCli = await runSpmtCli(["overlay", "outputs", "tenant-a", "nebula-arcade"], e.client);
     assert.equal(listedByCli.length, 1);
@@ -88,7 +88,7 @@ test("opaque overlay outputs work across SDK, CLI, API and MCP without persistin
     assert.equal(apiListed.status, 200);
 
     const mcp = new SpmtMcpServer(e.operations);
-    const mcpIssued = mcp.handle({ jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "spmt.overlay.outputs.issue", arguments: { tenantId: "tenant-a", appId: "nebula-arcade", widgetId: "chat-tag" } } }, { accessToken: e.ownerToken, protocolVersion: SPMT_MCP_PROTOCOL_VERSION });
+    const mcpIssued = mcp.handle({ jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "spmt.overlay.outputs.issue", arguments: { tenantId: "tenant-a", appId: "nebula-arcade", widgetId: "tag" } } }, { accessToken: e.ownerToken, protocolVersion: SPMT_MCP_PROTOCOL_VERSION });
     assert.match(mcpIssued.result.structuredContent.browserSourceUrl, /^https:\/\/outputs\.spmt\.invalid\/o\//);
 
     assert.equal(rawAuthorityFiles(e.path).includes(token), false);
@@ -99,7 +99,7 @@ test("opaque overlay outputs work across SDK, CLI, API and MCP without persistin
     assert.ok(e.store.listAudit("tenant-a").some((item) => item.action === "overlay.outputs.issue"));
     assert.ok(e.store.listAudit("tenant-a").some((item) => item.action === "overlay.outputs.revoke"));
   } finally {
-    chatStore.close();
+    tagStore.close();
     e.store.close();
     rmSync(e.dir, { recursive: true, force: true });
   }
@@ -108,9 +108,9 @@ test("opaque overlay outputs work across SDK, CLI, API and MCP without persistin
 test("only the signed-in tenant owner can manage outputs", () => {
   const e = environment();
   try {
-    const member = e.api.handle({ method: "POST", path: "/v1/overlay/outputs", headers: { authorization: `Bearer ${e.memberToken}`, "x-spmt-tenant": "tenant-a" }, body: { appId: "nebula-arcade", widgetId: "chat-tag" } });
+    const member = e.api.handle({ method: "POST", path: "/v1/overlay/outputs", headers: { authorization: `Bearer ${e.memberToken}`, "x-spmt-tenant": "tenant-a" }, body: { appId: "nebula-arcade", widgetId: "tag" } });
     assert.equal(member.status, 403);
-    const service = e.api.handle({ method: "POST", path: "/v1/overlay/outputs", headers: { authorization: `Bearer ${e.serviceToken}`, "x-spmt-tenant": "tenant-a" }, body: { appId: "nebula-arcade", widgetId: "chat-tag" } });
+    const service = e.api.handle({ method: "POST", path: "/v1/overlay/outputs", headers: { authorization: `Bearer ${e.serviceToken}`, "x-spmt-tenant": "tenant-a" }, body: { appId: "nebula-arcade", widgetId: "tag" } });
     assert.equal(service.status, 403);
     const crossTenant = e.api.handle({ method: "GET", path: "/v1/overlay/outputs", headers: { authorization: `Bearer ${e.ownerToken}`, "x-spmt-tenant": "tenant-b" } });
     assert.equal(crossTenant.status, 403);
@@ -123,7 +123,7 @@ test("only the signed-in tenant owner can manage outputs", () => {
 test("hashed output grants survive restart and expire closed", () => {
   const e = environment();
   try {
-    const issued = e.control.issueOverlayOutputGrant({ tenantId: "tenant-a", appId: "nebula-arcade", widgetId: "chat-tag", createdByUserId: "owner-1", ttlMs: 300_000 });
+    const issued = e.control.issueOverlayOutputGrant({ tenantId: "tenant-a", appId: "nebula-arcade", widgetId: "tag", createdByUserId: "owner-1", ttlMs: 300_000 });
     const path = new URL(issued.browserSourceUrl).pathname;
     assert.equal(new OverlayOutputMountResolver(e.control).resolve(path)?.principal.grantId, issued.grant.grantId);
     e.store.close();

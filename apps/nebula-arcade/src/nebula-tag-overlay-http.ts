@@ -1,56 +1,56 @@
-import type { ChatTagStore } from "./chat-tag-runtime.js";
-import type { ChatTagExperienceStore } from "./chat-tag-experience.js";
-import { buildChatTagOverlaySnapshot } from "./chat-tag-overlay.js";
+import type { NebulaTagStore } from "./nebula-tag-runtime.js";
+import type { NebulaTagExperienceStore } from "./nebula-tag-experience.js";
+import { buildNebulaTagOverlaySnapshot } from "./nebula-tag-overlay.js";
 
-export interface ChatTagOverlayPrincipalV1 {
+export interface NebulaTagOverlayPrincipalV1 {
   schemaVersion: 1;
   tenantId: string;
   appId: "nebula-arcade";
-  widgetId: "chat-tag";
+  widgetId: "tag";
   viewerUserId?: string;
   channelId?: string;
 }
 
-export interface ChatTagOverlayHttpRequestV1 {
+export interface NebulaTagOverlayHttpRequestV1 {
   method: string;
   path: string;
 }
 
-export interface ChatTagOverlayHttpResponseV1 {
+export interface NebulaTagOverlayHttpResponseV1 {
   status: number;
   headers: Record<string, string>;
   body: string;
 }
 
-const ROOT = "/v1/nebula/chat-tag/overlay";
+const ROOT = "/v1/nebula-arcade/tag/overlay";
 
 /**
- * Controls-free Chat Tag output mounted behind the authenticated SPMT output
+ * Controls-free Nebula Arcade tag game output mounted behind the authenticated SPMT output
  * gateway. The gateway owns grants and passes only a verified principal here;
  * Nebula never accepts provider tokens, app headers, or tenant IDs from URLs.
  */
-export class ChatTagOverlayHttpAdapter {
-  constructor(private readonly store: ChatTagStore, private readonly now: () => string = () => new Date().toISOString(), private readonly experience?: ChatTagExperienceStore) {}
+export class NebulaTagOverlayHttpAdapter {
+  constructor(private readonly store: NebulaTagStore, private readonly now: () => string = () => new Date().toISOString(), private readonly experience?: NebulaTagExperienceStore) {}
 
-  handle(request: ChatTagOverlayHttpRequestV1, principal?: ChatTagOverlayPrincipalV1): ChatTagOverlayHttpResponseV1 {
+  handle(request: NebulaTagOverlayHttpRequestV1, principal?: NebulaTagOverlayPrincipalV1): NebulaTagOverlayHttpResponseV1 {
     if (!principal) return response(401, "text/plain; charset=utf-8", "Authenticated overlay principal required");
-    if (principal.schemaVersion !== 1 || principal.appId !== "nebula-arcade" || principal.widgetId !== "chat-tag" || !validId(principal.tenantId)) {
-      return response(403, "text/plain; charset=utf-8", "Overlay principal is not authorized for Chat Tag");
+    if (principal.schemaVersion !== 1 || principal.appId !== "nebula-arcade" || principal.widgetId !== "tag" || !validId(principal.tenantId)) {
+      return response(403, "text/plain; charset=utf-8", "Overlay principal is not authorized for Nebula Arcade tag game");
     }
     if (request.method !== "GET") return response(405, "text/plain; charset=utf-8", "Method not allowed", { allow: "GET" });
     if (request.path === ROOT) {
-      return response(200, "text/html; charset=utf-8", renderChatTagOverlayHtml(), {
+      return response(200, "text/html; charset=utf-8", renderNebulaTagOverlayHtml(), {
         "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; media-src 'self'; font-src 'self'; base-uri 'none'; frame-ancestors *",
         "cache-control": "no-store",
         "referrer-policy": "no-referrer",
         "x-content-type-options": "nosniff",
       });
     }
-    if (request.path === ROOT + "/client.js") return response(200, "text/javascript; charset=utf-8", CHAT_TAG_OVERLAY_CLIENT_JS, { "cache-control": "public, max-age=300", "x-content-type-options": "nosniff" });
-    if (request.path === ROOT + "/styles.css") return response(200, "text/css; charset=utf-8", CHAT_TAG_OVERLAY_CSS, { "cache-control": "public, max-age=300", "x-content-type-options": "nosniff" });
+    if (request.path === ROOT + "/client.js") return response(200, "text/javascript; charset=utf-8", NEBULA_TAG_OVERLAY_CLIENT_JS, { "cache-control": "public, max-age=300", "x-content-type-options": "nosniff" });
+    if (request.path === ROOT + "/styles.css") return response(200, "text/css; charset=utf-8", NEBULA_TAG_OVERLAY_CSS, { "cache-control": "public, max-age=300", "x-content-type-options": "nosniff" });
     if (request.path === ROOT + "/state") {
       const stored = this.store.getState(principal.tenantId);
-      const snapshot = buildChatTagOverlaySnapshot(stored.state, { ...(principal.viewerUserId ? { viewerUserId: principal.viewerUserId } : {}), generatedAt: this.now() });
+      const snapshot = buildNebulaTagOverlaySnapshot(stored.state, { ...(principal.viewerUserId ? { viewerUserId: principal.viewerUserId } : {}), generatedAt: this.now() });
       return response(200, "application/json; charset=utf-8", JSON.stringify({ revision: stored.revision, snapshot }), {
         "cache-control": "no-store",
         "x-content-type-options": "nosniff",
@@ -67,21 +67,21 @@ export class ChatTagOverlayHttpAdapter {
   }
 }
 
-export function renderChatTagOverlayHtml(): string {
+export function renderNebulaTagOverlayHtml(): string {
   return [
     "<!doctype html>",
     '<html lang="en">',
     "<head>",
     '<meta charset="utf-8">',
     '<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">',
-    "<title>Chat Tag Overlay</title>",
+    "<title>Nebula Arcade tag game Overlay</title>",
     '<link rel="stylesheet" href="' + ROOT + '/styles.css">',
     "</head>",
     '<body data-state-url="' + ROOT + '/state" data-message-url="' + ROOT + '/messages" data-cycle-ms="240000">',
     '<main id="overlay" aria-live="polite">',
     '<section id="broadcast" class="broadcast" hidden><div id="confetti" class="confetti"></div><div id="broadcast-icon" class="broadcast-icon"></div><div id="broadcast-lines" class="broadcast-lines"></div></section>',
     '<footer id="status-bar" class="status-bar">',
-    '<div class="viewer"><strong id="viewer-name">Chat Tag</strong><span id="viewer-stats"></span></div>',
+    '<div class="viewer"><strong id="viewer-name">Nebula Arcade tag game</strong><span id="viewer-stats"></span></div>',
     '<div class="holder"><small>Current</small><strong id="holder">Loading…</strong></div>',
     '<div class="population"><strong id="population">0</strong><small>players</small></div>',
     "</footer>",
@@ -92,7 +92,7 @@ export function renderChatTagOverlayHtml(): string {
   ].join("");
 }
 
-export const CHAT_TAG_OVERLAY_CSS = [
+export const NEBULA_TAG_OVERLAY_CSS = [
   ":root{color-scheme:dark;font-family:Inter,ui-sans-serif,system-ui,sans-serif}",
   "*{box-sizing:border-box}",
   "html,body{width:100%;height:100%;margin:0;overflow:hidden;background:transparent}",
@@ -116,7 +116,7 @@ export const CHAT_TAG_OVERLAY_CSS = [
   "@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}.confetti{display:none}}",
 ].join("");
 
-export const CHAT_TAG_OVERLAY_CLIENT_JS = [
+export const NEBULA_TAG_OVERLAY_CLIENT_JS = [
   "(()=>{'use strict';",
   "const body=document.body,stateUrl=body.dataset.stateUrl,messageUrl=body.dataset.messageUrl,cycleMs=Number(body.dataset.cycleMs)||240000;",
   "const bar=document.getElementById('status-bar'),holder=document.getElementById('holder'),population=document.getElementById('population'),viewerName=document.getElementById('viewer-name'),viewerStats=document.getElementById('viewer-stats'),broadcast=document.getElementById('broadcast'),icon=document.getElementById('broadcast-icon'),lines=document.getElementById('broadcast-lines'),confetti=document.getElementById('confetti');",
@@ -125,7 +125,7 @@ export const CHAT_TAG_OVERLAY_CLIENT_JS = [
   "function sound(kind){try{const A=window.AudioContext||window.webkitAudioContext;if(!A)return;const c=new A(),now=c.currentTime;(tones[kind]||tones.history).forEach((f,i)=>{const o=c.createOscillator(),g=c.createGain();o.type=kind==='history'?'triangle':'sine';o.frequency.value=f;g.gain.setValueAtTime(.0001,now+i*.11);g.gain.exponentialRampToValueAtTime(kind==='history'?.018:.03,now+i*.11+.02);g.gain.exponentialRampToValueAtTime(.0001,now+i*.11+.22);o.connect(g);g.connect(c.destination);o.start(now+i*.11);o.stop(now+i*.11+.24)});}catch{}}",
   "function celebrate(colors){confetti.replaceChildren();if(matchMedia('(prefers-reduced-motion: reduce)').matches)return;for(let i=0;i<28;i++){const p=document.createElement('i');p.style.left=(Math.random()*100)+'%';p.style.setProperty('--color',colors[i%colors.length]);p.style.setProperty('--delay',(Math.random()*.35)+'s');p.style.setProperty('--duration',(3.8+Math.random()*1.8)+'s');p.style.setProperty('--drift',(-18+Math.random()*36)+'vw');confetti.append(p);}}",
   "function show(item){if(active){queue.push(item);return;}active=true;broadcast.hidden=false;broadcast.className='broadcast '+item.kind;bar.classList.add('dim');icon.textContent=item.icon;icon.style.color=item.color;lines.replaceChildren(...item.lines.map(value=>{const line=document.createElement('div');line.textContent=value;return line;}));sound(item.kind);if(item.kind!=='history')celebrate([item.color,'#fff','#ffd700']);setTimeout(()=>{broadcast.hidden=true;bar.classList.remove('dim');active=false;const next=queue.shift();if(next)setTimeout(()=>show(next),450);},item.duration||7000);}",
-  "function render(next){const previous=snapshot;snapshot=next;holder.textContent=next.currentIt?next.currentIt.username:'FREE FOR ALL';holder.style.color=next.currentIt?'#00d9ff':'#ff6b35';population.textContent=String(next.playerCount);if(next.viewer){viewerName.textContent=next.viewer.username;viewerStats.textContent='#'+next.viewer.rank+' • '+next.viewer.score+' pts • '+next.viewer.passCount+' passes';}else{viewerName.textContent='Chat Tag';viewerStats.textContent=next.availablePlayerCount+' available';}const history=next.recentHistory[0];if(previous&&history&&history.id!==lastHistoryId)show({kind:'tag',icon:history.doublePoints?'🔥':'🎯',color:history.doublePoints?'#ff4500':'#00d9ff',lines:[history.announcement],duration:9000});if(previous&&lastHolder!==undefined&&lastHolder!==(next.currentIt&&next.currentIt.userId)){show(next.currentIt?{kind:'newit',icon:'🎯',color:'#00d9ff',lines:[next.currentIt.username+' is now IT!'],duration:8000}:{kind:'ffa',icon:'🔥',color:'#ff4500',lines:['FREE FOR ALL!','Anyone can tag for DOUBLE POINTS!'],duration:10000});}lastHistoryId=history&&history.id;lastHolder=next.currentIt&&next.currentIt.userId;}",
+  "function render(next){const previous=snapshot;snapshot=next;holder.textContent=next.currentIt?next.currentIt.username:'FREE FOR ALL';holder.style.color=next.currentIt?'#00d9ff':'#ff6b35';population.textContent=String(next.playerCount);if(next.viewer){viewerName.textContent=next.viewer.username;viewerStats.textContent='#'+next.viewer.rank+' • '+next.viewer.score+' pts • '+next.viewer.passCount+' passes';}else{viewerName.textContent='Nebula Arcade tag game';viewerStats.textContent=next.availablePlayerCount+' available';}const history=next.recentHistory[0];if(previous&&history&&history.id!==lastHistoryId)show({kind:'tag',icon:history.doublePoints?'🔥':'🎯',color:history.doublePoints?'#ff4500':'#00d9ff',lines:[history.announcement],duration:9000});if(previous&&lastHolder!==undefined&&lastHolder!==(next.currentIt&&next.currentIt.userId)){show(next.currentIt?{kind:'newit',icon:'🎯',color:'#00d9ff',lines:[next.currentIt.username+' is now IT!'],duration:8000}:{kind:'ffa',icon:'🔥',color:'#ff4500',lines:['FREE FOR ALL!','Anyone can tag for DOUBLE POINTS!'],duration:10000});}lastHistoryId=history&&history.id;lastHolder=next.currentIt&&next.currentIt.userId;}",
   "async function poll(){try{const r=await fetch(stateUrl,{cache:'no-store',credentials:'same-origin'});if(!r.ok)return;const value=await r.json();render(value.snapshot);}catch{}}",
   "async function pollMessages(){try{const r=await fetch(messageUrl+'?after='+lastMessage,{cache:'no-store',credentials:'same-origin'});if(!r.ok)return;const value=await r.json();for(const item of value.messages||[]){lastMessage=Math.max(lastMessage,item.sequence);show({kind:'history',icon:'🏷️',color:'#00d9ff',lines:[item.text],duration:9000});}}catch{}}",
   "setInterval(poll,1000);setInterval(pollMessages,1000);poll();pollMessages();",
@@ -133,7 +133,7 @@ export const CHAT_TAG_OVERLAY_CLIENT_JS = [
   "})();",
 ].join("");
 
-function response(status: number, contentType: string, body: string, headers: Record<string, string> = {}): ChatTagOverlayHttpResponseV1 {
+function response(status: number, contentType: string, body: string, headers: Record<string, string> = {}): NebulaTagOverlayHttpResponseV1 {
   return { status, headers: { "content-type": contentType, ...headers }, body };
 }
 

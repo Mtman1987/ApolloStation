@@ -3,13 +3,13 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { createChatTagSandboxHost } from "../apps/nebula-arcade/dist/chat-tag-sandbox-server.js";
+import { createNebulaArcadeSandboxHost } from "../apps/nebula-arcade/dist/nebula-arcade-sandbox-server.js";
 
 function hostOrigin(server) { const address = server.address(); assert.ok(address && typeof address !== "string"); return `http://127.0.0.1:${address.port}`; }
 
 test("Nebula enhanced host gives all games shared runtime actions and Game Mix overlays", async () => {
   const directory = mkdtempSync(join(tmpdir(), "nebula-parity-"));
-  const host = createChatTagSandboxHost({ databasePath: join(directory, "nebula.sqlite"), tenantId: "tenant-a", channelId: "captain", port: 0, host: "127.0.0.1", buildSha: "test" });
+  const host = createNebulaArcadeSandboxHost({ databasePath: join(directory, "nebula.sqlite"), tenantId: "tenant-a", channelId: "captain", port: 0, host: "127.0.0.1", buildSha: "test" });
   try {
     await host.listen();
     const origin = hostOrigin(host.server);
@@ -58,7 +58,7 @@ test("Nebula enhanced host gives all games shared runtime actions and Game Mix o
 
 test("Nebula action validation retains donor-specific commands", async () => {
   const directory = mkdtempSync(join(tmpdir(), "nebula-actions-"));
-  const host = createChatTagSandboxHost({ databasePath: join(directory, "nebula.sqlite"), tenantId: "tenant-a", channelId: "captain", port: 0, host: "127.0.0.1" });
+  const host = createNebulaArcadeSandboxHost({ databasePath: join(directory, "nebula.sqlite"), tenantId: "tenant-a", channelId: "captain", port: 0, host: "127.0.0.1" });
   try {
     await host.listen(); const origin = hostOrigin(host.server);
     const post = (body) => fetch(`${origin}/v1/nebula/game-actions`, { method: "POST", headers: { "content-type": "application/json", origin }, body: JSON.stringify(body) });

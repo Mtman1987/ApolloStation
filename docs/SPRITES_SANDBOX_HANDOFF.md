@@ -41,7 +41,7 @@ Review and Release use isolated data roots. They must never share a writable dat
 
 The platform cohort contains the SPMT authority and SpaceMountain shell. First-party applications are discovered through the same registry contract used for future apps.
 
-Nebula Arcade is the registered Games Hub application. It owns the twenty-game catalog, game detail pages, command routing, saved multi-game overlay scenes, and game-private state. **Chat Tag is a bounded game module inside Nebula Arcade** for its own runtime, compatibility, scoring, commands, persistence, and overlay behavior; it is not published as a separate ecosystem app.
+Nebula Arcade is the registered Games Hub application and the only current technical/product identity for this area. It owns the twenty-game catalog, game detail pages, command routing, saved multi-game overlay scenes, workers, integrations, and game-private state. Tagging behavior is its internal `tag` game; no separately named app, service, worker, route, or overlay owner exists.
 
 Commlink, Stellar Core, Mission Control, and Nebula Arcade use the shared SpaceMountain viewport/theme/navigation contracts. The remaining donor apps are added through the same pattern rather than by expanding the shell with new hardcoded product paths.
 

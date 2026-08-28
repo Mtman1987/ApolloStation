@@ -29,16 +29,16 @@ function fixture() {
 test("a tenant creates one passwordless SPMT account immediately and remains idempotent", () => {
   const f = fixture();
   try {
-    const first = f.accounts.provisionAccount({ tenantId: "tenant-chat-tag-1", sourceAppId: "chat-tag", username: "newmember", displayName: "New Member" });
+    const first = f.accounts.provisionAccount({ tenantId: "tenant-nebula-arcade-1", sourceAppId: "nebula-arcade", username: "newmember", displayName: "New Member" });
     assert.equal(first.credentialState, "setup-required");
     assert.equal(first.createdUser, true);
     assert.equal(first.createdTenant, true);
     assert.equal(f.platformStore.getUserCredential(first.userId), undefined);
-    assert.equal(f.control.getTenant("tenant-chat-tag-1").ownerUserId, first.userId);
-    assert.equal(f.authority.getWorkspace("tenant-chat-tag-1")?.tenantId, "tenant-chat-tag-1");
-    f.authority.awardXp({ tenantId: "tenant-chat-tag-1", userId: first.userId, delta: 5, sourceAppId: "chat-tag", reason: "joined", idempotencyKey: "join-1" });
-    assert.equal(f.authority.getXpBalance("tenant-chat-tag-1", first.userId), 5);
-    const second = f.accounts.provisionAccount({ tenantId: "tenant-chat-tag-1", sourceAppId: "discord-stream-hub", username: "newmember" });
+    assert.equal(f.control.getTenant("tenant-nebula-arcade-1").ownerUserId, first.userId);
+    assert.equal(f.authority.getWorkspace("tenant-nebula-arcade-1")?.tenantId, "tenant-nebula-arcade-1");
+    f.authority.awardXp({ tenantId: "tenant-nebula-arcade-1", userId: first.userId, delta: 5, sourceAppId: "nebula-arcade", reason: "joined", idempotencyKey: "join-1" });
+    assert.equal(f.authority.getXpBalance("tenant-nebula-arcade-1", first.userId), 5);
+    const second = f.accounts.provisionAccount({ tenantId: "tenant-nebula-arcade-1", sourceAppId: "discord-stream-hub", username: "newmember" });
     assert.equal(second.userId, first.userId);
     assert.equal(second.createdUser, false);
     assert.equal(second.createdTenant, false);
@@ -82,8 +82,8 @@ test("existing members can receive a one-time Discord DM reset without a plainte
 test("tenant ownership and pre-linked provider identity never silently merge different accounts", () => {
   const f = fixture();
   try {
-    const a = f.accounts.provisionAccount({ tenantId: "tenant-one", sourceAppId: "chat-tag", username: "one" });
-    const b = f.accounts.provisionAccount({ tenantId: "tenant-two", sourceAppId: "chat-tag", username: "two", discord: { id: "discord-existing" } });
+    const a = f.accounts.provisionAccount({ tenantId: "tenant-one", sourceAppId: "nebula-arcade", username: "one" });
+    const b = f.accounts.provisionAccount({ tenantId: "tenant-two", sourceAppId: "nebula-arcade", username: "two", discord: { id: "discord-existing" } });
     assert.notEqual(a.userId, b.userId);
     assert.throws(() => f.accounts.provisionAccount({ tenantId: "tenant-one", sourceAppId: "spacemountain", discord: { id: "discord-existing" } }), /migration review/);
   } finally { f.close(); }

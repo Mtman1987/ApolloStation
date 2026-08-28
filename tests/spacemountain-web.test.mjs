@@ -57,7 +57,7 @@ test("private SpaceMountain host serves explicit browser modules with restrictiv
     assert.match(html, /Tenant personas remain in the separate apps/);
     assert.match(html, /Add developer app/);
     assert.match(html, /Developer docs/);
-    assert.doesNotMatch(html, /Publish Chat Tag through SDK/);
+    assert.doesNotMatch(html, /Publish Nebula Arcade tag game through SDK/);
     assert.doesNotMatch(html, /localStorage|sessionStorage|accessToken|refreshToken/);
 
     const client = await fetch(`${base}/assets/web/client.js`);
@@ -401,9 +401,9 @@ test("supervised runner seeds the canonical first-party app pool and launches Ne
   const directory = mkdtempSync(join(tmpdir(), "spmt-supervised-candidate-"));
   const ports = new Set();
   while (ports.size < 3) ports.add(await freePort());
-  const [spmtPort, webPort, chatTagPort] = ports;
+  const [spmtPort, webPort, nebulaArcadePort] = ports;
   const base = `http://127.0.0.1:${webPort}`;
-  const child = spawn(process.execPath, ["scripts/sprites/run-supervised-sandbox.mjs", "--candidate-app", "nebula-arcade", "--public-url", `http://localhost:${webPort}`, "--data-root", directory, "--build-sha", "candidate-test", "--spmt-port", String(spmtPort), "--web-port", String(webPort), "--chat-tag-port", String(chatTagPort)], { cwd: new URL("..", import.meta.url), stdio: ["ignore", "pipe", "pipe"] });
+  const child = spawn(process.execPath, ["scripts/sprites/run-supervised-sandbox.mjs", "--candidate-app", "nebula-arcade", "--public-url", `http://localhost:${webPort}`, "--data-root", directory, "--build-sha", "candidate-test", "--spmt-port", String(spmtPort), "--web-port", String(webPort), "--nebula-arcade-port", String(nebulaArcadePort)], { cwd: new URL("..", import.meta.url), stdio: ["ignore", "pipe", "pipe"] });
   let output = "";
   child.stdout.setEncoding("utf8");
   child.stderr.setEncoding("utf8");
@@ -439,7 +439,7 @@ test("supervised runner seeds the canonical first-party app pool and launches Ne
     child.kill("SIGTERM");
     const exit = await new Promise((done) => child.once("exit", (code, signal) => done({ code, signal })));
     assert.deepEqual(exit, { code: 0, signal: null });
-    await waitUntil(async () => !(await reachable(spmtPort)) && !(await reachable(webPort)) && !(await reachable(chatTagPort)), 5_000, () => "A supervised candidate port remained reachable after termination");
+    await waitUntil(async () => !(await reachable(spmtPort)) && !(await reachable(webPort)) && !(await reachable(nebulaArcadePort)), 5_000, () => "A supervised candidate port remained reachable after termination");
   } finally {
     if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
     rmSync(directory, { recursive: true, force: true });

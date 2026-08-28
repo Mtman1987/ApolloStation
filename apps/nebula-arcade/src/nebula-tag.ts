@@ -1,27 +1,27 @@
 import { SpmtClient } from "@spmt/sdk";
 
-export const CHAT_TAG_STATE_VERSION = 1 as const;
-export const CHAT_TAG_PLAYER_JOINED = "nebula.chat-tag.player.joined.v1";
-export const CHAT_TAG_PLAYER_LEFT = "nebula.chat-tag.player.left.v1";
-export const CHAT_TAG_TAG_COMPLETED = "nebula.chat-tag.tag.completed.v1";
-export const CHAT_TAG_FREE_FOR_ALL_STARTED = "nebula.chat-tag.free-for-all.started.v1";
-export const CHAT_TAG_PLAYER_AVAILABILITY_CHANGED = "nebula.chat-tag.player.availability.changed.v1";
-export const CHAT_TAG_PASS_GRANTED = "nebula.chat-tag.pass.granted.v1";
-export const CHAT_TAG_CROWN_SET = "nebula.chat-tag.crown.set.v1";
-export const CHAT_TAG_CROWNS_CLEARED = "nebula.chat-tag.crowns.cleared.v1";
+export const NEBULA_TAG_STATE_VERSION = 1 as const;
+export const NEBULA_TAG_PLAYER_JOINED = "nebula.arcade.tag.player.joined.v1";
+export const NEBULA_TAG_PLAYER_LEFT = "nebula.arcade.tag.player.left.v1";
+export const NEBULA_TAG_TAG_COMPLETED = "nebula.arcade.tag.completed.v1";
+export const NEBULA_TAG_FREE_FOR_ALL_STARTED = "nebula.arcade.tag.free-for-all.started.v1";
+export const NEBULA_TAG_PLAYER_AVAILABILITY_CHANGED = "nebula.arcade.tag.player.availability.changed.v1";
+export const NEBULA_TAG_PASS_GRANTED = "nebula.arcade.tag.pass.granted.v1";
+export const NEBULA_TAG_CROWN_SET = "nebula.arcade.tag.crown.set.v1";
+export const NEBULA_TAG_CROWNS_CLEARED = "nebula.arcade.tag.crowns.cleared.v1";
 
-export const CHAT_TAG_EVENT_TYPES = [
-  CHAT_TAG_PLAYER_JOINED,
-  CHAT_TAG_PLAYER_LEFT,
-  CHAT_TAG_TAG_COMPLETED,
-  CHAT_TAG_FREE_FOR_ALL_STARTED,
-  CHAT_TAG_PLAYER_AVAILABILITY_CHANGED,
-  CHAT_TAG_PASS_GRANTED,
-  CHAT_TAG_CROWN_SET,
-  CHAT_TAG_CROWNS_CLEARED,
+export const NEBULA_TAG_EVENT_TYPES = [
+  NEBULA_TAG_PLAYER_JOINED,
+  NEBULA_TAG_PLAYER_LEFT,
+  NEBULA_TAG_TAG_COMPLETED,
+  NEBULA_TAG_FREE_FOR_ALL_STARTED,
+  NEBULA_TAG_PLAYER_AVAILABILITY_CHANGED,
+  NEBULA_TAG_PASS_GRANTED,
+  NEBULA_TAG_CROWN_SET,
+  NEBULA_TAG_CROWNS_CLEARED,
 ] as const;
 
-export interface ChatTagPlayerStateV1 {
+export interface NebulaTagPlayerStateV1 {
   userId: string;
   username: string;
   joinedAt: string;
@@ -36,7 +36,7 @@ export interface ChatTagPlayerStateV1 {
   noTagbackFromUserId: string | null;
 }
 
-export interface ChatTagHistoryEntryV1 {
+export interface NebulaTagHistoryEntryV1 {
   id: string;
   commandId: string;
   kind: "tag" | "pass" | "free-for-all";
@@ -48,14 +48,14 @@ export interface ChatTagHistoryEntryV1 {
   scoreAwarded: number;
 }
 
-export interface ChatTagXpAwardV1 {
+export interface NebulaTagXpAwardV1 {
   userId: string;
   delta: number;
-  reason: "chat-tag.tag" | "chat-tag.pass" | "chat-tag.crown";
+  reason: "nebula-arcade.tag" | "nebula-arcade.pass" | "nebula-arcade.crown";
   idempotencyKey: string;
 }
 
-export interface ChatTagMonthlyWinnerV1 {
+export interface NebulaTagMonthlyWinnerV1 {
   userId: string;
   username: string;
   place: 1 | 2 | 3;
@@ -63,13 +63,13 @@ export interface ChatTagMonthlyWinnerV1 {
   selectedAt: string;
 }
 
-export interface ChatTagPublicEventV1 {
-  type: (typeof CHAT_TAG_EVENT_TYPES)[number];
+export interface NebulaTagPublicEventV1 {
+  type: (typeof NEBULA_TAG_EVENT_TYPES)[number];
   idempotencyKey: string;
   payload: Record<string, unknown>;
 }
 
-export type ChatTagCommandKindV1 =
+export type NebulaTagCommandKindV1 =
   | "join"
   | "leave"
   | "tag"
@@ -83,7 +83,7 @@ export type ChatTagCommandKindV1 =
   | "set-winner"
   | "clear-winners";
 
-interface ChatTagCommandBaseV1 {
+interface NebulaTagCommandBaseV1 {
   schemaVersion: 1;
   tenantId: string;
   commandId: string;
@@ -93,46 +93,46 @@ interface ChatTagCommandBaseV1 {
   isModerator?: boolean;
 }
 
-export type ChatTagCommandV1 =
-  | (ChatTagCommandBaseV1 & { kind: "join"; username: string })
-  | (ChatTagCommandBaseV1 & { kind: "leave" })
-  | (ChatTagCommandBaseV1 & { kind: "tag"; targetUserId: string })
-  | (ChatTagCommandBaseV1 & { kind: "pass"; targetUserId: string })
-  | (ChatTagCommandBaseV1 & { kind: "sleep"; targetUserId?: string })
-  | (ChatTagCommandBaseV1 & { kind: "wake"; targetUserId?: string })
-  | (ChatTagCommandBaseV1 & { kind: "record-activity" })
-  | (ChatTagCommandBaseV1 & { kind: "grant-pass"; targetUserId: string })
-  | (ChatTagCommandBaseV1 & { kind: "set-it"; targetUserId: string })
-  | (ChatTagCommandBaseV1 & { kind: "trigger-ffa" })
-  | (ChatTagCommandBaseV1 & { kind: "set-winner"; targetUserId: string; place: 1 | 2 | 3 })
-  | (ChatTagCommandBaseV1 & { kind: "clear-winners" });
+export type NebulaTagCommandV1 =
+  | (NebulaTagCommandBaseV1 & { kind: "join"; username: string })
+  | (NebulaTagCommandBaseV1 & { kind: "leave" })
+  | (NebulaTagCommandBaseV1 & { kind: "tag"; targetUserId: string })
+  | (NebulaTagCommandBaseV1 & { kind: "pass"; targetUserId: string })
+  | (NebulaTagCommandBaseV1 & { kind: "sleep"; targetUserId?: string })
+  | (NebulaTagCommandBaseV1 & { kind: "wake"; targetUserId?: string })
+  | (NebulaTagCommandBaseV1 & { kind: "record-activity" })
+  | (NebulaTagCommandBaseV1 & { kind: "grant-pass"; targetUserId: string })
+  | (NebulaTagCommandBaseV1 & { kind: "set-it"; targetUserId: string })
+  | (NebulaTagCommandBaseV1 & { kind: "trigger-ffa" })
+  | (NebulaTagCommandBaseV1 & { kind: "set-winner"; targetUserId: string; place: 1 | 2 | 3 })
+  | (NebulaTagCommandBaseV1 & { kind: "clear-winners" });
 
-export interface ChatTagCommandResultV1 {
+export interface NebulaTagCommandResultV1 {
   schemaVersion: 1;
   tenantId: string;
   commandId: string;
-  kind: ChatTagCommandKindV1;
+  kind: NebulaTagCommandKindV1;
   status: "applied" | "rejected" | "duplicate";
   code: string;
   message: string;
   stateChanged: boolean;
-  event?: ChatTagPublicEventV1;
-  xpAward?: ChatTagXpAwardV1;
+  event?: NebulaTagPublicEventV1;
+  xpAward?: NebulaTagXpAwardV1;
 }
 
-export interface ChatTagStateV1 {
-  schemaVersion: typeof CHAT_TAG_STATE_VERSION;
+export interface NebulaTagStateV1 {
+  schemaVersion: typeof NEBULA_TAG_STATE_VERSION;
   tenantId: string;
   currentItUserId: string | null;
   lastTagAt: string | null;
-  players: Record<string, ChatTagPlayerStateV1>;
-  history: ChatTagHistoryEntryV1[];
-  monthlyWinners: ChatTagMonthlyWinnerV1[];
+  players: Record<string, NebulaTagPlayerStateV1>;
+  history: NebulaTagHistoryEntryV1[];
+  monthlyWinners: NebulaTagMonthlyWinnerV1[];
   crownAwardKeys: string[];
-  appliedCommands: Record<string, ChatTagCommandResultV1>;
+  appliedCommands: Record<string, NebulaTagCommandResultV1>;
 }
 
-export interface ChatTagRulesV1 {
+export interface NebulaTagRulesV1 {
   tagSuccessPoints: number;
   taggedPenaltyPoints: number;
   immunityMs: number;
@@ -141,19 +141,19 @@ export interface ChatTagRulesV1 {
   passSpendWindowMs: number;
 }
 
-export interface ChatTagRotationRulesV1 {
+export interface NebulaTagRotationRulesV1 {
   rotateAfterMs: number;
   forceRandomAfterMs: number;
   freeForAllReminderMs: number;
 }
 
-export interface ChatTagRotationPlanV1 {
+export interface NebulaTagRotationPlanV1 {
   action: "none" | "assign" | "free-for-all";
   reason: "not-due" | "no-players" | "initial-assignment" | "active-holder-timeout" | "inactive-holder-timeout" | "forced-timeout" | "free-for-all-reminder" | "no-eligible-player";
-  command?: ChatTagCommandV1;
+  command?: NebulaTagCommandV1;
 }
 
-export const DEFAULT_CHAT_TAG_RULES: ChatTagRulesV1 = {
+export const DEFAULT_NEBULA_TAG_RULES: NebulaTagRulesV1 = {
   tagSuccessPoints: 100,
   taggedPenaltyPoints: 50,
   immunityMs: 20 * 60 * 1_000,
@@ -162,17 +162,17 @@ export const DEFAULT_CHAT_TAG_RULES: ChatTagRulesV1 = {
   passSpendWindowMs: 24 * 60 * 60 * 1_000,
 };
 
-export const DEFAULT_CHAT_TAG_ROTATION_RULES: ChatTagRotationRulesV1 = {
+export const DEFAULT_NEBULA_TAG_ROTATION_RULES: NebulaTagRotationRulesV1 = {
   rotateAfterMs: 40 * 60 * 1_000,
   forceRandomAfterMs: 5 * 60 * 60 * 1_000,
   freeForAllReminderMs: 60 * 60 * 1_000,
 };
 
-export type ChatTagParsedCommandV1 =
+export type NebulaTagParsedCommandV1 =
   | { kind: "join" | "leave" | "status" | "score" | "rank" | "players" | "sleep" | "wake" | "toggle-away" | "rules" | "help" | "info" }
   | { kind: "tag" | "pass" | "grant-pass"; targetUsername: string };
 
-export interface ChatTagInboundMessageV1 {
+export interface NebulaTagInboundMessageV1 {
   schemaVersion: 1;
   provider: "twitch" | "discord" | "kick";
   tenantId: string;
@@ -186,11 +186,11 @@ export interface ChatTagInboundMessageV1 {
   mentions?: Array<{ token: string; userId: string; username: string }>;
 }
 
-export type ChatTagMessagePlanV1 =
+export type NebulaTagMessagePlanV1 =
   | { kind: "ignored" }
   | { kind: "response"; code: string; message: string }
   | { kind: "rejected"; code: string; message: string }
-  | { kind: "command"; command: ChatTagCommandV1 };
+  | { kind: "command"; command: NebulaTagCommandV1 };
 
 function normalizeUsername(value: string): string {
   return value.trim().toLowerCase().replace(/^@+/, "");
@@ -201,13 +201,13 @@ function isValidIso(value: string): boolean {
 }
 
 function eventFor(
-  command: ChatTagCommandV1,
-  type: ChatTagPublicEventV1["type"],
+  command: NebulaTagCommandV1,
+  type: NebulaTagPublicEventV1["type"],
   payload: Record<string, unknown>,
-): ChatTagPublicEventV1 {
+): NebulaTagPublicEventV1 {
   return {
     type,
-    idempotencyKey: `chat-tag:${command.kind}:${command.commandId}`,
+    idempotencyKey: `nebula-arcade:${command.kind}:${command.commandId}`,
     payload: {
       schemaVersion: 1,
       commandId: command.commandId,
@@ -219,12 +219,12 @@ function eventFor(
 }
 
 function resultFor(
-  command: ChatTagCommandV1,
+  command: NebulaTagCommandV1,
   status: "applied" | "rejected",
   code: string,
   message: string,
-  extras: Pick<ChatTagCommandResultV1, "event" | "xpAward"> = {},
-): ChatTagCommandResultV1 {
+  extras: Pick<NebulaTagCommandResultV1, "event" | "xpAward"> = {},
+): NebulaTagCommandResultV1 {
   return {
     schemaVersion: 1,
     tenantId: command.tenantId,
@@ -238,20 +238,20 @@ function resultFor(
   };
 }
 
-function remember(state: ChatTagStateV1, result: ChatTagCommandResultV1): ChatTagCommandResultV1 {
+function remember(state: NebulaTagStateV1, result: NebulaTagCommandResultV1): NebulaTagCommandResultV1 {
   state.appliedCommands[result.commandId] = structuredClone(result);
   const keys = Object.keys(state.appliedCommands);
   for (const key of keys.slice(0, Math.max(0, keys.length - 500))) delete state.appliedCommands[key];
   return result;
 }
 
-function requireModerator(command: ChatTagCommandV1): ChatTagCommandResultV1 | null {
+function requireModerator(command: NebulaTagCommandV1): NebulaTagCommandResultV1 | null {
   return command.isModerator
     ? null
     : resultFor(command, "rejected", "moderator-required", "A broadcaster or moderator must perform this command.");
 }
 
-function availabilityDenial(player: ChatTagPlayerStateV1, actorUserId: string, nowMs: number): string | null {
+function availabilityDenial(player: NebulaTagPlayerStateV1, actorUserId: string, nowMs: number): string | null {
   if (player.sleeping) return "target-sleeping";
   if (player.offline) return "target-offline";
   if (player.noTagbackFromUserId === actorUserId) return "target-no-tagback";
@@ -260,14 +260,14 @@ function availabilityDenial(player: ChatTagPlayerStateV1, actorUserId: string, n
   return null;
 }
 
-function cloneState(state: ChatTagStateV1): ChatTagStateV1 {
+function cloneState(state: NebulaTagStateV1): NebulaTagStateV1 {
   return structuredClone(state);
 }
 
-export function createChatTagState(tenantId: string): ChatTagStateV1 {
+export function createNebulaTagState(tenantId: string): NebulaTagStateV1 {
   if (!tenantId.trim()) throw new Error("tenantId is required");
   return {
-    schemaVersion: CHAT_TAG_STATE_VERSION,
+    schemaVersion: NEBULA_TAG_STATE_VERSION,
     tenantId,
     currentItUserId: null,
     lastTagAt: null,
@@ -279,28 +279,28 @@ export function createChatTagState(tenantId: string): ChatTagStateV1 {
   };
 }
 
-export function assertChatTagStateV1(value: unknown, tenantId?: string): ChatTagStateV1 {
-  if (!value || typeof value !== "object") throw new Error("Chat Tag state must be an object");
-  const state = value as ChatTagStateV1;
-  if (state.schemaVersion !== CHAT_TAG_STATE_VERSION) throw new Error("Unsupported Chat Tag state version");
-  if (!state.tenantId || (tenantId && state.tenantId !== tenantId)) throw new Error("Chat Tag tenant mismatch");
-  if (!state.players || !state.history || !state.appliedCommands) throw new Error("Chat Tag state is incomplete");
+export function assertNebulaTagStateV1(value: unknown, tenantId?: string): NebulaTagStateV1 {
+  if (!value || typeof value !== "object") throw new Error("Nebula Arcade tag game state must be an object");
+  const state = value as NebulaTagStateV1;
+  if (state.schemaVersion !== NEBULA_TAG_STATE_VERSION) throw new Error("Unsupported Nebula Arcade tag game state version");
+  if (!state.tenantId || (tenantId && state.tenantId !== tenantId)) throw new Error("Nebula Arcade tag game tenant mismatch");
+  if (!state.players || !state.history || !state.appliedCommands) throw new Error("Nebula Arcade tag game state is incomplete");
   const normalized = cloneState(state);
   normalized.monthlyWinners = Array.isArray(normalized.monthlyWinners) ? normalized.monthlyWinners : [];
   normalized.crownAwardKeys = Array.isArray(normalized.crownAwardKeys) ? normalized.crownAwardKeys : [];
   return normalized;
 }
 
-export function parseChatTagCommandText(message: string): ChatTagParsedCommandV1 | null {
+export function parseNebulaTagCommandText(message: string): NebulaTagParsedCommandV1 | null {
   const tokens = message.trim().split(/\s+/);
   if (tokens.length < 2 || tokens[0]?.toLowerCase() !== "spmt") return null;
-  const modular = ["chattag", "taggame"].includes(tokens[1]?.toLowerCase() ?? "");
+  const modular = tokens[1]?.toLowerCase() === "arcade";
   if (modular && tokens.length === 2) return { kind: "join" };
   const commandIndex = modular ? 2 : 1;
   const name = tokens[commandIndex]?.toLowerCase();
   if (!name) return null;
   if (["join", "leave", "status", "score", "rank", "players", "sleep", "wake", "rules", "help", "info"].includes(name)) {
-    return { kind: name as Exclude<ChatTagParsedCommandV1["kind"], "tag" | "pass" | "grant-pass" | "toggle-away"> };
+    return { kind: name as Exclude<NebulaTagParsedCommandV1["kind"], "tag" | "pass" | "grant-pass" | "toggle-away"> };
   }
   if (name === "whosit") return { kind: "status" };
   if (name === "stats") return { kind: "score" };
@@ -313,11 +313,11 @@ export function parseChatTagCommandText(message: string): ChatTagParsedCommandV1
   return null;
 }
 
-export function planChatTagMessage(stateValue: ChatTagStateV1, message: ChatTagInboundMessageV1): ChatTagMessagePlanV1 {
-  const state = assertChatTagStateV1(stateValue, message.tenantId);
+export function planNebulaTagMessage(stateValue: NebulaTagStateV1, message: NebulaTagInboundMessageV1): NebulaTagMessagePlanV1 {
+  const state = assertNebulaTagStateV1(stateValue, message.tenantId);
   const mentionMap = new Map((message.mentions ?? []).map((mention) => [mention.token, `@${mention.username}`]));
   const normalizedText = message.text.split(/(\s+)/).map((part) => mentionMap.get(part) ?? part).join("");
-  const parsed = parseChatTagCommandText(normalizedText);
+  const parsed = parseNebulaTagCommandText(normalizedText);
   if (!parsed) return { kind: "ignored" };
   const actor = state.players[message.userId];
   const isModerator = Boolean(message.roles?.some((role) => role === "broadcaster" || role === "moderator"));
@@ -332,21 +332,21 @@ export function planChatTagMessage(stateValue: ChatTagStateV1, message: ChatTagI
   };
 
   if (parsed.kind === "status") {
-    const status = getChatTagStatus(state);
-    return { kind: "response", code: "status", message: status.freeForAll ? `Chat Tag is free for all with ${status.playerCount} players.` : `${status.currentItUsername} is it. ${status.playerCount} players are joined.` };
+    const status = getNebulaTagStatus(state);
+    return { kind: "response", code: "status", message: status.freeForAll ? `Nebula Arcade tag game is free for all with ${status.playerCount} players.` : `${status.currentItUsername} is it. ${status.playerCount} players are joined.` };
   }
   if (parsed.kind === "score") {
     return actor
       ? { kind: "response", code: "score", message: `${actor.username}: ${actor.score} points, ${actor.tagsMade} tags, ${actor.passCount} passes.` }
-      : { kind: "rejected", code: "not-a-player", message: "Join Chat Tag first with spmt join." };
+      : { kind: "rejected", code: "not-a-player", message: "Join Nebula Arcade tag game first with spmt join." };
   }
   if (parsed.kind === "rank") {
-    const leaders = getChatTagLeaderboard(state).slice(0, 3);
-    return { kind: "response", code: "rank", message: leaders.length ? leaders.map((player, index) => `#${index + 1} ${player.username} ${player.score}`).join(" | ") : "No Chat Tag players yet." };
+    const leaders = getNebulaTagLeaderboard(state).slice(0, 3);
+    return { kind: "response", code: "rank", message: leaders.length ? leaders.map((player, index) => `#${index + 1} ${player.username} ${player.score}`).join(" | ") : "No Nebula Arcade tag game players yet." };
   }
   if (parsed.kind === "players") {
     const players = Object.values(state.players).filter((player) => !player.sleeping && !player.offline);
-    return { kind: "response", code: "players", message: players.length ? players.map((player) => player.username).join(", ") : "No available Chat Tag players." };
+    return { kind: "response", code: "players", message: players.length ? players.map((player) => player.username).join(", ") : "No available Nebula Arcade tag game players." };
   }
   if (parsed.kind === "rules" || parsed.kind === "help" || parsed.kind === "info") {
     return { kind: "response", code: parsed.kind, message: '"spmt join" | "spmt tag @user" | "spmt pass @user" | "spmt status" | "spmt score" | "spmt rank" | "spmt away"' };
@@ -357,13 +357,13 @@ export function planChatTagMessage(stateValue: ChatTagStateV1, message: ChatTagI
   if (parsed.kind === "toggle-away") return { kind: "command", command: { ...base, kind: actor?.sleeping || actor?.offline ? "wake" : "sleep" } };
   if (parsed.kind !== "tag" && parsed.kind !== "pass" && parsed.kind !== "grant-pass") return { kind: "ignored" };
 
-  const target = resolveChatTagTarget(state, parsed.targetUsername);
-  if (target.kind !== "found") return { kind: "rejected", code: target.kind === "ambiguous" ? "target-ambiguous" : "target-not-a-player", message: target.kind === "ambiguous" ? `More than one player matches ${parsed.targetUsername}.` : `${parsed.targetUsername} is not in Chat Tag.` };
+  const target = resolveNebulaTagTarget(state, parsed.targetUsername);
+  if (target.kind !== "found") return { kind: "rejected", code: target.kind === "ambiguous" ? "target-ambiguous" : "target-not-a-player", message: target.kind === "ambiguous" ? `More than one player matches ${parsed.targetUsername}.` : `${parsed.targetUsername} is not in Nebula Arcade tag game.` };
   if (parsed.kind === "grant-pass") return { kind: "command", command: { ...base, kind: "grant-pass", targetUserId: target.userId } };
   return { kind: "command", command: { ...base, kind: parsed.kind, targetUserId: target.userId } };
 }
 
-export function resolveChatTagTarget(state: ChatTagStateV1, rawTarget: string): { kind: "found"; userId: string } | { kind: "ambiguous" | "not-found" } {
+export function resolveNebulaTagTarget(state: NebulaTagStateV1, rawTarget: string): { kind: "found"; userId: string } | { kind: "ambiguous" | "not-found" } {
   const target = normalizeUsername(rawTarget);
   const players = Object.values(state.players);
   const exact = players.find((player) => normalizeUsername(player.username) === target);
@@ -379,14 +379,14 @@ export function resolveChatTagTarget(state: ChatTagStateV1, rawTarget: string): 
   return { kind: "not-found" };
 }
 
-export function planChatTagRotation(
-  stateValue: ChatTagStateV1,
-  input: { now: string; channelId: string; liveUserIds?: string[]; random?: () => number; rules?: ChatTagRotationRulesV1 },
-): ChatTagRotationPlanV1 {
-  const state = assertChatTagStateV1(stateValue);
+export function planNebulaTagRotation(
+  stateValue: NebulaTagStateV1,
+  input: { now: string; channelId: string; liveUserIds?: string[]; random?: () => number; rules?: NebulaTagRotationRulesV1 },
+): NebulaTagRotationPlanV1 {
+  const state = assertNebulaTagStateV1(stateValue);
   const nowMs = Date.parse(input.now);
   if (!Number.isFinite(nowMs)) throw new Error("now must be an ISO timestamp");
-  const rules = input.rules ?? DEFAULT_CHAT_TAG_ROTATION_RULES;
+  const rules = input.rules ?? DEFAULT_NEBULA_TAG_ROTATION_RULES;
   if (rules.rotateAfterMs < 1 || rules.forceRandomAfterMs < rules.rotateAfterMs || rules.freeForAllReminderMs < 1) throw new Error("rotation rules are invalid");
   const players = Object.values(state.players);
   if (!players.length) return { action: "none", reason: "no-players" };
@@ -405,7 +405,7 @@ export function planChatTagRotation(
     schemaVersion: 1 as const,
     tenantId: state.tenantId,
     commandId: `rotation:${state.lastTagAt ?? "initial"}`,
-    actorUserId: "system:chat-tag-rotation",
+    actorUserId: "system:nebula-arcade-tag-rotation",
     occurredAt: input.now,
     channelId: input.channelId,
     isModerator: true,
@@ -424,18 +424,18 @@ export function planChatTagRotation(
   return { action: "free-for-all", reason: pool.length ? "inactive-holder-timeout" : "no-eligible-player", command: { ...commandBase, kind: "trigger-ffa" } };
 }
 
-function chooseRotationPlayer(players: ChatTagPlayerStateV1[], random: (() => number) | undefined): ChatTagPlayerStateV1 {
+function chooseRotationPlayer(players: NebulaTagPlayerStateV1[], random: (() => number) | undefined): NebulaTagPlayerStateV1 {
   const ordered = [...players].sort((left, right) => left.userId.localeCompare(right.userId));
   const raw = random ? random() : Math.random();
   return ordered[Math.max(0, Math.min(ordered.length - 1, Math.floor(raw * ordered.length)))]!;
 }
 
-export function executeChatTagCommand(
-  inputState: ChatTagStateV1,
-  command: ChatTagCommandV1,
-  rules: ChatTagRulesV1 = DEFAULT_CHAT_TAG_RULES,
-): { state: ChatTagStateV1; result: ChatTagCommandResultV1 } {
-  const state = assertChatTagStateV1(inputState, command.tenantId);
+export function executeNebulaTagCommand(
+  inputState: NebulaTagStateV1,
+  command: NebulaTagCommandV1,
+  rules: NebulaTagRulesV1 = DEFAULT_NEBULA_TAG_RULES,
+): { state: NebulaTagStateV1; result: NebulaTagCommandResultV1 } {
+  const state = assertNebulaTagStateV1(inputState, command.tenantId);
   const prior = state.appliedCommands[command.commandId];
   if (prior) return { state, result: { ...structuredClone(prior), status: "duplicate", stateChanged: false } };
   if (!command.commandId.trim()) throw new Error("commandId is required");
@@ -446,7 +446,7 @@ export function executeChatTagCommand(
 
   if (command.kind === "join") {
     if (actor) {
-      const result = remember(state, resultFor(command, "rejected", "already-joined", "You are already in Chat Tag."));
+      const result = remember(state, resultFor(command, "rejected", "already-joined", "You are already in Nebula Arcade tag game."));
       return { state, result };
     }
     const username = normalizeUsername(command.username);
@@ -469,8 +469,8 @@ export function executeChatTagCommand(
       state.currentItUserId = command.actorUserId;
       state.lastTagAt = command.occurredAt;
     }
-    const result = remember(state, resultFor(command, "applied", "joined", `${username} joined Chat Tag.`, {
-      event: eventFor(command, CHAT_TAG_PLAYER_JOINED, { userId: command.actorUserId, username }),
+    const result = remember(state, resultFor(command, "applied", "joined", `${username} joined Nebula Arcade tag game.`, {
+      event: eventFor(command, NEBULA_TAG_PLAYER_JOINED, { userId: command.actorUserId, username }),
     }));
     return { state, result };
   }
@@ -484,10 +484,10 @@ export function executeChatTagCommand(
     ((command.kind === "sleep" || command.kind === "wake") && command.targetUserId !== undefined)
   );
   if (!actor && !moderatorMayActWithoutMembership) {
-    const result = remember(state, resultFor(command, "rejected", "not-a-player", "Join Chat Tag first with spmt join."));
+    const result = remember(state, resultFor(command, "rejected", "not-a-player", "Join Nebula Arcade tag game first with spmt join."));
     return { state, result };
   }
-  const memberActor = actor as ChatTagPlayerStateV1;
+  const memberActor = actor as NebulaTagPlayerStateV1;
 
   if (command.kind === "record-activity") {
     memberActor.lastActiveAt = command.occurredAt;
@@ -504,7 +504,7 @@ export function executeChatTagCommand(
       state.currentItUserId = null;
       state.lastTagAt = command.occurredAt;
       state.history.push({
-        id: `chat-tag-history:${command.commandId}`,
+        id: `nebula-arcade-tag-history:${command.commandId}`,
         commandId: command.commandId,
         kind: "free-for-all",
         actorUserId: command.actorUserId,
@@ -515,8 +515,8 @@ export function executeChatTagCommand(
         scoreAwarded: 0,
       });
     }
-    const result = remember(state, resultFor(command, "applied", wasIt ? "left-free-for-all" : "left", `${memberActor.username} left Chat Tag.`, {
-      event: eventFor(command, CHAT_TAG_PLAYER_LEFT, { userId: command.actorUserId, username: memberActor.username, freeForAll: wasIt }),
+    const result = remember(state, resultFor(command, "applied", wasIt ? "left-free-for-all" : "left", `${memberActor.username} left Nebula Arcade tag game.`, {
+      event: eventFor(command, NEBULA_TAG_PLAYER_LEFT, { userId: command.actorUserId, username: memberActor.username, freeForAll: wasIt }),
     }));
     return { state, result };
   }
@@ -529,13 +529,13 @@ export function executeChatTagCommand(
     }
     const target = state.players[targetUserId];
     if (!target) {
-      const result = remember(state, resultFor(command, "rejected", "target-not-a-player", "The target is not in Chat Tag."));
+      const result = remember(state, resultFor(command, "rejected", "target-not-a-player", "The target is not in Nebula Arcade tag game."));
       return { state, result };
     }
     target.sleeping = command.kind === "sleep";
     if (command.kind === "wake") target.offline = false;
     const result = remember(state, resultFor(command, "applied", command.kind === "sleep" ? "sleeping" : "awake", `${target.username} is now ${command.kind === "sleep" ? "sleeping" : "awake"}.`, {
-      event: eventFor(command, CHAT_TAG_PLAYER_AVAILABILITY_CHANGED, { userId: targetUserId, sleeping: target.sleeping, offline: target.offline }),
+      event: eventFor(command, NEBULA_TAG_PLAYER_AVAILABILITY_CHANGED, { userId: targetUserId, sleeping: target.sleeping, offline: target.offline }),
     }));
     return { state, result };
   }
@@ -548,7 +548,7 @@ export function executeChatTagCommand(
     }
     const target = state.players[command.targetUserId];
     if (!target) {
-      const result = remember(state, resultFor(command, "rejected", "target-not-a-player", "The target is not in Chat Tag."));
+      const result = remember(state, resultFor(command, "rejected", "target-not-a-player", "The target is not in Nebula Arcade tag game."));
       return { state, result };
     }
     if (target.passCount >= rules.maxPasses) {
@@ -556,8 +556,8 @@ export function executeChatTagCommand(
       return { state, result };
     }
     target.passCount += 1;
-    const result = remember(state, resultFor(command, "applied", "pass-granted", `${target.username} received a Chat Tag pass.`, {
-      event: eventFor(command, CHAT_TAG_PASS_GRANTED, { userId: target.userId, username: target.username, passCount: target.passCount }),
+    const result = remember(state, resultFor(command, "applied", "pass-granted", `${target.username} received a Nebula Arcade tag game pass.`, {
+      event: eventFor(command, NEBULA_TAG_PASS_GRANTED, { userId: target.userId, username: target.username, passCount: target.passCount }),
     }));
     return { state, result };
   }
@@ -570,15 +570,15 @@ export function executeChatTagCommand(
     }
     if (command.kind === "clear-winners") {
       state.monthlyWinners = [];
-      const result = remember(state, resultFor(command, "applied", "crowns-cleared", "The displayed Chat Tag crowns were cleared.", {
-        event: eventFor(command, CHAT_TAG_CROWNS_CLEARED, {}),
+      const result = remember(state, resultFor(command, "applied", "crowns-cleared", "The displayed Nebula Arcade tag game crowns were cleared.", {
+        event: eventFor(command, NEBULA_TAG_CROWNS_CLEARED, {}),
       }));
       return { state, result };
     }
     if (![1, 2, 3].includes(command.place)) throw new Error("place must be 1, 2, or 3");
     const target = state.players[command.targetUserId];
     if (!target) {
-      const result = remember(state, resultFor(command, "rejected", "target-not-a-player", "The target is not in Chat Tag."));
+      const result = remember(state, resultFor(command, "rejected", "target-not-a-player", "The target is not in Nebula Arcade tag game."));
       return { state, result };
     }
     const monthKey = crownMonthKey(new Date(command.occurredAt));
@@ -596,8 +596,8 @@ export function executeChatTagCommand(
       .sort((left, right) => left.place - right.place);
     if (!alreadyAwarded) state.crownAwardKeys.push(awardKey);
     const reward = crownXpReward(command.place);
-    const result = remember(state, resultFor(command, "applied", alreadyAwarded ? "winner-updated" : "winner-crowned", `${target.username} is the #${command.place} Chat Tag winner for ${monthKey}.`, {
-      event: eventFor(command, CHAT_TAG_CROWN_SET, {
+    const result = remember(state, resultFor(command, "applied", alreadyAwarded ? "winner-updated" : "winner-crowned", `${target.username} is the #${command.place} Nebula Arcade tag game winner for ${monthKey}.`, {
+      event: eventFor(command, NEBULA_TAG_CROWN_SET, {
         userId: target.userId,
         username: target.username,
         place: command.place,
@@ -609,7 +609,7 @@ export function executeChatTagCommand(
         xpAward: {
           userId: target.userId,
           delta: reward,
-          reason: "chat-tag.crown",
+          reason: "nebula-arcade.crown",
           idempotencyKey: awardKey,
         },
       } : {}),
@@ -626,7 +626,7 @@ export function executeChatTagCommand(
     if (command.kind === "set-it") {
       const target = state.players[command.targetUserId];
       if (!target) {
-        const result = remember(state, resultFor(command, "rejected", "target-not-a-player", "The target is not in Chat Tag."));
+        const result = remember(state, resultFor(command, "rejected", "target-not-a-player", "The target is not in Nebula Arcade tag game."));
         return { state, result };
       }
       state.currentItUserId = target.userId;
@@ -636,14 +636,14 @@ export function executeChatTagCommand(
       target.timedImmunityUntil = null;
       target.noTagbackFromUserId = null;
       const result = remember(state, resultFor(command, "applied", "it-assigned", `${target.username} is now it.`, {
-        event: eventFor(command, CHAT_TAG_PLAYER_AVAILABILITY_CHANGED, { userId: target.userId, isIt: true }),
+        event: eventFor(command, NEBULA_TAG_PLAYER_AVAILABILITY_CHANGED, { userId: target.userId, isIt: true }),
       }));
       return { state, result };
     }
     state.currentItUserId = null;
     state.lastTagAt = command.occurredAt;
     state.history.push({
-      id: `chat-tag-history:${command.commandId}`,
+      id: `nebula-arcade-tag-history:${command.commandId}`,
       commandId: command.commandId,
       kind: "free-for-all",
       actorUserId: command.actorUserId,
@@ -653,20 +653,20 @@ export function executeChatTagCommand(
       doublePoints: true,
       scoreAwarded: 0,
     });
-    const result = remember(state, resultFor(command, "applied", "free-for-all", "Chat Tag is now free for all.", {
-      event: eventFor(command, CHAT_TAG_FREE_FOR_ALL_STARTED, { actorUserId: command.actorUserId }),
+    const result = remember(state, resultFor(command, "applied", "free-for-all", "Nebula Arcade tag game is now free for all.", {
+      event: eventFor(command, NEBULA_TAG_FREE_FOR_ALL_STARTED, { actorUserId: command.actorUserId }),
     }));
     return { state, result };
   }
 
   if (command.kind !== "tag" && command.kind !== "pass") {
     const exhaustive: never = command;
-    throw new Error(`Unsupported Chat Tag command: ${JSON.stringify(exhaustive)}`);
+    throw new Error(`Unsupported Nebula Arcade tag game command: ${JSON.stringify(exhaustive)}`);
   }
 
   const target = state.players[command.targetUserId];
   if (!target) {
-    const result = remember(state, resultFor(command, "rejected", "target-not-a-player", "The target is not in Chat Tag."));
+    const result = remember(state, resultFor(command, "rejected", "target-not-a-player", "The target is not in Nebula Arcade tag game."));
     return { state, result };
   }
   if (target.userId === memberActor.userId) {
@@ -681,7 +681,7 @@ export function executeChatTagCommand(
   }
   if (usingPass) {
     if (memberActor.passCount <= 0) {
-      const result = remember(state, resultFor(command, "rejected", "no-pass", "You do not have a Chat Tag pass."));
+      const result = remember(state, resultFor(command, "rejected", "no-pass", "You do not have a Nebula Arcade tag game pass."));
       return { state, result };
     }
     const cutoff = nowMs - rules.passSpendWindowMs;
@@ -711,8 +711,8 @@ export function executeChatTagCommand(
   target.noTagbackFromUserId = memberActor.userId;
   state.currentItUserId = target.userId;
   state.lastTagAt = command.occurredAt;
-  const history: ChatTagHistoryEntryV1 = {
-    id: `chat-tag-history:${command.commandId}`,
+  const history: NebulaTagHistoryEntryV1 = {
+    id: `nebula-arcade-tag-history:${command.commandId}`,
     commandId: command.commandId,
     kind: usingPass ? "pass" : "tag",
     actorUserId: memberActor.userId,
@@ -723,9 +723,9 @@ export function executeChatTagCommand(
     scoreAwarded,
   };
   state.history.push(history);
-  const idempotencyKey = `chat-tag:${command.kind}:${command.commandId}`;
+  const idempotencyKey = `nebula-arcade:${command.kind}:${command.commandId}`;
   const result = remember(state, resultFor(command, "applied", usingPass ? "pass-completed" : "tag-completed", `${memberActor.username} tagged ${target.username}${doublePoints ? " for double points" : ""}.`, {
-    event: eventFor(command, CHAT_TAG_TAG_COMPLETED, {
+    event: eventFor(command, NEBULA_TAG_TAG_COMPLETED, {
       historyId: history.id,
       actorUserId: memberActor.userId,
       actorUsername: memberActor.username,
@@ -738,14 +738,14 @@ export function executeChatTagCommand(
     xpAward: {
       userId: memberActor.userId,
       delta: scoreAwarded,
-      reason: usingPass ? "chat-tag.pass" : "chat-tag.tag",
+      reason: usingPass ? "nebula-arcade.pass" : "nebula-arcade.tag",
       idempotencyKey,
     },
   }));
   return { state, result };
 }
 
-export function getChatTagStatus(state: ChatTagStateV1): { freeForAll: boolean; currentItUserId: string | null; currentItUsername: string | null; playerCount: number } {
+export function getNebulaTagStatus(state: NebulaTagStateV1): { freeForAll: boolean; currentItUserId: string | null; currentItUsername: string | null; playerCount: number } {
   const current = state.currentItUserId ? state.players[state.currentItUserId] : undefined;
   return {
     freeForAll: !current,
@@ -755,7 +755,7 @@ export function getChatTagStatus(state: ChatTagStateV1): { freeForAll: boolean; 
   };
 }
 
-export function getChatTagLeaderboard(state: ChatTagStateV1): ChatTagPlayerStateV1[] {
+export function getNebulaTagLeaderboard(state: NebulaTagStateV1): NebulaTagPlayerStateV1[] {
   return Object.values(state.players)
     .map((player) => structuredClone(player))
     .sort((left, right) => right.score - left.score || right.tagsMade - left.tagsMade || left.username.localeCompare(right.username));
@@ -773,7 +773,7 @@ export function crownAwardKey(userId: string, place: number, monthKey: string): 
   return `crown:${monthKey}:${place}:${userId}`;
 }
 
-export function decorateChatTagCrowns(text: string, winners: ChatTagMonthlyWinnerV1[]): string {
+export function decorateNebulaTagCrowns(text: string, winners: NebulaTagMonthlyWinnerV1[]): string {
   let output = text;
   for (const winner of winners) {
     if (winner.username.length < 3) continue;
@@ -791,7 +791,7 @@ export function decorateChatTagCrowns(text: string, winners: ChatTagMonthlyWinne
   return output;
 }
 
-export async function publishChatTagCommandResult(client: SpmtClient, result: ChatTagCommandResultV1): Promise<{ eventPublished: boolean; xpAwarded: boolean }> {
+export async function publishNebulaTagCommandResult(client: SpmtClient, result: NebulaTagCommandResultV1): Promise<{ eventPublished: boolean; xpAwarded: boolean }> {
   let eventPublished = false;
   let xpAwarded = false;
   if (result.event) {

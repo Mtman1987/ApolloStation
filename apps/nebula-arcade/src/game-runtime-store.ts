@@ -4,6 +4,7 @@ import {
   normalizeNebulaGameRuntimeState,
   type NebulaGameRuntimeStateV1,
 } from "./game-runtime.js";
+import { migrateLegacyNebulaArcadeStorage } from "./legacy-nebula-migration.js";
 
 export class SqliteNebulaGameRuntimeStore {
   private readonly db: DatabaseSync;
@@ -11,6 +12,7 @@ export class SqliteNebulaGameRuntimeStore {
   constructor(path: string) {
     if (!path) throw new Error("Nebula game runtime database path is required");
     this.db = new DatabaseSync(path, { timeout: 5_000 });
+    migrateLegacyNebulaArcadeStorage(this.db);
     this.db.exec(`
       PRAGMA journal_mode=WAL;
       PRAGMA synchronous=FULL;

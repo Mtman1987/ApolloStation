@@ -1,12 +1,12 @@
 import { assertAppModuleManifestV1, type AppCatalogRegistrationV1, type AppModuleManifestV1 } from "@spmt/contracts";
 import { SpmtClient } from "@spmt/sdk";
-export * from "./chat-tag.js";
-export * from "./chat-tag-runtime.js";
-export * from "./chat-tag-gateway.js";
-export * from "./chat-tag-overlay.js";
-export * from "./chat-tag-overlay-http.js";
-export * from "./chat-tag-migration.js";
-export * from "./chat-tag-experience.js";
+export * from "./nebula-tag.js";
+export * from "./nebula-tag-runtime.js";
+export * from "./nebula-tag-gateway.js";
+export * from "./nebula-tag-overlay.js";
+export * from "./nebula-tag-overlay-http.js";
+export * from "./nebula-tag-migration.js";
+export * from "./nebula-tag-experience.js";
 export * from "./game-hub.js";
 export * from "./game-runtime.js";
 export * from "./game-runtime-store.js";
@@ -17,10 +17,10 @@ export * from "./quackverse-state.js";
 export * from "./quackverse-packs.js";
 export * from "./quackverse-battle.js";
 export * from "./bingo-game.js";
-import { CHAT_TAG_EVENT_TYPES } from "./chat-tag.js";
+import { NEBULA_TAG_EVENT_TYPES } from "./nebula-tag.js";
 
-export const CHAT_TAG_ROUND_COMPLETED = "nebula.chat-tag.round.completed.v1";
-export const manifest = assertAppModuleManifestV1({schemaVersion:1,manifestVersion:"spmt.app-manifest/v1",id:"nebula-arcade",name:"Nebula Arcade",description:"Cosmic Games Hub containing twenty equal community games, reusable multi-game overlays, and the original Chat Tag game.",capabilities:["chat-tag","quackverse","bingo","arena","game-overlays","overlay-scenes"],surfaces:["shell","standalone","overlay","popout"],requiredScopes:["events:write","xp:write","overlay:widgets:write"],eventTypes:[CHAT_TAG_ROUND_COMPLETED,...CHAT_TAG_EVENT_TYPES],integration:{identity:"connected",events:"native",xp:"connected",workspace:"connected"},workers:[{id:"chat-tag-bot",role:"provider-command-ingress",execution:"leased",canonicalAuthority:false}]} satisfies AppModuleManifestV1);
+export const NEBULA_ARCADE_ROUND_COMPLETED = "nebula.arcade.round.completed.v1";
+export const manifest = assertAppModuleManifestV1({schemaVersion:1,manifestVersion:"spmt.app-manifest/v1",id:"nebula-arcade",name:"Nebula Arcade",description:"Cosmic Games Hub containing twenty equal community games and reusable multi-game overlays.",capabilities:["tag","quackverse","bingo","arena","game-overlays","overlay-scenes"],surfaces:["shell","standalone","overlay","popout"],requiredScopes:["events:write","xp:write","overlay:widgets:write"],eventTypes:[NEBULA_ARCADE_ROUND_COMPLETED,...NEBULA_TAG_EVENT_TYPES],integration:{identity:"connected",events:"native",xp:"connected",workspace:"connected"},workers:[{id:"nebula-arcade-provider-ingress",role:"provider-command-ingress",execution:"leased",canonicalAuthority:false}]} satisfies AppModuleManifestV1);
 
 export function nebulaArcadeCatalogRegistration(publicOrigin: string): AppCatalogRegistrationV1 {
   const origin = new URL(publicOrigin);
@@ -36,11 +36,9 @@ export function nebulaArcadeCatalogRegistration(publicOrigin: string): AppCatalo
     status: "active",
   };
 }
-export const chatTagCatalogRegistration = nebulaArcadeCatalogRegistration;
-
-export interface ChatTagRoundResult { tenantId:string; channelId:string; roundId:string; winnerUserId:string; taggedUserId:string; completedAt:string; xpAward:number; }
-export async function completeChatTagRound(client:SpmtClient,result:ChatTagRoundResult){
-  const key=`chat-tag-round:${result.roundId}`;
-  await client.publishEvent(result.tenantId,CHAT_TAG_ROUND_COMPLETED,{schemaVersion:1,channelId:result.channelId,roundId:result.roundId,winnerUserId:result.winnerUserId,taggedUserId:result.taggedUserId,completedAt:result.completedAt,xpAward:result.xpAward},key);
-  return client.awardXp(result.tenantId,result.winnerUserId,result.xpAward,"chat-tag-round-win",key);
+export interface NebulaArcadeRoundResult { tenantId:string; channelId:string; roundId:string; winnerUserId:string; taggedUserId:string; completedAt:string; xpAward:number; }
+export async function completeNebulaArcadeRound(client:SpmtClient,result:NebulaArcadeRoundResult){
+  const key=`nebula-arcade-round:${result.roundId}`;
+  await client.publishEvent(result.tenantId,NEBULA_ARCADE_ROUND_COMPLETED,{schemaVersion:1,channelId:result.channelId,roundId:result.roundId,winnerUserId:result.winnerUserId,taggedUserId:result.taggedUserId,completedAt:result.completedAt,xpAward:result.xpAward},key);
+  return client.awardXp(result.tenantId,result.winnerUserId,result.xpAward,"nebula-arcade-round-win",key);
 }

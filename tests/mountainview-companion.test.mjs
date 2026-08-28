@@ -20,11 +20,11 @@ function obsCommand(overrides = {}) {
   return createCompanionDeviceCommand({ plan, context, commandId: "command-1", idempotencyKey: "voice-1", requestedAt: "2026-08-23T12:00:00.000Z", ...overrides });
 }
 
-test("MountainView keeps community, Chat Tag, HearMeOut, and StreamWeaver voice routes distinct", () => {
+test("MountainView keeps community, Nebula Arcade tag game, HearMeOut, and StreamWeaver voice routes distinct", () => {
   assert.deepEqual(planMountainViewVoiceCommand("who's live", context), {
     kind: "route", targetAppId: "discord-stream-hub", action: "community.live-members.read", payload: {}, risk: "low", requiresConfirmation: false, reason: "Unscoped live status belongs to the community-wide DSH projection",
   });
-  assert.equal(planMountainViewVoiceCommand("who's active in Chat Tag", context).targetAppId, "nebula-arcade");
+  assert.equal(planMountainViewVoiceCommand("who's active in Nebula Arcade tag game", context).targetAppId, "nebula-arcade");
   const song = planMountainViewVoiceCommand("play the song Squad Goals by Prof", context);
   assert.equal(song.targetAppId, "hearmeout");
   assert.deepEqual(song.payload, { query: "Squad Goals by Prof", roomId: "room-1" });

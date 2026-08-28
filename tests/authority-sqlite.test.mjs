@@ -20,7 +20,7 @@ test("SQLite authority survives reopen with workspace, XP, idempotency, and jour
     authority.linkProvider("user-a", "twitch", "123");
     authority.getOrCreateWorkspace("tenant-a");
     authority.updateWorkspace("tenant-a", 1, { appearance: { theme: "dark" } });
-    const award = { tenantId: "tenant-a", userId: "user-a", delta: 10, sourceAppId: "chat-tag", reason: "test", idempotencyKey: "award-1" };
+    const award = { tenantId: "tenant-a", userId: "user-a", delta: 10, sourceAppId: "nebula-arcade", reason: "test", idempotencyKey: "award-1" };
     assert.equal(authority.awardXp(award).duplicate, false);
     assert.equal(authority.awardXp(award).duplicate, true);
     const before = store.listJournal();
