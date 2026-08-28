@@ -168,6 +168,7 @@ test("Stella is app-neutral across SDK, API, CLI and MCP and stays truthful with
     const stellaTool = tools.result.tools.find((item) => item.name === "spmt.assistants.community.invoke");
     assert.ok(stellaTool && /Stella/.test(stellaTool.description));
     assert.deepEqual(stellaTool.inputSchema.required, ["tenantId", "message", "surface", "idempotencyKey"]);
+    assert.deepEqual(stellaTool.inputSchema.properties.routingPreference.enum, ["automatic", "hosted", "companion"]);
     const invoked = mcp.handle({ jsonrpc: "2.0", id: 11, method: "tools/call", params: { name: "spmt.assistants.community.invoke", arguments: { tenantId: "tenant-a", userId: "viewer-1", message: "Help", surface: "developer", idempotencyKey: "stella-unavailable-3" } } }, { accessToken: env.accessToken, protocolVersion: SPMT_MCP_PROTOCOL_VERSION });
     assert.equal(invoked.result.structuredContent.status, "unavailable");
     assert.equal(env.store.listAudit("tenant-a").filter((item) => item.action === "assistants.community.invoke").length, 3);

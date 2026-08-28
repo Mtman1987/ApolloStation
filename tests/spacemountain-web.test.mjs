@@ -256,6 +256,8 @@ test("browser proxy blocks cross-origin mutations and every credential or webhoo
     assert.equal((await fetch(`${base}/v1/auth/login`, { method: "POST", headers: { origin: new URL(base).origin, "content-type": "application/json" }, body: "{}" })).status, 404);
     assert.equal((await fetch(`${base}/v1/oauth/token`, { method: "POST", headers: { origin: new URL(base).origin, "content-type": "application/json" }, body: "{}" })).status, 404);
     assert.equal((await fetch(`${base}/v1/webhooks`)).status, 404);
+    assert.equal((await fetch(`${base}/v1/llm/health`)).status, 404);
+    assert.equal((await fetch(`${base}/v1/llm/chat/completions`, { method: "POST", headers: { origin: new URL(base).origin, "content-type": "application/json" }, body: "{}" })).status, 404, "the browser cannot bypass durable Stellar jobs and usage metering");
     assert.equal((await fetch(`${base}/v1/operations/logs`, { method: "POST", headers: { origin: new URL(base).origin, "content-type": "application/json" }, body: "{}" })).status, 404, "browser users cannot impersonate app log publishers");
   });
 });

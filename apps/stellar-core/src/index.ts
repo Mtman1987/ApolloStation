@@ -1,4 +1,37 @@
-import { assertAppModuleManifestV1, type AppCatalogRegistrationV1, type AppModuleManifestV1 } from "@spmt/contracts";
+import { assertAppModuleManifestV1, type AppCatalogRegistrationV1, type AppModuleManifestV1, type CommunityAssistantInvocationV1, type ExecutionTargetV1 } from "@spmt/contracts";
+import { ExecutionJobError, ExecutionJobService } from "@spmt/execution-core";
+
+export const STELLAR_CHAT_CAPABILITY_ID = "stellar-core.ai-chat.v1";
+export const STELLAR_CHAT_REQUEST_KIND = "stellar-chat-request.v1";
+export const STELLAR_CHAT_RESULT_KIND = "stellar-chat-result.v1";
+export type StellarRoutingPreferenceV1 = "automatic" | "hosted" | "companion";
+export interface StellarRouteDecisionV1 { executionTarget: ExecutionTargetV1; meteringTarget: "hosted" | "companion"; fallbackReason?: string; }
+
+export class StellarCommunityAssistantRuntime {
+  constructor(private readonly jobs: ExecutionJobService, private readonly options: { enabled: boolean; resolveRoute?: (input: CommunityAssistantInvocationV1) => StellarRouteDecisionV1 }) {}
+  status() { return this.options.enabled ? { availability: "available" as const } : { availability: "unavailable" as const, unavailableReason: "Stellar Core has no healthy inference worker configured" }; }
+  accept(input: CommunityAssistantInvocationV1) {
+    if (!this.options.enabled) throw new Error("Stellar Core inference is unavailable");
+    const routingPreference = input.routingPreference ?? "automatic";
+    const existing = this.jobs.findIdempotent(input.tenantId, "stellar-core", input.requestedById, input.idempotencyKey);
+    if (existing) {
+      const replayIdentity = [input.requestedByType, input.userId, input.message, input.callerAppId, input.surface, routingPreference, input.conversationId ?? null, input.correlationId ?? null];
+      const originalIdentity = [existing.requestedByType, existing.billedUserId, existing.input.message, existing.input.callerAppId, existing.input.surface, existing.input.routingPreference, existing.input.conversationId ?? null, existing.correlationId ?? null];
+      if (JSON.stringify(replayIdentity) !== JSON.stringify(originalIdentity)) throw new ExecutionJobError("conflict", "Stellar chat idempotency key was reused with different input");
+      return { jobId: existing.id, executionTarget: existing.executionTarget, meteringTarget: existing.meteringTarget, routingPreference, ...(typeof existing.input.fallbackReason === "string" ? { fallbackReason: existing.input.fallbackReason } : {}) };
+    }
+    const route = this.options.resolveRoute?.(input) ?? { executionTarget: "sprite" as const, meteringTarget: "hosted" as const };
+    const created = this.jobs.create({
+      tenantId: input.tenantId, ownerAppId: "stellar-core", capabilityId: STELLAR_CHAT_CAPABILITY_ID, executionOwner: "stellar-core",
+      requestedByType: input.requestedByType, requestedById: input.requestedById, billedUserId: input.userId,
+      meteredResource: "ai-chat-requests", usageQuantity: 1, executionTarget: route.executionTarget, meteringTarget: route.meteringTarget,
+      idempotencyKey: input.idempotencyKey,
+      input: { kind: STELLAR_CHAT_REQUEST_KIND, message: input.message, userId: input.userId, callerAppId: input.callerAppId, surface: input.surface, routingPreference, ...(route.fallbackReason ? { fallbackReason: route.fallbackReason } : {}), ...(input.conversationId ? { conversationId: input.conversationId } : {}) },
+      ...(input.correlationId ? { correlationId: input.correlationId } : {}),
+    });
+    return { jobId: created.job.id, executionTarget: route.executionTarget, meteringTarget: route.meteringTarget, routingPreference, ...(route.fallbackReason ? { fallbackReason: route.fallbackReason } : {}) };
+  }
+}
 
 export const manifest = assertAppModuleManifestV1({
   schemaVersion: 1,
@@ -6,12 +39,15 @@ export const manifest = assertAppModuleManifestV1({
   id: "stellar-core",
   name: "Stellar Core",
   description: "Persona-neutral ecosystem AI with Stella as the default Community Assistant presentation.",
-  capabilities: ["stella", "conversation", "model-routing", "memory", "rag", "tools", "voice-jobs", "usage"],
+  capabilities: [STELLAR_CHAT_CAPABILITY_ID, "stella", "conversation", "model-routing", "memory", "rag", "tools", "voice-jobs", "usage"],
   surfaces: ["shell", "standalone"],
   requiredScopes: ["assistants:read", "assistants:invoke", "stellar:context:read", "stellar:context:write", "stellar:capabilities:read"],
   eventTypes: ["stellar.job.accepted.v1", "stellar.job.completed.v1", "stellar.job.failed.v1"],
-  integration: { identity: "connected", events: "connected", workspace: "connected", inference: "declared" },
-  workers: [],
+  integration: { identity: "connected", events: "connected", workspace: "connected", inference: "connected" },
+  workers: [
+    { id: "stellar-qwen-worker", role: "hosted chat inference", execution: "elastic", canonicalAuthority: false },
+    { id: "stellar-companion-worker", role: "local chat inference", execution: "local", canonicalAuthority: false },
+  ],
 } satisfies AppModuleManifestV1);
 
 export function stellarCoreCatalogRegistration(publicOrigin: string): AppCatalogRegistrationV1 {

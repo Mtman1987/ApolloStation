@@ -73,6 +73,7 @@ const sandboxManifests = [
 ];
 const children = new Set();
 let stopping = false;
+const stellarWorkerCredential = llmBinary ? randomBytes(32).toString("base64url") : undefined;
 
 if (app === "nebula-arcade") {
   const chatTag = start("Nebula Arcade", "apps/nebula-arcade/dist/chat-tag-sandbox-server.js", {
@@ -104,10 +105,22 @@ const spmt = start("SPMT", "apps/spmt-service/dist/provider-identity-start.js", 
   SPMT_SANDBOX_FIXTURES: "0",
   SPMT_SANDBOX_OWNER_USERNAME: ownerUsername,
   SPMT_SANDBOX_APPS: JSON.stringify(sandboxManifests),
+  ...(stellarWorkerCredential ? { SPMT_STELLAR_CHAT_ENABLED: "1", STELLAR_WORKER_CREDENTIAL: stellarWorkerCredential } : {}),
   PORT: String(spmtPort),
 });
 
 await waitForUrl(spmt, `http://127.0.0.1:${spmtPort}/health/ready`, "SPMT");
+if (stellarWorkerCredential) {
+  const stellar = start("Stellar Core worker", "apps/stellar-core/dist/worker-start.js", {
+    ...common,
+    SPMT_ORIGIN: `http://127.0.0.1:${spmtPort}`,
+    STELLAR_PROVIDER_ORIGIN: "http://127.0.0.1:8081",
+    STELLAR_PROVIDER_MODEL: "Qwen/Qwen3-8B-GGUF:Q4_K_M",
+    STELLAR_EXECUTION_TARGET: "sprite",
+    STELLAR_WORKER_CREDENTIAL: stellarWorkerCredential,
+  });
+  stellar.once("exit", (code, signal) => { if (!stopping) void stop(signal === "SIGINT" || signal === "SIGTERM" ? 0 : code ?? (signal ? 1 : 0)); });
+}
 let chatTag;
 if (candidateApp === "nebula-arcade") {
   chatTag = start("Nebula Arcade candidate", "apps/nebula-arcade/dist/chat-tag-sandbox-server.js", {
@@ -133,7 +146,7 @@ await waitForUrl(web, `http://127.0.0.1:${webPort}/sandbox/health`, "SpaceMounta
 
 process.stdout.write(`\nGreen sandbox is supervised and ready at ${publicUrl}\n`);
 process.stdout.write(`The canonical app pool contains ${sandboxManifests.map((item) => item.name).join(", ")}.\n`);
-process.stdout.write("Outbound provider actions are disabled. No Sprite service has been registered.\n");
+process.stdout.write("Outbound provider actions and production fleet credentials are disabled.\n");
 process.stdout.write("Press Ctrl+C once to stop the supervised cohort.\n\n");
 
 process.on("SIGINT", () => void stop(0));

@@ -1,1 +1,1 @@
-{"extends":"../../tsconfig.base.json","compilerOptions":{"composite":true,"rootDir":"src","outDir":"dist","tsBuildInfoFile":"dist/.tsbuildinfo"},"references":[{"path":"../../packages/contracts"}],"include":["src/**/*.ts"]}
+{"extends":"../../tsconfig.base.json","compilerOptions":{"composite":true,"rootDir":"src","outDir":"dist","tsBuildInfoFile":"dist/.tsbuildinfo","lib":["ES2022","DOM","DOM.Iterable"],"types":["node"]},"references":[{"path":"../../packages/contracts"},{"path":"../../packages/execution-core"},{"path":"../../packages/sdk"}],"include":["src/**/*.ts"]}

@@ -19,6 +19,7 @@ test("completion evidence covers every first-party parity family", () => {
   assert.deepEqual(Object.keys(completion.evidence).sort(), [
     "chatGateway",
     "discordStreamHub",
+    "functionalFoundation",
     "hearmeout",
     "mountainviewCompanion",
     "nebulaArcade",

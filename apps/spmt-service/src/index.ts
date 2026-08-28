@@ -6,19 +6,22 @@ import { pathToFileURL } from "node:url";
 import { AccountRecoveryService, AccountSetupError, SqliteAccountSetupStore } from "@spmt/account-recovery-core";
 import { AuthorityService } from "@spmt/authority-core";
 import { SqliteAuthorityStore } from "@spmt/authority-sqlite";
-import { AuthService } from "@spmt/auth-core";
+import { AuthConflictError, AuthService } from "@spmt/auth-core";
 import { ControlService } from "@spmt/control-core";
+import { ExecutionJobService } from "@spmt/execution-core";
 import { MonetizationService } from "@spmt/monetization";
 import { OutboxDispatcher } from "@spmt/outbox-core";
 import { PlatformDataError, PlatformDataService, type OAuthClientV1 } from "@spmt/platform-data-core";
 import { SqlitePlatformDataStore } from "@spmt/platform-data-sqlite";
 import { PlatformOperations, type CoderRuntimeV1, type CommunityAssistantRuntimeV1 } from "@spmt/platform-ops";
+import { ProviderGrantError, type ProviderGrantIssuerV1 } from "@spmt/provider-grants-core";
 import { PlatformApiAdapter } from "@spmt/api-adapter";
 import { HealthRegistry } from "@spmt/runtime";
 import { assertBillingManifestV1, BILLING_PLAN_IDS, type AppCatalogRegistrationV1, type BillingManifestV1, type BillingPlanIdV1 } from "@spmt/contracts";
+import { StellarCommunityAssistantRuntime } from "@spmt/stellar-core";
 
-const USER_SCOPES = ["identity:read","identity:write","workspace:read","workspace:write","xp:read","apps:read","apps:install","entitlements:read","usage:read","events:read","commlink:read","commlink:write","notifications:read","notifications:write","webhooks:read","webhooks:write","assistants:read","assistants:invoke","stellar:context:read","stellar:context:write","stellar:capabilities:read"];
-const SANDBOX_OWNER_SCOPES = ["apps:register","operations:logs:read","operations:coder:read","operations:coder:invoke","overlay:widgets:read","overlay:outputs:read","overlay:outputs:write"];
+const USER_SCOPES = ["identity:read","identity:write","workspace:read","workspace:write","xp:read","apps:read","apps:install","entitlements:read","usage:read","events:read","jobs:read","jobs:write","commlink:read","commlink:write","notifications:read","notifications:write","webhooks:read","webhooks:write","assistants:read","assistants:invoke","stellar:context:read","stellar:context:write","stellar:capabilities:read"];
+const SANDBOX_OWNER_SCOPES = ["apps:register","jobs:any","operations:logs:read","operations:coder:read","operations:coder:invoke","overlay:widgets:read","overlay:outputs:read","overlay:outputs:write"];
 
 export interface SpmtServiceOptions {
   databasePath: string;
@@ -39,6 +42,9 @@ export interface SpmtServiceOptions {
   coderRuntime?: CoderRuntimeV1;
   communityAssistant?: CommunityAssistantRuntimeV1;
   billingManifest?: BillingManifestV1;
+  providerGrants?: ProviderGrantIssuerV1;
+  stellarChatEnabled?: boolean;
+  stellarWorkerCredential?: string;
 }
 
 export function createSpmtService(options: SpmtServiceOptions) {
@@ -58,7 +64,16 @@ export function createSpmtService(options: SpmtServiceOptions) {
   const billing = new MonetizationService(options.billingManifest ?? loadBillingManifest(), store);
   const data = new PlatformDataService({ store: platformStore, auth, webhookKey: options.webhookKey });
   const accounts = new AccountRecoveryService({ authority, authorityStore: store, control, platformStore, setupStore });
-  const operations = new PlatformOperations(auth, authority, control, data, options.communityAssistant, options.coderRuntime);
+  const executionJobs = new ExecutionJobService({
+    store: platformStore,
+    usage: billing,
+    resolvePlan: (tenantId) => billingPlan(control.listEntitlements(tenantId)),
+    onTransition: (job, previousState) => data.createOperationsLog({ tenantId: job.tenantId, sourceAppId: job.ownerAppId, reporterId: "spmt-execution", level: job.state === "failed" || job.state === "dead-letter" ? "error" : job.state === "cancelled" ? "warn" : "info", kind: `execution.${job.state}`, summary: `${job.capabilityId} ${previousState ? `${previousState} -> ` : ""}${job.state} on ${job.executionTarget}`, labels: ["execution-job", job.executionTarget, job.meteredResource], ...(job.correlationId ? { correlationId: job.correlationId } : {}), idempotencyKey: `${job.id}:${job.state}:${job.fencingEpoch}:${job.attempt}:${job.updatedAt}:${job.progress?.percent ?? "none"}` }),
+  });
+  if (options.stellarChatEnabled && (!options.stellarWorkerCredential || options.stellarWorkerCredential.length < 32)) throw new Error("An enabled Stellar chat runtime requires a 32+ character worker credential");
+  if (options.stellarWorkerCredential) ensureStellarWorkerIdentity(auth, options.stellarWorkerCredential);
+  const communityAssistant = options.communityAssistant ?? new StellarCommunityAssistantRuntime(executionJobs, { enabled: Boolean(options.stellarChatEnabled), resolveRoute: (input) => resolveStellarRoute(control, input.tenantId, input.routingPreference ?? "automatic") });
+  const operations = new PlatformOperations(auth, authority, control, data, communityAssistant, options.coderRuntime, executionJobs);
   const api = new PlatformApiAdapter(operations);
   const health = new HealthRegistry();
   health.setDependency("authority-storage", "ready", `sqlite:${store.journalMode()}`);
@@ -68,6 +83,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
 
   if (options.sandboxFixtures) seedSandboxFixtures(control, data, publicBaseUrl);
   if (options.sandboxApps?.length) seedSandboxApps(control, store.listTenants(), options.sandboxApps);
+  syncCommunityAssistantCapability(data, communityAssistant.status());
 
   const outbox = new OutboxDispatcher({
     authority,
@@ -336,6 +352,25 @@ export function createSpmtService(options: SpmtServiceOptions) {
         catch { return json(response, 401, { error: "unauthorized" }); }
       }
 
+      if (request.method === "POST" && url.pathname === "/v1/provider-grants") {
+        const token = accessToken(request), tenantId = header(request, "x-spmt-tenant");
+        if (!token || !tenantId) return json(response, 401, { error: "unauthorized" });
+        if (!options.providerGrants) return json(response, 503, { error: "provider_grants_unavailable" });
+        try {
+          const principal = auth.authorize(token, "providers:grant", tenantId);
+          if (principal.actorType !== "service") return json(response, 403, { error: "service_required" });
+          control.getApp(principal.actorId);
+          if (!control.listInstalls(tenantId).some((install) => install.appId === principal.actorId && install.enabled)) return json(response, 403, { error: "app_not_installed" });
+          const body = await readBody(request);
+          const grant = await options.providerGrants.issue({ schemaVersion: 1, tenantId, requesterAppId: principal.actorId, provider: str(body.provider, "provider") as "discord" | "twitch" | "kick" | "xbox" | "github" | "livekit", providerUserId: str(body.providerUserId, "providerUserId"), capabilityId: str(body.capabilityId, "capabilityId"), requiredScopes: stringValues(body.requiredScopes, "requiredScopes"), ...(body.ttlSeconds === undefined ? {} : { ttlSeconds: safeInteger(body.ttlSeconds, "ttlSeconds") }) });
+          authority.audit({ tenantId, actorType: "service", actorId: principal.actorId, action: "provider-grants.issue", target: `provider:${grant.provider}:${grant.providerUserId}:${grant.capabilityId}`, outcome: "accepted" });
+          return json(response, 201, grant);
+        } catch (error) {
+          if (error instanceof ProviderGrantError) return json(response, error.code === "unavailable" ? 503 : error.code === "denied" ? 403 : 400, { error: error.code, message: error.message });
+          return json(response, 403, { error: "forbidden" });
+        }
+      }
+
       const body = request.method === "GET" || request.method === "HEAD" ? undefined : await readBody(request);
       const headers = Object.fromEntries(Object.entries(request.headers).map(([key, value]) => [key, Array.isArray(value) ? value.join(",") : value]));
       if (!headers.authorization) {
@@ -351,7 +386,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
   });
 
   return {
-    store, platformStore, setupStore, authority, auth, control, billing, data, accounts, operations, outbox, server,
+    store, platformStore, setupStore, authority, auth, control, billing, data, accounts, executionJobs, operations, outbox, server,
     registerOAuthClient(input: Parameters<PlatformDataService["registerOAuthClient"]>[0]): ReturnType<PlatformDataService["registerOAuthClient"]> { return data.registerOAuthClient(input); },
     runOutboxOnce() { return outbox.runOnce(); },
     listen() { return new Promise<void>((done, reject) => { server.once("error", reject); server.listen(options.port ?? 3000, options.host ?? "0.0.0.0", () => { server.off("error", reject); done(); }); }); },
@@ -460,6 +495,8 @@ async function readBody(request: IncomingMessage): Promise<Record<string, unknow
   return parsed as Record<string, unknown>;
 }
 function str(value: unknown, name: string) { if (typeof value !== "string" || !value) throw new Error(`${name} is required`); return value; }
+function stringValues(value: unknown, name: string) { if (!Array.isArray(value) || !value.length || value.some((item) => typeof item !== "string" || !item)) throw new Error(`${name} must be a non-empty string array`); return value as string[]; }
+function safeInteger(value: unknown, name: string) { if (!Number.isSafeInteger(value)) throw new Error(`${name} must be a safe integer`); return value as number; }
 function header(request: IncomingMessage, name: string) { const value = request.headers[name]; return typeof value === "string" && value.trim() ? value.trim() : undefined; }
 function accessToken(request: IncomingMessage) { const authorization = request.headers.authorization; if (authorization?.startsWith("Bearer ")) return authorization.slice(7); return cookie(request, "spmt_token"); }
 function cookie(request: IncomingMessage, name: string) { const source = request.headers.cookie ?? ""; for (const item of source.split(";")) { const [index, ...rest] = item.trim().split("="); if (index === name) return decodeURIComponent(rest.join("=")); } return undefined; }
@@ -474,6 +511,21 @@ function loadBillingManifest() { return assertBillingManifestV1(JSON.parse(readF
 function billingPlan(entitlements: Array<{ key: string; value: string | number | boolean }>): BillingPlanIdV1 {
   for (const entitlement of entitlements) if (["billing.plan", "billing-plan", "plan", "tier"].includes(entitlement.key) && typeof entitlement.value === "string" && (BILLING_PLAN_IDS as readonly string[]).includes(entitlement.value)) return entitlement.value as BillingPlanIdV1;
   return "free";
+}
+function resolveStellarRoute(control: ControlService, tenantId: string, preference: "automatic" | "hosted" | "companion") {
+  const plan = billingPlan(control.listEntitlements(tenantId));
+  const companionInstalled = control.listInstalls(tenantId).some((install) => install.appId === "companion" && install.enabled);
+  const companionReady = companionInstalled && control.listRuntimeProjections(tenantId, "companion").some((runtime) => runtime.state === "ready");
+  if (preference === "companion" && plan !== "free" && companionReady) return { executionTarget: "companion" as const, meteringTarget: "companion" as const };
+  if (preference === "companion") return { executionTarget: "sprite" as const, meteringTarget: "hosted" as const, fallbackReason: plan === "free" ? "Companion routing requires a paid plan; hosted routing was selected." : "Companion is not connected and ready; hosted routing was selected." };
+  return { executionTarget: "sprite" as const, meteringTarget: "hosted" as const };
+}
+function ensureStellarWorkerIdentity(auth: AuthService, credential: string) {
+  try { auth.registerServiceIdentity({ serviceId: "stellar-core", credential, scopes: ["jobs:read", "jobs:work", "stellar:context:read"], tenantMode: "any" }); }
+  catch (error) { if (!(error instanceof AuthConflictError)) throw error; auth.issueServiceAccess("stellar-core", credential, 60); }
+}
+function syncCommunityAssistantCapability(data: PlatformDataService, status: ReturnType<CommunityAssistantRuntimeV1["status"]>) {
+  data.upsertStellarCapability({ id: "spmt.community-assistant", sourceAppId: "stellar-core", title: "Stella Community Assistant", description: "Invoke the app-neutral SPMT Community Assistant through the durable, metered Stellar Core job contract.", requiredScopes: ["assistants:invoke"], availability: status.availability, ...(status.availability === "unavailable" ? { unavailableReason: status.unavailableReason } : {}) });
 }
 function createDiscordDmSender(botToken: string, fetchImpl: typeof fetch) {
   return async (discordUserId: string, message: { title: string; description: string; url: string }) => {
@@ -499,6 +551,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   const twitchClientId = process.env.TWITCH_CLIENT_ID;
   const twitchClientSecret = process.env.TWITCH_CLIENT_SECRET;
   const discordBotToken = process.env.DISCORD_BOT_TOKEN;
+  const stellarWorkerCredential = process.env.STELLAR_WORKER_CREDENTIAL;
+  const stellarChatEnabled = process.env.SPMT_STELLAR_CHAT_ENABLED === "1";
+  if (stellarChatEnabled && !stellarWorkerCredential) throw new Error("SPMT_STELLAR_CHAT_ENABLED=1 requires STELLAR_WORKER_CREDENTIAL");
   const service = createSpmtService({
     databasePath,
     webhookKey: decodeKey(key),
@@ -513,6 +568,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     ...(twitchClientId ? { twitchClientId } : {}),
     ...(twitchClientSecret ? { twitchClientSecret } : {}),
     ...(discordBotToken ? { discordBotToken } : {}),
+    stellarChatEnabled,
+    ...(stellarWorkerCredential ? { stellarWorkerCredential } : {}),
   });
   await service.listen();
 }

@@ -109,6 +109,10 @@ The preferred topology is caller-initiated: apps and users call public SPMT/Stel
 | D-29 | First-party developer-platform parity | First-party apps use the same scoped, documented contracts available to outside developers. | Private shortcuts can be faster for code owned by one team. | ACCEPT |
 | D-30 | Dynamic app discovery | Every Apps surface consumes the canonical registry and reacts to approved registry revisions without source edits or redeployment. | Static menus are simpler and can hide partially ready apps. | ACCEPT |
 | D-45 | Foundational application surfaces | Register Commlink, Stellar Core, and Mission Control as first-party apps; discover their names, descriptions, launch targets, installation, and visibility through SPMT instead of hardcoding SpaceMountain navigation. | Keeping them as SpaceMountain pages requires less routing and packaging. | ACCEPT |
+| D-46 | Shared functional execution foundation | Use one metered `ExecutionJobV1` lifecycle with idempotent creation, fenced worker leases, bounded retries/dead letters, progress, and separate physical versus billing targets. Use it for asynchronous app work unless a documented specialized protocol is necessary. | App-specific queues are initially faster to implement and may match each workload more closely. | ACCEPT |
+| D-47 | Account versus app Settings | Account owns personal profile, plan, billing, and usage. Each app owns its versioned normal/advanced Settings and private storage, including encrypted write-only secrets and revision-safe migrations. | A single ecosystem Settings page would give users one place for every toggle. | ACCEPT |
+| D-48 | Provider credential delivery | SPMT remains provider credential authority and issues only short-lived app/capability/scope-bounded grants to installed services. Human sessions, jobs, logs, events, and URLs never carry provider credentials. | Letting each app store provider refresh tokens reduces broker dependency. | ACCEPT |
+| D-49 | Capability-level cutover | Keep a machine-readable capability wiring manifest with explicit `green-only`, `shadow`, `green-primary-with-fallback`, or `disabled` routing and evidence-backed wiring states. No hidden dual writes. | App-level cutover flags are simpler and require less inventory detail. | ACCEPT |
 
 ## Product naming debates
 
@@ -174,6 +178,14 @@ The preferred topology is caller-initiated: apps and users call public SPMT/Stel
 - **Name:** SPMT Ecosystem Core.
 - **Boundary:** Stellar Core remains the AI subsystem; SPMT, SpaceMountain, and the Mtman Machine Rotator retain their already accepted distinct roles. ApolloStation remains the repository/codename.
 - **Consequences:** Downstream apps consume the documented SDK, HTTP API, CLI, MCP, event, webhook, and job surfaces. The new umbrella name grants no hidden first-party shortcut or additional authority.
+
+## Change record — 2026-08-28 Stellar chat implementation
+
+- **Owner position:** Approve the first functionality-parity chunk using Qwen as the automatic route, plan-aware Companion eligibility, personal Account usage, and the existing shared job/machine foundation.
+- **Implemented decisions:** D-20, D-22, D-31, D-40, D-46, D-47, and D-49. D-24 remains a production gate until retention and user controls are enforced.
+- **Routing:** Free users remain platform-routed to hosted Qwen. Paid users see the Companion route only when Companion is installed and ready. An ineligible explicit Companion request receives a visible hosted fallback reason.
+- **Boundary:** All Stella work enters `ExecutionJobV1`; the browser-to-Qwen bypass is removed. Provider/model controls stay owner-only and Stellar Core does not speak as Athena or another tenant persona.
+- **Production gate:** Keep the capability in shadow until retention/export/deletion enforcement, live capacity/failure evidence, production credentials, and explicit route promotion are approved.
 
 ## Change record template
 

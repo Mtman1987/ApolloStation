@@ -1,1 +1,1 @@
-{"name":"@spmt/stellar-core","version":"0.1.0","private":true,"type":"module","main":"./dist/index.js","types":"./dist/index.d.ts","scripts":{"build":"tsc -b"},"dependencies":{"@spmt/contracts":"0.1.0"}}
+{"name":"@spmt/stellar-core","version":"0.1.0","private":true,"type":"module","main":"./dist/index.js","types":"./dist/index.d.ts","scripts":{"build":"tsc -b","start:worker":"node dist/worker-start.js"},"dependencies":{"@spmt/contracts":"0.1.0","@spmt/execution-core":"0.1.0","@spmt/sdk":"0.1.0"}}

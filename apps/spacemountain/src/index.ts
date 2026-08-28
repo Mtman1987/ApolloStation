@@ -240,13 +240,14 @@ export class SpaceMountainShellController {
     return this.spmt.sendCommlinkMessage(tenantId, conversationId, recipientUserIds, text);
   }
 
-  async invokeStella(tenantId: string, userId: string, message: string, conversationId: string, idempotencyKey: string) {
+  async invokeStella(tenantId: string, userId: string, message: string, conversationId: string, idempotencyKey: string, routingPreference: "automatic" | "hosted" | "companion" = "automatic") {
     requireId(tenantId, "tenantId");
     requireId(userId, "userId");
     requireId(conversationId, "conversationId");
     requireId(idempotencyKey, "idempotencyKey");
     if (!message.trim() || message.length > 4000) throw new Error("Stella message is invalid");
-    return this.spmt.invokeCommunityAssistant(tenantId, { userId, message: message.trim(), surface: "app", conversationId }, idempotencyKey);
+    if (!["automatic", "hosted", "companion"].includes(routingPreference)) throw new Error("Stella routing preference is invalid");
+    return this.spmt.invokeCommunityAssistant(tenantId, { userId, message: message.trim(), surface: "app", conversationId, routingPreference }, idempotencyKey);
   }
 
   async prepareCoderDraft(tenantId: string, targetAppId: string, prompt: string, evidenceLogIds: string[], idempotencyKey: string) {

@@ -2,6 +2,27 @@
 
 Status: evidence-backed working baseline, requiring live verification before migration.
 
+## Functional foundation added on 2026-08-28
+
+The current implementation now includes the shared scaffolding required before feature-by-feature wiring:
+
+- one durable, metered execution-job envelope across Sprite, Fly, and Companion with leases, fencing, heartbeat progress, retries, cancellation, dead letters, idempotency, tenant isolation, and restart persistence;
+- separate physical execution and Account metering targets so paid Companion-local work is unmetered against hosted caps while remaining visible in personal usage;
+- a public job contract across HTTP, SDK, CLI, and MCP, plus a reference-app example;
+- an SPMT provider-grant broker and public service-only endpoint with installed-app, capability, scope, expiry, audit, and human-denial rules;
+- a versioned app Settings contract and isolated SQLite foundation with encrypted secrets, optimistic revisions, immutable migration checksums, checkpoints, integrity checks, and restart restore;
+- `config/capability-wiring.v1.json`, which records every first-party owner, route mode, wiring state, migration note, machine target, metering category, and evidence.
+
+`Account` is now the personal usage/plan/profile destination. App `Settings` remain owned by each app for its normal and advanced configuration. Production provider refresh adapters, real worker connections, data reconciliation, Fly mutation, and donor retirement remain cutover work rather than being fabricated by this scaffold.
+
+## Stellar chat vertical added on 2026-08-28
+
+The first full functional vertical now runs from the SpaceMountain Stella form through the public Community Assistant contract into a metered `ExecutionJobV1`, then through a service-authenticated Stellar worker to a loopback OpenAI-compatible Qwen process. The UI polls durable progress and terminal state, displays provider failures truthfully, and refreshes the signed-in user's Account usage. No browser-accessible Qwen proxy remains.
+
+Hosted Qwen is the automatic route. Paid users may select Companion only when its installed runtime reports ready; Free or unavailable Companion requests visibly fall back to hosted. Companion usage is still recorded personally but does not fill the hosted allowance bar when the plan declares unmetered local processing. Model/provider controls remain owner-only, and Stellar Core remains persona-neutral behind the Stella presentation.
+
+This is verified Green wiring, not production activation. The capability manifest remains in `shadow`; prompt/result retention enforcement, export/deletion controls, live Qwen load and failure measurements, Companion process evidence, production worker credentials, and explicit route promotion remain gates.
+
 ## What is working conceptually
 
 - SPMT is already described as the canonical identity and platform contract owner.
