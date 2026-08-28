@@ -186,3 +186,5 @@ function assertOutbound(message: OutboundChatMessageV1): void {
 function messageKey(message: NormalizedChatMessageV1): string { return [message.tenantId, message.provider, message.connectionId, message.messageId].join(":"); }
 function requireId(value: string, name: string): void { if (!value || value.trim() !== value || value.length > 300 || !/^[A-Za-z0-9._:@/-]+$/.test(value)) throw new Error(`${name} is invalid`); }
 function redact(value: string): string { return value.replace(/\bBearer\s+\S+/gi, "Bearer [REDACTED]").replace(/((?:token|secret|password|authorization)\s*[:=]\s*)\S+/gi, "$1[REDACTED]").slice(0, 1_000); }
+
+export * from "./spmt-provider-grants.js";

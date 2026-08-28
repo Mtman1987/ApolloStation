@@ -29,7 +29,10 @@ export type ProviderGrantResultV1 =
   | { status: "reauthorization-required"; reason: string }
   | { status: "unavailable"; reason: string };
 
-export interface ProviderGrantSourceV1 { getGrant(connection: ProviderConnectionConfigV1): Promise<ProviderGrantResultV1>; }
+export interface ProviderGrantSourceV1 {
+  getGrant(connection: ProviderConnectionConfigV1): Promise<ProviderGrantResultV1>;
+  recoverAuthentication?(connection: ProviderConnectionConfigV1, reason: string): Promise<ProviderGrantResultV1>;
+}
 export interface ProviderConnectionHandleV1 { close(): void | Promise<void>; }
 export interface ProviderConnectionDriverV1 {
   provider: ChatProviderV1;
@@ -200,7 +203,8 @@ export class ChatProviderConnectionSupervisor {
             const active = this.active.get(key);
             if (!active) return;
             this.active.delete(key);
-            if (failure.kind === "authentication") this.store.markReauthorizationRequired(connection, this.owner, failure.reason, new Date().toISOString());
+            if (failure.kind === "authentication" && this.grants.recoverAuthentication) void this.recoverAuthentication(connection, failure.reason);
+            else if (failure.kind === "authentication") this.store.markReauthorizationRequired(connection, this.owner, failure.reason, new Date().toISOString());
             else this.store.markFailure(connection, this.owner, failure.reason, new Date().toISOString());
           },
         });
@@ -217,6 +221,16 @@ export class ChatProviderConnectionSupervisor {
       this.active.delete(key);
       try { await active.handle.close(); } finally { this.store.release(active.connection, this.owner, now); }
     }
+  }
+
+  private async recoverAuthentication(connection: ProviderConnectionConfigV1, reason: string): Promise<void> {
+    const now = new Date().toISOString();
+    try {
+      const result = await this.grants.recoverAuthentication!(connection, reason);
+      if (result.status === "ready") this.store.release(connection, this.owner, now);
+      else if (result.status === "reauthorization-required") this.store.markReauthorizationRequired(connection, this.owner, result.reason, now);
+      else this.store.markFailure(connection, this.owner, result.reason, now);
+    } catch (error) { this.store.markFailure(connection, this.owner, errorText(error), now); }
   }
 }
 

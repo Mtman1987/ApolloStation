@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "revision": "apollo-stellar-chat-production-gates-2026-08-28",
+  "revision": "apollo-provider-credential-authority-2026-08-28",
   "capabilities": [
     {
       "capabilityId": "spmt.identity-authority",
@@ -38,14 +38,14 @@
       "dataOwner": "spmt",
       "executionOwner": "spmt-vault",
       "surfaces": ["standalone"],
-      "entryPoints": ["/v1/provider-grants", "@spmt/sdk issueProviderGrant"],
+      "entryPoints": ["/v1/provider-grants", "/v1/provider-grants/recover", "@spmt/sdk issueProviderGrant", "@spmt/sdk recoverProviderCredential"],
       "contract": "ProviderGrantRequestV1 and IssuedProviderGrantV1",
       "meteredResource": "connected-providers",
       "executionTargets": ["fly"],
       "routeMode": "shadow",
-      "state": "scaffolded",
-      "migration": "Provider refresh adapters and production credentials remain credential-scoped wiring work.",
-      "evidence": ["tests/functional-foundation.test.mjs", "tests/provider-grant-api.test.mjs"]
+      "state": "wired",
+      "migration": "Encrypted refresh authority and one-way non-overwriting donor import are implemented. Real credentials remain disabled until the controlled two-tenant live rehearsal and owner cutover acceptance.",
+      "evidence": ["tests/functional-foundation.test.mjs", "tests/provider-grant-api.test.mjs", "tests/provider-credential-authority.test.mjs", "tests/provider-live-rehearsal-gate.test.mjs", "docs/architecture/PROVIDER_CREDENTIAL_AUTHORITY.md"]
     },
     {
       "capabilityId": "spacemountain.workspace-account-overlay",
@@ -89,8 +89,8 @@
       "executionTargets": ["fly"],
       "routeMode": "shadow",
       "state": "wired",
-      "migration": "Real Twitch, Discord, and Kick credential proof remains before production cutover.",
-      "evidence": ["tests/chat-gateway.test.mjs", "tests/chat-provider-supervisor.test.mjs", "tests/chat-provider-drivers.test.mjs"]
+      "migration": "SPMT refresh and Chat Gateway reconnect are wired. The controlled real-credential, concurrent two-tenant socket proof remains before production cutover.",
+      "evidence": ["tests/chat-gateway.test.mjs", "tests/chat-provider-supervisor.test.mjs", "tests/chat-provider-drivers.test.mjs", "tests/provider-credential-authority.test.mjs", "tests/provider-grant-api.test.mjs"]
     },
     {
       "capabilityId": "stellar-core.ai-chat.v1",

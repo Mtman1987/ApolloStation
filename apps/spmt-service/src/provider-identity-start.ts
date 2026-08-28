@@ -16,6 +16,18 @@ if (webhookKey.byteLength !== 32) throw new Error("SPMT_WEBHOOK_KEY must decode 
 const buildSha = process.env.BUILD_SHA;
 const twitchClientId = process.env.TWITCH_CLIENT_ID;
 const twitchClientSecret = process.env.TWITCH_CLIENT_SECRET;
+const discordClientId = process.env.DISCORD_CLIENT_ID;
+const discordClientSecret = process.env.DISCORD_CLIENT_SECRET;
+const kickClientId = process.env.KICK_CLIENT_ID;
+const kickClientSecret = process.env.KICK_CLIENT_SECRET;
+const providerCredentialKeySource = process.env.SPMT_PROVIDER_CREDENTIAL_KEY;
+const providerCredentialKey = providerCredentialKeySource ? Buffer.from(providerCredentialKeySource, "base64url") : undefined;
+if (providerCredentialKey && providerCredentialKey.byteLength !== 32) throw new Error("SPMT_PROVIDER_CREDENTIAL_KEY must decode to exactly 32 bytes");
+const providerOAuthClients = {
+  ...(twitchClientId && twitchClientSecret ? { twitch: { clientId: twitchClientId, clientSecret: twitchClientSecret } } : {}),
+  ...(discordClientId && discordClientSecret ? { discord: { clientId: discordClientId, clientSecret: discordClientSecret } } : {}),
+  ...(kickClientId && kickClientSecret ? { kick: { clientId: kickClientId, clientSecret: kickClientSecret } } : {}),
+};
 const discordBotToken = process.env.DISCORD_BOT_TOKEN;
 const stellarWorkerCredential = process.env.STELLAR_WORKER_CREDENTIAL;
 const stellarChatEnabled = process.env.SPMT_STELLAR_CHAT_ENABLED === "1";
@@ -33,6 +45,7 @@ const service = createSpmtServiceWithProviderIdentity({
   ...(buildSha ? { buildSha } : {}),
   ...(twitchClientId ? { twitchClientId } : {}),
   ...(twitchClientSecret ? { twitchClientSecret } : {}),
+  ...(providerCredentialKey ? { providerCredentialKey, providerOAuthClients } : {}),
   ...(discordBotToken ? { discordBotToken } : {}),
   stellarChatEnabled,
   ...(stellarWorkerCredential ? { stellarWorkerCredential } : {}),
