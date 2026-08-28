@@ -39,7 +39,7 @@ test("Sprite deployment verifies, tests, switches atomically, rolls back, and la
   assert.match(script, /create_apollo_service "\$BUILD_SHA"/);
   assert.match(script, /--candidate-app,nebula-arcade,--catalog,current/);
   assert.doesNotMatch(script, /--candidate-app,chat-tag/);
-  assert.match(script, /create_apollo_service "\$\(basename "\$previous_release"\)"/);
+  assert.match(script, /create_apollo_service "\$\(basename "\$previous_release"\)" 0/);
   assert.match(script, /services_json="\$\(sprite-env services list\)"/);
   assert.match(script, /select\(\.http_port != null\)/);
   assert.match(script, /for stale_service in "\$\{http_services\[@\]\}" "\$service_name" "\$bootstrap_service_name" spmt-qwen/);
@@ -47,6 +47,8 @@ test("Sprite deployment verifies, tests, switches atomically, rolls back, and la
   assert.match(script, /sprite-env services delete "\$service_name"/);
   assert.match(script, /llama_ref="b6335"/);
   assert.match(script, /--llm-binary,\$llama_root\/build\/bin\/llama-server/);
+  assert.match(script, /local enable_stellar="\$\{2:-1\}"/);
+  assert.match(script, /for _ in \{1\.\.1260\}/);
   assert.match(script, /sprite-env services create "\$bootstrap_service_name"/);
   assert.match(script, /grep -Fq "\$BUILD_SHA"/);
 });

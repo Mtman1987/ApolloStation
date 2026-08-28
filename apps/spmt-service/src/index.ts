@@ -534,7 +534,7 @@ function resolveStellarRoute(control: ControlService, jobs: ExecutionJobService,
 }
 function ensureStellarWorkerIdentity(auth: AuthService, credential: string) {
   try { auth.registerServiceIdentity({ serviceId: "stellar-core", credential, scopes: ["jobs:read", "jobs:work", "stellar:context:read"], tenantMode: "any" }); }
-  catch (error) { if (!(error instanceof AuthConflictError)) throw error; auth.issueServiceAccess("stellar-core", credential, 60); }
+  catch (error) { if (!(error instanceof AuthConflictError)) throw error; auth.rotateServiceCredential("stellar-core", credential); }
 }
 function syncCommunityAssistantCapability(data: PlatformDataService, status: ReturnType<CommunityAssistantRuntimeV1["status"]>) {
   data.upsertStellarCapability({ id: "spmt.community-assistant", sourceAppId: "stellar-core", title: "Stella Community Assistant", description: "Invoke the app-neutral SPMT Community Assistant through the durable, metered Stellar Core job contract.", requiredScopes: ["assistants:invoke"], availability: status.availability, ...(status.availability === "unavailable" ? { unavailableReason: status.unavailableReason } : {}) });
