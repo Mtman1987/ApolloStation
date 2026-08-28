@@ -1,25 +1,25 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  CHAT_TAG_TAG_COMPLETED,
-  CHAT_TAG_CROWN_SET,
-  assertChatTagStateV1,
+  NEBULA_TAG_TAG_COMPLETED,
+  NEBULA_TAG_CROWN_SET,
+  assertNebulaTagStateV1,
   crownAwardKey,
   crownMonthKey,
   crownXpReward,
-  createChatTagState,
-  decorateChatTagCrowns,
-  executeChatTagCommand,
-  getChatTagLeaderboard,
-  getChatTagStatus,
-  parseChatTagCommandText,
-  planChatTagMessage,
-  publishChatTagCommandResult,
+  createNebulaTagState,
+  decorateNebulaTagCrowns,
+  executeNebulaTagCommand,
+  getNebulaTagLeaderboard,
+  getNebulaTagStatus,
+  parseNebulaTagCommandText,
+  planNebulaTagMessage,
+  publishNebulaTagCommandResult,
 } from "../apps/nebula-arcade/dist/index.js";
-import { requestChatTagGameAnnouncements } from "../apps/discord-stream-hub/dist/index.js";
+import { requestNebulaArcadeTagAnnouncements } from "../apps/discord-stream-hub/dist/index.js";
 import { SpmtClient } from "../packages/sdk/dist/index.js";
 
-const TENANT = "tenant-chat-tag";
+const TENANT = "tenant-nebula-arcade";
 const CHANNEL = "mtman1987";
 const at = (minute) => new Date(Date.UTC(2026, 7, 23, 5, minute)).toISOString();
 
@@ -28,52 +28,52 @@ function command(kind, commandId, actorUserId, minute, extra = {}) {
 }
 
 function apply(state, value) {
-  return executeChatTagCommand(state, value);
+  return executeNebulaTagCommand(state, value);
 }
 
-test("original Chat Tag command words and aliases remain recognizable", () => {
-  assert.deepEqual(parseChatTagCommandText("spmt join"), { kind: "join" });
-  assert.deepEqual(parseChatTagCommandText("SPMT tag @TargetUser"), { kind: "tag", targetUsername: "targetuser" });
-  assert.deepEqual(parseChatTagCommandText("spmt pass target"), { kind: "pass", targetUsername: "target" });
-  assert.deepEqual(parseChatTagCommandText("spmt givepass @target"), { kind: "grant-pass", targetUsername: "target" });
-  assert.deepEqual(parseChatTagCommandText("spmt whosit"), { kind: "status" });
-  assert.deepEqual(parseChatTagCommandText("spmt stats"), { kind: "score" });
-  assert.deepEqual(parseChatTagCommandText("spmt away"), { kind: "toggle-away" });
-  assert.deepEqual(parseChatTagCommandText("spmt chattag"), { kind: "join" });
-  assert.deepEqual(parseChatTagCommandText("spmt taggame tag @TargetUser"), { kind: "tag", targetUsername: "targetuser" });
-  assert.equal(parseChatTagCommandText("hello chat"), null);
-  assert.equal(parseChatTagCommandText("spmt tag"), null);
+test("Nebula Arcade tag-game command words and canonical module prefix remain recognizable", () => {
+  assert.deepEqual(parseNebulaTagCommandText("spmt join"), { kind: "join" });
+  assert.deepEqual(parseNebulaTagCommandText("SPMT tag @TargetUser"), { kind: "tag", targetUsername: "targetuser" });
+  assert.deepEqual(parseNebulaTagCommandText("spmt pass target"), { kind: "pass", targetUsername: "target" });
+  assert.deepEqual(parseNebulaTagCommandText("spmt givepass @target"), { kind: "grant-pass", targetUsername: "target" });
+  assert.deepEqual(parseNebulaTagCommandText("spmt whosit"), { kind: "status" });
+  assert.deepEqual(parseNebulaTagCommandText("spmt stats"), { kind: "score" });
+  assert.deepEqual(parseNebulaTagCommandText("spmt away"), { kind: "toggle-away" });
+  assert.deepEqual(parseNebulaTagCommandText("spmt arcade"), { kind: "join" });
+  assert.deepEqual(parseNebulaTagCommandText("spmt arcade tag @TargetUser"), { kind: "tag", targetUsername: "targetuser" });
+  assert.equal(parseNebulaTagCommandText("hello chat"), null);
+  assert.equal(parseNebulaTagCommandText("spmt tag"), null);
 });
 
 test("provider-neutral chat ingress resolves aliases, mentions, roles, and read-only replies", () => {
-  let state = createChatTagState(TENANT);
+  let state = createNebulaTagState(TENANT);
   ({ state } = apply(state, command("join", "join-alpha", "user-alpha", 0, { username: "Alpha_User" })));
   ({ state } = apply(state, command("join", "join-beta", "user-beta", 1, { username: "BetaUser" })));
   const baseMessage = { schemaVersion: 1, provider: "discord", tenantId: TENANT, channelId: CHANNEL, occurredAt: at(2), roles: ["member"] };
-  const tag = planChatTagMessage(state, { ...baseMessage, messageId: "discord-1", userId: "user-alpha", username: "Alpha_User", text: "spmt chattag tag <@222>", mentions: [{ token: "<@222>", userId: "user-beta", username: "BetaUser" }] });
+  const tag = planNebulaTagMessage(state, { ...baseMessage, messageId: "discord-1", userId: "user-alpha", username: "Alpha_User", text: "spmt tag <@222>", mentions: [{ token: "<@222>", userId: "user-beta", username: "BetaUser" }] });
   assert.equal(tag.kind, "command");
   assert.equal(tag.command.kind, "tag");
   assert.equal(tag.command.targetUserId, "user-beta");
   assert.equal(tag.command.commandId, "discord:discord-1");
-  const rank = planChatTagMessage(state, { ...baseMessage, provider: "twitch", messageId: "twitch-1", userId: "user-beta", username: "BetaUser", text: "spmt rank" });
+  const rank = planNebulaTagMessage(state, { ...baseMessage, provider: "twitch", messageId: "twitch-1", userId: "user-beta", username: "BetaUser", text: "spmt rank" });
   assert.equal(rank.kind, "response");
   assert.match(rank.message, /#1 alpha_user/);
-  const grant = planChatTagMessage(state, { ...baseMessage, messageId: "discord-2", userId: "moderator", username: "Mod", roles: ["moderator"], text: "spmt givepass beta" });
+  const grant = planNebulaTagMessage(state, { ...baseMessage, messageId: "discord-2", userId: "moderator", username: "Mod", roles: ["moderator"], text: "spmt givepass beta" });
   assert.equal(grant.kind, "command");
   assert.equal(grant.command.isModerator, true);
   assert.equal(grant.command.targetUserId, "user-beta");
 });
 
 test("two players can join, transfer it, score, and replay a command safely", () => {
-  let state = createChatTagState(TENANT);
+  let state = createNebulaTagState(TENANT);
   ({ state } = apply(state, command("join", "join-a", "user-a", 0, { username: "Alpha" })));
   ({ state } = apply(state, command("join", "join-b", "user-b", 1, { username: "Beta" })));
-  assert.deepEqual(getChatTagStatus(state), { freeForAll: false, currentItUserId: "user-a", currentItUsername: "alpha", playerCount: 2 });
+  assert.deepEqual(getNebulaTagStatus(state), { freeForAll: false, currentItUserId: "user-a", currentItUsername: "alpha", playerCount: 2 });
 
   let outcome;
   ({ state, result: outcome } = apply(state, command("tag", "tag-a-b", "user-a", 2, { targetUserId: "user-b" })));
   assert.equal(outcome.status, "applied");
-  assert.equal(outcome.event.type, CHAT_TAG_TAG_COMPLETED);
+  assert.equal(outcome.event.type, NEBULA_TAG_TAG_COMPLETED);
   assert.equal(outcome.xpAward.delta, 100);
   assert.equal(state.currentItUserId, "user-b");
   assert.equal(state.players["user-a"].score, 100);
@@ -92,11 +92,11 @@ test("two players can join, transfer it, score, and replay a command safely", ()
   const afterImmunity = apply(tooSoon.state, command("tag", "tag-b-a", "user-b", 23, { targetUserId: "user-a" }));
   assert.equal(afterImmunity.result.status, "applied");
   assert.equal(afterImmunity.state.currentItUserId, "user-a");
-  assert.deepEqual(getChatTagLeaderboard(afterImmunity.state).map((player) => [player.userId, player.score]), [["user-a", 50], ["user-b", 50]]);
+  assert.deepEqual(getNebulaTagLeaderboard(afterImmunity.state).map((player) => [player.userId, player.score]), [["user-a", 50], ["user-b", 50]]);
 });
 
 test("sleep, free-for-all, moderator grants, and passes preserve production game rules", () => {
-  let state = createChatTagState(TENANT);
+  let state = createNebulaTagState(TENANT);
   ({ state } = apply(state, command("join", "join-mod", "user-mod", 0, { username: "Commander" })));
   ({ state } = apply(state, command("join", "join-a", "user-a", 1, { username: "Alpha" })));
   ({ state } = apply(state, command("join", "join-b", "user-b", 2, { username: "Beta" })));
@@ -123,7 +123,7 @@ test("sleep, free-for-all, moderator grants, and passes preserve production game
   assert.equal(response.code, "moderator-required");
   ({ state, result: response } = apply(state, command("trigger-ffa", "ffa", "user-mod", 10, { isModerator: true })));
   assert.equal(response.status, "applied");
-  assert.equal(getChatTagStatus(state).freeForAll, true);
+  assert.equal(getNebulaTagStatus(state).freeForAll, true);
 
   ({ state, result: response } = apply(state, command("tag", "ffa-a-mod", "user-a", 29, { targetUserId: "user-mod" })));
   assert.equal(response.status, "applied");
@@ -132,17 +132,17 @@ test("sleep, free-for-all, moderator grants, and passes preserve production game
 });
 
 test("state snapshots restore without crossing tenant boundaries", () => {
-  let tenantOne = createChatTagState("tenant-one");
-  ({ state: tenantOne } = executeChatTagCommand(tenantOne, { ...command("join", "join-one", "user-one", 0, { username: "One" }), tenantId: "tenant-one" }));
-  const restored = assertChatTagStateV1(JSON.parse(JSON.stringify(tenantOne)), "tenant-one");
+  let tenantOne = createNebulaTagState("tenant-one");
+  ({ state: tenantOne } = executeNebulaTagCommand(tenantOne, { ...command("join", "join-one", "user-one", 0, { username: "One" }), tenantId: "tenant-one" }));
+  const restored = assertNebulaTagStateV1(JSON.parse(JSON.stringify(tenantOne)), "tenant-one");
   assert.equal(restored.players["user-one"].username, "one");
-  assert.throws(() => assertChatTagStateV1(restored, "tenant-two"), /tenant mismatch/);
-  const tenantTwo = createChatTagState("tenant-two");
+  assert.throws(() => assertNebulaTagStateV1(restored, "tenant-two"), /tenant mismatch/);
+  const tenantTwo = createNebulaTagState("tenant-two");
   assert.deepEqual(Object.keys(tenantTwo.players), []);
 });
 
 test("a scoped moderator can operate the game without becoming a player", () => {
-  let state = createChatTagState(TENANT);
+  let state = createNebulaTagState(TENANT);
   ({ state } = apply(state, command("join", "join-a", "user-a", 0, { username: "Alpha" })));
   ({ state } = apply(state, command("join", "join-b", "user-b", 1, { username: "Beta" })));
   let response;
@@ -155,7 +155,7 @@ test("a scoped moderator can operate the game without becoming a player", () => 
 });
 
 test("successful tags publish and award XP only through tenant-scoped SPMT APIs", async () => {
-  let state = createChatTagState(TENANT);
+  let state = createNebulaTagState(TENANT);
   ({ state } = apply(state, command("join", "join-a", "user-a", 0, { username: "Alpha" })));
   ({ state } = apply(state, command("join", "join-b", "user-b", 1, { username: "Beta" })));
   const { result } = apply(state, command("tag", "tag-a-b", "user-a", 2, { targetUserId: "user-b" }));
@@ -165,14 +165,14 @@ test("successful tags publish and award XP only through tenant-scoped SPMT APIs"
     return Response.json({ ok: true });
   };
   const client = new SpmtClient({ baseUrl: "https://spmt.example", appId: "nebula-arcade", fetchImpl });
-  assert.deepEqual(await publishChatTagCommandResult(client, result), { eventPublished: true, xpAwarded: true });
+  assert.deepEqual(await publishNebulaTagCommandResult(client, result), { eventPublished: true, xpAwarded: true });
   assert.deepEqual(calls.map((call) => new URL(call.url).pathname), ["/v1/events", "/v1/xp/awards"]);
   assert.ok(calls.every((call) => call.headers["x-spmt-app"] === "nebula-arcade"));
   assert.ok(calls.every((call) => call.headers["x-spmt-tenant"] === TENANT));
-  assert.deepEqual(calls.map((call) => call.headers["idempotency-key"]), ["chat-tag:tag:tag-a-b", "chat-tag:tag:tag-a-b"]);
+  assert.deepEqual(calls.map((call) => call.headers["idempotency-key"]), ["nebula-arcade:tag:tag-a-b", "nebula-arcade:tag:tag-a-b"]);
 });
 
-test("Discord Stream Hub consumes only the public production Chat Tag event", async () => {
+test("Discord Stream Hub consumes only the public production Nebula Arcade tag game event", async () => {
   const calls = [];
   const fetchImpl = async (url, init = {}) => {
     calls.push({ url: String(url), method: init.method ?? "GET", headers: Object.fromEntries(new Headers(init.headers)), body: init.body ? JSON.parse(String(init.body)) : undefined });
@@ -180,20 +180,20 @@ test("Discord Stream Hub consumes only the public production Chat Tag event", as
     return Response.json({ ok: true });
   };
   const client = new SpmtClient({ baseUrl: "https://spmt.example", appId: "discord-stream-hub", fetchImpl });
-  assert.deepEqual(await requestChatTagGameAnnouncements(client, TENANT), { observed: 1 });
-  assert.equal(new URL(calls[0].url).searchParams.get("type"), CHAT_TAG_TAG_COMPLETED);
+  assert.deepEqual(await requestNebulaArcadeTagAnnouncements(client, TENANT), { observed: 1 });
+  assert.equal(new URL(calls[0].url).searchParams.get("type"), NEBULA_TAG_TAG_COMPLETED);
   assert.equal(new URL(calls[0].url).searchParams.get("sourceAppId"), "nebula-arcade");
-  assert.equal(calls[1].body.payload.kind, "chat-tag");
-  assert.equal(calls[1].headers["idempotency-key"], "dsh-chat-tag:event-tag-a-b");
+  assert.equal(calls[1].body.payload.kind, "nebula-arcade-tag");
+  assert.equal(calls[1].headers["idempotency-key"], "dsh-nebula-arcade:event-tag-a-b");
   assert.ok(calls.every((call) => call.headers["x-spmt-tenant"] === TENANT));
 });
 
 test("monthly crowns preserve fixed donor rewards and never schedule the same payout twice", () => {
-  let state = createChatTagState(TENANT);
+  let state = createNebulaTagState(TENANT);
   ({ state } = apply(state, command("join", "join-winner", "user-winner", 0, { username: "Van_Braak" })));
   const crowned = apply(state, command("set-winner", "crown-first", "owner", 1, { targetUserId: "user-winner", place: 1, isModerator: true }));
   state = crowned.state;
-  assert.equal(crowned.result.event.type, CHAT_TAG_CROWN_SET);
+  assert.equal(crowned.result.event.type, NEBULA_TAG_CROWN_SET);
   assert.equal(crowned.result.xpAward.delta, 500);
   assert.equal(crowned.result.xpAward.idempotencyKey, "crown:2026-08:1:user-winner");
   assert.deepEqual(state.monthlyWinners.map((winner) => [winner.place, winner.username]), [[1, "van_braak"]]);
@@ -212,7 +212,7 @@ test("monthly crowns preserve fixed donor rewards and never schedule the same pa
 
 test("crown decoration preserves mentions, skips URLs, and does not double-crown", () => {
   const winners = [{ userId: "u1", username: "van_braak", place: 1, monthKey: "2026-08", selectedAt: at(0) }];
-  assert.equal(decorateChatTagCrowns("@van_braak tagged van braak", winners), "👑@van_braak tagged 👑van braak");
-  assert.equal(decorateChatTagCrowns("👑van_braak wins", winners), "👑van_braak wins");
-  assert.equal(decorateChatTagCrowns("https://twitch.tv/van_braak", winners), "https://twitch.tv/van_braak");
+  assert.equal(decorateNebulaTagCrowns("@van_braak tagged van braak", winners), "👑@van_braak tagged 👑van braak");
+  assert.equal(decorateNebulaTagCrowns("👑van_braak wins", winners), "👑van_braak wins");
+  assert.equal(decorateNebulaTagCrowns("https://twitch.tv/van_braak", winners), "https://twitch.tv/van_braak");
 });

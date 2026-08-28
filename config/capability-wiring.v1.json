@@ -134,8 +134,8 @@
       "executionTargets": ["fly"],
       "routeMode": "green-only",
       "state": "wired",
-      "migration": "Chat Tag and Quackverse donor state imports remain repeatable per tenant.",
-      "evidence": ["tests/nebula-game-runtime.test.mjs", "tests/chat-tag-migration.test.mjs", "tests/nebula-overlay-scenes.test.mjs"]
+      "migration": "Nebula Arcade tag game and Quackverse donor state imports remain repeatable per tenant.",
+      "evidence": ["tests/nebula-game-runtime.test.mjs", "tests/nebula-tag-migration.test.mjs", "tests/nebula-overlay-scenes.test.mjs"]
     },
     {
       "capabilityId": "discord-stream-hub.community-points",

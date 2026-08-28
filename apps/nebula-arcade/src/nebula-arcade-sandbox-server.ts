@@ -1,11 +1,11 @@
 import { createServer, request as httpRequest, type IncomingMessage, type ServerResponse } from "node:http";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { createChatTagSandboxHost as createBaseNebulaHost, validateChatTagSandboxEnvironment, type ChatTagSandboxHostOptions } from "./nebula-runtime-host-base.js";
+import { createNebulaArcadeSandboxHost as createBaseNebulaHost, validateNebulaArcadeSandboxEnvironment, type NebulaArcadeSandboxHostOptions } from "./nebula-runtime-host-base.js";
 
 const APP_PATH = "/apps/nebula-arcade";
 
-export function createChatTagSandboxHost(options: ChatTagSandboxHostOptions) {
+export function createNebulaArcadeSandboxHost(options: NebulaArcadeSandboxHostOptions) {
   const base = createBaseNebulaHost({ ...options, port: 0, host: "127.0.0.1" });
   let basePort = 0;
   const server = createServer((request, response) => {
@@ -76,11 +76,11 @@ function proxy(request: IncomingMessage, response: ServerResponse, port: number,
 function listen(server: ReturnType<typeof createServer>, port: number, host: string) { return new Promise<void>((done, reject) => { server.once("error", reject); server.listen(port, host, () => { server.off("error", reject); done(); }); }); }
 function close(server: ReturnType<typeof createServer>) { return new Promise<void>((done, reject) => server.close((error) => error ? reject(error) : done())); }
 
-export { validateChatTagSandboxEnvironment };
-export type { ChatTagSandboxHostOptions };
+export { validateNebulaArcadeSandboxEnvironment };
+export type { NebulaArcadeSandboxHostOptions };
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  const checked = validateChatTagSandboxEnvironment(process.env);
-  const host = createChatTagSandboxHost({ ...checked, port: Number(process.env.PORT ?? 8080), host: process.env.HOST ?? "0.0.0.0", buildSha: process.env.BUILD_SHA ?? "dev", ...(process.env.CHAT_TAG_PIN_USER_ID ? { pinUserId: process.env.CHAT_TAG_PIN_USER_ID } : {}) });
+  const checked = validateNebulaArcadeSandboxEnvironment(process.env);
+  const host = createNebulaArcadeSandboxHost({ ...checked, port: Number(process.env.PORT ?? 8080), host: process.env.HOST ?? "0.0.0.0", buildSha: process.env.BUILD_SHA ?? "dev", ...(process.env.NEBULA_ARCADE_PIN_USER_ID ? { pinUserId: process.env.NEBULA_ARCADE_PIN_USER_ID } : {}) });
   await host.listen();
 }

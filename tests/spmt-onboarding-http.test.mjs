@@ -32,8 +32,8 @@ test("public setup choices expose exactly the SpaceMountain invite and existing-
 
 test("service-scoped account provisioning creates app-owned identity and login routes it to first-time setup", async () => {
   await withService(async (service, base) => {
-    service.auth.registerServiceIdentity({ serviceId: "chat-tag", credential: "chat-tag-provision-secret-123456789", scopes: ["identity:provision"], tenantMode: "any" });
-    const token = service.auth.issueServiceAccess("chat-tag", "chat-tag-provision-secret-123456789").accessToken;
+    service.auth.registerServiceIdentity({ serviceId: "nebula-arcade", credential: "nebula-arcade-provision-secret-123456789", scopes: ["identity:provision"], tenantMode: "any" });
+    const token = service.auth.issueServiceAccess("nebula-arcade", "nebula-arcade-provision-secret-123456789").accessToken;
     const provision = await fetch(`${base}/v1/accounts/provision`, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${token}` }, body: JSON.stringify({ tenantId: "tenant-new-user", username: "brandnew", displayName: "Brand New" }) });
     assert.equal(provision.status, 201);
     const account = await provision.json();

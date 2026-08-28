@@ -14,7 +14,7 @@
     "discordStreamHub": ["tests/dsh-live-monitor.test.mjs", "tests/dsh-discord-live-publisher.test.mjs", "tests/dsh-production-points-parity.test.mjs", "tests/dsh-twitch-poller.test.mjs"],
     "streamweaver": ["tests/streamweaver-donor-command-catalog.test.mjs", "tests/streamweaver-donor-command-runtime.test.mjs", "tests/streamweaver-economy-parity.test.mjs", "tests/streamweaver-event-actions.test.mjs", "tests/streamweaver-redeem-actions.test.mjs", "tests/streamweaver-shoutout-runtime.test.mjs"],
     "hearmeout": ["tests/hearmeout-room-media.test.mjs", "tests/hearmeout-livekit-signer.test.mjs", "tests/hearmeout-discord-adapter.test.mjs", "tests/hearmeout-discord-activity.test.mjs", "tests/hearmeout-voice-bridge-parity.test.mjs", "tests/hearmeout-worker-media-cache.test.mjs"],
-    "nebulaArcade": ["tests/nebula-game-hub.test.mjs", "tests/nebula-game-runtime.test.mjs", "tests/chat-tag-parity.test.mjs", "tests/quackverse-state.test.mjs", "tests/quackverse-battle.test.mjs", "tests/nebula-overlay-scenes.test.mjs"],
+    "nebulaArcade": ["tests/nebula-game-hub.test.mjs", "tests/nebula-game-runtime.test.mjs", "tests/nebula-tag-parity.test.mjs", "tests/quackverse-state.test.mjs", "tests/quackverse-battle.test.mjs", "tests/nebula-overlay-scenes.test.mjs"],
     "mountainviewCompanion": ["tests/mountainview-command-parity.test.mjs", "tests/mountainview-device-runtime.test.mjs", "tests/mountainview-companion.test.mjs", "tests/companion-donor-runtime.test.mjs", "tests/companion-relay-client.test.mjs", "tests/companion-runtime-handlers.test.mjs"],
     "spacemountainShell": ["tests/current-app-ingestion.test.mjs", "tests/product-ui-parity.test.mjs", "tests/spacemountain-shell-ui.test.mjs", "tests/spacemountain-web.test.mjs"]
   },

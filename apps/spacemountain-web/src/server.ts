@@ -67,14 +67,14 @@ export interface SpaceMountainWebHostOptions {
   buildSha?: string;
   fetchImpl?: typeof fetch;
   candidateManifest?: AppCatalogRegistrationV1;
-  chatTagOrigin?: string;
+  nebulaArcadeOrigin?: string;
 }
 
 export function createSpaceMountainWebHost(options: SpaceMountainWebHostOptions) {
   const spmtOrigin = requireLoopbackOrigin(options.spmtOrigin);
   const fetchImpl = options.fetchImpl ?? fetch;
   const buildSha = options.buildSha ?? "dev";
-  const chatTagOrigin = options.chatTagOrigin ? requireLoopbackOrigin(options.chatTagOrigin) : undefined;
+  const nebulaArcadeOrigin = options.nebulaArcadeOrigin ? requireLoopbackOrigin(options.nebulaArcadeOrigin) : undefined;
   const server = createServer(async (request, response) => {
     const nonce = randomBytes(18).toString("base64url");
     applySecurityHeaders(response, nonce);
@@ -101,9 +101,9 @@ export function createSpaceMountainWebHost(options: SpaceMountainWebHostOptions)
         requireSameOrigin(request);
         return await importDeveloperManifest(response, request, spmtOrigin, fetchImpl, await readJsonBody(request), options.candidateManifest);
       }
-      if (chatTagOrigin && chatTagProxyPath(url.pathname)) {
+      if (nebulaArcadeOrigin && nebulaArcadeProxyPath(url.pathname)) {
         if (!["GET", "HEAD"].includes(request.method ?? "GET")) requireSameOrigin(request);
-        return proxyChatTag(response, request, url, chatTagOrigin, fetchImpl);
+        return proxyNebulaArcade(response, request, url, nebulaArcadeOrigin, fetchImpl);
       }
       if (request.method === "POST" && url.pathname === "/sandbox/auth/logout") {
         requireSameOrigin(request);
@@ -143,7 +143,7 @@ export function validateSandboxWebEnvironment(environment: NodeJS.ProcessEnv) {
   if (!environment.SPMT_SANDBOX_ID || !/^[a-z0-9-]{3,80}$/.test(environment.SPMT_SANDBOX_ID)) throw new Error("SPMT_SANDBOX_ID must be a lowercase sandbox namespace");
   const present = PROVIDER_ENV_NAMES.filter((name) => Boolean(environment[name]));
   if (present.length) throw new Error(`Sandbox web host rejects provider or infrastructure credentials: ${present.join(", ")}`);
-  return { spmtOrigin: requireLoopbackOrigin(environment.SPMT_ORIGIN ?? "http://127.0.0.1:3000"), ...(environment.CHAT_TAG_ORIGIN ? { chatTagOrigin: requireLoopbackOrigin(environment.CHAT_TAG_ORIGIN) } : {}), ...(environment.SPMT_SANDBOX_CANDIDATE_MANIFEST ? { candidateManifest: candidateManifest(environment.SPMT_SANDBOX_CANDIDATE_MANIFEST) } : {}) };
+  return { spmtOrigin: requireLoopbackOrigin(environment.SPMT_ORIGIN ?? "http://127.0.0.1:3000"), ...(environment.NEBULA_ARCADE_ORIGIN ? { nebulaArcadeOrigin: requireLoopbackOrigin(environment.NEBULA_ARCADE_ORIGIN) } : {}), ...(environment.SPMT_SANDBOX_CANDIDATE_MANIFEST ? { candidateManifest: candidateManifest(environment.SPMT_SANDBOX_CANDIDATE_MANIFEST) } : {}) };
 }
 
 async function serveAsset(response: ServerResponse, asset: { file: string; type: string }) {
@@ -305,9 +305,9 @@ async function proxy(response: ServerResponse, request: IncomingMessage, url: UR
   response.end(encoded);
 }
 
-async function proxyChatTag(response: ServerResponse, request: IncomingMessage, url: URL, origin: string, fetchImpl: typeof fetch) {
+async function proxyNebulaArcade(response: ServerResponse, request: IncomingMessage, url: URL, origin: string, fetchImpl: typeof fetch) {
   const method = request.method ?? "GET";
-  const pathname = url.pathname === "/apps/nebula-arcade" || url.pathname === "/apps/chat-tag" ? "/" : url.pathname;
+  const pathname = url.pathname === "/apps/nebula-arcade" ? "/" : url.pathname;
   const headers = new Headers({ accept: request.headers.accept ?? "*/*" });
   if (request.headers["content-type"]) headers.set("content-type", request.headers["content-type"]);
   if (!["GET", "HEAD"].includes(method)) headers.set("origin", origin);
@@ -326,8 +326,8 @@ async function proxyChatTag(response: ServerResponse, request: IncomingMessage, 
   response.end(encoded);
 }
 
-function chatTagProxyPath(pathname: string) {
-  return pathname === "/apps/nebula-arcade" || pathname === "/apps/chat-tag" || pathname.startsWith("/assets/chat-tag-sandbox.") || pathname.startsWith("/assets/nebula-arcade/") || pathname.startsWith("/v1/chat-tag/") || pathname === "/v1/chat-tag/state" || pathname.startsWith("/v1/nebula/chat-tag/overlay");
+function nebulaArcadeProxyPath(pathname: string) {
+  return pathname === "/apps/nebula-arcade" || pathname.startsWith("/assets/nebula-arcade-sandbox.") || pathname.startsWith("/assets/nebula-arcade/") || pathname.startsWith("/v1/nebula-arcade/") || pathname.startsWith("/v1/nebula/") || pathname.startsWith("/overlay/");
 }
 
 function browserProxyAllowed(method: string, pathname: string) {
@@ -416,6 +416,6 @@ class WebHostError extends Error { constructor(readonly status: number, message:
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   const checked = validateSandboxWebEnvironment(process.env);
-  const host = createSpaceMountainWebHost({ spmtOrigin: checked.spmtOrigin, port: Number(process.env.PORT ?? 8080), host: process.env.HOST ?? "0.0.0.0", buildSha: process.env.BUILD_SHA ?? "dev", ...(checked.chatTagOrigin ? { chatTagOrigin: checked.chatTagOrigin } : {}), ...(checked.candidateManifest ? { candidateManifest: checked.candidateManifest } : {}) });
+  const host = createSpaceMountainWebHost({ spmtOrigin: checked.spmtOrigin, port: Number(process.env.PORT ?? 8080), host: process.env.HOST ?? "0.0.0.0", buildSha: process.env.BUILD_SHA ?? "dev", ...(checked.nebulaArcadeOrigin ? { nebulaArcadeOrigin: checked.nebulaArcadeOrigin } : {}), ...(checked.candidateManifest ? { candidateManifest: checked.candidateManifest } : {}) });
   await host.listen();
 }

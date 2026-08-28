@@ -38,7 +38,7 @@ test("Sprite deployment verifies, tests, switches atomically, rolls back, and la
   assert.match(script, /Deployment failed; restoring/);
   assert.match(script, /create_apollo_service "\$BUILD_SHA"/);
   assert.match(script, /--candidate-app,nebula-arcade,--catalog,current/);
-  assert.doesNotMatch(script, /--candidate-app,chat-tag/);
+  assert.doesNotMatch(script, /--candidate-app,nebula-tag/);
   assert.match(script, /create_apollo_service "\$\(basename "\$previous_release"\)" 0/);
   assert.match(script, /services_json="\$\(sprite-env services list\)"/);
   assert.match(script, /select\(\.http_port != null\)/);

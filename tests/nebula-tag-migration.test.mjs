@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { SqliteChatTagStore, migrateDonorChatTagState } from "../apps/nebula-arcade/dist/index.js";
+import { SqliteNebulaTagStore, migrateDonorNebulaTagState } from "../apps/nebula-arcade/dist/index.js";
 
 const migratedAt = "2026-08-23T12:00:00.000Z";
 const donor = {
@@ -19,7 +19,7 @@ const donor = {
 };
 
 test("donor migration preserves private game state without creating XP deliveries", () => {
-  const migrated = migrateDonorChatTagState(donor, { tenantId: "tenant-migrate", migratedAt });
+  const migrated = migrateDonorNebulaTagState(donor, { tenantId: "tenant-migrate", migratedAt });
   assert.deepEqual(migrated.report, { playersImported: 2, historyImported: 1, blockedHistorySkipped: 1, winnersImported: 1, warnings: [] });
   assert.equal(migrated.state.currentItUserId, "user-b");
   assert.equal(migrated.state.players["user-a"].score, 110);
@@ -30,11 +30,11 @@ test("donor migration preserves private game state without creating XP deliverie
 });
 
 test("SQLite import is one-time, restart-safe, and creates no historical SPMT outbox", () => {
-  const directory = mkdtempSync(join(tmpdir(), "apollo-chat-tag-migration-"));
-  const path = join(directory, "chat-tag.sqlite");
+  const directory = mkdtempSync(join(tmpdir(), "apollo-nebula-arcade-migration-"));
+  const path = join(directory, "nebula-arcade.sqlite");
   try {
-    const migrated = migrateDonorChatTagState(donor, { tenantId: "tenant-migrate", migratedAt });
-    const store = new SqliteChatTagStore(path);
+    const migrated = migrateDonorNebulaTagState(donor, { tenantId: "tenant-migrate", migratedAt });
+    const store = new SqliteNebulaTagStore(path);
     const first = store.importState(migrated.state, "donor-8170c51");
     const replay = store.importState(migrated.state, "donor-8170c51");
     assert.equal(first.duplicate, false);
@@ -42,7 +42,7 @@ test("SQLite import is one-time, restart-safe, and creates no historical SPMT ou
     assert.equal(store.listPendingDeliveries("tenant-migrate").length, 0);
     assert.throws(() => store.importState(migrated.state, "different-import"), /already exists/);
     store.close();
-    const reopened = new SqliteChatTagStore(path);
+    const reopened = new SqliteNebulaTagStore(path);
     assert.equal(reopened.getState("tenant-migrate").state.history.length, 1);
     reopened.close();
   } finally {

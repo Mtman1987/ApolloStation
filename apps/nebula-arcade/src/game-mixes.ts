@@ -1,5 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
 import { NEBULA_ARCADE_GAMES } from "./game-hub.js";
+import { canonicalNebulaGameId, migrateLegacyNebulaArcadeStorage } from "./legacy-nebula-migration.js";
 import type { NebulaOverlayLayerV1 } from "./overlay-scenes.js";
 
 export type NebulaGameMixModeV1 = "simultaneous" | "activity" | "rotate" | "manual";
@@ -73,6 +74,7 @@ export class SqliteNebulaGameMixStore {
   constructor(path: string) {
     if (!path) throw new Error("Nebula game mix database path is required");
     this.db = new DatabaseSync(path, { timeout: 5_000 });
+    migrateLegacyNebulaArcadeStorage(this.db);
     this.db.exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON;");
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS nebula_game_mixes (
@@ -124,7 +126,7 @@ export class SqliteNebulaGameMixStore {
     const mode = input.mode ?? "simultaneous";
     if (!MODES.has(mode)) throw new Error("Nebula game mix mode is invalid");
     const rotationSeconds = normalizeInteger(input.rotationSeconds ?? 20, 5, 300, "rotationSeconds");
-    const layers = normalizeLayers(input.layers);
+    const layers = normalizeLayers(input.layers, false);
     const activeGameId = input.activeGameId?.trim() || undefined;
     if (activeGameId && !GAME_IDS.has(activeGameId)) throw new Error("Nebula game mix active game is invalid");
     if (mode === "manual" && activeGameId && !layers.some((layer) => layer.gameId === activeGameId && layer.enabled)) throw new Error("Nebula manual active game must be enabled in the mix");
@@ -168,8 +170,8 @@ interface GameMixRow {
 function fromRow(row: GameMixRow): NebulaGameMixV1 {
   const mode = row.mode as NebulaGameMixModeV1;
   if (!MODES.has(mode)) throw new Error("Stored Nebula game mix mode is invalid");
-  const layers = normalizeLayers(JSON.parse(row.layers) as SaveNebulaGameMixV1["layers"]);
-  const activeGameId = row.active_game_id ?? undefined;
+  const layers = normalizeLayers(JSON.parse(row.layers) as SaveNebulaGameMixV1["layers"], true);
+  const activeGameId = row.active_game_id ? canonicalNebulaGameId(row.active_game_id) : undefined;
   if (activeGameId && !GAME_IDS.has(activeGameId)) throw new Error("Stored Nebula active game is invalid");
   return {
     schemaVersion: 1,
@@ -185,16 +187,17 @@ function fromRow(row: GameMixRow): NebulaGameMixV1 {
   };
 }
 
-function normalizeLayers(value: SaveNebulaGameMixV1["layers"]): NebulaGameMixLayerV1[] {
+function normalizeLayers(value: SaveNebulaGameMixV1["layers"], stored: boolean): NebulaGameMixLayerV1[] {
   if (!Array.isArray(value) || value.length > NEBULA_ARCADE_GAMES.length) throw new Error("Nebula game mix layers are invalid");
   const seen = new Set<string>();
   return value.map((layer, index) => {
-    if (!layer || typeof layer !== "object" || !GAME_IDS.has(layer.gameId) || seen.has(layer.gameId)) throw new Error("Nebula game mix contains an invalid game layer");
-    seen.add(layer.gameId);
+    const gameId = stored ? canonicalNebulaGameId(layer?.gameId) : String(layer?.gameId ?? "").trim().toLowerCase();
+    if (!layer || typeof layer !== "object" || !GAME_IDS.has(gameId) || seen.has(gameId)) throw new Error("Nebula game mix contains an invalid game layer");
+    seen.add(gameId);
     const style = layer.style ?? "full";
     if (!STYLES.has(style)) throw new Error("Nebula game mix layer style is invalid");
     return {
-      gameId: layer.gameId,
+      gameId,
       enabled: layer.enabled !== false,
       zIndex: Number.isSafeInteger(layer.zIndex) ? Number(layer.zIndex) : index,
       x: normalizeNumber(layer.x ?? 0, 0, 100, "x"),

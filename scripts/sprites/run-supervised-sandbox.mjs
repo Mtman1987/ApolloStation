@@ -15,7 +15,7 @@ const dataRoot = resolve(argumentsMap.get("data-root") ?? ".sandbox-data");
 const buildSha = argumentsMap.get("build-sha") ?? "sprite-local";
 const spmtPort = requirePort(argumentsMap.get("spmt-port") ?? "3000", "spmt-port");
 const webPort = requirePort(argumentsMap.get("web-port") ?? "8080", "web-port");
-const chatTagPort = requirePort(argumentsMap.get("chat-tag-port") ?? "3100", "chat-tag-port");
+const nebulaArcadePort = requirePort(argumentsMap.get("nebula-arcade-port") ?? "3100", "nebula-arcade-port");
 const ownerUsername = requireUsername(argumentsMap.get("owner-username") ?? "mtman1987");
 const llmBinary = argumentsMap.get("llm-binary");
 const llmCache = resolve(argumentsMap.get("llm-cache") ?? resolve(dataRoot, "models"));
@@ -76,21 +76,21 @@ let stopping = false;
 const stellarWorkerCredential = llmBinary ? randomBytes(32).toString("base64url") : undefined;
 
 if (app === "nebula-arcade") {
-  const chatTag = start("Nebula Arcade", "apps/nebula-arcade/dist/chat-tag-sandbox-server.js", {
+  const nebulaArcade = start("Nebula Arcade", "apps/nebula-arcade/dist/nebula-arcade-sandbox-server.js", {
     ...common,
-    CHAT_TAG_DATABASE_PATH: resolve(dataRoot, "chat-tag-green-sandbox.sqlite"),
-    CHAT_TAG_TENANT_ID: argumentsMap.get("tenant-id") ?? "chat-tag-sandbox",
-    CHAT_TAG_CHANNEL_ID: argumentsMap.get("channel-id") ?? "sandbox-channel",
+    NEBULA_ARCADE_DATABASE_PATH: resolve(dataRoot, "nebula-arcade-green-sandbox.sqlite"),
+    NEBULA_ARCADE_TENANT_ID: argumentsMap.get("tenant-id") ?? "nebula-arcade-sandbox",
+    NEBULA_ARCADE_CHANNEL_ID: argumentsMap.get("channel-id") ?? "sandbox-channel",
     HOST: "0.0.0.0",
     PORT: String(webPort),
   });
-  await waitForUrl(chatTag, `http://127.0.0.1:${webPort}/health/ready`, "Nebula Arcade");
+  await waitForUrl(nebulaArcade, `http://127.0.0.1:${webPort}/health/ready`, "Nebula Arcade");
   process.stdout.write(`\nNebula Arcade Green sandbox is ready at ${publicUrl}\n`);
   process.stdout.write("Gameplay, persistent state, support, overlay mode, and OBS output are enabled. Provider egress is disabled.\n");
   process.stdout.write("Press Ctrl+C once to stop the app.\n\n");
   process.on("SIGINT", () => void stop(0));
   process.on("SIGTERM", () => void stop(0));
-  await new Promise((done) => chatTag.once("exit", (code, signal) => { if (!stopping) void stop(signal === "SIGINT" || signal === "SIGTERM" ? 0 : code ?? (signal ? 1 : 0)).then(done); else done(); }));
+  await new Promise((done) => nebulaArcade.once("exit", (code, signal) => { if (!stopping) void stop(signal === "SIGINT" || signal === "SIGTERM" ? 0 : code ?? (signal ? 1 : 0)).then(done); else done(); }));
 } else {
 let llm;
 if (llmBinary) {
@@ -124,25 +124,25 @@ if (stellarWorkerCredential) {
   stellar.once("exit", (code, signal) => { if (!stopping) void stop(signal === "SIGINT" || signal === "SIGTERM" ? 0 : code ?? (signal ? 1 : 0)); });
   await waitForUrl(stellar, `http://127.0.0.1:${spmtPort}/health/stellar`, "Stellar Core hosted inference", 10 * 60_000);
 }
-let chatTag;
+let nebulaArcade;
 if (candidateApp === "nebula-arcade") {
-  chatTag = start("Nebula Arcade candidate", "apps/nebula-arcade/dist/chat-tag-sandbox-server.js", {
+  nebulaArcade = start("Nebula Arcade candidate", "apps/nebula-arcade/dist/nebula-arcade-sandbox-server.js", {
     ...common,
-    CHAT_TAG_DATABASE_PATH: resolve(dataRoot, "chat-tag-green-sandbox.sqlite"),
-    CHAT_TAG_TENANT_ID: argumentsMap.get("tenant-id") ?? "chat-tag-sandbox",
-    CHAT_TAG_CHANNEL_ID: argumentsMap.get("channel-id") ?? "sandbox-channel",
+    NEBULA_ARCADE_DATABASE_PATH: resolve(dataRoot, "nebula-arcade-green-sandbox.sqlite"),
+    NEBULA_ARCADE_TENANT_ID: argumentsMap.get("tenant-id") ?? "nebula-arcade-sandbox",
+    NEBULA_ARCADE_CHANNEL_ID: argumentsMap.get("channel-id") ?? "sandbox-channel",
     HOST: "127.0.0.1",
-    PORT: String(chatTagPort),
+    PORT: String(nebulaArcadePort),
   });
-  chatTag.once("exit", (code, signal) => { if (!stopping) void stop(signal === "SIGINT" || signal === "SIGTERM" ? 0 : code ?? (signal ? 1 : 0)); });
-  await waitForUrl(chatTag, `http://127.0.0.1:${chatTagPort}/health/ready`, "Nebula Arcade candidate");
+  nebulaArcade.once("exit", (code, signal) => { if (!stopping) void stop(signal === "SIGINT" || signal === "SIGTERM" ? 0 : code ?? (signal ? 1 : 0)); });
+  await waitForUrl(nebulaArcade, `http://127.0.0.1:${nebulaArcadePort}/health/ready`, "Nebula Arcade candidate");
 }
 const web = start("SpaceMountain web", "apps/spacemountain-web/dist/integrated-server.js", {
   ...common,
   SPMT_ORIGIN: `http://127.0.0.1:${spmtPort}`,
   HOST: "0.0.0.0",
   PORT: String(webPort),
-  ...(candidateManifest ? { CHAT_TAG_ORIGIN: `http://127.0.0.1:${chatTagPort}`, SPMT_SANDBOX_CANDIDATE_MANIFEST: JSON.stringify(candidateManifest) } : {}),
+  ...(candidateManifest ? { NEBULA_ARCADE_ORIGIN: `http://127.0.0.1:${nebulaArcadePort}`, SPMT_SANDBOX_CANDIDATE_MANIFEST: JSON.stringify(candidateManifest) } : {}),
 });
 spmt.once("exit", (code, signal) => { if (!stopping) void stop(signal === "SIGINT" || signal === "SIGTERM" ? 0 : code ?? (signal ? 1 : 0)); });
 await waitForUrl(web, `http://127.0.0.1:${webPort}/sandbox/health`, "SpaceMountain web");
@@ -218,7 +218,7 @@ function parseArguments(values) {
     if (!flag?.startsWith("--") || !value) throw new Error("Arguments must be --name value pairs");
     result.set(flag.slice(2), value);
   }
-  for (const name of result.keys()) if (!["app", "candidate-app", "catalog", "public-url", "data-root", "build-sha", "spmt-port", "web-port", "chat-tag-port", "tenant-id", "channel-id", "owner-username", "llm-binary", "llm-cache"].includes(name)) throw new Error(`Unknown argument --${name}`);
+  for (const name of result.keys()) if (!["app", "candidate-app", "catalog", "public-url", "data-root", "build-sha", "spmt-port", "web-port", "nebula-arcade-port", "tenant-id", "channel-id", "owner-username", "llm-binary", "llm-cache"].includes(name)) throw new Error(`Unknown argument --${name}`);
   return result;
 }
 

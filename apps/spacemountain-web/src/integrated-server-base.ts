@@ -179,7 +179,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     port: Number(process.env.PORT ?? 8080),
     host: process.env.HOST ?? "0.0.0.0",
     buildSha: process.env.BUILD_SHA ?? "dev",
-    ...(checked.chatTagOrigin ? { chatTagOrigin: checked.chatTagOrigin } : {}),
+    ...(checked.nebulaArcadeOrigin ? { nebulaArcadeOrigin: checked.nebulaArcadeOrigin } : {}),
     ...(checked.candidateManifest ? { candidateManifest: checked.candidateManifest } : {}),
   });
   await host.listen();

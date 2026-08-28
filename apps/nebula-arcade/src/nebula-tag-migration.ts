@@ -1,6 +1,6 @@
-import { assertChatTagStateV1, createChatTagState, type ChatTagHistoryEntryV1, type ChatTagMonthlyWinnerV1, type ChatTagStateV1 } from "./chat-tag.js";
+import { assertNebulaTagStateV1, createNebulaTagState, type NebulaTagHistoryEntryV1, type NebulaTagMonthlyWinnerV1, type NebulaTagStateV1 } from "./nebula-tag.js";
 
-export interface ChatTagMigrationReportV1 {
+export interface NebulaTagMigrationReportV1 {
   playersImported: number;
   historyImported: number;
   blockedHistorySkipped: number;
@@ -8,10 +8,10 @@ export interface ChatTagMigrationReportV1 {
   warnings: string[];
 }
 
-export function migrateDonorChatTagState(source: unknown, input: { tenantId: string; migratedAt: string }): { state: ChatTagStateV1; report: ChatTagMigrationReportV1 } {
-  if (!source || typeof source !== "object") throw new Error("Donor Chat Tag state must be an object");
+export function migrateDonorNebulaTagState(source: unknown, input: { tenantId: string; migratedAt: string }): { state: NebulaTagStateV1; report: NebulaTagMigrationReportV1 } {
+  if (!source || typeof source !== "object") throw new Error("Donor Nebula Arcade tag game state must be an object");
   const donor = source as Record<string, any>;
-  const state = createChatTagState(input.tenantId);
+  const state = createNebulaTagState(input.tenantId);
   const warnings: string[] = [];
   const rawPlayers: Array<[string, Record<string, any>]> = Array.isArray(donor.players)
     ? donor.players.map((player: Record<string, any>, index: number) => [String(player.id || player.userId || `unknown-${index}`), player])
@@ -48,7 +48,7 @@ export function migrateDonorChatTagState(source: unknown, input: { tenantId: str
       warnings.push(`Skipped history ${entry?.id || index}: player identity was not imported`);
       continue;
     }
-    const history: ChatTagHistoryEntryV1 = {
+    const history: NebulaTagHistoryEntryV1 = {
       id: String(entry?.id || `donor-history-${index}`),
       commandId: `migration:${entry?.id || index}`,
       kind: freeForAll ? "free-for-all" : entry?.passUsed ? "pass" : "tag",
@@ -78,15 +78,15 @@ export function migrateDonorChatTagState(source: unknown, input: { tenantId: str
   if (state.currentItUserId && !state.players[state.currentItUserId]) { warnings.push("Current-it identity was missing; migrated as free for all"); state.currentItUserId = null; }
   state.lastTagAt = nullableIso(donorGame.lastTagTime || donor.lastUpdate) ?? state.history.at(-1)?.occurredAt ?? null;
   const winners = Array.isArray(donorGame.monthlyWinners) ? donorGame.monthlyWinners : [];
-  state.monthlyWinners = winners.flatMap((winner: any): ChatTagMonthlyWinnerV1[] => {
+  state.monthlyWinners = winners.flatMap((winner: any): NebulaTagMonthlyWinnerV1[] => {
     const userId = String(winner?.userId || "");
     const place = Number(winner?.place);
     if (!state.players[userId] || ![1, 2, 3].includes(place)) return [];
     return [{ userId, username: state.players[userId]!.username, place: place as 1 | 2 | 3, monthKey: donorMonthKey(winner?.month, input.migratedAt), selectedAt: toIso(winner?.selectedAt, input.migratedAt) }];
-  }).sort((left: ChatTagMonthlyWinnerV1, right: ChatTagMonthlyWinnerV1) => left.place - right.place);
+  }).sort((left: NebulaTagMonthlyWinnerV1, right: NebulaTagMonthlyWinnerV1) => left.place - right.place);
   const payoutKeys: string[] = (Array.isArray(donorGame.crownPayouts) ? donorGame.crownPayouts : []).map((entry: any) => String(entry?.key || "")).filter((value: string) => Boolean(value));
   state.crownAwardKeys = [...new Set<string>(payoutKeys)];
-  return { state: assertChatTagStateV1(state, input.tenantId), report: { playersImported: Object.keys(state.players).length, historyImported: state.history.length, blockedHistorySkipped, winnersImported: state.monthlyWinners.length, warnings } };
+  return { state: assertNebulaTagStateV1(state, input.tenantId), report: { playersImported: Object.keys(state.players).length, historyImported: state.history.length, blockedHistorySkipped, winnersImported: state.monthlyWinners.length, warnings } };
 }
 
 function nullableIso(value: unknown): string | null {

@@ -59,8 +59,8 @@ export function planMountainViewVoiceCommand(transcript: string, context: Mounta
     return { kind: "route", targetAppId: "hearmeout", action: "media.movie.request", payload: { query: watchRequest[1]!.trim(), ...(context.hearMeOutRoomId ? { roomId: context.hearMeOutRoomId } : {}) }, risk: "low", requiresConfirmation: false, reason: "Watch requests belong to HearMeOut's canonical movie lane" };
   }
 
-  if (/\b(?:who(?:'s| is)?|everyone)\s+live\b|\blive\s+members\b|\b(?:who(?:'s| is)?)\s+active\s+in\s+chat[ -]?tag\b/.test(lower)) {
-    if (/\b(chat[ -]?tag|spmt)\b/.test(lower)) return { kind: "route", targetAppId: "nebula-arcade", action: "chat-tag.live-members.read", payload: {}, risk: "low", requiresConfirmation: false, reason: "The request explicitly scopes active users to the Chat Tag game module" };
+  if (/\b(?:who(?:'s| is)?|everyone)\s+live\b|\blive\s+members\b|\b(?:who(?:'s| is)?)\s+active\s+in\s+(?:nebula arcade|(?:the\s+)?tag game)\b/.test(lower)) {
+    if (/\b(?:nebula arcade|tag game)\b/.test(lower)) return { kind: "route", targetAppId: "nebula-arcade", action: "nebula-arcade.tag.live-members.read", payload: {}, risk: "low", requiresConfirmation: false, reason: "The request explicitly scopes active users to Nebula Arcade's tag game" };
     return { kind: "route", targetAppId: "discord-stream-hub", action: "community.live-members.read", payload: {}, risk: "low", requiresConfirmation: false, reason: "Unscoped live status belongs to the community-wide DSH projection" };
   }
 

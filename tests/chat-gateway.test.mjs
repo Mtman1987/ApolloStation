@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { ChatGatewayRuntime, SqliteChatGatewayStore, normalizeProviderChatEnvelope } from "../apps/chat-gateway/dist/index.js";
-import { ChatTagRuntime, SqliteChatTagStore, createChatTagGatewayConsumer } from "../apps/nebula-arcade/dist/index.js";
+import { NebulaTagRuntime, SqliteNebulaTagStore, createNebulaTagGatewayConsumer } from "../apps/nebula-arcade/dist/index.js";
 
 const at = (minute) => new Date(Date.UTC(2026, 7, 23, 12, minute)).toISOString();
 const envelope = (provider, messageId, tenantId = "tenant-a", extra = {}) => ({
@@ -25,7 +25,7 @@ const envelope = (provider, messageId, tenantId = "tenant-a", extra = {}) => ({
 function withStores(work) {
   const dir = mkdtempSync(join(tmpdir(), "spmt-chat-gateway-"));
   const gatewayStore = new SqliteChatGatewayStore(join(dir, "gateway.db"));
-  const tagStore = new SqliteChatTagStore(join(dir, "tag.db"));
+  const tagStore = new SqliteNebulaTagStore(join(dir, "tag.db"));
   return Promise.resolve(work({ dir, gatewayStore, tagStore })).finally(() => { gatewayStore.close(); tagStore.close(); rmSync(dir, { recursive: true, force: true }); });
 }
 
@@ -66,12 +66,12 @@ test("failed consumer delivery remains retryable with redacted durable evidence"
   assert.equal(gatewayStore.listPending("tenant-a").length, 0);
 }));
 
-test("Chat Tag consumes the shared gateway, merges canonical identity, and replies through provider egress", async () => withStores(async ({ gatewayStore, tagStore }) => {
+test("Nebula Arcade tag game consumes the shared gateway, merges canonical identity, and replies through provider egress", async () => withStores(async ({ gatewayStore, tagStore }) => {
   const sent = [];
   const spmt = { publishEvent: async () => ({}), awardXp: async () => ({}) };
-  const tag = new ChatTagRuntime(tagStore, spmt);
+  const tag = new NebulaTagRuntime(tagStore, spmt);
   let gateway;
-  const tagConsumer = createChatTagGatewayConsumer(tag, { send: (message) => gateway.send(message) });
+  const tagConsumer = createNebulaTagGatewayConsumer(tag, { send: (message) => gateway.send(message) });
   gateway = new ChatGatewayRuntime(gatewayStore, [tagConsumer], [
     { provider: "twitch", send: async (message) => { sent.push(message); return { providerMessageId: "tw-out-1" }; } },
     { provider: "discord", send: async (message) => { sent.push(message); return { providerMessageId: "dc-out-1" }; } },
@@ -88,12 +88,12 @@ test("Chat Tag consumes the shared gateway, merges canonical identity, and repli
   assert.equal(sent[1].provider, "discord");
   assert.equal(sent[1].replyToMessageId, "status-1");
   assert.match(sent[1].text, /0 points/);
-  assert.match(sent[1].idempotencyKey, /chat-tag-reply/);
+  assert.match(sent[1].idempotencyKey, /nebula-arcade-reply/);
 }));
 
 test("unlinked provider users remain stable provider-scoped actors instead of merging by display name", async () => withStores(async ({ gatewayStore, tagStore }) => {
-  const tag = new ChatTagRuntime(tagStore, { publishEvent: async () => ({}), awardXp: async () => ({}) });
-  const consumer = createChatTagGatewayConsumer(tag, { send: async () => ({ providerMessageId: "unused" }) });
+  const tag = new NebulaTagRuntime(tagStore, { publishEvent: async () => ({}), awardXp: async () => ({}) });
+  const consumer = createNebulaTagGatewayConsumer(tag, { send: async () => ({ providerMessageId: "unused" }) });
   const gateway = new ChatGatewayRuntime(gatewayStore, [consumer]);
   await gateway.ingest(envelope("twitch", "join-tw", "tenant-a", { text: "spmt join", providerUserId: "100", username: "SameName" }));
   await gateway.ingest(envelope("discord", "join-dc", "tenant-a", { text: "spmt join", providerUserId: "200", username: "SameName", occurredAt: at(1) }));

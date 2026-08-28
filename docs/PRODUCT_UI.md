@@ -92,7 +92,7 @@ Overlay Bay owns reusable Arcade overlay scenes. A saved scene contains an order
 
 Generic chat commands remain natural. When exactly one enabled game matches a command it may execute immediately. When multiple enabled games share that command, Nebula Arcade must ask the chatter which game they intended instead of firing every matching game.
 
-Chat Tag remains a bounded game module inside Nebula Arcade for its own commands, runtime, compatibility, persistence, scoring, and overlay behavior. It is not a separate public ecosystem product surface.
+Nebula Arcade is the only current Games Hub product surface. Its internal `tag` game owns tagging commands, persistence, scoring, and overlay behavior through Nebula Arcade routes and identity; it is never presented as a separate app or product.
 
 ## Theme presets
 

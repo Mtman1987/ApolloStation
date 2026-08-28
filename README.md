@@ -19,7 +19,7 @@ The reusable base now includes:
 - canonical SPMT identity, workspace, XP, events, app registration, overlay grants, runtime health, CLI, MCP, and SDK contracts;
 - Commlink as the shared communication app, Stellar Core as the persona-neutral AI app, and owner-only Mission Control for operations;
 - Nebula Arcade as the cosmic Games Hub with twenty equal game entries, full game detail pages, saved multi-game overlay scenes, and one command-collision router;
-- Chat Tag retained as a bounded Nebula Arcade game module and compatibility/runtime implementation, not as a separate public-facing ecosystem app;
+- Nebula Arcade as the sole Games Hub identity, with tagging implemented as its internal `tag` game and legacy persisted identifiers handled only by a one-way private migration;
 - isolated Review and Release Sprite promotion paths with checkpoint, test, atomic switch, and rollback behavior.
 
 The next implementation phase is deliberately repetitive: plug the remaining donor apps into these established contracts, then run logs -> fix -> logs, click every control, exercise every command/output, and only then promote the verified Green system toward production.
@@ -47,6 +47,7 @@ The next implementation phase is deliberately repetitive: plug the remaining don
 8. `DOCUMENT_REVIEW.md` — what should be kept, merged, archived, or removed.
 9. `docs/PRODUCT_UI.md` — shared viewport, depth/translucency, theme, scene, navigation, and app UI rules.
 10. `docs/SPRITES_SANDBOX_HANDOFF.md` — review/release Sprite promotion and verification contract.
+11. `docs/NEBULA_ARCADE_OWNERSHIP.md` — canonical Games Hub naming, route, worker, storage, and migration boundary.
 
 The `evidence/raw/` directory preserves historical source documents copied from the live donor repositories. That evidence is read-only historical input; nothing inside it is automatically a current requirement.
 

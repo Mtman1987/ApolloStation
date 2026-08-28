@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { ChatTagExperienceService, ChatTagRuntime, SqliteChatTagExperienceStore, SqliteChatTagStore, buildChatTagDirectoryPage, createChatTagGatewayConsumer, createChatTagState, executeChatTagCommand, getChatTagPinRanking } from "../apps/nebula-arcade/dist/index.js";
+import { NebulaTagExperienceService, NebulaTagRuntime, SqliteNebulaTagExperienceStore, SqliteNebulaTagStore, buildNebulaTagDirectoryPage, createNebulaTagGatewayConsumer, createNebulaTagState, executeNebulaTagCommand, getNebulaTagPinRanking } from "../apps/nebula-arcade/dist/index.js";
 import { SpmtClient } from "../packages/sdk/dist/index.js";
 
 const TENANT = "tenant-experience";
@@ -12,12 +12,12 @@ const at = (minute) => new Date(Date.UTC(2026, 7, 23, 10, minute)).toISOString()
 const inbound = (messageId, userId, username, text, minute, roles = ["member"]) => ({ schemaVersion: 1, provider: "twitch", tenantId: TENANT, channelId: CHANNEL, messageId, userId, username, text, occurredAt: at(minute), roles });
 
 function fixture() {
-  const directory = mkdtempSync(join(tmpdir(), "apollo-chat-tag-experience-"));
-  const path = join(directory, "chat-tag.sqlite");
-  const game = new SqliteChatTagStore(path);
-  const experience = new SqliteChatTagExperienceStore(path);
-  const runtime = new ChatTagRuntime(game, new SpmtClient({ baseUrl: "https://spmt.invalid", appId: "nebula-arcade", fetchImpl: async () => Response.json({ ok: true }) }));
-  const service = new ChatTagExperienceService(runtime, experience, "pin", () => at(20));
+  const directory = mkdtempSync(join(tmpdir(), "apollo-nebula-arcade-experience-"));
+  const path = join(directory, "nebula-arcade.sqlite");
+  const game = new SqliteNebulaTagStore(path);
+  const experience = new SqliteNebulaTagExperienceStore(path);
+  const runtime = new NebulaTagRuntime(game, new SpmtClient({ baseUrl: "https://spmt.invalid", appId: "nebula-arcade", fetchImpl: async () => Response.json({ ok: true }) }));
+  const service = new NebulaTagExperienceService(runtime, experience, "pin", () => at(20));
   return { directory, path, game, experience, runtime, service };
 }
 
@@ -38,18 +38,18 @@ test("complete ingress replies to mutations and ordinary chat clears away state"
 });
 
 test("live and player directories retain status ordering and bounded pagination", () => {
-  let state = createChatTagState(TENANT);
+  let state = createNebulaTagState(TENANT);
   for (const [index, name] of ["Alpha", "Beta", "Gamma", "Delta", "Epsilon"].entries()) {
-    state = executeChatTagCommand(state, { schemaVersion: 1, tenantId: TENANT, channelId: CHANNEL, kind: "join", commandId: `join-${name}`, actorUserId: name.toLowerCase(), username: name, occurredAt: at(index) }).state;
+    state = executeNebulaTagCommand(state, { schemaVersion: 1, tenantId: TENANT, channelId: CHANNEL, kind: "join", commandId: `join-${name}`, actorUserId: name.toLowerCase(), username: name, occurredAt: at(index) }).state;
   }
   state.players.gamma.lastActiveAt = at(-90);
   state.players.gamma.sleeping = true;
-  const page = buildChatTagDirectoryPage(state, { kind: "players", now: at(20), presence: { liveUserIds: ["beta"] }, maxCharacters: 18 });
+  const page = buildNebulaTagDirectoryPage(state, { kind: "players", now: at(20), presence: { liveUserIds: ["beta"] }, maxCharacters: 18 });
   assert.equal(page.liveCount, 1);
   assert.equal(page.chattingCount, 3);
   assert.ok(page.totalPages > 1);
   assert.match(page.entries[0], /^🟢beta$/);
-  const live = buildChatTagDirectoryPage(state, { kind: "live", now: at(20), presence: { liveUserIds: ["beta"] } });
+  const live = buildNebulaTagDirectoryPage(state, { kind: "live", now: at(20), presence: { liveUserIds: ["beta"] } });
   assert.doesNotMatch(live.message, /gamma/);
 });
 
@@ -59,7 +59,7 @@ test("Pin ranking, support, overlay mode, and permanent opt-out are durable", as
     await item.service.ingest(inbound("join-pin", "pin", "Pin", "spmt join", 0));
     await item.service.ingest(inbound("join-a", "alpha", "Alpha", "spmt join", 1));
     await item.service.ingest(inbound("tag-a", "pin", "Pin", "spmt tag alpha", 2));
-    assert.deepEqual(getChatTagPinRanking(item.runtime.getState(TENANT).state, "pin"), [{ userId: "alpha", username: "alpha", count: 1 }]);
+    assert.deepEqual(getNebulaTagPinRanking(item.runtime.getState(TENANT).state, "pin"), [{ userId: "alpha", username: "alpha", count: 1 }]);
     const pin = await item.service.ingest(inbound("pinrank", "alpha", "Alpha", "spmt pinrank", 3));
     assert.match(pin.message, /#1 alpha: 1/);
 
@@ -79,7 +79,7 @@ test("Pin ranking, support, overlay mode, and permanent opt-out are durable", as
     assert.equal(optedOut.code, "channel-opted-out");
     assert.equal((await item.service.ingest(inbound("after", "alpha", "Alpha", "spmt score", 9))).code, "channel-opted-out");
     item.experience.close();
-    const reopened = new SqliteChatTagExperienceStore(item.path);
+    const reopened = new SqliteNebulaTagExperienceStore(item.path);
     assert.equal(reopened.getChannelSettings(TENANT, CHANNEL).optedOut, true);
     assert.equal(reopened.listSupportTickets(TENANT).length, 1);
     reopened.close();
@@ -88,7 +88,7 @@ test("Pin ranking, support, overlay mode, and permanent opt-out are durable", as
 
 test("shared gateway uses the complete experience and keeps muted replies in OBS", async () => {
   const item = fixture(); const sent = [];
-  const consumer = createChatTagGatewayConsumer(item.service, { send: async (message) => { sent.push(message); return { providerMessageId: `out-${sent.length}` }; } });
+  const consumer = createNebulaTagGatewayConsumer(item.service, { send: async (message) => { sent.push(message); return { providerMessageId: `out-${sent.length}` }; } });
   const delivery = (id, text, roles = ["member"]) => ({ deliveryId: `delivery-${id}`, attempt: 1, message: { schemaVersion: 1, tenantId: TENANT, provider: "twitch", connectionId: "twitch-main", channelId: CHANNEL, messageId: id, text, occurredAt: at(sent.length), actor: { providerUserId: roles.includes("broadcaster") ? "owner" : "alpha", canonicalUserId: roles.includes("broadcaster") ? "owner" : "alpha", username: roles.includes("broadcaster") ? "Owner" : "Alpha", isBot: false, roles }, mentions: [] } });
   try {
     await consumer.deliver(delivery("join", "spmt join"));

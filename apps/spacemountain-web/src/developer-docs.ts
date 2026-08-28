@@ -50,7 +50,7 @@ export function renderDeveloperDocsPage(buildSha: string) {
         <li>Select <strong>Register app through SDK</strong>. The UI calls <code>SpmtClient.registerApp()</code>; it does not inject a card locally.</li>
         <li>Refresh Shipyard and install the registered app for a tenant. Installation is where the tenant approves scopes.</li>
       </ol>
-      <aside>Green sandbox tip: use <strong>Load Nebula Arcade example</strong> to load the Games Hub manifest into the generic form. Chat Tag remains one of its twenty equal game modules. Nothing is registered until you review the form and submit it.</aside>
+      <aside>Green sandbox tip: use <strong>Load Nebula Arcade example</strong> to load the Games Hub manifest into the generic form. Nebula Arcade tag game remains one of its twenty equal game modules. Nothing is registered until you review the form and submit it.</aside>
     </section>
 
     <section id="manifest">

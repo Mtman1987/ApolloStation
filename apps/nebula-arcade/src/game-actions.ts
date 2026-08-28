@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { NEBULA_ARCADE_GAMES } from "./game-hub.js";
+import { migrateLegacyNebulaArcadeStorage } from "./legacy-nebula-migration.js";
 
 export interface NebulaGameActionV1 {
   id: string; tenantId: string; channel: string; gameId: string; actorId: string; username: string; displayName: string;
@@ -13,6 +14,7 @@ export class SqliteNebulaGameActionStore {
   constructor(path: string) {
     if (!path) throw new Error("Nebula game action database path is required");
     this.db = new DatabaseSync(path, { timeout: 5_000 });
+    migrateLegacyNebulaArcadeStorage(this.db);
     this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;
       CREATE TABLE IF NOT EXISTS nebula_game_actions (
         tenant_id TEXT NOT NULL, action_id TEXT NOT NULL, channel TEXT NOT NULL, game_id TEXT NOT NULL,
@@ -49,7 +51,7 @@ export class SqliteNebulaGameActionStore {
 export function validateNebulaGameAction(gameId: string, actionValue: string, argsValue: readonly string[] = []): { action: string; args: string[] } {
   const game = cleanGame(gameId), action = String(actionValue || "join").trim().toLowerCase(), args = normalizeArgs(argsValue), noArgs = args.length === 0;
   if (["join", "leave", "start", "stop"].includes(action) && noArgs) return { action, args };
-  if (game === "chat-tag" && ["tag", "pass", "score", "status"].includes(action)) return { action, args };
+  if (game === "tag" && ["tag", "pass", "score", "status"].includes(action)) return { action, args };
   if (game === "bingo" && action === "phrases" && noArgs) return { action, args };
   if (game === "bingo" && action === "claim" && args.length === 1 && /^([1-9]|1\d|2[0-5])$/.test(args[0]!)) return { action, args };
   if (game === "chaosmode" && ["explode", "glitch", "portal", "shake"].includes(action) && noArgs) return { action, args };

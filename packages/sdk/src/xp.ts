@@ -1,10 +1,10 @@
 export const SPMT_XP_LEDGER_SCHEMA_VERSION = 1 as const;
 
 export const SPMT_XP_EVENT_MAP_V1 = {
-  "chat-tag.tag": { sourceApp: "chat-tag", eventType: "chat-tag-tag", defaultDelta: 100 },
-  "chat-tag.pass": { sourceApp: "chat-tag", eventType: "chat-tag-pass", defaultDelta: 200 },
-  "chat-tag.bingo.square": { sourceApp: "chat-tag", eventType: "chat-tag-bingo-square", defaultDelta: 10 },
-  "chat-tag.bingo.win": { sourceApp: "chat-tag", eventType: "chat-tag-bingo-win", defaultDelta: 250 },
+  "nebula-arcade.tag": { sourceApp: "nebula-arcade", eventType: "nebula-arcade-tag", defaultDelta: 100 },
+  "nebula-arcade.pass": { sourceApp: "nebula-arcade", eventType: "nebula-arcade-pass", defaultDelta: 200 },
+  "nebula-arcade.bingo.square": { sourceApp: "nebula-arcade", eventType: "nebula-arcade-bingo-square", defaultDelta: 10 },
+  "nebula-arcade.bingo.win": { sourceApp: "nebula-arcade", eventType: "nebula-arcade-bingo-win", defaultDelta: 250 },
   "dsh.discord.message": { sourceApp: "discord-stream-hub", eventType: "dsh-discord-message", defaultDelta: 1 },
   "dsh.twitch.message": { sourceApp: "discord-stream-hub", eventType: "dsh-twitch-message", defaultDelta: 10 },
   "dsh.twitch.follow": { sourceApp: "discord-stream-hub", eventType: "dsh-twitch-follow", defaultDelta: 25 },

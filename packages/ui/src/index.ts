@@ -126,7 +126,7 @@ function seededStarShadow(count: number, seed: number, width = 2_000, height = 2
   }).join(",");
 }
 
-/** The exact deterministic star distribution used by the live Chat Tag shell. */
+/** The exact deterministic star distribution used by the live Nebula Arcade tag game shell. */
 export const PRODUCT_STAR_FIELDS = Object.freeze([
   Object.freeze({ size: 1, count: 700, seed: 11, durationSeconds: 200, shadow: seededStarShadow(700, 11) }),
   Object.freeze({ size: 2, count: 200, seed: 23, durationSeconds: 150, shadow: seededStarShadow(200, 23) }),

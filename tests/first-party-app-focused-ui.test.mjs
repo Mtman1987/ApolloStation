@@ -20,7 +20,7 @@ test("every focused app keeps unique scene art while inheriting shared SpaceMoun
 
 test("Nebula Arcade stays on its functional runtime with shared shell navigation and unique scene", () => {
   assert.doesNotMatch(surfaceSource, /FirstPartyAppSurfaceId = [^;]*nebula-arcade/);
-  assert.match(integratedSource, /apps\/nebula-arcade|chatTagOrigin/);
+  assert.match(integratedSource, /apps\/nebula-arcade|nebulaArcadeOrigin/);
   assert.match(shellSource, /"nebula-arcade"[\s\S]*label: "Games"[\s\S]*label: "Play"[\s\S]*label: "Scores"[\s\S]*label: "Settings"/);
   assert.match(shellSource, /nebula-arcade\/solar-system\.webp/);
 });

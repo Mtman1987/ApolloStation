@@ -62,7 +62,7 @@ test("XP awards are idempotent per tenant and never double count", () => {
     tenantId: "tenant-a",
     userId: "user-a",
     delta: 25,
-    sourceAppId: "chat-tag",
+    sourceAppId: "nebula-arcade",
     reason: "game.win",
     idempotencyKey: "round-123:user-a",
   };
@@ -106,7 +106,7 @@ test("audit records preserve actor/action/outcome without becoming business stat
   const record = authority.audit({
     tenantId: "tenant-a",
     actorType: "service",
-    actorId: "chat-tag",
+    actorId: "nebula-arcade",
     action: "xp.award",
     target: "user-a",
     outcome: "accepted",
