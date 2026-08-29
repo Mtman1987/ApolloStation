@@ -135,6 +135,7 @@ test("graceful shutdown waits for the active Discord mutation before closing dur
     await discordStarted;
     let closed = false;
     const closing = service.close().then(() => { closed = true; });
+    await assert.rejects(() => service.runOnce(), /worker is closed/);
     await new Promise((resolve) => setTimeout(resolve, 20));
     assert.equal(closed, false);
     releaseDiscord();

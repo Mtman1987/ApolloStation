@@ -132,6 +132,7 @@ export class SupervisedDshLiveService {
   private readonly runtime: DshLiveRuntime;
   private readonly poller: DshTwitchLivePoller;
   private activeCycle: Promise<{ schemaVersion: 1; skipped: false; results: DshLiveWorkerTenantResultV1[] }> | undefined;
+  private closing: Promise<void> | undefined;
   private closed = false;
   constructor(private readonly options: DshLiveWorkerEnvironmentV1, fetchImpl: typeof fetch = fetch, private readonly now: () => string = () => new Date().toISOString()) {
     this.getAccessToken = createDshWorkerTokenProvider({ spmtOrigin: options.spmtOrigin, credential: options.credential, fetchImpl });
@@ -158,12 +159,15 @@ export class SupervisedDshLiveService {
       await pause(dshMillisecondsUntilNextPeriod(this.now(), this.options.config.pollIntervalSeconds), signal);
     }
   }
-  async close() {
-    if (this.closed) return;
-    await this.activeCycle;
-    if (this.closed) return;
+  close() {
+    if (this.closing) return this.closing;
     this.closed = true;
-    this.messages.close(); this.monitor.close();
+    const activeCycle = this.activeCycle;
+    this.closing = (async () => {
+      await activeCycle;
+      this.messages.close(); this.monitor.close();
+    })();
+    return this.closing;
   }
   private async executeCycle(): Promise<{ schemaVersion: 1; skipped: false; results: DshLiveWorkerTenantResultV1[] }> {
     const results: DshLiveWorkerTenantResultV1[] = [];
