@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { SupervisedDshLiveService, validateDshLiveWorkerEnvironment } from "../apps/discord-stream-hub/dist/index.js";
+import { dshMillisecondsUntilNextPeriod, SupervisedDshLiveService, validateDshLiveWorkerEnvironment } from "../apps/discord-stream-hub/dist/index.js";
 import { createSpmtService } from "../apps/spmt-service/dist/index.js";
 
 const observedAt = "2026-08-29T12:00:00.000Z";
@@ -37,6 +37,8 @@ test("DSH worker config separates public routing from secrets and fails closed i
     const checked = validateDshLiveWorkerEnvironment(base);
     assert.equal(checked.config.tenants.length, 0);
     assert.equal(checked.config.pollIntervalSeconds, 600);
+    assert.equal(dshMillisecondsUntilNextPeriod("2026-08-29T12:09:00.000Z", 600), 60_000);
+    assert.equal(dshMillisecondsUntilNextPeriod("2026-08-29T12:10:00.000Z", 600), 600_000);
     const livePath = writeConfig(dir, "dsh-live-sandbox.json", liveConfig());
     assert.throws(() => validateDshLiveWorkerEnvironment({ ...base, DSH_RUNTIME_CONFIG_PATH: livePath }), /rejects live provider tenants/);
     const secretPath = writeConfig(dir, "dsh-secret-sandbox.json", { schemaVersion: 1, pollIntervalSeconds: 600, tenants: [], discordBotToken: "must-not-live-here" });
@@ -93,7 +95,7 @@ test("the supervised DSH cycle authenticates, polls Twitch, publishes Discord, a
     const discord = calls.filter((call) => call.url.startsWith("https://discord.com/api/v10/"));
     assert.equal(discord.length, 3);
     assert.equal(discord.every((call) => call.headers.get("authorization") === "Bot ephemeral-discord-token"), true);
-    service.close();
+    await service.close();
 
     const providerMutations = calls.filter((call) => call.url.startsWith("https://discord.com/api/v10/")).length;
     service = new SupervisedDshLiveService(environment, fetchImpl, () => observedAt);
@@ -102,5 +104,42 @@ test("the supervised DSH cycle authenticates, polls Twitch, publishes Discord, a
     assert.equal(replay.results[0].status, "completed");
     assert.equal(replay.results[0].delivered, 0);
     assert.equal(calls.filter((call) => call.url.startsWith("https://discord.com/api/v10/")).length, providerMutations);
-  } finally { service.close(); rmSync(dir, { recursive: true, force: true }); }
+  } finally { await service.close(); rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("graceful shutdown waits for the active Discord mutation before closing durable state", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "apollo-dsh-worker-shutdown-"));
+  const configPath = writeConfig(dir, "dsh-runtime.json", liveConfig());
+  let releaseDiscord;
+  let announceDiscord;
+  const discordStarted = new Promise((resolve) => { announceDiscord = resolve; });
+  const discordReleased = new Promise((resolve) => { releaseDiscord = resolve; });
+  const fetchImpl = async (input, init = {}) => {
+    const url = String(input), method = init.method ?? "GET";
+    if (url.endsWith("/v1/auth/service-token")) return Response.json({ accessToken: `dsh-access-${"x".repeat(32)}`, accessExpiresAt: "2099-01-01T00:00:00.000Z" });
+    if (url.endsWith("/v1/provider-grants")) {
+      const request = JSON.parse(String(init.body)), twitch = request.provider === "twitch";
+      return Response.json({ schemaVersion: 1, grantId: `grant-${request.provider}`, tenantId: "tenant-a", requesterAppId: "discord-stream-hub", provider: request.provider, providerUserId: request.providerUserId, capabilityId: request.capabilityId, grantedScopes: request.requiredScopes, credential: { accessToken: twitch ? "ephemeral-twitch-token" : "ephemeral-discord-token", metadata: twitch ? { clientId: "public-twitch-client" } : { authorizationScheme: "Bot" } }, issuedAt: observedAt, expiresAt: "2099-01-01T00:00:00.000Z" }, { status: 201 });
+    }
+    if (url.startsWith("https://api.twitch.tv/helix/streams")) return Response.json({ data: [{ id: "stream-a", user_login: "captain", user_name: "Captain", title: "Space Night", game_name: "Space Game", viewer_count: 42, thumbnail_url: "https://example.com/{width}x{height}.jpg", started_at: observedAt }] });
+    if (url.startsWith("https://discord.com/api/v10/") && method === "POST") { announceDiscord(); await discordReleased; return Response.json({ id: "90001" }); }
+    if (url.startsWith("https://discord.com/api/v10/")) return new Response(undefined, { status: 204 });
+    if (url.endsWith("/v1/runtime/state")) return Response.json({ schemaVersion: 1, appId: "discord-stream-hub", state: "ready" });
+    throw new Error(`Unexpected request ${method} ${url}`);
+  };
+  const environment = validateDshLiveWorkerEnvironment({ SPMT_RUNTIME_MODE: "production", SPMT_ORIGIN: "http://127.0.0.1:3000", DSH_DATABASE_PATH: join(dir, "dsh.sqlite"), DSH_RUNTIME_CONFIG_PATH: configPath, DSH_WORKER_CREDENTIAL: credential });
+  const service = new SupervisedDshLiveService(environment, fetchImpl, () => observedAt);
+  try {
+    await service.ready();
+    const cycle = service.runOnce();
+    await discordStarted;
+    let closed = false;
+    const closing = service.close().then(() => { closed = true; });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.equal(closed, false);
+    releaseDiscord();
+    assert.equal((await cycle).results[0].status, "completed");
+    await closing;
+    assert.equal(closed, true);
+  } finally { await service.close(); rmSync(dir, { recursive: true, force: true }); }
 });

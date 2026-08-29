@@ -11,7 +11,7 @@ The Green worker is `apps/discord-stream-hub/dist/live-worker-start.js`. It auth
 ## Runtime flow
 
 1. The supervised process reads `DSH_RUNTIME_CONFIG_PATH`, a versioned public configuration containing tenant IDs, provider-account references, branding, routing channel IDs, and tracked canonical members. Unknown fields fail validation so secrets cannot be slipped into this file.
-2. Every configured tenant is polled on its declared 60–3,600 second cycle; the preserved donor interval is 600 seconds. Period-derived poll IDs make overlapping/restarted execution idempotent.
+2. Every configured tenant is polled on its declared 60–3,600 second cycle; the preserved donor interval is 600 seconds. Period-derived poll IDs make overlapping/restarted execution idempotent, and a late restart waits only until the next period boundary rather than adding a second full interval.
 3. DSH requests a five-minute `dsh-live-monitor` Twitch grant from SPMT and performs Helix stream lookup in batches of at most 100 logins.
 4. A complete poll enters the durable DSH live monitor. An incomplete or unauthorized poll cannot mass-mark members offline.
 5. Live transitions create/update/remove shoutouts and rotate the all-group spotlight. Actions enter the SQLite outbox before Discord delivery.
@@ -34,6 +34,8 @@ No donor authentication, Firebase access, hardcoded guild/admin identity, direct
 ## Persistence and restart
 
 `DSH_DATABASE_PATH` is an explicit absolute app-private SQLite path. It contains live member snapshots, poll receipts, spotlight cursor/state, pending delivery actions, and Discord message IDs. Poll replay in the same period returns the original result without reposting output. A failed delivery remains pending with its stable idempotency key and retries after restart.
+
+On shutdown, the supervisor first stops future scheduling, then waits for the active provider cycle to finish before closing SQLite. This prevents a remote Discord success from racing a local state/outbox write against a closed database.
 
 The public runtime configuration is not app state and contains no credential. Production must place it on controlled volume/config storage; secrets remain in SPMT and cohort environment credentials.
 
