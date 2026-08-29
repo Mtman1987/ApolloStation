@@ -188,14 +188,14 @@
       "dataOwner": "mountainview",
       "executionOwner": "mountainview",
       "surfaces": ["shell", "standalone", "overlay", "popout"],
-      "entryPoints": ["Xbox session jobs", "device relay", "overlay renderer"],
+      "entryPoints": ["public device inventory", "one-time Companion bootstrap", "voice-routed device jobs", "Xbox session jobs", "overlay renderer"],
       "contract": "ExecutionJobV1, DeviceRelayCommandV1, and overlay contracts",
       "meteredResource": "xbox-session-minutes",
       "executionTargets": ["fly", "companion"],
       "routeMode": "shadow",
       "state": "wired",
-      "migration": "Production Xbox credentials and session worker proof remain before Green primary.",
-      "evidence": ["tests/mountainview-command-parity.test.mjs", "tests/mountainview-device-runtime.test.mjs"]
+      "migration": "SPMT now owns the public user-private device inventory and one-time Companion enrollment. MountainView routes local commands through fenced Companion jobs; production Xbox credentials and session worker proof remain before Green primary.",
+      "evidence": ["tests/mountainview-command-parity.test.mjs", "tests/mountainview-device-runtime.test.mjs", "tests/mountainview-companion-platform.test.mjs", "docs/architecture/MOUNTAINVIEW_COMPANION_DEVICE_GATEWAY.md"]
     },
     {
       "capabilityId": "companion.local-execution",
@@ -209,8 +209,8 @@
       "executionTargets": ["companion"],
       "routeMode": "shadow",
       "state": "wired",
-      "migration": "The desktop runtime adopts the shared lease and settings contracts before production pairing.",
-      "evidence": ["tests/companion-donor-runtime.test.mjs", "tests/companion-relay-client.test.mjs", "tests/companion-workflow-store-sqlite.test.mjs"]
+      "migration": "The desktop runtime now has a shared-job worker boundary and receives a revocable tenant-scoped identity from a one-time SPMT bootstrap. Real desktop packaging, OBS hardware acceptance and signed-update proof remain release gates.",
+      "evidence": ["tests/companion-donor-runtime.test.mjs", "tests/companion-relay-client.test.mjs", "tests/companion-workflow-store-sqlite.test.mjs", "tests/mountainview-companion-platform.test.mjs", "docs/architecture/MOUNTAINVIEW_COMPANION_DEVICE_GATEWAY.md"]
     },
     {
       "capabilityId": "reference-app.integration-conformance",

@@ -28,7 +28,7 @@ import { HealthRegistry } from "@spmt/runtime";
 import { assertBillingManifestV1, assertNormalizedChatMessageV1, BILLING_PLAN_IDS, type AppCatalogRegistrationV1, type BillingManifestV1, type BillingPlanIdV1, type ChatProviderV1, type NormalizedChatMessageV1 } from "@spmt/contracts";
 import { STELLAR_CHAT_CAPABILITY_ID, StellarCommunityAssistantRuntime, StellarDataPrivacyService } from "@spmt/stellar-core";
 
-const USER_SCOPES = ["identity:read","identity:write","workspace:read","workspace:write","xp:read","apps:read","apps:install","entitlements:read","usage:read","events:read","jobs:read","jobs:write","commlink:read","commlink:write","notifications:read","notifications:write","webhooks:read","webhooks:write","assistants:read","assistants:invoke","stellar:context:read","stellar:context:write","stellar:capabilities:read","stellar:data:read","stellar:data:write"];
+const USER_SCOPES = ["identity:read","identity:write","workspace:read","workspace:write","xp:read","apps:read","apps:install","entitlements:read","usage:read","events:read","jobs:read","jobs:write","commlink:read","commlink:write","notifications:read","notifications:write","devices:read","devices:pair","devices:command","webhooks:read","webhooks:write","assistants:read","assistants:invoke","stellar:context:read","stellar:context:write","stellar:capabilities:read","stellar:data:read","stellar:data:write"];
 const SANDBOX_OWNER_SCOPES = ["apps:register","jobs:any","operations:logs:read","operations:coder:read","operations:coder:invoke","overlay:widgets:read","overlay:outputs:read","overlay:outputs:write"];
 
 export interface SpmtServiceOptions {
@@ -206,6 +206,11 @@ export function createSpmtService(options: SpmtServiceOptions) {
           ...(isIdentity(body.twitch) ? { twitch: body.twitch } : {}),
         });
         return json(response, result.createdUser || result.createdTenant ? 201 : 200, result);
+      }
+
+      if (request.method === "POST" && url.pathname === "/v1/devices/bootstrap/exchange") {
+        try { const body = await readBody(request); return json(response, 200, data.exchangeDeviceBootstrap(str(body.code, "code"))); }
+        catch (error) { return json(response, 400, { error: "invalid_bootstrap", message: error instanceof Error ? error.message : "Device bootstrap failed" }); }
       }
 
       if (request.method === "POST" && url.pathname === "/v1/onboarding/discord-invite") {
