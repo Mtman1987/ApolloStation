@@ -173,14 +173,14 @@
       "dataOwner": "hearmeout",
       "executionOwner": "hearmeout",
       "surfaces": ["shell", "standalone", "popout"],
-      "entryPoints": ["LiveKit rooms", "media resolver", "voice bridge"],
+      "entryPoints": ["LiveKit rooms", "durable media jobs", "supervised DJ/media worker", "voice bridge"],
       "contract": "Room grants, provider grants, ExecutionJobV1, and Companion relay",
       "meteredResource": "hosted-voice-minutes",
       "executionTargets": ["fly", "companion"],
       "routeMode": "shadow",
       "state": "wired",
-      "migration": "LiveKit, media-cache, and Discord voice production proof remains credential scoped.",
-      "evidence": ["tests/hearmeout-room-media.test.mjs", "tests/hearmeout-livekit-grants.test.mjs", "tests/hearmeout-voice-bridge-parity.test.mjs"]
+      "migration": "The donor media catalog, recent-user cache, and safe YouTube resolution path now execute through fenced jobs on a separately authenticated supervised worker. The Sprite rehearses a zero-tenant, outbound-disabled cohort; LiveKit, Discord voice and live provider acceptance remain credential scoped.",
+      "evidence": ["tests/hearmeout-room-media.test.mjs", "tests/hearmeout-livekit-grants.test.mjs", "tests/hearmeout-voice-bridge-parity.test.mjs", "tests/hearmeout-supervised-worker.test.mjs", "docs/architecture/HEARMEOUT_SUPERVISED_RUNTIME.md"]
     },
     {
       "capabilityId": "mountainview.xbox-sessions",

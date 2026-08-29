@@ -81,6 +81,7 @@ const chatGatewayCredential = randomBytes(32).toString("base64url");
 const streamweaverWorkerCredential = randomBytes(32).toString("base64url");
 const dshWorkerCredential = randomBytes(32).toString("base64url");
 const nebulaArcadeWorkerCredential = randomBytes(32).toString("base64url");
+const hearMeOutWorkerCredential = randomBytes(32).toString("base64url");
 
 if (app === "nebula-arcade") {
   const nebulaArcade = start("Nebula Arcade", "apps/nebula-arcade/dist/nebula-arcade-sandbox-server.js", {
@@ -121,6 +122,8 @@ const spmt = start("SPMT", "apps/spmt-service/dist/provider-identity-start.js", 
   DSH_WORKER_CREDENTIAL: dshWorkerCredential,
   SPMT_NEBULA_ARCADE_PROVIDER_RUNTIME_ENABLED: "1",
   NEBULA_ARCADE_WORKER_CREDENTIAL: nebulaArcadeWorkerCredential,
+  SPMT_HEARMEOUT_RUNTIME_ENABLED: "1",
+  HEARMEOUT_WORKER_CREDENTIAL: hearMeOutWorkerCredential,
   ...(stellarWorkerCredential ? { SPMT_STELLAR_CHAT_ENABLED: "1", STELLAR_WORKER_CREDENTIAL: stellarWorkerCredential } : {}),
   PORT: String(spmtPort),
 });
@@ -149,6 +152,16 @@ const dsh = start("Discord Stream Hub live worker", "apps/discord-stream-hub/dis
   DSH_WORKER_CREDENTIAL: dshWorkerCredential,
 });
 dsh.once("exit", (code, signal) => { if (!stopping) void stop(signal === "SIGINT" || signal === "SIGTERM" ? 0 : code ?? (signal ? 1 : 0)); });
+const hearMeOut = start("HearMeOut media worker", "apps/hearmeout/dist/execution-worker-start.js", {
+  ...common,
+  SPMT_ORIGIN: `http://127.0.0.1:${spmtPort}`,
+  HEARMEOUT_DATABASE_PATH: resolve(dataRoot, "hearmeout-runtime-sandbox.sqlite"),
+  HEARMEOUT_CACHE_DIR: resolve(dataRoot, "hearmeout-cache-sandbox"),
+  HEARMEOUT_RUNTIME_CONFIG_PATH: resolve("config/hearmeout-runtime.sandbox.v1.json"),
+  HEARMEOUT_WORKER_CREDENTIAL: hearMeOutWorkerCredential,
+  HEARMEOUT_EXECUTION_TARGET: "fly",
+});
+hearMeOut.once("exit", (code, signal) => { if (!stopping) void stop(signal === "SIGINT" || signal === "SIGTERM" ? 0 : code ?? (signal ? 1 : 0)); });
 if (stellarWorkerCredential) {
   const stellar = start("Stellar Core worker", "apps/stellar-core/dist/worker-start.js", {
     ...common,
