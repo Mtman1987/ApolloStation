@@ -131,7 +131,9 @@ export class SupervisedDshLiveService {
   private readonly messages: SqliteDshDiscordMessageStore;
   private readonly runtime: DshLiveRuntime;
   private readonly poller: DshTwitchLivePoller;
-  private running = false;
+  private activeCycle: Promise<{ schemaVersion: 1; skipped: false; results: DshLiveWorkerTenantResultV1[] }> | undefined;
+  private closing: Promise<void> | undefined;
+  private closed = false;
   constructor(private readonly options: DshLiveWorkerEnvironmentV1, fetchImpl: typeof fetch = fetch, private readonly now: () => string = () => new Date().toISOString()) {
     this.getAccessToken = createDshWorkerTokenProvider({ spmtOrigin: options.spmtOrigin, credential: options.credential, fetchImpl });
     this.client = new SpmtClient({ baseUrl: options.spmtOrigin, appId: "discord-stream-hub", getAccessToken: this.getAccessToken, fetchImpl });
@@ -144,24 +146,53 @@ export class SupervisedDshLiveService {
   }
   async ready() { await this.getAccessToken(); return { schemaVersion: 1 as const, workerId: this.options.workerId, configuredTenants: this.options.config.tenants.length, pollIntervalSeconds: this.options.config.pollIntervalSeconds }; }
   async runOnce(): Promise<{ schemaVersion: 1; skipped: boolean; results: DshLiveWorkerTenantResultV1[] }> {
-    if (this.running) return { schemaVersion: 1, skipped: true, results: [] };
-    this.running = true;
-    const results: DshLiveWorkerTenantResultV1[] = [];
-    try {
-      const observedAt = new Date(this.now()).toISOString();
-      const period = Math.floor(Date.parse(observedAt) / (this.options.config.pollIntervalSeconds * 1_000));
-      for (const tenant of this.options.config.tenants) {
-        const result = await this.poller.poll(tenant.tenantId, `dsh-live:${period}`, observedAt);
-        if (result.status === "completed") results.push({ tenantId: tenant.tenantId, status: "completed", liveCount: result.poll.liveCount, memberCount: result.poll.memberCount, delivered: result.result.delivery.delivered, failed: result.result.delivery.failed });
-        else results.push({ tenantId: tenant.tenantId, status: result.status, reason: safeReason(result.reason) });
-        await this.reportRuntime(tenant.tenantId, result.status === "completed" ? (result.result.delivery.failed ? "degraded" : "ready") : "degraded", result.status === "completed" ? `${result.poll.liveCount}/${result.poll.memberCount} tracked members live; ${result.result.delivery.failed} Discord deliveries pending` : safeReason(result.reason));
-      }
-      return { schemaVersion: 1, skipped: false, results };
-    } finally { this.running = false; }
+    if (this.closed) throw new Error("Discord Stream Hub worker is closed");
+    if (this.activeCycle) return { schemaVersion: 1, skipped: true, results: [] };
+    const cycle = this.executeCycle();
+    this.activeCycle = cycle;
+    try { return await cycle; }
+    finally { if (this.activeCycle === cycle) this.activeCycle = undefined; }
   }
-  async run(signal: AbortSignal) { while (!signal.aborted) { await this.runOnce(); await pause(this.options.config.pollIntervalSeconds * 1_000, signal); } }
-  close() { this.messages.close(); this.monitor.close(); }
+  async run(signal: AbortSignal) {
+    while (!signal.aborted) {
+      await this.runOnce();
+      await pause(dshMillisecondsUntilNextPeriod(this.now(), this.options.config.pollIntervalSeconds), signal);
+    }
+  }
+  close() {
+    if (this.closing) return this.closing;
+    this.closed = true;
+    const activeCycle = this.activeCycle;
+    this.closing = (async () => {
+      let failure: unknown;
+      let failed = false;
+      try { await activeCycle; } catch (error) { failure = error; failed = true; }
+      try { this.messages.close(); } catch (error) { if (!failed) { failure = error; failed = true; } }
+      try { this.monitor.close(); } catch (error) { if (!failed) { failure = error; failed = true; } }
+      if (failed) throw failure;
+    })();
+    return this.closing;
+  }
+  private async executeCycle(): Promise<{ schemaVersion: 1; skipped: false; results: DshLiveWorkerTenantResultV1[] }> {
+    const results: DshLiveWorkerTenantResultV1[] = [];
+    const observedAt = new Date(this.now()).toISOString();
+    const period = Math.floor(Date.parse(observedAt) / (this.options.config.pollIntervalSeconds * 1_000));
+    for (const tenant of this.options.config.tenants) {
+      const result = await this.poller.poll(tenant.tenantId, `dsh-live:${period}`, observedAt);
+      if (result.status === "completed") results.push({ tenantId: tenant.tenantId, status: "completed", liveCount: result.poll.liveCount, memberCount: result.poll.memberCount, delivered: result.result.delivery.delivered, failed: result.result.delivery.failed });
+      else results.push({ tenantId: tenant.tenantId, status: result.status, reason: safeReason(result.reason) });
+      await this.reportRuntime(tenant.tenantId, result.status === "completed" ? (result.result.delivery.failed ? "degraded" : "ready") : "degraded", result.status === "completed" ? `${result.poll.liveCount}/${result.poll.memberCount} tracked members live; ${result.result.delivery.failed} Discord deliveries pending` : safeReason(result.reason));
+    }
+    return { schemaVersion: 1, skipped: false, results };
+  }
   private async reportRuntime(tenantId: string, state: "ready" | "degraded", detail: string) { try { await this.client.reportRuntimeState(tenantId, state, detail); } catch { /* A status projection cannot invalidate a completed provider cycle. */ } }
+}
+
+export function dshMillisecondsUntilNextPeriod(now: string, intervalSeconds: number) {
+  const at = Date.parse(now), intervalMs = intervalSeconds * 1_000;
+  if (!Number.isFinite(at) || !Number.isSafeInteger(intervalSeconds) || intervalSeconds < 60 || intervalSeconds > 3_600) throw new Error("DSH period calculation input is invalid");
+  const remainder = ((at % intervalMs) + intervalMs) % intervalMs;
+  return remainder === 0 ? intervalMs : intervalMs - remainder;
 }
 
 function validateRuntimeConfig(value: unknown): DshLiveRuntimeConfigV1 {

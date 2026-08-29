@@ -9,7 +9,7 @@ async function shutdown() {
   if (stopping) return;
   stopping = true;
   controller.abort();
-  service.close();
+  await service.close();
 }
 
 process.once("SIGTERM", () => void shutdown());
