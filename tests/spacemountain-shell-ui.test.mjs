@@ -42,8 +42,9 @@ test("canonical home, Shipyard, registry apps, and workspace remain in the prese
 });
 
 test("Commlink retains saved ChatSpaces, Desks, feed, compose, search, pop-out and hidden signal", () => {
-  for (const pattern of [/data-commlink-space/, /data-commlink-desk/, /New ChatSpace/, /data-commlink-source/, /data-commlink-filter/, /data-commlink-compose/, /onSendCommlinkMessage/, /data-commlink-popout/, /data-open-conversation/, /data-commlink-search/, /data-spmt-signal-trigger/]) assert.match(base, pattern);
+  for (const pattern of [/data-commlink-space/, /data-commlink-desk/, /New ChatSpace/, /data-commlink-source/, /data-commlink-filter/, /data-commlink-compose/, /onSendCommlinkMessage/, /data-commlink-new-mail/, /onComposeCommlinkMail/, /data-commlink-read-all/, /onMarkAllCommlinkRead/, /data-commlink-popout/, /data-open-conversation/, /data-commlink-search/, /data-spmt-signal-trigger/]) assert.match(base, pattern);
   assert.match(base, /this\.snapshot\.liveChat/);
+  assert.match(base, /this\.snapshot\.commlinkRecipients/);
   assert.match(base, /occurredAt/);
   assert.doesNotMatch(base, /provider.*(?:accessToken|refreshToken)/);
 });

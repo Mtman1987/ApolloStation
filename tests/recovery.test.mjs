@@ -8,6 +8,7 @@ import { AuthService } from "../packages/auth-core/dist/index.js";
 import { SqliteAuthorityStore } from "../packages/authority-sqlite/dist/index.js";
 import { SqliteRecoverySource, verifySqliteRecoverySnapshot } from "../packages/authority-sqlite/dist/recovery.js";
 import { FileRecoveryVault, RecoveryVerificationError } from "../packages/recovery-core/dist/index.js";
+import { SqlitePlatformDataStore } from "../packages/platform-data-sqlite/dist/index.js";
 
 function populate(path) {
   const store = new SqliteAuthorityStore(path);
@@ -19,6 +20,12 @@ function populate(path) {
   auth.registerServiceIdentity({ serviceId: "streamweaver", credential: "streamweaver-green-secret-123456", scopes: ["xp:write"], tenantMode: "allow-list", tenantIds: ["tenant-a"] });
   store.promoteAuthorityEpoch(2);
   store.close();
+  const platform = new SqlitePlatformDataStore(path);
+  platform.putPairedDevice({ schemaVersion: 1, tenantId: "tenant-a", userId: "user-1", deviceId: "companion-1", name: "Studio", kind: "desktop", capabilities: ["obs.scene"], pairedAt: "2026-08-22T02:36:00.000Z", lastSeenAt: "2026-08-22T02:36:00.000Z" });
+  platform.putDeviceBootstrap({ codeHash: "bootstrap-hash", tenantId: "tenant-a", userId: "user-1", deviceId: "companion-1", name: "Studio", kind: "desktop", capabilities: ["obs.scene"], createdAt: "2026-08-22T02:36:00.000Z", expiresAt: "2026-08-22T02:46:00.000Z" });
+  platform.putCommlinkReadState({ tenantId: "tenant-a", userId: "user-1", conversationId: "conversation-1", readAt: "2026-08-22T02:36:00.000Z" });
+  platform.putCommlinkComposeReplay({ id: "compose-1", tenantId: "tenant-a", userId: "user-1", signature: "signature", conversationId: "conversation-1", messageId: "message-1", createdAt: "2026-08-22T02:36:00.000Z" });
+  platform.close();
 }
 
 test("vault captures an authenticated encrypted SQLite recovery point and restores it to a fresh file", async () => {
@@ -40,6 +47,10 @@ test("vault captures an authenticated encrypted SQLite recovery point and restor
   assert.equal(manifest.metadata.inventory.users, 1);
   assert.equal(manifest.metadata.inventory.xpEvents, 1);
   assert.equal(manifest.metadata.inventory.serviceIdentities, 1);
+  assert.equal(manifest.metadata.inventory.pairedDevices, 1);
+  assert.equal(manifest.metadata.inventory.deviceBootstraps, 1);
+  assert.equal(manifest.metadata.inventory.commlinkReadStates, 1);
+  assert.equal(manifest.metadata.inventory.commlinkComposeReplays, 1);
   const encrypted = readFileSync(join(vaultDir, "rp_test_001.snapshot.enc"));
   assert.equal(encrypted.includes(Buffer.from("tenant-a")), false);
   const verification = await vault.verify("rp_test_001");

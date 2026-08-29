@@ -80,6 +80,20 @@ function inventory(db: DatabaseSync): RecoveryInventoryV1 {
     webhooks: count(db, "webhooks"),
     stellarContext: count(db, "stellar_context"),
     stellarCapabilities: count(db, "stellar_capabilities"),
+    accessSessions: count(db, "access_sessions"),
+    refreshTokens: count(db, "refresh_tokens"),
+    idempotencyRecords: count(db, "idempotency"),
+    outboxRecords: count(db, "outbox"),
+    accountSetupTickets: count(db, "account_setup_tickets"),
+    operationsLogs: count(db, "operations_logs"),
+    coderJobs: count(db, "coder_jobs"),
+    executionJobs: count(db, "execution_jobs"),
+    pairedDevices: count(db, "paired_devices"),
+    deviceBootstraps: count(db, "device_bootstraps"),
+    commlinkReadStates: count(db, "commlink_read_state"),
+    commlinkComposeReplays: count(db, "commlink_compose_replays"),
+    providerCredentials: count(db, "provider_credentials"),
+    providerCredentialImports: count(db, "provider_credential_imports"),
   };
 }
 
@@ -88,6 +102,7 @@ function count(db: DatabaseSync, table: string) {
     "users", "provider_links", "workspaces", "xp_events", "platform_events", "audit_records", "service_identities",
     "tenants", "apps", "app_installs", "entitlements", "overlay_widgets", "overlay_output_grants", "runtime_projections", "usage_events", "user_profiles", "user_credentials", "oauth_clients", "oauth_codes",
     "commlink_conversations", "commlink_messages", "commlink_live_chat", "notifications", "webhooks", "stellar_context", "stellar_capabilities",
+    "access_sessions", "refresh_tokens", "idempotency", "outbox", "account_setup_tickets", "operations_logs", "coder_jobs", "execution_jobs", "paired_devices", "device_bootstraps", "commlink_read_state", "commlink_compose_replays", "provider_credentials", "provider_credential_imports",
   ]);
   if (!allowed.has(table)) throw new Error("Unknown recovery inventory table");
   const exists = db.prepare("SELECT 1 AS present FROM sqlite_master WHERE type='table' AND name=?").get(table) as { present?: number } | undefined;

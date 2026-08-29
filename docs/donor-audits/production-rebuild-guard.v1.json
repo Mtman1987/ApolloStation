@@ -89,7 +89,7 @@
       "notes": "LiveKit rooms, watch/music media, Discord Activity/chat/invites/voice bridge and hmo-dj-worker donor."
     },
     {
-      "product": "nebula-arcade-chat-tag",
+      "product": "nebula-arcade-frozen-donor",
       "repository": "Mtman1987/chat-tag",
       "frozenHead": "8170c51b04598774cbaa67981888e30b0c51f2fd",
       "currentMain": "c4b99179eff47e41e920603f96f6342b04390eee",

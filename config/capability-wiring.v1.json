@@ -68,14 +68,14 @@
       "dataOwner": "spmt",
       "executionOwner": "commlink",
       "surfaces": ["shell", "standalone", "popout"],
-      "entryPoints": ["/v1/commlink/*", "/v1/commlink/live", "/v1/notifications", "/v1/events", "@spmt/sdk listCommlinkLiveChat"],
-      "contract": "SPMT Commlink messages, notifications, events, and Chat Gateway feed",
+      "entryPoints": ["/v1/commlink/*", "/v1/commlink/mail", "/v1/commlink/recipients", "/v1/commlink/read-all", "/v1/commlink/live", "/v1/notifications", "/v1/events", "@spmt/sdk Commlink methods"],
+      "contract": "SPMT Commlink private mail, messages, personal read state, notifications, events, and Chat Gateway feed",
       "meteredResource": null,
       "executionTargets": ["fly"],
       "routeMode": "green-only",
-      "state": "wired",
-      "migration": "Live Chat is service-authenticated and projected in SpaceMountain; production conversation/read-state history and external-client conformance remain cutover reconciliation.",
-      "evidence": ["tests/commlink-live-chat.test.mjs", "tests/chat-gateway-commlink-transport.test.mjs", "tests/developer-platform.test.mjs", "docs/architecture/CHAT_GATEWAY_COMMLINK_TRANSPORT.md"]
+      "state": "verified",
+      "migration": "Private mail and live chat are public-contract backed; production conversation/read-state history and external-client conformance remain cutover reconciliation.",
+      "evidence": ["tests/commlink-mail-parity.test.mjs", "tests/commlink-live-chat.test.mjs", "tests/chat-gateway-commlink-transport.test.mjs", "tests/developer-platform.test.mjs", "docs/architecture/COMMLINK_MAIL_COMPATIBILITY.md", "docs/architecture/CHAT_GATEWAY_COMMLINK_TRANSPORT.md"]
     },
     {
       "capabilityId": "chat-gateway.provider-chat",
@@ -173,14 +173,14 @@
       "dataOwner": "hearmeout",
       "executionOwner": "hearmeout",
       "surfaces": ["shell", "standalone", "popout"],
-      "entryPoints": ["LiveKit rooms", "media resolver", "voice bridge"],
+      "entryPoints": ["LiveKit rooms", "durable media jobs", "supervised DJ/media worker", "voice bridge"],
       "contract": "Room grants, provider grants, ExecutionJobV1, and Companion relay",
       "meteredResource": "hosted-voice-minutes",
       "executionTargets": ["fly", "companion"],
       "routeMode": "shadow",
       "state": "wired",
-      "migration": "LiveKit, media-cache, and Discord voice production proof remains credential scoped.",
-      "evidence": ["tests/hearmeout-room-media.test.mjs", "tests/hearmeout-livekit-grants.test.mjs", "tests/hearmeout-voice-bridge-parity.test.mjs"]
+      "migration": "The donor media catalog, recent-user cache, and safe YouTube resolution path now execute through fenced jobs on a separately authenticated supervised worker. The Sprite rehearses a zero-tenant, outbound-disabled cohort; LiveKit, Discord voice and live provider acceptance remain credential scoped.",
+      "evidence": ["tests/hearmeout-room-media.test.mjs", "tests/hearmeout-livekit-grants.test.mjs", "tests/hearmeout-voice-bridge-parity.test.mjs", "tests/hearmeout-supervised-worker.test.mjs", "docs/architecture/HEARMEOUT_SUPERVISED_RUNTIME.md"]
     },
     {
       "capabilityId": "mountainview.xbox-sessions",
@@ -188,14 +188,14 @@
       "dataOwner": "mountainview",
       "executionOwner": "mountainview",
       "surfaces": ["shell", "standalone", "overlay", "popout"],
-      "entryPoints": ["Xbox session jobs", "device relay", "overlay renderer"],
+      "entryPoints": ["public device inventory", "one-time Companion bootstrap", "voice-routed device jobs", "Xbox session jobs", "overlay renderer"],
       "contract": "ExecutionJobV1, DeviceRelayCommandV1, and overlay contracts",
       "meteredResource": "xbox-session-minutes",
       "executionTargets": ["fly", "companion"],
       "routeMode": "shadow",
       "state": "wired",
-      "migration": "Production Xbox credentials and session worker proof remain before Green primary.",
-      "evidence": ["tests/mountainview-command-parity.test.mjs", "tests/mountainview-device-runtime.test.mjs"]
+      "migration": "SPMT now owns the public user-private device inventory and one-time Companion enrollment. MountainView routes local commands through fenced Companion jobs; production Xbox credentials and session worker proof remain before Green primary.",
+      "evidence": ["tests/mountainview-command-parity.test.mjs", "tests/mountainview-device-runtime.test.mjs", "tests/mountainview-companion-platform.test.mjs", "docs/architecture/MOUNTAINVIEW_COMPANION_DEVICE_GATEWAY.md"]
     },
     {
       "capabilityId": "companion.local-execution",
@@ -209,8 +209,8 @@
       "executionTargets": ["companion"],
       "routeMode": "shadow",
       "state": "wired",
-      "migration": "The desktop runtime adopts the shared lease and settings contracts before production pairing.",
-      "evidence": ["tests/companion-donor-runtime.test.mjs", "tests/companion-relay-client.test.mjs", "tests/companion-workflow-store-sqlite.test.mjs"]
+      "migration": "The desktop runtime now has a shared-job worker boundary and receives a revocable tenant-scoped identity from a one-time SPMT bootstrap. Real desktop packaging, OBS hardware acceptance and signed-update proof remain release gates.",
+      "evidence": ["tests/companion-donor-runtime.test.mjs", "tests/companion-relay-client.test.mjs", "tests/companion-workflow-store-sqlite.test.mjs", "tests/mountainview-companion-platform.test.mjs", "docs/architecture/MOUNTAINVIEW_COMPANION_DEVICE_GATEWAY.md"]
     },
     {
       "capabilityId": "reference-app.integration-conformance",

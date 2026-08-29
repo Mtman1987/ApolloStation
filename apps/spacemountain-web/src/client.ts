@@ -133,6 +133,8 @@ async function loadShell() {
       onOpenConversation: (conversation) => void openConversation(conversation),
       onSearchCommlink: (query) => void searchCommlink(query),
       onSendCommlinkMessage: (conversation, text) => void sendCommlinkMessage(conversation, text),
+      onComposeCommlinkMail: (recipientUserIds, subject, text) => void composeCommlinkMail(recipientUserIds, subject, text),
+      onMarkAllCommlinkRead: () => void markAllCommlinkRead(),
       onInvokeStella: (message, conversationId, routingPreference, remember) => void invokeStella(message, conversationId, routingPreference, remember),
       onExportStellarData: () => void exportStellarData(),
       onDeleteStellarData: () => void deleteStellarData(),
@@ -332,6 +334,7 @@ async function openConversation(conversation: Record<string, unknown>) {
   if (!id) return;
   setStatus("Loading Commlink messages…", "working");
   try {
+    await controller.markCommlinkConversationRead(principal.tenantIds[0]!, id);
     const messages = await controller.loadConversationMessages(principal.tenantIds[0]!, id) as Array<Record<string, unknown>>;
     dialogTitle.textContent = typeof conversation.title === "string" ? conversation.title : "Commlink conversation";
     dialogBody.replaceChildren(...messages.map(messageCard));
@@ -366,6 +369,26 @@ async function sendCommlinkMessage(conversation: Record<string, unknown>, text: 
     await controller.sendCommlinkMessage(principal.tenantIds[0]!, conversationId, recipients, text);
     await loadShell();
     setStatus("Message stored in canonical Commlink history.", "ready");
+  } catch (error) { setStatus(message(error), "error"); }
+}
+
+async function composeCommlinkMail(recipientUserIds: string[], subject: string, text: string) {
+  const principal = requirePrincipal();
+  setStatus("Sending private mail through Commlink…", "working");
+  try {
+    await controller.composeCommlinkMail(principal.tenantIds[0]!, recipientUserIds, text, `commlink-mail-${crypto.randomUUID()}`, subject || undefined);
+    await loadShell();
+    setStatus("Private Commlink mail sent.", "ready");
+  } catch (error) { setStatus(message(error), "error"); }
+}
+
+async function markAllCommlinkRead() {
+  const principal = requirePrincipal();
+  setStatus("Updating private Commlink read state…", "working");
+  try {
+    await controller.markAllCommlinkRead(principal.tenantIds[0]!);
+    await loadShell();
+    setStatus("All Commlink conversations marked read.", "ready");
   } catch (error) { setStatus(message(error), "error"); }
 }
 

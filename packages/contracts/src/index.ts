@@ -445,6 +445,21 @@ export interface OutboundChatMessageV1 {
 export const DEVICE_COMMAND_CAPABILITIES = ["obs.scene", "obs.stream", "overlay.window", "media.playback", "local.transcode"] as const;
 export type DeviceCommandCapabilityV1 = (typeof DEVICE_COMMAND_CAPABILITIES)[number];
 
+export const PAIRED_DEVICE_KINDS = ["companion", "phone", "bluetooth-headset", "glasses", "camera", "other"] as const;
+export type PairedDeviceKindV1 = (typeof PAIRED_DEVICE_KINDS)[number];
+export interface PairedDeviceV1 {
+  schemaVersion: 1;
+  tenantId: string;
+  userId: string;
+  deviceId: string;
+  name: string;
+  kind: PairedDeviceKindV1;
+  capabilities: DeviceCommandCapabilityV1[];
+  pairedAt: string;
+  lastSeenAt: string;
+  revokedAt?: string;
+}
+
 export interface DeviceRelayCommandV1 {
   schemaVersion: 1;
   tenantId: string;

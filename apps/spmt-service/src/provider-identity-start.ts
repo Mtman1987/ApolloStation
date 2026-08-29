@@ -44,6 +44,9 @@ if (dshLiveRuntimeEnabled && !dshWorkerCredential) throw new Error("SPMT_DSH_LIV
 const nebulaArcadeWorkerCredential = process.env.NEBULA_ARCADE_WORKER_CREDENTIAL;
 const nebulaArcadeProviderRuntimeEnabled = process.env.SPMT_NEBULA_ARCADE_PROVIDER_RUNTIME_ENABLED === "1";
 if (nebulaArcadeProviderRuntimeEnabled && !nebulaArcadeWorkerCredential) throw new Error("SPMT_NEBULA_ARCADE_PROVIDER_RUNTIME_ENABLED=1 requires NEBULA_ARCADE_WORKER_CREDENTIAL");
+const hearMeOutWorkerCredential = process.env.HEARMEOUT_WORKER_CREDENTIAL;
+const hearMeOutRuntimeEnabled = process.env.SPMT_HEARMEOUT_RUNTIME_ENABLED === "1";
+if (hearMeOutRuntimeEnabled && !hearMeOutWorkerCredential) throw new Error("SPMT_HEARMEOUT_RUNTIME_ENABLED=1 requires HEARMEOUT_WORKER_CREDENTIAL");
 const service = createSpmtServiceWithProviderIdentity({
   databasePath,
   webhookKey,
@@ -69,6 +72,8 @@ const service = createSpmtServiceWithProviderIdentity({
   ...(dshWorkerCredential ? { dshWorkerCredential } : {}),
   nebulaArcadeProviderRuntimeEnabled,
   ...(nebulaArcadeWorkerCredential ? { nebulaArcadeWorkerCredential } : {}),
+  hearMeOutRuntimeEnabled,
+  ...(hearMeOutWorkerCredential ? { hearMeOutWorkerCredential } : {}),
 });
 const gateway = createSpmtOutputGateway(service, { port, host: checked?.host ?? process.env.SPMT_HOST ?? "0.0.0.0", publicBaseUrl });
 

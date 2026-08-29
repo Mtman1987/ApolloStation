@@ -7,6 +7,7 @@
   "scope": "Retained first-party application behavior and shared application contracts are implemented and regression-tested in ApolloStation. Live-provider credentials, production data reconciliation, DNS promotion, billing migration, and donor shutdown are cutover evidence, not missing application code.",
   "evidence": {
     "functionalFoundation": ["tests/functional-foundation.test.mjs", "tests/functional-foundation-api.test.mjs", "tests/provider-grant-api.test.mjs", "config/capability-wiring.v1.json"],
+    "cutoverRecovery": ["tests/recovery.test.mjs", "tests/donor-cutover-rehearsal.test.mjs", "config/donor-cutover-rehearsal.v1.json", "scripts/audit-donor-cutover.mjs", "docs/architecture/DONOR_CUTOVER_REHEARSAL.md"],
     "spmtIdentityAuthDeveloper": ["tests/spmt-final-parity.test.mjs", "tests/developer-platform.test.mjs", "tests/provider-identity-convergence.test.mjs", "tests/provider-grandfather-parity.test.mjs"],
     "spmtXpWalletIntegrity": ["tests/xp-wallet-parity.test.mjs", "tests/xp-ledger-integrity.test.mjs", "tests/dsh-production-points-parity.test.mjs"],
     "overlayAuthority": ["tests/overlay-output-grants.test.mjs", "tests/nebula-overlay-scenes.test.mjs", "tests/streamweaver-overlay-runtime.test.mjs"],

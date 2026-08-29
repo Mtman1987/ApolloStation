@@ -1,0 +1,92 @@
+{
+  "schemaVersion": 1,
+  "mode": "dry-run",
+  "cutoverReady": false,
+  "policy": {
+    "donorMutationAllowed": false,
+    "donorRetirementAllowed": false,
+    "requireOwnerAcceptance": true,
+    "requiredProofs": [
+      "sourceSnapshotSha256",
+      "sourceCount",
+      "targetCount",
+      "sourceCanonicalSha256",
+      "targetCanonicalSha256",
+      "twoTenantIsolation",
+      "restartRestore",
+      "rollbackCheckpoint"
+    ]
+  },
+  "datasets": [
+    {
+      "datasetId": "identity-provider-links",
+      "targetOwner": "spmt",
+      "sourceDonors": ["spmt-authority", "spacemountain-front-door", "discord-stream-hub"],
+      "status": "blocked",
+      "reason": "Immutable provider identities and duplicate local accounts require reconciliation."
+    },
+    {
+      "datasetId": "xp-wallet-ledgers",
+      "targetOwner": "spmt",
+      "sourceDonors": ["spmt-authority", "spacemountain-front-door", "discord-stream-hub", "streamweaver"],
+      "status": "blocked",
+      "reason": "Balances must be rebuilt from reconciled events; max and sum guesses are forbidden."
+    },
+    {
+      "datasetId": "workspace-settings-scenes-entitlements",
+      "targetOwner": "spmt",
+      "sourceDonors": ["spmt-authority", "spacemountain-front-door", "streamweaver"],
+      "status": "blocked",
+      "reason": "Workspace, app settings, overlays and paid state require revision-aware import."
+    },
+    {
+      "datasetId": "commlink-mail-notifications-history",
+      "targetOwner": "commlink",
+      "sourceDonors": ["spmt-authority", "spacemountain-front-door"],
+      "status": "blocked",
+      "reason": "Conversation participants and personal read state require canonical-user mapping."
+    },
+    {
+      "datasetId": "provider-credentials-connections",
+      "targetOwner": "chat-gateway",
+      "sourceDonors": ["spmt-authority", "streamweaver", "discord-stream-hub", "hearmeout"],
+      "status": "blocked",
+      "reason": "Credentials require one-way sealed import and controlled two-tenant live rehearsal."
+    },
+    {
+      "datasetId": "nebula-arcade-game-state",
+      "targetOwner": "nebula-arcade",
+      "sourceDonors": ["nebula-arcade-frozen-donor"],
+      "status": "blocked",
+      "reason": "Historical donor state must map into the current Nebula Arcade identity."
+    },
+    {
+      "datasetId": "streamweaver-private-state",
+      "targetOwner": "streamweaver",
+      "sourceDonors": ["streamweaver"],
+      "status": "blocked",
+      "reason": "Personas, currency, commands, outboxes and memories require app-private restore proof."
+    },
+    {
+      "datasetId": "discord-stream-hub-private-state",
+      "targetOwner": "discord-stream-hub",
+      "sourceDonors": ["discord-stream-hub"],
+      "status": "blocked",
+      "reason": "Live members, Discord message IDs, schedules and delivery receipts require reconciliation."
+    },
+    {
+      "datasetId": "hearmeout-private-state",
+      "targetOwner": "hearmeout",
+      "sourceDonors": ["hearmeout"],
+      "status": "blocked",
+      "reason": "Rooms, membership, sessions, media queues and invitations require app-private restore proof."
+    },
+    {
+      "datasetId": "devices-companion-xbox",
+      "targetOwner": "mountainview",
+      "sourceDonors": ["spmt-authority", "rotator-mountainview-local-ai", "streamweaver"],
+      "status": "blocked",
+      "reason": "Device ownership, local pairing and Xbox sessions require real hardware and worker evidence."
+    }
+  ]
+}

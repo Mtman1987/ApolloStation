@@ -18,6 +18,7 @@ test("app-code parity completion remains evidence-backed while production cutove
 test("completion evidence covers every first-party parity family", () => {
   assert.deepEqual(Object.keys(completion.evidence).sort(), [
     "chatGateway",
+    "cutoverRecovery",
     "discordStreamHub",
     "functionalFoundation",
     "hearmeout",
