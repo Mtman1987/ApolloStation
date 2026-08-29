@@ -79,6 +79,7 @@ let stopping = false;
 const stellarWorkerCredential = llmBinary ? randomBytes(32).toString("base64url") : undefined;
 const chatGatewayCredential = randomBytes(32).toString("base64url");
 const streamweaverWorkerCredential = randomBytes(32).toString("base64url");
+const dshWorkerCredential = randomBytes(32).toString("base64url");
 
 if (app === "nebula-arcade") {
   const nebulaArcade = start("Nebula Arcade", "apps/nebula-arcade/dist/nebula-arcade-sandbox-server.js", {
@@ -115,6 +116,8 @@ const spmt = start("SPMT", "apps/spmt-service/dist/provider-identity-start.js", 
   CHAT_GATEWAY_WORKER_CREDENTIAL: chatGatewayCredential,
   SPMT_STREAMWEAVER_PROVIDER_RUNTIME_ENABLED: "1",
   STREAMWEAVER_WORKER_CREDENTIAL: streamweaverWorkerCredential,
+  SPMT_DSH_LIVE_RUNTIME_ENABLED: "1",
+  DSH_WORKER_CREDENTIAL: dshWorkerCredential,
   ...(stellarWorkerCredential ? { SPMT_STELLAR_CHAT_ENABLED: "1", STELLAR_WORKER_CREDENTIAL: stellarWorkerCredential } : {}),
   PORT: String(spmtPort),
 });
@@ -131,6 +134,14 @@ const chatGateway = start("Chat Gateway", "apps/chat-gateway/dist/service-start.
   STREAMWEAVER_DATABASE_PATH: resolve(dataRoot, "streamweaver-provider-sandbox.sqlite"),
 });
 chatGateway.once("exit", (code, signal) => { if (!stopping) void stop(signal === "SIGINT" || signal === "SIGTERM" ? 0 : code ?? (signal ? 1 : 0)); });
+const dsh = start("Discord Stream Hub live worker", "apps/discord-stream-hub/dist/live-worker-start.js", {
+  ...common,
+  SPMT_ORIGIN: `http://127.0.0.1:${spmtPort}`,
+  DSH_DATABASE_PATH: resolve(dataRoot, "discord-stream-hub-live-sandbox.sqlite"),
+  DSH_RUNTIME_CONFIG_PATH: resolve("config/discord-stream-hub-runtime.sandbox.v1.json"),
+  DSH_WORKER_CREDENTIAL: dshWorkerCredential,
+});
+dsh.once("exit", (code, signal) => { if (!stopping) void stop(signal === "SIGINT" || signal === "SIGTERM" ? 0 : code ?? (signal ? 1 : 0)); });
 if (stellarWorkerCredential) {
   const stellar = start("Stellar Core worker", "apps/stellar-core/dist/worker-start.js", {
     ...common,
