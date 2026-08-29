@@ -61,6 +61,8 @@ export interface SpmtServiceOptions {
   streamweaverWorkerCredential?: string;
   dshLiveRuntimeEnabled?: boolean;
   dshWorkerCredential?: string;
+  nebulaArcadeProviderRuntimeEnabled?: boolean;
+  nebulaArcadeWorkerCredential?: string;
 }
 
 export function createSpmtService(options: SpmtServiceOptions) {
@@ -99,6 +101,8 @@ export function createSpmtService(options: SpmtServiceOptions) {
   if (options.streamweaverWorkerCredential) ensureStreamWeaverIdentity(auth, options.streamweaverWorkerCredential);
   if (options.dshLiveRuntimeEnabled && (!options.dshWorkerCredential || options.dshWorkerCredential.length < 32)) throw new Error("An enabled Discord Stream Hub live runtime requires a 32+ character service credential");
   if (options.dshWorkerCredential) ensureDshIdentity(auth, options.dshWorkerCredential);
+  if (options.nebulaArcadeProviderRuntimeEnabled && (!options.nebulaArcadeWorkerCredential || options.nebulaArcadeWorkerCredential.length < 32)) throw new Error("An enabled Nebula Arcade provider runtime requires a 32+ character service credential");
+  if (options.nebulaArcadeWorkerCredential) ensureNebulaArcadeIdentity(auth, options.nebulaArcadeWorkerCredential);
   const communityAssistant = options.communityAssistant ?? new StellarCommunityAssistantRuntime(executionJobs, { enabled: Boolean(options.stellarChatEnabled), resolveRoute: (input) => resolveStellarRoute(control, executionJobs, input.tenantId, input.routingPreference ?? "automatic") });
   const stellarPrivacy = new StellarDataPrivacyService(executionJobs, data);
   const operations = new PlatformOperations(auth, authority, control, data, communityAssistant, options.coderRuntime, executionJobs, stellarPrivacy);
@@ -631,6 +635,10 @@ function ensureDshIdentity(auth: AuthService, credential: string) {
   try { auth.registerServiceIdentity({ serviceId: "discord-stream-hub", credential, scopes: ["providers:grant", "runtime:write"], tenantMode: "any" }); }
   catch (error) { if (!(error instanceof AuthConflictError)) throw error; auth.rotateServiceCredential("discord-stream-hub", credential); }
 }
+function ensureNebulaArcadeIdentity(auth: AuthService, credential: string) {
+  try { auth.registerServiceIdentity({ serviceId: "nebula-arcade", credential, scopes: ["events:write", "xp:write", "runtime:write"], tenantMode: "any" }); }
+  catch (error) { if (!(error instanceof AuthConflictError)) throw error; auth.rotateServiceCredential("nebula-arcade", credential); }
+}
 function syncCommunityAssistantCapability(data: PlatformDataService, status: ReturnType<CommunityAssistantRuntimeV1["status"]>) {
   data.upsertStellarCapability({ id: "spmt.community-assistant", sourceAppId: "stellar-core", title: "Stella Community Assistant", description: "Invoke the app-neutral SPMT Community Assistant through the durable, metered Stellar Core job contract.", requiredScopes: ["assistants:invoke"], availability: status.availability, ...(status.availability === "unavailable" ? { unavailableReason: status.unavailableReason } : {}) });
 }
@@ -681,6 +689,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   const dshWorkerCredential = process.env.DSH_WORKER_CREDENTIAL;
   const dshLiveRuntimeEnabled = process.env.SPMT_DSH_LIVE_RUNTIME_ENABLED === "1";
   if (dshLiveRuntimeEnabled && !dshWorkerCredential) throw new Error("SPMT_DSH_LIVE_RUNTIME_ENABLED=1 requires DSH_WORKER_CREDENTIAL");
+  const nebulaArcadeWorkerCredential = process.env.NEBULA_ARCADE_WORKER_CREDENTIAL;
+  const nebulaArcadeProviderRuntimeEnabled = process.env.SPMT_NEBULA_ARCADE_PROVIDER_RUNTIME_ENABLED === "1";
+  if (nebulaArcadeProviderRuntimeEnabled && !nebulaArcadeWorkerCredential) throw new Error("SPMT_NEBULA_ARCADE_PROVIDER_RUNTIME_ENABLED=1 requires NEBULA_ARCADE_WORKER_CREDENTIAL");
   const service = createSpmtService({
     databasePath,
     webhookKey: decodeKey(key),
@@ -704,6 +715,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     ...(streamweaverWorkerCredential ? { streamweaverWorkerCredential } : {}),
     dshLiveRuntimeEnabled,
     ...(dshWorkerCredential ? { dshWorkerCredential } : {}),
+    nebulaArcadeProviderRuntimeEnabled,
+    ...(nebulaArcadeWorkerCredential ? { nebulaArcadeWorkerCredential } : {}),
   });
   await service.listen();
 }

@@ -128,14 +128,14 @@
       "dataOwner": "nebula-arcade",
       "executionOwner": "nebula-arcade",
       "surfaces": ["shell", "standalone", "overlay", "popout"],
-      "entryPoints": ["game command router", "saved overlay scenes", "game runtime store"],
+      "entryPoints": ["supervised provider consumer", "game command router", "saved overlay scenes", "game runtime store"],
       "contract": "App-private game state plus SPMT XP and overlay contracts",
       "meteredResource": null,
       "executionTargets": ["fly"],
       "routeMode": "green-only",
-      "state": "wired",
+      "state": "verified",
       "migration": "Nebula Arcade tag game and Quackverse donor state imports remain repeatable per tenant.",
-      "evidence": ["tests/nebula-game-runtime.test.mjs", "tests/nebula-tag-migration.test.mjs", "tests/nebula-overlay-scenes.test.mjs"]
+      "evidence": ["tests/nebula-arcade-provider-runtime.test.mjs", "tests/nebula-game-runtime.test.mjs", "tests/nebula-tag-migration.test.mjs", "tests/nebula-overlay-scenes.test.mjs"]
     },
     {
       "capabilityId": "discord-stream-hub.community-points",

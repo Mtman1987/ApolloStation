@@ -8,6 +8,6 @@
     "lib": ["ES2022"],
     "types": ["node"]
   },
-  "references": [{ "path": "../../packages/commlink-core" }, { "path": "../../packages/contracts" }, { "path": "../../packages/sdk" }, { "path": "../streamweaver" }],
+  "references": [{ "path": "../../packages/commlink-core" }, { "path": "../../packages/contracts" }, { "path": "../../packages/sdk" }, { "path": "../nebula-arcade" }, { "path": "../streamweaver" }],
   "include": ["src/**/*.ts"]
 }

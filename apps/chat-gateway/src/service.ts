@@ -2,6 +2,7 @@ import { basename, isAbsolute } from "node:path";
 import { createSpmtCommlinkLiveChatConsumer } from "@spmt/commlink-core";
 import { SpmtClient } from "@spmt/sdk";
 import { StreamWeaverProviderRuntime } from "@spmt/streamweaver";
+import { NebulaArcadeProviderRuntime, loadNebulaArcadeProviderConfig, type NebulaArcadeProviderConfigV1 } from "@spmt/nebula-arcade";
 import { ChatGatewayRuntime, SqliteChatGatewayStore, type ChatGatewayConsumerV1 } from "./index.js";
 import { ChatProviderConnectionSupervisor, SqliteProviderConnectionStore, type ProviderConnectionConfigV1 } from "./connection-supervisor.js";
 import { createFirstPartyChatProviderAdapters } from "./provider-drivers.js";
@@ -16,6 +17,7 @@ export interface ChatGatewayWorkerEnvironmentV1 {
   connections: ProviderConnectionConfigV1[];
   reconcileMs: number;
   streamweaver?: { databasePath: string; credential: string };
+  nebulaArcade?: { databasePath: string; credential: string; configPath: string; config: NebulaArcadeProviderConfigV1 };
 }
 
 export function validateChatGatewayWorkerEnvironment(environment: NodeJS.ProcessEnv): ChatGatewayWorkerEnvironmentV1 {
@@ -46,7 +48,24 @@ export function validateChatGatewayWorkerEnvironment(environment: NodeJS.Process
     if (runtimeMode === "sandbox" && !basename(streamweaverDatabasePath).toLowerCase().includes("sandbox")) throw new Error("Sandbox StreamWeaver requires a sandbox-named database");
     streamweaver = { databasePath: streamweaverDatabasePath, credential: streamweaverCredential };
   }
-  return { runtimeMode, spmtOrigin, databasePath, credential, workerId, connections, reconcileMs, ...(streamweaver ? { streamweaver } : {}) };
+  const nebulaEnabled = environment.NEBULA_ARCADE_PROVIDER_RUNTIME_ENABLED === "1";
+  const nebulaCredential = environment.NEBULA_ARCADE_WORKER_CREDENTIAL;
+  const nebulaDatabasePath = environment.NEBULA_ARCADE_DATABASE_PATH;
+  const nebulaConfigPath = environment.NEBULA_ARCADE_RUNTIME_CONFIG_PATH;
+  if (!nebulaEnabled && (nebulaCredential || nebulaDatabasePath || nebulaConfigPath)) throw new Error("Nebula Arcade provider runtime settings require NEBULA_ARCADE_PROVIDER_RUNTIME_ENABLED=1");
+  let nebulaArcade: ChatGatewayWorkerEnvironmentV1["nebulaArcade"];
+  if (nebulaEnabled) {
+    if (!nebulaCredential || nebulaCredential.length < 32) throw new Error("A 32+ character NEBULA_ARCADE_WORKER_CREDENTIAL is required");
+    if (!nebulaDatabasePath || !isAbsolute(nebulaDatabasePath)) throw new Error("NEBULA_ARCADE_DATABASE_PATH must be absolute");
+    if (!nebulaConfigPath || !isAbsolute(nebulaConfigPath)) throw new Error("NEBULA_ARCADE_RUNTIME_CONFIG_PATH must be absolute");
+    const config = loadNebulaArcadeProviderConfig(nebulaConfigPath);
+    if (runtimeMode === "sandbox") {
+      if (!basename(nebulaDatabasePath).toLowerCase().includes("sandbox") || !basename(nebulaConfigPath).toLowerCase().includes("sandbox")) throw new Error("Sandbox Nebula Arcade requires sandbox-named database and config files");
+      if (config.tenants.length) throw new Error("Sandbox Nebula Arcade rejects live provider tenants");
+    }
+    nebulaArcade = { databasePath: nebulaDatabasePath, credential: nebulaCredential, configPath: nebulaConfigPath, config };
+  }
+  return { runtimeMode, spmtOrigin, databasePath, credential, workerId, connections, reconcileMs, ...(streamweaver ? { streamweaver } : {}), ...(nebulaArcade ? { nebulaArcade } : {}) };
 }
 
 export function parseChatGatewayConnections(source: string | undefined): ProviderConnectionConfigV1[] {
@@ -94,6 +113,8 @@ export class SupervisedChatGatewayService {
   private readonly getAccessToken: () => Promise<string>;
   private readonly getStreamWeaverAccessToken?: () => Promise<string>;
   private readonly streamweaver?: StreamWeaverProviderRuntime;
+  private readonly getNebulaArcadeAccessToken?: () => Promise<string>;
+  private readonly nebulaArcade?: NebulaArcadeProviderRuntime;
   constructor(private readonly options: ChatGatewayWorkerEnvironmentV1, fetchImpl?: typeof fetch) {
     this.getAccessToken = createChatGatewayWorkerTokenProvider({ spmtOrigin: options.spmtOrigin, credential: options.credential, ...(fetchImpl ? { fetchImpl } : {}) });
     const client = new SpmtClient({ baseUrl: options.spmtOrigin, appId: "chat-gateway", getAccessToken: this.getAccessToken, ...(fetchImpl ? { fetchImpl } : {}) });
@@ -108,13 +129,19 @@ export class SupervisedChatGatewayService {
       this.streamweaver = new StreamWeaverProviderRuntime({ databasePath: options.streamweaver.databasePath, client: streamweaverClient, egress: { send: (message) => { if (!connectedGateway) throw new Error("Chat Gateway egress is not ready"); return connectedGateway.send(message); } } });
       consumers.push(...this.streamweaver.consumers);
     }
+    if (options.nebulaArcade) {
+      this.getNebulaArcadeAccessToken = createInternalServiceTokenProvider({ spmtOrigin: options.spmtOrigin, serviceId: "nebula-arcade", credential: options.nebulaArcade.credential, ...(fetchImpl ? { fetchImpl } : {}) });
+      const nebulaClient = new SpmtClient({ baseUrl: options.spmtOrigin, appId: "nebula-arcade", getAccessToken: this.getNebulaArcadeAccessToken, ...(fetchImpl ? { fetchImpl } : {}) });
+      this.nebulaArcade = new NebulaArcadeProviderRuntime({ databasePath: options.nebulaArcade.databasePath, config: options.nebulaArcade.config, client: nebulaClient, egress: { send: (message) => { if (!connectedGateway) throw new Error("Chat Gateway egress is not ready"); return connectedGateway.send(message); } } });
+      consumers.push(...this.nebulaArcade.consumers);
+    }
     this.gateway = new ChatGatewayRuntime(this.chatStore, consumers, adapters.senders);
     connectedGateway = this.gateway;
     this.supervisor = new ChatProviderConnectionSupervisor(options.workerId, this.connectionStore, this.gateway, new SpmtChatProviderGrantSource(client), adapters.drivers);
     options.connections.forEach((connection) => this.connectionStore.put(connection));
     this.tenants = [...new Set(options.connections.map((connection) => connection.tenantId))];
   }
-  async ready() { await Promise.all([this.getAccessToken(), this.getStreamWeaverAccessToken?.()]); return { schemaVersion: 1 as const, workerId: this.options.workerId, configuredConnections: this.options.connections.length, consumers: this.gateway.consumerIds() }; }
+  async ready() { await Promise.all([this.getAccessToken(), this.getStreamWeaverAccessToken?.(), this.getNebulaArcadeAccessToken?.()]); return { schemaVersion: 1 as const, workerId: this.options.workerId, configuredConnections: this.options.connections.length, consumers: this.gateway.consumerIds() }; }
   async reconcile() {
     const connections = await this.supervisor.reconcile();
     const deliveries = { attempted: 0, delivered: 0, failed: 0 };
@@ -123,10 +150,11 @@ export class SupervisedChatGatewayService {
       deliveries.attempted += report.attempted; deliveries.delivered += report.delivered; deliveries.failed += report.failed;
     }
     const streamweaver = await this.streamweaver?.reconcile();
-    return { schemaVersion: 1 as const, connections, deliveries, ...(streamweaver ? { streamweaver } : {}) };
+    const nebulaArcade = await this.nebulaArcade?.reconcile();
+    return { schemaVersion: 1 as const, connections, deliveries, ...(streamweaver ? { streamweaver } : {}), ...(nebulaArcade ? { nebulaArcade } : {}) };
   }
   async run(signal: AbortSignal) { while (!signal.aborted) { await this.reconcile(); await pause(this.options.reconcileMs, signal); } }
-  async close() { await this.supervisor.stop(); this.streamweaver?.close(); this.connectionStore.close(); this.chatStore.close(); }
+  async close() { await this.supervisor.stop(); this.nebulaArcade?.close(); this.streamweaver?.close(); this.connectionStore.close(); this.chatStore.close(); }
 }
 
 function loopbackOrigin(value: string) { const url = new URL(value); if (url.protocol !== "http:" || !["127.0.0.1", "localhost", "::1"].includes(url.hostname) || url.username || url.password || url.pathname !== "/" || url.search || url.hash) throw new Error("SPMT_ORIGIN must be a credential-free loopback HTTP origin"); return url.origin; }
