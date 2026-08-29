@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "revision": "apollo-chat-gateway-commlink-transport-2026-08-29",
+  "revision": "apollo-dsh-supervised-live-runtime-2026-08-29",
   "capabilities": [
     {
       "capabilityId": "spmt.identity-authority",
@@ -143,14 +143,14 @@
       "dataOwner": "discord-stream-hub",
       "executionOwner": "discord-stream-hub",
       "surfaces": ["shell", "standalone"],
-      "entryPoints": ["Discord interactions", "Twitch live monitor", "SPMT XP events"],
+      "entryPoints": ["apps/discord-stream-hub/dist/live-worker-start.js", "Twitch live monitor", "Discord live publisher", "SPMT XP events"],
       "contract": "Provider grants, normalized events, and SPMT XP authority",
       "meteredResource": "connected-providers",
       "executionTargets": ["fly"],
       "routeMode": "shadow",
       "state": "wired",
-      "migration": "Discord message, application, and points provenance require production reconciliation.",
-      "evidence": ["tests/dsh-production-points-parity.test.mjs", "tests/dsh-live-monitor.test.mjs", "tests/dsh-discord-live-publisher.test.mjs"]
+      "migration": "The supervised worker, public runtime config, scoped Twitch/Discord grants, durable monitoring, and Discord publisher are wired. Production tenant/member/provider reconciliation and controlled live acceptance remain before cutover.",
+      "evidence": ["tests/dsh-production-points-parity.test.mjs", "tests/dsh-live-monitor.test.mjs", "tests/dsh-twitch-poller.test.mjs", "tests/dsh-discord-live-publisher.test.mjs", "tests/dsh-supervised-live-runtime.test.mjs", "docs/architecture/DISCORD_STREAM_HUB_LIVE_RUNTIME.md"]
     },
     {
       "capabilityId": "streamweaver.commands-personas",

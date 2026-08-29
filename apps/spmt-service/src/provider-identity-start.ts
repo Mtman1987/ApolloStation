@@ -38,6 +38,9 @@ if (chatGatewayEnabled && !chatGatewayCredential) throw new Error("SPMT_CHAT_GAT
 const streamweaverWorkerCredential = process.env.STREAMWEAVER_WORKER_CREDENTIAL;
 const streamweaverProviderRuntimeEnabled = process.env.SPMT_STREAMWEAVER_PROVIDER_RUNTIME_ENABLED === "1";
 if (streamweaverProviderRuntimeEnabled && !streamweaverWorkerCredential) throw new Error("SPMT_STREAMWEAVER_PROVIDER_RUNTIME_ENABLED=1 requires STREAMWEAVER_WORKER_CREDENTIAL");
+const dshWorkerCredential = process.env.DSH_WORKER_CREDENTIAL;
+const dshLiveRuntimeEnabled = process.env.SPMT_DSH_LIVE_RUNTIME_ENABLED === "1";
+if (dshLiveRuntimeEnabled && !dshWorkerCredential) throw new Error("SPMT_DSH_LIVE_RUNTIME_ENABLED=1 requires DSH_WORKER_CREDENTIAL");
 const service = createSpmtServiceWithProviderIdentity({
   databasePath,
   webhookKey,
@@ -59,6 +62,8 @@ const service = createSpmtServiceWithProviderIdentity({
   ...(chatGatewayCredential ? { chatGatewayCredential } : {}),
   streamweaverProviderRuntimeEnabled,
   ...(streamweaverWorkerCredential ? { streamweaverWorkerCredential } : {}),
+  dshLiveRuntimeEnabled,
+  ...(dshWorkerCredential ? { dshWorkerCredential } : {}),
 });
 const gateway = createSpmtOutputGateway(service, { port, host: checked?.host ?? process.env.SPMT_HOST ?? "0.0.0.0", publicBaseUrl });
 
