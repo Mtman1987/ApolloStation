@@ -579,13 +579,14 @@ export class SpaceMountainShellUi {
     const sourceIds = new Set(space.sourceIds);
     const signalMessageIds = new Set(this.snapshot.events.filter((event) => (recordText(event, ["type"]) ?? "").includes("lost-signal-message.requested")).map((event) => recordText(recordObject(event, "payload"), ["targetMessageId", "target_message_id"])).filter((id): id is string => Boolean(id)));
     const messages = (this.snapshot.messages ?? []).map((item) => ({ ...item, __recordType: "chat", ...(signalMessageIds.has(recordText(item, ["messageId", "message_id", "id"]) ?? "") ? { hiddenSignal: true } : {}) }));
+    const liveChat = (this.snapshot.liveChat ?? []).map((item) => ({ ...item, __recordType: "chat" }));
     const conversations = this.snapshot.conversations.map((item) => ({ ...item, __recordType: "chat" }));
     const events = this.snapshot.events.map((item) => ({ ...item, __recordType: "event" }));
     const notifications = this.snapshot.notifications.map((item) => ({ ...item, __recordType: "event" }));
-    return [...messages, ...conversations, ...events, ...notifications]
+    return [...liveChat, ...messages, ...conversations, ...events, ...notifications]
       .filter((item) => !sourceIds.size || sourceIds.has(commlinkRecordSource(item)) || sourceIds.has(`conversation:${recordText(item, ["conversationId", "id"]) ?? ""}`))
       .filter((item) => filter === "all" || (filter === "chat" && item.__recordType === "chat") || (filter === "events" && item.__recordType === "event") || (filter === "streamweaver" && commlinkRecordSource(item) === "streamweaver") || (filter === "queued" && recordBoolean(item, "queued", false)))
-      .sort((left, right) => Date.parse(recordText(right, ["createdAt", "created_at", "updatedAt", "updated_at"]) ?? "") - Date.parse(recordText(left, ["createdAt", "created_at", "updatedAt", "updated_at"]) ?? ""))
+      .sort((left, right) => Date.parse(recordText(right, ["occurredAt", "occurred_at", "createdAt", "created_at", "updatedAt", "updated_at"]) ?? "") - Date.parse(recordText(left, ["occurredAt", "occurred_at", "createdAt", "created_at", "updatedAt", "updated_at"]) ?? ""))
       .slice(0, 120);
   }
 
@@ -698,7 +699,9 @@ function commlinkSources(snapshot: SpaceMountainShellSnapshotV1) {
   const sources = new Map<string, { id: string; label: string; short: string; state: "ready" | "degraded" | "unavailable"; detail: string }>();
   const add = (id: string, label: string, state: "ready" | "degraded" | "unavailable", detail: string) => { if (!sources.has(id)) sources.set(id, { id, label, short: label.slice(0, 1).toUpperCase(), state, detail }); };
   add("spacemountain", "SPMT", snapshot.sources.commlink.state, "Canonical SPMT conversations, mail, notifications, and events");
-  snapshot.providerLinks.forEach((link) => { const provider = recordText(link, ["provider"]) ?? "provider"; add(provider, provider[0]!.toUpperCase() + provider.slice(1), "degraded", `${provider} identity is linked; the isolated Review Sprite keeps provider delivery disconnected`); });
+  const liveProviders = new Set((snapshot.liveChat ?? []).map((item) => item.provider));
+  snapshot.providerLinks.forEach((link) => { const provider = recordText(link, ["provider"]) ?? "provider"; const live = liveProviders.has(provider as "twitch" | "discord" | "kick"); add(provider, provider[0]!.toUpperCase() + provider.slice(1), live ? "ready" : "degraded", live ? `${provider} messages are arriving through Chat Gateway` : `${provider} identity is linked; no current Chat Gateway message has been projected`); });
+  liveProviders.forEach((provider) => add(provider, provider[0]!.toUpperCase() + provider.slice(1), "ready", `${provider} messages are arriving through Chat Gateway`));
   snapshot.apps.filter((app) => app.installed && app.enabled).forEach((app) => add(app.appId, app.name, app.appId === "streamweaver" ? snapshot.sources.commlink.state : "ready", `${app.name} app messages and typed events`));
   snapshot.conversations.forEach((conversation) => { const id = commlinkRecordSource(conversation); if (id && id !== "spacemountain") add(id, sourceLabel(id), snapshot.sources.commlink.state, `${sourceLabel(id)} canonical conversation source`); });
   snapshot.events.forEach((event) => { const id = commlinkRecordSource(event); if (id && id !== "spacemountain") add(id, sourceLabel(id), snapshot.sources.events.state, `${sourceLabel(id)} typed app events`); });
@@ -716,7 +719,7 @@ function commlinkCard(item: Record<string, unknown>, small = false) {
   const body = recordText(item, ["text", "body", "content", "summary", "title"]) ?? payloadKeySummary(item.payload);
   const conversationId = recordText(item, ["conversationId"]) ?? (recordText(item, ["kind"]) ? recordText(item, ["id"]) : undefined);
   const signal = isDiscordSignal(item);
-  return `<article class="cosmo-message ${small ? "small" : ""} ${signal ? "signal" : ""}" ${conversationId ? `data-open-conversation="${escapeHtml(conversationId)}"` : ""} ${signal ? "data-spmt-signal-trigger" : ""}><span class="cosmo-message-avatar">${escapeHtml(initials(title))}</span><div><header><strong>${escapeHtml(title)}</strong><b>${escapeHtml(sourceLabel(source))}</b><small>${escapeHtml(formatRecordTime(recordText(item, ["createdAt", "created_at", "updatedAt", "updated_at"])))}</small></header><p>${escapeHtml(body)}</p><footer><span>${escapeHtml(kind)}</span>${signal ? "<button type=\"button\" data-spmt-signal-trigger>Trace signal</button>" : ""}</footer></div></article>`;
+  return `<article class="cosmo-message ${small ? "small" : ""} ${signal ? "signal" : ""}" ${conversationId ? `data-open-conversation="${escapeHtml(conversationId)}"` : ""} ${signal ? "data-spmt-signal-trigger" : ""}><span class="cosmo-message-avatar">${escapeHtml(initials(title))}</span><div><header><strong>${escapeHtml(title)}</strong><b>${escapeHtml(sourceLabel(source))}</b><small>${escapeHtml(formatRecordTime(recordText(item, ["occurredAt", "occurred_at", "createdAt", "created_at", "updatedAt", "updated_at"])))}</small></header><p>${escapeHtml(body)}</p><footer><span>${escapeHtml(kind)}</span>${signal ? "<button type=\"button\" data-spmt-signal-trigger>Trace signal</button>" : ""}</footer></div></article>`;
 }
 function isDiscordSignal(item: Record<string, unknown>) {
   const source = commlinkRecordSource(item).toLowerCase(); const payload = recordObject(item, "payload");

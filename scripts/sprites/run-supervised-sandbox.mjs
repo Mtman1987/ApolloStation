@@ -37,6 +37,7 @@ if (candidateApp === "nebula-arcade") {
 }
 const [
   { commlinkCatalogRegistration },
+  { chatGatewayCatalogRegistration },
   { stellarCoreCatalogRegistration },
   { missionControlCatalogRegistration },
   { discordStreamHubCatalogRegistration },
@@ -46,6 +47,7 @@ const [
   { companionCatalogRegistration },
 ] = await Promise.all([
   import("../../apps/commlink/dist/index.js"),
+  import("../../apps/chat-gateway/dist/index.js"),
   import("../../apps/stellar-core/dist/index.js"),
   import("../../apps/mission-control/dist/index.js"),
   import("../../apps/discord-stream-hub/dist/index.js"),
@@ -56,6 +58,7 @@ const [
 ]);
 const coreManifests = [
   commlinkCatalogRegistration(publicUrl),
+  chatGatewayCatalogRegistration(publicUrl),
   stellarCoreCatalogRegistration(publicUrl),
   missionControlCatalogRegistration(publicUrl),
 ];
@@ -74,6 +77,7 @@ const sandboxManifests = [
 const children = new Set();
 let stopping = false;
 const stellarWorkerCredential = llmBinary ? randomBytes(32).toString("base64url") : undefined;
+const chatGatewayCredential = randomBytes(32).toString("base64url");
 
 if (app === "nebula-arcade") {
   const nebulaArcade = start("Nebula Arcade", "apps/nebula-arcade/dist/nebula-arcade-sandbox-server.js", {
@@ -106,11 +110,21 @@ const spmt = start("SPMT", "apps/spmt-service/dist/provider-identity-start.js", 
   SPMT_SANDBOX_FIXTURES: "0",
   SPMT_SANDBOX_OWNER_USERNAME: ownerUsername,
   SPMT_SANDBOX_APPS: JSON.stringify(sandboxManifests),
+  SPMT_CHAT_GATEWAY_ENABLED: "1",
+  CHAT_GATEWAY_WORKER_CREDENTIAL: chatGatewayCredential,
   ...(stellarWorkerCredential ? { SPMT_STELLAR_CHAT_ENABLED: "1", STELLAR_WORKER_CREDENTIAL: stellarWorkerCredential } : {}),
   PORT: String(spmtPort),
 });
 
 await waitForUrl(spmt, `http://127.0.0.1:${spmtPort}/health/ready`, "SPMT");
+const chatGateway = start("Chat Gateway", "apps/chat-gateway/dist/service-start.js", {
+  ...common,
+  SPMT_ORIGIN: `http://127.0.0.1:${spmtPort}`,
+  CHAT_GATEWAY_DATABASE_PATH: resolve(dataRoot, "chat-gateway-sandbox.sqlite"),
+  CHAT_GATEWAY_WORKER_CREDENTIAL: chatGatewayCredential,
+  CHAT_GATEWAY_CONNECTIONS: "[]",
+});
+chatGateway.once("exit", (code, signal) => { if (!stopping) void stop(signal === "SIGINT" || signal === "SIGTERM" ? 0 : code ?? (signal ? 1 : 0)); });
 if (stellarWorkerCredential) {
   const stellar = start("Stellar Core worker", "apps/stellar-core/dist/worker-start.js", {
     ...common,

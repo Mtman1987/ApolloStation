@@ -261,6 +261,8 @@ test("browser proxy blocks cross-origin mutations and every credential or webhoo
     assert.equal((await fetch(`${base}/v1/auth/login`, { method: "POST", headers: { origin: new URL(base).origin, "content-type": "application/json" }, body: "{}" })).status, 404);
     assert.equal((await fetch(`${base}/v1/oauth/token`, { method: "POST", headers: { origin: new URL(base).origin, "content-type": "application/json" }, body: "{}" })).status, 404);
     assert.equal((await fetch(`${base}/v1/webhooks`)).status, 404);
+    assert.equal((await fetch(`${base}/v1/commlink/live`)).status, 401, "the browser may read only its authenticated tenant projection");
+    assert.equal((await fetch(`${base}/v1/commlink/live`, { method: "POST", headers: { origin: new URL(base).origin, "content-type": "application/json" }, body: "{}" })).status, 404, "the browser cannot impersonate Chat Gateway ingestion");
     assert.equal((await fetch(`${base}/v1/llm/health`)).status, 404);
     assert.equal((await fetch(`${base}/v1/llm/chat/completions`, { method: "POST", headers: { origin: new URL(base).origin, "content-type": "application/json" }, body: "{}" })).status, 404, "the browser cannot bypass durable Stellar jobs and usage metering");
     assert.equal((await fetch(`${base}/v1/operations/logs`, { method: "POST", headers: { origin: new URL(base).origin, "content-type": "application/json" }, body: "{}" })).status, 404, "browser users cannot impersonate app log publishers");
@@ -410,7 +412,7 @@ test("supervised runner seeds the canonical first-party app pool and launches Ne
   child.stdout.on("data", (chunk) => { output += chunk; });
   child.stderr.on("data", (chunk) => { output += chunk; });
   try {
-    await waitUntil(() => output.includes("The canonical app pool contains Commlink, Stellar Core, Mission Control, Nebula Arcade."), 20_000, () => `Runner output:\n${output}`);
+    await waitUntil(() => output.includes("The canonical app pool contains Commlink, Chat Gateway, Stellar Core, Mission Control, Nebula Arcade."), 20_000, () => `Runner output:\n${output}`);
     const page = await (await fetch(`${base}/`)).text();
     assert.match(page, /Add developer app/);
     assert.match(page, /Load Nebula Arcade example/);
@@ -425,8 +427,8 @@ test("supervised runner seeds the canonical first-party app pool and launches Ne
     const cookie = (registration.headers.get("set-cookie") ?? "").split(";")[0];
     assert.ok(cookie);
     const client = new SpmtClient({ baseUrl: base, appId: "spacemountain", fetchImpl: (input, init = {}) => { const headers = new Headers(init.headers); headers.set("cookie", cookie); if (init.method === "POST") headers.set("origin", origin); return fetch(input, { ...init, headers }); } });
-    assert.deepEqual((await client.listApps()).map((app) => app.appId).sort(), ["commlink", "mission-control", "nebula-arcade", "stellar-core"]);
-    assert.deepEqual((await client.listInstalls((await registration.json()).tenantId)).map((install) => install.appId).sort(), ["commlink", "mission-control", "nebula-arcade", "stellar-core"]);
+    assert.deepEqual((await client.listApps()).map((app) => app.appId).sort(), ["chat-gateway", "commlink", "mission-control", "nebula-arcade", "stellar-core"]);
+    assert.deepEqual((await client.listInstalls((await registration.json()).tenantId)).map((install) => install.appId).sort(), ["chat-gateway", "commlink", "mission-control", "nebula-arcade", "stellar-core"]);
     const candidate = await (await fetch(`${base}/sandbox/candidate-app`)).json();
     await assert.rejects(() => client.registerApp(candidate), (error) => error?.status === 403);
 
@@ -435,7 +437,7 @@ test("supervised runner seeds the canonical first-party app pool and launches Ne
     const ownerCookie = (ownerRegistration.headers.get("set-cookie") ?? "").split(";")[0];
     assert.ok(ownerCookie);
     const ownerClient = new SpmtClient({ baseUrl: base, appId: "spacemountain", fetchImpl: (input, init = {}) => { const headers = new Headers(init.headers); headers.set("cookie", ownerCookie); if (init.method === "POST") headers.set("origin", origin); return fetch(input, { ...init, headers }); } });
-    assert.deepEqual((await ownerClient.listApps()).map((app) => app.appId).sort(), ["commlink", "mission-control", "nebula-arcade", "stellar-core"]);
+    assert.deepEqual((await ownerClient.listApps()).map((app) => app.appId).sort(), ["chat-gateway", "commlink", "mission-control", "nebula-arcade", "stellar-core"]);
     child.kill("SIGTERM");
     const exit = await new Promise((done) => child.once("exit", (code, signal) => done({ code, signal })));
     assert.deepEqual(exit, { code: 0, signal: null });

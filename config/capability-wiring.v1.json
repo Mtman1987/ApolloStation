@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "revision": "apollo-provider-credential-authority-2026-08-28",
+  "revision": "apollo-chat-gateway-commlink-transport-2026-08-29",
   "capabilities": [
     {
       "capabilityId": "spmt.identity-authority",
@@ -68,14 +68,14 @@
       "dataOwner": "spmt",
       "executionOwner": "commlink",
       "surfaces": ["shell", "standalone", "popout"],
-      "entryPoints": ["/v1/commlink/*", "/v1/notifications", "/v1/events"],
+      "entryPoints": ["/v1/commlink/*", "/v1/commlink/live", "/v1/notifications", "/v1/events", "@spmt/sdk listCommlinkLiveChat"],
       "contract": "SPMT Commlink messages, notifications, events, and Chat Gateway feed",
       "meteredResource": null,
       "executionTargets": ["fly"],
       "routeMode": "green-only",
       "state": "wired",
-      "migration": "Production conversation/read-state history remains a cutover reconciliation.",
-      "evidence": ["tests/commlink-live-chat.test.mjs", "tests/developer-platform.test.mjs"]
+      "migration": "Live Chat is service-authenticated and projected in SpaceMountain; production conversation/read-state history and external-client conformance remain cutover reconciliation.",
+      "evidence": ["tests/commlink-live-chat.test.mjs", "tests/chat-gateway-commlink-transport.test.mjs", "tests/developer-platform.test.mjs", "docs/architecture/CHAT_GATEWAY_COMMLINK_TRANSPORT.md"]
     },
     {
       "capabilityId": "chat-gateway.provider-chat",
@@ -83,14 +83,14 @@
       "dataOwner": "chat-gateway",
       "executionOwner": "chat-gateway",
       "surfaces": ["standalone"],
-      "entryPoints": ["provider sockets", "normalized chat feed", "outbound chat contract"],
+      "entryPoints": ["apps/chat-gateway/dist/service-start.js", "provider sockets", "normalized chat feed", "POST /v1/commlink/live", "outbound chat contract"],
       "contract": "NormalizedChatMessageV1 and provider-grant contract",
       "meteredResource": "connected-providers",
       "executionTargets": ["fly"],
       "routeMode": "shadow",
       "state": "wired",
-      "migration": "SPMT refresh and Chat Gateway reconnect are wired. The controlled real-credential, concurrent two-tenant socket proof remains before production cutover.",
-      "evidence": ["tests/chat-gateway.test.mjs", "tests/chat-provider-supervisor.test.mjs", "tests/chat-provider-drivers.test.mjs", "tests/provider-credential-authority.test.mjs", "tests/provider-grant-api.test.mjs"]
+      "migration": "The supervised service, SPMT refresh, durable Commlink delivery, and Chat Gateway reconnect are wired. The controlled real-credential concurrent two-tenant socket proof remains before production cutover.",
+      "evidence": ["tests/chat-gateway.test.mjs", "tests/chat-provider-supervisor.test.mjs", "tests/chat-provider-drivers.test.mjs", "tests/chat-gateway-commlink-transport.test.mjs", "tests/provider-credential-authority.test.mjs", "tests/provider-grant-api.test.mjs", "docs/architecture/CHAT_GATEWAY_COMMLINK_TRANSPORT.md"]
     },
     {
       "capabilityId": "stellar-core.ai-chat.v1",

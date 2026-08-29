@@ -16,6 +16,7 @@
     "@spmt/authority-sqlite": "0.4.0",
     "@spmt/auth-core": "0.1.0",
     "@spmt/control-core": "0.1.0",
+    "@spmt/commlink-core": "0.1.0",
     "@spmt/execution-core": "0.1.0",
     "@spmt/monetization": "0.1.0",
     "@spmt/outbox-core": "0.1.0",
