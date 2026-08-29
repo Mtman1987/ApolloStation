@@ -14,7 +14,7 @@ async function shutdown() {
 
 process.once("SIGTERM", () => void shutdown());
 process.once("SIGINT", () => void shutdown());
-await service.ready();
-process.stdout.write(`Chat Gateway worker ${checked.workerId} started with ${checked.connections.length} configured provider connection(s)\n`);
+const ready = await service.ready();
+process.stdout.write(`Chat Gateway worker ${checked.workerId} started with ${checked.connections.length} configured provider connection(s) and ${ready.consumers.length} consumer(s)\n`);
 try { await service.run(controller.signal); }
 finally { await shutdown(); }

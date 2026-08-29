@@ -8,6 +8,6 @@
     "lib": ["ES2022"],
     "types": ["node"]
   },
-  "references": [{ "path": "../../packages/commlink-core" }, { "path": "../../packages/contracts" }, { "path": "../../packages/sdk" }],
+  "references": [{ "path": "../../packages/commlink-core" }, { "path": "../../packages/contracts" }, { "path": "../../packages/sdk" }, { "path": "../streamweaver" }],
   "include": ["src/**/*.ts"]
 }

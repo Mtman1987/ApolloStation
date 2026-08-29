@@ -57,6 +57,8 @@ export interface SpmtServiceOptions {
   stellarWorkerCredential?: string;
   chatGatewayEnabled?: boolean;
   chatGatewayCredential?: string;
+  streamweaverProviderRuntimeEnabled?: boolean;
+  streamweaverWorkerCredential?: string;
 }
 
 export function createSpmtService(options: SpmtServiceOptions) {
@@ -91,6 +93,8 @@ export function createSpmtService(options: SpmtServiceOptions) {
   if (options.stellarWorkerCredential) ensureStellarWorkerIdentity(auth, options.stellarWorkerCredential);
   if (options.chatGatewayEnabled && (!options.chatGatewayCredential || options.chatGatewayCredential.length < 32)) throw new Error("An enabled Chat Gateway requires a 32+ character service credential");
   if (options.chatGatewayCredential) ensureChatGatewayIdentity(auth, options.chatGatewayCredential);
+  if (options.streamweaverProviderRuntimeEnabled && (!options.streamweaverWorkerCredential || options.streamweaverWorkerCredential.length < 32)) throw new Error("An enabled StreamWeaver provider runtime requires a 32+ character service credential");
+  if (options.streamweaverWorkerCredential) ensureStreamWeaverIdentity(auth, options.streamweaverWorkerCredential);
   const communityAssistant = options.communityAssistant ?? new StellarCommunityAssistantRuntime(executionJobs, { enabled: Boolean(options.stellarChatEnabled), resolveRoute: (input) => resolveStellarRoute(control, executionJobs, input.tenantId, input.routingPreference ?? "automatic") });
   const stellarPrivacy = new StellarDataPrivacyService(executionJobs, data);
   const operations = new PlatformOperations(auth, authority, control, data, communityAssistant, options.coderRuntime, executionJobs, stellarPrivacy);
@@ -614,6 +618,11 @@ function ensureChatGatewayIdentity(auth: AuthService, credential: string) {
   try { auth.registerServiceIdentity({ serviceId: "chat-gateway", credential, scopes: ["providers:grant", "commlink:live:write", "runtime:write"], tenantMode: "any" }); }
   catch (error) { if (!(error instanceof AuthConflictError)) throw error; auth.rotateServiceCredential("chat-gateway", credential); }
 }
+function ensureStreamWeaverIdentity(auth: AuthService, credential: string) {
+  const scopes = ["identity:read", "identity:write", "assistants:invoke", "jobs:read", "xp:write", "runtime:write"];
+  try { auth.registerServiceIdentity({ serviceId: "streamweaver", credential, scopes, tenantMode: "any" }); }
+  catch (error) { if (!(error instanceof AuthConflictError)) throw error; auth.rotateServiceCredential("streamweaver", credential); }
+}
 function syncCommunityAssistantCapability(data: PlatformDataService, status: ReturnType<CommunityAssistantRuntimeV1["status"]>) {
   data.upsertStellarCapability({ id: "spmt.community-assistant", sourceAppId: "stellar-core", title: "Stella Community Assistant", description: "Invoke the app-neutral SPMT Community Assistant through the durable, metered Stellar Core job contract.", requiredScopes: ["assistants:invoke"], availability: status.availability, ...(status.availability === "unavailable" ? { unavailableReason: status.unavailableReason } : {}) });
 }
@@ -658,6 +667,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   const chatGatewayCredential = process.env.CHAT_GATEWAY_WORKER_CREDENTIAL;
   const chatGatewayEnabled = process.env.SPMT_CHAT_GATEWAY_ENABLED === "1";
   if (chatGatewayEnabled && !chatGatewayCredential) throw new Error("SPMT_CHAT_GATEWAY_ENABLED=1 requires CHAT_GATEWAY_WORKER_CREDENTIAL");
+  const streamweaverWorkerCredential = process.env.STREAMWEAVER_WORKER_CREDENTIAL;
+  const streamweaverProviderRuntimeEnabled = process.env.SPMT_STREAMWEAVER_PROVIDER_RUNTIME_ENABLED === "1";
+  if (streamweaverProviderRuntimeEnabled && !streamweaverWorkerCredential) throw new Error("SPMT_STREAMWEAVER_PROVIDER_RUNTIME_ENABLED=1 requires STREAMWEAVER_WORKER_CREDENTIAL");
   const service = createSpmtService({
     databasePath,
     webhookKey: decodeKey(key),
@@ -677,6 +689,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     ...(stellarWorkerCredential ? { stellarWorkerCredential } : {}),
     chatGatewayEnabled,
     ...(chatGatewayCredential ? { chatGatewayCredential } : {}),
+    streamweaverProviderRuntimeEnabled,
+    ...(streamweaverWorkerCredential ? { streamweaverWorkerCredential } : {}),
   });
   await service.listen();
 }

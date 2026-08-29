@@ -78,6 +78,7 @@ const children = new Set();
 let stopping = false;
 const stellarWorkerCredential = llmBinary ? randomBytes(32).toString("base64url") : undefined;
 const chatGatewayCredential = randomBytes(32).toString("base64url");
+const streamweaverWorkerCredential = randomBytes(32).toString("base64url");
 
 if (app === "nebula-arcade") {
   const nebulaArcade = start("Nebula Arcade", "apps/nebula-arcade/dist/nebula-arcade-sandbox-server.js", {
@@ -112,6 +113,8 @@ const spmt = start("SPMT", "apps/spmt-service/dist/provider-identity-start.js", 
   SPMT_SANDBOX_APPS: JSON.stringify(sandboxManifests),
   SPMT_CHAT_GATEWAY_ENABLED: "1",
   CHAT_GATEWAY_WORKER_CREDENTIAL: chatGatewayCredential,
+  SPMT_STREAMWEAVER_PROVIDER_RUNTIME_ENABLED: "1",
+  STREAMWEAVER_WORKER_CREDENTIAL: streamweaverWorkerCredential,
   ...(stellarWorkerCredential ? { SPMT_STELLAR_CHAT_ENABLED: "1", STELLAR_WORKER_CREDENTIAL: stellarWorkerCredential } : {}),
   PORT: String(spmtPort),
 });
@@ -123,6 +126,9 @@ const chatGateway = start("Chat Gateway", "apps/chat-gateway/dist/service-start.
   CHAT_GATEWAY_DATABASE_PATH: resolve(dataRoot, "chat-gateway-sandbox.sqlite"),
   CHAT_GATEWAY_WORKER_CREDENTIAL: chatGatewayCredential,
   CHAT_GATEWAY_CONNECTIONS: "[]",
+  STREAMWEAVER_PROVIDER_RUNTIME_ENABLED: "1",
+  STREAMWEAVER_WORKER_CREDENTIAL: streamweaverWorkerCredential,
+  STREAMWEAVER_DATABASE_PATH: resolve(dataRoot, "streamweaver-provider-sandbox.sqlite"),
 });
 chatGateway.once("exit", (code, signal) => { if (!stopping) void stop(signal === "SIGINT" || signal === "SIGTERM" ? 0 : code ?? (signal ? 1 : 0)); });
 if (stellarWorkerCredential) {
