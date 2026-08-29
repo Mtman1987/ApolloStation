@@ -32,11 +32,20 @@ export class SqliteNebulaGameActionStore {
       action: cleanText(input.action, 40).toLowerCase(), args: normalizeArgs(input.args),
       message: String(input.message ?? "").trim().slice(0, 500), occurredAt: cleanIso(input.occurredAt),
     };
+    const existing = this.get(item.tenantId, item.id);
+    if (existing) {
+      if (JSON.stringify(existing) !== JSON.stringify(item)) throw new Error("Nebula action id was reused with different input");
+      return existing;
+    }
     this.db.prepare(`INSERT INTO nebula_game_actions(tenant_id,action_id,channel,game_id,actor_id,username,display_name,action,args,message,occurred_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)`)
       .run(item.tenantId,item.id,item.channel,item.gameId,item.actorId,item.username,item.displayName,item.action,JSON.stringify(item.args),item.message,item.occurredAt);
     this.db.prepare(`DELETE FROM nebula_game_actions WHERE tenant_id=? AND action_id NOT IN (SELECT action_id FROM nebula_game_actions WHERE tenant_id=? ORDER BY occurred_at DESC LIMIT 500)`)
       .run(item.tenantId,item.tenantId);
     return item;
+  }
+  get(tenantId: string, actionId: string): NebulaGameActionV1 | undefined {
+    const row = this.db.prepare(`SELECT action_id,tenant_id,channel,game_id,actor_id,username,display_name,action,args,message,occurred_at FROM nebula_game_actions WHERE tenant_id=? AND action_id=?`).get(cleanId(tenantId,"tenantId"),cleanId(actionId,"actionId")) as ActionRow | undefined;
+    return row ? fromRow(row) : undefined;
   }
   list(tenantId: string, input: { channel?: string; gameIds?: string[]; after?: string; limit?: number } = {}): NebulaGameActionV1[] {
     const tenant = cleanId(tenantId, "tenantId"), limit = Math.max(1, Math.min(250, Math.floor(Number(input.limit ?? 100))));

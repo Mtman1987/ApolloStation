@@ -17,6 +17,7 @@ export * from "./quackverse-state.js";
 export * from "./quackverse-packs.js";
 export * from "./quackverse-battle.js";
 export * from "./bingo-game.js";
+export * from "./provider-runtime.js";
 import { NEBULA_TAG_EVENT_TYPES } from "./nebula-tag.js";
 
 export const NEBULA_ARCADE_ROUND_COMPLETED = "nebula.arcade.round.completed.v1";
