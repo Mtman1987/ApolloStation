@@ -67,7 +67,7 @@ export class StreamWeaverEconomyCommandConsumer {
     private readonly nowMs: () => number = Date.now,
   ) {}
 
-  accepts(message: NormalizedChatMessageV1) { return !message.actor.isBot && /^![a-z]/i.test(message.text.trim()); }
+  accepts(message: NormalizedChatMessageV1) { const parsed=parseCommand(message.text); return !message.actor.isBot && Boolean(parsed && STREAMWEAVER_ECONOMY_COMMANDS.includes(parsed.command as (typeof STREAMWEAVER_ECONOMY_COMMANDS)[number])); }
 
   async deliver(delivery: NormalizedChatDeliveryV1) {
     const existing = this.state.getReceipt(delivery.message.tenantId, delivery.deliveryId);
@@ -241,6 +241,32 @@ export class StreamWeaverEconomyCommandConsumer {
 
   private send(delivery: NormalizedChatDeliveryV1, text: string) {
     return this.egress.send({ schemaVersion: 1, tenantId: delivery.message.tenantId, provider: delivery.message.provider, connectionId: delivery.message.connectionId, channelId: delivery.message.channelId, text, idempotencyKey: `streamweaver-command:${delivery.deliveryId}`, replyToMessageId: delivery.message.messageId });
+  }
+}
+
+/** Tenant-dispatched production wrapper around the app-private economy authority. */
+export class MultiTenantStreamWeaverEconomyCommandConsumer {
+  readonly id = "streamweaver.economy" as const;
+  private readonly consumers = new Map<string, StreamWeaverEconomyCommandConsumer>();
+  constructor(
+    private readonly store: import("./economy.js").StreamWeaverEconomyStoreV1,
+    private readonly client: import("@spmt/sdk").SpmtClient,
+    private readonly identities: StreamWeaverCommandIdentityResolverV1,
+    private readonly state: StreamWeaverCommandStateV1,
+    private readonly egress: StreamWeaverCommandEgressV1,
+    private readonly nowMs: () => number = Date.now,
+    private readonly random: () => number = Math.random,
+  ) {}
+  accepts(message: NormalizedChatMessageV1) { const parsed=parseCommand(message.text); return !message.actor.isBot && Boolean(parsed && STREAMWEAVER_ECONOMY_COMMANDS.includes(parsed.command as (typeof STREAMWEAVER_ECONOMY_COMMANDS)[number])); }
+  async deliver(delivery: NormalizedChatDeliveryV1) { await this.consumer(delivery.message.tenantId).deliver(delivery); }
+  private consumer(tenantId: string) {
+    let consumer = this.consumers.get(tenantId);
+    if (consumer) return consumer;
+    const economy = new StreamWeaverEconomy({ client: this.client, tenantId, store: this.store, nowMs: this.nowMs, random: this.random });
+    const admin = new StreamWeaverAdminEconomy(this.store, tenantId, { listCanonicalUserIds: () => this.store.listWalletUserIds(tenantId) });
+    consumer = new StreamWeaverEconomyCommandConsumer(economy, admin, this.identities, this.state, this.egress, this.nowMs);
+    this.consumers.set(tenantId, consumer);
+    return consumer;
   }
 }
 

@@ -71,4 +71,5 @@ The outbox stores only delivery coordinates, public display name, job ID, timest
 - provider OAuth refresh credentials must enter the SPMT provider-grant authority;
 - Twitch/Discord/Kick connections must pass credentialed two-tenant reconnect and egress rehearsal;
 - the Chat Gateway/StreamWeaver worker group needs live lease, drain, restart, and rollback evidence;
+- the supervised provider host and separate StreamWeaver service identity are implemented in `STREAMWEAVER_PROVIDER_RUNTIME.md`; live connections still require the controlled credentialed rehearsal;
 - Blue provider bots remain authoritative until those proofs and owner acceptance are recorded.

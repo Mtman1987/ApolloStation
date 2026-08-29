@@ -35,6 +35,9 @@ if (stellarChatEnabled && !stellarWorkerCredential) throw new Error("SPMT_STELLA
 const chatGatewayCredential = process.env.CHAT_GATEWAY_WORKER_CREDENTIAL;
 const chatGatewayEnabled = process.env.SPMT_CHAT_GATEWAY_ENABLED === "1";
 if (chatGatewayEnabled && !chatGatewayCredential) throw new Error("SPMT_CHAT_GATEWAY_ENABLED=1 requires CHAT_GATEWAY_WORKER_CREDENTIAL");
+const streamweaverWorkerCredential = process.env.STREAMWEAVER_WORKER_CREDENTIAL;
+const streamweaverProviderRuntimeEnabled = process.env.SPMT_STREAMWEAVER_PROVIDER_RUNTIME_ENABLED === "1";
+if (streamweaverProviderRuntimeEnabled && !streamweaverWorkerCredential) throw new Error("SPMT_STREAMWEAVER_PROVIDER_RUNTIME_ENABLED=1 requires STREAMWEAVER_WORKER_CREDENTIAL");
 const service = createSpmtServiceWithProviderIdentity({
   databasePath,
   webhookKey,
@@ -54,6 +57,8 @@ const service = createSpmtServiceWithProviderIdentity({
   ...(stellarWorkerCredential ? { stellarWorkerCredential } : {}),
   chatGatewayEnabled,
   ...(chatGatewayCredential ? { chatGatewayCredential } : {}),
+  streamweaverProviderRuntimeEnabled,
+  ...(streamweaverWorkerCredential ? { streamweaverWorkerCredential } : {}),
 });
 const gateway = createSpmtOutputGateway(service, { port, host: checked?.host ?? process.env.SPMT_HOST ?? "0.0.0.0", publicBaseUrl });
 

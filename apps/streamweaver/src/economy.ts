@@ -58,6 +58,7 @@ export interface StreamWeaverEconomyStoreV1 {
   transfer(tenantId: string, fromUserId: string, toUserId: string, amount: number): { from: StreamWeaverCurrencyWalletV1; to: StreamWeaverCurrencyWalletV1 };
   settleWager(tenantId: string, userId: string, wager: number, payout: number): StreamWeaverCurrencyWalletV1;
   listLeaderboard(tenantId: string, limit: number): StreamWeaverCurrencyLeaderboardEntryV1[];
+  listWalletUserIds(tenantId: string): string[];
   getCirculatingSupply(tenantId: string): number;
   getSettings(tenantId: string): StreamWeaverGambleSettingsV1 | undefined;
   putSettings(tenantId: string, settings: StreamWeaverGambleSettingsV1): StreamWeaverGambleSettingsV1;
@@ -104,6 +105,7 @@ export class MemoryStreamWeaverEconomyStore implements StreamWeaverEconomyStoreV
     const limit = boundedLimit(limitInput);
     return [...this.wallets.values()].filter((w) => w.tenantId === tenantId).sort((a,b) => b.balance-a.balance || a.userId.localeCompare(b.userId)).slice(0,limit).map((w,i) => ({...structuredClone(w),rank:i+1}));
   }
+  listWalletUserIds(tenantId: string) { return [...this.wallets.values()].filter((wallet) => wallet.tenantId === tenantId).map((wallet) => wallet.userId).sort(); }
   getCirculatingSupply(tenantId: string) {
     let total=0; for(const w of this.wallets.values()) if(w.tenantId===tenantId) total+=w.balance;
     for(const e of this.exchanges.values()) if(e.tenantId===tenantId&&e.status==="pending") total+=e.localSpent; return total;
@@ -142,6 +144,7 @@ CREATE TABLE IF NOT EXISTS streamweaver_currency_exchange(tenant_id TEXT NOT NUL
   transfer(t:string,f:string,to:string,a:number){return this.tx(()=>{const amount=positiveAmount(a),from=this.getWallet(t,f),dest=this.getWallet(t,to);if(from.balance<amount)throw new Error("insufficient StreamWeaver currency");const nf={...from,balance:from.balance-amount},nt={...dest,balance:dest.balance+amount};this.upsert(nf);this.upsert(nt);return{from:nf,to:nt};});}
   settleWager(t:string,u:string,w:number,p:number){return this.tx(()=>{const wager=positiveAmount(w),payout=safeNonNegative(p,"payout"),c=this.getWallet(t,u);if(c.balance<wager)throw new Error("insufficient StreamWeaver currency");const delta=payout-wager,n={...c,balance:c.balance+delta,totalEarned:c.totalEarned+Math.max(0,delta)};this.upsert(n);return n;});}
   listLeaderboard(t:string,l:number){const tenantId=requireText(t,"tenantId"),limit=boundedLimit(l);const rows=this.db.prepare("SELECT user_id,balance,total_earned FROM streamweaver_currency_wallet WHERE tenant_id=? ORDER BY balance DESC,user_id ASC LIMIT ?").all(tenantId,limit) as {user_id:string;balance:number;total_earned:number}[];return rows.map((r,i)=>({tenantId,userId:r.user_id,balance:Number(r.balance),totalEarned:Number(r.total_earned),rank:i+1}));}
+  listWalletUserIds(t:string){const tenantId=requireText(t,"tenantId");return (this.db.prepare("SELECT user_id AS userId FROM streamweaver_currency_wallet WHERE tenant_id=? ORDER BY user_id").all(tenantId) as Array<{userId:string}>).map((row)=>row.userId);}
   getCirculatingSupply(t:string){const tenantId=requireText(t,"tenantId");const w=this.db.prepare("SELECT COALESCE(SUM(balance),0) total FROM streamweaver_currency_wallet WHERE tenant_id=?").get(tenantId) as {total:number};const p=this.db.prepare("SELECT COALESCE(SUM(local_spent),0) total FROM streamweaver_currency_exchange WHERE tenant_id=? AND status='pending'").get(tenantId) as {total:number};return Number(w.total??0)+Number(p.total??0);}
   getSettings(t:string){const tenantId=requireText(t,"tenantId"),r=this.db.prepare("SELECT body FROM streamweaver_currency_settings WHERE tenant_id=?").get(tenantId) as {body:string}|undefined;return r?normalizeSettings(JSON.parse(r.body) as StreamWeaverGambleSettingsV1):undefined;}
   putSettings(t:string,s:StreamWeaverGambleSettingsV1){const tenantId=requireText(t,"tenantId"),v=normalizeSettings(s);this.db.prepare("INSERT INTO streamweaver_currency_settings(tenant_id,body,updated_at) VALUES(?,?,?) ON CONFLICT(tenant_id) DO UPDATE SET body=excluded.body,updated_at=excluded.updated_at").run(tenantId,JSON.stringify(v),new Date().toISOString());return v;}

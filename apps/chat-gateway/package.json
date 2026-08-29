@@ -6,5 +6,5 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": { "build": "tsc -b", "start": "node dist/service-start.js" },
-  "dependencies": { "@spmt/commlink-core": "0.1.0", "@spmt/contracts": "0.1.0", "@spmt/sdk": "0.1.0" }
+  "dependencies": { "@spmt/commlink-core": "0.1.0", "@spmt/contracts": "0.1.0", "@spmt/sdk": "0.1.0", "@spmt/streamweaver": "0.1.0" }
 }

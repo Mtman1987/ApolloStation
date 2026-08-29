@@ -147,6 +147,8 @@ export class ChatGatewayRuntime {
     for (const sender of senders) { if (this.senders.has(sender.provider)) throw new Error("Duplicate provider sender"); this.senders.set(sender.provider, sender); }
   }
 
+  consumerIds(): string[] { return [...this.consumers.keys()].sort(); }
+
   async ingest(envelope: ProviderChatEnvelopeV1): Promise<ChatGatewayIngestResultV1> {
     const message = normalizeProviderChatEnvelope(envelope);
     const consumerIds = [...this.consumers.values()].filter((consumer) => consumer.accepts(message)).map((consumer) => consumer.id);
