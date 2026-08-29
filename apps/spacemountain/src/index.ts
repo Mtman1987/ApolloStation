@@ -1,4 +1,4 @@
-import type { AppFrameLaunchV1, CoderDescriptorV1, CoderJobV1, OperationsLogV1, PersonalUsageSummaryV1, RuntimeStateV1, SurfaceModeV1 } from "@spmt/contracts";
+import type { AppFrameLaunchV1, CoderDescriptorV1, CoderJobV1, CommlinkLiveChatRecordV1, OperationsLogV1, PersonalUsageSummaryV1, RuntimeStateV1, SurfaceModeV1 } from "@spmt/contracts";
 import { SpmtClient } from "@spmt/sdk";
 
 export const SPACEMOUNTAIN_APP_ID = "spacemountain";
@@ -57,6 +57,7 @@ export interface SpaceMountainShellSnapshotV1 {
   events: Array<Record<string, unknown>>;
   conversations: Array<Record<string, unknown>>;
   messages?: Array<Record<string, unknown>>;
+  liveChat: CommlinkLiveChatRecordV1[];
   notifications: Array<Record<string, unknown>>;
   overlayWidgets: Array<Record<string, unknown>>;
   overlayOutputs: Array<Record<string, unknown>>;
@@ -119,6 +120,7 @@ export class SpaceMountainShellController {
       events: this.spmt.listEvents(input.tenantId, { limit: 100 }),
       commlink: conversationsTask,
       commlinkMessages: messagesTask,
+      commlinkLive: this.spmt.listCommlinkLiveChat?.(input.tenantId, { limit: 200 }) ?? Promise.resolve([]),
       notifications: this.spmt.listNotifications(input.tenantId, input.userId),
       overlayWidgets: this.spmt.listOverlayWidgets?.(input.tenantId) ?? Promise.resolve([]),
       overlayOutputs: this.spmt.listOverlayOutputs?.(input.tenantId) ?? Promise.resolve([]),
@@ -158,7 +160,7 @@ export class SpaceMountainShellController {
       entitlements: source(failures, ["entitlements"]),
       usage: source(failures, ["usage"]),
       events: source(failures, ["events"]),
-      commlink: source(failures, ["commlink", "commlinkMessages"]),
+      commlink: source(failures, ["commlink", "commlinkMessages", "commlinkLive"]),
       notifications: source(failures, ["notifications"]),
       stellar: source(failures, ["stellarContext", "stellarCapabilities"]),
       operations: source(failures, ["operationsAccess", "operationsLogs", "operationsCoder", "operationsCoderJobs"]),
@@ -185,6 +187,7 @@ export class SpaceMountainShellController {
       events: records(values.get("events")),
       conversations: records(values.get("commlink")),
       messages: records(values.get("commlinkMessages")),
+      liveChat: liveChatRecords(values.get("commlinkLive")),
       notifications: records(values.get("notifications")),
       overlayWidgets: records(values.get("overlayWidgets")),
       overlayOutputs: records(values.get("overlayOutputs")),
@@ -330,6 +333,7 @@ function strings(value: unknown) { return Array.isArray(value) ? value.filter((i
 function surfaceModes(value: unknown): SurfaceModeV1[] { const allowed = new Set<SurfaceModeV1>(["shell", "standalone", "overlay", "popout"]); return strings(value).filter((item): item is SurfaceModeV1 => allowed.has(item as SurfaceModeV1)); }
 function isXp(value: unknown): value is { tenantId: string; userId: string; balance: number } { return isRecord(value) && typeof value.tenantId === "string" && typeof value.userId === "string" && typeof value.balance === "number"; }
 function isPersonalUsage(value: unknown): value is PersonalUsageSummaryV1 { return isRecord(value) && value.schemaVersion === 1 && typeof value.userId === "string" && typeof value.period === "string" && isRecord(value.plan) && Array.isArray(value.resources); }
+function liveChatRecords(value: unknown) { return Array.isArray(value) ? value.filter((item): item is CommlinkLiveChatRecordV1 => isRecord(item) && item.schemaVersion === 1 && typeof item.tenantId === "string" && typeof item.messageId === "string") : []; }
 function operationsLogs(value: unknown) { return Array.isArray(value) ? value.filter((item): item is OperationsLogV1 => isRecord(item) && item.schemaVersion === 1 && typeof item.id === "string" && typeof item.sourceAppId === "string") : []; }
 function coderJobs(value: unknown) { return Array.isArray(value) ? value.filter((item): item is CoderJobV1 => isRecord(item) && item.schemaVersion === 1 && typeof item.id === "string" && typeof item.targetAppId === "string") : []; }
 function coderDescriptor(value: unknown) { return isRecord(value) && value.schemaVersion === 1 && value.id === "spmt.operations.coder" ? value as unknown as CoderDescriptorV1 : null; }

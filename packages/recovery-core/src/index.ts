@@ -24,6 +24,7 @@ export interface RecoveryInventoryV1 {
   oauthCodes: number;
   commlinkConversations: number;
   commlinkMessages: number;
+  commlinkLiveChat: number;
   notifications: number;
   webhooks: number;
   stellarContext: number;

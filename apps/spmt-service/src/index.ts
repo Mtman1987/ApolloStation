@@ -6,8 +6,9 @@ import { pathToFileURL } from "node:url";
 import { AccountRecoveryService, AccountSetupError, SqliteAccountSetupStore } from "@spmt/account-recovery-core";
 import { AuthorityService } from "@spmt/authority-core";
 import { SqliteAuthorityStore } from "@spmt/authority-sqlite";
-import { AuthConflictError, AuthService } from "@spmt/auth-core";
+import { AuthConflictError, AuthDeniedError, AuthService } from "@spmt/auth-core";
 import { ControlService } from "@spmt/control-core";
+import { CommlinkLiveChatStore } from "@spmt/commlink-core";
 import { ExecutionJobService } from "@spmt/execution-core";
 import { MonetizationService } from "@spmt/monetization";
 import { OutboxDispatcher } from "@spmt/outbox-core";
@@ -24,7 +25,7 @@ import {
 } from "@spmt/provider-grants-core";
 import { PlatformApiAdapter } from "@spmt/api-adapter";
 import { HealthRegistry } from "@spmt/runtime";
-import { assertBillingManifestV1, BILLING_PLAN_IDS, type AppCatalogRegistrationV1, type BillingManifestV1, type BillingPlanIdV1 } from "@spmt/contracts";
+import { assertBillingManifestV1, assertNormalizedChatMessageV1, BILLING_PLAN_IDS, type AppCatalogRegistrationV1, type BillingManifestV1, type BillingPlanIdV1, type ChatProviderV1, type NormalizedChatMessageV1 } from "@spmt/contracts";
 import { STELLAR_CHAT_CAPABILITY_ID, StellarCommunityAssistantRuntime, StellarDataPrivacyService } from "@spmt/stellar-core";
 
 const USER_SCOPES = ["identity:read","identity:write","workspace:read","workspace:write","xp:read","apps:read","apps:install","entitlements:read","usage:read","events:read","jobs:read","jobs:write","commlink:read","commlink:write","notifications:read","notifications:write","webhooks:read","webhooks:write","assistants:read","assistants:invoke","stellar:context:read","stellar:context:write","stellar:capabilities:read","stellar:data:read","stellar:data:write"];
@@ -54,6 +55,8 @@ export interface SpmtServiceOptions {
   providerOAuthClients?: ProviderOAuthClientsV1;
   stellarChatEnabled?: boolean;
   stellarWorkerCredential?: string;
+  chatGatewayEnabled?: boolean;
+  chatGatewayCredential?: string;
 }
 
 export function createSpmtService(options: SpmtServiceOptions) {
@@ -67,6 +70,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
   const store = new SqliteAuthorityStore(options.databasePath);
   const platformStore = new SqlitePlatformDataStore(options.databasePath);
   const setupStore = new SqliteAccountSetupStore(options.databasePath);
+  const commlinkLiveChat = new CommlinkLiveChatStore(options.databasePath);
   const authority = new AuthorityService({ store });
   const auth = new AuthService({ store });
   const publicBaseUrl = (options.publicBaseUrl ?? "https://spmt.live").replace(/\/$/, "");
@@ -85,6 +89,8 @@ export function createSpmtService(options: SpmtServiceOptions) {
   });
   if (options.stellarChatEnabled && (!options.stellarWorkerCredential || options.stellarWorkerCredential.length < 32)) throw new Error("An enabled Stellar chat runtime requires a 32+ character worker credential");
   if (options.stellarWorkerCredential) ensureStellarWorkerIdentity(auth, options.stellarWorkerCredential);
+  if (options.chatGatewayEnabled && (!options.chatGatewayCredential || options.chatGatewayCredential.length < 32)) throw new Error("An enabled Chat Gateway requires a 32+ character service credential");
+  if (options.chatGatewayCredential) ensureChatGatewayIdentity(auth, options.chatGatewayCredential);
   const communityAssistant = options.communityAssistant ?? new StellarCommunityAssistantRuntime(executionJobs, { enabled: Boolean(options.stellarChatEnabled), resolveRoute: (input) => resolveStellarRoute(control, executionJobs, input.tenantId, input.routingPreference ?? "automatic") });
   const stellarPrivacy = new StellarDataPrivacyService(executionJobs, data);
   const operations = new PlatformOperations(auth, authority, control, data, communityAssistant, options.coderRuntime, executionJobs, stellarPrivacy);
@@ -375,6 +381,41 @@ export function createSpmtService(options: SpmtServiceOptions) {
         catch { return json(response, 401, { error: "unauthorized" }); }
       }
 
+      if (request.method === "GET" && url.pathname === "/v1/commlink/live") {
+        const token = accessToken(request), tenantId = header(request, "x-spmt-tenant");
+        if (!token || !tenantId) return json(response, 401, { error: "unauthorized" });
+        try {
+          auth.authorize(token, "commlink:read", tenantId);
+          const provider = url.searchParams.get("provider") ?? undefined;
+          if (provider && !["twitch", "discord", "kick"].includes(provider)) return json(response, 400, { error: "invalid_provider" });
+          const limitValue = url.searchParams.get("limit");
+          const limit = limitValue === null ? undefined : Number(limitValue);
+          return json(response, 200, commlinkLiveChat.list({ tenantId, ...(provider ? { provider: provider as ChatProviderV1 } : {}), ...(url.searchParams.get("channelId") ? { channelId: url.searchParams.get("channelId")! } : {}), ...(url.searchParams.get("search") ? { search: url.searchParams.get("search")! } : {}), ...(limit === undefined ? {} : { limit }) }));
+        } catch (error) {
+          if (error instanceof Error && /limit|channelId|provider/.test(error.message)) return json(response, 400, { error: "invalid_query", message: error.message });
+          return json(response, 403, { error: "forbidden" });
+        }
+      }
+
+      if (request.method === "POST" && url.pathname === "/v1/commlink/live") {
+        const token = accessToken(request), tenantId = header(request, "x-spmt-tenant");
+        if (!token || !tenantId) return json(response, 401, { error: "unauthorized" });
+        try {
+          const principal = auth.authorize(token, "commlink:live:write", tenantId);
+          if (principal.actorType !== "service" || principal.actorId !== "chat-gateway") return json(response, 403, { error: "chat_gateway_required" });
+          control.getApp(principal.actorId);
+          if (!control.listInstalls(tenantId).some((install) => install.appId === principal.actorId && install.enabled)) return json(response, 403, { error: "app_not_installed" });
+          const body = await readBody(request);
+          const message = assertNormalizedChatMessageV1(body as unknown as NormalizedChatMessageV1);
+          if (message.tenantId !== tenantId) return json(response, 403, { error: "tenant_mismatch" });
+          return json(response, 201, commlinkLiveChat.ingest(message));
+        } catch (error) {
+          if (error instanceof AuthDeniedError) return json(response, 403, { error: "forbidden" });
+          if (error instanceof Error && /chat|message|actor|version|invalid/i.test(error.message)) return json(response, 400, { error: "invalid_message", message: error.message });
+          return json(response, 403, { error: "forbidden" });
+        }
+      }
+
       if (request.method === "POST" && url.pathname === "/v1/provider-grants") {
         const token = accessToken(request), tenantId = header(request, "x-spmt-tenant");
         if (!token || !tenantId) return json(response, 401, { error: "unauthorized" });
@@ -430,12 +471,12 @@ export function createSpmtService(options: SpmtServiceOptions) {
   });
 
   return {
-    store, platformStore, setupStore, authority, auth, control, billing, data, accounts, executionJobs, stellarPrivacy, operations, outbox, providerCredentials, server,
+    store, platformStore, setupStore, commlinkLiveChat, authority, auth, control, billing, data, accounts, executionJobs, stellarPrivacy, operations, outbox, providerCredentials, server,
     registerOAuthClient(input: Parameters<PlatformDataService["registerOAuthClient"]>[0]): ReturnType<PlatformDataService["registerOAuthClient"]> { return data.registerOAuthClient(input); },
     runOutboxOnce() { return outbox.runOnce(); },
     runStellarPrivacySweep() { return stellarPrivacy.sweep(store.listTenants().map((tenant) => tenant.id)); },
     listen() { return new Promise<void>((done, reject) => { server.once("error", reject); server.listen(options.port ?? 3000, options.host ?? "0.0.0.0", () => { server.off("error", reject); done(); }); }); },
-    close() { clearInterval(stellarCapabilityTimer); clearInterval(stellarPrivacyTimer); return new Promise<void>((done, reject) => server.close((error) => { providerCredentials?.close(); setupStore.close(); platformStore.close(); store.close(); error ? reject(error) : done(); })); },
+    close() { clearInterval(stellarCapabilityTimer); clearInterval(stellarPrivacyTimer); return new Promise<void>((done, reject) => server.close((error) => { providerCredentials?.close(); commlinkLiveChat.close(); setupStore.close(); platformStore.close(); store.close(); error ? reject(error) : done(); })); },
   };
 }
 
@@ -569,6 +610,10 @@ function ensureStellarWorkerIdentity(auth: AuthService, credential: string) {
   try { auth.registerServiceIdentity({ serviceId: "stellar-core", credential, scopes: ["jobs:read", "jobs:work", "stellar:context:read"], tenantMode: "any" }); }
   catch (error) { if (!(error instanceof AuthConflictError)) throw error; auth.rotateServiceCredential("stellar-core", credential); }
 }
+function ensureChatGatewayIdentity(auth: AuthService, credential: string) {
+  try { auth.registerServiceIdentity({ serviceId: "chat-gateway", credential, scopes: ["providers:grant", "commlink:live:write", "runtime:write"], tenantMode: "any" }); }
+  catch (error) { if (!(error instanceof AuthConflictError)) throw error; auth.rotateServiceCredential("chat-gateway", credential); }
+}
 function syncCommunityAssistantCapability(data: PlatformDataService, status: ReturnType<CommunityAssistantRuntimeV1["status"]>) {
   data.upsertStellarCapability({ id: "spmt.community-assistant", sourceAppId: "stellar-core", title: "Stella Community Assistant", description: "Invoke the app-neutral SPMT Community Assistant through the durable, metered Stellar Core job contract.", requiredScopes: ["assistants:invoke"], availability: status.availability, ...(status.availability === "unavailable" ? { unavailableReason: status.unavailableReason } : {}) });
 }
@@ -610,6 +655,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   const stellarWorkerCredential = process.env.STELLAR_WORKER_CREDENTIAL;
   const stellarChatEnabled = process.env.SPMT_STELLAR_CHAT_ENABLED === "1";
   if (stellarChatEnabled && !stellarWorkerCredential) throw new Error("SPMT_STELLAR_CHAT_ENABLED=1 requires STELLAR_WORKER_CREDENTIAL");
+  const chatGatewayCredential = process.env.CHAT_GATEWAY_WORKER_CREDENTIAL;
+  const chatGatewayEnabled = process.env.SPMT_CHAT_GATEWAY_ENABLED === "1";
+  if (chatGatewayEnabled && !chatGatewayCredential) throw new Error("SPMT_CHAT_GATEWAY_ENABLED=1 requires CHAT_GATEWAY_WORKER_CREDENTIAL");
   const service = createSpmtService({
     databasePath,
     webhookKey: decodeKey(key),
@@ -627,6 +675,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     ...(discordBotToken ? { discordBotToken } : {}),
     stellarChatEnabled,
     ...(stellarWorkerCredential ? { stellarWorkerCredential } : {}),
+    chatGatewayEnabled,
+    ...(chatGatewayCredential ? { chatGatewayCredential } : {}),
   });
   await service.listen();
 }

@@ -396,6 +396,33 @@ export interface NormalizedChatMessageV1 {
   mentions: Array<{ token: string; providerUserId: string; canonicalUserId?: string; username: string }>;
 }
 
+/** Public, credential-free Commlink projection of one normalized provider message. */
+export interface CommlinkLiveChatRecordV1 {
+  schemaVersion: 1;
+  tenantId: string;
+  provider: ChatProviderV1;
+  connectionId: string;
+  channelId: string;
+  sourceChannelId?: string;
+  messageId: string;
+  occurredAt: string;
+  text: string;
+  providerUserId: string;
+  canonicalUserId?: string;
+  username: string;
+  displayName?: string;
+  isBot: boolean;
+  roles: Array<"broadcaster" | "moderator" | "member">;
+}
+
+export interface CommlinkLiveChatQueryV1 {
+  tenantId: string;
+  provider?: ChatProviderV1;
+  channelId?: string;
+  search?: string;
+  limit?: number;
+}
+
 export interface NormalizedChatDeliveryV1 {
   schemaVersion: 1;
   deliveryId: string;

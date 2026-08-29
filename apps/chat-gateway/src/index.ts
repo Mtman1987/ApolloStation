@@ -2,6 +2,7 @@ import { DatabaseSync } from "node:sqlite";
 import {
   assertAppModuleManifestV1,
   assertNormalizedChatMessageV1,
+  type AppCatalogRegistrationV1,
   type AppModuleManifestV1,
   type ChatProviderV1,
   type NormalizedChatDeliveryV1,
@@ -28,6 +29,21 @@ export const manifest = assertAppModuleManifestV1({
     { id: "kick-chat", role: "kick-connection", execution: "leased", canonicalAuthority: false },
   ],
 } satisfies AppModuleManifestV1);
+
+export function chatGatewayCatalogRegistration(publicOrigin: string): AppCatalogRegistrationV1 {
+  const origin = new URL(publicOrigin);
+  if (origin.username || origin.password || origin.pathname !== "/" || origin.search || origin.hash) throw new Error("Chat Gateway catalog origin must be a credential-free origin");
+  return {
+    appId: manifest.id,
+    name: manifest.name,
+    description: manifest.description,
+    version: "0.1.0-green",
+    launchUrl: new URL("/apps/commlink?source=chat-gateway", origin).toString(),
+    allowedScopes: ["providers:grant", "commlink:live:write", "runtime:write"],
+    surfaces: ["standalone"],
+    status: "active",
+  };
+}
 
 export interface ProviderChatEnvelopeV1 {
   schemaVersion: 1;
@@ -95,6 +111,11 @@ export class SqliteChatGatewayStore {
       ? this.db.prepare("SELECT body FROM chat_deliveries WHERE tenant_id=? AND consumer_id=? AND state='pending' ORDER BY rowid LIMIT ?").all(tenantId, consumerId, limit)
       : this.db.prepare("SELECT body FROM chat_deliveries WHERE tenant_id=? AND state='pending' ORDER BY rowid LIMIT ?").all(tenantId, limit);
     return (rows as Array<{ body: string }>).map((row) => JSON.parse(row.body) as NormalizedChatDeliveryV1);
+  }
+
+  listPendingTenants(limit = 500): string[] {
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 5_000) throw new Error("tenant limit is invalid");
+    return (this.db.prepare("SELECT DISTINCT tenant_id AS tenantId FROM chat_deliveries WHERE state='pending' ORDER BY tenant_id LIMIT ?").all(limit) as Array<{ tenantId: string }>).map((row) => row.tenantId);
   }
 
   complete(deliveryId: string): void { requireId(deliveryId, "deliveryId"); this.db.prepare("UPDATE chat_deliveries SET state='delivered',last_error=NULL WHERE id=?").run(deliveryId); }
