@@ -56,6 +56,7 @@ export interface SpaceMountainShellSnapshotV1 {
   usage?: PersonalUsageSummaryV1;
   events: Array<Record<string, unknown>>;
   conversations: Array<Record<string, unknown>>;
+  commlinkRecipients: Array<{ userId: string; username: string; displayName: string }>;
   messages?: Array<Record<string, unknown>>;
   liveChat: CommlinkLiveChatRecordV1[];
   notifications: Array<Record<string, unknown>>;
@@ -119,6 +120,7 @@ export class SpaceMountainShellController {
       usage: this.spmt.getPersonalUsage?.(input.tenantId) ?? Promise.reject(new Error("Personal usage is unavailable")),
       events: this.spmt.listEvents(input.tenantId, { limit: 100 }),
       commlink: conversationsTask,
+      commlinkRecipients: this.spmt.findCommlinkRecipients(input.tenantId),
       commlinkMessages: messagesTask,
       commlinkLive: this.spmt.listCommlinkLiveChat?.(input.tenantId, { limit: 200 }) ?? Promise.resolve([]),
       notifications: this.spmt.listNotifications(input.tenantId, input.userId),
@@ -160,7 +162,7 @@ export class SpaceMountainShellController {
       entitlements: source(failures, ["entitlements"]),
       usage: source(failures, ["usage"]),
       events: source(failures, ["events"]),
-      commlink: source(failures, ["commlink", "commlinkMessages", "commlinkLive"]),
+      commlink: source(failures, ["commlink", "commlinkRecipients", "commlinkMessages", "commlinkLive"]),
       notifications: source(failures, ["notifications"]),
       stellar: source(failures, ["stellarContext", "stellarCapabilities"]),
       operations: source(failures, ["operationsAccess", "operationsLogs", "operationsCoder", "operationsCoderJobs"]),
@@ -186,6 +188,7 @@ export class SpaceMountainShellController {
       ...(isPersonalUsage(values.get("usage")) ? { usage: values.get("usage") as PersonalUsageSummaryV1 } : {}),
       events: records(values.get("events")),
       conversations: records(values.get("commlink")),
+      commlinkRecipients: commlinkRecipients(values.get("commlinkRecipients")),
       messages: records(values.get("commlinkMessages")),
       liveChat: liveChatRecords(values.get("commlinkLive")),
       notifications: records(values.get("notifications")),
@@ -242,6 +245,11 @@ export class SpaceMountainShellController {
     if (!text.trim() || text.length > 8000) throw new Error("message text is invalid");
     return this.spmt.sendCommlinkMessage(tenantId, conversationId, recipientUserIds, text);
   }
+
+  findCommlinkRecipients(tenantId:string,query=""){requireId(tenantId,"tenantId");if(query.length>120)throw new Error("recipient query is invalid");return this.spmt.findCommlinkRecipients(tenantId,query);}
+  composeCommlinkMail(tenantId:string,recipientUserIds:string[],text:string,idempotencyKey:string,subject?:string){requireId(tenantId,"tenantId");requireId(idempotencyKey,"idempotencyKey");if(!recipientUserIds.length)throw new Error("recipientUserIds is required");recipientUserIds.forEach((userId)=>requireId(userId,"recipientUserId"));if(!text.trim()||text.length>8000)throw new Error("message text is invalid");return this.spmt.composeCommlinkMail(tenantId,recipientUserIds,text,idempotencyKey,subject);}
+  markCommlinkConversationRead(tenantId:string,conversationId:string){requireId(tenantId,"tenantId");requireId(conversationId,"conversationId");return this.spmt.markCommlinkConversationRead(tenantId,conversationId);}
+  markAllCommlinkRead(tenantId:string){requireId(tenantId,"tenantId");return this.spmt.markAllCommlinkRead(tenantId);}
 
   async invokeStella(tenantId: string, userId: string, message: string, conversationId: string, idempotencyKey: string, routingPreference: "automatic" | "hosted" | "companion" = "automatic", remember = true) {
     requireId(tenantId, "tenantId");
@@ -328,6 +336,11 @@ function source(failures: Map<string, string>, keys: string[]): SourceStateV1 {
 }
 function record(value: unknown) { return isRecord(value) ? value : undefined; }
 function records(value: unknown) { return Array.isArray(value) ? value.filter(isRecord) : []; }
+function commlinkRecipients(value: unknown): Array<{ userId: string; username: string; displayName: string }> {
+  return records(value).flatMap((item) => typeof item.userId === "string" && typeof item.username === "string" && typeof item.displayName === "string"
+    ? [{ userId: item.userId, username: item.username, displayName: item.displayName }]
+    : []);
+}
 function isRecord(value: unknown): value is Record<string, unknown> { return Boolean(value) && typeof value === "object" && !Array.isArray(value); }
 function strings(value: unknown) { return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []; }
 function surfaceModes(value: unknown): SurfaceModeV1[] { const allowed = new Set<SurfaceModeV1>(["shell", "standalone", "overlay", "popout"]); return strings(value).filter((item): item is SurfaceModeV1 => allowed.has(item as SurfaceModeV1)); }
