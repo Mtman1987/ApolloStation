@@ -29,6 +29,20 @@ export interface RecoveryInventoryV1 {
   webhooks: number;
   stellarContext: number;
   stellarCapabilities: number;
+  accessSessions: number;
+  refreshTokens: number;
+  idempotencyRecords: number;
+  outboxRecords: number;
+  accountSetupTickets: number;
+  operationsLogs: number;
+  coderJobs: number;
+  executionJobs: number;
+  pairedDevices: number;
+  deviceBootstraps: number;
+  commlinkReadStates: number;
+  commlinkComposeReplays: number;
+  providerCredentials: number;
+  providerCredentialImports: number;
 }
 
 export interface RecoverySnapshotDescriptorV1 {

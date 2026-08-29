@@ -120,7 +120,7 @@ export class SpaceMountainShellController {
       usage: this.spmt.getPersonalUsage?.(input.tenantId) ?? Promise.reject(new Error("Personal usage is unavailable")),
       events: this.spmt.listEvents(input.tenantId, { limit: 100 }),
       commlink: conversationsTask,
-      commlinkRecipients: this.spmt.findCommlinkRecipients(input.tenantId),
+      commlinkRecipients: this.spmt.findCommlinkRecipients?.(input.tenantId) ?? Promise.resolve([]),
       commlinkMessages: messagesTask,
       commlinkLive: this.spmt.listCommlinkLiveChat?.(input.tenantId, { limit: 200 }) ?? Promise.resolve([]),
       notifications: this.spmt.listNotifications(input.tenantId, input.userId),
