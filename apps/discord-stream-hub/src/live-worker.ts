@@ -164,8 +164,12 @@ export class SupervisedDshLiveService {
     this.closed = true;
     const activeCycle = this.activeCycle;
     this.closing = (async () => {
-      await activeCycle;
-      this.messages.close(); this.monitor.close();
+      let failure: unknown;
+      let failed = false;
+      try { await activeCycle; } catch (error) { failure = error; failed = true; }
+      try { this.messages.close(); } catch (error) { if (!failed) { failure = error; failed = true; } }
+      try { this.monitor.close(); } catch (error) { if (!failed) { failure = error; failed = true; } }
+      if (failed) throw failure;
     })();
     return this.closing;
   }

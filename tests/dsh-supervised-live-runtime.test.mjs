@@ -144,3 +144,19 @@ test("graceful shutdown waits for the active Discord mutation before closing dur
     assert.equal(closed, true);
   } finally { await service.close(); rmSync(dir, { recursive: true, force: true }); }
 });
+
+test("shutdown closes both SQLite stores even when the captured active cycle rejects", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "apollo-dsh-worker-close-failure-"));
+  const configPath = writeConfig(dir, "dsh-runtime.json", { schemaVersion: 1, pollIntervalSeconds: 600, tenants: [] });
+  const environment = validateDshLiveWorkerEnvironment({ SPMT_RUNTIME_MODE: "production", SPMT_ORIGIN: "http://127.0.0.1:3000", DSH_DATABASE_PATH: join(dir, "dsh.sqlite"), DSH_RUNTIME_CONFIG_PATH: configPath, DSH_WORKER_CREDENTIAL: credential });
+  const service = new SupervisedDshLiveService(environment, async () => Response.json({ accessToken: `dsh-access-${"x".repeat(32)}`, accessExpiresAt: "2099-01-01T00:00:00.000Z" }), () => observedAt);
+  try {
+    const rejected = Promise.reject(new Error("forced active cycle failure"));
+    rejected.catch(() => undefined);
+    service.activeCycle = rejected;
+    await assert.rejects(service.close(), /forced active cycle failure/);
+    assert.throws(() => service.monitor.getLiveMembers("tenant-a"), /closed|database/i);
+    assert.throws(() => service.messages.get("tenant-a", "spotlight", "current"), /closed|database/i);
+    await assert.rejects(() => service.runOnce(), /worker is closed/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
