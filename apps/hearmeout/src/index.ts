@@ -9,6 +9,7 @@ export * from "./discord-interactions.js";
 export * from "./discord-receive-audio.js";
 export * from "./voice-bridge.js";
 export * from "./voice-bridge-resilience.js";
+export * from "./legacy-worker-adapter.js";
 export * from "./worker-media-cache.js";
 export * from "./worker-music-catalog.js";
 export * from "./watch-hls-policy.js";
