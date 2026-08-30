@@ -80,9 +80,10 @@ test("Discord driver identifies, stores a resumable cursor, normalizes messages,
   const handle = await pending;
   const cursor = decodeDiscordCursor(opened.cursors.at(-1));
   assert.deepEqual(cursor, { sessionId: "session-1", seq: 10, resumeGatewayUrl: "wss://gateway-us-east.discord.gg" });
-  socket.message(JSON.stringify({ op: 0, t: "MESSAGE_CREATE", s: 11, d: { id: "discord-msg-1", channel_id: "channel-1", content: "hello discord", timestamp: "2026-08-27T04:00:00Z", author: { id: "user-1", username: "viewer", global_name: "Viewer", bot: false }, mentions: [{ id: "user-2", username: "friend" }] } }));
+  socket.message(JSON.stringify({ op: 0, t: "MESSAGE_CREATE", s: 11, d: { id: "discord-msg-1", channel_id: "channel-1", content: "hello discord", timestamp: "2026-08-27T04:00:00Z", author: { id: "user-1", username: "viewer", global_name: "Viewer", avatar: "a_animatedhash", bot: false }, mentions: [{ id: "user-2", username: "friend" }] } }));
   assert.equal(opened.envelopes.length, 1);
   assert.equal(opened.envelopes[0].mentions[0].providerUserId, "user-2");
+  assert.equal(opened.envelopes[0].avatarUrl, "https://cdn.discordapp.com/avatars/user-1/a_animatedhash.gif?size=256");
   const sent = await driver.send({ schemaVersion: 1, tenantId: "tenant-a", provider: "discord", connectionId: "discord-main", channelId: "channel-1", text: "reply", idempotencyKey: "nonce-1", replyToMessageId: "discord-msg-1" });
   assert.equal(sent.providerMessageId, "discord-out-1");
   assert.match(requests[0].url, /channels\/channel-1\/messages$/);

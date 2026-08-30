@@ -240,6 +240,7 @@ export class NebulaTagRuntime {
         actorUserId: message.userId,
         occurredAt: message.occurredAt,
         channelId: message.channelId,
+        ...(message.avatarUrl ? { avatarUrl: message.avatarUrl } : {}),
         kind: "record-activity",
       });
       return { kind: "result", ...applied };

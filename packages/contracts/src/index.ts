@@ -390,6 +390,7 @@ export interface NormalizedChatMessageV1 {
     canonicalUserId?: string;
     username: string;
     displayName?: string;
+    avatarUrl?: string;
     isBot: boolean;
     roles: Array<"broadcaster" | "moderator" | "member">;
   };
@@ -501,6 +502,10 @@ export function assertNormalizedChatMessageV1(value: NormalizedChatMessageV1): N
   }
   if (!value.text || value.text.length > 8_000) throw new Error("Chat message text is invalid");
   if (!Number.isFinite(Date.parse(value.occurredAt))) throw new Error("Chat message occurredAt is invalid");
+  if (value.actor.avatarUrl) {
+    const avatar = new URL(value.actor.avatarUrl);
+    if (avatar.protocol !== "https:" || avatar.username || avatar.password) throw new Error("Chat actor avatarUrl must use credential-free HTTPS");
+  }
   if (typeof value.actor.isBot !== "boolean" || !Array.isArray(value.actor.roles) || value.actor.roles.some((role) => !["broadcaster", "moderator", "member"].includes(role)) || !Array.isArray(value.mentions)) throw new Error("Chat actor, roles, and mentions are invalid");
   for (const mention of value.mentions) if (!mention.token || !mention.providerUserId || !mention.username) throw new Error("Chat mention is invalid");
   return value;

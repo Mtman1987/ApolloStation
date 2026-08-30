@@ -59,6 +59,7 @@ export interface ProviderChatEnvelopeV1 {
   canonicalUserId?: string;
   username: string;
   displayName?: string;
+  avatarUrl?: string;
   isBot?: boolean;
   roles?: Array<"broadcaster" | "moderator" | "member">;
   mentions?: Array<{ token: string; providerUserId: string; canonicalUserId?: string; username: string }>;
@@ -198,6 +199,7 @@ export function normalizeProviderChatEnvelope(envelope: ProviderChatEnvelopeV1):
       ...(envelope.canonicalUserId ? { canonicalUserId: envelope.canonicalUserId } : {}),
       username: envelope.username,
       ...(envelope.displayName ? { displayName: envelope.displayName } : {}),
+      ...(envelope.avatarUrl ? { avatarUrl: envelope.avatarUrl } : {}),
       isBot: envelope.isBot ?? false,
       roles: [...new Set(envelope.roles ?? (["member"] as const))],
     },

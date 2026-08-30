@@ -1,5 +1,7 @@
 # Final live-donor catch-up
 
+> Superseded on 2026-08-30 by `LIVE_SOURCE_CATCHUP_2026-08-30.md`. Frozen local mirrors and the pinned-head workflow were retired; future comparisons use remote `main` plus the running live slice.
+
 Captured: 2026-08-29
 
 Target: ApolloStation `work/final-live-donor-catchup-2026-08-29`
@@ -18,7 +20,7 @@ Purpose: re-read every known live donor at its current `main`, retain ApolloStat
 | `Mtman1987/chat-tag` | `c4b99179eff47e41e920603f96f6342b04390eee` | `7d762b8` | Nebula Arcade Discord identity, compact embed, animated 20-game showcase, and large preview retained. |
 | `Mtman1987/fly-machine-rotator` | `66e66b8b8502a6cf1dd94aee0163c443459a6d08` | `9f92c0d` | Workflow-only cost guard. Apollo has no automatic LLM-worker deployment workflow, so no application code is required. |
 
-Short SHAs above identify the fetched donor commits; the prior frozen hashes remain in `production-rebuild-guard.v1.json` as historical evidence.
+Short SHAs above identify the fetched source commits. The frozen-hash guard was retired on 2026-08-30; current heads are recorded in `config/live-source-slices.v1.json`.
 
 ## Retained behavior
 

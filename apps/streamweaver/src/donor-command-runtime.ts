@@ -51,7 +51,7 @@ const BUILTIN_SOCIAL: Record<string, (actor: string, target?: string) => string>
   "!tickle": (actor,target) => target ? `${actor} tickles ${target}!` : `${actor} unleashes tickles on chat!`,
 };
 
-/** Executes every frozen donor trigger outside the canonical economy consumer. */
+/** Executes every retained legacy trigger outside the canonical economy consumer. */
 export class StreamWeaverDonorCommandConsumer {
   readonly id = "streamweaver.donor-commands" as const;
   private readonly nowMs: () => number;

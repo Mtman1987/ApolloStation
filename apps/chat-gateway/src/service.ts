@@ -17,7 +17,7 @@ export interface ChatGatewayWorkerEnvironmentV1 {
   connections: ProviderConnectionConfigV1[];
   reconcileMs: number;
   streamweaver?: { databasePath: string; credential: string };
-  nebulaArcade?: { databasePath: string; credential: string; configPath: string; config: NebulaArcadeProviderConfigV1; publicOrigin?: string; webhookName: string; avatarUrl?: string };
+  nebulaArcade?: { databasePath: string; credential: string; configPath: string; config: NebulaArcadeProviderConfigV1; publicOrigin?: string; gameplayOrigin?: string; webhookName: string; avatarUrl?: string };
 }
 
 export function validateChatGatewayWorkerEnvironment(environment: NodeJS.ProcessEnv): ChatGatewayWorkerEnvironmentV1 {
@@ -53,10 +53,11 @@ export function validateChatGatewayWorkerEnvironment(environment: NodeJS.Process
   const nebulaDatabasePath = environment.NEBULA_ARCADE_DATABASE_PATH;
   const nebulaConfigPath = environment.NEBULA_ARCADE_RUNTIME_CONFIG_PATH;
   const nebulaPublicOriginValue = environment.NEBULA_ARCADE_PUBLIC_ORIGIN ?? environment.SPMT_PUBLIC_ORIGIN;
+  const nebulaGameplayOriginValue = environment.NEBULA_GAMEPLAY_PUBLIC_ORIGIN;
   const legacyTagKey = ["CHAT", "TAG"].join("_");
   const nebulaAvatarValue = environment.NEBULA_ARCADE_AVATAR_URL ?? environment[`${legacyTagKey}_AVATAR_URL`] ?? environment[`DISCORD_${legacyTagKey}_AVATAR_URL`];
   const nebulaWebhookName = String(environment.NEBULA_ARCADE_WEBHOOK_NAME ?? environment[`${legacyTagKey}_WEBHOOK_NAME`] ?? "Nebula Arcade").replace(/[\r\n]/g, " ").trim().slice(0, 80);
-  if (!nebulaEnabled && (nebulaCredential || nebulaDatabasePath || nebulaConfigPath || nebulaPublicOriginValue || nebulaAvatarValue)) throw new Error("Nebula Arcade provider runtime settings require NEBULA_ARCADE_PROVIDER_RUNTIME_ENABLED=1");
+  if (!nebulaEnabled && (nebulaCredential || nebulaDatabasePath || nebulaConfigPath || nebulaPublicOriginValue || nebulaGameplayOriginValue || nebulaAvatarValue)) throw new Error("Nebula Arcade provider runtime settings require NEBULA_ARCADE_PROVIDER_RUNTIME_ENABLED=1");
   let nebulaArcade: ChatGatewayWorkerEnvironmentV1["nebulaArcade"];
   if (nebulaEnabled) {
     if (!nebulaCredential || nebulaCredential.length < 32) throw new Error("A 32+ character NEBULA_ARCADE_WORKER_CREDENTIAL is required");
@@ -64,13 +65,14 @@ export function validateChatGatewayWorkerEnvironment(environment: NodeJS.Process
     if (!nebulaConfigPath || !isAbsolute(nebulaConfigPath)) throw new Error("NEBULA_ARCADE_RUNTIME_CONFIG_PATH must be absolute");
     const config = loadNebulaArcadeProviderConfig(nebulaConfigPath);
     const publicOrigin = nebulaPublicOriginValue ? httpsOrigin(nebulaPublicOriginValue, "NEBULA_ARCADE_PUBLIC_ORIGIN") : undefined;
+    const gameplayOrigin = nebulaGameplayOriginValue ? httpsOrigin(nebulaGameplayOriginValue, "NEBULA_GAMEPLAY_PUBLIC_ORIGIN") : undefined;
     const avatarUrl = nebulaAvatarValue ? httpsAssetUrl(nebulaAvatarValue, "NEBULA_ARCADE_AVATAR_URL") : undefined;
     if (!nebulaWebhookName) throw new Error("NEBULA_ARCADE_WEBHOOK_NAME is invalid");
     if (runtimeMode === "sandbox") {
       if (!basename(nebulaDatabasePath).toLowerCase().includes("sandbox") || !basename(nebulaConfigPath).toLowerCase().includes("sandbox")) throw new Error("Sandbox Nebula Arcade requires sandbox-named database and config files");
       if (config.tenants.length) throw new Error("Sandbox Nebula Arcade rejects live provider tenants");
     }
-    nebulaArcade = { databasePath: nebulaDatabasePath, credential: nebulaCredential, configPath: nebulaConfigPath, config, webhookName: nebulaWebhookName, ...(publicOrigin ? { publicOrigin } : {}), ...(avatarUrl ? { avatarUrl } : {}) };
+    nebulaArcade = { databasePath: nebulaDatabasePath, credential: nebulaCredential, configPath: nebulaConfigPath, config, webhookName: nebulaWebhookName, ...(publicOrigin ? { publicOrigin } : {}), ...(gameplayOrigin ? { gameplayOrigin } : {}), ...(avatarUrl ? { avatarUrl } : {}) };
   }
   return { runtimeMode, spmtOrigin, databasePath, credential, workerId, connections, reconcileMs, ...(streamweaver ? { streamweaver } : {}), ...(nebulaArcade ? { nebulaArcade } : {}) };
 }
@@ -141,7 +143,7 @@ export class SupervisedChatGatewayService {
     if (options.nebulaArcade) {
       this.getNebulaArcadeAccessToken = createInternalServiceTokenProvider({ spmtOrigin: options.spmtOrigin, serviceId: "nebula-arcade", credential: options.nebulaArcade.credential, ...(fetchImpl ? { fetchImpl } : {}) });
       const nebulaClient = new SpmtClient({ baseUrl: options.spmtOrigin, appId: "nebula-arcade", getAccessToken: this.getNebulaArcadeAccessToken, ...(fetchImpl ? { fetchImpl } : {}) });
-      this.nebulaArcade = new NebulaArcadeProviderRuntime({ databasePath: options.nebulaArcade.databasePath, config: options.nebulaArcade.config, client: nebulaClient, egress: { send: (message) => { if (!connectedGateway) throw new Error("Chat Gateway egress is not ready"); return connectedGateway.send(message); } }, ...(options.nebulaArcade.publicOrigin ? { discordDashboard: { egress: adapters.discord, publicOrigin: options.nebulaArcade.publicOrigin, webhookName: options.nebulaArcade.webhookName, ...(options.nebulaArcade.avatarUrl ? { avatarUrl: options.nebulaArcade.avatarUrl } : {}) } } : {}) });
+      this.nebulaArcade = new NebulaArcadeProviderRuntime({ databasePath: options.nebulaArcade.databasePath, config: options.nebulaArcade.config, client: nebulaClient, egress: { send: (message) => { if (!connectedGateway) throw new Error("Chat Gateway egress is not ready"); return connectedGateway.send(message); } }, ...(options.nebulaArcade.publicOrigin ? { discordDashboard: { egress: adapters.discord, publicOrigin: options.nebulaArcade.publicOrigin, ...(options.nebulaArcade.gameplayOrigin ? { gameplayOrigin: options.nebulaArcade.gameplayOrigin } : {}), webhookName: options.nebulaArcade.webhookName, ...(options.nebulaArcade.avatarUrl ? { avatarUrl: options.nebulaArcade.avatarUrl } : {}) } } : {}) });
       consumers.push(...this.nebulaArcade.consumers);
     }
     this.gateway = new ChatGatewayRuntime(this.chatStore, consumers, adapters.senders, observers);

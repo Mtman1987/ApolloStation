@@ -21,9 +21,11 @@ export function migrateDonorNebulaTagState(source: unknown, input: { tenantId: s
     const username = String(player.twitchUsername || player.username || player.displayName || userId).trim().toLowerCase().replace(/^@+/, "");
     if (!userId || !username) { warnings.push(`Skipped player ${key}: missing identity`); continue; }
     const joinedAt = toIso(player.joinedAt, input.migratedAt);
+    const avatarUrl = optionalHttpsAsset(player.avatarUrl || player.avatarURL || player.profileImageUrl || player.profilePicture);
     state.players[userId] = {
       userId,
       username,
+      ...(avatarUrl ? { avatarUrl } : {}),
       joinedAt,
       lastActiveAt: toIso(player.lastChatAt || player.lastPlayedAt, joinedAt),
       score: 0,
@@ -96,6 +98,7 @@ function nullableIso(value: unknown): string | null {
   return Number.isFinite(parsed) ? new Date(parsed).toISOString() : null;
 }
 function toIso(value: unknown, fallback: string): string { return nullableIso(value) ?? fallback; }
+function optionalHttpsAsset(value: unknown): string | undefined { try { const url = new URL(String(value ?? "")); return url.protocol === "https:" && !url.username && !url.password ? url.toString() : undefined; } catch { return undefined; } }
 function donorMonthKey(value: unknown, fallback: string): string {
   const direct = String(value || "");
   if (/^\d{4}-\d{2}$/.test(direct)) return direct;

@@ -19,10 +19,11 @@ export * from "./quackverse-battle.js";
 export * from "./bingo-game.js";
 export * from "./provider-runtime.js";
 export * from "./discord-dashboard.js";
+export * from "./gameplay-showcase.js";
 import { NEBULA_TAG_EVENT_TYPES } from "./nebula-tag.js";
 
 export const NEBULA_ARCADE_ROUND_COMPLETED = "nebula.arcade.round.completed.v1";
-export const manifest = assertAppModuleManifestV1({schemaVersion:1,manifestVersion:"spmt.app-manifest/v1",id:"nebula-arcade",name:"Nebula Arcade",description:"Cosmic Games Hub containing twenty equal community games and reusable multi-game overlays.",capabilities:["tag","quackverse","bingo","arena","game-overlays","overlay-scenes"],surfaces:["shell","standalone","overlay","popout"],requiredScopes:["events:write","xp:write","overlay:widgets:write"],eventTypes:[NEBULA_ARCADE_ROUND_COMPLETED,...NEBULA_TAG_EVENT_TYPES],integration:{identity:"connected",events:"native",xp:"connected",workspace:"connected"},workers:[{id:"nebula-arcade-provider-ingress",role:"provider-command-ingress",execution:"leased",canonicalAuthority:false}]} satisfies AppModuleManifestV1);
+export const manifest = assertAppModuleManifestV1({schemaVersion:1,manifestVersion:"spmt.app-manifest/v1",id:"nebula-arcade",name:"Nebula Arcade",description:"Cosmic Games Hub containing twenty equal community games and reusable multi-game overlays.",capabilities:["tag","quackverse","bingo","arena","game-overlays","overlay-scenes","gameplay-showcase-manifest"],surfaces:["shell","standalone","overlay","popout"],requiredScopes:["events:write","xp:write","overlay:widgets:write"],eventTypes:[NEBULA_ARCADE_ROUND_COMPLETED,...NEBULA_TAG_EVENT_TYPES],integration:{identity:"connected",events:"native",xp:"connected",workspace:"connected"},workers:[{id:"nebula-arcade-provider-ingress",role:"provider-command-ingress",execution:"leased",canonicalAuthority:false}]} satisfies AppModuleManifestV1);
 
 export function nebulaArcadeCatalogRegistration(publicOrigin: string): AppCatalogRegistrationV1 {
   const origin = new URL(publicOrigin);
