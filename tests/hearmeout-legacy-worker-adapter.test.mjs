@@ -77,6 +77,6 @@ test("legacy HMO worker adapter validates Discord and authorization inputs befor
     fetchImpl: async () => { calls += 1; return new Response("{}", { status: 200 }); },
   });
   await assert.rejects(() => worker.status(base), /authorization is unavailable/);
-  await assert.rejects(() => worker.start({ ...base, guildId: "abc", voiceChannelId: "987654321098765432", audioProfile: "clean", discordReceiveGain: 1 }), /guildId must be a Discord snowflake/);
+  assert.throws(() => worker.start({ ...base, guildId: "abc", voiceChannelId: "987654321098765432", audioProfile: "clean", discordReceiveGain: 1 }), /guildId must be a Discord snowflake/);
   assert.equal(calls, 0);
 });
