@@ -8,8 +8,8 @@ This file records what is implemented and what has actually been proven. It does
 
 - ApolloStation is the implementation monorepo for the current Green system.
 - `main` is the active release line.
-- Current `main` is `c21f42d922cf552c3aade2c9d2f059122a2907fd`; that commit has the same source tree as the tested catalog-portability commit and exists only to trigger release promotion.
-- The protected Release Sprite promotion completed successfully for that exact SHA.
+- The runtime/source tree promoted for the first protected production rehearsal was commit `c21f42d922cf552c3aade2c9d2f059122a2907fd`, which is source-tree-identical to the tested catalog-portability implementation commit `6184f6785f0e55ddc6e832ce14c079aaea4f3782`.
+- The 2026-08-30 architecture reset that followed changes documentation only; it does not invalidate the runtime evidence below. Future code/runtime changes require new acceptance evidence rather than editing this file to chase the latest branch SHA.
 - Review and Release Sprite deployment paths remain private and checkpointed.
 
 ## Offline acceptance
