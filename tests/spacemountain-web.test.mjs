@@ -358,6 +358,8 @@ test("Sprite artifacts are deny-by-default and the supervised runner cannot regi
   const runner = readFileSync(new URL("../scripts/sprites/run-supervised-sandbox.mjs", import.meta.url), "utf8");
   assert.doesNotMatch(runner, /sprite-env|services\s+(?:create|start|restart)/);
   assert.match(runner, /SPMT_OUTBOUND_MODE: "disabled"/);
+  assert.match(runner, /offline-network-guard/);
+  assert.match(runner, /NODE_OPTIONS: `--import=\$\{offlineNetworkGuardPath\}`/);
   assert.match(runner, /randomBytes\(32\)\.toString\("base64url"\)/);
   const client = readFileSync(new URL("../apps/spacemountain-web/src/client.ts", import.meta.url), "utf8");
   assert.match(client, /document\.visibilityState !== "visible"/);
@@ -374,7 +376,7 @@ test("supervised runner makes both layers healthy and stops both children togeth
   const spmtPort = await freePort();
   let webPort = await freePort();
   while (webPort === spmtPort) webPort = await freePort();
-  const child = spawn(process.execPath, ["scripts/sprites/run-supervised-sandbox.mjs", "--public-url", `http://localhost:${webPort}`, "--data-root", directory, "--build-sha", "runner-test", "--spmt-port", String(spmtPort), "--web-port", String(webPort)], { cwd: new URL("..", import.meta.url), stdio: ["ignore", "pipe", "pipe"] });
+  const child = spawn(process.execPath, ["scripts/sprites/run-supervised-sandbox.mjs", "--public-url", `http://localhost:${webPort}`, "--data-root", directory, "--build-sha", "runner-test", "--spmt-port", String(spmtPort), "--web-port", String(webPort), "--offline-network-guard", "1"], { cwd: new URL("..", import.meta.url), stdio: ["ignore", "pipe", "pipe"] });
   let output = "";
   child.stdout.setEncoding("utf8");
   child.stderr.setEncoding("utf8");
@@ -405,7 +407,7 @@ test("supervised runner seeds the canonical first-party app pool and launches Ne
   while (ports.size < 3) ports.add(await freePort());
   const [spmtPort, webPort, nebulaArcadePort] = ports;
   const base = `http://127.0.0.1:${webPort}`;
-  const child = spawn(process.execPath, ["scripts/sprites/run-supervised-sandbox.mjs", "--candidate-app", "nebula-arcade", "--public-url", `http://localhost:${webPort}`, "--data-root", directory, "--build-sha", "candidate-test", "--spmt-port", String(spmtPort), "--web-port", String(webPort), "--nebula-arcade-port", String(nebulaArcadePort)], { cwd: new URL("..", import.meta.url), stdio: ["ignore", "pipe", "pipe"] });
+  const child = spawn(process.execPath, ["scripts/sprites/run-supervised-sandbox.mjs", "--candidate-app", "nebula-arcade", "--public-url", `http://localhost:${webPort}`, "--data-root", directory, "--build-sha", "candidate-test", "--spmt-port", String(spmtPort), "--web-port", String(webPort), "--nebula-arcade-port", String(nebulaArcadePort), "--offline-network-guard", "1"], { cwd: new URL("..", import.meta.url), stdio: ["ignore", "pipe", "pipe"] });
   let output = "";
   child.stdout.setEncoding("utf8");
   child.stderr.setEncoding("utf8");

@@ -17,7 +17,6 @@ on:
   push:
     branches:
       - main
-      - "work/**"
     paths:
       - "packages/**"
       - "apps/**"

@@ -1,0 +1,39 @@
+name: One-time branch cleanup
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/one-time-branch-cleanup.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  delete-non-main-branches:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete every non-main branch
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh api --paginate "repos/${GITHUB_REPOSITORY}/git/matching-refs/heads/" --jq '.[].ref' |
+          while IFS= read -r ref; do
+            [[ "$ref" == "refs/heads/main" ]] && continue
+            branch="${ref#refs/heads/}"
+            echo "Deleting ${branch}"
+            gh api --method DELETE "repos/${GITHUB_REPOSITORY}/git/refs/heads/${branch}"
+          done
+
+      - name: Verify main is the only branch
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mapfile -t refs < <(gh api --paginate "repos/${GITHUB_REPOSITORY}/git/matching-refs/heads/" --jq '.[].ref')
+          [[ "${#refs[@]}" -eq 1 ]]
+          [[ "${refs[0]}" == "refs/heads/main" ]]

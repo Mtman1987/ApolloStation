@@ -8,7 +8,9 @@ const deployScriptPath = new URL("../scripts/sprites/deploy-sandbox-release.sh",
 test("Sprite promotion keeps review and release targets isolated", async () => {
   const workflow = await readFile(workflowPath, "utf8");
 
-  assert.match(workflow, /branches:\s*\n\s*- main\s*\n\s*- "work\/\*\*"/);
+  assert.match(workflow, /push:\s*\n\s*branches:\s*\n\s*- main/);
+  assert.doesNotMatch(workflow, /work\/\*\*/);
+  assert.match(workflow, /github\.event_name == 'workflow_dispatch' && inputs\.target == 'review'/);
   assert.match(workflow, /SPRITES_AUTODEPLOY_ENABLED == 'true'/);
   assert.match(workflow, /environment: sprite-review/);
   assert.match(workflow, /environment: sprite-release/);
@@ -38,6 +40,7 @@ test("Sprite deployment verifies, tests, switches atomically, rolls back, and la
   assert.match(script, /Deployment failed; restoring/);
   assert.match(script, /create_apollo_service "\$BUILD_SHA"/);
   assert.match(script, /--candidate-app,nebula-arcade,--catalog,current/);
+  assert.match(script, /--offline-network-guard,1/);
   assert.doesNotMatch(script, /--candidate-app,nebula-tag/);
   assert.match(script, /create_apollo_service "\$\(basename "\$previous_release"\)" 0/);
   assert.match(script, /services_json="\$\(sprite-env services list\)"/);

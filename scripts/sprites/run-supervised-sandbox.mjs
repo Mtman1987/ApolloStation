@@ -19,10 +19,16 @@ const nebulaArcadePort = requirePort(argumentsMap.get("nebula-arcade-port") ?? "
 const ownerUsername = requireUsername(argumentsMap.get("owner-username") ?? "mtman1987");
 const llmBinary = argumentsMap.get("llm-binary");
 const llmCache = resolve(argumentsMap.get("llm-cache") ?? resolve(dataRoot, "models"));
+const offlineNetworkGuard = requireBooleanFlag(argumentsMap.get("offline-network-guard") ?? "0", "offline-network-guard");
+const offlineNetworkGuardPath = resolve("scripts/offline-network-guard.mjs");
+if (offlineNetworkGuard) await import(offlineNetworkGuardPath);
 const databasePath = resolve(dataRoot, "spmt-empty-catalog-sandbox.sqlite");
 await mkdir(dataRoot, { recursive: true, mode: 0o700 });
 
-const baseEnvironment = safeEnvironment(process.env);
+const baseEnvironment = {
+  ...safeEnvironment(process.env),
+  ...(offlineNetworkGuard ? { NODE_OPTIONS: `--import=${offlineNetworkGuardPath}` } : {}),
+};
 const common = {
   ...baseEnvironment,
   SPMT_RUNTIME_MODE: "sandbox",
@@ -269,8 +275,14 @@ function parseArguments(values) {
     if (!flag?.startsWith("--") || !value) throw new Error("Arguments must be --name value pairs");
     result.set(flag.slice(2), value);
   }
-  for (const name of result.keys()) if (!["app", "candidate-app", "catalog", "public-url", "data-root", "build-sha", "spmt-port", "web-port", "nebula-arcade-port", "tenant-id", "channel-id", "owner-username", "llm-binary", "llm-cache"].includes(name)) throw new Error(`Unknown argument --${name}`);
+  for (const name of result.keys()) if (!["app", "candidate-app", "catalog", "public-url", "data-root", "build-sha", "spmt-port", "web-port", "nebula-arcade-port", "tenant-id", "channel-id", "owner-username", "llm-binary", "llm-cache", "offline-network-guard"].includes(name)) throw new Error(`Unknown argument --${name}`);
   return result;
+}
+
+function requireBooleanFlag(value, name) {
+  if (value === "1") return true;
+  if (value === "0") return false;
+  throw new Error(`--${name} must be 0 or 1`);
 }
 
 function requireUsername(value) {
