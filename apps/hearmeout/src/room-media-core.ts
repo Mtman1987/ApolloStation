@@ -169,6 +169,15 @@ export class SqliteHearMeOutRoomMediaRuntime {
     return room;
   }
 
+  listRooms(principal: HearMeOutPrincipalV1, now?: string): HearMeOutRoomV1[] {
+    assertPrincipal(principal);
+    const at = validNow(now);
+    const rows = this.db.prepare("SELECT body FROM hmo_rooms WHERE tenant_id=? ORDER BY room_id").all(principal.tenantId) as Array<{ body: string }>;
+    return rows.map((row) => JSON.parse(row.body) as HearMeOutRoomV1)
+      .filter((room) => !isExpired(room, at))
+      .filter((room) => room.privacy === "public" || room.ownerUserId === principal.userId || principal.roles.includes("admin") || this.isMember(principal.tenantId, room.roomId, principal.userId));
+  }
+
   joinRoom(principal: HearMeOutPrincipalV1, roomId: string, operationId: string, now?: string, admission: { password?: string } = {}): HearMeOutRoomV1 {
     assertPrincipal(principal);
     const replay = this.replay<HearMeOutRoomV1>(principal.tenantId, operationId, "join-room");

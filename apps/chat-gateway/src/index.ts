@@ -74,6 +74,7 @@ export interface ChatProviderSenderV1 {
   provider: ChatProviderV1;
   send(message: OutboundChatMessageV1): Promise<{ providerMessageId: string }>;
 }
+export interface ChatGatewayMessageObserverV1 { id: string; observe(message: NormalizedChatMessageV1): void | Promise<void>; }
 
 export interface ChatGatewayDeliveryReportV1 { attempted: number; delivered: number; failed: number; }
 export interface ChatGatewayIngestResultV1 { duplicate: boolean; message: NormalizedChatMessageV1; delivery: ChatGatewayDeliveryReportV1; }
@@ -142,9 +143,11 @@ export class SqliteChatGatewayStore {
 export class ChatGatewayRuntime {
   private readonly consumers = new Map<string, ChatGatewayConsumerV1>();
   private readonly senders = new Map<ChatProviderV1, ChatProviderSenderV1>();
-  constructor(private readonly store: SqliteChatGatewayStore, consumers: ChatGatewayConsumerV1[] = [], senders: ChatProviderSenderV1[] = []) {
+  private readonly observers = new Map<string, ChatGatewayMessageObserverV1>();
+  constructor(private readonly store: SqliteChatGatewayStore, consumers: ChatGatewayConsumerV1[] = [], senders: ChatProviderSenderV1[] = [], observers: ChatGatewayMessageObserverV1[] = []) {
     for (const consumer of consumers) { requireId(consumer.id, "consumer id"); if (this.consumers.has(consumer.id)) throw new Error("Duplicate chat consumer id"); this.consumers.set(consumer.id, consumer); }
     for (const sender of senders) { if (this.senders.has(sender.provider)) throw new Error("Duplicate provider sender"); this.senders.set(sender.provider, sender); }
+    for (const observer of observers) { requireId(observer.id, "observer id"); if (this.observers.has(observer.id)) throw new Error("Duplicate chat observer id"); this.observers.set(observer.id, observer); }
   }
 
   consumerIds(): string[] { return [...this.consumers.keys()].sort(); }
@@ -153,6 +156,7 @@ export class ChatGatewayRuntime {
     const message = normalizeProviderChatEnvelope(envelope);
     const consumerIds = [...this.consumers.values()].filter((consumer) => consumer.accepts(message)).map((consumer) => consumer.id);
     const persisted = this.store.persist(message, consumerIds);
+    if (!persisted.duplicate) for (const observer of this.observers.values()) await Promise.resolve(observer.observe(message)).catch(() => undefined);
     const delivery = persisted.duplicate ? { attempted: 0, delivered: 0, failed: 0 } : await this.flush(message.tenantId);
     return { duplicate: persisted.duplicate, message, delivery };
   }

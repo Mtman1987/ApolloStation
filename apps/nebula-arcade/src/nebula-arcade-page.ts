@@ -10,12 +10,13 @@ export interface NebulaArcadePageOptions {
   shellSurface: boolean;
   view: NebulaArcadeViewV1;
   gameId?: string;
+  publicOrigin?: string;
 }
 
 export function renderNebulaArcadePage(options: NebulaArcadePageOptions): string {
   const selectedGame = NEBULA_ARCADE_GAMES.find((game) => game.id === options.gameId) ?? NEBULA_ARCADE_GAMES[0]!;
   const surface = options.shellSurface ? "shell" : "standalone";
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Nebula Arcade · ${escapeHtml(viewTitle(options.view, selectedGame))}</title><link rel="stylesheet" href="/assets/nebula-arcade-sandbox.css"><script src="/assets/nebula-arcade-sandbox.js" defer nonce="${options.nonce}"></script></head><body class="nebula-arcade-surface spmt-product-surface" data-surface="${surface}" data-view="${options.view}"><div class="spmt-product-backdrop" aria-hidden="true"><span class="spmt-product-backdrop-image"></span><span class="spmt-product-backdrop-tint"></span><span class="spmt-product-backdrop-shade"></span><span class="spmt-star-layer"><i></i><i></i><i></i></span></div>${standaloneHeader(options.shellSurface)}${rocketDock(options.shellSurface)}<main>${renderView(options, selectedGame)}</main>${settingsDialog()}</body></html>`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Nebula Arcade · ${escapeHtml(viewTitle(options.view, selectedGame))}</title>${socialPreviewMetadata(options)}<link rel="stylesheet" href="/assets/nebula-arcade-sandbox.css"><script src="/assets/nebula-arcade-sandbox.js" defer nonce="${options.nonce}"></script></head><body class="nebula-arcade-surface spmt-product-surface" data-surface="${surface}" data-view="${options.view}"><div class="spmt-product-backdrop" aria-hidden="true"><span class="spmt-product-backdrop-image"></span><span class="spmt-product-backdrop-tint"></span><span class="spmt-product-backdrop-shade"></span><span class="spmt-star-layer"><i></i><i></i><i></i></span></div>${standaloneHeader(options.shellSurface)}${rocketDock(options.shellSurface)}<main>${renderView(options, selectedGame)}</main>${settingsDialog()}</body></html>`;
 }
 
 export function renderNebulaOverlayOutput(scene: NebulaOverlaySceneV1): string {
@@ -89,6 +90,12 @@ function heading(kicker: string, title: string, body: string): string {
 function viewHref(view: NebulaArcadeViewV1, shell: boolean): string { return `?view=${view}${shell ? "&surface=shell" : ""}`; }
 function gameHref(gameId: string, shell: boolean): string { return `?view=game&game=${encodeURIComponent(gameId)}${shell ? "&surface=shell" : ""}`; }
 function viewTitle(view: NebulaArcadeViewV1, game: NebulaGameV1): string { return view === "game" ? game.name : view === "overlay" ? "Overlay Bay" : view === "stats" ? "Stats" : view === "games" ? "Games" : "Home"; }
+function socialPreviewMetadata(options: NebulaArcadePageOptions): string {
+  if (options.view !== "games" || !options.publicOrigin) return "";
+  const origin = new URL(options.publicOrigin); if (origin.protocol !== "https:" || origin.username || origin.password || origin.pathname !== "/" || origin.search || origin.hash) return "";
+  const page = new URL("/apps/nebula-arcade?view=games", origin).toString(), image = new URL("/assets/nebula-arcade/games-showcase.gif", origin).toString();
+  return `<meta name="description" content="One bot, one rotating overlay, and 20 equal community games built for live chat."><meta property="og:title" content="Nebula Arcade · 20 Games"><meta property="og:description" content="See all 20 live-chat games in the Nebula Arcade rotation."><meta property="og:url" content="${escapeHtml(page)}"><meta property="og:site_name" content="Nebula Arcade"><meta property="og:type" content="website"><meta property="og:image" content="${escapeHtml(image)}"><meta property="og:image:width" content="800"><meta property="og:image:height" content="450"><meta property="og:image:alt" content="Nebula Arcade 20-game showcase"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="Nebula Arcade · 20 Games"><meta name="twitter:description" content="See all 20 live-chat games in the Nebula Arcade rotation."><meta name="twitter:image" content="${escapeHtml(image)}">`;
+}
 function escapeHtml(value: string): string { return value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]!); }
 
 export const NEBULA_ARCADE_BASE_CSS = `

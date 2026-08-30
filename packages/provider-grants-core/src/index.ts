@@ -82,3 +82,4 @@ function iso(value: unknown, name: string) { if (typeof value !== "string" || !N
 function key(tenantId: string, providerValue: ProviderGrantProviderV1, providerUserId: string) { return `${tenantId}\0${providerValue}\0${providerUserId}`; }
 
 export * from "./credential-authority.js";
+export * from "./pinned-identity-policy.js";

@@ -16,12 +16,14 @@ import { SqliteNebulaOverlaySceneStore, type NebulaOverlayLayerV1, type NebulaOv
 const MAX_BODY_BYTES = 64 * 1_024;
 const HERE = dirname(fileURLToPath(import.meta.url));
 const NEBULA_ARCADE_BACKGROUND = resolve(HERE, "../assets/nebula-arcade-solar-system.webp");
+const NEBULA_ARCADE_ICON = resolve(HERE, "../assets/nebula-arcade-icon.png");
+const NEBULA_ARCADE_SHOWCASE = resolve(HERE, "../assets/nebula-arcade-games-showcase.gif");
 const APP_PATH = "/apps/nebula-arcade";
 const PROVIDER_ENV_NAMES = ["TWITCH_CLIENT_ID", "TWITCH_CLIENT_SECRET", "TWITCH_BOT_OAUTH_TOKEN", "DISCORD_BOT_TOKEN", "KICK_CLIENT_ID", "KICK_CLIENT_SECRET", "FLY_API_TOKEN"] as const;
 const GAME_IDS = new Set(NEBULA_ARCADE_GAMES.map((game) => game.id));
 const OVERLAY_FLOW_FIX_CSS = `body{display:flex;flex-direction:column;align-items:flex-end;justify-content:flex-end;gap:10px;padding:24px}.nebula-output-layer{z-index:auto}.nebula-output-placeholder{position:relative;inset:auto;width:auto;height:auto;flex:0 0 auto}`;
 
-export interface NebulaArcadeSandboxHostOptions { databasePath: string; tenantId: string; channelId: string; pinUserId?: string; port?: number; host?: string; buildSha?: string; }
+export interface NebulaArcadeSandboxHostOptions { databasePath: string; tenantId: string; channelId: string; pinUserId?: string; publicOrigin?: string; port?: number; host?: string; buildSha?: string; }
 
 export function createNebulaArcadeSandboxHost(options: NebulaArcadeSandboxHostOptions) {
   const gameStore = new SqliteNebulaTagStore(options.databasePath);
@@ -64,7 +66,7 @@ export function createNebulaArcadeSandboxHost(options: NebulaArcadeSandboxHostOp
           return html(response, 200, proxySafeOverlayPage(scene));
         }
         const shellSurface = url.searchParams.get("surface") === "shell";
-        const page = renderNebulaArcadePage({ nonce, tenantId: options.tenantId, channelId: options.channelId, shellSurface, view: arcadeView(url.searchParams.get("view")), ...(url.searchParams.get("game") ? { gameId: url.searchParams.get("game")! } : {}) });
+        const page = renderNebulaArcadePage({ nonce, tenantId: options.tenantId, channelId: options.channelId, shellSurface, view: arcadeView(url.searchParams.get("view")), ...(options.publicOrigin ? { publicOrigin: options.publicOrigin } : {}), ...(url.searchParams.get("game") ? { gameId: url.searchParams.get("game")! } : {}) });
         return html(response, 200, page.replace('<a href="/?view=spmt">SpaceMountain</a>', '<a href="/">SpaceMountain</a>'));
       }
 
@@ -72,6 +74,8 @@ export function createNebulaArcadeSandboxHost(options: NebulaArcadeSandboxHostOp
       if (request.method === "GET" && url.pathname === "/assets/nebula-arcade-sandbox.js") return text(response, 200, proxySafeBrowserScript(), "text/javascript; charset=utf-8", "public, max-age=300");
       if (request.method === "GET" && (url.pathname === "/assets/nebula-overlay.css" || url.pathname === "/assets/nebula-arcade/overlay.css")) return text(response, 200, `${NEBULA_OVERLAY_CSS}${OVERLAY_FLOW_FIX_CSS}`, "text/css; charset=utf-8", "public, max-age=300");
       if (request.method === "GET" && url.pathname === "/assets/nebula-arcade/solar-system.webp") return binary(response, 200, await readFile(NEBULA_ARCADE_BACKGROUND), "image/webp", "public, max-age=86400");
+      if (request.method === "GET" && url.pathname === "/assets/nebula-arcade/icon.png") return binary(response, 200, await readFile(NEBULA_ARCADE_ICON), "image/png", "public, max-age=86400");
+      if (request.method === "GET" && url.pathname === "/assets/nebula-arcade/games-showcase.gif") return binary(response, 200, await readFile(NEBULA_ARCADE_SHOWCASE), "image/gif", "public, max-age=86400");
 
       // Canonical direct-service API remains available; the browser uses APP_PATH aliases so the existing SpaceMountain shell proxy can carry it unchanged.
       if (request.method === "GET" && url.pathname === "/v1/nebula/overlay-scenes") return json(response, 200, { scenes: sceneStore.list(options.tenantId) });
@@ -180,6 +184,6 @@ class SandboxError extends Error { constructor(readonly status: number, message:
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   const checked = validateNebulaArcadeSandboxEnvironment(process.env);
-  const host = createNebulaArcadeSandboxHost({ ...checked, port: Number(process.env.PORT ?? 8080), host: process.env.HOST ?? "0.0.0.0", buildSha: process.env.BUILD_SHA ?? "dev", ...(process.env.NEBULA_ARCADE_PIN_USER_ID ? { pinUserId: process.env.NEBULA_ARCADE_PIN_USER_ID } : {}) });
+  const host = createNebulaArcadeSandboxHost({ ...checked, port: Number(process.env.PORT ?? 8080), host: process.env.HOST ?? "0.0.0.0", buildSha: process.env.BUILD_SHA ?? "dev", ...(process.env.NEBULA_ARCADE_PIN_USER_ID ? { pinUserId: process.env.NEBULA_ARCADE_PIN_USER_ID } : {}), ...(process.env.NEBULA_ARCADE_PUBLIC_ORIGIN ? { publicOrigin: process.env.NEBULA_ARCADE_PUBLIC_ORIGIN } : {}) });
   await host.listen();
 }

@@ -6,6 +6,7 @@ import { SqliteNebulaGameActionStore, validateNebulaGameAction } from "./game-ac
 import { NEBULA_ARCADE_GAMES, resolveNebulaCommand, type NebulaCommandTargetV1 } from "./game-hub.js";
 import { claimNebulaGameCommand, getNebulaGameStats, joinNebulaGame, leaveNebulaGame, normalizeNebulaPlayerId, recordNebulaGameChatActivity, resolveNebulaChannelGameIds, setNebulaChannelGameRunning } from "./game-runtime.js";
 import { SqliteNebulaGameRuntimeStore } from "./game-runtime-store.js";
+import { buildNebulaDiscordDashboard, nebulaDiscordDashboardSignature, SqliteNebulaDiscordDashboardStore, type NebulaDiscordDashboardEgressV1 } from "./discord-dashboard.js";
 import { NebulaTagExperienceService, SqliteNebulaTagExperienceStore } from "./nebula-tag-experience.js";
 import { NebulaTagRuntime, SqliteNebulaTagStore } from "./nebula-tag-runtime.js";
 
@@ -56,15 +57,18 @@ export class NebulaArcadeProviderRuntime {
   private readonly experienceStore: SqliteNebulaTagExperienceStore;
   private readonly gameStore: SqliteNebulaGameRuntimeStore;
   private readonly actionStore: SqliteNebulaGameActionStore;
+  private readonly dashboardStore?: SqliteNebulaDiscordDashboardStore;
   private readonly tagRuntime: NebulaTagRuntime;
   private readonly experiences = new Map<string, NebulaTagExperienceService>();
   private readonly channels = new Map<string, NebulaArcadeProviderChannelV1>();
+  private readonly dashboardSignatures = new Map<string, string>();
   private closed = false;
-  constructor(private readonly options: { databasePath: string; config: NebulaArcadeProviderConfigV1; client: SpmtClient; egress: NebulaArcadeProviderEgressV1; now?: () => string }) {
+  constructor(private readonly options: { databasePath: string; config: NebulaArcadeProviderConfigV1; client: SpmtClient; egress: NebulaArcadeProviderEgressV1; discordDashboard?: { egress: NebulaDiscordDashboardEgressV1; publicOrigin: string; webhookName?: string; avatarUrl?: string }; now?: () => string }) {
     this.tagStore = new SqliteNebulaTagStore(options.databasePath);
     this.experienceStore = new SqliteNebulaTagExperienceStore(options.databasePath);
     this.gameStore = new SqliteNebulaGameRuntimeStore(options.databasePath);
     this.actionStore = new SqliteNebulaGameActionStore(options.databasePath);
+    if (options.discordDashboard) this.dashboardStore = new SqliteNebulaDiscordDashboardStore(options.databasePath);
     this.tagRuntime = new NebulaTagRuntime(this.tagStore, options.client);
     for (const tenant of options.config.tenants) {
       this.experiences.set(tenant.tenantId, new NebulaTagExperienceService(this.tagRuntime, this.experienceStore, tenant.pinUserId, options.now));
@@ -82,12 +86,13 @@ export class NebulaArcadeProviderRuntime {
       const report = await this.tagRuntime.flushPending(tenant.tenantId);
       delivery.attempted += report.attempted; delivery.delivered += report.delivered; delivery.failed += report.failed;
     }
-    return { schemaVersion: 1 as const, configuredTenants: this.options.config.tenants.length, configuredChannels: this.channels.size, tagDelivery: delivery, rotation: { status: "presence-required" as const, reason: "Automatic Tag rotation is fenced until a fresh canonical presence snapshot is available." } };
+    const dashboard = await this.publishDashboards(false);
+    return { schemaVersion: 1 as const, configuredTenants: this.options.config.tenants.length, configuredChannels: this.channels.size, tagDelivery: delivery, dashboard, rotation: { status: "presence-required" as const, reason: "Automatic Tag rotation is fenced until a fresh canonical presence snapshot is available." } };
   }
   close() {
     if (this.closed) return;
     this.closed = true;
-    this.actionStore.close(); this.gameStore.close(); this.experienceStore.close(); this.tagStore.close();
+    this.dashboardStore?.close(); this.actionStore.close(); this.gameStore.close(); this.experienceStore.close(); this.tagStore.close();
   }
   private async deliver(delivery: NormalizedChatDeliveryV1) {
     if (this.closed) throw new Error("Nebula Arcade provider runtime is closed");
@@ -98,6 +103,7 @@ export class NebulaArcadeProviderRuntime {
     const tag = await experience.ingest(toTagMessage(message, message.text));
     if (tag.kind !== "ignored") {
       if ((tag.kind === "reply" || tag.kind === "executed") && tag.route === "chat") await this.reply(message, delivery.deliveryId, tag.code, tag.message);
+      if (tag.kind === "executed" && message.provider === "discord") await this.publishDashboard(message.tenantId, channel, true).catch(() => undefined);
       return;
     }
     const commandText = normalizeCommandText(message.text);
@@ -144,6 +150,30 @@ export class NebulaArcadeProviderRuntime {
   }
   private async reply(message: NormalizedChatMessageV1, deliveryId: string, code: string, text: string) {
     await this.options.egress.send({ schemaVersion: 1, tenantId: message.tenantId, provider: message.provider, connectionId: message.connectionId, channelId: message.channelId, text, idempotencyKey: `nebula-arcade-reply:${deliveryId}:${code}`, replyToMessageId: message.messageId });
+  }
+  private async publishDashboards(force: boolean) {
+    const report = { attempted: 0, delivered: 0, failed: 0 };
+    if (!this.options.discordDashboard || !this.dashboardStore) return report;
+    for (const tenant of this.options.config.tenants) for (const channel of tenant.channels) {
+      if (channel.provider !== "discord") continue;
+      report.attempted += 1;
+      try { const changed = await this.publishDashboard(tenant.tenantId, channel, force); if (changed) report.delivered += 1; }
+      catch { report.failed += 1; }
+    }
+    return report;
+  }
+  private async publishDashboard(tenantId: string, channel: NebulaArcadeProviderChannelV1, force: boolean) {
+    if (!this.options.discordDashboard || !this.dashboardStore || channel.provider !== "discord") return false;
+    const state = this.tagRuntime.getState(tenantId).state;
+    const signature = nebulaDiscordDashboardSignature(state);
+    const key = channelKey(tenantId, channel.provider, channel.connectionId, channel.channelId);
+    if (!force && this.dashboardSignatures.get(key) === signature) return false;
+    const existing = this.dashboardStore.get(tenantId, channel.connectionId, channel.channelId);
+    const built = buildNebulaDiscordDashboard(state, { publicOrigin: this.options.discordDashboard.publicOrigin, generatedAt: this.options.now?.() ?? new Date().toISOString(), ...(this.options.discordDashboard.webhookName ? { webhookName: this.options.discordDashboard.webhookName } : {}), ...(this.options.discordDashboard.avatarUrl ? { avatarUrl: this.options.discordDashboard.avatarUrl } : {}) });
+    const result = await this.options.discordDashboard.egress.upsertDiscordDashboard({ schemaVersion: 1, tenantId, connectionId: channel.connectionId, channelId: channel.channelId, webhookName: built.webhookName, ...(built.avatarUrl ? { avatarUrl: built.avatarUrl } : {}), ...(existing ? { previousMessageId: existing.messageId, previousTransport: existing.transport } : {}), payload: built.payload });
+    this.dashboardStore.put({ tenantId, connectionId: channel.connectionId, channelId: channel.channelId, messageId: result.providerMessageId, transport: result.transport, updatedAt: this.options.now?.() ?? new Date().toISOString() });
+    this.dashboardSignatures.set(key, signature);
+    return true;
   }
 }
 
