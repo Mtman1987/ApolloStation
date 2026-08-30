@@ -34,6 +34,7 @@ export interface StreamWeaverPersonaRuntimeV1 {
 }
 export interface StreamWeaverChatEgressV1 { send(message: OutboundChatMessageV1): Promise<{ providerMessageId: string }>; }
 export interface StreamWeaverPersonaConfigSourceV1 { get(tenantId: string): StreamWeaverPersonaConfigV1 | undefined | Promise<StreamWeaverPersonaConfigV1 | undefined>; }
+export interface StreamWeaverPersonaMessageGateV1 { willHandle(message: NormalizedChatMessageV1): boolean; }
 export interface StreamWeaverAssistantClientV1 {
   invokeCommunityAssistant(tenantId: string, input: { userId: string; message: string; surface: "stream"; conversationId: string; routingPreference: "automatic"; remember: boolean; presentation: CommunityAssistantPresentationInputV1 }, idempotencyKey: string): Promise<{ status: "accepted"; jobId: string } | { status: "unavailable"; reason: string }>;
   getExecutionJob(tenantId: string, jobId: string): Promise<ExecutionJobV1>;
@@ -159,8 +160,8 @@ export class StreamWeaverPersonaReplyReconciler {
 
 export class StreamWeaverChatGatewayConsumer {
   readonly id = "streamweaver.persona" as const;
-  constructor(private readonly summons: SqliteStreamWeaverSummonStore, private readonly configs: StreamWeaverPersonaConfigSourceV1, private readonly personas: StreamWeaverPersonaRuntimeV1, private readonly egress: StreamWeaverChatEgressV1) {}
-  accepts(message: NormalizedChatMessageV1): boolean { return !message.actor.isBot; }
+  constructor(private readonly summons: SqliteStreamWeaverSummonStore, private readonly configs: StreamWeaverPersonaConfigSourceV1, private readonly personas: StreamWeaverPersonaRuntimeV1, private readonly egress: StreamWeaverChatEgressV1, private readonly priorMessageGate?: StreamWeaverPersonaMessageGateV1) {}
+  accepts(message: NormalizedChatMessageV1): boolean { return !message.actor.isBot && !this.priorMessageGate?.willHandle(message); }
   async deliver(delivery: NormalizedChatDeliveryV1): Promise<void> {
     const config = await this.configs.get(delivery.message.tenantId);
     if (!config) return;

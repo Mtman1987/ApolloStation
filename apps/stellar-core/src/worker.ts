@@ -15,9 +15,27 @@ export class OpenAiCompatibleChatProvider implements StellarChatProviderV1 {
   constructor(private readonly options: { origin: string; model: string; fetchImpl?: typeof fetch; timeoutMs?: number }) { this.origin = loopbackOrigin(options.origin); }
   async healthy() { try { const response = await (this.options.fetchImpl ?? fetch)(`${this.origin}/health`, { signal: AbortSignal.timeout(2_000), redirect: "manual" }); return response.ok; } catch { return false; } }
   async complete(messages: StellarChatMessageV1[]) {
+    const first = await this.request(messages, 1_200);
+    let text = first.text;
+    let finishReason = first.finishReason;
+    let inputTokens = first.usage?.inputTokens ?? 0;
+    let outputTokens = first.usage?.outputTokens ?? 0;
+    let attempts = 0;
+    while (looksIncompleteCompletion(text, finishReason) && attempts < 2 && text.length < 49_000) {
+      attempts += 1;
+      const continuation = await this.request([...messages, { role: "assistant", content: text }, { role: "user", content: "Continue exactly where the response stopped. Finish the thought in complete sentences. Do not repeat prior text, add a heading, or mention that you are continuing." }], 600);
+      text = joinStellarContinuation(text, continuation.text);
+      finishReason = continuation.finishReason;
+      inputTokens += continuation.usage?.inputTokens ?? 0;
+      outputTokens += continuation.usage?.outputTokens ?? 0;
+    }
+    if (looksIncompleteCompletion(text, finishReason)) throw new StellarProviderError(`Inference provider returned an incomplete response after ${attempts} continuation attempt(s)`, true);
+    return { text: capAtCompleteSentence(text, 50_000), ...(finishReason ? { finishReason } : {}), usage: { inputTokens, outputTokens } };
+  }
+  private async request(messages: StellarChatMessageV1[], maxTokens: number): Promise<StellarChatCompletionV1> {
     let response: Response;
     try {
-      response = await (this.options.fetchImpl ?? fetch)(`${this.origin}/v1/chat/completions`, { method: "POST", headers: { accept: "application/json", "content-type": "application/json" }, body: JSON.stringify({ model: this.options.model, messages, temperature: 0.4, max_tokens: 1200, stream: false }), redirect: "manual", signal: AbortSignal.timeout(this.options.timeoutMs ?? 10 * 60_000) });
+      response = await (this.options.fetchImpl ?? fetch)(`${this.origin}/v1/chat/completions`, { method: "POST", headers: { accept: "application/json", "content-type": "application/json" }, body: JSON.stringify({ model: this.options.model, messages, temperature: 0.4, max_tokens: maxTokens, stream: false }), redirect: "manual", signal: AbortSignal.timeout(this.options.timeoutMs ?? 10 * 60_000) });
     } catch (error) { throw new StellarProviderError(error instanceof Error ? error.message : "Inference provider request failed", true); }
     if (!response.ok) throw new StellarProviderError(`Inference provider returned ${response.status}`, response.status === 408 || response.status === 429 || response.status >= 500);
     const body = await response.json() as { choices?: Array<{ message?: { content?: unknown }; finish_reason?: unknown }>; usage?: { prompt_tokens?: unknown; completion_tokens?: unknown } };
@@ -25,6 +43,29 @@ export class OpenAiCompatibleChatProvider implements StellarChatProviderV1 {
     if (typeof text !== "string" || !text.trim()) throw new StellarProviderError("Inference provider returned no assistant text", true);
     return { text: text.trim(), ...(typeof body.choices?.[0]?.finish_reason === "string" ? { finishReason: body.choices[0].finish_reason } : {}), usage: { ...(typeof body.usage?.prompt_tokens === "number" ? { inputTokens: body.usage.prompt_tokens } : {}), ...(typeof body.usage?.completion_tokens === "number" ? { outputTokens: body.usage.completion_tokens } : {}) } };
   }
+}
+
+export function looksIncompleteCompletion(text: string, finishReason?: string): boolean {
+  if (["length", "max_tokens", "max_output_tokens", "token_limit"].includes(String(finishReason ?? "").toLowerCase())) return true;
+  const clean = text.trim();
+  return clean.length > 200 && !/[.!?…][\])}"'’”]*$/.test(clean);
+}
+
+export function joinStellarContinuation(existing: string, continuation: string): string {
+  const left = existing.trimEnd(), right = continuation.trimStart();
+  if (!right) return left;
+  const maximum = Math.min(160, left.length, right.length);
+  for (let length = maximum; length >= 12; length -= 1) if (left.slice(-length).toLowerCase() === right.slice(0, length).toLowerCase()) return left + right.slice(length);
+  return `${left}${/\s$/.test(existing) || /^[,.;:!?)]/.test(right) ? "" : " "}${right}`;
+}
+
+export function capAtCompleteSentence(text: string, limit: number): string {
+  const clean = text.trim();
+  if (clean.length <= limit) return clean;
+  const candidate = clean.slice(0, limit);
+  let end = -1;
+  for (const match of candidate.matchAll(/[.!?…](?=\s|$)/g)) end = (match.index ?? 0) + match[0].length;
+  return end >= Math.floor(limit * .6) ? candidate.slice(0, end).trim() : `${candidate.slice(0, Math.max(0, limit - 1)).trimEnd()}…`;
 }
 
 export class StellarChatWorker {

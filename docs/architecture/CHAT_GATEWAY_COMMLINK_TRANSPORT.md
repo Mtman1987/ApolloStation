@@ -8,6 +8,8 @@ Status: implemented behind the provider cutover gate.
 - Chat Gateway is the only first-party provider socket process. It owns connection leases, reconnect cursors, normalized ingress dedupe, provider-neutral egress, and per-consumer delivery retry.
 - Commlink owns the user-facing communications experience. Its live feed reads a credential-free, tenant-scoped projection from SPMT alongside mail, notifications, and app events.
 - Nebula Arcade and StreamWeaver consume the same normalized Chat Gateway contract. Neither owns a second provider connection or message authority.
+- StreamWeaver's relay consumer records provider/canonical identities and routes explicit human messages without BotShare. Only autonomous bot-to-bot sharing requires bilateral BotShare.
+- Nebula Arcade supplies its dashboard presentation to Chat Gateway; Chat Gateway keeps the Discord bot/webhook execution credential private and returns only the durable message ID and transport.
 
 ## Runtime path
 
@@ -42,6 +44,14 @@ Required production inputs:
 - `CHAT_GATEWAY_DATABASE_PATH`: absolute durable SQLite path.
 - `CHAT_GATEWAY_WORKER_CREDENTIAL`: at least 32 characters and matched by the SPMT cohort.
 - `CHAT_GATEWAY_CONNECTIONS`: bounded JSON array of desired tenant/provider connections.
+
+Optional Nebula Arcade dashboard inputs (valid only when `NEBULA_ARCADE_PROVIDER_RUNTIME_ENABLED=1`):
+
+- `NEBULA_ARCADE_PUBLIC_ORIGIN` (or `SPMT_PUBLIC_ORIGIN`): credential-free HTTPS origin used for the games link, GIF, and large social preview.
+- `NEBULA_ARCADE_WEBHOOK_NAME`: defaults to `Nebula Arcade`.
+- `NEBULA_ARCADE_AVATAR_URL`: credential-free HTTPS webhook avatar; legacy Chat Tag avatar/name variables remain accepted for migration.
+
+The dashboard store persists no webhook token. Human relay threads persist only normalized endpoints, bounded conversation text, expiry, and provider message IDs; BotShare defaults off and applies only to autonomous bot messages.
 
 The Green Sprite starts this exact service with an empty connection array. Sandbox validation requires outbound mode disabled, a sandbox-named database, and zero live provider connections. This proves build, supervision, service authentication, migrations, and clean shutdown without granting provider access.
 

@@ -1,4 +1,5 @@
 import type { OutboundChatMessageV1 } from "@spmt/contracts";
+import type { NebulaDiscordDashboardPublishV1, NebulaDiscordDashboardResultV1 } from "@spmt/nebula-arcade";
 import type { ChatProviderSenderV1, ProviderChatEnvelopeV1 } from "./index.js";
 import type { ProviderConnectionConfigV1, ProviderConnectionDriverV1, ProviderConnectionHandleV1 } from "./connection-supervisor.js";
 
@@ -46,6 +47,7 @@ export class TwitchIrcProviderDriver implements ProviderConnectionDriverV1, Chat
 export class DiscordGatewayProviderDriver implements ProviderConnectionDriverV1, ChatProviderSenderV1 {
   readonly provider = "discord" as const;
   private readonly active = new Map<string, ActiveConnection>();
+  private readonly webhooks = new Map<string, { id: string; token: string; name: string }>();
   private readonly websocketFactory: ChatWebSocketFactory;
   private readonly fetchImpl: ProviderFetchLike;
   private readonly timeoutMs: number;
@@ -64,6 +66,68 @@ export class DiscordGatewayProviderDriver implements ProviderConnectionDriverV1,
     return { close: () => { intentional = true; if (heartbeat) clearInterval(heartbeat); this.active.delete(key); safeClose(socket); } };
   }
   async send(message: OutboundChatMessageV1): Promise<{ providerMessageId: string }> { const active = this.active.get(connectionKey(message)); if (!active) throw new Error("Discord chat connection is unavailable"); const body: Record<string, unknown> = { content: chatText(message.text), nonce: message.idempotencyKey, enforce_nonce: true }; if (message.replyToMessageId) body.message_reference = { message_id: message.replyToMessageId, channel_id: message.channelId, fail_if_not_exists: false }; const response = await this.fetchImpl(`${DISCORD_API_ORIGIN}/channels/${encodeURIComponent(message.channelId)}/messages`, { method: "POST", headers: { Authorization: `Bot ${active.accessToken}`, "Content-Type": "application/json" }, body: JSON.stringify(body) }); if (!response.ok) throw new Error(`Discord chat send failed with status ${response.status}`); const id = stringValue(record(await response.json())?.id); if (!id) throw new Error("Discord chat send returned no message id"); return { providerMessageId: id }; }
+
+  /**
+   * Keeps one app-owned dashboard message current. The connected Discord grant
+   * stays inside Chat Gateway; Nebula supplies only presentation and identity.
+   */
+  async upsertDiscordDashboard(message: NebulaDiscordDashboardPublishV1): Promise<NebulaDiscordDashboardResultV1> {
+    if (message.schemaVersion !== 1 || !/^\d{5,30}$/.test(message.channelId)) throw new Error("Nebula Discord dashboard target is invalid");
+    const active = this.active.get(connectionKey({ tenantId: message.tenantId, provider: "discord", connectionId: message.connectionId }));
+    if (!active || active.connection.channelId !== message.channelId) throw new Error("Discord dashboard connection is unavailable");
+    const webhookName = cleanDiscordWebhookName(message.webhookName);
+    const avatarUrl = message.avatarUrl ? cleanHttpsUrl(message.avatarUrl, "Discord dashboard avatar") : undefined;
+    const prior = message.previousMessageId && /^\d{5,30}$/.test(message.previousMessageId) ? message.previousMessageId : undefined;
+    if (prior && message.previousTransport === "webhook") {
+      const webhook = await this.getOrCreateWebhook(active, webhookName).catch(() => undefined);
+      if (webhook) {
+        const response = await this.fetchImpl(`${DISCORD_API_ORIGIN}/webhooks/${webhook.id}/${webhook.token}/messages/${prior}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: webhookName, ...(avatarUrl ? { avatar_url: avatarUrl } : {}), ...message.payload }) });
+        if (response.ok) return { providerMessageId: prior, transport: "webhook" };
+        if (response.status !== 404) await response.text().catch(() => "");
+      }
+    }
+    if (prior && message.previousTransport === "bot") {
+      const response = await this.fetchImpl(`${DISCORD_API_ORIGIN}/channels/${message.channelId}/messages/${prior}`, { method: "PATCH", headers: { Authorization: `Bot ${active.accessToken}`, "Content-Type": "application/json" }, body: JSON.stringify(message.payload) });
+      if (response.ok) return { providerMessageId: prior, transport: "bot" };
+      if (response.status !== 404) await response.text().catch(() => "");
+    }
+    const webhook = await this.getOrCreateWebhook(active, webhookName).catch(() => undefined);
+    if (webhook) {
+      const response = await this.fetchImpl(`${DISCORD_API_ORIGIN}/webhooks/${webhook.id}/${webhook.token}?wait=true`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: webhookName, ...(avatarUrl ? { avatar_url: avatarUrl } : {}), ...message.payload }) });
+      if (response.ok) {
+        const id = scalarString(record(await response.json())?.id);
+        if (id) return { providerMessageId: id, transport: "webhook" };
+      } else await response.text().catch(() => "");
+    }
+    const fallback = await this.fetchImpl(`${DISCORD_API_ORIGIN}/channels/${message.channelId}/messages`, { method: "POST", headers: { Authorization: `Bot ${active.accessToken}`, "Content-Type": "application/json" }, body: JSON.stringify(message.payload) });
+    if (!fallback.ok) throw new Error(`Discord dashboard send failed with status ${fallback.status}`);
+    const id = scalarString(record(await fallback.json())?.id);
+    if (!id) throw new Error("Discord dashboard send returned no message id");
+    return { providerMessageId: id, transport: "bot" };
+  }
+
+  private async getOrCreateWebhook(active: ActiveConnection, webhookName: string) {
+    const key = connectionKey(active.connection);
+    const cached = this.webhooks.get(key);
+    if (cached?.name === webhookName) return cached;
+    const headers = { Authorization: `Bot ${active.accessToken}`, "Content-Type": "application/json" };
+    const listed = await this.fetchImpl(`${DISCORD_API_ORIGIN}/channels/${encodeURIComponent(active.connection.channelId)}/webhooks`, { method: "GET", headers });
+    if (listed.ok) {
+      const values = await listed.json();
+      const candidates = Array.isArray(values) ? values : [];
+      const legacyWebhookName = ["Chat", "Tag"].join(" ");
+      const existing = candidates.map(record).find((item) => item && (stringValue(item.name) === webhookName || stringValue(item.name) === legacyWebhookName) && scalarString(item.id) && stringValue(item.token));
+      if (existing) {
+        const value = { id: scalarString(existing.id)!, token: stringValue(existing.token)!, name: webhookName };
+        this.webhooks.set(key, value); return value;
+      }
+    } else await listed.text().catch(() => "");
+    const created = await this.fetchImpl(`${DISCORD_API_ORIGIN}/channels/${encodeURIComponent(active.connection.channelId)}/webhooks`, { method: "POST", headers, body: JSON.stringify({ name: webhookName }) });
+    if (!created.ok) throw new Error(`Discord webhook provisioning failed with status ${created.status}`);
+    const body = record(await created.json()), id = scalarString(body?.id), token = stringValue(body?.token);
+    if (!id || !token) throw new Error("Discord webhook provisioning returned no execution credential");
+    const value = { id, token, name: webhookName }; this.webhooks.set(key, value); return value;
+  }
 }
 
 export class KickPusherProviderDriver implements ProviderConnectionDriverV1, ChatProviderSenderV1 {
@@ -101,6 +165,8 @@ function connectionKey(v: Pick<ProviderConnectionConfigV1,"tenantId"|"provider"|
 function twitchChannel(v:string) { const x=v.replace(/^#/,"").trim().toLowerCase(); if (!/^[a-z0-9_]{1,50}$/.test(x)) throw new Error("Twitch channel is invalid"); return x; }
 function oauth(v:string) { const x=v.replace(/^oauth:/i,""); if (!x || /[\r\n\s]/.test(x)) throw new Error("Twitch access token is invalid"); return x; }
 function metadata(v:string|undefined,name:string) { if (!v || v.trim()!==v || v.length>300 || /[\r\n]/.test(v)) throw new Error(`${name} is invalid`); return v; }
+function cleanDiscordWebhookName(v:string) { const result=String(v??"").replace(/[\r\n]/g," ").trim().slice(0,80);if(!result)throw new Error("Discord webhook name is invalid");return result; }
+function cleanHttpsUrl(v:string,name:string) { const url=new URL(v);if(url.protocol!=="https:"||url.username||url.password)throw new Error(`${name} must use credential-free HTTPS`);return url.toString(); }
 function chatText(v:string) { const x=v.replace(/[\r\n]+/g," ").trim(); if (!x) throw new Error("Chat text is empty"); return x.slice(0,8000); }
 function socketText(v:unknown) { if (typeof v==="string") return v; if (v instanceof ArrayBuffer) return Buffer.from(v).toString("utf8"); if (ArrayBuffer.isView(v)) return Buffer.from(v.buffer,v.byteOffset,v.byteLength).toString("utf8"); return String(v??""); }
 function json(v:string): Record<string,unknown>|undefined { try { return record(JSON.parse(v)); } catch { return; } }

@@ -114,6 +114,34 @@ test("Kick driver subscribes to donor Pusher chatroom, normalizes ChatMessageEve
   await handle.close();
 });
 
+test("Discord gateway provisions a Nebula-only webhook, applies avatar identity, and edits the durable dashboard", async () => {
+  const f = socketFactoryCapture(), requests = [];
+  const response = (status, value) => ({ ok: status >= 200 && status < 300, status, async json() { return value; }, async text() { return value === undefined ? "" : JSON.stringify(value); } });
+  const driver = new DiscordGatewayProviderDriver({ websocketFactory: f.factory, handshakeTimeoutMs: 2_000, fetch: async (url, init = {}) => {
+    requests.push({ url, init });
+    if (url.endsWith("/webhooks") && init.method === "GET") return response(200, []);
+    if (url.endsWith("/webhooks") && init.method === "POST") return response(200, { id: "77777", token: "scoped-webhook-token" });
+    if (url.includes("/webhooks/77777/scoped-webhook-token")) return response(200, { id: "88888" });
+    return response(500, { message: "unexpected" });
+  } });
+  const opened = openInput("discord", "123456"), pending = driver.open(opened.input), socket = f.sockets[0];
+  socket.open(); socket.message(JSON.stringify({ op: 10, d: { heartbeat_interval: 60_000 } })); socket.message(JSON.stringify({ op: 0, t: "READY", s: 1, d: { session_id: "session", resume_gateway_url: "wss://gateway.discord.gg" } }));
+  const handle = await pending;
+  const input = { schemaVersion: 1, tenantId: "tenant-a", connectionId: "discord-main", channelId: "123456", webhookName: "Nebula Arcade", avatarUrl: "https://apollo.example/assets/nebula-arcade/icon.png", payload: { embeds: [{ title: "🎮 Nebula Arcade · Chat Tag Live" }], components: [], allowed_mentions: { parse: [] } } };
+  const created = await driver.upsertDiscordDashboard(input);
+  assert.deepEqual(created, { providerMessageId: "88888", transport: "webhook" });
+  const executed = requests.find((request) => request.url.includes("?wait=true"));
+  assert.ok(executed);
+  const body = JSON.parse(executed.init.body);
+  assert.equal(body.username, "Nebula Arcade");
+  assert.equal(body.avatar_url, "https://apollo.example/assets/nebula-arcade/icon.png");
+  assert.equal(body.embeds[0].title, "🎮 Nebula Arcade · Chat Tag Live");
+  const edited = await driver.upsertDiscordDashboard({ ...input, previousMessageId: "88888", previousTransport: "webhook" });
+  assert.deepEqual(edited, { providerMessageId: "88888", transport: "webhook" });
+  assert.ok(requests.some((request) => request.init.method === "PATCH" && request.url.endsWith("/messages/88888")));
+  await handle.close();
+});
+
 test("first-party adapter factory exposes all three drivers and matching senders", () => {
   const f = socketFactoryCapture();
   const adapters = createFirstPartyChatProviderAdapters({ websocketFactory: f.factory, fetch: async () => ({ ok: true, status: 200, async json() { return {}; }, async text() { return ""; } }) });

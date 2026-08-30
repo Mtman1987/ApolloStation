@@ -81,6 +81,6 @@ export type { NebulaArcadeSandboxHostOptions };
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   const checked = validateNebulaArcadeSandboxEnvironment(process.env);
-  const host = createNebulaArcadeSandboxHost({ ...checked, port: Number(process.env.PORT ?? 8080), host: process.env.HOST ?? "0.0.0.0", buildSha: process.env.BUILD_SHA ?? "dev", ...(process.env.NEBULA_ARCADE_PIN_USER_ID ? { pinUserId: process.env.NEBULA_ARCADE_PIN_USER_ID } : {}) });
+  const host = createNebulaArcadeSandboxHost({ ...checked, port: Number(process.env.PORT ?? 8080), host: process.env.HOST ?? "0.0.0.0", buildSha: process.env.BUILD_SHA ?? "dev", ...(process.env.NEBULA_ARCADE_PIN_USER_ID ? { pinUserId: process.env.NEBULA_ARCADE_PIN_USER_ID } : {}), ...(process.env.NEBULA_ARCADE_PUBLIC_ORIGIN ? { publicOrigin: process.env.NEBULA_ARCADE_PUBLIC_ORIGIN } : {}) });
   await host.listen();
 }

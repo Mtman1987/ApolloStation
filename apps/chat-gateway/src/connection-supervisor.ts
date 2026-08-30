@@ -153,8 +153,8 @@ export class SqliteProviderConnectionStore {
     this.db.prepare("UPDATE provider_connections SET state='reauthorization-required',last_error=?,lease_owner=NULL,lease_expires_at=NULL,updated_at=? WHERE id=? AND lease_owner=?").run(redact(reason), iso(now), connectionKey(connection), owner);
   }
 
-  release(connection: ProviderConnectionConfigV1, owner: string, now: string): void {
-    this.db.prepare("UPDATE provider_connections SET state=CASE WHEN desired=1 THEN 'pending' ELSE 'stopped' END,lease_owner=NULL,lease_expires_at=NULL,next_attempt_at=?,updated_at=? WHERE id=? AND lease_owner=?").run(iso(now), iso(now), connectionKey(connection), owner);
+  release(connection: ProviderConnectionConfigV1, owner: string, now: string, nextAttemptAt = now): void {
+    this.db.prepare("UPDATE provider_connections SET state=CASE WHEN desired=1 THEN 'pending' ELSE 'stopped' END,lease_owner=NULL,lease_expires_at=NULL,next_attempt_at=?,updated_at=? WHERE id=? AND lease_owner=?").run(iso(nextAttemptAt), iso(now), connectionKey(connection), owner);
   }
 
   private requireLease(connection: ProviderConnectionConfigV1, owner: string): void {
@@ -227,7 +227,10 @@ export class ChatProviderConnectionSupervisor {
     const now = new Date().toISOString();
     try {
       const result = await this.grants.recoverAuthentication!(connection, reason);
-      if (result.status === "ready") this.store.release(connection, this.owner, now);
+      if (result.status === "ready") {
+        const current = this.store.get(connection.tenantId, connection.provider, connection.connectionId);
+        this.store.release(connection, this.owner, now, current?.lastConnectedAt ?? current?.nextAttemptAt ?? now);
+      }
       else if (result.status === "reauthorization-required") this.store.markReauthorizationRequired(connection, this.owner, result.reason, now);
       else this.store.markFailure(connection, this.owner, result.reason, now);
     } catch (error) { this.store.markFailure(connection, this.owner, errorText(error), now); }
