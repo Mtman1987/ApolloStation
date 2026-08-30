@@ -119,7 +119,7 @@ def frame_for(index: int, game):
 def main():
     frames = [frame_for(index, game) for index, game in enumerate(GAMES)]
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
-    frames[0].save(OUTPUT, save_all=True, append_images=frames[1:], duration=1450, loop=0, optimize=True, disposal=2)
+    frames[0].save(OUTPUT, save_all=True, append_images=frames[1:], duration=2900, loop=0, optimize=True, disposal=2)
     print(f"Wrote {OUTPUT} ({OUTPUT.stat().st_size / 1024 / 1024:.2f} MiB, {len(frames)} frames)")
 
 

@@ -1,29 +1,29 @@
 {
   "schemaVersion": 1,
-  "updated": "2026-08-29",
+  "updated": "2026-08-30",
   "branch": "main",
   "appCodeParity": "complete",
   "productionCutover": "blocked",
-  "scope": "Retained first-party application behavior and shared application contracts are implemented and regression-tested in ApolloStation. Live-provider credentials, production data reconciliation, DNS promotion, billing migration, and donor shutdown are cutover evidence, not missing application code.",
+  "scope": "ApolloStation owns current first-party behavior and visuals. Future comparisons use remote main plus the running live slice; local source mirrors are retired.",
   "evidence": {
-    "functionalFoundation": ["tests/functional-foundation.test.mjs", "tests/functional-foundation-api.test.mjs", "tests/provider-grant-api.test.mjs", "config/capability-wiring.v1.json"],
-    "cutoverRecovery": ["tests/recovery.test.mjs", "tests/donor-cutover-rehearsal.test.mjs", "config/donor-cutover-rehearsal.v1.json", "scripts/audit-donor-cutover.mjs", "docs/architecture/DONOR_CUTOVER_REHEARSAL.md", "docs/donor-audits/FINAL_LIVE_DONOR_CATCHUP_2026-08-29.md"],
-    "spmtIdentityAuthDeveloper": ["tests/spmt-final-parity.test.mjs", "tests/developer-platform.test.mjs", "tests/provider-identity-convergence.test.mjs", "tests/provider-grandfather-parity.test.mjs", "tests/stellar-completion-and-pinned-bot.test.mjs"],
-    "spmtXpWalletIntegrity": ["tests/xp-wallet-parity.test.mjs", "tests/xp-ledger-integrity.test.mjs", "tests/dsh-production-points-parity.test.mjs"],
-    "overlayAuthority": ["tests/overlay-output-grants.test.mjs", "tests/nebula-overlay-scenes.test.mjs", "tests/streamweaver-overlay-runtime.test.mjs"],
-    "chatGateway": ["tests/chat-gateway.test.mjs", "tests/chat-provider-supervisor.test.mjs", "tests/chat-provider-drivers.test.mjs", "tests/chat-gateway-commlink-transport.test.mjs", "tests/provider-credential-authority.test.mjs", "tests/provider-grant-api.test.mjs", "tests/provider-live-rehearsal-gate.test.mjs", "tests/commlink-live-chat.test.mjs", "tests/streamweaver-chat-gateway.test.mjs", "tests/streamweaver-provider-runtime.test.mjs", "tests/streamweaver-bot-relay-hardening.test.mjs", "docs/architecture/CHAT_GATEWAY_COMMLINK_TRANSPORT.md"],
-    "discordStreamHub": ["tests/dsh-live-monitor.test.mjs", "tests/dsh-discord-live-publisher.test.mjs", "tests/dsh-production-points-parity.test.mjs", "tests/dsh-twitch-poller.test.mjs", "tests/dsh-supervised-live-runtime.test.mjs", "tests/dsh-banner-signal-upgrades.test.mjs", "docs/architecture/DISCORD_STREAM_HUB_LIVE_RUNTIME.md"],
-    "streamweaver": ["tests/streamweaver-donor-command-catalog.test.mjs", "tests/streamweaver-donor-command-runtime.test.mjs", "tests/streamweaver-economy-parity.test.mjs", "tests/streamweaver-event-actions.test.mjs", "tests/streamweaver-redeem-actions.test.mjs", "tests/streamweaver-shoutout-runtime.test.mjs", "tests/streamweaver-persona-memory.test.mjs", "tests/streamweaver-provider-runtime.test.mjs", "tests/streamweaver-bot-relay-hardening.test.mjs", "tests/streamweaver-suite-bot-actions.test.mjs"],
-    "hearmeout": ["tests/hearmeout-room-media.test.mjs", "tests/hearmeout-livekit-signer.test.mjs", "tests/hearmeout-discord-adapter.test.mjs", "tests/hearmeout-discord-activity.test.mjs", "tests/hearmeout-voice-bridge-parity.test.mjs", "tests/hearmeout-worker-media-cache.test.mjs", "tests/hearmeout-bot-persona-actions.test.mjs", "tests/streamweaver-suite-bot-actions.test.mjs"],
-    "nebulaArcade": ["tests/nebula-game-hub.test.mjs", "tests/nebula-game-runtime.test.mjs", "tests/nebula-tag-parity.test.mjs", "tests/quackverse-state.test.mjs", "tests/quackverse-battle.test.mjs", "tests/nebula-overlay-scenes.test.mjs", "tests/nebula-discord-dashboard.test.mjs"],
-    "mountainviewCompanion": ["tests/mountainview-command-parity.test.mjs", "tests/mountainview-device-runtime.test.mjs", "tests/mountainview-companion.test.mjs", "tests/companion-donor-runtime.test.mjs", "tests/companion-relay-client.test.mjs", "tests/companion-runtime-handlers.test.mjs"],
-    "spacemountainShell": ["tests/current-app-ingestion.test.mjs", "tests/product-ui-parity.test.mjs", "tests/spacemountain-shell-ui.test.mjs", "tests/spacemountain-web.test.mjs"]
+    "functionalFoundation": ["tests/functional-foundation.test.mjs"],
+    "cutoverRecovery": ["tests/live-cutover-rehearsal.test.mjs"],
+    "spmtIdentityAuthDeveloper": ["tests/spmt-final-parity.test.mjs"],
+    "spmtXpWalletIntegrity": ["tests/xp-ledger-integrity.test.mjs"],
+    "overlayAuthority": ["tests/overlay-output-grants.test.mjs"],
+    "chatGateway": ["tests/chat-gateway.test.mjs"],
+    "discordStreamHub": ["tests/dsh-nebula-gameplay-rotation.test.mjs"],
+    "streamweaver": ["tests/streamweaver-bot-relay-hardening.test.mjs"],
+    "hearmeout": ["tests/hearmeout-bot-persona-actions.test.mjs"],
+    "nebulaArcade": ["tests/nebula-discord-dashboard.test.mjs"],
+    "mountainviewCompanion": ["tests/mountainview-companion.test.mjs"],
+    "spacemountainShell": ["tests/spacemountain-shell-ui.test.mjs"]
   },
   "cutoverOnlyGates": [
-    "capture and reconcile every live Fly app, machine, process group, volume and worker including the observed Xbox process group",
-    "migrate and reconcile production identities, provider links, balances, histories, settings, scenes and entitlements without max/sum guessing",
-    "exercise Twitch, Discord, Kick, LiveKit, OBS and Companion paths with real production-scoped credentials and record output evidence",
-    "verify production backup, restore, restart, rollback and two-tenant isolation on the deployed targets",
-    "promote main intentionally, validate spacemountain.live and spmt.live, then retire donor machines only after rollback retention"
+    "complete production reconciliation",
+    "complete external integration rehearsal",
+    "verify backup and restart behavior",
+    "retain a tested rollback point",
+    "record owner acceptance before live replacement"
   ]
 }

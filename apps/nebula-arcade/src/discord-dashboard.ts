@@ -1,10 +1,11 @@
 import { DatabaseSync } from "node:sqlite";
 import { buildNebulaTagOverlaySnapshot } from "./nebula-tag-overlay.js";
+import { NEBULA_GAMEPLAY_ROTATION_SECONDS } from "./gameplay-showcase.js";
 import type { NebulaTagStateV1 } from "./nebula-tag.js";
 
 export const NEBULA_DISCORD_WEBHOOK_NAME = "Nebula Arcade";
 export const NEBULA_DISCORD_SHOWCASE_FRAME_COUNT = 20;
-export const NEBULA_DISCORD_SHOWCASE_FRAME_DURATION_MS = 1_450;
+export const NEBULA_DISCORD_SHOWCASE_FRAME_DURATION_MS = 2_900;
 
 export interface NebulaDiscordEmbedFieldV1 { name: string; value: string; inline: true; }
 export interface NebulaDiscordDashboardPayloadV1 {
@@ -16,6 +17,7 @@ export interface NebulaDiscordDashboardPayloadV1 {
     fields: NebulaDiscordEmbedFieldV1[];
     author: { name: string; icon_url?: string };
     image?: { url: string };
+    thumbnail?: { url: string };
     footer: { text: string };
     timestamp: string;
   }>;
@@ -72,31 +74,40 @@ export class SqliteNebulaDiscordDashboardStore {
 
 export function buildNebulaDiscordDashboard(
   state: NebulaTagStateV1,
-  options: { publicOrigin?: string; generatedAt?: string; webhookName?: string; avatarUrl?: string } = {},
+  options: { publicOrigin?: string; gameplayOrigin?: string; generatedAt?: string; webhookName?: string; avatarUrl?: string } = {},
 ): { webhookName: string; avatarUrl?: string; payload: NebulaDiscordDashboardPayloadV1 } {
   const snapshot = buildNebulaTagOverlaySnapshot(state, options.generatedAt ? { generatedAt: options.generatedAt } : {});
   const generatedAt = snapshot.generatedAt;
   const origin = optionalOrigin(options.publicOrigin);
   const gamesUrl = origin ? new URL("/apps/nebula-arcade?view=games", origin).toString() : undefined;
   const iconUrl = absoluteImage(options.avatarUrl, origin, "/assets/nebula-arcade/icon.png");
-  const showcaseUrl = origin ? new URL("/assets/nebula-arcade/games-showcase.gif", origin).toString() : undefined;
+  const gameplayOrigin = optionalOrigin(options.gameplayOrigin, "Nebula gameplay");
+  const showcaseUrl = gameplayOrigin
+    ? nebulaGameplayDashboardImageUrl(gameplayOrigin, Date.parse(generatedAt))
+    : origin ? `${new URL("/assets/nebula-arcade/games-showcase.gif", origin).toString()}?v=3` : undefined;
   const taggedAtUnix = snapshot.lastTagAt ? Math.floor(Date.parse(snapshot.lastTagAt) / 1_000) : 0;
   const currentTag = snapshot.currentIt
-    ? [`**${snapshot.currentIt.username} is IT**`, taggedAtUnix ? `Holding it <t:${taggedAtUnix}:R>` : "Tag time unavailable", `${snapshot.playerCount} players`].join("\n")
-    : ["**FREE FOR ALL**", "Double-points tags are live", taggedAtUnix ? `Last tag <t:${taggedAtUnix}:R>` : "No tags yet", `${snapshot.playerCount} players`].join("\n");
-  const recentTags = snapshot.recentHistory.slice(0, 3).map((entry) => `${entry.doublePoints ? "🔥" : "🎯"} ${entry.actorUsername} tagged ${entry.targetUsername ?? "someone"}${entry.doublePoints ? " (2x)" : ""}`).join("\n") || "No recent tags";
-  const top3 = snapshot.leaderboard.filter((player) => player.username.toLowerCase() !== "mtman1987").slice(0, 3).map((player, index) => `**#${index + 1}** ${player.username} - ${player.score} pts (${player.tagsMade} tags)`).join("\n") || "No players yet";
-  const announcements: NebulaDiscordEmbedFieldV1[] = snapshot.recentHistory.slice(0, 3).map((entry, index) => ({
-    name: (index === 0 ? "📣 Latest · Tag Update" : "📢 Previous Tag Update").slice(0, 80),
-    value: [`**${entry.actorUsername}** tagged **${entry.targetUsername ?? "someone"}**${entry.doublePoints ? " for **DOUBLE POINTS**" : ""}.`, entry.targetUsername ? `**Now IT:** ${entry.targetUsername}` : "", `🕒 <t:${Math.floor(Date.parse(entry.occurredAt) / 1_000)}:R>`].filter(Boolean).join("\n").slice(0, 500),
-    inline: true,
-  }));
-  if (!announcements.length) announcements.push({ name: "📣 Latest", value: "No announcements yet.", inline: true });
+    ? [`**${snapshot.currentIt.username} is IT**`, taggedAtUnix ? `<t:${taggedAtUnix}:R>` : "Tag time unavailable", `${snapshot.playerCount} players`].join("\n")
+    : ["**FREE FOR ALL**", taggedAtUnix ? `Last tag <t:${taggedAtUnix}:R>` : "No tags yet", `${snapshot.playerCount} players`].join("\n");
+  const recentTags = snapshot.recentHistory.slice(0, 3).map((entry) => `${entry.doublePoints ? "🔥" : "🎯"} ${entry.actorUsername} → ${entry.targetUsername ?? "someone"}${entry.doublePoints ? " · 2x" : ""}`).join("\n") || "No recent tags";
+  const medals = ["🥇", "🥈", "🥉"];
+  const top3 = snapshot.leaderboard.filter((player) => player.username.toLowerCase() !== "mtman1987").slice(0, 3).map((player, index) => `${medals[index]} **${player.username}** · ${player.score} pts`).join("\n") || "No players yet";
+  const recent = snapshot.recentHistory.slice(0, 3);
+  const announcements: NebulaDiscordEmbedFieldV1[] = Array.from({ length: 3 }, (_, index) => {
+    const entry = recent[index];
+    if (!entry) return { name: index === 0 ? "📣 Latest" : "📢 Previous", value: "No announcement yet.", inline: true };
+    return {
+      name: (index === 0 ? "📣 Latest · Tag Update" : "📢 Previous Tag Update").slice(0, 80),
+      value: [`**${entry.actorUsername}** tagged **${entry.targetUsername ?? "someone"}**${entry.doublePoints ? " for **DOUBLE POINTS**" : ""}.`, entry.targetUsername ? `**Now IT:** ${entry.targetUsername}` : "", `🕒 <t:${Math.floor(Date.parse(entry.occurredAt) / 1_000)}:R>`].filter(Boolean).join("\n").slice(0, 240),
+      inline: true,
+    };
+  });
+  const currentAvatarUrl = snapshot.currentIt ? safeHttpsImage(state.players[snapshot.currentIt.userId]?.avatarUrl) : undefined;
   const payload: NebulaDiscordDashboardPayloadV1 = {
     embeds: [{
       title: "🎮 Nebula Arcade · Tag Live", ...(gamesUrl ? { url: gamesUrl } : {}), description: "One bot · 20 equal games · live community status", color: snapshot.freeForAll ? 0xff4500 : 0x00d9ff,
       fields: [{ name: "🎯 Current Tag", value: currentTag, inline: true }, { name: "📜 Recent Tags", value: recentTags, inline: true }, { name: "🏆 Top 3", value: top3, inline: true }, ...announcements],
-      author: { name: "Nebula Arcade · 20 Games", ...(iconUrl ? { icon_url: iconUrl } : {}) }, ...(showcaseUrl ? { image: { url: showcaseUrl } } : {}), footer: { text: "Nebula Arcade · type spmt controls to play Tag" }, timestamp: generatedAt,
+      author: { name: "Nebula Arcade · 20 Games", ...(iconUrl ? { icon_url: iconUrl } : {}) }, ...(showcaseUrl ? { image: { url: showcaseUrl } } : {}), ...(currentAvatarUrl ? { thumbnail: { url: currentAvatarUrl } } : {}), footer: { text: "Nebula Arcade · type spmt controls to play Tag" }, timestamp: generatedAt,
     }],
     components: gamesUrl ? [{ type: 1, components: [{ type: 2, style: 5, label: "Open all 20 games", emoji: { name: "🎮" }, url: gamesUrl }] }] : [],
     allowed_mentions: { parse: [] },
@@ -104,11 +115,19 @@ export function buildNebulaDiscordDashboard(
   return { webhookName: cleanName(options.webhookName ?? NEBULA_DISCORD_WEBHOOK_NAME), ...(iconUrl ? { avatarUrl: iconUrl } : {}), payload };
 }
 
-export function nebulaDiscordDashboardSignature(state: NebulaTagStateV1): string {
-  return JSON.stringify({ currentItUserId: state.currentItUserId, lastTagAt: state.lastTagAt, players: Object.values(state.players).map((player) => [player.userId, player.username, player.score, player.tagsMade, player.timesTagged]), history: state.history.slice(-3).map((entry) => [entry.id, entry.occurredAt, entry.actorUserId, entry.targetUserId, entry.doublePoints]) });
+export function nebulaDiscordDashboardSignature(state: NebulaTagStateV1, generatedAtMs = Date.now()): string {
+  return JSON.stringify({ gameplaySlot: Math.floor(generatedAtMs / (NEBULA_GAMEPLAY_ROTATION_SECONDS * 1_000)), currentItUserId: state.currentItUserId, lastTagAt: state.lastTagAt, players: Object.values(state.players).map((player) => [player.userId, player.username, player.avatarUrl, player.score, player.tagsMade, player.timesTagged]), history: state.history.slice(-3).map((entry) => [entry.id, entry.occurredAt, entry.actorUserId, entry.targetUserId, entry.doublePoints]) });
 }
 
-function optionalOrigin(value?: string) { if (!value) return undefined; const url = new URL(value); if (url.protocol !== "https:" || url.username || url.password || url.pathname !== "/" || url.search || url.hash) throw new Error("Nebula Arcade public origin must be a credential-free HTTPS origin"); return url; }
+export function nebulaGameplayDashboardImageUrl(originValue: string | URL, generatedAtMs = Date.now()): string {
+  const origin = typeof originValue === "string" ? optionalOrigin(originValue, "Nebula gameplay")! : originValue;
+  const url = new URL("/v1/discord-stream-hub/nebula-gameplay/current.gif", origin);
+  url.searchParams.set("slot", String(Math.floor(generatedAtMs / (NEBULA_GAMEPLAY_ROTATION_SECONDS * 1_000))));
+  return url.toString();
+}
+
+function optionalOrigin(value?: string, name = "Nebula Arcade public") { if (!value) return undefined; const url = new URL(value); if (url.protocol !== "https:" || url.username || url.password || url.pathname !== "/" || url.search || url.hash) throw new Error(`${name} origin must be a credential-free HTTPS origin`); return url; }
+function safeHttpsImage(value?: string) { if (!value) return undefined; const url = new URL(value); return url.protocol === "https:" && !url.username && !url.password ? url.toString() : undefined; }
 function absoluteImage(value: string | undefined, origin: URL | undefined, fallback: string) { const raw = String(value ?? "").trim(); if (raw) { const url = new URL(raw); if (url.protocol !== "https:" || url.username || url.password) throw new Error("Nebula Arcade avatar URL must use credential-free HTTPS"); return url.toString(); } return origin ? new URL(fallback, origin).toString() : undefined; }
 function cleanName(value: string) { const result = String(value ?? "").replace(/[\r\n]/g, " ").trim().slice(0, 80); if (!result) throw new Error("Nebula Discord webhook name is invalid"); return result; }
 function cleanId(value: string, name: string) { const result = String(value ?? "").trim(); if (!result || result.length > 300 || /[\r\n\0]/.test(result)) throw new Error(`${name} is invalid`); return result; }

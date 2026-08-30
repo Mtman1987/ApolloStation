@@ -31,12 +31,17 @@ function withStores(work) {
 
 test("Twitch, Discord, and Kick normalize to one provider-neutral message contract", () => {
   for (const provider of ["twitch", "discord", "kick"]) {
-    const value = normalizeProviderChatEnvelope(envelope(provider, provider + "-1", "tenant-a", { sourceChannelId: "shared-origin", canonicalUserId: "spmt-user-1", displayName: "Display", mentions: [{ token: "<@1>", providerUserId: "provider-2", canonicalUserId: "spmt-user-2", username: "Target" }] }));
+    const value = normalizeProviderChatEnvelope(envelope(provider, provider + "-1", "tenant-a", { sourceChannelId: "shared-origin", canonicalUserId: "spmt-user-1", displayName: "Display", avatarUrl: "https://cdn.example/avatar.webp", mentions: [{ token: "<@1>", providerUserId: "provider-2", canonicalUserId: "spmt-user-2", username: "Target" }] }));
     assert.equal(value.provider, provider);
     assert.equal(value.actor.canonicalUserId, "spmt-user-1");
     assert.equal(value.sourceChannelId, "shared-origin");
+    assert.equal(value.actor.avatarUrl, "https://cdn.example/avatar.webp");
     assert.equal(value.mentions[0].canonicalUserId, "spmt-user-2");
   }
+});
+
+test("normalized chat rejects credentialed or non-HTTPS avatar URLs", () => {
+  assert.throws(() => normalizeProviderChatEnvelope(envelope("discord", "unsafe-avatar", "tenant-a", { avatarUrl: "http://cdn.example/avatar.webp" })), /avatarUrl/);
 });
 
 test("gateway dedupes provider messages durably and isolates tenants", async () => withStores(async ({ gatewayStore }) => {
@@ -77,10 +82,11 @@ test("Nebula Arcade tag game consumes the shared gateway, merges canonical ident
     { provider: "discord", send: async (message) => { sent.push(message); return { providerMessageId: "dc-out-1" }; } },
   ]);
 
-  await gateway.ingest(envelope("twitch", "join-1", "tenant-a", { text: "spmt join", canonicalUserId: "spmt-user-1", username: "Alpha" }));
+  await gateway.ingest(envelope("twitch", "join-1", "tenant-a", { text: "spmt join", canonicalUserId: "spmt-user-1", username: "Alpha", avatarUrl: "https://cdn.example/alpha.webp" }));
   await gateway.ingest(envelope("discord", "status-1", "tenant-a", { text: "spmt score", canonicalUserId: "spmt-user-1", username: "AlphaDiscord", occurredAt: at(1) }));
   const state = tag.getState("tenant-a").state;
   assert.deepEqual(Object.keys(state.players), ["spmt-user-1"]);
+  assert.equal(state.players["spmt-user-1"].avatarUrl, "https://cdn.example/alpha.webp");
   assert.equal(sent.length, 2);
   assert.equal(sent[0].provider, "twitch");
   assert.equal(sent[0].replyToMessageId, "join-1");

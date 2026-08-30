@@ -24,6 +24,7 @@ export const NEBULA_TAG_EVENT_TYPES = [
 export interface NebulaTagPlayerStateV1 {
   userId: string;
   username: string;
+  avatarUrl?: string;
   joinedAt: string;
   lastActiveAt: string;
   score: number;
@@ -90,6 +91,7 @@ interface NebulaTagCommandBaseV1 {
   actorUserId: string;
   occurredAt: string;
   channelId: string;
+  avatarUrl?: string;
   isModerator?: boolean;
 }
 
@@ -180,6 +182,7 @@ export interface NebulaTagInboundMessageV1 {
   messageId: string;
   userId: string;
   username: string;
+  avatarUrl?: string;
   text: string;
   occurredAt: string;
   roles?: Array<"broadcaster" | "moderator" | "member">;
@@ -198,6 +201,12 @@ function normalizeUsername(value: string): string {
 
 function isValidIso(value: string): boolean {
   return Number.isFinite(Date.parse(value));
+}
+
+function credentialFreeHttps(value: string): string {
+  const url = new URL(value);
+  if (url.protocol !== "https:" || url.username || url.password) throw new Error("Nebula Arcade player avatarUrl must use credential-free HTTPS");
+  return url.toString();
 }
 
 function eventFor(
@@ -288,6 +297,7 @@ export function assertNebulaTagStateV1(value: unknown, tenantId?: string): Nebul
   const normalized = cloneState(state);
   normalized.monthlyWinners = Array.isArray(normalized.monthlyWinners) ? normalized.monthlyWinners : [];
   normalized.crownAwardKeys = Array.isArray(normalized.crownAwardKeys) ? normalized.crownAwardKeys : [];
+  for (const player of Object.values(normalized.players)) if (player.avatarUrl) player.avatarUrl = credentialFreeHttps(player.avatarUrl);
   return normalized;
 }
 
@@ -328,6 +338,7 @@ export function planNebulaTagMessage(stateValue: NebulaTagStateV1, message: Nebu
     actorUserId: message.userId,
     occurredAt: message.occurredAt,
     channelId: message.channelId,
+    ...(message.avatarUrl ? { avatarUrl: message.avatarUrl } : {}),
     isModerator,
   };
 
@@ -351,7 +362,7 @@ export function planNebulaTagMessage(stateValue: NebulaTagStateV1, message: Nebu
   if (parsed.kind === "rules" || parsed.kind === "help" || parsed.kind === "info") {
     return { kind: "response", code: parsed.kind, message: '"spmt join" | "spmt tag @user" | "spmt pass @user" | "spmt status" | "spmt score" | "spmt rank" | "spmt away"' };
   }
-  if (parsed.kind === "join") return { kind: "command", command: { ...base, kind: "join", username: message.username } };
+  if (parsed.kind === "join") return { kind: "command", command: { ...base, kind: "join", username: message.username, ...(message.avatarUrl ? { avatarUrl: message.avatarUrl } : {}) } };
   if (parsed.kind === "leave") return { kind: "command", command: { ...base, kind: "leave" } };
   if (parsed.kind === "sleep" || parsed.kind === "wake") return { kind: "command", command: { ...base, kind: parsed.kind } };
   if (parsed.kind === "toggle-away") return { kind: "command", command: { ...base, kind: actor?.sleeping || actor?.offline ? "wake" : "sleep" } };
@@ -443,6 +454,7 @@ export function executeNebulaTagCommand(
 
   const nowMs = Date.parse(command.occurredAt);
   const actor = state.players[command.actorUserId];
+  if (actor && command.avatarUrl) actor.avatarUrl = credentialFreeHttps(command.avatarUrl);
 
   if (command.kind === "join") {
     if (actor) {
@@ -454,6 +466,7 @@ export function executeNebulaTagCommand(
     state.players[command.actorUserId] = {
       userId: command.actorUserId,
       username,
+      ...(command.avatarUrl ? { avatarUrl: credentialFreeHttps(command.avatarUrl) } : {}),
       joinedAt: command.occurredAt,
       lastActiveAt: command.occurredAt,
       score: 0,

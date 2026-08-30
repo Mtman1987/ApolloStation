@@ -63,7 +63,7 @@ export class NebulaArcadeProviderRuntime {
   private readonly channels = new Map<string, NebulaArcadeProviderChannelV1>();
   private readonly dashboardSignatures = new Map<string, string>();
   private closed = false;
-  constructor(private readonly options: { databasePath: string; config: NebulaArcadeProviderConfigV1; client: SpmtClient; egress: NebulaArcadeProviderEgressV1; discordDashboard?: { egress: NebulaDiscordDashboardEgressV1; publicOrigin: string; webhookName?: string; avatarUrl?: string }; now?: () => string }) {
+  constructor(private readonly options: { databasePath: string; config: NebulaArcadeProviderConfigV1; client: SpmtClient; egress: NebulaArcadeProviderEgressV1; discordDashboard?: { egress: NebulaDiscordDashboardEgressV1; publicOrigin: string; gameplayOrigin?: string; webhookName?: string; avatarUrl?: string }; now?: () => string }) {
     this.tagStore = new SqliteNebulaTagStore(options.databasePath);
     this.experienceStore = new SqliteNebulaTagExperienceStore(options.databasePath);
     this.gameStore = new SqliteNebulaGameRuntimeStore(options.databasePath);
@@ -165,11 +165,12 @@ export class NebulaArcadeProviderRuntime {
   private async publishDashboard(tenantId: string, channel: NebulaArcadeProviderChannelV1, force: boolean) {
     if (!this.options.discordDashboard || !this.dashboardStore || channel.provider !== "discord") return false;
     const state = this.tagRuntime.getState(tenantId).state;
-    const signature = nebulaDiscordDashboardSignature(state);
+    const generatedAt = this.options.now?.() ?? new Date().toISOString();
+    const signature = nebulaDiscordDashboardSignature(state, Date.parse(generatedAt));
     const key = channelKey(tenantId, channel.provider, channel.connectionId, channel.channelId);
     if (!force && this.dashboardSignatures.get(key) === signature) return false;
     const existing = this.dashboardStore.get(tenantId, channel.connectionId, channel.channelId);
-    const built = buildNebulaDiscordDashboard(state, { publicOrigin: this.options.discordDashboard.publicOrigin, generatedAt: this.options.now?.() ?? new Date().toISOString(), ...(this.options.discordDashboard.webhookName ? { webhookName: this.options.discordDashboard.webhookName } : {}), ...(this.options.discordDashboard.avatarUrl ? { avatarUrl: this.options.discordDashboard.avatarUrl } : {}) });
+    const built = buildNebulaDiscordDashboard(state, { publicOrigin: this.options.discordDashboard.publicOrigin, generatedAt, ...(this.options.discordDashboard.gameplayOrigin ? { gameplayOrigin: this.options.discordDashboard.gameplayOrigin } : {}), ...(this.options.discordDashboard.webhookName ? { webhookName: this.options.discordDashboard.webhookName } : {}), ...(this.options.discordDashboard.avatarUrl ? { avatarUrl: this.options.discordDashboard.avatarUrl } : {}) });
     const result = await this.options.discordDashboard.egress.upsertDiscordDashboard({ schemaVersion: 1, tenantId, connectionId: channel.connectionId, channelId: channel.channelId, webhookName: built.webhookName, ...(built.avatarUrl ? { avatarUrl: built.avatarUrl } : {}), ...(existing ? { previousMessageId: existing.messageId, previousTransport: existing.transport } : {}), payload: built.payload });
     this.dashboardStore.put({ tenantId, connectionId: channel.connectionId, channelId: channel.channelId, messageId: result.providerMessageId, transport: result.transport, updatedAt: this.options.now?.() ?? new Date().toISOString() });
     this.dashboardSignatures.set(key, signature);
@@ -195,7 +196,7 @@ export function validateNebulaArcadeProviderConfig(value: unknown): NebulaArcade
 }
 
 function normalizeCommandText(text:string){const match=/^spmt\s+(?:arcade\s+)?(.+)$/i.exec(text.trim());return match?`!${match[1]}`:text.trim();}
-function toTagMessage(message:NormalizedChatMessageV1,text:string){return{schemaVersion:1 as const,provider:message.provider,tenantId:message.tenantId,channelId:message.sourceChannelId??message.channelId,messageId:`${message.connectionId}:${message.messageId}`,userId:actorId(message),username:message.actor.displayName??message.actor.username,text,occurredAt:message.occurredAt,roles:message.actor.roles,mentions:message.mentions.map((mention)=>({token:mention.token,userId:mention.canonicalUserId??`provider:${message.provider}:${mention.providerUserId}`,username:mention.username}))};}
+function toTagMessage(message:NormalizedChatMessageV1,text:string){return{schemaVersion:1 as const,provider:message.provider,tenantId:message.tenantId,channelId:message.sourceChannelId??message.channelId,messageId:`${message.connectionId}:${message.messageId}`,userId:actorId(message),username:message.actor.displayName??message.actor.username,...(message.actor.avatarUrl?{avatarUrl:message.actor.avatarUrl}:{}),text,occurredAt:message.occurredAt,roles:message.actor.roles,mentions:message.mentions.map((mention)=>({token:mention.token,userId:mention.canonicalUserId??`provider:${message.provider}:${mention.providerUserId}`,username:mention.username}))};}
 function actorId(message:NormalizedChatMessageV1){return message.actor.canonicalUserId??`provider:${message.provider}:${message.actor.providerUserId}`;}
 function gameActorId(message:NormalizedChatMessageV1){return message.actor.canonicalUserId?`spmt:${message.actor.canonicalUserId}`:`provider:${message.provider}:${message.actor.providerUserId}`;}
 function messageKey(message:NormalizedChatMessageV1){return channelKey(message.tenantId,message.provider,message.connectionId,message.channelId);}
