@@ -22,12 +22,13 @@ Live data-bearing Machine:
 - Fly volume capacity: 5 GB
 - snapshot retention: 5
 
-Live authority evidence:
+Live authority evidence from the corrected data-bearing-Machine probe at 2026-08-30T17:29:18Z:
 - `/data/spmt.db`: 915,935,232 bytes
 - `/data/spmt.db-wal`: 13,212,872 bytes
 - `/data/spmt.db-shm`: 32,768 bytes
 - SQLite `quick_check`: `ok`
 - 39 application tables
+- selected row counts: 563 users, 7 messages, 625,577 notifications
 - health reports WAL journal mode and persistent writable storage
 
 Automatic Fly snapshots present at capture:
@@ -60,6 +61,18 @@ Durable/private state:
 - SQLite integrity: `ok`
 - Blue DB schema: one Firestore-like `docs` table; 31 rows at capture
 
+Sanitized Blue collection inventory at 2026-08-30T17:33:19Z:
+- `config`: 1 row
+- `rooms`: 1 row
+- `rooms/discord-activity/users`: 1 row
+- `users`: 28 rows
+
+Classification:
+- `users` is **not** HearMeOut private authority in Apollo. SPMT is the canonical identity authority. These 28 Blue rows are reconciliation evidence only and must not be copied into the Green HearMeOut database.
+- `rooms` contains the single canonical `discord-activity` room. Green already has a deterministic `ensureHearMeOutDiscordActivityRoom` path; the room identity itself should be recreated through that contract rather than copied as a Blue document.
+- `rooms/discord-activity/users` is runtime membership/presence-shaped data. Presence is rebuilt on Green. Any membership fact worth retaining must be resolved through SPMT identity before insertion; a raw nested Blue user document is not a migration primitive.
+- `config` remains fail-closed until its keys are classified. No raw config value was read or exposed during this inventory.
+
 Disposable/rebuildable state:
 - `/data/watch-cache`: 278,526,361 bytes / 2 files
 - `/data/watch-hls`: 1,608,724,113 bytes / 518 files
@@ -79,6 +92,7 @@ Decision:
 - HLS and replaceable cache are not migration inputs.
 - The Blue `docs` database cannot simply replace the Apollo database because Apollo HearMeOut uses a normalized WAL SQLite authority (`hmo_rooms`, membership/access/invitations/admissions/presence/media sessions/operations). Migration therefore requires an explicit transform/import.
 - Presence is runtime/ephemeral state and should normally be rebuilt rather than carried into Green.
+- The importer must reject unknown Blue collections and unclassified config rather than silently discard them.
 
 ## HearMeOut DJ worker (`hmo-dj-worker`)
 
