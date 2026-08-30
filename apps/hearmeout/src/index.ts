@@ -13,6 +13,7 @@ export * from "./legacy-worker-adapter.js";
 export * from "./spmt-rtc.js";
 export * from "./spmt-rtc-relay.js";
 export * from "./spmt-rtc-socket-adapter.js";
+export * from "./spmt-rtc-canary-ticket.js";
 export * from "./worker-media-cache.js";
 export * from "./worker-music-catalog.js";
 export * from "./watch-hls-policy.js";
