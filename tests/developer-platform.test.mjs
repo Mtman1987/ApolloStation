@@ -81,9 +81,10 @@ test("SDK, HTTP API, CLI and MCP register applications through one catalog autho
       const response = env.api.handle({ method: init.method ?? "GET", path: `${parsed.pathname}${parsed.search}`, headers, ...(body === undefined ? {} : { body }) });
       return new Response(response.body === undefined ? null : JSON.stringify(response.body), { status: response.status, headers: { "content-type": "application/json" } });
     } });
-    const manifest = (appId) => ({ appId, name: `App ${appId}`, description: "Catalog-driven test app", version: "1.0.0", launchUrl: `https://${appId}.example/`, allowedScopes: ["workspace:read"], surfaces: ["standalone"], status: "active" });
+    const manifest = (appId, launchUrl = `https://${appId}.example/`) => ({ appId, name: `App ${appId}`, description: "Catalog-driven test app", version: "1.0.0", launchUrl, allowedScopes: ["workspace:read"], surfaces: ["standalone"], status: "active" });
 
-    await publisher.registerApp(manifest("sdk-app"));
+    await publisher.registerApp(manifest("sdk-app", "https://sdk-app.fly.dev/"));
+    await publisher.registerApp(manifest("space-owned-app", "https://hearmeout.spacemountain.live/"));
     await runSpmtCli(["apps", "register", JSON.stringify(manifest("cli-app"))], publisher);
     const apiResult = env.api.handle({ method: "POST", path: "/v1/apps", headers: { authorization: `Bearer ${publisherToken}`, "x-spmt-app": "developer-console" }, body: manifest("api-app") });
     assert.equal(apiResult.status, 200);
@@ -93,8 +94,8 @@ test("SDK, HTTP API, CLI and MCP register applications through one catalog autho
     const mcpResult = mcp.handle({ jsonrpc: "2.0", id: 31, method: "tools/call", params: { name: "spmt.apps.register", arguments: manifest("mcp-app") } }, { accessToken: publisherToken, protocolVersion: SPMT_MCP_PROTOCOL_VERSION });
     assert.equal(mcpResult.result.structuredContent.appId, "mcp-app");
 
-    assert.deepEqual((await publisher.listApps()).map((app) => app.appId).sort(), ["api-app", "cli-app", "mcp-app", "reference-app", "sdk-app"]);
-    assert.equal(env.store.listAudit().filter((item) => item.action === "apps.register" && item.actorId === "viewer-1").length, 4);
+    assert.deepEqual((await publisher.listApps()).map((app) => app.appId).sort(), ["api-app", "cli-app", "mcp-app", "reference-app", "sdk-app", "space-owned-app"]);
+    assert.equal(env.store.listAudit().filter((item) => item.action === "apps.register" && item.actorId === "viewer-1").length, 5);
   } finally { cleanup(env); }
 });
 

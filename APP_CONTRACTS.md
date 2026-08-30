@@ -141,5 +141,6 @@ Every request/job carries correlation ID, tenant ID, app/module ID, version, and
 - shell-integrated sidebars, drawers, dialogs, menus/popovers, toast stacks, docks, editor controls, and portal roots pass header/safe-area collision tests at responsive and wrapped-header heights;
 - the app uses the common `AppFrameV1`/`EmbedBridgeV1` rather than an app-specific workspace bridge;
 - first-party integration calls are traceable to documented SDK/API/event/WebSocket contracts and pass the same scope/tenant checks as third-party calls;
+- first-party catalog entries preserve the exact publisher-supplied HTTPS `launchUrl` through the same catalog validation and `apps.register` authority used by third-party apps; no shared-host or hosting-provider URL is inferred by app code;
 - the app serves as a passing reference implementation for every developer-platform capability it claims;
 - old app remains available until the observation gate closes.

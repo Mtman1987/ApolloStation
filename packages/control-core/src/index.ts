@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { assertOverlayWidgetManifestV1, type AppRuntimeProjectionV1, type IssuedOverlayOutputGrantV1, type OverlayOutputGrantV1, type OverlayOutputResolutionV1, type OverlayWidgetManifestV1, type RegisteredOverlayWidgetV1, type RuntimeStateV1 } from "@spmt/contracts";
+import { assertAppCatalogRegistrationV1, assertOverlayWidgetManifestV1, type AppRuntimeProjectionV1, type IssuedOverlayOutputGrantV1, type OverlayOutputGrantV1, type OverlayOutputResolutionV1, type OverlayWidgetManifestV1, type RegisteredOverlayWidgetV1, type RuntimeStateV1 } from "@spmt/contracts";
 
 export type TenantStatusV1 = "active" | "suspended";
 export type AppStatusV1 = "active" | "disabled";
@@ -131,19 +131,13 @@ export class ControlService {
 
   registerApp(input: Omit<AppManifestV1, "createdAt" | "updatedAt">): AppManifestV1 {
     return this.store.transaction(() => {
-      const appId = id(input.appId, "appId");
-      const existing = this.store.getApp(appId);
+      let normalized;
+      try { normalized = assertAppCatalogRegistrationV1(input); }
+      catch (error) { throw new ControlValidationError(error instanceof Error ? error.message : "App catalog manifest is invalid"); }
+      const existing = this.store.getApp(normalized.appId);
       const now = this.now();
       const app: AppManifestV1 = {
-        appId,
-        name: text(input.name, "name", 120),
-        description: text(input.description, "description", 1000),
-        version: text(input.version, "version", 80),
-        launchUrl: httpsUrl(input.launchUrl, "launchUrl"),
-        ...(input.iconUrl ? { iconUrl: httpsUrl(input.iconUrl, "iconUrl") } : {}),
-        allowedScopes: scopes(input.allowedScopes),
-        surfaces: surfaces(input.surfaces),
-        status: input.status,
+        ...normalized,
         createdAt: existing?.createdAt ?? now,
         updatedAt: now,
       };

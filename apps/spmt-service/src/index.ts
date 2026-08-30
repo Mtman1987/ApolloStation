@@ -25,7 +25,7 @@ import {
 } from "@spmt/provider-grants-core";
 import { PlatformApiAdapter } from "@spmt/api-adapter";
 import { HealthRegistry } from "@spmt/runtime";
-import { assertBillingManifestV1, assertNormalizedChatMessageV1, BILLING_PLAN_IDS, type AppCatalogRegistrationV1, type BillingManifestV1, type BillingPlanIdV1, type ChatProviderV1, type NormalizedChatMessageV1 } from "@spmt/contracts";
+import { assertAppCatalogRegistrationV1, assertBillingManifestV1, assertNormalizedChatMessageV1, BILLING_PLAN_IDS, type AppCatalogRegistrationV1, type BillingManifestV1, type BillingPlanIdV1, type ChatProviderV1, type NormalizedChatMessageV1 } from "@spmt/contracts";
 import { STELLAR_CHAT_CAPABILITY_ID, StellarCommunityAssistantRuntime, StellarDataPrivacyService } from "@spmt/stellar-core";
 
 const USER_SCOPES = ["identity:read","identity:write","workspace:read","workspace:write","xp:read","apps:read","apps:install","entitlements:read","usage:read","events:read","jobs:read","jobs:write","commlink:read","commlink:write","notifications:read","notifications:write","devices:read","devices:pair","devices:command","webhooks:read","webhooks:write","assistants:read","assistants:invoke","stellar:context:read","stellar:context:write","stellar:capabilities:read","stellar:data:read","stellar:data:write"];
@@ -525,10 +525,8 @@ function parseSandboxApps(source: string | undefined): AppCatalogRegistrationV1[
   try { value = JSON.parse(source); } catch { throw new Error("SPMT_SANDBOX_APPS must be valid JSON"); }
   if (!Array.isArray(value) || value.length > 50) throw new Error("SPMT_SANDBOX_APPS must be an array of at most 50 app manifests");
   return value.map((entry, index) => {
-    if (!entry || typeof entry !== "object" || Array.isArray(entry)) throw new Error(`SPMT_SANDBOX_APPS[${index}] must be an app manifest`);
-    const item = entry as Record<string, unknown>;
-    if (typeof item.appId !== "string" || typeof item.name !== "string" || typeof item.description !== "string" || typeof item.version !== "string" || typeof item.launchUrl !== "string" || !Array.isArray(item.allowedScopes) || !Array.isArray(item.surfaces) || (item.status !== "active" && item.status !== "disabled")) throw new Error(`SPMT_SANDBOX_APPS[${index}] is incomplete`);
-    return item as unknown as AppCatalogRegistrationV1;
+    try { return assertAppCatalogRegistrationV1(entry); }
+    catch (error) { throw new Error(`SPMT_SANDBOX_APPS[${index}] is invalid: ${error instanceof Error ? error.message : "invalid manifest"}`); }
   });
 }
 

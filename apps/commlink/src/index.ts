@@ -1,4 +1,4 @@
-import { assertAppModuleManifestV1, type AppCatalogRegistrationV1, type AppModuleManifestV1 } from "@spmt/contracts";
+import { assertAppModuleManifestV1, createAppCatalogRegistrationV1, type AppCatalogRegistrationV1, type AppModuleManifestV1 } from "@spmt/contracts";
 export * from "./live-chat.js";
 
 export const manifest = assertAppModuleManifestV1({
@@ -15,22 +15,6 @@ export const manifest = assertAppModuleManifestV1({
   workers: [],
 } satisfies AppModuleManifestV1);
 
-export function commlinkCatalogRegistration(publicOrigin: string): AppCatalogRegistrationV1 {
-  const origin = catalogOrigin(publicOrigin, "Commlink");
-  return {
-    appId: manifest.id,
-    name: manifest.name,
-    description: manifest.description,
-    version: "0.1.0-green",
-    launchUrl: new URL("/apps/commlink?surface=workspace", origin).toString(),
-    allowedScopes: [...manifest.requiredScopes],
-    surfaces: ["shell", "standalone", "popout"],
-    status: "active",
-  };
-}
-
-function catalogOrigin(value: string, name: string) {
-  const origin = new URL(value);
-  if (origin.username || origin.password || origin.pathname !== "/" || origin.search || origin.hash) throw new Error(`${name} catalog origin must be a credential-free origin`);
-  return origin;
+export function commlinkCatalogRegistration(launchUrl: string): AppCatalogRegistrationV1 {
+  return createAppCatalogRegistrationV1(manifest, { version: "0.1.0-green", launchUrl, surfaces: ["shell", "standalone", "popout"] });
 }

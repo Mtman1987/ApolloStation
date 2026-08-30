@@ -7,7 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { renderSpaceMountainPage, SANDBOX_BEACON_HTML, SANDBOX_CSS, SANDBOX_POLISH_CSS } from "./page.js";
 import { DEVELOPER_DOCS_CSS, DEVELOPER_MANIFEST_EXAMPLE, renderDeveloperDocsPage } from "./developer-docs.js";
 import { BOUNDED_APP_PATHS, renderBoundedAppPage } from "./bounded-app-pages.js";
-import type { AppCatalogRegistrationV1 } from "@spmt/contracts";
+import { assertAppCatalogRegistrationV1, type AppCatalogRegistrationV1 } from "@spmt/contracts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPOSITORY_ROOT = resolve(HERE, "../../..");
@@ -221,42 +221,8 @@ async function requireCatalogPublisher(request: IncomingMessage, origin: string,
 }
 
 function normalizeDeveloperManifest(value: unknown): AppCatalogRegistrationV1 {
-  const item = record(value);
-  if (!item) throw new WebHostError(400, "The manifest must be a JSON object");
-  const appId = manifestText(item.appId, "appId", 200);
-  if (!/^[A-Za-z0-9._:@/-]+$/.test(appId)) throw new WebHostError(400, "appId contains unsupported characters");
-  const name = manifestText(item.name, "name", 120);
-  const description = manifestText(item.description, "description", 1000);
-  const version = manifestText(item.version, "version", 80);
-  const launchUrl = manifestLaunchUrl(item.launchUrl, "launchUrl");
-  const iconUrl = item.iconUrl === undefined || item.iconUrl === "" ? undefined : manifestLaunchUrl(item.iconUrl, "iconUrl");
-  const allowedScopes = manifestArray(item.allowedScopes, "allowedScopes").map((scope) => scope.trim()).filter(Boolean);
-  if (allowedScopes.some((scope) => scope.length > 120 || !/^[A-Za-z0-9.*:_-]+$/.test(scope))) throw new WebHostError(400, "allowedScopes contains an invalid scope");
-  const declaredSurfaces = manifestArray(item.surfaces, "surfaces");
-  const validSurfaces = new Set(["shell", "standalone", "overlay", "popout"]);
-  if (!declaredSurfaces.length || declaredSurfaces.some((surface) => !validSurfaces.has(surface))) throw new WebHostError(400, "surfaces must contain at least one supported surface");
-  if (item.status !== "active" && item.status !== "disabled") throw new WebHostError(400, "status must be active or disabled");
-  return { appId, name, description, version, launchUrl, ...(iconUrl ? { iconUrl } : {}), allowedScopes: [...new Set(allowedScopes)].sort(), surfaces: [...new Set(declaredSurfaces)] as AppCatalogRegistrationV1["surfaces"], status: item.status };
-}
-
-function manifestText(value: unknown, name: string, max: number) {
-  if (typeof value !== "string" || !value.trim() || value.trim() !== value || value.length > max) throw new WebHostError(400, `${name} is required and must be at most ${max} characters`);
-  return value;
-}
-
-function manifestArray(value: unknown, name: string) {
-  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) throw new WebHostError(400, `${name} must be an array of strings`);
-  return value as string[];
-}
-
-function manifestLaunchUrl(value: unknown, name: string) {
-  const text = manifestText(value, name, 2048);
-  let url: URL;
-  try { url = new URL(text); } catch { throw new WebHostError(400, `${name} must be an absolute URL`); }
-  const local = url.hostname === "localhost" || url.hostname === "127.0.0.1";
-  if (url.protocol !== "https:" && !local) throw new WebHostError(400, `${name} must use HTTPS outside localhost`);
-  if (url.username || url.password) throw new WebHostError(400, `${name} may not contain embedded credentials`);
-  return url.toString();
+  try { return assertAppCatalogRegistrationV1(value); }
+  catch (error) { throw new WebHostError(400, error instanceof Error ? error.message : "The manifest is invalid"); }
 }
 
 function privateManifestHostname(hostname: string) {
@@ -372,13 +338,14 @@ function requireLoopbackOrigin(value: string) {
 function candidateManifest(source: string): AppCatalogRegistrationV1 {
   let value: unknown;
   try { value = JSON.parse(source); } catch { throw new Error("SPMT_SANDBOX_CANDIDATE_MANIFEST must be JSON"); }
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("SPMT_SANDBOX_CANDIDATE_MANIFEST must be an object");
-  const item = value as AppCatalogRegistrationV1;
-  if (item.appId !== "nebula-arcade" || item.status !== "active" || !Array.isArray(item.allowedScopes) || !Array.isArray(item.surfaces)) throw new Error("Sandbox candidate manifest is invalid");
+  let item: AppCatalogRegistrationV1;
+  try { item = assertAppCatalogRegistrationV1(value); }
+  catch (error) { throw new Error(`Sandbox candidate manifest is invalid: ${error instanceof Error ? error.message : "invalid manifest"}`); }
+  if (item.appId !== "nebula-arcade" || item.status !== "active") throw new Error("Sandbox candidate manifest is invalid");
   const launch = new URL(item.launchUrl);
   const local = launch.hostname === "localhost" || launch.hostname === "127.0.0.1";
   if ((!local && launch.protocol !== "https:") || (!local && !launch.hostname.endsWith(".sprites.app")) || launch.pathname !== "/apps/nebula-arcade") throw new Error("Sandbox candidate launch URL is invalid");
-  return structuredClone(item);
+  return item;
 }
 
 async function readJsonBody(request: IncomingMessage) { const body = await readBody(request); const parsed = JSON.parse(body.toString("utf8")) as unknown; if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new WebHostError(400, "A JSON object is required"); return parsed as Record<string, unknown>; }

@@ -1,4 +1,4 @@
-import { assertAppModuleManifestV1, BILLING_PLAN_IDS, METERED_RESOURCES, type AppCatalogRegistrationV1, type AppModuleManifestV1, type BillingPlanIdV1, type FleetProjectionV1, type MeteredResourceV1 } from "@spmt/contracts";
+import { assertAppModuleManifestV1, BILLING_PLAN_IDS, createAppCatalogRegistrationV1, METERED_RESOURCES, type AppCatalogRegistrationV1, type AppModuleManifestV1, type BillingPlanIdV1, type FleetProjectionV1, type MeteredResourceV1 } from "@spmt/contracts";
 
 export const manifest = assertAppModuleManifestV1({
   schemaVersion: 1,
@@ -14,18 +14,8 @@ export const manifest = assertAppModuleManifestV1({
   workers: [],
 } satisfies AppModuleManifestV1);
 
-export function missionControlCatalogRegistration(publicOrigin: string): AppCatalogRegistrationV1 {
-  const origin = catalogOrigin(publicOrigin, "Mission Control");
-  return {
-    appId: manifest.id,
-    name: manifest.name,
-    description: manifest.description,
-    version: "0.1.0-green",
-    launchUrl: new URL("/apps/mission-control?surface=workspace", origin).toString(),
-    allowedScopes: [...manifest.requiredScopes],
-    surfaces: ["shell", "standalone"],
-    status: "active",
-  };
+export function missionControlCatalogRegistration(launchUrl: string): AppCatalogRegistrationV1 {
+  return createAppCatalogRegistrationV1(manifest, { version: "0.1.0-green", launchUrl, surfaces: ["shell", "standalone"] });
 }
 
 export interface MissionControlFleetViewV1 {
@@ -89,8 +79,3 @@ export function missionControlMonetizationView(tenants: MissionControlTenantUsag
   return { schemaVersion: 1, totalTenants: tenants.length, monthlyRecurringRevenueUsd: Number(tenants.reduce((sum, tenant) => sum + tenant.monthlyPriceUsd, 0).toFixed(2)), planCounts, warning70, warning90, exhausted, hostedUsage, companionUsage };
 }
 
-function catalogOrigin(value: string, name: string) {
-  const origin = new URL(value);
-  if (origin.username || origin.password || origin.pathname !== "/" || origin.search || origin.hash) throw new Error(`${name} catalog origin must be a credential-free origin`);
-  return origin;
-}

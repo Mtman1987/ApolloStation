@@ -1,4 +1,4 @@
-import { assertAppModuleManifestV1, type AppCatalogRegistrationV1, type AppModuleManifestV1 } from "@spmt/contracts";
+import { assertAppModuleManifestV1, createAppCatalogRegistrationV1, type AppCatalogRegistrationV1, type AppModuleManifestV1 } from "@spmt/contracts";
 import { SpmtClient } from "@spmt/sdk";
 export * from "./nebula-tag.js";
 export * from "./nebula-tag-runtime.js";
@@ -25,19 +25,13 @@ import { NEBULA_TAG_EVENT_TYPES } from "./nebula-tag.js";
 export const NEBULA_ARCADE_ROUND_COMPLETED = "nebula.arcade.round.completed.v1";
 export const manifest = assertAppModuleManifestV1({schemaVersion:1,manifestVersion:"spmt.app-manifest/v1",id:"nebula-arcade",name:"Nebula Arcade",description:"Cosmic Games Hub containing twenty equal community games and reusable multi-game overlays.",capabilities:["tag","quackverse","bingo","arena","game-overlays","overlay-scenes","gameplay-showcase-manifest"],surfaces:["shell","standalone","overlay","popout"],requiredScopes:["events:write","xp:write","overlay:widgets:write"],eventTypes:[NEBULA_ARCADE_ROUND_COMPLETED,...NEBULA_TAG_EVENT_TYPES],integration:{identity:"connected",events:"native",xp:"connected",workspace:"connected"},workers:[{id:"nebula-arcade-provider-ingress",role:"provider-command-ingress",execution:"leased",canonicalAuthority:false}]} satisfies AppModuleManifestV1);
 
-export function nebulaArcadeCatalogRegistration(publicOrigin: string): AppCatalogRegistrationV1 {
-  const origin = new URL(publicOrigin);
-  if (origin.username || origin.password || origin.pathname !== "/" || origin.search || origin.hash) throw new Error("Nebula Arcade catalog origin must be a credential-free origin");
-  return {
-    appId: "nebula-arcade",
-    name: "Nebula Arcade",
-    description: "Cosmic Games Hub for twenty equal community games and reusable layered stream overlays.",
+export function nebulaArcadeCatalogRegistration(launchUrl: string): AppCatalogRegistrationV1 {
+  return createAppCatalogRegistrationV1(manifest, {
     version: "0.1.0-green",
-    launchUrl: new URL("/apps/nebula-arcade?surface=workspace", origin).toString(),
+    launchUrl,
     allowedScopes: ["events:write", "xp:write", "overlay:widgets:write"],
     surfaces: ["shell", "standalone", "overlay"],
-    status: "active",
-  };
+  });
 }
 export interface NebulaArcadeRoundResult { tenantId:string; channelId:string; roundId:string; winnerUserId:string; taggedUserId:string; completedAt:string; xpAward:number; }
 export async function completeNebulaArcadeRound(client:SpmtClient,result:NebulaArcadeRoundResult){

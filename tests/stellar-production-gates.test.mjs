@@ -48,7 +48,7 @@ test("Stellar privacy minimizes raw content, exports only the caller, and delete
   const directory = mkdtempSync(join(tmpdir(), "spmt-stellar-privacy-"));
   const service = createSpmtService({ databasePath: join(directory, "stellar.sqlite"), webhookKey: Buffer.alloc(32, 6), host: "127.0.0.1", port: 0, publicBaseUrl: "https://spmt.test" });
   try {
-    service.control.registerApp(stellarCoreCatalogRegistration("https://spmt.test"));
+    service.control.registerApp(stellarCoreCatalogRegistration("https://stellar.spacemountain.live/"));
     for (const [userId, username] of [["user-one", "privacy-one"], ["user-two", "privacy-two"]]) { service.authority.ensureUser(userId); service.data.registerUser({ userId, username, displayName: username, password: "privacy-password-123", tenantIds: ["tenant-privacy"] }); }
     service.control.registerTenant({ tenantId: "tenant-privacy", ownerUserId: "user-one", displayName: "Privacy Tenant" });
     service.authority.getOrCreateWorkspace("tenant-privacy");
@@ -81,7 +81,7 @@ test("the real Stella route reaches Free-plan warning and hard-stop boundaries",
   const directory = mkdtempSync(join(tmpdir(), "spmt-stellar-cap-")), credential = "stellar-worker-quota-credential-123456789";
   const service = createSpmtService({ databasePath: join(directory, "stellar.sqlite"), webhookKey: Buffer.alloc(32, 7), host: "127.0.0.1", port: 0, publicBaseUrl: "https://spmt.test", stellarChatEnabled: true, stellarWorkerCredential: credential });
   try {
-    service.control.registerApp(stellarCoreCatalogRegistration("https://spmt.test"));
+    service.control.registerApp(stellarCoreCatalogRegistration("https://stellar.spacemountain.live/"));
     await service.listen();
     const address = service.server.address(); assert.ok(address && typeof address !== "string"); const baseUrl = `http://127.0.0.1:${address.port}`;
     const registration = await fetch(`${baseUrl}/v1/auth/register`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ username: "quota-user", displayName: "Quota User", password: "quota-password-123" }) }).then((response) => response.json());

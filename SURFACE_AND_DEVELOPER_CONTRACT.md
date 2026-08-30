@@ -178,6 +178,8 @@ Widget registration requires an enabled tenant install, validates HTTPS renderer
 
 Every first-party flagship app must integrate with SPMT through the same public/versioned developer surface an external developer would use whenever that surface is appropriate.
 
+The app catalog is one contract for every publisher. SpaceMountain-owned apps publish the same `AppCatalogRegistrationV1` record and register through the same `apps.register` SDK/API/CLI/MCP authority as outside developers. A catalog `launchUrl` is a complete publisher-supplied URL and is never reconstructed from a special first-party host convention. SpaceMountain ownership may change review policy, approved scopes, or publisher authority; it does not create a private launch path, URL validator, or registration shortcut.
+
 ### Preferred interface by job
 
 - **TypeScript/JavaScript SDK** — default first-party application client for identity, app registry, workspace, messaging, events, jobs, overlay manifests, device contracts, and typed API calls.

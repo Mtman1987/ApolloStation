@@ -40,8 +40,8 @@ test("StreamWeaver presentations execute through Stellar with private prompts an
   const streamweaverCredential="streamweaver-persona-service-credential-123456";
   const service=createSpmtService({databasePath:join(directory,"authority.sqlite"),webhookKey:Buffer.alloc(32,11),host:"127.0.0.1",port:0,publicBaseUrl:"https://spmt.test",stellarChatEnabled:true,stellarWorkerCredential:workerCredential});
   try{
-    service.control.registerApp(stellarCoreCatalogRegistration("https://spmt.test"));
-    service.control.registerApp(streamweaverCatalogRegistration("https://spmt.test"));
+    service.control.registerApp(stellarCoreCatalogRegistration("https://stellar.spacemountain.live/"));
+    service.control.registerApp(streamweaverCatalogRegistration("https://streamweaver.spacemountain.live/"));
     for(const [tenantId,userId] of [["tenant-a","viewer-a"],["tenant-b","viewer-b"]]){
       service.authority.ensureUser(userId);
       service.data.registerUser({userId,username:userId,displayName:userId,password:`${userId}-password-123456`,tenantIds:[tenantId]});

@@ -13,30 +13,38 @@ import { streamweaverCatalogRegistration } from "../apps/streamweaver/dist/index
 import { createIntegratedSpaceMountainWebHost } from "../apps/spacemountain-web/dist/integrated-server.js";
 import { FIRST_PARTY_APP_CSS, FIRST_PARTY_APP_SURFACES } from "../apps/spacemountain-web/dist/first-party-app-surfaces.js";
 
-const origin = "https://test-green.sprites.app";
+const launchUrls = {
+  commlink: "https://commlink.spacemountain.live/",
+  "stellar-core": "https://stellar.spacemountain.live/",
+  "mission-control": "https://mission-control.spacemountain.live/",
+  "discord-stream-hub": "https://dsh.spacemountain.live/",
+  streamweaver: "https://streamweaver.spacemountain.live/",
+  hearmeout: "https://hearmeout.spacemountain.live/",
+  mountainview: "https://mountainview.spacemountain.live/",
+  companion: "https://companion.spacemountain.live/",
+  "nebula-arcade": "https://nebula.spacemountain.live/",
+};
 const registrations = [
-  commlinkCatalogRegistration(origin),
-  stellarCoreCatalogRegistration(origin),
-  missionControlCatalogRegistration(origin),
-  discordStreamHubCatalogRegistration(origin),
-  streamweaverCatalogRegistration(origin),
-  hearMeOutCatalogRegistration(origin),
-  mountainViewCatalogRegistration(origin),
-  companionCatalogRegistration(origin),
-  nebulaArcadeCatalogRegistration(origin),
+  commlinkCatalogRegistration(launchUrls.commlink),
+  stellarCoreCatalogRegistration(launchUrls["stellar-core"]),
+  missionControlCatalogRegistration(launchUrls["mission-control"]),
+  discordStreamHubCatalogRegistration(launchUrls["discord-stream-hub"]),
+  streamweaverCatalogRegistration(launchUrls.streamweaver),
+  hearMeOutCatalogRegistration(launchUrls.hearmeout),
+  mountainViewCatalogRegistration(launchUrls.mountainview),
+  companionCatalogRegistration(launchUrls.companion),
+  nebulaArcadeCatalogRegistration(launchUrls["nebula-arcade"]),
 ];
 
 const expectedIds = ["commlink", "companion", "discord-stream-hub", "hearmeout", "mission-control", "mountainview", "nebula-arcade", "stellar-core", "streamweaver"];
 
-test("the current first-party catalog contains every app and gives Workspace a stable embed launch", () => {
+test("SpaceMountain-owned apps use the same host-neutral catalog contract as developer apps", () => {
   assert.deepEqual(registrations.map((item) => item.appId).sort(), expectedIds);
   for (const registration of registrations) {
-    const url = new URL(registration.launchUrl);
-    assert.equal(url.origin, origin);
-    assert.equal(url.pathname, `/apps/${registration.appId}`);
-    assert.equal(url.searchParams.get("surface"), "workspace");
+    assert.equal(registration.launchUrl, launchUrls[registration.appId], `${registration.appId} must preserve the publisher-supplied launch URL exactly`);
     assert.equal(registration.surfaces.includes("shell"), true, `${registration.appId} must be launchable inside the SpaceMountain shell`);
   }
+  assert.equal(new Set(registrations.map((item) => new URL(item.launchUrl).hostname)).size, registrations.length, "the catalog must not assume one shared first-party host");
 });
 
 test("every newly ingested app owns a frameable shared-theme surface", async () => {

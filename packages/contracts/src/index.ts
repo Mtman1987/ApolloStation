@@ -547,6 +547,70 @@ export interface AppCatalogRegistrationV1 {
   status: "active" | "disabled";
 }
 
+/**
+ * Canonical app-catalog contract used by SpaceMountain-owned and external apps alike.
+ * Publisher trust and scope approval live in SPMT authorization; the manifest itself is host-neutral.
+ */
+export function assertAppCatalogRegistrationV1(value: unknown): AppCatalogRegistrationV1 {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("App catalog manifest must be an object");
+  const item = value as Record<string, unknown>;
+  const appId = appCatalogText(item.appId, "appId", 200);
+  if (!/^[A-Za-z0-9._:@/-]+$/.test(appId)) throw new Error("appId contains unsupported characters");
+  const name = appCatalogText(item.name, "name", 120);
+  const description = appCatalogText(item.description, "description", 1000);
+  const version = appCatalogText(item.version, "version", 80);
+  const launchUrl = appCatalogUrl(item.launchUrl, "launchUrl");
+  const iconUrl = item.iconUrl === undefined || item.iconUrl === "" ? undefined : appCatalogUrl(item.iconUrl, "iconUrl");
+  const allowedScopes = appCatalogStringArray(item.allowedScopes, "allowedScopes").map((scope) => scope.trim()).filter(Boolean);
+  if (allowedScopes.some((scope) => scope.length > 120 || !/^[A-Za-z0-9.*:_-]+$/.test(scope))) throw new Error("allowedScopes contains an invalid scope");
+  const declaredSurfaces = appCatalogStringArray(item.surfaces, "surfaces");
+  const supportedSurfaces = new Set(["shell", "standalone", "overlay", "popout"]);
+  if (!declaredSurfaces.length || declaredSurfaces.some((surface) => !supportedSurfaces.has(surface))) throw new Error("surfaces must contain at least one supported surface");
+  if (item.status !== "active" && item.status !== "disabled") throw new Error("status must be active or disabled");
+  return {
+    appId, name, description, version, launchUrl, ...(iconUrl ? { iconUrl } : {}),
+    allowedScopes: [...new Set(allowedScopes)].sort(),
+    surfaces: [...new Set(declaredSurfaces)] as AppCatalogRegistrationV1["surfaces"],
+    status: item.status,
+  };
+}
+
+/** Build a catalog record from the same public contract external developers submit. */
+export function createAppCatalogRegistrationV1(
+  app: Pick<AppModuleManifestV1, "id" | "name" | "description" | "requiredScopes" | "surfaces">,
+  input: { version: string; launchUrl: string; iconUrl?: string; allowedScopes?: string[]; surfaces?: AppCatalogRegistrationV1["surfaces"]; status?: AppCatalogRegistrationV1["status"] },
+): AppCatalogRegistrationV1 {
+  return assertAppCatalogRegistrationV1({
+    appId: app.id,
+    name: app.name,
+    description: app.description,
+    version: input.version,
+    launchUrl: input.launchUrl,
+    ...(input.iconUrl ? { iconUrl: input.iconUrl } : {}),
+    allowedScopes: input.allowedScopes ?? [...app.requiredScopes],
+    surfaces: input.surfaces ?? [...app.surfaces],
+    status: input.status ?? "active",
+  });
+}
+
+function appCatalogText(value: unknown, name: string, max: number): string {
+  if (typeof value !== "string" || !value.trim() || value.trim() !== value || value.length > max) throw new Error(`${name} is required and must be at most ${max} characters`);
+  return value;
+}
+function appCatalogStringArray(value: unknown, name: string): string[] {
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) throw new Error(`${name} must be an array of strings`);
+  return value as string[];
+}
+function appCatalogUrl(value: unknown, name: string): string {
+  const text = appCatalogText(value, name, 2048);
+  let url: URL;
+  try { url = new URL(text); } catch { throw new Error(`${name} must be an absolute URL`); }
+  const local = url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "::1" || url.hostname === "[::1]";
+  if (url.protocol !== "https:" && !local) throw new Error(`${name} must use HTTPS outside localhost`);
+  if (url.username || url.password) throw new Error(`${name} may not contain embedded credentials`);
+  return url.toString();
+}
+
 export function assertAppModuleManifestV1(value: AppModuleManifestV1): AppModuleManifestV1 {
   if (value.schemaVersion !== 1 || value.manifestVersion !== "spmt.app-manifest/v1") throw new Error("Unsupported app manifest version");
   if (!value.id || !value.name || !value.description) throw new Error("App manifest identity is incomplete");

@@ -13,7 +13,7 @@ test("Stella uses one metered durable job path for hosted Qwen and eligible Comp
   const credential = "stellar-worker-test-credential-1234567890";
   const service = createSpmtService({ databasePath: join(directory, "stellar.sqlite"), webhookKey: Buffer.alloc(32, 4), host: "127.0.0.1", port: 0, publicBaseUrl: "https://spmt.test", stellarChatEnabled: true, stellarWorkerCredential: credential });
   try {
-    service.control.registerApp(stellarCoreCatalogRegistration("https://spmt.test"));
+    service.control.registerApp(stellarCoreCatalogRegistration("https://stellar.spacemountain.live/"));
     await service.listen();
     const address = service.server.address();
     assert.ok(address && typeof address !== "string");

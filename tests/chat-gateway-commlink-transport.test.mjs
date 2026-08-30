@@ -38,7 +38,7 @@ test("Chat Gateway delivers durable normalized history through the authenticated
     service.authority.ensureUser("user-a"); service.authority.ensureUser("user-b");
     service.control.registerTenant({ tenantId: "tenant-a", ownerUserId: "user-a", displayName: "Tenant A" });
     service.control.registerTenant({ tenantId: "tenant-b", ownerUserId: "user-b", displayName: "Tenant B" });
-    service.control.registerApp(chatGatewayCatalogRegistration("https://spmt.test"));
+    service.control.registerApp(chatGatewayCatalogRegistration("https://commlink.spacemountain.live/?source=chat-gateway"));
     service.control.installApp("tenant-a", "chat-gateway");
     await service.listen();
     const address = service.server.address(); assert.ok(address && typeof address !== "string"); const baseUrl = `http://127.0.0.1:${address.port}`;
@@ -74,5 +74,5 @@ test("Chat Gateway worker configuration is explicit, bounded, and sandbox fail-c
   let calls = 0;
   const token = createChatGatewayWorkerTokenProvider({ spmtOrigin: "http://127.0.0.1:3000", credential: "x".repeat(32), fetchImpl: async (_url, init) => { calls += 1; assert.doesNotMatch(String(init.body), /twitch|discord|kick/); return new Response(JSON.stringify({ accessToken: "internal-access", accessExpiresAt: new Date(Date.now() + 300_000).toISOString() }), { status: 200, headers: { "content-type": "application/json" } }); } });
   assert.equal(await token(), "internal-access"); assert.equal(await token(), "internal-access"); assert.equal(calls, 1);
-  assert.doesNotMatch(JSON.stringify(chatGatewayCatalogRegistration("https://spmt.test")), /chat-tag/i);
+  assert.doesNotMatch(JSON.stringify(chatGatewayCatalogRegistration("https://commlink.spacemountain.live/?source=chat-gateway")), /chat-tag/i);
 });

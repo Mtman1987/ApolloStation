@@ -39,7 +39,7 @@ const common = {
 let candidateManifest;
 if (candidateApp === "nebula-arcade") {
   const module = await import("../../apps/nebula-arcade/dist/index.js");
-  candidateManifest = module.nebulaArcadeCatalogRegistration(publicUrl);
+  candidateManifest = module.nebulaArcadeCatalogRegistration(appLaunchUrl(publicUrl, "/apps/nebula-arcade?surface=workspace"));
 }
 const [
   { commlinkCatalogRegistration },
@@ -63,17 +63,17 @@ const [
   import("../../apps/companion/dist/index.js"),
 ]);
 const coreManifests = [
-  commlinkCatalogRegistration(publicUrl),
-  chatGatewayCatalogRegistration(publicUrl),
-  stellarCoreCatalogRegistration(publicUrl),
-  missionControlCatalogRegistration(publicUrl),
+  commlinkCatalogRegistration(appLaunchUrl(publicUrl, "/apps/commlink?surface=workspace")),
+  chatGatewayCatalogRegistration(appLaunchUrl(publicUrl, "/apps/commlink?source=chat-gateway")),
+  stellarCoreCatalogRegistration(appLaunchUrl(publicUrl, "/apps/stellar-core?surface=workspace")),
+  missionControlCatalogRegistration(appLaunchUrl(publicUrl, "/apps/mission-control?surface=workspace")),
 ];
 const currentManifests = [
-  discordStreamHubCatalogRegistration(publicUrl),
-  streamweaverCatalogRegistration(publicUrl),
-  hearMeOutCatalogRegistration(publicUrl),
-  mountainViewCatalogRegistration(publicUrl),
-  companionCatalogRegistration(publicUrl),
+  discordStreamHubCatalogRegistration(appLaunchUrl(publicUrl, "/apps/discord-stream-hub?surface=workspace")),
+  streamweaverCatalogRegistration(appLaunchUrl(publicUrl, "/apps/streamweaver?surface=workspace")),
+  hearMeOutCatalogRegistration(appLaunchUrl(publicUrl, "/apps/hearmeout?surface=workspace")),
+  mountainViewCatalogRegistration(appLaunchUrl(publicUrl, "/apps/mountainview?surface=workspace")),
+  companionCatalogRegistration(appLaunchUrl(publicUrl, "/apps/companion?surface=workspace")),
 ];
 const sandboxManifests = [
   ...coreManifests,
@@ -266,6 +266,8 @@ function requireSandboxUrl(value) {
   if (url.username || url.password || url.pathname !== "/" || url.search || url.hash) throw new Error("--public-url must be a credential-free origin");
   return url.origin;
 }
+
+function appLaunchUrl(origin, path) { return new URL(path, origin).toString(); }
 
 function parseArguments(values) {
   const result = new Map();

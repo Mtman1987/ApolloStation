@@ -1,4 +1,4 @@
-import { assertAppModuleManifestV1, type AppCatalogRegistrationV1, type AppModuleManifestV1, type CommunityAssistantInvocationV1 } from "@spmt/contracts";
+import { assertAppModuleManifestV1, createAppCatalogRegistrationV1, type AppCatalogRegistrationV1, type AppModuleManifestV1, type CommunityAssistantInvocationV1 } from "@spmt/contracts";
 import { ExecutionJobError, ExecutionJobService } from "@spmt/execution-core";
 import { STELLAR_CHAT_CAPABILITY_ID, STELLAR_CHAT_REQUEST_KIND, type StellarRouteDecisionV1 } from "./contracts.js";
 
@@ -49,22 +49,6 @@ export const manifest = assertAppModuleManifestV1({
   ],
 } satisfies AppModuleManifestV1);
 
-export function stellarCoreCatalogRegistration(publicOrigin: string): AppCatalogRegistrationV1 {
-  const origin = catalogOrigin(publicOrigin, "Stellar Core");
-  return {
-    appId: manifest.id,
-    name: manifest.name,
-    description: manifest.description,
-    version: "0.1.0-green",
-    launchUrl: new URL("/apps/stellar-core?surface=workspace", origin).toString(),
-    allowedScopes: [...manifest.requiredScopes],
-    surfaces: ["shell", "standalone"],
-    status: "active",
-  };
-}
-
-function catalogOrigin(value: string, name: string) {
-  const origin = new URL(value);
-  if (origin.username || origin.password || origin.pathname !== "/" || origin.search || origin.hash) throw new Error(`${name} catalog origin must be a credential-free origin`);
-  return origin;
+export function stellarCoreCatalogRegistration(launchUrl: string): AppCatalogRegistrationV1 {
+  return createAppCatalogRegistrationV1(manifest, { version: "0.1.0-green", launchUrl, surfaces: ["shell", "standalone"] });
 }

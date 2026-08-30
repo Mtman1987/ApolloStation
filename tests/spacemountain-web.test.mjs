@@ -96,7 +96,7 @@ test("developer console exposes an editable candidate but registers only through
   let web;
   try {
     await spmt.listen(); const spmtAddress = spmt.server.address(); assert.ok(spmtAddress && typeof spmtAddress !== "string");
-    const candidate = nebulaArcadeCatalogRegistration("https://test-green.sprites.app");
+    const candidate = nebulaArcadeCatalogRegistration("https://test-green.sprites.app/apps/nebula-arcade?surface=workspace");
     web = createSpaceMountainWebHost({ spmtOrigin: `http://127.0.0.1:${spmtAddress.port}`, host: "127.0.0.1", port: 0, candidateManifest: candidate });
     await web.listen(); const webAddress = web.server.address(); assert.ok(webAddress && typeof webAddress !== "string"); const base = `http://127.0.0.1:${webAddress.port}`; const origin = new URL(base).origin;
     const ordinaryRegistration = await fetch(`${base}/sandbox/auth/register`, { method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify({ displayName: "Empty Captain", username: "empty-captain", password: "sandbox-only-password" }) });
@@ -336,7 +336,7 @@ test("bundled review apps are installed into tenants that predate the deployment
     first.authority.getOrCreateWorkspace("existing-tenant");
     await first.close();
 
-    const manifest = nebulaArcadeCatalogRegistration("https://upgrade-green.sprites.app");
+    const manifest = nebulaArcadeCatalogRegistration("https://upgrade-green.sprites.app/apps/nebula-arcade?surface=workspace");
     const upgraded = createSpmtService({ ...options, sandboxApps: [manifest] });
     try {
       await upgraded.listen();

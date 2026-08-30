@@ -2,6 +2,7 @@ import { DatabaseSync } from "node:sqlite";
 import {
   assertAppModuleManifestV1,
   assertNormalizedChatMessageV1,
+  createAppCatalogRegistrationV1,
   type AppCatalogRegistrationV1,
   type AppModuleManifestV1,
   type ChatProviderV1,
@@ -30,19 +31,13 @@ export const manifest = assertAppModuleManifestV1({
   ],
 } satisfies AppModuleManifestV1);
 
-export function chatGatewayCatalogRegistration(publicOrigin: string): AppCatalogRegistrationV1 {
-  const origin = new URL(publicOrigin);
-  if (origin.username || origin.password || origin.pathname !== "/" || origin.search || origin.hash) throw new Error("Chat Gateway catalog origin must be a credential-free origin");
-  return {
-    appId: manifest.id,
-    name: manifest.name,
-    description: manifest.description,
+export function chatGatewayCatalogRegistration(launchUrl: string): AppCatalogRegistrationV1 {
+  return createAppCatalogRegistrationV1(manifest, {
     version: "0.1.0-green",
-    launchUrl: new URL("/apps/commlink?source=chat-gateway", origin).toString(),
+    launchUrl,
     allowedScopes: ["providers:grant", "commlink:live:write", "runtime:write"],
     surfaces: ["standalone"],
-    status: "active",
-  };
+  });
 }
 
 export interface ProviderChatEnvelopeV1 {
