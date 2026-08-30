@@ -1,63 +1,68 @@
-# SPMT Ecosystem Core
+# ApolloStation
 
-Status: **the shared Green base is approved for main promotion; Blue production remains authoritative until cutover gates pass**
+ApolloStation is the implementation monorepo for the SPMT Ecosystem Core and the SpaceMountain application platform.
 
-This repository is the clean-room implementation monorepo, architecture, and migration contract for rebuilding the SpaceMountain ecosystem beside the current production system.
+## Status
 
-**Naming boundary:** SPMT Ecosystem Core is the complete shared foundation in this repository. SPMT is its identity, data, policy, and developer authority; SpaceMountain is its front door and shared workspace; Stellar Core is its persona-neutral AI subsystem; and the Mtman Machine Rotator is its private fleet and operations controller. `ApolloStation` remains the repository/codename. Commlink, Stellar Core's Stella surface, Mission Control, and Nebula Arcade are registered first-party applications discovered through the same catalog contract used by every other app. Product-specific workers stay behind their owning app rather than becoming separate user-facing products.
+The project is no longer a speculative rebuild blueprint. The shared platform, application contracts, product ports, test suite, Review/Release Sprite workflow, and migration tooling are implemented in this repository. Blue production remains authoritative until each production cohort passes its migration and rollback gates.
 
-Owner approval recorded 2026-08-21 closes the foundation decision pack in `DECISIONS.md`. The reviewed shared UI/app baseline was approved for main promotion on 2026-08-24. Blue production still remains the donor and rollback authority until identity, data, provider, output, load, recovery, observation, and rollback gates pass.
+On 2026-08-30 the architecture documentation was reset around what the system actually became. Earlier debate ledgers, proposed topologies, milestone wiring notes, and phase plans remain available in Git history and donor evidence, but they no longer govern implementation.
 
-## Current Green baseline
+Current evidence:
 
-The reusable base now includes:
+- the complete offline acceptance battery passed 571/571 tests;
+- the main offline checklist completed 69/69 requirements;
+- the current runtime code tree was promoted to the protected Release Sprite;
+- the ecosystem-core Stage 1 rehearsal passed health, registry, identity persistence, workspace persistence, supervised restart, and recovery-to-ready checks with outbound integrations disabled;
+- no production tenant, DNS route, provider connection, or Blue authority has been moved by those tests.
 
-- one SpaceMountain shell viewport shared by Home, Shipyard, Workspace, Settings, the private header-opened Account, and every opened app;
-- a fixed shared header/sidebar with all long-page scrolling contained inside the content rectangle below the header;
-- one theme/background/star system with app-owned scene art and depth-aware translucent surfaces;
-- registry-driven first-party apps rather than hardcoded special cases;
-- canonical SPMT identity, workspace, XP, events, app registration, overlay grants, runtime health, CLI, MCP, and SDK contracts;
-- Commlink as the shared communication app, Stellar Core as the persona-neutral AI app, and owner-only Mission Control for operations;
-- Nebula Arcade as the cosmic Games Hub with twenty equal game entries, full game detail pages, saved multi-game overlay scenes, and one command-collision router;
-- Nebula Arcade as the sole Games Hub identity, with tagging implemented as its internal `tag` game and legacy persisted identifiers handled only by a one-way private migration;
-- isolated Review and Release Sprite promotion paths with checkpoint, test, atomic switch, and rollback behavior.
+## Product model
 
-The next implementation phase is deliberately repetitive: plug the remaining donor apps into these established contracts, then run logs -> fix -> logs, click every control, exercise every command/output, and only then promote the verified Green system toward production.
+- **SPMT** is the identity, policy, shared-data, developer, entitlement, usage, and authorization authority.
+- **SpaceMountain** is the public front door, shell, workspace, and app host.
+- **Stellar Core** is the persona-neutral AI execution system; Stella is the default SPMT Community Assistant.
+- **Chat Gateway** is the provider-neutral live-chat connection layer.
+- **Mission Control** is the owner/operator surface for runtime evidence and bounded operations.
+- **Commlink, Discord Stream Hub, StreamWeaver, HearMeOut, MountainView, Companion, Nebula Arcade, Stellar Core, and Mission Control** are registered applications rather than hardcoded exceptions.
+- First-party applications use the same catalog, launch, scope, SDK/API/event/job, AppFrame, and lifecycle contracts available to approved third-party applications. SpaceMountain ownership changes publisher trust and granted scopes, not launch plumbing.
 
-## What this package does
+## Read this documentation in this order
 
-- freezes donor documentation from the current live repositories as read-only evidence;
-- separates observed facts from old plans and unverified claims;
-- defines one coherent identity, data, runtime, worker, AI, and Fly.io model for Green;
-- records the accepted architecture decisions and keeps measured configuration changes inside their approved boundaries;
-- tracks donor-to-Green feature parity so a clean rebuild cannot silently become feature loss;
-- lists every material removal or rewrite with a defense and counterargument;
-- defines a reversible, cost-bounded parallel cutover;
-- keeps Firebase and other retired architecture out of the new design.
+1. `ARCHITECTURE.md` — the current architecture and the decisions that survived implementation.
+2. `CURRENT_STATE.md` — evidence-backed implementation and rehearsal status.
+3. `PRODUCTION_PATH.md` — the practical path from the current state to Blue retirement.
+4. `APP_CONTRACTS.md` — mandatory rules for first- and third-party apps, workers, data, URLs, lifecycle, and surfaces.
+5. `docs/PRODUCT_UI.md` — detailed visual/surface behavior.
+6. `docs/SPRITES_SANDBOX_HANDOFF.md` — Review/Release Sprite mechanics.
+7. `docs/MAIN_OFFLINE_TEST_CHECKLIST.md` — the offline acceptance procedure/evidence.
 
-## Read in this order
+`docs/architecture/` contains implementation notes for individual verticals. `docs/donor-audits/` and `evidence/raw/` are migration/history evidence, not governing architecture.
 
-1. `CURRENT_STATE.md` — what is known, inconsistent, and still unverified in the donor/live system.
-2. `DECISIONS.md` — accepted foundation decisions plus the small deferred decision set.
-3. `BLUEPRINT.md` — target architecture governed by the accepted decisions.
-4. `PARITY_LEDGER.md` — donor capability/state ownership mapped to Green disposition and proof.
-5. `APP_CONTRACTS.md` — rules every rebuilt app and worker must follow.
-6. `ROTATOR_FLEET_CONTRACT.md` — private fleet reconciliation, scaling, restart, access, logging, and safety boundaries.
-7. `OPERATIONS.md` — implementation batches, build order, cost clock, gates, migration, and rollback.
-8. `DOCUMENT_REVIEW.md` — what should be kept, merged, archived, or removed.
-9. `docs/PRODUCT_UI.md` — shared viewport, depth/translucency, theme, scene, navigation, and app UI rules.
-10. `docs/SPRITES_SANDBOX_HANDOFF.md` — review/release Sprite promotion and verification contract.
-11. `docs/NEBULA_ARCADE_OWNERSHIP.md` — canonical Games Hub naming, route, worker, storage, and migration boundary.
+## Permanent public names
 
-The `evidence/raw/` directory preserves historical source documents copied from the live donor repositories. That evidence is read-only historical input; nothing inside it is automatically a current requirement.
+`spmt.live` remains the SPMT platform/core identity. `spacemountain.live` remains the public ecosystem front door. SpaceMountain-owned apps use stable owned launch names such as:
+
+- `commlink.spacemountain.live`
+- `companion.spacemountain.live`
+- `discordstreamhub.spacemountain.live`
+- `hearmeout.spacemountain.live`
+- `missioncontrol.spacemountain.live`
+- `mountainview.spacemountain.live`
+- `nebula.spacemountain.live`
+- `stellar.spacemountain.live`
+- `streamweaver.spacemountain.live`
+
+Those names are permanent product addresses. The infrastructure behind them may move. A hostname never grants app trust by itself.
 
 ## Governing rules
 
-1. Accepted decisions are the Green architecture contract.
-2. Live production is donor evidence and the rollback system, not the place to build Green.
-3. No donor capability is silently dropped. If it has not been classified in `PARITY_LEDGER.md`, it defaults to `VERIFY`, never `REMOVE`.
-4. Build one shared contract or bounded product slice at a time, with tests proving parity or an explicit approved removal.
-5. Use the fewest visual layers necessary; deeper surfaces become more translucent, never more opaque.
-6. Every app occupies the same SpaceMountain content viewport. Home screens fit without scrolling; longer screens scroll only inside that rectangle and never behind the shared header.
-7. Blue stays available until Green passes identity, data, reliability, load, recovery, observation, and rollback gates.
-8. If implementation proves an accepted contract wrong, record the evidence and change the decision before changing the architecture.
+1. One shared fact has one canonical authority.
+2. App-private durable state is allowed when it is genuinely product-private; it is not a competing answer to an SPMT shared fact.
+3. First-party apps dogfood the public developer platform instead of using private shortcuts.
+4. Stable owned URLs identify our products; hosting-provider URLs are implementation details.
+5. Deployment boundaries follow workload behavior, security, failure, and scaling needs rather than brand names.
+6. Blue remains available until the corresponding Green capability/app passes live proof and rollback.
+7. No two runtimes may simultaneously own writable/responding authority for the same tenant/provider/channel.
+8. Provider credentials, infrastructure credentials, and app trust are scope/identity decisions, never URL decisions.
+9. Recovery outcomes are mandatory; a particular recovery product name or hosting vendor is not.
+10. If implementation evidence disproves this architecture, change this architecture explicitly rather than preserving an obsolete plan for consistency.
