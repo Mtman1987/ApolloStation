@@ -20,10 +20,10 @@ export function verifySpmtRtcCanaryTicketV1(secret: string, input: SpmtRtcCanary
   const normalized = normalize(secret, input);
   if (!Number.isFinite(now)) return false;
   const match = /^spmt-rtc-auth\.(\d{10,16})\.([A-Za-z0-9_-]{32,128})$/.exec(String(ticket ?? ""));
-  if (!match || Number(match[1]) !== normalized.expiresAt) return false;
+  if (!match || Number(match[1] ?? "") !== normalized.expiresAt) return false;
   if (normalized.expiresAt < now - 5_000 || normalized.expiresAt > now + 120_000) return false;
   const expected = Buffer.from(sign(secret, normalized));
-  const supplied = Buffer.from(match[2]);
+  const supplied = Buffer.from(match[2] ?? "");
   return expected.byteLength === supplied.byteLength && timingSafeEqual(expected, supplied);
 }
 
