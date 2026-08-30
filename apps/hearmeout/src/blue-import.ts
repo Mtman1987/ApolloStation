@@ -198,9 +198,9 @@ function transformBluePlaylistItem(value: unknown, index: number): HearMeOutMedi
   const blueId = cleanId(item.id, `playlist[${index}].id`);
   const title = text(item.title, `playlist[${index}].title`, 300);
   const playbackUrl = optionalText(item.playbackUrl, 4000) ?? text(item.url, `playlist[${index}].url`, 4000);
-  const addedBy = optionalText(item.addedBy, 300) ?? "unknown";
   const addedAt = timestamp(item.addedAt, `playlist[${index}].addedAt`);
   const duration = Number(item.duration);
+  const posterUrl = optionalText(item.thumbnail, 4000);
   const metadata: Record<string, unknown> = { blueItemId: blueId };
   for (const [key, raw] of [["artist", item.artist], ["artId", item.artId], ["addedBy", item.addedBy], ["playbackStrategy", item.playbackStrategy]] as const) {
     const normalized = optionalText(raw, 500);
@@ -218,7 +218,7 @@ function transformBluePlaylistItem(value: unknown, index: number): HearMeOutMedi
       title,
       source: optionalText(item.source, 100) ?? "hearmeout-blue",
       playbackUrl,
-      ...(optionalText(item.thumbnail, 4000) ? { posterUrl: optionalText(item.thumbnail, 4000) } : {}),
+      ...(posterUrl ? { posterUrl } : {}),
       ...(Number.isFinite(duration) && duration > 0 ? { durationSeconds: duration } : {}),
       metadata,
     },
@@ -232,6 +232,8 @@ function transformBlueVoiceBridge(value: unknown, tenantId: string): HearMeOutVo
   const guildId = snowflake(input.guildId, "voiceBridge.guildId");
   const voiceChannelId = snowflake(input.voiceChannelId, "voiceBridge.voiceChannelId");
   const receiveGain = Number(input.discordReceiveGain);
+  const updatedBy = optionalId(input.updatedBy);
+  const updatedAt = optionalTimestamp(input.updatedAt);
   return {
     schemaVersion: 1,
     tenantId,
@@ -245,8 +247,8 @@ function transformBlueVoiceBridge(value: unknown, tenantId: string): HearMeOutVo
     roomVoiceOutboundEnabled: typeof input.roomVoiceOutboundEnabled === "boolean" ? input.roomVoiceOutboundEnabled : true,
     audioProfile: profile,
     discordReceiveGain: Number.isFinite(receiveGain) ? Math.max(0, Math.min(4, receiveGain)) : 1,
-    ...(optionalId(input.updatedBy) ? { updatedBy: optionalId(input.updatedBy) } : {}),
-    ...(optionalTimestamp(input.updatedAt) ? { updatedAt: optionalTimestamp(input.updatedAt) } : {}),
+    ...(updatedBy ? { updatedBy } : {}),
+    ...(updatedAt ? { updatedAt } : {}),
   };
 }
 
