@@ -59,20 +59,45 @@ test("Apollo placeholder HearMeOut launch URLs resolve to the current real app",
   assert.equal(registration.surfaces.includes("standalone"), true);
 });
 
-test("every newly ingested generic app surface remains frameable for apps that still use it", async () => {
+test("obsolete Apollo HearMeOut routes redirect to the real room application", async () => {
+  const host = createIntegratedSpaceMountainWebHost({ spmtOrigin: "http://127.0.0.1:65534", host: "127.0.0.1", port: 0, buildSha: "hearmeout-redirect-test" });
+  try {
+    await host.listen();
+    const address = host.server.address();
+    assert.ok(address && typeof address !== "string");
+    const response = await fetch(`http://127.0.0.1:${address.port}/apps/hearmeout?surface=shell`, { redirect: "manual" });
+    assert.equal(response.status, 307);
+    assert.equal(response.headers.get("location"), HEARMEOUT_LIVE_LAUNCH_URL);
+  } finally {
+    await host.close();
+  }
+});
+
+test("every generic app surface still in use remains frameable and inherits the full shared appearance", async () => {
   const host = createIntegratedSpaceMountainWebHost({ spmtOrigin: "http://127.0.0.1:65534", host: "127.0.0.1", port: 0, buildSha: "app-ingestion-test" });
   try {
     await host.listen();
     const address = host.server.address();
     assert.ok(address && typeof address !== "string");
     const base = `http://127.0.0.1:${address.port}`;
-    assert.equal((await fetch(`${base}/assets/web/first-party-apps.css`)).status, 200);
-    assert.equal((await fetch(`${base}/assets/web/first-party-apps.js`)).status, 200);
+    const cssResponse = await fetch(`${base}/assets/web/first-party-apps.css`);
+    const jsResponse = await fetch(`${base}/assets/web/first-party-apps.js`);
+    assert.equal(cssResponse.status, 200);
+    assert.equal(jsResponse.status, 200);
+    const css = await cssResponse.text();
+    const js = await jsResponse.text();
+    assert.match(css, /color-scheme:normal!important/);
+    assert.match(css, /var\(--ink/);
+    assert.match(js, /--spmt-surface-depth-1/);
+    assert.match(js, /--spmt-ink/);
+    assert.match(js, /MutationObserver/);
     for (const [appId, descriptor] of Object.entries(FIRST_PARTY_APP_SURFACES)) {
+      if (appId === "hearmeout") continue;
       const response = await fetch(`${base}/apps/${appId}?surface=shell`);
       assert.equal(response.status, 200, appId);
       assert.equal(response.headers.get("x-frame-options"), "SAMEORIGIN");
       assert.match(response.headers.get("content-security-policy") ?? "", /frame-ancestors 'self'/);
+      assert.match(response.headers.get("permissions-policy") ?? "", /microphone=\(self\)/);
       const html = await response.text();
       assert.match(html, new RegExp(`data-app="${appId}"`));
       assert.match(html, /data-surface="shell"/);
