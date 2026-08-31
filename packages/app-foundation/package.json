@@ -5,6 +5,6 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
-  "dependencies": { "@spmt/contracts": "0.1.0" },
+  "dependencies": { "@spmt/contracts": "0.1.0", "@spmt/ui": "0.1.0" },
   "scripts": { "build": "tsc -b" }
 }
