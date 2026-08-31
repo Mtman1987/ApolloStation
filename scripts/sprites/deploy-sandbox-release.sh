@@ -83,7 +83,7 @@ restore_previous_cohort() {
     mv -Tf "$next_link" "$current_link"
     sprite-env services stop "$service_name" >/dev/null 2>&1 || true
     sprite-env services delete "$service_name" >/dev/null 2>&1 || true
-    create_apollo_service "$(basename "$previous_release")" || true
+    create_apollo_service "$(basename "$previous_release")" 0 || true
   fi
 }
 
