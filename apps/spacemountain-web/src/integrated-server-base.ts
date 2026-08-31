@@ -9,6 +9,7 @@ import {
   renderFirstPartyAppSurface,
   type FirstPartyAppSurfaceMode,
 } from "./first-party-app-surfaces.js";
+import { createHearMeOutGreenWebRuntime, HEARMEOUT_GREEN_BROWSER_JS, HEARMEOUT_GREEN_CSS } from "./hearmeout-green-surface.js";
 import { createSpaceMountainWebHost, validateSandboxWebEnvironment, type SpaceMountainWebHostOptions } from "./server.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -57,7 +58,7 @@ const FIRST_PARTY_SHARED_THEME_JS = `;(()=>{if(window.parent===window)return;try
 const FIRST_PARTY_EMBED_BROWSER_JS = FIRST_PARTY_APP_BROWSER_JS.replace(
   /const image=root\.querySelector\(':scope > \.spmt-product-backdrop \.spmt-product-backdrop-image'\),scene=shellScenes\[body\.dataset\.app\];if\(image&&scene\)\{image\.style\.backgroundImage=scene;image\.style\.backgroundPosition='center';image\.style\.backgroundSize='cover';\}/,
   "",
-) + FIRST_PARTY_SHARED_THEME_JS;
+) + FIRST_PARTY_SHARED_THEME_JS + HEARMEOUT_GREEN_BROWSER_JS;
 
 export interface IntegratedSpaceMountainWebHostOptions extends SpaceMountainWebHostOptions {
   port?: number;
@@ -67,16 +68,18 @@ export interface IntegratedSpaceMountainWebHostOptions extends SpaceMountainWebH
 export function createIntegratedSpaceMountainWebHost(options: IntegratedSpaceMountainWebHostOptions) {
   const inner = createSpaceMountainWebHost({ ...options, host: "127.0.0.1", port: 0 });
   let innerPort = 0;
+  const hearmeout = createHearMeOutGreenWebRuntime({ innerPort: () => innerPort });
   const outer = createServer(async (request, response) => {
     try {
       const url = new URL(request.url ?? "/", "http://spacemountain.integrated");
+      if (await hearmeout.handle(request, response, url)) return;
       if (request.method === "GET" && FIRST_PARTY_SCENE_ASSETS.has(url.pathname)) {
         applyAppHeaders(response, false);
         return sendBuffer(response, 200, await readFile(FIRST_PARTY_SCENE_ASSETS.get(url.pathname)!), "image/webp", "public, max-age=86400");
       }
       if (request.method === "GET" && url.pathname === "/assets/web/first-party-apps.css") {
         applyAppHeaders(response, false);
-        return send(response, 200, FIRST_PARTY_APP_CSS + FIRST_PARTY_REAL_SCENE_CSS + FIRST_PARTY_SHARED_THEME_CSS, "text/css; charset=utf-8", "public, max-age=300");
+        return send(response, 200, FIRST_PARTY_APP_CSS + FIRST_PARTY_REAL_SCENE_CSS + FIRST_PARTY_SHARED_THEME_CSS + HEARMEOUT_GREEN_CSS, "text/css; charset=utf-8", "public, max-age=300");
       }
       if (request.method === "GET" && url.pathname === "/assets/web/first-party-apps.js") {
         applyAppHeaders(response, false);
@@ -108,6 +111,7 @@ export function createIntegratedSpaceMountainWebHost(options: IntegratedSpaceMou
     },
     async close() {
       await new Promise<void>((done, reject) => outer.close((error) => error ? reject(error) : done()));
+      hearmeout.close();
       await inner.close();
     },
   };
