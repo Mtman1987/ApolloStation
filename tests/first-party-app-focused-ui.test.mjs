@@ -2,25 +2,31 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-const surfaceSource = readFileSync(new URL("../apps/spacemountain-web/src/first-party-app-surfaces.ts", import.meta.url), "utf8");
-const shellSource = `${readFileSync(new URL("../apps/spacemountain/src/shell-ui-base.ts", import.meta.url), "utf8")}\n${readFileSync(new URL("../apps/spacemountain/src/shell-ui.ts", import.meta.url), "utf8")}`;
-const integratedSource = `${readFileSync(new URL("../apps/spacemountain-web/src/integrated-server-base.ts", import.meta.url), "utf8")}\n${readFileSync(new URL("../apps/spacemountain-web/src/integrated-server.ts", import.meta.url), "utf8")}`;
+const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+const owned = ["discord-stream-hub", "streamweaver", "hearmeout", "mountainview", "companion"];
+const foundation = read("packages/app-foundation/src/product-web.ts");
+const shellSource = `${read("apps/spacemountain/src/shell-ui-base.ts")}\n${read("apps/spacemountain/src/shell-ui.ts")}`;
+const integratedSource = `${read("apps/spacemountain-web/src/integrated-server-base.ts")}\n${read("apps/spacemountain-web/src/integrated-server.ts")}`;
 
-test("focused first-party apps own real pages and fill the existing rocket dock with app navigation", () => {
-  for (const appId of ["discord-stream-hub", "streamweaver", "hearmeout", "mountainview", "companion"]) assert.match(surfaceSource, new RegExp(`id: "${appId}"`));
-  assert.match(surfaceSource, /data-themed-app-icon/);
-  assert.doesNotMatch(surfaceSource, /APP CONTRACT|Registered first-party module/);
-  for (const pattern of [/data-focused-nav/, /data-focused-nav-item/, /data-app-page/, /function showPage/, /spmt-dock-owned/, /spmt-dock-app-icon/, /scrollbar-gutter:stable/, /data-page="overview"/, /label: "Live"/, /label: "Shoutouts"/, /label: "Calendar"/, /label: "Commands"/, /label: "Economy"/, /label: "Pokémon"/, /label: "Room"/, /label: "Music"/, /label: "Voice Bridge"/, /label: "Scan QR"/, /label: "Camera"/, /label: "Relay"/, /label: "Workflows"/, /label: "Diagnostics"/]) assert.match(surfaceSource, pattern);
+test("focused owned apps keep their pages inside their product packages", () => {
+  for (const appId of owned) {
+    const source = read(`apps/${appId}/src/web-server.ts`);
+    assert.match(source, new RegExp(appId === "hearmeout" ? "HearMeOut" : appId === "discord-stream-hub" ? "Discord Stream Hub" : appId === "companion" ? "SpaceMountain Companion" : appId === "mountainview" ? "MountainView" : "StreamWeaver"));
+  }
+  assert.match(foundation, /data-nav/);
+  assert.match(foundation, /data-page/);
+  assert.match(foundation, /overflow:auto/);
 });
 
-test("every focused app keeps unique scene art while inheriting shared SpaceMountain appearance", () => {
-  for (const appId of ["discord-stream-hub", "streamweaver", "hearmeout", "mountainview", "companion"]) { assert.match(surfaceSource, new RegExp(`body\\[data-app="${appId}"\\] \\.scene-art`)); assert.match(surfaceSource, new RegExp(`'${appId}':`)); }
-  for (const pattern of [/--spmt-glass-opacity/, /--spmt-blur/, /--spmt-stars/, /--spmt-accent-secondary/, /dataset\.sharedUi='inherited'/, /feature-grid\{[^}]*background:transparent/]) assert.match(surfaceSource, pattern);
+test("owned app UI inherits canonical theme and layout through AppFrame", () => {
+  for (const pattern of [/PRODUCT_UI_CSS/, /spmt\.embed/, /host\.hello/, /theme\.changed/, /layout\.changed/, /--spmt-shell-available-height/, /--spmt-accent-secondary/]) assert.match(foundation, pattern);
+  assert.match(shellSource, /createAppFrameHost/);
+  assert.match(shellSource, /buildAppFrameTarget/);
+  assert.doesNotMatch(integratedSource, /renderFirstPartyAppSurface|first-party-app-surfaces/);
 });
 
-test("Nebula Arcade stays on its functional runtime with shared shell navigation and unique scene", () => {
-  assert.doesNotMatch(surfaceSource, /FirstPartyAppSurfaceId = [^;]*nebula-arcade/);
-  assert.match(integratedSource, /apps\/nebula-arcade|nebulaArcadeOrigin/);
+test("Nebula Arcade stays on its functional runtime while using the same catalog and shell frame", () => {
+  assert.match(integratedSource, /nebulaArcadeOrigin/);
   assert.match(shellSource, /"nebula-arcade"[\s\S]*label: "Games"[\s\S]*label: "Play"[\s\S]*label: "Scores"[\s\S]*label: "Settings"/);
   assert.match(shellSource, /nebula-arcade\/solar-system\.webp/);
 });
