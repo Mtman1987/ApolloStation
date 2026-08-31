@@ -39,6 +39,7 @@ llama_archive_sha256="6ffee01c8fe2481faf8b614bbd8ca9bdaa563f47d4d9e00dc44f423962
 previous_release=""
 switched=0
 bootstrap_service_removed=0
+cohort_quiesced=0
 
 mkdir -p "$releases_root" "$data_root"
 if [[ -L "$current_link" ]]; then
@@ -76,15 +77,26 @@ provision_llm_runtime() {
   fi
 }
 
+restore_previous_cohort() {
+  if [[ -n "$previous_release" && -d "$previous_release" ]]; then
+    ln -sfn "$previous_release" "$next_link"
+    mv -Tf "$next_link" "$current_link"
+    sprite-env services stop "$service_name" >/dev/null 2>&1 || true
+    sprite-env services delete "$service_name" >/dev/null 2>&1 || true
+    create_apollo_service "$(basename "$previous_release")" 0 || true
+  fi
+}
+
 rollback() {
   status=$?
   if (( status != 0 && switched == 1 )) && [[ -n "$previous_release" && -d "$previous_release" ]]; then
     echo "Deployment failed; restoring $previous_release" >&2
-    ln -sfn "$previous_release" "$next_link"
-    mv -Tf "$next_link" "$current_link"
-    sprite-env services stop "$service_name" || true
-    sprite-env services delete "$service_name" || true
-    create_apollo_service "$(basename "$previous_release")" 0 || true
+    restore_previous_cohort
+    cohort_quiesced=0
+  elif (( status != 0 && cohort_quiesced == 1 )); then
+    echo "Validation failed while the previous supervised cohort was quiesced; restoring it" >&2
+    restore_previous_cohort
+    cohort_quiesced=0
   fi
   if (( status != 0 && bootstrap_service_removed == 1 )) && [[ -z "$previous_release" ]]; then
     echo "Deployment failed; restoring bootstrap service $bootstrap_service_name" >&2
@@ -123,6 +135,24 @@ fi
 cd "$release_dir"
 npm ci --ignore-scripts
 npm run typecheck
+
+# The protected Sprite already has one complete supervised cohort listening on
+# the canonical app-owned loopback ports. The integration suite intentionally
+# launches another complete cohort, so validate it only after quiescing the old
+# service. A failing validation recreates the previous cohort in rollback().
+if sprite-env services get "$service_name" >/dev/null 2>&1; then
+  sprite-env services stop "$service_name" || true
+  sprite-env services delete "$service_name"
+  cohort_quiesced=1
+  pkill -TERM -f 'scripts/sprites/run-supervised-sandbox\.mjs' 2>/dev/null || true
+  for _ in {1..50}; do
+    if ! ss -ltn 2>/dev/null | grep -Eq ':(8080|3200|3201|3202|3203|3204)[[:space:]]'; then
+      break
+    fi
+    sleep 0.1
+  done
+fi
+
 timeout --signal=TERM --kill-after=15s 10m npm test
 
 provision_llm_runtime
@@ -171,6 +201,7 @@ if (( ready != 1 )); then
   echo "The deployed release did not report the expected build SHA" >&2
   exit 1
 fi
+cohort_quiesced=0
 
 printf 'Deployed %s commit %s\n' "$DEPLOY_ROLE" "$BUILD_SHA"
 printf 'Active release: %s\n' "$(readlink -f "$current_link")"
