@@ -4,7 +4,7 @@ import test from "node:test";
 import { commlinkCatalogRegistration } from "../apps/commlink/dist/index.js";
 import { companionCatalogRegistration } from "../apps/companion/dist/index.js";
 import { discordStreamHubCatalogRegistration } from "../apps/discord-stream-hub/dist/index.js";
-import { hearMeOutCatalogRegistration } from "../apps/hearmeout/dist/index.js";
+import { hearMeOutCatalogRegistration, HEARMEOUT_LIVE_LAUNCH_URL } from "../apps/hearmeout/dist/index.js";
 import { missionControlCatalogRegistration } from "../apps/mission-control/dist/index.js";
 import { mountainViewCatalogRegistration } from "../apps/mountainview/dist/index.js";
 import { nebulaArcadeCatalogRegistration } from "../apps/nebula-arcade/dist/index.js";
@@ -41,13 +41,25 @@ const expectedIds = ["commlink", "companion", "discord-stream-hub", "hearmeout",
 test("SpaceMountain-owned apps use the same host-neutral catalog contract as developer apps", () => {
   assert.deepEqual(registrations.map((item) => item.appId).sort(), expectedIds);
   for (const registration of registrations) {
-    assert.equal(registration.launchUrl, launchUrls[registration.appId], `${registration.appId} must preserve the publisher-supplied launch URL exactly`);
-    assert.equal(registration.surfaces.includes("shell"), true, `${registration.appId} must be launchable inside the SpaceMountain shell`);
+    assert.equal(registration.launchUrl, launchUrls[registration.appId], `${registration.appId} must preserve a real publisher-supplied launch URL exactly`);
+    if (registration.appId === "hearmeout") {
+      assert.equal(registration.surfaces.includes("shell"), false, "HearMeOut must not be trapped in a shell iframe while the real voice-room app is cross-origin");
+      assert.equal(registration.surfaces.includes("standalone"), true, "HearMeOut must launch as the real standalone room application");
+    } else {
+      assert.equal(registration.surfaces.includes("shell"), true, `${registration.appId} must be launchable inside the SpaceMountain shell`);
+    }
   }
   assert.equal(new Set(registrations.map((item) => new URL(item.launchUrl).hostname)).size, registrations.length, "the catalog must not assume one shared first-party host");
 });
 
-test("every newly ingested app owns a frameable shared-theme surface", async () => {
+test("Apollo placeholder HearMeOut launch URLs resolve to the current real app", () => {
+  const registration = hearMeOutCatalogRegistration("https://web-terminal-bvesa.sprites.app/apps/hearmeout?surface=workspace");
+  assert.equal(registration.launchUrl, HEARMEOUT_LIVE_LAUNCH_URL);
+  assert.equal(registration.surfaces.includes("shell"), false);
+  assert.equal(registration.surfaces.includes("standalone"), true);
+});
+
+test("every newly ingested generic app surface remains frameable for apps that still use it", async () => {
   const host = createIntegratedSpaceMountainWebHost({ spmtOrigin: "http://127.0.0.1:65534", host: "127.0.0.1", port: 0, buildSha: "app-ingestion-test" });
   try {
     await host.listen();
