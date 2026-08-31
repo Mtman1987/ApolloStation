@@ -6,7 +6,8 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
-    "./product-web": { "types": "./dist/product-web.d.ts", "default": "./dist/product-web.js" }
+    "./product-web": { "types": "./dist/product-web.d.ts", "default": "./dist/product-web.js" },
+    "./surface-client": { "types": "./dist/surface-client.d.ts", "default": "./dist/surface-client.js" }
   },
   "dependencies": { "@spmt/contracts": "0.1.0" },
   "scripts": { "build": "tsc -b" }
