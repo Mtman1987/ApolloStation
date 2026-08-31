@@ -8,6 +8,6 @@
     ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
     "./product-web": { "types": "./dist/product-web.d.ts", "default": "./dist/product-web.js" }
   },
-  "dependencies": { "@spmt/contracts": "0.1.0", "@spmt/ui": "0.1.0" },
+  "dependencies": { "@spmt/contracts": "0.1.0" },
   "scripts": { "build": "tsc -b" }
 }
