@@ -1,4 +1,4 @@
-import { createProductAppWebServer, productAppSnapshotHandler } from "@spmt/app-foundation";
+import { createProductAppWebServer, productAppSnapshotHandler } from "@spmt/app-foundation/product-web";
 
 export function createCompanionWebServer(options:{spmtOrigin:string;port?:number;host?:string;buildSha?:string}){
   const snapshot=productAppSnapshotHandler({appId:"companion",spmtOrigin:options.spmtOrigin});
