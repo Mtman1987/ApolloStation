@@ -1,12 +1,33 @@
 import { createAppFrameHost, measureShellLayout } from "@spmt/embed";
 import type { EmbedBridgeMessageV1, RuntimeStateV1, ThemeTokensV1 } from "@spmt/contracts";
-import { isAppSurfaceMessageV1, type AppSurfaceManifestV1 } from "@spmt/contracts/surface";
 import { installProductBackdrop, resolveProductBackdrop, resolveProductTheme } from "@spmt/ui";
 import { SpaceMountainShellUi as BaseShellUi, type SpaceMountainUiOptions } from "./shell-ui-base.js";
 import { buildAppFrameTarget, type SpaceMountainAppCardV1, type SpaceMountainShellSnapshotV1 } from "./index.js";
 import { OverlayBayParityController } from "./overlay-bay-ui.js";
 export type { SpaceMountainUiOptions, SpaceMountainViewV1 } from "./shell-ui-base.js";
 export { SPACE_MOUNTAIN_CSS } from "./shell-ui-base.js";
+
+interface AppSurfacePageV1 { id: string; label: string; description?: string; glyph?: string; home?: boolean; }
+interface AppSurfaceManifestV1 {
+  schemaVersion: 1;
+  appId: string;
+  scene: { imageUrl: string; imagePosition?: string };
+  pages: AppSurfacePageV1[];
+  shortcuts?: Array<{ id: string; label: string; pageId: string }>;
+}
+type AppSurfaceMessageV1 =
+  | { protocol: "spmt.surface"; version: 1; type: "surface.manifest"; manifest: AppSurfaceManifestV1 }
+  | { protocol: "spmt.surface"; version: 1; type: "page.changed"; appId: string; pageId: string };
+function isAppSurfaceMessageV1(value: unknown): value is AppSurfaceMessageV1 {
+  const message = record(value);
+  if (!message || message.protocol !== "spmt.surface" || message.version !== 1) return false;
+  if (message.type === "page.changed") return Boolean(text(message.appId) && text(message.pageId));
+  if (message.type !== "surface.manifest") return false;
+  const manifest = record(message.manifest);
+  const scene = record(manifest?.scene);
+  if (!manifest || manifest.schemaVersion !== 1 || !text(manifest.appId) || !scene || !text(scene.imageUrl) || !Array.isArray(manifest.pages) || !manifest.pages.length) return false;
+  return manifest.pages.every((page) => { const item = record(page); return Boolean(item && text(item.id) && text(item.label)); });
+}
 
 const APPFRAME_PRESENTATION_STYLE_ID = "spmt-appframe-presentation-contract";
 const APPFRAME_PRESENTATION_CSS = `
