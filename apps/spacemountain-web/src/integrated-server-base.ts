@@ -13,6 +13,7 @@ import { createSpaceMountainWebHost, validateSandboxWebEnvironment, type SpaceMo
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const WORKSPACE_SHELL_PATHS = new Set(["/apps/commlink", "/apps/stellar-core", "/apps/mission-control"]);
+const HEARMEOUT_LIVE_LAUNCH_URL = "https://hearmeout-main.fly.dev/";
 const MAX_EMBED_HTML_BYTES = 4 * 1024 * 1024;
 const FIRST_PARTY_SCENE_ASSETS = new Map<string, string>([
   ["/assets/product/discord-stream-hub-background.webp", resolve(HERE, "../assets/discord-stream-hub-background.webp")],
@@ -30,10 +31,34 @@ body[data-app="companion"] .scene-art{background:url("/assets/product/companion-
 /* In embedded shell/workspace mode the parent SpaceMountain shell owns the full-screen scene and stars. */
 body[data-surface="shell"] .app-scene,body[data-surface="workspace"] .app-scene{display:none!important}
 `;
+const FIRST_PARTY_SHARED_THEME_CSS = `
+:root{color-scheme:normal!important}
+body[data-shared-ui="inherited"]{color:var(--ink,#f7f7fb)!important}
+body[data-shared-ui="inherited"] .app-header>a,
+body[data-shared-ui="inherited"] .app-header nav a,
+body[data-shared-ui="inherited"] .hero-links a,
+body[data-shared-ui="inherited"] .app-hero h1,
+body[data-shared-ui="inherited"] .feature-card h2,
+body[data-shared-ui="inherited"] .about-strip strong,
+body[data-shared-ui="inherited"] .hmo-floor-heading strong,
+body[data-shared-ui="inherited"] .hmo-person-card strong,
+body[data-shared-ui="inherited"] .hmo-bot-card strong{color:var(--ink,#f7f7fb)!important}
+body[data-shared-ui="inherited"] .tagline,
+body[data-shared-ui="inherited"] .feature-card p,
+body[data-shared-ui="inherited"] .about-strip p,
+body[data-shared-ui="inherited"] .about-strip small,
+body[data-shared-ui="inherited"] .runtime-note p,
+body[data-shared-ui="inherited"] .hmo-floor-heading small,
+body[data-shared-ui="inherited"] .hmo-person-card small,
+body[data-shared-ui="inherited"] .hmo-bot-title small,
+body[data-shared-ui="inherited"] .hmo-service-row small,
+body[data-shared-ui="inherited"] .hmo-row-action{color:var(--muted,#a9acba)!important}
+`;
+const FIRST_PARTY_SHARED_THEME_JS = `;(()=>{if(window.parent===window)return;try{const root=window.parent.document.querySelector('.spmt-space-root');if(!root)return;const sync=()=>{const style=window.parent.getComputedStyle(root),pairs=[['--spmt-accent','--accent'],['--spmt-accent-secondary','--accent2'],['--spmt-glass-opacity','--glass'],['--spmt-blur','--blur'],['--spmt-stars','--stars'],['--spmt-surface-depth-1','--depth1'],['--spmt-surface-depth-2','--depth2'],['--spmt-surface-depth-3','--depth3'],['--spmt-surface-depth-4','--depth4'],['--spmt-ink','--ink'],['--spmt-muted','--muted'],['--spmt-border','--border']];for(const [source,target] of pairs){const value=style.getPropertyValue(source).trim();if(value)document.body.style.setProperty(target,value);}document.body.dataset.sharedUi='inherited';document.documentElement.style.colorScheme='normal';};sync();new MutationObserver(sync).observe(root,{attributes:true,attributeFilter:['style','data-spmt-theme','data-theme']});}catch{}})();`;
 const FIRST_PARTY_EMBED_BROWSER_JS = FIRST_PARTY_APP_BROWSER_JS.replace(
   /const image=root\.querySelector\(':scope > \.spmt-product-backdrop \.spmt-product-backdrop-image'\),scene=shellScenes\[body\.dataset\.app\];if\(image&&scene\)\{image\.style\.backgroundImage=scene;image\.style\.backgroundPosition='center';image\.style\.backgroundSize='cover';\}/,
   "",
-);
+) + FIRST_PARTY_SHARED_THEME_JS;
 
 export interface IntegratedSpaceMountainWebHostOptions extends SpaceMountainWebHostOptions {
   port?: number;
@@ -52,11 +77,16 @@ export function createIntegratedSpaceMountainWebHost(options: IntegratedSpaceMou
       }
       if (request.method === "GET" && url.pathname === "/assets/web/first-party-apps.css") {
         applyAppHeaders(response, false);
-        return send(response, 200, FIRST_PARTY_APP_CSS + FIRST_PARTY_REAL_SCENE_CSS, "text/css; charset=utf-8", "public, max-age=300");
+        return send(response, 200, FIRST_PARTY_APP_CSS + FIRST_PARTY_REAL_SCENE_CSS + FIRST_PARTY_SHARED_THEME_CSS, "text/css; charset=utf-8", "public, max-age=300");
       }
       if (request.method === "GET" && url.pathname === "/assets/web/first-party-apps.js") {
         applyAppHeaders(response, false);
         return send(response, 200, FIRST_PARTY_EMBED_BROWSER_JS, "text/javascript; charset=utf-8", "public, max-age=300");
+      }
+      if (request.method === "GET" && url.pathname === "/apps/hearmeout") {
+        response.writeHead(307, { location: HEARMEOUT_LIVE_LAUNCH_URL, "cache-control": "no-store", "x-content-type-options": "nosniff" });
+        response.end();
+        return;
       }
       const appId = appIdFromPath(url.pathname);
       if (request.method === "GET" && appId) {
@@ -157,7 +187,7 @@ function embedHeaders(source: IncomingMessage["headers"]) {
 function applyAppHeaders(response: ServerResponse, frameable: boolean) {
   response.setHeader("content-security-policy", `default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: https:; connect-src 'self'; frame-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors ${frameable ? "'self'" : "'none'"}; object-src 'none'`);
   response.setHeader("cross-origin-resource-policy", "same-origin");
-  response.setHeader("permissions-policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), bluetooth=()");
+  response.setHeader("permissions-policy", frameable ? "camera=(self), microphone=(self), geolocation=(), payment=(), usb=(), serial=(), bluetooth=()" : "camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), bluetooth=()");
   response.setHeader("referrer-policy", "no-referrer");
   response.setHeader("x-content-type-options", "nosniff");
   response.setHeader("x-frame-options", frameable ? "SAMEORIGIN" : "DENY");
