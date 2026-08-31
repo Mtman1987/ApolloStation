@@ -21,9 +21,12 @@ export * from "./youtube-resolver.js";
 export * from "./execution-worker.js";
 export * from "./persona-room.js";
 export * from "./bot-action-adapter.js";
+export * from "./web-server.js";
 
 export const manifest=assertAppModuleManifestV1({schemaVersion:1,manifestVersion:"spmt.app-manifest/v1",id:"hearmeout",name:"HearMeOut",description:"Voice rooms, synchronized watch and music sessions, Discord Activity, and OBS media outputs.",capabilities:["voice-rooms","spmt-rtc","livekit","webrtc-fallback","wss-audio-relay","watch-parties","music-queue","youtube-resolution","multi-audio-hls","persona-room-audio","bot-room-actions","discord-activity","discord-guilds","discord-channels","discord-messages","discord-embeds","discord-invites","discord-interactions","discord-voice-bridge","obs-now-playing"],surfaces:["shell","standalone","overlay","popout"],requiredScopes:["events:write","identity:read","devices:read"],eventTypes:["hearmeout.room.changed.v1","hearmeout.media-session.changed.v1"],integration:{identity:"connected",events:"native",workspace:"connected",devices:"connected"},workers:[{id:"hmo-dj-worker",role:"media-resolution, cache, persona audio, Discord voice, and SPMT RTC execution",execution:"elastic",canonicalAuthority:false}]} satisfies AppModuleManifestV1);
 
 export function hearMeOutCatalogRegistration(launchUrl:string):AppCatalogRegistrationV1{
-  return createAppCatalogRegistrationV1(manifest,{version:"0.1.0-green",launchUrl,surfaces:["shell","standalone","overlay","popout"]});
+  const canonical = new URL(launchUrl);
+  if (canonical.searchParams.get("surface") === "workspace") canonical.searchParams.delete("surface");
+  return createAppCatalogRegistrationV1(manifest,{version:"0.1.0-green",launchUrl:canonical.toString(),surfaces:["shell","standalone","overlay","popout"]});
 }
