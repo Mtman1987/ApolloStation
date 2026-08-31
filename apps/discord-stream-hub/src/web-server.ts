@@ -1,4 +1,4 @@
-import { createProductAppWebServer, productAppSnapshotHandler } from "@spmt/app-foundation";
+import { createProductAppWebServer, productAppSnapshotHandler } from "@spmt/app-foundation/product-web";
 
 export function createDiscordStreamHubWebServer(options:{spmtOrigin:string;port?:number;host?:string;buildSha?:string}){
   const snapshot=productAppSnapshotHandler({appId:"discord-stream-hub",spmtOrigin:options.spmtOrigin});
