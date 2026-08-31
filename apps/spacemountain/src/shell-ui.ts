@@ -34,6 +34,7 @@ export class SpaceMountainShellUi {
   private syncAppFrame() {
     const frame = this.options.root.querySelector<HTMLIFrameElement>("[data-shell-app-frame]") ?? undefined;
     if (!frame) { this.stopAppFrame(); return; }
+    this.applyAppFramePresentation(frame);
     const appId = this.options.root.dataset.spmtApp ?? "";
     const app = this.snapshot.apps.find((item) => item.appId === appId && item.installed && item.enabled && item.surfaces.includes("shell"));
     if (!app) { this.stopAppFrame(); return; }
@@ -63,6 +64,25 @@ export class SpaceMountainShellUi {
       onMessage: (message) => this.handleAppFrameMessage(frame, target.allowedOrigin, message),
     });
     this.appFrameHost.start();
+  }
+
+  private applyAppFramePresentation(frame: HTMLIFrameElement) {
+    // AppFrame content owns its real controls, but the shell owns the scene and
+    // outer geometry. Keep this wrapper visually absent so first- and third-party
+    // apps travel through the exact same channel without becoming a giant card.
+    const shell = frame.closest<HTMLElement>(".spmt-embedded-app-shell");
+    if (shell) {
+      shell.style.border = "0";
+      shell.style.borderRadius = "0";
+      shell.style.background = "transparent";
+      shell.style.boxShadow = "none";
+    }
+    frame.style.background = "transparent";
+    // Chromium intentionally gives transparent iframes an opaque canvas when a
+    // conflicting dark color-scheme is forced on the iframe element. The app
+    // already supplies its own theme tokens, so normal preserves transparency.
+    frame.style.setProperty("color-scheme", "normal");
+    frame.setAttribute("allowtransparency", "true");
   }
 
   private stopAppFrame() { this.appFrameHost?.stop(); this.appFrameHost = undefined; this.appFrame = undefined; }
