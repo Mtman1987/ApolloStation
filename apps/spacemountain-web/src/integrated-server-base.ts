@@ -12,8 +12,7 @@ import {
 import { createSpaceMountainWebHost, validateSandboxWebEnvironment, type SpaceMountainWebHostOptions } from "./server.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const WORKSPACE_SHELL_PATHS = new Set(["/apps/commlink", "/apps/stellar-core", "/apps/mission-control"]);
-const HEARMEOUT_LIVE_LAUNCH_URL = "https://hearmeout-main.fly.dev/";
+const WORKSPACE_SHELL_PATHS = new Set(["/apps/commlink", "/apps/stellar-core", "/apps/mission-control", "/apps/hearmeout"]);
 const MAX_EMBED_HTML_BYTES = 4 * 1024 * 1024;
 const FIRST_PARTY_SCENE_ASSETS = new Map<string, string>([
   ["/assets/product/discord-stream-hub-background.webp", resolve(HERE, "../assets/discord-stream-hub-background.webp")],
@@ -82,11 +81,6 @@ export function createIntegratedSpaceMountainWebHost(options: IntegratedSpaceMou
       if (request.method === "GET" && url.pathname === "/assets/web/first-party-apps.js") {
         applyAppHeaders(response, false);
         return send(response, 200, FIRST_PARTY_EMBED_BROWSER_JS, "text/javascript; charset=utf-8", "public, max-age=300");
-      }
-      if (request.method === "GET" && url.pathname === "/apps/hearmeout") {
-        response.writeHead(307, { location: HEARMEOUT_LIVE_LAUNCH_URL, "cache-control": "no-store", "x-content-type-options": "nosniff" });
-        response.end();
-        return;
       }
       const appId = appIdFromPath(url.pathname);
       if (request.method === "GET" && appId) {
