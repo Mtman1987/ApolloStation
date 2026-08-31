@@ -76,6 +76,33 @@ provision_llm_runtime() {
   fi
 }
 
+stop_orphan_app_web_processes() {
+  local pattern='apps/(discord-stream-hub|streamweaver|hearmeout|mountainview|companion)/dist/web-server\.js'
+  pkill -TERM -f "$pattern" 2>/dev/null || true
+  for _ in {1..40}; do
+    if ! pgrep -f "$pattern" >/dev/null 2>&1; then
+      break
+    fi
+    sleep 0.1
+  done
+  pkill -KILL -f "$pattern" 2>/dev/null || true
+}
+
+verify_app_web_cohort() {
+  local short_sha="${BUILD_SHA:0:12}"
+  local app body
+  for app in discord-stream-hub streamweaver hearmeout mountainview companion; do
+    body="$(curl -fsS --max-time 3 "http://127.0.0.1:8080/apps/$app")" || {
+      echo "App web verification failed: $app did not render through common ingress" >&2
+      return 1
+    }
+    if ! grep -Fq "Build $short_sha" <<<"$body"; then
+      echo "App web verification failed: $app is not serving build $short_sha" >&2
+      return 1
+    fi
+  done
+}
+
 rollback() {
   status=$?
   if (( status != 0 && switched == 1 )) && [[ -n "$previous_release" && -d "$previous_release" ]]; then
@@ -84,6 +111,7 @@ rollback() {
     mv -Tf "$next_link" "$current_link"
     sprite-env services stop "$service_name" || true
     sprite-env services delete "$service_name" || true
+    stop_orphan_app_web_processes
     create_apollo_service "$(basename "$previous_release")" 0 || true
   fi
   if (( status != 0 && bootstrap_service_removed == 1 )) && [[ -z "$previous_release" ]]; then
@@ -149,6 +177,7 @@ for stale_service in "${http_services[@]}" "$service_name" "$bootstrap_service_n
     [[ "$stale_service" == "$bootstrap_service_name" ]] && bootstrap_service_removed=1
   fi
 done
+stop_orphan_app_web_processes
 for _ in {1..30}; do
   if ! curl -fsS --max-time 1 http://127.0.0.1:8080/sandbox/health >/dev/null 2>&1; then
     break
@@ -160,7 +189,7 @@ create_apollo_service "$BUILD_SHA"
 ready=0
 for _ in {1..1260}; do
   if health="$(curl -fsS --max-time 2 http://127.0.0.1:8080/sandbox/health 2>/dev/null)"; then
-    if grep -Fq "$BUILD_SHA" <<<"$health"; then
+    if grep -Fq "$BUILD_SHA" <<<"$health" && verify_app_web_cohort; then
       ready=1
       break
     fi
@@ -168,7 +197,7 @@ for _ in {1..1260}; do
   sleep 0.5
 done
 if (( ready != 1 )); then
-  echo "The deployed release did not report the expected build SHA" >&2
+  echo "The deployed release or one of its app-owned web surfaces did not report the expected build SHA" >&2
   exit 1
 fi
 
