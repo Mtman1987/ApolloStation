@@ -33,21 +33,21 @@ const APPFRAME_PRESENTATION_STYLE_ID = "spmt-appframe-presentation-contract";
 const APPFRAME_PRESENTATION_CSS = `
 .spmt-embedded-app-shell{border:0!important;border-radius:0!important;background:transparent!important;box-shadow:none!important}
 .spmt-embedded-app-shell iframe[data-shell-app-frame]{display:block!important;width:100%!important;height:100%!important;border:0!important;border-radius:0!important;background:transparent!important;color-scheme:normal!important}
-.spmt-space-root[data-spmt-view="app"] .spmt-space-main{position:fixed!important;top:calc(var(--spmt-shell-top-inset,124px) + 18px)!important;right:14px!important;bottom:14px!important;left:14px!important;width:auto!important;max-width:none!important;height:auto!important;min-height:0!important;margin:0!important;padding:0!important;overflow:hidden!important}
+.spmt-space-root[data-spmt-view="app"] .spmt-space-main{position:fixed!important;right:14px!important;bottom:14px!important;left:14px!important;width:auto!important;max-width:none!important;height:auto!important;min-height:0!important;margin:0!important;padding:0!important;overflow:hidden!important}
 .spmt-space-root[data-spmt-view="app"] .spmt-embedded-app-shell{width:100%!important;height:100%!important;min-height:0!important;overflow:hidden!important}
 .spmt-rocket-dock{z-index:860!important}.spmt-workspace-tray{z-index:870!important}.spmt-shell-header-stack{z-index:880!important}
 .spmt-dock-owned header{position:sticky;top:0;z-index:2;display:grid;grid-template-columns:26px minmax(0,1fr);align-items:center;gap:7px;padding:5px 5px 7px;background:linear-gradient(180deg,rgba(8,9,14,.96),rgba(8,9,14,.72));font-size:8px}.spmt-dock-owned header img{width:26px;height:26px;object-fit:contain}.spmt-dock-owned header strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.spmt-surface-glyph{width:27px;height:27px;display:grid;place-items:center;flex:0 0 auto;border:1px solid color-mix(in srgb,var(--accent2) 25%,transparent);border-radius:9px;color:var(--accent2);font-size:13px;font-weight:900}.spmt-dock-owned button[aria-current="page"]{color:#fff;border-color:color-mix(in srgb,var(--accent) 34%,transparent);background:color-mix(in srgb,var(--accent) 14%,transparent);box-shadow:inset 3px 0 0 var(--accent)}
 .spmt-space-root *{scrollbar-width:thin;scrollbar-color:transparent transparent}.spmt-space-root *:hover{scrollbar-color:color-mix(in srgb,var(--accent) 62%,transparent) transparent}.spmt-space-root *::-webkit-scrollbar{width:4px;height:4px}.spmt-space-root *::-webkit-scrollbar-track{background:transparent}.spmt-space-root *::-webkit-scrollbar-thumb{border-radius:999px;background:transparent}.spmt-space-root *:hover::-webkit-scrollbar-thumb{background:color-mix(in srgb,var(--accent) 62%,transparent)}
 @media(max-width:900px){
  .spmt-shell-header-stack{left:108px!important;right:10px!important}
- .spmt-rocket-dock{left:10px!important;right:auto!important;top:calc(var(--guard-height,38px) + 8px)!important;bottom:max(10px,env(safe-area-inset-bottom))!important;width:88px!important;height:auto!important;max-height:calc(100dvh - var(--guard-height,38px) - 20px)!important;box-sizing:border-box!important;display:flex!important;flex-direction:column!important;align-items:stretch!important;padding:7px!important;border-radius:34px!important}
+ .spmt-rocket-dock{left:10px!important;right:auto!important;width:88px!important;height:auto!important;max-height:calc(100dvh - var(--guard-height,38px) - 20px)!important;box-sizing:border-box!important;display:flex!important;flex-direction:column!important;align-items:stretch!important;padding:7px!important;border-radius:34px!important}
  .spmt-dock-orbit{display:grid!important;width:68px!important;height:62px!important;margin:0 auto 3px!important}
  .spmt-rocket-dock nav{width:100%!important;min-height:0!important;display:flex!important;flex:1!important;flex-direction:column!important;justify-content:flex-start!important;overflow:hidden!important}
  .spmt-dock-core,.spmt-dock-account,.spmt-dock-apps{min-width:0!important;display:flex!important;flex-direction:column!important}.spmt-dock-apps{overflow-y:auto!important;overflow-x:hidden!important}
  .spmt-rocket-dock nav button{min-height:43px!important;flex:0 0 auto!important;flex-direction:column!important;justify-content:center!important;gap:2px!important;padding:4px!important}.spmt-rocket-dock nav label{display:none!important}.spmt-dock-owned header{grid-template-columns:1fr;justify-items:center}.spmt-dock-owned header strong{display:none}
- .spmt-space-root[data-spmt-dock="collapsed"] .spmt-rocket-dock{left:10px!important;right:auto!important;top:calc(var(--guard-height,38px) + 8px)!important;bottom:auto!important;width:72px!important;height:70px!important;min-height:0!important;padding:4px!important}.spmt-space-root[data-spmt-dock="collapsed"] .spmt-dock-orbit{display:grid!important;width:100%!important;height:100%!important;margin:0!important}.spmt-space-root[data-spmt-dock="collapsed"] .spmt-shell-header-stack{left:94px!important}
- .spmt-space-root[data-spmt-view="app"] .spmt-space-main{top:calc(var(--spmt-shell-top-inset,112px) + 14px)!important;right:9px!important;bottom:9px!important;left:9px!important}
- .spmt-workspace-tray{left:10px!important;right:10px!important;bottom:max(10px,env(safe-area-inset-bottom))!important}.spmt-workspace-frames{height:min(68dvh,640px)!important}.spmt-workspace-tray.maximized .spmt-workspace-frames{left:10px!important;right:10px!important;top:calc(var(--spmt-shell-top-inset,112px) + 10px)!important;bottom:84px!important}
+ .spmt-space-root[data-spmt-dock="collapsed"] .spmt-rocket-dock{left:10px!important;right:auto!important;bottom:auto!important;width:72px!important;height:70px!important;min-height:0!important;padding:4px!important}.spmt-space-root[data-spmt-dock="collapsed"] .spmt-dock-orbit{display:grid!important;width:100%!important;height:100%!important;margin:0!important}.spmt-space-root[data-spmt-dock="collapsed"] .spmt-shell-header-stack{left:94px!important}
+ .spmt-space-root[data-spmt-view="app"] .spmt-space-main{right:9px!important;bottom:9px!important;left:9px!important}
+ .spmt-workspace-tray{left:10px!important;right:10px!important;bottom:max(10px,env(safe-area-inset-bottom))!important}.spmt-workspace-frames{height:min(68dvh,640px)!important}.spmt-workspace-tray.maximized .spmt-workspace-frames{left:10px!important;right:10px!important;bottom:84px!important}
 }
 `;
 
@@ -62,16 +62,17 @@ export class SpaceMountainShellUi {
   private surfaceManifest: AppSurfaceManifestV1 | undefined;
   private activeSurfacePage = "home";
   private surfaceListener: ((event: MessageEvent<unknown>) => void) | undefined;
+  private geometryListener: (() => void) | undefined;
 
   constructor(private readonly options: SpaceMountainUiOptions) {
     this.snapshot = options.snapshot;
     this.base = new BaseShellUi(options);
     this.overlayBay = new OverlayBayParityController(options.root, this.snapshot);
   }
-  mount() { this.installAppFramePresentationContract(); this.listenForAppSurfaces(); this.base.mount(); this.observe(); this.overlayBay.mount(); this.syncAppFrame(); return this; }
-  update(snapshot: SpaceMountainShellSnapshotV1) { this.snapshot = snapshot; this.base.update(snapshot); this.overlayBay.update(snapshot); this.syncAppFrame(); this.applyAppSurfaceManifest(); }
+  mount() { this.installAppFramePresentationContract(); this.base.mount(); this.listenForAppSurfaces(); this.bindShellGeometry(); this.observe(); this.overlayBay.mount(); this.syncAppFrame(); return this; }
+  update(snapshot: SpaceMountainShellSnapshotV1) { this.snapshot = snapshot; this.base.update(snapshot); this.overlayBay.update(snapshot); this.applyShellGeometry(); this.syncAppFrame(); this.applyAppSurfaceManifest(); }
   updatePersonalUsage(usage: SpaceMountainShellSnapshotV1["usage"]) { this.base.updatePersonalUsage(usage); if (usage) this.snapshot = { ...this.snapshot, usage }; this.appFrameHost?.sync(); }
-  destroy() { this.observer?.disconnect(); this.observer = undefined; if (this.surfaceListener) window.removeEventListener("message", this.surfaceListener); this.surfaceListener = undefined; this.stopAppFrame(); this.base.destroy(); }
+  destroy() { this.observer?.disconnect(); this.observer = undefined; if (this.surfaceListener) window.removeEventListener("message", this.surfaceListener); this.surfaceListener = undefined; if (this.geometryListener) { window.removeEventListener("resize", this.geometryListener); window.visualViewport?.removeEventListener("resize", this.geometryListener); } this.geometryListener = undefined; this.stopAppFrame(); this.base.destroy(); }
 
   private installAppFramePresentationContract() {
     const document = this.options.root.ownerDocument;
@@ -103,13 +104,59 @@ export class SpaceMountainShellUi {
     window.addEventListener("message", this.surfaceListener);
   }
 
+  private bindShellGeometry() {
+    if (!this.geometryListener) {
+      this.geometryListener = () => this.applyShellGeometry();
+      window.addEventListener("resize", this.geometryListener);
+      window.visualViewport?.addEventListener("resize", this.geometryListener);
+    }
+    this.applyShellGeometry();
+  }
+
+  private applyShellGeometry() {
+    const root = this.options.root;
+    const header = root.querySelector<HTMLElement>("[data-spmt-shell-header]");
+    const main = root.querySelector<HTMLElement>(".spmt-space-main");
+    const dock = root.querySelector<HTMLElement>(".spmt-rocket-dock");
+    if (!header || !main || !dock) return;
+    const headerRect = header.getBoundingClientRect();
+    const mobile = window.matchMedia("(max-width:900px)").matches;
+    const gap = mobile ? 10 : 14;
+    const edge = mobile ? 9 : 14;
+    main.style.setProperty("position", "fixed", "important");
+    main.style.setProperty("top", `${Math.ceil(headerRect.bottom) + gap}px`, "important");
+    main.style.setProperty("right", `${edge}px`, "important");
+    main.style.setProperty("bottom", `${edge}px`, "important");
+    main.style.setProperty("left", `${edge}px`, "important");
+    main.style.setProperty("width", "auto", "important");
+    main.style.setProperty("max-width", "none", "important");
+    main.style.setProperty("height", "auto", "important");
+    main.style.setProperty("min-height", "0", "important");
+    main.style.setProperty("margin", "0", "important");
+    if (root.dataset.spmtView === "app") {
+      main.style.setProperty("padding", "0", "important");
+      main.style.setProperty("overflow", "hidden", "important");
+    }
+    dock.style.setProperty("position", "fixed", "important");
+    dock.style.setProperty("left", mobile ? "10px" : "16px", "important");
+    dock.style.setProperty("right", "auto", "important");
+    dock.style.setProperty("top", `${Math.max(8, Math.ceil(headerRect.top))}px`, "important");
+    if (root.dataset.spmtDock === "collapsed") {
+      dock.style.setProperty("bottom", "auto", "important");
+      dock.style.setProperty("width", mobile ? "72px" : "112px", "important");
+      dock.style.setProperty("height", mobile ? "70px" : "82px", "important");
+      dock.style.setProperty("min-height", "0", "important");
+    }
+  }
+
   private observe() {
     this.observer?.disconnect();
-    this.observer = new MutationObserver(() => queueMicrotask(() => { this.overlayBay.mount(); this.syncAppFrame(); this.applyAppSurfaceManifest(); }));
+    this.observer = new MutationObserver(() => queueMicrotask(() => { this.overlayBay.mount(); this.applyShellGeometry(); this.syncAppFrame(); this.applyAppSurfaceManifest(); }));
     this.observer.observe(this.options.root, { childList: true, subtree: true });
   }
 
   private syncAppFrame() {
+    this.applyShellGeometry();
     const frame = this.options.root.querySelector<HTMLIFrameElement>("[data-shell-app-frame]") ?? undefined;
     if (!frame) { this.stopAppFrame(); return; }
     this.applyAppFramePresentation(frame);
@@ -201,7 +248,11 @@ export class SpaceMountainShellUi {
   private stopAppFrame() { this.appFrameHost?.stop(); this.appFrameHost = undefined; this.appFrame = undefined; this.appFrameOrigin = ""; this.surfaceManifest = undefined; this.activeSurfacePage = "home"; }
   private shellLayout() {
     const header = this.options.root.querySelector<HTMLElement>("[data-spmt-shell-header]");
-    if (header) return measureShellLayout({ header, onChange: () => undefined });
+    if (header) {
+      const layout = measureShellLayout({ header, onChange: () => undefined });
+      const headerTop = Math.max(0, Math.ceil(header.getBoundingClientRect().top));
+      return { ...layout, safeTop: Math.max(layout.safeTop, headerTop) };
+    }
     return { schemaVersion: 1 as const, headerHeight: 0, safeTop: 0, safeRight: 0, safeBottom: 0, safeLeft: 0, availableWidth: window.innerWidth, availableHeight: window.innerHeight, measuredAt: new Date().toISOString() };
   }
   private handleAppFrameMessage(frame: HTMLIFrameElement, allowedOrigin: string, message: EmbedBridgeMessageV1) {
