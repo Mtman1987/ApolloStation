@@ -16,6 +16,11 @@ const buildSha = argumentsMap.get("build-sha") ?? "sprite-local";
 const spmtPort = requirePort(argumentsMap.get("spmt-port") ?? "3000", "spmt-port");
 const webPort = requirePort(argumentsMap.get("web-port") ?? "8080", "web-port");
 const nebulaArcadePort = requirePort(argumentsMap.get("nebula-arcade-port") ?? "3100", "nebula-arcade-port");
+const hearMeOutWebPort = requirePort(argumentsMap.get("hearmeout-web-port") ?? "3200", "hearmeout-web-port");
+const dshWebPort = requirePort(argumentsMap.get("dsh-web-port") ?? "3201", "dsh-web-port");
+const streamweaverWebPort = requirePort(argumentsMap.get("streamweaver-web-port") ?? "3202", "streamweaver-web-port");
+const mountainViewWebPort = requirePort(argumentsMap.get("mountainview-web-port") ?? "3203", "mountainview-web-port");
+const companionWebPort = requirePort(argumentsMap.get("companion-web-port") ?? "3204", "companion-web-port");
 const ownerUsername = requireUsername(argumentsMap.get("owner-username") ?? "mtman1987");
 const llmBinary = argumentsMap.get("llm-binary");
 const llmCache = resolve(argumentsMap.get("llm-cache") ?? resolve(dataRoot, "models"));
@@ -39,7 +44,7 @@ const common = {
 let candidateManifest;
 if (candidateApp === "nebula-arcade") {
   const module = await import("../../apps/nebula-arcade/dist/index.js");
-  candidateManifest = module.nebulaArcadeCatalogRegistration(appLaunchUrl(publicUrl, "/apps/nebula-arcade?surface=workspace"));
+  candidateManifest = module.nebulaArcadeCatalogRegistration(appLaunchUrl(publicUrl, "/apps/nebula-arcade"));
 }
 const [
   { commlinkCatalogRegistration },
@@ -63,17 +68,17 @@ const [
   import("../../apps/companion/dist/index.js"),
 ]);
 const coreManifests = [
-  commlinkCatalogRegistration(appLaunchUrl(publicUrl, "/apps/commlink?surface=workspace")),
+  commlinkCatalogRegistration(appLaunchUrl(publicUrl, "/apps/commlink")),
   chatGatewayCatalogRegistration(appLaunchUrl(publicUrl, "/apps/commlink?source=chat-gateway")),
-  stellarCoreCatalogRegistration(appLaunchUrl(publicUrl, "/apps/stellar-core?surface=workspace")),
-  missionControlCatalogRegistration(appLaunchUrl(publicUrl, "/apps/mission-control?surface=workspace")),
+  stellarCoreCatalogRegistration(appLaunchUrl(publicUrl, "/apps/stellar-core")),
+  missionControlCatalogRegistration(appLaunchUrl(publicUrl, "/apps/mission-control")),
 ];
 const currentManifests = [
-  discordStreamHubCatalogRegistration(appLaunchUrl(publicUrl, "/apps/discord-stream-hub?surface=workspace")),
-  streamweaverCatalogRegistration(appLaunchUrl(publicUrl, "/apps/streamweaver?surface=workspace")),
-  hearMeOutCatalogRegistration(appLaunchUrl(publicUrl, "/apps/hearmeout?surface=workspace")),
-  mountainViewCatalogRegistration(appLaunchUrl(publicUrl, "/apps/mountainview?surface=workspace")),
-  companionCatalogRegistration(appLaunchUrl(publicUrl, "/apps/companion?surface=workspace")),
+  discordStreamHubCatalogRegistration(appLaunchUrl(publicUrl, "/apps/discord-stream-hub")),
+  streamweaverCatalogRegistration(appLaunchUrl(publicUrl, "/apps/streamweaver")),
+  hearMeOutCatalogRegistration(appLaunchUrl(publicUrl, "/apps/hearmeout")),
+  mountainViewCatalogRegistration(appLaunchUrl(publicUrl, "/apps/mountainview")),
+  companionCatalogRegistration(appLaunchUrl(publicUrl, "/apps/companion")),
 ];
 const sandboxManifests = [
   ...coreManifests,
@@ -135,9 +140,25 @@ const spmt = start("SPMT", "apps/spmt-service/dist/provider-identity-start.js", 
 });
 
 await waitForUrl(spmt, `http://127.0.0.1:${spmtPort}/health/ready`, "SPMT");
+const spmtOrigin = `http://127.0.0.1:${spmtPort}`;
+
+const dshWeb = start("Discord Stream Hub web", "apps/discord-stream-hub/dist/web-server.js", { ...common, SPMT_ORIGIN: spmtOrigin, HOST: "127.0.0.1", PORT: String(dshWebPort) });
+const streamweaverWeb = start("StreamWeaver web", "apps/streamweaver/dist/web-server.js", { ...common, SPMT_ORIGIN: spmtOrigin, HOST: "127.0.0.1", PORT: String(streamweaverWebPort) });
+const hearMeOutWeb = start("HearMeOut web", "apps/hearmeout/dist/web-server.js", { ...common, SPMT_ORIGIN: spmtOrigin, HEARMEOUT_ROOM_DATABASE_PATH: resolve(dataRoot, "hearmeout-room-sandbox.sqlite"), HOST: "127.0.0.1", PORT: String(hearMeOutWebPort) });
+const mountainViewWeb = start("MountainView web", "apps/mountainview/dist/web-server.js", { ...common, SPMT_ORIGIN: spmtOrigin, MOUNTAINVIEW_DATABASE_PATH: resolve(dataRoot, "mountainview-green-sandbox.sqlite"), HOST: "127.0.0.1", PORT: String(mountainViewWebPort) });
+const companionWeb = start("Companion web", "apps/companion/dist/web-server.js", { ...common, SPMT_ORIGIN: spmtOrigin, HOST: "127.0.0.1", PORT: String(companionWebPort) });
+for (const child of [dshWeb, streamweaverWeb, hearMeOutWeb, mountainViewWeb, companionWeb]) child.once("exit", (code, signal) => { if (!stopping) void stop(signal === "SIGINT" || signal === "SIGTERM" ? 0 : code ?? (signal ? 1 : 0)); });
+await Promise.all([
+  waitForUrl(dshWeb, `http://127.0.0.1:${dshWebPort}/health/ready`, "Discord Stream Hub web"),
+  waitForUrl(streamweaverWeb, `http://127.0.0.1:${streamweaverWebPort}/health/ready`, "StreamWeaver web"),
+  waitForUrl(hearMeOutWeb, `http://127.0.0.1:${hearMeOutWebPort}/health/ready`, "HearMeOut web"),
+  waitForUrl(mountainViewWeb, `http://127.0.0.1:${mountainViewWebPort}/health/ready`, "MountainView web"),
+  waitForUrl(companionWeb, `http://127.0.0.1:${companionWebPort}/health/ready`, "Companion web"),
+]);
+
 const chatGateway = start("Chat Gateway", "apps/chat-gateway/dist/service-start.js", {
   ...common,
-  SPMT_ORIGIN: `http://127.0.0.1:${spmtPort}`,
+  SPMT_ORIGIN: spmtOrigin,
   CHAT_GATEWAY_DATABASE_PATH: resolve(dataRoot, "chat-gateway-sandbox.sqlite"),
   CHAT_GATEWAY_WORKER_CREDENTIAL: chatGatewayCredential,
   CHAT_GATEWAY_CONNECTIONS: "[]",
@@ -152,7 +173,7 @@ const chatGateway = start("Chat Gateway", "apps/chat-gateway/dist/service-start.
 chatGateway.once("exit", (code, signal) => { if (!stopping) void stop(signal === "SIGINT" || signal === "SIGTERM" ? 0 : code ?? (signal ? 1 : 0)); });
 const dsh = start("Discord Stream Hub live worker", "apps/discord-stream-hub/dist/live-worker-start.js", {
   ...common,
-  SPMT_ORIGIN: `http://127.0.0.1:${spmtPort}`,
+  SPMT_ORIGIN: spmtOrigin,
   DSH_DATABASE_PATH: resolve(dataRoot, "discord-stream-hub-live-sandbox.sqlite"),
   DSH_RUNTIME_CONFIG_PATH: resolve("config/discord-stream-hub-runtime.sandbox.v1.json"),
   DSH_WORKER_CREDENTIAL: dshWorkerCredential,
@@ -160,7 +181,7 @@ const dsh = start("Discord Stream Hub live worker", "apps/discord-stream-hub/dis
 dsh.once("exit", (code, signal) => { if (!stopping) void stop(signal === "SIGINT" || signal === "SIGTERM" ? 0 : code ?? (signal ? 1 : 0)); });
 const hearMeOut = start("HearMeOut media worker", "apps/hearmeout/dist/execution-worker-start.js", {
   ...common,
-  SPMT_ORIGIN: `http://127.0.0.1:${spmtPort}`,
+  SPMT_ORIGIN: spmtOrigin,
   HEARMEOUT_DATABASE_PATH: resolve(dataRoot, "hearmeout-runtime-sandbox.sqlite"),
   HEARMEOUT_CACHE_DIR: resolve(dataRoot, "hearmeout-cache-sandbox"),
   HEARMEOUT_RUNTIME_CONFIG_PATH: resolve("config/hearmeout-runtime.sandbox.v1.json"),
@@ -171,7 +192,7 @@ hearMeOut.once("exit", (code, signal) => { if (!stopping) void stop(signal === "
 if (stellarWorkerCredential) {
   const stellar = start("Stellar Core worker", "apps/stellar-core/dist/worker-start.js", {
     ...common,
-    SPMT_ORIGIN: `http://127.0.0.1:${spmtPort}`,
+    SPMT_ORIGIN: spmtOrigin,
     STELLAR_PROVIDER_ORIGIN: "http://127.0.0.1:8081",
     STELLAR_PROVIDER_MODEL: "Qwen/Qwen3-8B-GGUF:Q4_K_M",
     STELLAR_EXECUTION_TARGET: "sprite",
@@ -179,7 +200,7 @@ if (stellarWorkerCredential) {
     ...(llm?.pid ? { STELLAR_PROVIDER_PID: String(llm.pid) } : {}),
   });
   stellar.once("exit", (code, signal) => { if (!stopping) void stop(signal === "SIGINT" || signal === "SIGTERM" ? 0 : code ?? (signal ? 1 : 0)); });
-  await waitForUrl(stellar, `http://127.0.0.1:${spmtPort}/health/stellar`, "Stellar Core hosted inference", 10 * 60_000);
+  await waitForUrl(stellar, `${spmtOrigin}/health/stellar`, "Stellar Core hosted inference", 10 * 60_000);
 }
 let nebulaArcade;
 if (candidateApp === "nebula-arcade") {
@@ -196,16 +217,23 @@ if (candidateApp === "nebula-arcade") {
 }
 const web = start("SpaceMountain web", "apps/spacemountain-web/dist/integrated-server.js", {
   ...common,
-  SPMT_ORIGIN: `http://127.0.0.1:${spmtPort}`,
+  SPMT_ORIGIN: spmtOrigin,
+  DSH_WEB_ORIGIN: `http://127.0.0.1:${dshWebPort}`,
+  STREAMWEAVER_WEB_ORIGIN: `http://127.0.0.1:${streamweaverWebPort}`,
+  HEARMEOUT_WEB_ORIGIN: `http://127.0.0.1:${hearMeOutWebPort}`,
+  MOUNTAINVIEW_WEB_ORIGIN: `http://127.0.0.1:${mountainViewWebPort}`,
+  COMPANION_WEB_ORIGIN: `http://127.0.0.1:${companionWebPort}`,
   HOST: "0.0.0.0",
   PORT: String(webPort),
   ...(candidateManifest ? { NEBULA_ARCADE_ORIGIN: `http://127.0.0.1:${nebulaArcadePort}`, SPMT_SANDBOX_CANDIDATE_MANIFEST: JSON.stringify(candidateManifest) } : {}),
 });
 spmt.once("exit", (code, signal) => { if (!stopping) void stop(signal === "SIGINT" || signal === "SIGTERM" ? 0 : code ?? (signal ? 1 : 0)); });
 await waitForUrl(web, `http://127.0.0.1:${webPort}/sandbox/health`, "SpaceMountain web");
+for (const appId of ["discord-stream-hub", "streamweaver", "hearmeout", "mountainview", "companion"]) await waitForUrl(web, `http://127.0.0.1:${webPort}/health/${appId}`, `${appId} ingress`);
 
 process.stdout.write(`\nGreen sandbox is supervised and ready at ${publicUrl}\n`);
 process.stdout.write(`The canonical app pool contains ${sandboxManifests.map((item) => item.name).join(", ")}.\n`);
+process.stdout.write("App-owned Green frontends are isolated behind the common catalog/AppFrame ingress.\n");
 process.stdout.write("Outbound provider actions and production fleet credentials are disabled.\n");
 process.stdout.write("Press Ctrl+C once to stop the supervised cohort.\n\n");
 
@@ -277,7 +305,8 @@ function parseArguments(values) {
     if (!flag?.startsWith("--") || !value) throw new Error("Arguments must be --name value pairs");
     result.set(flag.slice(2), value);
   }
-  for (const name of result.keys()) if (!["app", "candidate-app", "catalog", "public-url", "data-root", "build-sha", "spmt-port", "web-port", "nebula-arcade-port", "tenant-id", "channel-id", "owner-username", "llm-binary", "llm-cache", "offline-network-guard"].includes(name)) throw new Error(`Unknown argument --${name}`);
+  const allowed = ["app", "candidate-app", "catalog", "public-url", "data-root", "build-sha", "spmt-port", "web-port", "nebula-arcade-port", "hearmeout-web-port", "dsh-web-port", "streamweaver-web-port", "mountainview-web-port", "companion-web-port", "tenant-id", "channel-id", "owner-username", "llm-binary", "llm-cache", "offline-network-guard"];
+  for (const name of result.keys()) if (!allowed.includes(name)) throw new Error(`Unknown argument --${name}`);
   return result;
 }
 
