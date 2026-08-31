@@ -42,7 +42,7 @@ test("generic product apps publish every page, keep Home fixed, scroll internal 
   assert.match(source, /productSurfaceManifest/);
   assert.match(source, /home: true/);
   assert.match(source, /document\.documentElement/);
-  assert.match(source, /html\[data-spmt-surface-mode=\\"shell\\"\][\s\S]*background:transparent!important/);
+  assert.match(source, /html\[data-spmt-surface-mode="shell"\][\s\S]*background:transparent!important/);
   assert.match(source, /html\.style\.setProperty\('background','transparent','important'\)/);
   assert.match(source, /body\.style\.setProperty\('background','transparent','important'\)/);
   assert.match(source, /color-scheme','normal','important'/);
@@ -74,10 +74,10 @@ test("HearMeOut publishes its own scene, keeps the shell document transparent, a
   assert.match(surface, /id: "rooms"/);
   assert.match(surface, /data-hmo-open-rooms/);
   assert.match(surface, /document\.documentElement/);
-  assert.match(surface, /html\[data-spmt-surface-mode=\\"shell\\"\][\s\S]*background:transparent!important/);
+  assert.match(surface, /html\[data-spmt-surface-mode="shell"\][\s\S]*background:transparent!important/);
   assert.match(surface, /html\.style\.setProperty\('background','transparent','important'\)/);
   assert.match(surface, /body\.style\.setProperty\('background','transparent','important'\)/);
-  assert.match(surface, /data-surface=\\"shell\\"[\s\S]*spmt-product-backdrop\{display:none!important\}/);
+  assert.match(surface, /data-surface="shell"[\s\S]*spmt-product-backdrop\{display:none!important\}/);
   assert.match(surface, /hmo-room-scroll[\s\S]*scrollbar-width:thin/);
   assert.match(web, /HEARMEOUT_SURFACE_BROWSER_JS/);
 });
