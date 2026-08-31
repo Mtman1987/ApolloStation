@@ -7,6 +7,9 @@ import { OverlayBayParityController } from "./overlay-bay-ui.js";
 export type { SpaceMountainUiOptions, SpaceMountainViewV1 } from "./shell-ui-base.js";
 export { SPACE_MOUNTAIN_CSS } from "./shell-ui-base.js";
 
+const APPFRAME_PRESENTATION_STYLE_ID = "spmt-appframe-presentation-contract";
+const APPFRAME_PRESENTATION_CSS = `.spmt-embedded-app-shell{border:0!important;border-radius:0!important;background:transparent!important;box-shadow:none!important}.spmt-embedded-app-shell iframe[data-shell-app-frame]{border-radius:0!important;background:transparent!important;color-scheme:normal!important}`;
+
 export class SpaceMountainShellUi {
   private readonly base: BaseShellUi;
   private readonly overlayBay: OverlayBayParityController;
@@ -20,10 +23,19 @@ export class SpaceMountainShellUi {
     this.base = new BaseShellUi(options);
     this.overlayBay = new OverlayBayParityController(options.root, this.snapshot);
   }
-  mount() { this.base.mount(); this.observe(); this.overlayBay.mount(); this.syncAppFrame(); return this; }
+  mount() { this.installAppFramePresentationContract(); this.base.mount(); this.observe(); this.overlayBay.mount(); this.syncAppFrame(); return this; }
   update(snapshot: SpaceMountainShellSnapshotV1) { this.snapshot = snapshot; this.base.update(snapshot); this.overlayBay.update(snapshot); this.syncAppFrame(); }
   updatePersonalUsage(usage: SpaceMountainShellSnapshotV1["usage"]) { this.base.updatePersonalUsage(usage); if (usage) this.snapshot = { ...this.snapshot, usage }; this.appFrameHost?.sync(); }
   destroy() { this.observer?.disconnect(); this.observer = undefined; this.stopAppFrame(); this.base.destroy(); }
+
+  private installAppFramePresentationContract() {
+    const document = this.options.root.ownerDocument;
+    if (document.getElementById(APPFRAME_PRESENTATION_STYLE_ID)) return;
+    const style = document.createElement("style");
+    style.id = APPFRAME_PRESENTATION_STYLE_ID;
+    style.textContent = APPFRAME_PRESENTATION_CSS;
+    document.head.append(style);
+  }
 
   private observe() {
     this.observer?.disconnect();
@@ -67,9 +79,6 @@ export class SpaceMountainShellUi {
   }
 
   private applyAppFramePresentation(frame: HTMLIFrameElement) {
-    // AppFrame content owns its real controls, but the shell owns the scene and
-    // outer geometry. Keep this wrapper visually absent so first- and third-party
-    // apps travel through the exact same channel without becoming a giant card.
     const shell = frame.closest<HTMLElement>(".spmt-embedded-app-shell");
     if (shell) {
       shell.style.border = "0";
@@ -78,9 +87,6 @@ export class SpaceMountainShellUi {
       shell.style.boxShadow = "none";
     }
     frame.style.background = "transparent";
-    // Chromium intentionally gives transparent iframes an opaque canvas when a
-    // conflicting dark color-scheme is forced on the iframe element. The app
-    // already supplies its own theme tokens, so normal preserves transparency.
     frame.style.setProperty("color-scheme", "normal");
     frame.setAttribute("allowtransparency", "true");
   }
