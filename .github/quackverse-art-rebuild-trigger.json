@@ -1,10 +1,10 @@
 {
-  "mode": "next-one",
-  "card_id": "",
+  "mode": "one-card",
+  "card_id": "1",
   "start_id": "",
   "limit": "1",
-  "force": false,
+  "force": true,
   "resolution": "2048x1280",
   "provider": "seaart",
-  "request_id": "bootstrap"
+  "request_id": "chat-card-1-20260901-0245"
 }
