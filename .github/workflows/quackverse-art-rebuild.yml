@@ -1,0 +1,127 @@
+name: Quackverse Art Rebuild
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "What to rebuild"
+        required: true
+        default: "next-one"
+        type: choice
+        options:
+          - next-one
+          - one-card
+          - range
+          - full-fresh
+      card_id:
+        description: "Card ID for one-card mode"
+        required: false
+        type: string
+      start_id:
+        description: "Start card ID for range mode"
+        required: false
+        type: string
+      limit:
+        description: "How many cards for range mode"
+        required: false
+        default: "1"
+        type: string
+      force:
+        description: "Replace already-complete selected cards"
+        required: false
+        default: false
+        type: boolean
+      resolution:
+        description: "Native generation resolution"
+        required: false
+        default: "2048x1280"
+        type: string
+      provider:
+        description: "StreamWeaver image provider"
+        required: false
+        default: "seaart"
+        type: choice
+        options:
+          - seaart
+          - cloudflare
+          - eden
+          - pollinations
+          - perchance
+
+permissions:
+  contents: read
+
+jobs:
+  rebuild:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      CHAT_TAG_BOT_SECRET: ${{ secrets.CHAT_TAG_BOT_SECRET || secrets.BOT_SECRET }}
+      CHAT_TAG_URL: https://chat-tag-new.fly.dev
+      STREAMWEAVER_URL: https://streamweaver-new.fly.dev
+      QUACKVERSE_TENANT_ID: spacemountainlive
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Validate service credential
+        shell: bash
+        run: |
+          if [ -z "$CHAT_TAG_BOT_SECRET" ]; then
+            echo "Missing CHAT_TAG_BOT_SECRET (or BOT_SECRET) repository secret." >&2
+            exit 1
+          fi
+
+      - name: Build command
+        id: command
+        shell: bash
+        env:
+          MODE: ${{ inputs.mode }}
+          CARD_ID: ${{ inputs.card_id }}
+          START_ID: ${{ inputs.start_id }}
+          LIMIT: ${{ inputs.limit }}
+          FORCE: ${{ inputs.force }}
+          RESOLUTION: ${{ inputs.resolution }}
+          PROVIDER: ${{ inputs.provider }}
+        run: |
+          args=(--resolution "$RESOLUTION" --provider "$PROVIDER")
+          case "$MODE" in
+            next-one)
+              args+=(--limit 1)
+              ;;
+            one-card)
+              if [ -z "$CARD_ID" ]; then echo "card_id is required for one-card mode" >&2; exit 1; fi
+              args+=(--card "$CARD_ID")
+              ;;
+            range)
+              if [ -z "$START_ID" ]; then echo "start_id is required for range mode" >&2; exit 1; fi
+              args+=(--start "$START_ID" --limit "${LIMIT:-1}")
+              ;;
+            full-fresh)
+              args+=(--fresh)
+              ;;
+            *)
+              echo "Unknown mode: $MODE" >&2
+              exit 1
+              ;;
+          esac
+          if [ "$FORCE" = "true" ]; then args+=(--force); fi
+          printf '%q ' "${args[@]}" > /tmp/quackverse-args
+          echo "Command: node scripts/quackverse-art-rebuild.mjs $(cat /tmp/quackverse-args)"
+
+      - name: Generate, inject, animate, verify
+        shell: bash
+        run: |
+          eval "node scripts/quackverse-art-rebuild.mjs $(cat /tmp/quackverse-args)"
+
+      - name: Upload checkpoint
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quackverse-art-rebuild-checkpoint
+          path: .quackverse-art-rebuild-state.json
+          if-no-files-found: ignore
+          retention-days: 14
