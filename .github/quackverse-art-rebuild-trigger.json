@@ -1,0 +1,10 @@
+{
+  "mode": "next-one",
+  "card_id": "",
+  "start_id": "",
+  "limit": "1",
+  "force": false,
+  "resolution": "2048x1280",
+  "provider": "seaart",
+  "request_id": "bootstrap"
+}
