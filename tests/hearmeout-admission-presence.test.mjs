@@ -31,7 +31,8 @@ test("private-room passwords are enforced server-side and never persisted in pla
     assert.deepEqual(runtime.listMembers("tenant-a", room.roomId, at).map((member) => member.userId), ["guest-1", "owner-1"]);
     assert.equal(rawFiles(path).includes("super-secret-room"), false);
     runtime.leaveRoom(guest, room.roomId, "leave-guest", at);
-    assert.equal(runtime.joinRoom(guest, room.roomId, "rejoin-admitted", at).roomId, room.roomId);
+    assert.throws(() => runtime.joinRoom(guest, room.roomId, "rejoin-without-password", at), /admission/);
+    assert.equal(runtime.joinRoom(guest, room.roomId, "rejoin-with-password", at, { password: "super-secret-room" }).roomId, room.roomId);
   } finally { runtime.close(); }
 });
 

@@ -4,6 +4,7 @@ import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 export const HEARMEOUT_ROOM_LIFETIME_MS = 6 * 60 * 60 * 1_000;
 export const HEARMEOUT_PRESENCE_STALE_MS = 45_000;
 export type HearMeOutMediaLaneV1 = "movie" | "music";
+export type HearMeOutModerationActionV1 = "kick" | "timeout" | "ban";
 
 export interface HearMeOutPrincipalV1 {
   tenantId: string;
@@ -115,6 +116,11 @@ export class SqliteHearMeOutRoomMediaRuntime {
         tenant_id TEXT NOT NULL, room_id TEXT NOT NULL, user_id TEXT NOT NULL, body TEXT NOT NULL,
         PRIMARY KEY(tenant_id,room_id,user_id)
       ) STRICT;
+      CREATE TABLE IF NOT EXISTS hmo_room_restrictions(
+        tenant_id TEXT NOT NULL, room_id TEXT NOT NULL, user_id TEXT NOT NULL, kind TEXT NOT NULL, expires_at TEXT, body TEXT NOT NULL,
+        PRIMARY KEY(tenant_id,room_id,user_id)
+      ) STRICT;
+      CREATE INDEX IF NOT EXISTS hmo_room_restrictions_active ON hmo_room_restrictions(tenant_id,room_id,expires_at);
       CREATE TABLE IF NOT EXISTS hmo_room_presence(
         tenant_id TEXT NOT NULL, room_id TEXT NOT NULL, user_id TEXT NOT NULL, connection_id TEXT NOT NULL, last_seen_at TEXT NOT NULL, body TEXT NOT NULL,
         PRIMARY KEY(tenant_id,room_id,user_id,connection_id)
@@ -173,9 +179,7 @@ export class SqliteHearMeOutRoomMediaRuntime {
     assertPrincipal(principal);
     const at = validNow(now);
     const rows = this.db.prepare("SELECT body FROM hmo_rooms WHERE tenant_id=? ORDER BY room_id").all(principal.tenantId) as Array<{ body: string }>;
-    return rows.map((row) => JSON.parse(row.body) as HearMeOutRoomV1)
-      .filter((room) => !isExpired(room, at))
-      .filter((room) => room.privacy === "public" || room.ownerUserId === principal.userId || principal.roles.includes("admin") || this.isMember(principal.tenantId, room.roomId, principal.userId));
+    return rows.map((row) => JSON.parse(row.body) as HearMeOutRoomV1).filter((room) => !isExpired(room, at));
   }
 
   joinRoom(principal: HearMeOutPrincipalV1, roomId: string, operationId: string, now?: string, admission: { password?: string } = {}): HearMeOutRoomV1 {
@@ -184,6 +188,7 @@ export class SqliteHearMeOutRoomMediaRuntime {
     if (replay) return replay;
     const at = validNow(now);
     const room = this.requireRoom(principal.tenantId, roomId, at);
+    this.assertCanJoin(principal, room, at);
     const access = room.privacy === "private" ? this.authorizePrivateAdmission(principal, room, admission.password, at) : undefined;
     this.transaction(() => {
       this.putMember(principal, room.roomId, at);
@@ -203,7 +208,7 @@ export class SqliteHearMeOutRoomMediaRuntime {
     const at = validNow(input.now);
     const room = this.requireRoom(principal.tenantId, input.roomId, at);
     if (room.privacy !== "private") throw new Error("Public HearMeOut rooms do not require invitations");
-    if (room.ownerUserId !== principal.userId && !principal.roles.includes("admin")) throw new Error("Only the room owner or an admin can invite private-room members");
+    if (!this.canManage(principal, room)) throw new Error("Only the room owner or an admin can invite private-room members");
     const ttlMs = input.ttlMs ?? 24 * 60 * 60 * 1_000;
     if (!Number.isSafeInteger(ttlMs) || ttlMs < 60_000 || ttlMs > 7 * 24 * 60 * 60 * 1_000) throw new Error("HearMeOut invitation lifetime is invalid");
     const invitation: HearMeOutRoomInvitationV1 = {
@@ -257,11 +262,65 @@ export class SqliteHearMeOutRoomMediaRuntime {
     const replay = this.replay<{ left: true }>(principal.tenantId, operationId, "leave-room");
     if (replay) return replay;
     const room = this.requireRoom(principal.tenantId, roomId, validNow(now));
-    if (room.ownerUserId === principal.userId) throw new Error("The room owner cannot leave an active room");
+    if (room.ownerUserId === principal.userId) throw new Error("The room owner cannot leave an active room; delete the room instead");
     const result = { left: true } as const;
     this.transaction(() => {
+      this.db.prepare("DELETE FROM hmo_room_presence WHERE tenant_id=? AND room_id=? AND user_id=?").run(principal.tenantId, room.roomId, principal.userId);
       this.db.prepare("DELETE FROM hmo_room_members WHERE tenant_id=? AND room_id=? AND user_id=?").run(principal.tenantId, room.roomId, principal.userId);
+      this.db.prepare("DELETE FROM hmo_room_admissions WHERE tenant_id=? AND room_id=? AND user_id=?").run(principal.tenantId, room.roomId, principal.userId);
       this.remember(principal.tenantId, operationId, "leave-room", result);
+    });
+    return result;
+  }
+
+  moderateMember(principal: HearMeOutPrincipalV1, input: { roomId: string; targetUserId: string; action: HearMeOutModerationActionV1; durationSeconds?: number | undefined; operationId: string; now?: string }): { action: HearMeOutModerationActionV1; targetUserId: string; expiresAt?: string } {
+    assertPrincipal(principal);
+    const replay = this.replay<{ action: HearMeOutModerationActionV1; targetUserId: string; expiresAt?: string }>(principal.tenantId, input.operationId, "moderate-room-member");
+    if (replay) return replay;
+    const at = validNow(input.now);
+    const room = this.requireRoom(principal.tenantId, input.roomId, at);
+    if (!this.canManage(principal, room)) throw new Error("Only the room owner or an admin can moderate room members");
+    const targetUserId = cleanId(input.targetUserId, "targetUserId");
+    if (targetUserId === room.ownerUserId) throw new Error("The room owner cannot be kicked, timed out, or banned");
+    if (targetUserId === principal.userId) throw new Error("A room moderator cannot moderate themselves");
+    if (input.action !== "kick" && input.action !== "timeout" && input.action !== "ban") throw new Error("HearMeOut moderation action is invalid");
+    let expiresAt: string | undefined;
+    if (input.action === "timeout") {
+      const duration = Number(input.durationSeconds ?? 600);
+      if (!Number.isSafeInteger(duration) || duration < 60 || duration > 24 * 60 * 60) throw new Error("HearMeOut timeout must be between 60 seconds and 24 hours");
+      expiresAt = new Date(Date.parse(at) + duration * 1_000).toISOString();
+    }
+    const result = { action: input.action, targetUserId, ...(expiresAt ? { expiresAt } : {}) };
+    this.transaction(() => {
+      this.db.prepare("DELETE FROM hmo_room_presence WHERE tenant_id=? AND room_id=? AND user_id=?").run(principal.tenantId, room.roomId, targetUserId);
+      this.db.prepare("DELETE FROM hmo_room_members WHERE tenant_id=? AND room_id=? AND user_id=?").run(principal.tenantId, room.roomId, targetUserId);
+      this.db.prepare("DELETE FROM hmo_room_admissions WHERE tenant_id=? AND room_id=? AND user_id=?").run(principal.tenantId, room.roomId, targetUserId);
+      if (input.action !== "kick") {
+        const body = { schemaVersion: 1, tenantId: principal.tenantId, roomId: room.roomId, userId: targetUserId, kind: input.action, createdByUserId: principal.userId, createdAt: at, ...(expiresAt ? { expiresAt } : {}) };
+        this.db.prepare("INSERT INTO hmo_room_restrictions(tenant_id,room_id,user_id,kind,expires_at,body) VALUES(?,?,?,?,?,?) ON CONFLICT(tenant_id,room_id,user_id) DO UPDATE SET kind=excluded.kind,expires_at=excluded.expires_at,body=excluded.body").run(principal.tenantId, room.roomId, targetUserId, input.action, expiresAt ?? null, JSON.stringify(body));
+      }
+      this.remember(principal.tenantId, input.operationId, "moderate-room-member", result);
+    });
+    return result;
+  }
+
+  deleteRoom(principal: HearMeOutPrincipalV1, roomId: string, operationId: string, now?: string): { deleted: true; roomId: string } {
+    assertPrincipal(principal);
+    const replay = this.replay<{ deleted: true; roomId: string }>(principal.tenantId, operationId, "delete-room");
+    if (replay) return replay;
+    const room = this.requireRoom(principal.tenantId, roomId, validNow(now));
+    if (!this.canManage(principal, room)) throw new Error("Only the room owner or an admin can delete the room");
+    const result = { deleted: true as const, roomId: room.roomId };
+    this.transaction(() => {
+      this.db.prepare("DELETE FROM hmo_media_sessions WHERE tenant_id=? AND room_id=?").run(principal.tenantId, room.roomId);
+      this.db.prepare("DELETE FROM hmo_room_presence WHERE tenant_id=? AND room_id=?").run(principal.tenantId, room.roomId);
+      this.db.prepare("DELETE FROM hmo_room_restrictions WHERE tenant_id=? AND room_id=?").run(principal.tenantId, room.roomId);
+      this.db.prepare("DELETE FROM hmo_room_admissions WHERE tenant_id=? AND room_id=?").run(principal.tenantId, room.roomId);
+      this.db.prepare("DELETE FROM hmo_room_invitations WHERE tenant_id=? AND room_id=?").run(principal.tenantId, room.roomId);
+      this.db.prepare("DELETE FROM hmo_room_access WHERE tenant_id=? AND room_id=?").run(principal.tenantId, room.roomId);
+      this.db.prepare("DELETE FROM hmo_room_members WHERE tenant_id=? AND room_id=?").run(principal.tenantId, room.roomId);
+      this.db.prepare("DELETE FROM hmo_rooms WHERE tenant_id=? AND room_id=?").run(principal.tenantId, room.roomId);
+      this.remember(principal.tenantId, operationId, "delete-room", result);
     });
     return result;
   }
@@ -274,7 +333,7 @@ export class SqliteHearMeOutRoomMediaRuntime {
   getSession(tenantId: string, roomId: string, lane: HearMeOutMediaLaneV1, now?: string): HearMeOutMediaSessionV1 {
     const at = validNow(now);
     this.requireRoom(tenantId, roomId, at);
-    return this.readSession(tenantId, roomId, lane) ?? emptySession(tenantId, cleanId(roomId, "roomId"), lane, at);
+    return this.readSession(tenantId, cleanId(roomId, "roomId"), lane) ?? emptySession(tenantId, cleanId(roomId, "roomId"), lane, at);
   }
 
   enqueue(principal: HearMeOutPrincipalV1, input: { roomId: string; lane: HearMeOutMediaLaneV1; item: HearMeOutMediaItemV1; operationId: string; now?: string }): HearMeOutMediaSessionV1 {
@@ -354,10 +413,32 @@ export class SqliteHearMeOutRoomMediaRuntime {
   }
 
   private assertCanControl(principal: HearMeOutPrincipalV1, room: HearMeOutRoomV1, session: HearMeOutMediaSessionV1, action: HearMeOutControlActionV1): void {
-    if (room.ownerUserId === principal.userId || principal.roles.includes("admin")) return;
+    if (this.canManage(principal, room)) return;
     const ownsRequest = [session.current, ...session.queue].some((request) => request?.requestedBy.userId === principal.userId);
     if (ownsRequest && (action === "next" || action === "clear")) return;
     throw new Error("Only the room host or an admin can use that media control");
+  }
+
+  private canManage(principal: HearMeOutPrincipalV1, room: HearMeOutRoomV1): boolean {
+    return room.ownerUserId === principal.userId || principal.roles.includes("admin");
+  }
+
+  private assertCanJoin(principal: HearMeOutPrincipalV1, room: HearMeOutRoomV1, now: string): void {
+    if (this.canManage(principal, room)) return;
+    const restriction = this.activeRestriction(room.tenantId, room.roomId, principal.userId, now);
+    if (!restriction) return;
+    if (restriction.kind === "ban") throw new Error("You are banned from this HearMeOut room");
+    throw new Error(`You are timed out from this HearMeOut room until ${restriction.expiresAt}`);
+  }
+
+  private activeRestriction(tenantId: string, roomId: string, userId: string, now: string): { kind: "timeout" | "ban"; expiresAt?: string } | undefined {
+    const row = this.db.prepare("SELECT kind,expires_at FROM hmo_room_restrictions WHERE tenant_id=? AND room_id=? AND user_id=?").get(tenantId, roomId, userId) as { kind: string; expires_at: string | null } | undefined;
+    if (!row) return undefined;
+    if (row.expires_at && Date.parse(row.expires_at) <= Date.parse(now)) {
+      this.db.prepare("DELETE FROM hmo_room_restrictions WHERE tenant_id=? AND room_id=? AND user_id=?").run(tenantId, roomId, userId);
+      return undefined;
+    }
+    return { kind: row.kind === "ban" ? "ban" : "timeout", ...(row.expires_at ? { expiresAt: row.expires_at } : {}) };
   }
 
   private readRoom(tenantId: string, roomId: string): HearMeOutRoomV1 | undefined {
