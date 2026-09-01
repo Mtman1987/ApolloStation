@@ -15,7 +15,7 @@ export const HEARMEOUT_WEB_SURFACE_CONTRACT = Object.freeze({
   factory: "createHearMeOutWebServer",
   surfaceClient: "HEARMEOUT_SURFACE_BROWSER_JS",
   sceneCss: "--spmt-app-backdrop-image:url('/assets/product/hearmeout-background.webp')",
-  roomUi: ["Create Room", "/api/hearmeout/rooms", "joinRoom", "heartbeatPresence", "listMembers", "getSession", "Music / DJ", "Watch party", "Green runtime", "No rooms yet", "No members yet", "idle"],
+  roomUi: ["Create Room", "/api/hearmeout/rooms", "joinRoom", "heartbeatPresence", "listMembers", "getSession", "Bot Hub", "Music Bot", "Bridge", "Personas", "Watch party", "Green runtime", "No rooms yet", "No members yet", "idle"],
 });
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
