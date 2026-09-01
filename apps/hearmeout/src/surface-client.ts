@@ -64,10 +64,9 @@ function enhanceRoom(){
     watchButton.addEventListener('click',()=>{watch.hidden=!watch.hidden;if(!watch.hidden)watch.scrollIntoView({block:'nearest'})});
     icons.insertBefore(watchButton,more);
   }
-  const bots=own.querySelector('[data-bot-drawer]');
+  const bots=people.querySelector('[data-bot-drawer]');
   if(bots&&!own.querySelector('[data-hmo-bots-icon]')){
-    const count=Array.isArray(window.__hmoRoomPersonas)?window.__hmoRoomPersonas.length:0;
-    const botButton=makeIcon('\u{1f916}',count?`Bots & personas - ${count} active`:'Bots & personas','hmoBotsIcon');
+    const botButton=makeIcon('\u{1f916}','Bots & personas','hmoBotsIcon');
     botButton.addEventListener('click',()=>{
       bots.hidden=!bots.hidden;
       if(!bots.hidden){
