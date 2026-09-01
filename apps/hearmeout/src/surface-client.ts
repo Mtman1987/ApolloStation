@@ -64,8 +64,26 @@ function enhanceRoom(){
     watchButton.addEventListener('click',()=>{watch.hidden=!watch.hidden;if(!watch.hidden)watch.scrollIntoView({block:'nearest'})});
     icons.insertBefore(watchButton,more);
   }
+  const bots=own.querySelector('[data-bot-drawer]');
+  if(bots&&!own.querySelector('[data-hmo-bots-icon]')){
+    const count=Array.isArray(window.__hmoRoomPersonas)?window.__hmoRoomPersonas.length:0;
+    const botButton=makeIcon('\u{1f916}',count?`Bots & personas - ${count} active`:'Bots & personas','hmoBotsIcon');
+    botButton.addEventListener('click',()=>{
+      bots.hidden=!bots.hidden;
+      if(!bots.hidden){
+        const personaTab=[...bots.querySelectorAll('.hmo-bot-tabs .hmo-button')].find(button=>button.textContent?.includes('Personas'));
+        personaTab?.click();
+        bots.scrollIntoView({block:'nearest'});
+      }
+    });
+    icons.insertBefore(botButton,more);
+  }
   const menu=own.querySelector('.hmo-person-menu');
-  if(menu){for(const button of [...menu.querySelectorAll('.hmo-button')])if(button.textContent?.includes('Open Commlink'))button.remove()}
+  if(menu){
+    for(const button of [...menu.querySelectorAll('.hmo-button')]){
+      if(button.textContent?.includes('Open Commlink')||button.textContent?.includes('Bots & personas'))button.remove();
+    }
+  }
 }
 function relabel(){
   const mark=document.querySelector('.hmo-mark span');if(mark)mark.textContent='VOICE - COMMLINK - WATCH - ROOMS';
