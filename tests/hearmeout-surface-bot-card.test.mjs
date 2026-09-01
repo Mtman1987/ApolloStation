@@ -31,6 +31,19 @@ test("HearMeOut Bot Hub keeps bot-like controls behind icons and popovers", () =
   assert.match(surface, /Escape/);
 });
 
+test("HearMeOut surface browser bundle parses before room controls initialize", () => {
+  const marker = "String.raw`";
+  const start = surface.indexOf(marker);
+  const end = surface.lastIndexOf("`;");
+  assert.ok(start >= 0 && end > start, "HearMeOut surface browser source must exist");
+  const browserSource = surface
+    .slice(start + marker.length, end)
+    .replaceAll("${manifest}", '{"appId":"hearmeout"}');
+  assert.doesNotThrow(() => new Function(browserSource));
+  assert.match(browserSource, /data-hmo-open-rooms/);
+  assert.match(browserSource, /data-hmo-create-home/);
+});
+
 test("HearMeOut room UI stays truthful when no media or provider session is active", () => {
   assert.match(source, /Green runtime/);
   assert.match(source, /No rooms yet/);
