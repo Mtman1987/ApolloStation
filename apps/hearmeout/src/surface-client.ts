@@ -37,7 +37,7 @@ function setMode(mode){html.dataset.spmtSurfaceMode=mode}
 function send(message){if(window.parent!==window)window.parent.postMessage(message,hostOrigin)}
 function publish(){send({protocol:'spmt.surface',version:1,type:'surface.manifest',manifest})}
 function report(pageId){send({protocol:'spmt.surface',version:1,type:'page.changed',appId:manifest.appId,pageId})}
-function resetRoomDetail(){const detail=document.querySelector('[data-hmo-room-detail]');if(detail){detail.hidden=true;detail.replaceChildren()}}
+function showDirectory(){const detail=document.querySelector('[data-hmo-room-detail]');if(detail){detail.hidden=true;detail.replaceChildren()}report('rooms')}
 function text(node){return String(node&&node.textContent||'').trim()}
 function hidePopovers(except){
   document.querySelectorAll('.hmo-bot-popover').forEach(pop=>{if(pop!==except)pop.hidden=true});
@@ -130,13 +130,21 @@ window.addEventListener('message',event=>{
   if(message?.protocol==='spmt.embed'&&message?.version===1&&message?.type==='host.hello'&&message.launch?.appId===manifest.appId){hostOrigin=event.origin||hostOrigin;setMode(message.launch.surfaceMode||'standalone');publish();return}
   if(!message||message.protocol!=='spmt.surface'||message.version!==1||message.type!=='page.open'||message.appId!==manifest.appId)return;
   if(hostOrigin!=='*'&&event.origin!==hostOrigin)return;
-  if(message.pageId==='rooms'){resetRoomDetail();document.querySelector('[data-hmo-open-rooms]')?.click()}
+  if(message.pageId==='rooms')document.querySelector('[data-hmo-open-rooms]')?.click();
   else if(message.pageId==='home')document.querySelector('[data-hmo-home]')?.click();
 });
-document.querySelector('[data-hmo-open-rooms]')?.addEventListener('click',()=>{resetRoomDetail();report('rooms')});
-document.querySelector('[data-hmo-create-home]')?.addEventListener('click',()=>{resetRoomDetail();report('rooms')});
+document.querySelector('[data-hmo-open-rooms]')?.addEventListener('click',showDirectory);
+document.querySelector('[data-hmo-create-home]')?.addEventListener('click',showDirectory);
 document.querySelector('[data-hmo-home]')?.addEventListener('click',()=>report('home'));
-document.addEventListener('click',event=>{const target=event.target instanceof Element?event.target.closest('button'):null;if(target&&target.closest('.hmo-bot-hub'))return;closePopovers()});
+document.addEventListener('click',event=>{
+  const target=event.target instanceof Element?event.target.closest('button'):null;
+  if(target&&target.closest('.hmo-bot-hub'))return;
+  closePopovers();
+  if(!target||target.textContent?.trim()!=='Open')return;
+  const footer=target.closest('.hmo-room-card footer');if(!footer)return;
+  const view=[...footer.querySelectorAll('button')].find(button=>button.textContent?.trim()==='View');if(!view)return;
+  event.preventDefault();event.stopImmediatePropagation();view.click();
+},true);
 document.addEventListener('keydown',event=>{if(event.key==='Escape')closePopovers()});
 new MutationObserver(queueEnhance).observe(document.body,{childList:true,subtree:true});
 queueEnhance();publish();
