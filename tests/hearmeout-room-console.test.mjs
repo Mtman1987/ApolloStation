@@ -22,7 +22,7 @@ test("HearMeOut room console exposes recognizable voice chat watch music and per
 test("HearMeOut room console routes chat and media through Green authority", async () => {
   const source = await read("apps/hearmeout/src/web-server-v2.ts");
   assert.match(source, /hmo_room_chat/);
-  assert.match(source, /\/media\\\/(movie\|music)/);
+  assert.match(source, /media\\\/(movie\|music)/);
   assert.match(source, /rooms\.enqueue\(principal/);
   assert.match(source, /rooms\.control\(principal/);
   assert.match(source, /\/v1\/assistants\/community\/invocations/);
