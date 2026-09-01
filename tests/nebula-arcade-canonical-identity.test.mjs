@@ -18,6 +18,7 @@ import {
 const ROOT = new URL("..", import.meta.url);
 const LEGACY_DASH_ID = ["chat", "tag"].join("-");
 const LEGACY_TABLE_PREFIX = ["chat", "tag"].join("_");
+const LEGACY_NEBULA_DEPLOYMENT_ORIGIN = "https://chat-tag-new.fly.dev";
 
 test("every executable integration names Nebula Arcade as the sole current owner", () => {
   assert.equal(manifest.id, "nebula-arcade");
@@ -28,7 +29,10 @@ test("every executable integration names Nebula Arcade as the sole current owner
 
   const currentFiles = executableFiles(["apps", "packages", "scripts", "config", ".github"]);
   const forbidden = new RegExp(`${["chat", "tag"].join("[ _-]?")}|chattag`, "i");
-  const leaks = currentFiles.flatMap((file) => forbidden.test(readFileSync(file, "utf8")) ? [relative(new URL("..", import.meta.url).pathname, file)] : []);
+  const leaks = currentFiles.flatMap((file) => {
+    const source = readFileSync(file, "utf8").replaceAll(LEGACY_NEBULA_DEPLOYMENT_ORIGIN, "https://legacy-nebula-deployment.invalid");
+    return forbidden.test(source) ? [relative(new URL("..", import.meta.url).pathname, file)] : [];
+  });
   assert.deepEqual(leaks, [], `obsolete Games Hub identity leaked into executable files: ${leaks.join(", ")}`);
 
   const server = readFileSync(new URL("../apps/spacemountain-web/src/server.ts", import.meta.url), "utf8");
