@@ -2,7 +2,7 @@
 import fs from 'node:fs/promises';
 import process from 'node:process';
 
-const DEFAULT_CHAT_TAG_URL = 'https://chat-tag-new.fly.dev';
+const DEFAULT_NEBULA_ARCADE_URL = 'https://chat-tag-new.fly.dev';
 const DEFAULT_STREAMWEAVER_URL = 'https://streamweaver-new.fly.dev';
 const DEFAULT_TENANT_ID = 'spacemountainlive';
 const DEFAULT_RESOLUTION = '2048x1280';
@@ -17,14 +17,14 @@ const NEGATIVE_PROMPT = [
 
 function parseArgs(argv) {
   const options = {
-    chatTagUrl: process.env.CHAT_TAG_URL || DEFAULT_CHAT_TAG_URL,
+    nebulaArcadeUrl: process.env.NEBULA_ARCADE_URL || DEFAULT_NEBULA_ARCADE_URL,
     streamweaverUrl: process.env.STREAMWEAVER_URL || DEFAULT_STREAMWEAVER_URL,
     tenantId: process.env.QUACKVERSE_TENANT_ID || process.env.STREAMWEAVER_TENANT_ID || DEFAULT_TENANT_ID,
     provider: process.env.QUACKVERSE_IMAGE_PROVIDER || DEFAULT_PROVIDER,
     resolution: process.env.QUACKVERSE_IMAGE_RESOLUTION || DEFAULT_RESOLUTION,
     fallbackResolution: process.env.QUACKVERSE_IMAGE_FALLBACK_RESOLUTION || '1536x960',
     stateFile: process.env.QUACKVERSE_REBUILD_STATE_FILE || DEFAULT_STATE_FILE,
-    botSecret: process.env.CHAT_TAG_BOT_SECRET || process.env.BOT_SECRET || '',
+    botSecret: process.env.NEBULA_ARCADE_BOT_SECRET || process.env.BOT_SECRET || '',
     fresh: false,
     dryRun: false,
     noAnimate: false,
@@ -55,7 +55,7 @@ function parseArgs(argv) {
     else if (arg === '--fallback-resolution') options.fallbackResolution = next();
     else if (arg === '--provider') options.provider = next();
     else if (arg === '--tenant') options.tenantId = next();
-    else if (arg === '--chat-tag-url') options.chatTagUrl = next();
+    else if (arg === '--nebula-arcade-url') options.nebulaArcadeUrl = next();
     else if (arg === '--streamweaver-url') options.streamweaverUrl = next();
     else if (arg === '--state-file') options.stateFile = next();
     else if (arg === '--seed') options.seed = Number(next());
@@ -63,7 +63,7 @@ function parseArgs(argv) {
     else throw new Error(`Unknown argument: ${arg}`);
   }
 
-  options.chatTagUrl = options.chatTagUrl.replace(/\/$/, '');
+  options.nebulaArcadeUrl = options.nebulaArcadeUrl.replace(/\/$/, '');
   options.streamweaverUrl = options.streamweaverUrl.replace(/\/$/, '');
   if (options.cardId !== null && (!Number.isFinite(options.cardId) || options.cardId < 1)) throw new Error('--card must be a positive card id');
   if (options.startId !== null && (!Number.isFinite(options.startId) || options.startId < 1)) throw new Error('--start must be a positive card id');
@@ -75,16 +75,16 @@ function parseArgs(argv) {
 
 function usage() {
   return `Quackverse external art rebuilder\n\n` +
-    `Runs outside ChatTag. It asks ChatTag for the canonical per-card prompt, generates one high-resolution image through StreamWeaver, uploads it through ChatTag's existing protected art API, then asks the existing DSH renderer to make/save the hover GIF.\n\n` +
+    `Runs outside Nebula Arcade. It asks Nebula Arcade for the canonical per-card prompt, generates one high-resolution image through StreamWeaver, uploads it through Nebula Arcade's existing protected art API, then asks the existing DSH renderer to make/save the hover GIF.\n\n` +
     `Required environment:\n` +
-    `  CHAT_TAG_BOT_SECRET=<live bot secret>\n\n` +
+    `  NEBULA_ARCADE_BOT_SECRET=<live bot secret>\n\n` +
     `Examples:\n` +
     `  node scripts/quackverse-art-rebuild.mjs --fresh\n` +
     `  node scripts/quackverse-art-rebuild.mjs --card 7 --force\n` +
     `  node scripts/quackverse-art-rebuild.mjs --start 40 --limit 10\n` +
     `  node scripts/quackverse-art-rebuild.mjs --dry-run --limit 5\n\n` +
     `Defaults:\n` +
-    `  ChatTag: ${DEFAULT_CHAT_TAG_URL}\n` +
+    `  Nebula Arcade: ${DEFAULT_NEBULA_ARCADE_URL}\n` +
     `  StreamWeaver: ${DEFAULT_STREAMWEAVER_URL}\n` +
     `  Resolution: ${DEFAULT_RESOLUTION}\n` +
     `  Provider: ${DEFAULT_PROVIDER}\n`;
@@ -103,19 +103,19 @@ async function requestJson(url, init = {}, label = 'request') {
 }
 
 function botHeaders(options, extra = {}) {
-  if (!options.botSecret) throw new Error('CHAT_TAG_BOT_SECRET is required for live writes.');
+  if (!options.botSecret) throw new Error('NEBULA_ARCADE_BOT_SECRET is required for live writes.');
   return { 'x-bot-secret': options.botSecret, ...extra };
 }
 
 async function readManifest(options) {
-  return requestJson(`${options.chatTagUrl}/api/quackverse/art`, {}, 'Quackverse art manifest');
+  return requestJson(`${options.nebulaArcadeUrl}/api/quackverse/art`, {}, 'Quackverse art manifest');
 }
 
 async function classifyCards(options, ids) {
   const cards = new Map();
   for (let offset = 0; offset < ids.length; offset += 20) {
     const chunk = ids.slice(offset, offset + 20);
-    const data = await requestJson(`${options.chatTagUrl}/api/quackverse/art/generate`, {
+    const data = await requestJson(`${options.nebulaArcadeUrl}/api/quackverse/art/generate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -176,7 +176,7 @@ function artDirectionFor(cardId, meta, genderPlan, resolution) {
 }
 
 async function previewPrompt(options, cardId, instructions) {
-  const data = await requestJson(`${options.chatTagUrl}/api/quackverse/art/generate`, {
+  const data = await requestJson(`${options.nebulaArcadeUrl}/api/quackverse/art/generate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -256,7 +256,7 @@ async function downloadImage(imageUrl, cardId) {
   if (!mimeType.startsWith('image/')) throw new Error(`Card #${cardId} generated asset is not an image (${mimeType})`);
   const bytes = Buffer.from(await response.arrayBuffer());
   if (!bytes.length) throw new Error(`Card #${cardId} generated image was empty`);
-  if (bytes.length > 20 * 1024 * 1024) throw new Error(`Card #${cardId} image exceeds ChatTag's 20MB upload limit`);
+  if (bytes.length > 20 * 1024 * 1024) throw new Error(`Card #${cardId} image exceeds Nebula Arcade's 20MB upload limit`);
   return { bytes, mimeType };
 }
 
@@ -270,7 +270,7 @@ function extensionForMime(mimeType) {
 
 async function uploadStatic(options, cardId, image, generation) {
   const ext = extensionForMime(image.mimeType);
-  return requestJson(`${options.chatTagUrl}/api/quackverse/art`, {
+  return requestJson(`${options.nebulaArcadeUrl}/api/quackverse/art`, {
     method: 'POST',
     headers: botHeaders(options, { 'Content-Type': 'application/json' }),
     body: JSON.stringify({
@@ -286,7 +286,7 @@ async function uploadStatic(options, cardId, image, generation) {
 }
 
 async function animateAndPersist(options, cardId) {
-  return requestJson(`${options.chatTagUrl}/api/quackverse/art/enhance-animate`, {
+  return requestJson(`${options.nebulaArcadeUrl}/api/quackverse/art/enhance-animate`, {
     method: 'POST',
     headers: botHeaders(options, { 'Content-Type': 'application/json' }),
     body: JSON.stringify({ cardId }),
@@ -294,7 +294,7 @@ async function animateAndPersist(options, cardId) {
 }
 
 async function deleteCardArt(options, cardId) {
-  return requestJson(`${options.chatTagUrl}/api/quackverse/art`, {
+  return requestJson(`${options.nebulaArcadeUrl}/api/quackverse/art`, {
     method: 'DELETE',
     headers: botHeaders(options, { 'Content-Type': 'application/json' }),
     body: JSON.stringify({ cardId, variant: 'all' }),
@@ -350,11 +350,11 @@ async function main() {
     return;
   }
 
-  if (!options.botSecret) throw new Error('CHAT_TAG_BOT_SECRET is required. Refusing to write live art without the existing service credential.');
+  if (!options.botSecret) throw new Error('NEBULA_ARCADE_BOT_SECRET is required. Refusing to write live art without the existing service credential.');
 
   const state = await loadState(options.stateFile);
   if (options.fresh) {
-    console.log(`Deleting existing static + hover art for ${ids.length} selected cards through the existing protected ChatTag art API...`);
+    console.log(`Deleting existing static + hover art for ${ids.length} selected cards through the existing protected Nebula Arcade art API...`);
     for (let index = 0; index < ids.length; index += 1) {
       const cardId = ids[index];
       await deleteCardArt(options, cardId);
@@ -391,7 +391,7 @@ async function main() {
         const generation = await generateWithStreamWeaver(options, preview.prompt, cardId);
         console.log(`  generated via ${generation.provider} at ${generation.resolution}; downloading...`);
         const image = await downloadImage(generation.imageUrl, cardId);
-        console.log(`  uploading ${Math.round(image.bytes.length / 1024)} KB static master through ChatTag API...`);
+        console.log(`  uploading ${Math.round(image.bytes.length / 1024)} KB static master through Nebula Arcade API...`);
         await uploadStatic(options, cardId, image, generation);
       } else {
         console.log('  static master already exists; keeping it and resuming animation');
