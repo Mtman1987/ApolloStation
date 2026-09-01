@@ -61,8 +61,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 360
     env:
-      CHAT_TAG_BOT_SECRET: ${{ secrets.CHAT_TAG_BOT_SECRET || secrets.BOT_SECRET }}
-      CHAT_TAG_URL: https://chat-tag-new.fly.dev
+      NEBULA_ARCADE_BOT_SECRET: ${{ secrets.BOT_SECRET }}
       STREAMWEAVER_URL: https://streamweaver-new.fly.dev
       QUACKVERSE_TENANT_ID: spacemountainlive
     steps:
@@ -75,8 +74,8 @@ jobs:
       - name: Validate service credential
         shell: bash
         run: |
-          if [ -z "$CHAT_TAG_BOT_SECRET" ]; then
-            echo "Missing CHAT_TAG_BOT_SECRET (or BOT_SECRET) repository secret." >&2
+          if [ -z "$NEBULA_ARCADE_BOT_SECRET" ]; then
+            echo "Missing BOT_SECRET repository secret for Nebula Arcade." >&2
             exit 1
           fi
 
