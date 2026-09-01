@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const source = readFileSync(new URL("../apps/hearmeout/src/web-server.ts", import.meta.url), "utf8");
+const surface = readFileSync(new URL("../apps/hearmeout/src/surface-client.ts", import.meta.url), "utf8");
 
 test("HearMeOut app-owned surface exposes real room creation, membership and media state", () => {
   assert.match(source, /Create Room/);
@@ -11,8 +12,23 @@ test("HearMeOut app-owned surface exposes real room creation, membership and med
   assert.match(source, /heartbeatPresence/);
   assert.match(source, /listMembers/);
   assert.match(source, /getSession/);
-  assert.match(source, /Music \/ DJ/);
+  assert.match(source, /Bot Hub/);
+  assert.match(source, /Music Bot/);
+  assert.match(source, /Bridge/);
+  assert.match(source, /Personas/);
   assert.match(source, /Watch party/);
+  assert.doesNotMatch(source, /Music \/ DJ/);
+});
+
+test("HearMeOut Bot Hub keeps bot-like controls behind icons and popovers", () => {
+  assert.match(surface, /hmo-bot-hub/);
+  assert.match(surface, /hmo-bot-icon/);
+  assert.match(surface, /hmo-bot-popover/);
+  assert.match(surface, /Bridge/);
+  assert.match(surface, /Music Bot/);
+  assert.match(surface, /Personas/);
+  assert.match(surface, /aria-expanded/);
+  assert.match(surface, /Escape/);
 });
 
 test("HearMeOut room UI stays truthful when no media or provider session is active", () => {
