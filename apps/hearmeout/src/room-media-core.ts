@@ -267,7 +267,7 @@ export class SqliteHearMeOutRoomMediaRuntime {
     this.transaction(() => {
       this.db.prepare("DELETE FROM hmo_room_presence WHERE tenant_id=? AND room_id=? AND user_id=?").run(principal.tenantId, room.roomId, principal.userId);
       this.db.prepare("DELETE FROM hmo_room_members WHERE tenant_id=? AND room_id=? AND user_id=?").run(principal.tenantId, room.roomId, principal.userId);
-      this.db.prepare("DELETE FROM hmo_room_admissions WHERE tenant_id=? AND room_id=? AND user_id=?").run(principal.tenantId, room.roomId, principal.userId);
+      this.db.prepare("DELETE FROM hmo_room_admissions WHERE tenant_id=? AND room_id=? AND user_id=? AND instr(body,'\"method\":\"password\"')>0").run(principal.tenantId, room.roomId, principal.userId);
       this.remember(principal.tenantId, operationId, "leave-room", result);
     });
     return result;
