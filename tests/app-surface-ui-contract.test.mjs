@@ -82,8 +82,8 @@ test("HearMeOut keeps its own shell scene and delegates Rooms navigation to real
   assert.match(surface, /function setMode\(mode\)\{html\.dataset\.spmtSurfaceMode=mode\}/);
   assert.match(surface, /hmo-room-scroll[\s\S]*scrollbar-width:thin/);
   assert.match(surface, /\.hmo-home\[hidden\],\.hmo-rooms\[hidden\]\{display:none!important\}/);
-  assert.match(surface, /data-hmo-view=\\"rooms\\"\] \.hmo-home\{display:none!important\}/);
-  assert.match(surface, /data-hmo-view=\\"rooms\\"\] \.hmo-rooms\{display:grid!important;height:100%!important;min-height:0!important;overflow:hidden!important\}/);
+  assert.ok(surface.includes('.hmo-app[data-hmo-view="rooms"] .hmo-home{display:none!important}'));
+  assert.ok(surface.includes('.hmo-app[data-hmo-view="rooms"] .hmo-rooms{display:grid!important;height:100%!important;min-height:0!important;overflow:hidden!important}'));
   assert.match(web, /HEARMEOUT_SURFACE_BROWSER_JS/);
 });
 
