@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import test from "node:test";
 import { readFile } from "node:fs/promises";
-import { fetchAppPlatformSnapshot, renderProductAppWebPage } from "../packages/app-foundation/dist/product-web.js";
+import { fetchAppPlatformSnapshot, productAppSnapshotSources, renderProductAppWebPage } from "../packages/app-foundation/dist/product-web.js";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
@@ -35,6 +35,7 @@ test("product app snapshot reads only canonical SPMT developer contracts and rep
     appId: "streamweaver",
     spmtOrigin: `http://127.0.0.1:${address.port}`,
     request: { headers: { cookie: "spmt_session=fixture" } },
+    sources: ["runtime", "events", "jobs", "workers", "operations", "devices", "stellarCapabilities", "providerLinks", "xpWallet", "xpLedger"],
   });
 
   assert.equal(snapshot.contract, "spmt.public-api.v1");
@@ -65,22 +66,41 @@ test("shared app UI renders per-section signals and truthful contract notes with
       title: "Published Activity",
       body: "Only records published through SPMT appear here.",
       signals: [{ source: "events", label: "Activity events", keywords: ["activity"] }],
+      catalogs: [{ label: "Existing capabilities", items: [{ title: "Read only", detail: "Derived from the app's existing catalog.", badge: "Available" }] }],
       contractNote: "Private app records are not inferred.",
     }],
   });
   assert.match(page, /SPMT developer surface/);
   assert.match(page, /Private app records are not inferred/);
+  assert.match(page, /Existing capabilities/);
+  assert.match(page, /Derived from the app's existing catalog/);
   assert.match(page, /spmt\.public-api\.v1|\/api\/.*snapshot/);
   const script = page.match(/<script>([\s\S]*)<\/script>/)?.[1];
   assert.ok(script);
   assert.doesNotThrow(() => new Function(script));
 });
 
+test("descriptor-declared snapshot sources keep baseline health and omit unrelated personal scopes", () => {
+  const sources = productAppSnapshotSources({
+    appId: "fixture",
+    name: "Fixture",
+    kicker: "FIXTURE",
+    tagline: "Fixture",
+    description: "Fixture",
+    sceneUrl: "/fixture.webp",
+    sections: [{ id: "logs", label: "Logs", title: "Logs", body: "Logs", signals: [{ source: "operations", label: "Operations" }] }],
+  });
+  assert.deepEqual(sources, ["runtime", "events", "jobs", "workers", "operations"]);
+  assert.equal(sources.includes("devices"), false);
+  assert.equal(sources.includes("providerLinks"), false);
+  assert.equal(sources.includes("xpWallet"), false);
+});
+
 test("DSH, StreamWeaver and Companion declare app-specific public feeds without copying private authorities", async () => {
   const checks = [
-    ["apps/discord-stream-hub/src/web-server.ts", ["providerLinks", "xpWallet", "Creator directory and provider presence records remain under DSH authority"]],
-    ["apps/streamweaver/src/web-server.ts", ["overlayWidgets", "stellarCapabilities", "Creator currency is tenant-local StreamWeaver data"]],
-    ["apps/companion/src/web-server.ts", ["devices", "operations", "does not start an unreviewed workflow"]],
+    ["apps/discord-stream-hub/src/web-server.ts", ["providerLinks", "xpWallet", "DSH_SHOUTOUT_GROUPS", "DSH_APPLICATION_DEFINITIONS", "Creator directory and provider presence records remain under DSH authority"]],
+    ["apps/streamweaver/src/web-server.ts", ["overlayWidgets", "stellarCapabilities", "STREAMWEAVER_DONOR_COMMANDS", "STREAMWEAVER_OVERLAYS", "Creator currency is tenant-local StreamWeaver data"]],
+    ["apps/companion/src/web-server.ts", ["devices", "operations", "COMPANION_WORKFLOWS", "COMPANION_MEDIA_PRESETS", "does not start an unreviewed workflow"]],
   ];
   for (const [path, patterns] of checks) {
     const source = await read(path);

@@ -22,6 +22,18 @@ export interface ProductAppSignalV1 {
   limit?: number;
 }
 
+export interface ProductAppCatalogItemV1 {
+  title: string;
+  detail?: string;
+  meta?: string;
+  badge?: string;
+}
+
+export interface ProductAppCatalogV1 {
+  label: string;
+  items: readonly ProductAppCatalogItemV1[];
+}
+
 export interface ProductAppSectionV1 {
   id: string;
   label: string;
@@ -29,10 +41,17 @@ export interface ProductAppSectionV1 {
   body: string;
   glyph?: string;
   signals?: readonly ProductAppSignalV1[];
+  catalogs?: readonly ProductAppCatalogV1[];
   contractNote?: string;
   emptyTitle?: string;
   emptyBody?: string;
   appOwnedData?: boolean;
+}
+
+const BASELINE_SNAPSHOT_SOURCES: readonly ProductAppSnapshotSourceV1[] = ["runtime", "events", "jobs", "workers"];
+
+export function productAppSnapshotSources(descriptor: ProductAppWebDescriptorV1): ProductAppSnapshotSourceV1[] {
+  return [...new Set([...BASELINE_SNAPSHOT_SOURCES, ...descriptor.sections.flatMap((section) => section.signals?.map((signal) => signal.source) ?? [])])];
 }
 
 export interface ProductAppWebDescriptorV1 {
@@ -94,19 +113,21 @@ export function renderProductAppWebPage(app: ProductAppWebDescriptorV1, buildSha
   const pageJs = PAGE_JS
     .replaceAll("__APP_ID__", scriptJson(app.appId))
     .replaceAll("__SECTIONS__", scriptJson(app.sections));
-  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><meta name="theme-color" content="#f97316"><title>${esc(app.name)} · SpaceMountain</title><style>${PRODUCT_UI_CSS}${CSS}${extraCss}</style></head><body class="spmt-product-surface owned" data-app="${esc(app.appId)}" data-surface="standalone" style="--spmt-app-backdrop-image:url('${safeUrl(app.sceneUrl)}')"><div class="spmt-product-backdrop" aria-hidden="true"><span class="spmt-product-backdrop-image"></span><span class="spmt-product-backdrop-tint"></span><span class="spmt-product-backdrop-shade"></span><span class="spmt-star-layer"><i></i><i></i><i></i></span></div><main><nav class="tabs spmt-product-glass" data-spmt-depth="2">${tabs}</nav><section class="home" data-page="home"><div class="hero"><div class="mark"><img data-logo src="/assets/product/app-icons/solar-flare/${esc(app.appId)}.png" alt=""><span class="spmt-product-kicker">${esc(app.kicker)}</span></div><h1>${esc(app.name)}</h1><p>${esc(app.tagline)}</p><div class="home-summary" data-spmt-home-summary aria-live="polite"><span>Connecting to the SPMT developer surface…</span></div><div class="actions"><button class="button primary" data-first>Open ${esc(app.sections[0]?.label ?? "app")}</button><button class="button" data-refresh>Refresh data</button></div><footer><span class="spmt-product-status" data-runtime>Checking runtime</span><small>Build ${esc(buildSha.slice(0, 12))}</small></footer></div></section>${pages}${extra}</main><script>${FRAME_JS}${pageJs}${browserJs}</script></body></html>`;
+  const catalogJs = productAppCatalogBrowserJs(Object.fromEntries(app.sections.filter((section) => section.catalogs?.length).map((section) => [section.id, section.catalogs])));
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><meta name="theme-color" content="#f97316"><title>${esc(app.name)} · SpaceMountain</title><style>${PRODUCT_UI_CSS}${CSS}${extraCss}</style></head><body class="spmt-product-surface owned" data-app="${esc(app.appId)}" data-surface="standalone" style="--spmt-app-backdrop-image:url('${safeUrl(app.sceneUrl)}')"><div class="spmt-product-backdrop" aria-hidden="true"><span class="spmt-product-backdrop-image"></span><span class="spmt-product-backdrop-tint"></span><span class="spmt-product-backdrop-shade"></span><span class="spmt-star-layer"><i></i><i></i><i></i></span></div><main><nav class="tabs spmt-product-glass" data-spmt-depth="2">${tabs}</nav><section class="home" data-page="home"><div class="hero"><div class="mark"><img data-logo src="/assets/product/app-icons/solar-flare/${esc(app.appId)}.png" alt=""><span class="spmt-product-kicker">${esc(app.kicker)}</span></div><h1>${esc(app.name)}</h1><p>${esc(app.tagline)}</p><div class="home-summary" data-spmt-home-summary aria-live="polite"><span>Connecting to the SPMT developer surface…</span></div><div class="actions"><button class="button primary" data-first>Open ${esc(app.sections[0]?.label ?? "app")}</button><button class="button" data-refresh>Refresh data</button></div><footer><span class="spmt-product-status" data-runtime>Checking runtime</span><small>Build ${esc(buildSha.slice(0, 12))}</small></footer></div></section>${pages}${extra}</main><script>${FRAME_JS}${pageJs}${browserJs}${catalogJs}</script></body></html>`;
 }
 
-export async function fetchAppPlatformSnapshot(input: { appId: string; spmtOrigin: string; request: IncomingMessage }) {
-  const origin = loopback(input.spmtOrigin);
-  const requestHeaders: Record<string, string> = { accept: "application/json", "x-spmt-app": input.appId };
-  if (input.request.headers.cookie) requestHeaders.cookie = input.request.headers.cookie;
-  const sessionResponse = await fetch(`${origin}/v1/session`, { headers: requestHeaders, redirect: "manual" });
-  if (!sessionResponse.ok) throw new Error("Sign in to SpaceMountain before using this app");
-  const session = await sessionResponse.json() as Record<string, unknown>;
-  const tenantId = Array.isArray(session.tenantIds) && typeof session.tenantIds[0] === "string" ? session.tenantIds[0] : "";
-  if (!tenantId) throw new Error("SPMT session has no tenant");
-  requestHeaders["x-spmt-tenant"] = tenantId;
+export function productAppCatalogBrowserJs(catalogs: Readonly<Record<string, readonly ProductAppCatalogV1[] | undefined>>) {
+  return String.raw`;(()=>{const catalogs=${scriptJson(catalogs)};function escapeHtml(value){return String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}function render(){for(const[sectionId,groups]of Object.entries(catalogs)){const slot=document.querySelector('[data-spmt-live-slot="'+CSS.escape(sectionId)+'"]');if(!slot||!Array.isArray(groups))continue;slot.querySelector('[data-spmt-catalogs]')?.remove();const wrapper=document.createElement('div');wrapper.dataset.spmtCatalogs='true';wrapper.className='signal-groups';wrapper.innerHTML=groups.map(group=>{const items=Array.isArray(group.items)?group.items:[];return'<section class="signal-group"><div class="signal-title"><span>'+escapeHtml(group.label||'App catalog')+'</span><span>'+items.length+'</span></div><div class="snapshot-records">'+items.map(item=>'<article class="spmt-snapshot-card"><div class="record-top"><b>'+escapeHtml(item.title)+'</b>'+(item.badge?'<span class="record-badge">'+escapeHtml(item.badge)+'</span>':'')+'</div>'+(item.detail?'<span>'+escapeHtml(item.detail)+'</span>':'')+(item.meta?'<span class="record-meta">'+escapeHtml(item.meta)+'</span>':'')+'</article>').join('')+'</div></section>'}).join('');const note=slot.querySelector('.contract-note');slot.insertBefore(wrapper,note)}}window.addEventListener('spmt:snapshot',render);setTimeout(render,0);setTimeout(render,1000)})();`;
+}
+
+export async function fetchAppSessionContext(input: { appId: string; spmtOrigin: string; request: IncomingMessage }) {
+  const context = await resolveAppSession(input);
+  return { schemaVersion: 1 as const, appId: input.appId, tenantId: context.tenantId, session: sessionIdentity(context.session) };
+}
+
+export async function fetchAppPlatformSnapshot(input: { appId: string; spmtOrigin: string; request: IncomingMessage; sources?: readonly ProductAppSnapshotSourceV1[] }) {
+  const { origin, requestHeaders, tenantId, session } = await resolveAppSession(input);
 
   const availability: Record<string, { available: boolean; status: number }> = {};
   const read = async <T>(source: string, path: string, fallback: T): Promise<T> => {
@@ -123,53 +144,60 @@ export async function fetchAppPlatformSnapshot(input: { appId: string; spmtOrigi
   const actorId = typeof session.actorId === "string" ? session.actorId : "";
   const appId = encodeURIComponent(input.appId);
   const actor = encodeURIComponent(actorId);
-  const [runtime, events, jobs, workers, operations, devices, overlayWidgets, overlayOutputs, xpWallet, unfilteredXpLedger, stellarCapabilities, providerLinks] = await Promise.all([
-    read<unknown[]>("runtime", `/v1/runtime/state?appId=${appId}`, []),
-    read<unknown[]>("events", `/v1/events?sourceAppId=${appId}&limit=50`, []),
-    read<unknown[]>("jobs", `/v1/jobs?ownerAppId=${appId}&limit=50`, []),
-    read<unknown[]>("workers", `/v1/jobs/workers?executionOwner=${appId}`, []),
-    read<unknown[]>("operations", `/v1/operations/logs?sourceAppId=${appId}&limit=50`, []),
-    read<unknown[]>("devices", "/v1/devices", []),
-    read<unknown[]>("overlayWidgets", `/v1/overlay/widgets?appId=${appId}`, []),
-    read<unknown[]>("overlayOutputs", `/v1/overlay/outputs?appId=${appId}`, []),
-    actorId ? read<Record<string, unknown> | null>("xpWallet", `/v1/xp/wallet?userId=${actor}`, null) : Promise.resolve(null),
-    actorId ? read<Array<Record<string, unknown>>>("xpLedger", `/v1/xp/ledger?userId=${actor}&limit=50`, []) : Promise.resolve([]),
-    read<unknown[]>("stellarCapabilities", "/v1/stellar/capabilities", []),
-    read<unknown[]>("providerLinks", "/v1/identity/providers", []),
-  ]);
-  if (!actorId) {
-    availability.xpWallet = { available: false, status: 401 };
-    availability.xpLedger = { available: false, status: 401 };
-  }
-  const xpLedger = unfilteredXpLedger.filter((entry) => entry.sourceAppId === input.appId);
+  const values: Record<ProductAppSnapshotSourceV1, unknown> = {
+    runtime: [], events: [], jobs: [], workers: [], operations: [], devices: [], overlayWidgets: [], overlayOutputs: [], xpWallet: null, xpLedger: [], stellarCapabilities: [], providerLinks: [],
+  };
+  const paths: Record<ProductAppSnapshotSourceV1, string> = {
+    runtime: `/v1/runtime/state?appId=${appId}`,
+    events: `/v1/events?sourceAppId=${appId}&limit=50`,
+    jobs: `/v1/jobs?ownerAppId=${appId}&limit=50`,
+    workers: `/v1/jobs/workers?executionOwner=${appId}`,
+    operations: `/v1/operations/logs?sourceAppId=${appId}&limit=50`,
+    devices: "/v1/devices",
+    overlayWidgets: `/v1/overlay/widgets?appId=${appId}`,
+    overlayOutputs: `/v1/overlay/outputs?appId=${appId}`,
+    xpWallet: `/v1/xp/wallet?userId=${actor}`,
+    xpLedger: `/v1/xp/ledger?userId=${actor}&limit=50`,
+    stellarCapabilities: "/v1/stellar/capabilities",
+    providerLinks: "/v1/identity/providers",
+  };
+  const requestedSources = [...new Set(input.sources?.length ? input.sources : BASELINE_SNAPSHOT_SOURCES)];
+  await Promise.all(requestedSources.map(async (source) => {
+    if ((source === "xpWallet" || source === "xpLedger") && !actorId) {
+      availability[source] = { available: false, status: 401 };
+      return;
+    }
+    values[source] = await read(source, paths[source], source === "xpWallet" ? null : []);
+  }));
+  const xpLedger = Array.isArray(values.xpLedger) ? values.xpLedger.filter((entry) => Boolean(entry) && typeof entry === "object" && (entry as Record<string, unknown>).sourceAppId === input.appId) : [];
   return {
     schemaVersion: 1 as const,
     contract: "spmt.public-api.v1" as const,
     appId: input.appId,
     tenantId,
-    session: { actorId: session.actorId, displayName: session.displayName, username: session.username },
+    session: sessionIdentity(session),
     availability,
-    runtime,
-    events,
-    jobs,
-    workers,
-    operations,
-    devices,
-    overlayWidgets,
-    overlayOutputs,
-    xpWallet,
+    runtime: values.runtime,
+    events: values.events,
+    jobs: values.jobs,
+    workers: values.workers,
+    operations: values.operations,
+    devices: values.devices,
+    overlayWidgets: values.overlayWidgets,
+    overlayOutputs: values.overlayOutputs,
+    xpWallet: values.xpWallet,
     xpLedger,
-    stellarCapabilities,
-    providerLinks,
+    stellarCapabilities: values.stellarCapabilities,
+    providerLinks: values.providerLinks,
   };
 }
 
-export function productAppSnapshotHandler(options: { appId: string; spmtOrigin: string; path?: string }) {
+export function productAppSnapshotHandler(options: { appId: string; spmtOrigin: string; path?: string; sources?: readonly ProductAppSnapshotSourceV1[] }) {
   const path = options.path ?? `/api/${options.appId}/snapshot`;
   return async (request: IncomingMessage, response: ServerResponse, url: URL) => {
     if (request.method !== "GET" || url.pathname !== path) return false;
     try {
-      return sendJson(response, 200, await fetchAppPlatformSnapshot({ appId: options.appId, spmtOrigin: options.spmtOrigin, request }));
+      return sendJson(response, 200, await fetchAppPlatformSnapshot({ appId: options.appId, spmtOrigin: options.spmtOrigin, request, ...(options.sources ? { sources: options.sources } : {}) }));
     } catch (error) {
       return sendJson(response, /sign in|session/i.test(safeError(error)) ? 401 : 502, { error: "snapshot_unavailable", message: safeError(error) });
     }
@@ -216,6 +244,23 @@ export function requireSameOrigin(request: IncomingMessage) {
 }
 
 export function safeError(error: unknown) { return error instanceof Error ? error.message : String(error ?? "Request failed"); }
+
+async function resolveAppSession(input: { appId: string; spmtOrigin: string; request: IncomingMessage }) {
+  const origin = loopback(input.spmtOrigin);
+  const requestHeaders: Record<string, string> = { accept: "application/json", "x-spmt-app": input.appId };
+  if (input.request.headers.cookie) requestHeaders.cookie = input.request.headers.cookie;
+  const sessionResponse = await fetch(`${origin}/v1/session`, { headers: requestHeaders, redirect: "manual" });
+  if (!sessionResponse.ok) throw new Error("Sign in to SpaceMountain before using this app");
+  const session = await sessionResponse.json() as Record<string, unknown>;
+  const tenantId = Array.isArray(session.tenantIds) && typeof session.tenantIds[0] === "string" ? session.tenantIds[0] : "";
+  if (!tenantId) throw new Error("SPMT session has no tenant");
+  requestHeaders["x-spmt-tenant"] = tenantId;
+  return { origin, requestHeaders, tenantId, session };
+}
+
+function sessionIdentity(session: Record<string, unknown>) {
+  return { actorId: session.actorId, displayName: session.displayName, username: session.username };
+}
 
 const CSS = `:root,html,body{margin:0;width:100%;height:100%;min-width:0;min-height:0;overflow:hidden;background:transparent}.owned[data-surface="shell"]>.spmt-product-backdrop{display:none}.owned main{height:var(--spmt-shell-available-height,100dvh);min-height:0;padding:clamp(10px,1.8vw,24px);display:grid;grid-template-columns:auto minmax(0,1fr);gap:14px}.tabs{align-self:center;display:grid;gap:6px;padding:8px;border-radius:18px}.tabs button{display:flex;gap:8px;align-items:center;border:1px solid transparent;border-radius:12px;background:transparent;color:var(--spmt-muted);padding:9px}.tabs button[aria-current="page"]{color:var(--spmt-ink);border-color:var(--spmt-border);background:var(--spmt-surface-depth-3)}.tabs i{color:var(--spmt-accent-secondary);font-style:normal}.home,.app-page{height:100%;min-height:0;min-width:0}.home{display:grid;place-items:center}.hero{width:min(980px,100%);display:grid;gap:clamp(10px,2vh,18px)}.mark{display:flex;align-items:center;gap:12px}.mark img{width:68px;height:68px;object-fit:contain}.hero h1{margin:0;font-size:clamp(42px,7.5vw,106px);line-height:.9;letter-spacing:-.05em}.hero>p,.app-page header p{color:var(--spmt-muted);max-width:760px;line-height:1.5}.home-summary{display:flex;align-items:center;gap:8px;flex-wrap:wrap;color:var(--spmt-muted);font-size:12px}.home-stat{display:grid;gap:2px;min-width:108px;padding:8px 11px;border:1px solid var(--spmt-border);border-radius:13px;background:var(--spmt-surface-depth-3)}.home-stat b{color:var(--spmt-ink);font-size:17px}.actions{display:flex;gap:8px;flex-wrap:wrap}.button{border:1px solid var(--spmt-border);border-radius:14px;background:var(--spmt-surface-depth-3);color:var(--spmt-ink);padding:10px 14px;font-weight:800}.button.primary{background:color-mix(in srgb,var(--spmt-accent) 28%,var(--spmt-surface-depth-2))}.button.danger{color:#fecaca;border-color:color-mix(in srgb,#ef4444 50%,transparent)}.button:disabled{opacity:.55;cursor:not-allowed}.hero footer{display:flex;gap:12px;color:var(--spmt-muted)}.app-page{overflow:auto;padding:12px}.app-page>header,.live{max-width:980px;margin:0 auto 14px}.app-page h2{font-size:clamp(28px,4vw,52px);margin:4px 0}.live{border-radius:20px;padding:15px;display:grid;gap:12px}.source-heading{display:flex;justify-content:space-between;align-items:center;gap:10px}.source-state,.record-badge{border:1px solid var(--spmt-border);border-radius:999px;padding:4px 8px;color:var(--spmt-muted);font-size:10px;text-transform:uppercase;letter-spacing:.08em}.source-state[data-state="ready"],.record-badge[data-state="ready"],.record-badge[data-state="succeeded"]{color:#bbf7d0;border-color:color-mix(in srgb,#22c55e 45%,transparent)}.source-state[data-state="partial"],.record-badge[data-state="queued"],.record-badge[data-state="running"],.record-badge[data-state="leased"]{color:#fde68a;border-color:color-mix(in srgb,#f59e0b 45%,transparent)}.source-state[data-state="unavailable"],.record-badge[data-state="failed"],.record-badge[data-state="error"],.record-badge[data-state="critical"]{color:#fecaca;border-color:color-mix(in srgb,#ef4444 45%,transparent)}.live>small,.empty-state p,.contract-note,.record-meta{color:var(--spmt-muted);white-space:pre-wrap}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px}.card{background:var(--spmt-surface-depth-4);border:1px solid color-mix(in srgb,var(--spmt-border) 72%,transparent);border-radius:12px;padding:9px}.card b{display:block;font-size:20px}.card span{font-size:10px;color:var(--spmt-muted)}.signal-groups{display:grid;gap:12px}.signal-group{display:grid;gap:7px}.signal-title{display:flex;align-items:center;justify-content:space-between;color:var(--spmt-muted);font-size:11px;text-transform:uppercase;letter-spacing:.08em}.snapshot-records{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px}.spmt-snapshot-card{display:grid;gap:6px;min-width:0;padding:11px;border:1px solid var(--spmt-border);border-radius:14px;background:var(--spmt-surface-depth-4)}.record-top{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}.spmt-snapshot-card b{overflow-wrap:anywhere}.spmt-snapshot-card>span,.record-meta{font-size:11px}.contract-note,.empty-state{padding:11px;border:1px dashed var(--spmt-border);border-radius:13px;background:color-mix(in srgb,var(--spmt-surface-depth-4) 72%,transparent)}.contract-note{font-size:11px;line-height:1.45}.empty-state{display:grid;gap:3px}.empty-state b,.empty-state p{margin:0}.app-form{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}.app-form label{display:grid;gap:4px;color:var(--spmt-muted);font-size:11px}.app-form input,.app-form select{width:100%;box-sizing:border-box;border:1px solid var(--spmt-border);border-radius:11px;background:var(--spmt-surface-depth-4);color:var(--spmt-ink);padding:9px}.app-form .form-actions{align-self:end}.capability-row{display:flex;gap:8px;flex-wrap:wrap}.capability-row label{display:flex;align-items:center;gap:4px}.capability-row input{width:auto}.local-list{display:grid;gap:8px}.local-record-actions{display:flex;justify-content:flex-end}.owned *{scrollbar-width:thin;scrollbar-color:transparent transparent}.owned *:hover{scrollbar-color:color-mix(in srgb,var(--spmt-accent) 62%,transparent) transparent}.owned *::-webkit-scrollbar{width:4px;height:4px}.owned *::-webkit-scrollbar-track{background:transparent}.owned *::-webkit-scrollbar-thumb{border-radius:99px;background:transparent}.owned *:hover::-webkit-scrollbar-thumb{background:color-mix(in srgb,var(--spmt-accent) 62%,transparent)}@media(max-width:760px){.owned main{grid-template-columns:1fr;grid-template-rows:auto minmax(0,1fr);padding:8px}.tabs{display:flex;overflow:auto}.tabs button span{display:none}.hero h1{font-size:clamp(40px,14vw,74px)}.home-stat{min-width:88px;flex:1}.snapshot-records{grid-template-columns:1fr}}`;
 

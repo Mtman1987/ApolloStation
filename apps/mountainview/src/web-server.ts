@@ -1,4 +1,4 @@
-import { createProductAppWebServer, fetchAppPlatformSnapshot, productAppSnapshotHandler, readJsonBody, requireSameOrigin, sendJson, type ProductAppWebDescriptorV1 } from "@spmt/app-foundation/product-web";
+import { createProductAppWebServer, fetchAppSessionContext, productAppSnapshotHandler, productAppSnapshotSources, readJsonBody, requireSameOrigin, sendJson, type ProductAppWebDescriptorV1 } from "@spmt/app-foundation/product-web";
 import { appSurfaceBrowserJs, productSurfaceManifest } from "@spmt/app-foundation/surface-client";
 import { SqliteMountainViewDeviceStore, type MountainViewDeviceCapabilityV1, type MountainViewDeviceKindV1 } from "./device-runtime.js";
 
@@ -12,11 +12,11 @@ const SURFACE=productSurfaceManifest({appId:DESCRIPTOR.appId,sceneUrl:DESCRIPTOR
 
 export function createMountainViewWebServer(options:{spmtOrigin:string;databasePath:string;port?:number;host?:string;buildSha?:string}){
   const store=new SqliteMountainViewDeviceStore(options.databasePath);
-  const snapshot=productAppSnapshotHandler({appId:"mountainview",spmtOrigin:options.spmtOrigin});
+  const snapshot=productAppSnapshotHandler({appId:"mountainview",spmtOrigin:options.spmtOrigin,sources:productAppSnapshotSources(DESCRIPTOR)});
   return createProductAppWebServer({descriptor:DESCRIPTOR,port:options.port,host:options.host,buildSha:options.buildSha,close:()=>store.close(),browserJs:appSurfaceBrowserJs(SURFACE)+MOUNTAINVIEW_BROWSER_JS,handleApi:async(request,response,url)=>{
     if(await snapshot(request,response,url))return true;
     if(!url.pathname.startsWith("/api/mountainview/devices"))return false;
-    const platform=await fetchAppPlatformSnapshot({appId:"mountainview",spmtOrigin:options.spmtOrigin,request});
+    const platform=await fetchAppSessionContext({appId:"mountainview",spmtOrigin:options.spmtOrigin,request});
     const userId=typeof platform.session.actorId==="string"?platform.session.actorId:"";
     if(!userId)return sendJson(response,401,{error:"sign_in_required"});
     if(request.method==="GET"&&url.pathname==="/api/mountainview/devices")return sendJson(response,200,{devices:store.list(platform.tenantId,userId),captures:store.listCaptures(platform.tenantId,userId,20)});
