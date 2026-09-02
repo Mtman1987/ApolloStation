@@ -1,0 +1,105 @@
+import assert from "node:assert/strict";
+import { createServer } from "node:http";
+import test from "node:test";
+import { readFile } from "node:fs/promises";
+import { fetchAppPlatformSnapshot, renderProductAppWebPage } from "../packages/app-foundation/dist/product-web.js";
+
+const root = new URL("../", import.meta.url);
+const read = (path) => readFile(new URL(path, root), "utf8");
+
+test("product app snapshot reads only canonical SPMT developer contracts and reports partial access", async (t) => {
+  const requests = [];
+  const server = createServer((request, response) => {
+    const url = new URL(request.url ?? "/", "http://fixture.invalid");
+    requests.push({ path: `${url.pathname}${url.search}`, appId: request.headers["x-spmt-app"], tenantId: request.headers["x-spmt-tenant"] });
+    if (url.pathname === "/v1/session") return json(response, 200, { actorId: "user-1", displayName: "Creator", tenantIds: ["tenant-1"] });
+    if (url.pathname === "/v1/runtime/state") return json(response, 200, [{ appId: "streamweaver", state: "ready", updatedAt: "2026-09-02T00:00:00.000Z" }]);
+    if (url.pathname === "/v1/events") return json(response, 200, [{ sourceAppId: "streamweaver", type: "command.executed", createdAt: "2026-09-02T00:00:00.000Z", payload: { command: "hello" } }]);
+    if (url.pathname === "/v1/xp/ledger") return json(response, 200, [
+      { sourceAppId: "streamweaver", delta: 5, reason: "command" },
+      { sourceAppId: "discord-stream-hub", delta: 10, reason: "community" },
+    ]);
+    if (url.pathname === "/v1/operations/logs") return json(response, 403, { error: "unauthorized" });
+    if (url.pathname === "/v1/xp/wallet") return json(response, 200, { spendableXp: 42, level: 3, rank: 7, lifetimeXp: 100 });
+    return json(response, 200, []);
+  });
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  t.after(() => new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve())));
+  const address = server.address();
+  assert.ok(address && typeof address === "object");
+
+  const snapshot = await fetchAppPlatformSnapshot({
+    appId: "streamweaver",
+    spmtOrigin: `http://127.0.0.1:${address.port}`,
+    request: { headers: { cookie: "spmt_session=fixture" } },
+  });
+
+  assert.equal(snapshot.contract, "spmt.public-api.v1");
+  assert.equal(snapshot.tenantId, "tenant-1");
+  assert.equal(snapshot.runtime.length, 1);
+  assert.equal(snapshot.events.length, 1);
+  assert.equal(snapshot.xpLedger.length, 1);
+  assert.equal(snapshot.xpLedger[0].sourceAppId, "streamweaver");
+  assert.deepEqual(snapshot.availability.operations, { available: false, status: 403 });
+  assert.equal(requests.every((request) => request.appId === "streamweaver"), true);
+  assert.equal(requests.filter((request) => request.path !== "/v1/session").every((request) => request.tenantId === "tenant-1"), true);
+  assert.equal(requests.some((request) => request.path === "/v1/devices"), true);
+  assert.equal(requests.some((request) => request.path === "/v1/stellar/capabilities"), true);
+  assert.equal(requests.some((request) => request.path === "/v1/identity/providers"), true);
+});
+
+test("shared app UI renders per-section signals and truthful contract notes with valid browser JavaScript", () => {
+  const page = renderProductAppWebPage({
+    appId: "fixture",
+    name: "Fixture",
+    kicker: "DEVELOPER SURFACE",
+    tagline: "Canonical data only.",
+    description: "Fixture app",
+    sceneUrl: "/assets/fixture.webp",
+    sections: [{
+      id: "activity",
+      label: "Activity",
+      title: "Published Activity",
+      body: "Only records published through SPMT appear here.",
+      signals: [{ source: "events", label: "Activity events", keywords: ["activity"] }],
+      contractNote: "Private app records are not inferred.",
+    }],
+  });
+  assert.match(page, /SPMT developer surface/);
+  assert.match(page, /Private app records are not inferred/);
+  assert.match(page, /spmt\.public-api\.v1|\/api\/.*snapshot/);
+  const script = page.match(/<script>([\s\S]*)<\/script>/)?.[1];
+  assert.ok(script);
+  assert.doesNotThrow(() => new Function(script));
+});
+
+test("DSH, StreamWeaver and Companion declare app-specific public feeds without copying private authorities", async () => {
+  const checks = [
+    ["apps/discord-stream-hub/src/web-server.ts", ["providerLinks", "xpWallet", "Creator directory and provider presence records remain under DSH authority"]],
+    ["apps/streamweaver/src/web-server.ts", ["overlayWidgets", "stellarCapabilities", "Creator currency is tenant-local StreamWeaver data"]],
+    ["apps/companion/src/web-server.ts", ["devices", "operations", "does not start an unreviewed workflow"]],
+  ];
+  for (const [path, patterns] of checks) {
+    const source = await read(path);
+    for (const pattern of patterns) assert.match(source, new RegExp(pattern));
+  }
+});
+
+test("MountainView uses its existing paired-device and capture routes for a functional local view", async () => {
+  const source = await read("apps/mountainview/src/web-server.ts");
+  assert.match(source, /data-pair-form/);
+  assert.match(source, /data-revoke-device/);
+  assert.match(source, /qr\.scanned/);
+  assert.match(source, /camera\.captured/);
+  assert.match(source, /\/api\/mountainview\/devices/);
+  assert.doesNotMatch(source, /navigator\.mediaDevices|getUserMedia/);
+});
+
+function json(response, status, value) {
+  const body = Buffer.from(JSON.stringify(value));
+  response.writeHead(status, { "content-type": "application/json", "content-length": String(body.byteLength) });
+  response.end(body);
+}
