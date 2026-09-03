@@ -17,11 +17,13 @@ interface AppSurfaceManifestV1 {
 }
 type AppSurfaceMessageV1 =
   | { protocol: "spmt.surface"; version: 1; type: "surface.manifest"; manifest: AppSurfaceManifestV1 }
-  | { protocol: "spmt.surface"; version: 1; type: "page.changed"; appId: string; pageId: string };
+  | { protocol: "spmt.surface"; version: 1; type: "page.changed"; appId: string; pageId: string }
+  | { protocol: "spmt.surface"; version: 1; type: "shell.navigate"; appId: string; view: "account" | "settings" | "workspace" | "apps" };
 function isAppSurfaceMessageV1(value: unknown): value is AppSurfaceMessageV1 {
   const message = record(value);
   if (!message || message.protocol !== "spmt.surface" || message.version !== 1) return false;
   if (message.type === "page.changed") return Boolean(text(message.appId) && text(message.pageId));
+  if (message.type === "shell.navigate") return Boolean(text(message.appId) && ["account", "settings", "workspace", "apps"].includes(String(message.view)));
   if (message.type !== "surface.manifest") return false;
   const manifest = record(message.manifest);
   const scene = record(manifest?.scene);
@@ -100,6 +102,8 @@ export class SpaceMountainShellUi {
       } else if (message.appId === appId && message.type === "page.changed") {
         this.activeSurfacePage = message.pageId;
         this.syncSurfacePageState();
+      } else if (message.appId === appId && message.type === "shell.navigate") {
+        this.base.navigate(message.view);
       }
     };
     window.addEventListener("message", this.surfaceListener);

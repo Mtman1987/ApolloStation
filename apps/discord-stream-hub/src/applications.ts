@@ -1,0 +1,26 @@
+import { randomUUID } from "node:crypto";
+import { DatabaseSync } from "node:sqlite";
+import type { DshApplicationTypeV1 } from "./application-flow.js";
+
+export type DshApplicationStatusV1 = "pending" | "approved" | "rejected";
+export interface DshApplicationV1 { schemaVersion: 1; id: string; tenantId: string; guildId: string; interactionId: string; type: DshApplicationTypeV1; applicantDiscordId: string; applicantUsername: string; answers: Record<string, string>; status: DshApplicationStatusV1; submittedAt: string; updatedAt: string; decidedByUserId?: string; decisionNote?: string; }
+
+export class SqliteDshApplicationStore {
+  private readonly db: DatabaseSync;
+  constructor(path: string) { this.db = new DatabaseSync(path, { timeout: 5_000 }); this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS dsh_applications(tenant_id TEXT NOT NULL,application_id TEXT NOT NULL,interaction_id TEXT NOT NULL UNIQUE,guild_id TEXT NOT NULL,status TEXT NOT NULL,body TEXT NOT NULL,updated_at TEXT NOT NULL,PRIMARY KEY(tenant_id,application_id)) STRICT; CREATE INDEX IF NOT EXISTS dsh_applications_status ON dsh_applications(tenant_id,status,updated_at);`); }
+  close() { this.db.close(); }
+  submit(input: Omit<DshApplicationV1, "schemaVersion" | "id" | "status" | "submittedAt" | "updatedAt">, now = new Date().toISOString()) {
+    const existing = this.byInteraction(input.interactionId); if (existing) return { duplicate: true, application: existing };
+    const application: DshApplicationV1 = { schemaVersion: 1, id: randomUUID(), tenantId: id(input.tenantId, "tenantId"), guildId: snowflake(input.guildId, "guildId"), interactionId: id(input.interactionId, "interactionId"), type: input.type, applicantDiscordId: snowflake(input.applicantDiscordId, "applicantDiscordId"), applicantUsername: label(input.applicantUsername, "applicantUsername", 100), answers: structuredClone(input.answers), status: "pending", submittedAt: iso(now), updatedAt: iso(now) };
+    this.db.prepare("INSERT INTO dsh_applications(tenant_id,application_id,interaction_id,guild_id,status,body,updated_at) VALUES(?,?,?,?,?,?,?)").run(application.tenantId, application.id, application.interactionId, application.guildId, application.status, JSON.stringify(application), application.updatedAt);
+    return { duplicate: false, application: structuredClone(application) };
+  }
+  list(tenantIdValue: string, status?: DshApplicationStatusV1, limit = 100) { const tenantId = id(tenantIdValue, "tenantId"), safeLimit = Math.max(1, Math.min(500, Math.trunc(limit))); const rows = status ? this.db.prepare("SELECT body FROM dsh_applications WHERE tenant_id=? AND status=? ORDER BY updated_at DESC LIMIT ?").all(tenantId, status, safeLimit) : this.db.prepare("SELECT body FROM dsh_applications WHERE tenant_id=? ORDER BY updated_at DESC LIMIT ?").all(tenantId, safeLimit); return (rows as Array<{ body: string }>).map((row) => JSON.parse(row.body) as DshApplicationV1); }
+  decide(tenantIdValue: string, applicationIdValue: string, decision: "approved" | "rejected", actorUserId: string, note = "", now = new Date().toISOString()) { const tenantId = id(tenantIdValue, "tenantId"), applicationId = id(applicationIdValue, "applicationId"), current = this.get(tenantId, applicationId); if (!current) throw new Error("Application not found"); if (current.status !== "pending") throw new Error("Application has already been decided"); const next: DshApplicationV1 = { ...current, status: decision, decidedByUserId: id(actorUserId, "actorUserId"), ...(note.trim() ? { decisionNote: label(note, "decisionNote", 1_000) } : {}), updatedAt: iso(now) }; this.db.prepare("UPDATE dsh_applications SET status=?,body=?,updated_at=? WHERE tenant_id=? AND application_id=? AND status='pending'").run(next.status, JSON.stringify(next), next.updatedAt, tenantId, applicationId); return structuredClone(next); }
+  get(tenantIdValue: string, applicationIdValue: string) { const row = this.db.prepare("SELECT body FROM dsh_applications WHERE tenant_id=? AND application_id=?").get(id(tenantIdValue, "tenantId"), id(applicationIdValue, "applicationId")) as { body: string } | undefined; return row ? JSON.parse(row.body) as DshApplicationV1 : undefined; }
+  private byInteraction(interactionIdValue: string) { const row = this.db.prepare("SELECT body FROM dsh_applications WHERE interaction_id=?").get(id(interactionIdValue, "interactionId")) as { body: string } | undefined; return row ? JSON.parse(row.body) as DshApplicationV1 : undefined; }
+}
+function id(value: string, name: string) { const result = String(value ?? "").trim(); if (!result || result.length > 300 || /[\r\n\0]/.test(result)) throw new Error(`${name} is invalid`); return result; }
+function snowflake(value: string, name: string) { const result = String(value ?? "").trim(); if (!/^\d{5,30}$/.test(result)) throw new Error(`${name} must be a Discord id`); return result; }
+function label(value: string, name: string, max: number) { const result = String(value ?? "").replace(/\0/g, "").trim(); if (!result || result.length > max) throw new Error(`${name} is invalid`); return result; }
+function iso(value: string) { if (!Number.isFinite(Date.parse(value))) throw new Error("Timestamp is invalid"); return new Date(value).toISOString(); }

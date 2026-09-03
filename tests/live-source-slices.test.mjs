@@ -4,13 +4,13 @@ import test from "node:test";
 
 const slices = JSON.parse(readFileSync(new URL("../config/live-source-slices.v1.json", import.meta.url), "utf8"));
 const expected = new Map([
-  ["Mtman1987/spmt-live", "e8241ad1682cadafa7c867e560fdb27360f99a06"],
-  ["Mtman1987/spacemountain-live", "1dc2c1f02a7eb7bb9ddade3460c43ffa87858f43"],
-  ["Mtman1987/streamweaver", "2079862f73e2d3938e2743e635f19609ab7791af"],
-  ["Mtman1987/DiscordStreamHub", "36cb164af1bfcd069c0cf5e92066eddd8cc28f3b"],
-  ["Mtman1987/hearmeout-main", "37b6ef3c2b4aabd6bf6624da8a4e38f74d5afbe4"],
-  ["Mtman1987/chat-tag", "0dd1dd844f24a0c9bc0192a95af35c617d7ba728"],
-  ["Mtman1987/fly-machine-rotator", "9f92c0deafc68b80145303a821625378679fdf7b"],
+  ["Mtman1987/spmt-live", "df18ae6bd7becd784fa5d614d9119d73b59e5b0e"],
+  ["Mtman1987/spacemountain-live", "3dcb653cd99cc10d1f7d791c8584f869797577cf"],
+  ["Mtman1987/streamweaver", "a29dd7e5260c673b7260bec7ad70de2040e077be"],
+  ["Mtman1987/DiscordStreamHub", "d97af868a3929e44b02103c347bb5680abe4c465"],
+  ["Mtman1987/hearmeout-main", "c12415b76bd51b7690fcb46ca67879f1becc17f6"],
+  ["Mtman1987/chat-tag", "42cb6401b3adf87a8c008474787d05d1dcf757db"],
+  ["Mtman1987/fly-machine-rotator", "01cc5d4f2276bfe575484a9c81a18636a6437c7d"],
 ]);
 
 test("live comparisons use current remote main and running slices without retained mirrors", () => {

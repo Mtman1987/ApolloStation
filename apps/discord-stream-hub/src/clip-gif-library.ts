@@ -3,7 +3,7 @@ import { DatabaseSync } from "node:sqlite";
 export const DSH_CLIP_GIF_LIMIT = 10;
 export const DSH_CLIP_CAPTURE_SECONDS = 60;
 export const DSH_CLIP_ROTATION_MS = 10 * 60 * 1_000;
-export const DSH_CLIP_GIF_MAX_BYTES = 96 * 1_024 * 1_024;
+export const DSH_CLIP_GIF_MAX_BYTES = 50 * 1_024 * 1_024;
 
 export interface DshClipGifV1 {
   schemaVersion: 1;

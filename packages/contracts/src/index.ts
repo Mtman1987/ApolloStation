@@ -247,6 +247,45 @@ export interface ExecutionJobCreateV1 {
   input: Record<string, unknown>;
 }
 
+export const SPMT_SUITE_ACTION_CATALOG = Object.freeze([
+  suiteAction("dsh.shoutouts.active.read", "read", "member"), suiteAction("dsh.shoutouts.live.read", "read", "member"), suiteAction("dsh.shoutouts.post", "broadcast", "moderator"), suiteAction("dsh.message.delete", "write", "admin"),
+  suiteAction("dsh.calendar.read", "read", "member"), suiteAction("dsh.calendar.captain.read", "read", "member"), suiteAction("dsh.calendar.captain.create", "write", "member"), suiteAction("dsh.calendar.event.create", "write", "admin"), suiteAction("dsh.calendar.deploy", "broadcast", "admin"), suiteAction("dsh.calendar.refresh", "write", "admin"),
+  suiteAction("dsh.applications.read", "read", "admin"), suiteAction("dsh.applications.deploy", "broadcast", "admin"), suiteAction("dsh.applications.decide", "write", "owner"),
+  suiteAction("hmo.rooms.read", "read", "member"), suiteAction("hmo.media.state.read", "read", "member"), suiteAction("hmo.media.request", "write", "member"), suiteAction("hmo.media.control", "write", "moderator"), suiteAction("hmo.bot.control", "write", "member"), suiteAction("hmo.voice.bridge.state", "read", "member"), suiteAction("hmo.voice.bridge.control", "write", "member"),
+  suiteAction("sw.image.generate", "write", "member"),
+] as const);
+export type SpmtSuiteActionIdV1 = typeof SPMT_SUITE_ACTION_CATALOG[number]["id"];
+export type SpmtSuiteActionRiskV1 = "read" | "write" | "broadcast";
+export type SpmtSuiteActionActorRoleV1 = "guest" | "member" | "moderator" | "admin" | "owner";
+export type SpmtSuiteActionSourceV1 = "chat" | "voice-commander" | "mountainview" | "hearmeout" | "companion" | "api" | "mcp";
+export interface SpmtSuiteActionJobInputV1 {
+  schemaVersion: 1;
+  action: SpmtSuiteActionIdV1;
+  args: Record<string, string>;
+  actor: { userId: string; username: string; role: SpmtSuiteActionActorRoleV1 };
+  source: { kind: SpmtSuiteActionSourceV1; provider?: ChatProviderV1; channelId?: string; connectionId?: string; requestId?: string; roomId?: string; deviceId?: string };
+}
+export const SPMT_SUITE_ACTION_CAPABILITIES = Object.freeze({ dsh: "dsh.suite-action.v1", hearmeout: "hearmeout.suite-action.v1", image: "streamweaver.image.generate.v1" } as const);
+export function spmtSuiteActionCapabilityId(action: SpmtSuiteActionIdV1) { return action === "sw.image.generate" ? SPMT_SUITE_ACTION_CAPABILITIES.image : `${action}.v1`; }
+export function routeSpmtSuiteAction(action: SpmtSuiteActionIdV1) {
+  if (action.startsWith("dsh.")) return { executionOwner: "discord-stream-hub", capabilityId: spmtSuiteActionCapabilityId(action), meteredResource: "hosted-worker-minutes" as const };
+  if (action.startsWith("hmo.")) return { executionOwner: "hearmeout", capabilityId: spmtSuiteActionCapabilityId(action), meteredResource: "hosted-worker-minutes" as const };
+  return { executionOwner: "streamweaver", capabilityId: SPMT_SUITE_ACTION_CAPABILITIES.image, meteredResource: "image-generations" as const };
+}
+export function assertSpmtSuiteActionJobInputV1(value: unknown): SpmtSuiteActionJobInputV1 {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Suite action input must be an object");
+  const input = value as Partial<SpmtSuiteActionJobInputV1>, descriptor = SPMT_SUITE_ACTION_CATALOG.find((item) => item.id === input.action);
+  if (input.schemaVersion !== 1 || !descriptor) throw new Error("Suite action is invalid");
+  if (!input.args || typeof input.args !== "object" || Array.isArray(input.args) || Object.entries(input.args).some(([key, item]) => !/^[A-Za-z0-9._-]{1,100}$/.test(key) || typeof item !== "string" || item.length > 5_000 || /\0/.test(item))) throw new Error("Suite action arguments are invalid");
+  if (!input.actor || !input.actor.userId?.trim() || !input.actor.username?.trim() || !["guest", "member", "moderator", "admin", "owner"].includes(input.actor.role ?? "")) throw new Error("Suite action actor is invalid");
+  if (suiteRoleLevel(input.actor.role!) < suiteRoleLevel(descriptor.minimumRole)) throw new Error(`${input.action} requires ${descriptor.minimumRole} access`);
+  if (!input.source || !["chat", "voice-commander", "mountainview", "hearmeout", "companion", "api", "mcp"].includes(input.source.kind ?? "")) throw new Error("Suite action source is invalid");
+  return structuredClone(input as SpmtSuiteActionJobInputV1);
+}
+
+function suiteAction<const I extends string>(id: I, risk: SpmtSuiteActionRiskV1, minimumRole: SpmtSuiteActionActorRoleV1) { return { id, risk, minimumRole }; }
+function suiteRoleLevel(role: SpmtSuiteActionActorRoleV1) { return { guest: 0, member: 1, moderator: 2, admin: 3, owner: 4 }[role]; }
+
 export const PROVIDER_GRANT_PROVIDERS = ["discord", "twitch", "kick", "xbox", "github", "livekit"] as const;
 export type ProviderGrantProviderV1 = (typeof PROVIDER_GRANT_PROVIDERS)[number];
 

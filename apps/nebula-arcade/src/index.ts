@@ -16,6 +16,11 @@ export * from "./game-mixes.js";
 export * from "./quackverse-state.js";
 export * from "./quackverse-packs.js";
 export * from "./quackverse-battle.js";
+export * from "./quackverse-canon-groups.js";
+export * from "./quackverse-presentation.js";
+export * from "./quackverse-visual-canon.js";
+export * from "./quackverse-pack-presentation.js";
+export * from "./quackverse-art-job.js";
 export * from "./bingo-game.js";
 export * from "./provider-runtime.js";
 export * from "./discord-dashboard.js";
@@ -23,13 +28,13 @@ export * from "./gameplay-showcase.js";
 import { NEBULA_TAG_EVENT_TYPES } from "./nebula-tag.js";
 
 export const NEBULA_ARCADE_ROUND_COMPLETED = "nebula.arcade.round.completed.v1";
-export const manifest = assertAppModuleManifestV1({schemaVersion:1,manifestVersion:"spmt.app-manifest/v1",id:"nebula-arcade",name:"Nebula Arcade",description:"Cosmic Games Hub containing twenty equal community games and reusable multi-game overlays.",capabilities:["tag","quackverse","bingo","arena","game-overlays","overlay-scenes","gameplay-showcase-manifest"],surfaces:["shell","standalone","overlay","popout"],requiredScopes:["events:write","xp:write","overlay:widgets:write"],eventTypes:[NEBULA_ARCADE_ROUND_COMPLETED,...NEBULA_TAG_EVENT_TYPES],integration:{identity:"connected",events:"native",xp:"connected",workspace:"connected"},workers:[{id:"nebula-arcade-provider-ingress",role:"provider-command-ingress",execution:"leased",canonicalAuthority:false}]} satisfies AppModuleManifestV1);
+export const manifest = assertAppModuleManifestV1({schemaVersion:1,manifestVersion:"spmt.app-manifest/v1",id:"nebula-arcade",name:"Nebula Arcade",description:"Cosmic Games Hub containing twenty equal community games and reusable multi-game overlays.",capabilities:["tag","quackverse","quackverse-canon-groups","quackverse-presentation-locks","quackverse-visual-canon","quackverse-art-render-handoff","unified-pack-presentation","bingo","arena","game-overlays","overlay-scenes","gameplay-showcase-manifest"],surfaces:["shell","standalone","overlay","popout"],requiredScopes:["events:write","jobs:write","xp:write","overlay:widgets:write"],eventTypes:[NEBULA_ARCADE_ROUND_COMPLETED,...NEBULA_TAG_EVENT_TYPES],integration:{identity:"connected",events:"native",xp:"connected",workspace:"connected"},workers:[{id:"nebula-arcade-provider-ingress",role:"provider-command-ingress",execution:"leased",canonicalAuthority:false}]} satisfies AppModuleManifestV1);
 
 export function nebulaArcadeCatalogRegistration(launchUrl: string): AppCatalogRegistrationV1 {
   return createAppCatalogRegistrationV1(manifest, {
     version: "0.1.0-green",
     launchUrl,
-    allowedScopes: ["events:write", "xp:write", "overlay:widgets:write"],
+    allowedScopes: ["events:write", "jobs:write", "xp:write", "overlay:widgets:write"],
     surfaces: ["shell", "standalone", "overlay"],
   });
 }

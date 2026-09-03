@@ -10,11 +10,17 @@ import {
 } from "./discord-live-publisher.js";
 import { DshLiveRuntime, SqliteDshLiveMonitor, type DshLiveMemberV1 } from "./live-monitor.js";
 import { DshTwitchLivePoller, TwitchHelixLiveClient, type DshLiveMemberDirectoryV1, type DshTwitchGrantSourceV1 } from "./twitch-live-poller.js";
+import { SqliteDshCalendarStore } from "./calendar.js";
+import { SqliteDshApplicationStore } from "./applications.js";
+import { DshBotActionAdapter } from "./bot-action-adapter.js";
+import { DshSuiteActionOperations } from "./suite-action-operations.js";
+import { DshSuiteActionWorker } from "./suite-action-worker.js";
 
 export interface DshLiveRuntimeTenantV1 {
   tenantId: string;
   twitchProviderUserId: string;
   discordProviderUserId: string;
+  discordGuildIds?: string[];
   branding: { communityMemberName: string; spotlightChannelId?: string; onboardingCustomId?: string };
   members: DshLiveMemberV1[];
 }
@@ -32,6 +38,7 @@ export interface DshLiveWorkerEnvironmentV1 {
   configPath: string;
   credential: string;
   workerId: string;
+  applicationInteractionsReady: boolean;
   config: DshLiveRuntimeConfigV1;
 }
 
@@ -64,7 +71,7 @@ export function validateDshLiveWorkerEnvironment(environment: NodeJS.ProcessEnv)
     if (!basename(configPath).toLowerCase().includes("sandbox")) throw new Error("Sandbox DSH requires a sandbox-named runtime config");
     if (config.tenants.length) throw new Error("Sandbox DSH rejects live provider tenants");
   }
-  return { runtimeMode, spmtOrigin, databasePath, configPath, credential, workerId, config };
+  return { runtimeMode, spmtOrigin, databasePath, configPath, credential, workerId, applicationInteractionsReady: Boolean(environment.DSH_DISCORD_PUBLIC_KEY && environment.SPMT_PUBLIC_ORIGIN), config };
 }
 
 /** Authenticates DSH without sharing Chat Gateway's service credential. */
@@ -115,7 +122,7 @@ export class SpmtDshTwitchGrantSource implements DshTwitchGrantSourceV1 {
 
 export class SpmtDshDiscordGrantSource implements DshDiscordGrantSourceV1 {
   constructor(private readonly client: SpmtClient, private readonly directory: ConfigDirectory) {}
-  async getGrant(input: { tenantId: string; capability: "messages:write" }) {
+  async getGrant(input: { tenantId: string; capability: "messages:write" | "channels:read" | "guilds:read" }) {
     const grant = await this.client.issueProviderGrant(input.tenantId, "discord", this.directory.providerUserId(input.tenantId, "discord"), "dsh-discord-live", [input.capability], 300);
     const scheme = grant.credential.metadata.authorizationScheme ?? "Bot";
     if (scheme !== "Bot" && scheme !== "Bearer") throw new Error("Discord grant authorization scheme is invalid");
@@ -129,8 +136,11 @@ export class SupervisedDshLiveService {
   private readonly client: SpmtClient;
   private readonly monitor: SqliteDshLiveMonitor;
   private readonly messages: SqliteDshDiscordMessageStore;
+  private readonly calendar: SqliteDshCalendarStore;
+  private readonly applications: SqliteDshApplicationStore;
   private readonly runtime: DshLiveRuntime;
   private readonly poller: DshTwitchLivePoller;
+  private readonly suiteActions: DshSuiteActionWorker;
   private activeCycle: Promise<{ schemaVersion: 1; skipped: false; results: DshLiveWorkerTenantResultV1[] }> | undefined;
   private closing: Promise<void> | undefined;
   private closed = false;
@@ -140,9 +150,14 @@ export class SupervisedDshLiveService {
     const directory = new ConfigDirectory(options.config);
     this.monitor = new SqliteDshLiveMonitor(options.databasePath, options.config.pollIntervalSeconds * 1_000);
     this.messages = new SqliteDshDiscordMessageStore(options.databasePath);
-    const publisher = new DshDiscordLivePublisher(new DshDiscordApi(new SpmtDshDiscordGrantSource(this.client, directory), fetchImpl), this.messages, directory, undefined, now);
+    const discord = new DshDiscordApi(new SpmtDshDiscordGrantSource(this.client, directory), fetchImpl);
+    const publisher = new DshDiscordLivePublisher(discord, this.messages, directory, undefined, now);
     this.runtime = new DshLiveRuntime(this.monitor, publisher);
     this.poller = new DshTwitchLivePoller(directory, new SpmtDshTwitchGrantSource(this.client, directory), new TwitchHelixLiveClient(fetchImpl), this.runtime);
+    this.calendar = new SqliteDshCalendarStore(options.databasePath);
+    this.applications = new SqliteDshApplicationStore(options.databasePath);
+    const operations = new DshSuiteActionOperations({ config: options.config, monitor: this.monitor, messages: this.messages, calendar: this.calendar, applications: this.applications, discord, applicationInteractionsReady: options.applicationInteractionsReady, now });
+    this.suiteActions = new DshSuiteActionWorker(this.client, new DshBotActionAdapter(operations), { workerId: `${options.workerId}-suite-actions`, tenantIds: options.config.tenants.map((tenant) => tenant.tenantId) });
   }
   async ready() { await this.getAccessToken(); return { schemaVersion: 1 as const, workerId: this.options.workerId, configuredTenants: this.options.config.tenants.length, pollIntervalSeconds: this.options.config.pollIntervalSeconds }; }
   async runOnce(): Promise<{ schemaVersion: 1; skipped: boolean; results: DshLiveWorkerTenantResultV1[] }> {
@@ -159,6 +174,7 @@ export class SupervisedDshLiveService {
       await pause(dshMillisecondsUntilNextPeriod(this.now(), this.options.config.pollIntervalSeconds), signal);
     }
   }
+  runSuiteActions(signal: AbortSignal) { return this.suiteActions.run(signal); }
   close() {
     if (this.closing) return this.closing;
     this.closed = true;
@@ -168,6 +184,8 @@ export class SupervisedDshLiveService {
       let failed = false;
       try { await activeCycle; } catch (error) { failure = error; failed = true; }
       try { this.messages.close(); } catch (error) { if (!failed) { failure = error; failed = true; } }
+      try { this.calendar.close(); } catch (error) { if (!failed) { failure = error; failed = true; } }
+      try { this.applications.close(); } catch (error) { if (!failed) { failure = error; failed = true; } }
       try { this.monitor.close(); } catch (error) { if (!failed) { failure = error; failed = true; } }
       if (failed) throw failure;
     })();
@@ -204,7 +222,7 @@ function validateRuntimeConfig(value: unknown): DshLiveRuntimeConfigV1 {
   const tenantIds = new Set<string>();
   const tenants = root.tenants.map((entry, index) => {
     const tenant = record(entry, `DSH tenants[${index}]`);
-    exactKeys(tenant, ["tenantId", "twitchProviderUserId", "discordProviderUserId", "branding", "members"], `DSH tenants[${index}]`);
+    exactKeys(tenant, ["tenantId", "twitchProviderUserId", "discordProviderUserId", "discordGuildIds", "branding", "members"], `DSH tenants[${index}]`);
     const tenantId = identifier(tenant.tenantId, "tenantId");
     if (tenantIds.has(tenantId)) throw new Error("DSH runtime config contains a duplicate tenant");
     tenantIds.add(tenantId);
@@ -222,7 +240,8 @@ function validateRuntimeConfig(value: unknown): DshLiveRuntimeConfigV1 {
       if (users.has(normalized.canonicalUserId) || logins.has(normalized.twitchLogin)) throw new Error("DSH tenant members must have unique canonical users and Twitch logins");
       users.add(normalized.canonicalUserId); logins.add(normalized.twitchLogin); return normalized;
     });
-    return { tenantId, twitchProviderUserId: identifier(tenant.twitchProviderUserId, "twitchProviderUserId"), discordProviderUserId: identifier(tenant.discordProviderUserId, "discordProviderUserId"), branding: { communityMemberName, ...(spotlightChannelId ? { spotlightChannelId } : {}), ...(onboardingCustomId ? { onboardingCustomId } : {}) }, members };
+    const discordGuildIds = tenant.discordGuildIds === undefined ? undefined : (() => { if (!Array.isArray(tenant.discordGuildIds) || tenant.discordGuildIds.length > 100) throw new Error("discordGuildIds must be an array of at most 100 Discord ids"); const values = [...new Set(tenant.discordGuildIds.map((value) => snowflake(value, "discordGuildId")))]; return values; })();
+    return { tenantId, twitchProviderUserId: identifier(tenant.twitchProviderUserId, "twitchProviderUserId"), discordProviderUserId: identifier(tenant.discordProviderUserId, "discordProviderUserId"), ...(discordGuildIds ? { discordGuildIds } : {}), branding: { communityMemberName, ...(spotlightChannelId ? { spotlightChannelId } : {}), ...(onboardingCustomId ? { onboardingCustomId } : {}) }, members };
   });
   return { schemaVersion: 1, pollIntervalSeconds: Number(root.pollIntervalSeconds), tenants };
 }

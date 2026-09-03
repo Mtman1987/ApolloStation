@@ -31,7 +31,7 @@ test("Nebula publishes the 20-game, 60-second showcase manifest without changing
   assert.doesNotMatch(html, /spmt-product-backdrop/);
 });
 
-test("DSH captures at most two missing games per cycle and persists renderer-neutral GIFs", async () => {
+test("DSH captures one missing game per cycle and persists renderer-neutral GIFs", async () => {
   const directory = mkdtempSync(join(tmpdir(), "dsh-nebula-gameplay-"));
   const databasePath = join(directory, "dsh.sqlite");
   const requests = [];
@@ -40,14 +40,14 @@ test("DSH captures at most two missing games per cycle and persists renderer-neu
     const service = new DshNebulaGameplayCaptureService(store, { capture: async (request) => { requests.push(request); return gif(); } }, () => "2026-08-30T12:00:00.000Z");
     const manifest = buildNebulaGameplayManifest("https://apollo.example");
     const report = await service.reconcile(manifest);
-    assert.equal(report.attempted, 2);
-    assert.equal(report.completed.length, 2);
+    assert.equal(report.attempted, 1);
+    assert.equal(report.completed.length, 1);
     assert.equal(requests[0].captureSeconds, NEBULA_GAMEPLAY_CAPTURE_SECONDS);
     assert.deepEqual({ width: requests[0].width, height: requests[0].height, fps: requests[0].fps, outputWidth: requests[0].outputWidth, palette: requests[0].palette }, { width: 800, height: 450, fps: 10, outputWidth: 480, palette: { maxColors: 128, statsMode: "diff", dither: "bayer", bayerScale: 4, diffMode: "rectangle" } });
     store.close();
     store = new SqliteDshNebulaGameplayStore(databasePath);
-    assert.equal(store.list().length, 2);
-    assert.equal(store.needed(manifest).length, 2);
+    assert.equal(store.list().length, 1);
+    assert.equal(store.needed(manifest).length, 1);
     store.close();
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });

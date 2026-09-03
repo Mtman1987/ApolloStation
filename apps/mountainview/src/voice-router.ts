@@ -1,9 +1,12 @@
-import { assertDeviceRelayCommandV1, type DeviceRelayCommandV1 } from "@spmt/contracts";
+import { SPMT_SUITE_ACTION_CATALOG, assertDeviceRelayCommandV1, type DeviceRelayCommandV1 } from "@spmt/contracts";
+import { detectSpmtSuiteActionCommand } from "@spmt/sdk";
 
 export interface MountainViewVoiceContextV1 {
   schemaVersion: 1;
   tenantId: string;
   userId: string;
+  username?: string;
+  role?: "member" | "moderator" | "admin" | "owner";
   targetCompanionDeviceId?: string;
   hearMeOutRoomId?: string;
 }
@@ -17,6 +20,16 @@ export function planMountainViewVoiceCommand(transcript: string, context: Mounta
   const text = transcript.trim();
   if (!text || text.length > 2_000) return { kind: "clarify", reason: "A voice command is required" };
   const lower = text.toLowerCase();
+
+  const suiteAction = detectSpmtSuiteActionCommand(text);
+  if (suiteAction) {
+    const descriptor = SPMT_SUITE_ACTION_CATALOG.find((item) => item.id === suiteAction.action)!;
+    const targetAppId = suiteAction.action.startsWith("dsh.") ? "discord-stream-hub" : suiteAction.action.startsWith("hmo.") ? "hearmeout" : "streamweaver";
+    return { kind: "route", targetAppId, action: suiteAction.action, payload: { ...suiteAction.args, ...(targetAppId === "hearmeout" && context.hearMeOutRoomId && !suiteAction.args.roomId ? { roomId: context.hearMeOutRoomId } : {}) }, risk: descriptor.risk === "read" ? "low" : descriptor.risk === "write" ? "medium" : "high", requiresConfirmation: false, reason: "This command uses the shared SPMT suite-action pipeline" };
+  }
+
+  const image = text.match(/\b(?:generate|make|create|draw)\s+(?:me\s+)?(?:an?\s+)?(?:ai\s+)?(?:image|picture|photo|artwork|illustration)\s*(?:of|showing|for)?\s+(.+?)\s*$/i);
+  if (image?.[1]?.trim()) return { kind: "route", targetAppId: "streamweaver", action: "sw.image.generate", payload: { prompt: image[1].trim() }, risk: "medium", requiresConfirmation: false, reason: "Image generation belongs to StreamWeaver's provider-backed media worker" };
 
   const obsScene = text.match(/(?:switch|set|change)(?:\s+the)?\s+obs(?:\s+scene)?\s+(?:to\s+)?(.+)$/i);
   if (obsScene) {

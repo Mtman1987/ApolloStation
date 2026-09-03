@@ -22,7 +22,7 @@ function obsCommand(overrides = {}) {
 
 test("MountainView keeps community, Nebula Arcade tag game, HearMeOut, and StreamWeaver voice routes distinct", () => {
   assert.deepEqual(planMountainViewVoiceCommand("who's live", context), {
-    kind: "route", targetAppId: "discord-stream-hub", action: "community.live-members.read", payload: {}, risk: "low", requiresConfirmation: false, reason: "Unscoped live status belongs to the community-wide DSH projection",
+    kind: "route", targetAppId: "discord-stream-hub", action: "dsh.shoutouts.live.read", payload: {}, risk: "low", requiresConfirmation: false, reason: "This command uses the shared SPMT suite-action pipeline",
   });
   assert.equal(planMountainViewVoiceCommand("who's active in Nebula Arcade tag game", context).targetAppId, "nebula-arcade");
   const song = planMountainViewVoiceCommand("play the song Squad Goals by Prof", context);

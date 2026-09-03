@@ -9,8 +9,8 @@ import {
   type NebulaGameplayManifestV1,
 } from "@spmt/nebula-arcade";
 
-export const DSH_NEBULA_GAMEPLAY_BATCH_SIZE = 2;
-export const DSH_NEBULA_GAMEPLAY_MAX_BYTES = 96 * 1_024 * 1_024;
+export const DSH_NEBULA_GAMEPLAY_BATCH_SIZE = 1;
+export const DSH_NEBULA_GAMEPLAY_MAX_BYTES = 50 * 1_024 * 1_024;
 
 export interface DshNebulaGameplayItemV1 extends NebulaGameplayManifestGameV1 {
   schemaVersion: 1;
@@ -39,7 +39,11 @@ export class SqliteDshNebulaGameplayStore {
   put(value: DshNebulaGameplayItemV1): DshNebulaGameplayItemV1 {
     const checked = validateItem(value);
     const metadata = JSON.stringify({ ...checked, gif: undefined });
-    this.db.prepare("INSERT INTO dsh_nebula_gameplay(game_id,game_order,revision,captured_at,metadata,gif) VALUES(?,?,?,?,?,?) ON CONFLICT(game_id) DO UPDATE SET game_order=excluded.game_order,revision=excluded.revision,captured_at=excluded.captured_at,metadata=excluded.metadata,gif=excluded.gif").run(checked.id, checked.order, checked.revision, checked.capturedAt, metadata, checked.gif);
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      this.db.prepare("INSERT INTO dsh_nebula_gameplay(game_id,game_order,revision,captured_at,metadata,gif) VALUES(?,?,?,?,?,?) ON CONFLICT(game_id) DO UPDATE SET game_order=excluded.game_order,revision=excluded.revision,captured_at=excluded.captured_at,metadata=excluded.metadata,gif=excluded.gif").run(checked.id, checked.order, checked.revision, checked.capturedAt, metadata, checked.gif);
+      this.db.exec("COMMIT");
+    } catch (error) { this.db.exec("ROLLBACK"); throw error; }
     return checked;
   }
   list(): DshNebulaGameplayItemV1[] {
@@ -51,6 +55,15 @@ export class SqliteDshNebulaGameplayStore {
     const current = new Map(this.list().map((item) => [item.id, item.revision]));
     return checked.games.filter((game) => current.get(game.id) !== game.revision).slice(0, limit);
   }
+  purgeStale(manifest: NebulaGameplayManifestV1): string[] {
+    const checked = validateManifest(manifest), revisions = new Map(checked.games.map((game) => [game.id, game.revision]));
+    const stale = this.list().filter((item) => revisions.get(item.id) !== item.revision).map((item) => item.id);
+    const remove = this.db.prepare("DELETE FROM dsh_nebula_gameplay WHERE game_id=?");
+    this.db.exec("BEGIN IMMEDIATE");
+    try { for (const id of stale) remove.run(id); this.db.exec("COMMIT"); }
+    catch (error) { this.db.exec("ROLLBACK"); throw error; }
+    return stale;
+  }
   select(now = Date.now()): DshNebulaGameplayItemV1 | undefined {
     const items = this.list();
     return items.length ? items[Math.floor(now / (NEBULA_GAMEPLAY_ROTATION_SECONDS * 1_000)) % items.length] : undefined;
@@ -61,6 +74,7 @@ export class DshNebulaGameplayCaptureService {
   constructor(private readonly store: SqliteDshNebulaGameplayStore, private readonly renderer: DshNebulaGameplayRendererV1, private readonly now: () => string = () => new Date().toISOString()) {}
   async reconcile(manifestValue: NebulaGameplayManifestV1) {
     const manifest = validateManifest(manifestValue);
+    const removedStaleGames = this.store.purgeStale(manifest);
     const needed = this.store.needed(manifest);
     const completed: string[] = [], failed: Array<{ id: string; error: string }> = [];
     for (const game of needed) {
@@ -70,7 +84,7 @@ export class DshNebulaGameplayCaptureService {
         completed.push(game.id);
       } catch (error) { failed.push({ id: game.id, error: safeError(error) }); }
     }
-    return { schemaVersion: 1 as const, totalGames: manifest.games.length, readyGames: this.store.list().length, attempted: needed.length, completed, failed };
+    return { schemaVersion: 1 as const, totalGames: manifest.games.length, readyGames: this.store.list().length, attempted: needed.length, completed, failed, removedStaleGames, cacheStrategy: "capture-one-missing-or-changed-game-per-cycle" as const };
   }
 }
 

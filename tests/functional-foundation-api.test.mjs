@@ -75,6 +75,32 @@ test("public API and SDK carry one metered job through create, lease, progress, 
   } finally { env.store.close(); rmSync(env.dir, { recursive: true, force: true }); }
 });
 
+test("the canonical suite-action MCP tool derives routing and human authority server-side", () => {
+  const env = setup();
+  try {
+    const mcp = new SpmtMcpServer(env.operations);
+    const listed = mcp.handle({ jsonrpc: "2.0", id: 20, method: "tools/list" }, { accessToken: env.userAToken, protocolVersion: SPMT_MCP_PROTOCOL_VERSION });
+    const tool = listed.result.tools.find((item) => item.name === "spmt.suite-actions.create");
+    assert.equal(tool.inputSchema.properties.input.properties.action.enum.length, 21);
+    const created = mcp.handle({
+      jsonrpc: "2.0", id: 21, method: "tools/call",
+      params: {
+        name: "spmt.suite-actions.create",
+        arguments: {
+          tenantId: "tenant-a", ownerAppId: "streamweaver", idempotencyKey: "mcp-suite-1",
+          input: { schemaVersion: 1, action: "dsh.calendar.refresh", args: {}, actor: { userId: "spoofed", username: "spoofed", role: "guest" }, source: { kind: "mcp" } },
+        },
+      },
+    }, { accessToken: env.userAToken, protocolVersion: SPMT_MCP_PROTOCOL_VERSION });
+    const job = created.result.structuredContent.job;
+    assert.equal(job.ownerAppId, "streamweaver");
+    assert.equal(job.executionOwner, "discord-stream-hub");
+    assert.equal(job.capabilityId, "dsh.calendar.refresh.v1");
+    assert.equal(job.billedUserId, "user-a");
+    assert.deepEqual(job.input.actor, { userId: "user-a", username: "user-a", role: "owner" });
+  } finally { env.platformStore.close(); env.store.close(); rmSync(env.dir, { recursive: true, force: true }); }
+});
+
 test("a service can read only the cross-owner execution jobs it requested", async () => {
   const env = setup();
   try {

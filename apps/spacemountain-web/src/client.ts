@@ -2,6 +2,7 @@ import { SpmtApiError, SpmtClient } from "@spmt/sdk";
 import type { AppCatalogRegistrationV1, OperationsLogV1 } from "@spmt/contracts";
 import { SpaceMountainShellController, buildAppFrameTarget, type SpaceMountainAppCardV1 } from "@spmt/spacemountain";
 import { SpaceMountainShellUi } from "@spmt/spacemountain/ui";
+import { SpaceMountainSessionRecoveryGate, classifySpaceMountainSessionFailure } from "./session-resilience.js";
 
 type Principal = { actorId: string; tenantIds: string[]; scopes: string[] };
 
@@ -41,10 +42,11 @@ let currentPrincipal: Principal | undefined;
 let loading = false;
 let registryFingerprint = "";
 let registeredAppIds = new Set<string>();
+const sessionRecovery = new SpaceMountainSessionRecoveryGate();
 
 loginForm.addEventListener("submit", (event) => void submitLogin(event));
 registerForm.addEventListener("submit", (event) => void submitRegistration(event));
-refreshButton.addEventListener("click", () => void loadShell().catch((error) => setStatus(message(error), "error")));
+refreshButton.addEventListener("click", () => void restoreShell());
 logoutButton.addEventListener("click", () => void logout());
 openDeveloperButton.addEventListener("click", () => openDeveloperConsole());
 closeDeveloperButton.addEventListener("click", () => developerDialog.close());
@@ -60,14 +62,15 @@ window.addEventListener("spmt:easter-egg-complete", (event) => void recordEggCom
 void boot();
 
 async function boot() {
-  try {
-    await loadShell();
-  } catch (error) {
-    if (error instanceof SpmtApiError && (error.status === 401 || error.status === 403)) {
-      showAuth("Create or sign in to an isolated sandbox account.");
-      return;
-    }
-    showAuth(message(error));
+  await restoreShell();
+}
+
+async function restoreShell() {
+  try { await loadShell(); sessionRecovery.authenticated(); }
+  catch (error) {
+    if (sessionRecovery.canRecover(error)) { setStatus("Restoring the existing SPMT session…", "working"); await delay(750); return restoreShell(); }
+    if (classifySpaceMountainSessionFailure(error) === "auth-rejected") return showAuth("Create or sign in to an isolated sandbox account.");
+    showSessionUnavailable(message(error));
   }
 }
 
@@ -102,6 +105,7 @@ async function authRequest(path: string, input: Record<string, string>, form: HT
     if (!response.ok) throw new Error(typeof payload.message === "string" ? payload.message : typeof payload.error === "string" ? payload.error : `Request failed (${response.status})`);
     form.querySelectorAll<HTMLInputElement>('input[type="password"]').forEach((node) => { node.value = ""; });
     await loadShell();
+    sessionRecovery.authenticated();
   } catch (error) {
     setStatus(message(error), "error");
   } finally {
@@ -146,7 +150,16 @@ async function loadShell() {
       onIssueOverlayOutput: (appId, widgetId, personal) => void issueOverlayOutput(appId, widgetId, personal),
       onRevokeOverlayOutput: (grantId) => void revokeOverlayOutput(grantId),
     }).mount();
-    setStatus("Sandbox open", "ready");
+    const query = new URLSearchParams(window.location.search);
+    const providerLinked = query.get("providerLinked");
+    const providerLinkError = query.get("providerLinkError");
+    if (providerLinked) setStatus(`${providerLinked} is now linked to your SPMT identity.`, "ready");
+    else if (providerLinkError) setStatus(providerLinkError, "error");
+    else setStatus("Sandbox open", "ready");
+    if (providerLinked || providerLinkError) {
+      query.delete("providerLinked"); query.delete("providerLinkError");
+      window.history.replaceState(null, "", `${window.location.pathname}${query.size ? `?${query}` : ""}${window.location.hash}`);
+    }
     if (window.location.hash === "#developer-console" && !openDeveloperButton.hidden && !developerDialog.open) openDeveloperConsole();
   } finally {
     loading = false;
@@ -619,6 +632,7 @@ async function revokeOverlayOutput(grantId: string) {
 }
 
 async function logout() {
+  sessionRecovery.beginLogout();
   await fetch("/sandbox/auth/logout", { method: "POST", credentials: "same-origin" }).catch(() => undefined);
   shellUi?.destroy();
   shellUi = undefined;
@@ -650,6 +664,11 @@ function showAuth(detail: string) {
   logoutButton.hidden = true;
   openDeveloperButton.hidden = true;
   setStatus(detail, detail.toLowerCase().includes("error") ? "error" : "working");
+}
+
+function showSessionUnavailable(detail: string) {
+  if (!currentPrincipal) { authView.hidden = true; shellView.hidden = true; refreshButton.hidden = false; logoutButton.hidden = true; openDeveloperButton.hidden = true; }
+  setStatus(`SPMT is temporarily unavailable; your signed-in session was retained. ${detail}`, "error");
 }
 
 function parsePrincipal(value: Record<string, unknown>): Principal {
@@ -689,6 +708,7 @@ function messageCard(value: Record<string, unknown>) {
 }
 
 function textBlock(value: string) { const node = document.createElement("p"); node.textContent = value; return node; }
+function delay(ms: number) { return new Promise<void>((resolve) => window.setTimeout(resolve, ms)); }
 function apiMessage(value: unknown, fallback: string) { return value && typeof value === "object" && !Array.isArray(value) && typeof (value as Record<string, unknown>).message === "string" ? String((value as Record<string, unknown>).message) : fallback; }
 function setStatus(value: string, kind: "ready" | "working" | "error") { status.textContent = value; status.dataset.kind = kind; }
 function message(value: unknown) {

@@ -13,14 +13,14 @@ test("MountainView routes donor OBS and Companion audio commands deterministical
 });
 
 test("MountainView routes concrete music and watch requests to HearMeOut",()=>{
- const song=planMountainViewVoiceCommand("play the song Squad Goals by Prof",context);assert.equal(song.kind,"route");assert.equal(song.targetAppId,"hearmeout");assert.equal(song.action,"media.music.request");assert.equal(song.payload.query,"Squad Goals by Prof");assert.equal(song.payload.roomId,"room-a");
- const pause=planMountainViewVoiceCommand("pause music",context);assert.equal(pause.kind,"route");assert.equal(pause.action,"media.music.pause");
- const next=planMountainViewVoiceCommand("skip the music",context);assert.equal(next.kind,"route");assert.equal(next.action,"media.music.next");
- const movie=planMountainViewVoiceCommand("watch movie The Matrix",context);assert.equal(movie.kind,"route");assert.equal(movie.action,"media.movie.request");assert.equal(movie.payload.query,"The Matrix");
+ const song=planMountainViewVoiceCommand("play the song Squad Goals by Prof",context);assert.equal(song.kind,"route");assert.equal(song.targetAppId,"hearmeout");assert.equal(song.action,"hmo.media.request");assert.equal(song.payload.query,"Squad Goals by Prof");assert.equal(song.payload.roomId,"room-a");
+ const pause=planMountainViewVoiceCommand("pause music",context);assert.equal(pause.kind,"route");assert.equal(pause.action,"hmo.media.control");assert.equal(pause.payload.control,"pause");
+ const next=planMountainViewVoiceCommand("skip the music",context);assert.equal(next.kind,"route");assert.equal(next.action,"hmo.media.control");assert.equal(next.payload.control,"next");
+ const movie=planMountainViewVoiceCommand("watch movie The Matrix",context);assert.equal(movie.kind,"route");assert.equal(movie.action,"hmo.media.request");assert.equal(movie.payload.lane,"movie");assert.equal(movie.payload.query,"The Matrix");
 });
 
 test("MountainView keeps community live status separate from the Nebula Arcade tag game game module",()=>{
- const everyone=planMountainViewVoiceCommand("who's live",context);assert.equal(everyone.kind,"route");assert.equal(everyone.targetAppId,"discord-stream-hub");assert.equal(everyone.action,"community.live-members.read");
+ const everyone=planMountainViewVoiceCommand("who's live",context);assert.equal(everyone.kind,"route");assert.equal(everyone.targetAppId,"discord-stream-hub");assert.equal(everyone.action,"dsh.shoutouts.live.read");
  const game=planMountainViewVoiceCommand("who's active in Nebula Arcade",context);assert.equal(game.kind,"route");assert.equal(game.targetAppId,"nebula-arcade");assert.equal(game.action,"nebula-arcade.tag.live-members.read");
 });
 

@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { STREAMWEAVER_BOT_ACTION_CATALOG, StreamWeaverBotActionConsumer, detectStreamWeaverBotAction } from "../apps/streamweaver/dist/index.js";
 
-test("suite bot action catalog exposes all 20 app-owned operations without persona names", () => {
-  assert.equal(STREAMWEAVER_BOT_ACTION_CATALOG.length, 20);
+test("suite bot action catalog exposes all 21 app-owned operations without persona names", () => {
+  assert.equal(STREAMWEAVER_BOT_ACTION_CATALOG.length, 21);
   assert.equal(STREAMWEAVER_BOT_ACTION_CATALOG.find((entry) => entry.id === "hmo.bot.control").minimumRole, "member");
   assert.equal(STREAMWEAVER_BOT_ACTION_CATALOG.find((entry) => entry.id === "hmo.voice.bridge.control").minimumRole, "member");
   assert.equal(JSON.stringify(STREAMWEAVER_BOT_ACTION_CATALOG).includes("Athena"), false);

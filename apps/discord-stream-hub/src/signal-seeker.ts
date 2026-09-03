@@ -28,6 +28,14 @@ export function dshSignalDropPayload(roleId: string, signalUrl: string) {
   return { content: `<@&${snowflake(roleId)}> A lost Signal appeared. It fades after 10 minutes.`, components: [{ type: 1, components: [{ type: 2, style: 5, label: "Claim Signal", url }] }], allowed_mentions: { parse: [], roles: [roleId] } };
 }
 
+export function dshRepeatSignalBreadcrumb(random: () => number = Math.random): string {
+  const hints = [
+    "🚀 **HUNT BREADCRUMB** — The carrier is yours already, but another anomaly looks like it wants to **launch**. Curious explorers sometimes find controls where everyone else only sees decoration.",
+    "🕳️ **HUNT BREADCRUMB** — The carrier is yours already, but another anomaly does not transmit at all — it **bends**. If Commlink ever feels like gravity stopped following the rules, investigate it.",
+  ];
+  return hints[Math.min(hints.length - 1, Math.floor(Math.max(0, Math.min(.999999, random())) * hints.length))]!;
+}
+
 export class SqliteDshSignalSeekerStore {
   private readonly db: DatabaseSync;
   constructor(path: string, private readonly now: () => string = () => new Date().toISOString()) {
@@ -76,6 +84,13 @@ export class SqliteDshSignalSeekerStore {
     const update = this.db.prepare("UPDATE dsh_signal_drops SET state='expired',body=? WHERE drop_id=? AND state='open'");
     for (const drop of expired) update.run(JSON.stringify(drop), drop.dropId);
     return expired;
+  }
+  get(tenantId: string, dropId: string): DshSignalDropV1 | undefined {
+    const row = this.db.prepare("SELECT body FROM dsh_signal_drops WHERE tenant_id=? AND drop_id=?").get(clean(tenantId), clean(dropId)) as { body: string } | undefined;
+    return row ? JSON.parse(row.body) as DshSignalDropV1 : undefined;
+  }
+  remove(tenantId: string, dropId: string): boolean {
+    return Number(this.db.prepare("DELETE FROM dsh_signal_drops WHERE tenant_id=? AND drop_id=?").run(clean(tenantId), clean(dropId)).changes) === 1;
   }
 }
 

@@ -16,5 +16,5 @@ process.once("SIGTERM", () => void shutdown());
 process.once("SIGINT", () => void shutdown());
 const ready = await service.ready();
 process.stdout.write(`Discord Stream Hub worker ${ready.workerId} started with ${ready.configuredTenants} configured tenant(s) on a ${ready.pollIntervalSeconds}-second cycle\n`);
-try { await service.run(controller.signal); }
+try { await Promise.all([service.run(controller.signal), service.runSuiteActions(controller.signal)]); }
 finally { await shutdown(); }

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "capturedAt": "2026-08-30",
+  "capturedAt": "2026-09-03",
   "comparisonPolicy": {
     "sourceOfComparison": "remote-main-and-running-live-slice",
     "retainLocalMirrors": false,
@@ -26,92 +26,92 @@
       "sourceId": "spmt-authority",
       "repository": "Mtman1987/spmt-live",
       "branch": "main",
-      "currentMain": "e8241ad1682cadafa7c867e560fdb27360f99a06",
+      "currentMain": "df18ae6bd7becd784fa5d614d9119d73b59e5b0e",
       "localMirrorRetained": false,
       "lastTwoCommits": [
-        { "sha": "e8241ad1682cadafa7c867e560fdb27360f99a06", "subject": "Prevent Commlink bootstrap from crashing SPMT machine" },
-        { "sha": "7b77643c40d6a6d23d907fba25d2b65c41d981e0", "subject": "Unblock SPMT production deployment" }
+        { "sha": "df18ae6bd7becd784fa5d614d9119d73b59e5b0e", "subject": "Merge PR #104: make SPMT startup restart-safe" },
+        { "sha": "e77d9509f55691b3b1443ffd05de57c6b29cd179", "subject": "Preserve existing dependency versions" }
       ],
       "disposition": "caught-up",
-      "evidence": ["tests/chat-gateway-commlink-transport.test.mjs", "tests/dsh-banner-signal-upgrades.test.mjs"]
+      "evidence": ["tests/chat-gateway-commlink-transport.test.mjs", "tests/spacemountain-web.test.mjs", "tests/live-counterpart-catchup.test.mjs"]
     },
     {
       "sourceId": "spacemountain-front-door",
       "repository": "Mtman1987/spacemountain-live",
       "branch": "main",
-      "currentMain": "1dc2c1f02a7eb7bb9ddade3460c43ffa87858f43",
+      "currentMain": "3dcb653cd99cc10d1f7d791c8584f869797577cf",
       "localMirrorRetained": false,
       "lastTwoCommits": [
-        { "sha": "1dc2c1f02a7eb7bb9ddade3460c43ffa87858f43", "subject": "Back off and cache Discord Stream Hub community status failures (#30)" },
-        { "sha": "44a0728091df7a9f19a16bd62ef4de883a79fac0", "subject": "Make rocket discovery persistence visible and bounded (#32)" }
+        { "sha": "3dcb653cd99cc10d1f7d791c8584f869797577cf", "subject": "Merge PR #35: silently recover lost SpaceMountain SPMT sessions" },
+        { "sha": "1bf56f1fdf9cc7c5ea8f7b3ba19a24e757b67684", "subject": "Test guarded SpaceMountain silent SSO recovery" }
       ],
       "disposition": "caught-up",
-      "evidence": ["tests/spacemountain-shell-ui.test.mjs", "tests/spacemountain-web.test.mjs"]
+      "evidence": ["tests/spacemountain-shell-ui.test.mjs", "tests/spacemountain-web.test.mjs", "tests/live-counterpart-catchup.test.mjs"]
     },
     {
       "sourceId": "streamweaver",
       "repository": "Mtman1987/streamweaver",
       "branch": "main",
-      "currentMain": "2079862f73e2d3938e2743e635f19609ab7791af",
+      "currentMain": "a29dd7e5260c673b7260bec7ad70de2040e077be",
       "localMirrorRetained": false,
       "lastTwoCommits": [
-        { "sha": "2079862f73e2d3938e2743e635f19609ab7791af", "subject": "Complete tenant-aware bot action routing (#202)" },
-        { "sha": "985e2cb22ba0f68b0b38e85bed0e61773e28c1f2", "subject": "Add tenant-aware bot action runtime (#201)" }
+        { "sha": "a29dd7e5260c673b7260bec7ad70de2040e077be", "subject": "Merge pull request #217 from Mtman1987/fix/companion-local-athena-wake" },
+        { "sha": "1ee9c9e6e2eba93fce9e08f4bfdb6d0b0a37634e", "subject": "Fix rich live-member patch build-time interpolation" }
       ],
       "disposition": "caught-up",
-      "evidence": ["tests/streamweaver-bot-relay-hardening.test.mjs", "tests/streamweaver-suite-bot-actions.test.mjs"]
+      "evidence": ["tests/streamweaver-bot-relay-hardening.test.mjs", "tests/streamweaver-suite-bot-actions.test.mjs", "tests/live-counterpart-catchup.test.mjs"]
     },
     {
       "sourceId": "discord-stream-hub",
       "repository": "Mtman1987/DiscordStreamHub",
       "branch": "main",
-      "currentMain": "36cb164af1bfcd069c0cf5e92066eddd8cc28f3b",
+      "currentMain": "d97af868a3929e44b02103c347bb5680abe4c465",
       "localMirrorRetained": false,
       "lastTwoCommits": [
-        { "sha": "36cb164af1bfcd069c0cf5e92066eddd8cc28f3b", "subject": "Merge default Nebula gameplay slot fix" },
-        { "sha": "61139989652eb48286c67664feed7574f385972b", "subject": "Fix default gameplay slot in tests/nebula-gameplay-rotation.test.ts" }
+        { "sha": "d97af868a3929e44b02103c347bb5680abe4c465", "subject": "Add breadcrumbs to repeat Signal intercepts" },
+        { "sha": "683a58ccbd162de898dacfeca86fe262ef4ce0f5", "subject": "Fix Quackverse palette typecheck" }
       ],
       "disposition": "ported",
-      "evidence": ["tests/dsh-nebula-gameplay-rotation.test.mjs", "tests/dsh-clip-gif-library.test.mjs", "tests/dsh-banner-signal-upgrades.test.mjs"]
+      "evidence": ["tests/dsh-nebula-gameplay-rotation.test.mjs", "tests/dsh-clip-gif-library.test.mjs", "tests/dsh-banner-signal-upgrades.test.mjs", "tests/live-counterpart-catchup.test.mjs"]
     },
     {
       "sourceId": "hearmeout",
       "repository": "Mtman1987/hearmeout-main",
       "branch": "main",
-      "currentMain": "37b6ef3c2b4aabd6bf6624da8a4e38f74d5afbe4",
+      "currentMain": "c12415b76bd51b7690fcb46ca67879f1becc17f6",
       "localMirrorRetained": false,
       "lastTwoCommits": [
-        { "sha": "37b6ef3c2b4aabd6bf6624da8a4e38f74d5afbe4", "subject": "Complete HearMeOut room and voice bot actions (#57)" },
-        { "sha": "a6ac7184e9a147af2c9151a99112386e5411e4e2", "subject": "Add authenticated bot media action adapter (#56)" }
+        { "sha": "c12415b76bd51b7690fcb46ca67879f1becc17f6", "subject": "Merge pull request #70 from Mtman1987/fix/local-companion-wake-bridge" },
+        { "sha": "06cb42cedd2b2fa79b45f1baea4850ce7754e4cf", "subject": "Narrow local wake persona target before queueing" }
       ],
       "disposition": "caught-up",
-      "evidence": ["tests/hearmeout-bot-persona-actions.test.mjs", "tests/streamweaver-suite-bot-actions.test.mjs"]
+      "evidence": ["tests/hearmeout-bot-persona-actions.test.mjs", "tests/streamweaver-suite-bot-actions.test.mjs", "tests/live-counterpart-catchup.test.mjs"]
     },
     {
       "sourceId": "nebula-arcade-live",
       "repository": "Mtman1987/chat\u002dtag",
       "branch": "main",
-      "currentMain": "0dd1dd844f24a0c9bc0192a95af35c617d7ba728",
+      "currentMain": "42cb6401b3adf87a8c008474787d05d1dcf757db",
       "localMirrorRetained": false,
       "lastTwoCommits": [
-        { "sha": "0dd1dd844f24a0c9bc0192a95af35c617d7ba728", "subject": "Merge pull request #76 from Mtman1987/fix/public-nebula-showcase-manifest" },
-        { "sha": "d9a719422798811dca8f04d04f8dc2e68a652c29", "subject": "fix: expose Nebula showcase manifest to DSH" }
+        { "sha": "42cb6401b3adf87a8c008474787d05d1dcf757db", "subject": "Make Discord pack render failures terminal and visible in logs" },
+        { "sha": "728a8399e4daad5f7162cfcf5bea05d3307ccca5", "subject": "Apply Quackverse pack presenter patch in bot image" }
       ],
       "disposition": "ported",
-      "evidence": ["tests/nebula-discord-dashboard.test.mjs", "tests/dsh-nebula-gameplay-rotation.test.mjs", "tests/chat-provider-drivers.test.mjs"]
+      "evidence": ["tests/nebula-discord-dashboard.test.mjs", "tests/dsh-nebula-gameplay-rotation.test.mjs", "tests/chat-provider-drivers.test.mjs", "tests/live-counterpart-catchup.test.mjs"]
     },
     {
       "sourceId": "rotator-mountainview-local-ai",
       "repository": "Mtman1987/fly-machine-rotator",
       "branch": "main",
-      "currentMain": "9f92c0deafc68b80145303a821625378679fdf7b",
+      "currentMain": "01cc5d4f2276bfe575484a9c81a18636a6437c7d",
       "localMirrorRetained": false,
       "lastTwoCommits": [
-        { "sha": "9f92c0deafc68b80145303a821625378679fdf7b", "subject": "Emergency: make LLM worker deploy manual-only" },
-        { "sha": "66e66b8b8502a6cf1dd94aee0163c443459a6d08", "subject": "Route MtFixIt repairs through hourly ChatGPT review" }
+        { "sha": "01cc5d4f2276bfe575484a9c81a18636a6437c7d", "subject": "Merge pull request #101 from Mtman1987/fix/android-local-athena-wake" },
+        { "sha": "d838af35698a64f7a930fed356670cae309ef270", "subject": "Build APK with local-only Athena wake" }
       ],
       "disposition": "caught-up",
-      "evidence": ["tests/rotator-fleet-controller.test.mjs", "tests/mountainview-device-runtime.test.mjs"]
+      "evidence": ["tests/rotator-fleet-controller.test.mjs", "tests/mountainview-device-runtime.test.mjs", "tests/live-counterpart-catchup.test.mjs"]
     }
   ]
 }

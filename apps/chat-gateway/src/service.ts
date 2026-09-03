@@ -1,7 +1,7 @@
 import { basename, isAbsolute } from "node:path";
 import { createSpmtCommlinkLiveChatConsumer } from "@spmt/commlink-core";
 import { SpmtClient } from "@spmt/sdk";
-import { StreamWeaverProviderRuntime } from "@spmt/streamweaver";
+import { NodeSeaArtCommandRunner, SeaArtCliProvider, StreamWeaverImageGenerationService, StreamWeaverImageWorker, StreamWeaverProviderRuntime, StreamWeaverSuiteActionJobExecutor } from "@spmt/streamweaver";
 import { NebulaArcadeProviderRuntime, loadNebulaArcadeProviderConfig, type NebulaArcadeProviderConfigV1 } from "@spmt/nebula-arcade";
 import { ChatGatewayRuntime, SqliteChatGatewayStore, type ChatGatewayConsumerV1 } from "./index.js";
 import { ChatProviderConnectionSupervisor, SqliteProviderConnectionStore, type ProviderConnectionConfigV1 } from "./connection-supervisor.js";
@@ -16,7 +16,7 @@ export interface ChatGatewayWorkerEnvironmentV1 {
   workerId: string;
   connections: ProviderConnectionConfigV1[];
   reconcileMs: number;
-  streamweaver?: { databasePath: string; credential: string };
+  streamweaver?: { databasePath: string; credential: string; image?: { token: string; modelNo: string; modelVerNo: string; binary: string } };
   nebulaArcade?: { databasePath: string; credential: string; configPath: string; config: NebulaArcadeProviderConfigV1; publicOrigin?: string; gameplayOrigin?: string; webhookName: string; avatarUrl?: string };
 }
 
@@ -46,7 +46,11 @@ export function validateChatGatewayWorkerEnvironment(environment: NodeJS.Process
     if (!streamweaverCredential || streamweaverCredential.length < 32) throw new Error("A 32+ character STREAMWEAVER_WORKER_CREDENTIAL is required");
     if (!streamweaverDatabasePath || !isAbsolute(streamweaverDatabasePath)) throw new Error("STREAMWEAVER_DATABASE_PATH must be absolute");
     if (runtimeMode === "sandbox" && !basename(streamweaverDatabasePath).toLowerCase().includes("sandbox")) throw new Error("Sandbox StreamWeaver requires a sandbox-named database");
-    streamweaver = { databasePath: streamweaverDatabasePath, credential: streamweaverCredential };
+    const imageValues=[environment.STREAMWEAVER_SEAART_CLI_TOKEN,environment.STREAMWEAVER_SEAART_MODEL_NO,environment.STREAMWEAVER_SEAART_MODEL_VER_NO].filter(Boolean);
+    if(imageValues.length!==0&&imageValues.length!==3)throw new Error("StreamWeaver SeaArt token, model, and model version must be configured together");
+    if(runtimeMode==="sandbox"&&imageValues.length)throw new Error("Sandbox StreamWeaver rejects external image generation");
+    const image=imageValues.length?{token:String(environment.STREAMWEAVER_SEAART_CLI_TOKEN),modelNo:modelIdentifier(environment.STREAMWEAVER_SEAART_MODEL_NO,"STREAMWEAVER_SEAART_MODEL_NO"),modelVerNo:modelIdentifier(environment.STREAMWEAVER_SEAART_MODEL_VER_NO,"STREAMWEAVER_SEAART_MODEL_VER_NO"),binary:environment.STREAMWEAVER_SEAART_CLI_BINARY||"seaart"}:undefined;
+    streamweaver = { databasePath: streamweaverDatabasePath, credential: streamweaverCredential, ...(image?{image}:{}) };
   }
   const nebulaEnabled = environment.NEBULA_ARCADE_PROVIDER_RUNTIME_ENABLED === "1";
   const nebulaCredential = environment.NEBULA_ARCADE_WORKER_CREDENTIAL;
@@ -114,6 +118,7 @@ export function createInternalServiceTokenProvider(options: { spmtOrigin: string
 export function createChatGatewayWorkerTokenProvider(options: { spmtOrigin: string; credential: string; fetchImpl?: typeof fetch }) { return createInternalServiceTokenProvider({ ...options, serviceId: "chat-gateway" }); }
 
 export class SupervisedChatGatewayService {
+  private readonly startedAt = new Date().toISOString();
   private readonly chatStore: SqliteChatGatewayStore;
   private readonly connectionStore: SqliteProviderConnectionStore;
   private readonly supervisor: ChatProviderConnectionSupervisor;
@@ -121,7 +126,9 @@ export class SupervisedChatGatewayService {
   private readonly tenants: string[];
   private readonly getAccessToken: () => Promise<string>;
   private readonly getStreamWeaverAccessToken?: () => Promise<string>;
+  private readonly streamweaverClient?: SpmtClient;
   private readonly streamweaver?: StreamWeaverProviderRuntime;
+  private readonly streamweaverImage?: StreamWeaverImageWorker;
   private readonly getNebulaArcadeAccessToken?: () => Promise<string>;
   private readonly nebulaArcade?: NebulaArcadeProviderRuntime;
   constructor(private readonly options: ChatGatewayWorkerEnvironmentV1, fetchImpl?: typeof fetch) {
@@ -136,7 +143,9 @@ export class SupervisedChatGatewayService {
     if (options.streamweaver) {
       this.getStreamWeaverAccessToken = createInternalServiceTokenProvider({ spmtOrigin: options.spmtOrigin, serviceId: "streamweaver", credential: options.streamweaver.credential, ...(fetchImpl ? { fetchImpl } : {}) });
       const streamweaverClient = new SpmtClient({ baseUrl: options.spmtOrigin, appId: "streamweaver", getAccessToken: this.getStreamWeaverAccessToken, ...(fetchImpl ? { fetchImpl } : {}) });
-      this.streamweaver = new StreamWeaverProviderRuntime({ databasePath: options.streamweaver.databasePath, client: streamweaverClient, egress: { send: (message) => { if (!connectedGateway) throw new Error("Chat Gateway egress is not ready"); return connectedGateway.send(message); } } });
+      this.streamweaverClient = streamweaverClient;
+      this.streamweaver = new StreamWeaverProviderRuntime({ databasePath: options.streamweaver.databasePath, client: streamweaverClient, botActions: new StreamWeaverSuiteActionJobExecutor(streamweaverClient), egress: { send: (message) => { if (!connectedGateway) throw new Error("Chat Gateway egress is not ready"); return connectedGateway.send(message); } } });
+      if(options.streamweaver.image){const image=options.streamweaver.image,provider=new SeaArtCliProvider(image.token,new NodeSeaArtCommandRunner(image.binary)),tenantIds=[...new Set(options.connections.map(connection=>connection.tenantId))];this.streamweaverImage=new StreamWeaverImageWorker(streamweaverClient,new StreamWeaverImageGenerationService([provider]),{workerId:`${options.workerId}-image`,modelNo:image.modelNo,modelVerNo:image.modelVerNo,...(tenantIds.length?{tenantIds}:{})});}
       consumers.push(...this.streamweaver.consumers);
       observers.push(...this.streamweaver.messageObservers);
     }
@@ -152,7 +161,7 @@ export class SupervisedChatGatewayService {
     options.connections.forEach((connection) => this.connectionStore.put(connection));
     this.tenants = [...new Set(options.connections.map((connection) => connection.tenantId))];
   }
-  async ready() { await Promise.all([this.getAccessToken(), this.getStreamWeaverAccessToken?.(), this.getNebulaArcadeAccessToken?.()]); return { schemaVersion: 1 as const, workerId: this.options.workerId, configuredConnections: this.options.connections.length, consumers: this.gateway.consumerIds() }; }
+  async ready() { await Promise.all([this.getAccessToken(), this.getStreamWeaverAccessToken?.(), this.getNebulaArcadeAccessToken?.()]); if(this.streamweaverClient&&this.tenants.length)await this.streamweaverClient.reportExecutionWorker({executionOwner:"streamweaver",workerId:`${this.options.workerId}-voice-egress`,executionTarget:"sprite",state:"ready",capabilityIds:["streamweaver.voice-egress.v1"],tenantIds:this.tenants,providerHealthy:true,startedAt:this.startedAt,leaseMs:60_000,metrics:{completedJobs:0,failedJobs:0,inputUnits:0,outputUnits:0}});await this.streamweaverImage?.report();return { schemaVersion: 1 as const, workerId: this.options.workerId, configuredConnections: this.options.connections.length, consumers: this.gateway.consumerIds() }; }
   async reconcile() {
     const connections = await this.supervisor.reconcile();
     const deliveries = { attempted: 0, delivered: 0, failed: 0 };
@@ -161,10 +170,13 @@ export class SupervisedChatGatewayService {
       deliveries.attempted += report.attempted; deliveries.delivered += report.delivered; deliveries.failed += report.failed;
     }
     const streamweaver = await this.streamweaver?.reconcile();
+    const voiceEgress = await this.drainStreamWeaverVoiceEgress();
     const nebulaArcade = await this.nebulaArcade?.reconcile();
-    return { schemaVersion: 1 as const, connections, deliveries, ...(streamweaver ? { streamweaver } : {}), ...(nebulaArcade ? { nebulaArcade } : {}) };
+    return { schemaVersion: 1 as const, connections, deliveries, ...(streamweaver ? { streamweaver } : {}), ...(voiceEgress ? { voiceEgress } : {}), ...(nebulaArcade ? { nebulaArcade } : {}) };
   }
-  async run(signal: AbortSignal) { while (!signal.aborted) { await this.reconcile(); await pause(this.options.reconcileMs, signal); } }
+  private async drainStreamWeaverVoiceEgress(limit=20){const client=this.streamweaverClient;if(!client)return undefined;const report={observed:0,sent:0,failed:0};if(!this.tenants.length)return report;const workerId=`${this.options.workerId}-voice-egress`;await client.reportExecutionWorker({executionOwner:"streamweaver",workerId,executionTarget:"sprite",state:"ready",capabilityIds:["streamweaver.voice-egress.v1"],tenantIds:this.tenants,providerHealthy:true,startedAt:this.startedAt,leaseMs:60_000,metrics:{completedJobs:0,failedJobs:0,inputUnits:0,outputUnits:0}});for(let index=0;index<limit;index+=1){const job=await client.claimAnyExecutionJob(workerId,"sprite",{executionOwner:"streamweaver",capabilityIds:["streamweaver.voice-egress.v1"],leaseMs:30_000});if(!job)break;report.observed+=1;try{const input=job.input,destination=input.destination;if(destination!=="twitch"&&destination!=="discord")throw new Error("Voice egress destination is invalid");const connectionId=requiredInput(input.connectionId,"connectionId"),channelId=requiredInput(input.channelId,"channelId"),text=boundedInput(input.text,"text",5_000);const configured=this.options.connections.find((item)=>item.tenantId===job.tenantId&&item.provider===destination&&item.connectionId===connectionId&&item.channelId===channelId&&item.desired);if(!configured)throw new Error("The selected provider connection is no longer configured");const sent=await this.gateway.send({schemaVersion:1,tenantId:job.tenantId,provider:destination,connectionId,channelId,text,idempotencyKey:`streamweaver-voice-egress:${job.id}`});if(!job.leaseId)throw new Error("Voice egress job lease is unavailable");await client.succeedExecutionJob(job.tenantId,job.id,workerId,job.leaseId,job.fencingEpoch,{schemaVersion:1,provider:destination,providerMessageId:sent.providerMessageId});report.sent+=1;}catch(error){const message=error instanceof Error?error.message:"Voice egress failed";if(!job.leaseId)throw error;await client.failExecutionJob(job.tenantId,job.id,workerId,job.leaseId,job.fencingEpoch,"voice_egress_failed",message,!/invalid|no longer configured/i.test(message));report.failed+=1;}}return report;}
+  async run(signal: AbortSignal) { await Promise.all([this.runGateway(signal),this.streamweaverImage?.run(signal)??Promise.resolve()]); }
+  private async runGateway(signal:AbortSignal){while(!signal.aborted){await this.reconcile();await pause(this.options.reconcileMs,signal);}}
   async close() { await this.supervisor.stop(); this.nebulaArcade?.close(); this.streamweaver?.close(); this.connectionStore.close(); this.chatStore.close(); }
 }
 
@@ -172,4 +184,7 @@ function loopbackOrigin(value: string) { const url = new URL(value); if (url.pro
 function httpsOrigin(value: string, name: string) { const url = new URL(value); if (url.protocol !== "https:" || url.username || url.password || url.pathname !== "/" || url.search || url.hash) throw new Error(`${name} must be a credential-free HTTPS origin`); return url.origin; }
 function httpsAssetUrl(value: string, name: string) { const url = new URL(value); if (url.protocol !== "https:" || url.username || url.password) throw new Error(`${name} must be a credential-free HTTPS URL`); return url.toString(); }
 function requireId(value: string, name: string) { if (!value || !/^[A-Za-z0-9._:@/-]{1,300}$/.test(value)) throw new Error(`${name} is invalid`); }
+function modelIdentifier(value:unknown,name:string){const result=String(value??"");if(!/^[A-Za-z0-9._:-]{1,160}$/.test(result))throw new Error(`${name} is invalid`);return result;}
+function requiredInput(value:unknown,name:string){const result=String(value??"").trim();requireId(result,name);return result;}
+function boundedInput(value:unknown,name:string,max:number){const result=String(value??"").trim();if(!result||result.length>max||/\0/.test(result))throw new Error(`${name} is invalid`);return result;}
 function pause(ms: number, signal: AbortSignal) { return new Promise<void>((resolve) => { if (signal.aborted) return resolve(); const timer = setTimeout(resolve, ms); signal.addEventListener("abort", () => { clearTimeout(timer); resolve(); }, { once: true }); }); }

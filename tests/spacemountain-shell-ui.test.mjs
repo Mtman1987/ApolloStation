@@ -121,6 +121,8 @@ test("Account owns personal identity and usage while Settings owns advanced conf
   assert.match(base, /page\("Your account", "Your plan, personal usage, linked identities, and XP in one private view\./);
   for (const label of ["AI and creation", "AI chat", "AI coding", "Image generation", "Hosted services and storage", "LINKED IDENTITIES"]) assert.match(base, new RegExp(label));
   for (const control of ["Remember this conversation", "Export my Stella data", "Delete my Stella data", "data-stellar-export", "data-stellar-delete"]) assert.match(base, new RegExp(control));
+  for (const provider of ["data-provider-link=\"twitch\"", "data-provider-link=\"discord\""]) assert.match(base, new RegExp(provider));
+  assert.match(base, /window\.location\.assign\(`\/v1\/identity\/providers\/\$\{provider\}\/start/);
   assert.match(base, /role="progressbar"/);
   assert.match(THEMED_SURFACE_CSS, /\.spmt-usage-track i\{[^}]*linear-gradient\(90deg,var\(--accent\),var\(--accent2\)\)/);
   assert.match(base, /page\("App and ecosystem settings", "Advanced controls stay with the app or shared system they configure\./);

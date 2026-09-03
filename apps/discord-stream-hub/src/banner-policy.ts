@@ -4,7 +4,7 @@ export const DSH_BANNER_HEIGHT = 100;
 export const DSH_BANNER_FPS = 10;
 export const DSH_BANNER_DURATION_SECONDS = 20;
 
-export type DshBannerVariantV1 = "commander" | "crew" | "mountaineer";
+export type DshBannerVariantV1 = "commander" | "crew" | "mountaineer" | "spotlight";
 export interface DshBannerIdentityV1 {
   twitchLogin: string;
   group?: string | null;
@@ -18,6 +18,7 @@ export const DSH_BANNER_VARIANTS = Object.freeze({
   commander: { labelHtml: "COMMANDER MT", messageHtml: "THE MOUNTAIN IS LIVE &bull; ALL SYSTEMS GO", primaryColor: "#ffd24a", secondaryColor: "#fff0a6", showUsername: false },
   crew: { labelHtml: "SPACEMOUNTAIN CREW", messageHtml: "CREW SIGNAL LOCKED &bull; LIVE NOW", primaryColor: "#00b7ff", secondaryColor: "#79dcff", showUsername: true },
   mountaineer: { labelHtml: 'MOUNTAINEER <span class="heart">&hearts;</span>', messageHtml: "SIGNAL RECEIVED &bull; LIVE NOW", primaryColor: "#39e58c", secondaryColor: "#a3f7c7", showUsername: true },
+  spotlight: { labelHtml: "COMMUNITY SPOTLIGHT", messageHtml: "SIGNAL BOOST ACTIVE &bull; FEATURED CREATOR LIVE", primaryColor: "#ff334f", secondaryColor: "#ff9aa9", showUsername: false },
 } satisfies Record<DshBannerVariantV1, { labelHtml: string; messageHtml: string; primaryColor: string; secondaryColor: string; showUsername: boolean }>);
 
 const COMMANDER_TWITCH_LOGINS = new Set(["mtman1987", "spacemountainlive"]);
@@ -36,7 +37,7 @@ export function resolveDshBannerVariant(identity: DshBannerIdentityV1): DshBanne
 
 export function normalizeDshBannerVariant(value: unknown): DshBannerVariantV1 {
   const variant = normalized(value);
-  return variant === "commander" || variant === "crew" ? variant : "mountaineer";
+  return variant === "commander" || variant === "crew" || variant === "spotlight" ? variant : "mountaineer";
 }
 
 export function dshBannerStorageKey(twitchLogin: string): string {

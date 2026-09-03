@@ -98,12 +98,12 @@ test("descriptor-declared snapshot sources keep baseline health and omit unrelat
 
 test("DSH, StreamWeaver and Companion declare app-specific public feeds without copying private authorities", async () => {
   const checks = [
-    ["apps/discord-stream-hub/src/web-server.ts", ["providerLinks", "xpWallet", "DSH_SHOUTOUT_GROUPS", "DSH_APPLICATION_DEFINITIONS", "Creator directory and provider presence records remain under DSH authority"]],
-    ["apps/streamweaver/src/web-server.ts", ["overlayWidgets", "stellarCapabilities", "STREAMWEAVER_DONOR_COMMANDS", "STREAMWEAVER_OVERLAYS", "Creator currency is tenant-local StreamWeaver data"]],
-    ["apps/companion/src/web-server.ts", ["devices", "operations", "COMPANION_WORKFLOWS", "COMPANION_MEDIA_PRESETS", "does not start an unreviewed workflow"]],
+    [["apps/discord-stream-hub/src/web-server.ts", "apps/discord-stream-hub/src/web-controls.ts", "apps/discord-stream-hub/src/shoutout-groups.ts"], ["providerLinks", "xpWallet", "DSH_SHOUTOUT_GROUPS", "DSH_APPLICATION_DEFINITIONS", "app-owned controls"]],
+    [["apps/streamweaver/src/web-server.ts", "apps/streamweaver/src/web-controls.ts"], ["overlayWidgets", "stellarCapabilities", "STREAMWEAVER_DONOR_COMMANDS", "STREAMWEAVER_OVERLAYS", "tenant-local currency"]],
+    [["apps/companion/src/web-server.ts"], ["devices", "operations", "COMPANION_WORKFLOWS", "COMPANION_MEDIA_PRESETS", "does not start an unreviewed workflow"]],
   ];
-  for (const [path, patterns] of checks) {
-    const source = await read(path);
+  for (const [paths, patterns] of checks) {
+    const source = (await Promise.all(paths.map((path) => read(path)))).join("\n");
     for (const pattern of patterns) assert.match(source, new RegExp(pattern));
   }
 });

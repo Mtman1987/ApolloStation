@@ -240,6 +240,31 @@ export function createSpmtService(options: SpmtServiceOptions) {
         });
       }
 
+      const providerLinkStart = request.method === "GET" ? url.pathname.match(/^\/v1\/identity\/providers\/(twitch|discord)\/start$/) : null;
+      if (providerLinkStart) {
+        const token = accessToken(request);
+        if (!token) return json(response, 401, { error: "unauthorized" });
+        const provider = providerLinkStart[1] as "twitch" | "discord";
+        const client = accountProviderOAuthClient(options, provider);
+        if (!client) return json(response, 503, { error: "provider_link_unavailable", message: `${provider} account linking is not configured` });
+        const principal = auth.authorize(token, "identity:write");
+        if (principal.actorType !== "user") return json(response, 403, { error: "user_required" });
+        const requestedTenantId = url.searchParams.get("tenantId") ?? principal.tenantIds[0];
+        if (!requestedTenantId) return json(response, 400, { error: "tenant_required" });
+        auth.authorize(token, "identity:write", requestedTenantId);
+        const state = randomBytes(24).toString("base64url");
+        const pending = encodeProviderLinkCookie({ schemaVersion: 1, provider, tenantId: requestedTenantId, userId: principal.actorId, state });
+        const redirectUri = `${publicBaseUrl}/v1/onboarding/twitch/callback`;
+        const authorizationUrl = provider === "twitch" ? new URL("https://id.twitch.tv/oauth2/authorize") : new URL("https://discord.com/oauth2/authorize");
+        authorizationUrl.searchParams.set("client_id", client.clientId);
+        authorizationUrl.searchParams.set("redirect_uri", redirectUri);
+        authorizationUrl.searchParams.set("response_type", "code");
+        authorizationUrl.searchParams.set("scope", provider === "twitch" ? "user:read:email" : "identify");
+        authorizationUrl.searchParams.set("state", state);
+        response.writeHead(302, { location: authorizationUrl.toString(), "cache-control": "no-store", "set-cookie": setupCookie("spmt_provider_link", pending) });
+        return response.end();
+      }
+
       if (request.method === "GET" && url.pathname === "/v1/onboarding/twitch/start") {
         const ticket = url.searchParams.get("ticket") ?? "";
         if (!options.twitchClientId || !options.twitchClientSecret) return json(response, 503, { error: "twitch_setup_unavailable" });
@@ -260,6 +285,28 @@ export function createSpmtService(options: SpmtServiceOptions) {
       }
 
       if (request.method === "GET" && url.pathname === "/v1/onboarding/twitch/callback") {
+        const pendingLink = decodeProviderLinkCookie(cookie(request, "spmt_provider_link"));
+        if (pendingLink) {
+          try {
+            const token = accessToken(request);
+            const state = url.searchParams.get("state") ?? "";
+            const code = url.searchParams.get("code") ?? "";
+            const client = accountProviderOAuthClient(options, pendingLink.provider);
+            if (!token || !state || !code || !client || state !== pendingLink.state) throw new Error("That account-link request expired. Start again from Account.");
+            const principal = auth.authorize(token, "identity:write", pendingLink.tenantId);
+            if (principal.actorType !== "user" || principal.actorId !== pendingLink.userId) throw new Error("Sign in with the account that started this link request.");
+            const identity = await exchangeProviderIdentity(pendingLink.provider, code, `${publicBaseUrl}/v1/onboarding/twitch/callback`, client, fetchImpl);
+            authority.linkProvider(principal.actorId, pendingLink.provider, identity.id);
+            authority.audit({ tenantId: pendingLink.tenantId, actorType: "user", actorId: principal.actorId, action: "identity.providers.link", target: `provider:${pendingLink.provider}:${identity.id}`, outcome: "accepted" });
+            const target = new URL("/", publicBaseUrl);
+            target.searchParams.set("view", "account");
+            target.searchParams.set("providerLinked", pendingLink.provider);
+            response.writeHead(302, { location: target.toString(), "cache-control": "no-store", "set-cookie": clearCookie("spmt_provider_link") });
+            return response.end();
+          } catch (error) {
+            return redirectProviderLinkError(response, publicBaseUrl, error instanceof Error ? error.message : "Account linking failed");
+          }
+        }
         const ticket = cookie(request, "spmt_setup_ticket");
         const state = url.searchParams.get("state") ?? "";
         const code = url.searchParams.get("code") ?? "";
@@ -608,9 +655,37 @@ function cookie(request: IncomingMessage, name: string) { const source = request
 function sessionCookie(token: string) { return `spmt_token=${encodeURIComponent(token)}; Path=/; HttpOnly; Secure; SameSite=Lax`; }
 function setupCookie(name: string, token: string) { return `${name}=${encodeURIComponent(token)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=1800`; }
 function clearCookie(name: string) { return `${name}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`; }
+interface PendingProviderLinkV1 { schemaVersion: 1; provider: "twitch" | "discord"; tenantId: string; userId: string; state: string; }
+function encodeProviderLinkCookie(value: PendingProviderLinkV1) { return Buffer.from(JSON.stringify(value), "utf8").toString("base64url"); }
+function decodeProviderLinkCookie(value: string | undefined): PendingProviderLinkV1 | undefined {
+  if (!value || value.length > 2_000) return undefined;
+  try {
+    const parsed = JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as Partial<PendingProviderLinkV1>;
+    if (parsed.schemaVersion !== 1 || (parsed.provider !== "twitch" && parsed.provider !== "discord") || !parsed.tenantId || !parsed.userId || !/^[A-Za-z0-9_-]{20,100}$/.test(parsed.state ?? "")) return undefined;
+    return parsed as PendingProviderLinkV1;
+  } catch { return undefined; }
+}
+function accountProviderOAuthClient(options: SpmtServiceOptions, provider: "twitch" | "discord") {
+  if (provider === "twitch" && options.twitchClientId && options.twitchClientSecret) return { clientId: options.twitchClientId, clientSecret: options.twitchClientSecret };
+  return options.providerOAuthClients?.[provider];
+}
+async function exchangeProviderIdentity(provider: "twitch" | "discord", code: string, redirectUri: string, client: { clientId: string; clientSecret: string }, fetchImpl: typeof fetch) {
+  const tokenUrl = provider === "twitch" ? "https://id.twitch.tv/oauth2/token" : "https://discord.com/api/oauth2/token";
+  const tokenResponse = await fetchImpl(tokenUrl, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ client_id: client.clientId, client_secret: client.clientSecret, code, grant_type: "authorization_code", redirect_uri: redirectUri }) });
+  const token = await tokenResponse.json().catch(() => ({})) as { access_token?: unknown };
+  if (!tokenResponse.ok || typeof token.access_token !== "string") throw new Error(`${provider} could not verify this account. Try again.`);
+  const identityResponse = provider === "twitch"
+    ? await fetchImpl("https://api.twitch.tv/helix/users", { headers: { "Client-Id": client.clientId, Authorization: `Bearer ${token.access_token}` } })
+    : await fetchImpl("https://discord.com/api/v10/users/@me", { headers: { Authorization: `Bearer ${token.access_token}` } });
+  const identityPayload = await identityResponse.json().catch(() => ({})) as Record<string, unknown>;
+  const identity = provider === "twitch" && Array.isArray(identityPayload.data) ? identityPayload.data[0] as Record<string, unknown> | undefined : identityPayload;
+  if (!identityResponse.ok || !identity || typeof identity.id !== "string") throw new Error(`${provider} identity verification failed. Try again.`);
+  return { id: identity.id, username: typeof identity.login === "string" ? identity.login : typeof identity.username === "string" ? identity.username : undefined };
+}
 function isIdentity(value: unknown): value is { id: string; username?: string } { return Boolean(value && typeof value === "object" && !Array.isArray(value) && typeof (value as { id?: unknown }).id === "string"); }
 function json(response: ServerResponse, status: number, body: unknown, headers: Record<string, string> = {}) { const encoded = JSON.stringify(body); response.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "content-length": Buffer.byteLength(encoded), ...headers }); response.end(encoded); }
 function redirectSetupError(response: ServerResponse, base: string, message: string) { const target = new URL("/first-time-setup", base); target.searchParams.set("setupError", message); response.writeHead(302, { location: target.toString(), "cache-control": "no-store" }); response.end(); }
+function redirectProviderLinkError(response: ServerResponse, base: string, message: string) { const target = new URL("/", base); target.searchParams.set("view", "account"); target.searchParams.set("providerLinkError", message.slice(0, 300)); response.writeHead(302, { location: target.toString(), "cache-control": "no-store", "set-cookie": clearCookie("spmt_provider_link") }); response.end(); }
 function decodeKey(value: string) { const key = Buffer.from(value, "base64url"); if (key.byteLength !== 32) throw new Error("SPMT_WEBHOOK_KEY must be base64url for exactly 32 bytes"); return key; }
 function loadBillingManifest() { return assertBillingManifestV1(JSON.parse(readFileSync(new URL("../../../config/billing-plans.v1.json", import.meta.url), "utf8")) as BillingManifestV1); }
 function billingPlan(entitlements: Array<{ key: string; value: string | number | boolean }>): BillingPlanIdV1 {
@@ -634,12 +709,12 @@ function ensureChatGatewayIdentity(auth: AuthService, credential: string) {
   catch (error) { if (!(error instanceof AuthConflictError)) throw error; auth.rotateServiceCredential("chat-gateway", credential); }
 }
 function ensureStreamWeaverIdentity(auth: AuthService, credential: string) {
-  const scopes = ["identity:read", "identity:write", "assistants:invoke", "jobs:read", "xp:write", "runtime:write"];
+  const scopes = ["identity:read", "identity:write", "assistants:invoke", "jobs:read", "jobs:write", "jobs:work", "xp:write", "runtime:write"];
   try { auth.registerServiceIdentity({ serviceId: "streamweaver", credential, scopes, tenantMode: "any" }); }
   catch (error) { if (!(error instanceof AuthConflictError)) throw error; auth.rotateServiceCredential("streamweaver", credential); }
 }
 function ensureDshIdentity(auth: AuthService, credential: string) {
-  try { auth.registerServiceIdentity({ serviceId: "discord-stream-hub", credential, scopes: ["providers:grant", "runtime:write"], tenantMode: "any" }); }
+  try { auth.registerServiceIdentity({ serviceId: "discord-stream-hub", credential, scopes: ["providers:grant", "jobs:read", "jobs:work", "runtime:write"], tenantMode: "any" }); }
   catch (error) { if (!(error instanceof AuthConflictError)) throw error; auth.rotateServiceCredential("discord-stream-hub", credential); }
 }
 function ensureNebulaArcadeIdentity(auth: AuthService, credential: string) {
@@ -647,7 +722,7 @@ function ensureNebulaArcadeIdentity(auth: AuthService, credential: string) {
   catch (error) { if (!(error instanceof AuthConflictError)) throw error; auth.rotateServiceCredential("nebula-arcade", credential); }
 }
 function ensureHearMeOutIdentity(auth: AuthService, credential: string) {
-  try { auth.registerServiceIdentity({ serviceId: "hearmeout", credential, scopes: ["providers:grant", "jobs:read", "jobs:work", "runtime:write"], tenantMode: "any" }); }
+  try { auth.registerServiceIdentity({ serviceId: "hearmeout", credential, scopes: ["providers:grant", "jobs:read", "jobs:write", "jobs:work", "runtime:write"], tenantMode: "any" }); }
   catch (error) { if (!(error instanceof AuthConflictError)) throw error; auth.rotateServiceCredential("hearmeout", credential); }
 }
 function syncCommunityAssistantCapability(data: PlatformDataService, status: ReturnType<CommunityAssistantRuntimeV1["status"]>) {
@@ -719,7 +794,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     ...(buildSha ? { buildSha } : {}),
     ...(twitchClientId ? { twitchClientId } : {}),
     ...(twitchClientSecret ? { twitchClientSecret } : {}),
-    ...(providerCredentialKey ? { providerCredentialKey, providerOAuthClients } : {}),
+    ...(providerCredentialKey ? { providerCredentialKey } : {}),
+    ...(Object.keys(providerOAuthClients).length ? { providerOAuthClients } : {}),
     ...(discordBotToken ? { discordBotToken } : {}),
     stellarChatEnabled,
     ...(stellarWorkerCredential ? { stellarWorkerCredential } : {}),

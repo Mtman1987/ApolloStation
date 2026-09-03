@@ -252,20 +252,27 @@ async function proxy(response: ServerResponse, request: IncomingMessage, url: UR
   if (typeof request.headers["x-correlation-id"] === "string") headers.set("x-correlation-id", request.headers["x-correlation-id"]);
   if (typeof request.headers["idempotency-key"] === "string") headers.set("idempotency-key", request.headers["idempotency-key"]);
   const body = ["GET", "HEAD"].includes(method) ? undefined : await readBody(request);
-  const upstream = await fetchImpl(`${origin}${url.pathname}${url.search}`, {
-    method,
-    headers,
-    ...(body ? { body } : {}),
-    redirect: "manual",
-    signal: AbortSignal.timeout(10000),
-  });
+  let upstream: Response;
+  try {
+    upstream = await fetchImpl(`${origin}${url.pathname}${url.search}`, {
+      method,
+      headers,
+      ...(body ? { body } : {}),
+      redirect: "manual",
+      signal: AbortSignal.timeout(10000),
+    });
+  } catch (error) {
+    throw new WebHostError(503, `SPMT is temporarily unavailable: ${error instanceof Error ? error.message : "network error"}`);
+  }
   const encoded = await limitedResponseBody(upstream);
   const responseHeaders: Record<string, string | string[]> = {
     "content-type": upstream.headers.get("content-type") ?? "application/json; charset=utf-8",
     "cache-control": "no-store",
     "content-length": String(encoded.byteLength),
   };
-  const cookies = getSetCookies(upstream.headers);
+  const location = upstream.headers.get("location");
+  if (location) responseHeaders.location = location;
+  const cookies = upstream.status < 500 ? getSetCookies(upstream.headers) : [];
   if (cookies.length) responseHeaders["set-cookie"] = cookies;
   response.writeHead(upstream.status, responseHeaders);
   response.end(encoded);
@@ -299,7 +306,7 @@ function nebulaArcadeProxyPath(pathname: string) {
 function browserProxyAllowed(method: string, pathname: string) {
   if (method === "GET") {
     if (["/health/live", "/health/ready", "/v1/session", "/v1/auth/setup-options", "/v1/identity/providers", "/v1/workspace/profile", "/v1/apps", "/v1/apps/installs", "/v1/entitlements", "/v1/usage/me", "/v1/events", "/v1/commlink/conversations", "/v1/commlink/messages", "/v1/commlink/live", "/v1/commlink/search", "/v1/notifications", "/v1/assistants/community", "/v1/stellar/context", "/v1/stellar/capabilities", "/v1/stellar/me/export", "/v1/stellar/me", "/v1/operations/logs", "/v1/operations/coder", "/v1/operations/coder/jobs"].includes(pathname)) return true;
-    return /^\/v1\/apps\/[^/]+$/.test(pathname) || /^\/v1\/jobs\/[^/]+$/.test(pathname);
+    return /^\/v1\/apps\/[^/]+$/.test(pathname) || /^\/v1\/jobs\/[^/]+$/.test(pathname) || /^\/v1\/identity\/providers\/(?:twitch|discord)\/start$/.test(pathname) || pathname === "/v1/onboarding/twitch/callback";
   }
   if (method === "PATCH" && pathname === "/v1/workspace/profile") return true;
   if (method === "DELETE" && (pathname === "/v1/stellar/me" || /^\/v1\/identity\/providers\/[^/]+\/[^/]+$/.test(pathname))) return true;

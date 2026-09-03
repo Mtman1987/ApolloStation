@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updated": "2026-08-30",
+  "updated": "2026-09-03",
   "branch": "main",
   "appCodeParity": "complete",
   "productionCutover": "blocked",
@@ -12,12 +12,12 @@
     "spmtXpWalletIntegrity": ["tests/xp-ledger-integrity.test.mjs"],
     "overlayAuthority": ["tests/overlay-output-grants.test.mjs"],
     "chatGateway": ["tests/chat-gateway.test.mjs"],
-    "discordStreamHub": ["tests/dsh-nebula-gameplay-rotation.test.mjs"],
-    "streamweaver": ["tests/streamweaver-bot-relay-hardening.test.mjs"],
-    "hearmeout": ["tests/hearmeout-bot-persona-actions.test.mjs"],
-    "nebulaArcade": ["tests/nebula-discord-dashboard.test.mjs"],
-    "mountainviewCompanion": ["tests/mountainview-companion.test.mjs"],
-    "spacemountainShell": ["tests/spacemountain-shell-ui.test.mjs"]
+    "discordStreamHub": ["tests/dsh-nebula-gameplay-rotation.test.mjs", "tests/live-counterpart-catchup.test.mjs"],
+    "streamweaver": ["tests/streamweaver-bot-relay-hardening.test.mjs", "tests/live-counterpart-catchup.test.mjs"],
+    "hearmeout": ["tests/hearmeout-bot-persona-actions.test.mjs", "tests/live-counterpart-catchup.test.mjs"],
+    "nebulaArcade": ["tests/nebula-discord-dashboard.test.mjs", "tests/live-counterpart-catchup.test.mjs"],
+    "mountainviewCompanion": ["tests/mountainview-companion.test.mjs", "tests/live-counterpart-catchup.test.mjs"],
+    "spacemountainShell": ["tests/spacemountain-shell-ui.test.mjs", "tests/live-counterpart-catchup.test.mjs"]
   },
   "cutoverOnlyGates": [
     "complete production reconciliation",

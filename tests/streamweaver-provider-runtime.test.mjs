@@ -35,7 +35,7 @@ test("supervised Chat Gateway validates and authenticates the separate StreamWea
   try {
     const ready = await service.ready();
     assert.deepEqual(authenticated.sort(), ["chat-gateway", "streamweaver"]);
-    assert.deepEqual(ready.consumers, ["commlink-live-chat", "streamweaver.bot-relay", "streamweaver.donor-commands", "streamweaver.economy", "streamweaver.persona"]);
+    assert.deepEqual(ready.consumers, ["commlink-live-chat", "streamweaver.bot-actions", "streamweaver.bot-relay", "streamweaver.donor-commands", "streamweaver.economy", "streamweaver.persona"]);
   } finally { await service.close(); rmSync(dir, { recursive: true, force: true }); }
 });
 

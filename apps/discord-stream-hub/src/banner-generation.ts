@@ -63,4 +63,9 @@ export class SqliteDshRoleAwareBannerService {
       .run(key, variant, DSH_BANNER_VERSION, generatedAt, JSON.stringify(metadata), gif);
     return { twitchLogin: key, variant, version: DSH_BANNER_VERSION, generatedAt, ...metadata, gif: new Uint8Array(gif) };
   }
+
+  /** One reusable red ticker used by Community Spotlight embeds. */
+  communitySpotlight(): Promise<DshStoredBannerV1> {
+    return this.generate("community-spotlight", "spotlight");
+  }
 }
