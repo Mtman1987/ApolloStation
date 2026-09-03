@@ -48,7 +48,7 @@ fi
 create_apollo_service() {
   local release_sha="$1"
   local enable_stellar="${2:-1}"
-  local runner_args="scripts/sprites/run-supervised-sandbox.mjs,--app,platform,--candidate-app,nebula-arcade,--catalog,current,--public-url,$SPRITE_PUBLIC_URL,--data-root,$data_root,--build-sha,$release_sha,--owner-username,mtman1987,--offline-network-guard,1"
+  local runner_args="scripts/sprites/run-supervised-sandbox.mjs,--app,platform,--candidate-app,nebula-arcade,--catalog,current,--public-url,$SPRITE_PUBLIC_URL,--data-root,$data_root,--build-sha,$release_sha,--owner-username,mtman1987,--offline-network-guard,1,--live-read-origin,https://spmt.live"
   if [[ "$enable_stellar" == "1" ]]; then
     runner_args="$runner_args,--llm-binary,$llama_root/build/bin/llama-server,--llm-cache,/home/sprite/models"
   fi

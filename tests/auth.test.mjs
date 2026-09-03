@@ -61,6 +61,23 @@ test("service credential rotation immediately invalidates previously issued acce
   rmSync(dir, { recursive: true, force: true });
 });
 
+test("supervised identity reconciliation updates stale scopes and tenant policy", () => {
+  const dir = mkdtempSync(join(tmpdir(), "spmt-auth-"));
+  const store = new SqliteAuthorityStore(join(dir, "authority.db"));
+  const auth = new AuthService({ store, tokenFactory: tokenFactory() });
+  auth.registerServiceIdentity({ serviceId: "dsh", credential: "old-service-secret-1234567890", scopes: ["jobs:read"], tenantMode: "allow-list", tenantIds: ["tenant-old"] });
+  const oldAccess = auth.issueServiceAccess("dsh", "old-service-secret-1234567890").accessToken;
+  const reconciled = auth.reconcileServiceIdentity({ serviceId: "dsh", credential: "new-service-secret-1234567890", scopes: ["jobs:read", "jobs:work"], tenantMode: "any" });
+  assert.deepEqual(reconciled.scopes, ["jobs:read", "jobs:work"]);
+  assert.equal(reconciled.tenantMode, "any");
+  assert.deepEqual(reconciled.tenantIds, []);
+  assert.equal(auth.authenticateAccessToken(oldAccess), undefined);
+  const nextAccess = auth.issueServiceAccess("dsh", "new-service-secret-1234567890").accessToken;
+  assert.equal(auth.authorize(nextAccess, "jobs:work", "tenant-new").actorId, "dsh");
+  store.close();
+  rmSync(dir, { recursive: true, force: true });
+});
+
 test("human refresh tokens rotate once and replay revokes the token family", () => {
   const dir = mkdtempSync(join(tmpdir(), "spmt-auth-"));
   const store = new SqliteAuthorityStore(join(dir, "authority.db"));

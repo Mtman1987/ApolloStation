@@ -129,6 +129,52 @@ export class AuthService {
     });
   }
 
+  /** Reconciles a supervised service identity to its declared credential and authorization policy. */
+  reconcileServiceIdentity(input: {
+    serviceId: string;
+    credential: string;
+    scopes: string[];
+    tenantMode: TenantModeV1;
+    tenantIds?: string[];
+  }): ServiceIdentityV1 {
+    return this.store.transaction(() => {
+      requireId(input.serviceId, "serviceId");
+      requireCredential(input.credential);
+      const current = this.store.getServiceIdentity(input.serviceId);
+      if (!current) {
+        const now = this.now();
+        const salt = randomBytes(16).toString("base64url");
+        const created: ServiceIdentityV1 = {
+          id: input.serviceId,
+          scopes: normalizeScopes(input.scopes),
+          tenantMode: input.tenantMode,
+          tenantIds: normalizeTenants(input.tenantMode, input.tenantIds ?? []),
+          credentialSalt: salt,
+          credentialHash: deriveCredential(input.credential, salt),
+          authzVersion: 1,
+          createdAt: now,
+          updatedAt: now,
+        };
+        this.store.putServiceIdentity(created);
+        return publicClone(created);
+      }
+      if (current.revokedAt) throw new AuthDeniedError(`Service identity ${input.serviceId} is revoked`);
+      const salt = randomBytes(16).toString("base64url");
+      const next: ServiceIdentityV1 = {
+        ...current,
+        scopes: normalizeScopes(input.scopes),
+        tenantMode: input.tenantMode,
+        tenantIds: normalizeTenants(input.tenantMode, input.tenantIds ?? []),
+        credentialSalt: salt,
+        credentialHash: deriveCredential(input.credential, salt),
+        authzVersion: current.authzVersion + 1,
+        updatedAt: this.now(),
+      };
+      this.store.putServiceIdentity(next);
+      return publicClone(next);
+    });
+  }
+
   rotateServiceCredential(serviceId: string, nextCredential: string): ServiceIdentityV1 {
     return this.store.transaction(() => {
       requireCredential(nextCredential);

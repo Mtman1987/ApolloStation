@@ -7,9 +7,12 @@ import { ChatGatewayRuntime, SqliteChatGatewayStore, type ChatGatewayConsumerV1 
 import { ChatProviderConnectionSupervisor, SqliteProviderConnectionStore, type ProviderConnectionConfigV1 } from "./connection-supervisor.js";
 import { createFirstPartyChatProviderAdapters } from "./provider-drivers.js";
 import { SpmtChatProviderGrantSource } from "./spmt-provider-grants.js";
+import type { SpmtOperationModeV1 } from "@spmt/contracts";
 
 export interface ChatGatewayWorkerEnvironmentV1 {
   runtimeMode: "production" | "sandbox";
+  operationMode: SpmtOperationModeV1;
+  liveIngressEnabled: boolean;
   spmtOrigin: string;
   databasePath: string;
   credential: string;
@@ -22,6 +25,8 @@ export interface ChatGatewayWorkerEnvironmentV1 {
 
 export function validateChatGatewayWorkerEnvironment(environment: NodeJS.ProcessEnv): ChatGatewayWorkerEnvironmentV1 {
   const runtimeMode = environment.SPMT_RUNTIME_MODE === "sandbox" ? "sandbox" : "production";
+  const operationMode: SpmtOperationModeV1 = environment.SPMT_OUTBOUND_MODE === "disabled" ? "read-only" : "active";
+  const liveIngressEnabled = environment.SPMT_LIVE_INGRESS_MODE === "enabled";
   const spmtOrigin = loopbackOrigin(environment.SPMT_ORIGIN ?? "");
   const databasePath = environment.CHAT_GATEWAY_DATABASE_PATH ?? "";
   if (!databasePath || !isAbsolute(databasePath)) throw new Error("CHAT_GATEWAY_DATABASE_PATH must be absolute");
@@ -31,8 +36,9 @@ export function validateChatGatewayWorkerEnvironment(environment: NodeJS.Process
   if (runtimeMode === "sandbox") {
     if (environment.SPMT_OUTBOUND_MODE !== "disabled") throw new Error("Sandbox Chat Gateway requires SPMT_OUTBOUND_MODE=disabled");
     if (!basename(databasePath).toLowerCase().includes("sandbox")) throw new Error("Sandbox Chat Gateway requires a sandbox-named database");
-    if (connections.length) throw new Error("Sandbox Chat Gateway rejects live provider connections");
+    if (connections.length && !liveIngressEnabled) throw new Error("Sandbox Chat Gateway rejects live provider connections unless SPMT_LIVE_INGRESS_MODE=enabled");
   }
+  if (liveIngressEnabled && operationMode !== "read-only") throw new Error("Live ingress requires SPMT_OUTBOUND_MODE=disabled");
   const reconcileMs = environment.CHAT_GATEWAY_RECONCILE_MS === undefined ? 1_000 : Number(environment.CHAT_GATEWAY_RECONCILE_MS);
   if (!Number.isSafeInteger(reconcileMs) || reconcileMs < 250 || reconcileMs > 60_000) throw new Error("CHAT_GATEWAY_RECONCILE_MS is invalid");
   const workerId = environment.CHAT_GATEWAY_WORKER_ID ?? `chat-gateway-${process.pid}`;
@@ -78,7 +84,7 @@ export function validateChatGatewayWorkerEnvironment(environment: NodeJS.Process
     }
     nebulaArcade = { databasePath: nebulaDatabasePath, credential: nebulaCredential, configPath: nebulaConfigPath, config, webhookName: nebulaWebhookName, ...(publicOrigin ? { publicOrigin } : {}), ...(gameplayOrigin ? { gameplayOrigin } : {}), ...(avatarUrl ? { avatarUrl } : {}) };
   }
-  return { runtimeMode, spmtOrigin, databasePath, credential, workerId, connections, reconcileMs, ...(streamweaver ? { streamweaver } : {}), ...(nebulaArcade ? { nebulaArcade } : {}) };
+  return { runtimeMode, operationMode, liveIngressEnabled, spmtOrigin, databasePath, credential, workerId, connections, reconcileMs, ...(streamweaver ? { streamweaver } : {}), ...(nebulaArcade ? { nebulaArcade } : {}) };
 }
 
 export function parseChatGatewayConnections(source: string | undefined): ProviderConnectionConfigV1[] {
@@ -140,7 +146,7 @@ export class SupervisedChatGatewayService {
     const consumers: ChatGatewayConsumerV1[] = [createSpmtCommlinkLiveChatConsumer(client)];
     const observers: Array<{ id: string; observe(message: import("@spmt/contracts").NormalizedChatMessageV1): void | Promise<void> }> = [];
     let connectedGateway: ChatGatewayRuntime | undefined;
-    if (options.streamweaver) {
+    if (options.streamweaver && !options.liveIngressEnabled) {
       this.getStreamWeaverAccessToken = createInternalServiceTokenProvider({ spmtOrigin: options.spmtOrigin, serviceId: "streamweaver", credential: options.streamweaver.credential, ...(fetchImpl ? { fetchImpl } : {}) });
       const streamweaverClient = new SpmtClient({ baseUrl: options.spmtOrigin, appId: "streamweaver", getAccessToken: this.getStreamWeaverAccessToken, ...(fetchImpl ? { fetchImpl } : {}) });
       this.streamweaverClient = streamweaverClient;
@@ -149,19 +155,19 @@ export class SupervisedChatGatewayService {
       consumers.push(...this.streamweaver.consumers);
       observers.push(...this.streamweaver.messageObservers);
     }
-    if (options.nebulaArcade) {
+    if (options.nebulaArcade && !options.liveIngressEnabled) {
       this.getNebulaArcadeAccessToken = createInternalServiceTokenProvider({ spmtOrigin: options.spmtOrigin, serviceId: "nebula-arcade", credential: options.nebulaArcade.credential, ...(fetchImpl ? { fetchImpl } : {}) });
       const nebulaClient = new SpmtClient({ baseUrl: options.spmtOrigin, appId: "nebula-arcade", getAccessToken: this.getNebulaArcadeAccessToken, ...(fetchImpl ? { fetchImpl } : {}) });
       this.nebulaArcade = new NebulaArcadeProviderRuntime({ databasePath: options.nebulaArcade.databasePath, config: options.nebulaArcade.config, client: nebulaClient, egress: { send: (message) => { if (!connectedGateway) throw new Error("Chat Gateway egress is not ready"); return connectedGateway.send(message); } }, ...(options.nebulaArcade.publicOrigin ? { discordDashboard: { egress: adapters.discord, publicOrigin: options.nebulaArcade.publicOrigin, ...(options.nebulaArcade.gameplayOrigin ? { gameplayOrigin: options.nebulaArcade.gameplayOrigin } : {}), webhookName: options.nebulaArcade.webhookName, ...(options.nebulaArcade.avatarUrl ? { avatarUrl: options.nebulaArcade.avatarUrl } : {}) } } : {}) });
       consumers.push(...this.nebulaArcade.consumers);
     }
-    this.gateway = new ChatGatewayRuntime(this.chatStore, consumers, adapters.senders, observers);
+    this.gateway = new ChatGatewayRuntime(this.chatStore, consumers, options.operationMode === "active" ? adapters.senders : [], observers);
     connectedGateway = this.gateway;
-    this.supervisor = new ChatProviderConnectionSupervisor(options.workerId, this.connectionStore, this.gateway, new SpmtChatProviderGrantSource(client), adapters.drivers);
+    this.supervisor = new ChatProviderConnectionSupervisor(options.workerId, this.connectionStore, this.gateway, new SpmtChatProviderGrantSource(client, options.operationMode === "read-only" ? { requiredScopes: { twitch: ["chat:read"], discord: ["gateway"], kick: ["chat:read"] } } : {}), adapters.drivers);
     options.connections.forEach((connection) => this.connectionStore.put(connection));
     this.tenants = [...new Set(options.connections.map((connection) => connection.tenantId))];
   }
-  async ready() { await Promise.all([this.getAccessToken(), this.getStreamWeaverAccessToken?.(), this.getNebulaArcadeAccessToken?.()]); if(this.streamweaverClient&&this.tenants.length)await this.streamweaverClient.reportExecutionWorker({executionOwner:"streamweaver",workerId:`${this.options.workerId}-voice-egress`,executionTarget:"sprite",state:"ready",capabilityIds:["streamweaver.voice-egress.v1"],tenantIds:this.tenants,providerHealthy:true,startedAt:this.startedAt,leaseMs:60_000,metrics:{completedJobs:0,failedJobs:0,inputUnits:0,outputUnits:0}});await this.streamweaverImage?.report();return { schemaVersion: 1 as const, workerId: this.options.workerId, configuredConnections: this.options.connections.length, consumers: this.gateway.consumerIds() }; }
+  async ready() { await Promise.all([this.getAccessToken(), this.getStreamWeaverAccessToken?.(), this.getNebulaArcadeAccessToken?.()]); if(this.streamweaverClient&&this.tenants.length)await this.streamweaverClient.reportExecutionWorker({executionOwner:"streamweaver",workerId:`${this.options.workerId}-voice-egress`,executionTarget:"sprite",state:"ready",capabilityIds:["streamweaver.voice-egress.v1"],tenantIds:this.tenants,providerHealthy:true,startedAt:this.startedAt,leaseMs:60_000,metrics:{completedJobs:0,failedJobs:0,inputUnits:0,outputUnits:0}});await this.streamweaverImage?.report();return { schemaVersion: 1 as const, workerId: this.options.workerId, operationMode: this.options.operationMode, liveIngressEnabled: this.options.liveIngressEnabled, configuredConnections: this.options.connections.length, consumers: this.gateway.consumerIds() }; }
   async reconcile() {
     const connections = await this.supervisor.reconcile();
     const deliveries = { attempted: 0, delivered: 0, failed: 0 };

@@ -10,6 +10,7 @@
     { "domain": "*.huggingface.co", "action": "allow" },
     { "domain": "hf.co", "action": "allow" },
     { "domain": "*.hf.co", "action": "allow" },
+    { "domain": "spmt.live", "action": "allow" },
     { "domain": "*", "action": "deny" }
   ]
 }

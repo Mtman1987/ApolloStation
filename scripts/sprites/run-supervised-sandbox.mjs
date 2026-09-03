@@ -12,6 +12,8 @@ const catalog = argumentsMap.get("catalog") ?? "core";
 if (!["core", "current"].includes(catalog)) throw new Error("--catalog must be core or current");
 const publicUrl = requireSandboxUrl(argumentsMap.get("public-url") ?? "http://localhost:8080");
 const dataRoot = resolve(argumentsMap.get("data-root") ?? ".sandbox-data");
+const liveReadOrigin = argumentsMap.has("live-read-origin") ? requireLiveReadOrigin(argumentsMap.get("live-read-origin")) : undefined;
+if (liveReadOrigin) process.env.SPMT_LIVE_READ_ORIGIN = liveReadOrigin;
 const buildSha = argumentsMap.get("build-sha") ?? "sprite-local";
 const spmtPort = requirePort(argumentsMap.get("spmt-port") ?? "3000", "spmt-port");
 const webPort = requirePort(argumentsMap.get("web-port") ?? "8080", "web-port");
@@ -41,6 +43,7 @@ const common = {
   SPMT_SANDBOX_ID: "spmt-ecosystem-sandbox",
   BUILD_SHA: buildSha,
 };
+const liveReadEnvironment = liveReadOrigin ? { SPMT_LIVE_READ_ORIGIN: liveReadOrigin, SPMT_LIVE_READ_PROTOCOL: "blue-v1" } : {};
 let candidateManifest;
 if (candidateApp === "nebula-arcade") {
   const module = await import("../../apps/nebula-arcade/dist/index.js");
@@ -142,11 +145,11 @@ const spmt = start("SPMT", "apps/spmt-service/dist/provider-identity-start.js", 
 await waitForUrl(spmt, `http://127.0.0.1:${spmtPort}/health/ready`, "SPMT");
 const spmtOrigin = `http://127.0.0.1:${spmtPort}`;
 
-const dshWeb = start("Discord Stream Hub web", "apps/discord-stream-hub/dist/web-server.js", { ...common, SPMT_ORIGIN: spmtOrigin, DSH_DATABASE_PATH: resolve(dataRoot, "discord-stream-hub-live-sandbox.sqlite"), DSH_RUNTIME_CONFIG_PATH: resolve("config/discord-stream-hub-runtime.sandbox.v1.json"), DSH_WORKER_CREDENTIAL: dshWorkerCredential, HOST: "127.0.0.1", PORT: String(dshWebPort) });
-const streamweaverWeb = start("StreamWeaver web", "apps/streamweaver/dist/web-server.js", { ...common, SPMT_ORIGIN: spmtOrigin, STREAMWEAVER_DATABASE_PATH: resolve(dataRoot, "streamweaver-provider-sandbox.sqlite"), STREAMWEAVER_WORKER_CREDENTIAL: streamweaverWorkerCredential, CHAT_GATEWAY_CONNECTIONS: "[]", HOST: "127.0.0.1", PORT: String(streamweaverWebPort) });
-const hearMeOutWeb = start("HearMeOut web", "apps/hearmeout/dist/web-server.js", { ...common, SPMT_ORIGIN: spmtOrigin, HEARMEOUT_ROOM_DATABASE_PATH: resolve(dataRoot, "hearmeout-room-sandbox.sqlite"), HEARMEOUT_WORKER_CREDENTIAL: hearMeOutWorkerCredential, HOST: "127.0.0.1", PORT: String(hearMeOutWebPort) });
-const mountainViewWeb = start("MountainView web", "apps/mountainview/dist/web-server.js", { ...common, SPMT_ORIGIN: spmtOrigin, MOUNTAINVIEW_DATABASE_PATH: resolve(dataRoot, "mountainview-green-sandbox.sqlite"), HOST: "127.0.0.1", PORT: String(mountainViewWebPort) });
-const companionWeb = start("Companion web", "apps/companion/dist/web-server.js", { ...common, SPMT_ORIGIN: spmtOrigin, HOST: "127.0.0.1", PORT: String(companionWebPort) });
+const dshWeb = start("Discord Stream Hub web", "apps/discord-stream-hub/dist/web-server.js", { ...common, ...liveReadEnvironment, SPMT_ORIGIN: spmtOrigin, DSH_DATABASE_PATH: resolve(dataRoot, "discord-stream-hub-live-sandbox.sqlite"), DSH_RUNTIME_CONFIG_PATH: resolve("config/discord-stream-hub-runtime.sandbox.v1.json"), DSH_WORKER_CREDENTIAL: dshWorkerCredential, HOST: "127.0.0.1", PORT: String(dshWebPort) });
+const streamweaverWeb = start("StreamWeaver web", "apps/streamweaver/dist/web-server.js", { ...common, ...liveReadEnvironment, SPMT_ORIGIN: spmtOrigin, STREAMWEAVER_DATABASE_PATH: resolve(dataRoot, "streamweaver-provider-sandbox.sqlite"), STREAMWEAVER_WORKER_CREDENTIAL: streamweaverWorkerCredential, CHAT_GATEWAY_CONNECTIONS: "[]", HOST: "127.0.0.1", PORT: String(streamweaverWebPort) });
+const hearMeOutWeb = start("HearMeOut web", "apps/hearmeout/dist/web-server.js", { ...common, ...liveReadEnvironment, SPMT_ORIGIN: spmtOrigin, HEARMEOUT_ROOM_DATABASE_PATH: resolve(dataRoot, "hearmeout-room-sandbox.sqlite"), HEARMEOUT_WORKER_CREDENTIAL: hearMeOutWorkerCredential, HOST: "127.0.0.1", PORT: String(hearMeOutWebPort) });
+const mountainViewWeb = start("MountainView web", "apps/mountainview/dist/web-server.js", { ...common, ...liveReadEnvironment, SPMT_ORIGIN: spmtOrigin, MOUNTAINVIEW_DATABASE_PATH: resolve(dataRoot, "mountainview-green-sandbox.sqlite"), HOST: "127.0.0.1", PORT: String(mountainViewWebPort) });
+const companionWeb = start("Companion web", "apps/companion/dist/web-server.js", { ...common, ...liveReadEnvironment, SPMT_ORIGIN: spmtOrigin, HOST: "127.0.0.1", PORT: String(companionWebPort) });
 for (const child of [dshWeb, streamweaverWeb, hearMeOutWeb, mountainViewWeb, companionWeb]) child.once("exit", (code, signal) => { if (!stopping) void stop(signal === "SIGINT" || signal === "SIGTERM" ? 0 : code ?? (signal ? 1 : 0)); });
 await Promise.all([
   waitForUrl(dshWeb, `http://127.0.0.1:${dshWebPort}/health/ready`, "Discord Stream Hub web"),
@@ -295,6 +298,12 @@ function requireSandboxUrl(value) {
   return url.origin;
 }
 
+function requireLiveReadOrigin(value) {
+  const url = new URL(value);
+  if (url.protocol !== "https:" || url.username || url.password || url.pathname !== "/" || url.search || url.hash) throw new Error("--live-read-origin must be a credential-free HTTPS origin");
+  return url.origin;
+}
+
 function appLaunchUrl(origin, path) { return new URL(path, origin).toString(); }
 
 function parseArguments(values) {
@@ -305,7 +314,7 @@ function parseArguments(values) {
     if (!flag?.startsWith("--") || !value) throw new Error("Arguments must be --name value pairs");
     result.set(flag.slice(2), value);
   }
-  const allowed = ["app", "candidate-app", "catalog", "public-url", "data-root", "build-sha", "spmt-port", "web-port", "nebula-arcade-port", "hearmeout-web-port", "dsh-web-port", "streamweaver-web-port", "mountainview-web-port", "companion-web-port", "tenant-id", "channel-id", "owner-username", "llm-binary", "llm-cache", "offline-network-guard"];
+  const allowed = ["app", "candidate-app", "catalog", "public-url", "data-root", "build-sha", "spmt-port", "web-port", "nebula-arcade-port", "hearmeout-web-port", "dsh-web-port", "streamweaver-web-port", "mountainview-web-port", "companion-web-port", "tenant-id", "channel-id", "owner-username", "llm-binary", "llm-cache", "offline-network-guard", "live-read-origin"];
   for (const name of result.keys()) if (!allowed.includes(name)) throw new Error(`Unknown argument --${name}`);
   return result;
 }

@@ -26,7 +26,7 @@ async function fixture(run) {
     writeFileSync(configPath, JSON.stringify({ schemaVersion: 1, pollIntervalSeconds: 60, tenants: [{ tenantId, twitchProviderUserId: "twitch-owner", discordProviderUserId: "discord-bot", discordGuildIds: [guildId], branding: { communityMemberName: "Crew" }, members: [] }] }));
     const { publicKey, privateKey } = generateKeyPairSync("ed25519"), publicKeyHex = publicKey.export({ type: "spki", format: "der" }).subarray(-32).toString("hex");
     dsh = createDiscordStreamHubWebServer({ spmtOrigin: spmtBase, host: "127.0.0.1", port: 0, databasePath: dshDatabase, runtimeConfigPath: configPath, publicOrigin: "https://spmt.example", discordPublicKey: publicKeyHex, discordClientId: "222222222222222222" });
-    streamweaver = createStreamWeaverWebServer({ spmtOrigin: spmtBase, host: "127.0.0.1", port: 0, databasePath: streamDatabase, connectionsJson: JSON.stringify([{ schemaVersion: 1, tenantId, provider: "twitch", connectionId: "main", channelId: "mtman1987", providerAccountId: "twitch-owner", desired: true }]) });
+    streamweaver = createStreamWeaverWebServer({ spmtOrigin: spmtBase, host: "127.0.0.1", port: 0, databasePath: streamDatabase, operationMode: "read-only", connectionsJson: JSON.stringify([{ schemaVersion: 1, tenantId, provider: "twitch", connectionId: "main", channelId: "mtman1987", providerAccountId: "twitch-owner", desired: true }]) });
     await dsh.listen(); await streamweaver.listen(); const dshAddress = dsh.server.address(), streamAddress = streamweaver.server.address(); assert.ok(dshAddress && typeof dshAddress !== "string" && streamAddress && typeof streamAddress !== "string");
     await run({ cookie, tenantId, guildId, dshBase: `http://127.0.0.1:${dshAddress.port}`, streamBase: `http://127.0.0.1:${streamAddress.port}`, privateKey });
   } finally { if (streamweaver) await streamweaver.close(); if (dsh) await dsh.close(); await spmt.close(); rmSync(directory, { recursive: true, force: true }); }
@@ -59,15 +59,19 @@ test("DSH makes calendar, channel delivery, application publishing, and private 
 test("StreamWeaver exposes a wired Voice Commander, searchable bot catalog, integrations, persona and economy", async () => {
   await fixture(async ({ cookie, streamBase }) => {
     const page = await (await fetch(streamBase)).text();
-    assert.match(page, /Voice Commander/); assert.match(page, /Explicit microphone/); assert.match(page, /Search commands/); assert.match(page, /Manage linked accounts/); assert.match(page, /@media\(max-width:720px\)/);
+    assert.match(page, /Voice Commander/); assert.match(page, /Explicit microphone/); assert.match(page, /Live input · read only · no outbound/); assert.match(page, /Search commands/); assert.match(page, /Manage linked accounts/); assert.match(page, /@media\(max-width:720px\)/);
     const control = await (await fetch(`${streamBase}/api/streamweaver/control`, { headers: { cookie } })).json();
-    assert.equal(control.role, "owner"); assert.equal(control.connections[0].provider, "twitch"); assert.equal(control.botRuntime.publicCommands, "connected"); assert.equal(control.botRuntime.suiteActions, "setup-required"); assert.ok(control.botActions.length >= 20); assert.ok(control.botActions.every((action) => action.availability === "setup-required"));
+    assert.equal(control.role, "owner"); assert.equal(control.operationMode, "read-only"); assert.equal(control.connections[0].provider, "twitch"); assert.equal(control.botRuntime.publicCommands, "connected"); assert.equal(control.botRuntime.suiteActions, "setup-required"); assert.ok(control.botActions.length >= 20); assert.ok(control.botActions.every((action) => action.availability === "setup-required")); assert.ok(control.botActions.some((action) => action.policy === "blocked"));
     const origin = new URL(streamBase).origin;
     const persona = await fetch(`${streamBase}/api/streamweaver/control/persona`, { method: "POST", headers: { cookie, origin, "content-type": "application/json" }, body: JSON.stringify({ personaId: "athena", displayName: "Athena", aliases: "athena\nannie", homeChannelIds: "main", summonWindowMinutes: 10, instructions: "Be warm, accurate, and concise.", memoryPolicy: "conversation" }) });
     assert.equal(persona.status, 200);
     const economy = await fetch(`${streamBase}/api/streamweaver/control/economy`, { method: "POST", headers: { cookie, origin, "content-type": "application/json" }, body: JSON.stringify({ currencyName: "Quacks", defaultBet: 100, minBet: 1, maxBet: 10000, winPercent: 28, jackpotPercent: 1, jackpotMultiplier: 10, spmtExchangeEnabled: false, baseLocalPerSpmt: 1000, referenceSupply: 1000000, maxSpmtPerExchange: 100 }) });
     assert.equal(economy.status, 200); assert.equal((await economy.json()).currencyName, "Quacks");
-    const unavailableVoice = await fetch(`${streamBase}/api/streamweaver/control/voice`, { method: "POST", headers: { cookie, origin, "content-type": "application/json" }, body: JSON.stringify({ destination: "twitch", connectionId: "main", message: "Hello stream" }) });
-    assert.equal(unavailableVoice.status, 503, "the UI must fail truthfully when its service runtime is not configured");
+    const blockedVoice = await fetch(`${streamBase}/api/streamweaver/control/voice`, { method: "POST", headers: { cookie, origin, "content-type": "application/json" }, body: JSON.stringify({ destination: "twitch", connectionId: "main", message: "Hello stream" }) });
+    assert.equal(blockedVoice.status, 200);
+    assert.deepEqual(await blockedVoice.json(), { schemaVersion: 1, kind: "preview", status: "blocked", operationMode: "read-only", destination: "twitch", reason: "Read-only mode accepts live input but does not send messages or invoke external assistants." });
+    const blockedAction = await fetch(`${streamBase}/api/streamweaver/control/voice`, { method: "POST", headers: { cookie, origin, "content-type": "application/json" }, body: JSON.stringify({ destination: "private", message: "post a DSH shoutout for @creator in #shoutouts" }) });
+    assert.equal(blockedAction.status, 200);
+    assert.deepEqual(await blockedAction.json(), { schemaVersion: 1, kind: "preview", status: "blocked", operationMode: "read-only", action: "dsh.shoutouts.post", risk: "broadcast", reason: "Read-only mode accepts live input but does not run write or broadcast actions." });
   });
 });

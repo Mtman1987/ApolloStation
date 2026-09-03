@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import test from "node:test";
 import { readFile } from "node:fs/promises";
-import { fetchAppPlatformSnapshot, productAppSnapshotSources, renderProductAppWebPage } from "../packages/app-foundation/dist/product-web.js";
+import { fetchAppPlatformSnapshot, productAppLiveReadFromEnvironment, productAppSnapshotSources, renderProductAppWebPage } from "../packages/app-foundation/dist/product-web.js";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
@@ -12,7 +12,7 @@ test("product app snapshot reads only canonical SPMT developer contracts and rep
   const server = createServer((request, response) => {
     const url = new URL(request.url ?? "/", "http://fixture.invalid");
     requests.push({ path: `${url.pathname}${url.search}`, appId: request.headers["x-spmt-app"], tenantId: request.headers["x-spmt-tenant"] });
-    if (url.pathname === "/v1/session") return json(response, 200, { actorId: "user-1", displayName: "Creator", tenantIds: ["tenant-1"] });
+    if (url.pathname === "/v1/session") return json(response, 200, { actorId: "user-1", username: "creator", displayName: "Creator", tenantIds: ["tenant-1"] });
     if (url.pathname === "/v1/runtime/state") return json(response, 200, [{ appId: "streamweaver", state: "ready", updatedAt: "2026-09-02T00:00:00.000Z" }]);
     if (url.pathname === "/v1/events") return json(response, 200, [{ sourceAppId: "streamweaver", type: "command.executed", createdAt: "2026-09-02T00:00:00.000Z", payload: { command: "hello" } }]);
     if (url.pathname === "/v1/xp/ledger") return json(response, 200, [
@@ -50,6 +50,32 @@ test("product app snapshot reads only canonical SPMT developer contracts and rep
   assert.equal(requests.some((request) => request.path === "/v1/devices"), true);
   assert.equal(requests.some((request) => request.path === "/v1/stellar/capabilities"), true);
   assert.equal(requests.some((request) => request.path === "/v1/identity/providers"), true);
+
+  const liveRequests = [];
+  const liveSnapshot = await fetchAppPlatformSnapshot({
+    appId: "streamweaver",
+    spmtOrigin: `http://127.0.0.1:${address.port}`,
+    request: { headers: { cookie: "spmt_session=fixture" } },
+    sources: ["runtime", "events"],
+    liveRead: {
+      origin: "https://production.example",
+      fetchImpl: async (url, init) => {
+        const headers = new Headers(init?.headers);
+        liveRequests.push({ url: String(url), method: init?.method, authorization: headers.get("authorization"), tenantId: headers.get("x-spmt-tenant"), shadowRead: headers.get("x-spmt-shadow-read") });
+        return Response.json(String(url).includes("/v1/runtime/state") ? [{ appId: "streamweaver", state: "ready", detail: "production" }] : [{ sourceAppId: "streamweaver", type: "live.event" }]);
+      },
+    },
+  });
+  assert.equal(liveSnapshot.dataMode, "live-read");
+  assert.equal(liveSnapshot.operationMode, "read-only");
+  assert.equal(liveSnapshot.runtime[0].detail, "production");
+  assert.equal(liveRequests.every((request) => request.method === "GET" && request.authorization === null && request.tenantId === "tenant-1" && request.shadowRead === "1"), true);
+});
+
+test("live-read configuration needs only an HTTPS production origin", () => {
+  assert.equal(productAppLiveReadFromEnvironment({}), undefined);
+  assert.deepEqual(productAppLiveReadFromEnvironment({ SPMT_LIVE_READ_ORIGIN: "https://production.example", SPMT_LIVE_READ_PROTOCOL: "blue-v1" }), { origin: "https://production.example", protocol: "blue-v1" });
+  assert.throws(() => productAppLiveReadFromEnvironment({ SPMT_LIVE_READ_ORIGIN: "http://production.example" }), /HTTPS origin/);
 });
 
 test("shared app UI renders per-section signals and truthful contract notes with valid browser JavaScript", () => {

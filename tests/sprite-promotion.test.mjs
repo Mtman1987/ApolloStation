@@ -4,6 +4,7 @@ import test from "node:test";
 
 const workflowPath = new URL("../.github/workflows/sprite-promotion.yml", import.meta.url);
 const deployScriptPath = new URL("../scripts/sprites/deploy-sandbox-release.sh", import.meta.url);
+const networkPolicyPath = new URL("../sandbox/sprites/network-policy.json", import.meta.url);
 
 test("Sprite promotion keeps review and release targets isolated", async () => {
   const workflow = await readFile(workflowPath, "utf8");
@@ -23,6 +24,7 @@ test("Sprite promotion keeps review and release targets isolated", async () => {
   assert.match(workflow, /grep -Eiq 'auth\[\^\[:alnum:\]\]\+sprite\|sprite\[\^\[:alnum:\]\]\+auth'/);
   assert.match(workflow, /sprite exec --no-port-forward/);
   assert.match(workflow, /--file scripts\/sprites\/deploy-sandbox-release\.sh:\/tmp\/deploy-sandbox-release\.sh/);
+  assert.doesNotMatch(workflow, /SPMT_LIVE_READ_ACCESS_TOKEN|spmt-live-read-token/);
   assert.doesNotMatch(workflow, /sprite exec --http-post/);
 });
 
@@ -41,6 +43,8 @@ test("Sprite deployment verifies, tests, switches atomically, rolls back, and la
   assert.match(script, /create_apollo_service "\$BUILD_SHA"/);
   assert.match(script, /--candidate-app,nebula-arcade,--catalog,current/);
   assert.match(script, /--offline-network-guard,1/);
+  assert.match(script, /--live-read-origin,https:\/\/spmt\.live/);
+  assert.doesNotMatch(script, /SPMT_LIVE_READ_ACCESS_TOKEN|live-read-token-file|spmt-live-read-token/);
   assert.doesNotMatch(script, /--candidate-app,nebula-tag/);
   assert.match(script, /create_apollo_service "\$\(basename "\$previous_release"\)" 0/);
   assert.match(script, /services_json="\$\(sprite-env services list\)"/);
@@ -54,4 +58,10 @@ test("Sprite deployment verifies, tests, switches atomically, rolls back, and la
   assert.match(script, /for _ in \{1\.\.1260\}/);
   assert.match(script, /sprite-env services create "\$bootstrap_service_name"/);
   assert.match(script, /grep -Fq "\$BUILD_SHA"/);
+});
+
+test("Sprite network policy allows the production read source but remains deny-by-default", async () => {
+  const policy = JSON.parse(await readFile(networkPolicyPath, "utf8"));
+  assert.ok(policy.rules.some((rule) => rule.domain === "spmt.live" && rule.action === "allow"));
+  assert.deepEqual(policy.rules.at(-1), { domain: "*", action: "deny" });
 });

@@ -66,10 +66,13 @@ test("Chat Gateway delivers durable normalized history through the authenticated
 test("Chat Gateway worker configuration is explicit, bounded, and sandbox fail-closed", async () => {
   const path = "/tmp/chat-gateway-sandbox.sqlite";
   const checked = validateChatGatewayWorkerEnvironment({ SPMT_RUNTIME_MODE: "sandbox", SPMT_OUTBOUND_MODE: "disabled", SPMT_ORIGIN: "http://127.0.0.1:3000", CHAT_GATEWAY_DATABASE_PATH: path, CHAT_GATEWAY_WORKER_CREDENTIAL: "x".repeat(32), CHAT_GATEWAY_CONNECTIONS: "[]" });
-  assert.equal(checked.connections.length, 0); assert.equal(checked.runtimeMode, "sandbox");
+  assert.equal(checked.connections.length, 0); assert.equal(checked.runtimeMode, "sandbox"); assert.equal(checked.operationMode, "read-only"); assert.equal(checked.liveIngressEnabled, false);
   const live = JSON.stringify([{ schemaVersion: 1, tenantId: "tenant-a", provider: "twitch", connectionId: "main", channelId: "channel", providerAccountId: "account", desired: true }]);
   assert.equal(parseChatGatewayConnections(live)[0].provider, "twitch");
   assert.throws(() => validateChatGatewayWorkerEnvironment({ SPMT_RUNTIME_MODE: "sandbox", SPMT_OUTBOUND_MODE: "disabled", SPMT_ORIGIN: "http://127.0.0.1:3000", CHAT_GATEWAY_DATABASE_PATH: path, CHAT_GATEWAY_WORKER_CREDENTIAL: "x".repeat(32), CHAT_GATEWAY_CONNECTIONS: live }), /rejects live provider connections/);
+  const inboundOnly = validateChatGatewayWorkerEnvironment({ SPMT_RUNTIME_MODE: "sandbox", SPMT_OUTBOUND_MODE: "disabled", SPMT_LIVE_INGRESS_MODE: "enabled", SPMT_ORIGIN: "http://127.0.0.1:3000", CHAT_GATEWAY_DATABASE_PATH: path, CHAT_GATEWAY_WORKER_CREDENTIAL: "x".repeat(32), CHAT_GATEWAY_CONNECTIONS: live });
+  assert.equal(inboundOnly.connections.length, 1); assert.equal(inboundOnly.operationMode, "read-only"); assert.equal(inboundOnly.liveIngressEnabled, true);
+  assert.throws(() => validateChatGatewayWorkerEnvironment({ SPMT_RUNTIME_MODE: "production", SPMT_LIVE_INGRESS_MODE: "enabled", SPMT_ORIGIN: "http://127.0.0.1:3000", CHAT_GATEWAY_DATABASE_PATH: path, CHAT_GATEWAY_WORKER_CREDENTIAL: "x".repeat(32), CHAT_GATEWAY_CONNECTIONS: live }), /requires SPMT_OUTBOUND_MODE=disabled/);
   assert.throws(() => validateChatGatewayWorkerEnvironment({ SPMT_ORIGIN: "https://spmt.example", CHAT_GATEWAY_DATABASE_PATH: "/tmp/chat.sqlite", CHAT_GATEWAY_WORKER_CREDENTIAL: "x".repeat(32) }), /loopback/);
   let calls = 0;
   const token = createChatGatewayWorkerTokenProvider({ spmtOrigin: "http://127.0.0.1:3000", credential: "x".repeat(32), fetchImpl: async (_url, init) => { calls += 1; assert.doesNotMatch(String(init.body), /twitch|discord|kick/); return new Response(JSON.stringify({ accessToken: "internal-access", accessExpiresAt: new Date(Date.now() + 300_000).toISOString() }), { status: 200, headers: { "content-type": "application/json" } }); } });

@@ -6,7 +6,7 @@ import { pathToFileURL } from "node:url";
 import { AccountRecoveryService, AccountSetupError, SqliteAccountSetupStore } from "@spmt/account-recovery-core";
 import { AuthorityService } from "@spmt/authority-core";
 import { SqliteAuthorityStore } from "@spmt/authority-sqlite";
-import { AuthConflictError, AuthDeniedError, AuthService } from "@spmt/auth-core";
+import { AuthDeniedError, AuthService } from "@spmt/auth-core";
 import { ControlService } from "@spmt/control-core";
 import { CommlinkLiveChatStore } from "@spmt/commlink-core";
 import { ExecutionJobService } from "@spmt/execution-core";
@@ -701,29 +701,23 @@ function resolveStellarRoute(control: ControlService, jobs: ExecutionJobService,
   return { executionTarget: "sprite" as const, meteringTarget: "hosted" as const };
 }
 function ensureStellarWorkerIdentity(auth: AuthService, credential: string) {
-  try { auth.registerServiceIdentity({ serviceId: "stellar-core", credential, scopes: ["jobs:read", "jobs:work", "stellar:context:read"], tenantMode: "any" }); }
-  catch (error) { if (!(error instanceof AuthConflictError)) throw error; auth.rotateServiceCredential("stellar-core", credential); }
+  auth.reconcileServiceIdentity({ serviceId: "stellar-core", credential, scopes: ["jobs:read", "jobs:work", "stellar:context:read"], tenantMode: "any" });
 }
 function ensureChatGatewayIdentity(auth: AuthService, credential: string) {
-  try { auth.registerServiceIdentity({ serviceId: "chat-gateway", credential, scopes: ["providers:grant", "commlink:live:write", "runtime:write"], tenantMode: "any" }); }
-  catch (error) { if (!(error instanceof AuthConflictError)) throw error; auth.rotateServiceCredential("chat-gateway", credential); }
+  auth.reconcileServiceIdentity({ serviceId: "chat-gateway", credential, scopes: ["providers:grant", "commlink:live:write", "runtime:write"], tenantMode: "any" });
 }
 function ensureStreamWeaverIdentity(auth: AuthService, credential: string) {
   const scopes = ["identity:read", "identity:write", "assistants:invoke", "jobs:read", "jobs:write", "jobs:work", "xp:write", "runtime:write"];
-  try { auth.registerServiceIdentity({ serviceId: "streamweaver", credential, scopes, tenantMode: "any" }); }
-  catch (error) { if (!(error instanceof AuthConflictError)) throw error; auth.rotateServiceCredential("streamweaver", credential); }
+  auth.reconcileServiceIdentity({ serviceId: "streamweaver", credential, scopes, tenantMode: "any" });
 }
 function ensureDshIdentity(auth: AuthService, credential: string) {
-  try { auth.registerServiceIdentity({ serviceId: "discord-stream-hub", credential, scopes: ["providers:grant", "jobs:read", "jobs:work", "runtime:write"], tenantMode: "any" }); }
-  catch (error) { if (!(error instanceof AuthConflictError)) throw error; auth.rotateServiceCredential("discord-stream-hub", credential); }
+  auth.reconcileServiceIdentity({ serviceId: "discord-stream-hub", credential, scopes: ["providers:grant", "jobs:read", "jobs:work", "runtime:write"], tenantMode: "any" });
 }
 function ensureNebulaArcadeIdentity(auth: AuthService, credential: string) {
-  try { auth.registerServiceIdentity({ serviceId: "nebula-arcade", credential, scopes: ["events:write", "xp:write", "runtime:write"], tenantMode: "any" }); }
-  catch (error) { if (!(error instanceof AuthConflictError)) throw error; auth.rotateServiceCredential("nebula-arcade", credential); }
+  auth.reconcileServiceIdentity({ serviceId: "nebula-arcade", credential, scopes: ["events:write", "xp:write", "runtime:write"], tenantMode: "any" });
 }
 function ensureHearMeOutIdentity(auth: AuthService, credential: string) {
-  try { auth.registerServiceIdentity({ serviceId: "hearmeout", credential, scopes: ["providers:grant", "jobs:read", "jobs:write", "jobs:work", "runtime:write"], tenantMode: "any" }); }
-  catch (error) { if (!(error instanceof AuthConflictError)) throw error; auth.rotateServiceCredential("hearmeout", credential); }
+  auth.reconcileServiceIdentity({ serviceId: "hearmeout", credential, scopes: ["providers:grant", "jobs:read", "jobs:write", "jobs:work", "runtime:write"], tenantMode: "any" });
 }
 function syncCommunityAssistantCapability(data: PlatformDataService, status: ReturnType<CommunityAssistantRuntimeV1["status"]>) {
   data.upsertStellarCapability({ id: "spmt.community-assistant", sourceAppId: "stellar-core", title: "Stella Community Assistant", description: "Invoke the app-neutral SPMT Community Assistant through the durable, metered Stellar Core job contract.", requiredScopes: ["assistants:invoke"], availability: status.availability, ...(status.availability === "unavailable" ? { unavailableReason: status.unavailableReason } : {}) });

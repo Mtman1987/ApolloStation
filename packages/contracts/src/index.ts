@@ -256,6 +256,7 @@ export const SPMT_SUITE_ACTION_CATALOG = Object.freeze([
 ] as const);
 export type SpmtSuiteActionIdV1 = typeof SPMT_SUITE_ACTION_CATALOG[number]["id"];
 export type SpmtSuiteActionRiskV1 = "read" | "write" | "broadcast";
+export type SpmtOperationModeV1 = "active" | "read-only";
 export type SpmtSuiteActionActorRoleV1 = "guest" | "member" | "moderator" | "admin" | "owner";
 export type SpmtSuiteActionSourceV1 = "chat" | "voice-commander" | "mountainview" | "hearmeout" | "companion" | "api" | "mcp";
 export interface SpmtSuiteActionJobInputV1 {
@@ -266,6 +267,8 @@ export interface SpmtSuiteActionJobInputV1 {
   source: { kind: SpmtSuiteActionSourceV1; provider?: ChatProviderV1; channelId?: string; connectionId?: string; requestId?: string; roomId?: string; deviceId?: string };
 }
 export const SPMT_SUITE_ACTION_CAPABILITIES = Object.freeze({ dsh: "dsh.suite-action.v1", hearmeout: "hearmeout.suite-action.v1", image: "streamweaver.image.generate.v1" } as const);
+export function spmtSuiteActionDescriptor(action: SpmtSuiteActionIdV1) { return SPMT_SUITE_ACTION_CATALOG.find((item) => item.id === action)!; }
+export function spmtSuiteActionAllowed(mode: SpmtOperationModeV1, action: SpmtSuiteActionIdV1) { return mode === "active" || spmtSuiteActionDescriptor(action).risk === "read"; }
 export function spmtSuiteActionCapabilityId(action: SpmtSuiteActionIdV1) { return action === "sw.image.generate" ? SPMT_SUITE_ACTION_CAPABILITIES.image : `${action}.v1`; }
 export function routeSpmtSuiteAction(action: SpmtSuiteActionIdV1) {
   if (action.startsWith("dsh.")) return { executionOwner: "discord-stream-hub", capabilityId: spmtSuiteActionCapabilityId(action), meteredResource: "hosted-worker-minutes" as const };
