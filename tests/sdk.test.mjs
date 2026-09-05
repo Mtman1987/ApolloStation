@@ -46,6 +46,27 @@ test("SDK event reads use the documented scoped query contract", async () => {
   assert.equal(headers.get("x-spmt-tenant"), "tenant-1");
 });
 
+test("SDK publishes and reads tenant-scoped Simulation Room events through the shared event API", async () => {
+  const seen=[];
+  const client=new SpmtClient({baseUrl:"https://green.spmt.test",appId:"overlay-bay",getAccessToken:()=>"test-token",fetchImpl:async(url,init={})=>{
+    seen.push({url,init});
+    if((init.method??"GET")==="POST")return Response.json({id:"event-1",tenantId:"tenant-1",sourceAppId:"overlay-bay",payload:JSON.parse(init.body).payload});
+    return Response.json([
+      {id:"event-1",tenantId:"tenant-1",sourceAppId:"overlay-bay",payload:{schemaVersion:1,roomId:"builder",lane:"overlay",direction:"preview",title:"Scene",body:"Rendered",occurredAt:"2026-09-05T00:00:00.000Z"}},
+      {id:"event-2",tenantId:"tenant-1",sourceAppId:"streamweaver",payload:{schemaVersion:1,roomId:"other",lane:"chat",direction:"egress",title:"Chat",body:"Hello",occurredAt:"2026-09-05T00:00:00.000Z"}},
+    ]);
+  }});
+  await client.publishSimulationRoomEvent("tenant-1",{roomId:"builder",lane:"overlay",direction:"preview",title:"Scene",body:"Rendered",data:{sceneId:"scene-1"},occurredAt:"2026-09-05T00:00:00.000Z"},"simulation-1");
+  const published=JSON.parse(seen[0].init.body);
+  assert.equal(published.type,"spmt.simulation-room.event.v1");
+  assert.equal(published.payload.roomId,"builder");
+  assert.equal(new Headers(seen[0].init.headers).get("x-spmt-tenant"),"tenant-1");
+  const listed=await client.listSimulationRoomEvents("tenant-1",{roomId:"builder",lane:"overlay"});
+  assert.deepEqual(listed.map((event)=>event.id),["event-1"]);
+  assert.match(new URL(seen[1].url).searchParams.get("type"),/simulation-room/);
+  assert.throws(()=>client.publishSimulationRoomEvent("tenant-1",{roomId:"builder",lane:"app",direction:"preview",title:"Unsafe",body:"No",data:{access_token:"must-not-leak"}},"simulation-unsafe"),/credentials or secrets/);
+});
+
 test("deprecated Athena SDK names remain transition aliases for Stellar Core", async () => {
   const seen = [];
   const client = new SpmtClient({

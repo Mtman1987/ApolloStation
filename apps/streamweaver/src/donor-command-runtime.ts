@@ -78,9 +78,15 @@ export class StreamWeaverDonorCommandConsumer {
     if (result.text) await this.send(delivery, result.text);
   }
 
-  async route(delivery: NormalizedChatDeliveryV1): Promise<{ command: string; text?: string } | undefined> {
+  /** Executes one explicitly wired native action without re-checking package installation. */
+  async execute(donorId: string, delivery: NormalizedChatDeliveryV1): Promise<string | undefined> {
+    const result = await this.route(delivery, donorId);
+    return result?.text;
+  }
+
+  async route(delivery: NormalizedChatDeliveryV1, explicitDonorId?: string): Promise<{ command: string; text?: string } | undefined> {
     const message = delivery.message;
-    const matches = this.matchDefinitions(message.text).filter((entry) => (this.options.enabled?.(message.tenantId, entry.donorId) ?? true) && !ECONOMY_TRIGGERS.has(canonicalDonorCommandTrigger(entry.trigger)));
+    const matches = this.matchDefinitions(message.text).filter((entry) => (!explicitDonorId || entry.donorId === explicitDonorId) && (explicitDonorId ? true : (this.options.enabled?.(message.tenantId, entry.donorId) ?? true)) && !ECONOMY_TRIGGERS.has(canonicalDonorCommandTrigger(entry.trigger)));
     if (!matches.length) return undefined;
     const commands = distinctEffectDefinitions(matches);
     const command = commands[0];

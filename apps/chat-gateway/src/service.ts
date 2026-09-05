@@ -1,13 +1,13 @@
 import { basename, isAbsolute } from "node:path";
 import { createSpmtCommlinkLiveChatConsumer } from "@spmt/commlink-core";
 import { SpmtClient } from "@spmt/sdk";
-import { NodeSeaArtCommandRunner, SeaArtCliProvider, StreamWeaverImageGenerationService, StreamWeaverImageWorker, StreamWeaverProviderRuntime, StreamWeaverSuiteActionJobExecutor } from "@spmt/streamweaver";
-import { NebulaArcadeProviderRuntime, loadNebulaArcadeProviderConfig, type NebulaArcadeProviderConfigV1 } from "@spmt/nebula-arcade";
-import { ChatGatewayRuntime, SqliteChatGatewayStore, type ChatGatewayConsumerV1 } from "./index.js";
+import { NodeSeaArtCommandRunner, SeaArtCliProvider, StreamWeaverImageGenerationService, StreamWeaverImageWorker, StreamWeaverProviderRuntime, StreamWeaverSuiteActionJobExecutor, type StreamWeaverBotActionExecutorV1 } from "@spmt/streamweaver";
+import { NebulaArcadeProviderRuntime, loadNebulaArcadeProviderConfig, type NebulaArcadeProviderConfigV1, type NebulaDiscordDashboardEgressV1 } from "@spmt/nebula-arcade";
+import { ChatGatewayRuntime, SqliteChatGatewayStore, createShadowChatProviderSenders, type ChatGatewayConsumerV1 } from "./index.js";
 import { ChatProviderConnectionSupervisor, SqliteProviderConnectionStore, type ProviderConnectionConfigV1 } from "./connection-supervisor.js";
 import { createFirstPartyChatProviderAdapters } from "./provider-drivers.js";
 import { SpmtChatProviderGrantSource } from "./spmt-provider-grants.js";
-import type { SpmtOperationModeV1 } from "@spmt/contracts";
+import { spmtSuiteActionAllowed, type SpmtOperationModeV1 } from "@spmt/contracts";
 
 export interface ChatGatewayWorkerEnvironmentV1 {
   runtimeMode: "production" | "sandbox";
@@ -80,7 +80,7 @@ export function validateChatGatewayWorkerEnvironment(environment: NodeJS.Process
     if (!nebulaWebhookName) throw new Error("NEBULA_ARCADE_WEBHOOK_NAME is invalid");
     if (runtimeMode === "sandbox") {
       if (!basename(nebulaDatabasePath).toLowerCase().includes("sandbox") || !basename(nebulaConfigPath).toLowerCase().includes("sandbox")) throw new Error("Sandbox Nebula Arcade requires sandbox-named database and config files");
-      if (config.tenants.length) throw new Error("Sandbox Nebula Arcade rejects live provider tenants");
+      if (config.tenants.length && !liveIngressEnabled) throw new Error("Sandbox Nebula Arcade rejects live provider tenants unless shadow live ingress is enabled");
     }
     nebulaArcade = { databasePath: nebulaDatabasePath, credential: nebulaCredential, configPath: nebulaConfigPath, config, webhookName: nebulaWebhookName, ...(publicOrigin ? { publicOrigin } : {}), ...(gameplayOrigin ? { gameplayOrigin } : {}), ...(avatarUrl ? { avatarUrl } : {}) };
   }
@@ -142,32 +142,59 @@ export class SupervisedChatGatewayService {
     const client = new SpmtClient({ baseUrl: options.spmtOrigin, appId: "chat-gateway", getAccessToken: this.getAccessToken, ...(fetchImpl ? { fetchImpl } : {}) });
     const adapters = createFirstPartyChatProviderAdapters(fetchImpl ? { fetch: async (url, init) => fetchImpl(url, init) } : {});
     this.chatStore = new SqliteChatGatewayStore(options.databasePath);
+    const egressMode = options.operationMode === "active" ? "provider" as const : "shadow" as const;
+    const publishShadow = async (message: import("./index.js").ShadowChatMessageV1) => {
+      await client.publishSimulationRoomEvent(message.tenantId, {
+        roomId: message.roomId,
+        lane: "chat",
+        direction: "egress",
+        title: `${message.provider} shadow output`,
+        body: message.text,
+        provider: message.provider,
+        connectionId: message.connectionId,
+        channelId: message.channelId,
+        ...(message.replyToMessageId ? { replyToMessageId: message.replyToMessageId } : {}),
+        data: { providerMessageId: message.providerMessageId },
+        occurredAt: message.createdAt,
+      }, `shadow-chat:${message.id}`).catch(() => undefined);
+    };
+    const senders = egressMode === "provider" ? adapters.senders : createShadowChatProviderSenders(this.chatStore, publishShadow);
+    const shadowDashboard: NebulaDiscordDashboardEgressV1 = { upsertDiscordDashboard: async (message) => {
+      const timestamp = message.payload.embeds[0]?.timestamp ?? new Date().toISOString();
+      const recorded = this.chatStore.recordShadow({ schemaVersion: 1, tenantId: message.tenantId, provider: "discord", connectionId: message.connectionId, channelId: message.channelId, text: JSON.stringify(message.payload).slice(0, 8_000), idempotencyKey: `nebula-dashboard:${message.connectionId}:${message.channelId}:${timestamp}` });
+      if (!recorded.duplicate) await publishShadow(recorded.message);
+      return { providerMessageId: message.previousMessageId ?? String(Date.now()), transport: "bot" };
+    } };
+    const discordDashboard = egressMode === "provider" ? adapters.discord : shadowDashboard;
     this.connectionStore = new SqliteProviderConnectionStore(options.databasePath);
     const consumers: ChatGatewayConsumerV1[] = [createSpmtCommlinkLiveChatConsumer(client)];
     const observers: Array<{ id: string; observe(message: import("@spmt/contracts").NormalizedChatMessageV1): void | Promise<void> }> = [];
     let connectedGateway: ChatGatewayRuntime | undefined;
-    if (options.streamweaver && !options.liveIngressEnabled) {
+    if (options.streamweaver) {
       this.getStreamWeaverAccessToken = createInternalServiceTokenProvider({ spmtOrigin: options.spmtOrigin, serviceId: "streamweaver", credential: options.streamweaver.credential, ...(fetchImpl ? { fetchImpl } : {}) });
       const streamweaverClient = new SpmtClient({ baseUrl: options.spmtOrigin, appId: "streamweaver", getAccessToken: this.getStreamWeaverAccessToken, ...(fetchImpl ? { fetchImpl } : {}) });
       this.streamweaverClient = streamweaverClient;
-      this.streamweaver = new StreamWeaverProviderRuntime({ databasePath: options.streamweaver.databasePath, client: streamweaverClient, botActions: new StreamWeaverSuiteActionJobExecutor(streamweaverClient), egress: { send: (message) => { if (!connectedGateway) throw new Error("Chat Gateway egress is not ready"); return connectedGateway.send(message); } } });
+      const suiteActions = new StreamWeaverSuiteActionJobExecutor(streamweaverClient);
+      const guardedSuiteActions: StreamWeaverBotActionExecutorV1 = options.operationMode === "active" ? suiteActions : { execute: (request, context) => spmtSuiteActionAllowed("read-only", request.action) ? suiteActions.execute(request, context) : Promise.resolve({ response: `Shadow mode blocked ${request.action}; write and broadcast actions cannot leave Apollo.` }) };
+      this.streamweaver = new StreamWeaverProviderRuntime({ databasePath: options.streamweaver.databasePath, client: streamweaverClient, botActions: guardedSuiteActions, allowAssistant: !options.liveIngressEnabled, egress: { send: (message) => { if (!connectedGateway) throw new Error("Chat Gateway egress is not ready"); return connectedGateway.send(message); } } });
       if(options.streamweaver.image){const image=options.streamweaver.image,provider=new SeaArtCliProvider(image.token,new NodeSeaArtCommandRunner(image.binary)),tenantIds=[...new Set(options.connections.map(connection=>connection.tenantId))];this.streamweaverImage=new StreamWeaverImageWorker(streamweaverClient,new StreamWeaverImageGenerationService([provider]),{workerId:`${options.workerId}-image`,modelNo:image.modelNo,modelVerNo:image.modelVerNo,...(tenantIds.length?{tenantIds}:{})});}
       consumers.push(...this.streamweaver.consumers);
       observers.push(...this.streamweaver.messageObservers);
     }
-    if (options.nebulaArcade && !options.liveIngressEnabled) {
+    if (options.nebulaArcade) {
       this.getNebulaArcadeAccessToken = createInternalServiceTokenProvider({ spmtOrigin: options.spmtOrigin, serviceId: "nebula-arcade", credential: options.nebulaArcade.credential, ...(fetchImpl ? { fetchImpl } : {}) });
       const nebulaClient = new SpmtClient({ baseUrl: options.spmtOrigin, appId: "nebula-arcade", getAccessToken: this.getNebulaArcadeAccessToken, ...(fetchImpl ? { fetchImpl } : {}) });
-      this.nebulaArcade = new NebulaArcadeProviderRuntime({ databasePath: options.nebulaArcade.databasePath, config: options.nebulaArcade.config, client: nebulaClient, egress: { send: (message) => { if (!connectedGateway) throw new Error("Chat Gateway egress is not ready"); return connectedGateway.send(message); } }, ...(options.nebulaArcade.publicOrigin ? { discordDashboard: { egress: adapters.discord, publicOrigin: options.nebulaArcade.publicOrigin, ...(options.nebulaArcade.gameplayOrigin ? { gameplayOrigin: options.nebulaArcade.gameplayOrigin } : {}), webhookName: options.nebulaArcade.webhookName, ...(options.nebulaArcade.avatarUrl ? { avatarUrl: options.nebulaArcade.avatarUrl } : {}) } } : {}) });
+      this.nebulaArcade = new NebulaArcadeProviderRuntime({ databasePath: options.nebulaArcade.databasePath, config: options.nebulaArcade.config, client: nebulaClient, egress: { send: (message) => { if (!connectedGateway) throw new Error("Chat Gateway egress is not ready"); return connectedGateway.send(message); } }, ...(options.nebulaArcade.publicOrigin ? { discordDashboard: { egress: discordDashboard, publicOrigin: options.nebulaArcade.publicOrigin, ...(options.nebulaArcade.gameplayOrigin ? { gameplayOrigin: options.nebulaArcade.gameplayOrigin } : {}), webhookName: options.nebulaArcade.webhookName, ...(options.nebulaArcade.avatarUrl ? { avatarUrl: options.nebulaArcade.avatarUrl } : {}) } } : {}) });
       consumers.push(...this.nebulaArcade.consumers);
     }
-    this.gateway = new ChatGatewayRuntime(this.chatStore, consumers, options.operationMode === "active" ? adapters.senders : [], observers);
+    this.gateway = new ChatGatewayRuntime(this.chatStore, consumers, senders, observers);
     connectedGateway = this.gateway;
     this.supervisor = new ChatProviderConnectionSupervisor(options.workerId, this.connectionStore, this.gateway, new SpmtChatProviderGrantSource(client, options.operationMode === "read-only" ? { requiredScopes: { twitch: ["chat:read"], discord: ["gateway"], kick: ["chat:read"] } } : {}), adapters.drivers);
     options.connections.forEach((connection) => this.connectionStore.put(connection));
     this.tenants = [...new Set(options.connections.map((connection) => connection.tenantId))];
   }
-  async ready() { await Promise.all([this.getAccessToken(), this.getStreamWeaverAccessToken?.(), this.getNebulaArcadeAccessToken?.()]); if(this.streamweaverClient&&this.tenants.length)await this.streamweaverClient.reportExecutionWorker({executionOwner:"streamweaver",workerId:`${this.options.workerId}-voice-egress`,executionTarget:"sprite",state:"ready",capabilityIds:["streamweaver.voice-egress.v1"],tenantIds:this.tenants,providerHealthy:true,startedAt:this.startedAt,leaseMs:60_000,metrics:{completedJobs:0,failedJobs:0,inputUnits:0,outputUnits:0}});await this.streamweaverImage?.report();return { schemaVersion: 1 as const, workerId: this.options.workerId, operationMode: this.options.operationMode, liveIngressEnabled: this.options.liveIngressEnabled, configuredConnections: this.options.connections.length, consumers: this.gateway.consumerIds() }; }
+  async ready() { await Promise.all([this.getAccessToken(), this.getStreamWeaverAccessToken?.(), this.getNebulaArcadeAccessToken?.()]); if(this.streamweaverClient&&this.tenants.length)await this.streamweaverClient.reportExecutionWorker({executionOwner:"streamweaver",workerId:`${this.options.workerId}-voice-egress`,executionTarget:"sprite",state:"ready",capabilityIds:["streamweaver.voice-egress.v1"],tenantIds:this.tenants,providerHealthy:true,startedAt:this.startedAt,leaseMs:60_000,metrics:{completedJobs:0,failedJobs:0,inputUnits:0,outputUnits:0}});await this.streamweaverImage?.report();return { schemaVersion: 1 as const, workerId: this.options.workerId, operationMode: this.options.operationMode, liveIngressEnabled: this.options.liveIngressEnabled, egressMode: this.options.operationMode === "active" ? "provider" as const : "shadow" as const, shadowMessages: this.chatStore.countShadowMessages(), configuredConnections: this.options.connections.length, consumers: this.gateway.consumerIds() }; }
+  listShadowMessages(tenantId:string,limit=200){return this.chatStore.listShadowMessages(tenantId,limit);}
   async reconcile() {
     const connections = await this.supervisor.reconcile();
     const deliveries = { attempted: 0, delivered: 0, failed: 0 };

@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { ChatGatewayRuntime, SqliteChatGatewayStore, normalizeProviderChatEnvelope } from "../apps/chat-gateway/dist/index.js";
+import { ChatGatewayRuntime, SqliteChatGatewayStore, createShadowChatProviderSenders, normalizeProviderChatEnvelope } from "../apps/chat-gateway/dist/index.js";
 import { NebulaTagRuntime, SqliteNebulaTagStore, createNebulaTagGatewayConsumer } from "../apps/nebula-arcade/dist/index.js";
 
 const at = (minute) => new Date(Date.UTC(2026, 7, 23, 12, minute)).toISOString();
@@ -69,6 +69,19 @@ test("failed consumer delivery remains retryable with redacted durable evidence"
   const retry = await gateway.flush("tenant-a");
   assert.deepEqual(retry, { attempted: 1, delivered: 1, failed: 0 });
   assert.equal(gatewayStore.listPending("tenant-a").length, 0);
+}));
+
+test("shadow senders durably capture every provider output without a live provider sender", async () => withStores(async ({ gatewayStore }) => {
+  const observed = [];
+  const gateway = new ChatGatewayRuntime(gatewayStore, [], createShadowChatProviderSenders(gatewayStore, (message) => observed.push(message)));
+  const outbound = { schemaVersion: 1, tenantId: "tenant-a", provider: "twitch", connectionId: "twitch-main", channelId: "channel-a", text: "A safe shadow reply", idempotencyKey: "shadow-test-1", replyToMessageId: "live-input-1" };
+  const first = await gateway.send(outbound);
+  const duplicate = await gateway.send(outbound);
+  assert.equal(first.providerMessageId, "shadow:twitch:shadow-test-1");
+  assert.deepEqual(duplicate, first);
+  assert.equal(observed.length, 1);
+  assert.equal(gatewayStore.countShadowMessages("tenant-a"), 1);
+  assert.deepEqual(gatewayStore.listShadowMessages("tenant-a").map((message) => ({ roomId: message.roomId, text: message.text, replyToMessageId: message.replyToMessageId })), [{ roomId: "twitch:twitch-main:channel-a", text: "A safe shadow reply", replyToMessageId: "live-input-1" }]);
 }));
 
 test("Nebula Arcade tag game consumes the shared gateway, merges canonical identity, and replies through provider egress", async () => withStores(async ({ gatewayStore, tagStore }) => {

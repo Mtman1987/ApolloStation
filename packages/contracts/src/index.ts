@@ -417,6 +417,28 @@ export function assertRuntimePolicyV1(value: RuntimePolicyV1): RuntimePolicyV1 {
 export const CHAT_PROVIDERS = ["twitch", "discord", "kick"] as const;
 export type ChatProviderV1 = (typeof CHAT_PROVIDERS)[number];
 
+/** Shared, tenant-scoped test surface used by app builders without contacting a real provider. */
+export const SPMT_SIMULATION_ROOM_EVENT = "spmt.simulation-room.event.v1" as const;
+export const SIMULATION_ROOM_LANES = ["chat", "overlay", "game", "app"] as const;
+export type SimulationRoomLaneV1 = (typeof SIMULATION_ROOM_LANES)[number];
+export type SimulationRoomDirectionV1 = "ingress" | "egress" | "preview";
+
+export interface SimulationRoomEventV1 {
+  schemaVersion: 1;
+  roomId: string;
+  lane: SimulationRoomLaneV1;
+  direction: SimulationRoomDirectionV1;
+  title: string;
+  body: string;
+  occurredAt: string;
+  provider?: ChatProviderV1;
+  connectionId?: string;
+  channelId?: string;
+  replyToMessageId?: string;
+  artifactUrl?: string;
+  data?: Record<string, unknown>;
+}
+
 export interface NormalizedChatMessageV1 {
   schemaVersion: 1;
   tenantId: string;
@@ -551,6 +573,33 @@ export function assertNormalizedChatMessageV1(value: NormalizedChatMessageV1): N
   if (typeof value.actor.isBot !== "boolean" || !Array.isArray(value.actor.roles) || value.actor.roles.some((role) => !["broadcaster", "moderator", "member"].includes(role)) || !Array.isArray(value.mentions)) throw new Error("Chat actor, roles, and mentions are invalid");
   for (const mention of value.mentions) if (!mention.token || !mention.providerUserId || !mention.username) throw new Error("Chat mention is invalid");
   return value;
+}
+
+export function assertSimulationRoomEventV1(value: SimulationRoomEventV1): SimulationRoomEventV1 {
+  if (value.schemaVersion !== 1 || !(SIMULATION_ROOM_LANES as readonly string[]).includes(value.lane) || !["ingress", "egress", "preview"].includes(value.direction)) throw new Error("Simulation room event version, lane, or direction is invalid");
+  for (const [name, field] of [["roomId", value.roomId], ["title", value.title]] as const) if (!field || field.trim() !== field || field.length > (name === "title" ? 160 : 200)) throw new Error(`Simulation room ${name} is invalid`);
+  if (!value.body || value.body.length > 8_000 || !Number.isFinite(Date.parse(value.occurredAt))) throw new Error("Simulation room event body or time is invalid");
+  if (value.provider && !(CHAT_PROVIDERS as readonly string[]).includes(value.provider)) throw new Error("Simulation room provider is invalid");
+  for (const [name, field] of [["connectionId", value.connectionId], ["channelId", value.channelId], ["replyToMessageId", value.replyToMessageId]] as const) if (field !== undefined && (!field || field.trim() !== field || field.length > 200)) throw new Error(`Simulation room ${name} is invalid`);
+  if (value.artifactUrl) {
+    const url = new URL(value.artifactUrl);
+    if (url.protocol !== "https:" || url.username || url.password) throw new Error("Simulation room artifactUrl must use credential-free HTTPS");
+  }
+  if (value.data !== undefined) {
+    if (!value.data || typeof value.data !== "object" || Array.isArray(value.data) || JSON.stringify(value.data).length > 32_000) throw new Error("Simulation room data is invalid");
+    rejectSimulationSecrets(value.data);
+  }
+  return value;
+}
+
+function rejectSimulationSecrets(value: unknown, depth = 0): void {
+  if (depth > 8) throw new Error("Simulation room data is too deeply nested");
+  if (Array.isArray(value)) { for (const item of value) rejectSimulationSecrets(item, depth + 1); return; }
+  if (!value || typeof value !== "object") return;
+  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+    if (/(?:^|[_-])(token|secret|password|credential|authorization|cookie)(?:$|[_-])/i.test(key)) throw new Error("Simulation room data may not contain credentials or secrets");
+    rejectSimulationSecrets(item, depth + 1);
+  }
 }
 
 export type AppIntegrationStateV1 = "native" | "connected" | "declared" | "unavailable" | "not-applicable";

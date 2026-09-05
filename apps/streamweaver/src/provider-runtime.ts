@@ -32,6 +32,7 @@ export interface StreamWeaverProviderRuntimeOptionsV1 {
   nowMs?: () => number;
   retryDelayMs?: number;
   botActions?: StreamWeaverBotActionExecutorV1;
+  allowAssistant?: boolean;
 }
 
 /**
@@ -61,11 +62,11 @@ export class StreamWeaverProviderRuntime {
     this.messageObservers = [{ id: "streamweaver.relay-identities", observe: (message) => { this.relayStore.observe(message); } }];
     const botActions = options.botActions ? new StreamWeaverBotActionConsumer(options.botActions, egress) : undefined;
     const priorGate = { willHandle: (message: NormalizedChatMessageV1) => relay.willHandle(message) || Boolean(botActions?.willHandle(message)) };
+    const commands = new StreamWeaverDonorCommandConsumer({ services: new DefaultStreamWeaverDonorCommandServices({}), identities, state: this.commandState, egress, enabled: (tenantId, donorId) => donorId === "commands-chat" || donorId === "commands-system" || this.flows.donorEnabled(tenantId, donorId), ...(options.nowMs ? { nowMs: options.nowMs } : {}) });
     const persona = new StreamWeaverChatGatewayConsumer(this.summons, this.settings, new SpmtStreamWeaverPersonaRuntime(options.client), egress, priorGate);
-    const flows = new StreamWeaverInstalledFlowConsumer(this.flows, this.commandState, egress, options.botActions);
-    const commands = new StreamWeaverDonorCommandConsumer({ services: new DefaultStreamWeaverDonorCommandServices({}), identities, state: this.commandState, egress, enabled: (tenantId, donorId) => this.flows.donorEnabled(tenantId, donorId), ...(options.nowMs ? { nowMs: options.nowMs } : {}) });
-    const economy = new MultiTenantStreamWeaverEconomyCommandConsumer(this.economy, options.client, identities, this.commandState, egress, options.nowMs, Math.random, (tenantId, trigger) => this.flows.commandEnabled(tenantId, trigger));
-    this.consumers = [relay, ...(botActions ? [botActions] : []), persona, flows, commands, economy];
+    const flows = new StreamWeaverInstalledFlowConsumer(this.flows, this.commandState, egress, options.botActions, commands);
+    const economy = new MultiTenantStreamWeaverEconomyCommandConsumer(this.economy, options.client, identities, this.commandState, egress, options.nowMs, Math.random);
+    this.consumers = [relay, ...(botActions ? [botActions] : []), ...(options.allowAssistant === false ? [] : [persona]), flows, commands, economy];
     this.replies = new StreamWeaverPersonaReplyReconciler(this.summons, options.client, egress, { ...(options.now ? { now: options.now } : {}), ...(options.retryDelayMs ? { retryDelayMs: options.retryDelayMs } : {}) });
   }
   consumerIds() { return this.consumers.map((consumer) => consumer.id); }

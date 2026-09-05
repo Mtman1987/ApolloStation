@@ -19,12 +19,12 @@ A StreamWeaver package is one independently useful flow. It is never an author's
 Hard invariants:
 
 1. A new tenant has zero installed flows. The original commands are not inserted as disabled tenant records.
-2. The community library begins with 73 individually addressable packages: 70 preserved donor definitions plus 3 native economy flows not represented by those definitions.
-3. Every original package is authored by `mtman1987`, has `installUnit: "flow"`, and is downloaded, imported, installed, removed, or shared independently.
-4. A `command_flow` JSON contains exactly one command trigger. It may contain multiple ordered action steps belonging to that one flow. Aliases do not create additional commands.
+2. The curated community library begins with 50 independently addressable packages after removing built-in economy, built-in persona/AI, duplicate command-directory entries, and duplicate fragments.
+3. Every seeded package is authored by `mtman1987`, has `installUnit: "flow"`, and is downloaded, imported, installed, removed, or shared independently.
+4. A `command_flow` JSON contains exactly one primary command. It may also contain only the required or optional add-on commands belonging to that same feature, and every command carries explicit `actionIds` wiring.
 5. Installing `mtman1987.coinflip` installs only `mtman1987.coinflip`. It does not copy the rest of the Original StreamWeaver collection into the tenant.
 6. Tenant package IDs cannot overwrite a built-in package or another tenant's package.
-7. Native StreamWeaver JSON and Streamer.bot-shaped JSON are separate exports of the same single flow.
+7. Native StreamWeaver JSON and Streamer.bot-shaped JSON are separate exports of the same single flow bundle. Streamer.bot export preserves each command's action binding and creates a wrapper action when a command has multiple ordered steps.
 
 Collections, tags, authors, and search are browsing metadata. They never change the install unit.
 
@@ -36,7 +36,7 @@ The generated draft is private and inert until its owner approves it. Approval e
 
 Cross-app steps use registered `run-action` capability identifiers and the shared SPMT execution pipeline. The app that registered a capability still owns execution. Provider roles are checked before write or broadcast actions run.
 
-Read-only operation accepts live inbound platform/provider data. It blocks provider egress, external assistant invocation, and write/broadcast suite actions. Local browsing and selection of flow packages do not require a made-up feature token.
+Shadow operation accepts live inbound platform/provider data. It replaces Twitch, Discord, and Kick egress with tenant-scoped Simulation Rooms, blocks external assistant invocation and write/broadcast suite actions, and retains read-only suite actions. Local browsing and selection of flow packages do not require a made-up feature token. The shared workspace footer owns the room viewer; StreamWeaver only publishes flow-builder previews through the shared SDK contract.
 
 ## Overlay boundary
 
@@ -71,4 +71,4 @@ When a blank tenant opens StreamWeaver, Setup Guide appears first and walks thro
 6. opening ecosystem-wide Overlay Bay and copying Public/Personal output URLs; and
 7. asking AI to build one custom flow, then optionally publishing that one flow.
 
-The Bot Functions page displays only installed flows for that tenant. The Community Flows page displays available packages that remain outside the account until individually selected.
+The Bot Functions page displays only installed flows for that tenant. The Community Flows page displays available packages that remain outside the account until individually selected. One package may contain a primary command and feature-specific add-on commands, but it must carry all of their action nodes and explicit command-to-action wiring. Built-in AI, economy, and command-directory capabilities are referenced by the runtime and are not duplicated as community downloads.

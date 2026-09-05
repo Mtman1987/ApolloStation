@@ -8,6 +8,9 @@ export interface StreamWeaverFlowCommandV1 {
   id: string;
   trigger: string;
   aliases: string[];
+  role: "primary" | "addon";
+  required: boolean;
+  actionIds: string[];
   family: StreamWeaverDonorCommandFamilyV1 | "custom";
   cooldownSeconds: number;
   matcher: "command" | "regex" | "bare";
@@ -18,7 +21,7 @@ export interface StreamWeaverFlowCommandV1 {
 
 export interface StreamWeaverFlowActionV1 {
   id: string;
-  type: "send-chat" | "send-discord" | "wait" | "run-action" | "http-request" | "set-variable" | "execute-code" | "obs-scene" | "obs-source";
+  type: "send-chat" | "send-discord" | "wait" | "run-action" | "run-native" | "http-request" | "set-variable" | "execute-code" | "obs-scene" | "obs-source";
   enabled: boolean;
   config: Record<string, unknown>;
 }
@@ -124,7 +127,9 @@ export class StreamWeaverFlowPackageStore {
     const candidateId = identifier(candidate.packageId, "packageId");
     const visible = this.get(tenantId, candidateId);
     if (visible?.visibility === "community") return { package: visible, install: this.install(tenantId, visible.packageId) };
-    const saved = this.saveDraft(tenantId, value, author);
+    const occupied = this.db.prepare("SELECT tenant_id AS tenantId FROM streamweaver_flow_packages WHERE package_id=?").get(candidateId) as { tenantId: string } | undefined;
+    const source = occupied && occupied.tenantId !== tenantId ? remapImportedFlowPackage(value) : value;
+    const saved = this.saveDraft(tenantId, source, author);
     return { package: saved, install: this.install(tenantId, saved.packageId) };
   }
 
@@ -179,8 +184,13 @@ export class StreamWeaverFlowPackageStore {
     const item = this.get(tenantId, packageId); if (!item) throw new Error("Flow package does not exist");
     const warnings: string[] = [];
     const actions = item.actions.map((action) => ({ id: action.id, name: `${item.name} · ${action.type}`, enabled: action.enabled, subActions: [streamerBotSubAction(action, warnings)] }));
-    const defaultActionId = actions[0]?.id;
-    return { format: "streamerbot-package", version: 1, source: "StreamWeaver", packageId: item.packageId, name: item.name, commands: item.commands.map((command) => ({ id: command.id, name: command.trigger.replace(/^!/, ""), command: command.trigger, aliases: command.aliases, enabled: command.enabled, ...(defaultActionId ? { actionId: defaultActionId } : {}) })), actions, warnings };
+    const commandActions = item.commands.map((command) => {
+      if (command.actionIds.length <= 1) return command.actionIds[0];
+      const wrapperId = `${command.id}.pipeline`;
+      actions.push({ id: wrapperId, name: `${item.name} · ${command.trigger} pipeline`, enabled: command.enabled, subActions: command.actionIds.map((actionId) => ({ type: "RunAction", enabled: true, actionId })) });
+      return wrapperId;
+    });
+    return { format: "streamerbot-package", version: 1, source: "StreamWeaver", packageId: item.packageId, name: item.name, commands: item.commands.map((command, index) => ({ id: command.id, name: command.trigger.replace(/^!/, ""), command: command.trigger, aliases: command.aliases, enabled: command.enabled, role: command.role, required: command.required, ...(commandActions[index] ? { actionId: commandActions[index] } : {}) })), actions, warnings: [...new Set(warnings)] };
   }
 
   private put(tenantId: string, item: StreamWeaverFlowPackageV1) {
@@ -194,16 +204,27 @@ export class StreamWeaverFlowPackageStore {
 
 export function legacyCommunityPackages(): StreamWeaverFlowPackageV1[] {
   const createdAt = "2026-08-23T00:00:00.000Z";
-  const donor = STREAMWEAVER_DONOR_COMMANDS.map((command) => legacyPackage(command, createdAt));
-  const existing = new Set(donor.flatMap((item) => item.commands.map((command) => command.trigger.toLowerCase())));
-  const native = ["!currency", "!currencyname", "!exchange"].filter((trigger) => !existing.has(trigger)).map((trigger) => nativePackage(trigger, createdAt));
-  return [...donor, ...native];
+  const excluded = new Set(STREAMWEAVER_DONOR_COMMANDS.filter((command) => command.family === "economy" || command.family === "persona" || command.donorId === "commands-chat" || command.donorId === "commands-system").map((command) => command.donorId));
+  const bundled = new Map<string, readonly string[]>([
+    ["accept", ["accept", "no", "yes"]],
+    ["lurk-chat", ["lurk-chat", "unlurk"]],
+  ]);
+  const consumed = new Set([...bundled.values()].flat());
+  const byId = new Map(STREAMWEAVER_DONOR_COMMANDS.map((command) => [command.donorId, command]));
+  const result: StreamWeaverFlowPackageV1[] = [];
+  for (const command of STREAMWEAVER_DONOR_COMMANDS) {
+    if (excluded.has(command.donorId) || (consumed.has(command.donorId) && !bundled.has(command.donorId))) continue;
+    const members = (bundled.get(command.donorId) ?? [command.donorId]).map((donorId) => byId.get(donorId)).filter((entry): entry is StreamWeaverDonorCommandV1 => Boolean(entry));
+    result.push(legacyPackage(members, createdAt));
+  }
+  return result;
 }
 
-function legacyPackage(command: StreamWeaverDonorCommandV1, createdAt: string): StreamWeaverFlowPackageV1 {
-  return { schemaVersion: 1, kind: STREAMWEAVER_FLOW_PACKAGE_KIND, packageId: `mtman1987.${command.donorId}`, packageKind: "command_flow", installUnit: "flow", name: command.trigger, description: `Preserved ${command.family} command flow from the original StreamWeaver catalog.`, author: { ...STREAMWEAVER_FLOW_AUTHOR }, visibility: "community", collection: "Original StreamWeaver", tags: [command.family, "legacy", "starter-option"], commands: [{ id: `command.${command.donorId}`, trigger: command.trigger, aliases: [...(command.aliases ?? [])], family: command.family, cooldownSeconds: command.cooldownSeconds, matcher: command.matcher ?? "command", runtime: "donor", donorId: command.donorId, enabled: true }], actions: [], createdAt, updatedAt: createdAt };
+function legacyPackage(commands: readonly StreamWeaverDonorCommandV1[], createdAt: string): StreamWeaverFlowPackageV1 {
+  const primary = commands[0]!;
+  const actions = commands.map((command) => ({ id: `action.${command.donorId}`, type: "run-native" as const, enabled: true, config: { capability: "streamweaver.donor-command.v1", donorId: command.donorId } }));
+  return { schemaVersion: 1, kind: STREAMWEAVER_FLOW_PACKAGE_KIND, packageId: `mtman1987.${primary.donorId}`, packageKind: "command_flow", installUnit: "flow", name: primary.trigger, description: `Complete ${primary.family} flow from the original StreamWeaver catalog, including its command${commands.length === 1 ? "" : "s"}, actions, and wiring.`, author: { ...STREAMWEAVER_FLOW_AUTHOR }, visibility: "community", collection: "Original StreamWeaver · Curated", tags: [...new Set(commands.map((command) => command.family)), "curated", "starter-option", ...(commands.length > 1 ? ["bundle"] : [])], commands: commands.map((command, index) => ({ id: `command.${command.donorId}`, trigger: command.trigger, aliases: [...(command.aliases ?? [])], role: index === 0 ? "primary" : "addon", required: index === 0, actionIds: [`action.${command.donorId}`], family: command.family, cooldownSeconds: command.cooldownSeconds, matcher: command.matcher ?? "command", runtime: "flow", donorId: command.donorId, enabled: true })), actions, createdAt, updatedAt: createdAt };
 }
-function nativePackage(trigger:string,createdAt:string):StreamWeaverFlowPackageV1{const id=trigger.slice(1);return{schemaVersion:1,kind:STREAMWEAVER_FLOW_PACKAGE_KIND,packageId:`mtman1987.${id}`,packageKind:"command_flow",installUnit:"flow",name:trigger,description:`Native StreamWeaver ${id} command flow.`,author:{...STREAMWEAVER_FLOW_AUTHOR},visibility:"community",collection:"Original StreamWeaver",tags:["economy","native","starter-option"],commands:[{id:`command.${id}`,trigger,aliases:[],family:"economy",cooldownSeconds:0,matcher:"command",runtime:"donor",enabled:true}],actions:[],createdAt,updatedAt:createdAt};}
 
 export function normalizeFlowPackage(value: unknown, defaults?: { now: string; author: { id: string; displayName?: string }; visibility: "private" | "community" }): StreamWeaverFlowPackageV1 {
   const item = object(value, "flow package");
@@ -211,19 +232,33 @@ export function normalizeFlowPackage(value: unknown, defaults?: { now: string; a
   const now = defaults?.now ?? iso(item.updatedAt, "updatedAt");
   const rawAuthor = item.author === undefined && defaults ? defaults.author : object(item.author, "author");
   const author = { id: identifier(rawAuthor.id, "author.id"), displayName: display(rawAuthor.displayName ?? rawAuthor.id) };
-  const commands = array(item.commands ?? [], "commands", 1).map((raw) => normalizeCommand(raw));
-  const actions = array(item.actions ?? [], "actions", 128).map((raw) => normalizeAction(raw));
+  const rawCommands = array(item.commands ?? [], "commands", 32);
+  const rawActions = array(item.actions ?? [], "actions", 128);
+  const commands = rawCommands.map((raw, index) => normalizeCommand(raw, index, rawCommands.length, rawActions));
+  const actions = rawActions.map((raw) => normalizeAction(raw));
   if (!commands.length && !actions.length) throw new Error("A flow package must contain at least one command or action");
   const packageKind = item.packageKind === "action_flow" || item.packageKind === "support_flow" ? item.packageKind : "command_flow";
-  if (packageKind === "command_flow" && commands.length !== 1) throw new Error("A command-flow JSON must contain exactly one command");
+  if (packageKind === "command_flow" && !commands.length) throw new Error("A command-flow JSON must contain a primary command");
+  if (commands.length && commands.filter((command) => command.role === "primary").length !== 1) throw new Error("A flow command bundle must contain exactly one primary command");
+  uniqueIds(commands.map((command) => command.id), "command");
+  uniqueIds(actions.map((action) => action.id), "action");
+  const actionIds = new Set(actions.map((action) => action.id));
+  for (const command of commands) {
+    if (!command.actionIds.length) throw new Error(`Command ${command.id} must be wired to at least one action`);
+    for (const actionId of command.actionIds) if (!actionIds.has(actionId)) throw new Error(`Command ${command.id} references missing action ${actionId}`);
+  }
+  const wired = new Set(commands.flatMap((command) => command.actionIds));
+  if (packageKind === "command_flow" && actions.some((action) => !wired.has(action.id))) throw new Error("Command-flow actions must be wired to a command");
   const result: StreamWeaverFlowPackageV1 = { schemaVersion: 1, kind: STREAMWEAVER_FLOW_PACKAGE_KIND, packageId: identifier(item.packageId ?? `flow.${crypto.randomUUID()}`, "packageId"), packageKind, installUnit: "flow", name: text(item.name, "name", 120), description: optionalText(item.description, 1000), author, visibility: defaults?.visibility ?? (item.visibility === "community" ? "community" : "private"), collection: optionalText(item.collection, 120) || "Community", tags: stringArray(item.tags, 24, 48), commands, actions, createdAt: item.createdAt === undefined ? now : iso(item.createdAt, "createdAt"), updatedAt: now };
   if (JSON.stringify(result).length > 256_000) throw new Error("Flow package is too large");
   return result;
 }
 
-function normalizeCommand(value: unknown): StreamWeaverFlowCommandV1 { const item=object(value,"command"),trigger=text(item.trigger??item.command,"command.trigger",120);if(!trigger.startsWith("!")&&item.matcher!=="regex"&&item.matcher!=="bare")throw new Error("Command trigger must begin with !");return{id:identifier(item.id??`command.${crypto.randomUUID()}`,"command.id"),trigger,aliases:stringArray(item.aliases,20,120),family:donorFamily(item.family),cooldownSeconds:integer(item.cooldownSeconds??0,0,86400,"command.cooldownSeconds"),matcher:item.matcher==="regex"||item.matcher==="bare"?item.matcher:"command",runtime:item.runtime==="donor"?"donor":"flow",...(typeof item.donorId==="string"?{donorId:identifier(item.donorId,"command.donorId")} : {}),enabled:item.enabled!==false}; }
-function normalizeAction(value: unknown): StreamWeaverFlowActionV1 { const item=object(value,"action"),allowed=["send-chat","send-discord","wait","run-action","http-request","set-variable","execute-code","obs-scene","obs-source"] as const,type=String(item.type);if(!allowed.includes(type as typeof allowed[number]))throw new Error(`Unsupported flow action: ${type}`);const config=object(item.config??{},"action.config");if(JSON.stringify(config).length>32_000)throw new Error("Flow action config is too large");return{id:identifier(item.id??`action.${crypto.randomUUID()}`,"action.id"),type:type as StreamWeaverFlowActionV1["type"],enabled:item.enabled!==false,config:structuredClone(config)}; }
-function streamerBotSubAction(action:StreamWeaverFlowActionV1,warnings:string[]){const map:Partial<Record<StreamWeaverFlowActionV1["type"],string>>={"send-chat":"SendChatMessage","send-discord":"DiscordSendMessage",wait:"Delay","run-action":"RunAction","http-request":"ExecuteCode","set-variable":"SetGlobalVariable","execute-code":"ExecuteCode","obs-scene":"ObsSetScene","obs-source":"ObsSetSourceVisibility"};const type=map[action.type]??"ExecuteCode";if(type==="ExecuteCode"&&action.type!=="execute-code")warnings.push(`${action.type} was exported as an ExecuteCode compatibility fallback.`);return{type,enabled:action.enabled,...action.config};}
+function normalizeCommand(value: unknown, index: number, commandCount: number, rawActions: unknown[]): StreamWeaverFlowCommandV1 { const item=object(value,"command"),trigger=text(item.trigger??item.command,"command.trigger",120);if(!trigger.startsWith("!")&&item.matcher!=="regex"&&item.matcher!=="bare")throw new Error("Command trigger must begin with !");const legacyActionIds=item.actionIds===undefined&&commandCount===1?rawActions.map((raw)=>identifier(object(raw,"action").id,"action.id")):stringArray(item.actionIds,128,200);return{id:identifier(item.id??`command.${crypto.randomUUID()}`,"command.id"),trigger,aliases:stringArray(item.aliases,20,120),role:item.role==="addon"?"addon":index===0?"primary":"addon",required:item.required===undefined?index===0:item.required===true,actionIds:legacyActionIds,family:donorFamily(item.family),cooldownSeconds:integer(item.cooldownSeconds??0,0,86400,"command.cooldownSeconds"),matcher:item.matcher==="regex"||item.matcher==="bare"?item.matcher:"command",runtime:item.runtime==="donor"?"donor":"flow",...(typeof item.donorId==="string"?{donorId:identifier(item.donorId,"command.donorId")} : {}),enabled:item.enabled!==false}; }
+function normalizeAction(value: unknown): StreamWeaverFlowActionV1 { const item=object(value,"action"),allowed=["send-chat","send-discord","wait","run-action","run-native","http-request","set-variable","execute-code","obs-scene","obs-source"] as const,type=String(item.type);if(!allowed.includes(type as typeof allowed[number]))throw new Error(`Unsupported flow action: ${type}`);const config=object(item.config??{},"action.config");if(type==="run-native"){if(config.capability!=="streamweaver.donor-command.v1")throw new Error("run-native must reference the StreamWeaver donor command capability");identifier(config.donorId,"action.config.donorId");}if(JSON.stringify(config).length>32_000)throw new Error("Flow action config is too large");return{id:identifier(item.id??`action.${crypto.randomUUID()}`,"action.id"),type:type as StreamWeaverFlowActionV1["type"],enabled:item.enabled!==false,config:structuredClone(config)}; }
+function streamerBotSubAction(action:StreamWeaverFlowActionV1,warnings:string[]){if(action.type==="run-native"){warnings.push("Native StreamWeaver actions require an equivalent action in Streamer.bot; the command/action wiring is preserved.");return{type:"RunAction",enabled:action.enabled,actionName:`StreamWeaver Native · ${String(action.config.donorId)}`,sourceCapability:action.config.capability};}const map:Partial<Record<StreamWeaverFlowActionV1["type"],string>>={"send-chat":"SendChatMessage","send-discord":"DiscordSendMessage",wait:"Delay","run-action":"RunAction","http-request":"ExecuteCode","set-variable":"SetGlobalVariable","execute-code":"ExecuteCode","obs-scene":"ObsSetScene","obs-source":"ObsSetSourceVisibility"};const type=map[action.type]??"ExecuteCode";if(type==="ExecuteCode"&&action.type!=="execute-code")warnings.push(`${action.type} was exported as an ExecuteCode compatibility fallback.`);return{type,enabled:action.enabled,...action.config};}
+function remapImportedFlowPackage(value:unknown){const item=structuredClone(object(value,"flow package")),suffix=crypto.randomUUID().slice(0,8),commands=array(item.commands??[],"commands",32),actions=array(item.actions??[],"actions",128),actionMap=new Map<string,string>();for(const raw of actions){const action=object(raw,"action"),old=identifier(action.id,"action.id"),next=`${old}.import-${suffix}`;actionMap.set(old,next);action.id=next;}for(const raw of commands){const command=object(raw,"command"),old=identifier(command.id,"command.id");command.id=`${old}.import-${suffix}`;if(Array.isArray(command.actionIds))command.actionIds=command.actionIds.map((actionId)=>actionMap.get(String(actionId))??actionId);}item.packageId=`${identifier(item.packageId,"packageId")}.import-${suffix}`;return item;}
+function uniqueIds(values:string[],name:string){if(new Set(values).size!==values.length)throw new Error(`Flow package contains duplicate ${name} IDs`);}
 function donorFamily(value:unknown):StreamWeaverFlowCommandV1["family"]{const allowed=new Set(["economy","social","links","twitch","moderation","community","watchtime","music","redeem","system","persona","pokemon","secret","custom"]);const result=String(value??"custom");return allowed.has(result)?result as StreamWeaverFlowCommandV1["family"]:"custom";}
 function object(value:unknown,name:string){if(!value||typeof value!=="object"||Array.isArray(value))throw new Error(`${name} must be an object`);return value as Record<string,unknown>;}
 function array(value:unknown,name:string,max:number){if(!Array.isArray(value)||value.length>max)throw new Error(`${name} must be an array with at most ${max} items`);return value;}

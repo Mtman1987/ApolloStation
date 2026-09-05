@@ -39,6 +39,31 @@ test("supervised Chat Gateway validates and authenticates the separate StreamWea
   } finally { await service.close(); rmSync(dir, { recursive: true, force: true }); }
 });
 
+test("live provider ingress runs installed StreamWeaver bundles into shadow rooms only", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "spmt-streamweaver-shadow-live-"));
+  const streamweaverPath = join(dir, "streamweaver-sandbox.sqlite");
+  const flowStore = new StreamWeaverFlowPackageStore(streamweaverPath, () => iso());
+  try { flowStore.install("tenant-a", "mtman1987.lurk-chat"); }
+  finally { flowStore.close(); }
+  const environment = validateChatGatewayWorkerEnvironment({ SPMT_RUNTIME_MODE: "sandbox", SPMT_OUTBOUND_MODE: "disabled", SPMT_LIVE_INGRESS_MODE: "enabled", SPMT_ORIGIN: "http://127.0.0.1:3000", CHAT_GATEWAY_DATABASE_PATH: join(dir, "chat-gateway-sandbox.sqlite"), CHAT_GATEWAY_WORKER_CREDENTIAL: "chat-gateway-service-credential-123456789", CHAT_GATEWAY_CONNECTIONS: "[]", STREAMWEAVER_PROVIDER_RUNTIME_ENABLED: "1", STREAMWEAVER_WORKER_CREDENTIAL: "streamweaver-service-credential-123456789", STREAMWEAVER_DATABASE_PATH: streamweaverPath });
+  const requests = [];
+  const service = new SupervisedChatGatewayService(environment, async (url, init) => {
+    requests.push({ url: String(url), method: init?.method ?? "GET" });
+    const body = JSON.parse(String(init?.body ?? "{}"));
+    return new Response(JSON.stringify({ accessToken: `${body.serviceId ?? "service"}-access-token-${"x".repeat(32)}`, accessExpiresAt: "2099-01-01T00:00:00.000Z" }), { status: 200, headers: { "content-type": "application/json" } });
+  });
+  try {
+    const ready = await service.ready();
+    assert.equal(ready.egressMode, "shadow");
+    assert.equal(ready.consumers.includes("streamweaver.installed-flows"), true);
+    assert.equal(ready.consumers.includes("streamweaver.persona"), false);
+    const result = await service.gateway.ingest(envelope({ messageId: "live-unlurk-1", text: "!unlurk" }));
+    assert.equal(result.delivery.failed, 0);
+    assert.equal(requests.some((request) => /^https:\/\/(?:api\.)?(?:twitch|discord|kick)\b/i.test(request.url)), false);
+    assert.deepEqual(service.listShadowMessages("tenant-a").map((message) => ({ provider: message.provider, text: message.text, replyToMessageId: message.replyToMessageId })), [{ provider: "discord", text: "@Owner is back from lurking!", replyToMessageId: "live-unlurk-1" }]);
+  } finally { await service.close(); rmSync(dir, { recursive: true, force: true }); }
+});
+
 test("SPMT grants the supervised StreamWeaver identity only its required runtime scopes", async () => {
   const dir = mkdtempSync(join(tmpdir(), "spmt-streamweaver-service-identity-"));
   const credential = "streamweaver-service-credential-123456789";
@@ -59,8 +84,8 @@ test("StreamWeaver commands and persona results traverse one restart-safe provid
   const setupFlows = new StreamWeaverFlowPackageStore(streamweaverPath, () => iso());
   try {
     assert.equal(setupFlows.listInstalledPackages("tenant-a").length, 0);
-    for (const packageId of ["mtman1987.coinflip", "mtman1987.currencyname", "mtman1987.points"]) setupFlows.install("tenant-a", packageId);
-    assert.equal(setupFlows.listInstalledPackages("tenant-a").length, 3);
+    setupFlows.install("tenant-a", "mtman1987.coinflip");
+    assert.equal(setupFlows.listInstalledPackages("tenant-a").length, 1);
   } finally { setupFlows.close(); }
   const jobStates = new Map();
   const invocations = [];

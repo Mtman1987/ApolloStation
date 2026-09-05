@@ -1,6 +1,6 @@
-# Shadow live read
+# Live read with Simulation Rooms
 
-Status: public production reads are enabled without a developer-created credential. Outbound provider actions remain disabled.
+Status: public production reads and provider ingress are enabled without a developer-created credential. Provider egress is replaced by durable, tenant-scoped Simulation Rooms.
 
 ## Boundary
 
@@ -20,8 +20,9 @@ StreamWeaver receives `operationMode=read-only` whenever outbound mode is disabl
 
 - `read` actions may enter the local app-owned job pipeline;
 - `write` and `broadcast` actions return a blocked preview and create no job;
-- free-form assistant invocations and Twitch/Discord sends return a blocked preview;
-- the UI displays `Live input · read only · no outbound`.
+- free-form assistant invocations remain blocked so live chat is not disclosed to an external model;
+- Twitch/Discord sends are accepted only as Simulation Room deliveries and never call a provider API;
+- the UI displays `Live input · provider replies go to shadow rooms`.
 
 This policy is enforced by the server. The UI label is explanatory, not the security boundary.
 
@@ -33,4 +34,10 @@ Private identity, XP, provider-link, and tenant projections still require real S
 
 ## Provider ingress
 
-Chat Gateway also recognizes `SPMT_LIVE_INGRESS_MODE=enabled` with outbound disabled. In that mode it requests provider read scopes, registers no provider senders, and does not start StreamWeaver or Nebula active consumers. Provider credentials come from the existing SPMT provider-grant authority; Apollo does not invent a second credential system.
+Chat Gateway also recognizes `SPMT_LIVE_INGRESS_MODE=enabled` with outbound disabled. In that mode it requests provider read scopes and starts the same StreamWeaver and Nebula consumers used by the active runtime. The only registered Twitch, Discord, and Kick senders are SQLite-backed shadow senders; the real provider sender objects are not registered with the gateway. Each simulated message is also published as `spmt.simulation-room.event.v1`. Provider credentials come from the existing SPMT provider-grant authority; Apollo does not invent a second credential system.
+
+Simulation Rooms are an ecosystem service rather than a Chat Gateway or StreamWeaver feature. The shared SDK publishes and reads the typed room event through the existing tenant-authorized event API. Its lanes are `chat`, `overlay`, `game`, and `app`; its directions are `ingress`, `egress`, and `preview`. The contract rejects embedded credentials and bounds structured preview data.
+
+The room viewer lives in the shared workspace footer beside Overlay Bay, Personal/Public output controls, and shared settings. It opens and closes over any app like the three persistent workspace slots. StreamWeaver publishes command previews into the current tenant's room; Overlay Bay and Nebula Arcade can publish to the same contract without depending on StreamWeaver. Tenant authorization, not a caller-supplied room token, is the isolation boundary.
+
+Native StreamWeaver economy and command-directory behavior remains built in and is not represented as downloadable community flow packages. Community packages begin outside every account and contain one primary command, any feature-specific add-on commands, their action nodes, and explicit `actionIds` wiring as one atomic JSON install unit.

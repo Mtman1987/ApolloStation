@@ -84,6 +84,7 @@ test("Rocketship, Black Hole, and Lost Signal interactions survive the wrapper",
 
 test("workspace tray keeps three persistent embeds and window controls", () => {
   for (const pattern of [/class="spmt-workspace-frames"/, /data-workspace-minimize/, /data-workspace-maximize/, /data-workspace-popout/, /data-workspace-clickthrough/, /data-workspace-opacity/, /frame\.dataset\.appId/]) assert.match(base, pattern);
+  for (const pattern of [/data-simulation-rooms-toggle/, /SPMT_SIMULATION_ROOM_EVENT/, /Tenant-scoped chat, overlay, game, and app previews/]) assert.match(base, pattern);
   assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /\.spmt-workspace-tray\{[^}]*position:fixed[^}]*bottom:/);
 });
 

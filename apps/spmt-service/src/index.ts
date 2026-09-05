@@ -704,10 +704,10 @@ function ensureStellarWorkerIdentity(auth: AuthService, credential: string) {
   auth.reconcileServiceIdentity({ serviceId: "stellar-core", credential, scopes: ["jobs:read", "jobs:work", "stellar:context:read"], tenantMode: "any" });
 }
 function ensureChatGatewayIdentity(auth: AuthService, credential: string) {
-  auth.reconcileServiceIdentity({ serviceId: "chat-gateway", credential, scopes: ["providers:grant", "commlink:live:write", "runtime:write"], tenantMode: "any" });
+  auth.reconcileServiceIdentity({ serviceId: "chat-gateway", credential, scopes: ["providers:grant", "commlink:live:write", "events:write", "runtime:write"], tenantMode: "any" });
 }
 function ensureStreamWeaverIdentity(auth: AuthService, credential: string) {
-  const scopes = ["identity:read", "identity:write", "assistants:invoke", "jobs:read", "jobs:write", "jobs:work", "xp:write", "runtime:write"];
+  const scopes = ["identity:read", "identity:write", "events:write", "assistants:invoke", "jobs:read", "jobs:write", "jobs:work", "xp:write", "runtime:write"];
   auth.reconcileServiceIdentity({ serviceId: "streamweaver", credential, scopes, tenantMode: "any" });
 }
 function ensureDshIdentity(auth: AuthService, credential: string) {

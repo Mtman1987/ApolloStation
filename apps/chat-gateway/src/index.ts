@@ -1,5 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
 import {
+  SPMT_SIMULATION_ROOM_EVENT,
   assertAppModuleManifestV1,
   assertNormalizedChatMessageV1,
   createAppCatalogRegistrationV1,
@@ -13,6 +14,9 @@ import {
 export * from "./connection-supervisor.js";
 export * from "./provider-drivers.js";
 
+/** @deprecated Use the shared SPMT simulation-room contract. */
+export const SHADOW_CHAT_EGRESS_EVENT = SPMT_SIMULATION_ROOM_EVENT;
+
 export const manifest = assertAppModuleManifestV1({
   schemaVersion: 1,
   manifestVersion: "spmt.app-manifest/v1",
@@ -22,7 +26,7 @@ export const manifest = assertAppModuleManifestV1({
   capabilities: ["chat-ingress", "chat-egress", "provider-presence", "reconnect", "replay"],
   surfaces: ["standalone"],
   requiredScopes: ["identity:read", "events:write", "chat:read", "chat:write", "runtime:write"],
-  eventTypes: ["spmt.chat.message.received.v1", "spmt.chat.provider.lifecycle.v1"],
+  eventTypes: ["spmt.chat.message.received.v1", "spmt.chat.provider.lifecycle.v1", SHADOW_CHAT_EGRESS_EVENT],
   integration: { identity: "connected", events: "native", runtime: "connected" },
   workers: [
     { id: "twitch-chat", role: "twitch-connection", execution: "leased", canonicalAuthority: false },
@@ -35,7 +39,7 @@ export function chatGatewayCatalogRegistration(launchUrl: string): AppCatalogReg
   return createAppCatalogRegistrationV1(manifest, {
     version: "0.1.0-green",
     launchUrl,
-    allowedScopes: ["providers:grant", "commlink:live:write", "runtime:write"],
+    allowedScopes: ["providers:grant", "commlink:live:write", "events:write", "runtime:write"],
     surfaces: ["standalone"],
   });
 }
@@ -74,6 +78,20 @@ export interface ChatGatewayMessageObserverV1 { id: string; observe(message: Nor
 
 export interface ChatGatewayDeliveryReportV1 { attempted: number; delivered: number; failed: number; }
 export interface ChatGatewayIngestResultV1 { duplicate: boolean; message: NormalizedChatMessageV1; delivery: ChatGatewayDeliveryReportV1; }
+export interface ShadowChatMessageV1 {
+  schemaVersion: 1;
+  id: string;
+  providerMessageId: string;
+  roomId: string;
+  tenantId: string;
+  provider: ChatProviderV1;
+  connectionId: string;
+  channelId: string;
+  text: string;
+  idempotencyKey: string;
+  replyToMessageId?: string;
+  createdAt: string;
+}
 
 export class SqliteChatGatewayStore {
   private readonly db: DatabaseSync;
@@ -126,12 +144,38 @@ export class SqliteChatGatewayStore {
   }
   countMessages(tenantId: string): number { return Number((this.db.prepare("SELECT COUNT(*) AS count FROM chat_messages WHERE tenant_id=?").get(tenantId) as { count: number | bigint }).count); }
 
+  recordShadow(message: OutboundChatMessageV1, now = new Date().toISOString()): { duplicate: boolean; message: ShadowChatMessageV1 } {
+    assertOutbound(message);
+    const id = [message.tenantId, message.provider, message.connectionId, message.channelId, message.idempotencyKey].join(":");
+    const providerMessageId = `shadow:${message.provider}:${message.idempotencyKey}`;
+    const body: ShadowChatMessageV1 = { schemaVersion: 1, id, providerMessageId, roomId: `${message.provider}:${message.connectionId}:${message.channelId}`, tenantId: message.tenantId, provider: message.provider, connectionId: message.connectionId, channelId: message.channelId, text: message.text, idempotencyKey: message.idempotencyKey, ...(message.replyToMessageId ? { replyToMessageId: message.replyToMessageId } : {}), createdAt: new Date(now).toISOString() };
+    const inserted = Number(this.db.prepare("INSERT INTO shadow_chat_messages(id,tenant_id,provider,connection_id,channel_id,idempotency_key,created_at,body) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING").run(id, message.tenantId, message.provider, message.connectionId, message.channelId, message.idempotencyKey, body.createdAt, JSON.stringify(body)).changes);
+    if (inserted) return { duplicate: false, message: body };
+    const existing = this.db.prepare("SELECT body FROM shadow_chat_messages WHERE id=?").get(id) as { body: string };
+    return { duplicate: true, message: JSON.parse(existing.body) as ShadowChatMessageV1 };
+  }
+
+  listShadowMessages(tenantId: string, limit = 200): ShadowChatMessageV1[] {
+    requireId(tenantId, "tenantId");
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1_000) throw new Error("shadow message limit is invalid");
+    return (this.db.prepare("SELECT body FROM shadow_chat_messages WHERE tenant_id=? ORDER BY rowid DESC LIMIT ?").all(tenantId, limit) as Array<{ body: string }>).map((row) => JSON.parse(row.body) as ShadowChatMessageV1);
+  }
+
+  countShadowMessages(tenantId?: string): number {
+    const row = tenantId
+      ? (requireId(tenantId, "tenantId"), this.db.prepare("SELECT COUNT(*) AS count FROM shadow_chat_messages WHERE tenant_id=?").get(tenantId))
+      : this.db.prepare("SELECT COUNT(*) AS count FROM shadow_chat_messages").get();
+    return Number((row as { count: number | bigint }).count);
+  }
+
   private migrate(): void {
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS chat_messages(id TEXT PRIMARY KEY,tenant_id TEXT NOT NULL,provider TEXT NOT NULL,connection_id TEXT NOT NULL,message_id TEXT NOT NULL,occurred_at TEXT NOT NULL,body TEXT NOT NULL) STRICT;
       CREATE INDEX IF NOT EXISTS chat_messages_tenant_time ON chat_messages(tenant_id,occurred_at);
       CREATE TABLE IF NOT EXISTS chat_deliveries(id TEXT PRIMARY KEY,tenant_id TEXT NOT NULL,consumer_id TEXT NOT NULL,state TEXT NOT NULL,attempts INTEGER NOT NULL,available_at TEXT NOT NULL,last_error TEXT,body TEXT NOT NULL) STRICT;
       CREATE INDEX IF NOT EXISTS chat_deliveries_pending ON chat_deliveries(tenant_id,consumer_id,state,available_at);
+      CREATE TABLE IF NOT EXISTS shadow_chat_messages(id TEXT PRIMARY KEY,tenant_id TEXT NOT NULL,provider TEXT NOT NULL,connection_id TEXT NOT NULL,channel_id TEXT NOT NULL,idempotency_key TEXT NOT NULL,created_at TEXT NOT NULL,body TEXT NOT NULL) STRICT;
+      CREATE INDEX IF NOT EXISTS shadow_chat_messages_room ON shadow_chat_messages(tenant_id,provider,connection_id,channel_id,created_at DESC);
     `);
   }
 }
@@ -175,6 +219,18 @@ export class ChatGatewayRuntime {
     if (!sender) throw new Error(`No ${message.provider} sender is connected`);
     return sender.send(message);
   }
+}
+
+export function createShadowChatProviderSenders(store: SqliteChatGatewayStore, onMessage?: (message: ShadowChatMessageV1) => void | Promise<void>): ChatProviderSenderV1[] {
+  return (["twitch", "discord", "kick"] as const).map((provider) => ({
+    provider,
+    async send(message: OutboundChatMessageV1) {
+      if (message.provider !== provider) throw new Error("Shadow sender received the wrong provider");
+      const recorded = store.recordShadow(message);
+      if (!recorded.duplicate) await onMessage?.(recorded.message);
+      return { providerMessageId: recorded.message.providerMessageId };
+    },
+  }));
 }
 
 export function normalizeProviderChatEnvelope(envelope: ProviderChatEnvelopeV1): NormalizedChatMessageV1 {

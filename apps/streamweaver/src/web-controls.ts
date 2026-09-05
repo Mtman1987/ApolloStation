@@ -1,9 +1,13 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { fetchAppPlatformSnapshot, fetchAppSessionContext, readJsonBody, requireSameOrigin, safeError, sendJson } from "@spmt/app-foundation/product-web";
 import { SpmtClient } from "@spmt/sdk";
-import { routeSpmtSuiteAction, spmtSuiteActionAllowed, spmtSuiteActionDescriptor, type ChatProviderV1, type ExecutionWorkerProjectionV1, type SpmtOperationModeV1 } from "@spmt/contracts";
+import { routeSpmtSuiteAction, spmtSuiteActionAllowed, spmtSuiteActionDescriptor, type ChatProviderV1, type ExecutionWorkerProjectionV1, type NormalizedChatDeliveryV1, type SpmtOperationModeV1 } from "@spmt/contracts";
 import { STREAMWEAVER_BOT_ACTION_CATALOG, detectStreamWeaverBotAction } from "./bot-action-runtime.js";
+import { MemoryStreamWeaverCommandState } from "./command-router.js";
+import { StreamWeaverDonorCommandConsumer } from "./donor-command-runtime.js";
+import { DefaultStreamWeaverDonorCommandServices } from "./donor-command-services.js";
 import { DEFAULT_STREAMWEAVER_GAMBLE_SETTINGS, SqliteStreamWeaverEconomyStore, StreamWeaverEconomy } from "./economy.js";
+import { StreamWeaverInstalledFlowConsumer } from "./flow-runtime.js";
 import { StreamWeaverPersonaSettingsStore } from "./persona-settings.js";
 import { StreamWeaverFlowPackageStore, normalizeFlowPackage } from "./flow-packages.js";
 
@@ -49,6 +53,7 @@ export class StreamWeaverWebControls {
       if (url.pathname === "/api/streamweaver/control/flows/import") return this.importFlow(response, context, body);
       if (url.pathname === "/api/streamweaver/control/flows/approve") return this.approveFlow(response, context, body);
       if (url.pathname === "/api/streamweaver/control/flows/publish") return this.publishFlow(response, context, body);
+      if (url.pathname === "/api/streamweaver/control/flows/preview") return await this.previewFlow(response, context, body);
       if (url.pathname === "/api/streamweaver/control/flows/ai") return await this.requestAiFlow(response, context, body);
       if (url.pathname === "/api/streamweaver/control/flows/ai/complete") return await this.completeAiFlow(response, context, body);
       if (url.pathname === "/api/streamweaver/control/persona") return this.updatePersona(response, context, body);
@@ -112,10 +117,29 @@ export class StreamWeaverWebControls {
   private publishFlow(response: ServerResponse, context: SessionContext, body: Record<string, unknown>) { const value=this.requireFlows().publish(context.tenantId,identifier(body.packageId,"packageId"),this.actor(context));return sendJson(response,200,{schemaVersion:1,package:value}); }
   private exportFlow(response: ServerResponse, context: SessionContext, packageId: string, format: "streamweaver" | "streamerbot" = "streamweaver") { const store=this.requireFlows(),value=format==="streamerbot"?store.exportStreamerBot(context.tenantId,packageId):store.exportPackage(context.tenantId,packageId);response.setHeader("content-disposition",`attachment; filename="${packageId.replace(/[^A-Za-z0-9._-]/g,"-")}.${format}.json"`);return sendJson(response,200,value); }
 
+  private async previewFlow(response: ServerResponse, context: SessionContext, body: Record<string, unknown>) {
+    const store=this.requireFlows(),client=this.requireClient(),packageId=identifier(body.packageId,"packageId"),item=store.get(context.tenantId,packageId);
+    if(!item)throw new Error("Flow package does not exist or is not visible to this tenant");
+    const commandId=body.commandId===undefined?(item.commands.find((entry)=>entry.role==="primary")?.id??item.commands[0]?.id):identifier(body.commandId,"commandId"),command=item.commands.find((entry)=>entry.id===commandId);
+    if(!command)throw new Error("Flow preview command does not exist");
+    const provider=simulationProvider(body.provider),messageText=optionalText(body.message,8_000)||command.trigger,actor=this.actor(context),now=new Date().toISOString(),nonce=`${Date.now()}:${Math.random().toString(36).slice(2)}`,roomId=`streamweaver:flow-builder:${actor.id}`;
+    const mentionName=messageText.match(/(?:^|\s)@([A-Za-z0-9_]{1,40})/)?.[1];
+    const delivery:NormalizedChatDeliveryV1={schemaVersion:1,deliveryId:`simulation:${nonce}`,consumerId:"streamweaver.installed-flows",attempts:1,message:{schemaVersion:1,tenantId:context.tenantId,provider,connectionId:"simulation",channelId:roomId,messageId:`simulation:${nonce}`,text:messageText,occurredAt:now,actor:{providerUserId:actor.id,canonicalUserId:actor.id,username:actor.displayName,displayName:actor.displayName,isBot:false,roles:["broadcaster"]},mentions:mentionName?[{token:`@${mentionName}`,providerUserId:`simulation:${mentionName}`,username:mentionName}]:[]}};
+    const state=new MemoryStreamWeaverCommandState(),egress={send:async()=>({providerMessageId:`simulation:${nonce}`})},native=new StreamWeaverDonorCommandConsumer({services:new DefaultStreamWeaverDonorCommandServices({}),identities:{resolve:()=>actor.id},state,egress,nowMs:()=>Date.parse(now)}),runtime=new StreamWeaverInstalledFlowConsumer(store,state,egress,undefined,native),preview=await runtime.preview(item,command.id,delivery);
+    const inputEvent=await client.publishSimulationRoomEvent(context.tenantId,{roomId,lane:"chat",direction:"ingress",title:`${command.trigger} preview input`,body:messageText,provider,connectionId:"simulation",channelId:roomId,data:{packageId,commandId:command.id}},`flow-preview:${nonce}:input`);
+    const events=[];
+    for(const [index,output] of preview.outputs.entries()){
+      const lane=output.type==="obs-scene"||output.type==="obs-source"?"overlay":output.type==="send-chat"||output.type==="send-discord"||output.type==="run-native"?"chat":"app";
+      events.push(await client.publishSimulationRoomEvent(context.tenantId,{roomId,lane,direction:lane==="chat"?"egress":"preview",title:`${command.trigger} · ${output.type}`,body:output.text,provider,connectionId:"simulation",channelId:roomId,replyToMessageId:delivery.message.messageId,data:{packageId,commandId:command.id,actionId:output.actionId,actionType:output.type}},`flow-preview:${nonce}:output:${index}`));
+    }
+    if(!preview.outputs.length)events.push(await client.publishSimulationRoomEvent(context.tenantId,{roomId,lane:"app",direction:"preview",title:`${command.trigger} completed`,body:"This command completed without a visible output.",data:{packageId,commandId:command.id}},`flow-preview:${nonce}:empty`));
+    return sendJson(response,200,{schemaVersion:1,roomId,packageId,command:preview.command,input:messageText,outputs:preview.outputs,events:[inputEvent,...events]});
+  }
+
   private async requestAiFlow(response: ServerResponse, context: SessionContext, body: Record<string, unknown>) {
     if (this.operationMode === "read-only") return sendJson(response, 200, { schemaVersion: 1, status: "blocked", reason: "Live-read mode accepts incoming data but does not send an AI request." });
     const idea=text(body.idea,"idea",4_000),client=this.requireClient(),userId=String(context.session.actorId??"");
-    const prompt=["You are the StreamWeaver flow builder inside the SPMT developer platform.","Return one strict JSON object only. Do not use markdown.","Build exactly one disabled, reviewable StreamWeaver flow package. One package is one import/export unit and may contain at most one command trigger plus that flow's action steps. Never return a command library or bundle.","Use kind streamweaver.flow-package, schemaVersion 1, installUnit flow, visibility private, commands[], actions[].",'Supported action types: send-chat, send-discord, wait, run-action, http-request, set-variable, execute-code, obs-scene, obs-source.',"For cross-app work use run-action with config.action and config.args so SPMT can route it to the app that registered the typed capability.","For visual work use an overlay step that references a registered widget; Overlay Bay owns final Public/Personal composition.","Every command must have id, trigger, aliases, family, cooldownSeconds, matcher, runtime=flow, enabled=false. Every action must have id, type, enabled=false, config.",`User request: ${idea}`].join("\n");
+    const prompt=["You are the StreamWeaver flow builder inside the SPMT developer platform.","Return one strict JSON object only. Do not use markdown.","Build exactly one disabled, reviewable StreamWeaver flow package. One package is one independently importable feature, but it may include the primary command plus only the required or optional add-on commands that make that feature work. Never return an unrelated command library.","Use kind streamweaver.flow-package, schemaVersion 1, installUnit flow, visibility private, commands[], actions[].",'Supported action types: send-chat, send-discord, wait, run-action, run-native, http-request, set-variable, execute-code, obs-scene, obs-source.',"For cross-app work use run-action with config.action and config.args so SPMT can route it to the app that registered the typed capability. Do not reimplement built-in AI or economy features.","For visual work use an overlay step that references a registered widget; Overlay Bay owns final Public/Personal composition.","Exactly one command must have role=primary and required=true. Add-on commands use role=addon. Every command must include id, trigger, aliases, role, required, actionIds, family, cooldownSeconds, matcher, runtime=flow, enabled=false. Every action must have id, type, enabled=false, config. Every actionId must reference an action in this package and no action may be orphaned.",`User request: ${idea}`].join("\n");
     const result=await client.invokeCommunityAssistant(context.tenantId,{userId,message:prompt,surface:"app",conversationId:`streamweaver:flow-builder:${userId}`,routingPreference:"automatic",remember:false},idempotency(body.idempotencyKey,"streamweaver-flow-ai"));
     return sendJson(response,result.status==="accepted"?202:503,{...result,kind:"flow-builder"});
   }
@@ -144,7 +168,7 @@ export class StreamWeaverWebControls {
       const result = await client.createSuiteActionJob(context.tenantId, { schemaVersion: 1, action: detected.action, args: detected.args, actor: { userId, username: String(context.session.username ?? context.session.displayName ?? userId), role: this.role(context) }, source: { kind: "voice-commander", ...(connection && provider ? { provider, channelId: connection.channelId, connectionId: connection.connectionId } : {}), requestId: idempotency(body.idempotencyKey, "streamweaver-suite-source") } }, idempotency(body.idempotencyKey, "streamweaver-suite-action"));
       return sendJson(response, 202, { schemaVersion: 1, kind: "suite-action", action: detected.action, duplicate: result.duplicate, jobId: result.job.id, state: result.job.state });
     }
-    if (this.operationMode === "read-only") return sendJson(response, 200, { schemaVersion: 1, kind: "preview", status: "blocked", operationMode: this.operationMode, destination, reason: "Read-only mode accepts live input but does not send messages or invoke external assistants." });
+    if (this.operationMode === "read-only" && (destination === "ai" || destination === "private")) return sendJson(response, 200, { schemaVersion: 1, kind: "preview", status: "blocked", operationMode: this.operationMode, destination, reason: "Shadow mode does not send live chat data to an external assistant. Choose a provider destination to deliver into its internal shadow room." });
     const client = this.requireClient();
     if (destination === "ai" || destination === "private") {
       const configured = this.persona?.get(context.tenantId);
@@ -217,6 +241,7 @@ function optionalText(value: unknown, max: number) { const result = String(value
 function identifier(value: unknown, name: string) { const result = String(value ?? "").trim(); if (!/^[A-Za-z0-9._:@/-]{1,200}$/.test(result)) throw new Error(`${name} is invalid`); return result; }
 function integer(value: unknown, min: number, max: number, name: string) { const result = Number(value); if (!Number.isSafeInteger(result) || result < min || result > max) throw new Error(`${name} is invalid`); return result; }
 function destinationValue(value: unknown): "private" | "ai" | "twitch" | "discord" { if (value !== "private" && value !== "ai" && value !== "twitch" && value !== "discord") throw new Error("Voice destination is invalid"); return value; }
+function simulationProvider(value: unknown): ChatProviderV1 { const provider=String(value??"twitch");if(provider!=="twitch"&&provider!=="discord"&&provider!=="kick")throw new Error("Simulation provider is invalid");return provider; }
 function idempotency(value: unknown, prefix: string) { const result = String(value ?? "").trim(); return result && /^[A-Za-z0-9._:@/-]{1,300}$/.test(result) ? result : `${prefix}:${Date.now()}:${Math.random().toString(36).slice(2)}`; }
 function suiteActionReady(workers: ExecutionWorkerProjectionV1[], tenantId: string, capabilityId: string) { const now = Date.now(); return workers.some((worker) => worker.state === "ready" && worker.providerHealthy && worker.capabilityIds.includes(capabilityId) && Date.parse(worker.leaseExpiresAt) > now && (!worker.tenantIds?.length || worker.tenantIds.includes(tenantId))); }
 function parseJsonObject(value:string){const trimmed=value.trim();try{return JSON.parse(trimmed) as unknown;}catch{}const fenced=trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1];if(fenced)try{return JSON.parse(fenced) as unknown;}catch{}const start=trimmed.indexOf("{"),end=trimmed.lastIndexOf("}");if(start>=0&&end>start)try{return JSON.parse(trimmed.slice(start,end+1)) as unknown;}catch{}throw new Error("AI response did not contain a valid flow package JSON object");}
