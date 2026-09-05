@@ -64,6 +64,6 @@ test("Nebula action validation retains donor-specific commands", async () => {
     const post = (body) => fetch(`${origin}/v1/nebula/game-actions`, { method: "POST", headers: { "content-type": "application/json", origin }, body: JSON.stringify(body) });
     await post({ gameId: "pixelbattle", action: "start", channel: "captain", username: "captain", userId: "1", isBroadcaster: true });
     assert.equal((await post({ gameId: "pixelbattle", action: "paint", args: ["red", "10", "5"], channel: "captain", username: "viewer", userId: "2" })).status, 200);
-    assert.equal((await post({ gameId: "pixelbattle", action: "paint", args: ["chartreuse", "999", "5"], channel: "captain", username: "viewer", userId: "2" })).status, 500);
+    assert.equal((await post({ gameId: "pixelbattle", action: "paint", args: ["chartreuse", "999", "5"], channel: "captain", username: "viewer", userId: "2" })).status, 400);
   } finally { await host.close(); rmSync(directory, { recursive: true, force: true }); }
 });

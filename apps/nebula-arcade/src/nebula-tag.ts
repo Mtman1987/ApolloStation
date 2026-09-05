@@ -33,6 +33,7 @@ export interface NebulaTagPlayerStateV1 {
   tagsMade: number;
   timesTagged: number;
   passCount: number;
+  eligible?: boolean;
   sleeping: boolean;
   offline: boolean;
   timedImmunityUntil: string | null;
@@ -84,7 +85,11 @@ export type NebulaTagCommandKindV1 =
   | "set-it"
   | "trigger-ffa"
   | "set-winner"
-  | "clear-winners";
+  | "clear-winners"
+  | "reset-scores"
+  | "award-points"
+  | "clear-all-away"
+  | "pin-tag";
 
 interface NebulaTagCommandBaseV1 {
   schemaVersion: 1;
@@ -109,7 +114,11 @@ export type NebulaTagCommandV1 =
   | (NebulaTagCommandBaseV1 & { kind: "set-it"; targetUserId: string })
   | (NebulaTagCommandBaseV1 & { kind: "trigger-ffa" })
   | (NebulaTagCommandBaseV1 & { kind: "set-winner"; targetUserId: string; place: 1 | 2 | 3 })
-  | (NebulaTagCommandBaseV1 & { kind: "clear-winners" });
+  | (NebulaTagCommandBaseV1 & { kind: "clear-winners" })
+  | (NebulaTagCommandBaseV1 & { kind: "reset-scores" })
+  | (NebulaTagCommandBaseV1 & { kind: "clear-all-away" })
+  | (NebulaTagCommandBaseV1 & { kind: "pin-tag"; targetUserId: string })
+  | (NebulaTagCommandBaseV1 & { kind: "award-points"; targetUserId: string; amount: number });
 
 export interface NebulaTagCommandResultV1 {
   schemaVersion: 1;
@@ -133,6 +142,7 @@ export interface NebulaTagStateV1 {
   history: NebulaTagHistoryEntryV1[];
   monthlyWinners: NebulaTagMonthlyWinnerV1[];
   crownAwardKeys: string[];
+  pinCounts?: Record<string, number>;
   appliedCommands: Record<string, NebulaTagCommandResultV1>;
 }
 
@@ -376,7 +386,7 @@ export function planNebulaTagMessage(stateValue: NebulaTagStateV1, message: Nebu
 
 export function resolveNebulaTagTarget(state: NebulaTagStateV1, rawTarget: string): { kind: "found"; userId: string } | { kind: "ambiguous" | "not-found" } {
   const target = normalizeUsername(rawTarget);
-  const players = Object.values(state.players);
+  const players = Object.values(state.players).filter(player=>player.eligible!==false);
   const exact = players.find((player) => normalizeUsername(player.username) === target);
   if (exact) return { kind: "found", userId: exact.userId };
   const compactTarget = target.replaceAll("_", "");
@@ -399,7 +409,7 @@ export function planNebulaTagRotation(
   if (!Number.isFinite(nowMs)) throw new Error("now must be an ISO timestamp");
   const rules = input.rules ?? DEFAULT_NEBULA_TAG_ROTATION_RULES;
   if (rules.rotateAfterMs < 1 || rules.forceRandomAfterMs < rules.rotateAfterMs || rules.freeForAllReminderMs < 1) throw new Error("rotation rules are invalid");
-  const players = Object.values(state.players);
+  const players = Object.values(state.players).filter(player=>player.eligible!==false);
   if (!players.length) return { action: "none", reason: "no-players" };
   const elapsed = state.lastTagAt ? nowMs - Date.parse(state.lastTagAt) : Number.POSITIVE_INFINITY;
   const dueAfterMs = state.currentItUserId ? rules.rotateAfterMs : rules.freeForAllReminderMs;
@@ -454,6 +464,20 @@ export function executeNebulaTagCommand(
 
   const nowMs = Date.parse(command.occurredAt);
   const actor = state.players[command.actorUserId];
+  const targetId='targetUserId' in command?command.targetUserId:undefined;
+  if(actor?.eligible===false || (targetId&&state.players[targetId]?.eligible===false))return{state,result:remember(state,resultFor(command,"rejected","player-ineligible","This player is excluded from Nebula Arcade."))};
+  if(command.kind==="pin-tag"){
+    if(!command.isModerator)return{state,result:remember(state,resultFor(command,"rejected","moderator-required","Only moderators can record Pin tags."))};
+    if(!state.players[command.targetUserId])throw new Error("Target is not a player");
+    state.pinCounts??={};state.pinCounts[command.targetUserId]=(state.pinCounts[command.targetUserId]??0)+1;
+    return{state,result:remember(state,resultFor(command,"applied","pin-tag",`Pin tag recorded: ${state.pinCounts[command.targetUserId]}.`))};
+  }
+  if(command.kind==="reset-scores"||command.kind==="clear-all-away"||command.kind==="award-points"){
+    if(!command.isModerator)return{state,result:remember(state,resultFor(command,"rejected","moderator-required","Only moderators can change Tag administration."))};
+    if(command.kind==="award-points"){if(!Number.isSafeInteger(command.amount)||Math.abs(command.amount)>100000)throw new Error("Points must be an integer between -100000 and 100000.");const target=state.players[command.targetUserId];if(!target)throw new Error("Target is not a player");target.score+=command.amount;}
+    else for(const player of Object.values(state.players)){if(command.kind==="reset-scores"){player.score=0;player.tagsMade=0;player.timesTagged=0;}else if(player.eligible!==false){player.sleeping=false;player.offline=false;}}
+    return{state,result:remember(state,resultFor(command,"applied",command.kind,"Tag administration saved.",{event:eventFor(command,NEBULA_TAG_PLAYER_AVAILABILITY_CHANGED,{action:command.kind})}))};
+  }
   if (actor && command.avatarUrl) actor.avatarUrl = credentialFreeHttps(command.avatarUrl);
 
   if (command.kind === "join") {

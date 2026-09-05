@@ -1,3 +1,4 @@
+import { DshNebulaMediaWorker } from "./nebula-media-worker.js";
 import { DshCalendarDelivery } from "./calendar-delivery.js";
 import { DshCalendarSync } from "./calendar-sync.js";
 import { readFileSync } from "node:fs";
@@ -153,6 +154,9 @@ export class SupervisedDshLiveService {
   private readonly applications: SqliteDshApplicationStore;
   private readonly runtime: DshLiveRuntime;
   private readonly poller: DshTwitchLivePoller;
+  private nebulaMediaCycle:Promise<void>|undefined;
+  private readonly nebulaMediaAbort=new AbortController();
+  private readonly nebulaMedia?:DshNebulaMediaWorker;
   private readonly suiteActions: DshSuiteActionWorker;
   private activeCycle: Promise<{ schemaVersion: 1; skipped: false; results: DshLiveWorkerTenantResultV1[] }> | undefined;
   private closing: Promise<void> | undefined;
@@ -160,6 +164,7 @@ export class SupervisedDshLiveService {
   constructor(private readonly options: DshLiveWorkerEnvironmentV1, fetchImpl: typeof fetch = fetch, private readonly now: () => string = () => new Date().toISOString()) {
     this.getAccessToken = createDshWorkerTokenProvider({ spmtOrigin: options.spmtOrigin, credential: options.credential, fetchImpl });
     this.client = new SpmtClient({ baseUrl: options.spmtOrigin, appId: "discord-stream-hub", getAccessToken: this.getAccessToken, fetchImpl });
+    if(options.operationMode==="active"&&options.publicOrigin)this.nebulaMedia=new DshNebulaMediaWorker(this.client,{databasePath:options.databasePath,publicOrigin:options.publicOrigin,workerId:`${options.workerId}-nebula-media`,tenantIds:options.config.tenants.map(tenant=>tenant.tenantId),sourceOrigins:(process.env.DSH_MEDIA_SOURCE_ORIGINS||"").split(",").filter(Boolean)},fetchImpl);
     const directory = new ConfigDirectory(options.config);
     this.monitor = new SqliteDshLiveMonitor(options.databasePath, options.config.pollIntervalSeconds * 1_000);
     this.messages = new SqliteDshDiscordMessageStore(options.databasePath);
@@ -193,15 +198,18 @@ export class SupervisedDshLiveService {
   }
   async runCalendar(signal:AbortSignal) {while(!signal.aborted&&!this.closed){const cycle=this.syncCalendars();this.calendarCycle=cycle;try{await cycle;}finally{this.calendarCycle=undefined;}await pause(5000,signal);}}
   private async syncCalendars(){for(const tenant of this.options.config.tenants){for(const guild of tenant.discordGuildIds??[]){const last=this.calendarSync.state(tenant.tenantId,guild).checkedAt;if(!last||Date.parse(this.now())-Date.parse(last)>=30000)await this.calendarSync.sync(tenant.tenantId,guild).catch(()=>undefined);}await this.calendarDelivery.flush(tenant.tenantId);}}
+  async runNebulaMedia(signal:AbortSignal){this.nebulaMediaCycle=this.nebulaMedia?.run(AbortSignal.any([signal,this.nebulaMediaAbort.signal]));await this.nebulaMediaCycle;}
   runSuiteActions(signal: AbortSignal) { return this.suiteActions.run(signal); }
   close() {
     if (this.closing) return this.closing;
     this.closed = true;
+    this.nebulaMediaAbort.abort();
     const activeCycle = this.activeCycle;
     this.closing = (async () => {
       let failure: unknown;
       let failed = false;
-      try { await this.calendarCycle; await activeCycle; } catch (error) { failure = error; failed = true; }
+      try { await this.nebulaMediaCycle; await this.calendarCycle; await activeCycle; } catch (error) { failure = error; failed = true; }
+      this.nebulaMedia?.close();
       try { this.messages.close(); } catch (error) { if (!failed) { failure = error; failed = true; } }
       try { this.calendarSync?.close(); this.calendar.close(); } catch (error) { if (!failed) { failure = error; failed = true; } }
       try { this.applications.close(); } catch (error) { if (!failed) { failure = error; failed = true; } }

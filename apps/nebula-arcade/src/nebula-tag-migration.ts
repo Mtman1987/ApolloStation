@@ -32,6 +32,7 @@ export function migrateDonorNebulaTagState(source: unknown, input: { tenantId: s
       tagsMade: 0,
       timesTagged: 0,
       passCount: Math.max(0, Number(player.passCount || (player.hasPass ? 1 : 0)) || 0),
+      eligible: !(player.optedOut===true || player.isPlayer===false),
       sleeping: Boolean(player.sleepingImmunity),
       offline: Boolean(player.offlineImmunity),
       timedImmunityUntil: nullableIso(player.timedImmunityUntil),
@@ -77,7 +78,7 @@ export function migrateDonorNebulaTagState(source: unknown, input: { tenantId: s
   }
   const donorGame = donor.tagGame?.state || donor;
   state.currentItUserId = String(donorGame.currentIt || donorGame.it || rawPlayers.find(([, player]) => player.isIt)?.[0] || "") || null;
-  if (state.currentItUserId && !state.players[state.currentItUserId]) { warnings.push("Current-it identity was missing; migrated as free for all"); state.currentItUserId = null; }
+  if (state.currentItUserId && (!state.players[state.currentItUserId] || state.players[state.currentItUserId]?.eligible===false)) { warnings.push("Current-it identity was missing; migrated as free for all"); state.currentItUserId = null; }
   state.lastTagAt = nullableIso(donorGame.lastTagTime || donor.lastUpdate) ?? state.history.at(-1)?.occurredAt ?? null;
   const winners = Array.isArray(donorGame.monthlyWinners) ? donorGame.monthlyWinners : [];
   state.monthlyWinners = winners.flatMap((winner: any): NebulaTagMonthlyWinnerV1[] => {

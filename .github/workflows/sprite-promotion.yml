@@ -1,9 +1,7 @@
 name: Sprite promotion
 
 on:
-  push:
-    branches:
-      - main
+  # Launch is manual while the release repository is being assembled.
   workflow_dispatch:
     inputs:
       target:
@@ -109,8 +107,7 @@ jobs:
     name: Promote main to web-terminal
     if: >-
       vars.SPRITES_AUTODEPLOY_ENABLED == 'true' &&
-      ((github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-       (github.event_name == 'workflow_dispatch' && inputs.target == 'release'))
+      github.event_name == 'workflow_dispatch' && inputs.target == 'release'
     runs-on: ubuntu-latest
     concurrency:
       group: apollo-release-sprite

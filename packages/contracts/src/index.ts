@@ -473,7 +473,10 @@ export interface SimulationRoomSummaryV1 {
   sourceAppIds: string[];
 }
 
+export interface NebulaProviderSupportEventV1 { kind:"subscription"|"resub"|"gift-subscriptions"|"cheer"|"raid"; amount:number; }
+
 export interface NormalizedChatMessageV1 {
+  supportEvent?:NebulaProviderSupportEventV1;
   schemaVersion: 1;
   tenantId: string;
   provider: ChatProviderV1;
@@ -598,6 +601,7 @@ export function assertNormalizedChatMessageV1(value: NormalizedChatMessageV1): N
   for (const [name, field] of [["tenantId", value.tenantId], ["connectionId", value.connectionId], ["channelId", value.channelId], ["messageId", value.messageId], ["actor.providerUserId", value.actor?.providerUserId], ["actor.username", value.actor?.username]] as const) {
     if (!field || field.trim() !== field || field.length > 200) throw new Error(`${name} is invalid`);
   }
+  if(value.supportEvent&&(value.provider!=="twitch"||!["subscription","resub","gift-subscriptions","cheer","raid"].includes(value.supportEvent.kind)||!Number.isSafeInteger(value.supportEvent.amount)||value.supportEvent.amount<1))throw new Error("Provider support event is invalid");
   if (!value.text || value.text.length > 8_000) throw new Error("Chat message text is invalid");
   if (!Number.isFinite(Date.parse(value.occurredAt))) throw new Error("Chat message occurredAt is invalid");
   if (value.actor.avatarUrl) {

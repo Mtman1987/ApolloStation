@@ -83,13 +83,13 @@ export class DiscordGatewayProviderDriver implements ProviderConnectionDriverV1,
       if (webhook) {
         const response = await this.fetchImpl(`${DISCORD_API_ORIGIN}/webhooks/${webhook.id}/${webhook.token}/messages/${prior}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: webhookName, ...(avatarUrl ? { avatar_url: avatarUrl } : {}), ...message.payload }) });
         if (response.ok) return { providerMessageId: prior, transport: "webhook" };
-        if (response.status !== 404) await response.text().catch(() => "");
+        if (response.status !== 404) throw new Error(`Discord message update failed (${response.status})`);
       }
     }
     if (prior && message.previousTransport === "bot") {
       const response = await this.fetchImpl(`${DISCORD_API_ORIGIN}/channels/${message.channelId}/messages/${prior}`, { method: "PATCH", headers: { Authorization: `Bot ${active.accessToken}`, "Content-Type": "application/json" }, body: JSON.stringify(message.payload) });
       if (response.ok) return { providerMessageId: prior, transport: "bot" };
-      if (response.status !== 404) await response.text().catch(() => "");
+      if (response.status !== 404) throw new Error(`Discord message update failed (${response.status})`);
     }
     const webhook = await this.getOrCreateWebhook(active, webhookName).catch(() => undefined);
     if (webhook) {
@@ -106,6 +106,13 @@ export class DiscordGatewayProviderDriver implements ProviderConnectionDriverV1,
     return { providerMessageId: id, transport: "bot" };
   }
 
+  async deleteDiscordMessage(input:{tenantId:string;connectionId:string;channelId:string;messageId:string;transport:"webhook"|"bot"}){
+    if(!/^\d{5,30}$/.test(input.messageId)||!/^\d{5,30}$/.test(input.channelId))throw new Error("Invalid Discord media message");
+    const active=this.active.get(connectionKey({...input,provider:"discord"}));if(!active||active.connection.channelId!==input.channelId)throw new Error("Discord connection unavailable");
+    const webhook=input.transport==="webhook"?await this.getOrCreateWebhook(active,"Nebula Arcade"):undefined;
+    const url=webhook?`${DISCORD_API_ORIGIN}/webhooks/${webhook.id}/${webhook.token}/messages/${input.messageId}`:`${DISCORD_API_ORIGIN}/channels/${input.channelId}/messages/${input.messageId}`;
+    const response=await this.fetchImpl(url,{method:"DELETE",headers:webhook?{}:{Authorization:`Bot ${active.accessToken}`}});if(!response.ok&&response.status!==404)throw new Error(`Discord media cleanup failed (${response.status})`);
+  }
   private async getOrCreateWebhook(active: ActiveConnection, webhookName: string) {
     const key = connectionKey(active.connection);
     const cached = this.webhooks.get(key);
@@ -153,7 +160,7 @@ export interface DiscordResumeCursorV1 { sessionId: string; seq: number; resumeG
 export function encodeDiscordCursor(cursor: DiscordResumeCursorV1): string { if (!cursor.sessionId || !Number.isSafeInteger(cursor.seq) || cursor.seq < 0) throw new Error("Discord resume cursor is invalid"); return Buffer.from(JSON.stringify(cursor), "utf8").toString("base64url"); }
 export function decodeDiscordCursor(cursor?: string): DiscordResumeCursorV1 | undefined { if (!cursor) return undefined; try { const r = record(JSON.parse(Buffer.from(cursor, "base64url").toString("utf8"))), sessionId = stringValue(r?.sessionId), seq = numberValue(r?.seq), url = stringValue(r?.resumeGatewayUrl); return sessionId && seq !== undefined && Number.isSafeInteger(seq) && seq >= 0 ? { sessionId, seq, ...(url ? { resumeGatewayUrl: url } : {}) } : undefined; } catch { return undefined; } }
 
-function parseTwitch(line: string, c: ProviderConnectionConfigV1, now: Date): ProviderChatEnvelopeV1 | undefined { const m = /^(?:@([^ ]+) )?:([^! ]+)!.* PRIVMSG #([^ ]+) :(.*)$/.exec(line); if (!m) return; const t = ircTags(m[1] ?? ""), username = m[2] ?? "", channel = m[3] ?? c.channelId, text = m[4] ?? "", providerUserId = t["user-id"] ?? username, messageId = t.id ?? `twitch-${now.getTime()}-${providerUserId}`, badges = new Set((t.badges ?? "").split(",").map(v => v.split("/")[0]).filter(Boolean)), roles: Array<"broadcaster"|"moderator"|"member"> = ["member"]; if (badges.has("broadcaster")) roles.unshift("broadcaster"); else if (badges.has("moderator") || t.mod === "1") roles.unshift("moderator"); const occurredAt = t["tmi-sent-ts"] && Number.isFinite(Number(t["tmi-sent-ts"])) ? new Date(Number(t["tmi-sent-ts"])).toISOString() : now.toISOString(); return { schemaVersion: 1, tenantId: c.tenantId, provider: "twitch", connectionId: c.connectionId, channelId: channel, ...(t["source-room-id"] ? { sourceChannelId: t["source-room-id"] } : {}), messageId, text, occurredAt, providerUserId, username, ...(t["display-name"] ? { displayName: t["display-name"] } : {}), isBot: badges.has("bot"), roles, mentions: [] }; }
+function parseTwitch(line: string, c: ProviderConnectionConfigV1, now: Date): ProviderChatEnvelopeV1 | undefined { const m = /^(?:@([^ ]+) )?:([^! ]+)!.* PRIVMSG #([^ ]+) :(.*)$/.exec(line); if (!m) {const notice=/^@([^ ]+) :[^ ]+ USERNOTICE #([^ ]+)(?: :(.*))?$/.exec(line);if(!notice)return;const tags=ircTags(notice[1]!),kind=({sub:"subscription",resub:"resub",submysterygift:"gift-subscriptions",raid:"raid"} as const)[tags["msg-id"] as "sub"|"resub"|"submysterygift"|"raid"];if(!kind||!tags["user-id"]||!tags.login)return;return{schemaVersion:1,tenantId:c.tenantId,provider:"twitch",connectionId:c.connectionId,channelId:notice[2]!,messageId:tags.id||`notice-${now.getTime()}-${tags["user-id"]}`,text:notice[3]||`Provider ${kind}`,occurredAt:now.toISOString(),providerUserId:tags["user-id"],username:tags.login,roles:["member"],mentions:[],supportEvent:{kind,amount:Math.max(1,Math.floor(Number(tags["msg-param-mass-gift-count"]||tags["msg-param-viewerCount"]||1)))}};} const t = ircTags(m[1] ?? ""), username = m[2] ?? "", channel = m[3] ?? c.channelId, text = m[4] ?? "", providerUserId = t["user-id"] ?? username, messageId = t.id ?? `twitch-${now.getTime()}-${providerUserId}`, badges = new Set((t.badges ?? "").split(",").map(v => v.split("/")[0]).filter(Boolean)), roles: Array<"broadcaster"|"moderator"|"member"> = ["member"]; if (badges.has("broadcaster")) roles.unshift("broadcaster"); else if (badges.has("moderator") || t.mod === "1") roles.unshift("moderator"); const occurredAt = t["tmi-sent-ts"] && Number.isFinite(Number(t["tmi-sent-ts"])) ? new Date(Number(t["tmi-sent-ts"])).toISOString() : now.toISOString(); return { schemaVersion: 1, tenantId: c.tenantId, provider: "twitch", connectionId: c.connectionId, channelId: channel, ...(t["source-room-id"] ? { sourceChannelId: t["source-room-id"] } : {}), messageId, text, occurredAt, providerUserId, username, ...(t["display-name"] ? { displayName: t["display-name"] } : {}), isBot: badges.has("bot"), roles, mentions: [],...(Number(t.bits)>=100?{supportEvent:{kind:"cheer" as const,amount:Number(t.bits)}}:{}) }; }
 function parseDiscord(value: unknown, c: ProviderConnectionConfigV1): ProviderChatEnvelopeV1 | undefined {
   const m = record(value); if (!m || scalarString(m.channel_id) !== c.channelId) return;
   const content = stringValue(m.content), id = scalarString(m.id), author = record(m.author), providerUserId = scalarString(author?.id), username = stringValue(author?.username), timestamp = stringValue(m.timestamp);

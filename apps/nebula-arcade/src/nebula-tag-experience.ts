@@ -1,3 +1,4 @@
+import { SqliteNebulaNetwork } from "./arcade-network.js";
 import { DatabaseSync } from "node:sqlite";
 import { assertNebulaTagStateV1, type NebulaTagInboundMessageV1, type NebulaTagPlayerStateV1, type NebulaTagStateV1 } from "./nebula-tag.js";
 import { NebulaTagRuntime, type StoredNebulaTagCommandV1, type NebulaTagDeliveryReportV1 } from "./nebula-tag-runtime.js";
@@ -36,6 +37,7 @@ export interface NebulaTagOverlayMessageV1 {
 }
 
 export interface NebulaTagExperienceStore {
+  isPlayerExcluded?(tenant:string,userId:string,username:string,channel:string):boolean;
   getChannelSettings(tenantId: string, channelId: string): NebulaTagChannelSettingsV1;
   setOverlayMode(tenantId: string, channelId: string, enabled: boolean, occurredAt: string): NebulaTagChannelSettingsV1;
   optOutChannel(tenantId: string, channelId: string, occurredAt: string): NebulaTagChannelSettingsV1;
@@ -53,16 +55,19 @@ export function isNebulaChannelOptedOut(store: Pick<NebulaTagExperienceStore,"ge
 
 export class SqliteNebulaTagExperienceStore implements NebulaTagExperienceStore {
   private readonly db: DatabaseSync;
+  private readonly network:SqliteNebulaNetwork;
 
   constructor(path: string) {
     if (!path) throw new Error("Nebula Arcade tag game experience database path is required");
+    this.network = new SqliteNebulaNetwork(path);
     this.db = new DatabaseSync(path, { timeout: 5_000 });
     this.db.exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;");
     migrateLegacyNebulaArcadeStorage(this.db);
     this.migrate();
   }
 
-  close(): void { this.db.close(); }
+  close(): void { this.db.close();this.network.close(); }
+  isPlayerExcluded(tenant:string,userId:string,username:string,channel:string){return this.network.blocked(tenant,userId,username,channel);}
 
   getChannelSettings(tenantId: string, channelId: string): NebulaTagChannelSettingsV1 {
     requireId(tenantId, "tenantId"); requireId(channelId, "channelId");
@@ -75,6 +80,7 @@ export class SqliteNebulaTagExperienceStore implements NebulaTagExperienceStore 
   }
 
   optOutChannel(tenantId: string, channelId: string, occurredAt: string): NebulaTagChannelSettingsV1 {
+    this.network.blacklist(tenantId,"channel",channelId,true,"Channel opt-out",occurredAt);
     return this.writeChannel(tenantId, channelId, occurredAt, { optedOut: true, overlayMode: false });
   }
 
@@ -83,6 +89,7 @@ export class SqliteNebulaTagExperienceStore implements NebulaTagExperienceStore 
     const ticket: NebulaTagSupportTicketV1 = { schemaVersion: 1, ...input, note: input.note?.slice(0, 500) ?? null, status: "open", resolvedAt: null };
     this.db.prepare("INSERT OR IGNORE INTO nebula_tag_support_tickets(ticket_id,tenant_id,channel_id,requester_user_id,requester_username,note,status,created_at,resolved_at) VALUES(?,?,?,?,?,?,?, ?,NULL)")
       .run(ticket.ticketId, ticket.tenantId, ticket.channelId, ticket.requesterUserId, ticket.requesterUsername.slice(0, 120), ticket.note, ticket.status, ticket.createdAt);
+    this.network.enqueue(ticket.tenantId,`support:${ticket.ticketId}`,"support",ticket,ticket.createdAt);
     return this.getTicket(ticket.ticketId) ?? ticket;
   }
 
@@ -94,6 +101,10 @@ export class SqliteNebulaTagExperienceStore implements NebulaTagExperienceStore 
     return rows.map(ticketFromRow);
   }
 
+  resolveSupportTicket(tenantId:string,ticketId:string,now=new Date().toISOString()) {
+    this.db.prepare("UPDATE nebula_tag_support_tickets SET status='resolved',resolved_at=? WHERE tenant_id=? AND ticket_id=? AND status='open'").run(now,tenantId,ticketId);
+    const ticket=this.listSupportTickets(tenantId).find(ticket=>ticket.ticketId===ticketId);if(!ticket)throw new Error("Support ticket not found");this.network.enqueue(tenantId,`support-resolved:${ticketId}`,"support-resolved",ticket,now);return ticket;
+  }
   enqueueOverlayMessage(input: Omit<NebulaTagOverlayMessageV1, "schemaVersion" | "sequence">): NebulaTagOverlayMessageV1 {
     requireId(input.tenantId, "tenantId"); requireId(input.channelId, "channelId"); requireId(input.code, "code"); requireIso(input.createdAt, "createdAt");
     const result = this.db.prepare("INSERT INTO nebula_tag_overlay_messages(tenant_id,channel_id,code,text,created_at) VALUES(?,?,?,?,?)").run(input.tenantId, input.channelId, input.code, input.text.slice(0, 1_000), input.createdAt);
@@ -139,7 +150,7 @@ export interface NebulaTagDirectoryPageV1 { kind: "players" | "live"; page: numb
 export function buildNebulaTagDirectoryPage(stateValue: NebulaTagStateV1, input: { kind: "players" | "live"; page?: number; now: string; presence?: NebulaTagPresenceV1; maxCharacters?: number }): NebulaTagDirectoryPageV1 {
   const state = assertNebulaTagStateV1(stateValue); const nowMs = Date.parse(input.now); requireIso(input.now, "now");
   const live = new Set(input.presence?.liveUserIds ?? []); const activeMs = 30 * 60 * 1_000;
-  const classified = Object.values(state.players).map((player) => ({ player, status: live.has(player.userId) ? "live" : nowMs - Date.parse(player.lastActiveAt) <= activeMs ? "chatting" : "offline" } as const));
+  const classified = Object.values(state.players).filter(player=>player.eligible!==false).map((player) => ({ player, status: live.has(player.userId) ? "live" : nowMs - Date.parse(player.lastActiveAt) <= activeMs ? "chatting" : "offline" } as const));
   const ordered = classified.sort((left, right) => statusOrder(left.status) - statusOrder(right.status) || left.player.username.localeCompare(right.player.username));
   const visible = input.kind === "live" ? ordered.filter((entry) => entry.status === "live" || entry.status === "chatting") : ordered;
   const labels = visible.map(({ player, status }) => `${status === "live" ? "🟢" : status === "chatting" ? "💬" : player.sleeping || player.offline ? "😴" : ""}${player.username}`);
@@ -151,8 +162,8 @@ export function buildNebulaTagDirectoryPage(stateValue: NebulaTagStateV1, input:
 
 export function getNebulaTagPinRanking(stateValue: NebulaTagStateV1, pinUserId: string, limit = 5): Array<{ userId: string; username: string; count: number }> {
   const state = assertNebulaTagStateV1(stateValue); requireId(pinUserId, "pinUserId");
-  const counts = new Map<string, number>();
-  for (const entry of state.history) if (entry.actorUserId === pinUserId && entry.targetUserId) counts.set(entry.targetUserId, (counts.get(entry.targetUserId) ?? 0) + 1);
+  const counts = new Map<string, number>(Object.entries(state.pinCounts??{}));
+  if(!state.pinCounts)for (const entry of state.history) if (entry.actorUserId === pinUserId && entry.targetUserId) counts.set(entry.targetUserId, (counts.get(entry.targetUserId) ?? 0) + 1);
   return [...counts].flatMap(([userId, count]) => state.players[userId] ? [{ userId, username: state.players[userId]!.username, count }] : []).sort((left, right) => right.count - left.count || left.username.localeCompare(right.username)).slice(0, limit);
 }
 
@@ -168,6 +179,7 @@ export class NebulaTagExperienceService {
   async ingest(message: NebulaTagInboundMessageV1, presence: NebulaTagPresenceV1 = {}): Promise<NebulaTagExperienceOutcomeV1> {
     const settings = this.experience.getChannelSettings(message.tenantId, message.channelId); const parsed = operationalCommand(message.text); const moderator = Boolean(message.roles?.some((role) => role === "broadcaster" || role === "moderator"));
     if (isNebulaChannelOptedOut(this.experience,message.tenantId,message.channelId)) return { kind: "ignored", code: "channel-opted-out" };
+    if(this.experience.isPlayerExcluded?.(message.tenantId,message.userId,message.username,message.channelId))return{kind:"ignored",code:"player-excluded"};
     if (parsed?.kind === "optout") {
       if (!moderator) return this.reply(settings, message, "moderator-required", "Only the broadcaster or a moderator can opt this channel out.");
       this.experience.optOutChannel(message.tenantId, message.channelId, message.occurredAt);
@@ -181,7 +193,7 @@ export class NebulaTagExperienceService {
     }
     if (parsed?.kind === "support") {
       this.experience.createSupportTicket({ ticketId: `${message.provider}:${message.messageId}`, tenantId: message.tenantId, channelId: message.channelId, requesterUserId: message.userId, requesterUsername: message.username, note: parsed.note, createdAt: message.occurredAt });
-      return this.reply(settings, message, "support-ticket-created", "Support ticket sent to admin.");
+      return this.reply(settings, message, "support-ticket-created", "Support ticket saved for the admins. Track it in Arcade Controls.");
     }
     if (parsed?.kind === "players" || parsed?.kind === "live" || parsed?.kind === "more") {
       const key = `${message.tenantId}:${message.userId}`; const cursor = this.cursors.get(key); const nowMs = Date.parse(this.now()); const kind = parsed.kind === "more" && cursor && cursor.expiresAt > nowMs ? cursor.kind : parsed.kind === "live" ? "live" : "players"; const page = parsed.kind === "more" && cursor && cursor.expiresAt > nowMs ? cursor.page : 0;

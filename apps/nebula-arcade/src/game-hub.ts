@@ -12,7 +12,7 @@ function game(id: string, name: string, summary: string, commands: string[], ove
 
 export const NEBULA_ARCADE_GAMES: readonly NebulaGameV1[] = Object.freeze([
   game("tag", "Tag", "A live Nebula Arcade game of tagging, passing, immunity, crowns, and persistent scores across chat.", ["join", "leave", "status", "score", "tag", "pass"], ["current-it", "scoreboard", "activity"]),
-  game("quackverse", "Quackverse", "Collect, trade, reveal, and battle community duck cards.", ["pack", "quackpack", "collection", "deck", "accept"], ["card-reveal", "collection", "battlefield", "activity"]),
+  game("quackverse", "Quackverse", "Collect, trade, reveal, and battle community duck cards.", ["pack", "quackpack", "collection", "deck", "decks", "savedeck", "activatedeck", "deletedeck", "hand", "ready", "deploy", "move", "attack", "useability", "attachgear", "end", "leave", "npc", "reset", "endmatch", "claimseat", "clearseat"], ["card-reveal", "collection", "battlefield", "activity"]),
   game("bingo", "Bingo", "A shared chat bingo board that turns stream moments and community prompts into a race.", ["card", "claim", "phrases", "leave", "status"], ["board", "winners"]),
   game("chaosmode", "Chaos Mode", "Timed community chaos events where chat actions modify the active round.", ["chaos", "explode", "glitch", "portal", "shake", "leave", "status"], ["round", "activity"]),
   game("chatgarden", "Chat Garden", "A cooperative garden that grows through chat participation and shared community actions.", ["garden", "grow", "leave", "status"], ["garden", "progress"]),

@@ -168,7 +168,7 @@ export class SimulationRoomRuntime {
       }
       if (input.appIds.includes("nebula-arcade")) {
         const feed = new SqliteNebulaGameInputStore(path("nebula")), tabletop = new SqliteNebulaTabletopRuntime(path("nebula"));
-        try { const inputs = feed.list(tenantId).slice(-50); while (inputs.length > 1 && JSON.stringify(inputs).length > 24000) inputs.shift(); await emit("nebula-arcade", { lane: "overlay", direction: "preview", title: "Arcade widgets", body: "", provider, data: { renderer: "nebula-arcade", inputs, tabletop: tabletop.snapshot(tenantId, channelId, actor.userId) } }); } finally { feed.close(); tabletop.close(); }
+        try { const inputs = feed.list(tenantId).slice(-50); while (inputs.length > 1 && JSON.stringify(inputs).length > 24000) inputs.shift(); await emit("nebula-arcade", { lane: "overlay", direction: "preview", title: "Arcade widgets", body: "", provider, data: { renderer: "nebula-arcade", inputs, tabletop: (({catalog, collection, savedDecks, ...preview}) => preview)(tabletop.snapshot(tenantId, channelId, actor.userId)) } }); } finally { feed.close(); tabletop.close(); }
       }
       if (delivered.delivery.failed) throw new Error("An app could not process this input. Its successful outputs are retained in the room; check the failed route before retrying.");
       if (!outputs) await emit("chat-gateway", { lane: "app", direction: "preview", title: "Routing result", body: input.message.startsWith("!") ? "No enabled command produced a response. Check that its flow is installed and its trigger matches. Provider-only and assistant actions require their connected runtime." : "Message delivered. No app produced an output for this message.", provider });

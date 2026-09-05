@@ -60,6 +60,8 @@ export class SqliteNebulaGameActionStore {
 export function validateNebulaGameAction(gameId: string, actionValue: string, argsValue: readonly string[] = []): { action: string; args: string[] } {
   const game = cleanGame(gameId), action = String(actionValue || "join").trim().toLowerCase(), args = normalizeArgs(argsValue), noArgs = args.length === 0;
   if (["join", "leave", "start", "stop"].includes(action) && noArgs) return { action, args };
+  if(game==="quackverse"&&["pack","quackpack","collection","deck","decks","savedeck","activatedeck","deletedeck","hand","ready","deploy","move","attack","useability","ability","attachgear","equip","end","pass","npc","togglenpc","reset","endmatch","claimseat","clearseat","loadmockgame","refill-daily","status"].includes(action))return{action,args};
+  if(game==="bingo"&&["card","center","reset","edit","generate","share","phrases","status"].includes(action))return{action,args};
   if (game === "tag" && ["tag", "pass", "score", "status"].includes(action)) return { action, args };
   if (game === "bingo" && action === "phrases" && noArgs) return { action, args };
   if (game === "bingo" && action === "claim" && args.length === 1 && /^([1-9]|1\d|2[0-5])$/.test(args[0]!)) return { action, args };

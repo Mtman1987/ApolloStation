@@ -23,13 +23,13 @@ const PROVIDER_ENV_NAMES = ["TWITCH_CLIENT_ID", "TWITCH_CLIENT_SECRET", "TWITCH_
 const GAME_IDS = new Set(NEBULA_ARCADE_GAMES.map((game) => game.id));
 const OVERLAY_FLOW_FIX_CSS = `body{display:flex;flex-direction:column;align-items:flex-end;justify-content:flex-end;gap:10px;padding:24px}.nebula-output-layer{z-index:auto}.nebula-output-placeholder{position:relative;inset:auto;width:auto;height:auto;flex:0 0 auto}`;
 
-export interface NebulaArcadeSandboxHostOptions { databasePath: string; tenantId: string; channelId: string; pinUserId?: string; publicOrigin?: string; port?: number; host?: string; buildSha?: string; }
+export interface NebulaArcadeSandboxHostOptions { databasePath: string; tenantId: string; channelId: string; channels?: string[]; pinUserId?: string; publicOrigin?: string; port?: number; host?: string; buildSha?: string; authenticate?: import("./control-surface.js").NebulaBrowserAuth; client?: SpmtClient; }
 
 export function createNebulaArcadeSandboxHost(options: NebulaArcadeSandboxHostOptions) {
   const gameStore = new SqliteNebulaTagStore(options.databasePath);
   const experienceStore = new SqliteNebulaTagExperienceStore(options.databasePath);
   const sceneStore = new SqliteNebulaOverlaySceneStore(options.databasePath);
-  const spmt = new SpmtClient({ baseUrl: "http://sandbox-disabled.invalid", appId: "nebula-arcade", fetchImpl: async () => Response.json({ sandbox: true, outbound: "disabled" }) });
+  const spmt = options.client ?? new SpmtClient({ baseUrl: "http://sandbox-disabled.invalid", appId: "nebula-arcade", fetchImpl: async () => Response.json({ sandbox: true, outbound: "disabled" }) });
   const runtime = new NebulaTagRuntime(gameStore, spmt);
   const experience = new NebulaTagExperienceService(runtime, experienceStore, options.pinUserId ?? "provider:twitch:pin", () => new Date().toISOString());
   const overlay = new NebulaTagOverlayHttpAdapter(gameStore, () => new Date().toISOString(), experienceStore);

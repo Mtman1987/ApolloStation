@@ -1,3 +1,4 @@
+import { SqliteDshMediaStore } from "./nebula-media-worker.js";
 import { createProductAppWebServer, productAppSnapshotHandler, productAppSnapshotSources, type ProductAppWebDescriptorV1 } from "@spmt/app-foundation/product-web";
 import type { SpmtOperationModeV1 } from "@spmt/contracts";
 import { appSurfaceBrowserJs, productSurfaceManifest } from "@spmt/app-foundation/surface-client";
@@ -42,11 +43,12 @@ export interface DiscordStreamHubWebServerOptionsV1 {
 }
 
 export function createDiscordStreamHubWebServer(options: DiscordStreamHubWebServerOptionsV1) {
+  const media=options.databasePath?new SqliteDshMediaStore(options.databasePath):undefined;
   const snapshot = productAppSnapshotHandler({ appId: "discord-stream-hub", spmtOrigin: options.spmtOrigin, sources: productAppSnapshotSources(DISCORD_STREAM_HUB_WEB_DESCRIPTOR) });
   const applicationStore = options.databasePath && options.discordPublicKey && options.runtimeConfigPath && options.publicOrigin ? new SqliteDshApplicationStore(options.databasePath) : undefined;
   const controls = new DshWebControls({ ...options, applicationInteractionsReady: Boolean(applicationStore) });
   const interactions = applicationStore ? new DshDiscordApplicationInteractions({ publicKey: options.discordPublicKey!, publicOrigin: options.publicOrigin!, config: loadDshLiveRuntimeConfig(options.runtimeConfigPath!), store: applicationStore,respond:interaction=>controls.interaction(interaction),...(options.fetchImpl?{fetchImpl:options.fetchImpl}:{}) }) : undefined;
-  return createProductAppWebServer({ descriptor: DISCORD_STREAM_HUB_WEB_DESCRIPTOR, port: options.port, host: options.host, buildSha: options.buildSha, extraCss: DSH_CONTROL_CSS, browserJs: appSurfaceBrowserJs(SURFACE) + DSH_PAGE_ALIASES_JS + dshBotInstallBrowserJs(options.discordClientId) + DSH_CONTROL_JS + DSH_REVIEW_JS + dshApplicationReadinessBrowserJs(options.operationMode === "read-only"), handleApi: async (request, response, url) => Boolean(await interactions?.handle(request, response, url)) || await controls.handle(request, response, url) || await snapshot(request, response, url), close: async () => { await interactions?.close(); applicationStore?.close(); controls.close(); } });
+  return createProductAppWebServer({ descriptor: DISCORD_STREAM_HUB_WEB_DESCRIPTOR, port: options.port, host: options.host, buildSha: options.buildSha, extraCss: DSH_CONTROL_CSS, browserJs: appSurfaceBrowserJs(SURFACE) + DSH_PAGE_ALIASES_JS + dshBotInstallBrowserJs(options.discordClientId) + DSH_CONTROL_JS + DSH_REVIEW_JS + dshApplicationReadinessBrowserJs(options.operationMode === "read-only"), handleApi: async (request, response, url) => Boolean(media?.handle(request,response,url)) || Boolean(await interactions?.handle(request, response, url)) || await controls.handle(request, response, url) || await snapshot(request, response, url), close: async () => { media?.close();await interactions?.close(); applicationStore?.close(); controls.close(); } });
 }
 
 function dshBotInstallBrowserJs(clientId?: string) {

@@ -1,3 +1,7 @@
+import { randomUUID } from "node:crypto";
+import { NebulaControlSurface } from "./control-surface.js";
+import { renderNebulaControlPage, NEBULA_CONTROL_JS } from "./control-page.js";
+import { applyNebulaWidgetSettings } from "./game-settings.js";
 import { SqliteNebulaArcadeActivityStore, NEBULA_ACTIVITY_CSS, NEBULA_ACTIVITY_HTML, NEBULA_ACTIVITY_JS } from "./arcade-activity.js";
 import { SqliteNebulaTagExperienceStore, isNebulaChannelOptedOut } from "./nebula-tag-experience.js";
 import type { NormalizedChatMessageV1 } from "@spmt/contracts";
@@ -28,15 +32,29 @@ export function createNebulaArcadeSandboxHost(options: NebulaArcadeSandboxHostOp
   const mixes = new SqliteNebulaGameMixStore(options.databasePath);
   const activity = new SqliteNebulaArcadeActivityStore(options.databasePath);
   const policy = new SqliteNebulaTagExperienceStore(options.databasePath);
+  const controls=new NebulaControlSurface(options);
   let corePort = 0;
 
   const server = createServer(async (request, response) => {
     try {
       const url = new URL(request.url ?? "/", "http://nebula.green");
+      if(url.pathname===APP_PATH&&url.searchParams.get("action")==="control"){
+        const player=options.authenticate?await options.authenticate(request):{userId:"sandbox-player",username:"sandbox-player",moderator:true};
+        if(request.method!=="GET")requireSameOrigin(request);
+        return json(response,200,await controls.handle(request.method||"GET",url.searchParams.get("route")||"state",request.method==="GET"?{channel:url.searchParams.get("channel")||options.channelId}:await readJson(request,url.searchParams.get("route")==="art-upload"?70*1024*1024:MAX_BODY_BYTES),player));
+      }
+      if(request.method==="GET"&&((url.pathname===APP_PATH&&url.searchParams.get("action")==="card-art")||url.pathname==="/api/quackverse/art/canon")){
+        const art=controls.art.get(options.tenantId,Number(url.searchParams.get("cardId")),url.searchParams.get("variant")||"master");if(art.url){response.writeHead(302,{location:art.url,"cache-control":"no-store"});response.end();return;}response.writeHead(200,{"content-type":art.mime,"cache-control":"public,max-age=60","content-security-policy":"default-src 'none'; sandbox","x-content-type-options":"nosniff"});response.end(art.bytes);return;
+      }
+      if(request.method==="GET"&&url.pathname===APP_PATH&&url.searchParams.get("action")==="pack-data"){
+        const ids=(url.searchParams.get("ids")||"").split(",").map(Number).slice(0,9);return json(response,200,{cards:ids.map(id=>({...controls.art.prompt(id).card,artUrl:controls.art.get(options.tenantId,id).url??`/apps/nebula-arcade?action=card-art&cardId=${id}`}))});
+      }
+      if(request.method==="GET"&&url.pathname==="/assets/nebula-arcade/control.js")return javascript(response,NEBULA_CONTROL_JS);
+      if(request.method==="GET"&&url.pathname===APP_PATH&&( ["controls","stats","art"].includes(url.searchParams.get("view")||"") || url.searchParams.get("view")==="game"&&["bingo","quackverse"].includes(url.searchParams.get("game")||"")))return html(response,200,renderNebulaControlPage(url.searchParams.get("view")||"game",url.searchParams.get("game")||"quackverse"));
       if (request.method === "GET" && url.pathname === "/assets/nebula-arcade/widgets/thirdparty/three.min.js") { response.writeHead(200, { "content-type":"text/javascript; charset=utf-8", "cache-control":"public,max-age=86400", "access-control-allow-origin":"*" }); response.end(nebulaThreeJs()); return; }
-      if (request.method === "GET" && url.pathname === "/v1/nebula/game-inputs") { const feed=inputs.list(options.tenantId,options.channelId); return json(response,200,{inputs:feed,tabletop:tabletop.snapshot(options.tenantId,feed.at(-1)?.providerChannelId || options.channelId)}); }
+      if (request.method === "GET" && url.pathname === "/v1/nebula/game-inputs") { const feed=inputs.list(options.tenantId,options.channelId); return json(response,200,{inputs:feed,tabletop:tabletop.snapshot(options.tenantId,options.channelId)}); }
       if (request.method === "GET" && url.pathname === "/assets/nebula-arcade/widget-stage.js") return javascript(response,NEBULA_WIDGET_STAGE_JS);
-      if (request.method === "GET" && url.pathname.startsWith("/assets/nebula-arcade/widgets/")) { const id=url.pathname.split("/").pop()?.replace(/\.html$/,"")||""; if(![...NEBULA_IMPORTED_WIDGET_IDS,"bingo","quackverse"].includes(id))return html(response,404,"Game not found");return widgetHtml(response,renderNebulaGameWidget(id)); }
+      if (request.method === "GET" && url.pathname.startsWith("/assets/nebula-arcade/widgets/")) { const id=url.pathname.split("/").pop()?.replace(/\.html$/,"")||""; if(![...NEBULA_IMPORTED_WIDGET_IDS,"bingo","quackverse"].includes(id))return html(response,404,"Game not found");return widgetHtml(response,applyNebulaWidgetSettings(renderNebulaGameWidget(id),id,controls.network.settings(options.tenantId,options.channelId,id))); }
       if (request.method === "GET" && url.pathname.startsWith("/overlay/arcade/")) { const id = url.pathname.split("/").pop()||""; if(!GAME_IDS.has(id))return html(response,404,"Game not found");return html(response,200,renderNebulaArcadeStage(false,[id])); }
       if (request.method === "GET" && url.pathname === "/overlay/arcade") return html(response,200,renderNebulaArcadeStage(false));
       if (request.method === "GET" && url.pathname === "/assets/nebula-game-mix.js") return javascript(response, GAME_MIX_CLIENT_JS);
@@ -50,7 +68,7 @@ export function createNebulaArcadeSandboxHost(options: NebulaArcadeSandboxHostOp
         return html(response, 200, renderNebulaGameplayCapturePage({ gameId, playerCount: stats.players.length, leaderboard: stats.leaderboard.slice(0, 5), actions: recent }));
       }
       if (request.method === "GET" && url.pathname === "/v1/nebula/game-actions") return json(response, 200, { actions: actions.list(options.tenantId, { ...(url.searchParams.get("channel") ? { channel: url.searchParams.get("channel")! } : {}), ...(url.searchParams.getAll("gameId").length ? { gameIds: url.searchParams.getAll("gameId") } : {}), ...(url.searchParams.get("after") ? { after: url.searchParams.get("after")! } : {}), ...(url.searchParams.get("limit") ? { limit: Number(url.searchParams.get("limit")) } : {}) }) });
-      if (request.method === "POST" && url.pathname === "/v1/nebula/game-actions") { requireSameOrigin(request); const body=await readJson(request); if(isNebulaChannelOptedOut(policy,options.tenantId,options.channelId,typeof body.channel === "string" ? body.channel : "")) throw new NebulaHostError(403,"This channel has opted out of Nebula Arcade"); return handleAction(response, body, options, runtime, actions, inputs, tabletop, activity); }
+      if (request.method === "POST" && url.pathname === "/v1/nebula/game-actions") { requireSameOrigin(request); const body=await readJson(request); if(controls.network.blocked(options.tenantId,String(body.userId||""),String(body.username||""),options.channelId)||isNebulaChannelOptedOut(policy,options.tenantId,options.channelId,typeof body.channel === "string" ? body.channel : "")) throw new NebulaHostError(403,"This channel has opted out of Nebula Arcade"); return handleAction(response, body, options, runtime, actions, inputs, tabletop, activity); }
       if (request.method === "GET" && (url.pathname === "/v1/nebula/game-mixes" || (url.pathname === APP_PATH && url.searchParams.get("action") === "game-mixes"))) return json(response, 200, { mixes: mixes.list(options.tenantId) });
       if (request.method === "POST" && (url.pathname === "/v1/nebula/game-mixes" || (url.pathname === APP_PATH && url.searchParams.get("action") === "game-mixes"))) {
         requireSameOrigin(request); const body = await readJson(request); const mix = mixes.save(options.tenantId, gameMixInput(body));
@@ -70,13 +88,13 @@ export function createNebulaArcadeSandboxHost(options: NebulaArcadeSandboxHostOp
       if (request.method === "GET" && url.pathname === APP_PATH && url.searchParams.get("view") === "overlay" && url.searchParams.get("surface") !== "overlay") return html(response, 200, canonicalOverlayEditorPage());
       if (request.method === "GET" && (url.pathname === APP_PATH || url.pathname === "/") && url.searchParams.get("surface") !== "overlay") return proxyCore(request, response, corePort, true);
       return proxyCore(request, response, corePort, false);
-    } catch (error) { return json(response, error instanceof NebulaHostError ? error.status : 500, { error: error instanceof NebulaHostError ? "invalid_request" : "internal", message: error instanceof Error ? error.message : "unknown error" }); }
+    } catch (error) { return json(response, error instanceof NebulaHostError ? error.status : error instanceof Error&&/permission|excluded|sign.in/i.test(error.message)?403:400, { error: error instanceof NebulaHostError ? "invalid_request" : "internal", message: error instanceof Error ? error.message : "unknown error" }); }
   });
 
   return {
     server,
     async listen() { await core.listen(); const address = core.server.address(); if (!address || typeof address === "string") throw new Error("Nebula Arcade core host did not bind a TCP port"); corePort = address.port; await listen(server, options.port ?? 8080, options.host ?? "0.0.0.0"); },
-    async close() { if (server.listening) await close(server); activity.close(); policy.close(); mixes.close(); actions.close(); runtime.close(); inputs.close(); tabletop.close(); await core.close(); },
+    async close() { if (server.listening) await close(server); controls.close(); activity.close(); policy.close(); mixes.close(); actions.close(); runtime.close(); inputs.close(); tabletop.close(); await core.close(); },
   };
 }
 
@@ -87,14 +105,18 @@ function handleAction(response: ServerResponse, body: Record<string, unknown>, o
   const canControl = body.isBroadcaster === true || body.isModerator === true || body.isAdmin === true || username === channel;
   if ((checked.action === "start" || checked.action === "stop") && !canControl) throw new NebulaHostError(403, "Only the streamer or a moderator can start or stop a game");
   const now = new Date();
+  const active=resolveNebulaChannelGameIds(runtime.get(options.tenantId),channel);
+  if(!["start","stop"].includes(checked.action)&&gameId!=="tag"&&!active.includes(gameId))throw new NebulaHostError(409,`${gameId} is not active in #${channel}`);
+  const message:NormalizedChatMessageV1={schemaVersion:1,tenantId:options.tenantId,provider:"twitch",connectionId:"nebula-app",channelId:channel,messageId:String(body.requestId||randomUUID()),text:`spmt ${gameId} ${checked.action} ${checked.args.join(" ")}`.trim(),occurredAt:now.toISOString(),actor:{providerUserId:userId,canonicalUserId:userId,username,displayName,isBot:false,roles:canControl?["moderator"]:["member"]},mentions:[]};
+  const tabletopAction=["bingo","quackverse"].includes(gameId)&&!["start","stop"].includes(checked.action)&&!(gameId==="bingo"&&checked.action==="leave");
+  const result=tabletopAction?tabletop.execute(message):undefined;
+  if(tabletopAction&&!tabletop.succeeded(message))throw new NebulaHostError(400,result||"Invalid game action");
   const updated = runtime.update(options.tenantId, (state) => {
     if (checked.action === "start" || checked.action === "stop") setNebulaChannelGameRunning(state, channel, gameId, checked.action === "start", now);
     else { const active = resolveNebulaChannelGameIds(state, channel); if (gameId !== "tag" && !active.includes(gameId)) throw new NebulaHostError(409, `${gameId} is not active in #${channel}`); if (checked.action === "leave") leaveNebulaGame(state, normalizeNebulaPlayerId(userId, username), gameId, now); else joinNebulaGame(state, { userId, username, displayName, gameId }, now); }
     return getNebulaGameStats(state, gameId);
   }, "default", now);
   const action = actions.record({ tenantId: options.tenantId, channel, gameId, actorId: userId, username, displayName, action: checked.action, args: checked.args, message: String(body.message ?? "").slice(0,500), occurredAt: now.toISOString() });
-  const message: NormalizedChatMessageV1 = {schemaVersion:1,tenantId:options.tenantId,provider:"twitch",connectionId:"nebula-app",channelId:channel,messageId:action.id,text:`spmt ${gameId} ${checked.action} ${checked.args.join(" ")}`.trim(),occurredAt:now.toISOString(),actor:{providerUserId:userId,canonicalUserId:userId,username,displayName,isBot:false,roles:canControl?["moderator"]:["member"]},mentions:[]};
-  const result = ["bingo","quackverse"].includes(gameId) ? tabletop.execute(message) : undefined;
   inputs.append(message,[gameId],options.channelId);
   const actorId=`spmt:${userId}`; activity.observe(options.tenantId,options.channelId,actorId,message.text,now.getTime());
   if(!["start","stop","status"].includes(checked.action)) activity.membership(options.tenantId,options.channelId,actorId,gameId,checked.action!=="leave",now.getTime());
@@ -119,7 +141,7 @@ function proxyCore(request: IncomingMessage, response: ServerResponse, port: num
   const upstream=httpRequest({hostname:"127.0.0.1",port,path:request.url??"/",method:request.method,headers},(incoming)=>{if(!transformPage||!String(incoming.headers["content-type"]??"").includes("text/html")){response.writeHead(incoming.statusCode??502,incoming.headers);incoming.pipe(response);return;}const chunks:Buffer[]=[];incoming.on("data",(chunk:Buffer|string)=>chunks.push(Buffer.isBuffer(chunk)?chunk:Buffer.from(chunk)));incoming.on("end",()=>{let body=Buffer.concat(chunks).toString("utf8");const encoded=Buffer.from(body),out={...incoming.headers,"content-length":String(encoded.byteLength)};response.writeHead(incoming.statusCode??200,out);response.end(encoded);});});upstream.on("error",(error)=>response.headersSent?response.destroy(error):json(response,502,{error:"core_runtime_unavailable"}));request.pipe(upstream);
 }
 function gameMixInput(body:Record<string,unknown>){const layers=Array.isArray(body.layers)?body.layers:Array.isArray(body.gameIds)?body.gameIds.map((gameId,index)=>({gameId,zIndex:index})):[];return{id:string(body.id,"id",80).toLowerCase(),name:string(body.name??body.id,"name",100),...(typeof body.mode==="string"?{mode:body.mode as NebulaGameMixV1["mode"]}:{}),...(typeof body.rotationSeconds==="number"?{rotationSeconds:body.rotationSeconds}:{}),...(typeof body.activeGameId==="string"?{activeGameId:body.activeGameId}:{}),...(body.activityBox!==undefined?{activityBox:body.activityBox as boolean}:{}),layers:layers as any[]};}
-async function readJson(request:IncomingMessage){const chunks:Buffer[]=[];let total=0;for await(const chunk of request){const part=Buffer.isBuffer(chunk)?chunk:Buffer.from(chunk);total+=part.byteLength;if(total>MAX_BODY_BYTES)throw new NebulaHostError(413,"Request body is too large");chunks.push(part);}let value:unknown;try{value=JSON.parse(Buffer.concat(chunks).toString("utf8"));}catch{throw new NebulaHostError(400,"A JSON object is required");}if(!value||typeof value!=="object"||Array.isArray(value))throw new NebulaHostError(400,"A JSON object is required");return value as Record<string,unknown>;}
+async function readJson(request:IncomingMessage,maxBytes=MAX_BODY_BYTES){const chunks:Buffer[]=[];let total=0;for await(const chunk of request){const part=Buffer.isBuffer(chunk)?chunk:Buffer.from(chunk);total+=part.byteLength;if(total>maxBytes)throw new NebulaHostError(413,"Request body is too large");chunks.push(part);}let value:unknown;try{value=JSON.parse(Buffer.concat(chunks).toString("utf8"));}catch{throw new NebulaHostError(400,"A JSON object is required");}if(!value||typeof value!=="object"||Array.isArray(value))throw new NebulaHostError(400,"A JSON object is required");return value as Record<string,unknown>;}
 function requireSameOrigin(request:IncomingMessage){const origin=request.headers.origin,host=request.headers.host;if(!origin||!host)throw new NebulaHostError(403,"A same-origin browser request is required");let parsed:URL;try{parsed=new URL(origin);}catch{throw new NebulaHostError(403,"Origin is invalid");}if(parsed.host!==host)throw new NebulaHostError(403,"Cross-origin mutation is blocked");}
 function resolvePublicOrigin(request:IncomingMessage,configured?:string){if(configured)return configured;const host=request.headers.host;if(!host)throw new NebulaHostError(503,"Nebula gameplay public origin is not configured");const hostname=host.replace(/^\[/,"").replace(/\](?::\d+)?$/,"").split(":")[0]??"";const loopback=["127.0.0.1","localhost","::1"].includes(hostname);const forwarded=String(request.headers["x-forwarded-proto"]??"").split(",")[0]?.trim();const protocol=loopback&&forwarded!=="https"?"http":"https";return`${protocol}://${host}`;}
 function string(value:unknown,name:string,max:number){if(typeof value!=="string"||!value.trim()||value.length>max)throw new NebulaHostError(400,`${name} is invalid`);return value.trim();}function array(value:unknown){return Array.isArray(value)?value.map((item)=>String(item??"").trim()).filter(Boolean).slice(0,8):[];}function gameName(id:string){return NEBULA_ARCADE_GAMES.find((game)=>game.id===id)?.name??id;}function escapeHtml(value:string){return value.replace(/[&<>"']/g,(char)=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[char]??char);}

@@ -79,11 +79,14 @@ export function claimPersonalBingoSquare(state: BingoStateV1, playerKey: string,
   const board = getPersonalBingoBoard(state, playerKey, true)!;
   if (square === BINGO_CENTER_INDEX && !board.centerPhrase.trim()) throw new Error("Choose a personal Bingo phrase before claiming the center square.");
   const key = String(square);
-  if (!board.covered[key]) board.covered[key] = { ...claim, claimedAt: claim.claimedAt ?? now.toISOString() };
+  if(board.covered[key])throw new Error("That Bingo square is already claimed.");
+  if(claim.channel && Object.values(board.covered).some(item=>item.channel===claim.channel))throw new Error("This stream has already contributed a square to your card. Claim your next square in another participating stream.");
+  const previouslyWon=Boolean(board.wonAt);
+  board.covered[key] = { ...claim, claimedAt: claim.claimedAt ?? now.toISOString() };
   board.updatedAt = now.toISOString();
   const won = hasBingo(board.covered);
   if (won && !board.wonAt) board.wonAt = now.toISOString();
-  return { board, square, newlyWon: won && board.wonAt === now.toISOString(), won };
+  return { board, square, newlyWon: won && !previouslyWon, won };
 }
 
 export function resetPersonalBingoProgress(state: BingoStateV1, now = new Date()): void {

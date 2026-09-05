@@ -147,14 +147,14 @@ test("supervised Chat Gateway authenticates Nebula separately and starts zero-te
   } finally { await service.close(); rmSync(directory, { recursive: true, force: true }); }
 });
 
-test("SPMT gives Nebula only events, XP, and runtime scopes", async () => {
+test("SPMT gives Nebula app events, XP, runtime and job scopes without provider grants", async () => {
   const directory = mkdtempSync(join(tmpdir(), "nebula-identity-"));
   const credential = "nebula-arcade-service-credential-123456";
   const service = createSpmtService({ databasePath: join(directory, "authority.sqlite"), webhookKey: Buffer.alloc(32, 12), port: 0, runtimeMode: "sandbox", nebulaArcadeProviderRuntimeEnabled: true, nebulaArcadeWorkerCredential: credential });
   await service.listen();
   try {
     const token = service.auth.issueServiceAccess("nebula-arcade", credential).accessToken;
-    for (const scope of ["events:write", "xp:write", "runtime:write"]) assert.equal(service.auth.authorize(token, scope, "tenant-a").actorId, "nebula-arcade");
+    for (const scope of ["events:write", "xp:write", "runtime:write", "jobs:read", "jobs:write"]) assert.equal(service.auth.authorize(token, scope, "tenant-a").actorId, "nebula-arcade");
     assert.throws(() => service.auth.authorize(token, "providers:grant", "tenant-a"), /scope/i);
     assert.throws(() => service.auth.authorize(token, "commlink:live:write", "tenant-a"), /scope/i);
   } finally { await service.close(); rmSync(directory, { recursive: true, force: true }); }

@@ -23,24 +23,26 @@ test('only a complete leading spmt token enters Nebula; compact and spaced names
  assert.equal(parseNebulaMessage('spmt tag @alice').command,'tag');
 });
 test('global help and rules list active games and link the full guide',()=>{
- const help=nebulaGuideReplies('spmt help',['wordchain','quackverse'],'https://spmt.example');assert.equal(help.length,3);assert.match(help[0],/^Word Chain:/);assert.match(help.at(-1),/https:\/\/spmt.example\/apps\/nebula-arcade\?view=commands/);assert.deepEqual(help,nebulaGuideReplies('spmt commands',['wordchain','quackverse'],'https://spmt.example'));assert.doesNotMatch(help.join(' '),/Tag:/);
+ const help=nebulaGuideReplies('spmt help',['wordchain','quackverse'],'https://spmt.example');assert.equal(help.length,4);assert.ok(help.some(line=>/^Word Chain:/.test(line)));assert.match(help.join(" "),/spmt join/);assert.match(help.at(-1),/https:\/\/spmt.example\/apps\/nebula-arcade\?view=commands/);assert.deepEqual(help,nebulaGuideReplies('spmt commands',['wordchain','quackverse'],'https://spmt.example'));assert.doesNotMatch(help.join(' '),/Tag:/);
 });
 test('ordinary chat updates presence without playing or waking the box; prefixed joined answers play',async()=>{
  const s=setup();try{await s.send('spmt word chain join');const n=s.feed.list('tenant-a').length;
  for(const text of ['!pack','!join','!accept','orange is the new black'])await s.send(text,{at:epoch+31000});
  assert.equal(s.feed.list('tenant-a').length,n);assert.equal(s.activity.snapshot('tenant-a','chat-a',['wordchain'],ids,epoch+31000).visible,false);
- await s.send('spmt orange',{at:epoch+32000});assert.deepEqual(s.feed.list('tenant-a').at(-1).gameIds,['wordchain']);
+ await s.send('spmt orange',{at:epoch+32000});assert.deepEqual(s.feed.list('tenant-a').at(-1).gameIds,['chatgarden','wordchain','wordstorm']);
  await s.send('spmt pack',{at:epoch+33000});assert.deepEqual(s.feed.list('tenant-a').at(-1).gameIds,['quackverse']);
  await s.send('spmt',{at:epoch+34000});assert.equal(s.activity.snapshot('tenant-a','chat-a',[],ids,epoch+63999).visible,true);assert.equal(s.activity.snapshot('tenant-a','chat-a',[],ids,epoch+64000).visible,false);
  await s.send('spmt',{at:epoch+70000,isBot:true});assert.equal(s.activity.snapshot('tenant-a','chat-a',[],ids,epoch+70000).visible,false);
  }finally{s.close()}
 });
-test('membership, counts and pending choices survive restart and remain channel scoped',async()=>{
+test('one enrollment survives restart across chats; leaving the pool removes membership everywhere',async()=>{
  const s=setup();try{for(const user of ['alice','bob','carol'])await s.send('spmt wordchain join',{user});
- assert.equal(s.activity.snapshot('tenant-a','chat-a',['wordchain','chatgarden'],ids,epoch).games.find(g=>g.id==='wordchain').players,3);
- const n=s.feed.list('tenant-a').length;await s.send('spmt orange',{user:'stranger'});await s.send('spmt orange',{channel:'chat-b'});assert.equal(s.feed.list('tenant-a').length,n);
- await s.send('spmt leave');assert.match(s.sent.at(-1).text,/spmt 5/);s.restart();await s.send('5');assert.equal(s.activity.joinedGames('tenant-a','chat-a','spmt:alice').includes('wordchain'),true);await s.send('spmt 5');assert.equal(s.activity.joinedGames('tenant-a','chat-a','spmt:alice').includes('wordchain'),false);
- assert.equal(s.activity.snapshot('tenant-a','chat-a',['wordchain'],ids,epoch).games.find(g=>g.id==='wordchain').players,2);assert.equal(s.activity.snapshot('tenant-a','chat-b',['wordchain'],ids,epoch).games[0].players,0);assert.equal(s.activity.snapshot('tenant-a','chat-a',['wordchain'],ids,epoch+300001).games[0].players,0);
+ assert.equal(s.activity.snapshot('tenant-a','chat-a',['wordchain'],ids,epoch).games[0].players,3);
+ const n=s.feed.list('tenant-a').length;await s.send('spmt orange',{user:'stranger'});assert.equal(s.feed.list('tenant-a').length,n);
+ s.restart();await s.send('spmt orange',{channel:'chat-b'});assert.equal(s.feed.list('tenant-a').length,n+1);assert.equal(s.activity.snapshot('tenant-a','chat-b',['wordchain'],ids,epoch).games[0].players,1);
+ await s.send('spmt wordchain leave');await s.send('spmt orange');assert.equal(s.feed.list('tenant-a').at(-1).gameIds.includes('wordchain'),false);
+ await s.send('spmt leave');assert.match(s.sent.at(-1).text,/left.*pool/i);s.restart();const after=s.feed.list('tenant-a').length;await s.send('spmt orange',{channel:'chat-b'});assert.equal(s.feed.list('tenant-a').length,after);
+ assert.equal(s.activity.snapshot('tenant-a','chat-a',['wordchain'],ids,epoch).games[0].players,2);assert.equal(s.activity.snapshot('tenant-a','chat-b',['wordchain'],ids,epoch).games[0].players,0);
  }finally{s.close()}
 });
 test('global guides bypass Tag and stopped games are excluded without falling into another game',async()=>{

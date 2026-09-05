@@ -716,7 +716,7 @@ function ensureDshIdentity(auth: AuthService, credential: string, production:boo
   auth.reconcileServiceIdentity({ serviceId: "discord-stream-hub", credential, scopes: ["identity:read", "providers:grant", "events:write", "jobs:read", "jobs:work", "runtime:write", ...(production?["xp:read","xp:write"]:[])], tenantMode: "any" });
 }
 function ensureNebulaArcadeIdentity(auth: AuthService, credential: string) {
-  auth.reconcileServiceIdentity({ serviceId: "nebula-arcade", credential, scopes: ["events:write", "xp:write", "runtime:write"], tenantMode: "any" });
+  auth.reconcileServiceIdentity({ serviceId: "nebula-arcade", credential, scopes: ["events:write", "xp:write", "runtime:write", "jobs:read", "jobs:write"], tenantMode: "any" });
 }
 function ensureHearMeOutIdentity(auth: AuthService, credential: string) {
   auth.reconcileServiceIdentity({ serviceId: "hearmeout", credential, scopes: ["providers:grant", "events:write", "jobs:read", "jobs:write", "jobs:work", "runtime:write"], tenantMode: "any" });

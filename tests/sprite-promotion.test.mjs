@@ -9,7 +9,8 @@ const networkPolicyPath = new URL("../sandbox/sprites/network-policy.json", impo
 test("Sprite promotion keeps review and release targets isolated", async () => {
   const workflow = await readFile(workflowPath, "utf8");
 
-  assert.match(workflow, /push:\s*\n\s*branches:\s*\n\s*- main/);
+  assert.doesNotMatch(workflow, /^  push:/m);
+  assert.match(workflow, /github\.event_name == 'workflow_dispatch' && inputs\.target == 'release'/);
   assert.doesNotMatch(workflow, /work\/\*\*/);
   assert.match(workflow, /github\.event_name == 'workflow_dispatch' && inputs\.target == 'review'/);
   assert.match(workflow, /SPRITES_AUTODEPLOY_ENABLED == 'true'/);

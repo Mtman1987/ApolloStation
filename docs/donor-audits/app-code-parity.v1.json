@@ -1,23 +1,55 @@
 {
   "schemaVersion": 1,
-  "updated": "2026-09-03",
+  "updated": "2026-09-05",
   "branch": "main",
   "appCodeParity": "complete",
   "productionCutover": "blocked",
   "scope": "ApolloStation owns current first-party behavior and visuals. Future comparisons use remote main plus the running live slice; local source mirrors are retired.",
   "evidence": {
-    "functionalFoundation": ["tests/functional-foundation.test.mjs"],
-    "cutoverRecovery": ["tests/live-cutover-rehearsal.test.mjs"],
-    "spmtIdentityAuthDeveloper": ["tests/spmt-final-parity.test.mjs"],
-    "spmtXpWalletIntegrity": ["tests/xp-ledger-integrity.test.mjs"],
-    "overlayAuthority": ["tests/overlay-output-grants.test.mjs"],
-    "chatGateway": ["tests/chat-gateway.test.mjs"],
-    "discordStreamHub": ["tests/dsh-nebula-gameplay-rotation.test.mjs", "tests/live-counterpart-catchup.test.mjs"],
-    "streamweaver": ["tests/streamweaver-bot-relay-hardening.test.mjs", "tests/live-counterpart-catchup.test.mjs"],
-    "hearmeout": ["tests/hearmeout-bot-persona-actions.test.mjs", "tests/live-counterpart-catchup.test.mjs"],
-    "nebulaArcade": ["tests/nebula-discord-dashboard.test.mjs", "tests/live-counterpart-catchup.test.mjs"],
-    "mountainviewCompanion": ["tests/mountainview-companion.test.mjs", "tests/live-counterpart-catchup.test.mjs"],
-    "spacemountainShell": ["tests/spacemountain-shell-ui.test.mjs", "tests/live-counterpart-catchup.test.mjs"]
+    "functionalFoundation": [
+      "tests/functional-foundation.test.mjs"
+    ],
+    "cutoverRecovery": [
+      "tests/live-cutover-rehearsal.test.mjs"
+    ],
+    "spmtIdentityAuthDeveloper": [
+      "tests/spmt-final-parity.test.mjs"
+    ],
+    "spmtXpWalletIntegrity": [
+      "tests/xp-ledger-integrity.test.mjs"
+    ],
+    "overlayAuthority": [
+      "tests/overlay-output-grants.test.mjs"
+    ],
+    "chatGateway": [
+      "tests/chat-gateway.test.mjs"
+    ],
+    "discordStreamHub": [
+      "tests/dsh-nebula-gameplay-rotation.test.mjs",
+      "tests/live-counterpart-catchup.test.mjs"
+    ],
+    "streamweaver": [
+      "tests/streamweaver-bot-relay-hardening.test.mjs",
+      "tests/live-counterpart-catchup.test.mjs"
+    ],
+    "hearmeout": [
+      "tests/hearmeout-bot-persona-actions.test.mjs",
+      "tests/live-counterpart-catchup.test.mjs"
+    ],
+    "nebulaArcade": [
+      "tests/nebula-discord-dashboard.test.mjs",
+      "tests/live-counterpart-catchup.test.mjs",
+      "tests/nebula-live-parity-build.test.mjs",
+      "tests/nebula-spmt-commands.test.mjs"
+    ],
+    "mountainviewCompanion": [
+      "tests/mountainview-companion.test.mjs",
+      "tests/live-counterpart-catchup.test.mjs"
+    ],
+    "spacemountainShell": [
+      "tests/spacemountain-shell-ui.test.mjs",
+      "tests/live-counterpart-catchup.test.mjs"
+    ]
   },
   "cutoverOnlyGates": [
     "complete production reconciliation",
@@ -25,5 +57,13 @@
     "verify backup and restart behavior",
     "retain a tested rollback point",
     "record owner acceptance before live replacement"
-  ]
+  ],
+  "nebulaRelease": {
+    "sourceCommit": "42cb6401b3adf87a8c008474787d05d1dcf757db",
+    "runbook": "docs/NEBULA_RELEASE.md",
+    "deploymentPerformed": false,
+    "productionProviderRehearsalPerformed": false,
+    "nativeRoundState": "browser-owned, matching live source",
+    "wordCategoryValidation": "starter categories and structural checks; no semantic dictionary"
+  }
 }

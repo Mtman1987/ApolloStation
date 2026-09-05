@@ -38,7 +38,7 @@ export interface NebulaDiscordDashboardPublishV1 {
 }
 
 export interface NebulaDiscordDashboardResultV1 { providerMessageId: string; transport: "webhook" | "bot"; }
-export interface NebulaDiscordDashboardEgressV1 { upsertDiscordDashboard(message: NebulaDiscordDashboardPublishV1): Promise<NebulaDiscordDashboardResultV1>; }
+export interface NebulaDiscordDashboardEgressV1 { deleteDiscordMessage?(input:{tenantId:string;connectionId:string;channelId:string;messageId:string;transport:"webhook"|"bot"}):Promise<void>; upsertDiscordDashboard(message: NebulaDiscordDashboardPublishV1): Promise<NebulaDiscordDashboardResultV1>; }
 
 export interface NebulaDiscordDashboardRecordV1 {
   tenantId: string;

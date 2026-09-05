@@ -40,7 +40,7 @@ function renderView(options: NebulaArcadePageOptions, selectedGame: NebulaGameV1
 }
 
 function homeView(options: NebulaArcadePageOptions): string {
-  return `<section class="hero" aria-labelledby="nebula-home-title"><p>GAMES HUB · 20 EQUAL TITLES</p><h1 id="nebula-home-title" class="hero-logo">NEBULA<span>ARCADE</span></h1><p class="hero-tagline">A cosmic multiplayer arcade for stream chat. Pick a game, combine several game overlays into one saved scene, and give OBS one stable URL.</p><div class="hero-links"><a id="games" href="${viewHref("games", options.shellSurface)}">Games</a><a id="overlay-bay-link" href="${viewHref("overlay", options.shellSurface)}">Overlay Bay</a><a id="leaderboard-panel" href="${viewHref("stats", options.shellSurface)}">Arcade Stats</a></div><span id="game-console" hidden></span></section>`;
+  return `<section class="hero" aria-labelledby="nebula-home-title"><p>GAMES HUB · 20 EQUAL TITLES</p><h1 id="nebula-home-title" class="hero-logo">NEBULA<span>ARCADE</span></h1><p class="hero-tagline">A cosmic multiplayer arcade for stream chat. Pick a game, combine several game overlays into one saved scene, and give OBS one stable URL.</p><div class="hero-links"><a id="games" href="${viewHref("games", options.shellSurface)}">Games</a><a id="overlay-bay-link" href="${viewHref("overlay", options.shellSurface)}">Overlay Bay</a><a id="leaderboard-panel" href="${viewHref("stats", options.shellSurface)}">Arcade Stats</a></div><a href="/apps/nebula-arcade?view=controls">Arcade Controls</a><span id="game-console" hidden></span></section>`;
 }
 
 function gamesView(options: NebulaArcadePageOptions): string {

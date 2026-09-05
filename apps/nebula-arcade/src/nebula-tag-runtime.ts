@@ -2,6 +2,8 @@ import { DatabaseSync } from "node:sqlite";
 import { SpmtClient } from "@spmt/sdk";
 import {
   DEFAULT_NEBULA_TAG_RULES,
+  DEFAULT_NEBULA_TAG_ROTATION_RULES,
+  type NebulaTagRotationRulesV1,
   assertNebulaTagStateV1,
   createNebulaTagState,
   executeNebulaTagCommand,
@@ -42,6 +44,7 @@ interface PendingNebulaTagDeliveryV1 {
 
 export interface NebulaTagStore {
   getState(tenantId: string): StoredNebulaTagStateV1;
+  rotationRules?(tenantId:string):NebulaTagRotationRulesV1;
   applyCommand(command: NebulaTagCommandV1, rules?: NebulaTagRulesV1): StoredNebulaTagCommandV1;
   listPendingDeliveries(tenantId: string, limit?: number): PendingNebulaTagDeliveryV1[];
   markDeliveryComplete(id: string): void;
@@ -77,6 +80,8 @@ export class SqliteNebulaTagStore implements NebulaTagStore {
     return { revision: row.revision, state: assertNebulaTagStateV1(JSON.parse(row.body), tenantId) };
   }
 
+  private settings(tenant:string):Record<string,number>{if(!this.db.prepare("SELECT 1 FROM sqlite_master WHERE name='nebula_arcade_settings'").get())return{};const row=this.db.prepare("SELECT body FROM nebula_arcade_settings WHERE tenant_id=? AND channel_id='@arcade' AND game_id='tag'").get(tenant) as {body:string}|undefined;return row?JSON.parse(row.body):{};}
+  rotationRules(tenant:string):NebulaTagRotationRulesV1{const settings=this.settings(tenant);return{...DEFAULT_NEBULA_TAG_ROTATION_RULES,...(settings.rotateMinutes?{rotateAfterMs:settings.rotateMinutes*60000}:{}),...(settings.forceMinutes?{forceRandomAfterMs:settings.forceMinutes*60000}:{})};}
   applyCommand(command: NebulaTagCommandV1, rules: NebulaTagRulesV1 = DEFAULT_NEBULA_TAG_RULES): StoredNebulaTagCommandV1 {
     requireId(command.tenantId, "tenantId");
     requireId(command.commandId, "commandId");
@@ -95,7 +100,8 @@ export class SqliteNebulaTagStore implements NebulaTagStore {
         };
       }
 
-      const applied = executeNebulaTagCommand(current.state, command, rules);
+      const settings=this.settings(command.tenantId);
+      const applied = executeNebulaTagCommand(current.state, command, {...rules,...(settings.tagSuccessPoints!==undefined?{tagSuccessPoints:settings.tagSuccessPoints}:{}),...(settings.taggedPenaltyPoints!==undefined?{taggedPenaltyPoints:settings.taggedPenaltyPoints}:{}),...(settings.immunityMinutes!==undefined?{immunityMs:settings.immunityMinutes*60000}:{})});
       const revision = current.revision + 1;
       this.db.prepare(`
         INSERT INTO nebula_tag_state(tenant_id, revision, updated_at, body)
@@ -251,7 +257,7 @@ export class NebulaTagRuntime {
   }
 
   async reconcileRotation(input: { tenantId: string; channelId: string; now: string; liveUserIds?: string[]; random?: () => number }): Promise<NebulaTagRotationPlanV1 | (StoredNebulaTagCommandV1 & { kind: "result"; rotation: NebulaTagRotationPlanV1; delivery: NebulaTagDeliveryReportV1 })> {
-    const rotation = planNebulaTagRotation(this.store.getState(input.tenantId).state, input);
+    const rotation = planNebulaTagRotation(this.store.getState(input.tenantId).state, {...input,...(this.store.rotationRules?{rules:this.store.rotationRules(input.tenantId)}:{})});
     if (!rotation.command) return rotation;
     const applied = await this.execute(rotation.command);
     return { kind: "result", rotation, ...applied };
