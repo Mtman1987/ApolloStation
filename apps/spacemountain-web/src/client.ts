@@ -136,8 +136,8 @@ async function loadShell() {
       onLaunchApp: (app) => launchApp(app),
       onOpenConversation: (conversation) => void openConversation(conversation),
       onSearchCommlink: (query) => void searchCommlink(query),
-      onSendCommlinkMessage: (conversation, text) => void sendCommlinkMessage(conversation, text),
-      onComposeCommlinkMail: (recipientUserIds, subject, text) => void composeCommlinkMail(recipientUserIds, subject, text),
+      onSendCommlinkMessage: (conversation, text) => sendCommlinkMessage(conversation, text),
+      onComposeCommlinkMail: (recipientUserIds, subject, text) => composeCommlinkMail(recipientUserIds, subject, text),
       onMarkAllCommlinkRead: () => void markAllCommlinkRead(),
       onInvokeStella: (message, conversationId, routingPreference, remember) => void invokeStella(message, conversationId, routingPreference, remember),
       onExportStellarData: () => void exportStellarData(),
@@ -376,13 +376,13 @@ async function sendCommlinkMessage(conversation: Record<string, unknown>, text: 
   const principal = requirePrincipal();
   const conversationId = typeof conversation.id === "string" ? conversation.id : "";
   const recipients = Array.isArray(conversation.participantUserIds) ? conversation.participantUserIds.filter((item): item is string => typeof item === "string" && item !== principal.actorId) : [];
-  if (!conversationId || !recipients.length) return setStatus("This Commlink source is read-only for the current account.", "error");
+  if (!conversationId || !recipients.length) throw new Error("Choose a conversation you can reply to.");
   setStatus("Sending through the canonical Commlink contract…", "working");
   try {
     await controller.sendCommlinkMessage(principal.tenantIds[0]!, conversationId, recipients, text);
     await loadShell();
     setStatus("Message stored in canonical Commlink history.", "ready");
-  } catch (error) { setStatus(message(error), "error"); }
+  } catch (error) { setStatus(message(error), "error"); throw error; }
 }
 
 async function composeCommlinkMail(recipientUserIds: string[], subject: string, text: string) {
@@ -392,7 +392,7 @@ async function composeCommlinkMail(recipientUserIds: string[], subject: string, 
     await controller.composeCommlinkMail(principal.tenantIds[0]!, recipientUserIds, text, `commlink-mail-${crypto.randomUUID()}`, subject || undefined);
     await loadShell();
     setStatus("Private Commlink mail sent.", "ready");
-  } catch (error) { setStatus(message(error), "error"); }
+  } catch (error) { setStatus(message(error), "error"); throw error; }
 }
 
 async function markAllCommlinkRead() {

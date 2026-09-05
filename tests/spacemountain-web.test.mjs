@@ -512,3 +512,26 @@ test("simulation stages and sandboxed Chicken Royale dependency are served throu
   }
   const script=await fetch(base+"/assets/nebula-arcade/widgets/thirdparty/three.min.js");assert.equal(script.status,200);assert.equal(script.headers.get("cross-origin-resource-policy"),"cross-origin");assert.equal(script.headers.get("access-control-allow-origin"),"*");
 }));
+
+test("Commlink recipient discovery, mail and read controls work through the signed-in browser host", async () => {
+  await withSandbox(async ({ spmt, base }) => {
+    const registration = await fetch(`${base}/sandbox/auth/register`, { method: "POST", headers: { origin: base, "content-type": "application/json" }, body: JSON.stringify({ displayName: "Commlink sender", username: "mail-sender", password: "browser-mail-password" }) });
+    assert.equal(registration.status, 201);
+    const cookie = registration.headers.get("set-cookie").split(";")[0];
+    const principal = await (await fetch(`${base}/v1/session`, { headers: { cookie } })).json();
+    const tenantId = principal.tenantIds[0];
+    spmt.authority.ensureUser("mail-recipient");
+    spmt.data.registerUser({ userId: "mail-recipient", username: "mail-recipient", displayName: "Recipient", password: "recipient-password", tenantIds: [tenantId] });
+    const client = new SpmtClient({ baseUrl: base, appId: "commlink", fetchImpl: (input, init) => { const headers = new Headers(init?.headers); headers.set("cookie", cookie); headers.set("origin", base); return fetch(input, { ...init, headers }); } });
+    assert.deepEqual((await client.findCommlinkRecipients(tenantId, "recipient")).map((person) => person.userId), ["mail-recipient"]);
+    const sent = await client.composeCommlinkMail(tenantId, ["mail-recipient"], "Browser-host message", "browser-mail-1", "Working controls");
+    assert.equal(sent.message.text, "Browser-host message");
+    assert.equal((await client.composeCommlinkMail(tenantId, ["mail-recipient"], "Browser-host message", "browser-mail-1", "Working controls")).duplicate, true);
+    assert.equal((await client.listCommlinkMailbox(tenantId, "sent"))[0].id, sent.message.id);
+    await client.markCommlinkConversationRead(tenantId, sent.conversation.id);
+    assert.equal((await client.markAllCommlinkRead(tenantId)).updated, 1);
+    const crossOrigin = await fetch(`${base}/v1/commlink/mail`, { method: "POST", headers: { cookie, origin: "https://outside.example", "content-type": "application/json", "x-spmt-tenant": tenantId }, body: "{}" });
+    assert.equal(crossOrigin.status, 403, "mail mutations retain the browser origin boundary");
+    assert.equal((await fetch(`${base}/v1/commlink/recipients`)).status, 403, "recipient discovery still requires sign-in");
+  });
+});
