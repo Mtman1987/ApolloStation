@@ -135,6 +135,14 @@ CREATE TABLE IF NOT EXISTS streamweaver_currency_settings(tenant_id TEXT PRIMARY
 CREATE TABLE IF NOT EXISTS streamweaver_currency_exchange(tenant_id TEXT NOT NULL,operation_id TEXT NOT NULL,user_id TEXT NOT NULL,body TEXT NOT NULL,status TEXT NOT NULL CHECK(status IN ('pending','complete')),local_spent INTEGER NOT NULL CHECK(local_spent>0),updated_at TEXT NOT NULL,PRIMARY KEY(tenant_id,operation_id)) STRICT;`);
   }
   close(){this.db.close();}
+  adjustOnce(tenantId:string,userId:string,mode:"add"|"set",amount:number,operationId:string,actorId:string) {
+    const key=JSON.stringify(["web-adjust",tenantId,operationId]),signature=JSON.stringify([userId,mode,amount,actorId]);
+    return this.tx(()=>{
+      const prior=this.read(key); if(prior){if(prior.signature!==signature)throw new Error("Currency request key was already used with different values");return {...prior,duplicate:true};}
+      const current=this.getWallet(tenantId,userId),delta=safeDelta(amount,"amount"),wallet={...current,balance:safeNonNegative(mode==="set"?delta:current.balance+delta,"balance"),totalEarned:current.totalEarned+(mode==="add"&&delta>0?delta:0)};
+      this.upsert(wallet);const result={signature,wallet,actorId,mode,amount,occurredAt:new Date().toISOString()};this.write(key,result);return {...result,duplicate:false};
+    });
+  }
   getCooldown(t:string,u:string){return Number(this.read(`cooldown:${t}:${u}`)?.timestamp??0);} putCooldown(t:string,u:string,x:number){this.write(`cooldown:${t}:${u}`,{timestamp:x});}
   getGlobalJackpotAt(){return Number(this.read("global:jackpot")?.timestamp??0);} putGlobalJackpotAt(x:number){this.write("global:jackpot",{timestamp:x});}
   getReceipt(t:string,o:string){return this.read(`receipt:${t}:${o}`) as StreamWeaverEconomyReceiptV1|undefined;} putReceipt(t:string,r:StreamWeaverEconomyReceiptV1){this.write(`receipt:${t}:${r.operationId}`,r);}

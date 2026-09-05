@@ -29,7 +29,7 @@ async function fixture(run) {
     dsh = createDiscordStreamHubWebServer({ spmtOrigin: spmtBase, host: "127.0.0.1", port: 0, databasePath: dshDatabase, runtimeConfigPath: configPath, publicOrigin: "https://spmt.example", discordPublicKey: publicKeyHex, discordClientId: "222222222222222222" });
     streamweaver = createStreamWeaverWebServer({ spmtOrigin: spmtBase, host: "127.0.0.1", port: 0, databasePath: streamDatabase, credential: streamweaverCredential, operationMode: "read-only", connectionsJson: JSON.stringify([{ schemaVersion: 1, tenantId, provider: "twitch", connectionId: "main", channelId: "mtman1987", providerAccountId: "twitch-owner", desired: true }]) });
     await dsh.listen(); await streamweaver.listen(); const dshAddress = dsh.server.address(), streamAddress = streamweaver.server.address(); assert.ok(dshAddress && typeof dshAddress !== "string" && streamAddress && typeof streamAddress !== "string");
-    ingress = createIntegratedSpaceMountainWebHost({ spmtOrigin: spmtBase, host: "127.0.0.1", port: 0, greenAppOrigins: { "discord-stream-hub": `http://127.0.0.1:${dshAddress.port}` } });
+    ingress = createIntegratedSpaceMountainWebHost({ spmtOrigin: spmtBase, host: "127.0.0.1", port: 0, greenAppOrigins: { "discord-stream-hub": `http://127.0.0.1:${dshAddress.port}`, "streamweaver": `http://127.0.0.1:${streamAddress.port}` } });
     await ingress.listen(); const webBase = `http://127.0.0.1:${ingress.server.address().port}`;
     await run({ cookie, tenantId, guildId, spmtBase, webBase, dshBase: `http://127.0.0.1:${dshAddress.port}`, streamBase: `http://127.0.0.1:${streamAddress.port}`, privateKey });
   } finally { if (ingress) await ingress.close(); if (streamweaver) await streamweaver.close(); if (dsh) await dsh.close(); await spmt.close(); rmSync(directory, { recursive: true, force: true }); }
@@ -62,12 +62,10 @@ test("DSH makes calendar, channel delivery, application publishing, and private 
 test("StreamWeaver exposes a wired Voice Commander, searchable bot catalog, integrations, persona and economy", async () => {
   await fixture(async ({ cookie, tenantId, spmtBase, streamBase }) => {
     const page = await (await fetch(streamBase)).text();
-    assert.match(page, /Setup Guide/); assert.match(page, /Community Flows/); assert.match(page, /Build one flow with AI/); assert.match(page, /Your account is genuinely blank/); assert.match(page, /Voice Commander/); assert.match(page, /Explicit microphone/); assert.match(page, /Live input · provider replies go to shadow rooms/); assert.match(page, /Simulation Rooms/); assert.match(page, /Manage linked accounts/); assert.match(page, /@media\(max-width:720px\)/);
+    assert.match(page, /Setup Guide/); assert.match(page, /Community Flows/); assert.match(page, /Build one flow with AI/); assert.match(page, /No flows installed yet/); assert.match(page, /Voice Commander/); assert.match(page, /Review your text before sending/); assert.match(page, /Provider replies are captured in Simulation Rooms/); assert.match(page, /Simulation Rooms/); assert.match(page, /Manage linked accounts/); assert.match(page, /@media\(max-width:720px\)/);
     const browserSource = page.match(/<script>([\s\S]*)<\/script>/)?.[1];
     assert.ok(browserSource); assert.doesNotThrow(() => new Function(browserSource));
-    assert.equal((browserSource.match(/textContent!==value/g) ?? []).length, 2, "StreamWeaver decorators must converge instead of retriggering themselves forever");
-    assert.doesNotMatch(browserSource, /state\.textContent=readiness/);
-    assert.doesNotMatch(browserSource, /if\(button\)button\.textContent='Preview \/ run read action'/);
+    assert.doesNotMatch(browserSource, /window.fetch=|nativeFetch=/, "the page controller does not replace browser fetch");
     const control = await (await fetch(`${streamBase}/api/streamweaver/control`, { headers: { cookie } })).json();
     assert.equal(control.role, "owner"); assert.equal(control.operationMode, "read-only"); assert.equal(control.connections[0].provider, "twitch"); assert.equal(control.botRuntime.publicCommands, "connected"); assert.equal(control.botRuntime.suiteActions, "partial"); assert.ok(control.botActions.length >= 20); assert.equal(control.botActions.find((action) => action.id === "sw.image.generate").availability, "connected"); assert.ok(control.botActions.some((action) => action.policy === "simulated")); assert.ok(control.botActions.every((action) => action.policy !== "blocked"));
     const origin = new URL(streamBase).origin;
@@ -132,5 +130,32 @@ test("DSH app-path ingress opens, edits and deletes a real workspace calendar wi
     assert.equal(snapshot.status, 200); assert.match(snapshot.headers.get("content-type"), /application\/json/);
     const unknown = await fetch(`${webBase}/apps/discord-stream-hub/api/missing`, { headers: { cookie } });
     assert.equal(unknown.status, 404); assert.match(unknown.headers.get("content-type"), /application\/json/);
+  });
+});
+
+
+test("StreamWeaver app ingress supports manual command editing, pause, link settings, wallet changes and private voice retention",async()=>{
+  await fixture(async({cookie,webBase})=>{
+    const base=webBase+'/apps/streamweaver/api/control',headers={cookie,origin:webBase,'content-type':'application/json'};
+    const read=async(path='')=>{const response=await fetch(base+path,{headers:{cookie}});assert.equal(response.status,200);return response.json()};
+    const post=async(path,body,status=200)=>{const response=await fetch(base+path,{method:'POST',headers,body:JSON.stringify(body)});assert.equal(response.status,status,await response.clone().text());return response.json()};
+    const state=await read();
+    const packageData={schemaVersion:1,kind:'streamweaver.flow-package',packageId:'flow.web-test',name:'Welcome',commands:[{id:'welcome',trigger:'!hello',aliases:[],enabled:false,actionIds:['reply']}],actions:[{id:'reply',type:'send-chat',enabled:false,config:{text:'Hello %userName%!'}}]};
+    let saved=(await post('/flows/save',{package:packageData})).package;
+    assert.equal(saved.commands[0].enabled,false);
+    await post('/flows/save',{package:{...saved,name:'Changed'},expectedUpdatedAt:'stale'},400);
+    await post('/flows/approve',{packageId:saved.packageId});
+    await post('/flows/toggle',{packageId:saved.packageId,enabled:false});
+    assert.equal((await read('/flows')).installed.find(i=>i.packageId===saved.packageId).enabled,false);
+    await post('/links',{webpage:'https://example.org/community'});assert.equal((await read()).creatorLinks.webpage,'https://example.org/community');
+    await post('/botshare',{enabled:true});assert.equal((await read()).botShareEnabled,true);
+    const adjustment={userId:state.session.actorId,mode:'add',amount:10,idempotencyKey:'currency-web'};
+    assert.equal((await post('/economy/adjust',adjustment)).wallet.balance,10);assert.equal((await post('/economy/adjust',adjustment)).duplicate,true);
+    await post('/voice',{destination:'private',message:'Do not retain this',idempotencyKey:'private'});
+    assert.deepEqual((await read('/voice/history')).history,[]);
+    await post('/voice',{destination:'ai',message:'Retained blocked request',idempotencyKey:'remembered'});
+    assert.equal((await read('/voice/history')).history[0].status,'blocked');
+    await post('/voice/history/clear',{});assert.equal((await read('/voice/history')).history.length,0);
+    await post('/flows/delete',{packageId:saved.packageId});assert.equal((await read('/flows')).drafts.length,0);
   });
 });

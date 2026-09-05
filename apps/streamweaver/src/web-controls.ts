@@ -10,6 +10,8 @@ import { DEFAULT_STREAMWEAVER_GAMBLE_SETTINGS, SqliteStreamWeaverEconomyStore, S
 import { StreamWeaverInstalledFlowConsumer } from "./flow-runtime.js";
 import { StreamWeaverPersonaSettingsStore } from "./persona-settings.js";
 import { StreamWeaverFlowPackageStore, normalizeFlowPackage } from "./flow-packages.js";
+import { StreamWeaverRuntimeSettingsStore } from "./runtime-settings.js";
+import { SqliteStreamWeaverBotRelayStore } from "./bot-relay.js";
 
 export interface StreamWeaverWebConnectionV1 { schemaVersion: 1; tenantId: string; provider: ChatProviderV1; connectionId: string; channelId: string; providerAccountId: string; desired: boolean; }
 export interface StreamWeaverWebControlOptionsV1 { spmtOrigin: string; databasePath?: string; credential?: string; connections?: StreamWeaverWebConnectionV1[]; operationMode?: SpmtOperationModeV1; fetchImpl?: typeof fetch; }
@@ -21,18 +23,21 @@ export class StreamWeaverWebControls {
   private readonly economy?: SqliteStreamWeaverEconomyStore;
   private readonly client?: SpmtClient;
   private readonly flows?: StreamWeaverFlowPackageStore;
+  private readonly runtimeSettings?: StreamWeaverRuntimeSettingsStore;
+  private readonly relay?: SqliteStreamWeaverBotRelayStore;
   private readonly operationMode: SpmtOperationModeV1;
 
   constructor(private readonly options: StreamWeaverWebControlOptionsV1) {
     this.operationMode = options.operationMode ?? "active";
     if (options.databasePath) { this.persona = new StreamWeaverPersonaSettingsStore(options.databasePath); this.economy = new SqliteStreamWeaverEconomyStore(options.databasePath); this.flows = new StreamWeaverFlowPackageStore(options.databasePath); }
+    if (options.databasePath) { this.runtimeSettings=new StreamWeaverRuntimeSettingsStore(options.databasePath); this.relay=new SqliteStreamWeaverBotRelayStore(options.databasePath); }
     if (options.credential) {
       const getAccessToken = serviceTokenProvider(options);
       this.client = new SpmtClient({ baseUrl: options.spmtOrigin, appId: "streamweaver", getAccessToken, ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}) });
     }
   }
 
-  close() { this.flows?.close(); this.persona?.close(); this.economy?.close(); }
+  close() { this.relay?.close(); this.runtimeSettings?.close(); this.flows?.close(); this.persona?.close(); this.economy?.close(); }
 
   async handle(request: IncomingMessage, response: ServerResponse, url: URL): Promise<boolean> {
     if (!url.pathname.startsWith("/api/streamweaver/control")) return false;
@@ -40,6 +45,9 @@ export class StreamWeaverWebControls {
       const context = await fetchAppSessionContext({ appId: "streamweaver", spmtOrigin: this.options.spmtOrigin, request });
       if (request.method === "GET" && url.pathname === "/api/streamweaver/control") return await this.read(request, response, context);
       if (request.method === "GET" && url.pathname === "/api/streamweaver/control/flows") return this.readFlows(response, context);
+      if (request.method === "GET" && url.pathname === "/api/streamweaver/control/activity") { this.requireOwner(context); return sendJson(response,200,{runs:this.requireFlows().listRuns(context.tenantId)}); }
+      if (request.method === "GET" && url.pathname === "/api/streamweaver/control/voice/history") return sendJson(response,200,{history:this.runtimeSettings?.voiceHistory(context.tenantId,this.actor(context).id) ?? []});
+      if (request.method === "GET" && url.pathname === "/api/streamweaver/control/economy/wallet") { this.requireOwner(context); if(!this.economy)throw new Error("Economy runtime is not configured");return sendJson(response,200,{wallet:this.economy.getWallet(context.tenantId,identifier(url.searchParams.get("userId"),"userId"))}); }
       if (request.method === "GET" && /^\/api\/streamweaver\/control\/flows\/[^/]+\/export\/streamerbot$/.test(url.pathname)) return this.exportFlow(response, context, decodeURIComponent(url.pathname.split("/").at(-3) ?? ""), "streamerbot");
       if (request.method === "GET" && /^\/api\/streamweaver\/control\/flows\/[^/]+\/export$/.test(url.pathname)) return this.exportFlow(response, context, decodeURIComponent(url.pathname.split("/").at(-2) ?? ""));
       if (request.method === "GET" && /^\/api\/streamweaver\/control\/voice\/jobs\/[^/]+$/.test(url.pathname)) return await this.job(response, context, decodeURIComponent(url.pathname.split("/").at(-1) ?? ""));
@@ -47,7 +55,14 @@ export class StreamWeaverWebControls {
       requireSameOrigin(request);
       const body = await readJsonBody(request);
       if (url.pathname === "/api/streamweaver/control/voice") return await this.voice(response, context, body);
+      if (url.pathname === "/api/streamweaver/control/voice/history/clear") { this.runtimeSettings?.clearVoice(context.tenantId,this.actor(context).id); return sendJson(response,200,{cleared:true}); }
       this.requireOwner(context);
+      if (url.pathname === "/api/streamweaver/control/links") { if(!this.runtimeSettings)throw new Error("StreamWeaver runtime is not configured");return sendJson(response,200,{links:this.runtimeSettings.saveLinks(context.tenantId,body)}); }
+      if (url.pathname === "/api/streamweaver/control/botshare") { if(!this.relay)throw new Error("StreamWeaver runtime is not configured");if(typeof body.enabled!=="boolean")throw new Error("enabled must be a boolean");this.relay.setBotShare(context.tenantId,body.enabled);return sendJson(response,200,{enabled:body.enabled}); }
+      if (url.pathname === "/api/streamweaver/control/flows/save") return sendJson(response,200,{package:this.requireFlows().editDraft(context.tenantId,body.package,this.actor(context),typeof body.expectedUpdatedAt==="string"?body.expectedUpdatedAt:undefined)});
+      if (url.pathname === "/api/streamweaver/control/flows/copy") return sendJson(response,200,{package:this.requireFlows().copyDraft(context.tenantId,identifier(body.packageId,"packageId"),this.actor(context))});
+      if (url.pathname === "/api/streamweaver/control/flows/delete") return sendJson(response,200,{removed:this.requireFlows().deleteDraft(context.tenantId,identifier(body.packageId,"packageId"),this.actor(context).id)});
+      if (url.pathname === "/api/streamweaver/control/flows/toggle") { if(typeof body.enabled!=="boolean")throw new Error("enabled must be a boolean");return sendJson(response,200,{install:this.requireFlows().setInstallEnabled(context.tenantId,identifier(body.packageId,"packageId"),body.enabled)}); }
       if (url.pathname === "/api/streamweaver/control/flows/install") return this.installFlow(response, context, body);
       if (url.pathname === "/api/streamweaver/control/flows/uninstall") return this.uninstallFlow(response, context, body);
       if (url.pathname === "/api/streamweaver/control/flows/import") return this.importFlow(response, context, body);
@@ -57,6 +72,13 @@ export class StreamWeaverWebControls {
       if (url.pathname === "/api/streamweaver/control/flows/ai") return await this.requestAiFlow(response, context, body);
       if (url.pathname === "/api/streamweaver/control/flows/ai/complete") return await this.completeAiFlow(response, context, body);
       if (url.pathname === "/api/streamweaver/control/persona") return this.updatePersona(response, context, body);
+      if (url.pathname === "/api/streamweaver/control/economy/adjust") {
+        if(!this.economy)throw new Error("Economy runtime is not configured");
+        if(body.mode!=="add"&&body.mode!=="set")throw new Error("Choose add or set");
+        const userId=identifier(body.userId,"userId"),amount=integer(body.amount,body.mode==="set"?0:-1000000000000,1000000000000,"amount");
+        if(!this.economy.listWalletUserIds(context.tenantId).includes(userId)&&userId!==this.actor(context).id)throw new Error("Choose an existing currency wallet or your own account");
+        return sendJson(response,200,this.economy.adjustOnce(context.tenantId,userId,body.mode,amount,identifier(body.idempotencyKey,"idempotencyKey"),this.actor(context).id));
+      }
       if (url.pathname === "/api/streamweaver/control/economy") return this.updateEconomy(response, context, body);
       return sendJson(response, 404, { error: "not_found" });
     } catch (error) {
@@ -92,6 +114,8 @@ export class StreamWeaverWebControls {
       stellarCapabilities: snapshot.stellarCapabilities,
       personaDocument,
       persona,
+      creatorLinks:this.runtimeSettings?.getLinks(tenantId) ?? {},
+      botShareEnabled:this.relay?.botShareEnabled(tenantId) ?? false,
       economy: { settings: economySettings, wallet, leaderboard: this.economy?.listLeaderboard(tenantId, 10) ?? [] },
       botRuntime: {
         publicCommands: connections.length ? "connected" : "setup-required",
@@ -107,7 +131,7 @@ export class StreamWeaverWebControls {
     const store = this.requireFlows(), installed = store.listInstalls(context.tenantId), installedIds = new Set(installed.map((item) => item.packageId));
     const community = store.listCommunity().map((item) => ({ ...item, installed: installedIds.has(item.packageId) }));
     const drafts = store.listTenantPackages(context.tenantId).filter((item) => item.visibility === "private").map((item) => ({ ...item, installed: installedIds.has(item.packageId) }));
-    return sendJson(response, 200, { schemaVersion: 1, tenantId: context.tenantId, installed, community, drafts, startsEmpty: true });
+    return sendJson(response, 200, { schemaVersion: 1, tenantId: context.tenantId, installed, community, drafts, startsEmpty: true, role:this.role(context) });
   }
 
   private installFlow(response: ServerResponse, context: SessionContext, body: Record<string, unknown>) { const install=this.requireFlows().install(context.tenantId,identifier(body.packageId,"packageId"));return sendJson(response,200,{schemaVersion:1,install}); }
@@ -125,7 +149,7 @@ export class StreamWeaverWebControls {
     const provider=simulationProvider(body.provider),messageText=optionalText(body.message,8_000)||command.trigger,actor=this.actor(context),now=new Date().toISOString(),nonce=`${Date.now()}:${Math.random().toString(36).slice(2)}`,roomId=`streamweaver:flow-builder:${actor.id}`;
     const mentionName=messageText.match(/(?:^|\s)@([A-Za-z0-9_]{1,40})/)?.[1];
     const delivery:NormalizedChatDeliveryV1={schemaVersion:1,deliveryId:`simulation:${nonce}`,consumerId:"streamweaver.installed-flows",attempts:1,message:{schemaVersion:1,tenantId:context.tenantId,provider,connectionId:"simulation",channelId:roomId,messageId:`simulation:${nonce}`,text:messageText,occurredAt:now,actor:{providerUserId:actor.id,canonicalUserId:actor.id,username:actor.displayName,displayName:actor.displayName,isBot:false,roles:["broadcaster"]},mentions:mentionName?[{token:`@${mentionName}`,providerUserId:`simulation:${mentionName}`,username:mentionName}]:[]}};
-    const state=new MemoryStreamWeaverCommandState(),egress={send:async()=>({providerMessageId:`simulation:${nonce}`})},native=new StreamWeaverDonorCommandConsumer({services:new DefaultStreamWeaverDonorCommandServices({}),identities:{resolve:()=>actor.id},state,egress,nowMs:()=>Date.parse(now)}),runtime=new StreamWeaverInstalledFlowConsumer(store,state,egress,undefined,native),preview=await runtime.preview(item,command.id,delivery);
+    const state=new MemoryStreamWeaverCommandState(),egress={send:async()=>({providerMessageId:`simulation:${nonce}`})},native=new StreamWeaverDonorCommandConsumer({services:new DefaultStreamWeaverDonorCommandServices(this.runtimeSettings?{links:this.runtimeSettings}:{}),identities:{resolve:()=>actor.id},state,egress,nowMs:()=>Date.parse(now)}),runtime=new StreamWeaverInstalledFlowConsumer(store,state,egress,undefined,native),preview=await runtime.preview(item,command.id,delivery);
     const inputEvent=await client.publishSimulationRoomEvent(context.tenantId,{roomId,roomName:"StreamWeaver flow previews",lane:"chat",direction:"ingress",title:`${command.trigger} preview input`,body:messageText,provider,connectionId:"simulation",channelId:roomId,data:{packageId,commandId:command.id}},`flow-preview:${nonce}:input`);
     const events=[];
     for(const [index,output] of preview.outputs.entries()){
@@ -139,7 +163,7 @@ export class StreamWeaverWebControls {
   private async requestAiFlow(response: ServerResponse, context: SessionContext, body: Record<string, unknown>) {
     if (this.operationMode === "read-only") return sendJson(response, 200, { schemaVersion: 1, status: "blocked", reason: "Live-read mode accepts incoming data but does not send an AI request." });
     const idea=text(body.idea,"idea",4_000),client=this.requireClient(),userId=String(context.session.actorId??"");
-    const prompt=["You are the StreamWeaver flow builder inside the SPMT developer platform.","Return one strict JSON object only. Do not use markdown.","Build exactly one disabled, reviewable StreamWeaver flow package. One package is one independently importable feature, but it may include the primary command plus only the required or optional add-on commands that make that feature work. Never return an unrelated command library.","Use kind streamweaver.flow-package, schemaVersion 1, installUnit flow, visibility private, commands[], actions[].",'Supported action types: send-chat, send-discord, wait, run-action, run-native, http-request, set-variable, execute-code, obs-scene, obs-source.',"For cross-app work use run-action with config.action and config.args so SPMT can route it to the app that registered the typed capability. Do not reimplement built-in AI or economy features.","For visual work use an overlay step that references a registered widget; Overlay Bay owns final Public/Personal composition.","Exactly one command must have role=primary and required=true. Add-on commands use role=addon. Every command must include id, trigger, aliases, role, required, actionIds, family, cooldownSeconds, matcher, runtime=flow, enabled=false. Every action must have id, type, enabled=false, config. Every actionId must reference an action in this package and no action may be orphaned.",`User request: ${idea}`].join("\n");
+    const prompt=["You are the StreamWeaver flow builder inside the SPMT developer platform.","Return one strict JSON object only. Do not use markdown.","Build exactly one disabled, reviewable StreamWeaver flow package. One package is one independently importable feature, but it may include the primary command plus only the required or optional add-on commands that make that feature work. Never return an unrelated command library.","Use kind streamweaver.flow-package, schemaVersion 1, installUnit flow, visibility private, commands[], actions[].",'Supported action types: send-chat, send-discord, wait, run-action, run-native, set-variable.',"For cross-app work use run-action with config.action and config.args so SPMT can route it to the app that registered the typed capability. Do not reimplement built-in AI or economy features.","Do not invent overlay, HTTP, code, or OBS steps. Overlay Bay owns Public/Personal composition.","Exactly one command must have role=primary and required=true. Add-on commands use role=addon. Every command must include id, trigger, aliases, role, required, actionIds, family, cooldownSeconds, matcher, runtime=flow, enabled=false. Every action must have id, type, enabled=false, config. Every actionId must reference an action in this package and no action may be orphaned.",`User request: ${idea}`].join("\n");
     const result=await client.invokeCommunityAssistant(context.tenantId,{userId,message:prompt,surface:"app",conversationId:`streamweaver:flow-builder:${userId}`,routingPreference:"automatic",remember:false},idempotency(body.idempotencyKey,"streamweaver-flow-ai"));
     return sendJson(response,result.status==="accepted"?202:503,{...result,kind:"flow-builder"});
   }
@@ -156,6 +180,8 @@ export class StreamWeaverWebControls {
 
   private async voice(response: ServerResponse, context: SessionContext, body: Record<string, unknown>) {
     const message = text(body.message, "message", 5_000), destination = destinationValue(body.destination);
+    const requestId=idempotency(body.idempotencyKey,"voice"), occurredAt=new Date().toISOString();
+    const reply=(status:number,value:Record<string,unknown>)=>{if(destination!=="private")this.runtimeSettings?.recordVoice(context.tenantId,this.actor(context).id,requestId,{requestId,message,destination,occurredAt,...value});return sendJson(response,status,value);};
     const detected = detectStreamWeaverBotAction(message);
     const userId = String(context.session.actorId ?? "");
     if (!userId) throw new Error("The signed-in user identity is unavailable");
@@ -166,26 +192,31 @@ export class StreamWeaverWebControls {
       const connection = provider ? this.connection(context.tenantId, provider, body.connectionId) : undefined;
       const requestId = idempotency(body.idempotencyKey, "streamweaver-suite-source"), roomId = connection && provider ? `${provider}:${connection.connectionId}:${connection.channelId}` : `streamweaver:voice-commander:${userId}`;
       if (this.operationMode === "read-only") await client.publishSimulationRoomEvent(context.tenantId, { roomId, lane: "app", direction: "preview", title: `${detected.action} Voice Commander input`, body: message, ...(provider ? { provider } : {}), ...(connection ? { connectionId: connection.connectionId, channelId: connection.channelId } : {}), data: { action: detected.action, risk: descriptor.risk, phase: "routed", arguments: Object.entries(detected.args).map(([name, value]) => ({ name, value })) } }, `voice-simulation:${requestId}:routed`);
-      if (this.operationMode === "read-only" && detected.action === "sw.image.generate") return sendJson(response, 200, { schemaVersion: 1, kind: "preview", status: "simulated", operationMode: this.operationMode, action: detected.action, risk: descriptor.risk, roomId, reason: "Image generation was previewed without contacting an external image provider." });
+      if (this.operationMode === "read-only" && detected.action === "sw.image.generate") return reply( 200, { schemaVersion: 1, kind: "preview", status: "simulated", operationMode: this.operationMode, action: detected.action, risk: descriptor.risk, roomId, reason: "Image generation was previewed without contacting an external image provider." });
       const result = await client.createSuiteActionJob(context.tenantId, { schemaVersion: 1, action: detected.action, args: detected.args, actor: { userId, username: String(context.session.username ?? context.session.displayName ?? userId), role: this.role(context) }, source: { kind: "voice-commander", ...(connection && provider ? { provider, channelId: connection.channelId, connectionId: connection.connectionId } : {}), requestId, ...(this.operationMode === "read-only" ? { simulation: true } : {}) } }, idempotency(body.idempotencyKey, "streamweaver-suite-action"));
-      return sendJson(response, 202, { schemaVersion: 1, kind: "suite-action", action: detected.action, duplicate: result.duplicate, jobId: result.job.id, state: result.job.state });
+      return reply( 202, { schemaVersion: 1, kind: "suite-action", action: detected.action, duplicate: result.duplicate, jobId: result.job.id, state: result.job.state });
     }
-    if (this.operationMode === "read-only" && (destination === "ai" || destination === "private")) return sendJson(response, 200, { schemaVersion: 1, kind: "preview", status: "blocked", operationMode: this.operationMode, destination, reason: "Shadow mode does not send live chat data to an external assistant. Choose a provider destination to deliver into its internal shadow room." });
+    if (this.operationMode === "read-only" && (destination === "ai" || destination === "private")) return reply( 200, { schemaVersion: 1, kind: "preview", status: "blocked", operationMode: this.operationMode, destination, reason: "Shadow mode does not send live chat data to an external assistant. Choose a provider destination to deliver into its internal shadow room." });
     const client = this.requireClient();
     if (destination === "ai" || destination === "private") {
       const configured = this.persona?.get(context.tenantId);
       const result = await client.invokeCommunityAssistant(context.tenantId, { userId, message, surface: "app", conversationId: `streamweaver:voice:${destination}:${userId}`, routingPreference: "automatic", remember: destination === "ai", ...(configured ? { presentation: { personaId: configured.personaId, displayName: configured.displayName, instructions: configured.instructions, memoryPolicy: configured.memoryPolicy } } : {}) }, idempotency(body.idempotencyKey, "streamweaver-voice-ai"));
-      return sendJson(response, result.status === "accepted" ? 202 : 503, { ...result, kind: "assistant", destination });
+      return reply( result.status === "accepted" ? 202 : 503, { ...result, kind: "assistant", destination });
     }
     const connection = this.connection(context.tenantId, destination, body.connectionId);
     const result = await client.createExecutionJob(context.tenantId, { ownerAppId: "streamweaver", capabilityId: "streamweaver.voice-egress.v1", executionOwner: "streamweaver", billedUserId: userId, meteredResource: "hosted-worker-minutes", usageQuantity: 1, executionTarget: "sprite", meteringTarget: "hosted", input: { schemaVersion: 1, destination, connectionId: connection.connectionId, channelId: connection.channelId, text: message, actorUserId: userId } }, idempotency(body.idempotencyKey, "streamweaver-voice-egress"));
-    return sendJson(response, 202, { schemaVersion: 1, kind: "egress", destination, duplicate: result.duplicate, jobId: result.job.id, state: result.job.state });
+    return reply( 202, { schemaVersion: 1, kind: "egress", destination, duplicate: result.duplicate, jobId: result.job.id, state: result.job.state });
   }
 
   private async job(response: ServerResponse, context: SessionContext, jobId: string) {
     if (!/^[A-Za-z0-9._:@/-]{1,300}$/.test(jobId)) throw new Error("Voice job id is invalid");
     const job = await this.requireClient().getExecutionJob(context.tenantId, jobId);
     if (job.billedUserId !== String(context.session.actorId ?? "")) throw new Error("Voice job is not visible to this user");
+    const entry=this.runtimeSettings?.voiceHistory(context.tenantId,this.actor(context).id).find(row=>row.jobId===jobId);
+    if(entry && ["succeeded","failed","dead-letter","cancelled"].includes(job.state)) {
+      const result=record(job.result), output=record(result?.output);
+      this.runtimeSettings?.recordVoice(context.tenantId,this.actor(context).id,String(entry.requestId),{...entry,state:job.state,output:String(result?.text??output?.text??(job.state==="succeeded"?"Completed":"Request did not complete")).slice(0,12000)});
+    }
     return sendJson(response, 200, { schemaVersion: 1, job });
   }
 

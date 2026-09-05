@@ -1,3 +1,4 @@
+import { StreamWeaverRuntimeSettingsStore } from "@spmt/streamweaver";
 import { createHash } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
@@ -107,6 +108,8 @@ export class SimulationRoomRuntime {
         if (this.options.streamweaverDatabasePath) {
           const sourceEconomy = new SqliteStreamWeaverEconomyStore(this.options.streamweaverDatabasePath), testEconomy = new SqliteStreamWeaverEconomyStore(flowPath);
           try { const settings = sourceEconomy.getSettings(tenantId); if (settings) { const digest=hash(JSON.stringify(settings)), previous=receipts.prepare("SELECT digest FROM source_settings WHERE name='economy'").get() as {digest:string}|undefined; if(previous?.digest!==digest){testEconomy.putSettings(tenantId, settings);receipts.prepare("INSERT OR REPLACE INTO source_settings VALUES('economy',?)").run(digest);} } } finally { sourceEconomy.close(); testEconomy.close(); }
+          const sourceLinks=new StreamWeaverRuntimeSettingsStore(this.options.streamweaverDatabasePath),targetLinks=new StreamWeaverRuntimeSettingsStore(flowPath);
+          try { targetLinks.saveLinks(tenantId,sourceLinks.getLinks(tenantId) as Record<string,unknown>); } finally { sourceLinks.close();targetLinks.close(); }
           const source = new StreamWeaverFlowPackageStore(this.options.streamweaverDatabasePath), target = new StreamWeaverFlowPackageStore(flowPath);
           try {
             for (const installed of target.listInstalls(tenantId)) target.uninstall(tenantId, installed.packageId);

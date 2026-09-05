@@ -86,7 +86,8 @@ export class StreamWeaverDonorCommandConsumer {
 
   async route(delivery: NormalizedChatDeliveryV1, explicitDonorId?: string): Promise<{ command: string; text?: string } | undefined> {
     const message = delivery.message;
-    const matches = this.matchDefinitions(message.text).filter((entry) => (!explicitDonorId || entry.donorId === explicitDonorId) && (explicitDonorId ? true : (this.options.enabled?.(message.tenantId, entry.donorId) ?? true)) && !ECONOMY_TRIGGERS.has(canonicalDonorCommandTrigger(entry.trigger)));
+    const candidates = explicitDonorId ? STREAMWEAVER_DONOR_COMMANDS.filter(entry=>entry.donorId===explicitDonorId) : this.matchDefinitions(message.text);
+    const matches = candidates.filter((entry) => (explicitDonorId ? true : (this.options.enabled?.(message.tenantId, entry.donorId) ?? true)) && !ECONOMY_TRIGGERS.has(canonicalDonorCommandTrigger(entry.trigger)));
     if (!matches.length) return undefined;
     const commands = distinctEffectDefinitions(matches);
     const command = commands[0];
@@ -96,7 +97,7 @@ export class StreamWeaverDonorCommandConsumer {
     const mention = message.mentions[0];
     const targetId = mention?.canonicalUserId ?? (mention ? await this.options.identities.resolve({ tenantId: message.tenantId, provider: message.provider, providerUserId: mention.providerUserId, username: mention.username }) : undefined);
     const actorName = message.actor.displayName ?? message.actor.username;
-    const cooldown = this.cooldown(command, message.tenantId, actorId ?? message.actor.providerUserId);
+    const cooldown = explicitDonorId ? 0 : this.cooldown(command, message.tenantId, actorId ?? message.actor.providerUserId);
     if (cooldown > 0) return { command: canonicalTrigger, text: `@${actorName}, wait ${cooldown}s before using ${displayTrigger(command)} again.` };
 
     const common: DonorInvocationCommonV1 = { delivery, actorId, mention, targetId, actorName };
@@ -110,7 +111,7 @@ export class StreamWeaverDonorCommandConsumer {
     }
     const text = primaryResult.text ?? builtin ?? secondaryText;
     if (primaryResult.handled === false && !text && commands.length === 1) return undefined;
-    this.markCooldown(command, message.tenantId, actorId ?? message.actor.providerUserId);
+    if (!explicitDonorId) this.markCooldown(command, message.tenantId, actorId ?? message.actor.providerUserId);
     return { command: canonicalTrigger, ...(text ? { text } : {}) };
   }
 

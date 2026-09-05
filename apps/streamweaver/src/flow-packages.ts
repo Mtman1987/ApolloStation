@@ -1,8 +1,20 @@
 import { DatabaseSync } from "node:sqlite";
+import { SPMT_SUITE_ACTION_CATALOG } from "@spmt/contracts";
 import { STREAMWEAVER_DONOR_COMMANDS, type StreamWeaverDonorCommandFamilyV1, type StreamWeaverDonorCommandV1 } from "./donor-command-catalog.js";
 
 export const STREAMWEAVER_FLOW_PACKAGE_KIND = "streamweaver.flow-package" as const;
 export const STREAMWEAVER_FLOW_AUTHOR = Object.freeze({ id: "mtman1987", displayName: "mtman1987" });
+
+export function assertStreamWeaverFlowRunnable(item: StreamWeaverFlowPackageV1) {
+  const supported=new Set(["send-chat","send-discord","wait","run-action","run-native","set-variable"]);
+  for(const action of item.actions) {
+    if(!supported.has(action.type))throw new Error(`${action.type} needs a registered execution capability. Replace that step before enabling the flow.`);
+    if(action.type==="wait"&&(!Number.isFinite(Number(action.config.milliseconds??action.config.value??0))||Number(action.config.milliseconds??action.config.value??0)<0||Number(action.config.milliseconds??action.config.value??0)>60000))throw new Error("Wait steps must be between 0 and 60000 milliseconds");
+    if(action.type==="run-native"&&!STREAMWEAVER_DONOR_COMMANDS.some(c=>c.donorId===action.config.donorId))throw new Error("Choose an existing native command");
+    if(action.type==="run-action"&&!SPMT_SUITE_ACTION_CATALOG.some(a=>a.id===action.config.action))throw new Error("Choose an existing cross-app action");
+    if((action.type==="send-chat"||action.type==="send-discord")&&!String(action.config.text??action.config.message??"").trim())throw new Error("Message steps need reply text");
+  }
+}
 
 export interface StreamWeaverFlowCommandV1 {
   id: string;
@@ -49,6 +61,7 @@ export interface StreamWeaverFlowInstallV1 {
   tenantId: string;
   packageId: string;
   installedAt: string;
+  enabled?: boolean;
 }
 
 export class StreamWeaverFlowPackageStore {
@@ -75,6 +88,7 @@ export class StreamWeaverFlowPackageStore {
       ) STRICT;
       CREATE INDEX IF NOT EXISTS streamweaver_flow_packages_visibility ON streamweaver_flow_packages(visibility,updated_at DESC);
       CREATE INDEX IF NOT EXISTS streamweaver_flow_installs_tenant ON streamweaver_flow_installs(tenant_id,installed_at);
+      CREATE TABLE IF NOT EXISTS streamweaver_flow_runs(tenant_id TEXT NOT NULL, delivery_id TEXT NOT NULL, body TEXT NOT NULL, occurred_at TEXT NOT NULL, PRIMARY KEY(tenant_id,delivery_id)) STRICT;
     `);
   }
   close() { this.db.close(); }
@@ -102,13 +116,60 @@ export class StreamWeaverFlowPackageStore {
 
   listInstalledPackages(tenantId: string) {
     const packages = new Map(this.listTenantPackages(tenantId).map((item) => [item.packageId, item]));
-    return this.listInstalls(tenantId).flatMap((install) => { const item = packages.get(install.packageId); return item ? [item] : []; });
+    return this.listInstalls(tenantId).flatMap((install) => { const item = packages.get(install.packageId); return item && install.enabled !== false ? [item] : []; });
+  }
+
+  setInstallEnabled(tenantId: string, packageId: string, enabled: boolean) {
+    const install = this.listInstalls(tenantId).find(item => item.packageId === packageId);
+    if (!install) throw new Error("Install this flow before changing its enabled state");
+    if(enabled)assertStreamWeaverFlowRunnable(this.get(tenantId,packageId)!);
+    const value = { ...install, enabled };
+    this.db.prepare("UPDATE streamweaver_flow_installs SET body=? WHERE tenant_id=? AND package_id=?").run(JSON.stringify(value), tenantId, packageId);
+    return value;
+  }
+
+  editDraft(tenantId: string, value: unknown, author: { id: string; displayName?: string }, expectedUpdatedAt?: string) {
+    const input = normalizeFlowPackage(value, { now: this.now(), author, visibility: "private" });
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const current = this.get(tenantId, input.packageId);
+      if (current && (current.author.id !== author.id || current.visibility !== "private")) throw new Error("Copy a community flow before editing it");
+      if (current && (!expectedUpdatedAt || current.updatedAt !== expectedUpdatedAt)) throw new Error("This flow changed. Reload it before saving your edits");
+      if (!current && expectedUpdatedAt) throw new Error("This flow was deleted. Reload the flow list");
+      if(this.listInstalls(tenantId).some(row=>row.packageId===input.packageId&&row.enabled!==false))assertStreamWeaverFlowRunnable(input);
+      const saved = this.saveDraft(tenantId, { ...input, createdAt: current?.createdAt ?? input.createdAt }, author);
+      this.db.exec("COMMIT"); return saved;
+    } catch (error) { this.db.exec("ROLLBACK"); throw error; }
+  }
+
+  copyDraft(tenantId: string, packageId: string, author: { id: string; displayName?: string }) {
+    const current = this.exportPackage(tenantId, packageId);
+    return this.saveDraft(tenantId, { ...current, packageId: `flow.${crypto.randomUUID()}`, name: `${current.name.slice(0,110)} copy`, commands: current.commands.map(c => ({...c, enabled:false})), actions: current.actions.map(a => ({...a, enabled:false})) }, author);
+  }
+
+  deleteDraft(tenantId: string, packageId: string, authorId: string) {
+    const current = this.get(tenantId, packageId);
+    if (!current || current.visibility !== "private" || current.author.id !== authorId) throw new Error("Only your private drafts can be deleted");
+    this.db.exec("BEGIN IMMEDIATE");
+    try { this.uninstall(tenantId, packageId); this.db.prepare("DELETE FROM streamweaver_flow_packages WHERE tenant_id=? AND package_id=?").run(tenantId,packageId); this.db.exec("COMMIT"); }
+    catch(error) { this.db.exec("ROLLBACK"); throw error; }
+    return true;
+  }
+
+  recordRun(tenantId: string, deliveryId: string, value: Record<string, unknown>) {
+    this.db.prepare("INSERT OR REPLACE INTO streamweaver_flow_runs VALUES(?,?,?,?)").run(tenantId, deliveryId, JSON.stringify(value), this.now());
+    this.db.prepare("DELETE FROM streamweaver_flow_runs WHERE tenant_id=? AND delivery_id NOT IN (SELECT delivery_id FROM streamweaver_flow_runs WHERE tenant_id=? ORDER BY occurred_at DESC,rowid DESC LIMIT 200)").run(tenantId,tenantId);
+  }
+  listRuns(tenantId: string) {
+    return (this.db.prepare("SELECT body FROM streamweaver_flow_runs WHERE tenant_id=? ORDER BY occurred_at DESC,rowid DESC LIMIT 100").all(tenantId) as Array<{body:string}>).map(row => JSON.parse(row.body) as Record<string,unknown>);
   }
 
   saveDraft(tenantId: string, value: unknown, author: { id: string; displayName?: string }) {
     const now = this.now();
     const input = normalizeFlowPackage(value, { now, author, visibility: "private" });
-    const owned = { ...input, author: { id: identifier(author.id, "author.id"), displayName: display(author.displayName ?? author.id) }, visibility: "private" as const, updatedAt: now };
+    const prior=this.get(tenantId,input.packageId);
+    const updatedAt=new Date(Math.max(Date.parse(now),prior?Date.parse(prior.updatedAt)+1:0)).toISOString();
+    const owned = { ...input, author: { id: identifier(author.id, "author.id"), displayName: display(author.displayName ?? author.id) }, visibility: "private" as const, updatedAt };
     this.put(tenantId, owned);
     return owned;
   }
@@ -135,7 +196,9 @@ export class StreamWeaverFlowPackageStore {
 
   install(tenantId: string, packageId: string) {
     tenantId = identifier(tenantId, "tenantId"); packageId = identifier(packageId, "packageId");
-    if (!this.get(tenantId, packageId)) throw new Error("Flow package does not exist or is not visible to this tenant");
+    const candidate=this.get(tenantId, packageId);
+    if (!candidate) throw new Error("Flow package does not exist or is not visible to this tenant");
+    if(candidate.commands.some(c=>c.enabled))assertStreamWeaverFlowRunnable(candidate);
     const existing = this.db.prepare("SELECT body FROM streamweaver_flow_installs WHERE tenant_id=? AND package_id=?").get(tenantId, packageId) as { body: string } | undefined;
     if (existing) return JSON.parse(existing.body) as StreamWeaverFlowInstallV1;
     const install: StreamWeaverFlowInstallV1 = { schemaVersion: 1, tenantId, packageId, installedAt: this.now() };
@@ -160,6 +223,7 @@ export class StreamWeaverFlowPackageStore {
   approveAndInstall(tenantId: string, packageId: string) {
     const item = this.get(tenantId, packageId);
     if (!item) throw new Error("Flow package does not exist or is not visible to this tenant");
+    assertStreamWeaverFlowRunnable(item);
     if (item.visibility === "community") return { package: item, install: this.install(tenantId, item.packageId) };
     const approved: StreamWeaverFlowPackageV1 = { ...item, commands: item.commands.map((command) => ({ ...command, enabled: true })), actions: item.actions.map((action) => ({ ...action, enabled: true })), updatedAt: this.now() };
     this.put(tenantId, approved);
