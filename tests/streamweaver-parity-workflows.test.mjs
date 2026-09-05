@@ -21,7 +21,7 @@ test('manual flow lifecycle keeps community originals intact, detects stale edit
   assert.equal(store.listInstalls('tenant-a').length,1);assert.equal(store.listInstalledPackages('tenant-a').length,0);
   store.setInstallEnabled('tenant-a',draft.packageId,true);assert.equal(store.listInstalledPackages('tenant-a').length,1);
   const original=store.get('tenant-a','mtman1987.boop'),copy=store.copyDraft('tenant-a',original.packageId,author);
-  assert.equal(copy.visibility,'private');assert.equal(copy.commands[0].enabled,false);
+  assert.equal(copy.visibility,'private');assert.equal(copy.commands[0].enabled,original.commands[0].enabled);assert.equal(store.listInstalls('tenant-a').some(i=>i.packageId===copy.packageId),false);
   assert.deepEqual(store.get('tenant-a',original.packageId),original);
   assert.throws(()=>store.editDraft('tenant-a',original,author,original.updatedAt),/Copy a community/);
   store.deleteDraft('tenant-a',draft.packageId,author.id);assert.equal(store.get('tenant-a',draft.packageId),undefined);assert.equal(store.listInstalls('tenant-a').length,0);
@@ -48,7 +48,7 @@ test('completed Discord steps survive a later failure and gateway retries use th
 }));
 
 test('unsupported imported steps cannot become enabled or report a successful preview',()=>fixture(async store=>{
-  const input=flow();input.commands[0].enabled=false;input.actions[0]={...input.actions[0],type:'execute-code',config:{code:'return 1;'}};
+  const input=flow();input.actions[0]={...input.actions[0],type:'execute-code',config:{code:'return 1;'}};
   const saved=store.editDraft('tenant-a',input,author);
   assert.throws(()=>store.approveAndInstall('tenant-a',saved.packageId),/registered execution capability/);
   const runtime=new StreamWeaverInstalledFlowConsumer(store,new MemoryStreamWeaverCommandState(),{send:async()=>({providerMessageId:'sent'})});

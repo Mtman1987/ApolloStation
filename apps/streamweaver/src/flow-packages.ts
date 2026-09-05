@@ -6,12 +6,14 @@ export const STREAMWEAVER_FLOW_PACKAGE_KIND = "streamweaver.flow-package" as con
 export const STREAMWEAVER_FLOW_AUTHOR = Object.freeze({ id: "mtman1987", displayName: "mtman1987" });
 
 export function assertStreamWeaverFlowRunnable(item: StreamWeaverFlowPackageV1) {
-  const supported=new Set(["send-chat","send-discord","wait","run-action","run-native","set-variable","condition","ai-response","obs-scene","device-command"]);
-  for(const command of item.commands)if(command.migrationNote)throw new Error(command.migrationNote);
-  for(const command of item.commands)if(command.edges===undefined&&command.actionIds.some(id=>item.actions.find(a=>a.id===id)?.type==="condition"))throw new Error("Enable branching and choose destinations for each condition before enabling this flow");
+  const supported=new Set(["send-chat","send-discord","wait","run-action","run-native","set-variable","condition","ai-response","obs-scene","obs-source","device-command"]);
+  for(const command of item.commands)if(command.enabled&&command.migrationNote)throw new Error(command.migrationNote);
+  for(const command of item.commands)if(command.enabled&&command.edges===undefined&&command.actionIds.some(id=>item.actions.find(a=>a.id===id)?.type==="condition"))throw new Error("Enable branching and choose destinations for each condition before enabling this flow");
   for(const action of item.actions) {
+    if(!action.enabled||!item.commands.some(command=>command.enabled&&command.actionIds.includes(action.id)))continue;
     if(!supported.has(action.type))throw new Error(`${action.type} needs a registered execution capability. Replace that step before enabling the flow.`);
-    if(action.type==="obs-scene"||action.type==="device-command"){if(!/^[A-Za-z0-9._:@/-]{1,200}$/.test(String(action.config.deviceId??"")))throw new Error("Choose a paired device on the Devices page, then select it for this step");if(action.type==="obs-scene"&&!String(action.config.sceneName??action.config.scene??"").trim())throw new Error("Choose an OBS scene name");if(action.type==="device-command"&&!Object.hasOwn(DEVICE_AUTOMATION_ACTIONS,String(action.config.action)))throw new Error("Choose an authorized device action");}
+    if(action.type==="obs-scene"||action.type==="obs-source"||action.type==="device-command"){if(!/^[A-Za-z0-9._:@/-]{1,200}$/.test(String(action.config.deviceId??"")))throw new Error("Choose a paired device on the Devices page, then select it for this step");if(action.type==="obs-scene"&&!String(action.config.sceneName??action.config.scene??"").trim())throw new Error("Choose an OBS scene name");if(action.type==="device-command"&&!Object.hasOwn(DEVICE_AUTOMATION_ACTIONS,String(action.config.action)))throw new Error("Choose an authorized device action");}
+    if(action.type==="obs-source"&&(!String(action.config.sceneName??action.config.scene??"").trim()||!String(action.config.sourceName??action.config.source??"").trim()||typeof action.config.visible!=="boolean"))throw new Error("Choose the OBS scene, source and visibility");
     if(action.type==="wait"&&(!Number.isFinite(Number(action.config.milliseconds??action.config.value??0))||Number(action.config.milliseconds??action.config.value??0)<0||Number(action.config.milliseconds??action.config.value??0)>60000))throw new Error("Wait steps must be between 0 and 60000 milliseconds");
     if(action.type==="run-native"&&!STREAMWEAVER_DONOR_COMMANDS.some(c=>c.donorId===action.config.donorId))throw new Error("Choose an existing native command");
     if(action.type==="run-action"&&!SPMT_SUITE_ACTION_CATALOG.some(a=>a.id===action.config.action))throw new Error("Choose an existing cross-app action");
@@ -177,7 +179,7 @@ export class StreamWeaverFlowPackageStore {
 
   copyDraft(tenantId: string, packageId: string, author: { id: string; displayName?: string }) {
     const current = this.exportPackage(tenantId, packageId);
-    return this.saveDraft(tenantId, { ...current, packageId: `flow.${crypto.randomUUID()}`, name: `${current.name.slice(0,110)} copy`, commands: current.commands.map(c => ({...c, enabled:false})), actions: current.actions.map(a => ({...a, enabled:false})) }, author);
+    return this.saveDraft(tenantId, { ...current, packageId: `flow.${crypto.randomUUID()}`, name: `${current.name.slice(0,110)} copy` }, author);
   }
 
   deleteDraft(tenantId: string, packageId: string, authorId: string) {
@@ -220,11 +222,11 @@ export class StreamWeaverFlowPackageStore {
     const candidate = object(value, "flow package");
     const candidateId = identifier(candidate.packageId, "packageId");
     const visible = this.get(tenantId, candidateId);
-    if (visible?.visibility === "community") return { package: visible, install: this.install(tenantId, visible.packageId) };
+    if (visible?.visibility === "community") return { package: visible };
     const occupied = this.db.prepare("SELECT tenant_id AS tenantId FROM streamweaver_flow_packages WHERE package_id=?").get(candidateId) as { tenantId: string } | undefined;
-    const source = occupied && occupied.tenantId !== tenantId ? remapImportedFlowPackage(value) : value;
+    const source = occupied ? remapImportedFlowPackage(value) : value;
     const saved = this.saveDraft(tenantId, source, author);
-    return { package: saved, install: this.install(tenantId, saved.packageId) };
+    return { package: saved };
   }
 
   install(tenantId: string, packageId: string) {
@@ -258,7 +260,7 @@ export class StreamWeaverFlowPackageStore {
     if (!item) throw new Error("Flow package does not exist or is not visible to this tenant");
     assertStreamWeaverFlowRunnable(item);
     if (item.visibility === "community") return { package: item, install: this.install(tenantId, item.packageId) };
-    const approved: StreamWeaverFlowPackageV1 = { ...item, commands: item.commands.map((command) => ({ ...command, enabled: true })), actions: item.actions.map((action) => ({ ...action, enabled: true })), updatedAt: this.now() };
+    const approved: StreamWeaverFlowPackageV1 = { ...item, updatedAt: this.now() };
     this.put(tenantId, approved);
     return { package: approved, install: this.install(tenantId, approved.packageId) };
   }

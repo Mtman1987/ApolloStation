@@ -64,14 +64,14 @@ test("import, approval, publishing, and collision remapping preserve one portabl
   try {
     const importedLibrary = store.importPackage("tenant-a", store.exportPackage("tenant-a", "mtman1987.coinflip"), author);
     assert.equal(importedLibrary.package.author.id, "mtman1987");
-    assert.deepEqual(store.listInstalls("tenant-a").map((item) => item.packageId), ["mtman1987.coinflip"]);
+    assert.deepEqual(store.listInstalls("tenant-a"), []);
 
     const imported = store.importPackage("tenant-a", customFlow(), author);
     assert.equal(imported.package.commands[0].enabled, false);
     assert.equal(imported.package.actions[0].enabled, false);
     const approved = store.approveAndInstall("tenant-a", imported.package.packageId);
-    assert.equal(approved.package.commands[0].enabled, true);
-    assert.equal(approved.package.actions[0].enabled, true);
+    assert.equal(approved.package.commands[0].enabled, false);
+    assert.equal(approved.package.actions[0].enabled, false);
     assert.equal(store.publish("tenant-a", imported.package.packageId, author).visibility, "community");
 
     const bundle = normalizeFlowPackage({ ...customFlow("owner-a.bundle"), author, createdAt: now(), updatedAt: now(), commands: [

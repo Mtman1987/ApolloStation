@@ -1,5 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
-import { assertDeviceRelayCommandV1, type DeviceCommandCapabilityV1, type DeviceRelayCommandV1, type DeviceRelayReceiptV1 } from "@spmt/contracts";
+import { assertDeviceRelayCommandV1, assertDeviceAutomationPayload, type DeviceCommandCapabilityV1, type DeviceRelayCommandV1, type DeviceRelayReceiptV1 } from "@spmt/contracts";
 
 export interface CompanionAuthorityPrincipalV1 { tenantId: string; appId: string; scopes: string[]; }
 export interface CompanionDeviceV1 { schemaVersion: 1; tenantId: string; deviceId: string; name: string; capabilities: DeviceCommandCapabilityV1[]; pairedAt: string; revokedAt?: string; }
@@ -7,6 +7,7 @@ export interface CompanionLocalAdapterV1 { execute(command: DeviceRelayCommandV1
 
 const ACTION_CAPABILITY: Record<string, DeviceCommandCapabilityV1> = {
   "obs.scene.set": "obs.scene",
+  "obs.source.visibility.set": "obs.scene",
   "obs.stream.start": "obs.stream",
   "obs.stream.stop": "obs.stream",
   "overlay.window.open": "overlay.window",
@@ -90,6 +91,7 @@ export class SqliteCompanionDeviceRelay {
 }
 
 function validatePayload(command: DeviceRelayCommandV1): void {
+  if(command.action==="obs.source.visibility.set")assertDeviceAutomationPayload(command.action,command.payload);
   if (command.action === "media.volume.set") {
     const volume = Number(command.payload.volume);
     if (!Number.isFinite(volume) || volume < 0 || volume > 1) throw new Error("Companion volume must be from 0 through 1");

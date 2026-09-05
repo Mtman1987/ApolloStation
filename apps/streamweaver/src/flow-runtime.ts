@@ -69,14 +69,14 @@ export class StreamWeaverInstalledFlowConsumer {
         if(run.visited.includes(id)){run.queue.shift();continue;}
         let result=Object.hasOwn(run.results,id)?run.results[id]:undefined;
         if(!result){
-          result=action.enabled?await this.step(action,delivery,run,false):{text:"",output:"",outcome:"success"};
+          result=action.enabled?await this.step(action,delivery,run,false):{text:"",output:"",outcome:action.type==="condition"?"false":"success"};
           run.results[id]=result;
           // Save the produced result before chat delivery. A network retry uses its stable delivery key.
           this.save(run);
         }
         if(result.text){await this.send(delivery,result.text,id);run.replies.push(result.text);}
         if(result.output){run.variables.lastOutput=result.output;if(action.config.saveAs)run.variables[String(action.config.saveAs)]=result.output;}
-        run.steps.push({actionId:id,type:action.type,state:"succeeded",output:result.output,outcome:result.outcome});
+        run.steps.push({actionId:id,type:action.type,state:action.enabled?"succeeded":"skipped",output:result.output,outcome:result.outcome});
         run.visited.push(id);run.queue.shift();delete run.pending;
         for(const next of successors(run.command,id,result.outcome))if(!run.visited.includes(next)&&!run.queue.includes(next))run.queue.push(next);
         this.save(run);
@@ -97,7 +97,7 @@ export class StreamWeaverInstalledFlowConsumer {
     const command=item.commands.find(c=>c.id===commandId);if(!command)throw new Error("Flow preview command does not exist");
     const run:FlowExecution={delivery,package:item,command,state:"running",variables:{},queue:roots(command),visited:[],steps:[],replies:[],results:{},cooldownKey:"",occurredAt:new Date(this.nowMs()).toISOString()};
     const outputs:Array<{actionId:string;type:StreamWeaverFlowActionV1["type"];text:string}>=[];
-    while(run.queue.length){const id=run.queue.shift()!;if(run.visited.includes(id))continue;const action=item.actions.find(a=>a.id===id)!,result=await this.step(action,delivery,run,true);run.visited.push(id);if(result.output){run.variables.lastOutput=result.output;if(action.config.saveAs)run.variables[String(action.config.saveAs)]=result.output;}if(result.text)outputs.push({actionId:id,type:action.type,text:result.text});for(const next of successors(command,id,result.outcome))if(!run.visited.includes(next))run.queue.push(next);}
+    while(run.queue.length){const id=run.queue.shift()!;if(run.visited.includes(id))continue;const action=item.actions.find(a=>a.id===id)!,result:StepResult=action.enabled?await this.step(action,delivery,run,true):{text:"",output:"",outcome:action.type==="condition"?"false":"success"};run.visited.push(id);if(result.output){run.variables.lastOutput=result.output;if(action.config.saveAs)run.variables[String(action.config.saveAs)]=result.output;}if(result.text)outputs.push({actionId:id,type:action.type,text:result.text});for(const next of successors(command,id,result.outcome))if(!run.visited.includes(next))run.queue.push(next);}
     return {command,outputs};
   }
   private match(message:NormalizedChatMessageV1){
@@ -140,13 +140,13 @@ export class StreamWeaverInstalledFlowConsumer {
       if(preview)return result(text,text);
       await this.egress.send({schemaVersion:1,tenantId:delivery.message.tenantId,provider:"discord",connectionId,channelId,text,idempotencyKey:`streamweaver-flow-discord:${delivery.deliveryId}:${action.id}`});return result(text);
     }
-    if(action.type==="obs-scene"||action.type==="device-command"){
+    if(action.type==="obs-scene"||action.type==="obs-source"||action.type==="device-command"){
       if(preview)return result("","Run this flow in a Simulation Room to inspect the isolated device state.");
       if(!this.services.device)throw new Error("Companion device execution is unavailable");
       const pending=run.pending?.actionId===action.id?run.pending.jobId:undefined;
       if(pending)return result(await this.jobResult(delivery,action.id,pending));
-      const payload=action.type==="obs-scene"?{sceneName:render(action.config.sceneName??action.config.scene)}:Object.fromEntries(Object.entries(record(action.config.payload)??{}).map(([key,value])=>[key,typeof value==="string"?render(value):value]));
-      const response=await this.services.device({delivery,deviceId:String(action.config.deviceId??""),ownerUserId:run.package.author.id,action:action.type==="obs-scene"?"obs.scene.set":String(action.config.action??""),payload,requestId:`flow-device:${delivery.deliveryId}:${action.id}`});
+      const payload=action.type==="obs-scene"?{sceneName:render(action.config.sceneName??action.config.scene)}:action.type==="obs-source"?{sceneName:render(action.config.sceneName??action.config.scene),sourceName:render(action.config.sourceName??action.config.source),visible:action.config.visible}:Object.fromEntries(Object.entries(record(action.config.payload)??{}).map(([key,value])=>[key,typeof value==="string"?render(value):value]));
+      const response=await this.services.device({delivery,deviceId:String(action.config.deviceId??""),ownerUserId:run.package.author.id,action:action.type==="obs-scene"?"obs.scene.set":action.type==="obs-source"?"obs.source.visibility.set":String(action.config.action??""),payload,requestId:`flow-device:${delivery.deliveryId}:${action.id}`});
       return result('output' in response?response.output:await this.jobResult(delivery,action.id,response.jobId));
     }
     if(action.type==="ai-response"){

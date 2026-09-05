@@ -99,3 +99,11 @@ Acceptance runs an installed StreamWeaver scene flow through SPMT admission, a p
 Imported nested graph actions now return to the enclosing action for both condition outcomes, including an empty branch. Imports no longer flatten a nested graph into a sequential chain. Regex matching follows the command's selected case rule. Runtime tests exercise both actual branch paths and case-sensitive versus insensitive matching.
 
 Device increment validation: the full offline repository gate passed 785 tests. A final focused check additionally exercises a connection loss after job admission and confirms retry reuses the original job. Device job timestamps and identifiers are stable for the captured input. The OBS runner parses successfully and the generated app controller passes its DOM checks. No user OBS, provider or external model credentials were used for these checks.
+
+## Step-state preservation and OBS source visibility
+
+Importing or copying a package now leaves it uninstalled and preserves each source command and step's enabled flag. Installation no longer turns disabled steps on. The builder exposes command and step enablement separately from installation; generated drafts start uninstalled with their intended active steps. Disabled steps are recorded as skipped in execution and omitted from previews. Disabled conditions follow the false branch. A disabled referenced legacy action disables all its expanded steps. Importing an existing private package creates a separate draft instead of overwriting an installed flow.
+
+OBS source visibility is a bounded Companion action with its own per-app consent. It resolves the named scene/source to its OBS scene-item ID, then shows or hides that item and returns the actual receipt. It uses the existing paired scene capability, with no arbitrary OBS request exposed to flows. Owner device updates also reject malformed action lists instead of interpreting them as a revoke request.
+
+Validation: 25 focused flow/import/device/mounted-HTTP tests passed. The full offline run found two tests asserting the old forced-enablement behavior; after correcting those expectations, all nine workflow tests passed. The generated controller's DOM checks passed. Credentialed OBS and phone rendering acceptance remain unobserved.

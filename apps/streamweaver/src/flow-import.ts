@@ -20,7 +20,7 @@ export function importStreamWeaverLegacy(value:unknown,author:{id:string;display
     function unmapped(raw:Json,reason:string){const id=add(raw,'execute-code',{migrationRequired:reason});warn(id,reason);return [id];}
     function mapStep(raw:Json):string[]{
       const c={...raw,...object(raw.config??raw.data)},type=String(raw.subtype??raw.$type??raw.type??'').replace(/^.*\./,'').replace(/,.*$/,'').replace(/\s+/g,'').toLowerCase();
-      if(['runaction','executeaction'].includes(type))return expand(String(c.actionId??''),String(c.actionName??''));
+      if(['runaction','executeaction'].includes(type)){const ids=expand(String(c.actionId??''),String(c.actionName??''));if(raw.enabled===false)for(const step of steps)if(ids.includes(step.id))step.enabled=false;return ids;}
       if(['send-chat','sendchatmessage','twitchchatmessage','action:send-chat'].includes(type))return [add(raw,'send-chat',{text:c.text??c.message??''})];
       if(['send-discord','discordsendmessage','discordmessage','discord','senddiscordmessage'].includes(type))return [add(raw,'send-discord',{text:c.text??c.message??'',channelId:c.channelId??'',connectionId:c.connectionId??''})];
       if(['delay','wait'].includes(type)){const ms=c.milliseconds??(raw.subtype==='delay'?Number(c.seconds??c.duration??0)*1000:c.duration??c.value??0);return [add(raw,'wait',{milliseconds:Number(ms)})];}
@@ -58,7 +58,7 @@ export function importStreamWeaverLegacy(value:unknown,author:{id:string;display
           for(const outcome of Array.isArray(outcomes)?outcomes:[outcomes]){if(outcome!==undefined&&!['success','true','false'].includes(String(outcome)))throw new Error(`Unsupported graph outcome: ${outcome}`);connect(from,to,outcome===undefined?undefined:String(outcome) as 'success'|'true'|'false');}
         }
       }else {const subs=list(target.subActions??target.subactions);if(!subs.length)ids=unmapped(target,'This action has no executable subactions. Select its ecosystem replacement.');else for(const sub of subs){const next=mapStep(sub);connect(ids,next);ids.push(...next);}}
-      references.delete(key);return ids;
+      if(target.enabled===false)for(const step of steps)if(ids.includes(step.id))step.enabled=false;references.delete(key);return ids;
     }
     let actionIds:string[]=[];
     const ids=Array.isArray(command.actionIds)?command.actionIds.map(String):command.actionId?[String(command.actionId)]:[];
@@ -67,7 +67,7 @@ export function importStreamWeaverLegacy(value:unknown,author:{id:string;display
     for(const id of ids){const next=expand(id);connect(actionIds,next);actionIds.push(...next);}
     if(!actionIds.length)actionIds=unmapped(command,'Choose the action that should run for this imported command.');
     const triggers=String(command.command??command.trigger??('!'+String(command.name??'imported').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,90))).split(/[\r\n]+/).filter(Boolean),trigger=triggers[0]??'!imported';
-    const commands=[{id:`command.${index}`,trigger,aliases:[...triggers.slice(1),...listStrings(command.aliases)],actionIds,enabled:false,caseSensitive:command.caseSensitive===true,globalCooldownSeconds:Number(command.globalCooldown??object(command.cooldown).global??0),...(command.permittedUsers||command.permittedGroups||command.permissions||command.sources?{migrationNote:'Review imported access rules and choose an Apollo access level before enabling.'}:{}),runtime:'flow',matcher:command.mode===1||command.regex?'regex':trigger.startsWith('!')?'command':'bare',cooldownSeconds:Number(command.userCooldown??object(command.cooldown).user??0),...(graph?{edges}:{})}];
+    const commands=[{id:`command.${index}`,trigger,aliases:[...triggers.slice(1),...listStrings(command.aliases)],actionIds,enabled:command.enabled!==false,caseSensitive:command.caseSensitive===true,globalCooldownSeconds:Number(command.globalCooldown??object(command.cooldown).global??0),...(command.permittedUsers||command.permittedGroups||command.permissions||command.sources?{migrationNote:'Review imported access rules and choose an Apollo access level before enabling.'}:{}),runtime:'flow',matcher:command.mode===1||command.regex?'regex':trigger.startsWith('!')?'command':'bare',cooldownSeconds:Number(command.userCooldown??object(command.cooldown).user??0),...(graph?{edges}:{})}];
     if(command.permittedUsers||command.permittedGroups||command.permissions||command.sources||command.globalCooldown)warnings.push({packageId,message:'Review legacy permissions, source filters and global cooldown before enabling this import; the original values are retained.'});
     const candidate=normalizeFlowPackage({schemaVersion:1,kind:'streamweaver.flow-package',packageId,packageKind:commands.length?'command_flow':'action_flow',name:String(command.name??source.name??trigger).slice(0,120),description:String(command.description??source.description??'Imported flow').slice(0,1000),author,commands,actions:steps,legacySource:{format:'legacy-streamweaver-or-streamerbot',source:structuredClone(source),commandIndex:index}}, {now,author,visibility:'private'});
     packages.push(candidate);

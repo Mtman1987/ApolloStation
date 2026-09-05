@@ -58,3 +58,16 @@ test('regex imports honor the selected case rule at delivery',()=>{
   assert.equal(runtime.accepts(message),true);const draft=store.exportPackage('tenant',pkg.packageId);draft.commands[0].caseSensitive=true;store.saveDraft('tenant',draft,author);store.approveAndInstall('tenant',pkg.packageId);assert.equal(runtime.accepts(message),false);assert.equal(runtime.accepts({...message,text:'Hello'}),true);
  }finally{store.close()}
 });
+
+test('copy, import and installation preserve disabled commands, referenced actions and steps at delivery and preview',async()=>{
+ const archive={commands:[{id:'enabled',command:'!test',actionId:'outer'},{id:'disabled',command:'!disabled',actionId:'outer',enabled:false}],actions:[{id:'outer',subActions:[{type:'SendChatMessage',message:'First'},{type:'RunAction',actionId:'nested',enabled:false},{type:'SendChatMessage',message:'Disabled',enabled:false},{type:'SendChatMessage',message:'Last'}]},{id:'nested',subActions:[{type:'SendChatMessage',message:'Must stay off'}]}]},store=new StreamWeaverFlowPackageStore(':memory:'),sent=[];
+ try{
+  const review=importStreamWeaverLegacy(archive,author,now);const pkg=store.saveDraft('tenant',review.packages[0],author);const disabled=store.saveDraft('tenant',review.packages[1],author);
+  assert.equal(store.listInstalls('tenant').length,0);const copy=store.copyDraft('tenant',pkg.packageId,author);assert.deepEqual(copy.actions.map(a=>a.enabled),[true,false,false,true]);
+  const imported=store.importPackage('tenant',pkg,author);assert.notEqual(imported.package.packageId,pkg.packageId);assert.equal(store.listInstalls('tenant').length,0);
+  store.approveAndInstall('tenant',pkg.packageId);store.approveAndInstall('tenant',disabled.packageId);
+  const runtime=new StreamWeaverInstalledFlowConsumer(store,new MemoryStreamWeaverCommandState(),{send:async m=>{sent.push(m.text);return {providerMessageId:String(sent.length)}}}),delivery={schemaVersion:1,deliveryId:'run',consumerId:runtime.id,attempts:1,message:{schemaVersion:1,tenantId:'tenant',provider:'twitch',connectionId:'main',channelId:'chat',messageId:'run',text:'!test',occurredAt:now,actor:{providerUserId:'viewer',username:'viewer',roles:['member'],isBot:false},mentions:[]}};
+  assert.equal(runtime.accepts({...delivery.message,text:'!disabled'}),false);await runtime.deliver(delivery);assert.deepEqual(sent,['First','Last']);assert.deepEqual(store.listRuns('tenant')[0].steps.map(s=>s.state),['succeeded','skipped','skipped','succeeded']);
+  assert.deepEqual((await runtime.preview(pkg,pkg.commands[0].id,delivery)).outputs.map(s=>s.text),['First','Last']);
+ }finally{store.close()}
+});

@@ -33,6 +33,13 @@ export class CompanionObsWebSocket implements CompanionLocalAdapterV1 {
   async execute(command:DeviceRelayCommandV1){
     const payload=command.payload,name=(key:string)=>{const value=String(payload[key]??"").trim();if(!value||value.length>200||/[\r\n\0]/.test(value))throw new Error(`OBS ${key} is required`);return value};
     if(command.action==="obs.scene.set"){const sceneName=name("sceneName");await this.request("SetCurrentProgramScene",{sceneName});return{detail:`OBS scene changed to ${sceneName}`}}
+    if(command.action==="obs.source.visibility.set"){
+      const sceneName=name("sceneName"),sourceName=name("sourceName");if(typeof payload.visible!=="boolean")throw new Error("OBS visible must be boolean");
+      const item=await this.request("GetSceneItemId",{sceneName,sourceName});
+      if(!Number.isSafeInteger(item.sceneItemId)||Number(item.sceneItemId)<0)throw new Error("OBS source was not found in this scene");
+      await this.request("SetSceneItemEnabled",{sceneName,sceneItemId:item.sceneItemId,sceneItemEnabled:payload.visible});
+      return{detail:`OBS source ${sourceName} ${payload.visible?"shown":"hidden"} in ${sceneName}`};
+    }
     const inputName=name("inputName");
     if(command.action==="media.play"||command.action==="media.pause")await this.request("TriggerMediaInputAction",{inputName,mediaAction:command.action==="media.play"?"OBS_WEBSOCKET_MEDIA_INPUT_ACTION_PLAY":"OBS_WEBSOCKET_MEDIA_INPUT_ACTION_PAUSE"});
     else if(command.action==="media.seek"){const mediaCursor=Number(payload.positionMs);if(!Number.isSafeInteger(mediaCursor)||mediaCursor<0)throw new Error("OBS media positionMs must be nonnegative milliseconds");await this.request("SetMediaInputCursor",{inputName,mediaCursor});}

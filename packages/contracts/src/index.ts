@@ -549,11 +549,12 @@ export type DeviceCommandCapabilityV1 = (typeof DEVICE_COMMAND_CAPABILITIES)[num
 
 export const PAIRED_DEVICE_KINDS = ["companion", "phone", "bluetooth-headset", "glasses", "camera", "other"] as const;
 export type PairedDeviceKindV1 = (typeof PAIRED_DEVICE_KINDS)[number];
-export const DEVICE_AUTOMATION_ACTIONS = {"obs.scene.set":"obs.scene","media.play":"media.playback","media.pause":"media.playback","media.seek":"media.playback","media.volume.set":"media.playback","media.mute.set":"media.playback"} as const;
+export const DEVICE_AUTOMATION_ACTIONS = {"obs.scene.set":"obs.scene","obs.source.visibility.set":"obs.scene","media.play":"media.playback","media.pause":"media.playback","media.seek":"media.playback","media.volume.set":"media.playback","media.mute.set":"media.playback"} as const;
 export function assertDeviceAutomationPayload(action:string,value:Record<string,unknown>):Record<string,unknown>{
   if(!Object.hasOwn(DEVICE_AUTOMATION_ACTIONS,action))throw new Error("Unsupported device automation action");
   const name=(key:string)=>{const result=String(value[key]??"").trim();if(!result||result.length>200||/[\r\n\0]/.test(result))throw new Error(`Device ${key} is required`);return result};
   if(action==="obs.scene.set")return{sceneName:name("sceneName")};
+  if(action==="obs.source.visibility.set"){if(typeof value.visible!=="boolean")throw new Error("Device visible must be boolean");return{sceneName:name("sceneName"),sourceName:name("sourceName"),visible:value.visible};}
   const inputName=name("inputName");
   if(action==="media.volume.set"){const volume=Number(value.volume);if(!Number.isFinite(volume)||volume<0||volume>1)throw new Error("Device volume must be from 0 to 1");return{inputName,volume};}
   if(action==="media.seek"){const positionMs=Number(value.positionMs);if(!Number.isSafeInteger(positionMs)||positionMs<0)throw new Error("Device positionMs must be nonnegative milliseconds");return{inputName,positionMs};}
