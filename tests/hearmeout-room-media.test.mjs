@@ -51,7 +51,7 @@ test("movie and music queues are canonical per-room lanes with durable idempoten
     assert.equal(first.playback.status, "playing");
     const second = runtime.enqueue(owner(), { roomId: "room-1", lane: "movie", item: media("movie-2"), operationId: "enqueue-2", now: "2026-08-23T12:00:05.000Z" });
     assert.equal(second.queue.length, 1);
-    const replay = runtime.enqueue(owner(), { roomId: "room-1", lane: "movie", item: media("ignored"), operationId: "enqueue-2", now: "2026-08-23T12:00:06.000Z" });
+    const replay = runtime.enqueue(owner(), { roomId: "room-1", lane: "movie", item: media("movie-2"), operationId: "enqueue-2", now: "2026-08-23T12:00:06.000Z" });
     assert.equal(replay.queue.length, 1);
     assert.equal(replay.queue[0].item.itemId, "movie-2");
     const music = runtime.enqueue(owner(), { roomId: "room-1", lane: "music", item: media("song-1", "music"), operationId: "music-1", now: at });

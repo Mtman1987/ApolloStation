@@ -135,6 +135,8 @@ export class SqliteHearMeOutRoomMediaRuntime {
         PRIMARY KEY(tenant_id,operation_id)
       ) STRICT;
     `);
+    const columns=this.db.prepare("PRAGMA table_info(hmo_operations)").all() as {name:string}[];
+    if(!columns.some(column=>column.name==="request_signature"))this.db.exec("ALTER TABLE hmo_operations ADD COLUMN request_signature TEXT");
   }
 
   close(): void { this.db.close(); }
@@ -338,11 +340,12 @@ export class SqliteHearMeOutRoomMediaRuntime {
 
   enqueue(principal: HearMeOutPrincipalV1, input: { roomId: string; lane: HearMeOutMediaLaneV1; item: HearMeOutMediaItemV1; operationId: string; now?: string }): HearMeOutMediaSessionV1 {
     assertPrincipal(principal);
-    const replay = this.replay<HearMeOutMediaSessionV1>(principal.tenantId, input.operationId, "enqueue");
-    if (replay) return replay;
     const at = validNow(input.now);
     const room = this.requireRoom(principal.tenantId, input.roomId, at);
     this.requireMember(principal.tenantId, room.roomId, principal.userId);
+    const signature=JSON.stringify([principal.userId,input.roomId,input.lane,input.item.type,input.item.title,input.item.source,input.item.playbackUrl,input.item.posterUrl,input.item.durationSeconds,input.item.metadata]);
+    const replay=this.replay<HearMeOutMediaSessionV1>(principal.tenantId,input.operationId,"enqueue",signature);
+    if(replay)return replay;
     assertItem(input.item);
     const session = this.readSession(principal.tenantId, room.roomId, input.lane) ?? emptySession(principal.tenantId, room.roomId, input.lane, at);
     const request: HearMeOutMediaRequestV1 = {
@@ -360,18 +363,19 @@ export class SqliteHearMeOutRoomMediaRuntime {
     session.revision += 1;
     this.transaction(() => {
       this.writeSession(session);
-      this.remember(principal.tenantId, input.operationId, "enqueue", session);
+      this.remember(principal.tenantId, input.operationId, "enqueue", session,signature);
     });
     return structuredClone(session);
   }
 
   control(principal: HearMeOutPrincipalV1, input: { roomId: string; lane: HearMeOutMediaLaneV1; action: HearMeOutControlActionV1; operationId: string; position?: number; targetIndex?: number; expectedRequestId?: string; now?: string }): HearMeOutMediaSessionV1 {
     assertPrincipal(principal);
-    const replay = this.replay<HearMeOutMediaSessionV1>(principal.tenantId, input.operationId, "control");
-    if (replay) return replay;
     const at = validNow(input.now);
     const room = this.requireRoom(principal.tenantId, input.roomId, at);
     this.requireMember(principal.tenantId, room.roomId, principal.userId);
+    const signature=JSON.stringify([principal.userId,input.roomId,input.lane,input.action,input.position,input.targetIndex,input.expectedRequestId]);
+    const replay=this.replay<HearMeOutMediaSessionV1>(principal.tenantId,input.operationId,"control",signature);
+    if(replay)return replay;
     const session = this.readSession(principal.tenantId, room.roomId, input.lane) ?? emptySession(principal.tenantId, room.roomId, input.lane, at);
     this.assertCanControl(principal, room, session, input.action);
 
@@ -407,7 +411,7 @@ export class SqliteHearMeOutRoomMediaRuntime {
     session.revision += 1;
     this.transaction(() => {
       this.writeSession(session);
-      this.remember(principal.tenantId, input.operationId, "control", session);
+      this.remember(principal.tenantId, input.operationId, "control", session,signature);
     });
     return structuredClone(session);
   }
@@ -505,15 +509,16 @@ export class SqliteHearMeOutRoomMediaRuntime {
     this.db.prepare("INSERT INTO hmo_media_sessions(tenant_id,room_id,lane,body) VALUES(?,?,?,?) ON CONFLICT(tenant_id,room_id,lane) DO UPDATE SET body=excluded.body").run(session.tenantId, session.roomId, session.lane, JSON.stringify(session));
   }
 
-  private replay<T>(tenantId: string, operationId: string, kind: string): T | undefined {
-    const row = this.db.prepare("SELECT kind,body FROM hmo_operations WHERE tenant_id=? AND operation_id=?").get(cleanId(tenantId, "tenantId"), cleanId(operationId, "operationId")) as { kind: string; body: string } | undefined;
+  private replay<T>(tenantId: string, operationId: string, kind: string,signature?:string): T | undefined {
+    const row = this.db.prepare("SELECT kind,body,request_signature FROM hmo_operations WHERE tenant_id=? AND operation_id=?").get(cleanId(tenantId, "tenantId"), cleanId(operationId, "operationId")) as { kind: string; body: string;request_signature?:string } | undefined;
     if (!row) return undefined;
     if (row.kind !== kind) throw new Error("HearMeOut operation ID was already used for another action");
+    if(signature&&row.request_signature&&signature!==row.request_signature)throw new Error("HearMeOut operation ID was already used with different values");
     return JSON.parse(row.body);
   }
 
-  private remember(tenantId: string, operationId: string, kind: string, value: unknown): void {
-    this.db.prepare("INSERT INTO hmo_operations(tenant_id,operation_id,kind,body) VALUES(?,?,?,?)").run(tenantId, cleanId(operationId, "operationId"), kind, JSON.stringify(value));
+  private remember(tenantId: string, operationId: string, kind: string, value: unknown,signature?:string): void {
+    this.db.prepare("INSERT INTO hmo_operations(tenant_id,operation_id,kind,body,request_signature) VALUES(?,?,?,?,?)").run(tenantId, cleanId(operationId, "operationId"), kind, JSON.stringify(value),signature??null);
   }
 
   private transaction<T>(fn: () => T): T {

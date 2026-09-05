@@ -75,3 +75,13 @@ Validation covers injected receipt failure in both memory and SQLite stores, tra
 ## Practical acceptance boundary
 
 The Sprite network policy and provider-write mode are existing access controls. This work does not widen them. Credentialed Twitch/Discord, external model, paired-device and phone rendering acceptance remains separate from code and isolated-runtime tests. Any concrete block must be recorded with the missing service/configuration and its failed acceptance check.
+
+## HearMeOut media counterpart
+
+StreamWeaver now has a Media & Mixer page using the same authenticated HearMeOut room API as HearMeOut itself. It selects existing rooms, supports private admission, reads both canonical queues, adds playable media, and controls play/pause/next/jump/seek/volume/mute/clear. The two browser players use real media URLs; local playback starts only after the operator enables it. Refresh updates queue state without replacing unfinished forms. This is a shared operator surface, not a second queue database.
+
+Media enqueue/control HTTP requests now retain idempotency keys; durable receipts validate the original actor, room, lane and input. Repeated requests cannot add a second copy, advance twice or silently reuse a key for different media. Room membership is checked before a receipt is returned. Suite media reads also require admission. Companion workers now fail rejected device commands instead of recording them as successful.
+
+Acceptance covers integrated signed-in HTTP queue operations, conflicting retries, unauthenticated/cross-origin denial, suite room privacy, and rejected device execution. The generated controller is exercised in a DOM harness for explicit playback, draft preservation, endpoint wiring, mixer values, private admission and restarting playback. Actual audio/network playback on the user's device remains unobserved. This increment does not yet supply server TTS/STT, BRB/shoutout generation, an authorized device-automation binding, or a private-room-to-public-output binding.
+
+The concurrent Nebula release changed Sprite promotion to manual while the release repository is assembled. Subsequent StreamWeaver commits preserve that workflow and are pushed to main without silently restoring automatic deployment.
