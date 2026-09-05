@@ -43,6 +43,12 @@ function setup(t){
  return{owner,member,service,send,worker,jobs,authority,api,tokens,flowPath};
 }
 
+test('simulation input completes a branched flow after a durable wait without another button press',async t=>{
+ const f=setup(t),flows=new StreamWeaverFlowPackageStore(f.flowPath);
+ try { const pkg=flows.editDraft('tenant-a',{kind:'streamweaver.flow-package',packageId:'branch-delay',name:'Branch and wait',commands:[{id:'test',trigger:'!test',actionIds:['choose','wait','reply','wrong'],edges:[{source:'choose',target:'wait',outcome:'true'},{source:'choose',target:'wrong',outcome:'false'},{source:'wait',target:'reply'}]}],actions:[{id:'choose',type:'condition',config:{left:'%args%',operator:'==',right:'yes'}},{id:'wait',type:'wait',config:{milliseconds:20}},{id:'reply',type:'send-chat',config:{text:'Finished waiting'}},{id:'wrong',type:'send-chat',config:{text:'Wrong branch'}}]}, {id:'owner'});flows.install('tenant-a',pkg.packageId); }finally{flows.close()}
+ const result=await f.send('!test yes');const output=result.events.filter(e=>e.payload.direction==='egress').map(e=>e.payload.body);assert.deepEqual(output,['Finished waiting']);
+});
+
 test('typed studio input reaches real StreamWeaver, HearMeOut, Tag, Bingo and Quackverse handlers through SDK/API/jobs',async t=>{
  const f=setup(t);
  await f.send('!currencyname Stars');

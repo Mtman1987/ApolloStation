@@ -102,6 +102,7 @@ export class SimulationRoomRuntime {
         return { response: String(result.text ?? "Action completed."), result };
       } };
       const consumers: ChatGatewayConsumerV1[] = [], observers: ChatGatewayMessageObserverV1[] = [];
+      let streamweaver: StreamWeaverProviderRuntime | undefined;
       if (!input.appIds.includes("streamweaver")) consumers.push(new StreamWeaverBotActionConsumer(botActions, {send:send("chat-gateway")}));
       if (input.appIds.includes("streamweaver")) {
         const flowPath = path("streamweaver");
@@ -117,7 +118,7 @@ export class SimulationRoomRuntime {
             for (const pkg of source.listInstalledPackages(tenantId)) { if(!builtins.has(pkg.packageId))target.saveDraft(tenantId, pkg, pkg.author); target.install(tenantId, pkg.packageId); }
           } finally { source.close(); target.close(); }
         }
-        const runtime = new StreamWeaverProviderRuntime({ databasePath: flowPath, client: client("streamweaver"), egress: { send: send("streamweaver") }, botActions, allowAssistant: false });
+        const runtime = streamweaver = new StreamWeaverProviderRuntime({ databasePath: flowPath, client: client("streamweaver"), egress: { send: send("streamweaver") }, botActions, allowAssistant: false });
         stores.push(runtime); consumers.push(...runtime.consumers); observers.push(...runtime.messageObservers);
       }
       if (input.appIds.includes("nebula-arcade")) {
@@ -154,6 +155,7 @@ export class SimulationRoomRuntime {
         return {token:`@${username}`,username,providerUserId:snowflake(known?.user_id || `mention:${username}`),...(known?{canonicalUserId:known.user_id}:{})};
       });
       const delivered = await gateway.ingest({ schemaVersion: 1, tenantId, provider, connectionId, channelId, sourceChannelId: channelId, messageId: job.id, text: input.message, mentions, occurredAt: job.createdAt, providerUserId: snowflake(actor.userId), canonicalUserId: actor.userId, username: actor.username, roles: actor.role === "owner" ? ["broadcaster", "moderator"] : ["member"] });
+      await streamweaver?.settleFlows();
       if (input.appIds.includes("nebula-arcade")) {
         const tags = new SqliteNebulaTagStore(path("nebula")), experience = new SqliteNebulaTagExperienceStore(path("nebula"));
         try { const snapshot = buildNebulaTagOverlaySnapshot(tags.getState(tenantId).state, { viewerUserId: actor.userId }); await emit("nebula-arcade", { lane: "overlay", direction: "preview", title: "Nebula Arcade Tag overlay", body: "", provider, data: { renderer: "nebula-tag", snapshot, messages: experience.listOverlayMessages(tenantId, channelId, 0).slice(-50) } }); } finally { tags.close(); experience.close(); }

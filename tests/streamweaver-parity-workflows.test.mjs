@@ -62,7 +62,7 @@ test('chat steps deliver in sequence instead of waiting for the entire pipeline,
   const sent=[];let fail=true;
   const runtime=new StreamWeaverInstalledFlowConsumer(store,new MemoryStreamWeaverCommandState(),{send:async m=>{sent.push(m);return {providerMessageId:m.idempotencyKey}}},undefined,{execute:async()=>{assert.equal(sent[0].text,'Starting now');if(fail)throw Error('Interrupted');return 'Finished'}});
   await assert.rejects(runtime.deliver(delivery()),/Interrupted/);assert.equal(sent.length,1);
-  fail=false;await runtime.deliver(delivery());assert.equal(sent[1].idempotencyKey,sent[0].idempotencyKey);assert.equal(sent.at(-1).text,'Finished');
+  fail=false;await runtime.deliver(delivery());assert.equal(sent.filter(m=>m.text==='Starting now').length,1);assert.equal(sent.at(-1).text,'Finished');
 }));
 
 test('customized native command names execute their bound action instead of requiring the old trigger',async()=>{

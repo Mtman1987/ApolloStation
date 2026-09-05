@@ -54,6 +54,7 @@ export class StreamWeaverProviderRuntime {
   private readonly flows: StreamWeaverFlowPackageStore;
   private readonly runtimeSettings: StreamWeaverRuntimeSettingsStore;
   private readonly bic: SqliteStreamWeaverBicStore;
+  private readonly installedFlows: StreamWeaverInstalledFlowConsumer;
   constructor(private readonly options: StreamWeaverProviderRuntimeOptionsV1) {
     this.settings = new StreamWeaverPersonaSettingsStore(options.databasePath, options.now);
     this.summons = new SqliteStreamWeaverSummonStore(options.databasePath);
@@ -72,13 +73,23 @@ export class StreamWeaverProviderRuntime {
     const services = new DefaultStreamWeaverDonorCommandServices({ links:this.runtimeSettings, bic:new StreamWeaverBicCommandExecutor(new StreamWeaverBicRuntime({store:this.bic,client:options.client})), socialEffects:new StreamWeaverSocialActionExecutor(options.client), system:{execute:invocation=>invocation.canonicalTrigger==="!commands" ? `Installed commands: ${this.flows.listInstalledPackages(invocation.tenantId).flatMap(pkg=>pkg.commands.filter(c=>c.enabled).map(c=>c.trigger)).join(", ") || "none"}. Currency: !points, !givepoints, !gamble, !pleader.` : undefined} });
     const commands = new StreamWeaverDonorCommandConsumer({ services, identities, state: this.commandState, egress, enabled: (tenantId, donorId) => donorId === "commands-chat" || donorId === "commands-system" || this.flows.donorEnabled(tenantId, donorId), ...(options.nowMs ? { nowMs: options.nowMs } : {}) });
     const persona = new StreamWeaverChatGatewayConsumer(this.summons, this.settings, new SpmtStreamWeaverPersonaRuntime(options.client), egress, priorGate);
-    const flows = new StreamWeaverInstalledFlowConsumer(this.flows, this.commandState, egress, options.botActions, commands, options.nowMs);
+    const flows = this.installedFlows = new StreamWeaverInstalledFlowConsumer(this.flows, this.commandState, egress, options.botActions, commands, options.nowMs, {
+      getJob:(tenantId,jobId)=>options.client.getExecutionJob(tenantId,jobId),
+      assistant:async ({delivery,prompt,requestId})=>{
+        if(options.allowAssistant===false)return {status:"unavailable",reason:"External assistant execution is disabled in this environment."};
+        const userId=delivery.message.actor.canonicalUserId;
+        if(!userId)return {status:"unavailable",reason:"Link your chat account to SPMT before using assistant flows."};
+        const persona=this.settings.get(delivery.message.tenantId);
+        return options.client.invokeCommunityAssistant(delivery.message.tenantId,{userId,message:prompt,surface:"stream",conversationId:`streamweaver:flow:${requestId}`,routingPreference:"automatic",remember:false,...(persona?{presentation:{personaId:persona.personaId,displayName:persona.displayName,instructions:persona.instructions,memoryPolicy:persona.memoryPolicy}}:{})},`streamweaver-assistant:${requestId}`);
+      },
+    });
     const economy = new MultiTenantStreamWeaverEconomyCommandConsumer(this.economy, options.client, identities, this.commandState, egress, options.nowMs, Math.random);
     this.consumers = [relay, ...(botActions ? [botActions] : []), ...(options.allowAssistant === false ? [] : [persona]), flows, commands, economy];
     this.replies = new StreamWeaverPersonaReplyReconciler(this.summons, options.client, egress, { ...(options.now ? { now: options.now } : {}), ...(options.retryDelayMs ? { retryDelayMs: options.retryDelayMs } : {}) });
   }
   consumerIds() { return this.consumers.map((consumer) => consumer.id); }
   setBotShare(tenantId: string, enabled: boolean) { this.relayStore.setBotShare(tenantId, enabled); }
-  reconcile(limit = 100) { return this.replies.runOnce(undefined, limit); }
+  async reconcile(limit = 100) { const replies=await this.replies.runOnce(undefined, limit);const flows=await this.installedFlows.reconcile(limit);return {...replies,flows}; }
+  settleFlows() { return this.installedFlows.settle(); }
   close() { this.bic.close(); this.runtimeSettings.close(); this.flows.close(); this.relayStore.close(); this.economy.close(); this.commandState.close(); this.summons.close(); this.settings.close(); }
 }

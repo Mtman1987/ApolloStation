@@ -6,13 +6,16 @@ export const STREAMWEAVER_FLOW_PACKAGE_KIND = "streamweaver.flow-package" as con
 export const STREAMWEAVER_FLOW_AUTHOR = Object.freeze({ id: "mtman1987", displayName: "mtman1987" });
 
 export function assertStreamWeaverFlowRunnable(item: StreamWeaverFlowPackageV1) {
-  const supported=new Set(["send-chat","send-discord","wait","run-action","run-native","set-variable"]);
+  const supported=new Set(["send-chat","send-discord","wait","run-action","run-native","set-variable","condition","ai-response"]);
   for(const action of item.actions) {
     if(!supported.has(action.type))throw new Error(`${action.type} needs a registered execution capability. Replace that step before enabling the flow.`);
     if(action.type==="wait"&&(!Number.isFinite(Number(action.config.milliseconds??action.config.value??0))||Number(action.config.milliseconds??action.config.value??0)<0||Number(action.config.milliseconds??action.config.value??0)>60000))throw new Error("Wait steps must be between 0 and 60000 milliseconds");
     if(action.type==="run-native"&&!STREAMWEAVER_DONOR_COMMANDS.some(c=>c.donorId===action.config.donorId))throw new Error("Choose an existing native command");
     if(action.type==="run-action"&&!SPMT_SUITE_ACTION_CATALOG.some(a=>a.id===action.config.action))throw new Error("Choose an existing cross-app action");
     if((action.type==="send-chat"||action.type==="send-discord")&&!String(action.config.text??action.config.message??"").trim())throw new Error("Message steps need reply text");
+    if(action.type==="condition"&&!["==","===","!=","!==",">",">=","<","<=","includes","exists"].includes(String(action.config.operator)))throw new Error("Choose a supported condition operator");
+    if(action.type==="ai-response"&&!String(action.config.input??"").trim())throw new Error("AI steps need an input prompt");
+    if(action.config.saveAs!==undefined&&!/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(String(action.config.saveAs)))throw new Error("Result variable names must start with a letter and contain only letters, numbers and underscores");
   }
 }
 
@@ -29,11 +32,12 @@ export interface StreamWeaverFlowCommandV1 {
   runtime: "donor" | "flow";
   donorId?: string;
   enabled: boolean;
+  edges?: Array<{ source: string; target: string; outcome?: "success" | "true" | "false" }>;
 }
 
 export interface StreamWeaverFlowActionV1 {
   id: string;
-  type: "send-chat" | "send-discord" | "wait" | "run-action" | "run-native" | "http-request" | "set-variable" | "execute-code" | "obs-scene" | "obs-source";
+  type: "send-chat" | "send-discord" | "wait" | "run-action" | "run-native" | "http-request" | "set-variable" | "execute-code" | "obs-scene" | "obs-source" | "condition" | "ai-response";
   enabled: boolean;
   config: Record<string, unknown>;
 }
@@ -89,9 +93,30 @@ export class StreamWeaverFlowPackageStore {
       CREATE INDEX IF NOT EXISTS streamweaver_flow_packages_visibility ON streamweaver_flow_packages(visibility,updated_at DESC);
       CREATE INDEX IF NOT EXISTS streamweaver_flow_installs_tenant ON streamweaver_flow_installs(tenant_id,installed_at);
       CREATE TABLE IF NOT EXISTS streamweaver_flow_runs(tenant_id TEXT NOT NULL, delivery_id TEXT NOT NULL, body TEXT NOT NULL, occurred_at TEXT NOT NULL, PRIMARY KEY(tenant_id,delivery_id)) STRICT;
+      CREATE TABLE IF NOT EXISTS streamweaver_flow_executions(tenant_id TEXT NOT NULL, delivery_id TEXT NOT NULL, state TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY(tenant_id,delivery_id)) STRICT;
+      CREATE TABLE IF NOT EXISTS streamweaver_flow_variables(tenant_id TEXT NOT NULL, package_id TEXT NOT NULL, name TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY(tenant_id,package_id,name)) STRICT;
     `);
   }
   close() { this.db.close(); }
+
+  execution<T>(tenantId:string,deliveryId:string): T | undefined {
+    const row=this.db.prepare("SELECT body FROM streamweaver_flow_executions WHERE tenant_id=? AND delivery_id=?").get(tenantId,deliveryId) as {body:string}|undefined;
+    return row ? JSON.parse(row.body) as T : undefined;
+  }
+  saveExecution(tenantId:string,deliveryId:string,state:string,body:unknown) {
+    this.db.prepare("INSERT INTO streamweaver_flow_executions VALUES(?,?,?,?) ON CONFLICT(tenant_id,delivery_id) DO UPDATE SET state=excluded.state,body=excluded.body").run(tenantId,deliveryId,state,JSON.stringify(body));
+    this.db.prepare("DELETE FROM streamweaver_flow_executions WHERE tenant_id=? AND state='succeeded' AND delivery_id NOT IN (SELECT delivery_id FROM streamweaver_flow_executions WHERE tenant_id=? AND state='succeeded' ORDER BY rowid DESC LIMIT 200)").run(tenantId,tenantId);
+  }
+  waitingExecutions<T>(limit=100):T[] {
+    return (this.db.prepare("SELECT body FROM streamweaver_flow_executions WHERE state IN ('waiting','running') ORDER BY rowid LIMIT ?").all(Math.max(1,Math.min(100,limit))) as Array<{body:string}>).map(row=>JSON.parse(row.body) as T);
+  }
+  variables(tenantId:string,packageId:string):Record<string,string> {
+    return Object.fromEntries((this.db.prepare("SELECT name,value FROM streamweaver_flow_variables WHERE tenant_id=? AND package_id=?").all(tenantId,packageId) as Array<{name:string;value:string}>).map(row=>[row.name,row.value]));
+  }
+  setVariable(tenantId:string,packageId:string,name:string,value:string) {
+    if(!/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(name)||value.length>16000)throw new Error("Flow variable is invalid");
+    this.db.prepare("INSERT INTO streamweaver_flow_variables VALUES(?,?,?,?) ON CONFLICT(tenant_id,package_id,name) DO UPDATE SET value=excluded.value").run(tenantId,packageId,name,value);
+  }
 
   listCommunity() {
     const custom = this.db.prepare("SELECT body FROM streamweaver_flow_packages WHERE visibility='community' ORDER BY updated_at DESC,package_id").all() as Array<{ body: string }>;
@@ -157,7 +182,7 @@ export class StreamWeaverFlowPackageStore {
   }
 
   recordRun(tenantId: string, deliveryId: string, value: Record<string, unknown>) {
-    this.db.prepare("INSERT OR REPLACE INTO streamweaver_flow_runs VALUES(?,?,?,?)").run(tenantId, deliveryId, JSON.stringify(value), this.now());
+    this.db.prepare("INSERT OR REPLACE INTO streamweaver_flow_runs VALUES(?,?,?,?)").run(tenantId, deliveryId, JSON.stringify({...value,deliveryId}), this.now());
     this.db.prepare("DELETE FROM streamweaver_flow_runs WHERE tenant_id=? AND delivery_id NOT IN (SELECT delivery_id FROM streamweaver_flow_runs WHERE tenant_id=? ORDER BY occurred_at DESC,rowid DESC LIMIT 200)").run(tenantId,tenantId);
   }
   listRuns(tenantId: string) {
@@ -318,10 +343,22 @@ export function normalizeFlowPackage(value: unknown, defaults?: { now: string; a
   return result;
 }
 
-function normalizeCommand(value: unknown, index: number, commandCount: number, rawActions: unknown[]): StreamWeaverFlowCommandV1 { const item=object(value,"command"),trigger=text(item.trigger??item.command,"command.trigger",120);if(!trigger.startsWith("!")&&item.matcher!=="regex"&&item.matcher!=="bare")throw new Error("Command trigger must begin with !");const legacyActionIds=item.actionIds===undefined&&commandCount===1?rawActions.map((raw)=>identifier(object(raw,"action").id,"action.id")):stringArray(item.actionIds,128,200);return{id:identifier(item.id??`command.${crypto.randomUUID()}`,"command.id"),trigger,aliases:stringArray(item.aliases,20,120),role:item.role==="addon"?"addon":index===0?"primary":"addon",required:item.required===undefined?index===0:item.required===true,actionIds:legacyActionIds,family:donorFamily(item.family),cooldownSeconds:integer(item.cooldownSeconds??0,0,86400,"command.cooldownSeconds"),matcher:item.matcher==="regex"||item.matcher==="bare"?item.matcher:"command",runtime:item.runtime==="donor"?"donor":"flow",...(typeof item.donorId==="string"?{donorId:identifier(item.donorId,"command.donorId")} : {}),enabled:item.enabled!==false}; }
-function normalizeAction(value: unknown): StreamWeaverFlowActionV1 { const item=object(value,"action"),allowed=["send-chat","send-discord","wait","run-action","run-native","http-request","set-variable","execute-code","obs-scene","obs-source"] as const,type=String(item.type);if(!allowed.includes(type as typeof allowed[number]))throw new Error(`Unsupported flow action: ${type}`);const config=object(item.config??{},"action.config");if(type==="run-native"){if(config.capability!=="streamweaver.donor-command.v1")throw new Error("run-native must reference the StreamWeaver donor command capability");identifier(config.donorId,"action.config.donorId");}if(JSON.stringify(config).length>32_000)throw new Error("Flow action config is too large");return{id:identifier(item.id??`action.${crypto.randomUUID()}`,"action.id"),type:type as StreamWeaverFlowActionV1["type"],enabled:item.enabled!==false,config:structuredClone(config)}; }
+function normalizeCommand(value: unknown, index: number, commandCount: number, rawActions: unknown[]): StreamWeaverFlowCommandV1 { const item=object(value,"command"),trigger=text(item.trigger??item.command,"command.trigger",120);if(!trigger.startsWith("!")&&item.matcher!=="regex"&&item.matcher!=="bare")throw new Error("Command trigger must begin with !");const legacyActionIds=item.actionIds===undefined&&commandCount===1?rawActions.map((raw)=>identifier(object(raw,"action").id,"action.id")):stringArray(item.actionIds,128,200);return{id:identifier(item.id??`command.${crypto.randomUUID()}`,"command.id"),trigger,aliases:stringArray(item.aliases,20,120),role:item.role==="addon"?"addon":index===0?"primary":"addon",required:item.required===undefined?index===0:item.required===true,actionIds:legacyActionIds,family:donorFamily(item.family),cooldownSeconds:integer(item.cooldownSeconds??0,0,86400,"command.cooldownSeconds"),matcher:item.matcher==="regex"||item.matcher==="bare"?item.matcher:"command",runtime:item.runtime==="donor"?"donor":"flow",...(typeof item.donorId==="string"?{donorId:identifier(item.donorId,"command.donorId")} : {}),enabled:item.enabled!==false,...(item.edges===undefined?{}:{edges:normalizeEdges(item.edges,legacyActionIds)})}; }
+function normalizeEdges(value: unknown, actionIds: string[]): NonNullable<StreamWeaverFlowCommandV1["edges"]> {
+  const edges = array(value,"command.edges",512).map(raw => {
+    const edge=object(raw,"edge"), source=identifier(edge.source,"edge.source"), target=identifier(edge.target,"edge.target");
+    if(!actionIds.includes(source)||!actionIds.includes(target))throw new Error("Flow edges must reference this command's steps");
+    if(edge.outcome!==undefined&&!["success","true","false"].includes(String(edge.outcome)))throw new Error("Flow edge outcome is invalid");
+    return {source,target,...(edge.outcome===undefined?{}:{outcome:edge.outcome as "success"|"true"|"false"})};
+  });
+  const visiting=new Set<string>(),visited=new Set<string>();
+  function visit(id:string){if(visiting.has(id))throw new Error("Flow edges cannot contain a cycle; use a separate trigger for repeated work");if(visited.has(id))return;visiting.add(id);for(const e of edges.filter(e=>e.source===id))visit(e.target);visiting.delete(id);visited.add(id);}
+  for(const id of actionIds)visit(id);
+  return edges;
+}
+function normalizeAction(value: unknown): StreamWeaverFlowActionV1 { const item=object(value,"action"),allowed=["send-chat","send-discord","wait","run-action","run-native","http-request","set-variable","execute-code","obs-scene","obs-source","condition","ai-response"] as const,type=String(item.type);if(!allowed.includes(type as typeof allowed[number]))throw new Error(`Unsupported flow action: ${type}`);const config=object(item.config??{},"action.config");if(type==="run-native"){if(config.capability!=="streamweaver.donor-command.v1")throw new Error("run-native must reference the StreamWeaver donor command capability");identifier(config.donorId,"action.config.donorId");}if(JSON.stringify(config).length>32_000)throw new Error("Flow action config is too large");return{id:identifier(item.id??`action.${crypto.randomUUID()}`,"action.id"),type:type as StreamWeaverFlowActionV1["type"],enabled:item.enabled!==false,config:structuredClone(config)}; }
 function streamerBotSubAction(action:StreamWeaverFlowActionV1,warnings:string[]){if(action.type==="run-native"){warnings.push("Native StreamWeaver actions require an equivalent action in Streamer.bot; the command/action wiring is preserved.");return{type:"RunAction",enabled:action.enabled,actionName:`StreamWeaver Native · ${String(action.config.donorId)}`,sourceCapability:action.config.capability};}const map:Partial<Record<StreamWeaverFlowActionV1["type"],string>>={"send-chat":"SendChatMessage","send-discord":"DiscordSendMessage",wait:"Delay","run-action":"RunAction","http-request":"ExecuteCode","set-variable":"SetGlobalVariable","execute-code":"ExecuteCode","obs-scene":"ObsSetScene","obs-source":"ObsSetSourceVisibility"};const type=map[action.type]??"ExecuteCode";if(type==="ExecuteCode"&&action.type!=="execute-code")warnings.push(`${action.type} was exported as an ExecuteCode compatibility fallback.`);return{type,enabled:action.enabled,...action.config};}
-function remapImportedFlowPackage(value:unknown){const item=structuredClone(object(value,"flow package")),suffix=crypto.randomUUID().slice(0,8),commands=array(item.commands??[],"commands",32),actions=array(item.actions??[],"actions",128),actionMap=new Map<string,string>();for(const raw of actions){const action=object(raw,"action"),old=identifier(action.id,"action.id"),next=`${old}.import-${suffix}`;actionMap.set(old,next);action.id=next;}for(const raw of commands){const command=object(raw,"command"),old=identifier(command.id,"command.id");command.id=`${old}.import-${suffix}`;if(Array.isArray(command.actionIds))command.actionIds=command.actionIds.map((actionId)=>actionMap.get(String(actionId))??actionId);}item.packageId=`${identifier(item.packageId,"packageId")}.import-${suffix}`;return item;}
+function remapImportedFlowPackage(value:unknown){const item=structuredClone(object(value,"flow package")),suffix=crypto.randomUUID().slice(0,8),commands=array(item.commands??[],"commands",32),actions=array(item.actions??[],"actions",128),actionMap=new Map<string,string>();for(const raw of actions){const action=object(raw,"action"),old=identifier(action.id,"action.id"),next=`${old}.import-${suffix}`;actionMap.set(old,next);action.id=next;}for(const raw of commands){const command=object(raw,"command"),old=identifier(command.id,"command.id");command.id=`${old}.import-${suffix}`;if(Array.isArray(command.actionIds))command.actionIds=command.actionIds.map((actionId)=>actionMap.get(String(actionId))??actionId);if(Array.isArray(command.edges))command.edges=command.edges.map(raw=>{const edge=object(raw,"edge");return {...edge,source:actionMap.get(String(edge.source))??edge.source,target:actionMap.get(String(edge.target))??edge.target};});}item.packageId=`${identifier(item.packageId,"packageId")}.import-${suffix}`;return item;}
 function uniqueIds(values:string[],name:string){if(new Set(values).size!==values.length)throw new Error(`Flow package contains duplicate ${name} IDs`);}
 function donorFamily(value:unknown):StreamWeaverFlowCommandV1["family"]{const allowed=new Set(["economy","social","links","twitch","moderation","community","watchtime","music","redeem","system","persona","pokemon","secret","custom"]);const result=String(value??"custom");return allowed.has(result)?result as StreamWeaverFlowCommandV1["family"]:"custom";}
 function object(value:unknown,name:string){if(!value||typeof value!=="object"||Array.isArray(value))throw new Error(`${name} must be an object`);return value as Record<string,unknown>;}

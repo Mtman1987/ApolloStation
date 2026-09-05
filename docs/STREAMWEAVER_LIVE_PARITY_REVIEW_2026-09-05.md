@@ -108,6 +108,10 @@ Source examples: [live flow editor](https://github.com/Mtman1987/streamweaver/bl
 - The Sprite's existing network policy and disabled outbound-provider mode are unchanged. External AI/image calls stay blocked there; provider replies use shadow delivery. This release does not claim live Twitch/Discord bot rehearsal.
 - Per-step receipts and gateway idempotency cover the tested retry paths. They are not a blanket exactly-once guarantee for every external side effect, arbitrary native adapter, crash window, or edited flow during an in-flight retry.
 
+## Follow-up implementation
+
+The subsequent graph/runtime increment and current ownership decisions are tracked in [the implementation ledger](STREAMWEAVER_PARITY_IMPLEMENTATION.md). It adds branches, persistent variables, durable waits, shared-assistant nodes and resumable suite results; those rows above describe the earlier `d22f632` release. The remaining feature groups are still being implemented.
+
 ## Remaining release work
 
 Before declaring full live parity, finish and prove: graph/AI/TTS node execution; role-specific bot setup; media/avatar/TTS/mixer controls and renderers; reward ingress and redeem administration; research/image configuration; stream-provider commands through shared grants; and complete game/inventory workflows with the owning app. Each item needs its actual UI, state owner, transport, failure/retry behavior, and both simulation and credentialed live evidence. The table above records these as open work rather than hiding them behind a readiness badge.
