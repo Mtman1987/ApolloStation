@@ -1,4 +1,5 @@
 import { assertSpmtSuiteActionJobInputV1, spmtSuiteActionCapabilityId, type ExecutionJobV1 } from "@spmt/contracts";
+import type { PublishSimulationRoomEventInputV1 } from "@spmt/sdk";
 import { DSH_BOT_ACTIONS, DshBotActionAdapter, type DshBotActionIdV1 } from "./bot-action-adapter.js";
 
 const DSH_SUITE_ACTION_CAPABILITIES = DSH_BOT_ACTIONS.map(spmtSuiteActionCapabilityId);
@@ -8,6 +9,7 @@ export interface DshSuiteActionWorkerClientV1 {
   succeedExecutionJob(tenantId: string, jobId: string, workerId: string, leaseId: string, fencingEpoch: number, result: Record<string, unknown>): Promise<unknown>;
   failExecutionJob(tenantId: string, jobId: string, workerId: string, leaseId: string, fencingEpoch: number, code: string, message: string, retryable: boolean): Promise<unknown>;
   reportExecutionWorker(input: Record<string, unknown>): Promise<unknown>;
+  publishSimulationRoomEvent?(tenantId: string, input: PublishSimulationRoomEventInputV1, idempotencyKey: string): Promise<unknown>;
 }
 
 export class DshSuiteActionWorker {
@@ -27,8 +29,9 @@ export class DshSuiteActionWorker {
       const input = assertSpmtSuiteActionJobInputV1(job.input);
       if (!input.action.startsWith("dsh.")) throw new Error("DSH worker received an action owned by another app");
       const args = { ...input.args, ...(!input.args.channelId && input.source.channelId ? { channelId: input.source.channelId } : {}), ...(!input.args.roomId && input.source.roomId ? { roomId: input.source.roomId } : {}) };
-      const result = await this.adapter.execute({ action: input.action as DshBotActionIdV1, tenantId: job.tenantId, actorUserId: input.actor.userId, actorRole: input.actor.role, args, idempotencyKey: job.idempotencyKey });
+      const result = await this.adapter.execute({ action: input.action as DshBotActionIdV1, tenantId: job.tenantId, actorUserId: input.actor.userId, actorRole: input.actor.role, args, idempotencyKey: job.idempotencyKey, ...(input.source.simulation === true ? { simulation: true } : {}) });
       await this.client.succeedExecutionJob(...lease, { schemaVersion: 1, text: resultText(input.action, result), ...result });
+      if (input.source.simulation === true && this.client.publishSimulationRoomEvent) await this.client.publishSimulationRoomEvent(job.tenantId, simulationResult(input, resultText(input.action, result)), `dsh-suite-simulation:${job.id}`).catch(() => undefined);
       this.completedJobs += 1;
     } catch (error) {
       this.failedJobs += 1;
@@ -42,5 +45,6 @@ export class DshSuiteActionWorker {
 }
 
 function resultText(action: string, result: Record<string, unknown>) { if (typeof result.text === "string" && result.text.trim()) return result.text.trim().slice(0, 8_000); if (typeof result.message === "string" && result.message.trim()) return result.message.trim().slice(0, 8_000); return `${action} completed.`; }
+function simulationResult(input: ReturnType<typeof assertSpmtSuiteActionJobInputV1>, body: string): PublishSimulationRoomEventInputV1 { const guildId = input.args.guildId || input.args.serverId, channelId = input.args.channelId || input.source.channelId, roomId = guildId && channelId ? `discord:${guildId}:${channelId}` : input.source.provider && channelId ? `${input.source.provider}:${input.source.connectionId ?? input.source.kind}:${channelId}` : `streamweaver:${input.source.kind}:${input.actor.userId}`; return { roomId, lane: "app", direction: "preview", title: `${input.action} simulation completed`, body, ...(input.source.provider ? { provider: input.source.provider } : {}), ...(input.source.connectionId ? { connectionId: input.source.connectionId } : {}), ...(channelId ? { channelId } : {}), data: { action: input.action, phase: "completed", executionOwner: "discord-stream-hub" } }; }
 function safe(error: unknown) { return (error instanceof Error ? error.message : "DSH suite action failed").replace(/(bearer|token|secret|password|authorization)\s*[:=]\s*\S+/gi, "$1=[redacted]").replace(/[\r\n]+/g, " ").slice(0, 900); }
 function pause(ms: number, signal: AbortSignal) { return new Promise<void>((done) => { if (signal.aborted) return done(); const timer = setTimeout(done, ms); signal.addEventListener("abort", () => { clearTimeout(timer); done(); }, { once: true }); }); }

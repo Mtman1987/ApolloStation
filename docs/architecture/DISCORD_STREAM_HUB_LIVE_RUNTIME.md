@@ -41,6 +41,6 @@ The public runtime configuration is not app state and contains no credential. Pr
 
 ## Deployment boundary
 
-The normal Sprite cohort starts DSH with `config/discord-stream-hub-runtime.sandbox.v1.json`, which contains zero tenants. Sandbox validation also requires outbound mode disabled, a sandbox-named SQLite file, and a sandbox-named configuration path. This proves build, service authentication, migrations, supervision, and shutdown without contacting Twitch or Discord.
+The normal Sprite cohort starts DSH with `config/discord-stream-hub-runtime.sandbox.v1.json`, which contains zero tenants by default. Sandbox validation requires outbound mode disabled plus sandbox-named SQLite and configuration files. A configured tenant is accepted only when `SPMT_LIVE_INGRESS_MODE=enabled`; Twitch reads and Discord server/channel reads then remain live while every Discord mutation is captured in tenant-scoped Simulation Rooms.
 
 Moving the route from `shadow` to Green primary still requires reconciled tenant/member/provider-account configuration, installed DSH scopes, controlled two-tenant Twitch/Discord proof, restart and reauthorization drills, Discord owner acceptance, and rollback evidence. The clip worker and donor media migration are separate later capabilities.

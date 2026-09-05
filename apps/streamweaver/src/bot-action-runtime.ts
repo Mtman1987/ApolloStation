@@ -6,7 +6,7 @@ export type StreamWeaverBotActionRiskV1 = SpmtSuiteActionRiskV1;
 export const STREAMWEAVER_BOT_ACTION_CATALOG = SPMT_SUITE_ACTION_CATALOG;
 export type StreamWeaverBotActionIdV1 = SpmtSuiteActionIdV1;
 export interface StreamWeaverBotActionRequestV1 { action: StreamWeaverBotActionIdV1; args: Record<string, string>; detection: "explicit" | "ai-read-only"; }
-export interface StreamWeaverBotActionContextV1 { tenantId: string; source: NormalizedChatMessageV1["provider"]; channelId: string; requestId: string; actor: { userId?: string; username: string; role: StreamWeaverBotActorRoleV1 }; }
+export interface StreamWeaverBotActionContextV1 { tenantId: string; source: NormalizedChatMessageV1["provider"]; connectionId?: string; channelId: string; requestId: string; simulation?: boolean; actor: { userId?: string; username: string; role: StreamWeaverBotActorRoleV1 }; }
 export interface StreamWeaverBotActionExecutorV1 { execute(request: StreamWeaverBotActionRequestV1, context: StreamWeaverBotActionContextV1): Promise<{ response: string; result?: Record<string, unknown> }>; }
 export interface StreamWeaverBotActionEgressV1 { send(message: OutboundChatMessageV1): Promise<{ providerMessageId: string }>; }
 
@@ -15,7 +15,7 @@ export class StreamWeaverSuiteActionJobExecutor implements StreamWeaverBotAction
   constructor(private readonly client: Pick<SpmtClient, "createSuiteActionJob" | "getExecutionJob">, private readonly options: { maxWaitMs?: number; pollMs?: number } = {}) {}
   async execute(request: StreamWeaverBotActionRequestV1, context: StreamWeaverBotActionContextV1) {
     if (!context.actor.userId) return { response: "Link this chat account to your SPMT identity before running cross-app actions." };
-    const created = await this.client.createSuiteActionJob(context.tenantId, { schemaVersion: 1, action: request.action, args: request.args, actor: { userId: context.actor.userId, username: context.actor.username, role: context.actor.role }, source: { kind: "chat", provider: context.source, channelId: context.channelId, requestId: context.requestId } }, `streamweaver-suite:${context.requestId}`);
+    const created = await this.client.createSuiteActionJob(context.tenantId, { schemaVersion: 1, action: request.action, args: request.args, actor: { userId: context.actor.userId, username: context.actor.username, role: context.actor.role }, source: { kind: "chat", provider: context.source, ...(context.connectionId ? { connectionId: context.connectionId } : {}), channelId: context.channelId, requestId: context.requestId, ...(context.simulation ? { simulation: true } : {}) } }, `streamweaver-suite:${context.requestId}`);
     const maxWaitMs = Math.max(0, this.options.maxWaitMs ?? 5_000), pollMs = Math.max(10, this.options.pollMs ?? 200), deadline = Date.now() + maxWaitMs;
     let job = created.job;
     while (!["succeeded", "failed", "dead-letter", "cancelled"].includes(job.state) && Date.now() < deadline) {
@@ -113,7 +113,7 @@ export class StreamWeaverBotActionConsumer {
     const descriptor = STREAMWEAVER_BOT_ACTION_CATALOG.find((item) => item.id === request.action)!;
     const response = roleLevel(role) < roleLevel(descriptor.minimumRole)
       ? `That ${descriptor.risk} action requires ${descriptor.minimumRole} access.`
-      : (await this.executor.execute(request, { tenantId: delivery.message.tenantId, source: delivery.message.provider, channelId: delivery.message.channelId, requestId: delivery.deliveryId, actor: { ...(delivery.message.actor.canonicalUserId ? { userId: delivery.message.actor.canonicalUserId } : {}), username: delivery.message.actor.username, role } })).response;
+      : (await this.executor.execute(request, { tenantId: delivery.message.tenantId, source: delivery.message.provider, connectionId: delivery.message.connectionId, channelId: delivery.message.channelId, requestId: delivery.deliveryId, actor: { ...(delivery.message.actor.canonicalUserId ? { userId: delivery.message.actor.canonicalUserId } : {}), username: delivery.message.actor.username, role } })).response;
     await this.egress.send({ schemaVersion: 1, tenantId: delivery.message.tenantId, provider: delivery.message.provider, connectionId: delivery.message.connectionId, channelId: delivery.message.channelId, text: response.slice(0, 8_000), idempotencyKey: `streamweaver-bot-action:${delivery.deliveryId}`, replyToMessageId: delivery.message.messageId });
   }
 }

@@ -153,7 +153,7 @@ JOIN #tenant/&lt;tenant-id&gt;</code></pre>
         <details><summary>The app registered but does not appear</summary><p>Confirm <code>status</code> is <code>active</code>, refresh Shipyard, and verify the current session can read the catalog. A disabled record remains stored but is intentionally hidden.</p></details>
         <details><summary>The app appears but cannot launch</summary><p>Registration alone is not enough. Install it for the current tenant, approve a subset of <code>allowedScopes</code>, and confirm its chosen surface is listed in <code>surfaces</code>.</p></details>
         <details><summary>A scope is rejected</summary><p>Use letters, numbers, dots, asterisks, colons, underscores, or hyphens. Remove duplicates. Installation cannot grant a scope absent from <code>allowedScopes</code>.</p></details>
-        <details><summary>Provider calls fail in Green</summary><p>That is expected. Green keeps Discord, Twitch, Kick, LiveKit, webhooks, workers, and production databases disconnected. Registration and UI testing must work without those providers.</p></details>
+        <details><summary>Where did provider output go in Green?</summary><p>Green may accept explicitly enabled live Twitch, Discord, and Kick ingress with <code>SPMT_LIVE_INGRESS_MODE=enabled</code>, but outbound mode remains disabled. Twitch/Discord/Kick replies, DSH delivery, HearMeOut command effects, Overlay Bay previews, and Nebula game results appear in tenant-scoped Simulation Rooms from the shared workspace footer instead of reaching real provider channels.</p></details>
       </div>
     </section>
   </main>

@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { basename, isAbsolute } from "node:path";
+import type { SpmtOperationModeV1 } from "@spmt/contracts";
 import { SpmtApiError, SpmtClient } from "@spmt/sdk";
 import {
   DshDiscordApi,
@@ -15,6 +16,7 @@ import { SqliteDshApplicationStore } from "./applications.js";
 import { DshBotActionAdapter } from "./bot-action-adapter.js";
 import { DshSuiteActionOperations } from "./suite-action-operations.js";
 import { DshSuiteActionWorker } from "./suite-action-worker.js";
+import { DshSimulationRoomDiscordTransport } from "./simulation-room.js";
 
 export interface DshLiveRuntimeTenantV1 {
   tenantId: string;
@@ -33,6 +35,8 @@ export interface DshLiveRuntimeConfigV1 {
 
 export interface DshLiveWorkerEnvironmentV1 {
   runtimeMode: "production" | "sandbox";
+  operationMode: SpmtOperationModeV1;
+  liveIngressEnabled: boolean;
   spmtOrigin: string;
   databasePath: string;
   configPath: string;
@@ -56,6 +60,8 @@ export function loadDshLiveRuntimeConfig(path: string): DshLiveRuntimeConfigV1 {
 
 export function validateDshLiveWorkerEnvironment(environment: NodeJS.ProcessEnv): DshLiveWorkerEnvironmentV1 {
   const runtimeMode = environment.SPMT_RUNTIME_MODE === "sandbox" ? "sandbox" : "production";
+  const operationMode: SpmtOperationModeV1 = environment.SPMT_OUTBOUND_MODE === "disabled" ? "read-only" : "active";
+  const liveIngressEnabled = environment.SPMT_LIVE_INGRESS_MODE === "enabled";
   const spmtOrigin = loopbackOrigin(environment.SPMT_ORIGIN ?? "");
   const databasePath = environment.DSH_DATABASE_PATH ?? "";
   if (!databasePath || !isAbsolute(databasePath)) throw new Error("DSH_DATABASE_PATH must be absolute");
@@ -66,12 +72,13 @@ export function validateDshLiveWorkerEnvironment(environment: NodeJS.ProcessEnv)
   const workerId = identifier(environment.DSH_WORKER_ID ?? `discord-stream-hub-${process.pid}`, "DSH_WORKER_ID");
   const config = loadDshLiveRuntimeConfig(configPath);
   if (runtimeMode === "sandbox") {
-    if (environment.SPMT_OUTBOUND_MODE !== "disabled") throw new Error("Sandbox DSH requires SPMT_OUTBOUND_MODE=disabled");
+    if (operationMode !== "read-only") throw new Error("Sandbox DSH requires SPMT_OUTBOUND_MODE=disabled");
     if (!basename(databasePath).toLowerCase().includes("sandbox")) throw new Error("Sandbox DSH requires a sandbox-named database");
     if (!basename(configPath).toLowerCase().includes("sandbox")) throw new Error("Sandbox DSH requires a sandbox-named runtime config");
-    if (config.tenants.length) throw new Error("Sandbox DSH rejects live provider tenants");
+    if (config.tenants.length && !liveIngressEnabled) throw new Error("Sandbox DSH rejects live provider tenants unless SPMT_LIVE_INGRESS_MODE=enabled");
   }
-  return { runtimeMode, spmtOrigin, databasePath, configPath, credential, workerId, applicationInteractionsReady: Boolean(environment.DSH_DISCORD_PUBLIC_KEY && environment.SPMT_PUBLIC_ORIGIN), config };
+  if (liveIngressEnabled && operationMode !== "read-only") throw new Error("Live ingress requires SPMT_OUTBOUND_MODE=disabled");
+  return { runtimeMode, operationMode, liveIngressEnabled, spmtOrigin, databasePath, configPath, credential, workerId, applicationInteractionsReady: Boolean(environment.DSH_DISCORD_PUBLIC_KEY && environment.SPMT_PUBLIC_ORIGIN), config };
 }
 
 /** Authenticates DSH without sharing Chat Gateway's service credential. */
@@ -150,16 +157,18 @@ export class SupervisedDshLiveService {
     const directory = new ConfigDirectory(options.config);
     this.monitor = new SqliteDshLiveMonitor(options.databasePath, options.config.pollIntervalSeconds * 1_000);
     this.messages = new SqliteDshDiscordMessageStore(options.databasePath);
-    const discord = new DshDiscordApi(new SpmtDshDiscordGrantSource(this.client, directory), fetchImpl);
+    const liveDiscord = new DshDiscordApi(new SpmtDshDiscordGrantSource(this.client, directory), fetchImpl);
+    const simulationDiscord = new DshSimulationRoomDiscordTransport(liveDiscord, this.client, { guildIds: (tenantId) => options.config.tenants.find((tenant) => tenant.tenantId === tenantId)?.discordGuildIds ?? [], now });
+    const discord = options.operationMode === "read-only" ? simulationDiscord : liveDiscord;
     const publisher = new DshDiscordLivePublisher(discord, this.messages, directory, undefined, now);
     this.runtime = new DshLiveRuntime(this.monitor, publisher);
     this.poller = new DshTwitchLivePoller(directory, new SpmtDshTwitchGrantSource(this.client, directory), new TwitchHelixLiveClient(fetchImpl), this.runtime);
     this.calendar = new SqliteDshCalendarStore(options.databasePath);
     this.applications = new SqliteDshApplicationStore(options.databasePath);
-    const operations = new DshSuiteActionOperations({ config: options.config, monitor: this.monitor, messages: this.messages, calendar: this.calendar, applications: this.applications, discord, applicationInteractionsReady: options.applicationInteractionsReady, now });
+    const operations = new DshSuiteActionOperations({ config: options.config, monitor: this.monitor, messages: this.messages, calendar: this.calendar, applications: this.applications, discord, simulationDiscord, applicationInteractionsReady: options.applicationInteractionsReady, now });
     this.suiteActions = new DshSuiteActionWorker(this.client, new DshBotActionAdapter(operations), { workerId: `${options.workerId}-suite-actions`, tenantIds: options.config.tenants.map((tenant) => tenant.tenantId) });
   }
-  async ready() { await this.getAccessToken(); return { schemaVersion: 1 as const, workerId: this.options.workerId, configuredTenants: this.options.config.tenants.length, pollIntervalSeconds: this.options.config.pollIntervalSeconds }; }
+  async ready() { await this.getAccessToken(); return { schemaVersion: 1 as const, workerId: this.options.workerId, operationMode: this.options.operationMode, liveIngressEnabled: this.options.liveIngressEnabled, egressMode: this.options.operationMode === "read-only" ? "shadow" as const : "provider" as const, configuredTenants: this.options.config.tenants.length, pollIntervalSeconds: this.options.config.pollIntervalSeconds }; }
   async runOnce(): Promise<{ schemaVersion: 1; skipped: boolean; results: DshLiveWorkerTenantResultV1[] }> {
     if (this.closed) throw new Error("Discord Stream Hub worker is closed");
     if (this.activeCycle) return { schemaVersion: 1, skipped: true, results: [] };

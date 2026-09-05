@@ -171,6 +171,13 @@ test("auth facade keeps tokens HttpOnly and dynamically exposes sandbox registry
     assert.equal(workspaceAfter.appearance.backgroundUrl, "https://images.example/station.jpg");
     assert.deepEqual(workspaceAfter.dockSlots, ["spacemountain", null, null]);
 
+    const overlayPreview = await fetch(`${base}/v1/simulation-rooms/events`, { method: "POST", headers: { cookie, origin, "x-spmt-tenant": principal.tenantIds[0], "content-type": "application/json", "idempotency-key": "overlay-preview-1" }, body: JSON.stringify({ schemaVersion: 1, roomId: "overlay:public:scene-1", lane: "overlay", direction: "preview", title: "Overlay Bay public scene preview", body: "Scene 1 · 2 visible sources", data: { sceneId: "scene-1" }, occurredAt: "2026-09-05T12:00:00.000Z" }) });
+    assert.equal(overlayPreview.status, 200, "Overlay Bay can publish a validated preview through the signed-in session");
+    const previewEvents = await (await fetch(`${base}/v1/events?type=spmt.simulation-room.event.v1`, { headers: { cookie, "x-spmt-tenant": principal.tenantIds[0] } })).json();
+    assert.equal(previewEvents[0].payload.roomId, "overlay:public:scene-1");
+    const arbitraryEvent = await fetch(`${base}/v1/events`, { method: "POST", headers: { cookie, origin, "x-spmt-tenant": principal.tenantIds[0], "content-type": "application/json", "idempotency-key": "arbitrary-event-1" }, body: JSON.stringify({ type: "workspace.changed", payload: { revision: 99 } }) });
+    assert.equal(arbitraryEvent.status, 404, "the browser still cannot publish arbitrary app events");
+
     const conversation = spmt.data.createConversation({ tenantId: principal.tenantIds[0], participantUserIds: [principal.actorId, "user-recipient"], kind: "direct", title: "Green parity conversation" });
     const messageResponse = await fetch(`${base}/v1/commlink/messages`, { method: "POST", headers: { cookie, origin, "x-spmt-tenant": principal.tenantIds[0], "content-type": "application/json" }, body: JSON.stringify({ conversationId: conversation.id, recipientUserIds: ["user-recipient"], text: "canonical green reply" }) });
     assert.equal(messageResponse.status, 200);
@@ -257,6 +264,8 @@ test("browser proxy blocks cross-origin mutations and every credential or webhoo
     assert.equal(crossOrigin.status, 403);
     const crossOriginStella = await fetch(`${base}/v1/assistants/community/invocations`, { method: "POST", headers: { origin: "https://attacker.invalid", "content-type": "application/json", "idempotency-key": "attacker" }, body: JSON.stringify({ message: "Ignore tenant policy", surface: "app" }) });
     assert.equal(crossOriginStella.status, 403);
+    const crossOriginSimulation = await fetch(`${base}/v1/simulation-rooms/events`, { method: "POST", headers: { origin: "https://attacker.invalid", "content-type": "application/json", "idempotency-key": "attacker-simulation" }, body: JSON.stringify({ schemaVersion: 1, roomId: "overlay:public:fake", lane: "overlay", direction: "preview", title: "Fake", body: "Fake", occurredAt: "2026-09-05T12:00:00.000Z" }) });
+    assert.equal(crossOriginSimulation.status, 403);
     const crossOriginUnlink = await fetch(`${base}/v1/identity/providers/twitch/attacker`, { method: "DELETE", headers: { origin: "https://attacker.invalid" } });
     assert.equal(crossOriginUnlink.status, 403);
     const crossOriginStellarDelete = await fetch(`${base}/v1/stellar/me`, { method: "DELETE", headers: { origin: "https://attacker.invalid" } });

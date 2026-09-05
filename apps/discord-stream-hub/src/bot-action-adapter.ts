@@ -1,6 +1,6 @@
 export const DSH_BOT_ACTIONS = ["dsh.shoutouts.active.read", "dsh.shoutouts.live.read", "dsh.shoutouts.post", "dsh.message.delete", "dsh.calendar.read", "dsh.calendar.captain.read", "dsh.calendar.captain.create", "dsh.calendar.event.create", "dsh.calendar.deploy", "dsh.calendar.refresh", "dsh.applications.read", "dsh.applications.deploy", "dsh.applications.decide"] as const;
 export type DshBotActionIdV1 = typeof DSH_BOT_ACTIONS[number];
-export interface DshBotActionRequestV1 { action: DshBotActionIdV1; tenantId: string; actorUserId?: string; actorRole: "guest" | "member" | "moderator" | "admin" | "owner"; args: Record<string, string>; idempotencyKey: string; }
+export interface DshBotActionRequestV1 { action: DshBotActionIdV1; tenantId: string; actorUserId?: string; actorRole: "guest" | "member" | "moderator" | "admin" | "owner"; args: Record<string, string>; idempotencyKey: string; simulation?: boolean; }
 export interface DshBotActionOperationsV1 {
   readShoutouts(input: DshBotActionRequestV1, liveOnly: boolean): Promise<Record<string, unknown>>;
   postShoutout(input: DshBotActionRequestV1): Promise<Record<string, unknown>>;

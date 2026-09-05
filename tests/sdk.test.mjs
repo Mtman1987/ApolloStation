@@ -58,9 +58,9 @@ test("SDK publishes and reads tenant-scoped Simulation Room events through the s
   }});
   await client.publishSimulationRoomEvent("tenant-1",{roomId:"builder",lane:"overlay",direction:"preview",title:"Scene",body:"Rendered",data:{sceneId:"scene-1"},occurredAt:"2026-09-05T00:00:00.000Z"},"simulation-1");
   const published=JSON.parse(seen[0].init.body);
-  assert.equal(published.type,"spmt.simulation-room.event.v1");
-  assert.equal(published.payload.roomId,"builder");
+  assert.equal(published.roomId,"builder");
   assert.equal(new Headers(seen[0].init.headers).get("x-spmt-tenant"),"tenant-1");
+  assert.equal(new URL(seen[0].url).pathname,"/v1/simulation-rooms/events");
   const listed=await client.listSimulationRoomEvents("tenant-1",{roomId:"builder",lane:"overlay"});
   assert.deepEqual(listed.map((event)=>event.id),["event-1"]);
   assert.match(new URL(seen[1].url).searchParams.get("type"),/simulation-room/);

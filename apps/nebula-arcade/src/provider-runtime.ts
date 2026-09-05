@@ -63,7 +63,7 @@ export class NebulaArcadeProviderRuntime {
   private readonly channels = new Map<string, NebulaArcadeProviderChannelV1>();
   private readonly dashboardSignatures = new Map<string, string>();
   private closed = false;
-  constructor(private readonly options: { databasePath: string; config: NebulaArcadeProviderConfigV1; client: SpmtClient; egress: NebulaArcadeProviderEgressV1; discordDashboard?: { egress: NebulaDiscordDashboardEgressV1; publicOrigin: string; gameplayOrigin?: string; webhookName?: string; avatarUrl?: string }; now?: () => string }) {
+  constructor(private readonly options: { databasePath: string; config: NebulaArcadeProviderConfigV1; client: SpmtClient; egress: NebulaArcadeProviderEgressV1; simulation?: boolean; discordDashboard?: { egress: NebulaDiscordDashboardEgressV1; publicOrigin: string; gameplayOrigin?: string; webhookName?: string; avatarUrl?: string }; now?: () => string }) {
     this.tagStore = new SqliteNebulaTagStore(options.databasePath);
     this.experienceStore = new SqliteNebulaTagExperienceStore(options.databasePath);
     this.gameStore = new SqliteNebulaGameRuntimeStore(options.databasePath);
@@ -150,6 +150,19 @@ export class NebulaArcadeProviderRuntime {
   }
   private async reply(message: NormalizedChatMessageV1, deliveryId: string, code: string, text: string) {
     await this.options.egress.send({ schemaVersion: 1, tenantId: message.tenantId, provider: message.provider, connectionId: message.connectionId, channelId: message.channelId, text, idempotencyKey: `nebula-arcade-reply:${deliveryId}:${code}`, replyToMessageId: message.messageId });
+    if (this.options.simulation) await this.options.client.publishSimulationRoomEvent(message.tenantId, {
+      roomId: `${message.provider}:${message.connectionId}:${message.channelId}`,
+      lane: "game",
+      direction: "preview",
+      title: `Nebula Arcade ${code}`,
+      body: text,
+      provider: message.provider,
+      connectionId: message.connectionId,
+      channelId: message.channelId,
+      replyToMessageId: message.messageId,
+      data: { code, deliveryId, actor: message.actor.displayName ?? message.actor.username },
+      occurredAt: this.options.now?.() ?? new Date().toISOString(),
+    }, `nebula-simulation:${deliveryId}:${code}`).catch(() => undefined);
   }
   private async publishDashboards(force: boolean) {
     const report = { attempted: 0, delivered: 0, failed: 0 };

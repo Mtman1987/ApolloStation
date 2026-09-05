@@ -19,7 +19,7 @@ The cohort authenticates `chat-gateway` and `nebula-arcade` independently. Provi
 
 ## Runtime and safety gates
 
-`NEBULA_ARCADE_RUNTIME_CONFIG_PATH` is an absolute JSON path. Unknown fields, duplicate tenants/channels, unknown games, and credential-like extra fields are rejected. `NEBULA_ARCADE_DATABASE_PATH` is also absolute. Sandbox mode requires sandbox-named files, disabled outbound access, and zero live provider tenants.
+`NEBULA_ARCADE_RUNTIME_CONFIG_PATH` is an absolute JSON path. Unknown fields, duplicate tenants/channels, unknown games, and credential-like extra fields are rejected. `NEBULA_ARCADE_DATABASE_PATH` is also absolute. Sandbox mode requires sandbox-named files and disabled outbound access. When shadow live ingress is explicitly enabled, configured provider tenants may run through Chat Gateway while game results are added to the room's `game` lane.
 
 The Sprite cohort always starts and authenticates the Nebula consumer against a tracked zero-tenant sandbox configuration. This proves composition, migrations, service separation, and clean shutdown without opening a provider socket or sending an external message.
 

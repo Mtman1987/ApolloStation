@@ -41,18 +41,22 @@ test("DSH worker config separates public routing from secrets and fails closed i
     assert.equal(dshMillisecondsUntilNextPeriod("2026-08-29T12:10:00.000Z", 600), 600_000);
     const livePath = writeConfig(dir, "dsh-live-sandbox.json", liveConfig());
     assert.throws(() => validateDshLiveWorkerEnvironment({ ...base, DSH_RUNTIME_CONFIG_PATH: livePath }), /rejects live provider tenants/);
+    const liveRead = validateDshLiveWorkerEnvironment({ ...base, DSH_RUNTIME_CONFIG_PATH: livePath, SPMT_LIVE_INGRESS_MODE: "enabled" });
+    assert.equal(liveRead.operationMode, "read-only");
+    assert.equal(liveRead.liveIngressEnabled, true);
+    assert.equal(liveRead.config.tenants.length, 1);
     const secretPath = writeConfig(dir, "dsh-secret-sandbox.json", { schemaVersion: 1, pollIntervalSeconds: 600, tenants: [], discordBotToken: "must-not-live-here" });
     assert.throws(() => validateDshLiveWorkerEnvironment({ ...base, DSH_RUNTIME_CONFIG_PATH: secretPath }), /unsupported fields/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
-test("SPMT grants the DSH worker only provider-grant and runtime-report authority", async () => {
+test("SPMT grants the DSH worker provider grants, Simulation Room events, jobs, and runtime reporting", async () => {
   const dir = mkdtempSync(join(tmpdir(), "apollo-dsh-worker-auth-"));
   const service = createSpmtService({ databasePath: join(dir, "authority.sqlite"), webhookKey: Buffer.alloc(32, 8), port: 0, runtimeMode: "sandbox", dshLiveRuntimeEnabled: true, dshWorkerCredential: credential });
   await service.listen();
   try {
     const token = service.auth.issueServiceAccess("discord-stream-hub", credential).accessToken;
-    for (const scope of ["providers:grant", "runtime:write"]) assert.equal(service.auth.authorize(token, scope, "tenant-a").actorId, "discord-stream-hub");
+    for (const scope of ["providers:grant", "events:write", "runtime:write"]) assert.equal(service.auth.authorize(token, scope, "tenant-a").actorId, "discord-stream-hub");
     for (const scope of ["identity:write", "xp:write", "commlink:live:write"]) assert.throws(() => service.auth.authorize(token, scope, "tenant-a"), /scope/i);
     assert.throws(() => service.auth.issueServiceAccess("discord-stream-hub", "wrong-credential-with-enough-characters-123"), /credential/i);
   } finally { await service.close(); rmSync(dir, { recursive: true, force: true }); }
@@ -81,7 +85,7 @@ test("the supervised DSH cycle authenticates, polls Twitch, publishes Discord, a
   const environment = validateDshLiveWorkerEnvironment({ SPMT_RUNTIME_MODE: "production", SPMT_ORIGIN: "http://127.0.0.1:3000", DSH_DATABASE_PATH: databasePath, DSH_RUNTIME_CONFIG_PATH: configPath, DSH_WORKER_CREDENTIAL: credential, DSH_WORKER_ID: "dsh-test" });
   let service = new SupervisedDshLiveService(environment, fetchImpl, () => observedAt);
   try {
-    assert.deepEqual(await service.ready(), { schemaVersion: 1, workerId: "dsh-test", configuredTenants: 1, pollIntervalSeconds: 600 });
+    assert.deepEqual(await service.ready(), { schemaVersion: 1, workerId: "dsh-test", operationMode: "active", liveIngressEnabled: false, egressMode: "provider", configuredTenants: 1, pollIntervalSeconds: 600 });
     const first = await service.runOnce();
     assert.equal(first.results[0].status, "completed");
     assert.equal(first.results[0].liveCount, 1);
@@ -104,6 +108,34 @@ test("the supervised DSH cycle authenticates, polls Twitch, publishes Discord, a
     assert.equal(replay.results[0].status, "completed");
     assert.equal(replay.results[0].delivered, 0);
     assert.equal(calls.filter((call) => call.url.startsWith("https://discord.com/api/v10/")).length, providerMutations);
+  } finally { await service.close(); rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("DSH shadow live ingress polls Twitch but sends every Discord mutation only to Simulation Rooms", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "apollo-dsh-shadow-live-"));
+  const configPath = writeConfig(dir, "dsh-live-sandbox.json", liveConfig());
+  const calls = [];
+  const fetchImpl = async (input, init = {}) => {
+    const url = String(input), method = init.method ?? "GET";
+    calls.push({ url, method, body: init.body ? JSON.parse(String(init.body)) : undefined });
+    if (url.endsWith("/v1/auth/service-token")) return Response.json({ accessToken: `dsh-access-${"x".repeat(32)}`, accessExpiresAt: "2099-01-01T00:00:00.000Z" });
+    if (url.endsWith("/v1/provider-grants")) { const request = JSON.parse(String(init.body)); assert.equal(request.provider, "twitch"); return Response.json({ schemaVersion: 1, grantId: "grant-twitch", tenantId: "tenant-a", requesterAppId: "discord-stream-hub", provider: "twitch", providerUserId: request.providerUserId, capabilityId: request.capabilityId, grantedScopes: request.requiredScopes, credential: { accessToken: "ephemeral-twitch-token", metadata: { clientId: "public-twitch-client" } }, issuedAt: observedAt, expiresAt: "2099-01-01T00:00:00.000Z" }, { status: 201 }); }
+    if (url.startsWith("https://api.twitch.tv/helix/streams")) return Response.json({ data: [{ id: "stream-a", user_login: "captain", user_name: "Captain", title: "Space Night", game_name: "Space Game", viewer_count: 42, thumbnail_url: "https://example.com/{width}x{height}.jpg", started_at: observedAt }] });
+    if (url.endsWith("/v1/simulation-rooms/events")) return Response.json({ id: `event-${calls.length}` }, { status: 201 });
+    if (url.endsWith("/v1/runtime/state")) return Response.json({ schemaVersion: 1, appId: "discord-stream-hub", state: "ready" });
+    throw new Error(`Unexpected request ${method} ${url}`);
+  };
+  const environment = validateDshLiveWorkerEnvironment({ SPMT_RUNTIME_MODE: "sandbox", SPMT_OUTBOUND_MODE: "disabled", SPMT_LIVE_INGRESS_MODE: "enabled", SPMT_ORIGIN: "http://127.0.0.1:3000", DSH_DATABASE_PATH: join(dir, "dsh-shadow-sandbox.sqlite"), DSH_RUNTIME_CONFIG_PATH: configPath, DSH_WORKER_CREDENTIAL: credential, DSH_WORKER_ID: "dsh-shadow-test" });
+  const service = new SupervisedDshLiveService(environment, fetchImpl, () => observedAt);
+  try {
+    assert.deepEqual(await service.ready(), { schemaVersion: 1, workerId: "dsh-shadow-test", operationMode: "read-only", liveIngressEnabled: true, egressMode: "shadow", configuredTenants: 1, pollIntervalSeconds: 600 });
+    const result = await service.runOnce();
+    assert.equal(result.results[0].status, "completed");
+    assert.equal(calls.some((call) => call.url.startsWith("https://discord.com/")), false);
+    assert.equal(calls.filter((call) => call.url.endsWith("/v1/provider-grants")).length, 1);
+    const previews = calls.filter((call) => call.url.endsWith("/v1/simulation-rooms/events")).map((call) => call.body);
+    assert.ok(previews.length >= 2);
+    assert.ok(previews.every((event) => event.provider === "discord" && event.direction === "egress"));
   } finally { await service.close(); rmSync(dir, { recursive: true, force: true }); }
 });
 

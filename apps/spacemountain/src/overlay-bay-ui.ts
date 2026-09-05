@@ -76,7 +76,7 @@ export class OverlayBayParityController {
     }).join("") || `<small>Installed apps have not registered widgets yet.</small>`;
     const sources = scene.sources.filter((source) => source.visible).map((source) => this.sourceCard(source)).join("") || `<div class="ob-empty">Add a source from the left. Nebula Arcade can contain any combination of all 20 games inside one source.</div>`;
     const issueButtons = owner ? `<button type="button" data-ob-copy-output="public">Copy Public URL</button><button type="button" data-ob-copy-output="personal">Copy Personal URL</button>` : "";
-    return `<div class="ob-shell"><aside class="ob-palette"><h3>Add source</h3><div class="ob-source-kinds">${paletteKinds}</div><h3>App widgets</h3><div class="ob-widgets">${widgets}</div></aside><main class="ob-stage-wrap"><div class="ob-stage-head"><input data-ob-scene-name maxlength="100" value="${esc(scene.name)}" aria-label="Scene name"><span>${scene.canvasWidth} × ${scene.canvasHeight}</span><button type="button" data-ob-save class="primary">Save</button>${issueButtons}</div><div class="ob-stage" data-ob-stage>${sources}</div></main><aside class="ob-inspector">${this.inspector(scene)}</aside></div>`;
+    return `<div class="ob-shell"><aside class="ob-palette"><h3>Add source</h3><div class="ob-source-kinds">${paletteKinds}</div><h3>App widgets</h3><div class="ob-widgets">${widgets}</div></aside><main class="ob-stage-wrap"><div class="ob-stage-head"><input data-ob-scene-name maxlength="100" value="${esc(scene.name)}" aria-label="Scene name"><span>${scene.canvasWidth} × ${scene.canvasHeight}</span><button type="button" data-ob-preview>Preview in rooms</button><button type="button" data-ob-save class="primary">Save</button>${issueButtons}</div><div class="ob-stage" data-ob-stage>${sources}</div></main><aside class="ob-inspector">${this.inspector(scene)}</aside></div>`;
   }
 
   private sourceCard(source: OverlaySceneSourceV1) {
@@ -133,6 +133,7 @@ export class OverlayBayParityController {
     bay.querySelector<HTMLElement>("[data-ob-duplicate]")?.addEventListener("click", () => this.duplicateScene(bay));
     bay.querySelector<HTMLElement>("[data-ob-delete]")?.addEventListener("click", () => void this.deleteScene(bay));
     bay.querySelector<HTMLElement>("[data-ob-save]")?.addEventListener("click", () => void this.persist(true).then(() => this.render(bay)).catch(showError));
+    bay.querySelector<HTMLElement>("[data-ob-preview]")?.addEventListener("click", () => void this.previewScene().catch(showError));
     bay.querySelectorAll<HTMLElement>("[data-ob-copy-output]").forEach((node) => node.onclick = () => void this.copyOutput(node.dataset.obCopyOutput === "personal" ? "personal" : "public"));
     bay.querySelectorAll<HTMLElement>("[data-ob-revoke]").forEach((node) => node.onclick = () => void this.revoke(node.dataset.obRevoke ?? "", bay));
     bay.querySelectorAll<HTMLElement>("[data-ob-add-kind]").forEach((node) => node.onclick = () => this.addKind(node.dataset.obAddKind as OverlaySourceKindV1, bay));
@@ -148,7 +149,7 @@ export class OverlayBayParityController {
     bay.querySelector<HTMLElement>("[data-ob-back]")?.addEventListener("click", () => this.reorder(-1, bay));
     bay.querySelector<HTMLElement>("[data-ob-copy]")?.addEventListener("click", () => this.copySource(bay));
     bay.querySelector<HTMLElement>("[data-ob-remove]")?.addEventListener("click", () => this.removeSource(bay));
-    bay.querySelector<HTMLElement>("[data-ob-test-alert]")?.addEventListener("click", () => this.testAlert(bay));
+    bay.querySelector<HTMLElement>("[data-ob-test-alert]")?.addEventListener("click", () => void this.testAlert(bay).catch(showError));
   }
 
   private newScene(bay: HTMLElement) { const name = window.prompt("Scene name", "Stream Overlay")?.trim(); if (!name) return; const scene = createOverlayScene(name); this.scenes.push(scene); this.activeSceneId = scene.id; this.selectedSourceId = ""; this.render(bay); }
@@ -174,7 +175,18 @@ export class OverlayBayParityController {
     };
   }
 
-  private testAlert(bay: HTMLElement) { const stage = bay.querySelector<HTMLElement>("[data-ob-stage]"); if (!stage) return; const test = document.createElement("div"); test.className = "ob-alert-test"; test.textContent = String(this.selectedSource()?.config.text ?? "Test alert"); stage.append(test); window.setTimeout(() => test.remove(), 2200); }
+  private async testAlert(bay: HTMLElement) { const stage = bay.querySelector<HTMLElement>("[data-ob-stage]"), source = this.selectedSource(); if (!stage || !source) return; const test = document.createElement("div"); test.className = "ob-alert-test"; test.textContent = String(source.config.text ?? "Test alert"); stage.append(test); window.setTimeout(() => test.remove(), 2200); await this.publishSimulation("Overlay Bay alert preview", test.textContent, { sourceId: source.id, sourceKind: source.kind }); }
+
+  private async previewScene() {
+    const scene = this.activeScene(); if (!scene) return;
+    await this.publishSimulation(`Overlay Bay ${this.output} scene preview`, `${scene.name} · ${scene.sources.filter((source) => source.visible).length} visible sources`, { sceneId: scene.id, output: this.output, canvas: { width: scene.canvasWidth, height: scene.canvasHeight }, sources: scene.sources.map((source) => ({ id: source.id, name: source.name, kind: source.kind, visible: source.visible, x: source.x, y: source.y, width: source.width, height: source.height, zIndex: source.zIndex, ...(source.kind === "nebula" ? { gameIds: strings(source.config.gameIds) } : {}) })) });
+  }
+
+  private async publishSimulation(title: string, body: string, data: Record<string, unknown>) {
+    const sceneId = this.activeScene()?.id ?? "overlay", occurredAt = new Date().toISOString();
+    const response = await fetch("/v1/simulation-rooms/events", { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json", "x-spmt-tenant": this.snapshot.tenantId, "idempotency-key": `overlay-preview:${sceneId}:${crypto.randomUUID()}` }, body: JSON.stringify({ schemaVersion: 1, roomId: `overlay:${this.output}:${sceneId}`, lane: "overlay", direction: "preview", title, body: body.slice(0, 8_000), data, occurredAt }) });
+    if (!response.ok) throw new Error(`Simulation Room preview failed (${response.status})`);
+  }
 
   private async persist(syncNebula: boolean) {
     const scene = this.activeScene(); const input = this.root.querySelector<HTMLInputElement>("[data-ob-scene-name]"); if (scene && input) this.updateScene({ name: input.value });

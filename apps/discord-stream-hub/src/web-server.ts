@@ -1,4 +1,5 @@
 import { createProductAppWebServer, productAppSnapshotHandler, productAppSnapshotSources, type ProductAppCatalogItemV1, type ProductAppWebDescriptorV1 } from "@spmt/app-foundation/product-web";
+import type { SpmtOperationModeV1 } from "@spmt/contracts";
 import { appSurfaceBrowserJs, productSurfaceManifest } from "@spmt/app-foundation/surface-client";
 import { DSH_APPLICATION_DEFINITIONS } from "./application-flow.js";
 import { SqliteDshApplicationStore } from "./applications.js";
@@ -36,6 +37,7 @@ export interface DiscordStreamHubWebServerOptionsV1 {
   databasePath?: string;
   runtimeConfigPath?: string;
   credential?: string;
+  operationMode?: SpmtOperationModeV1;
   publicOrigin?: string;
   discordPublicKey?: string;
   discordClientId?: string;
@@ -47,7 +49,7 @@ export function createDiscordStreamHubWebServer(options: DiscordStreamHubWebServ
   const applicationStore = options.databasePath && options.discordPublicKey && options.runtimeConfigPath && options.publicOrigin ? new SqliteDshApplicationStore(options.databasePath) : undefined;
   const interactions = applicationStore ? new DshDiscordApplicationInteractions({ publicKey: options.discordPublicKey!, publicOrigin: options.publicOrigin!, config: loadDshLiveRuntimeConfig(options.runtimeConfigPath!), store: applicationStore }) : undefined;
   const controls = new DshWebControls({ ...options, applicationInteractionsReady: Boolean(interactions) });
-  return createProductAppWebServer({ descriptor: DISCORD_STREAM_HUB_WEB_DESCRIPTOR, port: options.port, host: options.host, buildSha: options.buildSha, extraCss: DSH_CONTROL_CSS, browserJs: appSurfaceBrowserJs(SURFACE) + dshBotInstallBrowserJs(options.discordClientId) + DSH_CONTROL_JS + DSH_REVIEW_JS + dshApplicationReadinessBrowserJs(), handleApi: async (request, response, url) => Boolean(await interactions?.handle(request, response, url)) || await controls.handle(request, response, url) || await snapshot(request, response, url), close: () => { applicationStore?.close(); controls.close(); } });
+  return createProductAppWebServer({ descriptor: DISCORD_STREAM_HUB_WEB_DESCRIPTOR, port: options.port, host: options.host, buildSha: options.buildSha, extraCss: DSH_CONTROL_CSS, browserJs: appSurfaceBrowserJs(SURFACE) + dshBotInstallBrowserJs(options.discordClientId) + DSH_CONTROL_JS + DSH_REVIEW_JS + dshApplicationReadinessBrowserJs(options.operationMode === "read-only"), handleApi: async (request, response, url) => Boolean(await interactions?.handle(request, response, url)) || await controls.handle(request, response, url) || await snapshot(request, response, url), close: () => { applicationStore?.close(); controls.close(); } });
 }
 
 function dshBotInstallBrowserJs(clientId?: string) {
@@ -60,7 +62,8 @@ function dshBotInstallBrowserJs(clientId?: string) {
   return String.raw`;(()=>{const installUrl=${JSON.stringify(install.toString())};function decorate(){for(const bar of document.querySelectorAll('.dsh-bar')){const manage=bar.querySelector('[data-dsh-account]');if(!manage||bar.querySelector('[data-dsh-bot-install]'))continue;let actions=manage.parentElement;if(!actions?.classList.contains('dsh-actions')){actions=document.createElement('div');actions.className='dsh-actions';bar.insertBefore(actions,manage);actions.append(manage)}const link=document.createElement('a');link.className='button primary';link.dataset.dshBotInstall='';link.href=installUrl;link.target='_blank';link.rel='noopener noreferrer';link.textContent='Add DSH bot';actions.prepend(link)}}new MutationObserver(decorate).observe(document.body,{childList:true,subtree:true});decorate()})();`;
 }
 
-function dshApplicationReadinessBrowserJs() {
+function dshApplicationReadinessBrowserJs(shadowMode = false) {
+  if (shadowMode) return "";
   return String.raw`;(()=>{let checked=false,ready=true;function decorate(){if(!checked||ready)return;for(const button of document.querySelectorAll('button')){if(button.textContent?.trim()!=='Post Application Embed')continue;button.disabled=true;button.title='Discord application interactions are not configured';const card=button.closest('.dsh-card');if(card&&!card.querySelector('[data-dsh-interactions-warning]')){const warning=document.createElement('div');warning.className='dsh-empty';warning.dataset.dshInteractionsWarning='';warning.textContent='Application publishing is paused until the Discord interaction endpoint is configured.';card.append(warning)}}}new MutationObserver(decorate).observe(document.body,{childList:true,subtree:true});fetch('/api/discord-stream-hub/control',{credentials:'same-origin',cache:'no-store'}).then(response=>response.ok?response.json():null).then(value=>{checked=true;ready=Boolean(value?.applicationInteractionsReady);decorate()}).catch(()=>{})})();`;
 }
 
@@ -74,6 +77,6 @@ const DSH_REVIEW_JS = String.raw`;(()=>{const slot=document.querySelector('[data
 
 if (process.env.SPMT_ORIGIN) {
   const discordClientId = process.env.DSH_DISCORD_CLIENT_ID ?? process.env.DISCORD_CLIENT_ID;
-  const host = createDiscordStreamHubWebServer({ spmtOrigin: process.env.SPMT_ORIGIN, port: Number(process.env.PORT ?? 3201), host: process.env.HOST ?? "127.0.0.1", buildSha: process.env.BUILD_SHA ?? "dev", ...(process.env.DSH_DATABASE_PATH ? { databasePath: process.env.DSH_DATABASE_PATH } : {}), ...(process.env.DSH_RUNTIME_CONFIG_PATH ? { runtimeConfigPath: process.env.DSH_RUNTIME_CONFIG_PATH } : {}), ...(process.env.DSH_WORKER_CREDENTIAL ? { credential: process.env.DSH_WORKER_CREDENTIAL } : {}), ...(process.env.SPMT_PUBLIC_ORIGIN ? { publicOrigin: process.env.SPMT_PUBLIC_ORIGIN } : {}), ...(process.env.DSH_DISCORD_PUBLIC_KEY ? { discordPublicKey: process.env.DSH_DISCORD_PUBLIC_KEY } : {}), ...(discordClientId ? { discordClientId } : {}) });
+  const host = createDiscordStreamHubWebServer({ spmtOrigin: process.env.SPMT_ORIGIN, port: Number(process.env.PORT ?? 3201), host: process.env.HOST ?? "127.0.0.1", buildSha: process.env.BUILD_SHA ?? "dev", operationMode: process.env.SPMT_OUTBOUND_MODE === "disabled" ? "read-only" : "active", ...(process.env.DSH_DATABASE_PATH ? { databasePath: process.env.DSH_DATABASE_PATH } : {}), ...(process.env.DSH_RUNTIME_CONFIG_PATH ? { runtimeConfigPath: process.env.DSH_RUNTIME_CONFIG_PATH } : {}), ...(process.env.DSH_WORKER_CREDENTIAL ? { credential: process.env.DSH_WORKER_CREDENTIAL } : {}), ...(process.env.SPMT_PUBLIC_ORIGIN ? { publicOrigin: process.env.SPMT_PUBLIC_ORIGIN } : {}), ...(process.env.DSH_DISCORD_PUBLIC_KEY ? { discordPublicKey: process.env.DSH_DISCORD_PUBLIC_KEY } : {}), ...(discordClientId ? { discordClientId } : {}) });
   await host.listen();
 }

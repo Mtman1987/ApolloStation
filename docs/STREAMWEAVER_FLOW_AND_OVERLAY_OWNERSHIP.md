@@ -36,7 +36,7 @@ The generated draft is private and inert until its owner approves it. Approval e
 
 Cross-app steps use registered `run-action` capability identifiers and the shared SPMT execution pipeline. The app that registered a capability still owns execution. Provider roles are checked before write or broadcast actions run.
 
-Shadow operation accepts live inbound platform/provider data. It replaces Twitch, Discord, and Kick egress with tenant-scoped Simulation Rooms, blocks external assistant invocation and write/broadcast suite actions, and retains read-only suite actions. Local browsing and selection of flow packages do not require a made-up feature token. The shared workspace footer owns the room viewer; StreamWeaver only publishes flow-builder previews through the shared SDK contract.
+Shadow operation accepts live inbound platform/provider data. It replaces Twitch, Discord, and Kick egress with tenant-scoped Simulation Rooms, blocks external assistant and image-provider invocation, runs read-only suite actions, and submits write/broadcast suite actions with an enforced simulation marker to app-owned workers. Local browsing and selection of flow packages do not require a made-up feature token. The shared workspace footer owns the room viewer; StreamWeaver publishes flow-builder and Voice Commander routes through the shared SDK contract while each owning app publishes its own safe result.
 
 ## Overlay boundary
 

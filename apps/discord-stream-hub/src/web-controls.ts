@@ -1,11 +1,13 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { fetchAppPlatformSnapshot, fetchAppSessionContext, readJsonBody, requireSameOrigin, safeError, sendJson } from "@spmt/app-foundation/product-web";
+import type { SpmtOperationModeV1 } from "@spmt/contracts";
 import { SpmtClient } from "@spmt/sdk";
 import { buildDshPublicApplicationEmbed } from "./application-flow.js";
 import { SqliteDshApplicationStore } from "./applications.js";
 import { renderDshCalendarDiscordSummary, SqliteDshCalendarStore } from "./calendar.js";
-import { DshDiscordApi, SqliteDshDiscordMessageStore, type DshDiscordGrantSourceV1 } from "./discord-live-publisher.js";
+import { DshDiscordApi, SqliteDshDiscordMessageStore, type DshDiscordGrantSourceV1, type DshDiscordTransportV1 } from "./discord-live-publisher.js";
 import { createDshWorkerTokenProvider, loadDshLiveRuntimeConfig, type DshLiveRuntimeConfigV1 } from "./live-worker.js";
+import { DshSimulationRoomDiscordTransport } from "./simulation-room.js";
 import { DshTenantSettingsStore } from "./settings.js";
 
 export interface DshWebControlOptionsV1 {
@@ -13,6 +15,7 @@ export interface DshWebControlOptionsV1 {
   databasePath?: string;
   runtimeConfigPath?: string;
   credential?: string;
+  operationMode?: SpmtOperationModeV1;
   applicationInteractionsReady?: boolean;
   fetchImpl?: typeof fetch;
   now?: () => string;
@@ -27,7 +30,7 @@ export class DshWebControls {
   private readonly messages?: SqliteDshDiscordMessageStore;
   private readonly applications?: SqliteDshApplicationStore;
   private readonly config?: DshLiveRuntimeConfigV1;
-  private readonly discord?: DshDiscordApi;
+  private readonly discord?: DshDiscordTransportV1;
   private readonly now: () => string;
 
   constructor(private readonly options: DshWebControlOptionsV1) {
@@ -50,7 +53,10 @@ export class DshWebControls {
         if (scheme !== "Bot" && scheme !== "Bearer") throw new Error("Discord grant authorization scheme is invalid");
         return { authorization: `${scheme} ${grant.credential.accessToken}`, expiresAt: grant.expiresAt };
       } };
-      this.discord = new DshDiscordApi(grants, options.fetchImpl);
+      const liveDiscord = new DshDiscordApi(grants, options.fetchImpl);
+      this.discord = options.operationMode === "read-only"
+        ? new DshSimulationRoomDiscordTransport(liveDiscord, client, { guildIds: (tenantId) => this.config?.tenants.find((tenant) => tenant.tenantId === tenantId)?.discordGuildIds ?? [], now: this.now })
+        : liveDiscord;
     }
   }
 
@@ -86,7 +92,7 @@ export class DshWebControls {
     if (guildId && !allowedGuildIds.has(guildId)) throw new Error("Choose a Discord server configured for this tenant");
     let guilds: Array<Record<string, unknown>> = [], channels: Array<Record<string, unknown>> = [];
     let providerState: "ready" | "setup-required" | "unavailable" = this.discord ? "ready" : "setup-required";
-    let providerMessage = this.discord ? "Discord delivery is connected." : "Connect the DSH Discord bot to load servers and channels.";
+    let providerMessage = this.discord ? (this.options.operationMode === "read-only" ? "Live Discord servers and channels are connected. Delivery opens in Simulation Rooms." : "Discord delivery is connected.") : "Connect the DSH Discord bot to load servers and channels.";
     if (this.discord) {
       try {
         guilds = (await this.discord.listGuilds(tenantId)).filter((item) => typeof item.id === "string" && allowedGuildIds.has(item.id)).map((item) => ({ id: item.id, name: item.name ?? item.id, icon: item.icon ?? null }));
@@ -102,6 +108,7 @@ export class DshWebControls {
       role: this.role(context),
       storageReady: Boolean(this.calendar && this.settings),
       applicationInteractionsReady: Boolean(this.options.applicationInteractionsReady),
+      operationMode: this.options.operationMode ?? "active",
       provider: { state: providerState, message: providerMessage },
       providerLinks: snapshot?.providerLinks ?? [],
       guilds,
@@ -133,7 +140,7 @@ export class DshWebControls {
   }
 
   private async publishApplications(response: ServerResponse, context: SessionContext, body: Record<string, unknown>) {
-    if (!this.options.applicationInteractionsReady) throw new Error("Configure the Discord application interaction endpoint before publishing the application embed");
+    if (this.options.operationMode !== "read-only" && !this.options.applicationInteractionsReady) throw new Error("Configure the Discord application interaction endpoint before publishing the application embed");
     const serverId = this.guild(context.tenantId, body.serverId), channelId = snowflake(body.channelId, "channelId");
     const messageId = await this.upsertDiscord(context.tenantId, "applications", serverId, channelId, buildDshPublicApplicationEmbed(serverId));
     return sendJson(response, 200, { schemaVersion: 1, messageId, channelId });

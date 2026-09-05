@@ -7,7 +7,7 @@ import { ChatGatewayRuntime, SqliteChatGatewayStore, createShadowChatProviderSen
 import { ChatProviderConnectionSupervisor, SqliteProviderConnectionStore, type ProviderConnectionConfigV1 } from "./connection-supervisor.js";
 import { createFirstPartyChatProviderAdapters } from "./provider-drivers.js";
 import { SpmtChatProviderGrantSource } from "./spmt-provider-grants.js";
-import { spmtSuiteActionAllowed, type SpmtOperationModeV1 } from "@spmt/contracts";
+import { spmtSuiteActionDescriptor, type SpmtOperationModeV1 } from "@spmt/contracts";
 
 export interface ChatGatewayWorkerEnvironmentV1 {
   runtimeMode: "production" | "sandbox";
@@ -170,12 +170,66 @@ export class SupervisedChatGatewayService {
     const consumers: ChatGatewayConsumerV1[] = [createSpmtCommlinkLiveChatConsumer(client)];
     const observers: Array<{ id: string; observe(message: import("@spmt/contracts").NormalizedChatMessageV1): void | Promise<void> }> = [];
     let connectedGateway: ChatGatewayRuntime | undefined;
+    if (options.operationMode === "read-only") observers.push({ id: "simulation-rooms.provider-ingress", observe: async (message) => {
+      const roomId = `${message.provider}:${message.connectionId}:${message.channelId}`;
+      await client.publishSimulationRoomEvent(message.tenantId, {
+        roomId,
+        lane: "chat",
+        direction: "ingress",
+        title: `${message.provider} live input`,
+        body: message.text,
+        provider: message.provider,
+        connectionId: message.connectionId,
+        channelId: message.channelId,
+        data: {
+          messageId: message.messageId,
+          ...(message.sourceChannelId ? { sourceChannelId: message.sourceChannelId } : {}),
+          actor: { providerUserId: message.actor.providerUserId, username: message.actor.username, displayName: message.actor.displayName ?? message.actor.username, roles: message.actor.roles },
+          consumers: connectedGateway?.consumerIds() ?? [],
+        },
+        occurredAt: message.occurredAt,
+      }, `simulation-ingress:${message.provider}:${message.connectionId}:${message.messageId}`).catch(() => undefined);
+    } });
     if (options.streamweaver) {
       this.getStreamWeaverAccessToken = createInternalServiceTokenProvider({ spmtOrigin: options.spmtOrigin, serviceId: "streamweaver", credential: options.streamweaver.credential, ...(fetchImpl ? { fetchImpl } : {}) });
       const streamweaverClient = new SpmtClient({ baseUrl: options.spmtOrigin, appId: "streamweaver", getAccessToken: this.getStreamWeaverAccessToken, ...(fetchImpl ? { fetchImpl } : {}) });
       this.streamweaverClient = streamweaverClient;
       const suiteActions = new StreamWeaverSuiteActionJobExecutor(streamweaverClient);
-      const guardedSuiteActions: StreamWeaverBotActionExecutorV1 = options.operationMode === "active" ? suiteActions : { execute: (request, context) => spmtSuiteActionAllowed("read-only", request.action) ? suiteActions.execute(request, context) : Promise.resolve({ response: `Shadow mode blocked ${request.action}; write and broadcast actions cannot leave Apollo.` }) };
+      const guardedSuiteActions: StreamWeaverBotActionExecutorV1 = options.operationMode === "active" ? suiteActions : { execute: async (request, context) => {
+        const descriptor = spmtSuiteActionDescriptor(request.action), roomId = `${context.source}:${context.connectionId ?? "chat"}:${context.channelId}`;
+        const argumentList = Object.entries(request.args).map(([name, value]) => ({ name, value }));
+        await streamweaverClient.publishSimulationRoomEvent(context.tenantId, {
+          roomId,
+          lane: "app",
+          direction: "preview",
+          title: `${request.action} shadow route`,
+          body: `StreamWeaver recognized ${request.action} and routed it without provider egress.`,
+          provider: context.source,
+          ...(context.connectionId ? { connectionId: context.connectionId } : {}),
+          channelId: context.channelId,
+          data: { action: request.action, risk: descriptor.risk, phase: "routed", arguments: argumentList },
+        }, `shadow-suite:${context.requestId}:routed`).catch(() => undefined);
+        if (request.action === "sw.image.generate") return { response: "Image generation was previewed but not sent to an external provider in shadow mode." };
+        try {
+          const result = await suiteActions.execute(request, { ...context, simulation: true });
+          await streamweaverClient.publishSimulationRoomEvent(context.tenantId, {
+            roomId,
+            lane: request.action.startsWith("hmo.") ? "app" : "chat",
+            direction: "preview",
+            title: `${request.action} shadow result`,
+            body: result.response,
+            provider: context.source,
+            ...(context.connectionId ? { connectionId: context.connectionId } : {}),
+            channelId: context.channelId,
+            data: { action: request.action, risk: descriptor.risk, phase: "completed" },
+          }, `shadow-suite:${context.requestId}:completed`).catch(() => undefined);
+          return result;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : `${request.action} could not be simulated`;
+          await streamweaverClient.publishSimulationRoomEvent(context.tenantId, { roomId, lane: "app", direction: "preview", title: `${request.action} shadow failure`, body: message.slice(0, 8_000), provider: context.source, ...(context.connectionId ? { connectionId: context.connectionId } : {}), channelId: context.channelId, data: { action: request.action, risk: descriptor.risk, phase: "failed" } }, `shadow-suite:${context.requestId}:failed`).catch(() => undefined);
+          return { response: message };
+        }
+      } };
       this.streamweaver = new StreamWeaverProviderRuntime({ databasePath: options.streamweaver.databasePath, client: streamweaverClient, botActions: guardedSuiteActions, allowAssistant: !options.liveIngressEnabled, egress: { send: (message) => { if (!connectedGateway) throw new Error("Chat Gateway egress is not ready"); return connectedGateway.send(message); } } });
       if(options.streamweaver.image){const image=options.streamweaver.image,provider=new SeaArtCliProvider(image.token,new NodeSeaArtCommandRunner(image.binary)),tenantIds=[...new Set(options.connections.map(connection=>connection.tenantId))];this.streamweaverImage=new StreamWeaverImageWorker(streamweaverClient,new StreamWeaverImageGenerationService([provider]),{workerId:`${options.workerId}-image`,modelNo:image.modelNo,modelVerNo:image.modelVerNo,...(tenantIds.length?{tenantIds}:{})});}
       consumers.push(...this.streamweaver.consumers);
@@ -184,7 +238,7 @@ export class SupervisedChatGatewayService {
     if (options.nebulaArcade) {
       this.getNebulaArcadeAccessToken = createInternalServiceTokenProvider({ spmtOrigin: options.spmtOrigin, serviceId: "nebula-arcade", credential: options.nebulaArcade.credential, ...(fetchImpl ? { fetchImpl } : {}) });
       const nebulaClient = new SpmtClient({ baseUrl: options.spmtOrigin, appId: "nebula-arcade", getAccessToken: this.getNebulaArcadeAccessToken, ...(fetchImpl ? { fetchImpl } : {}) });
-      this.nebulaArcade = new NebulaArcadeProviderRuntime({ databasePath: options.nebulaArcade.databasePath, config: options.nebulaArcade.config, client: nebulaClient, egress: { send: (message) => { if (!connectedGateway) throw new Error("Chat Gateway egress is not ready"); return connectedGateway.send(message); } }, ...(options.nebulaArcade.publicOrigin ? { discordDashboard: { egress: discordDashboard, publicOrigin: options.nebulaArcade.publicOrigin, ...(options.nebulaArcade.gameplayOrigin ? { gameplayOrigin: options.nebulaArcade.gameplayOrigin } : {}), webhookName: options.nebulaArcade.webhookName, ...(options.nebulaArcade.avatarUrl ? { avatarUrl: options.nebulaArcade.avatarUrl } : {}) } } : {}) });
+      this.nebulaArcade = new NebulaArcadeProviderRuntime({ databasePath: options.nebulaArcade.databasePath, config: options.nebulaArcade.config, client: nebulaClient, simulation: options.operationMode === "read-only", egress: { send: (message) => { if (!connectedGateway) throw new Error("Chat Gateway egress is not ready"); return connectedGateway.send(message); } }, ...(options.nebulaArcade.publicOrigin ? { discordDashboard: { egress: discordDashboard, publicOrigin: options.nebulaArcade.publicOrigin, ...(options.nebulaArcade.gameplayOrigin ? { gameplayOrigin: options.nebulaArcade.gameplayOrigin } : {}), webhookName: options.nebulaArcade.webhookName, ...(options.nebulaArcade.avatarUrl ? { avatarUrl: options.nebulaArcade.avatarUrl } : {}) } } : {}) });
       consumers.push(...this.nebulaArcade.consumers);
     }
     this.gateway = new ChatGatewayRuntime(this.chatStore, consumers, senders, observers);

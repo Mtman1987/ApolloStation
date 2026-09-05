@@ -264,7 +264,7 @@ export interface SpmtSuiteActionJobInputV1 {
   action: SpmtSuiteActionIdV1;
   args: Record<string, string>;
   actor: { userId: string; username: string; role: SpmtSuiteActionActorRoleV1 };
-  source: { kind: SpmtSuiteActionSourceV1; provider?: ChatProviderV1; channelId?: string; connectionId?: string; requestId?: string; roomId?: string; deviceId?: string };
+  source: { kind: SpmtSuiteActionSourceV1; provider?: ChatProviderV1; channelId?: string; connectionId?: string; requestId?: string; roomId?: string; deviceId?: string; simulation?: boolean };
 }
 export const SPMT_SUITE_ACTION_CAPABILITIES = Object.freeze({ dsh: "dsh.suite-action.v1", hearmeout: "hearmeout.suite-action.v1", image: "streamweaver.image.generate.v1" } as const);
 export function spmtSuiteActionDescriptor(action: SpmtSuiteActionIdV1) { return SPMT_SUITE_ACTION_CATALOG.find((item) => item.id === action)!; }
@@ -283,6 +283,7 @@ export function assertSpmtSuiteActionJobInputV1(value: unknown): SpmtSuiteAction
   if (!input.actor || !input.actor.userId?.trim() || !input.actor.username?.trim() || !["guest", "member", "moderator", "admin", "owner"].includes(input.actor.role ?? "")) throw new Error("Suite action actor is invalid");
   if (suiteRoleLevel(input.actor.role!) < suiteRoleLevel(descriptor.minimumRole)) throw new Error(`${input.action} requires ${descriptor.minimumRole} access`);
   if (!input.source || !["chat", "voice-commander", "mountainview", "hearmeout", "companion", "api", "mcp"].includes(input.source.kind ?? "")) throw new Error("Suite action source is invalid");
+  if (input.source.simulation !== undefined && typeof input.source.simulation !== "boolean") throw new Error("Suite action simulation marker is invalid");
   return structuredClone(input as SpmtSuiteActionJobInputV1);
 }
 

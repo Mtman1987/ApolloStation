@@ -35,13 +35,14 @@ const message = (id, text, extra = {}) => ({
 });
 
 function delivery(id, text, extra) { return { schemaVersion: 1, deliveryId: `delivery-${id}`, consumerId: "nebula.arcade.provider-ingress", message: message(id, text, extra), attempt: 1 }; }
-function withRuntime(work) {
+function withRuntime(work, options = {}) {
   const directory = mkdtempSync(join(tmpdir(), "nebula-provider-"));
   const databasePath = join(directory, "nebula.sqlite");
   const sent = [];
-  const client = { publishEvent: async () => ({}), awardXp: async () => ({}) };
-  const runtime = new NebulaArcadeProviderRuntime({ databasePath, config: validateNebulaArcadeProviderConfig(config), client, egress: { send: async (item) => { sent.push(item); return { providerMessageId: `out-${sent.length}` }; } } });
-  return Promise.resolve(work({ runtime, databasePath, sent })).finally(() => { runtime.close(); rmSync(directory, { recursive: true, force: true }); });
+  const simulationEvents = [];
+  const client = { publishEvent: async () => ({}), awardXp: async () => ({}), publishSimulationRoomEvent: async (tenantId, input, idempotencyKey) => { simulationEvents.push({ tenantId, input, idempotencyKey }); return {}; } };
+  const runtime = new NebulaArcadeProviderRuntime({ databasePath, config: validateNebulaArcadeProviderConfig(config), client, simulation: options.simulation === true, egress: { send: async (item) => { sent.push(item); return { providerMessageId: `out-${sent.length}` }; } } });
+  return Promise.resolve(work({ runtime, databasePath, sent, simulationEvents })).finally(() => { runtime.close(); rmSync(directory, { recursive: true, force: true }); });
 }
 
 test("Nebula provider config is strict, provider-neutral, and contains no credentials", () => {
@@ -89,6 +90,16 @@ test("generic game commands are durable, replay-safe, and use app-private Games 
   assert.equal(actions.list("tenant-a").length, 1);
   games.close(); actions.close();
 }));
+
+test("Nebula game command results publish to the selected provider room without replacing chat egress", async () => withRuntime(async ({ runtime, sent, simulationEvents }) => {
+  await runtime.consumers[0].deliver(delivery("card-preview", "!card"));
+  assert.equal(sent.length, 1);
+  assert.equal(simulationEvents.length, 1);
+  assert.equal(simulationEvents[0].tenantId, "tenant-a");
+  assert.equal(simulationEvents[0].input.roomId, "twitch:tw-main:provider-channel");
+  assert.equal(simulationEvents[0].input.lane, "game");
+  assert.match(simulationEvents[0].input.body, /Bingo accepted join/);
+}, { simulation: true }));
 
 test("ambiguous commands ask the user instead of mutating two games while safe team colors broadcast", async () => withRuntime(async ({ runtime, databasePath, sent }) => {
   const consumer = runtime.consumers[0];

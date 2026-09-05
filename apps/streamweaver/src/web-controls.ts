@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { fetchAppPlatformSnapshot, fetchAppSessionContext, readJsonBody, requireSameOrigin, safeError, sendJson } from "@spmt/app-foundation/product-web";
 import { SpmtClient } from "@spmt/sdk";
-import { routeSpmtSuiteAction, spmtSuiteActionAllowed, spmtSuiteActionDescriptor, type ChatProviderV1, type ExecutionWorkerProjectionV1, type NormalizedChatDeliveryV1, type SpmtOperationModeV1 } from "@spmt/contracts";
+import { routeSpmtSuiteAction, spmtSuiteActionDescriptor, type ChatProviderV1, type ExecutionWorkerProjectionV1, type NormalizedChatDeliveryV1, type SpmtOperationModeV1 } from "@spmt/contracts";
 import { STREAMWEAVER_BOT_ACTION_CATALOG, detectStreamWeaverBotAction } from "./bot-action-runtime.js";
 import { MemoryStreamWeaverCommandState } from "./command-router.js";
 import { StreamWeaverDonorCommandConsumer } from "./donor-command-runtime.js";
@@ -70,7 +70,7 @@ export class StreamWeaverWebControls {
     const snapshot = await fetchAppPlatformSnapshot({ appId: "streamweaver", spmtOrigin: this.options.spmtOrigin, request, sources: ["providerLinks", "workers", "stellarCapabilities"] });
     const tenantId = context.tenantId, actorId = String(context.session.actorId ?? "");
     const suiteWorkers = this.client ? await this.client.listExecutionWorkers({ tenantId }).catch(() => [] as ExecutionWorkerProjectionV1[]) : [];
-    const botActions = STREAMWEAVER_BOT_ACTION_CATALOG.map((action) => ({ ...action, policy: spmtSuiteActionAllowed(this.operationMode, action.id) ? "allowed" as const : "blocked" as const, availability: spmtSuiteActionAllowed(this.operationMode, action.id) && suiteActionReady(suiteWorkers, tenantId, routeSpmtSuiteAction(action.id).capabilityId) ? "connected" as const : "setup-required" as const }));
+    const botActions = STREAMWEAVER_BOT_ACTION_CATALOG.map((action) => ({ ...action, policy: this.operationMode === "read-only" && action.risk !== "read" ? "simulated" as const : "allowed" as const, availability: (this.operationMode === "read-only" && action.id === "sw.image.generate") || suiteActionReady(suiteWorkers, tenantId, routeSpmtSuiteAction(action.id).capabilityId) ? "connected" as const : "setup-required" as const }));
     const connectedSuiteActions = botActions.filter((action) => action.availability === "connected").length;
     const suiteActions = connectedSuiteActions === botActions.length ? "connected" : connectedSuiteActions ? "partial" : "setup-required";
     const personaDocument = this.persona?.read(tenantId) ?? null;
@@ -161,11 +161,13 @@ export class StreamWeaverWebControls {
     if (!userId) throw new Error("The signed-in user identity is unavailable");
     if (detected) {
       const descriptor = spmtSuiteActionDescriptor(detected.action);
-      if (!spmtSuiteActionAllowed(this.operationMode, detected.action)) return sendJson(response, 200, { schemaVersion: 1, kind: "preview", status: "blocked", operationMode: this.operationMode, action: detected.action, risk: descriptor.risk, reason: "Read-only mode accepts live input but does not run write or broadcast actions." });
       const client = this.requireClient();
       const provider: "twitch" | "discord" | undefined = destination === "twitch" || destination === "discord" ? destination : undefined;
       const connection = provider ? this.connection(context.tenantId, provider, body.connectionId) : undefined;
-      const result = await client.createSuiteActionJob(context.tenantId, { schemaVersion: 1, action: detected.action, args: detected.args, actor: { userId, username: String(context.session.username ?? context.session.displayName ?? userId), role: this.role(context) }, source: { kind: "voice-commander", ...(connection && provider ? { provider, channelId: connection.channelId, connectionId: connection.connectionId } : {}), requestId: idempotency(body.idempotencyKey, "streamweaver-suite-source") } }, idempotency(body.idempotencyKey, "streamweaver-suite-action"));
+      const requestId = idempotency(body.idempotencyKey, "streamweaver-suite-source"), roomId = connection && provider ? `${provider}:${connection.connectionId}:${connection.channelId}` : `streamweaver:voice-commander:${userId}`;
+      if (this.operationMode === "read-only") await client.publishSimulationRoomEvent(context.tenantId, { roomId, lane: "app", direction: "preview", title: `${detected.action} Voice Commander input`, body: message, ...(provider ? { provider } : {}), ...(connection ? { connectionId: connection.connectionId, channelId: connection.channelId } : {}), data: { action: detected.action, risk: descriptor.risk, phase: "routed", arguments: Object.entries(detected.args).map(([name, value]) => ({ name, value })) } }, `voice-simulation:${requestId}:routed`);
+      if (this.operationMode === "read-only" && detected.action === "sw.image.generate") return sendJson(response, 200, { schemaVersion: 1, kind: "preview", status: "simulated", operationMode: this.operationMode, action: detected.action, risk: descriptor.risk, roomId, reason: "Image generation was previewed without contacting an external image provider." });
+      const result = await client.createSuiteActionJob(context.tenantId, { schemaVersion: 1, action: detected.action, args: detected.args, actor: { userId, username: String(context.session.username ?? context.session.displayName ?? userId), role: this.role(context) }, source: { kind: "voice-commander", ...(connection && provider ? { provider, channelId: connection.channelId, connectionId: connection.connectionId } : {}), requestId, ...(this.operationMode === "read-only" ? { simulation: true } : {}) } }, idempotency(body.idempotencyKey, "streamweaver-suite-action"));
       return sendJson(response, 202, { schemaVersion: 1, kind: "suite-action", action: detected.action, duplicate: result.duplicate, jobId: result.job.id, state: result.job.state });
     }
     if (this.operationMode === "read-only" && (destination === "ai" || destination === "private")) return sendJson(response, 200, { schemaVersion: 1, kind: "preview", status: "blocked", operationMode: this.operationMode, destination, reason: "Shadow mode does not send live chat data to an external assistant. Choose a provider destination to deliver into its internal shadow room." });

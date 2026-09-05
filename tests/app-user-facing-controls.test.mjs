@@ -28,7 +28,7 @@ async function fixture(run) {
     dsh = createDiscordStreamHubWebServer({ spmtOrigin: spmtBase, host: "127.0.0.1", port: 0, databasePath: dshDatabase, runtimeConfigPath: configPath, publicOrigin: "https://spmt.example", discordPublicKey: publicKeyHex, discordClientId: "222222222222222222" });
     streamweaver = createStreamWeaverWebServer({ spmtOrigin: spmtBase, host: "127.0.0.1", port: 0, databasePath: streamDatabase, credential: streamweaverCredential, operationMode: "read-only", connectionsJson: JSON.stringify([{ schemaVersion: 1, tenantId, provider: "twitch", connectionId: "main", channelId: "mtman1987", providerAccountId: "twitch-owner", desired: true }]) });
     await dsh.listen(); await streamweaver.listen(); const dshAddress = dsh.server.address(), streamAddress = streamweaver.server.address(); assert.ok(dshAddress && typeof dshAddress !== "string" && streamAddress && typeof streamAddress !== "string");
-    await run({ cookie, tenantId, guildId, dshBase: `http://127.0.0.1:${dshAddress.port}`, streamBase: `http://127.0.0.1:${streamAddress.port}`, privateKey });
+    await run({ cookie, tenantId, guildId, spmtBase, dshBase: `http://127.0.0.1:${dshAddress.port}`, streamBase: `http://127.0.0.1:${streamAddress.port}`, privateKey });
   } finally { if (streamweaver) await streamweaver.close(); if (dsh) await dsh.close(); await spmt.close(); rmSync(directory, { recursive: true, force: true }); }
 }
 
@@ -57,7 +57,7 @@ test("DSH makes calendar, channel delivery, application publishing, and private 
 });
 
 test("StreamWeaver exposes a wired Voice Commander, searchable bot catalog, integrations, persona and economy", async () => {
-  await fixture(async ({ cookie, streamBase }) => {
+  await fixture(async ({ cookie, tenantId, spmtBase, streamBase }) => {
     const page = await (await fetch(streamBase)).text();
     assert.match(page, /Setup Guide/); assert.match(page, /Community Flows/); assert.match(page, /Build one flow with AI/); assert.match(page, /Your account is genuinely blank/); assert.match(page, /Voice Commander/); assert.match(page, /Explicit microphone/); assert.match(page, /Live input · provider replies go to shadow rooms/); assert.match(page, /Simulation Rooms/); assert.match(page, /Manage linked accounts/); assert.match(page, /@media\(max-width:720px\)/);
     const browserSource = page.match(/<script>([\s\S]*)<\/script>/)?.[1];
@@ -66,7 +66,7 @@ test("StreamWeaver exposes a wired Voice Commander, searchable bot catalog, inte
     assert.doesNotMatch(browserSource, /state\.textContent=readiness/);
     assert.doesNotMatch(browserSource, /if\(button\)button\.textContent='Preview \/ run read action'/);
     const control = await (await fetch(`${streamBase}/api/streamweaver/control`, { headers: { cookie } })).json();
-    assert.equal(control.role, "owner"); assert.equal(control.operationMode, "read-only"); assert.equal(control.connections[0].provider, "twitch"); assert.equal(control.botRuntime.publicCommands, "connected"); assert.equal(control.botRuntime.suiteActions, "setup-required"); assert.ok(control.botActions.length >= 20); assert.ok(control.botActions.every((action) => action.availability === "setup-required")); assert.ok(control.botActions.some((action) => action.policy === "blocked"));
+    assert.equal(control.role, "owner"); assert.equal(control.operationMode, "read-only"); assert.equal(control.connections[0].provider, "twitch"); assert.equal(control.botRuntime.publicCommands, "connected"); assert.equal(control.botRuntime.suiteActions, "partial"); assert.ok(control.botActions.length >= 20); assert.equal(control.botActions.find((action) => action.id === "sw.image.generate").availability, "connected"); assert.ok(control.botActions.some((action) => action.policy === "simulated")); assert.ok(control.botActions.every((action) => action.policy !== "blocked"));
     const origin = new URL(streamBase).origin;
     const blankFlows = await (await fetch(`${streamBase}/api/streamweaver/control/flows`, { headers: { cookie } })).json();
     assert.deepEqual(blankFlows.installed, []); assert.equal(blankFlows.community.length, 50); assert.ok(blankFlows.community.every((item) => item.author.id === "mtman1987" && item.installUnit === "flow" && item.commands.length >= 1 && item.actions.length >= 1));
@@ -87,8 +87,10 @@ test("StreamWeaver exposes a wired Voice Commander, searchable bot catalog, inte
     const shadowVoice = await fetch(`${streamBase}/api/streamweaver/control/voice`, { method: "POST", headers: { cookie, origin, "content-type": "application/json" }, body: JSON.stringify({ destination: "twitch", connectionId: "main", message: "Hello stream", idempotencyKey: "shadow-voice-test" }) });
     assert.equal(shadowVoice.status, 202);
     const shadowVoiceBody = await shadowVoice.json(); assert.equal(shadowVoiceBody.kind, "egress"); assert.equal(shadowVoiceBody.destination, "twitch"); assert.ok(shadowVoiceBody.jobId);
-    const blockedAction = await fetch(`${streamBase}/api/streamweaver/control/voice`, { method: "POST", headers: { cookie, origin, "content-type": "application/json" }, body: JSON.stringify({ destination: "private", message: "post a DSH shoutout for @creator in #shoutouts" }) });
-    assert.equal(blockedAction.status, 200);
-    assert.deepEqual(await blockedAction.json(), { schemaVersion: 1, kind: "preview", status: "blocked", operationMode: "read-only", action: "dsh.shoutouts.post", risk: "broadcast", reason: "Read-only mode accepts live input but does not run write or broadcast actions." });
+    const simulatedAction = await fetch(`${streamBase}/api/streamweaver/control/voice`, { method: "POST", headers: { cookie, origin, "content-type": "application/json" }, body: JSON.stringify({ destination: "private", message: "post a DSH shoutout for @creator in #shoutouts", idempotencyKey: "simulated-dsh-action" }) });
+    assert.equal(simulatedAction.status, 202);
+    const simulatedActionBody = await simulatedAction.json(); assert.equal(simulatedActionBody.kind, "suite-action"); assert.equal(simulatedActionBody.action, "dsh.shoutouts.post"); assert.ok(simulatedActionBody.jobId);
+    const routedEvents = await (await fetch(`${spmtBase}/v1/events?type=spmt.simulation-room.event.v1&limit=100`, { headers: { cookie, "x-spmt-tenant": tenantId } })).json();
+    assert.ok(routedEvents.some((event) => event.payload?.title === "dsh.shoutouts.post Voice Commander input" && event.payload?.data?.risk === "broadcast"));
   });
 });

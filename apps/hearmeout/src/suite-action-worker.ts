@@ -1,4 +1,5 @@
 import { assertSpmtSuiteActionJobInputV1, spmtSuiteActionCapabilityId, type ExecutionJobV1, type SpmtSuiteActionJobInputV1 } from "@spmt/contracts";
+import type { PublishSimulationRoomEventInputV1 } from "@spmt/sdk";
 import { HEARMEOUT_BOT_ACTIONS, type HearMeOutBotActionIdV1 } from "./bot-action-adapter.js";
 
 export interface HearMeOutSuiteActionExecutorV1 { execute(input: SpmtSuiteActionJobInputV1 & { action: HearMeOutBotActionIdV1 }, context: { tenantId: string; idempotencyKey: string }): Promise<Record<string, unknown>>; }
@@ -7,6 +8,7 @@ export interface HearMeOutSuiteActionWorkerClientV1 {
   succeedExecutionJob(tenantId: string, jobId: string, workerId: string, leaseId: string, fencingEpoch: number, result: Record<string, unknown>): Promise<unknown>;
   failExecutionJob(tenantId: string, jobId: string, workerId: string, leaseId: string, fencingEpoch: number, code: string, message: string, retryable: boolean): Promise<unknown>;
   reportExecutionWorker(input: Record<string, unknown>): Promise<unknown>;
+  publishSimulationRoomEvent?(tenantId: string, input: PublishSimulationRoomEventInputV1, idempotencyKey: string): Promise<unknown>;
 }
 
 export class HearMeOutSuiteActionWorker {
@@ -27,6 +29,7 @@ export class HearMeOutSuiteActionWorker {
       if (!input.action.startsWith("hmo.") || job.capabilityId !== spmtSuiteActionCapabilityId(input.action) || !this.options.actions.includes(input.action as HearMeOutBotActionIdV1)) throw new Error("HearMeOut suite-action job route is invalid");
       const result = await this.executor.execute(input as SpmtSuiteActionJobInputV1 & { action: HearMeOutBotActionIdV1 }, { tenantId: job.tenantId, idempotencyKey: job.idempotencyKey });
       await this.client.succeedExecutionJob(...lease, { schemaVersion: 1, text: resultText(input.action, result), ...result });
+      if (input.source.simulation === true && this.client.publishSimulationRoomEvent) await this.client.publishSimulationRoomEvent(job.tenantId, simulationResult(input, resultText(input.action, result)), `hearmeout-suite-simulation:${job.id}`).catch(() => undefined);
       this.completedJobs += 1;
     } catch (error) {
       this.failedJobs += 1;
@@ -41,5 +44,6 @@ export class HearMeOutSuiteActionWorker {
 
 export const ALL_HEARMEOUT_SUITE_ACTIONS = [...HEARMEOUT_BOT_ACTIONS];
 function resultText(action: string, result: Record<string, unknown>) { if (typeof result.text === "string" && result.text.trim()) return result.text.trim().slice(0, 8_000); return `${action} completed.`; }
+function simulationResult(input: SpmtSuiteActionJobInputV1, body: string): PublishSimulationRoomEventInputV1 { const room = input.args.roomId || input.source.roomId, channelId = input.source.channelId; return { roomId: room ? `hearmeout:${room}` : input.source.provider && channelId ? `${input.source.provider}:${input.source.connectionId ?? input.source.kind}:${channelId}` : `streamweaver:${input.source.kind}:${input.actor.userId}`, lane: "app", direction: "preview", title: `${input.action} simulation completed`, body, ...(input.source.provider ? { provider: input.source.provider } : {}), ...(input.source.connectionId ? { connectionId: input.source.connectionId } : {}), ...(channelId ? { channelId } : {}), data: { action: input.action, phase: "completed", executionOwner: "hearmeout" } }; }
 function safe(error: unknown) { return (error instanceof Error ? error.message : "HearMeOut suite action failed").replace(/(bearer|token|secret|password|authorization)\s*[:=]\s*\S+/gi, "$1=[redacted]").replace(/[\r\n]+/g, " ").slice(0, 900); }
 function pause(ms: number, signal: AbortSignal) { return new Promise<void>((done) => { if (signal.aborted) return done(); const timer = setTimeout(done, ms); signal.addEventListener("abort", () => { clearTimeout(timer); done(); }, { once: true }); }); }

@@ -3,6 +3,14 @@ import type { DshLiveActionPublisherV1, DshLiveActionV1, DshLiveMemberV1, DshTwi
 
 export interface DshDiscordGrantV1 { authorization:string; expiresAt?:string; }
 export interface DshDiscordGrantSourceV1 { getGrant(input:{tenantId:string;capability:"messages:write"|"channels:read"|"guilds:read"}):Promise<DshDiscordGrantV1>; }
+export interface DshDiscordTransportV1 {
+  createMessage(tenantId:string,channelId:string,payload:Record<string,unknown>):Promise<string>;
+  listGuilds(tenantId:string):Promise<Array<{id?:string;name?:string;icon?:string|null}>>;
+  listGuildChannels(tenantId:string,guildId:string):Promise<Array<{id?:string;name?:string;type?:number;position?:number}>>;
+  editMessage(tenantId:string,channelId:string,messageId:string,payload:Record<string,unknown>):Promise<unknown>;
+  deleteMessage(tenantId:string,channelId:string,messageId:string):Promise<void>;
+  sendDirectMessage(tenantId:string,userId:string,payload:Record<string,unknown>):Promise<string>;
+}
 export interface DshDiscordBrandingV1 { communityMemberName:string; spotlightChannelId?:string; onboardingCustomId?:string; }
 export interface DshDiscordBrandingSourceV1 { getBranding(tenantId:string):Promise<DshDiscordBrandingV1>|DshDiscordBrandingV1; }
 export interface DshSpotlightMediaSourceV1 { getImage(input:{tenantId:string;member:DshLiveMemberV1;stream:DshTwitchStreamV1}):Promise<string|undefined>|string|undefined; }
@@ -35,7 +43,7 @@ export class DshDiscordError extends Error{constructor(readonly status:number,re
 
 /** Publishes DSH's durable live outbox to Discord while retaining message ids for edit/remove parity. */
 export class DshDiscordLivePublisher implements DshLiveActionPublisherV1 {
-  constructor(private readonly api:DshDiscordApi,private readonly state:SqliteDshDiscordMessageStore,private readonly branding:DshDiscordBrandingSourceV1,private readonly media?:DshSpotlightMediaSourceV1,private readonly now:()=>string=()=>new Date().toISOString()){}
+  constructor(private readonly api:DshDiscordTransportV1,private readonly state:SqliteDshDiscordMessageStore,private readonly branding:DshDiscordBrandingSourceV1,private readonly media?:DshSpotlightMediaSourceV1,private readonly now:()=>string=()=>new Date().toISOString()){}
   async publish(action:DshLiveActionV1){
     switch(action.type){
       case "shoutout.create": await this.upsertShoutout(action.tenantId,action.member,action.stream,false); return;
