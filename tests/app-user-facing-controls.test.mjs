@@ -7,6 +7,7 @@ import test from "node:test";
 import { createSpmtService } from "../apps/spmt-service/dist/index.js";
 import { createDiscordStreamHubWebServer } from "../apps/discord-stream-hub/dist/web-server.js";
 import { discordStreamHubCatalogRegistration } from "../apps/discord-stream-hub/dist/index.js";
+import { createIntegratedSpaceMountainWebHost } from "../apps/spacemountain-web/dist/integrated-server.js";
 import { createStreamWeaverWebServer } from "../apps/streamweaver/dist/web-server.js";
 import { streamweaverCatalogRegistration } from "../apps/streamweaver/dist/index.js";
 
@@ -16,7 +17,7 @@ async function fixture(run) {
   const guildId = "123456789012345678", streamweaverCredential = "streamweaver-test-worker-credential-123456789";
   writeFileSync(configPath, JSON.stringify({ schemaVersion: 1, pollIntervalSeconds: 60, tenants: [{ tenantId: "placeholder", twitchProviderUserId: "twitch-owner", discordProviderUserId: "discord-bot", discordGuildIds: [guildId], branding: { communityMemberName: "Crew" }, members: [] }] }));
   const spmt = createSpmtService({ databasePath: join(directory, "spmt.sqlite"), webhookKey: Buffer.alloc(32, 4), host: "127.0.0.1", port: 0, publicBaseUrl: "https://spmt.example", runtimeMode: "sandbox", sandboxOwnerUsername: "mtman1987", streamweaverProviderRuntimeEnabled: true, streamweaverWorkerCredential: streamweaverCredential, sandboxApps: [discordStreamHubCatalogRegistration("https://spmt.example/apps/discord-stream-hub"), streamweaverCatalogRegistration("https://spmt.example/apps/streamweaver")] });
-  let dsh, streamweaver;
+  let dsh, streamweaver, ingress;
   try {
     await spmt.listen(); const spmtAddress = spmt.server.address(); assert.ok(spmtAddress && typeof spmtAddress !== "string"); const spmtBase = `http://127.0.0.1:${spmtAddress.port}`;
     await fetch(`${spmtBase}/v1/auth/register`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ displayName: "M.T.", username: "mtman1987", password: "sandbox-owner-password" }) });
@@ -28,14 +29,16 @@ async function fixture(run) {
     dsh = createDiscordStreamHubWebServer({ spmtOrigin: spmtBase, host: "127.0.0.1", port: 0, databasePath: dshDatabase, runtimeConfigPath: configPath, publicOrigin: "https://spmt.example", discordPublicKey: publicKeyHex, discordClientId: "222222222222222222" });
     streamweaver = createStreamWeaverWebServer({ spmtOrigin: spmtBase, host: "127.0.0.1", port: 0, databasePath: streamDatabase, credential: streamweaverCredential, operationMode: "read-only", connectionsJson: JSON.stringify([{ schemaVersion: 1, tenantId, provider: "twitch", connectionId: "main", channelId: "mtman1987", providerAccountId: "twitch-owner", desired: true }]) });
     await dsh.listen(); await streamweaver.listen(); const dshAddress = dsh.server.address(), streamAddress = streamweaver.server.address(); assert.ok(dshAddress && typeof dshAddress !== "string" && streamAddress && typeof streamAddress !== "string");
-    await run({ cookie, tenantId, guildId, spmtBase, dshBase: `http://127.0.0.1:${dshAddress.port}`, streamBase: `http://127.0.0.1:${streamAddress.port}`, privateKey });
-  } finally { if (streamweaver) await streamweaver.close(); if (dsh) await dsh.close(); await spmt.close(); rmSync(directory, { recursive: true, force: true }); }
+    ingress = createIntegratedSpaceMountainWebHost({ spmtOrigin: spmtBase, host: "127.0.0.1", port: 0, greenAppOrigins: { "discord-stream-hub": `http://127.0.0.1:${dshAddress.port}` } });
+    await ingress.listen(); const webBase = `http://127.0.0.1:${ingress.server.address().port}`;
+    await run({ cookie, tenantId, guildId, spmtBase, webBase, dshBase: `http://127.0.0.1:${dshAddress.port}`, streamBase: `http://127.0.0.1:${streamAddress.port}`, privateKey });
+  } finally { if (ingress) await ingress.close(); if (streamweaver) await streamweaver.close(); if (dsh) await dsh.close(); await spmt.close(); rmSync(directory, { recursive: true, force: true }); }
 }
 
 test("DSH makes calendar, channel delivery, application publishing, and private review discoverable", async () => {
   await fixture(async ({ cookie, guildId, dshBase, privateKey }) => {
     const page = await (await fetch(dshBase)).text();
-    assert.match(page, /Admin Calendar/); assert.match(page, /Post Application Embed/); assert.match(page, /Application review/); assert.match(page, /Discord Delivery Settings/); assert.match(page, /Add DSH bot/); assert.match(page, /@media\(max-width:720px\)/);
+    assert.match(page, /Community Calendar/); assert.match(page, /Post Application Embed/); assert.match(page, /Application review/); assert.match(page, /Discord Delivery Settings/); assert.match(page, /Add DSH bot/); assert.match(page, /@media\(max-width:720px\)/);
     const control = await (await fetch(`${dshBase}/api/discord-stream-hub/control?guildId=${guildId}`, { headers: { cookie } })).json();
     assert.equal(control.role, "owner"); assert.equal(control.storageReady, true); assert.equal(control.applicationInteractionsReady, true); assert.deepEqual(control.calendar, []);
     const crossTenantGuild = await fetch(`${dshBase}/api/discord-stream-hub/control?guildId=999999999999999999`, { headers: { cookie } });
@@ -98,5 +101,36 @@ test("StreamWeaver exposes a wired Voice Commander, searchable bot catalog, inte
     const simulatedActionBody = await simulatedAction.json(); assert.equal(simulatedActionBody.kind, "suite-action"); assert.equal(simulatedActionBody.action, "dsh.shoutouts.post"); assert.ok(simulatedActionBody.jobId);
     const routedEvents = await (await fetch(`${spmtBase}/v1/events?type=spmt.simulation-room.event.v1&limit=100`, { headers: { cookie, "x-spmt-tenant": tenantId } })).json();
     assert.ok(routedEvents.some((event) => event.payload?.title === "dsh.shoutouts.post Voice Commander input" && event.payload?.data?.risk === "broadcast"));
+  });
+});
+
+
+test("DSH app-path ingress opens, edits and deletes a real workspace calendar without a Discord server", async () => {
+  await fixture(async ({ cookie, webBase }) => {
+    const api = `${webBase}/apps/discord-stream-hub/api/control`;
+    const headers = { cookie, origin: webBase, "content-type": "application/json" };
+    const initial = await fetch(`${api}?month=2026-09`, { headers: { cookie } });
+    assert.match(initial.headers.get("content-type"), /application\/json/);
+    assert.equal(initial.status, 200);
+    assert.deepEqual((await initial.json()).calendar, []);
+    const create = await fetch(`${api}/calendar/mission`, { method: "POST", headers, body: JSON.stringify({ missionName: "Workspace event", missionDescription: "Works before Discord is connected", missionDate: "2026-09-20", missionTime: "18:30" }) });
+    assert.equal(create.status, 201);
+    const event = (await create.json()).event;
+    assert.equal(event.serverId, "workspace");
+    assert.equal((await (await fetch(`${api}?month=2026-09`, { headers: { cookie } })).json()).calendar[0].id, event.id);
+    const edit = await fetch(`${api}/calendar/update`, { method: "POST", headers, body: JSON.stringify({ eventId: event.id, eventDate: "2026-10-02", eventName: "Updated event" }) });
+    assert.equal(edit.status, 200);
+    assert.equal((await edit.json()).event.eventName, "Updated event");
+    assert.equal((await (await fetch(`${api}?month=2026-09`, { headers: { cookie } })).json()).calendar.length, 0);
+    assert.equal((await (await fetch(`${api}?month=2026-10`, { headers: { cookie } })).json()).calendar[0].id, event.id);
+    const crossOrigin = await fetch(`${api}/calendar/delete`, { method: "POST", headers: { ...headers, origin: "https://outside.example" }, body: JSON.stringify({ eventId: event.id }) });
+    assert.equal(crossOrigin.status, 403, "outer ingress validates the actual browser origin before rewriting it");
+    const deleted = await fetch(`${api}/calendar/delete`, { method: "POST", headers, body: JSON.stringify({ eventId: event.id }) });
+    assert.equal(deleted.status, 200);
+    assert.equal((await deleted.json()).deleted, true);
+    const snapshot = await fetch(`${webBase}/apps/discord-stream-hub/api/snapshot`, { headers: { cookie } });
+    assert.equal(snapshot.status, 200); assert.match(snapshot.headers.get("content-type"), /application\/json/);
+    const unknown = await fetch(`${webBase}/apps/discord-stream-hub/api/missing`, { headers: { cookie } });
+    assert.equal(unknown.status, 404); assert.match(unknown.headers.get("content-type"), /application\/json/);
   });
 });

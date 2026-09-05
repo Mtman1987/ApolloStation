@@ -16,6 +16,13 @@ export interface IntegratedSpaceMountainWebHostOptions extends BaseIntegratedSpa
 export function createIntegratedSpaceMountainWebHost(options:IntegratedSpaceMountainWebHostOptions){
   const base=createBaseIntegratedHost({...options,port:0,host:"127.0.0.1"});let basePort=0;
   const outer=createServer(async(request,response)=>{try{const url=new URL(request.url??"/","http://spacemountain.parity");
+    // Validate the browser origin before rewriting it for a loopback app.
+    if (!["GET", "HEAD", "OPTIONS"].includes(request.method ?? "GET") && request.headers.origin) {
+      let sameOrigin = false;
+      try { const origin = new URL(request.headers.origin); sameOrigin = ["http:", "https:"].includes(origin.protocol) && origin.host === request.headers.host; } catch {}
+      if (!sameOrigin) return json(response, 403, { error: "cross_origin_request", message: "Open this action from the signed-in app." });
+    }
+
     if(SPMT_OVERLAY.test(url.pathname))return proxyDirect(request,response,options.spmtOrigin,url.pathname+url.search,true);
     if(NEBULA_RUNTIME.test(url.pathname)&&options.nebulaArcadeOrigin)return proxyDirect(request,response,options.nebulaArcadeOrigin,url.pathname+url.search,true);
     const app=greenAppForPath(url.pathname);if(app&&options.greenAppOrigins?.[app]){

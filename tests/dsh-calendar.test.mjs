@@ -29,3 +29,52 @@ test("DSH missions preserve optional clock, member attribution, CRUD and restart
 test("DSH calendar Discord projection is bounded and truthful when empty",()=>{
   const empty=renderDshCalendarDiscordSummary([],{from:"2026-09-01",to:"2026-09-30"});assert.equal(empty.eventCount,0);assert.match(empty.description,/No scheduled/);
 });
+
+
+test("calendar projection sorts and bounds long community schedules", () => {
+  const events = Array.from({length: 80}, (_, i) => ({ dayKey: "2026-09-20", eventDateTime: "2026-09-20T12:00:00Z", eventName: "M".repeat(120), username: "U".repeat(80) }));
+  events.unshift({ dayKey: "2026-08-30", eventDateTime: "2026-08-30T12:00:00Z", eventName: "Outside month", username: "Captain" });
+  const result = renderDshCalendarDiscordSummary(events, { from: "2026-09-01", to: "2026-09-30" });
+  assert.ok(result.description.length < 4000);
+  assert.equal(result.eventCount, 80);
+  assert.match(result.description, /more scheduled items/);
+  assert.doesNotMatch(result.description, /Outside month/);
+});
+
+test("chat and voice calendar actions share the workspace calendar before Discord setup", async () => {
+  const { DshSuiteActionOperations } = await import("../apps/discord-stream-hub/dist/suite-action-operations.js");
+  const calendar = new SqliteDshCalendarStore(":memory:");
+  try {
+    const operations = new DshSuiteActionOperations({ config: { tenants: [] }, calendar });
+    const today = new Date().toISOString().slice(0, 10);
+    const request = { tenantId: "tenant-a", actorUserId: "user-a", action: "dsh.calendar.captain.create", args: { selectedDate: today } };
+    const created = await operations.createCalendarEntry(request);
+    assert.equal(created.event.serverId, "workspace");
+    const result = await operations.readCalendar({ ...request, args: {} }, true);
+    assert.equal(result.events[0].id, created.event.id);
+    assert.equal((await operations.readCalendar({ ...request, tenantId: "tenant-b", args: {} }, false)).events.length, 0);
+    const moved = calendar.updateEvent("tenant-a", "workspace", created.event.id, { eventDate: "2026-10-02" });
+    assert.match(moved.eventName, /Oct 2/);
+  } finally { calendar.close(); }
+});
+
+
+test("calendar publishing preserves tracked messages after transient failures", async () => {
+  const { DshSuiteActionOperations } = await import("../apps/discord-stream-hub/dist/suite-action-operations.js");
+  const { SqliteDshDiscordMessageStore, DshDiscordError } = await import("../apps/discord-stream-hub/dist/discord-live-publisher.js");
+  const calendar = new SqliteDshCalendarStore(":memory:"), messages = new SqliteDshDiscordMessageStore(":memory:");
+  const guildId = "123456789012345678", channelId = "234567890123456789";
+  try {
+    messages.put({ tenantId: "tenant-a", kind: "calendar", key: guildId, channelId, messageId: "345678901234567890", updatedAt: new Date().toISOString() });
+    let error = new DshDiscordError(503, {}), creates = 0;
+    const operations = new DshSuiteActionOperations({ config: { tenants: [{ tenantId: "tenant-a", discordGuildIds: [guildId] }] }, calendar, messages, discord: { async editMessage(){throw error}, async createMessage(){creates++;return "456789012345678901"} } });
+    const request = { tenantId: "tenant-a", actorUserId: "user-a", action: "dsh.calendar.deploy", args: { guildId, channelId } };
+    await assert.rejects(operations.deployCalendar(request), /503/);
+    assert.equal(creates, 0);
+    assert.equal(messages.get("tenant-a", "calendar", guildId).messageId, "345678901234567890");
+    error = new DshDiscordError(404, {});
+    await operations.deployCalendar(request);
+    assert.equal(creates, 1);
+    assert.equal(messages.get("tenant-a", "calendar", guildId).messageId, "456789012345678901");
+  } finally { calendar.close(); messages.close(); }
+});

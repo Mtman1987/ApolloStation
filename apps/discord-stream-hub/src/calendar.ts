@@ -37,7 +37,7 @@ export class SqliteDshCalendarStore {
   }
   updateEvent(tenantIdValue:string,serverIdValue:string,eventIdValue:string,patch:{eventName?:string;description?:string;eventDate?:string;eventTime?:string},now=new Date().toISOString()):DshCalendarEventV1{
     const tenantId=cleanId(tenantIdValue,"tenantId"),serverId=cleanId(serverIdValue,"serverId"),eventId=cleanId(eventIdValue,"eventId"),current=this.get(tenantId,serverId,eventId);if(!current)throw new Error("Calendar event not found");
-    const dayKey=patch.eventDate?cleanDay(patch.eventDate):current.dayKey,clock=patch.eventTime?cleanClock(patch.eventTime):current.eventDateTime.slice(11,16),next:DshCalendarEventV1={...current,eventName:patch.eventName===undefined?current.eventName:cleanText(patch.eventName,"eventName",120),description:patch.description===undefined?current.description:cleanText(patch.description,"description",2000),dayKey,eventDateTime:`${dayKey}T${clock}:00.000Z`,updatedAt:timestamp(now,"now")};
+    const dayKey=patch.eventDate?cleanDay(patch.eventDate):current.dayKey,clock=patch.eventTime?cleanClock(patch.eventTime):current.eventDateTime.slice(11,16),next:DshCalendarEventV1={...current,eventName:patch.eventName===undefined?(current.type==="captains-log"&&patch.eventDate?`Captain's Log - ${formatMonthDay(dayKey)}`:current.eventName):cleanText(patch.eventName,"eventName",120),description:patch.description===undefined?current.description:cleanText(patch.description,"description",2000),dayKey,eventDateTime:`${dayKey}T${clock}:00.000Z`,updatedAt:timestamp(now,"now")};
     try{this.db.prepare("UPDATE dsh_calendar_events SET type=?,day_key=?,event_at=?,user_id=?,body=? WHERE tenant_id=? AND server_id=? AND event_id=?").run(next.type,next.dayKey,next.eventDateTime,next.userId,JSON.stringify(next),tenantId,serverId,eventId);}catch(error){if(/UNIQUE constraint failed/i.test(String(error)))throw new Error("That day is already claimed.");throw error;}return structuredClone(next);
   }
   deleteEvent(tenantIdValue:string,serverIdValue:string,eventIdValue:string){const tenantId=cleanId(tenantIdValue,"tenantId"),serverId=cleanId(serverIdValue,"serverId"),eventId=cleanId(eventIdValue,"eventId");return Number(this.db.prepare("DELETE FROM dsh_calendar_events WHERE tenant_id=? AND server_id=? AND event_id=?").run(tenantId,serverId,eventId).changes)>0;}
@@ -49,7 +49,12 @@ export class SqliteDshCalendarStore {
 }
 
 export function renderDshCalendarDiscordSummary(events:readonly DshCalendarEventV1[],input:{from:string;to:string}){
-  const title=`Community Calendar · ${cleanDay(input.from)} → ${cleanDay(input.to)}`;const lines=events.slice(0,40).map((event)=>`${event.dayKey} ${event.eventDateTime.slice(11,16)} · ${event.eventName} — ${event.username}`);return{title,description:lines.length?lines.join("\n"):"No scheduled community events.",eventCount:events.length};
+  const from=cleanDay(input.from),to=cleanDay(input.to),title=`Community Calendar · ${from} → ${to}`;
+  const ordered=events.filter(event=>event.dayKey>=from&&event.dayKey<=to).sort((a,b)=>a.eventDateTime.localeCompare(b.eventDateTime));
+  const lines:string[]=[];let length=0;
+  for(const event of ordered){const line=`${event.dayKey} ${event.eventDateTime.slice(11,16)} · ${event.eventName.replace(/\n/g," ")} — ${event.username.replace(/\n/g," ")}`;if(lines.length>=40||length+line.length+1>3900)break;lines.push(line);length+=line.length+1;}
+  const remaining=ordered.length-lines.length;if(remaining)lines.push(`… ${remaining} more scheduled items. Open the community calendar for the full list.`);
+  return{title,description:lines.length?lines.join("\n"):"No scheduled community events.",eventCount:ordered.length};
 }
 function parse(body:string){const value=JSON.parse(body) as DshCalendarEventV1;return structuredClone(value);}
 function cleanMember(value:DshCalendarMemberV1){if(!value)throw new Error("Calendar member is required");return{userId:cleanId(value.userId,"userId"),username:cleanText(value.username,"username",80),avatarUrl:value.avatarUrl?String(value.avatarUrl).slice(0,500):null};}

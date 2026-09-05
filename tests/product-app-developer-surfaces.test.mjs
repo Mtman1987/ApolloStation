@@ -70,6 +70,28 @@ test("product app snapshot reads only canonical SPMT developer contracts and rep
   assert.equal(liveSnapshot.operationMode, "read-only");
   assert.equal(liveSnapshot.runtime[0].detail, "production");
   assert.equal(liveRequests.every((request) => request.method === "GET" && request.authorization === null && request.tenantId === "tenant-1" && request.shadowRead === "1"), true);
+  const communityRequests = [];
+  const community = { shoutouts: [{ twitchLogin: "captain", isLive: true, isSpotlight: true }], analytics: { liveCount: 1 } };
+  const shared = await fetchAppPlatformSnapshot({
+    appId: "discord-stream-hub", spmtOrigin: `http://127.0.0.1:${address.port}`,
+    request: { headers: { cookie: "spmt_session=fixture" } }, sources: ["communityLive"],
+    liveRead: { origin: "https://production.example", protocol: "blue-v1", fetchImpl: async (url, init) => {
+      communityRequests.push({ url: String(url), method: init.method, headers: new Headers(init.headers) });
+      return Response.json(community);
+    } },
+  });
+  assert.deepEqual(shared.communityLive, community);
+  assert.deepEqual(shared.availability.communityLive, { available: true, status: 200 });
+  assert.equal(communityRequests.length, 1);
+  assert.equal(communityRequests[0].url, "https://production.example/api/live-community");
+  assert.equal(communityRequests[0].method, "GET");
+  assert.equal(communityRequests[0].headers.get("cookie"), null);
+  assert.equal(communityRequests[0].headers.get("authorization"), null);
+  const count = requests.length;
+  const isolated = await fetchAppPlatformSnapshot({ appId: "discord-stream-hub", spmtOrigin: `http://127.0.0.1:${address.port}`, request: { headers: { cookie: "spmt_session=fixture" } }, sources: ["communityLive"], liveRead: null });
+  assert.deepEqual(isolated.availability.communityLive, { available: false, status: 501 });
+  assert.equal(requests.length, count + 1, "only session auth runs; no invented Green presence route or provider poller");
+
 });
 
 test("live-read configuration needs only an HTTPS production origin", () => {
@@ -124,7 +146,7 @@ test("descriptor-declared snapshot sources keep baseline health, shared workspac
 
 test("DSH, StreamWeaver and Companion declare app-specific public feeds without copying private authorities", async () => {
   const checks = [
-    [["apps/discord-stream-hub/src/web-server.ts", "apps/discord-stream-hub/src/web-controls.ts", "apps/discord-stream-hub/src/shoutout-groups.ts"], ["providerLinks", "xpWallet", "DSH_SHOUTOUT_GROUPS", "DSH_APPLICATION_DEFINITIONS", "app-owned controls"]],
+    [["apps/discord-stream-hub/src/web-server.ts", "apps/discord-stream-hub/src/web-controls.ts", "apps/discord-stream-hub/src/shoutout-groups.ts"], ["providerLinks", "xpWallet", "DSH_SHOUTOUT_GROUPS", "buildDshPublicApplicationEmbed", "communityLive", "app-owned controls"]],
     [["apps/streamweaver/src/web-server.ts", "apps/streamweaver/src/web-controls.ts"], ["overlayWidgets", "stellarCapabilities", "STREAMWEAVER_DONOR_COMMANDS", "STREAMWEAVER_OVERLAYS", "tenant-local currency"]],
     [["apps/companion/src/web-server.ts"], ["devices", "operations", "COMPANION_WORKFLOWS", "COMPANION_MEDIA_PRESETS", "does not start an unreviewed workflow"]],
   ];
