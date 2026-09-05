@@ -100,6 +100,7 @@ const hearMeOutWorkerCredential = randomBytes(32).toString("base64url");
 if (app === "nebula-arcade") {
   const nebulaArcade = start("Nebula Arcade", "apps/nebula-arcade/dist/nebula-arcade-sandbox-server.js", {
     ...common,
+    NEBULA_ARCADE_PUBLIC_ORIGIN: publicUrl,
     NEBULA_ARCADE_DATABASE_PATH: resolve(dataRoot, "nebula-arcade-green-sandbox.sqlite"),
     NEBULA_ARCADE_TENANT_ID: argumentsMap.get("tenant-id") ?? "nebula-arcade-sandbox",
     NEBULA_ARCADE_CHANNEL_ID: argumentsMap.get("channel-id") ?? "sandbox-channel",
@@ -170,6 +171,7 @@ const chatGateway = start("Chat Gateway", "apps/chat-gateway/dist/service-start.
   STREAMWEAVER_DATABASE_PATH: resolve(dataRoot, "streamweaver-provider-sandbox.sqlite"),
   NEBULA_ARCADE_PROVIDER_RUNTIME_ENABLED: "1",
   NEBULA_ARCADE_WORKER_CREDENTIAL: nebulaArcadeWorkerCredential,
+  ...(publicUrl.startsWith("https:") ? { NEBULA_ARCADE_PUBLIC_ORIGIN: publicUrl } : {}),
   NEBULA_ARCADE_DATABASE_PATH: resolve(dataRoot, "nebula-arcade-provider-sandbox.sqlite"),
   NEBULA_ARCADE_RUNTIME_CONFIG_PATH: resolve("config/nebula-arcade-runtime.sandbox.v1.json"),
 });
@@ -209,6 +211,7 @@ let nebulaArcade;
 if (candidateApp === "nebula-arcade") {
   nebulaArcade = start("Nebula Arcade candidate", "apps/nebula-arcade/dist/nebula-arcade-sandbox-server.js", {
     ...common,
+    NEBULA_ARCADE_PUBLIC_ORIGIN: publicUrl,
     NEBULA_ARCADE_DATABASE_PATH: resolve(dataRoot, "nebula-arcade-green-sandbox.sqlite"),
     NEBULA_ARCADE_TENANT_ID: argumentsMap.get("tenant-id") ?? "nebula-arcade-sandbox",
     NEBULA_ARCADE_CHANNEL_ID: argumentsMap.get("channel-id") ?? "sandbox-channel",

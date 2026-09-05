@@ -103,7 +103,7 @@ test("normalized provider ingress executes once per provider message id", async 
   const inbound = (messageId, userId, username, text, minute) => ({ schemaVersion: 1, provider: "twitch", tenantId: "tenant-ingress", channelId: "mtman1987", messageId, userId, username, text, occurredAt: at(minute), roles: ["member"] });
   try {
     await item.runtime.ingest(inbound("join-alpha", "user-alpha", "Alpha", "spmt join", 0));
-    await item.runtime.ingest(inbound("join-beta", "user-beta", "Beta", "spmt arcade", 1));
+    await item.runtime.ingest(inbound("join-beta", "user-beta", "Beta", "spmt arcade join", 1));
     const first = await item.runtime.ingest(inbound("tag-1", "user-alpha", "Alpha", "spmt tag beta", 2));
     const duplicate = await item.runtime.ingest(inbound("tag-1", "user-alpha", "Alpha", "spmt tag beta", 2));
     assert.equal(first.kind, "result");

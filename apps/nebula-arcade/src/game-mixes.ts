@@ -26,6 +26,7 @@ export interface NebulaGameMixV1 {
   mode: NebulaGameMixModeV1;
   rotationSeconds: number;
   activeGameId?: string;
+  activityBox?: boolean;
   layers: NebulaGameMixLayerV1[];
   createdAt: string;
   updatedAt: string;
@@ -37,6 +38,7 @@ export interface SaveNebulaGameMixV1 {
   mode?: NebulaGameMixModeV1;
   rotationSeconds?: number;
   activeGameId?: string;
+  activityBox?: boolean;
   layers: Array<Partial<Omit<NebulaGameMixLayerV1, "gameId">> & Pick<NebulaGameMixLayerV1, "gameId">>;
 }
 
@@ -90,6 +92,8 @@ export class SqliteNebulaGameMixStore {
         PRIMARY KEY (tenant_id, mix_id)
       );
     `);
+    const columns=this.db.prepare("PRAGMA table_info(nebula_game_mixes)").all() as {name:string}[];
+    if(!columns.some(column=>column.name==="activity_box"))this.db.exec("ALTER TABLE nebula_game_mixes ADD COLUMN activity_box INTEGER NOT NULL DEFAULT 0");
   }
 
   close(): void { this.db.close(); }
@@ -97,7 +101,7 @@ export class SqliteNebulaGameMixStore {
   list(tenantId: string): NebulaGameMixV1[] {
     requireId(tenantId, "tenantId");
     const rows = this.db.prepare(`
-      SELECT tenant_id, mix_id, name, mode, rotation_seconds, active_game_id, layers, created_at, updated_at
+      SELECT tenant_id, mix_id, name, mode, rotation_seconds, active_game_id, layers, created_at, updated_at, activity_box
       FROM nebula_game_mixes
       WHERE tenant_id=?
       ORDER BY updated_at DESC, mix_id
@@ -109,7 +113,7 @@ export class SqliteNebulaGameMixStore {
     requireId(tenantId, "tenantId");
     requireId(mixId, "mixId");
     const row = this.db.prepare(`
-      SELECT tenant_id, mix_id, name, mode, rotation_seconds, active_game_id, layers, created_at, updated_at
+      SELECT tenant_id, mix_id, name, mode, rotation_seconds, active_game_id, layers, created_at, updated_at, activity_box
       FROM nebula_game_mixes
       WHERE tenant_id=? AND mix_id=?
     `).get(tenantId, mixId) as unknown as GameMixRow | undefined;
@@ -123,6 +127,8 @@ export class SqliteNebulaGameMixStore {
     if (!name || name.length > 100) throw new Error("Nebula game mix name is invalid");
     if (!Number.isFinite(Date.parse(now))) throw new Error("Nebula game mix timestamp is invalid");
 
+    if(input.activityBox!==undefined && typeof input.activityBox!=="boolean")throw new Error("Nebula activity box must be a boolean");
+    const activityBox=input.activityBox??false;
     const mode = input.mode ?? "simultaneous";
     if (!MODES.has(mode)) throw new Error("Nebula game mix mode is invalid");
     const rotationSeconds = normalizeInteger(input.rotationSeconds ?? 20, 5, 300, "rotationSeconds");
@@ -134,18 +140,19 @@ export class SqliteNebulaGameMixStore {
     const prior = this.db.prepare("SELECT created_at FROM nebula_game_mixes WHERE tenant_id=? AND mix_id=?").get(tenantId, input.id) as unknown as { created_at: string } | undefined;
     const createdAt = prior?.created_at ?? now;
     this.db.prepare(`
-      INSERT INTO nebula_game_mixes(tenant_id, mix_id, name, mode, rotation_seconds, active_game_id, layers, created_at, updated_at)
-      VALUES(?,?,?,?,?,?,?,?,?)
+      INSERT INTO nebula_game_mixes(tenant_id, mix_id, name, mode, rotation_seconds, active_game_id, layers, created_at, updated_at, activity_box)
+      VALUES(?,?,?,?,?,?,?,?,?,?)
       ON CONFLICT(tenant_id, mix_id) DO UPDATE SET
+        activity_box=excluded.activity_box,
         name=excluded.name,
         mode=excluded.mode,
         rotation_seconds=excluded.rotation_seconds,
         active_game_id=excluded.active_game_id,
         layers=excluded.layers,
         updated_at=excluded.updated_at
-    `).run(tenantId, input.id, name, mode, rotationSeconds, activeGameId ?? null, JSON.stringify(layers), createdAt, now);
+    `).run(tenantId, input.id, name, mode, rotationSeconds, activeGameId ?? null, JSON.stringify(layers), createdAt, now, activityBox?1:0);
 
-    return { schemaVersion: 1, id: input.id, tenantId, name, mode, rotationSeconds, ...(activeGameId ? { activeGameId } : {}), layers, createdAt, updatedAt: now };
+    return { schemaVersion: 1, id: input.id, tenantId, name, mode, activityBox, rotationSeconds, ...(activeGameId ? { activeGameId } : {}), layers, createdAt, updatedAt: now };
   }
 
   delete(tenantId: string, mixId: string): boolean {
@@ -162,6 +169,7 @@ interface GameMixRow {
   mode: string;
   rotation_seconds: number;
   active_game_id: string | null;
+  activity_box: number;
   layers: string;
   created_at: string;
   updated_at: string;
@@ -178,6 +186,7 @@ function fromRow(row: GameMixRow): NebulaGameMixV1 {
     id: row.mix_id,
     tenantId: row.tenant_id,
     name: row.name,
+    activityBox: Boolean(row.activity_box),
     mode,
     rotationSeconds: normalizeInteger(row.rotation_seconds, 5, 300, "rotationSeconds"),
     ...(activeGameId ? { activeGameId } : {}),

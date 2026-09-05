@@ -45,6 +45,12 @@ export interface NebulaTagExperienceStore {
   listOverlayMessages(tenantId: string, channelId: string, afterSequence?: number, limit?: number): NebulaTagOverlayMessageV1[];
 }
 
+/** Every arcade entry point shares the existing durable channel opt-out. */
+export function isNebulaChannelOptedOut(store: Pick<NebulaTagExperienceStore,"getChannelSettings">,tenantId:string,...channelIds:string[]):boolean {
+  const aliases=new Set(channelIds.flatMap(id=>{const clean=id.trim().replace(/^#/,"");return[clean,clean.toLowerCase()];}).filter(Boolean));
+  return [...aliases].some(channelId=>store.getChannelSettings(tenantId,channelId).optedOut);
+}
+
 export class SqliteNebulaTagExperienceStore implements NebulaTagExperienceStore {
   private readonly db: DatabaseSync;
 
@@ -161,11 +167,11 @@ export class NebulaTagExperienceService {
 
   async ingest(message: NebulaTagInboundMessageV1, presence: NebulaTagPresenceV1 = {}): Promise<NebulaTagExperienceOutcomeV1> {
     const settings = this.experience.getChannelSettings(message.tenantId, message.channelId); const parsed = operationalCommand(message.text); const moderator = Boolean(message.roles?.some((role) => role === "broadcaster" || role === "moderator"));
-    if (settings.optedOut) return { kind: "ignored", code: "channel-opted-out" };
+    if (isNebulaChannelOptedOut(this.experience,message.tenantId,message.channelId)) return { kind: "ignored", code: "channel-opted-out" };
     if (parsed?.kind === "optout") {
       if (!moderator) return this.reply(settings, message, "moderator-required", "Only the broadcaster or a moderator can opt this channel out.");
       this.experience.optOutChannel(message.tenantId, message.channelId, message.occurredAt);
-      return { kind: "reply", code: "channel-opted-out", message: "This channel is now permanently opted out of Nebula Arcade tag game.", route: "chat" };
+      return { kind: "reply", code: "channel-opted-out", message: "This channel is now permanently opted out of all Nebula Arcade games.", route: "chat" };
     }
     if (parsed?.kind === "mute" || parsed?.kind === "unmute") {
       if (!moderator) return this.reply(settings, message, "moderator-required", "Only the broadcaster or a moderator can toggle overlay mode.");

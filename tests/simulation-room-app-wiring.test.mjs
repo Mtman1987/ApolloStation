@@ -37,7 +37,7 @@ test("HearMeOut simulation jobs read the real room but cannot mutate media, pers
   let mediaCalls = 0;
   const executor = new HearMeOutWebSuiteActionExecutor(rooms, { async resolve() { mediaCalls += 1; throw new Error("simulation must not resolve media"); } });
   try {
-    rooms.createRoom(principal, { roomId: "studio", name: "Studio", privacy: "public", operationId: "create-studio", now: "2026-09-05T12:00:00.000Z" });
+    rooms.createRoom(principal, { roomId: "studio", name: "Studio", privacy: "public", operationId: "create-studio", now: new Date().toISOString() });
     const base = { schemaVersion: 1, actor: { userId: "user-a", username: "Member", role: "member" }, source: { kind: "voice-commander", requestId: "request-1", simulation: true } };
     const media = await executor.execute({ ...base, action: "hmo.media.request", args: { roomId: "studio", query: "Space Oddity" } }, { tenantId: "tenant-a", idempotencyKey: "media-1" });
     assert.equal(media.simulation, true);

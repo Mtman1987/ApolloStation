@@ -18,7 +18,7 @@ test('all twenty game outputs resolve to working renderer documents and Chicken 
   assert.deepEqual((await(await fetch(`${origin}/v1/nebula/game-inputs`)).json()).inputs,[]);
   const started=await fetch(`${origin}/v1/nebula/game-actions`,{method:'POST',headers:{origin,'content-type':'application/json'},body:JSON.stringify({gameId:'pixelbattle',action:'start',channel:'channel-a',username:'owner',isModerator:true})});assert.equal(started.status,200);
   const action=await fetch(`${origin}/v1/nebula/game-actions`,{method:'POST',headers:{origin,'content-type':'application/json'},body:JSON.stringify({gameId:'pixelbattle',action:'paint',args:['red','3','4'],channel:'channel-a',username:'owner'})});
-  assert.equal(action.status,200);const feed=await(await fetch(`${origin}/v1/nebula/game-inputs`)).json();assert.equal(feed.inputs.at(-1).message,'!pixelbattle paint red 3 4');assert.deepEqual(feed.inputs.at(-1).gameIds,['pixelbattle']);
+  assert.equal(action.status,200);const feed=await(await fetch(`${origin}/v1/nebula/game-inputs`)).json();assert.equal(feed.inputs.at(-1).message,'spmt pixelbattle paint red 3 4');assert.deepEqual(feed.inputs.at(-1).gameIds,['pixelbattle']);
  }finally{await host.close();rmSync(dir,{recursive:true,force:true});}
 });
 

@@ -75,7 +75,7 @@ test("Nebula consumes only configured channels and restores Tag commands without
 
 test("generic game commands are durable, replay-safe, and use app-private Games Points state", async () => withRuntime(async ({ runtime, databasePath, sent }) => {
   const consumer = runtime.consumers[0];
-  const first = delivery("card", "!card");
+  const first = delivery("card", "spmt card");
   await consumer.deliver(first);
   await consumer.deliver({ ...first, attempt: 2 });
   assert.equal(sent.length, 2);
@@ -86,13 +86,14 @@ test("generic game commands are durable, replay-safe, and use app-private Games 
   const actions = new SqliteNebulaGameActionStore(databasePath);
   const state = games.get("tenant-a");
   assert.equal(state.players["spmt:user-1"].joinedGames.bingo.plays, 1);
-  assert.equal(state.processedCommandIds.length, 1);
+  assert.equal(state.processedCommandIds.filter(id => id.startsWith("provider:")).length, 1);
+  assert.equal(state.processedCommandIds.filter(id => id.startsWith("activity:")).length, 1);
   assert.equal(actions.list("tenant-a").length, 1);
   games.close(); actions.close();
 }));
 
 test("Nebula game command results publish to the selected provider room without replacing chat egress", async () => withRuntime(async ({ runtime, sent, simulationEvents }) => {
-  await runtime.consumers[0].deliver(delivery("card-preview", "!card"));
+  await runtime.consumers[0].deliver(delivery("card-preview", "spmt card"));
   assert.equal(sent.length, 1);
   assert.equal(simulationEvents.length, 1);
   assert.equal(simulationEvents[0].tenantId, "tenant-a");
@@ -103,11 +104,11 @@ test("Nebula game command results publish to the selected provider room without 
 
 test("ambiguous commands ask the user instead of mutating two games while safe team colors broadcast", async () => withRuntime(async ({ runtime, databasePath, sent }) => {
   const consumer = runtime.consumers[0];
-  await consumer.deliver(delivery("status", "!status"));
+  await consumer.deliver(delivery("status", "spmt status"));
   assert.match(sent.at(-1).text, /More than one active game/);
   const actionsBefore = (() => { const store = new SqliteNebulaGameActionStore(databasePath); const count = store.list("tenant-a").length; store.close(); return count; })();
   assert.equal(actionsBefore, 0);
-  await consumer.deliver(delivery("red", "!red"));
+  await consumer.deliver(delivery("red", "spmt red"));
   const actions = new SqliteNebulaGameActionStore(databasePath);
   assert.deepEqual(actions.list("tenant-a").map((item) => item.gameId).sort(), ["chatwars", "colorwars"]);
   actions.close();
@@ -115,9 +116,9 @@ test("ambiguous commands ask the user instead of mutating two games while safe t
 
 test("Quackverse deck commands read the real collection and moderator controls remain enforced", async () => withRuntime(async ({ runtime, databasePath, sent }) => {
   const consumer = runtime.consumers[0];
-  await consumer.deliver(delivery("deck", "!deck"));
+  await consumer.deliver(delivery("deck", "spmt deck"));
   assert.match(sent.at(-1).text, /Deck \(0\/20\): empty/);
-  await consumer.deliver(delivery("start", "!start"));
+  await consumer.deliver(delivery("start", "spmt start"));
   assert.match(sent.at(-1).text, /Only the broadcaster or a moderator/);
   const actions = new SqliteNebulaGameActionStore(databasePath);
   assert.equal(actions.list("tenant-a").length, 0);

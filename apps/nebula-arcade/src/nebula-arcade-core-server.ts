@@ -5,7 +5,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { SpmtClient } from "@spmt/sdk";
 import { PRODUCT_UI_CSS } from "@spmt/ui";
-import { NebulaTagExperienceService, SqliteNebulaTagExperienceStore } from "./nebula-tag-experience.js";
+import { isNebulaChannelOptedOut, NebulaTagExperienceService, SqliteNebulaTagExperienceStore } from "./nebula-tag-experience.js";
 import { NebulaTagOverlayHttpAdapter } from "./nebula-tag-overlay-http.js";
 import { NebulaTagRuntime, SqliteNebulaTagStore } from "./nebula-tag-runtime.js";
 import { NEBULA_ARCADE_GAMES } from "./game-hub.js";
@@ -113,6 +113,7 @@ export function createNebulaArcadeSandboxHost(options: NebulaArcadeSandboxHostOp
       }
       if (request.method === "POST" && url.pathname === "/v1/nebula-arcade/tag/rotation") {
         requireSameOrigin(request);
+        if(isNebulaChannelOptedOut(experienceStore,options.tenantId,options.channelId))throw new SandboxError(403,"This channel has opted out of all Nebula Arcade games");
         const body = await readJson(request);
         const outcome = await runtime.reconcileRotation({ tenantId: options.tenantId, channelId: options.channelId, now: optionalIso(body.now) ?? new Date().toISOString(), liveUserIds: stringArray(body.liveUserIds, 200) });
         return json(response, 200, { outcome, stored: runtime.getState(options.tenantId) });
@@ -143,7 +144,7 @@ export function validateNebulaArcadeSandboxEnvironment(environment: NodeJS.Proce
   return { databasePath: resolve(environment.NEBULA_ARCADE_DATABASE_PATH ?? ".sandbox-data/nebula-arcade-green-sandbox.sqlite"), tenantId: safeId(environment.NEBULA_ARCADE_TENANT_ID ?? "nebula-arcade-sandbox", "NEBULA_ARCADE_TENANT_ID"), channelId: safeId(environment.NEBULA_ARCADE_CHANNEL_ID ?? "sandbox-channel", "NEBULA_ARCADE_CHANNEL_ID") };
 }
 
-function arcadeView(value: string | null): NebulaArcadeViewV1 { return value === "games" || value === "game" || value === "overlay" || value === "stats" ? value : "home"; }
+function arcadeView(value: string | null): NebulaArcadeViewV1 { return value === "rules" || value === "commands" || value === "games" || value === "game" || value === "overlay" || value === "stats" ? value : "home"; }
 function overlayOutputUrl(sceneId: string) { return `${APP_PATH}?surface=overlay&scene=${encodeURIComponent(sceneId)}`; }
 function proxySafeOverlayPage(scene: NebulaOverlaySceneV1) { return renderNebulaOverlayOutput(scene).replace("/assets/nebula-overlay.css", "/assets/nebula-arcade/overlay.css").replace(/\sstyle="--layer:\d+"/g, ""); }
 function proxySafeBrowserScript() {

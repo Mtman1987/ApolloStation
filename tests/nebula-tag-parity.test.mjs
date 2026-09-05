@@ -39,10 +39,10 @@ test("Nebula Arcade tag-game command words and canonical module prefix remain re
   assert.deepEqual(parseNebulaTagCommandText("spmt whosit"), { kind: "status" });
   assert.deepEqual(parseNebulaTagCommandText("spmt stats"), { kind: "score" });
   assert.deepEqual(parseNebulaTagCommandText("spmt away"), { kind: "toggle-away" });
-  assert.deepEqual(parseNebulaTagCommandText("spmt arcade"), { kind: "join" });
+  assert.deepEqual(parseNebulaTagCommandText("spmt arcade join"), { kind: "join" });
   assert.deepEqual(parseNebulaTagCommandText("spmt arcade tag @TargetUser"), { kind: "tag", targetUsername: "targetuser" });
   assert.equal(parseNebulaTagCommandText("hello chat"), null);
-  assert.equal(parseNebulaTagCommandText("spmt tag"), null);
+  assert.deepEqual(parseNebulaTagCommandText("spmt tag"), { kind: "join" });
 });
 
 test("provider-neutral chat ingress resolves aliases, mentions, roles, and read-only replies", () => {

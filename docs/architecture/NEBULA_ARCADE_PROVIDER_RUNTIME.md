@@ -12,8 +12,8 @@ The cohort authenticates `chat-gateway` and `nebula-arcade` independently. Provi
 
 1. Chat Gateway persists and normalizes a human provider message once.
 2. The Nebula consumer accepts it only when tenant, provider, connection, and channel match the strict versioned configuration.
-3. Historical `spmt` Tag commands execute in the internal `tag` game. Bang commands use the shared twenty-game router.
-4. Ambiguous commands ask the user to choose a game; safe team-color commands can fan out to both compatible games.
+3. All game commands and continuation input require a complete leading `spmt` token. Global help/rules runs before game routing and lists only running games. Other bot commands and ordinary conversation never enter game handlers.
+4. Ambiguous commands ask for `spmt N`, with the choice retained for 30 seconds across restarts. Safe team-color commands can fan out to both compatible games.
 5. Command IDs are delivery-derived and retained in bounded app-private state. A retry cannot mutate scores, membership, or action feeds twice.
 6. Replies return through Chat Gateway with a stable Nebula idempotency key and the original provider message as the reply target.
 
@@ -24,3 +24,5 @@ The cohort authenticates `chat-gateway` and `nebula-arcade` independently. Provi
 The Sprite cohort always starts and authenticates the Nebula consumer against a tracked zero-tenant sandbox configuration. This proves composition, migrations, service separation, and clean shutdown without opening a provider socket or sending an external message.
 
 Automatic Tag rotation remains fail-closed until a fresh canonical presence snapshot is available. The runtime reports `presence-required`; it never converts absent or stale monitoring data into an empty live-user list. Production activation still requires the controlled two-tenant provider rehearsal, canonical presence projection, donor-state reconciliation, deployed overlay proof, and owner acceptance.
+
+See [chat command behavior](NEBULA_CHAT_COMMANDS.md) and [settings/shared-policy audit](NEBULA_GAME_SETTINGS_AUDIT.md) for aliases, guides, recent channel activity, opt-outs and remaining gaps.

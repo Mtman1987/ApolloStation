@@ -49,9 +49,9 @@ test('typed studio input reaches real StreamWeaver, HearMeOut, Tag, Bingo and Qu
  let result=await f.send('!points');assert.ok(result.events.some(event=>event.payload.body.includes('Stars')));
  result=await f.send('list hearmeout rooms');assert.ok(result.events.some(event=>event.payload.data?.appId==='hearmeout'&&event.payload.body.includes('Preview Studio')));
  result=await f.send('spmt join');assert.ok(result.events.some(event=>event.payload.data?.renderer==='nebula-tag'&&event.payload.data.snapshot.playerCount===1));
- await f.send('!card');await f.send('!bingo center Cosmic ducks');result=await f.send('!claim 13');
+ await f.send('spmt card');await f.send('spmt bingo center Cosmic ducks');result=await f.send('spmt claim 13');
  const board=result.events.find(event=>event.payload.data?.renderer==='nebula-arcade').payload.data.tabletop.bingo;assert.equal(board.centerPhrase,'Cosmic ducks');assert.ok(board.covered['12']);
- result=await f.send('!pack');const pack=result.events.find(event=>event.payload.data?.renderer==='nebula-arcade').payload.data.tabletop.quackverse.lastPack;assert.equal(pack.length,9);assert.ok(pack.every(card=>card.id&&card.name));
+ result=await f.send('spmt pack');const pack=result.events.find(event=>event.payload.data?.renderer==='nebula-arcade').payload.data.tabletop.quackverse.lastPack;assert.equal(pack.length,9);assert.ok(pack.every(card=>card.id&&card.name));
  assert.equal((await f.owner.listSimulationRooms('tenant-a')).length,1);
  assert.equal(f.authority.getXpBalance('tenant-a','owner'),0,'simulation never mutates the live XP wallet');
 });
@@ -76,7 +76,7 @@ test('room input identity and tenant come from authentication and reserved worke
 });
 
 test('input retries stay in one room and deleting a room starts with clean test state',async t=>{
- const f=setup(t);const input={roomId:'studio',provider:'twitch',message:'!pack'};
+ const f=setup(t);const input={roomId:'studio',provider:'twitch',message:'spmt pack'};
  const first=await f.owner.sendSimulationRoomInput('tenant-a',input,'same-key'),second=await f.owner.sendSimulationRoomInput('tenant-a',input,'same-key');assert.equal(first.job.id,second.job.id);assert.equal(second.duplicate,true);
  await f.worker.runOnce();await f.owner.deleteSimulationRoom('tenant-a','studio','delete-studio');
  const result=await f.send('spmt status');const snapshot=result.events.find(event=>event.payload.data?.renderer==='nebula-arcade').payload.data.tabletop.quackverse;assert.deepEqual(snapshot.lastPack,[]);
@@ -107,7 +107,7 @@ test('Discord application buttons, forms and submission use the live interaction
 
 test('an input queued before room deletion cannot recreate the deleted room',async t=>{
  const f=setup(t);await f.send('!points');
- const queued=await f.owner.sendSimulationRoomInput('tenant-a',{roomId:'studio',provider:'twitch',message:'!pack'},'queued-before-delete');
+ const queued=await f.owner.sendSimulationRoomInput('tenant-a',{roomId:'studio',provider:'twitch',message:'spmt pack'},'queued-before-delete');
  await f.owner.deleteSimulationRoom('tenant-a','studio','delete-before-worker');await f.worker.runOnce();
  assert.equal((await f.owner.getExecutionJob('tenant-a',queued.job.id)).state,'failed');
  assert.equal((await f.owner.listSimulationRooms('tenant-a')).length,0);
@@ -122,7 +122,7 @@ test('a named room is created without previewing a command, then independently r
  let rooms=await f.owner.listSimulationRooms('tenant-a');assert.equal(rooms.length,1);assert.equal(rooms[0].name,'Friday live test');
  const roomId=created.roomId;let result=await f.send('!headpat',{roomId});let outputs=result.events.filter(event=>event.payload.direction==='egress'&&event.payload.data?.inputId===result.job.id);assert.equal(outputs.length,1);assert.match(outputs[0].payload.body,/headpats/);
  result=await f.send('!boop @owner',{roomId});outputs=result.events.filter(event=>event.payload.direction==='egress'&&event.payload.data?.inputId===result.job.id);assert.equal(outputs.length,1);assert.match(outputs[0].payload.body,/boops @owner/);assert.ok(result.events.filter(event=>event.payload.data?.inputId===result.job.id).every(event=>!String(event.payload.title).includes('headpat')));
- await f.send('!card',{roomId});await f.send('list hearmeout rooms',{roomId});await f.send('deploy admin calendar',{roomId,provider:'discord'});
+ await f.send('spmt card',{roomId});await f.send('list hearmeout rooms',{roomId});await f.send('deploy admin calendar',{roomId,provider:'discord'});
  rooms=await f.owner.listSimulationRooms('tenant-a');assert.equal(rooms.length,1);assert.equal(rooms[0].name,'Friday live test');
  await assert.rejects(f.owner.createSimulationRoom('tenant-b','Other tenant','wrong-tenant'),{status:403});
 });

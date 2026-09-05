@@ -10,14 +10,14 @@ test("Nebula Arcade exposes twenty peer games with no featured ordering metadata
 });
 
 test("Nebula Arcade tag game keeps its simple commands while other games use distinct public verbs", () => {
-  assert.deepEqual(routeNebulaCommand("!join", ["tag", "bingo", "petrace", "wordstorm"]), [{ gameId: "tag", command: "join", args: [] }]);
-  assert.equal(resolveNebulaCommand("!card", ["tag", "bingo"]).targets[0].gameId, "bingo");
-  assert.equal(resolveNebulaCommand("!pet dog", ["petrace"]).targets[0].gameId, "petrace");
-  assert.equal(resolveNebulaCommand("!storm", ["wordstorm"]).targets[0].gameId, "wordstorm");
+  assert.deepEqual(routeNebulaCommand("spmt join", ["tag", "bingo", "petrace", "wordstorm"]), [{ gameId: "tag", command: "join", args: [] }]);
+  assert.equal(resolveNebulaCommand("spmt card", ["tag", "bingo"]).targets[0].gameId, "bingo");
+  assert.equal(resolveNebulaCommand("spmt pet dog", ["petrace"]).targets[0].gameId, "petrace");
+  assert.equal(resolveNebulaCommand("spmt storm", ["wordstorm"]).targets[0].gameId, "wordstorm");
 });
 
 test("shared commands ask the chatter to choose when they cannot safely fan out", () => {
-  const result = resolveNebulaCommand("!leave", ["tag", "chatgarden"]);
+  const result = resolveNebulaCommand("spmt leave", ["tag", "chatgarden"]);
   assert.equal(result.kind, "choose-game");
   assert.deepEqual(result.targets.map((target) => target.gameId), ["tag", "chatgarden"]);
   assert.match(result.prompt, /1 for Tag/);
@@ -25,26 +25,26 @@ test("shared commands ask the chatter to choose when they cannot safely fan out"
 });
 
 test("safe team-color conflicts broadcast to both compatible active games", () => {
-  const result = resolveNebulaCommand("!red", ["chatwars", "colorwars"]);
+  const result = resolveNebulaCommand("spmt red", ["chatwars", "colorwars"]);
   assert.equal(result.kind, "broadcast");
   assert.deepEqual(result.targets.map((target) => target.gameId), ["chatwars", "colorwars"]);
 });
 
 test("game-specific public verbs route directly", () => {
-  assert.equal(resolveNebulaCommand("!dance", ["tag", "dancingparade"]).targets[0].gameId, "dancingparade");
-  assert.equal(resolveNebulaCommand("!explode", ["chaosmode"]).targets[0].command, "explode");
-  assert.deepEqual(resolveNebulaCommand("!paint red 10 5", ["pixelbattle"]).targets[0].args, ["red", "10", "5"]);
-  assert.deepEqual(resolveNebulaCommand("!dig B5", ["treasurehunt"]).targets[0].args, ["B5"]);
+  assert.equal(resolveNebulaCommand("spmt dance", ["tag", "dancingparade"]).targets[0].gameId, "dancingparade");
+  assert.equal(resolveNebulaCommand("spmt explode", ["chaosmode"]).targets[0].command, "explode");
+  assert.deepEqual(resolveNebulaCommand("spmt paint red 10 5", ["pixelbattle"]).targets[0].args, ["red", "10", "5"]);
+  assert.deepEqual(resolveNebulaCommand("spmt dig B5", ["treasurehunt"]).targets[0].args, ["B5"]);
 });
 
 test("accept only reaches enabled games with a pending invitation", () => {
-  const targets = routeNebulaCommand("!accept", ["quackverse", "treasurehunt"], ["treasurehunt"]);
+  const targets = routeNebulaCommand("spmt accept", ["quackverse", "treasurehunt"], ["treasurehunt"]);
   assert.deepEqual(targets.map((target) => target.gameId), ["treasurehunt"]);
 });
 
 test("help exposes actual public commands without requiring a game-name prefix", () => {
-  assert.ok(nebulaGameCommandHelp("bingo").includes("!claim"));
-  assert.ok(nebulaGameCommandHelp("chickenroyale").includes("!launch"));
-  assert.ok(nebulaGameCommandHelp("quackverse").includes("!pack"));
+  assert.ok(nebulaGameCommandHelp("bingo").includes("spmt bingo claim"));
+  assert.ok(nebulaGameCommandHelp("chickenroyale").includes("spmt chickenroyale launch"));
+  assert.ok(nebulaGameCommandHelp("quackverse").includes("spmt quackverse pack"));
   assert.equal(nebulaGameCommandHelp("missing").length, 0);
 });

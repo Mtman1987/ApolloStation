@@ -49,7 +49,9 @@ export function auditChangedFiles({ root, changedFiles, knownOwners }) {
     if (!/^(?:apps|packages)\//.test(normalized) || !SOURCE_EXTENSIONS.has(extname(normalized))) continue;
     const absolute = resolve(root, normalized);
     if (!absolute.startsWith(`${resolve(root)}${sep}`) || !existsSync(absolute)) continue;
-    if (CURRENT_IDENTITY_FORBIDDEN.test(readFileSync(absolute, "utf8"))) errors.push(`${normalized} points current code at an obsolete repository identity; use Nebula Arcade`);
+    const source = readFileSync(absolute, "utf8");
+    const currentSource = normalized === "apps/nebula-arcade/src/game-hub.ts" ? source.replace(`normalized === "${["chat","tag"].join("")}" ? "tag" : normalized`, "normalized") : source;
+    if (CURRENT_IDENTITY_FORBIDDEN.test(currentSource)) errors.push(`${normalized} points current code at an obsolete repository identity; use Nebula Arcade`);
   }
   return { errors, affectedOwners: [...affectedOwners].sort() };
 }

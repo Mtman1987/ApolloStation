@@ -1,3 +1,5 @@
+import { parseNebulaMessage } from "./game-hub.js";
+import { nebulaGuideReplies } from "./game-guide.js";
 import { SpmtClient } from "@spmt/sdk";
 
 export const NEBULA_TAG_STATE_VERSION = 1 as const;
@@ -302,12 +304,10 @@ export function assertNebulaTagStateV1(value: unknown, tenantId?: string): Nebul
 }
 
 export function parseNebulaTagCommandText(message: string): NebulaTagParsedCommandV1 | null {
-  const tokens = message.trim().split(/\s+/);
-  if (tokens.length < 2 || tokens[0]?.toLowerCase() !== "spmt") return null;
-  const modular = tokens[1]?.toLowerCase() === "arcade";
-  if (modular && tokens.length === 2) return { kind: "join" };
-  const commandIndex = modular ? 2 : 1;
-  const name = tokens[commandIndex]?.toLowerCase();
+  const parsed = parseNebulaMessage(message);
+  if (!parsed || (parsed.gameId && parsed.gameId !== "tag")) return null;
+  if (!parsed.gameId && ["help","commands","rules"].includes(parsed.command)) return null;
+  const name = parsed.command === "commands" ? "help" : parsed.command;
   if (!name) return null;
   if (["join", "leave", "status", "score", "rank", "players", "sleep", "wake", "rules", "help", "info"].includes(name)) {
     return { kind: name as Exclude<NebulaTagParsedCommandV1["kind"], "tag" | "pass" | "grant-pass" | "toggle-away"> };
@@ -316,7 +316,7 @@ export function parseNebulaTagCommandText(message: string): NebulaTagParsedComma
   if (name === "stats") return { kind: "score" };
   if (name === "away") return { kind: "toggle-away" };
   if (name === "tag" || name === "pass" || name === "givepass") {
-    const targetUsername = normalizeUsername(tokens[commandIndex + 1] ?? "");
+    const targetUsername = normalizeUsername(parsed.args[0] ?? "");
     if (!targetUsername) return null;
     return { kind: name === "givepass" ? "grant-pass" : name, targetUsername };
   }
@@ -360,7 +360,7 @@ export function planNebulaTagMessage(stateValue: NebulaTagStateV1, message: Nebu
     return { kind: "response", code: "players", message: players.length ? players.map((player) => player.username).join(", ") : "No available Nebula Arcade tag game players." };
   }
   if (parsed.kind === "rules" || parsed.kind === "help" || parsed.kind === "info") {
-    return { kind: "response", code: parsed.kind, message: '"spmt join" | "spmt tag @user" | "spmt pass @user" | "spmt status" | "spmt score" | "spmt rank" | "spmt away"' };
+    return { kind: "response", code: parsed.kind, message: nebulaGuideReplies(`spmt tag ${parsed.kind === "rules" ? "rules" : "help"}`,["tag"])!.join(" ") };
   }
   if (parsed.kind === "join") return { kind: "command", command: { ...base, kind: "join", username: message.username, ...(message.avatarUrl ? { avatarUrl: message.avatarUrl } : {}) } };
   if (parsed.kind === "leave") return { kind: "command", command: { ...base, kind: "leave" } };

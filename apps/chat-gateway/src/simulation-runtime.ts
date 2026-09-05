@@ -120,6 +120,7 @@ export class SimulationRoomRuntime {
       if (input.appIds.includes("nebula-arcade")) {
         const dashboard = discord("nebula-arcade");
         const runtime = new NebulaArcadeProviderRuntime({
+          publicOrigin: this.options.publicOrigin || "https://spmt.live",
           databasePath: path("nebula"), client: client("nebula-arcade"),
           config: { schemaVersion: 1, revision: "simulation-v1", tenants: [{ tenantId, pinUserId: actor.userId, channels: [{ provider, connectionId, channelId, stateChannelId: `studio-${provider}`, enabledGameIds: NEBULA_ARCADE_GAMES.map(game => game.id) }] }] },
           egress: { send: send("nebula-arcade") },

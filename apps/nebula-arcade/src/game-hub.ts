@@ -23,14 +23,14 @@ export const NEBULA_ARCADE_GAMES: readonly NebulaGameV1[] = Object.freeze([
   game("dancingparade", "Dancing Parade", "A shared parade where chat joins, dances, and builds the on-screen procession.", ["parade", "dance", "leave", "status"], ["parade", "activity"]),
   game("emojirain", "Emoji Rain", "Community emoji choices become a live falling visual game on stream.", ["rain", "leave", "status"], ["rain", "counter"]),
   game("emojitower", "Emoji Tower", "Players stack emoji pieces and try to keep the community tower standing.", ["tower", "drop", "leave", "status"], ["tower", "height"]),
-  game("memorylane", "Memory Lane", "A community memory challenge using prompts, sequences, and recall rounds.", ["memory", "leave", "status"], ["sequence", "scoreboard"]),
+  game("memorylane", "Memory Lane", "A community memory wall that turns shared messages, keywords, and emoji into photo memories.", ["memory", "leave", "status"], ["sequence", "scoreboard"]),
   game("petrace", "Pet Race", "Chat joins pets into a race and follows the field through each round.", ["pet", "race", "leave", "status"], ["track", "standings"]),
   game("phraseguess", "Phrase Guess", "Chat races to solve hidden phrases while clues are revealed over time.", ["phrase", "leave", "status"], ["phrase", "guesses"]),
   game("pixelbattle", "Pixel Battle", "Players compete and collaborate on a shared pixel battlefield.", ["pixel", "paint", "leave", "status"], ["canvas", "teams"]),
-  game("rhythmpulse", "Rhythm Pulse", "A timing game where chat reactions drive a shared rhythm sequence.", ["rhythm", "leave", "status"], ["pulse", "streak"]),
+  game("rhythmpulse", "Rhythm Pulse", "A collaborative beat performance where chat contributes rhythm words and musical emoji.", ["rhythm", "leave", "status"], ["pulse", "streak"]),
   game("treasurehunt", "Treasure Hunt", "Chat follows clues, accepts discoveries, and races through a shared hunt.", ["treasure", "dig", "accept", "leave", "status"], ["map", "clues"]),
   game("wordchain", "Word Chain", "Players keep a word chain alive by responding with valid linked words.", ["chain", "leave", "status"], ["chain", "streak"]),
-  game("wordstorm", "Word Storm", "A rapid word challenge where chat scores through valid responses during timed rounds.", ["storm", "leave", "status"], ["round", "scoreboard"]),
+  game("wordstorm", "Word Storm", "A live word cloud where repeated words grow and similar words form visual combos.", ["storm", "leave", "status"], ["round", "scoreboard"]),
 ]);
 
 export interface NebulaCommandTargetV1 { gameId: string; command: string; args: string[]; }
@@ -54,20 +54,32 @@ const ACTION_ALIASES = new Map<string, { gameId: string; command: string }>([
   ["claim", { gameId: "bingo", command: "claim" }], ["phrases", { gameId: "bingo", command: "phrases" }], ["paint", { gameId: "pixelbattle", command: "paint" }], ["dig", { gameId: "treasurehunt", command: "dig" }],
 ]);
 
-function parseCommand(text: string) {
-  const match = /^!(\S+)(?:\s+(.*))?$/i.exec(String(text || "").trim());
+/** The only public chat namespace. Never reinterpret another bot's !commands. */
+export function parseNebulaMessage(text: string) {
+  const match = /^spmt(?:\s+([\s\S]*))?$/i.exec(String(text || "").trim());
   if (!match) return null;
-  return { command: match[1]!.toLowerCase(), args: match[2]?.trim().split(/\s+/).filter(Boolean) ?? [] };
+  const words = (match[1] ?? "").trim().split(/\s+/).filter(Boolean);
+  if (words[0]?.toLowerCase() === "arcade") words.shift();
+  for (let length = Math.min(3, words.length); length > 0; length--) {
+    const normalized = normalizeGameId(words.slice(0, length).join(" "));
+    // User-requested chat spelling; persisted game and app identity stay canonical.
+    const gameId = normalized === "chattag" ? "tag" : normalized;
+    const game = NEBULA_ARCADE_GAMES.find(item => normalizeGameId(item.name) === gameId || item.id === gameId);
+    if (!game) continue;
+    if (game.id === "tag" && words.length > length && !["join","leave","status","score","rank","tag","pass","givepass","whosit","away","sleep","wake","players","live","more","mute","unmute","optout","support","ticket","pinrank","help","commands","rules"].includes(words[length]!.toLowerCase())) break;
+    return { body: words.join(" "), gameId: game.id, command: words[length]?.toLowerCase() ?? "join", args: words.slice(length + 1) };
+  }
+  return { body: words.join(" "), gameId: undefined, command: words[0]?.toLowerCase() ?? "", args: words.slice(1) };
 }
 
 export function routeNebulaCommand(text: string, enabledGameIds: readonly string[], pendingGameIds: readonly string[] = []): NebulaCommandTargetV1[] {
-  const parsed = parseCommand(text);
+  const parsed = parseNebulaMessage(text);
   if (!parsed) return [];
   const { command, args } = parsed;
   const enabled = new Set(enabledGameIds.map(normalizeGameId));
   const pending = new Set(pendingGameIds.map(normalizeGameId));
 
-  if (enabled.has(command)) return [{ gameId: command, command: args[0]?.toLowerCase() || "join", args: args.slice(1) }];
+  if (parsed.gameId) return enabled.has(parsed.gameId) ? [{ gameId: parsed.gameId, command, args }] : [];
 
   const directAction = ACTION_ALIASES.get(command);
   if (directAction && enabled.has(directAction.gameId)) return [{ gameId: directAction.gameId, command: directAction.command, args }];
@@ -85,11 +97,11 @@ export function routeNebulaCommand(text: string, enabledGameIds: readonly string
     return NEBULA_ARCADE_GAMES.filter((item) => enabled.has(item.id) && pending.has(item.id) && item.commands.includes("accept")).map((item) => ({ gameId: item.id, command, args }));
   }
 
-  return NEBULA_ARCADE_GAMES.filter((item) => enabled.has(item.id) && item.commands.includes(command)).map((item) => ({ gameId: item.id, command, args }));
+  return NEBULA_ARCADE_GAMES.filter((item) => enabled.has(item.id) && (item.commands.includes(command) || ["leave","status"].includes(command))).map((item) => ({ gameId: item.id, command, args }));
 }
 
 export function resolveNebulaCommand(text: string, enabledGameIds: readonly string[], pendingGameIds: readonly string[] = []): NebulaCommandResolutionV1 {
-  const parsed = parseCommand(text);
+  const parsed = parseNebulaMessage(text);
   const targets = routeNebulaCommand(text, enabledGameIds, pendingGameIds);
   if (!parsed || targets.length === 0) return { kind: "none", targets: [] };
   if (targets.length === 1) return { kind: "single", targets: [targets[0]!] };
@@ -101,17 +113,17 @@ export function resolveNebulaCommand(text: string, enabledGameIds: readonly stri
 
   const choices = targets.map((target, index) => {
     const item = NEBULA_ARCADE_GAMES.find((candidate) => candidate.id === target.gameId);
-    return `${index + 1} for ${item?.name ?? target.gameId}`;
+    return `spmt ${index + 1} for ${item?.name ?? target.gameId}`;
   });
-  return { kind: "choose-game", command: parsed.command, args: parsed.args, targets, prompt: `More than one active game uses !${parsed.command}. What game would you like? Type ${choices.join(", ")}.` };
+  return { kind: "choose-game", command: parsed.command, args: parsed.args, targets, prompt: `More than one active game uses spmt ${parsed.command}. Choose a game: ${choices.join(", ")}.` };
 }
 
 export function nebulaGameCommandHelp(gameId: string): string[] {
   const game = NEBULA_ARCADE_GAMES.find((item) => item.id === normalizeGameId(gameId));
   if (!game) return [];
-  return game.commands.map((command) => `!${command}`);
+  return game.commands.map((command) => `spmt ${game.id} ${command}`);
 }
 
 function normalizeGameId(value: unknown): string {
-  return String(value ?? "").trim().toLowerCase();
+  return String(value ?? "").trim().toLowerCase().replace(/[\s_-]+/g, "");
 }

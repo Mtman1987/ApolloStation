@@ -20,7 +20,7 @@ test("Nebula shared game runtime survives restart without becoming a second SPMT
     first.update("tenant-a",state=>{
       setNebulaChannelGameRunning(state,"captain","wordstorm",true,new Date("2026-08-26T12:00:00Z"));
       const joined=joinNebulaGame(state,{userId:"1",username:"alpha",displayName:"Alpha",gameId:"wordstorm"},new Date("2026-08-26T12:00:01Z"));
-      recordNebulaGameChatActivity(state,{channel:"captain",userId:"1",username:"alpha",displayName:"Alpha",message:"hello",profileGameIds:["wordstorm"]},Date.parse("2026-08-26T12:01:00Z"));
+      recordNebulaGameChatActivity(state,{channel:"captain",userId:"1",username:"alpha",displayName:"Alpha",message:"spmt hello",profileGameIds:["wordstorm"]},Date.parse("2026-08-26T12:01:00Z"));
       recordNebulaGameWin(state,joined.player.id,"wordstorm",2,new Date("2026-08-26T12:01:01Z"));
     });
     first.close();

@@ -5,11 +5,13 @@ import { basename, isAbsolute } from "node:path";
 import type { NormalizedChatDeliveryV1, NormalizedChatMessageV1, OutboundChatMessageV1 } from "@spmt/contracts";
 import type { SpmtClient } from "@spmt/sdk";
 import { SqliteNebulaGameActionStore, validateNebulaGameAction } from "./game-actions.js";
-import { NEBULA_ARCADE_GAMES, resolveNebulaCommand, type NebulaCommandTargetV1 } from "./game-hub.js";
+import { NEBULA_ARCADE_GAMES, parseNebulaMessage, resolveNebulaCommand, type NebulaCommandTargetV1 } from "./game-hub.js";
+import { NEBULA_CONTINUATION_GAMES, nebulaGuideReplies } from "./game-guide.js";
+import { SqliteNebulaArcadeActivityStore } from "./arcade-activity.js";
 import { claimNebulaGameCommand, getNebulaGameStats, joinNebulaGame, leaveNebulaGame, normalizeNebulaPlayerId, recordNebulaGameChatActivity, resolveNebulaChannelGameIds, setNebulaChannelGameRunning } from "./game-runtime.js";
 import { SqliteNebulaGameRuntimeStore } from "./game-runtime-store.js";
 import { buildNebulaDiscordDashboard, nebulaDiscordDashboardSignature, SqliteNebulaDiscordDashboardStore, type NebulaDiscordDashboardEgressV1 } from "./discord-dashboard.js";
-import { NebulaTagExperienceService, SqliteNebulaTagExperienceStore } from "./nebula-tag-experience.js";
+import { isNebulaChannelOptedOut, NebulaTagExperienceService, SqliteNebulaTagExperienceStore } from "./nebula-tag-experience.js";
 import { NebulaTagRuntime, SqliteNebulaTagStore } from "./nebula-tag-runtime.js";
 
 export interface NebulaArcadeProviderChannelV1 {
@@ -57,6 +59,7 @@ export class NebulaArcadeProviderRuntime {
   readonly consumers;
   private readonly tabletop: SqliteNebulaTabletopRuntime;
   private readonly inputStore: SqliteNebulaGameInputStore;
+  private readonly activity: SqliteNebulaArcadeActivityStore;
   private readonly tagStore: SqliteNebulaTagStore;
   private readonly experienceStore: SqliteNebulaTagExperienceStore;
   private readonly gameStore: SqliteNebulaGameRuntimeStore;
@@ -67,9 +70,10 @@ export class NebulaArcadeProviderRuntime {
   private readonly channels = new Map<string, NebulaArcadeProviderChannelV1>();
   private readonly dashboardSignatures = new Map<string, string>();
   private closed = false;
-  constructor(private readonly options: { databasePath: string; config: NebulaArcadeProviderConfigV1; client: SpmtClient; egress: NebulaArcadeProviderEgressV1; simulation?: boolean; discordDashboard?: { egress: NebulaDiscordDashboardEgressV1; publicOrigin: string; gameplayOrigin?: string; webhookName?: string; avatarUrl?: string }; now?: () => string }) {
+  constructor(private readonly options: { databasePath: string; config: NebulaArcadeProviderConfigV1; client: SpmtClient; egress: NebulaArcadeProviderEgressV1; simulation?: boolean; publicOrigin?: string; discordDashboard?: { egress: NebulaDiscordDashboardEgressV1; publicOrigin: string; gameplayOrigin?: string; webhookName?: string; avatarUrl?: string }; now?: () => string }) {
     this.tabletop = new SqliteNebulaTabletopRuntime(options.databasePath);
     this.inputStore = new SqliteNebulaGameInputStore(options.databasePath);
+    this.activity = new SqliteNebulaArcadeActivityStore(options.databasePath);
     this.tagStore = new SqliteNebulaTagStore(options.databasePath);
     this.experienceStore = new SqliteNebulaTagExperienceStore(options.databasePath);
     this.gameStore = new SqliteNebulaGameRuntimeStore(options.databasePath);
@@ -78,7 +82,10 @@ export class NebulaArcadeProviderRuntime {
     this.tagRuntime = new NebulaTagRuntime(this.tagStore, options.client);
     for (const tenant of options.config.tenants) {
       this.experiences.set(tenant.tenantId, new NebulaTagExperienceService(this.tagRuntime, this.experienceStore, tenant.pinUserId, options.now));
-      for (const channel of tenant.channels) this.channels.set(channelKey(tenant.tenantId, channel.provider, channel.connectionId, channel.channelId), channel);
+      for (const channel of tenant.channels) {
+        this.channels.set(channelKey(tenant.tenantId, channel.provider, channel.connectionId, channel.channelId), channel);
+        this.activity.configure(tenant.tenantId,channel.stateChannelId,channel.enabledGameIds);
+      }
     }
     this.consumers = [{
       id: "nebula.arcade.provider-ingress" as const,
@@ -98,46 +105,82 @@ export class NebulaArcadeProviderRuntime {
   close() {
     if (this.closed) return;
     this.closed = true;
-    this.tabletop.close(); this.inputStore.close(); this.dashboardStore?.close(); this.actionStore.close(); this.gameStore.close(); this.experienceStore.close(); this.tagStore.close();
+    this.tabletop.close(); this.inputStore.close(); this.activity.close(); this.dashboardStore?.close(); this.actionStore.close(); this.gameStore.close(); this.experienceStore.close(); this.tagStore.close();
   }
   private async deliver(delivery: NormalizedChatDeliveryV1) {
     if (this.closed) throw new Error("Nebula Arcade provider runtime is closed");
-    const message = delivery.message;
-    const channel = this.channels.get(messageKey(message));
-    const experience = this.experiences.get(message.tenantId);
-    if (!channel || !experience) return;
-    const tabletopCommand = normalizeCommandText(message.text).split(/\s/)[0]?.toLowerCase()||"", tabletopGame = /^!(bingo|card|claim|phrases)$/.test(tabletopCommand)?"bingo":/^!(quackverse|quackpack|pack|deck|collection)$/.test(tabletopCommand)?"quackverse":undefined;
-    const tabletop = (tabletopGame ? channel.enabledGameIds.includes(tabletopGame) : channel.enabledGameIds.includes("bingo")) ? this.tabletop.execute(message) : undefined;
-    if (tabletop !== undefined) {
-      const gameId = /(?:bingo|card|claim|phrases)/i.test(normalizeCommandText(message.text).split(/\s/)[0]||"") ? "bingo" : "quackverse";
-      let body = tabletop;
-      if (/^!card\s*$/i.test(normalizeCommandText(message.text))) body = `${this.applyTarget(message,delivery.deliveryId,channel,{gameId:"bingo",command:"card",args:[]})} ${tabletop}`;
-      this.inputStore.append(message,[gameId]); await this.reply(message,delivery.deliveryId,"tabletop",body); return;
-    }
-    const tagAlias = /^!(tag|pass|givepass|whosit)(?:\s|$)/i.test(message.text) ? `spmt ${message.text.slice(1)}` : message.text;
-    if (/^!tag\s*$/i.test(message.text)) { await this.reply(message, delivery.deliveryId, "tag-help", "Use !tag @player to tag someone. Join with spmt join."); return; }
-    const tag = await experience.ingest(toTagMessage(message, tagAlias));
-    if (tag.kind !== "ignored") {
-      if ((tag.kind === "reply" || tag.kind === "executed") && tag.route === "chat") await this.reply(message, delivery.deliveryId, tag.code, tag.message);
-      if (tag.kind === "executed" && message.provider === "discord") await this.publishDashboard(message.tenantId, channel, true).catch(() => undefined);
+    const message=delivery.message, channel=this.channels.get(messageKey(message)), experience=this.experiences.get(message.tenantId);
+    if (!channel || !experience || message.actor.isBot) return;
+    const channelIds=[...new Set([message.sourceChannelId??message.channelId,message.channelId,channel.stateChannelId])];
+    if (isNebulaChannelOptedOut(this.experienceStore,message.tenantId,...channelIds)) return;
+    const parsed=parseNebulaMessage(message.text);
+    if (parsed?.command==="optout" && (!parsed.gameId || parsed.gameId==="tag")) {
+      const outcome=await experience.ingest(toTagMessage(message,"spmt optout"));
+      if(outcome.kind==="reply") {
+        // A shared-chat source is a separate room, not a receiving-channel alias.
+        if(outcome.code==="channel-opted-out" && (!message.sourceChannelId || message.sourceChannelId===message.channelId)) this.experienceStore.optOutChannel(message.tenantId,channel.stateChannelId,message.occurredAt);
+        await this.reply(message,delivery.deliveryId,outcome.code,outcome.message);
+      }
       return;
     }
-    const commandText = normalizeCommandText(message.text);
-    const resolution = resolveNebulaCommand(commandText, channel.enabledGameIds);
-    if (resolution.kind === "none") {
-      this.inputStore.append(message, resolveNebulaChannelGameIds(this.gameStore.get(message.tenantId), channel.stateChannelId, channel.enabledGameIds));
-      this.gameStore.update(message.tenantId, (state) => {
-        if (claimNebulaGameCommand(state, `activity:${delivery.deliveryId}`)) recordNebulaGameChatActivity(state, { channel: channel.stateChannelId, userId: actorId(message), username: message.actor.username, displayName: message.actor.displayName, message: message.text, profileGameIds: channel.enabledGameIds }, Date.parse(message.occurredAt));
-      });
-      return;
+    const now=Date.parse(message.occurredAt),actor=gameActorId(message);
+    this.activity.observe(message.tenantId,channel.stateChannelId,actor,message.text,now);
+    if(!parsed || !parsed.body)return;
+    const activeIds=resolveNebulaChannelGameIds(this.gameStore.get(message.tenantId),channel.stateChannelId,channel.enabledGameIds);
+    const guide=nebulaGuideReplies(message.text,activeIds,this.options.publicOrigin??this.options.discordDashboard?.publicOrigin);
+    if(guide){for(const [index,body] of guide.entries())await this.reply(message,delivery.deliveryId,`guide-${index}`,body);return;}
+    const choiceKey=`${messageKey(message)}\0${actor}`,choice=this.activity.choice(message.tenantId,choiceKey,actor,now);
+    let selected:NebulaCommandTargetV1|undefined;
+    if(/^\d+$/.test(parsed.body)&&choice){selected=choice[Number(parsed.body)-1];if(!selected){await this.reply(message,delivery.deliveryId,"choice-invalid",`Choose spmt 1 through spmt ${choice.length}.`);return;}this.activity.clearChoice(message.tenantId,choiceKey,actor);}
+    else if(!/^\d+$/.test(parsed.body))this.activity.clearChoice(message.tenantId,choiceKey,actor);
+    const available=["start","stop","status"].includes(parsed.command)?[...new Set([...channel.enabledGameIds,...activeIds])]:activeIds;
+    const resolution=resolveNebulaCommand(message.text,available);
+    if(!selected && resolution.kind==="none"){
+      const catalog=resolveNebulaCommand(message.text,NEBULA_ARCADE_GAMES.map(game=>game.id));
+      if(parsed.gameId || catalog.targets.length){const names=parsed.gameId?[gameName(parsed.gameId)]:catalog.targets.map(target=>gameName(target.gameId));await this.reply(message,delivery.deliveryId,"game-inactive",`${names.join(" / ")} is not active in this channel.`);return;}
     }
-    if (resolution.kind === "choose-game") { await this.reply(message, delivery.deliveryId, "choose-game", resolution.prompt); return; }
-    const targets = resolution.targets;
-    const replies: string[] = [];
-    const accepted: string[] = [];
-    for (const target of targets) { const reply = this.applyTarget(message, delivery.deliveryId, channel, target); replies.push(reply); if (reply.startsWith(`${gameName(target.gameId)} accepted`)) accepted.push(target.gameId); }
-    if (accepted.length) this.inputStore.append(message, accepted);
-    await this.reply(message, delivery.deliveryId, "game-action", replies.join(" "));
+    if(!selected && resolution.kind==="choose-game"){this.activity.saveChoice(message.tenantId,choiceKey,actor,resolution.targets,now);await this.reply(message,delivery.deliveryId,"choose-game",resolution.prompt);return;}
+    let targets=selected?[selected]:resolution.targets;
+    if(!targets.length && activeIds.includes("tag") && ["whosit","stats","rank","givepass","away","sleep","wake","players","live","more","mute","unmute","support","ticket","pinrank"].includes(parsed.command))targets=[{gameId:"tag",command:parsed.command,args:parsed.args}];
+    const joined=this.activity.joinedGames(message.tenantId,channel.stateChannelId,actor);
+    if(!targets.length && !parsed.gameId)targets=activeIds.filter(id=>joined.includes(id)&&NEBULA_CONTINUATION_GAMES.has(id)).map(gameId=>({gameId,command:"input",args:[parsed.body]}));
+    const replies:string[]=[],accepted:string[]=[];
+    for(const target of targets){
+      if(!activeIds.includes(target.gameId)&&!["start","stop","status"].includes(target.command)){replies.push(`${gameName(target.gameId)} is stopped in this channel.`);continue;}
+      if(target.gameId==="tag"){
+        const tag=await experience.ingest(toTagMessage(message,`spmt ${target.command} ${target.args.join(" ")}`.trim()));
+        if((tag.kind==="reply"||tag.kind==="executed")&&tag.route==="chat")replies.push(tag.message);
+        if(tag.kind==="executed"&&tag.execution.result.status!=="rejected"){
+          this.activity.membership(message.tenantId,channel.stateChannelId,actor,"tag",!["leave","sleep"].includes(target.command),now);
+          if(message.provider==="discord")await this.publishDashboard(message.tenantId,channel,true).catch(()=>undefined);
+        }
+        continue;
+      }
+      const game=NEBULA_ARCADE_GAMES.find(item=>item.id===target.gameId)!;
+      const continuation=target.command==="input"||(NEBULA_CONTINUATION_GAMES.has(target.gameId)&&!["join","leave","status","start","stop"].includes(target.command)&&!game.commands.includes(target.command)&&!(target.gameId==="bingo"&&["center","reset"].includes(target.command)));
+      if(continuation){
+        if(!joined.includes(target.gameId)){replies.push(`Join ${game.name} first with spmt ${game.id} join.`);continue;}
+        if(target.gameId==="bingo")this.tabletop.observeBingo(message);
+        accepted.push(target.gameId);continue;
+      }
+      if(["bingo","quackverse"].includes(target.gameId)&&!["leave","start","stop"].includes(target.command)){
+        const command=target.command==="quackpack"?"pack":target.command;
+        const normalized={...message,text:`spmt ${target.gameId} ${command} ${target.args.join(" ")}`.trim()};
+        const result=this.tabletop.execute(normalized);if(result!==undefined)replies.push(result);
+        if(this.tabletop.succeeded(normalized)){
+          if(!["status","phrases","reset","collection","deck","hand"].includes(command))replies.push(this.applyTarget(message,delivery.deliveryId,channel,{gameId:target.gameId,command:"join",args:[]}));
+          accepted.push(target.gameId);
+        }
+        continue;
+      }
+      const reply=this.applyTarget(message,delivery.deliveryId,channel,target);replies.push(reply);if(reply.startsWith(`${gameName(target.gameId)} accepted`))accepted.push(target.gameId);
+    }
+    if(accepted.length){
+      const normalizedText=selected?`spmt ${selected.gameId} ${selected.command} ${selected.args.join(" ")}`.trim():message.text;
+      this.inputStore.append({...message,text:normalizedText},accepted,channel.stateChannelId);
+      this.gameStore.update(message.tenantId,state=>{if(claimNebulaGameCommand(state,`activity:${delivery.deliveryId}`))recordNebulaGameChatActivity(state,{channel:channel.stateChannelId,userId:actor,username:message.actor.username,displayName:message.actor.displayName,message:normalizedText,profileGameIds:accepted,eligibleGameIds:accepted},now);});
+    }
+    if(replies.length)await this.reply(message,delivery.deliveryId,"game-action",replies.join(" "));
   }
   private applyTarget(message: NormalizedChatMessageV1, deliveryId: string, channel: NebulaArcadeProviderChannelV1, target: NebulaCommandTargetV1) {
     if (target.command === "status") { const stats = getNebulaGameStats(this.gameStore.get(message.tenantId), target.gameId); return `${gameName(target.gameId)}: ${stats.players.length} active players. ${stats.leaderboard.slice(0,3).map(player=>`${player.displayName}: ${player.score}`).join(" · ")}`; }
@@ -146,7 +189,7 @@ export class NebulaArcadeProviderRuntime {
     let checked: ReturnType<typeof validateNebulaGameAction>;
     try { checked = validateNebulaGameAction(target.gameId, actionValue, actionValue === "join" ? [] : target.args); }
     catch (error) {
-      if (error instanceof Error && /^Unsupported /.test(error.message)) return `${gameName(target.gameId)}: invalid !${target.command} arguments. ${target.gameId === "pixelbattle" ? "Use !paint <color> <x 0–19> <y 0–14>." : target.gameId === "treasurehunt" ? "Use !dig <A1–H8>." : "Use the game name followed by an action, for example !chickenroyale start."}`;
+      if (error instanceof Error && /^Unsupported /.test(error.message)) return `${gameName(target.gameId)}: invalid spmt ${target.command} arguments. Use spmt ${target.gameId} help.`;
       throw error;
     }
     const commandId = `provider:${deliveryId}:${target.gameId}:${checked.action}`;
@@ -165,12 +208,16 @@ export class NebulaArcadeProviderRuntime {
       }
       return true;
     }).result;
+    if (changed && !["start","stop"].includes(checked.action)) this.activity.membership(message.tenantId,channel.stateChannelId,actor,target.gameId,checked.action!=="leave",Date.parse(message.occurredAt));
     this.actionStore.record({ id: commandId, tenantId: message.tenantId, channel: channel.stateChannelId, gameId: target.gameId, actorId: actor, username, displayName, action: checked.action, args: checked.args, message: message.text, occurredAt: message.occurredAt });
     const stats = getNebulaGameStats(this.gameStore.get(message.tenantId), target.gameId);
     return changed ? `${gameName(target.gameId)} accepted ${checked.action} for ${displayName}. ${stats.players.length} active.` : `${gameName(target.gameId)} already accepted that command.`;
   }
   private async reply(message: NormalizedChatMessageV1, deliveryId: string, code: string, text: string) {
-    await this.options.egress.send({ schemaVersion: 1, tenantId: message.tenantId, provider: message.provider, connectionId: message.connectionId, channelId: message.channelId, text, idempotencyKey: `nebula-arcade-reply:${deliveryId}:${code}`, replyToMessageId: message.messageId });
+    const chunks:string[]=[];let remainder=text;
+    while(remainder.length>440){const cut=remainder.lastIndexOf(" ",440),end=cut>100?cut:440;chunks.push(remainder.slice(0,end));remainder=remainder.slice(end).trimStart();}
+    if(remainder)chunks.push(remainder);
+    for(const [index,chunk] of chunks.entries())await this.options.egress.send({schemaVersion:1,tenantId:message.tenantId,provider:message.provider,connectionId:message.connectionId,channelId:message.channelId,text:chunk,idempotencyKey:`nebula-arcade-reply:${deliveryId}:${code}:${index}`,replyToMessageId:message.messageId});
     if (this.options.simulation) await this.options.client.publishSimulationRoomEvent(message.tenantId, {
       roomId: `${message.provider}:${message.connectionId}:${message.channelId}`,
       lane: "game",
@@ -198,6 +245,7 @@ export class NebulaArcadeProviderRuntime {
   }
   private async publishDashboard(tenantId: string, channel: NebulaArcadeProviderChannelV1, force: boolean) {
     if (!this.options.discordDashboard || !this.dashboardStore || channel.provider !== "discord") return false;
+    if (isNebulaChannelOptedOut(this.experienceStore,tenantId,channel.channelId,channel.stateChannelId)) return false;
     const state = this.tagRuntime.getState(tenantId).state;
     const generatedAt = this.options.now?.() ?? new Date().toISOString();
     const signature = nebulaDiscordDashboardSignature(state, Date.parse(generatedAt));
@@ -229,7 +277,6 @@ export function validateNebulaArcadeProviderConfig(value: unknown): NebulaArcade
   return{schemaVersion:1,revision,tenants};
 }
 
-function normalizeCommandText(text:string){const match=/^spmt\s+(?:arcade\s+)?(.+)$/i.exec(text.trim());return match?`!${match[1]}`:text.trim();}
 function toTagMessage(message:NormalizedChatMessageV1,text:string){return{schemaVersion:1 as const,provider:message.provider,tenantId:message.tenantId,channelId:message.sourceChannelId??message.channelId,messageId:`${message.connectionId}:${message.messageId}`,userId:actorId(message),username:message.actor.displayName??message.actor.username,...(message.actor.avatarUrl?{avatarUrl:message.actor.avatarUrl}:{}),text,occurredAt:message.occurredAt,roles:message.actor.roles,mentions:message.mentions.map((mention)=>({token:mention.token,userId:mention.canonicalUserId??`provider:${message.provider}:${mention.providerUserId}`,username:mention.username}))};}
 function actorId(message:NormalizedChatMessageV1){return message.actor.canonicalUserId??`provider:${message.provider}:${message.actor.providerUserId}`;}
 function gameActorId(message:NormalizedChatMessageV1){return message.actor.canonicalUserId?`spmt:${message.actor.canonicalUserId}`:`provider:${message.provider}:${message.actor.providerUserId}`;}

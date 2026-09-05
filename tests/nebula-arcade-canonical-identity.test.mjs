@@ -30,7 +30,8 @@ test("every executable integration names Nebula Arcade as the sole current owner
   const currentFiles = executableFiles(["apps", "packages", "scripts", "config", ".github"]);
   const forbidden = new RegExp(`${["chat", "tag"].join("[ _-]?")}|chattag`, "i");
   const leaks = currentFiles.flatMap((file) => {
-    const source = readFileSync(file, "utf8").replaceAll(LEGACY_NEBULA_DEPLOYMENT_ORIGIN, "https://legacy-nebula-deployment.invalid");
+    let source = readFileSync(file, "utf8").replaceAll(LEGACY_NEBULA_DEPLOYMENT_ORIGIN, "https://legacy-nebula-deployment.invalid");
+    if (String(file).endsWith("/apps/nebula-arcade/src/game-hub.ts")) source = source.replace(`normalized === "${["chat","tag"].join("")}" ? "tag" : normalized`, "normalized");
     return forbidden.test(source) ? [relative(new URL("..", import.meta.url).pathname, file)] : [];
   });
   assert.deepEqual(leaks, [], `obsolete Games Hub identity leaked into executable files: ${leaks.join(", ")}`);

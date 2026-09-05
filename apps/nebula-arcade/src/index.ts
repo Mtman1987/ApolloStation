@@ -1,3 +1,5 @@
+export * from "./game-guide.js";
+export * from "./arcade-activity.js";
 export * from "./tabletop-runtime.js";
 export * from "./game-inputs.js";
 export * from "./game-widgets.js";
