@@ -7,6 +7,8 @@ export const STREAMWEAVER_FLOW_AUTHOR = Object.freeze({ id: "mtman1987", display
 
 export function assertStreamWeaverFlowRunnable(item: StreamWeaverFlowPackageV1) {
   const supported=new Set(["send-chat","send-discord","wait","run-action","run-native","set-variable","condition","ai-response"]);
+  for(const command of item.commands)if(command.migrationNote)throw new Error(command.migrationNote);
+  for(const command of item.commands)if(command.edges===undefined&&command.actionIds.some(id=>item.actions.find(a=>a.id===id)?.type==="condition"))throw new Error("Enable branching and choose destinations for each condition before enabling this flow");
   for(const action of item.actions) {
     if(!supported.has(action.type))throw new Error(`${action.type} needs a registered execution capability. Replace that step before enabling the flow.`);
     if(action.type==="wait"&&(!Number.isFinite(Number(action.config.milliseconds??action.config.value??0))||Number(action.config.milliseconds??action.config.value??0)<0||Number(action.config.milliseconds??action.config.value??0)>60000))throw new Error("Wait steps must be between 0 and 60000 milliseconds");
@@ -32,6 +34,10 @@ export interface StreamWeaverFlowCommandV1 {
   runtime: "donor" | "flow";
   donorId?: string;
   enabled: boolean;
+  minimumRole?: "guest"|"member"|"moderator"|"admin"|"owner";
+  caseSensitive?: boolean;
+  globalCooldownSeconds?: number;
+  migrationNote?: string;
   edges?: Array<{ source: string; target: string; outcome?: "success" | "true" | "false" }>;
 }
 
@@ -48,6 +54,7 @@ export interface StreamWeaverFlowPackageV1 {
   packageId: string;
   packageKind: "command_flow" | "action_flow" | "support_flow";
   installUnit: "flow";
+  legacySource?: Record<string,unknown>;
   name: string;
   description: string;
   author: { id: string; displayName: string };
@@ -339,11 +346,16 @@ export function normalizeFlowPackage(value: unknown, defaults?: { now: string; a
   const wired = new Set(commands.flatMap((command) => command.actionIds));
   if (packageKind === "command_flow" && actions.some((action) => !wired.has(action.id))) throw new Error("Command-flow actions must be wired to a command");
   const result: StreamWeaverFlowPackageV1 = { schemaVersion: 1, kind: STREAMWEAVER_FLOW_PACKAGE_KIND, packageId: identifier(item.packageId ?? `flow.${crypto.randomUUID()}`, "packageId"), packageKind, installUnit: "flow", name: text(item.name, "name", 120), description: optionalText(item.description, 1000), author, visibility: defaults?.visibility ?? (item.visibility === "community" ? "community" : "private"), collection: optionalText(item.collection, 120) || "Community", tags: stringArray(item.tags, 24, 48), commands, actions, createdAt: item.createdAt === undefined ? now : iso(item.createdAt, "createdAt"), updatedAt: now };
+  if(item.legacySource!==undefined)result.legacySource=structuredClone(object(item.legacySource,"legacySource"));
   if (JSON.stringify(result).length > 256_000) throw new Error("Flow package is too large");
   return result;
 }
 
-function normalizeCommand(value: unknown, index: number, commandCount: number, rawActions: unknown[]): StreamWeaverFlowCommandV1 { const item=object(value,"command"),trigger=text(item.trigger??item.command,"command.trigger",120);if(!trigger.startsWith("!")&&item.matcher!=="regex"&&item.matcher!=="bare")throw new Error("Command trigger must begin with !");const legacyActionIds=item.actionIds===undefined&&commandCount===1?rawActions.map((raw)=>identifier(object(raw,"action").id,"action.id")):stringArray(item.actionIds,128,200);return{id:identifier(item.id??`command.${crypto.randomUUID()}`,"command.id"),trigger,aliases:stringArray(item.aliases,20,120),role:item.role==="addon"?"addon":index===0?"primary":"addon",required:item.required===undefined?index===0:item.required===true,actionIds:legacyActionIds,family:donorFamily(item.family),cooldownSeconds:integer(item.cooldownSeconds??0,0,86400,"command.cooldownSeconds"),matcher:item.matcher==="regex"||item.matcher==="bare"?item.matcher:"command",runtime:item.runtime==="donor"?"donor":"flow",...(typeof item.donorId==="string"?{donorId:identifier(item.donorId,"command.donorId")} : {}),enabled:item.enabled!==false,...(item.edges===undefined?{}:{edges:normalizeEdges(item.edges,legacyActionIds)})}; }
+function normalizeCommand(value: unknown, index: number, commandCount: number, rawActions: unknown[]): StreamWeaverFlowCommandV1 { const item=object(value,"command"),trigger=text(item.trigger??item.command,"command.trigger",120);if(!trigger.startsWith("!")&&item.matcher!=="regex"&&item.matcher!=="bare")throw new Error("Command trigger must begin with !");const legacyActionIds=item.actionIds===undefined&&commandCount===1?rawActions.map((raw)=>identifier(object(raw,"action").id,"action.id")):stringArray(item.actionIds,128,200);return{id:identifier(item.id??`command.${crypto.randomUUID()}`,"command.id"),trigger,aliases:stringArray(item.aliases,20,120),role:item.role==="addon"?"addon":index===0?"primary":"addon",required:item.required===undefined?index===0:item.required===true,actionIds:legacyActionIds,family:donorFamily(item.family),cooldownSeconds:integer(item.cooldownSeconds??0,0,86400,"command.cooldownSeconds"),matcher:item.matcher==="regex"||item.matcher==="bare"?item.matcher:"command",runtime:item.runtime==="donor"?"donor":"flow",...(typeof item.donorId==="string"?{donorId:identifier(item.donorId,"command.donorId")} : {}),enabled:item.enabled!==false,...commandAccess(item),...(item.edges===undefined?{}:{edges:normalizeEdges(item.edges,legacyActionIds)})}; }
+function commandAccess(item:Record<string,unknown>){
+  if(item.minimumRole!==undefined&&!['guest','member','moderator','admin','owner'].includes(String(item.minimumRole)))throw new Error('Command access role is invalid');
+  return {...(item.minimumRole?{minimumRole:item.minimumRole as NonNullable<StreamWeaverFlowCommandV1['minimumRole']>}:{}),...(item.caseSensitive===true?{caseSensitive:true}:{}),...(item.globalCooldownSeconds===undefined?{}:{globalCooldownSeconds:integer(item.globalCooldownSeconds,0,86400,'globalCooldownSeconds')}),...(item.migrationNote?{migrationNote:optionalText(item.migrationNote,1000)}:{})};
+}
 function normalizeEdges(value: unknown, actionIds: string[]): NonNullable<StreamWeaverFlowCommandV1["edges"]> {
   const edges = array(value,"command.edges",512).map(raw => {
     const edge=object(raw,"edge"), source=identifier(edge.source,"edge.source"), target=identifier(edge.target,"edge.target");

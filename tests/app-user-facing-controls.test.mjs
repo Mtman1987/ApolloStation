@@ -157,5 +157,11 @@ test("StreamWeaver app ingress supports manual command editing, pause, link sett
     assert.equal((await read('/voice/history')).history[0].status,'blocked');
     await post('/voice/history/clear',{});assert.equal((await read('/voice/history')).history.length,0);
     await post('/flows/delete',{packageId:saved.packageId});assert.equal((await read('/flows')).drafts.length,0);
+    const archive={commands:[{id:'hello',command:'!importhello',actionId:'reply'}],actions:[{id:'reply',name:'Reply',subActions:[{type:'SendChatMessage',message:'Imported welcome'}]}],extra:'retained'};
+    const imported=await post('/flows/import',{package:archive});assert.equal(imported.packages.length,2);assert.equal((await read('/flows')).installed.length,0);
+    assert.deepEqual(imported.packages[0].legacySource.source,archive);
+    const again=await post('/flows/import',{package:archive});assert.equal(again.packages[0].packageId,imported.packages[0].packageId);
+    await post('/flows/approve',{packageId:imported.packages[0].packageId});assert.equal((await read('/flows')).installed.length,1);
+
   });
 });

@@ -1,3 +1,4 @@
+import { importStreamWeaverLegacy } from "./flow-import.js";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { fetchAppPlatformSnapshot, fetchAppSessionContext, readJsonBody, requireSameOrigin, safeError, sendJson } from "@spmt/app-foundation/product-web";
 import { SpmtClient } from "@spmt/sdk";
@@ -136,7 +137,9 @@ export class StreamWeaverWebControls {
 
   private installFlow(response: ServerResponse, context: SessionContext, body: Record<string, unknown>) { const install=this.requireFlows().install(context.tenantId,identifier(body.packageId,"packageId"));return sendJson(response,200,{schemaVersion:1,install}); }
   private uninstallFlow(response: ServerResponse, context: SessionContext, body: Record<string, unknown>) { const removed=this.requireFlows().uninstall(context.tenantId,identifier(body.packageId,"packageId"));return sendJson(response,200,{schemaVersion:1,removed}); }
-  private importFlow(response: ServerResponse, context: SessionContext, body: Record<string, unknown>) { const actor=this.actor(context),result=this.requireFlows().importPackage(context.tenantId,body.package,actor);return sendJson(response,200,{schemaVersion:1,...result}); }
+  private importFlow(response: ServerResponse, context: SessionContext, body: Record<string, unknown>) { const actor=this.actor(context),source=body.package as Record<string,unknown>;
+    if(source&&typeof source==='object'&&(source.schemaVersion!==1||Array.isArray(source.nodes))){const review=importStreamWeaverLegacy(source,actor,new Date().toISOString(),context.tenantId),store=this.requireFlows();const packages=review.packages.map(pkg=>store.get(context.tenantId,pkg.packageId)??store.saveDraft(context.tenantId,pkg,actor));return sendJson(response,200,{schemaVersion:1,packages,warnings:review.warnings});}
+    const result=this.requireFlows().importPackage(context.tenantId,body.package,actor);return sendJson(response,200,{schemaVersion:1,...result}); }
   private approveFlow(response: ServerResponse, context: SessionContext, body: Record<string, unknown>) { const result=this.requireFlows().approveAndInstall(context.tenantId,identifier(body.packageId,"packageId"));return sendJson(response,200,{schemaVersion:1,...result}); }
   private publishFlow(response: ServerResponse, context: SessionContext, body: Record<string, unknown>) { const value=this.requireFlows().publish(context.tenantId,identifier(body.packageId,"packageId"),this.actor(context));return sendJson(response,200,{schemaVersion:1,package:value}); }
   private exportFlow(response: ServerResponse, context: SessionContext, packageId: string, format: "streamweaver" | "streamerbot" = "streamweaver") { const store=this.requireFlows(),value=format==="streamerbot"?store.exportStreamerBot(context.tenantId,packageId):store.exportPackage(context.tenantId,packageId);response.setHeader("content-disposition",`attachment; filename="${packageId.replace(/[^A-Za-z0-9._-]/g,"-")}.${format}.json"`);return sendJson(response,200,value); }

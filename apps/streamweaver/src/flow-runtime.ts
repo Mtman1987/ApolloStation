@@ -53,11 +53,12 @@ export class StreamWeaverInstalledFlowConsumer {
     if(!run){
       const match=this.match(delivery.message);if(!match)return;
       assertStreamWeaverFlowRunnable(match.package);
+      if(roleLevel(actorRole(delivery.message))<roleLevel(match.command.minimumRole??'guest')){await this.send(delivery,`This command requires ${match.command.minimumRole} access.`);return;}
       const cooldownKey=JSON.stringify(["flow",tenantId,delivery.message.provider,delivery.message.channelId,match.package.packageId,match.command.id,delivery.message.actor.canonicalUserId??delivery.message.actor.providerUserId]);
-      const last=this.state.getCooldown(cooldownKey),remaining=Math.ceil((last+match.command.cooldownSeconds*1000-this.nowMs())/1000);
-      if(last&&remaining>0){this.packages.recordRun(tenantId,delivery.deliveryId,{packageId:match.package.packageId,command:match.command.trigger,input:delivery.message.text,provider:delivery.message.provider,actor:delivery.message.actor.displayName??delivery.message.actor.username,occurredAt:new Date(this.nowMs()).toISOString(),steps:[],state:"cooldown"});await this.send(delivery,`Wait ${remaining}s before using ${match.command.trigger} again.`);return;}
+      const globalKey=JSON.stringify(["flow-global",tenantId,delivery.message.provider,delivery.message.channelId,match.package.packageId,match.command.id]),last=this.state.getCooldown(cooldownKey),globalLast=this.state.getCooldown(globalKey),remaining=Math.max(last?Math.ceil((last+match.command.cooldownSeconds*1000-this.nowMs())/1000):0,globalLast?Math.ceil((globalLast+(match.command.globalCooldownSeconds??0)*1000-this.nowMs())/1000):0);
+      if(remaining>0){this.packages.recordRun(tenantId,delivery.deliveryId,{packageId:match.package.packageId,command:match.command.trigger,input:delivery.message.text,provider:delivery.message.provider,actor:delivery.message.actor.displayName??delivery.message.actor.username,occurredAt:new Date(this.nowMs()).toISOString(),steps:[],state:"cooldown"});await this.send(delivery,`Wait ${remaining}s before using ${match.command.trigger} again.`);return;}
       run={delivery:structuredClone(delivery),package:structuredClone(match.package),command:structuredClone(match.command),state:"running",variables:this.packages.variables(tenantId,match.package.packageId),queue:roots(match.command),visited:[],steps:[],replies:[],results:{},cooldownKey,occurredAt:new Date(this.nowMs()).toISOString()};
-      this.save(run);this.state.putCooldown(cooldownKey,this.nowMs());
+      this.save(run);this.state.putCooldown(cooldownKey,this.nowMs());this.state.putCooldown(globalKey,this.nowMs());
     }
     // Use the captured input and package even if the incoming retry or installed draft has changed.
     delivery=run.delivery;run.state="running";delete run.error;
@@ -99,11 +100,12 @@ export class StreamWeaverInstalledFlowConsumer {
     return {command,outputs};
   }
   private match(message:NormalizedChatMessageV1){
-    const first=message.text.trim().split(/\s+/)[0]?.toLowerCase()??"";
+    const rawFirst=message.text.trim().split(/\s+/)[0]??"";
     for(const item of this.packages.listInstalledPackages(message.tenantId))for(const command of item.commands){
       if(!command.enabled||command.runtime!=="flow")continue;
-      if(command.matcher==="command"&&(command.trigger.toLowerCase()===first||command.aliases.some(a=>a.toLowerCase()===first)))return {package:item,command};
-      if(command.matcher==="bare"&&(message.text.trim().toLowerCase()===command.trigger.toLowerCase()||first===`!${command.trigger.toLowerCase()}`))return {package:item,command};
+      const norm=(value:string)=>command.caseSensitive?value:value.toLowerCase(),first=norm(rawFirst);
+      if(command.matcher==="command"&&(norm(command.trigger)===first||command.aliases.some(a=>norm(a)===first)))return {package:item,command};
+      if(command.matcher==="bare"&&(norm(message.text.trim())===norm(command.trigger)||first===`!${norm(command.trigger)}`))return {package:item,command};
       if(command.matcher==="regex"&&regexMatch(command.trigger,message.text))return {package:item,command};
     }
     return undefined;
@@ -149,11 +151,13 @@ export class StreamWeaverInstalledFlowConsumer {
       if(!descriptor)throw new Error("Choose a registered SPMT suite action");
       if(preview)return result("",`Would run ${descriptor.id} (${descriptor.risk})`);
       if(!this.suiteActions)throw new Error("The registered suite action executor is unavailable");
+      if(!delivery.message.actor.canonicalUserId)throw new Error("Link your chat account to SPMT before running cross-app actions");
       const role=actorRole(delivery.message);if(roleLevel(role)<roleLevel(descriptor.minimumRole))throw new Error(`That ${descriptor.risk} action requires ${descriptor.minimumRole} access.`);
       const pending=run.pending?.actionId===action.id?run.pending.jobId:undefined;
       if(pending){const output=await this.jobResult(delivery,action.id,pending);return result(output,action.config.sendResult===false||action.config.sendResult==="false"?"":output);}
       const response=await this.suiteActions.execute({action:id,args:Object.fromEntries(Object.entries(record(action.config.args)??{}).map(([k,v])=>[k,render(v)])),detection:"explicit"},{tenantId:delivery.message.tenantId,source:delivery.message.provider,connectionId:delivery.message.connectionId,channelId:delivery.message.channelId,requestId:`${delivery.deliveryId}:${action.id}`,actor:{...(delivery.message.actor.canonicalUserId?{userId:delivery.message.actor.canonicalUserId}:{}),username:delivery.message.actor.username,role}});
       const state=String(response.result?.state??"");if(["failed","dead-letter","cancelled"].includes(state))throw new Error(response.response);
+      if(response.result?.unavailable===true)throw new Error(response.response);
       if(response.result?.jobId&&state&&state!=="succeeded")throw new PendingStep({actionId:action.id,jobId:String(response.result.jobId)});
       return result(response.response,action.config.sendResult===false||action.config.sendResult==="false"?"":response.response);
     }

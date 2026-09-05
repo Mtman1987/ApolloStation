@@ -32,9 +32,17 @@ Legacy code, HTTP and local file operations must retain their intended behavior 
 
 Validation: 741-test offline suite passed before the added delayed-simulation acceptance test; the added acceptance test and all nine existing simulation tests also passed. DOM checks cover generated script parsing and existing editor behavior. No authenticated phone browser or real provider delivery evidence is claimed. External assistant execution remains disabled in the existing read-only simulation environment.
 
+## Import follow-up
+
+The next increment reads legacy StreamWeaver graph/package JSON and Streamer.bot commands/actions/subactions, expands referenced actions, preserves aliases and graph outcomes, and retains the exact original archive (including fields not understood by Apollo). Commands and reusable actions become separate private drafts; importing does not enable or install them. Reimporting the same archive in the same tenant returns its existing drafts rather than overwriting edits. IDs are scoped to the importing tenant.
+
+Flow Builder now exposes minimum access, case sensitivity, personal cooldown and shared cooldown. Legacy access fields that cannot be represented safely require an explicit replacement access choice; their original values remain in the archive. Raw scripts, unregistered plugin actions and provider/device steps still need their actual ecosystem counterparts and are not counted as parity merely because import preserves them.
+
+Validation: 747 offline tests passed, including authenticated mounted-app archive import/reimport and installation. A subsequently added focused test covers a graph action followed by reusable action steps. Import and graph runtime tests cover source preservation, aliases, branch outcomes, recursive-action rejection, scope isolation, role enforcement, case matching and shared cooldown. Existing browser-controller DOM checks passed.
+
 ## Remaining implementation groups
 
-1. Import live graph packages and full Streamer.bot commands/actions/subactions without losing source fields or wiring; implement their supported replacements.
+1. Finish replacements for the imported raw script/HTTP/device/media nodes, event-trigger bindings, and legacy provider-specific access rules. The supported graph/archive converter is implemented above.
 2. Finish media/TTS/STT services, profile and model preferences, asset controls, queues/mixer and actual overlay renderers.
 3. Wire provider commands through shared grants; role-specific bot connections including owner-only Count; reward ingress and redeem controls.
 4. Complete messaging/shared/private chat controls via the canonical owners, research/image preferences, and relay presentation behavior.
