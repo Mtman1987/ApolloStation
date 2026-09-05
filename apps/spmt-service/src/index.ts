@@ -1,3 +1,4 @@
+import { streamWeaverWidgetManifests } from "@spmt/streamweaver/dist/overlay-widgets.js";
 import { randomBytes } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { readFileSync } from "node:fs";
@@ -584,6 +585,7 @@ function seedSandboxApps(control: ControlService, tenants: Array<{ id: string }>
 
 function installSandboxApps(control: ControlService, tenantId: string, manifests: AppCatalogRegistrationV1[]) {
   manifests.filter((manifest) => manifest.status === "active").forEach((manifest) => control.installApp(tenantId, manifest.appId, manifest.allowedScopes));
+  for (const app of manifests.filter(item=>item.appId==="streamweaver"&&item.status==="active")) for (const manifest of streamWeaverWidgetManifests(new URL(app.launchUrl).origin)) control.registerOverlayWidget({tenantId,manifest});
 }
 
 function seedSandboxFixtures(control: ControlService, data: PlatformDataService, publicBaseUrl: string) {

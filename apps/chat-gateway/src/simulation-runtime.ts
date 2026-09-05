@@ -1,4 +1,4 @@
-import { StreamWeaverRuntimeSettingsStore } from "@spmt/streamweaver";
+import { streamWeaverWidgetSnapshot, StreamWeaverRuntimeSettingsStore } from "@spmt/streamweaver";
 import { createHash } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
@@ -52,6 +52,8 @@ export class SimulationRoomRuntime {
       if (provider !== "kick") authority.linkProvider(actor.userId, provider, snowflake(actor.userId));
       const token = auth.issueHumanSession({ userId: actor.userId, tenantIds: [tenantId], scopes: ["*"] }).accessToken;
       const api = new PlatformApiAdapter(new PlatformOperations(auth, authority));
+      const eventTokens = new Map<string,string>();
+      const appEventToken=(appId:string)=>{let value=eventTokens.get(appId);if(!value){const credential=hash(`${directory}:${appId}`);auth.reconcileServiceIdentity({serviceId:appId,credential,tenantMode:"allow-list",tenantIds:[tenantId],scopes:["events:read","events:write"]});value=auth.issueServiceAccess(appId,credential).accessToken;eventTokens.set(appId,value);}return value;};
       const client = (appId: string) => new SpmtClient({ baseUrl: "https://simulation.invalid", appId, getAccessToken: () => token, fetchImpl: async (url, init) => {
         const parsed = new URL(String(url));
         if (parsed.origin !== "https://simulation.invalid") throw new Error("External requests are unavailable in this room");
@@ -60,7 +62,8 @@ export class SimulationRoomRuntime {
           return Response.json(user ? { userId: user.userId } : { message: "That test participant is not present" }, { status: user ? 200 : 404 });
         }
         const body = init?.body ? JSON.parse(String(init.body)) : undefined;
-        const result = api.handle({ method: init?.method ?? "GET", path: parsed.pathname + parsed.search, headers: Object.fromEntries(new Headers(init?.headers)), body });
+        const headers=new Headers(init?.headers);if(parsed.pathname==="/v1/events")headers.set("authorization",`Bearer ${appEventToken(appId)}`);
+        const result = api.handle({ method: init?.method ?? "GET", path: parsed.pathname + parsed.search, headers: Object.fromEntries(headers), body });
         if (parsed.pathname === "/v1/events" && init?.method === "POST" && result.status < 300) await emit(appId, { lane: "app", direction: "preview", title: String(body.type), body: "", provider, data: { eventType: body.type, payload: body.payload } });
         return Response.json(result.body ?? {}, { status: result.status });
       } });
@@ -118,6 +121,8 @@ export class SimulationRoomRuntime {
             for (const pkg of source.listInstalledPackages(tenantId)) { if(!builtins.has(pkg.packageId))target.saveDraft(tenantId, pkg, pkg.author); target.install(tenantId, pkg.packageId); }
           } finally { source.close(); target.close(); }
         }
+        const appearanceStore=new StreamWeaverRuntimeSettingsStore(this.options.streamweaverDatabasePath??flowPath);
+        try{await client("streamweaver").publishEvent(tenantId,"streamweaver.avatar.updated.v1",appearanceStore.appearance(tenantId),`simulation-avatar:${job.id}`);}finally{appearanceStore.close();}
         const runtime = streamweaver = new StreamWeaverProviderRuntime({ databasePath: flowPath, client: client("streamweaver"), egress: { send: send("streamweaver") }, botActions, allowAssistant: false });
         stores.push(runtime); consumers.push(...runtime.consumers); observers.push(...runtime.messageObservers);
       }
@@ -156,6 +161,7 @@ export class SimulationRoomRuntime {
       });
       const delivered = await gateway.ingest({ schemaVersion: 1, tenantId, provider, connectionId, channelId, sourceChannelId: channelId, messageId: job.id, text: input.message, mentions, occurredAt: job.createdAt, providerUserId: snowflake(actor.userId), canonicalUserId: actor.userId, username: actor.username, roles: actor.role === "owner" ? ["broadcaster", "moderator"] : ["member"] });
       await streamweaver?.settleFlows();
+      if (streamweaver) await emit("streamweaver",{lane:"overlay",direction:"preview",title:"StreamWeaver widgets",body:"",provider,data:{renderer:"streamweaver",snapshot:streamWeaverWidgetSnapshot(authority.listEvents(tenantId,{sourceAppId:"streamweaver",limit:200}))}});
       if (input.appIds.includes("nebula-arcade")) {
         const tags = new SqliteNebulaTagStore(path("nebula")), experience = new SqliteNebulaTagExperienceStore(path("nebula"));
         try { const snapshot = buildNebulaTagOverlaySnapshot(tags.getState(tenantId).state, { viewerUserId: actor.userId }); await emit("nebula-arcade", { lane: "overlay", direction: "preview", title: "Nebula Arcade Tag overlay", body: "", provider, data: { renderer: "nebula-tag", snapshot, messages: experience.listOverlayMessages(tenantId, channelId, 0).slice(-50) } }); } finally { tags.close(); experience.close(); }

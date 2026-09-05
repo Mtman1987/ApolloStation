@@ -73,6 +73,10 @@ test("StreamWeaver exposes a wired Voice Commander, searchable bot catalog, inte
     const saveBroadcaster = id => fetch(`${streamBase}/api/streamweaver/control/twitch`, {method:"POST",headers:{cookie,origin,"content-type":"application/json"},body:JSON.stringify({broadcasterId:id})});
     assert.equal((await saveBroadcaster("999")).status,400);
     assert.equal((await saveBroadcaster("100")).status,200);
+    const avatar=await fetch(`${streamBase}/api/streamweaver/control/appearance`,{method:"POST",headers:{cookie,origin,"content-type":"application/json"},body:JSON.stringify({avatarUrl:"https://assets.test/idle.png",talkingUrl:"https://assets.test/talking.gif"})});
+    assert.equal(avatar.status,200);assert.equal((await avatar.json()).appearance.talkingUrl,"https://assets.test/talking.gif");
+    const widgets=await (await fetch(`${spmtBase}/v1/overlay/widgets`,{headers:{cookie,"x-spmt-tenant":tenantId}})).json();
+    assert.ok(widgets.some(widget=>widget.manifest.appId==="streamweaver"&&widget.manifest.widgetId==="social"));
     const twitchSettings=await (await fetch(`${streamBase}/api/streamweaver/control`,{headers:{cookie}})).json();
     assert.equal(twitchSettings.twitch.broadcasterId,"100");
     const blankFlows = await (await fetch(`${streamBase}/api/streamweaver/control/flows`, { headers: { cookie } })).json();

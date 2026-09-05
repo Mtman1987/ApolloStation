@@ -46,6 +46,14 @@ Installed native Twitch commands now obtain short-lived grants from Chat Gateway
 
 A failed or unavailable native action is now recorded as a failed flow, rather than a successful completion. Focused acceptance covers installed follower/title commands through the actual consumer, scoped broker requests, denied writes, owner-only broadcaster selection, and grant isolation. Cross-provider follow-history identity lookup, shared-presence integration, role-specific OAuth setup, and credentialed provider acceptance remain open.
 
+## Overlay renderer follow-up
+
+StreamWeaver now contributes real transparent renderers for chat interactions, Bic, gamble results, creator leaderboards, avatar, speech/captions, and shoutout/BRB media. Apollo's output gateway resolves the existing tenant or opaque grant before returning HTML or an allowlisted widget snapshot. Public payloads omit credentials and unrelated widget data. Revocation and app disable stop output access. The sandbox registers these widgets for installed StreamWeaver tenants, so they appear in Overlay Bay.
+
+Simulation Rooms have a StreamWeaver stage using the same renderers and room-isolated events; it stays mounted while histories refresh. Avatar controls accept idle and talking assets. Creator-currency chat settlements and owner adjustments publish actual leaderboard/result snapshots. The media renderer supports ordered playback and captions, but speech generation and the HearMeOut producer/control integration remain open; a playable renderer alone is not a completed TTS or BRB workflow. Game widgets remain owned by Nebula.
+
+Validation includes actual output-grant issuance, HTML and JSON polling, revocation, tenant/widget isolation, authenticated avatar saving and widget discovery, installed command simulation, and DOM execution covering origin checks, escaped text, event deduplication and sequential media playback. Authenticated phone layout and real audio-device acceptance remain unobserved.
+
 ## Remaining implementation groups
 
 1. Finish replacements for the imported raw script/HTTP/device/media nodes, event-trigger bindings, and legacy provider-specific access rules. The supported graph/archive converter is implemented above.

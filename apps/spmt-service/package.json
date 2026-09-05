@@ -8,7 +8,10 @@
     ".": "./dist/index.js",
     "./provider-identity-host": "./dist/provider-identity-host.js"
   },
-  "scripts": { "build": "tsc -b", "start": "node dist/provider-identity-start.js" },
+  "scripts": {
+    "build": "tsc -b",
+    "start": "node dist/provider-identity-start.js"
+  },
   "dependencies": {
     "@spmt/account-recovery-core": "0.1.0",
     "@spmt/api-adapter": "0.3.0",
@@ -25,6 +28,7 @@
     "@spmt/platform-ops": "0.3.0",
     "@spmt/provider-grants-core": "0.1.0",
     "@spmt/runtime": "0.1.0",
-    "@spmt/stellar-core": "0.1.0"
+    "@spmt/stellar-core": "0.1.0",
+    "@spmt/streamweaver": "0.1.0"
   }
 }

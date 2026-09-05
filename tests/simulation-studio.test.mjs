@@ -128,6 +128,7 @@ test('a named room is created without previewing a command, then independently r
  let rooms=await f.owner.listSimulationRooms('tenant-a');assert.equal(rooms.length,1);assert.equal(rooms[0].name,'Friday live test');
  const roomId=created.roomId;let result=await f.send('!headpat',{roomId});let outputs=result.events.filter(event=>event.payload.direction==='egress'&&event.payload.data?.inputId===result.job.id);assert.equal(outputs.length,1);assert.match(outputs[0].payload.body,/headpats/);
  result=await f.send('!boop @owner',{roomId});outputs=result.events.filter(event=>event.payload.direction==='egress'&&event.payload.data?.inputId===result.job.id);assert.equal(outputs.length,1);assert.match(outputs[0].payload.body,/boops @owner/);assert.ok(result.events.filter(event=>event.payload.data?.inputId===result.job.id).every(event=>!String(event.payload.title).includes('headpat')));
+ const swStage=result.events.find(event=>event.payload.data?.renderer==='streamweaver'&&event.payload.data?.inputId===result.job.id);assert.ok(swStage.payload.data.snapshot.items.some(item=>item.kind==='social'&&item.text.includes('boops owner')));
  await f.send('spmt card',{roomId});await f.send('list hearmeout rooms',{roomId});await f.send('deploy admin calendar',{roomId,provider:'discord'});
  rooms=await f.owner.listSimulationRooms('tenant-a');assert.equal(rooms.length,1);assert.equal(rooms[0].name,'Friday live test');
  await assert.rejects(f.owner.createSimulationRoom('tenant-b','Other tenant','wrong-tenant'),{status:403});

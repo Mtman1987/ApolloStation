@@ -259,7 +259,12 @@ export class MultiTenantStreamWeaverEconomyCommandConsumer {
     private readonly enabled: (tenantId: string, trigger: string) => boolean = () => true,
   ) {}
   accepts(message: NormalizedChatMessageV1) { const parsed=parseCommand(message.text); return !message.actor.isBot && Boolean(parsed && STREAMWEAVER_ECONOMY_COMMANDS.includes(parsed.command as (typeof STREAMWEAVER_ECONOMY_COMMANDS)[number]) && this.enabled(message.tenantId, `!${canonicalCooldownCommand(parsed.command)}`)); }
-  async deliver(delivery: NormalizedChatDeliveryV1) { await this.consumer(delivery.message.tenantId).deliver(delivery); }
+  async deliver(delivery: NormalizedChatDeliveryV1) {
+    const tenantId=delivery.message.tenantId;
+    await this.consumer(tenantId).deliver(delivery);
+    const receipt=this.state.getReceipt(tenantId,delivery.deliveryId);
+    if(receipt && typeof this.client.publishEvent === "function")await this.client.publishEvent(tenantId,"streamweaver.economy.overlay.v1",{schemaVersion:1,command:receipt.command,text:receipt.text,displayName:delivery.message.actor.displayName??delivery.message.actor.username,currencyName:this.store.getSettings(tenantId)?.currencyName??"Creator currency",leaderboard:this.store.listLeaderboard(tenantId,10),result:this.store.getReceipt(tenantId,delivery.deliveryId)?.result??{}},`streamweaver-economy-overlay:${delivery.deliveryId}`);
+  }
   private consumer(tenantId: string) {
     let consumer = this.consumers.get(tenantId);
     if (consumer) return consumer;

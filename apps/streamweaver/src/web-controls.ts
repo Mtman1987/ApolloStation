@@ -1,4 +1,5 @@
 import { importStreamWeaverLegacy } from "./flow-import.js";
+import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { fetchAppPlatformSnapshot, fetchAppSessionContext, readJsonBody, requireSameOrigin, safeError, sendJson } from "@spmt/app-foundation/product-web";
 import { SpmtClient } from "@spmt/sdk";
@@ -58,6 +59,12 @@ export class StreamWeaverWebControls {
       if (url.pathname === "/api/streamweaver/control/voice") return await this.voice(response, context, body);
       if (url.pathname === "/api/streamweaver/control/voice/history/clear") { this.runtimeSettings?.clearVoice(context.tenantId,this.actor(context).id); return sendJson(response,200,{cleared:true}); }
       this.requireOwner(context);
+      if(url.pathname==="/api/streamweaver/control/appearance"){
+        if(!this.runtimeSettings||!this.client)throw new Error("StreamWeaver runtime is not configured");
+        const appearance=this.runtimeSettings.saveAppearance(context.tenantId,body);
+        await this.client.publishEvent(context.tenantId,"streamweaver.avatar.updated.v1",{...appearance,displayName:this.persona?.get(context.tenantId)?.displayName??"Assistant"},`streamweaver-avatar:${randomUUID()}`);
+        return sendJson(response,200,{appearance});
+      }
       if(url.pathname==="/api/streamweaver/control/twitch"){
         if(!this.runtimeSettings)throw new Error("StreamWeaver runtime is not configured");
         const id=String(body.broadcasterId??''),snapshot=await fetchAppPlatformSnapshot({appId:"streamweaver",spmtOrigin:this.options.spmtOrigin,request,sources:["providerLinks"]});
@@ -85,9 +92,11 @@ export class StreamWeaverWebControls {
         if(body.mode!=="add"&&body.mode!=="set")throw new Error("Choose add or set");
         const userId=identifier(body.userId,"userId"),amount=integer(body.amount,body.mode==="set"?0:-1000000000000,1000000000000,"amount");
         if(!this.economy.listWalletUserIds(context.tenantId).includes(userId)&&userId!==this.actor(context).id)throw new Error("Choose an existing currency wallet or your own account");
-        return sendJson(response,200,this.economy.adjustOnce(context.tenantId,userId,body.mode,amount,identifier(body.idempotencyKey,"idempotencyKey"),this.actor(context).id));
+        const result=this.economy.adjustOnce(context.tenantId,userId,body.mode,amount,identifier(body.idempotencyKey,"idempotencyKey"),this.actor(context).id);
+        await this.publishEconomyOverlay(context.tenantId,`wallet:${String(body.idempotencyKey)}`);
+        return sendJson(response,200,result);
       }
-      if (url.pathname === "/api/streamweaver/control/economy") return this.updateEconomy(response, context, body);
+      if (url.pathname === "/api/streamweaver/control/economy") return await this.updateEconomy(response, context, body);
       return sendJson(response, 404, { error: "not_found" });
     } catch (error) {
       const message = safeError(error);
@@ -118,6 +127,7 @@ export class StreamWeaverWebControls {
       runtimeReady: Boolean(this.client && this.persona && this.economy),
       providerLinks: snapshot.providerLinks,
       connections,
+      appearance:this.runtimeSettings?.appearance(tenantId)??{},
       twitch:{broadcasterId:this.runtimeSettings?.twitchBroadcaster(tenantId)??""},
       workers: snapshot.workers,
       stellarCapabilities: snapshot.stellarCapabilities,
@@ -247,13 +257,17 @@ export class StreamWeaverWebControls {
     return sendJson(response, 200, this.persona.patch(context.tenantId, { schemaVersion: 1, expectedRevision: current.revision, values }));
   }
 
-  private updateEconomy(response: ServerResponse, context: SessionContext, body: Record<string, unknown>) {
+  private async updateEconomy(response: ServerResponse, context: SessionContext, body: Record<string, unknown>) {
     if (!this.economy) throw new Error("StreamWeaver runtime is not configured");
     const economy = new StreamWeaverEconomy({ tenantId: context.tenantId, store: this.economy });
     const settings = economy.configureCurrency({ currencyName: text(body.currencyName, "currencyName", 32), defaultBet: integer(body.defaultBet, 1, Number.MAX_SAFE_INTEGER, "defaultBet"), minBet: integer(body.minBet, 0, Number.MAX_SAFE_INTEGER, "minBet"), maxBet: integer(body.maxBet, 0, Number.MAX_SAFE_INTEGER, "maxBet"), jackpotPercent: integer(body.jackpotPercent, 0, 100, "jackpotPercent"), jackpotMultiplier: integer(body.jackpotMultiplier, 1, 1_000_000, "jackpotMultiplier"), winPercent: integer(body.winPercent, 0, 100, "winPercent"), spmtExchangeEnabled: body.spmtExchangeEnabled === true, baseLocalPerSpmt: integer(body.baseLocalPerSpmt, 1, Number.MAX_SAFE_INTEGER, "baseLocalPerSpmt"), referenceSupply: integer(body.referenceSupply, 1, Number.MAX_SAFE_INTEGER, "referenceSupply"), maxSpmtPerExchange: integer(body.maxSpmtPerExchange, 1, Number.MAX_SAFE_INTEGER, "maxSpmtPerExchange") });
+    await this.publishEconomyOverlay(context.tenantId,`settings:${randomUUID()}`);
     return sendJson(response, 200, settings);
   }
 
+  private async publishEconomyOverlay(tenantId:string,key:string) {
+    if(this.client&&this.economy)await this.client.publishEvent(tenantId,"streamweaver.economy.overlay.v1",{schemaVersion:1,command:"settings",currencyName:this.economy.getSettings(tenantId)?.currencyName??"Creator currency",leaderboard:this.economy.listLeaderboard(tenantId,10)},`streamweaver-economy-overlay:${key}`);
+  }
   private connection(tenantId: string, provider: "twitch" | "discord", requested: unknown) {
     const options = (this.options.connections ?? []).filter((item) => item.tenantId === tenantId && item.provider === provider && item.desired);
     const request = String(requested ?? "");

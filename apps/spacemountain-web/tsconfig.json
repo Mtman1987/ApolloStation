@@ -32,6 +32,9 @@
     },
     {
       "path": "../nebula-arcade"
+    },
+    {
+      "path": "../streamweaver"
     }
   ],
   "include": [

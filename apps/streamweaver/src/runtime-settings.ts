@@ -8,10 +8,13 @@ export class StreamWeaverRuntimeSettingsStore {
   constructor(path: string) {
     this.db = new DatabaseSync(path,{timeout:5000});
     this.db.exec("PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS streamweaver_creator_links(tenant_id TEXT PRIMARY KEY, body TEXT NOT NULL) STRICT;");
+    this.db.exec("CREATE TABLE IF NOT EXISTS streamweaver_appearance(tenant_id TEXT PRIMARY KEY,body TEXT NOT NULL) STRICT;");
     this.db.exec("CREATE TABLE IF NOT EXISTS streamweaver_twitch_settings(tenant_id TEXT PRIMARY KEY,broadcaster_id TEXT NOT NULL) STRICT;");
     this.db.exec("CREATE TABLE IF NOT EXISTS streamweaver_voice_history(tenant_id TEXT NOT NULL,user_id TEXT NOT NULL,request_id TEXT NOT NULL,body TEXT NOT NULL,PRIMARY KEY(tenant_id,user_id,request_id)) STRICT;");
   }
   close() { this.db.close(); }
+  appearance(tenantId:string):{avatarUrl:string;talkingUrl:string} {const row=this.db.prepare("SELECT body FROM streamweaver_appearance WHERE tenant_id=?").get(tenantId) as {body:string}|undefined;return row?JSON.parse(row.body):{avatarUrl:"",talkingUrl:""};}
+  saveAppearance(tenantId:string,value:Record<string,unknown>) {const result={avatarUrl:"",talkingUrl:""};for(const key of ["avatarUrl","talkingUrl"] as const){const text=String(value[key]??"").trim();if(!text)continue;const url=new URL(text);if(url.protocol!=="https:"||url.username||url.password||text.length>2000)throw new Error("Avatar assets must use public HTTPS URLs");result[key]=url.href;}this.db.prepare("INSERT OR REPLACE INTO streamweaver_appearance VALUES(?,?)").run(tenantId,JSON.stringify(result));return result;}
   twitchBroadcaster(tenantId:string){const row=this.db.prepare("SELECT broadcaster_id FROM streamweaver_twitch_settings WHERE tenant_id=?").get(tenantId) as {broadcaster_id:string}|undefined;return row?.broadcaster_id;}
   setTwitchBroadcaster(tenantId:string,broadcasterId:string){if(broadcasterId&&!/^[0-9]{1,30}$/.test(broadcasterId))throw new Error("Choose a linked Twitch broadcaster");this.db.prepare("INSERT OR REPLACE INTO streamweaver_twitch_settings VALUES(?,?)").run(tenantId,broadcasterId);return {broadcasterId};}
   voiceHistory(tenantId:string,userId:string) {

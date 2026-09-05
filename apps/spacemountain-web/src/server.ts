@@ -1,3 +1,4 @@
+import { renderStreamWeaverWidget, STREAMWEAVER_WIDGET_CSP } from "@spmt/streamweaver/dist/overlay-widgets.js";
 import { renderNebulaTagOverlayHtml, NEBULA_TAG_OVERLAY_CSS, NEBULA_TAG_OVERLAY_CLIENT_JS, renderNebulaGameWidget, renderNebulaArcadeStage, NEBULA_IMPORTED_WIDGET_IDS, NEBULA_WIDGET_STAGE_JS, nebulaThreeJs } from "@spmt/nebula-arcade";
 import { randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -107,6 +108,10 @@ export function createSpaceMountainWebHost(options: SpaceMountainWebHostOptions)
           response.setHeader("content-security-policy", "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; frame-ancestors 'self'; base-uri 'none'");
           return html(response, 200, renderNebulaTagOverlayHtml(true).replaceAll("/v1/nebula-arcade/tag/overlay", "/simulation-rooms/tag"));
         }
+      }
+      if (request.method === "GET" && url.pathname === "/simulation-rooms/streamweaver") {
+        response.removeHeader("x-frame-options"); response.setHeader("content-security-policy",STREAMWEAVER_WIDGET_CSP.replace("frame-ancestors *","frame-ancestors 'self'"));
+        return html(response,200,renderStreamWeaverWidget("auto",true));
       }
       if (request.method === "GET" && url.pathname === "/simulation-rooms") {
         response.removeHeader("x-frame-options");
