@@ -81,8 +81,10 @@ export function createSpaceMountainWebHost(options: SpaceMountainWebHostOptions)
   const server = createServer(async (request, response) => {
     const nonce = randomBytes(18).toString("base64url");
     applySecurityHeaders(response, nonce);
+    let overlayRequest = false;
     try {
       const url = new URL(request.url ?? "/", "http://spacemountain.local");
+      overlayRequest = (request.method === "GET" || request.method === "HEAD") && overlayOutputPath(url.pathname) && !url.search;
       if (request.method === "GET" && BOUNDED_APP_PATHS.has(url.pathname)) {
         const surface = url.searchParams.get("surface") === "shell" ? "shell" : "standalone";
         const page = renderBoundedAppPage(url.pathname, buildSha, nonce, surface);
@@ -120,8 +122,8 @@ export function createSpaceMountainWebHost(options: SpaceMountainWebHostOptions)
         requireSameOrigin(request);
         return register(response, spmtOrigin, fetchImpl, await readJsonBody(request));
       }
-      if ((request.method === "GET" || request.method === "HEAD") && /^\/o\/[A-Za-z0-9_-]{16,512}$/.test(url.pathname)) {
-        return proxy(response, request, url, spmtOrigin, fetchImpl);
+      if (overlayRequest) {
+        return await proxy(response, request, url, spmtOrigin, fetchImpl, true);
       }
       if ((url.pathname.startsWith("/v1/") || url.pathname.startsWith("/health/")) && browserProxyAllowed(request.method ?? "GET", url.pathname)) {
         if (!["GET", "HEAD"].includes(request.method ?? "GET")) requireSameOrigin(request);
@@ -130,6 +132,7 @@ export function createSpaceMountainWebHost(options: SpaceMountainWebHostOptions)
       return json(response, 404, { error: "not_found" });
     } catch (error) {
       const status = error instanceof WebHostError ? error.status : 500;
+      if (overlayRequest) return transparentOverlayResponse(response, status);
       return json(response, status, { error: status === 500 ? "internal" : "invalid_request", message: error instanceof Error ? error.message : "unknown error" });
     }
   });
@@ -246,7 +249,7 @@ async function upstreamJson(fetchImpl: typeof fetch, url: string, body: Record<s
   return { response, body: parseJson(encoded) };
 }
 
-async function proxy(response: ServerResponse, request: IncomingMessage, url: URL, origin: string, fetchImpl: typeof fetch) {
+async function proxy(response: ServerResponse, request: IncomingMessage, url: URL, origin: string, fetchImpl: typeof fetch, overlay = false) {
   const method = request.method ?? "GET";
   const headers = new Headers({ accept: request.headers.accept ?? "application/json", "x-spmt-app": "spacemountain" });
   if (request.headers["content-type"]) headers.set("content-type", request.headers["content-type"]);
@@ -268,17 +271,39 @@ async function proxy(response: ServerResponse, request: IncomingMessage, url: UR
     throw new WebHostError(503, `SPMT is temporarily unavailable: ${error instanceof Error ? error.message : "network error"}`);
   }
   const encoded = await limitedResponseBody(upstream);
+  // An overlay occupies the whole workspace. Auth or renderer failures must not
+  // paint a browser error document over the shell, and must retain their status.
+  if (overlay && !upstream.ok) return transparentOverlayResponse(response, upstream.status >= 400 ? upstream.status : 502);
   const responseHeaders: Record<string, string | string[]> = {
     "content-type": upstream.headers.get("content-type") ?? "application/json; charset=utf-8",
     "cache-control": "no-store",
     "content-length": String(encoded.byteLength),
   };
+  if (overlay) {
+    response.removeHeader("x-frame-options");
+    responseHeaders["content-security-policy"] = upstream.headers.get("content-security-policy") ?? "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'self'";
+    for (const name of ["x-frame-options", "referrer-policy", "cross-origin-resource-policy", "permissions-policy"]) {
+      const value = upstream.headers.get(name);
+      if (value) responseHeaders[name] = value;
+    }
+  }
   const location = upstream.headers.get("location");
   if (location) responseHeaders.location = location;
   const cookies = upstream.status < 500 ? getSetCookies(upstream.headers) : [];
   if (cookies.length) responseHeaders["set-cookie"] = cookies;
   response.writeHead(upstream.status, responseHeaders);
   response.end(encoded);
+}
+
+function overlayOutputPath(pathname: string) {
+  return /^\/t\/[A-Za-z0-9._:@-]{1,200}\/(?:public|personal)(?:\/source\/[A-Za-z0-9._:@%/-]{1,600})?$/.test(pathname)
+    || /^\/o\/[A-Za-z0-9_-]{16,512}(?:\/source\/[A-Za-z0-9._:@%/-]{1,600})?$/.test(pathname);
+}
+
+function transparentOverlayResponse(response: ServerResponse, status: number) {
+  response.removeHeader("x-frame-options");
+  response.setHeader("content-security-policy", "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'self'; base-uri 'none'");
+  return html(response, status, '<!doctype html><meta charset="utf-8"><title>Overlay unavailable</title><style>html,body{margin:0;background:transparent}</style>');
 }
 
 async function proxyNebulaArcade(response: ServerResponse, request: IncomingMessage, url: URL, origin: string, fetchImpl: typeof fetch) {
@@ -309,7 +334,7 @@ function nebulaArcadeProxyPath(pathname: string) {
 function browserProxyAllowed(method: string, pathname: string) {
   if (method === "GET") {
     if (["/health/live", "/health/ready", "/v1/session", "/v1/auth/setup-options", "/v1/identity/providers", "/v1/workspace/profile", "/v1/overlay/tenant-outputs", "/v1/apps", "/v1/apps/installs", "/v1/entitlements", "/v1/usage/me", "/v1/events", "/v1/commlink/conversations", "/v1/commlink/messages", "/v1/commlink/live", "/v1/commlink/search", "/v1/notifications", "/v1/assistants/community", "/v1/stellar/context", "/v1/stellar/capabilities", "/v1/stellar/me/export", "/v1/stellar/me", "/v1/operations/logs", "/v1/operations/coder", "/v1/operations/coder/jobs"].includes(pathname)) return true;
-    return /^\/t\/[A-Za-z0-9._:@-]+\/(?:public|personal)(?:\/source\/[A-Za-z0-9._:@%/-]+)?$/.test(pathname) || /^\/v1\/apps\/[^/]+$/.test(pathname) || /^\/v1\/jobs\/[^/]+$/.test(pathname) || /^\/v1\/identity\/providers\/(?:twitch|discord)\/start$/.test(pathname) || pathname === "/v1/onboarding/twitch/callback";
+    return /^\/v1\/apps\/[^/]+$/.test(pathname) || /^\/v1\/jobs\/[^/]+$/.test(pathname) || /^\/v1\/identity\/providers\/(?:twitch|discord)\/start$/.test(pathname) || pathname === "/v1/onboarding/twitch/callback";
   }
   if (method === "PATCH" && pathname === "/v1/workspace/profile") return true;
   if (method === "DELETE" && (pathname === "/v1/stellar/me" || /^\/v1\/identity\/providers\/[^/]+\/[^/]+$/.test(pathname))) return true;
