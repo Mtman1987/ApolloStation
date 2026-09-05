@@ -2,6 +2,31 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { SpmtClient } from "../packages/sdk/dist/index.js";
 
+test("SDK default transport keeps the browser fetch receiver for room and workspace requests", async (t) => {
+  const seen = [];
+  // Native browser fetch rejects a client instance as its receiver; Node fetch
+  // and arrow-function test doubles do not enforce that browser requirement.
+  t.mock.method(globalThis, "fetch", async function (url, init) {
+    if (this !== globalThis) throw new TypeError("Failed to execute 'fetch' on 'Window': Illegal invocation");
+    seen.push({ url, init });
+    const path = new URL(url).pathname;
+    if (path === "/v1/session") return Response.json({ tenantIds: ["tenant-1"] });
+    if (path === "/v1/workspace/profile") return Response.json({ revision: 1, dockSlots: [null, null, null] });
+    if (init.method === "DELETE") return Response.json({ roomId: "builder", deleted: true });
+    return Response.json([{ roomId: "builder" }]);
+  });
+  const client = new SpmtClient({ baseUrl: "https://apollo.test", appId: "spacemountain" });
+  assert.deepEqual((await client.getSession()).tenantIds, ["tenant-1"]);
+  assert.equal((await client.listSimulationRooms("tenant-1"))[0].roomId, "builder");
+  assert.equal((await client.listSimulationRoomEvents("tenant-1", { roomId: "builder" }))[0].roomId, "builder");
+  const workspace = await client.getWorkspaceProfile("tenant-1");
+  await client.updateWorkspaceProfile("tenant-1", workspace.revision, { dockSlots: ["/simulation-rooms?roomId=builder", null, null] });
+  assert.equal((await client.deleteSimulationRoom("tenant-1", "builder", "delete-1")).deleted, true);
+  assert.equal(seen.length, 6);
+  for (const { init } of seen.slice(1)) assert.equal(new Headers(init.headers).get("x-spmt-tenant"), "tenant-1");
+  assert.equal(new Headers(seen.at(-1).init.headers).get("idempotency-key"), "delete-1");
+});
+
 test("SDK uses documented app/tenant/correlation headers and bearer auth", async () => {
   const seen = [];
   const fetchImpl = async (url, init) => {
