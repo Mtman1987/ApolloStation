@@ -157,7 +157,7 @@ export function renderBoundedAppPage(pathname: string, buildSha: string, nonce: 
     @media(max-width:640px){.bounded-app-root,body[data-spmt-surface="standalone"] .bounded-app-root{padding:12px 12px calc(92px + env(safe-area-inset-bottom));overflow-y:auto}.bounded-feature-grid{grid-template-columns:1fr}.bounded-app-identity{align-items:flex-start;flex-direction:column;gap:10px}.bounded-app-identity>img{width:clamp(84px,24vw,128px);height:clamp(84px,24vw,128px)}.bounded-rocket-dock{left:50%;top:auto;bottom:max(10px,env(safe-area-inset-bottom));width:min(94vw,440px);transform:translateX(-50%);border-radius:22px}.bounded-app-mark{display:none}.bounded-rocket-dock nav{grid-template-columns:repeat(4,1fr)}.bounded-hero{min-height:0;padding:18px}.bounded-hero h1{font-size:clamp(31px,12vw,52px)}}
     @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
   </style>
-  <script type="importmap" nonce="${nonce}">{"imports":{"@spmt/sdk":"/assets/sdk/index.js","@spmt/ui":"/assets/ui/index.js"}}</script>
+  <script type="importmap" nonce="${nonce}">{"imports":{"@spmt/contracts":"/assets/contracts/index.js","@spmt/embed":"/assets/embed/index.js","@spmt/sdk":"/assets/sdk/index.js","@spmt/ui":"/assets/ui/index.js"}}</script>
   <script type="module" nonce="${nonce}" src="/assets/web/bounded-app-client.js"></script>
 </head>
 <body class="spmt-product-surface" data-spmt-surface="${surface}" data-spmt-app-id="${escapeHtml(page.id)}" data-spmt-scene="${escapeHtml(page.scene)}">

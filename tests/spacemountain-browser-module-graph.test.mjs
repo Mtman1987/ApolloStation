@@ -2,7 +2,48 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createSpaceMountainWebHost } from "../apps/spacemountain-web/dist/server.js";
 
-test("SpaceMountain serves every runtime SDK module needed before browser boot", async () => {
+function browserModuleMetadata(html, base) {
+  const importMapSource = html.match(/<script type="importmap"[^>]*>(.*?)<\/script>/s)?.[1];
+  assert.ok(importMapSource, "page must declare its browser import map");
+  const imports = JSON.parse(importMapSource).imports ?? {};
+  const entries = [...html.matchAll(/<script type="module"[^>]*src="([^"]+)"[^>]*><\/script>/g)]
+    .map((match) => new URL(match[1], base).href);
+  assert.ok(entries.length, "page must declare at least one browser module entrypoint");
+  return { imports, entries };
+}
+
+function importedSpecifiers(source) {
+  return [...source.matchAll(/(?:import\s+(?:[^"']*?\s+from\s+)?|export\s+(?:\*|\{[^}]*\})\s+from\s+)["']([^"']+)["']/g)]
+    .map((match) => match[1]);
+}
+
+async function assertBrowserModuleGraph(base, pagePath) {
+  const pageUrl = new URL(pagePath, base);
+  const page = await fetch(pageUrl);
+  assert.equal(page.status, 200, `${pageUrl.pathname} must load`);
+  const { imports, entries } = browserModuleMetadata(await page.text(), pageUrl);
+  const pending = [...entries];
+  const visited = new Set();
+
+  while (pending.length) {
+    const moduleUrl = pending.shift();
+    if (visited.has(moduleUrl)) continue;
+    visited.add(moduleUrl);
+    const response = await fetch(moduleUrl);
+    assert.equal(response.status, 200, `${new URL(moduleUrl).pathname} must be browser-addressable`);
+    assert.match(response.headers.get("content-type") ?? "", /text\/javascript/, `${new URL(moduleUrl).pathname} must be JavaScript`);
+    const source = await response.text();
+    for (const specifier of importedSpecifiers(source)) {
+      const mapped = imports[specifier];
+      assert.ok(mapped || specifier.startsWith(".") || specifier.startsWith("/"), `unmapped browser import: ${specifier}`);
+      pending.push(new URL(mapped ?? specifier, moduleUrl).href);
+    }
+  }
+
+  return visited;
+}
+
+test("SpaceMountain serves the complete browser module graph before boot", async () => {
   const web = createSpaceMountainWebHost({
     spmtOrigin: "http://127.0.0.1:3000",
     host: "127.0.0.1",
@@ -15,19 +56,14 @@ test("SpaceMountain serves every runtime SDK module needed before browser boot",
     assert.ok(address && typeof address !== "string");
     const base = `http://127.0.0.1:${address.port}`;
 
-    const client = await fetch(`${base}/assets/web/client.js`);
-    assert.equal(client.status, 200);
-    assert.match(await client.text(), /@spmt\/sdk/);
+    const shellGraph = await assertBrowserModuleGraph(base, "/");
+    assert.ok(shellGraph.has(`${base}/assets/web/client.js`));
+    assert.ok(shellGraph.has(`${base}/assets/web/session-resilience.js`));
+    assert.ok(shellGraph.has(`${base}/assets/sdk/xp.js`));
+    assert.ok(shellGraph.has(`${base}/assets/sdk/suite-actions.js`));
 
-    const sdk = await fetch(`${base}/assets/sdk/index.js`);
-    assert.equal(sdk.status, 200);
-    const sdkSource = await sdk.text();
-    assert.match(sdkSource, /\.\/xp\.js/);
-
-    const xp = await fetch(`${base}/assets/sdk/xp.js`);
-    assert.equal(xp.status, 200, "the SDK sibling imported by index.js must be browser-addressable");
-    assert.match(xp.headers.get("content-type") ?? "", /text\/javascript/);
-    assert.match(await xp.text(), /SPMT_XP_LEDGER_SCHEMA_VERSION/);
+    const boundedGraph = await assertBrowserModuleGraph(base, "/apps/discord-stream-hub");
+    assert.ok(boundedGraph.has(`${base}/assets/web/bounded-app-client.js`));
   } finally {
     await web.close();
   }
