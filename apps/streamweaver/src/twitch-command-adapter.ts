@@ -35,7 +35,7 @@ export class StreamWeaverTwitchCommandAdapter {
 
   async followed(tenantId:string,userId:string){
     const grant=await this.ready(tenantId,"followers:read");
-    const payload=await this.request<{data?:Array<{broadcaster_id?:string;user_id?:string;followed_at?:string}>}>(grant,this.url("/channels/followed",{user_id:cleanId(userId,"userId"),broadcaster_id:grant.broadcasterId}));
+    const payload=await this.request<{data?:Array<{broadcaster_id?:string;user_id?:string;followed_at?:string}>}>(grant,this.url("/channels/followers",{user_id:cleanId(userId,"userId"),broadcaster_id:grant.broadcasterId}));
     const row=payload.data?.[0]; if(!row)return undefined;
     if(!row.followed_at||!Number.isFinite(Date.parse(row.followed_at)))throw new Error("Twitch returned an invalid follow timestamp");
     return { followedAt:new Date(row.followed_at).toISOString(), broadcasterId:String(row.broadcaster_id||grant.broadcasterId), userId:String(row.user_id||userId) } satisfies StreamWeaverTwitchFollowV1;
@@ -89,9 +89,9 @@ export class StreamWeaverTwitchCommandAdapter {
     return grant;
   }
 
-  private url(path:string,params:Record<string,string>){ const url=new URL(path,this.apiOrigin.endsWith("/")?this.apiOrigin:`${this.apiOrigin}/`); for(const [key,value] of Object.entries(params))url.searchParams.set(key,value); return url; }
+  private url(path:string,params:Record<string,string>){ const url=new URL(path.replace(/^\/+/,""),this.apiOrigin.endsWith("/")?this.apiOrigin:`${this.apiOrigin}/`); for(const [key,value] of Object.entries(params))url.searchParams.set(key,value); return url; }
   private async request<T>(grant:Extract<StreamWeaverTwitchGrantResultV1,{status:"ready"}>,url:URL,options:{method?:string;body?:unknown}={}){
-    const response=await this.fetchImpl(url,{method:options.method??"GET",headers:{"client-id":grant.clientId,authorization:`Bearer ${grant.accessToken}`,accept:"application/json",...(options.body===undefined?{}:{"content-type":"application/json"})},...(options.body===undefined?{}:{body:JSON.stringify(options.body)})});
+    const response=await this.fetchImpl(url,{method:options.method??"GET",redirect:"error",signal:AbortSignal.timeout(15000),headers:{"client-id":grant.clientId,authorization:`Bearer ${grant.accessToken}`,accept:"application/json",...(options.body===undefined?{}:{"content-type":"application/json"})},...(options.body===undefined?{}:{body:JSON.stringify(options.body)})});
     if(response.status===204)return undefined as T;
     const text=await response.text(); let payload:unknown=undefined; if(text){try{payload=JSON.parse(text);}catch{payload={message:text.slice(0,500)};}}
     if(!response.ok)throw new StreamWeaverTwitchError(response.status,response.status===401?"Twitch rejected the current SPMT provider grant":`Twitch request failed (${response.status})`);

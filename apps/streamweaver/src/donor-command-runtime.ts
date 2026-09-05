@@ -16,7 +16,7 @@ export interface StreamWeaverDonorCommandInvocationV1 {
   channelId: string;
 }
 
-export interface StreamWeaverDonorCommandExecutionV1 { text?: string; handled?: boolean; }
+export interface StreamWeaverDonorCommandExecutionV1 { text?: string; handled?: boolean; unavailable?: boolean; }
 export interface StreamWeaverDonorCommandServicesV1 {
   execute(invocation: StreamWeaverDonorCommandInvocationV1): Promise<StreamWeaverDonorCommandExecutionV1 | string | undefined> | StreamWeaverDonorCommandExecutionV1 | string | undefined;
 }
@@ -81,10 +81,11 @@ export class StreamWeaverDonorCommandConsumer {
   /** Executes one explicitly wired native action without re-checking package installation. */
   async execute(donorId: string, delivery: NormalizedChatDeliveryV1): Promise<string | undefined> {
     const result = await this.route(delivery, donorId);
+    if (result?.unavailable) throw new Error(result.text || "The native command could not run.");
     return result?.text;
   }
 
-  async route(delivery: NormalizedChatDeliveryV1, explicitDonorId?: string): Promise<{ command: string; text?: string } | undefined> {
+  async route(delivery: NormalizedChatDeliveryV1, explicitDonorId?: string): Promise<{ command: string; text?: string; unavailable?: boolean } | undefined> {
     const message = delivery.message;
     const candidates = explicitDonorId ? STREAMWEAVER_DONOR_COMMANDS.filter(entry=>entry.donorId===explicitDonorId) : this.matchDefinitions(message.text);
     const matches = candidates.filter((entry) => (explicitDonorId ? true : (this.options.enabled?.(message.tenantId, entry.donorId) ?? true)) && !ECONOMY_TRIGGERS.has(canonicalDonorCommandTrigger(entry.trigger)));
@@ -105,14 +106,16 @@ export class StreamWeaverDonorCommandConsumer {
     const builtin = this.builtin(primary);
     const primaryResult = normalizeExecution(await this.options.services.execute(primary));
     let secondaryText: string | undefined;
+    let unavailable = primaryResult.unavailable;
     for (const secondary of commands.slice(1)) {
       const result = normalizeExecution(await this.options.services.execute(this.invocation(secondary, common)));
       secondaryText ??= result.text;
+      unavailable ||= result.unavailable;
     }
     const text = primaryResult.text ?? builtin ?? secondaryText;
     if (primaryResult.handled === false && !text && commands.length === 1) return undefined;
-    if (!explicitDonorId) this.markCooldown(command, message.tenantId, actorId ?? message.actor.providerUserId);
-    return { command: canonicalTrigger, ...(text ? { text } : {}) };
+    if (!explicitDonorId && !unavailable) this.markCooldown(command, message.tenantId, actorId ?? message.actor.providerUserId);
+    return { command: canonicalTrigger, ...(text ? { text } : {}), ...(unavailable ? { unavailable: true } : {}) };
   }
 
   private invocation(command: StreamWeaverDonorCommandV1, common: DonorInvocationCommonV1): StreamWeaverDonorCommandInvocationV1 {

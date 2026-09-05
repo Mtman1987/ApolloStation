@@ -24,6 +24,7 @@ async function fixture(run) {
     const login = await fetch(`${spmtBase}/v1/auth/login`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ username: "mtman1987", password: "sandbox-owner-password" }) });
     const cookie = (login.headers.get("set-cookie") ?? "").split(";", 1)[0]; assert.ok(cookie);
     const session = await (await fetch(`${spmtBase}/v1/session`, { headers: { cookie } })).json(); const tenantId = session.tenantIds[0];
+    spmt.authority.linkProvider(session.userId ?? session.actorId, "twitch", "100");
     writeFileSync(configPath, JSON.stringify({ schemaVersion: 1, pollIntervalSeconds: 60, tenants: [{ tenantId, twitchProviderUserId: "twitch-owner", discordProviderUserId: "discord-bot", discordGuildIds: [guildId], branding: { communityMemberName: "Crew" }, members: [] }] }));
     const { publicKey, privateKey } = generateKeyPairSync("ed25519"), publicKeyHex = publicKey.export({ type: "spki", format: "der" }).subarray(-32).toString("hex");
     dsh = createDiscordStreamHubWebServer({ spmtOrigin: spmtBase, host: "127.0.0.1", port: 0, databasePath: dshDatabase, runtimeConfigPath: configPath, publicOrigin: "https://spmt.example", discordPublicKey: publicKeyHex, discordClientId: "222222222222222222" });
@@ -69,6 +70,11 @@ test("StreamWeaver exposes a wired Voice Commander, searchable bot catalog, inte
     const control = await (await fetch(`${streamBase}/api/streamweaver/control`, { headers: { cookie } })).json();
     assert.equal(control.role, "owner"); assert.equal(control.operationMode, "read-only"); assert.equal(control.connections[0].provider, "twitch"); assert.equal(control.botRuntime.publicCommands, "connected"); assert.equal(control.botRuntime.suiteActions, "partial"); assert.ok(control.botActions.length >= 20); assert.equal(control.botActions.find((action) => action.id === "sw.image.generate").availability, "connected"); assert.ok(control.botActions.some((action) => action.policy === "simulated")); assert.ok(control.botActions.every((action) => action.policy !== "blocked"));
     const origin = new URL(streamBase).origin;
+    const saveBroadcaster = id => fetch(`${streamBase}/api/streamweaver/control/twitch`, {method:"POST",headers:{cookie,origin,"content-type":"application/json"},body:JSON.stringify({broadcasterId:id})});
+    assert.equal((await saveBroadcaster("999")).status,400);
+    assert.equal((await saveBroadcaster("100")).status,200);
+    const twitchSettings=await (await fetch(`${streamBase}/api/streamweaver/control`,{headers:{cookie}})).json();
+    assert.equal(twitchSettings.twitch.broadcasterId,"100");
     const blankFlows = await (await fetch(`${streamBase}/api/streamweaver/control/flows`, { headers: { cookie } })).json();
     assert.deepEqual(blankFlows.installed, []); assert.equal(blankFlows.community.length, 50); assert.ok(blankFlows.community.every((item) => item.author.id === "mtman1987" && item.installUnit === "flow" && item.commands.length >= 1 && item.actions.length >= 1));
     const install = await fetch(`${streamBase}/api/streamweaver/control/flows/install`, { method: "POST", headers: { cookie, origin, "content-type": "application/json" }, body: JSON.stringify({ packageId: "mtman1987.coinflip" }) });

@@ -58,6 +58,13 @@ export class StreamWeaverWebControls {
       if (url.pathname === "/api/streamweaver/control/voice") return await this.voice(response, context, body);
       if (url.pathname === "/api/streamweaver/control/voice/history/clear") { this.runtimeSettings?.clearVoice(context.tenantId,this.actor(context).id); return sendJson(response,200,{cleared:true}); }
       this.requireOwner(context);
+      if(url.pathname==="/api/streamweaver/control/twitch"){
+        if(!this.runtimeSettings)throw new Error("StreamWeaver runtime is not configured");
+        const id=String(body.broadcasterId??''),snapshot=await fetchAppPlatformSnapshot({appId:"streamweaver",spmtOrigin:this.options.spmtOrigin,request,sources:["providerLinks"]});
+        const links=Array.isArray(snapshot.providerLinks)?snapshot.providerLinks as Array<Record<string,unknown>>:[];
+        if(id&&!links.some(link=>link.provider==='twitch'&&link.providerUserId===id&&!link.revokedAt))throw new Error("Choose one of your active linked Twitch identities");
+        return sendJson(response,200,this.runtimeSettings.setTwitchBroadcaster(context.tenantId,id));
+      }
       if (url.pathname === "/api/streamweaver/control/links") { if(!this.runtimeSettings)throw new Error("StreamWeaver runtime is not configured");return sendJson(response,200,{links:this.runtimeSettings.saveLinks(context.tenantId,body)}); }
       if (url.pathname === "/api/streamweaver/control/botshare") { if(!this.relay)throw new Error("StreamWeaver runtime is not configured");if(typeof body.enabled!=="boolean")throw new Error("enabled must be a boolean");this.relay.setBotShare(context.tenantId,body.enabled);return sendJson(response,200,{enabled:body.enabled}); }
       if (url.pathname === "/api/streamweaver/control/flows/save") return sendJson(response,200,{package:this.requireFlows().editDraft(context.tenantId,body.package,this.actor(context),typeof body.expectedUpdatedAt==="string"?body.expectedUpdatedAt:undefined)});
@@ -111,6 +118,7 @@ export class StreamWeaverWebControls {
       runtimeReady: Boolean(this.client && this.persona && this.economy),
       providerLinks: snapshot.providerLinks,
       connections,
+      twitch:{broadcasterId:this.runtimeSettings?.twitchBroadcaster(tenantId)??""},
       workers: snapshot.workers,
       stellarCapabilities: snapshot.stellarCapabilities,
       personaDocument,

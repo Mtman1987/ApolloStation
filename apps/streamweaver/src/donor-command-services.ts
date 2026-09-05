@@ -107,5 +107,5 @@ export class DefaultStreamWeaverDonorCommandServices implements StreamWeaverDono
   }
 }
 
-function unavailable(text:string):StreamWeaverDonorCommandExecutionV1{return{handled:true,text};}
+function unavailable(text:string):StreamWeaverDonorCommandExecutionV1{return{handled:true,text,unavailable:true};}
 function formatDuration(ms:number){if(!Number.isFinite(ms)||ms<0)return"0m";const totalMinutes=Math.floor(ms/60_000);const days=Math.floor(totalMinutes/1440);const hours=Math.floor((totalMinutes%1440)/60);const minutes=totalMinutes%60;return[days?`${days}d`:"",hours?`${hours}h`:"",`${minutes}m`].filter(Boolean).join(" ");}

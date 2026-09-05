@@ -8,9 +8,12 @@ export class StreamWeaverRuntimeSettingsStore {
   constructor(path: string) {
     this.db = new DatabaseSync(path,{timeout:5000});
     this.db.exec("PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS streamweaver_creator_links(tenant_id TEXT PRIMARY KEY, body TEXT NOT NULL) STRICT;");
+    this.db.exec("CREATE TABLE IF NOT EXISTS streamweaver_twitch_settings(tenant_id TEXT PRIMARY KEY,broadcaster_id TEXT NOT NULL) STRICT;");
     this.db.exec("CREATE TABLE IF NOT EXISTS streamweaver_voice_history(tenant_id TEXT NOT NULL,user_id TEXT NOT NULL,request_id TEXT NOT NULL,body TEXT NOT NULL,PRIMARY KEY(tenant_id,user_id,request_id)) STRICT;");
   }
   close() { this.db.close(); }
+  twitchBroadcaster(tenantId:string){const row=this.db.prepare("SELECT broadcaster_id FROM streamweaver_twitch_settings WHERE tenant_id=?").get(tenantId) as {broadcaster_id:string}|undefined;return row?.broadcaster_id;}
+  setTwitchBroadcaster(tenantId:string,broadcasterId:string){if(broadcasterId&&!/^[0-9]{1,30}$/.test(broadcasterId))throw new Error("Choose a linked Twitch broadcaster");this.db.prepare("INSERT OR REPLACE INTO streamweaver_twitch_settings VALUES(?,?)").run(tenantId,broadcasterId);return {broadcasterId};}
   voiceHistory(tenantId:string,userId:string) {
     return (this.db.prepare("SELECT body FROM streamweaver_voice_history WHERE tenant_id=? AND user_id=? ORDER BY rowid DESC LIMIT 50").all(tenantId,userId) as Array<{body:string}>).map(row=>JSON.parse(row.body) as Record<string,unknown>);
   }

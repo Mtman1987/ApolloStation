@@ -1,3 +1,5 @@
+import { SpmtStreamWeaverTwitchGrantSource } from "./twitch-grants.js";
+import { StreamWeaverTwitchCommandAdapter } from "./twitch-command-adapter.js";
 import type { NormalizedChatMessageV1, OutboundChatMessageV1 } from "@spmt/contracts";
 import type { SpmtClient } from "@spmt/sdk";
 import {
@@ -36,6 +38,9 @@ export interface StreamWeaverProviderRuntimeOptionsV1 {
   retryDelayMs?: number;
   botActions?: StreamWeaverBotActionExecutorV1;
   allowAssistant?: boolean;
+  providerGrants?: Pick<SpmtClient,"issueProviderGrant">;
+  allowProviderWrites?: boolean;
+  providerFetch?: typeof fetch;
 }
 
 /**
@@ -70,7 +75,7 @@ export class StreamWeaverProviderRuntime {
     this.messageObservers = [{ id: "streamweaver.relay-identities", observe: (message) => { this.relayStore.observe(message); } }];
     const botActions = options.botActions ? new StreamWeaverBotActionConsumer(options.botActions, egress) : undefined;
     const priorGate = { willHandle: (message: NormalizedChatMessageV1) => relay.willHandle(message) || Boolean(botActions?.willHandle(message)) };
-    const services = new DefaultStreamWeaverDonorCommandServices({ links:this.runtimeSettings, bic:new StreamWeaverBicCommandExecutor(new StreamWeaverBicRuntime({store:this.bic,client:options.client})), socialEffects:new StreamWeaverSocialActionExecutor(options.client), system:{execute:invocation=>invocation.canonicalTrigger==="!commands" ? `Installed commands: ${this.flows.listInstalledPackages(invocation.tenantId).flatMap(pkg=>pkg.commands.filter(c=>c.enabled).map(c=>c.trigger)).join(", ") || "none"}. Currency: !points, !givepoints, !gamble, !pleader.` : undefined} });
+    const services = new DefaultStreamWeaverDonorCommandServices({ ...(options.providerGrants?{twitch:new StreamWeaverTwitchCommandAdapter(new SpmtStreamWeaverTwitchGrantSource(options.providerGrants,tenantId=>this.runtimeSettings.twitchBroadcaster(tenantId),options.allowProviderWrites===true),options.providerFetch)}:{}), links:this.runtimeSettings, bic:new StreamWeaverBicCommandExecutor(new StreamWeaverBicRuntime({store:this.bic,client:options.client})), socialEffects:new StreamWeaverSocialActionExecutor(options.client), system:{execute:invocation=>invocation.canonicalTrigger==="!commands" ? `Installed commands: ${this.flows.listInstalledPackages(invocation.tenantId).flatMap(pkg=>pkg.commands.filter(c=>c.enabled).map(c=>c.trigger)).join(", ") || "none"}. Currency: !points, !givepoints, !gamble, !pleader.` : undefined} });
     const commands = new StreamWeaverDonorCommandConsumer({ services, identities, state: this.commandState, egress, enabled: (tenantId, donorId) => donorId === "commands-chat" || donorId === "commands-system" || this.flows.donorEnabled(tenantId, donorId), ...(options.nowMs ? { nowMs: options.nowMs } : {}) });
     const persona = new StreamWeaverChatGatewayConsumer(this.summons, this.settings, new SpmtStreamWeaverPersonaRuntime(options.client), egress, priorGate);
     const flows = this.installedFlows = new StreamWeaverInstalledFlowConsumer(this.flows, this.commandState, egress, options.botActions, commands, options.nowMs, {

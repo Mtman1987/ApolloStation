@@ -40,6 +40,12 @@ Flow Builder now exposes minimum access, case sensitivity, personal cooldown and
 
 Validation: 747 offline tests passed, including authenticated mounted-app archive import/reimport and installation. A subsequently added focused test covers a graph action followed by reusable action steps. Import and graph runtime tests cover source preservation, aliases, branch outcomes, recursive-action rejection, scope isolation, role enforcement, case matching and shared cooldown. Existing browser-controller DOM checks passed.
 
+## Twitch grant follow-up
+
+Installed native Twitch commands now obtain short-lived grants from Chat Gateway's existing SPMT broker. StreamWeaver stores only the explicitly selected linked broadcaster ID. Integrations validates that selection against the owner's active Account links. The adapter preserves `/helix`, uses broadcaster-authorized follower history, refuses redirects, and has a bounded request timeout. Captured environments reject title/category/clip/shoutout writes before requesting a grant. No OAuth scope or credential allowlist is expanded by this integration.
+
+A failed or unavailable native action is now recorded as a failed flow, rather than a successful completion. Focused acceptance covers installed follower/title commands through the actual consumer, scoped broker requests, denied writes, owner-only broadcaster selection, and grant isolation. Cross-provider follow-history identity lookup, shared-presence integration, role-specific OAuth setup, and credentialed provider acceptance remain open.
+
 ## Remaining implementation groups
 
 1. Finish replacements for the imported raw script/HTTP/device/media nodes, event-trigger bindings, and legacy provider-specific access rules. The supported graph/archive converter is implemented above.

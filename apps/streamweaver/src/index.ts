@@ -46,3 +46,4 @@ export function streamweaverCatalogRegistration(launchUrl:string):AppCatalogRegi
 export async function cueAnnouncementOverlays(client:SpmtClient,tenantId:string){const events=await client.listEvents(tenantId,{type:DISCORD_ANNOUNCEMENT_REQUESTED,sourceAppId:"discord-stream-hub",limit:100});for(const event of events){const id=String(event.id??event.eventId??"");if(!id)continue;await client.publishEvent(tenantId,STREAMWEAVER_OVERLAY_CUE,{schemaVersion:1,sourceEventId:id,renderer:"community-announcement",payload:event.payload??{}},`streamweaver-announcement:${id}`);}return{observed:events.length};}
 
 export * from "./flow-import.js";
+export * from "./twitch-grants.js";

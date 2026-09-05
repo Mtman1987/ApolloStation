@@ -233,7 +233,7 @@ export class SupervisedChatGatewayService {
           return { response: message };
         }
       } };
-      this.streamweaver = new StreamWeaverProviderRuntime({ databasePath: options.streamweaver.databasePath, client: streamweaverClient, botActions: guardedSuiteActions, allowAssistant: !options.liveIngressEnabled, egress: { send: (message) => { if (!connectedGateway) throw new Error("Chat Gateway egress is not ready"); return connectedGateway.send(message); } } });
+      this.streamweaver = new StreamWeaverProviderRuntime({ databasePath: options.streamweaver.databasePath, client: streamweaverClient, botActions: guardedSuiteActions, providerGrants:client,allowProviderWrites:egressMode==="provider",allowAssistant: !options.liveIngressEnabled, egress: { send: (message) => { if (!connectedGateway) throw new Error("Chat Gateway egress is not ready"); return connectedGateway.send(message); } } });
       if(options.streamweaver.image){const image=options.streamweaver.image,provider=new SeaArtCliProvider(image.token,new NodeSeaArtCommandRunner(image.binary)),tenantIds=[...new Set(options.connections.map(connection=>connection.tenantId))];this.streamweaverImage=new StreamWeaverImageWorker(streamweaverClient,new StreamWeaverImageGenerationService([provider]),{workerId:`${options.workerId}-image`,modelNo:image.modelNo,modelVerNo:image.modelVerNo,...(tenantIds.length?{tenantIds}:{})});}
       consumers.push(...this.streamweaver.consumers);
       observers.push(...this.streamweaver.messageObservers);

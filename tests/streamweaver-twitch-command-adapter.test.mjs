@@ -9,9 +9,10 @@ function fixture() {
   const fetchImpl = async (url, init = {}) => {
     calls.push({ url: String(url), method: init.method ?? "GET", headers: init.headers, body: init.body });
     const value = String(url);
+    assert.ok(new URL(value).pathname.startsWith("/helix/"));assert.equal(init.redirect,"error");assert.ok(init.signal);
     if (value.includes("/clips?")) return response(202, { data: [{ id: "clip123", edit_url: "https://clips.twitch.tv/edit/clip123" }] });
-    if (value.includes("/channels/followers?")) return response(200, { total: 321, data: [] });
-    if (value.includes("/channels/followed?")) return response(200, { data: [{ broadcaster_id: "100", user_id: "200", followed_at: "2026-01-01T00:00:00Z" }] });
+    if (value.includes("/channels/followers?")&&!new URL(value).searchParams.has("user_id")) return response(200, { total: 321, data: [] });
+    if (value.includes("/channels/followers?")) return response(200, { data: [{ broadcaster_id: "100", user_id: "200", followed_at: "2026-01-01T00:00:00Z" }] });
     if (value.includes("/streams?")) return response(200, { data: [{ id: "stream1", started_at: "2026-08-24T18:00:00Z", title: "Live", game_name: "Space Game", viewer_count: 42 }] });
     if (value.includes("/search/categories?")) return response(200, { data: [{ id: "game1", name: "Space Game" }] });
     if (value.includes("/users?")) return response(200, { data: [{ id: "200", login: "friend", display_name: "Friend", profile_image_url: "https://example.com/friend.png" }] });
