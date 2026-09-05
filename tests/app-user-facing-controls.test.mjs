@@ -60,6 +60,11 @@ test("StreamWeaver exposes a wired Voice Commander, searchable bot catalog, inte
   await fixture(async ({ cookie, streamBase }) => {
     const page = await (await fetch(streamBase)).text();
     assert.match(page, /Voice Commander/); assert.match(page, /Explicit microphone/); assert.match(page, /Live input · read only · no outbound/); assert.match(page, /Search commands/); assert.match(page, /Manage linked accounts/); assert.match(page, /@media\(max-width:720px\)/);
+    const browserSource = page.match(/<script>([\s\S]*)<\/script>/)?.[1];
+    assert.ok(browserSource); assert.doesNotThrow(() => new Function(browserSource));
+    assert.equal((browserSource.match(/textContent!==value/g) ?? []).length, 2, "StreamWeaver decorators must converge instead of retriggering themselves forever");
+    assert.doesNotMatch(browserSource, /state\.textContent=readiness/);
+    assert.doesNotMatch(browserSource, /if\(button\)button\.textContent='Preview \/ run read action'/);
     const control = await (await fetch(`${streamBase}/api/streamweaver/control`, { headers: { cookie } })).json();
     assert.equal(control.role, "owner"); assert.equal(control.operationMode, "read-only"); assert.equal(control.connections[0].provider, "twitch"); assert.equal(control.botRuntime.publicCommands, "connected"); assert.equal(control.botRuntime.suiteActions, "setup-required"); assert.ok(control.botActions.length >= 20); assert.ok(control.botActions.every((action) => action.availability === "setup-required")); assert.ok(control.botActions.some((action) => action.policy === "blocked"));
     const origin = new URL(streamBase).origin;
