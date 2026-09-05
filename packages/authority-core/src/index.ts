@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, createHash } from "node:crypto";
 import { SPMT_SIMULATION_ROOM_EVENT, SPMT_SIMULATION_ROOM_DELETED, assertSimulationRoomEventV1, type SimulationRoomEventV1, type SimulationRoomLaneV1, type SimulationRoomSummaryV1 } from "@spmt/contracts";
 
 export type ProviderKindV1 = "twitch" | "discord" | "xbox" | "github" | "other";
@@ -437,7 +437,7 @@ export class AuthorityService {
   listSimulationRooms(tenantId: string, limit = 100): SimulationRoomSummaryV1[] {
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 200) throw new AuthorityValidationError("room limit must be an integer from 1 through 200");
     return [...this.simulationRooms(tenantId)].reverse().slice(0, limit).map(([roomId, history]) => ({
-      roomId, name: [...history].reverse().find((event) => event.payload.roomName)?.payload.roomName ?? history[0]!.payload.title,
+      roomId, name: history.find(event => event.payload.data?.kind === "room-created")?.payload.roomName ?? [...history].reverse().find((event) => event.payload.roomName)?.payload.roomName ?? history[0]!.payload.title,
       eventCount: history.length, lastActivityAt: history.at(-1)!.createdAt,
       lanes: [...new Set(history.map((event) => event.payload.lane))], sourceAppIds: [...new Set(history.map((event) => event.sourceAppId))],
     }));
@@ -450,6 +450,18 @@ export class AuthorityService {
     const rooms = this.simulationRooms(tenantId);
     const events = options.roomId === undefined ? [...rooms.values()].flat().sort((a, b) => a.createdAt.localeCompare(b.createdAt)) : rooms.get(options.roomId) ?? [];
     return events.filter((event) => (!options.lane || event.payload.lane === options.lane) && (!options.sourceAppId || event.sourceAppId === options.sourceAppId)).slice(-limit).reverse();
+  }
+
+  createSimulationRoom(tenantId: string, sourceAppId: string, name: string, idempotencyKey: string) {
+    requireId(tenantId,"tenantId"); requireId(sourceAppId,"sourceAppId"); requireId(idempotencyKey,"idempotencyKey");
+    const roomId = "room-" + createHash("sha256").update(`${tenantId}\0${sourceAppId}\0${idempotencyKey}`).digest("hex").slice(0,24);
+    const payload = assertSimulationRoomEventV1({schemaVersion:1,roomId,roomName:name,title:"Room created",body:"Shared stream and Discord test channels are ready. Type a message to let your installed apps respond.",lane:"app",direction:"preview",occurredAt:this.now(),data:{kind:"room-created",appId:"chat-gateway"}});
+    const result = this.publishEvent({tenantId,sourceAppId,type:SPMT_SIMULATION_ROOM_EVENT,payload:payload as unknown as Record<string,unknown>,idempotencyKey:`simulation-create:${roomId}`});
+    return {roomId:String(result.value.payload.roomId),name:String(result.value.payload.roomName),duplicate:result.duplicate};
+  }
+
+  simulationRoomEpoch(tenantId: string, roomId: string) {
+    return this.store.listEvents(tenantId).filter(event => event.type === SPMT_SIMULATION_ROOM_DELETED && event.payload.roomId === roomId).at(-1)?.id ?? "initial";
   }
 
   deleteSimulationRoom(tenantId: string, roomId: string, sourceAppId: string, idempotencyKey: string) {

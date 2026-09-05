@@ -1,3 +1,4 @@
+import { renderNebulaTagOverlayHtml, NEBULA_TAG_OVERLAY_CSS, NEBULA_TAG_OVERLAY_CLIENT_JS, renderNebulaGameWidget, renderNebulaArcadeStage, NEBULA_IMPORTED_WIDGET_IDS, NEBULA_WIDGET_STAGE_JS, nebulaThreeJs } from "@spmt/nebula-arcade";
 import { randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
@@ -87,9 +88,28 @@ export function createSpaceMountainWebHost(options: SpaceMountainWebHostOptions)
     try {
       const url = new URL(request.url ?? "/", "http://spacemountain.local");
       overlayRequest = (request.method === "GET" || request.method === "HEAD") && overlayOutputPath(url.pathname) && !url.search;
+      if (request.method === "GET" && url.pathname === "/assets/nebula-arcade/widgets/thirdparty/three.min.js") { response.setHeader("cross-origin-resource-policy","cross-origin"); response.writeHead(200, { "content-type":"text/javascript; charset=utf-8", "cache-control":"public,max-age=86400", "access-control-allow-origin":"*" }); response.end(nebulaThreeJs()); return; }
+      if (request.method === "GET" && (url.pathname === "/simulation-rooms/arcade" || url.pathname === "/assets/nebula-arcade/widget-stage.js" || url.pathname.startsWith("/assets/nebula-arcade/widgets/"))) {
+        if(url.pathname.endsWith("widget-stage.js")) return textResponse(response,200,NEBULA_WIDGET_STAGE_JS,"text/javascript; charset=utf-8","no-store");
+        response.removeHeader("x-frame-options");
+        const widget=url.pathname.startsWith("/assets/");
+        response.setHeader("content-security-policy", "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; frame-src 'self'; frame-ancestors 'self'; base-uri 'none'"+(widget?"; sandbox allow-scripts":""));
+        if(!widget)return html(response,200,renderNebulaArcadeStage(true));
+        const id=url.pathname.split("/").pop()?.replace(/\.html$/,"")||"";
+        return [...NEBULA_IMPORTED_WIDGET_IDS,"bingo","quackverse"].includes(id)?html(response,200,renderNebulaGameWidget(id)):textResponse(response,404,"Not found","text/plain","no-store");
+      }
+      if (request.method === "GET" && url.pathname.startsWith("/simulation-rooms/tag")) {
+        if (url.pathname === "/simulation-rooms/tag/client.js") return textResponse(response, 200, NEBULA_TAG_OVERLAY_CLIENT_JS, "text/javascript; charset=utf-8", "no-store");
+        if (url.pathname === "/simulation-rooms/tag/styles.css") return textResponse(response, 200, NEBULA_TAG_OVERLAY_CSS, "text/css; charset=utf-8", "no-store");
+        if (url.pathname === "/simulation-rooms/tag") {
+          response.removeHeader("x-frame-options");
+          response.setHeader("content-security-policy", "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; frame-ancestors 'self'; base-uri 'none'");
+          return html(response, 200, renderNebulaTagOverlayHtml(true).replaceAll("/v1/nebula-arcade/tag/overlay", "/simulation-rooms/tag"));
+        }
+      }
       if (request.method === "GET" && url.pathname === "/simulation-rooms") {
         response.removeHeader("x-frame-options");
-        response.setHeader("content-security-policy", `default-src 'none'; script-src 'self' 'nonce-${nonce}'; style-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'self'; base-uri 'none'; form-action 'self'; object-src 'none'`);
+        response.setHeader("content-security-policy", `default-src 'none'; script-src 'self' 'nonce-${nonce}'; style-src 'unsafe-inline'; connect-src 'self'; frame-src 'self'; img-src 'self' https: data:; media-src 'self' https:; frame-ancestors 'self'; base-uri 'none'; form-action 'self'; object-src 'none'`);
         return html(response, 200, `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="color-scheme" content="dark"><title>Simulation Rooms</title><style>html,body{margin:0;height:100%;background:#080d18;color:#eff4ff;font:14px system-ui}#simulation-rooms-root{box-sizing:border-box;height:100%;overflow:auto;padding:12px}</style><script type="importmap" nonce="${nonce}">{"imports":{"@spmt/contracts":"/assets/contracts/index.js","@spmt/sdk":"/assets/sdk/index.js","@spmt/spacemountain/simulation-rooms":"/assets/spacemountain/simulation-rooms-ui.js"}}</script><script type="module" src="/assets/web/simulation-rooms-client.js" nonce="${nonce}"></script></head><body><main id="simulation-rooms-root">Opening Simulation Rooms…</main></body></html>`);
       }
       if (request.method === "GET" && BOUNDED_APP_PATHS.has(url.pathname)) {
@@ -347,7 +367,7 @@ function browserProxyAllowed(method: string, pathname: string) {
   if (method === "PATCH" && pathname === "/v1/workspace/profile") return true;
   if (method === "DELETE" && pathname === "/v1/simulation-rooms") return true;
   if (method === "DELETE" && (pathname === "/v1/stellar/me" || /^\/v1\/identity\/providers\/[^/]+\/[^/]+$/.test(pathname))) return true;
-  if (method === "POST") return pathname === "/v1/apps" || pathname === "/v1/simulation-rooms/events" || /^\/v1\/apps\/[^/]+\/(?:install|disable)$/.test(pathname) || /^\/v1\/notifications\/[^/]+\/read$/.test(pathname) || pathname === "/v1/commlink/messages" || pathname === "/v1/assistants/community/invocations" || pathname === "/v1/operations/coder/jobs";
+  if (method === "POST") return pathname === "/v1/apps" || pathname === "/v1/simulation-rooms" || pathname === "/v1/simulation-rooms/events" || pathname === "/v1/simulation-rooms/input" || /^\/v1\/apps\/[^/]+\/(?:install|disable)$/.test(pathname) || /^\/v1\/notifications\/[^/]+\/read$/.test(pathname) || pathname === "/v1/commlink/messages" || pathname === "/v1/assistants/community/invocations" || pathname === "/v1/operations/coder/jobs";
   return false;
 }
 

@@ -421,6 +421,28 @@ export type ChatProviderV1 = (typeof CHAT_PROVIDERS)[number];
 /** Shared, tenant-scoped test surface used by app builders without contacting a real provider. */
 export const SPMT_SIMULATION_ROOM_EVENT = "spmt.simulation-room.event.v1" as const;
 export const SPMT_SIMULATION_ROOM_DELETED = "spmt.simulation-room.deleted.v1" as const;
+export const SIMULATION_ROOM_INPUT_CAPABILITY = "chat-gateway.simulation-input.v1" as const;
+export interface SimulationRoomInputV1 { roomId: string; provider: "twitch" | "discord" | "kick"; message: string; interaction?: { customId: string; values?: Record<string,string> }; }
+export interface SimulationRoomInputJobV1 extends SimulationRoomInputV1 {
+  schemaVersion: 1;
+  epoch?: string;
+  actor: { userId: string; username: string; role: "owner" | "member" };
+  appIds: string[];
+}
+export function assertSimulationRoomInputV1(value: unknown): SimulationRoomInputV1 {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Room input is required");
+  const input = value as SimulationRoomInputV1;
+  if (typeof input.roomId !== "string" || !input.roomId.trim() || input.roomId !== input.roomId.trim() || input.roomId.length > 200 || /[\r\n\0]/.test(input.roomId)) throw new Error("Room ID is invalid");
+  if (!["twitch", "discord", "kick"].includes(input.provider)) throw new Error("Choose a stream or Discord chat provider");
+  if (typeof input.message !== "string" || !input.message.trim() || input.message.length > 5000 || /\0/.test(input.message)) throw new Error("Enter a message up to 5000 characters");
+  if (input.interaction !== undefined) {
+    if (input.provider !== "discord" || !input.interaction || typeof input.interaction !== "object" || !/^application_(?:inquiry|start|submit):(?:mod|partner|dev):\d{5,30}$/.test(input.interaction.customId)) throw new Error("Discord interaction is invalid");
+    const values = input.interaction.values;
+    if (values !== undefined && (!values || typeof values !== "object" || Array.isArray(values) || Object.keys(values).length > 5 || Object.entries(values).some(([key,value]) => !/^[a-z0-9_-]{1,80}$/i.test(key) || typeof value !== "string" || value.length > 1000))) throw new Error("Discord form answers are invalid");
+    return { roomId: input.roomId, provider: input.provider, message: input.message.trim(), interaction: { customId: input.interaction.customId, ...(values ? { values: { ...values } } : {}) } };
+  }
+  return { roomId: input.roomId, provider: input.provider, message: input.message.trim() };
+}
 export const SIMULATION_ROOM_LANES = ["chat", "overlay", "game", "app"] as const;
 export type SimulationRoomLaneV1 = (typeof SIMULATION_ROOM_LANES)[number];
 export type SimulationRoomDirectionV1 = "ingress" | "egress" | "preview";

@@ -27,11 +27,11 @@ test("Nebula Arcade sandbox keeps the tag game functional while all games report
     assert.doesNotMatch(games, /Runtime widget pending|Catalog registered/);
 
     const tagPage = await (await fetch(`${origin}/?view=game&game=tag`)).text();
-    assert.match(tagPage, /Nebula Arcade tag game/);
+    assert.match(tagPage, /src="\/overlay\/arcade\/tag"/);
     assert.match(tagPage, /id="game-console"/);
 
     const garden = await (await fetch(`${origin}/?view=game&game=chatgarden`)).text();
-    assert.match(garden, /Shared runtime ready|shared persistent runtime/i);
+    assert.match(garden, /src="\/overlay\/arcade\/chatgarden"/);
     assert.doesNotMatch(garden, /This page does not fake gameplay|runtime will plug/i);
 
     const overlay = await (await fetch(`${origin}/?view=overlay`)).text();

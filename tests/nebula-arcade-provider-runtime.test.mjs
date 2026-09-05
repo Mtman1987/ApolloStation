@@ -113,10 +113,10 @@ test("ambiguous commands ask the user instead of mutating two games while safe t
   actions.close();
 }));
 
-test("unported specialized actions and moderator controls return truthful chat states", async () => withRuntime(async ({ runtime, databasePath, sent }) => {
+test("Quackverse deck commands read the real collection and moderator controls remain enforced", async () => withRuntime(async ({ runtime, databasePath, sent }) => {
   const consumer = runtime.consumers[0];
   await consumer.deliver(delivery("deck", "!deck"));
-  assert.match(sent.at(-1).text, /not connected yet/);
+  assert.match(sent.at(-1).text, /Deck \(0\/20\): empty/);
   await consumer.deliver(delivery("start", "!start"));
   assert.match(sent.at(-1).text, /Only the broadcaster or a moderator/);
   const actions = new SqliteNebulaGameActionStore(databasePath);

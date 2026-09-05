@@ -67,7 +67,7 @@ export class NebulaTagOverlayHttpAdapter {
   }
 }
 
-export function renderNebulaTagOverlayHtml(): string {
+export function renderNebulaTagOverlayHtml(simulation = false): string {
   return [
     "<!doctype html>",
     '<html lang="en">',
@@ -77,7 +77,7 @@ export function renderNebulaTagOverlayHtml(): string {
     "<title>Nebula Arcade tag game Overlay</title>",
     '<link rel="stylesheet" href="' + ROOT + '/styles.css">',
     "</head>",
-    '<body data-state-url="' + ROOT + '/state" data-message-url="' + ROOT + '/messages" data-cycle-ms="240000">',
+    '<body ' + (simulation ? 'data-simulation="true" ' : '') + 'data-state-url="' + ROOT + '/state" data-message-url="' + ROOT + '/messages" data-cycle-ms="240000">',
     '<main id="overlay" aria-live="polite">',
     '<section id="broadcast" class="broadcast" hidden><div id="confetti" class="confetti"></div><div id="broadcast-icon" class="broadcast-icon"></div><div id="broadcast-lines" class="broadcast-lines"></div></section>',
     '<footer id="status-bar" class="status-bar">',
@@ -128,7 +128,7 @@ export const NEBULA_TAG_OVERLAY_CLIENT_JS = [
   "function render(next){const previous=snapshot;snapshot=next;holder.textContent=next.currentIt?next.currentIt.username:'FREE FOR ALL';holder.style.color=next.currentIt?'#00d9ff':'#ff6b35';population.textContent=String(next.playerCount);if(next.viewer){viewerName.textContent=next.viewer.username;viewerStats.textContent='#'+next.viewer.rank+' • '+next.viewer.score+' pts • '+next.viewer.passCount+' passes';}else{viewerName.textContent='Nebula Arcade tag game';viewerStats.textContent=next.availablePlayerCount+' available';}const history=next.recentHistory[0];if(previous&&history&&history.id!==lastHistoryId)show({kind:'tag',icon:history.doublePoints?'🔥':'🎯',color:history.doublePoints?'#ff4500':'#00d9ff',lines:[history.announcement],duration:9000});if(previous&&lastHolder!==undefined&&lastHolder!==(next.currentIt&&next.currentIt.userId)){show(next.currentIt?{kind:'newit',icon:'🎯',color:'#00d9ff',lines:[next.currentIt.username+' is now IT!'],duration:8000}:{kind:'ffa',icon:'🔥',color:'#ff4500',lines:['FREE FOR ALL!','Anyone can tag for DOUBLE POINTS!'],duration:10000});}lastHistoryId=history&&history.id;lastHolder=next.currentIt&&next.currentIt.userId;}",
   "async function poll(){try{const r=await fetch(stateUrl,{cache:'no-store',credentials:'same-origin'});if(!r.ok)return;const value=await r.json();render(value.snapshot);}catch{}}",
   "async function pollMessages(){try{const r=await fetch(messageUrl+'?after='+lastMessage,{cache:'no-store',credentials:'same-origin'});if(!r.ok)return;const value=await r.json();for(const item of value.messages||[]){lastMessage=Math.max(lastMessage,item.sequence);show({kind:'history',icon:'🏷️',color:'#00d9ff',lines:[item.text],duration:9000});}}catch{}}",
-  "setInterval(poll,1000);setInterval(pollMessages,1000);poll();pollMessages();",
+  "if(body.dataset.simulation==='true'){window.addEventListener('message',event=>{if(event.source!==window.parent||event.origin!==location.origin||event.data?.type!=='spmt.simulation.tag')return;const data=event.data;if(data.snapshot?.schemaVersion!==1)return;render(data.snapshot);for(const item of data.messages||[]){if(item.sequence<=lastMessage)continue;lastMessage=item.sequence;show({kind:'history',icon:'🏷️',color:'#00d9ff',lines:[item.text],duration:9000});}});window.parent.postMessage({type:'spmt.simulation.tag.ready'},location.origin);}else{setInterval(poll,1000);setInterval(pollMessages,1000);poll();pollMessages();}",
   "setInterval(()=>{if(!snapshot||active)return;if(cycle==='leaderboard'){cycle='history';const rows=snapshot.leaderboard.slice(0,5).map(p=>'#'+p.rank+' '+p.username+' '+p.score+' pts');if(rows.length)show({kind:'history',icon:'🏆',color:'#ffd700',lines:rows,duration:15000});}else{cycle='leaderboard';const rows=snapshot.recentHistory.slice(0,6).map(h=>(h.doublePoints?'🔥 ':'🎯 ')+h.announcement);if(rows.length)show({kind:'history',icon:'📜',color:'#9146ff',lines:rows,duration:15000});}},cycleMs);",
   "})();",
 ].join("");

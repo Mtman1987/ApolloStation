@@ -48,7 +48,7 @@ test("Nebula enhanced host gives all games shared runtime actions and Game Mix o
 
     const app = await fetch(`${origin}/apps/nebula-arcade?view=game&game=chatgarden`);
     const appHtml = await app.text();
-    assert.match(appHtml, /Shared runtime ready/);
+    assert.match(appHtml, /src="\/overlay\/arcade\/chatgarden"/);
     assert.doesNotMatch(appHtml, /Catalog registered/);
   } finally {
     await host.close();

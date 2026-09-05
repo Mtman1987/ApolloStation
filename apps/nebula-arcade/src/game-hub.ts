@@ -67,6 +67,8 @@ export function routeNebulaCommand(text: string, enabledGameIds: readonly string
   const enabled = new Set(enabledGameIds.map(normalizeGameId));
   const pending = new Set(pendingGameIds.map(normalizeGameId));
 
+  if (enabled.has(command)) return [{ gameId: command, command: args[0]?.toLowerCase() || "join", args: args.slice(1) }];
+
   const directAction = ACTION_ALIASES.get(command);
   if (directAction && enabled.has(directAction.gameId)) return [{ gameId: directAction.gameId, command: directAction.command, args }];
 

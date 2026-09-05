@@ -68,7 +68,7 @@ export function validateNebulaGameAction(gameId: string, actionValue: string, ar
   if (game === "dancingparade" && action === "dance" && noArgs) return { action, args };
   if (game === "emojitower" && action === "drop" && noArgs) return { action, args };
   if (game === "petrace" && ["dog", "cat", "rabbit", "turtle", "hamster"].includes(action) && noArgs) return { action, args };
-  if (game === "pixelbattle" && action === "paint" && args.length === 3 && /^(red|blue|green|yellow|purple|orange|pink|white|black|cyan)$/.test(args[0]!) && /^\d{1,2}$/.test(args[1]!) && /^\d{1,2}$/.test(args[2]!)) return { action, args };
+  if (game === "pixelbattle" && action === "paint" && args.length === 3 && /^(red|blue|green|yellow|purple|orange|pink|white|black|cyan)$/.test(args[0]!) && /^\d{1,2}$/.test(args[1]!) && Number(args[1]) < 20 && /^\d{1,2}$/.test(args[2]!) && Number(args[2]) < 15) return { action, args };
   if (game === "treasurehunt" && action === "dig" && args.length === 1 && /^[a-h][1-8]$/i.test(args[0]!)) return { action, args };
   throw new Error(`Unsupported ${game} action`);
 }

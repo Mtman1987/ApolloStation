@@ -56,15 +56,6 @@ function proxy(request: IncomingMessage, response: ServerResponse, port: number,
     incoming.on("data", (chunk: Buffer | string) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
     incoming.on("end", () => {
       let html = Buffer.concat(chunks).toString("utf8");
-      html = html
-        .replaceAll("Catalog registered", "Shared runtime ready")
-        .replaceAll("catalog ready", "runtime ready")
-        .replaceAll("Runtime widget pending", "Shared runtime connected")
-        .replaceAll("This title has its catalog and overlay contract reserved. Its runtime will plug into the same game, overlay, command, and theme contracts as it is ported.", "This title is connected to Nebula Arcade's shared persistent players, scores, Games Points, command, action, and overlay runtime.")
-        .replaceAll("This page does not fake gameplay. The runtime will use the same game, overlay, command, and theme contracts when its port is added.", "This game uses Nebula Arcade's shared persistent runtime. Game-specific actions are validated before they enter the shared player, score, points, action, and overlay state.")
-        .replaceAll("Game page screenshot placeholder", "Shared runtime game surface")
-        .replaceAll("Overlay screenshot placeholder", "Overlay Bay Game Mix surface")
-        .replaceAll("Chat interaction example placeholder", "Provider-neutral chat action surface");
       const body = Buffer.from(html); const out = { ...incoming.headers, "content-length": String(body.byteLength) }; delete out["transfer-encoding"];
       response.writeHead(incoming.statusCode ?? 200, out); response.end(body);
     });

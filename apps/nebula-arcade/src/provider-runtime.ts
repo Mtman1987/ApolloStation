@@ -1,3 +1,5 @@
+import { SqliteNebulaTabletopRuntime } from "./tabletop-runtime.js";
+import { SqliteNebulaGameInputStore } from "./game-inputs.js";
 import { readFileSync } from "node:fs";
 import { basename, isAbsolute } from "node:path";
 import type { NormalizedChatDeliveryV1, NormalizedChatMessageV1, OutboundChatMessageV1 } from "@spmt/contracts";
@@ -53,6 +55,8 @@ export function validateNebulaArcadeProviderEnvironment(environment: NodeJS.Proc
 
 export class NebulaArcadeProviderRuntime {
   readonly consumers;
+  private readonly tabletop: SqliteNebulaTabletopRuntime;
+  private readonly inputStore: SqliteNebulaGameInputStore;
   private readonly tagStore: SqliteNebulaTagStore;
   private readonly experienceStore: SqliteNebulaTagExperienceStore;
   private readonly gameStore: SqliteNebulaGameRuntimeStore;
@@ -64,6 +68,8 @@ export class NebulaArcadeProviderRuntime {
   private readonly dashboardSignatures = new Map<string, string>();
   private closed = false;
   constructor(private readonly options: { databasePath: string; config: NebulaArcadeProviderConfigV1; client: SpmtClient; egress: NebulaArcadeProviderEgressV1; simulation?: boolean; discordDashboard?: { egress: NebulaDiscordDashboardEgressV1; publicOrigin: string; gameplayOrigin?: string; webhookName?: string; avatarUrl?: string }; now?: () => string }) {
+    this.tabletop = new SqliteNebulaTabletopRuntime(options.databasePath);
+    this.inputStore = new SqliteNebulaGameInputStore(options.databasePath);
     this.tagStore = new SqliteNebulaTagStore(options.databasePath);
     this.experienceStore = new SqliteNebulaTagExperienceStore(options.databasePath);
     this.gameStore = new SqliteNebulaGameRuntimeStore(options.databasePath);
@@ -92,7 +98,7 @@ export class NebulaArcadeProviderRuntime {
   close() {
     if (this.closed) return;
     this.closed = true;
-    this.dashboardStore?.close(); this.actionStore.close(); this.gameStore.close(); this.experienceStore.close(); this.tagStore.close();
+    this.tabletop.close(); this.inputStore.close(); this.dashboardStore?.close(); this.actionStore.close(); this.gameStore.close(); this.experienceStore.close(); this.tagStore.close();
   }
   private async deliver(delivery: NormalizedChatDeliveryV1) {
     if (this.closed) throw new Error("Nebula Arcade provider runtime is closed");
@@ -100,7 +106,17 @@ export class NebulaArcadeProviderRuntime {
     const channel = this.channels.get(messageKey(message));
     const experience = this.experiences.get(message.tenantId);
     if (!channel || !experience) return;
-    const tag = await experience.ingest(toTagMessage(message, message.text));
+    const tabletopCommand = normalizeCommandText(message.text).split(/\s/)[0]?.toLowerCase()||"", tabletopGame = /^!(bingo|card|claim|phrases)$/.test(tabletopCommand)?"bingo":/^!(quackverse|quackpack|pack|deck|collection)$/.test(tabletopCommand)?"quackverse":undefined;
+    const tabletop = (tabletopGame ? channel.enabledGameIds.includes(tabletopGame) : channel.enabledGameIds.includes("bingo")) ? this.tabletop.execute(message) : undefined;
+    if (tabletop !== undefined) {
+      const gameId = /(?:bingo|card|claim|phrases)/i.test(normalizeCommandText(message.text).split(/\s/)[0]||"") ? "bingo" : "quackverse";
+      let body = tabletop;
+      if (/^!card\s*$/i.test(normalizeCommandText(message.text))) body = `${this.applyTarget(message,delivery.deliveryId,channel,{gameId:"bingo",command:"card",args:[]})} ${tabletop}`;
+      this.inputStore.append(message,[gameId]); await this.reply(message,delivery.deliveryId,"tabletop",body); return;
+    }
+    const tagAlias = /^!(tag|pass|givepass|whosit)(?:\s|$)/i.test(message.text) ? `spmt ${message.text.slice(1)}` : message.text;
+    if (/^!tag\s*$/i.test(message.text)) { await this.reply(message, delivery.deliveryId, "tag-help", "Use !tag @player to tag someone. Join with spmt join."); return; }
+    const tag = await experience.ingest(toTagMessage(message, tagAlias));
     if (tag.kind !== "ignored") {
       if ((tag.kind === "reply" || tag.kind === "executed") && tag.route === "chat") await this.reply(message, delivery.deliveryId, tag.code, tag.message);
       if (tag.kind === "executed" && message.provider === "discord") await this.publishDashboard(message.tenantId, channel, true).catch(() => undefined);
@@ -109,6 +125,7 @@ export class NebulaArcadeProviderRuntime {
     const commandText = normalizeCommandText(message.text);
     const resolution = resolveNebulaCommand(commandText, channel.enabledGameIds);
     if (resolution.kind === "none") {
+      this.inputStore.append(message, resolveNebulaChannelGameIds(this.gameStore.get(message.tenantId), channel.stateChannelId, channel.enabledGameIds));
       this.gameStore.update(message.tenantId, (state) => {
         if (claimNebulaGameCommand(state, `activity:${delivery.deliveryId}`)) recordNebulaGameChatActivity(state, { channel: channel.stateChannelId, userId: actorId(message), username: message.actor.username, displayName: message.actor.displayName, message: message.text, profileGameIds: channel.enabledGameIds }, Date.parse(message.occurredAt));
       });
@@ -117,15 +134,19 @@ export class NebulaArcadeProviderRuntime {
     if (resolution.kind === "choose-game") { await this.reply(message, delivery.deliveryId, "choose-game", resolution.prompt); return; }
     const targets = resolution.targets;
     const replies: string[] = [];
-    for (const target of targets) replies.push(this.applyTarget(message, delivery.deliveryId, channel, target));
+    const accepted: string[] = [];
+    for (const target of targets) { const reply = this.applyTarget(message, delivery.deliveryId, channel, target); replies.push(reply); if (reply.startsWith(`${gameName(target.gameId)} accepted`)) accepted.push(target.gameId); }
+    if (accepted.length) this.inputStore.append(message, accepted);
     await this.reply(message, delivery.deliveryId, "game-action", replies.join(" "));
   }
   private applyTarget(message: NormalizedChatMessageV1, deliveryId: string, channel: NebulaArcadeProviderChannelV1, target: NebulaCommandTargetV1) {
+    if (target.command === "status") { const stats = getNebulaGameStats(this.gameStore.get(message.tenantId), target.gameId); return `${gameName(target.gameId)}: ${stats.players.length} active players. ${stats.leaderboard.slice(0,3).map(player=>`${player.displayName}: ${player.score}`).join(" · ")}`; }
+    if (target.gameId === "petrace" && target.args.length && !["dog","cat","rabbit","turtle","hamster"].includes(target.args[0]!.toLowerCase())) return "Choose a Pet Race pet: dog, cat, rabbit, turtle or hamster.";
     const actionValue = JOIN_COMMANDS.has(target.command) ? "join" : target.command;
     let checked: ReturnType<typeof validateNebulaGameAction>;
-    try { checked = validateNebulaGameAction(target.gameId, actionValue, target.args); }
+    try { checked = validateNebulaGameAction(target.gameId, actionValue, actionValue === "join" ? [] : target.args); }
     catch (error) {
-      if (error instanceof Error && /^Unsupported /.test(error.message)) return `${gameName(target.gameId)} recognizes !${target.command}, but that specialized action is not connected yet.`;
+      if (error instanceof Error && /^Unsupported /.test(error.message)) return `${gameName(target.gameId)}: invalid !${target.command} arguments. ${target.gameId === "pixelbattle" ? "Use !paint <color> <x 0–19> <y 0–14>." : target.gameId === "treasurehunt" ? "Use !dig <A1–H8>." : "Use the game name followed by an action, for example !chickenroyale start."}`;
       throw error;
     }
     const commandId = `provider:${deliveryId}:${target.gameId}:${checked.action}`;

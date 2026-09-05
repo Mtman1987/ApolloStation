@@ -1,3 +1,6 @@
+export * from "./tabletop-runtime.js";
+export * from "./game-inputs.js";
+export * from "./game-widgets.js";
 import { assertAppModuleManifestV1, createAppCatalogRegistrationV1, type AppCatalogRegistrationV1, type AppModuleManifestV1 } from "@spmt/contracts";
 import { SpmtClient } from "@spmt/sdk";
 export * from "./nebula-tag.js";

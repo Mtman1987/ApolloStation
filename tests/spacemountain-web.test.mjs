@@ -504,3 +504,11 @@ async function waitUntil(check, timeout, detail) {
   }
   throw new Error(detail());
 }
+
+
+test("simulation stages and sandboxed Chicken Royale dependency are served through Apollo ingress", async () => withSandbox(async ({base}) => {
+  for (const path of ["/simulation-rooms/arcade", "/simulation-rooms/tag", "/assets/nebula-arcade/widgets/chickenroyale.html"]) {
+    const response=await fetch(base+path);assert.equal(response.status,200,path);assert.equal(response.headers.get("x-frame-options"),null);assert.match(response.headers.get("content-security-policy"),/frame-ancestors 'self'/);
+  }
+  const script=await fetch(base+"/assets/nebula-arcade/widgets/thirdparty/three.min.js");assert.equal(script.status,200);assert.equal(script.headers.get("cross-origin-resource-policy"),"cross-origin");assert.equal(script.headers.get("access-control-allow-origin"),"*");
+}));
