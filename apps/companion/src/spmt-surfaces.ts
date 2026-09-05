@@ -38,22 +38,20 @@ export function buildCompanionSurfaceUrl(payload: unknown, id: string, appId = "
 
 export async function resolveCompanionSurfaceUrl(session: CompanionSessionFetchV1, id: string, appId = "companion", origin = DEFAULT_COMPANION_SPMT_ORIGIN): Promise<string> {
   const base = safeOrigin(origin);
-  const payload = await fetchSessionJson(session, new URL("/api/platform/surfaces", base).toString());
-  return buildCompanionSurfaceUrl(payload, id, appId, base.toString());
+  await fetchSessionJson(session, new URL("/v1/session", base).toString());
+  const surfaces = [
+    { id: "worktray", path: "/?surface=workspace-popout" },
+    { id: "commlink", path: "/apps/commlink?surface=workspace-service" },
+    { id: "overlays", path: "/?view=workspace&surface=workspace-service" },
+  ];
+  return buildCompanionSurfaceUrl({ surfaces }, id, appId, base.toString());
 }
 
 export async function resolveCompanionPersonalOverlayUrl(session: CompanionSessionFetchV1, origin = DEFAULT_COMPANION_SPMT_ORIGIN): Promise<string> {
   const base = safeOrigin(origin);
-  const payload = record(await fetchSessionJson(session, new URL("/api/personal-overlay-launch", base).toString()));
-  const raw = String(payload.url ?? "").trim();
-  if (!raw) return "";
-  try {
-    const url = new URL(raw, base);
-    if (url.protocol !== "https:" || url.username || url.password) return "";
-    return url.toString();
-  } catch {
-    return "";
-  }
+  await fetchSessionJson(session, new URL("/v1/session", base).toString());
+  // The authenticated host follows scene selection and the shared display switch.
+  return new URL("/workspace/overlay", base).toString();
 }
 
 async function fetchSessionJson(session: CompanionSessionFetchV1, url: string): Promise<unknown> {

@@ -75,6 +75,7 @@ export class SpaceMountainShellUi {
     this.overlayBay = new OverlayBayParityController(options.root, this.snapshot);
   }
   mount() { this.installAppFramePresentationContract(); this.base.mount(); this.listenForAppSurfaces(); this.bindShellGeometry(); this.observe(); this.overlayBay.mount(); this.syncAppFrame(); return this; }
+  updateWorkspace(workspace: Record<string, unknown>, tenantOutputs: SpaceMountainShellSnapshotV1["tenantOutputs"]) { if (workspace.revision === this.snapshot.workspace?.revision) return; this.snapshot = { ...this.snapshot, workspace, ...(tenantOutputs ? { tenantOutputs } : {}) }; this.base.updateWorkspace(workspace, tenantOutputs); this.overlayBay.update(this.snapshot); }
   update(snapshot: SpaceMountainShellSnapshotV1) { this.snapshot = snapshot; this.base.update(snapshot); this.overlayBay.update(snapshot); this.applyShellGeometry(); this.syncAppFrame(); this.applyAppSurfaceManifest(); }
   updatePersonalUsage(usage: SpaceMountainShellSnapshotV1["usage"]) { this.base.updatePersonalUsage(usage); if (usage) this.snapshot = { ...this.snapshot, usage }; this.appFrameHost?.sync(); }
   destroy() { this.observer?.disconnect(); this.observer = undefined; if (this.surfaceListener) window.removeEventListener("message", this.surfaceListener); this.surfaceListener = undefined; if (this.geometryListener) { window.removeEventListener("resize", this.geometryListener); window.visualViewport?.removeEventListener("resize", this.geometryListener); } this.geometryListener = undefined; this.stopAppFrame(); this.base.destroy(); }
@@ -128,6 +129,13 @@ export class SpaceMountainShellUi {
     const main = root.querySelector<HTMLElement>(".spmt-space-main");
     const dock = root.querySelector<HTMLElement>(".spmt-rocket-dock");
     if (!header || !main || !dock) return;
+    if (root.dataset.workspaceSurface === "service") {
+      for (const edge of ["top", "right", "bottom", "left"]) main.style.setProperty(edge, "0", "important");
+      main.style.setProperty("position", "fixed", "important");
+      main.style.setProperty("padding", "12px", "important");
+      main.style.setProperty("overflow", "auto", "important");
+      return;
+    }
     const headerRect = header.getBoundingClientRect();
     const mobile = window.matchMedia("(max-width:900px)").matches;
     const gap = mobile ? 10 : 14;

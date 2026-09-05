@@ -62,6 +62,8 @@ export interface WorkspaceProfileV1 {
   activeOverlaySceneId?: string;
   activePublicOverlaySceneId?: string | null;
   activePersonalOverlaySceneId?: string | null;
+  /** Shared display switch for the private workspace overlay on apps and devices. */
+  personalOverlayEnabled?: boolean;
   ttsSubscriptionIds: string[];
   appThemes: Record<string, string>;
   commlink?: CommlinkWorkspaceV1;
@@ -580,6 +582,7 @@ function validateCommlinkWorkspace(workspace: CommlinkWorkspaceV1) {
 }
 
 function validateOverlayWorkspace(workspace: WorkspaceProfileV1) {
+  if (workspace.personalOverlayEnabled !== undefined && typeof workspace.personalOverlayEnabled !== "boolean") throw new AuthorityValidationError("Personal overlay enabled must be a boolean");
   const scenes = workspace.overlayScenes ?? [];
   if (!Array.isArray(scenes) || scenes.length > 32) throw new AuthorityValidationError("Overlay Bay may contain at most 32 scenes");
   if (JSON.stringify(scenes).length > 2_000_000) throw new AuthorityValidationError("Overlay Bay scene data is too large");

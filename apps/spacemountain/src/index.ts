@@ -50,7 +50,7 @@ export interface SpaceMountainShellSnapshotV1 {
   session?: Record<string, unknown>;
   providerLinks: Array<Record<string, unknown>>;
   workspace?: Record<string, unknown>;
-  tenantOutputs?: { schemaVersion: 1; tenantId: string; editorUrl: string; public: { name: "public"; sceneId: string | null; url: string }; personal: { name: "personal"; sceneId: string | null; url: string } };
+  tenantOutputs?: { schemaVersion: 1; tenantId: string; revision?: number; editorUrl: string; public: { name: "public"; sceneId: string | null; url: string }; personal: { name: "personal"; sceneId: string | null; enabled?: boolean; url: string } };
   xp?: { tenantId: string; userId: string; balance: number };
   apps: SpaceMountainAppCardV1[];
   entitlements: Array<Record<string, unknown>>;

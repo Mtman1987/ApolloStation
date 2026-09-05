@@ -95,7 +95,7 @@ test("SPMT exposes stable Public and signed-in Personal tenant overlay outputs",
       tenantId: "tenant-a",
       editorUrl: "https://spmt.example/?view=workspace",
       public: { name: "public", sceneId: "public-scene", url: "https://spmt.example/t/tenant-a/public" },
-      personal: { name: "personal", sceneId: "personal-scene", url: "https://spmt.example/t/tenant-a/personal" },
+      personal: { name: "personal", sceneId: "personal-scene", enabled: true, url: "https://spmt.example/t/tenant-a/personal" },
     });
     const publicOutput = await fetch(`${base}/t/tenant-a/public`);
     assert.equal(publicOutput.status, 200);
@@ -105,6 +105,14 @@ test("SPMT exposes stable Public and signed-in Personal tenant overlay outputs",
     const personalOutput = await fetch(`${base}/t/tenant-a/personal`, { headers: { authorization: "Bearer owner-token" } });
     assert.equal(personalOutput.status, 200);
     assert.match(await personalOutput.text(), /PERSONAL OUTPUT/);
+    workspace.personalOverlayEnabled = false;
+    const disabled = await fetch(`${base}/t/tenant-a/personal`, { headers: { authorization: "Bearer owner-token" } });
+    assert.doesNotMatch(await disabled.text(), /PERSONAL OUTPUT/);
+    assert.match(await (await fetch(`${base}/t/tenant-a/public`)).text(), /PUBLIC OUTPUT/);
+    workspace.personalOverlayEnabled = true;
+    workspace.activePersonalOverlaySceneId = "public-scene";
+    const switched = await fetch(`${base}/t/tenant-a/personal`, { headers: { authorization: "Bearer owner-token" } });
+    assert.match(await switched.text(), /PUBLIC OUTPUT/);
     assert.equal(authorized.every((item) => item.scope === "workspace:read" && item.tenantId === "tenant-a"), true);
   } finally { await gateway.close(); }
 });

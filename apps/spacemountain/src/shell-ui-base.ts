@@ -8,7 +8,7 @@ import { POLISHED_SPACE_MOUNTAIN_CSS } from "./product-shell-css.js";
 import { THEMED_SURFACE_CSS } from "./themed-surface-css.js";
 
 const VISUAL_FINISH_CSS = `.spmt-header-action-icon{display:block;width:28px;height:28px;object-fit:contain;filter:drop-shadow(0 0 8px color-mix(in srgb,var(--accent2) 55%,transparent))}.spmt-core-nav-icon{width:30px;height:30px;display:grid;place-items:center;flex:0 0 auto}.spmt-core-nav-icon img{display:block;width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 0 8px color-mix(in srgb,var(--accent2) 55%,transparent))}.spmt-core-nav-icon .spmt-svg{width:24px;height:24px;color:var(--accent2);filter:drop-shadow(0 0 7px color-mix(in srgb,var(--accent2) 45%,transparent))}.spmt-rocket-dock .spmt-core-nav-icon{width:27px;height:27px}.spmt-header-actions .spmt-core-nav-icon{width:28px;height:28px}.spmt-account-summary{display:flex;align-items:center;gap:8px;padding:0 3px;cursor:pointer;border-radius:12px}.spmt-account-summary:hover,.spmt-account-summary:focus-visible{background:color-mix(in srgb,var(--accent) 12%,transparent);outline:1px solid var(--theme-border)}.spmt-space-root[data-spmt-view="home"] .spmt-hero-logo-large{width:min(820px,100%)!important;height:clamp(180px,48cqh,390px)!important;max-height:66%!important;margin:0!important;object-fit:contain!important;object-position:left center!important;filter:drop-shadow(0 0 26px color-mix(in srgb,var(--accent2) 36%,transparent))}.spmt-theme-native{position:absolute!important;width:1px!important;height:1px!important;overflow:hidden!important;clip:rect(0 0 0 0)!important;white-space:nowrap!important}.spmt-theme-picker{grid-column:1/-1;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.spmt-theme-picker button{min-height:104px;display:grid;place-items:center;gap:4px;padding:10px;border:1px solid var(--border);border-radius:16px;background:linear-gradient(145deg,color-mix(in srgb,var(--accent) 10%,#050713),#050713);color:white}.spmt-theme-picker button:hover,.spmt-theme-picker button[aria-pressed="true"]{border-color:var(--accent2);box-shadow:0 0 24px color-mix(in srgb,var(--accent2) 30%,transparent);transform:translateY(-2px)}.spmt-theme-picker img{width:100%;height:58px;object-fit:contain}.spmt-theme-picker span{font-size:9px;font-weight:900;letter-spacing:.12em;text-transform:uppercase}@media(max-width:1040px){.spmt-account-summary .spmt-account-copy{display:none}}@media(max-width:800px){.spmt-theme-picker{grid-template-columns:repeat(2,minmax(0,1fr))}}`;
-const PERSONAL_OVERLAY_CSS = `.spmt-shell-personal-overlay{position:fixed;inset:0;width:100%;height:100%;border:0;z-index:14;pointer-events:none;background:transparent;color-scheme:normal}.spmt-shell-personal-overlay[hidden]{display:none}.spmt-workspace-surfaces button.active{color:#bbf7d0;border-color:color-mix(in srgb,#22c55e 55%,transparent)}.spmt-simulation-rooms{height:100%;overflow:auto;padding:14px;background:rgba(4,6,14,.96)}.spmt-simulation-rooms>header{position:sticky;top:0;z-index:2;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px;border:1px solid var(--border);border-radius:14px;background:rgba(8,10,20,.96)}.spmt-simulation-rooms h2,.spmt-simulation-rooms p{margin:0}.spmt-simulation-rooms p{color:#a8aab7;font-size:11px}.spmt-simulation-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:9px;margin-top:10px}.spmt-simulation-event{display:grid;gap:6px;padding:11px;border:1px solid var(--border);border-radius:14px;background:rgba(255,255,255,.035)}.spmt-simulation-event>span{color:var(--accent2);font-size:9px;font-weight:900;letter-spacing:.12em;text-transform:uppercase}.spmt-simulation-event small{color:#858795}.spmt-simulation-empty{padding:24px;border:1px dashed var(--border);border-radius:14px;color:#858795;text-align:center}`;
+const PERSONAL_OVERLAY_CSS = `.spmt-workspace-tray>footer{flex-wrap:wrap}.spmt-workspace-tray .spmt-workspace-surfaces{display:flex!important;align-items:center;gap:6px;flex-wrap:wrap;min-width:0}.spmt-space-root:not([data-workspace-surface="popout"]) .spmt-workspace-tray.maximized .spmt-workspace-frames{bottom:calc(var(--workspace-footer-height,64px) + 24px)!important}.spmt-space-root:not([data-workspace-surface="popout"]) .spmt-workspace-frames{max-height:calc(100dvh - var(--spmt-shell-top-inset,124px) - var(--workspace-footer-height,64px) - 30px)}@media(max-width:900px){.spmt-workspace-tray .spmt-workspace-surfaces{flex:1 1 100%;order:3}.spmt-workspace-surfaces button{min-height:36px;font-size:11px}}.spmt-overlay-selector{display:flex;align-items:center;gap:6px;font-size:11px;white-space:nowrap}.spmt-overlay-selector select{max-width:180px;min-height:32px;background:var(--panel);color:var(--spmt-ink,#fff);border:1px solid var(--border);border-radius:8px}.spmt-device-downloads a{padding:12px 16px;border-radius:12px;text-decoration:none;font-weight:800}[data-workspace-surface="popout"]>.spmt-space-shell{display:none}[data-workspace-surface="popout"] .spmt-workspace-tray{inset:0!important;width:auto!important;border-radius:0;display:flex;flex-direction:column}[data-workspace-surface="popout"] .spmt-workspace-frames{position:relative!important;inset:auto!important;flex:1;min-height:0;height:auto!important}[data-workspace-surface="popout"] .spmt-workspace-tray>footer{flex-wrap:wrap;flex:none}[data-workspace-surface="popout"] [data-workspace-close],[data-workspace-surface="popout"] [data-workspace-minimize]{display:none}[data-workspace-surface="service"] .spmt-shell-header-stack,[data-workspace-surface="service"] .spmt-rocket-dock,[data-workspace-surface="service"] .spmt-workspace-tray{display:none!important}[data-workspace-surface="service"] .spmt-space-main{inset:0!important;padding:12px!important;overflow:auto!important}[data-workspace-surface="service"] .cosmo-page{height:calc(100dvh - 24px)!important;min-height:0!important}[data-workspace-surface="service"]:not([data-workspace-tool="settings"]) [data-workspace-settings]{display:none}[data-workspace-surface="service"][data-workspace-tool="settings"] [data-overlay-bay]{display:none!important}[data-workspace-surface="service"] .spmt-page-title{display:none}[data-workspace-service-panel]{height:100%}[data-workspace-service-panel] iframe{width:100%;height:100%;border:0}.spmt-shell-personal-overlay{position:fixed;inset:0;width:100%;height:100%;border:0;z-index:875;clip-path:inset(0 0 var(--workspace-overlay-bottom,0px) 0);pointer-events:none;background:transparent;color-scheme:normal}.spmt-shell-personal-overlay[hidden]{display:none}.spmt-workspace-surfaces button.active{color:#bbf7d0;border-color:color-mix(in srgb,#22c55e 55%,transparent)}.spmt-simulation-rooms{height:100%;overflow:auto;padding:14px;background:rgba(4,6,14,.96)}.spmt-simulation-rooms>header{position:sticky;top:0;z-index:2;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px;border:1px solid var(--border);border-radius:14px;background:rgba(8,10,20,.96)}.spmt-simulation-rooms h2,.spmt-simulation-rooms p{margin:0}.spmt-simulation-rooms p{color:#a8aab7;font-size:11px}.spmt-simulation-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:9px;margin-top:10px}.spmt-simulation-event{display:grid;gap:6px;padding:11px;border:1px solid var(--border);border-radius:14px;background:rgba(255,255,255,.035)}.spmt-simulation-event>span{color:var(--accent2);font-size:9px;font-weight:900;letter-spacing:.12em;text-transform:uppercase}.spmt-simulation-event small{color:#858795}.spmt-simulation-empty{padding:24px;border:1px dashed var(--border);border-radius:14px;color:#858795;text-align:center}`;
 
 export type SpaceMountainViewV1 = "home" | "apps" | "workspace" | "settings" | "account";
 type CommlinkFilterV1 = "all" | "chat" | "events" | "streamweaver" | "queued";
@@ -51,6 +51,9 @@ const NAV: Array<{ id: SpaceMountainViewV1; label: string; description: string; 
   { id: "workspace", label: "Workspace", description: "Canonical overlays, scenes, appearance, and three persistent slots.", icon: "layout" },
   { id: "settings", label: "Settings", description: "Configure ecosystem apps and advanced behavior.", icon: "settings" },
 ];
+// Runtime registrations remain intact; only user-facing products belong in Shipyard.
+const SHARED_SERVICES = new Set(["commlink", "chat-gateway", "overlay-bay", "mission-control", "companion", "mountainview", "spacemountain", "spacemountain-web", "spmt-service", "reference-app"]);
+export function isListedApplication(app: { appId: string }) { return !SHARED_SERVICES.has(app.appId); }
 const SHELL_APP_RENDERERS = new Set(["commlink", "stellar-core", "mission-control"]);
 interface AppDockItemV1 { label: string; description: string; icon: IconName; target: string; }
 const APP_DOCK_NAVIGATION: Readonly<Record<string, readonly AppDockItemV1[]>> = {
@@ -62,7 +65,7 @@ const APP_DOCK_NAVIGATION: Readonly<Record<string, readonly AppDockItemV1[]>> = 
   "stellar-core": [
     { label: "Stella", description: "Talk with the ecosystem assistant.", icon: "spark", target: "[data-stella-form]" },
     { label: "Models", description: "Owner-visible inference platform and model controls.", icon: "grid", target: ".spmt-command-grid" },
-    { label: "Context", description: "Authorized context and capabilities.", icon: "layout", target: ".spmt-context-grid" },
+    { label: "Mission Control", description: "Operations and Coder.", icon: "pulse", target: "[data-mission-control]" },
   ],
   "mission-control": [
     { label: "Evidence", description: "Recent scoped operational evidence.", icon: "pulse", target: ".spmt-account-section" },
@@ -100,8 +103,13 @@ export class SpaceMountainShellUi {
   private stopLayout: (() => void) | undefined;
   private clockTimer: number | undefined;
   private workspaceTray: HTMLElement | undefined;
+  private footerResizeObserver: ResizeObserver | undefined;
   private personalOverlay: HTMLIFrameElement | undefined;
   private personalOverlayVisible = true;
+  private workspaceService: "commlink" | "overlay-bay" | "settings" | undefined;
+  private readonly workspacePopout = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("surface") === "workspace-popout";
+  private readonly serviceEmbed = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("surface") === "workspace-service";
+  private overlaySaving = false;
   private workspaceOpen = false;
   private workspaceExpanded = false;
   private workspaceMaximized = false;
@@ -125,16 +133,26 @@ export class SpaceMountainShellUi {
       const requested = new URLSearchParams(window.location.search).get("view");
       if (requested === "account" || NAV.some((item) => item.id === requested)) this.view = requested as SpaceMountainViewV1;
       if (new URLSearchParams(window.location.search).get("surface") === "simulation") { this.workspaceOpen = true; this.workspaceExpanded = true; this.simulationRoomsOpen = true; }
-      const requestedApp = new URLSearchParams(window.location.search).get("app");
+      const requestedAppRaw = new URLSearchParams(window.location.search).get("app");
+      const requestedApp = requestedAppRaw === "mission-control" ? "stellar-core" : requestedAppRaw;
       if (requestedApp && this.shellApp(requestedApp)) this.activeAppId = requestedApp;
       const matchedApp = window.location.pathname.match(/^\/apps\/([^/]+)$/)?.[1];
       if (!this.activeAppId && matchedApp && SHELL_APP_RENDERERS.has(decodeURIComponent(matchedApp))) this.activeAppId = decodeURIComponent(matchedApp);
-      try { this.personalOverlayVisible = window.localStorage.getItem("spmt:personal-overlay-visible") !== "off"; } catch {}
+      if (this.activeAppId === "mission-control") this.activeAppId = "stellar-core";
+      if (this.workspacePopout) {
+        const query = new URLSearchParams(window.location.search);
+        this.workspaceOpen = true; this.workspaceExpanded = true; this.workspaceMaximized = true;
+        this.workspaceTarget = Math.max(0, Math.min(2, Number(query.get("slot")) || 0));
+        const service = query.get("tool");
+        if (service === "commlink" || service === "overlay-bay" || service === "settings") this.workspaceService = service;
+        if (service === "simulation") this.simulationRoomsOpen = true;
+      }
     }
   }
 
   mount() { this.options.root.classList.add("spmt-space-root", "spmt-product-surface"); this.render(); if (this.simulationRoomsOpen) this.openSimulationRooms(new URLSearchParams(window.location.search).get("roomId") ?? undefined); return this; }
   openSimulationRooms(roomId?: string) {
+    this.workspaceService = undefined;
     const pinned = workspaceDockSlots(this.snapshot.workspace).findIndex((slot) => {
       const target = simulationRoomSlot(slot); return target !== undefined && (roomId ? target.roomId === roomId : !target.roomId);
     });
@@ -144,8 +162,13 @@ export class SpaceMountainShellUi {
     this.syncWorkspaceTray();
   }
   update(snapshot: SpaceMountainShellSnapshotV1) { if (snapshot.tenantId !== this.snapshot.tenantId) { this.commlinkLocal.clear(); this.commlinkConversationId = ""; this.simulationRoomsUi?.destroy(); this.simulationRoomsUi = undefined; } this.snapshot = snapshot; this.commlinkDraft = undefined; if (this.activeAppId && !this.shellApp(this.activeAppId)) this.activeAppId = undefined; this.render(); }
+  updateWorkspace(workspace: Record<string, unknown>, tenantOutputs: SpaceMountainShellSnapshotV1["tenantOutputs"]) {
+    this.snapshot = { ...this.snapshot, workspace, ...(tenantOutputs ? { tenantOutputs } : {}) };
+    this.personalOverlayVisible = recordBoolean(workspace, "personalOverlayEnabled", true);
+    this.syncPersonalOverlay(); this.syncWorkspaceTray();
+  }
   updatePersonalUsage(usage: SpaceMountainShellSnapshotV1["usage"]) { this.snapshot = { ...this.snapshot, ...(usage ? { usage } : {}) }; if (!this.activeAppId && this.view === "account") this.render(); }
-  destroy() { this.simulationRoomsUi?.destroy(); this.simulationRoomsUi = undefined; this.stopLayout?.(); this.stopLayout = undefined; if (this.clockTimer !== undefined) window.clearInterval(this.clockTimer); this.clockTimer = undefined; this.options.root.replaceChildren(); this.workspaceTray = undefined; this.personalOverlay = undefined; }
+  destroy() { this.footerResizeObserver?.disconnect(); this.simulationRoomsUi?.destroy(); this.simulationRoomsUi = undefined; this.stopLayout?.(); this.stopLayout = undefined; if (this.clockTimer !== undefined) window.clearInterval(this.clockTimer); this.clockTimer = undefined; this.options.root.replaceChildren(); this.workspaceTray = undefined; this.personalOverlay = undefined; }
 
   private bindLayout() {
     this.stopLayout?.();
@@ -163,6 +186,9 @@ export class SpaceMountainShellUi {
   }
 
   private openApp(app: SpaceMountainAppCardV1) {
+    if (app.appId === "mission-control") { const stellar = this.shellApp("stellar-core"); if (stellar) { this.openApp(stellar); const panel = this.options.root.querySelector<HTMLDetailsElement>("[data-mission-control]"); if (panel) panel.open = true; } return; }
+    if (app.appId === "commlink" && !this.serviceEmbed) { this.openWorkspaceService("commlink"); return; }
+    if (app.appId === "companion" || app.appId === "mountainview") { window.location.assign(`/downloads/${app.appId}`); return; }
     if (!this.shellApp(app.appId)) return this.options.onLaunchApp?.(app);
     this.activeAppId = app.appId;
     if (typeof window !== "undefined") {
@@ -177,6 +203,9 @@ export class SpaceMountainShellUi {
 
   private render() {
     const root = this.options.root;
+    root.dataset.workspaceTool = new URLSearchParams(window.location.search).get("tool") ?? "";
+    root.dataset.workspaceSurface = this.workspacePopout ? "popout" : this.serviceEmbed ? "service" : "shell";
+    this.personalOverlayVisible = recordBoolean(this.snapshot.workspace, "personalOverlayEnabled", true);
     this.captureCommlink();
     const appearance = recordObject(this.snapshot.workspace, "appearance");
     const accent = recordText(appearance, ["accent"]);
@@ -218,6 +247,7 @@ export class SpaceMountainShellUi {
     if (!shell) { shell = document.createElement("div"); shell.className = "spmt-space-shell"; root.append(shell); }
     shell.innerHTML = `${this.header()}${this.dock()}<main class="spmt-space-main">${this.body()}</main>`;
     this.restoreCommlink();
+    if (new URLSearchParams(window.location.search).get("panel") === "mission-control") { const panel = root.querySelector<HTMLDetailsElement>("[data-mission-control]"); if (panel) panel.open = true; }
     if (!this.personalOverlay) { this.personalOverlay = this.createPersonalOverlay(); root.append(this.personalOverlay); }
     if (!this.workspaceTray) { this.workspaceTray = this.createWorkspaceTray(); root.append(this.workspaceTray); }
     this.syncPersonalOverlay();
@@ -241,7 +271,7 @@ export class SpaceMountainShellUi {
     root.querySelector<HTMLElement>("[data-commlink-delete-space]")?.addEventListener("click", () => this.deleteChatSpace());
     root.querySelector<HTMLElement>("[data-commlink-delete-desk]")?.addEventListener("click", () => this.deleteDesk());
     root.querySelector<HTMLElement>("[data-commlink-compact]")?.addEventListener("click", () => { const state = this.commlinkWorkspace(); this.updateCommlink({ compact: !state.compact }); });
-    root.querySelector<HTMLElement>("[data-commlink-popout]")?.addEventListener("click", () => window.open(`/?app=commlink`, "spmt-commlink", "popup,width=1440,height=920"));
+    root.querySelector<HTMLElement>("[data-commlink-popout]")?.addEventListener("click", () => window.open(`/?surface=workspace-popout&tool=commlink`, "spmt-commlink", "popup,width=1440,height=920"));
     root.querySelectorAll<HTMLButtonElement>("[data-commlink-new-mail]").forEach((node) => node.addEventListener("click", () => root.querySelector<HTMLDialogElement>("[data-commlink-mail-dialog]")?.showModal()));
     root.querySelector<HTMLButtonElement>("[data-commlink-mail-cancel]")?.addEventListener("click", () => root.querySelector<HTMLDialogElement>("[data-commlink-mail-dialog]")?.close());
     root.querySelector<HTMLButtonElement>("[data-commlink-read-all]")?.addEventListener("click", () => this.options.onMarkAllCommlinkRead?.());
@@ -416,12 +446,38 @@ export class SpaceMountainShellUi {
   private syncPersonalOverlay() {
     const frame = this.personalOverlay;
     if (!frame) return;
-    const url = this.snapshot.tenantOutputs?.personal.url ?? "";
+    const rawUrl = this.snapshot.tenantOutputs?.personal.url ?? "";
+    const url = rawUrl && !this.serviceEmbed ? new URL(new URL(rawUrl, window.location.origin).pathname, window.location.origin).toString() : "";
+    const sceneId = String(this.snapshot.workspace?.activePersonalOverlaySceneId ?? this.snapshot.tenantOutputs?.personal.sceneId ?? "");
+    if (url && frame.dataset.sceneRevision !== String(this.snapshot.workspace?.revision ?? "")) {
+      frame.src = url; frame.dataset.sceneRevision = String(this.snapshot.workspace?.revision ?? "");
+    }
     if (url && frame.src !== url) frame.src = url;
     if (!url && frame.getAttribute("src")) frame.removeAttribute("src");
-    frame.hidden = !this.personalOverlayVisible || !url;
+    frame.hidden = this.serviceEmbed || !this.personalOverlayVisible || !url;
+    const footer = this.workspaceOpen ? this.workspaceTray?.querySelector("footer")?.getBoundingClientRect() : undefined;
+    this.workspaceTray?.style.setProperty("--workspace-footer-height", `${footer?.height ?? 64}px`);
+    frame.style.setProperty("--workspace-overlay-bottom", footer?.height ? `${Math.max(0, window.innerHeight - footer.top)}px` : "0px");
+    const select = this.workspaceTray?.querySelector<HTMLSelectElement>("[data-personal-overlay-scene]");
+    if (select) {
+      const scenes = Array.isArray(this.snapshot.workspace?.overlayScenes) ? this.snapshot.workspace.overlayScenes : [];
+      select.innerHTML = scenes.map((scene: Record<string, unknown>) => selectOption(String(scene.id), sceneId, String(scene.name ?? "Overlay group"))).join("") || `<option value="">No saved overlay groups</option>`;
+      select.disabled = this.overlaySaving || !scenes.length || !this.options.onSaveWorkspace || !sessionHasScope(this.snapshot.session, "workspace:write");
+    }
     const toggle = this.workspaceTray?.querySelector<HTMLElement>("[data-personal-overlay-toggle]");
-    if (toggle) { toggle.textContent = `Personal ${this.personalOverlayVisible ? "On" : "Off"}`; toggle.classList.toggle("active", this.personalOverlayVisible); }
+    if (toggle) { toggle.textContent = `Overlay ${this.personalOverlayVisible ? "On" : "Off"}`; toggle.setAttribute("aria-pressed", String(this.personalOverlayVisible)); (toggle as HTMLButtonElement).disabled = this.overlaySaving || !this.options.onSaveWorkspace || !sessionHasScope(this.snapshot.session, "workspace:write"); toggle.classList.toggle("active", this.personalOverlayVisible); }
+  }
+
+  private async savePersonalOverlay(patch: Record<string, unknown>) {
+    if (this.overlaySaving || !this.options.onSaveWorkspace || !sessionHasScope(this.snapshot.session, "workspace:write")) return;
+    this.overlaySaving = true; this.syncPersonalOverlay();
+    try {
+      await this.options.onSaveWorkspace(Number(this.snapshot.workspace?.revision), patch);
+    } finally { this.overlaySaving = false; this.syncPersonalOverlay(); }
+  }
+
+  private openWorkspaceService(service: "commlink" | "overlay-bay" | "settings") {
+    this.workspaceService = service; this.simulationRoomsOpen = false; this.workspaceOpen = true; this.workspaceExpanded = true; this.workspaceClickThrough = false; this.syncWorkspaceTray();
   }
 
   private copyTenantOutput(output: "public" | "personal") {
@@ -435,23 +491,27 @@ export class SpaceMountainShellUi {
     const tray = document.createElement("section");
     tray.className = "spmt-workspace-tray";
     tray.setAttribute("aria-label", "SPMT workspace tray");
-    tray.innerHTML = `<div class="spmt-workspace-frames" aria-live="polite">${[0, 1, 2].map((index) => `<div data-workspace-frame="${index}"><iframe title="Workspace slot ${index + 1}" allow="autoplay; microphone; camera; fullscreen; clipboard-write"></iframe><p>This workspace slot is empty. Assign an installed app in Workspace.</p></div>`).join("")}<section class="spmt-simulation-rooms" data-simulation-rooms hidden></section></div><footer><strong>${icon("layout")}<span>Workspace</span></strong><nav aria-label="Persistent app slots">${[0, 1, 2].map((index) => `<button type="button" data-workspace-slot="${index}"><span>Slot ${index + 1}</span><small>Empty</small></button>`).join("")}</nav><div class="spmt-workspace-surfaces"><button type="button" data-simulation-rooms-toggle>Simulation Rooms</button><button type="button" data-workspace-surface="workspace">Overlay Bay</button><button type="button" data-personal-overlay-toggle>Personal On</button><button type="button" data-copy-tenant-output="public">Copy Public</button><button type="button" data-copy-tenant-output="personal">Copy Personal</button><button type="button" data-workspace-surface="settings">Settings</button></div><div class="spmt-workspace-controls"><button type="button" data-workspace-minimize aria-label="Minimize workspace frame" title="Minimize">−</button><button type="button" data-workspace-maximize aria-label="Maximize workspace frame" title="Maximize">□</button><button type="button" data-workspace-popout aria-label="Pop out active workspace slot" title="Pop out">↗</button><button type="button" data-workspace-clickthrough aria-label="Toggle click-through" title="Click-through">◎</button><label title="Workspace opacity"><span>Opacity</span><input type="range" min="35" max="100" value="92" data-workspace-opacity><output>92%</output></label><button type="button" data-workspace-close aria-label="Close workspace footer" title="Close">×</button></div></footer>`;
-    tray.querySelectorAll<HTMLElement>("[data-workspace-slot]").forEach((node) => node.addEventListener("click", () => { this.workspaceTarget = Number(node.dataset.workspaceSlot); if (simulationRoomSlot(workspaceDockSlots(this.snapshot.workspace)[this.workspaceTarget])) this.workspaceClickThrough = false; this.simulationRoomsOpen = false; this.workspaceOpen = true; this.workspaceExpanded = true; this.syncWorkspaceTray(); }));
+    tray.innerHTML = `<div class="spmt-workspace-frames" aria-live="polite">${[0, 1, 2].map((index) => `<div data-workspace-frame="${index}"><iframe title="Workspace slot ${index + 1}" allow="autoplay; microphone; camera; fullscreen; clipboard-write"></iframe><p>This workspace slot is empty. Assign an installed app in Workspace.</p></div>`).join("")}${["commlink", "overlay-bay", "settings"].map((tool) => `<div data-workspace-service-panel="${tool}" hidden><iframe title="${tool === "commlink" ? "Commlink" : tool === "overlay-bay" ? "Overlay Bay" : "Workspace settings"}" allow="autoplay; microphone; camera; fullscreen; clipboard-write"></iframe></div>`).join("")}<section class="spmt-simulation-rooms" data-simulation-rooms hidden></section></div><footer><strong>${icon("layout")}<span>Workspace</span></strong><nav aria-label="Persistent app slots">${[0, 1, 2].map((index) => `<button type="button" data-workspace-slot="${index}"><span>Slot ${index + 1}</span><small>Empty</small></button>`).join("")}</nav><div class="spmt-workspace-surfaces"><button type="button" data-simulation-rooms-toggle>Simulation Rooms</button><button type="button" data-workspace-tool="commlink">Commlink</button><button type="button" data-workspace-tool="overlay-bay">Overlay Bay</button><label class="spmt-overlay-selector">Overlay group<select data-personal-overlay-scene aria-label="Personal overlay group"></select></label><button type="button" data-personal-overlay-toggle aria-pressed="true">Overlay On</button><button type="button" data-copy-tenant-output="public">Copy Public</button><button type="button" data-copy-tenant-output="personal">Copy Personal</button><button type="button" data-workspace-tool="settings">Settings</button></div><div class="spmt-workspace-controls"><button type="button" data-workspace-minimize aria-label="Minimize workspace frame" title="Minimize">−</button><button type="button" data-workspace-maximize aria-label="Maximize workspace frame" title="Maximize">□</button><button type="button" data-workspace-popout aria-label="Pop out workspace with overlays" title="Pop out">↗</button><button type="button" data-workspace-clickthrough aria-label="Toggle click-through" title="Click-through">◎</button><label title="Workspace opacity"><span>Opacity</span><input type="range" min="35" max="100" value="92" data-workspace-opacity><output>92%</output></label><button type="button" data-workspace-close aria-label="Close workspace footer" title="Close">×</button></div></footer>`;
+    tray.querySelectorAll<HTMLElement>("[data-workspace-slot]").forEach((node) => node.addEventListener("click", () => { this.workspaceService = undefined; this.workspaceTarget = Number(node.dataset.workspaceSlot); if (simulationRoomSlot(workspaceDockSlots(this.snapshot.workspace)[this.workspaceTarget])) this.workspaceClickThrough = false; this.simulationRoomsOpen = false; this.workspaceOpen = true; this.workspaceExpanded = true; this.syncWorkspaceTray(); }));
     tray.querySelector<HTMLElement>("[data-simulation-rooms-toggle]")?.addEventListener("click", () => this.openSimulationRooms());
     tray.querySelectorAll<HTMLElement>("[data-workspace-surface]").forEach((node) => node.addEventListener("click", () => { this.workspaceExpanded = false; this.navigate(node.dataset.workspaceSurface as SpaceMountainViewV1); }));
-    tray.querySelector<HTMLElement>("[data-personal-overlay-toggle]")?.addEventListener("click", () => { this.personalOverlayVisible = !this.personalOverlayVisible; try { window.localStorage.setItem("spmt:personal-overlay-visible", this.personalOverlayVisible ? "on" : "off"); } catch {} this.syncPersonalOverlay(); });
+    tray.querySelectorAll<HTMLElement>("[data-workspace-tool]").forEach((node) => node.addEventListener("click", () => this.openWorkspaceService(node.dataset.workspaceTool as "commlink" | "overlay-bay" | "settings")));
+    tray.querySelector<HTMLSelectElement>("[data-personal-overlay-scene]")?.addEventListener("change", (event) => void this.savePersonalOverlay({ activePersonalOverlaySceneId: (event.currentTarget as HTMLSelectElement).value }));
+    tray.querySelector<HTMLElement>("[data-personal-overlay-toggle]")?.addEventListener("click", () => void this.savePersonalOverlay({ personalOverlayEnabled: !this.personalOverlayVisible }));
     tray.querySelectorAll<HTMLElement>("[data-copy-tenant-output]").forEach((node) => node.addEventListener("click", () => this.copyTenantOutput(node.dataset.copyTenantOutput === "personal" ? "personal" : "public")));
     tray.querySelector<HTMLElement>("[data-workspace-minimize]")?.addEventListener("click", () => { this.workspaceExpanded = false; this.workspaceMaximized = false; this.syncWorkspaceTray(); });
     tray.querySelector<HTMLElement>("[data-workspace-maximize]")?.addEventListener("click", () => { this.workspaceExpanded = true; this.workspaceMaximized = !this.workspaceMaximized; this.syncWorkspaceTray(); });
     tray.querySelector<HTMLElement>("[data-workspace-popout]")?.addEventListener("click", () => {
-      if (this.simulationRoomsOpen) return;
-      const frame = tray.querySelector<HTMLIFrameElement>(`[data-workspace-frame="${this.workspaceTarget}"] iframe`);
-      if (frame?.src) window.open(frame.src, `spmt-workspace-${this.workspaceTarget}`, "popup,width=1440,height=920");
+      const query = new URLSearchParams({ surface: "workspace-popout", slot: String(this.workspaceTarget) });
+      if (this.simulationRoomsOpen) query.set("tool", "simulation");
+      else if (this.workspaceService) query.set("tool", this.workspaceService);
+      window.open(`/?${query}`, "spmt-workspace", "popup,width=1440,height=920");
     });
     tray.querySelector<HTMLElement>("[data-workspace-clickthrough]")?.addEventListener("click", () => { this.workspaceClickThrough = !this.workspaceClickThrough; this.syncWorkspaceTray(); });
     tray.querySelector<HTMLInputElement>("[data-workspace-opacity]")?.addEventListener("input", (event) => { this.workspaceOpacity = Number((event.currentTarget as HTMLInputElement).value); this.syncWorkspaceTray(); });
     tray.querySelector<HTMLElement>("[data-workspace-close]")?.addEventListener("click", () => { this.workspaceOpen = false; this.workspaceExpanded = false; this.workspaceMaximized = false; this.syncWorkspaceTray(); });
     tray.querySelectorAll<HTMLIFrameElement>("[data-workspace-frame] iframe").forEach((frame) => frame.addEventListener("load", () => this.syncWorkspaceRoomVisibility(frame)));
+    if (typeof ResizeObserver !== "undefined") { this.footerResizeObserver = new ResizeObserver(() => this.syncPersonalOverlay()); this.footerResizeObserver.observe(tray.querySelector("footer")!); }
     return tray;
   }
 
@@ -464,7 +524,9 @@ export class SpaceMountainShellUi {
     tray.classList.toggle("expanded", this.workspaceExpanded);
     tray.classList.toggle("maximized", this.workspaceMaximized);
     tray.classList.toggle("click-through", this.workspaceClickThrough);
-    tray.hidden = !this.workspaceOpen;
+    tray.hidden = this.serviceEmbed || !this.workspaceOpen;
+    // Shared service documents must never mount another copy of the dock.
+    if (this.serviceEmbed) return;
     tray.style.setProperty("--workspace-opacity", String(this.workspaceOpacity / 100));
     const opacity = tray.querySelector<HTMLInputElement>("[data-workspace-opacity]");
     if (opacity && Number(opacity.value) !== this.workspaceOpacity) opacity.value = String(this.workspaceOpacity);
@@ -476,17 +538,25 @@ export class SpaceMountainShellUi {
     const simulationPanel=tray.querySelector<HTMLElement>("[data-simulation-rooms]");
     if(simulationPanel) simulationPanel.hidden=!this.workspaceExpanded||!this.simulationRoomsOpen;
     this.ensureSimulationRooms().setVisible(this.workspaceOpen && this.workspaceExpanded && this.simulationRoomsOpen);
+    tray.querySelectorAll<HTMLElement>("[data-workspace-service-panel]").forEach((panel) => {
+      const tool = panel.dataset.workspaceServicePanel;
+      const frame = panel.querySelector<HTMLIFrameElement>("iframe");
+      panel.hidden = this.workspaceService !== tool || !this.workspaceExpanded || this.simulationRoomsOpen;
+      const path = tool === "commlink" ? "/apps/commlink?surface=workspace-service" : `/?view=workspace&surface=workspace-service${tool === "settings" ? "&tool=settings" : ""}`;
+      if (frame && this.workspaceService === tool && frame.getAttribute("src") !== path) frame.src = path;
+    });
+    tray.querySelectorAll<HTMLElement>("[data-workspace-tool]").forEach((button) => button.classList.toggle("active", button.dataset.workspaceTool === this.workspaceService && !this.simulationRoomsOpen));
     const slots = workspaceDockSlots(this.snapshot.workspace);
     slots.forEach((appId, index) => {
       const roomSlot = simulationRoomSlot(appId);
       const app = this.snapshot.apps.find((item) => item.appId === appId && item.installed && item.enabled);
       const button = tray.querySelector<HTMLElement>(`[data-workspace-slot="${index}"]`);
-      if (button) { button.innerHTML = `<span>Slot ${index + 1}</span><small>${escapeHtml(roomSlot ? (roomSlot.roomId ? "Simulation room" : "Simulation Rooms") : app?.name ?? "Empty")}</small>`; button.classList.toggle("active", index === this.workspaceTarget); }
+      if (button) { button.innerHTML = `<span>Slot ${index + 1}</span><small>${escapeHtml(roomSlot ? (roomSlot.roomId ? "Simulation room" : "Simulation Rooms") : appId === "overlay-bay" ? "Overlay Bay" : app?.name ?? "Empty")}</small>`; button.classList.toggle("active", index === this.workspaceTarget); }
       const panel = tray.querySelector<HTMLElement>(`[data-workspace-frame="${index}"]`);
       const frame = panel?.querySelector<HTMLIFrameElement>("iframe");
       if (!panel || !frame) return;
-      panel.hidden = !this.workspaceExpanded || this.simulationRoomsOpen || index !== this.workspaceTarget;
-      const nextUrl = roomSlot ? simulationRoomPath(roomSlot.roomId) : app?.launchUrl ?? "";
+      panel.hidden = !this.workspaceExpanded || this.simulationRoomsOpen || Boolean(this.workspaceService) || index !== this.workspaceTarget;
+      const nextUrl = roomSlot ? simulationRoomPath(roomSlot.roomId) : appId === "overlay-bay" ? "/?view=workspace&surface=workspace-service" : appId === "commlink" ? "/apps/commlink?surface=workspace-service" : app && isListedApplication(app) ? SHELL_APP_RENDERERS.has(app.appId) ? `/apps/${encodeURIComponent(app.appId)}?surface=workspace-service` : this.shellLaunchUrl(app) : "";
       if (nextUrl && frame.dataset.appId !== appId) { frame.src = nextUrl; frame.dataset.appId = appId ?? ""; frame.title = roomSlot ? "Simulation room" : app?.name ?? "Workspace app"; }
       if (!nextUrl && frame.dataset.appId) { frame.removeAttribute("src"); delete frame.dataset.appId; }
       frame.hidden = !nextUrl;
@@ -494,6 +564,7 @@ export class SpaceMountainShellUi {
       const emptyState = panel.querySelector<HTMLElement>("p");
       if (emptyState) emptyState.hidden = Boolean(nextUrl);
     });
+    this.syncPersonalOverlay();
   }
 
   private syncWorkspaceRoomVisibility(frame: HTMLIFrameElement) {
@@ -523,7 +594,7 @@ export class SpaceMountainShellUi {
   }
 
   private appVisible(app: SpaceMountainAppCardV1) {
-    return app.appId !== "mission-control" || this.snapshot.operations.canReadLogs || this.snapshot.operations.canReadCoder;
+    return isListedApplication(app);
   }
 
   private sidebarApps() {
@@ -531,7 +602,7 @@ export class SpaceMountainShellUi {
   }
 
   private shellApp(appId: string) {
-    return this.snapshot.apps.find((app) => app.appId === appId && app.installed && app.enabled && app.surfaces.includes("shell") && this.appVisible(app));
+    return this.snapshot.apps.find((app) => app.appId === appId && app.installed && app.enabled && app.surfaces.includes("shell") && (this.appVisible(app) || app.appId === "commlink" || (app.appId === "mission-control" && (this.snapshot.operations.canReadLogs || this.snapshot.operations.canReadCoder))));
   }
 
   private shellLaunchUrl(app: SpaceMountainAppCardV1) {
@@ -549,14 +620,15 @@ export class SpaceMountainShellUi {
       return;
     }
     const control = this.options.root.querySelector<HTMLElement>(target);
-    if (control?.tagName === "BUTTON") control.click();
+    if (control?.tagName === "DETAILS") { (control as HTMLDetailsElement).open = true; control.scrollIntoView({ behavior: "smooth", block: "start" }); }
+    else if (control?.tagName === "BUTTON") control.click();
     else control?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   private header() {
     const unread = this.snapshot.notifications.filter((item) => !item.readAt && !item.read_at).length;
     const user = recordText(this.snapshot.session, ["displayName", "display_name", "username"]) ?? "Captain";
-    const live = ecosystemPresence(this.snapshot.events, this.snapshot.apps);
+    const live = ecosystemPresence(this.snapshot.events, this.snapshot.apps.filter(isListedApplication));
     const connectedApps = this.sidebarApps();
     const appearance = recordObject(this.snapshot.workspace, "appearance");
     const theme = resolveProductTheme(recordText(appearance, ["theme"]), recordText(appearance, ["accent"]));
@@ -575,7 +647,7 @@ export class SpaceMountainShellUi {
     const appButtons = apps.map((app) => { const themed = themedAppIconUrl(theme.id, app.appId); return `<button data-launch-app="${escapeHtml(app.appId)}" class="${this.activeAppId === app.appId ? "active" : ""}" title="${escapeHtml(`${app.name} — ${app.description || "SpaceMountain ecosystem application"}`)}" aria-label="${escapeHtml(`${app.name}: ${app.description || "SpaceMountain ecosystem application"}`)}"><i class="spmt-dock-app-icon">${themed ? `<img src="${escapeHtml(themed)}" alt="" loading="lazy">` : app.iconUrl ? `<img src="${escapeHtml(app.iconUrl)}" alt="" loading="lazy">` : escapeHtml(initials(app.name))}</i><label>${escapeHtml(app.name)}</label></button>`; }).join("");
     const activeApp = this.activeAppId ? this.shellApp(this.activeAppId) : undefined;
     const appNav: readonly AppDockItemV1[] | undefined = activeApp ? APP_DOCK_NAVIGATION[activeApp.appId] ?? [{ label: activeApp.name, description: activeApp.description || "Application overview.", icon: "grid", target: "body" }] : undefined;
-    const appOwnedButtons = appNav?.map((item) => `<button data-app-dock-target="${escapeHtml(item.target)}" title="${escapeHtml(`${item.label} — ${item.description}`)}" aria-label="${escapeHtml(`${item.label}: ${item.description}`)}">${icon(item.icon)}<label>${escapeHtml(item.label)}</label></button>`).join("");
+    const appOwnedButtons = appNav?.filter((item) => item.target !== "[data-mission-control]" || this.snapshot.operations.canReadLogs || this.snapshot.operations.canReadCoder).map((item) => `<button data-app-dock-target="${escapeHtml(item.target)}" title="${escapeHtml(`${item.label} — ${item.description}`)}" aria-label="${escapeHtml(`${item.label}: ${item.description}`)}">${icon(item.icon)}<label>${escapeHtml(item.label)}</label></button>`).join("");
     const activeIcon = activeApp ? themedAppIconUrl(theme.id, activeApp.appId) : undefined;
     const middle = appOwnedButtons ? `<section class="spmt-dock-apps spmt-dock-owned" aria-label="${escapeHtml(activeApp?.name ?? "App")} navigation"><header>${activeIcon ? `<img src="${escapeHtml(activeIcon)}" alt="">` : ""}<strong>${escapeHtml(activeApp?.name ?? "App")}</strong></header>${appOwnedButtons}</section>` : `<section class="spmt-dock-apps" aria-label="Installed applications">${appButtons}</section>`;
     return `<aside class="spmt-rocket-dock spmt-product-glass" data-dock-owner="${escapeHtml(this.activeAppId ?? "spacemountain")}"><div id="rocketLauncher" class="spmt-dock-orbit docked" data-spmt-rocket-trigger role="button" tabindex="0" aria-label="Open or close app navigation; double-click to launch the rocket" title="Click to open or close navigation · Double-click to launch"><span></span><img src="/assets/product/model-rocket.png" alt="SpaceMountain rocket"></div><nav class="spmt-dock-nav"><section class="spmt-dock-core" aria-label="SpaceMountain">${navButtons(core)}</section>${middle}<section class="spmt-dock-account" aria-label="Workspace and account">${navButtons(account)}</section></nav></aside>`;
@@ -584,7 +656,7 @@ export class SpaceMountainShellUi {
   private body() {
     if (this.activeAppId === "commlink" && this.shellApp("commlink")) return this.commlink();
     if (this.activeAppId === "stellar-core" && this.shellApp("stellar-core")) return this.stellar();
-    if (this.activeAppId === "mission-control" && this.shellApp("mission-control")) return this.operations();
+
     if (this.activeAppId) {
       const app = this.shellApp(this.activeAppId);
       if (app) return `<section class="spmt-embedded-app-shell" aria-label="${escapeHtml(app.name)}"><iframe data-shell-app-frame title="${escapeHtml(app.name)}" src="${escapeHtml(this.shellLaunchUrl(app))}" loading="eager"></iframe></section>`;
@@ -597,14 +669,17 @@ export class SpaceMountainShellUi {
   }
 
   private home() {
-    const installed = this.snapshot.apps.filter((app) => app.installed && app.enabled);
+    const installed = this.sidebarApps();
     const unread = this.snapshot.notifications.filter((item) => !item.readAt && !item.read_at).length;
     const appearance = recordObject(this.snapshot.workspace, "appearance");
     const theme = resolveProductTheme(recordText(appearance, ["theme"]), recordText(appearance, ["accent"]));
-    return `<section class="spmt-hero spmt-product-glass"><div class="spmt-hero-copy"><img class="spmt-hero-logo spmt-hero-logo-large" data-theme-logo="hero-secondary" src="${themeLogoUrl(theme.id, "hero-secondary")}" alt="SpaceMountain"><div class="actions"><button data-nav="apps" class="primary">${icon("rocket")}Open Shipyard</button><button data-launch-app="commlink">${icon("mail")}Open Commlink</button></div></div><div class="spmt-metrics">${metric("Apps online", `${installed.length}/${this.snapshot.apps.length}`)}${metric("Unread", String(unread))}${metric("Active apps", String((this.snapshot.runtimeStates ?? []).filter((item) => recordText(item, ["state"]) === "ready").length))}${metric("Theme", theme.name)}</div></section>`;
+    return `<section class="spmt-hero spmt-product-glass"><div class="spmt-hero-copy"><img class="spmt-hero-logo spmt-hero-logo-large" data-theme-logo="hero-secondary" src="${themeLogoUrl(theme.id, "hero-secondary")}" alt="SpaceMountain"><div class="actions"><button data-nav="apps" class="primary">${icon("rocket")}Open Shipyard</button><button data-launch-app="commlink">${icon("mail")}Open Commlink</button></div></div><div class="spmt-metrics">${metric("Apps online", `${installed.length}/${this.snapshot.apps.filter(isListedApplication).length}`)}${metric("Unread", String(unread))}${metric("Active apps", String((this.snapshot.runtimeStates ?? []).filter((item) => recordText(item, ["state"]) === "ready" && isListedApplication({ appId: recordText(item, ["appId", "app_id"]) ?? "" })).length))}${metric("Theme", theme.name)}</div></section>`;
   }
 
-  private shipyard() { const apps = this.snapshot.apps.filter((app) => this.appVisible(app)); const appearance = recordObject(this.snapshot.workspace, "appearance"); const theme = resolveProductTheme(recordText(appearance, ["theme"])).id; return `${page("Apps and capabilities", "Registry, install state, granted scopes, and entitlements come directly from SPMT.", "SHIPYARD")}<div class="spmt-app-grid wide">${apps.map((app) => appCard(app, theme)).join("")}${overlayBayCard(theme)}</div>`; }
+  private shipyard() { const apps = this.snapshot.apps.filter((app) => this.appVisible(app)); const appearance = recordObject(this.snapshot.workspace, "appearance"); const theme = resolveProductTheme(recordText(appearance, ["theme"])).id; return `${page("Apps", "Your creator apps. Shared tools live in Workspace; companions run on your devices.", "SHIPYARD")}<div class="spmt-app-grid wide">${apps.map((app) => appCard(app, theme)).join("")}</div>${this.downloads()}`; }
+  private downloads() {
+    return `<section class="spmt-section spmt-device-downloads"><header><div><span>ON YOUR DEVICES</span><h2>Download companions</h2></div></header><p>Install the Windows companion on your PC or MountainView on Android.</p><div class="actions"><a class="primary" href="/downloads/companion">Download for Windows</a><a class="primary" href="/downloads/mountainview">Download for Android</a></div></section>`;
+  }
   private commlink() {
     const state = this.commlinkWorkspace();
     const sources = commlinkSources(this.snapshot);
@@ -807,7 +882,7 @@ export class SpaceMountainShellUi {
     const companionReady = this.snapshot.usage?.plan.planId !== "free" && this.snapshot.apps.some((app) => app.appId === "companion" && app.installed && app.enabled) && this.snapshot.runtimeStates.some((item) => recordText(item, ["appId", "app_id"]) === "companion" && recordText(item, ["state"]) === "ready");
     const routeControl = companionReady ? `<label class="spmt-stella-route">Route<select name="routingPreference"><option value="automatic">Automatic · hosted</option><option value="companion">Companion · local</option><option value="hosted">Hosted</option></select></label>` : `<input type="hidden" name="routingPreference" value="automatic">`;
     const ownerControls = owner ? `<section class="spmt-account-section spmt-owner-controls"><header><span>OWNER CONTROL</span><h2>Stellar Core model platform</h2></header><div class="spmt-field-grid"><label>Platform<select disabled><option>${runtimeAvailable ? "Connected Stellar Core worker" : "No inference worker connected"}</option></select></label><label>Model<select disabled><option>${runtimeAvailable ? "Runtime-managed model" : "Connect a model deployment"}</option></select></label><label class="spmt-check"><input type="checkbox" checked disabled> Canonical RAG context</label></div><p>Only the ecosystem owner sees model and platform controls. The model worker is deployed separately from this private Review Sprite and receives scoped, redacted SPMT context.</p></section>` : "";
-    return `${page("Speak with Stella", "Stellar Core is the ecosystem AI layer; Stella is its default assistant.", "STELLA CORE")}${sourceNotice("Stellar Core catalog", this.snapshot.sources.stellar)}<section class="spmt-stella-chat"><header><span>STELLA</span><h2>Community Assistant</h2></header><div class="spmt-stella-history" data-stella-history><p>Ask Stella about the ecosystem, your workspace, or creator tools.</p></div><form data-stella-form>${routeControl}<input name="message" maxlength="4000" required placeholder="Speak to Stella…"><label class="spmt-check"><input type="checkbox" name="remember" checked> Remember this conversation</label><button class="primary" type="submit">Send</button></form></section>${ownerControls}<section class="spmt-account-section"><header><span>CAPABILITY CATALOG</span><h2>What Stella can use</h2></header><div class="spmt-command-grid">${capabilities.map((item) => { const available = recordText(item, ["availability"]) === "available"; return `<article><div><span class="spmt-command-state ${available ? "available" : "unavailable"}">${available ? "AVAILABLE" : "UNAVAILABLE"}</span><h3>${escapeHtml(recordText(item, ["title", "id"]) ?? "System capability")}</h3></div><p>${escapeHtml(recordText(item, ["description"]) ?? "")}</p><small>${available ? escapeHtml(recordStrings(item, "requiredScopes").join(", ") || "Ready") : escapeHtml(recordText(item, ["unavailableReason", "unavailable_reason"]) ?? "Runtime unavailable")}</small></article>`; }).join("") || empty("No Stellar Core capabilities have been declared yet.")}</div></section>`;
+    return `${page("Speak with Stella", "Stellar Core is the ecosystem AI layer; Stella is its default assistant.", "STELLA CORE")}${sourceNotice("Stellar Core catalog", this.snapshot.sources.stellar)}<section class="spmt-stella-chat"><header><span>STELLA</span><h2>Community Assistant</h2></header><div class="spmt-stella-history" data-stella-history><p>Ask Stella about the ecosystem, your workspace, or creator tools.</p></div><form data-stella-form>${routeControl}<input name="message" maxlength="4000" required placeholder="Speak to Stella…"><label class="spmt-check"><input type="checkbox" name="remember" checked> Remember this conversation</label><button class="primary" type="submit">Send</button></form></section>${ownerControls}${this.snapshot.operations.canReadLogs || this.snapshot.operations.canReadCoder ? `<details class="spmt-account-section" data-mission-control><summary>Mission Control · operations and Coder</summary>${this.operations()}</details>` : ""}<section class="spmt-account-section"><header><span>CAPABILITY CATALOG</span><h2>What Stella can use</h2></header><div class="spmt-command-grid">${capabilities.map((item) => { const available = recordText(item, ["availability"]) === "available"; return `<article><div><span class="spmt-command-state ${available ? "available" : "unavailable"}">${available ? "AVAILABLE" : "UNAVAILABLE"}</span><h3>${escapeHtml(recordText(item, ["title", "id"]) ?? "System capability")}</h3></div><p>${escapeHtml(recordText(item, ["description"]) ?? "")}</p><small>${available ? escapeHtml(recordStrings(item, "requiredScopes").join(", ") || "Ready") : escapeHtml(recordText(item, ["unavailableReason", "unavailable_reason"]) ?? "Runtime unavailable")}</small></article>`; }).join("") || empty("No Stellar Core capabilities have been declared yet.")}</div></section>`;
   }
   private operations() {
     const logs = this.snapshot.operations.logs.slice(0, 100);
@@ -834,7 +909,7 @@ export class SpaceMountainShellUi {
     const accent = recordText(appearance, ["accent"]) ?? "#ff7a18";
     const backgroundUrl = recordText(appearance, ["backgroundUrl", "background_url"]) ?? "";
     const animation = recordObject(appearance, "animation");
-    const appOptions = [{ value: simulationRoomPath(), label: "Simulation Rooms" }, ...this.snapshot.apps.filter((app) => app.installed && app.enabled).map((app) => ({ value: app.appId, label: app.name }))];
+    const appOptions = [{ value: "overlay-bay", label: "Overlay Bay" }, { value: simulationRoomPath(), label: "Simulation Rooms" }, ...this.snapshot.apps.filter((app) => app.installed && app.enabled && (isListedApplication(app) || app.appId === "commlink")).map((app) => ({ value: app.appId, label: app.name }))];
     return `${page("Portable station layout", "One canonical workspace profile, shared overlays, and three persistent app slots.", "WORKSPACE")}${sourceNotice("Workspace", this.snapshot.sources.workspace)}<form class="spmt-settings-form" data-workspace-settings><section><header><span>APPEARANCE</span><h2>One color language, a unique scene in every app</h2></header><p class="spmt-appearance-rule">Your theme recolors each app's own cosmic scene. The shared stars, glass, and navigation remain familiar everywhere.</p><div class="spmt-field-grid"><label>Theme<select name="theme" data-workspace-theme>${selectOption("solar-flare", theme, "Solar flare")}${selectOption("nebula-purple", theme, "Nebula purple")}${selectOption("oceanic-blue", theme, "Oceanic blue")}${selectOption("aurora-green", theme, "Aurora green")}${!theme.includes("-") ? selectOption(theme, theme, `Existing: ${theme}`) : ""}</select></label><label>Accent<input name="accent" data-workspace-accent type="color" value="${escapeHtml(accent)}"></label><label class="wide">Custom scene override <small>Optional; leave blank to use each app's artwork.</small><input name="backgroundUrl" type="url" inputmode="url" placeholder="https://…" value="${escapeHtml(backgroundUrl)}"></label></div><div class="spmt-slider-grid">${rangeControl("glowIntensity", "Glow", recordNumber(appearance, "glowIntensity") ?? 55)}${rangeControl("starDensity", "Stars", recordNumber(appearance, "starDensity") ?? 70)}${rangeControl("glassOpacity", "Glass", recordNumber(appearance, "glassOpacity") ?? 76)}${rangeControl("blurStrength", "Blur", recordNumber(appearance, "blurStrength") ?? 18)}${rangeControl("nebulaIntensity", "Nebula", recordNumber(appearance, "nebulaIntensity") ?? 55)}${rangeControl("parallaxDepth", "Parallax", recordNumber(appearance, "parallaxDepth") ?? 35)}${rangeControl("borderStrength", "Borders", recordNumber(appearance, "borderStrength") ?? 35)}${rangeControl("chatTransparency", "Chat transparency", recordNumber(appearance, "chatTransparency") ?? 15)}${rangeControl("animationSpeed", "Animation speed", recordNumber(animation, "speed") ?? 50)}</div></section><section><header><span>LAYOUT & MOTION</span><h2>Shared interface behavior</h2></header><div class="spmt-field-grid"><label>Density<select name="density">${selectOption("compact", recordText(appearance, ["density"]) ?? "comfortable", "Compact")}${selectOption("comfortable", recordText(appearance, ["density"]) ?? "comfortable", "Comfortable")}${selectOption("spacious", recordText(appearance, ["density"]) ?? "comfortable", "Spacious")}</select></label><label>Sidebar style<select name="sidebarStyle">${selectOption("glass", recordText(appearance, ["sidebarStyle"]) ?? "glass", "Glass")}${selectOption("solid", recordText(appearance, ["sidebarStyle"]) ?? "glass", "Solid")}${selectOption("minimal", recordText(appearance, ["sidebarStyle"]) ?? "glass", "Minimal")}</select></label><label>Sidebar position<select name="sidebarPosition">${selectOption("left", recordText(appearance, ["sidebarPosition"]) ?? "left", "Left")}${selectOption("right", recordText(appearance, ["sidebarPosition"]) ?? "left", "Right")}</select></label><label>Topbar style<select name="topbarStyle">${selectOption("glass", recordText(appearance, ["topbarStyle"]) ?? "glass", "Glass")}${selectOption("solid", recordText(appearance, ["topbarStyle"]) ?? "glass", "Solid")}${selectOption("minimal", recordText(appearance, ["topbarStyle"]) ?? "glass", "Minimal")}</select></label><label>Tab style<select name="tabStyle">${selectOption("pills", recordText(appearance, ["tabStyle"]) ?? "pills", "Pills")}${selectOption("underline", recordText(appearance, ["tabStyle"]) ?? "pills", "Underline")}${selectOption("cards", recordText(appearance, ["tabStyle"]) ?? "pills", "Cards")}</select></label><label>Tab position<select name="tabPosition">${selectOption("top", recordText(appearance, ["tabPosition"]) ?? "top", "Top")}${selectOption("bottom", recordText(appearance, ["tabPosition"]) ?? "top", "Bottom")}</select></label></div><div class="spmt-toggle-grid">${checkControl("sidebarCollapsed", "Collapse sidebar", recordBoolean(appearance, "sidebarCollapsed", false))}${checkControl("showAvatars", "Show avatars", recordBoolean(appearance, "showAvatars", true))}${checkControl("smoothTransitions", "Smooth transitions", recordBoolean(appearance, "smoothTransitions", true))}${checkControl("pushToTalk", "Push to talk", recordBoolean(appearance, "pushToTalk", false))}${checkControl("particles", "Particles", recordBoolean(animation, "particles", true))}${checkControl("shootingStars", "Shooting stars", recordBoolean(animation, "shootingStars", true))}</div></section><section><header><span>DOCK</span><h2>Three persistent workspace embeds</h2></header><p>Keep apps or Simulation Rooms open while you work in any app.</p><button type="button" data-open-workspace-rooms>Open Simulation Rooms</button><div class="spmt-field-grid">${slots.map((slot, index) => `<label>Slot ${index + 1}<select name="dockSlot${index}">${selectOption("", slot ?? "", "Empty")}${slot && !appOptions.some((option) => option.value === slot) ? selectOption(slot, slot, simulationRoomSlot(slot) ? "Pinned simulation room" : `Existing: ${slot}`) : ""}${appOptions.map((option) => selectOption(option.value, slot ?? "", option.label)).join("")}</select></label>`).join("")}</div></section><button type="submit" class="primary">Save canonical workspace</button><small>Revision ${recordNumber(profile, "revision") ?? "unavailable"} · changes are written once to SPMT and read by every authorized app.</small></form>`;
   }
   private account() {
@@ -848,7 +923,7 @@ export class SpaceMountainShellUi {
   }
 
   private settings() {
-    const installed = this.snapshot.apps.filter((app) => app.installed && app.enabled);
+    const installed = this.sidebarApps();
     return `${page("App and ecosystem settings", "Advanced controls stay with the app or shared system they configure.", "SETTINGS")}<section class="spmt-account-section"><header><span>ECOSYSTEM</span><h2>Shared appearance and workspace behavior</h2><p>Themes, animation, layout, dock slots, scenes, and other shared controls are maintained in Workspace.</p></header><div class="actions"><button type="button" class="primary" data-nav="workspace">Open workspace settings ${icon("arrow")}</button></div></section><section class="spmt-account-section"><header><span>APP SETTINGS</span><h2>Advanced controls by owning app</h2><p>Open an app to configure its integrations, automation, output, privacy, and advanced switches without mixing them into your personal account.</p></header><div class="spmt-app-grid wide">${installed.map((app) => `<article class="spmt-app-card"><span>APP SETTINGS</span><h2>${escapeHtml(app.name)}</h2><p>${escapeHtml(app.description)}</p><button type="button" data-launch-app="${escapeHtml(app.appId)}">Open ${escapeHtml(app.name)} settings ${icon("arrow")}</button></article>`).join("") || empty("Install an app in Shipyard to expose its settings.")}</div></section>`;
   }
 }
@@ -1038,7 +1113,7 @@ function recordStrings(value: unknown, key: string) { if (!value || typeof value
 function payloadKeySummary(value: unknown) { if (!value || typeof value !== "object" || Array.isArray(value)) return "No structured payload fields"; const keys = Object.keys(value as Record<string, unknown>).sort(); return keys.length ? `Payload fields: ${keys.slice(0, 12).join(", ")}${keys.length > 12 ? "…" : ""}` : "No structured payload fields"; }
 function formatRecordTime(value: string | undefined) { if (!value) return "Time unavailable"; const timestamp = Date.parse(value); if (!Number.isFinite(timestamp)) return value; return new Date(timestamp).toISOString().replace("T", " ").replace(".000Z", " UTC"); }
 function appCard(app: SpaceMountainAppCardV1, theme: string) { const action = app.installed && app.enabled ? `<button class="primary" data-launch-app="${escapeHtml(app.appId)}">Launch ${icon("arrow")}</button>` : `<button data-install-app="${escapeHtml(app.appId)}">Install</button>`; const themed = themedAppIconUrl(theme, app.appId); const art = themed ? `<img src="${escapeHtml(themed)}" alt="" loading="lazy">` : app.iconUrl ? `<img src="${escapeHtml(app.iconUrl)}" alt="" loading="lazy">` : `<span>${escapeHtml(initials(app.name))}</span>`; return `<article class="spmt-app-card"><div class="app-icon">${art}</div><div class="spmt-app-status"><span>${app.installed ? (app.enabled ? "INSTALLED" : "DISABLED") : "AVAILABLE"}</span><small>v${escapeHtml(app.version || "—")}</small></div><h3>${escapeHtml(app.name)}</h3><p>${escapeHtml(app.description || "SpaceMountain ecosystem application")}</p><footer>${action}<small>${escapeHtml(app.surfaces.join(" · ") || "standalone")}</small></footer></article>`; }
-function overlayBayCard(theme: string) { return `<article class="spmt-app-card"><div class="app-icon"><img src="${themedAppIconUrl(theme, "overlay-bay")}" alt="" loading="lazy"></div><div class="spmt-app-status"><span>WORKSPACE TOOL</span><small>canonical</small></div><h3>Overlay Bay</h3><p>Compose app widgets into sandbox-safe OBS scenes and managed outputs.</p><footer><button class="primary" data-nav="workspace">Open ${icon("arrow")}</button><small>workspace · overlay</small></footer></article>`; }
+
 function metric(label: string, value: string) { return `<div><strong>${escapeHtml(value)}</strong><span>${escapeHtml(label)}</span></div>`; }
 function quick(title: string, body: string, nav: SpaceMountainViewV1, iconName: IconName = "pulse") { return `<button data-nav="${nav}"><i>${icon(iconName)}</i><strong>${title}</strong><span>${body}</span><em>${icon("arrow")}</em></button>`; }
 function page(title: string, body: string, kicker = "SPACEMOUNTAIN") { return `<section class="spmt-page-title"><span>${kicker}</span><h1>${escapeHtml(title)}</h1><p>${escapeHtml(body)}</p></section>`; }
@@ -1047,7 +1122,7 @@ function recordText(value: unknown, keys: string[]) { if (!value || typeof value
 function recordNumber(value: unknown, key: string) { if (!value || typeof value !== "object" || Array.isArray(value)) return undefined; const result = (value as Record<string, unknown>)[key]; return typeof result === "number" && Number.isFinite(result) ? result : undefined; }
 function recordBoolean(value: unknown, key: string, fallback: boolean) { if (!value || typeof value !== "object" || Array.isArray(value)) return fallback; const result = (value as Record<string, unknown>)[key]; return typeof result === "boolean" ? result : fallback; }
 function recordObject(value: unknown, key: string) { if (!value || typeof value !== "object" || Array.isArray(value)) return undefined; const result = (value as Record<string, unknown>)[key]; return result && typeof result === "object" && !Array.isArray(result) ? result as Record<string, unknown> : undefined; }
-function sessionHasScope(value: unknown, scope: string) { return recordStrings(value, "scopes").includes(scope); }
+function sessionHasScope(value: unknown, scope: string) { const scopes = recordStrings(value, "scopes"); return scopes.includes("*") || scopes.includes(scope) || scopes.some((item) => item.endsWith(":*") && scope.startsWith(item.slice(0, -1))); }
 function providerLinkKey(value: unknown) { return `${recordText(value, ["provider"]) ?? ""}:${recordText(value, ["providerUserId", "provider_user_id"]) ?? ""}`; }
 function themeLogoUrl(theme: string, kind: "hero" | "hero-secondary" | "name" | "spmt") {
   const id = ["solar-flare", "nebula-purple", "oceanic-blue", "aurora-green"].includes(theme) ? theme : "solar-flare";
@@ -1061,7 +1136,8 @@ function themedAppIconUrl(theme: string, appId: string) {
   return supported.has(id) ? `/assets/product/app-icons/${themeId}/${id}.png` : undefined;
 }
 function coreNavIcon(theme: string, view: SpaceMountainViewV1) {
-  const artwork = view === "apps" ? "shipyard" : view === "workspace" ? "overlay-bay" : undefined;
+  if (view === "home") return `<span class="spmt-core-nav-icon"><img data-theme-logo="spmt" src="${themeLogoUrl(theme, "spmt")}" alt=""></span>`;
+  const artwork = view === "apps" ? "shipyard" : view === "workspace" ? "overlay-bay" : view === "settings" ? "mission-control" : undefined;
   if (artwork) return `<span class="spmt-core-nav-icon"><img data-core-nav-art="${artwork}" src="${escapeHtml(themedAppIconUrl(theme, artwork) ?? "")}" alt=""></span>`;
   return `<span class="spmt-core-nav-icon">${icon(view === "settings" ? "settings" : "home")}</span>`;
 }

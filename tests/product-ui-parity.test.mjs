@@ -46,7 +46,7 @@ test("SpaceMountain presentation remains finished and dynamically catalog-backed
   assert.doesNotMatch(shellSource, /app-streamweaver|app-hearmeout|app-discord-hub|app-nebula-tag/);
   assert.doesNotMatch(shellSource, /sessionStorage|\/api\/spmt/);
   assert.doesNotMatch(shellSource, /localStorage[^\n]*(?:token|credential|authorization)/i);
-  assert.match(shellSource, /spmt:personal-overlay-visible/);
+  assert.match(shellSource, /personalOverlayEnabled/);
   assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /\.spmt-header-clocks/);
   assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /\.spmt-live-button/);
   assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /\.spmt-rocket-dock/);

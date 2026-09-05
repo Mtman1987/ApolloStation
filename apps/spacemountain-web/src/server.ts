@@ -24,6 +24,7 @@ const PROVIDER_ENV_NAMES = Object.freeze([
 ]);
 
 const ASSETS = new Map<string, { file: string; type: string }>([
+  ["/assets/web/personal-overlay-client.js", { file: resolve(HERE, "personal-overlay-client.js"), type: "text/javascript; charset=utf-8" }],
   ["/assets/web/simulation-rooms-client.js", { file: resolve(HERE, "simulation-rooms-client.js"), type: "text/javascript; charset=utf-8" }],
   ["/assets/spacemountain/simulation-rooms-ui.js", { file: resolve(REPOSITORY_ROOT, "apps/spacemountain/dist/simulation-rooms-ui.js"), type: "text/javascript; charset=utf-8" }],
   ["/assets/web/client.js", { file: resolve(HERE, "client.js"), type: "text/javascript; charset=utf-8" }],
@@ -90,6 +91,19 @@ export function createSpaceMountainWebHost(options: SpaceMountainWebHostOptions)
     try {
       const url = new URL(request.url ?? "/", "http://spacemountain.local");
       overlayRequest = (request.method === "GET" || request.method === "HEAD") && overlayOutputPath(url.pathname) && !url.search;
+      const companionDownloads: Record<string, string> = {
+        "/downloads/companion": "https://github.com/Mtman1987/streamweaver/releases/latest/download/SpaceMountain-Companion-Setup.exe",
+        "/downloads/companion/windows": "https://github.com/Mtman1987/streamweaver/releases/latest/download/SpaceMountain-Companion-Setup.exe",
+        "/downloads/mountainview": "https://github.com/Mtman1987/fly-machine-rotator/releases/download/mountainview-latest/MountainView-Android.apk",
+      };
+      if (request.method === "GET" && companionDownloads[url.pathname]) { response.writeHead(302, { location: companionDownloads[url.pathname]!, "cache-control": "no-store" }); response.end(); return; }
+      if (request.method === "GET" && url.pathname === "/api/platform/surfaces") return json(response, 200, { schemaVersion: 1, surfaces: [{ id: "worktray", path: "/?surface=workspace-popout" }, { id: "commlink", path: "/apps/commlink?surface=workspace-service" }, { id: "overlays", path: "/?view=workspace&surface=workspace-service" }] });
+      if (request.method === "GET" && url.pathname === "/api/personal-overlay-launch") {
+        const session = await fetchImpl(`${spmtOrigin}/v1/session`, { headers: { cookie: request.headers.cookie ?? "", accept: "application/json" }, redirect: "manual", signal: AbortSignal.timeout(5000) });
+        if (!session.ok) return json(response, session.status, { error: "Sign in to view your personal overlay" });
+        return json(response, 200, { url: "/workspace/overlay" });
+      }
+      if (request.method === "GET" && url.pathname === "/apps/mission-control") { response.writeHead(302, { location: "/?app=stellar-core&panel=mission-control", "cache-control": "no-store" }); response.end(); return; }
       if (request.method === "GET" && url.pathname === "/assets/nebula-arcade/widgets/thirdparty/three.min.js") { response.setHeader("cross-origin-resource-policy","cross-origin"); response.writeHead(200, { "content-type":"text/javascript; charset=utf-8", "cache-control":"public,max-age=86400", "access-control-allow-origin":"*" }); response.end(nebulaThreeJs()); return; }
       if (request.method === "GET" && (url.pathname === "/simulation-rooms/arcade" || url.pathname === "/assets/nebula-arcade/widget-stage.js" || url.pathname.startsWith("/assets/nebula-arcade/widgets/"))) {
         if(url.pathname.endsWith("widget-stage.js")) return textResponse(response,200,NEBULA_WIDGET_STAGE_JS,"text/javascript; charset=utf-8","no-store");
@@ -126,7 +140,18 @@ export function createSpaceMountainWebHost(options: SpaceMountainWebHostOptions)
         response.setHeader("content-security-policy", `default-src 'none'; script-src 'self' 'nonce-${nonce}'; style-src 'unsafe-inline'; img-src 'self' https:; connect-src 'self'; frame-ancestors 'self'; base-uri 'none'; object-src 'none'`);
         return html(response, 200, page);
       }
-      if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/first-time-setup" || SHELL_APP_PATHS.has(url.pathname))) return html(response, 200, renderSpaceMountainPage(nonce, buildSha, Boolean(options.candidateManifest)));
+      if (request.method === "GET" && url.pathname === "/workspace/overlay") {
+        response.removeHeader("x-frame-options");
+        response.setHeader("content-security-policy", `default-src 'none'; script-src 'self' 'nonce-${nonce}'; style-src 'unsafe-inline'; connect-src 'self'; frame-src 'self'; frame-ancestors 'self'; base-uri 'none'`);
+        return html(response, 200, `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Personal overlay</title><style>html,body{margin:0;width:100%;height:100%;background:transparent}iframe{width:100%;height:100%;border:0;pointer-events:none}iframe[hidden]{display:none}</style></head><body><iframe data-overlay-frame title="Personal overlay" hidden></iframe><script type="module" nonce="${nonce}" src="/assets/web/personal-overlay-client.js"></script></body></html>`);
+      }
+      if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/first-time-setup" || SHELL_APP_PATHS.has(url.pathname))) {
+        if (url.searchParams.get("surface") === "workspace-service") {
+          response.removeHeader("x-frame-options");
+          response.setHeader("content-security-policy", String(response.getHeader("content-security-policy")).replace("frame-ancestors 'none'", "frame-ancestors 'self'"));
+        }
+        return html(response, 200, renderSpaceMountainPage(nonce, buildSha, Boolean(options.candidateManifest)));
+      }
       if (request.method === "GET" && url.pathname === "/assets/web/sandbox.css") return textResponse(response, 200, SANDBOX_CSS + SANDBOX_POLISH_CSS, "text/css; charset=utf-8", "public, max-age=300");
       if (request.method === "GET" && url.pathname === "/assets/web/developer-docs.css") return textResponse(response, 200, DEVELOPER_DOCS_CSS, "text/css; charset=utf-8", "public, max-age=300");
       if (request.method === "GET" && url.pathname === "/docs/developers") return html(response, 200, renderDeveloperDocsPage(buildSha));

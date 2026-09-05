@@ -32,12 +32,12 @@ test("visible shell does not restore private proxy or browser credential storage
   assert.doesNotMatch(source, /\/api\/spmt/);
   assert.doesNotMatch(source, /sessionStorage/);
   assert.doesNotMatch(source, /localStorage[^\n]*(?:token|credential|authorization)/i);
-  assert.match(base, /spmt:personal-overlay-visible/);
+  assert.match(base, /personalOverlayEnabled/);
   assert.doesNotMatch(source, /[?&](?:tenant|scopes|token)=/);
 });
 
 test("canonical home, Shipyard, registry apps, and workspace remain in the preserved shell", () => {
-  for (const pattern of [/Open Shipyard/, /Open Commlink/, /Registry, install state, granted scopes, and entitlements come directly from SPMT/, /Three persistent workspace embeds/, /data-workspace-settings/, /Save canonical workspace/, /Custom scene override/, /installProductBackdrop/, /app\.surfaces\.includes\("shell"\)/]) assert.match(base, pattern);
+  for (const pattern of [/Open Shipyard/, /Open Commlink/, /Shared tools live in Workspace/, /Three persistent workspace embeds/, /data-workspace-settings/, /Save canonical workspace/, /Custom scene override/, /installProductBackdrop/, /app\.surfaces\.includes\("shell"\)/]) assert.match(base, pattern);
   assert.doesNotMatch(base, /label: "SPMT"/);
   assert.doesNotMatch(base, /const NAV[\s\S]*label: "Commlink"[\s\S]*\];/);
 });
@@ -97,7 +97,7 @@ test("canonical appearance still flattens wrappers and deepens translucency", ()
 });
 
 test("shared header and mobile dock remain catalog-backed and viewport-safe", () => {
-  assert.match(base, /ecosystemPresence\(this\.snapshot\.events, this\.snapshot\.apps\)/);
+  assert.match(base, /ecosystemPresence\(this\.snapshot\.events, this\.snapshot\.apps\.filter\(isListedApplication\)\)/);
   assert.match(base, /data-spmt-local-clock/);
   assert.match(base, /data-spmt-utc-clock/);
   assert.match(base, /data-apps-tray/);

@@ -1,3 +1,4 @@
+import type { SpaceMountainShellSnapshotV1 } from "@spmt/spacemountain";
 import { SpmtApiError, SpmtClient } from "@spmt/sdk";
 import type { AppCatalogRegistrationV1, OperationsLogV1 } from "@spmt/contracts";
 import { SpaceMountainShellController, buildAppFrameTarget, type SpaceMountainAppCardV1 } from "@spmt/spacemountain";
@@ -57,6 +58,19 @@ loadJsonButton.addEventListener("click", () => void loadPastedManifest());
 loadCandidateButton?.addEventListener("click", () => void loadCandidateExample());
 resetDeveloperButton.addEventListener("click", () => resetDeveloperForm());
 window.setInterval(() => void watchRegistry(), 20_000);
+window.setInterval(() => void watchWorkspace(), 5_000);
+window.addEventListener("focus", () => void watchWorkspace());
+let watchingWorkspace = false;
+async function watchWorkspace() {
+  if (watchingWorkspace || !currentPrincipal || loading || document.visibilityState !== "visible") return;
+  watchingWorkspace = true;
+  try {
+    const tenantId = currentPrincipal.tenantIds[0]!;
+    const [workspace, outputs] = await Promise.all([spmt.getWorkspaceProfile(tenantId), spmt.getTenantOverlayOutputs(tenantId)]);
+    shellUi?.updateWorkspace(workspace, outputs as SpaceMountainShellSnapshotV1["tenantOutputs"]);
+  } catch { /* Keep the last authorized state through brief network failures. */ }
+  finally { watchingWorkspace = false; }
+}
 window.addEventListener("spmt:easter-egg-complete", (event) => void recordEggCompletion(event as CustomEvent));
 
 void boot();

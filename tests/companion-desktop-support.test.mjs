@@ -106,8 +106,9 @@ test("Companion resolves only canonical same-origin SPMT surfaces and authentica
     if (url.endsWith("/api/platform/surfaces")) return new Response(JSON.stringify(payload), { status: 200 });
     return new Response(JSON.stringify({ url: "https://spacemountain.live/o/opaque-token" }), { status: 200 });
   } };
-  assert.match(await resolveCompanionSurfaceUrl(session, "worktray"), /\/workspace\?app=companion&mode=panel$/);
-  assert.equal(await resolveCompanionPersonalOverlayUrl(session), "https://spacemountain.live/o/opaque-token");
+  assert.equal(await resolveCompanionSurfaceUrl(session, "worktray"), "https://spmt.live/?surface=workspace-popout&app=companion&mode=panel");
+  assert.equal(await resolveCompanionPersonalOverlayUrl(session), "https://spmt.live/workspace/overlay");
+  assert.equal(calls.every((call) => call.url === "https://spmt.live/v1/session"), true);
   assert.equal(calls.every((call) => call.options.credentials === "include" && call.options.cache === "no-store" && call.options.redirect === "error"), true);
 });
 

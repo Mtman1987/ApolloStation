@@ -23,6 +23,7 @@ export function createIntegratedSpaceMountainWebHost(options:IntegratedSpaceMoun
       if (!sameOrigin) return json(response, 403, { error: "cross_origin_request", message: "Open this action from the signed-in app." });
     }
 
+    if(request.method==="GET"&&(url.pathname==="/apps/companion"||url.pathname==="/apps/mountainview")) { response.writeHead(302,{location:url.pathname==="/apps/companion"?"/downloads/companion":"/downloads/mountainview","cache-control":"no-store"}); response.end(); return; }
     if(SPMT_OVERLAY.test(url.pathname))return proxyDirect(request,response,options.spmtOrigin,url.pathname+url.search,true);
     if(NEBULA_RUNTIME.test(url.pathname)&&options.nebulaArcadeOrigin)return proxyDirect(request,response,options.nebulaArcadeOrigin,url.pathname+url.search,true);
     const app=greenAppForPath(url.pathname);if(app&&options.greenAppOrigins?.[app]){
