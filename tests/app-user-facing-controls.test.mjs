@@ -161,6 +161,10 @@ test("StreamWeaver app ingress supports manual command editing, pause, link sett
     await post('/botshare',{enabled:true});assert.equal((await read()).botShareEnabled,true);
     const adjustment={userId:state.session.actorId,mode:'add',amount:10,idempotencyKey:'currency-web'};
     assert.equal((await post('/economy/adjust',adjustment)).wallet.balance,10);assert.equal((await post('/economy/adjust',adjustment)).duplicate,true);
+    const bulk={mode:'add',amount:5,idempotencyKey:'currency-bulk'};assert.equal((await post('/economy/bulk',bulk)).count,1);await post('/economy/bulk',bulk);
+    const wallet=await read('/economy/wallet?userId='+encodeURIComponent(state.session.actorId));assert.equal(wallet.wallet.balance,15);
+    const ledger=(await read('/economy/ledger')).entries;assert.deepEqual(ledger.map(row=>row.delta),[5,10]);assert.equal(ledger[0].actorId,state.session.actorId);
+    const diagnostics=await read('/diagnostics');assert.equal(diagnostics.currency.walletCount,1);assert.equal(diagnostics.operationMode,'read-only');assert.ok(Array.isArray(diagnostics.runs));
     await post('/voice',{destination:'private',message:'Do not retain this',idempotencyKey:'private'});
     assert.deepEqual((await read('/voice/history')).history,[]);
     await post('/voice',{destination:'ai',message:'Retained blocked request',idempotencyKey:'remembered'});

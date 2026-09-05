@@ -54,6 +54,14 @@ Simulation Rooms have a StreamWeaver stage using the same renderers and room-iso
 
 Validation includes actual output-grant issuance, HTML and JSON polling, revocation, tenant/widget isolation, authenticated avatar saving and widget discovery, installed command simulation, and DOM execution covering origin checks, escaped text, event deduplication and sequential media playback. Authenticated phone layout and real audio-device acceptance remain unobserved.
 
+## Currency administration follow-up
+
+Local give/heist/gamble/roll operations now commit their wallet changes, cooldowns and receipts together. A failed receipt write rolls the operation back. Moderator single-wallet and bulk operations now honor operation IDs, preserve the original bulk recipient set on replay, and reject reuse with different values. All bulk wallets commit or roll back together.
+
+The owner UI exposes bulk add/subtract/set for existing creator-currency wallets, with a cursor-paged ledger showing before/after amounts, operation and actor. Ledger entries begin with this release; earlier balances are retained without inventing historical transactions. Owner edits and command settlements update the existing overlay projection. Zero jackpot/win percentages now remain zero, and a configured 100% win chance remains 100%; the previous runtime silently forced them to 1% or 99%.
+
+Validation covers injected receipt failure in both memory and SQLite stores, transaction rollback, retry/conflict behavior, recipient-set stability, cross-tenant balances, ledger pagination, percentage boundaries and mounted authenticated owner controls. Canonical SPMT XP remains separate. Activity also offers a bounded runtime diagnostic export; it omits saved flow bodies, private voice content and provider credentials.
+
 ## Remaining implementation groups
 
 1. Finish replacements for the imported raw script/HTTP/device/media nodes, event-trigger bindings, and legacy provider-specific access rules. The supported graph/archive converter is implemented above.

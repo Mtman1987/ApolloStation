@@ -1,3 +1,4 @@
+import { StreamWeaverAdminEconomy } from "./economy-admin.js";
 import { importStreamWeaverLegacy } from "./flow-import.js";
 import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -16,7 +17,7 @@ import { StreamWeaverRuntimeSettingsStore } from "./runtime-settings.js";
 import { SqliteStreamWeaverBotRelayStore } from "./bot-relay.js";
 
 export interface StreamWeaverWebConnectionV1 { schemaVersion: 1; tenantId: string; provider: ChatProviderV1; connectionId: string; channelId: string; providerAccountId: string; desired: boolean; }
-export interface StreamWeaverWebControlOptionsV1 { spmtOrigin: string; databasePath?: string; credential?: string; connections?: StreamWeaverWebConnectionV1[]; operationMode?: SpmtOperationModeV1; fetchImpl?: typeof fetch; }
+export interface StreamWeaverWebControlOptionsV1 { buildSha?:string; spmtOrigin: string; databasePath?: string; credential?: string; connections?: StreamWeaverWebConnectionV1[]; operationMode?: SpmtOperationModeV1; fetchImpl?: typeof fetch; }
 type SessionContext = Awaited<ReturnType<typeof fetchAppSessionContext>>;
 
 /** Authenticated app API behind Voice Commander, persona, economy, and integration pages. */
@@ -47,8 +48,20 @@ export class StreamWeaverWebControls {
       const context = await fetchAppSessionContext({ appId: "streamweaver", spmtOrigin: this.options.spmtOrigin, request });
       if (request.method === "GET" && url.pathname === "/api/streamweaver/control") return await this.read(request, response, context);
       if (request.method === "GET" && url.pathname === "/api/streamweaver/control/flows") return this.readFlows(response, context);
+      if(request.method==="GET"&&url.pathname==="/api/streamweaver/control/diagnostics"){
+        this.requireOwner(context);
+        const flows=this.requireFlows(),clean=(value:unknown)=>String(value??"").replace(/\bBearer\s+\S+/gi,"Bearer [redacted]").replace(/(bearer|token|secret|password|authorization)\s*[:=]\s*\S+/gi,"$1=[redacted]").slice(0,500);
+        const runs=flows.listRuns(context.tenantId).map(run=>({packageId:run.packageId,command:run.command,state:run.state,occurredAt:run.occurredAt,error:clean(run.error),steps:(Array.isArray(run.steps)?run.steps:[]).map(value=>{const step=record(value)??{};return{id:clean(step.id),type:clean(step.type),state:clean(step.state)};})}));
+        response.setHeader("content-disposition",'attachment; filename="streamweaver-diagnostics.json"');
+        return sendJson(response,200,{schemaVersion:1,generatedAt:new Date().toISOString(),buildSha:this.options.buildSha??"unknown",operationMode:this.operationMode,tenantId:context.tenantId,installed:flows.listInstalls(context.tenantId),runs,currency:{walletCount:this.economy?.listWalletUserIds(context.tenantId).length??0,settings:this.economy?.getSettings(context.tenantId)},scope:"Runtime metadata only. Export individual flows from the command library. Currency changes are in the owner ledger."});
+      }
       if (request.method === "GET" && url.pathname === "/api/streamweaver/control/activity") { this.requireOwner(context); return sendJson(response,200,{runs:this.requireFlows().listRuns(context.tenantId)}); }
       if (request.method === "GET" && url.pathname === "/api/streamweaver/control/voice/history") return sendJson(response,200,{history:this.runtimeSettings?.voiceHistory(context.tenantId,this.actor(context).id) ?? []});
+      if(request.method==="GET"&&url.pathname==="/api/streamweaver/control/economy/ledger"){
+        this.requireOwner(context);if(!this.economy)throw new Error("Economy runtime is not configured");
+        const entries=this.economy.listLedger(context.tenantId,{...(url.searchParams.get("userId")?{userId:identifier(url.searchParams.get("userId"),"userId")}:{}),...(url.searchParams.get("before")?{before:Number(url.searchParams.get("before"))}:{}),limit:50});
+        return sendJson(response,200,{entries,nextBefore:entries.length===50?entries.at(-1)!.id:null});
+      }
       if (request.method === "GET" && url.pathname === "/api/streamweaver/control/economy/wallet") { this.requireOwner(context); if(!this.economy)throw new Error("Economy runtime is not configured");return sendJson(response,200,{wallet:this.economy.getWallet(context.tenantId,identifier(url.searchParams.get("userId"),"userId"))}); }
       if (request.method === "GET" && /^\/api\/streamweaver\/control\/flows\/[^/]+\/export\/streamerbot$/.test(url.pathname)) return this.exportFlow(response, context, decodeURIComponent(url.pathname.split("/").at(-3) ?? ""), "streamerbot");
       if (request.method === "GET" && /^\/api\/streamweaver\/control\/flows\/[^/]+\/export$/.test(url.pathname)) return this.exportFlow(response, context, decodeURIComponent(url.pathname.split("/").at(-2) ?? ""));
@@ -87,6 +100,13 @@ export class StreamWeaverWebControls {
       if (url.pathname === "/api/streamweaver/control/flows/ai") return await this.requestAiFlow(response, context, body);
       if (url.pathname === "/api/streamweaver/control/flows/ai/complete") return await this.completeAiFlow(response, context, body);
       if (url.pathname === "/api/streamweaver/control/persona") return this.updatePersona(response, context, body);
+      if(url.pathname==="/api/streamweaver/control/economy/bulk"){
+        if(!this.economy)throw new Error("Economy runtime is not configured");
+        if(body.mode!=="add"&&body.mode!=="set")throw new Error("Choose add or set");
+        const amount=integer(body.amount,body.mode==="set"?0:-1000000000000,1000000000000,"amount"),operationId=identifier(body.idempotencyKey,"idempotencyKey"),admin=new StreamWeaverAdminEconomy(this.economy,context.tenantId,{listCanonicalUserIds:()=>this.economy!.listWalletUserIds(context.tenantId)});
+        const count=await (body.mode==="add"?admin.addToAll(amount,operationId,{actorId:this.actor(context).id}):admin.setToAll(amount,operationId,{actorId:this.actor(context).id}));
+        await this.publishEconomyOverlay(context.tenantId,`bulk:${operationId}`);return sendJson(response,200,{count});
+      }
       if (url.pathname === "/api/streamweaver/control/economy/adjust") {
         if(!this.economy)throw new Error("Economy runtime is not configured");
         if(body.mode!=="add"&&body.mode!=="set")throw new Error("Choose add or set");
