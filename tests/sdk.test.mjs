@@ -53,7 +53,6 @@ test("SDK publishes and reads tenant-scoped Simulation Room events through the s
     if((init.method??"GET")==="POST")return Response.json({id:"event-1",tenantId:"tenant-1",sourceAppId:"overlay-bay",payload:JSON.parse(init.body).payload});
     return Response.json([
       {id:"event-1",tenantId:"tenant-1",sourceAppId:"overlay-bay",payload:{schemaVersion:1,roomId:"builder",lane:"overlay",direction:"preview",title:"Scene",body:"Rendered",occurredAt:"2026-09-05T00:00:00.000Z"}},
-      {id:"event-2",tenantId:"tenant-1",sourceAppId:"streamweaver",payload:{schemaVersion:1,roomId:"other",lane:"chat",direction:"egress",title:"Chat",body:"Hello",occurredAt:"2026-09-05T00:00:00.000Z"}},
     ]);
   }});
   await client.publishSimulationRoomEvent("tenant-1",{roomId:"builder",lane:"overlay",direction:"preview",title:"Scene",body:"Rendered",data:{sceneId:"scene-1"},occurredAt:"2026-09-05T00:00:00.000Z"},"simulation-1");
@@ -63,7 +62,9 @@ test("SDK publishes and reads tenant-scoped Simulation Room events through the s
   assert.equal(new URL(seen[0].url).pathname,"/v1/simulation-rooms/events");
   const listed=await client.listSimulationRoomEvents("tenant-1",{roomId:"builder",lane:"overlay"});
   assert.deepEqual(listed.map((event)=>event.id),["event-1"]);
-  assert.match(new URL(seen[1].url).searchParams.get("type"),/simulation-room/);
+  assert.equal(new URL(seen[1].url).pathname,"/v1/simulation-rooms/events");
+  assert.equal(new URL(seen[1].url).searchParams.get("roomId"),"builder");
+  assert.equal(new URL(seen[1].url).searchParams.get("lane"),"overlay");
   assert.throws(()=>client.publishSimulationRoomEvent("tenant-1",{roomId:"builder",lane:"app",direction:"preview",title:"Unsafe",body:"No",data:{access_token:"must-not-leak"}},"simulation-unsafe"),/credentials or secrets/);
 });
 

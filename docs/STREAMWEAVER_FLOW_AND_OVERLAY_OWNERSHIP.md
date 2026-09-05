@@ -38,6 +38,23 @@ Cross-app steps use registered `run-action` capability identifiers and the share
 
 Shadow operation accepts live inbound platform/provider data. It replaces Twitch, Discord, and Kick egress with tenant-scoped Simulation Rooms, blocks external assistant and image-provider invocation, runs read-only suite actions, and submits write/broadcast suite actions with an enforced simulation marker to app-owned workers. Local browsing and selection of flow packages do not require a made-up feature token. The shared workspace footer owns the room viewer; StreamWeaver publishes flow-builder and Voice Commander routes through the shared SDK contract while each owning app publishes its own safe result.
 
+## Simulation Rooms and persistent embeds
+
+A room is identified by `(tenantId, roomId)`. A preview's input and outputs are messages in that room. StreamWeaver reuses its flow-builder room for the current user, including repeated command previews. Existing preview events are grouped automatically.
+
+Open **Workspace → Simulation Rooms** to see one entry per room. **Open room** shows its conversation; StreamWeaver rooms accept another command test. **Pin to Workspace** assigns a room to Slot 1, 2, or 3. Slot assignments use the existing canonical `dockSlots` profile field, with `/simulation-rooms?roomId=<encoded room ID>` as the embedded surface. Choosing `/simulation-rooms` embeds the room browser. The shell keeps these iframe nodes attached across app navigation, preserving the open room and unfinished input. The dedicated surface polls while visible and renders without a nested Apollo shell.
+
+| API | SDK method | Purpose |
+| --- | --- | --- |
+| `GET /v1/simulation-rooms` | `listSimulationRooms(tenantId, limit?)` | List grouped active rooms |
+| `GET /v1/simulation-rooms/events?roomId=…` | `listSimulationRoomEvents(tenantId, options)` | Read a room's current conversation, with optional lane/source filters |
+| `POST /v1/simulation-rooms/events` | `publishSimulationRoomEvent(tenantId, input, idempotencyKey)` | Add a validated synthetic input/output; optional `roomName` supplies a display label |
+| `DELETE /v1/simulation-rooms?roomId=…` | `deleteSimulationRoom(tenantId, roomId, idempotencyKey)` | Remove a room and its current conversation from active views |
+
+Reads require `events:read`; deletion requires tenant-scoped `workspace:write` and an idempotency key. These operations are also exposed through `spmt.simulation-rooms.*` MCP tools. Deletion appends a lifecycle record to the canonical event journal; it does not erase audit evidence. A new preview reopens the same room with a fresh conversation. General event publishing cannot forge that deletion record.
+
+Apps open a specific room with the existing validated `spmt.surface` bridge: `{ protocol: "spmt.surface", version: 1, type: "simulation.open", appId, roomId }`. The shell opens the room in its assigned slot when pinned, or in its shared room panel otherwise. Previewing does not navigate away from the app being tested.
+
 ## Overlay boundary
 
 Overlay Bay is ecosystem-wide. It is not a StreamWeaver composite feature.

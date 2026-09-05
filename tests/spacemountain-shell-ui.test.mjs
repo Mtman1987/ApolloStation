@@ -37,7 +37,7 @@ test("visible shell does not restore private proxy or browser credential storage
 });
 
 test("canonical home, Shipyard, registry apps, and workspace remain in the preserved shell", () => {
-  for (const pattern of [/Open Shipyard/, /Open Commlink/, /Registry, install state, granted scopes, and entitlements come directly from SPMT/, /Three persistent app slots/, /data-workspace-settings/, /Save canonical workspace/, /Custom scene override/, /installProductBackdrop/, /app\.surfaces\.includes\("shell"\)/]) assert.match(base, pattern);
+  for (const pattern of [/Open Shipyard/, /Open Commlink/, /Registry, install state, granted scopes, and entitlements come directly from SPMT/, /Three persistent workspace embeds/, /data-workspace-settings/, /Save canonical workspace/, /Custom scene override/, /installProductBackdrop/, /app\.surfaces\.includes\("shell"\)/]) assert.match(base, pattern);
   assert.doesNotMatch(base, /label: "SPMT"/);
   assert.doesNotMatch(base, /const NAV[\s\S]*label: "Commlink"[\s\S]*\];/);
 });
@@ -84,7 +84,7 @@ test("Rocketship, Black Hole, and Lost Signal interactions survive the wrapper",
 
 test("workspace tray keeps three persistent embeds and window controls", () => {
   for (const pattern of [/class="spmt-workspace-frames"/, /data-workspace-minimize/, /data-workspace-maximize/, /data-workspace-popout/, /data-workspace-clickthrough/, /data-workspace-opacity/, /frame\.dataset\.appId/]) assert.match(base, pattern);
-  for (const pattern of [/data-simulation-rooms-toggle/, /SPMT_SIMULATION_ROOM_EVENT/, /Tenant-scoped chat, overlay, game, and app previews/]) assert.match(base, pattern);
+  for (const pattern of [/data-simulation-rooms-toggle/, /SimulationRoomsUi/, /simulationRoomSlot/]) assert.match(base, pattern);
   assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /\.spmt-workspace-tray\{[^}]*position:fixed[^}]*bottom:/);
 });
 

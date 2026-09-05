@@ -94,6 +94,26 @@ test("private SpaceMountain host serves explicit browser modules with restrictiv
   });
 });
 
+test("Workspace room surfaces and room lifecycle APIs are reachable through browser ingress", async () => {
+  await withSandbox(async ({base}) => {
+    const surface = await fetch(`${base}/simulation-rooms?roomId=flow-preview`);
+    assert.equal(surface.status,200);
+    assert.equal(surface.headers.get("x-frame-options"),null);
+    assert.match(surface.headers.get("content-security-policy"),/frame-ancestors 'self'/);
+    assert.match(await surface.text(),/simulation-rooms-client.js/);
+    const registration = await fetch(`${base}/sandbox/auth/register`,{method:"POST",headers:{origin:base,"content-type":"application/json"},body:JSON.stringify({username:"room-tester",displayName:"Room Tester",password:"test-only-room-password"})});
+    const cookie=registration.headers.get("set-cookie").split(";")[0];
+    const principal=await (await fetch(`${base}/v1/session`,{headers:{cookie}})).json();
+    const headers={cookie,origin:base,"x-spmt-tenant":principal.tenantIds[0],"content-type":"application/json","idempotency-key":"room-preview"};
+    assert.equal((await fetch(`${base}/v1/simulation-rooms/events`,{method:"POST",headers,body:JSON.stringify({schemaVersion:1,roomId:"preview",lane:"chat",direction:"ingress",title:"Input",body:"hello",occurredAt:new Date().toISOString()})})).status,200);
+    assert.equal((await (await fetch(`${base}/v1/simulation-rooms`,{headers})).json()).length,1);
+    assert.equal((await (await fetch(`${base}/v1/simulation-rooms/events?roomId=preview`,{headers})).json()).length,1);
+    assert.equal((await fetch(`${base}/v1/simulation-rooms?roomId=preview`,{method:"DELETE",headers:{...headers,origin:"https://other.test"}})).status,403);
+    assert.equal((await fetch(`${base}/v1/simulation-rooms?roomId=preview`,{method:"DELETE",headers:{...headers,"idempotency-key":"room-delete"}})).status,200);
+    assert.deepEqual(await (await fetch(`${base}/v1/simulation-rooms`,{headers})).json(),[]);
+  });
+});
+
 test("developer console exposes an editable candidate but registers only through the SDK", async () => {
   const directory = mkdtempSync(join(tmpdir(), "spmt-empty-catalog-"));
   const spmt = createSpmtService({ databasePath: join(directory, "spmt-empty.sqlite"), webhookKey: Buffer.alloc(32, 8), host: "127.0.0.1", port: 0, publicBaseUrl: "https://test-green.sprites.app", runtimeMode: "sandbox", sandboxFixtures: false, sandboxOwnerUsername: "mtman1987" });

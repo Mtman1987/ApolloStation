@@ -101,6 +101,9 @@ spmt.apps.register { ...manifest }</code></pre>
     <section id="workspace">
       <span>CANONICAL WORKSPACE</span><h2>Use one workspace, not an app-owned copy</h2>
       <p>Read and update <code>/v1/workspace/profile</code> through <code>SpmtClient.getWorkspaceProfile()</code> and <code>updateWorkspaceProfile()</code>. The profile carries the three dock slots, shared appearance and motion controls, and the active overlay scene. Apps should mount the canonical workspace tray in their live header and retain iframe nodes while their own routes change.</p>
+      <h3>Simulation Rooms in workspace embeds</h3>
+      <p>Open Simulation Rooms from Workspace, then open a conversation or pin it to Slot 1, 2, or 3. Each slot can hold an app or a room. The room stays mounted while the active app changes. Preview inputs and outputs share one room entry.</p>
+      <p>Use <code>listSimulationRooms()</code>, <code>listSimulationRoomEvents()</code>, <code>publishSimulationRoomEvent()</code>, and <code>deleteSimulationRoom()</code> on the SDK. The same operations are available under <code>/v1/simulation-rooms</code> and the <code>spmt.simulation-rooms.*</code> MCP tools. Deleting requires tenant workspace write access and removes the active conversation; canonical audit history is retained.</p>
       <h3>Browser-source outputs</h3>
       <pre><code>const widgets = await spmt.listOverlayWidgets(tenantId);
 const issued = await spmt.issueOverlayOutput(

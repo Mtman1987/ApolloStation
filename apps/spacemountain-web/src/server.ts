@@ -22,6 +22,8 @@ const PROVIDER_ENV_NAMES = Object.freeze([
 ]);
 
 const ASSETS = new Map<string, { file: string; type: string }>([
+  ["/assets/web/simulation-rooms-client.js", { file: resolve(HERE, "simulation-rooms-client.js"), type: "text/javascript; charset=utf-8" }],
+  ["/assets/spacemountain/simulation-rooms-ui.js", { file: resolve(REPOSITORY_ROOT, "apps/spacemountain/dist/simulation-rooms-ui.js"), type: "text/javascript; charset=utf-8" }],
   ["/assets/web/client.js", { file: resolve(HERE, "client.js"), type: "text/javascript; charset=utf-8" }],
   ["/assets/web/session-resilience.js", { file: resolve(HERE, "session-resilience.js"), type: "text/javascript; charset=utf-8" }],
   ["/assets/web/bounded-app-client.js", { file: resolve(HERE, "bounded-app-client.js"), type: "text/javascript; charset=utf-8" }],
@@ -85,6 +87,11 @@ export function createSpaceMountainWebHost(options: SpaceMountainWebHostOptions)
     try {
       const url = new URL(request.url ?? "/", "http://spacemountain.local");
       overlayRequest = (request.method === "GET" || request.method === "HEAD") && overlayOutputPath(url.pathname) && !url.search;
+      if (request.method === "GET" && url.pathname === "/simulation-rooms") {
+        response.removeHeader("x-frame-options");
+        response.setHeader("content-security-policy", `default-src 'none'; script-src 'self' 'nonce-${nonce}'; style-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'self'; base-uri 'none'; form-action 'self'; object-src 'none'`);
+        return html(response, 200, `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="color-scheme" content="dark"><title>Simulation Rooms</title><style>html,body{margin:0;height:100%;background:#080d18;color:#eff4ff;font:14px system-ui}#simulation-rooms-root{box-sizing:border-box;height:100%;overflow:auto;padding:12px}</style><script type="importmap" nonce="${nonce}">{"imports":{"@spmt/contracts":"/assets/contracts/index.js","@spmt/sdk":"/assets/sdk/index.js","@spmt/spacemountain/simulation-rooms":"/assets/spacemountain/simulation-rooms-ui.js"}}</script><script type="module" src="/assets/web/simulation-rooms-client.js" nonce="${nonce}"></script></head><body><main id="simulation-rooms-root">Opening Simulation Rooms…</main></body></html>`);
+      }
       if (request.method === "GET" && BOUNDED_APP_PATHS.has(url.pathname)) {
         const surface = url.searchParams.get("surface") === "shell" ? "shell" : "standalone";
         const page = renderBoundedAppPage(url.pathname, buildSha, nonce, surface);
@@ -333,10 +340,12 @@ function nebulaArcadeProxyPath(pathname: string) {
 
 function browserProxyAllowed(method: string, pathname: string) {
   if (method === "GET") {
+    if (pathname === "/v1/simulation-rooms" || pathname === "/v1/simulation-rooms/events") return true;
     if (["/health/live", "/health/ready", "/v1/session", "/v1/auth/setup-options", "/v1/identity/providers", "/v1/workspace/profile", "/v1/overlay/tenant-outputs", "/v1/apps", "/v1/apps/installs", "/v1/entitlements", "/v1/usage/me", "/v1/events", "/v1/commlink/conversations", "/v1/commlink/messages", "/v1/commlink/live", "/v1/commlink/search", "/v1/notifications", "/v1/assistants/community", "/v1/stellar/context", "/v1/stellar/capabilities", "/v1/stellar/me/export", "/v1/stellar/me", "/v1/operations/logs", "/v1/operations/coder", "/v1/operations/coder/jobs"].includes(pathname)) return true;
     return /^\/v1\/apps\/[^/]+$/.test(pathname) || /^\/v1\/jobs\/[^/]+$/.test(pathname) || /^\/v1\/identity\/providers\/(?:twitch|discord)\/start$/.test(pathname) || pathname === "/v1/onboarding/twitch/callback";
   }
   if (method === "PATCH" && pathname === "/v1/workspace/profile") return true;
+  if (method === "DELETE" && pathname === "/v1/simulation-rooms") return true;
   if (method === "DELETE" && (pathname === "/v1/stellar/me" || /^\/v1\/identity\/providers\/[^/]+\/[^/]+$/.test(pathname))) return true;
   if (method === "POST") return pathname === "/v1/apps" || pathname === "/v1/simulation-rooms/events" || /^\/v1\/apps\/[^/]+\/(?:install|disable)$/.test(pathname) || /^\/v1\/notifications\/[^/]+\/read$/.test(pathname) || pathname === "/v1/commlink/messages" || pathname === "/v1/assistants/community/invocations" || pathname === "/v1/operations/coder/jobs";
   return false;

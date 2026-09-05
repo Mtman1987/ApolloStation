@@ -420,6 +420,7 @@ export type ChatProviderV1 = (typeof CHAT_PROVIDERS)[number];
 
 /** Shared, tenant-scoped test surface used by app builders without contacting a real provider. */
 export const SPMT_SIMULATION_ROOM_EVENT = "spmt.simulation-room.event.v1" as const;
+export const SPMT_SIMULATION_ROOM_DELETED = "spmt.simulation-room.deleted.v1" as const;
 export const SIMULATION_ROOM_LANES = ["chat", "overlay", "game", "app"] as const;
 export type SimulationRoomLaneV1 = (typeof SIMULATION_ROOM_LANES)[number];
 export type SimulationRoomDirectionV1 = "ingress" | "egress" | "preview";
@@ -427,6 +428,7 @@ export type SimulationRoomDirectionV1 = "ingress" | "egress" | "preview";
 export interface SimulationRoomEventV1 {
   schemaVersion: 1;
   roomId: string;
+  roomName?: string;
   lane: SimulationRoomLaneV1;
   direction: SimulationRoomDirectionV1;
   title: string;
@@ -438,6 +440,15 @@ export interface SimulationRoomEventV1 {
   replyToMessageId?: string;
   artifactUrl?: string;
   data?: Record<string, unknown>;
+}
+
+export interface SimulationRoomSummaryV1 {
+  roomId: string;
+  name: string;
+  eventCount: number;
+  lastActivityAt: string;
+  lanes: SimulationRoomLaneV1[];
+  sourceAppIds: string[];
 }
 
 export interface NormalizedChatMessageV1 {
@@ -580,6 +591,7 @@ export function assertSimulationRoomEventV1(value: SimulationRoomEventV1): Simul
   if (value.schemaVersion !== 1 || !(SIMULATION_ROOM_LANES as readonly string[]).includes(value.lane) || !["ingress", "egress", "preview"].includes(value.direction)) throw new Error("Simulation room event version, lane, or direction is invalid");
   for (const [name, field] of [["roomId", value.roomId], ["title", value.title]] as const) if (!field || field.trim() !== field || field.length > (name === "title" ? 160 : 200)) throw new Error(`Simulation room ${name} is invalid`);
   if (!value.body || value.body.length > 8_000 || !Number.isFinite(Date.parse(value.occurredAt))) throw new Error("Simulation room event body or time is invalid");
+  if (value.roomName !== undefined && (typeof value.roomName !== "string" || !value.roomName.trim() || value.roomName.trim() !== value.roomName || value.roomName.length > 160)) throw new Error("Simulation room name is invalid");
   if (value.provider && !(CHAT_PROVIDERS as readonly string[]).includes(value.provider)) throw new Error("Simulation room provider is invalid");
   for (const [name, field] of [["connectionId", value.connectionId], ["channelId", value.channelId], ["replyToMessageId", value.replyToMessageId]] as const) if (field !== undefined && (!field || field.trim() !== field || field.length > 200)) throw new Error(`Simulation room ${name} is invalid`);
   if (value.artifactUrl) {

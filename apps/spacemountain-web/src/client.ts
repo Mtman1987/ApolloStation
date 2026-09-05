@@ -144,7 +144,7 @@ async function loadShell() {
       onDeleteStellarData: () => void deleteStellarData(),
       onMarkNotificationRead: (notification) => void markNotificationRead(notification),
       onUnlinkProvider: (link) => void unlinkProvider(link),
-      onSaveWorkspace: (expectedRevision, patch) => void saveWorkspace(expectedRevision, patch),
+      onSaveWorkspace: (expectedRevision, patch) => saveWorkspace(expectedRevision, patch),
       onPrepareCoderLog: (log) => void prepareCoderLog(log),
       onPrepareCoderPrompt: (appId, prompt) => void prepareCoderPrompt(appId, prompt),
       onIssueOverlayOutput: (appId, widgetId, personal) => void issueOverlayOutput(appId, widgetId, personal),
@@ -581,7 +581,8 @@ async function saveWorkspace(expectedRevision: number, patch: Record<string, unk
     }
     await loadShell();
     setStatus("Workspace saved once and published for every authorized app.", "ready");
-  } catch (error) { setStatus(message(error), "error"); }
+    return true;
+  } catch (error) { setStatus(message(error), "error"); return false; }
 }
 
 async function prepareCoderLog(log: OperationsLogV1) {

@@ -78,6 +78,12 @@ test("StreamWeaver exposes a wired Voice Commander, searchable bot catalog, inte
     assert.equal(exported.status, 200); assert.match(exported.headers.get("content-disposition") ?? "", /\.streamweaver\.json/); assert.equal((await exported.json()).commands.length, 1);
     const preview = await fetch(`${streamBase}/api/streamweaver/control/flows/preview`, { method: "POST", headers: { cookie, origin, "content-type": "application/json" }, body: JSON.stringify({ packageId: "mtman1987.coinflip" }) });
     assert.equal(preview.status, 200); const previewBody=await preview.json(); assert.match(previewBody.roomId,/streamweaver:flow-builder/); assert.equal(previewBody.command.role,"primary"); assert.ok(previewBody.outputs.length>0);
+    const secondPreview = await fetch(`${streamBase}/api/streamweaver/control/flows/preview`, { method: "POST", headers: { cookie, origin, "content-type": "application/json" }, body: JSON.stringify({ packageId: "mtman1987.coinflip", message: "!coinflip" }) });
+    assert.equal((await secondPreview.json()).roomId,previewBody.roomId);
+    const rooms = await (await fetch(`${spmtBase}/v1/simulation-rooms`, { headers: { cookie, "x-spmt-tenant": tenantId } })).json();
+    assert.equal(rooms.filter((room)=>room.roomId===previewBody.roomId).length,1,"repeated previews reuse a single room");
+    assert.ok(rooms.find((room)=>room.roomId===previewBody.roomId).eventCount>=4,"inputs and outputs belong in the conversation");
+    assert.doesNotMatch(browserSource,/data-nav="shadow-rooms"|data-spmt-live-slot="shadow-rooms"/);
     const blockedBuilder = await fetch(`${streamBase}/api/streamweaver/control/flows/ai`, { method: "POST", headers: { cookie, origin, "content-type": "application/json" }, body: JSON.stringify({ idea: "Make !hello greet the chatter" }) });
     assert.equal(blockedBuilder.status, 200); assert.equal((await blockedBuilder.json()).status, "blocked");
     const persona = await fetch(`${streamBase}/api/streamweaver/control/persona`, { method: "POST", headers: { cookie, origin, "content-type": "application/json" }, body: JSON.stringify({ personaId: "athena", displayName: "Athena", aliases: "athena\nannie", homeChannelIds: "main", summonWindowMinutes: 10, instructions: "Be warm, accurate, and concise.", memoryPolicy: "conversation" }) });

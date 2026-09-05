@@ -42,7 +42,7 @@ export interface StreamWeaverWebServerOptionsV1 { spmtOrigin: string; port?: num
 export function createStreamWeaverWebServer(options: StreamWeaverWebServerOptionsV1) {
   const snapshot = productAppSnapshotHandler({ appId: "streamweaver", spmtOrigin: options.spmtOrigin, sources: productAppSnapshotSources(STREAMWEAVER_WEB_DESCRIPTOR) });
   const controls = new StreamWeaverWebControls({ ...options, connections: parseStreamWeaverWebConnections(options.connectionsJson) });
-  return createProductAppWebServer({ descriptor: STREAMWEAVER_WEB_DESCRIPTOR, port: options.port, host: options.host, buildSha: options.buildSha, extraCss: STREAMWEAVER_CONTROL_CSS + STREAMWEAVER_FLOW_CSS, browserJs: appSurfaceBrowserJs(SURFACE) + voiceJobCompletionBrowserJs() + suiteActionStatusBrowserJs() + controlBrowserJs() + flowBrowserJs() + simulationRoomBrowserJs() + simulationRoomLauncherBrowserJs() + operationModeBrowserJs(), handleApi: async (request, response, url) => await controls.handle(request, response, url) || await snapshot(request, response, url), close: () => controls.close() });
+  return createProductAppWebServer({ descriptor: STREAMWEAVER_WEB_DESCRIPTOR, port: options.port, host: options.host, buildSha: options.buildSha, extraCss: STREAMWEAVER_CONTROL_CSS + STREAMWEAVER_FLOW_CSS, browserJs: appSurfaceBrowserJs(SURFACE) + voiceJobCompletionBrowserJs() + suiteActionStatusBrowserJs() + controlBrowserJs() + flowBrowserJs() + simulationRoomBrowserJs() + operationModeBrowserJs(), handleApi: async (request, response, url) => await controls.handle(request, response, url) || await snapshot(request, response, url), close: () => controls.close() });
 }
 
 const STREAMWEAVER_CONTROL_CSS = `
@@ -72,11 +72,27 @@ function flowBrowserJs() {
 }
 
 function simulationRoomBrowserJs() {
-  return String.raw`;(()=>{let packages=new Map(),loading=false;const escapeHtml=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));function status(message,state=''){document.querySelectorAll('[data-sw-flow-status]').forEach(node=>{node.textContent=message;node.dataset.state=state})}async function load(){if(loading)return;loading=true;try{const response=await fetch('/api/streamweaver/control/flows',{credentials:'same-origin',cache:'no-store'}),value=await response.json();if(!response.ok)return;packages=new Map([...(value.community||[]),...(value.drafts||[])].map(item=>[item.packageId,item]));decorate()}catch{}finally{loading=false}}function decorate(){for(const card of document.querySelectorAll('.sw-flow-card[data-package]')){if(card.dataset.simulationReady==='true')continue;const item=packages.get(card.dataset.package);if(!item)continue;const actions=card.querySelector('.sw-actions');if(!actions)continue;for(const command of item.commands||[]){const button=document.createElement('button');button.type='button';button.className='button';button.dataset.swSimPreview='';button.dataset.packageId=item.packageId;button.dataset.commandId=command.id;button.textContent='Preview '+command.trigger+(command.role==='addon'?' add-on':'');actions.prepend(button)}card.dataset.simulationReady='true'}}function render(result){const node=document.querySelector('[data-spmt-live-slot="shadow-rooms"]');if(!node)return;const outputs=result.outputs||[];node.innerHTML='<div class="sw-shell"><section class="sw-flow-lead"><span class="sw-badge">Tenant simulation · no provider egress</span><h3>'+escapeHtml(result.command?.trigger||'Flow preview')+'</h3><p>Room '+escapeHtml(result.roomId)+' received the exact synthetic input and app output below. Other tenants cannot read this room.</p></section><article class="sw-card"><span class="sw-badge">chat · ingress</span><strong>'+escapeHtml(result.input)+'</strong></article>'+(outputs.length?outputs.map(output=>'<article class="sw-card"><span class="sw-badge">'+escapeHtml(output.type)+'</span><strong>'+escapeHtml(output.text)+'</strong><small>'+escapeHtml(output.actionId)+'</small></article>').join(''):'<article class="sw-card"><span class="sw-badge">app · preview</span><strong>This command completed without a visible output.</strong></article>')+'</div>'}document.addEventListener('click',event=>{const button=event.target.closest?.('[data-sw-sim-preview]');if(!button)return;void(async()=>{try{button.disabled=true;status('Running this command in your tenant simulation room…');const response=await fetch('/api/streamweaver/control/flows/preview',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({packageId:button.dataset.packageId,commandId:button.dataset.commandId})}),value=await response.json();if(!response.ok)throw new Error(value.message||value.error||'Preview failed');status('Preview stayed inside your tenant simulation room.','ready');document.querySelector('[data-nav="shadow-rooms"]')?.click();setTimeout(()=>render(value),0)}catch(error){status(error instanceof Error?error.message:String(error),'error')}finally{button.disabled=false}})()});new MutationObserver(()=>{decorate();if(!packages.size)void load()}).observe(document.body,{childList:true,subtree:true});setTimeout(()=>void load(),0)})();`;
-}
-
-function simulationRoomLauncherBrowserJs() {
-  return String.raw`;(()=>{const nativeFetch=window.fetch.bind(window);window.fetch=async(input,init)=>{const response=await nativeFetch(input,init);try{const path=new URL(typeof input==='string'?input:input instanceof URL?input:input.url,location.href).pathname,method=String(init?.method||'GET').toUpperCase();if(method==='POST'&&path==='/api/streamweaver/control/flows/preview'&&response.ok)setTimeout(()=>document.querySelector('[data-spmt-open-simulation-rooms]')?.click(),0)}catch{}return response}})();`;
+  return String.raw`;(()=>{
+    let packages=new Map(),loading=false;
+    const pending=new Set();
+    function status(message,state=''){document.querySelectorAll('[data-sw-flow-status]').forEach(node=>{node.textContent=message;node.dataset.state=state})}
+    async function load(){if(loading)return;loading=true;try{const response=await fetch('/api/streamweaver/control/flows',{credentials:'same-origin',cache:'no-store'}),value=await response.json();if(!response.ok)return;packages=new Map([...(value.community||[]),...(value.drafts||[])].map(item=>[item.packageId,item]));decorate()}catch{}finally{loading=false}}
+    function decorate(){for(const card of document.querySelectorAll('.sw-flow-card[data-package]')){if(card.dataset.simulationReady==='true')continue;const item=packages.get(card.dataset.package);if(!item)continue;const actions=card.querySelector('.sw-actions');if(!actions)continue;for(const command of item.commands||[]){const button=document.createElement('button');button.type='button';button.className='button';button.dataset.swSimPreview='';button.dataset.packageId=item.packageId;button.dataset.commandId=command.id;button.textContent='Preview '+command.trigger+(command.role==='addon'?' add-on':'');actions.prepend(button)}card.dataset.simulationReady='true'}}
+    document.addEventListener('click',event=>{
+      const button=event.target.closest?.('[data-sw-sim-preview]');if(!button||button.disabled)return;
+      const key=button.dataset.packageId+':'+button.dataset.commandId;if(pending.has(key))return;
+      pending.add(key);button.disabled=true;
+      void(async()=>{try{
+        status('Running this command in your simulation room…');
+        const response=await fetch('/api/streamweaver/control/flows/preview',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({packageId:button.dataset.packageId,commandId:button.dataset.commandId})}),value=await response.json();
+        if(!response.ok)throw new Error(value.message||value.error||'Preview failed');
+        status('Preview added to your room.','ready');
+        window.dispatchEvent(new CustomEvent('spmt:open-simulation-rooms',{detail:{roomId:value.roomId}}));
+      }catch(error){status(error instanceof Error?error.message:String(error),'error')}finally{pending.delete(key);button.disabled=false}})();
+    });
+    new MutationObserver(()=>{decorate();if(!packages.size)void load()}).observe(document.body,{childList:true,subtree:true});
+    setTimeout(()=>void load(),0);
+  })();`;
 }
 
 function operationModeBrowserJs() {

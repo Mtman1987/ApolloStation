@@ -6,10 +6,22 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
-    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
-    "./ui": { "types": "./dist/shell-ui.d.ts", "default": "./dist/shell-ui.js" }
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./ui": {
+      "types": "./dist/shell-ui.d.ts",
+      "default": "./dist/shell-ui.js"
+    },
+    "./simulation-rooms": {
+      "types": "./dist/simulation-rooms-ui.d.ts",
+      "default": "./dist/simulation-rooms-ui.js"
+    }
   },
-  "scripts": { "build": "tsc -b" },
+  "scripts": {
+    "build": "tsc -b"
+  },
   "dependencies": {
     "@spmt/contracts": "0.1.0",
     "@spmt/embed": "0.1.0",

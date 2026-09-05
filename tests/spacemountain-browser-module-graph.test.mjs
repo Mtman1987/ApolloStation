@@ -62,6 +62,10 @@ test("SpaceMountain serves the complete browser module graph before boot", async
     assert.ok(shellGraph.has(`${base}/assets/sdk/xp.js`));
     assert.ok(shellGraph.has(`${base}/assets/sdk/suite-actions.js`));
 
+    const simulationGraph = await assertBrowserModuleGraph(base, "/simulation-rooms?roomId=preview");
+    assert.ok(simulationGraph.has(`${base}/assets/spacemountain/simulation-rooms-ui.js`));
+    assert.ok(simulationGraph.has(`${base}/assets/web/simulation-rooms-client.js`));
+
     const boundedGraph = await assertBrowserModuleGraph(base, "/apps/discord-stream-hub");
     assert.ok(boundedGraph.has(`${base}/assets/web/bounded-app-client.js`));
   } finally {

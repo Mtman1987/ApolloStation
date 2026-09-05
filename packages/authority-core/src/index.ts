@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { SPMT_SIMULATION_ROOM_EVENT, SPMT_SIMULATION_ROOM_DELETED, assertSimulationRoomEventV1, type SimulationRoomEventV1, type SimulationRoomLaneV1, type SimulationRoomSummaryV1 } from "@spmt/contracts";
 
 export type ProviderKindV1 = "twitch" | "discord" | "xbox" | "github" | "other";
 
@@ -413,6 +414,48 @@ export class AuthorityService {
       .filter((event) => options.sourceAppId === undefined || event.sourceAppId === options.sourceAppId)
       .slice(-limit)
       .reverse();
+  }
+
+  private simulationRooms(tenantId: string) {
+    requireId(tenantId, "tenantId");
+    const rooms = new Map<string, Array<PlatformEventV1 & { payload: SimulationRoomEventV1 }>>();
+    // Replay the tenant's journal in insertion order. Deletion removes the active
+    // room projection while preserving the canonical event/audit history.
+    for (const event of this.store.listEvents(tenantId)) {
+      if (event.type === SPMT_SIMULATION_ROOM_DELETED && typeof event.payload.roomId === "string") { rooms.delete(event.payload.roomId); continue; }
+      if (event.type !== SPMT_SIMULATION_ROOM_EVENT) continue;
+      let payload: SimulationRoomEventV1;
+      try { payload = assertSimulationRoomEventV1(event.payload as unknown as SimulationRoomEventV1); } catch { continue; }
+      const history = rooms.get(payload.roomId) ?? [];
+      history.push({ ...event, payload } as PlatformEventV1 & { payload: SimulationRoomEventV1 });
+      rooms.delete(payload.roomId);
+      rooms.set(payload.roomId, history);
+    }
+    return rooms;
+  }
+
+  listSimulationRooms(tenantId: string, limit = 100): SimulationRoomSummaryV1[] {
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 200) throw new AuthorityValidationError("room limit must be an integer from 1 through 200");
+    return [...this.simulationRooms(tenantId)].reverse().slice(0, limit).map(([roomId, history]) => ({
+      roomId, name: [...history].reverse().find((event) => event.payload.roomName)?.payload.roomName ?? history[0]!.payload.title,
+      eventCount: history.length, lastActivityAt: history.at(-1)!.createdAt,
+      lanes: [...new Set(history.map((event) => event.payload.lane))], sourceAppIds: [...new Set(history.map((event) => event.sourceAppId))],
+    }));
+  }
+
+  listSimulationRoomEvents(tenantId: string, options: { roomId?: string; lane?: SimulationRoomLaneV1; sourceAppId?: string; limit?: number } = {}) {
+    const limit = options.limit ?? 100;
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 200) throw new AuthorityValidationError("room event limit must be an integer from 1 through 200");
+    if (options.roomId !== undefined) requireId(options.roomId, "roomId");
+    const rooms = this.simulationRooms(tenantId);
+    const events = options.roomId === undefined ? [...rooms.values()].flat().sort((a, b) => a.createdAt.localeCompare(b.createdAt)) : rooms.get(options.roomId) ?? [];
+    return events.filter((event) => (!options.lane || event.payload.lane === options.lane) && (!options.sourceAppId || event.sourceAppId === options.sourceAppId)).slice(-limit).reverse();
+  }
+
+  deleteSimulationRoom(tenantId: string, roomId: string, sourceAppId: string, idempotencyKey: string) {
+    requireId(roomId, "roomId");
+    const result = this.publishEvent({ tenantId, sourceAppId, type: SPMT_SIMULATION_ROOM_DELETED, payload: { schemaVersion: 1, roomId }, idempotencyKey });
+    return { roomId, deleted: true, duplicate: result.duplicate };
   }
 
   listOutbox() { return this.store.listOutbox(); }
