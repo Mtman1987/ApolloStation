@@ -102,7 +102,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
   if (options.streamweaverProviderRuntimeEnabled && (!options.streamweaverWorkerCredential || options.streamweaverWorkerCredential.length < 32)) throw new Error("An enabled StreamWeaver provider runtime requires a 32+ character service credential");
   if (options.streamweaverWorkerCredential) ensureStreamWeaverIdentity(auth, options.streamweaverWorkerCredential);
   if (options.dshLiveRuntimeEnabled && (!options.dshWorkerCredential || options.dshWorkerCredential.length < 32)) throw new Error("An enabled Discord Stream Hub live runtime requires a 32+ character service credential");
-  if (options.dshWorkerCredential) ensureDshIdentity(auth, options.dshWorkerCredential);
+  if (options.dshWorkerCredential) ensureDshIdentity(auth, options.dshWorkerCredential, runtimeMode === "production");
   if (options.nebulaArcadeProviderRuntimeEnabled && (!options.nebulaArcadeWorkerCredential || options.nebulaArcadeWorkerCredential.length < 32)) throw new Error("An enabled Nebula Arcade provider runtime requires a 32+ character service credential");
   if (options.nebulaArcadeWorkerCredential) ensureNebulaArcadeIdentity(auth, options.nebulaArcadeWorkerCredential);
   if (options.hearMeOutRuntimeEnabled && (!options.hearMeOutWorkerCredential || options.hearMeOutWorkerCredential.length < 32)) throw new Error("An enabled HearMeOut runtime requires a 32+ character service credential");
@@ -710,8 +710,8 @@ function ensureStreamWeaverIdentity(auth: AuthService, credential: string) {
   const scopes = ["identity:read", "identity:write", "events:write", "assistants:invoke", "jobs:read", "jobs:write", "jobs:work", "xp:write", "runtime:write"];
   auth.reconcileServiceIdentity({ serviceId: "streamweaver", credential, scopes, tenantMode: "any" });
 }
-function ensureDshIdentity(auth: AuthService, credential: string) {
-  auth.reconcileServiceIdentity({ serviceId: "discord-stream-hub", credential, scopes: ["providers:grant", "events:write", "jobs:read", "jobs:work", "runtime:write"], tenantMode: "any" });
+function ensureDshIdentity(auth: AuthService, credential: string, production:boolean) {
+  auth.reconcileServiceIdentity({ serviceId: "discord-stream-hub", credential, scopes: ["identity:read", "providers:grant", "events:write", "jobs:read", "jobs:work", "runtime:write", ...(production?["xp:read","xp:write"]:[])], tenantMode: "any" });
 }
 function ensureNebulaArcadeIdentity(auth: AuthService, credential: string) {
   auth.reconcileServiceIdentity({ serviceId: "nebula-arcade", credential, scopes: ["events:write", "xp:write", "runtime:write"], tenantMode: "any" });

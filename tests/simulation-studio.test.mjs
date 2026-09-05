@@ -58,7 +58,7 @@ test('typed studio input reaches real StreamWeaver, HearMeOut, Tag, Bingo and Qu
 
 test('Discord creates and edits the real calendar embed without duplicate room/message creation',async t=>{
  const f=setup(t);let result=await f.send('deploy admin calendar',{provider:'discord'});
- const first=result.events.find(event=>event.payload.data?.operation==='create'&&event.payload.data.appId==='discord-stream-hub');assert.ok(first.payload.data.payload.embeds[0].title.includes('📅'));
+ const first=result.events.find(event=>event.payload.data?.operation==='create'&&event.payload.data.appId==='discord-stream-hub');assert.match(first.payload.data.payload.embeds[0].title,/Community Calendar/);assert.equal(first.payload.data.payload.embeds.length,1);
  result=await f.send('refresh admin calendar',{provider:'discord'});
  const edited=result.events.find(event=>event.payload.data?.operation==='edit');assert.equal(edited.payload.data.providerMessageId,first.payload.data.providerMessageId);
  assert.equal((await f.owner.listSimulationRooms('tenant-a')).length,1);
@@ -125,4 +125,18 @@ test('a named room is created without previewing a command, then independently r
  await f.send('spmt card',{roomId});await f.send('list hearmeout rooms',{roomId});await f.send('deploy admin calendar',{roomId,provider:'discord'});
  rooms=await f.owner.listSimulationRooms('tenant-a');assert.equal(rooms.length,1);assert.equal(rooms[0].name,'Friday live test');
  await assert.rejects(f.owner.createSimulationRoom('tenant-b','Other tenant','wrong-tenant'),{status:403});
+});
+
+
+test('calendar modal submissions update the same room message through the SDK and actual Discord handler',async t=>{
+ const f=setup(t);let result=await f.send('deploy admin calendar',{provider:'discord'});
+ const first=result.events.find(e=>e.payload.data?.payload?.calendar),payload=first.payload.data.payload,button=payload.components[0].components.find(b=>b.custom_id.includes(':captain:'));
+ result=await f.send('Claim Captain’s Log',{provider:'discord',interaction:{customId:button.custom_id}});
+ const modal=result.events.find(e=>e.payload.data?.interactionType===9).payload.data.payload;
+ result=await f.send('Choose date',{provider:'discord',interaction:{customId:modal.custom_id,values:{date:payload.calendar.month+'-17'}}});
+ const update=result.events.find(e=>e.payload.data?.inputId===result.job.id&&e.payload.data?.payload?.calendar);
+ assert.ok(update);assert.equal(update.payload.data.operation,'edit');assert.equal(update.payload.data.providerMessageId,first.payload.data.providerMessageId);
+ assert.equal(update.payload.data.payload.calendar.events[0].type,'captains-log');assert.equal(update.payload.data.payload.calendar.events[0].username,'owner');
+ assert.match(renderSimulationDiscordPayload(update.payload.data.payload),/<svg/);
+ assert.equal((await f.owner.listSimulationRooms('tenant-a')).length,1);
 });

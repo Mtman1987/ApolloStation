@@ -292,3 +292,5 @@ export function installDefaultPortalRoots(doc: Document) {
 export function portalLayer(kind: PortalKindV1) {
   return layerForPortal[kind];
 }
+
+export * from "./community-calendar.js";

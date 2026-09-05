@@ -9,7 +9,7 @@ export function renderSpaceMountainPage(nonce: string, buildSha: string, candida
   <meta name="robots" content="noindex,nofollow,noarchive">
   <title>SpaceMountain Green Sandbox</title>
   <link rel="stylesheet" href="/assets/web/sandbox.css">
-  <script type="importmap" nonce="${nonce}">{"imports":{"@spmt/contracts":"/assets/contracts/index.js","@spmt/embed":"/assets/embed/index.js","@spmt/sdk":"/assets/sdk/index.js","@spmt/ui":"/assets/ui/index.js","@spmt/spacemountain":"/assets/spacemountain/index.js","@spmt/spacemountain/ui":"/assets/spacemountain/shell-ui.js"}}</script>
+  <script type="importmap" nonce="${nonce}">{"imports":{"@spmt/contracts":"/assets/contracts/index.js","@spmt/embed":"/assets/embed/index.js","@spmt/sdk":"/assets/sdk/index.js","@spmt/ui":"/assets/ui/index.js","@spmt/ui/community-calendar":"/assets/ui/community-calendar.js","@spmt/spacemountain":"/assets/spacemountain/index.js","@spmt/spacemountain/ui":"/assets/spacemountain/shell-ui.js"}}</script>
   <script type="module" src="/assets/web/client.js" nonce="${nonce}"></script>
 </head>
 <body>

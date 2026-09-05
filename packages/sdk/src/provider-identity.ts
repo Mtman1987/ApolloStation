@@ -14,6 +14,7 @@ export interface SpmtProviderIdentityResultV1 {
   providerUserId: string;
   userId: string;
   profile: SpmtProviderIdentityProfileV1;
+  tenantRole?: "owner" | "member" | null;
   credentialState: "setup-required" | "password-set";
   createdUser: boolean;
   linkedProvider: boolean;

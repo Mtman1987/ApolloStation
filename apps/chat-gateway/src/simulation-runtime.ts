@@ -11,7 +11,7 @@ import { SpmtClient } from "@spmt/sdk";
 import { SIMULATION_ROOM_INPUT_CAPABILITY, assertSimulationRoomInputV1, type ExecutionJobV1, type SimulationRoomEventV1, type SimulationRoomInputJobV1 } from "@spmt/contracts";
 import { StreamWeaverProviderRuntime, StreamWeaverBotActionConsumer, StreamWeaverFlowPackageStore, legacyCommunityPackages, SqliteStreamWeaverEconomyStore, type StreamWeaverBotActionExecutorV1 } from "@spmt/streamweaver";
 import { NebulaArcadeProviderRuntime, NEBULA_ARCADE_GAMES, SqliteNebulaGameInputStore, SqliteNebulaTabletopRuntime, SqliteNebulaTagStore, SqliteNebulaTagExperienceStore, buildNebulaTagOverlaySnapshot } from "@spmt/nebula-arcade";
-import { DshBotActionAdapter, DshSuiteActionOperations, respondDshApplicationInteraction, SqliteDshLiveMonitor, SqliteDshDiscordMessageStore, SqliteDshCalendarStore, SqliteDshApplicationStore, type DshDiscordTransportV1, type DshBotActionIdV1 } from "@spmt/discord-stream-hub";
+import { DshBotActionAdapter, DshSuiteActionOperations, respondDshApplicationInteraction, respondDshCalendarInteraction, DshCalendarDelivery, SqliteDshLiveMonitor, SqliteDshDiscordMessageStore, SqliteDshCalendarStore, SqliteDshApplicationStore, type DshDiscordTransportV1, type DshBotActionIdV1 } from "@spmt/discord-stream-hub";
 import { HearMeOutWebSuiteActionExecutor, SqliteHearMeOutRoomMediaRuntime } from "@spmt/hearmeout";
 import { ChatGatewayRuntime, SqliteChatGatewayStore, type ChatGatewayConsumerV1, type ChatGatewayMessageObserverV1 } from "./index.js";
 
@@ -139,8 +139,10 @@ export class SimulationRoomRuntime {
       const gateway = new ChatGatewayRuntime(chatStore, consumers, (["twitch", "discord", "kick"] as const).map(provider => ({ provider, send: capture })), observers);
       if (input.interaction) {
         if (!input.appIds.includes("discord-stream-hub")) throw new Error("Discord Stream Hub is not installed");
-        const interaction = input.interaction, result = respondDshApplicationInteraction({ config: dshConfig, store: applications, publicOrigin: this.options.publicOrigin || "https://spmt.live" }, { id: snowflake(job.id), type: interaction.customId.startsWith("application_submit:") ? 5 : 3, guild_id: guildId, member: { user: { id: snowflake(actor.userId), username: actor.username } }, data: { custom_id: interaction.customId, components: Object.entries(interaction.values ?? {}).map(([custom_id,value])=>({type:1,components:[{custom_id,value}]})) } });
-        await emit("discord-stream-hub", { lane: "chat", direction: "egress", title: "Discord interaction", body: String(result.data?.content || result.data?.title || "Application inquiry"), provider: "discord", data: { operation: "create", providerMessageId: snowflake(job.id), payload: result.data ?? {}, interactionType: result.type } });
+        const interaction = input.interaction, interactionInput={ id: snowflake(job.id), type: /(?:application_submit|calendar:(?:captain|mission)-submit):/.test(interaction.customId) ? 5 : 3, guild_id: guildId, member: { user: { id: snowflake(actor.userId), username: actor.username } }, data: { custom_id: interaction.customId, components: Object.entries(interaction.values ?? {}).map(([custom_id,value])=>({type:1,components:[{custom_id,value}]})) } };
+        const result=await respondDshCalendarInteraction({config:dshConfig,calendar,resolve:async()=>({userId:actor.userId,username:actor.username,role:actor.role==="owner"?"owner":"member"}),changed:tenant=>new DshCalendarDelivery(calendar,messages,discord("discord-stream-hub"),()=>new Date().toISOString(),client("discord-stream-hub")).flush(tenant)},interactionInput)??respondDshApplicationInteraction({config:dshConfig,store:applications,publicOrigin:this.options.publicOrigin||"https://spmt.live"},interactionInput);
+        const tracked=messages.get(tenantId,"calendar",guildId);
+        await emit("discord-stream-hub", { lane: "chat", direction: "egress", title: "Discord interaction", body: String(result.data?.content || result.data?.title || "Calendar"), provider: "discord", data: { operation: result.type===7?"edit":"create", providerMessageId: result.type===7&&tracked?tracked.messageId:snowflake(job.id), payload: result.data ?? {}, interactionType: result.type } });
         receipts.prepare("UPDATE inputs SET state='done' WHERE id=?").run(job.id);
         return { outputs: 1 };
       }

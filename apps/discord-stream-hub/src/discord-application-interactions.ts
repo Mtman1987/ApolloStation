@@ -1,3 +1,4 @@
+import { dshDiscordRequestBody } from "./calendar-presentation.js";
 import { createPublicKey, verify } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { buildDshApplicationModal, buildDshInquiryMessage, normalizeDshApplicationAnswers, parseDshApplicationType } from "./application-flow.js";
@@ -5,13 +6,27 @@ import { SqliteDshApplicationStore } from "./applications.js";
 import type { DshLiveRuntimeConfigV1 } from "./live-worker.js";
 
 export class DshDiscordApplicationInteractions {
-  constructor(private readonly options: { publicKey: string; publicOrigin: string; config: DshLiveRuntimeConfigV1; store: SqliteDshApplicationStore }) { if (!/^[a-f0-9]{64}$/i.test(options.publicKey)) throw new Error("DSH Discord interaction public key is invalid"); }
+  private readonly pending=new Set<Promise<void>>();
+  async close(){await Promise.allSettled(this.pending);}
+  constructor(private readonly options: { publicKey: string; publicOrigin: string; config: DshLiveRuntimeConfigV1; store: SqliteDshApplicationStore; respond?:(interaction:Record<string,any>)=>Promise<{type:number;data?:Record<string,any>}|undefined>; fetchImpl?:typeof fetch }) { if (!/^[a-f0-9]{64}$/i.test(options.publicKey)) throw new Error("DSH Discord interaction public key is invalid"); }
   async handle(request: IncomingMessage, response: ServerResponse, url: URL) {
     if (request.method !== "POST" || url.pathname !== "/api/discord-stream-hub/interactions") return false;
     const raw = await body(request, 1024 * 1024), timestamp = String(request.headers["x-signature-timestamp"] ?? ""), signature = String(request.headers["x-signature-ed25519"] ?? "");
     if (!timestamp || !/^[a-f0-9]{128}$/i.test(signature) || !verify(null, Buffer.concat([Buffer.from(timestamp), raw]), createPublicKey({ key: Buffer.concat([Buffer.from("302a300506032b6570032100", "hex"), Buffer.from(this.options.publicKey, "hex")]), format: "der", type: "spki" }), Buffer.from(signature, "hex"))) return json(response, 401, { error: "invalid_signature" });
     const interaction = JSON.parse(raw.toString("utf8")) as Record<string, any>;
-    return json(response, 200, respondDshApplicationInteraction(this.options, interaction));
+    const calendar=String(interaction.data?.custom_id??"").startsWith("calendar:"),defer=calendar&&(interaction.type===5||/^calendar:(previous|next):/.test(String(interaction.data?.custom_id)));
+    const respond=async()=>await this.options.respond?.(interaction)??respondDshApplicationInteraction(this.options,interaction);
+    if(defer){
+      const month=interaction.type===3;
+      if(!/^\d{5,30}$/.test(String(interaction.application_id??""))||! /^[A-Za-z0-9._-]{10,300}$/.test(String(interaction.token??"")))return json(response,200,ephemeral("Discord did not provide a valid response token."));
+      json(response,200,{type:month?6:5,...(month?{}:{data:{flags:64}})});
+      const task=(async()=>{const result=await respond().catch(error=>ephemeral(error instanceof Error?error.message:"Calendar update failed"));const payload=result.data??{},fetchImpl=this.options.fetchImpl??fetch;
+        const body=await dshDiscordRequestBody(payload,fetchImpl),followup=month&&result.type!==7;
+        const reply=await fetchImpl(`https://discord.com/api/v10/webhooks/${interaction.application_id}/${interaction.token}${followup?"":"/messages/@original"}`,{method:followup?"POST":"PATCH",headers:body.headers,body:body.body,signal:AbortSignal.timeout(15000)});
+        if(!reply.ok)throw new Error(`Discord interaction delivery failed (${reply.status})`);
+      })();this.pending.add(task);void task.catch(()=>undefined).finally(()=>this.pending.delete(task));return true;
+    }
+    return json(response,200,await respond());
   }
 }
 /** Shared Discord interaction behavior; the HTTP entry point verifies signatures first. */

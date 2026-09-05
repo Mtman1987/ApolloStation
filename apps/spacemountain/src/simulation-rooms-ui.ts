@@ -1,3 +1,4 @@
+import { renderCommunityCalendarSvg, type CommunityCalendarView } from "@spmt/ui/community-calendar";
 import { SpmtClient } from "@spmt/sdk";
 import type { SimulationRoomSummaryV1, SimulationRoomInputV1 } from "@spmt/contracts";
 
@@ -27,8 +28,8 @@ export function renderSimulationDiscordPayload(value: unknown) {
   return `${payload.content ? `<p>${richText(payload.content)}</p>` : ""}${embeds.map(embed => {
     const color = Number.isInteger(embed.color) && Number(embed.color) >= 0 && Number(embed.color) <= 0xffffff ? Number(embed.color).toString(16).padStart(6, "0") : "5865f2";
     const fields = Array.isArray(embed.fields) ? embed.fields.map(record) : [];
-    return `<section class="simulation-embed" style="border-left-color:#${color}">${record(embed.author).name ? `<small>${richText(record(embed.author).name)}</small>` : ""}${previewImage(embed.thumbnail, "simulation-embed-thumbnail")}${embed.title ? `<strong>${richText(embed.title)}</strong>` : ""}${embed.description ? `<p>${richText(embed.description)}</p>` : ""}${fields.length ? `<div class="simulation-embed-fields">${fields.map(field => `<div class="simulation-embed-field" data-inline="${field.inline === true}"><strong>${richText(field.name)}</strong><p>${richText(field.value)}</p></div>`).join("")}</div>` : ""}${previewImage(embed.image)}${record(embed.footer).text ? `<small>${richText(record(embed.footer).text)}</small>` : ""}</section>`;
-  }).join("")}${Array.isArray(payload.attachments) ? payload.attachments.map(item => { const attachment = record(item), url = safeUrl(attachment.url); return url ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(attachment.filename || "Attachment")}</a>` : ""; }).join("") : ""}${Array.isArray(payload.components) ? `<div class="simulation-components">${payload.components.flatMap(row => Array.isArray(record(row).components) ? record(row).components as unknown[] : []).map(record).map(component => { const label = `${escapeHtml(record(component.emoji).name)} ${escapeHtml(component.label || component.placeholder || "Select")}`, url = safeUrl(component.url), customId = String(component.custom_id || ""); return url ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${label}</a>` : `<button type="button" ${/^application_(inquiry|start):(mod|partner|dev):\d{5,30}$/.test(customId) && component.disabled !== true ? `data-discord-action="${escapeHtml(customId)}"` : "disabled"}>${label}</button>`; }).join("")}</div>` : ""}`;
+    return `<section class="simulation-embed" style="border-left-color:#${color}">${record(embed.author).name ? `<small>${richText(record(embed.author).name)}</small>` : ""}${previewImage(embed.thumbnail, "simulation-embed-thumbnail")}${embed.title ? `<strong>${richText(embed.title)}</strong>` : ""}${embed.description ? `<p>${richText(embed.description)}</p>` : ""}${fields.length ? `<div class="simulation-embed-fields">${fields.map(field => `<div class="simulation-embed-field" data-inline="${field.inline === true}"><strong>${richText(field.name)}</strong><p>${richText(field.value)}</p></div>`).join("")}</div>` : ""}${payload.calendar ? `<div class="simulation-calendar" style="width:100%;overflow:auto">${calendarArtwork(payload.calendar)}</div>` : previewImage(embed.image)}${record(embed.footer).text ? `<small>${richText(record(embed.footer).text)}</small>` : ""}</section>`;
+  }).join("")}${Array.isArray(payload.attachments) ? payload.attachments.map(item => { const attachment = record(item), url = safeUrl(attachment.url); return url ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(attachment.filename || "Attachment")}</a>` : ""; }).join("") : ""}${Array.isArray(payload.components) ? `<div class="simulation-components">${payload.components.flatMap(row => Array.isArray(record(row).components) ? record(row).components as unknown[] : []).map(record).map(component => { const label = `${escapeHtml(record(component.emoji).name)} ${escapeHtml(component.label || component.placeholder || "Select")}`, url = safeUrl(component.url), customId = String(component.custom_id || ""); return url ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${label}</a>` : `<button type="button" ${/^(?:application_(inquiry|start):(mod|partner|dev):\d{5,30}|calendar:(captain|mission|previous|next):\d{5,30}:\d{4}-(0[1-9]|1[0-2]))$/.test(customId) && component.disabled !== true ? `data-discord-action="${escapeHtml(customId)}"` : "disabled"}>${label}</button>`; }).join("")}</div>` : ""}`;
 }
 
 export interface SimulationRoomsUiOptions { canDelete?: boolean; onPin?: (roomId: string, slot: number) => Promise<void>; }
@@ -69,7 +70,7 @@ export class SimulationRoomsUi {
     if (form.matches("[data-discord-form]")) {
       event.preventDefault();
       const values = Object.fromEntries([...form.querySelectorAll<HTMLTextAreaElement>("textarea[name]")].map(field => [field.name,field.value]));
-      if (!this.busy) void this.send("Submit application", { customId: form.dataset.discordForm!, values });
+      if (!this.busy) void this.send("Submit", { customId: form.dataset.discordForm!, values });
       return;
     }
     if (!form.matches("[data-room-compose]")) return;
@@ -175,7 +176,7 @@ export class SimulationRoomsUi {
     this.modalSignature = String(event.id);
     const components = (Array.isArray(payload.components) ? payload.components : []).flatMap(row => Array.isArray(record(row).components) ? record(row).components as unknown[] : []).map(record);
     const modal = this.query("[data-discord-modal]");
-    modal.innerHTML = `<form class="simulation-discord-form" data-discord-form="${escapeHtml(payload.custom_id)}"><strong>${escapeHtml(payload.title)}</strong>${components.filter(field => field.type === 4).map(field => `<label>${escapeHtml(field.label)}<textarea name="${escapeHtml(field.custom_id)}" placeholder="${escapeHtml(field.placeholder)}" minlength="${Math.max(0, Number(field.min_length) || 0)}" maxlength="${Math.min(1000, Number(field.max_length) || 1000)}" ${field.required ? "required" : ""}></textarea></label>`).join("")}<div class="simulation-actions"><button type="submit">Submit application</button><button type="button" data-modal-close>Cancel</button></div></form>`;
+    modal.innerHTML = `<form class="simulation-discord-form" data-discord-form="${escapeHtml(payload.custom_id)}"><strong>${escapeHtml(payload.title)}</strong>${components.filter(field => field.type === 4).map(field => `<label>${escapeHtml(field.label)}<textarea name="${escapeHtml(field.custom_id)}" placeholder="${escapeHtml(field.placeholder)}" minlength="${Math.max(0, Number(field.min_length) || 0)}" maxlength="${Math.min(1000, Number(field.max_length) || 1000)}" ${field.required ? "required" : ""}></textarea></label>`).join("")}<div class="simulation-actions"><button type="submit">Submit</button><button type="button" data-modal-close>Cancel</button></div></form>`;
     modal.hidden = false;
   }
   private render() {
@@ -204,3 +205,6 @@ export class SimulationRoomsUi {
     this.updateOverlay();
   }
 }
+
+
+function calendarArtwork(value:unknown){try{return renderCommunityCalendarSvg(value as CommunityCalendarView).replace('<svg ','<svg style="width:100%;height:auto" ');}catch{return "<p>Calendar artwork could not be read.</p>";}}

@@ -4,6 +4,7 @@ import { AppSettingsService, SqliteAppPrivateDatabase, type AppPrivateDatasetMan
 export const DSH_TENANT_SETTINGS_V1: AppSettingsDefinitionV1 = {
   schemaVersion: 1, appId: "discord-stream-hub", settingsVersion: 1, subject: "tenant",
   fields: [
+    { key: "captainMinimumDays", label: "Captain days per month", description: "Minimum selected duty days per crew member; zero shows counts only.", type: "number", sensitive: false, defaultValue: 0, minimum: 0, maximum: 31 },
     { key: "spotlightChannelId", label: "Spotlight channel", description: "Discord channel that receives community spotlight announcements.", type: "string", sensitive: false, defaultValue: "" },
     { key: "signalChannelId", label: "Signal channel", description: "Discord channel that receives Signal Seeker discoveries.", type: "string", sensitive: false, defaultValue: "" },
     { key: "gifStorageChannelId", label: "GIF storage channel", description: "Discord channel used for app-owned rendered GIF storage.", type: "string", sensitive: false, defaultValue: "" },
@@ -16,7 +17,7 @@ export const DSH_TENANT_SETTINGS_V1: AppSettingsDefinitionV1 = {
 
 export const DSH_TENANT_SETTINGS_DATASET_V1: AppPrivateDatasetManifestV1 = { schemaVersion: 1, appId: "discord-stream-hub", dataset: "tenant-settings", classification: "private-authority", owner: "discord-stream-hub", retention: "Until the tenant removes Discord Stream Hub or replaces its settings.", maximumBytes: 16 * 1_024 * 1_024, recovery: "Checkpoint the DSH private database and verify the settings revision and SQLite integrity after restore." };
 
-export interface DshTenantSettingsV1 { schemaVersion: 1; tenantId: string; spotlightChannelId?: string; signalChannelId?: string; gifStorageChannelId?: string; groupChannels: Record<string, string>; pollIntervalSeconds: number; spotlightEnabled: boolean; signalSeekerEnabled: boolean; revision: number; }
+export interface DshTenantSettingsV1 { schemaVersion: 1; tenantId: string; captainMinimumDays: number; spotlightChannelId?: string; signalChannelId?: string; gifStorageChannelId?: string; groupChannels: Record<string, string>; pollIntervalSeconds: number; spotlightEnabled: boolean; signalSeekerEnabled: boolean; revision: number; }
 
 export class DshTenantSettingsStore {
   private readonly database: SqliteAppPrivateDatabase;
@@ -27,7 +28,7 @@ export class DshTenantSettingsStore {
   readDocument(tenantId: string): AppSettingsDocumentV1 { return this.settings.read(tenantId, tenantId); }
   patch(tenantId: string, patch: AppSettingsPatchV1): DshTenantSettingsV1 { if (patch.values?.groupChannels !== undefined && patch.values.groupChannels !== null) parseGroupChannels(patch.values.groupChannels); return this.value(tenantId, this.settings.patch(tenantId, tenantId, patch)); }
   read(tenantId: string): DshTenantSettingsV1 { return this.value(tenantId, this.readDocument(tenantId)); }
-  private value(tenantId: string, document: AppSettingsDocumentV1): DshTenantSettingsV1 { const values = document.values; return { schemaVersion: 1, tenantId, ...optionalChannel("spotlightChannelId", values.spotlightChannelId), ...optionalChannel("signalChannelId", values.signalChannelId), ...optionalChannel("gifStorageChannelId", values.gifStorageChannelId), groupChannels: parseGroupChannels(values.groupChannels), pollIntervalSeconds: boundedInteger(values.pollIntervalSeconds, 15, 900, "poll interval"), spotlightEnabled: booleanValue(values.spotlightEnabled, "spotlightEnabled"), signalSeekerEnabled: booleanValue(values.signalSeekerEnabled, "signalSeekerEnabled"), revision: document.revision }; }
+  private value(tenantId: string, document: AppSettingsDocumentV1): DshTenantSettingsV1 { const values = document.values; return { schemaVersion: 1, tenantId, captainMinimumDays: boundedInteger(values.captainMinimumDays, 0, 31, "captain minimum"), ...optionalChannel("spotlightChannelId", values.spotlightChannelId), ...optionalChannel("signalChannelId", values.signalChannelId), ...optionalChannel("gifStorageChannelId", values.gifStorageChannelId), groupChannels: parseGroupChannels(values.groupChannels), pollIntervalSeconds: boundedInteger(values.pollIntervalSeconds, 15, 900, "poll interval"), spotlightEnabled: booleanValue(values.spotlightEnabled, "spotlightEnabled"), signalSeekerEnabled: booleanValue(values.signalSeekerEnabled, "signalSeekerEnabled"), revision: document.revision }; }
 }
 
 function optionalChannel<K extends "spotlightChannelId" | "signalChannelId" | "gifStorageChannelId">(key: K, value: unknown): Partial<Pick<DshTenantSettingsV1, K>> { if (value === "" || value === undefined) return {}; if (typeof value !== "string" || !/^\d{5,30}$/.test(value)) throw new Error(`DSH ${key} is invalid`); return { [key]: value } as Partial<Pick<DshTenantSettingsV1, K>>; }

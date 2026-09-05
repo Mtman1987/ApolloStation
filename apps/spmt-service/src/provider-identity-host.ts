@@ -33,6 +33,11 @@ export function mountProviderIdentityRoutes(service: ReturnType<typeof createSpm
           ...(body === undefined ? {} : { body }),
         });
         if (result) {
+          if(result.status===200&&request.method==="GET"&&result.body&&typeof result.body==="object"){
+            const identity=result.body as {userId:string;profile:{tenantIds:string[]}},tenantId=String(request.headers["x-spmt-tenant"]??"");
+            const tenant=service.store.getTenant(tenantId);
+            result.body={...identity,tenantRole:tenant?.ownerUserId===identity.userId?"owner":tenant&&identity.profile.tenantIds.includes(tenantId)?"member":null};
+          }
           writeJson(response, result.status, result.body);
           return;
         }

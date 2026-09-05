@@ -436,7 +436,7 @@ export function assertSimulationRoomInputV1(value: unknown): SimulationRoomInput
   if (!["twitch", "discord", "kick"].includes(input.provider)) throw new Error("Choose a stream or Discord chat provider");
   if (typeof input.message !== "string" || !input.message.trim() || input.message.length > 5000 || /\0/.test(input.message)) throw new Error("Enter a message up to 5000 characters");
   if (input.interaction !== undefined) {
-    if (input.provider !== "discord" || !input.interaction || typeof input.interaction !== "object" || !/^application_(?:inquiry|start|submit):(?:mod|partner|dev):\d{5,30}$/.test(input.interaction.customId)) throw new Error("Discord interaction is invalid");
+    if (input.provider !== "discord" || !input.interaction || typeof input.interaction !== "object" || !/^(?:application_(?:inquiry|start|submit):(?:mod|partner|dev):\d{5,30}|calendar:(?:captain|mission|previous|next|captain-submit|mission-submit):\d{5,30}:\d{4}-(?:0[1-9]|1[0-2]))$/.test(input.interaction.customId)) throw new Error("Discord interaction is invalid");
     const values = input.interaction.values;
     if (values !== undefined && (!values || typeof values !== "object" || Array.isArray(values) || Object.keys(values).length > 5 || Object.entries(values).some(([key,value]) => !/^[a-z0-9_-]{1,80}$/i.test(key) || typeof value !== "string" || value.length > 1000))) throw new Error("Discord form answers are invalid");
     return { roomId: input.roomId, provider: input.provider, message: input.message.trim(), interaction: { customId: input.interaction.customId, ...(values ? { values: { ...values } } : {}) } };
@@ -621,10 +621,18 @@ export function assertSimulationRoomEventV1(value: SimulationRoomEventV1): Simul
     if (url.protocol !== "https:" || url.username || url.password) throw new Error("Simulation room artifactUrl must use credential-free HTTPS");
   }
   if (value.data !== undefined) {
-    if (!value.data || typeof value.data !== "object" || Array.isArray(value.data) || JSON.stringify(value.data).length > 32_000) throw new Error("Simulation room data is invalid");
+    if (!value.data || typeof value.data !== "object" || Array.isArray(value.data) || JSON.stringify(value.data).length > simulationDataLimit(value)) throw new Error("Simulation room data is invalid");
     rejectSimulationSecrets(value.data);
   }
   return value;
+}
+
+function simulationDataLimit(value:SimulationRoomEventV1){
+  const payload=value.data?.payload as Record<string,unknown>|undefined,calendar=payload?.calendar as Record<string,unknown>|undefined;
+  if(value.provider!=="discord"||!calendar)return 32_000;
+  if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(String(calendar.month))||!/^\d{4}-\d{2}-\d{2}$/.test(String(calendar.today))||!Array.isArray(calendar.events)||calendar.events.length>500)throw new Error("Calendar preview is invalid");
+  for(const raw of calendar.events){const e=raw as Record<string,unknown>;if(!e||!["event","captains-log"].includes(String(e.type))||typeof e.id!=="string"||e.id.length>180||typeof e.eventName!=="string"||e.eventName.length>120||typeof e.description!=="string"||e.description.length>2000||typeof e.username!=="string"||e.username.length>80||!/^\d{4}-\d{2}-\d{2}$/.test(String(e.dayKey))||!Number.isFinite(Date.parse(String(e.eventDateTime)))||e.userAvatar&&(!/^https:\/\//.test(String(e.userAvatar))||String(e.userAvatar).length>500))throw new Error("Calendar preview item is invalid");}
+  return 512_000;
 }
 
 function rejectSimulationSecrets(value: unknown, depth = 0): void {

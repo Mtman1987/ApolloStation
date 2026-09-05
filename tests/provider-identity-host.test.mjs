@@ -42,7 +42,11 @@ test("provider identity HTTP adapter shares the real SPMT port without breaking 
       headers: { authorization: `Bearer ${token}`, "x-spmt-tenant": "tenant-a" },
     });
     assert.equal(resolve.status, 200);
-    assert.equal((await resolve.json()).userId, created.userId);
+    const resolved=await resolve.json();assert.equal(resolved.userId,created.userId);assert.equal(resolved.tenantRole,null);
+    service.control.registerTenant({tenantId:"tenant-a",ownerUserId:created.userId,displayName:"Community"});
+    const owner=await (await fetch(`http://127.0.0.1:${port}/v1/identity/provider?provider=discord&providerUserId=discord-host-1`,{headers:{authorization:`Bearer ${token}`,"x-spmt-tenant":"tenant-a"}})).json();
+    assert.equal(owner.tenantRole,"owner");
+    const cross=await fetch(`http://127.0.0.1:${port}/v1/identity/provider?provider=discord&providerUserId=discord-host-1`,{headers:{authorization:`Bearer ${token}`,"x-spmt-tenant":"tenant-b"}});assert.equal(cross.status,403);
   } finally {
     await service.close();
     rmSync(dir, { recursive: true, force: true });

@@ -17,6 +17,7 @@ export * from "./provider-identity.js";
 export * from "./points-event-router.js";
 export * from "./points.js";
 export * from "./calendar.js";
+export * from "./calendar-presentation.js";
 export * from "./application-flow.js";
 export * from "./applications.js";
 export * from "./discord-application-interactions.js";
@@ -36,3 +37,7 @@ export const manifest=assertAppModuleManifestV1({schemaVersion:1,manifestVersion
 export function discordStreamHubCatalogRegistration(launchUrl:string):AppCatalogRegistrationV1{const url=new URL(launchUrl);url.searchParams.delete("surface");return createAppCatalogRegistrationV1(manifest,{version:"0.1.0-green",launchUrl:url.toString(),surfaces:["shell","standalone","overlay"]});}
 export async function requestNebulaArcadeAnnouncements(client:SpmtClient,tenantId:string){const events=await client.listEvents(tenantId,{type:NEBULA_ARCADE_ROUND_COMPLETED,sourceAppId:"nebula-arcade",limit:100});for(const event of events){const id=String(event.id??event.eventId??"");if(!id)continue;await client.publishEvent(tenantId,DISCORD_ANNOUNCEMENT_REQUESTED,{schemaVersion:1,sourceEventId:id,kind:"nebula-arcade-round",payload:event.payload??{}},`dsh-nebula-arcade:${id}`);}return{observed:events.length};}
 export async function requestNebulaArcadeTagAnnouncements(client:SpmtClient,tenantId:string){const events=await client.listEvents(tenantId,{type:NEBULA_TAG_TAG_COMPLETED,sourceAppId:"nebula-arcade",limit:100});for(const event of events){const id=String(event.id??event.eventId??"");if(!id)continue;await client.publishEvent(tenantId,DISCORD_ANNOUNCEMENT_REQUESTED,{schemaVersion:1,sourceEventId:id,kind:"nebula-arcade-tag",payload:event.payload??{}},`dsh-nebula-arcade:${id}`);}return{observed:events.length};}
+
+export * from "./calendar-delivery.js";
+export * from "./calendar-interactions.js";
+export * from "./calendar-sync.js";

@@ -4,10 +4,21 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./community-calendar": {
+      "types": "./dist/community-calendar.d.ts",
+      "default": "./dist/community-calendar.js"
+    }
+  },
   "dependencies": {
     "@spmt/contracts": "0.1.0",
     "@spmt/embed": "0.1.0"
   },
-  "scripts": { "build": "tsc -b" }
+  "scripts": {
+    "build": "tsc -b"
+  }
 }

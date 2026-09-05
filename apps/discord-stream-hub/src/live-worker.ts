@@ -1,3 +1,5 @@
+import { DshCalendarDelivery } from "./calendar-delivery.js";
+import { DshCalendarSync } from "./calendar-sync.js";
 import { readFileSync } from "node:fs";
 import { basename, isAbsolute } from "node:path";
 import type { SpmtOperationModeV1 } from "@spmt/contracts";
@@ -38,6 +40,7 @@ export interface DshLiveWorkerEnvironmentV1 {
   operationMode: SpmtOperationModeV1;
   liveIngressEnabled: boolean;
   spmtOrigin: string;
+  publicOrigin?:string;
   databasePath: string;
   configPath: string;
   credential: string;
@@ -78,7 +81,7 @@ export function validateDshLiveWorkerEnvironment(environment: NodeJS.ProcessEnv)
     if (config.tenants.length && !liveIngressEnabled) throw new Error("Sandbox DSH rejects live provider tenants unless SPMT_LIVE_INGRESS_MODE=enabled");
   }
   if (liveIngressEnabled && operationMode !== "read-only") throw new Error("Live ingress requires SPMT_OUTBOUND_MODE=disabled");
-  return { runtimeMode, operationMode, liveIngressEnabled, spmtOrigin, databasePath, configPath, credential, workerId, applicationInteractionsReady: Boolean(environment.DSH_DISCORD_PUBLIC_KEY && environment.SPMT_PUBLIC_ORIGIN), config };
+  return { runtimeMode, operationMode, liveIngressEnabled, spmtOrigin, ...(environment.SPMT_PUBLIC_ORIGIN?{publicOrigin:environment.SPMT_PUBLIC_ORIGIN}:{}), databasePath, configPath, credential, workerId, applicationInteractionsReady: Boolean(environment.DSH_DISCORD_PUBLIC_KEY && environment.SPMT_PUBLIC_ORIGIN), config };
 }
 
 /** Authenticates DSH without sharing Chat Gateway's service credential. */
@@ -129,7 +132,7 @@ export class SpmtDshTwitchGrantSource implements DshTwitchGrantSourceV1 {
 
 export class SpmtDshDiscordGrantSource implements DshDiscordGrantSourceV1 {
   constructor(private readonly client: SpmtClient, private readonly directory: ConfigDirectory) {}
-  async getGrant(input: { tenantId: string; capability: "messages:write" | "channels:read" | "guilds:read" }) {
+  async getGrant(input: { tenantId: string; capability: "messages:write" | "channels:read" | "guilds:read" | "events:read" | "events:write" }) {
     const grant = await this.client.issueProviderGrant(input.tenantId, "discord", this.directory.providerUserId(input.tenantId, "discord"), "dsh-discord-live", [input.capability], 300);
     const scheme = grant.credential.metadata.authorizationScheme ?? "Bot";
     if (scheme !== "Bot" && scheme !== "Bearer") throw new Error("Discord grant authorization scheme is invalid");
@@ -144,6 +147,9 @@ export class SupervisedDshLiveService {
   private readonly monitor: SqliteDshLiveMonitor;
   private readonly messages: SqliteDshDiscordMessageStore;
   private readonly calendar: SqliteDshCalendarStore;
+  private readonly calendarSync: DshCalendarSync;
+  private readonly calendarDelivery:DshCalendarDelivery;
+  private calendarCycle:Promise<void>|undefined;
   private readonly applications: SqliteDshApplicationStore;
   private readonly runtime: DshLiveRuntime;
   private readonly poller: DshTwitchLivePoller;
@@ -164,6 +170,8 @@ export class SupervisedDshLiveService {
     this.runtime = new DshLiveRuntime(this.monitor, publisher);
     this.poller = new DshTwitchLivePoller(directory, new SpmtDshTwitchGrantSource(this.client, directory), new TwitchHelixLiveClient(fetchImpl), this.runtime);
     this.calendar = new SqliteDshCalendarStore(options.databasePath);
+    this.calendarSync = new DshCalendarSync(options.databasePath, this.calendar, discord, now, options.publicOrigin);
+    this.calendarDelivery=new DshCalendarDelivery(this.calendar,this.messages,discord,now,this.client,options.operationMode==="read-only");
     this.applications = new SqliteDshApplicationStore(options.databasePath);
     const operations = new DshSuiteActionOperations({ config: options.config, monitor: this.monitor, messages: this.messages, calendar: this.calendar, applications: this.applications, discord, simulationDiscord, applicationInteractionsReady: options.applicationInteractionsReady, now });
     this.suiteActions = new DshSuiteActionWorker(this.client, new DshBotActionAdapter(operations), { workerId: `${options.workerId}-suite-actions`, tenantIds: options.config.tenants.map((tenant) => tenant.tenantId) });
@@ -183,6 +191,8 @@ export class SupervisedDshLiveService {
       await pause(dshMillisecondsUntilNextPeriod(this.now(), this.options.config.pollIntervalSeconds), signal);
     }
   }
+  async runCalendar(signal:AbortSignal) {while(!signal.aborted&&!this.closed){const cycle=this.syncCalendars();this.calendarCycle=cycle;try{await cycle;}finally{this.calendarCycle=undefined;}await pause(5000,signal);}}
+  private async syncCalendars(){for(const tenant of this.options.config.tenants){for(const guild of tenant.discordGuildIds??[]){const last=this.calendarSync.state(tenant.tenantId,guild).checkedAt;if(!last||Date.parse(this.now())-Date.parse(last)>=30000)await this.calendarSync.sync(tenant.tenantId,guild).catch(()=>undefined);}await this.calendarDelivery.flush(tenant.tenantId);}}
   runSuiteActions(signal: AbortSignal) { return this.suiteActions.run(signal); }
   close() {
     if (this.closing) return this.closing;
@@ -191,9 +201,9 @@ export class SupervisedDshLiveService {
     this.closing = (async () => {
       let failure: unknown;
       let failed = false;
-      try { await activeCycle; } catch (error) { failure = error; failed = true; }
+      try { await this.calendarCycle; await activeCycle; } catch (error) { failure = error; failed = true; }
       try { this.messages.close(); } catch (error) { if (!failed) { failure = error; failed = true; } }
-      try { this.calendar.close(); } catch (error) { if (!failed) { failure = error; failed = true; } }
+      try { this.calendarSync?.close(); this.calendar.close(); } catch (error) { if (!failed) { failure = error; failed = true; } }
       try { this.applications.close(); } catch (error) { if (!failed) { failure = error; failed = true; } }
       try { this.monitor.close(); } catch (error) { if (!failed) { failure = error; failed = true; } }
       if (failed) throw failure;

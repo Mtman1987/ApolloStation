@@ -1,10 +1,17 @@
+import { communityCalendarMissions } from "@spmt/ui";
+import { DshCalendarSync } from "./calendar-sync.js";
+import { DshCalendarDelivery } from "./calendar-delivery.js";
+import { respondDshCalendarInteraction } from "./calendar-interactions.js";
+import { resolveProviderIdentity } from "@spmt/sdk/provider-identity";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { dshCaptainParticipation, renderDshCalendarPng } from "./calendar-presentation.js";
+import { canonicalDshShoutoutGroup } from "./shoutout-groups.js";
 import { fetchAppPlatformSnapshot, fetchAppSessionContext, readJsonBody, requireSameOrigin, safeError, sendJson } from "@spmt/app-foundation/product-web";
 import type { SpmtOperationModeV1 } from "@spmt/contracts";
 import { SpmtClient } from "@spmt/sdk";
 import { buildDshPublicApplicationEmbed } from "./application-flow.js";
 import { SqliteDshApplicationStore } from "./applications.js";
-import { renderDshCalendarDiscordSummary, SqliteDshCalendarStore } from "./calendar.js";
+import { SqliteDshCalendarStore } from "./calendar.js";
 import { DshDiscordApi, DshDiscordError, SqliteDshDiscordMessageStore, type DshDiscordGrantSourceV1, type DshDiscordTransportV1 } from "./discord-live-publisher.js";
 import { createDshWorkerTokenProvider, loadDshLiveRuntimeConfig, type DshLiveRuntimeConfigV1 } from "./live-worker.js";
 import { DshSimulationRoomDiscordTransport } from "./simulation-room.js";
@@ -12,6 +19,7 @@ import { DshTenantSettingsStore } from "./settings.js";
 
 export interface DshWebControlOptionsV1 {
   spmtOrigin: string;
+  publicOrigin?: string;
   databasePath?: string;
   runtimeConfigPath?: string;
   credential?: string;
@@ -31,6 +39,10 @@ export class DshWebControls {
   private readonly applications?: SqliteDshApplicationStore;
   private readonly config?: DshLiveRuntimeConfigV1;
   private readonly discord?: DshDiscordTransportV1;
+  private client?:SpmtClient;
+  private sync?:DshCalendarSync;
+  private delivery?:DshCalendarDelivery;
+  private liveDiscord?:DshDiscordApi;
   private readonly now: () => string;
 
   constructor(private readonly options: DshWebControlOptionsV1) {
@@ -54,9 +66,11 @@ export class DshWebControls {
         return { authorization: `${scheme} ${grant.credential.accessToken}`, expiresAt: grant.expiresAt };
       } };
       const liveDiscord = new DshDiscordApi(grants, options.fetchImpl);
+      this.client=client;this.liveDiscord=liveDiscord;
       this.discord = options.operationMode === "read-only"
         ? new DshSimulationRoomDiscordTransport(liveDiscord, client, { guildIds: (tenantId) => this.config?.tenants.find((tenant) => tenant.tenantId === tenantId)?.discordGuildIds ?? [], now: this.now })
         : liveDiscord;
+      if(this.calendar&&this.messages){this.sync=new DshCalendarSync(options.databasePath!,this.calendar,this.discord as DshDiscordApi,this.now,options.publicOrigin);this.delivery=new DshCalendarDelivery(this.calendar,this.messages,this.discord,this.now,client,options.operationMode==="read-only");}
     }
   }
 
@@ -66,15 +80,22 @@ export class DshWebControls {
     if (!url.pathname.startsWith("/api/discord-stream-hub/control")) return false;
     try {
       const context = await fetchAppSessionContext({ appId: "discord-stream-hub", spmtOrigin: this.options.spmtOrigin, request });
+      if(request.method==="GET"&&url.pathname==="/api/discord-stream-hub/control/calendar-image"){
+        const guild=url.searchParams.get("guildId")?this.guild(context.tenantId,url.searchParams.get("guildId")):"workspace",month=String(url.searchParams.get("month")??this.now().slice(0,7));
+        const png=await renderDshCalendarPng(this.requireCalendar().month(context.tenantId,guild,month),month,this.options.fetchImpl,this.now().slice(0,10));response.writeHead(200,{"content-type":"image/png","cache-control":"no-store","content-disposition":`attachment; filename="community-calendar-${month}.png"`});response.end(png);return true;
+      }
+      if(request.method==="GET"&&url.pathname==="/api/discord-stream-hub/control/calendar")return sendJson(response,200,this.calendarView(context.tenantId,url.searchParams.get("guildId"),String(url.searchParams.get("month")??this.now().slice(0,7))));
       if (request.method === "GET" && url.pathname === "/api/discord-stream-hub/control") return await this.read(request, response, context, url);
       if (request.method !== "POST") return sendJson(response, 405, { error: "method_not_allowed" });
       requireSameOrigin(request);
       const body = await readJsonBody(request);
-      if (url.pathname === "/api/discord-stream-hub/control/calendar/captain") return this.captain(response, context, body);
-      if (url.pathname === "/api/discord-stream-hub/control/calendar/update") return this.changeCalendar(response, context, body, false);
-      if (url.pathname === "/api/discord-stream-hub/control/calendar/delete") return this.changeCalendar(response, context, body, true);
+      if (url.pathname === "/api/discord-stream-hub/control/calendar/captain") return await this.captain(response, context, body,request);
+      if (url.pathname === "/api/discord-stream-hub/control/calendar/update") return await this.changeCalendar(response, context, body, false);
+      if (url.pathname === "/api/discord-stream-hub/control/calendar/delete") return await this.changeCalendar(response, context, body, true);
       this.requireOwner(context);
-      if (url.pathname === "/api/discord-stream-hub/control/calendar/mission") return this.mission(response, context, body);
+      if(url.pathname==="/api/discord-stream-hub/control/calendar/sync"){if(!this.sync)throw new Error("Connect Discord before synchronizing events");await this.sync.sync(context.tenantId,this.guild(context.tenantId,body.serverId));await this.delivery?.flush(context.tenantId);return sendJson(response,200,{saved:true});}
+      if(url.pathname==="/api/discord-stream-hub/control/calendar/resolve"){if(!this.sync)throw new Error("Connect Discord before synchronizing events");if(!["calendar","discord","retry"].includes(String(body.choice)))throw new Error("Choose a calendar or Discord version");await this.sync.resolve(context.tenantId,this.guild(context.tenantId,body.serverId),text(body.eventId,"eventId",180),body.choice as "calendar"|"discord"|"retry");await this.delivery?.flush(context.tenantId);return sendJson(response,200,{saved:true});}
+      if (url.pathname === "/api/discord-stream-hub/control/calendar/mission") return await this.mission(response, context, body,request);
       if (url.pathname === "/api/discord-stream-hub/control/calendar/publish") return await this.publishCalendar(response, context, body);
       if (url.pathname === "/api/discord-stream-hub/control/applications/publish") return await this.publishApplications(response, context, body);
       if (url.pathname === "/api/discord-stream-hub/control/applications/decide") return await this.decideApplication(response, context, body);
@@ -105,14 +126,16 @@ export class DshWebControls {
     if (!/^\d{4}-(?:0[1-9]|1[0-2])$/.test(month)) throw new Error("Choose a valid calendar month");
     const from = `${month}-01`;
     const to = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0)).toISOString().slice(0, 10);
-    const calendar = this.calendar ? ["workspace", ...(guildId ? [guildId] : [])].flatMap((scope) => this.calendar!.list(tenantId, scope, { from, to, limit: 500 })) : [];
+    await this.member(context,request);
+    const calendar = this.calendar?.month(tenantId,guildId??"workspace",month)??[];
+    const view=this.calendarView(tenantId,guildId,month);
     const snapshot = await fetchAppPlatformSnapshot({ appId: "discord-stream-hub", spmtOrigin: this.options.spmtOrigin, request, sources: ["providerLinks", "communityLive"] }).catch(() => undefined);
     const community = record(snapshot?.communityLive);
     const presenceAvailable = Boolean(snapshot?.availability.communityLive?.available && Array.isArray(community?.shoutouts));
     const liveMembers = presenceAvailable ? (community!.shoutouts as unknown[]).flatMap((entry) => {
       const row = record(entry);
       if (!row || row.isLive !== true || typeof row.twitchLogin !== "string" || !/^[a-zA-Z0-9_]{1,32}$/.test(row.twitchLogin)) return [];
-      return [{ twitchLogin: row.twitchLogin, displayName: String(row.displayName ?? row.twitchLogin).slice(0, 100), group: String(row.groupName ?? row.category ?? "Community").slice(0, 80), isSpotlight: row.isSpotlight === true, title: String(row.title ?? "").slice(0, 200), gameName: String(row.gameName ?? "").slice(0, 100), viewerCount: Math.max(0, Number(row.viewerCount) || 0) }];
+      return [{ twitchLogin: row.twitchLogin, displayName: String(row.displayName ?? row.twitchLogin).slice(0, 100), group: canonicalDshShoutoutGroup(String(row.groupName ?? row.category ?? "Community")) ?? "Community", isSpotlight: row.isSpotlight === true, title: String(row.title ?? "").slice(0, 200), gameName: String(row.gameName ?? "").slice(0, 100), viewerCount: Math.max(0, Number(row.viewerCount) || 0) }];
     }) : [];
     return sendJson(response, 200, {
       schemaVersion: 1,
@@ -127,7 +150,8 @@ export class DshWebControls {
       guilds,
       channels,
       selectedGuildId: guildId ?? "",
-      calendar,
+      ...view,
+      participation: dshCaptainParticipation(calendar, this.config?.tenants.find(tenant => tenant.tenantId === tenantId)?.members.filter(member => member.group === "Crew").map(member => ({userId: member.canonicalUserId, username: member.twitchLogin})) ?? [], this.settings?.read(tenantId).captainMinimumDays ?? 0),
       calendarMonth: month,
       presence: { source: "ecosystem", state: presenceAvailable ? "ready" : "unavailable" },
       liveMembers,
@@ -138,24 +162,42 @@ export class DshWebControls {
     });
   }
 
-  private captain(response: ServerResponse, context: SessionContext, body: Record<string, unknown>) {
-    const store = this.requireCalendar();
-    const result = store.scheduleCaptainsLog({ tenantId: context.tenantId, serverId: this.calendarScope(context.tenantId, body.serverId), selectedDate: day(body.selectedDate), member: this.member(context), now: this.now() });
-    return sendJson(response, 201, result);
+  private calendarView(tenant:string,rawGuild:unknown,month:string){
+    const guild=rawGuild?this.guild(tenant,rawGuild):"workspace",events=this.calendar?.month(tenant,guild,month)??[],missions=communityCalendarMissions({month,today:this.now().slice(0,10),events});
+    const colors=new Map(missions.map(e=>[e.id,e]));
+    const guildIds=this.config?.tenants.find(t=>t.tenantId===tenant)?.discordGuildIds??[];
+    return {calendar:events.map(e=>({...e,...(colors.has(e.id)?{color:colors.get(e.id)!.color,number:colors.get(e.id)!.number}:{})})),calendarMonth:month,calendarSync:guildIds.filter(g=>guild==="workspace"||g===guild).map(g=>({guildId:g,...this.sync?.status(tenant,g),imageError:this.calendar?.state(tenant,`image-error:${g}`)??null})),participation:dshCaptainParticipation(events,this.config?.tenants.find(t=>t.tenantId===tenant)?.members.filter(m=>m.group==="Crew").map(m=>({userId:m.canonicalUserId,username:m.twitchLogin}))??[],this.settings?.read(tenant).captainMinimumDays??0)};
   }
-
-  private mission(response: ServerResponse, context: SessionContext, body: Record<string, unknown>) {
-    const result = this.requireCalendar().scheduleMission({ tenantId: context.tenantId, serverId: this.calendarScope(context.tenantId, body.serverId), missionName: text(body.missionName, "missionName", 120), missionDescription: text(body.missionDescription, "missionDescription", 2_000), missionDate: day(body.missionDate), missionTime: clock(body.missionTime), member: this.member(context), now: this.now() });
-    return sendJson(response, 201, result);
+  private async captain(response:ServerResponse,context:SessionContext,body:Record<string,unknown>,request:IncomingMessage){
+    const member=await this.member(context,request),store=this.requireCalendar();
+    const result=store.once(context.tenantId,this.requestKey(context,body),()=>store.scheduleCaptainsLog({tenantId:context.tenantId,serverId:this.calendarScope(context.tenantId,body.serverId),selectedDate:day(body.selectedDate),member,now:this.now()}));
+    return sendJson(response,201,{...result,effects:await this.changed(context.tenantId)});
   }
-
-  private async publishCalendar(response: ServerResponse, context: SessionContext, body: Record<string, unknown>) {
-    const serverId = this.guild(context.tenantId, body.serverId), channelId = snowflake(body.channelId, "channelId");
-    const events = ["workspace", serverId].flatMap((scope) => this.requireCalendar().list(context.tenantId, scope, { from: dayOffset(-1), to: dayOffset(90), limit: 300 }));
-    const summary = renderDshCalendarDiscordSummary(events, { from: dayOffset(0), to: dayOffset(90) });
-    const messageId = await this.upsertDiscord(context.tenantId, "calendar", serverId, channelId, { embeds: [{ title: `📅 ${summary.title}`, description: summary.description, color: 0xf97316, footer: { text: `${summary.eventCount} scheduled item${summary.eventCount === 1 ? "" : "s"} · Discord Stream Hub` }, timestamp: this.now() }], allowed_mentions: { parse: [] } });
-    return sendJson(response, 200, { schemaVersion: 1, messageId, channelId, eventCount: summary.eventCount });
+  private async mission(response:ServerResponse,context:SessionContext,body:Record<string,unknown>,request:IncomingMessage){
+    const member=await this.member(context,request),store=this.requireCalendar();
+    const result=store.once(context.tenantId,this.requestKey(context,body),()=>store.scheduleMission({tenantId:context.tenantId,serverId:this.calendarScope(context.tenantId,body.serverId),missionName:text(body.missionName,"missionName",100),missionDescription:text(body.missionDescription,"missionDescription",2000),missionDate:day(body.missionDate),missionTime:clock(body.missionTime),...(body.endDateTime?{endDateTime:String(body.endDateTime).replace(/Z?$/,"Z")}:{}),...(body.location?{location:text(body.location,"location",100)}:{}),member,now:this.now()}));
+    return sendJson(response,201,{...result,effects:await this.changed(context.tenantId)});
   }
+  private async publishCalendar(response:ServerResponse,context:SessionContext,body:Record<string,unknown>){
+    if(!this.delivery)throw new Error("Connect the DSH Discord bot before publishing");
+    const guild=this.guild(context.tenantId,body.serverId),channel=snowflake(body.channelId,"channelId");
+    return sendJson(response,200,{schemaVersion:1,...await this.delivery.publish(context.tenantId,guild,channel,String(body.month??this.now().slice(0,7)))});
+  }
+  async changed(tenant:string){
+    const failures:string[]=[];
+    for(const guild of this.config?.tenants.find(t=>t.tenantId===tenant)?.discordGuildIds??[])try{await this.sync?.sync(tenant,guild);const status=this.sync?.status(tenant,guild);for(const issue of status?.issues??[])if(issue.message)failures.push(issue.message);}catch(error){failures.push(safeError(error));}
+    const effects=await this.delivery?.flush(tenant);if(effects?.pending)failures.push(effects.message);
+    return {pending:failures.length>0,message:failures.join("; ")};
+  }
+  async interaction(interaction:Record<string,any>){
+    if(!this.config||!this.calendar)return undefined;
+    return respondDshCalendarInteraction({config:this.config,calendar:this.calendar,now:this.now,changed:tenant=>this.changed(tenant),resolve:async(tenant,id)=>{
+      if(!this.client)throw new Error("Connect the DSH service before using calendar controls");
+      const identity=await resolveProviderIdentity(this.client,tenant,"discord",id);
+      return {userId:identity.userId,username:identity.profile.displayName||identity.profile.username,role:identity.tenantRole??null};
+    }},interaction);
+  }
+  private requestKey(context:SessionContext,body:Record<string,unknown>){return body.requestId?`${String(context.session.actorId)}:${text(body.requestId,"requestId",100)}`:undefined;}
 
   private async publishApplications(response: ServerResponse, context: SessionContext, body: Record<string, unknown>) {
     if (this.options.operationMode !== "read-only" && !this.options.applicationInteractionsReady) throw new Error("Configure the Discord application interaction endpoint before publishing the application embed");
@@ -181,6 +223,7 @@ export class DshWebControls {
     const store = this.requireSettings(), current = store.readDocument(context.tenantId), values: Record<string, string | number | boolean | null> = {};
     for (const key of ["spotlightChannelId", "signalChannelId", "gifStorageChannelId"] as const) if (body[key] !== undefined) values[key] = body[key] === "" ? "" : snowflake(body[key], key);
     for (const key of ["spotlightEnabled", "signalSeekerEnabled"] as const) if (typeof body[key] === "boolean") values[key] = body[key];
+    if (body.captainMinimumDays !== undefined) values.captainMinimumDays = integer(body.captainMinimumDays, 0, 31, "captainMinimumDays");
     if (body.pollIntervalSeconds !== undefined) values.pollIntervalSeconds = integer(body.pollIntervalSeconds, 15, 900, "pollIntervalSeconds");
     const next = store.patch(context.tenantId, { schemaVersion: 1, expectedRevision: current.revision, values });
     return sendJson(response, 200, next);
@@ -203,18 +246,23 @@ export class DshWebControls {
 
   private requireOwner(context: SessionContext) { if (this.role(context) !== "owner") throw new Error("Tenant owner access is required for this action"); }
   private calendarScope(tenantId: string, value: unknown) { return !value || value === "workspace" ? "workspace" : this.guild(tenantId, value); }
-  private changeCalendar(response: ServerResponse, context: SessionContext, body: Record<string, unknown>, remove: boolean) {
+  private async changeCalendar(response: ServerResponse, context: SessionContext, body: Record<string, unknown>, remove: boolean) {
     const store = this.requireCalendar(), scope = this.calendarScope(context.tenantId, body.serverId), eventId = text(body.eventId, "eventId", 180);
     const current = store.get(context.tenantId, scope, eventId);
     if (!current) throw new Error("Calendar event not found");
     const owner = this.role(context) === "owner";
     if (!owner && (current.type !== "captains-log" || current.userId !== context.session.actorId)) throw new Error("Tenant owner access is required to change another member's event");
-    if (remove) return sendJson(response, 200, { deleted: store.deleteEvent(context.tenantId, scope, eventId) });
-    const patch = { ...(body.eventDate !== undefined ? { eventDate: day(body.eventDate) } : {}), ...(owner && body.eventName !== undefined ? { eventName: text(body.eventName, "eventName", 120) } : {}), ...(owner && body.description !== undefined ? { description: text(body.description, "description", 2_000) } : {}), ...(owner && body.eventTime !== undefined ? { eventTime: clock(body.eventTime) } : {}) };
-    return sendJson(response, 200, { event: store.updateEvent(context.tenantId, scope, eventId, patch, this.now()) });
+    if (remove) {const deleted=store.deleteEvent(context.tenantId,scope,eventId);return sendJson(response,200,{deleted,effects:await this.changed(context.tenantId)});}
+    const patch = { ...(owner&&body.endDateTime?{endDateTime:String(body.endDateTime).replace(/Z?$/,"Z")}:{}),...(owner&&body.location?{location:text(body.location,"location",100)}:{}),...(body.eventDate !== undefined ? { eventDate: day(body.eventDate) } : {}), ...(owner && body.eventName !== undefined ? { eventName: text(body.eventName, "eventName", 120) } : {}), ...(owner && body.description !== undefined ? { description: text(body.description, "description", 2_000) } : {}), ...(owner && body.eventTime !== undefined ? { eventTime: clock(body.eventTime) } : {}) };
+    const event=store.updateEvent(context.tenantId,scope,eventId,patch,this.now());return sendJson(response,200,{event,effects:await this.changed(context.tenantId)});
   }
   private role(context: SessionContext) { const roles = record(context.session.tenantRoles); return roles?.[context.tenantId] === "owner" ? "owner" : "member"; }
-  private member(context: SessionContext) { return { userId: String(context.session.actorId ?? ""), username: String(context.session.displayName ?? context.session.username ?? context.session.actorId ?? "SPMT member") }; }
+  private async member(context:SessionContext,request:IncomingMessage){
+    let avatarUrl:string|undefined;
+    if(this.liveDiscord)try{const snapshot=await fetchAppPlatformSnapshot({appId:"discord-stream-hub",spmtOrigin:this.options.spmtOrigin,request,sources:["providerLinks"],liveRead:null});const value=snapshot.providerLinks as any,links=Array.isArray(value)?value:value?.providers??value?.links??[];const link=links.find((l:any)=>l.provider==="discord"&&!l.revokedAt);if(link?.providerUserId){const user=await this.liveDiscord.getUser(context.tenantId,link.providerUserId);if(user.avatar)avatarUrl=`https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png?size=128`;}}catch{}
+    if(avatarUrl)this.calendar?.setAvatar(context.tenantId,String(context.session.actorId),avatarUrl);
+    return {userId:String(context.session.actorId??""),username:String(context.session.displayName??context.session.username??context.session.actorId??"SPMT member"),...(avatarUrl?{avatarUrl}:{})};
+  }
   private requireCalendar() { if (!this.calendar) throw new Error("DSH calendar storage is not configured"); return this.calendar; }
   private requireSettings() { if (!this.settings) throw new Error("DSH settings storage is not configured"); return this.settings; }
   private guild(tenantId: string, value: unknown) { const guildId = snowflake(value, "serverId"); if (!this.config?.tenants.find((tenant) => tenant.tenantId === tenantId)?.discordGuildIds?.includes(guildId)) throw new Error("Choose a Discord server configured for this tenant"); return guildId; }
