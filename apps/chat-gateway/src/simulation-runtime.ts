@@ -123,7 +123,7 @@ export class SimulationRoomRuntime {
         }
         const appearanceStore=new StreamWeaverRuntimeSettingsStore(this.options.streamweaverDatabasePath??flowPath);
         try{await client("streamweaver").publishEvent(tenantId,"streamweaver.avatar.updated.v1",appearanceStore.appearance(tenantId),`simulation-avatar:${job.id}`);}finally{appearanceStore.close();}
-        const runtime = streamweaver = new StreamWeaverProviderRuntime({ databasePath: flowPath, client: client("streamweaver"), egress: { send: send("streamweaver") }, botActions, allowAssistant: false });
+        const runtime = streamweaver = new StreamWeaverProviderRuntime({ databasePath: flowPath, client: client("streamweaver"), egress: { send: send("streamweaver") }, botActions, allowAssistant: false, simulation:true });
         stores.push(runtime); consumers.push(...runtime.consumers); observers.push(...runtime.messageObservers);
       }
       if (input.appIds.includes("nebula-arcade")) {

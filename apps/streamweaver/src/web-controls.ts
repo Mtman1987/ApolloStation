@@ -47,6 +47,7 @@ export class StreamWeaverWebControls {
     try {
       const context = await fetchAppSessionContext({ appId: "streamweaver", spmtOrigin: this.options.spmtOrigin, request });
       if (request.method === "GET" && url.pathname === "/api/streamweaver/control") return await this.read(request, response, context);
+      if(request.method==="GET"&&url.pathname==="/api/streamweaver/control/devices"){this.requireOwner(context);return sendJson(response,200,{devices:await this.deviceApi(request,context)});}
       if (request.method === "GET" && url.pathname === "/api/streamweaver/control/flows") return this.readFlows(response, context);
       if(request.method==="GET"&&url.pathname==="/api/streamweaver/control/diagnostics"){
         this.requireOwner(context);
@@ -72,6 +73,8 @@ export class StreamWeaverWebControls {
       if (url.pathname === "/api/streamweaver/control/voice") return await this.voice(response, context, body);
       if (url.pathname === "/api/streamweaver/control/voice/history/clear") { this.runtimeSettings?.clearVoice(context.tenantId,this.actor(context).id); return sendJson(response,200,{cleared:true}); }
       this.requireOwner(context);
+      if(url.pathname==="/api/streamweaver/control/devices/pair"){return sendJson(response,200,await this.deviceApi(request,context,{deviceId:`companion-${randomUUID()}`,name:String(body.name??"").trim().slice(0,100),kind:"companion",capabilities:["obs.scene","media.playback"],ttlSeconds:900},"/v1/devices/bootstrap"));}
+      if(url.pathname==="/api/streamweaver/control/devices"){return sendJson(response,200,await this.deviceApi(request,context,{deviceId:identifier(body.deviceId,"deviceId"),appId:"streamweaver",actions:Array.isArray(body.actions)?body.actions:[]}));}
       if(url.pathname==="/api/streamweaver/control/appearance"){
         if(!this.runtimeSettings||!this.client)throw new Error("StreamWeaver runtime is not configured");
         const appearance=this.runtimeSettings.saveAppearance(context.tenantId,body);
@@ -125,6 +128,10 @@ export class StreamWeaverWebControls {
     }
   }
 
+  private async deviceApi(request:IncomingMessage,context:SessionContext,body?:Record<string,unknown>,path?:string){
+    const response=await (this.options.fetchImpl??fetch)(this.options.spmtOrigin+(path??(body?"/v1/devices/automation":"/v1/devices")),{method:body?"POST":"GET",headers:{accept:"application/json","x-spmt-app":"streamweaver","x-spmt-tenant":context.tenantId,...(request.headers.cookie?{cookie:request.headers.cookie}:{}),...(request.headers.authorization?{authorization:request.headers.authorization}:{}),...(body?{"content-type":"application/json"}:{})},...(body?{body:JSON.stringify(body)}:{}),redirect:"error",signal:AbortSignal.timeout(10000)});
+    if(!(response.headers.get("content-type")??"").includes("application/json"))throw new Error("The device service returned an unreadable response");const value=await response.json() as Record<string,unknown>;if(!response.ok)throw new Error(String(value.message??value.error??"The device service is unavailable"));return value;
+  }
   private async read(request: IncomingMessage, response: ServerResponse, context: SessionContext) {
     const snapshot = await fetchAppPlatformSnapshot({ appId: "streamweaver", spmtOrigin: this.options.spmtOrigin, request, sources: ["providerLinks", "workers", "stellarCapabilities"] });
     const tenantId = context.tenantId, actorId = String(context.session.actorId ?? "");
@@ -138,12 +145,15 @@ export class StreamWeaverWebControls {
     const wallet = this.economy && actorId ? this.economy.getWallet(tenantId, actorId) : null;
     const connections = (this.options.connections ?? []).filter((item) => item.tenantId === tenantId && item.desired).map(({ provider, connectionId, channelId, providerAccountId }) => ({ provider, connectionId, channelId, providerAccountId }));
     const installedFlows = this.flows?.listInstalledPackages(tenantId) ?? [];
+    let devices:unknown[]=[],deviceError:string|undefined;if(this.role(context)==="owner")try{const value=await this.deviceApi(request,context);if(!Array.isArray(value))throw new Error("The device list is invalid");devices=value;}catch(error){deviceError=error instanceof Error?error.message:"Devices could not be read";}
+
     return sendJson(response, 200, {
       schemaVersion: 1,
       tenantId,
       session: context.session,
       role: this.role(context),
       operationMode: this.operationMode,
+      devices,deviceError,
       runtimeReady: Boolean(this.client && this.persona && this.economy),
       providerLinks: snapshot.providerLinks,
       connections,

@@ -179,3 +179,14 @@ test("StreamWeaver app ingress supports manual command editing, pause, link sett
 
   });
 });
+
+test("StreamWeaver exposes owner pairing and saves selected device automation through the canonical API",async()=>{
+ await fixture(async({cookie,webBase,spmtBase})=>{
+  const headers={cookie,origin:webBase,"content-type":"application/json"},root=webBase+"/api/streamweaver/control";
+  const pairing=await fetch(root+"/devices/pair",{method:"POST",headers,body:JSON.stringify({name:"Studio Computer"})});assert.equal(pairing.status,200);const code=await pairing.json();
+  const exchange=await fetch(spmtBase+"/v1/devices/bootstrap/exchange",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({code:code.code})});assert.equal(exchange.status,200);
+  const paired=await exchange.json(),devices=await(await fetch(root+"/devices",{headers})).json();assert.equal(devices.devices[0].name,"Studio Computer");
+  const saved=await fetch(root+"/devices",{method:"POST",headers,body:JSON.stringify({deviceId:paired.device.deviceId,actions:["obs.scene.set"]})});assert.equal(saved.status,200);assert.deepEqual((await saved.json()).automationGrants[0].actions,["obs.scene.set"]);
+  const current=await(await fetch(root,{headers})).json();assert.equal(current.devices[0].automationGrants[0].appId,"streamweaver");
+ });
+});

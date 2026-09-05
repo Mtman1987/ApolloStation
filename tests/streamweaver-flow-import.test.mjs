@@ -34,3 +34,27 @@ test('reusable graph actions remain connected to following command steps',()=>{
  const archive={commands:[{id:'test',command:'!test',actionIds:['graph','tail']}],actions:[{id:'graph',flow:{nodes:[{id:'start',type:'trigger',subtype:'start'},{id:'message',type:'action',subtype:'send-chat',data:{message:'First'}}],edges:[{source:'start',target:'message'}]}},{id:'tail',subActions:[{type:'SendChatMessage',message:'Second'},{type:'SendChatMessage',message:'Third'}]}]};
  const pkg=importStreamWeaverLegacy(archive,author,now).packages[0];assert.deepEqual(pkg.commands[0].edges.map(e=>[e.source,e.target]),[['step.0','step.1'],['step.2','step.3'],['step.1','step.2']]);
 });
+
+test('nested legacy branches resume the enclosing action on either outcome without running the skipped branch',async()=>{
+ const archive={commands:[{id:'test',command:'!test',actionIds:['outer','tail']}],actions:[
+  {id:'inner',flow:{nodes:[{id:'start',type:'trigger',subtype:'start'},{id:'choice',type:'condition',subtype:'text-includes',data:{source:'%args%',value:'yes'}},{id:'yes',type:'action',subtype:'send-chat',data:{message:'Yes branch'}}],edges:[{source:'start',target:'choice'},{source:'choice',target:'yes',sourceHandle:'true'}]}},
+  {id:'outer',flow:{nodes:[{id:'begin',type:'trigger',subtype:'start'},{id:'nested',type:'RunAction',actionId:'inner'},{id:'after',type:'action',subtype:'send-chat',data:{message:'After inner'}}],edges:[{source:'begin',target:'nested'},{source:'nested',target:'after'}]}},
+  {id:'tail',subActions:[{type:'SendChatMessage',message:'After outer'}]}
+ ]},store=new StreamWeaverFlowPackageStore(':memory:'),sent=[];
+ try{
+  const pkg=importStreamWeaverLegacy(archive,author,now).packages[0];store.saveDraft('tenant',pkg,author);store.approveAndInstall('tenant',pkg.packageId);
+  const runtime=new StreamWeaverInstalledFlowConsumer(store,new MemoryStreamWeaverCommandState(),{send:async m=>{sent.push(m.text);return {providerMessageId:String(sent.length)}}});
+  const delivery=(id,text)=>({schemaVersion:1,deliveryId:id,consumerId:runtime.id,attempts:1,message:{schemaVersion:1,tenantId:'tenant',provider:'twitch',connectionId:'main',channelId:'chat',messageId:id,text,occurredAt:now,actor:{providerUserId:'viewer',username:'viewer',roles:['member'],isBot:false},mentions:[]}});
+  await runtime.deliver(delivery('yes','!test yes'));assert.deepEqual(sent,['Yes branch','After inner','After outer']);sent.length=0;
+  await runtime.deliver(delivery('no','!test no'));assert.deepEqual(sent,['After inner','After outer']);
+ }finally{store.close()}
+});
+
+test('regex imports honor the selected case rule at delivery',()=>{
+ const archive={commands:[{id:'regex',command:'^Hello$',regex:true,caseSensitive:false,actionId:'reply'}],actions:[{id:'reply',subactions:[{type:'SendChatMessage',message:'Hello'}]}]},store=new StreamWeaverFlowPackageStore(':memory:');
+ try{
+  const pkg=importStreamWeaverLegacy(archive,author,now).packages[0];store.saveDraft('tenant',pkg,author);store.approveAndInstall('tenant',pkg.packageId);
+  const runtime=new StreamWeaverInstalledFlowConsumer(store,new MemoryStreamWeaverCommandState(),{send:async()=>({providerMessageId:'sent'})}),message={tenantId:'tenant',text:'HELLO',actor:{isBot:false}};
+  assert.equal(runtime.accepts(message),true);const draft=store.exportPackage('tenant',pkg.packageId);draft.commands[0].caseSensitive=true;store.saveDraft('tenant',draft,author);store.approveAndInstall('tenant',pkg.packageId);assert.equal(runtime.accepts(message),false);assert.equal(runtime.accepts({...message,text:'Hello'}),true);
+ }finally{store.close()}
+});

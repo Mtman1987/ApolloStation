@@ -1,3 +1,5 @@
+import {createHash} from "node:crypto";
+import { assertDeviceAutomationPayload, DEVICE_AUTOMATION_ACTIONS } from "@spmt/contracts";
 import { SpmtStreamWeaverTwitchGrantSource } from "./twitch-grants.js";
 import { StreamWeaverTwitchCommandAdapter } from "./twitch-command-adapter.js";
 import type { NormalizedChatMessageV1, OutboundChatMessageV1 } from "@spmt/contracts";
@@ -40,6 +42,7 @@ export interface StreamWeaverProviderRuntimeOptionsV1 {
   allowAssistant?: boolean;
   providerGrants?: Pick<SpmtClient,"issueProviderGrant">;
   allowProviderWrites?: boolean;
+  simulation?:boolean;
   providerFetch?: typeof fetch;
 }
 
@@ -79,6 +82,21 @@ export class StreamWeaverProviderRuntime {
     const commands = new StreamWeaverDonorCommandConsumer({ services, identities, state: this.commandState, egress, enabled: (tenantId, donorId) => donorId === "commands-chat" || donorId === "commands-system" || this.flows.donorEnabled(tenantId, donorId), ...(options.nowMs ? { nowMs: options.nowMs } : {}) });
     const persona = new StreamWeaverChatGatewayConsumer(this.summons, this.settings, new SpmtStreamWeaverPersonaRuntime(options.client), egress, priorGate);
     const flows = this.installedFlows = new StreamWeaverInstalledFlowConsumer(this.flows, this.commandState, egress, options.botActions, commands, options.nowMs, {
+      device:async ({delivery,deviceId,ownerUserId,action,payload,requestId})=>{
+        if(!Object.hasOwn(DEVICE_AUTOMATION_ACTIONS,action))throw new Error("Unsupported device automation action");
+        requestId=`sw-device:${createHash("sha256").update(requestId).digest("hex")}`;
+        payload=assertDeviceAutomationPayload(action,payload);
+        const tenantId=delivery.message.tenantId,capability=DEVICE_AUTOMATION_ACTIONS[action as keyof typeof DEVICE_AUTOMATION_ACTIONS];
+        if(options.simulation){
+          const key=`device:${requestId}`,prior=this.commandState.getReceipt(tenantId,key);if(prior)return {output:prior.text};
+          const stateKey=`simulation-device:${deviceId}`,old=this.flows.variables(tenantId,stateKey),state={...old,...Object.fromEntries(Object.entries(payload).map(([k,v])=>[k,String(v)])),action};
+          for(const [name,value] of Object.entries(state))this.flows.setVariable(tenantId,stateKey,name,value);
+          const output=JSON.stringify({simulation:true,deviceId,state});this.commandState.putReceipt({tenantId,deliveryId:key,command:action,text:output,createdAt:new Date().toISOString()});return {output};
+        }
+        if(options.allowProviderWrites!==true)throw new Error("Device execution is disabled here. Test the command in a Simulation Room.");
+        const result=await options.client.createExecutionJob(tenantId,{ownerAppId:"streamweaver",capabilityId:"companion.device.command.v1",executionOwner:"companion",billedUserId:ownerUserId,meteredResource:"hosted-worker-minutes",usageQuantity:1,executionTarget:"companion",meteringTarget:"companion",input:{command:{schemaVersion:1,tenantId,commandId:requestId,idempotencyKey:requestId,sourceAppId:"streamweaver",targetDeviceId:deviceId,capability,action,payload,requestedByUserId:ownerUserId,requestedAt:delivery.message.occurredAt,requiresConfirmation:false,confirmed:false}}},requestId);
+        return {jobId:result.job.id};
+      },
       getJob:(tenantId,jobId)=>options.client.getExecutionJob(tenantId,jobId),
       assistant:async ({delivery,prompt,requestId})=>{
         if(options.allowAssistant===false)return {status:"unavailable",reason:"External assistant execution is disabled in this environment."};

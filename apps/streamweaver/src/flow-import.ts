@@ -34,9 +34,13 @@ export function importStreamWeaverLegacy(value:unknown,author:{id:string;display
       if(routes[type]){const id=add(raw,routes[type]!,c);warn(id,`${String(raw.type??raw.subtype)} needs its paired ecosystem capability selected.`);return [id];}
       return unmapped(raw,`Map ${String(raw.type??raw.subtype??raw.$type??'unknown action')} to an authorized ecosystem capability before enabling it.`);
     }
-    function connect(previous:string[],next:string[]){
+    function connect(previous:string[],next:string[],outcome?:'success'|'true'|'false'){
       if(!previous.length||!next.length)return;
-      for(const source of previous.filter(id=>!edges.some(e=>e.source===id&&previous.includes(e.target))))edges.push({source,target:next[0]!});
+      for(const source of previous){
+        const outgoing=edges.filter(edge=>edge.source===source&&previous.includes(edge.target)),condition=steps.find(step=>step.id===source)?.type==='condition';
+        if(condition){for(const branch of ['true','false'] as const)if((outcome===undefined||outcome==='success'||outcome===branch)&&!outgoing.some(edge=>edge.outcome===undefined||edge.outcome===branch))edges.push({source,target:next[0]!,outcome:branch});}
+        else if(!outgoing.length)edges.push({source,target:next[0]!,...(outcome===undefined?{}:{outcome})});
+      }
     }
     function expand(id:string,name=''):string[]{
       const target=actionsById.get(id)??rawActions.find(a=>name&&a.name===name);
@@ -47,11 +51,11 @@ export function importStreamWeaverLegacy(value:unknown,author:{id:string;display
         graph=true;const mapping=new Map<string,string[]>(),nodes=list(flow.nodes),nodeIds=new Set(nodes.map(n=>String(n.id)));
         if(nodes.filter(n=>n.type==='trigger').length>1)throw new Error('Split multiple graph triggers into individual command packages before importing');
         const ordered=[...nodes.filter(n=>n.type==='trigger'),...nodes.filter(n=>n.type!=='trigger')];
-        for(const node of ordered){const mapped=mapStep(node);mapping.set(String(node.id),mapped);ids.push(...mapped);for(let i=0;i<mapped.length-1;i++)edges.push({source:mapped[i]!,target:mapped[i+1]!});}
+        for(const node of ordered){const mapped=mapStep(node);mapping.set(String(node.id),mapped);ids.push(...mapped);}
         for(const edge of list(flow.edges)){
           if(!nodeIds.has(String(edge.source))||!nodeIds.has(String(edge.target)))throw new Error('Imported graph has an edge to a missing node');
-          const from=mapping.get(String(edge.source))!.at(-1)!,to=mapping.get(String(edge.target))![0]!,outcomes=object(edge.conditions).outcome??edge.sourceHandle;
-          for(const outcome of Array.isArray(outcomes)?outcomes:[outcomes]){if(outcome!==undefined&&!['success','true','false'].includes(String(outcome)))throw new Error(`Unsupported graph outcome: ${outcome}`);edges.push({source:from,target:to,...(outcome===undefined?{}:{outcome:String(outcome) as 'success'|'true'|'false'})});}
+          const from=mapping.get(String(edge.source))!,to=mapping.get(String(edge.target))!,outcomes=object(edge.conditions).outcome??edge.sourceHandle;
+          for(const outcome of Array.isArray(outcomes)?outcomes:[outcomes]){if(outcome!==undefined&&!['success','true','false'].includes(String(outcome)))throw new Error(`Unsupported graph outcome: ${outcome}`);connect(from,to,outcome===undefined?undefined:String(outcome) as 'success'|'true'|'false');}
         }
       }else {const subs=list(target.subActions??target.subactions);if(!subs.length)ids=unmapped(target,'This action has no executable subactions. Select its ecosystem replacement.');else for(const sub of subs){const next=mapStep(sub);connect(ids,next);ids.push(...next);}}
       references.delete(key);return ids;

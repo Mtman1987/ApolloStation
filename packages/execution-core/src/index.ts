@@ -189,13 +189,13 @@ export class ExecutionJobService {
     return this.listWorkers({ ...input, freshOnly: true }).some((worker) => worker.state === "ready" && worker.providerHealthy);
   }
 
-  claim(input: { tenantId: string; executionOwner: string; workerId: string; executionTarget: ExecutionTargetV1; capabilityIds?: string[]; leaseMs?: number }): ExecutionJobV1 | undefined {
+  claim(input: { tenantId: string; executionOwner: string; workerId: string; executionTarget: ExecutionTargetV1; capabilityIds?: string[]; leaseMs?: number; canClaim?:(job:ExecutionJobV1)=>boolean }): ExecutionJobV1 | undefined {
     const tenantId = identifier(input.tenantId, "tenantId"), executionOwner = identifier(input.executionOwner, "executionOwner"), workerId = identifier(input.workerId, "workerId"), executionTarget = target(input.executionTarget);
     const capabilities = input.capabilityIds?.map((value) => identifier(value, "capabilityId"));
     const leaseMs = boundedInteger(input.leaseMs ?? 30_000, "leaseMs", 5_000, 3_600_000);
     return this.options.store.transaction(() => {
       this.requeueExpired(tenantId, executionOwner, executionTarget);
-      const candidate = this.options.store.listExecutionJobs(tenantId, { executionOwner, executionTarget, state: "queued", limit: 200 }).find((job) => !capabilities?.length || capabilities.includes(job.capabilityId));
+      const candidate = this.options.store.listExecutionJobs(tenantId, { executionOwner, executionTarget, state: "queued", limit: 200 }).find((job) => (!capabilities?.length || capabilities.includes(job.capabilityId)) && (!input.canClaim || input.canClaim(job)));
       if (!candidate) return undefined;
       const now = timestamp(this.now(), "job clock");
       const claimed: ExecutionJobV1 = { ...candidate, state: "leased", attempt: candidate.attempt + 1, fencingEpoch: candidate.fencingEpoch + 1, leaseId: `lease_${randomBytes(12).toString("hex")}`, leaseOwner: workerId, leaseExpiresAt: new Date(Date.parse(now) + leaseMs).toISOString(), updatedAt: now };
@@ -203,12 +203,12 @@ export class ExecutionJobService {
     });
   }
 
-  claimAny(input: { executionOwner: string; workerId: string; executionTarget: ExecutionTargetV1; tenantIds?: string[]; capabilityIds?: string[]; leaseMs?: number }): ExecutionJobV1 | undefined {
+  claimAny(input: { executionOwner: string; workerId: string; executionTarget: ExecutionTargetV1; tenantIds?: string[]; capabilityIds?: string[]; leaseMs?: number; canClaim?:(job:ExecutionJobV1)=>boolean }): ExecutionJobV1 | undefined {
     const executionOwner = identifier(input.executionOwner, "executionOwner"), executionTarget = target(input.executionTarget);
     const allowedTenants = input.tenantIds?.map((value) => identifier(value, "tenantId"));
     const tenants = this.options.store.listExecutionJobTenants({ executionOwner, executionTarget }).filter((tenantId) => !allowedTenants || allowedTenants.includes(tenantId));
     for (const tenantId of tenants) {
-      const claimed = this.claim({ tenantId, executionOwner, workerId: input.workerId, executionTarget, ...(input.capabilityIds ? { capabilityIds: input.capabilityIds } : {}), ...(input.leaseMs === undefined ? {} : { leaseMs: input.leaseMs }) });
+      const claimed = this.claim({ tenantId, executionOwner, workerId: input.workerId, executionTarget, ...(input.canClaim?{canClaim:input.canClaim}:{}), ...(input.capabilityIds ? { capabilityIds: input.capabilityIds } : {}), ...(input.leaseMs === undefined ? {} : { leaseMs: input.leaseMs }) });
       if (claimed) return claimed;
     }
     return undefined;

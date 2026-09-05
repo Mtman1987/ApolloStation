@@ -6,6 +6,7 @@ import { assertStreamWeaverFlowRunnable, StreamWeaverFlowPackageStore, type Stre
 
 export interface StreamWeaverNativeFlowExecutorV1 { execute(donorId: string, delivery: NormalizedChatDeliveryV1): Promise<string | undefined>; }
 export interface StreamWeaverFlowServicesV1 {
+  device?(input:{delivery:NormalizedChatDeliveryV1;deviceId:string;ownerUserId:string;action:string;payload:Record<string,unknown>;requestId:string}):Promise<{jobId:string}|{output:string}>;
   assistant?(input:{delivery:NormalizedChatDeliveryV1;prompt:string;requestId:string}):Promise<{status:"accepted";jobId:string}|{status:"unavailable";reason:string}>;
   getJob?(tenantId:string,jobId:string):Promise<ExecutionJobV1>;
 }
@@ -106,7 +107,7 @@ export class StreamWeaverInstalledFlowConsumer {
       const norm=(value:string)=>command.caseSensitive?value:value.toLowerCase(),first=norm(rawFirst);
       if(command.matcher==="command"&&(norm(command.trigger)===first||command.aliases.some(a=>norm(a)===first)))return {package:item,command};
       if(command.matcher==="bare"&&(norm(message.text.trim())===norm(command.trigger)||first===`!${norm(command.trigger)}`))return {package:item,command};
-      if(command.matcher==="regex"&&regexMatch(command.trigger,message.text))return {package:item,command};
+      if(command.matcher==="regex"&&regexMatch(command.trigger,message.text,command.caseSensitive))return {package:item,command};
     }
     return undefined;
   }
@@ -138,6 +139,15 @@ export class StreamWeaverInstalledFlowConsumer {
       if(!text.trim())throw new Error("Discord message text is required");if(!connectionId||!channelId)throw new Error("Choose a connected Discord destination for this step");
       if(preview)return result(text,text);
       await this.egress.send({schemaVersion:1,tenantId:delivery.message.tenantId,provider:"discord",connectionId,channelId,text,idempotencyKey:`streamweaver-flow-discord:${delivery.deliveryId}:${action.id}`});return result(text);
+    }
+    if(action.type==="obs-scene"||action.type==="device-command"){
+      if(preview)return result("","Run this flow in a Simulation Room to inspect the isolated device state.");
+      if(!this.services.device)throw new Error("Companion device execution is unavailable");
+      const pending=run.pending?.actionId===action.id?run.pending.jobId:undefined;
+      if(pending)return result(await this.jobResult(delivery,action.id,pending));
+      const payload=action.type==="obs-scene"?{sceneName:render(action.config.sceneName??action.config.scene)}:Object.fromEntries(Object.entries(record(action.config.payload)??{}).map(([key,value])=>[key,typeof value==="string"?render(value):value]));
+      const response=await this.services.device({delivery,deviceId:String(action.config.deviceId??""),ownerUserId:run.package.author.id,action:action.type==="obs-scene"?"obs.scene.set":String(action.config.action??""),payload,requestId:`flow-device:${delivery.deliveryId}:${action.id}`});
+      return result('output' in response?response.output:await this.jobResult(delivery,action.id,response.jobId));
     }
     if(action.type==="ai-response"){
       if(preview)return result("","AI response requires running this command in a Simulation Room with an available assistant worker.");
@@ -191,4 +201,4 @@ export function renderFlowTemplate(value:string,message:NormalizedChatMessageV1,
 function actorRole(message:NormalizedChatMessageV1):StreamWeaverBotActorRoleV1{return message.actor.roles.includes("broadcaster")?"owner":message.actor.roles.includes("moderator")?"moderator":message.actor.roles.includes("member")?"member":"guest";}
 function roleLevel(role:StreamWeaverBotActorRoleV1){return {guest:0,member:1,moderator:2,admin:3,owner:4}[role];}
 function record(value:unknown){return value&&typeof value==="object"&&!Array.isArray(value)?value as Record<string,unknown>:undefined;}
-function regexMatch(pattern:string,value:string){try{const insensitive=pattern.startsWith("(?i)");return new RegExp(insensitive?pattern.slice(4):pattern,insensitive?"i":"").test(value);}catch{return false;}}
+function regexMatch(pattern:string,value:string,caseSensitive=false){try{const legacyInsensitive=pattern.startsWith("(?i)");return new RegExp(legacyInsensitive?pattern.slice(4):pattern,caseSensitive?"":"i").test(value);}catch{return false;}}
