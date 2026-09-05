@@ -28,6 +28,7 @@ export interface StreamWeaverDonorRuntimeOptionsV1 {
   nowMs?: () => number;
   random?: () => number;
   botNames?: string[];
+  enabled?: (tenantId: string, donorId: string) => boolean;
 }
 
 type DonorInvocationCommonV1 = {
@@ -65,7 +66,7 @@ export class StreamWeaverDonorCommandConsumer {
 
   accepts(message: NormalizedChatMessageV1) {
     if (message.actor.isBot) return false;
-    return this.matchDefinitions(message.text).some((entry) => !ECONOMY_TRIGGERS.has(canonicalDonorCommandTrigger(entry.trigger)));
+    return this.matchDefinitions(message.text).some((entry) => (this.options.enabled?.(message.tenantId, entry.donorId) ?? true) && !ECONOMY_TRIGGERS.has(canonicalDonorCommandTrigger(entry.trigger)));
   }
 
   async deliver(delivery: NormalizedChatDeliveryV1) {
@@ -79,7 +80,7 @@ export class StreamWeaverDonorCommandConsumer {
 
   async route(delivery: NormalizedChatDeliveryV1): Promise<{ command: string; text?: string } | undefined> {
     const message = delivery.message;
-    const matches = this.matchDefinitions(message.text).filter((entry) => !ECONOMY_TRIGGERS.has(canonicalDonorCommandTrigger(entry.trigger)));
+    const matches = this.matchDefinitions(message.text).filter((entry) => (this.options.enabled?.(message.tenantId, entry.donorId) ?? true) && !ECONOMY_TRIGGERS.has(canonicalDonorCommandTrigger(entry.trigger)));
     if (!matches.length) return undefined;
     const commands = distinctEffectDefinitions(matches);
     const command = commands[0];

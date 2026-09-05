@@ -13,7 +13,9 @@ export type ProductAppSnapshotSourceV1 =
   | "xpLedger"
   | "xpWallet"
   | "stellarCapabilities"
-  | "providerLinks";
+  | "providerLinks"
+  | "workspace"
+  | "tenantOutputs";
 
 export interface ProductAppSignalV1 {
   source: ProductAppSnapshotSourceV1;
@@ -48,7 +50,7 @@ export interface ProductAppSectionV1 {
   appOwnedData?: boolean;
 }
 
-const BASELINE_SNAPSHOT_SOURCES: readonly ProductAppSnapshotSourceV1[] = ["runtime", "events", "jobs", "workers"];
+const BASELINE_SNAPSHOT_SOURCES: readonly ProductAppSnapshotSourceV1[] = ["runtime", "events", "jobs", "workers", "workspace", "tenantOutputs"];
 
 export function productAppSnapshotSources(descriptor: ProductAppWebDescriptorV1): ProductAppSnapshotSourceV1[] {
   return [...new Set([...BASELINE_SNAPSHOT_SOURCES, ...descriptor.sections.flatMap((section) => section.signals?.map((signal) => signal.source) ?? [])])];
@@ -120,7 +122,7 @@ export function renderProductAppWebPage(app: ProductAppWebDescriptorV1, buildSha
     .replaceAll("__APP_ID__", scriptJson(app.appId))
     .replaceAll("__SECTIONS__", scriptJson(app.sections));
   const catalogJs = productAppCatalogBrowserJs(Object.fromEntries(app.sections.filter((section) => section.catalogs?.length).map((section) => [section.id, section.catalogs])));
-  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><meta name="theme-color" content="#f97316"><title>${esc(app.name)} · SpaceMountain</title><style>${PRODUCT_UI_CSS}${CSS}${extraCss}</style></head><body class="spmt-product-surface owned" data-app="${esc(app.appId)}" data-surface="standalone" style="--spmt-app-backdrop-image:url('${safeUrl(app.sceneUrl)}')"><div class="spmt-product-backdrop" aria-hidden="true"><span class="spmt-product-backdrop-image"></span><span class="spmt-product-backdrop-tint"></span><span class="spmt-product-backdrop-shade"></span><span class="spmt-star-layer"><i></i><i></i><i></i></span></div><main><nav class="tabs spmt-product-glass" data-spmt-depth="2">${tabs}</nav><section class="home" data-page="home"><div class="hero"><div class="mark"><img data-logo src="/assets/product/app-icons/solar-flare/${esc(app.appId)}.png" alt=""><span class="spmt-product-kicker">${esc(app.kicker)}</span></div><h1>${esc(app.name)}</h1><p>${esc(app.tagline)}</p><div class="home-summary" data-spmt-home-summary aria-live="polite"><span>Connecting to the SPMT developer surface…</span></div><div class="actions"><button class="button primary" data-first>Open ${esc(app.sections[0]?.label ?? "app")}</button><button class="button" data-refresh>Refresh data</button></div><footer><span class="spmt-product-status" data-runtime>Checking runtime</span><small>Build ${esc(buildSha.slice(0, 12))}</small></footer></div></section>${pages}${extra}</main><script>${FRAME_JS}${pageJs}${SNAPSHOT_MODE_JS}${browserJs}${catalogJs}</script></body></html>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><meta name="theme-color" content="#f97316"><title>${esc(app.name)} · SpaceMountain</title><style>${PRODUCT_UI_CSS}${CSS}${WORKSPACE_OVERLAY_CSS}${extraCss}</style></head><body class="spmt-product-surface owned" data-app="${esc(app.appId)}" data-surface="standalone" style="--spmt-app-backdrop-image:url('${safeUrl(app.sceneUrl)}')"><div class="spmt-product-backdrop" aria-hidden="true"><span class="spmt-product-backdrop-image"></span><span class="spmt-product-backdrop-tint"></span><span class="spmt-product-backdrop-shade"></span><span class="spmt-star-layer"><i></i><i></i><i></i></span></div><iframe class="spmt-personal-overlay" data-spmt-personal-overlay title="Personal workspace overlay" aria-hidden="true"></iframe><main><nav class="tabs spmt-product-glass" data-spmt-depth="2">${tabs}</nav><section class="home" data-page="home"><div class="hero"><div class="mark"><img data-logo src="/assets/product/app-icons/solar-flare/${esc(app.appId)}.png" alt=""><span class="spmt-product-kicker">${esc(app.kicker)}</span></div><h1>${esc(app.name)}</h1><p>${esc(app.tagline)}</p><div class="home-summary" data-spmt-home-summary aria-live="polite"><span>Connecting to the SPMT developer surface…</span></div><div class="actions"><button class="button primary" data-first>Open ${esc(app.sections[0]?.label ?? "app")}</button><button class="button" data-refresh>Refresh data</button></div><footer><span class="spmt-product-status" data-runtime>Checking runtime</span><small>Build ${esc(buildSha.slice(0, 12))}</small></footer></div></section>${pages}${extra}</main><aside class="spmt-overlay-footer spmt-product-glass" data-spmt-overlay-footer><strong>Workspace overlay</strong><button type="button" data-spmt-personal-toggle>Personal On</button><button type="button" data-spmt-copy-public>Copy Public URL</button><button type="button" data-spmt-copy-personal>Copy Personal URL</button><button type="button" data-spmt-open-overlay-bay>Overlay Bay</button></aside><script>${FRAME_JS}${pageJs}${SNAPSHOT_MODE_JS}${WORKSPACE_OVERLAY_JS}${browserJs}${catalogJs}</script></body></html>`;
 }
 
 export function productAppCatalogBrowserJs(catalogs: Readonly<Record<string, readonly ProductAppCatalogV1[] | undefined>>) {
@@ -157,7 +159,7 @@ export async function fetchAppPlatformSnapshot(input: { appId: string; spmtOrigi
   const appId = encodeURIComponent(input.appId);
   const actor = encodeURIComponent(actorId);
   const values: Record<ProductAppSnapshotSourceV1, unknown> = {
-    runtime: [], events: [], jobs: [], workers: [], operations: [], devices: [], overlayWidgets: [], overlayOutputs: [], xpWallet: null, xpLedger: [], stellarCapabilities: [], providerLinks: [],
+    runtime: [], events: [], jobs: [], workers: [], operations: [], devices: [], overlayWidgets: [], overlayOutputs: [], xpWallet: null, xpLedger: [], stellarCapabilities: [], providerLinks: [], workspace: null, tenantOutputs: null,
   };
   const paths: Record<ProductAppSnapshotSourceV1, string> = {
     runtime: `/v1/runtime/state?appId=${appId}`,
@@ -172,6 +174,8 @@ export async function fetchAppPlatformSnapshot(input: { appId: string; spmtOrigi
     xpLedger: `/v1/xp/ledger?userId=${actor}&limit=50`,
     stellarCapabilities: "/v1/stellar/capabilities",
     providerLinks: "/v1/identity/providers",
+    workspace: "/v1/workspace/profile",
+    tenantOutputs: "/v1/overlay/tenant-outputs",
   };
   if (liveRead && liveProtocol === "blue-v1") Object.assign(paths, {
     runtime: "/api/apps",
@@ -186,6 +190,8 @@ export async function fetchAppPlatformSnapshot(input: { appId: string; spmtOrigi
     xpLedger: "",
     stellarCapabilities: "/api/athena/os",
     providerLinks: "/api/me",
+    workspace: "/api/workspace-profile",
+    tenantOutputs: "/api/personal-overlay-launch",
   });
   const requestedSources = [...new Set(input.sources?.length ? input.sources : BASELINE_SNAPSHOT_SOURCES)];
   await Promise.all(requestedSources.map(async (source) => {
@@ -218,6 +224,8 @@ export async function fetchAppPlatformSnapshot(input: { appId: string; spmtOrigi
     xpLedger,
     stellarCapabilities: values.stellarCapabilities,
     providerLinks: values.providerLinks,
+    workspace: values.workspace,
+    tenantOutputs: values.tenantOutputs,
   };
 }
 
@@ -315,6 +323,10 @@ const PAGE_JS = String.raw`;(()=>{const appId=__APP_ID__,sections=__SECTIONS__,b
 
 const SNAPSHOT_MODE_JS = String.raw`;(()=>{window.addEventListener('spmt:snapshot',event=>{const snapshot=event.detail||{},live=snapshot.dataMode==='live-read';document.body.dataset.dataMode=live?'live-read':'isolated';for(const old of document.querySelectorAll('[data-spmt-snapshot-mode]'))old.remove();if(!live)return;const badge=document.createElement('span');badge.className='source-state snapshot-mode';badge.dataset.spmtSnapshotMode='';badge.dataset.state='ready';badge.textContent='Live data · read only';document.querySelector('.mark')?.append(badge);for(const heading of document.querySelectorAll('.source-heading strong'))heading.textContent='Live SPMT data'})})();`;
 
+const WORKSPACE_OVERLAY_CSS = `.spmt-personal-overlay{position:fixed;inset:0;width:100%;height:100%;border:0;z-index:8;pointer-events:none;background:transparent}.spmt-personal-overlay[hidden]{display:none}.spmt-overlay-footer{position:fixed;z-index:20;left:50%;bottom:max(8px,env(safe-area-inset-bottom));transform:translateX(-50%);display:flex;align-items:center;gap:6px;max-width:calc(100vw - 16px);padding:6px 8px;border-radius:14px}.spmt-overlay-footer strong{padding:0 5px;font-size:10px;white-space:nowrap;color:var(--spmt-muted)}.spmt-overlay-footer button{min-height:32px;padding:6px 9px;border:1px solid var(--spmt-border);border-radius:10px;background:var(--spmt-surface-depth-3);color:var(--spmt-ink);font-size:10px;font-weight:800;white-space:nowrap}.owned[data-surface="shell"]>.spmt-overlay-footer,.owned[data-surface="shell"]>.spmt-personal-overlay{display:none!important}@media(max-width:620px){.spmt-overlay-footer{left:8px;right:8px;transform:none;overflow:auto}.spmt-overlay-footer strong{display:none}.owned main{padding-bottom:58px}}`;
+
+const WORKSPACE_OVERLAY_JS = String.raw`;(()=>{const key='spmt:personal-overlay-visible',frame=document.querySelector('[data-spmt-personal-overlay]'),footer=document.querySelector('[data-spmt-overlay-footer]'),toggle=footer?.querySelector('[data-spmt-personal-toggle]');let outputs=null,visible=true;try{visible=localStorage.getItem(key)!=='off'}catch{}function sync(){if(frame)frame.hidden=!visible;if(toggle)toggle.textContent='Personal '+(visible?'On':'Off')}async function copy(name){const url=outputs?.[name]?.url;if(!url)return;if(navigator.clipboard?.writeText)await navigator.clipboard.writeText(url);else window.prompt('Copy '+name+' overlay URL',url)}toggle?.addEventListener('click',()=>{visible=!visible;try{localStorage.setItem(key,visible?'on':'off')}catch{}sync()});footer?.querySelector('[data-spmt-copy-public]')?.addEventListener('click',()=>void copy('public'));footer?.querySelector('[data-spmt-copy-personal]')?.addEventListener('click',()=>void copy('personal'));footer?.querySelector('[data-spmt-open-overlay-bay]')?.addEventListener('click',()=>{if(window.parent!==window)window.parent.postMessage({protocol:'spmt.surface',version:1,type:'shell.navigate',appId:document.body.dataset.app||'',view:'workspace'},'*');else if(outputs?.editorUrl)location.assign(outputs.editorUrl)});window.addEventListener('spmt:snapshot',event=>{const next=event.detail?.tenantOutputs;if(!next||typeof next!=='object')return;outputs=next;if(frame&&next.personal?.url&&frame.src!==next.personal.url)frame.src=next.personal.url;sync()});sync()})();`;
+
 function validateDescriptor(value: ProductAppWebDescriptorV1) {
   if (!value.appId || !value.name || !value.sceneUrl || !value.sections.length) throw new Error("Product app web descriptor is incomplete");
   const ids = new Set<string>();
@@ -332,7 +344,7 @@ function loopback(value: string) {
 }
 
 function headers(response: ServerResponse) {
-  response.setHeader("content-security-policy", "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'self'; object-src 'none'");
+  response.setHeader("content-security-policy", "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-src 'self' https:; base-uri 'none'; form-action 'self'; frame-ancestors 'self'; object-src 'none'");
   response.setHeader("x-frame-options", "SAMEORIGIN");
   response.setHeader("referrer-policy", "no-referrer");
 }

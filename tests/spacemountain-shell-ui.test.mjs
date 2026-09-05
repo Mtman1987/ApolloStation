@@ -16,8 +16,8 @@ test("SpaceMountain wrapper preserves the proven shell and upgrades only Overlay
   assert.match(wrapper, /OverlayBayParityController/);
   assert.match(wrapper, /MutationObserver/);
   assert.match(wrapper, /export \{ SPACE_MOUNTAIN_CSS \}/);
-  assert.match(overlay, /Canonical stream overlay editor/);
-  assert.match(overlay, /Create OBS URL/);
+  assert.match(overlay, /Canonical ecosystem overlay editor/);
+  assert.match(overlay, /Copy Public URL/);
 });
 
 test("SpaceMountain shell UI uses measured shared header inset everywhere", () => {
@@ -28,10 +28,11 @@ test("SpaceMountain shell UI uses measured shared header inset everywhere", () =
   assert.match(SPACE_MOUNTAIN_CSS, /\.spmt-space-main\{[^}]*padding:calc\(var\(--spmt-shell-top-inset/);
 });
 
-test("visible shell does not restore private proxy or browser token storage", () => {
+test("visible shell does not restore private proxy or browser credential storage", () => {
   assert.doesNotMatch(source, /\/api\/spmt/);
-  assert.doesNotMatch(source, /localStorage/);
   assert.doesNotMatch(source, /sessionStorage/);
+  assert.doesNotMatch(source, /localStorage[^\n]*(?:token|credential|authorization)/i);
+  assert.match(base, /spmt:personal-overlay-visible/);
   assert.doesNotMatch(source, /[?&](?:tenant|scopes|token)=/);
 });
 
@@ -135,5 +136,8 @@ test("Overlay Bay retains donor editor controls and all source families", () => 
   for (const feature of [/data-ob-resize/, /data-ob-front/, /data-ob-back/, /data-ob-copy/, /data-ob-remove/, /data-ob-test-alert/, /data-ob-field="opacity"/, /data-ob-field="interactive"/, /data-ob-field="locked"/, /data-ob-game/, /data-ob-game-style/]) assert.match(overlay, feature);
   assert.match(overlay, /NEBULA_GAMES/);
   assert.match(overlay, /\/v1\/overlay\/scenes\/register/);
-  assert.match(overlay, /\/v1\/overlay\/outputs/);
+  assert.match(overlay, /activePublicOverlaySceneId/);
+  assert.match(overlay, /activePersonalOverlaySceneId/);
+  assert.match(overlay, /Copy Public URL/);
+  assert.match(overlay, /Copy Personal URL/);
 });

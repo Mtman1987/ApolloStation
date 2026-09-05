@@ -44,7 +44,9 @@ test("SpaceMountain presentation remains finished and dynamically catalog-backed
   for (const pattern of [/data-theme-logo="hero-secondary"/, /data-theme-logo="spmt"/, /themeLogoUrl/, /themedAppIconUrl/, /model-rocket\.png/, /SPACEMOUNTAIN_SCENE/, /installProductBackdrop/, /bindProductRocketNavigation/, /Custom scene override/, /app\.iconUrl/, /this\.snapshot\.apps\.filter/]) assert.match(shellSource, pattern);
   assert.doesNotMatch(shellSource, /One command bridge for every creator tool/);
   assert.doesNotMatch(shellSource, /app-streamweaver|app-hearmeout|app-discord-hub|app-nebula-tag/);
-  assert.doesNotMatch(shellSource, /localStorage|sessionStorage|\/api\/spmt/);
+  assert.doesNotMatch(shellSource, /sessionStorage|\/api\/spmt/);
+  assert.doesNotMatch(shellSource, /localStorage[^\n]*(?:token|credential|authorization)/i);
+  assert.match(shellSource, /spmt:personal-overlay-visible/);
   assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /\.spmt-header-clocks/);
   assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /\.spmt-live-button/);
   assert.match(POLISHED_SPACE_MOUNTAIN_CSS, /\.spmt-rocket-dock/);

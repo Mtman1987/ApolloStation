@@ -59,7 +59,7 @@ test("DSH makes calendar, channel delivery, application publishing, and private 
 test("StreamWeaver exposes a wired Voice Commander, searchable bot catalog, integrations, persona and economy", async () => {
   await fixture(async ({ cookie, streamBase }) => {
     const page = await (await fetch(streamBase)).text();
-    assert.match(page, /Voice Commander/); assert.match(page, /Explicit microphone/); assert.match(page, /Live input · read only · no outbound/); assert.match(page, /Search commands/); assert.match(page, /Manage linked accounts/); assert.match(page, /@media\(max-width:720px\)/);
+    assert.match(page, /Setup Guide/); assert.match(page, /Community Flows/); assert.match(page, /Build one flow with AI/); assert.match(page, /Your account is genuinely blank/); assert.match(page, /Voice Commander/); assert.match(page, /Explicit microphone/); assert.match(page, /Live input · read only · no outbound/); assert.match(page, /Manage linked accounts/); assert.match(page, /@media\(max-width:720px\)/);
     const browserSource = page.match(/<script>([\s\S]*)<\/script>/)?.[1];
     assert.ok(browserSource); assert.doesNotThrow(() => new Function(browserSource));
     assert.equal((browserSource.match(/textContent!==value/g) ?? []).length, 2, "StreamWeaver decorators must converge instead of retriggering themselves forever");
@@ -68,6 +68,16 @@ test("StreamWeaver exposes a wired Voice Commander, searchable bot catalog, inte
     const control = await (await fetch(`${streamBase}/api/streamweaver/control`, { headers: { cookie } })).json();
     assert.equal(control.role, "owner"); assert.equal(control.operationMode, "read-only"); assert.equal(control.connections[0].provider, "twitch"); assert.equal(control.botRuntime.publicCommands, "connected"); assert.equal(control.botRuntime.suiteActions, "setup-required"); assert.ok(control.botActions.length >= 20); assert.ok(control.botActions.every((action) => action.availability === "setup-required")); assert.ok(control.botActions.some((action) => action.policy === "blocked"));
     const origin = new URL(streamBase).origin;
+    const blankFlows = await (await fetch(`${streamBase}/api/streamweaver/control/flows`, { headers: { cookie } })).json();
+    assert.deepEqual(blankFlows.installed, []); assert.equal(blankFlows.community.length, 73); assert.ok(blankFlows.community.every((item) => item.author.id === "mtman1987" && item.installUnit === "flow" && item.commands.length === 1));
+    const install = await fetch(`${streamBase}/api/streamweaver/control/flows/install`, { method: "POST", headers: { cookie, origin, "content-type": "application/json" }, body: JSON.stringify({ packageId: "mtman1987.coinflip" }) });
+    assert.equal(install.status, 200);
+    const oneFlow = await (await fetch(`${streamBase}/api/streamweaver/control/flows`, { headers: { cookie } })).json();
+    assert.deepEqual(oneFlow.installed.map((item) => item.packageId), ["mtman1987.coinflip"]);
+    const exported = await fetch(`${streamBase}/api/streamweaver/control/flows/mtman1987.coinflip/export`, { headers: { cookie } });
+    assert.equal(exported.status, 200); assert.match(exported.headers.get("content-disposition") ?? "", /\.streamweaver\.json/); assert.equal((await exported.json()).commands.length, 1);
+    const blockedBuilder = await fetch(`${streamBase}/api/streamweaver/control/flows/ai`, { method: "POST", headers: { cookie, origin, "content-type": "application/json" }, body: JSON.stringify({ idea: "Make !hello greet the chatter" }) });
+    assert.equal(blockedBuilder.status, 200); assert.equal((await blockedBuilder.json()).status, "blocked");
     const persona = await fetch(`${streamBase}/api/streamweaver/control/persona`, { method: "POST", headers: { cookie, origin, "content-type": "application/json" }, body: JSON.stringify({ personaId: "athena", displayName: "Athena", aliases: "athena\nannie", homeChannelIds: "main", summonWindowMinutes: 10, instructions: "Be warm, accurate, and concise.", memoryPolicy: "conversation" }) });
     assert.equal(persona.status, 200);
     const economy = await fetch(`${streamBase}/api/streamweaver/control/economy`, { method: "POST", headers: { cookie, origin, "content-type": "application/json" }, body: JSON.stringify({ currencyName: "Quacks", defaultBet: 100, minBet: 1, maxBet: 10000, winPercent: 28, jackpotPercent: 1, jackpotMultiplier: 10, spmtExchangeEnabled: false, baseLocalPerSpmt: 1000, referenceSupply: 1000000, maxSpmtPerExchange: 100 }) });

@@ -18,6 +18,7 @@ export class OverlayBayParityController {
   private scenes: OverlaySceneV1[] = [];
   private activeSceneId = "";
   private selectedSourceId = "";
+  private output: "public" | "personal" = "public";
 
   constructor(private readonly root: HTMLElement, snapshot: SpaceMountainShellSnapshotV1) {
     this.snapshot = snapshot;
@@ -43,7 +44,10 @@ export class OverlayBayParityController {
   private loadSnapshot() {
     try { this.scenes = normalizeOverlayScenes(this.snapshot.workspace?.overlayScenes); }
     catch { this.scenes = []; }
-    const requested = typeof this.snapshot.workspace?.activeOverlaySceneId === "string" ? this.snapshot.workspace.activeOverlaySceneId : "";
+    const field = this.output === "public" ? "activePublicOverlaySceneId" : "activePersonalOverlaySceneId";
+    const named = typeof this.snapshot.workspace?.[field] === "string" ? String(this.snapshot.workspace[field]) : "";
+    const legacy = typeof this.snapshot.workspace?.activeOverlaySceneId === "string" ? this.snapshot.workspace.activeOverlaySceneId : "";
+    const requested = named || legacy;
     if (requested && this.scenes.some((scene) => scene.id === requested)) this.activeSceneId = requested;
     else if (!this.scenes.some((scene) => scene.id === this.activeSceneId)) this.activeSceneId = this.scenes[0]?.id ?? "";
     if (!this.activeSceneId) this.selectedSourceId = "";
@@ -59,7 +63,7 @@ export class OverlayBayParityController {
     if (scene) headActions.push(`<button type="button" data-ob-duplicate>Duplicate</button>`, `<button type="button" data-ob-delete>Delete</button>`);
     const tabs = this.scenes.length ? this.scenes.map((item) => `<button type="button" data-ob-scene="${esc(item.id)}" class="${item.id === this.activeSceneId ? "active" : ""}">${esc(item.name)}</button>`).join("") : `<span>No saved scenes yet.</span>`;
     const body = scene ? this.editor(scene, owner) : `<div class="ob-first"><h3>Create your first overlay scene</h3><p>Combine app widgets, a Nebula Game Mix, URLs, images, text, alerts, camera, screen, Xbox, links, ticker, and weather in one final browser source.</p><button type="button" data-ob-new class="primary">Create scene</button></div>`;
-    bay.innerHTML = `<style>${OVERLAY_EDITOR_CSS}</style><header class="ob-head"><div style="display:flex;align-items:center;gap:14px"><img src="${overlayIconUrl(this.snapshot)}" alt="" style="width:72px;height:72px;object-fit:contain;filter:drop-shadow(0 0 16px var(--accent2))"><div><span>OVERLAY BAY</span><h2>Canonical stream overlay editor</h2><p>One editor. One final browser-source URL. Apps own their runtime; Overlay Bay owns composition.</p></div></div><div class="ob-head-actions">${headActions.join("")}</div></header><div class="ob-tabs">${tabs}</div>${body}${this.outputs(owner)}`;
+    bay.innerHTML = `<style>${OVERLAY_EDITOR_CSS}</style><header class="ob-head"><div style="display:flex;align-items:center;gap:14px"><img src="${overlayIconUrl(this.snapshot)}" alt="" style="width:72px;height:72px;object-fit:contain;filter:drop-shadow(0 0 16px var(--accent2))"><div><span>OVERLAY BAY</span><h2>Canonical ecosystem overlay editor</h2><p>Public is the OBS program. Personal is the private workspace HUD. They can use the same scene or different scenes.</p></div></div><div class="ob-head-actions"><button type="button" data-ob-output="public" class="${this.output === "public" ? "active" : ""}">Public</button><button type="button" data-ob-output="personal" class="${this.output === "personal" ? "active" : ""}">Personal</button>${headActions.join("")}</div></header><div class="ob-output-note">Editing <strong>${this.output === "public" ? "Public · OBS/browser source" : "Personal · signed-in workspace"}</strong></div><div class="ob-tabs">${tabs}</div>${body}${this.outputs(owner)}`;
     this.bind(bay);
   }
 
@@ -71,7 +75,7 @@ export class OverlayBayParityController {
       return `<button type="button" data-ob-add-widget="${esc(appId)}|${esc(widgetId)}" data-renderer="${esc(text(manifest?.rendererUrl))}">${esc(title)}<small>${esc(appId)}</small></button>`;
     }).join("") || `<small>Installed apps have not registered widgets yet.</small>`;
     const sources = scene.sources.filter((source) => source.visible).map((source) => this.sourceCard(source)).join("") || `<div class="ob-empty">Add a source from the left. Nebula Arcade can contain any combination of all 20 games inside one source.</div>`;
-    const issueButtons = owner ? `<button type="button" data-ob-issue class="primary">Create OBS URL</button><button type="button" data-ob-issue-personal>Personal URL</button>` : "";
+    const issueButtons = owner ? `<button type="button" data-ob-copy-output="public">Copy Public URL</button><button type="button" data-ob-copy-output="personal">Copy Personal URL</button>` : "";
     return `<div class="ob-shell"><aside class="ob-palette"><h3>Add source</h3><div class="ob-source-kinds">${paletteKinds}</div><h3>App widgets</h3><div class="ob-widgets">${widgets}</div></aside><main class="ob-stage-wrap"><div class="ob-stage-head"><input data-ob-scene-name maxlength="100" value="${esc(scene.name)}" aria-label="Scene name"><span>${scene.canvasWidth} × ${scene.canvasHeight}</span><button type="button" data-ob-save class="primary">Save</button>${issueButtons}</div><div class="ob-stage" data-ob-stage>${sources}</div></main><aside class="ob-inspector">${this.inspector(scene)}</aside></div>`;
   }
 
@@ -112,22 +116,24 @@ export class OverlayBayParityController {
   }
 
   private outputs(owner: boolean) {
+    const canonical = this.snapshot.tenantOutputs;
+    const named = canonical ? `<article><div><b>Public · canonical OBS program</b><small>${esc(canonical.public.url)}</small></div><button type="button" data-ob-copy-output="public">Copy</button></article><article><div><b>Personal · signed-in workspace HUD</b><small>${esc(canonical.personal.url)}</small></div><button type="button" data-ob-copy-output="personal">Copy</button></article>` : `<p>Canonical tenant output URLs are unavailable.</p>`;
     const items = (this.snapshot.overlayOutputs ?? []).map((item) => {
       const revoked = Boolean(text(item.revokedAt)); const status = revoked ? "revoked" : `expires ${esc(text(item.expiresAt) || "—")}`;
       const button = owner && !revoked ? `<button type="button" data-ob-revoke="${esc(text(item.grantId))}">Revoke</button>` : "";
       return `<article><div><b>${esc(text(item.appId) || "ecosystem")} · ${esc(text(item.widgetId) || "widget")}</b><small>${status}</small></div>${button}</article>`;
     }).join("");
-    return `<section class="ob-outputs"><h3>Issued browser sources</h3>${items || `<p>No active outputs. New URLs are shown once when created.</p>`}</section>`;
+    return `<section class="ob-outputs"><h3>Canonical tenant outputs</h3>${named}<details><summary>Temporary app/widget grants</summary>${items || `<p>No temporary grants.</p>`}</details></section>`;
   }
 
   private bind(bay: HTMLElement) {
     bay.querySelectorAll<HTMLElement>("[data-ob-new]").forEach((node) => node.onclick = () => this.newScene(bay));
+    bay.querySelectorAll<HTMLElement>("[data-ob-output]").forEach((node) => node.onclick = () => { this.output = node.dataset.obOutput === "personal" ? "personal" : "public"; this.loadSnapshot(); this.render(bay); });
     bay.querySelectorAll<HTMLElement>("[data-ob-scene]").forEach((node) => node.onclick = () => { this.activeSceneId = node.dataset.obScene ?? ""; this.selectedSourceId = ""; this.render(bay); });
     bay.querySelector<HTMLElement>("[data-ob-duplicate]")?.addEventListener("click", () => this.duplicateScene(bay));
     bay.querySelector<HTMLElement>("[data-ob-delete]")?.addEventListener("click", () => void this.deleteScene(bay));
     bay.querySelector<HTMLElement>("[data-ob-save]")?.addEventListener("click", () => void this.persist(true).then(() => this.render(bay)).catch(showError));
-    bay.querySelector<HTMLElement>("[data-ob-issue]")?.addEventListener("click", () => void this.issue(false, bay));
-    bay.querySelector<HTMLElement>("[data-ob-issue-personal]")?.addEventListener("click", () => void this.issue(true, bay));
+    bay.querySelectorAll<HTMLElement>("[data-ob-copy-output]").forEach((node) => node.onclick = () => void this.copyOutput(node.dataset.obCopyOutput === "personal" ? "personal" : "public"));
     bay.querySelectorAll<HTMLElement>("[data-ob-revoke]").forEach((node) => node.onclick = () => void this.revoke(node.dataset.obRevoke ?? "", bay));
     bay.querySelectorAll<HTMLElement>("[data-ob-add-kind]").forEach((node) => node.onclick = () => this.addKind(node.dataset.obAddKind as OverlaySourceKindV1, bay));
     bay.querySelectorAll<HTMLElement>("[data-ob-add-widget]").forEach((node) => node.onclick = () => this.addWidget(node, bay));
@@ -174,7 +180,12 @@ export class OverlayBayParityController {
     const scene = this.activeScene(); const input = this.root.querySelector<HTMLInputElement>("[data-ob-scene-name]"); if (scene && input) this.updateScene({ name: input.value });
     if (syncNebula) await this.syncNebula();
     const revision = numeric(this.snapshot.workspace?.revision); if (!revision) throw new Error("Workspace revision is unavailable");
-    const response = await fetch("/v1/workspace/profile", { method: "PATCH", headers: { "content-type": "application/json", "x-spmt-tenant": this.snapshot.tenantId }, body: JSON.stringify({ expectedRevision: revision, patch: { overlayScenes: this.scenes, activeOverlaySceneId: this.activeSceneId || undefined } }) });
+    const ids = new Set(this.scenes.map((item) => item.id));
+    const priorPublic = text(this.snapshot.workspace?.activePublicOverlaySceneId) || text(this.snapshot.workspace?.activeOverlaySceneId);
+    const priorPersonal = text(this.snapshot.workspace?.activePersonalOverlaySceneId) || priorPublic;
+    const activePublicOverlaySceneId = this.output === "public" ? this.activeSceneId || null : ids.has(priorPublic) ? priorPublic : null;
+    const activePersonalOverlaySceneId = this.output === "personal" ? this.activeSceneId || null : ids.has(priorPersonal) ? priorPersonal : activePublicOverlaySceneId;
+    const response = await fetch("/v1/workspace/profile", { method: "PATCH", headers: { "content-type": "application/json", "x-spmt-tenant": this.snapshot.tenantId }, body: JSON.stringify({ expectedRevision: revision, patch: { overlayScenes: this.scenes, activeOverlaySceneId: activePublicOverlaySceneId || undefined, activePublicOverlaySceneId, activePersonalOverlaySceneId } }) });
     const body = record(await safeJson(response)); if (!response.ok) throw new Error(String(body?.message ?? `Overlay scene save failed (${response.status})`));
     if (body) this.snapshot.workspace = { ...this.snapshot.workspace, ...body }; else if (this.snapshot.workspace) this.snapshot.workspace.revision = revision + 1;
   }
@@ -200,6 +211,8 @@ export class OverlayBayParityController {
       this.render(bay);
     } catch (error) { showError(error); }
   }
+
+  private async copyOutput(output: "public" | "personal") { const url = this.snapshot.tenantOutputs?.[output].url; if (!url) return showError(new Error("Canonical tenant output URL is unavailable")); if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(url); else window.prompt(`Copy ${output} overlay URL`, url); }
 
   private async revoke(grantId: string, bay: HTMLElement) { if (!grantId || !window.confirm("Revoke this browser source?")) return; const response = await fetch(`/v1/overlay/outputs/${encodeURIComponent(grantId)}/revoke`, { method: "POST", headers: { "content-type": "application/json", "x-spmt-tenant": this.snapshot.tenantId }, body: "{}" }); if (!response.ok) showError(new Error(`Revoke failed (${response.status})`)); else { this.snapshot.overlayOutputs = this.snapshot.overlayOutputs.map((item) => text(item.grantId) === grantId ? { ...item, revokedAt: new Date().toISOString() } : item); this.render(bay); } }
 }

@@ -5,6 +5,7 @@ import { routeSpmtSuiteAction, spmtSuiteActionAllowed, spmtSuiteActionDescriptor
 import { STREAMWEAVER_BOT_ACTION_CATALOG, detectStreamWeaverBotAction } from "./bot-action-runtime.js";
 import { DEFAULT_STREAMWEAVER_GAMBLE_SETTINGS, SqliteStreamWeaverEconomyStore, StreamWeaverEconomy } from "./economy.js";
 import { StreamWeaverPersonaSettingsStore } from "./persona-settings.js";
+import { StreamWeaverFlowPackageStore, normalizeFlowPackage } from "./flow-packages.js";
 
 export interface StreamWeaverWebConnectionV1 { schemaVersion: 1; tenantId: string; provider: ChatProviderV1; connectionId: string; channelId: string; providerAccountId: string; desired: boolean; }
 export interface StreamWeaverWebControlOptionsV1 { spmtOrigin: string; databasePath?: string; credential?: string; connections?: StreamWeaverWebConnectionV1[]; operationMode?: SpmtOperationModeV1; fetchImpl?: typeof fetch; }
@@ -15,30 +16,41 @@ export class StreamWeaverWebControls {
   private readonly persona?: StreamWeaverPersonaSettingsStore;
   private readonly economy?: SqliteStreamWeaverEconomyStore;
   private readonly client?: SpmtClient;
+  private readonly flows?: StreamWeaverFlowPackageStore;
   private readonly operationMode: SpmtOperationModeV1;
 
   constructor(private readonly options: StreamWeaverWebControlOptionsV1) {
     this.operationMode = options.operationMode ?? "active";
-    if (options.databasePath) { this.persona = new StreamWeaverPersonaSettingsStore(options.databasePath); this.economy = new SqliteStreamWeaverEconomyStore(options.databasePath); }
+    if (options.databasePath) { this.persona = new StreamWeaverPersonaSettingsStore(options.databasePath); this.economy = new SqliteStreamWeaverEconomyStore(options.databasePath); this.flows = new StreamWeaverFlowPackageStore(options.databasePath); }
     if (options.credential) {
       const getAccessToken = serviceTokenProvider(options);
       this.client = new SpmtClient({ baseUrl: options.spmtOrigin, appId: "streamweaver", getAccessToken, ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}) });
     }
   }
 
-  close() { this.persona?.close(); this.economy?.close(); }
+  close() { this.flows?.close(); this.persona?.close(); this.economy?.close(); }
 
   async handle(request: IncomingMessage, response: ServerResponse, url: URL): Promise<boolean> {
     if (!url.pathname.startsWith("/api/streamweaver/control")) return false;
     try {
       const context = await fetchAppSessionContext({ appId: "streamweaver", spmtOrigin: this.options.spmtOrigin, request });
       if (request.method === "GET" && url.pathname === "/api/streamweaver/control") return await this.read(request, response, context);
+      if (request.method === "GET" && url.pathname === "/api/streamweaver/control/flows") return this.readFlows(response, context);
+      if (request.method === "GET" && /^\/api\/streamweaver\/control\/flows\/[^/]+\/export\/streamerbot$/.test(url.pathname)) return this.exportFlow(response, context, decodeURIComponent(url.pathname.split("/").at(-3) ?? ""), "streamerbot");
+      if (request.method === "GET" && /^\/api\/streamweaver\/control\/flows\/[^/]+\/export$/.test(url.pathname)) return this.exportFlow(response, context, decodeURIComponent(url.pathname.split("/").at(-2) ?? ""));
       if (request.method === "GET" && /^\/api\/streamweaver\/control\/voice\/jobs\/[^/]+$/.test(url.pathname)) return await this.job(response, context, decodeURIComponent(url.pathname.split("/").at(-1) ?? ""));
       if (request.method !== "POST") return sendJson(response, 405, { error: "method_not_allowed" });
       requireSameOrigin(request);
       const body = await readJsonBody(request);
       if (url.pathname === "/api/streamweaver/control/voice") return await this.voice(response, context, body);
       this.requireOwner(context);
+      if (url.pathname === "/api/streamweaver/control/flows/install") return this.installFlow(response, context, body);
+      if (url.pathname === "/api/streamweaver/control/flows/uninstall") return this.uninstallFlow(response, context, body);
+      if (url.pathname === "/api/streamweaver/control/flows/import") return this.importFlow(response, context, body);
+      if (url.pathname === "/api/streamweaver/control/flows/approve") return this.approveFlow(response, context, body);
+      if (url.pathname === "/api/streamweaver/control/flows/publish") return this.publishFlow(response, context, body);
+      if (url.pathname === "/api/streamweaver/control/flows/ai") return await this.requestAiFlow(response, context, body);
+      if (url.pathname === "/api/streamweaver/control/flows/ai/complete") return await this.completeAiFlow(response, context, body);
       if (url.pathname === "/api/streamweaver/control/persona") return this.updatePersona(response, context, body);
       if (url.pathname === "/api/streamweaver/control/economy") return this.updateEconomy(response, context, body);
       return sendJson(response, 404, { error: "not_found" });
@@ -61,6 +73,7 @@ export class StreamWeaverWebControls {
     const economySettings = this.economy?.getSettings(tenantId) ?? DEFAULT_STREAMWEAVER_GAMBLE_SETTINGS;
     const wallet = this.economy && actorId ? this.economy.getWallet(tenantId, actorId) : null;
     const connections = (this.options.connections ?? []).filter((item) => item.tenantId === tenantId && item.desired).map(({ provider, connectionId, channelId, providerAccountId }) => ({ provider, connectionId, channelId, providerAccountId }));
+    const installedFlows = this.flows?.listInstalledPackages(tenantId) ?? [];
     return sendJson(response, 200, {
       schemaVersion: 1,
       tenantId,
@@ -81,7 +94,40 @@ export class StreamWeaverWebControls {
         suiteActionsMessage: `${connectedSuiteActions} of ${botActions.length} cross-app actions have a ready app-owned worker. Commands from Voice Commander, chat, MountainView, and Companion use the same SPMT job pipeline.`,
       },
       botActions,
+      flows: { installed: installedFlows.length, community: this.flows?.listCommunity().length ?? 0 },
     });
+  }
+
+  private readFlows(response: ServerResponse, context: SessionContext) {
+    const store = this.requireFlows(), installed = store.listInstalls(context.tenantId), installedIds = new Set(installed.map((item) => item.packageId));
+    const community = store.listCommunity().map((item) => ({ ...item, installed: installedIds.has(item.packageId) }));
+    const drafts = store.listTenantPackages(context.tenantId).filter((item) => item.visibility === "private").map((item) => ({ ...item, installed: installedIds.has(item.packageId) }));
+    return sendJson(response, 200, { schemaVersion: 1, tenantId: context.tenantId, installed, community, drafts, startsEmpty: true });
+  }
+
+  private installFlow(response: ServerResponse, context: SessionContext, body: Record<string, unknown>) { const install=this.requireFlows().install(context.tenantId,identifier(body.packageId,"packageId"));return sendJson(response,200,{schemaVersion:1,install}); }
+  private uninstallFlow(response: ServerResponse, context: SessionContext, body: Record<string, unknown>) { const removed=this.requireFlows().uninstall(context.tenantId,identifier(body.packageId,"packageId"));return sendJson(response,200,{schemaVersion:1,removed}); }
+  private importFlow(response: ServerResponse, context: SessionContext, body: Record<string, unknown>) { const actor=this.actor(context),result=this.requireFlows().importPackage(context.tenantId,body.package,actor);return sendJson(response,200,{schemaVersion:1,...result}); }
+  private approveFlow(response: ServerResponse, context: SessionContext, body: Record<string, unknown>) { const result=this.requireFlows().approveAndInstall(context.tenantId,identifier(body.packageId,"packageId"));return sendJson(response,200,{schemaVersion:1,...result}); }
+  private publishFlow(response: ServerResponse, context: SessionContext, body: Record<string, unknown>) { const value=this.requireFlows().publish(context.tenantId,identifier(body.packageId,"packageId"),this.actor(context));return sendJson(response,200,{schemaVersion:1,package:value}); }
+  private exportFlow(response: ServerResponse, context: SessionContext, packageId: string, format: "streamweaver" | "streamerbot" = "streamweaver") { const store=this.requireFlows(),value=format==="streamerbot"?store.exportStreamerBot(context.tenantId,packageId):store.exportPackage(context.tenantId,packageId);response.setHeader("content-disposition",`attachment; filename="${packageId.replace(/[^A-Za-z0-9._-]/g,"-")}.${format}.json"`);return sendJson(response,200,value); }
+
+  private async requestAiFlow(response: ServerResponse, context: SessionContext, body: Record<string, unknown>) {
+    if (this.operationMode === "read-only") return sendJson(response, 200, { schemaVersion: 1, status: "blocked", reason: "Live-read mode accepts incoming data but does not send an AI request." });
+    const idea=text(body.idea,"idea",4_000),client=this.requireClient(),userId=String(context.session.actorId??"");
+    const prompt=["You are the StreamWeaver flow builder inside the SPMT developer platform.","Return one strict JSON object only. Do not use markdown.","Build exactly one disabled, reviewable StreamWeaver flow package. One package is one import/export unit and may contain at most one command trigger plus that flow's action steps. Never return a command library or bundle.","Use kind streamweaver.flow-package, schemaVersion 1, installUnit flow, visibility private, commands[], actions[].",'Supported action types: send-chat, send-discord, wait, run-action, http-request, set-variable, execute-code, obs-scene, obs-source.',"For cross-app work use run-action with config.action and config.args so SPMT can route it to the app that registered the typed capability.","For visual work use an overlay step that references a registered widget; Overlay Bay owns final Public/Personal composition.","Every command must have id, trigger, aliases, family, cooldownSeconds, matcher, runtime=flow, enabled=false. Every action must have id, type, enabled=false, config.",`User request: ${idea}`].join("\n");
+    const result=await client.invokeCommunityAssistant(context.tenantId,{userId,message:prompt,surface:"app",conversationId:`streamweaver:flow-builder:${userId}`,routingPreference:"automatic",remember:false},idempotency(body.idempotencyKey,"streamweaver-flow-ai"));
+    return sendJson(response,result.status==="accepted"?202:503,{...result,kind:"flow-builder"});
+  }
+
+  private async completeAiFlow(response: ServerResponse, context: SessionContext, body: Record<string, unknown>) {
+    const jobId=identifier(body.jobId,"jobId"),job=await this.requireClient().getExecutionJob(context.tenantId,jobId),userId=String(context.session.actorId??"");
+    if (job.billedUserId!==userId) throw new Error("AI flow job is not visible to this user");
+    if (job.state!=="succeeded") return sendJson(response,202,{schemaVersion:1,state:job.state,jobId});
+    const result=record(job.result),raw=String(result?.text??record(result?.output)?.text??""),parsed=parseJsonObject(raw),candidate=record(record(parsed)?.package)??parsed;
+    const normalized=normalizeFlowPackage(candidate,{now:new Date().toISOString(),author:this.actor(context),visibility:"private"});
+    const saved=this.requireFlows().saveDraft(context.tenantId,normalized,this.actor(context));
+    return sendJson(response,200,{schemaVersion:1,state:"succeeded",package:saved});
   }
 
   private async voice(response: ServerResponse, context: SessionContext, body: Record<string, unknown>) {
@@ -148,6 +194,8 @@ export class StreamWeaverWebControls {
     return match;
   }
   private requireClient() { if (!this.client) throw new Error("StreamWeaver runtime is not configured"); return this.client; }
+  private requireFlows() { if (!this.flows) throw new Error("StreamWeaver flow storage is not configured"); return this.flows; }
+  private actor(context: SessionContext) { const id=String(context.session.actorId??"");return{id,displayName:String(context.session.username??context.session.displayName??id)}; }
   private requireOwner(context: SessionContext) { if (this.role(context) !== "owner") throw new Error("Tenant owner access is required for this action"); }
   private role(context: SessionContext) { const roles = record(context.session.tenantRoles); return roles?.[context.tenantId] === "owner" ? "owner" : "member"; }
 }
@@ -171,6 +219,7 @@ function integer(value: unknown, min: number, max: number, name: string) { const
 function destinationValue(value: unknown): "private" | "ai" | "twitch" | "discord" { if (value !== "private" && value !== "ai" && value !== "twitch" && value !== "discord") throw new Error("Voice destination is invalid"); return value; }
 function idempotency(value: unknown, prefix: string) { const result = String(value ?? "").trim(); return result && /^[A-Za-z0-9._:@/-]{1,300}$/.test(result) ? result : `${prefix}:${Date.now()}:${Math.random().toString(36).slice(2)}`; }
 function suiteActionReady(workers: ExecutionWorkerProjectionV1[], tenantId: string, capabilityId: string) { const now = Date.now(); return workers.some((worker) => worker.state === "ready" && worker.providerHealthy && worker.capabilityIds.includes(capabilityId) && Date.parse(worker.leaseExpiresAt) > now && (!worker.tenantIds?.length || worker.tenantIds.includes(tenantId))); }
+function parseJsonObject(value:string){const trimmed=value.trim();try{return JSON.parse(trimmed) as unknown;}catch{}const fenced=trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1];if(fenced)try{return JSON.parse(fenced) as unknown;}catch{}const start=trimmed.indexOf("{"),end=trimmed.lastIndexOf("}");if(start>=0&&end>start)try{return JSON.parse(trimmed.slice(start,end+1)) as unknown;}catch{}throw new Error("AI response did not contain a valid flow package JSON object");}
 
 export function parseStreamWeaverWebConnections(source: string | undefined): StreamWeaverWebConnectionV1[] {
   if (!source) return [];

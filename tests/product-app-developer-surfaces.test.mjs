@@ -106,7 +106,7 @@ test("shared app UI renders per-section signals and truthful contract notes with
   assert.doesNotThrow(() => new Function(script));
 });
 
-test("descriptor-declared snapshot sources keep baseline health and omit unrelated personal scopes", () => {
+test("descriptor-declared snapshot sources keep baseline health, shared workspace outputs, and omit unrelated personal scopes", () => {
   const sources = productAppSnapshotSources({
     appId: "fixture",
     name: "Fixture",
@@ -116,7 +116,7 @@ test("descriptor-declared snapshot sources keep baseline health and omit unrelat
     sceneUrl: "/fixture.webp",
     sections: [{ id: "logs", label: "Logs", title: "Logs", body: "Logs", signals: [{ source: "operations", label: "Operations" }] }],
   });
-  assert.deepEqual(sources, ["runtime", "events", "jobs", "workers", "operations"]);
+  assert.deepEqual(sources, ["runtime", "events", "jobs", "workers", "workspace", "tenantOutputs", "operations"]);
   assert.equal(sources.includes("devices"), false);
   assert.equal(sources.includes("providerLinks"), false);
   assert.equal(sources.includes("xpWallet"), false);

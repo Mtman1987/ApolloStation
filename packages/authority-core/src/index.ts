@@ -55,7 +55,12 @@ export interface WorkspaceProfileV1 {
   revision: number;
   appearance: AppearanceV1;
   dockSlots: [string | null, string | null, string | null];
+  /** Canonical Overlay Bay scene documents. SPMT stores them; SpaceMountain is their only editor. */
+  overlayScenes?: Array<Record<string, unknown>>;
+  /** @deprecated Compatibility pointer for pre named-output workspaces. */
   activeOverlaySceneId?: string;
+  activePublicOverlaySceneId?: string | null;
+  activePersonalOverlaySceneId?: string | null;
   ttsSubscriptionIds: string[];
   appThemes: Record<string, string>;
   commlink?: CommlinkWorkspaceV1;
@@ -271,6 +276,7 @@ export class AuthorityService {
       if (patch.appearance) validateAppearance(patch.appearance);
       if (patch.commlink) validateCommlinkWorkspace(patch.commlink);
       const next: WorkspaceProfileV1 = { ...current, ...cloneJson(patch), tenantId, revision: current.revision + 1, updatedAt: this.now() };
+      validateOverlayWorkspace(next);
       this.store.putWorkspace(next);
       return next;
     });
@@ -516,6 +522,30 @@ function validateCommlinkWorkspace(workspace: CommlinkWorkspaceV1) {
   }
   if (!spaceIds.has(workspace.activeChatSpaceId) || !deskIds.has(workspace.activeDeskId)) throw new AuthorityValidationError("Commlink active workspace selection is invalid");
   if (!["focus", "desk"].includes(workspace.view) || !["all", "chat", "events", "streamweaver", "queued"].includes(workspace.filter) || typeof workspace.compact !== "boolean") throw new AuthorityValidationError("Commlink workspace controls are invalid");
+}
+
+function validateOverlayWorkspace(workspace: WorkspaceProfileV1) {
+  const scenes = workspace.overlayScenes ?? [];
+  if (!Array.isArray(scenes) || scenes.length > 32) throw new AuthorityValidationError("Overlay Bay may contain at most 32 scenes");
+  if (JSON.stringify(scenes).length > 2_000_000) throw new AuthorityValidationError("Overlay Bay scene data is too large");
+  const ids = new Set<string>();
+  for (const value of scenes) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) throw new AuthorityValidationError("Overlay Bay scenes must be objects");
+    const scene = value as Record<string, unknown>;
+    if (scene.schemaVersion !== 1 || typeof scene.id !== "string") throw new AuthorityValidationError("Overlay Bay scene identity is invalid");
+    requireWorkspaceValue(scene.id, "Overlay Bay scene id", 200);
+    if (ids.has(scene.id)) throw new AuthorityValidationError("Overlay Bay scene ids must be unique");
+    ids.add(scene.id);
+  }
+  for (const [name, value] of [
+    ["legacy", workspace.activeOverlaySceneId],
+    ["Public", workspace.activePublicOverlaySceneId],
+    ["Personal", workspace.activePersonalOverlaySceneId],
+  ] as const) {
+    if (value === undefined || value === null) continue;
+    requireWorkspaceValue(value, `${name} overlay scene id`, 200);
+    if (!ids.has(value)) throw new AuthorityValidationError(`${name} overlay scene does not exist in this workspace`);
+  }
 }
 
 function requireId(value: string, name: string) {

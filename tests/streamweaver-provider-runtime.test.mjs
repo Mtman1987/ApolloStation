@@ -6,7 +6,7 @@ import test from "node:test";
 import { ChatGatewayRuntime, SqliteChatGatewayStore } from "../apps/chat-gateway/dist/index.js";
 import { SupervisedChatGatewayService, validateChatGatewayWorkerEnvironment } from "../apps/chat-gateway/dist/service.js";
 import { createSpmtService } from "../apps/spmt-service/dist/index.js";
-import { StreamWeaverPersonaSettingsStore, StreamWeaverProviderRuntime } from "../apps/streamweaver/dist/index.js";
+import { StreamWeaverFlowPackageStore, StreamWeaverPersonaSettingsStore, StreamWeaverProviderRuntime } from "../apps/streamweaver/dist/index.js";
 
 const iso = (seconds = 0) => new Date(Date.parse("2026-08-29T08:00:00.000Z") + seconds * 1_000).toISOString();
 
@@ -35,7 +35,7 @@ test("supervised Chat Gateway validates and authenticates the separate StreamWea
   try {
     const ready = await service.ready();
     assert.deepEqual(authenticated.sort(), ["chat-gateway", "streamweaver"]);
-    assert.deepEqual(ready.consumers, ["commlink-live-chat", "streamweaver.bot-actions", "streamweaver.bot-relay", "streamweaver.donor-commands", "streamweaver.economy", "streamweaver.persona"]);
+    assert.deepEqual(ready.consumers, ["commlink-live-chat", "streamweaver.bot-actions", "streamweaver.bot-relay", "streamweaver.donor-commands", "streamweaver.economy", "streamweaver.installed-flows", "streamweaver.persona"]);
   } finally { await service.close(); rmSync(dir, { recursive: true, force: true }); }
 });
 
@@ -56,6 +56,12 @@ test("StreamWeaver commands and persona results traverse one restart-safe provid
   const dir = mkdtempSync(join(tmpdir(), "spmt-streamweaver-provider-runtime-"));
   const streamweaverPath = join(dir, "streamweaver.sqlite"), gatewayPath = join(dir, "gateway.sqlite");
   configurePersona(streamweaverPath, "tenant-a", "Athena", "owner-a");
+  const setupFlows = new StreamWeaverFlowPackageStore(streamweaverPath, () => iso());
+  try {
+    assert.equal(setupFlows.listInstalledPackages("tenant-a").length, 0);
+    for (const packageId of ["mtman1987.coinflip", "mtman1987.currencyname", "mtman1987.points"]) setupFlows.install("tenant-a", packageId);
+    assert.equal(setupFlows.listInstalledPackages("tenant-a").length, 3);
+  } finally { setupFlows.close(); }
   const jobStates = new Map();
   const invocations = [];
   const client = {

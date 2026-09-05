@@ -16,8 +16,9 @@ test("home is singular, Stella is actionable, and Overlay Bay consumes canonical
   assert.match(shell, /data-overlay-bay|dataset\.overlayBay/);
   assert.match(shell, /overlayWidgets/);
   assert.match(shell, /overlayOutputs/);
-  assert.match(overlay, /Canonical stream overlay editor/);
-  assert.match(overlay, /Create OBS URL/);
+  assert.match(overlay, /Canonical ecosystem overlay editor/);
+  assert.match(overlay, /Copy Public URL/);
+  assert.match(overlay, /Copy Personal URL/);
 });
 
 test("ecosystem presence deduplicates canonical users and retains every reporting source", () => {

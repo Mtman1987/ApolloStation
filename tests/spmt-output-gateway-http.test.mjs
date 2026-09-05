@@ -65,3 +65,46 @@ test("SPMT output gateway returns an inert transparent 404 for invalid or revoke
     assert.match(await response.text(), /Overlay unavailable/);
   } finally { await gateway.close(); }
 });
+
+test("SPMT exposes stable Public and signed-in Personal tenant overlay outputs", async () => {
+  const inner = createServer((_request, response) => { response.writeHead(404); response.end(); });
+  const workspace = {
+    activePublicOverlaySceneId: "public-scene",
+    activePersonalOverlaySceneId: "personal-scene",
+    overlayScenes: [
+      { schemaVersion: 1, id: "public-scene", name: "Public", sources: [{ id: "public-text", kind: "text", name: "Public title", visible: true, x: 0, y: 0, width: 100, height: 20, opacity: 1, zIndex: 1, config: { text: "PUBLIC OUTPUT" } }] },
+      { schemaVersion: 1, id: "personal-scene", name: "Personal", sources: [{ id: "personal-text", kind: "text", name: "Private controls", visible: true, x: 0, y: 0, width: 100, height: 20, opacity: 1, zIndex: 1, config: { text: "PERSONAL OUTPUT" } }] },
+    ],
+  };
+  const authorized = [];
+  const service = {
+    server: inner,
+    control: {},
+    authority: { getWorkspace(tenantId) { assert.equal(tenantId, "tenant-a"); return workspace; } },
+    auth: { authorize(token, scope, tenantId) { authorized.push({ token, scope, tenantId }); if (token !== "owner-token") throw new Error("invalid token"); return { actorId: "owner-a" }; } },
+    async close() { if (inner.listening) await close(inner); },
+  };
+  const gateway = createSpmtOutputGateway(service, { port: 0, host: "127.0.0.1", publicBaseUrl: "https://spmt.example" });
+  try {
+    await gateway.listen();
+    const base = origin(gateway.server);
+    const described = await fetch(`${base}/v1/overlay/tenant-outputs`, { headers: { authorization: "Bearer owner-token", "x-spmt-tenant": "tenant-a" } });
+    assert.equal(described.status, 200);
+    assert.deepEqual(await described.json(), {
+      schemaVersion: 1,
+      tenantId: "tenant-a",
+      editorUrl: "https://spmt.example/?view=workspace",
+      public: { name: "public", sceneId: "public-scene", url: "https://spmt.example/t/tenant-a/public" },
+      personal: { name: "personal", sceneId: "personal-scene", url: "https://spmt.example/t/tenant-a/personal" },
+    });
+    const publicOutput = await fetch(`${base}/t/tenant-a/public`);
+    assert.equal(publicOutput.status, 200);
+    assert.match(await publicOutput.text(), /PUBLIC OUTPUT/);
+    const anonymousPersonal = await fetch(`${base}/t/tenant-a/personal`);
+    assert.equal(anonymousPersonal.status, 401);
+    const personalOutput = await fetch(`${base}/t/tenant-a/personal`, { headers: { authorization: "Bearer owner-token" } });
+    assert.equal(personalOutput.status, 200);
+    assert.match(await personalOutput.text(), /PERSONAL OUTPUT/);
+    assert.equal(authorized.every((item) => item.scope === "workspace:read" && item.tenantId === "tenant-a"), true);
+  } finally { await gateway.close(); }
+});

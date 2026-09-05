@@ -12,6 +12,7 @@ function fakeClient(overrides = {}) {
     }),
     listProviderLinks: async () => [{ userId: "user-1", provider: "twitch", providerUserId: "twitch-1", linkedAt: "2026-08-23T00:00:00.000Z" }],
     getWorkspaceProfile: async () => ({ tenantId: "tenant-a", revision: 4, appearance: { theme: "dark" }, dockSlots: ["streamweaver", null, "nebula-arcade"] }),
+    getTenantOverlayOutputs: async () => ({ schemaVersion: 1, tenantId: "tenant-a", editorUrl: "https://spmt.example/?view=workspace", public: { name: "public", sceneId: null, url: "https://spmt.example/t/tenant-a/public" }, personal: { name: "personal", sceneId: null, url: "https://spmt.example/t/tenant-a/personal" } }),
     getXpBalance: async () => ({ tenantId: "tenant-a", userId: "user-1", balance: 42 }),
     listApps: async () => [
       { appId: "streamweaver", name: "StreamWeaver", description: "Automation", version: "1", launchUrl: "https://streamweaver.example/dashboard", surfaces: ["shell", "standalone"], allowedScopes: ["chat:read"] },
@@ -41,6 +42,7 @@ test("SpaceMountain loads canonical known services into one ready shell snapshot
   assert.equal(snapshot.state, "ready");
   assert.equal(snapshot.xp.balance, 42);
   assert.equal(snapshot.providerLinks[0].provider, "twitch");
+  assert.equal(snapshot.tenantOutputs.public.url, "https://spmt.example/t/tenant-a/public");
   assert.equal(snapshot.usage.userId, "user-1");
   assert.equal(snapshot.usage.resources[0].percent, 20);
   assert.equal(snapshot.apps.length, 2);

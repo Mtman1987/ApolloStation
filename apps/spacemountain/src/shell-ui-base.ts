@@ -6,6 +6,7 @@ import { POLISHED_SPACE_MOUNTAIN_CSS } from "./product-shell-css.js";
 import { THEMED_SURFACE_CSS } from "./themed-surface-css.js";
 
 const VISUAL_FINISH_CSS = `.spmt-header-action-icon{display:block;width:28px;height:28px;object-fit:contain;filter:drop-shadow(0 0 8px color-mix(in srgb,var(--accent2) 55%,transparent))}.spmt-core-nav-icon{width:30px;height:30px;display:grid;place-items:center;flex:0 0 auto}.spmt-core-nav-icon img{display:block;width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 0 8px color-mix(in srgb,var(--accent2) 55%,transparent))}.spmt-core-nav-icon .spmt-svg{width:24px;height:24px;color:var(--accent2);filter:drop-shadow(0 0 7px color-mix(in srgb,var(--accent2) 45%,transparent))}.spmt-rocket-dock .spmt-core-nav-icon{width:27px;height:27px}.spmt-header-actions .spmt-core-nav-icon{width:28px;height:28px}.spmt-account-summary{display:flex;align-items:center;gap:8px;padding:0 3px;cursor:pointer;border-radius:12px}.spmt-account-summary:hover,.spmt-account-summary:focus-visible{background:color-mix(in srgb,var(--accent) 12%,transparent);outline:1px solid var(--theme-border)}.spmt-space-root[data-spmt-view="home"] .spmt-hero-logo-large{width:min(820px,100%)!important;height:clamp(180px,48cqh,390px)!important;max-height:66%!important;margin:0!important;object-fit:contain!important;object-position:left center!important;filter:drop-shadow(0 0 26px color-mix(in srgb,var(--accent2) 36%,transparent))}.spmt-theme-native{position:absolute!important;width:1px!important;height:1px!important;overflow:hidden!important;clip:rect(0 0 0 0)!important;white-space:nowrap!important}.spmt-theme-picker{grid-column:1/-1;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.spmt-theme-picker button{min-height:104px;display:grid;place-items:center;gap:4px;padding:10px;border:1px solid var(--border);border-radius:16px;background:linear-gradient(145deg,color-mix(in srgb,var(--accent) 10%,#050713),#050713);color:white}.spmt-theme-picker button:hover,.spmt-theme-picker button[aria-pressed="true"]{border-color:var(--accent2);box-shadow:0 0 24px color-mix(in srgb,var(--accent2) 30%,transparent);transform:translateY(-2px)}.spmt-theme-picker img{width:100%;height:58px;object-fit:contain}.spmt-theme-picker span{font-size:9px;font-weight:900;letter-spacing:.12em;text-transform:uppercase}@media(max-width:1040px){.spmt-account-summary .spmt-account-copy{display:none}}@media(max-width:800px){.spmt-theme-picker{grid-template-columns:repeat(2,minmax(0,1fr))}}`;
+const PERSONAL_OVERLAY_CSS = `.spmt-shell-personal-overlay{position:fixed;inset:0;width:100%;height:100%;border:0;z-index:14;pointer-events:none;background:transparent}.spmt-shell-personal-overlay[hidden]{display:none}.spmt-workspace-surfaces button.active{color:#bbf7d0;border-color:color-mix(in srgb,#22c55e 55%,transparent)}`;
 
 export type SpaceMountainViewV1 = "home" | "apps" | "workspace" | "settings" | "account";
 type CommlinkFilterV1 = "all" | "chat" | "events" | "streamweaver" | "queued";
@@ -97,6 +98,8 @@ export class SpaceMountainShellUi {
   private stopLayout: (() => void) | undefined;
   private clockTimer: number | undefined;
   private workspaceTray: HTMLElement | undefined;
+  private personalOverlay: HTMLIFrameElement | undefined;
+  private personalOverlayVisible = true;
   private workspaceOpen = false;
   private workspaceExpanded = false;
   private workspaceMaximized = false;
@@ -115,6 +118,7 @@ export class SpaceMountainShellUi {
       if (requestedApp && this.shellApp(requestedApp)) this.activeAppId = requestedApp;
       const matchedApp = window.location.pathname.match(/^\/apps\/([^/]+)$/)?.[1];
       if (!this.activeAppId && matchedApp && SHELL_APP_RENDERERS.has(decodeURIComponent(matchedApp))) this.activeAppId = decodeURIComponent(matchedApp);
+      try { this.personalOverlayVisible = window.localStorage.getItem("spmt:personal-overlay-visible") !== "off"; } catch {}
     }
   }
 
@@ -185,10 +189,15 @@ export class SpaceMountainShellUi {
     root.style.setProperty("--spmt-chat-opacity", String(Math.max(0.38, (100 - chatTransparency) / 100)));
     root.style.setProperty("--spmt-backdrop-scale", String(1.015 + parallaxDepth / 2000));
     const retainedTray = this.workspaceTray;
+    const retainedPersonalOverlay = this.personalOverlay;
     retainedTray?.remove();
-    root.innerHTML = `<style data-spmt-space-style>${PRODUCT_UI_CSS}${SPACE_MOUNTAIN_CSS}${POLISHED_SPACE_MOUNTAIN_CSS}${WORKSPACE_SETTINGS_CSS}${VISUAL_FINISH_CSS}${COMMLINK_FORM_CSS}${COMMLINK_MAIL_CSS}${COSMO_COMMLINK_CSS}${THEMED_SURFACE_CSS}</style><div class="spmt-space-shell">${this.header()}${this.dock()}<main class="spmt-space-main">${this.body()}</main></div>`;
+    retainedPersonalOverlay?.remove();
+    root.innerHTML = `<style data-spmt-space-style>${PRODUCT_UI_CSS}${SPACE_MOUNTAIN_CSS}${POLISHED_SPACE_MOUNTAIN_CSS}${WORKSPACE_SETTINGS_CSS}${VISUAL_FINISH_CSS}${PERSONAL_OVERLAY_CSS}${COMMLINK_FORM_CSS}${COMMLINK_MAIL_CSS}${COSMO_COMMLINK_CSS}${THEMED_SURFACE_CSS}</style><div class="spmt-space-shell">${this.header()}${this.dock()}<main class="spmt-space-main">${this.body()}</main></div>`;
+    this.personalOverlay = retainedPersonalOverlay ?? this.createPersonalOverlay();
+    root.append(this.personalOverlay);
     this.workspaceTray = retainedTray ?? this.createWorkspaceTray();
     root.append(this.workspaceTray);
+    this.syncPersonalOverlay();
     this.syncWorkspaceTray();
     installProductBackdrop(root, backdrop);
     bindProductRocketNavigation(root, NAV, this.view, (view) => this.navigate(view));
@@ -374,13 +383,41 @@ export class SpaceMountainShellUi {
     this.clockTimer = window.setInterval(update, 30_000);
   }
 
+  private createPersonalOverlay() {
+    const frame = document.createElement("iframe");
+    frame.className = "spmt-shell-personal-overlay";
+    frame.title = "Personal workspace overlay";
+    frame.setAttribute("aria-hidden", "true");
+    return frame;
+  }
+
+  private syncPersonalOverlay() {
+    const frame = this.personalOverlay;
+    if (!frame) return;
+    const url = this.snapshot.tenantOutputs?.personal.url ?? "";
+    if (url && frame.src !== url) frame.src = url;
+    if (!url && frame.getAttribute("src")) frame.removeAttribute("src");
+    frame.hidden = !this.personalOverlayVisible || !url;
+    const toggle = this.workspaceTray?.querySelector<HTMLElement>("[data-personal-overlay-toggle]");
+    if (toggle) { toggle.textContent = `Personal ${this.personalOverlayVisible ? "On" : "Off"}`; toggle.classList.toggle("active", this.personalOverlayVisible); }
+  }
+
+  private copyTenantOutput(output: "public" | "personal") {
+    const url = this.snapshot.tenantOutputs?.[output].url;
+    if (!url) return;
+    if (navigator.clipboard?.writeText) void navigator.clipboard.writeText(url);
+    else window.prompt(`Copy ${output} overlay URL`, url);
+  }
+
   private createWorkspaceTray() {
     const tray = document.createElement("section");
     tray.className = "spmt-workspace-tray";
     tray.setAttribute("aria-label", "SPMT workspace tray");
-    tray.innerHTML = `<div class="spmt-workspace-frames" aria-live="polite">${[0, 1, 2].map((index) => `<div data-workspace-frame="${index}"><iframe title="Workspace slot ${index + 1}" allow="autoplay; microphone; camera; fullscreen; clipboard-write"></iframe><p>This workspace slot is empty. Assign an installed app in Workspace.</p></div>`).join("")}</div><footer><strong>${icon("layout")}<span>Workspace</span></strong><nav aria-label="Persistent app slots">${[0, 1, 2].map((index) => `<button type="button" data-workspace-slot="${index}"><span>Slot ${index + 1}</span><small>Empty</small></button>`).join("")}</nav><div class="spmt-workspace-surfaces"><button type="button" data-workspace-surface="workspace">Overlay Bay</button><button type="button" data-workspace-surface="settings">Settings</button></div><div class="spmt-workspace-controls"><button type="button" data-workspace-minimize aria-label="Minimize workspace frame" title="Minimize">−</button><button type="button" data-workspace-maximize aria-label="Maximize workspace frame" title="Maximize">□</button><button type="button" data-workspace-popout aria-label="Pop out active workspace slot" title="Pop out">↗</button><button type="button" data-workspace-clickthrough aria-label="Toggle click-through" title="Click-through">◎</button><label title="Workspace opacity"><span>Opacity</span><input type="range" min="35" max="100" value="92" data-workspace-opacity><output>92%</output></label><button type="button" data-workspace-close aria-label="Close workspace footer" title="Close">×</button></div></footer>`;
+    tray.innerHTML = `<div class="spmt-workspace-frames" aria-live="polite">${[0, 1, 2].map((index) => `<div data-workspace-frame="${index}"><iframe title="Workspace slot ${index + 1}" allow="autoplay; microphone; camera; fullscreen; clipboard-write"></iframe><p>This workspace slot is empty. Assign an installed app in Workspace.</p></div>`).join("")}</div><footer><strong>${icon("layout")}<span>Workspace</span></strong><nav aria-label="Persistent app slots">${[0, 1, 2].map((index) => `<button type="button" data-workspace-slot="${index}"><span>Slot ${index + 1}</span><small>Empty</small></button>`).join("")}</nav><div class="spmt-workspace-surfaces"><button type="button" data-workspace-surface="workspace">Overlay Bay</button><button type="button" data-personal-overlay-toggle>Personal On</button><button type="button" data-copy-tenant-output="public">Copy Public</button><button type="button" data-copy-tenant-output="personal">Copy Personal</button><button type="button" data-workspace-surface="settings">Settings</button></div><div class="spmt-workspace-controls"><button type="button" data-workspace-minimize aria-label="Minimize workspace frame" title="Minimize">−</button><button type="button" data-workspace-maximize aria-label="Maximize workspace frame" title="Maximize">□</button><button type="button" data-workspace-popout aria-label="Pop out active workspace slot" title="Pop out">↗</button><button type="button" data-workspace-clickthrough aria-label="Toggle click-through" title="Click-through">◎</button><label title="Workspace opacity"><span>Opacity</span><input type="range" min="35" max="100" value="92" data-workspace-opacity><output>92%</output></label><button type="button" data-workspace-close aria-label="Close workspace footer" title="Close">×</button></div></footer>`;
     tray.querySelectorAll<HTMLElement>("[data-workspace-slot]").forEach((node) => node.addEventListener("click", () => { this.workspaceTarget = Number(node.dataset.workspaceSlot); this.workspaceOpen = true; this.workspaceExpanded = true; this.syncWorkspaceTray(); }));
     tray.querySelectorAll<HTMLElement>("[data-workspace-surface]").forEach((node) => node.addEventListener("click", () => { this.workspaceExpanded = false; this.navigate(node.dataset.workspaceSurface as SpaceMountainViewV1); }));
+    tray.querySelector<HTMLElement>("[data-personal-overlay-toggle]")?.addEventListener("click", () => { this.personalOverlayVisible = !this.personalOverlayVisible; try { window.localStorage.setItem("spmt:personal-overlay-visible", this.personalOverlayVisible ? "on" : "off"); } catch {} this.syncPersonalOverlay(); });
+    tray.querySelectorAll<HTMLElement>("[data-copy-tenant-output]").forEach((node) => node.addEventListener("click", () => this.copyTenantOutput(node.dataset.copyTenantOutput === "personal" ? "personal" : "public")));
     tray.querySelector<HTMLElement>("[data-workspace-minimize]")?.addEventListener("click", () => { this.workspaceExpanded = false; this.workspaceMaximized = false; this.syncWorkspaceTray(); });
     tray.querySelector<HTMLElement>("[data-workspace-maximize]")?.addEventListener("click", () => { this.workspaceExpanded = true; this.workspaceMaximized = !this.workspaceMaximized; this.syncWorkspaceTray(); });
     tray.querySelector<HTMLElement>("[data-workspace-popout]")?.addEventListener("click", () => {

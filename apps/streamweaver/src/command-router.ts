@@ -256,8 +256,9 @@ export class MultiTenantStreamWeaverEconomyCommandConsumer {
     private readonly egress: StreamWeaverCommandEgressV1,
     private readonly nowMs: () => number = Date.now,
     private readonly random: () => number = Math.random,
+    private readonly enabled: (tenantId: string, trigger: string) => boolean = () => true,
   ) {}
-  accepts(message: NormalizedChatMessageV1) { const parsed=parseCommand(message.text); return !message.actor.isBot && Boolean(parsed && STREAMWEAVER_ECONOMY_COMMANDS.includes(parsed.command as (typeof STREAMWEAVER_ECONOMY_COMMANDS)[number])); }
+  accepts(message: NormalizedChatMessageV1) { const parsed=parseCommand(message.text); return !message.actor.isBot && Boolean(parsed && STREAMWEAVER_ECONOMY_COMMANDS.includes(parsed.command as (typeof STREAMWEAVER_ECONOMY_COMMANDS)[number]) && this.enabled(message.tenantId, `!${canonicalCooldownCommand(parsed.command)}`)); }
   async deliver(delivery: NormalizedChatDeliveryV1) { await this.consumer(delivery.message.tenantId).deliver(delivery); }
   private consumer(tenantId: string) {
     let consumer = this.consumers.get(tenantId);

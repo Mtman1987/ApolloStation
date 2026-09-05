@@ -56,6 +56,20 @@ test("workspace persists a validated canonical Commlink layout", () => {
   assert.throws(() => authority.updateWorkspace("tenant-a", 2, { commlink: { ...commlink, activeChatSpaceId: "missing" } }), /active workspace selection/);
 });
 
+test("workspace owns validated Public and Personal Overlay Bay scene selections", () => {
+  const authority = service();
+  authority.getOrCreateWorkspace("tenant-a");
+  const scenes = [
+    { schemaVersion: 1, id: "public-scene", name: "Public", sources: [] },
+    { schemaVersion: 1, id: "personal-scene", name: "Personal", sources: [] },
+  ];
+  const updated = authority.updateWorkspace("tenant-a", 1, { overlayScenes: scenes, activePublicOverlaySceneId: "public-scene", activePersonalOverlaySceneId: "personal-scene" });
+  assert.equal(updated.activePublicOverlaySceneId, "public-scene");
+  assert.equal(updated.activePersonalOverlaySceneId, "personal-scene");
+  assert.throws(() => authority.updateWorkspace("tenant-a", 2, { activePublicOverlaySceneId: "missing" }), /does not exist/);
+  assert.throws(() => authority.updateWorkspace("tenant-a", 2, { overlayScenes: [...scenes, { schemaVersion: 1, id: "public-scene", name: "Duplicate", sources: [] }] }), /unique/);
+});
+
 test("XP awards are idempotent per tenant and never double count", () => {
   const authority = service();
   const input = {

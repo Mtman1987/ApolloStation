@@ -50,6 +50,7 @@ export interface SpaceMountainShellSnapshotV1 {
   session?: Record<string, unknown>;
   providerLinks: Array<Record<string, unknown>>;
   workspace?: Record<string, unknown>;
+  tenantOutputs?: { schemaVersion: 1; tenantId: string; editorUrl: string; public: { name: "public"; sceneId: string | null; url: string }; personal: { name: "personal"; sceneId: string | null; url: string } };
   xp?: { tenantId: string; userId: string; balance: number };
   apps: SpaceMountainAppCardV1[];
   entitlements: Array<Record<string, unknown>>;
@@ -113,6 +114,7 @@ export class SpaceMountainShellController {
       session: sessionTask,
       providerLinks: this.spmt.listProviderLinks(),
       workspace: this.spmt.getWorkspaceProfile(input.tenantId),
+      tenantOutputs: this.spmt.getTenantOverlayOutputs(input.tenantId),
       xp: this.spmt.getXpBalance(input.tenantId, input.userId),
       shipyard: this.spmt.listApps(),
       installs: this.spmt.listInstalls(input.tenantId),
@@ -155,7 +157,7 @@ export class SpaceMountainShellController {
     const sources: Record<SpaceMountainSource, SourceStateV1> = {
       session: source(failures, ["session"]),
       identity: source(failures, ["providerLinks"]),
-      workspace: source(failures, ["workspace"]),
+      workspace: source(failures, ["workspace", "tenantOutputs"]),
       xp: source(failures, ["xp"]),
       shipyard: source(failures, ["shipyard"]),
       installs: source(failures, ["installs"]),
@@ -175,6 +177,7 @@ export class SpaceMountainShellController {
 
     const setupPayload = record(values.get("setup"));
     const operationsAccess = operationAccess(values.get("operationsAccess"));
+    const namedOutputs = tenantOutputs(values.get("tenantOutputs"));
     return {
       state,
       tenantId: input.tenantId,
@@ -182,6 +185,7 @@ export class SpaceMountainShellController {
       ...(session ? { session } : {}),
       providerLinks: records(values.get("providerLinks")),
       ...(workspace ? { workspace } : {}),
+      ...(namedOutputs ? { tenantOutputs: namedOutputs } : {}),
       ...(isXp(values.get("xp")) ? { xp: values.get("xp") as { tenantId: string; userId: string; balance: number } } : {}),
       apps,
       entitlements: records(values.get("entitlements")),
@@ -346,6 +350,7 @@ function strings(value: unknown) { return Array.isArray(value) ? value.filter((i
 function surfaceModes(value: unknown): SurfaceModeV1[] { const allowed = new Set<SurfaceModeV1>(["shell", "standalone", "overlay", "popout"]); return strings(value).filter((item): item is SurfaceModeV1 => allowed.has(item as SurfaceModeV1)); }
 function isXp(value: unknown): value is { tenantId: string; userId: string; balance: number } { return isRecord(value) && typeof value.tenantId === "string" && typeof value.userId === "string" && typeof value.balance === "number"; }
 function isPersonalUsage(value: unknown): value is PersonalUsageSummaryV1 { return isRecord(value) && value.schemaVersion === 1 && typeof value.userId === "string" && typeof value.period === "string" && isRecord(value.plan) && Array.isArray(value.resources); }
+function tenantOutputs(value: unknown): SpaceMountainShellSnapshotV1["tenantOutputs"] | undefined { if (!isRecord(value) || value.schemaVersion !== 1 || typeof value.tenantId !== "string" || typeof value.editorUrl !== "string" || !isRecord(value.public) || !isRecord(value.personal) || typeof value.public.url !== "string" || typeof value.personal.url !== "string") return undefined; return value as unknown as NonNullable<SpaceMountainShellSnapshotV1["tenantOutputs"]>; }
 function liveChatRecords(value: unknown) { return Array.isArray(value) ? value.filter((item): item is CommlinkLiveChatRecordV1 => isRecord(item) && item.schemaVersion === 1 && typeof item.tenantId === "string" && typeof item.messageId === "string") : []; }
 function operationsLogs(value: unknown) { return Array.isArray(value) ? value.filter((item): item is OperationsLogV1 => isRecord(item) && item.schemaVersion === 1 && typeof item.id === "string" && typeof item.sourceAppId === "string") : []; }
 function coderJobs(value: unknown) { return Array.isArray(value) ? value.filter((item): item is CoderJobV1 => isRecord(item) && item.schemaVersion === 1 && typeof item.id === "string" && typeof item.targetAppId === "string") : []; }
