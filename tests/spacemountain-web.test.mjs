@@ -63,6 +63,10 @@ test("private SpaceMountain host serves explicit browser modules with restrictiv
     const client = await fetch(`${base}/assets/web/client.js`);
     assert.equal(client.status, 200);
     assert.match(client.headers.get("content-type") ?? "", /text\/javascript/);
+    const sessionResilience = await fetch(`${base}/assets/web/session-resilience.js`);
+    assert.equal(sessionResilience.status, 200);
+    assert.match(sessionResilience.headers.get("content-type") ?? "", /text\/javascript/);
+    assert.match(await sessionResilience.text(), /classifySpaceMountainSessionFailure/);
     assert.equal((await fetch(`${base}/assets/ui/index.js`)).status, 200);
     assert.equal((await fetch(`${base}/assets/spacemountain/product-shell-css.js`)).status, 200);
     assert.equal((await fetch(`${base}/assets/spacemountain/themed-surface-css.js`)).status, 200);

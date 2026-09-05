@@ -23,6 +23,7 @@ const PROVIDER_ENV_NAMES = Object.freeze([
 
 const ASSETS = new Map<string, { file: string; type: string }>([
   ["/assets/web/client.js", { file: resolve(HERE, "client.js"), type: "text/javascript; charset=utf-8" }],
+  ["/assets/web/session-resilience.js", { file: resolve(HERE, "session-resilience.js"), type: "text/javascript; charset=utf-8" }],
   ["/assets/contracts/index.js", { file: resolve(REPOSITORY_ROOT, "packages/contracts/dist/index.js"), type: "text/javascript; charset=utf-8" }],
   ["/assets/embed/index.js", { file: resolve(REPOSITORY_ROOT, "packages/embed/dist/index.js"), type: "text/javascript; charset=utf-8" }],
   ["/assets/sdk/index.js", { file: resolve(REPOSITORY_ROOT, "packages/sdk/dist/index.js"), type: "text/javascript; charset=utf-8" }],
