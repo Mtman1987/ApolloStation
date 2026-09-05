@@ -803,6 +803,21 @@ export interface CommunityAssistantDescriptorV1 {
   unavailableReason?: string;
 }
 
+export interface AssistantResearchOptionsV1 { enabled:boolean; liveSearchEnabled:boolean; knowledgePacks:string[]; sourceAllowlist:string[]; maxResults:number; cacheMinutes:number; }
+export interface AssistantResearchRequestV1 extends AssistantResearchOptionsV1 { query:string; }
+export function normalizeAssistantResearchOptions(value:unknown):AssistantResearchOptionsV1 {
+  if(!value||typeof value!=="object"||Array.isArray(value))throw new Error("Research settings must be an object");
+  const input=value as Record<string,unknown>,flag=(key:string,fallback:boolean)=>{if(input[key]===undefined)return fallback;if(typeof input[key]!=="boolean")throw new Error(`Research ${key} must be boolean`);return input[key] as boolean;};
+  const list=(key:string,max:number,pattern:RegExp)=>{if(input[key]===undefined)return [];if(!Array.isArray(input[key])||input[key].length>max)throw new Error(`Research ${key} is invalid`);return [...new Set((input[key] as unknown[]).map(value=>{if(typeof value!=="string"||!pattern.test(value.trim().toLowerCase()))throw new Error(`Research ${key} contains an invalid entry`);return value.trim().toLowerCase();}))];};
+  const integer=(key:string,fallback:number,min:number,max:number)=>{const n=input[key]===undefined?fallback:Number(input[key]);if(!Number.isSafeInteger(n)||n<min||n>max)throw new Error(`Research ${key} must be from ${min} to ${max}`);return n;};
+  return{enabled:flag("enabled",true),liveSearchEnabled:flag("liveSearchEnabled",false),knowledgePacks:list("knowledgePacks",20,/^[a-z0-9][a-z0-9_-]{0,79}$/),sourceAllowlist:list("sourceAllowlist",50,/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/),maxResults:integer("maxResults",5,1,8),cacheMinutes:integer("cacheMinutes",15,0,1440)};
+}
+export function assertAssistantResearchRequest(value:unknown):AssistantResearchRequestV1 {
+  const settings=normalizeAssistantResearchOptions(value),query=(value as Record<string,unknown>).query;
+  if(typeof query!=="string"||!query.trim()||query.length>2000||/\0/.test(query))throw new Error("Research query must be from 1 to 2000 characters");
+  return{...settings,query:query.trim()};
+}
+
 export interface CommunityAssistantInvocationV1 {
   schemaVersion: 1;
   tenantId: string;
@@ -815,6 +830,7 @@ export interface CommunityAssistantInvocationV1 {
   routingPreference?: "automatic" | "hosted" | "companion";
   remember?: boolean;
   presentation?: CommunityAssistantPresentationV1;
+  research?: AssistantResearchRequestV1;
   idempotencyKey: string;
   conversationId?: string;
   correlationId?: string;

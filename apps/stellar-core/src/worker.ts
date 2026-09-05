@@ -1,4 +1,5 @@
-import { ASSISTANT_MEMORY_POLICIES, type CommunityAssistantPresentationV1, type ExecutionJobV1, type ExecutionTargetV1 } from "@spmt/contracts";
+import {StellarResearchService,stellarResearchContext} from "./research.js";
+import { assertAssistantResearchRequest, ASSISTANT_MEMORY_POLICIES, type CommunityAssistantPresentationV1, type ExecutionJobV1, type ExecutionTargetV1 } from "@spmt/contracts";
 import { SpmtApiError, SpmtClient } from "@spmt/sdk";
 import { STELLAR_CHAT_CAPABILITY_ID, STELLAR_CHAT_REQUEST_KIND, STELLAR_CHAT_RESULT_KIND } from "./contracts.js";
 
@@ -69,6 +70,7 @@ export function capAtCompleteSentence(text: string, limit: number): string {
 }
 
 export class StellarChatWorker {
+  private readonly research:StellarResearchService;
   private readonly workerId: string;
   private readonly executionTarget: ExecutionTargetV1;
   private completedJobs = 0;
@@ -77,7 +79,7 @@ export class StellarChatWorker {
   private outputUnits = 0;
   private lastLatencyMs: number | undefined;
   private lastUnits = 0;
-  constructor(private readonly client: SpmtClient, private readonly provider: StellarChatProviderV1, options: { workerId: string; executionTarget: ExecutionTargetV1 }) { this.workerId = required(options.workerId, "workerId"); this.executionTarget = options.executionTarget; }
+  constructor(private readonly client: SpmtClient, private readonly provider: StellarChatProviderV1, options: { workerId: string; executionTarget: ExecutionTargetV1; research?:StellarResearchService }) { this.research=options.research??new StellarResearchService();this.workerId = required(options.workerId, "workerId"); this.executionTarget = options.executionTarget; }
   async runOnce() {
     if (!await this.provider.healthy()) return undefined;
     const job = await this.client.claimAnyExecutionJob(this.workerId, this.executionTarget, { executionOwner: "stellar-core", capabilityIds: [STELLAR_CHAT_CAPABILITY_ID], leaseMs: 900_000 });
@@ -96,6 +98,8 @@ export class StellarChatWorker {
       await this.client.heartbeatExecutionJob(lease.tenantId, lease.jobId, lease.workerId, lease.leaseId, lease.fencingEpoch, { percent: 10, message: "Preparing scoped context" }, 900_000);
       const [context, jobs] = await Promise.all([request.remember ? this.client.listStellarContext(job.tenantId, request.userId) : Promise.resolve([]), request.remember ? this.client.listExecutionJobs(job.tenantId, { ownerAppId: "stellar-core", billedUserId: request.userId, state: "succeeded", limit: 40 }) : Promise.resolve([])]);
       const messages = buildStellarChatMessages(request, context, jobs);
+      const research=request.research?.enabled?await this.research.resolve(job.tenantId,{...request.research,...(!request.remember?{cacheMinutes:0}:{})}):undefined;
+      if(research)messages.splice(1,0,{role:"system",content:stellarResearchContext(research)});
       await this.client.heartbeatExecutionJob(lease.tenantId, lease.jobId, lease.workerId, lease.leaseId, lease.fencingEpoch, { percent: 35, message: "Running assistant inference" }, 900_000);
       inferenceStartedAt = Date.now();
       const completion = await this.provider.complete(messages);
@@ -103,7 +107,7 @@ export class StellarChatWorker {
       this.lastUnits = (completion.usage?.inputTokens ?? 0) + (completion.usage?.outputTokens ?? 0);
       this.inputUnits += completion.usage?.inputTokens ?? 0;
       this.outputUnits += completion.usage?.outputTokens ?? 0;
-      await this.client.succeedExecutionJob(lease.tenantId, lease.jobId, lease.workerId, lease.leaseId, lease.fencingEpoch, { kind: STELLAR_CHAT_RESULT_KIND, text: completion.text, ...(completion.finishReason ? { finishReason: completion.finishReason } : {}), ...(completion.usage ? { usage: { ...(completion.usage.inputTokens === undefined ? {} : { inputUnits: completion.usage.inputTokens }), ...(completion.usage.outputTokens === undefined ? {} : { outputUnits: completion.usage.outputTokens }) } } : {}) });
+      await this.client.succeedExecutionJob(lease.tenantId, lease.jobId, lease.workerId, lease.leaseId, lease.fencingEpoch, { kind: STELLAR_CHAT_RESULT_KIND, text: research?formatResearchAnswer(completion.text,research):completion.text, ...(research?{research}:{}), ...(completion.finishReason ? { finishReason: completion.finishReason } : {}), ...(completion.usage ? { usage: { ...(completion.usage.inputTokens === undefined ? {} : { inputUnits: completion.usage.inputTokens }), ...(completion.usage.outputTokens === undefined ? {} : { outputUnits: completion.usage.outputTokens }) } } : {}) });
       this.completedJobs += 1;
     } catch (error) {
       if (inferenceStartedAt !== undefined) { this.lastLatencyMs = Date.now() - inferenceStartedAt; this.lastUnits = 0; }
@@ -128,8 +132,8 @@ export function createStellarWorkerTokenProvider(options: { spmtOrigin: string; 
 }
 
 export function buildStellarChatMessages(request: ReturnType<typeof stellarRequest>, context: Array<Record<string, unknown>>, jobs: ExecutionJobV1[]): StellarChatMessageV1[] {
-  const contextText = context.slice(0, 20).map((item) => typeof item.text === "string" ? item.text.trim() : "").filter(Boolean).join("\n").slice(0, 8_000);
-  const history = jobs.filter((item) => item.input.conversationId === request.conversationId && samePresentation(item.input.presentation, request.presentation)).slice(-8).flatMap((item): StellarChatMessageV1[] => {
+  const contextText = (request.remember?context:[]).slice(0, 20).map((item) => typeof item.text === "string" ? item.text.trim() : "").filter(Boolean).join("\n").slice(0, 8_000);
+  const history = jobs.filter((item) => request.remember && item.input.remember!==false && !String(item.input.conversationId??"").startsWith("streamweaver:voice:private:") && item.input.conversationId === request.conversationId && samePresentation(item.input.presentation, request.presentation)).slice(-8).flatMap((item): StellarChatMessageV1[] => {
     const prompt = typeof item.input.message === "string" ? item.input.message : "";
     const answer = typeof item.result?.text === "string" ? item.result.text : "";
     return prompt && answer ? [{ role: "user", content: prompt.slice(0, 4_000) }, { role: "assistant", content: answer.slice(0, 6_000) }] : [];
@@ -143,8 +147,8 @@ export function buildStellarChatMessages(request: ReturnType<typeof stellarReque
 export function stellarRequest(input: Record<string, unknown>) {
   if (input.kind !== STELLAR_CHAT_REQUEST_KIND || typeof input.message !== "string" || !input.message.trim() || typeof input.userId !== "string") throw new Error("Stellar chat job input is invalid");
   const presentation = input.presentation === undefined ? undefined : presentationValue(input.presentation);
-  const remember = presentation ? presentation.memoryPolicy === "conversation" : input.remember !== false;
-  return { message: input.message, userId: input.userId, remember, conversationId: typeof input.conversationId === "string" ? input.conversationId : undefined, ...(presentation ? { presentation } : {}) };
+  const remember = input.remember !== false && (!presentation || presentation.memoryPolicy === "conversation") && !String(input.conversationId??"").startsWith("streamweaver:voice:private:");
+  return { message: input.message, userId: input.userId, remember, ...(input.research===undefined?{}:{research:assertAssistantResearchRequest(input.research)}), conversationId: typeof input.conversationId === "string" ? input.conversationId : undefined, ...(presentation ? { presentation } : {}) };
 }
 function presentationValue(value:unknown):CommunityAssistantPresentationV1{if(!value||typeof value!=="object"||Array.isArray(value))throw new Error("Stellar chat presentation is invalid");const input=value as Record<string,unknown>;const sourceAppId=requiredInputId(input.sourceAppId,"sourceAppId"),personaId=requiredInputId(input.personaId,"personaId");if(typeof input.displayName!=="string"||!input.displayName.trim()||input.displayName.length>120||/[\r\n]/.test(input.displayName))throw new Error("Stellar chat presentation is invalid");if(typeof input.instructions!=="string"||!input.instructions.trim()||input.instructions.length>4000)throw new Error("Stellar chat presentation is invalid");if(typeof input.memoryPolicy!=="string"||!(ASSISTANT_MEMORY_POLICIES as readonly string[]).includes(input.memoryPolicy))throw new Error("Stellar chat presentation is invalid");return{sourceAppId,personaId,displayName:input.displayName.trim(),instructions:input.instructions.trim(),memoryPolicy:input.memoryPolicy as CommunityAssistantPresentationV1["memoryPolicy"]};}
 function samePresentation(value:unknown,expected:CommunityAssistantPresentationV1|undefined){if(!expected)return value===undefined;if(!value||typeof value!=="object"||Array.isArray(value))return false;const item=value as Record<string,unknown>;return item.sourceAppId===expected.sourceAppId&&item.personaId===expected.personaId;}
@@ -153,3 +157,10 @@ function loopbackOrigin(value: string) { const url = new URL(value); if (url.pro
 function required(value: string, name: string) { if (!value || !/^[A-Za-z0-9._:@/-]{1,200}$/.test(value)) throw new Error(`${name} is invalid`); return value; }
 function safeFailure(error: unknown) { const text = error instanceof SpmtApiError ? `${error.message}: ${error.responseBody}` : error instanceof Error ? error.message : "Stellar worker failed"; return text.replace(/[\r\n]+/g, " ").slice(0, 900); }
 function pause(ms: number, signal: AbortSignal) { return new Promise<void>((resolve) => { if (signal.aborted) return resolve(); const timer = setTimeout(resolve, ms); signal.addEventListener("abort", () => { clearTimeout(timer); resolve(); }, { once: true }); }); }
+
+function formatResearchAnswer(text:string,research:import("./research.js").StellarResearchResultV1){
+  let result=capAtCompleteSentence(text,5000);
+  if(research.warnings.length)result+="\n\n"+research.warnings.join(" ").slice(0,800);
+  const sources:string[]=[];for(const source of research.sources){const line=source.title.slice(0,100)+(source.url?" — "+source.url:"");if(result.length+sources.join("\n").length+line.length+20<7900)sources.push(line);}
+  return result+(sources.length?"\n\nSources:\n"+sources.join("\n"):"");
+}

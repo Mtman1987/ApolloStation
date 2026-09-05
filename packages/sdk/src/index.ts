@@ -8,7 +8,7 @@ export interface ListEventsOptionsV1 { type?:string; sourceAppId?:string; limit?
 export interface PublishSimulationRoomEventInputV1 extends Omit<SimulationRoomEventV1,"schemaVersion"|"occurredAt"> { occurredAt?:string; }
 export interface ListSimulationRoomEventsOptionsV1 { roomId?:string; lane?:SimulationRoomLaneV1; sourceAppId?:string; limit?:number; }
 export interface AwardXpOptionsV1 { eventType?:string; metadata?:Record<string,unknown>; }
-export interface InvokeCommunityAssistantInputV1 { userId?:string; message:string; surface:AssistantSurfaceV1; conversationId?:string; routingPreference?:"automatic"|"hosted"|"companion"; remember?:boolean; presentation?:CommunityAssistantPresentationInputV1; }
+export interface InvokeCommunityAssistantInputV1 { userId?:string; message:string; surface:AssistantSurfaceV1; conversationId?:string; routingPreference?:"automatic"|"hosted"|"companion"; remember?:boolean; presentation?:CommunityAssistantPresentationInputV1; research?:import("@spmt/contracts").AssistantResearchRequestV1; }
 export interface PublishOperationsLogInputV1 { sourceAppId?:string; level:OperationsLogLevelV1; kind:string; summary:string; detail?:string; labels?:string[]; occurredAt?:string; }
 export interface ListOperationsLogsOptionsV1 { sourceAppId?:string; level?:OperationsLogLevelV1; limit?:number; }
 export interface ListCoderJobsOptionsV1 { targetAppId?:string; state?:CoderJobStateV1; limit?:number; }

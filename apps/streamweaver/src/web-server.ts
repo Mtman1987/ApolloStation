@@ -1,3 +1,4 @@
+import {streamWeaverResearchBrowserJs} from "./research-client.js";
 import { createProductAppWebServer, productAppSnapshotHandler, productAppSnapshotSources, type ProductAppCatalogItemV1, type ProductAppWebDescriptorV1 } from "@spmt/app-foundation/product-web";
 import { appSurfaceBrowserJs, productSurfaceManifest } from "@spmt/app-foundation/surface-client";
 import type { SpmtOperationModeV1 } from "@spmt/contracts";
@@ -27,6 +28,7 @@ export const STREAMWEAVER_WEB_DESCRIPTOR: ProductAppWebDescriptorV1 = {
     { id: "setup", label: "Setup Guide", title: "Start With Only What You Choose", body: "New StreamWeaver tenants begin with zero command flows. Choose community flows, connect accounts and bot channels, learn Voice Commander, then add the ecosystem Public/Personal overlays.", glyph: "✓", appOwnedData: true },
     { id: "community", label: "Community Flows", title: "Browse, Import & Share Flows", body: "One feature is one portable JSON package. Install only the flows you want, export them, or publish your own for the community.", glyph: "◎", appOwnedData: true },
     { id: "builder", label: "Flow Builder", title: "Create & Edit Commands", body: "Build a command, arrange its action steps, or ask the shared assistant for a private draft.", glyph: "✧", appOwnedData: true },
+    { id:"research",label:"Research",title:"Questions & Knowledge",body:"Choose knowledge packs and approved live sources. Research runs through the shared assistant.",glyph:"?",appOwnedData:true },
     { id: "voice", label: "Voice Commander", title: "Voice Commander", body: "Dictate to your private persona or send speech to a connected Twitch or Discord channel. Recording begins only when you press the microphone.", glyph: "◉", appOwnedData: true },
     { id: "commands", label: "My Commands", title: "My Commands & Flows", body: "Manage installed commands, pause flows, customize copies and inspect their steps.", glyph: ">", appOwnedData: true },
     { id: "persona", label: "Bot & Persona", title: "Bot & Persona", body: "Set the name, summon aliases, home channels, instructions and memory boundary for this tenant's assistant presentation.", glyph: "✦", appOwnedData: true },
@@ -47,7 +49,7 @@ export interface StreamWeaverWebServerOptionsV1 { spmtOrigin: string; port?: num
 export function createStreamWeaverWebServer(options: StreamWeaverWebServerOptionsV1) {
   const snapshot = productAppSnapshotHandler({ appId: "streamweaver", spmtOrigin: options.spmtOrigin, sources: productAppSnapshotSources(STREAMWEAVER_WEB_DESCRIPTOR) });
   const controls = new StreamWeaverWebControls({ ...options, connections: parseStreamWeaverWebConnections(options.connectionsJson) });
-  return createProductAppWebServer({ descriptor: STREAMWEAVER_WEB_DESCRIPTOR, port: options.port, host: options.host, buildSha: options.buildSha, extraCss: STREAMWEAVER_CONTROL_CSS + STREAMWEAVER_FLOW_CSS, browserJs: appSurfaceBrowserJs(SURFACE) + streamWeaverBrowserJs() + streamWeaverMediaBrowserJs(), handleApi: async (request, response, url) => await controls.handle(request, response, url) || await snapshot(request, response, url), close: () => controls.close() });
+  return createProductAppWebServer({ descriptor: STREAMWEAVER_WEB_DESCRIPTOR, port: options.port, host: options.host, buildSha: options.buildSha, extraCss: STREAMWEAVER_CONTROL_CSS + STREAMWEAVER_FLOW_CSS, browserJs: appSurfaceBrowserJs(SURFACE) + streamWeaverBrowserJs() + streamWeaverMediaBrowserJs() + streamWeaverResearchBrowserJs(), handleApi: async (request, response, url) => await controls.handle(request, response, url) || await snapshot(request, response, url), close: () => controls.close() });
 }
 
 const STREAMWEAVER_CONTROL_CSS = `

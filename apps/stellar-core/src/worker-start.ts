@@ -1,3 +1,4 @@
+import {BraveStellarSearchProvider,StellarResearchService} from "./research.js";
 import { readFile } from "node:fs/promises";
 import { SpmtClient } from "@spmt/sdk";
 import { STELLAR_CHAT_CAPABILITY_ID } from "./contracts.js";
@@ -12,7 +13,8 @@ if (!spmtOrigin || !providerOrigin || credential.length < 32) throw new Error("S
 const workerId = process.env.STELLAR_WORKER_ID ?? `stellar-${executionTarget}-${process.pid}`;
 const client = new SpmtClient({ baseUrl: spmtOrigin, appId: "stellar-core", getAccessToken: createStellarWorkerTokenProvider({ spmtOrigin, credential }) });
 const provider = new OpenAiCompatibleChatProvider({ origin: providerOrigin, model });
-const worker = new StellarChatWorker(client, provider, { workerId, executionTarget });
+const research=new StellarResearchService(process.env.SPMT_OUTBOUND_MODE!=="disabled"&&process.env.STELLAR_BRAVE_SEARCH_CREDENTIAL?new BraveStellarSearchProvider(process.env.STELLAR_BRAVE_SEARCH_CREDENTIAL):undefined);
+const worker = new StellarChatWorker(client, provider, { workerId, executionTarget,research });
 const controller = new AbortController();
 const startedAt = new Date().toISOString();
 const startedMs = Date.now();

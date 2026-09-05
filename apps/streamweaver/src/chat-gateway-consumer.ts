@@ -1,3 +1,4 @@
+import type {StreamWeaverResearchConversation} from "./research-mode.js";
 import { DatabaseSync } from "node:sqlite";
 import type { AssistantMemoryPolicyV1, CommunityAssistantPresentationInputV1, ExecutionJobV1, NormalizedChatDeliveryV1, NormalizedChatMessageV1, OutboundChatMessageV1 } from "@spmt/contracts";
 
@@ -30,13 +31,13 @@ export interface StreamWeaverPersonaInvocationV1 {
 }
 
 export interface StreamWeaverPersonaRuntimeV1 {
-  invoke(input: StreamWeaverPersonaInvocationV1): Promise<{ status: "accepted"; jobId: string } | { status: "unavailable"; reason: string }>;
+  invoke(input: StreamWeaverPersonaInvocationV1): Promise<{ status: "accepted"; jobId: string } | { status: "unavailable"; reason: string } | {status:"reply";text:string}>;
 }
 export interface StreamWeaverChatEgressV1 { send(message: OutboundChatMessageV1): Promise<{ providerMessageId: string }>; }
 export interface StreamWeaverPersonaConfigSourceV1 { get(tenantId: string): StreamWeaverPersonaConfigV1 | undefined | Promise<StreamWeaverPersonaConfigV1 | undefined>; }
 export interface StreamWeaverPersonaMessageGateV1 { willHandle(message: NormalizedChatMessageV1): boolean; }
 export interface StreamWeaverAssistantClientV1 {
-  invokeCommunityAssistant(tenantId: string, input: { userId: string; message: string; surface: "stream"; conversationId: string; routingPreference: "automatic"; remember: boolean; presentation: CommunityAssistantPresentationInputV1 }, idempotencyKey: string): Promise<{ status: "accepted"; jobId: string } | { status: "unavailable"; reason: string }>;
+  invokeCommunityAssistant(tenantId: string, input: { userId: string; message: string; surface: "stream"; conversationId: string; routingPreference: "automatic"; remember: boolean; presentation: CommunityAssistantPresentationInputV1;research?:import("@spmt/contracts").AssistantResearchRequestV1 }, idempotencyKey: string): Promise<{ status: "accepted"; jobId: string } | { status: "unavailable"; reason: string }>;
   getExecutionJob(tenantId: string, jobId: string): Promise<ExecutionJobV1>;
 }
 
@@ -112,9 +113,10 @@ export class SqliteStreamWeaverSummonStore {
 }
 
 export class SpmtStreamWeaverPersonaRuntime implements StreamWeaverPersonaRuntimeV1 {
-  constructor(private readonly client: Pick<StreamWeaverAssistantClientV1, "invokeCommunityAssistant">) {}
-  invoke(input: StreamWeaverPersonaInvocationV1) {
-    return this.client.invokeCommunityAssistant(input.tenantId, { userId: input.userId, message: input.message, surface: "stream", conversationId: input.conversationId, routingPreference: "automatic", remember: input.presentation.memoryPolicy === "conversation", presentation: input.presentation }, input.idempotencyKey);
+  constructor(private readonly client: Pick<StreamWeaverAssistantClientV1, "invokeCommunityAssistant">,private readonly research?:StreamWeaverResearchConversation) {}
+  async invoke(input: StreamWeaverPersonaInvocationV1) {
+    const prepared=this.research?.prepare(input);if(prepared?.reply)return {status:"reply" as const,text:prepared.reply};
+    return this.client.invokeCommunityAssistant(input.tenantId, { userId: input.userId, message: input.message, surface: "stream", conversationId: input.conversationId, routingPreference: "automatic", remember: input.presentation.memoryPolicy === "conversation", presentation: input.presentation,...(prepared?.research?{research:prepared.research}:{}) }, input.idempotencyKey);
   }
 }
 
@@ -160,16 +162,19 @@ export class StreamWeaverPersonaReplyReconciler {
 
 export class StreamWeaverChatGatewayConsumer {
   readonly id = "streamweaver.persona" as const;
-  constructor(private readonly summons: SqliteStreamWeaverSummonStore, private readonly configs: StreamWeaverPersonaConfigSourceV1, private readonly personas: StreamWeaverPersonaRuntimeV1, private readonly egress: StreamWeaverChatEgressV1, private readonly priorMessageGate?: StreamWeaverPersonaMessageGateV1) {}
+  constructor(private readonly summons: SqliteStreamWeaverSummonStore, private readonly configs: StreamWeaverPersonaConfigSourceV1, private readonly personas: StreamWeaverPersonaRuntimeV1, private readonly egress: StreamWeaverChatEgressV1, private readonly priorMessageGate?: StreamWeaverPersonaMessageGateV1,private readonly research?:StreamWeaverResearchConversation) {}
   accepts(message: NormalizedChatMessageV1): boolean { return !message.actor.isBot && !this.priorMessageGate?.willHandle(message); }
   async deliver(delivery: NormalizedChatDeliveryV1): Promise<void> {
     const config = await this.configs.get(delivery.message.tenantId);
     if (!config) return;
     const active = this.summons.get(config.tenantId, delivery.message.provider, delivery.message.channelId, config.personaId);
-    const route = planStreamWeaverPersonaRoute(delivery, config, active?.expiresAt);
+    const message=delivery.message,userId=message.actor.canonicalUserId??"provider:"+message.provider+":"+message.actor.providerUserId;
+    const following=(this.research?.pending(message.tenantId,message.provider,message.channelId,userId)||this.research?.resumable(message.tenantId,message.provider,message.channelId,userId,"streamweaver-persona:"+delivery.deliveryId))&&!addressed(message.text,config.aliases);
+    const route = planStreamWeaverPersonaRoute(following?{...delivery,message:{...message,text:config.aliases[0]+" "+message.text}}:delivery, config, active?.expiresAt);
     if (route.kind === "ignored") return;
     if (route.openSummonUntil) this.summons.open({ tenantId: config.tenantId, provider: delivery.message.provider, channelId: delivery.message.channelId, personaId: config.personaId, openedByUserId: route.invocation.userId, expiresAt: route.openSummonUntil });
     const result = await this.personas.invoke(route.invocation);
+    if(result.status==="reply"){await this.egress.send({schemaVersion:1,tenantId:delivery.message.tenantId,provider:delivery.message.provider,connectionId:delivery.message.connectionId,channelId:delivery.message.channelId,text:result.text,idempotencyKey:"streamweaver-research-prompt:"+delivery.deliveryId,replyToMessageId:delivery.message.messageId});return;}
     if (result.status === "accepted") {
       this.summons.enqueueReply({ schemaVersion: 1, tenantId: delivery.message.tenantId, deliveryId: delivery.deliveryId, jobId: result.jobId, displayName: config.displayName, provider: delivery.message.provider, connectionId: delivery.message.connectionId, channelId: delivery.message.channelId, replyToMessageId: delivery.message.messageId, createdAt: delivery.message.occurredAt });
       return;

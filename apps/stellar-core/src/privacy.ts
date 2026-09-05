@@ -46,7 +46,7 @@ export class StellarDataPrivacyService {
         const age = now - Date.parse(job.completedAt);
         if (age >= STELLAR_METADATA_RETENTION_MS) { this.jobs.delete(tenantId, job.id); deleted += 1; continue; }
         if (job.input.kind !== STELLAR_CHAT_REQUEST_KIND) continue;
-        const remember = job.input.remember !== false;
+        const remember = job.input.remember !== false && !String(job.input.conversationId??"").startsWith("streamweaver:voice:private:");
         if (age < (remember ? STELLAR_RAW_RETENTION_MS : STELLAR_EPHEMERAL_RETENTION_MS)) continue;
         this.jobs.redactPayloads(tenantId, job.id, metadataInput(job, remember), metadataResult(job));
         minimized += 1;

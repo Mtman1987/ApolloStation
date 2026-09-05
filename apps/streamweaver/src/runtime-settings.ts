@@ -1,4 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
+import {normalizeAssistantResearchOptions,type AssistantResearchOptionsV1} from "@spmt/contracts";
 import type { StreamWeaverTenantLinksV1 } from "./donor-command-services.js";
 
 export const STREAMWEAVER_LINK_KEYS = ["discord","hover","instagram","merch","tiktok","twitter","webpage","youtube"] as const;
@@ -8,10 +9,13 @@ export class StreamWeaverRuntimeSettingsStore {
   constructor(path: string) {
     this.db = new DatabaseSync(path,{timeout:5000});
     this.db.exec("PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS streamweaver_creator_links(tenant_id TEXT PRIMARY KEY, body TEXT NOT NULL) STRICT;");
+    this.db.exec("CREATE TABLE IF NOT EXISTS streamweaver_research(tenant_id TEXT PRIMARY KEY,body TEXT NOT NULL) STRICT;");
     this.db.exec("CREATE TABLE IF NOT EXISTS streamweaver_appearance(tenant_id TEXT PRIMARY KEY,body TEXT NOT NULL) STRICT;");
     this.db.exec("CREATE TABLE IF NOT EXISTS streamweaver_twitch_settings(tenant_id TEXT PRIMARY KEY,broadcaster_id TEXT NOT NULL) STRICT;");
     this.db.exec("CREATE TABLE IF NOT EXISTS streamweaver_voice_history(tenant_id TEXT NOT NULL,user_id TEXT NOT NULL,request_id TEXT NOT NULL,body TEXT NOT NULL,PRIMARY KEY(tenant_id,user_id,request_id)) STRICT;");
   }
+  research(tenantId:string):AssistantResearchOptionsV1 {const row=this.db.prepare("SELECT body FROM streamweaver_research WHERE tenant_id=?").get(tenantId) as {body:string}|undefined;return normalizeAssistantResearchOptions(row?JSON.parse(row.body):{});}
+  saveResearch(tenantId:string,value:unknown){const settings=normalizeAssistantResearchOptions(value);this.db.prepare("INSERT OR REPLACE INTO streamweaver_research VALUES(?,?)").run(tenantId,JSON.stringify(settings));return settings;}
   close() { this.db.close(); }
   appearance(tenantId:string):{avatarUrl:string;talkingUrl:string} {const row=this.db.prepare("SELECT body FROM streamweaver_appearance WHERE tenant_id=?").get(tenantId) as {body:string}|undefined;return row?JSON.parse(row.body):{avatarUrl:"",talkingUrl:""};}
   saveAppearance(tenantId:string,value:Record<string,unknown>) {const result={avatarUrl:"",talkingUrl:""};for(const key of ["avatarUrl","talkingUrl"] as const){const text=String(value[key]??"").trim();if(!text)continue;const url=new URL(text);if(url.protocol!=="https:"||url.username||url.password||text.length>2000)throw new Error("Avatar assets must use public HTTPS URLs");result[key]=url.href;}this.db.prepare("INSERT OR REPLACE INTO streamweaver_appearance VALUES(?,?)").run(tenantId,JSON.stringify(result));return result;}

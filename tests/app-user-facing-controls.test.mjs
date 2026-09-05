@@ -150,6 +150,7 @@ test("StreamWeaver app ingress supports manual command editing, pause, link sett
     const read=async(path='')=>{const response=await fetch(base+path,{headers:{cookie}});assert.equal(response.status,200);return response.json()};
     const post=async(path,body,status=200)=>{const response=await fetch(base+path,{method:'POST',headers,body:JSON.stringify(body)});assert.equal(response.status,status,await response.clone().text());return response.json()};
     const state=await read();
+    const research={enabled:true,liveSearchEnabled:false,knowledgePacks:["vocaloid"],sourceAllowlist:["vocaloid.com"],maxResults:3,cacheMinutes:0};await post("/research",research);assert.deepEqual((await read()).research,research);await post("/research",{...research,maxResults:99},400);
     const packageData={schemaVersion:1,kind:'streamweaver.flow-package',packageId:'flow.web-test',name:'Welcome',commands:[{id:'welcome',trigger:'!hello',aliases:[],enabled:false,actionIds:['reply']}],actions:[{id:'reply',type:'send-chat',enabled:false,config:{text:'Hello %userName%!'}}]};
     let saved=(await post('/flows/save',{package:packageData})).package;
     assert.equal(saved.commands[0].enabled,false);

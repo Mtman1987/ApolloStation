@@ -1,3 +1,4 @@
+import {streamWeaverResearchIntent} from "./research-mode.js";
 import { StreamWeaverAdminEconomy } from "./economy-admin.js";
 import { importStreamWeaverLegacy } from "./flow-import.js";
 import { randomUUID } from "node:crypto";
@@ -73,6 +74,7 @@ export class StreamWeaverWebControls {
       if (url.pathname === "/api/streamweaver/control/voice") return await this.voice(response, context, body);
       if (url.pathname === "/api/streamweaver/control/voice/history/clear") { this.runtimeSettings?.clearVoice(context.tenantId,this.actor(context).id); return sendJson(response,200,{cleared:true}); }
       this.requireOwner(context);
+      if(url.pathname==="/api/streamweaver/control/research"){if(!this.runtimeSettings)throw new Error("StreamWeaver runtime is not configured");return sendJson(response,200,{research:this.runtimeSettings.saveResearch(context.tenantId,body)});}
       if(url.pathname==="/api/streamweaver/control/devices/pair"){return sendJson(response,200,await this.deviceApi(request,context,{deviceId:`companion-${randomUUID()}`,name:String(body.name??"").trim().slice(0,100),kind:"companion",capabilities:["obs.scene","media.playback"],ttlSeconds:900},"/v1/devices/bootstrap"));}
       if(url.pathname==="/api/streamweaver/control/devices"){if(!Array.isArray(body.actions))throw new Error("Device actions must be an array");return sendJson(response,200,await this.deviceApi(request,context,{deviceId:identifier(body.deviceId,"deviceId"),appId:"streamweaver",actions:Array.isArray(body.actions)?body.actions:[]}));}
       if(url.pathname==="/api/streamweaver/control/appearance"){
@@ -161,6 +163,7 @@ export class StreamWeaverWebControls {
       twitch:{broadcasterId:this.runtimeSettings?.twitchBroadcaster(tenantId)??""},
       workers: snapshot.workers,
       stellarCapabilities: snapshot.stellarCapabilities,
+      research:this.runtimeSettings?.research(tenantId),
       personaDocument,
       persona,
       creatorLinks:this.runtimeSettings?.getLinks(tenantId) ?? {},
@@ -231,6 +234,7 @@ export class StreamWeaverWebControls {
 
   private async voice(response: ServerResponse, context: SessionContext, body: Record<string, unknown>) {
     const message = text(body.message, "message", 5_000), destination = destinationValue(body.destination);
+    if(body.research===true&&!this.runtimeSettings?.research(context.tenantId).enabled)throw new Error("Enable research in Research preferences before using this form.");
     const requestId=idempotency(body.idempotencyKey,"voice"), occurredAt=new Date().toISOString();
     const reply=(status:number,value:Record<string,unknown>)=>{if(destination!=="private")this.runtimeSettings?.recordVoice(context.tenantId,this.actor(context).id,requestId,{requestId,message,destination,occurredAt,...value});return sendJson(response,status,value);};
     const detected = detectStreamWeaverBotAction(message);
@@ -250,8 +254,8 @@ export class StreamWeaverWebControls {
     if (this.operationMode === "read-only" && (destination === "ai" || destination === "private")) return reply( 200, { schemaVersion: 1, kind: "preview", status: "blocked", operationMode: this.operationMode, destination, reason: "Shadow mode does not send live chat data to an external assistant. Choose a provider destination to deliver into its internal shadow room." });
     const client = this.requireClient();
     if (destination === "ai" || destination === "private") {
-      const configured = this.persona?.get(context.tenantId);
-      const result = await client.invokeCommunityAssistant(context.tenantId, { userId, message, surface: "app", conversationId: `streamweaver:voice:${destination}:${userId}`, routingPreference: "automatic", remember: destination === "ai", ...(configured ? { presentation: { personaId: configured.personaId, displayName: configured.displayName, instructions: configured.instructions, memoryPolicy: configured.memoryPolicy } } : {}) }, idempotency(body.idempotencyKey, "streamweaver-voice-ai"));
+      const configured = this.persona?.get(context.tenantId),intent=streamWeaverResearchIntent(message),preferences=this.runtimeSettings?.research(context.tenantId);
+      const result = await client.invokeCommunityAssistant(context.tenantId, { userId, message,...(intent.kind==="query"&&preferences?.enabled?{research:{...preferences,query:intent.query}}:{}), surface: "app", conversationId: `streamweaver:voice:${destination}:${userId}`, routingPreference: "automatic", remember: destination === "ai", ...(configured ? { presentation: { personaId: configured.personaId, displayName: configured.displayName, instructions: configured.instructions, memoryPolicy: configured.memoryPolicy } } : {}) }, idempotency(body.idempotencyKey, "streamweaver-voice-ai"));
       return reply( result.status === "accepted" ? 202 : 503, { ...result, kind: "assistant", destination });
     }
     const connection = this.connection(context.tenantId, destination, body.connectionId);
