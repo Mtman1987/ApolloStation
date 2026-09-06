@@ -49,6 +49,11 @@ export class OpenAiCompatibleChatProvider implements StellarChatProviderV1 {
 export function looksIncompleteCompletion(text: string, finishReason?: string): boolean {
   if (["length", "max_tokens", "max_output_tokens", "token_limit"].includes(String(finishReason ?? "").toLowerCase())) return true;
   const clean = text.trim();
+  // Structured authoring replies end in braces, not sentence punctuation.
+  const json = clean.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i)?.[1] ?? clean;
+  if (/^[{[]/.test(json)) {
+    try { const value:unknown=JSON.parse(json); if(value && typeof value === "object") return false; } catch { /* An unfinished JSON reply still needs continuation. */ }
+  }
   return clean.length > 200 && !/[.!?…][\])}"'’”]*$/.test(clean);
 }
 
