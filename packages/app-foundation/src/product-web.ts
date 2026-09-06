@@ -49,6 +49,8 @@ export interface ProductAppSectionV1 {
   emptyTitle?: string;
   emptyBody?: string;
   appOwnedData?: boolean;
+  /** Optional navigation heading. Consecutive sections with the same heading collapse together. */
+  navigationGroup?: string;
 }
 
 const BASELINE_SNAPSHOT_SOURCES: readonly ProductAppSnapshotSourceV1[] = ["runtime", "events", "jobs", "workers", "workspace", "tenantOutputs"];
@@ -120,9 +122,18 @@ export function createProductAppWebServer(options: ProductAppWebServerOptionsV1)
 
 export function renderProductAppWebPage(app: ProductAppWebDescriptorV1, buildSha = "dev", extra = "", extraCss = "", browserJs = "") {
   validateDescriptor(app);
-  const nav = [{ id: "home", label: "Home", glyph: "◈" }, ...app.sections.map((section) => ({ id: section.id, label: section.label, glyph: section.glyph ?? "◇" }))];
   const pages = app.sections.map((section) => `<section class="app-page" data-page="${esc(section.id)}" hidden><header><span class="spmt-product-kicker">${esc(section.label)}</span><h2>${esc(section.title)}</h2><p>${esc(section.body)}</p></header><div class="live spmt-product-glass" data-spmt-depth="2" data-spmt-live-slot="${esc(section.id)}"${section.appOwnedData ? " data-spmt-app-owned-data=\"true\"" : ""} aria-live="polite"><div class="source-heading"><strong>${section.appOwnedData ? "App-owned data" : "SPMT developer surface"}</strong><span class="source-state" data-source-state>Connecting</span></div><small>Loading current app state…</small></div></section>`).join("");
-  const tabs = nav.map((item) => `<button type="button" data-nav="${esc(item.id)}"><i>${esc(item.glyph)}</i><span>${esc(item.label)}</span></button>`).join("");
+  const sectionTabs = app.sections.map((section) => `<button type="button" data-nav="${esc(section.id)}"><i>${esc(section.glyph ?? "◇")}</i><span>${esc(section.label)}</span></button>`);
+  const groupedTabs: string[] = [];
+  for (let index = 0; index < app.sections.length;) {
+    const group = app.sections[index]?.navigationGroup;
+    if (!group) { groupedTabs.push(sectionTabs[index]!); index += 1; continue; }
+    let end = index + 1;
+    while (app.sections[end]?.navigationGroup === group) end += 1;
+    groupedTabs.push(`<details class="tabs-group"><summary>${esc(group)}</summary>${sectionTabs.slice(index, end).join("")}</details>`);
+    index = end;
+  }
+  const tabs = `<button type="button" data-nav="home"><i>◈</i><span>Home</span></button>${groupedTabs.join("")}`;
   const pageJs = PAGE_JS
     .replaceAll("__APP_ID__", scriptJson(app.appId))
     .replaceAll("__SECTIONS__", scriptJson(app.sections));

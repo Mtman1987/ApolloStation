@@ -15,7 +15,7 @@ import { StreamWeaverInstalledFlowConsumer } from "./flow-runtime.js";
 import { StreamWeaverPersonaSettingsStore } from "./persona-settings.js";
 import { StreamWeaverFlowPackageStore, assertStreamWeaverFlowRunnable, normalizeFlowPackage } from "./flow-packages.js";
 import { assertFlowCodeValue } from "./flow-code.js";
-import { buildStreamWeaverAiFlowPrompt, STREAMWEAVER_AI_FLOW_IDEA_LIMIT } from "./flow-ai-builder.js";
+import { buildStreamWeaverAiFlowPrompt, buildStreamWeaverAiFlowRepairPrompt, STREAMWEAVER_AI_FLOW_IDEA_LIMIT, STREAMWEAVER_AI_FLOW_REPAIR_LIMIT } from "./flow-ai-builder.js";
 import { StreamWeaverRuntimeSettingsStore } from "./runtime-settings.js";
 import { SqliteStreamWeaverBotRelayStore } from "./bot-relay.js";
 
@@ -231,12 +231,23 @@ export class StreamWeaverWebControls {
     const jobId=identifier(body.jobId,"jobId"),job=await this.requireClient().getExecutionJob(context.tenantId,jobId),userId=String(context.session.actorId??"");
     if (job.billedUserId!==userId) throw new Error("AI flow job is not visible to this user");
     if (job.state!=="succeeded") return sendJson(response,202,{schemaVersion:1,state:job.state,jobId});
-    const result=record(job.result),raw=String(result?.text??record(result?.output)?.text??""),parsed=parseJsonObject(raw),candidate=record(record(parsed)?.package)??parsed;
-    const normalized=normalizeFlowPackage(candidate,{now:new Date().toISOString(),author:this.actor(context),visibility:"private"});
-    for(const action of normalized.actions)assertFlowCodeValue(action.config);
-    assertStreamWeaverFlowRunnable(normalized);
-    const saved=this.requireFlows().saveDraft(context.tenantId,normalized,this.actor(context));
-    return sendJson(response,200,{schemaVersion:1,state:"succeeded",package:saved,validated:true});
+    const result=record(job.result),raw=String(result?.text??record(result?.output)?.text??"");
+    try {
+      const parsed=parseJsonObject(raw),candidate=record(record(parsed)?.package)??parsed;
+      const normalized=normalizeFlowPackage(candidate,{now:new Date().toISOString(),author:this.actor(context),visibility:"private"});
+      for(const action of normalized.actions)assertFlowCodeValue(action.config);
+      assertStreamWeaverFlowRunnable(normalized);
+      const saved=this.requireFlows().saveDraft(context.tenantId,normalized,this.actor(context));
+      return sendJson(response,200,{schemaVersion:1,state:"succeeded",package:saved,validated:true,repairAttempts:integer(body.repairAttempt??0,0,STREAMWEAVER_AI_FLOW_REPAIR_LIMIT,"repairAttempt")});
+    } catch(error) {
+      const repairAttempt=integer(body.repairAttempt??0,0,STREAMWEAVER_AI_FLOW_REPAIR_LIMIT,"repairAttempt");
+      if(repairAttempt>=STREAMWEAVER_AI_FLOW_REPAIR_LIMIT)throw new Error(`Stellar could not produce a runnable flow after ${repairAttempt+1} drafts: ${safeError(error)}`);
+      const original=String(record(job.input)?.message??"");
+      if(!original)throw error;
+      const retry=await this.requireClient().invokeCommunityAssistant(context.tenantId,{userId,message:buildStreamWeaverAiFlowRepairPrompt(original,raw,error),surface:"developer",conversationId:`streamweaver:flow-coder:${userId}:repair`,routingPreference:"automatic",remember:false},`streamweaver-flow-ai-repair:${jobId}:${repairAttempt+1}`);
+      if(retry.status!=="accepted")throw new Error(retry.reason);
+      return sendJson(response,202,{schemaVersion:1,state:"repairing",jobId:retry.jobId,repairAttempt:repairAttempt+1,reason:safeError(error)});
+    }
   }
 
   private async voice(response: ServerResponse, context: SessionContext, body: Record<string, unknown>) {

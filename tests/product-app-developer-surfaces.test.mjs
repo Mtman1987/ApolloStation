@@ -128,6 +128,17 @@ test("shared app UI renders per-section signals and truthful contract notes with
   assert.doesNotThrow(() => new Function(script));
 });
 
+test("shared app UI can organize dense navigation into collapsible groups",()=>{
+  const page=renderProductAppWebPage({appId:"fixture",name:"Fixture",kicker:"FIXTURE",tagline:"Fixture",description:"Fixture",sceneUrl:"/fixture.webp",sections:[
+    {id:"one",label:"One",title:"One",body:"One",navigationGroup:"Create"},
+    {id:"two",label:"Two",title:"Two",body:"Two",navigationGroup:"Create"},
+    {id:"three",label:"Three",title:"Three",body:"Three",navigationGroup:"Manage"},
+  ]});
+  assert.match(page,/<details class="tabs-group"><summary>Create<\/summary>/);
+  assert.match(page,/<details class="tabs-group"><summary>Manage<\/summary>/);
+  assert.equal((page.match(/data-nav="home"/g)||[]).length,1);
+});
+
 test("descriptor-declared snapshot sources keep baseline health, shared workspace outputs, and omit unrelated personal scopes", () => {
   const sources = productAppSnapshotSources({
     appId: "fixture",

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {buildStreamWeaverAiFlowPrompt,STREAMWEAVER_AI_FLOW_IDEA_LIMIT} from '../apps/streamweaver/dist/flow-ai-builder.js';
+import {buildStreamWeaverAiFlowPrompt,buildStreamWeaverAiFlowRepairPrompt,STREAMWEAVER_AI_FLOW_IDEA_LIMIT} from '../apps/streamweaver/dist/flow-ai-builder.js';
 
 test('Stellar flow-coder prompt is sourced from Apollo tools and teaches branches, AI, devices, Flow Code and secure choices',()=>{
   const prompt=buildStreamWeaverAiFlowPrompt('make a smart command',{devices:[{deviceId:'companion-main',kind:'companion',capabilities:['obs.scene','media.playback']}],connections:[{provider:'discord',connectionId:'discord-main',channelId:'chat'}]});
@@ -8,6 +8,15 @@ test('Stellar flow-coder prompt is sourced from Apollo tools and teaches branche
   assert.match(prompt,/Never emit http-request or execute-code/);
   assert.match(prompt,/source of truth/i);
   assert.equal(prompt.includes('!__securechoice'),false,'internal secure-choice trigger leaked into the AI tool list');
+});
+
+test('failed Stellar drafts receive bounded validator-guided repair instructions',()=>{
+  const original=buildStreamWeaverAiFlowPrompt('make !duel a secure simultaneous game');
+  const repair=buildStreamWeaverAiFlowRepairPrompt(original,'```json\n{"actions":[]}\n```',new Error('Primary command has no runnable entry action'));
+  assert.match(repair,/regenerate the complete package from scratch/i);
+  assert.match(repair,/Primary command has no runnable entry action/);
+  assert.match(repair,/"actions":\[\]/);
+  assert.ok(repair.length<=7900);
 });
 
 test('the complete Apollo tool catalog fits the Stellar developer message budget with a maximum idea',()=>{

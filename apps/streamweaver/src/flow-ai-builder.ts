@@ -6,6 +6,7 @@ export interface StreamWeaverAiFlowPromptContextV1 {
   connections?: unknown[];
 }
 export const STREAMWEAVER_AI_FLOW_IDEA_LIMIT=1_500;
+export const STREAMWEAVER_AI_FLOW_REPAIR_LIMIT=2;
 
 /** Apollo's registered StreamWeaver tools are the authoring truth. Live StreamWeaver is reference material only. */
 export function buildStreamWeaverAiFlowPrompt(idea: string, context: StreamWeaverAiFlowPromptContextV1 = {}) {
@@ -43,6 +44,19 @@ export function buildStreamWeaverAiFlowPrompt(idea: string, context: StreamWeave
   ].join("\n");
   if (prompt.length > 8_000) throw new Error("Flow builder request is too large for Stellar; shorten the command description");
   return prompt;
+}
+
+/** Give Stellar the validator's exact objection and its prior draft, while staying inside its message budget. */
+export function buildStreamWeaverAiFlowRepairPrompt(originalPrompt:string,invalidOutput:string,error:unknown) {
+  const reason=String(error instanceof Error?error.message:error??"Flow validation failed").replace(/\0/g,"").slice(0,500);
+  const prior=invalidOutput.replace(/\0/g,"").slice(0,1_000);
+  const prompt=[
+    originalPrompt.slice(0,6_000),
+    "Your previous JSON draft did not pass Apollo's validator. Regenerate the complete package from scratch; return strict JSON only.",
+    `Validator error: ${reason}`,
+    `Rejected draft excerpt: ${prior}`,
+  ].join("\n");
+  return prompt.slice(0,7_900);
 }
 
 function record(value: unknown) { return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined; }
