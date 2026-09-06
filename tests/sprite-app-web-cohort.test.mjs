@@ -9,7 +9,11 @@ test("protected promotion rejects stale app-owned web processes and verifies ren
 
   assert.match(script, /stop_orphan_app_web_processes\(\)/);
   assert.match(script, /apps\/\(discord-stream-hub\|streamweaver\|hearmeout\|mountainview\|companion\)\/dist\/web-server/);
-  assert.match(script, /for app in discord-stream-hub streamweaver hearmeout mountainview companion/);
+  assert.match(script, /for app in discord-stream-hub streamweaver hearmeout nebula-arcade stellar-core/);
+  assert.match(script, /for app in companion mountainview/);
+  assert.match(script, /location: \/downloads\/\$app/);
+  assert.match(script, /assets\/spacemountain\/shell-ui-base\.js/);
+  assert.match(script, /for theme in solar-flare nebula-purple oceanic-blue aurora-green/);
   assert.match(script, /http:\/\/127\.0\.0\.1:8080\/apps\/\$app/);
   assert.match(script, /grep -Fq "Build \$short_sha"/);
   assert.match(script, /grep -Fq "\$BUILD_SHA" <<<"\$health" && verify_app_web_cohort/);

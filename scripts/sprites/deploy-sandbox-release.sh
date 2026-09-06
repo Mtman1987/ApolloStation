@@ -91,7 +91,7 @@ stop_orphan_app_web_processes() {
 verify_app_web_cohort() {
   local short_sha="${BUILD_SHA:0:12}"
   local app body
-  for app in discord-stream-hub streamweaver hearmeout mountainview companion; do
+  for app in discord-stream-hub streamweaver hearmeout nebula-arcade stellar-core; do
     body="$(curl -fsS --max-time 3 "http://127.0.0.1:8080/apps/$app")" || {
       echo "App web verification failed: $app did not render through common ingress" >&2
       return 1
@@ -100,6 +100,26 @@ verify_app_web_cohort() {
       echo "App web verification failed: $app is not serving build $short_sha" >&2
       return 1
     fi
+  done
+  local headers theme asset
+  for app in companion mountainview; do
+    headers="$(curl -fsS --max-time 3 -D - -o /dev/null "http://127.0.0.1:8080/apps/$app")" || return 1
+    if ! grep -Eiq "^location: /downloads/$app" <<<"$headers"; then
+      echo "Companion download redirect verification failed: $app" >&2
+      return 1
+    fi
+  done
+  if ! curl -fsS --max-time 3 http://127.0.0.1:8080/assets/spacemountain/shell-ui-base.js | cmp -s - "$current_link/apps/spacemountain/dist/shell-ui-base.js"; then
+    echo "Workspace navigation is not serving the current compiled shell" >&2
+    return 1
+  fi
+  for theme in solar-flare nebula-purple oceanic-blue aurora-green; do
+    for asset in "themes/$theme-spmt.png" "app-icons/$theme/mission-control.png"; do
+      if ! curl -fsS --max-time 3 "http://127.0.0.1:8080/assets/product/$asset" | cmp -s - "$current_link/apps/spacemountain-web/assets/$asset"; then
+        echo "Home or Settings icon verification failed: $asset" >&2
+        return 1
+      fi
+    done
   done
 }
 

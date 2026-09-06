@@ -18,6 +18,14 @@ Home uses the SPMT mark. Settings uses the cockpit/control-console choice from
 the icon sheet, reusing the existing four themed mission-control artwork files.
 All header and sidebar navigation uses the same icon mapping.
 
+The clickable Workspace footer opens an expandable panel. Personal overlays
+contains the saved group selector and a Show selected overlay switch; overlay
+links, shared tools, and window appearance are grouped in accordions. The footer
+itself keeps only Workspace, three slots, and window controls. Standalone app
+footers use the same expandable arrangement. Empty, disabled, and unavailable
+overlays return transparent documents with compatible CSP, and no selected scene
+keeps the Personal frame hidden.
+
 The footer pop-out (`/?surface=workspace-popout`) carries the three saved slots,
 shared tools, selected Personal overlay group, and display switch. Service
 iframes use `surface=workspace-service` and never initialize another dock.
@@ -43,8 +51,7 @@ A device must connect to the Apollo host being tested to consume these surfaces.
    products appear; Windows and Android appear below as download links.
 2. Open Workspace from the footer. Open Commlink, Overlay Bay, and Settings;
    switch between them and confirm their content remains available.
-3. Save two named scenes in Overlay Bay. Select one in the footer's Overlay
-   group control, then switch to the other.
+3. Save two named scenes in Overlay Bay. Click Workspace and select one under Personal overlays, then switch to the other.
 4. Pop out the workspace. Confirm the selected group and Overlay On/Off control
    are present. Toggle Off; confirm the Personal layer disappears in both
    windows within five seconds. Public output must stay unchanged.
@@ -60,3 +67,8 @@ companion and product-surface tests; DOM interaction checks for tool switching,
 selection persistence, display toggle, popup URL and prevention of nested docks.
 The cloud browser could not reach the local preview, so rendered browser and
 physical Windows/Android acceptance remain to be checked on the target host.
+
+Main pushes again trigger the existing protected release Sprite promotion after
+the owner authorized deployment on 2026-09-06. The repository opt-in variable,
+environment gate, target identity checks, full tests, atomic switch, and rollback
+remain in place. The release Sprite is web-terminal-bvesa.sprites.app.
