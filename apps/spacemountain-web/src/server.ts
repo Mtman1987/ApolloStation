@@ -379,6 +379,8 @@ async function proxyNebulaArcade(response: ServerResponse, request: IncomingMess
   const encoded = await limitedResponseBody(upstream);
   response.removeHeader("x-frame-options");
   response.removeHeader("content-security-policy");
+  const upstreamBuild = upstream.headers.get("x-spmt-build-sha");
+  if (upstreamBuild && /^[a-f0-9]{40}$/.test(upstreamBuild)) response.setHeader("x-spmt-build-sha", upstreamBuild);
   response.writeHead(upstream.status, {
     "content-type": upstream.headers.get("content-type") ?? "application/octet-stream",
     "content-length": encoded.byteLength,

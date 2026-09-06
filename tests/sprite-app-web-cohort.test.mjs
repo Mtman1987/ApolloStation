@@ -28,11 +28,15 @@ test("Nebula's visible app response exposes the running build for release verifi
   const directory = await mkdtemp(join(tmpdir(), "nebula-release-"));
   const sha = "a".repeat(40);
   const host = createNebulaArcadeSandboxHost({databasePath:join(directory,"db.sqlite"),tenantId:"test",channelId:"room",port:0,host:"127.0.0.1",buildSha:sha});
+  const { createIntegratedSpaceMountainWebHost } = await import("../apps/spacemountain-web/dist/integrated-server.js");
+  let ingress;
   try {
     await host.listen();
-    const response = await fetch(`http://127.0.0.1:${host.server.address().port}/apps/nebula-arcade`);
+    ingress = createIntegratedSpaceMountainWebHost({spmtOrigin:"http://127.0.0.1:1",nebulaArcadeOrigin:`http://127.0.0.1:${host.server.address().port}`,port:0,host:"127.0.0.1"});
+    await ingress.listen();
+    const response = await fetch(`http://127.0.0.1:${ingress.server.address().port}/apps/nebula-arcade`);
     assert.equal(response.status,200);
     assert.equal(response.headers.get("x-spmt-build-sha"),sha);
     assert.match(await response.text(),/Nebula Arcade/);
-  } finally { await host.close(); await rm(directory,{recursive:true,force:true}); }
+  } finally { if (ingress) await ingress.close(); await host.close(); await rm(directory,{recursive:true,force:true}); }
 });
