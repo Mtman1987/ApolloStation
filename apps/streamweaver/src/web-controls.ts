@@ -109,7 +109,10 @@ export class StreamWeaverWebControls {
           return sendJson(response,200,{tenantId:context.tenantId,partners:this.community.partners(context.tenantId),redeems:this.community.redeems(context.tenantId),settings:this.community.settings(context.tenantId),...(this.role(context)==="owner"?{shoutoutSettings:this.shoutoutStore?.settings(context.tenantId),voices:TTS_VOICE_OPTIONS.map(v=>({id:v.id,label:v.label}))}:{}),awards:this.community.awards(context.tenantId),awardEvents:STREAM_EVENT_AWARDS,bindings:this.community.bindings(context.tenantId),tasks:this.role(context)==="owner"?this.community.tasks(context.tenantId):[],stats:this.community.checkinStats(context.tenantId),watchtime:this.community.watchLeaders(context.tenantId),pricing,wallet:this.economy?.getWallet(context.tenantId,this.actor(context).id),diagnostics:this.role(context)==="owner"?this.community.providerDiagnostics(context.tenantId):[],owner:this.role(context)==="owner"});
         }
         if(request.method!=="POST")return sendJson(response,405,{message:"Use GET or POST"});requireSameOrigin(request);const body=await readJsonBody(request);
-        if(body.action==="checkin")return sendJson(response,200,this.community.checkin(context.tenantId,this.actor(context).id,String(body.partnerId??""),"web",String(body.requestId??"")));
+        if(body.action==="checkin"){
+          if(!this.economy||!this.client)throw new Error("Check-in runtime is unavailable");
+          return sendJson(response,200,await new StreamWeaverCommunityRuntime(this.community,this.economy,this.client,this.operationMode==="active",this.operationMode==="active").checkin({tenantId:context.tenantId,actorId:this.actor(context).id,linked:true,partnerId:String(body.partnerId??""),source:"web",requestId:String(body.requestId??""),currency:body.currency==="spmt"?"spmt":"streamer",...(body.maxSpmtCost===undefined?{}:{maxSpmtCost:Number(body.maxSpmtCost)})}));
+        }
         if(body.action==="redeem-request"){
           if(!this.client||!this.economy)throw new Error("Reward runtime is not configured");
           const currency=body.currency==="spmt"?"spmt":"streamer";

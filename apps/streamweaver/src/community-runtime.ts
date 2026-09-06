@@ -6,16 +6,31 @@ import type { SqliteStreamWeaverEconomyStore } from "./economy.js";
 import { StreamWeaverCommunityStore } from "./community-store.js";
 
 export class StreamWeaverCommunityRuntime {
-  constructor(private readonly store:StreamWeaverCommunityStore,private readonly economy:SqliteStreamWeaverEconomyStore,private readonly client:SpmtClient,private readonly allowAssistant:boolean){}
+  constructor(private readonly store:StreamWeaverCommunityStore,private readonly economy:SqliteStreamWeaverEconomyStore,private readonly client:SpmtClient,private readonly allowAssistant:boolean,private readonly allowSpmtPayments=true){}
   watchtime(invocation:StreamWeaverDonorCommandInvocationV1){
     if(invocation.canonicalTrigger==="!wleader")return this.store.watchLeaders(invocation.tenantId).map((r,i)=>`${i+1}. ${r.username}: ${r.minutes} minutes`).join(" | ")||"No watch time recorded yet.";
     const value=this.store.watchtime(invocation.tenantId,invocation.provider,invocation.actor.providerUserId);return `${invocation.actor.displayName}: ${Number(value.minutes)} minutes recorded in this stream's live chat.`;
   }
-  community(invocation:StreamWeaverDonorCommandInvocationV1){
-    if(invocation.canonicalTrigger==="!checkin"){const result=this.store.checkin(invocation.tenantId,invocation.actor.userId??`${invocation.provider}:${invocation.actor.providerUserId}`,invocation.args[0]??"",invocation.provider,invocation.deliveryId);return `${invocation.actor.displayName} checked in with ${result.partner.name} (${result.userTotal} total). ${result.partner.inviteUrl}`;}
+  async community(invocation:StreamWeaverDonorCommandInvocationV1){
+    if(invocation.canonicalTrigger==="!checkin"){
+      if(!invocation.args[0])return this.store.partners(invocation.tenantId).map(p=>`${p.id}: ${p.name}${p.rewardId?" (reward-priced)":""}`).join(" | ")||"The streamer has not configured check-ins.";
+      const result=await this.checkin({tenantId:invocation.tenantId,actorId:invocation.actor.userId??`${invocation.provider}:${invocation.actor.providerUserId}`,linked:!!invocation.actor.userId,partnerId:invocation.args[0],source:invocation.provider,requestId:invocation.deliveryId,currency:invocation.args[1]==="spmt"?"spmt":"streamer",...(invocation.args[2]?{maxSpmtCost:Number(invocation.args[2])}:{})});return result.text;
+    }
     if(invocation.canonicalTrigger==="!time")return new Date().toISOString();
     if(invocation.canonicalTrigger==="!stats")return this.watchtime(invocation);
     return undefined;
+  }
+  async checkin(input:{tenantId:string;actorId:string;linked:boolean;partnerId:string;source:string;requestId:string;currency:"streamer"|"spmt";maxSpmtCost?:number}){
+    if(input.currency==="spmt"&&!this.allowSpmtPayments)throw new Error("SPMT payments are disabled in this environment");
+    const attempt=this.store.prepareCheckin(input.tenantId,input.actorId,input.partnerId,input.source,input.requestId,input.currency);
+    if(attempt.reward){
+      if(!input.linked)throw new Error("Link your account before using a reward-priced check-in");
+      const requestId="checkin:"+createHash("sha256").update(input.requestId).digest("hex");
+      const payment=await new StreamWeaverRewardRuntime(this.economy,this.client).redeem({tenantId:input.tenantId,userId:input.actorId,requestId,reward:attempt.reward,streamSession:attempt.streamSession,currency:input.currency,...(input.maxSpmtCost===undefined?{}:{maxSpmtCost:input.maxSpmtCost})});
+      if(payment.state!=="complete")return {state:payment.state,text:`Check-in declined: ${payment.message}`,message:payment.message};
+    }
+    const result=this.store.checkin(input.tenantId,input.actorId,input.partnerId,input.source,input.requestId);
+    return {...result,state:"complete" as const,text:`Checked in with ${result.partner.name} (${result.userTotal} total). ${result.partner.inviteUrl}`};
   }
   async redeem(invocation:StreamWeaverDonorCommandInvocationV1){
     const args=[...invocation.args],rewardId=invocation.canonicalTrigger==="!redeem"?(args.shift()??""):invocation.canonicalTrigger.replace(/^!/,"");
@@ -25,8 +40,10 @@ export class StreamWeaverCommunityRuntime {
   async redeemReward(input:{tenantId:string;requestId:string;rewardId:string;userId:string;displayName:string;currency:"streamer"|"spmt";maxSpmtCost?:number}){
     const reward=this.store.redeems(input.tenantId).find(r=>r.id===input.rewardId);
     if(!reward)throw new Error("This reward has not been configured by the streamer");
+    const target=this.store.bindRewardCheckin(input.tenantId,input.userId,reward.id,input.requestId);
     const result=await new StreamWeaverRewardRuntime(this.economy,this.client).redeem({...input,reward,streamSession:this.store.settings(input.tenantId).welcomeSession});
-    const text=result.presentation.text.replaceAll("{user}",input.displayName);
+    let text=result.presentation.text.replaceAll("{user}",input.displayName);
+    if(result.state==="complete"&&target.partner){const checkin=this.store.checkin(input.tenantId,input.userId,target.partner.id,"reward","reward:"+createHash("sha256").update(input.requestId).digest("hex"),target.partner);text+=` Checked in with ${checkin.partner.name} (${checkin.userTotal} total). ${checkin.partner.inviteUrl}`;}
     if(result.state==="complete")this.store.enqueue(input.tenantId,`redeem:${input.requestId}`,"streamweaver.redeem.presentation.v1",{...result.presentation,text,displayName:input.displayName,currency:result.currency,cost:result.cost,localAward:result.localAward});
     return {...result,text};
   }

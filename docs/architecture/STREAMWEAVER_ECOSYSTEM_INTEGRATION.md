@@ -116,4 +116,10 @@ Owner-only DSH `GET /api/discord-stream-hub/control/checkin-members` validates t
 
 StreamWeaver’s owner UI verifies the returned workspace before submitting the roster to owner-only, same-origin `POST /api/streamweaver/control/checkin-role` (3 MiB maximum). This is owner-curated display data, not canonical identity or role authorization. A SQLite transaction validates all member IDs and replaces only that guild/role/group snapshot, preserving existing invitation overrides. Manual entries and other tenants are untouched. Refresh is explicit. Imported Discord IDs never create canonical XP wallets or authorize privileged commands.
 
-Check-in redelivery validates actor, partner and source against the saved request and returns its durable outbox outcome, preserving original totals and partner details after later changes or removal. Remaining bulk/front-seat/greeting and reward-flow parity stays open.
+Check-in redelivery validates actor, partner and source against the saved request and returns its durable outbox outcome, preserving original totals and partner details after later changes or removal. Remaining bulk/front-seat and AI/spoken greeting parity stays open.
+
+### Reward-backed check-ins
+
+A partner’s optional `rewardId` binds one configured reward. Owner writes reject ambiguous reuse across partners; roster refresh preserves bindings. Direct web/chat check-ins freeze their partner/reward/session before using the existing reward settlement runtime. A completed settlement precedes check-in recording; a stable payment key permits recovery between those operations. No extra XP issuance or wallet conversion is introduced. SPMT requires an explicit maximum price and is disabled for read-only/simulation check-in execution.
+
+Normal reward and Twitch EventSub redemption paths freeze the optional check-in target before settlement and record it only on completion, using a distinct durable check-in key. Historic free check-ins replay without retroactive charging. Local insufficient-funds and first-claim rejections produce no check-in, while ambiguous SPMT transport failures retain the original quote and settlement key. Offline coverage includes crash-after-payment recovery, changed local supply during retry, first-claim awards, target removal and historical replay.

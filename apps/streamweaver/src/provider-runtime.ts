@@ -116,7 +116,7 @@ export class StreamWeaverProviderRuntime {
     if(grants){this.twitch=new StreamWeaverTwitchCommandAdapter(grants,options.providerFetch);if(options.allowProviderWrites===true)this.eventsub=new StreamWeaverTwitchEventSub(options.databasePath,grants,options.providerFetch);}
     if(this.twitch&&options.allowProviderWrites===true)this.presentation=new StreamWeaverPresentationRuntime({store:this.community,shoutoutStore:this.shoutoutStore,twitch:this.twitch,client:options.client,personas:this.settings,connections:options.connections??[],egress:options.egress});
     this.messageObservers.push({id:"streamweaver.welcome",observe:message=>{if(message.provider==="twitch"&&!message.actor.isBot&&!STREAMWEAVER_KNOWN_BOTS.has(message.actor.username.toLowerCase()))this.community.welcome(message.tenantId,message.provider,message.actor.providerUserId,message.actor.displayName??message.actor.username,message.actor.username);}});
-    const community=new StreamWeaverCommunityRuntime(this.community,this.economy,options.client,options.allowAssistant!==false);
+    const community=new StreamWeaverCommunityRuntime(this.community,this.economy,options.client,options.allowAssistant!==false,options.simulation!==true&&options.allowProviderWrites===true);
     const services = new DefaultStreamWeaverDonorCommandServices({
       watchtime:{execute:i=>community.watchtime(i)},community:{execute:i=>community.community(i)},redeems:{execute:i=>community.redeem(i)},translation:community,
       ...(this.twitch?{twitch:this.twitch}:{}),
