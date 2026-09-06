@@ -3,6 +3,7 @@ import { SPMT_SUITE_ACTION_CATALOG } from "@spmt/contracts";
 import type { StreamWeaverBotActionExecutorV1, StreamWeaverBotActorRoleV1 } from "./bot-action-runtime.js";
 import type { StreamWeaverCommandStateV1 } from "./command-router.js";
 import { assertStreamWeaverFlowRunnable, StreamWeaverFlowPackageStore, type StreamWeaverFlowActionV1, type StreamWeaverFlowPackageV1, type StreamWeaverFlowCommandV1 } from "./flow-packages.js";
+import { renderFlowCodeExpression } from "./flow-code.js";
 
 export interface StreamWeaverNativeFlowExecutorV1 { execute(donorId: string, delivery: NormalizedChatDeliveryV1): Promise<string | undefined>; }
 export interface StreamWeaverFlowServicesV1 {
@@ -61,7 +62,6 @@ export class StreamWeaverInstalledFlowConsumer {
       run={delivery:structuredClone(delivery),package:structuredClone(match.package),command:structuredClone(match.command),state:"running",variables:this.packages.variables(tenantId,match.package.packageId),queue:roots(match.command),visited:[],steps:[],replies:[],results:{},cooldownKey,occurredAt:new Date(this.nowMs()).toISOString()};
       this.save(run);this.state.putCooldown(cooldownKey,this.nowMs());this.state.putCooldown(globalKey,this.nowMs());
     }
-    // Use the captured input and package even if the incoming retry or installed draft has changed.
     delivery=run.delivery;run.state="running";delete run.error;
     try{
       while(run.queue.length){
@@ -70,9 +70,7 @@ export class StreamWeaverInstalledFlowConsumer {
         let result=Object.hasOwn(run.results,id)?run.results[id]:undefined;
         if(!result){
           result=action.enabled?await this.step(action,delivery,run,false):{text:"",output:"",outcome:action.type==="condition"?"false":"success"};
-          run.results[id]=result;
-          // Save the produced result before chat delivery. A network retry uses its stable delivery key.
-          this.save(run);
+          run.results[id]=result;this.save(run);
         }
         if(result.text){await this.send(delivery,result.text,id);run.replies.push(result.text);}
         if(result.output){run.variables.lastOutput=result.output;if(action.config.saveAs)run.variables[String(action.config.saveAs)]=result.output;}
@@ -190,13 +188,16 @@ function roots(command:StreamWeaverFlowCommandV1){return command.actionIds.slice
 function successors(command:StreamWeaverFlowCommandV1,id:string,outcome:Outcome){if(command.edges!==undefined)return command.edges.filter(e=>e.source===id&&(!e.outcome||e.outcome===outcome)).map(e=>e.target);const next=command.actionIds[command.actionIds.indexOf(id)+1];return next?[next]:[];}
 export function renderFlowTemplate(value:string,message:NormalizedChatMessageV1,variables:Record<string,string>){
   const args=message.text.trim().split(/\s+/).slice(1),tags:Record<string,string>={"display-name":message.actor.displayName??message.actor.username,username:message.actor.username,"user-id":message.actor.canonicalUserId??message.actor.providerUserId};
-  return value.replaceAll("%userName%",tags["display-name"]!).replaceAll("%user%",message.actor.username).replaceAll("%message%",message.text).replaceAll("%rawInput%",message.text).replaceAll("%args%",args.join(" ")).replaceAll("%targetUser%",message.mentions[0]?.username??"").replace(/\{\{\s*([^}]+?)\s*\}\}/g,(_,token:string)=>{
+  const rendered=value.replace(/\{\{\s*([^}]+?)\s*\}\}/g,(_,rawToken:string)=>{
+    const token=rawToken.trim();
+    if(token.startsWith("="))return renderFlowCodeExpression(token.slice(1),{message:message.text,args,userName:tags["display-name"]!,user:message.actor.username,targetUser:message.mentions[0]?.username??"",lastOutput:variables.lastOutput??"",vars:variables});
     const path=token.replace(/\[['"]?([^\]'" ]+)['"]?\]/g,".$1").split(".");
     if(path[0]==="args")return path.length===1?args.join(" "):args[Number(path[1])]??"";
     if(path[0]==="tags")return tags[path[1]!]??"";
     if(path[0]==="vars")return Object.hasOwn(variables,path[1]!)?variables[path[1]!]??"":"";
     return Object.hasOwn(variables,token)?variables[token]??"":"";
-  }).slice(0,16000);
+  });
+  return rendered.replaceAll("%userName%",tags["display-name"]!).replaceAll("%user%",message.actor.username).replaceAll("%message%",message.text).replaceAll("%rawInput%",message.text).replaceAll("%args%",args.join(" ")).replaceAll("%targetUser%",message.mentions[0]?.username??"").slice(0,16000);
 }
 function actorRole(message:NormalizedChatMessageV1):StreamWeaverBotActorRoleV1{return message.actor.roles.includes("broadcaster")?"owner":message.actor.roles.includes("moderator")?"moderator":message.actor.roles.includes("member")?"member":"guest";}
 function roleLevel(role:StreamWeaverBotActorRoleV1){return {guest:0,member:1,moderator:2,admin:3,owner:4}[role];}

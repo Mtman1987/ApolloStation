@@ -13,7 +13,9 @@ import { DefaultStreamWeaverDonorCommandServices } from "./donor-command-service
 import { DEFAULT_STREAMWEAVER_GAMBLE_SETTINGS, SqliteStreamWeaverEconomyStore, StreamWeaverEconomy } from "./economy.js";
 import { StreamWeaverInstalledFlowConsumer } from "./flow-runtime.js";
 import { StreamWeaverPersonaSettingsStore } from "./persona-settings.js";
-import { StreamWeaverFlowPackageStore, normalizeFlowPackage } from "./flow-packages.js";
+import { StreamWeaverFlowPackageStore, assertStreamWeaverFlowRunnable, normalizeFlowPackage } from "./flow-packages.js";
+import { assertFlowCodeValue } from "./flow-code.js";
+import { buildStreamWeaverAiFlowPrompt, buildStreamWeaverAiFlowRepairPrompt, STREAMWEAVER_AI_FLOW_IDEA_LIMIT, STREAMWEAVER_AI_FLOW_REPAIR_LIMIT } from "./flow-ai-builder.js";
 import { StreamWeaverRuntimeSettingsStore } from "./runtime-settings.js";
 import { SqliteStreamWeaverBotRelayStore } from "./bot-relay.js";
 
@@ -102,7 +104,7 @@ export class StreamWeaverWebControls {
       if (url.pathname === "/api/streamweaver/control/flows/approve") return this.approveFlow(response, context, body);
       if (url.pathname === "/api/streamweaver/control/flows/publish") return this.publishFlow(response, context, body);
       if (url.pathname === "/api/streamweaver/control/flows/preview") return await this.previewFlow(response, context, body);
-      if (url.pathname === "/api/streamweaver/control/flows/ai") return await this.requestAiFlow(response, context, body);
+      if (url.pathname === "/api/streamweaver/control/flows/ai") return await this.requestAiFlow(request, response, context, body);
       if (url.pathname === "/api/streamweaver/control/flows/ai/complete") return await this.completeAiFlow(response, context, body);
       if (url.pathname === "/api/streamweaver/control/persona") return this.updatePersona(response, context, body);
       if(url.pathname==="/api/streamweaver/control/economy/bulk"){
@@ -214,22 +216,38 @@ export class StreamWeaverWebControls {
     return sendJson(response,200,{schemaVersion:1,roomId,packageId,command:preview.command,input:messageText,outputs:preview.outputs,events:[inputEvent,...events]});
   }
 
-  private async requestAiFlow(response: ServerResponse, context: SessionContext, body: Record<string, unknown>) {
+  private async requestAiFlow(request: IncomingMessage, response: ServerResponse, context: SessionContext, body: Record<string, unknown>) {
     if (this.operationMode === "read-only") return sendJson(response, 200, { schemaVersion: 1, status: "blocked", reason: "Live-read mode accepts incoming data but does not send an AI request." });
-    const idea=text(body.idea,"idea",4_000),client=this.requireClient(),userId=String(context.session.actorId??"");
-    const prompt=["You are the StreamWeaver flow builder inside the SPMT developer platform.","Return one strict JSON object only. Do not use markdown.","Build exactly one uninstalled, reviewable StreamWeaver flow package. One package is one independently importable feature, but it may include the primary command plus only the required or optional add-on commands that make that feature work. Never return an unrelated command library.","Use kind streamweaver.flow-package, schemaVersion 1, installUnit flow, visibility private, commands[], actions[].",'Supported action types: send-chat, send-discord, wait, run-action, run-native, set-variable.',"For cross-app work use run-action with config.action and config.args so SPMT can route it to the app that registered the typed capability. Do not reimplement built-in AI or economy features.","Do not invent overlay, HTTP, code, or OBS steps. Overlay Bay owns Public/Personal composition.","Exactly one command must have role=primary and required=true. Add-on commands use role=addon. Every command must include id, trigger, aliases, role, required, actionIds, family, cooldownSeconds, matcher, runtime=flow, enabled=true. Every action must have id, type, enabled=true, config. These flags describe intended behavior; saving the draft does not install it. Use enabled=false only for a deliberately disabled command or step. Every actionId must reference an action in this package and no action may be orphaned.",`User request: ${idea}`].join("\n");
-    const result=await client.invokeCommunityAssistant(context.tenantId,{userId,message:prompt,surface:"app",conversationId:`streamweaver:flow-builder:${userId}`,routingPreference:"automatic",remember:false},idempotency(body.idempotencyKey,"streamweaver-flow-ai"));
-    return sendJson(response,result.status==="accepted"?202:503,{...result,kind:"flow-builder"});
+    const idea=text(body.idea,"idea",STREAMWEAVER_AI_FLOW_IDEA_LIMIT),client=this.requireClient(),userId=String(context.session.actorId??"");
+    let devices:unknown[]=[];
+    try { const value=await this.deviceApi(request,context); if(Array.isArray(value))devices=value; } catch { /* Device setup is optional; unregistered devices must not be invented. */ }
+    const connections=(this.options.connections??[]).filter(item=>item.tenantId===context.tenantId&&item.desired);
+    const prompt=buildStreamWeaverAiFlowPrompt(idea,{devices,connections});
+    const result=await client.invokeCommunityAssistant(context.tenantId,{userId,message:prompt,surface:"developer",conversationId:`streamweaver:flow-coder:${userId}`,routingPreference:"automatic",remember:false},idempotency(body.idempotencyKey,"streamweaver-flow-ai"));
+    return sendJson(response,result.status==="accepted"?202:503,{...result,kind:"flow-builder",toolCatalog:"apollo-streamweaver"});
   }
 
   private async completeAiFlow(response: ServerResponse, context: SessionContext, body: Record<string, unknown>) {
     const jobId=identifier(body.jobId,"jobId"),job=await this.requireClient().getExecutionJob(context.tenantId,jobId),userId=String(context.session.actorId??"");
     if (job.billedUserId!==userId) throw new Error("AI flow job is not visible to this user");
     if (job.state!=="succeeded") return sendJson(response,202,{schemaVersion:1,state:job.state,jobId});
-    const result=record(job.result),raw=String(result?.text??record(result?.output)?.text??""),parsed=parseJsonObject(raw),candidate=record(record(parsed)?.package)??parsed;
-    const normalized=normalizeFlowPackage(candidate,{now:new Date().toISOString(),author:this.actor(context),visibility:"private"});
-    const saved=this.requireFlows().saveDraft(context.tenantId,normalized,this.actor(context));
-    return sendJson(response,200,{schemaVersion:1,state:"succeeded",package:saved});
+    const result=record(job.result),raw=String(result?.text??record(result?.output)?.text??"");
+    try {
+      const parsed=parseJsonObject(raw),candidate=record(record(parsed)?.package)??parsed;
+      const normalized=normalizeFlowPackage(candidate,{now:new Date().toISOString(),author:this.actor(context),visibility:"private"});
+      for(const action of normalized.actions)assertFlowCodeValue(action.config);
+      assertStreamWeaverFlowRunnable(normalized);
+      const saved=this.requireFlows().saveDraft(context.tenantId,normalized,this.actor(context));
+      return sendJson(response,200,{schemaVersion:1,state:"succeeded",package:saved,validated:true,repairAttempts:integer(body.repairAttempt??0,0,STREAMWEAVER_AI_FLOW_REPAIR_LIMIT,"repairAttempt")});
+    } catch(error) {
+      const repairAttempt=integer(body.repairAttempt??0,0,STREAMWEAVER_AI_FLOW_REPAIR_LIMIT,"repairAttempt");
+      if(repairAttempt>=STREAMWEAVER_AI_FLOW_REPAIR_LIMIT)throw new Error(`Stellar could not produce a runnable flow after ${repairAttempt+1} drafts: ${safeError(error)}`);
+      const original=String(record(job.input)?.message??"");
+      if(!original)throw error;
+      const retry=await this.requireClient().invokeCommunityAssistant(context.tenantId,{userId,message:buildStreamWeaverAiFlowRepairPrompt(original,raw,error),surface:"developer",conversationId:`streamweaver:flow-coder:${userId}:repair`,routingPreference:"automatic",remember:false},`streamweaver-flow-ai-repair:${jobId}:${repairAttempt+1}`);
+      if(retry.status!=="accepted")throw new Error(retry.reason);
+      return sendJson(response,202,{schemaVersion:1,state:"repairing",jobId:retry.jobId,repairAttempt:repairAttempt+1,reason:safeError(error)});
+    }
   }
 
   private async voice(response: ServerResponse, context: SessionContext, body: Record<string, unknown>) {
