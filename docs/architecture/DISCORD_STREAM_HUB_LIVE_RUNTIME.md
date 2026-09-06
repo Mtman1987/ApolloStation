@@ -44,3 +44,49 @@ The public runtime configuration is not app state and contains no credential. Pr
 The normal Sprite cohort starts DSH with `config/discord-stream-hub-runtime.sandbox.v1.json`, which contains zero tenants by default. Sandbox validation requires outbound mode disabled plus sandbox-named SQLite and configuration files. A configured tenant is accepted only when `SPMT_LIVE_INGRESS_MODE=enabled`; Twitch reads and Discord server/channel reads then remain live while every Discord mutation is captured in tenant-scoped Simulation Rooms.
 
 Moving the route from `shadow` to Green primary still requires reconciled tenant/member/provider-account configuration, installed DSH scopes, controlled two-tenant Twitch/Discord proof, restart and reauthorization drills, Discord owner acceptance, and rollback evidence. The clip worker and donor media migration are separate later capabilities.
+
+## 6 September 2026: shoutout presentation and app controls
+
+The app consumes the existing shared community feed without dropping its avatar,
+image/GIF, video, banner, original Discord-message URL, description or timestamps.
+Its streamer cards restore the donor's avatar/title, media, personal copy and
+Viewers/Game/Updated layout, including the wide spotlight/VIP card. Playback uses
+the actual saved video or a Twitch clip/live player with the current parent host.
+Small containers scale a player with Twitch's minimum dimensions. Refresh updates
+stats/copy in place and retains an active player. Missing stats remain unknown.
+
+Owner generation requests validate the creator and event against the shared feed,
+then use Stellar Core through SPMT. SQLite retains request/job state, prompts,
+previous messages and normalized message fingerprints. Refresh/retry reuses the
+same request; a new generation has its own request. Repeated output retries with
+a changed prompt, then reports a failure rather than presenting repeated copy as
+fresh. Generation uses public stream facts with conversation memory disabled.
+It does not replace the established Discord embed descriptions.
+
+The native publisher and explicit shoutout action now share the five original
+`DiscordStreamHub@d97af86` tier payloads: cyan Crew, purple Partners, orange Honored
+Guests, Twitch-purple Community, and teal Raid Pile. Crew retains a separate
+banner embed when supplied; Partners retain their link buttons. Runtime branding
+accepts `embedTemplates` overrides for the donor's crew/partners/community fields,
+and members accept `bannerUrl` and `partnerDiscordUrl`. Twitch profile images are
+looked up separately from stream thumbnails. Spotlight no longer rewrites a
+member's tier footer. Manual app posting uses the durable suite-action queue and
+the existing simulation transport in outbound-disabled mode.
+
+The original deployed DSH service and its saved live templates/media are not
+modified by this release. The native clip library/capture migration remains the
+separate capability described above; no GIF URL is fabricated into an MP4 URL.
+Custom live template values must be supplied in runtime branding for native
+outbound parity. This release verifies the original source defaults and configured
+overrides, not unseen live database values or authenticated phone rendering.
+
+Validation: 819 repository tests pass, including canonical media retention,
+authenticated generation/post routing, owner and source validation, all five tier
+payloads, restart-safe generation and duplicate rejection. A DOM execution check
+also verifies that stat/message refresh retains the same playing video element.
+
+The same release includes the concurrent Commlink/named-room changes. A creator
+from the shared feed can be previewed directly into a selected owned shadow room,
+without adding a Discord provider account or tracked-member configuration. The
+original tier payload and receipt are frozen per request so retries do not create
+duplicate room events. Real Discord posting retains the durable worker route.

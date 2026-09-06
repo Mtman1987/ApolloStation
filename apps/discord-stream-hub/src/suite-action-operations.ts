@@ -1,3 +1,4 @@
+import { buildDshTierShoutout, dshStreamShoutout } from "./shoutout-presentation.js";
 import { DshCalendarDelivery } from "./calendar-delivery.js";
 import { buildDshPublicApplicationEmbed } from "./application-flow.js";
 import { SqliteDshApplicationStore } from "./applications.js";
@@ -18,7 +19,10 @@ export class DshSuiteActionOperations implements DshBotActionOperationsV1 {
   async postShoutout(input: DshBotActionRequestV1) {
     const tenant = this.tenant(input.tenantId), target = required(input.args.target, "target").replace(/^@/, "").toLowerCase(), member = tenant.members.find((item) => item.twitchLogin.toLowerCase() === target || item.canonicalUserId.toLowerCase() === target);
     if (!member) throw new Error("Choose a tracked DSH member for the shoutout");
-    const channelId = await this.channel(input, member.shoutoutChannelId), messageId = await this.discord(input).createMessage(input.tenantId, channelId, { embeds: [{ title: `📣 Shoutout to ${member.twitchLogin}`, description: `Go show them some love at https://twitch.tv/${member.twitchLogin}`, url: `https://twitch.tv/${member.twitchLogin}`, color: 0x9146ff, footer: { text: `${member.group} · Discord Stream Hub` }, timestamp: this.now() }], allowed_mentions: { parse: [] } });
+    const stream=this.options.monitor.getLiveStream(input.tenantId,member.canonicalUserId);
+    if(!stream)throw new Error("This creator has no current live stream snapshot. Wait for the live feed to refresh.");
+    const payload=buildDshTierShoutout(dshStreamShoutout(member,stream),{...(tenant.branding.embedTemplates?{templates:tenant.branding.embedTemplates}:{}),timestamp:this.now()});
+    const channelId = await this.channel(input, member.shoutoutChannelId), messageId = await this.discord(input).createMessage(input.tenantId, channelId, payload);
     return { text: `Posted a shoutout for ${member.twitchLogin}.`, channelId, messageId };
   }
   async deleteMessage(input: DshBotActionRequestV1) { const channelId = snowflake(input.args.channelId, "channelId"), messageId = snowflake(input.args.messageId, "messageId"); await this.discord(input).deleteMessage(input.tenantId, channelId, messageId); return { text: input.simulation ? "Previewed the Discord message deletion in Simulation Rooms." : "Deleted the Discord message.", channelId, messageId }; }

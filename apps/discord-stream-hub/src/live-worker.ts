@@ -1,3 +1,4 @@
+import { dshEmbedTemplateOverrides, dshHttps, type DshEmbedTemplates } from "./shoutout-presentation.js";
 import { DshNebulaMediaWorker } from "./nebula-media-worker.js";
 import { DshCalendarDelivery } from "./calendar-delivery.js";
 import { DshCalendarSync } from "./calendar-sync.js";
@@ -26,7 +27,7 @@ export interface DshLiveRuntimeTenantV1 {
   twitchProviderUserId: string;
   discordProviderUserId: string;
   discordGuildIds?: string[];
-  branding: { communityMemberName: string; spotlightChannelId?: string; onboardingCustomId?: string };
+  branding: { communityMemberName: string; spotlightChannelId?: string; onboardingCustomId?: string; embedTemplates?: DshEmbedTemplates };
   members: DshLiveMemberV1[];
 }
 
@@ -254,7 +255,8 @@ function validateRuntimeConfig(value: unknown): DshLiveRuntimeConfigV1 {
     if (tenantIds.has(tenantId)) throw new Error("DSH runtime config contains a duplicate tenant");
     tenantIds.add(tenantId);
     const brand = record(tenant.branding, "branding");
-    exactKeys(brand, ["communityMemberName", "spotlightChannelId", "onboardingCustomId"], "branding");
+    exactKeys(brand, ["communityMemberName", "spotlightChannelId", "onboardingCustomId", "embedTemplates"], "branding");
+    const embedTemplates=dshEmbedTemplateOverrides(brand.embedTemplates);
     const communityMemberName = boundedText(brand.communityMemberName, "communityMemberName", 100);
     const spotlightChannelId = brand.spotlightChannelId === undefined ? undefined : snowflake(brand.spotlightChannelId, "spotlightChannelId");
     const onboardingCustomId = brand.onboardingCustomId === undefined ? undefined : boundedText(brand.onboardingCustomId, "onboardingCustomId", 100);
@@ -262,13 +264,14 @@ function validateRuntimeConfig(value: unknown): DshLiveRuntimeConfigV1 {
     const users = new Set<string>(), logins = new Set<string>();
     const members = tenant.members.map((memberValue, memberIndex) => {
       const member = record(memberValue, `members[${memberIndex}]`);
-      exactKeys(member, ["canonicalUserId", "discordUserId", "twitchLogin", "group", "shoutoutChannelId"], `members[${memberIndex}]`);
+      exactKeys(member, ["canonicalUserId", "discordUserId", "twitchLogin", "group", "shoutoutChannelId", "bannerUrl", "partnerDiscordUrl"], `members[${memberIndex}]`);
       const normalized: DshLiveMemberV1 = { canonicalUserId: identifier(member.canonicalUserId, "canonicalUserId"), discordUserId: snowflake(member.discordUserId, "discordUserId"), twitchLogin: twitchLogin(member.twitchLogin), group: memberGroup(member.group), shoutoutChannelId: snowflake(member.shoutoutChannelId, "shoutoutChannelId") };
+      for(const field of ['bannerUrl','partnerDiscordUrl'] as const)if(member[field]!==undefined){const url=dshHttps(member[field]);if(!url)throw new Error(`${field} must be a credential-free HTTPS URL`);normalized[field]=url;}
       if (users.has(normalized.canonicalUserId) || logins.has(normalized.twitchLogin)) throw new Error("DSH tenant members must have unique canonical users and Twitch logins");
       users.add(normalized.canonicalUserId); logins.add(normalized.twitchLogin); return normalized;
     });
     const discordGuildIds = tenant.discordGuildIds === undefined ? undefined : (() => { if (!Array.isArray(tenant.discordGuildIds) || tenant.discordGuildIds.length > 100) throw new Error("discordGuildIds must be an array of at most 100 Discord ids"); const values = [...new Set(tenant.discordGuildIds.map((value) => snowflake(value, "discordGuildId")))]; return values; })();
-    return { tenantId, twitchProviderUserId: identifier(tenant.twitchProviderUserId, "twitchProviderUserId"), discordProviderUserId: identifier(tenant.discordProviderUserId, "discordProviderUserId"), ...(discordGuildIds ? { discordGuildIds } : {}), branding: { communityMemberName, ...(spotlightChannelId ? { spotlightChannelId } : {}), ...(onboardingCustomId ? { onboardingCustomId } : {}) }, members };
+    return { tenantId, twitchProviderUserId: identifier(tenant.twitchProviderUserId, "twitchProviderUserId"), discordProviderUserId: identifier(tenant.discordProviderUserId, "discordProviderUserId"), ...(discordGuildIds ? { discordGuildIds } : {}), branding: { communityMemberName, ...(embedTemplates?{embedTemplates}:{}), ...(spotlightChannelId ? { spotlightChannelId } : {}), ...(onboardingCustomId ? { onboardingCustomId } : {}) }, members };
   });
   return { schemaVersion: 1, pollIntervalSeconds: Number(root.pollIntervalSeconds), tenants };
 }

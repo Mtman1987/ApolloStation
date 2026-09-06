@@ -56,7 +56,7 @@ test("SPMT grants the DSH worker provider grants, Simulation Room events, jobs, 
   await service.listen();
   try {
     const token = service.auth.issueServiceAccess("discord-stream-hub", credential).accessToken;
-    for (const scope of ["providers:grant", "events:write", "runtime:write"]) assert.equal(service.auth.authorize(token, scope, "tenant-a").actorId, "discord-stream-hub");
+    for (const scope of ["providers:grant", "events:read", "events:write", "runtime:write", "assistants:invoke", "jobs:write", "jobs:read"]) assert.equal(service.auth.authorize(token, scope, "tenant-a").actorId, "discord-stream-hub");
     for (const scope of ["identity:write", "xp:write", "commlink:live:write"]) assert.throws(() => service.auth.authorize(token, scope, "tenant-a"), /scope/i);
     assert.throws(() => service.auth.issueServiceAccess("discord-stream-hub", "wrong-credential-with-enough-characters-123"), /credential/i);
   } finally { await service.close(); rmSync(dir, { recursive: true, force: true }); }

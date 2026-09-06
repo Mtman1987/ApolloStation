@@ -9,6 +9,8 @@ export interface DshLiveMemberV1 {
   twitchLogin: string;
   group: DshMemberGroupV1;
   shoutoutChannelId: string;
+  bannerUrl?: string;
+  partnerDiscordUrl?: string;
 }
 
 export interface DshTwitchStreamV1 {
@@ -19,6 +21,7 @@ export interface DshTwitchStreamV1 {
   gameName: string;
   viewerCount: number;
   thumbnailUrl: string;
+  avatarUrl?: string;
   startedAt: string;
 }
 
@@ -79,7 +82,7 @@ export class SqliteDshLiveMonitor {
           const type = prior?.live ? "shoutout.update" : "shoutout.create";
           const actionVersion = type === "shoutout.create" ? stream.twitchStreamId : poll.pollId;
           actions.push({ schemaVersion: 1, type, idempotencyKey: "dsh:" + type + ":" + poll.tenantId + ":" + member.canonicalUserId + ":" + actionVersion, tenantId: poll.tenantId, member, stream });
-          this.putMemberState(poll.tenantId, member, true, stream.twitchStreamId, poll.observedAt);
+          this.putMemberState(poll.tenantId, member, true, stream.twitchStreamId, poll.observedAt, stream);
         } else {
           if (prior?.live && prior.streamId) actions.push({ schemaVersion: 1, type: "shoutout.remove", idempotencyKey: "dsh:shoutout.remove:" + poll.tenantId + ":" + member.canonicalUserId + ":" + prior.streamId, tenantId: poll.tenantId, member, priorStreamId: prior.streamId });
           this.putMemberState(poll.tenantId, member, false, undefined, poll.observedAt);
@@ -111,6 +114,12 @@ export class SqliteDshLiveMonitor {
     return rows.map((row) => (JSON.parse(row.body) as { member: DshLiveMemberV1 }).member);
   }
 
+  getLiveStream(tenantId: string, userId: string): DshTwitchStreamV1 | undefined {
+    requireId(tenantId, "tenantId"); requireId(userId, "userId");
+    const row=this.db.prepare("SELECT body FROM live_members WHERE tenant_id=? AND user_id=? AND is_live=1").get(tenantId,userId) as {body:string}|undefined;
+    return row ? (JSON.parse(row.body) as {stream?:DshTwitchStreamV1}).stream : undefined;
+  }
+
   listPendingActions(tenantId: string, limit = 100): PendingDshLiveActionV1[] {
     requireId(tenantId, "tenantId");
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 500) throw new Error("limit must be from 1 to 500");
@@ -124,8 +133,8 @@ export class SqliteDshLiveMonitor {
     const row = this.db.prepare("SELECT is_live,stream_id FROM live_members WHERE tenant_id=? AND user_id=?").get(tenantId, userId) as { is_live: number; stream_id: string | null } | undefined;
     return row ? { live: row.is_live === 1, ...(row.stream_id ? { streamId: row.stream_id } : {}) } : undefined;
   }
-  private putMemberState(tenantId: string, member: DshLiveMemberV1, live: boolean, streamId: string | undefined, observedAt: string): void {
-    this.db.prepare("INSERT INTO live_members(tenant_id,user_id,twitch_login,is_live,stream_id,observed_at,body) VALUES(?,?,?,?,?,?,?) ON CONFLICT(tenant_id,user_id) DO UPDATE SET twitch_login=excluded.twitch_login,is_live=excluded.is_live,stream_id=excluded.stream_id,observed_at=excluded.observed_at,body=excluded.body").run(tenantId, member.canonicalUserId, member.twitchLogin.toLowerCase(), live ? 1 : 0, streamId ?? null, observedAt, JSON.stringify({ member }));
+  private putMemberState(tenantId: string, member: DshLiveMemberV1, live: boolean, streamId: string | undefined, observedAt: string, stream?: DshTwitchStreamV1): void {
+    this.db.prepare("INSERT INTO live_members(tenant_id,user_id,twitch_login,is_live,stream_id,observed_at,body) VALUES(?,?,?,?,?,?,?) ON CONFLICT(tenant_id,user_id) DO UPDATE SET twitch_login=excluded.twitch_login,is_live=excluded.is_live,stream_id=excluded.stream_id,observed_at=excluded.observed_at,body=excluded.body").run(tenantId, member.canonicalUserId, member.twitchLogin.toLowerCase(), live ? 1 : 0, streamId ?? null, observedAt, JSON.stringify({ member, ...(stream ? { stream } : {}) }));
   }
   private getSpotlight(tenantId: string): { userId: string; nextIndex: number; rotatedAt: string } | undefined {
     return this.db.prepare("SELECT user_id AS userId,next_index AS nextIndex,rotated_at AS rotatedAt FROM spotlight WHERE tenant_id=?").get(tenantId) as { userId: string; nextIndex: number; rotatedAt: string } | undefined;

@@ -1,3 +1,4 @@
+import { buildDshTierShoutout, dshStreamShoutout, type DshEmbedTemplates } from "./shoutout-presentation.js";
 import { DatabaseSync } from "node:sqlite";
 import { dshDiscordRequestBody } from "./calendar-presentation.js";
 import type { DshScheduledEventV1, DshCalendarTransportV1 } from "./calendar-sync.js";
@@ -13,7 +14,7 @@ export interface DshDiscordTransportV1 extends Partial<DshCalendarTransportV1> {
   deleteMessage(tenantId:string,channelId:string,messageId:string):Promise<void>;
   sendDirectMessage(tenantId:string,userId:string,payload:Record<string,unknown>):Promise<string>;
 }
-export interface DshDiscordBrandingV1 { communityMemberName:string; spotlightChannelId?:string; onboardingCustomId?:string; }
+export interface DshDiscordBrandingV1 { communityMemberName:string; spotlightChannelId?:string; onboardingCustomId?:string; embedTemplates?:DshEmbedTemplates; }
 export interface DshDiscordBrandingSourceV1 { getBranding(tenantId:string):Promise<DshDiscordBrandingV1>|DshDiscordBrandingV1; }
 export interface DshSpotlightMediaSourceV1 { getImage(input:{tenantId:string;member:DshLiveMemberV1;stream:DshTwitchStreamV1}):Promise<string|undefined>|string|undefined; }
 
@@ -62,7 +63,7 @@ export class DshDiscordLivePublisher implements DshLiveActionPublisherV1 {
     }
   }
   private async upsertShoutout(tenantId:string,member:DshLiveMemberV1,stream:DshTwitchStreamV1,spotlight:boolean){
-    const brand=await this.branding.getBranding(tenantId);const tracked=this.state.get(tenantId,"shoutout",member.canonicalUserId);const payload={embeds:[buildLiveEmbed(member,stream,brand,spotlight)],allowed_mentions:{parse:[]}};
+    const brand=await this.branding.getBranding(tenantId);const tracked=this.state.get(tenantId,"shoutout",member.canonicalUserId);const payload=buildDshTierShoutout(dshStreamShoutout(member,stream),{...(brand.embedTemplates?{templates:brand.embedTemplates}:{}),timestamp:this.now()});
     if(tracked){try{await this.api.editMessage(tenantId,tracked.channelId,tracked.messageId,payload);this.state.put({...tracked,updatedAt:this.now()});return;}catch(error){if(!repostable(error))throw error;await this.api.deleteMessage(tenantId,tracked.channelId,tracked.messageId).catch(()=>undefined);}}
     const messageId=await this.api.createMessage(tenantId,member.shoutoutChannelId,payload);this.state.put({tenantId,kind:"shoutout",key:member.canonicalUserId,channelId:member.shoutoutChannelId,messageId,updatedAt:this.now()});
   }
@@ -76,7 +77,6 @@ export class DshDiscordLivePublisher implements DshLiveActionPublisherV1 {
   private async clearSpotlight(tenantId:string){const tracked=this.state.get(tenantId,"spotlight","current");if(!tracked)return;await this.api.deleteMessage(tenantId,tracked.channelId,tracked.messageId).catch((error)=>{if(!repostable(error))throw error;});this.state.remove(tenantId,"spotlight","current");}
 }
 
-function buildLiveEmbed(member:DshLiveMemberV1,stream:DshTwitchStreamV1,branding:DshDiscordBrandingV1,spotlight:boolean){const honored=member.group==="Honored Guests";return{title:`🚨 **${stream.displayName}** is now LIVE on Twitch!`,description:`**${stream.title}**\n🎮 Playing: ${stream.gameName}\n👥 Viewers: ${stream.viewerCount}${honored?"\n\n✨ *Honored Guest*":""}`,url:`https://twitch.tv/${member.twitchLogin}`,color:honored?0xFF8C00:0x9146FF,thumbnail:{url:thumbnail(stream.thumbnailUrl,50,50)},image:{url:thumbnail(stream.thumbnailUrl,1920,1080)},footer:{text:spotlight?"Twitch • ⭐ COMMUNITY SPOTLIGHT ⭐":honored?"Twitch • Honored Guest":`Twitch • ${branding.communityMemberName} Shoutout`},timestamp:new Date().toISOString()};}
 function buildSpotlightEmbed(member:DshLiveMemberV1,stream:DshTwitchStreamV1,image?:string){return{title:"⭐ COMMUNITY SPOTLIGHT ⭐",description:`**${stream.displayName}** is featured!\n[Watch Stream](https://twitch.tv/${member.twitchLogin})`,color:0xFFD700,thumbnail:{url:image??thumbnail(stream.thumbnailUrl,300,300)},fields:[{name:"🎮 Game",value:stream.gameName||"No category",inline:true},{name:"👥 Viewers",value:String(stream.viewerCount),inline:true},{name:"🔄 Rotates",value:"Every 10 min",inline:true}]};}
 function thumbnail(value:string,width:number,height:number){return String(value||"").replace("{width}",String(width)).replace("{height}",String(height));}
 function repostable(error:unknown){if(error instanceof DshDiscordError)return error.status===404||error.status===400;return /30046|unknown message|message_not_found|404/i.test(error instanceof Error?error.message:String(error));}
