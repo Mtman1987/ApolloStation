@@ -43,3 +43,36 @@ test('sandbox native sync captures outgoing events without calling real Discord 
 
 test('mission colors stay assigned when an earlier event is added',t=>{const f=fixture(t),later=f.mission('2026-09-20','Later meeting');const first=communityCalendarMissions({month:'2026-09',today:now().slice(0,10),events:f.calendar.month(tenant,'workspace','2026-09')})[0].color;f.mission('2026-09-06','Earlier meeting');assert.equal(communityCalendarMissions({month:'2026-09',today:now().slice(0,10),events:f.calendar.month(tenant,'workspace','2026-09')}).find(e=>e.id===later.id).color,first);});
 test('native voice events keep an unspecified end and channel when editing their name',async t=>{const f=fixture(t),id='222222222222222222';f.native.set(id,{id,name:'Voice hangout',description:'Join us',scheduled_start_time:'2026-09-10T12:00:00.000Z',scheduled_end_time:null,entity_type:2,channel_id:'333333333333333333',status:1});await f.sync.sync(tenant,guild);const event=f.calendar.list(tenant,'workspace')[0];f.calendar.updateEvent(tenant,'workspace',event.id,{eventName:'Community voice hangout'});await f.sync.sync(tenant,guild);assert.equal(f.native.get(id).scheduled_end_time,null);assert.equal(f.native.get(id).channel_id,'333333333333333333');assert.throws(()=>f.calendar.updateEvent(tenant,'workspace',event.id,{location:'Not the voice channel'}),/channel in Discord/);});
+
+test('calendar artwork changes refresh the existing message once and retry safely',async t=>{
+ const f=fixture(t),messages=new SqliteDshDiscordMessageStore(f.path);t.after(()=>messages.close());
+ let creates=0,edits=0,fail=false;
+ const discord={async createMessage(){creates++;return '333333333333333333'},async editMessage(_tenant,_channel,id){assert.equal(id,'333333333333333333');edits++;if(fail)throw new DshDiscordError(503,{})}};
+ const delivery=new DshCalendarDelivery(f.calendar,messages,discord,now);
+ await delivery.publish(tenant,guild,'222222222222222222','2026-09');
+ const delivered=f.calendar.state(tenant,`delivered:${guild}`),{artworkRevision,...old}=delivered;
+ assert.equal(typeof artworkRevision,'number');f.calendar.setState(tenant,`delivered:${guild}`,old);
+ fail=true;assert.equal((await delivery.flush(tenant)).pending,true);
+ assert.deepEqual(f.calendar.state(tenant,`delivered:${guild}`),old);
+ fail=false;assert.equal((await delivery.flush(tenant)).pending,false);
+ await delivery.flush(tenant);assert.equal(creates,1);assert.equal(edits,2);
+ assert.deepEqual(f.calendar.state(tenant,`delivered:${guild}`),delivered);
+});
+
+test('calendar avatars fill clipped cells and crowded markers stay inside, above the avatar',()=>{
+ const dayKey='2026-09-07',event={id:'captain',type:'captains-log',dayKey,eventDateTime:dayKey+'T00:00:00Z',eventName:'Captain duty',description:'',username:'Testdev',userAvatar:'https://cdn.discordapp.com/avatars/123/test.png'};
+ const events=[event,...Array.from({length:22},(_,i)=>({...event,id:'mission-'+i,type:'event',eventName:'Testing '+i,description:'Description below the title',endDateTime:dayKey+'T00:55:00Z'}))];
+ const svg=renderCommunityCalendarSvg({month:'2026-09',today:'2026-09-06',events});
+ const cell=svg.split(`data-calendar-day="${dayKey}"`)[1].split('data-calendar-day=')[0];
+ const attrs=tag=>Object.fromEntries([...tag.matchAll(/([\w-]+)="([^"]*)"/g)].map(m=>[m[1],m[2]]));
+ const box=attrs(cell.match(/<rect [^>]+>/)[0]),avatar=attrs(cell.match(/<image [^>]+>/)[0]);
+ assert.ok(+avatar.width/+box.width>0.95);assert.ok(+avatar.height/+box.height>0.95);
+ assert.ok(+avatar.x>=+box.x&&+avatar.y>=+box.y);assert.ok(+avatar.x+ +avatar.width<=+box.x+ +box.width);assert.ok(+avatar.y+ +avatar.height<=+box.y+ +box.height);
+ assert.equal(avatar.preserveAspectRatio,'xMidYMid slice');assert.match(cell,/<g clip-path="url\(#avatar-7\)">/);
+ const circles=[...cell.matchAll(/<circle [^>]+>/g)].map(m=>attrs(m[0]));assert.equal(circles.length,22);
+ for(const dot of circles){assert.equal(+dot.r,9);assert.ok(+dot.cx- +dot.r>=+box.x);assert.ok(+dot.cx+ +dot.r<=+box.x+ +box.width);assert.ok(+dot.cy- +dot.r>=+box.y);assert.ok(+dot.cy+ +dot.r<=+box.y+ +box.height);}
+ assert.ok(cell.indexOf('<image')<cell.indexOf('<circle'));
+ const row=svg.split('data-calendar-event="mission-0"')[1].split('</g>')[0],texts=[...row.matchAll(/<text ([^>]+)>(.*?)<\/text>/g)].map(m=>({...attrs(m[1]),text:m[2]}));
+ const title=texts.find(t=>t.text.includes('Testing 0')),time=texts.find(t=>t.text.includes('00:55')),detail=texts.find(t=>t.text.includes('Description below'));
+ assert.equal(title.y,time.y);assert.ok(+time.x>+title.x);assert.ok(+detail.y>+title.y);assert.equal(detail.x,title.x);assert.equal(title.fill,attrs(row.match(/<circle [^>]+>/)[0]).fill);assert.equal(title['font-weight'],'bold');
+});

@@ -18,3 +18,25 @@ function num(value:unknown,min:number,max:number,name:string){if(typeof value!==
 function int(value:unknown,min:number,max:number,name:string){if(typeof value!=="number"||!Number.isSafeInteger(value)||value<min||value>max)throw new Error(`Overlay ${name} is invalid`);return value;}
 function bool(value:unknown,name:string){if(typeof value!=="boolean")throw new Error(`Overlay ${name} is invalid`);return value;}
 function iso(value:unknown){if(typeof value!=="string"||!Number.isFinite(Date.parse(value)))throw new Error("Overlay timestamp is invalid");return value;}
+
+/** Rebase this editor's field changes onto the latest workspace without moving other sources. */
+export function mergeOverlaySceneEdits(base:OverlaySceneV1[],local:OverlaySceneV1[],remote:OverlaySceneV1[]):OverlaySceneV1[]{
+  const same=(a:unknown,b:unknown)=>JSON.stringify(a)===JSON.stringify(b);
+  function fields<T extends Record<string,unknown>>(before:T,edited:T,current:T):T{
+    const result={...current};
+    for(const key of new Set([...Object.keys(before),...Object.keys(edited)])){
+      if(same(before[key],edited[key]))continue;
+      const a=before[key],b=edited[key],c=current[key];
+      if(key==='config'&&a&&b&&c&&typeof a==='object'&&typeof b==='object'&&typeof c==='object')result[key as keyof T]=fields(a as T,b as T,c as T) as T[keyof T];
+      else if(key!=='sources')result[key as keyof T]=edited[key] as T[keyof T];
+    }
+    return result;
+  }
+  function collection<T extends {id:string}>(before:T[],edited:T[],current:T[],merge:(a:T,b:T,c:T)=>T):T[]{
+    const result=new Map(current.map(item=>[item.id,item])),original=new Map(before.map(item=>[item.id,item])),changed=new Map(edited.map(item=>[item.id,item]));
+    for(const item of before)if(!changed.has(item.id))result.delete(item.id);
+    for(const item of edited){const previous=original.get(item.id);if(same(previous,item))continue;const latest=result.get(item.id);if(previous&&!latest)throw new Error('An edited overlay source or scene was removed in another window. Reload to review it.');result.set(item.id,previous&&latest?merge(previous,item,latest):structuredClone(item));}
+    return [...result.values()];
+  }
+  return normalizeOverlayScenes(collection(base,local,remote,(before,edited,current)=>({...fields(before as unknown as Record<string,unknown>,edited as unknown as Record<string,unknown>,current as unknown as Record<string,unknown>),sources:collection(before.sources,edited.sources,current.sources,(a,b,c)=>fields(a as unknown as Record<string,unknown>,b as unknown as Record<string,unknown>,c as unknown as Record<string,unknown>) as unknown as OverlaySceneSourceV1)} as unknown as OverlaySceneV1)));
+}

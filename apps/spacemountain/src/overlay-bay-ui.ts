@@ -1,5 +1,5 @@
 import type { SpaceMountainShellSnapshotV1 } from "./index.js";
-import { OVERLAY_SOURCE_KINDS, createOverlayScene, createOverlaySource, normalizeOverlayScenes, saveOverlayScene, sourceLabel, type OverlaySceneSourceV1, type OverlaySceneV1, type OverlaySourceKindV1 } from "./overlay-scenes.js";
+import { OVERLAY_SOURCE_KINDS, createOverlayScene, createOverlaySource, normalizeOverlayScenes, mergeOverlaySceneEdits, saveOverlayScene, sourceLabel, type OverlaySceneSourceV1, type OverlaySceneV1, type OverlaySourceKindV1 } from "./overlay-scenes.js";
 
 const NEBULA_GAMES = [
   ["tag","Tag"],["quackverse","Quackverse"],["bingo","Bingo"],["chaosmode","Chaos Mode"],["chatgarden","Chat Garden"],["chatwars","Chat Wars"],["chickenroyale","Chicken Royale"],["colorsymphony","Color Symphony"],["colorwars","Color Wars"],["dancingparade","Dancing Parade"],["emojirain","Emoji Rain"],["emojitower","Emoji Tower"],["memorylane","Memory Lane"],["petrace","Pet Race"],["phraseguess","Phrase Guess"],["pixelbattle","Pixel Battle"],["rhythmpulse","Rhythm Pulse"],["treasurehunt","Treasure Hunt"],["wordchain","Word Chain"],["wordstorm","Word Storm"],
@@ -18,6 +18,16 @@ export class OverlayBayParityController {
   private scenes: OverlaySceneV1[] = [];
   private activeSceneId = "";
   private selectedSourceId = "";
+  private discoveredWidgets: Array<Record<string, unknown>> = [];
+  private discoveryStarted = false;
+  private discoveryMessage = "";
+  private baseScenes: OverlaySceneV1[] = [];
+  private editVersion = 0;
+  private savedVersion = 0;
+  private saving: Promise<void> | undefined;
+  private saveTimer: number | undefined;
+  private dragging = false;
+  private saveMessage = "All changes saved";
   private output: "public" | "personal" = "public";
 
   constructor(private readonly root: HTMLElement, snapshot: SpaceMountainShellSnapshotV1) {
@@ -26,7 +36,9 @@ export class OverlayBayParityController {
   }
 
   update(snapshot: SpaceMountainShellSnapshotV1) {
+    if (Number(snapshot.workspace?.revision ?? 0) < Number(this.snapshot.workspace?.revision ?? 0)) return;
     this.snapshot = snapshot;
+    if (this.saving || this.editVersion !== this.savedVersion || this.dragging) return;
     this.loadSnapshot();
     this.mount();
   }
@@ -34,6 +46,7 @@ export class OverlayBayParityController {
   mount() {
     const bay = this.root.querySelector<HTMLElement>("[data-overlay-bay]");
     if (!bay) return;
+    if(!this.discoveryStarted){this.discoveryStarted=true;void this.discoverWidgets(bay);}
     if (bay.dataset.overlayParity === "1" && bay.dataset.sceneRevision === String(this.snapshot.workspace?.revision ?? "")) return;
     bay.dataset.overlayParity = "1";
     bay.dataset.sceneRevision = String(this.snapshot.workspace?.revision ?? "");
@@ -44,6 +57,7 @@ export class OverlayBayParityController {
   private loadSnapshot() {
     try { this.scenes = normalizeOverlayScenes(this.snapshot.workspace?.overlayScenes); }
     catch { this.scenes = []; }
+    this.baseScenes = structuredClone(this.scenes);
     const field = this.output === "public" ? "activePublicOverlaySceneId" : "activePersonalOverlaySceneId";
     const named = typeof this.snapshot.workspace?.[field] === "string" ? String(this.snapshot.workspace[field]) : "";
     const legacy = typeof this.snapshot.workspace?.activeOverlaySceneId === "string" ? this.snapshot.workspace.activeOverlaySceneId : "";
@@ -57,6 +71,7 @@ export class OverlayBayParityController {
   private selectedSource() { return this.activeScene()?.sources.find((source) => source.id === this.selectedSourceId); }
 
   private render(bay: HTMLElement) {
+    const expanded = new Map([...bay.querySelectorAll<HTMLDetailsElement>("details[data-ob-section]")].map(node => [node.dataset.obSection,node.open]));
     const scene = this.activeScene();
     const owner = hasScope(this.snapshot.session, "overlay:outputs:write");
     const headActions = [`<button type="button" data-ob-new>New scene</button>`];
@@ -64,19 +79,26 @@ export class OverlayBayParityController {
     const tabs = this.scenes.length ? this.scenes.map((item) => `<button type="button" data-ob-scene="${esc(item.id)}" class="${item.id === this.activeSceneId ? "active" : ""}">${esc(item.name)}</button>`).join("") : `<span>No saved scenes yet.</span>`;
     const body = scene ? this.editor(scene, owner) : `<div class="ob-first"><h3>Create your first overlay scene</h3><p>Combine app widgets, a Nebula Game Mix, URLs, images, text, alerts, camera, screen, Xbox, links, ticker, and weather in one final browser source.</p><button type="button" data-ob-new class="primary">Create scene</button></div>`;
     bay.innerHTML = `<style>${OVERLAY_EDITOR_CSS}</style><header class="ob-head"><div style="display:flex;align-items:center;gap:14px"><img src="${overlayIconUrl(this.snapshot)}" alt="" style="width:72px;height:72px;object-fit:contain;filter:drop-shadow(0 0 16px var(--accent2))"><div><span>OVERLAY BAY</span><h2>Canonical ecosystem overlay editor</h2><p>Public is the OBS program. Personal is the private workspace HUD. They can use the same scene or different scenes.</p></div></div><div class="ob-head-actions"><button type="button" data-ob-output="public" class="${this.output === "public" ? "active" : ""}">Public</button><button type="button" data-ob-output="personal" class="${this.output === "personal" ? "active" : ""}">Personal</button>${headActions.join("")}</div></header><div class="ob-output-note">Editing <strong>${this.output === "public" ? "Public · OBS/browser source" : "Personal · signed-in workspace"}</strong></div><div class="ob-tabs">${tabs}</div>${body}${this.outputs(owner)}`;
+    for (const section of bay.querySelectorAll<HTMLDetailsElement>("details[data-ob-section]")) if (expanded.has(section.dataset.obSection)) section.open = expanded.get(section.dataset.obSection)!;
     this.bind(bay);
   }
 
   private editor(scene: OverlaySceneV1, owner: boolean) {
     const paletteKinds = OVERLAY_SOURCE_KINDS.filter((kind) => kind !== "widget").map((kind) => `<button type="button" data-ob-add-kind="${kind}">${esc(sourceLabel(kind))}</button>`).join("");
-    const widgets = (this.snapshot.overlayWidgets ?? []).map((item) => {
+    const widgetGroups = new Map<string, string[]>();
+    const available=[...(this.snapshot.overlayWidgets??[]),...this.discoveredWidgets],seenWidgets=new Set<string>();
+    for (const item of available) {
       const manifest = record(item.manifest); const appId = text(manifest?.appId); const widgetId = text(manifest?.widgetId); const title = text(manifest?.title) || widgetId;
-      if (!appId || !widgetId) return "";
-      return `<button type="button" data-ob-add-widget="${esc(appId)}|${esc(widgetId)}" data-renderer="${esc(text(manifest?.rendererUrl))}">${esc(title)}<small>${esc(appId)}</small></button>`;
-    }).join("") || `<small>Installed apps have not registered widgets yet.</small>`;
+      if (!appId || !widgetId || appId === "overlay-bay" || seenWidgets.has(appId+":"+widgetId)) continue;
+      seenWidgets.add(appId+":"+widgetId);
+      const entries=widgetGroups.get(appId)??[];
+      entries.push(`<button type="button" data-ob-add-widget="${esc(appId)}|${esc(widgetId)}" data-renderer="${esc(text(manifest?.rendererUrl))}">${esc(title)}</button>`);widgetGroups.set(appId,entries);
+    }
+    const widgets=[...widgetGroups].map(([appId,entries])=>`<details data-ob-section="widgets-${esc(appId)}"><summary>${esc(this.snapshot.apps?.find(app=>app.appId===appId)?.name??appId)} <small>${entries.length}</small></summary><div class="ob-widgets">${entries.join("")}</div></details>`).join("")||`<small>Installed apps have not registered widgets yet.</small>`;
+    const savedUrls=this.scenes.flatMap(saved=>saved.sources.filter(source=>source.kind==="web"||source.kind==="widget").map(source=>`<button type="button" data-ob-reuse-source="${esc(saved.id)}|${esc(source.id)}">${esc(source.name)}<small>${esc(saved.name)}</small></button>`)).join("");
     const sources = scene.sources.filter((source) => source.visible).map((source) => this.sourceCard(source)).join("") || `<div class="ob-empty">Add a source from the left. Nebula Arcade can contain any combination of all 20 games inside one source.</div>`;
     const issueButtons = owner ? `<button type="button" data-ob-copy-output="public">Copy Public URL</button><button type="button" data-ob-copy-output="personal">Copy Personal URL</button>` : "";
-    return `<div class="ob-shell"><aside class="ob-palette"><h3>Add source</h3><div class="ob-source-kinds">${paletteKinds}</div><h3>App widgets</h3><div class="ob-widgets">${widgets}</div></aside><main class="ob-stage-wrap"><div class="ob-stage-head"><input data-ob-scene-name maxlength="100" value="${esc(scene.name)}" aria-label="Scene name"><span>${scene.canvasWidth} × ${scene.canvasHeight}</span><button type="button" data-ob-preview>Preview in rooms</button><button type="button" data-ob-save class="primary">Save</button>${issueButtons}</div><div class="ob-stage" data-ob-stage>${sources}</div></main><aside class="ob-inspector">${this.inspector(scene)}</aside></div>`;
+    return `<div class="ob-shell"><aside class="ob-palette"><details data-ob-section="source-types"><summary>Add source</summary><div class="ob-source-kinds">${paletteKinds}</div></details><details data-ob-section="app-widgets" open><summary>App overlays</summary><button type="button" data-ob-refresh-widgets>Refresh app overlays</button><p class="ob-discovery-status">${esc(this.discoveryMessage)}</p>${widgets}</details><details data-ob-section="saved-urls"><summary>Saved overlay sources</summary><div class="ob-widgets">${savedUrls||"<p>No saved URL or widget sources.</p>"}</div></details><details data-ob-section="scene-sources" open><summary>Scene sources · ${scene.sources.length}</summary><div class="ob-layer-list">${scene.sources.map(source=>`<div><button type="button" data-ob-select="${esc(source.id)}" class="${source.id===this.selectedSourceId?"active":""}">${esc(source.name)}</button><label><input type="checkbox" data-ob-source-visible="${esc(source.id)}" ${source.visible?"checked":""}>Show</label><label><input type="checkbox" data-ob-source-locked="${esc(source.id)}" ${source.locked?"checked":""}>Lock</label></div>`).join("")||"<p>No sources yet.</p>"}</div></details></aside><main class="ob-stage-wrap"><div class="ob-stage-head"><input data-ob-scene-name maxlength="100" value="${esc(scene.name)}" aria-label="Scene name"><span>${scene.canvasWidth} × ${scene.canvasHeight}</span><button type="button" data-ob-preview>Preview in rooms</button><button type="button" data-ob-save class="primary">Save</button><span data-ob-save-state role="status">${esc(this.saveMessage)}</span>${issueButtons}</div><div class="ob-stage" data-ob-stage style="aspect-ratio:${scene.canvasWidth}/${scene.canvasHeight}">${sources}</div></main><aside class="ob-inspector"><details data-ob-section="source-properties" open><summary>${this.selectedSource()?"Source properties":"Scene properties"}</summary>${this.inspector(scene)}</details></aside></div>`;
   }
 
   private sourceCard(source: OverlaySceneSourceV1) {
@@ -123,13 +145,14 @@ export class OverlayBayParityController {
       const button = owner && !revoked ? `<button type="button" data-ob-revoke="${esc(text(item.grantId))}">Revoke</button>` : "";
       return `<article><div><b>${esc(text(item.appId) || "ecosystem")} · ${esc(text(item.widgetId) || "widget")}</b><small>${status}</small></div>${button}</article>`;
     }).join("");
-    return `<section class="ob-outputs"><h3>Canonical tenant outputs</h3>${named}<details><summary>Temporary app/widget grants</summary>${items || `<p>No temporary grants.</p>`}</details></section>`;
+    return `<section class="ob-outputs"><details data-ob-section="output-links"><summary>Overlay URLs</summary>${named}<details data-ob-section="temporary-grants"><summary>Temporary app/widget grants</summary>${items || `<p>No temporary grants.</p>`}</details></details></section>`;
   }
 
   private bind(bay: HTMLElement) {
+    bay.querySelector<HTMLElement>("[data-ob-refresh-widgets]")?.addEventListener("click",()=>void this.discoverWidgets(bay));
     bay.querySelectorAll<HTMLElement>("[data-ob-new]").forEach((node) => node.onclick = () => this.newScene(bay));
-    bay.querySelectorAll<HTMLElement>("[data-ob-output]").forEach((node) => node.onclick = () => { this.output = node.dataset.obOutput === "personal" ? "personal" : "public"; this.loadSnapshot(); this.render(bay); });
-    bay.querySelectorAll<HTMLElement>("[data-ob-scene]").forEach((node) => node.onclick = () => { this.activeSceneId = node.dataset.obScene ?? ""; this.selectedSourceId = ""; this.render(bay); });
+    bay.querySelectorAll<HTMLElement>("[data-ob-output]").forEach((node) => node.onclick = () => { this.output = node.dataset.obOutput === "personal" ? "personal" : "public"; if(this.editVersion===this.savedVersion&&!this.saving)this.loadSnapshot(); this.render(bay); });
+    bay.querySelectorAll<HTMLElement>("[data-ob-scene]").forEach((node) => node.onclick = () => { this.activeSceneId = node.dataset.obScene ?? ""; this.selectedSourceId = ""; this.changed(); this.render(bay); });
     bay.querySelector<HTMLElement>("[data-ob-duplicate]")?.addEventListener("click", () => this.duplicateScene(bay));
     bay.querySelector<HTMLElement>("[data-ob-delete]")?.addEventListener("click", () => void this.deleteScene(bay));
     bay.querySelector<HTMLElement>("[data-ob-save]")?.addEventListener("click", () => void this.persist(true).then(() => this.render(bay)).catch(showError));
@@ -137,7 +160,11 @@ export class OverlayBayParityController {
     bay.querySelectorAll<HTMLElement>("[data-ob-copy-output]").forEach((node) => node.onclick = () => void this.copyOutput(node.dataset.obCopyOutput === "personal" ? "personal" : "public"));
     bay.querySelectorAll<HTMLElement>("[data-ob-revoke]").forEach((node) => node.onclick = () => void this.revoke(node.dataset.obRevoke ?? "", bay));
     bay.querySelectorAll<HTMLElement>("[data-ob-add-kind]").forEach((node) => node.onclick = () => this.addKind(node.dataset.obAddKind as OverlaySourceKindV1, bay));
+    bay.querySelectorAll<HTMLElement>("[data-ob-reuse-source]").forEach(node=>node.onclick=()=>{const [sceneId,sourceId]=(node.dataset.obReuseSource??"").split("|"),source=this.scenes.find(scene=>scene.id===sceneId)?.sources.find(source=>source.id===sourceId);if(source)this.addSource({...structuredClone(source),id:`source-${crypto.randomUUID()}`},bay);});
     bay.querySelectorAll<HTMLElement>("[data-ob-add-widget]").forEach((node) => node.onclick = () => this.addWidget(node, bay));
+    bay.querySelectorAll<HTMLElement>("[data-ob-select]").forEach(node=>node.onclick=()=>{this.selectedSourceId=node.dataset.obSelect??"";this.render(bay);});
+    bay.querySelectorAll<HTMLInputElement>("[data-ob-source-visible]").forEach(node=>node.onchange=()=>{this.updateSource(node.dataset.obSourceVisible??"",{visible:node.checked});this.render(bay);});
+    bay.querySelectorAll<HTMLInputElement>("[data-ob-source-locked]").forEach(node=>node.onchange=()=>{this.updateSource(node.dataset.obSourceLocked??"",{locked:node.checked});this.render(bay);});
     bay.querySelectorAll<HTMLElement>("[data-ob-source]").forEach((node) => { node.onclick = (event) => { if ((event.target as HTMLElement).hasAttribute("data-ob-resize")) return; this.selectedSourceId = node.dataset.obSource ?? ""; this.render(bay); }; this.drag(node, bay); });
     const name = bay.querySelector<HTMLInputElement>("[data-ob-scene-name]"); if (name) name.onchange = () => this.updateScene({ name: name.value });
     bay.querySelectorAll<HTMLInputElement>("[data-ob-canvas]").forEach((node) => node.onchange = () => this.updateScene(node.dataset.obCanvas === "width" ? { canvasWidth: Number(node.value) } : { canvasHeight: Number(node.value) }));
@@ -152,34 +179,55 @@ export class OverlayBayParityController {
     bay.querySelector<HTMLElement>("[data-ob-test-alert]")?.addEventListener("click", () => void this.testAlert(bay).catch(showError));
   }
 
-  private newScene(bay: HTMLElement) { const name = window.prompt("Scene name", "Stream Overlay")?.trim(); if (!name) return; const scene = createOverlayScene(name); this.scenes.push(scene); this.activeSceneId = scene.id; this.selectedSourceId = ""; this.render(bay); }
-  private duplicateScene(bay: HTMLElement) { const scene = this.activeScene(); if (!scene) return; const now = new Date().toISOString(); const copy: OverlaySceneV1 = { ...structuredClone(scene), id: `scene-${crypto.randomUUID()}`, name: `${scene.name} Copy`, createdAt: now, updatedAt: now, sources: scene.sources.map((source) => ({ ...source, id: `source-${crypto.randomUUID()}` })) }; this.scenes.push(copy); this.activeSceneId = copy.id; this.selectedSourceId = ""; this.render(bay); }
-  private async deleteScene(bay: HTMLElement) { const scene = this.activeScene(); if (!scene || !window.confirm(`Delete “${scene.name}”?`)) return; this.scenes = this.scenes.filter((item) => item.id !== scene.id); this.activeSceneId = this.scenes[0]?.id ?? ""; this.selectedSourceId = ""; await this.persist(false); this.render(bay); }
+  private async discoverWidgets(bay:HTMLElement){
+    const nebula=this.snapshot.apps?.find(app=>app.appId==="nebula-arcade"&&app.enabled!==false),items:Array<Record<string,unknown>>=[];
+    if(nebula){
+      const origin=new URL(nebula.launchUrl,window.location.origin).origin;
+      for(const [id,title] of [["all","All active games"],...NEBULA_GAMES])items.push({manifest:{appId:"nebula-arcade",widgetId:`arcade:${id}`,title,rendererUrl:new URL(id==="all"?"/overlay/arcade":`/overlay/arcade/${id}`,origin).href}});
+      try{
+        const response=await fetch("/v1/nebula/game-mixes",{credentials:"same-origin",cache:"no-store",headers:{"x-spmt-tenant":this.snapshot.tenantId}}),payload=record(await safeJson(response));
+        if(!response.ok)throw new Error("Saved game mixes could not be loaded. Refresh to retry.");
+        for(const raw of Array.isArray(payload?.mixes)?payload.mixes:[]){const mix=record(raw),id=text(mix?.id);if(!id)continue;items.push({manifest:{appId:"nebula-arcade",widgetId:`saved-mix:${id}`,title:`Saved mix · ${text(mix?.name)||id}`,rendererUrl:new URL(`/overlay/game-mix/${encodeURIComponent(id)}`,origin).href}});}
+        this.discoveryMessage="Registered app overlays and saved game mixes are up to date.";
+      }catch(error){this.discoveryMessage=error instanceof Error?error.message:"Could not load saved app overlays.";}
+    }else this.discoveryMessage="Registered overlays from installed apps.";
+    this.discoveredWidgets=items;if(!this.dragging)this.render(bay);
+  }
+
+  private newScene(bay: HTMLElement) { const name = window.prompt("Scene name", "Stream Overlay")?.trim(); if (!name) return; const scene = createOverlayScene(name); this.scenes.push(scene); this.activeSceneId = scene.id; this.selectedSourceId = ""; this.changed(); this.render(bay); }
+  private duplicateScene(bay: HTMLElement) { const scene = this.activeScene(); if (!scene) return; const now = new Date().toISOString(); const copy: OverlaySceneV1 = { ...structuredClone(scene), id: `scene-${crypto.randomUUID()}`, name: `${scene.name} Copy`, createdAt: now, updatedAt: now, sources: scene.sources.map((source) => ({ ...source, id: `source-${crypto.randomUUID()}` })) }; this.scenes.push(copy); this.activeSceneId = copy.id; this.selectedSourceId = ""; this.changed(); this.render(bay); }
+  private async deleteScene(bay: HTMLElement) { const scene = this.activeScene(); if (!scene || !window.confirm(`Delete “${scene.name}”?`)) return; this.scenes = this.scenes.filter((item) => item.id !== scene.id); this.activeSceneId = this.scenes[0]?.id ?? ""; this.selectedSourceId = ""; this.changed(); await this.persist(false); this.render(bay); }
   private addKind(kind: OverlaySourceKindV1, bay: HTMLElement) { const source = createOverlaySource(kind, kind === "nebula" ? "Nebula Arcade Game Mix" : sourceLabel(kind)); if (kind === "nebula") source.config = { mixId: `mix-${crypto.randomUUID()}`, gameIds: ["tag"], mode: "simultaneous", rotationSeconds: 20, gameStyles: { tag: "full" } }; this.addSource(source, bay); }
   private addWidget(node: HTMLElement, bay: HTMLElement) { const [appId = "", widgetId = ""] = String(node.dataset.obAddWidget ?? "").split("|"); const source = createOverlaySource("widget", node.textContent?.trim().slice(0, 100) || widgetId); source.config = { appId, widgetId, rendererUrl: node.dataset.renderer ?? "" }; this.addSource(source, bay); }
   private addSource(source: OverlaySceneSourceV1, bay: HTMLElement) { const scene = this.activeScene(); if (!scene) return; source.zIndex = scene.sources.length; this.updateScene({ sources: [...scene.sources, source] }); this.selectedSourceId = source.id; this.render(bay); }
   private copySource(bay: HTMLElement) { const scene = this.activeScene(); const source = this.selectedSource(); if (!scene || !source) return; const copy = { ...structuredClone(source), id: `source-${crypto.randomUUID()}`, name: `${source.name} Copy`, zIndex: scene.sources.length }; this.addSource(copy, bay); }
   private removeSource(bay: HTMLElement) { const scene = this.activeScene(); const source = this.selectedSource(); if (!scene || !source) return; this.updateScene({ sources: scene.sources.filter((item) => item.id !== source.id).map((item, zIndex) => ({ ...item, zIndex })) }); this.selectedSourceId = ""; this.render(bay); }
   private reorder(direction: number, bay: HTMLElement) { const scene = this.activeScene(); const source = this.selectedSource(); if (!scene || !source) return; const ordered = [...scene.sources].sort((a, b) => a.zIndex - b.zIndex); const index = ordered.findIndex((item) => item.id === source.id); const target = clamp(index + direction, 0, ordered.length - 1); if (index < 0 || target === index) return; const [moved] = ordered.splice(index, 1); if (!moved) return; ordered.splice(target, 0, moved); this.updateScene({ sources: ordered.map((item, zIndex) => ({ ...item, zIndex })) }); this.render(bay); }
-  private updateScene(patch: Partial<Pick<OverlaySceneV1, "name" | "canvasWidth" | "canvasHeight" | "sources">>) { const scene = this.activeScene(); if (!scene) return; const updated = saveOverlayScene(scene, patch); this.scenes = this.scenes.map((item) => item.id === scene.id ? updated : item); }
-  private updateSelected(patch: Partial<OverlaySceneSourceV1>) { const scene = this.activeScene(); const source = this.selectedSource(); if (!scene || !source) return; this.updateScene({ sources: scene.sources.map((item) => item.id === source.id ? { ...item, ...patch } : item) }); }
+  private updateScene(patch: Partial<Pick<OverlaySceneV1, "name" | "canvasWidth" | "canvasHeight" | "sources">>) { const scene = this.activeScene(); if (!scene) return; const updated = saveOverlayScene(scene, patch); this.scenes = this.scenes.map((item) => item.id === scene.id ? updated : item); this.changed(); }
+  private updateSelected(patch: Partial<OverlaySceneSourceV1>) { this.updateSource(this.selectedSourceId, patch); }
+  private updateSource(sourceId: string, patch: Partial<OverlaySceneSourceV1>) { const scene = this.activeScene(); const source = scene?.sources.find(item => item.id === sourceId); if (!scene || !source) return; this.updateScene({ sources: scene.sources.map((item) => item.id === source.id ? { ...item, ...patch } : item) });
+    const current=this.activeScene()?.sources.find(item=>item.id===sourceId),node=[...this.root.querySelectorAll<HTMLElement>("[data-ob-source]")].find(node=>node.dataset.obSource===sourceId);
+    if(current&&node){node.style.left=`${current.x}%`;node.style.top=`${current.y}%`;node.style.width=`${current.width}%`;node.style.height=`${current.height}%`;node.style.opacity=String(current.opacity);node.hidden=!current.visible;node.classList.toggle("locked",current.locked);}
+  }
   private updateNebulaGames(bay: HTMLElement) { const source = this.selectedSource(); if (!source || source.kind !== "nebula") return; const gameIds = [...bay.querySelectorAll<HTMLInputElement>("[data-ob-game]:checked")].map((node) => node.dataset.obGame ?? "").filter(Boolean); const gameStyles = Object.fromEntries([...bay.querySelectorAll<HTMLSelectElement>("[data-ob-game-style]")].map((node) => [node.dataset.obGameStyle ?? "", node.value]).filter(([key]) => Boolean(key))); this.updateSelected({ config: { ...source.config, gameIds, gameStyles } }); this.render(bay); }
 
   private drag(node: HTMLElement, bay: HTMLElement) {
     node.onpointerdown = (event) => {
       const source = this.activeScene()?.sources.find((item) => item.id === node.dataset.obSource); const stage = bay.querySelector<HTMLElement>("[data-ob-stage]"); if (!source || source.locked || !stage) return;
+      this.selectedSourceId = source.id; this.dragging = true;
       const resize = (event.target as HTMLElement).hasAttribute("data-ob-resize"); event.preventDefault(); node.setPointerCapture(event.pointerId);
       const rect = stage.getBoundingClientRect(); const startX = event.clientX; const startY = event.clientY; const original = { x: source.x, y: source.y, width: source.width, height: source.height };
-      node.onpointermove = (move) => { const dx = (move.clientX - startX) / rect.width * 100; const dy = (move.clientY - startY) / rect.height * 100; if (resize) this.updateSelected({ width: clamp(original.width + dx, 1, 100 - original.x), height: clamp(original.height + dy, 1, 100 - original.y) }); else this.updateSelected({ x: clamp(original.x + dx, 0, 100 - original.width), y: clamp(original.y + dy, 0, 100 - original.height) }); const current = this.selectedSource(); if (current) { node.style.left = `${current.x}%`; node.style.top = `${current.y}%`; node.style.width = `${current.width}%`; node.style.height = `${current.height}%`; } };
-      node.onpointerup = () => { node.onpointermove = null; node.onpointerup = null; this.render(bay); };
+      node.onpointermove = (move) => { const dx = (move.clientX - startX) / rect.width * 100; const dy = (move.clientY - startY) / rect.height * 100; if (resize) this.updateSource(source.id, { width: clamp(original.width + dx, 1, 100 - original.x), height: clamp(original.height + dy, 1, 100 - original.y) }); else this.updateSource(source.id, { x: clamp(original.x + dx, 0, 100 - original.width), y: clamp(original.y + dy, 0, 100 - original.height) }); const current = this.activeScene()?.sources.find(item => item.id === source.id); if (current) { node.style.left = `${current.x}%`; node.style.top = `${current.y}%`; node.style.width = `${current.width}%`; node.style.height = `${current.height}%`; } };
+      const finish = () => { node.onpointermove = null; node.onpointerup = null; node.onpointercancel = null; this.dragging = false; if(node.hasPointerCapture?.(event.pointerId))node.releasePointerCapture(event.pointerId); this.queueSave(); this.render(bay); };
+      node.onpointerup = finish; node.onpointercancel = finish;
     };
   }
 
-  private async testAlert(bay: HTMLElement) { const stage = bay.querySelector<HTMLElement>("[data-ob-stage]"), source = this.selectedSource(); if (!stage || !source) return; const test = document.createElement("div"); test.className = "ob-alert-test"; test.textContent = String(source.config.text ?? "Test alert"); stage.append(test); window.setTimeout(() => test.remove(), 2200); await this.publishSimulation("Overlay Bay alert preview", test.textContent, { sourceId: source.id, sourceKind: source.kind }); }
+  private async testAlert(bay: HTMLElement) { const stage = bay.querySelector<HTMLElement>("[data-ob-stage]"), source = this.selectedSource(); if (!stage || !source) return; const test = document.createElement("div"); test.className = "ob-alert-test"; test.style.cssText = `left:${source.x}%;top:${source.y}%;width:${source.width}%;height:${source.height}%;opacity:${source.opacity};z-index:${source.zIndex + 1}`; test.textContent = String(source.config.text || source.name || "Test alert"); stage.append(test); window.setTimeout(() => test.remove(), 2200); await this.publishSimulation("Overlay Bay alert preview", test.textContent, { sourceId: source.id, sourceKind: source.kind, sceneId: this.activeSceneId, x: source.x, y: source.y, width: source.width, height: source.height, opacity: source.opacity, zIndex: source.zIndex, config: source.config }); }
 
   private async previewScene() {
     const scene = this.activeScene(); if (!scene) return;
-    await this.publishSimulation(`Overlay Bay ${this.output} scene preview`, `${scene.name} · ${scene.sources.filter((source) => source.visible).length} visible sources`, { sceneId: scene.id, output: this.output, canvas: { width: scene.canvasWidth, height: scene.canvasHeight }, sources: scene.sources.map((source) => ({ id: source.id, name: source.name, kind: source.kind, visible: source.visible, x: source.x, y: source.y, width: source.width, height: source.height, zIndex: source.zIndex, ...(source.kind === "nebula" ? { gameIds: strings(source.config.gameIds) } : {}) })) });
+    await this.publishSimulation(`Overlay Bay ${this.output} scene preview`, `${scene.name} · ${scene.sources.filter((source) => source.visible).length} visible sources`, { sceneId: scene.id, output: this.output, canvas: { width: scene.canvasWidth, height: scene.canvasHeight }, sources: scene.sources.map((source) => ({ id: source.id, name: source.name, kind: source.kind, visible: source.visible, x: source.x, y: source.y, width: source.width, height: source.height, opacity: source.opacity, interactive: source.interactive, config: source.config, zIndex: source.zIndex, ...(source.kind === "nebula" ? { gameIds: strings(source.config.gameIds) } : {}) })) });
   }
 
   private async publishSimulation(title: string, body: string, data: Record<string, unknown>) {
@@ -188,18 +236,39 @@ export class OverlayBayParityController {
     if (!response.ok) throw new Error(`Simulation Room preview failed (${response.status})`);
   }
 
-  private async persist(syncNebula: boolean) {
-    const scene = this.activeScene(); const input = this.root.querySelector<HTMLInputElement>("[data-ob-scene-name]"); if (scene && input) this.updateScene({ name: input.value });
-    if (syncNebula) await this.syncNebula();
-    const revision = numeric(this.snapshot.workspace?.revision); if (!revision) throw new Error("Workspace revision is unavailable");
-    const ids = new Set(this.scenes.map((item) => item.id));
-    const priorPublic = text(this.snapshot.workspace?.activePublicOverlaySceneId) || text(this.snapshot.workspace?.activeOverlaySceneId);
-    const priorPersonal = text(this.snapshot.workspace?.activePersonalOverlaySceneId) || priorPublic;
-    const activePublicOverlaySceneId = this.output === "public" ? this.activeSceneId || null : ids.has(priorPublic) ? priorPublic : null;
-    const activePersonalOverlaySceneId = this.output === "personal" ? this.activeSceneId || null : ids.has(priorPersonal) ? priorPersonal : activePublicOverlaySceneId;
-    const response = await fetch("/v1/workspace/profile", { method: "PATCH", headers: { "content-type": "application/json", "x-spmt-tenant": this.snapshot.tenantId }, body: JSON.stringify({ expectedRevision: revision, patch: { overlayScenes: this.scenes, activeOverlaySceneId: activePublicOverlaySceneId || undefined, activePublicOverlaySceneId, activePersonalOverlaySceneId } }) });
-    const body = record(await safeJson(response)); if (!response.ok) throw new Error(String(body?.message ?? `Overlay scene save failed (${response.status})`));
-    if (body) this.snapshot.workspace = { ...this.snapshot.workspace, ...body }; else if (this.snapshot.workspace) this.snapshot.workspace.revision = revision + 1;
+  private changed() { this.editVersion++; this.saveMessage = "Unsaved changes"; this.queueSave(); }
+  private queueSave() {
+    if(this.saveTimer!==undefined)window.clearTimeout(this.saveTimer);
+    if(this.dragging)return;
+    this.saveTimer=window.setTimeout(()=>{this.saveTimer=undefined;void this.persist(true).catch(error=>this.saveStatus(error instanceof Error?error.message:"Could not save. Use Save to retry."));},350);
+  }
+  private saveStatus(message:string){this.saveMessage=message;const status=this.root.querySelector<HTMLElement>("[data-ob-save-state]");if(status)status.textContent=message;}
+  private async persist(syncNebula: boolean):Promise<void> {
+    if(this.saveTimer!==undefined){window.clearTimeout(this.saveTimer);this.saveTimer=undefined;}
+    if(this.saving){await this.saving;if(this.editVersion===this.savedVersion)return;}
+    this.saving=this.persistNow(syncNebula);
+    try{await this.saving;}finally{this.saving=undefined;if(this.editVersion!==this.savedVersion&&this.saveMessage==="All changes saved")this.queueSave();}
+  }
+  private async persistNow(syncNebula:boolean) {
+    this.saveStatus("Saving…");
+    if(syncNebula)await this.syncNebula();
+    for(let attempt=0;attempt<2;attempt++){
+      const current=await fetch("/v1/workspace/profile",{credentials:"same-origin",cache:"no-store",headers:{"x-spmt-tenant":this.snapshot.tenantId}}),workspace=record(await safeJson(current));
+      if(!current.ok||!workspace)throw new Error("Could not read the latest workspace. Your edits are still here; use Save to retry.");
+      const revision=numeric(workspace.revision);if(!revision)throw new Error("Workspace revision is unavailable");
+      const draft=structuredClone(this.scenes),version=this.editVersion,scenes=mergeOverlaySceneEdits(this.baseScenes,draft,normalizeOverlayScenes(workspace.overlayScenes));
+      const ids=new Set(scenes.map(item=>item.id)),priorPublic=text(workspace.activePublicOverlaySceneId)||text(workspace.activeOverlaySceneId),priorPersonal=text(workspace.activePersonalOverlaySceneId)||priorPublic;
+      const activePublicOverlaySceneId=this.output==="public"?this.activeSceneId||null:ids.has(priorPublic)?priorPublic:null;
+      const activePersonalOverlaySceneId=this.output==="personal"?this.activeSceneId||null:ids.has(priorPersonal)?priorPersonal:activePublicOverlaySceneId;
+      const response=await fetch("/v1/workspace/profile",{method:"PATCH",credentials:"same-origin",headers:{"content-type":"application/json","x-spmt-tenant":this.snapshot.tenantId},body:JSON.stringify({expectedRevision:revision,patch:{overlayScenes:scenes,activeOverlaySceneId:activePublicOverlaySceneId||undefined,activePublicOverlaySceneId,activePersonalOverlaySceneId}})});
+      const body=record(await safeJson(response));if(response.status===409&&attempt===0)continue;
+      if(!response.ok)throw new Error(String(body?.message??`Overlay scene save failed (${response.status}). Your edits are still here.`));
+      const saved=body??{...workspace,overlayScenes:scenes,revision:revision+1};
+      this.snapshot.workspace={...this.snapshot.workspace,...saved};
+      this.baseScenes=normalizeOverlayScenes(saved.overlayScenes);
+      this.scenes=mergeOverlaySceneEdits(draft,this.scenes,this.baseScenes);this.savedVersion=version;
+      this.saveStatus("All changes saved");return;
+    }
   }
 
   private async syncNebula() {
@@ -241,4 +310,4 @@ function esc(value: string) { return value.replace(/[&<>"']/g, (char) => ({ "&":
 async function safeJson(response: Response) { try { return await response.json() as unknown; } catch { return undefined; } }
 function showError(error: unknown) { window.alert(error instanceof Error ? error.message : "Overlay Bay operation failed"); }
 
-const OVERLAY_EDITOR_CSS = `.spmt-overlay-bay-parity{display:block!important;padding:0!important;overflow:hidden}.ob-head{display:flex;justify-content:space-between;gap:16px;padding:18px 20px;border-bottom:1px solid rgba(255,255,255,.12)}.ob-head h2{margin:.15em 0}.ob-head p{margin:0;opacity:.72}.ob-head-actions,.ob-stage-head,.ob-source-actions{display:flex;gap:8px;align-items:center}.ob-tabs{display:flex;gap:6px;padding:10px 14px;overflow:auto;border-bottom:1px solid rgba(255,255,255,.1)}.ob-tabs button.active{outline:1px solid var(--accent)}.ob-shell{display:grid;grid-template-columns:190px minmax(0,1fr) 280px;min-height:620px}.ob-palette,.ob-inspector{padding:14px;overflow:auto;background:rgba(3,8,20,.28)}.ob-palette{border-right:1px solid rgba(255,255,255,.1)}.ob-inspector{border-left:1px solid rgba(255,255,255,.1)}.ob-source-kinds,.ob-widgets{display:grid;gap:6px}.ob-palette button{text-align:left}.ob-palette button small{display:block;opacity:.6}.ob-stage-wrap{min-width:0;padding:12px;display:flex;flex-direction:column;gap:10px}.ob-stage-head input{min-width:160px;flex:1}.ob-stage{position:relative;aspect-ratio:16/9;max-height:70vh;width:100%;overflow:hidden;border:1px solid rgba(100,210,255,.3);border-radius:14px;background:radial-gradient(circle at 30% 20%,rgba(95,60,160,.18),rgba(2,8,20,.72));touch-action:none}.ob-empty{position:absolute;inset:0;display:grid;place-items:center;padding:30px;text-align:center;opacity:.62}.ob-source{position:absolute;border:1px solid rgba(100,220,255,.55);border-radius:10px;background:rgba(7,16,35,.82);box-shadow:0 0 20px rgba(75,80,180,.2);overflow:hidden;user-select:none;touch-action:none}.ob-source.selected{outline:2px solid var(--accent)}.ob-source.locked{border-style:dashed}.ob-source header{display:flex;justify-content:space-between;gap:8px;padding:5px 8px;background:rgba(0,0,0,.25);font-size:11px}.ob-source>div{height:calc(100% - 28px);display:flex;align-items:center;justify-content:center;gap:8px;flex-direction:column;padding:8px;text-align:center}.ob-source img{width:100%;height:100%;object-fit:contain}.ob-source i[data-ob-resize]{position:absolute;right:0;bottom:0;width:18px;height:18px;cursor:nwse-resize;background:linear-gradient(135deg,transparent 45%,var(--accent) 46%)}.ob-inspector label{display:grid;gap:5px;margin:9px 0;font-size:12px}.ob-inspector input,.ob-inspector select,.ob-inspector textarea,.ob-stage-head input{width:100%}.ob-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px}.ob-checks{display:grid;grid-template-columns:1fr 1fr;gap:4px}.ob-checks label{display:flex;align-items:center;gap:6px}.ob-checks input{width:auto}.ob-games{display:grid;gap:5px;max-height:280px;overflow:auto}.ob-games label{grid-template-columns:auto 1fr 78px;align-items:center;margin:0;padding:4px;border-bottom:1px solid rgba(255,255,255,.06)}.ob-games input{width:auto}.ob-outputs{padding:14px 18px;border-top:1px solid rgba(255,255,255,.1)}.ob-outputs article{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.06)}.ob-outputs small{display:block;opacity:.6}.ob-first{padding:30px}.ob-alert-test{position:absolute;inset:25%;z-index:999;display:grid;place-items:center;border-radius:18px;background:rgba(90,20,130,.92);font-size:clamp(20px,4vw,54px);font-weight:900;animation:obtest .25s ease-out}@keyframes obtest{from{opacity:0;transform:scale(.8)}to{opacity:1;transform:scale(1)}}@media(max-width:900px){.ob-shell{grid-template-columns:1fr}.ob-palette{border-right:0;border-bottom:1px solid rgba(255,255,255,.1)}.ob-source-kinds,.ob-widgets{grid-template-columns:repeat(2,minmax(0,1fr))}.ob-inspector{border-left:0;border-top:1px solid rgba(255,255,255,.1)}.ob-stage{min-height:360px}.ob-head{flex-direction:column}.ob-stage-head{flex-wrap:wrap}}`;
+const OVERLAY_EDITOR_CSS = `.spmt-overlay-bay-parity{display:block!important;padding:0!important;overflow:hidden}.ob-head{display:flex;justify-content:space-between;gap:16px;padding:18px 20px;border-bottom:1px solid rgba(255,255,255,.12)}.ob-head h2{margin:.15em 0}.ob-head p{margin:0;opacity:.72}.ob-head-actions,.ob-stage-head,.ob-source-actions{display:flex;gap:8px;align-items:center}.ob-tabs{display:flex;gap:6px;padding:10px 14px;overflow:auto;border-bottom:1px solid rgba(255,255,255,.1)}.ob-tabs button.active{outline:1px solid var(--accent)}.ob-shell{display:grid;grid-template-columns:190px minmax(0,1fr) 280px;min-height:620px}.ob-palette,.ob-inspector{padding:14px;overflow:auto;background:rgba(3,8,20,.28)}.ob-palette{border-right:1px solid rgba(255,255,255,.1)}.ob-inspector{border-left:1px solid rgba(255,255,255,.1)}.ob-source-kinds,.ob-widgets{display:grid;gap:6px;padding:8px 0}.ob-palette details,.ob-inspector details{border-bottom:1px solid var(--border,#ffffff25);padding:6px 0}.ob-palette summary,.ob-inspector summary,.ob-outputs summary{cursor:pointer;padding:10px 0;font-weight:800}.ob-layer-list>div{display:grid;grid-template-columns:1fr 1fr;gap:5px;padding:8px 0}.ob-layer-list button{grid-column:1/-1;overflow-wrap:anywhere}.ob-layer-list label{display:flex;gap:4px;align-items:center;font-size:12px}.ob-layer-list input{width:auto}.ob-layer-list .active{outline:1px solid var(--accent)}[data-ob-save-state]{font-size:12px}.ob-palette button{text-align:left}.ob-palette button small{display:block;opacity:.6}.ob-stage-wrap{min-width:0;padding:12px;display:flex;flex-direction:column;gap:10px}.ob-stage-head input{min-width:160px;flex:1}.ob-stage{position:relative;aspect-ratio:16/9;max-height:70vh;width:100%;overflow:hidden;border:1px solid rgba(100,210,255,.3);border-radius:14px;background:radial-gradient(circle at 30% 20%,rgba(95,60,160,.18),rgba(2,8,20,.72));touch-action:none}.ob-empty{position:absolute;inset:0;display:grid;place-items:center;padding:30px;text-align:center;opacity:.62}.ob-source{position:absolute;border:1px solid rgba(100,220,255,.55);border-radius:10px;background:rgba(7,16,35,.82);box-shadow:0 0 20px rgba(75,80,180,.2);overflow:hidden;user-select:none;touch-action:none}.ob-source.selected{outline:2px solid var(--accent)}.ob-source.locked{border-style:dashed}.ob-source header{display:flex;justify-content:space-between;gap:8px;padding:5px 8px;background:rgba(0,0,0,.25);font-size:11px}.ob-source>div{height:calc(100% - 28px);display:flex;align-items:center;justify-content:center;gap:8px;flex-direction:column;padding:8px;text-align:center}.ob-source img{width:100%;height:100%;object-fit:contain}.ob-source i[data-ob-resize]{position:absolute;right:0;bottom:0;width:18px;height:18px;cursor:nwse-resize;background:linear-gradient(135deg,transparent 45%,var(--accent) 46%)}.ob-inspector label{display:grid;gap:5px;margin:9px 0;font-size:12px}.ob-inspector input,.ob-inspector select,.ob-inspector textarea,.ob-stage-head input{width:100%}.ob-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px}.ob-checks{display:grid;grid-template-columns:1fr 1fr;gap:4px}.ob-checks label{display:flex;align-items:center;gap:6px}.ob-checks input{width:auto}.ob-games{display:grid;gap:5px;max-height:280px;overflow:auto}.ob-games label{grid-template-columns:auto 1fr 78px;align-items:center;margin:0;padding:4px;border-bottom:1px solid rgba(255,255,255,.06)}.ob-games input{width:auto}.ob-outputs{padding:14px 18px;border-top:1px solid rgba(255,255,255,.1)}.ob-outputs article{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.06)}.ob-outputs small{display:block;opacity:.6}.ob-first{padding:30px}.ob-alert-test{position:absolute;overflow:hidden;white-space:pre-wrap;background:transparent;color:white;font:700 clamp(14px,2vw,42px)/1.2 system-ui;text-shadow:0 2px 8px #000;pointer-events:none}@keyframes obtest{from{opacity:0;transform:scale(.8)}to{opacity:1;transform:scale(1)}}@media(max-width:900px){.ob-shell{grid-template-columns:1fr}.ob-palette{border-right:0;border-bottom:1px solid rgba(255,255,255,.1)}.ob-source-kinds,.ob-widgets{grid-template-columns:repeat(2,minmax(0,1fr))}.ob-inspector{border-left:0;border-top:1px solid rgba(255,255,255,.1)}.ob-stage{min-height:0}.ob-head{flex-direction:column}.ob-stage-head{flex-wrap:wrap}}`;

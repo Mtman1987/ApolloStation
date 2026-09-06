@@ -77,3 +77,15 @@ Sprite setup provisions FFmpeg 6.1.1 from a pinned, SHA-256-verified static
 release before media tests, and launches workers with that same executable on
 PATH. Release verification checks the live shell bytes, all four Home/Settings
 icon pairs, native download redirects, and app build identities.
+
+## Overlay editor and source audit (2026-09-06)
+
+Dragging targets the grabbed source ID, independent of the inspector selection. Layout edits autosave after the gesture/input settles. Workspace refreshes preserve an unfinished draft; saves merge changed source fields onto the latest revision, retaining unrelated changes from other windows. Hidden sources remain selectable in the Scene sources accordion, with independent Show and Lock checkboxes.
+
+Alert tests use the selected source's position, size, opacity, layer and content. They no longer create a separate centered purple card. Source kinds, app widgets, saved source reuse, properties and output URLs are collapsible. The preview canvas follows the scene's own aspect ratio.
+
+The source audit found nine registered StreamWeaver widgets (chat interactions, Bic counter, gamble, classic gamble, leaderboard, avatar, voice/captions, shoutout media and BRB media). Overlay Bay also discovers Nebula's existing saved game mixes and exposes its 20 individual game outputs plus the all-active-games output. Saved URL/widget sources from every workspace scene can be reused. Refresh app overlays re-reads the saved game mixes.
+
+HearMeOut, Discord Stream Hub and Stellar Core do not currently expose additional registered native overlay renderer URLs in Apollo. An app catalog `overlay` surface label alone is not treated as a working renderer. Existing external browser-source URLs remain usable through Web / Overlay URL.
+
+Registered HTML renderers receive a transparent root/body canvas and a matching explicit color scheme; upstream errors and non-HTML documents produce transparent errors. Only the canvas style is admitted to a renderer's restrictive style CSP, preserving script and connection restrictions. Workspace controls remain above the overlay. Live provider sends remain subject to the existing environment mode.

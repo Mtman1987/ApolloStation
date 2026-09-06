@@ -124,3 +124,22 @@ test("SPMT exposes stable Public and signed-in Personal tenant overlay outputs",
     assert.equal(authorized.every((item) => item.scope === "workspace:read" && item.tenantId === "tenant-a"), true);
   } finally { await gateway.close(); }
 });
+
+test('saved widget sources keep a transparent canvas without loosening scripts or painting upstream errors',async()=>{
+ const inner=createServer((_req,res)=>res.end()),principal={grantId:'grant-a',tenantId:'tenant-a',appId:'renderer',widgetId:'widget'};
+ let result={status:200,body:'<!doctype html><html><head><style nonce="original">body{background:white}</style></head><body>Actual overlay artwork</body></html>',type:'text/html',csp:"default-src 'none'; script-src 'nonce-original'; style-src 'nonce-original'; connect-src 'self'; frame-ancestors 'self'"};
+ const gateway=createSpmtOutputGateway({server:inner,control:{resolveOverlayOutputToken(){return{principal,rendererUrl:'https://renderer.example/overlay'}}},async close(){await close(inner)}},{port:0,host:'127.0.0.1',fetchImpl:async()=>new Response(result.body,{status:result.status,headers:{'content-type':result.type,'content-security-policy':result.csp}})});
+ try{
+  await gateway.listen();const url=origin(gateway.server)+'/o/abcdefghijklmnop';
+  const response=await fetch(url),html=await response.text(),csp=response.headers.get('content-security-policy');
+  assert.equal(response.status,200);assert.match(html,/Actual overlay artwork/);assert.match(html,/background:transparent!important;color-scheme:only light!important/);
+  const css=html.match(/<style data-spmt-overlay-canvas="">(.*?)<\/style>/)[1],{createHash}=await import('node:crypto');
+  assert.ok(csp.includes("'sha256-"+createHash('sha256').update(css).digest('base64')+"'"));
+  assert.match(csp,/script-src 'nonce-original';/);assert.match(csp,/connect-src 'self';/);assert.match(csp,/style-src-elem 'nonce-original' 'sha256-/);
+  result.csp="default-src 'none'; script-src 'none'; style-src 'unsafe-inline'";
+  const inline=await fetch(url);assert.equal(inline.headers.get('content-security-policy'),result.csp);
+  for(const failure of [{status:503,type:'text/html',body:'<body style="background:white">Service failure</body>'},{status:200,type:'application/json',body:'{"error":"Renderer not ready"}'}]){
+   result={...result,...failure};const bad=await fetch(url),body=await bad.text();assert.ok(bad.status>=400);assert.match(body,/background:transparent;color-scheme:only light/);assert.doesNotMatch(body,/Service failure|Renderer not ready/);
+  }
+ }finally{await gateway.close()}
+});
