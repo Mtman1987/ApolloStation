@@ -1,16 +1,56 @@
 {
   "rules": [
-    { "domain": "github.com", "action": "allow" },
-    { "domain": "*.github.com", "action": "allow" },
-    { "domain": "githubusercontent.com", "action": "allow" },
-    { "domain": "*.githubusercontent.com", "action": "allow" },
-    { "domain": "npmjs.org", "action": "allow" },
-    { "domain": "*.npmjs.org", "action": "allow" },
-    { "domain": "huggingface.co", "action": "allow" },
-    { "domain": "*.huggingface.co", "action": "allow" },
-    { "domain": "hf.co", "action": "allow" },
-    { "domain": "*.hf.co", "action": "allow" },
-    { "domain": "spmt.live", "action": "allow" },
-    { "domain": "*", "action": "deny" }
+    {
+      "domain": "github.com",
+      "action": "allow"
+    },
+    {
+      "domain": "*.github.com",
+      "action": "allow"
+    },
+    {
+      "domain": "githubusercontent.com",
+      "action": "allow"
+    },
+    {
+      "domain": "*.githubusercontent.com",
+      "action": "allow"
+    },
+    {
+      "domain": "npmjs.org",
+      "action": "allow"
+    },
+    {
+      "domain": "*.npmjs.org",
+      "action": "allow"
+    },
+    {
+      "domain": "huggingface.co",
+      "action": "allow"
+    },
+    {
+      "domain": "*.huggingface.co",
+      "action": "allow"
+    },
+    {
+      "domain": "hf.co",
+      "action": "allow"
+    },
+    {
+      "domain": "*.hf.co",
+      "action": "allow"
+    },
+    {
+      "domain": "spmt.live",
+      "action": "allow"
+    },
+    {
+      "domain": "api.openai.com",
+      "action": "allow"
+    },
+    {
+      "domain": "*",
+      "action": "deny"
+    }
   ]
 }

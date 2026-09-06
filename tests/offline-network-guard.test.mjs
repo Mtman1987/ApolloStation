@@ -36,3 +36,9 @@ test("offline guard permits only GET requests to the configured live-read origin
 function httpsRequest() {
   return https.get("https://example.com/apollo-should-never-leave");
 }
+
+
+test('private flow credential scope allows only OpenAI Responses POST',()=>{
+ const source=`globalThis.fetch=async()=>new Response('ok');await import(process.env.GUARD_URL);await fetch('https://api.openai.com/v1/responses',{method:'POST'});let blocked=0;for(const [url,method] of [['https://api.openai.com/v1/responses','GET'],['https://api.openai.com/v1/files','POST'],['https://example.com/data','POST']]){try{fetch(url,{method})}catch(error){if(/OFFLINE_NETWORK_BLOCKED/.test(String(error)))blocked++}}if(blocked!==3)process.exit(1);`;
+ const child=spawnSync(process.execPath,['--input-type=module','--eval',source],{encoding:'utf8',env:{...process.env,GUARD_URL:new URL('../scripts/offline-network-guard.mjs',import.meta.url).href,SPMT_PRIVATE_FLOW_OPENAI_ENABLED:'1'}});assert.equal(child.status,0,child.stderr);
+});

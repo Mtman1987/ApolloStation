@@ -3,6 +3,7 @@ import https from "node:https";
 import net from "node:net";
 import tls from "node:tls";
 
+const privateFlowOpenAi=process.env.SPMT_PRIVATE_FLOW_OPENAI_ENABLED==="1";
 const marker = Symbol.for("apollostation.offline-network-guard");
 const liveReadUrl = configuredLiveReadUrl(process.env.SPMT_LIVE_READ_ORIGIN);
 
@@ -60,11 +61,13 @@ function assertSocketTarget(args, label) {
   if (typeof first === "object" && first !== null) {
     if (first.path) return;
     if (isLiveReadHost(first.host ?? first.hostname ?? first.servername) && Number(first.port ?? 443) === 443) return;
+    if(privateFlowOpenAi&&String(first.host??first.hostname??first.servername)==="api.openai.com"&&Number(first.port??443)===443)return;
     assertLoopbackHost(first.host ?? first.hostname ?? "localhost", label);
     return;
   }
   const host = typeof args[1] === "string" ? args[1] : "localhost";
   if (isLiveReadHost(host) && Number(first ?? 443) === 443) return;
+  if(privateFlowOpenAi&&host==="api.openai.com"&&Number(first??443)===443)return;
   assertLoopbackHost(host, label);
 }
 
@@ -73,6 +76,7 @@ function assertAllowedUrl(value, method, label) {
   const url = value instanceof URL ? value : new URL(String(value), "http://localhost");
   if (!["http:", "https:", "ws:", "wss:"].includes(url.protocol)) return;
   if (liveReadUrl && url.origin === liveReadUrl.origin && String(method).toUpperCase() === "GET") return;
+  if(privateFlowOpenAi&&url.origin==="https://api.openai.com"&&url.pathname==="/v1/responses"&&String(method).toUpperCase()==="POST")return;
   assertLoopbackHost(url.hostname, label);
 }
 

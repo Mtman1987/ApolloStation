@@ -61,6 +61,7 @@ export interface StreamWeaverFlowActionV1 {
 }
 
 export interface StreamWeaverFlowPackageV1 {
+  guide?: { summary:string; invariants:string[]; sections:Array<{id:string;title:string;content:string}> };
   schemaVersion: 1;
   kind: typeof STREAMWEAVER_FLOW_PACKAGE_KIND;
   packageId: string;
@@ -363,6 +364,7 @@ export function normalizeFlowPackage(value: unknown, defaults?: { now: string; a
   if (packageKind === "command_flow" && actions.some((action) => !wired.has(action.id))) throw new Error("Command-flow actions must be wired to a command");
   const result: StreamWeaverFlowPackageV1 = { schemaVersion: 1, kind: STREAMWEAVER_FLOW_PACKAGE_KIND, packageId: identifier(item.packageId ?? `flow.${crypto.randomUUID()}`, "packageId"), packageKind, installUnit: "flow", name: text(item.name, "name", 120), description: optionalText(item.description, 1000), author, visibility: defaults?.visibility ?? (item.visibility === "community" ? "community" : "private"), collection: optionalText(item.collection, 120) || "Community", tags: stringArray(item.tags, 24, 48), commands, actions, createdAt: item.createdAt === undefined ? now : iso(item.createdAt, "createdAt"), updatedAt: now };
   if(item.legacySource!==undefined)result.legacySource=structuredClone(object(item.legacySource,"legacySource"));
+  if(item.guide!==undefined){const guide=object(item.guide,"guide");result.guide={summary:text(guide.summary,"guide.summary",1000),invariants:stringArray(guide.invariants,20,500),sections:array(guide.sections,"guide.sections",20).map(value=>{const section=object(value,"guide section");return{id:identifier(section.id,"section.id"),title:text(section.title,"section.title",120),content:text(section.content,"section.content",6000)};})};uniqueIds(result.guide.sections.map(s=>s.id),"guide section");if(JSON.stringify(result.guide).length>40000)throw Error("Flow guide exceeds 40000 characters");}
   if (JSON.stringify(result).length > 256_000) throw new Error("Flow package is too large");
   return result;
 }

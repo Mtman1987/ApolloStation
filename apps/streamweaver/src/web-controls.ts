@@ -1,6 +1,9 @@
 import {activeRideLookup} from "./ride-runtime.js";
 import {StreamWeaverTwitchCommandAdapter} from "./twitch-command-adapter.js";
 import {SpmtStreamWeaverTwitchGrantSource} from "./twitch-grants.js";
+import {StreamWeaverFlowTestRoom} from "./flow-test-room.js";
+import {OpenAiToolAuthor} from "@spmt/stellar-core";
+import {StreamWeaverFlowAuthorWorker,FLOW_AUTHOR_CAPABILITY} from "./flow-author-worker.js";
 import {StreamWeaverTikTokStore} from "./tiktok-store.js";
 import { SqliteStreamWeaverShoutoutStore, type StreamWeaverShoutoutSettings } from "./shoutout-store.js";
 import { TTS_VOICE_OPTIONS } from "@spmt/stellar-core";
@@ -31,12 +34,14 @@ import { StreamWeaverRuntimeSettingsStore } from "./runtime-settings.js";
 import { SqliteStreamWeaverBotRelayStore } from "./bot-relay.js";
 
 export interface StreamWeaverWebConnectionV1 { schemaVersion: 1; tenantId: string; provider: ChatProviderV1; connectionId: string; channelId: string; providerAccountId: string; desired: boolean; }
-export interface StreamWeaverWebControlOptionsV1 { privateAiDraftsEnabled?:boolean; buildSha?:string; spmtOrigin: string; databasePath?: string; credential?: string; connections?: StreamWeaverWebConnectionV1[]; operationMode?: SpmtOperationModeV1; fetchImpl?: typeof fetch; }
+export interface StreamWeaverWebControlOptionsV1 { openAiKey?:string; privateAiDraftsEnabled?:boolean; buildSha?:string; spmtOrigin: string; databasePath?: string; credential?: string; connections?: StreamWeaverWebConnectionV1[]; operationMode?: SpmtOperationModeV1; fetchImpl?: typeof fetch; }
 type SessionContext = Awaited<ReturnType<typeof fetchAppSessionContext>>;
 
 /** Authenticated app API behind Voice Commander, persona, economy, and integration pages. */
 export class StreamWeaverWebControls {
   private readonly tiktok?:StreamWeaverTikTokStore;
+  private readonly testRooms?:StreamWeaverFlowTestRoom;
+  private readonly authorWorker?:StreamWeaverFlowAuthorWorker;
   private readonly shoutoutStore?:SqliteStreamWeaverShoutoutStore;
   private readonly generation?:StreamWeaverGenerationStore;
   private readonly community?:StreamWeaverCommunityStore;
@@ -62,6 +67,8 @@ export class StreamWeaverWebControls {
       const getAccessToken = serviceTokenProvider(options);
       this.client = new SpmtClient({ baseUrl: options.spmtOrigin, appId: "streamweaver", getAccessToken, ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}) });
     }
+    if(options.databasePath&&this.client)this.testRooms=new StreamWeaverFlowTestRoom(options.databasePath+".flow-tests",this.client);
+    if(options.openAiKey&&this.client&&this.flows&&this.testRooms){this.authorWorker=new StreamWeaverFlowAuthorWorker(this.client,this.flows,new OpenAiToolAuthor({apiKey:options.openAiKey,...(options.fetchImpl?{fetchImpl:options.fetchImpl}:{})}),this.testRooms);this.authorWorker.start();}
   }
 
   close() { this.tiktok?.close(); this.shoutoutStore?.close(); this.generation?.close(); this.community?.close(); this.pokemon?.close(); this.relay?.close(); this.runtimeSettings?.close(); this.flows?.close(); this.persona?.close(); this.economy?.close(); }
@@ -260,6 +267,12 @@ export class StreamWeaverWebControls {
       if (url.pathname === "/api/streamweaver/control/flows/approve") return this.approveFlow(response, context, body);
       if (url.pathname === "/api/streamweaver/control/flows/publish") return this.publishFlow(response, context, body);
       if (url.pathname === "/api/streamweaver/control/flows/preview") return await this.previewFlow(response, context, body);
+      if(url.pathname==="/api/streamweaver/control/flows/test"){
+        if(!this.testRooms)throw Error("Flow test rooms are unavailable");const user=this.actor(context).id;
+        if(body.testId){const seat=body.seat==="b"?"b":"a";return sendJson(response,200,await this.testRooms.act(context.tenantId,user,identifier(body.testId,"testId"),seat,String(body.action??"view"),body.index===undefined?undefined:Number(body.index)));}
+        const pkg=this.requireFlows().get(context.tenantId,identifier(body.packageId,"packageId"));if(!pkg||pkg.author.id!==user||pkg.visibility!=="private")throw Error("Select one of your private flows to test");
+        return sendJson(response,200,body.action==="suite"?await this.testRooms.test(context.tenantId,user,pkg):await this.testRooms.start(context.tenantId,user,pkg));
+      }
       if (url.pathname === "/api/streamweaver/control/flows/ai") return await this.requestAiFlow(request, response, context, body);
       if (url.pathname === "/api/streamweaver/control/flows/ai/complete") return await this.completeAiFlow(response, context, body);
       if (url.pathname === "/api/streamweaver/control/persona") return this.updatePersona(response, context, body);
@@ -333,6 +346,7 @@ export class StreamWeaverWebControls {
         suiteActionsMessage: `${connectedSuiteActions} of ${botActions.length} cross-app actions have a ready app-owned worker. Commands from Voice Commander, chat, MountainView, and Companion use the same SPMT job pipeline.`,
       },
       botActions,
+      aiAuthoring:{ready:Boolean(this.authorWorker),createModel:"gpt-5.6-sol",editModel:"gpt-5.6-luna"},
       flows: { installed: installedFlows.length, community: this.flows?.listCommunity().length ?? 0 },
     });
   }
@@ -378,18 +392,26 @@ export class StreamWeaverWebControls {
     let devices:unknown[]=[];
     try { const value=await this.deviceApi(request,context); if(Array.isArray(value))devices=value; } catch { /* Device setup is optional; unregistered devices must not be invented. */ }
     const connections=(this.options.connections??[]).filter(item=>item.tenantId===context.tenantId&&item.desired);
+    if(this.authorWorker){
+      const sourceId=body.packageId===undefined?undefined:identifier(body.packageId,"packageId"),source=sourceId?this.requireFlows().get(context.tenantId,sourceId):undefined;
+      if(sourceId&&(!source||source.author.id!==userId||source.visibility!=="private"))throw Error("Select one of your saved private flows before requesting an edit");
+      if(source&&body.expectedUpdatedAt!==source.updatedAt)throw Error("Save or reopen the current flow before requesting an AI edit");
+      const result=await client.createExecutionJob(context.tenantId,{ownerAppId:"streamweaver",capabilityId:FLOW_AUTHOR_CAPABILITY,executionOwner:"streamweaver",billedUserId:userId,meteredResource:"ai-chat-requests",usageQuantity:1,executionTarget:"sprite",meteringTarget:"hosted",input:{idea,displayName:this.actor(context).displayName,devices,connections,...(source?{sourcePackageId:source.packageId,sourceRevision:source.updatedAt}:{})}},idempotency(body.idempotencyKey,"streamweaver-flow-ai"));
+      return sendJson(response,202,{status:"accepted",jobId:result.job.id,model:source?"gpt-5.6-luna":"gpt-5.6-sol"});
+    }
     const prompt=buildStreamWeaverAiFlowPrompt(idea,{devices,connections});
     const result=await client.invokeCommunityAssistant(context.tenantId,{userId,message:prompt,surface:"developer",conversationId:`streamweaver:flow-coder:${userId}`,routingPreference:"automatic",remember:false},idempotency(body.idempotencyKey,"streamweaver-flow-ai"));
     return sendJson(response,result.status==="accepted"?202:503,{...result,kind:"flow-builder",toolCatalog:"apollo-streamweaver"});
   }
 
   private async readAiFlowJobs(request: IncomingMessage, response: ServerResponse, context: SessionContext) {
-    const userId=String(context.session.actorId??""),jobs=await this.deviceApi(request,context,undefined,"/v1/jobs?ownerAppId=stellar-core&limit=100") as unknown as ExecutionJobV1[];
-    return sendJson(response,200,{jobs:jobs.filter(job=>this.isAiFlowJob(job,userId)).map(job=>({jobId:job.id,state:job.state,createdAt:job.createdAt,updatedAt:job.updatedAt,repairAttempt:this.aiFlowRepairAttempt(job),reason:job.error?.message,packageId:this.requireFlows().get(context.tenantId,`flow.ai.${job.id}`)?.packageId}))});
+    const userId=String(context.session.actorId??""),jobs=(await Promise.all(["stellar-core","streamweaver"].map(app=>this.deviceApi(request,context,undefined,"/v1/jobs?ownerAppId="+app+"&limit=100")))).flat() as unknown as ExecutionJobV1[];
+    return sendJson(response,200,{jobs:jobs.filter(job=>this.isAiFlowJob(job,userId)).sort((a,b)=>b.createdAt.localeCompare(a.createdAt)).map(job=>({jobId:job.id,state:job.state,createdAt:job.createdAt,updatedAt:job.updatedAt,model:job.result?.model??(job.capabilityId===FLOW_AUTHOR_CAPABILITY?(job.input.sourcePackageId?"gpt-5.6-luna":"gpt-5.6-sol"):"legacy"),repairAttempt:this.aiFlowRepairAttempt(job),reason:job.error?.message,packageId:this.requireFlows().get(context.tenantId,`flow.ai.${job.id}`)?.packageId}))});
   }
 
   private isAiFlowJob(job: {billedUserId:string;capabilityId:string;input:Record<string,unknown>},userId:string) {
     const conversation=String(job.input.conversationId??"");
+    if(job.billedUserId===userId&&job.capabilityId===FLOW_AUTHOR_CAPABILITY)return true;
     return job.billedUserId===userId && job.capabilityId==="stellar-core.ai-chat.v1" && [ `streamweaver:flow-coder:${userId}`, `streamweaver:flow-coder:${userId}:repair` ].includes(conversation);
   }
 
@@ -401,6 +423,11 @@ export class StreamWeaverWebControls {
     if (job.state!=="succeeded") return sendJson(response,202,{schemaVersion:1,state:job.state,jobId,reason:job.error?.message});
     const repairAttempt=this.aiFlowRepairAttempt(job),packageId=`flow.ai.${jobId}`,existing=this.requireFlows().get(context.tenantId,packageId);
     if(existing)return sendJson(response,200,{schemaVersion:1,state:"succeeded",package:existing,validated:true,repairAttempts:repairAttempt});
+    if(job.capabilityId===FLOW_AUTHOR_CAPABILITY){
+      const normalized=normalizeFlowPackage(record(job.result)?.package,{now:new Date().toISOString(),author:this.actor(context),visibility:"private"});assertStreamWeaverFlowRunnable(normalized);
+      const saved=this.requireFlows().saveDraft(context.tenantId,{...normalized,packageId,author:this.actor(context)},this.actor(context));
+      return sendJson(response,200,{state:"succeeded",package:saved,model:job.result?.model,validated:true});
+    }
     const result=record(job.result),raw=String(result?.text??record(result?.output)?.text??"");
     try {
       const parsed=parseJsonObject(raw),candidate=record(record(parsed)?.package)??parsed;

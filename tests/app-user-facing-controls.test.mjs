@@ -28,7 +28,7 @@ async function fixture(run, aiOptions = {}) {
     writeFileSync(configPath, JSON.stringify({ schemaVersion: 1, pollIntervalSeconds: 60, tenants: [{ tenantId, twitchProviderUserId: "twitch-owner", discordProviderUserId: "discord-bot", discordGuildIds: [guildId], branding: { communityMemberName: "Crew" }, members: [] }] }));
     const { publicKey, privateKey } = generateKeyPairSync("ed25519"), publicKeyHex = publicKey.export({ type: "spki", format: "der" }).subarray(-32).toString("hex");
     dsh = createDiscordStreamHubWebServer({ spmtOrigin: spmtBase, host: "127.0.0.1", port: 0, databasePath: dshDatabase, runtimeConfigPath: configPath, publicOrigin: "https://spmt.example", discordPublicKey: publicKeyHex, discordClientId: "222222222222222222" });
-    streamweaver = createStreamWeaverWebServer({ privateAiDraftsEnabled:aiOptions.privateAiDraftsEnabled, spmtOrigin: spmtBase, host: "127.0.0.1", port: 0, databasePath: streamDatabase, credential: streamweaverCredential, operationMode: "read-only", connectionsJson: JSON.stringify([{ schemaVersion: 1, tenantId, provider: "twitch", connectionId: "main", channelId: "mtman1987", providerAccountId: "twitch-owner", desired: true }]) });
+    streamweaver = createStreamWeaverWebServer({ openAiKey:aiOptions.openAiKey,fetchImpl:aiOptions.fetchImpl,privateAiDraftsEnabled:aiOptions.privateAiDraftsEnabled, spmtOrigin: spmtBase, host: "127.0.0.1", port: 0, databasePath: streamDatabase, credential: streamweaverCredential, operationMode: "read-only", connectionsJson: JSON.stringify([{ schemaVersion: 1, tenantId, provider: "twitch", connectionId: "main", channelId: "mtman1987", providerAccountId: "twitch-owner", desired: true }]) });
     await dsh.listen(); await streamweaver.listen(); const dshAddress = dsh.server.address(), streamAddress = streamweaver.server.address(); assert.ok(dshAddress && typeof dshAddress !== "string" && streamAddress && typeof streamAddress !== "string");
     ingress = createIntegratedSpaceMountainWebHost({ spmtOrigin: spmtBase, host: "127.0.0.1", port: 0, greenAppOrigins: { "discord-stream-hub": `http://127.0.0.1:${dshAddress.port}`, "streamweaver": `http://127.0.0.1:${streamAddress.port}` } });
     await ingress.listen(); const webBase = `http://127.0.0.1:${ingress.server.address().port}`;
@@ -280,4 +280,29 @@ test('owner check-in greeting controls persist and reject invalid voices and ano
 
 test('owner can bind an enabled reward to rides and cannot reuse an individual check-in reward',async()=>{
  await fixture(async({cookie,streamBase})=>{const path=streamBase+'/api/streamweaver/control/stream-operations',headers={cookie,origin:streamBase,'content-type':'application/json'},post=body=>fetch(path,{method:'POST',headers,body:JSON.stringify(body)});assert.equal((await post({action:'redeem',id:'ride',title:'Ride',price:100,award:0,acceptance:'either',firstPerStream:false,text:'Ride!',mediaUrl:'',enabled:true,rewardId:''})).status,200);assert.equal((await post({action:'ride-settings',enabled:true,rewardId:'ride'})).status,200);assert.equal((await (await fetch(path,{headers:{cookie}})).json()).rideSettings.rewardId,'ride');assert.notEqual((await post({action:'partner',id:'crew',name:'Crew',kind:'crew',imageUrl:'',inviteUrl:'',rewardId:'ride'})).status,200);assert.equal((await post({action:'ride-settings',enabled:false,rewardId:''})).status,200);});
+});
+
+test('hosted flow jobs create with Sol, shadow test, recover drafts and edit with Luna',async()=>{
+ const calls=[];
+ const pkg={schemaVersion:1,kind:'streamweaver.flow-package',packageId:'generated-hello',name:'Hello',commands:[{id:'hello',trigger:'!hello',actionIds:['reply'],runtime:'flow'}],actions:[{id:'reply',type:'send-chat',config:{text:'Hello %userName%!'}}],guide:{summary:'Greeting',invariants:['Greet the sender'],sections:['configuration','troubleshooting','tests'].map(id=>({id,title:id,content:'One greeting sent to the source chat.'}))}};
+ const fetchImpl=async(url,init)=>{
+  if(String(url)!=='https://api.openai.com/v1/responses')return fetch(url,init);
+  const body=JSON.parse(init.body);calls.push(body);const number=body.input.filter(i=>i.type==='function_call_output').length;
+  const name=number===0?'read_capabilities':number===1?'run_shadow_tests':'submit_flow';
+  return Response.json({status:'completed',output:[{type:'function_call',call_id:'call-'+calls.length,name,arguments:JSON.stringify(name==='read_capabilities'?{}:{packageJson:JSON.stringify(pkg)})}],usage:{input_tokens:10,output_tokens:5}});
+ };
+ await fixture(async({cookie,streamBase})=>{
+  const headers={cookie,origin:streamBase,'content-type':'application/json'};
+  const post=async(path,body)=>{const response=await fetch(streamBase+'/api/streamweaver/control/flows/'+path,{method:'POST',headers,body:JSON.stringify(body)});const data=await response.json();assert.ok(response.ok,JSON.stringify(data));return data;};
+  const control=await(await fetch(streamBase+'/api/streamweaver/control',{headers})).json();assert.equal(control.aiAuthoring.ready,true);
+  const first=await post('ai',{idea:'Greet the sender',idempotencyKey:'sol-create'});assert.equal(first.model,'gpt-5.6-sol');
+  const finish=async jobId=>{for(let i=0;i<100;i++){const data=await post('ai/complete',{jobId});if(data.state==='succeeded')return data;if(data.state==='failed')assert.fail(data.reason);await new Promise(r=>setTimeout(r,50));}assert.fail('Worker did not finish');};
+  const created=await finish(first.jobId);assert.equal(created.package.guide.summary,'Greeting');
+  const test=await post('test',{packageId:created.package.packageId,action:'suite'});assert.equal(test.passed,true);
+  const second=await post('ai',{idea:'Keep the greeting',packageId:created.package.packageId,expectedUpdatedAt:created.package.updatedAt,idempotencyKey:'luna-edit'});assert.equal(second.model,'gpt-5.6-luna');
+  const edited=await finish(second.jobId);assert.notEqual(edited.package.packageId,created.package.packageId);
+  const history=await(await fetch(streamBase+'/api/streamweaver/control/flows/ai/jobs',{headers})).json();assert.equal(history.jobs.length,2);
+  assert.deepEqual(calls.map(c=>c.model),['gpt-5.6-sol','gpt-5.6-sol','gpt-5.6-sol','gpt-5.6-luna','gpt-5.6-luna','gpt-5.6-luna']);
+  assert.equal(JSON.parse(calls[3].input[0].content).guideIndex.length,3);assert.equal(calls[3].input[0].content.includes('One greeting sent'),false);
+ },{privateAiDraftsEnabled:true,openAiKey:'mock-private-key',fetchImpl});
 });

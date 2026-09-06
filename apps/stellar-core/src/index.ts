@@ -64,3 +64,4 @@ export * from "./private-assistant.js";
 export {StellarSpeechPresence} from "./speech-presence.js";
 
 export {StellarPublicMemory} from "./public-memory.js";
+export * from "./openai-tool-author.js";

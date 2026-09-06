@@ -180,6 +180,23 @@ jobs:
           jq -S . sandbox/sprites/network-policy.json >/tmp/network-policy-expected.json
           diff -u /tmp/network-policy-expected.json /tmp/network-policy-actual.json
 
+      - name: Install private flow authoring credential when configured
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${OPENAI_API_KEY:-}" ]]; then
+            umask 077
+            python3 -c 'import os,pathlib; pathlib.Path(os.environ["RUNNER_TEMP"],"apollo-openai-key").write_text(os.environ["OPENAI_API_KEY"])'
+            sprite exec --no-port-forward -o "$SPRITE_ORG" -s "$SPRITE_NAME" \
+              --file "$RUNNER_TEMP/apollo-openai-key:/tmp/apollo-openai-key" \
+              -- /bin/bash -c 'umask 077; mkdir -p /home/sprite/data/release; install -m 600 /tmp/apollo-openai-key /home/sprite/data/release/openai-api-key; rm -f /tmp/apollo-openai-key'
+            rm -f "$RUNNER_TEMP/apollo-openai-key"
+          else
+            echo "OPENAI_API_KEY is not configured in Actions; preserving any existing private Sprite credential."
+          fi
+
       - name: Promote and verify exact main commit
         shell: bash
         run: |
