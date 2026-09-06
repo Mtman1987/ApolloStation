@@ -104,3 +104,7 @@ Image Studio also has **Check image prompts before generation** for public and p
 In StreamWeaver → Accounts & Chat, the workspace owner can set a TikTok username and enable its read-only live source. The status refreshes every five seconds and shows connection state, received observations, viewers and likes. Chat, completed gift streaks, ordinary gifts, follows, shares and likes appear in shared chat. Failed delivery queues retry; disabling or changing the source clears its pending observations.
 
 The source requires active operation and enabled StreamWeaver and Chat Gateway installations. TikTok does not provide a public chat-send API through this connector. These observations do not establish verified account identity, run commands or award points. The deployed private, outbound-disabled environment does not connect until its operating restrictions are deliberately changed. Real TikTok/signing access still requires acceptance.
+
+### Gift event bindings
+
+A retained `gift-sub` command now receives Twitch's aggregate gifted-subscription event when no enabled `gift-bomb` command is configured. If both are enabled, `gift-bomb` takes precedence and only one flow runs. `{count}` expands to the gifted-subscription quantity; `{user}` remains the gifter. Local event awards still use the single `twitch:gift-bomb` award policy and its durable receipt.

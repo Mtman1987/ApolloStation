@@ -199,8 +199,11 @@ export class StreamWeaverProviderRuntime {
       if(event.rewardId&&event.redemptionId)await this.twitch?.redemptionStatus(event.tenantId,event.rewardId,event.redemptionId,"CANCELED");
       return;
     }
-    const binding=this.community.bindings(event.tenantId).find(b=>b.enabled&&b.event===eventName);
-    const text=binding?.command.replaceAll("{user}",event.username).replaceAll("{input}",event.input);
+    // Twitch emits one aggregate subscription-gift notification. Retained gift-sub
+    // bindings are a fallback alias, so enabling both cannot run a flow twice.
+    const bindings=this.community.bindings(event.tenantId).filter(b=>b.enabled);
+    const binding=bindings.find(b=>b.event===eventName)??(eventName==="gift-bomb"?bindings.find(b=>b.event==="gift-sub"):undefined);
+    const text=binding?.command.replaceAll("{user}",event.username).replaceAll("{input}",event.input).replaceAll("{count}",String(event.units??1));
     if(text){const message:NormalizedChatMessageV1={schemaVersion:1,tenantId:event.tenantId,provider:"twitch",connectionId:connection.connectionId,channelId:connection.channelId,messageId:source,text,occurredAt:event.occurredAt,actor:{providerUserId:event.userId||"anonymous",username:event.username||"anonymous",displayName:event.displayName,roles:["member"],isBot:false,...(canonicalUserId?{canonicalUserId}:{})},mentions:[]};await this.installedFlows.deliver({schemaVersion:1,deliveryId:source,consumerId:"streamweaver.installed-flows",attempts:1,message});}
     if(outcome){
       await this.options.egress.send({schemaVersion:1,tenantId:event.tenantId,provider:"twitch",connectionId:connection.connectionId,channelId:connection.channelId,text:outcome.text,idempotencyKey:`reward-result:${source}`});
