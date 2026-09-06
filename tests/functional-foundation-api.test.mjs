@@ -110,3 +110,7 @@ test("a service can read only the cross-owner execution jobs it requested", asyn
     assert.equal((await env.streamweaver.listExecutionJobs("tenant-a")).length, 0, "a requester needs a known job id and cannot enumerate another app's jobs");
   } finally { env.platformStore.close(); env.store.close(); rmSync(env.dir, { recursive: true, force: true }); }
 });
+
+test('canonical image suite actions derive publication permission and simulation cannot request it',()=>{
+ for(const simulation of [false,true]){const env=setup();try{const mcp=new SpmtMcpServer(env.operations),created=mcp.handle({jsonrpc:'2.0',id:1,method:'tools/call',params:{name:'spmt.suite-actions.create',arguments:{tenantId:'tenant-a',ownerAppId:'streamweaver',idempotencyKey:'image-publication',input:{schemaVersion:1,action:'sw.image.generate',args:{prompt:'Mountain'},actor:{userId:'spoofed',username:'spoofed',role:'owner'},source:{kind:'chat',simulation},mediaVisibility:'public'}}}},{accessToken:env.userAToken,protocolVersion:SPMT_MCP_PROTOCOL_VERSION});const job=created.result.structuredContent.job;assert.equal(job.billedUserId,'user-a');assert.equal(job.input.mediaVisibility,simulation?'private':'public');}finally{env.platformStore.close();env.store.close();rmSync(env.dir,{recursive:true,force:true})}}
+});

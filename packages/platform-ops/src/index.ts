@@ -183,7 +183,7 @@ export class PlatformOperations {
           }
           this.requireControl().getApp(ownerAppId);
           if(!this.requireControl().listInstalls(tenantId).some((install)=>install.appId===ownerAppId&&install.enabled))throw new AuthDeniedError(`App ${ownerAppId} is not installed for tenant ${tenantId}`);
-          const route=routeSpmtSuiteAction(input.action),result=this.requireExecutionJobs().create({tenantId,ownerAppId,capabilityId:route.capabilityId,executionOwner:route.executionOwner,requestedByType:principal.actorType,requestedById:principal.actorId,billedUserId:input.actor.userId,meteredResource:route.meteredResource,usageQuantity:1,executionTarget:"sprite",meteringTarget:"hosted",idempotencyKey:text(request.input.idempotencyKey,"idempotencyKey"),input:{...input},...(context.correlationId?{correlationId:context.correlationId}:{})});
+          const route=routeSpmtSuiteAction(input.action),result=this.requireExecutionJobs().create({tenantId,ownerAppId,capabilityId:route.capabilityId,executionOwner:route.executionOwner,requestedByType:principal.actorType,requestedById:principal.actorId,billedUserId:input.actor.userId,meteredResource:route.meteredResource,usageQuantity:1,executionTarget:"sprite",meteringTarget:"hosted",idempotencyKey:text(request.input.idempotencyKey,"idempotencyKey"),input:{...input,...(input.action==="sw.image.generate"?{mediaVisibility:input.source.simulation?"private":"public"}:{})},...(context.correlationId?{correlationId:context.correlationId}:{})});
           this.audit(principal,tenantId,"suite-actions.create",`suite-action:${input.action}:${result.job.id}`,result.duplicate?"duplicate":"accepted",context.correlationId);
           return{name:request.name,result};
         }

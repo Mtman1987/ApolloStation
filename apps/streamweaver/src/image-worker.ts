@@ -1,3 +1,4 @@
+import {decodeBinaryImage} from "./binary-image.js";
 import { assertSpmtSuiteActionJobInputV1, type ExecutionJobV1 } from "@spmt/contracts";
 import { StreamWeaverGenerationStore, normalizeGenerationSettings } from "./generation-settings.js";
 import { downloadGeneratedImage } from "./generated-media-download.js";
@@ -5,7 +6,7 @@ import type { SpmtClient } from "@spmt/sdk";
 import { StreamWeaverImageGenerationService } from "./image-generation.js";
 
 export const STREAMWEAVER_IMAGE_GENERATION_CAPABILITY = "streamweaver.image.generate.v1";
-export interface StreamWeaverImageWorkerClientV1 { claimAnyExecutionJob(workerId: string, target: "sprite", options: { executionOwner: string; capabilityIds: string[]; leaseMs: number }): Promise<ExecutionJobV1 | null>; heartbeatExecutionJob(tenantId: string, jobId: string, workerId: string, leaseId: string, fencingEpoch: number, progress: { percent: number; message: string }, leaseMs: number): Promise<unknown>; succeedExecutionJob(tenantId: string, jobId: string, workerId: string, leaseId: string, fencingEpoch: number, result: Record<string, unknown>): Promise<unknown>; failExecutionJob(tenantId: string, jobId: string, workerId: string, leaseId: string, fencingEpoch: number, code: string, message: string, retryable: boolean): Promise<unknown>; reportExecutionWorker(input:Record<string,unknown>):Promise<unknown>; uploadMediaAsset?:SpmtClient["uploadMediaAsset"]; }
+export interface StreamWeaverImageWorkerClientV1 { claimAnyExecutionJob(workerId: string, target: "sprite", options: { executionOwner: string; capabilityIds: string[]; leaseMs: number }): Promise<ExecutionJobV1 | null>; heartbeatExecutionJob(tenantId: string, jobId: string, workerId: string, leaseId: string, fencingEpoch: number, progress: { percent: number; message: string }, leaseMs: number): Promise<unknown>; succeedExecutionJob(tenantId: string, jobId: string, workerId: string, leaseId: string, fencingEpoch: number, result: Record<string, unknown>): Promise<unknown>; failExecutionJob(tenantId: string, jobId: string, workerId: string, leaseId: string, fencingEpoch: number, code: string, message: string, retryable: boolean): Promise<unknown>; reportExecutionWorker(input:Record<string,unknown>):Promise<unknown>; uploadMediaAsset?:SpmtClient["uploadMediaAsset"];publishMediaAsset?:SpmtClient["publishMediaAsset"]; }
 export class StreamWeaverImageWorker {
   private completedJobs=0;private failedJobs=0;private readonly startedAt=new Date().toISOString();private lastReportAt=0;private lastCatalogAt=0;
   constructor(private readonly client: StreamWeaverImageWorkerClientV1, private readonly service: StreamWeaverImageGenerationService, private readonly options: { workerId: string; modelNo: string; modelVerNo: string; tenantIds?:string[];settings?:StreamWeaverGenerationStore;fetchImpl?:typeof fetch }) {}
@@ -25,7 +26,18 @@ export class StreamWeaverImageWorker {
       const contentModeration=scope==="public"?(this.options.settings?.read(job.tenantId).contentModeration??true):settings.contentModeration===true;
       await this.client.heartbeatExecutionJob(...lease, { percent: 10, message: "Generating image with the configured provider chain" }, 15 * 60_000);
       let media=this.options.settings?.generated<Awaited<ReturnType<StreamWeaverImageGenerationService["image"]>>>(job.tenantId,job.id);
-      if(!media){media=await this.service.image({ prompt, modelNo:settings.modelNo||String(job.input.model||this.options.modelNo),modelVerNo:settings.modelVerNo||String(job.input.modelVerNo||this.options.modelVerNo),count:job.input.generationSettings?settings.count:count,seed:settings.seed,resolution:settings.resolution,provider:settings.provider,contentModeration,...(settings.edenModel?{edenModel:settings.edenModel}:{}),providerParams:settings.providerParams,enhancePrompt:settings.enhance,tenantId:job.tenantId,userId:job.billedUserId,requestId:job.id,promptTemplate:settings.promptTemplate });this.options.settings?.saveGenerated(job.tenantId,job.id,media);}else if(contentModeration)await this.service.moderatePrompt(media.prompt);
+      if(!media){media=await this.service.image({ prompt, modelNo:settings.modelNo||String(job.input.model||this.options.modelNo),modelVerNo:settings.modelVerNo||String(job.input.modelVerNo||this.options.modelVerNo),count:job.input.generationSettings?settings.count:count,seed:settings.seed,resolution:settings.resolution,provider:settings.provider,contentModeration,...(settings.edenModel?{edenModel:settings.edenModel}:{}),...(settings.cloudflareModel?{cloudflareModel:settings.cloudflareModel}:{}),providerParams:settings.providerParams,enhancePrompt:settings.enhance,tenantId:job.tenantId,userId:job.billedUserId,requestId:job.id,promptTemplate:settings.promptTemplate });this.options.settings?.saveGenerated(job.tenantId,job.id,media);}else if(contentModeration)await this.service.moderatePrompt(media.prompt);
+      if(media.binaryImages?.length){
+        if(!this.client.uploadMediaAsset)throw Error("Generated image storage is unavailable");
+        const publicOutput=job.input.mediaVisibility!=="private";
+        if(publicOutput&&(job.input.mediaVisibility!=="public"||!this.client.publishMediaAsset))throw Error("This image job has no explicit public media permission");
+        const mediaAssetIds:string[]=[],resourceUrls:string[]=[],jobContext={jobId:job.id,leaseId:job.leaseId,fencingEpoch:job.fencingEpoch};
+        for(const [index,binary] of media.binaryImages.entries()){
+          const image=decodeBinaryImage(binary),asset=await this.client.uploadMediaAsset(job.tenantId,{name:`Generated image ${index+1}`,contentType:image.contentType,purpose:"image",...(publicOutput?{expiresInSeconds:7*86400}:{})},image.bytes,`image:${job.id}:${index}`,jobContext);mediaAssetIds.push(asset.id);
+          if(publicOutput){const published=await this.client.publishMediaAsset!(job.tenantId,asset.id,jobContext);if(!published.publicUrl)throw Error("Public image publication is unavailable");resourceUrls.push(published.publicUrl);}
+        }
+        await this.client.succeedExecutionJob(...lease,{schemaVersion:1,kind:"image",provider:media.provider,prompt:media.prompt,attemptedProviders:media.attemptedProviders,mediaAssetIds,...(publicOutput?{text:`Generated images: ${resourceUrls.join(" ")}`,resourceUrl:resourceUrls[0],resourceUrls}:{text:`Saved ${mediaAssetIds.length} private images to Media Files.`})});this.completedJobs++;return;
+      }
       const mediaAssetIds:string[]=[];
       if(job.input.mediaVisibility==="private") {
         if(!this.client.uploadMediaAsset)throw new Error("Private image storage is unavailable");

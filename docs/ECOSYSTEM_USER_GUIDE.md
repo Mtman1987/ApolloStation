@@ -126,3 +126,9 @@ Riders must have existing Discord and Twitch links to the same Apollo account an
 After payment, a front-seat rider receives **100 streamer points**. Selection prefers people outside the recent-winner window, retains the last 20 winners and falls back to all riders when everyone has won recently. The ride uses the configured reward's normal local/SPMT pricing and awards; the front-seat bonus is additional local currency. No SPMT XP is created or converted.
 
 Rider eligibility and reward terms freeze for a request. Interrupted rides resume with the same payment, winner and bonus receipts. Every rider contributes to check-in statistics, with one bulk overlay reveal. Optional check-in greeting/speech settings also apply. Imported membership is an owner-refreshed snapshot; refresh it before relying on new role changes.
+
+### Cloudflare image generation
+
+Image Studio now offers **Cloudflare → FLUX.1 Schnell** in both private and public generation settings when its worker credentials are configured. It supports one to four images, a seed and 1–8 steps. Cloudflare uses its own default image size; the resolution selector applies to Eden/SeaArt. Prompts must fit within 2,048 characters. Other Cloudflare models, LoRAs and reference-image workflows remain pending.
+
+Private results go to Media Files. Public chat image actions publish managed image links that expire after seven days and can be revoked or deleted through Media Files. Storage retries reuse the generated images. Existing prompt-check controls apply; when enabled, checks still require the configured Eden moderation service. Inactive or sandbox runtimes do not call Cloudflare.
