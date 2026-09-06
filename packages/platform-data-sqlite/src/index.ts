@@ -1,3 +1,4 @@
+export * from "./media-assets.js";
 import { DatabaseSync } from "node:sqlite";
 import type { CoderJobStateV1, CoderJobV1, ExecutionJobStateV1, ExecutionJobV1, ExecutionTargetV1, OperationsLogLevelV1, OperationsLogV1, PairedDeviceV1 } from "@spmt/contracts";
 import type { ExecutionJobListOptionsV1, ExecutionJobStoreV1 } from "@spmt/execution-core";

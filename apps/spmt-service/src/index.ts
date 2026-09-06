@@ -1,3 +1,4 @@
+import { SpmtMediaApi } from "./media-api.js";
 import { streamWeaverWidgetManifests } from "@spmt/streamweaver/dist/overlay-widgets.js";
 import { randomBytes } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
@@ -14,7 +15,7 @@ import { ExecutionJobService } from "@spmt/execution-core";
 import { MonetizationService } from "@spmt/monetization";
 import { OutboxDispatcher } from "@spmt/outbox-core";
 import { PlatformDataError, PlatformDataService, type OAuthClientV1 } from "@spmt/platform-data-core";
-import { SqlitePlatformDataStore } from "@spmt/platform-data-sqlite";
+import { SqliteMediaAssetStore, SqlitePlatformDataStore } from "@spmt/platform-data-sqlite";
 import { PlatformOperations, type CoderRuntimeV1, type CommunityAssistantRuntimeV1 } from "@spmt/platform-ops";
 import {
   ProviderGrantBroker,
@@ -29,7 +30,7 @@ import { HealthRegistry } from "@spmt/runtime";
 import { assertAppCatalogRegistrationV1, assertBillingManifestV1, assertNormalizedChatMessageV1, BILLING_PLAN_IDS, type AppCatalogRegistrationV1, type BillingManifestV1, type BillingPlanIdV1, type ChatProviderV1, type NormalizedChatMessageV1 } from "@spmt/contracts";
 import { STELLAR_CHAT_CAPABILITY_ID, StellarCommunityAssistantRuntime, StellarDataPrivacyService } from "@spmt/stellar-core";
 
-const USER_SCOPES = ["identity:read","identity:write","workspace:read","workspace:write","xp:read","apps:read","apps:install","entitlements:read","usage:read","events:read","jobs:read","jobs:write","commlink:read","commlink:write","notifications:read","notifications:write","devices:read","devices:pair","devices:command","webhooks:read","webhooks:write","assistants:read","assistants:invoke","stellar:context:read","stellar:context:write","stellar:capabilities:read","stellar:data:read","stellar:data:write"];
+const USER_SCOPES = ["media:read","media:write","identity:read","identity:write","workspace:read","workspace:write","xp:read","apps:read","apps:install","entitlements:read","usage:read","events:read","jobs:read","jobs:write","commlink:read","commlink:write","notifications:read","notifications:write","devices:read","devices:pair","devices:command","webhooks:read","webhooks:write","assistants:read","assistants:invoke","stellar:context:read","stellar:context:write","stellar:capabilities:read","stellar:data:read","stellar:data:write"];
 const SANDBOX_OWNER_SCOPES = ["apps:register","jobs:any","operations:logs:read","operations:coder:read","operations:coder:invoke","overlay:widgets:read","overlay:outputs:read","overlay:outputs:write"];
 
 export interface SpmtServiceOptions {
@@ -78,6 +79,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
   if (options.sandboxApps?.length && runtimeMode !== "sandbox") throw new Error("Sandbox apps require sandbox runtime mode");
   const store = new SqliteAuthorityStore(options.databasePath);
   const platformStore = new SqlitePlatformDataStore(options.databasePath);
+  const mediaAssets = new SqliteMediaAssetStore(options.databasePath);
   const setupStore = new SqliteAccountSetupStore(options.databasePath);
   const commlinkLiveChat = new CommlinkLiveChatStore(options.databasePath);
   const authority = new AuthorityService({ store });
@@ -112,6 +114,9 @@ export function createSpmtService(options: SpmtServiceOptions) {
   const stellarPrivacy = new StellarDataPrivacyService(executionJobs, data);
   const operations = new PlatformOperations(auth, authority, control, data, communityAssistant, options.coderRuntime, executionJobs, stellarPrivacy);
   const api = new PlatformApiAdapter(operations);
+  const mediaApi = new SpmtMediaApi({ assets: mediaAssets, auth, control, jobs: platformStore, publicBaseUrl, accessToken, limitBytes: (tenantId) => (billing.manifest.plans.find(plan => plan.planId === billingPlan(control.listEntitlements(tenantId)))?.limits["storage-gb"] ?? 0) * 1024 ** 3 });
+  mediaAssets.sweep();
+  const mediaSweepTimer = setInterval(() => mediaAssets.sweep(), 15 * 60_000); mediaSweepTimer.unref();
   const health = new HealthRegistry();
   health.setDependency("authority-storage", "ready", `sqlite:${store.journalMode()}`);
   health.setDependency("outbound-integrations", runtimeMode === "sandbox" ? "degraded" : "ready", runtimeMode === "sandbox" ? "disabled by sandbox contract" : "enabled");
@@ -143,6 +148,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
     try {
       const path = request.url ?? "/";
       const url = new URL(`http://spmt.local${path}`);
+      if (await mediaApi.handle(request, response, url)) return;
 
       if (request.method === "GET" && url.pathname === "/health/live") return json(response, 200, { live: true, service: "spmt", runtimeMode, outboundIntegrations: runtimeMode === "sandbox" ? "disabled" : "enabled", buildSha: options.buildSha ?? "dev" });
       if (request.method === "GET" && url.pathname === "/health/ready") {
@@ -540,12 +546,12 @@ export function createSpmtService(options: SpmtServiceOptions) {
   });
 
   return {
-    store, platformStore, setupStore, commlinkLiveChat, authority, auth, control, billing, data, accounts, executionJobs, stellarPrivacy, operations, outbox, providerCredentials, server,
+    store, platformStore, mediaAssets, setupStore, commlinkLiveChat, authority, auth, control, billing, data, accounts, executionJobs, stellarPrivacy, operations, outbox, providerCredentials, server,
     registerOAuthClient(input: Parameters<PlatformDataService["registerOAuthClient"]>[0]): ReturnType<PlatformDataService["registerOAuthClient"]> { return data.registerOAuthClient(input); },
     runOutboxOnce() { return outbox.runOnce(); },
     runStellarPrivacySweep() { return stellarPrivacy.sweep(store.listTenants().map((tenant) => tenant.id)); },
     listen() { return new Promise<void>((done, reject) => { server.once("error", reject); server.listen(options.port ?? 3000, options.host ?? "0.0.0.0", () => { server.off("error", reject); done(); }); }); },
-    close() { clearInterval(stellarCapabilityTimer); clearInterval(stellarPrivacyTimer); return new Promise<void>((done, reject) => server.close((error) => { providerCredentials?.close(); commlinkLiveChat.close(); setupStore.close(); platformStore.close(); store.close(); error ? reject(error) : done(); })); },
+    close() { clearInterval(mediaSweepTimer); clearInterval(stellarCapabilityTimer); clearInterval(stellarPrivacyTimer); return new Promise<void>((done, reject) => server.close((error) => { providerCredentials?.close(); commlinkLiveChat.close(); setupStore.close(); mediaAssets.close(); platformStore.close(); store.close(); error ? reject(error) : done(); })); },
   };
 }
 
@@ -703,7 +709,7 @@ function resolveStellarRoute(control: ControlService, jobs: ExecutionJobService,
   return { executionTarget: "sprite" as const, meteringTarget: "hosted" as const };
 }
 function ensureStellarWorkerIdentity(auth: AuthService, credential: string) {
-  auth.reconcileServiceIdentity({ serviceId: "stellar-core", credential, scopes: ["jobs:read", "jobs:work", "stellar:context:read"], tenantMode: "any" });
+  auth.reconcileServiceIdentity({ serviceId: "stellar-core", credential, scopes: ["jobs:read", "jobs:work", "stellar:context:read", "media:read", "media:write"], tenantMode: "any" });
 }
 function ensureChatGatewayIdentity(auth: AuthService, credential: string) {
   auth.reconcileServiceIdentity({ serviceId: "chat-gateway", credential, scopes: ["jobs:read", "jobs:work", "providers:grant", "commlink:live:write", "events:write", "runtime:write"], tenantMode: "any" });

@@ -1,3 +1,4 @@
+export * from "./media.js";
 export const SPMT_PROTOCOL_VERSION = 1 as const;
 
 export const SURFACE_MODES = ["shell", "standalone", "overlay", "popout"] as const;

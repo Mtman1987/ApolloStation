@@ -1,3 +1,5 @@
+import {proxyAppMedia} from "@spmt/app-foundation/media-proxy";
+import {streamWeaverAssetsBrowserJs} from "./assets-client.js";
 import {streamWeaverResearchBrowserJs} from "./research-client.js";
 import { createProductAppWebServer, productAppSnapshotHandler, productAppSnapshotSources, type ProductAppCatalogItemV1, type ProductAppWebDescriptorV1 } from "@spmt/app-foundation/product-web";
 import { appSurfaceBrowserJs, productSurfaceManifest } from "@spmt/app-foundation/surface-client";
@@ -35,6 +37,7 @@ export const STREAMWEAVER_WEB_DESCRIPTOR: ProductAppWebDescriptorV1 = {
     { id: "integrations", label: "Integrations", title: "Connected Accounts & Channels", body: "See the difference between personal provider identities and active bot channel connections, then manage identities in Account.", glyph: "↔", appOwnedData: true },
     { id: "economy", label: "Economy", title: "Creator Currency", body: "Configure and inspect StreamWeaver's tenant-local currency. Canonical SPMT XP remains a separate shared ledger.", glyph: "$", appOwnedData: true },
     { id: "devices", label: "Devices", title: "Devices & OBS", body: "Authorize selected actions on your paired Companion devices, then use them in your flows.", glyph: "▱", appOwnedData:true },
+    { id:"assets",label:"Media Files",title:"Shared Media Files",body:"Store private recordings, avatars and generated media in your shared workspace.",glyph:"▧",appOwnedData:true },
     { id: "media", label: "Media & Mixer", title: "Media & Mixer", body: "Control your HearMeOut room queues while configuring StreamWeaver.", glyph: "♫", appOwnedData:true },
     { id: "overlays", label: "Overlays", title: "Stream Outputs", body: "Compose your stream through the shared Overlay Bay and test outputs in Simulation Rooms.", glyph: "▣", appOwnedData:true, signals:[{source:"overlayWidgets",label:"Registered widgets"},{source:"overlayOutputs",label:"Issued outputs"}] },
     { id: "activity", label: "Activity", title: "Command Run History", body: "Inspect actual command inputs, ordered steps, results and failures.", glyph: "◷", appOwnedData:true },
@@ -49,7 +52,7 @@ export interface StreamWeaverWebServerOptionsV1 { spmtOrigin: string; port?: num
 export function createStreamWeaverWebServer(options: StreamWeaverWebServerOptionsV1) {
   const snapshot = productAppSnapshotHandler({ appId: "streamweaver", spmtOrigin: options.spmtOrigin, sources: productAppSnapshotSources(STREAMWEAVER_WEB_DESCRIPTOR) });
   const controls = new StreamWeaverWebControls({ ...options, connections: parseStreamWeaverWebConnections(options.connectionsJson) });
-  return createProductAppWebServer({ descriptor: STREAMWEAVER_WEB_DESCRIPTOR, port: options.port, host: options.host, buildSha: options.buildSha, extraCss: STREAMWEAVER_CONTROL_CSS + STREAMWEAVER_FLOW_CSS, browserJs: appSurfaceBrowserJs(SURFACE) + streamWeaverBrowserJs() + streamWeaverMediaBrowserJs() + streamWeaverResearchBrowserJs(), handleApi: async (request, response, url) => await controls.handle(request, response, url) || await snapshot(request, response, url), close: () => controls.close() });
+  return createProductAppWebServer({ descriptor: STREAMWEAVER_WEB_DESCRIPTOR, port: options.port, host: options.host, buildSha: options.buildSha, extraCss: STREAMWEAVER_CONTROL_CSS + STREAMWEAVER_FLOW_CSS, browserJs: appSurfaceBrowserJs(SURFACE) + streamWeaverBrowserJs() + streamWeaverMediaBrowserJs() + streamWeaverResearchBrowserJs() + streamWeaverAssetsBrowserJs(), handleApi: async (request, response, url) => await proxyAppMedia({appId:"streamweaver",spmtOrigin:options.spmtOrigin,request,response,url,...(options.fetchImpl?{fetchImpl:options.fetchImpl}:{})}) || await controls.handle(request, response, url) || await snapshot(request, response, url), close: () => controls.close() });
 }
 
 const STREAMWEAVER_CONTROL_CSS = `

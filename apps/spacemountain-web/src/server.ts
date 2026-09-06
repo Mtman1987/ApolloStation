@@ -30,6 +30,7 @@ const ASSETS = new Map<string, { file: string; type: string }>([
   ["/assets/web/client.js", { file: resolve(HERE, "client.js"), type: "text/javascript; charset=utf-8" }],
   ["/assets/web/session-resilience.js", { file: resolve(HERE, "session-resilience.js"), type: "text/javascript; charset=utf-8" }],
   ["/assets/web/bounded-app-client.js", { file: resolve(HERE, "bounded-app-client.js"), type: "text/javascript; charset=utf-8" }],
+  ["/assets/contracts/media.js", { file: resolve(REPOSITORY_ROOT, "packages/contracts/dist/media.js"), type: "text/javascript; charset=utf-8" }],
   ["/assets/contracts/index.js", { file: resolve(REPOSITORY_ROOT, "packages/contracts/dist/index.js"), type: "text/javascript; charset=utf-8" }],
   ["/assets/embed/index.js", { file: resolve(REPOSITORY_ROOT, "packages/embed/dist/index.js"), type: "text/javascript; charset=utf-8" }],
   ["/assets/sdk/index.js", { file: resolve(REPOSITORY_ROOT, "packages/sdk/dist/index.js"), type: "text/javascript; charset=utf-8" }],
@@ -315,7 +316,9 @@ async function proxy(response: ServerResponse, request: IncomingMessage, url: UR
   if (typeof request.headers["x-spmt-tenant"] === "string") headers.set("x-spmt-tenant", request.headers["x-spmt-tenant"]);
   if (typeof request.headers["x-correlation-id"] === "string") headers.set("x-correlation-id", request.headers["x-correlation-id"]);
   if (typeof request.headers["idempotency-key"] === "string") headers.set("idempotency-key", request.headers["idempotency-key"]);
-  const body = ["GET", "HEAD"].includes(method) ? undefined : await readBody(request);
+  const media = url.pathname.startsWith("/v1/media/");
+  if(media && request.headers.range)headers.set("range",request.headers.range);
+  const body = ["GET", "HEAD"].includes(method) ? undefined : await readBody(request, media && url.pathname === "/v1/media/assets" ? 8 * 1024 * 1024 : MAX_BODY_BYTES);
   let upstream: Response;
   try {
     upstream = await fetchImpl(`${origin}${url.pathname}${url.search}`, {
@@ -328,7 +331,7 @@ async function proxy(response: ServerResponse, request: IncomingMessage, url: UR
   } catch (error) {
     throw new WebHostError(503, `SPMT is temporarily unavailable: ${error instanceof Error ? error.message : "network error"}`);
   }
-  const encoded = await limitedResponseBody(upstream);
+  const encoded = media ? await limitedBody(upstream, 8 * 1024 * 1024, "Media response is too large") : await limitedResponseBody(upstream);
   // An overlay occupies the whole workspace. Auth or renderer failures must not
   // paint a browser error document over the shell, and must retain their status.
   if (overlay && !upstream.ok) return transparentOverlayResponse(response, upstream.status >= 400 ? upstream.status : 502);
@@ -337,6 +340,7 @@ async function proxy(response: ServerResponse, request: IncomingMessage, url: UR
     "cache-control": "no-store",
     "content-length": String(encoded.byteLength),
   };
+  if(media){for(const name of ["content-range","accept-ranges","content-disposition","x-content-type-options","cross-origin-resource-policy","access-control-allow-origin","access-control-expose-headers"]){const value=upstream.headers.get(name);if(value)responseHeaders[name]=value;}if(method==="HEAD")responseHeaders["content-length"]=upstream.headers.get("content-length")??"0";}
   if (overlay) {
     response.removeHeader("x-frame-options");
     responseHeaders["content-security-policy"] = upstream.headers.get("content-security-policy") ?? "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'self'";
@@ -390,6 +394,11 @@ function nebulaArcadeProxyPath(pathname: string) {
 }
 
 function browserProxyAllowed(method: string, pathname: string) {
+  if(["GET","HEAD"].includes(method)&&/^\/v1\/media\/public\/[A-Za-z0-9_-]{43}$/.test(pathname))return true;
+  if(pathname==="/v1/media/assets")return ["GET","POST"].includes(method);
+  if(/^\/v1\/media\/assets\/[a-f0-9-]{36}$/.test(pathname))return ["GET","DELETE"].includes(method);
+  if(/^\/v1\/media\/assets\/[a-f0-9-]{36}\/content$/.test(pathname))return ["GET","HEAD"].includes(method);
+  if(/^\/v1\/media\/assets\/[a-f0-9-]{36}\/publication$/.test(pathname))return ["POST","DELETE"].includes(method);
   if (method === "GET") {
     if (["/v1/commlink/recipients", "/v1/commlink/mail"].includes(pathname)) return true;
     if (pathname === "/v1/simulation-rooms" || pathname === "/v1/simulation-rooms/events") return true;
@@ -405,10 +414,10 @@ function browserProxyAllowed(method: string, pathname: string) {
 }
 
 function applySecurityHeaders(response: ServerResponse, nonce: string) {
-  response.setHeader("content-security-policy", `default-src 'none'; script-src 'self' 'nonce-${nonce}'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self'; frame-src 'self'; font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'`);
+  response.setHeader("content-security-policy", `default-src 'none'; script-src 'self' 'nonce-${nonce}'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; media-src 'self' https: blob:; connect-src 'self'; frame-src 'self'; font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'`);
   response.setHeader("cross-origin-opener-policy", "same-origin");
   response.setHeader("cross-origin-resource-policy", "same-origin");
-  response.setHeader("permissions-policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), bluetooth=()");
+  response.setHeader("permissions-policy", "camera=(), microphone=(self), geolocation=(), payment=(), usb=(), serial=(), bluetooth=()");
   response.setHeader("referrer-policy", "no-referrer");
   response.setHeader("x-content-type-options", "nosniff");
   response.setHeader("x-frame-options", "DENY");
@@ -446,7 +455,7 @@ function candidateManifest(source: string): AppCatalogRegistrationV1 {
 }
 
 async function readJsonBody(request: IncomingMessage) { const body = await readBody(request); const parsed = JSON.parse(body.toString("utf8")) as unknown; if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new WebHostError(400, "A JSON object is required"); return parsed as Record<string, unknown>; }
-async function readBody(request: IncomingMessage) { const chunks: Buffer[] = []; let total = 0; for await (const chunk of request) { const part = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk); total += part.byteLength; if (total > MAX_BODY_BYTES) throw new WebHostError(413, "Request body is too large"); chunks.push(part); } return Buffer.concat(chunks); }
+async function readBody(request: IncomingMessage, maximum = MAX_BODY_BYTES) { const chunks: Buffer[] = []; let total = 0; for await (const chunk of request) { const part = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk); total += part.byteLength; if (total > maximum) throw new WebHostError(413, "Request body is too large"); chunks.push(part); } return Buffer.concat(chunks); }
 async function limitedResponseBody(response: Response) { return limitedBody(response, MAX_RESPONSE_BYTES, "SPMT response is too large"); }
 async function limitedBody(response: Response, maximum: number, errorMessage: string) {
   const declared = Number(response.headers.get("content-length") ?? 0);
