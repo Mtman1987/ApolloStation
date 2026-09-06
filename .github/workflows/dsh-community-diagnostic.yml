@@ -1,0 +1,31 @@
+name: DSH community diagnostic
+
+on:
+  pull_request:
+
+jobs:
+  isolate:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: integration
+            files: tests/app-user-facing-controls.test.mjs
+          - name: surface-contracts
+            files: tests/app-surface-ui-contract.test.mjs tests/first-party-app-focused-ui.test.mjs tests/app-owned-green-surfaces.test.mjs tests/bounded-app-product-ui.test.mjs
+          - name: community-workflows
+            files: tests/dsh-application-workflow.test.mjs tests/dsh-proposal-workflow.test.mjs
+          - name: discord-existing
+            files: tests/discord*.test.mjs
+    name: ${{ matrix.name }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - run: npm ci --ignore-scripts
+      - name: Build workspace
+        run: npm run build
+      - name: Run isolated contracts
+        run: node --test ${{ matrix.files }}
