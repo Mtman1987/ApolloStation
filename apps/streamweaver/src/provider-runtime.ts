@@ -1,3 +1,4 @@
+import {executePokemonCommand} from "./pokemon-commands.js";
 import {awardStreamWeaverProviderEvent} from "./provider-event-awards.js";
 import { SqliteStreamWeaverShoutoutStore, STREAMWEAVER_KNOWN_BOTS } from "./shoutout-store.js";
 import { StreamWeaverPresentationRuntime } from "./stream-presentation-runtime.js";
@@ -121,13 +122,7 @@ export class StreamWeaverProviderRuntime {
       ...(this.twitch?{twitch:this.twitch}:{}),
       links:this.runtimeSettings,
       moderation:{execute:invocation=>{if(invocation.canonicalTrigger!=="!so")return undefined;if(!this.presentation)throw new Error("Live shoutouts are unavailable in this environment");const username=(invocation.target?.username??invocation.args[0]??"").replace(/^@/,"");if(!/^[a-zA-Z0-9_]{1,25}$/.test(username))throw new Error("Usage: !so @username");this.community.requestTask(invocation.tenantId,invocation.deliveryId,{action:"shoutout",username});return `Shoutout queued for @${username}.`;}},
-      pokemon:{execute:invocation=>{
-        if(!invocation.actor.userId)throw new Error("Link your account before using Pokémon");
-        const [operation,...args]=invocation.canonicalTrigger==="pack"?["open",...invocation.args]:invocation.args;
-        const action=operation||"collection",actor={id:invocation.actor.userId,displayName:invocation.actor.displayName,owner:invocation.actor.isBroadcaster};
-        const result=this.pokemon.act(invocation.tenantId,actor,{action,requestId:createHash("sha256").update(invocation.deliveryId).digest("hex"),...(action==="open"&&args[0]?{set:args[0]}:{}),...(["trade","leader"].includes(action)&&args[0]?{userId:invocation.target?.userId??args[0]}:{}),...(["offer","accept","cancel-trade"].includes(action)?{tradeId:args[0]??""}:{}),...(action==="offer"?{card:args.slice(1).join(" ")}:{})});
-        return String(result.text??"Pokémon action completed.");
-      }},
+      pokemon:{execute:invocation=>executePokemonCommand(this.pokemon,invocation)},
 
       bic:new StreamWeaverBicCommandExecutor(new StreamWeaverBicRuntime({store:this.bic,client:options.client})),
       socialEffects:new StreamWeaverSocialActionExecutor(options.client),

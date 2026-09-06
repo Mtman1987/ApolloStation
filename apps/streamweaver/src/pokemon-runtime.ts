@@ -4,7 +4,7 @@ export const STREAMWEAVER_GYM_BATTLE_TIMEOUT_MS = 120_000;
 export const STREAMWEAVER_GYM_TEAM_SIZE = 3;
 
 export interface StreamWeaverPokemonCardV1 { name:string; number:string; setCode:string; rarity:string; imageUrl?:string; seasonId?:string; openedAt?:string }
-export interface StreamWeaverPokemonCatalogCardV1 extends StreamWeaverPokemonCardV1 { supertype?:string; hp?:string|number; types?:string[]; attacks?:Array<{name:string;cost?:string[];damage?:string|number;text?:string}>; weaknesses?:Array<{type:string;value:string}>; resistances?:Array<{type:string;value:string}> }
+export interface StreamWeaverPokemonCatalogCardV1 extends StreamWeaverPokemonCardV1 { nationalPokedexNumbers?:number[]; supertype?:string; hp?:string|number; types?:string[]; attacks?:Array<{name:string;cost?:string[];damage?:string|number;text?:string}>; weaknesses?:Array<{type:string;value:string}>; resistances?:Array<{type:string;value:string}> }
 export interface StreamWeaverPokemonCollectionV1 { cards:StreamWeaverPokemonCardV1[]; packsOpened:number }
 export interface StreamWeaverPokemonPackResultV1 { pack:StreamWeaverPokemonCardV1[]; setName:string; setCode:string; username:string }
 

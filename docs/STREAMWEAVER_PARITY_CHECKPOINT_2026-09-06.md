@@ -15,7 +15,8 @@ The [discovery audit](donor-audits/STREAMWEAVER_LIVE_AUDIT_2026-09-06.md) is pin
 - The current follow-up adds room completion/audio, listener diagnostics, public memory, Social Stream/private inbox, rich chat/replay, shoutout AI/settings/audit, YouTube event metadata and local provider awards. The repository build and all 886 offline tests passed for this batch. This batch is commit `d946fb8c97f4088fa1a12e5ba8e6e22ae6ba8b51`: [Sprite promotion succeeded](https://github.com/Mtman1987/ApolloStation/actions/runs/34057679893), and [Green Contracts succeeded](https://github.com/Mtman1987/ApolloStation/actions/runs/34057679880).
 - The YouTube OAuth follow-up and removal of obsolete conversion controls passed the repository build and all 889 offline tests (four concurrent test files). Commit `5460fb91e4ca55b9a0fe872271c2e23b8bacaf76` passed [Sprite promotion](https://github.com/Mtman1987/ApolloStation/actions/runs/34058968829) and [Green Contracts](https://github.com/Mtman1987/ApolloStation/actions/runs/34058968828).
 - Native Discord correction follow-up: repository build and all 893 offline tests passed. Commit `c7b2c6947590f96c1e20a20f419f6628831321b0` passed [Sprite promotion](https://github.com/Mtman1987/ApolloStation/actions/runs/34059393089) and [Green Contracts](https://github.com/Mtman1987/ApolloStation/actions/runs/34059393063).
-- Public room-persona follow-up: repository build and all 899 offline tests passed after integrating the concurrent flow-authoring and structured-output fixes, including actual owner-publication and room catalog/invocation routes. Its own promotion must still be verified.
+- Public room-persona follow-up: repository build and all 899 offline tests passed after integrating the concurrent flow-authoring and structured-output fixes, including actual owner-publication and room catalog/invocation routes. Commit `0d15db68792d96075ef70229bb9abd339c43b8c6` passed [Sprite promotion](https://github.com/Mtman1987/ApolloStation/actions/runs/34060332653) and [Green Contracts](https://github.com/Mtman1987/ApolloStation/actions/runs/34060332510).
+- Pokémon completion follow-up: repository build and all 903 offline tests passed, including gateway commands, owned downloads and card/HP projection. Promotion for this batch remains to be verified.
 - The user guide and integration reference are served at `/docs` and `/docs/developers/streamweaver`, with this checklist at `/docs/streamweaver/parity`.
 
 ## The 15 remaining groups from the follow-up request
@@ -36,7 +37,7 @@ The [discovery audit](donor-audits/STREAMWEAVER_LIVE_AUDIT_2026-09-06.md) is pin
 | 10. Platform event awards | Partial | Atomic configurable Twitch EventSub and YouTube event award consumer implemented. YouTube canonical identity uses verified OAuth links; TikTok sources and remaining donor helper mappings remain. |
 | 11. Shoutouts | Code implemented | AI/fallback greetings, owner voice/cooldown/exclusion/Discord settings and audit download. Provider/voice acceptance remains. |
 | 12. Check-ins | Partial | Existing persistent check-ins remain; Discord roles, invitation overrides and reward-flow details remain. |
-| 13. Pokémon | Partial | Existing collection/trade/gym/seasons remain; full command arguments, downloads/Pokédex, Discord trades and dedicated overlays remain. |
+| 13. Pokémon | Code implemented | Shared Discord/chat team, trade and battle commands, searchable Pokédex, owned PNG/collection JSON downloads, Eevee packs and dedicated card/trade/HP widgets implemented. Live provider and rendered overlay acceptance remain. |
 | 14. Legacy triggers/sub-actions | Open | Every retained unsupported live definition needs an explicit runnable equivalent and migration acceptance. |
 | 15. Special bot administration | Open | Fleet, gift-bot, whitelist and role-specific account controls. |
 
@@ -88,9 +89,9 @@ Thus 100 local points costs 10 XP with 1,000,000 local / 100,000 XP outstanding,
 | 30 | Check-ins | Persistent check-ins, source/count displays and overlay implemented. Discord role lookup, invitation overrides and reward-flow details remain. |
 | 31 | Translation | Shared production Qwen translation and stable request keys implemented. Actual translation/provider acceptance remains. |
 | 32 | Watch time | Production Twitch chatter-minute snapshots and command service implemented. Validate real poll behavior and shared-presence ownership before cutover. |
-| 33 | Pokémon collection/packs | Persistent API, UI, packs and collection command service implemented. Full card download/Pokédex details and team/attack command arguments require comparison. |
-| 34 | Pokémon trading | Atomic persistent offers/acceptance and web trade UI implemented. Discord interaction presentation remains. |
-| 35 | Gym/seasons | Persistent gym/season management UI implemented. Dedicated donor-overlay parity remains partial. |
+| 33 | Pokémon collection/packs | Persistent API/UI, Eevee packs, searchable Pokédex, owned PNG/collection JSON downloads and full team/attack command arguments implemented. Live download acceptance remains. |
+| 34 | Pokémon trading | Atomic persistent offers/acceptance, web trade UI and shared Discord chat commands implemented. Dedicated trade overlay shows offered cards and acceptance; live presentation acceptance remains. |
+| 35 | Gym/seasons | Persistent gym/season UI, shared battle commands and dedicated team/HP/turn overlay implemented. Live overlay acceptance remains. |
 | 36 | Legacy graph actions | Explicit speech and signed point steps added to bounded action types; speech resumes its saved job, points return a saved balance. Arbitrary scripts remain preserved but disabled until rewritten as supported capabilities. |
 | 37 | Legacy sub-actions/triggers | Import preserves unsupported source and disables unmapped commands; some non-chat bindings run. Every retained live definition still needs a runnable mapping and migration acceptance. |
 | 38 | Special bot administration | Known-bot welcome exclusion and existing canonical provider/tenant configuration available. Fleet/gift-bot admin, whitelist and role-specific account workflows remain. |

@@ -75,7 +75,9 @@ Configure welcomes, shoutout mode, BRB clip source and partner entries in Stream
 
 Image Studio supports private generation, prompt templates/enhancement, model/version identifiers, resolution, count, seed and bounded provider parameters. SeaArt and Eden are constructed providers. Model/LoRA browsing, character workflow, additional legacy providers and remaining content settings are still open; a provider name or preference alone does not make those functions available. Generated images use shared media ownership and visibility controls.
 
-The Pokémon UI offers existing collection, pack, trade, gym and season operations. Remaining donor command arguments, downloads/Pokédex details, Discord trade presentation and dedicated overlays are tracked in the checkpoint.
+The Games page offers Pokémon collections, packs, trades, gym battles and seasons. Its Pokédex searches loaded sets by name, card ID, type or national Pokédex number and shows your owned counts. Download your collection as JSON, or an owned card as PNG when provider downloads are enabled. Owners load sets and grant packs; the Eevee pack becomes available when at least nine Eevee-family cards are loaded.
+
+Linked chat users can use `!pokemon help` for team, trade and battle commands, including on Discord. Trades use the same inventory and atomic acceptance as the web controls. Add the Pokémon pack, collection, trade or gym-battle widget to an overlay for card art, trade offers and battle HP. These widgets still need live OBS and phone acceptance.
 
 ## Release status
 
