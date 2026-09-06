@@ -1,3 +1,4 @@
+import type { StreamWeaverBotActionReplies } from "./bot-action-replies.js";
 import { SPMT_SUITE_ACTION_CATALOG, type NormalizedChatDeliveryV1, type NormalizedChatMessageV1, type OutboundChatMessageV1, type SpmtSuiteActionActorRoleV1, type SpmtSuiteActionIdV1, type SpmtSuiteActionRiskV1 } from "@spmt/contracts";
 import { detectSpmtSuiteActionCommand, type SpmtClient } from "@spmt/sdk";
 
@@ -27,7 +28,7 @@ export class StreamWeaverSuiteActionJobExecutor implements StreamWeaverBotAction
       return { response: clean(result.text, 8_000) || `${request.action} completed.`, result: { jobId: job.id, ...result } };
     }
     if (["failed", "dead-letter", "cancelled"].includes(job.state)) return { response: clean(record(job.error)?.message, 500) || `${request.action} did not complete.`, result: { jobId: job.id, state: job.state } };
-    return { response: `${request.action} was queued and is visible in activity.`, result: { jobId: job.id, state: job.state } };
+    return { response: `${request.action} was queued and is visible in activity.`, result: { jobId: job.id, state: job.state, pending: true } };
   }
 }
 
@@ -103,7 +104,7 @@ function detectStreamWeaverBotActionLegacy(message: string, now = new Date()): S
 
 export class StreamWeaverBotActionConsumer {
   readonly id = "streamweaver.bot-actions" as const;
-  constructor(private readonly executor: StreamWeaverBotActionExecutorV1, private readonly egress: StreamWeaverBotActionEgressV1) {}
+  constructor(private readonly executor: StreamWeaverBotActionExecutorV1, private readonly egress: StreamWeaverBotActionEgressV1, private readonly replies?: StreamWeaverBotActionReplies) {}
   accepts(message: NormalizedChatMessageV1): boolean { return !message.actor.isBot && this.willHandle(message); }
   willHandle(message: NormalizedChatMessageV1): boolean { return Boolean(detectStreamWeaverBotAction(message.text, new Date(message.occurredAt))); }
   async deliver(delivery: NormalizedChatDeliveryV1): Promise<void> {
@@ -111,10 +112,18 @@ export class StreamWeaverBotActionConsumer {
     if (!request) return;
     const role = providerRole(delivery.message);
     const descriptor = STREAMWEAVER_BOT_ACTION_CATALOG.find((item) => item.id === request.action)!;
-    const response = roleLevel(role) < roleLevel(descriptor.minimumRole)
-      ? `That ${descriptor.risk} action requires ${descriptor.minimumRole} access.`
-      : (await this.executor.execute(request, { tenantId: delivery.message.tenantId, source: delivery.message.provider, connectionId: delivery.message.connectionId, channelId: delivery.message.channelId, requestId: delivery.deliveryId, actor: { ...(delivery.message.actor.canonicalUserId ? { userId: delivery.message.actor.canonicalUserId } : {}), username: delivery.message.actor.username, role } })).response;
-    await this.egress.send({ schemaVersion: 1, tenantId: delivery.message.tenantId, provider: delivery.message.provider, connectionId: delivery.message.connectionId, channelId: delivery.message.channelId, text: response.slice(0, 8_000), idempotencyKey: `streamweaver-bot-action:${delivery.deliveryId}`, replyToMessageId: delivery.message.messageId });
+    const context: StreamWeaverBotActionContextV1 = { tenantId: delivery.message.tenantId, source: delivery.message.provider, connectionId: delivery.message.connectionId, channelId: delivery.message.channelId, requestId: delivery.deliveryId, actor: { ...(delivery.message.actor.canonicalUserId ? { userId: delivery.message.actor.canonicalUserId } : {}), username: delivery.message.actor.username, role } };
+    let receipt = this.replies?.get(context);
+    if (!receipt) {
+      const result = roleLevel(role) < roleLevel(descriptor.minimumRole)
+        ? { response: `That ${descriptor.risk} action requires ${descriptor.minimumRole} access.` }
+        : await this.executor.execute(request, context);
+      const message: OutboundChatMessageV1 = { schemaVersion: 1, tenantId: delivery.message.tenantId, provider: delivery.message.provider, connectionId: delivery.message.connectionId, channelId: delivery.message.channelId, text: result.response.slice(0, 8_000), idempotencyKey: `streamweaver-bot-action:${delivery.deliveryId}`, replyToMessageId: delivery.message.messageId };
+      receipt = { action: request.action, context, message, ...((result.result?.pending === true || request.action === "sw.image.generate") && typeof result.result?.jobId === "string" ? { jobId: result.result.jobId, completionReply: result.result.pending === true } : {}) };
+      receipt = this.replies?.remember(receipt) ?? receipt;
+    }
+    await this.egress.send(receipt.message);
+    this.replies?.acknowledge(context);
   }
 }
 

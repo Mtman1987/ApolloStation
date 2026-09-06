@@ -73,7 +73,7 @@ In Stream operations, **Speech players** shows recent authorized TTS output list
 
 Configure welcomes, shoutout mode, BRB clip source and partner entries in Stream operations. Shoutout settings include optional AI greeting instructions, a fallback greeting, voice, automatic cooldown, excluded usernames and Discord delivery. Greetings use a saved assistant job and fall back when generation fails. Manual/voice shoutouts retain their cooldown-bypass behavior while honoring exclusions. Owners can download the last 5,000 shoutout audit entries.
 
-Image Studio supports private generation, prompt templates/enhancement, model/version identifiers, resolution, count, seed and bounded provider parameters. SeaArt and Eden are constructed providers. Model/LoRA browsing, character workflow, additional legacy providers and remaining content settings are still open; a provider name or preference alone does not make those functions available. Generated images use shared media ownership and visibility controls.
+Image Studio supports private generation, prompt templates/enhancement, model/version identifiers, resolution, count, seed and bounded provider parameters. SeaArt, Eden, Cloudflare FLUX.1 Schnell and Pollinations are constructed providers. SeaArt model/LoRA browsing, character workflow and additional legacy providers are still open; a provider name or preference alone does not make those functions available. Generated images use shared media ownership and visibility controls.
 
 The Games page offers Pokémon collections, packs, trades, gym battles and seasons. Its Pokédex searches loaded sets by name, card ID, type or national Pokédex number and shows your owned counts. Download your collection as JSON, or an owned card as PNG when provider downloads are enabled. Owners load sets and grant packs; the Eevee pack becomes available when at least nine Eevee-family cards are loaded.
 
@@ -138,3 +138,9 @@ Private results go to Media Files. Public chat image actions publish managed ima
 Image Studio now offers **Pollinations** with a worker-refreshed image-model catalog and a saved model choice for each private/public scope. Choose a supported image model, resolution, count and seed. A zero seed requests fresh seeds; selected models determine which settings they honor. Advanced provider-parameter JSON must be empty for this adapter.
 
 Completed images use the same managed storage as Cloudflare: private results stay in Media Files, and public image actions receive revocable links with seven-day expiry. The worker needs its own configured Pollinations API key and provider allowance. Existing application prompt checks remain effective. Actual provider/budget and rendered-output acceptance remain open.
+
+### Completed image replies and overlays
+
+When a chat image or cross-app action takes longer than the initial wait, StreamWeaver acknowledges that it is queued and later replies to the original message with the completed result. Pending replies survive a restart and retry provider outages without starting another job or charging again. Failed jobs receive a short failure reply; activity retains the details. Delivery pauses when that chat destination is inactive.
+
+Add **Generated images** from StreamWeaver’s overlay widgets to show completed public chat images for 30 seconds. The widget displays up to four images and the requester’s chat name. Private Image Studio images stay private. Both fast and delayed public image jobs feed this widget. Real OBS rendering and provider delivery still need live acceptance.

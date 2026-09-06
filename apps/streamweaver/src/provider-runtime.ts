@@ -1,3 +1,4 @@
+import { StreamWeaverBotActionReplies } from "./bot-action-replies.js";
 import {activeRideLookup} from "./ride-runtime.js";
 import {executePokemonCommand} from "./pokemon-commands.js";
 import {awardStreamWeaverProviderEvent} from "./provider-event-awards.js";
@@ -84,6 +85,7 @@ export class StreamWeaverProviderRuntime {
   private readonly presentation?:StreamWeaverPresentationRuntime;
   private readonly pokemon:StreamWeaverPokemonStore;
   private readonly secureChoices:StreamWeaverSecureChoiceStore;
+  private readonly botActionReplies: StreamWeaverBotActionReplies;
   private readonly installedFlows: StreamWeaverInstalledFlowConsumer;
   constructor(private readonly options: StreamWeaverProviderRuntimeOptionsV1) {
     this.community=new StreamWeaverCommunityStore(options.databasePath);
@@ -103,7 +105,8 @@ export class StreamWeaverProviderRuntime {
     this.secureChoices = new StreamWeaverSecureChoiceStore(options.databasePath, options.now);
     const relay = new StreamWeaverBotRelayConsumer(this.relayStore, egress);
     this.messageObservers = [{ id: "streamweaver.relay-identities", observe: (message) => { this.relayStore.observe(message); } }];
-    const botActions = options.botActions ? new StreamWeaverBotActionConsumer(options.botActions, egress) : undefined;
+    this.botActionReplies = new StreamWeaverBotActionReplies(options.databasePath, options.nowMs);
+    const botActions = options.botActions ? new StreamWeaverBotActionConsumer(options.botActions, egress, this.botActionReplies) : undefined;
     const priorGate = { willHandle: (message: NormalizedChatMessageV1) => relay.willHandle(message) || Boolean(botActions?.willHandle(message)) };
     const secureChoiceExecutor={execute:(invocation:import("./donor-command-runtime.js").StreamWeaverDonorCommandInvocationV1)=>{
       if(invocation.command.donorId!==STREAMWEAVER_SECURE_CHOICE_DONOR_ID)return undefined;
@@ -163,7 +166,7 @@ export class StreamWeaverProviderRuntime {
   }
   consumerIds() { return this.consumers.map((consumer) => consumer.id); }
   setBotShare(tenantId: string, enabled: boolean) { this.relayStore.setBotShare(tenantId, enabled); }
-  async reconcile(limit = 100) { await this.reconcileProviderEvents(); await this.presentation?.runOnce(); await this.community.flush((tenant,type,payload,key)=>this.options.client.publishEvent(tenant,type,payload,key)); await this.pokemon.flush((tenant,type,payload,key)=>this.options.client.publishEvent(tenant,type,payload,key)); const replies=await this.replies.runOnce(undefined, limit);const flows=await this.installedFlows.reconcile(limit);const secureChoices=await this.secureChoices.flushOutbox(message=>this.options.egress.send(message),limit);return {...replies,flows,secureChoices}; }
+  async reconcile(limit = 100) { if(this.options.allowProviderWrites===true&&!this.options.simulation)await this.botActionReplies.flush(this.options.client,message=>this.options.egress.send(message),message=>Boolean(this.options.connections?.some(connection=>connection.desired&&connection.tenantId===message.tenantId&&connection.provider===message.provider&&connection.channelId===message.channelId&&connection.connectionId===message.connectionId)),limit,(...args)=>this.options.client.publishEvent(...args)); await this.reconcileProviderEvents(); await this.presentation?.runOnce(); await this.community.flush((tenant,type,payload,key)=>this.options.client.publishEvent(tenant,type,payload,key)); await this.pokemon.flush((tenant,type,payload,key)=>this.options.client.publishEvent(tenant,type,payload,key)); const replies=await this.replies.runOnce(undefined, limit);const flows=await this.installedFlows.reconcile(limit);const secureChoices=await this.secureChoices.flushOutbox(message=>this.options.egress.send(message),limit);return {...replies,flows,secureChoices}; }
   private async reconcileProviderEvents(){
     if(this.options.allowProviderWrites!==true)return;
     const tenants=this.community.configuredTenants();
@@ -212,5 +215,5 @@ export class StreamWeaverProviderRuntime {
     }
   }
   settleFlows() { return this.installedFlows.settle(); }
-  close() { this.shoutoutStore.close(); this.eventsub?.close(); this.community.close(); this.pokemon.close(); this.secureChoices.close(); this.research.close(); this.bic.close(); this.runtimeSettings.close(); this.flows.close(); this.relayStore.close(); this.economy.close(); this.commandState.close(); this.summons.close(); this.settings.close(); }
+  close() { this.botActionReplies.close(); this.shoutoutStore.close(); this.eventsub?.close(); this.community.close(); this.pokemon.close(); this.secureChoices.close(); this.research.close(); this.bic.close(); this.runtimeSettings.close(); this.flows.close(); this.relayStore.close(); this.economy.close(); this.commandState.close(); this.summons.close(); this.settings.close(); }
 }
