@@ -114,3 +114,15 @@ A retained `gift-sub` command now receives Twitch's aggregate gifted-subscriptio
 Owners can enable **Check-in greetings** in Stream operations, choose a fallback message and voice, and optionally enable AI text, spoken greetings or delivery to the configured Discord channel. `{user}` is the viewer's display name and `{partner}` is the check-in partner. Greetings remain off until configured.
 
 Successful web, chat and Twitch-menu reward check-ins queue their presentation after settlement. A failed payment produces no greeting. Presentation retries reuse the original check-in and payment; they do not charge again. AI failures use the fallback, and pending AI jobs wait without blocking the check-in. Disabling greetings stops pending presentation tasks. Speech uses the public Speech / TTS player in Overlay Bay. Provider and OBS/audio acceptance remain required.
+
+### Space Mountain bulk rides
+
+1. Import a Discord role into the **community** check-in group. Refresh that role when membership changes.
+2. Create an enabled reward with the ride's cost, accepted currency and any first-claim rule. Use a separate reward from individual partner check-ins.
+3. In **Space Mountain rides**, select that reward ID and enable rides. Viewers use its normal reward button, its one-point Twitch menu entry, or `!checkin --ride`. For SPMT, use the reward button's displayed price or `!checkin --ride spmt <maximum XP>`.
+
+Riders must have existing Discord and Twitch links to the same Apollo account and be present in the streamer's current Twitch chat list. Display names do not establish eligibility. The current implementation supports up to 500 imported community entries, 2,000 current chatters and 200 eligible riders. Lookup failure or an empty eligible list stops the ride before payment.
+
+After payment, a front-seat rider receives **100 streamer points**. Selection prefers people outside the recent-winner window, retains the last 20 winners and falls back to all riders when everyone has won recently. The ride uses the configured reward's normal local/SPMT pricing and awards; the front-seat bonus is additional local currency. No SPMT XP is created or converted.
+
+Rider eligibility and reward terms freeze for a request. Interrupted rides resume with the same payment, winner and bonus receipts. Every rider contributes to check-in statistics, with one bulk overlay reveal. Optional check-in greeting/speech settings also apply. Imported membership is an owner-refreshed snapshot; refresh it before relying on new role changes.

@@ -1,3 +1,4 @@
+import {runStreamRide,type StreamRideLookup} from "./ride-runtime.js";
 import { createHash } from "node:crypto";
 import { StreamWeaverRewardRuntime } from "./reward-runtime.js";
 import type { SpmtClient } from "@spmt/sdk";
@@ -6,13 +7,14 @@ import type { SqliteStreamWeaverEconomyStore } from "./economy.js";
 import { StreamWeaverCommunityStore } from "./community-store.js";
 
 export class StreamWeaverCommunityRuntime {
-  constructor(private readonly store:StreamWeaverCommunityStore,private readonly economy:SqliteStreamWeaverEconomyStore,private readonly client:SpmtClient,private readonly allowAssistant:boolean,private readonly allowSpmtPayments=true){}
+  constructor(private readonly store:StreamWeaverCommunityStore,private readonly economy:SqliteStreamWeaverEconomyStore,private readonly client:SpmtClient,private readonly allowAssistant:boolean,private readonly allowSpmtPayments=true,private readonly rideLookup?:StreamRideLookup){}
   watchtime(invocation:StreamWeaverDonorCommandInvocationV1){
     if(invocation.canonicalTrigger==="!wleader")return this.store.watchLeaders(invocation.tenantId).map((r,i)=>`${i+1}. ${r.username}: ${r.minutes} minutes`).join(" | ")||"No watch time recorded yet.";
     const value=this.store.watchtime(invocation.tenantId,invocation.provider,invocation.actor.providerUserId);return `${invocation.actor.displayName}: ${Number(value.minutes)} minutes recorded in this stream's live chat.`;
   }
   async community(invocation:StreamWeaverDonorCommandInvocationV1){
     if(invocation.canonicalTrigger==="!checkin"){
+      if(invocation.args[0]==="--ride")return (await this.ride({tenantId:invocation.tenantId,actorId:invocation.actor.userId??"",displayName:invocation.actor.displayName,source:invocation.provider,requestId:invocation.deliveryId,currency:invocation.args[1]==="spmt"?"spmt":"streamer",...(invocation.args[2]?{maxSpmtCost:Number(invocation.args[2])}:{})})).text;
       if(!invocation.args[0])return this.store.partners(invocation.tenantId).map(p=>`${p.id}: ${p.name}${p.rewardId?" (reward-priced)":""}`).join(" | ")||"The streamer has not configured check-ins.";
       const result=await this.checkin({tenantId:invocation.tenantId,actorId:invocation.actor.userId??`${invocation.provider}:${invocation.actor.providerUserId}`,linked:!!invocation.actor.userId,displayName:invocation.actor.displayName,partnerId:invocation.args[0],source:invocation.provider,requestId:invocation.deliveryId,currency:invocation.args[1]==="spmt"?"spmt":"streamer",...(invocation.args[2]?{maxSpmtCost:Number(invocation.args[2])}:{})});return result.text;
     }
@@ -32,12 +34,14 @@ export class StreamWeaverCommunityRuntime {
     const result=this.store.checkin(input.tenantId,input.actorId,input.partnerId,input.source,input.requestId,undefined,this.allowAssistant&&this.allowSpmtPayments?(input.displayName??"viewer"):undefined);
     return {...result,state:"complete" as const,text:`Checked in with ${result.partner.name} (${result.userTotal} total). ${result.partner.inviteUrl}`};
   }
+  ride(input:import("./ride-runtime.js").StreamRideRequest){return runStreamRide(this.store,this.economy,this.client,this.rideLookup,this.allowSpmtPayments,input);}
   async redeem(invocation:StreamWeaverDonorCommandInvocationV1){
     const args=[...invocation.args],rewardId=invocation.canonicalTrigger==="!redeem"?(args.shift()??""):invocation.canonicalTrigger.replace(/^!/,"");
     const result=await this.redeemReward({tenantId:invocation.tenantId,requestId:invocation.deliveryId,rewardId,userId:invocation.actor.userId??"",displayName:invocation.actor.displayName,currency:args[0]?.toLowerCase()==="spmt"?"spmt":"streamer",...(args[1]?{maxSpmtCost:Number(args[1])}:{})});
     return result.state==="complete"?result.text:`Reward declined: ${result.message}`;
   }
   async redeemReward(input:{tenantId:string;requestId:string;rewardId:string;userId:string;displayName:string;currency:"streamer"|"spmt";maxSpmtCost?:number}){
+    if(this.store.rides.settings(input.tenantId).rewardId===input.rewardId)return this.ride({tenantId:input.tenantId,actorId:input.userId,displayName:input.displayName,source:"reward",requestId:input.requestId,currency:input.currency,rewardId:input.rewardId,...(input.maxSpmtCost===undefined?{}:{maxSpmtCost:input.maxSpmtCost})});
     const reward=this.store.redeems(input.tenantId).find(r=>r.id===input.rewardId);
     if(!reward)throw new Error("This reward has not been configured by the streamer");
     const target=this.store.bindRewardCheckin(input.tenantId,input.userId,reward.id,input.requestId);

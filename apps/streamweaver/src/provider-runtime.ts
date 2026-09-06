@@ -1,3 +1,4 @@
+import {activeRideLookup} from "./ride-runtime.js";
 import {executePokemonCommand} from "./pokemon-commands.js";
 import {awardStreamWeaverProviderEvent} from "./provider-event-awards.js";
 import { SqliteStreamWeaverShoutoutStore, STREAMWEAVER_KNOWN_BOTS } from "./shoutout-store.js";
@@ -116,7 +117,7 @@ export class StreamWeaverProviderRuntime {
     if(grants){this.twitch=new StreamWeaverTwitchCommandAdapter(grants,options.providerFetch);if(options.allowProviderWrites===true)this.eventsub=new StreamWeaverTwitchEventSub(options.databasePath,grants,options.providerFetch);}
     if(this.twitch&&options.allowProviderWrites===true)this.presentation=new StreamWeaverPresentationRuntime({store:this.community,shoutoutStore:this.shoutoutStore,twitch:this.twitch,client:options.client,personas:this.settings,connections:options.connections??[],egress:options.egress});
     this.messageObservers.push({id:"streamweaver.welcome",observe:message=>{if(message.provider==="twitch"&&!message.actor.isBot&&!STREAMWEAVER_KNOWN_BOTS.has(message.actor.username.toLowerCase()))this.community.welcome(message.tenantId,message.provider,message.actor.providerUserId,message.actor.displayName??message.actor.username,message.actor.username);}});
-    const community=new StreamWeaverCommunityRuntime(this.community,this.economy,options.client,options.allowAssistant!==false,options.simulation!==true&&options.allowProviderWrites===true);
+    const community=new StreamWeaverCommunityRuntime(this.community,this.economy,options.client,options.allowAssistant!==false,options.simulation!==true&&options.allowProviderWrites===true,this.twitch?activeRideLookup(this.community,this.twitch,options.client):undefined);
     const services = new DefaultStreamWeaverDonorCommandServices({
       watchtime:{execute:i=>community.watchtime(i)},community:{execute:i=>community.community(i)},redeems:{execute:i=>community.redeem(i)},translation:community,
       ...(this.twitch?{twitch:this.twitch}:{}),
@@ -181,7 +182,7 @@ export class StreamWeaverProviderRuntime {
       if(!canonicalUserId)outcome={accepted:false,text:"Reward declined: link your Twitch account to SPMT before redeeming."};
       else if(!redeem.enabled)outcome={accepted:false,text:"Reward declined: this reward is paused."};
       else {
-        const runtime=new StreamWeaverCommunityRuntime(this.community,this.economy,this.options.client,this.options.allowAssistant!==false);
+        const runtime=new StreamWeaverCommunityRuntime(this.community,this.economy,this.options.client,this.options.allowAssistant!==false,this.options.simulation!==true&&this.options.allowProviderWrites===true,this.twitch?activeRideLookup(this.community,this.twitch,this.options.client):undefined);
         const args=event.input.trim().split(/\s+/),currency=args[0]?.toLowerCase()==="spmt"?"spmt":"streamer";
         if(redeem.acceptance==="spmt"&&currency!=="spmt")outcome={accepted:false,text:"Reward declined: this reward requires an explicit SPMT payment. Use the reward desk to confirm the XP price."};
         else if(redeem.acceptance==="streamer"&&currency==="spmt")outcome={accepted:false,text:"Reward declined: the streamer accepts only their own points for this reward."};

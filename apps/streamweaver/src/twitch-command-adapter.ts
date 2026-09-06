@@ -19,7 +19,15 @@ export class StreamWeaverTwitchCommandAdapter {
     const origin=new URL(apiOrigin); if(origin.protocol!=="https:"||origin.username||origin.password||origin.search||origin.hash)throw new Error("Twitch API origin must be credential-free HTTPS");
   }
 
-  async chatters(tenantId:string){const grant=await this.ready(tenantId,"chatters:read"),users:Array<{id:string;username:string}>=[];let after="";for(let page=0;page<20;page++){const response=await this.request<{data?:Array<{user_id:string;user_login:string}>,pagination?:{cursor?:string}}>(grant,this.url("/chat/chatters",{broadcaster_id:grant.broadcasterId,moderator_id:grant.moderatorId??grant.broadcasterId,first:"1000",...(after?{after}:{})}));for(const user of response.data??[])users.push({id:user.user_id,username:user.user_login});after=response.pagination?.cursor??"";if(!after)break;}return users;}
+  async chatters(tenantId:string){
+    const grant=await this.ready(tenantId,"chatters:read"),users=new Map<string,{id:string;username:string}>(),cursors=new Set<string>();let after="";
+    for(let page=0;page<20;page++){
+      const response=await this.request<{data?:Array<{user_id:string;user_login:string}>,pagination?:{cursor?:string}}>(grant,this.url("/chat/chatters",{broadcaster_id:grant.broadcasterId,moderator_id:grant.moderatorId??grant.broadcasterId,first:"1000",...(after?{after}:{})}));
+      for(const user of response.data??[])users.set(user.user_id,{id:user.user_id,username:user.user_login});
+      after=response.pagination?.cursor??"";if(!after)return [...users.values()];if(cursors.has(after))throw Error("Twitch chatter pagination did not advance");cursors.add(after);
+    }
+    throw Error("Twitch chatter list exceeds the supported page limit");
+  }
   async clips(tenantId:string,userId?:string){const grant=await this.ready(tenantId,"clips:read");const result=await this.request<{data?:Array<{id:string;url:string;embed_url:string;thumbnail_url:string;duration:number;title:string}>}>(grant,this.url("/clips",{broadcaster_id:userId??grant.broadcasterId,first:"20"}));return result.data??[];}
   async rewards(tenantId:string){const grant=await this.ready(tenantId,"rewards:read");const result=await this.request<{data?:Array<{id:string;title:string;cost:number;is_enabled:boolean}>}>(grant,this.url("/channel_points/custom_rewards",{broadcaster_id:grant.broadcasterId}));return result.data??[];}
 

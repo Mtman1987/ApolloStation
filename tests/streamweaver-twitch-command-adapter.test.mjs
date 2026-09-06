@@ -59,3 +59,7 @@ test("expired or unavailable provider grants fail closed before Twitch is called
   await assert.rejects(() => adapter.createClip("tenant-a"), /link twitch again/);
   assert.equal(calls, 0);
 });
+
+test('chatter pagination deduplicates users and rejects repeated cursors instead of returning a partial roster',async()=>{
+ const grant={getGrant:async()=>({status:'ready',clientId:'client',accessToken:'token',broadcasterId:'100',expiresAt:'2099-01-01'})};let calls=0;const adapter=new StreamWeaverTwitchCommandAdapter(grant,async()=>{calls++;return Response.json({data:[{user_id:'1',user_login:'one'}],pagination:{cursor:'same'}})});await assert.rejects(()=>adapter.chatters('tenant'),/did not advance/);assert.equal(calls,2);calls=0;const valid=new StreamWeaverTwitchCommandAdapter(grant,async()=>Response.json({data:[{user_id:'1',user_login:'one'}],pagination:++calls===1?{cursor:'next'}:{}}));assert.equal((await valid.chatters('tenant')).length,1);
+});

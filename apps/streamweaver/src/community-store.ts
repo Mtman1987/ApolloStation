@@ -1,3 +1,4 @@
+import {StreamWeaverRideStore} from "./ride-store.js";
 import { DatabaseSync } from "node:sqlite";
 import { createHash } from "node:crypto";
 export interface StreamPartner { id:string; name:string; kind:"partner"|"crew"|"mod"|"community"; imageUrl:string; inviteUrl:string; rewardId?:string; source?:{guildId:string;roleId:string;syncedAt:string}; }
@@ -8,8 +9,9 @@ export interface StreamEventAward {event:string;points:number;perUnit:boolean;en
 export interface StreamEventBinding { event:string; command:string; enabled:boolean; }
 export interface StreamPresentationSettings { welcomeEnabled:boolean; welcomeSession:string; welcomeText:string; brbMode:"broadcaster"|"viewer"; welcomeShoutout?:boolean;shoutoutMode?:"full"|"overlay"|"chat"; }
 export class StreamWeaverCommunityStore {
+  readonly rides:StreamWeaverRideStore;
   private readonly db:DatabaseSync;
-  constructor(path:string){this.db=new DatabaseSync(path);this.db.exec("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000");this.db.exec(`
+  constructor(path:string){this.rides=new StreamWeaverRideStore(path);this.db=new DatabaseSync(path);this.db.exec("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000");this.db.exec(`
     CREATE TABLE IF NOT EXISTS sw_community_config(tenant TEXT NOT NULL,kind TEXT NOT NULL,id TEXT NOT NULL,body TEXT NOT NULL,PRIMARY KEY(tenant,kind,id));
     CREATE TABLE IF NOT EXISTS sw_checkins(tenant TEXT NOT NULL,request TEXT NOT NULL,actor TEXT NOT NULL,partner TEXT NOT NULL,source TEXT NOT NULL,created_at TEXT NOT NULL,PRIMARY KEY(tenant,request));
     CREATE TABLE IF NOT EXISTS sw_watchtime(tenant TEXT NOT NULL,provider TEXT NOT NULL,user_id TEXT NOT NULL,username TEXT NOT NULL,minutes INTEGER NOT NULL DEFAULT 0,last_bucket INTEGER NOT NULL,PRIMARY KEY(tenant,provider,user_id));
@@ -21,7 +23,7 @@ export class StreamWeaverCommunityStore {
   providerDiagnostics(tenant:string){if(!this.db.prepare("SELECT name FROM sqlite_master WHERE name='sw_twitch_event_retries'").get())return [];return this.db.prepare("SELECT id,attempts,retry_at AS retryAt,error FROM sw_twitch_event_retries WHERE tenant=? ORDER BY retry_at DESC LIMIT 100").all(tenant);}
   configuredTenants(){return this.db.prepare("SELECT DISTINCT tenant FROM sw_community_config").all().map(r=>String(r.tenant));}
   partners(tenant:string){return this.list<StreamPartner>(tenant,"partner");}
-  savePartner(tenant:string,input:StreamPartner){const value:StreamPartner={id:id(input.id),name:text(input.name,120),kind:input.kind,imageUrl:url(input.imageUrl),inviteUrl:url(input.inviteUrl),...(input.rewardId?{rewardId:id(input.rewardId)}:{})};if(!["partner","crew","mod","community"].includes(value.kind))throw new Error("Choose a partner group");if(value.rewardId&&this.partners(tenant).some(p=>p.id!==value.id&&p.rewardId===value.rewardId))throw new Error("This reward is already assigned to another check-in");const source=this.partners(tenant).find(p=>p.id===value.id)?.source;if(source)value.source=source;this.save(tenant,"partner",value.id,value);return value;}
+  savePartner(tenant:string,input:StreamPartner){const value:StreamPartner={id:id(input.id),name:text(input.name,120),kind:input.kind,imageUrl:url(input.imageUrl),inviteUrl:url(input.inviteUrl),...(input.rewardId?{rewardId:id(input.rewardId)}:{})};if(!["partner","crew","mod","community"].includes(value.kind))throw new Error("Choose a partner group");if(value.rewardId&&this.rides.settings(tenant).enabled&&this.rides.settings(tenant).rewardId===value.rewardId)throw Error("The ride reward cannot also price an individual check-in");if(value.rewardId&&this.partners(tenant).some(p=>p.id!==value.id&&p.rewardId===value.rewardId))throw new Error("This reward is already assigned to another check-in");const source=this.partners(tenant).find(p=>p.id===value.id)?.source;if(source)value.source=source;this.save(tenant,"partner",value.id,value);return value;}
   importPartnerRole(tenant:string,input:{guildId:string;roleId:string;kind:StreamPartner["kind"];members:Array<{id:string;name:string;imageUrl:string}>}){
     if(!/^[0-9]{5,30}$/.test(input.guildId)||!/^[0-9]{5,30}$/.test(input.roleId)||!["partner","crew","mod","community"].includes(input.kind)||!Array.isArray(input.members)||input.members.length>10000)throw new Error("Choose a Discord server, role and check-in group");
     const seen=new Set<string>();for(const m of input.members){if(!m||!/^[0-9]{5,30}$/.test(m.id)||seen.has(m.id))throw new Error("Role members must have unique Discord IDs");seen.add(m.id);text(m.name,120);url(m.imageUrl);}
@@ -85,7 +87,7 @@ export class StreamWeaverCommunityStore {
       const result={signature,partner,...(reward?{reward}:{}),streamSession:this.settings(tenant).welcomeSession};this.save(tenant,"checkin-attempt",request,result);this.db.exec("COMMIT");return result;
     }catch(error){this.db.exec("ROLLBACK");throw error;}
   }
-  checkin(tenant:string,actor:string,partnerId:string,sourceInput:string,requestId:string,partnerSnapshot?:StreamPartner,presentationName?:string){
+  checkin(tenant:string,actor:string,partnerId:string,sourceInput:string,requestId:string,partnerSnapshot?:StreamPartner,presentationName?:string,emitOverlay=true){
     const request=id(requestId),source=text(sourceInput,100);text(actor,300);
     this.db.exec("BEGIN IMMEDIATE");try{
       const prior=this.db.prepare("SELECT actor,partner,source FROM sw_checkins WHERE tenant=? AND request=?").get(tenant,request);
@@ -102,6 +104,7 @@ export class StreamWeaverCommunityStore {
       this.db.prepare("INSERT OR IGNORE INTO sw_checkins VALUES(?,?,?,?,?,?)").run(tenant,request,actor,partnerId,source,new Date().toISOString());
       const result={partner,userTotal:Number(this.db.prepare("SELECT COUNT(*) AS n FROM sw_checkins WHERE tenant=? AND actor=?").get(tenant,actor)!.n),partnerTotal:Number(this.db.prepare("SELECT COUNT(*) AS n FROM sw_checkins WHERE tenant=? AND partner=?").get(tenant,partnerId)!.n)};
       this.enqueue(tenant,`checkin:${request}`,"streamweaver.checkin.v1",{...result,actor});
+      if(!emitOverlay)this.db.prepare("UPDATE sw_community_outbox SET sent=1 WHERE tenant=? AND id=?").run(tenant,createHash("sha256").update(`checkin:${request}`).digest("hex"));
       if(presentationName!==undefined&&this.checkinSettings(tenant).enabled)this.requestTask(tenant,`checkin-greeting:${request}`,{action:"checkin-greeting",displayName:text(presentationName,120),partner:{id:partner.id,name:partner.name,kind:partner.kind,inviteUrl:partner.inviteUrl}});
       this.db.exec("COMMIT");return result;
     }catch(error){this.db.exec("ROLLBACK");throw error;}
@@ -116,7 +119,7 @@ export class StreamWeaverCommunityStore {
   watchLeaders(tenant:string){return this.db.prepare("SELECT username,SUM(minutes) AS minutes FROM sw_watchtime WHERE tenant=? GROUP BY provider,user_id ORDER BY minutes DESC LIMIT 10").all(tenant);}
   enqueue(tenant:string,key:string,type:string,payload:Record<string,unknown>){this.db.prepare("INSERT OR IGNORE INTO sw_community_outbox(tenant,id,type,body) VALUES(?,?,?,?)").run(tenant,createHash("sha256").update(key).digest("hex"),type,JSON.stringify(payload));}
   async flush(publish:(tenant:string,type:string,payload:Record<string,unknown>,key:string)=>Promise<unknown>){for(const row of this.db.prepare("SELECT tenant,id,type,body FROM sw_community_outbox WHERE sent=0 LIMIT 100").all()){await publish(String(row.tenant),String(row.type),JSON.parse(String(row.body)),`community:${row.id}`);this.db.prepare("UPDATE sw_community_outbox SET sent=1 WHERE tenant=? AND id=?").run(String(row.tenant),String(row.id));}}
-  close(){this.db.close();}
+  close(){this.rides.close();this.db.close();}
   requestTask(tenant:string,key:string,body:Record<string,unknown>){if(!key||key.length>500||key.includes("\0"))throw new Error("Stream request identifier is required");const hash=createHash("sha256").update(key).digest("hex"),old=this.db.prepare("SELECT body FROM sw_stream_tasks WHERE tenant=? AND id=?").get(tenant,hash);if(old&&String(old.body)!==JSON.stringify(body))throw new Error("Stream request identifier was used for another action");this.db.prepare("INSERT OR IGNORE INTO sw_stream_tasks(tenant,id,body) VALUES(?,?,?)").run(tenant,hash,JSON.stringify(body));return {requestId:hash};}
   pendingTasks(){return this.db.prepare("SELECT tenant,id,body FROM sw_stream_tasks WHERE state='pending' AND next_at<=? ORDER BY rowid LIMIT 10").all(Date.now()).map(r=>({tenant:String(r.tenant),id:String(r.id),body:JSON.parse(String(r.body)) as Record<string,unknown>}));}
   deferTask(tenant:string,key:string){this.db.prepare("UPDATE sw_stream_tasks SET next_at=? WHERE tenant=? AND id=?").run(Date.now()+1000,tenant,key);}
