@@ -15,7 +15,7 @@ import { StreamWeaverInstalledFlowConsumer } from "./flow-runtime.js";
 import { StreamWeaverPersonaSettingsStore } from "./persona-settings.js";
 import { StreamWeaverFlowPackageStore, assertStreamWeaverFlowRunnable, normalizeFlowPackage } from "./flow-packages.js";
 import { assertFlowCodeValue } from "./flow-code.js";
-import { buildStreamWeaverAiFlowPrompt } from "./flow-ai-builder.js";
+import { buildStreamWeaverAiFlowPrompt, STREAMWEAVER_AI_FLOW_IDEA_LIMIT } from "./flow-ai-builder.js";
 import { StreamWeaverRuntimeSettingsStore } from "./runtime-settings.js";
 import { SqliteStreamWeaverBotRelayStore } from "./bot-relay.js";
 
@@ -218,7 +218,7 @@ export class StreamWeaverWebControls {
 
   private async requestAiFlow(request: IncomingMessage, response: ServerResponse, context: SessionContext, body: Record<string, unknown>) {
     if (this.operationMode === "read-only") return sendJson(response, 200, { schemaVersion: 1, status: "blocked", reason: "Live-read mode accepts incoming data but does not send an AI request." });
-    const idea=text(body.idea,"idea",4_000),client=this.requireClient(),userId=String(context.session.actorId??"");
+    const idea=text(body.idea,"idea",STREAMWEAVER_AI_FLOW_IDEA_LIMIT),client=this.requireClient(),userId=String(context.session.actorId??"");
     let devices:unknown[]=[];
     try { const value=await this.deviceApi(request,context); if(Array.isArray(value))devices=value; } catch { /* Device setup is optional; unregistered devices must not be invented. */ }
     const connections=(this.options.connections??[]).filter(item=>item.tenantId===context.tenantId&&item.desired);

@@ -88,3 +88,14 @@ test("import, approval, publishing, and collision remapping preserve one portabl
     assert.equal(copied.package.commands[0].actionIds[0], copied.package.actions[0].id);
   } finally { store.close(); }
 });
+
+test("every runnable package boundary rejects malformed Flow Code",()=>{
+  const store=new StreamWeaverFlowPackageStore(":memory:",now);
+  try{
+    const bad={...customFlow("owner-a.bad-code"),commands:[{...customFlow().commands[0],role:"primary",required:true,enabled:true,actionIds:["action.welcome"]}],actions:[{...customFlow().actions[0],enabled:true,config:{text:'{{= argsText | upper'}}]};
+    const draft=store.saveDraft("tenant-a",bad,author);
+    assert.throws(()=>store.install("tenant-a",draft.packageId),/not closed/i);
+    assert.throws(()=>store.publish("tenant-a",draft.packageId,author),/not closed/i);
+    assert.throws(()=>store.importPackage("tenant-b",bad,{id:"owner-b"}),/not closed/i);
+  }finally{store.close();}
+});

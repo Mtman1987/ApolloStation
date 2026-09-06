@@ -23,4 +23,12 @@ test('normal StreamWeaver templates can embed Flow Code expressions',()=>{
   const message={schemaVersion:1,tenantId:'tenant',provider:'twitch',connectionId:'main',channelId:'chat',messageId:'one',text:'!shape 2 world',occurredAt:'2026-09-06T00:00:00Z',actor:{providerUserId:'one',username:'commander',displayName:'Commander',isBot:false,roles:['broadcaster']},mentions:[]};
   assert.equal(renderFlowTemplate('Result: {{= argsText | upper }}',message,{lastOutput:''}),'Result: 2 WORLD');
   assert.equal(renderFlowTemplate('{{= vars.points | number | add(args[0]) }}',message,{points:'4'}),'6');
+  assert.equal(renderFlowTemplate('Echo: %args%',{...message,text:'!shape {{= "viewer" | upper }}'},{}),'Echo: {{= "viewer" | upper }}');
+});
+
+test('Flow Code bounds every intermediate value and rejects every malformed marker',()=>{
+  assert.throws(()=>renderFlowCodeExpression('"a" | replace("a","aa") | replace("a","aa") | replace("a","aa") | replace("a","aa") | replace("a","aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa") | replace("a","aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")',context),/safe output limit/i);
+  assert.throws(()=>renderFlowCodeExpression('"abc" | replace("","x".repeat)',context),/Unsupported Flow Code value/);
+  assert.throws(()=>renderFlowCodeExpression('"x" | replace("","abcdefghijklmnop") | replace("","abcdefghijklmnop") | replace("","abcdefghijklmnop") | replace("","abcdefghijklmnop")',context),/safe output limit/i);
+  assert.throws(()=>assertFlowCodeValue({value:'{{= argsText | upper }} then {{= argsText | lower'}),/not closed/i);
 });

@@ -7,9 +7,10 @@ const REQUIRED = [
 ];
 
 test("all 70 frozen StreamWeaver donor command definitions are represented", () => {
-  assert.equal(STREAMWEAVER_DONOR_COMMANDS.length, STREAMWEAVER_DONOR_DEFINITION_COUNT);
+  const frozen=STREAMWEAVER_DONOR_COMMANDS.filter(entry=>!entry.trigger.startsWith("!__"));
+  assert.equal(frozen.length, STREAMWEAVER_DONOR_DEFINITION_COUNT);
   assert.equal(STREAMWEAVER_DONOR_DEFINITION_COUNT, 70);
-  const triggers = STREAMWEAVER_DONOR_COMMANDS.map((entry) => entry.trigger.toLowerCase());
+  const triggers = frozen.map((entry) => entry.trigger.toLowerCase());
   for (const trigger of REQUIRED) assert.ok(triggers.includes(trigger), `missing donor trigger ${trigger}`);
   assert.equal(triggers.filter((trigger) => trigger === "!commands").length, 2);
   assert.equal(triggers.filter((trigger) => trigger === "!lurk").length, 2);

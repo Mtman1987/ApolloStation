@@ -1,17 +1,20 @@
 import { DatabaseSync } from "node:sqlite";
 import { DEVICE_AUTOMATION_ACTIONS, SPMT_SUITE_ACTION_CATALOG } from "@spmt/contracts";
 import { STREAMWEAVER_DONOR_COMMANDS, type StreamWeaverDonorCommandFamilyV1, type StreamWeaverDonorCommandV1 } from "./donor-command-catalog.js";
+import { assertFlowCodeValue } from "./flow-code.js";
 
 export const STREAMWEAVER_FLOW_PACKAGE_KIND = "streamweaver.flow-package" as const;
 export const STREAMWEAVER_FLOW_AUTHOR = Object.freeze({ id: "mtman1987", displayName: "mtman1987" });
 
 export function assertStreamWeaverFlowRunnable(item: StreamWeaverFlowPackageV1) {
+  assertStreamWeaverFlowCode(item);
   const supported=new Set(["send-chat","send-discord","wait","run-action","run-native","set-variable","condition","ai-response","obs-scene","obs-source","device-command"]);
   for(const command of item.commands)if(command.enabled&&command.migrationNote)throw new Error(command.migrationNote);
   for(const command of item.commands)if(command.enabled&&command.edges===undefined&&command.actionIds.some(id=>item.actions.find(a=>a.id===id)?.type==="condition"))throw new Error("Enable branching and choose destinations for each condition before enabling this flow");
   for(const action of item.actions) {
     if(!action.enabled||!item.commands.some(command=>command.enabled&&command.actionIds.includes(action.id)))continue;
     if(!supported.has(action.type))throw new Error(`${action.type} needs a registered execution capability. Replace that step before enabling the flow.`);
+    assertFlowCodeValue(action.config);
     if(action.type==="obs-scene"||action.type==="obs-source"||action.type==="device-command"){if(!/^[A-Za-z0-9._:@/-]{1,200}$/.test(String(action.config.deviceId??"")))throw new Error("Choose a paired device on the Devices page, then select it for this step");if(action.type==="obs-scene"&&!String(action.config.sceneName??action.config.scene??"").trim())throw new Error("Choose an OBS scene name");if(action.type==="device-command"&&!Object.hasOwn(DEVICE_AUTOMATION_ACTIONS,String(action.config.action)))throw new Error("Choose an authorized device action");}
     if(action.type==="obs-source"&&(!String(action.config.sceneName??action.config.scene??"").trim()||!String(action.config.sourceName??action.config.source??"").trim()||typeof action.config.visible!=="boolean"))throw new Error("Choose the OBS scene, source and visibility");
     if(action.type==="wait"&&(!Number.isFinite(Number(action.config.milliseconds??action.config.value??0))||Number(action.config.milliseconds??action.config.value??0)<0||Number(action.config.milliseconds??action.config.value??0)>60000))throw new Error("Wait steps must be between 0 and 60000 milliseconds");
@@ -23,6 +26,8 @@ export function assertStreamWeaverFlowRunnable(item: StreamWeaverFlowPackageV1) 
     if(action.config.saveAs!==undefined&&!/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(String(action.config.saveAs)))throw new Error("Result variable names must start with a letter and contain only letters, numbers and underscores");
   }
 }
+
+function assertStreamWeaverFlowCode(item:StreamWeaverFlowPackageV1){for(const action of item.actions)assertFlowCodeValue(action.config);}
 
 export interface StreamWeaverFlowCommandV1 {
   id: string;
@@ -179,6 +184,7 @@ export class StreamWeaverFlowPackageStore {
 
   copyDraft(tenantId: string, packageId: string, author: { id: string; displayName?: string }) {
     const current = this.exportPackage(tenantId, packageId);
+    assertStreamWeaverFlowCode(current);
     return this.saveDraft(tenantId, { ...current, packageId: `flow.${crypto.randomUUID()}`, name: `${current.name.slice(0,110)} copy` }, author);
   }
 
@@ -213,6 +219,7 @@ export class StreamWeaverFlowPackageStore {
     const item = this.get(tenantId, packageId);
     if (!item) throw new Error("Flow package does not exist");
     if (item.author.id !== author.id) throw new Error("Only the flow author may publish this package");
+    assertStreamWeaverFlowCode(item);
     const published = { ...item, visibility: "community" as const, updatedAt: this.now() };
     this.put(tenantId, published);
     return published;
@@ -225,7 +232,9 @@ export class StreamWeaverFlowPackageStore {
     if (visible?.visibility === "community") return { package: visible };
     const occupied = this.db.prepare("SELECT tenant_id AS tenantId FROM streamweaver_flow_packages WHERE package_id=?").get(candidateId) as { tenantId: string } | undefined;
     const source = occupied ? remapImportedFlowPackage(value) : value;
-    const saved = this.saveDraft(tenantId, source, author);
+    const normalized=normalizeFlowPackage(source,{now:this.now(),author,visibility:"private"});
+    assertStreamWeaverFlowCode(normalized);
+    const saved = this.saveDraft(tenantId, normalized, author);
     return { package: saved };
   }
 

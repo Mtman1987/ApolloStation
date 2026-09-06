@@ -5,6 +5,7 @@ export interface StreamWeaverAiFlowPromptContextV1 {
   devices?: unknown[];
   connections?: unknown[];
 }
+export const STREAMWEAVER_AI_FLOW_IDEA_LIMIT=1_500;
 
 /** Apollo's registered StreamWeaver tools are the authoring truth. Live StreamWeaver is reference material only. */
 export function buildStreamWeaverAiFlowPrompt(idea: string, context: StreamWeaverAiFlowPromptContextV1 = {}) {
@@ -14,11 +15,13 @@ export function buildStreamWeaverAiFlowPrompt(idea: string, context: StreamWeave
   const devices = context.devices?.slice(0, 40).flatMap((value) => {
     const item = record(value), id = clean(item?.deviceId);
     return id ? [`${id}:${clean(item?.kind) || "device"}:${list(item?.capabilities).join("+")}`] : [];
-  }).join(",") || "none";
+  }).join(",").slice(0,600) || "none";
   const connections = context.connections?.slice(0, 40).flatMap((value) => {
     const item = record(value), id = clean(item?.connectionId), provider = clean(item?.provider), channel = clean(item?.channelId);
     return id && provider ? [`${provider}:${id}:${channel}`] : [];
-  }).join(",") || "none";
+  }).join(",").slice(0,600) || "none";
+
+  if(idea.length>STREAMWEAVER_AI_FLOW_IDEA_LIMIT)throw new Error(`Flow builder ideas must be at most ${STREAMWEAVER_AI_FLOW_IDEA_LIMIT} characters`);
 
   const prompt = [
     "You are Stellar Core's StreamWeaver command-flow coder. ApolloStation contracts below are the source of truth; old/live StreamWeaver is behavior reference only.",

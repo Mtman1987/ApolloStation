@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {buildStreamWeaverAiFlowPrompt} from '../apps/streamweaver/dist/flow-ai-builder.js';
+import {buildStreamWeaverAiFlowPrompt,STREAMWEAVER_AI_FLOW_IDEA_LIMIT} from '../apps/streamweaver/dist/flow-ai-builder.js';
 
 test('Stellar flow-coder prompt is sourced from Apollo tools and teaches branches, AI, devices, Flow Code and secure choices',()=>{
   const prompt=buildStreamWeaverAiFlowPrompt('make a smart command',{devices:[{deviceId:'companion-main',kind:'companion',capabilities:['obs.scene','media.playback']}],connections:[{provider:'discord',connectionId:'discord-main',channelId:'chat'}]});
@@ -11,6 +11,9 @@ test('Stellar flow-coder prompt is sourced from Apollo tools and teaches branche
 });
 
 test('the complete Apollo tool catalog fits the Stellar developer message budget with a maximum idea',()=>{
-  const prompt=buildStreamWeaverAiFlowPrompt('x'.repeat(4000));
+  const devices=Array.from({length:40},(_,i)=>({deviceId:`companion-${i}-${'x'.repeat(100)}`,kind:'companion',capabilities:Array(20).fill('media.playback')}));
+  const connections=Array.from({length:40},(_,i)=>({provider:'discord',connectionId:`connection-${i}-${'x'.repeat(100)}`,channelId:'chat'}));
+  const prompt=buildStreamWeaverAiFlowPrompt('x'.repeat(STREAMWEAVER_AI_FLOW_IDEA_LIMIT),{devices,connections});
   assert.ok(prompt.length<=8000,`prompt length was ${prompt.length}`);
+  assert.throws(()=>buildStreamWeaverAiFlowPrompt('x'.repeat(STREAMWEAVER_AI_FLOW_IDEA_LIMIT+1)),/at most/i);
 });

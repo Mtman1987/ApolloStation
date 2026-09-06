@@ -103,7 +103,8 @@ export const STREAMWEAVER_DONOR_COMMANDS: readonly StreamWeaverDonorCommandV1[] 
   { donorId:"secure-choice-session", trigger:"!__securechoice", family:"persona", cooldownSeconds:0 },
 ] as const;
 
-export const STREAMWEAVER_DONOR_DEFINITION_COUNT = 71;
+/** Count of frozen live StreamWeaver definitions; Green-only internal capabilities are excluded. */
+export const STREAMWEAVER_DONOR_DEFINITION_COUNT = 70;
 
 export function donorCommandsByFamily(family: StreamWeaverDonorCommandFamilyV1) {
   return STREAMWEAVER_DONOR_COMMANDS.filter((command) => command.family === family);

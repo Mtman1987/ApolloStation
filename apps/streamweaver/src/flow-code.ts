@@ -14,7 +14,10 @@ interface Stage { name: string; args: string[]; }
 const MAX_EXPRESSION_LENGTH = 4_000;
 const MAX_STAGES = 32;
 const MAX_ARGUMENTS = 16;
+const MAX_VALUE_LENGTH = 16_000;
+const MAX_ARRAY_ITEMS = 256;
 const SAFE_NAME = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
+const FORBIDDEN_NAMES = new Set(["constructor","prototype","__proto__"]);
 const OPERATIONS = new Set([
   "trim", "lower", "upper", "string", "number", "length", "add", "subtract", "multiply", "divide", "mod",
   "abs", "round", "floor", "ceil", "min", "max", "contains", "startsWith", "endsWith", "replace", "slice",
@@ -28,15 +31,16 @@ const OPERATIONS = new Set([
  */
 export function renderFlowCodeExpression(source: string, context: StreamWeaverFlowCodeContextV1): string {
   const pipeline = parsePipeline(source);
-  let value = resolveAtom(pipeline.source, context);
-  for (const stage of pipeline.stages) value = applyStage(stage, value, context);
+  let value = bounded(resolveAtom(pipeline.source, context));
+  for (const stage of pipeline.stages) value = bounded(applyStage(stage, value, context));
   return output(value);
 }
 
 export function assertFlowCodeValue(value: unknown): void {
   if (typeof value === "string") {
     const matches = [...value.matchAll(/\{\{\s*=\s*([^{}]+?)\s*\}\}/g)];
-    if (value.includes("{{=") && !matches.length) throw new Error("Flow Code expression is not closed correctly");
+    const residue=value.replace(/\{\{\s*=\s*([^{}]+?)\s*\}\}/g,"");
+    if (residue.includes("{{=")) throw new Error("Flow Code expression is not closed correctly");
     for (const match of matches) parsePipeline(match[1] ?? "");
     return;
   }
@@ -81,7 +85,7 @@ function validateAtom(source: string): void {
   if (["message","argsText","userName","user","targetUser","lastOutput"].includes(atom)) return;
   if (/^args\[\d{1,3}\]$/.test(atom) || /^arg\d{1,3}$/.test(atom)) return;
   const variable = /^vars\.([A-Za-z][A-Za-z0-9_]{0,63})$/.exec(atom);
-  if (variable && SAFE_NAME.test(variable[1]!)) return;
+  if (variable && SAFE_NAME.test(variable[1]!)&&!FORBIDDEN_NAMES.has(variable[1]!)) return;
   throw new Error(`Unsupported Flow Code value: ${atom.slice(0, 80)}`);
 }
 
@@ -128,9 +132,15 @@ function applyStage(stage: Stage, current: FlowCodeValue, context: StreamWeaverF
     case "contains": return text(current).includes(text(args[0]));
     case "startsWith": return text(current).startsWith(text(args[0]));
     case "endsWith": return text(current).endsWith(text(args[0]));
-    case "replace": return text(current).replaceAll(text(args[0]), text(args[1]));
+    case "replace": {
+      const input=text(current),search=text(args[0]),replacement=text(args[1]);
+      const occurrences=search===""?input.length+1:countOccurrences(input,search);
+      const projected=input.length-occurrences*search.length+occurrences*replacement.length;
+      if(projected>MAX_VALUE_LENGTH)throw new Error("Flow Code value exceeds the safe output limit");
+      return input.replaceAll(search,replacement);
+    }
     case "slice": return (Array.isArray(current) ? current : text(current)).slice(integer(args[0]), args.length > 1 ? integer(args[1]) : undefined) as FlowCodeValue;
-    case "split": return text(current).split(text(args[0])).slice(0, 256);
+    case "split": return text(current).split(text(args[0])).slice(0, MAX_ARRAY_ITEMS);
     case "join": return Array.isArray(current) ? current.map(text).join(text(args[0])) : text(current);
     case "pick": return Array.isArray(current) ? current[integer(args[0])] ?? "" : text(current).charAt(integer(args[0]));
     case "default": return current === null || current === "" ? args[0] ?? "" : current;
@@ -170,3 +180,13 @@ function text(value: FlowCodeValue | undefined): string { if (value === null || 
 function finite(value: FlowCodeValue | undefined): number { const result = Number(Array.isArray(value) ? text(value) : value); if (!Number.isFinite(result)) throw new Error("Flow Code expected a finite number"); return result; }
 function integer(value: FlowCodeValue | undefined): number { const result = finite(value); if (!Number.isSafeInteger(result)) throw new Error("Flow Code expected an integer"); return result; }
 function output(value: FlowCodeValue): string { return Array.isArray(value) ? JSON.stringify(value) : value === null ? "" : String(value); }
+function bounded(value:FlowCodeValue):FlowCodeValue {
+  if(Array.isArray(value)){
+    if(value.length>MAX_ARRAY_ITEMS)throw new Error("Flow Code array exceeds the safe item limit");
+    let size=0;for(const item of value){size+=text(item).length;if(size>MAX_VALUE_LENGTH)throw new Error("Flow Code value exceeds the safe output limit");}
+    return value;
+  }
+  if(typeof value==="string"&&value.length>MAX_VALUE_LENGTH)throw new Error("Flow Code value exceeds the safe output limit");
+  return value;
+}
+function countOccurrences(value:string,search:string){let count=0,at=0;while((at=value.indexOf(search,at))!==-1){count++;at+=search.length;}return count;}
