@@ -1,6 +1,6 @@
 # Nebula release build — 5 September 2026
 
-This is a repository release, with no deployment performed. Main pushes run checks; Sprite promotion requires an explicit manual workflow dispatch. Keep the existing live service running until the launch operator switches it.
+Main pushes run checks and may promote the exact commit to the Release Sprite when the owner-enabled `SPRITES_AUTODEPLOY_ENABLED` setting is true. Review deployment remains manual. These workflows do not replace the existing live Fly apps; production provider and data cutover remains a separate operation.
 
 Compared against `Mtman1987/chat-tag` main `42cb6401b3adf87a8c008474787d05d1dcf757db`, the source revision observed in the successful live deployment. Apollo owns the implementation and assets; it does not need a checkout of the old application to run.
 

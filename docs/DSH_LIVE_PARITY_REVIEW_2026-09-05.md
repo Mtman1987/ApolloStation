@@ -1,5 +1,7 @@
 # Discord Stream Hub: live functionality and Apollo parity review
 
+Update, 6 September 2026: [the production cleanup](production/READINESS_CLEANUP_2026-09-06.md) consolidates the application/proposal branch, directly integrates its controllers, and adds HTTP regression coverage. The table below remains the dated 5 September comparison; completed application votes, receipts, templates, and proposal delivery should be read with that update. This does not certify the remaining live workflows.
+
 Date: 5 September 2026. Scope: current source, the supplied Apollo screenshots, and execution checks of the changes in this commit.
 
 **Apollo does not yet have full functional parity with live Discord Stream Hub.** The live implementation contains substantial community workflows that cannot be replaced by a runtime summary, an empty page, or a tested payload helper. This update repairs navigation and calendar controls and consolidates pages. It does not certify all the remaining workflows as production-ready.

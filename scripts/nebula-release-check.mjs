@@ -15,7 +15,12 @@ check('Node runtime', () => { if (Number(process.versions.node.split('.')[0]) < 
 check('Media renderer', () => { if (spawnSync('ffmpeg', ['-version'], { stdio: 'ignore' }).status !== 0) throw new Error('Install ffmpeg'); });
 check('Game catalog', () => { if (NEBULA_ARCADE_GAMES.length !== 20 || quackverseCards.length !== 101) throw new Error('Unexpected game or card inventory'); });
 check('Packaged artwork', () => { if (!existsSync(new URL('apps/nebula-arcade/assets/quackverse-art/imported/card-1-light-ranger-armor-4.jpg', root))) throw new Error('Packaged artwork is missing'); });
-check('Deployment remains manual', () => { if (/^  push:/m.test(readFileSync(new URL('.github/workflows/sprite-promotion.yml', root), 'utf8'))) throw new Error('Sprite promotion must not trigger on push'); });
+check('Sprite release remains owner-controlled', () => {
+  const workflow = readFileSync(new URL('.github/workflows/sprite-promotion.yml', root), 'utf8');
+  if (!workflow.includes("vars.SPRITES_AUTODEPLOY_ENABLED == 'true'") || !workflow.includes("github.ref == 'refs/heads/main'") || !workflow.includes('environment: sprite-release')) throw new Error('Preserve the owner opt-in, main branch restriction and protected Sprite environment');
+  const slices = JSON.parse(readFileSync(new URL('config/live-source-slices.v1.json', root), 'utf8'));
+  if (slices.productionCutover.liveMutationAllowed !== false || slices.productionCutover.liveRetirementAllowed !== false) throw new Error('Live Fly cutover requires separate verified authorization');
+});
 if (process.argv.includes('--production')) {
   check('Production provider configuration', () => {
     const config = validateChatGatewayWorkerEnvironment(process.env);

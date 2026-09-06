@@ -1,3 +1,7 @@
+import { DshApplicationControls } from "./application-controls.js";
+import { DSH_APPLICATION_BROWSER_JS } from "./application-ui.js";
+import { DshProposalControls } from "./proposal-controls.js";
+import { DSH_PROPOSAL_BROWSER_JS } from "./proposal-ui.js";
 import { DSH_SHOUTOUT_CSS, DSH_SHOUTOUT_BROWSER_JS } from "./shoutout-ui.js";
 import { SqliteDshMediaStore } from "./nebula-media-worker.js";
 import { createProductAppWebServer, productAppSnapshotHandler, productAppSnapshotSources, type ProductAppWebDescriptorV1 } from "@spmt/app-foundation/product-web";
@@ -49,7 +53,27 @@ export function createDiscordStreamHubWebServer(options: DiscordStreamHubWebServ
   const applicationStore = options.databasePath && options.discordPublicKey && options.runtimeConfigPath && options.publicOrigin ? new SqliteDshApplicationStore(options.databasePath) : undefined;
   const controls = new DshWebControls({ ...options, applicationInteractionsReady: Boolean(applicationStore) });
   const interactions = applicationStore ? new DshDiscordApplicationInteractions({ publicKey: options.discordPublicKey!, publicOrigin: options.publicOrigin!, config: loadDshLiveRuntimeConfig(options.runtimeConfigPath!), store: applicationStore,respond:interaction=>controls.interaction(interaction),...(options.fetchImpl?{fetchImpl:options.fetchImpl}:{}) }) : undefined;
-  return createProductAppWebServer({ descriptor: DISCORD_STREAM_HUB_WEB_DESCRIPTOR, port: options.port, host: options.host, buildSha: options.buildSha, extraCss: DSH_CONTROL_CSS, browserJs: appSurfaceBrowserJs(SURFACE) + DSH_PAGE_ALIASES_JS + dshBotInstallBrowserJs(options.discordClientId) + DSH_CONTROL_JS + DSH_REVIEW_JS, handleApi: async (request, response, url) => Boolean(media?.handle(request,response,url)) || Boolean(await interactions?.handle(request, response, url)) || await controls.handle(request, response, url) || await snapshot(request, response, url), close: async () => { media?.close();await interactions?.close(); applicationStore?.close(); controls.close(); } });
+  const workflowOptions = options.databasePath && options.runtimeConfigPath ? {
+    ...options, databasePath: options.databasePath, runtimeConfigPath: options.runtimeConfigPath,
+  } : undefined;
+  const applications = workflowOptions ? new DshApplicationControls(workflowOptions) : undefined;
+  const proposals = workflowOptions ? new DshProposalControls(workflowOptions) : undefined;
+  return createProductAppWebServer({
+    descriptor: DISCORD_STREAM_HUB_WEB_DESCRIPTOR,
+    port: options.port, host: options.host, buildSha: options.buildSha,
+    extraCss: DSH_CONTROL_CSS,
+    browserJs: appSurfaceBrowserJs(SURFACE) + DSH_PAGE_ALIASES_JS + dshBotInstallBrowserJs(options.discordClientId) + DSH_CONTROL_JS
+      + (applications ? DSH_APPLICATION_BROWSER_JS + DSH_PROPOSAL_BROWSER_JS : ""),
+    handleApi: async (request, response, url) => Boolean(media?.handle(request, response, url))
+      || Boolean(await interactions?.handle(request, response, url))
+      || Boolean(await applications?.handle(request, response, url))
+      || Boolean(await proposals?.handle(request, response, url))
+      || await controls.handle(request, response, url) || await snapshot(request, response, url),
+    close: async () => {
+      media?.close(); await interactions?.close(); applicationStore?.close();
+      applications?.close(); proposals?.close(); controls.close();
+    },
+  });
 }
 
 function dshBotInstallBrowserJs(clientId?: string) {
@@ -117,15 +141,6 @@ const DSH_CONTROL_JS = String.raw`;(()=>{
   setInterval(async()=>{if(!state||busy||document.hidden||document.querySelector('dialog[open]')||document.activeElement?.closest('form'))return;const request=loading,guild=selectedGuild,currentMonth=month;try{const value=await json(await fetch(api+'/calendar?'+new URLSearchParams({month,...(guild?{guildId:guild}:{})}),{credentials:'same-origin',cache:'no-store'}));if(request!==loading||guild!==selectedGuild||currentMonth!==month||busy||document.activeElement?.closest('form'))return;if(JSON.stringify([state.calendar,state.calendarSync,state.participation])===JSON.stringify([value.calendar,value.calendarSync,value.participation]))return;remember();const container=slot('calendar')?.closest('[data-page]'),top=container?.scrollTop;Object.assign(state,value);renderCalendar();if(container)container.scrollTop=top;}catch(error){status(error.message||String(error),'error')}},5000);
   void load();
 })();`;
-
-const DSH_REVIEW_JS = String.raw`;(()=>{
- const parent=document.querySelector('[data-spmt-live-slot="applications"]');if(!parent)return;
- const slot=document.createElement('section');slot.dataset.dshReviews='';slot.className='dsh-review-panel';parent.after(slot);
- const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
- function render(state){if(state.role!=='owner'){slot.innerHTML='';return}const pending=(state.applications||[]).filter(item=>item.status==='pending'),decided=(state.applications||[]).filter(item=>item.status!=='pending');slot.innerHTML='<div class="dsh-shell"><h3>Application review</h3>'+(pending.length?pending.map(item=>'<article class="dsh-card"><span class="dsh-badge">'+esc(item.type)+' · pending</span><h3>'+esc(item.applicantUsername)+'</h3><dl>'+Object.entries(item.answers||{}).map(([key,value])=>'<dt>'+esc(key)+'</dt><dd>'+esc(value)+'</dd>').join('')+'</dl><form class="dsh-form" data-review="'+esc(item.id)+'"><label>Decision note<textarea name="note" maxlength="1000"></textarea></label><label>Decision<select name="decision"><option value="approved">Approve</option><option value="rejected">Decline</option></select></label><p role="status"></p><button class="button primary">Save decision and notify applicant</button></form></article>').join(''):'<p class="dsh-empty">No applications waiting for review.</p>')+(decided.length?'<details class="dsh-card"><summary>Decision history ('+decided.length+')</summary>'+decided.map(item=>'<p><strong>'+esc(item.applicantUsername)+'</strong> · '+esc(item.type)+' · '+esc(item.status)+'<br>'+esc(item.decisionNote||'')+'</p>').join('')+'</details>':'')+'</div>';slot.querySelectorAll('form[data-review]').forEach(form=>form.addEventListener('submit',async event=>{event.preventDefault();if(form.dataset.busy)return;form.dataset.busy='true';const button=form.querySelector('button'),status=form.querySelector('[role=status]');button.disabled=true;try{const data=Object.fromEntries(new FormData(form));const response=await fetch('/apps/discord-stream-hub/api/control/applications/decide',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({...data,applicationId:form.dataset.review})});if(!(response.headers.get('content-type')||'').includes('application/json'))throw new Error('The app could not reach its data service. Try again.');const value=await response.json();if(!response.ok)throw new Error(value.message||value.error);form.innerHTML='<p role="status">'+esc(value.notification==='sent'?'Decision saved and applicant notified.':'Decision saved. Discord could not deliver the notification.')+'</p>'}catch(error){status.textContent=error.message||String(error);button.disabled=false;delete form.dataset.busy}}))}
- window.addEventListener('dsh:control-loaded',event=>{if(!slot.querySelector('textarea')||![...slot.querySelectorAll('textarea')].some(input=>input.value))render(event.detail)});
-})();`;
-
 
 const DSH_PAGE_ALIASES_JS = String.raw`;(()=>{window.addEventListener('message',event=>{if(event.source!==window.parent||event.origin!==location.origin)return;const message=event.data;if(message?.protocol!=='spmt.surface'||message.version!==1||message.appId!=='discord-stream-hub'||message.type!=='page.open')return;const target=message.pageId==='live'?'shoutouts':message.pageId==='reviews'?'applications':null;if(target)document.querySelector('[data-nav="'+target+'"]')?.click()})})();`;
 

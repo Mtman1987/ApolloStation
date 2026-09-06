@@ -3,7 +3,7 @@
 Updated: 2026-08-30
 Status: read-only source inventory complete; live Fly runtime/filesystem inventory still required.
 
-This is the first production-inventory slice under `PRODUCTION_PATH.md`. It records only facts proven from current GitHub source/configuration plus previously observed live facts. It does not authorize Blue mutation, DNS movement, credential changes, volume copies, or provider output.
+This is the first production-inventory slice under [PRODUCTION_PATH.md](../PRODUCTION_PATH.md). It records only facts proven from current GitHub source/configuration plus previously observed live facts. It does not authorize Blue mutation, DNS movement, credential changes, volume copies, or provider output.
 
 ## Source revisions
 

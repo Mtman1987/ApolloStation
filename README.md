@@ -8,7 +8,7 @@ The project is no longer a speculative rebuild blueprint. The shared platform, a
 
 On 2026-08-30 the architecture documentation was reset around what the system actually became. Earlier debate ledgers, proposed topologies, milestone wiring notes, and phase plans remain available in Git history and donor evidence, but they no longer govern implementation.
 
-Current evidence:
+Historical evidence from the 2026-08-30 baseline (see the cleanup report for current validation):
 
 - the complete offline acceptance battery passed 571/571 tests;
 - the main offline checklist completed 69/69 requirements;
@@ -26,17 +26,21 @@ Current evidence:
 - **Commlink, Discord Stream Hub, StreamWeaver, HearMeOut, MountainView, Companion, Nebula Arcade, Stellar Core, and Mission Control** are registered applications rather than hardcoded exceptions.
 - First-party applications use the same catalog, launch, scope, SDK/API/event/job, AppFrame, and lifecycle contracts available to approved third-party applications. SpaceMountain ownership changes publisher trust and granted scopes, not launch plumbing.
 
-## Read this documentation in this order
+## Documentation
 
-1. `ARCHITECTURE.md` — the current architecture and the decisions that survived implementation.
-2. `CURRENT_STATE.md` — evidence-backed implementation and rehearsal status.
-3. `PRODUCTION_PATH.md` — the practical path from the current state to Blue retirement.
-4. `APP_CONTRACTS.md` — mandatory rules for first- and third-party apps, workers, data, URLs, lifecycle, and surfaces.
+[Documentation index](docs/README.md) · [Production cleanup](docs/production/READINESS_CLEANUP_2026-09-06.md)
+
+Read these documents in order:
+
+1. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — the current architecture and the decisions that survived implementation.
+2. [docs/CURRENT_STATE.md](docs/CURRENT_STATE.md) — evidence-backed implementation and rehearsal status.
+3. [docs/PRODUCTION_PATH.md](docs/PRODUCTION_PATH.md) — the practical path from the current state to Blue retirement.
+4. [docs/APP_CONTRACTS.md](docs/APP_CONTRACTS.md) — mandatory rules for first- and third-party apps, workers, data, URLs, lifecycle, and surfaces.
 5. `docs/PRODUCT_UI.md` — detailed visual/surface behavior.
 6. `docs/SPRITES_SANDBOX_HANDOFF.md` — Review/Release Sprite mechanics.
 7. `docs/MAIN_OFFLINE_TEST_CHECKLIST.md` — the offline acceptance procedure/evidence.
 
-`docs/architecture/` contains implementation notes for individual verticals. `docs/donor-audits/` and `evidence/raw/` are migration/history evidence, not governing architecture.
+`docs/architecture/` contains implementation notes for individual verticals. `docs/donor-audits/` and `docs/archive/evidence/raw/` are migration/history evidence, not governing architecture.
 
 ## Permanent public names
 

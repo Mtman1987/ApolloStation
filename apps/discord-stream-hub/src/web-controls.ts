@@ -125,7 +125,6 @@ export class DshWebControls {
       if (url.pathname === "/api/discord-stream-hub/control/calendar/mission") return await this.mission(response, context, body,request);
       if (url.pathname === "/api/discord-stream-hub/control/calendar/publish") return await this.publishCalendar(response, context, body);
       if (url.pathname === "/api/discord-stream-hub/control/applications/publish") return await this.publishApplications(response, context, body);
-      if (url.pathname === "/api/discord-stream-hub/control/applications/decide") return await this.decideApplication(response, context, body);
       if (url.pathname === "/api/discord-stream-hub/control/settings") return await this.updateSettings(response, context, body);
       return sendJson(response, 404, { error: "not_found" });
     } catch (error) {
@@ -236,19 +235,6 @@ export class DshWebControls {
     await this.validateDestination(context.tenantId,serverId,channelId);
     const messageId = await this.upsertDiscord(context.tenantId, "applications", serverId, channelId, buildDshPublicApplicationEmbed(serverId));
     return sendJson(response, 200, { schemaVersion: 1, messageId, channelId, ...(isSimulationDiscordId(serverId) ? {shadowRoomId:(await this.discord?.target(context.tenantId,serverId))?.roomId} : {}) });
-  }
-
-  private async decideApplication(response: ServerResponse, context: SessionContext, body: Record<string, unknown>) {
-    if (!this.applications) throw new Error("DSH application storage is not configured");
-    const decision = body.decision === "approved" ? "approved" : body.decision === "rejected" ? "rejected" : undefined;
-    if (!decision) throw new Error("Application decision is invalid");
-    const application = this.applications.decide(context.tenantId, text(body.applicationId, "applicationId", 300), decision, String(context.session.actorId ?? ""), optionalText(body.note, 1_000), this.now());
-    let notification: "sent" | "unavailable" = "unavailable";
-    if (this.discord) {
-      const label = decision === "approved" ? "approved" : "not approved";
-      await this.discord.sendDirectMessage(context.tenantId, application.applicantDiscordId, { embeds: [{ title: `SPMT ${application.type} application update`, description: `Your application was ${label}.${application.decisionNote ? `\n\n${application.decisionNote}` : ""}`, color: decision === "approved" ? 0x22c55e : 0xef4444 }], allowed_mentions: { parse: [] } }).then(() => { notification = "sent"; }).catch(() => undefined);
-    }
-    return sendJson(response, 200, { schemaVersion: 1, application, notification });
   }
 
   private async updateSettings(response: ServerResponse, context: SessionContext, body: Record<string, unknown>) {

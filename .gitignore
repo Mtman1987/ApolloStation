@@ -5,3 +5,21 @@ coverage/
 .DS_Store
 .sprite
 .sprites/
+
+# Local configuration and generated development/runtime artifacts
+.env
+.env.*
+!.env.example
+!*.env.example
+*.log
+*.tmp
+*.bak
+*.orig
+*.rej
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+playwright-report/
+test-results/
+.quackverse-art-rebuild-state.json
