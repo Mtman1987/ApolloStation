@@ -6,12 +6,13 @@ import type { AuthorityService } from "@spmt/authority-core";
 import { CommlinkOperatorStore, type CommlinkLiveChatStore } from "@spmt/commlink-core";
 
 export class CommlinkOperatorApi {
+  private readonly published=new Map<string,number>();
   constructor(private readonly options:{store:CommlinkOperatorStore;chat:CommlinkLiveChatStore;auth:AuthService;control:ControlService;authority:AuthorityService;accessToken(request:IncomingMessage):string|undefined}){}
   publish(tenant:string) {
-    const state=this.options.store.read(tenant),message=state.featured?this.options.chat.list({tenantId:tenant,limit:500}).find(m=>recordId(m)===state.featured):undefined;
-    if(state.revision===0)return state;
+    const state=this.options.store.read(tenant),message=state.featured?state.snapshots?.[state.featured]??this.options.chat.list({tenantId:tenant,limit:500}).find(m=>recordId(m)===state.featured):undefined;
+    if(state.revision===0||this.published.get(tenant)===state.revision)return state;
     this.options.authority.publishEvent({tenantId:tenant,sourceAppId:"commlink",type:"commlink.chat.featured.v1",idempotencyKey:`chat-feature:${state.revision}`,payload:{revision:state.revision,text:message?.text??"",username:message?.username??"",style:state.style,durationMs:state.durationSeconds*1000,clear:!message}});
-    return state;
+    this.published.set(tenant,state.revision);return state;
   }
   async handle(request:IncomingMessage,response:ServerResponse,url:URL) {
     if(!/^\/v1\/commlink\/(operator|filters|ingestion-errors)$/.test(url.pathname))return false;
@@ -22,7 +23,13 @@ export class CommlinkOperatorApi {
       const path=url.pathname.split('/').at(-1),user=principal.actorId;
       if(request.method==="GET"){
         if(path==="filters")return json(response,200,{filters:this.options.store.filters(tenant,user)});
-        if(path==="operator")return json(response,200,{state:this.options.store.read(tenant),messages:this.options.chat.list({tenantId:tenant,limit:500}).map(m=>({...m,id:recordId(m)})),canOperate:workspace.ownerUserId===user});
+        if(path==="operator") {
+          const state=this.options.store.read(tenant);
+          const current=this.options.chat.list({tenantId:tenant,limit:500}).map(m=>({...m,id:recordId(m)}));
+          const ids=new Set(current.map(m=>m.id));
+          const retained=Object.values(state.snapshots??{}).filter(m=>!ids.has(m.id));
+          return json(response,200,{state,messages:[...retained,...current],canOperate:workspace.ownerUserId===user});
+        }
         if(workspace.ownerUserId!==user)return json(response,403,{message:"Only the workspace owner can inspect ingestion failures"});
         return json(response,200,{failures:this.options.store.failures(tenant)});
       }
@@ -30,7 +37,8 @@ export class CommlinkOperatorApi {
       const body=await readJson(request);
       if(path==="filters")return json(response,200,{filters:this.options.store.saveFilters(tenant,user,body.filters)});
       if(path!=="operator"||workspace.ownerUserId!==user)return json(response,403,{message:"Only the workspace owner can change stream presentation"});
-      const state=this.options.store.apply(tenant,body as Parameters<CommlinkOperatorStore['apply']>[1],this.options.chat.list({tenantId:tenant,limit:500}).map(m=>recordId(m)));
+      const messages=this.options.chat.list({tenantId:tenant,limit:500}).map(m=>({...m,id:recordId(m)}));
+      const state=this.options.store.apply(tenant,body as Parameters<CommlinkOperatorStore['apply']>[1],messages.map(m=>m.id),messages);
       this.publish(tenant);return json(response,200,{state});
     }catch(error){return json(response,error instanceof AuthDeniedError?403:400,{message:error instanceof Error?error.message:"Chat desk request failed"});}
   }

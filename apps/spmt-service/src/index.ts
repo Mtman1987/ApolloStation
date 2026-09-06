@@ -1,7 +1,7 @@
 import { CommlinkOperatorApi } from "./commlink-operator-api.js";
 import { CommlinkOperatorStore } from "@spmt/commlink-core";
 import { SpmtAssistantApi } from "./assistant-api.js";
-import { StellarAssistantStore } from "@spmt/stellar-core";
+import { StellarAssistantStore, StellarPrivateAssistant } from "@spmt/stellar-core";
 import { SpmtMediaApi } from "./media-api.js";
 import { streamWeaverWidgetManifests } from "@spmt/streamweaver/dist/overlay-widgets.js";
 import { randomBytes } from "node:crypto";
@@ -123,7 +123,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
   const operatorApi = new CommlinkOperatorApi({store:commlinkOperator,chat:commlinkLiveChat,auth,control,authority,accessToken});
   const operatorTimer=setInterval(()=>{for(const tenant of store.listTenants())if(tenant.status === "active")try{operatorApi.publish(tenant.id);}catch{/* A failed publication retries with the same revision. */}},1000);operatorTimer.unref();
   const mediaApi = new SpmtMediaApi({ assets: mediaAssets, auth, control, jobs: platformStore, publicBaseUrl, accessToken, limitBytes: (tenantId) => (billing.manifest.plans.find(plan => plan.planId === billingPlan(control.listEntitlements(tenantId)))?.limits["storage-gb"] ?? 0) * 1024 ** 3 });
-  const assistantApi = new SpmtAssistantApi({store:assistantStore,auth,control,jobs:executionJobs,assets:mediaAssets,enabled:runtimeMode === "production",accessToken});
+  const assistantApi = new SpmtAssistantApi({store:assistantStore,privateAssistant:new StellarPrivateAssistant(assistantStore,executionJobs,communityAssistant),auth,control,jobs:executionJobs,assets:mediaAssets,enabled:runtimeMode === "production",accessToken});
   mediaAssets.sweep();
   const mediaSweepTimer = setInterval(() => mediaAssets.sweep(), 15 * 60_000); mediaSweepTimer.unref();
   const health = new HealthRegistry();
@@ -721,13 +721,13 @@ function resolveStellarRoute(control: ControlService, jobs: ExecutionJobService,
   return { executionTarget: "sprite" as const, meteringTarget: "hosted" as const };
 }
 function ensureStellarWorkerIdentity(auth: AuthService, credential: string) {
-  auth.reconcileServiceIdentity({ serviceId: "stellar-core", credential, scopes: ["jobs:read", "jobs:work", "stellar:context:read", "media:read", "media:write"], tenantMode: "any" });
+  auth.reconcileServiceIdentity({ serviceId: "stellar-core", credential, scopes: ["jobs:read", "jobs:work", "stellar:context:read", "media:read", "media:write", "events:write"], tenantMode: "any" });
 }
 function ensureChatGatewayIdentity(auth: AuthService, credential: string) {
   auth.reconcileServiceIdentity({ serviceId: "chat-gateway", credential, scopes: ["jobs:read", "jobs:work", "providers:grant", "commlink:live:write", "events:write", "runtime:write"], tenantMode: "any" });
 }
 function ensureStreamWeaverIdentity(auth: AuthService, credential: string) {
-  const scopes = ["identity:read", "identity:write", "events:write", "assistants:invoke", "jobs:read", "jobs:write", "jobs:work", "xp:read", "xp:write", "runtime:write"];
+  const scopes = ["identity:read", "identity:write", "events:write", "assistants:invoke", "jobs:read", "jobs:write", "jobs:work", "xp:read", "xp:write", "runtime:write", "media:read", "media:write"];
   auth.reconcileServiceIdentity({ serviceId: "streamweaver", credential, scopes, tenantMode: "any" });
 }
 function ensureDshIdentity(auth: AuthService, credential: string, production:boolean) {

@@ -111,7 +111,7 @@ export class StreamWeaverShoutoutRuntime {
   private async safeClip(tenantId:string,user:StreamWeaverTwitchUserV1):Promise<StreamWeaverShoutoutClipV1|undefined>{try{return await this.options.clips?.pick({tenantId,user});}catch{return undefined;}}
   private async effect(input:{tenantId:string;invocationId:string;donorActionId:string},effect:StreamWeaverShoutoutEffectV1,payload:Record<string,unknown>):Promise<void>{
     await this.options.client.publishEvent(input.tenantId,STREAMWEAVER_SHOUTOUT_EFFECT_REQUESTED,{schemaVersion:1,invocationId:input.invocationId,donorActionId:input.donorActionId,effect,payload:sanitize(payload)},`streamweaver-shoutout-effect:${input.invocationId}:${effect}`);
-    await this.options.effects?.execute({tenantId:input.tenantId,effect,payload:sanitize(payload)});
+    await this.options.effects?.execute({tenantId:input.tenantId,effect,payload:{...sanitize(payload),invocationId:input.invocationId}});
   }
   private async audit(tenantId:string,invocationId:string,donorActionId:string,status:string,metadata:Record<string,unknown>):Promise<void>{
     await this.options.client.publishEvent(tenantId,STREAMWEAVER_SHOUTOUT_AUDIT,{schemaVersion:1,invocationId,donorActionId,status:safeToken(status),metadata:sanitize(metadata)},`streamweaver-shoutout-audit:${invocationId}:${safeToken(status)}`);

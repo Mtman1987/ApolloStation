@@ -45,3 +45,17 @@ test('cross-app job failure is retained as failure and pending results feed late
  const h=harness(store,{getJob:async()=>({state:jobState,result:{text:'studio'}})},Date.now,suite);await h.runtime.deliver(delivery());assert.equal(calls.length,1);jobState='succeeded';await h.runtime.reconcile();assert.equal(calls[1].args.roomId,'studio');assert.deepEqual(h.messages.map(m=>m.text),['Playing real track']);
  }finally{store.close()}
 });
+
+test('speech waits across reconciliation and signed point changes run once after it completes',async()=>{
+ const store=new StreamWeaverFlowPackageStore(':memory:');let speechCalls=0,pointCalls=0,state='running';
+ try{
+ install(store,[step('voice','speak',{text:'Hello {{args[0]}}'}),step('award','points',{delta:'500',saveAs:'balance'}),step('reply','send-chat',{text:'Balance {{balance}}'})]);
+ const h=harness(store,{speech:async input=>{speechCalls++;assert.equal(input.text,'Hello yes');return {jobId:'speech-one'}},getJob:async()=>({state,result:{text:'Hello yes'}}),points:async input=>{pointCalls++;assert.equal(input.delta,500);assert.equal(input.ownerUserId,'owner');return 750}});
+ await h.runtime.deliver(delivery());await h.runtime.reconcile();assert.equal(speechCalls,1);assert.equal(pointCalls,0);
+ state='succeeded';await h.runtime.reconcile();await h.runtime.deliver(delivery());assert.equal(speechCalls,1);assert.equal(pointCalls,1);assert.deepEqual(h.messages.map(m=>m.text),['Balance 750']);
+ }finally{store.close()}
+});
+test('failed speech prevents subsequent currency effects',async()=>{
+ const store=new StreamWeaverFlowPackageStore(':memory:');let pointCalls=0;
+ try{install(store,[step('voice','speak',{text:'Hello'}),step('charge','points',{delta:'-500'})]);const h=harness(store,{speech:async()=>({jobId:'failed-speech'}),getJob:async()=>({state:'failed',error:{message:'Provider unavailable'}}),points:async()=>{pointCalls++;return 0}});await assert.rejects(()=>h.runtime.deliver(delivery()));assert.equal(pointCalls,0);assert.equal(store.listRuns('tenant')[0].state,'failed');}finally{store.close()}
+});

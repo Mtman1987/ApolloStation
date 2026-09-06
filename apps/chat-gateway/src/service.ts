@@ -2,7 +2,7 @@ import { SimulationRoomRuntime, SimulationRoomWorker } from "./simulation-runtim
 import { basename, isAbsolute, dirname, join } from "node:path";
 import { createSpmtCommlinkLiveChatConsumer } from "@spmt/commlink-core";
 import { SpmtClient } from "@spmt/sdk";
-import { NodeSeaArtCommandRunner, SeaArtCliProvider, StreamWeaverImageGenerationService, StreamWeaverImageWorker, StreamWeaverProviderRuntime, StreamWeaverSuiteActionJobExecutor, type StreamWeaverBotActionExecutorV1 } from "@spmt/streamweaver";
+import { EdenStreamWeaverImageProvider, StreamWeaverGenerationStore, NodeSeaArtCommandRunner, SeaArtCliProvider, StreamWeaverImageGenerationService, StreamWeaverImageWorker, StreamWeaverProviderRuntime, StreamWeaverSuiteActionJobExecutor, type StreamWeaverBotActionExecutorV1 } from "@spmt/streamweaver";
 import { NebulaArcadeProviderRuntime, loadNebulaArcadeProviderConfig, type NebulaArcadeProviderConfigV1, type NebulaDiscordDashboardEgressV1 } from "@spmt/nebula-arcade";
 import { ChatGatewayRuntime, SqliteChatGatewayStore, createShadowChatProviderSenders, type ChatGatewayConsumerV1 } from "./index.js";
 import { ChatProviderConnectionSupervisor, SqliteProviderConnectionStore, type ProviderConnectionConfigV1 } from "./connection-supervisor.js";
@@ -20,7 +20,7 @@ export interface ChatGatewayWorkerEnvironmentV1 {
   workerId: string;
   connections: ProviderConnectionConfigV1[];
   reconcileMs: number;
-  streamweaver?: { databasePath: string; credential: string; image?: { token: string; modelNo: string; modelVerNo: string; binary: string } };
+  streamweaver?: { databasePath: string; credential: string; image?: { token: string; modelNo: string; modelVerNo: string; binary: string; edenKey?:string;edenModel?:string } };
   nebulaArcade?: { databasePath: string; credential: string; configPath: string; config: NebulaArcadeProviderConfigV1; publicOrigin?: string; gameplayOrigin?: string; webhookName: string; avatarUrl?: string };
 }
 
@@ -56,7 +56,9 @@ export function validateChatGatewayWorkerEnvironment(environment: NodeJS.Process
     const imageValues=[environment.STREAMWEAVER_SEAART_CLI_TOKEN,environment.STREAMWEAVER_SEAART_MODEL_NO,environment.STREAMWEAVER_SEAART_MODEL_VER_NO].filter(Boolean);
     if(imageValues.length!==0&&imageValues.length!==3)throw new Error("StreamWeaver SeaArt token, model, and model version must be configured together");
     if(runtimeMode==="sandbox"&&imageValues.length)throw new Error("Sandbox StreamWeaver rejects external image generation");
-    const image=imageValues.length?{token:String(environment.STREAMWEAVER_SEAART_CLI_TOKEN),modelNo:modelIdentifier(environment.STREAMWEAVER_SEAART_MODEL_NO,"STREAMWEAVER_SEAART_MODEL_NO"),modelVerNo:modelIdentifier(environment.STREAMWEAVER_SEAART_MODEL_VER_NO,"STREAMWEAVER_SEAART_MODEL_VER_NO"),binary:environment.STREAMWEAVER_SEAART_CLI_BINARY||"seaart"}:undefined;
+    const edenKey=environment.STREAMWEAVER_EDENAI_IMAGE_KEY;
+    if(runtimeMode==="sandbox"&&edenKey)throw new Error("Sandbox StreamWeaver rejects external image generation");
+    const image=imageValues.length?{token:String(environment.STREAMWEAVER_SEAART_CLI_TOKEN),modelNo:modelIdentifier(environment.STREAMWEAVER_SEAART_MODEL_NO,"STREAMWEAVER_SEAART_MODEL_NO"),modelVerNo:modelIdentifier(environment.STREAMWEAVER_SEAART_MODEL_VER_NO,"STREAMWEAVER_SEAART_MODEL_VER_NO"),binary:environment.STREAMWEAVER_SEAART_CLI_BINARY||"seaart",...(edenKey?{edenKey,edenModel:environment.STREAMWEAVER_EDENAI_IMAGE_MODEL||"image/generation/stabilityai"}:{})}:edenKey?{token:"",modelNo:"",modelVerNo:"",binary:"seaart",edenKey,edenModel:environment.STREAMWEAVER_EDENAI_IMAGE_MODEL||"image/generation/stabilityai"}:undefined;
     streamweaver = { databasePath: streamweaverDatabasePath, credential: streamweaverCredential, ...(image?{image}:{}) };
   }
   const nebulaEnabled = environment.NEBULA_ARCADE_PROVIDER_RUNTIME_ENABLED === "1";
@@ -137,6 +139,7 @@ export class SupervisedChatGatewayService {
   private readonly streamweaverClient?: SpmtClient;
   private readonly streamweaver?: StreamWeaverProviderRuntime;
   private readonly streamweaverImage?: StreamWeaverImageWorker;
+  private readonly generationSettings?:StreamWeaverGenerationStore;
   private readonly getNebulaArcadeAccessToken?: () => Promise<string>;
   private readonly nebulaArcade?: NebulaArcadeProviderRuntime;
   constructor(private readonly options: ChatGatewayWorkerEnvironmentV1, fetchImpl?: typeof fetch) {
@@ -198,7 +201,8 @@ export class SupervisedChatGatewayService {
       const streamweaverClient = new SpmtClient({ baseUrl: options.spmtOrigin, appId: "streamweaver", getAccessToken: this.getStreamWeaverAccessToken, ...(fetchImpl ? { fetchImpl } : {}) });
       this.streamweaverClient = streamweaverClient;
       const suiteActions = new StreamWeaverSuiteActionJobExecutor(streamweaverClient);
-      const guardedSuiteActions: StreamWeaverBotActionExecutorV1 = options.operationMode === "active" ? suiteActions : { execute: async (request, context) => {
+      const generationSettings=this.generationSettings=new StreamWeaverGenerationStore(options.streamweaver.databasePath);
+      const guardedSuiteActions: StreamWeaverBotActionExecutorV1 = options.operationMode === "active" ? {execute:async(request,context)=>{if(request.action==="sw.image.generate"){const access=generationSettings.read(context.tenantId).publicAccess;if(access==="off"||(access==="mods"&&!["owner","admin","moderator"].includes(context.actor.role)))return {response:"The streamer has restricted image generation."};}return suiteActions.execute(request,context);}} : { execute: async (request, context) => {
         const descriptor = spmtSuiteActionDescriptor(request.action), roomId = `${context.source}:${context.connectionId ?? "chat"}:${context.channelId}`;
         const argumentList = Object.entries(request.args).map(([name, value]) => ({ name, value }));
         await streamweaverClient.publishSimulationRoomEvent(context.tenantId, {
@@ -234,7 +238,16 @@ export class SupervisedChatGatewayService {
         }
       } };
       this.streamweaver = new StreamWeaverProviderRuntime({ databasePath: options.streamweaver.databasePath, client: streamweaverClient, connections:options.connections, botActions: guardedSuiteActions, providerGrants:client,allowProviderWrites:egressMode==="provider",allowAssistant: !options.liveIngressEnabled, egress: { send: (message) => { if (!connectedGateway) throw new Error("Chat Gateway egress is not ready"); return connectedGateway.send(message); } } });
-      if(options.streamweaver.image){const image=options.streamweaver.image,provider=new SeaArtCliProvider(image.token,new NodeSeaArtCommandRunner(image.binary)),tenantIds=[...new Set(options.connections.map(connection=>connection.tenantId))];this.streamweaverImage=new StreamWeaverImageWorker(streamweaverClient,new StreamWeaverImageGenerationService([provider]),{workerId:`${options.workerId}-image`,modelNo:image.modelNo,modelVerNo:image.modelVerNo,...(tenantIds.length?{tenantIds}:{})});}
+      if(options.streamweaver.image&&options.operationMode==="active") {
+        const image=options.streamweaver.image,providers=[...(image.token?[new SeaArtCliProvider(image.token,new NodeSeaArtCommandRunner(image.binary))]:[]),...(image.edenKey?[new EdenStreamWeaverImageProvider(image.edenKey,image.edenModel,fetchImpl)]:[])],tenantIds=[...new Set(options.connections.map(connection=>connection.tenantId))];
+        const enhancer={enhance:async(prompt:string,input?:import("@spmt/streamweaver").SeaArtImageRequestV1)=>{
+          if(!input?.tenantId||!input.userId) return prompt;
+          const request=await streamweaverClient.invokeCommunityAssistant(input.tenantId,{userId:input.userId,message:`Rewrite this image prompt under 3000 characters. ${input.promptTemplate??"Preserve the intent; add clear composition and lighting."} Return only the prompt.\n\n${prompt}`,surface:"app",remember:false},`image-prompt:${input.requestId}`);
+          if(request.status!=="accepted")return prompt;
+          for(let i=0;i<90;i++){const job=await streamweaverClient.getExecutionJob(input.tenantId,request.jobId);if(job.state==="succeeded")return String(job.result?.text??prompt);if(["failed","cancelled","dead-letter"].includes(job.state))return prompt;await new Promise(resolve=>setTimeout(resolve,1000));}return prompt;
+        }};
+        this.streamweaverImage=new StreamWeaverImageWorker(streamweaverClient,new StreamWeaverImageGenerationService(providers,enhancer),{workerId:`${options.workerId}-image`,modelNo:image.modelNo,modelVerNo:image.modelVerNo,settings:generationSettings,...(fetchImpl?{fetchImpl}:{}),...(tenantIds.length?{tenantIds}:{})});
+      }
       consumers.push(...this.streamweaver.consumers);
       observers.push(...this.streamweaver.messageObservers);
     }
@@ -281,7 +294,7 @@ export class SupervisedChatGatewayService {
   async run(signal: AbortSignal) { await Promise.all([this.runGateway(signal),this.runSimulation(signal),this.streamweaverImage?.run(signal)??Promise.resolve()]); }
   private async runSimulation(signal:AbortSignal){while(!signal.aborted){await this.simulationWorker.runOnce();await pause(this.options.reconcileMs,signal);}}
   private async runGateway(signal:AbortSignal){while(!signal.aborted){await this.reconcile();await pause(this.options.reconcileMs,signal);}}
-  async close() { await this.supervisor.stop(); this.nebulaArcade?.close(); this.streamweaver?.close(); this.connectionStore.close(); this.chatStore.close(); }
+  async close() { await this.supervisor.stop(); this.nebulaArcade?.close(); this.streamweaver?.close(); this.generationSettings?.close(); this.connectionStore.close(); this.chatStore.close(); }
 }
 
 function loopbackOrigin(value: string) { const url = new URL(value); if (url.protocol !== "http:" || !["127.0.0.1", "localhost", "::1"].includes(url.hostname) || url.username || url.password || url.pathname !== "/" || url.search || url.hash) throw new Error("SPMT_ORIGIN must be a credential-free loopback HTTP origin"); return url.origin; }

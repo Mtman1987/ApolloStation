@@ -41,7 +41,7 @@ export const manifest = assertAppModuleManifestV1({
   capabilities: [STELLAR_CHAT_CAPABILITY_ID, "stella", "conversation", "model-routing", "memory", "rag", "tools", "voice-jobs", "usage"],
   surfaces: ["shell", "standalone"],
   requiredScopes: ["assistants:read", "assistants:invoke", "stellar:context:read", "stellar:context:write", "stellar:capabilities:read"],
-  eventTypes: ["stellar.job.accepted.v1", "stellar.job.completed.v1", "stellar.job.failed.v1"],
+  eventTypes: ["stellar.speech.playback.v1", "stellar.job.accepted.v1", "stellar.job.completed.v1", "stellar.job.failed.v1"],
   integration: { identity: "connected", events: "connected", workspace: "connected", inference: "connected" },
   workers: [
     { id: "stellar-qwen-worker", role: "hosted chat inference", execution: "elastic", canonicalAuthority: false },
@@ -59,3 +59,4 @@ export * from "./speech-provider.js";
 export * from "./speech-worker.js";
 export * from "./speech-voices.js";
 export * from "./assistant-store.js";
+export * from "./private-assistant.js";

@@ -7,6 +7,8 @@ import { renderFlowCodeExpression } from "./flow-code.js";
 
 export interface StreamWeaverNativeFlowExecutorV1 { execute(donorId: string, delivery: NormalizedChatDeliveryV1): Promise<string | undefined>; }
 export interface StreamWeaverFlowServicesV1 {
+  speech?(input:{delivery:NormalizedChatDeliveryV1;text:string;voice?:string;requestId:string}):Promise<{jobId:string}>;
+  points?(input:{delivery:NormalizedChatDeliveryV1;delta:number;ownerUserId:string;requestId:string}):Promise<number>;
   device?(input:{delivery:NormalizedChatDeliveryV1;deviceId:string;ownerUserId:string;action:string;payload:Record<string,unknown>;requestId:string}):Promise<{jobId:string}|{output:string}>;
   assistant?(input:{delivery:NormalizedChatDeliveryV1;prompt:string;requestId:string}):Promise<{status:"accepted";jobId:string}|{status:"unavailable";reason:string}>;
   getJob?(tenantId:string,jobId:string):Promise<ExecutionJobV1>;
@@ -146,6 +148,20 @@ export class StreamWeaverInstalledFlowConsumer {
       const payload=action.type==="obs-scene"?{sceneName:render(action.config.sceneName??action.config.scene)}:action.type==="obs-source"?{sceneName:render(action.config.sceneName??action.config.scene),sourceName:render(action.config.sourceName??action.config.source),visible:action.config.visible}:Object.fromEntries(Object.entries(record(action.config.payload)??{}).map(([key,value])=>[key,typeof value==="string"?render(value):value]));
       const response=await this.services.device({delivery,deviceId:String(action.config.deviceId??""),ownerUserId:run.package.author.id,action:action.type==="obs-scene"?"obs.scene.set":action.type==="obs-source"?"obs.source.visibility.set":String(action.config.action??""),payload,requestId:`flow-device:${delivery.deliveryId}:${action.id}`});
       return result('output' in response?response.output:await this.jobResult(delivery,action.id,response.jobId));
+    }
+    if(action.type==="speak") {
+      const text=render(action.config.text);
+      if(preview)return result("",`Would speak: ${text}`);
+      if(!this.services.speech)throw new Error("Speech is unavailable for this flow");
+      let jobId=run.pending?.actionId===action.id?run.pending.jobId:undefined;
+      if(!jobId)jobId=(await this.services.speech({delivery,text,...(action.config.voice?{voice:String(action.config.voice)}:{}),requestId:`flow-speech:${delivery.deliveryId}:${action.id}`})).jobId;
+      return result(await this.jobResult(delivery,action.id,jobId));
+    }
+    if(action.type==="points") {
+      const delta=Number(render(action.config.delta));if(!Number.isSafeInteger(delta)||Math.abs(delta)>1e12)throw new Error("Point change must be a whole number");
+      if(preview)return result("",`Would change the viewer's streamer points by ${delta}`);
+      if(!this.services.points)throw new Error("Streamer currency is unavailable for this flow");
+      const balance=await this.services.points({delivery,delta,ownerUserId:run.package.author.id,requestId:`flow-points:${delivery.deliveryId}:${action.id}`});return result(String(balance));
     }
     if(action.type==="ai-response"){
       if(preview)return result("","AI response requires running this command in a Simulation Room with an available assistant worker.");

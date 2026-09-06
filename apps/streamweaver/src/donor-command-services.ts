@@ -5,7 +5,7 @@ export interface StreamWeaverTenantLinksV1 { discord?:string; hover?:string; ins
 export interface StreamWeaverLinkSourceV1 { getLinks(tenantId:string):Promise<StreamWeaverTenantLinksV1>|StreamWeaverTenantLinksV1; }
 export interface StreamWeaverTwitchIdentitySourceV1 { resolveTwitchUserId(input:{tenantId:string;canonicalUserId?:string;provider:string;providerUserId:string}):Promise<string|undefined>|string|undefined; }
 export interface StreamWeaverCapabilityExecutorV1 { execute(input:StreamWeaverDonorCommandInvocationV1):Promise<string|undefined>|string|undefined; }
-export interface StreamWeaverTranslationServiceV1 { translate(input:{tenantId:string;text:string;requestedByUserId?:string;provider:string}):Promise<string>|string; }
+export interface StreamWeaverTranslationServiceV1 { translate(input:{tenantId:string;text:string;requestedByUserId?:string;provider:string;requestId?:string}):Promise<string>|string; }
 
 export interface DefaultStreamWeaverDonorServicesOptionsV1 {
   twitch?:StreamWeaverTwitchCommandAdapter;
@@ -75,6 +75,7 @@ export class DefaultStreamWeaverDonorCommandServices implements StreamWeaverDono
 
   private async moderation(invocation:StreamWeaverDonorCommandInvocationV1){
     if(!invocation.actor.isModerator)return {handled:true,text:`@${invocation.actor.displayName}, only mods can use that!`};
+    if(invocation.canonicalTrigger==="!so"&&this.options.moderation)return this.delegate(this.options.moderation,invocation);
     if(this.options.twitch){
       try{
         if(invocation.canonicalTrigger==="!settitle"){const title=invocation.args.join(" ").trim();if(!title)return {handled:true,text:"Usage: !settitle <title>"};const result=await this.options.twitch.setTitle(invocation.tenantId,title);return {handled:true,text:`Title updated: ${result.title}`};}
@@ -89,7 +90,7 @@ export class DefaultStreamWeaverDonorCommandServices implements StreamWeaverDono
     if(invocation.canonicalTrigger==="!bic"&&this.options.bic)return this.delegate(this.options.bic,invocation);
     if(invocation.canonicalTrigger==="!t"&&this.options.translation){
       const text=invocation.args.join(" ").trim(); if(!text)return {handled:true,text:"Usage: !T <text to translate>"};
-      try{return {handled:true,text:await this.options.translation.translate({tenantId:invocation.tenantId,text,...(invocation.actor.userId?{requestedByUserId:invocation.actor.userId}:{}),provider:invocation.provider})};}
+      try{return {handled:true,text:await this.options.translation.translate({tenantId:invocation.tenantId,text,...(invocation.actor.userId?{requestedByUserId:invocation.actor.userId}:{}),provider:invocation.provider,requestId:invocation.deliveryId})};}
       catch(error){return unavailable(error instanceof Error?error.message:"Translation failed.");}
     }
     return this.delegate(this.options.community,invocation);

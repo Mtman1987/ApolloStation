@@ -22,6 +22,8 @@ export * from "./donor-social-actions.js";
 export * from "./donor-shoutout-actions.js";
 export * from "./shoutout-matcher.js";
 export * from "./shoutout-store.js";
+export * from "./eden-image-provider.js";
+export * from "./generation-settings.js";
 export * from "./twitch-command-adapter.js";
 export * from "./username-matcher.js";
 export * from "./overlay-runtime.js";

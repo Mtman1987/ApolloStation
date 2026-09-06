@@ -8,7 +8,7 @@ export const STREAMWEAVER_FLOW_AUTHOR = Object.freeze({ id: "mtman1987", display
 
 export function assertStreamWeaverFlowRunnable(item: StreamWeaverFlowPackageV1) {
   assertStreamWeaverFlowCode(item);
-  const supported=new Set(["send-chat","send-discord","wait","run-action","run-native","set-variable","condition","ai-response","obs-scene","obs-source","device-command"]);
+  const supported=new Set(["send-chat","send-discord","wait","run-action","run-native","set-variable","condition","ai-response","speak","points","obs-scene","obs-source","device-command"]);
   for(const command of item.commands)if(command.enabled&&command.migrationNote)throw new Error(command.migrationNote);
   for(const command of item.commands)if(command.enabled&&command.edges===undefined&&command.actionIds.some(id=>item.actions.find(a=>a.id===id)?.type==="condition"))throw new Error("Enable branching and choose destinations for each condition before enabling this flow");
   for(const action of item.actions) {
@@ -22,6 +22,8 @@ export function assertStreamWeaverFlowRunnable(item: StreamWeaverFlowPackageV1) 
     if(action.type==="run-action"&&!SPMT_SUITE_ACTION_CATALOG.some(a=>a.id===action.config.action))throw new Error("Choose an existing cross-app action");
     if((action.type==="send-chat"||action.type==="send-discord")&&!String(action.config.text??action.config.message??"").trim())throw new Error("Message steps need reply text");
     if(action.type==="condition"&&!["==","===","!=","!==",">",">=","<","<=","includes","exists"].includes(String(action.config.operator)))throw new Error("Choose a supported condition operator");
+    if(action.type==="speak"&&!String(action.config.text??" ").trim())throw new Error("Speech steps need text");
+    if(action.type==="points"&&action.config.delta===undefined)throw new Error("Points steps need an amount");
     if(action.type==="ai-response"&&!String(action.config.input??"").trim())throw new Error("AI steps need an input prompt");
     if(action.config.saveAs!==undefined&&!/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(String(action.config.saveAs)))throw new Error("Result variable names must start with a letter and contain only letters, numbers and underscores");
   }
@@ -51,7 +53,7 @@ export interface StreamWeaverFlowCommandV1 {
 
 export interface StreamWeaverFlowActionV1 {
   id: string;
-  type: "send-chat" | "send-discord" | "wait" | "run-action" | "run-native" | "http-request" | "set-variable" | "execute-code" | "obs-scene" | "obs-source" | "condition" | "ai-response" | "device-command";
+  type: "send-chat" | "send-discord" | "wait" | "run-action" | "run-native" | "http-request" | "set-variable" | "execute-code" | "obs-scene" | "obs-source" | "condition" | "ai-response" | "device-command" | "speak" | "points";
   enabled: boolean;
   config: Record<string, unknown>;
 }
@@ -380,7 +382,7 @@ function normalizeEdges(value: unknown, actionIds: string[]): NonNullable<Stream
   for(const id of actionIds)visit(id);
   return edges;
 }
-function normalizeAction(value: unknown): StreamWeaverFlowActionV1 { const item=object(value,"action"),allowed=["send-chat","send-discord","wait","run-action","run-native","http-request","set-variable","execute-code","obs-scene","obs-source","condition","ai-response","device-command"] as const,type=String(item.type);if(!allowed.includes(type as typeof allowed[number]))throw new Error(`Unsupported flow action: ${type}`);const config=object(item.config??{},"action.config");if(type==="run-native"){if(config.capability!=="streamweaver.donor-command.v1")throw new Error("run-native must reference the StreamWeaver donor command capability");identifier(config.donorId,"action.config.donorId");}if(JSON.stringify(config).length>32_000)throw new Error("Flow action config is too large");return{id:identifier(item.id??`action.${crypto.randomUUID()}`,"action.id"),type:type as StreamWeaverFlowActionV1["type"],enabled:item.enabled!==false,config:structuredClone(config)}; }
+function normalizeAction(value: unknown): StreamWeaverFlowActionV1 { const item=object(value,"action"),allowed=["send-chat","send-discord","wait","run-action","run-native","http-request","set-variable","execute-code","obs-scene","obs-source","condition","ai-response","speak","points","device-command"] as const,type=String(item.type);if(!allowed.includes(type as typeof allowed[number]))throw new Error(`Unsupported flow action: ${type}`);const config=object(item.config??{},"action.config");if(type==="run-native"){if(config.capability!=="streamweaver.donor-command.v1")throw new Error("run-native must reference the StreamWeaver donor command capability");identifier(config.donorId,"action.config.donorId");}if(JSON.stringify(config).length>32_000)throw new Error("Flow action config is too large");return{id:identifier(item.id??`action.${crypto.randomUUID()}`,"action.id"),type:type as StreamWeaverFlowActionV1["type"],enabled:item.enabled!==false,config:structuredClone(config)}; }
 function streamerBotSubAction(action:StreamWeaverFlowActionV1,warnings:string[]){if(action.type==="run-native"){warnings.push("Native StreamWeaver actions require an equivalent action in Streamer.bot; the command/action wiring is preserved.");return{type:"RunAction",enabled:action.enabled,actionName:`StreamWeaver Native · ${String(action.config.donorId)}`,sourceCapability:action.config.capability};}const map:Partial<Record<StreamWeaverFlowActionV1["type"],string>>={"send-chat":"SendChatMessage","send-discord":"DiscordSendMessage",wait:"Delay","run-action":"RunAction","http-request":"ExecuteCode","set-variable":"SetGlobalVariable","execute-code":"ExecuteCode","obs-scene":"ObsSetScene","obs-source":"ObsSetSourceVisibility"};const type=map[action.type]??"ExecuteCode";if(type==="ExecuteCode"&&action.type!=="execute-code")warnings.push(`${action.type} was exported as an ExecuteCode compatibility fallback.`);return{type,enabled:action.enabled,...action.config};}
 function remapImportedFlowPackage(value:unknown){const item=structuredClone(object(value,"flow package")),suffix=crypto.randomUUID().slice(0,8),commands=array(item.commands??[],"commands",32),actions=array(item.actions??[],"actions",128),actionMap=new Map<string,string>();for(const raw of actions){const action=object(raw,"action"),old=identifier(action.id,"action.id"),next=`${old}.import-${suffix}`;actionMap.set(old,next);action.id=next;}for(const raw of commands){const command=object(raw,"command"),old=identifier(command.id,"command.id");command.id=`${old}.import-${suffix}`;if(Array.isArray(command.actionIds))command.actionIds=command.actionIds.map((actionId)=>actionMap.get(String(actionId))??actionId);if(Array.isArray(command.edges))command.edges=command.edges.map(raw=>{const edge=object(raw,"edge");return {...edge,source:actionMap.get(String(edge.source))??edge.source,target:actionMap.get(String(edge.target))??edge.target};});}item.packageId=`${identifier(item.packageId,"packageId")}.import-${suffix}`;return item;}
 function uniqueIds(values:string[],name:string){if(new Set(values).size!==values.length)throw new Error(`Flow package contains duplicate ${name} IDs`);}

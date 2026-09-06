@@ -4,13 +4,16 @@ import { TTS_VOICE_OPTIONS, ATHENA_CANONICAL_TTS_VOICE } from "./speech-voices.j
 
 export interface AssistantPreferences { voice: string; ttsEnabled: boolean; gifEnabled: boolean; remember: boolean; }
 export interface AssistantNote { id: string; subject: string; title: string; content: string; updatedAt: string; }
+export interface AssistantTurn { id:string; jobId:string; message:string; answer?:string; state:string; createdAt:string; sequence?:number; }
+export interface AssistantThread { epoch:string; turns:AssistantTurn[]; summary:string; sequence?:number; summaryThrough?:string; condensation?:{jobId:string;through:string;title:string}; }
 /** One ecosystem-owned private store, partitioned by both tenant and canonical user. */
 export class StellarAssistantStore {
   private readonly db: DatabaseSync;
   constructor(path: string) {
     this.db = new DatabaseSync(path); this.db.exec("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000");
     this.db.exec(`CREATE TABLE IF NOT EXISTS stellar_preferences(tenant TEXT NOT NULL, user_id TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY(tenant,user_id));
-      CREATE TABLE IF NOT EXISTS stellar_notes(tenant TEXT NOT NULL,user_id TEXT NOT NULL,id TEXT NOT NULL,body TEXT NOT NULL,PRIMARY KEY(tenant,user_id,id));`);
+      CREATE TABLE IF NOT EXISTS stellar_notes(tenant TEXT NOT NULL,user_id TEXT NOT NULL,id TEXT NOT NULL,body TEXT NOT NULL,PRIMARY KEY(tenant,user_id,id));
+      CREATE TABLE IF NOT EXISTS stellar_private_threads(tenant TEXT NOT NULL,user_id TEXT NOT NULL,body TEXT NOT NULL,PRIMARY KEY(tenant,user_id));`);
   }
   preferences(tenant: string, user: string): AssistantPreferences {
     const row = this.db.prepare("SELECT body FROM stellar_preferences WHERE tenant=? AND user_id=?").get(tenant,user);
@@ -29,7 +32,19 @@ export class StellarAssistantStore {
     this.db.prepare("INSERT INTO stellar_notes VALUES(?,?,?,?) ON CONFLICT(tenant,user_id,id) DO UPDATE SET body=excluded.body").run(tenant,user,note.id,JSON.stringify(note)); return note;
   }
   deleteNote(tenant: string, user: string, id: string) { this.db.prepare("DELETE FROM stellar_notes WHERE tenant=? AND user_id=? AND id=?").run(tenant,user,id); }
-  deleteForUser(tenant: string,user: string) { this.db.prepare("DELETE FROM stellar_notes WHERE tenant=? AND user_id=?").run(tenant,user); this.db.prepare("DELETE FROM stellar_preferences WHERE tenant=? AND user_id=?").run(tenant,user); }
+  thread(tenant:string,user:string):AssistantThread {
+    const row=this.db.prepare("SELECT body FROM stellar_private_threads WHERE tenant=? AND user_id=?").get(tenant,user);
+    if(!row){const empty={epoch:randomUUID(),turns:[],summary:""};this.saveThread(tenant,user,empty);return empty;}
+    const thread=JSON.parse(String(row.body)) as AssistantThread;
+    const cutoff=Date.now()-(this.preferences(tenant,user).remember?7*86400_000:3600_000);
+    thread.turns=thread.turns.filter(t=>Date.parse(t.createdAt)>cutoff);return thread;
+  }
+  saveThread(tenant:string,user:string,thread:AssistantThread) {
+    this.db.prepare("INSERT INTO stellar_private_threads VALUES(?,?,?) ON CONFLICT(tenant,user_id) DO UPDATE SET body=excluded.body").run(tenant,user,JSON.stringify({...thread,turns:thread.turns.slice(-100)}));
+  }
+  clearThread(tenant:string,user:string) {const thread={epoch:randomUUID(),turns:[],summary:""};this.saveThread(tenant,user,thread);return thread;}
+  sweep(){for(const row of this.db.prepare("SELECT tenant,user_id FROM stellar_private_threads").all()){const tenant=String(row.tenant),user=String(row.user_id);this.saveThread(tenant,user,this.thread(tenant,user));}}
+  deleteForUser(tenant: string,user: string) { this.db.prepare("DELETE FROM stellar_notes WHERE tenant=? AND user_id=?").run(tenant,user); this.db.prepare("DELETE FROM stellar_preferences WHERE tenant=? AND user_id=?").run(tenant,user); this.db.prepare("DELETE FROM stellar_private_threads WHERE tenant=? AND user_id=?").run(tenant,user); }
   close() { this.db.close(); }
 }
 function field(value: unknown,max: number) { if (typeof value !== "string" || !value.trim() || value.length > max || value.includes("\0")) throw new Error("Note field is missing or too large"); return value.trim(); }

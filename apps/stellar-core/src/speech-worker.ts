@@ -24,7 +24,13 @@ export class StellarSpeechWorker {
         const result = await this.provider.synthesize(String(job.input.text ?? ""), String(job.input.voice ?? "deepgram:aura-2:athena"), job.tenantId);
         this.metrics.inputUnits+=String(job.input.text??"").length;this.metrics.outputUnits+=result.bytes.byteLength;
         const asset = await this.client.uploadMediaAsset(job.tenantId, { name: "spoken-reply.mp3", contentType: result.contentType, purpose: "speech", expiresInSeconds: 3600 }, result.bytes, `speech:${job.id}`, mediaLease);
-        await this.client.succeedExecutionJob(...lease, { kind: "stellar.speech.result.v1", mediaAssetId: asset.id, voice: result.voice, providers: result.providers, contentType: result.contentType });
+        let mediaUrl:string|undefined;
+        if(job.input.mediaVisibility==="public"&&job.ownerAppId==="streamweaver") {
+          const published=await this.client.publishMediaAsset(job.tenantId,asset.id,mediaLease);mediaUrl=published.publicUrl;
+          if(!mediaUrl)throw new StellarSpeechError("Public speech publication failed");
+          await this.client.publishEvent(job.tenantId,"stellar.speech.playback.v1",{kind:"tts-player",mediaUrl,text:String(job.input.text??"").slice(0,2000),durationMs:Math.min(3600000,Math.max(10000,String(job.input.text??"").length*90))},`speech-playback:${job.id}`);
+        }
+        await this.client.succeedExecutionJob(...lease, { kind: "stellar.speech.result.v1", text:String(job.input.text??""),mediaAssetId: asset.id,...(mediaUrl?{mediaUrl}:{}), voice: result.voice, providers: result.providers, contentType: result.contentType });
       } else {
         const ids = job.input.mediaAssetIds;
         if (!Array.isArray(ids) || ids.length !== 1 || typeof ids[0] !== "string") throw new StellarSpeechError("Transcription requires one recording asset");

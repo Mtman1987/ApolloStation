@@ -22,14 +22,14 @@ export class StellarDataPrivacyService {
       exportedAt,
       retention: { rawDays: 7, doNotRememberHours: 1, metadataDays: 30 },
       context: this.data.listPersonalStellarContext(tenantId, userId),
-      ...(this.options.assistantStore?{notes:this.options.assistantStore.notes(tenantId,userId),preferences:this.options.assistantStore.preferences(tenantId,userId)}:{}),
-      jobs: this.jobs.listForMaintenance(tenantId, { ownerAppId: "stellar-core", billedUserId: userId }).map(publicStellarJob),
+      ...(this.options.assistantStore?{notes:this.options.assistantStore.notes(tenantId,userId),preferences:this.options.assistantStore.preferences(tenantId,userId),conversation:this.options.assistantStore.thread(tenantId,userId)}:{}),
+      jobs: this.jobs.listForMaintenance(tenantId, { billedUserId: userId }).filter(stellarOwned).map(publicStellarJob),
     };
   }
 
   deleteForUser(tenantId: string, userId: string) {
     this.options.assistantStore?.deleteForUser(tenantId,userId);
-    const jobs = this.jobs.listForMaintenance(tenantId, { ownerAppId: "stellar-core", billedUserId: userId });
+    const jobs = this.jobs.listForMaintenance(tenantId, { billedUserId: userId }).filter(stellarOwned);
     let deletedJobs = 0;
     for (const job of jobs) {
       if (!terminal(job)) this.jobs.cancel(tenantId, job.id);
@@ -40,14 +40,19 @@ export class StellarDataPrivacyService {
   }
 
   sweep(tenantIds: string[]) {
+    this.options.assistantStore?.sweep();
     const now = Date.parse(this.now());
     let minimized = 0, deleted = 0;
     for (const tenantId of [...new Set(tenantIds)]) {
-      const jobs = this.jobs.listForMaintenance(tenantId, { ownerAppId: "stellar-core" });
+      const jobs = this.jobs.listForMaintenance(tenantId).filter(stellarOwned);
       for (const job of jobs) {
         if (!terminal(job) || !job.completedAt) continue;
         const age = now - Date.parse(job.completedAt);
         if (age >= STELLAR_METADATA_RETENTION_MS) { this.jobs.delete(tenantId, job.id); deleted += 1; continue; }
+        if(job.input.kind==="stellar.speech.request.v1") {
+          if(age>=STELLAR_EPHEMERAL_RETENTION_MS){this.jobs.redactPayloads(tenantId,job.id,{kind:"stellar.speech.metadata.v1",contentMinimized:true},{state:job.state,contentMinimized:true});minimized++;}
+          continue;
+        }
         if (job.input.kind !== STELLAR_CHAT_REQUEST_KIND) continue;
         const remember = job.input.remember !== false && !String(job.input.conversationId??"").startsWith("streamweaver:voice:private:");
         if (age < (remember ? STELLAR_RAW_RETENTION_MS : STELLAR_EPHEMERAL_RETENTION_MS)) continue;
@@ -58,6 +63,7 @@ export class StellarDataPrivacyService {
     return { schemaVersion: 1 as const, minimized, deleted, sweptAt: this.now() };
   }
 }
+function stellarOwned(job:ExecutionJobV1){return job.ownerAppId==="stellar-core"||(job.executionOwner==="stellar-core"&&["stellar.speech.synthesize.v1","stellar.speech.transcribe.v1"].includes(job.capabilityId));}
 
 function terminal(job: ExecutionJobV1) { return ["succeeded", "failed", "cancelled", "dead-letter"].includes(job.state); }
 function metadataInput(job: ExecutionJobV1, remember: boolean) { const presentation=publicPresentation(job.input.presentation); return { kind: STELLAR_CHAT_METADATA_KIND, capabilityId: STELLAR_CHAT_CAPABILITY_ID, userId: job.billedUserId, surface: typeof job.input.surface === "string" ? job.input.surface : "unknown", routingPreference: typeof job.input.routingPreference === "string" ? job.input.routingPreference : "automatic", remember, ...(presentation?{presentation}:{}), ...(typeof job.input.conversationId === "string" ? { conversationId: job.input.conversationId } : {}), contentMinimized: true }; }

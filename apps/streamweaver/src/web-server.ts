@@ -3,6 +3,8 @@ import { streamWeaverOperationsBrowserJs } from "./stream-operations-client.js";
 import { streamWeaverPokemonBrowserJs } from "./pokemon-client.js";
 import { streamWeaverChatDeskBrowserJs } from "./chat-desk-client.js";
 import { streamWeaverAssistantBrowserJs } from "./assistant-client.js";
+import { streamWeaverPrivateAssistantBrowserJs } from "./private-assistant-client.js";
+import { streamWeaverGenerationBrowserJs } from "./generation-client.js";
 import {proxyAppMedia} from "@spmt/app-foundation/media-proxy";
 import {streamWeaverAssetsBrowserJs} from "./assets-client.js";
 import {streamWeaverResearchBrowserJs} from "./research-client.js";
@@ -47,6 +49,7 @@ export const STREAMWEAVER_WEB_DESCRIPTOR: ProductAppWebDescriptorV1 = {
     { id: "devices", label: "Devices & OBS", title: "Devices & OBS", body: "Authorize selected actions on your paired Companion devices, then use them in your flows.", glyph: "▱", appOwnedData:true, navigationGroup:"Connections & Output" },
     { id: "media", label: "Media & Mixer", title: "Media & Mixer", body: "Control your HearMeOut room queues while configuring StreamWeaver.", glyph: "♫", appOwnedData:true, navigationGroup:"Connections & Output" },
     { id: "overlays", label: "Overlays", title: "Stream Outputs", body: "Compose your stream through the shared Overlay Bay and test outputs in Simulation Rooms.", glyph: "▣", appOwnedData:true, navigationGroup:"Connections & Output", signals:[{source:"overlayWidgets",label:"Registered widgets"},{source:"overlayOutputs",label:"Issued outputs"}] },
+    { id:"generation",label:"Image Studio",title:"Image Studio",body:"Generate private images with your preferred settings.",glyph:"▧",appOwnedData:true,navigationGroup:"Connections & Output" },
     { id:"assets",label:"Media Files",title:"Shared Media Files",body:"Store private recordings, avatars and generated media in your shared workspace.",glyph:"▧",appOwnedData:true,navigationGroup:"Connections & Output" },
     { id: "economy", label: "Points", title: "Streamer Points", body: "Manage your points and see their current value compared with SPMT XP.", glyph: "$", appOwnedData: true, navigationGroup:"Manage" },
     { id: "activity", label: "Activity", title: "Command Run History", body: "Inspect actual command inputs, ordered steps, results and failures.", glyph: "◷", appOwnedData:true, navigationGroup:"Manage" },
@@ -62,7 +65,7 @@ export function createStreamWeaverWebServer(options: StreamWeaverWebServerOption
   const snapshot = productAppSnapshotHandler({ appId: "streamweaver", spmtOrigin: options.spmtOrigin, sources: productAppSnapshotSources(STREAMWEAVER_WEB_DESCRIPTOR) });
   const controls = new StreamWeaverWebControls({ ...options, connections: parseStreamWeaverWebConnections(options.connectionsJson) });
   const secureChoice=options.databasePath?new StreamWeaverSecureChoiceWeb({databasePath:options.databasePath,spmtOrigin:options.spmtOrigin,publicOrigin:options.publicOrigin??process.env.STREAMWEAVER_PUBLIC_ORIGIN??options.spmtOrigin}):undefined;
-  return createProductAppWebServer({ descriptor: STREAMWEAVER_WEB_DESCRIPTOR, port: options.port, host: options.host, buildSha: options.buildSha, extraCss: STREAMWEAVER_CONTROL_CSS + STREAMWEAVER_FLOW_CSS, browserJs: appSurfaceBrowserJs(SURFACE) + streamWeaverBrowserJs() + streamWeaverMediaBrowserJs() + streamWeaverResearchBrowserJs() + streamWeaverAssetsBrowserJs() + streamWeaverAssistantBrowserJs() + streamWeaverChatDeskBrowserJs() + streamWeaverPokemonBrowserJs() + streamWeaverOperationsBrowserJs() + streamWeaverPointsRateBrowserJs(), handleApi: async (request, response, url) => await proxyAppMedia({appId:"streamweaver",spmtOrigin:options.spmtOrigin,request,response,url,...(options.fetchImpl?{fetchImpl:options.fetchImpl}:{})}) || await secureChoice?.handle(request,response,url) || await controls.handle(request, response, url) || await snapshot(request, response, url), close: () => {secureChoice?.close();controls.close();} });
+  return createProductAppWebServer({ descriptor: STREAMWEAVER_WEB_DESCRIPTOR, port: options.port, host: options.host, buildSha: options.buildSha, extraCss: STREAMWEAVER_CONTROL_CSS + STREAMWEAVER_FLOW_CSS, browserJs: appSurfaceBrowserJs(SURFACE) + streamWeaverBrowserJs() + streamWeaverMediaBrowserJs() + streamWeaverResearchBrowserJs() + streamWeaverAssetsBrowserJs() + streamWeaverAssistantBrowserJs() + streamWeaverPrivateAssistantBrowserJs() + streamWeaverGenerationBrowserJs() + streamWeaverChatDeskBrowserJs() + streamWeaverPokemonBrowserJs() + streamWeaverOperationsBrowserJs() + streamWeaverPointsRateBrowserJs(), handleApi: async (request, response, url) => await proxyAppMedia({appId:"streamweaver",spmtOrigin:options.spmtOrigin,request,response,url,...(options.fetchImpl?{fetchImpl:options.fetchImpl}:{})}) || await secureChoice?.handle(request,response,url) || await controls.handle(request, response, url) || await snapshot(request, response, url), close: () => {secureChoice?.close();controls.close();} });
 }
 
 const STREAMWEAVER_CONTROL_CSS = `

@@ -1,3 +1,4 @@
+import { StreamWeaverGenerationStore, GENERATION_TEMPLATES, type StreamWeaverGenerationSettings } from "./generation-settings.js";
 import { StreamWeaverCommunityRuntime } from "./community-runtime.js";
 import { calculateStreamWeaverSupplyRate } from "./economy.js";
 import { StreamWeaverCommunityStore, type StreamPartner, type StreamRedeem, type StreamEventBinding } from "./community-store.js";
@@ -29,6 +30,7 @@ type SessionContext = Awaited<ReturnType<typeof fetchAppSessionContext>>;
 
 /** Authenticated app API behind Voice Commander, persona, economy, and integration pages. */
 export class StreamWeaverWebControls {
+  private readonly generation?:StreamWeaverGenerationStore;
   private readonly community?:StreamWeaverCommunityStore;
   private readonly pokemon?: StreamWeaverPokemonStore;
   private readonly persona?: StreamWeaverPersonaSettingsStore;
@@ -41,6 +43,7 @@ export class StreamWeaverWebControls {
 
   constructor(private readonly options: StreamWeaverWebControlOptionsV1) {
     this.operationMode = options.operationMode ?? "active";
+    if(options.databasePath)this.generation=new StreamWeaverGenerationStore(options.databasePath);
     if (options.databasePath) this.community=new StreamWeaverCommunityStore(options.databasePath);
     if (options.databasePath) this.pokemon=new StreamWeaverPokemonStore(options.databasePath);
     if (options.databasePath) { this.persona = new StreamWeaverPersonaSettingsStore(options.databasePath); this.economy = new SqliteStreamWeaverEconomyStore(options.databasePath); this.flows = new StreamWeaverFlowPackageStore(options.databasePath); }
@@ -51,12 +54,28 @@ export class StreamWeaverWebControls {
     }
   }
 
-  close() { this.community?.close(); this.pokemon?.close(); this.relay?.close(); this.runtimeSettings?.close(); this.flows?.close(); this.persona?.close(); this.economy?.close(); }
+  close() { this.generation?.close(); this.community?.close(); this.pokemon?.close(); this.relay?.close(); this.runtimeSettings?.close(); this.flows?.close(); this.persona?.close(); this.economy?.close(); }
 
   async handle(request: IncomingMessage, response: ServerResponse, url: URL): Promise<boolean> {
     if (!url.pathname.startsWith("/api/streamweaver/control")) return false;
     try {
       const context = await fetchAppSessionContext({ appId: "streamweaver", spmtOrigin: this.options.spmtOrigin, request });
+      if(url.pathname==="/api/streamweaver/control/generation") {
+        if(!this.generation)throw new Error("Generation settings are unavailable");
+        const scope=`private:${this.actor(context).id}`;
+        if(request.method==="GET")return sendJson(response,200,{tenantId:context.tenantId,owner:this.role(context)==="owner",settings:this.generation.read(context.tenantId,scope),publicSettings:this.generation.read(context.tenantId),templates:GENERATION_TEMPLATES});
+        if(request.method!=="POST")return sendJson(response,405,{message:"Use GET or POST"});
+        requireSameOrigin(request);const body=await readJsonBody(request);
+        if(body.action==="settings") {
+          if(body.surface==="public")this.requireOwner(context);
+          return sendJson(response,200,this.generation.save(context.tenantId,body.surface==="public"?"public":scope,body.settings as Partial<StreamWeaverGenerationSettings>));
+        }
+        if(body.action!=="generate")throw new Error("Unknown generation action");
+        if(this.operationMode!=="active")throw new Error("External image generation is disabled in this environment");
+        const prompt=text(body.prompt,"prompt",3000),settings=this.generation.read(context.tenantId,scope);
+        const result=await this.requireClient().createExecutionJob(context.tenantId,{ownerAppId:"streamweaver",capabilityId:"streamweaver.image.generate.v1",executionOwner:"streamweaver",billedUserId:this.actor(context).id,meteredResource:"image-generations",usageQuantity:settings.count,executionTarget:"sprite",meteringTarget:"hosted",input:{prompt,generationSettings:settings,mediaVisibility:"private"}},idempotency(body.requestId,"image-studio"));
+        return sendJson(response,202,{jobId:result.job.id});
+      }
       if(url.pathname==="/api/streamweaver/control/stream-operations"){
         if(!this.community)throw new Error("Stream operations storage is not configured");
         if(request.method==="GET"){
@@ -64,7 +83,7 @@ export class StreamWeaverWebControls {
           let pricing:Record<string,unknown>={available:false,localSupply,message:"SPMT pricing is unavailable"};
           try {if(this.client){const spmt=await this.client.getXpSupply(context.tenantId);const rate=calculateStreamWeaverSupplyRate(localSupply,spmt.spendableSupply);pricing={available:true,localSupply,spmtSupply:spmt.spendableSupply,localPerSpmt:rate.localPerSpmt,spmtPerLocal:rate.spmtPerLocal,measuredAt:spmt.measuredAt,rounding:"up to the next whole XP",prices:Object.fromEntries(this.community.redeems(context.tenantId).map(r=>[r.id,rate.localCostInSpmt(r.price)]))};}}
           catch{pricing.message=localSupply===0?"SPMT pricing requires a nonzero streamer-point supply":"SPMT pricing is temporarily unavailable";}
-          return sendJson(response,200,{partners:this.community.partners(context.tenantId),redeems:this.community.redeems(context.tenantId),settings:this.community.settings(context.tenantId),bindings:this.community.bindings(context.tenantId),stats:this.community.checkinStats(context.tenantId),watchtime:this.community.watchLeaders(context.tenantId),pricing,wallet:this.economy?.getWallet(context.tenantId,this.actor(context).id),diagnostics:this.role(context)==="owner"?this.community.providerDiagnostics(context.tenantId):[],owner:this.role(context)==="owner"});
+          return sendJson(response,200,{partners:this.community.partners(context.tenantId),redeems:this.community.redeems(context.tenantId),settings:this.community.settings(context.tenantId),bindings:this.community.bindings(context.tenantId),tasks:this.role(context)==="owner"?this.community.tasks(context.tenantId):[],stats:this.community.checkinStats(context.tenantId),watchtime:this.community.watchLeaders(context.tenantId),pricing,wallet:this.economy?.getWallet(context.tenantId,this.actor(context).id),diagnostics:this.role(context)==="owner"?this.community.providerDiagnostics(context.tenantId):[],owner:this.role(context)==="owner"});
         }
         if(request.method!=="POST")return sendJson(response,405,{message:"Use GET or POST"});requireSameOrigin(request);const body=await readJsonBody(request);
         if(body.action==="checkin")return sendJson(response,200,this.community.checkin(context.tenantId,this.actor(context).id,String(body.partnerId??""),"web",String(body.requestId??"")));
@@ -75,6 +94,14 @@ export class StreamWeaverWebControls {
           return sendJson(response,200,await new StreamWeaverCommunityRuntime(this.community,this.economy,this.client,this.operationMode==="active").redeemReward({tenantId:context.tenantId,userId:this.actor(context).id,displayName:this.actor(context).id,rewardId:String(body.rewardId??""),requestId:String(body.requestId??""),currency,...(body.maxSpmtCost===undefined?{}:{maxSpmtCost:Number(body.maxSpmtCost)})}));
         }
         this.requireOwner(context);
+        if(["say","shoutout","voice-shoutout","brb-start","brb-stop","create-twitch-reward"].includes(String(body.action))){
+          if(this.operationMode!=="active")throw new Error("Live stream presentation is disabled in this environment");
+          const action=String(body.action),payload:Record<string,unknown>={action};
+          if(action==="say"){payload.text=text(body.text,"text",5000);payload.voice=optionalText(body.voice,128)||"deepgram:aura-2:athena";}
+          if(action.includes("shoutout"))payload.username=text(body.username,"username",120).replace(/^@/,"");
+          if(action==="create-twitch-reward") {const reward=this.community.redeems(context.tenantId).find(r=>r.id===body.rewardId);if(!reward)throw new Error("Choose a configured reward");payload.rewardId=reward.id;}
+          return sendJson(response,202,this.community.requestTask(context.tenantId,String(body.requestId??""),payload));
+        }
         if(body.action==="partner")return sendJson(response,200,this.community.savePartner(context.tenantId,body as unknown as StreamPartner));
         if(body.action==="remove-partner"){this.community.removePartner(context.tenantId,String(body.id));return sendJson(response,200,{removed:true});}
         if(body.action==="redeem")return sendJson(response,200,this.community.saveRedeem(context.tenantId,body as unknown as StreamRedeem));

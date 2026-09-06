@@ -26,6 +26,8 @@ export function importStreamWeaverLegacy(value:unknown,author:{id:string;display
       if(['delay','wait'].includes(type)){const ms=c.milliseconds??(raw.subtype==='delay'?Number(c.seconds??c.duration??0)*1000:c.duration??c.value??0);return [add(raw,'wait',{milliseconds:Number(ms)})];}
       if(type==='start')return [add(raw,'wait',{milliseconds:0})];
       if(['set-variable','setargument','setvariable','setglobalvariable'].includes(type))return [add(raw,'set-variable',{key:c.key??c.variableName??c.name??'value',value:c.value??c.default??'',scope:type==='setglobalvariable'?'persistent':'run'})];
+      if(['speak','tts','texttospeech','say','speaktext'].includes(type))return [add(raw,'speak',{text:c.text??c.message??'',...(c.voice?{voice:c.voice}:{})})];
+      if(['points','addpoints','removepoints'].includes(type))return [add(raw,'points',{delta:type==='removepoints'?-Number(c.amount??c.points??0):c.delta??c.amount??c.points??0})];
       if(type==='ai-response')return [add(raw,'ai-response',{input:c.input??'',saveAs:c.saveAs??'aiResponse'})];
       if(type==='text-includes')return [add(raw,'condition',{left:c.source??'{{lastOutput}}',right:c.value??'',operator:'includes'})];
       if(type==='compare')return [add(raw,'condition',{left:c.left??'',right:c.right??'',operator:c.operator??'=='})];

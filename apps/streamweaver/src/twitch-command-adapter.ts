@@ -35,6 +35,10 @@ export class StreamWeaverTwitchCommandAdapter {
   }
   async createRewardEntry(tenantId:string,title:string,prompt:string){
     const grant=await this.ready(tenantId,"rewards:manage");
+    title=boundedText(title,1,45,"title");prompt=boundedText(prompt,1,200,"prompt");
+    const current=await this.request<{data?:Array<{id:string;title:string;cost:number}>}>(grant,this.url("/channel_points/custom_rewards",{broadcaster_id:grant.broadcasterId,only_manageable_rewards:"true"}));
+    const existing=current.data?.find(r=>r.title===title);
+    if(existing){if(existing.cost!==1)throw new Error("An existing Twitch reward with this title has a different cost");return {id:existing.id};}
     const result=await this.request<{data?:Array<{id:string}>}>(grant,this.url("/channel_points/custom_rewards",{broadcaster_id:grant.broadcasterId}),{method:"POST",body:{title:boundedText(title,1,45,"title"),prompt:boundedText(prompt,1,200,"prompt"),cost:1,is_user_input_required:false,should_redemptions_skip_request_queue:false}});
     if(!result.data?.[0]?.id)throw new Error("Twitch did not return a reward ID");return result.data[0];
   }

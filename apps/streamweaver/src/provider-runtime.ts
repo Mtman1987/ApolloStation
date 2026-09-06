@@ -1,3 +1,6 @@
+import { SqliteStreamWeaverShoutoutStore, STREAMWEAVER_KNOWN_BOTS } from "./shoutout-store.js";
+import { StreamWeaverPresentationRuntime } from "./stream-presentation-runtime.js";
+import { StreamWeaverAdminEconomy } from "./economy-admin.js";
 import { StreamRewardRequestError } from "./reward-runtime.js";
 import { StreamWeaverTwitchEventSub, type StreamWeaverTwitchEvent } from "./twitch-eventsub.js";
 import { STREAMWEAVER_DONOR_COMMANDS } from "./donor-command-catalog.js";
@@ -74,11 +77,14 @@ export class StreamWeaverProviderRuntime {
   private readonly twitch?:StreamWeaverTwitchCommandAdapter;
   private lastWatchPoll=0;
   private readonly community:StreamWeaverCommunityStore;
+  private readonly shoutoutStore:SqliteStreamWeaverShoutoutStore;
+  private readonly presentation?:StreamWeaverPresentationRuntime;
   private readonly pokemon:StreamWeaverPokemonStore;
   private readonly secureChoices:StreamWeaverSecureChoiceStore;
   private readonly installedFlows: StreamWeaverInstalledFlowConsumer;
   constructor(private readonly options: StreamWeaverProviderRuntimeOptionsV1) {
     this.community=new StreamWeaverCommunityStore(options.databasePath);
+    this.shoutoutStore=new SqliteStreamWeaverShoutoutStore(options.databasePath);
     this.pokemon=new StreamWeaverPokemonStore(options.databasePath);
     this.settings = new StreamWeaverPersonaSettingsStore(options.databasePath, options.now);
     this.summons = new SqliteStreamWeaverSummonStore(options.databasePath);
@@ -106,12 +112,14 @@ export class StreamWeaverProviderRuntime {
     }};
     const grants=options.providerGrants?new SpmtStreamWeaverTwitchGrantSource(options.providerGrants,tenant=>this.runtimeSettings.twitchBroadcaster(tenant),options.allowProviderWrites===true):undefined;
     if(grants){this.twitch=new StreamWeaverTwitchCommandAdapter(grants,options.providerFetch);if(options.allowProviderWrites===true)this.eventsub=new StreamWeaverTwitchEventSub(options.databasePath,grants,options.providerFetch);}
-    this.messageObservers.push({id:"streamweaver.welcome",observe:message=>{if(message.provider==="twitch"&&!message.actor.isBot)this.community.welcome(message.tenantId,message.provider,message.actor.providerUserId,message.actor.displayName??message.actor.username);}});
+    if(this.twitch&&options.allowProviderWrites===true)this.presentation=new StreamWeaverPresentationRuntime({store:this.community,shoutoutStore:this.shoutoutStore,twitch:this.twitch,client:options.client,personas:this.settings,connections:options.connections??[],egress:options.egress});
+    this.messageObservers.push({id:"streamweaver.welcome",observe:message=>{if(message.provider==="twitch"&&!message.actor.isBot&&!STREAMWEAVER_KNOWN_BOTS.has(message.actor.username.toLowerCase()))this.community.welcome(message.tenantId,message.provider,message.actor.providerUserId,message.actor.displayName??message.actor.username,message.actor.username);}});
     const community=new StreamWeaverCommunityRuntime(this.community,this.economy,options.client,options.allowAssistant!==false);
     const services = new DefaultStreamWeaverDonorCommandServices({
       watchtime:{execute:i=>community.watchtime(i)},community:{execute:i=>community.community(i)},redeems:{execute:i=>community.redeem(i)},translation:community,
       ...(this.twitch?{twitch:this.twitch}:{}),
       links:this.runtimeSettings,
+      moderation:{execute:invocation=>{if(invocation.canonicalTrigger!=="!so")return undefined;if(!this.presentation)throw new Error("Live shoutouts are unavailable in this environment");const username=(invocation.target?.username??invocation.args[0]??"").replace(/^@/,"");if(!/^[a-zA-Z0-9_]{1,25}$/.test(username))throw new Error("Usage: !so @username");this.community.requestTask(invocation.tenantId,invocation.deliveryId,{action:"shoutout",username});return `Shoutout queued for @${username}.`;}},
       pokemon:{execute:invocation=>{
         if(!invocation.actor.userId)throw new Error("Link your account before using Pokémon");
         const [operation,...args]=invocation.canonicalTrigger==="pack"?["open",...invocation.args]:invocation.args;
@@ -139,6 +147,12 @@ export class StreamWeaverProviderRuntime {
         return {jobId:result.job.id};
       },
       getJob:(tenantId,jobId)=>options.client.getExecutionJob(tenantId,jobId),
+      points:async({delivery,delta,ownerUserId,requestId})=>{const userId=delivery.message.actor.canonicalUserId;if(!userId)throw new Error("Link your account before using streamer currency flows");const wallet=await new StreamWeaverAdminEconomy(this.economy,delivery.message.tenantId,{listCanonicalUserIds:()=>[userId]}).addPoints(userId,delta,createHash("sha256").update(requestId).digest("hex"),{actorId:ownerUserId});return wallet.balance;},
+      speech:async({delivery,text,voice,requestId})=>{
+        if(options.allowAssistant===false||options.simulation||options.allowProviderWrites!==true)throw new Error("External speech is disabled in this environment");
+        const userId=delivery.message.actor.canonicalUserId;if(!userId)throw new Error("Link your account before using speech");
+        const result=await options.client.createExecutionJob(delivery.message.tenantId,{ownerAppId:"streamweaver",executionOwner:"stellar-core",capabilityId:"stellar.speech.synthesize.v1",billedUserId:userId,meteredResource:"hosted-worker-minutes",usageQuantity:1,executionTarget:"sprite",meteringTarget:"hosted",input:{kind:"stellar.speech.request.v1",text,voice:voice||"deepgram:aura-2:athena",remember:false,mediaVisibility:"public"}},`flow-speech:${createHash("sha256").update(requestId).digest("hex")}`);return {jobId:result.job.id};
+      },
       assistant:async ({delivery,prompt,requestId})=>{if(options.allowAssistant===false)return {status:"unavailable",reason:"External assistant execution is disabled in this environment."};const userId=delivery.message.actor.canonicalUserId;if(!userId)return {status:"unavailable",reason:"Link your chat account to SPMT before using assistant flows."};const persona=this.settings.get(delivery.message.tenantId),intent=streamWeaverResearchIntent(prompt),preferences=this.runtimeSettings.research(delivery.message.tenantId);return options.client.invokeCommunityAssistant(delivery.message.tenantId,{userId,message:prompt,...(intent.kind==="query"&&preferences.enabled?{research:{...preferences,query:intent.query}}:{}),surface:"stream",conversationId:`streamweaver:flow:${requestId}`,routingPreference:"automatic",remember:false,...(persona?{presentation:{personaId:persona.personaId,displayName:persona.displayName,instructions:persona.instructions,memoryPolicy:persona.memoryPolicy}}:{})},`streamweaver-assistant:${requestId}`);},
     });
     const economy = new MultiTenantStreamWeaverEconomyCommandConsumer(this.economy, options.client, identities, this.commandState, egress, options.nowMs, Math.random);
@@ -147,7 +161,7 @@ export class StreamWeaverProviderRuntime {
   }
   consumerIds() { return this.consumers.map((consumer) => consumer.id); }
   setBotShare(tenantId: string, enabled: boolean) { this.relayStore.setBotShare(tenantId, enabled); }
-  async reconcile(limit = 100) { await this.reconcileProviderEvents(); await this.community.flush((tenant,type,payload,key)=>this.options.client.publishEvent(tenant,type,payload,key)); await this.pokemon.flush((tenant,type,payload,key)=>this.options.client.publishEvent(tenant,type,payload,key)); const replies=await this.replies.runOnce(undefined, limit);const flows=await this.installedFlows.reconcile(limit);const secureChoices=await this.secureChoices.flushOutbox(message=>this.options.egress.send(message),limit);return {...replies,flows,secureChoices}; }
+  async reconcile(limit = 100) { await this.reconcileProviderEvents(); await this.presentation?.runOnce(); await this.community.flush((tenant,type,payload,key)=>this.options.client.publishEvent(tenant,type,payload,key)); await this.pokemon.flush((tenant,type,payload,key)=>this.options.client.publishEvent(tenant,type,payload,key)); const replies=await this.replies.runOnce(undefined, limit);const flows=await this.installedFlows.reconcile(limit);const secureChoices=await this.secureChoices.flushOutbox(message=>this.options.egress.send(message),limit);return {...replies,flows,secureChoices}; }
   private async reconcileProviderEvents(){
     if(this.options.allowProviderWrites!==true)return;
     const tenants=this.community.configuredTenants();
@@ -192,5 +206,5 @@ export class StreamWeaverProviderRuntime {
     }
   }
   settleFlows() { return this.installedFlows.settle(); }
-  close() { this.eventsub?.close(); this.community.close(); this.pokemon.close(); this.secureChoices.close(); this.research.close(); this.bic.close(); this.runtimeSettings.close(); this.flows.close(); this.relayStore.close(); this.economy.close(); this.commandState.close(); this.summons.close(); this.settings.close(); }
+  close() { this.shoutoutStore.close(); this.eventsub?.close(); this.community.close(); this.pokemon.close(); this.secureChoices.close(); this.research.close(); this.bic.close(); this.runtimeSettings.close(); this.flows.close(); this.relayStore.close(); this.economy.close(); this.commandState.close(); this.summons.close(); this.settings.close(); }
 }

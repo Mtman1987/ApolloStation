@@ -1,6 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
 
-export interface CommlinkOperatorState { revision: number; pinned: string[]; queue: string[]; featured: string | null; featuredAt: number | null; autoShow: boolean; autoAdvance: boolean; durationSeconds: number; style: "glass" | "solid" | "minimal"; }
+export interface CommlinkOperatorMessage {id:string;text:string;username:string;provider:string;channelId:string;}
+export interface CommlinkOperatorState { snapshots?:Record<string,CommlinkOperatorMessage>; revision: number; pinned: string[]; queue: string[]; featured: string | null; featuredAt: number | null; autoShow: boolean; autoAdvance: boolean; durationSeconds: number; style: "glass" | "solid" | "minimal"; }
 export interface CommlinkSavedFilter { name: string; search: string; provider: string; channelId: string; }
 const defaults = (): CommlinkOperatorState => ({revision:0,pinned:[],queue:[],featured:null,featuredAt:null,autoShow:false,autoAdvance:false,durationSeconds:15,style:"glass"});
 
@@ -14,10 +15,10 @@ export class CommlinkOperatorStore {
       CREATE TABLE IF NOT EXISTS commlink_ingestion_errors(id INTEGER PRIMARY KEY AUTOINCREMENT,tenant TEXT NOT NULL,message TEXT NOT NULL,created_at INTEGER NOT NULL);`);
   }
   read(tenant: string): CommlinkOperatorState { return this.transaction(()=>{const state=this.load(tenant);if(state.autoAdvance&&state.featuredAt!==null&&state.durationSeconds>0&&this.now()-state.featuredAt>=state.durationSeconds*1000){state.featured=state.queue.shift()??null;state.featuredAt=state.featured?this.now():null;state.revision++;this.save(tenant,state);}return state;}); }
-  apply(tenant:string,input:{action:string;eventId?:string;revision:number;enabled?:boolean;durationSeconds?:number;style?:string;autoAdvance?:boolean},knownIds:readonly string[]) {
+  apply(tenant:string,input:{action:string;eventId?:string;revision:number;enabled?:boolean;durationSeconds?:number;style?:string;autoAdvance?:boolean},knownIds:readonly string[],messages:readonly CommlinkOperatorMessage[]=[]) {
     return this.transaction(()=>{
-      const state=this.load(tenant);if(input.revision!==state.revision)throw new Error("Chat desk changed. Refresh and try again.");
-      const id=input.eventId;if(id&&!knownIds.includes(id))throw new Error("Message is outside the available chat history");
+      const state=this.load(tenant);state.snapshots??={};if(input.revision!==state.revision)throw new Error("Chat desk changed. Refresh and try again.");
+      const id=input.eventId;if(id&&!knownIds.includes(id)&&!state.snapshots[id])throw new Error("Message is outside the available chat history");
       if(["pin","unpin","queue","unqueue","feature"].includes(input.action)&&!id)throw new Error("Choose a message");
       if(input.action==="pin")state.pinned=[...new Set([...state.pinned,id!])].slice(-100);
       else if(input.action==="unpin")state.pinned=state.pinned.filter(x=>x!==id);
@@ -32,6 +33,9 @@ export class CommlinkOperatorStore {
         if(input.durationSeconds!==undefined){if(!Number.isInteger(input.durationSeconds)||input.durationSeconds<0||input.durationSeconds>300)throw new Error("Duration must be 0–300 seconds");state.durationSeconds=input.durationSeconds;}
         if(input.style!==undefined){if(!["glass","solid","minimal"].includes(input.style))throw new Error("Choose a supported style");state.style=input.style as CommlinkOperatorState["style"];}
       }else throw new Error("Unknown chat desk action");
+      const retained=new Set([...state.pinned,...state.queue,...(state.featured?[state.featured]:[])]);
+      for(const message of messages)if(retained.has(message.id))state.snapshots[message.id]={id:message.id,text:message.text.slice(0,8000),username:message.username.slice(0,200),provider:message.provider,channelId:message.channelId};
+      for(const key of Object.keys(state.snapshots))if(!retained.has(key))delete state.snapshots[key];
       state.revision++;this.save(tenant,state);return state;
     });
   }
