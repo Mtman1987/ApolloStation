@@ -2,10 +2,12 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { appSurfaceBrowserJs, productSurfaceManifest } from "@spmt/app-foundation/surface-client";
 import { DshApplicationControls } from "./application-controls.js";
 import { DSH_APPLICATION_BROWSER_JS } from "./application-ui.js";
+import { DshProposalControls } from "./proposal-controls.js";
+import { DSH_PROPOSAL_BROWSER_JS } from "./proposal-ui.js";
 import type { DiscordStreamHubWebServerOptionsV1 } from "./web-server-legacy.js";
 
 // Preserve the proven DSH surface byte-for-byte while layering the completed
-// application workflow in front of only the routes it owns. Suppress the
+// community workflows in front of only the routes they own. Suppress the
 // legacy module's environment auto-start while importing it; this wrapper owns
 // the single production listener.
 const startupSpmtOrigin = process.env.SPMT_ORIGIN;
@@ -30,65 +32,63 @@ if (DISCORD_STREAM_HUB_WEB_DESCRIPTOR.name !== "Discord Stream Hub" || !ENTRYPOI
 }
 
 type RequestListener = (request: IncomingMessage, response: ServerResponse) => void;
-const APPLICATION_ACTIONS = new Set(["reviews", "agreement", "vote", "decide", "notify", "templates"]);
 const APP_API_PREFIX = "/apps/discord-stream-hub/api/";
 const APPLICATION_PREFIX = "/api/discord-stream-hub/control/applications/";
+const PROPOSAL_PREFIX = "/api/discord-stream-hub/control/proposals/";
 
 export function createDiscordStreamHubWebServer(options: DiscordStreamHubWebServerOptionsV1) {
   const host = legacy.createDiscordStreamHubWebServer(options);
-  const applications = options.databasePath && options.runtimeConfigPath
-    ? new DshApplicationControls({
-        spmtOrigin: options.spmtOrigin,
-        databasePath: options.databasePath,
-        runtimeConfigPath: options.runtimeConfigPath,
-        ...(options.publicOrigin ? { publicOrigin: options.publicOrigin } : {}),
-        ...(options.credential ? { credential: options.credential } : {}),
-        ...(options.operationMode ? { operationMode: options.operationMode } : {}),
-        ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}),
-      })
-    : undefined;
+  const workflowOptions = options.databasePath && options.runtimeConfigPath ? {
+    spmtOrigin: options.spmtOrigin,
+    databasePath: options.databasePath,
+    runtimeConfigPath: options.runtimeConfigPath,
+    ...(options.credential ? { credential: options.credential } : {}),
+    ...(options.operationMode ? { operationMode: options.operationMode } : {}),
+    ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}),
+  } : undefined;
+  const applications = workflowOptions ? new DshApplicationControls({ ...workflowOptions, ...(options.publicOrigin ? { publicOrigin: options.publicOrigin } : {}) }) : undefined;
+  const proposals = workflowOptions ? new DshProposalControls(workflowOptions) : undefined;
 
-  if (applications) {
+  if (applications && proposals) {
     const listeners = host.server.listeners("request");
     if (listeners.length !== 1) {
       applications.close();
-      throw new Error("DSH application dispatcher expected exactly one product-server request listener");
+      proposals.close();
+      throw new Error("DSH community dispatcher expected exactly one product-server request listener");
     }
     const fallback = listeners[0] as RequestListener;
     host.server.removeAllListeners("request");
     host.server.on("request", (request: IncomingMessage, response: ServerResponse) => {
-      void dispatchApplicationRequest(applications, fallback, host.server, request, response);
+      void dispatchCommunityRequest(applications, proposals, fallback, host.server, request, response);
     });
   }
 
   const closeLegacy = host.close.bind(host);
   host.close = async () => {
     applications?.close();
+    proposals?.close();
     await closeLegacy();
   };
   return host;
 }
 
-async function dispatchApplicationRequest(
+async function dispatchCommunityRequest(
   applications: DshApplicationControls,
+  proposals: DshProposalControls,
   fallback: RequestListener,
   server: unknown,
   request: IncomingMessage,
   response: ServerResponse,
 ) {
   const url = new URL(request.url ?? "/", "http://spmt.app");
-  if (url.pathname.startsWith(APP_API_PREFIX)) {
-    url.pathname = `/api/discord-stream-hub/${url.pathname.slice(APP_API_PREFIX.length)}`;
-  }
-  if (url.pathname.startsWith(APPLICATION_PREFIX)) {
-    const action = url.pathname.slice(APPLICATION_PREFIX.length);
-    if (APPLICATION_ACTIONS.has(action) && await applications.handle(request, response, url)) return;
-  }
-  if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/apps/discord-stream-hub")) injectApplicationUi(response);
+  if (url.pathname.startsWith(APP_API_PREFIX)) url.pathname = `/api/discord-stream-hub/${url.pathname.slice(APP_API_PREFIX.length)}`;
+  if (url.pathname.startsWith(APPLICATION_PREFIX) && await applications.handle(request, response, url)) return;
+  if (url.pathname.startsWith(PROPOSAL_PREFIX) && await proposals.handle(request, response, url)) return;
+  if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/apps/discord-stream-hub")) injectCommunityUi(response);
   Reflect.apply(fallback, server, [request, response]);
 }
 
-function injectApplicationUi(response: ServerResponse) {
+function injectCommunityUi(response: ServerResponse) {
   const writeHead = response.writeHead.bind(response);
   const end = response.end.bind(response);
   response.writeHead = ((statusCode: number, ...args: unknown[]) => {
@@ -103,7 +103,7 @@ function injectApplicationUi(response: ServerResponse) {
     if (typeof chunk === "string" || Buffer.isBuffer(chunk)) {
       const html = Buffer.isBuffer(chunk) ? chunk.toString("utf8") : chunk;
       if (html.includes("</body>")) {
-        const next = html.replace("</body>", `<script>${DSH_APPLICATION_BROWSER_JS}</script></body>`);
+        const next = html.replace("</body>", `<script>${DSH_APPLICATION_BROWSER_JS}</script><script>${DSH_PROPOSAL_BROWSER_JS}</script></body>`);
         return Reflect.apply(end, response, [next, ...args]);
       }
     }
