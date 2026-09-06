@@ -26,6 +26,43 @@ test('fresh AI copy survives restarts, retries duplicate outputs and never uses 
  assert.equal(await f.store.latest('different-tenant',view,f.client),undefined);await assert.rejects(()=>f.store.start('tenant','owner',{...view,id:'another-event'},'first',f.client),/cannot be reused/);
 });
 test('AI failures and mismatched jobs never become fabricated successful copy',async t=>{const f=generation(t);await f.store.start('tenant','owner',view,'failure',f.client);f.jobs.get('job-1').state='succeeded';f.jobs.get('job-1').result={text:''};assert.equal((await f.store.latest('tenant',view,f.client)).state,'failed');await f.store.start('tenant','owner',view,'mismatch',f.client);f.jobs.get('job-2').billedUserId='someone-else';f.jobs.get('job-2').state='succeeded';f.jobs.get('job-2').result={text:'Private text'};const result=await f.store.latest('tenant',view,f.client);assert.equal(result.state,'failed');assert.equal(result.message,undefined)});
+test('refresh recovers lost admission responses after restart without creating a second job',async t=>{
+ const f=generation(t),admitted=new Map(),attempts=[];
+ let unavailable=true;
+ const client={...f.client,async invokeCommunityAssistant(tenant,input,key){
+   attempts.push(key);
+   if(!admitted.has(key))admitted.set(key,await f.client.invokeCommunityAssistant(tenant,input,key));
+   if(unavailable)throw new Error('response lost');
+   return admitted.get(key);
+ }};
+ await assert.rejects(f.store.start('tenant','owner',view,'lost-response',client),/response lost/);
+ f.reopen();
+ const pending=await f.store.latest('tenant',view,client);
+ assert.equal(pending.state,'pending');assert.match(pending.error,/Refresh to retry/);
+ assert.equal(await f.store.latest('other-tenant',view,client),undefined);
+ assert.equal(attempts.length,2);
+ unavailable=false;
+ assert.equal((await f.store.latest('tenant',view,client)).state,'pending');
+ assert.equal(new Set(attempts).size,1);assert.equal(f.calls.length,1);
+ f.jobs.get('job-1').state='succeeded';f.jobs.get('job-1').result={text:'Recovered fresh copy.'};
+ assert.equal((await f.store.latest('tenant',view,client)).message,'Recovered fresh copy.');
+});
+test('refresh resumes interrupted duplicate-copy attempts using the persisted retry key',async t=>{
+ const f=generation(t);
+ await f.store.start('tenant','owner',view,'original',f.client);
+ Object.assign(f.jobs.get('job-1'),{state:'succeeded',result:{text:'Come explore with Captain.'}});
+ await f.store.latest('tenant',view,f.client);
+ await f.store.start('tenant','owner',view,'next',f.client);
+ Object.assign(f.jobs.get('job-2'),{state:'succeeded',result:{text:'Come explore with Captain!'}});
+ const keys=[];let unavailable=true;
+ const client={...f.client,async invokeCommunityAssistant(tenant,input,key){keys.push(key);if(unavailable)throw new Error('offline');return f.client.invokeCommunityAssistant(tenant,input,key)}};
+ assert.equal((await f.store.latest('tenant',view,client)).state,'pending');
+ f.reopen();unavailable=false;
+ await f.store.latest('tenant',view,client);
+ assert.equal(keys.length,2);assert.equal(keys[0],keys[1]);assert.match(keys[1],/:1$/);
+ Object.assign(f.jobs.get('job-3'),{state:'succeeded',result:{text:'Captain has a new Space Night adventure. Join the crew!'}});
+ assert.equal((await f.store.latest('tenant',view,client)).message,'Captain has a new Space Night adventure. Join the crew!');
+});
 test('saved video and clip URLs use playable media with the actual embed parent',()=>{
  const context={location:{hostname:'web-terminal-bvesa.sprites.app'},document:{referrer:'https://spacemountain.live/'},URL,setInterval(){},avatar:v=>{try{return new URL(v).protocol==='https:'?v:''}catch{return''}}};const media=new Function('location','document','URL','setInterval','avatar',DSH_SHOUTOUT_BROWSER_JS+';return shoutoutMedia;')(...Object.values(context));
  assert.deepEqual(media(view),{kind:'video',url:source.videoUrl});const clip=media({...view,videoUrl:'https://clips.twitch.tv/RealClipSlug'});assert.equal(clip.kind,'iframe');const url=new URL(clip.url);assert.equal(url.hostname,'clips.twitch.tv');assert.equal(url.searchParams.get('clip'),'RealClipSlug');assert.deepEqual(url.searchParams.getAll('parent'),['web-terminal-bvesa.sprites.app','spacemountain.live']);const live=new URL(media({...view,videoUrl:source.imageUrl}).url);assert.equal(live.hostname,'player.twitch.tv');assert.equal(live.searchParams.get('channel'),'captain');assert.equal(live.searchParams.get('autoplay'),'false');

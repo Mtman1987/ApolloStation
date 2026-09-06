@@ -90,3 +90,18 @@ from the shared feed can be previewed directly into a selected owned shadow room
 without adding a Discord provider account or tracked-member configuration. The
 original tier payload and receipt are frozen per request so retries do not create
 duplicate room events. Real Discord posting retains the durable worker route.
+
+### Interrupted shoutout generation recovery
+
+Refresh now resumes a pending generation whose assistant admission response was
+lost before its job ID could be saved. It reuses the persisted attempt's
+idempotency key, including after restart and during duplicate-copy retries.
+Temporary admission failures remain visibly pending with a retry message; a
+successful admission resumes normal job polling. This prevents a card from
+remaining on “Writing message…” permanently after a transient outage.
+
+Regression coverage simulates an accepted job with a lost response, repeated
+unavailability, restart, tenant isolation, and interruption of a duplicate-copy
+retry. It verifies that recovery uses the same attempt key and retrieves the
+completed copy. Credentialed provider delivery and phone rendering are not
+established by these offline checks.

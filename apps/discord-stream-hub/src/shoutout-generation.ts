@@ -30,8 +30,12 @@ export class DshShoutoutGenerationStore {
   async latest(tenant:string,view:DshShoutoutView,client?:Client){
     const result=this.db.prepare('SELECT body FROM dsh_shoutout_generation WHERE tenant_id=? AND login=? AND event_id=? ORDER BY created_at DESC,rowid DESC LIMIT 1').get(tenant,view.twitchLogin,view.id) as {body:string}|undefined;if(!result)return;
     const row=JSON.parse(result.body) as Generation;
-    if(row.state==='pending'&&row.jobId&&client){
-      try{const job=await client.getExecutionJob(tenant,row.jobId);if(job.billedUserId!==row.actorId||job.input.callerAppId!=='discord-stream-hub'){row.state='failed';row.error='The assistant returned a message for a different request.';this.save(row);return this.public(row);}
+    if(row.state==='pending'&&client){
+      try{
+        // Admission can succeed remotely before its response is lost. Recover the
+        // persisted attempt with the same idempotency key, including after restart.
+        if(!row.jobId){await this.invoke(row,client);return this.public(row);}
+        const job=await client.getExecutionJob(tenant,row.jobId);if(job.billedUserId!==row.actorId||job.input.callerAppId!=='discord-stream-hub'){row.state='failed';row.error='The assistant returned a message for a different request.';this.save(row);return this.public(row);}
         if(job.state==='succeeded'){const message=String(job.result?.text??'').trim().slice(0,1000),repeated=Boolean(message)&&!this.claimCopy(row,message);
           if(!message){row.state='failed';row.error='The assistant returned no shoutout message. Generate again to retry.';this.save(row);return this.public(row);}
           if(repeated&&row.attempt<2){row.attempt++;delete row.jobId;row.prompt+=`\nDo not repeat this rejected copy: ${message}. Use a completely different opening and wording.`;this.save(row);await this.invoke(row,client);}
