@@ -1,6 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
 import { createHash } from "node:crypto";
 export interface StreamPartner { id:string; name:string; kind:"partner"|"crew"|"mod"|"community"; imageUrl:string; inviteUrl:string; rewardId?:string; source?:{guildId:string;roleId:string;syncedAt:string}; }
+export interface StreamCheckinSettings {enabled:boolean;aiEnabled:boolean;ttsEnabled:boolean;discordEnabled:boolean;greeting:string;prompt:string;voice:string;}
 export interface StreamRedeem { id:string; title:string; price:number; award:number; acceptance:"streamer"|"spmt"|"either"; firstPerStream:boolean; text:string; mediaUrl:string; enabled:boolean; rewardId:string; }
 export const STREAM_EVENT_AWARDS=["twitch:follow","twitch:subscribe","twitch:resubscribe","twitch:gift-bomb","twitch:cheer","twitch:raid","youtube:newSponsorEvent","youtube:memberMilestoneChatEvent","youtube:membershipGiftingEvent","youtube:giftMembershipReceivedEvent","youtube:superChatEvent","youtube:superStickerEvent"] as const;
 export interface StreamEventAward {event:string;points:number;perUnit:boolean;enabled:boolean;}
@@ -84,7 +85,7 @@ export class StreamWeaverCommunityStore {
       const result={signature,partner,...(reward?{reward}:{}),streamSession:this.settings(tenant).welcomeSession};this.save(tenant,"checkin-attempt",request,result);this.db.exec("COMMIT");return result;
     }catch(error){this.db.exec("ROLLBACK");throw error;}
   }
-  checkin(tenant:string,actor:string,partnerId:string,sourceInput:string,requestId:string,partnerSnapshot?:StreamPartner){
+  checkin(tenant:string,actor:string,partnerId:string,sourceInput:string,requestId:string,partnerSnapshot?:StreamPartner,presentationName?:string){
     const request=id(requestId),source=text(sourceInput,100);text(actor,300);
     this.db.exec("BEGIN IMMEDIATE");try{
       const prior=this.db.prepare("SELECT actor,partner,source FROM sw_checkins WHERE tenant=? AND request=?").get(tenant,request);
@@ -100,9 +101,15 @@ export class StreamWeaverCommunityStore {
       const partner=(frozen?.partner as StreamPartner|undefined)??partnerSnapshot??this.partners(tenant).find(p=>p.id===partnerId);if(!partner)throw new Error("Partner was not found");
       this.db.prepare("INSERT OR IGNORE INTO sw_checkins VALUES(?,?,?,?,?,?)").run(tenant,request,actor,partnerId,source,new Date().toISOString());
       const result={partner,userTotal:Number(this.db.prepare("SELECT COUNT(*) AS n FROM sw_checkins WHERE tenant=? AND actor=?").get(tenant,actor)!.n),partnerTotal:Number(this.db.prepare("SELECT COUNT(*) AS n FROM sw_checkins WHERE tenant=? AND partner=?").get(tenant,partnerId)!.n)};
-      this.enqueue(tenant,`checkin:${request}`,"streamweaver.checkin.v1",{...result,actor});this.db.exec("COMMIT");return result;
+      this.enqueue(tenant,`checkin:${request}`,"streamweaver.checkin.v1",{...result,actor});
+      if(presentationName!==undefined&&this.checkinSettings(tenant).enabled)this.requestTask(tenant,`checkin-greeting:${request}`,{action:"checkin-greeting",displayName:text(presentationName,120),partner:{id:partner.id,name:partner.name,kind:partner.kind,inviteUrl:partner.inviteUrl}});
+      this.db.exec("COMMIT");return result;
     }catch(error){this.db.exec("ROLLBACK");throw error;}
   }
+  checkinSettings(tenant:string):StreamCheckinSettings{return this.list<StreamCheckinSettings>(tenant,"checkin-settings")[0]??{enabled:false,aiEnabled:false,ttsEnabled:false,discordEnabled:false,greeting:"Welcome {user}! You checked in with {partner}.",prompt:"Write a short, warm public check-in greeting.",voice:"deepgram:aura-2:athena"};}
+  saveCheckinSettings(tenant:string,input:StreamCheckinSettings){for(const key of ["enabled","aiEnabled","ttsEnabled","discordEnabled"] as const)if(typeof input[key]!=="boolean")throw Error("Choose valid check-in presentation settings");const value={enabled:input.enabled,aiEnabled:input.aiEnabled,ttsEnabled:input.ttsEnabled,discordEnabled:input.discordEnabled,greeting:text(input.greeting,1000),prompt:text(input.prompt,2000),voice:text(input.voice,128)};this.save(tenant,"checkin-settings","main",value);return value;}
+  checkinGreeting(tenant:string,key:string):{jobId?:string;text?:string;failed?:boolean}|undefined{const row=this.db.prepare("SELECT body FROM sw_community_config WHERE tenant=? AND kind='checkin-greeting' AND id=?").get(tenant,key);return row?JSON.parse(String(row.body)):undefined;}
+  saveCheckinGreeting(tenant:string,key:string,value:{jobId?:string;text?:string;failed?:boolean}){this.save(tenant,"checkin-greeting",key,value);}
   checkinStats(tenant:string){return{partners:this.db.prepare("SELECT partner,COUNT(*) AS count FROM sw_checkins WHERE tenant=? GROUP BY partner ORDER BY count DESC").all(tenant),sources:this.db.prepare("SELECT source,COUNT(*) AS count FROM sw_checkins WHERE tenant=? GROUP BY source ORDER BY count DESC").all(tenant),users:this.db.prepare("SELECT actor,COUNT(*) AS count FROM sw_checkins WHERE tenant=? GROUP BY actor ORDER BY count DESC LIMIT 500").all(tenant)};}
   recordWatchtime(tenant:string,provider:string,chatters:Array<{id:string;username:string}>,now=Date.now()){const bucket=Math.floor(now/60000);this.db.exec("BEGIN IMMEDIATE");try{for(const user of chatters)this.db.prepare("INSERT INTO sw_watchtime VALUES(?,?,?,?,1,?) ON CONFLICT(tenant,provider,user_id) DO UPDATE SET minutes=sw_watchtime.minutes+CASE WHEN excluded.last_bucket>sw_watchtime.last_bucket THEN 1 ELSE 0 END,last_bucket=MAX(sw_watchtime.last_bucket,excluded.last_bucket),username=excluded.username").run(tenant,provider,user.id,user.username,bucket);this.db.exec("COMMIT");}catch(error){this.db.exec("ROLLBACK");throw error;}}
   watchtime(tenant:string,provider:string,userId:string){return this.db.prepare("SELECT username,minutes FROM sw_watchtime WHERE tenant=? AND provider=? AND user_id=?").get(tenant,provider,userId)??{minutes:0};}

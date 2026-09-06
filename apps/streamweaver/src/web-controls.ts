@@ -115,18 +115,18 @@ export class StreamWeaverWebControls {
           let pricing:Record<string,unknown>={available:false,localSupply,message:"SPMT pricing is unavailable"};
           try {if(this.client){const spmt=await this.client.getXpSupply(context.tenantId);const rate=calculateStreamWeaverSupplyRate(localSupply,spmt.spendableSupply);pricing={available:true,localSupply,spmtSupply:spmt.spendableSupply,localPerSpmt:rate.localPerSpmt,spmtPerLocal:rate.spmtPerLocal,measuredAt:spmt.measuredAt,rounding:"up to the next whole XP",prices:Object.fromEntries(this.community.redeems(context.tenantId).map(r=>[r.id,rate.localCostInSpmt(r.price)]))};}}
           catch{pricing.message=localSupply===0?"SPMT pricing requires a nonzero streamer-point supply":"SPMT pricing is temporarily unavailable";}
-          return sendJson(response,200,{tenantId:context.tenantId,partners:this.community.partners(context.tenantId),redeems:this.community.redeems(context.tenantId),settings:this.community.settings(context.tenantId),...(this.role(context)==="owner"?{shoutoutSettings:this.shoutoutStore?.settings(context.tenantId),voices:TTS_VOICE_OPTIONS.map(v=>({id:v.id,label:v.label}))}:{}),awards:this.community.awards(context.tenantId),awardEvents:STREAM_EVENT_AWARDS,bindings:this.community.bindings(context.tenantId),tasks:this.role(context)==="owner"?this.community.tasks(context.tenantId):[],stats:this.community.checkinStats(context.tenantId),watchtime:this.community.watchLeaders(context.tenantId),pricing,wallet:this.economy?.getWallet(context.tenantId,this.actor(context).id),diagnostics:this.role(context)==="owner"?this.community.providerDiagnostics(context.tenantId):[],owner:this.role(context)==="owner"});
+          return sendJson(response,200,{tenantId:context.tenantId,partners:this.community.partners(context.tenantId),redeems:this.community.redeems(context.tenantId),settings:this.community.settings(context.tenantId),...(this.role(context)==="owner"?{checkinSettings:this.community.checkinSettings(context.tenantId),shoutoutSettings:this.shoutoutStore?.settings(context.tenantId),voices:TTS_VOICE_OPTIONS.map(v=>({id:v.id,label:v.label}))}:{}),awards:this.community.awards(context.tenantId),awardEvents:STREAM_EVENT_AWARDS,bindings:this.community.bindings(context.tenantId),tasks:this.role(context)==="owner"?this.community.tasks(context.tenantId):[],stats:this.community.checkinStats(context.tenantId),watchtime:this.community.watchLeaders(context.tenantId),pricing,wallet:this.economy?.getWallet(context.tenantId,this.actor(context).id),diagnostics:this.role(context)==="owner"?this.community.providerDiagnostics(context.tenantId):[],owner:this.role(context)==="owner"});
         }
         if(request.method!=="POST")return sendJson(response,405,{message:"Use GET or POST"});requireSameOrigin(request);const body=await readJsonBody(request);
         if(body.action==="checkin"){
           if(!this.economy||!this.client)throw new Error("Check-in runtime is unavailable");
-          return sendJson(response,200,await new StreamWeaverCommunityRuntime(this.community,this.economy,this.client,this.operationMode==="active",this.operationMode==="active").checkin({tenantId:context.tenantId,actorId:this.actor(context).id,linked:true,partnerId:String(body.partnerId??""),source:"web",requestId:String(body.requestId??""),currency:body.currency==="spmt"?"spmt":"streamer",...(body.maxSpmtCost===undefined?{}:{maxSpmtCost:Number(body.maxSpmtCost)})}));
+          return sendJson(response,200,await new StreamWeaverCommunityRuntime(this.community,this.economy,this.client,this.operationMode==="active",this.operationMode==="active").checkin({tenantId:context.tenantId,actorId:this.actor(context).id,linked:true,displayName:this.actor(context).displayName,partnerId:String(body.partnerId??""),source:"web",requestId:String(body.requestId??""),currency:body.currency==="spmt"?"spmt":"streamer",...(body.maxSpmtCost===undefined?{}:{maxSpmtCost:Number(body.maxSpmtCost)})}));
         }
         if(body.action==="redeem-request"){
           if(!this.client||!this.economy)throw new Error("Reward runtime is not configured");
           const currency=body.currency==="spmt"?"spmt":"streamer";
           if(currency==="spmt"&&this.operationMode!=="active")throw new Error("SPMT payments are disabled in this environment");
-          return sendJson(response,200,await new StreamWeaverCommunityRuntime(this.community,this.economy,this.client,this.operationMode==="active").redeemReward({tenantId:context.tenantId,userId:this.actor(context).id,displayName:this.actor(context).id,rewardId:String(body.rewardId??""),requestId:String(body.requestId??""),currency,...(body.maxSpmtCost===undefined?{}:{maxSpmtCost:Number(body.maxSpmtCost)})}));
+          return sendJson(response,200,await new StreamWeaverCommunityRuntime(this.community,this.economy,this.client,this.operationMode==="active").redeemReward({tenantId:context.tenantId,userId:this.actor(context).id,displayName:this.actor(context).displayName,rewardId:String(body.rewardId??""),requestId:String(body.requestId??""),currency,...(body.maxSpmtCost===undefined?{}:{maxSpmtCost:Number(body.maxSpmtCost)})}));
         }
         this.requireOwner(context);
         if(["say","shoutout","voice-shoutout","brb-start","brb-stop","create-twitch-reward"].includes(String(body.action))){
@@ -136,6 +136,10 @@ export class StreamWeaverWebControls {
           if(action.includes("shoutout"))payload.username=text(body.username,"username",120).replace(/^@/,"");
           if(action==="create-twitch-reward") {const reward=this.community.redeems(context.tenantId).find(r=>r.id===body.rewardId);if(!reward)throw new Error("Choose a configured reward");payload.rewardId=reward.id;}
           return sendJson(response,202,this.community.requestTask(context.tenantId,String(body.requestId??""),payload));
+        }
+        if(body.action==="checkin-settings"){
+          if(!TTS_VOICE_OPTIONS.some(v=>v.id===body.voice))throw new Error("Choose a supported voice");
+          return sendJson(response,200,this.community.saveCheckinSettings(context.tenantId,body as unknown as import("./community-store.js").StreamCheckinSettings));
         }
         if(body.action==="shoutout-settings"){
           if(!this.shoutoutStore)throw new Error("Shoutout settings are unavailable");

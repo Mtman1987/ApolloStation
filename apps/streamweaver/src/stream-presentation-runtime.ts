@@ -1,3 +1,4 @@
+import {presentCheckin} from "./checkin-presentation.js";
 import type { SpmtClient } from "@spmt/sdk";
 import type { OutboundChatMessageV1 } from "@spmt/contracts";
 import { StreamWeaverCommunityStore } from "./community-store.js";
@@ -44,7 +45,8 @@ export class StreamWeaverPresentationRuntime {
   async runOnce() {
     const {store,twitch}=this.options;
     for(const task of store.pendingTasks())try{
-      if(task.body.action==="say") {
+      if(task.body.action==="checkin-greeting")await presentCheckin(this.options,task);
+      else if(task.body.action==="say") {
         const userId=this.options.personas.get(task.tenant)?.ownerCanonicalUserId;if(!userId)throw new Error("Configure the persona owner before speaking on stream");
         await this.options.client.createExecutionJob(task.tenant,{ownerAppId:"streamweaver",executionOwner:"stellar-core",capabilityId:"stellar.speech.synthesize.v1",billedUserId:userId,meteredResource:"hosted-worker-minutes",usageQuantity:1,executionTarget:"sprite",meteringTarget:"hosted",input:{kind:"stellar.speech.request.v1",text:String(task.body.text),voice:String(task.body.voice||"deepgram:aura-2:athena"),remember:false,mediaVisibility:"public"}},`stream-say:${task.id}`);
       }else if(task.body.action==="shoutout")await this.shoutouts.manual({tenantId:task.tenant,invocationId:task.id,targetLogin:String(task.body.username),source:task.body.source==="auto-welcome"?"auto-welcome":"manual",skipCooldown:task.body.source!=="auto-welcome"});

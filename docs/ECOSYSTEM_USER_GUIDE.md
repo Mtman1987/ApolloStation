@@ -108,3 +108,9 @@ The source requires active operation and enabled StreamWeaver and Chat Gateway i
 ### Gift event bindings
 
 A retained `gift-sub` command now receives Twitch's aggregate gifted-subscription event when no enabled `gift-bomb` command is configured. If both are enabled, `gift-bomb` takes precedence and only one flow runs. `{count}` expands to the gifted-subscription quantity; `{user}` remains the gifter. Local event awards still use the single `twitch:gift-bomb` award policy and its durable receipt.
+
+### Check-in greetings and speech
+
+Owners can enable **Check-in greetings** in Stream operations, choose a fallback message and voice, and optionally enable AI text, spoken greetings or delivery to the configured Discord channel. `{user}` is the viewer's display name and `{partner}` is the check-in partner. Greetings remain off until configured.
+
+Successful web, chat and Twitch-menu reward check-ins queue their presentation after settlement. A failed payment produces no greeting. Presentation retries reuse the original check-in and payment; they do not charge again. AI failures use the fallback, and pending AI jobs wait without blocking the check-in. Disabling greetings stops pending presentation tasks. Speech uses the public Speech / TTS player in Overlay Bay. Provider and OBS/audio acceptance remain required.

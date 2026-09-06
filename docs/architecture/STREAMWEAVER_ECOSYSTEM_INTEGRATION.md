@@ -147,3 +147,9 @@ Owner-only `/control/tiktok` persists settings and returns status. Read-only ope
 ### Retained gift-sub event compatibility
 
 `StreamWeaverProviderRuntime` resolves an exact enabled event binding first, then uses `gift-sub` as the fallback alias for `gift-bomb`. Both consume the same aggregate `channel.subscription.gift` notification; no recipient identity or per-recipient notification is fabricated. `{count}` exposes its quantity. Delivery IDs and local award receipt keys remain based on the original provider event, so a retry cannot award points twice and enabling both names cannot invoke two flows.
+
+### Durable check-in presentation
+
+A successful `StreamWeaverCommunityStore.checkin` commits its receipt, overlay event and optional `checkin-greeting` task in one SQLite transaction. Native runtime calls and web controls supply the authenticated display name; inactive operation supplies no presentation request. Reward settlement remains in the existing shared runtime and is not repeated by the presentation consumer.
+
+`StreamWeaverPresentationRuntime` consumes those tasks using current owner settings. AI requests use a dedicated public stream presentation with memory disabled, a fixed conversation/request ID and persisted job state. Job reads validate tenant, billed owner, owning app and conversation. Terminal inference failures use the owner's fallback. Provider transport failures retry under stable Twitch/Discord egress and public speech-job keys; the canonical systems retain delivery and billing authority. Optional Discord delivery requires a configured tenant destination. Public speech requires a configured persona owner and the existing listener/overlay acceptance. Bulk ride selection/front-seat bonuses remain separate work.
