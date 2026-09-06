@@ -26,13 +26,16 @@ export class CloudflareStreamWeaverImageProvider {
   if(guidance!==undefined&&(!Number.isFinite(guidance)||guidance<(phoenix?2:0)||guidance>10))throw Error('Cloudflare guidance is out of range');
   if(params.negative_prompt!==undefined&&(typeof params.negative_prompt!=='string'||!params.negative_prompt.trim()||params.negative_prompt.length>1500))throw Error('Cloudflare negative prompt is invalid');
   if(input.seed!==undefined&&(!Number.isSafeInteger(input.seed)||input.seed<0||input.seed>2147483647))throw Error('Cloudflare seed is invalid');
+  const references=input.referenceImages??[];
+  if(references.length>4||references.length&&!klein)throw Error('Reference images require a Klein model and at most four images');
+  const referenceBytes=references.map(validateCloudflareReference);
   const resolution=input.resolution||'1024x1024';
   if(!['512x512','768x768','1024x1024','1024x768','768x1024'].includes(resolution))throw Error('Cloudflare resolution is invalid');
   const [width,height]=resolution.split('x').map(Number),binaryImages:StreamWeaverBinaryImage[]=[];
   for(let i=0;i<count;i++){
    const payload:Record<string,string|number>={prompt:input.prompt,...(!schnell?{width:width!,height:height!}:{}),...(input.seed?{seed:(input.seed+i)%2147483647}:{}),...(guidance===undefined?{}:{guidance}),...(params.negative_prompt===undefined?{}:{negative_prompt:String(params.negative_prompt)})};
    const headers:Record<string,string>={authorization:`Bearer ${this.token}`};let body:FormData|string;
-   if(klein){const form=new FormData();for(const [key,value] of Object.entries(payload))form.set(key,String(value));body=form;}
+   if(klein){const form=new FormData();for(const [key,value] of Object.entries(payload))form.set(key,String(value));for(const [index,bytes] of referenceBytes.entries())form.set(`input_image_${index}`,new Blob([Uint8Array.from(bytes)],{type:"image/png"}),`reference-${index}.png`);body=form;}
    else{payload[schnell?'steps':'num_steps']=steps;headers['content-type']='application/json';body=JSON.stringify(payload);}
    const response=await this.fetchImpl(`https://api.cloudflare.com/client/v4/accounts/${this.accountId}/ai/run/${model}`,{method:'POST',headers,body,redirect:'error',signal:AbortSignal.timeout(180000)});
    if(!response.ok)throw Error(`Cloudflare image generation returned HTTP ${response.status}`);
@@ -45,4 +48,12 @@ export class CloudflareStreamWeaverImageProvider {
   }
   return {provider:this.id,kind:'image',resourceUrl:'',resourceUrls:[],binaryImages};
  }
+}
+
+export function validateCloudflareReference(image:StreamWeaverBinaryImage){
+ const {bytes,contentType}=decodeBinaryImage(image);
+ if(contentType!=="image/png"||bytes.length>1024*1024||bytes.length<33||bytes.toString("ascii",12,16)!=="IHDR")throw Error("Reference images must be PNG files up to 1 MiB");
+ const width=bytes.readUInt32BE(16),height=bytes.readUInt32BE(20);
+ if(width<1||height<1||width>=512||height>=512)throw Error("Reference images must be smaller than 512 pixels on each side");
+ return bytes;
 }

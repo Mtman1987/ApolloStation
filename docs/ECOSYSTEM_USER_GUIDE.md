@@ -73,7 +73,7 @@ In Stream operations, **Speech players** shows recent authorized TTS output list
 
 Configure welcomes, shoutout mode, BRB clip source and partner entries in Stream operations. Shoutout settings include optional AI greeting instructions, a fallback greeting, voice, automatic cooldown, excluded usernames and Discord delivery. Greetings use a saved assistant job and fall back when generation fails. Manual/voice shoutouts retain their cooldown-bypass behavior while honoring exclusions. Owners can download the last 5,000 shoutout audit entries.
 
-Image Studio supports private generation, prompt templates/enhancement, model/version identifiers, resolution, count, seed and bounded provider parameters. SeaArt, Eden, Cloudflare and Pollinations are constructed providers. SeaArt model/LoRA browsing, character workflow and additional legacy providers are still open; a provider name or preference alone does not make those functions available. Generated images use shared media ownership and visibility controls.
+Image Studio supports private generation, prompt templates/enhancement, model/version identifiers, resolution, count, seed and bounded provider parameters. SeaArt, Eden, Cloudflare and Pollinations are constructed providers. Some old provider menus were placeholders, as explained below; a provider name or preference alone does not make those functions available. Generated images use shared media ownership and visibility controls.
 
 The Games page offers Pokémon collections, packs, trades, gym battles and seasons. Its Pokédex searches loaded sets by name, card ID, type or national Pokédex number and shows your owned counts. Download your collection as JSON, or an owned card as PNG when provider downloads are enabled. Owners load sets and grant packs; the Eevee pack becomes available when at least nine Eevee-family cards are loaded.
 
@@ -129,7 +129,7 @@ Rider eligibility and reward terms freeze for a request. Interrupted rides resum
 
 ### Cloudflare image generation
 
-Image Studio now offers **Cloudflare → FLUX.1 Schnell** in both private and public generation settings when its worker credentials are configured. It supports one to four images, a seed and 1–8 steps. Cloudflare uses its own default image size; the resolution selector applies to Eden/SeaArt. Prompts must fit within 2,048 characters. The additional model choices are described below. LoRAs and reference-image workflows remain pending.
+Image Studio now offers **Cloudflare → FLUX.1 Schnell** in both private and public generation settings when its worker credentials are configured. It supports one to four images, a seed and 1–8 steps. Cloudflare uses its own default image size; the resolution selector applies to Eden/SeaArt. Prompts must fit within 2,048 characters. The additional model choices are described below. The old LoRA entries were placeholders. Reference-image inputs are now available for Klein.
 
 Private results go to Media Files. Public chat image actions publish managed image links that expire after seven days and can be revoked or deleted through Media Files. Storage retries reuse the generated images. Existing prompt-check controls apply; when enabled, checks still require the configured Eden moderation service. Inactive or sandbox runtimes do not call Cloudflare.
 
@@ -149,4 +149,12 @@ Add **Generated images** from StreamWeaver’s overlay widgets to show completed
 
 Cloudflare now offers FLUX.2 Klein 4B, Lucid Origin and Phoenix 1.0 for public or private generation, plus FLUX.2 Klein 9B for private generation only. Save the model in the appropriate Image Studio settings. All support one to four images and prompts up to 2,048 characters. Unlike FLUX.1 Schnell, these models use the selected resolution.
 
-Klein runs a fixed four steps. Lucid accepts 1–40 steps; Phoenix accepts 1–50. Advanced JSON uses `steps` and `guidance_scale` (0–10, or 2–10 for Phoenix); Phoenix also supports `negative_prompt`. Unsupported settings fail before the provider request. Reference-image uploads are not yet available. Provider account/model access and actual rendered output still require acceptance.
+Klein runs a fixed four steps. Lucid accepts 1–40 steps; Phoenix accepts 1–50. Advanced JSON uses `steps` and `guidance_scale` (0–10, or 2–10 for Phoenix); Phoenix also supports `negative_prompt`. Unsupported settings fail before the provider request. Reference-image uploads are now available for Klein. Provider account/model access and actual rendered output still require acceptance.
+
+### Reference images and removed placeholder requirements
+
+In Image Studio, save **Cloudflare → Klein 4B** or **Klein 9B** in your private settings, then attach up to four PNG, JPEG or WebP images when generating. Each source may be up to 8 MiB. The browser makes a PNG copy below 512 pixels on each side; each copy must fit within 1 MiB. References and results remain private in Media Files until you explicitly publish them. Mention “image 0”, “image 1” and so on in your prompt to identify references. Generation retries reuse completed output instead of calling the provider again.
+
+The old LoRA menu contained future slots, and its SeaArt character preference had no connected execution caller. Those are not features you need to configure in Apollo. The old default Perchance request fell back to Pollinations; Apollo offers Pollinations directly. A separately configured custom Perchance bridge has not been verified.
+
+A **blacklist** blocks users. The old Athena **whitelist** granted selected people special cross-channel access to that personal bot. It is a different feature, not a replacement for a blacklist, and Apollo is not adding a general whitelist merely because that old setting exists.

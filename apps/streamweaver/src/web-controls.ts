@@ -104,7 +104,11 @@ export class StreamWeaverWebControls {
         if(body.action!=="generate")throw new Error("Unknown generation action");
         if(this.operationMode!=="active")throw new Error("External image generation is disabled in this environment");
         const prompt=text(body.prompt,"prompt",3000),settings=this.generation.read(context.tenantId,scope);
-        const result=await this.requireClient().createExecutionJob(context.tenantId,{ownerAppId:"streamweaver",capabilityId:"streamweaver.image.generate.v1",executionOwner:"streamweaver",billedUserId:this.actor(context).id,meteredResource:"image-generations",usageQuantity:settings.count,executionTarget:"sprite",meteringTarget:"hosted",input:{prompt,generationSettings:settings,mediaVisibility:"private"}},idempotency(body.requestId,"image-studio"));
+        const mediaAssetIds=body.mediaAssetIds??[];
+        if(!Array.isArray(mediaAssetIds)||mediaAssetIds.length>4||mediaAssetIds.some(id=>typeof id!=="string"||!/^[a-f0-9-]{36}$/.test(id)))throw Error("Choose at most four reference images");
+        if(mediaAssetIds.length&&(settings.provider!=="cloudflare"||!settings.cloudflareModel?.includes("/flux-2-klein-")))throw Error("Save Cloudflare Klein as your private image model before attaching references");
+        for(const id of mediaAssetIds){const asset=await this.deviceApi(request,context,undefined,"/v1/media/assets/"+id);if(asset.tenantId!==context.tenantId||asset.ownerUserId!==this.actor(context).id||asset.contentType!=="image/png")throw Error("Reference image is unavailable for this account");}
+        const result=await this.requireClient().createExecutionJob(context.tenantId,{ownerAppId:"streamweaver",capabilityId:"streamweaver.image.generate.v1",executionOwner:"streamweaver",billedUserId:this.actor(context).id,meteredResource:"image-generations",usageQuantity:settings.count,executionTarget:"sprite",meteringTarget:"hosted",input:{prompt,generationSettings:settings,mediaVisibility:"private",...(mediaAssetIds.length?{mediaAssetIds}:{})}},idempotency(body.requestId,"image-studio"));
         return sendJson(response,202,{jobId:result.job.id});
       }
       if(url.pathname==="/api/streamweaver/control/stream-operations/shoutout-audit"){
