@@ -14,7 +14,8 @@ The [discovery audit](donor-audits/STREAMWEAVER_LIVE_AUDIT_2026-09-06.md) is pin
 - Second parity release: `e1159a8970c3ae7ab6e731fd42524ee90eb885d6`, 867 passing offline tests. [Sprite promotion succeeded](https://github.com/Mtman1987/ApolloStation/actions/runs/34054028644); [Green Contracts succeeded](https://github.com/Mtman1987/ApolloStation/actions/runs/34054028650).
 - The current follow-up adds room completion/audio, listener diagnostics, public memory, Social Stream/private inbox, rich chat/replay, shoutout AI/settings/audit, YouTube event metadata and local provider awards. The repository build and all 886 offline tests passed for this batch. This batch is commit `d946fb8c97f4088fa1a12e5ba8e6e22ae6ba8b51`: [Sprite promotion succeeded](https://github.com/Mtman1987/ApolloStation/actions/runs/34057679893), and [Green Contracts succeeded](https://github.com/Mtman1987/ApolloStation/actions/runs/34057679880).
 - The YouTube OAuth follow-up and removal of obsolete conversion controls passed the repository build and all 889 offline tests (four concurrent test files). Commit `5460fb91e4ca55b9a0fe872271c2e23b8bacaf76` passed [Sprite promotion](https://github.com/Mtman1987/ApolloStation/actions/runs/34058968829) and [Green Contracts](https://github.com/Mtman1987/ApolloStation/actions/runs/34058968828).
-- Native Discord correction follow-up: repository build and all 893 offline tests passed. Its own promotion must still be verified.
+- Native Discord correction follow-up: repository build and all 893 offline tests passed. Commit `c7b2c6947590f96c1e20a20f419f6628831321b0` passed [Sprite promotion](https://github.com/Mtman1987/ApolloStation/actions/runs/34059393089) and [Green Contracts](https://github.com/Mtman1987/ApolloStation/actions/runs/34059393063).
+- Public room-persona follow-up: repository build and all 899 offline tests passed after integrating the concurrent flow-authoring and structured-output fixes, including actual owner-publication and room catalog/invocation routes. Its own promotion must still be verified.
 - The user guide and integration reference are served at `/docs` and `/docs/developers/streamweaver`, with this checklist at `/docs/streamweaver/parity`.
 
 ## The 15 remaining groups from the follow-up request
@@ -23,7 +24,7 @@ The [discovery audit](donor-audits/STREAMWEAVER_LIVE_AUDIT_2026-09-06.md) is pin
 
 | Group | Current status | Remaining requirement |
 | --- | --- | --- |
-| 1. HearMeOut persona and voice | Partial | Shared recording, completed fallback replies and browser RTC audio mix implemented. Public custom-persona discovery/eligibility and live room acceptance remain. |
+| 1. HearMeOut persona and voice | Code implemented | Owner-published persona snapshots, public discovery/eligibility, persona-specific room jobs, selected voice, recording and completed browser/RTC playback implemented. Live room acceptance remains. |
 | 2. Private Discord assistant | Open | DM setup, signed message controls, GIF/TTS delivery, deletion and image carousels. |
 | 3. Public TTS players | Code implemented | Owner stream/widget listing, recent listener presence and playback status. Authenticated OBS/audio acceptance remains. |
 | 4. Public memory | Code implemented | Public-only channel condensation, manual count adjustment, clear and saved-job lifecycle. Inference acceptance remains. |
@@ -59,7 +60,7 @@ Thus 100 local points costs 10 XP with 1,000,000 local / 100,000 XP outstanding,
 | 2 | Transcription | Private recording upload, shared transcription jobs and StreamWeaver recording UI implemented. HearMeOut recording fallback now uploads private media and reconciles shared transcription jobs. Live microphone/provider acceptance remains. |
 | 3 | Voice catalog/preferences | Persisted voice, spoken-reply and Remember settings, actual private speech playback implemented. GIF preference alone does not implement GIF delivery. |
 | 4 | Say/TTS lifecycle | Public Say tasks, published audio events and overlay playback implemented. Owner stream/widget discovery, 15-second listener presence and completion-based playback are implemented. Live listener acceptance remains. |
-| 5 | Public HearMeOut persona speech | The shared fallback now completes room text replies, resumes private speech jobs and mixes playback into the member’s active RTC stream. Public custom-persona discovery/eligibility, full coordinator construction and room audio acceptance remain. |
+| 5 | Public HearMeOut persona speech | The shared fallback now completes room text replies, resumes private speech jobs and mixes playback into the member’s active RTC stream. Owner-published persona discovery and eligibility now feed canonical persona-specific room jobs and the selected voice. This production path replaces the optional legacy coordinator dependency. Live room audio acceptance remains. |
 | 6 | Private conversation | User/tenant-scoped persisted conversation, optional note context, bounded raw retention, clear/cancel, named summaries and browser replies implemented. Private Discord conversation delivery/settings remain. |
 | 7 | Private Discord controls | Signed message-scoped controls, DM resolution, finalization, toggles and deletion remain unported. |
 | 8 | Spoken-turn feed | Authenticated incremental feed with monotonic cursor and clear-epoch reset implemented; private web replies can synthesize speech. Private Discord feed integration remains. |

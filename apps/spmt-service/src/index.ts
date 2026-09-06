@@ -1,3 +1,4 @@
+import {PublicPersonaApi} from "./public-persona-api.js";
 import {createHash} from "node:crypto";
 import {normalizeCommlinkProviderMutation,type CommlinkProviderMutationV1} from "@spmt/contracts";
 import {YouTubeOAuthApi} from "./youtube-oauth-api.js";
@@ -128,6 +129,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
   const stellarPrivacy = new StellarDataPrivacyService(executionJobs, data, {assistantStore});
   const operations = new PlatformOperations(auth, authority, control, data, communityAssistant, options.coderRuntime, executionJobs, stellarPrivacy);
   const api = new PlatformApiAdapter(operations);
+  const publicPersonas=new PublicPersonaApi({path:options.databasePath,auth,authority,control,runtime:communityAssistant,accessToken});
   const socialStreamStore=new CommlinkSocialStreamStore(options.databasePath);
   const operatorApi = new CommlinkOperatorApi({store:commlinkOperator,chat:commlinkLiveChat,auth,control,authority,accessToken});
   const operatorTimer=setInterval(()=>{for(const tenant of store.listTenants())if(tenant.status === "active")try{operatorApi.publish(tenant.id);}catch{/* A failed publication retries with the same revision. */}},1000);operatorTimer.unref();
@@ -170,6 +172,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
       const path = request.url ?? "/";
       const url = new URL(`http://spmt.local${path}`);
       if (await mediaApi.handle(request, response, url)) return;
+      if (await publicPersonas.handle(request,response,url)) return;
       if (await youtubeOAuth.handle(request,response,url)) return;
       if (await assistantApi.handle(request,response,url)) return;
       if (await socialStreamApi.handle(request,response,url)) return;
@@ -588,7 +591,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
     runOutboxOnce() { return outbox.runOnce(); },
     runStellarPrivacySweep() { return stellarPrivacy.sweep(store.listTenants().map((tenant) => tenant.id)); },
     listen() { return new Promise<void>((done, reject) => { server.once("error", reject); server.listen(options.port ?? 3000, options.host ?? "0.0.0.0", () => { server.off("error", reject); done(); }); }); },
-    close() { clearInterval(operatorTimer); clearInterval(mediaSweepTimer); clearInterval(stellarCapabilityTimer); clearInterval(stellarPrivacyTimer); return new Promise<void>((done, reject) => server.close((error) => { providerCredentials?.close(); assistantStore.close(); publicMemory.close(); youtubeOAuth.close(); socialStreamStore.close(); commlinkOperator.close(); commlinkLiveChat.close(); setupStore.close(); mediaAssets.close(); platformStore.close(); store.close(); error ? reject(error) : done(); })); },
+    close() { clearInterval(operatorTimer); clearInterval(mediaSweepTimer); clearInterval(stellarCapabilityTimer); clearInterval(stellarPrivacyTimer); return new Promise<void>((done, reject) => server.close((error) => { providerCredentials?.close(); assistantStore.close(); publicMemory.close(); youtubeOAuth.close(); publicPersonas.close(); socialStreamStore.close(); commlinkOperator.close(); commlinkLiveChat.close(); setupStore.close(); mediaAssets.close(); platformStore.close(); store.close(); error ? reject(error) : done(); })); },
   };
 }
 

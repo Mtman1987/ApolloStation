@@ -64,6 +64,14 @@ export class StreamWeaverWebControls {
     if (!url.pathname.startsWith("/api/streamweaver/control")) return false;
     try {
       const context = await fetchAppSessionContext({ appId: "streamweaver", spmtOrigin: this.options.spmtOrigin, request });
+      if(url.pathname==="/api/streamweaver/control/persona/public"){
+        this.requireOwner(context);const path="/v1/assistant/public-personas";
+        if(request.method==="GET")return sendJson(response,200,await this.deviceApi(request,context,undefined,path+"?own=true"));
+        if(request.method!=="POST")return sendJson(response,405,{message:"Use GET or POST"});requireSameOrigin(request);const body=await readJsonBody(request);
+        if(body.action==="withdraw")return sendJson(response,200,await this.deviceApi(request,context,{action:"withdraw"},path));
+        const persona=this.persona?.get(context.tenantId);if(!persona)throw Error("Save your persona before publishing");
+        return sendJson(response,200,await this.deviceApi(request,context,{action:"publish",personaId:persona.personaId,displayName:persona.displayName,aliases:persona.aliases,instructions:persona.instructions,voice:body.voice},path));
+      }
       if(url.pathname==="/api/streamweaver/control/generation") {
         if(!this.generation)throw new Error("Generation settings are unavailable");
         const scope=`private:${this.actor(context).id}`;
