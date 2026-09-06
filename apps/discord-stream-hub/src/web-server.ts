@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { DshApplicationControls } from "./application-controls.js";
+import { DSH_APPLICATION_BROWSER_JS } from "./application-ui.js";
 import type { DiscordStreamHubWebServerOptionsV1 } from "./web-server-legacy.js";
 
 // Preserve the proven DSH surface byte-for-byte while layering the completed
@@ -23,12 +24,12 @@ export function createDiscordStreamHubWebServer(options: DiscordStreamHubWebServ
   const applications = options.databasePath && options.runtimeConfigPath
     ? new DshApplicationControls({
         spmtOrigin: options.spmtOrigin,
-        publicOrigin: options.publicOrigin,
         databasePath: options.databasePath,
         runtimeConfigPath: options.runtimeConfigPath,
-        credential: options.credential,
-        operationMode: options.operationMode,
-        fetchImpl: options.fetchImpl,
+        ...(options.publicOrigin ? { publicOrigin: options.publicOrigin } : {}),
+        ...(options.credential ? { credential: options.credential } : {}),
+        ...(options.operationMode ? { operationMode: options.operationMode } : {}),
+        ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}),
       })
     : undefined;
 
@@ -68,7 +69,22 @@ async function dispatchApplicationRequest(
     const action = url.pathname.slice(APPLICATION_PREFIX.length);
     if (APPLICATION_ACTIONS.has(action) && await applications.handle(request, response, url)) return;
   }
+  if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/apps/discord-stream-hub")) injectApplicationUi(response);
   await Promise.resolve(Reflect.apply(fallback, server, [request, response]));
+}
+
+function injectApplicationUi(response: ServerResponse) {
+  const end = response.end.bind(response);
+  response.end = ((chunk?: unknown, ...args: unknown[]) => {
+    if (typeof chunk === "string" || Buffer.isBuffer(chunk)) {
+      const html = Buffer.isBuffer(chunk) ? chunk.toString("utf8") : chunk;
+      if (html.includes("</body>")) {
+        const next = html.replace("</body>", `<script>${DSH_APPLICATION_BROWSER_JS}</script></body>`);
+        return Reflect.apply(end, response, [next, ...args]);
+      }
+    }
+    return Reflect.apply(end, response, [chunk, ...args]);
+  }) as typeof response.end;
 }
 
 if (startupSpmtOrigin) {
