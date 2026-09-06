@@ -66,6 +66,7 @@ test("StreamWeaver exposes a wired Voice Commander, searchable bot catalog, inte
     assert.match(page, /Setup Guide/); assert.match(page, /Community Flows/); assert.match(page, /Build one flow with AI/); assert.match(page, /No flows installed yet/); assert.match(page, /Voice Commander/); assert.match(page, /Review your text before sending/); assert.match(page, /Provider replies are captured in Simulation Rooms/); assert.match(page, /Simulation Rooms/); assert.match(page, /Manage linked accounts/); assert.match(page, /@media\(max-width:720px\)/);
     const browserSource = page.match(/<script>([\s\S]*)<\/script>/)?.[1];
     assert.ok(browserSource); assert.doesNotThrow(() => new Function(browserSource));
+    assert.match(browserSource, /Finish your flow/); assert.match(browserSource, /data-flow-intent="enable"/); assert.match(browserSource, /data-flow-intent="publish"/);
     assert.doesNotMatch(browserSource, /window.fetch=|nativeFetch=/, "the page controller does not replace browser fetch");
     const control = await (await fetch(`${streamBase}/api/streamweaver/control`, { headers: { cookie } })).json();
     assert.equal(control.role, "owner"); assert.equal(control.operationMode, "read-only"); assert.equal(control.connections[0].provider, "twitch"); assert.equal(control.botRuntime.publicCommands, "connected"); assert.equal(control.botRuntime.suiteActions, "partial"); assert.ok(control.botActions.length >= 20); assert.equal(control.botActions.find((action) => action.id === "sw.image.generate").availability, "connected"); assert.ok(control.botActions.some((action) => action.policy === "simulated")); assert.ok(control.botActions.every((action) => action.policy !== "blocked"));
@@ -305,4 +306,36 @@ test('hosted flow jobs create with Sol, shadow test, recover drafts and edit wit
   assert.deepEqual(calls.map(c=>c.model),['gpt-5.6-sol','gpt-5.6-sol','gpt-5.6-sol','gpt-5.6-luna','gpt-5.6-luna','gpt-5.6-luna']);
   assert.equal(JSON.parse(calls[3].input[0].content).guideIndex.length,3);assert.equal(calls[3].input[0].content.includes('One greeting sent'),false);
  },{privateAiDraftsEnabled:true,openAiKey:'mock-private-key',fetchImpl});
+});
+
+
+test('flow finish saves settings, enables privately, and publishes independently', async () => {
+  await fixture(async ({ cookie, streamBase }) => {
+    const root=streamBase+'/api/streamweaver/control/flows';
+    const post=async (path,body)=>{const r=await fetch(root+path,{method:'POST',headers:{cookie,origin:streamBase,'content-type':'application/json'},body:JSON.stringify(body)});assert.equal(r.status,200,await r.clone().text());return r.json();};
+    const list=async()=> (await fetch(root,{headers:{cookie}})).json();
+    let {package:p}=await post('/copy',{packageId:'mtman1987.coinflip'});
+    p.commands[0].cooldownSeconds=17;
+    p.commands[0].enabled=false;
+    p=(await post('/save',{package:p,expectedUpdatedAt:p.updatedAt})).package;
+    p=(await post('/approve',{packageId:p.packageId})).package;
+    await post('/toggle',{packageId:p.packageId,enabled:true});
+    let state=await list();
+    assert.equal(state.installed.find(x=>x.packageId===p.packageId).enabled,true);
+    assert.equal(state.drafts.find(x=>x.packageId===p.packageId).commands[0].enabled,false);
+    assert.ok(!state.community.some(x=>x.packageId===p.packageId));
+    p.name='Configured coin flip';
+    p=(await post('/save',{package:p,expectedUpdatedAt:p.updatedAt})).package;
+    await post('/publish',{packageId:p.packageId});
+    state=await list();
+    const published=state.community.find(x=>x.packageId===p.packageId);
+    assert.equal(published.name,'Configured coin flip');
+    assert.equal(published.commands[0].cooldownSeconds,17);
+    assert.equal(published.commands[0].enabled,false);
+    const {package:uninstalled}=await post('/copy',{packageId:'mtman1987.coinflip'});
+    await post('/publish',{packageId:uninstalled.packageId});
+    state=await list();
+    assert.ok(state.community.some(x=>x.packageId===uninstalled.packageId));
+    assert.ok(!state.installed.some(x=>x.packageId===uninstalled.packageId),'publishing does not enable or install a flow');
+  });
 });

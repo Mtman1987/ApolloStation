@@ -89,3 +89,7 @@ When a blank tenant opens StreamWeaver, Setup Guide appears first and walks thro
 7. asking AI to build one custom flow, then optionally publishing that one flow.
 
 The Bot Functions page displays only installed flows for that tenant. The Community Flows page displays available packages that remain outside the account until individually selected. One package may contain a primary command and feature-specific add-on commands, but it must carry all of their action nodes and explicit command-to-action wiring. Built-in AI, economy, and command-directory capabilities are referenced by the runtime and are not duplicated as community downloads.
+
+### Finishing a flow
+
+The builder ends with **Save & enable** and **Publish flow**. Set up flow opens the command, permission, cooldown and action settings. Save & enable saves the reviewed settings and activates the installation while preserving individually disabled commands and steps. Publish flow saves the latest edits and shares the package in Community Flows for download and installation; it does not activate the flow. Publishing closes the private editor and opens the community catalog. Saving uses the current draft revision so stale edits cannot silently overwrite newer settings.
