@@ -15,6 +15,7 @@ if (startupSpmtOrigin) process.env.SPMT_ORIGIN = startupSpmtOrigin;
 export const DISCORD_STREAM_HUB_WEB_DESCRIPTOR = legacy.DISCORD_STREAM_HUB_WEB_DESCRIPTOR;
 export type { DiscordStreamHubWebServerOptionsV1 } from "./web-server-legacy.js";
 
+type RequestListener = (request: IncomingMessage, response: ServerResponse) => void;
 const APPLICATION_ACTIONS = new Set(["reviews", "agreement", "vote", "decide", "notify", "templates"]);
 const APP_API_PREFIX = "/apps/discord-stream-hub/api/";
 const APPLICATION_PREFIX = "/api/discord-stream-hub/control/applications/";
@@ -39,7 +40,7 @@ export function createDiscordStreamHubWebServer(options: DiscordStreamHubWebServ
       applications.close();
       throw new Error("DSH application dispatcher expected exactly one product-server request listener");
     }
-    const fallback = listeners[0]!;
+    const fallback = listeners[0] as RequestListener;
     host.server.removeAllListeners("request");
     host.server.on("request", (request: IncomingMessage, response: ServerResponse) => {
       void dispatchApplicationRequest(applications, fallback, host.server, request, response);
@@ -56,7 +57,7 @@ export function createDiscordStreamHubWebServer(options: DiscordStreamHubWebServ
 
 async function dispatchApplicationRequest(
   applications: DshApplicationControls,
-  fallback: (...args: unknown[]) => unknown,
+  fallback: RequestListener,
   server: unknown,
   request: IncomingMessage,
   response: ServerResponse,
@@ -70,11 +71,20 @@ async function dispatchApplicationRequest(
     if (APPLICATION_ACTIONS.has(action) && await applications.handle(request, response, url)) return;
   }
   if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/apps/discord-stream-hub")) injectApplicationUi(response);
-  await Promise.resolve(Reflect.apply(fallback, server, [request, response]));
+  Reflect.apply(fallback, server, [request, response]);
 }
 
 function injectApplicationUi(response: ServerResponse) {
+  const writeHead = response.writeHead.bind(response);
   const end = response.end.bind(response);
+  response.writeHead = ((statusCode: number, ...args: unknown[]) => {
+    for (const arg of args) {
+      if (!arg || typeof arg !== "object" || Array.isArray(arg)) continue;
+      const headers = arg as Record<string, unknown>;
+      for (const key of Object.keys(headers)) if (key.toLowerCase() === "content-length") delete headers[key];
+    }
+    return Reflect.apply(writeHead, response, [statusCode, ...args]);
+  }) as typeof response.writeHead;
   response.end = ((chunk?: unknown, ...args: unknown[]) => {
     if (typeof chunk === "string" || Buffer.isBuffer(chunk)) {
       const html = Buffer.isBuffer(chunk) ? chunk.toString("utf8") : chunk;
