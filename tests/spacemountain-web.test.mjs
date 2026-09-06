@@ -108,6 +108,10 @@ test("Workspace room surfaces and room lifecycle APIs are reachable through brow
     assert.equal((await fetch(`${base}/v1/simulation-rooms/events`,{method:"POST",headers,body:JSON.stringify({schemaVersion:1,roomId:"preview",lane:"chat",direction:"ingress",title:"Input",body:"hello",occurredAt:new Date().toISOString()})})).status,200);
     assert.equal((await (await fetch(`${base}/v1/simulation-rooms`,{headers})).json()).length,1);
     assert.equal((await (await fetch(`${base}/v1/simulation-rooms/events?roomId=preview`,{headers})).json()).length,1);
+    const sent=await fetch(`${base}/v1/commlink/shadow-messages`,{method:"POST",headers,body:JSON.stringify({roomId:"preview",text:"Commlink to shadow"})});
+    assert.equal(sent.status,200);
+    assert.equal((await sent.json()).event.payload.body,"Commlink to shadow");
+    assert.equal((await fetch(`${base}/v1/commlink/shadow-messages`,{method:"POST",headers:{...headers,origin:"https://other.test"},body:JSON.stringify({roomId:"preview",text:"Cross origin"})})).status,403);
     assert.equal((await fetch(`${base}/v1/simulation-rooms?roomId=preview`,{method:"DELETE",headers:{...headers,origin:"https://other.test"}})).status,403);
     assert.equal((await fetch(`${base}/v1/simulation-rooms?roomId=preview`,{method:"DELETE",headers:{...headers,"idempotency-key":"room-delete"}})).status,200);
     assert.deepEqual(await (await fetch(`${base}/v1/simulation-rooms`,{headers})).json(),[]);

@@ -388,6 +388,14 @@ async function searchCommlink(query: string) {
 
 async function sendCommlinkMessage(conversation: Record<string, unknown>, text: string) {
   const principal = requirePrincipal();
+  if (typeof conversation.shadowRoomId === "string") {
+    try {
+      await spmt.sendCommlinkShadowMessage(principal.tenantIds[0]!, conversation.shadowRoomId, text, `shadow-${crypto.randomUUID()}`);
+      await loadShell();
+      setStatus("Message delivered to your shadow room.", "ready");
+      return;
+    } catch (error) { setStatus(message(error), "error"); throw error; }
+  }
   const conversationId = typeof conversation.id === "string" ? conversation.id : "";
   const recipients = Array.isArray(conversation.participantUserIds) ? conversation.participantUserIds.filter((item): item is string => typeof item === "string" && item !== principal.actorId) : [];
   if (!conversationId || !recipients.length) throw new Error("Choose a conversation you can reply to.");

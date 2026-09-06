@@ -92,6 +92,10 @@ export class SpaceMountainShellUi {
   private listenForAppSurfaces() {
     if (this.surfaceListener) return;
     this.surfaceListener = (event) => {
+      if (event.origin === window.location.origin && isAppSurfaceMessageV1(event.data) && event.data.type === "simulation.open" && event.data.appId === "commlink") {
+        const trusted = [...this.options.root.querySelectorAll<HTMLIFrameElement>(".spmt-workspace-frames iframe")].some(frame => event.source === frame.contentWindow && new URL(frame.src,window.location.origin).pathname === "/apps/commlink");
+        if (trusted) { this.base.openSimulationRooms(event.data.roomId); return; }
+      }
       const frame = this.appFrame;
       if (!frame || event.source !== frame.contentWindow || event.origin !== this.appFrameOrigin || !isAppSurfaceMessageV1(event.data)) return;
       const message = event.data;

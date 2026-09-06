@@ -60,6 +60,8 @@ export interface SpaceMountainShellSnapshotV1 {
   commlinkRecipients: Array<{ userId: string; username: string; displayName: string }>;
   messages?: Array<Record<string, unknown>>;
   liveChat: CommlinkLiveChatRecordV1[];
+  simulationRooms?: Array<{roomId:string;name:string}>;
+  simulationMessages?: Array<Record<string,unknown>>;
   notifications: Array<Record<string, unknown>>;
   overlayWidgets: Array<Record<string, unknown>>;
   overlayOutputs: Array<Record<string, unknown>>;
@@ -124,6 +126,8 @@ export class SpaceMountainShellController {
       commlink: conversationsTask,
       commlinkRecipients: this.spmt.findCommlinkRecipients?.(input.tenantId) ?? Promise.resolve([]),
       commlinkMessages: messagesTask,
+      simulationRooms: this.spmt.listSimulationRooms?.(input.tenantId,200) ?? Promise.resolve([]),
+      simulationMessages: this.spmt.listSimulationRoomEvents?.(input.tenantId,{lane:"chat",limit:200}) ?? Promise.resolve([]),
       commlinkLive: this.spmt.listCommlinkLiveChat?.(input.tenantId, { limit: 200 }) ?? Promise.resolve([]),
       notifications: this.spmt.listNotifications(input.tenantId, input.userId),
       overlayWidgets: this.spmt.listOverlayWidgets?.(input.tenantId) ?? Promise.resolve([]),
@@ -195,6 +199,8 @@ export class SpaceMountainShellController {
       commlinkRecipients: commlinkRecipients(values.get("commlinkRecipients")),
       messages: records(values.get("commlinkMessages")),
       liveChat: liveChatRecords(values.get("commlinkLive")),
+      simulationRooms: records(values.get("simulationRooms")).filter((r): r is {roomId:string;name:string} => typeof r.roomId === "string" && typeof r.name === "string"),
+      simulationMessages: records(values.get("simulationMessages")),
       notifications: records(values.get("notifications")),
       overlayWidgets: records(values.get("overlayWidgets")),
       overlayOutputs: records(values.get("overlayOutputs")),

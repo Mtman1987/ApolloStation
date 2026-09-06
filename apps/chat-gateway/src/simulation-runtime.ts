@@ -9,7 +9,7 @@ import { SqliteAuthorityStore } from "@spmt/authority-sqlite";
 import { PlatformOperations } from "@spmt/platform-ops";
 import { PlatformApiAdapter } from "@spmt/api-adapter";
 import { SpmtClient } from "@spmt/sdk";
-import { SIMULATION_ROOM_INPUT_CAPABILITY, assertSimulationRoomInputV1, type ExecutionJobV1, type SimulationRoomEventV1, type SimulationRoomInputJobV1 } from "@spmt/contracts";
+import { simulationDiscordIds, SIMULATION_ROOM_INPUT_CAPABILITY, assertSimulationRoomInputV1, type ExecutionJobV1, type SimulationRoomEventV1, type SimulationRoomInputJobV1 } from "@spmt/contracts";
 import { StreamWeaverProviderRuntime, StreamWeaverBotActionConsumer, StreamWeaverFlowPackageStore, legacyCommunityPackages, SqliteStreamWeaverEconomyStore, type StreamWeaverBotActionExecutorV1 } from "@spmt/streamweaver";
 import { NebulaArcadeProviderRuntime, NEBULA_ARCADE_GAMES, SqliteNebulaGameInputStore, SqliteNebulaTabletopRuntime, SqliteNebulaTagStore, SqliteNebulaTagExperienceStore, buildNebulaTagOverlaySnapshot } from "@spmt/nebula-arcade";
 import { DshBotActionAdapter, DshSuiteActionOperations, respondDshApplicationInteraction, respondDshCalendarInteraction, DshCalendarDelivery, SqliteDshLiveMonitor, SqliteDshDiscordMessageStore, SqliteDshCalendarStore, SqliteDshApplicationStore, type DshDiscordTransportV1, type DshBotActionIdV1 } from "@spmt/discord-stream-hub";
@@ -73,7 +73,7 @@ export class SimulationRoomRuntime {
         outputs++;
         return { providerMessageId };
       };
-      const guildId = snowflake(`${tenantId}:${roomId}:guild`), channelId = snowflake(`${tenantId}:${roomId}:${provider}`), connectionId = "simulation";
+      const ids = simulationDiscordIds(tenantId, roomId), guildId = ids.guildId, channelId = provider === "discord" ? ids.channelId : snowflake(`${tenantId}:${roomId}:${provider}`), connectionId = "simulation";
       const discord = (appId: string): DshDiscordTransportV1 => {
         const capture = async (operation: string, destination: string, payload: Record<string, unknown>, messageId = snowflake(`${job.id}:${sequence}`)) => {
           await emit(appId, { lane: "chat", direction: "egress", title: appId, body: String(payload.content ?? ""), provider: "discord", channelId: destination, data: { operation, payload, providerMessageId: messageId } }); outputs++; return messageId;

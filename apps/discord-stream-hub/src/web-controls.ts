@@ -7,12 +7,12 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { dshCaptainParticipation, renderDshCalendarPng } from "./calendar-presentation.js";
 import { canonicalDshShoutoutGroup } from "./shoutout-groups.js";
 import { fetchAppPlatformSnapshot, fetchAppSessionContext, readJsonBody, requireSameOrigin, safeError, sendJson } from "@spmt/app-foundation/product-web";
-import type { SpmtOperationModeV1 } from "@spmt/contracts";
+import { isSimulationDiscordId, simulationDiscordIds, type SpmtOperationModeV1 } from "@spmt/contracts";
 import { SpmtClient } from "@spmt/sdk";
 import { buildDshPublicApplicationEmbed } from "./application-flow.js";
 import { SqliteDshApplicationStore } from "./applications.js";
 import { SqliteDshCalendarStore } from "./calendar.js";
-import { DshDiscordApi, DshDiscordError, SqliteDshDiscordMessageStore, type DshDiscordGrantSourceV1, type DshDiscordTransportV1 } from "./discord-live-publisher.js";
+import { DshDiscordApi, DshDiscordError, SqliteDshDiscordMessageStore, type DshDiscordGrantSourceV1 } from "./discord-live-publisher.js";
 import { createDshWorkerTokenProvider, loadDshLiveRuntimeConfig, type DshLiveRuntimeConfigV1 } from "./live-worker.js";
 import { DshSimulationRoomDiscordTransport } from "./simulation-room.js";
 import { DshTenantSettingsStore } from "./settings.js";
@@ -38,7 +38,7 @@ export class DshWebControls {
   private readonly messages?: SqliteDshDiscordMessageStore;
   private readonly applications?: SqliteDshApplicationStore;
   private readonly config?: DshLiveRuntimeConfigV1;
-  private readonly discord?: DshDiscordTransportV1;
+  private readonly discord?: DshSimulationRoomDiscordTransport;
   private client?:SpmtClient;
   private sync?:DshCalendarSync;
   private delivery?:DshCalendarDelivery;
@@ -54,7 +54,7 @@ export class DshWebControls {
       this.applications = new SqliteDshApplicationStore(options.databasePath);
     }
     if (options.runtimeConfigPath) this.config = loadDshLiveRuntimeConfig(options.runtimeConfigPath);
-    if (options.credential && this.config) {
+    if (options.credential) {
       const getAccessToken = createDshWorkerTokenProvider({ spmtOrigin: options.spmtOrigin, credential: options.credential, ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}) });
       const client = new SpmtClient({ baseUrl: options.spmtOrigin, appId: "discord-stream-hub", getAccessToken, ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}) });
       const grants: DshDiscordGrantSourceV1 = { getGrant: async ({ tenantId, capability }) => {
@@ -67,10 +67,8 @@ export class DshWebControls {
       } };
       const liveDiscord = new DshDiscordApi(grants, options.fetchImpl);
       this.client=client;this.liveDiscord=liveDiscord;
-      this.discord = options.operationMode === "read-only"
-        ? new DshSimulationRoomDiscordTransport(liveDiscord, client, { guildIds: (tenantId) => this.config?.tenants.find((tenant) => tenant.tenantId === tenantId)?.discordGuildIds ?? [], now: this.now })
-        : liveDiscord;
-      if(this.calendar&&this.messages){this.sync=new DshCalendarSync(options.databasePath!,this.calendar,this.discord as DshDiscordApi,this.now,options.publicOrigin);this.delivery=new DshCalendarDelivery(this.calendar,this.messages,this.discord,this.now,client,options.operationMode==="read-only");}
+      this.discord = new DshSimulationRoomDiscordTransport(liveDiscord, client, { guildIds: (tenantId) => this.config?.tenants.find((tenant) => tenant.tenantId === tenantId)?.discordGuildIds ?? [], now: this.now, liveWrites: options.operationMode !== "read-only" });
+      if(this.calendar&&this.messages){this.sync=new DshCalendarSync(options.databasePath!,this.calendar,this.discord,this.now,options.publicOrigin);this.delivery=new DshCalendarDelivery(this.calendar,this.messages,this.discord,this.now,client,options.operationMode==="read-only");}
     }
   }
 
@@ -99,11 +97,11 @@ export class DshWebControls {
       if (url.pathname === "/api/discord-stream-hub/control/calendar/publish") return await this.publishCalendar(response, context, body);
       if (url.pathname === "/api/discord-stream-hub/control/applications/publish") return await this.publishApplications(response, context, body);
       if (url.pathname === "/api/discord-stream-hub/control/applications/decide") return await this.decideApplication(response, context, body);
-      if (url.pathname === "/api/discord-stream-hub/control/settings") return this.updateSettings(response, context, body);
+      if (url.pathname === "/api/discord-stream-hub/control/settings") return await this.updateSettings(response, context, body);
       return sendJson(response, 404, { error: "not_found" });
     } catch (error) {
       const message = safeError(error);
-      const status = /sign in|session/i.test(message) ? 401 : /owner access/i.test(message) ? 403 : /configured for this tenant/i.test(message) ? 400 : /connect.*discord|grant|discord/i.test(message) ? 502 : 400;
+      const status = /sign in|session/i.test(message) ? 401 : /owner access/i.test(message) ? 403 : /configured for this tenant|^Choose |shadow room is no longer available/i.test(message) ? 400 : /connect.*discord|grant|discord/i.test(message) ? 502 : 400;
       return sendJson(response, status, { error: "dsh_control_failed", message });
     }
   }
@@ -112,13 +110,14 @@ export class DshWebControls {
     const tenantId = context.tenantId;
     const guildId = optionalSnowflake(url.searchParams.get("guildId"));
     const allowedGuildIds = new Set(this.config?.tenants.find((tenant) => tenant.tenantId === tenantId)?.discordGuildIds ?? []);
-    if (guildId && !allowedGuildIds.has(guildId)) throw new Error("Choose a Discord server configured for this tenant");
+    if (guildId && isSimulationDiscordId(guildId)) await this.discord?.target(tenantId, guildId);
+    if (guildId && !isSimulationDiscordId(guildId) && !allowedGuildIds.has(guildId)) throw new Error("Choose a Discord server configured for this tenant");
     let guilds: Array<Record<string, unknown>> = [], channels: Array<Record<string, unknown>> = [];
     let providerState: "ready" | "setup-required" | "unavailable" = this.discord ? "ready" : "setup-required";
     let providerMessage = this.discord ? (this.options.operationMode === "read-only" ? "Live Discord servers and channels are connected. Delivery opens in Simulation Rooms." : "Discord delivery is connected.") : "Connect the DSH Discord bot to load servers and channels.";
     if (this.discord) {
       try {
-        guilds = (await this.discord.listGuilds(tenantId)).filter((item) => typeof item.id === "string" && allowedGuildIds.has(item.id)).map((item) => ({ id: item.id, name: item.name ?? item.id, icon: item.icon ?? null }));
+        guilds = (await this.discord.listGuilds(tenantId)).filter((item) => typeof item.id === "string" && (allowedGuildIds.has(item.id) || isSimulationDiscordId(item.id))).map((item) => ({ id: item.id, name: item.name ?? item.id, icon: item.icon ?? null, ...(isSimulationDiscordId(String(item.id)) ? { shadow: true } : {}) }));
         if (guildId) channels = (await this.discord.listGuildChannels(tenantId, guildId)).filter((item) => typeof item.id === "string" && (item.type === 0 || item.type === 5)).sort((a, b) => Number(a.position ?? 0) - Number(b.position ?? 0)).map((item) => ({ id: item.id, name: item.name ?? item.id, type: item.type ?? 0 }));
       } catch (error) { providerState = "unavailable"; providerMessage = safeError(error); }
     }
@@ -145,11 +144,12 @@ export class DshWebControls {
       storageReady: Boolean(this.calendar && this.settings),
       applicationInteractionsReady: Boolean(this.options.applicationInteractionsReady),
       operationMode: this.options.operationMode ?? "active",
-      provider: { state: providerState, message: providerMessage },
+      provider: { state: providerState, message: guildId && isSimulationDiscordId(guildId) ? "Messages and embeds stay in this shadow room." : providerMessage },
       providerLinks: snapshot?.providerLinks ?? [],
       guilds,
       channels,
       selectedGuildId: guildId ?? "",
+      selectedShadowRoomId: guildId && isSimulationDiscordId(guildId) ? (await this.discord?.target(tenantId,guildId))?.roomId : null,
       ...view,
       participation: dshCaptainParticipation(calendar, this.config?.tenants.find(tenant => tenant.tenantId === tenantId)?.members.filter(member => member.group === "Crew").map(member => ({userId: member.canonicalUserId, username: member.twitchLogin})) ?? [], this.settings?.read(tenantId).captainMinimumDays ?? 0),
       calendarMonth: month,
@@ -181,7 +181,8 @@ export class DshWebControls {
   private async publishCalendar(response:ServerResponse,context:SessionContext,body:Record<string,unknown>){
     if(!this.delivery)throw new Error("Connect the DSH Discord bot before publishing");
     const guild=this.guild(context.tenantId,body.serverId),channel=snowflake(body.channelId,"channelId");
-    return sendJson(response,200,{schemaVersion:1,...await this.delivery.publish(context.tenantId,guild,channel,String(body.month??this.now().slice(0,7)))});
+    await this.validateDestination(context.tenantId,guild,channel);
+    return sendJson(response,200,{schemaVersion:1,...(isSimulationDiscordId(guild) ? {shadowRoomId:(await this.discord?.target(context.tenantId,guild))?.roomId} : {}),...await this.delivery.publish(context.tenantId,guild,channel,String(body.month??this.now().slice(0,7)))});
   }
   async changed(tenant:string){
     const failures:string[]=[];
@@ -200,10 +201,11 @@ export class DshWebControls {
   private requestKey(context:SessionContext,body:Record<string,unknown>){return body.requestId?`${String(context.session.actorId)}:${text(body.requestId,"requestId",100)}`:undefined;}
 
   private async publishApplications(response: ServerResponse, context: SessionContext, body: Record<string, unknown>) {
-    if (this.options.operationMode !== "read-only" && !this.options.applicationInteractionsReady) throw new Error("Configure the Discord application interaction endpoint before publishing the application embed");
+    if (!isSimulationDiscordId(String(body.serverId)) && this.options.operationMode !== "read-only" && !this.options.applicationInteractionsReady) throw new Error("Configure the Discord application interaction endpoint before publishing the application embed");
     const serverId = this.guild(context.tenantId, body.serverId), channelId = snowflake(body.channelId, "channelId");
+    await this.validateDestination(context.tenantId,serverId,channelId);
     const messageId = await this.upsertDiscord(context.tenantId, "applications", serverId, channelId, buildDshPublicApplicationEmbed(serverId));
-    return sendJson(response, 200, { schemaVersion: 1, messageId, channelId });
+    return sendJson(response, 200, { schemaVersion: 1, messageId, channelId, ...(isSimulationDiscordId(serverId) ? {shadowRoomId:(await this.discord?.target(context.tenantId,serverId))?.roomId} : {}) });
   }
 
   private async decideApplication(response: ServerResponse, context: SessionContext, body: Record<string, unknown>) {
@@ -219,9 +221,10 @@ export class DshWebControls {
     return sendJson(response, 200, { schemaVersion: 1, application, notification });
   }
 
-  private updateSettings(response: ServerResponse, context: SessionContext, body: Record<string, unknown>) {
+  private async updateSettings(response: ServerResponse, context: SessionContext, body: Record<string, unknown>) {
     const store = this.requireSettings(), current = store.readDocument(context.tenantId), values: Record<string, string | number | boolean | null> = {};
     for (const key of ["spotlightChannelId", "signalChannelId", "gifStorageChannelId"] as const) if (body[key] !== undefined) values[key] = body[key] === "" ? "" : snowflake(body[key], key);
+    for (const value of Object.values(values)) if (typeof value === "string" && isSimulationDiscordId(value)) { if (!this.discord) throw new Error("Shadow room delivery is unavailable"); await this.discord.target(context.tenantId,value); }
     for (const key of ["spotlightEnabled", "signalSeekerEnabled"] as const) if (typeof body[key] === "boolean") values[key] = body[key];
     if (body.captainMinimumDays !== undefined) values.captainMinimumDays = integer(body.captainMinimumDays, 0, 31, "captainMinimumDays");
     if (body.pollIntervalSeconds !== undefined) values.pollIntervalSeconds = integer(body.pollIntervalSeconds, 15, 900, "pollIntervalSeconds");
@@ -244,6 +247,13 @@ export class DshWebControls {
     return messageId;
   }
 
+  private async validateDestination(tenantId:string,guildId:string,channelId:string) {
+    if (!this.discord) throw new Error("Discord delivery is unavailable");
+    if (isSimulationDiscordId(guildId) || isSimulationDiscordId(channelId)) {
+      const room = await this.discord.target(tenantId,guildId);
+      if (!room || simulationDiscordIds(tenantId,room.roomId).guildId !== guildId || simulationDiscordIds(tenantId,room.roomId).channelId !== channelId) throw new Error("Choose the Discord channel belonging to this shadow room");
+    } else if (!(await this.discord.listGuildChannels(tenantId,guildId)).some(channel => channel.id === channelId && (channel.type === 0 || channel.type === 5))) throw new Error("Choose a text channel in the selected Discord server");
+  }
   private requireOwner(context: SessionContext) { if (this.role(context) !== "owner") throw new Error("Tenant owner access is required for this action"); }
   private calendarScope(tenantId: string, value: unknown) { return !value || value === "workspace" ? "workspace" : this.guild(tenantId, value); }
   private async changeCalendar(response: ServerResponse, context: SessionContext, body: Record<string, unknown>, remove: boolean) {
@@ -265,7 +275,7 @@ export class DshWebControls {
   }
   private requireCalendar() { if (!this.calendar) throw new Error("DSH calendar storage is not configured"); return this.calendar; }
   private requireSettings() { if (!this.settings) throw new Error("DSH settings storage is not configured"); return this.settings; }
-  private guild(tenantId: string, value: unknown) { const guildId = snowflake(value, "serverId"); if (!this.config?.tenants.find((tenant) => tenant.tenantId === tenantId)?.discordGuildIds?.includes(guildId)) throw new Error("Choose a Discord server configured for this tenant"); return guildId; }
+  private guild(tenantId: string, value: unknown) { const guildId = snowflake(value, "serverId"); if (isSimulationDiscordId(guildId)) return guildId; if (!this.config?.tenants.find((tenant) => tenant.tenantId === tenantId)?.discordGuildIds?.includes(guildId)) throw new Error("Choose a Discord server configured for this tenant"); return guildId; }
 }
 
 function record(value: unknown) { return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined; }

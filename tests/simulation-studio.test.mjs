@@ -147,3 +147,21 @@ test('calendar modal submissions update the same room message through the SDK an
  assert.match(renderSimulationDiscordPayload(update.payload.data.payload),/<svg/);
  assert.equal((await f.owner.listSimulationRooms('tenant-a')).length,1);
 });
+
+test('Commlink sends and receives through the same named room without a second user or public delivery',async t=>{
+ const f=setup(t),room=await f.owner.createSimulationRoom('tenant-a','Comms test','comms-room');
+ const sent=await f.owner.sendCommlinkShadowMessage('tenant-a',room.roomId,'From Commlink','send-1');
+ assert.equal(sent.duplicate,false);
+ assert.equal((await f.owner.sendCommlinkShadowMessage('tenant-a',room.roomId,'From Commlink','send-1')).duplicate,true);
+ let events=await f.owner.listSimulationRoomEvents('tenant-a',{roomId:room.roomId,lane:'chat'});
+ assert.equal(events.length,1);assert.equal(events[0].payload.direction,'egress');assert.equal(events[0].sourceAppId,'commlink');
+ assert.equal(events[0].payload.data.payload.content,'From Commlink');
+ const reply=await f.send('Reply from the Discord test pane',{provider:'discord',roomId:room.roomId});
+ assert.ok(reply.events.some(event=>event.payload.direction==='ingress'&&event.payload.body==='Reply from the Discord test pane'));
+ assert.ok(reply.events.some(event=>event.sourceAppId==='commlink'&&event.payload.body==='From Commlink'));
+ assert.equal((await f.owner.listSimulationRooms('tenant-a')).length,1);
+ await assert.rejects(f.owner.sendCommlinkShadowMessage('tenant-b',room.roomId,'Wrong tenant','wrong-tenant'),{status:403});
+ await f.owner.deleteSimulationRoom('tenant-a',room.roomId,'delete-comms');
+ await assert.rejects(f.owner.sendCommlinkShadowMessage('tenant-a',room.roomId,'Stale selection','stale'),{status:404});
+ assert.deepEqual(await f.owner.listSimulationRooms('tenant-a'),[]);
+});

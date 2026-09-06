@@ -52,3 +52,33 @@ test("HearMeOut simulation jobs read the real room but cannot mutate media, pers
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+for (const liveWrites of [false,true]) test(`named shadow Discord destinations preserve exact embeds with live writes ${liveWrites}`, async () => {
+  const {simulationDiscordIds} = await import('../packages/contracts/dist/index.js');
+  let rooms=[{roomId:'room-a',name:'My embed lab'},{roomId:'room-b',name:'Other room'}];
+  let writes=0, reads=0;
+  const events=[];
+  const client={listSimulationRooms:async tenant=>tenant==='tenant-a'?rooms:[],publishSimulationRoomEvent:async(tenant,input)=>events.push({tenant,input})};
+  const provider={listGuilds:async()=>{reads++;throw new Error('No Discord bot connected');},listGuildChannels:async()=>{reads++;return[];},createMessage:async()=>{writes++;return'live-message';},editMessage:async()=>{writes++;},deleteMessage:async()=>{writes++;}};
+  const transport=new DshSimulationRoomDiscordTransport(provider,client,{liveWrites});
+  const ids=simulationDiscordIds('tenant-a','room-a');
+  const guilds=await transport.listGuilds('tenant-a');
+  assert.equal(guilds[0].name,'Shadow · My embed lab');
+  assert.equal(guilds[0].id,ids.guildId);
+  assert.equal((await transport.listGuildChannels('tenant-a',ids.guildId))[0].id,ids.channelId);
+  const payload={embeds:[{title:'Application',description:'Exact tier appearance',color:0x38bdf8}],components:[{type:1,components:[{type:2,style:1,label:'Apply',custom_id:`application_start:mod:${ids.guildId}`}]}]};
+  const messageId=await transport.createMessage('tenant-a',ids.channelId,payload);
+  await transport.editMessage('tenant-a',ids.channelId,messageId,{...payload,content:'Updated'});
+  await transport.deleteMessage('tenant-a',ids.channelId,messageId);
+  assert.equal(writes,0);
+  assert.equal(reads,1,'virtual channel lookup does not consult Discord');
+  assert.deepEqual(events.map(event=>event.input.roomId),['room-a','room-a','room-a']);
+  assert.deepEqual(events[0].input.data.payload,payload);
+  assert.equal(events[0].input.data.explicitRoom,true);
+  assert.equal(events[1].input.data.messageId,messageId);
+  await assert.rejects(transport.createMessage('tenant-b',ids.channelId,payload),/no longer available/);
+  rooms=[];
+  await assert.rejects(transport.createMessage('tenant-a',ids.channelId,payload),/no longer available/);
+  assert.equal(writes,0,'deleted or foreign shadow destinations never fall through to Discord');
+  if(liveWrites){assert.equal(await transport.createMessage('tenant-a','1234567890',payload),'live-message');assert.equal(writes,1);}
+});

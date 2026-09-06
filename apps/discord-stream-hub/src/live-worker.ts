@@ -170,7 +170,7 @@ export class SupervisedDshLiveService {
     this.messages = new SqliteDshDiscordMessageStore(options.databasePath);
     const liveDiscord = new DshDiscordApi(new SpmtDshDiscordGrantSource(this.client, directory), fetchImpl);
     const simulationDiscord = new DshSimulationRoomDiscordTransport(liveDiscord, this.client, { guildIds: (tenantId) => options.config.tenants.find((tenant) => tenant.tenantId === tenantId)?.discordGuildIds ?? [], now });
-    const discord = options.operationMode === "read-only" ? simulationDiscord : liveDiscord;
+    const discord = options.operationMode === "read-only" ? simulationDiscord : new DshSimulationRoomDiscordTransport(liveDiscord, this.client, { guildIds: (tenantId) => options.config.tenants.find((tenant) => tenant.tenantId === tenantId)?.discordGuildIds ?? [], now, liveWrites: true });
     const publisher = new DshDiscordLivePublisher(discord, this.messages, directory, undefined, now);
     this.runtime = new DshLiveRuntime(this.monitor, publisher);
     this.poller = new DshTwitchLivePoller(directory, new SpmtDshTwitchGrantSource(this.client, directory), new TwitchHelixLiveClient(fetchImpl), this.runtime);

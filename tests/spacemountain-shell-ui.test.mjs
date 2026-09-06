@@ -43,7 +43,7 @@ test("canonical home, Shipyard, registry apps, and workspace remain in the prese
 });
 
 test("Commlink retains saved ChatSpaces, Desks, feed, compose, search, pop-out and hidden signal", () => {
-  for (const pattern of [/data-commlink-space/, /data-commlink-desk/, /New view/, /data-commlink-source/, /data-commlink-filter/, /data-commlink-compose/, /onSendCommlinkMessage/, /data-commlink-new-mail/, /onComposeCommlinkMail/, /data-commlink-read-all/, /onMarkAllCommlinkRead/, /data-commlink-popout/, /data-open-conversation/, /data-commlink-search/, /data-spmt-signal-trigger/]) assert.match(base, pattern);
+  for (const pattern of [/data-commlink-space/, /data-commlink-desk/, /New chat space/, /data-commlink-source/, /data-commlink-filter/, /data-commlink-compose/, /onSendCommlinkMessage/, /data-commlink-new-mail/, /onComposeCommlinkMail/, /data-commlink-read-all/, /onMarkAllCommlinkRead/, /data-commlink-popout/, /data-open-conversation/, /data-commlink-search/, /data-spmt-signal-trigger/]) assert.match(base, pattern);
   assert.match(base, /this\.snapshot\.liveChat/);
   assert.match(base, /this\.snapshot\.commlinkRecipients/);
   assert.match(base, /occurredAt/);
@@ -89,7 +89,7 @@ test("workspace tray keeps three persistent embeds and window controls", () => {
 });
 
 test("canonical appearance still flattens wrappers and deepens translucency", () => {
-  assert.match(base, /\$\{COSMO_COMMLINK_CSS\}\$\{THEMED_SURFACE_CSS\}/);
+  assert.match(base, /\$\{THEMED_SURFACE_CSS\}\$\{COMMLINK_LAYOUT_CSS\}/);
   assert.match(THEMED_SURFACE_CSS, /--theme-depth-1:/);
   assert.match(THEMED_SURFACE_CSS, /--theme-depth-4:/);
   assert.match(THEMED_SURFACE_CSS, /\.cosmo-commlink\{border:0;background:transparent;box-shadow:none;backdrop-filter:none\}/);

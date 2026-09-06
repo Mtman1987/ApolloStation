@@ -465,6 +465,18 @@ export interface SimulationRoomEventV1 {
   data?: Record<string, unknown>;
 }
 
+/** Reserved 24-digit IDs cannot collide with Discord's unsigned 64-bit snowflakes.
+ * Every app uses the same tenant/room mapping, including interactive embed tests. */
+export function simulationDiscordIds(tenantId: string, roomId: string) {
+  const id = (lane: string) => {
+    let hash = 14695981039346656037n;
+    for (const byte of new TextEncoder().encode(`${tenantId}\0${roomId}\0${lane}`)) hash = BigInt.asUintN(64, (hash ^ BigInt(byte)) * 1099511628211n);
+    return `9999${hash.toString().padStart(20, "0")}`;
+  };
+  return { guildId: id("guild"), channelId: id("discord") };
+}
+export function isSimulationDiscordId(value: string) { return /^9999\d{20}$/.test(value); }
+
 export interface SimulationRoomSummaryV1 {
   roomId: string;
   name: string;
