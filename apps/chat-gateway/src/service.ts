@@ -4,7 +4,7 @@ import { SimulationRoomRuntime, SimulationRoomWorker } from "./simulation-runtim
 import { basename, isAbsolute, dirname, join } from "node:path";
 import { createSpmtCommlinkLiveChatConsumer } from "@spmt/commlink-core";
 import { SpmtClient } from "@spmt/sdk";
-import { CloudflareStreamWeaverImageProvider, EdenStreamWeaverImageProvider, StreamWeaverGenerationStore, NodeSeaArtCommandRunner, SeaArtCliProvider, StreamWeaverImageGenerationService, StreamWeaverImageWorker, StreamWeaverProviderRuntime, StreamWeaverSuiteActionJobExecutor, type StreamWeaverBotActionExecutorV1 } from "@spmt/streamweaver";
+import { PollinationsStreamWeaverImageProvider, CloudflareStreamWeaverImageProvider, EdenStreamWeaverImageProvider, StreamWeaverGenerationStore, NodeSeaArtCommandRunner, SeaArtCliProvider, StreamWeaverImageGenerationService, StreamWeaverImageWorker, StreamWeaverProviderRuntime, StreamWeaverSuiteActionJobExecutor, type StreamWeaverBotActionExecutorV1 } from "@spmt/streamweaver";
 import { NebulaArcadeProviderRuntime, loadNebulaArcadeProviderConfig, type NebulaArcadeProviderConfigV1, type NebulaDiscordDashboardEgressV1 } from "@spmt/nebula-arcade";
 import { ChatGatewayRuntime, SqliteChatGatewayStore, createShadowChatProviderSenders, type ChatGatewayConsumerV1 } from "./index.js";
 import { ChatProviderConnectionSupervisor, SqliteProviderConnectionStore, type ProviderConnectionConfigV1 } from "./connection-supervisor.js";
@@ -22,7 +22,7 @@ export interface ChatGatewayWorkerEnvironmentV1 {
   workerId: string;
   connections: ProviderConnectionConfigV1[];
   reconcileMs: number;
-  streamweaver?: { databasePath: string; credential: string; image?: { token: string; modelNo: string; modelVerNo: string; binary: string; edenKey?:string;edenModel?:string;cloudflareAccountId?:string;cloudflareToken?:string } };
+  streamweaver?: { databasePath: string; credential: string; image?: { token: string; modelNo: string; modelVerNo: string; binary: string; edenKey?:string;edenModel?:string;cloudflareAccountId?:string;cloudflareToken?:string;pollinationsToken?:string } };
   nebulaArcade?: { databasePath: string; credential: string; configPath: string; config: NebulaArcadeProviderConfigV1; publicOrigin?: string; gameplayOrigin?: string; webhookName: string; avatarUrl?: string };
 }
 
@@ -65,6 +65,9 @@ export function validateChatGatewayWorkerEnvironment(environment: NodeJS.Process
     if(runtimeMode==="sandbox"&&cloudflareToken)throw Error("Sandbox StreamWeaver rejects external image generation");
     let image:NonNullable<NonNullable<ChatGatewayWorkerEnvironmentV1["streamweaver"]>["image"]>|undefined=imageValues.length?{token:String(environment.STREAMWEAVER_SEAART_CLI_TOKEN),modelNo:modelIdentifier(environment.STREAMWEAVER_SEAART_MODEL_NO,"STREAMWEAVER_SEAART_MODEL_NO"),modelVerNo:modelIdentifier(environment.STREAMWEAVER_SEAART_MODEL_VER_NO,"STREAMWEAVER_SEAART_MODEL_VER_NO"),binary:environment.STREAMWEAVER_SEAART_CLI_BINARY||"seaart",...(edenKey?{edenKey,edenModel:environment.STREAMWEAVER_EDENAI_IMAGE_MODEL||"image/generation/stabilityai"}:{})}:edenKey?{token:"",modelNo:"",modelVerNo:"",binary:"seaart",edenKey,edenModel:environment.STREAMWEAVER_EDENAI_IMAGE_MODEL||"image/generation/stabilityai"}:undefined;
     if(cloudflareAccountId&&cloudflareToken){image??={token:"",modelNo:"",modelVerNo:"",binary:"seaart"};image.cloudflareAccountId=cloudflareAccountId;image.cloudflareToken=cloudflareToken;}
+    const pollinationsToken=environment.STREAMWEAVER_POLLINATIONS_API_KEY;
+    if(runtimeMode==="sandbox"&&pollinationsToken)throw Error("Sandbox StreamWeaver rejects external image generation");
+    if(pollinationsToken){image??={token:"",modelNo:"",modelVerNo:"",binary:"seaart"};image.pollinationsToken=pollinationsToken;}
     streamweaver = { databasePath: streamweaverDatabasePath, credential: streamweaverCredential, ...(image?{image}:{}) };
   }
   const nebulaEnabled = environment.NEBULA_ARCADE_PROVIDER_RUNTIME_ENABLED === "1";
@@ -250,7 +253,7 @@ export class SupervisedChatGatewayService {
       } };
       this.streamweaver = new StreamWeaverProviderRuntime({ databasePath: options.streamweaver.databasePath, client: streamweaverClient, connections:options.connections, botActions: guardedSuiteActions, providerGrants:client,allowProviderWrites:egressMode==="provider",allowAssistant: !options.liveIngressEnabled, egress: { send: (message) => { if (!connectedGateway) throw new Error("Chat Gateway egress is not ready"); return connectedGateway.send(message); } } });
       if(options.streamweaver.image&&options.operationMode==="active") {
-        const image=options.streamweaver.image,providers=[...(image.cloudflareAccountId&&image.cloudflareToken?[new CloudflareStreamWeaverImageProvider(image.cloudflareAccountId,image.cloudflareToken,fetchImpl)]:[]),...(image.token?[new SeaArtCliProvider(image.token,new NodeSeaArtCommandRunner(image.binary))]:[]),...(image.edenKey?[new EdenStreamWeaverImageProvider(image.edenKey,image.edenModel,fetchImpl)]:[])],tenantIds=[...new Set(options.connections.map(connection=>connection.tenantId))];
+        const image=options.streamweaver.image,providers=[...(image.cloudflareAccountId&&image.cloudflareToken?[new CloudflareStreamWeaverImageProvider(image.cloudflareAccountId,image.cloudflareToken,fetchImpl)]:[]),...(image.token?[new SeaArtCliProvider(image.token,new NodeSeaArtCommandRunner(image.binary))]:[]),...(image.edenKey?[new EdenStreamWeaverImageProvider(image.edenKey,image.edenModel,fetchImpl)]:[]),...(image.pollinationsToken?[new PollinationsStreamWeaverImageProvider(image.pollinationsToken,fetchImpl)]:[])],tenantIds=[...new Set(options.connections.map(connection=>connection.tenantId))];
         const enhancer={enhance:async(prompt:string,input?:import("@spmt/streamweaver").SeaArtImageRequestV1)=>{
           if(!input?.tenantId||!input.userId) return prompt;
           const request=await streamweaverClient.invokeCommunityAssistant(input.tenantId,{userId:input.userId,message:`Rewrite this image prompt under 3000 characters. ${input.promptTemplate??"Preserve the intent; add clear composition and lighting."} Return only the prompt.\n\n${prompt}`,surface:"app",remember:false},`image-prompt:${input.requestId}`);

@@ -132,3 +132,9 @@ Rider eligibility and reward terms freeze for a request. Interrupted rides resum
 Image Studio now offers **Cloudflare → FLUX.1 Schnell** in both private and public generation settings when its worker credentials are configured. It supports one to four images, a seed and 1–8 steps. Cloudflare uses its own default image size; the resolution selector applies to Eden/SeaArt. Prompts must fit within 2,048 characters. Other Cloudflare models, LoRAs and reference-image workflows remain pending.
 
 Private results go to Media Files. Public chat image actions publish managed image links that expire after seven days and can be revoked or deleted through Media Files. Storage retries reuse the generated images. Existing prompt-check controls apply; when enabled, checks still require the configured Eden moderation service. Inactive or sandbox runtimes do not call Cloudflare.
+
+### Pollinations image generation
+
+Image Studio now offers **Pollinations** with a worker-refreshed image-model catalog and a saved model choice for each private/public scope. Choose a supported image model, resolution, count and seed. A zero seed requests fresh seeds; selected models determine which settings they honor. Advanced provider-parameter JSON must be empty for this adapter.
+
+Completed images use the same managed storage as Cloudflare: private results stay in Media Files, and public image actions receive revocable links with seven-day expiry. The worker needs its own configured Pollinations API key and provider allowance. Existing application prompt checks remain effective. Actual provider/budget and rendered-output acceptance remain open.

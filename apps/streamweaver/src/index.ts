@@ -59,3 +59,4 @@ export * from "./community-runtime.js";
 export * from "./tiktok-store.js";
 
 export * from "./cloudflare-image-provider.js";
+export * from "./pollinations-image-provider.js";

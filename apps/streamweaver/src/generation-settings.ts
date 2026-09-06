@@ -1,5 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
-export interface StreamWeaverGenerationSettings {provider:"automatic"|"seaart-cli"|"edenai"|"cloudflare";edenModel?:string;cloudflareModel?:string;contentModeration?:boolean;publicAccess:"everyone"|"mods"|"off";modelNo:string;modelVerNo:string;resolution:string;count:number;seed:number;enhance:boolean;promptTemplate:string;providerParams:Record<string,string|number|boolean>;}
+export interface StreamWeaverGenerationSettings {provider:"automatic"|"seaart-cli"|"edenai"|"cloudflare"|"pollinations";edenModel?:string;cloudflareModel?:string;pollinationsModel?:string;contentModeration?:boolean;publicAccess:"everyone"|"mods"|"off";modelNo:string;modelVerNo:string;resolution:string;count:number;seed:number;enhance:boolean;promptTemplate:string;providerParams:Record<string,string|number|boolean>;}
 export const GENERATION_TEMPLATES={general:"Preserve the subject and intent. Add coherent composition, lighting and visual detail.",photo:"Preserve the subject and intent. Describe a photograph with lens, lighting, setting and color.",avatar:"Preserve the character. Compose a clear portrait with a simple background."};
 const defaults=():StreamWeaverGenerationSettings=>({provider:"automatic",edenModel:"",contentModeration:true,publicAccess:"everyone",modelNo:"",modelVerNo:"",resolution:"1024x1024",count:1,seed:0,enhance:true,promptTemplate:GENERATION_TEMPLATES.general,providerParams:{}});
 export class StreamWeaverGenerationStore {
@@ -15,7 +15,8 @@ export class StreamWeaverGenerationStore {
 }
 export function normalizeGenerationSettings(input:Partial<StreamWeaverGenerationSettings>):StreamWeaverGenerationSettings {
   const v={...defaults(),...input};
-  if(!["automatic","seaart-cli","edenai","cloudflare"].includes(v.provider)||!["everyone","mods","off"].includes(v.publicAccess))throw new Error("Choose supported generation settings");
+  if(!["automatic","seaart-cli","edenai","cloudflare","pollinations"].includes(v.provider)||!["everyone","mods","off"].includes(v.publicAccess))throw new Error("Choose supported generation settings");
+  if(v.pollinationsModel!==undefined&&v.pollinationsModel!==""&&(typeof v.pollinationsModel!=="string"||!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,119}(?:\/[a-zA-Z0-9][a-zA-Z0-9._-]{0,119})?$/.test(v.pollinationsModel)))throw Error("Pollinations model is invalid");
   if(v.cloudflareModel!==undefined&&v.cloudflareModel!==""&&v.cloudflareModel!=="@cf/black-forest-labs/flux-1-schnell")throw Error("Cloudflare image model is invalid");
   if(v.edenModel!==undefined&&(typeof v.edenModel!=="string"||v.edenModel.length>220||(v.edenModel!==""&&!/^image\/generation\/[a-z0-9_-]+(?:\/[A-Za-z0-9._ -]{1,160})?$/.test(v.edenModel))))throw new Error("Eden image model is invalid");
   for(const name of ["modelNo","modelVerNo"] as const)if(typeof v[name]!=="string"||!/^$|^[A-Za-z0-9._:-]{1,160}$/.test(v[name]))throw new Error("Model identifier is invalid");
