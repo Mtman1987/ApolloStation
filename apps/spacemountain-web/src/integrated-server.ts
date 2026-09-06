@@ -1,3 +1,4 @@
+import { attachHearMeOutRtcProxy } from "./rtc-upgrade-proxy.js";
 import { createServer, request as httpRequest, type IncomingMessage, type ServerResponse } from "node:http";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -32,7 +33,8 @@ export function createIntegratedSpaceMountainWebHost(options:IntegratedSpaceMoun
     }
     return proxyInner(request,response,basePort);
   }catch(error){if(!response.headersSent)json(response,500,{error:"parity_gateway_failure",message:error instanceof Error?error.message:"unknown error"});else response.destroy(error instanceof Error?error:undefined);}});
-  return{server:outer,async listen(){await base.listen();const address=base.server.address();if(!address||typeof address==="string")throw new Error("SpaceMountain parity base host did not bind a TCP port");basePort=address.port;await listen(outer,options.port??8080,options.host??"0.0.0.0");},async close(){if(outer.listening)await close(outer);await base.close();}};
+  const closeRtc=attachHearMeOutRtcProxy(outer,options.greenAppOrigins?.hearmeout);
+  return{server:outer,async listen(){await base.listen();const address=base.server.address();if(!address||typeof address==="string")throw new Error("SpaceMountain parity base host did not bind a TCP port");basePort=address.port;await listen(outer,options.port??8080,options.host??"0.0.0.0");},async close(){closeRtc();if(outer.listening)await close(outer);await base.close();}};
 }
 
 function greenAppForPath(pathname:string):GreenAppId|undefined{for(const appId of GREEN_APP_IDS)if(pathname===`/apps/${appId}`||pathname.startsWith(`/apps/${appId}/`)||pathname===`/api/${appId}`||pathname.startsWith(`/api/${appId}/`)||pathname===`/health/${appId}`)return appId;return undefined;}

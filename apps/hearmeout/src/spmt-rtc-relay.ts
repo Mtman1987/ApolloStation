@@ -62,16 +62,18 @@ export class SpmtRtcRelayRoomV1 {
     return this.snapshot();
   }
 
-  leave(participantId: string) {
+  leave(participantId: string, expectedSend?: SpmtRtcRelayParticipantV1['send']) {
     const clean = cleanId(participantId, "participantId");
+    if (expectedSend && this.participants.get(clean)?.participant.send !== expectedSend) return false;
     const removed = this.participants.delete(clean);
     if (removed) this.lastActivityAt = this.now();
     return removed;
   }
 
-  publish(participantId: string, frame: Uint8Array) {
+  publish(participantId: string, frame: Uint8Array, expectedSend?: SpmtRtcRelayParticipantV1['send']) {
     const sender = this.participants.get(cleanId(participantId, "participantId"));
     if (!sender) throw new Error("SPMT RTC relay participant is not joined");
+    if (expectedSend && sender.participant.send !== expectedSend) throw new Error("SPMT RTC relay connection was replaced");
     if (!(frame instanceof Uint8Array)) throw new Error("SPMT RTC relay frame must be binary");
     if (!frame.byteLength || frame.byteLength > this.maxFrameBytes) throw new Error("SPMT RTC relay frame size is invalid");
 

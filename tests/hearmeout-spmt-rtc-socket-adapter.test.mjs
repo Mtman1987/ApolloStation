@@ -69,3 +69,17 @@ test("SPMT RTC socket adapter closes malformed binary producers and removes memb
   assert.match(client.closed[0].reason, /frame size is invalid/);
   assert.equal(hub.snapshot()[0].participantCount, 0);
 });
+
+
+test("a late close from a replaced socket cannot disconnect the new participant", async () => {
+  const hub = new SpmtRtcRelayHubV1();
+  const adapter = new SpmtRtcRelaySocketAdapterV1(hub, { authorize() { return true; } });
+  const old = socket(), replacement = socket(), listener = socket();
+  await adapter.attach(old.api, { ...base, participantId: 'a', role: 'browser' });
+  await adapter.attach(replacement.api, { ...base, participantId: 'a', role: 'browser' });
+  await adapter.attach(listener.api, { ...base, participantId: 'b', role: 'browser' });
+  old.end();
+  assert.equal(hub.snapshot()[0].participantCount, 2);
+  replacement.binary([7, 8, 9]);
+  assert.deepEqual([...listener.sent[0]], [7, 8, 9]);
+});

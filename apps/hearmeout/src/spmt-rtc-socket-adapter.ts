@@ -44,11 +44,12 @@ export class SpmtRtcRelaySocketAdapterV1 {
 
     const roomKey = `${normalized.tenantId}:${normalized.roomId}`;
     const room = this.hub.room(roomKey);
+    const send = (frame: Uint8Array) => socket.send(frame);
     try {
       room.join({
         participantId: normalized.participantId,
         role: normalized.role,
-        send: (frame) => socket.send(frame),
+        send,
         close: (code, reason) => socket.close(code, reason),
       });
     } catch (error) {
@@ -60,12 +61,12 @@ export class SpmtRtcRelaySocketAdapterV1 {
     const leave = () => {
       if (closed) return;
       closed = true;
-      room.leave(normalized.participantId);
+      room.leave(normalized.participantId, send);
     };
     socket.onBinary((frame) => {
       if (closed) return;
       try {
-        room.publish(normalized.participantId, frame);
+        room.publish(normalized.participantId, frame, send);
       } catch (error) {
         leave();
         socket.close(4400, safeReason(error));
