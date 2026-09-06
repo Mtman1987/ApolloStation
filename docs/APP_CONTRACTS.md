@@ -144,3 +144,5 @@ Every request/job carries correlation ID, tenant ID, app/module ID, version, and
 - first-party catalog entries preserve the exact publisher-supplied HTTPS `launchUrl` through the same catalog validation and `apps.register` authority used by third-party apps; no shared-host or hosting-provider URL is inferred by app code;
 - the app serves as a passing reference implementation for every developer-platform capability it claims;
 - old app remains available until the observation gate closes.
+
+Naming: **Stella** is the public community bot and ecosystem coder/troubleshooter. **Athena** is the owner’s personal bot. Model and infrastructure names do not change this distinction.

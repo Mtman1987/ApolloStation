@@ -87,7 +87,7 @@ const PAGES: readonly BoundedAppPage[] = [
     eyebrow: "Creator Automation",
     description: "Tenant-configured personas, commands, redeems, overlays, research, TTS, chat consumption, cards, queues, and creator automation.",
     status: "Green donor surface",
-    note: "Stella remains the ecosystem assistant and Athena remains the owner persona; StreamWeaver consumes the shared Chat Gateway and Stellar Core contracts.",
+    note: "Stella is the public community bot and coder; Athena remains the owner's personal bot, and StreamWeaver consumes the shared Chat Gateway and Stellar Core contracts.",
     features: [
       { title: "Personas", detail: "Each tenant owns its configured bot identity, voice, memory policy, aliases, and summon behavior." },
       { title: "Commands", detail: "Preserve commands, actions, redeems, queues, featured messages, and donor behavior route by route." },

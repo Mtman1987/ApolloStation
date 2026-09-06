@@ -255,3 +255,5 @@ The following are release blockers, not cosmetic bugs:
 - the public SDK/API says a capability exists but no flagship/reference app proves it;
 - an OBS/headless output accidentally renders workspace/header chrome;
 - a fixed component works at one hard-coded header height but breaks when the header wraps or a device safe area changes.
+
+Naming: **Stella** is the public community bot and ecosystem coder/troubleshooter. **Athena** is the owner’s personal bot. Model and infrastructure names do not change this distinction.

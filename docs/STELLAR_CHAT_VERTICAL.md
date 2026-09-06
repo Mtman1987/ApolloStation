@@ -46,3 +46,5 @@ The existing `qwen-cpu-pool` runtime policy remains zero-minimum, bounded, and p
 - The real Stella route has been driven to the Free-plan 70/90/100 warning regime and 100% hard stop in automated production-like traffic.
 - A real Companion worker is optional, not fabricated: until a paired local process reports fresh tenant-compatible evidence, explicit Companion requests visibly use hosted fallback. Disconnect and reconnect are governed by the same lease.
 - Production deployment records the exact build SHA and accepts the release only after live Qwen readiness. Longer-term latency/capacity tuning remains telemetry work, not a route-safety gate.
+
+Naming: **Stella** is the public community bot and ecosystem coder/troubleshooter. **Athena** is the owner’s personal bot. Model and infrastructure names do not change this distinction.
