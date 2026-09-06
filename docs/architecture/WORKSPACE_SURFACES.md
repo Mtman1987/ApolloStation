@@ -72,3 +72,8 @@ Main pushes again trigger the existing protected release Sprite promotion after
 the owner authorized deployment on 2026-09-06. The repository opt-in variable,
 environment gate, target identity checks, full tests, atomic switch, and rollback
 remain in place. The release Sprite is web-terminal-bvesa.sprites.app.
+
+Sprite setup provisions FFmpeg 6.1.1 from a pinned, SHA-256-verified static
+release before media tests, and launches workers with that same executable on
+PATH. Release verification checks the live shell bytes, all four Home/Settings
+icon pairs, native download redirects, and app build identities.

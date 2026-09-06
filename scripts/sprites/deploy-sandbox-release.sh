@@ -35,6 +35,7 @@ service_name="apollo-sandbox"
 bootstrap_service_name="webtmux"
 llama_root="/home/sprite/runtime/llama-b6335"
 llama_ref="b6335"
+media_root="/home/sprite/runtime/ffmpeg-b6.1.1"
 llama_archive_sha256="6ffee01c8fe2481faf8b614bbd8ca9bdaa563f47d4d9e00dc44f423962812d25"
 previous_release=""
 switched=0
@@ -53,11 +54,38 @@ create_apollo_service() {
     runner_args="$runner_args,--llm-binary,$llama_root/build/bin/llama-server,--llm-cache,/home/sprite/models"
   fi
   sprite-env services create "$service_name" \
-    --cmd node \
+    --cmd "$media_root/run-node" \
     --args "$runner_args" \
     --dir "$current_link" \
     --http-port 8080 \
     --duration 15s
+}
+
+# The media renderer and its tests need the same verified FFmpeg on the Sprite.
+provision_media_runtime() {
+  mkdir -p "$media_root"
+  if [[ ! -x "$media_root/ffmpeg" ]]; then
+    local archive="$media_root/ffmpeg.gz"
+    curl -fsSL --retry 2 "https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/ffmpeg-linux-x64.gz" -o "$archive"
+    echo "bfe8a8fc511530457b528c48d77b5737527b504a3797a9bc4866aeca69c2dffa  $archive" | sha256sum --check --strict
+    gzip -dc "$archive" > "$media_root/ffmpeg.next"
+    chmod +x "$media_root/ffmpeg.next"
+    mv "$media_root/ffmpeg.next" "$media_root/ffmpeg"
+    rm -f "$archive"
+  fi
+  echo "e7e7fb30477f717e6f55f9180a70386c62677ef8a4d4d1a5d948f4098aa3eb99  $media_root/ffmpeg" | sha256sum --check --strict
+  if [[ ! -f "$media_root/LICENSE" ]]; then
+    curl -fsSL "https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/linux-x64.LICENSE" -o "$media_root/LICENSE"
+  fi
+  echo "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903  $media_root/LICENSE" | sha256sum --check --strict
+  cat > "$media_root/run-node" <<'RUNNER'
+#!/usr/bin/env bash
+export PATH="$(dirname -- "$0"):$PATH"
+exec node "$@"
+RUNNER
+  chmod +x "$media_root/run-node"
+  export PATH="$media_root:$PATH"
+  ffmpeg -version >/dev/null
 }
 
 provision_llm_runtime() {
@@ -92,11 +120,16 @@ verify_app_web_cohort() {
   local short_sha="${BUILD_SHA:0:12}"
   local app body
   for app in discord-stream-hub streamweaver hearmeout nebula-arcade stellar-core; do
-    body="$(curl -fsS --max-time 3 "http://127.0.0.1:8080/apps/$app")" || {
+    body="$(curl -fsS --max-time 3 -D - "http://127.0.0.1:8080/apps/$app")" || {
       echo "App web verification failed: $app did not render through common ingress" >&2
       return 1
     }
-    if ! grep -Fq "Build $short_sha" <<<"$body"; then
+    if [[ "$app" == "nebula-arcade" ]]; then
+      if ! grep -Fiq "x-spmt-build-sha: $BUILD_SHA" <<<"$body"; then
+        echo "Nebula Arcade is not serving build $BUILD_SHA" >&2
+        return 1
+      fi
+    elif ! grep -Fq "Build $short_sha" <<<"$body"; then
       echo "App web verification failed: $app is not serving build $short_sha" >&2
       return 1
     fi
@@ -169,6 +202,7 @@ if [[ -n "$(git -C "$release_dir" status --short)" ]]; then
 fi
 
 cd "$release_dir"
+provision_media_runtime
 npm ci --ignore-scripts
 npm run typecheck
 NODE_OPTIONS="--import=$release_dir/scripts/sprites/supervisor-test-port-isolation.mjs" timeout --signal=TERM --kill-after=15s 10m npm test

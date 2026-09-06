@@ -9,6 +9,7 @@ export function createNebulaArcadeSandboxHost(options: NebulaArcadeSandboxHostOp
   const base = createBaseNebulaHost({ ...options, port: 0, host: "127.0.0.1" });
   let basePort = 0;
   const server = createServer((request, response) => {
+    response.setHeader("x-spmt-build-sha", options.buildSha ?? "dev");
     try {
       const url = new URL(request.url ?? "/", "http://nebula-canonical.local");
       if (request.method === "GET" && (url.pathname === "/" || url.pathname === APP_PATH) && url.searchParams.get("view") === "overlay") {
