@@ -75,7 +75,7 @@ export class StreamWeaverWebControls {
       if(url.pathname==="/api/streamweaver/control/generation") {
         if(!this.generation)throw new Error("Generation settings are unavailable");
         const scope=`private:${this.actor(context).id}`;
-        if(request.method==="GET")return sendJson(response,200,{tenantId:context.tenantId,owner:this.role(context)==="owner",settings:this.generation.read(context.tenantId,scope),publicSettings:this.generation.read(context.tenantId),templates:GENERATION_TEMPLATES});
+        if(request.method==="GET")return sendJson(response,200,{tenantId:context.tenantId,owner:this.role(context)==="owner",settings:this.generation.read(context.tenantId,scope),publicSettings:this.generation.read(context.tenantId),templates:GENERATION_TEMPLATES,catalog:this.generation.catalog()});
         if(request.method!=="POST")return sendJson(response,405,{message:"Use GET or POST"});
         requireSameOrigin(request);const body=await readJsonBody(request);
         if(body.action==="settings") {

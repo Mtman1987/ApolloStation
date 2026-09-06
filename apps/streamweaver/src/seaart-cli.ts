@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 
 export interface SeaArtCommandResultV1 { stdout: string; stderr: string; }
 export interface SeaArtCommandRunnerV1 { run(args: string[], timeoutMs: number): Promise<SeaArtCommandResultV1>; }
-export interface SeaArtImageRequestV1 { prompt: string; modelNo: string; modelVerNo: string; resolution?: string; count?: number; seed?: number; provider?:string; providerParams?:Record<string,string|number|boolean>; tenantId?:string; userId?:string; requestId?:string; promptTemplate?:string; }
+export interface SeaArtImageRequestV1 { edenModel?:string; prompt: string; modelNo: string; modelVerNo: string; resolution?: string; count?: number; seed?: number; provider?:string; providerParams?:Record<string,string|number|boolean>; tenantId?:string; userId?:string; requestId?:string; promptTemplate?:string; }
 export interface SeaArtVideoRequestV1 { prompt: string; firstFrame: string; lastFrame?: string; modelNo: string; modelVerNo: string; duration?: number; negativePrompt?: string; resolution?: string; aspectRatio?: string; }
 export interface SeaArtMediaResultV1 { taskId: string; resourceUrl: string; resourceUrls: string[]; nativeGif?: boolean; provider: "seaart-cli"; }
 export class SeaArtCliUnavailableError extends Error {}
