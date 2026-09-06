@@ -26,3 +26,32 @@ test('Cloudflare configuration requires both credentials and rejects external ge
 test('refreshing one provider catalog retains the last successful entries of an unavailable provider',async()=>{
  const settings=new StreamWeaverGenerationStore(':memory:');try{settings.saveCatalog([{provider:'edenai',id:'image/generation/stabilityai',label:'Eden'}]);const service=new StreamWeaverImageGenerationService([new CloudflareStreamWeaverImageProvider(account,'fixture-key'),{id:'edenai',listModels:async()=>{throw Error('unavailable')},generateImage:async()=>assert.fail()}]);settings.saveCatalog(await service.catalog());assert.deepEqual(new Set(settings.catalog().models.map(m=>m.provider)),new Set(['cloudflare','edenai']));settings.saveCatalog([{provider:'edenai',id:'image/generation/openai/dall-e-3',label:'New Eden'}]);assert.equal(settings.catalog().models.filter(m=>m.provider==='edenai').length,1);assert.equal(settings.catalog().models.some(m=>m.provider==='cloudflare'),true);}finally{settings.close()}
 });
+
+for(const suffix of ['flux-2-klein-4b','flux-2-klein-9b'])test(`Cloudflare ${suffix} sends multipart dimensions and seeds with fixed steps`,async()=>{
+ const calls=[],provider=new CloudflareStreamWeaverImageProvider(account,'fixture-key',async(url,init)=>{calls.push({url,init});return Response.json({result:{image:png}})});
+ await provider.generateImage({...input,surface:'private',cloudflareModel:`@cf/black-forest-labs/${suffix}`,resolution:'768x1024',providerParams:{steps:4,guidance_scale:3}});
+ assert.equal(calls.length,2);assert.ok(calls[0].init.body instanceof FormData);assert.equal(calls[0].init.headers['content-type'],undefined);assert.equal(calls[0].init.body.get('width'),'768');assert.equal(calls[0].init.body.get('height'),'1024');assert.equal(calls[1].init.body.get('seed'),'42');assert.equal(calls[0].init.body.get('guidance'),'3');assert.equal(calls[0].init.body.get('steps'),null);
+ await assert.rejects(()=>provider.generateImage({...input,surface:'private',cloudflareModel:`@cf/black-forest-labs/${suffix}`,providerParams:{steps:5}}),/exactly 4/);assert.equal(calls.length,2);
+});
+
+test('Cloudflare Leonardo models use their own bounds and accept Phoenix binary output',async()=>{
+ const calls=[],provider=new CloudflareStreamWeaverImageProvider(account,'fixture-key',async(url,init)=>{calls.push({url,body:JSON.parse(init.body)});return url.endsWith('phoenix-1.0')?new Response(Buffer.from(png,'base64'),{headers:{'content-type':'image/png'}}):Response.json({result:{image:png}})});
+ const lucid=await provider.generateImage({...input,count:1,cloudflareModel:'@cf/leonardo/lucid-origin',resolution:'1024x768',providerParams:{steps:40,guidance_scale:0}});assert.equal(lucid.binaryImages.length,1);assert.equal(calls[0].body.num_steps,40);assert.equal(calls[0].body.guidance,0);assert.equal(calls[0].body.height,768);
+ const phoenix=await provider.generateImage({...input,count:1,cloudflareModel:'@cf/leonardo/phoenix-1.0',providerParams:{steps:50,guidance_scale:2,negative_prompt:'blurry'}});assert.equal(phoenix.binaryImages[0].base64,png);assert.equal(calls[1].body.negative_prompt,'blurry');assert.equal(calls[1].body.num_steps,50);
+ await assert.rejects(()=>provider.generateImage({...input,cloudflareModel:'@cf/leonardo/lucid-origin',providerParams:{steps:41}}),/1–40/);
+ await assert.rejects(()=>provider.generateImage({...input,cloudflareModel:'@cf/leonardo/phoenix-1.0',providerParams:{guidance_scale:0}}),/guidance/);assert.equal(calls.length,2);
+});
+
+test('Klein 9B is rejected by public settings and the worker derives private scope from media visibility',async()=>{
+ const model='@cf/black-forest-labs/flux-2-klein-9b',settings=new StreamWeaverGenerationStore(':memory:'),seen=[],results=[],failures=[];let claim=0;
+ try{
+  assert.throws(()=>settings.save('tenant','public',{cloudflareModel:model}),/private generation/);
+  settings.save('tenant','private:viewer',{provider:'cloudflare',cloudflareModel:model,enhance:false,contentModeration:false});
+  const provider=new CloudflareStreamWeaverImageProvider(account,'fixture-key',async(_url,init)=>{seen.push(init);return Response.json({result:{image:png}})});
+  await assert.rejects(()=>provider.generateImage({...input,cloudflareModel:model}),/private generation/);
+  const job={id:'private-job',tenantId:'tenant',billedUserId:'viewer',capabilityId:'streamweaver.image.generate.v1',leaseId:'lease',fencingEpoch:1,input:{prompt:'Mountain',mediaVisibility:'private'}};
+  const client={reportExecutionWorker:async()=>{},claimAnyExecutionJob:async()=>++claim===1?job:null,heartbeatExecutionJob:async()=>{},uploadMediaAsset:async()=>({id:'asset'}),succeedExecutionJob:async(...args)=>results.push(args.at(-1)),failExecutionJob:async(...args)=>failures.push(args)};
+  await new StreamWeaverImageWorker(client,new StreamWeaverImageGenerationService([provider]),{workerId:'worker',modelNo:'',modelVerNo:'',settings}).runOnce();
+  assert.equal(failures.length,0);assert.equal(seen.length,1);assert.equal(results[0].resourceUrls,undefined);assert.deepEqual(results[0].mediaAssetIds,['asset']);
+ }finally{settings.close();}
+});

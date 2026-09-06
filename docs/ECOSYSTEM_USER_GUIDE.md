@@ -73,7 +73,7 @@ In Stream operations, **Speech players** shows recent authorized TTS output list
 
 Configure welcomes, shoutout mode, BRB clip source and partner entries in Stream operations. Shoutout settings include optional AI greeting instructions, a fallback greeting, voice, automatic cooldown, excluded usernames and Discord delivery. Greetings use a saved assistant job and fall back when generation fails. Manual/voice shoutouts retain their cooldown-bypass behavior while honoring exclusions. Owners can download the last 5,000 shoutout audit entries.
 
-Image Studio supports private generation, prompt templates/enhancement, model/version identifiers, resolution, count, seed and bounded provider parameters. SeaArt, Eden, Cloudflare FLUX.1 Schnell and Pollinations are constructed providers. SeaArt model/LoRA browsing, character workflow and additional legacy providers are still open; a provider name or preference alone does not make those functions available. Generated images use shared media ownership and visibility controls.
+Image Studio supports private generation, prompt templates/enhancement, model/version identifiers, resolution, count, seed and bounded provider parameters. SeaArt, Eden, Cloudflare and Pollinations are constructed providers. SeaArt model/LoRA browsing, character workflow and additional legacy providers are still open; a provider name or preference alone does not make those functions available. Generated images use shared media ownership and visibility controls.
 
 The Games page offers Pokémon collections, packs, trades, gym battles and seasons. Its Pokédex searches loaded sets by name, card ID, type or national Pokédex number and shows your owned counts. Download your collection as JSON, or an owned card as PNG when provider downloads are enabled. Owners load sets and grant packs; the Eevee pack becomes available when at least nine Eevee-family cards are loaded.
 
@@ -129,7 +129,7 @@ Rider eligibility and reward terms freeze for a request. Interrupted rides resum
 
 ### Cloudflare image generation
 
-Image Studio now offers **Cloudflare → FLUX.1 Schnell** in both private and public generation settings when its worker credentials are configured. It supports one to four images, a seed and 1–8 steps. Cloudflare uses its own default image size; the resolution selector applies to Eden/SeaArt. Prompts must fit within 2,048 characters. Other Cloudflare models, LoRAs and reference-image workflows remain pending.
+Image Studio now offers **Cloudflare → FLUX.1 Schnell** in both private and public generation settings when its worker credentials are configured. It supports one to four images, a seed and 1–8 steps. Cloudflare uses its own default image size; the resolution selector applies to Eden/SeaArt. Prompts must fit within 2,048 characters. The additional model choices are described below. LoRAs and reference-image workflows remain pending.
 
 Private results go to Media Files. Public chat image actions publish managed image links that expire after seven days and can be revoked or deleted through Media Files. Storage retries reuse the generated images. Existing prompt-check controls apply; when enabled, checks still require the configured Eden moderation service. Inactive or sandbox runtimes do not call Cloudflare.
 
@@ -144,3 +144,9 @@ Completed images use the same managed storage as Cloudflare: private results sta
 When a chat image or cross-app action takes longer than the initial wait, StreamWeaver acknowledges that it is queued and later replies to the original message with the completed result. Pending replies survive a restart and retry provider outages without starting another job or charging again. Failed jobs receive a short failure reply; activity retains the details. Delivery pauses when that chat destination is inactive.
 
 Add **Generated images** from StreamWeaver’s overlay widgets to show completed public chat images for 30 seconds. The widget displays up to four images and the requester’s chat name. Private Image Studio images stay private. Both fast and delayed public image jobs feed this widget. Real OBS rendering and provider delivery still need live acceptance.
+
+### Additional Cloudflare image models
+
+Cloudflare now offers FLUX.2 Klein 4B, Lucid Origin and Phoenix 1.0 for public or private generation, plus FLUX.2 Klein 9B for private generation only. Save the model in the appropriate Image Studio settings. All support one to four images and prompts up to 2,048 characters. Unlike FLUX.1 Schnell, these models use the selected resolution.
+
+Klein runs a fixed four steps. Lucid accepts 1–40 steps; Phoenix accepts 1–50. Advanced JSON uses `steps` and `guidance_scale` (0–10, or 2–10 for Phoenix); Phoenix also supports `negative_prompt`. Unsupported settings fail before the provider request. Reference-image uploads are not yet available. Provider account/model access and actual rendered output still require acceptance.
