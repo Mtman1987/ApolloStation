@@ -259,3 +259,13 @@ test('AI flow history recovers only owned flow jobs and completion preserves edi
     assert.match((await exhausted.json()).message,/after 3 drafts/);
   });
 });
+
+test('owner role import reaches check-in controls and foreign-origin writes are rejected', async()=>{
+ await fixture(async({cookie,streamBase})=>{
+  const path=streamBase+'/api/streamweaver/control/checkin-role',body={guildId:'123456',roleId:'654321',kind:'crew',members:[{id:'100000',name:'Role member',imageUrl:''}]};
+  const result=await fetch(path,{method:'POST',headers:{cookie,origin:streamBase,'content-type':'application/json'},body:JSON.stringify(body)});assert.equal(result.status,200);assert.equal((await result.json()).imported,1);
+  const state=await (await fetch(streamBase+'/api/streamweaver/control/stream-operations',{headers:{cookie}})).json();assert.equal(state.partners[0].name,'Role member');
+  const forged=await fetch(path,{method:'POST',headers:{cookie,origin:'https://foreign.example','content-type':'application/json'},body:JSON.stringify({...body,members:[]})});assert.notEqual(forged.status,200);
+  const anonymous=await fetch(path,{method:'POST',headers:{origin:streamBase,'content-type':'application/json'},body:JSON.stringify(body)});assert.notEqual(anonymous.status,200);
+ });
+});

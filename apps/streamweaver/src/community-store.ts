@@ -1,6 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
 import { createHash } from "node:crypto";
-export interface StreamPartner { id:string; name:string; kind:"partner"|"crew"|"mod"|"community"; imageUrl:string; inviteUrl:string; }
+export interface StreamPartner { id:string; name:string; kind:"partner"|"crew"|"mod"|"community"; imageUrl:string; inviteUrl:string; source?:{guildId:string;roleId:string;syncedAt:string}; }
 export interface StreamRedeem { id:string; title:string; price:number; award:number; acceptance:"streamer"|"spmt"|"either"; firstPerStream:boolean; text:string; mediaUrl:string; enabled:boolean; rewardId:string; }
 export const STREAM_EVENT_AWARDS=["twitch:follow","twitch:subscribe","twitch:resubscribe","twitch:gift-bomb","twitch:cheer","twitch:raid","youtube:newSponsorEvent","youtube:memberMilestoneChatEvent","youtube:membershipGiftingEvent","youtube:giftMembershipReceivedEvent","youtube:superChatEvent","youtube:superStickerEvent"] as const;
 export interface StreamEventAward {event:string;points:number;perUnit:boolean;enabled:boolean;}
@@ -20,7 +20,17 @@ export class StreamWeaverCommunityStore {
   providerDiagnostics(tenant:string){if(!this.db.prepare("SELECT name FROM sqlite_master WHERE name='sw_twitch_event_retries'").get())return [];return this.db.prepare("SELECT id,attempts,retry_at AS retryAt,error FROM sw_twitch_event_retries WHERE tenant=? ORDER BY retry_at DESC LIMIT 100").all(tenant);}
   configuredTenants(){return this.db.prepare("SELECT DISTINCT tenant FROM sw_community_config").all().map(r=>String(r.tenant));}
   partners(tenant:string){return this.list<StreamPartner>(tenant,"partner");}
-  savePartner(tenant:string,input:StreamPartner){const value:StreamPartner={id:id(input.id),name:text(input.name,120),kind:input.kind,imageUrl:url(input.imageUrl),inviteUrl:url(input.inviteUrl)};if(!["partner","crew","mod","community"].includes(value.kind))throw new Error("Choose a partner group");this.save(tenant,"partner",value.id,value);return value;}
+  savePartner(tenant:string,input:StreamPartner){const value:StreamPartner={id:id(input.id),name:text(input.name,120),kind:input.kind,imageUrl:url(input.imageUrl),inviteUrl:url(input.inviteUrl)};if(!["partner","crew","mod","community"].includes(value.kind))throw new Error("Choose a partner group");const source=this.partners(tenant).find(p=>p.id===value.id)?.source;if(source)value.source=source;this.save(tenant,"partner",value.id,value);return value;}
+  importPartnerRole(tenant:string,input:{guildId:string;roleId:string;kind:StreamPartner["kind"];members:Array<{id:string;name:string;imageUrl:string}>}){
+    if(!/^[0-9]{5,30}$/.test(input.guildId)||!/^[0-9]{5,30}$/.test(input.roleId)||!["partner","crew","mod","community"].includes(input.kind)||!Array.isArray(input.members)||input.members.length>10000)throw new Error("Choose a Discord server, role and check-in group");
+    const seen=new Set<string>();for(const m of input.members){if(!m||!/^[0-9]{5,30}$/.test(m.id)||seen.has(m.id))throw new Error("Role members must have unique Discord IDs");seen.add(m.id);text(m.name,120);url(m.imageUrl);}
+    this.db.exec("BEGIN IMMEDIATE");try{
+      const old=this.partners(tenant),source={guildId:input.guildId,roleId:input.roleId,syncedAt:new Date().toISOString()},ids=new Set<string>();
+      for(const m of input.members){const key=`discord:${input.guildId}:${input.roleId}:${input.kind}:${m.id}`;ids.add(key);const prior=old.find(p=>p.id===key);this.save(tenant,"partner",key,{id:key,name:m.name,kind:input.kind,imageUrl:m.imageUrl,inviteUrl:prior?.inviteUrl??"",source});}
+      for(const p of old)if(p.source?.guildId===input.guildId&&p.source.roleId===input.roleId&&p.kind===input.kind&&!ids.has(p.id))this.removePartner(tenant,p.id);
+      this.db.exec("COMMIT");return {imported:ids.size,source};
+    }catch(error){this.db.exec("ROLLBACK");throw error;}
+  }
   removePartner(tenant:string,partner:string){this.db.prepare("DELETE FROM sw_community_config WHERE tenant=? AND kind='partner' AND id=?").run(tenant,partner);}
   redeems(tenant:string){return this.list<StreamRedeem>(tenant,"redeem").map(r=>({...r,award:r.award??0,acceptance:r.acceptance??"streamer" as const,firstPerStream:r.firstPerStream??false}));}
   saveRedeem(tenant:string,input:StreamRedeem){
@@ -48,7 +58,21 @@ export class StreamWeaverCommunityStore {
       this.db.exec("COMMIT");return message;
     }catch(error){this.db.exec("ROLLBACK");throw error;}
   }
-  checkin(tenant:string,actor:string,partnerId:string,source:string,requestId:string){const partner=this.partners(tenant).find(p=>p.id===partnerId);if(!partner)throw new Error("Partner was not found");const request=id(requestId);this.db.exec("BEGIN IMMEDIATE");try{const prior=this.db.prepare("SELECT actor,partner,source FROM sw_checkins WHERE tenant=? AND request=?").get(tenant,request);if(prior&&(prior.actor!==actor||prior.partner!==partnerId||prior.source!==source))throw new Error("Request identifier was used for another check-in");this.db.prepare("INSERT OR IGNORE INTO sw_checkins VALUES(?,?,?,?,?,?)").run(tenant,request,actor,partnerId,text(source,100),new Date().toISOString());const result={partner,userTotal:Number(this.db.prepare("SELECT COUNT(*) AS n FROM sw_checkins WHERE tenant=? AND actor=?").get(tenant,actor)!.n),partnerTotal:Number(this.db.prepare("SELECT COUNT(*) AS n FROM sw_checkins WHERE tenant=? AND partner=?").get(tenant,partnerId)!.n)};this.enqueue(tenant,`checkin:${request}`,"streamweaver.checkin.v1",{...result,actor});this.db.exec("COMMIT");return result;}catch(error){this.db.exec("ROLLBACK");throw error;}}
+  checkin(tenant:string,actor:string,partnerId:string,sourceInput:string,requestId:string){
+    const request=id(requestId),source=text(sourceInput,100);text(actor,300);
+    this.db.exec("BEGIN IMMEDIATE");try{
+      const prior=this.db.prepare("SELECT actor,partner,source FROM sw_checkins WHERE tenant=? AND request=?").get(tenant,request);
+      if(prior){
+        if(prior.actor!==actor||prior.partner!==partnerId||prior.source!==source)throw new Error("Request identifier was used for another check-in");
+        const saved=this.db.prepare("SELECT body FROM sw_community_outbox WHERE tenant=? AND id=?").get(tenant,createHash("sha256").update(`checkin:${request}`).digest("hex"));
+        if(saved){const {partner,userTotal,partnerTotal}=JSON.parse(String(saved.body));this.db.exec("COMMIT");return {partner:partner as StreamPartner,userTotal:Number(userTotal),partnerTotal:Number(partnerTotal)};}
+      }
+      const partner=this.partners(tenant).find(p=>p.id===partnerId);if(!partner)throw new Error("Partner was not found");
+      this.db.prepare("INSERT OR IGNORE INTO sw_checkins VALUES(?,?,?,?,?,?)").run(tenant,request,actor,partnerId,source,new Date().toISOString());
+      const result={partner,userTotal:Number(this.db.prepare("SELECT COUNT(*) AS n FROM sw_checkins WHERE tenant=? AND actor=?").get(tenant,actor)!.n),partnerTotal:Number(this.db.prepare("SELECT COUNT(*) AS n FROM sw_checkins WHERE tenant=? AND partner=?").get(tenant,partnerId)!.n)};
+      this.enqueue(tenant,`checkin:${request}`,"streamweaver.checkin.v1",{...result,actor});this.db.exec("COMMIT");return result;
+    }catch(error){this.db.exec("ROLLBACK");throw error;}
+  }
   checkinStats(tenant:string){return{partners:this.db.prepare("SELECT partner,COUNT(*) AS count FROM sw_checkins WHERE tenant=? GROUP BY partner ORDER BY count DESC").all(tenant),sources:this.db.prepare("SELECT source,COUNT(*) AS count FROM sw_checkins WHERE tenant=? GROUP BY source ORDER BY count DESC").all(tenant),users:this.db.prepare("SELECT actor,COUNT(*) AS count FROM sw_checkins WHERE tenant=? GROUP BY actor ORDER BY count DESC LIMIT 500").all(tenant)};}
   recordWatchtime(tenant:string,provider:string,chatters:Array<{id:string;username:string}>,now=Date.now()){const bucket=Math.floor(now/60000);this.db.exec("BEGIN IMMEDIATE");try{for(const user of chatters)this.db.prepare("INSERT INTO sw_watchtime VALUES(?,?,?,?,1,?) ON CONFLICT(tenant,provider,user_id) DO UPDATE SET minutes=sw_watchtime.minutes+CASE WHEN excluded.last_bucket>sw_watchtime.last_bucket THEN 1 ELSE 0 END,last_bucket=MAX(sw_watchtime.last_bucket,excluded.last_bucket),username=excluded.username").run(tenant,provider,user.id,user.username,bucket);this.db.exec("COMMIT");}catch(error){this.db.exec("ROLLBACK");throw error;}}
   watchtime(tenant:string,provider:string,userId:string){return this.db.prepare("SELECT username,minutes FROM sw_watchtime WHERE tenant=? AND provider=? AND user_id=?").get(tenant,provider,userId)??{minutes:0};}

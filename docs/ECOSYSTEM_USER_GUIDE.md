@@ -84,3 +84,9 @@ Linked chat users can use `!pokemon help` for team, trade and battle commands, i
 The configured main-branch promotion targets the Apollo Sprite `testing-968/web-terminal`. Its successful deployment does not replace any Fly app in `mtman-new`. Provider credentials, outbound execution policy, authenticated browser use, migration reconciliation and rollback rehearsal are separate acceptance requirements.
 
 Continue the current StreamWeaver checklist before starting the next live-app audit. The next app receives its own source audit and documentation delta.
+
+## Discord check-in groups
+
+Owners can open StreamWeaver → Stream operations → Import Discord check-in group, enter a server and role configured in Discord Stream Hub, and choose partner, crew, mod or community. Import again to refresh the saved roster. This is an explicit snapshot, not continuous Discord synchronization. Bots are excluded. Use **Edit / invite override** on a partner to set its invitation link; refresh preserves that override and removes people who left the imported role without changing manual partners.
+
+Discord Stream Hub must be installed and connected, and its bot must have access to the server and member-list intent. Live lookup is unavailable when provider access is disabled. Both app pages must use the same workspace. Check-in retries keep the originally recorded totals and partner even if the roster later changes. Bulk rides, front-seat rewards and check-in greeting/reward flows remain in the parity checklist.

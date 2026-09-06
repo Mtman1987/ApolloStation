@@ -93,6 +93,12 @@ export class StreamWeaverWebControls {
         response.setHeader("content-disposition",'attachment; filename="shoutout-audit.json"');
         return sendJson(response,200,{schemaVersion:1,tenantId:context.tenantId,generatedAt:new Date().toISOString(),limit:5000,entries:this.shoutoutStore?.auditLog(context.tenantId)??[]});
       }
+      if(url.pathname==="/api/streamweaver/control/checkin-role"){
+        this.requireOwner(context);if(request.method!=="POST")return sendJson(response,405,{message:"Use POST"});requireSameOrigin(request);
+        if(!this.community)throw new Error("Check-in storage is unavailable");
+        const body=await readJsonBody(request,3*1024*1024);
+        return sendJson(response,200,this.community.importPartnerRole(context.tenantId,body as unknown as Parameters<StreamWeaverCommunityStore["importPartnerRole"]>[1]));
+      }
       if(url.pathname==="/api/streamweaver/control/stream-operations"){
         if(!this.community)throw new Error("Stream operations storage is not configured");
         if(request.method==="GET"){

@@ -109,3 +109,11 @@ HearMeOut checks room admission before catalog, join, invocation and result poll
 Authenticated Pokémon control routes expose searchable, paged `pokedex`, current-user collection `export`, and owned `card` details. PNG download requires active operation mode and ownership, constructs a fixed `images.pokemontcg.io` URL from bounded identifiers, rejects redirects, enforces a 12 MiB limit and validates PNG bytes. Catalog-provided URLs cannot redirect the server fetch. JSON export remains available without provider egress.
 
 Native `pokemon-pack`, `pokemon-collection`, `pokemon-trade` and `gym-battle` widgets project explicit card fields from the existing outbox. Gym updates replace displayed state with current HP and turn information. Tests cover actual gateway command dispatch, inventory isolation, trade/battle transactions, download restrictions and overlay projection. Provider downloads and rendered OBS/mobile presentation still require acceptance.
+
+## Check-in role imports
+
+Owner-only DSH `GET /api/discord-stream-hub/control/checkin-members` validates the tenant-configured guild and exact role, reads Discord member pages with the existing scoped grant, excludes bots and rejects oversized or non-advancing results. It requires active operation mode. Discord requires the privileged member-list intent for [List Guild Members](https://docs.discord.com/developers/resources/guild#list-guild-members); a failed lookup never returns a partial replacement roster.
+
+StreamWeaver’s owner UI verifies the returned workspace before submitting the roster to owner-only, same-origin `POST /api/streamweaver/control/checkin-role` (3 MiB maximum). This is owner-curated display data, not canonical identity or role authorization. A SQLite transaction validates all member IDs and replaces only that guild/role/group snapshot, preserving existing invitation overrides. Manual entries and other tenants are untouched. Refresh is explicit. Imported Discord IDs never create canonical XP wallets or authorize privileged commands.
+
+Check-in redelivery validates actor, partner and source against the saved request and returns its durable outbox outcome, preserving original totals and partner details after later changes or removal. Remaining bulk/front-seat/greeting and reward-flow parity stays open.

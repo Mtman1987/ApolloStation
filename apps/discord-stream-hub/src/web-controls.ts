@@ -81,6 +81,13 @@ export class DshWebControls {
     if (!url.pathname.startsWith("/api/discord-stream-hub/control")) return false;
     try {
       const context = await fetchAppSessionContext({ appId: "discord-stream-hub", spmtOrigin: this.options.spmtOrigin, request });
+      if(url.pathname==="/api/discord-stream-hub/control/checkin-members"){
+        this.requireOwner(context);if(request.method!=="GET")return sendJson(response,405,{message:"Use GET"});
+        if(this.options.operationMode!=="active")throw new Error("Live Discord role lookup is disabled in this environment");
+        if(!this.liveDiscord)throw new Error("Connect Discord Stream Hub before importing role members");
+        const guild=this.guild(context.tenantId,url.searchParams.get("guildId"));if(isSimulationDiscordId(guild))throw new Error("Choose a live Discord server for role import");
+        return sendJson(response,200,{tenantId:context.tenantId,...await this.liveDiscord.checkinRoleMembers(context.tenantId,guild,String(url.searchParams.get("roleId")??""))});
+      }
       if(request.method==="GET"&&url.pathname==="/api/discord-stream-hub/control/calendar-image"){
         const guild=url.searchParams.get("guildId")?this.guild(context.tenantId,url.searchParams.get("guildId")):"workspace",month=String(url.searchParams.get("month")??this.now().slice(0,7));
         const png=await renderDshCalendarPng(this.requireCalendar().month(context.tenantId,guild,month),month,this.options.fetchImpl,this.now().slice(0,10));response.writeHead(200,{"content-type":"image/png","cache-control":"no-store","content-disposition":`attachment; filename="community-calendar-${month}.png"`});response.end(png);return true;

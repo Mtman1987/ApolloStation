@@ -37,6 +37,20 @@ export class DshDiscordApi {
   async createMessage(tenantId:string,channelId:string,payload:Record<string,unknown>){const body=await this.request<{id?:string}>(tenantId,`/channels/${snowflake(channelId,"channelId")}/messages`,"POST",payload);if(!body?.id)throw new Error("Discord did not return a message id");return body.id;}
   async getUser(tenantId:string,userId:string){return (await this.request<{id:string;avatar?:string|null}>(tenantId,`/users/${snowflake(userId,"userId")}`,"GET",undefined,"guilds:read"))!;}
   async listGuilds(tenantId:string){return await this.request<Array<{id?:string;name?:string;icon?:string|null}>>(tenantId,"/users/@me/guilds","GET",undefined,"guilds:read")??[];}
+  async checkinRoleMembers(tenantId:string,guildId:string,roleId:string){
+    const guild=snowflake(guildId,"guildId"),role=snowflake(roleId,"roleId");
+    const roles=await this.request<Array<{id:string;name:string}>>(tenantId,`/guilds/${guild}/roles`,"GET",undefined,"guilds:read");
+    const selected=roles?.find(r=>r.id===role);if(!selected)throw new Error("Choose a role in the configured Discord server");
+    const members:Array<{id:string;name:string;imageUrl:string}>=[];let after="0";
+    for(let page=0;page<10;page++){
+      const rows=await this.request<Array<{user?:{id:string;username:string;global_name?:string;avatar?:string;bot?:boolean};nick?:string;roles?:string[]}>>(tenantId,`/guilds/${guild}/members?limit=1000&after=${after}`,"GET",undefined,"guilds:read");
+      if(!Array.isArray(rows)||rows.length>1000)throw new Error("Discord returned an invalid member page");
+      for(const row of rows){const u=row.user;if(!u||u.bot||!row.roles?.includes(role))continue;snowflake(u.id,"memberId");members.push({id:u.id,name:String(row.nick||u.global_name||u.username).slice(0,120),imageUrl:u.avatar&&/^[a-zA-Z0-9_]{1,100}$/.test(u.avatar)?`https://cdn.discordapp.com/avatars/${u.id}/${u.avatar}.png?size=128`:""});}
+      if(rows.length<1000)return {guildId:guild,roleId:role,roleName:selected.name,members,syncedAt:new Date().toISOString()};
+      const next=snowflake(rows.at(-1)?.user?.id??"","memberId");if(BigInt(next)<=BigInt(after))throw new Error("Discord member pagination did not advance");after=next;
+    }
+    throw new Error("The member list exceeds 10000 entries; no partial role import was returned");
+  }
   async listGuildChannels(tenantId:string,guildId:string){return await this.request<Array<{id?:string;name?:string;type?:number;position?:number}>>(tenantId,`/guilds/${snowflake(guildId,"guildId")}/channels`,"GET",undefined,"channels:read")??[];}
   async editMessage(tenantId:string,channelId:string,messageId:string,payload:Record<string,unknown>){return this.request(tenantId,`/channels/${snowflake(channelId,"channelId")}/messages/${snowflake(messageId,"messageId")}`,"PATCH",payload);}
   async deleteMessage(tenantId:string,channelId:string,messageId:string){await this.request(tenantId,`/channels/${snowflake(channelId,"channelId")}/messages/${snowflake(messageId,"messageId")}`,"DELETE");}
