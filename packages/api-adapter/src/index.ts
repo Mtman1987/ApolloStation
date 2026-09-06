@@ -7,6 +7,7 @@ export class PlatformApiAdapter { constructor(private readonly operations:Platfo
 if(request.method==="GET"&&url.pathname==="/v1/session"){operation="session.get";input={};}
 else if(request.method==="GET"&&url.pathname==="/v1/identity/providers"){operation="identity.providers.list";input={};} else if(request.method==="DELETE"&&/^\/v1\/identity\/providers\/[^/]+\/[^/]+$/.test(url.pathname)){operation="identity.providers.unlink";input={provider:seg(url,4),providerUserId:seg(url,5)};}
 else if(request.method==="GET"&&url.pathname==="/v1/workspace/profile"){operation="workspace.get";input={tenantId:reqTenant(tenantId)};} else if(request.method==="PATCH"&&url.pathname==="/v1/workspace/profile"){operation="workspace.update";input={tenantId:reqTenant(tenantId),expectedRevision:body.expectedRevision,patch:body.patch};}
+else if(request.method==="GET"&&url.pathname==="/v1/xp/supply"){operation="xp.supply";input={tenantId:reqTenant(tenantId)};}
 else if(request.method==="GET"&&url.pathname==="/v1/xp/balance"){operation="xp.balance";input={tenantId:reqTenant(tenantId),userId:url.searchParams.get("userId")??""};}
 else if(request.method==="GET"&&url.pathname==="/v1/xp/wallet"){operation="xp.wallet";input={tenantId:reqTenant(tenantId),userId:url.searchParams.get("userId")??""};}
 else if(request.method==="GET"&&url.pathname==="/v1/xp/ledger"){const limit=url.searchParams.get("limit");operation="xp.ledger";input={tenantId:reqTenant(tenantId),userId:url.searchParams.get("userId")??"",...(limit===null?{}:{limit:Number(limit)})};}

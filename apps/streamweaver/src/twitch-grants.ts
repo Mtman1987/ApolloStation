@@ -3,6 +3,7 @@ import type { StreamWeaverTwitchGrantSourceV1, StreamWeaverTwitchGrantResultV1 }
 
 /** OAuth scopes belong to the shared grant authority. This map never supplies refresh tokens. */
 export const STREAMWEAVER_TWITCH_COMMAND_SCOPES:Readonly<Record<string,readonly string[]>>=Object.freeze({
+  "events:read":[],"events:rewards":["channel:manage:redemptions"],"events:follow":["moderator:read:followers"],"events:subscriptions":["channel:read:subscriptions"],"events:cheer":["bits:read"],"rewards:manage":["channel:manage:redemptions"],"chatters:read":["moderator:read:chatters"],"clips:read":[],"rewards:read":["channel:read:redemptions"],
   "clips:write":["clips:edit"],"followers:read":["moderator:read:followers"],"streams:read":[],
   "channel:manage":["channel:manage:broadcast"],"shoutouts:manage":["moderator:manage:shoutouts"],"users:read":[],
 });
@@ -11,7 +12,7 @@ export class SpmtStreamWeaverTwitchGrantSource implements StreamWeaverTwitchGran
   async getGrant(input:{tenantId:string;capability:string}):Promise<StreamWeaverTwitchGrantResultV1>{
     const scopes=Object.hasOwn(STREAMWEAVER_TWITCH_COMMAND_SCOPES,input.capability)?STREAMWEAVER_TWITCH_COMMAND_SCOPES[input.capability]:undefined;
     if(!scopes)return {status:"unavailable",reason:"This Twitch command capability is not registered."};
-    if(!this.allowWrites&&["clips:write","channel:manage","shoutouts:manage"].includes(input.capability))return {status:"unavailable",reason:"This environment captures provider output and does not allow live Twitch changes."};
+    if(!this.allowWrites&&["clips:write","channel:manage","shoutouts:manage","rewards:manage"].includes(input.capability))return {status:"unavailable",reason:"This environment captures provider output and does not allow live Twitch changes."};
     const broadcasterId=this.broadcaster(input.tenantId);
     if(!broadcasterId)return {status:"unavailable",reason:"Choose your linked Twitch broadcaster in StreamWeaver Integrations."};
     try{

@@ -28,7 +28,7 @@ test("new StreamWeaver tenants are blank while the curated library contains comp
     assert.deepEqual(store.listInstalls("tenant-a"), []);
     assert.deepEqual(store.listInstalledPackages("tenant-a"), []);
     const library = legacyCommunityPackages();
-    assert.equal(library.length, 50);
+    assert.equal(library.length, 53);
     assert.equal(library.every((item) => item.installUnit === "flow" && item.author.id === "mtman1987"), true);
     assert.equal(library.every((item) => item.actions.length > 0), true);
     assert.equal(library.every((item) => item.commands.filter((command) => command.role === "primary").length === 1), true);

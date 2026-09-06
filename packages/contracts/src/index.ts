@@ -291,7 +291,7 @@ export function assertSpmtSuiteActionJobInputV1(value: unknown): SpmtSuiteAction
 function suiteAction<const I extends string>(id: I, risk: SpmtSuiteActionRiskV1, minimumRole: SpmtSuiteActionActorRoleV1) { return { id, risk, minimumRole }; }
 function suiteRoleLevel(role: SpmtSuiteActionActorRoleV1) { return { guest: 0, member: 1, moderator: 2, admin: 3, owner: 4 }[role]; }
 
-export const PROVIDER_GRANT_PROVIDERS = ["discord", "twitch", "kick", "xbox", "github", "livekit"] as const;
+export const PROVIDER_GRANT_PROVIDERS = ["discord", "twitch", "kick", "xbox", "github", "livekit", "youtube"] as const;
 export type ProviderGrantProviderV1 = (typeof PROVIDER_GRANT_PROVIDERS)[number];
 
 export interface ProviderGrantRequestV1 {
@@ -416,7 +416,7 @@ export function assertRuntimePolicyV1(value: RuntimePolicyV1): RuntimePolicyV1 {
   return value;
 }
 
-export const CHAT_PROVIDERS = ["twitch", "discord", "kick"] as const;
+export const CHAT_PROVIDERS = ["twitch", "discord", "kick", "youtube"] as const;
 export type ChatProviderV1 = (typeof CHAT_PROVIDERS)[number];
 
 /** Shared, tenant-scoped test surface used by app builders without contacting a real provider. */

@@ -105,7 +105,7 @@ test("one-way donor import is replay-safe and never overwrites a newer provider 
   } finally { f.close(); }
 });
 
-test("official Twitch, Discord, and Kick refresh adapters use form posts and preserve rotated refresh tokens", async () => {
+test("official Twitch, Discord, Kick, and YouTube refresh adapters use form posts and preserve rotated refresh tokens", async () => {
   const requests = [];
   const adapters = createFirstPartyProviderRefreshAdapters(async (url, init) => {
     requests.push({ url, init });
@@ -116,7 +116,7 @@ test("official Twitch, Discord, and Kick refresh adapters use form posts and pre
     assert.equal(result.expiresAt, "2026-08-28T13:00:00.000Z");
     assert.match(result.refreshToken, /refresh-token$/);
   }
-  assert.deepEqual(requests.map((request) => new URL(request.url).host), ["id.twitch.tv", "discord.com", "id.kick.com"]);
+  assert.deepEqual(requests.map((request) => new URL(request.url).host), ["id.twitch.tv", "discord.com", "id.kick.com", "oauth2.googleapis.com"]);
   assert.match(requests[0].init.body, /client_secret=provider-client-secret/);
   assert.match(requests[1].init.headers.authorization, /^Basic /);
   assert.doesNotMatch(requests[1].init.body, /provider-client-secret/);

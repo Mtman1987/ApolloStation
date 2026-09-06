@@ -143,9 +143,9 @@ test("Discord gateway provisions a Nebula-only webhook, applies avatar identity,
   await handle.close();
 });
 
-test("first-party adapter factory exposes all three drivers and matching senders", () => {
+test("first-party adapter factory exposes Twitch, Discord, Kick and YouTube drivers and matching senders", () => {
   const f = socketFactoryCapture();
   const adapters = createFirstPartyChatProviderAdapters({ websocketFactory: f.factory, fetch: async () => ({ ok: true, status: 200, async json() { return {}; }, async text() { return ""; } }) });
-  assert.deepEqual(adapters.drivers.map((driver) => driver.provider), ["twitch", "discord", "kick"]);
-  assert.deepEqual(adapters.senders.map((sender) => sender.provider), ["twitch", "discord", "kick"]);
+  assert.deepEqual(adapters.drivers.map((driver) => driver.provider), ["twitch", "discord", "kick", "youtube"]);
+  assert.deepEqual(adapters.senders.map((sender) => sender.provider), ["twitch", "discord", "kick", "youtube"]);
 });

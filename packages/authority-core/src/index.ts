@@ -304,6 +304,22 @@ export class AuthorityService {
     return this.store.listXp(tenantId, userId).reduce((total, item) => total + item.delta, 0);
   }
 
+  /** Outstanding spendable units, never lifetime earnings. Only the aggregate leaves authority. */
+  getXpSupply() {
+    const balances = new Map<string, bigint>();
+    for (const entry of this.store.listJournal()) {
+      if (entry.kind !== "xp") continue;
+      const event = entry.payload as unknown as XpEventV1;
+      if (!Number.isSafeInteger(event.delta)) throw new AuthorityValidationError("XP ledger contains an invalid amount");
+      const key = JSON.stringify([event.tenantId, event.userId]);
+      balances.set(key, (balances.get(key) ?? 0n) + BigInt(event.delta));
+    }
+    let total = 0n;
+    for (const balance of balances.values()) if (balance > 0n) total += balance;
+    if (total > BigInt(Number.MAX_SAFE_INTEGER)) throw new AuthorityValidationError("XP supply exceeds the supported range");
+    return { spendableSupply: Number(total), measuredAt: this.now() };
+  }
+
   getXpLedger(tenantId: string, userId: string, limit = 100): XpEventV1[] {
     requireId(tenantId, "tenantId"); requireId(userId, "userId");
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 500) throw new AuthorityValidationError("XP ledger limit must be from 1 through 500");
@@ -329,7 +345,7 @@ export class AuthorityService {
     return this.store.transaction(() => {
       requirePositiveBoundedAmount(input.amount, "amount", 1_000_000);
       const existing = this.store.findIdempotent<XpEventV1>("xp", input.tenantId, input.idempotencyKey);
-      if (existing) return { spent: false, duplicate: true, amount: input.amount, wallet: this.getXpWallet(input.tenantId, input.userId), event: existing };
+      if (existing) { if(existing.userId!==input.userId||existing.delta!==-input.amount||existing.sourceAppId!==input.sourceAppId)throw new AuthorityConflictError("XP spend identifier was used with different terms"); return { spent: false, duplicate: true, amount: input.amount, wallet: this.getXpWallet(input.tenantId, input.userId), event: existing }; }
       const wallet = this.getXpWallet(input.tenantId, input.userId);
       if (wallet.spendableXp < input.amount) throw new AuthorityConflictError("Insufficient spendable XP");
       const result = this.awardXp({ tenantId: input.tenantId, userId: input.userId, delta: -input.amount, sourceAppId: input.sourceAppId, reason: input.reason ?? input.eventType ?? "wallet-spend", idempotencyKey: input.idempotencyKey, ...(input.eventType ? { eventType: input.eventType } : {}), metadata: { ...(input.metadata ?? {}), lifetimeEligible: false, walletAction: "spend" } });
@@ -343,7 +359,10 @@ export class AuthorityService {
       if (input.fromUserId === input.toUserId) throw new AuthorityValidationError("XP transfer requires two different users");
       requirePositiveBoundedAmount(input.amount, "amount", 1_000_000);
       const prior = this.store.findIdempotent<{ amount: number; fromUserId: string; toUserId: string }>("xp-transfer", input.tenantId, input.idempotencyKey);
-      if (prior) return { transferred: false, duplicate: true, amount: prior.amount, from: this.getXpWallet(input.tenantId, prior.fromUserId), to: this.getXpWallet(input.tenantId, prior.toUserId) };
+      if (prior) {
+        if (prior.amount !== input.amount || prior.fromUserId !== input.fromUserId || prior.toUserId !== input.toUserId) throw new AuthorityConflictError("XP transfer identifier was used with different terms");
+        return { transferred: false, duplicate: true, amount: prior.amount, from: this.getXpWallet(input.tenantId, prior.fromUserId), to: this.getXpWallet(input.tenantId, prior.toUserId) };
+      }
       const debitKey = `${input.idempotencyKey}:debit`; const creditKey = `${input.idempotencyKey}:credit`;
       if (this.store.findIdempotent("xp", input.tenantId, debitKey) || this.store.findIdempotent("xp", input.tenantId, creditKey)) throw new AuthorityConflictError("XP transfer idempotency key collides with an existing partial operation");
       if (this.getXpWallet(input.tenantId, input.fromUserId).spendableXp < input.amount) throw new AuthorityConflictError("Insufficient spendable XP");

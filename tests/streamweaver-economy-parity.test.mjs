@@ -128,40 +128,15 @@ test("local-to-SPMT exchange linearly dilutes as local supply increases", () => 
   assert.equal(calculateStreamWeaverExchangeRate(10_000_000, settings).localPerSpmt, 10000);
 });
 
-test("SPMT exchange is explicit, capped and replay-safe while normal gambling stays local", async () => {
-  const store = new MemoryStreamWeaverEconomyStore();
-  const client = fakeSpmtClient();
-  seed(store, "tenant-1", { user: 1_100_000 });
-  const { economy } = configuredEconomy({ store, client, exchange: true, nowMs: () => 1234567 });
-  const quote = economy.quoteLocalToSpmt(10_000);
-  assert.equal(quote.localPerSpmt, 1100);
-  assert.equal(quote.spmtAmount, 9);
-  assert.equal(quote.localSpent, 9900);
-  const before = store.getWallet("tenant-1", "user").balance;
-  const first = await economy.exchangeLocalForSpmt({ userId: "user", localAmount: 10_000, operationId: "exchange-1" });
-  assert.equal(first.success, true);
-  assert.equal(first.exchange.spmtAwarded, 9);
-  assert.equal(store.getWallet("tenant-1", "user").balance, before - 9900);
-  assert.equal(client.calls.length, 1);
-  const replay = await economy.exchangeLocalForSpmt({ userId: "user", localAmount: 10_000, operationId: "exchange-1" });
-  assert.equal(replay.duplicate, true);
-  assert.equal(store.getWallet("tenant-1", "user").balance, before - 9900);
-  assert.equal(client.calls.length, 1);
-});
-
-test("failed SPMT award leaves a reserved exchange for idempotent retry without double local deduction", async () => {
-  const store = new MemoryStreamWeaverEconomyStore();
-  seed(store, "tenant-1", { user: 20_000 });
-  const failing = fakeSpmtClient({ failAwards: true });
-  const economy = configuredEconomy({ store, client: failing, exchange: true }).economy;
-  const before = store.getWallet("tenant-1", "user").balance;
-  const first = await economy.exchangeLocalForSpmt({ userId: "user", localAmount: 10_000, operationId: "pending-1" });
-  assert.equal(first.pending, true);
-  const afterFirst = store.getWallet("tenant-1", "user").balance;
-  assert.ok(afterFirst < before);
-  const second = await economy.exchangeLocalForSpmt({ userId: "user", localAmount: 10_000, operationId: "pending-1" });
-  assert.equal(second.pending, true);
-  assert.equal(store.getWallet("tenant-1", "user").balance, afterFirst);
+test("legacy local-to-SPMT conversion is disabled even when old settings enable it", async () => {
+  const store=new MemoryStreamWeaverEconomyStore(),client=fakeSpmtClient();
+  seed(store,"tenant-1",{user:1_100_000});
+  const {economy}=configuredEconomy({store,client,exchange:true});
+  assert.equal(economy.getCurrencySettings().spmtExchangeEnabled,false);
+  assert.throws(()=>economy.quoteLocalToSpmt(10000),/cannot be converted/);
+  await assert.rejects(()=>economy.exchangeLocalForSpmt({userId:"user",localAmount:10000,operationId:"exchange"}),/cannot be converted/);
+  assert.equal(store.getWallet("tenant-1","user").balance,1_100_000);
+  assert.equal(client.calls.length,0);
 });
 
 test("amount aliases and roll math remain compatible", () => {

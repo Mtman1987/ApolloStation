@@ -7,7 +7,9 @@ const REQUIRED = [
 ];
 
 test("all 70 frozen StreamWeaver donor command definitions are represented", () => {
-  const frozen=STREAMWEAVER_DONOR_COMMANDS.filter(entry=>!entry.trigger.startsWith("!__"));
+  const added=new Set(["checkin-command","pokemon-command","redeem-command"]);
+  const frozen=STREAMWEAVER_DONOR_COMMANDS.filter(entry=>!entry.trigger.startsWith("!__")&&!added.has(entry.donorId));
+  assert.equal(STREAMWEAVER_DONOR_COMMANDS.filter(entry=>added.has(entry.donorId)).length,3);
   assert.equal(frozen.length, STREAMWEAVER_DONOR_DEFINITION_COUNT);
   assert.equal(STREAMWEAVER_DONOR_DEFINITION_COUNT, 70);
   const triggers = frozen.map((entry) => entry.trigger.toLowerCase());

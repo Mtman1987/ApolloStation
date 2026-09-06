@@ -32,7 +32,7 @@ async function fixture(run) {
     await dsh.listen(); await streamweaver.listen(); const dshAddress = dsh.server.address(), streamAddress = streamweaver.server.address(); assert.ok(dshAddress && typeof dshAddress !== "string" && streamAddress && typeof streamAddress !== "string");
     ingress = createIntegratedSpaceMountainWebHost({ spmtOrigin: spmtBase, host: "127.0.0.1", port: 0, greenAppOrigins: { "discord-stream-hub": `http://127.0.0.1:${dshAddress.port}`, "streamweaver": `http://127.0.0.1:${streamAddress.port}` } });
     await ingress.listen(); const webBase = `http://127.0.0.1:${ingress.server.address().port}`;
-    await run({ cookie, tenantId, guildId, spmtBase, webBase, dshBase: `http://127.0.0.1:${dshAddress.port}`, streamBase: `http://127.0.0.1:${streamAddress.port}`, privateKey });
+    await run({ spmt, streamDatabase, cookie, tenantId, guildId, spmtBase, webBase, dshBase: `http://127.0.0.1:${dshAddress.port}`, streamBase: `http://127.0.0.1:${streamAddress.port}`, privateKey });
   } finally { if (ingress) await ingress.close(); if (streamweaver) await streamweaver.close(); if (dsh) await dsh.close(); await spmt.close(); rmSync(directory, { recursive: true, force: true }); }
 }
 
@@ -80,7 +80,7 @@ test("StreamWeaver exposes a wired Voice Commander, searchable bot catalog, inte
     const twitchSettings=await (await fetch(`${streamBase}/api/streamweaver/control`,{headers:{cookie}})).json();
     assert.equal(twitchSettings.twitch.broadcasterId,"100");
     const blankFlows = await (await fetch(`${streamBase}/api/streamweaver/control/flows`, { headers: { cookie } })).json();
-    assert.deepEqual(blankFlows.installed, []); assert.equal(blankFlows.community.length, 50); assert.ok(blankFlows.community.every((item) => item.author.id === "mtman1987" && item.installUnit === "flow" && item.commands.length >= 1 && item.actions.length >= 1));
+    assert.deepEqual(blankFlows.installed, []); assert.equal(blankFlows.community.length, 53); assert.ok(blankFlows.community.every((item) => item.author.id === "mtman1987" && item.installUnit === "flow" && item.commands.length >= 1 && item.actions.length >= 1));
     const install = await fetch(`${streamBase}/api/streamweaver/control/flows/install`, { method: "POST", headers: { cookie, origin, "content-type": "application/json" }, body: JSON.stringify({ packageId: "mtman1987.coinflip" }) });
     assert.equal(install.status, 200);
     const oneFlow = await (await fetch(`${streamBase}/api/streamweaver/control/flows`, { headers: { cookie } })).json();
@@ -190,4 +190,25 @@ test("StreamWeaver exposes owner pairing and saves selected device automation th
   const saved=await fetch(root+"/devices",{method:"POST",headers,body:JSON.stringify({deviceId:paired.device.deviceId,actions:["obs.scene.set"]})});assert.equal(saved.status,200);assert.deepEqual((await saved.json()).automationGrants[0].actions,["obs.scene.set"]);
   const current=await(await fetch(root,{headers})).json();assert.equal(current.devices[0].automationGrants[0].appId,"streamweaver");
  });
+});
+
+
+test("Points-page value box reads live supplies after both local issuance and XP spending", async () => {
+  await fixture(async({spmt,streamDatabase,cookie,tenantId,streamBase})=>{
+    const {SqliteStreamWeaverEconomyStore}=await import("../apps/streamweaver/dist/economy.js");
+    const store=new SqliteStreamWeaverEconomyStore(streamDatabase);
+    try {
+      store.setBalance(tenantId,"rate-viewer",1000000);
+      spmt.authority.awardXp({tenantId,userId:"rate-viewer",delta:100000,sourceAppId:"test",reason:"seed",idempotencyKey:"rate-seed"});
+      const read=async()=>{const response=await fetch(streamBase+"/api/streamweaver/control/economy/rate",{headers:{cookie}});assert.equal(response.status,200,await response.clone().text());return response.json()};
+      const first=await read();assert.equal(first.streamerPointsPerXp,10);assert.equal(first.xpPerStreamerPoint,0.1);
+      store.adjustBalance(tenantId,"rate-viewer",9000000);
+      const second=await read();assert.equal(second.streamerPointsPerXp,100);assert.equal(second.xpPerStreamerPoint,0.01);
+      spmt.authority.spendXp({tenantId,userId:"rate-viewer",amount:50000,sourceAppId:"test",idempotencyKey:"rate-spend"});
+      const third=await read();assert.equal(third.streamerPointsPerXp,200);assert.equal(third.xpPerStreamerPoint,0.005);
+      assert.equal(spmt.authority.getXpWallet(tenantId,"rate-viewer").lifetimeXp,100000);
+      const anonymous=await fetch(streamBase+"/api/streamweaver/control/economy/rate");assert.notEqual(anonymous.status,200);
+      const html=await(await fetch(streamBase)).text();assert.match(html,/Current SPMT value/);assert.match(html,/Updates every 5 seconds/);
+    } finally {store.close()}
+  });
 });

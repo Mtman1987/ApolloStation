@@ -17,7 +17,7 @@ import { isNebulaChannelOptedOut, NebulaTagExperienceService, SqliteNebulaTagExp
 import { NebulaTagRuntime, SqliteNebulaTagStore } from "./nebula-tag-runtime.js";
 
 export interface NebulaArcadeProviderChannelV1 {
-  provider: "twitch" | "discord" | "kick";
+  provider: "twitch" | "discord" | "kick" | "youtube";
   connectionId: string;
   channelId: string;
   stateChannelId: string;

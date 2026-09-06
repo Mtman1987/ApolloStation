@@ -12,6 +12,7 @@ const DEFAULT_SCOPES: Record<ChatProviderV1, string[]> = {
   twitch: ["chat:edit", "chat:read"],
   discord: ["gateway", "messages:write"],
   kick: ["chat:read", "chat:write"],
+  youtube: ["https://www.googleapis.com/auth/youtube.force-ssl"],
 };
 
 /** Chat Gateway receives access grants only; refresh credentials stay in SPMT. */
@@ -23,7 +24,7 @@ export class SpmtChatProviderGrantSource implements ProviderGrantSourceV1 {
     this.capabilityId = options.capabilityId ?? "provider-chat";
     this.ttlSeconds = options.ttlSeconds ?? 300;
     if (!Number.isSafeInteger(this.ttlSeconds) || this.ttlSeconds < 30 || this.ttlSeconds > 900) throw new Error("Provider grant TTL is invalid");
-    this.scopes = { twitch: [...(options.requiredScopes?.twitch ?? DEFAULT_SCOPES.twitch)], discord: [...(options.requiredScopes?.discord ?? DEFAULT_SCOPES.discord)], kick: [...(options.requiredScopes?.kick ?? DEFAULT_SCOPES.kick)] };
+    this.scopes = { youtube:[...(options.requiredScopes?.youtube??DEFAULT_SCOPES.youtube)], twitch: [...(options.requiredScopes?.twitch ?? DEFAULT_SCOPES.twitch)], discord: [...(options.requiredScopes?.discord ?? DEFAULT_SCOPES.discord)], kick: [...(options.requiredScopes?.kick ?? DEFAULT_SCOPES.kick)] };
   }
   async getGrant(connection: ProviderConnectionConfigV1): Promise<ProviderGrantResultV1> {
     try {

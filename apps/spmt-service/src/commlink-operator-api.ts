@@ -1,0 +1,41 @@
+import { createHash } from "node:crypto";
+import type { IncomingMessage, ServerResponse } from "node:http";
+import { AuthDeniedError, type AuthService } from "@spmt/auth-core";
+import type { ControlService } from "@spmt/control-core";
+import type { AuthorityService } from "@spmt/authority-core";
+import { CommlinkOperatorStore, type CommlinkLiveChatStore } from "@spmt/commlink-core";
+
+export class CommlinkOperatorApi {
+  constructor(private readonly options:{store:CommlinkOperatorStore;chat:CommlinkLiveChatStore;auth:AuthService;control:ControlService;authority:AuthorityService;accessToken(request:IncomingMessage):string|undefined}){}
+  publish(tenant:string) {
+    const state=this.options.store.read(tenant),message=state.featured?this.options.chat.list({tenantId:tenant,limit:500}).find(m=>recordId(m)===state.featured):undefined;
+    if(state.revision===0)return state;
+    this.options.authority.publishEvent({tenantId:tenant,sourceAppId:"commlink",type:"commlink.chat.featured.v1",idempotencyKey:`chat-feature:${state.revision}`,payload:{revision:state.revision,text:message?.text??"",username:message?.username??"",style:state.style,durationMs:state.durationSeconds*1000,clear:!message}});
+    return state;
+  }
+  async handle(request:IncomingMessage,response:ServerResponse,url:URL) {
+    if(!/^\/v1\/commlink\/(operator|filters|ingestion-errors)$/.test(url.pathname))return false;
+    try {
+      const token=this.options.accessToken(request),tenant=String(request.headers['x-spmt-tenant']??"");if(!token||!tenant)return json(response,401,{message:"Sign in to use the chat desk"});
+      const principal=this.options.auth.authorize(token,request.method==="GET"?"commlink:read":"commlink:write",tenant),workspace=this.options.control.getTenant(tenant);
+      if(principal.actorType!=="user"||workspace.status!=="active")return json(response,403,{message:"Chat desk access denied"});
+      const path=url.pathname.split('/').at(-1),user=principal.actorId;
+      if(request.method==="GET"){
+        if(path==="filters")return json(response,200,{filters:this.options.store.filters(tenant,user)});
+        if(path==="operator")return json(response,200,{state:this.options.store.read(tenant),messages:this.options.chat.list({tenantId:tenant,limit:500}).map(m=>({...m,id:recordId(m)})),canOperate:workspace.ownerUserId===user});
+        if(workspace.ownerUserId!==user)return json(response,403,{message:"Only the workspace owner can inspect ingestion failures"});
+        return json(response,200,{failures:this.options.store.failures(tenant)});
+      }
+      if(request.method!=="POST")return json(response,405,{message:"Method is not supported"});
+      const body=await readJson(request);
+      if(path==="filters")return json(response,200,{filters:this.options.store.saveFilters(tenant,user,body.filters)});
+      if(path!=="operator"||workspace.ownerUserId!==user)return json(response,403,{message:"Only the workspace owner can change stream presentation"});
+      const state=this.options.store.apply(tenant,body as Parameters<CommlinkOperatorStore['apply']>[1],this.options.chat.list({tenantId:tenant,limit:500}).map(m=>recordId(m)));
+      this.publish(tenant);return json(response,200,{state});
+    }catch(error){return json(response,error instanceof AuthDeniedError?403:400,{message:error instanceof Error?error.message:"Chat desk request failed"});}
+  }
+}
+async function readJson(request:IncomingMessage):Promise<Record<string,unknown>>{let size=0;const chunks:Buffer[]=[];for await(const chunk of request){size+=chunk.length;if(size>32_000)throw new Error("Request is too large");chunks.push(Buffer.from(chunk));}const value=JSON.parse(Buffer.concat(chunks).toString());if(!value||typeof value!=="object"||Array.isArray(value))throw new Error("Expected an object");return value;}
+function json(response:ServerResponse,status:number,value:unknown){response.writeHead(status,{"content-type":"application/json","cache-control":"no-store"});response.end(JSON.stringify(value));return true;}
+
+function recordId(m:{provider:string;connectionId:string;channelId:string;messageId:string}){return createHash("sha256").update(JSON.stringify([m.provider,m.connectionId,m.channelId,m.messageId])).digest("hex");}

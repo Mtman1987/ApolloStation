@@ -188,7 +188,7 @@ export type NebulaTagParsedCommandV1 =
 
 export interface NebulaTagInboundMessageV1 {
   schemaVersion: 1;
-  provider: "twitch" | "discord" | "kick";
+  provider: "twitch" | "discord" | "kick" | "youtube";
   tenantId: string;
   channelId: string;
   messageId: string;

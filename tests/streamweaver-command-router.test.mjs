@@ -155,11 +155,11 @@ test("moderator point commands now mutate and report only the local StreamWeaver
   assert.equal((await f.consumer.route(delivery("!resetallpoints", { roles: ["moderator"], deliveryId: "all-reset" }))).text, "Reset Starbits for 4 users to 0");
 });
 
-test("!exchange is an explicit separate path to SPMT XP", async () => {
+test("!exchange explains direct reward payment without converting currency", async () => {
   const f = fixture();
   const result = await f.consumer.route(delivery("!exchange 5000", { deliveryId: "exchange-1" }));
-  assert.equal(result.text, "@Captain exchanged 5K Starbits for 5 SPMT XP.");
-  assert.equal(f.calls.find((entry) => entry[0] === "exchange")[1].localAmount, 5000);
+  assert.match(result.text, /cannot be converted/);
+  assert.equal(f.calls.some((entry) => entry[0] === "exchange"), false);
 });
 
 test("delivery replay reuses the persisted command response and egress idempotency key", async () => {

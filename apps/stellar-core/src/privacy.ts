@@ -2,6 +2,7 @@ import type { ExecutionJobV1 } from "@spmt/contracts";
 import { ExecutionJobService } from "@spmt/execution-core";
 import { PlatformDataService } from "@spmt/platform-data-core";
 import { STELLAR_CHAT_CAPABILITY_ID, STELLAR_CHAT_REQUEST_KIND } from "./contracts.js";
+import type { StellarAssistantStore } from "./assistant-store.js";
 
 export const STELLAR_RAW_RETENTION_MS = 7 * 24 * 60 * 60 * 1_000;
 export const STELLAR_EPHEMERAL_RETENTION_MS = 60 * 60 * 1_000;
@@ -10,7 +11,7 @@ export const STELLAR_CHAT_METADATA_KIND = "stellar-chat-metadata.v1";
 
 export class StellarDataPrivacyService {
   private readonly now: () => string;
-  constructor(private readonly jobs: ExecutionJobService, private readonly data: PlatformDataService, options: { now?: () => string } = {}) { this.now = options.now ?? (() => new Date().toISOString()); }
+  constructor(private readonly jobs: ExecutionJobService, private readonly data: PlatformDataService, private readonly options: { now?: () => string; assistantStore?:StellarAssistantStore } = {}) { this.now = options.now ?? (() => new Date().toISOString()); }
 
   exportForUser(tenantId: string, userId: string) {
     const exportedAt = this.now();
@@ -21,11 +22,13 @@ export class StellarDataPrivacyService {
       exportedAt,
       retention: { rawDays: 7, doNotRememberHours: 1, metadataDays: 30 },
       context: this.data.listPersonalStellarContext(tenantId, userId),
+      ...(this.options.assistantStore?{notes:this.options.assistantStore.notes(tenantId,userId),preferences:this.options.assistantStore.preferences(tenantId,userId)}:{}),
       jobs: this.jobs.listForMaintenance(tenantId, { ownerAppId: "stellar-core", billedUserId: userId }).map(publicStellarJob),
     };
   }
 
   deleteForUser(tenantId: string, userId: string) {
+    this.options.assistantStore?.deleteForUser(tenantId,userId);
     const jobs = this.jobs.listForMaintenance(tenantId, { ownerAppId: "stellar-core", billedUserId: userId });
     let deletedJobs = 0;
     for (const job of jobs) {

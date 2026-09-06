@@ -1,3 +1,7 @@
+import { CommlinkOperatorApi } from "./commlink-operator-api.js";
+import { CommlinkOperatorStore } from "@spmt/commlink-core";
+import { SpmtAssistantApi } from "./assistant-api.js";
+import { StellarAssistantStore } from "@spmt/stellar-core";
 import { SpmtMediaApi } from "./media-api.js";
 import { streamWeaverWidgetManifests } from "@spmt/streamweaver/dist/overlay-widgets.js";
 import { randomBytes } from "node:crypto";
@@ -80,8 +84,10 @@ export function createSpmtService(options: SpmtServiceOptions) {
   const store = new SqliteAuthorityStore(options.databasePath);
   const platformStore = new SqlitePlatformDataStore(options.databasePath);
   const mediaAssets = new SqliteMediaAssetStore(options.databasePath);
+  const assistantStore = new StellarAssistantStore(options.databasePath);
   const setupStore = new SqliteAccountSetupStore(options.databasePath);
   const commlinkLiveChat = new CommlinkLiveChatStore(options.databasePath);
+  const commlinkOperator = new CommlinkOperatorStore(options.databasePath);
   const authority = new AuthorityService({ store });
   const auth = new AuthService({ store });
   const publicBaseUrl = (options.publicBaseUrl ?? "https://spmt.live").replace(/\/$/, "");
@@ -111,10 +117,13 @@ export function createSpmtService(options: SpmtServiceOptions) {
   if (options.hearMeOutRuntimeEnabled && (!options.hearMeOutWorkerCredential || options.hearMeOutWorkerCredential.length < 32)) throw new Error("An enabled HearMeOut runtime requires a 32+ character service credential");
   if (options.hearMeOutWorkerCredential) ensureHearMeOutIdentity(auth, options.hearMeOutWorkerCredential);
   const communityAssistant = options.communityAssistant ?? new StellarCommunityAssistantRuntime(executionJobs, { enabled: Boolean(options.stellarChatEnabled), resolveRoute: (input) => resolveStellarRoute(control, executionJobs, input.tenantId, input.routingPreference ?? "automatic") });
-  const stellarPrivacy = new StellarDataPrivacyService(executionJobs, data);
+  const stellarPrivacy = new StellarDataPrivacyService(executionJobs, data, {assistantStore});
   const operations = new PlatformOperations(auth, authority, control, data, communityAssistant, options.coderRuntime, executionJobs, stellarPrivacy);
   const api = new PlatformApiAdapter(operations);
+  const operatorApi = new CommlinkOperatorApi({store:commlinkOperator,chat:commlinkLiveChat,auth,control,authority,accessToken});
+  const operatorTimer=setInterval(()=>{for(const tenant of store.listTenants())if(tenant.status === "active")try{operatorApi.publish(tenant.id);}catch{/* A failed publication retries with the same revision. */}},1000);operatorTimer.unref();
   const mediaApi = new SpmtMediaApi({ assets: mediaAssets, auth, control, jobs: platformStore, publicBaseUrl, accessToken, limitBytes: (tenantId) => (billing.manifest.plans.find(plan => plan.planId === billingPlan(control.listEntitlements(tenantId)))?.limits["storage-gb"] ?? 0) * 1024 ** 3 });
+  const assistantApi = new SpmtAssistantApi({store:assistantStore,auth,control,jobs:executionJobs,assets:mediaAssets,enabled:runtimeMode === "production",accessToken});
   mediaAssets.sweep();
   const mediaSweepTimer = setInterval(() => mediaAssets.sweep(), 15 * 60_000); mediaSweepTimer.unref();
   const health = new HealthRegistry();
@@ -149,6 +158,8 @@ export function createSpmtService(options: SpmtServiceOptions) {
       const path = request.url ?? "/";
       const url = new URL(`http://spmt.local${path}`);
       if (await mediaApi.handle(request, response, url)) return;
+      if (await assistantApi.handle(request,response,url)) return;
+      if (await operatorApi.handle(request,response,url)) return;
 
       if (request.method === "GET" && url.pathname === "/health/live") return json(response, 200, { live: true, service: "spmt", runtimeMode, outboundIntegrations: runtimeMode === "sandbox" ? "disabled" : "enabled", buildSha: options.buildSha ?? "dev" });
       if (request.method === "GET" && url.pathname === "/health/ready") {
@@ -462,7 +473,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
         try {
           auth.authorize(token, "commlink:read", tenantId);
           const provider = url.searchParams.get("provider") ?? undefined;
-          if (provider && !["twitch", "discord", "kick"].includes(provider)) return json(response, 400, { error: "invalid_provider" });
+          if (provider && !["twitch", "discord", "kick", "youtube"].includes(provider)) return json(response, 400, { error: "invalid_provider" });
           const limitValue = url.searchParams.get("limit");
           const limit = limitValue === null ? undefined : Number(limitValue);
           return json(response, 200, commlinkLiveChat.list({ tenantId, ...(provider ? { provider: provider as ChatProviderV1 } : {}), ...(url.searchParams.get("channelId") ? { channelId: url.searchParams.get("channelId")! } : {}), ...(url.searchParams.get("search") ? { search: url.searchParams.get("search")! } : {}), ...(limit === undefined ? {} : { limit }) }));
@@ -486,6 +497,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
           return json(response, 201, commlinkLiveChat.ingest(message));
         } catch (error) {
           if (error instanceof AuthDeniedError) return json(response, 403, { error: "forbidden" });
+          commlinkOperator.recordFailure(tenantId,"Chat message was rejected during ingestion");
           if (error instanceof Error && /chat|message|actor|version|invalid/i.test(error.message)) return json(response, 400, { error: "invalid_message", message: error.message });
           return json(response, 403, { error: "forbidden" });
         }
@@ -551,7 +563,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
     runOutboxOnce() { return outbox.runOnce(); },
     runStellarPrivacySweep() { return stellarPrivacy.sweep(store.listTenants().map((tenant) => tenant.id)); },
     listen() { return new Promise<void>((done, reject) => { server.once("error", reject); server.listen(options.port ?? 3000, options.host ?? "0.0.0.0", () => { server.off("error", reject); done(); }); }); },
-    close() { clearInterval(mediaSweepTimer); clearInterval(stellarCapabilityTimer); clearInterval(stellarPrivacyTimer); return new Promise<void>((done, reject) => server.close((error) => { providerCredentials?.close(); commlinkLiveChat.close(); setupStore.close(); mediaAssets.close(); platformStore.close(); store.close(); error ? reject(error) : done(); })); },
+    close() { clearInterval(operatorTimer); clearInterval(mediaSweepTimer); clearInterval(stellarCapabilityTimer); clearInterval(stellarPrivacyTimer); return new Promise<void>((done, reject) => server.close((error) => { providerCredentials?.close(); assistantStore.close(); commlinkOperator.close(); commlinkLiveChat.close(); setupStore.close(); mediaAssets.close(); platformStore.close(); store.close(); error ? reject(error) : done(); })); },
   };
 }
 
@@ -715,7 +727,7 @@ function ensureChatGatewayIdentity(auth: AuthService, credential: string) {
   auth.reconcileServiceIdentity({ serviceId: "chat-gateway", credential, scopes: ["jobs:read", "jobs:work", "providers:grant", "commlink:live:write", "events:write", "runtime:write"], tenantMode: "any" });
 }
 function ensureStreamWeaverIdentity(auth: AuthService, credential: string) {
-  const scopes = ["identity:read", "identity:write", "events:write", "assistants:invoke", "jobs:read", "jobs:write", "jobs:work", "xp:write", "runtime:write"];
+  const scopes = ["identity:read", "identity:write", "events:write", "assistants:invoke", "jobs:read", "jobs:write", "jobs:work", "xp:read", "xp:write", "runtime:write"];
   auth.reconcileServiceIdentity({ serviceId: "streamweaver", credential, scopes, tenantMode: "any" });
 }
 function ensureDshIdentity(auth: AuthService, credential: string, production:boolean) {

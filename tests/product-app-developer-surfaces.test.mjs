@@ -158,7 +158,7 @@ test("descriptor-declared snapshot sources keep baseline health, shared workspac
 test("DSH, StreamWeaver and Companion declare app-specific public feeds without copying private authorities", async () => {
   const checks = [
     [["apps/discord-stream-hub/src/web-server.ts", "apps/discord-stream-hub/src/web-controls.ts", "apps/discord-stream-hub/src/shoutout-groups.ts"], ["providerLinks", "xpWallet", "DSH_SHOUTOUT_GROUPS", "buildDshPublicApplicationEmbed", "communityLive", "app-owned controls"]],
-    [["apps/streamweaver/src/web-server.ts", "apps/streamweaver/src/web-controls.ts"], ["overlayWidgets", "stellarCapabilities", "STREAMWEAVER_DONOR_COMMANDS", "STREAMWEAVER_OVERLAYS", "tenant-local currency"]],
+    [["apps/streamweaver/src/web-server.ts", "apps/streamweaver/src/web-controls.ts"], ["overlayWidgets", "stellarCapabilities", "STREAMWEAVER_DONOR_COMMANDS", "STREAMWEAVER_OVERLAYS", "current value compared with SPMT XP"]],
     [["apps/companion/src/web-server.ts"], ["devices", "operations", "COMPANION_WORKFLOWS", "COMPANION_MEDIA_PRESETS", "does not start an unreviewed workflow"]],
   ];
   for (const [paths, patterns] of checks) {

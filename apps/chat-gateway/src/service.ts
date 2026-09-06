@@ -97,7 +97,7 @@ export function parseChatGatewayConnections(source: string | undefined): Provide
   return parsed.map((value, index) => {
     if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`CHAT_GATEWAY_CONNECTIONS[${index}] is invalid`);
     const item = value as Record<string, unknown>;
-    if (item.schemaVersion !== 1 || !["twitch", "discord", "kick"].includes(String(item.provider)) || typeof item.desired !== "boolean") throw new Error(`CHAT_GATEWAY_CONNECTIONS[${index}] is invalid`);
+    if (item.schemaVersion !== 1 || !["twitch", "discord", "kick", "youtube"].includes(String(item.provider)) || typeof item.desired !== "boolean") throw new Error(`CHAT_GATEWAY_CONNECTIONS[${index}] is invalid`);
     const connection = item as unknown as ProviderConnectionConfigV1;
     for (const [field, name] of [[connection.tenantId, "tenantId"], [connection.connectionId, "connectionId"], [connection.channelId, "channelId"], [connection.providerAccountId, "providerAccountId"]] as const) requireId(field, name);
     const key = `${connection.tenantId}:${connection.provider}:${connection.connectionId}`;
@@ -233,7 +233,7 @@ export class SupervisedChatGatewayService {
           return { response: message };
         }
       } };
-      this.streamweaver = new StreamWeaverProviderRuntime({ databasePath: options.streamweaver.databasePath, client: streamweaverClient, botActions: guardedSuiteActions, providerGrants:client,allowProviderWrites:egressMode==="provider",allowAssistant: !options.liveIngressEnabled, egress: { send: (message) => { if (!connectedGateway) throw new Error("Chat Gateway egress is not ready"); return connectedGateway.send(message); } } });
+      this.streamweaver = new StreamWeaverProviderRuntime({ databasePath: options.streamweaver.databasePath, client: streamweaverClient, connections:options.connections, botActions: guardedSuiteActions, providerGrants:client,allowProviderWrites:egressMode==="provider",allowAssistant: !options.liveIngressEnabled, egress: { send: (message) => { if (!connectedGateway) throw new Error("Chat Gateway egress is not ready"); return connectedGateway.send(message); } } });
       if(options.streamweaver.image){const image=options.streamweaver.image,provider=new SeaArtCliProvider(image.token,new NodeSeaArtCommandRunner(image.binary)),tenantIds=[...new Set(options.connections.map(connection=>connection.tenantId))];this.streamweaverImage=new StreamWeaverImageWorker(streamweaverClient,new StreamWeaverImageGenerationService([provider]),{workerId:`${options.workerId}-image`,modelNo:image.modelNo,modelVerNo:image.modelVerNo,...(tenantIds.length?{tenantIds}:{})});}
       consumers.push(...this.streamweaver.consumers);
       observers.push(...this.streamweaver.messageObservers);

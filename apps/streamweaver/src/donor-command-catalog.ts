@@ -56,6 +56,7 @@ export const STREAMWEAVER_DONOR_COMMANDS: readonly StreamWeaverDonorCommandV1[] 
   { donorId:"highfive", trigger:"!highfive", family:"social", cooldownSeconds:2 },
   { donorId:"hover", trigger:"!hover", family:"links", cooldownSeconds:0 },
   { donorId:"hug", trigger:"!hug", family:"social", cooldownSeconds:2 },
+  { donorId:"redeem-command", trigger:"!redeem", family:"redeem", cooldownSeconds:0 },
   { donorId:"hydrate", trigger:"!hydrate", family:"redeem", cooldownSeconds:0 },
   { donorId:"instagram", trigger:"!instagram", family:"links", cooldownSeconds:0 },
   { donorId:"leader", trigger:"!leader", family:"community", cooldownSeconds:0 },
@@ -99,6 +100,8 @@ export const STREAMWEAVER_DONOR_COMMANDS: readonly StreamWeaverDonorCommandV1[] 
   { donorId:"persona-chat-call", trigger:"(?i).*@?{{BOT_NAME}}.*", family:"persona", cooldownSeconds:0, matcher:"regex" },
   { donorId:"persona-athenacall", trigger:"(?i).*@?{{BOT_NAME}}.*", family:"persona", cooldownSeconds:0, matcher:"regex" },
   { donorId:"persona-chat-call-bot", trigger:"(?i).*@?{{BOT_NAME}}.*", family:"persona", cooldownSeconds:0, matcher:"regex" },
+  { donorId:"checkin-command", trigger:"!checkin", family:"community", cooldownSeconds:0 },
+  { donorId:"pokemon-command", trigger:"!pokemon", family:"pokemon", cooldownSeconds:0 },
   { donorId:"pokemon-pack", trigger:"pack", family:"pokemon", cooldownSeconds:0, matcher:"bare" },
   { donorId:"secure-choice-session", trigger:"!__securechoice", family:"persona", cooldownSeconds:0 },
 ] as const;

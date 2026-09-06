@@ -1,3 +1,9 @@
+import { StreamRewardRequestError } from "./reward-runtime.js";
+import { StreamWeaverTwitchEventSub, type StreamWeaverTwitchEvent } from "./twitch-eventsub.js";
+import { STREAMWEAVER_DONOR_COMMANDS } from "./donor-command-catalog.js";
+import { StreamWeaverCommunityStore } from "./community-store.js";
+import { StreamWeaverCommunityRuntime } from "./community-runtime.js";
+import { StreamWeaverPokemonStore } from "./pokemon-store.js";
 import {StreamWeaverResearchConversation,streamWeaverResearchIntent} from "./research-mode.js";
 import {createHash} from "node:crypto";
 import { assertDeviceAutomationPayload, DEVICE_AUTOMATION_ACTIONS } from "@spmt/contracts";
@@ -47,6 +53,7 @@ export interface StreamWeaverProviderRuntimeOptionsV1 {
   allowProviderWrites?: boolean;
   simulation?:boolean;
   providerFetch?: typeof fetch;
+  connections?:Array<{tenantId:string;provider:string;connectionId:string;channelId:string;desired:boolean}>;
 }
 
 /** Owns StreamWeaver's app-private chat state while Chat Gateway owns sockets. */
@@ -63,9 +70,16 @@ export class StreamWeaverProviderRuntime {
   private readonly runtimeSettings: StreamWeaverRuntimeSettingsStore;
   private readonly research:StreamWeaverResearchConversation;
   private readonly bic: SqliteStreamWeaverBicStore;
+  private readonly eventsub?:StreamWeaverTwitchEventSub;
+  private readonly twitch?:StreamWeaverTwitchCommandAdapter;
+  private lastWatchPoll=0;
+  private readonly community:StreamWeaverCommunityStore;
+  private readonly pokemon:StreamWeaverPokemonStore;
   private readonly secureChoices:StreamWeaverSecureChoiceStore;
   private readonly installedFlows: StreamWeaverInstalledFlowConsumer;
   constructor(private readonly options: StreamWeaverProviderRuntimeOptionsV1) {
+    this.community=new StreamWeaverCommunityStore(options.databasePath);
+    this.pokemon=new StreamWeaverPokemonStore(options.databasePath);
     this.settings = new StreamWeaverPersonaSettingsStore(options.databasePath, options.now);
     this.summons = new SqliteStreamWeaverSummonStore(options.databasePath);
     this.commandState = new SqliteStreamWeaverCommandState(options.databasePath);
@@ -90,13 +104,26 @@ export class StreamWeaverProviderRuntime {
       if(!delivery)throw new Error("Secure choice flow input is unavailable");
       return this.secureChoices.start({delivery,config:action.config,requestKey:`${invocation.deliveryId}:${action.actionId}`,publicOrigin:options.publicOrigin??process.env.STREAMWEAVER_PUBLIC_ORIGIN??options.client.baseUrl}).text;
     }};
+    const grants=options.providerGrants?new SpmtStreamWeaverTwitchGrantSource(options.providerGrants,tenant=>this.runtimeSettings.twitchBroadcaster(tenant),options.allowProviderWrites===true):undefined;
+    if(grants){this.twitch=new StreamWeaverTwitchCommandAdapter(grants,options.providerFetch);if(options.allowProviderWrites===true)this.eventsub=new StreamWeaverTwitchEventSub(options.databasePath,grants,options.providerFetch);}
+    this.messageObservers.push({id:"streamweaver.welcome",observe:message=>{if(message.provider==="twitch"&&!message.actor.isBot)this.community.welcome(message.tenantId,message.provider,message.actor.providerUserId,message.actor.displayName??message.actor.username);}});
+    const community=new StreamWeaverCommunityRuntime(this.community,this.economy,options.client,options.allowAssistant!==false);
     const services = new DefaultStreamWeaverDonorCommandServices({
-      ...(options.providerGrants?{twitch:new StreamWeaverTwitchCommandAdapter(new SpmtStreamWeaverTwitchGrantSource(options.providerGrants,tenantId=>this.runtimeSettings.twitchBroadcaster(tenantId),options.allowProviderWrites===true),options.providerFetch)}:{}),
+      watchtime:{execute:i=>community.watchtime(i)},community:{execute:i=>community.community(i)},redeems:{execute:i=>community.redeem(i)},translation:community,
+      ...(this.twitch?{twitch:this.twitch}:{}),
       links:this.runtimeSettings,
+      pokemon:{execute:invocation=>{
+        if(!invocation.actor.userId)throw new Error("Link your account before using Pokémon");
+        const [operation,...args]=invocation.canonicalTrigger==="pack"?["open",...invocation.args]:invocation.args;
+        const action=operation||"collection",actor={id:invocation.actor.userId,displayName:invocation.actor.displayName,owner:invocation.actor.isBroadcaster};
+        const result=this.pokemon.act(invocation.tenantId,actor,{action,requestId:createHash("sha256").update(invocation.deliveryId).digest("hex"),...(action==="open"&&args[0]?{set:args[0]}:{}),...(["trade","leader"].includes(action)&&args[0]?{userId:invocation.target?.userId??args[0]}:{}),...(["offer","accept","cancel-trade"].includes(action)?{tradeId:args[0]??""}:{}),...(action==="offer"?{card:args.slice(1).join(" ")}:{})});
+        return String(result.text??"Pokémon action completed.");
+      }},
+
       bic:new StreamWeaverBicCommandExecutor(new StreamWeaverBicRuntime({store:this.bic,client:options.client})),
       socialEffects:new StreamWeaverSocialActionExecutor(options.client),
       persona:secureChoiceExecutor,
-      system:{execute:invocation=>invocation.canonicalTrigger==="!commands" ? `Installed commands: ${this.flows.listInstalledPackages(invocation.tenantId).flatMap(pkg=>pkg.commands.filter(c=>c.enabled).map(c=>c.trigger)).join(", ") || "none"}. Currency: !points, !givepoints, !gamble, !pleader.` : undefined}
+      system:{execute:invocation=>invocation.canonicalTrigger==="!commands" ? `Installed commands: ${this.flows.listInstalledPackages(invocation.tenantId).flatMap(pkg=>pkg.commands.filter(c=>c.enabled).map(c=>c.trigger)).join(", ") || "none"}. Currency: !points, !givepoints, !gamble, !pleader.` : community.system(invocation)}
     });
     const commands = new StreamWeaverDonorCommandConsumer({ services, identities, state: this.commandState, egress, enabled: (tenantId, donorId) => donorId === "commands-chat" || donorId === "commands-system" || this.flows.donorEnabled(tenantId, donorId), ...(options.nowMs ? { nowMs: options.nowMs } : {}) });
     const persona = new StreamWeaverChatGatewayConsumer(this.summons, this.settings, new SpmtStreamWeaverPersonaRuntime(options.client,this.research), egress, priorGate,this.research);
@@ -120,7 +147,50 @@ export class StreamWeaverProviderRuntime {
   }
   consumerIds() { return this.consumers.map((consumer) => consumer.id); }
   setBotShare(tenantId: string, enabled: boolean) { this.relayStore.setBotShare(tenantId, enabled); }
-  async reconcile(limit = 100) { const replies=await this.replies.runOnce(undefined, limit);const flows=await this.installedFlows.reconcile(limit);const secureChoices=await this.secureChoices.flushOutbox(message=>this.options.egress.send(message),limit);return {...replies,flows,secureChoices}; }
+  async reconcile(limit = 100) { await this.reconcileProviderEvents(); await this.community.flush((tenant,type,payload,key)=>this.options.client.publishEvent(tenant,type,payload,key)); await this.pokemon.flush((tenant,type,payload,key)=>this.options.client.publishEvent(tenant,type,payload,key)); const replies=await this.replies.runOnce(undefined, limit);const flows=await this.installedFlows.reconcile(limit);const secureChoices=await this.secureChoices.flushOutbox(message=>this.options.egress.send(message),limit);return {...replies,flows,secureChoices}; }
+  private async reconcileProviderEvents(){
+    if(this.options.allowProviderWrites!==true)return;
+    const tenants=this.community.configuredTenants();
+    if(this.twitch&&Date.now()-this.lastWatchPoll>=60000){this.lastWatchPoll=Date.now();for(const tenant of tenants)try{const stream=await this.twitch.uptime(tenant);if(stream){this.community.saveSettings(tenant,{welcomeSession:`twitch:${stream.id}`});this.community.recordWatchtime(tenant,"twitch",await this.twitch.chatters(tenant));}}catch{/* Missing grants do not fabricate watchtime. */}}
+    await this.eventsub?.reconcile(tenants.map(tenantId=>({tenantId,types:[...this.community.bindings(tenantId).filter(b=>b.enabled).map(b=>b.event),...this.community.redeems(tenantId).filter(r=>r.enabled&&r.rewardId).map(r=>`reward:${r.rewardId}`)]})).filter(t=>t.types.length),event=>this.deliverProviderEvent(event));
+  }
+  private async deliverProviderEvent(event:StreamWeaverTwitchEvent){
+    const connection=this.options.connections?.find(c=>c.tenantId===event.tenantId&&c.provider==="twitch"&&c.desired);
+    if(!connection)throw new Error("Configure a Twitch chat destination for provider events");
+    const canonicalUserId=event.userId?await new StreamWeaverSpmtIdentityResolver(this.options.client).resolve({tenantId:event.tenantId,provider:"twitch",providerUserId:event.userId,username:event.username,displayName:event.displayName}):undefined;
+    const source=event.redemptionId?`twitch-reward:${event.redemptionId}`:`eventsub:${event.id}`,eventName=event.rewardId?`reward:${event.rewardId}`:event.type;
+    const redeem=event.rewardId?this.community.redeems(event.tenantId).find(r=>r.rewardId===event.rewardId):undefined;
+    let outcome=this.community.eventOutcome(event.tenantId,source);
+    if(redeem&&!outcome){
+      if(!canonicalUserId)outcome={accepted:false,text:"Reward declined: link your Twitch account to SPMT before redeeming."};
+      else if(!redeem.enabled)outcome={accepted:false,text:"Reward declined: this reward is paused."};
+      else {
+        const runtime=new StreamWeaverCommunityRuntime(this.community,this.economy,this.options.client,this.options.allowAssistant!==false);
+        const args=event.input.trim().split(/\s+/),currency=args[0]?.toLowerCase()==="spmt"?"spmt":"streamer";
+        if(redeem.acceptance==="spmt"&&currency!=="spmt")outcome={accepted:false,text:"Reward declined: this reward requires an explicit SPMT payment. Use the reward desk to confirm the XP price."};
+        else if(redeem.acceptance==="streamer"&&currency==="spmt")outcome={accepted:false,text:"Reward declined: the streamer accepts only their own points for this reward."};
+        else {
+          try {
+          const result=await runtime.redeemReward({tenantId:event.tenantId,requestId:source,rewardId:redeem.id,userId:canonicalUserId,displayName:event.displayName,currency,...(args[1]?{maxSpmtCost:Number(args[1])}:{})});
+          outcome={accepted:result.state==="complete",text:result.state==="complete"?result.text:`Reward declined: ${result.message}`};
+          }catch(error){if(error instanceof StreamRewardRequestError)outcome={accepted:false,text:`Reward declined: ${error.message}`};else throw error;}
+        }
+      }
+      if(outcome)this.community.saveEventOutcome(event.tenantId,source,outcome);
+    }
+    if(outcome&&!outcome.accepted){
+      await this.options.egress.send({schemaVersion:1,tenantId:event.tenantId,provider:"twitch",connectionId:connection.connectionId,channelId:connection.channelId,text:outcome.text,idempotencyKey:`reward-result:${source}`});
+      if(event.rewardId&&event.redemptionId)await this.twitch?.redemptionStatus(event.tenantId,event.rewardId,event.redemptionId,"CANCELED");
+      return;
+    }
+    const binding=this.community.bindings(event.tenantId).find(b=>b.enabled&&b.event===eventName);
+    const text=binding?.command.replaceAll("{user}",event.username).replaceAll("{input}",event.input);
+    if(text){const message:NormalizedChatMessageV1={schemaVersion:1,tenantId:event.tenantId,provider:"twitch",connectionId:connection.connectionId,channelId:connection.channelId,messageId:source,text,occurredAt:event.occurredAt,actor:{providerUserId:event.userId||"anonymous",username:event.username||"anonymous",displayName:event.displayName,roles:["member"],isBot:false,...(canonicalUserId?{canonicalUserId}:{})},mentions:[]};await this.installedFlows.deliver({schemaVersion:1,deliveryId:source,consumerId:"streamweaver.installed-flows",attempts:1,message});}
+    if(outcome){
+      await this.options.egress.send({schemaVersion:1,tenantId:event.tenantId,provider:"twitch",connectionId:connection.connectionId,channelId:connection.channelId,text:outcome.text,idempotencyKey:`reward-result:${source}`});
+      if(event.rewardId&&event.redemptionId)await this.twitch?.redemptionStatus(event.tenantId,event.rewardId,event.redemptionId,"FULFILLED");
+    }
+  }
   settleFlows() { return this.installedFlows.settle(); }
-  close() { this.secureChoices.close(); this.research.close(); this.bic.close(); this.runtimeSettings.close(); this.flows.close(); this.relayStore.close(); this.economy.close(); this.commandState.close(); this.summons.close(); this.settings.close(); }
+  close() { this.eventsub?.close(); this.community.close(); this.pokemon.close(); this.secureChoices.close(); this.research.close(); this.bic.close(); this.runtimeSettings.close(); this.flows.close(); this.relayStore.close(); this.economy.close(); this.commandState.close(); this.summons.close(); this.settings.close(); }
 }

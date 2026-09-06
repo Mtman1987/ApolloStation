@@ -127,8 +127,10 @@ function toLiveChatRecord(message: NormalizedChatMessageV1): CommlinkLiveChatRec
     roles: [...message.actor.roles],
   };
 }
-function acceptsProvider(provider: ChatProviderV1) { return provider === "twitch" || provider === "discord" || provider === "kick"; }
+function acceptsProvider(provider: ChatProviderV1) { return provider === "twitch" || provider === "discord" || provider === "kick" || provider === "youtube"; }
 function assertProvider(value: string): asserts value is ChatProviderV1 { if (!acceptsProvider(value as ChatProviderV1)) throw new Error("provider is invalid"); }
 function messageKey(record: CommlinkLiveChatRecordV1): string { return [record.tenantId, record.provider, record.connectionId, record.messageId].join(":"); }
 function requireId(value: string, name: string): void { if (!value || value.trim() !== value || value.length > 300 || !/^[A-Za-z0-9._:@/-]+$/.test(value)) throw new Error(`${name} is invalid`); }
 function escapeLike(value: string): string { return value.replace(/[\\%_]/g, (match) => `\\${match}`); }
+
+export * from "./operator.js";

@@ -19,6 +19,26 @@ export class StreamWeaverTwitchCommandAdapter {
     const origin=new URL(apiOrigin); if(origin.protocol!=="https:"||origin.username||origin.password||origin.search||origin.hash)throw new Error("Twitch API origin must be credential-free HTTPS");
   }
 
+  async chatters(tenantId:string){const grant=await this.ready(tenantId,"chatters:read"),users:Array<{id:string;username:string}>=[];let after="";for(let page=0;page<20;page++){const response=await this.request<{data?:Array<{user_id:string;user_login:string}>,pagination?:{cursor?:string}}>(grant,this.url("/chat/chatters",{broadcaster_id:grant.broadcasterId,moderator_id:grant.moderatorId??grant.broadcasterId,first:"1000",...(after?{after}:{})}));for(const user of response.data??[])users.push({id:user.user_id,username:user.user_login});after=response.pagination?.cursor??"";if(!after)break;}return users;}
+  async clips(tenantId:string,userId?:string){const grant=await this.ready(tenantId,"clips:read");const result=await this.request<{data?:Array<{id:string;url:string;embed_url:string;thumbnail_url:string;duration:number;title:string}>}>(grant,this.url("/clips",{broadcaster_id:userId??grant.broadcasterId,first:"20"}));return result.data??[];}
+  async rewards(tenantId:string){const grant=await this.ready(tenantId,"rewards:read");const result=await this.request<{data?:Array<{id:string;title:string;cost:number;is_enabled:boolean}>}>(grant,this.url("/channel_points/custom_rewards",{broadcaster_id:grant.broadcasterId}));return result.data??[];}
+
+  async redemptionStatus(tenantId:string,rewardId:string,redemptionId:string,status:"FULFILLED"|"CANCELED"){
+    const grant=await this.ready(tenantId,"rewards:manage");
+    const endpoint=this.url("/channel_points/custom_rewards/redemptions",{broadcaster_id:grant.broadcasterId,reward_id:cleanId(rewardId,"rewardId"),id:cleanId(redemptionId,"redemptionId")});
+    // Inspect before patch so a successful provider mutation followed by a network
+    // failure can be retried without treating the already-finalized reward as new.
+    const current=await this.request<{data?:Array<{status:string}>}>(grant,endpoint);
+    if(current.data?.[0]?.status===status)return;
+    if(current.data?.[0]?.status!=="UNFULFILLED")throw new StreamWeaverTwitchError(409,"The Twitch redemption has already been finalized differently");
+    await this.request(grant,endpoint,{method:"PATCH",body:{status}});
+  }
+  async createRewardEntry(tenantId:string,title:string,prompt:string){
+    const grant=await this.ready(tenantId,"rewards:manage");
+    const result=await this.request<{data?:Array<{id:string}>}>(grant,this.url("/channel_points/custom_rewards",{broadcaster_id:grant.broadcasterId}),{method:"POST",body:{title:boundedText(title,1,45,"title"),prompt:boundedText(prompt,1,200,"prompt"),cost:1,is_user_input_required:false,should_redemptions_skip_request_queue:false}});
+    if(!result.data?.[0]?.id)throw new Error("Twitch did not return a reward ID");return result.data[0];
+  }
+
   async createClip(tenantId:string){
     const grant=await this.ready(tenantId,"clips:write");
     const url=this.url("/clips",{broadcaster_id:grant.broadcasterId});

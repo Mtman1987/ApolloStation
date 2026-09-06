@@ -4,7 +4,7 @@ import {fetchAppSessionContext,requireSameOrigin,sendJson} from "./product-web.j
 
 /** Standalone app counterpart of the shell's media proxy. It forwards the user's session. */
 export async function proxyAppMedia(input:{appId:string;spmtOrigin:string;request:IncomingMessage;response:ServerResponse;url:URL;fetchImpl?:typeof fetch}):Promise<boolean>{
-  const {request,response,url}=input;if(!url.pathname.startsWith("/v1/media/"))return false;
+  const {request,response,url}=input;if(!url.pathname.startsWith("/v1/media/")&&!url.pathname.startsWith("/v1/assistant/")&&!/^\/v1\/commlink\/(operator|filters|ingestion-errors)$/.test(url.pathname))return false;
   const method=request.method??"GET",publicRead=["GET","HEAD"].includes(method)&&/^\/v1\/media\/public\/[A-Za-z0-9_-]{43}$/.test(url.pathname);
   try{
     if(!["GET","HEAD","POST","DELETE"].includes(method))return sendJson(response,405,{message:"Media method is not supported"});

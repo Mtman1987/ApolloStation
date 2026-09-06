@@ -396,6 +396,8 @@ function nebulaArcadeProxyPath(pathname: string) {
 }
 
 function browserProxyAllowed(method: string, pathname: string) {
+  if(/^\/v1\/commlink\/(operator|filters|ingestion-errors)$/.test(pathname))return ["GET","POST"].includes(method);
+  if (/^\/v1\/assistant\/(preferences|notes|speech\/(synthesize|transcribe|jobs\/[A-Za-z0-9._:-]+)|notes\/[^/]+)$/.test(pathname)) return ["GET","POST","DELETE"].includes(method);
   if(["GET","HEAD"].includes(method)&&/^\/v1\/media\/public\/[A-Za-z0-9_-]{43}$/.test(pathname))return true;
   if(pathname==="/v1/media/assets")return ["GET","POST"].includes(method);
   if(/^\/v1\/media\/assets\/[a-f0-9-]{36}$/.test(pathname))return ["GET","DELETE"].includes(method);

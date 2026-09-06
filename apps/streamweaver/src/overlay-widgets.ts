@@ -2,12 +2,12 @@ import { createHash } from "node:crypto";
 import type { OverlayWidgetManifestV1 } from "@spmt/contracts";
 
 export const STREAMWEAVER_WIDGETS = Object.freeze({
-  social: "Chat interactions", "bic-counter": "Bic counter", gamble: "Gamble result", "classic-gamble": "Classic gamble",
+  "welcome": "Welcome", "checkin": "Partner check-in", "redeem": "Reward", "pokemon": "Pokémon activity", "featured-chat": "Featured chat", social: "Chat interactions", "bic-counter": "Bic counter", gamble: "Gamble result", "classic-gamble": "Classic gamble",
   leaderboard: "Creator currency leaderboard", avatar: "Bot avatar", "tts-player": "Voice and captions",
   "shoutout-player": "Shoutout media", "brb-player": "BRB media",
 });
 export type StreamWeaverWidgetId = keyof typeof STREAMWEAVER_WIDGETS;
-export const STREAMWEAVER_WIDGET_EVENT_TYPES = ["streamweaver.social.interaction.v1", "streamweaver.bic.counter.updated.v1", "streamweaver.overlay.cue.requested.v1", "streamweaver.economy.overlay.v1", "streamweaver.avatar.updated.v1", "streamweaver.media.playback.v1"] as const;
+export const STREAMWEAVER_WIDGET_EVENT_TYPES = ["streamweaver.welcome.v1","streamweaver.checkin.v1","streamweaver.redeem.presentation.v1","streamweaver.pokemon.activity.v1","commlink.chat.featured.v1","streamweaver.social.interaction.v1", "streamweaver.bic.counter.updated.v1", "streamweaver.overlay.cue.requested.v1", "streamweaver.economy.overlay.v1", "streamweaver.avatar.updated.v1", "streamweaver.media.playback.v1"] as const;
 type Event = { id?: string; eventId?: string; sourceAppId?: string; type: string; occurredAt?: string; createdAt?: string; payload: unknown };
 export interface StreamWeaverWidgetItem { id: string; kind: string; occurredAt: string; text: string; actor?: string; total?: number | undefined; avatarUrl?: string | undefined; talkingUrl?: string | undefined; mediaUrl?: string | undefined; rows?: Array<{name:string;balance:number}>; durationMs?: number; }
 export function streamWeaverWidgetManifests(origin: string): OverlayWidgetManifestV1[] {
@@ -19,11 +19,16 @@ export function isStreamWeaverWidget(value: string): value is StreamWeaverWidget
 export function streamWeaverWidgetSnapshot(events: Event[], now = new Date().toISOString(), widget?: StreamWeaverWidgetId) {
   const items: StreamWeaverWidgetItem[] = [];
   for (const event of events) {
-    if(event.sourceAppId && event.sourceAppId !== "streamweaver")continue;
+    if(event.sourceAppId && event.sourceAppId !== "streamweaver" && !(event.sourceAppId === "commlink" && event.type === "commlink.chat.featured.v1"))continue;
     const payload=object(event.payload),occurredAt=event.occurredAt??event.createdAt??"",id=String(event.id??event.eventId??"");
     if(!id||!Number.isFinite(Date.parse(occurredAt)))continue;
     const base={id,occurredAt,text:""};
-    if(event.type==="streamweaver.social.interaction.v1") {
+    if(["streamweaver.welcome.v1","streamweaver.checkin.v1","streamweaver.redeem.presentation.v1","streamweaver.pokemon.activity.v1"].includes(event.type)){
+      const kind=event.type.split(".")[1]!,partner=object(payload.partner);
+      items.push({...base,kind,text:short(payload.text??(kind==="checkin"?`${payload.actor} checked in with ${partner.name} (${payload.userTotal} total)`:payload.title),2000),actor:short(payload.displayName??payload.actor,100),avatarUrl:media(partner.imageUrl),mediaUrl:media(payload.mediaUrl),durationMs:10000});
+    }else if(event.type==="commlink.chat.featured.v1") {
+      items.push({...base,kind:"featured-chat",text:short(payload.text,2000),actor:short(payload.username,100),durationMs:Math.max(1000,Math.min(300000,Number(payload.durationMs)||300000))});
+    } else if(event.type==="streamweaver.social.interaction.v1") {
       const actor=short(object(payload.actor).displayName??object(payload.actor).username,100),target=short(object(payload.target).username,100),trigger=short(payload.trigger,40);
       const verbs:Record<string,string>={"!boop":"boops","!cuddle":"cuddles","!dance":"dances with","!fistbump":"fist bumps","!headpat":"gives headpats to","!highfive":"high fives","!hug":"hugs","!love":"sends love to","!tickle":"tickles"};
       if(Object.hasOwn(verbs,trigger))items.push({...base,kind:"social",actor,text:`${actor} ${verbs[trigger]} ${target||"chat"}!`,durationMs:7000});
@@ -57,7 +62,7 @@ if(['tts-player','shoutout-player','brb-player'].includes(item.kind)){const url=
 if(!['leaderboard','bic-counter','avatar','brb-player'].includes(item.kind))timer=setTimeout(finish,item.durationMs||7000);else active=false;}
 function finish(){reset();image(avatarState.avatarUrl);const next=queue.shift();if(next)show(next);else renderPersistent();}
 function renderPersistent(){if(active)return;const kind=widget==='classic-gamble'?'gamble':widget;if(['bic-counter','leaderboard','avatar'].includes(kind)){const latest=snapshot.items.filter(i=>i.kind===kind).at(-1);if(latest)show(latest);}}
-function accept(next){if(next?.schemaVersion!==1||!Array.isArray(next.items))return;snapshot=next;avatarState=next.items.filter(i=>i.kind==='avatar').at(-1)||{};const now=Date.now();for(const item of next.items){if(seen.has(item.id))continue;seen.add(item.id);const kind=widget==='classic-gamble'?'gamble':widget;if(widget!=='auto'&&item.kind!==kind)continue;if(['leaderboard','bic-counter','avatar'].includes(item.kind)){if(widget!=='auto')renderPersistent();continue;}if(now-Date.parse(item.occurredAt)>Math.max(15000,item.durationMs||15000))continue;if(!item.mediaUrl&&['tts-player','brb-player','shoutout-player'].includes(item.kind)){queue=[];reset();continue;}if(active){if(queue.length<50)queue.push(item);}else show(item);}if(seen.size>1000)seen=new Set(next.items.map(i=>i.id));renderPersistent();}
+function accept(next){if(next?.schemaVersion!==1||!Array.isArray(next.items))return;snapshot=next;avatarState=next.items.filter(i=>i.kind==='avatar').at(-1)||{};const now=Date.now();for(const item of next.items){if(seen.has(item.id))continue;seen.add(item.id);const kind=widget==='classic-gamble'?'gamble':widget;if(widget!=='auto'&&item.kind!==kind)continue;if(['leaderboard','bic-counter','avatar'].includes(item.kind)){if(widget!=='auto')renderPersistent();continue;}if(now-Date.parse(item.occurredAt)>Math.max(15000,item.durationMs||15000))continue;if(item.kind==='featured-chat'&&!item.text){queue=[];reset();continue;}if(!item.mediaUrl&&['tts-player','brb-player','shoutout-player'].includes(item.kind)){queue=[];reset();continue;}if(active){if(queue.length<50)queue.push(item);}else show(item);}if(seen.size>1000)seen=new Set(next.items.map(i=>i.id));renderPersistent();}
 player.addEventListener('ended',finish);player.addEventListener('error',()=>{error.textContent='The media could not be played.';error.hidden=body.dataset.simulation!=='true';finish();});
 selector?.addEventListener('change',()=>{widget=selector.value;body.dataset.widget=widget;queue=[];reset();seen=new Set();accept(snapshot);});
 document.querySelector('[data-audio]')?.addEventListener('click',event=>{audioEnabled=!audioEnabled;player.muted=!audioEnabled;event.currentTarget.textContent=audioEnabled?'Mute audio':'Enable audio';error.hidden=true;if(player.src)player.play().catch(()=>{error.hidden=false;});});

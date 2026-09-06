@@ -67,7 +67,7 @@ export class SimulationRoomRuntime {
         if (parsed.pathname === "/v1/events" && init?.method === "POST" && result.status < 300) await emit(appId, { lane: "app", direction: "preview", title: String(body.type), body: "", provider, data: { eventType: body.type, payload: body.payload } });
         return Response.json(result.body ?? {}, { status: result.status });
       } });
-      const send = (appId: string) => async (message: { text: string; provider: "twitch" | "discord" | "kick"; idempotencyKey: string }) => {
+      const send = (appId: string) => async (message: { text: string; provider: "twitch" | "discord" | "kick" | "youtube"; idempotencyKey: string }) => {
         const providerMessageId = snowflake(message.idempotencyKey);
         await emit(appId, { lane: "chat", direction: "egress", title: appId, body: message.text, provider: message.provider, data: { providerMessageId, operation: "create", payload: { content: message.text } } });
         outputs++;

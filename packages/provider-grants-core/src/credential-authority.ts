@@ -3,7 +3,7 @@ import { DatabaseSync } from "node:sqlite";
 import type { ProviderGrantProviderV1 } from "@spmt/contracts";
 import { ProviderGrantError, type ProviderCredentialSourceV1, type ProviderCredentialV1 } from "./index.js";
 
-export const REFRESHABLE_PROVIDER_GRANT_PROVIDERS = ["twitch", "discord", "kick"] as const;
+export const REFRESHABLE_PROVIDER_GRANT_PROVIDERS = ["twitch", "discord", "kick", "youtube"] as const;
 export type RefreshableProviderGrantProviderV1 = (typeof REFRESHABLE_PROVIDER_GRANT_PROVIDERS)[number];
 export type ProviderCredentialStateV1 = "ready" | "refreshing" | "reauthorization-required" | "revoked";
 export type ProviderCredentialRefreshModeV1 = "oauth" | "replace-only";
@@ -337,6 +337,7 @@ export function createFirstPartyProviderRefreshAdapters(fetchImpl: ProviderRefre
     formRefreshAdapter("twitch", "https://id.twitch.tv/oauth2/token", "body", fetchImpl),
     formRefreshAdapter("discord", "https://discord.com/api/v10/oauth2/token", "basic", fetchImpl),
     formRefreshAdapter("kick", "https://id.kick.com/oauth/token", "body", fetchImpl),
+    formRefreshAdapter("youtube", "https://oauth2.googleapis.com/token", "body", fetchImpl),
   ];
 }
 
@@ -354,7 +355,7 @@ function formRefreshAdapter(provider: RefreshableProviderGrantProviderV1, endpoi
     try { payload = await response.json(); } catch { throw new ProviderOAuthRefreshError(false, `${provider} token endpoint returned invalid JSON`); }
     const body = object(payload, `${provider} refresh response`), expiresIn = boundedInteger(body.expires_in, "expires_in", 1, 365 * 24 * 60 * 60);
     const scopes = body.scope === undefined ? undefined : Array.isArray(body.scope) ? stringList(body.scope, "scope", 200) : typeof body.scope === "string" ? stringList(body.scope.split(/\s+/).filter(Boolean), "scope", 200) : fail("scope is invalid");
-    return { accessToken: credentialSecret(body.access_token, "access_token"), refreshToken: credentialSecret(body.refresh_token, "refresh_token"), expiresAt: new Date(Date.parse(timestamp(input.now, "refresh clock")) + expiresIn * 1000).toISOString(), ...(scopes ? { scopes } : {}) };
+    return { accessToken: credentialSecret(body.access_token, "access_token"), refreshToken: credentialSecret(body.refresh_token ?? input.refreshToken, "refresh_token"), expiresAt: new Date(Date.parse(timestamp(input.now, "refresh clock")) + expiresIn * 1000).toISOString(), ...(scopes ? { scopes } : {}) };
   } };
 }
 

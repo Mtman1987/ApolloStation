@@ -97,7 +97,7 @@ export class StreamWeaverEconomyCommandConsumer {
         case "currency": {
           const settings = this.economy.getCurrencySettings();
           text = settings.currencyConfigured
-            ? `${settings.currencyName} is this StreamWeaver's currency. SPMT exchange is ${settings.spmtExchangeEnabled ? "enabled" : "disabled"}.`
+            ? `${settings.currencyName} is this StreamWeaver's currency. Eligible rewards can accept SPMT directly; streamer points cannot become XP.`
             : "The StreamWeaver owner must choose a custom currency name before economy commands are enabled.";
           break;
         }
@@ -156,15 +156,7 @@ export class StreamWeaverEconomyCommandConsumer {
           }
           break;
         }
-        case "exchange": {
-          if (!parsed.args[0]) return { command, text: `@${actorName}, usage: !exchange amount` };
-          const localAmount = parseStreamWeaverPointAmount(parsed.args[0]);
-          const result = await this.economy.exchangeLocalForSpmt({ userId: actorId, localAmount, operationId: delivery.deliveryId });
-          text = result.success
-            ? `@${actorName} exchanged ${formatCompactPointAmount(result.exchange.localSpent)} ${result.exchange.currencyName} for ${result.exchange.spmtAwarded} SPMT XP.`
-            : `@${actorName}, exchange is reserved and pending retry; no additional ${result.exchange.currencyName} will be deducted.`;
-          break;
-        }
+        case "exchange": { return {command,text:"Streamer points cannot be converted into SPMT XP. You can spend SPMT directly on rewards where the streamer allows it."}; }
         case "addpoints": {
           if (!isModerator(message)) return { command, text: `@${actorName}, only mods can use that!` };
           const target = await this.target(message); const amount = integerToken(parsed.args[1]);

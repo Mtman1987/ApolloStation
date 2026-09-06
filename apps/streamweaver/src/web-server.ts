@@ -1,3 +1,8 @@
+import { streamWeaverPointsRateBrowserJs } from "./points-rate-client.js";
+import { streamWeaverOperationsBrowserJs } from "./stream-operations-client.js";
+import { streamWeaverPokemonBrowserJs } from "./pokemon-client.js";
+import { streamWeaverChatDeskBrowserJs } from "./chat-desk-client.js";
+import { streamWeaverAssistantBrowserJs } from "./assistant-client.js";
 import {proxyAppMedia} from "@spmt/app-foundation/media-proxy";
 import {streamWeaverAssetsBrowserJs} from "./assets-client.js";
 import {streamWeaverResearchBrowserJs} from "./research-client.js";
@@ -28,6 +33,9 @@ export const STREAMWEAVER_WEB_DESCRIPTOR: ProductAppWebDescriptorV1 = {
   description: "StreamWeaver owns tenant-configured automation while shared identity, jobs, provider grants, Stellar Core and workspace stay canonical in SPMT.",
   sceneUrl: "/assets/product/streamweaver-background.webp",
   sections: [
+    {id:"streamops",label:"Stream Operations",title:"Rewards, Welcomes & Check-ins",body:"Configure stream events and community operations.",glyph:"✦",appOwnedData:true,navigationGroup:"Manage"},
+    {id:"chatdesk",label:"Chat Desk",title:"Shared Chat Desk",body:"Pin, queue and feature chat through Commlink.",glyph:"↔",appOwnedData:true,navigationGroup:"Connections & Output"},
+    {id:"assistant",label:"Speech & Notes",title:"Voice and Private Notes",body:"Choose your voice, transcribe recordings and keep private notes.",glyph:"◉",appOwnedData:true,navigationGroup:"Assistant"},
     { id: "setup", label: "Setup Guide", title: "Start With Only What You Choose", body: "New StreamWeaver tenants begin with zero command flows. Choose community flows, connect accounts and bot channels, learn Voice Commander, then add the ecosystem Public/Personal overlays.", glyph: "✓", appOwnedData: true },
     { id: "community", label: "Community Flows", title: "Browse, Import & Share Flows", body: "One feature is one portable JSON package. Install only the flows you want, export them, or publish your own for the community.", glyph: "◎", appOwnedData: true, navigationGroup:"Commands" },
     { id: "builder", label: "Flow Builder", title: "Create & Edit Commands", body: "Build a command, arrange its action steps, or ask the shared assistant for a private draft.", glyph: "✧", appOwnedData: true, navigationGroup:"Commands" },
@@ -40,9 +48,9 @@ export const STREAMWEAVER_WEB_DESCRIPTOR: ProductAppWebDescriptorV1 = {
     { id: "media", label: "Media & Mixer", title: "Media & Mixer", body: "Control your HearMeOut room queues while configuring StreamWeaver.", glyph: "♫", appOwnedData:true, navigationGroup:"Connections & Output" },
     { id: "overlays", label: "Overlays", title: "Stream Outputs", body: "Compose your stream through the shared Overlay Bay and test outputs in Simulation Rooms.", glyph: "▣", appOwnedData:true, navigationGroup:"Connections & Output", signals:[{source:"overlayWidgets",label:"Registered widgets"},{source:"overlayOutputs",label:"Issued outputs"}] },
     { id:"assets",label:"Media Files",title:"Shared Media Files",body:"Store private recordings, avatars and generated media in your shared workspace.",glyph:"▧",appOwnedData:true,navigationGroup:"Connections & Output" },
-    { id: "economy", label: "Economy", title: "Creator Currency", body: "Configure and inspect StreamWeaver's tenant-local currency. Canonical SPMT XP remains a separate shared ledger.", glyph: "$", appOwnedData: true, navigationGroup:"Manage" },
+    { id: "economy", label: "Points", title: "Streamer Points", body: "Manage your points and see their current value compared with SPMT XP.", glyph: "$", appOwnedData: true, navigationGroup:"Manage" },
     { id: "activity", label: "Activity", title: "Command Run History", body: "Inspect actual command inputs, ordered steps, results and failures.", glyph: "◷", appOwnedData:true, navigationGroup:"Manage" },
-    { id: "games", label: "Games", title: "Pokémon, Packs & Gym", body: "Collections, packs, trading, teams and gym battles remain tenant-bound under StreamWeaver.", glyph: "○", navigationGroup:"Manage", signals: [{ source: "events", label: "Game activity", keywords: ["pokemon", "pokémon", "pack", "card", "trade", "gym", "battle"] }, { source: "jobs", label: "Game jobs", keywords: ["pokemon", "pack", "card", "trade", "gym"] }], emptyTitle: "No game activity published", emptyBody: "No collection, pack, trade, team or gym activity is currently published." },
+    { id: "games", appOwnedData:true, label: "Games", title: "Pokémon, Packs & Gym", body: "Collections, packs, trading, teams and gym battles remain tenant-bound under StreamWeaver.", glyph: "○", navigationGroup:"Manage", signals: [{ source: "events", label: "Game activity", keywords: ["pokemon", "pokémon", "pack", "card", "trade", "gym", "battle"] }, { source: "jobs", label: "Game jobs", keywords: ["pokemon", "pack", "card", "trade", "gym"] }], emptyTitle: "No game activity published", emptyBody: "No collection, pack, trade, team or gym activity is currently published." },
   ],
 };
 
@@ -54,7 +62,7 @@ export function createStreamWeaverWebServer(options: StreamWeaverWebServerOption
   const snapshot = productAppSnapshotHandler({ appId: "streamweaver", spmtOrigin: options.spmtOrigin, sources: productAppSnapshotSources(STREAMWEAVER_WEB_DESCRIPTOR) });
   const controls = new StreamWeaverWebControls({ ...options, connections: parseStreamWeaverWebConnections(options.connectionsJson) });
   const secureChoice=options.databasePath?new StreamWeaverSecureChoiceWeb({databasePath:options.databasePath,spmtOrigin:options.spmtOrigin,publicOrigin:options.publicOrigin??process.env.STREAMWEAVER_PUBLIC_ORIGIN??options.spmtOrigin}):undefined;
-  return createProductAppWebServer({ descriptor: STREAMWEAVER_WEB_DESCRIPTOR, port: options.port, host: options.host, buildSha: options.buildSha, extraCss: STREAMWEAVER_CONTROL_CSS + STREAMWEAVER_FLOW_CSS, browserJs: appSurfaceBrowserJs(SURFACE) + streamWeaverBrowserJs() + streamWeaverMediaBrowserJs() + streamWeaverResearchBrowserJs() + streamWeaverAssetsBrowserJs(), handleApi: async (request, response, url) => await proxyAppMedia({appId:"streamweaver",spmtOrigin:options.spmtOrigin,request,response,url,...(options.fetchImpl?{fetchImpl:options.fetchImpl}:{})}) || await secureChoice?.handle(request,response,url) || await controls.handle(request, response, url) || await snapshot(request, response, url), close: () => {secureChoice?.close();controls.close();} });
+  return createProductAppWebServer({ descriptor: STREAMWEAVER_WEB_DESCRIPTOR, port: options.port, host: options.host, buildSha: options.buildSha, extraCss: STREAMWEAVER_CONTROL_CSS + STREAMWEAVER_FLOW_CSS, browserJs: appSurfaceBrowserJs(SURFACE) + streamWeaverBrowserJs() + streamWeaverMediaBrowserJs() + streamWeaverResearchBrowserJs() + streamWeaverAssetsBrowserJs() + streamWeaverAssistantBrowserJs() + streamWeaverChatDeskBrowserJs() + streamWeaverPokemonBrowserJs() + streamWeaverOperationsBrowserJs() + streamWeaverPointsRateBrowserJs(), handleApi: async (request, response, url) => await proxyAppMedia({appId:"streamweaver",spmtOrigin:options.spmtOrigin,request,response,url,...(options.fetchImpl?{fetchImpl:options.fetchImpl}:{})}) || await secureChoice?.handle(request,response,url) || await controls.handle(request, response, url) || await snapshot(request, response, url), close: () => {secureChoice?.close();controls.close();} });
 }
 
 const STREAMWEAVER_CONTROL_CSS = `

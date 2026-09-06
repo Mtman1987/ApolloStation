@@ -1,3 +1,7 @@
+import { StreamWeaverCommunityRuntime } from "./community-runtime.js";
+import { calculateStreamWeaverSupplyRate } from "./economy.js";
+import { StreamWeaverCommunityStore, type StreamPartner, type StreamRedeem, type StreamEventBinding } from "./community-store.js";
+import { StreamWeaverPokemonStore, type PokemonAction } from "./pokemon-store.js";
 import {streamWeaverResearchIntent} from "./research-mode.js";
 import { StreamWeaverAdminEconomy } from "./economy-admin.js";
 import { importStreamWeaverLegacy } from "./flow-import.js";
@@ -25,6 +29,8 @@ type SessionContext = Awaited<ReturnType<typeof fetchAppSessionContext>>;
 
 /** Authenticated app API behind Voice Commander, persona, economy, and integration pages. */
 export class StreamWeaverWebControls {
+  private readonly community?:StreamWeaverCommunityStore;
+  private readonly pokemon?: StreamWeaverPokemonStore;
   private readonly persona?: StreamWeaverPersonaSettingsStore;
   private readonly economy?: SqliteStreamWeaverEconomyStore;
   private readonly client?: SpmtClient;
@@ -35,6 +41,8 @@ export class StreamWeaverWebControls {
 
   constructor(private readonly options: StreamWeaverWebControlOptionsV1) {
     this.operationMode = options.operationMode ?? "active";
+    if (options.databasePath) this.community=new StreamWeaverCommunityStore(options.databasePath);
+    if (options.databasePath) this.pokemon=new StreamWeaverPokemonStore(options.databasePath);
     if (options.databasePath) { this.persona = new StreamWeaverPersonaSettingsStore(options.databasePath); this.economy = new SqliteStreamWeaverEconomyStore(options.databasePath); this.flows = new StreamWeaverFlowPackageStore(options.databasePath); }
     if (options.databasePath) { this.runtimeSettings=new StreamWeaverRuntimeSettingsStore(options.databasePath); this.relay=new SqliteStreamWeaverBotRelayStore(options.databasePath); }
     if (options.credential) {
@@ -43,13 +51,71 @@ export class StreamWeaverWebControls {
     }
   }
 
-  close() { this.relay?.close(); this.runtimeSettings?.close(); this.flows?.close(); this.persona?.close(); this.economy?.close(); }
+  close() { this.community?.close(); this.pokemon?.close(); this.relay?.close(); this.runtimeSettings?.close(); this.flows?.close(); this.persona?.close(); this.economy?.close(); }
 
   async handle(request: IncomingMessage, response: ServerResponse, url: URL): Promise<boolean> {
     if (!url.pathname.startsWith("/api/streamweaver/control")) return false;
     try {
       const context = await fetchAppSessionContext({ appId: "streamweaver", spmtOrigin: this.options.spmtOrigin, request });
+      if(url.pathname==="/api/streamweaver/control/stream-operations"){
+        if(!this.community)throw new Error("Stream operations storage is not configured");
+        if(request.method==="GET"){
+          const localSupply=this.economy?.getCirculatingSupply(context.tenantId)??0;
+          let pricing:Record<string,unknown>={available:false,localSupply,message:"SPMT pricing is unavailable"};
+          try {if(this.client){const spmt=await this.client.getXpSupply(context.tenantId);const rate=calculateStreamWeaverSupplyRate(localSupply,spmt.spendableSupply);pricing={available:true,localSupply,spmtSupply:spmt.spendableSupply,localPerSpmt:rate.localPerSpmt,spmtPerLocal:rate.spmtPerLocal,measuredAt:spmt.measuredAt,rounding:"up to the next whole XP",prices:Object.fromEntries(this.community.redeems(context.tenantId).map(r=>[r.id,rate.localCostInSpmt(r.price)]))};}}
+          catch{pricing.message=localSupply===0?"SPMT pricing requires a nonzero streamer-point supply":"SPMT pricing is temporarily unavailable";}
+          return sendJson(response,200,{partners:this.community.partners(context.tenantId),redeems:this.community.redeems(context.tenantId),settings:this.community.settings(context.tenantId),bindings:this.community.bindings(context.tenantId),stats:this.community.checkinStats(context.tenantId),watchtime:this.community.watchLeaders(context.tenantId),pricing,wallet:this.economy?.getWallet(context.tenantId,this.actor(context).id),diagnostics:this.role(context)==="owner"?this.community.providerDiagnostics(context.tenantId):[],owner:this.role(context)==="owner"});
+        }
+        if(request.method!=="POST")return sendJson(response,405,{message:"Use GET or POST"});requireSameOrigin(request);const body=await readJsonBody(request);
+        if(body.action==="checkin")return sendJson(response,200,this.community.checkin(context.tenantId,this.actor(context).id,String(body.partnerId??""),"web",String(body.requestId??"")));
+        if(body.action==="redeem-request"){
+          if(!this.client||!this.economy)throw new Error("Reward runtime is not configured");
+          const currency=body.currency==="spmt"?"spmt":"streamer";
+          if(currency==="spmt"&&this.operationMode!=="active")throw new Error("SPMT payments are disabled in this environment");
+          return sendJson(response,200,await new StreamWeaverCommunityRuntime(this.community,this.economy,this.client,this.operationMode==="active").redeemReward({tenantId:context.tenantId,userId:this.actor(context).id,displayName:this.actor(context).id,rewardId:String(body.rewardId??""),requestId:String(body.requestId??""),currency,...(body.maxSpmtCost===undefined?{}:{maxSpmtCost:Number(body.maxSpmtCost)})}));
+        }
+        this.requireOwner(context);
+        if(body.action==="partner")return sendJson(response,200,this.community.savePartner(context.tenantId,body as unknown as StreamPartner));
+        if(body.action==="remove-partner"){this.community.removePartner(context.tenantId,String(body.id));return sendJson(response,200,{removed:true});}
+        if(body.action==="redeem")return sendJson(response,200,this.community.saveRedeem(context.tenantId,body as unknown as StreamRedeem));
+        if(body.action==="binding")return sendJson(response,200,this.community.saveBinding(context.tenantId,body as unknown as StreamEventBinding));
+        if(body.action==="settings")return sendJson(response,200,this.community.saveSettings(context.tenantId,body));
+        throw new Error("Unknown stream operation");
+      }
+      if(url.pathname==="/api/streamweaver/control/pokemon") {
+        if(!this.pokemon)throw new Error("Pokémon storage is not configured");
+        const actor={...this.actor(context),owner:this.role(context)==="owner"};
+        if(request.method==="GET")return sendJson(response,200,{...this.pokemon.snapshot(context.tenantId,actor),actor,tenantId:context.tenantId});
+        if(request.method!=="POST")return sendJson(response,405,{message:"Use GET or POST"});
+        requireSameOrigin(request);const body=await readJsonBody(request,2_000_000);
+        if(body.action==="fetch-set"){
+          this.requireOwner(context);if(this.operationMode!=="active")throw new Error("External catalogs are disabled in this environment. Import a catalog file instead.");
+          const set=String(body.set??"");if(!/^[a-zA-Z0-9-]{1,40}$/.test(set))throw new Error("Enter a valid set ID");
+          const cards:import("./pokemon-runtime.js").StreamWeaverPokemonCatalogCardV1[]=[];let name=set;
+          for(let page=1;page<=8;page++){
+            const query=new URLSearchParams({q:`set.id:${set}`,page:String(page),pageSize:"250"});
+            const response=await(this.options.fetchImpl??fetch)("https://api.pokemontcg.io/v2/cards?"+query,{headers:process.env.POKEMON_TCG_API_KEY?{"X-Api-Key":process.env.POKEMON_TCG_API_KEY}:{},redirect:"error",signal:AbortSignal.timeout(20000)});
+            if(!response.ok)throw new Error(`Card catalog returned HTTP ${response.status}`);
+            const payload=await response.json() as {data?:Array<Record<string,any>>};if(!Array.isArray(payload.data))throw new Error("Card catalog returned invalid data");
+            for(const c of payload.data){name=String(c.set?.name??set);cards.push({name:String(c.name),number:String(c.number),setCode:set,rarity:String(c.rarity??"Common"),...(c.images?.small?{imageUrl:String(c.images.small)}:{}),...(c.supertype?{supertype:String(c.supertype)}:{}),...(c.hp?{hp:String(c.hp)}:{}),...(Array.isArray(c.types)?{types:c.types}:{}),...(Array.isArray(c.attacks)?{attacks:c.attacks}:{}),...(Array.isArray(c.weaknesses)?{weaknesses:c.weaknesses}:{}),...(Array.isArray(c.resistances)?{resistances:c.resistances}:{})});}
+            if(payload.data.length<250)break;
+          }
+          body.action="catalog";body.catalog={name,cards};
+        }
+        const result=this.pokemon.act(context.tenantId,actor,body as unknown as PokemonAction);
+        return sendJson(response,200,result);
+      }
+
       if (request.method === "GET" && url.pathname === "/api/streamweaver/control") return await this.read(request, response, context);
+      if (request.method === "GET" && url.pathname === "/api/streamweaver/control/economy/rate") {
+        if (!this.economy) throw new Error("Points storage is not configured");
+        const tenantId=context.tenantId, settings=this.economy.getSettings(tenantId);
+        const spmt=await this.requireClient().getXpSupply(tenantId);
+        // Read the local total after authority responds; no stale configured reference supply.
+        const streamerPoints=this.economy.getCirculatingSupply(tenantId),spmtPoints=spmt.spendableSupply;
+        const valid=Number.isSafeInteger(streamerPoints)&&streamerPoints>0&&Number.isSafeInteger(spmtPoints)&&spmtPoints>0;
+        return sendJson(response,200,{available:valid,streamerPoints,spmtPoints,currencyName:settings?.currencyName??"Streamer points",...(valid?{streamerPointsPerXp:streamerPoints/spmtPoints,xpPerStreamerPoint:spmtPoints/streamerPoints}:{}),measuredAt:new Date().toISOString(),spmtMeasuredAt:spmt.measuredAt,...(!valid?{message:"A rate is available once both currencies have a nonzero outstanding supply."}:{})});
+      }
       if(request.method==="GET"&&url.pathname==="/api/streamweaver/control/devices"){this.requireOwner(context);return sendJson(response,200,{devices:await this.deviceApi(request,context)});}
       if (request.method === "GET" && url.pathname === "/api/streamweaver/control/flows") return this.readFlows(response, context);
       if(request.method==="GET"&&url.pathname==="/api/streamweaver/control/diagnostics"){
@@ -361,7 +427,7 @@ export function parseStreamWeaverWebConnections(source: string | undefined): Str
   let value: unknown; try { value = JSON.parse(source); } catch { throw new Error("CHAT_GATEWAY_CONNECTIONS must be valid JSON"); }
   if (!Array.isArray(value) || value.length > 500) throw new Error("CHAT_GATEWAY_CONNECTIONS must be an array");
   return value.map((item) => {
-    const row = record(item); if (!row || row.schemaVersion !== 1 || !["twitch", "discord", "kick"].includes(String(row.provider)) || typeof row.desired !== "boolean") throw new Error("CHAT_GATEWAY_CONNECTIONS contains an invalid connection");
+    const row = record(item); if (!row || row.schemaVersion !== 1 || !["twitch", "discord", "kick", "youtube"].includes(String(row.provider)) || typeof row.desired !== "boolean") throw new Error("CHAT_GATEWAY_CONNECTIONS contains an invalid connection");
     return { schemaVersion: 1, tenantId: identifier(row.tenantId, "tenantId"), provider: row.provider as ChatProviderV1, connectionId: identifier(row.connectionId, "connectionId"), channelId: identifier(row.channelId, "channelId"), providerAccountId: identifier(row.providerAccountId, "providerAccountId"), desired: row.desired };
   });
 }

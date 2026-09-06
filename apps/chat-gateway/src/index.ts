@@ -223,7 +223,7 @@ export class ChatGatewayRuntime {
 }
 
 export function createShadowChatProviderSenders(store: SqliteChatGatewayStore, onMessage?: (message: ShadowChatMessageV1) => void | Promise<void>): ChatProviderSenderV1[] {
-  return (["twitch", "discord", "kick"] as const).map((provider) => ({
+  return (["twitch", "discord", "kick", "youtube"] as const).map((provider) => ({
     provider,
     async send(message: OutboundChatMessageV1) {
       if (message.provider !== provider) throw new Error("Shadow sender received the wrong provider");

@@ -54,3 +54,8 @@ export function stellarCoreCatalogRegistration(launchUrl: string): AppCatalogReg
 }
 
 export {StellarResearchService,BraveStellarSearchProvider} from "./research.js";
+
+export * from "./speech-provider.js";
+export * from "./speech-worker.js";
+export * from "./speech-voices.js";
+export * from "./assistant-store.js";
