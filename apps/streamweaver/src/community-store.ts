@@ -2,6 +2,8 @@ import { DatabaseSync } from "node:sqlite";
 import { createHash } from "node:crypto";
 export interface StreamPartner { id:string; name:string; kind:"partner"|"crew"|"mod"|"community"; imageUrl:string; inviteUrl:string; }
 export interface StreamRedeem { id:string; title:string; price:number; award:number; acceptance:"streamer"|"spmt"|"either"; firstPerStream:boolean; text:string; mediaUrl:string; enabled:boolean; rewardId:string; }
+export const STREAM_EVENT_AWARDS=["twitch:follow","twitch:subscribe","twitch:resubscribe","twitch:gift-bomb","twitch:cheer","twitch:raid","youtube:newSponsorEvent","youtube:memberMilestoneChatEvent","youtube:membershipGiftingEvent","youtube:giftMembershipReceivedEvent","youtube:superChatEvent","youtube:superStickerEvent"] as const;
+export interface StreamEventAward {event:string;points:number;perUnit:boolean;enabled:boolean;}
 export interface StreamEventBinding { event:string; command:string; enabled:boolean; }
 export interface StreamPresentationSettings { welcomeEnabled:boolean; welcomeSession:string; welcomeText:string; brbMode:"broadcaster"|"viewer"; welcomeShoutout?:boolean;shoutoutMode?:"full"|"overlay"|"chat"; }
 export class StreamWeaverCommunityStore {
@@ -29,6 +31,8 @@ export class StreamWeaverCommunityStore {
     const collision=this.redeems(tenant).find(r=>r.id!==value.id&&value.rewardId&&r.rewardId===value.rewardId);if(collision)throw new Error("This Twitch reward is already bound to another reward");
     this.save(tenant,"redeem",value.id,value);return value;
   }
+  awards(tenant:string){return this.list<StreamEventAward>(tenant,"event-award");}
+  saveAward(tenant:string,input:StreamEventAward){if(!(STREAM_EVENT_AWARDS as readonly string[]).includes(input.event)||!Number.isSafeInteger(input.points)||input.points<0||input.points>1000000000000||typeof input.perUnit!=="boolean"||typeof input.enabled!=="boolean")throw new Error("Choose a supported event and nonnegative whole-point award");if(input.perUnit&&!['twitch:cheer','twitch:gift-bomb','twitch:raid'].includes(input.event))throw new Error("Per-unit awards are available for Twitch bits, gifted subscriptions and raid viewers");const value={event:input.event,points:input.points,perUnit:input.perUnit,enabled:input.enabled};this.save(tenant,"event-award",value.event,value);return value;}
   bindings(tenant:string){return this.list<StreamEventBinding&{id:string}>(tenant,"binding");}
   saveBinding(tenant:string,input:StreamEventBinding){if(!/^(follow|subscribe|resubscribe|gift-sub|gift-bomb|cheer|raid|reward:[A-Za-z0-9-]+)$/.test(input.event))throw new Error("Choose a supported provider event");const value={id:input.event,event:input.event,command:text(input.command,500),enabled:input.enabled===true};this.save(tenant,"binding",value.id,value);return value;}
   settings(tenant:string):StreamPresentationSettings{return this.list<StreamPresentationSettings>(tenant,"presentation")[0]??{welcomeEnabled:false,welcomeSession:"default",welcomeText:"Welcome {user}!",brbMode:"broadcaster"};}
@@ -54,6 +58,7 @@ export class StreamWeaverCommunityStore {
   close(){this.db.close();}
   requestTask(tenant:string,key:string,body:Record<string,unknown>){if(!key||key.length>500||key.includes("\0"))throw new Error("Stream request identifier is required");const hash=createHash("sha256").update(key).digest("hex"),old=this.db.prepare("SELECT body FROM sw_stream_tasks WHERE tenant=? AND id=?").get(tenant,hash);if(old&&String(old.body)!==JSON.stringify(body))throw new Error("Stream request identifier was used for another action");this.db.prepare("INSERT OR IGNORE INTO sw_stream_tasks(tenant,id,body) VALUES(?,?,?)").run(tenant,hash,JSON.stringify(body));return {requestId:hash};}
   pendingTasks(){return this.db.prepare("SELECT tenant,id,body FROM sw_stream_tasks WHERE state='pending' AND next_at<=? ORDER BY rowid LIMIT 10").all(Date.now()).map(r=>({tenant:String(r.tenant),id:String(r.id),body:JSON.parse(String(r.body)) as Record<string,unknown>}));}
+  deferTask(tenant:string,key:string){this.db.prepare("UPDATE sw_stream_tasks SET next_at=? WHERE tenant=? AND id=?").run(Date.now()+1000,tenant,key);}
   finishTask(tenant:string,key:string,error?:string){this.db.prepare("UPDATE sw_stream_tasks SET state=?,error=?,next_at=? WHERE tenant=? AND id=?").run(error?"pending":"complete",error?.slice(0,300)??null,Date.now()+60_000,tenant,key);}
   tasks(tenant:string){return this.db.prepare("SELECT id,state,error FROM sw_stream_tasks WHERE tenant=? ORDER BY rowid DESC LIMIT 30").all(tenant);}
   program(tenant:string):{clips:Array<{url:string;duration:number;text:string}>;index:number;nextAt:number;requestId:string}|undefined{return this.list(tenant,"brb-program")[0] as ReturnType<StreamWeaverCommunityStore['program']>;}

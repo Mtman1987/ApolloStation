@@ -1,3 +1,4 @@
+import {renderEcosystemDocs} from "./ecosystem-docs.js";
 import { renderStreamWeaverWidget, STREAMWEAVER_WIDGET_CSP } from "@spmt/streamweaver/dist/overlay-widgets.js";
 import { renderNebulaTagOverlayHtml, NEBULA_TAG_OVERLAY_CSS, NEBULA_TAG_OVERLAY_CLIENT_JS, renderNebulaGameWidget, renderNebulaArcadeStage, NEBULA_IMPORTED_WIDGET_IDS, NEBULA_WIDGET_STAGE_JS, nebulaThreeJs } from "@spmt/nebula-arcade";
 import { randomBytes } from "node:crypto";
@@ -155,6 +156,7 @@ export function createSpaceMountainWebHost(options: SpaceMountainWebHostOptions)
       }
       if (request.method === "GET" && url.pathname === "/assets/web/sandbox.css") return textResponse(response, 200, SANDBOX_CSS + SANDBOX_POLISH_CSS, "text/css; charset=utf-8", "public, max-age=300");
       if (request.method === "GET" && url.pathname === "/assets/web/developer-docs.css") return textResponse(response, 200, DEVELOPER_DOCS_CSS, "text/css; charset=utf-8", "public, max-age=300");
+      if(request.method==="GET"&&["/docs","/docs/streamweaver","/docs/developers/streamweaver","/docs/streamweaver/parity"].includes(url.pathname))return html(response,200,renderEcosystemDocs(url.pathname,buildSha)!);
       if (request.method === "GET" && url.pathname === "/docs/developers") return html(response, 200, renderDeveloperDocsPage(buildSha));
       if (request.method === "GET" && url.pathname === "/docs/examples/app-manifest.json") return json(response, 200, DEVELOPER_MANIFEST_EXAMPLE);
       if (request.method === "GET" && url.pathname === "/sandbox/beacon") return html(response, 200, SANDBOX_BEACON_HTML);
@@ -183,6 +185,11 @@ export function createSpaceMountainWebHost(options: SpaceMountainWebHostOptions)
       }
       if (overlayRequest) {
         return await proxy(response, request, url, spmtOrigin, fetchImpl, true);
+      }
+      if(request.method==="POST"&&socialStreamIngress(url.pathname)){
+        // Dedicated bearer-authenticated ingestion; never accepts a browser session as bridge authority.
+        if(!/^Bearer ss_[A-Za-z0-9_-]{43}$/.test(request.headers.authorization??""))return json(response,401,{message:"A Social Stream bridge key is required"});
+        return proxy(response,request,url,spmtOrigin,fetchImpl,false,true);
       }
       if ((url.pathname.startsWith("/v1/") || url.pathname.startsWith("/health/")) && browserProxyAllowed(request.method ?? "GET", url.pathname)) {
         if (!["GET", "HEAD"].includes(request.method ?? "GET")) requireSameOrigin(request);
@@ -308,17 +315,19 @@ async function upstreamJson(fetchImpl: typeof fetch, url: string, body: Record<s
   return { response, body: parseJson(encoded) };
 }
 
-async function proxy(response: ServerResponse, request: IncomingMessage, url: URL, origin: string, fetchImpl: typeof fetch, overlay = false) {
+async function proxy(response: ServerResponse, request: IncomingMessage, url: URL, origin: string, fetchImpl: typeof fetch, overlay = false, bridge = false) {
   const method = request.method ?? "GET";
   const headers = new Headers({ accept: request.headers.accept ?? "application/json", "x-spmt-app": "spacemountain" });
   if (request.headers["content-type"]) headers.set("content-type", request.headers["content-type"]);
-  if (request.headers.cookie) headers.set("cookie", request.headers.cookie);
+  if (!bridge && request.headers.cookie) headers.set("cookie", request.headers.cookie);
+  if(bridge)headers.set("authorization",request.headers.authorization!);
+  if(overlay)for(const name of ["x-spmt-listener-id","x-spmt-listener-state","x-spmt-listener-event"]){const value=request.headers[name];if(typeof value==="string")headers.set(name,value);}
   if (typeof request.headers["x-spmt-tenant"] === "string") headers.set("x-spmt-tenant", request.headers["x-spmt-tenant"]);
   if (typeof request.headers["x-correlation-id"] === "string") headers.set("x-correlation-id", request.headers["x-correlation-id"]);
   if (typeof request.headers["idempotency-key"] === "string") headers.set("idempotency-key", request.headers["idempotency-key"]);
   const media = url.pathname.startsWith("/v1/media/");
   if(media && request.headers.range)headers.set("range",request.headers.range);
-  const body = ["GET", "HEAD"].includes(method) ? undefined : await readBody(request, media && url.pathname === "/v1/media/assets" ? 8 * 1024 * 1024 : MAX_BODY_BYTES);
+  const body = ["GET", "HEAD"].includes(method) ? undefined : await readBody(request, media && url.pathname === "/v1/media/assets" ? 8 * 1024 * 1024 : bridge ? 64000 : MAX_BODY_BYTES);
   let upstream: Response;
   try {
     upstream = await fetchImpl(`${origin}${url.pathname}${url.search}`, {
@@ -356,6 +365,8 @@ async function proxy(response: ServerResponse, request: IncomingMessage, url: UR
   response.writeHead(upstream.status, responseHeaders);
   response.end(encoded);
 }
+
+function socialStreamIngress(pathname:string){return /^\/v1\/commlink\/social-stream\/[A-Za-z0-9._:@-]{1,200}$/.test(pathname);}
 
 function overlayOutputPath(pathname: string) {
   return /^\/t\/[A-Za-z0-9._:@-]{1,200}\/(?:public|personal)(?:\/source\/[A-Za-z0-9._:@%/-]{1,600})?$/.test(pathname)
@@ -396,7 +407,7 @@ function nebulaArcadeProxyPath(pathname: string) {
 }
 
 function browserProxyAllowed(method: string, pathname: string) {
-  if(/^\/v1\/commlink\/(operator|filters|ingestion-errors)$/.test(pathname))return ["GET","POST"].includes(method);
+  if(/^\/v1\/commlink\/(operator|filters|ingestion-errors|social-stream)$/.test(pathname))return ["GET","POST"].includes(method);
   if (/^\/v1\/assistant\/(preferences|notes|speech\/(synthesize|transcribe|jobs\/[A-Za-z0-9._:-]+)|notes\/[^/]+)$/.test(pathname)) return ["GET","POST","DELETE"].includes(method);
   if(["GET","HEAD"].includes(method)&&/^\/v1\/media\/public\/[A-Za-z0-9_-]{43}$/.test(pathname))return true;
   if(pathname==="/v1/media/assets")return ["GET","POST"].includes(method);

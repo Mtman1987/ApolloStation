@@ -1,7 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
 import type { StreamWeaverTwitchGrantSourceV1 } from "./twitch-command-adapter.js";
 
-export interface StreamWeaverTwitchEvent { id:string;tenantId:string;type:string;userId:string;username:string;displayName:string;rewardId?:string;redemptionId?:string;input:string;occurredAt:string; }
+export interface StreamWeaverTwitchEvent { id:string;tenantId:string;type:string;userId:string;username:string;displayName:string;rewardId?:string;redemptionId?:string;input:string;occurredAt:string;units?:number; }
 interface Socket { close():void; addEventListener(type:string,listener:(event:any)=>void):void; }
 /** Reconnectable EventSub source with a durable inbox, separate from ordinary chat sockets. */
 export class StreamWeaverTwitchEventSub {
@@ -59,7 +59,8 @@ export class StreamWeaverTwitchEventSub {
       else if(frame.metadata?.message_type==="notification"){
         const e=frame.payload?.event??{},subscription=frame.payload?.subscription?.type??"",id=String(frame.metadata?.message_id??"");
         const type=eventType(subscription);if(!type||!id)return;
-        const value:StreamWeaverTwitchEvent={id,tenantId,type,userId:String(e.user_id??e.from_broadcaster_user_id??""),username:String(e.user_login??e.from_broadcaster_user_login??""),displayName:String(e.user_name??e.from_broadcaster_user_name??"viewer"),input:String(e.user_input??""),occurredAt:String(frame.metadata.message_timestamp??new Date().toISOString()),...(e.reward?.id?{rewardId:String(e.reward.id),redemptionId:String(e.id??"")}:{})};
+        const units=type==="cheer"?e.bits:type==="gift-bomb"?e.total:type==="raid"?e.viewers:1;
+        const value:StreamWeaverTwitchEvent={id,tenantId,type,units:Number.isSafeInteger(units)&&units>0?units:1,userId:String(e.user_id??e.from_broadcaster_user_id??""),username:String(e.user_login??e.from_broadcaster_user_login??""),displayName:String(e.user_name??e.from_broadcaster_user_name??"viewer"),input:String(e.user_input??""),occurredAt:String(frame.metadata.message_timestamp??new Date().toISOString()),...(e.reward?.id?{rewardId:String(e.reward.id),redemptionId:String(e.id??"")}:{})};
         this.db.prepare("INSERT OR IGNORE INTO sw_twitch_events(tenant,id,body) VALUES(?,?,?)").run(tenantId,id,JSON.stringify(value));
       }
     })().catch(failed)});

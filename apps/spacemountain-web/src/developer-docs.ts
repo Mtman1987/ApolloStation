@@ -37,7 +37,7 @@ export function renderDeveloperDocsPage(buildSha: string) {
     </section>
 
     <nav class="toc" aria-label="Developer documentation">
-      <a href="#quickstart">UI quickstart</a><a href="#manifest">Manifest</a><a href="#sdk">SDK</a><a href="#workspace">Workspace</a><a href="#commlink">Commlink + IRC</a><a href="#ai">Stellar + Coder</a><a href="#lifecycle">Lifecycle</a><a href="#troubleshooting">Troubleshooting</a>
+      <a href="/docs">Ecosystem user guide</a><a href="/docs/developers/streamweaver">StreamWeaver integration</a><a href="/docs/streamweaver/parity">Parity status</a><a href="#quickstart">UI quickstart</a><a href="#manifest">Manifest</a><a href="#sdk">SDK</a><a href="#workspace">Workspace</a><a href="#commlink">Commlink + IRC</a><a href="#ai">Stellar + Coder</a><a href="#lifecycle">Lifecycle</a><a href="#troubleshooting">Troubleshooting</a>
     </nav>
 
     <section id="quickstart">

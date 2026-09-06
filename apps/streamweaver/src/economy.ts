@@ -43,7 +43,7 @@ export interface StreamWeaverCurrencyExchangeV1 {
   requestedLocal?: number; spmtSupplyAtQuote?: number; localSpent: number; spmtAwarded: number; localPerSpmt: number; supplyAtQuote: number;
   status: "pending" | "complete"; createdAt: string; completedAt?: string;
 }
-export type StreamWeaverEconomyReceiptV1 = { operationId: string; kind: "give" | "steal" | "gamble" | "roll" | "admin" | "redeem" | "redeem-claim"; result: Record<string, unknown>; createdAt: string; };
+export type StreamWeaverEconomyReceiptV1 = { operationId: string; kind: "give" | "steal" | "gamble" | "roll" | "admin" | "provider-award" | "redeem" | "redeem-claim"; result: Record<string, unknown>; createdAt: string; };
 
 export interface StreamWeaverCurrencyOperationV1 { reason:string; operationId?:string; actorId?:string; }
 export interface StreamWeaverCurrencyLedgerEntryV1 extends StreamWeaverCurrencyOperationV1 { id:number; tenantId:string; userId:string; before:number; after:number; delta:number; occurredAt:string; }

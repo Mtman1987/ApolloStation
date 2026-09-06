@@ -149,3 +149,19 @@ test("first-party adapter factory exposes Twitch, Discord, Kick and YouTube driv
   assert.deepEqual(adapters.drivers.map((driver) => driver.provider), ["twitch", "discord", "kick", "youtube"]);
   assert.deepEqual(adapters.senders.map((sender) => sender.provider), ["twitch", "discord", "kick", "youtube"]);
 });
+
+test('Discord attachment-only messages reach the normalized Commlink projection without unsafe URLs',async()=>{
+ const f=socketFactoryCapture(),driver=new DiscordGatewayProviderDriver({websocketFactory:f.factory,handshakeTimeoutMs:2000}),opened=openInput('discord','channel-1'),pending=driver.open(opened.input),socket=f.sockets[0];socket.open();socket.message(JSON.stringify({op:10,d:{heartbeat_interval:60000}}));socket.message(JSON.stringify({op:0,t:'READY',s:1,d:{session_id:'session'}}));const handle=await pending;
+ try{socket.message(JSON.stringify({op:0,t:'MESSAGE_CREATE',s:2,d:{id:'attachment-one',channel_id:'channel-1',content:'',timestamp:'2026-09-06T12:00:00Z',author:{id:'user',username:'viewer'},attachments:[{url:'https://cdn.discordapp.com/attachments/a.png',filename:'Picture'},{url:'javascript:alert(1)'}]}}));assert.equal(opened.envelopes.length,1);assert.equal(opened.envelopes[0].text,'[Attachment]');assert.equal(opened.envelopes[0].rich.attachments.length,1);const {normalizeProviderChatEnvelope}=await import('../apps/chat-gateway/dist/index.js');const {CommlinkLiveChatStore}=await import('../packages/commlink-core/dist/index.js');const store=new CommlinkLiveChatStore(':memory:');try{store.ingest(normalizeProviderChatEnvelope(opened.envelopes[0]));assert.equal(store.list({tenantId:'tenant-a'})[0].rich.attachments[0].name,'Picture')}finally{store.close()}}finally{await handle.close()}
+});
+
+test('YouTube memberships, gifted memberships, Super Chats and stickers retain their event details',async()=>{
+ const {youTubeRichEvent}=await import('../apps/chat-gateway/dist/youtube-driver.js');
+ assert.equal(youTubeRichEvent({type:'superChatEvent',superChatDetails:{amountDisplayString:'$5.00'}}).donation,'$5.00');
+ assert.equal(youTubeRichEvent({type:'superStickerEvent',superStickerDetails:{amountDisplayString:'€2.00'}}).eventType,'superStickerEvent');
+ assert.equal(youTubeRichEvent({type:'newSponsorEvent',newSponsorDetails:{memberLevelName:'Crew'}}).membership,'Crew');
+ assert.match(youTubeRichEvent({type:'memberMilestoneChatEvent',memberMilestoneChatDetails:{memberLevelName:'Crew',memberMonth:12}}).membership,/12 months/);
+ assert.match(youTubeRichEvent({type:'membershipGiftingEvent',membershipGiftingDetails:{giftMembershipsCount:5,giftMembershipsLevelName:'Crew'}}).membership,/5 gifted/);
+ assert.equal(youTubeRichEvent({type:'giftMembershipReceivedEvent',giftMembershipReceivedDetails:{memberLevelName:'Crew'}}).eventType,'giftMembershipReceivedEvent');
+ assert.equal(youTubeRichEvent({type:'textMessageEvent'}),undefined);
+});

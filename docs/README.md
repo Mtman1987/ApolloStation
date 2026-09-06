@@ -4,6 +4,10 @@ All architecture, contracts, development notes, audit evidence and production ru
 
 ## Start here
 
+- [Ecosystem and StreamWeaver user guide](ECOSYSTEM_USER_GUIDE.md) — served in Apollo at `/docs`.
+- [StreamWeaver developer integration reference](architecture/STREAMWEAVER_ECOSYSTEM_INTEGRATION.md) — `/docs/developers/streamweaver`.
+- [Current StreamWeaver parity checklist](STREAMWEAVER_PARITY_CHECKPOINT_2026-09-06.md) — `/docs/streamweaver/parity`.
+
 1. [Production cleanup and validation](production/READINESS_CLEANUP_2026-09-06.md)
 2. [Architecture](ARCHITECTURE.md)
 3. [Application contracts](APP_CONTRACTS.md) and [shared surface/developer contract](SURFACE_AND_DEVELOPER_CONTRACT.md)

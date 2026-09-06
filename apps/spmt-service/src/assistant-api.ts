@@ -3,21 +3,27 @@ import { AuthDeniedError, type AuthService } from "@spmt/auth-core";
 import type { ControlService } from "@spmt/control-core";
 import type { ExecutionJobService } from "@spmt/execution-core";
 import type { SqliteMediaAssetStore } from "@spmt/platform-data-sqlite";
-import { StellarAssistantStore, StellarPrivateAssistant, STELLAR_CHAT_CAPABILITY_ID, STELLAR_SPEECH_CAPABILITIES, TTS_VOICE_OPTIONS } from "@spmt/stellar-core";
+import { StellarAssistantStore, StellarPrivateAssistant, StellarPublicMemory, StellarSpeechPresence, STELLAR_CHAT_CAPABILITY_ID, STELLAR_SPEECH_CAPABILITIES, TTS_VOICE_OPTIONS } from "@spmt/stellar-core";
 
 export class SpmtAssistantApi {
-  constructor(private readonly options: { store: StellarAssistantStore; privateAssistant?:StellarPrivateAssistant; auth: AuthService; control: ControlService; jobs: ExecutionJobService; assets: SqliteMediaAssetStore; enabled: boolean; accessToken(request: IncomingMessage): string | undefined }) {}
+  constructor(private readonly options: { store: StellarAssistantStore; publicMemory?:StellarPublicMemory; speechPresence?:StellarSpeechPresence; privateAssistant?:StellarPrivateAssistant; auth: AuthService; control: ControlService; jobs: ExecutionJobService; assets: SqliteMediaAssetStore; enabled: boolean; accessToken(request: IncomingMessage): string | undefined }) {}
   async handle(request: IncomingMessage, response: ServerResponse, url: URL) {
     if (!url.pathname.startsWith("/v1/assistant/")) return false;
     try {
       const tenant = header(request,"x-spmt-tenant") ?? url.searchParams.get("tenantId") ?? "", token = this.options.accessToken(request);
       if (!tenant || !token) return json(response,401,{message:"Sign in to use the assistant"});
       const write = !["GET","HEAD"].includes(request.method ?? "GET");
-      const principal = this.options.auth.authorize(token,write?"assistants:invoke":"assistants:read",tenant);
+      const principal = this.options.auth.authorize(token,request.method==="GET"&&url.pathname==="/v1/assistant/public-memory/context"?"jobs:read":write?"assistants:invoke":"assistants:read",tenant);
+      if(request.method==="GET"&&url.pathname==="/v1/assistant/public-memory/context"){
+        if(principal.actorType!=="service"||principal.actorId!=="stellar-core"||this.options.control.getTenant(tenant).status!=="active")return json(response,403,{message:"Only the Stellar worker can load public context"});
+        return json(response,200,this.options.publicMemory?.context(tenant,url.searchParams.get("jobId")??"")??{summary:""});
+      }
       if (principal.actorType !== "user") return json(response,403,{message:"Use the signed-in user's assistant session"});
       if (this.options.control.getTenant(tenant).status !== "active") return json(response,403,{message:"Workspace is suspended"});
       const user = principal.actorId, path = url.pathname.slice("/v1/assistant/".length);
       if (request.method === "GET") {
+        if(path==="public-memory"){if(this.options.control.getTenant(tenant).ownerUserId!==user)return json(response,403,{message:"Only the workspace owner can manage public memory"});return json(response,200,{memories:this.options.publicMemory?.list(tenant)??[]});}
+        if(path==="streams"){if(this.options.control.getTenant(tenant).ownerUserId!==user)return json(response,403,{message:"Only the workspace owner can inspect stream listeners"});return json(response,200,{listeners:this.options.speechPresence?.list(tenant)??[],widgets:this.options.control.listOverlayWidgets(tenant,"streamweaver").filter(w=>w.manifest.widgetId==="tts-player"),generatedAt:new Date().toISOString()});}
         if (path === "preferences") return json(response,200,{preferences:this.options.store.preferences(tenant,user),voices:TTS_VOICE_OPTIONS.map(({id,label,description})=>({id,label,description}))});
         if (path === "notes") return json(response,200,{notes:this.options.store.notes(tenant,user)});
         if (path === "conversation" && this.options.privateAssistant) return json(response,200,{thread:this.options.privateAssistant.read(tenant,user)});
@@ -36,6 +42,13 @@ export class SpmtAssistantApi {
       if (request.method === "DELETE" && path.startsWith("notes/")) { this.options.store.deleteNote(tenant,user,decodeURIComponent(path.slice(6))); return json(response,200,{deleted:true}); }
       if (request.method !== "POST") return json(response,405,{message:"Method is not supported"});
       const body = await readJson(request);
+      if(path.startsWith("public-memory/")&&this.options.publicMemory){
+        if(this.options.control.getTenant(tenant).ownerUserId!==user)return json(response,403,{message:"Only the workspace owner can manage public memory"});
+        const source={provider:String(body.provider??""),channelId:String(body.channelId??"")};
+        if(path==="public-memory/clear")return json(response,200,this.options.publicMemory.clear(tenant,source));
+        if(path==="public-memory/adjust")return json(response,200,this.options.publicMemory.adjust(tenant,source,body.adjustment,header(request,"idempotency-key")??""));
+        if(path==="public-memory/condense"){if(!this.options.enabled)return json(response,503,{message:"External assistant execution is disabled"});return json(response,202,this.options.publicMemory.summarize(tenant,source));}
+      }
       if (path === "preferences") return json(response,200,this.options.store.savePreferences(tenant,user,body));
       if (path === "notes") return json(response,200,this.options.store.saveNote(tenant,user,body));
       if(path === "conversation/clear" && this.options.privateAssistant)return json(response,200,{thread:this.options.privateAssistant.clear(tenant,user)});

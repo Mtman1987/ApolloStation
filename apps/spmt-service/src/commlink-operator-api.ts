@@ -36,6 +36,7 @@ export class CommlinkOperatorApi {
       if(request.method!=="POST")return json(response,405,{message:"Method is not supported"});
       const body=await readJson(request);
       if(path==="filters")return json(response,200,{filters:this.options.store.saveFilters(tenant,user,body.filters)});
+      if(path==="ingestion-errors"&&workspace.ownerUserId===user&&body.action==="replay"){const id=Number(body.id),message=this.options.store.replay(tenant,id);if(message.tenantId!==tenant)throw Error("Ingestion tenant mismatch");const result=this.options.chat.ingest(message);this.options.store.completeReplay(tenant,id);return json(response,200,{replayed:true,duplicate:result.duplicate});}
       if(path!=="operator"||workspace.ownerUserId!==user)return json(response,403,{message:"Only the workspace owner can change stream presentation"});
       const messages=this.options.chat.list({tenantId:tenant,limit:500}).map(m=>({...m,id:recordId(m)}));
       const state=this.options.store.apply(tenant,body as Parameters<CommlinkOperatorStore['apply']>[1],messages.map(m=>m.id),messages);

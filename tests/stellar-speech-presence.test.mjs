@@ -1,0 +1,4 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {StellarSpeechPresence} from '../apps/stellar-core/dist/speech-presence.js';
+test('speech listener diagnostics are tenant scoped, expire, and validate untrusted reports',()=>{let now=1000;const p=new StellarSpeechPresence(()=>now);p.touch('a','listener-123456789','tts-player','playing','event');p.touch('b','listener-123456789','tts-player','muted','other');assert.equal(p.list('a').length,1);assert.equal(p.list('a')[0].eventId,'event');p.touch('a','listener-123456789','tts-player','idle','');assert.equal(p.list('a')[0].state,'idle');p.touch('a','short','tts-player','playing','event');p.touch('a','listener-123456788','tts-player','administrator','event');assert.equal(p.list('a').length,1);now+=15001;assert.deepEqual(p.list('a'),[]);assert.deepEqual(p.list('b'),[])});

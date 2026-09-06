@@ -20,8 +20,9 @@ export type StreamWeaverShoutoutEffectV1 = "chat-link" | "clip" | "chat-greeting
 export interface StreamWeaverShoutoutChatterSourceV1 {
   list(input:{tenantId:string;provider:"twitch";channelId:string}):Promise<readonly StreamWeaverChatterV1[]>|readonly StreamWeaverChatterV1[];
 }
+export class StreamWeaverGreetingPending extends Error {}
 export interface StreamWeaverShoutoutGreetingGeneratorV1 {
-  generate(input:{tenantId:string;user:StreamWeaverTwitchUserV1;shoutoutCount:number;source:StreamWeaverShoutoutSourceV1}):Promise<string>|string;
+  generate(input:{tenantId:string;invocationId:string;user:StreamWeaverTwitchUserV1;shoutoutCount:number;source:StreamWeaverShoutoutSourceV1}):Promise<string>|string;
 }
 export interface StreamWeaverShoutoutClipV1 { url:string; thumbnailUrl?:string; durationSeconds:number; }
 export interface StreamWeaverShoutoutClipSourceV1 {
@@ -83,7 +84,7 @@ export class StreamWeaverShoutoutRuntime {
     }
     const mode=input.forceMode??resolveStreamWeaverShoutoutMode(await this.options.modes?.get(input.tenantId));
     await this.audit(input.tenantId,input.invocationId,input.donorActionId,"started",{username:input.user.login,displayName:input.user.displayName,source:input.source,mode,skipCooldown:input.skipCooldown});
-    const greeting=await this.generateGreeting(input.tenantId,input.user,eligibility.count,input.source);
+    const greeting=await this.generateGreeting(input.tenantId,input.user,eligibility.count,input.source,input.invocationId);
     const effects:string[]=[];
 
     if(mode==="chat"){
@@ -103,9 +104,9 @@ export class StreamWeaverShoutoutRuntime {
     return {completed:true,matchedLogin:input.user.login,mode,effects};
   }
 
-  private async generateGreeting(tenantId:string,user:StreamWeaverTwitchUserV1,shoutoutCount:number,source:StreamWeaverShoutoutSourceV1):Promise<string>{
-    try{const generated=await this.options.greeting?.generate({tenantId,user,shoutoutCount,source});if(generated&&String(generated).trim())return safeText(generated,500);}
-    catch{/* donor behavior falls back if AI greeting fails */}
+  private async generateGreeting(tenantId:string,user:StreamWeaverTwitchUserV1,shoutoutCount:number,source:StreamWeaverShoutoutSourceV1,invocationId:string):Promise<string>{
+    try{const generated=await this.options.greeting?.generate({tenantId,invocationId,user,shoutoutCount,source});if(generated&&String(generated).trim())return safeText(generated,500);}
+    catch(error){if(error instanceof StreamWeaverGreetingPending)throw error;/* fall back if AI greeting fails */}
     return shoutoutCount===0?`Welcome, @${user.displayName}! Glad you're here!`:`Welcome back, @${user.displayName}! Glad you're here!`;
   }
   private async safeClip(tenantId:string,user:StreamWeaverTwitchUserV1):Promise<StreamWeaverShoutoutClipV1|undefined>{try{return await this.options.clips?.pick({tenantId,user});}catch{return undefined;}}
@@ -114,6 +115,7 @@ export class StreamWeaverShoutoutRuntime {
     await this.options.effects?.execute({tenantId:input.tenantId,effect,payload:{...sanitize(payload),invocationId:input.invocationId}});
   }
   private async audit(tenantId:string,invocationId:string,donorActionId:string,status:string,metadata:Record<string,unknown>):Promise<void>{
+    this.options.store.audit(tenantId,invocationId,safeToken(status),sanitize(metadata));
     await this.options.client.publishEvent(tenantId,STREAMWEAVER_SHOUTOUT_AUDIT,{schemaVersion:1,invocationId,donorActionId,status:safeToken(status),metadata:sanitize(metadata)},`streamweaver-shoutout-audit:${invocationId}:${safeToken(status)}`);
   }
 }

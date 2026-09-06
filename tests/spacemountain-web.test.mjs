@@ -539,3 +539,12 @@ test("Commlink recipient discovery, mail and read controls work through the sign
     assert.equal((await fetch(`${base}/v1/commlink/recipients`)).status, 403, "recipient discovery still requires sign-in");
   });
 });
+
+test('Social Stream ingress forwards only its bridge credential without relaxing browser mutation checks',async()=>{
+ const calls=[],web=createSpaceMountainWebHost({spmtOrigin:'http://127.0.0.1:1',host:'127.0.0.1',port:0,buildSha:'test',fetchImpl:async(url,init)=>{calls.push({url,headers:new Headers(init.headers)});return Response.json({accepted:true})}});await web.listen();const base='http://127.0.0.1:'+web.server.address().port;
+ try{const path=base+'/v1/commlink/social-stream/a';assert.equal((await fetch(path,{method:'POST',headers:{cookie:'session=secret'},body:'{}'})).status,401);const key='ss_'+'a'.repeat(43);assert.equal((await fetch(path,{method:'POST',headers:{authorization:'Bearer '+key,cookie:'session=secret','content-type':'application/json'},body:'{}'})).status,200);assert.equal(calls.length,1);assert.equal(calls[0].headers.get('authorization'),'Bearer '+key);assert.equal(calls[0].headers.get('cookie'),null);assert.equal((await fetch(base+'/v1/commlink/social-stream',{method:'POST',headers:{authorization:'Bearer '+key},body:'{}'})).status,403);}finally{await web.close()}
+});
+
+test('public and developer ecosystem docs serve the canonical guides with honest parity status',async()=>{
+ await withSandbox(async({base})=>{const guide=await fetch(base+'/docs');assert.equal(guide.status,200);assert.match(await guide.text(),/SPMT XP price|Equivalent XP price/);const developer=await fetch(base+'/docs/developers/streamweaver');assert.equal(developer.status,200);assert.match(await developer.text(),/public-memory\/context/);const parity=await fetch(base+'/docs/streamweaver/parity');assert.equal(parity.status,200);assert.match(await parity.text(),/Private Discord assistant/);assert.equal((await fetch(base+'/docs/../../../package.json')).status,404);});
+});

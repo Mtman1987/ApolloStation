@@ -30,7 +30,7 @@ test("HearMeOut uses Commlink instead of a second visible room chat", async () =
   assert.match(source, /Open Commlink/);
   assert.match(source, /\?app=commlink/);
   assert.match(source, /surface:\"commlink\"/);
-  assert.match(source, /\/v1\/assistants\/community\/invocations/);
+  assert.match(await read("apps/hearmeout/src/room-assistant-jobs.ts"), /\/v1\/assistants\/community\/invocations/);
   assert.doesNotMatch(source, />Room chat</);
 });
 

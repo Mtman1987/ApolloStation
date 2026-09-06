@@ -60,3 +60,7 @@ export * from "./speech-worker.js";
 export * from "./speech-voices.js";
 export * from "./assistant-store.js";
 export * from "./private-assistant.js";
+
+export {StellarSpeechPresence} from "./speech-presence.js";
+
+export {StellarPublicMemory} from "./public-memory.js";

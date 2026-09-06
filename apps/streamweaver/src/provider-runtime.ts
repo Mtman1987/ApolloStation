@@ -1,3 +1,4 @@
+import {awardStreamWeaverProviderEvent} from "./provider-event-awards.js";
 import { SqliteStreamWeaverShoutoutStore, STREAMWEAVER_KNOWN_BOTS } from "./shoutout-store.js";
 import { StreamWeaverPresentationRuntime } from "./stream-presentation-runtime.js";
 import { StreamWeaverAdminEconomy } from "./economy-admin.js";
@@ -156,7 +157,12 @@ export class StreamWeaverProviderRuntime {
       assistant:async ({delivery,prompt,requestId})=>{if(options.allowAssistant===false)return {status:"unavailable",reason:"External assistant execution is disabled in this environment."};const userId=delivery.message.actor.canonicalUserId;if(!userId)return {status:"unavailable",reason:"Link your chat account to SPMT before using assistant flows."};const persona=this.settings.get(delivery.message.tenantId),intent=streamWeaverResearchIntent(prompt),preferences=this.runtimeSettings.research(delivery.message.tenantId);return options.client.invokeCommunityAssistant(delivery.message.tenantId,{userId,message:prompt,...(intent.kind==="query"&&preferences.enabled?{research:{...preferences,query:intent.query}}:{}),surface:"stream",conversationId:`streamweaver:flow:${requestId}`,routingPreference:"automatic",remember:false,...(persona?{presentation:{personaId:persona.personaId,displayName:persona.displayName,instructions:persona.instructions,memoryPolicy:persona.memoryPolicy}}:{})},`streamweaver-assistant:${requestId}`);},
     });
     const economy = new MultiTenantStreamWeaverEconomyCommandConsumer(this.economy, options.client, identities, this.commandState, egress, options.nowMs, Math.random);
-    this.consumers = [relay, ...(botActions ? [botActions] : []), ...(options.allowAssistant === false ? [] : [persona]), flows, commands, economy];
+    const eventAwards:StreamWeaverProviderConsumerV1={id:"streamweaver.provider-awards",accepts:message=>message.provider==="youtube"&&Boolean(message.rich?.eventType),deliver:async({message})=>{
+      if(options.allowProviderWrites!==true)return;
+      const userId=message.actor.canonicalUserId??await identities.resolve({tenantId:message.tenantId,provider:message.provider,providerUserId:message.actor.providerUserId,username:message.actor.username,displayName:message.actor.displayName??message.actor.username});
+      awardStreamWeaverProviderEvent(this.community,this.economy,{tenantId:message.tenantId,event:`youtube:${message.rich!.eventType}`,sourceId:JSON.stringify([message.provider,message.connectionId,message.channelId,message.messageId]),userId:userId??""});
+    }};
+    this.consumers = [eventAwards,relay, ...(botActions ? [botActions] : []), ...(options.allowAssistant === false ? [] : [persona]), flows, commands, economy];
     this.replies = new StreamWeaverPersonaReplyReconciler(this.summons, options.client, egress, { ...(options.now ? { now: options.now } : {}), ...(options.retryDelayMs ? { retryDelayMs: options.retryDelayMs } : {}) });
   }
   consumerIds() { return this.consumers.map((consumer) => consumer.id); }
@@ -166,13 +172,14 @@ export class StreamWeaverProviderRuntime {
     if(this.options.allowProviderWrites!==true)return;
     const tenants=this.community.configuredTenants();
     if(this.twitch&&Date.now()-this.lastWatchPoll>=60000){this.lastWatchPoll=Date.now();for(const tenant of tenants)try{const stream=await this.twitch.uptime(tenant);if(stream){this.community.saveSettings(tenant,{welcomeSession:`twitch:${stream.id}`});this.community.recordWatchtime(tenant,"twitch",await this.twitch.chatters(tenant));}}catch{/* Missing grants do not fabricate watchtime. */}}
-    await this.eventsub?.reconcile(tenants.map(tenantId=>({tenantId,types:[...this.community.bindings(tenantId).filter(b=>b.enabled).map(b=>b.event),...this.community.redeems(tenantId).filter(r=>r.enabled&&r.rewardId).map(r=>`reward:${r.rewardId}`)]})).filter(t=>t.types.length),event=>this.deliverProviderEvent(event));
+    await this.eventsub?.reconcile(tenants.map(tenantId=>({tenantId,types:[...this.community.awards(tenantId).filter(a=>a.enabled&&a.event.startsWith("twitch:")).map(a=>a.event.slice(7)),...this.community.bindings(tenantId).filter(b=>b.enabled).map(b=>b.event),...this.community.redeems(tenantId).filter(r=>r.enabled&&r.rewardId).map(r=>`reward:${r.rewardId}`)]})).filter(t=>t.types.length),event=>this.deliverProviderEvent(event));
   }
   private async deliverProviderEvent(event:StreamWeaverTwitchEvent){
     const connection=this.options.connections?.find(c=>c.tenantId===event.tenantId&&c.provider==="twitch"&&c.desired);
     if(!connection)throw new Error("Configure a Twitch chat destination for provider events");
     const canonicalUserId=event.userId?await new StreamWeaverSpmtIdentityResolver(this.options.client).resolve({tenantId:event.tenantId,provider:"twitch",providerUserId:event.userId,username:event.username,displayName:event.displayName}):undefined;
     const source=event.redemptionId?`twitch-reward:${event.redemptionId}`:`eventsub:${event.id}`,eventName=event.rewardId?`reward:${event.rewardId}`:event.type;
+    if(event.type!=="reward")awardStreamWeaverProviderEvent(this.community,this.economy,{tenantId:event.tenantId,event:`twitch:${event.type}`,sourceId:source,userId:canonicalUserId??"",units:event.units??1});
     const redeem=event.rewardId?this.community.redeems(event.tenantId).find(r=>r.rewardId===event.rewardId):undefined;
     let outcome=this.community.eventOutcome(event.tenantId,source);
     if(redeem&&!outcome){

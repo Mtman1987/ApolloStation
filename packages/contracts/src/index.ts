@@ -489,6 +489,7 @@ export interface SimulationRoomSummaryV1 {
 export interface NebulaProviderSupportEventV1 { kind:"subscription"|"resub"|"gift-subscriptions"|"cheer"|"raid"; amount:number; }
 
 export interface NormalizedChatMessageV1 {
+  rich?:CommlinkLiveChatRecordV1["rich"];
   supportEvent?:NebulaProviderSupportEventV1;
   schemaVersion: 1;
   tenantId: string;
@@ -513,9 +514,10 @@ export interface NormalizedChatMessageV1 {
 
 /** Public, credential-free Commlink projection of one normalized provider message. */
 export interface CommlinkLiveChatRecordV1 {
+  rich?: {source:string;eventType:string;attachments:Array<{url:string;name:string}>;donation?:string;membership?:string;deleted?:boolean};
   schemaVersion: 1;
   tenantId: string;
-  provider: ChatProviderV1;
+  provider: ChatProviderV1 | "social-stream";
   connectionId: string;
   channelId: string;
   sourceChannelId?: string;
@@ -532,7 +534,7 @@ export interface CommlinkLiveChatRecordV1 {
 
 export interface CommlinkLiveChatQueryV1 {
   tenantId: string;
-  provider?: ChatProviderV1;
+  provider?: ChatProviderV1 | "social-stream";
   channelId?: string;
   search?: string;
   limit?: number;
@@ -623,11 +625,18 @@ export function assertDeviceRelayCommandV1(value: DeviceRelayCommandV1): DeviceR
   return value;
 }
 
+export function normalizeCommlinkRichContent(value:NonNullable<CommlinkLiveChatRecordV1["rich"]>){
+ if(!value||typeof value!=="object"||typeof value.source!=="string"||value.source.length>100||typeof value.eventType!=="string"||value.eventType.length>100||!Array.isArray(value.attachments)||value.attachments.length>12)throw Error("Chat rich content is invalid");
+ const attachments=value.attachments.map(a=>{const url=new URL(a.url);if(url.protocol!=="https:"||url.username||url.password||url.href.length>2048||typeof a.name!=="string"||a.name.length>150)throw Error("Chat attachment is invalid");return {url:url.href,name:a.name}});
+ return {source:value.source,eventType:value.eventType,attachments,...(typeof value.donation==="string"?{donation:value.donation.slice(0,100)}:{}),...(typeof value.membership==="string"?{membership:value.membership.slice(0,100)}:{})};
+}
+
 export function assertNormalizedChatMessageV1(value: NormalizedChatMessageV1): NormalizedChatMessageV1 {
   if (value.schemaVersion !== 1 || !(CHAT_PROVIDERS as readonly string[]).includes(value.provider)) throw new Error("Normalized chat message version or provider is invalid");
   for (const [name, field] of [["tenantId", value.tenantId], ["connectionId", value.connectionId], ["channelId", value.channelId], ["messageId", value.messageId], ["actor.providerUserId", value.actor?.providerUserId], ["actor.username", value.actor?.username]] as const) {
     if (!field || field.trim() !== field || field.length > 200) throw new Error(`${name} is invalid`);
   }
+  if(value.rich)normalizeCommlinkRichContent(value.rich);
   if(value.supportEvent&&(value.provider!=="twitch"||!["subscription","resub","gift-subscriptions","cheer","raid"].includes(value.supportEvent.kind)||!Number.isSafeInteger(value.supportEvent.amount)||value.supportEvent.amount<1))throw new Error("Provider support event is invalid");
   if (!value.text || value.text.length > 8_000) throw new Error("Chat message text is invalid");
   if (!Number.isFinite(Date.parse(value.occurredAt))) throw new Error("Chat message occurredAt is invalid");

@@ -1,7 +1,9 @@
+import { SqliteStreamWeaverShoutoutStore, type StreamWeaverShoutoutSettings } from "./shoutout-store.js";
+import { TTS_VOICE_OPTIONS } from "@spmt/stellar-core";
 import { StreamWeaverGenerationStore, GENERATION_TEMPLATES, type StreamWeaverGenerationSettings } from "./generation-settings.js";
 import { StreamWeaverCommunityRuntime } from "./community-runtime.js";
 import { calculateStreamWeaverSupplyRate } from "./economy.js";
-import { StreamWeaverCommunityStore, type StreamPartner, type StreamRedeem, type StreamEventBinding } from "./community-store.js";
+import { StreamWeaverCommunityStore, STREAM_EVENT_AWARDS, type StreamEventAward, type StreamPartner, type StreamRedeem, type StreamEventBinding } from "./community-store.js";
 import { StreamWeaverPokemonStore, type PokemonAction } from "./pokemon-store.js";
 import {streamWeaverResearchIntent} from "./research-mode.js";
 import { StreamWeaverAdminEconomy } from "./economy-admin.js";
@@ -30,6 +32,7 @@ type SessionContext = Awaited<ReturnType<typeof fetchAppSessionContext>>;
 
 /** Authenticated app API behind Voice Commander, persona, economy, and integration pages. */
 export class StreamWeaverWebControls {
+  private readonly shoutoutStore?:SqliteStreamWeaverShoutoutStore;
   private readonly generation?:StreamWeaverGenerationStore;
   private readonly community?:StreamWeaverCommunityStore;
   private readonly pokemon?: StreamWeaverPokemonStore;
@@ -43,6 +46,7 @@ export class StreamWeaverWebControls {
 
   constructor(private readonly options: StreamWeaverWebControlOptionsV1) {
     this.operationMode = options.operationMode ?? "active";
+    if(options.databasePath)this.shoutoutStore=new SqliteStreamWeaverShoutoutStore(options.databasePath);
     if(options.databasePath)this.generation=new StreamWeaverGenerationStore(options.databasePath);
     if (options.databasePath) this.community=new StreamWeaverCommunityStore(options.databasePath);
     if (options.databasePath) this.pokemon=new StreamWeaverPokemonStore(options.databasePath);
@@ -54,7 +58,7 @@ export class StreamWeaverWebControls {
     }
   }
 
-  close() { this.generation?.close(); this.community?.close(); this.pokemon?.close(); this.relay?.close(); this.runtimeSettings?.close(); this.flows?.close(); this.persona?.close(); this.economy?.close(); }
+  close() { this.shoutoutStore?.close(); this.generation?.close(); this.community?.close(); this.pokemon?.close(); this.relay?.close(); this.runtimeSettings?.close(); this.flows?.close(); this.persona?.close(); this.economy?.close(); }
 
   async handle(request: IncomingMessage, response: ServerResponse, url: URL): Promise<boolean> {
     if (!url.pathname.startsWith("/api/streamweaver/control")) return false;
@@ -76,6 +80,11 @@ export class StreamWeaverWebControls {
         const result=await this.requireClient().createExecutionJob(context.tenantId,{ownerAppId:"streamweaver",capabilityId:"streamweaver.image.generate.v1",executionOwner:"streamweaver",billedUserId:this.actor(context).id,meteredResource:"image-generations",usageQuantity:settings.count,executionTarget:"sprite",meteringTarget:"hosted",input:{prompt,generationSettings:settings,mediaVisibility:"private"}},idempotency(body.requestId,"image-studio"));
         return sendJson(response,202,{jobId:result.job.id});
       }
+      if(url.pathname==="/api/streamweaver/control/stream-operations/shoutout-audit"){
+        this.requireOwner(context);if(request.method!=="GET")return sendJson(response,405,{message:"Use GET"});
+        response.setHeader("content-disposition",'attachment; filename="shoutout-audit.json"');
+        return sendJson(response,200,{schemaVersion:1,tenantId:context.tenantId,generatedAt:new Date().toISOString(),limit:5000,entries:this.shoutoutStore?.auditLog(context.tenantId)??[]});
+      }
       if(url.pathname==="/api/streamweaver/control/stream-operations"){
         if(!this.community)throw new Error("Stream operations storage is not configured");
         if(request.method==="GET"){
@@ -83,7 +92,7 @@ export class StreamWeaverWebControls {
           let pricing:Record<string,unknown>={available:false,localSupply,message:"SPMT pricing is unavailable"};
           try {if(this.client){const spmt=await this.client.getXpSupply(context.tenantId);const rate=calculateStreamWeaverSupplyRate(localSupply,spmt.spendableSupply);pricing={available:true,localSupply,spmtSupply:spmt.spendableSupply,localPerSpmt:rate.localPerSpmt,spmtPerLocal:rate.spmtPerLocal,measuredAt:spmt.measuredAt,rounding:"up to the next whole XP",prices:Object.fromEntries(this.community.redeems(context.tenantId).map(r=>[r.id,rate.localCostInSpmt(r.price)]))};}}
           catch{pricing.message=localSupply===0?"SPMT pricing requires a nonzero streamer-point supply":"SPMT pricing is temporarily unavailable";}
-          return sendJson(response,200,{partners:this.community.partners(context.tenantId),redeems:this.community.redeems(context.tenantId),settings:this.community.settings(context.tenantId),bindings:this.community.bindings(context.tenantId),tasks:this.role(context)==="owner"?this.community.tasks(context.tenantId):[],stats:this.community.checkinStats(context.tenantId),watchtime:this.community.watchLeaders(context.tenantId),pricing,wallet:this.economy?.getWallet(context.tenantId,this.actor(context).id),diagnostics:this.role(context)==="owner"?this.community.providerDiagnostics(context.tenantId):[],owner:this.role(context)==="owner"});
+          return sendJson(response,200,{tenantId:context.tenantId,partners:this.community.partners(context.tenantId),redeems:this.community.redeems(context.tenantId),settings:this.community.settings(context.tenantId),...(this.role(context)==="owner"?{shoutoutSettings:this.shoutoutStore?.settings(context.tenantId),voices:TTS_VOICE_OPTIONS.map(v=>({id:v.id,label:v.label}))}:{}),awards:this.community.awards(context.tenantId),awardEvents:STREAM_EVENT_AWARDS,bindings:this.community.bindings(context.tenantId),tasks:this.role(context)==="owner"?this.community.tasks(context.tenantId):[],stats:this.community.checkinStats(context.tenantId),watchtime:this.community.watchLeaders(context.tenantId),pricing,wallet:this.economy?.getWallet(context.tenantId,this.actor(context).id),diagnostics:this.role(context)==="owner"?this.community.providerDiagnostics(context.tenantId):[],owner:this.role(context)==="owner"});
         }
         if(request.method!=="POST")return sendJson(response,405,{message:"Use GET or POST"});requireSameOrigin(request);const body=await readJsonBody(request);
         if(body.action==="checkin")return sendJson(response,200,this.community.checkin(context.tenantId,this.actor(context).id,String(body.partnerId??""),"web",String(body.requestId??"")));
@@ -102,9 +111,16 @@ export class StreamWeaverWebControls {
           if(action==="create-twitch-reward") {const reward=this.community.redeems(context.tenantId).find(r=>r.id===body.rewardId);if(!reward)throw new Error("Choose a configured reward");payload.rewardId=reward.id;}
           return sendJson(response,202,this.community.requestTask(context.tenantId,String(body.requestId??""),payload));
         }
+        if(body.action==="shoutout-settings"){
+          if(!this.shoutoutStore)throw new Error("Shoutout settings are unavailable");
+          if(!TTS_VOICE_OPTIONS.some(v=>v.id===body.voice))throw new Error("Choose a supported voice");
+          const settings={aiEnabled:body.aiEnabled,prompt:body.prompt,greeting:body.greeting,cooldownMinutes:body.cooldownMinutes,voice:body.voice,discordEnabled:body.discordEnabled,excluded:typeof body.excluded==="string"?body.excluded.split(/[\n,]/).map(v=>v.trim()).filter(Boolean):body.excluded} as StreamWeaverShoutoutSettings;
+          return sendJson(response,200,this.shoutoutStore.saveSettings(context.tenantId,settings));
+        }
         if(body.action==="partner")return sendJson(response,200,this.community.savePartner(context.tenantId,body as unknown as StreamPartner));
         if(body.action==="remove-partner"){this.community.removePartner(context.tenantId,String(body.id));return sendJson(response,200,{removed:true});}
         if(body.action==="redeem")return sendJson(response,200,this.community.saveRedeem(context.tenantId,body as unknown as StreamRedeem));
+        if(body.action==="event-award")return sendJson(response,200,this.community.saveAward(context.tenantId,body as unknown as StreamEventAward));
         if(body.action==="binding")return sendJson(response,200,this.community.saveBinding(context.tenantId,body as unknown as StreamEventBinding));
         if(body.action==="settings")return sendJson(response,200,this.community.saveSettings(context.tenantId,body));
         throw new Error("Unknown stream operation");

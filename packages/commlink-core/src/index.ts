@@ -1,6 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
 import {
-  assertNormalizedChatMessageV1,
+  assertNormalizedChatMessageV1, normalizeCommlinkRichContent,
   type ChatProviderV1,
   type CommlinkLiveChatQueryV1,
   type CommlinkLiveChatRecordV1,
@@ -59,13 +59,21 @@ export class CommlinkLiveChatStore {
     return { duplicate: Number(result.changes) === 0, record };
   }
 
+  ingestMirror(record:CommlinkLiveChatRecordV1,operation:"message"|"edit"|"delete") {
+    if(record.provider!=="social-stream"||record.canonicalUserId||record.roles.length)throw new Error("Invalid mirrored chat identity");
+    const id=messageKey(record),prior=this.db.prepare("SELECT body FROM commlink_live_chat WHERE id=?").get(id);
+    if(prior&&operation==="message")return {duplicate:true,record:JSON.parse(String(prior.body)) as CommlinkLiveChatRecordV1};
+    if(operation==="delete"){record={...record,text:"[Message removed]",rich:{source:record.rich?.source??"social-stream",eventType:"delete",attachments:[],deleted:true}};}
+    this.db.prepare("INSERT INTO commlink_live_chat VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET text=excluded.text,body=excluded.body").run(id,record.tenantId,record.provider,record.connectionId,record.channelId,record.messageId,record.occurredAt,record.text,record.providerUserId,null,record.username,JSON.stringify(record));
+    return {duplicate:false,record};
+  }
   list(query: CommlinkLiveChatQueryV1): CommlinkLiveChatRecordV1[] {
     requireId(query.tenantId, "tenantId");
     const limit = query.limit ?? 100;
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 500) throw new Error("limit must be from 1 to 500");
     const where = ["tenant_id = ?"];
     const params: Array<string | number> = [query.tenantId];
-    if (query.provider) { assertProvider(query.provider); where.push("provider = ?"); params.push(query.provider); }
+    if (query.provider) { if(query.provider!=="social-stream")assertProvider(query.provider); where.push("provider = ?"); params.push(query.provider); }
     if (query.channelId) { requireId(query.channelId, "channelId"); where.push("channel_id = ?"); params.push(query.channelId); }
     if (query.search) {
       const search = query.search.trim().slice(0, 200);
@@ -119,6 +127,7 @@ function toLiveChatRecord(message: NormalizedChatMessageV1): CommlinkLiveChatRec
     messageId: message.messageId,
     occurredAt: new Date(message.occurredAt).toISOString(),
     text: message.text,
+    ...(message.rich?{rich:normalizeCommlinkRichContent(message.rich)}:{}),
     providerUserId: message.actor.providerUserId,
     ...(message.actor.canonicalUserId ? { canonicalUserId: message.actor.canonicalUserId } : {}),
     username: message.actor.username,
@@ -134,3 +143,4 @@ function requireId(value: string, name: string): void { if (!value || value.trim
 function escapeLike(value: string): string { return value.replace(/[\\%_]/g, (match) => `\\${match}`); }
 
 export * from "./operator.js";
+export * from './social-stream.js';

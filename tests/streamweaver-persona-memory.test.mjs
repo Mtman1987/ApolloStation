@@ -68,6 +68,7 @@ test("StreamWeaver presentations execute through Stellar with private prompts an
       assert.equal(route.kind,"invoke");
       const result=await runtime.invoke(route.invocation);assert.equal(result.status,"accepted");
       await new StellarChatWorker(workerClient,provider,{workerId:"persona-worker",executionTarget:"sprite"}).runOnce();
+      assert.equal(service.executionJobs.get(tenantId,result.jobId).state,"succeeded");
       return result.jobId;
     };
     const firstA=await invoke("tenant-a","viewer-a","home-a","athena","first-a");
@@ -79,7 +80,7 @@ test("StreamWeaver presentations execute through Stellar with private prompts an
     settings.close();
 
     assert.match(calls[0][0].content,/warm constellation voice unique to tenant A/);
-    assert.match(calls[0][0].content,/TENANT A REMEMBERED CONTEXT/);
+    assert.doesNotMatch(calls[0][0].content,/TENANT A REMEMBERED CONTEXT/,"personal canonical context must not enter a public stream reply");
     assert.doesNotMatch(JSON.stringify(calls[0]),/tenant B|gothic humor/i);
     assert.match(calls[1][0].content,/dry gothic humor unique to tenant B/);
     assert.doesNotMatch(JSON.stringify(calls[1]),/TENANT B MUST NOT LOAD THIS CONTEXT|warm constellation|first-a|persona-answer-1/);

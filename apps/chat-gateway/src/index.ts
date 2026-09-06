@@ -45,6 +45,7 @@ export function chatGatewayCatalogRegistration(launchUrl: string): AppCatalogReg
 }
 
 export interface ProviderChatEnvelopeV1 {
+  rich?:NormalizedChatMessageV1["rich"];
   supportEvent?:import("@spmt/contracts").NebulaProviderSupportEventV1;
   schemaVersion: 1;
   tenantId: string;
@@ -245,6 +246,7 @@ export function normalizeProviderChatEnvelope(envelope: ProviderChatEnvelopeV1):
     ...(envelope.sourceChannelId ? { sourceChannelId: envelope.sourceChannelId } : {}),
     messageId: envelope.messageId,
     text: envelope.text,
+    ...(envelope.rich?{rich:envelope.rich}:{}),
     ...(envelope.supportEvent?{supportEvent:envelope.supportEvent}:{}),
     occurredAt: envelope.occurredAt,
     actor: {

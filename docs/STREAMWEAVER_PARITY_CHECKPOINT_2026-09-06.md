@@ -11,6 +11,32 @@ The [discovery audit](donor-audits/STREAMWEAVER_LIVE_AUDIT_2026-09-06.md) is pin
 - This checkpoint's follow-up adds private assistant memory and replay, private image production and controls, public speech, welcome/shoutout/BRB producers, Twitch menu creation, and durable flow speech/points behavior.
 - Public HTTP probing currently reaches Sprite authentication. No authenticated phone-browser, real Twitch reward, Discord delivery, paid speech/image response, or live HearMeOut audio acceptance is claimed by an offline test or a green deployment.
 
+- Second parity release: `e1159a8970c3ae7ab6e731fd42524ee90eb885d6`, 867 passing offline tests. [Sprite promotion succeeded](https://github.com/Mtman1987/ApolloStation/actions/runs/34054028644); [Green Contracts succeeded](https://github.com/Mtman1987/ApolloStation/actions/runs/34054028650).
+- The current follow-up adds room completion/audio, listener diagnostics, public memory, Social Stream/private inbox, rich chat/replay, shoutout AI/settings/audit, YouTube event metadata and local provider awards. The repository build and all 886 offline tests passed for this batch. Promotion must be verified for its own commit; the earlier links do not certify this batch’s deployment.
+- The user guide and integration reference are served at `/docs` and `/docs/developers/streamweaver`, with this checklist at `/docs/streamweaver/parity`.
+
+## The 15 remaining groups from the follow-up request
+
+“Code implemented” still requires authenticated/provider acceptance. Partial groups remain open; this is not a new audit of the other live apps.
+
+| Group | Current status | Remaining requirement |
+| --- | --- | --- |
+| 1. HearMeOut persona and voice | Partial | Shared recording, completed fallback replies and browser RTC audio mix implemented. Public custom-persona discovery/eligibility and live room acceptance remain. |
+| 2. Private Discord assistant | Open | DM setup, signed message controls, GIF/TTS delivery, deletion and image carousels. |
+| 3. Public TTS players | Code implemented | Owner stream/widget listing, recent listener presence and playback status. Authenticated OBS/audio acceptance remains. |
+| 4. Public memory | Code implemented | Public-only channel condensation, manual count adjustment, clear and saved-job lifecycle. Inference acceptance remains. |
+| 5. Image Studio completion | Partial | Existing model/version controls and SeaArt/Eden remain; catalog/LoRA browsing, character workflow, content controls and additional legacy providers remain. |
+| 6. YouTube | Partial | Live-chat membership, milestone, gift and paid-message metadata implemented. OAuth/account UI and canonical viewer linking remain. |
+| 7. TikTok | Open | Actual connector lifecycle and chat/gift/follow/share/like sources. |
+| 8. Social Stream | Code implemented | Authenticated public/private ingestion, metadata, status, rotation, edit/delete and owner inbox. External hosting-auth acceptance remains. |
+| 9. Rich chat and replay | Partial | Discord attachments, Social Stream media/edit/delete and validated projection replay implemented. Native provider edit/delete coverage and live checks remain. |
+| 10. Platform event awards | Partial | Atomic configurable Twitch EventSub and YouTube event award consumer implemented. YouTube canonical identity depends on its OAuth port; TikTok sources and remaining donor helper mappings remain. |
+| 11. Shoutouts | Code implemented | AI/fallback greetings, owner voice/cooldown/exclusion/Discord settings and audit download. Provider/voice acceptance remains. |
+| 12. Check-ins | Partial | Existing persistent check-ins remain; Discord roles, invitation overrides and reward-flow details remain. |
+| 13. Pokémon | Partial | Existing collection/trade/gym/seasons remain; full command arguments, downloads/Pokédex, Discord trades and dedicated overlays remain. |
+| 14. Legacy triggers/sub-actions | Open | Every retained unsupported live definition needs an explicit runnable equivalent and migration acceptance. |
+| 15. Special bot administration | Open | Fleet, gift-bot, whitelist and role-specific account controls. |
+
 ## Currency decisions that must survive every port
 
 Twitch's one-point reward is a menu entry. A Twitch-funded notification does not waive the reward's configured streamer-currency requirement. Insufficient funds must reject the configured redemption; cancellation/refund requires a reward the configured Twitch application is permitted to manage. Rewards can charge local points, award them, or award once to the first successful claimant. Each reward chooses local currency, SPMT XP, or either.
@@ -28,14 +54,14 @@ Thus 100 local points costs 10 XP with 1,000,000 local / 100,000 XP outstanding,
 | # | Audit group | Current implementation and remaining work |
 | --- | --- | --- |
 | 1 | Pinned Athena speech | Shared Stellar speech worker, Deepgram primary, same-voice Eden failover, validation and cooldowns implemented. Credentialed provider and deployed-worker acceptance remain. |
-| 2 | Transcription | Private recording upload, shared transcription jobs and StreamWeaver recording UI implemented. HearMeOut bot-card fallback is not connected to these production ports. |
+| 2 | Transcription | Private recording upload, shared transcription jobs and StreamWeaver recording UI implemented. HearMeOut recording fallback now uploads private media and reconciles shared transcription jobs. Live microphone/provider acceptance remains. |
 | 3 | Voice catalog/preferences | Persisted voice, spoken-reply and Remember settings, actual private speech playback implemented. GIF preference alone does not implement GIF delivery. |
-| 4 | Say/TTS lifecycle | Public Say tasks, published audio events and overlay playback implemented. Stream/listener discovery and consumer-presence controls remain. |
-| 5 | Public HearMeOut persona speech | Coordinator contracts exist, but production speech transport is not constructed. The fallback currently queues text without completing the room reply. Public persona discovery/eligibility and room audio acceptance remain. |
+| 4 | Say/TTS lifecycle | Public Say tasks, published audio events and overlay playback implemented. Owner stream/widget discovery, 15-second listener presence and completion-based playback are implemented. Live listener acceptance remains. |
+| 5 | Public HearMeOut persona speech | The shared fallback now completes room text replies, resumes private speech jobs and mixes playback into the member’s active RTC stream. Public custom-persona discovery/eligibility, full coordinator construction and room audio acceptance remain. |
 | 6 | Private conversation | User/tenant-scoped persisted conversation, optional note context, bounded raw retention, clear/cancel, named summaries and browser replies implemented. Private Discord conversation delivery/settings remain. |
 | 7 | Private Discord controls | Signed message-scoped controls, DM resolution, finalization, toggles and deletion remain unported. |
 | 8 | Spoken-turn feed | Authenticated incremental feed with monotonic cursor and clear-epoch reset implemented; private web replies can synthesize speech. Private Discord feed integration remains. |
-| 9 | Long-term memory | Private manual named summaries and automatic condensation after 20 new completed turns implemented. Public condensation and donor message-count adjustment remain. |
+| 9 | Long-term memory | Private manual named summaries and automatic condensation after 20 new completed turns implemented. Public-only channel condensation, owner count adjustment and clear/late-completion protection are now implemented; private canonical context is excluded from stream replies. |
 | 10 | Person notes | Private subject/person notes, CRUD and opt-in assistant context implemented in Stellar/StreamWeaver. The legacy MountainView-specific endpoint is not copied. |
 | 11 | Persona optimizer | Shared assistant job creates a draft; owner explicitly puts it into the editor and saves. No automatic persona overwrite. Provider acceptance remains. |
 | 12 | Private image gallery | Generation worker imports approved provider images into shared private binary assets; Image Studio carousel and Media Files lifecycle implemented. Discord carousel/delivery remains. |
@@ -43,18 +69,18 @@ Thus 100 local points costs 10 XP with 1,000,000 local / 100,000 XP outstanding,
 | 14 | Generation studio | Model/version, resolution, count, seed, prompt templates and bounded Eden provider parameters implemented. Full model/LoRA browsing and character-ID workflow remain. |
 | 15 | Generation access | Persisted public everyone/mods/off policy and per-user private settings implemented; worker enforces current public policy across suite entry points. Separate legacy content-policy controls remain. |
 | 16 | Prompt enhancement/fallback | Production Qwen enhancer, original-prompt fallback on enhancement failure, SeaArt/Eden chain implemented. External provider acceptance remains. |
-| 17 | YouTube | Poll/send driver, discovery and grant refresh implemented. Account OAuth management and membership/Super Chat normalization remain. |
+| 17 | YouTube | Poll/send driver, discovery and grant refresh implemented. Membership, milestone, gifted membership, Super Chat and sticker metadata now normalize into the rich feed. Account OAuth management and canonical viewer linking remain. |
 | 18 | TikTok | Running connector for chat/gifts/follows/shares/likes/room users and connection controls remains unported. |
-| 19 | Social Stream | Compatible authenticated ingestion, normalization and status adapter remains unported. |
+| 19 | Social Stream | Tenant-key authenticated public/private ingestion, safe rich normalization, edit/delete, status/rotation/disable and owner-only private inbox implemented. External Sprite-auth/bridge acceptance remains. |
 | 20 | Shared-chat desk | Pin, queue, feature, clear, next, auto controls and durable selected-message snapshots implemented. Selected messages survive eviction from the current 500-message feed. |
 | 21 | Featured overlay | Dedicated selected-message renderer, hold-until-cleared duration, style and restart behavior implemented. Authenticated OBS/browser acceptance remains. |
 | 22 | Saved chat workspace | Per-user filters, persistent selection and visible-page refresh implemented. |
-| 23 | Rich chat/diagnostics | Operator-facing sanitized ingestion errors implemented. Rich attachment normalization and operator replay remain. |
+| 23 | Rich chat/diagnostics | Operator-facing sanitized ingestion errors implemented. Discord attachments, YouTube event metadata, Social Stream rich/edit/delete and validated-message replay implemented. Native provider edit/delete coverage and live acceptance remain. |
 | 24 | Twitch EventSub | Subscription/reconnect and reward/event ingress implemented. Actual broadcaster authorization and live redelivery/reconnect acceptance remain. |
 | 25 | Redeems | Management UI, local/XP policy, balance checks, signed awards, first claim, replay protection, and one-Twitch-point menu creation/binding implemented. Validate live fulfillment/cancellation using the managing Twitch app. |
-| 26 | Non-chat automation | EventSub event bindings can reach installed flows. Remaining platform-specific award-helper wiring and unavailable TikTok sources remain. |
+| 26 | Non-chat automation | EventSub event bindings can reach installed flows. Owner-configured atomic local-point awards now consume Twitch EventSub and verified YouTube event metadata. YouTube account linking, remaining donor helper mappings and unavailable TikTok sources remain. |
 | 27 | Welcome/walk-on | Atomic per-session welcome state, known-bot exclusions, durable welcome/shoutout tasks and production effect adapters implemented. Live session/provider acceptance remains. |
-| 28 | Manual/voice shoutouts | Spoken-name matching, mode controls, clips, chat, public TTS and configured Discord destination implemented. Custom AI greetings, detailed configuration and audit download remain. |
+| 28 | Manual/voice shoutouts | Spoken-name matching, mode controls, clips, chat, public TTS and configured Discord destination implemented. Saved AI greeting jobs with fallback, owner voice/cooldown/exclusion/Discord controls and a tenant-scoped audit download are now implemented. External acceptance remains. |
 | 29 | BRB | Broadcaster/viewer clip selection, durable start/stop program and timed Twitch-embed renderer implemented. Live clip/audio/browser acceptance remains. |
 | 30 | Check-ins | Persistent check-ins, source/count displays and overlay implemented. Discord role lookup, invitation overrides and reward-flow details remain. |
 | 31 | Translation | Shared production Qwen translation and stable request keys implemented. Actual translation/provider acceptance remains. |

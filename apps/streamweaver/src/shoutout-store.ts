@@ -5,6 +5,8 @@ export const STREAMWEAVER_KNOWN_BOTS = new Set([
   "streamelements","nightbot","moobot","streamlabs","blerp","fossabot","wizebot","botisimo","coebot","ankhbot","deepbot","phantombot","vivbot","ohbot","supibot",
 ]);
 
+export interface StreamWeaverShoutoutSettings { aiEnabled:boolean; prompt:string; greeting:string; cooldownMinutes:number; voice:string; discordEnabled:boolean; excluded:string[]; }
+
 export type StreamWeaverShoutoutEligibilityV1 =
   | { eligible: true; count: number }
   | { eligible: false; reason: "known-bot" | "excluded-user" | "cooldown"; remainingMs?: number; count: number };
@@ -32,6 +34,27 @@ export class SqliteStreamWeaverShoutoutStore {
     `);
   }
   close(): void { this.db.close(); }
+  settings(tenant:string):StreamWeaverShoutoutSettings {
+    const saved=this.operation(safeId(tenant,"tenantId"),"settings")??{};
+    return {aiEnabled:false,prompt:"Give this streamer a warm, concise shoutout. Use only the supplied profile facts; do not invent their games or achievements.",greeting:"Welcome, @{user}! Glad you’re here!",cooldownMinutes:720,voice:"deepgram:aura-2:athena",discordEnabled:true,...saved,excluded:this.excluded(tenant)} as StreamWeaverShoutoutSettings;
+  }
+  saveSettings(tenant:string,input:Partial<StreamWeaverShoutoutSettings>){
+    const value={...this.settings(tenant),...input};
+    if(typeof value.aiEnabled!=="boolean"||typeof value.discordEnabled!=="boolean")throw new Error("Choose valid shoutout toggles");
+    for(const key of ["prompt","greeting"] as const)if(typeof value[key]!=="string"||!value[key].trim()||value[key].length>2000)throw new Error("Shoutout text must contain 1–2000 characters");
+    if(!Number.isSafeInteger(value.cooldownMinutes)||value.cooldownMinutes<0||value.cooldownMinutes>10080)throw new Error("Cooldown must be 0–10080 minutes");
+    if(typeof value.voice!=="string"||value.voice.length>128||!/^[A-Za-z0-9:_-]+$/.test(value.voice))throw new Error("Voice ID is invalid");
+    if(!Array.isArray(value.excluded)||value.excluded.length>500)throw new Error("Choose at most 500 excluded users");
+    const excluded=[...new Set(value.excluded.map(safeLogin))];
+    this.transaction(()=>{for(const user of this.excluded(tenant))this.setExcluded(tenant,user,false);for(const user of excluded)this.setExcluded(tenant,user,true);const {excluded:_,...body}=value;this.saveOperation(tenant,"settings",body);});
+    return this.settings(tenant);
+  }
+  greeting(tenant:string,invocation:string):{jobId?:string;text?:string;failed?:boolean}|undefined{return this.operation(tenant,`greeting:${invocation}`);}
+  saveGreeting(tenant:string,invocation:string,body:{jobId?:string;text?:string;failed?:boolean}){this.saveOperation(tenant,`greeting:${invocation}`,body);}
+  audit(tenant:string,invocation:string,status:string,metadata:Record<string,unknown>){this.saveOperation(tenant,`audit:${invocation}:${status}`,{invocationId:invocation,status,metadata,recordedAt:new Date(this.nowMs()).toISOString()});}
+  auditLog(tenant:string){return this.db.prepare("SELECT body FROM streamweaver_shoutout_operations WHERE tenant_id=? AND idempotency_key LIKE 'audit:%' ORDER BY rowid DESC LIMIT 5000").all(safeId(tenant,"tenantId")).map(r=>JSON.parse(String(r.body)));}
+  private saveOperation(tenant:string,key:string,body:unknown){this.db.prepare("INSERT INTO streamweaver_shoutout_operations VALUES(?,?,?) ON CONFLICT(tenant_id,idempotency_key) DO UPDATE SET body=excluded.body").run(safeId(tenant,"tenantId"),safeKey(key),JSON.stringify(body));}
+
 
   eligibility(tenantId: string, username: string, skipCooldown = false): StreamWeaverShoutoutEligibilityV1 {
     const tenant = safeId(tenantId, "tenantId");
@@ -41,7 +64,7 @@ export class SqliteStreamWeaverShoutoutStore {
     if (STREAMWEAVER_KNOWN_BOTS.has(user)) return { eligible:false, reason:"known-bot", count };
     if (row?.excluded === 1) return { eligible:false, reason:"excluded-user", count };
     if (!skipCooldown && row?.last_shoutout_ms != null) {
-      const remainingMs = STREAMWEAVER_SHOUTOUT_COOLDOWN_MS - (this.nowMs() - row.last_shoutout_ms);
+      const remainingMs = this.settings(tenant).cooldownMinutes*60000 - (this.nowMs() - row.last_shoutout_ms);
       if (remainingMs > 0) return { eligible:false, reason:"cooldown", remainingMs, count };
     }
     return { eligible:true, count };
