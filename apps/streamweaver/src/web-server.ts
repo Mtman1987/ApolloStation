@@ -9,11 +9,12 @@ import { streamWeaverBrowserJs } from "./web-client.js";
 import { STREAMWEAVER_DONOR_COMMANDS } from "./donor-command-catalog.js";
 import { STREAMWEAVER_OVERLAYS } from "./overlay-runtime.js";
 import { StreamWeaverWebControls, parseStreamWeaverWebConnections } from "./web-controls.js";
+import { StreamWeaverSecureChoiceWeb } from "./secure-choice.js";
 
 const COMMAND_UI: Array<{ trigger: string; family: string; aliases: readonly string[]; cooldownSeconds: number }> = [];
 const commandTriggers = new Set<string>();
 for (const command of STREAMWEAVER_DONOR_COMMANDS) {
-  if ((command.matcher ?? "command") !== "command" || commandTriggers.has(command.trigger)) continue;
+  if ((command.matcher ?? "command") !== "command" || commandTriggers.has(command.trigger) || command.trigger.startsWith("!__")) continue;
   commandTriggers.add(command.trigger);
   COMMAND_UI.push({ trigger: command.trigger, family: command.family, aliases: command.aliases ?? [], cooldownSeconds: command.cooldownSeconds ?? 0 });
 }
@@ -47,12 +48,13 @@ export const STREAMWEAVER_WEB_DESCRIPTOR: ProductAppWebDescriptorV1 = {
 
 const SURFACE = productSurfaceManifest({ appId: STREAMWEAVER_WEB_DESCRIPTOR.appId, sceneUrl: STREAMWEAVER_WEB_DESCRIPTOR.sceneUrl, sections: STREAMWEAVER_WEB_DESCRIPTOR.sections, shortcuts: [{ id: "setup", label: "Continue Setup", pageId: "setup" }, { id: "builder", label: "Build a Flow With AI", pageId: "builder" }, { id: "voice", label: "Open Voice Commander", pageId: "voice" }, { id: "community", label: "Browse Community Flows", pageId: "community" }] });
 
-export interface StreamWeaverWebServerOptionsV1 { spmtOrigin: string; port?: number; host?: string; buildSha?: string; databasePath?: string; credential?: string; connectionsJson?: string; operationMode?: SpmtOperationModeV1; fetchImpl?: typeof fetch; }
+export interface StreamWeaverWebServerOptionsV1 { spmtOrigin: string; publicOrigin?:string; port?: number; host?: string; buildSha?: string; databasePath?: string; credential?: string; connectionsJson?: string; operationMode?: SpmtOperationModeV1; fetchImpl?: typeof fetch; }
 
 export function createStreamWeaverWebServer(options: StreamWeaverWebServerOptionsV1) {
   const snapshot = productAppSnapshotHandler({ appId: "streamweaver", spmtOrigin: options.spmtOrigin, sources: productAppSnapshotSources(STREAMWEAVER_WEB_DESCRIPTOR) });
   const controls = new StreamWeaverWebControls({ ...options, connections: parseStreamWeaverWebConnections(options.connectionsJson) });
-  return createProductAppWebServer({ descriptor: STREAMWEAVER_WEB_DESCRIPTOR, port: options.port, host: options.host, buildSha: options.buildSha, extraCss: STREAMWEAVER_CONTROL_CSS + STREAMWEAVER_FLOW_CSS, browserJs: appSurfaceBrowserJs(SURFACE) + streamWeaverBrowserJs() + streamWeaverMediaBrowserJs() + streamWeaverResearchBrowserJs() + streamWeaverAssetsBrowserJs(), handleApi: async (request, response, url) => await proxyAppMedia({appId:"streamweaver",spmtOrigin:options.spmtOrigin,request,response,url,...(options.fetchImpl?{fetchImpl:options.fetchImpl}:{})}) || await controls.handle(request, response, url) || await snapshot(request, response, url), close: () => controls.close() });
+  const secureChoice=options.databasePath?new StreamWeaverSecureChoiceWeb({databasePath:options.databasePath,spmtOrigin:options.spmtOrigin,publicOrigin:options.publicOrigin??process.env.STREAMWEAVER_PUBLIC_ORIGIN??options.spmtOrigin}):undefined;
+  return createProductAppWebServer({ descriptor: STREAMWEAVER_WEB_DESCRIPTOR, port: options.port, host: options.host, buildSha: options.buildSha, extraCss: STREAMWEAVER_CONTROL_CSS + STREAMWEAVER_FLOW_CSS, browserJs: appSurfaceBrowserJs(SURFACE) + streamWeaverBrowserJs() + streamWeaverMediaBrowserJs() + streamWeaverResearchBrowserJs() + streamWeaverAssetsBrowserJs(), handleApi: async (request, response, url) => await proxyAppMedia({appId:"streamweaver",spmtOrigin:options.spmtOrigin,request,response,url,...(options.fetchImpl?{fetchImpl:options.fetchImpl}:{})}) || await secureChoice?.handle(request,response,url) || await controls.handle(request, response, url) || await snapshot(request, response, url), close: () => {secureChoice?.close();controls.close();} });
 }
 
 const STREAMWEAVER_CONTROL_CSS = `
@@ -65,6 +67,6 @@ const STREAMWEAVER_FLOW_CSS = `
 `;
 
 if (process.env.SPMT_ORIGIN) {
-  const host = createStreamWeaverWebServer({ spmtOrigin: process.env.SPMT_ORIGIN, port: Number(process.env.PORT ?? 3202), host: process.env.HOST ?? "127.0.0.1", buildSha: process.env.BUILD_SHA ?? "dev", operationMode: process.env.SPMT_OUTBOUND_MODE === "disabled" ? "read-only" : "active", ...(process.env.STREAMWEAVER_DATABASE_PATH ? { databasePath: process.env.STREAMWEAVER_DATABASE_PATH } : {}), ...(process.env.STREAMWEAVER_WORKER_CREDENTIAL ? { credential: process.env.STREAMWEAVER_WORKER_CREDENTIAL } : {}), ...(process.env.CHAT_GATEWAY_CONNECTIONS ? { connectionsJson: process.env.CHAT_GATEWAY_CONNECTIONS } : {}) });
+  const host = createStreamWeaverWebServer({ spmtOrigin: process.env.SPMT_ORIGIN, ...(process.env.STREAMWEAVER_PUBLIC_ORIGIN?{publicOrigin:process.env.STREAMWEAVER_PUBLIC_ORIGIN}:{}), port: Number(process.env.PORT ?? 3202), host: process.env.HOST ?? "127.0.0.1", buildSha: process.env.BUILD_SHA ?? "dev", operationMode: process.env.SPMT_OUTBOUND_MODE === "disabled" ? "read-only" : "active", ...(process.env.STREAMWEAVER_DATABASE_PATH ? { databasePath: process.env.STREAMWEAVER_DATABASE_PATH } : {}), ...(process.env.STREAMWEAVER_WORKER_CREDENTIAL ? { credential: process.env.STREAMWEAVER_WORKER_CREDENTIAL } : {}), ...(process.env.CHAT_GATEWAY_CONNECTIONS ? { connectionsJson: process.env.CHAT_GATEWAY_CONNECTIONS } : {}) });
   await host.listen();
 }
