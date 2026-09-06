@@ -49,10 +49,7 @@ export interface StreamWeaverProviderRuntimeOptionsV1 {
   providerFetch?: typeof fetch;
 }
 
-/**
- * Owns StreamWeaver's app-private chat state while Chat Gateway owns sockets.
- * Every SPMT call uses the StreamWeaver service identity supplied by the host.
- */
+/** Owns StreamWeaver's app-private chat state while Chat Gateway owns sockets. */
 export class StreamWeaverProviderRuntime {
   readonly consumers: StreamWeaverProviderConsumerV1[];
   readonly messageObservers: Array<{ id: string; observe(message: NormalizedChatMessageV1): void }>;
@@ -85,19 +82,20 @@ export class StreamWeaverProviderRuntime {
     this.messageObservers = [{ id: "streamweaver.relay-identities", observe: (message) => { this.relayStore.observe(message); } }];
     const botActions = options.botActions ? new StreamWeaverBotActionConsumer(options.botActions, egress) : undefined;
     const priorGate = { willHandle: (message: NormalizedChatMessageV1) => relay.willHandle(message) || Boolean(botActions?.willHandle(message)) };
+    const secureChoiceExecutor={execute:(invocation:import("./donor-command-runtime.js").StreamWeaverDonorCommandInvocationV1)=>{
+      if(invocation.command.donorId!==STREAMWEAVER_SECURE_CHOICE_DONOR_ID)return undefined;
+      const execution=this.flows.execution<unknown>(invocation.tenantId,invocation.deliveryId),action=secureChoiceActionFromExecution(execution);
+      if(!action)throw new Error("Secure choice configuration is missing from the current flow step");
+      const delivery=(execution as {delivery?:import("@spmt/contracts").NormalizedChatDeliveryV1}|undefined)?.delivery;
+      if(!delivery)throw new Error("Secure choice flow input is unavailable");
+      return this.secureChoices.start({delivery,config:action.config,requestKey:`${invocation.deliveryId}:${action.actionId}`,publicOrigin:options.publicOrigin??process.env.STREAMWEAVER_PUBLIC_ORIGIN??options.client.baseUrl}).text;
+    }};
     const services = new DefaultStreamWeaverDonorCommandServices({
       ...(options.providerGrants?{twitch:new StreamWeaverTwitchCommandAdapter(new SpmtStreamWeaverTwitchGrantSource(options.providerGrants,tenantId=>this.runtimeSettings.twitchBroadcaster(tenantId),options.allowProviderWrites===true),options.providerFetch)}:{}),
       links:this.runtimeSettings,
       bic:new StreamWeaverBicCommandExecutor(new StreamWeaverBicRuntime({store:this.bic,client:options.client})),
       socialEffects:new StreamWeaverSocialActionExecutor(options.client),
-      community:{execute:invocation=>{
-        if(invocation.command.donorId!==STREAMWEAVER_SECURE_CHOICE_DONOR_ID)return undefined;
-        const execution=this.flows.execution<unknown>(invocation.tenantId,invocation.deliveryId),action=secureChoiceActionFromExecution(execution);
-        if(!action)throw new Error("Secure choice configuration is missing from the current flow step");
-        const delivery=(execution as {delivery?:import("@spmt/contracts").NormalizedChatDeliveryV1}|undefined)?.delivery;
-        if(!delivery)throw new Error("Secure choice flow input is unavailable");
-        return this.secureChoices.start({delivery,config:action.config,requestKey:`${invocation.deliveryId}:${action.actionId}`,publicOrigin:options.publicOrigin??process.env.STREAMWEAVER_PUBLIC_ORIGIN??options.client.baseUrl}).text;
-      }},
+      persona:secureChoiceExecutor,
       system:{execute:invocation=>invocation.canonicalTrigger==="!commands" ? `Installed commands: ${this.flows.listInstalledPackages(invocation.tenantId).flatMap(pkg=>pkg.commands.filter(c=>c.enabled).map(c=>c.trigger)).join(", ") || "none"}. Currency: !points, !givepoints, !gamble, !pleader.` : undefined}
     });
     const commands = new StreamWeaverDonorCommandConsumer({ services, identities, state: this.commandState, egress, enabled: (tenantId, donorId) => donorId === "commands-chat" || donorId === "commands-system" || this.flows.donorEnabled(tenantId, donorId), ...(options.nowMs ? { nowMs: options.nowMs } : {}) });
@@ -108,24 +106,13 @@ export class StreamWeaverProviderRuntime {
         requestId=`sw-device:${createHash("sha256").update(requestId).digest("hex")}`;
         payload=assertDeviceAutomationPayload(action,payload);
         const tenantId=delivery.message.tenantId,capability=DEVICE_AUTOMATION_ACTIONS[action as keyof typeof DEVICE_AUTOMATION_ACTIONS];
-        if(options.simulation){
-          const key=`device:${requestId}`,prior=this.commandState.getReceipt(tenantId,key);if(prior)return {output:prior.text};
-          const stateKey=`simulation-device:${deviceId}`,old=this.flows.variables(tenantId,stateKey),state={...old,...Object.fromEntries(Object.entries(payload).map(([k,v])=>[k,String(v)])),action};
-          for(const [name,value] of Object.entries(state))this.flows.setVariable(tenantId,stateKey,name,value);
-          const output=JSON.stringify({simulation:true,deviceId,state});this.commandState.putReceipt({tenantId,deliveryId:key,command:action,text:output,createdAt:new Date().toISOString()});return {output};
-        }
+        if(options.simulation){const key=`device:${requestId}`,prior=this.commandState.getReceipt(tenantId,key);if(prior)return {output:prior.text};const stateKey=`simulation-device:${deviceId}`,old=this.flows.variables(tenantId,stateKey),state={...old,...Object.fromEntries(Object.entries(payload).map(([k,v])=>[k,String(v)])),action};for(const [name,value] of Object.entries(state))this.flows.setVariable(tenantId,stateKey,name,value);const output=JSON.stringify({simulation:true,deviceId,state});this.commandState.putReceipt({tenantId,deliveryId:key,command:action,text:output,createdAt:new Date().toISOString()});return {output};}
         if(options.allowProviderWrites!==true)throw new Error("Device execution is disabled here. Test the command in a Simulation Room.");
         const result=await options.client.createExecutionJob(tenantId,{ownerAppId:"streamweaver",capabilityId:"companion.device.command.v1",executionOwner:"companion",billedUserId:ownerUserId,meteredResource:"hosted-worker-minutes",usageQuantity:1,executionTarget:"companion",meteringTarget:"companion",input:{command:{schemaVersion:1,tenantId,commandId:requestId,idempotencyKey:requestId,sourceAppId:"streamweaver",targetDeviceId:deviceId,capability,action,payload,requestedByUserId:ownerUserId,requestedAt:delivery.message.occurredAt,requiresConfirmation:false,confirmed:false}}},requestId);
         return {jobId:result.job.id};
       },
       getJob:(tenantId,jobId)=>options.client.getExecutionJob(tenantId,jobId),
-      assistant:async ({delivery,prompt,requestId})=>{
-        if(options.allowAssistant===false)return {status:"unavailable",reason:"External assistant execution is disabled in this environment."};
-        const userId=delivery.message.actor.canonicalUserId;
-        if(!userId)return {status:"unavailable",reason:"Link your chat account to SPMT before using assistant flows."};
-        const persona=this.settings.get(delivery.message.tenantId),intent=streamWeaverResearchIntent(prompt),preferences=this.runtimeSettings.research(delivery.message.tenantId);
-        return options.client.invokeCommunityAssistant(delivery.message.tenantId,{userId,message:prompt,...(intent.kind==="query"&&preferences.enabled?{research:{...preferences,query:intent.query}}:{}),surface:"stream",conversationId:`streamweaver:flow:${requestId}`,routingPreference:"automatic",remember:false,...(persona?{presentation:{personaId:persona.personaId,displayName:persona.displayName,instructions:persona.instructions,memoryPolicy:persona.memoryPolicy}}:{})},`streamweaver-assistant:${requestId}`);
-      },
+      assistant:async ({delivery,prompt,requestId})=>{if(options.allowAssistant===false)return {status:"unavailable",reason:"External assistant execution is disabled in this environment."};const userId=delivery.message.actor.canonicalUserId;if(!userId)return {status:"unavailable",reason:"Link your chat account to SPMT before using assistant flows."};const persona=this.settings.get(delivery.message.tenantId),intent=streamWeaverResearchIntent(prompt),preferences=this.runtimeSettings.research(delivery.message.tenantId);return options.client.invokeCommunityAssistant(delivery.message.tenantId,{userId,message:prompt,...(intent.kind==="query"&&preferences.enabled?{research:{...preferences,query:intent.query}}:{}),surface:"stream",conversationId:`streamweaver:flow:${requestId}`,routingPreference:"automatic",remember:false,...(persona?{presentation:{personaId:persona.personaId,displayName:persona.displayName,instructions:persona.instructions,memoryPolicy:persona.memoryPolicy}}:{})},`streamweaver-assistant:${requestId}`);},
     });
     const economy = new MultiTenantStreamWeaverEconomyCommandConsumer(this.economy, options.client, identities, this.commandState, egress, options.nowMs, Math.random);
     this.consumers = [relay, ...(botActions ? [botActions] : []), ...(options.allowAssistant === false ? [] : [persona]), flows, commands, economy];
