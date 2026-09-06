@@ -1,0 +1,34 @@
+import {createHash} from 'node:crypto';
+import type {CommlinkTikTokEventV1} from '@spmt/contracts';
+import {StreamWeaverTikTokStore,type StreamWeaverTikTokConfig} from '@spmt/streamweaver';
+export interface TikTokConnection {on(event:string,listener:(data:any)=>void):unknown;connect():Promise<unknown>;disconnect():unknown;}
+interface TikTokState {cancel?:()=>void;config:StreamWeaverTikTokConfig;connection?:TikTokConnection;closed:boolean;retryAt:number;windowAt:number;received:number}
+export type TikTokFactory=(username:string)=>Promise<TikTokConnection>;
+export async function createTikTokConnection(username:string):Promise<TikTokConnection>{const {WebcastPushConnection}=await import('tiktok-live-connector/legacy');return new WebcastPushConnection(username,{processInitialData:true,enableExtendedGiftInfo:true,authenticateWs:false,useMobile:false,...(process.env.TIKTOK_SIGN_API_KEY?{signApiKey:process.env.TIKTOK_SIGN_API_KEY}:{})})}
+/** Read-only Webcast lifecycle. It never grants account identity or sends TikTok chat. */
+export class TikTokLiveIngestor {
+ private readonly active=new Map<string,TikTokState>();private closed=false;private readonly access=new Map<string,{at:number;allowed:boolean}>();
+ constructor(private readonly store:StreamWeaverTikTokStore,private readonly ingest:(event:CommlinkTikTokEventV1)=>Promise<unknown>,private readonly enabled:boolean,private readonly factory:TikTokFactory=createTikTokConnection,private readonly now:()=>number=Date.now,private readonly canConnect:(tenant:string)=>Promise<boolean>=async()=>true){}
+ async reconcile(){if(this.closed)return;const configs=this.store.configs(),allowed=new Set<string>();if(this.enabled)for(const config of configs.filter(c=>c.enabled)){let check=this.access.get(config.tenantId);if(!check||this.now()-check.at>=15000){check={at:this.now(),allowed:await this.canConnect(config.tenantId).catch(()=>false)};this.access.set(config.tenantId,check)}if(check.allowed)allowed.add(config.tenantId);else this.store.update(config,{state:"blocked",message:"Workspace or app access is unavailable"})}for(const [tenant,state]of this.active){const current=configs.find(c=>c.tenantId===tenant);if(!this.enabled||!current?.enabled||!allowed.has(tenant)||current.revision!==state.config.revision){state.closed=true;await disconnect(state);this.active.delete(tenant)}}if(!this.enabled)return;
+  for(const config of configs.filter(c=>c.enabled&&allowed.has(c.tenantId))){const old=this.active.get(config.tenantId);if(old&&!old.closed)continue;if(old&&old.retryAt>this.now())continue;const state={config,closed:false,retryAt:0,windowAt:this.now(),received:0};this.active.set(config.tenantId,state);void this.start(state).catch(()=>this.failed(state));}
+  for(const item of this.store.pending(allowed))try{await this.ingest(item.event);this.store.sent(item.config.tenantId,item.event.messageId)}catch{this.store.update(item.config,{message:'Shared chat delivery is unavailable; queued observations will retry'});continue}
+ }
+ private failed(state:TikTokState){if(state.closed)return;state.closed=true;state.retryAt=this.now()+60000;void disconnect(state);this.store.update(state.config,{state:'unavailable',message:'TikTok connection unavailable. Check that the account is live and connector access is configured.'})}
+
+ private async start(state:TikTokState){this.store.update(state.config,{state:'connecting',message:''});const connection=await this.factory(state.config.username);if(state.closed||this.closed){await connection.disconnect();return;}state.connection=connection;
+  for(const [name,kind]of [['chat','chat'],['gift','gift'],['follow','follow'],['share','share'],['like','like'],['roomUser','viewers']] as const)connection.on(name,data=>{if(state.closed||this.closed)return;if(this.now()-state.windowAt>=60000){state.windowAt=this.now();state.received=0}if(++state.received>1000){this.store.update(state.config,{message:'Live event rate limit reached; showing up to 1000 observations per minute'});return;}const event=tikTokObservation(state.config,kind,data,this.now());if(event)this.store.enqueue(state.config,event)});
+  connection.on('error',()=>this.failed(state));connection.on('disconnected',()=>this.failed(state));let timer:ReturnType<typeof setTimeout>|undefined;try{await Promise.race([connection.connect(),new Promise((_,reject)=>{state.cancel=()=>reject(Error('TikTok connection stopped'));timer=setTimeout(()=>reject(Error('TikTok handshake timeout')),20000)})]);if(state.closed||this.closed){await connection.disconnect();return;}this.store.update(state.config,{state:'connected',message:''});}finally{if(timer)clearTimeout(timer)}
+ }
+ async close(){this.closed=true;for(const state of this.active.values()){state.closed=true;await disconnect(state)}this.active.clear();this.store.close()}
+}
+export function tikTokObservation(config:StreamWeaverTikTokConfig,kind:CommlinkTikTokEventV1['kind'],value:unknown,now:number):CommlinkTikTokEventV1|undefined {
+ const d=value&&typeof value==='object'?value as Record<string,any>:{};if(kind==='gift'&&Number(d.giftType)===1&&d.repeatEnd!==true)return;
+ const quantity=kind==='gift'?Number(d.repeatCount??1):kind==='like'?Number(d.likeCount??1):kind==='viewers'?Number(d.viewerCount??d.totalUser??0):1;if(!Number.isSafeInteger(quantity)||quantity<0||quantity>1e12)return;
+ const diamondCost=Number(d.diamondCount??d.extendedGiftInfo?.diamond_count),totalLikes=Number(d.totalLikeCount);
+ const username=String(d.uniqueId??(kind==='viewers'?config.username:'viewer')).slice(0,120),displayName=String(d.nickname??username).slice(0,120),userId=String(d.userId??username).slice(0,200);
+ const text=(kind==='chat'?String(d.comment??''):kind==='gift'?`Gift: ${String(d.giftName??d.extendedGiftInfo?.name??'gift').slice(0,120)} × ${quantity}${Number.isSafeInteger(diamondCost)&&diamondCost>=0&&diamondCost<=1e12?' · '+diamondCost+' diamonds each':''}`:kind==='follow'?'Followed the live account':kind==='share'?'Shared the live stream':kind==='like'?`Liked the stream × ${quantity}`:`Live viewers: ${quantity}`).slice(0,8000);if(!text.trim())return;
+ const source=String(d.msgId??d.id??createHash('sha256').update(JSON.stringify([kind,userId,text,now])).digest('hex')).slice(0,180),messageId=createHash('sha256').update(JSON.stringify([config.username,kind,source])).digest('hex');
+ return {schemaVersion:1,tenantId:config.tenantId,connectionId:'tiktok:'+config.username,channelId:config.username,messageId,occurredAt:new Date(now).toISOString(),kind,userId,username,displayName,text,quantity,...(kind==="gift"&&Number.isSafeInteger(diamondCost)&&diamondCost>=0&&diamondCost<=1e12?{diamondCost}:{}),...(kind==="like"&&Number.isSafeInteger(totalLikes)&&totalLikes>=0&&totalLikes<=1e12?{totalLikes}:{})};
+}
+
+async function disconnect(state:TikTokState){state.cancel?.();try{await state.connection?.disconnect()}catch{ /* A failed disconnect must not retain source authority or stop other tenants. */ }}

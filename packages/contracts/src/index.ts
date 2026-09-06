@@ -512,12 +512,17 @@ export interface NormalizedChatMessageV1 {
   mentions: Array<{ token: string; providerUserId: string; canonicalUserId?: string; username: string }>;
 }
 
+export interface CommlinkTikTokEventV1 {
+  schemaVersion:1;tenantId:string;connectionId:string;channelId:string;messageId:string;occurredAt:string;
+  kind:"chat"|"gift"|"follow"|"share"|"like"|"viewers";userId:string;username:string;displayName:string;text:string;quantity?:number;diamondCost?:number;totalLikes?:number;
+}
+
 /** Public, credential-free Commlink projection of one normalized provider message. */
 export interface CommlinkLiveChatRecordV1 {
   rich?: {source:string;eventType:string;attachments:Array<{url:string;name:string}>;donation?:string;membership?:string;deleted?:boolean};
   schemaVersion: 1;
   tenantId: string;
-  provider: ChatProviderV1 | "social-stream";
+  provider: ChatProviderV1 | "social-stream" | "tiktok";
   connectionId: string;
   channelId: string;
   sourceChannelId?: string;
@@ -534,7 +539,7 @@ export interface CommlinkLiveChatRecordV1 {
 
 export interface CommlinkLiveChatQueryV1 {
   tenantId: string;
-  provider?: ChatProviderV1 | "social-stream";
+  provider?: ChatProviderV1 | "social-stream" | "tiktok";
   channelId?: string;
   search?: string;
   limit?: number;

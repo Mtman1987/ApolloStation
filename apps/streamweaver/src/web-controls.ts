@@ -1,3 +1,4 @@
+import {StreamWeaverTikTokStore} from "./tiktok-store.js";
 import { SqliteStreamWeaverShoutoutStore, type StreamWeaverShoutoutSettings } from "./shoutout-store.js";
 import { TTS_VOICE_OPTIONS } from "@spmt/stellar-core";
 import { StreamWeaverGenerationStore, GENERATION_TEMPLATES, type StreamWeaverGenerationSettings } from "./generation-settings.js";
@@ -32,6 +33,7 @@ type SessionContext = Awaited<ReturnType<typeof fetchAppSessionContext>>;
 
 /** Authenticated app API behind Voice Commander, persona, economy, and integration pages. */
 export class StreamWeaverWebControls {
+  private readonly tiktok?:StreamWeaverTikTokStore;
   private readonly shoutoutStore?:SqliteStreamWeaverShoutoutStore;
   private readonly generation?:StreamWeaverGenerationStore;
   private readonly community?:StreamWeaverCommunityStore;
@@ -45,6 +47,7 @@ export class StreamWeaverWebControls {
   private readonly operationMode: SpmtOperationModeV1;
 
   constructor(private readonly options: StreamWeaverWebControlOptionsV1) {
+    if(options.databasePath)this.tiktok=new StreamWeaverTikTokStore(options.databasePath);
     this.operationMode = options.operationMode ?? "active";
     if(options.databasePath)this.shoutoutStore=new SqliteStreamWeaverShoutoutStore(options.databasePath);
     if(options.databasePath)this.generation=new StreamWeaverGenerationStore(options.databasePath);
@@ -58,12 +61,18 @@ export class StreamWeaverWebControls {
     }
   }
 
-  close() { this.shoutoutStore?.close(); this.generation?.close(); this.community?.close(); this.pokemon?.close(); this.relay?.close(); this.runtimeSettings?.close(); this.flows?.close(); this.persona?.close(); this.economy?.close(); }
+  close() { this.tiktok?.close(); this.shoutoutStore?.close(); this.generation?.close(); this.community?.close(); this.pokemon?.close(); this.relay?.close(); this.runtimeSettings?.close(); this.flows?.close(); this.persona?.close(); this.economy?.close(); }
 
   async handle(request: IncomingMessage, response: ServerResponse, url: URL): Promise<boolean> {
     if (!url.pathname.startsWith("/api/streamweaver/control")) return false;
     try {
       const context = await fetchAppSessionContext({ appId: "streamweaver", spmtOrigin: this.options.spmtOrigin, request });
+      if(url.pathname==="/api/streamweaver/control/tiktok"){
+        this.requireOwner(context);if(!this.tiktok)throw new Error("TikTok settings storage is unavailable");
+        if(request.method==="GET")return sendJson(response,200,{config:this.tiktok.config(context.tenantId),status:this.tiktok.status(context.tenantId),available:this.operationMode==="active"});
+        if(request.method!=="POST")return sendJson(response,405,{message:"Use GET or POST"});requireSameOrigin(request);const body=await readJsonBody(request);
+        return sendJson(response,200,this.tiktok.configure(context.tenantId,{username:String(body.username??""),enabled:body.enabled as boolean}));
+      }
       if(url.pathname==="/api/streamweaver/control/persona/public"){
         this.requireOwner(context);const path="/v1/assistant/public-personas";
         if(request.method==="GET")return sendJson(response,200,await this.deviceApi(request,context,undefined,path+"?own=true"));

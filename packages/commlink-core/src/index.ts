@@ -78,7 +78,7 @@ export class CommlinkLiveChatStore {
   }
 
   ingestMirror(record:CommlinkLiveChatRecordV1,operation:"message"|"edit"|"delete") {
-    if(record.provider!=="social-stream"||record.canonicalUserId||record.roles.length)throw new Error("Invalid mirrored chat identity");
+    if(!["social-stream","tiktok"].includes(record.provider)||record.canonicalUserId||record.roles.length)throw new Error("Invalid mirrored chat identity");
     const id=messageKey(record),prior=this.db.prepare("SELECT body FROM commlink_live_chat WHERE id=?").get(id);
     if(prior&&operation==="message")return {duplicate:true,record:JSON.parse(String(prior.body)) as CommlinkLiveChatRecordV1};
     if(operation==="delete"){record={...record,text:"[Message removed]",rich:{source:record.rich?.source??"social-stream",eventType:"delete",attachments:[],deleted:true}};}
@@ -91,7 +91,7 @@ export class CommlinkLiveChatStore {
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 500) throw new Error("limit must be from 1 to 500");
     const where = ["tenant_id = ?"];
     const params: Array<string | number> = [query.tenantId];
-    if (query.provider) { if(query.provider!=="social-stream")assertProvider(query.provider); where.push("provider = ?"); params.push(query.provider); }
+    if (query.provider) { if(!["social-stream","tiktok"].includes(query.provider))assertProvider(query.provider); where.push("provider = ?"); params.push(query.provider); }
     if (query.channelId) { requireId(query.channelId, "channelId"); where.push("channel_id = ?"); params.push(query.channelId); }
     if (query.search) {
       const search = query.search.trim().slice(0, 200);
@@ -164,3 +164,5 @@ export * from "./operator.js";
 export * from './social-stream.js';
 
 function mutationKey(record:Pick<CommlinkLiveChatRecordV1,"tenantId"|"provider"|"connectionId"|"channelId"|"messageId">){return JSON.stringify([record.tenantId,record.provider,record.connectionId,record.channelId,record.messageId]);}
+
+export * from "./tiktok.js";

@@ -1,3 +1,4 @@
+import {normalizeTikTokLiveEvent} from "@spmt/commlink-core";
 import {PublicPersonaApi} from "./public-persona-api.js";
 import {createHash} from "node:crypto";
 import {normalizeCommlinkProviderMutation,type CommlinkProviderMutationV1} from "@spmt/contracts";
@@ -490,16 +491,24 @@ export function createSpmtService(options: SpmtServiceOptions) {
         try {
           auth.authorize(token, "commlink:read", tenantId);
           const provider = url.searchParams.get("provider") ?? undefined;
-          if (provider && !["twitch", "discord", "kick", "youtube", "social-stream"].includes(provider)) return json(response, 400, { error: "invalid_provider" });
+          if (provider && !["twitch", "discord", "kick", "youtube", "social-stream", "tiktok"].includes(provider)) return json(response, 400, { error: "invalid_provider" });
           const limitValue = url.searchParams.get("limit");
           const limit = limitValue === null ? undefined : Number(limitValue);
-          return json(response, 200, commlinkLiveChat.list({ tenantId, ...(provider ? { provider: provider as ChatProviderV1 | "social-stream" } : {}), ...(url.searchParams.get("channelId") ? { channelId: url.searchParams.get("channelId")! } : {}), ...(url.searchParams.get("search") ? { search: url.searchParams.get("search")! } : {}), ...(limit === undefined ? {} : { limit }) }));
+          return json(response, 200, commlinkLiveChat.list({ tenantId, ...(provider ? { provider: provider as ChatProviderV1 | "social-stream" | "tiktok" } : {}), ...(url.searchParams.get("channelId") ? { channelId: url.searchParams.get("channelId")! } : {}), ...(url.searchParams.get("search") ? { search: url.searchParams.get("search")! } : {}), ...(limit === undefined ? {} : { limit }) }));
         } catch (error) {
           if (error instanceof Error && /limit|channelId|provider/.test(error.message)) return json(response, 400, { error: "invalid_query", message: error.message });
           return json(response, 403, { error: "forbidden" });
         }
       }
 
+      if(["GET","POST"].includes(request.method??"")&&url.pathname==="/v1/commlink/live/tiktok"){
+        const token=accessToken(request),tenantId=header(request,"x-spmt-tenant");if(!token||!tenantId)return json(response,401,{error:"unauthorized"});
+        try{const principal=auth.authorize(token,"commlink:live:write",tenantId);if(principal.actorType!=="service"||principal.actorId!=="chat-gateway")return json(response,403,{error:"chat_gateway_required"});
+          const installed=control.listInstalls(tenantId),enabled=control.getTenant(tenantId).status==="active"&&["chat-gateway","streamweaver"].every(app=>installed.some(i=>i.appId===app&&i.enabled));if(request.method==="GET")return json(response,200,{enabled});if(!enabled)return json(response,403,{error:"app_not_installed"});
+          const record=normalizeTikTokLiveEvent(await readBody(request) as unknown as import("@spmt/contracts").CommlinkTikTokEventV1);if(record.tenantId!==tenantId)return json(response,403,{error:"tenant_mismatch"});
+          const result=commlinkLiveChat.ingestMirror(record,"message");operatorApi.publish(tenantId);return json(response,200,result);
+        }catch(error){return json(response,error instanceof AuthDeniedError?403:400,{error:"invalid_tiktok_event",message:error instanceof Error?error.message:"TikTok event rejected"});}
+      }
       if(request.method==="POST"&&url.pathname==="/v1/commlink/live/mutations"){
         const token=accessToken(request),tenantId=header(request,"x-spmt-tenant");if(!token||!tenantId)return json(response,401,{error:"unauthorized"});
         try{const principal=auth.authorize(token,"commlink:live:write",tenantId);if(principal.actorType!=="service"||principal.actorId!=="chat-gateway")return json(response,403,{error:"chat_gateway_required"});

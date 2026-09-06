@@ -1,3 +1,5 @@
+import {TikTokLiveIngestor,createTikTokConnection} from "./tiktok-live.js";
+import {StreamWeaverTikTokStore} from "@spmt/streamweaver";
 import { SimulationRoomRuntime, SimulationRoomWorker } from "./simulation-runtime.js";
 import { basename, isAbsolute, dirname, join } from "node:path";
 import { createSpmtCommlinkLiveChatConsumer } from "@spmt/commlink-core";
@@ -127,6 +129,7 @@ export function createInternalServiceTokenProvider(options: { spmtOrigin: string
 export function createChatGatewayWorkerTokenProvider(options: { spmtOrigin: string; credential: string; fetchImpl?: typeof fetch }) { return createInternalServiceTokenProvider({ ...options, serviceId: "chat-gateway" }); }
 
 export class SupervisedChatGatewayService {
+  private readonly tiktok?:TikTokLiveIngestor;
   private readonly connectionClient:SpmtClient;
   private lastYouTubeSync=0;
   private readonly startedAt = new Date().toISOString();
@@ -148,6 +151,7 @@ export class SupervisedChatGatewayService {
     this.getAccessToken = createChatGatewayWorkerTokenProvider({ spmtOrigin: options.spmtOrigin, credential: options.credential, ...(fetchImpl ? { fetchImpl } : {}) });
     const client = new SpmtClient({ baseUrl: options.spmtOrigin, appId: "chat-gateway", getAccessToken: this.getAccessToken, ...(fetchImpl ? { fetchImpl } : {}) });
     this.connectionClient=client;
+    if(options.streamweaver)this.tiktok=new TikTokLiveIngestor(new StreamWeaverTikTokStore(options.streamweaver.databasePath),event=>client.ingestTikTokLiveEvent(event.tenantId,event),options.operationMode==="active",createTikTokConnection,Date.now,tenant=>client.getTikTokLiveAccess(tenant).then(value=>value.enabled));
     this.simulationWorker = new SimulationRoomWorker(client, new SimulationRoomRuntime({ directory: join(dirname(options.databasePath), "simulation-rooms"), ...(options.nebulaArcade?.publicOrigin ? { publicOrigin: options.nebulaArcade.publicOrigin } : {}), ...(options.streamweaver ? { streamweaverDatabasePath: options.streamweaver.databasePath } : {}), publish: (event, key) => client.publishSimulationRoomEvent(String((event.data as Record<string, unknown>)?.tenantId ?? ""), event, key) }), `${options.workerId}-simulation`);
     const adapters = createFirstPartyChatProviderAdapters(fetchImpl ? { fetch: async (url, init) => fetchImpl(url, init) } : {});
     this.chatStore = new SqliteChatGatewayStore(options.databasePath);
@@ -282,6 +286,7 @@ export class SupervisedChatGatewayService {
   async ready() { await Promise.all([this.getAccessToken(), this.getStreamWeaverAccessToken?.(), this.getNebulaArcadeAccessToken?.()]); if(this.streamweaverClient&&this.tenants.length)await this.streamweaverClient.reportExecutionWorker({executionOwner:"streamweaver",workerId:`${this.options.workerId}-voice-egress`,executionTarget:"sprite",state:"ready",capabilityIds:["streamweaver.voice-egress.v1"],tenantIds:this.tenants,providerHealthy:true,startedAt:this.startedAt,leaseMs:60_000,metrics:{completedJobs:0,failedJobs:0,inputUnits:0,outputUnits:0}});await this.streamweaverImage?.report();return { schemaVersion: 1 as const, workerId: this.options.workerId, operationMode: this.options.operationMode, liveIngressEnabled: this.options.liveIngressEnabled, egressMode: this.options.operationMode === "active" ? "provider" as const : "shadow" as const, shadowMessages: this.chatStore.countShadowMessages(), configuredConnections: this.options.connections.length, consumers: this.gateway.consumerIds() }; }
   listShadowMessages(tenantId:string,limit=200){return this.chatStore.listShadowMessages(tenantId,limit);}
   async reconcile() {
+    await this.tiktok?.reconcile();
     if(this.options.operationMode==="active"&&Date.now()-this.lastYouTubeSync>5000){this.lastYouTubeSync=Date.now();try{
       const result=await this.connectionClient.listYouTubeChatConnections();if(!Array.isArray(result.connections))throw new Error("YouTube connection discovery returned an invalid response");
       for(const c of result.connections){const prior=this.connectionStore.get(c.tenantId,"youtube",c.connectionId);if(!prior||prior.desired!==c.desired||prior.channelId!==c.channelId||prior.providerAccountId!==c.providerAccountId)this.connectionStore.put(c);if(!this.tenants.includes(c.tenantId))this.tenants.push(c.tenantId);}
@@ -302,7 +307,7 @@ export class SupervisedChatGatewayService {
   async run(signal: AbortSignal) { await Promise.all([this.runGateway(signal),this.runSimulation(signal),this.streamweaverImage?.run(signal)??Promise.resolve()]); }
   private async runSimulation(signal:AbortSignal){while(!signal.aborted){await this.simulationWorker.runOnce();await pause(this.options.reconcileMs,signal);}}
   private async runGateway(signal:AbortSignal){while(!signal.aborted){await this.reconcile();await pause(this.options.reconcileMs,signal);}}
-  async close() { await this.supervisor.stop(); this.nebulaArcade?.close(); this.streamweaver?.close(); this.generationSettings?.close(); this.connectionStore.close(); this.chatStore.close(); }
+  async close() { await this.tiktok?.close();await this.supervisor.stop(); this.nebulaArcade?.close(); this.streamweaver?.close(); this.generationSettings?.close(); this.connectionStore.close(); this.chatStore.close(); }
 }
 
 function loopbackOrigin(value: string) { const url = new URL(value); if (url.protocol !== "http:" || !["127.0.0.1", "localhost", "::1"].includes(url.hostname) || url.username || url.password || url.pathname !== "/" || url.search || url.hash) throw new Error("SPMT_ORIGIN must be a credential-free loopback HTTP origin"); return url.origin; }

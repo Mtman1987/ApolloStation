@@ -269,3 +269,7 @@ test('owner role import reaches check-in controls and foreign-origin writes are 
   const anonymous=await fetch(path,{method:'POST',headers:{origin:streamBase,'content-type':'application/json'},body:JSON.stringify(body)});assert.notEqual(anonymous.status,200);
  });
 });
+
+test('owner can save and disable TikTok ingestion through the app while anonymous requests are rejected',async()=>{
+ await fixture(async({cookie,streamBase})=>{const path=streamBase+'/api/streamweaver/control/tiktok',headers={cookie,origin:streamBase,'content-type':'application/json'};const saved=await fetch(path,{method:'POST',headers,body:JSON.stringify({username:'@captain',enabled:true})});assert.equal(saved.status,200);const state=await (await fetch(path,{headers:{cookie}})).json();assert.equal(state.config.username,'captain');assert.equal(state.config.enabled,true);const disabled=await fetch(path,{method:'POST',headers,body:JSON.stringify({username:'captain',enabled:false})});assert.equal(disabled.status,200);assert.equal((await (await fetch(path,{headers:{cookie}})).json()).status.state,'disabled');assert.notEqual((await fetch(path)).status,200);const {streamWeaverTikTokBrowserJs}=await import('../apps/streamweaver/dist/tiktok-client.js');new Function(streamWeaverTikTokBrowserJs());});
+});
