@@ -1,0 +1,206 @@
+import { randomBytes, randomInt, randomUUID } from "node:crypto";
+import type { IncomingMessage, ServerResponse } from "node:http";
+import { DatabaseSync } from "node:sqlite";
+import { fetchAppSessionContext, requireSameOrigin } from "@spmt/app-foundation/product-web";
+import type { NormalizedChatDeliveryV1, OutboundChatMessageV1 } from "@spmt/contracts";
+
+export const STREAMWEAVER_SECURE_CHOICE_DONOR_ID = "secure-choice-session" as const;
+
+export interface StreamWeaverSecureChoiceOptionV1 { id:string; label:string; }
+export interface StreamWeaverSecureChoiceRelationV1 { winner:string; loser:string; message:string; }
+export interface StreamWeaverSecureChoiceConfigV1 {
+  title:string;
+  target:"first-mention";
+  expiresSeconds:number;
+  options:StreamWeaverSecureChoiceOptionV1[];
+  relations:StreamWeaverSecureChoiceRelationV1[];
+}
+interface SecureChoicePlayerV1 { userId:string; username:string; displayName:string; token:string; order:string[]; choiceId?:string; committedAt?:string; }
+export interface StreamWeaverSecureChoiceSessionV1 {
+  schemaVersion:1;
+  tenantId:string;
+  sessionId:string;
+  requestKey:string;
+  title:string;
+  state:"pending"|"active"|"resolved"|"declined"|"expired";
+  provider:NormalizedChatDeliveryV1["message"]["provider"];
+  connectionId:string;
+  channelId:string;
+  sourceMessageId:string;
+  createdAt:string;
+  updatedAt:string;
+  expiresAt:string;
+  round:number;
+  config:StreamWeaverSecureChoiceConfigV1;
+  challenger:SecureChoicePlayerV1;
+  challenged:SecureChoicePlayerV1;
+  result?:{tie:boolean;winnerUserId?:string;loserUserId?:string;challengerChoice:string;challengedChoice:string;message:string};
+}
+interface SecureChoiceOutboxV1 { eventId:string; message:OutboundChatMessageV1; }
+
+export interface StreamWeaverSecureChoiceStartV1 {
+  delivery:NormalizedChatDeliveryV1;
+  config:unknown;
+  requestKey:string;
+  publicOrigin:string;
+}
+
+/**
+ * Durable, tenant-scoped simultaneous-choice sessions. Participant URLs are opaque,
+ * but authorization never trusts the URL token alone: every mutation also requires
+ * the signed-in canonical user to match the seat assigned at challenge creation.
+ */
+export class StreamWeaverSecureChoiceStore {
+  private readonly db:DatabaseSync;
+  constructor(path:string,private readonly now:()=>string=()=>new Date().toISOString()) {
+    if(!path)throw new Error("Secure choice storage path is required");
+    this.db=new DatabaseSync(path,{timeout:5_000});
+    this.db.exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;");
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS streamweaver_secure_choices(
+        tenant_id TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        request_key TEXT NOT NULL,
+        body TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY(tenant_id,session_id),
+        UNIQUE(tenant_id,request_key)
+      ) STRICT;
+      CREATE INDEX IF NOT EXISTS streamweaver_secure_choices_request ON streamweaver_secure_choices(tenant_id,request_key);
+      CREATE TABLE IF NOT EXISTS streamweaver_secure_choice_outbox(
+        tenant_id TEXT NOT NULL,
+        event_id TEXT NOT NULL,
+        body TEXT NOT NULL,
+        state TEXT NOT NULL CHECK(state IN ('pending','sent')),
+        created_at TEXT NOT NULL,
+        sent_at TEXT,
+        PRIMARY KEY(tenant_id,event_id)
+      ) STRICT;
+      CREATE INDEX IF NOT EXISTS streamweaver_secure_choice_outbox_pending ON streamweaver_secure_choice_outbox(state,created_at);
+    `);
+  }
+  close(){this.db.close();}
+
+  start(input:StreamWeaverSecureChoiceStartV1){
+    const config=assertStreamWeaverSecureChoiceConfig(input.config),message=input.delivery.message,actorId=message.actor.canonicalUserId,mention=message.mentions[0];
+    if(!actorId)throw new Error("Link your chat account to SPMT before starting a secure choice session");
+    if(!mention)throw new Error("Mention the person you want to challenge");
+    if(!mention.canonicalUserId)throw new Error("The challenged user must link their chat account to SPMT before accepting secure choices");
+    if(mention.canonicalUserId===actorId)throw new Error("Choose another person for a secure choice session");
+    const prior=this.byRequest(message.tenantId,input.requestKey);if(prior)return{sessionId:prior.sessionId,text:challengeMessage(prior,input.publicOrigin)};
+    const now=this.now(),expiresAt=new Date(Date.parse(now)+config.expiresSeconds*1000).toISOString();
+    const session:StreamWeaverSecureChoiceSessionV1={schemaVersion:1,tenantId:message.tenantId,sessionId:randomUUID(),requestKey:input.requestKey,title:config.title,state:"pending",provider:message.provider,connectionId:message.connectionId,channelId:message.channelId,sourceMessageId:message.messageId,createdAt:now,updatedAt:now,expiresAt,round:0,config,challenger:{userId:actorId,username:message.actor.username,displayName:message.actor.displayName??message.actor.username,token:seatToken(),order:[]},challenged:{userId:mention.canonicalUserId,username:mention.username,displayName:mention.username,token:seatToken(),order:[]}};
+    this.put(session);
+    return{sessionId:session.sessionId,text:challengeMessage(session,input.publicOrigin)};
+  }
+
+  find(sessionId:string){const row=this.db.prepare("SELECT body FROM streamweaver_secure_choices WHERE session_id=? LIMIT 1").get(sessionId) as {body:string}|undefined;return row?JSON.parse(row.body) as StreamWeaverSecureChoiceSessionV1:undefined;}
+  byRequest(tenantId:string,requestKey:string){const row=this.db.prepare("SELECT body FROM streamweaver_secure_choices WHERE tenant_id=? AND request_key=?").get(tenantId,requestKey) as {body:string}|undefined;return row?JSON.parse(row.body) as StreamWeaverSecureChoiceSessionV1:undefined;}
+  player(session:StreamWeaverSecureChoiceSessionV1,token:string){return session.challenger.token===token?session.challenger:session.challenged.token===token?session.challenged:undefined;}
+
+  accept(sessionId:string,token:string,userId:string,publicOrigin:string){return this.mutate(sessionId,(session)=>{
+    this.requireParticipant(session,token,userId,true);this.expireIfDue(session);
+    if(session.state!=="pending")return session;
+    session.state="active";session.round=1;prepareRound(session);session.updatedAt=this.now();
+    this.enqueue(session,`ready:${session.round}`,readyMessage(session,publicOrigin));return session;
+  });}
+  decline(sessionId:string,token:string,userId:string){return this.mutate(sessionId,(session)=>{
+    this.requireParticipant(session,token,userId,true);this.expireIfDue(session);
+    if(session.state!=="pending")return session;
+    session.state="declined";session.updatedAt=this.now();
+    this.enqueue(session,"declined",`@${session.challenged.username} declined @${session.challenger.username}'s ${session.title} challenge.`);return session;
+  });}
+  choose(sessionId:string,token:string,userId:string,index:number,publicOrigin:string){return this.mutate(sessionId,(session)=>{
+    const player=this.requireParticipant(session,token,userId,false);this.expireIfDue(session);
+    if(session.state!=="active")return session;
+    if(player.choiceId)return session;
+    if(!Number.isSafeInteger(index)||index<1||index>player.order.length)throw new Error("Choose one of the displayed grid positions");
+    player.choiceId=player.order[index-1]!;player.committedAt=this.now();session.updatedAt=this.now();
+    if(!session.challenger.choiceId||!session.challenged.choiceId)return session;
+    this.resolveRound(session,publicOrigin);return session;
+  });}
+
+  async flushOutbox(send:(message:OutboundChatMessageV1)=>Promise<unknown>,limit=100){
+    this.expireDue();const rows=this.db.prepare("SELECT tenant_id,event_id,body FROM streamweaver_secure_choice_outbox WHERE state='pending' ORDER BY created_at,event_id LIMIT ?").all(Math.max(1,Math.min(100,limit))) as Array<{tenant_id:string;event_id:string;body:string}>;let sent=0;
+    for(const row of rows){const value=JSON.parse(row.body) as SecureChoiceOutboxV1;try{await send(value.message);this.db.prepare("UPDATE streamweaver_secure_choice_outbox SET state='sent',sent_at=? WHERE tenant_id=? AND event_id=? AND state='pending'").run(this.now(),row.tenant_id,row.event_id);sent++;}catch{/* durable outbox retries on the next reconcile */}}
+    return{sent,pending:rows.length-sent};
+  }
+
+  private resolveRound(session:StreamWeaverSecureChoiceSessionV1,publicOrigin:string){
+    const challengerChoice=session.challenger.choiceId!,challengedChoice=session.challenged.choiceId!;
+    if(challengerChoice===challengedChoice){
+      const label=option(session,challengerChoice).label;
+      if(session.round>=20){session.state="resolved";session.result={tie:true,challengerChoice,challengedChoice,message:`Tie after ${session.round} rounds — both chose ${label}.`};this.enqueue(session,`tie-final:${session.round}`,`${session.title}: tie after ${session.round} rounds — both chose ${label}.`);return;}
+      const oldRound=session.round;session.round++;prepareRound(session);session.result=undefined;session.updatedAt=this.now();this.enqueue(session,`tie:${oldRound}`,`${session.title}: tie — both chose ${label}. Fresh hidden grids for round ${session.round}: ${playerLink(session,session.challenger,publicOrigin)} | ${playerLink(session,session.challenged,publicOrigin)}`);return;
+    }
+    const relation=session.config.relations.find(item=>item.winner===challengerChoice&&item.loser===challengedChoice)||session.config.relations.find(item=>item.winner===challengedChoice&&item.loser===challengerChoice);
+    if(!relation)throw new Error("Secure choice rules do not resolve this pair");
+    const challengerWins=relation.winner===challengerChoice,winner=challengerWins?session.challenger:session.challenged,loser=challengerWins?session.challenged:session.challenger;
+    session.state="resolved";session.result={tie:false,winnerUserId:winner.userId,loserUserId:loser.userId,challengerChoice,challengedChoice,message:relation.message};session.updatedAt=this.now();
+    this.enqueue(session,`result:${session.round}`,`${session.title}: @${winner.username} wins — ${relation.message}. @${session.challenger.username} chose ${option(session,challengerChoice).label}; @${session.challenged.username} chose ${option(session,challengedChoice).label}.`);
+  }
+  private requireParticipant(session:StreamWeaverSecureChoiceSessionV1,token:string,userId:string,mustBeChallenged:boolean){const player=this.player(session,token);if(!player||player.userId!==userId)throw new SecureChoiceAccessError("Hey — no peeking!");if(mustBeChallenged&&player!==session.challenged)throw new SecureChoiceAccessError("Hey — no peeking!");return player;}
+  private expireIfDue(session:StreamWeaverSecureChoiceSessionV1){if((session.state==="pending"||session.state==="active")&&Date.parse(session.expiresAt)<=Date.parse(this.now())){session.state="expired";session.updatedAt=this.now();this.enqueue(session,"expired",`${session.title} challenge expired before both players finished.`);}}
+  private expireDue(){const rows=this.db.prepare("SELECT body FROM streamweaver_secure_choices").all() as Array<{body:string}>;for(const row of rows){const session=JSON.parse(row.body) as StreamWeaverSecureChoiceSessionV1;if((session.state==="pending"||session.state==="active")&&Date.parse(session.expiresAt)<=Date.parse(this.now()))this.mutate(session.sessionId,value=>{this.expireIfDue(value);return value;});}}
+  private mutate(sessionId:string,fn:(session:StreamWeaverSecureChoiceSessionV1)=>StreamWeaverSecureChoiceSessionV1){this.db.exec("BEGIN IMMEDIATE");try{const session=this.find(sessionId);if(!session)throw new Error("Secure choice session does not exist");const value=fn(session);this.put(value);this.db.exec("COMMIT");return value;}catch(error){this.db.exec("ROLLBACK");throw error;}}
+  private put(session:StreamWeaverSecureChoiceSessionV1){this.db.prepare("INSERT INTO streamweaver_secure_choices VALUES(?,?,?,?,?) ON CONFLICT(tenant_id,session_id) DO UPDATE SET body=excluded.body,updated_at=excluded.updated_at").run(session.tenantId,session.sessionId,session.requestKey,JSON.stringify(session),session.updatedAt);}
+  private enqueue(session:StreamWeaverSecureChoiceSessionV1,suffix:string,text:string){const eventId=`${session.sessionId}:${suffix}`,message:OutboundChatMessageV1={schemaVersion:1,tenantId:session.tenantId,provider:session.provider,connectionId:session.connectionId,channelId:session.channelId,text,idempotencyKey:`streamweaver-secure-choice:${eventId}`,replyToMessageId:session.sourceMessageId};const body:SecureChoiceOutboxV1={eventId,message};this.db.prepare("INSERT OR IGNORE INTO streamweaver_secure_choice_outbox VALUES(?,?,?,'pending',?,NULL)").run(session.tenantId,eventId,JSON.stringify(body),this.now());}
+}
+
+export class SecureChoiceAccessError extends Error {}
+
+/** Authenticated mini-page used by the opaque links posted into chat. */
+export class StreamWeaverSecureChoiceWeb {
+  private readonly store:StreamWeaverSecureChoiceStore;
+  constructor(private readonly options:{databasePath:string;spmtOrigin:string;now?:()=>string}){this.store=new StreamWeaverSecureChoiceStore(options.databasePath,options.now);}
+  close(){this.store.close();}
+  async handle(request:IncomingMessage,response:ServerResponse,url:URL){
+    const match=/^\/api\/streamweaver\/secure-choice\/([A-Za-z0-9-]{8,80})\/([A-Za-z0-9_-]{16,120})$/.exec(url.pathname);if(!match)return false;
+    const session=this.store.find(match[1]!);if(!session)return html(response,404,page("Choice unavailable","This challenge no longer exists."));
+    let context:Awaited<ReturnType<typeof fetchAppSessionContext>>;try{context=await fetchAppSessionContext({appId:"streamweaver",spmtOrigin:this.options.spmtOrigin,request});}catch{return html(response,401,page("Sign in required","Sign in to SpaceMountain, then reopen this duel link."));}
+    const userId=String(context.session.actorId??""),player=this.store.player(session,match[2]!);if(context.tenantId!==session.tenantId||!player||player.userId!==userId)return html(response,403,page("Hey — no peeking!","That grid belongs to the other player."));
+    let value=session;
+    try{
+      if(request.method==="POST"){
+        requireSameOrigin(request);const form=await readForm(request),action=form.get("action");
+        if(action==="accept")value=this.store.accept(session.sessionId,player.token,userId,this.options.spmtOrigin);
+        else if(action==="decline")value=this.store.decline(session.sessionId,player.token,userId);
+        else if(action==="choose")value=this.store.choose(session.sessionId,player.token,userId,Number(form.get("index")),this.options.spmtOrigin);
+        else throw new Error("Unknown secure choice action");
+      }else if(request.method!=="GET")return html(response,405,page("Method not allowed","Open the link normally from chat."));
+    }catch(error){if(error instanceof SecureChoiceAccessError)return html(response,403,page("Hey — no peeking!","That grid belongs to the other player."));return html(response,400,page("Choice failed",error instanceof Error?error.message:"The choice could not be saved."));}
+    return html(response,200,renderSession(value,player.token,userId));
+  }
+}
+
+export function secureChoiceActionFromExecution(value:unknown){const execution=record(value),queue=Array.isArray(execution?.queue)?execution.queue:[],pkg=record(execution?.package),actions=Array.isArray(pkg?.actions)?pkg.actions:[],id=String(queue[0]??"");const action=actions.map(record).find(item=>item?.id===id),config=record(action?.config);if(action?.type!=="run-native"||config?.donorId!==STREAMWEAVER_SECURE_CHOICE_DONOR_ID)return undefined;return{actionId:id,config};}
+
+export function assertStreamWeaverSecureChoiceConfig(value:unknown):StreamWeaverSecureChoiceConfigV1{
+  const input=record(value);if(!input)throw new Error("Secure choice configuration is required");
+  const title=cleanText(input.title,"title",100),target=input.target??"first-mention";if(target!=="first-mention")throw new Error("Secure choice target must be first-mention");
+  const expiresSeconds=input.expiresSeconds===undefined?180:Number(input.expiresSeconds);if(!Number.isSafeInteger(expiresSeconds)||expiresSeconds<30||expiresSeconds>900)throw new Error("Secure choice expiration must be from 30 to 900 seconds");
+  if(!Array.isArray(input.options)||input.options.length<2||input.options.length>12)throw new Error("Secure choice needs from 2 to 12 options");
+  const options=input.options.map((raw)=>{const item=record(raw);if(!item)throw new Error("Secure choice option is invalid");const id=String(item.id??"").trim().toLowerCase();if(!/^[a-z0-9][a-z0-9_-]{0,39}$/.test(id))throw new Error("Secure choice option id is invalid");return{id,label:cleanText(item.label,"option label",80)};});
+  if(new Set(options.map(item=>item.id)).size!==options.length)throw new Error("Secure choice option ids must be unique");
+  if(!Array.isArray(input.relations))throw new Error("Secure choice relations are required");const valid=new Set(options.map(item=>item.id)),pairs=new Set<string>();
+  const relations=input.relations.map((raw)=>{const item=record(raw);if(!item)throw new Error("Secure choice relation is invalid");const winner=String(item.winner??"").trim().toLowerCase(),loser=String(item.loser??"").trim().toLowerCase();if(winner===loser||!valid.has(winner)||!valid.has(loser))throw new Error("Secure choice relation references an invalid pair");const pair=[winner,loser].sort().join("\0");if(pairs.has(pair))throw new Error("Secure choice relation pair is duplicated");pairs.add(pair);return{winner,loser,message:cleanText(item.message,"relation message",160)};});
+  if(pairs.size!==options.length*(options.length-1)/2)throw new Error("Secure choice rules must resolve every possible pair exactly once");
+  return{title,target:"first-mention",expiresSeconds,options,relations};
+}
+
+function prepareRound(session:StreamWeaverSecureChoiceSessionV1){session.challenger.order=shuffle(session.config.options.map(item=>item.id));session.challenged.order=shuffle(session.config.options.map(item=>item.id));delete session.challenger.choiceId;delete session.challenger.committedAt;delete session.challenged.choiceId;delete session.challenged.committedAt;}
+function shuffle<T>(items:T[]){const result=[...items];for(let i=result.length-1;i>0;i--){const j=randomInt(i+1);[result[i],result[j]]=[result[j]!,result[i]!];}return result;}
+function seatToken(){return randomBytes(24).toString("base64url");}
+function choiceUrl(session:StreamWeaverSecureChoiceSessionV1,player:SecureChoicePlayerV1,origin:string){return `${publicOrigin(origin)}/apps/streamweaver/api/secure-choice/${encodeURIComponent(session.sessionId)}/${encodeURIComponent(player.token)}`;}
+function challengeMessage(session:StreamWeaverSecureChoiceSessionV1,origin:string){return `@${session.challenged.username}, @${session.challenger.username} challenges you to ${session.title}. Accept or decline: ${choiceUrl(session,session.challenged,origin)}`;}
+function playerLink(session:StreamWeaverSecureChoiceSessionV1,player:SecureChoicePlayerV1,origin:string){return `@${player.username} ${choiceUrl(session,player,origin)}`;}
+function readyMessage(session:StreamWeaverSecureChoiceSessionV1,origin:string){return `${session.title} round ${session.round}: ${playerLink(session,session.challenger,origin)} | ${playerLink(session,session.challenged,origin)}. Each grid is randomized and identity-locked; both choices stay hidden until committed.`;}
+function option(session:StreamWeaverSecureChoiceSessionV1,id:string){const value=session.config.options.find(item=>item.id===id);if(!value)throw new Error("Secure choice option is missing");return value;}
+function publicOrigin(value:string){const url=new URL(value);const local=["localhost","127.0.0.1","::1","[::1]"].includes(url.hostname);if(url.protocol!=="https:"&&!local)throw new Error("Secure choice links require HTTPS outside localhost");url.pathname="";url.search="";url.hash="";return url.toString().replace(/\/$/,"");}
+function record(value:unknown){return value&&typeof value==="object"&&!Array.isArray(value)?value as Record<string,unknown>:undefined;}
+function cleanText(value:unknown,name:string,max:number){const text=String(value??"").replace(/[\r\n\0]/g," ").trim();if(!text||text.length>max)throw new Error(`${name} is required and must be at most ${max} characters`);return text;}
+function page(title:string,body:string,inner=""){return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>${esc(title)} · StreamWeaver</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#070b16;color:#eef2ff;font-family:system-ui,sans-serif}.card{width:min(680px,92vw);box-sizing:border-box;padding:24px;border:1px solid #334155;border-radius:22px;background:#111827;box-shadow:0 20px 70px #0008}h1{margin:0 0 10px;font-size:clamp(26px,6vw,42px)}p{color:#cbd5e1;line-height:1.5}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-top:18px}button{width:100%;min-height:74px;padding:12px;border:1px solid #64748b;border-radius:16px;background:#1e293b;color:#fff;font:inherit;font-weight:800;cursor:pointer}button:hover{background:#334155}.actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:18px}.actions form{flex:1}.muted{font-size:13px;color:#94a3b8}</style></head><body><main class="card"><h1>${esc(title)}</h1><p>${esc(body)}</p>${inner}</main></body></html>`;}
+function renderSession(session:StreamWeaverSecureChoiceSessionV1,token:string,userId:string){const player=session.challenger.token===token?session.challenger:session.challenged,other=player===session.challenger?session.challenged:session.challenger;if(!player||player.userId!==userId)return page("Hey — no peeking!","That grid belongs to the other player.");if(session.state==="pending"){if(player!==session.challenged)return page(session.title,`Waiting for @${session.challenged.username} to accept the challenge.`);return page(session.title,`@${session.challenger.username} challenged you. Accept to create two independently randomized private grids.`,`<div class="actions"><form method="post"><input type="hidden" name="action" value="accept"><button>Accept challenge</button></form><form method="post"><input type="hidden" name="action" value="decline"><button>Decline</button></form></div>`);}if(session.state==="declined")return page(session.title,"Challenge declined.");if(session.state==="expired")return page(session.title,"This challenge expired.");if(session.state==="resolved"){const result=session.result;return page(session.title,result?.tie?result.message:`${result?.message??"Round complete"}. You chose ${option(session,player.choiceId??"").label}; @${other.username} chose ${option(session,other.choiceId??"").label}.`);}if(player.choiceId)return page(session.title,`Your choice is locked for round ${session.round}. Waiting for @${other.username}; nothing is revealed until both choices are committed.`,`<p class="muted">Your private grid cannot be changed after submission.</p>`);const cells=player.order.map((id,index)=>`<form method="post"><input type="hidden" name="action" value="choose"><input type="hidden" name="index" value="${index+1}"><button>${index+1} · ${esc(option(session,id).label)}</button></form>`).join("");return page(session.title,`Round ${session.round}. This grid is yours only and is shuffled independently from @${other.username}'s grid. Pick one position.`,`<div class="grid">${cells}</div><p class="muted">You can safely say only the number in chat; the same number does not mean the same move on the other grid.</p>`);}
+function esc(value:unknown){return String(value??"").replace(/[&<>"']/g,char=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]!));}
+function html(response:ServerResponse,status:number,body:string){response.statusCode=status;response.setHeader("content-type","text/html; charset=utf-8");response.setHeader("cache-control","no-store, max-age=0");response.setHeader("x-frame-options","DENY");response.setHeader("content-security-policy","default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'");response.end(body);return true;}
+async function readForm(request:IncomingMessage){let body="";for await(const chunk of request){body+=String(chunk);if(body.length>8_192)throw new Error("Choice form is too large");}return new URLSearchParams(body);}
