@@ -100,7 +100,7 @@ export const STREAMWEAVER_DONOR_COMMANDS: readonly StreamWeaverDonorCommandV1[] 
   { donorId:"persona-athenacall", trigger:"(?i).*@?{{BOT_NAME}}.*", family:"persona", cooldownSeconds:0, matcher:"regex" },
   { donorId:"persona-chat-call-bot", trigger:"(?i).*@?{{BOT_NAME}}.*", family:"persona", cooldownSeconds:0, matcher:"regex" },
   { donorId:"pokemon-pack", trigger:"pack", family:"pokemon", cooldownSeconds:0, matcher:"bare" },
-  { donorId:"secure-choice-session", trigger:"!__securechoice", family:"community", cooldownSeconds:0 },
+  { donorId:"secure-choice-session", trigger:"!__securechoice", family:"persona", cooldownSeconds:0 },
 ] as const;
 
 export const STREAMWEAVER_DONOR_DEFINITION_COUNT = 71;
