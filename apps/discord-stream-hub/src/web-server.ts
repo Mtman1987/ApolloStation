@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { appSurfaceBrowserJs, productSurfaceManifest } from "@spmt/app-foundation/surface-client";
 import { DshApplicationControls } from "./application-controls.js";
 import { DSH_APPLICATION_BROWSER_JS } from "./application-ui.js";
 import type { DiscordStreamHubWebServerOptionsV1 } from "./web-server-legacy.js";
@@ -14,6 +15,19 @@ if (startupSpmtOrigin) process.env.SPMT_ORIGIN = startupSpmtOrigin;
 
 export const DISCORD_STREAM_HUB_WEB_DESCRIPTOR = legacy.DISCORD_STREAM_HUB_WEB_DESCRIPTOR;
 export type { DiscordStreamHubWebServerOptionsV1 } from "./web-server-legacy.js";
+
+// Keep the app-owned public surface explicit at the production entrypoint even
+// while the established renderer lives in web-server-legacy.ts. This is also a
+// runtime guard against the wrapper silently drifting away from Discord Stream Hub.
+const ENTRYPOINT_SURFACE = productSurfaceManifest({
+  appId: DISCORD_STREAM_HUB_WEB_DESCRIPTOR.appId,
+  sceneUrl: DISCORD_STREAM_HUB_WEB_DESCRIPTOR.sceneUrl,
+  sections: DISCORD_STREAM_HUB_WEB_DESCRIPTOR.sections,
+});
+const ENTRYPOINT_SURFACE_BROWSER_JS = appSurfaceBrowserJs(ENTRYPOINT_SURFACE);
+if (DISCORD_STREAM_HUB_WEB_DESCRIPTOR.name !== "Discord Stream Hub" || !ENTRYPOINT_SURFACE_BROWSER_JS) {
+  throw new Error("Discord Stream Hub public surface contract is invalid");
+}
 
 type RequestListener = (request: IncomingMessage, response: ServerResponse) => void;
 const APPLICATION_ACTIONS = new Set(["reviews", "agreement", "vote", "decide", "notify", "templates"]);
