@@ -4,7 +4,7 @@ import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {StreamWeaverSecureChoiceStore,assertStreamWeaverSecureChoiceConfig} from '../apps/streamweaver/dist/secure-choice.js';
-import {legacyCommunityPackages} from '../apps/streamweaver/dist/flow-packages.js';
+import {legacyCommunityPackages,normalizeFlowPackage,assertStreamWeaverFlowRunnable} from '../apps/streamweaver/dist/flow-packages.js';
 
 const rpsls={
   title:'Rock Paper Scissors Lizard Spock',target:'first-mention',expiresSeconds:180,
@@ -23,6 +23,13 @@ const rpsls={
   ]
 };
 const delivery=(id='duel-1')=>({schemaVersion:1,deliveryId:id,consumerId:'streamweaver.installed-flows',attempts:1,message:{schemaVersion:1,tenantId:'tenant-a',provider:'twitch',connectionId:'main',channelId:'captain',messageId:id,text:'!duel @spockfan',occurredAt:'2026-09-06T12:00:00Z',actor:{providerUserId:'tw-a',canonicalUserId:'user-a',username:'rockfan',displayName:'RockFan',isBot:false,roles:['member']},mentions:[{token:'@spockfan',providerUserId:'tw-b',canonicalUserId:'user-b',username:'spockfan'}]}});
+
+test('AI draft validation rejects incomplete secure game rules before installation',()=>{
+  const draft=normalizeFlowPackage({schemaVersion:1,kind:'streamweaver.flow-package',packageId:'flow.rpsls',name:'RPSLS',commands:[{id:'rpsls',trigger:'!rpsls',actionIds:['game'],runtime:'flow'}],actions:[{id:'game',type:'run-native',config:{capability:'streamweaver.donor-command.v1',donorId:'secure-choice-session',...rpsls}}]}, {now:'2026-09-06T12:00:00Z',author:{id:'owner'},visibility:'private'});
+  assert.doesNotThrow(()=>assertStreamWeaverFlowRunnable(draft));
+  draft.actions[0].config.relations=rpsls.relations.slice(0,9);
+  assert.throws(()=>assertStreamWeaverFlowRunnable(draft),/resolve every possible pair/i);
+});
 
 function fixture(){const dir=mkdtempSync(join(tmpdir(),'sw-choice-')),path=join(dir,'state.sqlite'),store=new StreamWeaverSecureChoiceStore(path,()=> '2026-09-06T12:00:00.000Z');return{dir,store,close(){store.close();rmSync(dir,{recursive:true,force:true})}};}
 

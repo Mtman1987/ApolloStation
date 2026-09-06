@@ -60,7 +60,7 @@ export const STREAMWEAVER_WEB_DESCRIPTOR: ProductAppWebDescriptorV1 = {
 
 const SURFACE = productSurfaceManifest({ appId: STREAMWEAVER_WEB_DESCRIPTOR.appId, sceneUrl: STREAMWEAVER_WEB_DESCRIPTOR.sceneUrl, sections: STREAMWEAVER_WEB_DESCRIPTOR.sections, shortcuts: [{ id: "setup", label: "Continue Setup", pageId: "setup" }, { id: "builder", label: "Build a Flow With AI", pageId: "builder" }, { id: "voice", label: "Open Voice Commander", pageId: "voice" }, { id: "community", label: "Browse Community Flows", pageId: "community" }] });
 
-export interface StreamWeaverWebServerOptionsV1 { spmtOrigin: string; publicOrigin?:string; port?: number; host?: string; buildSha?: string; databasePath?: string; credential?: string; connectionsJson?: string; operationMode?: SpmtOperationModeV1; fetchImpl?: typeof fetch; }
+export interface StreamWeaverWebServerOptionsV1 { privateAiDraftsEnabled?:boolean; spmtOrigin: string; publicOrigin?:string; port?: number; host?: string; buildSha?: string; databasePath?: string; credential?: string; connectionsJson?: string; operationMode?: SpmtOperationModeV1; fetchImpl?: typeof fetch; }
 
 export function createStreamWeaverWebServer(options: StreamWeaverWebServerOptionsV1) {
   const snapshot = productAppSnapshotHandler({ appId: "streamweaver", spmtOrigin: options.spmtOrigin, sources: productAppSnapshotSources(STREAMWEAVER_WEB_DESCRIPTOR) });
@@ -80,6 +80,6 @@ const STREAMWEAVER_FLOW_CSS = `
 `;
 
 if (process.env.SPMT_ORIGIN) {
-  const host = createStreamWeaverWebServer({ spmtOrigin: process.env.SPMT_ORIGIN, ...(process.env.STREAMWEAVER_PUBLIC_ORIGIN?{publicOrigin:process.env.STREAMWEAVER_PUBLIC_ORIGIN}:{}), port: Number(process.env.PORT ?? 3202), host: process.env.HOST ?? "127.0.0.1", buildSha: process.env.BUILD_SHA ?? "dev", operationMode: process.env.SPMT_OUTBOUND_MODE === "disabled" ? "read-only" : "active", ...(process.env.STREAMWEAVER_DATABASE_PATH ? { databasePath: process.env.STREAMWEAVER_DATABASE_PATH } : {}), ...(process.env.STREAMWEAVER_WORKER_CREDENTIAL ? { credential: process.env.STREAMWEAVER_WORKER_CREDENTIAL } : {}), ...(process.env.CHAT_GATEWAY_CONNECTIONS ? { connectionsJson: process.env.CHAT_GATEWAY_CONNECTIONS } : {}) });
+  const host = createStreamWeaverWebServer({ privateAiDraftsEnabled: process.env.SPMT_RUNTIME_MODE === "sandbox" && process.env.STREAMWEAVER_PRIVATE_AI_DRAFTS_ENABLED === "1", spmtOrigin: process.env.SPMT_ORIGIN, ...(process.env.STREAMWEAVER_PUBLIC_ORIGIN?{publicOrigin:process.env.STREAMWEAVER_PUBLIC_ORIGIN}:{}), port: Number(process.env.PORT ?? 3202), host: process.env.HOST ?? "127.0.0.1", buildSha: process.env.BUILD_SHA ?? "dev", operationMode: process.env.SPMT_OUTBOUND_MODE === "disabled" ? "read-only" : "active", ...(process.env.STREAMWEAVER_DATABASE_PATH ? { databasePath: process.env.STREAMWEAVER_DATABASE_PATH } : {}), ...(process.env.STREAMWEAVER_WORKER_CREDENTIAL ? { credential: process.env.STREAMWEAVER_WORKER_CREDENTIAL } : {}), ...(process.env.CHAT_GATEWAY_CONNECTIONS ? { connectionsJson: process.env.CHAT_GATEWAY_CONNECTIONS } : {}) });
   await host.listen();
 }

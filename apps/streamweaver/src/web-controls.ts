@@ -27,7 +27,7 @@ import { StreamWeaverRuntimeSettingsStore } from "./runtime-settings.js";
 import { SqliteStreamWeaverBotRelayStore } from "./bot-relay.js";
 
 export interface StreamWeaverWebConnectionV1 { schemaVersion: 1; tenantId: string; provider: ChatProviderV1; connectionId: string; channelId: string; providerAccountId: string; desired: boolean; }
-export interface StreamWeaverWebControlOptionsV1 { buildSha?:string; spmtOrigin: string; databasePath?: string; credential?: string; connections?: StreamWeaverWebConnectionV1[]; operationMode?: SpmtOperationModeV1; fetchImpl?: typeof fetch; }
+export interface StreamWeaverWebControlOptionsV1 { privateAiDraftsEnabled?:boolean; buildSha?:string; spmtOrigin: string; databasePath?: string; credential?: string; connections?: StreamWeaverWebConnectionV1[]; operationMode?: SpmtOperationModeV1; fetchImpl?: typeof fetch; }
 type SessionContext = Awaited<ReturnType<typeof fetchAppSessionContext>>;
 
 /** Authenticated app API behind Voice Commander, persona, economy, and integration pages. */
@@ -326,7 +326,7 @@ export class StreamWeaverWebControls {
   }
 
   private async requestAiFlow(request: IncomingMessage, response: ServerResponse, context: SessionContext, body: Record<string, unknown>) {
-    if (this.operationMode === "read-only") return sendJson(response, 200, { schemaVersion: 1, status: "blocked", reason: "Live-read mode accepts incoming data but does not send an AI request." });
+    if (this.operationMode === "read-only" && !this.options.privateAiDraftsEnabled) return sendJson(response, 200, { schemaVersion: 1, status: "blocked", reason: "Live-read mode accepts incoming data but does not send an AI request." });
     const idea=text(body.idea,"idea",STREAMWEAVER_AI_FLOW_IDEA_LIMIT),client=this.requireClient(),userId=String(context.session.actorId??"");
     let devices:unknown[]=[];
     try { const value=await this.deviceApi(request,context); if(Array.isArray(value))devices=value; } catch { /* Device setup is optional; unregistered devices must not be invented. */ }

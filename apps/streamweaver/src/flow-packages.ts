@@ -2,6 +2,7 @@ import { DatabaseSync } from "node:sqlite";
 import { DEVICE_AUTOMATION_ACTIONS, SPMT_SUITE_ACTION_CATALOG } from "@spmt/contracts";
 import { STREAMWEAVER_DONOR_COMMANDS, type StreamWeaverDonorCommandFamilyV1, type StreamWeaverDonorCommandV1 } from "./donor-command-catalog.js";
 import { assertFlowCodeValue } from "./flow-code.js";
+import { assertStreamWeaverSecureChoiceConfig, STREAMWEAVER_SECURE_CHOICE_DONOR_ID } from "./secure-choice.js";
 
 export const STREAMWEAVER_FLOW_PACKAGE_KIND = "streamweaver.flow-package" as const;
 export const STREAMWEAVER_FLOW_AUTHOR = Object.freeze({ id: "mtman1987", displayName: "mtman1987" });
@@ -19,6 +20,7 @@ export function assertStreamWeaverFlowRunnable(item: StreamWeaverFlowPackageV1) 
     if(action.type==="obs-source"&&(!String(action.config.sceneName??action.config.scene??"").trim()||!String(action.config.sourceName??action.config.source??"").trim()||typeof action.config.visible!=="boolean"))throw new Error("Choose the OBS scene, source and visibility");
     if(action.type==="wait"&&(!Number.isFinite(Number(action.config.milliseconds??action.config.value??0))||Number(action.config.milliseconds??action.config.value??0)<0||Number(action.config.milliseconds??action.config.value??0)>60000))throw new Error("Wait steps must be between 0 and 60000 milliseconds");
     if(action.type==="run-native"&&!STREAMWEAVER_DONOR_COMMANDS.some(c=>c.donorId===action.config.donorId))throw new Error("Choose an existing native command");
+    if(action.type==="run-native"&&action.config.donorId===STREAMWEAVER_SECURE_CHOICE_DONOR_ID)assertStreamWeaverSecureChoiceConfig(action.config);
     if(action.type==="run-action"&&!SPMT_SUITE_ACTION_CATALOG.some(a=>a.id===action.config.action))throw new Error("Choose an existing cross-app action");
     if((action.type==="send-chat"||action.type==="send-discord")&&!String(action.config.text??action.config.message??"").trim())throw new Error("Message steps need reply text");
     if(action.type==="condition"&&!["==","===","!=","!==",">",">=","<","<=","includes","exists"].includes(String(action.config.operator)))throw new Error("Choose a supported condition operator");

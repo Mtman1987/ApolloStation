@@ -19,6 +19,15 @@ test('failed Stellar drafts receive bounded validator-guided repair instructions
   assert.ok(repair.length<=7900);
 });
 
+test('repair retains the requested game even when the tool catalog exceeds the repair excerpt',()=>{
+  const idea='Build !rpsls with private simultaneous choices. '+ 'Keep the game rules. '.repeat(60);
+  const original=buildStreamWeaverAiFlowPrompt(idea);
+  assert.ok(original.length>6000);
+  const repair=buildStreamWeaverAiFlowRepairPrompt(original,'{}',new Error('Missing action capability'));
+  assert.ok(repair.includes(`User request: ${idea}`));
+  assert.ok(repair.includes('capability:streamweaver.donor-command.v1'));
+});
+
 test('the complete Apollo tool catalog fits the Stellar developer message budget with a maximum idea',()=>{
   const devices=Array.from({length:40},(_,i)=>({deviceId:`companion-${i}-${'x'.repeat(100)}`,kind:'companion',capabilities:Array(20).fill('media.playback')}));
   const connections=Array.from({length:40},(_,i)=>({provider:'discord',connectionId:`connection-${i}-${'x'.repeat(100)}`,channelId:'chat'}));

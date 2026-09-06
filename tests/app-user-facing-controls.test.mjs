@@ -11,12 +11,12 @@ import { createIntegratedSpaceMountainWebHost } from "../apps/spacemountain-web/
 import { createStreamWeaverWebServer } from "../apps/streamweaver/dist/web-server.js";
 import { streamweaverCatalogRegistration } from "../apps/streamweaver/dist/index.js";
 
-async function fixture(run) {
+async function fixture(run, aiOptions = {}) {
   const directory = mkdtempSync(join(tmpdir(), "spmt-app-controls-"));
   const dshDatabase = join(directory, "dsh.sqlite"), streamDatabase = join(directory, "streamweaver.sqlite"), configPath = join(directory, "dsh-config.json");
   const guildId = "123456789012345678", streamweaverCredential = "streamweaver-test-worker-credential-123456789";
   writeFileSync(configPath, JSON.stringify({ schemaVersion: 1, pollIntervalSeconds: 60, tenants: [{ tenantId: "placeholder", twitchProviderUserId: "twitch-owner", discordProviderUserId: "discord-bot", discordGuildIds: [guildId], branding: { communityMemberName: "Crew" }, members: [] }] }));
-  const spmt = createSpmtService({ databasePath: join(directory, "spmt.sqlite"), webhookKey: Buffer.alloc(32, 4), host: "127.0.0.1", port: 0, publicBaseUrl: "https://spmt.example", runtimeMode: "sandbox", sandboxOwnerUsername: "mtman1987", streamweaverProviderRuntimeEnabled: true, streamweaverWorkerCredential: streamweaverCredential, sandboxApps: [discordStreamHubCatalogRegistration("https://spmt.example/apps/discord-stream-hub"), streamweaverCatalogRegistration("https://spmt.example/apps/streamweaver")] });
+  const spmt = createSpmtService({ ...(aiOptions.communityAssistant ? {communityAssistant:aiOptions.communityAssistant} : {}), databasePath: join(directory, "spmt.sqlite"), webhookKey: Buffer.alloc(32, 4), host: "127.0.0.1", port: 0, publicBaseUrl: "https://spmt.example", runtimeMode: "sandbox", sandboxOwnerUsername: "mtman1987", streamweaverProviderRuntimeEnabled: true, streamweaverWorkerCredential: streamweaverCredential, sandboxApps: [discordStreamHubCatalogRegistration("https://spmt.example/apps/discord-stream-hub"), streamweaverCatalogRegistration("https://spmt.example/apps/streamweaver")] });
   let dsh, streamweaver, ingress;
   try {
     await spmt.listen(); const spmtAddress = spmt.server.address(); assert.ok(spmtAddress && typeof spmtAddress !== "string"); const spmtBase = `http://127.0.0.1:${spmtAddress.port}`;
@@ -28,7 +28,7 @@ async function fixture(run) {
     writeFileSync(configPath, JSON.stringify({ schemaVersion: 1, pollIntervalSeconds: 60, tenants: [{ tenantId, twitchProviderUserId: "twitch-owner", discordProviderUserId: "discord-bot", discordGuildIds: [guildId], branding: { communityMemberName: "Crew" }, members: [] }] }));
     const { publicKey, privateKey } = generateKeyPairSync("ed25519"), publicKeyHex = publicKey.export({ type: "spki", format: "der" }).subarray(-32).toString("hex");
     dsh = createDiscordStreamHubWebServer({ spmtOrigin: spmtBase, host: "127.0.0.1", port: 0, databasePath: dshDatabase, runtimeConfigPath: configPath, publicOrigin: "https://spmt.example", discordPublicKey: publicKeyHex, discordClientId: "222222222222222222" });
-    streamweaver = createStreamWeaverWebServer({ spmtOrigin: spmtBase, host: "127.0.0.1", port: 0, databasePath: streamDatabase, credential: streamweaverCredential, operationMode: "read-only", connectionsJson: JSON.stringify([{ schemaVersion: 1, tenantId, provider: "twitch", connectionId: "main", channelId: "mtman1987", providerAccountId: "twitch-owner", desired: true }]) });
+    streamweaver = createStreamWeaverWebServer({ privateAiDraftsEnabled:aiOptions.privateAiDraftsEnabled, spmtOrigin: spmtBase, host: "127.0.0.1", port: 0, databasePath: streamDatabase, credential: streamweaverCredential, operationMode: "read-only", connectionsJson: JSON.stringify([{ schemaVersion: 1, tenantId, provider: "twitch", connectionId: "main", channelId: "mtman1987", providerAccountId: "twitch-owner", desired: true }]) });
     await dsh.listen(); await streamweaver.listen(); const dshAddress = dsh.server.address(), streamAddress = streamweaver.server.address(); assert.ok(dshAddress && typeof dshAddress !== "string" && streamAddress && typeof streamAddress !== "string");
     ingress = createIntegratedSpaceMountainWebHost({ spmtOrigin: spmtBase, host: "127.0.0.1", port: 0, greenAppOrigins: { "discord-stream-hub": `http://127.0.0.1:${dshAddress.port}`, "streamweaver": `http://127.0.0.1:${streamAddress.port}` } });
     await ingress.listen(); const webBase = `http://127.0.0.1:${ingress.server.address().port}`;
@@ -211,4 +211,15 @@ test("Points-page value box reads live supplies after both local issuance and XP
       const html=await(await fetch(streamBase)).text();assert.match(html,/Current SPMT value/);assert.match(html,/Updates every 5 seconds/);
     } finally {store.close()}
   });
+});
+
+
+test("sandbox private AI drafts reach the shared assistant while chat egress remains read-only", async () => {
+  const requests=[];
+  await fixture(async ({cookie,streamBase})=>{
+    const response=await fetch(streamBase+'/api/streamweaver/control/flows/ai',{method:'POST',headers:{cookie,origin:streamBase,'content-type':'application/json'},body:JSON.stringify({idea:'Build !rpsls with hidden choices',idempotencyKey:'private-draft-test'})});
+    const body=await response.json();assert.equal(response.status,202,JSON.stringify(body));assert.equal(body.jobId,'draft-test-job');
+    assert.equal(requests.length,1);assert.equal(requests[0].surface,'developer');assert.equal(requests[0].remember,false);
+    const control=await (await fetch(streamBase+'/api/streamweaver/control',{headers:{cookie}})).json();assert.equal(control.operationMode,'read-only');
+  },{privateAiDraftsEnabled:true,communityAssistant:{status:()=>({availability:'available'}),accept(input){requests.push(input);return{jobId:'draft-test-job',executionTarget:'sprite'};}}});
 });
