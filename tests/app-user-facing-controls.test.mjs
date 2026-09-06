@@ -227,3 +227,35 @@ test("sandbox private AI drafts reach the shared assistant while chat egress rem
     const control=await (await fetch(streamBase+'/api/streamweaver/control',{headers:{cookie}})).json();assert.equal(control.operationMode,'read-only');
   },{privateAiDraftsEnabled:true,communityAssistant:{status:()=>({availability:'available'}),accept(input){requests.push(input);return{jobId:'draft-test-job',executionTarget:'sprite'};}}});
 });
+
+test('AI flow history recovers only owned flow jobs and completion preserves edited drafts', async () => {
+  await fixture(async ({spmt,cookie,tenantId,streamBase}) => {
+    const userId=spmt.store.listTenants().find(t=>t.id===tenantId).ownerUserId;
+    assert.ok(userId);
+    const make=(key,conversationId=`streamweaver:flow-coder:${userId}`,billedUserId=userId)=>spmt.executionJobs.create({tenantId,ownerAppId:'stellar-core',capabilityId:'stellar-core.ai-chat.v1',executionOwner:'stellar-core',requestedByType:'service',requestedById:'streamweaver',billedUserId,meteredResource:'ai-chat-requests',usageQuantity:1,executionTarget:'sprite',meteringTarget:'hosted',idempotencyKey:key,input:{kind:'stellar-chat-request.v1',userId:billedUserId,conversationId,message:'Build a greeting',remember:false}}).job;
+    const pending=make('recover-pending'),unrelated=make('other-chat','ordinary-chat');
+    const headers={cookie,origin:new URL(streamBase).origin,'content-type':'application/json'};
+    const list=await (await fetch(`${streamBase}/api/streamweaver/control/flows/ai/jobs`,{headers})).json();
+    assert.deepEqual(list.jobs.map(j=>j.jobId),[pending.id]);
+    assert.equal(JSON.stringify(list).includes('Build a greeting'),false);
+    const complete=async jobId=>fetch(`${streamBase}/api/streamweaver/control/flows/ai/complete`,{method:'POST',headers,body:JSON.stringify({jobId})});
+    assert.equal((await complete(unrelated.id)).status,400);
+    assert.equal((await (await complete(pending.id)).json()).state,'queued');
+    const pkg={schemaVersion:1,kind:'streamweaver.flow-package',packageId:'model-chosen-id',name:'Hello',commands:[{id:'hello',trigger:'!hello',actionIds:['reply'],runtime:'flow'}],actions:[{id:'reply',type:'send-chat',config:{text:'Hello %userName%!'}}]};
+    spmt.platformStore.putExecutionJob({...pending,state:'succeeded',result:{text:JSON.stringify(pkg)}});
+    const completed=await (await complete(pending.id)).json();
+    assert.equal(completed.state,'succeeded');
+    assert.equal(completed.package.packageId,`flow.ai.${pending.id}`);
+    const saved=await fetch(`${streamBase}/api/streamweaver/control/flows/save`,{method:'POST',headers,body:JSON.stringify({package:{...completed.package,name:'My edited greeting'},expectedUpdatedAt:completed.package.updatedAt})});
+    assert.equal(saved.status,200,await saved.text());
+    const reopened=await (await complete(pending.id)).json();
+    assert.equal(reopened.package.name,'My edited greeting');
+    const drafts=await (await fetch(`${streamBase}/api/streamweaver/control/flows`,{headers})).json();
+    assert.equal(drafts.drafts.length,1);
+    const repair=make(`streamweaver-flow-ai-repair:${pending.id}:2`,`streamweaver:flow-coder:${userId}:repair`);
+    spmt.platformStore.putExecutionJob({...repair,state:'succeeded',result:{text:'{}'}});
+    const exhausted=await complete(repair.id);
+    assert.equal(exhausted.status,400);
+    assert.match((await exhausted.json()).message,/after 3 drafts/);
+  });
+});

@@ -12,7 +12,7 @@ import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { fetchAppPlatformSnapshot, fetchAppSessionContext, readJsonBody, requireSameOrigin, safeError, sendJson } from "@spmt/app-foundation/product-web";
 import { SpmtClient } from "@spmt/sdk";
-import { routeSpmtSuiteAction, spmtSuiteActionDescriptor, type ChatProviderV1, type ExecutionWorkerProjectionV1, type NormalizedChatDeliveryV1, type SpmtOperationModeV1 } from "@spmt/contracts";
+import { routeSpmtSuiteAction, spmtSuiteActionDescriptor, type ChatProviderV1, type ExecutionWorkerProjectionV1, type ExecutionJobV1, type NormalizedChatDeliveryV1, type SpmtOperationModeV1 } from "@spmt/contracts";
 import { STREAMWEAVER_BOT_ACTION_CATALOG, detectStreamWeaverBotAction } from "./bot-action-runtime.js";
 import { MemoryStreamWeaverCommandState } from "./command-router.js";
 import { StreamWeaverDonorCommandConsumer } from "./donor-command-runtime.js";
@@ -169,6 +169,7 @@ export class StreamWeaverWebControls {
       }
       if(request.method==="GET"&&url.pathname==="/api/streamweaver/control/devices"){this.requireOwner(context);return sendJson(response,200,{devices:await this.deviceApi(request,context)});}
       if (request.method === "GET" && url.pathname === "/api/streamweaver/control/flows") return this.readFlows(response, context);
+      if (request.method === "GET" && url.pathname === "/api/streamweaver/control/flows/ai/jobs") { this.requireOwner(context); return await this.readAiFlowJobs(request, response, context); }
       if(request.method==="GET"&&url.pathname==="/api/streamweaver/control/diagnostics"){
         this.requireOwner(context);
         const flows=this.requireFlows(),clean=(value:unknown)=>String(value??"").replace(/\bBearer\s+\S+/gi,"Bearer [redacted]").replace(/(bearer|token|secret|password|authorization)\s*[:=]\s*\S+/gi,"$1=[redacted]").slice(0,500);
@@ -344,20 +345,33 @@ export class StreamWeaverWebControls {
     return sendJson(response,result.status==="accepted"?202:503,{...result,kind:"flow-builder",toolCatalog:"apollo-streamweaver"});
   }
 
+  private async readAiFlowJobs(request: IncomingMessage, response: ServerResponse, context: SessionContext) {
+    const userId=String(context.session.actorId??""),jobs=await this.deviceApi(request,context,undefined,"/v1/jobs?ownerAppId=stellar-core&limit=100") as unknown as ExecutionJobV1[];
+    return sendJson(response,200,{jobs:jobs.filter(job=>this.isAiFlowJob(job,userId)).map(job=>({jobId:job.id,state:job.state,createdAt:job.createdAt,updatedAt:job.updatedAt,repairAttempt:this.aiFlowRepairAttempt(job),reason:job.error?.message,packageId:this.requireFlows().get(context.tenantId,`flow.ai.${job.id}`)?.packageId}))});
+  }
+
+  private isAiFlowJob(job: {billedUserId:string;capabilityId:string;input:Record<string,unknown>},userId:string) {
+    const conversation=String(job.input.conversationId??"");
+    return job.billedUserId===userId && job.capabilityId==="stellar-core.ai-chat.v1" && [ `streamweaver:flow-coder:${userId}`, `streamweaver:flow-coder:${userId}:repair` ].includes(conversation);
+  }
+
+  private aiFlowRepairAttempt(job:{idempotencyKey:string}) { return Number(job.idempotencyKey.match(/streamweaver-flow-ai-repair:.*:([12])$/)?.[1]??0); }
+
   private async completeAiFlow(response: ServerResponse, context: SessionContext, body: Record<string, unknown>) {
     const jobId=identifier(body.jobId,"jobId"),job=await this.requireClient().getExecutionJob(context.tenantId,jobId),userId=String(context.session.actorId??"");
-    if (job.billedUserId!==userId) throw new Error("AI flow job is not visible to this user");
-    if (job.state!=="succeeded") return sendJson(response,202,{schemaVersion:1,state:job.state,jobId});
+    if (!this.isAiFlowJob(job,userId)) throw new Error("AI flow job is not visible to this user");
+    if (job.state!=="succeeded") return sendJson(response,202,{schemaVersion:1,state:job.state,jobId,reason:job.error?.message});
+    const repairAttempt=this.aiFlowRepairAttempt(job),packageId=`flow.ai.${jobId}`,existing=this.requireFlows().get(context.tenantId,packageId);
+    if(existing)return sendJson(response,200,{schemaVersion:1,state:"succeeded",package:existing,validated:true,repairAttempts:repairAttempt});
     const result=record(job.result),raw=String(result?.text??record(result?.output)?.text??"");
     try {
       const parsed=parseJsonObject(raw),candidate=record(record(parsed)?.package)??parsed;
       const normalized=normalizeFlowPackage(candidate,{now:new Date().toISOString(),author:this.actor(context),visibility:"private"});
       for(const action of normalized.actions)assertFlowCodeValue(action.config);
       assertStreamWeaverFlowRunnable(normalized);
-      const saved=this.requireFlows().saveDraft(context.tenantId,normalized,this.actor(context));
-      return sendJson(response,200,{schemaVersion:1,state:"succeeded",package:saved,validated:true,repairAttempts:integer(body.repairAttempt??0,0,STREAMWEAVER_AI_FLOW_REPAIR_LIMIT,"repairAttempt")});
+      const saved=this.requireFlows().saveDraft(context.tenantId,{...normalized,packageId},this.actor(context));
+      return sendJson(response,200,{schemaVersion:1,state:"succeeded",package:saved,validated:true,repairAttempts:repairAttempt});
     } catch(error) {
-      const repairAttempt=integer(body.repairAttempt??0,0,STREAMWEAVER_AI_FLOW_REPAIR_LIMIT,"repairAttempt");
       if(repairAttempt>=STREAMWEAVER_AI_FLOW_REPAIR_LIMIT)throw new Error(`Stellar could not produce a runnable flow after ${repairAttempt+1} drafts: ${safeError(error)}`);
       const original=String(record(job.input)?.message??"");
       if(!original)throw error;
