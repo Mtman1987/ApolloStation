@@ -26,6 +26,8 @@ export interface StreamWeaverDonorCommandV1 {
  * Frozen from Mtman1987/streamweaver@387acf70552f9a6a557a83e8804c328245932961
  * SPMT_COMMAND_CATALOG.md. Duplicate donor definitions are intentionally kept:
  * preservation counts definitions, while routing de-duplicates equivalent work.
+ * secure-choice-session is a Green-only native capability intentionally appended
+ * to the donor vocabulary so generated flows can invoke it without arbitrary code.
  */
 export const STREAMWEAVER_DONOR_COMMANDS: readonly StreamWeaverDonorCommandV1[] = [
   { donorId:"accept", trigger:"!accept", family:"community", cooldownSeconds:0 },
@@ -98,9 +100,10 @@ export const STREAMWEAVER_DONOR_COMMANDS: readonly StreamWeaverDonorCommandV1[] 
   { donorId:"persona-athenacall", trigger:"(?i).*@?{{BOT_NAME}}.*", family:"persona", cooldownSeconds:0, matcher:"regex" },
   { donorId:"persona-chat-call-bot", trigger:"(?i).*@?{{BOT_NAME}}.*", family:"persona", cooldownSeconds:0, matcher:"regex" },
   { donorId:"pokemon-pack", trigger:"pack", family:"pokemon", cooldownSeconds:0, matcher:"bare" },
+  { donorId:"secure-choice-session", trigger:"!__securechoice", family:"community", cooldownSeconds:0 },
 ] as const;
 
-export const STREAMWEAVER_DONOR_DEFINITION_COUNT = 70;
+export const STREAMWEAVER_DONOR_DEFINITION_COUNT = 71;
 
 export function donorCommandsByFamily(family: StreamWeaverDonorCommandFamilyV1) {
   return STREAMWEAVER_DONOR_COMMANDS.filter((command) => command.family === family);
