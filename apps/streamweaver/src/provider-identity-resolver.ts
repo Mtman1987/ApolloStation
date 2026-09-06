@@ -20,12 +20,13 @@ export class StreamWeaverSpmtIdentityResolver {
   constructor(private readonly client: SpmtClient) {}
 
   async resolve(input: StreamWeaverProviderIdentityInputV1): Promise<string | undefined> {
-    if (input.provider !== "discord" && input.provider !== "twitch") return undefined;
+    if (input.provider !== "discord" && input.provider !== "twitch" && input.provider !== "youtube") return undefined;
     try {
       return (await resolveProviderIdentity(this.client, input.tenantId, input.provider, input.providerUserId)).userId;
     } catch (error) {
       if (!isNotFound(error)) throw error;
     }
+    if(input.provider === "youtube")return undefined;
     const created = await grandfatherProviderIdentity(this.client, input.tenantId, {
       provider: input.provider,
       providerUserId: input.providerUserId,

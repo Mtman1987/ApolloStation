@@ -1,3 +1,4 @@
+import {YouTubeOAuthApi} from "./youtube-oauth-api.js";
 import {StellarPublicMemory} from "@spmt/stellar-core";
 import {CommlinkSocialStreamApi} from "./social-stream-api.js";
 import {CommlinkSocialStreamStore} from "@spmt/commlink-core";
@@ -131,6 +132,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
   const mediaApi = new SpmtMediaApi({ assets: mediaAssets, auth, control, jobs: platformStore, publicBaseUrl, accessToken, limitBytes: (tenantId) => (billing.manifest.plans.find(plan => plan.planId === billingPlan(control.listEntitlements(tenantId)))?.limits["storage-gb"] ?? 0) * 1024 ** 3 });
   const socialStreamApi=new CommlinkSocialStreamApi({store:socialStreamStore,chat:commlinkLiveChat,operator:commlinkOperator,auth,control,accessToken,publish:tenant=>{operatorApi.publish(tenant)}});
   const publicMemory=new StellarPublicMemory(options.databasePath,executionJobs,communityAssistant,tenant=>commlinkLiveChat.list({tenantId:tenant,limit:500}),tenant=>control.getTenant(tenant).ownerUserId);
+  const youtubeOAuth=new YouTubeOAuthApi({databasePath:options.databasePath,auth,authority,control,publicBaseUrl,enabled:runtimeMode==="production",fetchImpl,accessToken,...(providerCredentials?{credentials:providerCredentials}:{}),...(options.providerOAuthClients?.youtube?{client:options.providerOAuthClients.youtube}:{})});
   const assistantApi = new SpmtAssistantApi({store:assistantStore,publicMemory,speechPresence,privateAssistant:new StellarPrivateAssistant(assistantStore,executionJobs,communityAssistant),auth,control,jobs:executionJobs,assets:mediaAssets,enabled:runtimeMode === "production",accessToken});
   mediaAssets.sweep();
   const mediaSweepTimer = setInterval(() => {mediaAssets.sweep();socialStreamStore.sweepPrivate();}, 15 * 60_000); mediaSweepTimer.unref();
@@ -166,6 +168,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
       const path = request.url ?? "/";
       const url = new URL(`http://spmt.local${path}`);
       if (await mediaApi.handle(request, response, url)) return;
+      if (await youtubeOAuth.handle(request,response,url)) return;
       if (await assistantApi.handle(request,response,url)) return;
       if (await socialStreamApi.handle(request,response,url)) return;
       if (await operatorApi.handle(request,response,url)) return;
@@ -523,7 +526,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
           control.getApp(principal.actorId);
           if (!control.listInstalls(tenantId).some((install) => install.appId === principal.actorId && install.enabled)) return json(response, 403, { error: "app_not_installed" });
           const body = await readBody(request);
-          const grant = await providerGrants.issue({ schemaVersion: 1, tenantId, requesterAppId: principal.actorId, provider: str(body.provider, "provider") as "discord" | "twitch" | "kick" | "xbox" | "github" | "livekit", providerUserId: str(body.providerUserId, "providerUserId"), capabilityId: str(body.capabilityId, "capabilityId"), requiredScopes: stringValues(body.requiredScopes, "requiredScopes"), ...(body.ttlSeconds === undefined ? {} : { ttlSeconds: safeInteger(body.ttlSeconds, "ttlSeconds") }) });
+          const grant = await providerGrants.issue({ schemaVersion: 1, tenantId, requesterAppId: principal.actorId, provider: str(body.provider, "provider") as "discord" | "twitch" | "kick" | "youtube" | "xbox" | "github" | "livekit", providerUserId: str(body.providerUserId, "providerUserId"), capabilityId: str(body.capabilityId, "capabilityId"), requiredScopes: stringValues(body.requiredScopes, "requiredScopes"), ...(body.ttlSeconds === undefined ? {} : { ttlSeconds: safeInteger(body.ttlSeconds, "ttlSeconds") }) });
           authority.audit({ tenantId, actorType: "service", actorId: principal.actorId, action: "provider-grants.issue", target: `provider:${grant.provider}:${grant.providerUserId}:${grant.capabilityId}`, outcome: "accepted" });
           return json(response, 201, grant);
         } catch (error) {
@@ -542,7 +545,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
           control.getApp(principal.actorId);
           if (!control.listInstalls(tenantId).some((install) => install.appId === principal.actorId && install.enabled)) return json(response, 403, { error: "app_not_installed" });
           const body = await readBody(request);
-          const provider = str(body.provider, "provider") as "discord" | "twitch" | "kick" | "xbox" | "github" | "livekit";
+          const provider = str(body.provider, "provider") as "discord" | "twitch" | "kick" | "youtube" | "xbox" | "github" | "livekit";
           const providerUserId = str(body.providerUserId, "providerUserId");
           const result = await providerCredentials.recover({ tenantId, provider, providerUserId, reason: str(body.reason, "reason") });
           authority.audit({ tenantId, actorType: "service", actorId: principal.actorId, action: "provider-grants.recover", target: `provider:${provider}:${providerUserId}`, outcome: result.status === "ready" ? "accepted" : "denied" });
@@ -573,7 +576,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
     runOutboxOnce() { return outbox.runOnce(); },
     runStellarPrivacySweep() { return stellarPrivacy.sweep(store.listTenants().map((tenant) => tenant.id)); },
     listen() { return new Promise<void>((done, reject) => { server.once("error", reject); server.listen(options.port ?? 3000, options.host ?? "0.0.0.0", () => { server.off("error", reject); done(); }); }); },
-    close() { clearInterval(operatorTimer); clearInterval(mediaSweepTimer); clearInterval(stellarCapabilityTimer); clearInterval(stellarPrivacyTimer); return new Promise<void>((done, reject) => server.close((error) => { providerCredentials?.close(); assistantStore.close(); publicMemory.close(); socialStreamStore.close(); commlinkOperator.close(); commlinkLiveChat.close(); setupStore.close(); mediaAssets.close(); platformStore.close(); store.close(); error ? reject(error) : done(); })); },
+    close() { clearInterval(operatorTimer); clearInterval(mediaSweepTimer); clearInterval(stellarCapabilityTimer); clearInterval(stellarPrivacyTimer); return new Promise<void>((done, reject) => server.close((error) => { providerCredentials?.close(); assistantStore.close(); publicMemory.close(); youtubeOAuth.close(); socialStreamStore.close(); commlinkOperator.close(); commlinkLiveChat.close(); setupStore.close(); mediaAssets.close(); platformStore.close(); store.close(); error ? reject(error) : done(); })); },
   };
 }
 
@@ -781,7 +784,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   const kickClientSecret = process.env.KICK_CLIENT_SECRET;
   const providerCredentialKeySource = process.env.SPMT_PROVIDER_CREDENTIAL_KEY;
   const providerCredentialKey = providerCredentialKeySource ? decodeKey(providerCredentialKeySource) : undefined;
+  const youtubeClientId=process.env.YOUTUBE_CLIENT_ID,youtubeClientSecret=process.env.YOUTUBE_CLIENT_SECRET;
   const providerOAuthClients = {
+    ...(youtubeClientId&&youtubeClientSecret?{youtube:{clientId:youtubeClientId,clientSecret:youtubeClientSecret}}:{}),
     ...(twitchClientId && twitchClientSecret ? { twitch: { clientId: twitchClientId, clientSecret: twitchClientSecret } } : {}),
     ...(discordClientId && discordClientSecret ? { discord: { clientId: discordClientId, clientSecret: discordClientSecret } } : {}),
     ...(kickClientId && kickClientSecret ? { kick: { clientId: kickClientId, clientSecret: kickClientSecret } } : {}),

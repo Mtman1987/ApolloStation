@@ -37,7 +37,13 @@ In **Stream operations**, a reward can charge local points, award local points, 
 
 Adding a reward to the Twitch menu creates a one-Twitch-point entry. That menu price does not satisfy the StreamWeaver price. Insufficient local funds reject a local-currency redemption. SPMT payments require the user's selected currency and maximum accepted XP cost; use the reward desk to review the price. Twitch fulfillment/cancellation requires the managing application's broadcaster grant.
 
-Owners can configure point awards for verified Twitch follows, subscriptions, resubscriptions, gifts, cheers and raids. Twitch bits, gifted subscriptions and raid viewers can multiply the configured award. YouTube membership and paid-message events carry their event details; their awards require a canonical viewer identity, and the YouTube account-linking port remains open. These awards affect local currency only. An anonymous or unresolved identity receives no award. Repeated delivery of the same event cannot credit it twice.
+Owners can configure point awards for verified Twitch follows, subscriptions, resubscriptions, gifts, cheers and raids. Twitch bits, gifted subscriptions and raid viewers can multiply the configured award. YouTube membership and paid-message events carry their event details; their awards require the viewer to link that YouTube channel in Account. These awards affect local currency only. An anonymous or unresolved identity receives no award. Repeated delivery of the same event cannot credit it twice.
+
+## YouTube connections
+
+Viewers use **Account → Link YouTube** to link their own channel to their Apollo identity. The workspace owner separately uses **StreamWeaver → Integrations → Connect YouTube chat** to authorize reading and sending live chat. Enable both StreamWeaver and Chat Gateway first. Viewer linking alone does not start a chat connection.
+
+Google authorization must be configured by the deployment operator. Owner consent requests offline access so SPMT can renew the connection without exposing tokens to the browser. Integrations shows the requested connection and offers Disconnect. A requested connection still needs an active broadcast, an available gateway and working provider access; it is not proof that chat has connected. Unknown YouTube viewers are not automatically assigned an account or awarded points.
 
 ## Chat desk and Social Stream
 

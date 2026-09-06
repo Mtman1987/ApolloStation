@@ -21,7 +21,7 @@ export class ProviderIdentityOperations {
       const tenantId = text(request.input.tenantId, "tenantId");
       if (request.name === "identity.provider.resolve") {
         this.auth.authorize(context.accessToken, "identity:read", tenantId);
-        const value = this.accounts.resolveProviderIdentity(provider(request.input.provider), text(request.input.providerUserId, "providerUserId"));
+        const value = this.accounts.resolveProviderIdentity(request.input.provider === "youtube" ? "youtube" : provider(request.input.provider), text(request.input.providerUserId, "providerUserId"));
         if (!value) throw new ProviderIdentityOperationError("not_found", "Provider identity is not linked to an active SPMT user");
         return value;
       }

@@ -38,7 +38,7 @@ export interface ProviderGrandfatherInputV1 {
 }
 
 export interface ProviderIdentityResultV1 {
-  provider: GrandfatherProviderV1;
+  provider: GrandfatherProviderV1 | "youtube";
   providerUserId: string;
   userId: string;
   profile: UserProfileV1;
@@ -192,8 +192,8 @@ export class AccountRecoveryService {
     };
   }
 
-  resolveProviderIdentity(providerInput: GrandfatherProviderV1, providerUserIdInput: string): ProviderIdentityResultV1 | undefined {
-    const provider = requireGrandfatherProvider(providerInput);
+  resolveProviderIdentity(providerInput: GrandfatherProviderV1 | "youtube", providerUserIdInput: string): ProviderIdentityResultV1 | undefined {
+    const provider = providerInput === "youtube" ? "youtube" : requireGrandfatherProvider(providerInput);
     const providerUserId = requireProviderUserId(providerUserIdInput);
     const link = this.authorityStore.getProviderLink(provider, providerUserId);
     if (!link || link.revokedAt) return undefined;

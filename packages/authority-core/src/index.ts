@@ -1,7 +1,7 @@
 import { randomBytes, createHash } from "node:crypto";
 import { SPMT_SIMULATION_ROOM_EVENT, SPMT_SIMULATION_ROOM_DELETED, assertSimulationRoomEventV1, type SimulationRoomEventV1, type SimulationRoomLaneV1, type SimulationRoomSummaryV1 } from "@spmt/contracts";
 
-export type ProviderKindV1 = "twitch" | "discord" | "xbox" | "github" | "other";
+export type ProviderKindV1 = "youtube" | "twitch" | "discord" | "xbox" | "github" | "other";
 
 export interface UserRecordV1 { id: string; createdAt: string; }
 export interface ProviderLinkV1 { provider: ProviderKindV1; providerUserId: string; userId: string; linkedAt: string; revokedAt?: string; }

@@ -127,6 +127,8 @@ export function createInternalServiceTokenProvider(options: { spmtOrigin: string
 export function createChatGatewayWorkerTokenProvider(options: { spmtOrigin: string; credential: string; fetchImpl?: typeof fetch }) { return createInternalServiceTokenProvider({ ...options, serviceId: "chat-gateway" }); }
 
 export class SupervisedChatGatewayService {
+  private readonly connectionClient:SpmtClient;
+  private lastYouTubeSync=0;
   private readonly startedAt = new Date().toISOString();
   private readonly simulationWorker: SimulationRoomWorker;
   private readonly chatStore: SqliteChatGatewayStore;
@@ -145,6 +147,7 @@ export class SupervisedChatGatewayService {
   constructor(private readonly options: ChatGatewayWorkerEnvironmentV1, fetchImpl?: typeof fetch) {
     this.getAccessToken = createChatGatewayWorkerTokenProvider({ spmtOrigin: options.spmtOrigin, credential: options.credential, ...(fetchImpl ? { fetchImpl } : {}) });
     const client = new SpmtClient({ baseUrl: options.spmtOrigin, appId: "chat-gateway", getAccessToken: this.getAccessToken, ...(fetchImpl ? { fetchImpl } : {}) });
+    this.connectionClient=client;
     this.simulationWorker = new SimulationRoomWorker(client, new SimulationRoomRuntime({ directory: join(dirname(options.databasePath), "simulation-rooms"), ...(options.nebulaArcade?.publicOrigin ? { publicOrigin: options.nebulaArcade.publicOrigin } : {}), ...(options.streamweaver ? { streamweaverDatabasePath: options.streamweaver.databasePath } : {}), publish: (event, key) => client.publishSimulationRoomEvent(String((event.data as Record<string, unknown>)?.tenantId ?? ""), event, key) }), `${options.workerId}-simulation`);
     const adapters = createFirstPartyChatProviderAdapters(fetchImpl ? { fetch: async (url, init) => fetchImpl(url, init) } : {});
     this.chatStore = new SqliteChatGatewayStore(options.databasePath);
@@ -279,6 +282,10 @@ export class SupervisedChatGatewayService {
   async ready() { await Promise.all([this.getAccessToken(), this.getStreamWeaverAccessToken?.(), this.getNebulaArcadeAccessToken?.()]); if(this.streamweaverClient&&this.tenants.length)await this.streamweaverClient.reportExecutionWorker({executionOwner:"streamweaver",workerId:`${this.options.workerId}-voice-egress`,executionTarget:"sprite",state:"ready",capabilityIds:["streamweaver.voice-egress.v1"],tenantIds:this.tenants,providerHealthy:true,startedAt:this.startedAt,leaseMs:60_000,metrics:{completedJobs:0,failedJobs:0,inputUnits:0,outputUnits:0}});await this.streamweaverImage?.report();return { schemaVersion: 1 as const, workerId: this.options.workerId, operationMode: this.options.operationMode, liveIngressEnabled: this.options.liveIngressEnabled, egressMode: this.options.operationMode === "active" ? "provider" as const : "shadow" as const, shadowMessages: this.chatStore.countShadowMessages(), configuredConnections: this.options.connections.length, consumers: this.gateway.consumerIds() }; }
   listShadowMessages(tenantId:string,limit=200){return this.chatStore.listShadowMessages(tenantId,limit);}
   async reconcile() {
+    if(this.options.operationMode==="active"&&Date.now()-this.lastYouTubeSync>5000){this.lastYouTubeSync=Date.now();try{
+      const result=await this.connectionClient.listYouTubeChatConnections();if(!Array.isArray(result.connections))throw new Error("YouTube connection discovery returned an invalid response");
+      for(const c of result.connections){const prior=this.connectionStore.get(c.tenantId,"youtube",c.connectionId);if(!prior||prior.desired!==c.desired||prior.channelId!==c.channelId||prior.providerAccountId!==c.providerAccountId)this.connectionStore.put(c);if(!this.tenants.includes(c.tenantId))this.tenants.push(c.tenantId);}
+    }catch{/* Existing short-lived provider grants still expire; retry discovery next cycle. */}}
     const connections = await this.supervisor.reconcile();
     const deliveries = { attempted: 0, delivered: 0, failed: 0 };
     for (const tenantId of new Set([...this.tenants, ...this.chatStore.listPendingTenants()])) {

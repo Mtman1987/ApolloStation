@@ -1,6 +1,6 @@
 import type { SpmtClient } from "./index.js";
 
-export type SpmtProviderIdentityKindV1 = "discord" | "twitch";
+export type SpmtProviderIdentityKindV1 = "discord" | "twitch" | "youtube";
 export interface SpmtProviderIdentityProfileV1 {
   userId: string;
   username: string;
@@ -27,7 +27,7 @@ export function resolveProviderIdentity(client: SpmtClient, tenantId: string, pr
 }
 
 export function grandfatherProviderIdentity(client: SpmtClient, tenantId: string, input: {
-  provider: SpmtProviderIdentityKindV1;
+  provider: Exclude<SpmtProviderIdentityKindV1,"youtube">;
   providerUserId: string;
   providerUsername?: string;
   username?: string;

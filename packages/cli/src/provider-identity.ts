@@ -11,6 +11,7 @@ export async function runProviderIdentityCli(argv: string[], client: SpmtClient)
   const provider = providerKind(providerRaw);
   if (action === "resolve") return resolveProviderIdentity(client, required(tenantId, "tenantId"), provider, required(providerUserId, "providerUserId"));
   if (action === "grandfather") {
+    if(provider === "youtube")throw new Error("YouTube accounts require OAuth verification");
     return grandfatherProviderIdentity(client, required(tenantId, "tenantId"), {
       provider,
       providerUserId: required(providerUserId, "providerUserId"),
@@ -23,7 +24,7 @@ export async function runProviderIdentityCli(argv: string[], client: SpmtClient)
 }
 
 function providerKind(value: string | undefined): SpmtProviderIdentityKindV1 {
-  if (value !== "discord" && value !== "twitch") throw new Error("provider must be discord or twitch");
+  if (value !== "discord" && value !== "twitch" && value !== "youtube") throw new Error("provider must be discord, twitch or youtube");
   return value;
 }
 function required(value: string | undefined, name: string) { if (!value) throw new Error(`${name} is required`); return value; }

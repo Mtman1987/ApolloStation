@@ -3,7 +3,7 @@ import { grandfatherProviderIdentity, resolveProviderIdentity, type SpmtProvider
 
 export interface DshProviderIdentityInputV1 {
   tenantId: string;
-  provider: SpmtProviderIdentityKindV1;
+  provider: Exclude<SpmtProviderIdentityKindV1,"youtube">;
   providerUserId: string;
   username?: string;
   displayName?: string;

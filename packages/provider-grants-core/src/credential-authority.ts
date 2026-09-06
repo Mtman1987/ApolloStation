@@ -1,6 +1,6 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
-import type { ProviderGrantProviderV1 } from "@spmt/contracts";
+import { PROVIDER_GRANT_PROVIDERS, type ProviderGrantProviderV1 } from "@spmt/contracts";
 import { ProviderGrantError, type ProviderCredentialSourceV1, type ProviderCredentialV1 } from "./index.js";
 
 export const REFRESHABLE_PROVIDER_GRANT_PROVIDERS = ["twitch", "discord", "kick", "youtube"] as const;
@@ -374,7 +374,7 @@ function projectionOf(row: CredentialRow): ProviderCredentialProjectionV1 { cons
 function validateClients(value: ProviderOAuthClientsV1): ProviderOAuthClientsV1 { const result: ProviderOAuthClientsV1 = {}; for (const provider of REFRESHABLE_PROVIDER_GRANT_PROVIDERS) { const item = value[provider]; if (item) result[provider] = { clientId: credentialSecret(item.clientId, `${provider} clientId`), clientSecret: credentialSecret(item.clientSecret, `${provider} clientSecret`) }; } return result; }
 function credentialKey(tenantId: string, provider: ProviderGrantProviderV1, providerUserId: string): string { return createHash("sha256").update(`${tenantId}\0${provider}\0${providerUserId}`).digest("hex"); }
 function isRefreshable(value: ProviderGrantProviderV1): value is RefreshableProviderGrantProviderV1 { return (REFRESHABLE_PROVIDER_GRANT_PROVIDERS as readonly string[]).includes(value); }
-function providerName(value: unknown): ProviderGrantProviderV1 { if (typeof value !== "string" || !["discord", "twitch", "kick", "xbox", "github", "livekit"].includes(value)) throw new ProviderGrantError("invalid", "provider is invalid"); return value as ProviderGrantProviderV1; }
+function providerName(value: unknown): ProviderGrantProviderV1 { if (typeof value !== "string" || !(PROVIDER_GRANT_PROVIDERS as readonly string[]).includes(value)) throw new ProviderGrantError("invalid", "provider is invalid"); return value as ProviderGrantProviderV1; }
 function identifier(value: unknown, name: string): string { if (typeof value !== "string" || !/^[A-Za-z0-9._:@/-]{1,200}$/.test(value)) throw new ProviderGrantError("invalid", `${name} is invalid`); return value; }
 function credentialSecret(value: unknown, name: string): string { if (typeof value !== "string" || value.length < 8 || value.length > 8192) throw new ProviderGrantError("invalid", `${name} is invalid`); return value; }
 function timestamp(value: unknown, name: string): string { if (typeof value !== "string" || !Number.isFinite(Date.parse(value))) throw new ProviderGrantError("invalid", `${name} is invalid`); return new Date(value).toISOString(); }

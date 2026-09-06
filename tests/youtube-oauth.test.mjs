@@ -1,0 +1,47 @@
+import test from 'node:test';
+import {chatGatewayCatalogRegistration} from '../apps/chat-gateway/dist/index.js';
+import {SupervisedChatGatewayService} from '../apps/chat-gateway/dist/service.js';
+import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
+import {mkdtempSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {createSpmtServiceWithProviderIdentity} from '../apps/spmt-service/dist/provider-identity-host.js';
+import {createSpaceMountainWebHost} from '../apps/spacemountain-web/dist/server.js';
+import {streamweaverCatalogRegistration} from '../apps/streamweaver/dist/index.js';
+import {SpmtClient} from '../packages/sdk/dist/index.js';
+import {StreamWeaverSpmtIdentityResolver} from '../apps/streamweaver/dist/provider-identity-resolver.js';
+const ROOT='/v1/identity/providers/youtube',READ='https://www.googleapis.com/auth/youtube.readonly',CHAT='https://www.googleapis.com/auth/youtube.force-ssl';
+const pair=r=>r.headers.get('set-cookie').split(';')[0];
+async function fixture(run){const dir=mkdtempSync(join(tmpdir(),'youtube-oauth-'));let channel='UCowner',scope=READ,challenge;const calls=[];
+ const service=createSpmtServiceWithProviderIdentity({databasePath:join(dir,'spmt.sqlite'),webhookKey:Buffer.alloc(32,3),providerCredentialKey:Buffer.alloc(32,4),host:'127.0.0.1',port:0,publicBaseUrl:'https://spmt.test',providerOAuthClients:{youtube:{clientId:'youtube-client',clientSecret:'youtube-client-secret'}},fetchImpl:async(url,init)=>{calls.push(String(url));if(String(url).endsWith('/token')){const params=new URLSearchParams(init.body);assert.equal(createHash('sha256').update(params.get('code_verifier')).digest('base64url'),challenge);assert.equal(init.redirect,'error');return Response.json({access_token:'youtube-access-token-for-tests-only',refresh_token:'youtube-refresh-token-for-tests-only',expires_in:3600,scope});}return Response.json({items:[{id:channel,snippet:{title:'Captain'}}]});}});
+ let web;try{service.control.registerApp(streamweaverCatalogRegistration('https://streamweaver.example.com'));service.control.registerApp(chatGatewayCatalogRegistration('https://chat.example.com'));for(const user of ['owner','viewer']){service.authority.ensureUser(user);service.data.registerUser({userId:user,username:user,displayName:user,password:'test-account-password-123',tenantIds:['a']})}service.control.registerTenant({tenantId:'a',ownerUserId:'owner',displayName:'A'});service.authority.getOrCreateWorkspace('a');service.control.installApp('a','streamweaver');service.control.installApp('a','chat-gateway');await service.listen();const base='http://127.0.0.1:'+service.server.address().port;web=createSpaceMountainWebHost({spmtOrigin:base,host:'127.0.0.1',port:0});await web.listen();const browser='http://127.0.0.1:'+web.server.address().port;
+ const sessions=Object.fromEntries(['owner','viewer'].map(user=>[user,'spmt_token='+encodeURIComponent(service.auth.issueHumanSession({userId:user,scopes:['identity:read','identity:write'],tenantIds:['a']}).accessToken)]));
+ const begin=async(user,purpose='identity')=>{const r=await fetch(browser+ROOT+'/start?tenantId=a&purpose='+purpose,{headers:{cookie:sessions[user]},redirect:'manual'});if(r.status!==302)return {response:r};const target=new URL(r.headers.get('location'));challenge=target.searchParams.get('code_challenge');scope=target.searchParams.get('scope');return {response:r,target,state:target.searchParams.get('state'),cookie:pair(r)}};
+ const callback=(user,pending,extra='')=>fetch(browser+ROOT+'/callback?state='+pending.state+'&code=verified-code'+extra,{headers:{cookie:sessions[user]+'; '+pending.cookie},redirect:'manual'});
+ await run({dir,service,base,browser,sessions,begin,callback,calls,setChannel:v=>channel=v});
+ }finally{if(web)await web.close();await service.close();rmSync(dir,{recursive:true,force:true})}}
+test('YouTube viewer linking is session-bound, PKCE protected and not grandfathered',async()=>fixture(async f=>{
+ const request=await f.begin('viewer');assert.equal(request.target.origin,'https://accounts.google.com');assert.equal(request.target.searchParams.get('scope'),READ);assert.equal(request.target.searchParams.get('redirect_uri'),'https://spmt.test'+ROOT+'/callback');
+ const wrong=await f.callback('owner',request);assert.match(new URL(wrong.headers.get('location')).searchParams.get('providerLinkError'),/account that started/);assert.equal(f.calls.length,0);
+ f.setChannel('UCviewer');const done=await f.callback('viewer',request);assert.equal(new URL(done.headers.get('location')).searchParams.get('providerLinked'),'youtube');assert.equal(f.service.authority.listProviderLinks('viewer')[0].providerUserId,'UCviewer');
+ const replay=await f.callback('viewer',request);assert.match(new URL(replay.headers.get('location')).searchParams.get('providerLinkError'),/expired/);assert.equal(f.calls.length,2);
+ f.service.auth.registerServiceIdentity({serviceId:'streamweaver',credential:'streamweaver-test-credential-at-least-32-chars',scopes:['identity:read','identity:write'],tenantMode:'any'});const token=f.service.auth.issueServiceAccess('streamweaver','streamweaver-test-credential-at-least-32-chars').accessToken,client=new SpmtClient({baseUrl:f.base,appId:'streamweaver',getAccessToken:()=>token});const resolver=new StreamWeaverSpmtIdentityResolver(client);assert.equal(await resolver.resolve({tenantId:'a',provider:'youtube',providerUserId:'UCviewer',username:'Viewer'}),'viewer');assert.equal(await resolver.resolve({tenantId:'a',provider:'youtube',providerUserId:'unknown',username:'Unknown'}),undefined);
+ const denied=await fetch(f.base+'/v1/identity/provider/grandfather',{method:'POST',headers:{authorization:'Bearer '+token,'x-spmt-tenant':'a','content-type':'application/json'},body:JSON.stringify({provider:'youtube',providerUserId:'unknown'})});assert.notEqual(denied.status,200);
+}));
+test('YouTube owner chat consent seals credentials and drives scoped discovery and disconnect',async()=>fixture(async f=>{
+ assert.equal((await f.begin('viewer','chat')).response.status,403);assert.equal(f.calls.length,0);const request=await f.begin('owner','chat');assert.equal(request.target.searchParams.get('scope'),CHAT);assert.equal(request.target.searchParams.get('access_type'),'offline');const completed=new URL((await f.callback('owner',request)).headers.get('location'));assert.equal(completed.searchParams.get('providerLinked'),'youtube',completed.searchParams.get('providerLinkError'));const credential=f.service.providerCredentials.get('a','youtube','UCowner');assert.deepEqual(credential.allowedAppIds,['chat-gateway']);assert.doesNotMatch(JSON.stringify(credential),/youtube-refresh-token|youtube-access-token/);
+ f.service.auth.registerServiceIdentity({serviceId:'chat-gateway',credential:'gateway-test-credential-at-least-32-characters',scopes:['providers:grant'],tenantMode:'any'});const token=f.service.auth.issueServiceAccess('chat-gateway','gateway-test-credential-at-least-32-characters').accessToken;
+ const discover=()=>fetch(f.base+'/v1/chat/youtube-connections',{headers:{authorization:'Bearer '+token}}).then(r=>r.json());assert.equal((await discover()).connections[0].desired,true);assert.equal((await fetch(f.base+'/v1/chat/youtube-connections',{headers:{cookie:f.sessions.owner}})).status,403);
+ const status=await fetch(f.browser+ROOT+'/connections?tenantId=a',{headers:{cookie:f.sessions.owner}});assert.equal((await status.json()).connections[0].channelId,'UCowner');const disconnected=await fetch(f.browser+ROOT+'/connections?tenantId=a',{method:'POST',headers:{cookie:f.sessions.owner,origin:f.browser,'content-type':'application/json'},body:JSON.stringify({action:'disconnect',channelId:'UCowner'})});assert.equal(disconnected.status,200);assert.equal((await discover()).connections[0].desired,false);assert.equal(f.service.providerCredentials.get('a','youtube','UCowner').state,'revoked');
+}));
+
+test('Chat Gateway discovers OAuth connections, opens its driver and closes on disconnect',async()=>fixture(async f=>{
+ const pending=await f.begin('owner','chat');assert.equal(new URL((await f.callback('owner',pending)).headers.get('location')).searchParams.get('providerLinked'),'youtube');
+ const credential='gateway-test-credential-at-least-32-characters';f.service.auth.registerServiceIdentity({serviceId:'chat-gateway',credential,scopes:['providers:grant'],tenantMode:'any'});
+ const gateway=new SupervisedChatGatewayService({runtimeMode:'production',operationMode:'active',liveIngressEnabled:false,spmtOrigin:f.base,databasePath:join(f.dir,'gateway.sqlite'),credential,workerId:'youtube-test',connections:[],reconcileMs:1000});
+ let opened=0,closed=0;gateway.supervisor.drivers.set('youtube',{provider:'youtube',async open(input){assert.equal(input.connection.providerAccountId,'UCowner');assert.equal(input.accessToken,'youtube-access-token-for-tests-only');opened++;return {close(){closed++}}}});
+ try{const first=await gateway.reconcile();assert.equal(first.connections.connected,1,JSON.stringify(first));assert.equal(opened,1);await gateway.reconcile();assert.equal(opened,1);
+ const response=await fetch(f.browser+ROOT+'/connections?tenantId=a',{method:'POST',headers:{cookie:f.sessions.owner,origin:f.browser,'content-type':'application/json'},body:JSON.stringify({action:'disconnect',channelId:'UCowner'})});assert.equal(response.status,200);gateway.lastYouTubeSync=0;await gateway.reconcile();assert.equal(closed,1);
+ }finally{await gateway.close()}
+}));

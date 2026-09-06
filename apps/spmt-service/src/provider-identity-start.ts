@@ -23,7 +23,9 @@ const kickClientSecret = process.env.KICK_CLIENT_SECRET;
 const providerCredentialKeySource = process.env.SPMT_PROVIDER_CREDENTIAL_KEY;
 const providerCredentialKey = providerCredentialKeySource ? Buffer.from(providerCredentialKeySource, "base64url") : undefined;
 if (providerCredentialKey && providerCredentialKey.byteLength !== 32) throw new Error("SPMT_PROVIDER_CREDENTIAL_KEY must decode to exactly 32 bytes");
+const youtubeClientId=process.env.YOUTUBE_CLIENT_ID,youtubeClientSecret=process.env.YOUTUBE_CLIENT_SECRET;
 const providerOAuthClients = {
+  ...(youtubeClientId&&youtubeClientSecret?{youtube:{clientId:youtubeClientId,clientSecret:youtubeClientSecret}}:{}),
   ...(twitchClientId && twitchClientSecret ? { twitch: { clientId: twitchClientId, clientSecret: twitchClientSecret } } : {}),
   ...(discordClientId && discordClientSecret ? { discord: { clientId: discordClientId, clientSecret: discordClientSecret } } : {}),
   ...(kickClientId && kickClientSecret ? { kick: { clientId: kickClientId, clientSecret: kickClientSecret } } : {}),
