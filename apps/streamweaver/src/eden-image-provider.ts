@@ -7,6 +7,13 @@ export class EdenStreamWeaverImageProvider {
   constructor(private readonly key:string,private readonly model="image/generation/stabilityai",private readonly fetchImpl:typeof fetch=fetch) {
     if(!key||!/^image\/generation\/[a-z0-9_-]+(?:\/[A-Za-z0-9._ -]+)?$/.test(model))throw new Error("Eden image configuration is invalid");
   }
+  async moderatePrompt(prompt:string){
+    const response=await this.fetchImpl("https://api.edenai.run/v3/moderations",{method:"POST",headers:{authorization:`Bearer ${this.key}`,"content-type":"application/json"},body:JSON.stringify({model:"openai/omni-moderation-latest",input:prompt}),redirect:"error",signal:AbortSignal.timeout(30000)});
+    if(!response.ok)throw new Error(`Image prompt moderation unavailable (HTTP ${response.status})`);
+    const value=await response.json() as {results?:Array<{flagged?:boolean}>};
+    if(!Array.isArray(value.results)||!value.results.length||value.results.some(r=>!r||typeof r.flagged!=="boolean"))throw new Error("Image prompt moderation returned an invalid result");
+    if(value.results.some(r=>r.flagged))throw new Error("Image prompt blocked by the configured content moderation");
+  }
   async listModels(){
     const response=await this.fetchImpl("https://api.edenai.run/v3/info/image/generation",{headers:{authorization:`Bearer ${this.key}`,accept:"application/json"},redirect:"error",signal:AbortSignal.timeout(20000)});
     if(!response.ok)throw new Error(`Eden model catalog returned HTTP ${response.status}`);
