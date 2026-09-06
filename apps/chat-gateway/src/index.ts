@@ -1,5 +1,7 @@
+import {createHash} from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import {
+  normalizeCommlinkProviderMutation, type CommlinkProviderMutationV1,
   SPMT_SIMULATION_ROOM_EVENT,
   assertAppModuleManifestV1,
   assertNormalizedChatMessageV1,
@@ -102,6 +104,7 @@ export class SqliteChatGatewayStore {
     this.db = new DatabaseSync(path, { timeout: 5_000 });
     this.db.exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON;");
     this.migrate();
+    this.db.exec("CREATE TABLE IF NOT EXISTS chat_mutations(id TEXT PRIMARY KEY,body TEXT NOT NULL,sent INTEGER NOT NULL DEFAULT 0,last_error TEXT)");
   }
   close(): void { this.db.close(); }
 
@@ -120,6 +123,11 @@ export class SqliteChatGatewayStore {
       return { duplicate: false };
     } catch (error) { this.db.exec("ROLLBACK"); throw error; }
   }
+
+  persistMutation(input:CommlinkProviderMutationV1){const value=normalizeCommlinkProviderMutation(input),key={...value,...(value.operation==="delete"?{occurredAt:""}:{})},id=createHash("sha256").update(JSON.stringify(key)).digest("hex");this.db.prepare("INSERT OR IGNORE INTO chat_mutations(id,body) VALUES(?,?)").run(id,JSON.stringify(value));}
+  pendingMutations(){return this.db.prepare("SELECT id,body FROM chat_mutations WHERE sent=0 ORDER BY rowid LIMIT 100").all().map(r=>({id:String(r.id),value:JSON.parse(String(r.body)) as CommlinkProviderMutationV1}));}
+  completeMutation(id:string){this.db.prepare("UPDATE chat_mutations SET sent=1,last_error=NULL WHERE id=?").run(id);}
+  failMutation(id:string,error:string){this.db.prepare("UPDATE chat_mutations SET last_error=? WHERE id=?").run(redact(error),id);}
 
   listPending(tenantId: string, consumerId?: string, limit = 100): NormalizedChatDeliveryV1[] {
     requireId(tenantId, "tenantId");
@@ -186,7 +194,7 @@ export class ChatGatewayRuntime {
   private readonly consumers = new Map<string, ChatGatewayConsumerV1>();
   private readonly senders = new Map<ChatProviderV1, ChatProviderSenderV1>();
   private readonly observers = new Map<string, ChatGatewayMessageObserverV1>();
-  constructor(private readonly store: SqliteChatGatewayStore, consumers: ChatGatewayConsumerV1[] = [], senders: ChatProviderSenderV1[] = [], observers: ChatGatewayMessageObserverV1[] = []) {
+  constructor(private readonly store: SqliteChatGatewayStore, consumers: ChatGatewayConsumerV1[] = [], senders: ChatProviderSenderV1[] = [], observers: ChatGatewayMessageObserverV1[] = [], private readonly mutationSink?:(mutation:CommlinkProviderMutationV1)=>Promise<unknown>) {
     for (const consumer of consumers) { requireId(consumer.id, "consumer id"); if (this.consumers.has(consumer.id)) throw new Error("Duplicate chat consumer id"); this.consumers.set(consumer.id, consumer); }
     for (const sender of senders) { if (this.senders.has(sender.provider)) throw new Error("Duplicate provider sender"); this.senders.set(sender.provider, sender); }
     for (const observer of observers) { requireId(observer.id, "observer id"); if (this.observers.has(observer.id)) throw new Error("Duplicate chat observer id"); this.observers.set(observer.id, observer); }
@@ -214,6 +222,9 @@ export class ChatGatewayRuntime {
     }
     return report;
   }
+
+  async mutate(input:CommlinkProviderMutationV1){this.store.persistMutation(input);return this.flushMutations();}
+  async flushMutations(){const report={attempted:0,delivered:0,failed:0};if(!this.mutationSink)return report;for(const item of this.store.pendingMutations()){report.attempted++;try{await this.mutationSink(item.value);this.store.completeMutation(item.id);report.delivered++;}catch(error){this.store.failMutation(item.id,error instanceof Error?error.message:"Chat correction failed");report.failed++;}}return report;}
 
   async send(message: OutboundChatMessageV1): Promise<{ providerMessageId: string }> {
     assertOutbound(message);

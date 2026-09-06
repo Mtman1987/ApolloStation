@@ -42,6 +42,7 @@ export interface ProviderConnectionDriverV1 {
     grantExpiresAt: string;
     grantMetadata: Record<string, string>;
     resumeCursor?: string;
+    onMutation?(mutation:import("@spmt/contracts").CommlinkProviderMutationV1):void|Promise<unknown>;
     onEnvelope(envelope: ProviderChatEnvelopeV1): void | Promise<void>;
     onCursor(cursor: string): void;
     onDisconnect(failure: { kind: "transport" | "authentication"; reason: string }): void;
@@ -197,6 +198,7 @@ export class ChatProviderConnectionSupervisor {
           grantExpiresAt: grant.expiresAt,
           grantMetadata: grant.metadata ?? {},
           ...(projection.cursor ? { resumeCursor: projection.cursor } : {}),
+          onMutation: async (mutation) => { if(mutation.tenantId!==connection.tenantId||mutation.provider!==connection.provider||mutation.connectionId!==connection.connectionId||mutation.channelId!==connection.channelId)throw Error("Chat correction crossed its connection boundary");return this.gateway.mutate(mutation); },
           onEnvelope: async (envelope) => { await this.gateway.ingest(envelope); },
           onCursor: (cursor) => this.store.saveCursor(connection, this.owner, cursor, new Date().toISOString()),
           onDisconnect: (failure) => {

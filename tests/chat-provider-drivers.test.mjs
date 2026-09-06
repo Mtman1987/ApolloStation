@@ -165,3 +165,8 @@ test('YouTube memberships, gifted memberships, Super Chats and stickers retain t
  assert.equal(youTubeRichEvent({type:'giftMembershipReceivedEvent',giftMembershipReceivedDetails:{memberLevelName:'Crew'}}).eventType,'giftMembershipReceivedEvent');
  assert.equal(youTubeRichEvent({type:'textMessageEvent'}),undefined);
 });
+
+test("Discord partial edits and bulk deletes enter only the correction path",async()=>{
+ const f=socketFactoryCapture(),driver=new DiscordGatewayProviderDriver({websocketFactory:f.factory}),opened=openInput("discord","12345"),changes=[];opened.input.onMutation=m=>changes.push(m);const pending=driver.open(opened.input),socket=f.sockets[0];socket.open();socket.message(JSON.stringify({op:0,t:"READY",s:1,d:{session_id:"session"}}));const handle=await pending;
+ try{const emit=(t,d)=>socket.message(JSON.stringify({op:0,t,s:2,d}));emit("MESSAGE_UPDATE",{id:"54321",channel_id:"12345",content:"!points 500",edited_timestamp:"2026-09-06T10:01:00Z"});emit("MESSAGE_UPDATE",{id:"54321",channel_id:"12345",attachments:[{url:"javascript:bad",filename:"bad"}]});emit("MESSAGE_UPDATE",{id:"54321",channel_id:"99999",content:"other channel"});emit("MESSAGE_DELETE_BULK",{channel_id:"12345",ids:["54321","67890"]});assert.equal(opened.envelopes.length,0);assert.equal(changes.length,4);assert.equal(changes[0].text,"!points 500");assert.deepEqual(changes[1].rich.attachments,[]);assert.equal(changes[2].operation,"delete");assert.equal(changes[3].messageId,"67890");}finally{await handle.close()}
+});

@@ -1,6 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
 import {
-  assertNormalizedChatMessageV1, normalizeCommlinkRichContent,
+  assertNormalizedChatMessageV1, normalizeCommlinkRichContent, normalizeCommlinkProviderMutation, type CommlinkProviderMutationV1,
   type ChatProviderV1,
   type CommlinkLiveChatQueryV1,
   type CommlinkLiveChatRecordV1,
@@ -20,6 +20,7 @@ export class CommlinkLiveChatStore {
     this.db = new DatabaseSync(path, { timeout: 5_000 });
     this.db.exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;");
     this.db.exec(`
+      CREATE TABLE IF NOT EXISTS commlink_provider_mutations(id TEXT PRIMARY KEY, body TEXT NOT NULL) STRICT;
       CREATE TABLE IF NOT EXISTS commlink_live_chat (
         id TEXT PRIMARY KEY,
         tenant_id TEXT NOT NULL,
@@ -56,7 +57,24 @@ export class CommlinkLiveChatStore {
       record.messageId, record.occurredAt, record.text, record.providerUserId,
       record.canonicalUserId ?? null, record.username, JSON.stringify(record),
     );
-    return { duplicate: Number(result.changes) === 0, record };
+    this.applyMutation(id);
+    const current=this.db.prepare("SELECT body FROM commlink_live_chat WHERE id=?").get(id)!;
+    return { duplicate: Number(result.changes) === 0, record:JSON.parse(String(current.body)) as CommlinkLiveChatRecordV1 };
+  }
+
+  mutate(input:CommlinkProviderMutationV1) {
+    const value=normalizeCommlinkProviderMutation(input),id=mutationKey(value);this.db.exec("BEGIN IMMEDIATE");
+    try {const row=this.db.prepare("SELECT body FROM commlink_provider_mutations WHERE id=?").get(id),prior=row?JSON.parse(String(row.body)) as CommlinkProviderMutationV1:undefined;
+      const duplicate=Boolean(prior&&(prior.operation==="delete"||(value.operation==="edit"&&Date.parse(prior.occurredAt)>Date.parse(value.occurredAt))||JSON.stringify(prior)===JSON.stringify(value)));
+      if(!duplicate){const next=value.operation==="delete"?value:{...prior,...value};this.db.prepare("INSERT INTO commlink_provider_mutations VALUES(?,?) ON CONFLICT(id) DO UPDATE SET body=excluded.body").run(id,JSON.stringify(next));}
+      const record=this.applyMutation(messageKey(value));this.db.exec("COMMIT");return {duplicate,record:record?.channelId===value.channelId?record:undefined};
+    }catch(error){this.db.exec("ROLLBACK");throw error;}
+  }
+  private applyMutation(id:string){
+    const source=this.db.prepare("SELECT body FROM commlink_live_chat WHERE id=?").get(id);if(!source)return undefined;
+    let record=JSON.parse(String(source.body)) as CommlinkLiveChatRecordV1;const patch=this.db.prepare("SELECT body FROM commlink_provider_mutations WHERE id=?").get(mutationKey(record));if(!patch)return record;const value=JSON.parse(String(patch.body)) as CommlinkProviderMutationV1;
+    record=value.operation==="delete"?{...record,text:"[Message removed]",rich:{source:"discord",eventType:"delete",attachments:[],deleted:true}}:{...record,...(value.text!==undefined?{text:value.text||"[Message has no text]"}:{}),...(value.rich?{rich:value.rich}:{})};
+    this.db.prepare("UPDATE commlink_live_chat SET text=?,body=? WHERE id=?").run(record.text,JSON.stringify(record),id);return record;
   }
 
   ingestMirror(record:CommlinkLiveChatRecordV1,operation:"message"|"edit"|"delete") {
@@ -138,9 +156,11 @@ function toLiveChatRecord(message: NormalizedChatMessageV1): CommlinkLiveChatRec
 }
 function acceptsProvider(provider: ChatProviderV1) { return provider === "twitch" || provider === "discord" || provider === "kick" || provider === "youtube"; }
 function assertProvider(value: string): asserts value is ChatProviderV1 { if (!acceptsProvider(value as ChatProviderV1)) throw new Error("provider is invalid"); }
-function messageKey(record: CommlinkLiveChatRecordV1): string { return [record.tenantId, record.provider, record.connectionId, record.messageId].join(":"); }
+function messageKey(record: Pick<CommlinkLiveChatRecordV1,"tenantId"|"provider"|"connectionId"|"channelId"|"messageId">): string { return [record.tenantId, record.provider, record.connectionId, record.messageId].join(":"); }
 function requireId(value: string, name: string): void { if (!value || value.trim() !== value || value.length > 300 || !/^[A-Za-z0-9._:@/-]+$/.test(value)) throw new Error(`${name} is invalid`); }
 function escapeLike(value: string): string { return value.replace(/[\\%_]/g, (match) => `\\${match}`); }
 
 export * from "./operator.js";
 export * from './social-stream.js';
+
+function mutationKey(record:Pick<CommlinkLiveChatRecordV1,"tenantId"|"provider"|"connectionId"|"channelId"|"messageId">){return JSON.stringify([record.tenantId,record.provider,record.connectionId,record.channelId,record.messageId]);}

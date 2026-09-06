@@ -13,7 +13,8 @@ The [discovery audit](donor-audits/STREAMWEAVER_LIVE_AUDIT_2026-09-06.md) is pin
 
 - Second parity release: `e1159a8970c3ae7ab6e731fd42524ee90eb885d6`, 867 passing offline tests. [Sprite promotion succeeded](https://github.com/Mtman1987/ApolloStation/actions/runs/34054028644); [Green Contracts succeeded](https://github.com/Mtman1987/ApolloStation/actions/runs/34054028650).
 - The current follow-up adds room completion/audio, listener diagnostics, public memory, Social Stream/private inbox, rich chat/replay, shoutout AI/settings/audit, YouTube event metadata and local provider awards. The repository build and all 886 offline tests passed for this batch. This batch is commit `d946fb8c97f4088fa1a12e5ba8e6e22ae6ba8b51`: [Sprite promotion succeeded](https://github.com/Mtman1987/ApolloStation/actions/runs/34057679893), and [Green Contracts succeeded](https://github.com/Mtman1987/ApolloStation/actions/runs/34057679880).
-- The YouTube OAuth follow-up and removal of obsolete conversion controls passed the repository build and all 889 offline tests (four concurrent test files). Promotion must be verified for this follow-up commit before counting it as deployed.
+- The YouTube OAuth follow-up and removal of obsolete conversion controls passed the repository build and all 889 offline tests (four concurrent test files). Commit `5460fb91e4ca55b9a0fe872271c2e23b8bacaf76` passed [Sprite promotion](https://github.com/Mtman1987/ApolloStation/actions/runs/34058968829) and [Green Contracts](https://github.com/Mtman1987/ApolloStation/actions/runs/34058968828).
+- Native Discord correction follow-up: repository build and all 893 offline tests passed. Its own promotion must still be verified.
 - The user guide and integration reference are served at `/docs` and `/docs/developers/streamweaver`, with this checklist at `/docs/streamweaver/parity`.
 
 ## The 15 remaining groups from the follow-up request
@@ -30,7 +31,7 @@ The [discovery audit](donor-audits/STREAMWEAVER_LIVE_AUDIT_2026-09-06.md) is pin
 | 6. YouTube | Code implemented | Account linking, owner offline chat consent, credential authority, gateway discovery/disconnect and canonical viewer resolution implemented. Google client configuration and live broadcast/send/refresh acceptance remain. |
 | 7. TikTok | Open | Actual connector lifecycle and chat/gift/follow/share/like sources. |
 | 8. Social Stream | Code implemented | Authenticated public/private ingestion, metadata, status, rotation, edit/delete and owner inbox. External hosting-auth acceptance remains. |
-| 9. Rich chat and replay | Partial | Discord attachments, Social Stream media/edit/delete and validated projection replay implemented. Native provider edit/delete coverage and live checks remain. |
+| 9. Rich chat and replay | Code implemented | Discord attachments, native partial edits and single/bulk deletions, Social Stream media/edit/delete and validated projection replay implemented. Live provider and output checks remain. |
 | 10. Platform event awards | Partial | Atomic configurable Twitch EventSub and YouTube event award consumer implemented. YouTube canonical identity uses verified OAuth links; TikTok sources and remaining donor helper mappings remain. |
 | 11. Shoutouts | Code implemented | AI/fallback greetings, owner voice/cooldown/exclusion/Discord settings and audit download. Provider/voice acceptance remains. |
 | 12. Check-ins | Partial | Existing persistent check-ins remain; Discord roles, invitation overrides and reward-flow details remain. |
@@ -76,7 +77,7 @@ Thus 100 local points costs 10 XP with 1,000,000 local / 100,000 XP outstanding,
 | 20 | Shared-chat desk | Pin, queue, feature, clear, next, auto controls and durable selected-message snapshots implemented. Selected messages survive eviction from the current 500-message feed. |
 | 21 | Featured overlay | Dedicated selected-message renderer, hold-until-cleared duration, style and restart behavior implemented. Authenticated OBS/browser acceptance remains. |
 | 22 | Saved chat workspace | Per-user filters, persistent selection and visible-page refresh implemented. |
-| 23 | Rich chat/diagnostics | Operator-facing sanitized ingestion errors implemented. Discord attachments, YouTube event metadata, Social Stream rich/edit/delete and validated-message replay implemented. Native provider edit/delete coverage and live acceptance remain. |
+| 23 | Rich chat/diagnostics | Operator-facing sanitized ingestion errors implemented. Discord attachments, YouTube event metadata, Social Stream rich/edit/delete and validated-message replay implemented. Native Discord partial edits and single/bulk deletes now use a durable correction path with selected-message cleanup. Live acceptance remains. |
 | 24 | Twitch EventSub | Subscription/reconnect and reward/event ingress implemented. Actual broadcaster authorization and live redelivery/reconnect acceptance remain. |
 | 25 | Redeems | Management UI, local/XP policy, balance checks, signed awards, first claim, replay protection, and one-Twitch-point menu creation/binding implemented. Validate live fulfillment/cancellation using the managing Twitch app. |
 | 26 | Non-chat automation | EventSub event bindings can reach installed flows. Owner-configured atomic local-point awards now consume Twitch EventSub and verified YouTube event metadata. Remaining donor helper mappings and unavailable TikTok sources remain; YouTube requires a verified account link. |

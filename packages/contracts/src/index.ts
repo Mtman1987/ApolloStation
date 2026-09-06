@@ -1138,3 +1138,18 @@ export function assertCapabilityWiringManifestV1(value: CapabilityWiringManifest
 
 function contractId(value: unknown): value is string { return typeof value === "string" && /^[A-Za-z0-9._:@/-]{1,200}$/.test(value); }
 function contractStrings(value: unknown): value is string[] { return Array.isArray(value) && value.length > 0 && value.every((item) => typeof item === "string" && item.trim() && item.length <= 500); }
+
+/** Provider corrections change public presentation only; they are never command inputs. */
+export interface CommlinkProviderMutationV1 {
+  schemaVersion:1; tenantId:string; provider:"discord"; connectionId:string; channelId:string; messageId:string;
+  operation:"edit"|"delete"; occurredAt:string; text?:string; rich?:NonNullable<CommlinkLiveChatRecordV1["rich"]>;
+}
+export function normalizeCommlinkProviderMutation(value:CommlinkProviderMutationV1):CommlinkProviderMutationV1 {
+  if(!value||value.schemaVersion!==1||value.provider!=="discord"||!["edit","delete"].includes(value.operation))throw Error("Chat mutation is invalid");
+  for(const id of [value.tenantId,value.connectionId,value.channelId,value.messageId])if(typeof id!=="string"||!/^[A-Za-z0-9._:@/-]{1,200}$/.test(id))throw Error("Chat mutation identifier is invalid");
+  if(typeof value.occurredAt!=="string"||!Number.isFinite(Date.parse(value.occurredAt)))throw Error("Chat mutation time is invalid");
+  if(value.text!==undefined&&(typeof value.text!=="string"||value.text.length>8000))throw Error("Chat mutation text is invalid");
+  const rich=value.rich?normalizeCommlinkRichContent(value.rich):undefined;
+  if(value.operation==="edit"&&value.text===undefined&&!rich)throw Error("Chat mutation has no changed fields");
+  return {schemaVersion:1,tenantId:value.tenantId,provider:"discord",connectionId:value.connectionId,channelId:value.channelId,messageId:value.messageId,operation:value.operation,occurredAt:new Date(value.occurredAt).toISOString(),...(value.operation==="edit"&&value.text!==undefined?{text:value.text}:{}),...(value.operation==="edit"&&rich?{rich}:{})};
+}

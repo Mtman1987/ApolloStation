@@ -47,7 +47,7 @@ Google authorization must be configured by the deployment operator. Owner consen
 
 ## Chat desk and Social Stream
 
-The chat desk offers platform/search filters, saved filters, pinning, a feature queue and a Featured chat output. Selected message snapshots survive normal feed eviction. Attachments appear as safe HTTPS links. Discord attachment-only messages and Social Stream media are retained in the shared projection.
+The chat desk offers platform/search filters, saved filters, pinning, a feature queue and a Featured chat output. Selected message snapshots survive normal feed eviction. Attachments appear as safe HTTPS links. Discord attachment-only messages and Social Stream media are retained in the shared projection. Native Discord edits update text and attachments; single and bulk deletions remove content from the feed and clear its pinned, queued or featured presentation. Corrections do not run chat commands or award points again.
 
 Owners can create or rotate a Social Stream bridge key in the chat desk. Copy the displayed ingestion URL and send the key in `Authorization: Bearer <key>`. A new key is shown only when created; rotation invalidates the previous key. Disable stops further ingestion.
 

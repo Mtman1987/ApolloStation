@@ -1,3 +1,5 @@
+import {createHash} from "node:crypto";
+import {normalizeCommlinkProviderMutation,type CommlinkProviderMutationV1} from "@spmt/contracts";
 import {YouTubeOAuthApi} from "./youtube-oauth-api.js";
 import {StellarPublicMemory} from "@spmt/stellar-core";
 import {CommlinkSocialStreamApi} from "./social-stream-api.js";
@@ -485,14 +487,24 @@ export function createSpmtService(options: SpmtServiceOptions) {
         try {
           auth.authorize(token, "commlink:read", tenantId);
           const provider = url.searchParams.get("provider") ?? undefined;
-          if (provider && !["twitch", "discord", "kick", "youtube"].includes(provider)) return json(response, 400, { error: "invalid_provider" });
+          if (provider && !["twitch", "discord", "kick", "youtube", "social-stream"].includes(provider)) return json(response, 400, { error: "invalid_provider" });
           const limitValue = url.searchParams.get("limit");
           const limit = limitValue === null ? undefined : Number(limitValue);
-          return json(response, 200, commlinkLiveChat.list({ tenantId, ...(provider ? { provider: provider as ChatProviderV1 } : {}), ...(url.searchParams.get("channelId") ? { channelId: url.searchParams.get("channelId")! } : {}), ...(url.searchParams.get("search") ? { search: url.searchParams.get("search")! } : {}), ...(limit === undefined ? {} : { limit }) }));
+          return json(response, 200, commlinkLiveChat.list({ tenantId, ...(provider ? { provider: provider as ChatProviderV1 | "social-stream" } : {}), ...(url.searchParams.get("channelId") ? { channelId: url.searchParams.get("channelId")! } : {}), ...(url.searchParams.get("search") ? { search: url.searchParams.get("search")! } : {}), ...(limit === undefined ? {} : { limit }) }));
         } catch (error) {
           if (error instanceof Error && /limit|channelId|provider/.test(error.message)) return json(response, 400, { error: "invalid_query", message: error.message });
           return json(response, 403, { error: "forbidden" });
         }
+      }
+
+      if(request.method==="POST"&&url.pathname==="/v1/commlink/live/mutations"){
+        const token=accessToken(request),tenantId=header(request,"x-spmt-tenant");if(!token||!tenantId)return json(response,401,{error:"unauthorized"});
+        try{const principal=auth.authorize(token,"commlink:live:write",tenantId);if(principal.actorType!=="service"||principal.actorId!=="chat-gateway")return json(response,403,{error:"chat_gateway_required"});
+          if(control.getTenant(tenantId).status!=="active"||!control.listInstalls(tenantId).some(i=>i.appId==="chat-gateway"&&i.enabled))return json(response,403,{error:"app_not_installed"});
+          const value=normalizeCommlinkProviderMutation(await readBody(request) as unknown as CommlinkProviderMutationV1);if(value.tenantId!==tenantId)return json(response,403,{error:"tenant_mismatch"});
+          const result=commlinkLiveChat.mutate(value);if(result.record){const r=result.record,id=createHash("sha256").update(JSON.stringify([r.provider,r.connectionId,r.channelId,r.messageId])).digest("hex");commlinkOperator.reviseMessage(tenantId,{...r,id},r.rich?.deleted===true);operatorApi.publish(tenantId);}
+          return json(response,200,result);
+        }catch(error){return json(response,error instanceof AuthDeniedError?403:400,{error:"invalid_chat_mutation",message:error instanceof Error?error.message:"Chat correction failed"});}
       }
 
       if (request.method === "POST" && url.pathname === "/v1/commlink/live") {
