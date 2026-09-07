@@ -2,6 +2,8 @@
 
 Status: implemented in Green; live tenant configuration and provider credentials remain cutover-gated.
 
+Audit update, 7 September: see the [current deployed-source comparison](../donor-audits/DSH_LIVE_AUDIT_2026-09-07.md). The worker still reads static runtime routing rather than the app's saved delivery settings, and its optional spotlight media source is not connected. Signal, creator-media and channel-moderation helper exports are not runtime integration. The suite-action application decision also bypasses the web agreement/notification workflow. These are tracked implementation gaps, not new requirements for duplicate ecosystem services.
+
 ## Ownership
 
 Discord Stream Hub owns its tracked-member directory, live/offline projection, shoutout and spotlight state, Discord message IDs, and retryable delivery outbox. SPMT owns the service identity, app installation, encrypted Twitch/Discord credentials, refresh fencing, and short-lived provider grants. The worker receives no refresh secret and stores no provider token.

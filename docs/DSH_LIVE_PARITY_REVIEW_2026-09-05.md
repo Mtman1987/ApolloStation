@@ -1,5 +1,7 @@
 # Discord Stream Hub: live functionality and Apollo parity review
 
+Current status: the [7 September deployment-source audit](donor-audits/DSH_LIVE_AUDIT_2026-09-07.md) supersedes this document's remaining-gap list. Calendar, application web agreements/votes, proposals and tier payloads have implementations; eleven specific workflow groups remain. The separate welcome-card claim is unconfirmed and is not an automatic port requirement.
+
 Update, 6 September 2026: [the production cleanup](production/READINESS_CLEANUP_2026-09-06.md) consolidates the application/proposal branch, directly integrates its controllers, and adds HTTP regression coverage. The table below remains the dated 5 September comparison; completed application votes, receipts, templates, and proposal delivery should be read with that update. This does not certify the remaining live workflows.
 
 Date: 5 September 2026. Scope: current source, the supplied Apollo screenshots, and execution checks of the changes in this commit.

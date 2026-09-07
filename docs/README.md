@@ -7,6 +7,7 @@ All architecture, contracts, development notes, audit evidence and production ru
 - [Ecosystem and StreamWeaver user guide](ECOSYSTEM_USER_GUIDE.md) — served in Apollo at `/docs`.
 - [StreamWeaver developer integration reference](architecture/STREAMWEAVER_ECOSYSTEM_INTEGRATION.md) — `/docs/developers/streamweaver`.
 - [Current StreamWeaver parity checklist](STREAMWEAVER_PARITY_CHECKPOINT_2026-09-06.md) — `/docs/streamweaver/parity`.
+- [Current Discord Stream Hub audit](donor-audits/DSH_LIVE_AUDIT_2026-09-07.md) — deployed-source comparison and eleven remaining workflow groups.
 
 1. [Production cleanup and validation](production/READINESS_CLEANUP_2026-09-06.md)
 2. [Architecture](ARCHITECTURE.md)

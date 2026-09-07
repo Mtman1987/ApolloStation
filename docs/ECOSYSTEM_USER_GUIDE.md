@@ -20,6 +20,12 @@ Sign in, select the workspace, and install enabled apps through Shipyard. Accoun
 
 Capabilities require the relevant app installation, permissions and an available runtime. A queued job is not yet a delivered result. Simulation output is visible in Simulation Rooms and does not prove delivery to Twitch, Discord or an audio listener.
 
+## Discord Stream Hub availability
+
+Calendar supports captain duty, missions, participation counts and a downloadable month image. Configured Discord connections support calendar publication and native event synchronization. Applications includes Crew advice, owner decisions, agreement acceptance and receipts; Proposals has publishing and delivery retry controls. Live & Shoutouts retains the distinct community tier designs.
+
+The 7 September audit found that saved Spotlight/Signal/media settings are not yet applied by the worker. Do not treat a successful settings save as confirmation that delivery changed. Signal Seeker, raid membership/scheduling, creator clip/banner automation, community leaderboard publication, channel cleanup, forum forwarding and Twitch partner schedules still need integration. Approval through chat also needs the same agreement notification behavior as the web Applications page. These workflows are not certified replacements for the existing live app yet.
+
 ## StreamWeaver points and rewards
 
 The Points page displays the outstanding local streamer-point supply, global outstanding spendable SPMT XP supply, and both directions of the current ratio. It refreshes every five seconds, on window focus and after a local wallet mutation. Spendable XP is distinct from lifetime XP.
