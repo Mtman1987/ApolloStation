@@ -1,3 +1,4 @@
+import {parseTwitchBotRoles} from "./twitch-bot-api.js";
 import { createSpmtServiceWithProviderIdentity } from "./provider-identity-host.js";
 import { createSpmtOutputGateway } from "./output-gateway.js";
 import { validateSandboxServiceEnvironment } from "./index.js";
@@ -63,6 +64,7 @@ const service = createSpmtServiceWithProviderIdentity({
   ...(twitchClientId ? { twitchClientId } : {}),
   ...(twitchClientSecret ? { twitchClientSecret } : {}),
   ...(providerCredentialKey ? { providerCredentialKey } : {}),
+  twitchBotRoles:parseTwitchBotRoles(process.env.SPMT_TWITCH_BOT_ROLES),
   ...(Object.keys(providerOAuthClients).length ? { providerOAuthClients } : {}),
   ...(discordBotToken ? { discordBotToken } : {}),
   stellarChatEnabled,

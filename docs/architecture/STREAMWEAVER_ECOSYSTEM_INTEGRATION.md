@@ -1,6 +1,6 @@
 # StreamWeaver ecosystem integration reference
 
-See the [user guide](../ECOSYSTEM_USER_GUIDE.md) and [current parity checkpoint](../STREAMWEAVER_PARITY_CHECKPOINT_2026-09-06.md). This is an implementation reference, not a declaration that all 15 backlog groups or the live cutover are complete.
+See the [user guide](../ECOSYSTEM_USER_GUIDE.md) and [current parity checkpoint](../STREAMWEAVER_PARITY_CHECKPOINT_2026-09-06.md). This is the current implementation reference. Live provider acceptance and tenant migration are tracked separately from implemented functions.
 
 ## Ownership and authorization
 
@@ -199,3 +199,17 @@ Revalidation against the pinned donor found that `generationLoras` contains expl
 `POST /v1/assistant/conversation/control` applies `gif` or `delete` to a turn in the signed-in canonical user’s tenant-scoped thread. There is no caller-selected user authority. Deletion removes the selected execution job, cancels/deletes pending condensation and clears the generated summary note while preserving separately saved notes. The thread epoch changes so feed clients reset. GIF visibility persists per turn; GIF selection is an owned `image/gif` media asset checked by the preferences API. The browser uses authenticated private media URLs and existing shared speech jobs for explicit read-aloud.
 
 This uses the existing app conversation, settings, speech and media surfaces rather than duplicating the donor’s signed Discord link system. Native Discord DM transport remains a different surface, not an implemented transport claim. The user explicitly accepts equivalent functions elsewhere in Apollo.
+
+## Twitch bot and broadcaster lifecycle
+
+`apps/spmt-service/src/twitch-bot-api.ts` constructs the canonical account lifecycle. `GET /v1/identity/twitch-bots?tenantId=…` returns owner-scoped fleet projections, broadcaster authorization status and permitted reserved roles; it never returns credentials. `POST` disconnects an owned selected bot, or broadcaster authorization when `role=broadcaster`. The browser host explicitly proxies these routes, and standalone apps proxy the status/mutation surface while starting OAuth at the canonical authorization origin.
+
+`GET /v1/identity/twitch-bots/start` requires a linked broadcaster, the active workspace owner and enabled StreamWeaver/Chat Gateway installs. Parameters are `tenantId`, `broadcasterId`, `role` (default `bot`) and `login` for an ordinary bot. The ten-minute state is hashed in SQLite, bound to the owner and HttpOnly cookie, consumed once, and checked again against current ownership/install/link state before storing the result. The callback uses server-side code exchange and Twitch validation, verifies client ID, requested scopes and selected identity, and seals credentials in the existing provider authority. Bot OAuth never links that bot as the human's canonical identity. Broadcaster consent verifies the immutable selected broadcaster ID and uses `STREAMWEAVER_TWITCH_COMMAND_SCOPES` for its permissions and capabilities.
+
+Configure the existing `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET`, and `SPMT_PROVIDER_CREDENTIAL_KEY`. Register the exact callback `${SPMT_PUBLIC_URL}/v1/identity/twitch-bots/callback` with Twitch. Optional `SPMT_TWITCH_BOT_ROLES` is an array of `{roleId,tenantId,ownerUserId,providerUserId,login}` using canonical IDs. The `the-count` role requires login `thecountspmt`; its immutable Twitch ID must be supplied from the actual account, never guessed. The role is unavailable until configured. Ordinary consent cannot claim a reserved login or ID. The existing pinned-provider policy now executes in this callback and issues only the `provider-chat` capability to Chat Gateway.
+
+`GET /v1/chat/twitch-bot-connections` is Chat Gateway service-only and filters tenant authority. Discovery updates the shared connection list used by StreamWeaver's pending replies, presentation tasks and image worker tenant reporting. One bot is selected per broadcaster; replacement closes obsolete senders and revokes an unused previous bot credential. Disconnect stops the selected connection on discovery. It does not silently restore an old environment-configured bot. Role authorization is owner/workspace scoped; it does not create unrestricted cross-tenant credential access.
+
+Managed Twitch credentials are validated at first use, after token changes and at most thirty-minute intervals while used. Grant issuance rechecks the canonical owner and app state; broadcaster grants also recheck the provider link. The connection supervisor closes a socket at grant expiry and requires a new grant, so an established connection cannot continue indefinitely on an expired authorization.
+
+Tests in `twitch-bot-oauth.test.mjs` cross the actual browser host, canonical API, credential authority, SDK and connection supervisor with fake Twitch responses. They cover owner/state/identity isolation, reserved role protection, permission separation, replacement and disconnect. These tests do not claim real provider consent, IRC delivery, live tenant migration, or global special-bot distribution has been accepted.

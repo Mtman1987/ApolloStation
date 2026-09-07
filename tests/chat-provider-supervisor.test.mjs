@@ -116,9 +116,9 @@ test("an active socket authentication rejection asks SPMT to rotate once before 
   try {
     f.connections.put(config("twitch"), t0);
     const opened = [], recoveries = [];
-    let recovery = { status: "ready", accessToken: "rotated-access", expiresAt: "2026-08-23T13:00:00Z" };
+    let recovery = { status: "ready", accessToken: "rotated-access", expiresAt: "2030-08-23T13:00:00Z" };
     const grants = {
-      async getGrant() { return { status: "ready", accessToken: "initial-access", expiresAt: "2026-08-23T13:00:00Z" }; },
+      async getGrant() { return { status: "ready", accessToken: "initial-access", expiresAt: "2030-08-23T13:00:00Z" }; },
       async recoverAuthentication(connection, reason) { recoveries.push({ connection, reason }); return recovery; },
     };
     const supervisor = new ChatProviderConnectionSupervisor("worker-a", f.connections, new ChatGatewayRuntime(f.messages), grants, [fakeDriver("twitch", opened)]);
@@ -144,4 +144,13 @@ test("provider backoff preserves the donor fast Twitch and fifteen-second Kick s
   assert.equal(reconnectDelayMs("kick", 1), 15_000);
   assert.equal(reconnectDelayMs("kick", 2), 30_000);
   assert.equal(reconnectDelayMs("kick", 20), 300_000);
+});
+
+test('expired provider grants close the live connection and require fresh authorization',async()=>{
+ const f=fixture();try{f.connections.put(config('twitch'),t0);let closed=0,issued=0;const opened=[];
+ const grants={async getGrant(){issued++;return issued===1?{status:'ready',accessToken:'short-lived',expiresAt:'2026-08-23T12:00:05Z'}:{status:'reauthorization-required',reason:'revoked'}}};
+ const supervisor=new ChatProviderConnectionSupervisor('worker-a',f.connections,new ChatGatewayRuntime(f.messages),grants,[{provider:'twitch',async open(input){opened.push(input);return {close(){closed++}}}}]);
+ assert.equal((await supervisor.reconcile(t0)).connected,1);await supervisor.reconcile('2026-08-23T12:00:04Z');assert.equal(closed,0);
+ const report=await supervisor.reconcile('2026-08-23T12:00:05Z');assert.equal(closed,1);assert.equal(issued,2);assert.equal(opened.length,1);assert.equal(report.reauthorizationRequired,1);await supervisor.stop('2026-08-23T12:00:06Z');
+ }finally{f.close()}
 });

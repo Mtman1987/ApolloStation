@@ -166,7 +166,7 @@ export class SqliteProviderConnectionStore {
 
 export class ChatProviderConnectionSupervisor {
   private readonly drivers = new Map<ChatProviderV1, ProviderConnectionDriverV1>();
-  private readonly active = new Map<string, { connection: ProviderConnectionConfigV1; handle: ProviderConnectionHandleV1 }>();
+  private readonly active = new Map<string, { connection: ProviderConnectionConfigV1; handle: ProviderConnectionHandleV1; expiresAt: string }>();
   constructor(private readonly owner: string, private readonly store: SqliteProviderConnectionStore, private readonly gateway: ChatGatewayRuntime, private readonly grants: ProviderGrantSourceV1, drivers: ProviderConnectionDriverV1[], private readonly leaseMs = 30_000) {
     requireId(owner, "supervisor owner");
     for (const driver of drivers) { if (this.drivers.has(driver.provider)) throw new Error("Duplicate provider connection driver"); this.drivers.set(driver.provider, driver); }
@@ -175,6 +175,7 @@ export class ChatProviderConnectionSupervisor {
   async reconcile(now = new Date().toISOString()): Promise<{ claimed: number; connected: number; failed: number; reauthorizationRequired: number }> {
     const at = iso(now);
     for (const [key, active] of this.active) {
+      if(Date.parse(active.expiresAt)<=Date.parse(at)){this.active.delete(key);try{await active.handle.close();}finally{this.store.release(active.connection,this.owner,at);}continue;}
       try { this.store.renew(active.connection, this.owner, at, this.leaseMs); }
       catch { this.active.delete(key); await active.handle.close(); }
     }
@@ -191,6 +192,7 @@ export class ChatProviderConnectionSupervisor {
       catch (error) { this.store.markFailure(connection, this.owner, errorText(error), at); report.failed += 1; continue; }
       if (grant.status === "reauthorization-required") { this.store.markReauthorizationRequired(connection, this.owner, grant.reason, at); report.reauthorizationRequired += 1; continue; }
       if (grant.status === "unavailable") { this.store.markFailure(connection, this.owner, grant.reason, at); report.failed += 1; continue; }
+      if(!Number.isFinite(Date.parse(grant.expiresAt))||Date.parse(grant.expiresAt)<=Date.parse(at)){this.store.markFailure(connection,this.owner,"Provider grant has expired",at);report.failed+=1;continue;}
       try {
         const handle = await driver.open({
           connection,
@@ -210,7 +212,7 @@ export class ChatProviderConnectionSupervisor {
             else this.store.markFailure(connection, this.owner, failure.reason, new Date().toISOString());
           },
         });
-        this.active.set(key, { connection, handle });
+        this.active.set(key, { connection, handle, expiresAt:grant.expiresAt });
         this.store.markConnected(connection, this.owner, at, this.leaseMs);
         report.connected += 1;
       } catch (error) { this.store.markFailure(connection, this.owner, errorText(error), at); report.failed += 1; }

@@ -139,6 +139,7 @@ export class SupervisedChatGatewayService {
   private readonly tiktok?:TikTokLiveIngestor;
   private readonly connectionClient:SpmtClient;
   private lastYouTubeSync=0;
+  private lastTwitchBotSync=0;
   private readonly startedAt = new Date().toISOString();
   private readonly simulationWorker: SimulationRoomWorker;
   private readonly chatStore: SqliteChatGatewayStore;
@@ -290,14 +291,31 @@ export class SupervisedChatGatewayService {
     for(const tenantId of new Set(options.connections.map(connection=>connection.tenantId))){if(!options.nebulaArcade?.config.tenants.find(tenant=>tenant.tenantId===tenantId)?.autoJoinLivePlayers)for(const connection of this.connectionStore.list(tenantId))if(connection.provider==='twitch'&&connection.connectionId.startsWith('nebula-live-')&&connection.desired)this.connectionStore.put({...connection,desired:false});}
     this.tenants = [...new Set(options.connections.map((connection) => connection.tenantId))];
   }
+  private applyDiscoveredConnection(c:ProviderConnectionConfigV1){
+    const prior=this.connectionStore.get(c.tenantId,c.provider,c.connectionId);
+    if(!prior||prior.desired!==c.desired||prior.channelId!==c.channelId||prior.providerAccountId!==c.providerAccountId)this.connectionStore.put(c);
+    const configured=this.options.connections.findIndex(old=>old.tenantId===c.tenantId&&old.provider===c.provider&&old.connectionId===c.connectionId);
+    if(configured<0)this.options.connections.push(c);else this.options.connections[configured]=c;
+    if(!this.tenants.includes(c.tenantId))this.tenants.push(c.tenantId);
+    if(c.desired)this.streamweaverImage?.addTenant(c.tenantId);
+  }
   async ready() { await Promise.all([this.getAccessToken(), this.getStreamWeaverAccessToken?.(), this.getNebulaArcadeAccessToken?.()]); if(this.streamweaverClient&&this.tenants.length)await this.streamweaverClient.reportExecutionWorker({executionOwner:"streamweaver",workerId:`${this.options.workerId}-voice-egress`,executionTarget:"sprite",state:"ready",capabilityIds:["streamweaver.voice-egress.v1"],tenantIds:this.tenants,providerHealthy:true,startedAt:this.startedAt,leaseMs:60_000,metrics:{completedJobs:0,failedJobs:0,inputUnits:0,outputUnits:0}});await this.streamweaverImage?.report();return { schemaVersion: 1 as const, workerId: this.options.workerId, operationMode: this.options.operationMode, liveIngressEnabled: this.options.liveIngressEnabled, egressMode: this.options.operationMode === "active" ? "provider" as const : "shadow" as const, shadowMessages: this.chatStore.countShadowMessages(), configuredConnections: this.options.connections.length, consumers: this.gateway.consumerIds() }; }
   listShadowMessages(tenantId:string,limit=200){return this.chatStore.listShadowMessages(tenantId,limit);}
   async reconcile() {
     await this.tiktok?.reconcile();
     if(this.options.operationMode==="active"&&Date.now()-this.lastYouTubeSync>5000){this.lastYouTubeSync=Date.now();try{
       const result=await this.connectionClient.listYouTubeChatConnections();if(!Array.isArray(result.connections))throw new Error("YouTube connection discovery returned an invalid response");
-      for(const c of result.connections){const prior=this.connectionStore.get(c.tenantId,"youtube",c.connectionId);if(!prior||prior.desired!==c.desired||prior.channelId!==c.channelId||prior.providerAccountId!==c.providerAccountId)this.connectionStore.put(c);if(!this.tenants.includes(c.tenantId))this.tenants.push(c.tenantId);}
+      for(const c of result.connections)this.applyDiscoveredConnection(c);
     }catch{/* Existing short-lived provider grants still expire; retry discovery next cycle. */}}
+    if(this.options.operationMode==="active"&&Date.now()-this.lastTwitchBotSync>5000){this.lastTwitchBotSync=Date.now();try{
+      const result=await this.connectionClient.listTwitchBotConnections();if(!Array.isArray(result.connections))throw Error("Invalid Twitch bot discovery");
+      const wanted=new Set(result.connections.map(c=>c.tenantId+":"+c.connectionId));
+      for(const tenant of this.tenants)for(const old of this.connectionStore.list(tenant))if(old.provider==="twitch"&&old.connectionId.startsWith("twitch-bot-")&&!wanted.has(tenant+":"+old.connectionId))this.applyDiscoveredConnection({...old,desired:false});
+      for(const c of result.connections){
+        for(const old of this.connectionStore.list(c.tenantId))if(old.provider==="twitch"&&old.channelId===c.channelId&&old.connectionId!==c.connectionId&&old.desired)this.applyDiscoveredConnection({...old,desired:false});
+        this.applyDiscoveredConnection(c);
+      }
+    }catch{/* Retry discovery; existing grants keep their bounded lifetimes. */}}
     const connections = await this.supervisor.reconcile();
     const deliveries = { attempted: 0, delivered: 0, failed: 0 };
     for (const tenantId of new Set([...this.tenants, ...this.chatStore.listPendingTenants()])) {

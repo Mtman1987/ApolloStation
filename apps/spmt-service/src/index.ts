@@ -1,3 +1,4 @@
+import {TwitchBotApi,parseTwitchBotRoles,type TwitchBotRole} from "./twitch-bot-api.js";
 import {normalizeTikTokLiveEvent} from "@spmt/commlink-core";
 import {PublicPersonaApi} from "./public-persona-api.js";
 import {createHash} from "node:crypto";
@@ -68,6 +69,7 @@ export interface SpmtServiceOptions {
   providerGrants?: ProviderGrantIssuerV1;
   providerCredentialKey?: Uint8Array;
   providerOAuthClients?: ProviderOAuthClientsV1;
+  twitchBotRoles?: TwitchBotRole[];
   stellarChatEnabled?: boolean;
   stellarWorkerCredential?: string;
   chatGatewayEnabled?: boolean;
@@ -106,7 +108,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
   const data = new PlatformDataService({ store: platformStore, auth, webhookKey: options.webhookKey });
   const fetchImpl = options.fetchImpl ?? fetch;
   const providerCredentials = options.providerCredentialKey ? new SqliteProviderCredentialAuthority(options.databasePath, options.providerCredentialKey, createFirstPartyProviderRefreshAdapters(fetchImpl), { ...(options.providerOAuthClients ? { clients: options.providerOAuthClients } : {}) }) : undefined;
-  const providerGrants = options.providerGrants ?? (providerCredentials ? new ProviderGrantBroker(providerCredentials) : undefined);
+  const providerGrants = options.providerGrants ?? (providerCredentials ? new ProviderGrantBroker({resolve:async input=>{const credential=await providerCredentials.resolve(input);return credential&&await twitchBots.validateManagedCredential(input.tenantId,credential)?credential:undefined;}}) : undefined);
   const accounts = new AccountRecoveryService({ authority, authorityStore: store, control, platformStore, setupStore });
   const executionJobs = new ExecutionJobService({
     store: platformStore,
@@ -137,6 +139,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
   const mediaApi = new SpmtMediaApi({ assets: mediaAssets, auth, control, jobs: platformStore, publicBaseUrl, accessToken, limitBytes: (tenantId) => (billing.manifest.plans.find(plan => plan.planId === billingPlan(control.listEntitlements(tenantId)))?.limits["storage-gb"] ?? 0) * 1024 ** 3 });
   const socialStreamApi=new CommlinkSocialStreamApi({store:socialStreamStore,chat:commlinkLiveChat,operator:commlinkOperator,auth,control,accessToken,publish:tenant=>{operatorApi.publish(tenant)}});
   const publicMemory=new StellarPublicMemory(options.databasePath,executionJobs,communityAssistant,tenant=>commlinkLiveChat.list({tenantId:tenant,limit:500}),tenant=>control.getTenant(tenant).ownerUserId);
+  const twitchBots=new TwitchBotApi({databasePath:options.databasePath,auth,authority,control,publicBaseUrl,enabled:runtimeMode==="production",fetchImpl,accessToken,roles:parseTwitchBotRoles(JSON.stringify(options.twitchBotRoles??[])),...(providerCredentials?{credentials:providerCredentials}:{}),...(accountProviderOAuthClient(options,"twitch")?{client:accountProviderOAuthClient(options,"twitch")!}:{})});
   const youtubeOAuth=new YouTubeOAuthApi({databasePath:options.databasePath,auth,authority,control,publicBaseUrl,enabled:runtimeMode==="production",fetchImpl,accessToken,...(providerCredentials?{credentials:providerCredentials}:{}),...(options.providerOAuthClients?.youtube?{client:options.providerOAuthClients.youtube}:{})});
   const assistantApi = new SpmtAssistantApi({store:assistantStore,publicMemory,speechPresence,privateAssistant:new StellarPrivateAssistant(assistantStore,executionJobs,communityAssistant),auth,control,jobs:executionJobs,assets:mediaAssets,enabled:runtimeMode === "production",accessToken});
   mediaAssets.sweep();
@@ -174,6 +177,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
       const url = new URL(`http://spmt.local${path}`);
       if (await mediaApi.handle(request, response, url)) return;
       if (await publicPersonas.handle(request,response,url)) return;
+      if (await twitchBots.handle(request,response,url)) return;
       if (await youtubeOAuth.handle(request,response,url)) return;
       if (await assistantApi.handle(request,response,url)) return;
       if (await socialStreamApi.handle(request,response,url)) return;
@@ -600,7 +604,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
     runOutboxOnce() { return outbox.runOnce(); },
     runStellarPrivacySweep() { return stellarPrivacy.sweep(store.listTenants().map((tenant) => tenant.id)); },
     listen() { return new Promise<void>((done, reject) => { server.once("error", reject); server.listen(options.port ?? 3000, options.host ?? "0.0.0.0", () => { server.off("error", reject); done(); }); }); },
-    close() { clearInterval(operatorTimer); clearInterval(mediaSweepTimer); clearInterval(stellarCapabilityTimer); clearInterval(stellarPrivacyTimer); return new Promise<void>((done, reject) => server.close((error) => { providerCredentials?.close(); assistantStore.close(); publicMemory.close(); youtubeOAuth.close(); publicPersonas.close(); socialStreamStore.close(); commlinkOperator.close(); commlinkLiveChat.close(); setupStore.close(); mediaAssets.close(); platformStore.close(); store.close(); error ? reject(error) : done(); })); },
+    close() { clearInterval(operatorTimer); clearInterval(mediaSweepTimer); clearInterval(stellarCapabilityTimer); clearInterval(stellarPrivacyTimer); return new Promise<void>((done, reject) => server.close((error) => { providerCredentials?.close(); assistantStore.close(); publicMemory.close(); youtubeOAuth.close(); twitchBots.close(); publicPersonas.close(); socialStreamStore.close(); commlinkOperator.close(); commlinkLiveChat.close(); setupStore.close(); mediaAssets.close(); platformStore.close(); store.close(); error ? reject(error) : done(); })); },
   };
 }
 
@@ -848,6 +852,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     ...(twitchClientId ? { twitchClientId } : {}),
     ...(twitchClientSecret ? { twitchClientSecret } : {}),
     ...(providerCredentialKey ? { providerCredentialKey } : {}),
+    twitchBotRoles:parseTwitchBotRoles(process.env.SPMT_TWITCH_BOT_ROLES),
     ...(Object.keys(providerOAuthClients).length ? { providerOAuthClients } : {}),
     ...(discordBotToken ? { discordBotToken } : {}),
     stellarChatEnabled,

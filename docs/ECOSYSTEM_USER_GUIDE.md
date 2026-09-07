@@ -164,3 +164,15 @@ A **blacklist** blocks users. The old Athena **whitelist** granted selected peop
 The private assistant page now includes **Read aloud**, **Show/hide GIF**, and **Delete reply** on individual turns. Voice settings control automatic speech; Read aloud also works when automatic speech is off. Upload a GIF privately in Media Files, then choose it under Voice preferences. Visibility can be changed for one reply without changing every reply.
 
 Deleting a turn removes that exchange and its job, cancels pending summary work and clears the generated conversation summary so it cannot reintroduce the deleted turn. Separately saved notes remain under your control. Image Studio already supplies private image generation, previous/next viewing and shared media deletion. These app controls provide the functional counterpart to the old Discord links; a duplicate Discord DM assistant and its native message controls have not been recreated.
+
+## Twitch accounts and bot administration
+
+Open **StreamWeaver → Accounts & Chat** as the workspace owner. Link your broadcaster in Account, select it in StreamWeaver, and save it. **Authorize broadcaster permissions** obtains the permissions used for redemptions, event awards, followers, clips, shoutouts and channel controls. Identity linking alone does not authorize those actions.
+
+Under **Twitch bot accounts**, enter the separate Twitch bot login and choose **Authorize bot account**. Twitch asks you to approve that account; approving a different login is rejected. The shared chat service discovers the saved connection automatically. There is one selected bot per broadcaster in a workspace. Replacing it stops the previous connection; disconnecting broadcaster permissions leaves the chat bot connected, and disconnecting the bot leaves broadcaster permissions intact.
+
+The account list shows authorized bots across workspaces you own and can access, their authorization state, and whether the connection is requested. This is not a claim that Twitch is currently connected. Reserved roles, including TheCountSPMT, appear only to their configured owner. They cannot be claimed through the ordinary bot form.
+
+To reassign a normal bot, disconnect it in the source workspace and have the destination owner authorize that bot in their workspace. Set its presentation in **Bot & Persona**. OAuth credentials are never copied through a browser or exported with persona settings. The old personal Athena username whitelist is not reproduced; existing canonical owner summon and bilateral BotShare controls remain the access policy.
+
+In the private sandbox, provider authorization controls are unavailable until the corresponding production configuration is supplied. Existing simulation rooms remain the way to test commands without posting to Twitch or Discord.

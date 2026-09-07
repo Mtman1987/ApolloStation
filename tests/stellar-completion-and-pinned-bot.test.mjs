@@ -30,7 +30,7 @@ test("The Count credential is owner-only, identity-pinned, least-scope, and encr
     assert.throws(() => storePinnedProviderAuthorization(authority, policy, { actorUserId: "owner-a", providerUserId: "wrong-id", providerLogin: "other", accessToken: "access-token-123", refreshToken: "refresh-token-123", scopes: ["chat:read"], expiresAt: "2026-08-30T12:00:00Z" }), /TheCountSPMT/);
     const stored = storePinnedProviderAuthorization(authority, policy, { actorUserId: "owner-a", providerUserId: "count-provider-id", providerLogin: "TheCountSPMT", accessToken: "access-token-123", refreshToken: "refresh-token-123", scopes: ["chat:read", "chat:edit", "user:write:chat"], expiresAt: "2026-08-30T12:00:00Z" });
     assert.equal(stored.metadata.identityPinned, "true");
-    assert.deepEqual(stored.allowedAppIds, ["chat-gateway", "streamweaver"]);
-    assert.deepEqual(stored.allowedCapabilities, ["chat:write"]);
+    assert.deepEqual(stored.allowedAppIds, ["chat-gateway"]);
+    assert.deepEqual(stored.allowedCapabilities, ["provider-chat"]);
   } finally { authority.close(); rmSync(dir, { recursive: true, force: true }); }
 });
