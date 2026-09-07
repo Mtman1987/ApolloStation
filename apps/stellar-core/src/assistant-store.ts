@@ -2,9 +2,9 @@ import { DatabaseSync } from "node:sqlite";
 import { randomUUID } from "node:crypto";
 import { TTS_VOICE_OPTIONS, ATHENA_CANONICAL_TTS_VOICE } from "./speech-voices.js";
 
-export interface AssistantPreferences { voice: string; ttsEnabled: boolean; gifEnabled: boolean; remember: boolean; }
+export interface AssistantPreferences { voice: string; ttsEnabled: boolean; gifEnabled: boolean; gifAssetId?: string; remember: boolean; }
 export interface AssistantNote { id: string; subject: string; title: string; content: string; updatedAt: string; }
-export interface AssistantTurn { id:string; jobId:string; message:string; answer?:string; state:string; createdAt:string; sequence?:number; }
+export interface AssistantTurn { id:string; jobId:string; message:string; answer?:string; state:string; createdAt:string; sequence?:number; gifVisible?:boolean; }
 export interface AssistantThread { epoch:string; turns:AssistantTurn[]; summary:string; sequence?:number; summaryThrough?:string; condensation?:{jobId:string;through:string;title:string}; }
 /** One ecosystem-owned private store, partitioned by both tenant and canonical user. */
 export class StellarAssistantStore {
@@ -23,6 +23,7 @@ export class StellarAssistantStore {
     const next = this.preferences(tenant,user);
     if (input.voice !== undefined) { if (!TTS_VOICE_OPTIONS.some(v => v.id === input.voice)) throw new Error("Choose a supported voice"); next.voice = input.voice; }
     for (const key of ["ttsEnabled","gifEnabled","remember"] as const) if (input[key] !== undefined) { if (typeof input[key] !== "boolean") throw new Error("Preference must be true or false"); next[key] = input[key]; }
+    if(input.gifAssetId!==undefined){if(typeof input.gifAssetId!=="string"||(input.gifAssetId!==""&&!/^[a-f0-9-]{36}$/.test(input.gifAssetId)))throw new Error("Choose a valid private GIF");next.gifAssetId=input.gifAssetId;}
     this.db.prepare("INSERT INTO stellar_preferences VALUES(?,?,?) ON CONFLICT(tenant,user_id) DO UPDATE SET body=excluded.body").run(tenant,user,JSON.stringify(next)); return next;
   }
   notes(tenant: string, user: string) { return this.db.prepare("SELECT body FROM stellar_notes WHERE tenant=? AND user_id=? ORDER BY id LIMIT 500").all(tenant,user).map(r => JSON.parse(String(r.body)) as AssistantNote); }

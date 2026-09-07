@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 import type { CommunityAssistantInvocationV1 } from "@spmt/contracts";
 import type { ExecutionJobService } from "@spmt/execution-core";
 import { StellarAssistantStore, type AssistantThread } from "./assistant-store.js";
@@ -57,6 +57,23 @@ export class StellarPrivateAssistant {
       const job=this.jobs.get(tenant,id);if(job?.billedUserId===user){if(!terminal(job.state))this.jobs.cancel(tenant,id);this.jobs.delete(tenant,id);}
     }
     return this.store.clearThread(tenant,user);
+  }
+  controlTurn(tenant:string,user:string,id:unknown,action:unknown) {
+    if(typeof id!=="string"||!id||id.length>200||!["delete","gif"].includes(String(action)))throw new Error("Choose a private reply control");
+    const thread=this.store.thread(tenant,user),turn=thread.turns.find(t=>t.id===id);
+    if(!turn)throw new Error("Private reply was not found");
+    if(action==="gif"){
+      turn.gifVisible=!(turn.gifVisible??this.store.preferences(tenant,user).gifEnabled);
+      this.store.saveThread(tenant,user,thread);return thread;
+    }
+    const job=this.jobs.get(tenant,turn.jobId);
+    if(job?.billedUserId!==user)throw new Error("Private reply ownership mismatch");
+    if(!terminal(job.state))this.jobs.cancel(tenant,job.id);
+    this.jobs.delete(tenant,job.id);
+    if(thread.condensation){const summary=this.jobs.get(tenant,thread.condensation.jobId);if(summary?.billedUserId===user){if(!terminal(summary.state))this.jobs.cancel(tenant,summary.id);this.jobs.delete(tenant,summary.id);}}
+    this.store.deleteNote(tenant,user,`summary:${thread.epoch}`);
+    thread.turns=thread.turns.filter(t=>t.id!==id);thread.summary="";delete thread.summaryThrough;delete thread.condensation;thread.epoch=randomUUID();
+    this.store.saveThread(tenant,user,thread);return thread;
   }
   optimize(tenant:string,user:string,instructions:unknown,requestId:string,appId:string) {
     if(typeof instructions!=="string"||!instructions.trim()||instructions.length>4000)throw new Error("Persona instructions must contain 1–4000 characters");

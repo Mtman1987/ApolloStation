@@ -49,7 +49,11 @@ export class SpmtAssistantApi {
         if(path==="public-memory/adjust")return json(response,200,this.options.publicMemory.adjust(tenant,source,body.adjustment,header(request,"idempotency-key")??""));
         if(path==="public-memory/condense"){if(!this.options.enabled)return json(response,503,{message:"External assistant execution is disabled"});return json(response,202,this.options.publicMemory.summarize(tenant,source));}
       }
-      if (path === "preferences") return json(response,200,this.options.store.savePreferences(tenant,user,body));
+      if (path === "preferences") {
+        if(body.gifAssetId){const asset=this.options.assets.get(String(body.gifAssetId));if(!asset||asset.tenantId!==tenant||asset.ownerUserId!==user||asset.contentType!=="image/gif")return json(response,404,{message:"Your private GIF was not found"});}
+        return json(response,200,this.options.store.savePreferences(tenant,user,body));
+      }
+      if(path==="conversation/control"&&this.options.privateAssistant)return json(response,200,{thread:this.options.privateAssistant.controlTurn(tenant,user,body.id,body.action)});
       if (path === "notes") return json(response,200,this.options.store.saveNote(tenant,user,body));
       if(path === "conversation/clear" && this.options.privateAssistant)return json(response,200,{thread:this.options.privateAssistant.clear(tenant,user)});
       if(["conversation","conversation/condense","persona/optimize"].includes(path)&&this.options.privateAssistant) {

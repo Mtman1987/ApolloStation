@@ -158,3 +158,9 @@ In Image Studio, save **Cloudflare → Klein 4B** or **Klein 9B** in your privat
 The old LoRA menu contained future slots, and its SeaArt character preference had no connected execution caller. Those are not features you need to configure in Apollo. The old default Perchance request fell back to Pollinations; Apollo offers Pollinations directly. A separately configured custom Perchance bridge has not been verified.
 
 A **blacklist** blocks users. The old Athena **whitelist** granted selected people special cross-channel access to that personal bot. It is a different feature, not a replacement for a blacklist, and Apollo is not adding a general whitelist merely because that old setting exists.
+
+### Private reply controls
+
+The private assistant page now includes **Read aloud**, **Show/hide GIF**, and **Delete reply** on individual turns. Voice settings control automatic speech; Read aloud also works when automatic speech is off. Upload a GIF privately in Media Files, then choose it under Voice preferences. Visibility can be changed for one reply without changing every reply.
+
+Deleting a turn removes that exchange and its job, cancels pending summary work and clears the generated conversation summary so it cannot reintroduce the deleted turn. Separately saved notes remain under your control. Image Studio already supplies private image generation, previous/next viewing and shared media deletion. These app controls provide the functional counterpart to the old Discord links; a duplicate Discord DM assistant and its native message controls have not been recreated.

@@ -45,3 +45,35 @@ test('spoken replay cursors advance once per completed turn and reset after clea
  f.runtime.clear('a','one');feed=f.runtime.feed('a','one',2,epoch);assert.equal(feed.reset,true);assert.equal(feed.cursor,0);assert.equal(feed.turns.length,0);
  }finally{f.store.close()}
 });
+
+test('private reply controls persist GIF visibility and deletion removes only the selected turn and derived summary',()=>{
+ const f=fixture();try{
+ const first=f.runtime.send('a','one','First','first','streamweaver');f.complete(first.jobId,'First answer');f.runtime.read('a','one');
+ const summary=f.runtime.summarize('a','one','Conversation summary');f.complete(summary.jobId,'First answer summary');f.runtime.read('a','one');
+ const second=f.runtime.send('a','one','Second','second','streamweaver');f.complete(second.jobId,'Second answer');f.runtime.read('a','one');
+ f.store.saveNote('a','one',{id:'manual',title:'Keep this',content:'Separately saved'});
+ const epoch=f.runtime.read('a','one').epoch;
+ assert.equal(f.runtime.controlTurn('a','one','first','gif').turns[0].gifVisible,false);
+ assert.equal(f.runtime.controlTurn('a','one','first','gif').turns[0].gifVisible,true);
+ assert.throws(()=>f.runtime.controlTurn('a','two','first','delete'),/not found/);
+ assert.throws(()=>f.runtime.controlTurn('b','one','first','delete'),/not found/);
+ const pending=f.runtime.summarize('a','one','Updated summary');
+ const thread=f.runtime.controlTurn('a','one','first','delete');assert.equal(thread.turns.length,1);assert.equal(thread.turns[0].id,'second');assert.equal(thread.summary,'');assert.equal(thread.condensation,undefined);
+ assert.equal(f.records.has(first.jobId),false);assert.equal(f.records.has(pending.jobId),false);assert.equal(f.records.has(second.jobId),true);
+ assert.deepEqual(f.store.notes('a','one').map(n=>n.id),['manual']);assert.equal(f.runtime.feed('a','one',100,epoch).reset,true);
+ }finally{f.store.close()}
+});
+
+test('assistant API binds GIF selection and reply controls to the signed-in user',async()=>{
+ const {Readable}=await import('node:stream');const {SpmtAssistantApi}=await import('../apps/spmt-service/dist/assistant-api.js');const f=fixture();
+ let owner='one',assetOwner='one';const assetId='11111111-1111-1111-1111-111111111111';
+ const api=new SpmtAssistantApi({store:f.store,privateAssistant:f.runtime,jobs:{},enabled:false,control:{getTenant:()=>({status:'active'})},assets:{get:()=>({id:assetId,tenantId:'a',ownerUserId:assetOwner,contentType:'image/gif'})},auth:{authorize:()=>({actorType:'user',actorId:owner})},accessToken:()=> 'session'});
+ const call=async(path,body)=>{let result,status;const req=Readable.from([JSON.stringify(body)]);req.method='POST';req.headers={'x-spmt-tenant':'a'};const response={writeHead:s=>status=s,end:text=>result=JSON.parse(text)};await api.handle(req,response,new URL('https://apollo.example/v1/assistant/'+path));return {status,result};};
+ try{
+  assert.equal((await call('preferences',{gifAssetId:assetId})).status,200);
+  assetOwner='other';assert.equal((await call('preferences',{gifAssetId:assetId})).status,404);
+  const r=f.runtime.send('a','one','Private','turn','streamweaver');f.complete(r.jobId,'Private reply');
+  owner='other';assert.equal((await call('conversation/control',{id:'turn',action:'delete',userId:'one'})).status,400);assert.equal(f.records.has(r.jobId),true);
+  owner='one';assert.equal((await call('conversation/control',{id:'turn',action:'delete'})).status,200);assert.equal(f.records.has(r.jobId),false);
+ }finally{f.store.close();}
+});
