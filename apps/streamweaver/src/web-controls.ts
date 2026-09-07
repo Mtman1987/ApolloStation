@@ -409,8 +409,9 @@ export class StreamWeaverWebControls {
   }
 
   private async readAiFlowJobs(request: IncomingMessage, response: ServerResponse, context: SessionContext) {
-    const userId=String(context.session.actorId??""),jobs=(await Promise.all(["stellar-core","streamweaver"].map(app=>this.deviceApi(request,context,undefined,"/v1/jobs?ownerAppId="+app+"&limit=100")))).flat() as unknown as ExecutionJobV1[];
-    return sendJson(response,200,{jobs:jobs.filter(job=>this.isAiFlowJob(job,userId)).sort((a,b)=>b.createdAt.localeCompare(a.createdAt)).map(job=>({jobId:job.id,state:job.state,createdAt:job.createdAt,updatedAt:job.updatedAt,model:job.result?.model??(job.capabilityId===FLOW_AUTHOR_CAPABILITY?(job.input.sourcePackageId?"gpt-5.6-luna":"gpt-5.6-sol"):"legacy"),repairAttempt:this.aiFlowRepairAttempt(job),reason:job.error?.message,packageId:this.requireFlows().get(context.tenantId,`flow.ai.${job.id}`)?.packageId}))});
+    const userId=String(context.session.actorId??""),reads=await Promise.allSettled(["stellar-core","streamweaver"].map(app=>this.deviceApi(request,context,undefined,"/v1/jobs?ownerAppId="+app+"&limit=100"))),jobs=reads.flatMap(result=>result.status==="fulfilled"&&Array.isArray(result.value)?result.value:[]) as unknown as ExecutionJobV1[];
+    const unavailable=reads.filter(result=>result.status==="rejected").length;
+    return sendJson(response,200,{jobs:jobs.filter(job=>this.isAiFlowJob(job,userId)).sort((a,b)=>b.createdAt.localeCompare(a.createdAt)).map(job=>({jobId:job.id,state:job.state,createdAt:job.createdAt,updatedAt:job.updatedAt,model:job.result?.model??(job.capabilityId===FLOW_AUTHOR_CAPABILITY?(job.input.sourcePackageId?"gpt-5.6-luna":"gpt-5.6-sol"):"legacy"),repairAttempt:this.aiFlowRepairAttempt(job),reason:job.error?.message,packageId:this.requireFlows().get(context.tenantId,`flow.ai.${job.id}`)?.packageId})),...(unavailable?{warning:`${unavailable} AI draft history source${unavailable===1?" is":"s are"} temporarily unavailable.`}:{})});
   }
 
   private isAiFlowJob(job: {billedUserId:string;capabilityId:string;input:Record<string,unknown>},userId:string) {

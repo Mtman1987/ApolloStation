@@ -130,7 +130,7 @@ export function renderProductAppWebPage(app: ProductAppWebDescriptorV1, buildSha
     if (!group) { groupedTabs.push(sectionTabs[index]!); index += 1; continue; }
     let end = index + 1;
     while (app.sections[end]?.navigationGroup === group) end += 1;
-    groupedTabs.push(`<details class="tabs-group"><summary>${esc(group)}</summary>${sectionTabs.slice(index, end).join("")}</details>`);
+    groupedTabs.push(`<details class="tabs-group" open><summary>${esc(group)}</summary>${sectionTabs.slice(index, end).join("")}</details>`);
     index = end;
   }
   const tabs = `<button type="button" data-nav="home"><i>◈</i><span>Home</span></button>${groupedTabs.join("")}`;

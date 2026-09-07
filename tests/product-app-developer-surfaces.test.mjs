@@ -134,8 +134,8 @@ test("shared app UI can organize dense navigation into collapsible groups",()=>{
     {id:"two",label:"Two",title:"Two",body:"Two",navigationGroup:"Create"},
     {id:"three",label:"Three",title:"Three",body:"Three",navigationGroup:"Manage"},
   ]});
-  assert.match(page,/<details class="tabs-group"><summary>Create<\/summary>/);
-  assert.match(page,/<details class="tabs-group"><summary>Manage<\/summary>/);
+  assert.match(page,/<details class="tabs-group" open><summary>Create<\/summary>/);
+  assert.match(page,/<details class="tabs-group" open><summary>Manage<\/summary>/);
   assert.equal((page.match(/data-nav="home"/g)||[]).length,1);
 });
 
