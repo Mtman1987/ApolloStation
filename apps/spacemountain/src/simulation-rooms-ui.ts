@@ -48,7 +48,8 @@ export class SimulationRoomsUi {
   private status = "";
   private pendingJob: string | undefined;
   private historySignature = "";
-  private overlaySignature = "";
+  private output: "public" | "personal" = "public";
+  private outputSignature = "";
   private modalSignature = "";
   private readonly click = (event: Event) => {
     const button = (event.target as HTMLElement).closest<HTMLButtonElement>("button");
@@ -78,33 +79,42 @@ export class SimulationRoomsUi {
     const message = this.query<HTMLTextAreaElement>("[data-room-compose] textarea").value.trim();
     if (message && !this.busy) void this.send(message);
   };
+  private readonly keydown = (event: KeyboardEvent) => {
+    const target = event.target as HTMLTextAreaElement;
+    if (!target.matches("[data-room-compose] textarea") || event.key !== "Enter" || event.shiftKey || event.isComposing) return;
+    event.preventDefault();
+    target.form?.requestSubmit();
+  };
   private readonly change = (event: Event) => {
     const target = event.target as HTMLSelectElement;
-    if (target.matches("[data-stage-source]")) { this.query("[data-streamweaver-frame]").hidden = target.value !== "streamweaver"; this.query("[data-arcade-frame]").hidden = target.value !== "arcade"; this.query("[data-tag-frame]").hidden = target.value !== "tag"; this.query("[data-public-frame]").hidden = target.value !== "public"; this.render(); }
+    if (target.matches("[data-stage-output]")) { this.output = target.value === "personal" ? "personal" : "public"; this.syncOutputFrame(true); this.render(); }
     if (target.matches("[data-stream-provider]")) { this.provider = target.value === "kick" ? "kick" : "twitch"; this.render(); }
   };
-  private readonly overlayReady = (event: MessageEvent) => { if (event.origin === window.location.origin && [this.query<HTMLIFrameElement>("[data-streamweaver-frame]").contentWindow,this.query<HTMLIFrameElement>("[data-tag-frame]").contentWindow,this.query<HTMLIFrameElement>("[data-arcade-frame]").contentWindow].includes(event.source as Window) && ["spmt.simulation.tag.ready","spmt.simulation.arcade.ready","spmt.simulation.streamweaver.ready"].includes(String(record(event.data).type))) this.updateOverlay(true); };
   constructor(private readonly root: HTMLElement, private readonly client: SpmtClient, private readonly tenantId: string, private readonly options: SimulationRoomsUiOptions = {}) {
-    root.innerHTML = `<style>${CSS}</style><div class="simulation-content"><header class="simulation-toolbar"><div><h2>Preview Studio</h2><p class="simulation-help">One room across your apps. Test chat, commands and Discord actions.</p></div><div class="simulation-actions"><button type="button" data-room-create>Create room</button><button type="button" data-room-back>All rooms</button><button type="button" data-room-refresh>Refresh</button></div></header><form class="simulation-actions" data-create-room hidden><label>Room name <input name="roomName" maxlength="120" required placeholder="Live test"></label><button type="submit">Create and open</button></form><p class="simulation-status" role="status"></p><div data-room-actions></div><div class="simulation-rooms-list" data-room-list hidden></div><div class="simulation-studio" data-studio><div class="simulation-actions" role="tablist" aria-label="Preview channel"><button type="button" role="tab" data-tab="twitch">Stream</button><button type="button" role="tab" data-tab="discord">Discord</button></div><div data-stream-tools class="simulation-actions"><label>Overlay <select data-stage-source><option value="streamweaver">StreamWeaver · test state</option><option value="arcade">Arcade games · test state</option><option value="tag">Nebula Arcade Tag · test state</option><option value="public">Saved stream overlay · live view</option></select></label><label>Chat <select data-stream-provider><option value="twitch">Twitch</option><option value="kick">Kick</option></select></label></div><div class="simulation-stage" data-stage><iframe data-streamweaver-frame src="/simulation-rooms/streamweaver" title="StreamWeaver simulation widgets" allow="autoplay"></iframe><iframe data-arcade-frame hidden src="/simulation-rooms/arcade" title="Arcade simulation widgets"></iframe><iframe data-tag-frame hidden src="/simulation-rooms/tag" title="Nebula Arcade Tag simulation overlay"></iframe><iframe data-public-frame hidden title="Saved stream overlay"></iframe><span class="simulation-stage-caption" data-stage-caption>16:9 · waiting for test input</span></div><p class="simulation-help" data-stage-help>Nebula Arcade Tag uses its live renderer with test state. Choose a game inside the stage or let it follow chat activity.</p><section class="simulation-chat-panel"><div class="simulation-chat-title"></div><div class="simulation-conversation" role="log" aria-label="Room conversation" aria-live="polite"></div><div data-discord-modal hidden></div><form class="simulation-compose" data-room-compose><label><span class="simulation-help" data-compose-label>Message or !command</span><textarea name="message" rows="1" maxlength="5000" required placeholder="Type a message or !command…"></textarea></label><button type="submit">Send</button></form></section><p class="simulation-help">Uses installed app handlers with separate test state. Nothing posts to live channels. Discord application buttons and forms use the same handlers as Discord.</p></div></div>`;
-    root.addEventListener("click", this.click); root.addEventListener("submit", this.submit); root.addEventListener("change", this.change); window.addEventListener("message", this.overlayReady);
+    root.innerHTML = `<style>${CSS}</style><div class="simulation-content"><header class="simulation-toolbar"><div><h2>Preview Studio</h2><p class="simulation-help">One room across your apps. Test chat, commands and Discord actions.</p></div><div class="simulation-actions"><button type="button" data-room-create>Create room</button><button type="button" data-room-back>All rooms</button><button type="button" data-room-refresh>Refresh</button></div></header><form class="simulation-actions" data-create-room hidden><label>Room name <input name="roomName" maxlength="120" required placeholder="Live test"></label><button type="submit">Create and open</button></form><p class="simulation-status" role="status"></p><div data-room-actions></div><div class="simulation-rooms-list" data-room-list hidden></div><div class="simulation-studio" data-studio><div class="simulation-actions" role="tablist" aria-label="Preview channel"><button type="button" role="tab" data-tab="twitch">Stream</button><button type="button" role="tab" data-tab="discord">Discord</button></div><div data-stream-tools class="simulation-actions"><label>Overlay Bay output <select data-stage-output><option value="public">Public · current OBS profile</option><option value="personal">Personal · current private profile</option></select></label><label>Chat <select data-stream-provider><option value="twitch">Twitch</option><option value="kick">Kick</option></select></label></div><div class="simulation-stage" data-stage><iframe data-output-frame title="Canonical Overlay Bay output" allow="autoplay"></iframe><span class="simulation-stage-caption" data-stage-caption></span></div><p class="simulation-help" data-stage-help>This is the same canonical Overlay Bay output used by OBS or your signed-in workspace. Change profiles in Overlay Bay, then refresh the room if needed.</p><section class="simulation-chat-panel"><div class="simulation-chat-title"></div><div class="simulation-conversation" role="log" aria-label="Room conversation" aria-live="polite"></div><div data-discord-modal hidden></div><form class="simulation-compose" data-room-compose><label><span class="simulation-help" data-compose-label>Message or !command</span><textarea name="message" rows="1" maxlength="5000" required placeholder="Type a message or !command…"></textarea></label><button type="submit">Send</button></form><p class="simulation-help">Enter sends · Shift+Enter starts a new line</p></section><p class="simulation-help">Uses installed app handlers with separate test state. Nothing posts to live channels. Discord application buttons and forms use the same handlers as Discord.</p></div></div>`;
+    root.addEventListener("click", this.click); root.addEventListener("submit", this.submit); root.addEventListener("change", this.change); root.addEventListener("keydown", this.keydown);
+    this.syncOutputFrame(true);
     this.render();
   }
   private query<T extends HTMLElement = HTMLElement>(selector: string) { return this.root.querySelector<T>(selector)!; }
-  open(roomId?: string) { const previous = this.selected; this.selected = roomId ?? ""; if (previous === this.selected) { if(this.active)void this.refresh(true); return; } if (previous !== this.selected) { this.query<HTMLIFrameElement>("[data-streamweaver-frame]").src = "/simulation-rooms/streamweaver"; this.query<HTMLIFrameElement>("[data-tag-frame]").src = "/simulation-rooms/tag"; this.query<HTMLIFrameElement>("[data-arcade-frame]").src = "/simulation-rooms/arcade"; } this.events = []; this.modalSignature = ""; this.query("[data-discord-modal]").hidden = true; this.historySignature = ""; this.overlaySignature = ""; this.status = ""; this.query<HTMLTextAreaElement>("[data-room-compose] textarea").value = ""; this.render(); if (this.active) void this.refresh(true); }
+  open(roomId?: string) { const previous = this.selected; this.selected = roomId ?? ""; if (previous === this.selected) { if(this.active)void this.refresh(true); return; } this.events = []; this.modalSignature = ""; this.query("[data-discord-modal]").hidden = true; this.historySignature = ""; this.status = ""; this.query<HTMLTextAreaElement>("[data-room-compose] textarea").value = ""; this.syncOutputFrame(true); this.render(); if (this.active) void this.refresh(true); }
   setVisible(visible: boolean) {
     if (visible === this.active) return; this.active = visible;
     if (this.timer !== undefined) window.clearInterval(this.timer); this.timer = undefined;
     if (visible) { void this.refresh(true); this.timer = window.setInterval(() => { if (!document.hidden) void this.refresh(); }, 2000); }
     else { this.generation++; this.loading = false; }
   }
-  destroy() { this.setVisible(false); this.generation++; this.root.removeEventListener("click", this.click); this.root.removeEventListener("submit", this.submit); this.root.removeEventListener("change", this.change); window.removeEventListener("message", this.overlayReady); }
+  destroy() { this.setVisible(false); this.generation++; this.root.removeEventListener("click", this.click); this.root.removeEventListener("submit", this.submit); this.root.removeEventListener("change", this.change); this.root.removeEventListener("keydown", this.keydown); }
   private async refresh(force = false) {
     if (this.loading && !force) return;
     const generation = ++this.generation, roomId = this.selected; this.loading = true;
     try {
-      const [rooms, events, job] = await Promise.all([this.client.listSimulationRooms(this.tenantId, 200), roomId ? this.client.listSimulationRoomEvents(this.tenantId, { roomId, limit: 200 }) : Promise.resolve([]), this.pendingJob ? this.client.getExecutionJob(this.tenantId, this.pendingJob) : Promise.resolve(undefined)]);
+      const [rooms, events, job, workspace, outputs] = await Promise.all([this.client.listSimulationRooms(this.tenantId, 200), roomId ? this.client.listSimulationRoomEvents(this.tenantId, { roomId, limit: 200 }) : Promise.resolve([]), this.pendingJob ? this.client.getExecutionJob(this.tenantId, this.pendingJob) : Promise.resolve(undefined), this.client.getWorkspaceProfile(this.tenantId), this.client.getTenantOverlayOutputs(this.tenantId)]);
       if (generation !== this.generation) return;
       this.rooms = rooms; this.events = events;
+      const selected = this.output === "personal" ? workspace.activePersonalOverlaySceneId ?? outputs.personal?.sceneId : workspace.activePublicOverlaySceneId ?? outputs.public?.sceneId;
+      const signature = `${this.output}:${workspace.revision}:${selected ?? ""}:${this.output === "personal" ? workspace.personalOverlayEnabled !== false : true}`;
+      if (signature !== this.outputSignature) { this.outputSignature = signature; this.syncOutputFrame(true); }
       if (job) {
         if (["succeeded", "failed", "dead-letter", "cancelled"].includes(job.state)) { this.pendingJob = undefined; this.busy = false; this.status = job.state === "succeeded" ? "" : job.error?.message || "Input did not complete."; }
         else this.status = job.state === "queued" ? "Waiting for the room worker…" : "Apps are processing your message…";
@@ -142,16 +152,10 @@ export class SimulationRoomsUi {
   private actions(roomId: string, includeOpen: boolean) {
     return `<div class="simulation-actions">${includeOpen ? `<button type="button" data-room-open="${escapeHtml(roomId)}">Open room</button>` : ""}${this.options.canDelete && this.rooms.some(room => room.roomId === roomId) ? `<button type="button" data-room-delete="${escapeHtml(roomId)}">Delete room</button>` : ""}${this.options.onPin ? `<select aria-label="Workspace slot">${[0,1,2].map(slot => `<option value="${slot}">Slot ${slot + 1}</option>`).join("")}</select><button type="button" data-room-pin="${escapeHtml(roomId)}">Pin to Workspace</button>` : ""}</div>`;
   }
-  private updateOverlay(force = false) {
-    const tag = record(record(this.events.find(item => record(record(item.payload).data).renderer === "nebula-tag")?.payload).data);
-    const arcade = record(record(this.events.find(item => record(record(item.payload).data).renderer === "nebula-arcade")?.payload).data);
-    const streamweaver=record(record(this.events.find(item=>record(record(item.payload).data).renderer==="streamweaver")?.payload).data);
-    const signature = JSON.stringify([tag,arcade,streamweaver]);
-    if (!force && signature === this.overlaySignature) return;
-    this.overlaySignature = signature;
-    if (streamweaver.snapshot) this.query<HTMLIFrameElement>("[data-streamweaver-frame]").contentWindow?.postMessage({type:"spmt.simulation.streamweaver",snapshot:streamweaver.snapshot},window.location.origin);
-    if (tag.snapshot) this.query<HTMLIFrameElement>("[data-tag-frame]").contentWindow?.postMessage({ type: "spmt.simulation.tag", snapshot: tag.snapshot, messages: tag.messages ?? [] }, window.location.origin);
-    if (arcade.inputs) this.query<HTMLIFrameElement>("[data-arcade-frame]").contentWindow?.postMessage({ type: "spmt.simulation.arcade", inputs: arcade.inputs, tabletop: arcade.tabletop, tag }, window.location.origin);
+  private syncOutputFrame(force = false) {
+    const frame = this.query<HTMLIFrameElement>("[data-output-frame]");
+    const path = `/t/${encodeURIComponent(this.tenantId)}/${this.output}`;
+    if (force || frame.getAttribute("src") !== path) frame.src = path;
   }
   private history() {
     const messages = new Map<string, Record<string, unknown>>();
@@ -192,11 +196,8 @@ export class SimulationRoomsUi {
     if (!this.selected) this.query("[data-room-list]").innerHTML = this.rooms.map(item => `<article class="simulation-room-card"><strong>${escapeHtml(item.name)}</strong><small>${item.eventCount} messages · ${escapeHtml(item.lanes.join(", "))}</small>${this.actions(item.roomId, true)}</article>`).join("");
     this.root.querySelectorAll<HTMLButtonElement>("[data-tab]").forEach(button => button.setAttribute("aria-selected", String((button.dataset.tab === "discord") === discord)));
     this.query("[data-stage]").hidden = discord; this.query("[data-stream-tools]").hidden = discord; this.query("[data-stage-help]").hidden = discord;
-    const publicView = this.query<HTMLSelectElement>("[data-stage-source]").value === "public";
-    const publicFrame = this.query<HTMLIFrameElement>("[data-public-frame]");
-    if (publicView && !publicFrame.getAttribute("src")) publicFrame.src = `/t/${encodeURIComponent(this.tenantId)}/public`;
-    this.query("[data-stage-help]").textContent = publicView ? "Your saved stream composite. This view reads live state; room commands do not change it. Choose an app preview to see its test overlay respond." : "Uses the same widgets as the stream overlay, driven by this room’s test input.";
-    this.query("[data-stage-caption]").hidden = publicView || this.events.some(event => record(record(event.payload).data).renderer === "nebula-tag" || record(record(event.payload).data).renderer === "streamweaver");
+    this.query<HTMLSelectElement>("[data-stage-output]").value = this.output;
+    this.query("[data-stage-caption]").textContent = this.output === "personal" ? "Personal · current private profile" : "Public · current OBS profile";
     this.query(".simulation-chat-panel").dataset.provider = this.provider;
     this.query(".simulation-chat-title").textContent = discord ? "# simulation-chat · Discord" : `${this.provider === "kick" ? "Kick" : "Twitch"} chat · 16:9`;
     this.query("[data-compose-label]").textContent = discord ? "Message, !command or action (e.g. deploy admin calendar)" : "Message or !command";
@@ -204,7 +205,6 @@ export class SimulationRoomsUi {
     const history = this.history(), log = this.query(".simulation-conversation");
     if (history !== this.historySignature) { const bottom = log.scrollHeight - log.scrollTop - log.clientHeight < 70; log.innerHTML = history; this.historySignature = history; if (bottom) log.scrollTop = log.scrollHeight; }
     this.root.querySelectorAll<HTMLButtonElement>("[data-create-room] button,[data-room-create],[data-room-compose] button,[data-room-actions] button,[data-room-list] button,[data-discord-action],[data-discord-form] button").forEach(button => { button.disabled = this.busy; });
-    this.updateOverlay();
   }
 }
 

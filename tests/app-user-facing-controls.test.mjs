@@ -67,6 +67,7 @@ test("StreamWeaver exposes a wired Voice Commander, searchable bot catalog, inte
     const browserSource = page.match(/<script>([\s\S]*)<\/script>/)?.[1];
     assert.ok(browserSource); assert.doesNotThrow(() => new Function(browserSource));
     assert.match(browserSource, /Finish your flow/); assert.match(browserSource, /data-flow-intent="enable"/); assert.match(browserSource, /data-flow-intent="publish"/);
+    assert.match(browserSource, /Bot & Persona unavailable/); assert.match(browserSource, /Active avatar/); assert.match(browserSource, /streamweaver:avatar-updated/); assert.match(browserSource, /Use as active avatar/);
     assert.doesNotMatch(browserSource, /window.fetch=|nativeFetch=/, "the page controller does not replace browser fetch");
     const control = await (await fetch(`${streamBase}/api/streamweaver/control`, { headers: { cookie } })).json();
     assert.equal(control.role, "owner"); assert.equal(control.operationMode, "read-only"); assert.equal(control.connections[0].provider, "twitch"); assert.equal(control.botRuntime.publicCommands, "connected"); assert.equal(control.botRuntime.suiteActions, "partial"); assert.ok(control.botActions.length >= 20); assert.equal(control.botActions.find((action) => action.id === "sw.image.generate").availability, "connected"); assert.ok(control.botActions.some((action) => action.policy === "simulated")); assert.ok(control.botActions.every((action) => action.policy !== "blocked"));
