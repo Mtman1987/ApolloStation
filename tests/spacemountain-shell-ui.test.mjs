@@ -9,6 +9,7 @@ const base = readFileSync(new URL("../apps/spacemountain/src/shell-ui-base.ts", 
 const wrapper = readFileSync(new URL("../apps/spacemountain/src/shell-ui.ts", import.meta.url), "utf8");
 const overlay = readFileSync(new URL("../apps/spacemountain/src/overlay-bay-ui.ts", import.meta.url), "utf8");
 const overlayScenes = readFileSync(new URL("../apps/spacemountain/src/overlay-scenes.ts", import.meta.url), "utf8");
+const simulation = readFileSync(new URL("../apps/spacemountain/src/simulation-rooms-ui.ts", import.meta.url), "utf8");
 const source = `${base}\n${wrapper}\n${overlay}`;
 
 test("SpaceMountain wrapper preserves the proven shell and upgrades only Overlay Bay", () => {
@@ -48,6 +49,20 @@ test("Commlink retains saved ChatSpaces, Desks, feed, compose, search, pop-out a
   assert.match(base, /this\.snapshot\.commlinkRecipients/);
   assert.match(base, /occurredAt/);
   assert.doesNotMatch(base, /provider.*(?:accessToken|refreshToken)/);
+  assert.match(base, /Enter sends · Shift\+Enter starts a new line/);
+  assert.match(base, /event\.key !== "Enter" \|\| event\.shiftKey \|\| event\.isComposing/);
+  assert.match(base, /commlinkComposer\.requestSubmit\(\)/);
+});
+
+test("Simulation Rooms mirror only the canonical Public or Personal Overlay Bay output", () => {
+  assert.match(simulation, /Public · current OBS profile/);
+  assert.match(simulation, /Personal · current private profile/);
+  assert.match(simulation, /data-stage-output/);
+  assert.match(simulation, /getWorkspaceProfile/);
+  assert.match(simulation, /getTenantOverlayOutputs/);
+  assert.match(simulation, /`\/t\/\$\{encodeURIComponent\(this\.tenantId\)\}\/\$\{this\.output\}`/);
+  assert.doesNotMatch(simulation, /data-stage-source|data-streamweaver-frame|data-arcade-frame|data-tag-frame/);
+  assert.match(simulation, /Enter sends · Shift\+Enter starts a new line/);
 });
 
 test("Stellar Core and Mission Control keep their accepted roles", () => {

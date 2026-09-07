@@ -317,7 +317,13 @@ export class SpaceMountainShellUi {
       this.render();
     });
     root.querySelector<HTMLFormElement>("[data-commlink-mail-form]")?.addEventListener("submit", (event) => { event.preventDefault(); void this.submitCommlink(true); });
-    root.querySelector<HTMLFormElement>("[data-commlink-compose]")?.addEventListener("submit", (event) => { event.preventDefault(); void this.submitCommlink(false); });
+    const commlinkComposer = root.querySelector<HTMLFormElement>("[data-commlink-compose]");
+    commlinkComposer?.addEventListener("submit", (event) => { event.preventDefault(); void this.submitCommlink(false); });
+    commlinkComposer?.querySelector<HTMLTextAreaElement>("textarea[name=message]")?.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" || event.shiftKey || event.isComposing) return;
+      event.preventDefault();
+      commlinkComposer.requestSubmit();
+    });
     root.querySelectorAll<HTMLElement>("[data-open-conversation]").forEach((node) => node.addEventListener("click", () => { const item = this.snapshot.conversations.find((conversation) => conversation.id === node.dataset.openConversation); if (item) this.options.onOpenConversation?.(item); }));
     root.querySelector<HTMLFormElement>("[data-commlink-search]")?.addEventListener("submit", (event) => { event.preventDefault(); const query = String(new FormData(event.currentTarget as HTMLFormElement).get("query") ?? "").trim(); if (query) this.options.onSearchCommlink?.(query); });
     root.querySelector<HTMLFormElement>("[data-stella-form]")?.addEventListener("submit", (event) => { event.preventDefault(); const form = event.currentTarget as HTMLFormElement; const values = new FormData(form); const message = String(values.get("message") ?? "").trim(); const rawRoute = String(values.get("routingPreference") ?? "automatic"); const route = rawRoute === "companion" || rawRoute === "hosted" ? rawRoute : "automatic"; const remember = values.get("remember") === "on"; if (message) { this.options.onInvokeStella?.(message, `stella-${this.snapshot.userId}`, route, remember); form.reset(); } });
@@ -499,7 +505,7 @@ export class SpaceMountainShellUi {
     const toggle = this.workspaceTray?.querySelector<HTMLInputElement>("[data-personal-overlay-toggle]");
     if (toggle) { toggle.checked = this.personalOverlayVisible; toggle.disabled = this.overlaySaving || !this.options.onSaveWorkspace || !sessionHasScope(this.snapshot.session, "workspace:write"); }
     const state = this.workspaceTray?.querySelector<HTMLElement>("[data-personal-overlay-state]");
-    if (state) state.textContent = this.personalOverlayVisible ? "On" : "Off";
+    if (state) state.textContent = !this.personalOverlayVisible ? "Off" : sceneId ? "On" : "On · choose a profile";
   }
 
   private async savePersonalOverlay(patch: Record<string, unknown>) {
@@ -759,7 +765,7 @@ export class SpaceMountainShellUi {
         <footer><button data-commlink-read-all>Mark all read</button><button data-commlink-popout>Pop out</button></footer>
       </aside>
       <div class="cosmo-workspace"><header class="cosmo-topbar"><div><span>${shadowRoomId ? "SHADOW ROOM · DISCORD" : state.view === "desk" ? "DESK" : "COMMLINK"}</span><h1>${escapeHtml(state.view === "desk" ? activeDesk.name : shadowRoomId ? String(writable!.title) : activeSpace.name)}</h1></div><div class="cosmo-actions"><button data-commlink-toggle-views aria-expanded="${this.commlinkSidebarOpen}" class="cosmo-mobile-views">Spaces</button>${shadowRoomId ? `<button data-commlink-open-room="${escapeHtml(shadowRoomId)}">Open room</button>` : ""}<button class="primary" data-commlink-new-mail>New message</button></div></header>
-      ${state.view === "desk" ? `<section class="cosmo-desk-grid">${panels}</section>` : `<section class="cosmo-focus"><div class="cosmo-feed-pane"><div class="cosmo-feed" data-commlink-local="feed:${escapeHtml(shadowRoomId ?? activeSpace.id)}:${state.filter}" aria-label="Message history" tabindex="0">${feed}</div><form class="cosmo-composer" data-commlink-compose data-commlink-local="reply:${escapeHtml(destinationId)}"><label>${shadowRoomId ? "Send to" : "Reply to"}<select data-commlink-destination aria-label="Message destination">${destinations.length ? `${!destinationId ? `<option value="" selected disabled>Choose a conversation or shadow room</option>` : ""}` + destinations.map((conversation) => `<option value="${escapeHtml(String(conversation.id))}" ${conversation.id === destinationId ? "selected" : ""}>${conversation.shadowRoomId ? "Shadow · " : ""}${escapeHtml(recordText(conversation, ["title"]) ?? "Private conversation")}</option>`).join("") : `<option value="">No conversations yet</option>`}</select></label><div class="cosmo-message-input"><textarea name="message" maxlength="8000" rows="2" ${writable ? "required" : "disabled"} placeholder="${shadowRoomId ? "Message this shadow room…" : writable ? "Write a reply…" : "Start a private message or choose a shadow room"}"></textarea><button class="primary" ${writable && !this.commlinkSending ? "" : "disabled"}>${this.commlinkSending ? "Sending…" : "Send"}</button></div><p data-commlink-send-status role="status">${escapeHtml(this.commlinkSendStatus)}</p></form></div></section>`}
+      ${state.view === "desk" ? `<section class="cosmo-desk-grid">${panels}</section>` : `<section class="cosmo-focus"><div class="cosmo-feed-pane"><div class="cosmo-feed" data-commlink-local="feed:${escapeHtml(shadowRoomId ?? activeSpace.id)}:${state.filter}" aria-label="Message history" tabindex="0">${feed}</div><form class="cosmo-composer" data-commlink-compose data-commlink-local="reply:${escapeHtml(destinationId)}"><label>${shadowRoomId ? "Send to" : "Reply to"}<select data-commlink-destination aria-label="Message destination">${destinations.length ? `${!destinationId ? `<option value="" selected disabled>Choose a conversation or shadow room</option>` : ""}` + destinations.map((conversation) => `<option value="${escapeHtml(String(conversation.id))}" ${conversation.id === destinationId ? "selected" : ""}>${conversation.shadowRoomId ? "Shadow · " : ""}${escapeHtml(recordText(conversation, ["title"]) ?? "Private conversation")}</option>`).join("") : `<option value="">No conversations yet</option>`}</select></label><div class="cosmo-message-input"><textarea name="message" maxlength="8000" rows="2" ${writable ? "required" : "disabled"} placeholder="${shadowRoomId ? "Message this shadow room…" : writable ? "Write a reply…" : "Start a private message or choose a shadow room"}"></textarea><button type="submit" class="primary" ${writable && !this.commlinkSending ? "" : "disabled"}>${this.commlinkSending ? "Sending…" : "Send"}</button></div><p class="cosmo-help">Enter sends · Shift+Enter starts a new line</p><p data-commlink-send-status role="status">${escapeHtml(this.commlinkSendStatus)}</p></form></div></section>`}
       <dialog class="cosmo-mail-dialog" data-commlink-mail-dialog data-commlink-local="mail-dialog"><form data-commlink-mail-form data-commlink-local="mail"><header><h2>New message</h2><button type="button" data-commlink-mail-cancel aria-label="Close">×</button></header><label>Recipients<select name="recipientUserIds" multiple required size="${Math.min(6, Math.max(2, this.snapshot.commlinkRecipients.length))}">${this.snapshot.commlinkRecipients.map((recipient) => `<option value="${escapeHtml(recipient.userId)}">${escapeHtml(recipient.displayName)} · @${escapeHtml(recipient.username)}</option>`).join("")}</select></label><label>Subject<input name="subject" maxlength="200" placeholder="Optional subject"></label><label>Message<textarea name="message" maxlength="8000" rows="7" required placeholder="Write a private message…"></textarea></label><p data-commlink-mail-status role="status">${escapeHtml(this.commlinkMailStatus)}</p><footer><small>${this.snapshot.commlinkRecipients.length ? "Select people in this workspace." : "No other workspace members are available."}</small><button class="primary" ${this.snapshot.commlinkRecipients.length && !this.commlinkMailSending ? "" : "disabled"}>${this.commlinkMailSending ? "Sending…" : "Send message"}</button></footer></form></dialog>
       </div></section></section>`;
   }
@@ -874,11 +880,16 @@ export class SpaceMountainShellUi {
     const form = this.options.root.querySelector<HTMLFormElement>(selector);
     const textarea = form?.querySelector<HTMLTextAreaElement>("textarea[name=message]");
     const text = textarea?.value.trim() ?? "";
-    if (!form || !text) return;
+    if (!form || !text) { this.commlinkSendStatus = "Type a message before sending."; this.render(); return; }
     const conversation = this.activeCommlinkConversation();
     const recipients = [...form.querySelectorAll<HTMLOptionElement>("select[name=recipientUserIds] option")].filter((option) => option.selected).map((option) => option.value);
     const subject = form.querySelector<HTMLInputElement>("input[name=subject]")?.value.trim() ?? "";
-    if (mail ? !recipients.length : !conversation) return;
+    if (mail ? !recipients.length : !conversation) {
+      if (mail) this.commlinkMailStatus = "Choose at least one recipient.";
+      else this.commlinkSendStatus = "Choose a conversation or Shadow Room before sending.";
+      this.render();
+      return;
+    }
     const key = form.dataset.commlinkLocal!;
     const original = textarea!.value;
     if (mail) { this.commlinkMailSending = true; this.commlinkMailStatus = "Sending…"; }
