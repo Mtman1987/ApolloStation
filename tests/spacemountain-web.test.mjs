@@ -8,6 +8,7 @@ import test from "node:test";
 import { createSpmtService, validateSandboxServiceEnvironment } from "../apps/spmt-service/dist/index.js";
 import { createSpaceMountainWebHost, validateSandboxWebEnvironment } from "../apps/spacemountain-web/dist/server.js";
 import { nebulaArcadeCatalogRegistration } from "../apps/nebula-arcade/dist/index.js";
+import { streamweaverCatalogRegistration } from "../apps/streamweaver/dist/index.js";
 import { SpmtClient } from "../packages/sdk/dist/index.js";
 
 async function withSandbox(run) {
@@ -547,4 +548,26 @@ test('Social Stream ingress forwards only its bridge credential without relaxing
 
 test('public and developer ecosystem docs serve the canonical guides with honest parity status',async()=>{
  await withSandbox(async({base})=>{const guide=await fetch(base+'/docs');assert.equal(guide.status,200);assert.match(await guide.text(),/SPMT XP price|Equivalent XP price/);const developer=await fetch(base+'/docs/developers/streamweaver');assert.equal(developer.status,200);assert.match(await developer.text(),/public-memory\/context/);const parity=await fetch(base+'/docs/streamweaver/parity');assert.equal(parity.status,200);const parityText=await parity.text();assert.match(parityText,/Private assistant control functions/);assert.match(parityText,/Native Discord DM transport/);assert.equal((await fetch(base+'/docs/../../../package.json')).status,404);});
+});
+
+test('assistant browser routes reach canonical handlers and retain session and origin checks', async () => {
+  await withSandbox(async ({spmt,base}) => {
+    spmt.control.registerApp(streamweaverCatalogRegistration('https://streamweaver.example.com'));
+    spmt.authority.ensureUser('assistant-route-owner');
+    spmt.control.registerTenant({tenantId:'assistant-routes',ownerUserId:'assistant-route-owner',displayName:'Assistant routes'});
+    const token=spmt.auth.issueHumanSession({userId:'assistant-route-owner',scopes:['assistants:read','assistants:invoke'],tenantIds:['assistant-routes']}).accessToken;
+    const headers={cookie:'spmt_token='+encodeURIComponent(token),origin:base,'x-spmt-tenant':'assistant-routes','content-type':'application/json','idempotency-key':'route-check'};
+    for(const path of ['conversation','conversation/feed','public-memory','streams']) {
+      const response=await fetch(base+'/v1/assistant/'+path,{headers});assert.equal(response.status,200,path+': '+await response.clone().text());assert.match(response.headers.get('content-type'),/json/);
+    }
+    const clear=await fetch(base+'/v1/assistant/conversation/clear',{method:'POST',headers,body:'{}'});assert.equal(clear.status,200);assert.deepEqual((await clear.json()).thread.turns,[]);
+    const control=await fetch(base+'/v1/assistant/conversation/control',{method:'POST',headers,body:JSON.stringify({id:'missing',action:'delete'})});assert.equal(control.status,400);assert.match((await control.json()).message,/Private reply was not found/);
+    for(const path of ['conversation','conversation/condense','persona/optimize','public-memory/condense']) {
+      const response=await fetch(base+'/v1/assistant/'+path,{method:'POST',headers,body:'{}'});assert.equal(response.status,503,path);assert.match((await response.json()).message,/disabled/);
+    }
+    const job=await fetch(base+'/v1/assistant/jobs/missing',{headers});assert.equal(job.status,400);assert.match((await job.json()).message,/job/i);
+    const unauthenticated=await fetch(base+'/v1/assistant/conversation?tenantId=assistant-routes');assert.equal(unauthenticated.status,401);
+    const wrongOrigin=await fetch(base+'/v1/assistant/conversation/clear',{method:'POST',headers:{...headers,origin:'https://other.example'},body:'{}'});assert.equal(wrongOrigin.status,403);
+    for(const path of ['public-memory/context','conversation/unknown']) assert.equal((await fetch(base+'/v1/assistant/'+path,{headers})).status,404,path);
+  });
 });

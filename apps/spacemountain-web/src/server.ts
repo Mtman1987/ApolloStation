@@ -407,6 +407,9 @@ function nebulaArcadeProxyPath(pathname: string) {
 }
 
 function browserProxyAllowed(method: string, pathname: string) {
+  if (["/v1/assistant/conversation", "/v1/assistant/conversation/feed", "/v1/assistant/public-memory", "/v1/assistant/streams"].includes(pathname)) return method === "GET" || (method === "POST" && pathname === "/v1/assistant/conversation");
+  if (/^\/v1\/assistant\/(conversation\/(control|clear|condense)|public-memory\/(clear|adjust|condense)|persona\/optimize)$/.test(pathname)) return method === "POST";
+  if (/^\/v1\/assistant\/jobs\/[A-Za-z0-9._:-]+$/.test(pathname)) return method === "GET";
   if(pathname==="/v1/identity/providers/youtube/connections")return ["GET","POST"].includes(method);
   if(/^\/v1\/identity\/providers\/youtube\/(start|callback)$/.test(pathname))return method==="GET";
   if(/^\/v1\/commlink\/(operator|filters|ingestion-errors|social-stream)$/.test(pathname))return ["GET","POST"].includes(method);
