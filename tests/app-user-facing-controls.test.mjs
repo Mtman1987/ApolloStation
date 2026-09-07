@@ -229,6 +229,24 @@ test("sandbox private AI drafts reach the shared assistant while chat egress rem
   },{privateAiDraftsEnabled:true,communityAssistant:{status:()=>({availability:'available'}),accept(input){requests.push(input);return{jobId:'draft-test-job',executionTarget:'sprite'};}}});
 });
 
+test("an unavailable AI history source does not blank StreamWeaver pages", async () => {
+  const fetchImpl = async (url, init) => String(url).includes("/v1/jobs?ownerAppId=stellar-core")
+    ? Response.json({ message: "Stellar history is temporarily offline" }, { status: 503 })
+    : fetch(url, init);
+  await fixture(async ({ cookie, streamBase }) => {
+    const response = await fetch(streamBase + "/api/streamweaver/control/flows/ai/jobs", { headers: { cookie } });
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.deepEqual(body.jobs, []);
+    assert.match(body.warning, /1 AI draft history source is temporarily unavailable/);
+    const page = await (await fetch(streamBase)).text();
+    const browserSource = page.match(/<script>([\s\S]*)<\/script>/)?.[1];
+    assert.ok(browserSource);
+    assert.doesNotThrow(() => new Function(browserSource));
+    assert.match(browserSource, /Community flows and persona settings are still ready/);
+  }, { fetchImpl });
+});
+
 test('AI flow history recovers only owned flow jobs and completion preserves edited drafts', async () => {
   await fixture(async ({spmt,cookie,tenantId,streamBase}) => {
     const userId=spmt.store.listTenants().find(t=>t.id===tenantId).ownerUserId;
