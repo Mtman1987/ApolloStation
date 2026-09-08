@@ -20,3 +20,8 @@ test("embedded AppFrame wrappers are transparent before mobile Chromium creates 
   assert.match(wrapper, /frame\.style\.setProperty\("color-scheme", "normal"\)/);
   assert.match(wrapper, /frame\.setAttribute\("allowtransparency", "true"\)/);
 });
+
+test("app surface navigation survives an iframe launch reload", () => {
+  assert.match(wrapper, /this\.applyAppSurfaceManifest\(\);[\s\S]{0,400}this\.openSurfacePage\(this\.activeSurfacePage\);/);
+  assert.match(wrapper, /private openSurfacePage\(pageId: string\)[\s\S]*this\.activeSurfacePage = pageId;\s*this\.syncSurfacePageState\(\);[\s\S]*type: "page\.open"/);
+});

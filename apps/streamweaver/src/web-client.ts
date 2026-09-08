@@ -118,7 +118,7 @@ if(a.type==='send-chat')return area('Reply text','text',c.text,'data-config="tex
   }catch(e){status(e.message,true)}finally{form.dataset.busy='false';if(submit)submit.disabled=false}})()});
   window.addEventListener('spmt:snapshot',event=>{platform=event.detail||{};if(!initialized)void refresh();else drawOverlays()});
   window.addEventListener('streamweaver:avatar-updated',event=>{if(!control)return;control.appearance=event.detail||{};drawPersona();status('Active avatar updated.');});
-  window.addEventListener('keydown',e=>{if(e.key.toLowerCase()==='v'&&!e.ctrlKey&&!e.altKey&&!e.metaKey&&!e.repeat&&!e.target.closest('input,textarea,select,[contenteditable="true"]')&&document.body.dataset.page==='voice')slots('voice').querySelector('[data-sw-action="mic"]')?.click()});
+  window.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing&&e.target.matches('[data-sw-form="voice"] textarea[name="message"]')){e.preventDefault();e.target.form?.requestSubmit();return}if(e.key.toLowerCase()==='v'&&!e.ctrlKey&&!e.altKey&&!e.metaKey&&!e.repeat&&!e.target.closest('input,textarea,select,[contenteditable="true"]')&&document.body.dataset.page==='voice')slots('voice').querySelector('[data-sw-action="mic"]')?.click()});
   setTimeout(()=>void refresh(),0);
 })();
 `; }
