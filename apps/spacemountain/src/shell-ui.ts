@@ -106,6 +106,10 @@ export class SpaceMountainShellUi {
         const home = message.manifest.pages.find((page) => page.home)?.id ?? "home";
         if (!message.manifest.pages.some((page) => page.id === this.activeSurfacePage)) this.activeSurfacePage = home;
         this.applyAppSurfaceManifest();
+        // The iframe can publish once before syncAppFrame replaces its launch URL and
+        // again after the final document loads. Re-open the remembered page so a dock
+        // click made during that handoff cannot disappear into the old document.
+        this.openSurfacePage(this.activeSurfacePage);
       } else if (message.appId === appId && message.type === "page.changed") {
         this.activeSurfacePage = message.pageId;
         this.syncSurfacePageState();
@@ -257,6 +261,8 @@ export class SpaceMountainShellUi {
     const manifest = this.surfaceManifest;
     const frame = this.appFrame;
     if (!manifest || !frame || !manifest.pages.some((page) => page.id === pageId)) return;
+    this.activeSurfacePage = pageId;
+    this.syncSurfacePageState();
     frame.contentWindow?.postMessage({ protocol: "spmt.surface", version: 1, type: "page.open", appId: manifest.appId, pageId }, this.appFrameOrigin);
   }
 
