@@ -51,6 +51,8 @@ test("generic product apps keep their app-owned scene while shell controls layou
   assert.match(source, /\.owned \.home\{height:100%!important;min-height:0!important;overflow:hidden!important\}/);
   assert.match(source, /\.owned \.app-page\{height:100%!important;min-height:0!important;overflow:auto!important/);
   assert.match(source, /data-spmt-surface-shortcut/);
+  assert.match(source, /const pageSelector='\.home\[data-page\],\.app-page\[data-page\],\[data-hmo-view-panel\]'/);
+  assert.doesNotMatch(source, /querySelectorAll\('\[data-page\],\[data-hmo-view-panel\]'\)/);
   assert.match(source, /scrollbar-width:thin/);
   assert.match(source, /::-webkit-scrollbar\{width:4px;height:4px\}/);
 });
