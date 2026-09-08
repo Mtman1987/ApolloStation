@@ -1,10 +1,10 @@
 import {TikTokLiveIngestor,createTikTokConnection} from "./tiktok-live.js";
 import {StreamWeaverTikTokStore} from "@spmt/streamweaver";
 import { SimulationRoomRuntime, SimulationRoomWorker } from "./simulation-runtime.js";
-import { basename, isAbsolute, dirname, join } from "node:path";
+import { basename, isAbsolute, dirname, join, resolve } from "node:path";
 import { createSpmtCommlinkLiveChatConsumer } from "@spmt/commlink-core";
 import { SpmtClient } from "@spmt/sdk";
-import { PollinationsStreamWeaverImageProvider, CloudflareStreamWeaverImageProvider, EdenStreamWeaverImageProvider, StreamWeaverGenerationStore, NodeSeaArtCommandRunner, SeaArtCliProvider, StreamWeaverImageGenerationService, StreamWeaverImageWorker, StreamWeaverProviderRuntime, StreamWeaverSuiteActionJobExecutor, type StreamWeaverBotActionExecutorV1 } from "@spmt/streamweaver";
+import { PollinationsStreamWeaverImageProvider, CloudflareStreamWeaverImageProvider, EdenStreamWeaverImageProvider, StreamWeaverGenerationStore, NodeSeaArtCommandRunner, SeaArtCliProvider, StreamWeaverImageGenerationService, StreamWeaverImageWorker, StreamWeaverProviderRuntime, StreamWeaverSuiteActionJobExecutor, StreamWeaverAvatarWorker, MeshyAvatarProvider, KeenToolsAvatarProvider, BlenderAvatarGeometry, StreamWeaverRuntimeSettingsStore, type StreamWeaverBotActionExecutorV1 } from "@spmt/streamweaver";
 import { NebulaArcadeProviderRuntime, loadNebulaArcadeProviderConfig, type NebulaArcadeProviderConfigV1, type NebulaDiscordDashboardEgressV1 } from "@spmt/nebula-arcade";
 import { ChatGatewayRuntime, SqliteChatGatewayStore, createShadowChatProviderSenders, type ChatGatewayConsumerV1 } from "./index.js";
 import { ChatProviderConnectionSupervisor, SqliteProviderConnectionStore, type ProviderConnectionConfigV1 } from "./connection-supervisor.js";
@@ -22,7 +22,7 @@ export interface ChatGatewayWorkerEnvironmentV1 {
   workerId: string;
   connections: ProviderConnectionConfigV1[];
   reconcileMs: number;
-  streamweaver?: { databasePath: string; credential: string; image?: { token: string; modelNo: string; modelVerNo: string; binary: string; edenKey?:string;edenModel?:string;cloudflareAccountId?:string;cloudflareToken?:string;pollinationsToken?:string } };
+  streamweaver?: { databasePath: string; credential: string; image?: { token: string; modelNo: string; modelVerNo: string; binary: string; edenKey?:string;edenModel?:string;cloudflareAccountId?:string;cloudflareToken?:string;pollinationsToken?:string };avatar?:{meshyKey:string;keenToolsKey:string;genericBodyPaths:string[];blenderBinary:string;geometryScriptPath:string} };
   nebulaArcade?: { databasePath: string; credential: string; configPath: string; config: NebulaArcadeProviderConfigV1; publicOrigin?: string; gameplayOrigin?: string; webhookName: string; avatarUrl?: string };
 }
 
@@ -68,7 +68,13 @@ export function validateChatGatewayWorkerEnvironment(environment: NodeJS.Process
     const pollinationsToken=environment.STREAMWEAVER_POLLINATIONS_API_KEY;
     if(runtimeMode==="sandbox"&&pollinationsToken)throw Error("Sandbox StreamWeaver rejects external image generation");
     if(pollinationsToken){image??={token:"",modelNo:"",modelVerNo:"",binary:"seaart"};image.pollinationsToken=pollinationsToken;}
-    streamweaver = { databasePath: streamweaverDatabasePath, credential: streamweaverCredential, ...(image?{image}:{}) };
+    const avatarKeys=[environment.STREAMWEAVER_MESHY_API_KEY,environment.STREAMWEAVER_KEENTOOLS_API_KEY].filter(Boolean);
+    if(avatarKeys.length!==0&&avatarKeys.length!==2)throw Error("Meshy and KeenTools API keys must be configured together");
+    if(!avatarKeys.length&&(environment.STREAMWEAVER_GENERIC_BODY_GLB||environment.STREAMWEAVER_AVATAR_GEOMETRY_SCRIPT||environment.STREAMWEAVER_BLENDER_BINARY))throw Error("Avatar geometry settings require Meshy and KeenTools API keys");
+    if(runtimeMode==="sandbox"&&avatarKeys.length)throw Error("Sandbox StreamWeaver rejects external avatar generation");
+    let avatar:NonNullable<NonNullable<ChatGatewayWorkerEnvironmentV1["streamweaver"]>["avatar"]>|undefined;
+    if(avatarKeys.length){const genericBodyPaths=environment.STREAMWEAVER_GENERIC_BODY_GLB?[environment.STREAMWEAVER_GENERIC_BODY_GLB]:Array.from({length:4},(_,index)=>resolve(`apps/streamweaver/assets/generic-female-body.glb.part-${String(index).padStart(2,"0")}`)),geometryScriptPath=environment.STREAMWEAVER_AVATAR_GEOMETRY_SCRIPT??resolve("apps/streamweaver/scripts/avatar_geometry.py");if(genericBodyPaths.some(path=>!isAbsolute(path))||!isAbsolute(geometryScriptPath))throw Error("Avatar generic body and geometry script paths must be absolute");avatar={meshyKey:String(environment.STREAMWEAVER_MESHY_API_KEY),keenToolsKey:String(environment.STREAMWEAVER_KEENTOOLS_API_KEY),genericBodyPaths,geometryScriptPath,blenderBinary:environment.STREAMWEAVER_BLENDER_BINARY||"blender"};}
+    streamweaver = { databasePath: streamweaverDatabasePath, credential: streamweaverCredential, ...(image?{image}:{}),...(avatar?{avatar}:{}) };
   }
   const nebulaEnabled = environment.NEBULA_ARCADE_PROVIDER_RUNTIME_ENABLED === "1";
   const nebulaCredential = environment.NEBULA_ARCADE_WORKER_CREDENTIAL;
@@ -152,6 +158,8 @@ export class SupervisedChatGatewayService {
   private readonly streamweaverClient?: SpmtClient;
   private readonly streamweaver?: StreamWeaverProviderRuntime;
   private readonly streamweaverImage?: StreamWeaverImageWorker;
+  private readonly streamweaverAvatar?:StreamWeaverAvatarWorker;
+  private readonly streamweaverAvatarSettings?:StreamWeaverRuntimeSettingsStore;
   private readonly generationSettings?:StreamWeaverGenerationStore;
   private readonly getNebulaArcadeAccessToken?: () => Promise<string>;
   private readonly nebulaArcade?: NebulaArcadeProviderRuntime;
@@ -263,6 +271,10 @@ export class SupervisedChatGatewayService {
         }};
         this.streamweaverImage=new StreamWeaverImageWorker(streamweaverClient,new StreamWeaverImageGenerationService(providers,enhancer),{workerId:`${options.workerId}-image`,modelNo:image.modelNo,modelVerNo:image.modelVerNo,settings:generationSettings,...(fetchImpl?{fetchImpl}:{}),...(tenantIds.length?{tenantIds}:{})});
       }
+      if(options.streamweaver.avatar&&options.operationMode==="active"){
+        const avatar=options.streamweaver.avatar,settings=this.streamweaverAvatarSettings=new StreamWeaverRuntimeSettingsStore(options.streamweaver.databasePath),tenantIds=[...new Set(options.connections.map(connection=>connection.tenantId))];
+        this.streamweaverAvatar=new StreamWeaverAvatarWorker(streamweaverClient,new MeshyAvatarProvider(avatar.meshyKey,fetchImpl),new KeenToolsAvatarProvider(avatar.keenToolsKey,fetchImpl),new BlenderAvatarGeometry({binary:avatar.blenderBinary,scriptPath:avatar.geometryScriptPath}),{workerId:`${options.workerId}-avatar`,genericBodyPaths:avatar.genericBodyPaths,...(tenantIds.length?{tenantIds}:{}),activate:async(tenantId,value)=>{const current=settings.appearance(tenantId),appearance=settings.saveAppearance(tenantId,{...current,modelUrl:value.modelUrl,modelAssetId:value.modelAssetId,...(!current.avatarUrl&&value.previewUrl?{avatarUrl:value.previewUrl}:{})});await streamweaverClient.publishEvent(tenantId,"streamweaver.avatar.updated.v1",appearance,`streamweaver-avatar-active:${value.modelAssetId}`);}});
+      }
       consumers.push(...this.streamweaver.consumers);
       observers.push(...this.streamweaver.messageObservers);
     }
@@ -298,8 +310,9 @@ export class SupervisedChatGatewayService {
     if(configured<0)this.options.connections.push(c);else this.options.connections[configured]=c;
     if(!this.tenants.includes(c.tenantId))this.tenants.push(c.tenantId);
     if(c.desired)this.streamweaverImage?.addTenant(c.tenantId);
+    if(c.desired)this.streamweaverAvatar?.addTenant(c.tenantId);
   }
-  async ready() { await Promise.all([this.getAccessToken(), this.getStreamWeaverAccessToken?.(), this.getNebulaArcadeAccessToken?.()]); if(this.streamweaverClient&&this.tenants.length)await this.streamweaverClient.reportExecutionWorker({executionOwner:"streamweaver",workerId:`${this.options.workerId}-voice-egress`,executionTarget:"sprite",state:"ready",capabilityIds:["streamweaver.voice-egress.v1"],tenantIds:this.tenants,providerHealthy:true,startedAt:this.startedAt,leaseMs:60_000,metrics:{completedJobs:0,failedJobs:0,inputUnits:0,outputUnits:0}});await this.streamweaverImage?.report();return { schemaVersion: 1 as const, workerId: this.options.workerId, operationMode: this.options.operationMode, liveIngressEnabled: this.options.liveIngressEnabled, egressMode: this.options.operationMode === "active" ? "provider" as const : "shadow" as const, shadowMessages: this.chatStore.countShadowMessages(), configuredConnections: this.options.connections.length, consumers: this.gateway.consumerIds() }; }
+  async ready() { await Promise.all([this.getAccessToken(), this.getStreamWeaverAccessToken?.(), this.getNebulaArcadeAccessToken?.()]); if(this.streamweaverClient&&this.tenants.length)await this.streamweaverClient.reportExecutionWorker({executionOwner:"streamweaver",workerId:`${this.options.workerId}-voice-egress`,executionTarget:"sprite",state:"ready",capabilityIds:["streamweaver.voice-egress.v1"],tenantIds:this.tenants,providerHealthy:true,startedAt:this.startedAt,leaseMs:60_000,metrics:{completedJobs:0,failedJobs:0,inputUnits:0,outputUnits:0}});await Promise.all([this.streamweaverImage?.report(),this.streamweaverAvatar?.report()]);return { schemaVersion: 1 as const, workerId: this.options.workerId, operationMode: this.options.operationMode, liveIngressEnabled: this.options.liveIngressEnabled, egressMode: this.options.operationMode === "active" ? "provider" as const : "shadow" as const, shadowMessages: this.chatStore.countShadowMessages(), configuredConnections: this.options.connections.length, consumers: this.gateway.consumerIds() }; }
   listShadowMessages(tenantId:string,limit=200){return this.chatStore.listShadowMessages(tenantId,limit);}
   async reconcile() {
     await this.tiktok?.reconcile();
@@ -329,10 +342,10 @@ export class SupervisedChatGatewayService {
     return { schemaVersion: 1 as const, connections, deliveries, mutations, ...(streamweaver ? { streamweaver } : {}), ...(voiceEgress ? { voiceEgress } : {}), ...(nebulaArcade ? { nebulaArcade } : {}) };
   }
   private async drainStreamWeaverVoiceEgress(limit=20){const client=this.streamweaverClient;if(!client)return undefined;const report={observed:0,sent:0,failed:0};if(!this.tenants.length)return report;const workerId=`${this.options.workerId}-voice-egress`;await client.reportExecutionWorker({executionOwner:"streamweaver",workerId,executionTarget:"sprite",state:"ready",capabilityIds:["streamweaver.voice-egress.v1"],tenantIds:this.tenants,providerHealthy:true,startedAt:this.startedAt,leaseMs:60_000,metrics:{completedJobs:0,failedJobs:0,inputUnits:0,outputUnits:0}});for(let index=0;index<limit;index+=1){const job=await client.claimAnyExecutionJob(workerId,"sprite",{executionOwner:"streamweaver",capabilityIds:["streamweaver.voice-egress.v1"],leaseMs:30_000});if(!job)break;report.observed+=1;try{const input=job.input,destination=input.destination;if(destination!=="twitch"&&destination!=="discord")throw new Error("Voice egress destination is invalid");const connectionId=requiredInput(input.connectionId,"connectionId"),channelId=requiredInput(input.channelId,"channelId"),text=boundedInput(input.text,"text",5_000);const configured=this.options.connections.find((item)=>item.tenantId===job.tenantId&&item.provider===destination&&item.connectionId===connectionId&&item.channelId===channelId&&item.desired);if(!configured)throw new Error("The selected provider connection is no longer configured");const sent=await this.gateway.send({schemaVersion:1,tenantId:job.tenantId,provider:destination,connectionId,channelId,text,idempotencyKey:`streamweaver-voice-egress:${job.id}`});if(!job.leaseId)throw new Error("Voice egress job lease is unavailable");await client.succeedExecutionJob(job.tenantId,job.id,workerId,job.leaseId,job.fencingEpoch,{schemaVersion:1,provider:destination,providerMessageId:sent.providerMessageId});report.sent+=1;}catch(error){const message=error instanceof Error?error.message:"Voice egress failed";if(!job.leaseId)throw error;await client.failExecutionJob(job.tenantId,job.id,workerId,job.leaseId,job.fencingEpoch,"voice_egress_failed",message,!/invalid|no longer configured/i.test(message));report.failed+=1;}}return report;}
-  async run(signal: AbortSignal) { await Promise.all([this.runGateway(signal),this.runSimulation(signal),this.streamweaverImage?.run(signal)??Promise.resolve()]); }
+  async run(signal: AbortSignal) { await Promise.all([this.runGateway(signal),this.runSimulation(signal),this.streamweaverImage?.run(signal)??Promise.resolve(),this.streamweaverAvatar?.run(signal)??Promise.resolve()]); }
   private async runSimulation(signal:AbortSignal){while(!signal.aborted){await this.simulationWorker.runOnce();await pause(this.options.reconcileMs,signal);}}
   private async runGateway(signal:AbortSignal){while(!signal.aborted){await this.reconcile();await pause(this.options.reconcileMs,signal);}}
-  async close() { await this.tiktok?.close();await this.supervisor.stop(); this.nebulaArcade?.close(); this.streamweaver?.close(); this.generationSettings?.close(); this.connectionStore.close(); this.chatStore.close(); }
+  async close() { await this.tiktok?.close();await this.supervisor.stop(); this.nebulaArcade?.close(); this.streamweaver?.close(); this.generationSettings?.close();this.streamweaverAvatarSettings?.close(); this.connectionStore.close(); this.chatStore.close(); }
 }
 
 function loopbackOrigin(value: string) { const url = new URL(value); if (url.protocol !== "http:" || !["127.0.0.1", "localhost", "::1"].includes(url.hostname) || url.username || url.password || url.pathname !== "/" || url.search || url.hash) throw new Error("SPMT_ORIGIN must be a credential-free loopback HTTP origin"); return url.origin; }

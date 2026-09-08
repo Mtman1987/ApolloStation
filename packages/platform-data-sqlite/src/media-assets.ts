@@ -53,11 +53,12 @@ function validateMedia(input:MediaAssetUploadV1,bytes:Uint8Array) {
   if(!input.name||input.name.length>180||/[\x00-\x1f\x7f/\\]/.test(input.name))throw new MediaAssetError(400,"Use a media filename without paths or control characters");
   if(!["recording","speech","image","avatar","attachment","video"].includes(input.purpose))throw new MediaAssetError(400,"Media purpose is invalid");
   if(input.expiresInSeconds!==undefined&&(!Number.isSafeInteger(input.expiresInSeconds)||input.expiresInSeconds<60||input.expiresInSeconds>30*86400))throw new MediaAssetError(400,"Media lifetime must be between one minute and 30 days");
-  if(!bytes.byteLength||bytes.byteLength>MEDIA_ASSET_MAX_BYTES)throw new MediaAssetError(413,"Media must contain between one byte and 8 MiB");
+  if(!bytes.byteLength||bytes.byteLength>MEDIA_ASSET_MAX_BYTES)throw new MediaAssetError(413,"Media must contain between one byte and 64 MiB");
   const data=Buffer.from(bytes),text=(start:number,end:number)=>data.subarray(start,end).toString("ascii"),hex=(start:number,end:number)=>data.subarray(start,end).toString("hex");
-  const supported:Record<string,boolean>={"image/png":hex(0,8)==="89504e470d0a1a0a","image/jpeg":hex(0,3)==="ffd8ff","image/gif":["GIF87a","GIF89a"].includes(text(0,6)),"image/webp":text(0,4)==="RIFF"&&text(8,12)==="WEBP","audio/wav":text(0,4)==="RIFF"&&text(8,12)==="WAVE","audio/mpeg":text(0,3)==="ID3"||(data[0]===255&&((data[1]??0)&224)===224),"audio/ogg":text(0,4)==="OggS","audio/webm":hex(0,4)==="1a45dfa3","video/webm":hex(0,4)==="1a45dfa3","video/mp4":text(4,8)==="ftyp"};
-  if(!supported[input.contentType])throw new MediaAssetError(415,"Unsupported media type or file signature; use PNG, JPEG, GIF, WebP, MP3, WAV, Ogg, WebM or MP4");
-  if(["avatar","image"].includes(input.purpose)&&!input.contentType.startsWith("image/"))throw new MediaAssetError(415,"An image is required for this asset");
+  const supported:Record<string,boolean>={"image/png":hex(0,8)==="89504e470d0a1a0a","image/jpeg":hex(0,3)==="ffd8ff","image/gif":["GIF87a","GIF89a"].includes(text(0,6)),"image/webp":text(0,4)==="RIFF"&&text(8,12)==="WEBP","audio/wav":text(0,4)==="RIFF"&&text(8,12)==="WAVE","audio/mpeg":text(0,3)==="ID3"||(data[0]===255&&((data[1]??0)&224)===224),"audio/ogg":text(0,4)==="OggS","audio/webm":hex(0,4)==="1a45dfa3","video/webm":hex(0,4)==="1a45dfa3","video/mp4":text(4,8)==="ftyp","model/gltf-binary":text(0,4)==="glTF"};
+  if(!supported[input.contentType])throw new MediaAssetError(415,"Unsupported media type or file signature; use PNG, JPEG, GIF, WebP, MP3, WAV, Ogg, WebM, MP4 or GLB");
+  if(input.purpose==="image"&&!input.contentType.startsWith("image/"))throw new MediaAssetError(415,"An image is required for this asset");
+  if(input.purpose==="avatar"&&!input.contentType.startsWith("image/")&&input.contentType!=="model/gltf-binary")throw new MediaAssetError(415,"An image or GLB model is required for this avatar asset");
   if(["recording","speech"].includes(input.purpose)&&!input.contentType.startsWith("audio/"))throw new MediaAssetError(415,"Audio is required for this asset");
   if(input.purpose==="video"&&!input.contentType.startsWith("video/"))throw new MediaAssetError(415,"Video is required for this asset");
 }

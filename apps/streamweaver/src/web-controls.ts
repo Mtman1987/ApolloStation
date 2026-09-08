@@ -32,6 +32,7 @@ import { assertFlowCodeValue } from "./flow-code.js";
 import { buildStreamWeaverAiFlowPrompt, buildStreamWeaverAiFlowRepairPrompt, STREAMWEAVER_AI_FLOW_IDEA_LIMIT, STREAMWEAVER_AI_FLOW_REPAIR_LIMIT } from "./flow-ai-builder.js";
 import { StreamWeaverRuntimeSettingsStore } from "./runtime-settings.js";
 import { SqliteStreamWeaverBotRelayStore } from "./bot-relay.js";
+import { STREAMWEAVER_AVATAR_BUILD_CAPABILITY } from "./avatar-worker.js";
 
 export interface StreamWeaverWebConnectionV1 { schemaVersion: 1; tenantId: string; provider: ChatProviderV1; connectionId: string; channelId: string; providerAccountId: string; desired: boolean; }
 export interface StreamWeaverWebControlOptionsV1 { openAiKey?:string; privateAiDraftsEnabled?:boolean; buildSha?:string; spmtOrigin: string; databasePath?: string; credential?: string; connections?: StreamWeaverWebConnectionV1[]; operationMode?: SpmtOperationModeV1; fetchImpl?: typeof fetch; }
@@ -251,6 +252,13 @@ export class StreamWeaverWebControls {
         const appearance=this.runtimeSettings.saveAppearance(context.tenantId,body);
         await this.client.publishEvent(context.tenantId,"streamweaver.avatar.updated.v1",{...appearance,displayName:this.persona?.get(context.tenantId)?.displayName??"Assistant"},`streamweaver-avatar:${randomUUID()}`);
         return sendJson(response,200,{appearance});
+      }
+      if(url.pathname==="/api/streamweaver/control/avatar-build"){
+        if(this.operationMode!=="active")throw Error("External avatar creation is disabled in this environment");
+        const portraitAssetId=identifier(body.portraitAssetId,"portraitAssetId"),asset=await this.deviceApi(request,context,undefined,"/v1/media/assets/"+portraitAssetId);
+        if(asset.tenantId!==context.tenantId||asset.ownerUserId!==this.actor(context).id||!["image/png","image/jpeg"].includes(String(asset.contentType)))throw Error("Choose one of your PNG or JPEG portraits from Media Files");
+        const result=await this.requireClient().createExecutionJob(context.tenantId,{ownerAppId:"streamweaver",capabilityId:STREAMWEAVER_AVATAR_BUILD_CAPABILITY,executionOwner:"streamweaver",billedUserId:this.actor(context).id,meteredResource:"image-generations",usageQuantity:1,executionTarget:"sprite",meteringTarget:"hosted",input:{schemaVersion:1,portraitAssetId}},idempotency(body.requestId,"avatar-build"));
+        return sendJson(response,202,{jobId:result.job.id,state:result.job.state});
       }
       if(url.pathname==="/api/streamweaver/control/twitch"){
         if(!this.runtimeSettings)throw new Error("StreamWeaver runtime is not configured");
