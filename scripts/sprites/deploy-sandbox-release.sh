@@ -255,7 +255,13 @@ if (( ready != 1 )); then
   exit 1
 fi
 
+# Owner-approved one-time test credit, after the Green release is healthy.
+if [[ "$DEPLOY_ROLE" == "release" ]]; then
+  SPMT_RUNTIME_MODE=sandbox DEPLOY_ROLE=release node scripts/sprites/credit-green-test-xp.mjs
+fi
+
 printf 'Deployed %s commit %s\n' "$DEPLOY_ROLE" "$BUILD_SHA"
 printf 'Active release: %s\n' "$(readlink -f "$current_link")"
 sprite-env services get "$service_name"
 trap - EXIT
+
