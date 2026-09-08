@@ -147,6 +147,9 @@ export function createSpaceMountainWebHost(options: SpaceMountainWebHostOptions)
         response.setHeader("content-security-policy", `default-src 'none'; script-src 'self' 'nonce-${nonce}'; style-src 'unsafe-inline'; connect-src 'self'; frame-src 'self'; frame-ancestors 'self'; base-uri 'none'`);
         return html(response, 200, `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Personal overlay</title><style>html,body{margin:0;width:100%;height:100%;background:transparent;color-scheme:only light}iframe{width:100%;height:100%;border:0;pointer-events:none;background:transparent;color-scheme:only light}iframe[hidden]{display:none}</style></head><body><iframe data-overlay-frame title="Personal overlay" hidden></iframe><script type="module" nonce="${nonce}" src="/assets/web/personal-overlay-client.js"></script></body></html>`);
       }
+      if (request.method === "GET" && url.pathname === "/apps/commlink") {
+        await requireVerifiedCommlinkSession(request, spmtOrigin, fetchImpl);
+      }
       if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/first-time-setup" || SHELL_APP_PATHS.has(url.pathname))) {
         if (url.searchParams.get("surface") === "workspace-service") {
           response.removeHeader("x-frame-options");
@@ -280,6 +283,33 @@ async function importDeveloperManifest(response: ServerResponse, request: Incomi
   let parsed: unknown;
   try { parsed = JSON.parse(encoded.toString("utf8")); } catch { throw new WebHostError(400, "Manifest response is not valid JSON"); }
   return json(response, 200, normalizeDeveloperManifest(parsed));
+}
+
+async function requireVerifiedCommlinkSession(request: IncomingMessage, origin: string, fetchImpl: typeof fetch) {
+  if (!request.headers.cookie) throw new WebHostError(401, "A verified SPMT session is required to open Commlink");
+  let upstream: Response;
+  try {
+    upstream = await fetchImpl(`${origin}/v1/session`, {
+      headers: { accept: "application/json", cookie: request.headers.cookie, "x-spmt-app": "spacemountain" },
+      redirect: "manual",
+      signal: AbortSignal.timeout(5000),
+    });
+  } catch {
+    throw new WebHostError(503, "Commlink cannot verify the SPMT tenant session");
+  }
+  const encoded = await limitedResponseBody(upstream);
+  if (!upstream.ok) {
+    if (upstream.status === 401) throw new WebHostError(401, "A verified SPMT session is required to open Commlink");
+    if (upstream.status === 403) throw new WebHostError(403, "The SPMT session is not authorized for Commlink");
+    throw new WebHostError(503, "Commlink cannot verify the SPMT tenant session");
+  }
+  const principal = record(parseJson(encoded));
+  const actorId = typeof principal?.actorId === "string" ? principal.actorId.trim() : "";
+  const tenantIds = Array.isArray(principal?.tenantIds)
+    ? principal.tenantIds.filter((tenantId): tenantId is string => typeof tenantId === "string" && tenantId.trim().length > 0)
+    : [];
+  if (!actorId || tenantIds.length === 0) throw new WebHostError(403, "Commlink requires a verified user and tenant");
+  return { actorId, tenantIds };
 }
 
 async function requireCatalogPublisher(request: IncomingMessage, origin: string, fetchImpl: typeof fetch) {

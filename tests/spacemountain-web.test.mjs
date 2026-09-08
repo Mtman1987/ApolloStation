@@ -464,7 +464,7 @@ test("supervised runner seeds the canonical first-party app pool and launches Ne
     assert.match(page, /Load Nebula Arcade example/);
     assert.doesNotMatch(page, /Publish Nebula Arcade through SDK/);
     assert.equal((await fetch(`${base}/apps/nebula-arcade`)).status, 200);
-    assert.equal((await fetch(`${base}/apps/commlink`)).status, 200);
+    assert.equal((await fetch(`${base}/apps/commlink`)).status, 401, "Commlink must fail closed without a verified SPMT tenant");
     assert.equal((await fetch(`${base}/apps/stellar-core`)).status, 200);
     assert.equal((await fetch(`${base}/apps/mission-control`)).status, 200);
     const origin = new URL(base).origin;
@@ -472,6 +472,7 @@ test("supervised runner seeds the canonical first-party app pool and launches Ne
     assert.equal(registration.status, 201);
     const cookie = (registration.headers.get("set-cookie") ?? "").split(";")[0];
     assert.ok(cookie);
+    assert.equal((await fetch(`${base}/apps/commlink`, { headers: { cookie } })).status, 200, "verified tenants may render Commlink");
     const client = new SpmtClient({ baseUrl: base, appId: "spacemountain", fetchImpl: (input, init = {}) => { const headers = new Headers(init.headers); headers.set("cookie", cookie); if (init.method === "POST") headers.set("origin", origin); return fetch(input, { ...init, headers }); } });
     assert.deepEqual((await client.listApps()).map((app) => app.appId).sort(), ["chat-gateway", "commlink", "mission-control", "nebula-arcade", "stellar-core"]);
     assert.deepEqual((await client.listInstalls((await registration.json()).tenantId)).map((install) => install.appId).sort(), ["chat-gateway", "commlink", "mission-control", "nebula-arcade", "stellar-core"]);
