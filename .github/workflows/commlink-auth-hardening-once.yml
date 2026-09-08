@@ -1,0 +1,34 @@
+name: Commlink auth hardening once
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/commlink-auth-hardening-once.yml
+permissions:
+  contents: write
+jobs:
+  patch-and-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Patch Commlink session gate
+        run: python3 scripts/patch-commlink-auth-hardening.py
+      - name: Build
+        run: npm run build
+      - name: Security-focused tests
+        run: node --test tests/spacemountain-web.test.mjs tests/workspace-consolidation.test.mjs
+      - name: Commit Commlink hardening
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add apps/spacemountain-web/src/server.ts tests/spacemountain-web.test.mjs tests/workspace-consolidation.test.mjs
+          git diff --cached --check
+          git commit -m "Fail closed when Commlink tenant session is missing"
+          git push origin HEAD:main
