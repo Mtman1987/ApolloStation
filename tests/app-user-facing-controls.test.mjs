@@ -71,6 +71,8 @@ test("StreamWeaver exposes a wired Voice Commander, searchable bot catalog, inte
     assert.match(browserSource, /Create rigged 3D avatar/); assert.match(browserSource, /avatar-build/); assert.match(browserSource, /Rigged 3D avatar ready/);
     assert.match(browserSource, /e\.key==='Enter'.*requestSubmit\(\)/, "Enter submits Voice Commander");
     assert.match(browserSource, /!e\.shiftKey/, "Shift+Enter remains available for a new line");
+    assert.match(browserSource, /data-sw-page=/);
+    assert.doesNotMatch(browserSource, /button\('Open','nav','data-page=/, "in-page navigation cannot impersonate an app page");
     assert.doesNotMatch(browserSource, /window.fetch=|nativeFetch=/, "the page controller does not replace browser fetch");
     const control = await (await fetch(`${streamBase}/api/streamweaver/control`, { headers: { cookie } })).json();
     assert.equal(control.role, "owner"); assert.equal(control.operationMode, "read-only"); assert.equal(control.connections[0].provider, "twitch"); assert.equal(control.botRuntime.publicCommands, "connected"); assert.equal(control.botRuntime.suiteActions, "partial"); assert.ok(control.botActions.length >= 20); assert.equal(control.botActions.find((action) => action.id === "sw.image.generate").availability, "connected"); assert.ok(control.botActions.some((action) => action.policy === "simulated")); assert.ok(control.botActions.every((action) => action.policy !== "blocked"));
