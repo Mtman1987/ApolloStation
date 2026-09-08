@@ -11,6 +11,7 @@ const authView = element<HTMLElement>("auth-view");
 const shellView = element<HTMLElement>("shell-view");
 const shellRoot = element<HTMLElement>("spacemountain-root");
 const status = element<HTMLElement>("sandbox-status");
+const authStatus = element<HTMLElement>("sandbox-auth-status");
 const refreshButton = element<HTMLButtonElement>("refresh-shell");
 const logoutButton = element<HTMLButtonElement>("logout");
 const openDeveloperButton = element<HTMLButtonElement>("open-developer-console");
@@ -35,7 +36,7 @@ const dialogBody = element<HTMLElement>("record-dialog-body");
 const spmt = new SpmtClient({
   baseUrl: window.location.origin,
   appId: "spacemountain",
-  fetchImpl: (input, init) => fetch(input, { ...init, credentials: "same-origin" }),
+  fetchImpl: (input, init) => fetch(input, { ...init, credentials: "same-origin", ...(init?.signal ? {} : { signal: AbortSignal.timeout(12_000) }) }),
 });
 const controller = new SpaceMountainShellController(spmt);
 let shellUi: SpaceMountainShellUi | undefined;
@@ -109,12 +110,7 @@ async function authRequest(path: string, input: Record<string, string>, form: HT
   if (button) button.disabled = true;
   setStatus("Opening the isolated SPMT session…", "working");
   try {
-    const response = await fetch(path, {
-      method: "POST",
-      credentials: "same-origin",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(input),
-    });
+    const response = await sandboxAuthRequest(path, input, path.endsWith("/login"));
     const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
     if (!response.ok) throw new Error(typeof payload.message === "string" ? payload.message : typeof payload.error === "string" ? payload.error : `Request failed (${response.status})`);
     form.querySelectorAll<HTMLInputElement>('input[type="password"]').forEach((node) => { node.value = ""; });
@@ -125,6 +121,26 @@ async function authRequest(path: string, input: Record<string, string>, form: HT
   } finally {
     if (button) button.disabled = false;
   }
+}
+
+async function sandboxAuthRequest(path: string, input: Record<string, string>, retry: boolean) {
+  for (let attempt = 0; attempt < (retry ? 2 : 1); attempt += 1) {
+    try {
+      const response = await fetch(path, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(input),
+        signal: AbortSignal.timeout(12_000),
+      });
+      if (response.status < 500 || !retry || attempt > 0) return response;
+    } catch (error) {
+      if (!retry || attempt > 0) throw new Error("The sandbox did not answer. Tap Enter SpaceMountain to try again.", { cause: error });
+    }
+    setStatus("The sandbox is waking up; retrying sign-in once…", "working");
+    await delay(750);
+  }
+  throw new Error("The sandbox did not answer. Tap Enter SpaceMountain to try again.");
 }
 
 async function loadShell() {
@@ -733,7 +749,7 @@ function messageCard(value: Record<string, unknown>) {
 function textBlock(value: string) { const node = document.createElement("p"); node.textContent = value; return node; }
 function delay(ms: number) { return new Promise<void>((resolve) => window.setTimeout(resolve, ms)); }
 function apiMessage(value: unknown, fallback: string) { return value && typeof value === "object" && !Array.isArray(value) && typeof (value as Record<string, unknown>).message === "string" ? String((value as Record<string, unknown>).message) : fallback; }
-function setStatus(value: string, kind: "ready" | "working" | "error") { status.textContent = value; status.dataset.kind = kind; }
+function setStatus(value: string, kind: "ready" | "working" | "error") { status.textContent = value; status.dataset.kind = kind; authStatus.textContent = value; authStatus.dataset.kind = kind; authStatus.hidden = kind === "ready"; }
 function message(value: unknown) {
   if (value instanceof SpmtApiError) {
     try {
