@@ -197,6 +197,28 @@ jobs:
             echo "OPENAI_API_KEY is not configured in Actions; preserving any existing private Sprite credential."
           fi
 
+      - name: Install dedicated avatar AI credentials when configured
+        env:
+          STREAMWEAVER_MESHY_API_KEY: ${{ secrets.STREAMWEAVER_MESHY_API_KEY }}
+          STREAMWEAVER_KEENTOOLS_API_KEY: ${{ secrets.STREAMWEAVER_KEENTOOLS_API_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${STREAMWEAVER_MESHY_API_KEY:-}" && -n "${STREAMWEAVER_KEENTOOLS_API_KEY:-}" ]]; then
+            umask 077
+            python3 -c 'import os,pathlib; root=pathlib.Path(os.environ["RUNNER_TEMP"]); (root/"apollo-meshy-key").write_text(os.environ["STREAMWEAVER_MESHY_API_KEY"]); (root/"apollo-keentools-key").write_text(os.environ["STREAMWEAVER_KEENTOOLS_API_KEY"])'
+            sprite exec --no-port-forward -o "$SPRITE_ORG" -s "$SPRITE_NAME" \
+              --file "$RUNNER_TEMP/apollo-meshy-key:/tmp/apollo-meshy-key" \
+              --file "$RUNNER_TEMP/apollo-keentools-key:/tmp/apollo-keentools-key" \
+              -- /bin/bash -c 'umask 077; mkdir -p /home/sprite/data/release; install -m 600 /tmp/apollo-meshy-key /home/sprite/data/release/streamweaver-meshy-api-key; install -m 600 /tmp/apollo-keentools-key /home/sprite/data/release/streamweaver-keentools-api-key; rm -f /tmp/apollo-meshy-key /tmp/apollo-keentools-key'
+            rm -f "$RUNNER_TEMP/apollo-meshy-key" "$RUNNER_TEMP/apollo-keentools-key"
+          elif [[ -n "${STREAMWEAVER_MESHY_API_KEY:-}" || -n "${STREAMWEAVER_KEENTOOLS_API_KEY:-}" ]]; then
+            echo "Configure both StreamWeaver avatar AI credentials together." >&2
+            exit 1
+          else
+            echo "Avatar AI credentials are not configured in Actions; preserving any existing private Sprite credentials."
+          fi
+
       - name: Promote and verify exact main commit
         shell: bash
         run: |

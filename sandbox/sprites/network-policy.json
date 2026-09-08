@@ -49,6 +49,22 @@
       "action": "allow"
     },
     {
+      "domain": "api.meshy.ai",
+      "action": "allow"
+    },
+    {
+      "domain": "assets.meshy.ai",
+      "action": "allow"
+    },
+    {
+      "domain": "api.keentools.io",
+      "action": "allow"
+    },
+    {
+      "domain": "*.amazonaws.com",
+      "action": "allow"
+    },
+    {
       "domain": "*",
       "action": "deny"
     }

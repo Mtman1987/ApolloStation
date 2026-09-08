@@ -28,6 +28,10 @@ test("Sprite promotion keeps review and release targets isolated", async () => {
   assert.match(workflow, /--file scripts\/sprites\/deploy-sandbox-release\.sh:\/tmp\/deploy-sandbox-release\.sh/);
   assert.doesNotMatch(workflow, /SPMT_LIVE_READ_ACCESS_TOKEN|spmt-live-read-token/);
   assert.doesNotMatch(workflow, /sprite exec --http-post/);
+  assert.match(workflow, /secrets\.STREAMWEAVER_MESHY_API_KEY/);
+  assert.match(workflow, /secrets\.STREAMWEAVER_KEENTOOLS_API_KEY/);
+  assert.match(workflow, /streamweaver-meshy-api-key/);
+  assert.match(workflow, /streamweaver-keentools-api-key/);
 });
 
 test("Sprite deployment verifies, tests, switches atomically, rolls back, and launches the current app catalog", async () => {
@@ -68,5 +72,7 @@ test("Sprite deployment verifies, tests, switches atomically, rolls back, and la
 test("Sprite network policy allows the production read source but remains deny-by-default", async () => {
   const policy = JSON.parse(await readFile(networkPolicyPath, "utf8"));
   assert.ok(policy.rules.some((rule) => rule.domain === "spmt.live" && rule.action === "allow"));
+  for (const domain of ["api.meshy.ai", "assets.meshy.ai", "api.keentools.io", "*.amazonaws.com"]) assert.ok(policy.rules.some((rule) => rule.domain === domain && rule.action === "allow"));
+  assert.equal(policy.rules.some((rule) => /twitch|discord/i.test(rule.domain) && rule.action === "allow"), false);
   assert.deepEqual(policy.rules.at(-1), { domain: "*", action: "deny" });
 });

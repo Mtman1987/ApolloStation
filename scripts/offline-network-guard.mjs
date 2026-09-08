@@ -4,6 +4,7 @@ import net from "node:net";
 import tls from "node:tls";
 
 const privateFlowOpenAi=process.env.SPMT_PRIVATE_FLOW_OPENAI_ENABLED==="1";
+const avatarAiOutbound=process.env.SPMT_AVATAR_AI_OUTBOUND_MODE==="enabled";
 const marker = Symbol.for("apollostation.offline-network-guard");
 const liveReadUrl = configuredLiveReadUrl(process.env.SPMT_LIVE_READ_ORIGIN);
 
@@ -62,12 +63,14 @@ function assertSocketTarget(args, label) {
     if (first.path) return;
     if (isLiveReadHost(first.host ?? first.hostname ?? first.servername) && Number(first.port ?? 443) === 443) return;
     if(privateFlowOpenAi&&String(first.host??first.hostname??first.servername)==="api.openai.com"&&Number(first.port??443)===443)return;
+    if(avatarAiOutbound&&isAvatarAiHost(first.host??first.hostname??first.servername)&&Number(first.port??443)===443)return;
     assertLoopbackHost(first.host ?? first.hostname ?? "localhost", label);
     return;
   }
   const host = typeof args[1] === "string" ? args[1] : "localhost";
   if (isLiveReadHost(host) && Number(first ?? 443) === 443) return;
   if(privateFlowOpenAi&&host==="api.openai.com"&&Number(first??443)===443)return;
+  if(avatarAiOutbound&&isAvatarAiHost(host)&&Number(first??443)===443)return;
   assertLoopbackHost(host, label);
 }
 
@@ -77,8 +80,21 @@ function assertAllowedUrl(value, method, label) {
   if (!["http:", "https:", "ws:", "wss:"].includes(url.protocol)) return;
   if (liveReadUrl && url.origin === liveReadUrl.origin && String(method).toUpperCase() === "GET") return;
   if(privateFlowOpenAi&&url.origin==="https://api.openai.com"&&url.pathname==="/v1/responses"&&String(method).toUpperCase()==="POST")return;
+  if(avatarAiOutbound&&isAllowedAvatarAiUrl(url,String(method).toUpperCase()))return;
   assertLoopbackHost(url.hostname, label);
 }
+
+function isAllowedAvatarAiUrl(url,method){
+  if(url.protocol!=="https:"||url.username||url.password)return false;
+  if(url.hostname==="api.meshy.ai")return (method==="POST"&&url.pathname==="/openapi/v1/image-to-3d")||(method==="GET"&&/^\/openapi\/v1\/image-to-3d\/[A-Za-z0-9-]{8,128}$/.test(url.pathname));
+  if(url.hostname==="assets.meshy.ai")return method==="GET";
+  if(url.hostname==="api.keentools.io")return (method==="POST"&&url.pathname==="/v1/avatar/init")||(method==="POST"&&/^\/v1\/avatar\/[A-Za-z0-9_-]{4,160}\/process$/.test(url.pathname))||(method==="GET"&&/^\/v1\/avatar\/[A-Za-z0-9_-]{4,160}\/(?:get-status|get-3d-model)$/.test(url.pathname));
+  return isSignedS3Url(url)&&(method==="GET"||method==="PUT");
+}
+
+function isSignedS3Url(url){return isS3Host(url.hostname)&&url.searchParams.get("X-Amz-Algorithm")==="AWS4-HMAC-SHA256"&&url.searchParams.has("X-Amz-Credential")&&url.searchParams.has("X-Amz-Signature");}
+function isAvatarAiHost(value){const host=String(value??"").toLowerCase();return host==="api.meshy.ai"||host==="assets.meshy.ai"||host==="api.keentools.io"||isS3Host(host);}
+function isS3Host(value){return /^(?:[a-z0-9.-]+\.)?s3(?:[.-][a-z0-9-]+)?\.amazonaws\.com$/.test(String(value??"").toLowerCase());}
 
 function assertLoopbackHost(value, label) {
   const rawHost = String(value).toLowerCase();
