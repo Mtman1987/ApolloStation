@@ -22,7 +22,7 @@ export interface ChatGatewayWorkerEnvironmentV1 {
   workerId: string;
   connections: ProviderConnectionConfigV1[];
   reconcileMs: number;
-  streamweaver?: { databasePath: string; credential: string; image?: { token: string; modelNo: string; modelVerNo: string; binary: string; edenKey?:string;edenModel?:string;cloudflareAccountId?:string;cloudflareToken?:string;pollinationsToken?:string };avatar?:{meshyKey:string;keenToolsKey:string;genericBodyPaths:string[];blenderBinary:string;geometryScriptPath:string} };
+  streamweaver?: { databasePath: string; credential: string; image?: { token: string; modelNo: string; modelVerNo: string; binary: string; edenKey?:string;edenModel?:string;cloudflareAccountId?:string;cloudflareToken?:string;pollinationsToken?:string };avatar?:{outboundEnabled:boolean;meshyKey:string;keenToolsKey:string;genericBodyPaths:string[];blenderBinary:string;geometryScriptPath:string} };
   nebulaArcade?: { databasePath: string; credential: string; configPath: string; config: NebulaArcadeProviderConfigV1; publicOrigin?: string; gameplayOrigin?: string; webhookName: string; avatarUrl?: string };
 }
 
@@ -69,11 +69,14 @@ export function validateChatGatewayWorkerEnvironment(environment: NodeJS.Process
     if(runtimeMode==="sandbox"&&pollinationsToken)throw Error("Sandbox StreamWeaver rejects external image generation");
     if(pollinationsToken){image??={token:"",modelNo:"",modelVerNo:"",binary:"seaart"};image.pollinationsToken=pollinationsToken;}
     const avatarKeys=[environment.STREAMWEAVER_MESHY_API_KEY,environment.STREAMWEAVER_KEENTOOLS_API_KEY].filter(Boolean);
+    const sandboxAvatarOutbound=environment.SPMT_AVATAR_AI_OUTBOUND_MODE==="enabled";
+    if(sandboxAvatarOutbound&&runtimeMode!=="sandbox")throw Error("SPMT_AVATAR_AI_OUTBOUND_MODE is a sandbox-only exception");
     if(avatarKeys.length!==0&&avatarKeys.length!==2)throw Error("Meshy and KeenTools API keys must be configured together");
+    if(sandboxAvatarOutbound&&avatarKeys.length!==2)throw Error("Sandbox avatar AI outbound requires Meshy and KeenTools API keys");
     if(!avatarKeys.length&&(environment.STREAMWEAVER_GENERIC_BODY_GLB||environment.STREAMWEAVER_AVATAR_GEOMETRY_SCRIPT||environment.STREAMWEAVER_BLENDER_BINARY))throw Error("Avatar geometry settings require Meshy and KeenTools API keys");
-    if(runtimeMode==="sandbox"&&avatarKeys.length)throw Error("Sandbox StreamWeaver rejects external avatar generation");
+    if(runtimeMode==="sandbox"&&avatarKeys.length&&!sandboxAvatarOutbound)throw Error("Sandbox StreamWeaver rejects external avatar generation without the dedicated avatar AI exception");
     let avatar:NonNullable<NonNullable<ChatGatewayWorkerEnvironmentV1["streamweaver"]>["avatar"]>|undefined;
-    if(avatarKeys.length){const genericBodyPaths=environment.STREAMWEAVER_GENERIC_BODY_GLB?[environment.STREAMWEAVER_GENERIC_BODY_GLB]:Array.from({length:4},(_,index)=>resolve(`apps/streamweaver/assets/generic-female-body.glb.part-${String(index).padStart(2,"0")}`)),geometryScriptPath=environment.STREAMWEAVER_AVATAR_GEOMETRY_SCRIPT??resolve("apps/streamweaver/scripts/avatar_geometry.py");if(genericBodyPaths.some(path=>!isAbsolute(path))||!isAbsolute(geometryScriptPath))throw Error("Avatar generic body and geometry script paths must be absolute");avatar={meshyKey:String(environment.STREAMWEAVER_MESHY_API_KEY),keenToolsKey:String(environment.STREAMWEAVER_KEENTOOLS_API_KEY),genericBodyPaths,geometryScriptPath,blenderBinary:environment.STREAMWEAVER_BLENDER_BINARY||"blender"};}
+    if(avatarKeys.length){const genericBodyPaths=environment.STREAMWEAVER_GENERIC_BODY_GLB?[environment.STREAMWEAVER_GENERIC_BODY_GLB]:Array.from({length:4},(_,index)=>resolve(`apps/streamweaver/assets/generic-female-body.glb.part-${String(index).padStart(2,"0")}`)),geometryScriptPath=environment.STREAMWEAVER_AVATAR_GEOMETRY_SCRIPT??resolve("apps/streamweaver/scripts/avatar_geometry.py");if(genericBodyPaths.some(path=>!isAbsolute(path))||!isAbsolute(geometryScriptPath))throw Error("Avatar generic body and geometry script paths must be absolute");avatar={outboundEnabled:operationMode==="active"||sandboxAvatarOutbound,meshyKey:String(environment.STREAMWEAVER_MESHY_API_KEY),keenToolsKey:String(environment.STREAMWEAVER_KEENTOOLS_API_KEY),genericBodyPaths,geometryScriptPath,blenderBinary:environment.STREAMWEAVER_BLENDER_BINARY||"blender"};}
     streamweaver = { databasePath: streamweaverDatabasePath, credential: streamweaverCredential, ...(image?{image}:{}),...(avatar?{avatar}:{}) };
   }
   const nebulaEnabled = environment.NEBULA_ARCADE_PROVIDER_RUNTIME_ENABLED === "1";
@@ -271,7 +274,7 @@ export class SupervisedChatGatewayService {
         }};
         this.streamweaverImage=new StreamWeaverImageWorker(streamweaverClient,new StreamWeaverImageGenerationService(providers,enhancer),{workerId:`${options.workerId}-image`,modelNo:image.modelNo,modelVerNo:image.modelVerNo,settings:generationSettings,...(fetchImpl?{fetchImpl}:{}),...(tenantIds.length?{tenantIds}:{})});
       }
-      if(options.streamweaver.avatar&&options.operationMode==="active"){
+      if(options.streamweaver.avatar?.outboundEnabled){
         const avatar=options.streamweaver.avatar,settings=this.streamweaverAvatarSettings=new StreamWeaverRuntimeSettingsStore(options.streamweaver.databasePath),tenantIds=[...new Set(options.connections.map(connection=>connection.tenantId))];
         this.streamweaverAvatar=new StreamWeaverAvatarWorker(streamweaverClient,new MeshyAvatarProvider(avatar.meshyKey,fetchImpl),new KeenToolsAvatarProvider(avatar.keenToolsKey,fetchImpl),new BlenderAvatarGeometry({binary:avatar.blenderBinary,scriptPath:avatar.geometryScriptPath}),{workerId:`${options.workerId}-avatar`,genericBodyPaths:avatar.genericBodyPaths,...(tenantIds.length?{tenantIds}:{}),activate:async(tenantId,value)=>{const current=settings.appearance(tenantId),appearance=settings.saveAppearance(tenantId,{...current,modelUrl:value.modelUrl,modelAssetId:value.modelAssetId,...(!current.avatarUrl&&value.previewUrl?{avatarUrl:value.previewUrl}:{})});await streamweaverClient.publishEvent(tenantId,"streamweaver.avatar.updated.v1",appearance,`streamweaver-avatar-active:${value.modelAssetId}`);}});
       }

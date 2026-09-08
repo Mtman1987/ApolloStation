@@ -11,7 +11,7 @@ export class MeshyAvatarProvider {
       const task=await this.json(`https://api.meshy.ai/openapi/v1/image-to-3d/${encodeURIComponent(taskId)}`,{headers:this.headers(false)}) as Record<string,unknown>;
       const status=String(task.status??"");
       if(status==="SUCCEEDED"){
-        const modelUrls=record(task.model_urls),url=httpsUrl(modelUrls.glb,"Meshy GLB URL");
+        const modelUrls=record(task.model_urls),url=meshyAssetUrl(modelUrls.glb,"Meshy GLB URL");
         return{taskId,glb:await binary(this.fetchImpl,url,"Meshy GLB",64*1024*1024)};
       }
       if(status==="FAILED"||status==="CANCELED")throw Error(`Meshy avatar generation failed: ${safe(record(task.task_error).message)||status}`);
@@ -26,5 +26,5 @@ export class MeshyAvatarProvider {
 export async function binary(fetchImpl:typeof fetch,url:string,label:string,maximum:number){const response=await fetchImpl(url,{redirect:"error",signal:AbortSignal.timeout(180_000)});if(!response.ok)throw Error(`${label} returned HTTP ${response.status}`);const declared=Number(response.headers.get("content-length")??0);if(declared>maximum)throw Error(`${label} exceeds the ${Math.floor(maximum/1024/1024)} MiB limit`);const bytes=new Uint8Array(await response.arrayBuffer());if(!bytes.byteLength||bytes.byteLength>maximum)throw Error(`${label} has an invalid size`);return bytes;}
 function id(value:unknown,label:string){const text=String(value??"").trim();if(!/^[A-Za-z0-9-]{8,128}$/.test(text))throw Error(`${label} is invalid`);return text;}
 function record(value:unknown):Record<string,unknown>{return value&&typeof value==="object"&&!Array.isArray(value)?value as Record<string,unknown>:{};}
-function httpsUrl(value:unknown,label:string){const url=new URL(String(value??""));if(url.protocol!=="https:"||url.username||url.password)throw Error(`${label} is invalid`);return url.toString();}
+function meshyAssetUrl(value:unknown,label:string){const url=new URL(String(value??""));if(url.protocol!=="https:"||url.username||url.password||url.hostname!=="assets.meshy.ai")throw Error(`${label} is invalid`);return url.toString();}
 function safe(value:unknown){return String(value??"").replace(/[\r\n]+/g," ").slice(0,300);}

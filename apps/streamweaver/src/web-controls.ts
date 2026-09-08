@@ -35,7 +35,7 @@ import { SqliteStreamWeaverBotRelayStore } from "./bot-relay.js";
 import { STREAMWEAVER_AVATAR_BUILD_CAPABILITY } from "./avatar-worker.js";
 
 export interface StreamWeaverWebConnectionV1 { schemaVersion: 1; tenantId: string; provider: ChatProviderV1; connectionId: string; channelId: string; providerAccountId: string; desired: boolean; }
-export interface StreamWeaverWebControlOptionsV1 { openAiKey?:string; privateAiDraftsEnabled?:boolean; buildSha?:string; spmtOrigin: string; databasePath?: string; credential?: string; connections?: StreamWeaverWebConnectionV1[]; operationMode?: SpmtOperationModeV1; fetchImpl?: typeof fetch; }
+export interface StreamWeaverWebControlOptionsV1 { openAiKey?:string; privateAiDraftsEnabled?:boolean; avatarBuildEnabled?:boolean; buildSha?:string; spmtOrigin: string; databasePath?: string; credential?: string; connections?: StreamWeaverWebConnectionV1[]; operationMode?: SpmtOperationModeV1; fetchImpl?: typeof fetch; }
 type SessionContext = Awaited<ReturnType<typeof fetchAppSessionContext>>;
 
 /** Authenticated app API behind Voice Commander, persona, economy, and integration pages. */
@@ -54,10 +54,12 @@ export class StreamWeaverWebControls {
   private readonly runtimeSettings?: StreamWeaverRuntimeSettingsStore;
   private readonly relay?: SqliteStreamWeaverBotRelayStore;
   private readonly operationMode: SpmtOperationModeV1;
+  private readonly avatarBuildEnabled: boolean;
 
   constructor(private readonly options: StreamWeaverWebControlOptionsV1) {
     if(options.databasePath)this.tiktok=new StreamWeaverTikTokStore(options.databasePath);
     this.operationMode = options.operationMode ?? "active";
+    this.avatarBuildEnabled = options.avatarBuildEnabled ?? this.operationMode === "active";
     if(options.databasePath)this.shoutoutStore=new SqliteStreamWeaverShoutoutStore(options.databasePath);
     if(options.databasePath)this.generation=new StreamWeaverGenerationStore(options.databasePath);
     if (options.databasePath) this.community=new StreamWeaverCommunityStore(options.databasePath);
@@ -254,7 +256,7 @@ export class StreamWeaverWebControls {
         return sendJson(response,200,{appearance});
       }
       if(url.pathname==="/api/streamweaver/control/avatar-build"){
-        if(this.operationMode!=="active")throw Error("External avatar creation is disabled in this environment");
+        if(!this.avatarBuildEnabled)throw Error("Avatar creation is disabled in this environment");
         const portraitAssetId=identifier(body.portraitAssetId,"portraitAssetId"),asset=await this.deviceApi(request,context,undefined,"/v1/media/assets/"+portraitAssetId);
         if(asset.tenantId!==context.tenantId||asset.ownerUserId!==this.actor(context).id||!["image/png","image/jpeg"].includes(String(asset.contentType)))throw Error("Choose one of your PNG or JPEG portraits from Media Files");
         const result=await this.requireClient().createExecutionJob(context.tenantId,{ownerAppId:"streamweaver",capabilityId:STREAMWEAVER_AVATAR_BUILD_CAPABILITY,executionOwner:"streamweaver",billedUserId:this.actor(context).id,meteredResource:"image-generations",usageQuantity:1,executionTarget:"sprite",meteringTarget:"hosted",input:{schemaVersion:1,portraitAssetId}},idempotency(body.requestId,"avatar-build"));
@@ -338,6 +340,7 @@ export class StreamWeaverWebControls {
       session: context.session,
       role: this.role(context),
       operationMode: this.operationMode,
+      avatarBuildEnabled: this.avatarBuildEnabled,
       devices,deviceError,
       runtimeReady: Boolean(this.client && this.persona && this.economy),
       providerLinks: snapshot.providerLinks,

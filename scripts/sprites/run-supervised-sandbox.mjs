@@ -29,7 +29,11 @@ const llmCache = resolve(argumentsMap.get("llm-cache") ?? resolve(dataRoot, "mod
 const offlineNetworkGuard = requireBooleanFlag(argumentsMap.get("offline-network-guard") ?? "0", "offline-network-guard");
 const offlineNetworkGuardPath = resolve("scripts/offline-network-guard.mjs");
 if (offlineNetworkGuard) await import(offlineNetworkGuardPath);
-let flowOpenAiKey="";try{flowOpenAiKey=(await readFile(resolve(dataRoot,"openai-api-key"),"utf8")).trim();}catch(error){if(error.code!=="ENOENT")throw error;}
+const flowOpenAiKey=await readPrivateCredential("openai-api-key");
+const meshyAvatarKey=await readPrivateCredential("streamweaver-meshy-api-key");
+const keenToolsAvatarKey=await readPrivateCredential("streamweaver-keentools-api-key");
+if(Boolean(meshyAvatarKey)!==Boolean(keenToolsAvatarKey))throw new Error("Meshy and KeenTools avatar credentials must be installed together");
+const avatarAiEnabled=Boolean(meshyAvatarKey&&keenToolsAvatarKey);
 const databasePath = resolve(dataRoot, "spmt-empty-catalog-sandbox.sqlite");
 await mkdir(dataRoot, { recursive: true, mode: 0o700 });
 
@@ -148,7 +152,7 @@ await waitForUrl(spmt, `http://127.0.0.1:${spmtPort}/health/ready`, "SPMT");
 const spmtOrigin = `http://127.0.0.1:${spmtPort}`;
 
 const dshWeb = start("Discord Stream Hub web", "apps/discord-stream-hub/dist/web-server.js", { ...common, ...liveReadEnvironment, SPMT_ORIGIN: spmtOrigin, DSH_DATABASE_PATH: resolve(dataRoot, "discord-stream-hub-live-sandbox.sqlite"), DSH_RUNTIME_CONFIG_PATH: resolve("config/discord-stream-hub-runtime.sandbox.v1.json"), DSH_WORKER_CREDENTIAL: dshWorkerCredential, HOST: "127.0.0.1", PORT: String(dshWebPort) });
-const streamweaverWeb = start("StreamWeaver web", "apps/streamweaver/dist/web-server.js", { ...common, ...(flowOpenAiKey ? { OPENAI_API_KEY:flowOpenAiKey, SPMT_PRIVATE_FLOW_OPENAI_ENABLED:"1", STREAMWEAVER_PRIVATE_AI_DRAFTS_ENABLED: "1" } : {}), ...liveReadEnvironment, SPMT_ORIGIN: spmtOrigin, STREAMWEAVER_DATABASE_PATH: resolve(dataRoot, "streamweaver-provider-sandbox.sqlite"), STREAMWEAVER_WORKER_CREDENTIAL: streamweaverWorkerCredential, CHAT_GATEWAY_CONNECTIONS: "[]", HOST: "127.0.0.1", PORT: String(streamweaverWebPort) });
+const streamweaverWeb = start("StreamWeaver web", "apps/streamweaver/dist/web-server.js", { ...common, ...(flowOpenAiKey ? { OPENAI_API_KEY:flowOpenAiKey, SPMT_PRIVATE_FLOW_OPENAI_ENABLED:"1", STREAMWEAVER_PRIVATE_AI_DRAFTS_ENABLED: "1" } : {}), ...(avatarAiEnabled?{STREAMWEAVER_AVATAR_BUILD_ENABLED:"1"}:{}), ...liveReadEnvironment, SPMT_ORIGIN: spmtOrigin, STREAMWEAVER_DATABASE_PATH: resolve(dataRoot, "streamweaver-provider-sandbox.sqlite"), STREAMWEAVER_WORKER_CREDENTIAL: streamweaverWorkerCredential, CHAT_GATEWAY_CONNECTIONS: "[]", HOST: "127.0.0.1", PORT: String(streamweaverWebPort) });
 const hearMeOutWeb = start("HearMeOut web", "apps/hearmeout/dist/web-server.js", { ...common, ...liveReadEnvironment, SPMT_ORIGIN: spmtOrigin, ...Object.fromEntries(["LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET"].filter(key => process.env[key]).map(key => [key, process.env[key]])), HEARMEOUT_ROOM_DATABASE_PATH: resolve(dataRoot, "hearmeout-room-sandbox.sqlite"), HEARMEOUT_WORKER_CREDENTIAL: hearMeOutWorkerCredential, HOST: "127.0.0.1", PORT: String(hearMeOutWebPort) });
 const mountainViewWeb = start("MountainView web", "apps/mountainview/dist/web-server.js", { ...common, ...liveReadEnvironment, SPMT_ORIGIN: spmtOrigin, MOUNTAINVIEW_DATABASE_PATH: resolve(dataRoot, "mountainview-green-sandbox.sqlite"), HOST: "127.0.0.1", PORT: String(mountainViewWebPort) });
 const companionWeb = start("Companion web", "apps/companion/dist/web-server.js", { ...common, ...liveReadEnvironment, SPMT_ORIGIN: spmtOrigin, HOST: "127.0.0.1", PORT: String(companionWebPort) });
@@ -170,6 +174,7 @@ const chatGateway = start("Chat Gateway", "apps/chat-gateway/dist/service-start.
   STREAMWEAVER_PROVIDER_RUNTIME_ENABLED: "1",
   STREAMWEAVER_WORKER_CREDENTIAL: streamweaverWorkerCredential,
   STREAMWEAVER_DATABASE_PATH: resolve(dataRoot, "streamweaver-provider-sandbox.sqlite"),
+  ...(avatarAiEnabled?{SPMT_AVATAR_AI_OUTBOUND_MODE:"enabled",STREAMWEAVER_MESHY_API_KEY:meshyAvatarKey,STREAMWEAVER_KEENTOOLS_API_KEY:keenToolsAvatarKey}:{}),
   NEBULA_ARCADE_PROVIDER_RUNTIME_ENABLED: "1",
   NEBULA_ARCADE_WORKER_CREDENTIAL: nebulaArcadeWorkerCredential,
   ...(publicUrl.startsWith("https:") ? { NEBULA_ARCADE_PUBLIC_ORIGIN: publicUrl } : {}),
@@ -292,6 +297,8 @@ function safeEnvironment(source) {
   for (const name of ["HOME", "PATH", "LANG", "LC_ALL", "TZ", "TMPDIR", "TEMP", "TMP"]) if (source[name]) safe[name] = source[name];
   return safe;
 }
+
+async function readPrivateCredential(name){try{return(await readFile(resolve(dataRoot,name),"utf8")).trim();}catch(error){if(error.code!=="ENOENT")throw error;return "";}}
 
 function requireSandboxUrl(value) {
   let url;
