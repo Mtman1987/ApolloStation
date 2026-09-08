@@ -69,6 +69,9 @@ test("StreamWeaver exposes a wired Voice Commander, searchable bot catalog, inte
     assert.match(browserSource, /Finish your flow/); assert.match(browserSource, /data-flow-intent="enable"/); assert.match(browserSource, /data-flow-intent="publish"/);
     assert.match(browserSource, /Bot & Persona unavailable/); assert.match(browserSource, /Active avatar/); assert.match(browserSource, /streamweaver:avatar-updated/); assert.match(browserSource, /Use as active avatar/);
     assert.match(browserSource, /Create rigged 3D avatar/); assert.match(browserSource, /avatar-build/); assert.match(browserSource, /Rigged 3D avatar ready/);
+    assert.match(browserSource, /data-sw-form="avatar-build-upload"/); assert.match(browserSource, /accept="image\/png,image\/jpeg"/);
+    assert.match(browserSource, /Portrait uploaded\. Starting the Meshy avatar build/); assert.match(browserSource, /portraitAssetId:asset\.id/);
+    assert.match(browserSource, /Advanced avatar URLs/); assert.match(browserSource, /Choose picture and create avatar/);
     assert.match(browserSource, /e\.key==='Enter'.*requestSubmit\(\)/, "Enter submits Voice Commander");
     assert.match(browserSource, /!e\.shiftKey/, "Shift+Enter remains available for a new line");
     assert.match(browserSource, /data-sw-page=/);
