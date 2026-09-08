@@ -310,7 +310,9 @@ function privateManifestHostname(hostname: string) {
 }
 
 async function upstreamJson(fetchImpl: typeof fetch, url: string, body: Record<string, unknown>) {
-  const response = await fetchImpl(url, { method: "POST", headers: { "content-type": "application/json", accept: "application/json" }, body: JSON.stringify(body), redirect: "manual", signal: AbortSignal.timeout(10000) });
+  let response: Response;
+  try { response = await fetchImpl(url, { method: "POST", headers: { "content-type": "application/json", accept: "application/json" }, body: JSON.stringify(body), redirect: "manual", signal: AbortSignal.timeout(10000) }); }
+  catch (error) { throw new WebHostError(503, `The isolated SPMT login service did not answer in time: ${error instanceof Error ? error.message : "unavailable"}`); }
   const encoded = await limitedResponseBody(response);
   return { response, body: parseJson(encoded) };
 }

@@ -58,12 +58,17 @@ test("private SpaceMountain host serves explicit browser modules with restrictiv
     assert.match(html, /Tenant personas remain in the separate apps/);
     assert.match(html, /Add developer app/);
     assert.match(html, /Developer docs/);
+    assert.match(html, /sandbox-auth-status/);
     assert.doesNotMatch(html, /Publish Nebula Arcade tag game through SDK/);
     assert.doesNotMatch(html, /localStorage|sessionStorage|accessToken|refreshToken/);
 
     const client = await fetch(`${base}/assets/web/client.js`);
     assert.equal(client.status, 200);
     assert.match(client.headers.get("content-type") ?? "", /text\/javascript/);
+    const clientSource = await client.text();
+    assert.match(clientSource, /AbortSignal\.timeout\(12_000\)/);
+    assert.match(clientSource, /retrying sign-in once/);
+    assert.match(clientSource, /Tap Enter SpaceMountain to try again/);
     const sessionResilience = await fetch(`${base}/assets/web/session-resilience.js`);
     assert.equal(sessionResilience.status, 200);
     assert.match(sessionResilience.headers.get("content-type") ?? "", /text\/javascript/);
