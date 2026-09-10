@@ -1,0 +1,45 @@
+name: Product human reference presentation once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/product-human-reference-presentation-once.yml"
+      - "scripts/patch-product-human-reference-presentation-once.py"
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - name: Apply shared product presentation patch
+        run: python3 scripts/patch-product-human-reference-presentation-once.py
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+      - name: Install FFmpeg for renderer contract test
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+      - name: Validate ecosystem
+        run: npm test
+      - name: Commit shared product presentation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add packages/app-foundation/src/product-web.ts tests/product-human-reference-presentation.test.mjs
+          if git diff --cached --quiet; then
+            echo "No product presentation changes to commit"
+            exit 0
+          fi
+          git commit -m "Humanize audit references across product surfaces"
+          git push origin HEAD:main
