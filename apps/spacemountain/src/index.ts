@@ -385,7 +385,7 @@ function collectHumanReferenceInputs(liveChat:readonly CommlinkLiveChatRecordV1[
     refs.push({provider:message.provider,kind:"channel",id:message.channelId});
     refs.push({provider:message.provider,kind:"message",id:message.messageId,channelId:message.channelId,textHint:message.text});
   }
-  for(const log of logs){refs.push(...discoverHumanReferencesInText(log.summary));if(log.detail)refs.push(...discoverHumanReferencesInText(log.detail));}
+  for(const log of logs){refs.push(...discoverHumanReferencesInText(`${log.summary}\n${log.detail??""}`));}
   return [...new Map(refs.map(ref=>[humanReferenceKey(ref),ref])).values()];
 }
 function presentLiveChat(messages:readonly CommlinkLiveChatRecordV1[],refs:readonly HumanReferenceV1[]):CommlinkLiveChatRecordV1[]{

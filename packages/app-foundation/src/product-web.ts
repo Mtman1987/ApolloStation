@@ -442,8 +442,9 @@ export function collectOperationsHumanReferences(value: unknown): HumanReference
   for (const item of value) {
     if (!item || typeof item !== "object" || Array.isArray(item)) continue;
     const record = item as Record<string, unknown>;
-    if (typeof record.summary === "string") refs.push(...discoverHumanReferencesInText(record.summary));
-    if (typeof record.detail === "string") refs.push(...discoverHumanReferencesInText(record.detail));
+    const summary = typeof record.summary === "string" ? record.summary : "";
+    const detail = typeof record.detail === "string" ? record.detail : "";
+    refs.push(...discoverHumanReferencesInText(`${summary}\n${detail}`));
   }
   return [...new Map(refs.map((ref) => [humanReferenceKey(ref), ref])).values()];
 }
