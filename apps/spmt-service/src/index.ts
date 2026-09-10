@@ -1,3 +1,4 @@
+import { HumanReferenceApi, HumanReferenceService } from "./human-reference-api.js";
 import {TwitchBotApi,parseTwitchBotRoles,type TwitchBotRole} from "./twitch-bot-api.js";
 import {normalizeTikTokLiveEvent} from "@spmt/commlink-core";
 import {PublicPersonaApi} from "./public-persona-api.js";
@@ -108,6 +109,8 @@ export function createSpmtService(options: SpmtServiceOptions) {
   const data = new PlatformDataService({ store: platformStore, auth, webhookKey: options.webhookKey });
   const fetchImpl = options.fetchImpl ?? fetch;
   const providerCredentials = options.providerCredentialKey ? new SqliteProviderCredentialAuthority(options.databasePath, options.providerCredentialKey, createFirstPartyProviderRefreshAdapters(fetchImpl), { ...(options.providerOAuthClients ? { clients: options.providerOAuthClients } : {}) }) : undefined;
+  const humanReferenceResolver = new HumanReferenceService({ ...(providerCredentials ? { credentials: providerCredentials } : {}), fetchImpl });
+  const humanReferenceApi = new HumanReferenceApi({ resolver: humanReferenceResolver, auth, control, accessToken });
   const providerGrants = options.providerGrants ?? (providerCredentials ? new ProviderGrantBroker({resolve:async input=>{const credential=await providerCredentials.resolve(input);return credential&&await twitchBots.validateManagedCredential(input.tenantId,credential)?credential:undefined;}}) : undefined);
   const accounts = new AccountRecoveryService({ authority, authorityStore: store, control, platformStore, setupStore });
   const executionJobs = new ExecutionJobService({
@@ -134,7 +137,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
   const api = new PlatformApiAdapter(operations);
   const publicPersonas=new PublicPersonaApi({path:options.databasePath,auth,authority,control,runtime:communityAssistant,accessToken});
   const socialStreamStore=new CommlinkSocialStreamStore(options.databasePath);
-  const operatorApi = new CommlinkOperatorApi({store:commlinkOperator,chat:commlinkLiveChat,auth,control,authority,accessToken});
+  const operatorApi = new CommlinkOperatorApi({store:commlinkOperator,chat:commlinkLiveChat,auth,control,authority,accessToken,resolveReferences:(tenant,references)=>humanReferenceResolver.resolveMany(tenant,references)});
   const operatorTimer=setInterval(()=>{for(const tenant of store.listTenants())if(tenant.status === "active")try{operatorApi.publish(tenant.id);}catch{/* A failed publication retries with the same revision. */}},1000);operatorTimer.unref();
   const mediaApi = new SpmtMediaApi({ assets: mediaAssets, auth, control, jobs: platformStore, publicBaseUrl, accessToken, limitBytes: (tenantId) => (billing.manifest.plans.find(plan => plan.planId === billingPlan(control.listEntitlements(tenantId)))?.limits["storage-gb"] ?? 0) * 1024 ** 3 });
   const socialStreamApi=new CommlinkSocialStreamApi({store:socialStreamStore,chat:commlinkLiveChat,operator:commlinkOperator,auth,control,accessToken,publish:tenant=>{operatorApi.publish(tenant)}});
@@ -175,6 +178,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
     try {
       const path = request.url ?? "/";
       const url = new URL(`http://spmt.local${path}`);
+      if (await humanReferenceApi.handle(request, response, url)) return;
       if (await mediaApi.handle(request, response, url)) return;
       if (await publicPersonas.handle(request,response,url)) return;
       if (await twitchBots.handle(request,response,url)) return;

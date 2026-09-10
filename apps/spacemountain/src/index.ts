@@ -1,3 +1,4 @@
+import { discoverHumanReferencesInText, humanReferenceKey, humanizeTextWithReferences, type HumanReferenceInputV1, type HumanReferenceV1 } from "@spmt/contracts/human-reference";
 import type { AppFrameLaunchV1, CoderDescriptorV1, CoderJobV1, CommlinkLiveChatRecordV1, OperationsLogV1, PersonalUsageSummaryV1, RuntimeStateV1, SurfaceModeV1 } from "@spmt/contracts";
 import { SpmtClient } from "@spmt/sdk";
 
@@ -153,6 +154,16 @@ export class SpaceMountainShellController {
       else failures.set(key, errorDetail(result.reason));
     });
 
+    const rawLiveChat = liveChatRecords(values.get("commlinkLive"));
+    const rawOperationsLogs = operationsLogs(values.get("operationsLogs"));
+    const referenceInputs = collectHumanReferenceInputs(rawLiveChat, rawOperationsLogs);
+    let resolvedReferences: HumanReferenceV1[] = [];
+    if (referenceInputs.length && typeof this.spmt.resolveHumanReferences === "function") {
+      try { resolvedReferences = (await this.spmt.resolveHumanReferences(input.tenantId, referenceInputs)).references; } catch { /* presentation lookup must never take the shell down */ }
+    }
+    const presentedLiveChat = presentLiveChat(rawLiveChat, resolvedReferences);
+    const presentedOperationsLogs = presentOperationsLogs(rawOperationsLogs, resolvedReferences);
+
     const session = record(values.get("session"));
     const workspace = record(values.get("workspace"));
     const rawApps = records(values.get("shipyard"));
@@ -198,7 +209,7 @@ export class SpaceMountainShellController {
       conversations: records(values.get("commlink")),
       commlinkRecipients: commlinkRecipients(values.get("commlinkRecipients")),
       messages: records(values.get("commlinkMessages")),
-      liveChat: liveChatRecords(values.get("commlinkLive")),
+      liveChat: presentedLiveChat,
       simulationRooms: records(values.get("simulationRooms")).filter((r): r is {roomId:string;name:string} => typeof r.roomId === "string" && typeof r.name === "string"),
       simulationMessages: records(values.get("simulationMessages")),
       notifications: records(values.get("notifications")),
@@ -206,7 +217,7 @@ export class SpaceMountainShellController {
       overlayOutputs: records(values.get("overlayOutputs")),
       runtimeStates: records(values.get("runtimeStates")),
       stellar: { context: records(values.get("stellarContext")), capabilities: records(values.get("stellarCapabilities")) },
-      operations: { ...operationsAccess, logs: operationsLogs(values.get("operationsLogs")), coder: coderDescriptor(values.get("operationsCoder")), jobs: coderJobs(values.get("operationsCoderJobs")) },
+      operations: { ...operationsAccess, logs: presentedOperationsLogs, coder: coderDescriptor(values.get("operationsCoder")), jobs: coderJobs(values.get("operationsCoderJobs")) },
       setupOptions: Array.isArray(setupPayload?.options) ? setupPayload.options.filter(isRecord) : [],
       sources,
     };
@@ -365,3 +376,21 @@ function operationAccess(value: unknown) { return isRecord(value) ? { canReadLog
 function sessionHasScope(value: unknown, required: string) { if (!isRecord(value) || !Array.isArray(value.scopes)) return false; const scopes=value.scopes.filter((item):item is string=>typeof item==="string");if(scopes.includes("*")||scopes.includes(required))return true;const parts=required.split(":");for(let index=parts.length-1;index>0;index-=1)if(scopes.includes(`${parts.slice(0,index).join(":")}:*`))return true;return false; }
 function errorDetail(value: unknown) { return value instanceof Error ? value.message : String(value ?? "unknown error"); }
 function requireId(value: string, name: string) { if (!value || value.trim() !== value || value.length > 200 || !/^[A-Za-z0-9._:@/-]+$/.test(value)) throw new Error(`${name} is invalid`); return value; }
+
+
+function collectHumanReferenceInputs(liveChat:readonly CommlinkLiveChatRecordV1[],logs:readonly OperationsLogV1[]):HumanReferenceInputV1[]{
+  const refs:HumanReferenceInputV1[]=[];
+  for(const message of liveChat){
+    refs.push({provider:message.provider,kind:"user",id:message.providerUserId,labelHint:message.displayName??message.username});
+    refs.push({provider:message.provider,kind:"channel",id:message.channelId});
+    refs.push({provider:message.provider,kind:"message",id:message.messageId,channelId:message.channelId,textHint:message.text});
+  }
+  for(const log of logs){refs.push(...discoverHumanReferencesInText(log.summary));if(log.detail)refs.push(...discoverHumanReferencesInText(log.detail));}
+  return [...new Map(refs.map(ref=>[humanReferenceKey(ref),ref])).values()];
+}
+function presentLiveChat(messages:readonly CommlinkLiveChatRecordV1[],refs:readonly HumanReferenceV1[]):CommlinkLiveChatRecordV1[]{
+  return messages.map(message=>{const actor=refs.find(ref=>ref.kind==="user"&&ref.id===message.providerUserId),channel=refs.find(ref=>ref.kind==="channel"&&ref.id===message.channelId),providerMessage=refs.find(ref=>ref.kind==="message"&&ref.id===message.messageId);const context=[channel?.label,channel?.secondary].filter(Boolean).join(" · ");return {...message,presentation:{actor,channel,message:providerMessage},...(context?{__humanContext:context}:{})} as CommlinkLiveChatRecordV1;});
+}
+function presentOperationsLogs(logs:readonly OperationsLogV1[],refs:readonly HumanReferenceV1[]):OperationsLogV1[]{
+  return logs.map(log=>({...log,presentation:{summary:humanizeTextWithReferences(log.summary,refs),...(log.detail?{detail:humanizeTextWithReferences(log.detail,refs)}:{})}} as OperationsLogV1));
+}

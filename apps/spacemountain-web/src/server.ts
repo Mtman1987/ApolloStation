@@ -33,6 +33,7 @@ const ASSETS = new Map<string, { file: string; type: string }>([
   ["/assets/web/bounded-app-client.js", { file: resolve(HERE, "bounded-app-client.js"), type: "text/javascript; charset=utf-8" }],
   ["/assets/contracts/media.js", { file: resolve(REPOSITORY_ROOT, "packages/contracts/dist/media.js"), type: "text/javascript; charset=utf-8" }],
   ["/assets/contracts/index.js", { file: resolve(REPOSITORY_ROOT, "packages/contracts/dist/index.js"), type: "text/javascript; charset=utf-8" }],
+  ["/assets/contracts/human-reference.js", { file: resolve(REPOSITORY_ROOT, "packages/contracts/dist/human-reference.js"), type: "text/javascript; charset=utf-8" }],
   ["/assets/embed/index.js", { file: resolve(REPOSITORY_ROOT, "packages/embed/dist/index.js"), type: "text/javascript; charset=utf-8" }],
   ["/assets/sdk/index.js", { file: resolve(REPOSITORY_ROOT, "packages/sdk/dist/index.js"), type: "text/javascript; charset=utf-8" }],
   ["/assets/sdk/xp.js", { file: resolve(REPOSITORY_ROOT, "packages/sdk/dist/xp.js"), type: "text/javascript; charset=utf-8" }],

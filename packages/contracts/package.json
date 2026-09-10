@@ -6,7 +6,8 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
-    "./surface": { "types": "./dist/surface.d.ts", "default": "./dist/surface.js" }
+    "./surface": { "types": "./dist/surface.d.ts", "default": "./dist/surface.js" },
+    "./human-reference": { "types": "./dist/human-reference.d.ts", "default": "./dist/human-reference.js" }
   },
   "scripts": { "build": "tsc -b" }
 }
