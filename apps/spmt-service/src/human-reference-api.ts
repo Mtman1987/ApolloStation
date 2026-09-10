@@ -57,7 +57,7 @@ export class HumanReferenceService {
     if (input.kind === "guild") return this.discordGuild(input, authorization);
     if (input.kind === "channel") return this.discordChannel(input, authorization);
     if (input.kind === "message") return this.discordMessage(input, authorization);
-    if (input.kind === "user") return input.guildId ? this.discordMember(input, authorization) : undefined;
+    if (input.kind === "user") return input.guildId || input.channelId ? this.discordMember(input, authorization) : undefined;
     return (await this.discordChannel({ ...input, kind: "channel" }, authorization))
       ?? (await this.discordGuild({ ...input, kind: "guild" }, authorization));
   }
@@ -89,14 +89,19 @@ export class HumanReferenceService {
   }
 
   private async discordMember(input: HumanReferenceInputV1, authorization: string): Promise<HumanReferenceV1 | undefined> {
-    if (!input.guildId) return undefined;
-    const member = await this.discordGet(`/guilds/${encodeURIComponent(input.guildId)}/members/${encodeURIComponent(input.id)}`, authorization);
+    let guildId = input.guildId;
+    if (!guildId && input.channelId) {
+      const channel = await this.discordChannel({ provider: "discord", kind: "channel", id: input.channelId }, authorization);
+      guildId = channel?.guildId;
+    }
+    if (!guildId) return undefined;
+    const member = await this.discordGet(`/guilds/${encodeURIComponent(guildId)}/members/${encodeURIComponent(input.id)}`, authorization);
     if (!member) return undefined;
     const user = record(member.user);
     const label = text(member.nick) ?? (user ? text(user.global_name) ?? text(user.username) : undefined);
     if (!label) return undefined;
-    const guild = await this.discordGet(`/guilds/${encodeURIComponent(input.guildId)}`, authorization);
-    return { schemaVersion: 1, ...input, kind: "user", label, resolved: true, ...(guild && text(guild.name) ? { secondary: text(guild.name)! } : {}) };
+    const guild = await this.discordGet(`/guilds/${encodeURIComponent(guildId)}`, authorization);
+    return { schemaVersion: 1, ...input, kind: "user", guildId, label, resolved: true, ...(guild && text(guild.name) ? { secondary: text(guild.name)! } : {}) };
   }
 
   private async discordMessage(input: HumanReferenceInputV1, authorization: string): Promise<HumanReferenceV1 | undefined> {
