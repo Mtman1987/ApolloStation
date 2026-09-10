@@ -1,0 +1,147 @@
+name: Reference context linking once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/reference-context-linking-once.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - name: Link user references to channel and server context
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def patch(path, old, new):
+              p=Path(path); text=p.read_text(encoding='utf-8')
+              if new in text: return
+              if old not in text: raise SystemExit(f'patch anchor missing in {path}: {old[:120]}')
+              p.write_text(text.replace(old,new,1),encoding='utf-8')
+
+          patch('packages/contracts/src/human-reference.ts',
+            '...(onlyChannel && ref.kind === "message" && !ref.channelId ? { channelId: onlyChannel } : {}),',
+            '...(onlyChannel && (ref.kind === "message" || ref.kind === "user") && !ref.channelId ? { channelId: onlyChannel } : {}),')
+          patch('packages/contracts/src/human-reference.ts',
+            '  for (const ref of references) {\n    const current = byId.get(ref.id);',
+            '  for (const ref of references) {\n    if (!ref.resolved) continue;\n    const current = byId.get(ref.id);')
+
+          old_member='''  private async discordMember(input: HumanReferenceInputV1, authorization: string): Promise<HumanReferenceV1 | undefined> {
+              if (!input.guildId) return undefined;
+              const member = await this.discordGet(`/guilds/${encodeURIComponent(input.guildId)}/members/${encodeURIComponent(input.id)}`, authorization);
+              if (!member) return undefined;
+              const user = record(member.user);
+              const label = text(member.nick) ?? (user ? text(user.global_name) ?? text(user.username) : undefined);
+              if (!label) return undefined;
+              const guild = await this.discordGet(`/guilds/${encodeURIComponent(input.guildId)}`, authorization);
+              return { schemaVersion: 1, ...input, kind: "user", label, resolved: true, ...(guild && text(guild.name) ? { secondary: text(guild.name)! } : {}) };
+            }'''
+          new_member='''  private async discordMember(input: HumanReferenceInputV1, authorization: string): Promise<HumanReferenceV1 | undefined> {
+              let guildId = input.guildId;
+              if (!guildId && input.channelId) {
+                const channel = await this.discordChannel({ provider: "discord", kind: "channel", id: input.channelId }, authorization);
+                guildId = channel?.guildId;
+              }
+              if (!guildId) return undefined;
+              const member = await this.discordGet(`/guilds/${encodeURIComponent(guildId)}/members/${encodeURIComponent(input.id)}`, authorization);
+              if (!member) return undefined;
+              const user = record(member.user);
+              const label = text(member.nick) ?? (user ? text(user.global_name) ?? text(user.username) : undefined);
+              if (!label) return undefined;
+              const guild = await this.discordGet(`/guilds/${encodeURIComponent(guildId)}`, authorization);
+              return { schemaVersion: 1, ...input, kind: "user", guildId, label, resolved: true, ...(guild && text(guild.name) ? { secondary: text(guild.name)! } : {}) };
+            }'''
+          patch('apps/spmt-service/src/human-reference-api.ts', old_member, new_member)
+
+          patch('apps/spacemountain/src/index.ts',
+            '  for(const log of logs){refs.push(...discoverHumanReferencesInText(log.summary));if(log.detail)refs.push(...discoverHumanReferencesInText(log.detail));}',
+            '  for(const log of logs){refs.push(...discoverHumanReferencesInText(`${log.summary}\\n${log.detail??""}`));}')
+
+          p=Path('packages/app-foundation/src/product-web.ts'); text=p.read_text(encoding='utf-8')
+          old='''  for (const item of value) {
+              if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+              const record = item as Record<string, unknown>;
+              if (typeof record.summary === "string") refs.push(...discoverHumanReferencesInText(record.summary));
+              if (typeof record.detail === "string") refs.push(...discoverHumanReferencesInText(record.detail));
+            }'''
+          new='''  for (const item of value) {
+              if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+              const record = item as Record<string, unknown>;
+              const summary = typeof record.summary === "string" ? record.summary : "";
+              const detail = typeof record.detail === "string" ? record.detail : "";
+              refs.push(...discoverHumanReferencesInText(`${summary}\\n${detail}`));
+            }'''
+          if old not in text: raise SystemExit('product reference collection anchor missing')
+          p.write_text(text.replace(old,new,1),encoding='utf-8')
+
+          test=Path('tests/human-reference-presentation.test.mjs'); text=test.read_text(encoding='utf-8')
+          text=text.replace(
+            '  assert.equal(refs.find((ref) => ref.kind === "message")?.channelId, "223456789012345678");\n',
+            '  assert.equal(refs.find((ref) => ref.kind === "message")?.channelId, "223456789012345678");\n  assert.equal(refs.find((ref) => ref.kind === "user")?.channelId, "223456789012345678");\n')
+          old_tail='''  const [user] = await service.resolveMany("tenant-a", [{provider:"discord",kind:"user",id:"423456789012345678"}]);
+              assert.equal(user.resolved, false);
+              assert.equal(fetched.some((url) => url.includes('/users/423456789012345678')), false);
+            });'''
+          new_tail='''  const [user] = await service.resolveMany("tenant-a", [{provider:"discord",kind:"user",id:"423456789012345678"}]);
+              assert.equal(user.resolved, false);
+              assert.equal(fetched.some((url) => url.includes('/users/423456789012345678')), false);
+            });
+
+            test("Discord user references inherit accessible channel context and resolve inside that server", async () => {
+              const fetched = [];
+              const credentials = {
+                list() { return [{ provider:"discord", providerUserId:"bot", state:"ready", metadata:{authorizationScheme:"Bot"} }]; },
+                async resolve() { return { accessToken:"secret", metadata:{authorizationScheme:"Bot"} }; },
+              };
+              const fetchImpl = async (url) => {
+                const value=String(url); fetched.push(value);
+                if(value.endsWith('/channels/223456789012345678'))return new Response(JSON.stringify({id:"223456789012345678",name:"general",guild_id:"123456789012345678"}),{status:200});
+                if(value.endsWith('/guilds/123456789012345678/members/423456789012345678'))return new Response(JSON.stringify({nick:"SaltyBear",user:{id:"423456789012345678",username:"saltybear27276"}}),{status:200});
+                if(value.endsWith('/guilds/123456789012345678'))return new Response(JSON.stringify({id:"123456789012345678",name:"SpaceMountain"}),{status:200});
+                return new Response('{}',{status:404});
+              };
+              const service = new HumanReferenceService({ credentials, fetchImpl });
+              const [user] = await service.resolveMany("tenant-a", [{provider:"discord",kind:"user",id:"423456789012345678",channelId:"223456789012345678"}]);
+              assert.equal(user.label,"SaltyBear");
+              assert.equal(user.secondary,"SpaceMountain");
+              assert.equal(user.guildId,"123456789012345678");
+              assert.equal(fetched.some((url)=>url.includes('/users/423456789012345678')),false);
+            });'''
+          if old_tail not in text: raise SystemExit('human reference test tail anchor missing')
+          test.write_text(text.replace(old_tail,new_tail,1),encoding='utf-8')
+
+          product=Path('tests/product-human-reference-presentation.test.mjs'); text=product.read_text(encoding='utf-8')
+          text=text.replace(
+            '  assert.equal(refs.some((ref) => ref.kind === "user" && ref.id === "737589459347"), true);',
+            '  assert.equal(refs.some((ref) => ref.kind === "user" && ref.id === "737589459347" && ref.channelId === "1004895478763"), true);')
+          product.write_text(text,encoding='utf-8')
+          PY
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+      - name: Install FFmpeg for renderer contract test
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+      - name: Validate ecosystem
+        run: npm test
+      - name: Commit contextual reference linking
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add packages/contracts/src/human-reference.ts apps/spmt-service/src/human-reference-api.ts apps/spacemountain/src/index.ts packages/app-foundation/src/product-web.ts tests/human-reference-presentation.test.mjs tests/product-human-reference-presentation.test.mjs
+          git commit -m "Resolve human references with event context"
+          git push origin HEAD:main
