@@ -34,7 +34,21 @@ export class SqliteNebulaGameRuntimeStore {
     const row = this.db.prepare("SELECT body FROM nebula_game_runtime WHERE tenant_id=? AND runtime_key=?").get(tenant, key) as { body: string } | undefined;
     if (!row) return defaultNebulaGameRuntimeState();
     try { return normalizeNebulaGameRuntimeState(JSON.parse(row.body) as Partial<NebulaGameRuntimeStateV1>); }
-    catch { return defaultNebulaGameRuntimeState(); }
+    catch (error) {
+      // Never turn damaged production state into an apparently healthy, empty arcade.
+      // The previous fallback could overwrite every player's saved progress on the
+      // next mutation. Keep the row untouched so an operator can restore it.
+      throw new NebulaGameRuntimeCorruptionError(tenant, key, error);
+    }
+  }
+
+  integrityCheck(): void {
+    const row = this.db.prepare("PRAGMA quick_check").get() as { quick_check?: string } | undefined;
+    if (row?.quick_check !== "ok") throw new Error("Nebula game runtime database integrity check failed");
+    for (const stored of this.db.prepare("SELECT tenant_id AS tenantId,runtime_key AS runtimeKey,body FROM nebula_game_runtime").all() as { tenantId: string; runtimeKey: string; body: string }[]) {
+      try { normalizeNebulaGameRuntimeState(JSON.parse(stored.body) as Partial<NebulaGameRuntimeStateV1>); }
+      catch (error) { throw new NebulaGameRuntimeCorruptionError(stored.tenantId, stored.runtimeKey, error); }
+    }
   }
 
   put(tenantId: string, state: NebulaGameRuntimeStateV1, runtimeKey = "default", now = new Date()): NebulaGameRuntimeStateV1 {
@@ -64,6 +78,13 @@ export class SqliteNebulaGameRuntimeStore {
       this.db.exec("ROLLBACK");
       throw error;
     }
+  }
+}
+
+export class NebulaGameRuntimeCorruptionError extends Error {
+  constructor(readonly tenantId: string, readonly runtimeKey: string, cause?: unknown) {
+    super(`Nebula game runtime state is corrupted for tenant ${tenantId} (${runtimeKey}); refusing to replace saved progress`, { cause });
+    this.name = "NebulaGameRuntimeCorruptionError";
   }
 }
 
