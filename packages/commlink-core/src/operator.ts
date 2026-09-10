@@ -1,8 +1,9 @@
 import { DatabaseSync } from "node:sqlite";
 
-export interface CommlinkOperatorMessage {rich?:import("@spmt/contracts").CommlinkLiveChatRecordV1["rich"];id:string;text:string;username:string;provider:string;channelId:string;}
+export interface CommlinkOperatorMessage {rich?:import("@spmt/contracts").CommlinkLiveChatRecordV1["rich"];id:string;text:string;username:string;displayName?:string;provider:string;channelId:string;providerUserId?:string;isBot?:boolean;}
 export interface CommlinkOperatorState { snapshots?:Record<string,CommlinkOperatorMessage>; revision: number; pinned: string[]; queue: string[]; featured: string | null; featuredAt: number | null; autoShow: boolean; autoAdvance: boolean; durationSeconds: number; style: "glass" | "solid" | "minimal"; }
 export interface CommlinkSavedFilter { name: string; search: string; provider: string; channelId: string; }
+export interface CommlinkTrainingExampleV1 {schemaVersion:1;tenantId:string;personaKey:string;messageKey:string;prompt:string;originalResponse:string;response:string;vote:"positive"|"negative";weight:1|2|3;reviewerUserId:string;updatedAt:string;metadata:Record<string,string>;}
 const defaults = (): CommlinkOperatorState => ({revision:0,pinned:[],queue:[],featured:null,featuredAt:null,autoShow:false,autoAdvance:false,durationSeconds:15,style:"glass"});
 
 /** Operator decisions are durable and versioned independently of immutable chat records. */
@@ -13,7 +14,8 @@ export class CommlinkOperatorStore {
     this.db.exec(`CREATE TABLE IF NOT EXISTS commlink_operator(tenant TEXT PRIMARY KEY,body TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS commlink_user_filters(tenant TEXT NOT NULL,user_id TEXT NOT NULL,body TEXT NOT NULL,PRIMARY KEY(tenant,user_id));
       CREATE TABLE IF NOT EXISTS commlink_ingestion_errors(id INTEGER PRIMARY KEY AUTOINCREMENT,tenant TEXT NOT NULL,message TEXT NOT NULL,created_at INTEGER NOT NULL);
-      CREATE TABLE IF NOT EXISTS commlink_ingestion_replays(id INTEGER PRIMARY KEY,tenant TEXT NOT NULL,payload TEXT NOT NULL,completed INTEGER NOT NULL DEFAULT 0);`);
+      CREATE TABLE IF NOT EXISTS commlink_ingestion_replays(id INTEGER PRIMARY KEY,tenant TEXT NOT NULL,payload TEXT NOT NULL,completed INTEGER NOT NULL DEFAULT 0);
+      CREATE TABLE IF NOT EXISTS commlink_training_examples(tenant TEXT NOT NULL,persona_key TEXT NOT NULL,message_key TEXT NOT NULL,vote INTEGER NOT NULL CHECK(vote IN (-1,1)),weight INTEGER NOT NULL CHECK(weight BETWEEN 1 AND 3),updated_at TEXT NOT NULL,body TEXT NOT NULL,PRIMARY KEY(tenant,persona_key,message_key)) STRICT;`);
   }
   read(tenant: string): CommlinkOperatorState { return this.transaction(()=>{const state=this.load(tenant);if(state.autoAdvance&&state.featuredAt!==null&&state.durationSeconds>0&&this.now()-state.featuredAt>=state.durationSeconds*1000){state.featured=state.queue.shift()??null;state.featuredAt=state.featured?this.now():null;state.revision++;this.save(tenant,state);}return state;}); }
   apply(tenant:string,input:{action:string;eventId?:string;revision:number;enabled?:boolean;durationSeconds?:number;style?:string;autoAdvance?:boolean},knownIds:readonly string[],messages:readonly CommlinkOperatorMessage[]=[]) {
@@ -35,11 +37,18 @@ export class CommlinkOperatorStore {
         if(input.style!==undefined){if(!["glass","solid","minimal"].includes(input.style))throw new Error("Choose a supported style");state.style=input.style as CommlinkOperatorState["style"];}
       }else throw new Error("Unknown chat desk action");
       const retained=new Set([...state.pinned,...state.queue,...(state.featured?[state.featured]:[])]);
-      for(const message of messages)if(retained.has(message.id))state.snapshots[message.id]={id:message.id,text:message.text.slice(0,8000),username:message.username.slice(0,200),provider:message.provider,channelId:message.channelId,...(message.rich?{rich:structuredClone(message.rich)}:{})};
+      for(const message of messages)if(retained.has(message.id))state.snapshots[message.id]={id:message.id,text:message.text.slice(0,8000),username:message.username.slice(0,200),...(message.displayName?{displayName:message.displayName.slice(0,200)}:{}),provider:message.provider,channelId:message.channelId,...(message.providerUserId?{providerUserId:message.providerUserId.slice(0,300)}:{}),...(message.isBot!==undefined?{isBot:message.isBot}:{}),...(message.rich?{rich:structuredClone(message.rich)}:{})};
       for(const key of Object.keys(state.snapshots))if(!retained.has(key))delete state.snapshots[key];
       state.revision++;this.save(tenant,state);return state;
     });
   }
+  saveTrainingExample(input:Omit<CommlinkTrainingExampleV1,"schemaVersion"|"updatedAt">):CommlinkTrainingExampleV1{
+    const clean=(value:string,name:string,max:number)=>{if(typeof value!=="string"||!value.trim()||value.length>max||value.includes("\0"))throw new Error(`Training ${name} is invalid`);return value.trim();};
+    if(input.vote!=="positive"&&input.vote!=="negative")throw new Error("Choose thumbs up or thumbs down");if(![1,2,3].includes(input.weight))throw new Error("Training weight must be 1, 2, or 3");
+    const row:CommlinkTrainingExampleV1={schemaVersion:1,tenantId:clean(input.tenantId,"tenant",500),personaKey:clean(input.personaKey,"persona",500),messageKey:clean(input.messageKey,"message",500),prompt:clean(input.prompt,"prompt",10000),originalResponse:clean(input.originalResponse,"original response",20000),response:clean(input.response,"response",20000),vote:input.vote,weight:input.weight,reviewerUserId:clean(input.reviewerUserId,"reviewer",500),updatedAt:new Date(this.now()).toISOString(),metadata:{...input.metadata}};
+    this.db.prepare("INSERT INTO commlink_training_examples(tenant,persona_key,message_key,vote,weight,updated_at,body) VALUES(?,?,?,?,?,?,?) ON CONFLICT(tenant,persona_key,message_key) DO UPDATE SET vote=excluded.vote,weight=excluded.weight,updated_at=excluded.updated_at,body=excluded.body").run(row.tenantId,row.personaKey,row.messageKey,row.vote==="positive"?1:-1,row.weight,row.updatedAt,JSON.stringify(row));return row;
+  }
+  trainingExamples(tenant:string,personaKey?:string):CommlinkTrainingExampleV1[]{const rows=personaKey?this.db.prepare("SELECT body FROM commlink_training_examples WHERE tenant=? AND persona_key=? ORDER BY updated_at DESC").all(tenant,personaKey):this.db.prepare("SELECT body FROM commlink_training_examples WHERE tenant=? ORDER BY updated_at DESC").all(tenant);return rows.map(row=>JSON.parse(String(row.body)) as CommlinkTrainingExampleV1);}
   reviseMessage(tenant:string,message:CommlinkOperatorMessage,deleted=false){return this.transaction(()=>{const state=this.load(tenant),id=message.id;if(!state.snapshots?.[id]&&!state.pinned.includes(id)&&!state.queue.includes(id)&&state.featured!==id)return state;if(deleted){delete state.snapshots?.[id];state.pinned=state.pinned.filter(x=>x!==id);state.queue=state.queue.filter(x=>x!==id);if(state.featured===id){state.featured=null;state.featuredAt=null}}else{state.snapshots??={};state.snapshots[id]=structuredClone(message)}state.revision++;this.save(tenant,state);return state})}
   filters(tenant:string,user:string):CommlinkSavedFilter[] {const row=this.db.prepare("SELECT body FROM commlink_user_filters WHERE tenant=? AND user_id=?").get(tenant,user);return row?JSON.parse(String(row.body)):[];}
   saveFilters(tenant:string,user:string,input:unknown) {

@@ -39,6 +39,14 @@ export class CommlinkOperatorApi {
       if(path==="ingestion-errors"&&workspace.ownerUserId===user&&body.action==="replay"){const id=Number(body.id),message=this.options.store.replay(tenant,id);if(message.tenantId!==tenant)throw Error("Ingestion tenant mismatch");const result=this.options.chat.ingest(message);this.options.store.completeReplay(tenant,id);return json(response,200,{replayed:true,duplicate:result.duplicate});}
       if(path!=="operator"||workspace.ownerUserId!==user)return json(response,403,{message:"Only the workspace owner can change stream presentation"});
       const messages=this.options.chat.list({tenantId:tenant,limit:500}).map(m=>({...m,id:recordId(m)}));
+      if(body.action==="review"){
+        const eventId=String(body.eventId??""),index=messages.findIndex(m=>m.id===eventId),message=messages[index];
+        if(!message||message.isBot!==true)throw new Error("Choose a bot reply from this tenant");
+        const prior=messages.slice(index+1).find(m=>m.provider===message.provider&&m.channelId===message.channelId&&!m.isBot);
+        const prompt=prior?.text??String(body.prompt??"");
+        const saved=this.options.store.saveTrainingExample({tenantId:tenant,personaKey:`public:${message.provider}:${message.providerUserId}`,messageKey:eventId,prompt,originalResponse:message.text,response:String(body.response??message.text),vote:body.vote as "positive"|"negative",weight:Number(body.weight) as 1|2|3,reviewerUserId:user,metadata:{provider:message.provider,channelId:message.channelId,botUsername:message.username}});
+        return json(response,200,{saved});
+      }
       const state=this.options.store.apply(tenant,body as Parameters<CommlinkOperatorStore['apply']>[1],messages.map(m=>m.id),messages);
       this.publish(tenant);return json(response,200,{state});
     }catch(error){return json(response,error instanceof AuthDeniedError?403:400,{message:error instanceof Error?error.message:"Chat desk request failed"});}
@@ -46,5 +54,4 @@ export class CommlinkOperatorApi {
 }
 async function readJson(request:IncomingMessage):Promise<Record<string,unknown>>{let size=0;const chunks:Buffer[]=[];for await(const chunk of request){size+=chunk.length;if(size>32_000)throw new Error("Request is too large");chunks.push(Buffer.from(chunk));}const value=JSON.parse(Buffer.concat(chunks).toString());if(!value||typeof value!=="object"||Array.isArray(value))throw new Error("Expected an object");return value;}
 function json(response:ServerResponse,status:number,value:unknown){response.writeHead(status,{"content-type":"application/json","cache-control":"no-store"});response.end(JSON.stringify(value));return true;}
-
 function recordId(m:{provider:string;connectionId:string;channelId:string;messageId:string}){return createHash("sha256").update(JSON.stringify([m.provider,m.connectionId,m.channelId,m.messageId])).digest("hex");}

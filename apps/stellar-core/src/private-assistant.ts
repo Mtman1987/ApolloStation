@@ -58,8 +58,8 @@ export class StellarPrivateAssistant {
     }
     return this.store.clearThread(tenant,user);
   }
-  controlTurn(tenant:string,user:string,id:unknown,action:unknown) {
-    if(typeof id!=="string"||!id||id.length>200||!["delete","gif"].includes(String(action)))throw new Error("Choose a private reply control");
+  controlTurn(tenant:string,user:string,id:unknown,action:unknown,review?:unknown) {
+    if(typeof id!=="string"||!id||id.length>200||!["delete","gif","review"].includes(String(action)))throw new Error("Choose a private reply control");
     const thread=this.store.thread(tenant,user),turn=thread.turns.find(t=>t.id===id);
     if(!turn)throw new Error("Private reply was not found");
     if(action==="gif"){
@@ -68,6 +68,16 @@ export class StellarPrivateAssistant {
     }
     const job=this.jobs.get(tenant,turn.jobId);
     if(job?.billedUserId!==user)throw new Error("Private reply ownership mismatch");
+    if(action==="review"){
+      if(turn.state!=="succeeded"||!turn.answer)throw new Error("Only a completed reply can become training material");
+      if(!review||typeof review!=="object"||Array.isArray(review))throw new Error("Training review is missing");
+      const value=review as Record<string,unknown>,vote=value.vote,weight=Number(value.weight),prompt=value.prompt??turn.message,response=value.response??turn.answer;
+      if(vote!=="positive"&&vote!=="negative")throw new Error("Choose thumbs up or thumbs down");
+      if(!Number.isSafeInteger(weight)||weight<1||weight>3)throw new Error("Training weight must be 1, 2, or 3");
+      const saved=this.store.saveTrainingExample({tenantId:tenant,personaKey:`stellar:private:${user}`,source:"private",messageKey:turn.id,prompt:String(prompt),originalResponse:turn.answer,response:String(response),vote,weight:weight as 1|2|3,reviewerUserId:user,metadata:{jobId:turn.jobId,conversationId:`stellar:private:${user}`}});
+      turn.trainingReview={vote:saved.vote,weight:saved.weight,response:saved.response};
+      this.store.saveThread(tenant,user,thread);return thread;
+    }
     if(!terminal(job.state))this.jobs.cancel(tenant,job.id);
     this.jobs.delete(tenant,job.id);
     if(thread.condensation){const summary=this.jobs.get(tenant,thread.condensation.jobId);if(summary?.billedUserId===user){if(!terminal(summary.state))this.jobs.cancel(tenant,summary.id);this.jobs.delete(tenant,summary.id);}}
