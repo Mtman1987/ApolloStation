@@ -19,58 +19,24 @@ jobs:
         with:
           node-version: 24
           cache: npm
-      - name: Link user references to channel and server context
+      - name: Link each audit event before resolving references
         shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          import re
 
-          def replace(path, old, new):
-              p=Path(path); text=p.read_text(encoding='utf-8')
-              if new in text: return
-              if old not in text: raise SystemExit(f'anchor missing in {path}')
-              p.write_text(text.replace(old,new,1),encoding='utf-8')
+          p=Path('apps/spacemountain/src/index.ts')
+          text=p.read_text(encoding='utf-8')
+          old='for(const log of logs){refs.push(...discoverHumanReferencesInText(log.summary));if(log.detail)refs.push(...discoverHumanReferencesInText(log.detail));}'
+          new='for(const log of logs){refs.push(...discoverHumanReferencesInText(`${log.summary}\\n${log.detail??""}`));}'
+          if old not in text: raise SystemExit('SpaceMountain log reference collector missing')
+          p.write_text(text.replace(old,new,1),encoding='utf-8')
 
-          replace('packages/contracts/src/human-reference.ts',
-            '...(onlyChannel && ref.kind === "message" && !ref.channelId ? { channelId: onlyChannel } : {}),',
-            '...(onlyChannel && (ref.kind === "message" || ref.kind === "user") && !ref.channelId ? { channelId: onlyChannel } : {}),')
-          replace('packages/contracts/src/human-reference.ts',
-            '  for (const ref of references) {\n    const current = byId.get(ref.id);',
-            '  for (const ref of references) {\n    if (!ref.resolved) continue;\n    const current = byId.get(ref.id);')
-
-          p=Path('apps/spmt-service/src/human-reference-api.ts'); text=p.read_text(encoding='utf-8')
-          new_member='''  private async discordMember(input: HumanReferenceInputV1, authorization: string): Promise<HumanReferenceV1 | undefined> {
-            let guildId = input.guildId;
-            if (!guildId && input.channelId) {
-              const channel = await this.discordChannel({ provider: "discord", kind: "channel", id: input.channelId }, authorization);
-              guildId = channel?.guildId;
-            }
-            if (!guildId) return undefined;
-            const member = await this.discordGet(`/guilds/${encodeURIComponent(guildId)}/members/${encodeURIComponent(input.id)}`, authorization);
-            if (!member) return undefined;
-            const user = record(member.user);
-            const label = text(member.nick) ?? (user ? text(user.global_name) ?? text(user.username) : undefined);
-            if (!label) return undefined;
-            const guild = await this.discordGet(`/guilds/${encodeURIComponent(guildId)}`, authorization);
-            return { schemaVersion: 1, ...input, kind: "user", guildId, label, resolved: true, ...(guild && text(guild.name) ? { secondary: text(guild.name)! } : {}) };
-          }'''
-          pattern=r'  private async discordMember\(input: HumanReferenceInputV1, authorization: string\): Promise<HumanReferenceV1 \| undefined> \{.*?\n  \}\n\n  private async discordMessage'
-          updated,count=re.subn(pattern,new_member+'\n\n  private async discordMessage',text,count=1,flags=re.S)
-          if count!=1: raise SystemExit('discord member method not found')
-          p.write_text(updated,encoding='utf-8')
-
-          replace('apps/spacemountain/src/index.ts',
-            '  for(const log of logs){refs.push(...discoverHumanReferencesInText(log.summary));if(log.detail)refs.push(...discoverHumanReferencesInText(log.detail));}',
-            '  for(const log of logs){refs.push(...discoverHumanReferencesInText(`${log.summary}\\n${log.detail??""}`));}')
-
-          p=Path('packages/app-foundation/src/product-web.ts'); text=p.read_text(encoding='utf-8')
-          old='''if (typeof record.summary === "string") refs.push(...discoverHumanReferencesInText(record.summary));
-    if (typeof record.detail === "string") refs.push(...discoverHumanReferencesInText(record.detail));'''
-          new='''const summary = typeof record.summary === "string" ? record.summary : "";
-    const detail = typeof record.detail === "string" ? record.detail : "";
-    refs.push(...discoverHumanReferencesInText(`${summary}\\n${detail}`));'''
-          if old not in text: raise SystemExit('product reference lines missing')
+          p=Path('packages/app-foundation/src/product-web.ts')
+          text=p.read_text(encoding='utf-8')
+          old='if (typeof record.summary === "string") refs.push(...discoverHumanReferencesInText(record.summary));\n    if (typeof record.detail === "string") refs.push(...discoverHumanReferencesInText(record.detail));'
+          new='const summary = typeof record.summary === "string" ? record.summary : "";\n    const detail = typeof record.detail === "string" ? record.detail : "";\n    refs.push(...discoverHumanReferencesInText(`${summary}\\n${detail}`));'
+          if old not in text: raise SystemExit('Shared product log reference collector missing')
           p.write_text(text.replace(old,new,1),encoding='utf-8')
           PY
       - name: Install dependencies
@@ -81,12 +47,12 @@ jobs:
           sudo apt-get install -y ffmpeg
       - name: Validate ecosystem
         run: npm test
-      - name: Commit contextual reference linking
+      - name: Commit contextual collectors
         shell: bash
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add packages/contracts/src/human-reference.ts apps/spmt-service/src/human-reference-api.ts apps/spacemountain/src/index.ts packages/app-foundation/src/product-web.ts
-          git commit -m "Resolve human references with event context"
+          git add apps/spacemountain/src/index.ts packages/app-foundation/src/product-web.ts
+          git commit -m "Resolve audit references with event context"
           git push origin HEAD:main
