@@ -22,6 +22,27 @@ jobs:
           cache: npm
       - name: Apply centralized human-reference patch
         run: python3 scripts/patch-human-reference-presentation-once.py
+      - name: Fix strict optional presentation fields
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('apps/spmt-service/src/commlink-operator-api.ts')
+          text = path.read_text(encoding='utf-8')
+          old = '''  for(const message of messages){const provider=typeof message.provider==="string"?message.provider:undefined;
+            if(typeof message.providerUserId==="string"&&message.providerUserId)values.push({provider,kind:"user",id:message.providerUserId,labelHint:String(message.displayName??message.username??"")||undefined});
+            if(typeof message.channelId==="string"&&message.channelId)values.push({provider,kind:"channel",id:message.channelId});
+            if(typeof message.messageId==="string"&&message.messageId)values.push({provider,kind:"message",id:message.messageId,channelId:typeof message.channelId==="string"?message.channelId:undefined,textHint:typeof message.text==="string"?message.text:undefined});
+          }'''
+          new = '''  for(const message of messages){const provider=typeof message.provider==="string"?message.provider:undefined,base=provider?{provider}:{};
+            if(typeof message.providerUserId==="string"&&message.providerUserId){const labelHint=String(message.displayName??message.username??"");values.push({...base,kind:"user",id:message.providerUserId,...(labelHint?{labelHint}:{})});}
+            if(typeof message.channelId==="string"&&message.channelId)values.push({...base,kind:"channel",id:message.channelId});
+            if(typeof message.messageId==="string"&&message.messageId){const channelId=typeof message.channelId==="string"?message.channelId:undefined,textHint=typeof message.text==="string"?message.text:undefined;values.push({...base,kind:"message",id:message.messageId,...(channelId?{channelId}:{}),...(textHint?{textHint}:{})});}
+          }'''
+          if old not in text:
+              raise SystemExit('strict optional patch anchor missing')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
       - name: Install dependencies
         run: npm ci --ignore-scripts
       - name: Validate ecosystem
