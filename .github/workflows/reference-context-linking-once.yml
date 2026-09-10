@@ -24,6 +24,7 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          import re
 
           def replace(path, old, new):
               p=Path(path); text=p.read_text(encoding='utf-8')
@@ -38,17 +39,8 @@ jobs:
             '  for (const ref of references) {\n    const current = byId.get(ref.id);',
             '  for (const ref of references) {\n    if (!ref.resolved) continue;\n    const current = byId.get(ref.id);')
 
-          old='''  private async discordMember(input: HumanReferenceInputV1, authorization: string): Promise<HumanReferenceV1 | undefined> {
-            if (!input.guildId) return undefined;
-            const member = await this.discordGet(`/guilds/${encodeURIComponent(input.guildId)}/members/${encodeURIComponent(input.id)}`, authorization);
-            if (!member) return undefined;
-            const user = record(member.user);
-            const label = text(member.nick) ?? (user ? text(user.global_name) ?? text(user.username) : undefined);
-            if (!label) return undefined;
-            const guild = await this.discordGet(`/guilds/${encodeURIComponent(input.guildId)}`, authorization);
-            return { schemaVersion: 1, ...input, kind: "user", label, resolved: true, ...(guild && text(guild.name) ? { secondary: text(guild.name)! } : {}) };
-          }'''
-          new='''  private async discordMember(input: HumanReferenceInputV1, authorization: string): Promise<HumanReferenceV1 | undefined> {
+          p=Path('apps/spmt-service/src/human-reference-api.ts'); text=p.read_text(encoding='utf-8')
+          new_member='''  private async discordMember(input: HumanReferenceInputV1, authorization: string): Promise<HumanReferenceV1 | undefined> {
             let guildId = input.guildId;
             if (!guildId && input.channelId) {
               const channel = await this.discordChannel({ provider: "discord", kind: "channel", id: input.channelId }, authorization);
@@ -63,7 +55,11 @@ jobs:
             const guild = await this.discordGet(`/guilds/${encodeURIComponent(guildId)}`, authorization);
             return { schemaVersion: 1, ...input, kind: "user", guildId, label, resolved: true, ...(guild && text(guild.name) ? { secondary: text(guild.name)! } : {}) };
           }'''
-          replace('apps/spmt-service/src/human-reference-api.ts',old,new)
+          pattern=r'  private async discordMember\(input: HumanReferenceInputV1, authorization: string\): Promise<HumanReferenceV1 \| undefined> \{.*?\n  \}\n\n  private async discordMessage'
+          updated,count=re.subn(pattern,new_member+'\n\n  private async discordMessage',text,count=1,flags=re.S)
+          if count!=1: raise SystemExit('discord member method not found')
+          p.write_text(updated,encoding='utf-8')
+
           replace('apps/spacemountain/src/index.ts',
             '  for(const log of logs){refs.push(...discoverHumanReferencesInText(log.summary));if(log.detail)refs.push(...discoverHumanReferencesInText(log.detail));}',
             '  for(const log of logs){refs.push(...discoverHumanReferencesInText(`${log.summary}\\n${log.detail??""}`));}')
