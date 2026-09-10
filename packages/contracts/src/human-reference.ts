@@ -85,7 +85,7 @@ export function discoverHumanReferencesInText(text: string): HumanReferenceInput
   return unique.map((ref) => ({
     ...ref,
     ...(onlyGuild && ref.kind !== "guild" && !ref.guildId ? { guildId: onlyGuild } : {}),
-    ...(onlyChannel && ref.kind === "message" && !ref.channelId ? { channelId: onlyChannel } : {}),
+    ...(onlyChannel && (ref.kind === "message" || ref.kind === "user") && !ref.channelId ? { channelId: onlyChannel } : {}),
   }));
 }
 
@@ -93,6 +93,7 @@ export function humanizeTextWithReferences(text: string, references: readonly Hu
   let result = text;
   const byId = new Map<string, HumanReferenceV1>();
   for (const ref of references) {
+    if (!ref.resolved) continue;
     const current = byId.get(ref.id);
     if (!current || (!current.resolved && ref.resolved)) byId.set(ref.id, ref);
   }
