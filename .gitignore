@@ -23,3 +23,7 @@ coverage/
 playwright-report/
 test-results/
 .quackverse-art-rebuild-state.json
+
+# Private canonical agent assets and experiment outputs
+.local/agents/
+**/__pycache__/
