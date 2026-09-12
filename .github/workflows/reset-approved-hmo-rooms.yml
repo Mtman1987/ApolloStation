@@ -1,0 +1,30 @@
+name: Reset owner-approved HearMeOut rooms
+on:
+  push:
+    branches: [diagnostics/hmo-cutover-install-20260912]
+    paths: [.github/workflows/reset-approved-hmo-rooms.yml, scripts/sprites/reset-approved-hmo-rooms.mjs]
+permissions:
+  contents: read
+jobs:
+  reset:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    concurrency:
+      group: apollo-release-sprite
+      cancel-in-progress: false
+    environment: sprite-release
+    env:
+      SPRITES_TOKEN: ${{ secrets.SPRITES_TOKEN }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Inspect and clear the owner-approved room stores
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL https://sprites.dev/install.sh | bash
+          export PATH="$HOME/.local/bin:$PATH"
+          sprite auth setup --token "$SPRITES_TOKEN"
+          actual="$(sprite api /v1/sprites/web-terminal -- --silent | jq -r '.id')"
+          test "$actual" = sprite-fec8d6f2-49f0-4e28-bc6d-e8a7ae364280
+          sprite checkpoint create -o testing-968 -s web-terminal --comment 'Before owner-requested HearMeOut room reset'
+          sprite exec --no-port-forward -o testing-968 -s web-terminal --file scripts/sprites/reset-approved-hmo-rooms.mjs:/tmp/reset-approved-hmo-rooms.mjs -- node /tmp/reset-approved-hmo-rooms.mjs
