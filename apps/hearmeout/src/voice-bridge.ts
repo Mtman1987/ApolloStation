@@ -90,16 +90,13 @@ export class HearMeOutVoiceBridgeController {
     this.store.put(next);
     try {
       const worker = await this.worker.start({ tenantId: principal.tenantId, roomId: room.roomId, guildId: next.guildId, voiceChannelId: next.voiceChannelId, audioProfile: next.audioProfile, discordReceiveGain: next.discordReceiveGain });
-      try {
-        const gate = await this.worker.setRoomOutbound({ tenantId: principal.tenantId, roomId: room.roomId, roomVoiceOutboundEnabled: next.roomVoiceOutboundEnabled });
-        if (this.worker.setDiscordReceiveGain) await this.worker.setDiscordReceiveGain({ tenantId: principal.tenantId, roomId: room.roomId, discordReceiveGain: next.discordReceiveGain });
-        return { success: true as const, config: next, worker, gate };
-      } catch (error) {
-        await this.worker.stop({ tenantId: principal.tenantId, roomId: room.roomId }).catch(() => undefined);
-        this.store.put({ ...next, enabled: false, updatedAt: this.now() });
-        throw error;
-      }
+      const gate = await this.worker.setRoomOutbound({ tenantId: principal.tenantId, roomId: room.roomId, roomVoiceOutboundEnabled: next.roomVoiceOutboundEnabled });
+      if (this.worker.setDiscordReceiveGain) await this.worker.setDiscordReceiveGain({ tenantId: principal.tenantId, roomId: room.roomId, discordReceiveGain: next.discordReceiveGain });
+      return { success: true as const, config: next, worker, gate };
     } catch (error) {
+      // A timed-out HTTP start may still finish at the provider. The worker's
+      // stop route waits for that in-flight start before removing its bridge.
+      await this.worker.stop({ tenantId: principal.tenantId, roomId: room.roomId }).catch(() => undefined);
       this.store.put({ ...next, enabled: false, updatedAt: this.now() });
       throw error;
     }

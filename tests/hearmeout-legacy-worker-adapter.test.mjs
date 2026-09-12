@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { HttpHearMeOutVoiceBridgeWorker, HttpHearMeOutVoiceBridgeWorkerError } from "../apps/hearmeout/dist/index.js";
 
+import { hearMeOutProviderRoomName } from "../apps/hearmeout/dist/room-identity.js";
+const providerRoomId = hearMeOutProviderRoomName("tenant-a", "discord-activity");
 const base = { tenantId: "tenant-a", roomId: "discord-activity" };
 
 test("legacy HMO worker adapter sends bounded authenticated requests without credentials in URLs", async () => {
@@ -27,16 +29,16 @@ test("legacy HMO worker adapter sends bounded authenticated requests without cre
   assert.equal(calls[0].init.redirect, "manual");
   assert.deepEqual(JSON.parse(calls[0].init.body), {
     action: "start",
-    roomId: "discord-activity",
+    roomId: providerRoomId,
     guildId: "123456789012345678",
     voiceChannelId: "987654321098765432",
     audioProfile: "clean",
     discordReceiveGain: 1,
   });
   assert.ok(calls.every((call) => !call.url.includes("canary-worker-secret-value")));
-  assert.deepEqual(JSON.parse(calls[1].init.body), { roomId: "discord-activity", roomVoiceOutboundEnabled: false });
-  assert.deepEqual(JSON.parse(calls[2].init.body), { roomId: "discord-activity", audioProfile: "resilient" });
-  assert.deepEqual(JSON.parse(calls[3].init.body), { action: "stop", roomId: "discord-activity" });
+  assert.deepEqual(JSON.parse(calls[1].init.body), { roomId: providerRoomId, roomVoiceOutboundEnabled: false });
+  assert.deepEqual(JSON.parse(calls[2].init.body), { roomId: providerRoomId, audioProfile: "resilient" });
+  assert.deepEqual(JSON.parse(calls[3].init.body), { action: "stop", roomId: providerRoomId });
 });
 
 test("legacy HMO worker adapter status uses query only for room identity and refuses redirects", async () => {
@@ -50,7 +52,7 @@ test("legacy HMO worker adapter status uses query only for room identity and ref
     },
   });
   await assert.rejects(() => worker.status(base), /redirect refused/);
-  assert.equal(seen.url, "https://worker.example/voice-bridge?roomId=discord-activity");
+  assert.equal(seen.url, `https://worker.example/voice-bridge?roomId=${providerRoomId}`);
   assert.equal(seen.init.headers.authorization, "Bearer canary-worker-secret-value");
 });
 
@@ -91,7 +93,7 @@ test("HTTP adapter applies nondefault gain and verifies the worker's actual resp
   await worker.start({ ...base, guildId: "123456789012345678", voiceChannelId: "987654321098765432", audioProfile: "clean", discordReceiveGain: 0.7 });
   await worker.setDiscordReceiveGain({ ...base, discordReceiveGain: 0.6 });
   assert.equal(calls[0].body.discordReceiveGain, 0.7);
-  assert.deepEqual(calls[1], { url: "https://worker.example/voice-bridge/receive-gain", body: { roomId: base.roomId, discordReceiveGain: 0.6 } });
+  assert.deepEqual(calls[1], { url: "https://worker.example/voice-bridge/receive-gain", body: { roomId: providerRoomId, discordReceiveGain: 0.6 } });
 });
 
 test("an old worker or a success-false response cannot masquerade as applied gain", async () => {

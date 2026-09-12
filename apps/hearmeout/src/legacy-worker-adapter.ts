@@ -1,11 +1,13 @@
 import type { HearMeOutVoiceAudioProfileV1, HearMeOutVoiceBridgeWorkerV1 } from "./voice-bridge.js";
 import { clampHearMeOutDiscordReceiveGain } from "./discord-receive-audio.js";
+import { hearMeOutProviderRoomName } from "./room-identity.js";
 
 export interface HttpHearMeOutVoiceBridgeWorkerOptionsV1 {
   workerOrigin: string;
   getAuthorization: () => string | Promise<string>;
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
+  allowedTenantIds?: string[];
 }
 
 /**
@@ -37,14 +39,16 @@ export class HttpHearMeOutVoiceBridgeWorker implements HearMeOutVoiceBridgeWorke
   }
 
   status(input: { tenantId: string; roomId: string }) {
+    this.requireTenant(input.tenantId);
     cleanId(input.tenantId, "tenantId");
-    const roomId = cleanId(input.roomId, "roomId");
+    const roomId = hearMeOutProviderRoomName(input.tenantId, cleanId(input.roomId, "roomId"));
     return this.request("/voice-bridge", { query: { roomId } });
   }
 
   start(input: { tenantId: string; roomId: string; guildId: string; voiceChannelId: string; audioProfile: HearMeOutVoiceAudioProfileV1; discordReceiveGain: number }) {
+    this.requireTenant(input.tenantId);
     cleanId(input.tenantId, "tenantId");
-    const roomId = cleanId(input.roomId, "roomId");
+    const roomId = hearMeOutProviderRoomName(input.tenantId, cleanId(input.roomId, "roomId"));
     const guildId = snowflake(input.guildId, "guildId");
     const voiceChannelId = snowflake(input.voiceChannelId, "voiceChannelId");
     const audioProfile = profile(input.audioProfile);
@@ -57,21 +61,23 @@ export class HttpHearMeOutVoiceBridgeWorker implements HearMeOutVoiceBridgeWorke
       catch (error) {
         // A worker may have started before revealing its older contract.
         // Do not leave an untracked bridge running after Apollo rejects it.
-        await this.stop({ tenantId: input.tenantId, roomId }).catch(() => undefined);
+        await this.stop({ tenantId: input.tenantId, roomId: input.roomId }).catch(() => undefined);
         throw error;
       }
     });
   }
 
   stop(input: { tenantId: string; roomId: string }) {
+    this.requireTenant(input.tenantId);
     cleanId(input.tenantId, "tenantId");
-    const roomId = cleanId(input.roomId, "roomId");
+    const roomId = hearMeOutProviderRoomName(input.tenantId, cleanId(input.roomId, "roomId"));
     return this.request("/voice-bridge", { method: "POST", body: { action: "stop", roomId } });
   }
 
   setRoomOutbound(input: { tenantId: string; roomId: string; roomVoiceOutboundEnabled: boolean }) {
+    this.requireTenant(input.tenantId);
     cleanId(input.tenantId, "tenantId");
-    const roomId = cleanId(input.roomId, "roomId");
+    const roomId = hearMeOutProviderRoomName(input.tenantId, cleanId(input.roomId, "roomId"));
     if (typeof input.roomVoiceOutboundEnabled !== "boolean") throw new Error("roomVoiceOutboundEnabled must be boolean");
     return this.request("/voice-bridge/gate", {
       method: "POST",
@@ -80,18 +86,24 @@ export class HttpHearMeOutVoiceBridgeWorker implements HearMeOutVoiceBridgeWorke
   }
 
   setAudioProfile(input: { tenantId: string; roomId: string; audioProfile: HearMeOutVoiceAudioProfileV1 }) {
+    this.requireTenant(input.tenantId);
     cleanId(input.tenantId, "tenantId");
-    const roomId = cleanId(input.roomId, "roomId");
+    const roomId = hearMeOutProviderRoomName(input.tenantId, cleanId(input.roomId, "roomId"));
     const audioProfile = profile(input.audioProfile);
     return this.request("/voice-bridge/audio-profile", { method: "POST", body: { roomId, audioProfile } });
   }
 
   setDiscordReceiveGain(input: { tenantId: string; roomId: string; discordReceiveGain: number }) {
+    this.requireTenant(input.tenantId);
     cleanId(input.tenantId, "tenantId");
-    const roomId = cleanId(input.roomId, "roomId");
+    const roomId = hearMeOutProviderRoomName(input.tenantId, cleanId(input.roomId, "roomId"));
     const discordReceiveGain = clampHearMeOutDiscordReceiveGain(finiteNumber(input.discordReceiveGain, "discordReceiveGain"));
     return this.request("/voice-bridge/receive-gain", { method: "POST", body: { roomId, discordReceiveGain } })
       .then((result) => confirmGain(result, discordReceiveGain));
+  }
+
+  private requireTenant(tenantId: string) {
+    if (this.options.allowedTenantIds && !this.options.allowedTenantIds.includes(tenantId)) throw new Error("Discord voice is not enabled for this workspace");
   }
 
   private async request(path: string, options: { method?: string; body?: unknown; query?: Record<string, string> } = {}): Promise<Record<string, unknown>> {
