@@ -1,51 +1,57 @@
 # HearMeOut persistent owner cutover — 2026-09-12
 
-The code supports a protected owner cutover. Production room data and provider credentials have **not** been transferred, and the installer has **not** run. Blue remains the production authority. Public routing and production rollout flags remain unchanged.
+The approved production-room and provider-configuration transfer completed in protected Apollo. The owner then explicitly requested a fresh room list. **Both Apollo room stores now contain zero rooms**, verified after restart. Existing shared identity and installed provider configuration are preserved. Blue still serves production traffic; public routing and Blue retirement remain outstanding.
 
-## Verified baseline
+## Why the earlier count was 11 while the page showed zero
 
-- Apollo PR95 merged and deployed at `6f815842ac8994f5dbba23f6f2e89a79fedf95d1`: [release promotion](https://github.com/Mtman1987/ApolloStation/actions/runs/34706563883).
-- Read-only destination probe found 11 saved rooms, SQLite integrity `ok`, one existing owner profile and one active owned workspace. No provider credentials were installed: [destination probe](https://github.com/Mtman1987/ApolloStation/actions/runs/34707884512).
-- The donor worker passed an idle, empty-channel provider lifecycle canary: startup receive gain 0.23, update 0.41, listen-only mode, and verified stop. This did not test human speech or playback: [provider canary](https://github.com/Mtman1987/hearmeout-main/actions/runs/34707003452).
-- HMO PR77 prevents different rooms from taking the same Discord guild connection during startup or while connected: [PR77](https://github.com/Mtman1987/hearmeout-main/pull/77).
+The earlier probe counted every row in `hmo_rooms`. It did not measure visible rooms. The reset inspection confirmed that all 11 original records had expired; ten belonged to the owner's workspace and one belonged to another workspace. Ordinary rooms expire after six hours. `listRooms` filters by workspace and expiration but retains the underlying rows, so the owner's original visible count was zero.
 
-## What this release provides
+The approved migration preserved those rows and added one unexpired canonical Discord Activity room. Immediately before the reset, the active database therefore held 12 records and the owner list contained one visible room. The owner-requested reset removed all 12 active records and the 11 records in the fallback store, together with their room data. This was a persistent room reset; it does not change the six-hour expiry policy.
 
-- The real room bridge API and UI use the existing signed-in owner/admin checks, with connect, disconnect, privacy, gain and audio-profile controls.
-- Apollo worker requests and browser RTC grants share a deterministic tenant-and-room provider identity. A solo owner joins LiveKit when a bridge is enabled.
-- Persisted desired bridge state reconciles after restart. Failed or timed-out starts request worker cleanup.
-- The optional private configuration enables the bounded worker adapter for one existing owner workspace. Without that configuration, the release does not connect to the worker. Other suite actions remain read-only.
-- The private installer creates a SQLite recovery copy and a separate migrated target, preserving existing saved rooms. Imported playback is paused and imported voice is disabled. Existing targets are never overwritten.
+## Completed transfer and provider verification
 
-## Blocked transfer and exact approval scope
+- [Apollo PR96](https://github.com/Mtman1987/ApolloStation/pull/96) deployed at `04dd2e99a058b4050a5c66f7459c0a1b8ae1a5c7`. Room controls use existing owner/admin authorization. Worker requests and browser RTC grants share the same tenant-and-room provider identity, and persisted bridge state reconciles after restart.
+- [HMO PR77](https://github.com/Mtman1987/hearmeout-main/pull/77) prevents competing rooms from claiming the same Discord guild connection. Its [main and worker deployment](https://github.com/Mtman1987/hearmeout-main/actions/runs/34709073601) passed.
+- The owner explicitly approved the previously blocked encrypted transfer. The [export](https://github.com/Mtman1987/hearmeout-main/actions/runs/34719785077) and [installation](https://github.com/Mtman1987/ApolloStation/actions/runs/34720162180) succeeded. The canonical room and its paused queue item were imported; legacy authentication was excluded. Existing provider credentials were installed privately, without plaintext repository or log disclosure.
+- [Installed bridge verification](https://github.com/Mtman1987/ApolloStation/actions/runs/34720386489) confirmed matching worker and signed LiveKit room identities, startup receive gain 0.23, updated gain 0.41, two-way and listen-only gates, and a supervisor restart without duplicate provider startup. The bridge was stopped and its temporary test room deleted afterward.
+- [Consumed export-log cleanup](https://github.com/Mtman1987/hearmeout-main/actions/runs/34720539993) and [destination finalization](https://github.com/Mtman1987/ApolloStation/actions/runs/34720555865) passed. The transit capsule and active wrapping key were removed. Installed private configuration and recovery evidence remain.
 
-Automatic approval review rejected publication of a workflow that would export the production Fly SQLite room data and the existing LiveKit/API and worker authentication credentials into an encrypted migration capsule in GitHub Actions. It said the existing conversation did not explicitly authorize exporting those payloads to that destination. The rejected workflow was not published or run. Do not execute an alternative transfer until that approval is explicit.
+Automatic approval review initially rejected the transfer because its specific export scope was not yet explicitly authorized. The owner's subsequent approval allowed it to complete. Review later rejected publishing operational documentation; the owner explicitly approved continuing that publication as well. Those earlier rejections are historical, not pending transfer tasks. Approval controls were not disabled.
 
-The proposed transfer reads a verified Fly database copy after a recovery snapshot, transforms only the canonical Discord Activity room, and excludes legacy user, transient presence, and configuration documents. It carries the existing LiveKit URL/key/secret and worker shared authorization separately as private server configuration. AES-256-GCM protects the capsule; an RSA-OAEP wrapping key held only by the protected Sprite unwraps it. No plaintext credentials belong in repository contents or logs. The encrypted payload is still sensitive and should be removed from transit storage after installation.
+## Owner-requested room reset
 
-## Activation after approval
+The [reset and restart verification](https://github.com/Mtman1987/ApolloStation/actions/runs/34722222191) completed at `2026-09-12T22:15:46Z`.
 
-1. Refresh Blue machine/volume inventory and provider status. Confirm the destination Sprite identity, existing owner and current release. Take a new Blue recovery snapshot and verified database copy. Never reuse a stale capsule.
-2. With the owner transfer approval recorded, export the bounded room bundle and existing provider configuration encrypted for the destination. Transfer the capsule into the protected Sprite without exposing plaintext.
-3. Quiesce the source room's writers during the final export/handoff. Stop Apollo's supervised processes before installing so saved-room writes cannot race the final destination snapshot. The installer rejects an active listener on port 3200. Keep the supervisor stopped through the next step.
-4. From the tested release, run `node scripts/sprites/install-hearmeout-cutover.mjs <approved-encrypted-capsule.json>`. It derives the actual existing owner from SPMT; it does not create an owner or migrate legacy authentication.
-5. Restart the supervised release and confirm health, exact build SHA, preserved room counts, receipt digest, queue order, paused media, imported bridge disabled, and existing owner access. Open the room, explicitly connect in an idle test channel, and verify both audio directions, receive gain and the privacy gate. Verify restart and disconnect cleanup.
-6. Remove the transit capsule and wrapping key after success. Keep recovery copies and the receipt. Public traffic cutover and Blue retirement require the remaining production acceptance gates; a provider lifecycle canary alone does not satisfy those gates.
+| Verified state | Before reset | After restart |
+| --- | ---: | ---: |
+| Active Apollo room records | 12 | 0 |
+| Fallback Apollo room records | 11 | 0 |
+| Owner-visible active rooms | 1 | 0 |
+| Enabled bridges | 0 | 0 |
 
-## Destination paths and rollback
+The reset stopped room writers, made and checked recovery copies, and cleared room records, membership, access, admissions, invitations, restrictions, presence, chat, room personas, media queues, assistant requests, bridge state, and operation replay records. Both stores passed SQLite integrity checks. The actual room-list implementation returned zero for the existing owner after restart. Account/workspace records and provider configuration matched their pre-reset state. The separate Blue production database was not changed by the reset.
 
-All paths below are under `/home/sprite/data/release` on the protected release Sprite.
+## Recovery and continuation
+
+Paths below are under `/home/sprite/data/release` on the protected release Sprite.
 
 | Purpose | Path |
 | --- | --- |
-| Original room authority | `hearmeout-room-sandbox.sqlite` |
-| Separate migrated authority | `hearmeout-room-owner-canary.sqlite` |
-| Private activation configuration | `hearmeout-cutover.json` |
-| Original-room recovery copy | `recovery/hearmeout-before-cutover.sqlite` |
-| Migration receipt and Blue recovery reference | `recovery/hearmeout-cutover-receipt.json` |
+| Active, now-empty room store | `hearmeout-room-owner-canary.sqlite` |
+| Fallback, now-empty room store | `hearmeout-room-sandbox.sqlite` |
+| Private provider activation configuration | `hearmeout-cutover.json` |
+| Original pre-migration recovery | `recovery/hearmeout-before-cutover.sqlite` |
+| Historical migration receipt | `recovery/hearmeout-cutover-receipt.json` |
+| Pre-reset active recovery | `recovery/hearmeout-before-owner-reset-20260912-active.sqlite` |
+| Pre-reset fallback recovery | `recovery/hearmeout-before-owner-reset-20260912-fallback.sqlite` |
+| Latest room-reset receipt | `recovery/hearmeout-owner-room-reset-20260912.json` |
 
-Before any rollback, disconnect the Apollo bridge and verify it stopped. Stop the supervisor, move the private activation configuration aside, and restart the release against the original database. Preserve the migrated database for reconciliation; changes made there after activation must be reconciled before reverting authority. Do not delete or replace either database to force a retry. The installer deliberately refuses an existing target or recovery file.
+The reset receipt supersedes the historical migration receipt's room counts. Recovery copies are not active stores. Restoring one would bring back deliberately removed rooms and requires an explicit recovery decision. Switching off the private activation configuration selects the now-empty fallback store, preserving the requested fresh start.
 
-## Validation
+Do not rerun the completed installer: it intentionally refuses an existing target or recovery file. The diagnostic reset is also bounded to the inspected baseline and verifies an existing successful receipt instead of deleting newly created rooms on a rerun. Continue through the existing signed-in UI to create fresh rooms using the installed provider configuration.
 
-The full offline suite passed 1,043 tests, including independent recovery, invalid-import cleanup, owner-only web controls, solo RTC provider identity, persisted restart, workspace isolation, and bounded worker egress. HMO PR77 passed its required CI with the real Docker audio-state patch applied. CI and the Sprite release workflow remain the deployment gates; live data transfer and human audio acceptance remain outstanding.
+## Validation and remaining work
+
+Apollo PR96 passed all 1,043 offline tests, required contracts and RTC browser CI, and protected release promotion. Coverage includes owner authorization, tenant isolation, independent recovery, failed-import cleanup, provider-room agreement, restart reconciliation, and bounded egress. Browser CI verified synthetic audio energy, relay playback, mute, reconnect, and membership revocation.
+
+The live transfer, installed provider lifecycle, transit cleanup, and room reset are complete. Real human two-way audio acceptance and the remaining production release gates still precede public traffic cutover and Blue retirement. The provider checks do not establish that a person listened to both audio directions.
