@@ -7,12 +7,18 @@ const GATE_STATES = new Set(["pending", "passed", "blocked"]);
 const COHORT_STATES = new Set(["queued", "blocked", "protected-preview", "shadow", "canary", "primary", "retired"]);
 const GREEN_MODES = new Set(["isolated", "shadow", "canary", "primary", "retired"]);
 const AUTHORITIES = new Set(["blue", "green"]);
+const PUBLIC_GATES = ["releaseBuild", "releaseHealth", "publicIngress", "isolatedPreviewStorage", "abuseAndCostBounds"];
+const CUTOVER_GATES = ["inventory", "dataReconciliation", "externalIntegration", "rollback", "ownerAcceptance"];
 
 export function auditProductionRollout(plan) {
   const errors = [];
   if (plan?.schemaVersion !== 1) errors.push("production rollout must use schemaVersion 1");
   if (plan?.strategy !== "parallel-app-cutover") errors.push("production rollout must use the parallel app cutover strategy");
   const global = plan?.global ?? {};
+  for (const name of ["publicShellEnabled", "productionTrafficMoved", "liveMutationAllowed", "blueRetirementAllowed", "automaticPromotionAllowed"]) {
+    if (typeof global[name] !== "boolean") errors.push(`global ${name} must be a boolean`);
+  }
+  if (global.automaticPromotionAllowed !== false) errors.push("automatic promotion must remain disabled");
   if (!AUTHORITIES.has(global.defaultProductionAuthority)) errors.push("default production authority must be blue or green");
   if (!AUTHORITIES.has(global.emergencyRollbackAuthority)) errors.push("emergency rollback authority must be blue or green");
   if (global.productionTrafficMoved && !global.liveMutationAllowed) errors.push("production traffic cannot move while live mutation is disabled");
@@ -20,12 +26,15 @@ export function auditProductionRollout(plan) {
 
   const publicPreviewGates = plan?.publicPreviewGates ?? {};
   const publicGateEntries = Object.entries(publicPreviewGates);
+  for (const name of PUBLIC_GATES) {
+    if (!Object.hasOwn(publicPreviewGates, name)) errors.push(`required public preview gate ${name} is missing`);
+  }
   if (!publicGateEntries.length) errors.push("public preview gates are required");
   for (const [name, gate] of publicGateEntries) {
     if (!GATE_STATES.has(gate?.state)) errors.push(`public preview gate ${name} has an invalid state`);
     if (!String(gate?.evidence ?? "").trim()) errors.push(`public preview gate ${name} requires evidence`);
   }
-  const publicPreviewReady = publicGateEntries.length > 0 && publicGateEntries.every(([, gate]) => gate.state === "passed");
+  const publicPreviewReady = PUBLIC_GATES.every((name) => publicPreviewGates[name]?.state === "passed") && publicGateEntries.every(([, gate]) => gate?.state === "passed" && typeof gate.evidence === "string" && gate.evidence.trim());
   if (global.publicShellEnabled && !publicPreviewReady) errors.push("public shell cannot be enabled until every public preview gate passes");
 
   const cohorts = Array.isArray(plan?.cohorts) ? plan.cohorts : [];
@@ -35,6 +44,9 @@ export function auditProductionRollout(plan) {
   const orders = new Set();
   const candidates = [];
   for (const cohort of cohorts) {
+    for (const name of ["nextCandidate", "shadowSideEffectsAllowed"]) {
+      if (typeof cohort?.[name] !== "boolean") errors.push(`cohort ${cohort?.id ?? "unknown"} ${name} must be a boolean`);
+    }
     if (!cohort?.id || ids.has(cohort.id)) errors.push(`duplicate or missing cohort id: ${cohort?.id ?? "unknown"}`);
     ids.add(cohort?.id);
     if (!Number.isInteger(cohort?.order) || orders.has(cohort.order)) errors.push(`cohort ${cohort?.id ?? "unknown"} needs a unique integer order`);
@@ -50,14 +62,19 @@ export function auditProductionRollout(plan) {
     }
     if (cohort?.nextCandidate) candidates.push(cohort.id);
     const gates = Object.entries(cohort?.gates ?? {});
+    for (const name of CUTOVER_GATES) {
+      if (!Object.hasOwn(cohort?.gates ?? {}, name)) errors.push(`cohort ${cohort?.id ?? "unknown"} required cutover gate ${name} is missing`);
+    }
     if (!gates.length) errors.push(`cohort ${cohort?.id ?? "unknown"} requires cutover gates`);
     for (const [name, state] of gates) if (!GATE_STATES.has(state)) errors.push(`cohort ${cohort?.id ?? "unknown"} gate ${name} has an invalid state`);
-    const cutoverGatesPassed = gates.length > 0 && gates.every(([, state]) => state === "passed");
+    const cutoverGatesPassed = CUTOVER_GATES.every((name) => cohort?.gates?.[name] === "passed") && gates.every(([, state]) => state === "passed");
     const canAffectProduction = ["canary", "primary", "retired"].includes(cohort?.greenMode) || ["canary", "primary", "retired"].includes(cohort?.status);
     if (canAffectProduction && !cutoverGatesPassed) errors.push(`cohort ${cohort?.id ?? "unknown"} cannot affect production before every cutover gate passes`);
+    if ((canAffectProduction || cohort?.productionAuthority === "green") && (!global.liveMutationAllowed || !global.productionTrafficMoved)) errors.push(`cohort ${cohort?.id ?? "unknown"} production mode requires explicit traffic and mutation permissions`);
+    if (cohort?.productionAuthority === "green" && (!cutoverGatesPassed || !canAffectProduction)) errors.push(`cohort ${cohort?.id ?? "unknown"} Green authority requires a proven production mode`);
     if (cohort?.shadowSideEffectsAllowed && cohort?.greenMode === "shadow") errors.push(`cohort ${cohort?.id ?? "unknown"} shadow mode must be side-effect free`);
     if (cohort?.productionAuthority === "green" && !global.liveMutationAllowed) errors.push(`cohort ${cohort?.id ?? "unknown"} cannot give Green production authority while live mutation is disabled`);
-    if (cohort?.status === "retired" && !global.blueRetirementAllowed) errors.push(`cohort ${cohort?.id ?? "unknown"} cannot retire Blue while retirement is disabled`);
+    if ((cohort?.status === "retired" || cohort?.greenMode === "retired") && !global.blueRetirementAllowed) errors.push(`cohort ${cohort?.id ?? "unknown"} cannot retire Blue while retirement is disabled`);
   }
   if (candidates.length !== 1) errors.push(`exactly one next rollout candidate is required; found ${candidates.length}`);
   const ordered = [...cohorts].sort((a, b) => a.order - b.order);
@@ -74,7 +91,7 @@ export function auditProductionRollout(plan) {
     liveMutationAllowed: global.liveMutationAllowed === true,
     blueRetirementAllowed: global.blueRetirementAllowed === true,
     nextCandidate: candidates.length === 1 ? candidates[0] : null,
-    pendingPublicGates: publicGateEntries.filter(([, gate]) => gate.state !== "passed").map(([name]) => name),
+    pendingPublicGates: [...new Set([...PUBLIC_GATES, ...Object.keys(publicPreviewGates)])].filter((name) => publicPreviewGates[name]?.state !== "passed"),
     errors,
   };
 }
