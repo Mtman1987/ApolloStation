@@ -1,0 +1,72 @@
+name: Apollo launch diagnostics
+on:
+  push:
+    branches: [diagnostics/apollo-launch-20260912]
+    paths: [".github/workflows/apollo-launch-diagnostics.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: sprite-release
+    env:
+      SPRITES_TOKEN: ${{ secrets.SPRITES_TOKEN }}
+      SPRITE_NAME: web-terminal
+      EXPECTED_SPRITE_ID: sprite-fec8d6f2-49f0-4e28-bc6d-e8a7ae364280
+    steps:
+      - uses: actions/checkout@v5
+      - name: Inspect the current release without deploying
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SPRITES_TOKEN"
+          mkdir -p diagnostics
+          curl -fsSL --max-time 30 https://sprites.dev/install.sh | bash
+          export PATH="$HOME/.local/bin:$PATH"
+          sprite auth setup --token "$SPRITES_TOKEN"
+          actual_id="$(timeout 25s sprite api "/v1/sprites/$SPRITE_NAME" -- --silent | jq -r '.id')"
+          test "$actual_id" = "$EXPECTED_SPRITE_ID"
+          # Fixed read-only commands, using the same authenticated release target as promotion.
+          cat > /tmp/apollo-launch-inspect.sh <<'REMOTE'
+          set -uo pipefail
+          failures=0
+          echo 'ACTIVE_RELEASE'
+          readlink -f /home/sprite/apollo-release/current || failures=1
+          echo 'SERVICE_STATE'
+          sprite-env services get apollo-sandbox | jq '{name,http_port,state}' || failures=1
+          for path in /sandbox/health /health/discord-stream-hub /health/streamweaver /health/hearmeout /health/mountainview /health/companion; do
+            echo "HEALTH $path"
+            curl -fsS --max-time 8 "http://127.0.0.1:8080$path" || failures=1
+            echo
+          done
+          echo 'RECENT_SERVICE_LOGS'
+          tail -n 4000 /.sprite/logs/services/apollo-sandbox.log || failures=1
+          exit "$failures"
+          REMOTE
+          if timeout 100s sprite exec --no-port-forward -o testing-968 -s "$SPRITE_NAME" --file /tmp/apollo-launch-inspect.sh:/tmp/apollo-launch-inspect.sh -- /bin/bash /tmp/apollo-launch-inspect.sh > /tmp/apollo-launch-raw.txt 2>&1; then
+            result=0
+          else
+            result=$?
+          fi
+          # Redact before any logs are printed or uploaded. No credentials or environment dump.
+          python3 - <<'PY'
+          import os,re,pathlib
+          raw=pathlib.Path('/tmp/apollo-launch-raw.txt').read_text(errors='replace')
+          raw=raw.replace(os.environ['SPRITES_TOKEN'],'[REDACTED]')
+          raw=re.sub(r'(?i)(Bearer\s+)\S+',r'\1[REDACTED]',raw)
+          raw=re.sub(r'(?i)((?:api[_-]?key|client[_-]?secret|access[_-]?token|refresh[_-]?token|authorization|password)\s*[\"\' ]*[:=]\s*[\"\' ]*)[^\"\'\s,;}{]+',r'\1[REDACTED]',raw)
+          raw=re.sub(r'\b(?:sk-|github_pat_|ghp_)[A-Za-z0-9_-]{12,}\b','[REDACTED]',raw)
+          raw=re.sub(r'\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b','[REDACTED JWT]',raw)
+          pathlib.Path('diagnostics/apollo-launch.txt').write_text(raw)
+          print(raw[:12000])
+          PY
+          exit "$result"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: apollo-launch-diagnostics
+          path: diagnostics/
+          retention-days: 1
+          if-no-files-found: error
