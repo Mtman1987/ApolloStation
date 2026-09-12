@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { AuthDeniedError, AuthService } from "../packages/auth-core/dist/index.js";
+import { AuthDeniedError, AuthService, hashToken } from "../packages/auth-core/dist/index.js";
 import { SqliteAuthorityStore } from "../packages/authority-sqlite/dist/index.js";
 
 function tokenFactory() {
@@ -87,6 +87,60 @@ test("human refresh tokens rotate once and replay revokes the token family", () 
   assert.ok(first.refreshToken);
   const second = auth.rotateHumanRefresh(first.refreshToken);
   assert.ok(second.refreshToken);
+  assert.throws(() => auth.rotateHumanRefresh(first.refreshToken), /replay detected/);
+  assert.throws(() => auth.rotateHumanRefresh(second.refreshToken), /revoked/);
+  store.close();
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("parallel human refreshes reuse one restart-safe successor during a bounded overlap", () => {
+  const dir = mkdtempSync(join(tmpdir(), "spmt-auth-overlap-"));
+  const path = join(dir, "authority.db");
+  const clock = makeClock();
+  const rotationKey = Buffer.alloc(32, 7);
+  let store = new SqliteAuthorityStore(path);
+  let auth = new AuthService({ store, now: clock.now, tokenFactory: tokenFactory(), refreshRotationKey: rotationKey });
+  const first = auth.issueHumanSession({ userId: "user-1", scopes: ["workspace:read"], tenantIds: ["tenant-a"] });
+  const rotations = Array.from({ length: 12 }, () => auth.rotateHumanRefresh(first.refreshToken));
+  assert.equal(new Set(rotations.map((item) => item.refreshToken)).size, 1);
+  assert.equal(new Set(rotations.map((item) => item.accessToken)).size, 12);
+  const successor = rotations[0].refreshToken;
+  assert.doesNotMatch(JSON.stringify(store.getRefreshTokenByTokenHash(hashToken(first.refreshToken))), new RegExp(successor.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), "only the successor hash may be stored");
+  store.close();
+
+  store = new SqliteAuthorityStore(path);
+  auth = new AuthService({ store, now: clock.now, tokenFactory: tokenFactory(), refreshRotationKey: rotationKey });
+  assert.equal(auth.rotateHumanRefresh(first.refreshToken).refreshToken, successor, "overlap survives a process restart without storing plaintext tokens");
+  clock.advance(61);
+  assert.throws(() => auth.rotateHumanRefresh(first.refreshToken), /replay detected/);
+  assert.throws(() => auth.rotateHumanRefresh(successor), /revoked/);
+  store.close();
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("refresh overlap fails closed after a server-key change", () => {
+  const dir = mkdtempSync(join(tmpdir(), "spmt-auth-key-change-"));
+  const store = new SqliteAuthorityStore(join(dir, "authority.db"));
+  const clock = makeClock();
+  const firstAuthority = new AuthService({ store, now: clock.now, tokenFactory: tokenFactory(), refreshRotationKey: Buffer.alloc(32, 3) });
+  const first = firstAuthority.issueHumanSession({ userId: "user-1", scopes: ["workspace:read"], tenantIds: ["tenant-a"] });
+  const second = firstAuthority.rotateHumanRefresh(first.refreshToken);
+  const changedAuthority = new AuthService({ store, now: clock.now, tokenFactory: tokenFactory(), refreshRotationKey: Buffer.alloc(32, 4) });
+  assert.throws(() => changedAuthority.rotateHumanRefresh(first.refreshToken), /replay detected/);
+  assert.throws(() => firstAuthority.rotateHumanRefresh(second.refreshToken), /revoked/);
+  assert.throws(() => new AuthService({ store, refreshRotationKey: Buffer.alloc(31) }), /at least 32 bytes/);
+  store.close();
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("an older refresh ancestor cannot revive after its successor rotates", () => {
+  const dir = mkdtempSync(join(tmpdir(), "spmt-auth-ancestor-"));
+  const store = new SqliteAuthorityStore(join(dir, "authority.db"));
+  const clock = makeClock();
+  const auth = new AuthService({ store, now: clock.now, tokenFactory: tokenFactory(), refreshRotationKey: Buffer.alloc(32, 9) });
+  const first = auth.issueHumanSession({ userId: "user-1", scopes: ["workspace:read"], tenantIds: ["tenant-a"] });
+  const second = auth.rotateHumanRefresh(first.refreshToken);
+  auth.rotateHumanRefresh(second.refreshToken);
   assert.throws(() => auth.rotateHumanRefresh(first.refreshToken), /replay detected/);
   assert.throws(() => auth.rotateHumanRefresh(second.refreshToken), /revoked/);
   store.close();

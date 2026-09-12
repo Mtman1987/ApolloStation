@@ -102,7 +102,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
   const commlinkLiveChat = new CommlinkLiveChatStore(options.databasePath);
   const commlinkOperator = new CommlinkOperatorStore(options.databasePath);
   const authority = new AuthorityService({ store });
-  const auth = new AuthService({ store });
+  const auth = new AuthService({ store, refreshRotationKey: options.webhookKey });
   const publicBaseUrl = (options.publicBaseUrl ?? "https://spmt.live").replace(/\/$/, "");
   const control = new ControlService({ store, outputBaseUrl: publicBaseUrl });
   const billing = new MonetizationService(options.billingManifest ?? loadBillingManifest(), store);

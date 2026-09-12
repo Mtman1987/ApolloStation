@@ -1,6 +1,6 @@
 # Production Path
 
-Updated: 2026-08-30
+Updated: 2026-09-12
 
 This is the current migration and rollout plan. It replaces the original phase-number-heavy operations plan. The goal is to move from a fully tested Green codebase to production without either freezing ourselves behind obsolete assumptions or skipping safety evidence that still matters.
 
@@ -16,6 +16,8 @@ This is the current migration and rollout plan. It replaces the original phase-n
 
 ## Where we are now
 
+The latest source continuation is recorded in [the September 12 handoff](production/APOLLO_CUTOVER_CONTINUATION_2026-09-12.md). The older counts below describe the August baseline. Current operational state is recorded once in `config/production-rollout.v1.json`; source inventory is not an independent production authority.
+
 Completed:
 
 - current donor/live functionality has been ported into ApolloStation to the accepted offline-parity level;
@@ -27,6 +29,11 @@ Completed:
 - ecosystem-core rehearsal Stage 1 passed with outbound/provider access disabled.
 
 We are now at **production inventory and controlled live integration preparation**.
+
+The machine-checked rollout state lives in `config/production-rollout.v1.json`. Run
+`npm run release:audit` before changing public exposure, production authority, or
+Blue-retirement state. The manifest intentionally distinguishes an isolated public
+Apollo preview from moving any production writer or provider output.
 
 ## Step 1 — refresh production inventory
 

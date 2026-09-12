@@ -24,9 +24,9 @@ test("live replacement cannot claim readiness while production blockers remain",
   const slices = read("config/live-source-slices.v1.json");
   const parity = read("docs/donor-audits/app-code-parity.v1.json");
   const wiring = read("config/capability-wiring.v1.json");
-  slices.productionCutover.ready = true;
+  slices.productionCutover = { ready: true };
   const errors = validateLiveSliceStructure({ root, slices, parity, wiring });
-  assert.ok(errors.some((item) => /remain blocked/.test(item)));
+  assert.ok(errors.some((item) => /second production authority/.test(item)));
 });
 
 test("changed-source intake maps Apollo owners and rejects the retired repository name as runtime identity", () => {

@@ -33,7 +33,7 @@ test("HearMeOut voice bridge preserves owner/admin control, privacy gate, clean 
   assert.equal(started.config.enabled, true);
   assert.equal(started.config.roomVoiceOutboundEnabled, true);
   assert.equal(started.config.audioProfile, "clean");
-  assert.equal(started.config.discordReceiveGain, 1);
+  assert.equal(started.config.discordReceiveGain, 0.32);
   assert.deepEqual(worker.calls.slice(0, 3).map(([kind]) => kind), ["start", "gate", "gain"]);
 
   const listenOnly = await controller.setRoomOutbound(owner, "room-a", false);
@@ -42,7 +42,7 @@ test("HearMeOut voice bridge preserves owner/admin control, privacy gate, clean 
   const resilient = await controller.setAudioProfile(owner, "room-a", "resilient");
   assert.equal(resilient.config.audioProfile, "resilient");
   const gain = await controller.setDiscordReceiveGain(owner, "room-a", 1.25);
-  assert.equal(gain.config.discordReceiveGain, 1.25);
+  assert.equal(gain.config.discordReceiveGain, 1);
   const stopped = await controller.stop(owner, "room-a");
   assert.equal(stopped.config.enabled, false);
 
@@ -61,7 +61,7 @@ test("new voice bridges default two-way with clean Discord receive audio", () =>
   assert.equal(config.enabled, false);
   assert.equal(config.roomVoiceOutboundEnabled, true);
   assert.equal(config.audioProfile, "clean");
-  assert.equal(config.discordReceiveGain, 1);
+  assert.equal(config.discordReceiveGain, 0.32);
   store.close(); rmSync(dir, { recursive: true, force: true });
 });
 
@@ -82,7 +82,7 @@ test("enabled voice bridge survives process restart and reconciles worker plus p
   assert.deepEqual(first.map((entry) => entry.outcome), ["resumed"]);
   assert.deepEqual(worker.calls.map(([kind]) => kind), ["status", "start", "gate", "gain"]);
   assert.equal(worker.calls.find(([kind]) => kind === "start")[1].audioProfile, "resilient");
-  assert.equal(worker.calls.find(([kind]) => kind === "start")[1].discordReceiveGain, 1.1);
+  assert.equal(worker.calls.find(([kind]) => kind === "start")[1].discordReceiveGain, 1, "restart reconciliation caps a persisted full-scale boost before worker startup");
   assert.equal(worker.calls.find(([kind]) => kind === "gate")[1].roomVoiceOutboundEnabled, false);
 
   worker.calls.length = 0;

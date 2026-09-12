@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   HEARMEOUT_DISCORD_BYTES_PER_FRAME,
+  HEARMEOUT_DISCORD_DEFAULT_INGRESS_GAIN,
   HEARMEOUT_DISCORD_RECEIVE_PROFILES,
   HearMeOutDiscordPcmJitterSource,
   clampHearMeOutDiscordReceiveGain,
@@ -53,9 +54,9 @@ test("Discord jitter recovery emits silence instead of repeating speech edges", 
 });
 
 test("Discord receive gain is bounded and mixed speech is softly limited", () => {
-  assert.equal(clampHearMeOutDiscordReceiveGain(0), 0.25);
-  assert.equal(clampHearMeOutDiscordReceiveGain(5), 2);
-  assert.equal(clampHearMeOutDiscordReceiveGain("bad"), 1);
+  assert.equal(clampHearMeOutDiscordReceiveGain(0), 0.05);
+  assert.equal(clampHearMeOutDiscordReceiveGain(5), 1);
+  assert.equal(clampHearMeOutDiscordReceiveGain("bad"), HEARMEOUT_DISCORD_DEFAULT_INGRESS_GAIN);
   const loud = pcmFrame(30_000);
   const result = mixHearMeOutDiscordReceiveFrames([loud, loud], { receiveGain: 1.5 });
   assert.equal(result.frame.length, HEARMEOUT_DISCORD_BYTES_PER_FRAME);
@@ -65,4 +66,14 @@ test("Discord receive gain is bounded and mixed speech is softly limited", () =>
     const sample = result.frame.readInt16LE(offset);
     assert.ok(sample >= -32_768 && sample <= 32_767);
   }
+});
+
+test("Discord ingress defaults to measurable re-encoding headroom", () => {
+  const result = mixHearMeOutDiscordReceiveFrames([pcmFrame(10_000)]);
+  assert.equal(result.metrics.receiveGain, 0.32);
+  assert.equal(result.metrics.peakInput, 10_000);
+  assert.equal(result.metrics.peakOutput, 3_200);
+  assert.equal(result.frame.readInt16LE(0), 3_200);
+  assert.equal(result.metrics.limitedSamples, 0);
+  assert.equal(result.metrics.clippedSamples, 0);
 });

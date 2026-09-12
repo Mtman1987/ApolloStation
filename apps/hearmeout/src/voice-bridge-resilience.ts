@@ -77,7 +77,7 @@ export class ResilientHearMeOutVoiceBridgeWorker implements HearMeOutVoiceBridge
   }
 
   setDiscordReceiveGain(input: { tenantId: string; roomId: string; discordReceiveGain: number }) {
-    if (!this.worker.setDiscordReceiveGain) return Promise.resolve({ running: false, discordReceiveGain: input.discordReceiveGain });
+    if (!this.worker.setDiscordReceiveGain) return Promise.reject(new Error("This voice worker does not support Discord receive gain updates"));
     return this.worker.setDiscordReceiveGain(input);
   }
 

@@ -1,4 +1,6 @@
-import { createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+
+export const HUMAN_REFRESH_OVERLAP_SECONDS = 60;
 
 export type AuthActorTypeV1 = "user" | "service";
 export type TenantModeV1 = "any" | "allow-list";
@@ -40,6 +42,7 @@ export interface RefreshTokenV1 {
   issuedAt: string;
   expiresAt: string;
   usedAt?: string;
+  rotatedToHash?: string;
   revokedAt?: string;
 }
 
@@ -87,17 +90,22 @@ export interface AuthServiceOptions {
   store: AuthStore;
   now?: () => string;
   tokenFactory?: (kind: "access" | "refresh" | "id") => string;
+  /** Stable 32+ byte server key used only to derive restart-safe refresh successors. */
+  refreshRotationKey?: Uint8Array;
 }
 
 export class AuthService {
   private readonly store: AuthStore;
   private readonly now: () => string;
   private readonly tokenFactory: (kind: "access" | "refresh" | "id") => string;
+  private readonly refreshRotationKey: Uint8Array | undefined;
 
   constructor(options: AuthServiceOptions) {
     this.store = options.store;
     this.now = options.now ?? (() => new Date().toISOString());
     this.tokenFactory = options.tokenFactory ?? ((kind) => `${kind}_${randomBytes(32).toString("base64url")}`);
+    if (options.refreshRotationKey && options.refreshRotationKey.byteLength < 32) throw new AuthValidationError("refreshRotationKey must be at least 32 bytes");
+    this.refreshRotationKey = options.refreshRotationKey ? new Uint8Array(options.refreshRotationKey) : undefined;
   }
 
   registerServiceIdentity(input: {
@@ -260,20 +268,17 @@ export class AuthService {
 
   rotateHumanRefresh(refreshToken: string, accessTtlSeconds = 900): IssuedAccessV1 {
     const tokenHash = hashToken(refreshToken);
-    const current = this.store.getRefreshTokenByTokenHash(tokenHash);
-    if (!current) throw new AuthDeniedError("Invalid refresh token");
     const now = this.now();
-    if (current.revokedAt || isExpired(current.expiresAt, now)) throw new AuthDeniedError("Refresh token is expired or revoked");
-    if (current.usedAt) {
-      this.store.transaction(() => this.store.revokeRefreshFamily(current.familyId, now));
-      throw new AuthDeniedError("Refresh token replay detected; token family revoked");
-    }
-
-    return this.store.transaction(() => {
+    const outcome: { kind: "issued"; result: IssuedAccessV1 } | { kind: "replay"; familyId: string } = this.store.transaction(() => {
       const latest = this.store.getRefreshTokenByTokenHash(tokenHash);
       if (!latest || latest.revokedAt || isExpired(latest.expiresAt, now)) throw new AuthDeniedError("Refresh token is expired or revoked");
-      if (latest.usedAt) throw new AuthDeniedError("Refresh token replay detected; token family revoked");
-      this.store.putRefreshToken({ ...latest, usedAt: now });
+      if (latest.usedAt) {
+        const overlap = this.reissueRefreshOverlap(latest, refreshToken, now, accessTtlSeconds);
+        return overlap ? { kind: "issued", result: overlap } : { kind: "replay", familyId: latest.familyId };
+      }
+      const successorToken = this.deriveRefreshSuccessor(refreshToken);
+      const successorHash = hashToken(successorToken);
+      this.store.putRefreshToken({ ...latest, usedAt: now, rotatedToHash: successorHash });
       const access = this.issueAccess({
         actorType: "user",
         actorId: latest.actorId,
@@ -289,9 +294,14 @@ export class AuthService {
         scopes: latest.scopes,
         tenantIds: latest.tenantIds,
         ttlSeconds: remainingSeconds,
-      });
-      return { ...access, refreshToken: refresh.token, refreshExpiresAt: refresh.record.expiresAt };
+      }, successorToken);
+      return { kind: "issued", result: { ...access, refreshToken: refresh.token, refreshExpiresAt: refresh.record.expiresAt } };
     });
+    if (outcome.kind === "replay") {
+      this.store.transaction(() => this.store.revokeRefreshFamily(outcome.familyId, now));
+      throw new AuthDeniedError("Refresh token replay detected; token family revoked");
+    }
+    return outcome.result;
   }
 
   authenticateAccessToken(accessToken: string): AuthPrincipalV1 | undefined {
@@ -355,8 +365,8 @@ export class AuthService {
     return { accessToken: token, accessExpiresAt: record.expiresAt };
   }
 
-  private issueRefresh(input: { familyId: string; actorId: string; scopes: string[]; tenantIds: string[]; ttlSeconds: number }) {
-    const token = this.tokenFactory("refresh");
+  private issueRefresh(input: { familyId: string; actorId: string; scopes: string[]; tenantIds: string[]; ttlSeconds: number }, suppliedToken?: string) {
+    const token = suppliedToken ?? this.tokenFactory("refresh");
     const issuedAt = this.now();
     const record: RefreshTokenV1 = {
       id: this.tokenFactory("id"),
@@ -370,6 +380,23 @@ export class AuthService {
     };
     this.store.putRefreshToken(record);
     return { token, record };
+  }
+
+  private deriveRefreshSuccessor(refreshToken: string): string {
+    if (!this.refreshRotationKey) return this.tokenFactory("refresh");
+    return `refresh_${createHmac("sha384", this.refreshRotationKey).update("spmt-human-refresh-v1\0", "utf8").update(refreshToken, "utf8").digest("base64url")}`;
+  }
+
+  private reissueRefreshOverlap(current: RefreshTokenV1, refreshToken: string, now: string, accessTtlSeconds: number): IssuedAccessV1 | undefined {
+    if (!this.refreshRotationKey || !current.usedAt || !current.rotatedToHash) return undefined;
+    const age = Date.parse(now) - Date.parse(current.usedAt);
+    if (!Number.isFinite(age) || age < 0 || age > HUMAN_REFRESH_OVERLAP_SECONDS * 1_000) return undefined;
+    const successorToken = this.deriveRefreshSuccessor(refreshToken);
+    if (hashToken(successorToken) !== current.rotatedToHash) return undefined;
+    const successor = this.store.getRefreshTokenByTokenHash(current.rotatedToHash);
+    if (!successor || successor.familyId !== current.familyId || successor.actorId !== current.actorId || successor.usedAt || successor.revokedAt || isExpired(successor.expiresAt, now)) return undefined;
+    const access = this.issueAccess({ actorType: "user", actorId: successor.actorId, scopes: successor.scopes, tenantMode: "allow-list", tenantIds: successor.tenantIds, ttlSeconds: clampTtl(accessTtlSeconds, 60, 3600) });
+    return { ...access, refreshToken: successorToken, refreshExpiresAt: successor.expiresAt };
   }
 }
 

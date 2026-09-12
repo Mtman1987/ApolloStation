@@ -8,19 +8,7 @@
     "apolloVisualsRemainAuthoritative": true,
     "newFixesLandInApollo": true
   },
-  "liveFlyInventoryComplete": false,
-  "productionCutover": {
-    "ready": false,
-    "liveMutationAllowed": false,
-    "liveRetirementAllowed": false,
-    "blockers": [
-      "production reconciliation is incomplete",
-      "external integration rehearsal is incomplete",
-      "backup, restart, and rollback proof is incomplete",
-      "live runtime inventory is incomplete",
-      "owner acceptance is not recorded"
-    ]
-  },
+  "rolloutStateFile": "config/production-rollout.v1.json",
   "sources": [
     {
       "sourceId": "spmt-authority",

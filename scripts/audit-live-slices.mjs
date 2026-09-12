@@ -4,6 +4,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { extname, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import { auditProductionRolloutFile } from "./audit-production-rollout.mjs";
+
 const CURRENT_IDENTITY_FORBIDDEN = new RegExp(`${["chat", "tag"].join("[ _-]?")}|${"chat" + "tag"}`, "i");
 const SOURCE_EXTENSIONS = new Set([".cjs", ".js", ".json", ".mjs", ".ts", ".tsx"]);
 const SHA = /^[0-9a-f]{40}$/;
@@ -15,8 +17,8 @@ export function validateLiveSliceStructure({ root, slices, parity, wiring }) {
   if (slices?.comparisonPolicy?.retainLocalMirrors !== false) errors.push("live-source slices may not require retained local mirrors");
   if (slices?.comparisonPolicy?.mutateLiveFlyApps !== false) errors.push("live-source audit may not mutate Fly apps");
   if (parity?.schemaVersion !== 1 || parity?.appCodeParity !== "complete") errors.push("app-code parity manifest must remain complete and versioned");
-  if (slices?.productionCutover?.ready !== false || slices?.productionCutover?.liveMutationAllowed !== false || slices?.productionCutover?.liveRetirementAllowed !== false) errors.push("live cutover must remain blocked, non-mutating, and non-retiring until production proof is complete");
-  if (!Array.isArray(slices?.productionCutover?.blockers) || !slices.productionCutover.blockers.length) errors.push("live cutover must retain high-level production blockers");
+  if (slices?.rolloutStateFile !== "config/production-rollout.v1.json") errors.push("live-source inventory must reference the canonical production rollout state");
+  if (Object.hasOwn(slices ?? {}, "productionCutover") || Object.hasOwn(slices ?? {}, "liveFlyInventoryComplete")) errors.push("live-source inventory cannot define a second production authority; use the canonical rollout state");
   const sourceIds = new Set();
   const repositories = new Set();
   for (const source of slices?.sources ?? []) {
@@ -80,9 +82,17 @@ export function auditRepository(root, options = {}) {
   const changed = options.changedFiles ? auditChangedFiles({ root, changedFiles: options.changedFiles, knownOwners }) : { errors: [], affectedOwners: [] };
   structuralErrors.push(...changed.errors);
   if (options.checkRemote) structuralErrors.push(...auditRemoteHeads(slices.sources));
-  const blockers = [...slices.productionCutover.blockers];
-  const ready = structuralErrors.length === 0 && blockers.length === 0 && slices.productionCutover.ready === true;
-  return { schemaVersion: 1, ready, mode: "dry-run", sourceMode: slices.comparisonPolicy.sourceOfComparison, structuralErrors, blockers, changedFiles: options.changedFiles ?? [], affectedOwners: changed.affectedOwners, liveSources: slices.sources.map((item) => ({ repository: item.repository, currentMain: item.currentMain, lastTwoCommits: item.lastTwoCommits.map((commit) => commit.sha) })) };
+  const rollout = auditProductionRolloutFile(root);
+  structuralErrors.push(...rollout.errors);
+  const gateLabels = { inventory: "live runtime inventory", dataReconciliation: "production data reconciliation", externalIntegration: "external integration rehearsal", rollback: "backup, restart, and rollback proof", ownerAcceptance: "owner acceptance" };
+  const blockers = Object.entries(gateLabels).flatMap(([name, label]) => {
+    const pending = rollout.cohorts.filter((cohort) => cohort.pendingGates.includes(name)).map((cohort) => cohort.id);
+    return pending.length ? [`${label} incomplete: ${pending.join(", ")}`] : [];
+  });
+  blockers.push(...rollout.pendingPublicGates.map((name) => `public preview ${name} is incomplete`));
+  const ready = structuralErrors.length === 0 && rollout.productionReady;
+  return { schemaVersion: 1, ready, mode: "dry-run", sourceMode: slices.comparisonPolicy.sourceOfComparison, structuralErrors, blockers, rollout, changedFiles: options.changedFiles ?? [], affectedOwners: changed.affectedOwners, liveSources: slices.sources.map((item) => ({ repository: item.repository, currentMain: item.currentMain, lastTwoCommits: item.lastTwoCommits.map((commit) => commit.sha) })) };
+
 }
 
 function listTracked(root, paths) { const result = spawnSync("git", ["ls-files", "--", ...paths], { cwd: root, encoding: "utf8" }); if (result.status !== 0) throw new Error(result.stderr.trim() || "git ls-files failed"); return result.stdout.split(/\r?\n/).filter(Boolean); }
