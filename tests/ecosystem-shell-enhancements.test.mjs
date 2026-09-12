@@ -35,7 +35,7 @@ test("Black Hole and Rocketship remain hidden double-click ecosystem interaction
   assert.match(base, /ENTER HERE/);
   assert.match(base, /Math\.hypot/);
   assert.match(base, /data-spmt-signal-trigger/);
-  assert.match(client, /ecosystem\.easter-egg\.\$\{egg\}\.completed\.v1/);
+  assert.match(client, /reconcileEcosystemEggCompletions/);
   assert.match(client, /blackHole.*rocket.*signal/s);
   assert.match(client, /Lord Puzzler unlocked/);
 });

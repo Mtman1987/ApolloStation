@@ -29,6 +29,7 @@ const ASSETS = new Map<string, { file: string; type: string }>([
   ["/assets/web/simulation-rooms-client.js", { file: resolve(HERE, "simulation-rooms-client.js"), type: "text/javascript; charset=utf-8" }],
   ["/assets/spacemountain/simulation-rooms-ui.js", { file: resolve(REPOSITORY_ROOT, "apps/spacemountain/dist/simulation-rooms-ui.js"), type: "text/javascript; charset=utf-8" }],
   ["/assets/web/client.js", { file: resolve(HERE, "client.js"), type: "text/javascript; charset=utf-8" }],
+  ["/assets/web/egg-completion-retry.js", { file: resolve(HERE, "egg-completion-retry.js"), type: "text/javascript; charset=utf-8" }],
   ["/assets/web/session-resilience.js", { file: resolve(HERE, "session-resilience.js"), type: "text/javascript; charset=utf-8" }],
   ["/assets/web/bounded-app-client.js", { file: resolve(HERE, "bounded-app-client.js"), type: "text/javascript; charset=utf-8" }],
   ["/assets/contracts/media.js", { file: resolve(REPOSITORY_ROOT, "packages/contracts/dist/media.js"), type: "text/javascript; charset=utf-8" }],

@@ -4,11 +4,14 @@ export const HEARMEOUT_DISCORD_FRAME_MS = 20;
 export const HEARMEOUT_DISCORD_SAMPLES_PER_FRAME = 960;
 export const HEARMEOUT_DISCORD_BYTES_PER_SAMPLE = 2;
 export const HEARMEOUT_DISCORD_BYTES_PER_FRAME = HEARMEOUT_DISCORD_SAMPLES_PER_FRAME * HEARMEOUT_DISCORD_CHANNELS * HEARMEOUT_DISCORD_BYTES_PER_SAMPLE;
+// Discord voice is already aggressively normalized. Keep roughly 10 dB of
+// headroom before the bridge re-encodes it for LiveKit.
+export const HEARMEOUT_DISCORD_DEFAULT_INGRESS_GAIN = 0.32;
 
 export type HearMeOutDiscordReceiveProfileV1 = "low-latency" | "balanced" | "resilient" | "clean";
 export interface HearMeOutDiscordReceiveProfileConfigV1 { targetFrames: number; maxFrames: number; adaptiveMaxFrames: number; maxStartupWaitMs: number; fadeSamples: number; }
 export interface HearMeOutDiscordReceiveMetricsV1 { starts: number; speechEnds: number; underruns: number; rebuffers: number; lateFrames: number; droppedFrames: number; concealedFrames: number; currentBufferedFrames: number; targetFrames: number; arrivalJitterMs: number; }
-export interface HearMeOutDiscordMixMetricsV1 { limitedSamples: number; clippedSamples: number; receiveGain: number; }
+export interface HearMeOutDiscordMixMetricsV1 { limitedSamples: number; clippedSamples: number; receiveGain: number; peakInput: number; peakOutput: number; }
 
 export const HEARMEOUT_DISCORD_RECEIVE_PROFILES: Readonly<Record<HearMeOutDiscordReceiveProfileV1, HearMeOutDiscordReceiveProfileConfigV1>> = Object.freeze({
   "low-latency": Object.freeze({ targetFrames: 4, maxFrames: 20, adaptiveMaxFrames: 10, maxStartupWaitMs: 100, fadeSamples: 120 }),
@@ -22,8 +25,8 @@ export function normalizeHearMeOutDiscordReceiveProfile(value: unknown): HearMeO
 }
 export function clampHearMeOutDiscordReceiveGain(value: unknown): number {
   const numeric = typeof value === "number" ? value : Number(value);
-  if (!Number.isFinite(numeric)) return 1;
-  return Math.max(0.25, Math.min(2, numeric));
+  if (!Number.isFinite(numeric)) return HEARMEOUT_DISCORD_DEFAULT_INGRESS_GAIN;
+  return Math.max(0.05, Math.min(1, numeric));
 }
 
 export class HearMeOutDiscordPcmJitterSource {
@@ -102,16 +105,17 @@ export class HearMeOutDiscordPcmJitterSource {
 }
 
 export function mixHearMeOutDiscordReceiveFrames(frames: readonly (Buffer | Uint8Array)[], options: { receiveGain?: number; limiterThreshold?: number } = {}): { frame: Buffer<ArrayBufferLike>; metrics: HearMeOutDiscordMixMetricsV1 } {
-  const gain = clampHearMeOutDiscordReceiveGain(options.receiveGain ?? 1);
+  const gain = clampHearMeOutDiscordReceiveGain(options.receiveGain ?? HEARMEOUT_DISCORD_DEFAULT_INGRESS_GAIN);
   const thresholdRatio = typeof options.limiterThreshold === "number" && Number.isFinite(options.limiterThreshold) ? Math.max(0.5, Math.min(0.98, options.limiterThreshold)) : 0.9;
   const threshold = 32_767 * thresholdRatio;
   const output: Buffer<ArrayBufferLike> = Buffer.alloc(HEARMEOUT_DISCORD_BYTES_PER_FRAME);
-  let limitedSamples = 0, clippedSamples = 0;
+  let limitedSamples = 0, clippedSamples = 0, peakInput = 0, peakOutput = 0;
   const valid = frames.map((frame) => Buffer.from(frame)).filter((frame) => frame.length >= HEARMEOUT_DISCORD_BYTES_PER_FRAME);
-  if (valid.length === 0) return { frame: output, metrics: { limitedSamples, clippedSamples, receiveGain: gain } };
+  if (valid.length === 0) return { frame: output, metrics: { limitedSamples, clippedSamples, receiveGain: gain, peakInput, peakOutput } };
   for (let offset = 0; offset < HEARMEOUT_DISCORD_BYTES_PER_FRAME; offset += 2) {
     let mixed = 0;
     for (const frame of valid) mixed += frame.readInt16LE(offset);
+    peakInput = Math.max(peakInput, Math.abs(mixed));
     mixed *= gain;
     if (Math.abs(mixed) > 32_767) clippedSamples += 1;
     if (Math.abs(mixed) > threshold) {
@@ -119,9 +123,11 @@ export function mixHearMeOutDiscordReceiveFrames(frames: readonly (Buffer | Uint
       const sign = mixed < 0 ? -1 : 1, magnitude = Math.abs(mixed), headroom = Math.max(1, 32_767 - threshold);
       mixed = sign * (threshold + headroom * (1 - Math.exp(-(magnitude - threshold) / headroom)));
     }
-    output.writeInt16LE(Math.max(-32_768, Math.min(32_767, Math.round(mixed))), offset);
+    const sample = Math.max(-32_768, Math.min(32_767, Math.round(mixed)));
+    peakOutput = Math.max(peakOutput, Math.abs(sample));
+    output.writeInt16LE(sample, offset);
   }
-  return { frame: output, metrics: { limitedSamples, clippedSamples, receiveGain: gain } };
+  return { frame: output, metrics: { limitedSamples, clippedSamples, receiveGain: gain, peakInput, peakOutput } };
 }
 
 export function fadePcm16Edge(frame: Buffer | Uint8Array, fadeSamples: number, direction: "in" | "out"): Buffer<ArrayBufferLike> {

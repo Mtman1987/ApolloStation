@@ -56,7 +56,7 @@ export function auditProductionRollout(plan) {
     if (!AUTHORITIES.has(cohort?.productionAuthority)) errors.push(`cohort ${cohort?.id ?? "unknown"} has an invalid production authority`);
     if (!AUTHORITIES.has(cohort?.rollbackTarget)) errors.push(`cohort ${cohort?.id ?? "unknown"} has an invalid rollback target`);
     if (!Array.isArray(cohort?.units) || !cohort.units.length) errors.push(`cohort ${cohort?.id ?? "unknown"} requires rollout units`);
-    for (const unit of cohort?.units ?? []) {
+    for (const unit of Array.isArray(cohort?.units) ? cohort.units : []) {
       if (!String(unit).trim() || units.has(unit)) errors.push(`duplicate or invalid rollout unit: ${unit ?? "unknown"}`);
       units.add(unit);
     }
@@ -74,12 +74,25 @@ export function auditProductionRollout(plan) {
     if (cohort?.productionAuthority === "green" && (!cutoverGatesPassed || !canAffectProduction)) errors.push(`cohort ${cohort?.id ?? "unknown"} Green authority requires a proven production mode`);
     if (cohort?.shadowSideEffectsAllowed && cohort?.greenMode === "shadow") errors.push(`cohort ${cohort?.id ?? "unknown"} shadow mode must be side-effect free`);
     if (cohort?.productionAuthority === "green" && !global.liveMutationAllowed) errors.push(`cohort ${cohort?.id ?? "unknown"} cannot give Green production authority while live mutation is disabled`);
-    if ((cohort?.status === "retired" || cohort?.greenMode === "retired") && !global.blueRetirementAllowed) errors.push(`cohort ${cohort?.id ?? "unknown"} cannot retire Blue while retirement is disabled`);
+    const retiring = cohort?.status === "retired" || cohort?.greenMode === "retired";
+    if (retiring && !global.blueRetirementAllowed) errors.push(`cohort ${cohort?.id ?? "unknown"} cannot retire Blue while retirement is disabled`);
+    if (retiring && (cohort?.productionAuthority !== "green" || !["primary", "retired"].includes(cohort?.greenMode) || cohort?.status !== "retired")) errors.push(`cohort ${cohort?.id ?? "unknown"} cannot retire its serving Blue authority before Green is primary`);
+    if (cohort?.status === "primary" && (cohort?.greenMode !== "primary" || cohort?.productionAuthority !== "green")) errors.push(`cohort ${cohort?.id ?? "unknown"} primary status requires Green primary authority`);
+    if (cohort?.greenMode === "primary" && !["primary", "retired"].includes(cohort?.status)) errors.push(`cohort ${cohort?.id ?? "unknown"} primary mode requires primary or retired status`);
   }
-  if (candidates.length !== 1) errors.push(`exactly one next rollout candidate is required; found ${candidates.length}`);
-  const ordered = [...cohorts].sort((a, b) => a.order - b.order);
+  const ordered = cohorts.filter((cohort) => cohort && typeof cohort === "object").sort((a, b) => a.order - b.order);
+  const apps = ordered.filter((cohort) => cohort.id !== "ecosystem-core");
+  const complete = (cohort) => cohort.productionAuthority === "green" && ["primary", "retired"].includes(cohort.status) && ["primary", "retired"].includes(cohort.greenMode) && CUTOVER_GATES.every((name) => cohort.gates?.[name] === "passed");
+  const next = apps.find((cohort) => !complete(cohort));
   if (ordered.at(-1)?.id !== "streamweaver") errors.push("StreamWeaver must remain the last broad migration cohort");
-  if (candidates[0] !== "hearmeout") errors.push("HearMeOut must remain the first real app canary until its cutover is complete");
+  if (apps[0]?.id !== "hearmeout") errors.push("HearMeOut must remain the first real app canary");
+  if (next ? candidates.length !== 1 || candidates[0] !== next.id : candidates.length !== 0) errors.push(`next rollout candidate must be ${next?.id ?? "none after all app cutovers complete"}`);
+  if (global.defaultProductionAuthority === "green" && !ordered.every(complete)) errors.push("default production authority stays Blue until every cohort has completed cutover");
+  const cohortReadiness = ordered.map((cohort) => ({
+    id: cohort.id,
+    ready: CUTOVER_GATES.every((name) => cohort.gates?.[name] === "passed"),
+    pendingGates: CUTOVER_GATES.filter((name) => cohort.gates?.[name] !== "passed"),
+  }));
 
   return {
     schemaVersion: 1,
@@ -92,6 +105,8 @@ export function auditProductionRollout(plan) {
     blueRetirementAllowed: global.blueRetirementAllowed === true,
     nextCandidate: candidates.length === 1 ? candidates[0] : null,
     pendingPublicGates: [...new Set([...PUBLIC_GATES, ...Object.keys(publicPreviewGates)])].filter((name) => publicPreviewGates[name]?.state !== "passed"),
+    cohorts: cohortReadiness,
+    productionReady: errors.length === 0 && publicPreviewReady && cohortReadiness.length > 0 && cohortReadiness.every((cohort) => cohort.ready),
     errors,
   };
 }

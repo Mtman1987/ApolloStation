@@ -1,6 +1,6 @@
 # Production Path
 
-Updated: 2026-08-30
+Updated: 2026-09-12
 
 This is the current migration and rollout plan. It replaces the original phase-number-heavy operations plan. The goal is to move from a fully tested Green codebase to production without either freezing ourselves behind obsolete assumptions or skipping safety evidence that still matters.
 
@@ -15,6 +15,8 @@ This is the current migration and rollout plan. It replaces the original phase-n
 7. Production infrastructure policy is measured and replaceable; no vendor is architecture by itself.
 
 ## Where we are now
+
+The latest source continuation is recorded in [the September 12 handoff](production/APOLLO_CUTOVER_CONTINUATION_2026-09-12.md). The older counts below describe the August baseline. Current operational state is recorded once in `config/production-rollout.v1.json`; source inventory is not an independent production authority.
 
 Completed:
 

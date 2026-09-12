@@ -4,6 +4,7 @@ import type { AppCatalogRegistrationV1, OperationsLogV1 } from "@spmt/contracts"
 import { SpaceMountainShellController, buildAppFrameTarget, type SpaceMountainAppCardV1 } from "@spmt/spacemountain";
 import { SpaceMountainShellUi } from "@spmt/spacemountain/ui";
 import { SpaceMountainSessionRecoveryGate, classifySpaceMountainSessionFailure } from "./session-resilience.js";
+import { createBrowserEcosystemEggCompletionQueue, EcosystemEggRetryCoordinator, reconcileEcosystemEggCompletions } from "./egg-completion-retry.js";
 
 type Principal = { actorId: string; tenantIds: string[]; scopes: string[] };
 
@@ -45,6 +46,8 @@ let loading = false;
 let registryFingerprint = "";
 let registeredAppIds = new Set<string>();
 const sessionRecovery = new SpaceMountainSessionRecoveryGate();
+const eggCompletions = createBrowserEcosystemEggCompletionQueue();
+const eggRetries = new EcosystemEggRetryCoordinator(reconcileEggCompletions);
 
 loginForm.addEventListener("submit", (event) => void submitLogin(event));
 registerForm.addEventListener("submit", (event) => void submitRegistration(event));
@@ -60,7 +63,9 @@ loadCandidateButton?.addEventListener("click", () => void loadCandidateExample()
 resetDeveloperButton.addEventListener("click", () => resetDeveloperForm());
 window.setInterval(() => void watchRegistry(), 20_000);
 window.setInterval(() => void watchWorkspace(), 5_000);
-window.addEventListener("focus", () => void watchWorkspace());
+window.addEventListener("focus", () => { void watchWorkspace(); void retryEggCompletions(); });
+window.addEventListener("online", () => void retryEggCompletions());
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") void retryEggCompletions(); });
 let watchingWorkspace = false;
 async function watchWorkspace() {
   if (watchingWorkspace || !currentPrincipal || loading || document.visibilityState !== "visible") return;
@@ -153,6 +158,7 @@ async function loadShell() {
     registryFingerprint = registrySignature(snapshot.apps);
     registeredAppIds = new Set(snapshot.apps.map((app) => app.appId));
     currentPrincipal = principal;
+    void retryEggCompletions();
     authView.hidden = true;
     shellView.hidden = false;
     refreshButton.hidden = false;
@@ -523,20 +529,26 @@ async function recordEggCompletion(event: CustomEvent) {
   const egg = event.detail?.egg;
   if (egg !== "blackHole" && egg !== "rocket" && egg !== "signal") return;
   const tenantId = principal.tenantIds[0]!;
-  const type = `ecosystem.easter-egg.${egg}.completed.v1`;
+  eggCompletions.enqueue({ tenantId, userId: principal.actorId, egg });
   setStatus(`Retaining ${egg} discovery in canonical SPMT state…`, "working");
+  await retryEggCompletions();
+}
+
+function retryEggCompletions() { return eggRetries.retry(); }
+
+async function reconcileEggCompletions() {
+  const principal = currentPrincipal;
+  if (!principal?.tenantIds[0]) return;
+  const account = { tenantId: principal.tenantIds[0], userId: principal.actorId };
+  if (!eggCompletions.forAccount(account.tenantId, account.userId).length) return;
+  const isCurrent = () => currentPrincipal?.actorId === account.userId && currentPrincipal.tenantIds[0] === account.tenantId;
   try {
-    await spmt.publishEvent(tenantId, type, { schemaVersion: 1, userId: principal.actorId, egg, completed: true }, `egg:${principal.actorId}:${egg}`);
-    const events = await spmt.listEvents(tenantId, { limit: 100 });
-    const found = new Set(events.filter((item) => item.payload && typeof item.payload === "object" && (item.payload as Record<string, unknown>).userId === principal.actorId).map((item) => item.type));
-    const all = ["blackHole", "rocket", "signal"].every((name) => found.has(`ecosystem.easter-egg.${name}.completed.v1`));
-    if (all) {
-      const alreadyRewarded = found.has("ecosystem.easter-eggs.completed.v1");
-      await spmt.publishEvent(tenantId, "ecosystem.easter-eggs.completed.v1", { schemaVersion: 1, userId: principal.actorId, reward: "lord-puzzler", assistant: "count-puzzle" }, `egg:${principal.actorId}:complete`);
-      if (!alreadyRewarded) await spmt.createNotification(tenantId, principal.actorId, "achievement", "Lord Puzzler unlocked", "Count Puzzle has joined your ecosystem collection.");
-    }
-    setStatus(all ? "All three signals retained · Lord Puzzler unlocked." : `${egg} discovery retained.`, "ready");
-  } catch (error) { setStatus(`Discovery was not retained · ${message(error)}`, "error"); }
+    const result = await reconcileEcosystemEggCompletions({ queue: eggCompletions, account, isCurrent, api: spmt });
+    if (!result || !isCurrent()) return;
+    setStatus(result.pending ? "Discovery is waiting for canonical confirmation." : result.all ? "All three signals retained · Lord Puzzler unlocked." : `${result.eggs.join(", ")} discovery retained.`, result.pending ? "working" : "ready");
+  } catch {
+    if (isCurrent()) setStatus("Discovery is waiting for canonical confirmation · retrying for this account.", "working");
+  }
 }
 
 function conversationReplyForm(conversation: Record<string, unknown>, actorId: string) {

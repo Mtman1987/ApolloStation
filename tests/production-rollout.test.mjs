@@ -133,3 +133,58 @@ test("Blue cannot be retired before production has moved", () => {
   assert.equal(report.valid, false);
   assert.ok(report.errors.some((error) => /retirement cannot be allowed/.test(error)));
 });
+
+function completeCohort(cohort) {
+  for (const name of Object.keys(cohort.gates)) cohort.gates[name] = "passed";
+  cohort.status = cohort.greenMode = "primary";
+  cohort.productionAuthority = "green";
+  cohort.nextCandidate = false;
+}
+
+test("the next canary advances through the existing order and ends when every app is primary", () => {
+  const plan = readPlan();
+  plan.global.liveMutationAllowed = plan.global.productionTrafficMoved = true;
+  const apps = plan.cohorts.filter((cohort) => cohort.id !== "ecosystem-core");
+  for (let index = 0; index < apps.length; index++) {
+    assert.equal(auditProductionRollout(plan).nextCandidate, apps[index].id);
+    completeCohort(apps[index]);
+    if (apps[index + 1]) apps[index + 1].nextCandidate = true;
+    const report = auditProductionRollout(plan);
+    assert.equal(report.valid, true, report.errors.join("\n"));
+  }
+  assert.equal(auditProductionRollout(plan).nextCandidate, null);
+});
+
+test("retirement cannot stop a cohort still served by Blue even after another app moves", () => {
+  const plan = readPlan();
+  plan.global.liveMutationAllowed = plan.global.productionTrafficMoved = plan.global.blueRetirementAllowed = true;
+  completeCohort(plan.cohorts[1]);
+  plan.cohorts[2].nextCandidate = true;
+  const cohort = plan.cohorts[2];
+  for (const name of Object.keys(cohort.gates)) cohort.gates[name] = "passed";
+  cohort.status = "retired";
+  const report = auditProductionRollout(plan);
+  assert.equal(report.valid, false);
+  assert.ok(report.errors.some((error) => /serving Blue authority/.test(error)));
+});
+
+test("retiring an already migrated app preserves its serving Green replacement", () => {
+  const plan = readPlan();
+  plan.global.liveMutationAllowed = plan.global.productionTrafficMoved = plan.global.blueRetirementAllowed = true;
+  completeCohort(plan.cohorts[1]);
+  plan.cohorts[1].status = "retired";
+  plan.cohorts[2].nextCandidate = true;
+  const report = auditProductionRollout(plan);
+  assert.equal(report.valid, true, report.errors.join("\n"));
+});
+
+test("primary labels and global Green authority cannot bypass unfinished cohorts", () => {
+  const plan = readPlan();
+  plan.global.liveMutationAllowed = plan.global.productionTrafficMoved = true;
+  for (const name of Object.keys(plan.cohorts[1].gates)) plan.cohorts[1].gates[name] = "passed";
+  plan.cohorts[1].status = "primary";
+  assert.equal(auditProductionRollout(plan).valid, false);
+  const second = readPlan();
+  second.global.defaultProductionAuthority = "green";
+  assert.equal(auditProductionRollout(second).valid, false);
+});

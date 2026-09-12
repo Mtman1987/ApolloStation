@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { validateChatGatewayWorkerEnvironment } from '../apps/chat-gateway/dist/service.js';
 import { NEBULA_ARCADE_GAMES } from '../apps/nebula-arcade/dist/game-hub.js';
 import { quackverseCards } from '../apps/nebula-arcade/dist/quackverse-data.js';
+import { auditProductionRolloutFile } from './audit-production-rollout.mjs';
 const root = new URL('../', import.meta.url);
 const checks = [];
 function check(name, run) {
@@ -18,8 +19,8 @@ check('Packaged artwork', () => { if (!existsSync(new URL('apps/nebula-arcade/as
 check('Sprite release remains owner-controlled', () => {
   const workflow = readFileSync(new URL('.github/workflows/sprite-promotion.yml', root), 'utf8');
   if (!workflow.includes("vars.SPRITES_AUTODEPLOY_ENABLED == 'true'") || !workflow.includes("github.ref == 'refs/heads/main'") || !workflow.includes('environment: sprite-release')) throw new Error('Preserve the owner opt-in, main branch restriction and protected Sprite environment');
-  const slices = JSON.parse(readFileSync(new URL('config/live-source-slices.v1.json', root), 'utf8'));
-  if (slices.productionCutover.liveMutationAllowed !== false || slices.productionCutover.liveRetirementAllowed !== false) throw new Error('Live Fly cutover requires separate verified authorization');
+  const rollout = auditProductionRolloutFile(fileURLToPath(root));
+  if (!rollout.valid) throw new Error(rollout.errors.join('; '));
 });
 if (process.argv.includes('--production')) {
   check('Production provider configuration', () => {

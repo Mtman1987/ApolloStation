@@ -82,6 +82,7 @@ test("transforms durable activity-room queue and voice config while forcing live
   assert.equal(transformed.voiceBridge.guildId, "123456789012345678");
   assert.equal(transformed.voiceBridge.voiceChannelId, "223456789012345678");
   assert.equal(transformed.voiceBridge.audioProfile, "balanced");
+  assert.equal(transformed.voiceBridge.discordReceiveGain, 0.32, "a Blue config without an explicit gain imports with safe Discord ingress headroom");
   assert.deepEqual(transformed.restart, { presence: true, activePlayback: true, djWorker: true });
 });
 

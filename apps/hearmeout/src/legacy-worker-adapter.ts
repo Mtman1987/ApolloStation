@@ -1,4 +1,5 @@
 import type { HearMeOutVoiceAudioProfileV1, HearMeOutVoiceBridgeWorkerV1 } from "./voice-bridge.js";
+import { clampHearMeOutDiscordReceiveGain } from "./discord-receive-audio.js";
 
 export interface HttpHearMeOutVoiceBridgeWorkerOptionsV1 {
   workerOrigin: string;
@@ -47,10 +48,18 @@ export class HttpHearMeOutVoiceBridgeWorker implements HearMeOutVoiceBridgeWorke
     const guildId = snowflake(input.guildId, "guildId");
     const voiceChannelId = snowflake(input.voiceChannelId, "voiceChannelId");
     const audioProfile = profile(input.audioProfile);
-    finiteNumber(input.discordReceiveGain, "discordReceiveGain");
+    const discordReceiveGain = clampHearMeOutDiscordReceiveGain(finiteNumber(input.discordReceiveGain, "discordReceiveGain"));
     return this.request("/voice-bridge", {
       method: "POST",
-      body: { action: "start", roomId, guildId, voiceChannelId, audioProfile },
+      body: { action: "start", roomId, guildId, voiceChannelId, audioProfile, discordReceiveGain },
+    }).then(async (result) => {
+      try { return confirmGain(result, discordReceiveGain); }
+      catch (error) {
+        // A worker may have started before revealing its older contract.
+        // Do not leave an untracked bridge running after Apollo rejects it.
+        await this.stop({ tenantId: input.tenantId, roomId }).catch(() => undefined);
+        throw error;
+      }
     });
   }
 
@@ -75,6 +84,14 @@ export class HttpHearMeOutVoiceBridgeWorker implements HearMeOutVoiceBridgeWorke
     const roomId = cleanId(input.roomId, "roomId");
     const audioProfile = profile(input.audioProfile);
     return this.request("/voice-bridge/audio-profile", { method: "POST", body: { roomId, audioProfile } });
+  }
+
+  setDiscordReceiveGain(input: { tenantId: string; roomId: string; discordReceiveGain: number }) {
+    cleanId(input.tenantId, "tenantId");
+    const roomId = cleanId(input.roomId, "roomId");
+    const discordReceiveGain = clampHearMeOutDiscordReceiveGain(finiteNumber(input.discordReceiveGain, "discordReceiveGain"));
+    return this.request("/voice-bridge/receive-gain", { method: "POST", body: { roomId, discordReceiveGain } })
+      .then((result) => confirmGain(result, discordReceiveGain));
   }
 
   private async request(path: string, options: { method?: string; body?: unknown; query?: Record<string, string> } = {}): Promise<Record<string, unknown>> {
@@ -107,8 +124,15 @@ export class HttpHearMeOutVoiceBridgeWorker implements HearMeOutVoiceBridgeWorke
     }
     if (!response.ok) throw new HttpHearMeOutVoiceBridgeWorkerError(response.status, safeProviderMessage(payload));
     if (!payload || typeof payload !== "object" || Array.isArray(payload)) return {};
+    if ((payload as Record<string, unknown>).success === false) throw new HttpHearMeOutVoiceBridgeWorkerError(response.status, safeProviderMessage(payload) ?? "Worker did not apply the request");
     return payload as Record<string, unknown>;
   }
+}
+
+function confirmGain(result: Record<string, unknown>, expected: number) {
+  const status = result.status && typeof result.status === "object" ? result.status as Record<string, unknown> : result;
+  if (status.discordReceiveGain !== expected) throw new Error("HearMeOut worker did not confirm the requested Discord receive gain; update the worker gain API before cutover");
+  return result;
 }
 
 export class HttpHearMeOutVoiceBridgeWorkerError extends Error {

@@ -1,6 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
 import type { HearMeOutPrincipalV1, SqliteHearMeOutRoomMediaRuntime } from "./room-media-core.js";
-import { clampHearMeOutDiscordReceiveGain, type HearMeOutDiscordReceiveProfileV1 } from "./discord-receive-audio.js";
+import { HEARMEOUT_DISCORD_DEFAULT_INGRESS_GAIN, clampHearMeOutDiscordReceiveGain, type HearMeOutDiscordReceiveProfileV1 } from "./discord-receive-audio.js";
 
 export type HearMeOutVoiceAudioProfileV1 = HearMeOutDiscordReceiveProfileV1;
 
@@ -136,9 +136,10 @@ export class HearMeOutVoiceBridgeController {
     const room = this.requireManager(principal, roomId);
     const gain = clampHearMeOutDiscordReceiveGain(discordReceiveGain);
     const current = this.store.get(principal.tenantId, room.roomId);
+    if (current.enabled && !this.worker.setDiscordReceiveGain) throw new Error("This voice worker does not support Discord receive gain updates");
     const config = this.store.put({ ...current, discordReceiveGain: gain, updatedBy: principal.userId, updatedAt: this.now() });
-    if (!current.enabled || !this.worker.setDiscordReceiveGain) return { success: true as const, config, worker: { running: current.enabled, discordReceiveGain: gain } };
-    const worker = await this.worker.setDiscordReceiveGain({ tenantId: principal.tenantId, roomId: room.roomId, discordReceiveGain: gain });
+    if (!current.enabled) return { success: true as const, config, worker: { running: false, discordReceiveGain: gain } };
+    const worker = await this.worker.setDiscordReceiveGain!({ tenantId: principal.tenantId, roomId: room.roomId, discordReceiveGain: gain });
     return { success: true as const, config, worker };
   }
 
@@ -205,10 +206,10 @@ function workerMatches(status: Record<string, unknown>, config: HearMeOutVoiceBr
   return true;
 }
 function safeError(error: unknown) { const text = error instanceof Error ? error.message : String(error ?? "voice bridge reconciliation failed"); return text.replace(/(?:token|authorization|secret|password)\s*[:=]\s*\S+/gi, "$1=[redacted]").slice(0, 300); }
-function defaultVoiceBridgeConfig(tenantId: string, roomId: string): HearMeOutVoiceBridgeConfigV1 { return { schemaVersion: 1, tenantId: cleanId(tenantId, "tenantId"), roomId: cleanId(roomId, "roomId"), enabled: false, guildId: "", voiceChannelId: "", roomVoiceOutboundEnabled: true, audioProfile: "clean", discordReceiveGain: 1 }; }
+function defaultVoiceBridgeConfig(tenantId: string, roomId: string): HearMeOutVoiceBridgeConfigV1 { return { schemaVersion: 1, tenantId: cleanId(tenantId, "tenantId"), roomId: cleanId(roomId, "roomId"), enabled: false, guildId: "", voiceChannelId: "", roomVoiceOutboundEnabled: true, audioProfile: "clean", discordReceiveGain: HEARMEOUT_DISCORD_DEFAULT_INGRESS_GAIN }; }
 function normalizeConfig(input: Partial<HearMeOutVoiceBridgeConfigV1>, tenantId: string, roomId: string): HearMeOutVoiceBridgeConfigV1 {
   const profile = isAudioProfile(input.audioProfile) ? input.audioProfile : "clean";
-  return { schemaVersion: 1, tenantId: cleanId(tenantId, "tenantId"), roomId: cleanId(roomId, "roomId"), enabled: Boolean(input.enabled), guildId: input.guildId ? snowflake(input.guildId, "guildId") : "", voiceChannelId: input.voiceChannelId ? snowflake(input.voiceChannelId, "voiceChannelId") : "", roomVoiceOutboundEnabled: typeof input.roomVoiceOutboundEnabled === "boolean" ? input.roomVoiceOutboundEnabled : true, audioProfile: profile, discordReceiveGain: clampHearMeOutDiscordReceiveGain(input.discordReceiveGain ?? 1), ...(input.updatedBy ? { updatedBy: cleanId(input.updatedBy, "updatedBy") } : {}), ...(input.updatedAt ? { updatedAt: validTimestamp(input.updatedAt, "updatedAt") } : {}) };
+  return { schemaVersion: 1, tenantId: cleanId(tenantId, "tenantId"), roomId: cleanId(roomId, "roomId"), enabled: Boolean(input.enabled), guildId: input.guildId ? snowflake(input.guildId, "guildId") : "", voiceChannelId: input.voiceChannelId ? snowflake(input.voiceChannelId, "voiceChannelId") : "", roomVoiceOutboundEnabled: typeof input.roomVoiceOutboundEnabled === "boolean" ? input.roomVoiceOutboundEnabled : true, audioProfile: profile, discordReceiveGain: clampHearMeOutDiscordReceiveGain(input.discordReceiveGain ?? HEARMEOUT_DISCORD_DEFAULT_INGRESS_GAIN), ...(input.updatedBy ? { updatedBy: cleanId(input.updatedBy, "updatedBy") } : {}), ...(input.updatedAt ? { updatedAt: validTimestamp(input.updatedAt, "updatedAt") } : {}) };
 }
 function isAudioProfile(value: unknown): value is HearMeOutVoiceAudioProfileV1 { return value === "low-latency" || value === "balanced" || value === "resilient" || value === "clean"; }
 function snowflake(value: string, name: string) { const clean = String(value ?? "").trim(); if (!/^\d{5,30}$/.test(clean)) throw new Error(`${name} must be a Discord snowflake`); return clean; }
