@@ -1,0 +1,29 @@
+name: Finalize approved HearMeOut transfer
+on:
+  push:
+    branches: [diagnostics/hmo-cutover-install-20260912]
+    paths: [.github/workflows/finalize-hmo-transfer.yml, scripts/sprites/finalize-hmo-transfer.mjs]
+permissions:
+  contents: read
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    concurrency:
+      group: apollo-release-sprite
+      cancel-in-progress: false
+    environment: sprite-release
+    env:
+      SPRITES_TOKEN: ${{ secrets.SPRITES_TOKEN }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Verify final room state and remove transit key
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL https://sprites.dev/install.sh | bash
+          export PATH="$HOME/.local/bin:$PATH"
+          sprite auth setup --token "$SPRITES_TOKEN"
+          actual="$(sprite api /v1/sprites/web-terminal -- --silent | jq -r '.id')"
+          test "$actual" = sprite-fec8d6f2-49f0-4e28-bc6d-e8a7ae364280
+          sprite exec --no-port-forward -o testing-968 -s web-terminal --file scripts/sprites/finalize-hmo-transfer.mjs:/tmp/finalize-hmo-transfer.mjs -- node /tmp/finalize-hmo-transfer.mjs

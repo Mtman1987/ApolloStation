@@ -1,0 +1,14 @@
+import {readFileSync,rmSync,existsSync,chmodSync,statSync} from 'node:fs';
+import {DatabaseSync} from 'node:sqlite';
+const root='/home/sprite/data/release';
+const receipt=JSON.parse(readFileSync(root+'/recovery/hearmeout-cutover-receipt.json','utf8'));
+const config=JSON.parse(readFileSync(root+'/hearmeout-cutover.json','utf8'));
+if(receipt.sourceDatabaseSha256!=='78d63c6310808c7c0fe5150604aa310a278f4e6785b8db6d92c057df0227fa34'||config.sourceDatabaseSha256!==receipt.sourceDatabaseSha256)throw Error('Installed migration receipt mismatch');
+const r=await fetch('http://127.0.0.1:3200/health/ready',{signal:AbortSignal.timeout(5000)});const health=r.ok?await r.json():{};
+if(health.state!=='ready'||!health.voiceBridge?.configured||health.voiceBridge.enabledRooms!==0)throw Error('Release is not ready and disconnected');
+const db=new DatabaseSync(root+'/hearmeout-room-owner-canary.sqlite',{readOnly:true});
+const rooms=db.prepare('SELECT COUNT(*) AS n FROM hmo_rooms').get().n;const integrity=db.prepare('PRAGMA quick_check').get().quick_check;db.close();
+if(rooms!==12||integrity!=='ok')throw Error('Persistent room verification failed');
+for(const file of ['hearmeout-cutover.json','hearmeout-room-owner-canary.sqlite','recovery/hearmeout-before-cutover.sqlite','recovery/hearmeout-cutover-receipt.json'])chmodSync(root+'/'+file,0o600);
+for(const file of [root+'/hmo-transfer-private.pem','/tmp/hmo-approved-capsule.json','/tmp/hmo-test-target.json'])rmSync(file,{force:true});
+console.log(JSON.stringify({ok:true,health,rooms,integrity,transferPrivateKeyRemoved:!existsSync(root+'/hmo-transfer-private.pem'),transitCapsuleRemoved:!existsSync('/tmp/hmo-approved-capsule.json'),privateConfigurationMode:(statSync(root+'/hearmeout-cutover.json').mode&0o777).toString(8),productionTrafficMoved:false}));
