@@ -1,0 +1,40 @@
+name: Verify installed Apollo HearMeOut bridge
+on:
+  push:
+    branches: [diagnostics/hmo-cutover-install-20260912]
+    paths: [.github/workflows/verify-installed-hmo-bridge.yml, scripts/sprites/verify-installed-hmo-bridge.mjs]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: apollo-release-sprite
+      cancel-in-progress: false
+    environment: sprite-release
+    env:
+      SPRITES_TOKEN: ${{ secrets.SPRITES_TOKEN }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Retrieve the freshly inspected idle test channel
+        run: |
+          node --input-type=module <<'JS'
+          import {writeFileSync} from 'node:fs';
+          const r=await fetch('https://api.github.com/repos/Mtman1987/hearmeout-main/actions/jobs/103624628015/logs',{headers:{Authorization:'Bearer '+process.env.GH_TOKEN,Accept:'application/vnd.github+json'}});
+          if(!r.ok)throw Error('Verified test channel unavailable');
+          const match=(await r.text()).match(/HMO_TEST_TARGET=([A-Za-z0-9+/=]+)/);if(!match)throw Error('No verified test channel');
+          writeFileSync('/tmp/hmo-test-target.json',Buffer.from(match[1],'base64'),{mode:0o600});
+          JS
+      - name: Verify through the installed Apollo controller
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL https://sprites.dev/install.sh | bash
+          export PATH="$HOME/.local/bin:$PATH"
+          sprite auth setup --token "$SPRITES_TOKEN"
+          actual="$(sprite api /v1/sprites/web-terminal -- --silent | jq -r '.id')"
+          test "$actual" = sprite-fec8d6f2-49f0-4e28-bc6d-e8a7ae364280
+          sprite exec --no-port-forward -o testing-968 -s web-terminal --file scripts/sprites/verify-installed-hmo-bridge.mjs:/tmp/verify-installed-hmo-bridge.mjs --file /tmp/hmo-test-target.json:/tmp/hmo-test-target.json -- node /tmp/verify-installed-hmo-bridge.mjs
