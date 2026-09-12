@@ -8,7 +8,7 @@ export type RoomAssistantRequest=(path:string,body?:Record<string,unknown>,key?:
 /** Room admission is checked by the HTTP controller; job ownership is rechecked on every read. */
 export class HearMeOutRoomAssistantJobs {
  private readonly db:DatabaseSync;
- constructor(path:string){this.db=new DatabaseSync(path,{timeout:5000});this.db.exec('CREATE TABLE IF NOT EXISTS hmo_assistant_requests(tenant TEXT NOT NULL,user_id TEXT NOT NULL,room TEXT NOT NULL,id TEXT NOT NULL,body TEXT NOT NULL,PRIMARY KEY(tenant,user_id,room,id)) STRICT');}
+ constructor(path:string,private readonly requireRoom?:(scope:Scope)=>void){this.db=new DatabaseSync(path,{timeout:5000});this.db.exec('CREATE TABLE IF NOT EXISTS hmo_assistant_requests(tenant TEXT NOT NULL,user_id TEXT NOT NULL,room TEXT NOT NULL,id TEXT NOT NULL,body TEXT NOT NULL,PRIMARY KEY(tenant,user_id,room,id)) STRICT');}
  close(){this.db.close()}
  deleteRoom(tenant:string,room:string){this.db.prepare('DELETE FROM hmo_assistant_requests WHERE tenant=? AND room=?').run(tenant,room)}
  async submit(scope:Scope,input:{message:string;personaId:string;displayName:string;speak:boolean}|{mediaAssetId:string},key:string,request:RoomAssistantRequest){
@@ -25,6 +25,7 @@ export class HearMeOutRoomAssistantJobs {
  async read(scope:Scope,id:string,request:RoomAssistantRequest,append:(id:string,personaId:string,name:string,text:string)=>void){
   const binding=this.get(scope,id);if(!binding?.jobId)throw Error('Room assistant request was not found');
   const job=await request('/v1/jobs/'+encodeURIComponent(binding.jobId)) as ExecutionJobV1;
+  this.requireRoom?.(scope);
   this.requireJob(scope,job,binding.kind==='reply',binding.personaId);
   if(job.state!=='succeeded')return {requestId:id,state:job.state,...(['failed','cancelled','dead-letter'].includes(job.state)?{error:'The assistant request could not complete'}:{})};
   if(binding.kind==='transcription')return {requestId:id,state:'succeeded',transcription:String(job.result?.transcription??'')};
@@ -40,5 +41,5 @@ export class HearMeOutRoomAssistantJobs {
  }
  private requireJob(scope:Scope,job:ExecutionJobV1,reply=false,personaId?:string){if(!job||job.tenantId!==scope.tenantId||job.billedUserId!==scope.userId||(reply?(job.ownerAppId!=='stellar-core'||job.input.conversationId!==`hearmeout:${scope.roomId}${personaId?.startsWith("swpublic_")?":"+personaId:""}`):job.ownerAppId!=='hearmeout'))throw Error('Room assistant job was not found')}
  private get(scope:Scope,id:string):Binding|undefined{const row=this.db.prepare('SELECT body FROM hmo_assistant_requests WHERE tenant=? AND user_id=? AND room=? AND id=?').get(scope.tenantId,scope.userId,scope.roomId,id);return row?JSON.parse(String(row.body)):undefined}
- private save(scope:Scope,binding:Binding){this.db.prepare('INSERT INTO hmo_assistant_requests VALUES(?,?,?,?,?) ON CONFLICT(tenant,user_id,room,id) DO UPDATE SET body=excluded.body').run(scope.tenantId,scope.userId,scope.roomId,binding.id,JSON.stringify(binding))}
+ private save(scope:Scope,binding:Binding){this.requireRoom?.(scope);this.db.prepare('INSERT INTO hmo_assistant_requests VALUES(?,?,?,?,?) ON CONFLICT(tenant,user_id,room,id) DO UPDATE SET body=excluded.body').run(scope.tenantId,scope.userId,scope.roomId,binding.id,JSON.stringify(binding))}
 }

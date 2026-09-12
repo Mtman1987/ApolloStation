@@ -9,6 +9,7 @@ export interface HearMeOutVoiceBridgeConfigV1 {
   tenantId: string;
   roomId: string;
   enabled: boolean;
+  cleanupPending?: boolean;
   guildId: string;
   voiceChannelId: string;
   roomVoiceOutboundEnabled: boolean;
@@ -58,6 +59,13 @@ export class SqliteHearMeOutVoiceBridgeStore {
     this.db.prepare("INSERT INTO hmo_voice_bridge(tenant_id,room_id,body) VALUES(?,?,?) ON CONFLICT(tenant_id,room_id) DO UPDATE SET body=excluded.body").run(value.tenantId, value.roomId, JSON.stringify(value));
     return value;
   }
+  delete(tenantId: string, roomId: string) {
+    this.db.prepare("DELETE FROM hmo_voice_bridge WHERE tenant_id=? AND room_id=?").run(cleanId(tenantId, "tenantId"), cleanId(roomId, "roomId"));
+  }
+  listPendingCleanup(): HearMeOutVoiceBridgeConfigV1[] {
+    const rows = this.db.prepare("SELECT tenant_id,room_id,body FROM hmo_voice_bridge WHERE json_extract(body,'$.cleanupPending')=1 ORDER BY tenant_id,room_id").all() as Array<{ tenant_id: string; room_id: string; body: string }>;
+    return rows.map(row => normalizeConfig(JSON.parse(row.body), row.tenant_id, row.room_id));
+  }
   listEnabled(limit = 500): HearMeOutVoiceBridgeConfigV1[] {
     const bounded = Math.max(1, Math.min(2_000, Math.trunc(limit)));
     const rows = this.db.prepare("SELECT tenant_id,room_id,body FROM hmo_voice_bridge ORDER BY tenant_id,room_id LIMIT ?").all(bounded) as { tenant_id: string; room_id: string; body: string }[];
@@ -78,6 +86,7 @@ export class HearMeOutVoiceBridgeController {
   async start(principal: HearMeOutPrincipalV1, input: { roomId: string; guildId: string; voiceChannelId: string }) {
     const room = this.requireManager(principal, input.roomId);
     const current = this.store.get(principal.tenantId, room.roomId);
+    if (current.cleanupPending) throw new Error("The previous Discord connection is still stopping; retry shortly");
     const next: HearMeOutVoiceBridgeConfigV1 = {
       ...current,
       enabled: true,
@@ -90,14 +99,18 @@ export class HearMeOutVoiceBridgeController {
     this.store.put(next);
     try {
       const worker = await this.worker.start({ tenantId: principal.tenantId, roomId: room.roomId, guildId: next.guildId, voiceChannelId: next.voiceChannelId, audioProfile: next.audioProfile, discordReceiveGain: next.discordReceiveGain });
+      this.requireManager(principal, room.roomId);
       const gate = await this.worker.setRoomOutbound({ tenantId: principal.tenantId, roomId: room.roomId, roomVoiceOutboundEnabled: next.roomVoiceOutboundEnabled });
       if (this.worker.setDiscordReceiveGain) await this.worker.setDiscordReceiveGain({ tenantId: principal.tenantId, roomId: room.roomId, discordReceiveGain: next.discordReceiveGain });
+      this.requireManager(principal, room.roomId);
       return { success: true as const, config: next, worker, gate };
     } catch (error) {
       // A timed-out HTTP start may still finish at the provider. The worker's
       // stop route waits for that in-flight start before removing its bridge.
-      await this.worker.stop({ tenantId: principal.tenantId, roomId: room.roomId }).catch(() => undefined);
-      this.store.put({ ...next, enabled: false, updatedAt: this.now() });
+      let cleanupPending = false;
+      try { await this.worker.stop({ tenantId: principal.tenantId, roomId: room.roomId }); } catch { cleanupPending = true; }
+      if (cleanupPending || this.rooms.getRoom(principal.tenantId, room.roomId, this.now())) this.store.put({ ...next, enabled: false, ...(cleanupPending ? { cleanupPending: true } : {}), updatedAt: this.now() });
+      else this.store.delete(principal.tenantId, room.roomId);
       throw error;
     }
   }
@@ -106,7 +119,9 @@ export class HearMeOutVoiceBridgeController {
     const room = this.requireManager(principal, roomId);
     const current = this.store.get(principal.tenantId, room.roomId);
     const worker = await this.worker.stop({ tenantId: principal.tenantId, roomId: room.roomId });
-    const config = this.store.put({ ...current, enabled: false, updatedBy: principal.userId, updatedAt: this.now() });
+    const config = { ...current, enabled: false, updatedBy: principal.userId, updatedAt: this.now() };
+    if (this.rooms.getRoom(principal.tenantId, room.roomId, this.now())) this.store.put(config);
+    else this.store.delete(principal.tenantId, room.roomId);
     return { success: true as const, config, worker };
   }
 
@@ -148,9 +163,7 @@ export class HearMeOutVoiceBridgeController {
       const identity = `${config.tenantId}:${config.roomId}`;
       const room = this.rooms.getRoom(config.tenantId, config.roomId, this.now());
       if (!room) {
-        this.store.put({ ...config, enabled: false, updatedAt: this.now() });
-        await this.worker.stop({ tenantId: config.tenantId, roomId: config.roomId }).catch(() => undefined);
-        results.push({ tenantId: config.tenantId, roomId: config.roomId, outcome: "disabled-stale" });
+        results.push(await this.cleanupBridge(config));
         continue;
       }
       const channelKey = `${config.guildId}:${config.voiceChannelId}`;
@@ -180,6 +193,25 @@ export class HearMeOutVoiceBridgeController {
     return results;
   }
 
+  /** Retry provider stops independently of deleting the room and its contents. */
+  async cleanupDeletedRooms(): Promise<HearMeOutVoiceBridgeReconcileResultV1[]> {
+    const results: HearMeOutVoiceBridgeReconcileResultV1[] = [];
+    for (const config of this.store.listPendingCleanup()) results.push(await this.cleanupBridge(config));
+    return results;
+  }
+
+  private async cleanupBridge(config: HearMeOutVoiceBridgeConfigV1): Promise<HearMeOutVoiceBridgeReconcileResultV1> {
+    this.store.put({ ...config, enabled: false, cleanupPending: true, updatedAt: this.now() });
+    try {
+      const stopped = await this.worker.stop({ tenantId: config.tenantId, roomId: config.roomId });
+      if (stopped.running === true || (stopped.status as { running?: boolean } | undefined)?.running === true) throw new Error("Discord voice bridge has not stopped yet");
+      this.store.delete(config.tenantId, config.roomId);
+      return { tenantId: config.tenantId, roomId: config.roomId, outcome: "disabled-stale" };
+    } catch (error) {
+      return { tenantId: config.tenantId, roomId: config.roomId, outcome: "retryable-error", message: safeError(error) };
+    }
+  }
+
   private assertNoChannelCollision(candidate: HearMeOutVoiceBridgeConfigV1) {
     const collision = this.store.listEnabled().find((value) => value.enabled && (value.tenantId !== candidate.tenantId || value.roomId !== candidate.roomId) && value.guildId === candidate.guildId && value.voiceChannelId === candidate.voiceChannelId);
     if (collision) throw new Error(`Discord voice channel is already bridged by ${collision.tenantId}:${collision.roomId}`);
@@ -206,7 +238,7 @@ function safeError(error: unknown) { const text = error instanceof Error ? error
 function defaultVoiceBridgeConfig(tenantId: string, roomId: string): HearMeOutVoiceBridgeConfigV1 { return { schemaVersion: 1, tenantId: cleanId(tenantId, "tenantId"), roomId: cleanId(roomId, "roomId"), enabled: false, guildId: "", voiceChannelId: "", roomVoiceOutboundEnabled: true, audioProfile: "clean", discordReceiveGain: HEARMEOUT_DISCORD_DEFAULT_INGRESS_GAIN }; }
 function normalizeConfig(input: Partial<HearMeOutVoiceBridgeConfigV1>, tenantId: string, roomId: string): HearMeOutVoiceBridgeConfigV1 {
   const profile = isAudioProfile(input.audioProfile) ? input.audioProfile : "clean";
-  return { schemaVersion: 1, tenantId: cleanId(tenantId, "tenantId"), roomId: cleanId(roomId, "roomId"), enabled: Boolean(input.enabled), guildId: input.guildId ? snowflake(input.guildId, "guildId") : "", voiceChannelId: input.voiceChannelId ? snowflake(input.voiceChannelId, "voiceChannelId") : "", roomVoiceOutboundEnabled: typeof input.roomVoiceOutboundEnabled === "boolean" ? input.roomVoiceOutboundEnabled : true, audioProfile: profile, discordReceiveGain: clampHearMeOutDiscordReceiveGain(input.discordReceiveGain ?? HEARMEOUT_DISCORD_DEFAULT_INGRESS_GAIN), ...(input.updatedBy ? { updatedBy: cleanId(input.updatedBy, "updatedBy") } : {}), ...(input.updatedAt ? { updatedAt: validTimestamp(input.updatedAt, "updatedAt") } : {}) };
+  return { schemaVersion: 1, tenantId: cleanId(tenantId, "tenantId"), roomId: cleanId(roomId, "roomId"), enabled: Boolean(input.enabled) && !input.cleanupPending, ...(input.cleanupPending ? { cleanupPending: true } : {}), guildId: input.guildId ? snowflake(input.guildId, "guildId") : "", voiceChannelId: input.voiceChannelId ? snowflake(input.voiceChannelId, "voiceChannelId") : "", roomVoiceOutboundEnabled: typeof input.roomVoiceOutboundEnabled === "boolean" ? input.roomVoiceOutboundEnabled : true, audioProfile: profile, discordReceiveGain: clampHearMeOutDiscordReceiveGain(input.discordReceiveGain ?? HEARMEOUT_DISCORD_DEFAULT_INGRESS_GAIN), ...(input.updatedBy ? { updatedBy: cleanId(input.updatedBy, "updatedBy") } : {}), ...(input.updatedAt ? { updatedAt: validTimestamp(input.updatedAt, "updatedAt") } : {}) };
 }
 function isAudioProfile(value: unknown): value is HearMeOutVoiceAudioProfileV1 { return value === "low-latency" || value === "balanced" || value === "resilient" || value === "clean"; }
 function snowflake(value: string, name: string) { const clean = String(value ?? "").trim(); if (!/^\d{5,30}$/.test(clean)) throw new Error(`${name} must be a Discord snowflake`); return clean; }
