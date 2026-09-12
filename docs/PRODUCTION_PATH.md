@@ -28,6 +28,11 @@ Completed:
 
 We are now at **production inventory and controlled live integration preparation**.
 
+The machine-checked rollout state lives in `config/production-rollout.v1.json`. Run
+`npm run release:audit` before changing public exposure, production authority, or
+Blue-retirement state. The manifest intentionally distinguishes an isolated public
+Apollo preview from moving any production writer or provider output.
+
 ## Step 1 — refresh production inventory
 
 Before moving any app, capture the live reality that matters to that app and the shared services it uses.
