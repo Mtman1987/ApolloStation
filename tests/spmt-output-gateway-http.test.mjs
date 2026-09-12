@@ -3,10 +3,32 @@ import { createServer } from "node:http";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { createSpmtOutputGateway } from "../apps/spmt-service/dist/output-gateway.js";
+import { AuthDeniedError } from "../packages/auth-core/dist/index.js";
 
 function listen(server) { return new Promise((done, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", () => { server.off("error", reject); done(); }); }); }
 function close(server) { return new Promise((done, reject) => server.close((error) => error ? reject(error) : done())); }
 function origin(server) { const address = server.address(); assert.ok(address && typeof address !== "string"); return `http://127.0.0.1:${address.port}`; }
+
+test("expired Personal child credentials return an error without crashing the output gateway", { timeout: 5000 }, async () => {
+  const inner = createServer((_request, response) => response.end("still alive"));
+  const service = {
+    server: inner, control: {}, authority: {},
+    auth: { authorize() { throw new AuthDeniedError("Access token is invalid or expired"); } },
+    async close() { if (inner.listening) await close(inner); },
+  };
+  const gateway = createSpmtOutputGateway(service, { port: 0, host: "127.0.0.1" });
+  try {
+    await gateway.listen();
+    for (const headers of [{ authorization: "Bearer expired-test-token" }, { accept: "text/html" }]) {
+      const denied = await fetch(`${origin(gateway.server)}/t/tenant-a/personal/source/widget-a`, {
+        headers, signal: AbortSignal.timeout(1500),
+      });
+      assert.equal(denied.status, headers.authorization ? 403 : 401);
+      await denied.text();
+      assert.equal(await (await fetch(`${origin(gateway.server)}/health/ready`)).text(), "still alive");
+    }
+  } finally { await gateway.close(); }
+});
 
 test("Overlay Bay registration derives every app and renderer URL from the configured environment", () => {
   const source = readFileSync(new URL("../apps/spmt-service/src/output-gateway.ts", import.meta.url), "utf8");

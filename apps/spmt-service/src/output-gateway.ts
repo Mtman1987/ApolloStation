@@ -1,4 +1,5 @@
 import type {StellarSpeechPresence} from "@spmt/stellar-core";
+import { AuthDeniedError } from "@spmt/auth-core";
 import { isStreamWeaverWidget, streamWeaverWidgetSnapshot, renderStreamWeaverWidget, STREAMWEAVER_WIDGET_CSP, STREAMWEAVER_WIDGET_EVENT_TYPES } from "@spmt/streamweaver/dist/overlay-widgets.js";
 import { createHash } from "node:crypto";
 import { createServer, request as httpRequest, type IncomingMessage, type Server, type ServerResponse } from "node:http";
@@ -11,7 +12,57 @@ const OVERLAY_BAY_APP="overlay-bay";
 export interface SpmtOutputGatewayServiceV1{speechPresence?:StellarSpeechPresence;server:Server;control:ControlService;authority:{getWorkspace(tenantId:string):unknown;listEvents?(tenantId:string,options:{type?:string;sourceAppId?:string;limit?:number}):Array<{id:string;sourceAppId:string;type:string;occurredAt?:string;createdAt?:string;payload:unknown}>};auth:{authorize(token:string,scope:string,tenantId?:string):{actorId:string}};close():Promise<void>;}
 export interface SpmtOutputGatewayOptionsV1{port:number;host?:string;publicBaseUrl?:string;fetchImpl?:typeof fetch;}
 
-export function createSpmtOutputGateway(service:SpmtOutputGatewayServiceV1,options:SpmtOutputGatewayOptionsV1){const fetchImpl=options.fetchImpl??fetch,publicBaseUrl=new URL(options.publicBaseUrl??"https://spmt.live");let innerPort=0;const outer=createServer(async(request,response)=>{try{const url=new URL(request.url??"/","http://spmt-output.local");if(request.method==="POST"&&url.pathname==="/v1/overlay/scenes/register"){requireSameOriginOrApi(request);return registerScene(service,request,response,publicBaseUrl);}if(request.method==="GET"&&url.pathname==="/v1/overlay/tenant-outputs")return describeTenantOutputs(service,request,response,url,publicBaseUrl);if((request.method==="GET"||request.method==="HEAD")&&!url.search&&!url.hash){const namedChild=TENANT_OUTPUT_CHILD.exec(url.pathname);if(namedChild)return renderTenantSceneChild(service,request,response,namedChild[1]!,namedChild[2]! as TenantOutputName,decodeURIComponent(namedChild[3]!),fetchImpl);const named=TENANT_OUTPUT.exec(url.pathname);if(named)return renderTenantScene(service,request,response,named[1]!,named[2]! as TenantOutputName,fetchImpl);const child=CHILD_OUTPUT.exec(url.pathname);if(child)return renderSceneChild(service,request,response,child[1]!,decodeURIComponent(child[2]!),fetchImpl);const root=ROOT_OUTPUT.exec(url.pathname);if(root)return renderOpaqueOutput(service,request,response,root[1]!,fetchImpl);}return proxyToInner(request,response,innerPort);}catch(error){if(!response.headersSent&&request.headers.accept?.includes("text/html")&&/^\/(?:t|o)\//.test(request.url??""))return outputUnavailable(response,error instanceof GatewayError?error.status:500);if(!response.headersSent)return json(response,error instanceof GatewayError?error.status:500,{error:error instanceof GatewayError?"invalid_request":"output_gateway_failure",message:error instanceof Error?error.message:"unknown error"});response.destroy(error instanceof Error?error:undefined);}});return{server:outer,async listen(){await listenServer(service.server,0,"127.0.0.1");const address=service.server.address();if(!address||typeof address==="string")throw new Error("SPMT inner service did not bind a TCP port");innerPort=address.port;await listenServer(outer,options.port,options.host??"0.0.0.0");},async close(){if(outer.listening)await closeServer(outer);await service.close();}};}
+export function createSpmtOutputGateway(service: SpmtOutputGatewayServiceV1, options: SpmtOutputGatewayOptionsV1) {
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const publicBaseUrl = new URL(options.publicBaseUrl ?? "https://spmt.live");
+  let innerPort = 0;
+  const outer = createServer(async (request, response) => {
+    try {
+      const url = new URL(request.url ?? "/", "http://spmt-output.local");
+      if (request.method === "POST" && url.pathname === "/v1/overlay/scenes/register") {
+        requireSameOriginOrApi(request);
+        return await registerScene(service, request, response, publicBaseUrl);
+      }
+      if (request.method === "GET" && url.pathname === "/v1/overlay/tenant-outputs") {
+        return describeTenantOutputs(service, request, response, url, publicBaseUrl);
+      }
+      if ((request.method === "GET" || request.method === "HEAD") && !url.search && !url.hash) {
+        const namedChild = TENANT_OUTPUT_CHILD.exec(url.pathname);
+        if (namedChild) return await renderTenantSceneChild(service, request, response, namedChild[1]!, namedChild[2]! as TenantOutputName, decodeURIComponent(namedChild[3]!), fetchImpl);
+        const named = TENANT_OUTPUT.exec(url.pathname);
+        if (named) return renderTenantScene(service, request, response, named[1]!, named[2]! as TenantOutputName, fetchImpl);
+        const child = CHILD_OUTPUT.exec(url.pathname);
+        if (child) return await renderSceneChild(service, request, response, child[1]!, decodeURIComponent(child[2]!), fetchImpl);
+        const root = ROOT_OUTPUT.exec(url.pathname);
+        if (root) return await renderOpaqueOutput(service, request, response, root[1]!, fetchImpl);
+      }
+      return proxyToInner(request, response, innerPort);
+    } catch (error) {
+      const status = error instanceof GatewayError ? error.status : error instanceof AuthDeniedError ? 403 : 500;
+      if (status === 500) console.error("SPMT output gateway request failed", { errorName: error instanceof Error ? error.name : "UnknownError" });
+      if (!response.headersSent && request.headers.accept?.includes("text/html") && /^\/(?:t|o)\//.test(request.url ?? "")) return outputUnavailable(response, status);
+      if (!response.headersSent) return json(response, status, {
+        error: error instanceof GatewayError ? "invalid_request" : error instanceof AuthDeniedError ? "forbidden" : "output_gateway_failure",
+        message: error instanceof AuthDeniedError ? "Overlay access denied" : error instanceof GatewayError ? error.message : "Output gateway failed",
+      });
+      response.destroy(error instanceof Error ? error : undefined);
+    }
+  });
+  return {
+    server: outer,
+    async listen() {
+      await listenServer(service.server, 0, "127.0.0.1");
+      const address = service.server.address();
+      if (!address || typeof address === "string") throw new Error("SPMT inner service did not bind a TCP port");
+      innerPort = address.port;
+      await listenServer(outer, options.port, options.host ?? "0.0.0.0");
+    },
+    async close() {
+      if (outer.listening) await closeServer(outer);
+      await service.close();
+    },
+  };
+}
 
 type TenantOutputName="public"|"personal";
 function outputSceneId(workspaceValue:unknown,output:TenantOutputName){const workspace=record(workspaceValue);if(!workspace)return"";const publicId=String(workspace.activePublicOverlaySceneId??workspace.activeOverlaySceneId??"");return output==="public"?publicId:String(workspace.activePersonalOverlaySceneId??publicId);}
