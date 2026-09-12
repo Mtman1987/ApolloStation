@@ -35,6 +35,6 @@ test("HearMeOut room UI stays truthful when no media or provider session is acti
   assert.match(source, /Green runtime/);
   assert.match(source, /No rooms yet/);
   assert.match(source, /idle/);
-  assert.match(runtime, /supervised bridge adapter is mounted/);
+  assert.match(runtime, /async function renderBridge/);
   assert.doesNotMatch(source, /hearmeout-main\.fly\.dev/);
 });

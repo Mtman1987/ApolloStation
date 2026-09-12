@@ -4,6 +4,7 @@ import net from "node:net";
 import tls from "node:tls";
 
 const privateFlowOpenAi=process.env.SPMT_PRIVATE_FLOW_OPENAI_ENABLED==="1";
+const hearMeOutBridge = process.env.HEARMEOUT_CONTROLLED_BRIDGE === "1" && process.env.HEARMEOUT_VOICE_BRIDGE_ORIGIN === "https://hmo-dj-worker.fly.dev";
 const avatarAiOutbound=process.env.SPMT_AVATAR_AI_OUTBOUND_MODE==="enabled";
 const marker = Symbol.for("apollostation.offline-network-guard");
 const liveReadUrl = configuredLiveReadUrl(process.env.SPMT_LIVE_READ_ORIGIN);
@@ -62,6 +63,7 @@ function assertSocketTarget(args, label) {
   if (typeof first === "object" && first !== null) {
     if (first.path) return;
     if (isLiveReadHost(first.host ?? first.hostname ?? first.servername) && Number(first.port ?? 443) === 443) return;
+    if (hearMeOutBridge && String(first.host ?? first.hostname ?? first.servername) === "hmo-dj-worker.fly.dev" && Number(first.port ?? 443) === 443) return;
     if(privateFlowOpenAi&&String(first.host??first.hostname??first.servername)==="api.openai.com"&&Number(first.port??443)===443)return;
     if(avatarAiOutbound&&isAvatarAiHost(first.host??first.hostname??first.servername)&&Number(first.port??443)===443)return;
     assertLoopbackHost(first.host ?? first.hostname ?? "localhost", label);
@@ -69,6 +71,7 @@ function assertSocketTarget(args, label) {
   }
   const host = typeof args[1] === "string" ? args[1] : "localhost";
   if (isLiveReadHost(host) && Number(first ?? 443) === 443) return;
+  if (hearMeOutBridge && host === "hmo-dj-worker.fly.dev" && Number(first ?? 443) === 443) return;
   if(privateFlowOpenAi&&host==="api.openai.com"&&Number(first??443)===443)return;
   if(avatarAiOutbound&&isAvatarAiHost(host)&&Number(first??443)===443)return;
   assertLoopbackHost(host, label);
@@ -79,6 +82,7 @@ function assertAllowedUrl(value, method, label) {
   const url = value instanceof URL ? value : new URL(String(value), "http://localhost");
   if (!["http:", "https:", "ws:", "wss:"].includes(url.protocol)) return;
   if (liveReadUrl && url.origin === liveReadUrl.origin && String(method).toUpperCase() === "GET") return;
+  if (hearMeOutBridge && url.origin === "https://hmo-dj-worker.fly.dev" && !url.username && !url.password && ["GET", "POST"].includes(String(method).toUpperCase()) && /^\/voice-bridge(?:\/(?:gate|audio-profile|receive-gain))?$/.test(url.pathname)) return;
   if(privateFlowOpenAi&&url.origin==="https://api.openai.com"&&url.pathname==="/v1/responses"&&String(method).toUpperCase()==="POST")return;
   if(avatarAiOutbound&&isAllowedAvatarAiUrl(url,String(method).toUpperCase()))return;
   assertLoopbackHost(url.hostname, label);

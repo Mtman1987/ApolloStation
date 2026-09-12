@@ -65,6 +65,10 @@
       "action": "allow"
     },
     {
+      "domain": "hmo-dj-worker.fly.dev",
+      "action": "allow"
+    },
+    {
       "domain": "*",
       "action": "deny"
     }

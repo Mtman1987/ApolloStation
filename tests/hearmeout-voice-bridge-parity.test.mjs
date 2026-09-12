@@ -119,3 +119,20 @@ test("restart reconciliation disables stale rooms, blocks channel collisions, an
   assert.equal(worker.calls.filter(([kind]) => kind === "start").length, 1, "collision cannot start a second bridge into one Discord channel");
   store.close(); rooms.close(); rmSync(dir, { recursive: true, force: true });
 });
+
+test("a timed-out start requests provider cleanup before disabling persisted desired state", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "hmo-voice-timeout-"));
+  const db = join(dir, "hmo.sqlite");
+  const rooms = new SqliteHearMeOutRoomMediaRuntime(db);
+  const store = new SqliteHearMeOutVoiceBridgeStore(db);
+  const worker = new FakeVoiceWorker();
+  rooms.createRoom(captain(), { roomId: "room-a", name: "Room A", privacy: "public", operationId: "create-timeout", now: "2026-08-24T19:00:00.000Z" });
+  worker.start = async () => { worker.running = true; throw new Error("worker request timed out"); };
+  const controller = new HearMeOutVoiceBridgeController(rooms, store, worker, () => "2026-08-24T20:00:00.000Z");
+  try {
+    await assert.rejects(controller.start(captain(), { roomId: "room-a", guildId: "123456789012345678", voiceChannelId: "987654321098765432" }), /timed out/);
+    assert.equal(worker.running, false);
+    assert.equal(worker.calls.filter(([kind]) => kind === "stop").length, 1);
+    assert.equal(store.get("tenant-a", "room-a").enabled, false);
+  } finally { store.close(); rooms.close(); rmSync(dir, { recursive: true, force: true }); }
+});

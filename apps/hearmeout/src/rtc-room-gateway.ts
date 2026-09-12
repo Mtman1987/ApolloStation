@@ -5,6 +5,7 @@ import WebSocket, { WebSocketServer } from 'ws';
 import { SpmtRtcRelayHubV1 } from './spmt-rtc-relay.js';
 import { classifySpmtRtcFailure } from './spmt-rtc.js';
 import { HearMeOutLiveKitSigner } from './livekit-signer.js';
+import { hearMeOutProviderRoomName } from './room-identity.js';
 import type { HearMeOutPrincipalV1 } from './room-media-core.js';
 
 export type RoomRtcMode = 'waiting' | 'livekit-cloud' | 'peer-webrtc' | 'wss-relay';
@@ -14,6 +15,7 @@ export interface RoomRtcOptions {
   livekit?: { url: string; apiKey: string; apiSecret: string };
   iceServers?: Array<{ urls: string | string[]; username?: string; credential?: string }>;
   membershipCheckMs?: number;
+  hasVoiceBridge?: (tenantId: string, roomId: string) => boolean;
 }
 type Member = { id: number; principal: HearMeOutPrincipalV1; socket: WebSocket; sequence: number; alive: boolean; request: IncomingMessage; authorizedAt: number };
 type Room = { key: string; roomId: string; mode: Exclude<RoomRtcMode, 'waiting'>; epoch: number; members: Map<number, Member> };
@@ -119,7 +121,9 @@ export class HearMeOutRoomRtcGateway {
   }
 
   private mode(room: Room): RoomRtcMode {
-    return new Set([...room.members.values()].map(member => member.principal.userId)).size < 2 ? 'waiting' : room.mode;
+    const first = room.members.values().next().value as Member | undefined;
+    const bridged = first && this.options.hasVoiceBridge?.(first.principal.tenantId, room.roomId);
+    return !bridged && new Set([...room.members.values()].map(member => member.principal.userId)).size < 2 ? 'waiting' : room.mode;
   }
   private failover(room: Room, reason: string) {
     if (room.mode === 'livekit-cloud') {
@@ -135,7 +139,7 @@ export class HearMeOutRoomRtcGateway {
     const mode = this.mode(room);
     const livekit = mode === 'livekit-cloud' && this.signer && this.options.livekit ? {
       url: this.options.livekit.url,
-      ...this.signer.sign({ tenantId: member.principal.tenantId, roomId: room.roomId, roomName: `hmo_${room.key}`,
+      ...this.signer.sign({ tenantId: member.principal.tenantId, roomId: room.roomId, roomName: hearMeOutProviderRoomName(member.principal.tenantId, room.roomId),
         participantIdentity: String(member.id), participantName: member.principal.displayName,
         ttlSeconds: 600, canPublish: true, canSubscribe: true, canPublishData: false }),
     } : undefined;
@@ -144,6 +148,11 @@ export class HearMeOutRoomRtcGateway {
       iceServers: this.options.iceServers ?? [{ urls: 'stun:stun.l.google.com:19302' }], livekit });
   }
   private broadcast(room: Room) { for (const member of room.members.values()) this.snapshot(room, member); }
+  refreshRoom(tenantId: string, roomId: string) {
+    const key = createHash('sha256').update(JSON.stringify([tenantId, roomId])).digest('hex');
+    const room = this.rooms.get(key);
+    if (room) { if (this.signer && this.options.hasVoiceBridge?.(tenantId, roomId)) room.mode = 'livekit-cloud'; room.epoch++; this.broadcast(room); }
+  }
   private send(member: Member, message: unknown) { if (member.socket.readyState === WebSocket.OPEN) member.socket.send(JSON.stringify(message)); }
   private reject(socket: Duplex, status: number) { socket.end(`HTTP/1.1 ${status} Rejected\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`); }
 
