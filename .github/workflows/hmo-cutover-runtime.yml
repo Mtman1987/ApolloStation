@@ -1,0 +1,32 @@
+name: HearMeOut cutover runtime inspection
+on:
+  push:
+    branches: [diagnostics/hmo-cutover-runtime-20260912]
+    paths: [.github/workflows/hmo-cutover-runtime.yml, scripts/sprites/inspect-hmo-cutover.mjs]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: sprite-release
+    env:
+      SPRITES_TOKEN: ${{ secrets.SPRITES_TOKEN }}
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+      HMO_WORKER_SHARED_SECRET: ${{ secrets.HMO_WORKER_SHARED_SECRET }}
+      LIVEKIT_API_KEY: ${{ secrets.LIVEKIT_API_KEY }}
+      LIVEKIT_API_SECRET: ${{ secrets.LIVEKIT_API_SECRET }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Check configuration presence
+        run: node -e "console.log(JSON.stringify(Object.fromEntries(['SPRITES_TOKEN','FLY_API_TOKEN','HMO_WORKER_SHARED_SECRET','LIVEKIT_API_KEY','LIVEKIT_API_SECRET'].map(n=>[n,Boolean(process.env[n])]))))"
+      - name: Inspect protected release state
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL https://sprites.dev/install.sh | bash
+          export PATH="$HOME/.local/bin:$PATH"
+          sprite auth setup --token "$SPRITES_TOKEN"
+          actual="$(sprite api /v1/sprites/web-terminal -- --silent | jq -r '.id')"
+          test "$actual" = sprite-fec8d6f2-49f0-4e28-bc6d-e8a7ae364280
+          sprite exec --no-port-forward -o testing-968 -s web-terminal --file scripts/sprites/inspect-hmo-cutover.mjs:/tmp/inspect-hmo-cutover.mjs -- node /tmp/inspect-hmo-cutover.mjs
