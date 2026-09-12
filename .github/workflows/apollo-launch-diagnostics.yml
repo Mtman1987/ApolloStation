@@ -33,16 +33,28 @@ jobs:
           set -uo pipefail
           failures=0
           echo 'ACTIVE_RELEASE'
-          readlink -f /home/sprite/apollo-release/current || failures=1
+          active_release="$(readlink -f /home/sprite/apollo-release/current)" || failures=1
+          echo "$active_release"
           echo 'SERVICE_STATE'
           sprite-env services get apollo-sandbox | jq '{name,http_port,state}' || failures=1
+          if [ "$(basename "$active_release")" = 64d540deb3d37cbcefb518e70e2fe20391c736b7 ]; then
+            status="$(curl -sS --max-time 8 -o /tmp/apollo-denied-overlay.txt -w '%{http_code}' -H 'Authorization: Bearer invalid-launch-probe' http://127.0.0.1:3000/t/launch-probe/personal/source/widget)" || failures=1
+            echo "EXPIRED_OVERLAY_PROBE status=$status expected=403"
+            [ "$status" = 403 ] || failures=1
+          else
+            echo 'Overlay probe skipped: expected repaired release is not active.'
+            failures=1
+          fi
+          echo 'NEBULA_READINESS'
+          curl -fsS --max-time 8 http://127.0.0.1:3100/health/ready || failures=1
+          echo
           for path in /sandbox/health /health/discord-stream-hub /health/streamweaver /health/hearmeout /health/mountainview /health/companion; do
             echo "HEALTH $path"
             curl -fsS --max-time 8 "http://127.0.0.1:8080$path" || failures=1
             echo
           done
           echo 'RECENT_SERVICE_LOGS'
-          tail -n 4000 /.sprite/logs/services/apollo-sandbox.log || failures=1
+          tail -n 250 /.sprite/logs/services/apollo-sandbox.log || failures=1
           exit "$failures"
           REMOTE
           if timeout 100s sprite exec --no-port-forward -o testing-968 -s "$SPRITE_NAME" --file /tmp/apollo-launch-inspect.sh:/tmp/apollo-launch-inspect.sh -- /bin/bash /tmp/apollo-launch-inspect.sh > /tmp/apollo-launch-raw.txt 2>&1; then
