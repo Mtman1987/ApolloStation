@@ -4,6 +4,7 @@ import type { AppCatalogRegistrationV1, OperationsLogV1 } from "@spmt/contracts"
 import { SpaceMountainShellController, buildAppFrameTarget, type SpaceMountainAppCardV1 } from "@spmt/spacemountain";
 import { SpaceMountainShellUi } from "@spmt/spacemountain/ui";
 import { SpaceMountainSessionRecoveryGate, classifySpaceMountainSessionFailure } from "./session-resilience.js";
+import { createBrowserEcosystemEggCompletionQueue, type EcosystemEggPendingV1, type EcosystemEggV1 } from "./egg-completion-retry.js";
 
 type Principal = { actorId: string; tenantIds: string[]; scopes: string[] };
 
@@ -45,6 +46,8 @@ let loading = false;
 let registryFingerprint = "";
 let registeredAppIds = new Set<string>();
 const sessionRecovery = new SpaceMountainSessionRecoveryGate();
+const eggCompletions = createBrowserEcosystemEggCompletionQueue();
+let eggCompletionInFlight: Promise<void> | undefined;
 
 loginForm.addEventListener("submit", (event) => void submitLogin(event));
 registerForm.addEventListener("submit", (event) => void submitRegistration(event));
@@ -60,7 +63,9 @@ loadCandidateButton?.addEventListener("click", () => void loadCandidateExample()
 resetDeveloperButton.addEventListener("click", () => resetDeveloperForm());
 window.setInterval(() => void watchRegistry(), 20_000);
 window.setInterval(() => void watchWorkspace(), 5_000);
-window.addEventListener("focus", () => void watchWorkspace());
+window.addEventListener("focus", () => { void watchWorkspace(); void retryEggCompletions(); });
+window.addEventListener("online", () => void retryEggCompletions());
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") void retryEggCompletions(); });
 let watchingWorkspace = false;
 async function watchWorkspace() {
   if (watchingWorkspace || !currentPrincipal || loading || document.visibilityState !== "visible") return;
@@ -153,6 +158,7 @@ async function loadShell() {
     registryFingerprint = registrySignature(snapshot.apps);
     registeredAppIds = new Set(snapshot.apps.map((app) => app.appId));
     currentPrincipal = principal;
+    void retryEggCompletions();
     authView.hidden = true;
     shellView.hidden = false;
     refreshButton.hidden = false;
@@ -523,21 +529,51 @@ async function recordEggCompletion(event: CustomEvent) {
   const egg = event.detail?.egg;
   if (egg !== "blackHole" && egg !== "rocket" && egg !== "signal") return;
   const tenantId = principal.tenantIds[0]!;
-  const type = `ecosystem.easter-egg.${egg}.completed.v1`;
+  eggCompletions.enqueue({ tenantId, userId: principal.actorId, egg });
   setStatus(`Retaining ${egg} discovery in canonical SPMT state…`, "working");
+  await retryEggCompletions();
+}
+
+async function retryEggCompletions() {
+  if (eggCompletionInFlight) return eggCompletionInFlight;
+  const principal = currentPrincipal;
+  if (!principal) return;
+  const tenantId = principal.tenantIds[0]!;
+  const pending = eggCompletions.forAccount(tenantId, principal.actorId);
+  if (!pending.length) return;
+  eggCompletionInFlight = reconcileEggCompletions(principal, pending).finally(() => { eggCompletionInFlight = undefined; });
+  return eggCompletionInFlight;
+}
+
+async function reconcileEggCompletions(principal: Principal, pending: EcosystemEggPendingV1[]) {
+  const tenantId = principal.tenantIds[0]!;
   try {
-    await spmt.publishEvent(tenantId, type, { schemaVersion: 1, userId: principal.actorId, egg, completed: true }, `egg:${principal.actorId}:${egg}`);
+    for (const item of pending) {
+      const type = eggCompletionType(item.egg);
+      // A lost response is ambiguous, so always confirm against canonical SPMT
+      // state. The stable event key makes every retry idempotent.
+      await spmt.publishEvent(tenantId, type, { schemaVersion: 1, userId: principal.actorId, egg: item.egg, completed: true }, `egg:${principal.actorId}:${item.egg}`).catch(() => undefined);
+    }
     const events = await spmt.listEvents(tenantId, { limit: 100 });
     const found = new Set(events.filter((item) => item.payload && typeof item.payload === "object" && (item.payload as Record<string, unknown>).userId === principal.actorId).map((item) => item.type));
+    for (const item of pending) if (found.has(eggCompletionType(item.egg))) eggCompletions.confirm(item);
+    const unconfirmed = eggCompletions.forAccount(tenantId, principal.actorId);
+    if (unconfirmed.length) {
+      setStatus(`Discovery is waiting for canonical confirmation · retrying for this account.`, "working");
+      return;
+    }
     const all = ["blackHole", "rocket", "signal"].every((name) => found.has(`ecosystem.easter-egg.${name}.completed.v1`));
     if (all) {
       const alreadyRewarded = found.has("ecosystem.easter-eggs.completed.v1");
       await spmt.publishEvent(tenantId, "ecosystem.easter-eggs.completed.v1", { schemaVersion: 1, userId: principal.actorId, reward: "lord-puzzler", assistant: "count-puzzle" }, `egg:${principal.actorId}:complete`);
       if (!alreadyRewarded) await spmt.createNotification(tenantId, principal.actorId, "achievement", "Lord Puzzler unlocked", "Count Puzzle has joined your ecosystem collection.");
     }
-    setStatus(all ? "All three signals retained · Lord Puzzler unlocked." : `${egg} discovery retained.`, "ready");
-  } catch (error) { setStatus(`Discovery was not retained · ${message(error)}`, "error"); }
+    const names = pending.map((item) => item.egg).join(", ");
+    setStatus(all ? "All three signals retained · Lord Puzzler unlocked." : `${names} discovery retained.`, "ready");
+  } catch { setStatus("Discovery is waiting for canonical confirmation · retrying for this account.", "working"); }
 }
+
+function eggCompletionType(egg: EcosystemEggV1) { return `ecosystem.easter-egg.${egg}.completed.v1`; }
 
 function conversationReplyForm(conversation: Record<string, unknown>, actorId: string) {
   const recipients = Array.isArray(conversation.participantUserIds) ? conversation.participantUserIds.filter((item): item is string => typeof item === "string" && item !== actorId) : [];
