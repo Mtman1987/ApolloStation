@@ -1,5 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
-import { existsSync, statSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
+import { existsSync, statSync, readFileSync, readdirSync, realpathSync, writeFileSync } from 'node:fs';
+import { generateKeyPairSync, createPublicKey } from 'node:crypto';
 const root='/home/sprite/data/release';
 const db=new DatabaseSync(root+'/spmt-empty-catalog-sandbox.sqlite',{readOnly:true});
 const profiles=db.prepare('SELECT user_id,body FROM user_profiles WHERE username=?').all('mtman1987');
@@ -13,3 +14,8 @@ const names=['HMO_WORKER_SHARED_SECRET','HEARMEOUT_VOICE_BRIDGE_AUTHORIZATION','
 const services=[];
 for(const pid of readdirSync('/proc').filter(x=>/^\d+$/.test(x))){try{const cmd=readFileSync('/proc/'+pid+'/cmdline','utf8');if(!cmd.includes('hearmeout/dist/web-server'))continue;const env=Object.fromEntries(readFileSync('/proc/'+pid+'/environ','utf8').split('\0').filter(Boolean).map(x=>{const i=x.indexOf('=');return[x.slice(0,i),x.slice(i+1)]}));services.push({mode:env.SPMT_OUTBOUND_MODE,configuration:Object.fromEntries(names.map(n=>[n,Boolean(env[n])]))});}catch{}}
 console.log(JSON.stringify({release:realpathSync('/home/sprite/apollo-release/current').split('/').at(-1),owner,roomStore,services,privateConfigurationFiles:readdirSync(root).filter(n=>/^(?:hearmeout|livekit|hmo-)/.test(n)).map(n=>({name:n,bytes:statSync(root+'/'+n).size}))}));
+
+const transferKey=root+'/hmo-transfer-private.pem';
+if(!existsSync(transferKey)){const key=generateKeyPairSync('rsa',{modulusLength:3072,privateKeyEncoding:{type:'pkcs8',format:'pem'},publicKeyEncoding:{type:'spki',format:'pem'}});writeFileSync(transferKey,key.privateKey,{mode:0o600,flag:'wx'});}
+const publicKey=createPublicKey(readFileSync(transferKey)).export({type:'spki',format:'pem'});
+console.log(JSON.stringify({transferPublicKey:publicKey}));
