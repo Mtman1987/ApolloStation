@@ -137,9 +137,40 @@ export class SqliteHearMeOutRoomMediaRuntime {
     `);
     const columns=this.db.prepare("PRAGMA table_info(hmo_operations)").all() as {name:string}[];
     if(!columns.some(column=>column.name==="request_signature"))this.db.exec("ALTER TABLE hmo_operations ADD COLUMN request_signature TEXT");
+    if(!columns.some(column=>column.name==="room_id")) {
+      this.db.exec("ALTER TABLE hmo_operations ADD COLUMN room_id TEXT; UPDATE hmo_operations SET room_id=json_extract(body,'$.roomId');");
+    }
+    this.db.exec("CREATE INDEX IF NOT EXISTS hmo_operations_room ON hmo_operations(tenant_id,room_id)");
   }
 
   close(): void { this.db.close(); }
+
+  /** Remove expired ordinary rooms even when nobody visits the room list. */
+  pruneExpiredRooms(now?: string): Array<{ tenantId: string; roomId: string }> {
+    const at = validNow(now);
+    return this.transaction(() => {
+      const rows = this.db.prepare("SELECT body FROM hmo_rooms").all() as Array<{ body: string }>;
+      const expired = rows.map(row => JSON.parse(row.body) as HearMeOutRoomV1).filter(room => !room.systemRoom && isExpired(room, at));
+      for (const room of expired) this.removeRoomData(room.tenantId, room.roomId);
+      return expired.map(({ tenantId, roomId }) => ({ tenantId, roomId }));
+    });
+  }
+
+  private removeRoomData(tenantId: string, roomId: string): void {
+    const tables = new Set((this.db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as Array<{ name: string }>).map(row => row.name));
+    for (const table of ["hmo_media_sessions", "hmo_room_presence", "hmo_room_restrictions", "hmo_room_admissions", "hmo_room_invitations", "hmo_room_access", "hmo_room_members", "hmo_room_chat", "hmo_room_personas", "hmo_persona_rooms"]) {
+      if (tables.has(table)) this.db.prepare(`DELETE FROM ${table} WHERE tenant_id=? AND room_id=?`).run(tenantId, roomId);
+    }
+    if (tables.has("hmo_assistant_requests")) this.db.prepare("DELETE FROM hmo_assistant_requests WHERE tenant=? AND room=?").run(tenantId, roomId);
+    if (tables.has("hmo_voice_bridge")) {
+      // Keep only a durable stop request if the provider still needs cleanup.
+      // Deleting a room must not depend on the remote worker being reachable.
+      this.db.prepare("UPDATE hmo_voice_bridge SET body=json_set(body,'$.enabled',json('false'),'$.cleanupPending',json('true')) WHERE tenant_id=? AND room_id=? AND json_extract(body,'$.enabled')=1").run(tenantId, roomId);
+      this.db.prepare("DELETE FROM hmo_voice_bridge WHERE tenant_id=? AND room_id=? AND COALESCE(json_extract(body,'$.cleanupPending'),0)=0").run(tenantId, roomId);
+    }
+    this.db.prepare("DELETE FROM hmo_operations WHERE tenant_id=? AND room_id=?").run(tenantId, roomId);
+    this.db.prepare("DELETE FROM hmo_rooms WHERE tenant_id=? AND room_id=?").run(tenantId, roomId);
+  }
 
   createRoom(principal: HearMeOutPrincipalV1, input: { roomId: string; name: string; privacy: "public" | "private"; password?: string; systemRoom?: boolean; operationId: string; now?: string }): HearMeOutRoomV1 {
     assertPrincipal(principal);
@@ -161,6 +192,7 @@ export class SqliteHearMeOutRoomMediaRuntime {
     this.transaction(() => {
       const existing = this.db.prepare("SELECT 1 FROM hmo_rooms WHERE tenant_id=? AND room_id=?").get(principal.tenantId, roomId);
       if (existing) throw new Error("HearMeOut room already exists");
+      if (this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='hmo_voice_bridge'").get() && this.db.prepare("SELECT 1 FROM hmo_voice_bridge WHERE tenant_id=? AND room_id=? AND json_extract(body,'$.cleanupPending')=1").get(principal.tenantId, roomId)) throw new Error("HearMeOut room voice cleanup is still pending");
       this.db.prepare("INSERT INTO hmo_rooms(tenant_id,room_id,body) VALUES(?,?,?)").run(principal.tenantId, roomId, JSON.stringify(room));
       this.db.prepare("INSERT INTO hmo_room_access(tenant_id,room_id,password_salt,password_hash) VALUES(?,?,?,?)").run(principal.tenantId, roomId, passwordRecord?.salt ?? null, passwordRecord?.hash ?? null);
       this.putMember(principal, roomId, now);
@@ -270,7 +302,7 @@ export class SqliteHearMeOutRoomMediaRuntime {
       this.db.prepare("DELETE FROM hmo_room_presence WHERE tenant_id=? AND room_id=? AND user_id=?").run(principal.tenantId, room.roomId, principal.userId);
       this.db.prepare("DELETE FROM hmo_room_members WHERE tenant_id=? AND room_id=? AND user_id=?").run(principal.tenantId, room.roomId, principal.userId);
       this.db.prepare("DELETE FROM hmo_room_admissions WHERE tenant_id=? AND room_id=? AND user_id=? AND instr(body,'\"method\":\"password\"')>0").run(principal.tenantId, room.roomId, principal.userId);
-      this.remember(principal.tenantId, operationId, "leave-room", result);
+      this.remember(principal.tenantId, operationId, "leave-room", result, undefined, room.roomId);
     });
     return result;
   }
@@ -301,7 +333,7 @@ export class SqliteHearMeOutRoomMediaRuntime {
         const body = { schemaVersion: 1, tenantId: principal.tenantId, roomId: room.roomId, userId: targetUserId, kind: input.action, createdByUserId: principal.userId, createdAt: at, ...(expiresAt ? { expiresAt } : {}) };
         this.db.prepare("INSERT INTO hmo_room_restrictions(tenant_id,room_id,user_id,kind,expires_at,body) VALUES(?,?,?,?,?,?) ON CONFLICT(tenant_id,room_id,user_id) DO UPDATE SET kind=excluded.kind,expires_at=excluded.expires_at,body=excluded.body").run(principal.tenantId, room.roomId, targetUserId, input.action, expiresAt ?? null, JSON.stringify(body));
       }
-      this.remember(principal.tenantId, input.operationId, "moderate-room-member", result);
+      this.remember(principal.tenantId, input.operationId, "moderate-room-member", result, undefined, room.roomId);
     });
     return result;
   }
@@ -310,18 +342,14 @@ export class SqliteHearMeOutRoomMediaRuntime {
     assertPrincipal(principal);
     const replay = this.replay<{ deleted: true; roomId: string }>(principal.tenantId, operationId, "delete-room");
     if (replay) return replay;
-    const room = this.requireRoom(principal.tenantId, roomId, validNow(now));
+    validNow(now);
+    const room = this.readRoom(principal.tenantId, roomId);
+    if (!room) throw new Error("HearMeOut room not found");
     if (!this.canManage(principal, room)) throw new Error("Only the room owner or an admin can delete the room");
     const result = { deleted: true as const, roomId: room.roomId };
     this.transaction(() => {
-      this.db.prepare("DELETE FROM hmo_media_sessions WHERE tenant_id=? AND room_id=?").run(principal.tenantId, room.roomId);
-      this.db.prepare("DELETE FROM hmo_room_presence WHERE tenant_id=? AND room_id=?").run(principal.tenantId, room.roomId);
-      this.db.prepare("DELETE FROM hmo_room_restrictions WHERE tenant_id=? AND room_id=?").run(principal.tenantId, room.roomId);
-      this.db.prepare("DELETE FROM hmo_room_admissions WHERE tenant_id=? AND room_id=?").run(principal.tenantId, room.roomId);
-      this.db.prepare("DELETE FROM hmo_room_invitations WHERE tenant_id=? AND room_id=?").run(principal.tenantId, room.roomId);
-      this.db.prepare("DELETE FROM hmo_room_access WHERE tenant_id=? AND room_id=?").run(principal.tenantId, room.roomId);
-      this.db.prepare("DELETE FROM hmo_room_members WHERE tenant_id=? AND room_id=?").run(principal.tenantId, room.roomId);
-      this.db.prepare("DELETE FROM hmo_rooms WHERE tenant_id=? AND room_id=?").run(principal.tenantId, room.roomId);
+      this.removeRoomData(principal.tenantId, room.roomId);
+      // A small deletion receipt keeps retries idempotent without retaining room contents.
       this.remember(principal.tenantId, operationId, "delete-room", result);
     });
     return result;
@@ -517,8 +545,8 @@ export class SqliteHearMeOutRoomMediaRuntime {
     return JSON.parse(row.body);
   }
 
-  private remember(tenantId: string, operationId: string, kind: string, value: unknown,signature?:string): void {
-    this.db.prepare("INSERT INTO hmo_operations(tenant_id,operation_id,kind,body,request_signature) VALUES(?,?,?,?,?)").run(tenantId, cleanId(operationId, "operationId"), kind, JSON.stringify(value),signature??null);
+  private remember(tenantId: string, operationId: string, kind: string, value: unknown,signature?:string,roomId?:string): void {
+    this.db.prepare("INSERT INTO hmo_operations(tenant_id,operation_id,kind,body,request_signature,room_id) VALUES(?,?,?,?,?,?)").run(tenantId, cleanId(operationId, "operationId"), kind, JSON.stringify(value),signature??null,roomId??(value as {roomId?:string})?.roomId??null);
   }
 
   private transaction<T>(fn: () => T): T {
@@ -538,7 +566,7 @@ function emptySession(tenantId: string, roomId: string, lane: HearMeOutMediaLane
   assertLane(lane);
   return { schemaVersion: 1, tenantId, roomId, sessionId: `hmo:${roomId}:${lane}`, lane, current: null, queue: [], playback: { status: "idle", position: 0, updatedAt: now, muted: true, volume: 85 }, revision: 0 };
 }
-function isExpired(room: HearMeOutRoomV1, now: string): boolean { return Boolean(room.expiresAt && Date.parse(room.expiresAt) <= Date.parse(now)); }
+function isExpired(room: HearMeOutRoomV1, now: string): boolean { return Boolean(!room.systemRoom && room.expiresAt && Date.parse(room.expiresAt) <= Date.parse(now)); }
 function assertLane(lane: string): asserts lane is HearMeOutMediaLaneV1 { if (lane !== "movie" && lane !== "music") throw new Error("HearMeOut media lane is invalid"); }
 function validNow(value?: string): string { const result = value ?? new Date().toISOString(); if (!Number.isFinite(Date.parse(result))) throw new Error("HearMeOut timestamp is invalid"); return new Date(result).toISOString(); }
 function cleanId(value: string, name: string): string { if (!value || value.trim() !== value || value.length > 160 || !/^[A-Za-z0-9_.:-]+$/.test(value)) throw new Error(`HearMeOut ${name} is invalid`); return value; }

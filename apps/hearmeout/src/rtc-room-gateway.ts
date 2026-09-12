@@ -148,6 +148,11 @@ export class HearMeOutRoomRtcGateway {
       iceServers: this.options.iceServers ?? [{ urls: 'stun:stun.l.google.com:19302' }], livekit });
   }
   private broadcast(room: Room) { for (const member of room.members.values()) this.snapshot(room, member); }
+  closeRoom(tenantId: string, roomId: string) {
+    const key = createHash('sha256').update(JSON.stringify([tenantId, roomId])).digest('hex');
+    const room = this.rooms.get(key);
+    if (room) for (const member of room.members.values()) member.socket.close(4403, 'HearMeOut room closed');
+  }
   refreshRoom(tenantId: string, roomId: string) {
     const key = createHash('sha256').update(JSON.stringify([tenantId, roomId])).digest('hex');
     const room = this.rooms.get(key);

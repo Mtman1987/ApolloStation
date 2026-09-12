@@ -4,9 +4,19 @@ The approved production-room and provider-configuration transfer completed in pr
 
 ## Why the earlier count was 11 while the page showed zero
 
-The earlier probe counted every row in `hmo_rooms`. It did not measure visible rooms. The reset inspection confirmed that all 11 original records had expired; ten belonged to the owner's workspace and one belonged to another workspace. Ordinary rooms expire after six hours. `listRooms` filters by workspace and expiration but retains the underlying rows, so the owner's original visible count was zero.
+The earlier probe counted every row in `hmo_rooms`. It did not measure visible rooms. The reset inspection confirmed that all 11 original records had expired; ten belonged to the owner's workspace and one belonged to another workspace. Ordinary rooms expire after six hours. At the time of that probe, `listRooms` filtered by workspace and expiration without deleting the underlying rows, so the owner's original visible count was zero.
 
-The approved migration preserved those rows and added one unexpired canonical Discord Activity room. Immediately before the reset, the active database therefore held 12 records and the owner list contained one visible room. The owner-requested reset removed all 12 active records and the 11 records in the fallback store, together with their room data. This was a persistent room reset; it does not change the six-hour expiry policy.
+The approved migration preserved those rows and added one unexpired canonical Discord Activity room. Immediately before the reset, the active database therefore held 12 records and the owner list contained one visible room. The owner-requested reset removed all 12 active records and the 11 records in the fallback store, together with their room data. That operation reset the stored data; the lifecycle correction below prevents expired records from accumulating again.
+
+## Permanent room lifecycle correction
+
+The room runtime now removes expired ordinary rooms and their associated data in a transaction. The web host runs this cleanup before serving and every 60 seconds, even without page visits. Active rooms and permanent system rooms are preserved. Owner/admin deletion also accepts expired rooms instead of rejecting them as inaccessible.
+
+Cleanup covers room records, access, membership, invitations, admissions, restrictions, presence, chat, room personas, queues, assistant bindings, and room-scoped operation results. Manual deletion retains only a small idempotency receipt, without the room contents. Open RTC connections are closed. Late assistant and persona responses cannot recreate bindings or chat for a removed room.
+
+A Discord outage no longer blocks local room deletion. Any unfinished disconnect remains as a disabled provider cleanup request, retried by the recurring sweep and after restart; it is removed when the worker confirms stopping. It cannot restart a deleted room. The readiness response reports pending voice stops and local cleanup failures so failures are not silently hidden.
+
+Regression coverage exercises startup cleanup with active/system/other-workspace preservation, timer cleanup without page visits, RTC closure, expired-room deletion while Discord is unavailable, disconnect recovery across restart, deletion during voice startup, and a delayed assistant response after deletion. The six-hour room lifetime remains unchanged.
 
 ## Completed transfer and provider verification
 
