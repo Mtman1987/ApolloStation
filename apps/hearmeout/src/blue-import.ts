@@ -1,5 +1,6 @@
 import { HEARMEOUT_ACTIVITY_ROOM_ID } from "./activity-contract.js";
 import type { HearMeOutMediaRequestV1 } from "./room-media-core.js";
+import { HEARMEOUT_DISCORD_DEFAULT_INGRESS_GAIN, clampHearMeOutDiscordReceiveGain } from "./discord-receive-audio.js";
 import type { HearMeOutVoiceBridgeConfigV1, HearMeOutVoiceAudioProfileV1 } from "./voice-bridge.js";
 
 export interface BlueHearMeOutDocumentV1 {
@@ -246,7 +247,7 @@ function transformBlueVoiceBridge(value: unknown, tenantId: string): HearMeOutVo
     voiceChannelId,
     roomVoiceOutboundEnabled: typeof input.roomVoiceOutboundEnabled === "boolean" ? input.roomVoiceOutboundEnabled : true,
     audioProfile: profile,
-    discordReceiveGain: Number.isFinite(receiveGain) ? Math.max(0, Math.min(4, receiveGain)) : 1,
+    discordReceiveGain: Number.isFinite(receiveGain) ? clampHearMeOutDiscordReceiveGain(receiveGain) : HEARMEOUT_DISCORD_DEFAULT_INGRESS_GAIN,
     ...(updatedBy ? { updatedBy } : {}),
     ...(updatedAt ? { updatedAt } : {}),
   };
