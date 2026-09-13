@@ -1,3 +1,4 @@
+import { DshApplicationDecisionService } from "./application-decision.js";
 import { dshEmbedTemplateOverrides, dshHttps, type DshEmbedTemplates } from "./shoutout-presentation.js";
 import { DshNebulaMediaWorker } from "./nebula-media-worker.js";
 import { DshCalendarDelivery } from "./calendar-delivery.js";
@@ -156,6 +157,7 @@ export class SupervisedDshLiveService {
   private readonly calendarDelivery:DshCalendarDelivery;
   private calendarCycle:Promise<void>|undefined;
   private readonly applications: SqliteDshApplicationStore;
+  private readonly applicationDecisions: DshApplicationDecisionService;
   private readonly runtime: DshLiveRuntime;
   private readonly poller: DshTwitchLivePoller;
   private nebulaMediaCycle:Promise<void>|undefined;
@@ -186,7 +188,8 @@ export class SupervisedDshLiveService {
     this.calendarSync = new DshCalendarSync(options.databasePath, this.calendar, discord, now, options.publicOrigin);
     this.calendarDelivery=new DshCalendarDelivery(this.calendar,this.messages,discord,now,this.client,options.operationMode==="read-only");
     this.applications = new SqliteDshApplicationStore(options.databasePath);
-    const operations = new DshSuiteActionOperations({ config: options.config, monitor: this.monitor, messages: this.messages, calendar: this.calendar, applications: this.applications, discord, simulationDiscord, applicationInteractionsReady: options.applicationInteractionsReady, now });
+    this.applicationDecisions=new DshApplicationDecisionService(this.applications,{discord,publicOrigin:options.publicOrigin,preview:options.operationMode==="read-only",now});
+    const operations = new DshSuiteActionOperations({ config: options.config, monitor: this.monitor, messages: this.messages, calendar: this.calendar, applications: this.applications, discord, simulationDiscord, applicationInteractionsReady: options.applicationInteractionsReady, ...(options.publicOrigin?{publicOrigin:options.publicOrigin}:{}), now });
     this.suiteActions = new DshSuiteActionWorker(this.client, new DshBotActionAdapter(operations), { workerId: `${options.workerId}-suite-actions`, tenantIds: options.config.tenants.map((tenant) => tenant.tenantId) });
   }
   async ready() { await this.getAccessToken(); return { schemaVersion: 1 as const, workerId: this.options.workerId, operationMode: this.options.operationMode, liveIngressEnabled: this.options.liveIngressEnabled, egressMode: this.options.operationMode === "read-only" ? "shadow" as const : "provider" as const, configuredTenants: this.options.config.tenants.length, pollIntervalSeconds: this.options.config.pollIntervalSeconds }; }
@@ -207,7 +210,7 @@ export class SupervisedDshLiveService {
     }
   }
   async runCalendar(signal:AbortSignal) {while(!signal.aborted&&!this.closed){const cycle=this.syncCalendars();this.calendarCycle=cycle;try{await cycle;}finally{this.calendarCycle=undefined;}await pause(5000,signal);}}
-  private async syncCalendars(){for(const tenant of this.options.config.tenants){for(const guild of tenant.discordGuildIds??[]){const last=this.calendarSync.state(tenant.tenantId,guild).checkedAt;if(!last||Date.parse(this.now())-Date.parse(last)>=30000)await this.calendarSync.sync(tenant.tenantId,guild).catch(()=>undefined);}await this.calendarDelivery.flush(tenant.tenantId);}}
+  private async syncCalendars(){for(const tenant of this.options.config.tenants){for(const guild of tenant.discordGuildIds??[]){const last=this.calendarSync.state(tenant.tenantId,guild).checkedAt;if(!last||Date.parse(this.now())-Date.parse(last)>=30000)await this.calendarSync.sync(tenant.tenantId,guild).catch(()=>undefined);}await this.calendarDelivery.flush(tenant.tenantId);await this.applicationDecisions.flush(tenant.tenantId);}}
   async runNebulaMedia(signal:AbortSignal){this.nebulaMediaCycle=this.nebulaMedia?.run(AbortSignal.any([signal,this.nebulaMediaAbort.signal]));await this.nebulaMediaCycle;}
   runSuiteActions(signal: AbortSignal) { return this.suiteActions.run(signal); }
   close() {

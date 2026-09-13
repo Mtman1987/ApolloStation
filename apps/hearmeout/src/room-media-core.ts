@@ -49,6 +49,11 @@ export interface HearMeOutPresenceV1 {
   lastSeenAt: string;
 }
 
+export interface HearMeOutVoiceQueueEntryV1 {
+  userId: string; displayName: string; addedAt: string; state: 'waiting' | 'invited';
+  invitationId?: string; expiresAt?: string;
+}
+
 export interface HearMeOutMediaItemV1 {
   itemId: string;
   type: "movie" | "live" | "music" | "tts";
@@ -89,6 +94,7 @@ export type HearMeOutControlActionV1 = "play" | "pause" | "seek" | "mute" | "unm
 
 export class SqliteHearMeOutRoomMediaRuntime {
   private readonly db: DatabaseSync;
+  private transactionDepth = 0;
 
   constructor(path: string) {
     if (!path) throw new Error("HearMeOut database path is required");
@@ -127,6 +133,10 @@ export class SqliteHearMeOutRoomMediaRuntime {
       ) STRICT;
       CREATE TABLE IF NOT EXISTS hmo_room_moves(
         tenant_id TEXT NOT NULL, room_id TEXT NOT NULL, user_id TEXT NOT NULL, target_room_id TEXT NOT NULL, body TEXT NOT NULL,
+        PRIMARY KEY(tenant_id,room_id,user_id)
+      ) STRICT;
+      CREATE TABLE IF NOT EXISTS hmo_room_voice_queue(
+        tenant_id TEXT NOT NULL, room_id TEXT NOT NULL, user_id TEXT NOT NULL, added_at TEXT NOT NULL, body TEXT NOT NULL,
         PRIMARY KEY(tenant_id,room_id,user_id)
       ) STRICT;
       CREATE TABLE IF NOT EXISTS hmo_room_presence(
@@ -174,7 +184,7 @@ export class SqliteHearMeOutRoomMediaRuntime {
 
   private removeRoomData(tenantId: string, roomId: string): void {
     const tables = new Set((this.db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as Array<{ name: string }>).map(row => row.name));
-    for (const table of ["hmo_media_sessions", "hmo_room_presence", "hmo_room_restrictions", "hmo_room_member_controls", "hmo_room_moves", "hmo_room_admissions", "hmo_room_invitations", "hmo_room_access", "hmo_room_members", "hmo_room_chat", "hmo_room_personas", "hmo_persona_rooms"]) {
+    for (const table of ["hmo_media_sessions", "hmo_room_presence", "hmo_room_restrictions", "hmo_room_member_controls", "hmo_room_moves", "hmo_room_voice_queue", "hmo_room_admissions", "hmo_room_invitations", "hmo_room_access", "hmo_room_members", "hmo_room_chat", "hmo_room_personas", "hmo_persona_rooms"]) {
       if (tables.has(table)) this.db.prepare(`DELETE FROM ${table} WHERE tenant_id=? AND room_id=?`).run(tenantId, roomId);
     }
     this.db.prepare("DELETE FROM hmo_room_moves WHERE tenant_id=? AND target_room_id=?").run(tenantId, roomId);
@@ -244,6 +254,7 @@ export class SqliteHearMeOutRoomMediaRuntime {
     this.transaction(() => {
       this.putMember(principal, room.roomId, at);
       this.db.prepare("DELETE FROM hmo_room_moves WHERE tenant_id=? AND room_id=? AND user_id=?").run(principal.tenantId, room.roomId, principal.userId);
+      this.db.prepare('DELETE FROM hmo_room_voice_queue WHERE tenant_id=? AND room_id=? AND user_id=?').run(principal.tenantId, room.roomId, principal.userId);
       if (access) {
         this.putAdmission(principal.tenantId, room.roomId, principal.userId, access.method, access.invitation?.invitedByUserId ?? room.ownerUserId, at);
         if (access.invitation) this.acceptInvitation(access.invitation, at);
@@ -259,7 +270,6 @@ export class SqliteHearMeOutRoomMediaRuntime {
     if (replay) return replay;
     const at = validNow(input.now);
     const room = this.requireRoom(principal.tenantId, input.roomId, at);
-    if (room.privacy !== "private") throw new Error("Public HearMeOut rooms do not require invitations");
     if (!this.canManage(principal, room)) throw new Error("Only the room owner or an admin can invite private-room members");
     const ttlMs = input.ttlMs ?? 24 * 60 * 60 * 1_000;
     if (!Number.isSafeInteger(ttlMs) || ttlMs < 60_000 || ttlMs > 7 * 24 * 60 * 60 * 1_000) throw new Error("HearMeOut invitation lifetime is invalid");
@@ -278,6 +288,47 @@ export class SqliteHearMeOutRoomMediaRuntime {
       this.remember(principal.tenantId, input.operationId, "invite-room", invitation);
     });
     return invitation;
+  }
+
+  requestVoiceTurn(principal: HearMeOutPrincipalV1, roomId: string, now?: string): HearMeOutVoiceQueueEntryV1 {
+    assertPrincipal(principal); const at = validNow(now), room = this.requireRoom(principal.tenantId, roomId, at); this.assertCanJoin(principal, room, at);
+    const current = this.voiceQueue(principal, roomId, at).find(entry => entry.userId === principal.userId);
+    if (current && (current.state === 'waiting' || Date.parse(current.expiresAt || '') > Date.parse(at))) return current;
+    const entry: HearMeOutVoiceQueueEntryV1 = { userId: principal.userId, displayName: principal.displayName, addedAt: at, state: 'waiting' };
+    this.db.prepare('INSERT INTO hmo_room_voice_queue(tenant_id,room_id,user_id,added_at,body) VALUES(?,?,?,?,?) ON CONFLICT(tenant_id,room_id,user_id) DO UPDATE SET added_at=excluded.added_at,body=excluded.body').run(principal.tenantId, roomId, principal.userId, at, JSON.stringify(entry));
+    return entry;
+  }
+
+  voiceQueue(principal: HearMeOutPrincipalV1, roomId: string, now?: string): HearMeOutVoiceQueueEntryV1[] {
+    assertPrincipal(principal); const room = this.requireRoom(principal.tenantId, roomId, validNow(now));
+    const rows = this.db.prepare('SELECT body FROM hmo_room_voice_queue WHERE tenant_id=? AND room_id=? ORDER BY added_at,user_id').all(principal.tenantId, roomId);
+    return rows.map(row => JSON.parse(String(row.body)) as HearMeOutVoiceQueueEntryV1).filter(entry => this.canManage(principal, room) || entry.userId === principal.userId);
+  }
+
+  admitNextVoiceTurn(principal: HearMeOutPrincipalV1, roomId: string, operationId: string, now?: string): HearMeOutVoiceQueueEntryV1 | null {
+    assertPrincipal(principal); const at = validNow(now), room = this.requireRoom(principal.tenantId, roomId, at);
+    if (!this.canManage(principal, room)) throw new Error('Only the room owner or an admin can admit the next person');
+    const signature = JSON.stringify([principal.userId,roomId]);
+    return this.transaction(() => {
+      const replay = this.replay<HearMeOutVoiceQueueEntryV1>(principal.tenantId, operationId, 'voice-admit', signature); if (replay) return replay;
+      const next = this.voiceQueue(principal, roomId, at).find(entry => entry.state === 'waiting'); if (!next) return null;
+      this.assertCanJoin({ ...principal, userId: next.userId, roles: ['member'] }, room, at);
+      const invitation = this.inviteToRoom(principal, { roomId, inviteeUserId: next.userId, operationId: 'invite:' + operationId, ttlMs: 5 * 60_000, now: at });
+      const entry: HearMeOutVoiceQueueEntryV1 = { ...next, state: 'invited', invitationId: invitation.invitationId, expiresAt: invitation.expiresAt };
+      this.db.prepare('UPDATE hmo_room_voice_queue SET body=? WHERE tenant_id=? AND room_id=? AND user_id=?').run(JSON.stringify(entry), principal.tenantId, roomId, next.userId);
+      this.remember(principal.tenantId, operationId, 'voice-admit', entry, signature, roomId); return entry;
+    });
+  }
+
+  removeVoiceTurn(principal: HearMeOutPrincipalV1, roomId: string, userId: string, now?: string) {
+    assertPrincipal(principal); const at = validNow(now), room = this.requireRoom(principal.tenantId, roomId, at);
+    if (userId !== principal.userId && !this.canManage(principal, room)) throw new Error('Only the room owner or an admin can remove another waiting person');
+    this.transaction(() => {
+      const entry = this.voiceQueue(principal, roomId, at).find(value => value.userId === userId);
+      if (entry?.invitationId) this.db.prepare("UPDATE hmo_room_invitations SET body=json_set(body,'$.revokedAt',?) WHERE tenant_id=? AND invitation_id=?").run(at, principal.tenantId, entry.invitationId);
+      this.db.prepare('DELETE FROM hmo_room_voice_queue WHERE tenant_id=? AND room_id=? AND user_id=?').run(principal.tenantId, roomId, userId);
+    });
+    return { removed: true };
   }
 
   heartbeatPresence(principal: HearMeOutPrincipalV1, roomId: string, connectionId: string, now?: string): HearMeOutPresenceV1 {
@@ -363,6 +414,7 @@ export class SqliteHearMeOutRoomMediaRuntime {
       this.db.prepare("DELETE FROM hmo_room_presence WHERE tenant_id=? AND room_id=? AND user_id=?").run(principal.tenantId, room.roomId, targetUserId);
       this.db.prepare("DELETE FROM hmo_room_members WHERE tenant_id=? AND room_id=? AND user_id=?").run(principal.tenantId, room.roomId, targetUserId);
       this.db.prepare("DELETE FROM hmo_room_admissions WHERE tenant_id=? AND room_id=? AND user_id=?").run(principal.tenantId, room.roomId, targetUserId);
+      this.db.prepare('DELETE FROM hmo_room_voice_queue WHERE tenant_id=? AND room_id=? AND user_id=?').run(principal.tenantId, room.roomId, targetUserId);
       if (input.action === "ban" || input.action === "timeout") {
         const body = { schemaVersion: 1, tenantId: principal.tenantId, roomId: room.roomId, userId: targetUserId, kind: input.action, createdByUserId: principal.userId, createdAt: at, ...(expiresAt ? { expiresAt } : {}) };
         this.db.prepare("INSERT INTO hmo_room_restrictions(tenant_id,room_id,user_id,kind,expires_at,body) VALUES(?,?,?,?,?,?) ON CONFLICT(tenant_id,room_id,user_id) DO UPDATE SET kind=excluded.kind,expires_at=excluded.expires_at,body=excluded.body").run(principal.tenantId, room.roomId, targetUserId, input.action, expiresAt ?? null, JSON.stringify(body));
@@ -640,9 +692,12 @@ export class SqliteHearMeOutRoomMediaRuntime {
   }
 
   private transaction<T>(fn: () => T): T {
+    if (this.transactionDepth) return fn();
     this.db.exec("BEGIN IMMEDIATE");
+    this.transactionDepth++;
     try { const result = fn(); this.db.exec("COMMIT"); return result; }
     catch (error) { this.db.exec("ROLLBACK"); throw error; }
+    finally { this.transactionDepth--; }
   }
 }
 
