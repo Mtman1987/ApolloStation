@@ -1,3 +1,4 @@
+import {SpmtClient} from '../packages/sdk/dist/index.js';
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -35,7 +36,7 @@ test("HearMeOut job worker executes durable catalog search and remember operatio
   rmSync(dir, { recursive: true, force: true });
 });
 
-test("SPMT gives HearMeOut its own minimal worker identity", async () => {
+test("SPMT gives HearMeOut its own minimal worker identity and accepts its actual readiness report", async () => {
   const dir = mkdtempSync(join(tmpdir(), "hearmeout-service-identity-"));
   const credential = "hearmeout-service-credential-123456789";
   const service = createSpmtService({ databasePath: join(dir, "authority.sqlite"), webhookKey: Buffer.alloc(32, 17), port: 0, runtimeMode: "sandbox", hearMeOutRuntimeEnabled: true, hearMeOutWorkerCredential: credential });
@@ -45,5 +46,12 @@ test("SPMT gives HearMeOut its own minimal worker identity", async () => {
     for (const scope of ["providers:grant", "jobs:read", "jobs:work", "runtime:write"]) assert.equal(service.auth.authorize(token, scope, "tenant-a").actorId, "hearmeout");
     assert.throws(() => service.auth.authorize(token, "xp:write", "tenant-a"), /scope/i);
     assert.throws(() => service.auth.authorize(token, "identity:write", "tenant-a"), /scope/i);
+    const client = new SpmtClient({baseUrl:'http://127.0.0.1:'+service.server.address().port,appId:'hearmeout',getAccessToken:async()=>token});
+    const worker = new HearMeOutExecutionWorker(client,{workerId:'hmo-sprite',executionTarget:'sprite',tenantIds:['tenant-a'],capabilities:['hearmeout.music.search','hearmeout.youtube.resolve'],catalog:new HearMeOutWorkerMusicCatalog({catalogFile:join(dir,'catalog.json')}),cache:new HearMeOutWorkerMediaCache({cacheDir:join(dir,'cache')})});
+    await worker.report(new Date().toISOString());
+    const workers = await client.listExecutionWorkers({executionOwner:'hearmeout',capabilityId:'hearmeout.youtube.resolve',tenantId:'tenant-a'});
+    assert.equal(workers.length,1);assert.equal(workers[0].state,'ready');assert.equal(workers[0].providerHealthy,true);assert.equal(workers[0].executionTarget,'sprite');
+    assert.equal((await client.listExecutionWorkers({executionOwner:'hearmeout',tenantId:'tenant-b'})).length,0);
+
   } finally { await service.close(); rmSync(dir, { recursive: true, force: true }); }
 });

@@ -292,11 +292,11 @@ if [[ "$DEPLOY_ROLE" == "release" ]]; then
   SPMT_RUNTIME_MODE=sandbox DEPLOY_ROLE=release node scripts/sprites/credit-green-test-xp.mjs
 fi
 
+if [[ "$DEPLOY_ROLE" == "release" ]]; then
+  node scripts/sprites/verify-hearmeout-broadcast-test.mjs http://127.0.0.1:8080 "$BUILD_SHA"
+fi
+
 printf 'Deployed %s commit %s\n' "$DEPLOY_ROLE" "$BUILD_SHA"
 printf 'Active release: %s\n' "$(readlink -f "$current_link")"
 sprite-env services get "$service_name"
 trap - EXIT
-
-if [[ "$DEPLOY_ROLE" == "release" ]]; then
-  node scripts/sprites/verify-hearmeout-broadcast-test.mjs http://127.0.0.1:8080 "$BUILD_SHA"
-fi

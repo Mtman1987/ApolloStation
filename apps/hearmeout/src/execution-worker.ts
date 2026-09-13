@@ -97,7 +97,7 @@ export class HearMeOutExecutionWorker {
     return job.id;
   }
   async run(signal: AbortSignal, pollMs = 1_000) { while (!signal.aborted) { if (!await this.runOnce()) await pause(pollMs, signal); } }
-  async report(startedAt: string) { return this.client.reportExecutionWorker({ executionOwner: "hearmeout", workerId: this.options.workerId, executionTarget: this.options.executionTarget, state: "ready", capabilityIds: this.options.capabilities, ...(this.options.tenantIds ? { tenantIds: this.options.tenantIds } : {}), providerHealthy: true, startedAt, metrics: { completedJobs: this.completedJobs, failedJobs: this.failedJobs }, leaseMs: 30_000 }); }
+  async report(startedAt: string) { return this.client.reportExecutionWorker({ executionOwner: "hearmeout", workerId: this.options.workerId, executionTarget: this.options.executionTarget, state: "ready", capabilityIds: this.options.capabilities, ...(this.options.tenantIds ? { tenantIds: this.options.tenantIds } : {}), providerHealthy: true, startedAt, metrics: { completedJobs: this.completedJobs, failedJobs: this.failedJobs, inputUnits: 0, outputUnits: 0 }, leaseMs: 30_000 }); }
   private async execute(job: ExecutionJobV1) {
     if (!job.leaseId) throw new Error("Claimed HearMeOut job has no lease");
     const lease = [job.tenantId, job.id, this.options.workerId, job.leaseId, job.fencingEpoch] as const;
