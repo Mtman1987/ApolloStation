@@ -268,7 +268,7 @@ export interface SpmtSuiteActionJobInputV1 {
   action: SpmtSuiteActionIdV1;
   args: Record<string, string>;
   actor: { userId: string; username: string; role: SpmtSuiteActionActorRoleV1 };
-  source: { kind: SpmtSuiteActionSourceV1; provider?: ChatProviderV1; channelId?: string; connectionId?: string; requestId?: string; roomId?: string; deviceId?: string; simulation?: boolean };
+  source: { kind: SpmtSuiteActionSourceV1; provider?: ChatProviderV1; guildId?: string; channelId?: string; connectionId?: string; requestId?: string; roomId?: string; deviceId?: string; simulation?: boolean };
 }
 export const SPMT_SUITE_ACTION_CAPABILITIES = Object.freeze({ dsh: "dsh.suite-action.v1", hearmeout: "hearmeout.suite-action.v1", image: "streamweaver.image.generate.v1" } as const);
 export function spmtSuiteActionDescriptor(action: SpmtSuiteActionIdV1) { return SPMT_SUITE_ACTION_CATALOG.find((item) => item.id === action)!; }

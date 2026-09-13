@@ -46,12 +46,14 @@ test("room owner can kick timeout and ban members and restrictions block re-entr
   } finally { runtime.close(); }
 });
 
-test("room owner deletes an active room instead of leaving it", () => {
+test("room owner can leave a discoverable active room and still delete it", () => {
   const runtime = fixture();
   try {
     const owner = principal("owner-1");
     runtime.createRoom(owner, { roomId: "delete-me", name: "Delete Me", privacy: "public", operationId: "create-delete", now: at });
-    assert.throws(() => runtime.leaveRoom(owner, "delete-me", "owner-leave", at), /delete the room instead/);
+    assert.deepEqual(runtime.leaveRoom(owner, "delete-me", "owner-leave", at), {left:true});
+    assert.equal(runtime.getRoom(owner.tenantId,"delete-me",at).ownerUserId,owner.userId);
+    assert.ok(runtime.listRooms(owner,at).some(room=>room.roomId==="delete-me"));
     assert.deepEqual(runtime.deleteRoom(owner, "delete-me", "delete-room", at), { deleted: true, roomId: "delete-me" });
     assert.equal(runtime.getRoom("tenant-a", "delete-me", at), undefined);
   } finally { runtime.close(); }

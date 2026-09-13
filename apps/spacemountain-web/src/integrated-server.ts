@@ -27,7 +27,8 @@ export function createIntegratedSpaceMountainWebHost(options:IntegratedSpaceMoun
     if(request.method==="GET"&&(url.pathname==="/apps/companion"||url.pathname==="/apps/mountainview")) { response.writeHead(302,{location:url.pathname==="/apps/companion"?"/downloads/companion":"/downloads/mountainview","cache-control":"no-store"}); response.end(); return; }
     if(SPMT_OVERLAY.test(url.pathname))return proxyDirect(request,response,options.spmtOrigin,url.pathname+url.search,true);
     if(NEBULA_RUNTIME.test(url.pathname)&&options.nebulaArcadeOrigin)return proxyDirect(request,response,options.nebulaArcadeOrigin,url.pathname+url.search,true);
-    const app=greenAppForPath(url.pathname);if(app&&options.greenAppOrigins?.[app]){
+    const activityPath = url.pathname === '/activity' || url.pathname === '/activity-lite' || (url.pathname === '/' && url.searchParams.has('frame_id')) || url.pathname === '/api/watch/activity-default' || /^\/api\/watch\/sessions\/[^/]+\/(?:state|broadcast\/[^/]+)$/.test(url.pathname) || url.pathname === '/api/discord/interactions';
+    const app=activityPath?'hearmeout':greenAppForPath(url.pathname);if(app&&options.greenAppOrigins?.[app]){
       const path=url.pathname===`/health/${app}`?"/health/ready":url.pathname+url.search;
       return proxyDirect(request,response,options.greenAppOrigins[app]!,path,true);
     }

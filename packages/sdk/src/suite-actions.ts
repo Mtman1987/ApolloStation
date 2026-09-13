@@ -5,6 +5,9 @@ export interface SpmtSuiteActionCommandV1 { action: SpmtSuiteActionIdV1; args: R
 /** Device- and surface-neutral deterministic intent parser for the shared suite-action pipeline. */
 export function detectSpmtSuiteActionCommand(message: string, now = new Date()): SpmtSuiteActionCommandV1 | undefined {
   const value = normalized(message);
+  const legacyMedia = message.trim().match(/^!(wr|watchrequest|sr|songrequest)\s+(.+)$/is);
+  if (legacyMedia) return request("hmo.media.request", { query: clean(legacyMedia[2], 500), lane: /^(wr|watchrequest)$/i.test(legacyMedia[1]!) ? "movie" : "music", roomId: "" });
+  if (/^!(np|nowplaying)$/i.test(value)) return request("hmo.media.state.read", {});
   const channel = clean(message.match(/(?:to|in|into|on)\s+#([a-z0-9_-]{1,100})\b/i)?.[1]);
   const roomId = clean(message.match(/\b(?:room|chat)\s+(?:called|named)?\s*["“]?([a-z0-9][a-z0-9 _-]{0,159}?)["”]?(?:\s+(?:please|now)|[,.!?]|$)/i)?.[1]);
   const image = clean(message.match(/\b(?:generate|make|create|draw)\s+(?:me\s+)?(?:an?\s+)?(?:ai\s+)?(?:image|picture|photo|artwork|illustration)\s*(?:of|showing|for)?\s+(.+?)\s*$/i)?.[1], 3_000).replace(/\s+please$/i, "");

@@ -1,0 +1,46 @@
+import assert from 'node:assert/strict';
+import {mkdtemp,readFile,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {execFileSync} from 'node:child_process';
+import {createServer} from 'node:http';
+import {chromium} from 'playwright';
+import {SqliteHearMeOutRoomMediaRuntime} from '../apps/hearmeout/dist/room-media-core.js';
+import {ensureHearMeOutDiscordActivityRoom,joinHearMeOutDiscordActivityRoom} from '../apps/hearmeout/dist/activity-room.js';
+import {handleHearMeOutActivityRequest} from '../apps/hearmeout/dist/activity-web.js';
+import {createIntegratedSpaceMountainWebHost} from '../apps/spacemountain-web/dist/integrated-server.js';
+import {HearMeOutRoomBroadcast} from '../apps/hearmeout/dist/room-broadcast.js';
+const dir=await mkdtemp(join(tmpdir(),'hmo-hls-browser-')),rooms=new SqliteHearMeOutRoomMediaRuntime(':memory:');
+const principal={tenantId:'hls',userId:'owner',displayName:'Owner',roles:['admin']},binding={tenantId:'hls',clientId:'234567890123456789'};
+let browser,server,worker,timer,ingress;
+try{
+ const file=join(dir,'film.mp4');execFileSync('ffmpeg',['-hide_banner','-loglevel','error','-f','lavfi','-i','color=c=blue:s=96x64:r=25','-f','lavfi','-i','sine=frequency=440:sample_rate=44100','-f','lavfi','-i','sine=frequency=660:sample_rate=44100','-t','90','-map','0:v','-map','1:a','-map','2:a','-c:v','libx264','-preset','ultrafast','-g','50','-c:a','aac','-b:a','32k','-ac','1','-metadata:s:a:0','language=eng','-metadata:s:a:1','language=hin','-movflags','+faststart',file],{timeout:30000});const fixture=await readFile(file);
+ ensureHearMeOutDiscordActivityRoom(rooms,principal);joinHearMeOutDiscordActivityRoom(rooms,principal,'join');
+ const roomId='discord-activity',view=()=>({room:rooms.getRoom('hls',roomId),member:true,viewer:{userId:'owner',canManage:true},music:rooms.getSession('hls',roomId,'music'),movie:{...rooms.getSession('hls',roomId,'movie'),broadcast:{configured:true,playbackUrl:'/api/hearmeout/rooms/discord-activity/broadcast/movie/index.m3u8'}}});
+ const [bundle,source]=await Promise.all(['media-client.js','playback-source-client.js'].map(file=>readFile(new URL('../apps/hearmeout/dist/'+file,import.meta.url))));
+ server=createServer(async(req,res)=>{try{const url=new URL(req.url,'http://local');
+  if(url.pathname==='/v1/media/public/'+'a'.repeat(43)){const range=/bytes=(\d+)-(\d*)/.exec(req.headers.range??''),start=Number(range?.[1]??0),end=range?.[2]?Number(range[2]):fixture.length-1;res.writeHead(range?206:200,{'content-type':'video/mp4','accept-ranges':'bytes','content-length':end-start+1,...(range?{'content-range':`bytes ${start}-${end}/${fixture.length}`}:{})});res.end(fixture.subarray(start,end+1));return;}
+  const feed=url.pathname.match(/^\/(?:api\/hearmeout\/rooms\/discord-activity\/broadcast\/movie|api\/watch\/sessions\/discord-watch-room\/broadcast)\/([^/]+)$/);if(feed){await worker.serve('hls',roomId,'movie',feed[1],res);return;}
+  if(handleHearMeOutActivityRequest(req,res,url,rooms,binding,{configured:true}))return;
+  if(url.pathname==='/api/hearmeout/playback-source.js'||url.pathname==='/api/hearmeout/media-client.js'){res.setHeader('content-type','application/javascript');res.end(url.pathname==='/api/hearmeout/media-client.js'?bundle:source);return;}
+  if(url.pathname==='/api/hearmeout/rooms/'+roomId){res.setHeader('content-type','application/json');res.end(JSON.stringify(view()));return;}
+  res.setHeader('content-type','text/html');res.end(`<main id="player"></main><script src="/api/hearmeout/media-client.js"></script><script>HearMeOutMedia.mount(document.querySelector('#player'),${JSON.stringify(view())},'movie')</script>`);
+ }catch(e){res.writeHead(500);res.end(String(e));}});await new Promise(r=>server.listen(0,'127.0.0.1',r));const appOrigin='http://127.0.0.1:'+server.address().port;
+ rooms.enqueue(principal,{roomId,lane:'movie',operationId:'request',item:{itemId:'hls-film',title:'Multilingual film',type:'movie',source:'fixture',playbackUrl:'https://media.example/v1/media/public/'+'a'.repeat(43),durationSeconds:90}});
+ worker=new HearMeOutRoomBroadcast(rooms,{ffmpegBinary:'/usr/bin/ffmpeg',ffprobeBinary:'/usr/bin/ffprobe',cachePath:join(dir,'broadcast'),spmtOrigin:appOrigin});await worker.listen();timer=setInterval(()=>rooms.advanceRoomTimelines(),500);
+ ingress=createIntegratedSpaceMountainWebHost({spmtOrigin:appOrigin,greenAppOrigins:{hearmeout:appOrigin},port:0,host:'127.0.0.1'});await ingress.listen();const origin='http://127.0.0.1:'+ingress.server.address().port;
+ browser=await chromium.launch({executablePath:process.env.HMO_TEST_BROWSER_PATH||chromium.executablePath(),headless:true,args:['--no-sandbox','--disable-dev-shm-usage','--autoplay-policy=no-user-gesture-required']});
+ const errors=[],pages=[];async function open(path){const page=await browser.newPage();page.on('pageerror',e=>errors.push(e.message));await page.goto(origin+path);await page.waitForFunction(()=>{const v=document.querySelector('video');return v&&!v.paused&&v.currentTime>.1;});return page;}
+ pages.push(await open('/apps/hearmeout'));pages.push(await open('/activity?sessionId=discord-watch-room'));
+ await pages[1].getByRole('button',{name:'Enable sound',exact:true}).click();
+ for(const page of pages){assert.equal(await page.evaluate(()=>document.querySelector('video').playbackRate),1);const select=page.getByRole('combobox',{name:'Audio language'});await select.waitFor({state:'visible'});assert.equal(await select.locator('option').count(),2);await select.selectOption('1');assert.equal(await select.inputValue(),'1');await page.waitForFunction(()=>{const v=document.querySelector('video');return !v.paused&&!v.error;});}
+ const revision=rooms.getSession('hls',roomId,'movie').revision;
+ await pages[0].getByRole('slider',{name:'movie volume on this device'}).evaluate(el => { el.value = '37'; el.dispatchEvent(new Event('input', { bubbles: true })); });await pages[1].getByRole('slider',{name:'Volume on this device',exact:true}).evaluate(el => { el.value = '61'; el.dispatchEvent(new Event('input', { bubbles: true })); });
+ assert.equal(await pages[0].evaluate(()=>document.querySelector('video').volume),.37);assert.equal(await pages[1].evaluate(()=>document.querySelector('video').volume),.61);
+ for(let i=0;i<pages.length;i++){const page=pages[i],other=pages[1-i],otherVolume=await other.evaluate(()=>document.querySelector('video').volume),position=await page.evaluate(()=>document.querySelector('video').currentTime);await page.getByRole('button',{name:'Mute locally',exact:true}).click();await page.waitForFunction(t=>{const v=document.querySelector('video');return v.volume===0&&!v.muted&&!v.paused&&v.currentTime>t+.2;},position);assert.equal(await other.evaluate(()=>document.querySelector('video').volume),otherVolume);await page.getByRole('button',{name:i?'Enable sound':'Restore sound',exact:true}).click();}
+ assert.equal(rooms.getSession('hls',roomId,'movie').revision,revision);
+ const position=await pages[0].evaluate(()=>document.querySelector('video').currentTime),starts=worker.status().startedProcesses;
+ await Promise.all(pages.map(page=>page.close()));await new Promise(r=>setTimeout(r,5000));assert.equal(worker.status().active,1);assert.equal(worker.status().startedProcesses,starts);
+ const returned=await open('/activity?sessionId=discord-watch-room');await returned.waitForFunction(previous=>document.querySelector('video').currentTime>previous+2,position);assert.equal(worker.status().startedProcesses,starts);
+ assert.deepEqual(errors,[]);console.log('PASS: one room encoder supplies native and Discord windows with two audio languages. Local volume/zero-volume silence never changes the room or pauses playback. The room continues without windows and a returning viewer joins its current broadcast.');
+}finally{if(timer)clearInterval(timer);await browser?.close();await ingress?.close();await worker?.close();if(server){server.closeAllConnections();await new Promise(r=>server.close(r));}rooms.close();await rm(dir,{recursive:true,force:true});}

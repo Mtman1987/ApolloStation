@@ -111,34 +111,19 @@ test("unlinked Discord users fail closed and are never merged by username", asyn
   } finally { fx.rooms.close(); }
 });
 
-test("volume modal preserves donor custom ids and applies only bounded shared volume", async () => {
+test("legacy Discord volume and mute controls cannot change room playback", async () => {
   const fx = routerFixture();
+  const base = { guild_id: "123456789012345678", channel_id: "523456789012345678", member: { permissions: "8192", user: { id: "223456789012345678", username: "captain" } } };
   try {
-    const base = {
-      guild_id: "123456789012345678",
-      channel_id: "523456789012345678",
-      member: { permissions: "8192", user: { id: "223456789012345678", username: "captain" } },
-    };
-    const modal = await fx.router.handle(fx.signed({ ...base, id: "323456789012345681", type: 3, data: { custom_id: "hmo_watch_volume_modal:discord-music-room" } }));
-    assert.equal(modal.body.type, HEARMEOUT_DISCORD_INTERACTION_RESPONSE.MODAL);
-    assert.equal(modal.body.data.custom_id, "hmo_watch_volume_submit:discord-music-room");
-
-    const submitted = await fx.router.handle(fx.signed({
-      ...base,
-      id: "323456789012345682",
-      type: 5,
-      data: { custom_id: "hmo_watch_volume_submit:discord-music-room", components: [{ components: [{ custom_id: "volume_value", value: "42" }] }] },
-    }));
-    assert.equal(submitted.body.type, HEARMEOUT_DISCORD_INTERACTION_RESPONSE.UPDATE_MESSAGE);
-    assert.equal(fx.rooms.getSession("tenant-a", HEARMEOUT_ACTIVITY_ROOM_ID, "music").playback.volume, 42);
-
-    const invalid = await fx.router.handle(fx.signed({
-      ...base,
-      id: "323456789012345683",
-      type: 5,
-      data: { custom_id: "hmo_watch_volume_submit:discord-music-room", components: [{ components: [{ custom_id: "volume_value", value: "999" }] }] },
-    }));
-    assert.match(invalid.body.data.content, /0 to 100/);
+    const controls = await fx.router.handle(fx.signed({ ...base, id: "323456789012345680", type: 3, data: { custom_id: "hmo_watch_controls:discord-music-room" } }));
+    assert.doesNotMatch(JSON.stringify(controls.body.data.components), /mute|volume/i);
+    const before = fx.rooms.getSession("tenant-a", HEARMEOUT_ACTIVITY_ROOM_ID, "music", "2026-09-13T12:00:00.000Z");
+    let id = 681;
+    for (const [type, custom_id] of [[3,"hmo_watch_volume_modal:discord-music-room"],[3,"hmo_watch_volume:discord-music-room"],[3,"hmo_watch_control:mute-unmute:discord-music-room"],[5,"hmo_watch_volume_submit:discord-music-room"]]) {
+      const result = await fx.router.handle(fx.signed({ ...base, id: "323456789012345" + id++, type, data: { custom_id, components: [{ components: [{ custom_id: "volume_value", value: "0" }] }] } }));
+      assert.equal(result.body.type, 4); assert.match(result.body.data.content, /only you/);
+      assert.deepEqual(fx.rooms.getSession("tenant-a", HEARMEOUT_ACTIVITY_ROOM_ID, "music", "2026-09-13T12:00:00.000Z"), before);
+    }
   } finally { fx.rooms.close(); }
 });
 

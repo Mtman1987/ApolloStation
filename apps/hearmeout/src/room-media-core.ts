@@ -18,6 +18,7 @@ export interface HearMeOutRoomV1 {
   tenantId: string;
   roomId: string;
   name: string;
+  instanceId?: string;
   ownerUserId: string;
   privacy: "public" | "private";
   systemRoom: boolean;
@@ -153,6 +154,10 @@ export class SqliteHearMeOutRoomMediaRuntime {
         PRIMARY KEY(tenant_id,room_id,user_id,connection_id)
       ) STRICT;
       CREATE INDEX IF NOT EXISTS hmo_room_presence_active ON hmo_room_presence(tenant_id,room_id,last_seen_at);
+      CREATE TABLE IF NOT EXISTS hmo_broadcast_leases(
+        tenant_id TEXT NOT NULL, room_id TEXT NOT NULL, lane TEXT NOT NULL, owner TEXT NOT NULL, expires_at TEXT NOT NULL,
+        PRIMARY KEY(tenant_id,room_id,lane)
+      ) STRICT;
       CREATE TABLE IF NOT EXISTS hmo_media_sessions(
         tenant_id TEXT NOT NULL, room_id TEXT NOT NULL, lane TEXT NOT NULL, body TEXT NOT NULL,
         PRIMARY KEY(tenant_id,room_id,lane)
@@ -193,7 +198,7 @@ export class SqliteHearMeOutRoomMediaRuntime {
 
   private removeRoomData(tenantId: string, roomId: string): void {
     const tables = new Set((this.db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as Array<{ name: string }>).map(row => row.name));
-    for (const table of ["hmo_media_sessions", "hmo_room_presence", "hmo_room_restrictions", "hmo_room_member_controls", "hmo_room_moves", "hmo_room_voice_queue", "hmo_room_radio", "hmo_room_admissions", "hmo_room_invitations", "hmo_room_access", "hmo_room_members", "hmo_room_chat", "hmo_room_personas", "hmo_persona_rooms"]) {
+    for (const table of ["hmo_broadcast_leases", "hmo_media_sessions", "hmo_room_presence", "hmo_room_restrictions", "hmo_room_member_controls", "hmo_room_moves", "hmo_room_voice_queue", "hmo_room_radio", "hmo_room_admissions", "hmo_room_invitations", "hmo_room_access", "hmo_room_members", "hmo_room_chat", "hmo_room_personas", "hmo_persona_rooms"]) {
       if (tables.has(table)) this.db.prepare(`DELETE FROM ${table} WHERE tenant_id=? AND room_id=?`).run(tenantId, roomId);
     }
     this.db.prepare("DELETE FROM hmo_room_moves WHERE tenant_id=? AND target_room_id=?").run(tenantId, roomId);
@@ -220,7 +225,7 @@ export class SqliteHearMeOutRoomMediaRuntime {
     const password = input.password === undefined ? undefined : privateRoomPassword(input.password);
     const passwordRecord = password === undefined ? undefined : hashPrivateRoomPassword(password);
     const room: HearMeOutRoomV1 = {
-      schemaVersion: 1, tenantId: principal.tenantId, roomId, name,
+      schemaVersion: 1, tenantId: principal.tenantId, roomId, name, instanceId: randomBytes(16).toString('hex'),
       ownerUserId: principal.userId, privacy: input.privacy, systemRoom: Boolean(input.systemRoom),
       createdAt: now, updatedAt: now,
       ...(input.systemRoom ? {} : { expiresAt: new Date(Date.parse(now) + HEARMEOUT_ROOM_LIFETIME_MS).toISOString() }),
@@ -374,7 +379,7 @@ export class SqliteHearMeOutRoomMediaRuntime {
     const replay = this.replay<{ left: true }>(principal.tenantId, operationId, "leave-room");
     if (replay) return replay;
     const room = this.requireRoom(principal.tenantId, roomId, validNow(now));
-    if (room.ownerUserId === principal.userId) throw new Error("The room owner cannot leave an active room; delete the room instead");
+    // Leaving closes this viewer window; ownership and the room broadcast continue.
     const result = { left: true } as const;
     this.transaction(() => {
       this.db.prepare("DELETE FROM hmo_room_presence WHERE tenant_id=? AND room_id=? AND user_id=?").run(principal.tenantId, room.roomId, principal.userId);
@@ -483,6 +488,48 @@ export class SqliteHearMeOutRoomMediaRuntime {
     return this.readSession(tenantId, cleanId(roomId, "roomId"), lane) ?? emptySession(tenantId, cleanId(roomId, "roomId"), lane, at);
   }
 
+  claimBroadcast(tenantId: string, roomId: string, lane: HearMeOutMediaLaneV1, owner: string, now = new Date().toISOString()) {
+    if (!this.getRoom(tenantId, roomId, now)) return false;
+    return this.db.prepare("INSERT INTO hmo_broadcast_leases(tenant_id,room_id,lane,owner,expires_at) VALUES(?,?,?,?,?) ON CONFLICT(tenant_id,room_id,lane) DO UPDATE SET owner=excluded.owner,expires_at=excluded.expires_at WHERE hmo_broadcast_leases.owner=excluded.owner OR hmo_broadcast_leases.expires_at<=?").run(tenantId, roomId, lane, owner, new Date(Date.parse(now)+30000).toISOString(), now).changes === 1;
+  }
+  releaseBroadcast(tenantId: string, roomId: string, lane: HearMeOutMediaLaneV1, owner: string) { this.db.prepare("DELETE FROM hmo_broadcast_leases WHERE tenant_id=? AND room_id=? AND lane=? AND owner=?").run(tenantId,roomId,lane,owner); }
+
+  broadcastSessions(now?: string): HearMeOutMediaSessionV1[] {
+    const at = validNow(now);
+    return this.db.prepare("SELECT body FROM hmo_media_sessions").all().map(row => JSON.parse(String(row.body)) as HearMeOutMediaSessionV1).filter(session => session.current && this.getRoom(session.tenantId, session.roomId, at));
+  }
+
+  /** The room clock advances even with no browsers or RTC participants. */
+  advanceRoomTimelines(now?: string) {
+    const at = validNow(now);
+    return this.transaction(() => {
+      let changed = 0;
+      for (const session of this.broadcastSessions(at)) {
+        if (session.playback.status !== "playing") continue;
+        let elapsed = playbackPosition(session, at), advanced = false;
+        while (session.current && session.current.item.durationSeconds && session.current.item.type !== "live" && elapsed >= session.current.item.durationSeconds) {
+          elapsed -= session.current.item.durationSeconds;
+          session.current = session.queue.shift() ?? null; advanced = true;
+          if (session.current && session.lane === "music") this.recordMusicStart(session, new Date(Date.parse(at) - elapsed * 1000).toISOString());
+        }
+        if (advanced) { session.playback = { ...session.playback, status: session.current ? "playing" : "idle", position: session.current ? elapsed : 0, updatedAt: at }; session.revision++; this.writeSession(session); changed++; }
+      }
+      return changed;
+    });
+  }
+
+  finishBroadcastRequest(tenantId: string, roomId: string, lane: HearMeOutMediaLaneV1, requestId: string, now?: string) {
+    const at = validNow(now);
+    return this.transaction(() => {
+      if (!this.getRoom(tenantId, roomId, at)) return false;
+      const session = this.readSession(tenantId, roomId, lane);
+      if (!session || session.current?.requestId !== requestId || session.playback.status !== "playing") return false;
+      session.current = session.queue.shift() ?? null;
+      session.playback = { ...session.playback, status: session.current ? "playing" : "idle", position: 0, updatedAt: at };
+      session.revision++; this.writeSession(session); if (session.lane === "music") this.recordMusicStart(session, at); return true;
+    });
+  }
+
   radio(tenant:string,roomId:string):HearMeOutRadioV1|undefined{const row=this.db.prepare('SELECT body FROM hmo_room_radio WHERE tenant_id=? AND room_id=?').get(tenant,roomId);return row?JSON.parse(String(row.body)):undefined;}
   configureRadio(principal:HearMeOutPrincipalV1,roomId:string,enabled:boolean,seed:string,now?:string){
     assertPrincipal(principal);const room=this.requireRoom(principal.tenantId,roomId,validNow(now));this.requireMember(principal.tenantId,roomId,principal.userId);if(!this.canManage(principal,room))throw Error('Only the room host or an admin can change auto-radio');
@@ -507,6 +554,25 @@ export class SqliteHearMeOutRoomMediaRuntime {
     this.db.prepare('UPDATE hmo_room_radio SET body=?,lease_owner=NULL,lease_until=NULL,next_attempt_at=? WHERE tenant_id=? AND room_id=?').run(JSON.stringify(state),new Date(Date.parse(now)+(error?30000:5000)).toISOString(),tenant,roomId);
     return added;
   });}
+
+  /** Freeze the user intent separately from expiring provider URLs. A restarted
+   * resolver can replay the committed request without resolving/enqueuing twice. */
+  async enqueueResolved(principal: HearMeOutPrincipalV1, input: { roomId: string; lane: HearMeOutMediaLaneV1; intent: string; operationId: string; resolve: () => Promise<HearMeOutMediaItemV1> }): Promise<HearMeOutMediaSessionV1> {
+    assertPrincipal(principal);
+    const signature = JSON.stringify([principal.userId, input.roomId, input.lane, input.intent]), receiptId = `resolved:${input.operationId}`;
+    const replay = () => {
+      this.requireRoom(principal.tenantId, input.roomId, validNow()); this.requireMember(principal.tenantId, input.roomId, principal.userId);
+      return this.replay<HearMeOutMediaSessionV1>(principal.tenantId, receiptId, "resolved-enqueue", signature);
+    };
+    const prior = replay(); if (prior) return prior;
+    const item = await input.resolve();
+    return this.transaction(() => {
+      const completed = replay(); if (completed) return completed;
+      const session = this.enqueueInTransaction(principal, { roomId: input.roomId, lane: input.lane, item, operationId: input.operationId });
+      this.remember(principal.tenantId, receiptId, "resolved-enqueue", session, signature, input.roomId);
+      return session;
+    });
+  }
 
   enqueue(principal: HearMeOutPrincipalV1, input: { roomId: string; lane: HearMeOutMediaLaneV1; item: HearMeOutMediaItemV1; operationId: string; now?: string }): HearMeOutMediaSessionV1 {
     return this.transaction(() => this.enqueueInTransaction(principal,input));
@@ -553,6 +619,7 @@ export class SqliteHearMeOutRoomMediaRuntime {
     const at = validNow(input.now);
     const room = this.requireRoom(principal.tenantId, input.roomId, at);
     this.requireMember(principal.tenantId, room.roomId, principal.userId);
+    if (["volume", "mute", "unmute"].includes(input.action)) throw new Error("Volume and silence are local to each viewer. Use the player volume control.");
     const signature=JSON.stringify([principal.userId,input.roomId,input.lane,input.action,input.position,input.targetIndex,input.expectedRequestId]);
     const replay=this.replay<HearMeOutMediaSessionV1>(principal.tenantId,input.operationId,"control",signature);
     if(replay)return replay;
@@ -566,11 +633,6 @@ export class SqliteHearMeOutRoomMediaRuntime {
       session.playback = { ...session.playback, status: input.action === "play" ? "playing" : "paused", position: Math.max(0, input.position ?? effectivePosition), updatedAt: at };
     } else if (input.action === "seek") {
       session.playback = { ...session.playback, position: finiteNonNegative(input.position, "position"), updatedAt: at };
-    } else if (input.action === "mute" || input.action === "unmute") {
-      session.playback = { ...session.playback, position: effectivePosition, muted: input.action === "mute", updatedAt: at };
-    } else if (input.action === "volume") {
-      const volume = Math.max(0, Math.min(100, Math.round(finiteNonNegative(input.position, "volume"))));
-      session.playback = { ...session.playback, position: effectivePosition, volume, muted: volume === 0, updatedAt: at };
     } else if (input.action === "next") {
       if (!input.expectedRequestId || session.current?.requestId === input.expectedRequestId) {
         session.current = session.queue.shift() ?? null;
@@ -618,10 +680,15 @@ export class SqliteHearMeOutRoomMediaRuntime {
     return { favorites, recent: history, mostPlayed, ...(rows.length > 100 ? { nextOffset: offset + 100 } : {}) };
   }
 
-  queueFavorite(principal: HearMeOutPrincipalV1, roomId: string, itemId: string, operationId: string, now?: string) {
+  favorite(principal: HearMeOutPrincipalV1, itemId: string): HearMeOutMediaItemV1 {
+    assertPrincipal(principal);
     const row = this.db.prepare('SELECT body FROM hmo_music_favorites WHERE tenant_id=? AND user_id=? AND item_id=?').get(principal.tenantId, principal.userId, cleanId(itemId, 'itemId')) as { body: string } | undefined;
     if (!row) throw new Error('Saved track not found');
-    return this.enqueue(principal, { roomId, lane: 'music', item: JSON.parse(row.body), operationId, ...(now ? { now } : {}) });
+    return JSON.parse(row.body) as HearMeOutMediaItemV1;
+  }
+
+  queueFavorite(principal: HearMeOutPrincipalV1, roomId: string, itemId: string, operationId: string, now?: string) {
+    return this.enqueue(principal, { roomId, lane: 'music', item: this.favorite(principal, itemId), operationId, ...(now ? { now } : {}) });
   }
 
   private recordMusicStart(session: HearMeOutMediaSessionV1, at: string) {

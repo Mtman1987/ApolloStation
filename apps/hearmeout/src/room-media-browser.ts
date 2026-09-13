@@ -1,7 +1,9 @@
+import { HearMeOutPlaybackSource } from './playback-source.js';
 import type { HearMeOutMediaSessionV1 } from './room-media-core.js';
 
+type RoomMediaSession = HearMeOutMediaSessionV1 & {broadcast?:{playbackUrl:string;configured:boolean}};
 type Lane = 'music' | 'movie';
-type RoomView = { room: { roomId: string }; member?: boolean; locked?: boolean; move?: { targetRoomId: string }; viewer: { userId: string; canManage: boolean }; music: HearMeOutMediaSessionV1; movie: HearMeOutMediaSessionV1 };
+type RoomView = { room: { roomId: string }; member?: boolean; locked?: boolean; move?: { targetRoomId: string }; viewer: { userId: string; canManage: boolean }; music: RoomMediaSession; movie: RoomMediaSession };
 
 export function hearMeOutPlaybackPosition(session: HearMeOutMediaSessionV1, now = Date.now()) {
   const elapsed = session.playback.status === 'playing' ? Math.max(0, now - Date.parse(session.playback.updatedAt)) / 1000 : 0;
@@ -35,6 +37,7 @@ export class HearMeOutRoomMediaBrowser {
     if (!this.timer) this.timer = setInterval(() => void this.refresh(), 1500);
   }
   mount(host: HTMLElement, room: RoomView, lane: Lane) { this.bindRoom(room); const player = this.players.get(lane); if (player) host.append(player.root); }
+  joinLive() { for (const player of this.players.values()) player.joinLive(); }
   park() { for (const player of this.players.values()) this.parking.append(player.root); }
   setVolume(value: number) { this.volume = Math.max(0, Math.min(1, value)); for (const player of this.players.values()) player.volume(this.volume); }
   async setOutput(value: string) { this.output = value; await Promise.all([...this.players.values()].map(player => player.output(value))); }
@@ -61,7 +64,7 @@ export class HearMeOutRoomMediaBrowser {
     });
     const value = await response.json(); if (!response.ok) throw Error(value.message || value.error || 'Playback control failed');
     if (generation !== this.generation) return;
-    room[lane] = value; this.players.get(lane)?.apply(value, room.viewer); await this.refresh();
+    room[lane] = {...value,...(room[lane].broadcast?{broadcast:room[lane].broadcast}:{})}; this.players.get(lane)?.apply(room[lane], room.viewer); await this.refresh();
   }
   close() { this.generation++; this.refreshing = false; if (this.timer) clearInterval(this.timer); this.timer = undefined; for (const player of this.players.values()) player.close(); this.players.clear(); this.room = undefined; }
 }
@@ -69,54 +72,64 @@ export class HearMeOutRoomMediaBrowser {
 class RoomPlayer {
   readonly root = document.createElement('section');
   private media: HTMLMediaElement;
+  private playbackSource: HearMeOutPlaybackSource;
+  private audioLanguage = document.createElement('select');
   private title = document.createElement('strong');
   private status = document.createElement('p');
   private controls = document.createElement('div');
   private seek = document.createElement('input');
-  private sharedVolume = document.createElement('input');
+  private localVolume = document.createElement('input');
   private queue = document.createElement('div');
-  private session?: HearMeOutMediaSessionV1;
+  private session?: RoomMediaSession;
   private viewer?: RoomView['viewer'];
   private requestId = '';
   private endedId = '';
   private master = 1;
+  private level: number;
+  private lastAudible = 85;
+  private silence: HTMLButtonElement;
+  private readonly volumeKey: string;
   private source = '';
   private resumeBlocked = false;
   private outputDevice: string | undefined;
 
   constructor(lane: Lane, private send: (action: string, args?: Record<string, unknown>) => Promise<void>) {
+    this.volumeKey = 'hmo-media-volume:' + lane;
+    const saved = Number(localStorage.getItem(this.volumeKey) ?? 85); this.level = Number.isFinite(saved) ? Math.max(0, Math.min(100, saved)) : 85;
+    if (this.level > 0) this.lastAudible = this.level;
     this.root.className = 'hmo-native-player'; this.root.dataset.hmoPlayer = lane;
     this.media = document.createElement(lane === 'music' ? 'audio' : 'video');
+    this.playbackSource = new HearMeOutPlaybackSource(this.media, error => this.error(error), this.audioLanguage);
     this.media.preload = 'metadata'; this.media.setAttribute('playsinline', '');
     this.media.style.cssText = 'display:block;width:100%;max-height:48vh;background:#000';
     this.status.setAttribute('role', 'status'); this.controls.className = 'hmo-toolbar';
     const button = (label: string, action: () => void | Promise<void>) => { const node = document.createElement('button'); node.type = 'button'; node.className = 'hmo-button'; node.textContent = label; node.addEventListener('click', () => void Promise.resolve().then(action).catch(error => this.error(error))); return node; };
     this.controls.append(button('Play', () => this.send('play')), button('Pause', () => this.send('pause')),
-      button('Next', () => this.advance()), button('Clear', () => this.send('clear', { expectedRequestId: this.requestId })),
-      button('Mute session', () => this.send(this.session?.playback.muted ? 'unmute' : 'mute')));
+      button('Next', () => this.advance()), button('Clear', () => this.send('clear', { expectedRequestId: this.requestId })));
     this.seek.type = 'range'; this.seek.min = '0'; this.seek.step = '.1'; this.seek.setAttribute('aria-label', lane + ' position');
     this.seek.addEventListener('change', () => void this.send('seek', { position: Number(this.seek.value) }).catch(error => this.error(error)));
-    this.sharedVolume.type = 'range'; this.sharedVolume.min = '0'; this.sharedVolume.max = '100'; this.sharedVolume.setAttribute('aria-label', lane + ' shared volume');
-    this.sharedVolume.addEventListener('change', () => void this.send('volume', { position: Number(this.sharedVolume.value) }).catch(error => this.error(error)));
-    this.controls.append(this.seek, this.sharedVolume);
-    this.root.append(this.title, this.media, this.status, button('Enable sound / retry', async () => { this.resumeBlocked = false; if (this.media.error) { this.media.load(); return; } await this.sync(); }), this.controls, this.queue);
+    this.localVolume.type = 'range'; this.localVolume.min = '0'; this.localVolume.max = '100'; this.localVolume.setAttribute('aria-label', lane + ' volume on this device');
+    this.localVolume.addEventListener('input', () => this.setLocalVolume(Number(this.localVolume.value)));
+    this.silence = button('Mute locally', () => this.setLocalVolume(this.level > 0 ? 0 : this.lastAudible));
+    const localControls = document.createElement('div'); localControls.className = 'hmo-toolbar'; localControls.append(this.localVolume, this.silence, this.audioLanguage);
+    this.controls.append(this.seek);
+    this.root.append(this.title, this.media, this.status, button('Enable sound / retry', async () => { this.resumeBlocked = false; if (!this.level) this.setLocalVolume(this.lastAudible); if (this.media.error || this.playbackSource.failed) { this.playbackSource.retry(); return; } await this.sync(); }), localControls, this.controls, this.queue);
+    this.volume(this.master);
     this.media.addEventListener('loadedmetadata', () => void this.sync().catch(error => this.error(error)));
     this.media.addEventListener('canplay', () => void this.sync().catch(error => this.error(error)));
     this.media.addEventListener('error', () => this.error(Error('This media could not play. Retry or choose another source; the queue is preserved.')));
-    this.media.addEventListener('ended', () => { if (this.session?.playback.status === 'playing' && this.canAdvance() && this.endedId !== this.requestId) { this.endedId = this.requestId; void this.advance().catch(error => { this.endedId = ''; this.error(error); }); } });
-    this.media.addEventListener('timeupdate', () => { if (document.activeElement !== this.seek) this.seek.value = String(this.media.currentTime); });
+    this.media.addEventListener('ended', () => { if (!this.session?.broadcast && this.session?.playback.status === 'playing' && this.canAdvance() && this.endedId !== this.requestId) { this.endedId = this.requestId; void this.advance().catch(error => { this.endedId = ''; this.error(error); }); } });
+    this.media.addEventListener('timeupdate', () => { if (document.activeElement !== this.seek) this.seek.value = String(this.session?.broadcast ? hearMeOutPlaybackPosition(this.session) : this.media.currentTime); });
   }
-  apply(session: HearMeOutMediaSessionV1, viewer: RoomView['viewer']) {
+  apply(session: RoomMediaSession, viewer: RoomView['viewer']) {
     this.session = session; this.viewer = viewer;
     this.controls.hidden = !viewer.canManage;
     this.title.textContent = session.current?.item.title || 'Nothing playing';
-    this.sharedVolume.value = String(session.playback.volume);
-    const id = session.current?.requestId || '', url = session.current?.item.playbackUrl || '';
+    const id = session.current?.requestId || '', url = session.current ? session.broadcast?.playbackUrl || session.current.item.playbackUrl : '';
+    if (session.broadcast) this.requestId = id;
     if (id !== this.requestId || url !== this.source) {
       this.media.pause(); this.requestId = id; this.source = url; this.endedId = ''; this.resumeBlocked = false;
-      if (url) { const parsed = new URL(url, location.href); this.media.src = /^\/v1\/media\/public\/[A-Za-z0-9_-]{43}$/.test(parsed.pathname) ? parsed.pathname : parsed.href; }
-      else this.media.removeAttribute('src');
-      this.media.load();
+      this.playbackSource.load(url, Boolean(session.broadcast) || session.current?.item.metadata?.mediaType === 'hls', Boolean(session.broadcast));
     }
     this.queue.replaceChildren(...session.queue.map((request, index) => {
       const row = document.createElement('div'); row.className = 'hmo-queue-row';
@@ -131,27 +144,31 @@ class RoomPlayer {
   private async sync() {
     const session = this.session; if (!session?.current) { this.media.pause(); this.status.textContent = 'Queue is empty'; return; }
     this.volume(this.master);
+    if (session.broadcast && !session.broadcast.configured) { this.status.textContent = 'The room broadcast worker is not connected yet.'; return; }
     if (this.media.readyState < 1) return;
-    const duration = Number.isFinite(this.media.duration) ? this.media.duration : session.current.item.durationSeconds;
+    const duration = session.broadcast ? session.current.item.durationSeconds : Number.isFinite(this.media.duration) ? this.media.duration : session.current.item.durationSeconds;
     const target = hearMeOutPlaybackPosition(session);
     this.seek.max = String(duration ?? Math.max(target, 1)); this.seek.disabled = !duration;
-    if (!this.media.seeking && Math.abs(this.media.currentTime - target) > 1.5) {
+    if (!session.broadcast && !this.media.seeking && Math.abs(this.media.currentTime - target) > 1.5) {
       try { this.media.currentTime = Math.min(target, duration ?? target); } catch { /* A live seek range may not be available yet. */ }
     }
-    if (session.playback.status === 'playing') {
+    if (session.broadcast || session.playback.status === 'playing') {
       if (!this.resumeBlocked && this.media.paused) {
         try { await this.media.play(); } catch (error) { if ((error as Error).name === 'NotAllowedError') { this.resumeBlocked = true; this.status.textContent = 'Tap Enable sound to join playback.'; return; } if ((error as Error).name !== 'AbortError') { this.error(error); return; } }
       }
     } else this.media.pause();
-    if (!this.resumeBlocked && !this.media.error) this.status.textContent = session.playback.status + ' · shared volume ' + session.playback.volume + '%';
+    if (!this.resumeBlocked && !this.media.error && !this.playbackSource.failed) this.status.textContent = session.playback.status + ' · your volume ' + this.level + '%';
   }
-  volume(value: number) { this.master = value; this.media.volume = Math.max(0, Math.min(1, (this.session?.playback.volume ?? 85) / 100 * value)); this.media.muted = this.session?.playback.muted ?? false; }
+  private setLocalVolume(value: number) { this.level = Math.max(0, Math.min(100, value)); if (this.level > 0) this.lastAudible = this.level; localStorage.setItem(this.volumeKey, String(this.level)); this.volume(this.master); this.resumeBlocked=false; void this.sync().catch(error=>this.error(error)); }
+  volume(value: number) { this.master = value; this.media.volume = Math.max(0, Math.min(1, this.level / 100 * value)); this.localVolume.value = String(this.level); this.silence.textContent = this.level ? 'Mute locally' : 'Restore sound'; }
   async output(deviceId: string) { if (deviceId === this.outputDevice) return; try { if ('setSinkId' in this.media) await this.media.setSinkId(deviceId); this.outputDevice = deviceId; } catch { this.status.textContent = 'Selected audio output is unavailable. Choose an output in Audio settings.'; } }
+  joinLive() { this.playbackSource.joinLive(); }
   error(error: unknown) { this.status.textContent = error instanceof Error ? error.message : String(error); }
-  close() { this.media.pause(); this.media.removeAttribute('src'); this.media.load(); this.root.remove(); }
+  close() { this.playbackSource.clear(); this.root.remove(); }
 }
 
 if (typeof window !== 'undefined') {
   const media = new HearMeOutRoomMediaBrowser(); Object.assign(window, { HearMeOutMedia: media });
   window.addEventListener('pagehide', () => media.close());
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) media.joinLive(); });
 }

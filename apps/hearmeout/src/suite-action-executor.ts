@@ -1,3 +1,6 @@
+import { HEARMEOUT_ACTIVITY_ROOM_ID, HEARMEOUT_ACTIVITY_ROOM_NAME } from "./activity-contract.js";
+import { ensureHearMeOutDiscordActivityRoom, joinHearMeOutDiscordActivityRoom } from "./activity-room.js";
+import type { HearMeOutActivityBinding } from "./activity-web.js";
 import { createHash, randomUUID } from "node:crypto";
 import { spmtSuiteActionDescriptor, type SpmtSuiteActionJobInputV1 } from "@spmt/contracts";
 import type { SpmtClient } from "@spmt/sdk";
@@ -58,15 +61,24 @@ export function hearMeOutYoutubeId(value: string): string | undefined {
 }
 
 export class HearMeOutWebSuiteActionExecutor implements HearMeOutSuiteActionExecutorV1 {
-  constructor(private readonly rooms: SqliteHearMeOutRoomMediaRuntime, private readonly media: HearMeOutSuiteMediaResolverV1, private readonly options: { personaConversation?: HearMeOutPersonaConversationCoordinator; personaDirectory?: (tenantId: string) => Promise<HearMeOutPublicPersonaV1[]>; personaStore?: HearMeOutSuitePersonaStoreV1; voiceBridge?: HearMeOutVoiceBridgeController } = {}) {}
+  constructor(private readonly rooms: SqliteHearMeOutRoomMediaRuntime, private readonly media: HearMeOutSuiteMediaResolverV1, private readonly options: { activity?: HearMeOutActivityBinding; personaConversation?: HearMeOutPersonaConversationCoordinator; personaDirectory?: (tenantId: string) => Promise<HearMeOutPublicPersonaV1[]>; personaStore?: HearMeOutSuitePersonaStoreV1; voiceBridge?: HearMeOutVoiceBridgeController } = {}) {}
   async execute(input: SpmtSuiteActionJobInputV1 & { action: HearMeOutBotActionIdV1 }, context: { tenantId: string; idempotencyKey: string }) {
     const principal = this.principal(input, context.tenantId);
     if (input.action === "hmo.rooms.read") { const rooms = this.rooms.listRooms(principal).map((room) => ({ roomId: room.roomId, name: room.name, privacy: room.privacy, owned: room.ownerUserId === principal.userId })); return { text: rooms.length ? `HearMeOut rooms: ${rooms.map((room) => room.name).join(", ")}.` : "There are no active HearMeOut rooms.", rooms }; }
-    const roomId = this.roomId(principal, input.args.roomId || input.source.roomId);
+    let requestedRoom = input.args.roomId || input.source.roomId;
+    const activity = this.options.activity;
+    const discordActivity = activity?.tenantId === principal.tenantId && input.source.provider === "discord" && Boolean(input.source.guildId && activity.guildIds?.includes(input.source.guildId)) && (!requestedRoom || requestedRoom === HEARMEOUT_ACTIVITY_ROOM_ID);
+    if (discordActivity) {
+      requestedRoom = HEARMEOUT_ACTIVITY_ROOM_ID;
+      if (input.source.simulation === true && spmtSuiteActionDescriptor(input.action).risk !== "read") return this.simulationPreview(input, requestedRoom);
+      ensureHearMeOutDiscordActivityRoom(this.rooms, { tenantId: principal.tenantId, userId: HEARMEOUT_ACTIVITY_ROOM_ID, displayName: HEARMEOUT_ACTIVITY_ROOM_NAME, roles: ["admin"] });
+      if (!this.rooms.listMembers(principal.tenantId, requestedRoom).some(member => member.userId === principal.userId)) joinHearMeOutDiscordActivityRoom(this.rooms, principal, `discord-suite-join:${context.idempotencyKey}`);
+    }
+    const roomId = this.roomId(principal, requestedRoom);
     if (!this.rooms.listMembers(principal.tenantId, roomId).some(member => member.userId === principal.userId)) throw new Error("Join this HearMeOut room before reading or controlling its media");
     if (input.action === "hmo.media.state.read") { const music = this.rooms.getSession(principal.tenantId, roomId, "music"), movie = this.rooms.getSession(principal.tenantId, roomId, "movie"), playing = [music.current?.item.title, movie.current?.item.title].filter(Boolean); return { text: playing.length ? `Now playing in HearMeOut: ${playing.join(" and ")}.` : "Nothing is playing in that HearMeOut room.", roomId, music, movie }; }
     if (input.source.simulation === true && spmtSuiteActionDescriptor(input.action).risk !== "read") return this.simulationPreview(input, roomId);
-    if (input.action === "hmo.media.request") { const query = required(input.args.query, "query"), lane = input.args.lane === "movie" ? "movie" : "music", item = await this.media.resolve({ tenantId: principal.tenantId, query, lane, operationId: context.idempotencyKey }), session = this.rooms.enqueue(principal, { roomId, lane, item, operationId: context.idempotencyKey }); return { text: `${item.title} was ${session.current?.item.itemId === item.itemId ? "started" : "added to the queue"}.`, roomId, lane, session }; }
+    if (input.action === "hmo.media.request") { const query = required(input.args.query, "query"), lane = input.args.lane === "movie" ? "movie" : "music", session = await this.rooms.enqueueResolved(principal, { roomId, lane, intent: query, operationId: context.idempotencyKey, resolve: () => this.media.resolve({ tenantId: principal.tenantId, query, lane, operationId: context.idempotencyKey }) }), request = [session.current,...session.queue].find(item => item?.requestId === "hmo-request:" + context.idempotencyKey); return { text: `${request?.item.title ?? query} was ${session.current?.requestId === request?.requestId ? "started" : "added to the queue"}.`, roomId, lane, session }; }
     if (input.action === "hmo.media.control") { const control = input.args.control === "stop" ? "clear" : input.args.control, allowed = ["play", "pause", "next", "clear", "mute", "unmute", "volume"] as const; if (!allowed.includes(control as typeof allowed[number])) throw new Error("Unsupported HearMeOut media control"); const lane = input.args.lane === "movie" ? "movie" : "music", current = this.rooms.getSession(principal.tenantId, roomId, lane).current, session = this.rooms.control(principal, { roomId, lane, action: control as typeof allowed[number], operationId: context.idempotencyKey, ...(control === "next" && current ? { expectedRequestId: current.requestId } : {}), ...(control === "volume" ? { position: percent(input.args.value) } : {}) }); return { text: `${lane === "movie" ? "Watch" : "Music"} playback is now ${session.playback.status}.`, roomId, lane, session }; }
     if (input.action === "hmo.bot.control") return this.persona(principal, roomId, input.args);
     const voice = this.options.voiceBridge; if (!voice) throw new Error("HearMeOut voice-bridge adapter is unavailable");

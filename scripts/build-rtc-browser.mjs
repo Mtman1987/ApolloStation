@@ -6,3 +6,6 @@ await build({ absWorkingDir: root, entryPoints: ['apps/hearmeout/src/rtc-browser
 
 await build({ absWorkingDir: root, entryPoints: ['apps/hearmeout/src/room-media-browser.ts'], outfile: 'apps/hearmeout/dist/media-client.js',
   bundle: true, platform: 'browser', format: 'iife', target: ['chrome100', 'firefox115', 'safari16'], minify: true });
+
+await build({ absWorkingDir: root, entryPoints: ['apps/hearmeout/src/playback-source.ts'], outfile: 'apps/hearmeout/dist/playback-source-client.js',
+  bundle: true, platform: 'browser', format: 'iife', target: ['chrome100', 'firefox115', 'safari16'], minify: true });

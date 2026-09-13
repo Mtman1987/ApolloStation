@@ -58,6 +58,10 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - name: Verify real audio and fallback recovery
         run: npm run test:rtc-browser
+      - name: Install HLS fixture dependency
+        run: command -v ffmpeg || (sudo apt-get update && sudo apt-get install -y ffmpeg)
+      - name: Verify HLS and audio languages in room and Discord Activity
+        run: node scripts/test-hmo-hls-browser.mjs
       - name: Verify shared room media playback
         run: node scripts/test-hmo-media-browser.mjs
       - name: Verify saved music remains accessible without rooms

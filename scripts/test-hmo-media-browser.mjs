@@ -40,7 +40,6 @@ const server = createServer(async (request, response) => {
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const origin = `http://127.0.0.1:${server.address().port}`;
 for (const id of ['first', 'second']) rooms.enqueue(owner, { roomId: 'room', lane: 'music', operationId: id, item: { itemId: id, title: id, type: 'music', source: 'browser-test', playbackUrl: 'https://media.example/v1/media/public/' + 'a'.repeat(43), durationSeconds: 60 } });
-rooms.control(owner, { roomId: 'room', lane: 'music', action: 'unmute', operationId: 'enable-shared-audio' });
 let browser;
 try {
   browser = await chromium.launch({ executablePath: process.env.HMO_TEST_BROWSER_PATH || chromium.executablePath(), headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage', '--autoplay-policy=no-user-gesture-required'] });
@@ -55,14 +54,24 @@ try {
   const control = (action, args = {}) => rooms.control(owner, { roomId: 'room', lane: 'music', action, ...args, operationId: 'server-' + operation++ });
   control('pause');
   for (const page of pages) await page.waitForFunction(() => document.querySelector('audio').paused);
-  control('seek', { position: 12 }); control('volume', { position: 40 });
-  for (const page of pages) await page.waitForFunction(() => { const audio = document.querySelector('audio'); return Math.abs(audio.currentTime - 12) < .5 && Math.abs(audio.volume - .4) < .01; });
+  control('seek', { position: 12 });
+  for (const page of pages) await page.waitForFunction(() => { const audio = document.querySelector('audio'); return Math.abs(audio.currentTime - 12) < .5; });
   await pages[0].evaluate(() => { window.audioBefore = document.querySelector('audio'); HearMeOutMedia.park(); HearMeOutMedia.mount(document.querySelector('#other'), initial, 'music'); });
   assert.equal(await pages[0].evaluate(() => document.querySelector('audio') === window.audioBefore && document.querySelector('audio').currentTime >= 12), true);
   await pages[0].getByRole('button', { name: 'Play', exact: true }).click();
   for (const page of pages) await page.waitForFunction(() => !document.querySelector('audio').paused && document.querySelector('audio').currentTime > 12);
   assert.equal(await pages[1].getByRole('button', { name: 'Play', exact: true }).isVisible(), false);
-  control('mute'); for (const page of pages) await page.waitForFunction(() => document.querySelector('audio').muted);
+  const revision = rooms.getSession(owner.tenantId, 'room', 'music').revision;
+  await pages[1].getByRole('slider', { name: 'music volume on this device' }).evaluate(el => { el.value = '40'; el.dispatchEvent(new Event('input', { bubbles: true })); });
+  assert.equal(await pages[1].evaluate(() => document.querySelector('audio').volume), .4);
+  assert.equal(await pages[0].evaluate(() => document.querySelector('audio').volume), .85);
+  const beforeSilence = await pages[1].evaluate(() => document.querySelector('audio').currentTime);
+  await pages[1].getByRole('button', { name: 'Mute locally', exact: true }).click();
+  await pages[1].waitForFunction(t => { const audio = document.querySelector('audio'); return audio.volume === 0 && !audio.muted && !audio.paused && audio.currentTime > t + .2; }, beforeSilence);
+  assert.equal(await pages[0].evaluate(() => document.querySelector('audio').volume), .85);
+  assert.equal(rooms.getSession(owner.tenantId, 'room', 'music').revision, revision);
+  await pages[1].getByRole('button', { name: 'Restore sound', exact: true }).click();
+  assert.equal(await pages[1].evaluate(() => document.querySelector('audio').volume), .4);
   control('next', { expectedRequestId: 'hmo-request:first' });
   control('next', { expectedRequestId: 'hmo-request:first' });
   for (const page of pages) await page.waitForFunction(() => document.querySelector('[data-hmo-player="music"] strong').textContent === 'second' && document.querySelector('audio').currentTime < 6);
@@ -70,5 +79,5 @@ try {
   await pages[1].waitForFunction(() => !document.querySelector('audio'));
   assert.equal(await pages[0].locator('audio').count(), 1);
   assert.deepEqual(errors, []);
-  console.log('PASS: two browsers play actual audio; canonical pause, seek, volume, mute and next synchronize; stale drawers preserve playback; duplicate end events do not skip tracks; revoked membership stops playback.');
+  console.log('PASS: two browsers play actual audio; room pause, seek and next synchronize; viewer volume is local and silence sets volume to zero without pausing; stale drawers preserve playback; duplicate end events do not skip tracks; revoked membership stops playback.');
 } finally { await browser?.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); rooms.close(); }
