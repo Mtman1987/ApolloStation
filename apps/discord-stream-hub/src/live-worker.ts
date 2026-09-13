@@ -1,3 +1,4 @@
+import { DshMemberDirectoryStore, DshMemberDirectoryWorker } from "./member-directory.js";
 import {DshOnboardingPanel} from "./onboarding-panel.js";
 import { DshMemberActivityStore, DshMemberActivityWorker } from "./member-activity.js";
 import { DshPartnerSchedules } from "./partner-schedules.js";
@@ -117,8 +118,9 @@ export function createDshWorkerTokenProvider(options: { spmtOrigin: string; cred
 
 export class ConfigDirectory implements DshLiveMemberDirectoryV1, DshDiscordBrandingSourceV1 {
   private readonly tenants = new Map<string, DshLiveRuntimeTenantV1>();
-  constructor(private readonly config: DshLiveRuntimeConfigV1, private readonly settings?: DshTenantSettingsStore) { config.tenants.forEach((tenant) => this.tenants.set(tenant.tenantId, tenant)); }
-  async listLiveTrackedMembers(tenantId: string) { const saved = this.settings?.read(tenantId); return structuredClone(this.require(tenantId).members).map(member => ({ ...member, shoutoutChannelId: saved?.groupChannels[dshShoutoutGroupSlug(member.group) || ''] || member.shoutoutChannelId })); }
+  constructor(private readonly config: DshLiveRuntimeConfigV1, private readonly settings?: DshTenantSettingsStore, private readonly memberDirectory?: DshMemberDirectoryStore) { config.tenants.forEach((tenant) => this.tenants.set(tenant.tenantId, tenant)); }
+  async listLiveTrackedMembers(tenantId: string) { this.require(tenantId); const saved = this.settings?.read(tenantId); return (this.memberDirectory?.trackedMembers(tenantId) ?? structuredClone(this.require(tenantId).members)).map(member => ({ ...member, shoutoutChannelId: saved?.groupChannels[dshShoutoutGroupSlug(member.group) || ''] || member.shoutoutChannelId })); }
+  members(tenantId: string, guild?: string) { this.require(tenantId); return this.memberDirectory?.members(tenantId, guild) ?? structuredClone(this.require(tenantId).members); }
   getBranding(tenantId: string) { const saved = this.settings?.read(tenantId), base = structuredClone(this.require(tenantId).branding); return { ...base, ...(saved?.spotlightChannelId ? { spotlightChannelId: saved.spotlightChannelId } : {}), ...(saved?.embedTemplates ? { embedTemplates: saved.embedTemplates } : {}), ...(saved ? { spotlightEnabled: saved.spotlightEnabled, groupChannels: saved.groupChannels } : {}) }; }
   getPollSettings(tenantId: string) { const saved = this.settings?.read(tenantId); return { intervalSeconds: saved?.revision ? saved.pollIntervalSeconds : this.config.pollIntervalSeconds, revision: saved?.revision ?? 0, spotlightEnabled: saved?.spotlightEnabled ?? true }; }
   providerUserId(tenantId: string, provider: "twitch" | "discord") { const tenant = this.require(tenantId); return provider === "twitch" ? tenant.twitchProviderUserId : tenant.discordProviderUserId; }
@@ -176,6 +178,8 @@ export class SupervisedDshLiveService {
   private readonly suiteActions: DshSuiteActionWorker;
   private readonly settings: DshTenantSettingsStore;
   private readonly directory: ConfigDirectory;
+  private readonly memberDirectory: DshMemberDirectoryStore;
+  private readonly memberSync: DshMemberDirectoryWorker;
   private readonly scheduledPeriods = new Map<string, string>();
   private activeCycle: Promise<{ schemaVersion: 1; skipped: false; results: DshLiveWorkerTenantResultV1[] }> | undefined;
   private closing: Promise<void> | undefined;
@@ -186,7 +190,8 @@ export class SupervisedDshLiveService {
     if(options.operationMode==="active"&&options.publicOrigin)this.nebulaMedia=new DshNebulaMediaWorker(this.client,{databasePath:options.databasePath,publicOrigin:options.publicOrigin,workerId:`${options.workerId}-nebula-media`,tenantIds:options.config.tenants.map(tenant=>tenant.tenantId),sourceOrigins:(process.env.DSH_MEDIA_SOURCE_ORIGINS||"").split(",").filter(Boolean)},fetchImpl);
     this.activityStore=new DshMemberActivityStore(options.databasePath);this.activity=new DshMemberActivityWorker(this.activityStore,this.client,options.config);
     this.settings = new DshTenantSettingsStore(options.databasePath, now);
-    const directory = this.directory = new ConfigDirectory(options.config, this.settings);
+    this.memberDirectory = new DshMemberDirectoryStore(options.databasePath, options.config, this.settings);
+    const directory = this.directory = new ConfigDirectory(options.config, this.settings, this.memberDirectory);
     this.monitor = new SqliteDshLiveMonitor(options.databasePath, options.config.pollIntervalSeconds * 1_000);
     this.messages = new SqliteDshDiscordMessageStore(options.databasePath);
     const liveDiscord = new DshDiscordApi(new SpmtDshDiscordGrantSource(this.client, directory), fetchImpl);
@@ -196,15 +201,16 @@ export class SupervisedDshLiveService {
     const publisher = new DshDiscordLivePublisher(discord, this.messages, directory, undefined, now,this.monitor.guests);
     this.runtime = new DshLiveRuntime(this.monitor, publisher);
     const twitchGrants=new SpmtDshTwitchGrantSource(this.client,directory),twitch=new TwitchHelixLiveClient(fetchImpl);
+    this.memberSync = new DshMemberDirectoryWorker(this.memberDirectory, this.client, options.config, liveDiscord, twitchGrants, twitch, now);
     this.poller = new DshTwitchLivePoller(directory,twitchGrants,twitch,this.runtime);
     this.calendar = new SqliteDshCalendarStore(options.databasePath);
     this.calendarSync = new DshCalendarSync(options.databasePath, this.calendar, discord, now, options.publicOrigin);
     this.calendarDelivery=new DshCalendarDelivery(this.calendar,this.messages,discord,now,this.client,options.operationMode==="read-only");
     if(options.publicOrigin)this.onboarding=new DshOnboardingPanel(this.calendar,this.messages,discord,this.client,options.config,options.publicOrigin,now);
-    this.partnerSchedules=new DshPartnerSchedules(this.calendar,this.messages,this.client,options.config,discord,fetchImpl,now);
+    this.partnerSchedules=new DshPartnerSchedules(this.calendar,this.messages,this.client,options.config,discord,fetchImpl,now,(tenant,guild)=>directory.members(tenant,guild));
     this.applications = new SqliteDshApplicationStore(options.databasePath);
     this.applicationDecisions=new DshApplicationDecisionService(this.applications,{discord,publicOrigin:options.publicOrigin,preview:options.operationMode==="read-only",now});
-    const operations = new DshSuiteActionOperations({ cleanup:this.cleanup,cleanupLiveWrites:options.operationMode==="active",guestLookup:async(tenantId,twitchLogin)=>{const grant=await twitchGrants.getGrant(tenantId);if(grant.status!=="ready")throw Error(grant.reason);return twitch.getGuest({...grant,twitchLogin});},config: options.config, monitor: this.monitor, messages: this.messages, calendar: this.calendar, applications: this.applications, discord, simulationDiscord, applicationInteractionsReady: options.applicationInteractionsReady, ...(options.publicOrigin?{publicOrigin:options.publicOrigin}:{}), now });
+    const operations = new DshSuiteActionOperations({ memberSource:(tenant,guild)=>directory.members(tenant,guild), cleanup:this.cleanup,cleanupLiveWrites:options.operationMode==="active",guestLookup:async(tenantId,twitchLogin)=>{const grant=await twitchGrants.getGrant(tenantId);if(grant.status!=="ready")throw Error(grant.reason);return twitch.getGuest({...grant,twitchLogin});},config: options.config, monitor: this.monitor, messages: this.messages, calendar: this.calendar, applications: this.applications, discord, simulationDiscord, applicationInteractionsReady: options.applicationInteractionsReady, ...(options.publicOrigin?{publicOrigin:options.publicOrigin}:{}), now });
     this.suiteActions = new DshSuiteActionWorker(this.client, new DshBotActionAdapter(operations), { workerId: `${options.workerId}-suite-actions`, tenantIds: options.config.tenants.map((tenant) => tenant.tenantId) });
   }
   async ready() { await this.getAccessToken(); return { schemaVersion: 1 as const, workerId: this.options.workerId, operationMode: this.options.operationMode, liveIngressEnabled: this.options.liveIngressEnabled, egressMode: this.options.operationMode === "read-only" ? "shadow" as const : "provider" as const, configuredTenants: this.options.config.tenants.length, pollIntervalSeconds: this.options.config.pollIntervalSeconds }; }
@@ -225,7 +231,7 @@ export class SupervisedDshLiveService {
     }
   }
   async runCalendar(signal:AbortSignal) {while(!signal.aborted&&!this.closed){const cycle=this.syncCalendars();this.calendarCycle=cycle;try{await cycle;}finally{this.calendarCycle=undefined;}await pause(5000,signal);}}
-  private async syncCalendars(){for(const tenant of this.options.config.tenants){await this.activity.runOnce(tenant.tenantId).catch(()=>undefined);for(const guild of tenant.discordGuildIds??[]){const last=this.calendarSync.state(tenant.tenantId,guild).checkedAt;if(!last||Date.parse(this.now())-Date.parse(last)>=30000)await this.calendarSync.sync(tenant.tenantId,guild).catch(()=>undefined);}await this.onboarding?.flush(tenant.tenantId);await this.partnerSchedules.flush(tenant.tenantId);await this.calendarDelivery.flush(tenant.tenantId);await this.applicationDecisions.flush(tenant.tenantId);await this.runtime.flushGuests(tenant.tenantId,this.now());}}
+  private async syncCalendars(){for(const tenant of this.options.config.tenants){await this.memberSync.sync(tenant.tenantId).catch(()=>undefined);await this.activity.runOnce(tenant.tenantId).catch(()=>undefined);for(const guild of tenant.discordGuildIds??[]){const last=this.calendarSync.state(tenant.tenantId,guild).checkedAt;if(!last||Date.parse(this.now())-Date.parse(last)>=30000)await this.calendarSync.sync(tenant.tenantId,guild).catch(()=>undefined);}await this.onboarding?.flush(tenant.tenantId);await this.partnerSchedules.flush(tenant.tenantId);await this.calendarDelivery.flush(tenant.tenantId);await this.applicationDecisions.flush(tenant.tenantId);await this.runtime.flushGuests(tenant.tenantId,this.now());}}
   async runNebulaMedia(signal:AbortSignal){this.nebulaMediaCycle=this.nebulaMedia?.run(AbortSignal.any([signal,this.nebulaMediaAbort.signal]));await this.nebulaMediaCycle;}
   runSuiteActions(signal: AbortSignal) { return this.suiteActions.run(signal); }
   close() {
@@ -238,7 +244,7 @@ export class SupervisedDshLiveService {
       let failed = false;
       try { await this.nebulaMediaCycle; await this.calendarCycle; await activeCycle; } catch (error) { failure = error; failed = true; }
       this.nebulaMedia?.close();
-      this.settings.close();this.cleanup.close();this.activityStore.close();
+      this.memberDirectory.close();this.settings.close();this.cleanup.close();this.activityStore.close();
       try { this.messages.close(); } catch (error) { if (!failed) { failure = error; failed = true; } }
       try { this.calendarSync?.close(); this.calendar.close(); } catch (error) { if (!failed) { failure = error; failed = true; } }
       try { this.applications.close(); } catch (error) { if (!failed) { failure = error; failed = true; } }
@@ -253,11 +259,12 @@ export class SupervisedDshLiveService {
     for (const tenant of this.options.config.tenants) {
       const period = this.period(tenant.tenantId);
       if (scheduled && this.scheduledPeriods.get(tenant.tenantId) === period) continue;
+      const directoryState = await this.memberSync.sync(tenant.tenantId);
       const result = await this.poller.poll(tenant.tenantId, period, observedAt);
       this.scheduledPeriods.set(tenant.tenantId, period);
       if (result.status === "completed") results.push({ tenantId: tenant.tenantId, status: "completed", liveCount: result.poll.liveCount, memberCount: result.poll.memberCount, delivered: result.result.delivery.delivered, failed: result.result.delivery.failed });
       else results.push({ tenantId: tenant.tenantId, status: result.status, reason: safeReason(result.reason) });
-      await this.reportRuntime(tenant.tenantId, result.status === "completed" ? (result.result.delivery.failed ? "degraded" : "ready") : "degraded", result.status === "completed" ? `${result.poll.liveCount}/${result.poll.memberCount} tracked members live; ${result.result.delivery.failed} Discord deliveries pending` : safeReason(result.reason));
+      await this.reportRuntime(tenant.tenantId, result.status === "completed" ? (result.result.delivery.failed || directoryState.error ? "degraded" : "ready") : "degraded", result.status === "completed" ? `${result.poll.liveCount}/${result.poll.memberCount} tracked members live; ${result.result.delivery.failed} Discord deliveries pending${directoryState.error ? "; member refresh pending" : ""}` : safeReason(result.reason));
     }
     return { schemaVersion: 1, skipped: false, results };
   }

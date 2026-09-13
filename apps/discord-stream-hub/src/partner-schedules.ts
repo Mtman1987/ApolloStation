@@ -1,3 +1,4 @@
+import type { DshMemberSource } from "./member-directory.js";
 import { createHash, randomUUID } from "node:crypto";
 import { resolveProviderIdentity } from "@spmt/sdk/provider-identity";
 import type { SpmtClient } from "@spmt/sdk";
@@ -13,9 +14,9 @@ export const dshPartnerCalendarScope=(guild:string,user:string)=>`partner-${dige
 
 /** Public Twitch schedules consume the existing SPMT provider grant and identity owners. */
 export class DshPartnerSchedules {
-  constructor(private readonly calendar:SqliteDshCalendarStore,private readonly messages:SqliteDshDiscordMessageStore,private readonly client:SpmtClient,private readonly config:DshLiveRuntimeConfigV1,private readonly discord:DshDiscordTransportV1,private readonly fetchImpl:typeof fetch=fetch,private readonly now=()=>new Date().toISOString()) {}
-  partners(tenant:string){return this.config.tenants.find(t=>t.tenantId===tenant)?.members.filter(m=>m.group==="Partners").map(m=>({userId:m.canonicalUserId,discordUserId:m.discordUserId,twitchLogin:m.twitchLogin}))??[];}
-  private member(tenant:string,guild:string,user:string){const config=this.config.tenants.find(t=>t.tenantId===tenant);if(!config?.discordGuildIds?.includes(guild))throw Error("Choose a Discord server configured for this tenant");const member=config.members.find(m=>m.canonicalUserId===user&&m.group==="Partners");if(!member)throw Error("Choose a linked partner");return {config,member,scope:dshPartnerCalendarScope(guild,user)};}
+  constructor(private readonly calendar:SqliteDshCalendarStore,private readonly messages:SqliteDshDiscordMessageStore,private readonly client:SpmtClient,private readonly config:DshLiveRuntimeConfigV1,private readonly discord:DshDiscordTransportV1,private readonly fetchImpl:typeof fetch=fetch,private readonly now=()=>new Date().toISOString(),private readonly memberSource?:DshMemberSource) {}
+  partners(tenant:string,guild?:string){return (this.memberSource?.(tenant,guild)??this.config.tenants.find(t=>t.tenantId===tenant)?.members)?.filter(m=>m.group==="Partners").map(m=>({userId:m.canonicalUserId,discordUserId:m.discordUserId,twitchLogin:m.twitchLogin}))??[];}
+  private member(tenant:string,guild:string,user:string){const config=this.config.tenants.find(t=>t.tenantId===tenant);if(!config?.discordGuildIds?.includes(guild))throw Error("Choose a Discord server configured for this tenant");const member=(this.memberSource?.(tenant,guild)??config.members).find(m=>m.canonicalUserId===user&&m.group==="Partners");if(!member)throw Error("Choose a linked partner");return {config,member,scope:dshPartnerCalendarScope(guild,user)};}
   view(tenant:string,guild:string,user:string,month:string){const {member,scope}=this.member(tenant,guild,user);validMonth(month);return {userId:user,twitchLogin:member.twitchLogin,guildId:guild,month,...this.calendar.state<State>(tenant,`${scope}:${month}`),events:this.calendar.all(tenant,scope).filter(e=>e.dayKey.startsWith(month)),tracked:this.messages.get(tenant,"partner-calendar",scope)??null};}
   async sync(tenant:string,guild:string,user:string,month:string){
     const {config,member,scope}=this.member(tenant,guild,user);validMonth(month);const key=`${scope}:${month}`,owner=randomUUID();

@@ -35,7 +35,7 @@ Source baseline: Apollo `8ecd34b748bea47fbb718955a86c4d48509dc9bf`. The donor co
 | P25 | Approved | Moderation controls under DSH Settings now create exact message selections through shared suite jobs and the real Discord grant adapter. Bot/all/until scopes, durable previews, selected-ID execution, resumable partial deletion, server validation and job/plan leases are wired. Simulation and runtime read-only modes cannot execute live deletion. Six integration tests cover scope, newer-message preservation, restart/retry, concurrency, adapter grants, shared jobs and authenticated web controls. No live channel cleanup was performed. |
 | P26 | Approved | Approved; implementation remains outstanding. |
 | P27 | Approved | Native linking-panel publication and repair, destination recovery, signed donor button aliases and private SPMT setup links are wired. Community enrollment reuses the canonical account/ticket service and keeps each member separate from the workspace owner. New/returning members, conflicting provider identities, stale links and deleted channel/message recovery are tested. Cross-account conflicts retain the existing explicit recovery requirement; production OAuth acceptance remains pending. |
-| P28 | Approved | Approved; implementation remains outstanding. |
+| P28 | Approved | Native member directory now reads tenant membership and active provider references from canonical SPMT accounts, pages actual Discord members/roles, and resolves current Twitch names by immutable ID. Existing role groups and routes feed the monitor, suite commands, partner calendars and Members UI. Owner settings, role changes, joins/leaves, unlinks during provider outages, restart, paging and lease fencing are tested. Donor membership/role-map transfer and live provider acceptance remain P33. |
 | P29 | Approved | Approved; implementation remains outstanding. |
 | P30 | Approved | Approved; implementation remains outstanding. |
 | P31 | Approved | Shared Commlink ingress emits idempotent message metadata events without a second message history. Forward event pagination and DSH durable cursors feed the Members view with actual message counts, distinct UTC active days and last-seen channels. Bursts, restart, duplicate delivery, delayed messages, tenant boundaries and canonical identity resolution are tested. Unmeasured metrics remain null; historical donor totals remain P33. |
@@ -44,7 +44,7 @@ Source baseline: Apollo `8ecd34b748bea47fbb718955a86c4d48509dc9bf`. The donor co
 
 ## Validation
 
-- `npm run test:offline`: 1,093 passing, zero failures (full offline suite after partner schedules, participation and linking panels).
+- `npm run test:offline`: 1,099 passing, zero failures (full offline suite including the member directory and its running consumers).
 - `scripts/test-hmo-media-browser.mjs`: two independent Chromium contexts with actual decoded audio and canonical room state.
 - Required contracts/RTC CI now includes the room-media browser test.
 - Existing room expiry and donor-bridge recovery tests remain passing; deliberately deleted rooms were not reimported.
@@ -72,4 +72,21 @@ The restored checkout started from `b582e2947351a95b103cf738224a75c43831100b`. T
 
 The full approved list is still in progress. HMO Watch/HLS/Discord activity, media production, remaining community/reward/communications features and donor reconciliation must be completed before public replacement.
 
-Validation for this continuation: `npm run test:offline` passed all 1,093 tests; `git diff --check` is clean. Required GitHub browser checks will run on the saved checkpoint.
+Validation for this continuation: `npm run test:offline` passed all 1,093 tests; `git diff --check` is clean. Checkpoint 896184c passed required GitHub contracts and RTC/media/console browser checks in run 34780373784 (contracts 103786172704, rtc-audio 103786172552).
+
+
+## Continuation: canonical member directory
+
+This continuation starts at `896184cc870aef889d0e8707e9c47ef36d9810e5` and implements P28 through existing owners:
+
+- SPMT's account service exposes a credential-free, tenant-scoped directory to the authenticated, installed DSH service. It returns current Discord/Twitch references; revoked links and nonmembers are excluded. The API uses existing `identity:read` authority and creates no identities, links, memberships or credentials.
+- DSH stores derived provider observations in its existing private SQLite database. Refreshes use a renewable, fenced tenant lease. Discord pages are complete up to the existing 10,000-member bound; incomplete/repeated pages do not replace the successful server snapshot. Twitch profile lookup is batched by immutable provider IDs, so renamed accounts keep their canonical identity.
+- A successful canonical-account refresh applies known unlinks even if Discord or Twitch is subsequently unavailable. Successful provider observations remain available during outages, with visible pending status. Existing configured members bootstrap the directory until its first complete provider refresh, filtered by current account links once known. Successful activation must be verified before cutover.
+- Owner Settings maps server roles to the existing Crew, Partners, Honored Guests, Raid Pile and Everyone Else groups. The donor's first mapped role rule is preserved. Until mappings are imported/saved for a server, existing explicit configured groups are retained. Unmapped roles then use Everyone Else. Existing group-channel settings control routes, and the destination must belong to that server.
+- The existing tenant monitor has one destination per person. Ambiguous cross-server routes and multiple linked Twitch accounts without an existing selection are shown as unresolved rather than assigned a new precedence. Existing routing/account selections must be reconciled during P33; this is not a new identity or role authority.
+- The running monitor, suite operations, selected-server partner calendars, Captain participation and web controls consume the same directory. Saved role edits apply without restart. Removing a provider link or leaving Discord removes tracking after reconciliation. Deliberately removed HMO rooms remain excluded from all imports.
+- A retry defect exposed by repeated membership changes is fixed: rejoining the same stream gets a fresh transition receipt, subsequent removal can run again, and stale pending live actions are discarded before publication. This does not claim indefinite exactly-once Discord delivery across arbitrary process/network failures.
+
+Validation: six new integration tests exercise real SPMT HTTP/SDK directory paging, credential/tenant boundaries, revoked links, 1,001 Discord members including a bot, provider renames, live Discord-message routing through the existing publisher, partner changes, owner web controls, restart, lease fencing and repeated same-stream entry/removal. The full offline suite passes 1,099 tests. Live Discord/Twitch acceptance, donor membership and role-map migration remain outstanding.
+
+Provider contracts checked against the official [Discord guild API](https://docs.discord.com/developers/resources/guild#list-guild-members) and [Twitch Get Users API](https://dev.twitch.tv/docs/api/reference/#get-users). The Discord bot must retain the existing guild-member access required for a complete member read; no new write grant is requested.

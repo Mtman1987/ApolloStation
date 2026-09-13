@@ -51,6 +51,28 @@ export class DshDiscordApi {
   async createMessage(tenantId:string,channelId:string,payload:Record<string,unknown>){const body=await this.request<{id?:string}>(tenantId,`/channels/${snowflake(channelId,"channelId")}/messages`,"POST",payload);if(!body?.id)throw new Error("Discord did not return a message id");return body.id;}
   async getUser(tenantId:string,userId:string){return (await this.request<{id:string;avatar?:string|null}>(tenantId,`/users/${snowflake(userId,"userId")}`,"GET",undefined,"guilds:read"))!;}
   async listGuilds(tenantId:string){return await this.request<Array<{id?:string;name?:string;icon?:string|null}>>(tenantId,"/users/@me/guilds","GET",undefined,"guilds:read")??[];}
+  async memberDirectory(tenantId: string, guildId: string, progress: () => void = () => {}) {
+    const guild = snowflake(guildId, "guildId"); progress();
+    const roles = await this.request<Array<{id: string; name: string}>>(tenantId, `/guilds/${guild}/roles`, "GET", undefined, "guilds:read");
+    if (!Array.isArray(roles) || roles.some(role => !/^\d{5,30}$/.test(role.id) || typeof role.name !== "string")) throw Error("Discord returned invalid roles");
+    progress(); const channels = await this.listGuildChannels(tenantId, guild);
+    const members: Array<{discordUserId: string; displayName: string; roleIds: string[]}> = []; let after = "0";
+    const seen = new Set<string>();
+    for (let page = 0; page <= 10; page++) {
+      progress();
+      const rows = await this.request<Array<{user?: {id: string; username: string; global_name?: string; bot?: boolean}; nick?: string; roles?: string[]}>>(tenantId, `/guilds/${guild}/members?limit=1000&after=${after}`, "GET", undefined, "guilds:read");
+      if (!Array.isArray(rows) || rows.length > 1000 || (page === 10 && rows.length)) throw Error("Discord member list is incomplete or exceeds 10000 entries");
+      for (const row of rows) {
+        const id = snowflake(row.user?.id ?? "", "memberId");
+        if (seen.has(id) || BigInt(id) <= BigInt(after) || !Array.isArray(row.roles) || row.roles.some(role => !/^\d{5,30}$/.test(role))) throw Error("Discord member pagination is invalid");
+        seen.add(id); if (row.user!.bot) continue;
+        members.push({discordUserId: id, displayName: String(row.nick || row.user!.global_name || row.user!.username).slice(0, 120), roleIds: row.roles});
+      }
+      if (rows.length < 1000) return {guildId: guild, roles: roles.map(({id, name}) => ({id, name: name.slice(0, 120)})), channelIds: channels.filter(c => c.type === 0 || c.type === 5).map(c => snowflake(c.id ?? "", "channelId")), members};
+      const next = rows.at(-1)!.user!.id; if (BigInt(next) <= BigInt(after)) throw Error("Discord member pagination did not advance"); after = next;
+    }
+    throw Error("Discord member list is incomplete");
+  }
   async checkinRoleMembers(tenantId:string,guildId:string,roleId:string){
     const guild=snowflake(guildId,"guildId"),role=snowflake(roleId,"roleId");
     const roles=await this.request<Array<{id:string;name:string}>>(tenantId,`/guilds/${guild}/roles`,"GET",undefined,"guilds:read");

@@ -1,3 +1,4 @@
+import type { DshMemberSource } from "./member-directory.js";
 import type { DshChannelCleanup } from "./channel-cleanup.js";
 import { dshGuestLogin, type DshGuestProfileV1 } from "./guest-shoutouts.js";
 import { DshApplicationDecisionService } from "./application-decision.js";
@@ -13,10 +14,10 @@ import type { DshLiveRuntimeConfigV1, DshLiveRuntimeTenantV1 } from "./live-work
 
 /** Concrete DSH-owned operations used by web, chat, voice, APK, and Companion requests. */
 export class DshSuiteActionOperations implements DshBotActionOperationsV1 {
-  constructor(private readonly options: { config: DshLiveRuntimeConfigV1; monitor: SqliteDshLiveMonitor; messages: SqliteDshDiscordMessageStore; calendar: SqliteDshCalendarStore; applications: SqliteDshApplicationStore; discord: DshDiscordTransportV1; simulationDiscord?: DshDiscordTransportV1; applicationInteractionsReady: boolean; publicOrigin?: string; cleanup?:DshChannelCleanup;cleanupLiveWrites?:boolean;guestLookup?:(tenantId:string,login:string)=>Promise<DshGuestProfileV1>; now?: () => string }) {}
+  constructor(private readonly options: { memberSource?: DshMemberSource; config: DshLiveRuntimeConfigV1; monitor: SqliteDshLiveMonitor; messages: SqliteDshDiscordMessageStore; calendar: SqliteDshCalendarStore; applications: SqliteDshApplicationStore; discord: DshDiscordTransportV1; simulationDiscord?: DshDiscordTransportV1; applicationInteractionsReady: boolean; publicOrigin?: string; cleanup?:DshChannelCleanup;cleanupLiveWrites?:boolean;guestLookup?:(tenantId:string,login:string)=>Promise<DshGuestProfileV1>; now?: () => string }) {}
   async cleanupChannel(input:DshBotActionRequestV1) {
     const cleanup=this.options.cleanup;if(!cleanup)throw Error("Discord channel cleanup is unavailable");
-    const actor=required(input.actorUserId,"actorUserId"),tenant=this.tenant(input.tenantId);
+    const actor=required(input.actorUserId,"actorUserId"),tenant=this.tenant(input.tenantId,input.args.guildId||input.args.serverId);
     if(input.action==="dsh.moderation.preview") {
       const guildId=this.guild(input),channelId=await this.channel(input),mode=input.args.mode;
       if(mode!=="bot"&&mode!=="all"&&mode!=="until")throw Error("Choose bot, all, or until cleanup mode");
@@ -42,13 +43,13 @@ export class DshSuiteActionOperations implements DshBotActionOperationsV1 {
     return {...result,serverId,text:`Raid Train ${input.action.endsWith("reserve")?"hour reserved":"reservation canceled"} for ${date} at ${String(hour).padStart(2,"0")}:00 UTC. The published calendar will refresh.`};
   }
   async readShoutouts(input: DshBotActionRequestV1, liveOnly: boolean) {
-    const tenant = this.tenant(input.tenantId), live = new Set(this.options.monitor.getLiveMembers(input.tenantId).map((member) => member.canonicalUserId));
+    const tenant = this.tenant(input.tenantId,input.args.guildId||input.args.serverId), live = new Set(this.options.monitor.getLiveMembers(input.tenantId).map((member) => member.canonicalUserId));
     const members = liveOnly ? tenant.members.filter((member) => live.has(member.canonicalUserId)) : tenant.members.filter((member) => this.options.messages.get(input.tenantId, "shoutout", member.canonicalUserId));
     const guests=this.options.monitor.guests.list(input.tenantId).filter(target=>liveOnly?target.stream&&!target.offlineDetectedAt:Boolean(this.options.messages.get(input.tenantId,"guest-shoutout",target.id))),names=[...new Set([...members.map(member=>member.twitchLogin),...guests.map(target=>target.twitchLogin)])];
     return {text:names.length?`${liveOnly?"Live":"Active shoutout"} creators: ${names.join(", ")}.`:`No ${liveOnly?"tracked creators are live":"active shoutouts were found"}.`,members:members.map(({canonicalUserId,twitchLogin,group,shoutoutChannelId})=>({canonicalUserId,twitchLogin,group,shoutoutChannelId})),guests};
   }
   async postShoutout(input: DshBotActionRequestV1) {
-    const tenant=this.tenant(input.tenantId),raw=required(input.args.target,"target"),target=dshGuestLogin(tenant.members.find(item=>item.canonicalUserId===raw)?.twitchLogin??raw),member=tenant.members.find(item=>item.twitchLogin.toLowerCase()===target),guildId=this.guild(input),channelId=await this.channel(input,member?.shoutoutChannelId);
+    const tenant=this.tenant(input.tenantId,input.args.guildId||input.args.serverId),raw=required(input.args.target,"target"),target=dshGuestLogin(tenant.members.find(item=>item.canonicalUserId===raw)?.twitchLogin??raw),member=tenant.members.find(item=>item.twitchLogin.toLowerCase()===target),guildId=this.guild(input),channelId=await this.channel(input,member?.shoutoutChannelId);
     if(!input.simulation&&!(await this.options.discord.listGuildChannels(input.tenantId,guildId)).some(channel=>channel.id===channelId&&(channel.type===0||channel.type===5)))throw Error("Choose a text channel in the selected Discord server");
     if(input.simulation){const stream=member?this.options.monitor.getLiveStream(input.tenantId,member.canonicalUserId):undefined,payload=stream&&member?buildDshTierShoutout(dshStreamShoutout(member,stream),{timestamp:this.now(),...(tenant.branding.embedTemplates?{templates:tenant.branding.embedTemplates}:{})}):{embeds:[{title:`Temporary guest shoutout · ${target}`,description:"Preview: the creator profile and live status will be looked up before posting.",url:`https://twitch.tv/${target}`}],allowed_mentions:{parse:[]}};const messageId=await this.discord(input).createMessage(input.tenantId,channelId,payload);return {simulation:true,text:`Previewed temporary guest shoutout for ${target}.`,channelId,messageId};}
     if(!this.options.guestLookup)throw Error("Twitch guest lookup is not connected");
@@ -57,7 +58,7 @@ export class DshSuiteActionOperations implements DshBotActionOperationsV1 {
   }
   async removeGuestShoutout(input:DshBotActionRequestV1){
     const id=required(input.args.targetId,"targetId"),target=this.options.monitor.guests.get(input.tenantId,id);if(!target)throw Error("Guest shoutout was not found");
-    if(!this.tenant(input.tenantId).discordGuildIds?.includes(target.guildId))throw Error("Guest shoutout server is no longer configured for this tenant");
+    if(!this.tenant(input.tenantId,input.args.guildId||input.args.serverId).discordGuildIds?.includes(target.guildId))throw Error("Guest shoutout server is no longer configured for this tenant");
     if(input.simulation)return {simulation:true,text:`Previewed removal of ${target.twitchLogin}'s temporary shoutout.`};
     const result=this.options.monitor.guests.remove(input.tenantId,id,required(input.actorUserId,"actorUserId"),required(input.idempotencyKey,"idempotencyKey"),this.now());
     return {...result,text:"Temporary shoutout removed. Discord deletion is queued and will retry if needed."};
@@ -78,9 +79,9 @@ export class DshSuiteActionOperations implements DshBotActionOperationsV1 {
     const result=await service.decide({tenantId:input.tenantId,applicationId:matches[0]!.id,decision,actorUserId:required(input.actorUserId,"actorUserId"),note:input.args.note??"",operationId:input.idempotencyKey,operationSignature:JSON.stringify([input.actorUserId,input.args])});
     return{text:result.notification==='previewed'?`Previewed ${decision} for ${result.application.applicantUsername}.`:`${result.application.applicantUsername}'s ${result.application.type} application was ${decision}. ${result.notification==='sent'?'They were notified on Discord.':'Discord notification is pending and will retry.'}`,...result};
   }
-  private tenant(tenantId: string): DshLiveRuntimeTenantV1 { const tenant = this.options.config.tenants.find((item) => item.tenantId === tenantId); if (!tenant) throw new Error("DSH is not configured for this tenant"); return tenant; }
+  private tenant(tenantId: string,guild?:string): DshLiveRuntimeTenantV1 { const tenant = this.options.config.tenants.find((item) => item.tenantId === tenantId); if (!tenant) throw new Error("DSH is not configured for this tenant"); return {...tenant,members:this.options.memberSource?.(tenantId,guild) ?? tenant.members}; }
   private calendarScope(input: DshBotActionRequestV1) { const requested = input.args.guildId || input.args.serverId; return !requested || requested === "workspace" ? "workspace" : this.guild(input); }
-  private guild(input: DshBotActionRequestV1) { const tenant = this.tenant(input.tenantId), requested = input.args.guildId || input.args.serverId; if (requested && tenant.discordGuildIds?.includes(requested)) return requested; if (!requested && tenant.discordGuildIds?.length === 1) return tenant.discordGuildIds[0]!; throw new Error("Choose a Discord server configured for this tenant"); }
+  private guild(input: DshBotActionRequestV1) { const tenant = this.tenant(input.tenantId,input.args.guildId||input.args.serverId), requested = input.args.guildId || input.args.serverId; if (requested && tenant.discordGuildIds?.includes(requested)) return requested; if (!requested && tenant.discordGuildIds?.length === 1) return tenant.discordGuildIds[0]!; throw new Error("Choose a Discord server configured for this tenant"); }
   private guildFromTracked(input: DshBotActionRequestV1, kind: "calendar" | "applications") { if (input.args.guildId || input.args.serverId) return this.guild(input); const tracked = this.options.messages.list(input.tenantId, kind); if (tracked.length === 1) return tracked[0]!.key; return this.guild(input); }
   private async channel(input: DshBotActionRequestV1, fallback?: string) { const requested = input.args.channelId || input.args.channel, guildId = this.guild(input); if (!requested) { if (fallback) { if (input.simulation) await this.discord(input).listGuildChannels(input.tenantId, guildId); return fallback; } throw new Error("Choose a Discord channel for this action"); } if (/^\d{5,30}$/.test(requested)) { if (input.simulation) await this.discord(input).listGuildChannels(input.tenantId, guildId); return requested; } const name = requested.replace(/^#/, "").toLowerCase(), matches = (await this.discord(input).listGuildChannels(input.tenantId, guildId)).filter((item) => (item.type === 0 || item.type === 5) && String(item.name ?? "").toLowerCase() === name && typeof item.id === "string"); if (matches.length !== 1) throw new Error("The Discord channel name was not unique; choose its channel id"); return matches[0]!.id!; }
   private async publishCalendar(input:DshBotActionRequestV1,guildId:string,channelId:string){return new DshCalendarDelivery(this.options.calendar,this.options.messages,this.discord(input),()=>this.now()).publish(input.tenantId,guildId,channelId,input.args.month||this.options.calendar.state<string>(input.tenantId,`month:${guildId}`)||this.now().slice(0,7));}

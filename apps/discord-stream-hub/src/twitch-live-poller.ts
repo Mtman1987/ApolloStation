@@ -51,6 +51,16 @@ export class DshTwitchLivePoller {
 }
 
 export class TwitchHelixLiveClient implements DshTwitchLiveClientV1 {
+  async getUsersById(input: {clientId: string; accessToken: string; userIds: string[]}) {
+    if (input.userIds.length > 100 || input.userIds.some(id => !/^\d{1,30}$/.test(id))) throw Error("Invalid Twitch identity lookup");
+    if (!input.userIds.length) return [];
+    const url = new URL("https://api.twitch.tv/helix/users"); for (const id of input.userIds) url.searchParams.append("id", id);
+    const response = await this.fetchImpl(url, {headers: {"client-id": input.clientId, authorization: `Bearer ${input.accessToken}`}, redirect: "error", signal: AbortSignal.timeout(15000)});
+    if (!response.ok) throw new TwitchHelixError(response.status, "Twitch member lookup is unavailable");
+    const data = (await response.json() as {data?: Array<{id: string; login: string}>}).data;
+    if (!Array.isArray(data) || new Set(data.map(user => user.id)).size !== data.length || data.some(user => !input.userIds.includes(user.id) || !/^[a-z0-9_]{1,25}$/.test(user.login))) throw Error("Invalid Twitch member lookup response");
+    return data.map(({id, login}) => ({id, login}));
+  }
   private readonly avatars=new Map<string,{url:string;expires:number}>();
   constructor(private readonly fetchImpl: typeof fetch = fetch) {}
   async getGuest(input:{clientId:string;accessToken:string;twitchLogin:string}):Promise<DshGuestProfileV1>{

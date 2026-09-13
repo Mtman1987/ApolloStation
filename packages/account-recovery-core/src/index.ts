@@ -212,6 +212,16 @@ export class AccountRecoveryService {
     };
   }
 
+  /** Credential-free community directory; provider references remain canonical here. */
+  listCommunityIdentities(tenantIdInput: string, afterUserId = "", limit = 200) {
+    const tenantId = requireId(tenantIdInput, "tenantId");
+    if (this.control.getTenant(tenantId).status !== "active" || this.control.getApp("discord-stream-hub").status !== "active" || !this.control.listInstalls(tenantId).some(app => app.appId === "discord-stream-hub" && app.enabled)) throw new AccountSetupError("Discord Stream Hub is not enabled for this community");
+    if (!Number.isInteger(limit) || limit < 1 || limit > 200 || typeof afterUserId !== "string" || afterUserId.length > 200) throw new AccountSetupError("Invalid community directory page");
+    const profiles = this.platformStore.listUserProfilesByTenant(tenantId).filter(profile => profile.userId > afterUserId).sort((a, b) => a.userId < b.userId ? -1 : a.userId > b.userId ? 1 : 0);
+    const members = profiles.slice(0, limit).map(profile => ({ userId: profile.userId, username: profile.username, displayName: profile.displayName, providers: this.authorityStore.listProviderLinks(profile.userId).filter(link => !link.revokedAt && (link.provider === "discord" || link.provider === "twitch")).map(link => ({ provider: link.provider as "discord" | "twitch", providerUserId: link.providerUserId })) }));
+    return { schemaVersion: 1 as const, tenantId, members, nextAfterUserId: profiles.length > limit ? members.at(-1)!.userId : null };
+  }
+
   provisionAccount(input: AccountProvisionInputV1): AccountProvisionResultV1 {
     const tenantId = requireId(input.tenantId, "tenantId");
     requireId(input.sourceAppId, "sourceAppId");

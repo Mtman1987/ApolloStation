@@ -24,7 +24,7 @@ export function mountProviderIdentityRoutes(service: ReturnType<typeof createSpm
   service.server.on("request", async (request, response) => {
     try {
       const pathname = new URL(request.url ?? "/", "http://spmt.internal").pathname;
-      if (pathname === "/v1/identity/provider" || pathname === "/v1/identity/provider/grandfather") {
+      if (pathname === "/v1/identity/provider" || pathname === "/v1/identity/provider/grandfather" || pathname === "/v1/identity/community-members") {
         const body = request.method === "POST" ? await readJsonBody(request) : undefined;
         const result = adapter.handle({
           method: request.method ?? "GET",
@@ -33,7 +33,7 @@ export function mountProviderIdentityRoutes(service: ReturnType<typeof createSpm
           ...(body === undefined ? {} : { body }),
         });
         if (result) {
-          if(result.status===200&&request.method==="GET"&&result.body&&typeof result.body==="object"){
+          if(pathname==="/v1/identity/provider"&&result.status===200&&request.method==="GET"&&result.body&&typeof result.body==="object"){
             const identity=result.body as {userId:string;profile:{tenantIds:string[]}},tenantId=String(request.headers["x-spmt-tenant"]??"");
             const tenant=service.store.getTenant(tenantId);
             result.body={...identity,tenantRole:tenant?.ownerUserId===identity.userId?"owner":tenant&&identity.profile.tenantIds.includes(tenantId)?"member":null};

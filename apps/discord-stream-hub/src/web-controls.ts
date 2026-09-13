@@ -1,3 +1,4 @@
+import { DshMemberDirectoryStore } from "./member-directory.js";
 import {DshOnboardingPanel} from "./onboarding-panel.js";
 import { DshMemberActivityStore } from "./member-activity.js";
 import { DshPartnerSchedules } from "./partner-schedules.js";
@@ -42,6 +43,7 @@ type SessionContext = Awaited<ReturnType<typeof fetchAppSessionContext>>;
 
 /** Authenticated, app-owned controls used by the DSH browser surface. */
 export class DshWebControls {
+  private readonly memberDirectory?:DshMemberDirectoryStore;
   private readonly cleanup?:DshChannelCleanup;
   private readonly activity?:DshMemberActivityStore;
   private readonly monitor?:SqliteDshLiveMonitor;
@@ -73,6 +75,7 @@ export class DshWebControls {
       this.shoutouts = new DshShoutoutGenerationStore(options.databasePath, this.now);
     }
     if (options.runtimeConfigPath) this.config = loadDshLiveRuntimeConfig(options.runtimeConfigPath);
+    if(options.databasePath&&this.config&&this.settings)this.memberDirectory=new DshMemberDirectoryStore(options.databasePath,this.config,this.settings);
     if (options.credential) {
       const getAccessToken = createDshWorkerTokenProvider({ spmtOrigin: options.spmtOrigin, credential: options.credential, ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}) });
       const client = new SpmtClient({ baseUrl: options.spmtOrigin, appId: "discord-stream-hub", getAccessToken, ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}) });
@@ -87,11 +90,11 @@ export class DshWebControls {
       const liveDiscord = new DshDiscordApi(grants, options.fetchImpl);
       this.client=client;this.liveDiscord=liveDiscord;
       this.discord = new DshSimulationRoomDiscordTransport(liveDiscord, client, { guildIds: (tenantId) => this.config?.tenants.find((tenant) => tenant.tenantId === tenantId)?.discordGuildIds ?? [], now: this.now, liveWrites: options.operationMode !== "read-only" });
-      if(this.calendar&&this.messages){this.sync=new DshCalendarSync(options.databasePath!,this.calendar,this.discord,this.now,options.publicOrigin);if(this.config&&options.publicOrigin)this.onboarding=new DshOnboardingPanel(this.calendar,this.messages,this.discord,client,this.config,options.publicOrigin,this.now);if(this.config)this.partners=new DshPartnerSchedules(this.calendar,this.messages,client,this.config,this.discord,options.fetchImpl,this.now);this.delivery=new DshCalendarDelivery(this.calendar,this.messages,this.discord,this.now,client,options.operationMode==="read-only");}
+      if(this.calendar&&this.messages){this.sync=new DshCalendarSync(options.databasePath!,this.calendar,this.discord,this.now,options.publicOrigin);if(this.config&&options.publicOrigin)this.onboarding=new DshOnboardingPanel(this.calendar,this.messages,this.discord,client,this.config,options.publicOrigin,this.now);if(this.config)this.partners=new DshPartnerSchedules(this.calendar,this.messages,client,this.config,this.discord,options.fetchImpl,this.now,(tenant,guild)=>this.members(tenant,guild));this.delivery=new DshCalendarDelivery(this.calendar,this.messages,this.discord,this.now,client,options.operationMode==="read-only");}
     }
   }
 
-  close() { this.activity?.close();this.cleanup?.close();this.monitor?.close(); this.calendar?.close(); this.settings?.close(); this.messages?.close(); this.applications?.close(); this.shoutouts?.close(); }
+  close() { this.memberDirectory?.close();this.activity?.close();this.cleanup?.close();this.monitor?.close(); this.calendar?.close(); this.settings?.close(); this.messages?.close(); this.applications?.close(); this.shoutouts?.close(); }
 
   async handle(request: IncomingMessage, response: ServerResponse, url: URL): Promise<boolean> {
     if (!url.pathname.startsWith("/api/discord-stream-hub/control")) return false;
@@ -178,7 +181,7 @@ export class DshWebControls {
           return sendJson(response,200,{messageId,simulation:true,shadowRoomId:room.roomId});
         }
         if(!tenant)throw new Error("DSH is not configured for this tenant");
-        const channelId=body.channelId?snowflake(body.channelId,"channelId"):tenant.members.find(member=>member.twitchLogin===target)?.shoutoutChannelId;
+        const channelId=body.channelId?snowflake(body.channelId,"channelId"):this.members(context.tenantId,String(body.serverId??"")||undefined).find(member=>member.twitchLogin===target)?.shoutoutChannelId;
         if(!channelId)throw new Error("Choose a channel for the temporary guest shoutout");
         const result=await this.client.createSuiteActionJob(context.tenantId,{schemaVersion:1,action:"dsh.shoutouts.post",args:{target,guildId,...(body.channelId?{channelId}:{})},actor:{userId,username:String(context.session.username??context.session.displayName??userId),role:"owner"},source:{kind:"api",requestId,...(this.options.operationMode==="read-only"?{simulation:true}:{})}},`dsh-post:${userId}:${requestId}`);
         return sendJson(response,202,{jobId:result.job.id,state:result.job.state,simulation:this.options.operationMode==="read-only"});
@@ -193,6 +196,7 @@ export class DshWebControls {
       if (url.pathname === "/api/discord-stream-hub/control/calendar/mission") return await this.mission(response, context, body,request);
       if (url.pathname === "/api/discord-stream-hub/control/calendar/publish") return await this.publishCalendar(response, context, body);
       if (url.pathname === "/api/discord-stream-hub/control/applications/publish") return await this.publishApplications(response, context, body);
+      if (url.pathname === "/api/discord-stream-hub/control/settings/roles") { if (body.roleGuildId === undefined) throw Error("Choose a Discord server for role groups"); return await this.updateSettings(response, context, body); }
       if (url.pathname === "/api/discord-stream-hub/control/settings") return await this.updateSettings(response, context, body);
       return sendJson(response, 404, { error: "not_found" });
     } catch (error) {
@@ -241,10 +245,11 @@ export class DshWebControls {
       selectedGuildId: guildId ?? "",
       selectedShadowRoomId: guildId && isSimulationDiscordId(guildId) ? (await this.discord?.target(tenantId,guildId))?.roomId : null,
       ...view,
-      participation: dshCaptainParticipation(calendar, this.config?.tenants.find(tenant => tenant.tenantId === tenantId)?.members.filter(member => member.group === "Crew").map(member => ({userId: member.canonicalUserId, username: member.twitchLogin})) ?? [], this.settings?.read(tenantId).captainMinimumDays ?? 0),
-      partnerSchedules:guildId&&!isSimulationDiscordId(guildId)?this.partners?.partners(tenantId).map(p=>this.partners!.view(tenantId,guildId,p.userId,month))??[]:[],
+      participation: dshCaptainParticipation(calendar, this.members(tenantId,guildId).filter(member => member.group === "Crew").map(member => ({userId: member.canonicalUserId, username: member.twitchLogin})) ?? [], this.settings?.read(tenantId).captainMinimumDays ?? 0),
+      partnerSchedules:guildId&&!isSimulationDiscordId(guildId)?this.partners?.partners(tenantId,guildId).map(p=>this.partners!.view(tenantId,guildId,p.userId,month))??[]:[],
       onboardingPanels:(this.config?.tenants.find(t=>t.tenantId===tenantId)?.discordGuildIds??[]).map(g=>this.onboarding?.view(tenantId,g)).filter(Boolean),
       memberActivity:this.activity?.list(tenantId,guildId&&!isSimulationDiscordId(guildId)?guildId:undefined)??[],
+      memberDirectory:this.memberDirectory?.view(tenantId,guildId)??null,
       activityStatus:this.activity?.cursor(tenantId).error??null,
       calendarMonth: month,
       ...shoutouts,
@@ -259,7 +264,7 @@ export class DshWebControls {
     const snapshot=supplied??await fetchAppPlatformSnapshot({appId:"discord-stream-hub",spmtOrigin:this.options.spmtOrigin,request,sources:["communityLive"]}).catch(()=>undefined);
     const community=record(snapshot?.communityLive), available=Boolean(snapshot?.availability.communityLive?.available&&Array.isArray(community?.shoutouts));
     const members:DshShoutoutView[]=available?(community!.shoutouts as unknown[]).flatMap(row=>{const view=dshShoutoutView(row);return view?[view]:[]}):[];
-    const tracked=new Set(this.config?.tenants.find(t=>t.tenantId===context.tenantId)?.members.map(m=>m.twitchLogin)??[]);
+    const tracked=new Set(this.members(context.tenantId).map(m=>m.twitchLogin)??[]);
     const liveMembers=await Promise.all(members.map(async member=>{const generated=await this.shoutouts?.latest(context.tenantId,member,this.client);return {...member,...(generated?{generated}:{}),canPost:this.role(context)==="owner"&&tracked.has(member.twitchLogin)}}));
     const guests=(this.monitor?.guests.list(context.tenantId,false)??[]).flatMap(target=>{const message=this.messages?.get(context.tenantId,"guest-shoutout",target.id);return target.state==="active"||message?[{...target,...(message?{messageId:message.messageId}:{}),deliveryPending:target.state!=="active"||!message||message.updatedAt<target.updatedAt}]:[]});
     return {guests,presence:{source:"ecosystem",state:available?"ready":"unavailable"},liveMembers,spotlight:liveMembers.find(m=>m.isSpotlight)??null,shoutoutPostingReady:Boolean(this.client&&this.calendar)&&this.role(context)==="owner",shoutoutWriterReady:Boolean(this.client&&this.shoutouts)&&this.role(context)==="owner"};
@@ -269,7 +274,7 @@ export class DshWebControls {
     const guild=rawGuild?this.guild(tenant,rawGuild):"workspace",events=this.calendar?.month(tenant,guild,month)??[],missions=communityCalendarMissions({month,today:this.now().slice(0,10),events});
     const colors=new Map(missions.map(e=>[e.id,e]));
     const guildIds=this.config?.tenants.find(t=>t.tenantId===tenant)?.discordGuildIds??[];
-    return {calendar:events.map(e=>({...e,...(colors.has(e.id)?{color:colors.get(e.id)!.color,number:colors.get(e.id)!.number}:{})})),calendarMonth:month,calendarSync:guildIds.filter(g=>guild==="workspace"||g===guild).map(g=>({guildId:g,...this.sync?.status(tenant,g),imageError:this.calendar?.state(tenant,`image-error:${g}`)??null})),participation:dshCaptainParticipation(events,this.config?.tenants.find(t=>t.tenantId===tenant)?.members.filter(m=>m.group==="Crew").map(m=>({userId:m.canonicalUserId,username:m.twitchLogin}))??[],this.settings?.read(tenant).captainMinimumDays??0)};
+    return {calendar:events.map(e=>({...e,...(colors.has(e.id)?{color:colors.get(e.id)!.color,number:colors.get(e.id)!.number}:{})})),calendarMonth:month,calendarSync:guildIds.filter(g=>guild==="workspace"||g===guild).map(g=>({guildId:g,...this.sync?.status(tenant,g),imageError:this.calendar?.state(tenant,`image-error:${g}`)??null})),participation:dshCaptainParticipation(events,this.members(tenant,guild==="workspace"?undefined:guild).filter(m=>m.group==="Crew").map(m=>({userId:m.canonicalUserId,username:m.twitchLogin}))??[],this.settings?.read(tenant).captainMinimumDays??0)};
   }
   private async captain(response:ServerResponse,context:SessionContext,body:Record<string,unknown>,request:IncomingMessage){
     const member=await this.member(context,request),store=this.requireCalendar();
@@ -313,6 +318,7 @@ export class DshWebControls {
     return sendJson(response, 200, { schemaVersion: 1, messageId, channelId, ...(isSimulationDiscordId(serverId) ? {shadowRoomId:(await this.discord?.target(context.tenantId,serverId))?.roomId} : {}) });
   }
 
+  private members(tenant:string,guild?:string){return this.memberDirectory?.members(tenant,guild)??this.config?.tenants.find(t=>t.tenantId===tenant)?.members??[];}
   private effectiveSettings(tenantId: string) {
     const saved = this.requireSettings().read(tenantId), tenant = this.config?.tenants.find(value => value.tenantId === tenantId);
     return { ...saved, pollIntervalSeconds: saved.revision ? saved.pollIntervalSeconds : this.config?.pollIntervalSeconds ?? saved.pollIntervalSeconds,
@@ -333,6 +339,16 @@ export class DshWebControls {
     }
     if (body.groupChannels !== undefined) values.groupChannels = typeof body.groupChannels === 'string' ? body.groupChannels : JSON.stringify(body.groupChannels);
     if (body.embedTemplates !== undefined) values.embedTemplates = typeof body.embedTemplates === 'string' ? body.embedTemplates : JSON.stringify(body.embedTemplates);
+    if (body.roleGuildId !== undefined) {
+      const guild=this.guild(context.tenantId,body.roleGuildId);if(isSimulationDiscordId(guild))throw Error("Choose a live Discord server for role groups");
+      const roles=this.memberDirectory?.view(context.tenantId,guild).roles[0]?.roles;if(!roles)throw Error("Wait for the server member directory to refresh before changing role groups");
+      const mappings=structuredClone(effective.roleMappings), selected:Record<string,string>={};
+      for(const [key,value] of Object.entries(body))if(key.startsWith("role:")){
+        const id=snowflake(key.slice(5),"roleId");if(!roles.some(role=>role.id===id))throw Error("Choose a role from the selected server");
+        if(value!=="")selected[id]=String(value);
+      }
+      mappings[guild]=selected as typeof mappings[string];values.roleMappings=JSON.stringify(mappings);
+    }
     if (body.captainMinimumDays !== undefined) values.captainMinimumDays = integer(body.captainMinimumDays, 0, 31, "captainMinimumDays");
     if (body.pollIntervalSeconds !== undefined) values.pollIntervalSeconds = integer(body.pollIntervalSeconds, 15, 3600, "pollIntervalSeconds");
     const next = store.patch(context.tenantId, { schemaVersion: 1, expectedRevision: current.revision, values });

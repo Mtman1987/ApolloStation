@@ -75,7 +75,7 @@ export class SqliteDshLiveMonitor {
       for (const prior of removedMembers) {
         if (currentMemberIds.has(prior.userId)) continue;
         const member = (JSON.parse(prior.body) as { member: DshLiveMemberV1 }).member;
-        if (prior.isLive === 1 && prior.streamId) actions.push({ schemaVersion: 1, type: "shoutout.remove", idempotencyKey: "dsh:shoutout.remove:" + poll.tenantId + ":" + member.canonicalUserId + ":" + prior.streamId, tenantId: poll.tenantId, member, priorStreamId: prior.streamId });
+        if (prior.isLive === 1 && prior.streamId) actions.push({ schemaVersion: 1, type: "shoutout.remove", idempotencyKey: "dsh:shoutout.remove:" + poll.tenantId + ":" + member.canonicalUserId + ":" + prior.streamId + ":" + poll.pollId, tenantId: poll.tenantId, member, priorStreamId: prior.streamId });
         this.db.prepare("DELETE FROM live_members WHERE tenant_id=? AND user_id=?").run(poll.tenantId, prior.userId);
       }
       for (const member of [...poll.members].sort((a, b) => a.twitchLogin.localeCompare(b.twitchLogin))) {
@@ -84,11 +84,11 @@ export class SqliteDshLiveMonitor {
         if (stream) {
           live.push({ member, stream });
           const type = prior?.live ? "shoutout.update" : "shoutout.create";
-          const actionVersion = type === "shoutout.create" ? stream.twitchStreamId : poll.pollId;
+          const actionVersion = stream.twitchStreamId + ":" + poll.pollId;
           actions.push({ schemaVersion: 1, type, idempotencyKey: "dsh:" + type + ":" + poll.tenantId + ":" + member.canonicalUserId + ":" + actionVersion, tenantId: poll.tenantId, member, stream });
           this.putMemberState(poll.tenantId, member, true, stream.twitchStreamId, poll.observedAt, stream);
         } else {
-          if (prior?.live && prior.streamId) actions.push({ schemaVersion: 1, type: "shoutout.remove", idempotencyKey: "dsh:shoutout.remove:" + poll.tenantId + ":" + member.canonicalUserId + ":" + prior.streamId, tenantId: poll.tenantId, member, priorStreamId: prior.streamId });
+          if (prior?.live && prior.streamId) actions.push({ schemaVersion: 1, type: "shoutout.remove", idempotencyKey: "dsh:shoutout.remove:" + poll.tenantId + ":" + member.canonicalUserId + ":" + prior.streamId + ":" + poll.pollId, tenantId: poll.tenantId, member, priorStreamId: prior.streamId });
           this.putMemberState(poll.tenantId, member, false, undefined, poll.observedAt);
         }
       }
@@ -131,6 +131,15 @@ export class SqliteDshLiveMonitor {
     const rows = this.db.prepare(`SELECT attempts,body FROM live_action_outbox WHERE tenant_id=? AND state='pending' ${guestsOnly?"AND json_extract(body,'$.type')='guest.refresh'":""} ORDER BY rowid LIMIT ?`).all(tenantId, limit) as Array<{ attempts: number; body: string }>;
     return rows.map((row) => ({ attempts: row.attempts, action: JSON.parse(row.body) as DshLiveActionV1 }));
   }
+  isCurrentAction(action: DshLiveActionV1): boolean {
+    if (action.type === "guest.refresh") return true;
+    if (action.type === "spotlight.clear") return !this.getSpotlight(action.tenantId);
+    if (action.type === "shoutout.remove") return !this.getMemberState(action.tenantId, action.member.canonicalUserId)?.live;
+    const row = this.db.prepare("SELECT body FROM live_members WHERE tenant_id=? AND user_id=? AND is_live=1").get(action.tenantId, action.member.canonicalUserId) as {body: string} | undefined;
+    if (!row) return false;
+    const current = JSON.parse(row.body) as {member: DshLiveMemberV1; stream: DshTwitchStreamV1};
+    return current.stream.twitchStreamId === action.stream.twitchStreamId && JSON.stringify(current.member) === JSON.stringify(action.member) && (action.type !== "spotlight.update" || this.getSpotlight(action.tenantId)?.userId === action.member.canonicalUserId);
+  }
   completeAction(idempotencyKey: string): void { requireId(idempotencyKey, "idempotencyKey"); this.db.prepare("UPDATE live_action_outbox SET state='delivered',last_error=NULL WHERE id=?").run(idempotencyKey); }
   failAction(idempotencyKey: string, error: string): void { requireId(idempotencyKey, "idempotencyKey"); this.db.prepare("UPDATE live_action_outbox SET attempts=attempts+1,last_error=? WHERE id=?").run(redact(error), idempotencyKey); }
 
@@ -169,7 +178,7 @@ export class DshLiveRuntime {
     const pending = this.monitor.listPendingActions(tenantId, limit,guestsOnly);
     const report = { attempted: pending.length, delivered: 0, failed: 0 };
     for (const item of pending) {
-      try { await this.publisher.publish(item.action); this.monitor.completeAction(item.action.idempotencyKey); report.delivered += 1; }
+      try { if (this.monitor.isCurrentAction(item.action)) await this.publisher.publish(item.action); this.monitor.completeAction(item.action.idempotencyKey); report.delivered += 1; }
       catch (error) { this.monitor.failAction(item.action.idempotencyKey, error instanceof Error ? error.message : String(error)); report.failed += 1; }
     }
     return report;
