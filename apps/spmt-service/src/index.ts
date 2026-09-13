@@ -782,7 +782,7 @@ function ensureNebulaArcadeIdentity(auth: AuthService, credential: string) {
   auth.reconcileServiceIdentity({ serviceId: "nebula-arcade", credential, scopes: ["events:write", "xp:write", "runtime:write", "jobs:read", "jobs:write"], tenantMode: "any" });
 }
 function ensureHearMeOutIdentity(auth: AuthService, credential: string) {
-  auth.reconcileServiceIdentity({ serviceId: "hearmeout", credential, scopes: ["providers:grant", "events:write", "jobs:read", "jobs:write", "jobs:work", "runtime:write"], tenantMode: "any" });
+  auth.reconcileServiceIdentity({ serviceId: "hearmeout", credential, scopes: ["assistants:read", "assistants:invoke", "providers:grant", "events:write", "jobs:read", "jobs:write", "jobs:work", "runtime:write"], tenantMode: "any" });
 }
 function syncCommunityAssistantCapability(data: PlatformDataService, status: ReturnType<CommunityAssistantRuntimeV1["status"]>) {
   data.upsertStellarCapability({ id: "spmt.community-assistant", sourceAppId: "stellar-core", title: "Stella Community Assistant", description: "Invoke the app-neutral SPMT Community Assistant through the durable, metered Stellar Core job contract.", requiredScopes: ["assistants:invoke"], availability: status.availability, ...(status.availability === "unavailable" ? { unavailableReason: status.unavailableReason } : {}) });

@@ -7,6 +7,7 @@ import { classifySpmtRtcFailure } from './spmt-rtc.js';
 import { HearMeOutLiveKitSigner } from './livekit-signer.js';
 import { hearMeOutProviderRoomName } from './room-identity.js';
 import type { HearMeOutPrincipalV1 } from './room-media-core.js';
+import { RoomServiceClient } from 'livekit-server-sdk';
 
 export type RoomRtcMode = 'waiting' | 'livekit-cloud' | 'peer-webrtc' | 'wss-relay';
 export interface RoomRtcOptions {
@@ -16,24 +17,34 @@ export interface RoomRtcOptions {
   iceServers?: Array<{ urls: string | string[]; username?: string; credential?: string }>;
   membershipCheckMs?: number;
   hasVoiceBridge?: (tenantId: string, roomId: string) => boolean;
+  isServerMuted?: (tenantId: string, roomId: string, userId: string) => boolean;
+  maxParticipants?: number;
 }
-type Member = { id: number; principal: HearMeOutPrincipalV1; socket: WebSocket; sequence: number; alive: boolean; request: IncomingMessage; authorizedAt: number };
+type Member = { id: number; principal: HearMeOutPrincipalV1; socket: WebSocket; sequence: number; alive: boolean; request: IncomingMessage; authorizedAt: number; screenSharing?: boolean };
 type Room = { key: string; roomId: string; mode: Exclude<RoomRtcMode, 'waiting'>; epoch: number; members: Map<number, Member> };
 
 /** One authority chooses the transport for every member. Audio is never decoded here. */
 export class HearMeOutRoomRtcGateway {
   private readonly sockets = new WebSocketServer({ noServer: true, maxPayload: 32_768, perMessageDeflate: false });
-  private readonly relay = new SpmtRtcRelayHubV1({ maxParticipants: 8, maxFrameBytes: 1292, maxFramesPerSecond: 30 });
+  private readonly relay: SpmtRtcRelayHubV1;
+  private readonly capacity: number;
   private readonly rooms = new Map<string, Room>();
   private readonly timer: ReturnType<typeof setInterval>;
   private cloudUnavailableUntil = 0;
   private reconciling = false;
   private readonly signer: HearMeOutLiveKitSigner | undefined;
+  private readonly provider: RoomServiceClient | undefined;
+  private readonly pendingProvider = new Map<string, { room: string; identity: string; remove: boolean; muted: boolean }>();
 
   constructor(private options: RoomRtcOptions) {
+    // Reuse the established SPMT relay capacity and its configurable bounds.
+    this.capacity = options.maxParticipants ?? 32;
+    if (!Number.isSafeInteger(this.capacity) || this.capacity < 2 || this.capacity > 256) throw new Error('RTC capacity must be between 2 and 256 connections');
+    this.relay = new SpmtRtcRelayHubV1({ maxParticipants: this.capacity, maxFrameBytes: 1292, maxFramesPerSecond: 30 });
     if (options.livekit) {
       if (!/^wss:\/\//.test(options.livekit.url)) throw new Error('LiveKit URL must use wss');
       this.signer = new HearMeOutLiveKitSigner(options.livekit.apiKey, options.livekit.apiSecret);
+      this.provider = new RoomServiceClient(options.livekit.url.replace(/^wss:/, 'https:'), options.livekit.apiKey, options.livekit.apiSecret, { requestTimeout: 5 });
     }
     this.timer = setInterval(() => { void this.reconcile(); }, options.membershipCheckMs ?? 15_000);
     this.timer.unref();
@@ -64,7 +75,7 @@ export class HearMeOutRoomRtcGateway {
       room = { key, roomId, mode: this.signer && Date.now() >= this.cloudUnavailableUntil ? 'livekit-cloud' : 'peer-webrtc', epoch: 1, members: new Map() };
       this.rooms.set(key, room);
     }
-    if (room.members.size >= 8) return this.reject(socket, 429);
+    if (room.members.size >= this.capacity) return this.reject(socket, 429);
     const target = room;
     this.sockets.handleUpgrade(request, socket, head, ws => this.join(target, principal, request, ws));
   }
@@ -90,6 +101,7 @@ export class HearMeOutRoomRtcGateway {
         this.options.requireMembership(principal, room.roomId);
         const bytes = Buffer.isBuffer(raw) ? raw : Buffer.from(raw as ArrayBuffer);
         if (binary) {
+          if (this.muted(room, member)) return;
           if (room.mode !== 'wss-relay' || this.mode(room) === 'waiting') return;
           // Fixed wire format: 40ms, mono signed PCM16 LE, 16kHz. The server
           // stamps the actual sender and epoch; clients cannot impersonate peers.
@@ -101,7 +113,9 @@ export class HearMeOutRoomRtcGateway {
           return;
         }
         const message = JSON.parse(bytes.toString('utf8'));
-        if (message.type === 'signal' && room.mode === 'peer-webrtc' && message.epoch === room.epoch) {
+        if (message.type === 'screen' && typeof message.sharing === 'boolean') {
+          member.screenSharing = message.sharing && !this.muted(room, member); this.broadcast(room);
+        } else if (message.type === 'signal' && (room.mode === 'peer-webrtc' || room.mode === 'wss-relay') && message.epoch === room.epoch) {
           const target = room.members.get(Number(message.to));
           if (target && target !== member && (message.description || message.candidate)) {
             this.send(target, { type: 'signal', from: id, epoch: room.epoch, description: message.description, candidate: message.candidate });
@@ -141,13 +155,42 @@ export class HearMeOutRoomRtcGateway {
       url: this.options.livekit.url,
       ...this.signer.sign({ tenantId: member.principal.tenantId, roomId: room.roomId, roomName: hearMeOutProviderRoomName(member.principal.tenantId, room.roomId),
         participantIdentity: String(member.id), participantName: member.principal.displayName,
-        ttlSeconds: 600, canPublish: true, canSubscribe: true, canPublishData: false }),
+        ttlSeconds: 600, canPublish: !this.muted(room, member), canSubscribe: true, canPublishData: false }),
     } : undefined;
     this.send(member, { type: 'room', id: member.id, mode, epoch: room.epoch,
-      peers: [...room.members.values()].map(value => ({ id: value.id, userId: value.principal.userId, name: value.principal.displayName })),
+      peers: [...room.members.values()].map(value => ({ id: value.id, userId: value.principal.userId, name: value.principal.displayName, serverMuted: this.muted(room, value), screenSharing: value.screenSharing === true && !this.muted(room, value) })),
       iceServers: this.options.iceServers ?? [{ urls: 'stun:stun.l.google.com:19302' }], livekit });
   }
   private broadcast(room: Room) { for (const member of room.members.values()) this.snapshot(room, member); }
+  private muted(room: Room, member: Member) { return this.options.isServerMuted?.(member.principal.tenantId, room.roomId, member.principal.userId) ?? false; }
+  async moderateMember(tenantId: string, roomId: string, userId: string, action: string, targetRoomId?: string) {
+    const key = createHash('sha256').update(JSON.stringify([tenantId, roomId])).digest('hex'), room = this.rooms.get(key);
+    if (!room) return { providerPending: false };
+    for (const member of room.members.values()) if (member.principal.userId === userId) {
+      const remove = ['kick', 'ban', 'timeout', 'move'].includes(action);
+      if (remove) {
+        if (targetRoomId) this.send(member, { type: 'move', targetRoomId });
+        member.socket.close(4403, 'Room access ended');
+      }
+      if (this.provider && action !== 'unban') this.pendingProvider.set(`${key}:${member.id}`, { room: hearMeOutProviderRoomName(tenantId, roomId), identity: String(member.id), remove, muted: this.muted(room, member) });
+    }
+    room.epoch++; this.broadcast(room);
+    await this.reconcileProvider();
+    return { providerPending: [...this.pendingProvider.keys()].some(value => value.startsWith(key + ':')) };
+  }
+  private async reconcileProvider() {
+    if (!this.provider) return;
+    for (const [key, pending] of this.pendingProvider) {
+      try {
+        if (pending.remove) await this.provider.removeParticipant(pending.room, pending.identity);
+        else await this.provider.updateParticipant(pending.room, pending.identity, undefined, { canPublish: !pending.muted, canSubscribe: true, canPublishData: false });
+        if (this.pendingProvider.get(key) === pending) this.pendingProvider.delete(key);
+      } catch (error) {
+        // A disconnected participant is already absent; other provider failures retry.
+        if ((error as { code?: string }).code === 'not_found' && this.pendingProvider.get(key) === pending) this.pendingProvider.delete(key);
+      }
+    }
+  }
   closeRoom(tenantId: string, roomId: string) {
     const key = createHash('sha256').update(JSON.stringify([tenantId, roomId])).digest('hex');
     const room = this.rooms.get(key);
@@ -182,6 +225,7 @@ export class HearMeOutRoomRtcGateway {
       } catch { member.socket.close(4403, 'Room access ended'); }
     }
     this.relay.pruneIdle();
+    await this.reconcileProvider();
     } finally { this.reconciling = false; }
   }
   diagnostics() { return { rooms: this.rooms.size, relay: this.relay.snapshot() }; }

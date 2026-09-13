@@ -18,6 +18,7 @@ const gateway = new HearMeOutRoomRtcGateway({
   livekit: { url: 'wss://127.0.0.1:1', apiKey: 'test-api-key', apiSecret: 'test-only-livekit-signing-key' },
   iceServers: [], membershipCheckMs: 1000,
 });
+const originalFailover = gateway.failover.bind(gateway); gateway.failover = (room, reason) => { console.log('RTC transition:', room.mode, reason); return originalFailover(room, reason); };
 gateway.attach(internal);
 await new Promise(resolve => internal.listen(0, '127.0.0.1', resolve));
 const bundle = await readFile(new URL('../apps/hearmeout/dist/rtc-client.js', import.meta.url));
@@ -44,20 +45,22 @@ try {
     socket.on('error', () => {}); socket.on('open', () => { socket.close(); reject(new Error('Cross-origin socket accepted')); });
   });
   assert.equal(refused, 403);
-  browser = await chromium.launch({ executablePath: chromium.executablePath(), headless: true, args: ['--no-sandbox', '--autoplay-policy=no-user-gesture-required'] });
+  browser = await chromium.launch({ executablePath: process.env.HMO_TEST_BROWSER_PATH || chromium.executablePath(), headless: true, args: ['--no-sandbox', '--disable-features=WebRtcHideLocalIpsWithMdns', '--autoplay-policy=no-user-gesture-required'] });
   const pages = [];
   for (const user of ['alice', 'bob']) {
     const context = await browser.newContext();
     await context.addCookies([{ name: 'session', value: user, url: origin }]);
     const page = await context.newPage();
     page.on('pageerror', error => console.error('browser error:', error.message));
-    await page.goto(origin); await page.click('#join'); pages.push(page);
+    await page.goto(origin); await page.evaluate(() => { setInterval(() => { if (window.rtc?.links.size) window.lastPeerState = [...window.rtc.links.values()].map(link => ({ ice: link.pc.iceConnectionState, signaling: link.pc.signalingState, local: link.pc.localDescription?.type, remote: link.pc.remoteDescription?.type, candidates: link.pc.localDescription?.sdp.match(/a=candidate:/g)?.length||0 })); }, 1000); }); await page.click('#join'); pages.push(page);
     if (user === 'alice') {
       await page.waitForFunction(() => window.rtc?.diagnostics().mode === 'waiting');
       assert.equal(gateway.diagnostics().relay[0].participants.length, 1);
     }
   }
+  try {
   for (const page of pages) await page.waitForFunction(() => window.rtc?.diagnostics().peers.length === 1 && window.rtc.diagnostics().peers.every(value => value === 'connected'), null, { timeout: 35_000 });
+  } catch (error) { for (const page of pages) console.error(await page.evaluate(() => ({ rtc: window.rtc.diagnostics(), lastPeers: window.lastPeerState, status: document.querySelector('#status').textContent, links: [...window.rtc.links.values()].map(link => ({ ice: link.pc.iceConnectionState, signaling: link.pc.signalingState, local: link.pc.localDescription?.type, remote: link.pc.remoteDescription?.type, candidates: link.pc.localDescription?.sdp.match(/a=candidate:/g)?.length||0 })) }))); throw error; }
   for (const page of pages) await page.waitForFunction(async () => {
     for (const { pc } of window.rtc.links.values()) for (const report of (await pc.getStats()).values()) {
       if (report.type === 'inbound-rtp' && report.kind === 'audio' && report.packetsReceived > 5 && report.totalAudioEnergy > 0) return true;
@@ -65,6 +68,14 @@ try {
     return false;
   });
   console.log('PASS: solo room stays idle; failed LiveKit connection moves both browsers to direct WebRTC; actual audio packets have energy.');
+  await pages[0].evaluate(async () => {
+    const canvas = document.createElement('canvas'); canvas.width = 320; canvas.height = 180;
+    const paint = () => { const ctx = canvas.getContext('2d'); ctx.fillStyle = '#e03020'; ctx.fillRect(0, 0, 320, 180); requestAnimationFrame(paint); }; paint();
+    window.testScreen = canvas.captureStream(12); await window.rtc.setScreen(testScreen);
+  });
+  await pages[1].waitForFunction(() => { const video = document.querySelector('[data-hmo-screen]'); return video && !video.hidden && video.videoWidth === 320; });
+  assert.equal(await pages[1].evaluate(() => { const canvas = document.createElement('canvas'); canvas.width = 1; canvas.height = 1; const ctx = canvas.getContext('2d'); ctx.drawImage(document.querySelector('[data-hmo-screen]'), 0, 0, 1, 1); const pixel = ctx.getImageData(0, 0, 1, 1).data; return pixel[0] > 150 && pixel[1] < 100; }), true);
+  console.log('PASS: screen sharing delivers actual video pixels through the room peer connection.');
   await pages[0].evaluate(() => {
     const state = window.rtc.diagnostics();
     window.rtc.socket.send(JSON.stringify({ type: 'failed', transport: state.mode, epoch: state.epoch, reason: 'ICE failed during test' }));
@@ -81,6 +92,11 @@ try {
     });
   }
   console.log('PASS: coordinated relay fallback carries PCM audio through the real ingress and plays a nonzero waveform on both browsers.');
+  await pages[1].waitForFunction(() => { const video = document.querySelector('[data-hmo-screen]'); return video && !video.hidden && video.videoWidth === 320; });
+  await pages[0].evaluate(() => window.rtc.setScreen(null));
+  await pages[1].waitForFunction(() => [...document.querySelectorAll('[data-hmo-screen]')].every(video => video.hidden));
+  assert.equal(await pages[0].evaluate(() => window.testScreen.getVideoTracks()[0].readyState), 'ended');
+  console.log('PASS: screen sharing continues alongside fallback audio, and stopping sharing ends capture and hides the viewer.');
   await pages[0].evaluate(() => window.input.getAudioTracks()[0].enabled = false);
   const sent = await pages[0].evaluate(() => window.rtc.diagnostics().framesSent);
   await new Promise(resolve => setTimeout(resolve, 250));

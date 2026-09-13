@@ -1,10 +1,10 @@
 import { DatabaseSync } from "node:sqlite";
-import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 
 export const HEARMEOUT_ROOM_LIFETIME_MS = 6 * 60 * 60 * 1_000;
 export const HEARMEOUT_PRESENCE_STALE_MS = 45_000;
 export type HearMeOutMediaLaneV1 = "movie" | "music";
-export type HearMeOutModerationActionV1 = "kick" | "timeout" | "ban";
+export type HearMeOutModerationActionV1 = "kick" | "timeout" | "ban" | "unban" | "mute" | "unmute" | "move";
 
 export interface HearMeOutPrincipalV1 {
   tenantId: string;
@@ -49,6 +49,16 @@ export interface HearMeOutPresenceV1 {
   lastSeenAt: string;
 }
 
+export interface HearMeOutVoiceQueueEntryV1 {
+  userId: string; displayName: string; addedAt: string; state: 'waiting' | 'invited';
+  invitationId?: string; expiresAt?: string;
+}
+
+export interface HearMeOutRadioV1 {
+  enabled: boolean; seed: string; revision: number; principal: HearMeOutPrincipalV1;
+  history: Array<{ itemId: string; title: string; selectedAt: string }>; error?: string;
+}
+
 export interface HearMeOutMediaItemV1 {
   itemId: string;
   type: "movie" | "live" | "music" | "tts";
@@ -89,6 +99,7 @@ export type HearMeOutControlActionV1 = "play" | "pause" | "seek" | "mute" | "unm
 
 export class SqliteHearMeOutRoomMediaRuntime {
   private readonly db: DatabaseSync;
+  private transactionDepth = 0;
 
   constructor(path: string) {
     if (!path) throw new Error("HearMeOut database path is required");
@@ -121,6 +132,22 @@ export class SqliteHearMeOutRoomMediaRuntime {
         PRIMARY KEY(tenant_id,room_id,user_id)
       ) STRICT;
       CREATE INDEX IF NOT EXISTS hmo_room_restrictions_active ON hmo_room_restrictions(tenant_id,room_id,expires_at);
+      CREATE TABLE IF NOT EXISTS hmo_room_member_controls(
+        tenant_id TEXT NOT NULL, room_id TEXT NOT NULL, user_id TEXT NOT NULL, server_muted INTEGER NOT NULL,
+        PRIMARY KEY(tenant_id,room_id,user_id)
+      ) STRICT;
+      CREATE TABLE IF NOT EXISTS hmo_room_moves(
+        tenant_id TEXT NOT NULL, room_id TEXT NOT NULL, user_id TEXT NOT NULL, target_room_id TEXT NOT NULL, body TEXT NOT NULL,
+        PRIMARY KEY(tenant_id,room_id,user_id)
+      ) STRICT;
+      CREATE TABLE IF NOT EXISTS hmo_room_voice_queue(
+        tenant_id TEXT NOT NULL, room_id TEXT NOT NULL, user_id TEXT NOT NULL, added_at TEXT NOT NULL, body TEXT NOT NULL,
+        PRIMARY KEY(tenant_id,room_id,user_id)
+      ) STRICT;
+      CREATE TABLE IF NOT EXISTS hmo_room_radio(
+        tenant_id TEXT NOT NULL, room_id TEXT NOT NULL, body TEXT NOT NULL, lease_owner TEXT, lease_until TEXT, next_attempt_at TEXT,
+        PRIMARY KEY(tenant_id,room_id)
+      ) STRICT;
       CREATE TABLE IF NOT EXISTS hmo_room_presence(
         tenant_id TEXT NOT NULL, room_id TEXT NOT NULL, user_id TEXT NOT NULL, connection_id TEXT NOT NULL, last_seen_at TEXT NOT NULL, body TEXT NOT NULL,
         PRIMARY KEY(tenant_id,room_id,user_id,connection_id)
@@ -133,6 +160,14 @@ export class SqliteHearMeOutRoomMediaRuntime {
       CREATE TABLE IF NOT EXISTS hmo_operations(
         tenant_id TEXT NOT NULL, operation_id TEXT NOT NULL, kind TEXT NOT NULL, body TEXT NOT NULL,
         PRIMARY KEY(tenant_id,operation_id)
+      ) STRICT;
+      CREATE TABLE IF NOT EXISTS hmo_music_favorites(
+        tenant_id TEXT NOT NULL, user_id TEXT NOT NULL, item_id TEXT NOT NULL, saved_at TEXT NOT NULL, body TEXT NOT NULL,
+        PRIMARY KEY(tenant_id,user_id,item_id)
+      ) STRICT;
+      CREATE TABLE IF NOT EXISTS hmo_music_history(
+        tenant_id TEXT NOT NULL, user_id TEXT NOT NULL, request_id TEXT NOT NULL, item_id TEXT NOT NULL, played_at TEXT NOT NULL, body TEXT NOT NULL,
+        PRIMARY KEY(tenant_id,request_id)
       ) STRICT;
     `);
     const columns=this.db.prepare("PRAGMA table_info(hmo_operations)").all() as {name:string}[];
@@ -158,9 +193,10 @@ export class SqliteHearMeOutRoomMediaRuntime {
 
   private removeRoomData(tenantId: string, roomId: string): void {
     const tables = new Set((this.db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as Array<{ name: string }>).map(row => row.name));
-    for (const table of ["hmo_media_sessions", "hmo_room_presence", "hmo_room_restrictions", "hmo_room_admissions", "hmo_room_invitations", "hmo_room_access", "hmo_room_members", "hmo_room_chat", "hmo_room_personas", "hmo_persona_rooms"]) {
+    for (const table of ["hmo_media_sessions", "hmo_room_presence", "hmo_room_restrictions", "hmo_room_member_controls", "hmo_room_moves", "hmo_room_voice_queue", "hmo_room_radio", "hmo_room_admissions", "hmo_room_invitations", "hmo_room_access", "hmo_room_members", "hmo_room_chat", "hmo_room_personas", "hmo_persona_rooms"]) {
       if (tables.has(table)) this.db.prepare(`DELETE FROM ${table} WHERE tenant_id=? AND room_id=?`).run(tenantId, roomId);
     }
+    this.db.prepare("DELETE FROM hmo_room_moves WHERE tenant_id=? AND target_room_id=?").run(tenantId, roomId);
     if (tables.has("hmo_assistant_requests")) this.db.prepare("DELETE FROM hmo_assistant_requests WHERE tenant=? AND room=?").run(tenantId, roomId);
     if (tables.has("hmo_voice_bridge")) {
       // Keep only a durable stop request if the provider still needs cleanup.
@@ -226,6 +262,8 @@ export class SqliteHearMeOutRoomMediaRuntime {
     const access = room.privacy === "private" ? this.authorizePrivateAdmission(principal, room, admission.password, at) : undefined;
     this.transaction(() => {
       this.putMember(principal, room.roomId, at);
+      this.db.prepare("DELETE FROM hmo_room_moves WHERE tenant_id=? AND room_id=? AND user_id=?").run(principal.tenantId, room.roomId, principal.userId);
+      this.db.prepare('DELETE FROM hmo_room_voice_queue WHERE tenant_id=? AND room_id=? AND user_id=?').run(principal.tenantId, room.roomId, principal.userId);
       if (access) {
         this.putAdmission(principal.tenantId, room.roomId, principal.userId, access.method, access.invitation?.invitedByUserId ?? room.ownerUserId, at);
         if (access.invitation) this.acceptInvitation(access.invitation, at);
@@ -241,7 +279,6 @@ export class SqliteHearMeOutRoomMediaRuntime {
     if (replay) return replay;
     const at = validNow(input.now);
     const room = this.requireRoom(principal.tenantId, input.roomId, at);
-    if (room.privacy !== "private") throw new Error("Public HearMeOut rooms do not require invitations");
     if (!this.canManage(principal, room)) throw new Error("Only the room owner or an admin can invite private-room members");
     const ttlMs = input.ttlMs ?? 24 * 60 * 60 * 1_000;
     if (!Number.isSafeInteger(ttlMs) || ttlMs < 60_000 || ttlMs > 7 * 24 * 60 * 60 * 1_000) throw new Error("HearMeOut invitation lifetime is invalid");
@@ -260,6 +297,47 @@ export class SqliteHearMeOutRoomMediaRuntime {
       this.remember(principal.tenantId, input.operationId, "invite-room", invitation);
     });
     return invitation;
+  }
+
+  requestVoiceTurn(principal: HearMeOutPrincipalV1, roomId: string, now?: string): HearMeOutVoiceQueueEntryV1 {
+    assertPrincipal(principal); const at = validNow(now), room = this.requireRoom(principal.tenantId, roomId, at); this.assertCanJoin(principal, room, at);
+    const current = this.voiceQueue(principal, roomId, at).find(entry => entry.userId === principal.userId);
+    if (current && (current.state === 'waiting' || Date.parse(current.expiresAt || '') > Date.parse(at))) return current;
+    const entry: HearMeOutVoiceQueueEntryV1 = { userId: principal.userId, displayName: principal.displayName, addedAt: at, state: 'waiting' };
+    this.db.prepare('INSERT INTO hmo_room_voice_queue(tenant_id,room_id,user_id,added_at,body) VALUES(?,?,?,?,?) ON CONFLICT(tenant_id,room_id,user_id) DO UPDATE SET added_at=excluded.added_at,body=excluded.body').run(principal.tenantId, roomId, principal.userId, at, JSON.stringify(entry));
+    return entry;
+  }
+
+  voiceQueue(principal: HearMeOutPrincipalV1, roomId: string, now?: string): HearMeOutVoiceQueueEntryV1[] {
+    assertPrincipal(principal); const room = this.requireRoom(principal.tenantId, roomId, validNow(now));
+    const rows = this.db.prepare('SELECT body FROM hmo_room_voice_queue WHERE tenant_id=? AND room_id=? ORDER BY added_at,user_id').all(principal.tenantId, roomId);
+    return rows.map(row => JSON.parse(String(row.body)) as HearMeOutVoiceQueueEntryV1).filter(entry => this.canManage(principal, room) || entry.userId === principal.userId);
+  }
+
+  admitNextVoiceTurn(principal: HearMeOutPrincipalV1, roomId: string, operationId: string, now?: string): HearMeOutVoiceQueueEntryV1 | null {
+    assertPrincipal(principal); const at = validNow(now), room = this.requireRoom(principal.tenantId, roomId, at);
+    if (!this.canManage(principal, room)) throw new Error('Only the room owner or an admin can admit the next person');
+    const signature = JSON.stringify([principal.userId,roomId]);
+    return this.transaction(() => {
+      const replay = this.replay<HearMeOutVoiceQueueEntryV1>(principal.tenantId, operationId, 'voice-admit', signature); if (replay) return replay;
+      const next = this.voiceQueue(principal, roomId, at).find(entry => entry.state === 'waiting'); if (!next) return null;
+      this.assertCanJoin({ ...principal, userId: next.userId, roles: ['member'] }, room, at);
+      const invitation = this.inviteToRoom(principal, { roomId, inviteeUserId: next.userId, operationId: 'invite:' + operationId, ttlMs: 5 * 60_000, now: at });
+      const entry: HearMeOutVoiceQueueEntryV1 = { ...next, state: 'invited', invitationId: invitation.invitationId, expiresAt: invitation.expiresAt };
+      this.db.prepare('UPDATE hmo_room_voice_queue SET body=? WHERE tenant_id=? AND room_id=? AND user_id=?').run(JSON.stringify(entry), principal.tenantId, roomId, next.userId);
+      this.remember(principal.tenantId, operationId, 'voice-admit', entry, signature, roomId); return entry;
+    });
+  }
+
+  removeVoiceTurn(principal: HearMeOutPrincipalV1, roomId: string, userId: string, now?: string) {
+    assertPrincipal(principal); const at = validNow(now), room = this.requireRoom(principal.tenantId, roomId, at);
+    if (userId !== principal.userId && !this.canManage(principal, room)) throw new Error('Only the room owner or an admin can remove another waiting person');
+    this.transaction(() => {
+      const entry = this.voiceQueue(principal, roomId, at).find(value => value.userId === userId);
+      if (entry?.invitationId) this.db.prepare("UPDATE hmo_room_invitations SET body=json_set(body,'$.revokedAt',?) WHERE tenant_id=? AND invitation_id=?").run(at, principal.tenantId, entry.invitationId);
+      this.db.prepare('DELETE FROM hmo_room_voice_queue WHERE tenant_id=? AND room_id=? AND user_id=?').run(principal.tenantId, roomId, userId);
+    });
+    return { removed: true };
   }
 
   heartbeatPresence(principal: HearMeOutPrincipalV1, roomId: string, connectionId: string, now?: string): HearMeOutPresenceV1 {
@@ -307,9 +385,10 @@ export class SqliteHearMeOutRoomMediaRuntime {
     return result;
   }
 
-  moderateMember(principal: HearMeOutPrincipalV1, input: { roomId: string; targetUserId: string; action: HearMeOutModerationActionV1; durationSeconds?: number | undefined; operationId: string; now?: string }): { action: HearMeOutModerationActionV1; targetUserId: string; expiresAt?: string } {
+  moderateMember(principal: HearMeOutPrincipalV1, input: { roomId: string; targetUserId: string; action: HearMeOutModerationActionV1; durationSeconds?: number | undefined; targetRoomId?: string | undefined; operationId: string; now?: string }): { action: HearMeOutModerationActionV1; targetUserId: string; expiresAt?: string; targetRoomId?: string } {
     assertPrincipal(principal);
-    const replay = this.replay<{ action: HearMeOutModerationActionV1; targetUserId: string; expiresAt?: string }>(principal.tenantId, input.operationId, "moderate-room-member");
+    const signature = JSON.stringify([principal.userId, input.roomId, input.targetUserId, input.action, input.durationSeconds, input.targetRoomId]);
+    const replay = this.replay<{ action: HearMeOutModerationActionV1; targetUserId: string; expiresAt?: string; targetRoomId?: string }>(principal.tenantId, input.operationId, "moderate-room-member", signature);
     if (replay) return replay;
     const at = validNow(input.now);
     const room = this.requireRoom(principal.tenantId, input.roomId, at);
@@ -317,23 +396,46 @@ export class SqliteHearMeOutRoomMediaRuntime {
     const targetUserId = cleanId(input.targetUserId, "targetUserId");
     if (targetUserId === room.ownerUserId) throw new Error("The room owner cannot be kicked, timed out, or banned");
     if (targetUserId === principal.userId) throw new Error("A room moderator cannot moderate themselves");
-    if (input.action !== "kick" && input.action !== "timeout" && input.action !== "ban") throw new Error("HearMeOut moderation action is invalid");
+    if (!["kick", "timeout", "ban", "unban", "mute", "unmute", "move"].includes(input.action)) throw new Error("HearMeOut moderation action is invalid");
+    let destination: HearMeOutRoomV1 | undefined;
+    const target = this.listMembers(principal.tenantId, room.roomId, at).find(member => member.userId === targetUserId);
+    if (["mute", "unmute", "move"].includes(input.action) && !target) throw new Error("HearMeOut room member not found");
+    if (input.action === "move") {
+      destination = this.requireRoom(principal.tenantId, cleanId(input.targetRoomId || "", "targetRoomId"), at);
+      if (destination.roomId === room.roomId) throw new Error("Choose another destination room");
+      const moving = { ...principal, userId: targetUserId, displayName: target!.displayName, roles: ["member"] as Array<"member"> };
+      this.assertCanJoin(moving, destination, at);
+      if (destination.privacy === "private" && !this.canManage(principal, destination)) this.authorizePrivateAdmission(moving, destination, undefined, at);
+    }
     let expiresAt: string | undefined;
     if (input.action === "timeout") {
       const duration = Number(input.durationSeconds ?? 600);
       if (!Number.isSafeInteger(duration) || duration < 60 || duration > 24 * 60 * 60) throw new Error("HearMeOut timeout must be between 60 seconds and 24 hours");
       expiresAt = new Date(Date.parse(at) + duration * 1_000).toISOString();
     }
-    const result = { action: input.action, targetUserId, ...(expiresAt ? { expiresAt } : {}) };
+    const result = { action: input.action, targetUserId, ...(expiresAt ? { expiresAt } : {}), ...(destination ? { targetRoomId: destination.roomId } : {}) };
     this.transaction(() => {
+      if (input.action === "unban") {
+        this.db.prepare("DELETE FROM hmo_room_restrictions WHERE tenant_id=? AND room_id=? AND user_id=?").run(principal.tenantId, room.roomId, targetUserId);
+      } else if (input.action === "mute" || input.action === "unmute") {
+        this.db.prepare("INSERT INTO hmo_room_member_controls(tenant_id,room_id,user_id,server_muted) VALUES(?,?,?,?) ON CONFLICT(tenant_id,room_id,user_id) DO UPDATE SET server_muted=excluded.server_muted").run(principal.tenantId, room.roomId, targetUserId, input.action === "mute" ? 1 : 0);
+      } else {
       this.db.prepare("DELETE FROM hmo_room_presence WHERE tenant_id=? AND room_id=? AND user_id=?").run(principal.tenantId, room.roomId, targetUserId);
       this.db.prepare("DELETE FROM hmo_room_members WHERE tenant_id=? AND room_id=? AND user_id=?").run(principal.tenantId, room.roomId, targetUserId);
       this.db.prepare("DELETE FROM hmo_room_admissions WHERE tenant_id=? AND room_id=? AND user_id=?").run(principal.tenantId, room.roomId, targetUserId);
-      if (input.action !== "kick") {
+      this.db.prepare('DELETE FROM hmo_room_voice_queue WHERE tenant_id=? AND room_id=? AND user_id=?').run(principal.tenantId, room.roomId, targetUserId);
+      if (input.action === "ban" || input.action === "timeout") {
         const body = { schemaVersion: 1, tenantId: principal.tenantId, roomId: room.roomId, userId: targetUserId, kind: input.action, createdByUserId: principal.userId, createdAt: at, ...(expiresAt ? { expiresAt } : {}) };
         this.db.prepare("INSERT INTO hmo_room_restrictions(tenant_id,room_id,user_id,kind,expires_at,body) VALUES(?,?,?,?,?,?) ON CONFLICT(tenant_id,room_id,user_id) DO UPDATE SET kind=excluded.kind,expires_at=excluded.expires_at,body=excluded.body").run(principal.tenantId, room.roomId, targetUserId, input.action, expiresAt ?? null, JSON.stringify(body));
       }
-      this.remember(principal.tenantId, input.operationId, "moderate-room-member", result, undefined, room.roomId);
+      if (destination && target) {
+        this.putMember({ ...principal, userId: targetUserId, displayName: target.displayName }, destination.roomId, at);
+        this.putAdmission(principal.tenantId, destination.roomId, targetUserId, "invitation", principal.userId, at);
+        const movement = { targetRoomId: destination.roomId, targetRoomName: destination.name, movedAt: at, movedBy: principal.userId };
+        this.db.prepare("INSERT INTO hmo_room_moves(tenant_id,room_id,user_id,target_room_id,body) VALUES(?,?,?,?,?) ON CONFLICT(tenant_id,room_id,user_id) DO UPDATE SET target_room_id=excluded.target_room_id,body=excluded.body").run(principal.tenantId, room.roomId, targetUserId, destination.roomId, JSON.stringify(movement));
+      }
+      }
+      this.remember(principal.tenantId, input.operationId, "moderate-room-member", result, signature, room.roomId);
     });
     return result;
   }
@@ -355,9 +457,24 @@ export class SqliteHearMeOutRoomMediaRuntime {
     return result;
   }
 
-  listMembers(tenantId: string, roomId: string, now?: string): Array<{ userId: string; displayName: string; joinedAt: string }> {
+  isServerMuted(tenantId: string, roomId: string, userId: string): boolean {
+    return Boolean(this.db.prepare("SELECT 1 FROM hmo_room_member_controls WHERE tenant_id=? AND room_id=? AND user_id=? AND server_muted=1").get(tenantId, roomId, userId));
+  }
+
+  memberMovement(principal: HearMeOutPrincipalV1, roomId: string): { targetRoomId: string; targetRoomName: string; movedAt: string; movedBy: string } | undefined {
+    const row = this.db.prepare("SELECT body FROM hmo_room_moves WHERE tenant_id=? AND room_id=? AND user_id=?").get(principal.tenantId, roomId, principal.userId) as { body: string } | undefined;
+    return row ? JSON.parse(row.body) : undefined;
+  }
+
+  listRestrictions(principal: HearMeOutPrincipalV1, roomId: string, now?: string): Array<{ userId: string; kind: string; expiresAt?: string }> {
+    const at = validNow(now), room = this.requireRoom(principal.tenantId, roomId, at);
+    if (!this.canManage(principal, room)) throw new Error("Only the room owner or an admin can review room restrictions");
+    return this.db.prepare("SELECT body FROM hmo_room_restrictions WHERE tenant_id=? AND room_id=? AND (expires_at IS NULL OR expires_at>?) ORDER BY user_id").all(principal.tenantId, roomId, at).map(row => JSON.parse(String(row.body)));
+  }
+
+  listMembers(tenantId: string, roomId: string, now?: string): Array<{ userId: string; displayName: string; joinedAt: string; serverMuted: boolean }> {
     this.requireRoom(tenantId, roomId, validNow(now));
-    return this.db.prepare("SELECT body FROM hmo_room_members WHERE tenant_id=? AND room_id=? ORDER BY user_id").all(tenantId, cleanId(roomId, "roomId")).map((row) => JSON.parse(String((row as { body: string }).body)));
+    return this.db.prepare("SELECT m.body,COALESCE(c.server_muted,0) AS server_muted FROM hmo_room_members m LEFT JOIN hmo_room_member_controls c USING(tenant_id,room_id,user_id) WHERE m.tenant_id=? AND m.room_id=? ORDER BY m.user_id").all(tenantId, cleanId(roomId, "roomId")).map(row => ({ ...JSON.parse(String(row.body)), serverMuted: Boolean(row.server_muted) }));
   }
 
   getSession(tenantId: string, roomId: string, lane: HearMeOutMediaLaneV1, now?: string): HearMeOutMediaSessionV1 {
@@ -366,7 +483,36 @@ export class SqliteHearMeOutRoomMediaRuntime {
     return this.readSession(tenantId, cleanId(roomId, "roomId"), lane) ?? emptySession(tenantId, cleanId(roomId, "roomId"), lane, at);
   }
 
+  radio(tenant:string,roomId:string):HearMeOutRadioV1|undefined{const row=this.db.prepare('SELECT body FROM hmo_room_radio WHERE tenant_id=? AND room_id=?').get(tenant,roomId);return row?JSON.parse(String(row.body)):undefined;}
+  configureRadio(principal:HearMeOutPrincipalV1,roomId:string,enabled:boolean,seed:string,now?:string){
+    assertPrincipal(principal);const room=this.requireRoom(principal.tenantId,roomId,validNow(now));this.requireMember(principal.tenantId,roomId,principal.userId);if(!this.canManage(principal,room))throw Error('Only the room host or an admin can change auto-radio');
+    const query=String(seed).trim();if(enabled&&(!query||query.length>300))throw Error('Choose a song, artist or style for auto-radio');
+    const prior=this.radio(principal.tenantId,roomId),state:HearMeOutRadioV1={enabled,seed:query||prior?.seed||'',revision:(prior?.revision??0)+1,principal:structuredClone(principal),history:prior?.history??[]};
+    this.db.prepare('INSERT INTO hmo_room_radio(tenant_id,room_id,body) VALUES(?,?,?) ON CONFLICT(tenant_id,room_id) DO UPDATE SET body=excluded.body,lease_owner=NULL,lease_until=NULL,next_attempt_at=NULL').run(principal.tenantId,roomId,JSON.stringify(state));return state;
+  }
+  radioRooms(){return this.db.prepare('SELECT tenant_id,room_id,body FROM hmo_room_radio').all().map(row=>({tenantId:String(row.tenant_id),roomId:String(row.room_id),state:JSON.parse(String(row.body)) as HearMeOutRadioV1})).filter(item=>item.state.enabled);}
+  claimRadio(tenant:string,roomId:string,owner:string,now:string){return this.db.prepare('UPDATE hmo_room_radio SET lease_owner=?,lease_until=? WHERE tenant_id=? AND room_id=? AND (lease_until IS NULL OR lease_until<=?) AND (next_attempt_at IS NULL OR next_attempt_at<=?)').run(owner,new Date(Date.parse(now)+300000).toISOString(),tenant,roomId,now,now).changes===1;}
+  completeRadio(tenant:string,roomId:string,owner:string,radioRevision:number,sessionRevision:number,item:HearMeOutMediaItemV1|undefined,error:string|undefined,now:string){return this.transaction(()=>{
+    const row=this.db.prepare('SELECT lease_owner FROM hmo_room_radio WHERE tenant_id=? AND room_id=?').get(tenant,roomId),state=this.radio(tenant,roomId);
+    if(!row||row.lease_owner!==owner||!state||state.revision!==radioRevision||!state.enabled)return false;
+    let added=false;
+    if(item&&this.getRoom(tenant,roomId,now)){
+      const session=this.getSession(tenant,roomId,'music',now);
+      if(session.revision===sessionRevision&&!session.queue.length){
+        this.enqueue(state.principal,{roomId,lane:'music',item:{...item,metadata:{...item.metadata,autoRadio:true}},operationId:'radio:'+owner,now});
+        state.history=[...state.history,{itemId:item.itemId,title:item.title,selectedAt:now}].slice(-50);delete state.error;added=true;
+      }
+    }
+    if(error)state.error=error.slice(0,500);
+    this.db.prepare('UPDATE hmo_room_radio SET body=?,lease_owner=NULL,lease_until=NULL,next_attempt_at=? WHERE tenant_id=? AND room_id=?').run(JSON.stringify(state),new Date(Date.parse(now)+(error?30000:5000)).toISOString(),tenant,roomId);
+    return added;
+  });}
+
   enqueue(principal: HearMeOutPrincipalV1, input: { roomId: string; lane: HearMeOutMediaLaneV1; item: HearMeOutMediaItemV1; operationId: string; now?: string }): HearMeOutMediaSessionV1 {
+    return this.transaction(() => this.enqueueInTransaction(principal,input));
+  }
+
+  private enqueueInTransaction(principal: HearMeOutPrincipalV1, input: { roomId: string; lane: HearMeOutMediaLaneV1; item: HearMeOutMediaItemV1; operationId: string; now?: string }): HearMeOutMediaSessionV1 {
     assertPrincipal(principal);
     const at = validNow(input.now);
     const room = this.requireRoom(principal.tenantId, input.roomId, at);
@@ -386,17 +532,23 @@ export class SqliteHearMeOutRoomMediaRuntime {
       session.current = request;
       session.playback = { ...session.playback, status: "playing", position: 0, updatedAt: at };
     } else {
-      session.queue.push(request);
+      const radioIndex=input.lane==='music'&&input.item.metadata?.autoRadio!==true?session.queue.findIndex(entry=>entry.item.metadata?.autoRadio===true):-1;
+      if(radioIndex<0)session.queue.push(request);else session.queue.splice(radioIndex,0,request);
     }
     session.revision += 1;
     this.transaction(() => {
       this.writeSession(session);
+      if (input.lane === 'music' && session.current?.requestId === request.requestId) this.recordMusicStart(session, at);
       this.remember(principal.tenantId, input.operationId, "enqueue", session,signature);
     });
     return structuredClone(session);
   }
 
   control(principal: HearMeOutPrincipalV1, input: { roomId: string; lane: HearMeOutMediaLaneV1; action: HearMeOutControlActionV1; operationId: string; position?: number; targetIndex?: number; expectedRequestId?: string; now?: string }): HearMeOutMediaSessionV1 {
+    return this.transaction(() => this.controlInTransaction(principal,input));
+  }
+
+  private controlInTransaction(principal: HearMeOutPrincipalV1, input: { roomId: string; lane: HearMeOutMediaLaneV1; action: HearMeOutControlActionV1; operationId: string; position?: number; targetIndex?: number; expectedRequestId?: string; now?: string }): HearMeOutMediaSessionV1 {
     assertPrincipal(principal);
     const at = validNow(input.now);
     const room = this.requireRoom(principal.tenantId, input.roomId, at);
@@ -440,8 +592,41 @@ export class SqliteHearMeOutRoomMediaRuntime {
     this.transaction(() => {
       this.writeSession(session);
       this.remember(principal.tenantId, input.operationId, "control", session,signature);
+      if (input.lane === 'music' && session.playback.status === 'playing') this.recordMusicStart(session, at);
     });
     return structuredClone(session);
+  }
+
+  saveFavorite(principal: HearMeOutPrincipalV1, item: HearMeOutMediaItemV1, now?: string) {
+    assertPrincipal(principal); assertItem(item); if (item.type !== 'music') throw new Error('Choose a music track to save');
+    const itemId = musicLibraryId(item), savedAt = validNow(now);
+    this.db.prepare('INSERT INTO hmo_music_favorites(tenant_id,user_id,item_id,saved_at,body) VALUES(?,?,?,?,?) ON CONFLICT(tenant_id,user_id,item_id) DO UPDATE SET body=excluded.body').run(principal.tenantId, principal.userId, itemId, savedAt, JSON.stringify(item));
+    return { itemId, item: structuredClone(item) };
+  }
+
+  removeFavorite(principal: HearMeOutPrincipalV1, itemId: string) {
+    assertPrincipal(principal); this.db.prepare('DELETE FROM hmo_music_favorites WHERE tenant_id=? AND user_id=? AND item_id=?').run(principal.tenantId, principal.userId, cleanId(itemId, 'itemId'));
+    return { removed: true };
+  }
+
+  musicLibrary(principal: HearMeOutPrincipalV1, offset = 0) {
+    assertPrincipal(principal); if (!Number.isSafeInteger(offset) || offset < 0) throw new Error('Invalid library page');
+    const rows = this.db.prepare('SELECT item_id AS itemId,saved_at AS savedAt,body FROM hmo_music_favorites WHERE tenant_id=? AND user_id=? ORDER BY saved_at DESC,item_id LIMIT 101 OFFSET ?').all(principal.tenantId, principal.userId, offset);
+    const favorites = rows.slice(0,100).map(row => ({ itemId: String(row.itemId), savedAt: String(row.savedAt), item: JSON.parse(String(row.body)) as HearMeOutMediaItemV1 }));
+    const history = this.db.prepare('SELECT item_id AS itemId,MAX(played_at) AS lastPlayedAt,COUNT(*) AS playCount,body FROM hmo_music_history WHERE tenant_id=? AND user_id=? GROUP BY item_id ORDER BY lastPlayedAt DESC LIMIT 100').all(principal.tenantId, principal.userId).map(row => ({ itemId: String(row.itemId), lastPlayedAt: String(row.lastPlayedAt), playCount: Number(row.playCount), item: JSON.parse(String(row.body)) as HearMeOutMediaItemV1 }));
+    const mostPlayed = this.db.prepare('SELECT item_id AS itemId,MAX(played_at) AS lastPlayedAt,COUNT(*) AS playCount,body FROM hmo_music_history WHERE tenant_id=? AND user_id=? GROUP BY item_id ORDER BY playCount DESC,lastPlayedAt DESC LIMIT 100').all(principal.tenantId, principal.userId).map(row => ({ itemId: String(row.itemId), lastPlayedAt: String(row.lastPlayedAt), playCount: Number(row.playCount), item: JSON.parse(String(row.body)) as HearMeOutMediaItemV1 }));
+    return { favorites, recent: history, mostPlayed, ...(rows.length > 100 ? { nextOffset: offset + 100 } : {}) };
+  }
+
+  queueFavorite(principal: HearMeOutPrincipalV1, roomId: string, itemId: string, operationId: string, now?: string) {
+    const row = this.db.prepare('SELECT body FROM hmo_music_favorites WHERE tenant_id=? AND user_id=? AND item_id=?').get(principal.tenantId, principal.userId, cleanId(itemId, 'itemId')) as { body: string } | undefined;
+    if (!row) throw new Error('Saved track not found');
+    return this.enqueue(principal, { roomId, lane: 'music', item: JSON.parse(row.body), operationId, ...(now ? { now } : {}) });
+  }
+
+  private recordMusicStart(session: HearMeOutMediaSessionV1, at: string) {
+    const current = session.current; if (!current || current.item.type !== 'music') return;
+    this.db.prepare('INSERT INTO hmo_music_history(tenant_id,user_id,request_id,item_id,played_at,body) VALUES(?,?,?,?,?,?) ON CONFLICT(tenant_id,request_id) DO NOTHING').run(session.tenantId, current.requestedBy.userId, current.requestId, musicLibraryId(current.item), at, JSON.stringify(current.item));
   }
 
   private assertCanControl(principal: HearMeOutPrincipalV1, room: HearMeOutRoomV1, session: HearMeOutMediaSessionV1, action: HearMeOutControlActionV1): void {
@@ -550,11 +735,16 @@ export class SqliteHearMeOutRoomMediaRuntime {
   }
 
   private transaction<T>(fn: () => T): T {
+    if (this.transactionDepth) return fn();
     this.db.exec("BEGIN IMMEDIATE");
+    this.transactionDepth++;
     try { const result = fn(); this.db.exec("COMMIT"); return result; }
     catch (error) { this.db.exec("ROLLBACK"); throw error; }
+    finally { this.transactionDepth--; }
   }
 }
+
+function musicLibraryId(item: HearMeOutMediaItemV1) { return createHash('sha256').update(JSON.stringify([item.source, item.metadata?.videoId ?? (item.source === 'user-url' ? item.playbackUrl : item.itemId)])).digest('hex'); }
 
 export function playbackPosition(session: HearMeOutMediaSessionV1, now?: string): number {
   const at = Date.parse(validNow(now));

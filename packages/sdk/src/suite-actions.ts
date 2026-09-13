@@ -29,6 +29,12 @@ export function detectSpmtSuiteActionCommand(message: string, now = new Date()):
   if (/\b(?:deploy|post|publish|send)\b.*\b(?:mod(?:erator)?|partner|dev(?:eloper|elopment)?)\b.*\bapplications?\b/.test(value)) return request("dsh.applications.deploy", { channel });
   if (/\b(?:deploy|post|publish|send)\b.*\b(?:admin\s+)?calendar\b/.test(value)) return request("dsh.calendar.deploy", { channel });
   if (/\b(?:refresh|update|regenerate)\b.*\b(?:deployed\s+)?(?:admin\s+)?calendar\b/.test(value)) return request("dsh.calendar.refresh", {});
+  if (/\braid[ -]?train\b/.test(value)) {
+    const date=extractDate(message,now),clock=/\b(?:at\s+)?([01]?\d|2[0-3]):00\b/.exec(value),hour=clock?String(Number(clock[1])):"";
+    if (/\b(?:cancel|leave|release)\b/.test(value))return request("dsh.calendar.raid.cancel",{date,hour});
+    if (/\b(?:claim|reserve|signup|sign\s+up|join)\b/.test(value))return request("dsh.calendar.raid.reserve",{date,hour});
+    if (/\b(?:show|view|list|read|schedule|available)\b/.test(value))return request("dsh.calendar.raid.read",{date});
+  }
   if (/\b(?:claim|schedule|set|put|add|sign)\b.*\bcaptain'?s?\s+log\b/.test(value)) return request("dsh.calendar.captain.create", { selectedDate: extractDate(message, now) });
   if (/\b(?:who|read|show|list|check|what)\b.*\bcaptain'?s?\s+log\b/.test(value)) return request("dsh.calendar.captain.read", {});
   if (/\b(?:read|show|list|check|what(?:'s| is))\b.*\b(?:dsh|discord\s*stream\s*hubs?|admin)\b.*\bcalendar\b/.test(value)) return request("dsh.calendar.read", {});

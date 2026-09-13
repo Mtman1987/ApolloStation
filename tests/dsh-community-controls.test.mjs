@@ -6,7 +6,6 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { createDiscordStreamHubWebServer } from '../apps/discord-stream-hub/dist/web-server.js';
 import { SqliteDshApplicationStore } from '../apps/discord-stream-hub/dist/applications.js';
-import { simulationDiscordIds } from '../packages/contracts/dist/index.js';
 
 async function fixture(t, operationMode = 'read-only') {
   const directory = mkdtempSync(join(tmpdir(), 'dsh-community-controls-'));
@@ -36,6 +35,8 @@ async function fixture(t, operationMode = 'read-only') {
     if (path === '/v1/provider-grants') return Response.json({ expiresAt: '2099-01-01T00:00:00Z', credential: { accessToken: 'test-only-provider-token', metadata: { authorizationScheme: 'Bot' } } });
     if (path === '/v1/simulation-rooms') return Response.json([{ roomId: 'test-room', name: 'Test room' }]);
     if (path === '/v1/simulation-rooms/events') { events.push(JSON.parse(init.body)); return Response.json({}); }
+    if (path === '/api/v10/users/@me/channels') return Response.json({ id: '77777' });
+    if (path === '/api/v10/channels/77777/messages') { messages.push(JSON.parse(init.body)); return Response.json({ id: '67890' }); }
     if (path === '/api/v10/users/@me/guilds') return Response.json([{ id: guildId, name: 'Community' }, { id: '88888', name: 'Unrelated tenant' }]);
     if (path === `/api/v10/guilds/${guildId}/channels`) return Response.json([{ id: channelId, name: 'proposals', type: 0 }]);
     if (path === `/api/v10/channels/${channelId}/messages`) { messages.push(JSON.parse(init.body)); return Response.json({ id: '56789' }); }
@@ -45,7 +46,7 @@ async function fixture(t, operationMode = 'read-only') {
     }
     throw new Error(`Unexpected provider request: ${path}`);
   };
-  const host = createDiscordStreamHubWebServer({ spmtOrigin, databasePath, runtimeConfigPath, host: '127.0.0.1', port: 0, credential: 'test-worker-credential-123456789012345', operationMode, fetchImpl });
+  const host = createDiscordStreamHubWebServer({ spmtOrigin, publicOrigin: 'https://apollo.example', discordPublicKey: 'ab'.repeat(32), databasePath, runtimeConfigPath, host: '127.0.0.1', port: 0, credential: 'test-worker-credential-123456789012345', operationMode, fetchImpl });
   await host.listen();
   const origin = `http://127.0.0.1:${host.server.address().port}`;
   const api = origin + '/apps/discord-stream-hub/api/control';
@@ -57,9 +58,8 @@ async function fixture(t, operationMode = 'read-only') {
 }
 
 test('DSH serves publishing, blind advisory votes, decisions and identity-bound receipts through one app server', async t => {
-  const f = await fixture(t);
-  const shadow = simulationDiscordIds(f.tenantId, 'test-room');
-  const published = await f.post('/applications/publish', { serverId: shadow.guildId, channelId: shadow.channelId });
+  const f = await fixture(t, 'active');
+  const published = await f.post('/applications/publish', { serverId: f.guildId, channelId: f.channelId });
   assert.equal(published.status, 200, await published.text());
   const application = f.store.submit({ tenantId: f.tenantId, guildId: f.guildId, interactionId: 'submission-one', type: 'mod', applicantDiscordId: f.applicantDiscordId, applicantUsername: 'Candidate', answers: { motivation: 'Help the community' } }).application;
   assert.equal((await f.get('/applications/reviews', 'candidate')).status, 403);
@@ -71,8 +71,8 @@ test('DSH serves publishing, blind advisory votes, decisions and identity-bound 
   const decision = await f.post('/applications/decide', { applicationId: application.id, decision: 'approved' });
   assert.equal(decision.status, 200);
   assert.equal((await decision.json()).notification, 'sent');
-  const dm = f.events.find(event => event.connectionId === 'discord-direct-message');
-  const offerUrl = new URL(dm.data.payload.components[0].components[0].url);
+  const dm = f.messages.find(message => message.enforce_nonce);
+  const offerUrl = new URL(dm.components[0].components[0].url);
   const token = offerUrl.searchParams.get('token');
   const query = new URLSearchParams({ applicationId: application.id, token });
   const agreement = await (await f.get('/applications/agreement?' + query, 'candidate')).json();

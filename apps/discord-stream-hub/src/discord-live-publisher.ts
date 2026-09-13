@@ -1,3 +1,6 @@
+import type { DshDiscordModerationPortV1 } from "./channel-moderation.js";
+import { buildDshGuestShoutout, type DshGuestShoutoutStore, type DshGuestLiveActionV1 } from "./guest-shoutouts.js";
+import { dshShoutoutGroupSlug } from './shoutout-groups.js';
 import { buildDshTierShoutout, dshStreamShoutout, type DshEmbedTemplates } from "./shoutout-presentation.js";
 import { DatabaseSync } from "node:sqlite";
 import { dshDiscordRequestBody } from "./calendar-presentation.js";
@@ -14,11 +17,11 @@ export interface DshDiscordTransportV1 extends Partial<DshCalendarTransportV1> {
   deleteMessage(tenantId:string,channelId:string,messageId:string):Promise<void>;
   sendDirectMessage(tenantId:string,userId:string,payload:Record<string,unknown>):Promise<string>;
 }
-export interface DshDiscordBrandingV1 { communityMemberName:string; spotlightChannelId?:string; onboardingCustomId?:string; embedTemplates?:DshEmbedTemplates; }
+export interface DshDiscordBrandingV1 { communityMemberName:string; spotlightChannelId?:string; spotlightEnabled?:boolean; groupChannels?:Record<string,string>; onboardingCustomId?:string; embedTemplates?:DshEmbedTemplates; }
 export interface DshDiscordBrandingSourceV1 { getBranding(tenantId:string):Promise<DshDiscordBrandingV1>|DshDiscordBrandingV1; }
 export interface DshSpotlightMediaSourceV1 { getImage(input:{tenantId:string;member:DshLiveMemberV1;stream:DshTwitchStreamV1}):Promise<string|undefined>|string|undefined; }
 
-export interface DshTrackedDiscordMessageV1 { tenantId:string; kind:"shoutout"|"spotlight"|"calendar"|"applications"; key:string; channelId:string; messageId:string; updatedAt:string; }
+export interface DshTrackedDiscordMessageV1 { tenantId:string; kind:"shoutout"|"spotlight"|"calendar"|"applications"|"guest-shoutout"; key:string; channelId:string; messageId:string; updatedAt:string; }
 
 export class SqliteDshDiscordMessageStore {
   private readonly db:DatabaseSync;
@@ -33,6 +36,17 @@ export class SqliteDshDiscordMessageStore {
 export class DshDiscordApi {
   constructor(private readonly grants:DshDiscordGrantSourceV1,private readonly fetchImpl:typeof fetch=fetch,private readonly origin="https://discord.com/api/v10"){
     const url=new URL(origin);if(url.protocol!=="https:"||url.username||url.password||url.search||url.hash)throw new Error("Discord API origin must be credential-free HTTPS");
+  }
+  moderationPort():DshDiscordModerationPortV1 {
+    const history=(row:{id:string;author?:{id?:string;bot?:boolean}})=>({id:row.id,...(row.author?.id?{authorId:row.author.id}:{}),...(row.author?.bot===undefined?{}:{authorIsBot:row.author.bot})});
+    return {
+      channel:async(tenant,id)=>{const channel=await this.request<{id:string;guild_id?:string;name?:string}>(tenant,`/channels/${snowflake(id,"channelId")}`,"GET",undefined,"channels:read");if(!channel?.guild_id)throw Error("Choose a Discord server channel");return{id:channel.id,guildId:channel.guild_id,...(channel.name?{name:channel.name}:{})};},
+      botIdentity:async tenant=>{const user=await this.request<{id:string}>(tenant,"/users/@me","GET",undefined,"guilds:read");if(!user?.id)throw Error("Discord bot identity is unavailable");return user;},
+      message:async(tenant,channel,id)=>{try{const row=await this.request<{id:string;author?:{id?:string;bot?:boolean}}>(tenant,`/channels/${snowflake(channel,"channelId")}/messages/${snowflake(id,"messageId")}`,"GET",undefined,"channels:read");return row?history(row):undefined;}catch(error){if(error instanceof DshDiscordError&&error.status===404)return undefined;throw error;}},
+      messages:async(tenant,channel,input)=>{const rows=await this.request<Array<{id:string;author?:{id?:string;bot?:boolean}}>>(tenant,`/channels/${snowflake(channel,"channelId")}/messages?limit=100${input.before?`&before=${snowflake(input.before,"before")}`:""}`,"GET",undefined,"channels:read");if(!Array.isArray(rows))throw Error("Discord returned an invalid history page");return rows.map(history);},
+      bulkDelete:async(tenant,channel,ids)=>{await this.request(tenant,`/channels/${snowflake(channel,"channelId")}/messages/bulk-delete`,"POST",{messages:ids.map(id=>snowflake(id,"messageId"))});},
+      deleteMessage:(tenant,channel,id)=>this.deleteMessage(tenant,channel,id),
+    };
   }
   async createMessage(tenantId:string,channelId:string,payload:Record<string,unknown>){const body=await this.request<{id?:string}>(tenantId,`/channels/${snowflake(channelId,"channelId")}/messages`,"POST",payload);if(!body?.id)throw new Error("Discord did not return a message id");return body.id;}
   async getUser(tenantId:string,userId:string){return (await this.request<{id:string;avatar?:string|null}>(tenantId,`/users/${snowflake(userId,"userId")}`,"GET",undefined,"guilds:read"))!;}
@@ -66,9 +80,10 @@ export class DshDiscordError extends Error{constructor(readonly status:number,re
 
 /** Publishes DSH's durable live outbox to Discord while retaining message ids for edit/remove parity. */
 export class DshDiscordLivePublisher implements DshLiveActionPublisherV1 {
-  constructor(private readonly api:DshDiscordTransportV1,private readonly state:SqliteDshDiscordMessageStore,private readonly branding:DshDiscordBrandingSourceV1,private readonly media?:DshSpotlightMediaSourceV1,private readonly now:()=>string=()=>new Date().toISOString()){}
+  constructor(private readonly api:DshDiscordTransportV1,private readonly state:SqliteDshDiscordMessageStore,private readonly branding:DshDiscordBrandingSourceV1,private readonly media?:DshSpotlightMediaSourceV1,private readonly now:()=>string=()=>new Date().toISOString(),private readonly guests?:DshGuestShoutoutStore){}
   async publish(action:DshLiveActionV1){
     switch(action.type){
+      case "guest.refresh": await this.publishGuest(action); return;
       case "shoutout.create": await this.upsertShoutout(action.tenantId,action.member,action.stream,false); return;
       case "shoutout.update": await this.upsertShoutout(action.tenantId,action.member,action.stream,false); return;
       case "shoutout.remove": await this.removeShoutout(action.tenantId,action.member); return;
@@ -76,14 +91,32 @@ export class DshDiscordLivePublisher implements DshLiveActionPublisherV1 {
       case "spotlight.clear": await this.clearSpotlight(action.tenantId); return;
     }
   }
+  private async publishGuest(action:DshGuestLiveActionV1){
+    const guests=this.guests;if(!guests)throw Error("Guest shoutout delivery is unavailable");
+    const tenant=action.tenantId,id=action.targetId,owner=guests.acquire(tenant,id);if(!owner)throw Error("Guest shoutout delivery is already in progress");
+    try{
+      const current=guests.get(tenant,id);if(!current||current.generation!==action.generation||current.revision!==action.revision)return;
+      let tracked=this.state.get(tenant,"guest-shoutout",id);
+      const remove=async()=>{if(!tracked)return;guests.renew(tenant,id,owner);await this.api.deleteMessage(tenant,tracked.channelId,tracked.messageId).catch(error=>{if(!(error instanceof DshDiscordError)||error.status!==404)throw error;});this.state.remove(tenant,"guest-shoutout",id);tracked=undefined;};
+      if(current.state!=="active"){await remove();return;}
+      const brand=await this.branding.getBranding(tenant),payload=buildDshGuestShoutout(current,brand.embedTemplates);
+      if(tracked&&tracked.channelId!==current.channelId)await remove();
+      if(tracked){guests.renew(tenant,id,owner);try{await this.api.editMessage(tenant,tracked.channelId,tracked.messageId,payload);}catch(error){if(!(error instanceof DshDiscordError)||error.status!==404)throw error;this.state.remove(tenant,"guest-shoutout",id);tracked=undefined;}}
+      if(!tracked){guests.renew(tenant,id,owner);const messageId=await this.api.createMessage(tenant,current.channelId,payload);tracked={tenantId:tenant,kind:"guest-shoutout",key:id,channelId:current.channelId,messageId,updatedAt:this.now()};}
+      guests.renew(tenant,id,owner);this.state.put({...tracked,updatedAt:this.now()});
+      // A removal committed while Discord was replying must not leave an orphan behind.
+      if(guests.get(tenant,id)?.state!=="active")await remove();
+    }finally{guests.release(tenant,id,owner);}
+  }
   private async upsertShoutout(tenantId:string,member:DshLiveMemberV1,stream:DshTwitchStreamV1,spotlight:boolean){
-    const brand=await this.branding.getBranding(tenantId);const tracked=this.state.get(tenantId,"shoutout",member.canonicalUserId);const payload=buildDshTierShoutout(dshStreamShoutout(member,stream),{...(brand.embedTemplates?{templates:brand.embedTemplates}:{}),timestamp:this.now()});
+    const brand=await this.branding.getBranding(tenantId);let tracked=this.state.get(tenantId,"shoutout",member.canonicalUserId);const channelId=brand.groupChannels?.[dshShoutoutGroupSlug(member.group)||'']||member.shoutoutChannelId;const payload=buildDshTierShoutout(dshStreamShoutout(member,stream),{...(brand.embedTemplates?{templates:brand.embedTemplates}:{}),timestamp:this.now()});
+    if(tracked&&tracked.channelId!==channelId){await this.api.deleteMessage(tenantId,tracked.channelId,tracked.messageId).catch(error=>{if(!repostable(error))throw error});this.state.remove(tenantId,"shoutout",member.canonicalUserId);tracked=undefined;}
     if(tracked){try{await this.api.editMessage(tenantId,tracked.channelId,tracked.messageId,payload);this.state.put({...tracked,updatedAt:this.now()});return;}catch(error){if(!repostable(error))throw error;await this.api.deleteMessage(tenantId,tracked.channelId,tracked.messageId).catch(()=>undefined);}}
-    const messageId=await this.api.createMessage(tenantId,member.shoutoutChannelId,payload);this.state.put({tenantId,kind:"shoutout",key:member.canonicalUserId,channelId:member.shoutoutChannelId,messageId,updatedAt:this.now()});
+    const messageId=await this.api.createMessage(tenantId,channelId,payload);this.state.put({tenantId,kind:"shoutout",key:member.canonicalUserId,channelId,messageId,updatedAt:this.now()});
   }
   private async removeShoutout(tenantId:string,member:DshLiveMemberV1){const tracked=this.state.get(tenantId,"shoutout",member.canonicalUserId);if(!tracked)return;await this.api.deleteMessage(tenantId,tracked.channelId,tracked.messageId).catch((error)=>{if(!repostable(error))throw error;});this.state.remove(tenantId,"shoutout",member.canonicalUserId);}
   private async upsertSpotlight(tenantId:string,member:DshLiveMemberV1,stream:DshTwitchStreamV1){
-    const brand=await this.branding.getBranding(tenantId);const channelId=brand.spotlightChannelId??member.shoutoutChannelId;const image=await this.media?.getImage({tenantId,member,stream});const tracked=this.state.get(tenantId,"spotlight","current");const embed=buildSpotlightEmbed(member,stream,image);const components=brand.onboardingCustomId?[{type:1,components:[{type:2,style:1,label:"Join SpaceMountain",custom_id:brand.onboardingCustomId}]}]:[];const payload={embeds:[embed],components,allowed_mentions:{parse:[]}};
+    const brand=await this.branding.getBranding(tenantId);if(brand.spotlightEnabled===false){await this.clearSpotlight(tenantId);return;}const channelId=brand.spotlightChannelId??member.shoutoutChannelId;const image=await this.media?.getImage({tenantId,member,stream});const tracked=this.state.get(tenantId,"spotlight","current");const embed=buildSpotlightEmbed(member,stream,image);const components=brand.onboardingCustomId?[{type:1,components:[{type:2,style:1,label:"Join SpaceMountain",custom_id:brand.onboardingCustomId}]}]:[];const payload={embeds:[embed],components,allowed_mentions:{parse:[]}};
     if(tracked){await this.api.deleteMessage(tenantId,tracked.channelId,tracked.messageId).catch((error)=>{if(!repostable(error))throw error;});}
     const messageId=await this.api.createMessage(tenantId,channelId,payload);this.state.put({tenantId,kind:"spotlight",key:"current",channelId,messageId,updatedAt:this.now()});
     await this.upsertShoutout(tenantId,member,stream,true);
