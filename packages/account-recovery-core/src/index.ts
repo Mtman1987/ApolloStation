@@ -49,6 +49,7 @@ export interface ProviderIdentityResultV1 {
 }
 
 export interface AccountSetupTicketV1 {
+  joinCommunity?:boolean;
   tokenHash: string;
   purpose: SetupPurposeV1;
   userId: string;
@@ -300,6 +301,15 @@ export class AccountRecoveryService {
     return { account, ticket: token };
   }
 
+  /** Community enrollment resolves the person; it never adopts the community owner's identity. */
+  createDiscordCommunityInvite(input:AccountProvisionInputV1 & {discord:{id:string;username?:string}}){
+    this.control.getTenant(requireId(input.tenantId,"tenantId"));
+    const identity=this.grandfatherProviderIdentity({sourceAppId:input.sourceAppId,provider:"discord",providerUserId:input.discord.id,...(input.discord.username?{providerUsername:input.discord.username}:{}),...(input.displayName?{displayName:input.displayName}:{})});
+    const token=this.tokenFactory(),now=this.now();
+    this.setupStore.putTicket({tokenHash:sha256(token),purpose:"first-time-setup",userId:identity.userId,tenantId:input.tenantId,sourceAppId:input.sourceAppId,discordUserId:input.discord.id,discordVerifiedAt:now,joinCommunity:true,createdAt:now,expiresAt:addMinutes(now,30)});
+    return {account:{userId:identity.userId,tenantId:input.tenantId,profile:identity.profile,credentialState:identity.credentialState,createdUser:identity.createdUser,createdTenant:false},ticket:token};
+  }
+
   beginTwitchVerification(ticketToken: string) {
     const ticket = this.requireTicket(ticketToken, "first-time-setup");
     if (!ticket.discordVerifiedAt) throw new AccountSetupError("Discord verification is required before Twitch verification");
@@ -326,7 +336,12 @@ export class AccountRecoveryService {
   completeFirstTimePassword(ticketToken: string, password: string) {
     const ticket = this.requireTicket(ticketToken, "first-time-setup");
     if (!ticket.discordVerifiedAt || !ticket.twitchVerifiedAt) throw new AccountSetupError("Discord and Twitch verification are both required");
-    this.setPassword(ticket.userId, password);
+    if(ticket.joinCommunity){
+      for(const [provider,id] of [["discord",ticket.discordUserId],["twitch",ticket.twitchUserId]] as const){const link=id?this.authorityStore.getProviderLink(provider,id):undefined;if(!link||link.revokedAt||link.userId!==ticket.userId)throw new AccountSetupError("Account links changed; restart verified account setup");}
+      const profile=this.platformStore.getUserProfile(ticket.userId);if(!profile)throw new AccountSetupError("Account profile is unavailable");
+      this.setPassword(ticket.userId,password);
+      if(!profile.tenantIds.includes(ticket.tenantId))this.platformStore.putUserProfile({...profile,tenantIds:[...profile.tenantIds,ticket.tenantId].sort(),updatedAt:this.now()});
+    }else this.setPassword(ticket.userId, password);
     const usedAt = this.now();
     this.setupStore.putTicket({ ...ticket, usedAt });
     return { userId: ticket.userId, tenantId: ticket.tenantId, credentialState: "password-set" as const };

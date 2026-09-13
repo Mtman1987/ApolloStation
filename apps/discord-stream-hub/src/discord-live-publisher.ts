@@ -21,7 +21,7 @@ export interface DshDiscordBrandingV1 { communityMemberName:string; spotlightCha
 export interface DshDiscordBrandingSourceV1 { getBranding(tenantId:string):Promise<DshDiscordBrandingV1>|DshDiscordBrandingV1; }
 export interface DshSpotlightMediaSourceV1 { getImage(input:{tenantId:string;member:DshLiveMemberV1;stream:DshTwitchStreamV1}):Promise<string|undefined>|string|undefined; }
 
-export interface DshTrackedDiscordMessageV1 { tenantId:string; kind:"shoutout"|"spotlight"|"calendar"|"applications"|"guest-shoutout"; key:string; channelId:string; messageId:string; updatedAt:string; }
+export interface DshTrackedDiscordMessageV1 { tenantId:string; kind:"shoutout"|"spotlight"|"calendar"|"applications"|"guest-shoutout"|"partner-calendar"|"onboarding"; key:string; channelId:string; messageId:string; updatedAt:string; }
 
 export class SqliteDshDiscordMessageStore {
   private readonly db:DatabaseSync;

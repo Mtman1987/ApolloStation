@@ -63,7 +63,7 @@ export class DshCalendarSync {
         this.link(link,local,native);state.links.push(link);save();
       }
       for(const scope of ["workspace",guild])for(const local of this.calendar.all(tenant,scope)){
-        if(local.type!=="event"||local.eventDateTime<=this.now()||(local.discordGuildId&&local.discordGuildId!==guild)||state.links.some(l=>l.localId===local.id))continue;
+        if(local.type!=="event"||local.source==="twitch"||local.source==="partner"||local.eventDateTime<=this.now()||(local.discordGuildId&&local.discordGuildId!==guild)||state.links.some(l=>l.localId===local.id))continue;
         this.calendar.renew(tenant,key,owner);const link:Link={scope,localId:local.id,phase:"creating",local:localValue(local)};
         let payload:Record<string,unknown>;
         try{payload=nativePayload(local,this.publicOrigin);}catch(error){link.phase="invalid";link.problem=explain(error);state.links.push(link);save();continue;}

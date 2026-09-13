@@ -492,6 +492,7 @@ export interface SimulationRoomSummaryV1 {
 export interface NebulaProviderSupportEventV1 { kind:"subscription"|"resub"|"gift-subscriptions"|"cheer"|"raid"; amount:number; }
 
 export interface NormalizedChatMessageV1 {
+  guildId?:string;
   rich?:CommlinkLiveChatRecordV1["rich"];
   supportEvent?:NebulaProviderSupportEventV1;
   schemaVersion: 1;
@@ -522,6 +523,7 @@ export interface CommlinkTikTokEventV1 {
 
 /** Public, credential-free Commlink projection of one normalized provider message. */
 export interface CommlinkLiveChatRecordV1 {
+  guildId?:string;
   rich?: {source:string;eventType:string;attachments:Array<{url:string;name:string}>;donation?:string;membership?:string;deleted?:boolean};
   schemaVersion: 1;
   tenantId: string;
@@ -644,6 +646,7 @@ export function assertNormalizedChatMessageV1(value: NormalizedChatMessageV1): N
   for (const [name, field] of [["tenantId", value.tenantId], ["connectionId", value.connectionId], ["channelId", value.channelId], ["messageId", value.messageId], ["actor.providerUserId", value.actor?.providerUserId], ["actor.username", value.actor?.username]] as const) {
     if (!field || field.trim() !== field || field.length > 200) throw new Error(`${name} is invalid`);
   }
+  if(value.guildId!==undefined&&(value.provider!=="discord"||!/^\d{5,30}$/.test(value.guildId)))throw Error("Chat guild is invalid");
   if(value.rich)normalizeCommlinkRichContent(value.rich);
   if(value.supportEvent&&(value.provider!=="twitch"||!["subscription","resub","gift-subscriptions","cheer","raid"].includes(value.supportEvent.kind)||!Number.isSafeInteger(value.supportEvent.amount)||value.supportEvent.amount<1))throw new Error("Provider support event is invalid");
   if (!value.text || value.text.length > 8_000) throw new Error("Chat message text is invalid");

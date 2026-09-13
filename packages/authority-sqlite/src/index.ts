@@ -52,6 +52,11 @@ export class SqliteAuthorityStore implements AuthorityStore, AuthStore, ControlS
   listXp(tenantId: string, userId: string) { return this.allJson<XpEventV1>("SELECT body FROM xp_events WHERE tenant_id = ? AND user_id = ? ORDER BY rowid", tenantId, userId); }
   appendEvent(event: PlatformEventV1) { this.db.prepare("INSERT INTO platform_events(id, tenant_id, idempotency_key, body) VALUES(?, ?, ?, ?)").run(event.id, event.tenantId, event.idempotencyKey, json(event)); this.journal("event", event.id, event, event.tenantId); }
   listEvents(tenantId: string) { return this.allJson<PlatformEventV1>("SELECT body FROM platform_events WHERE tenant_id = ? ORDER BY rowid", tenantId); }
+  listEventsAfter(tenantId:string,afterId:string,options:{type?:string;sourceAppId?:string;limit:number}){
+    const cursor=afterId?this.db.prepare("SELECT rowid FROM platform_events WHERE tenant_id=? AND id=?").get(tenantId,afterId):{rowid:0};
+    if(!cursor)throw new Error("Event cursor does not belong to this tenant");
+    return this.allJson<PlatformEventV1>("SELECT body FROM platform_events WHERE tenant_id=? AND rowid>? AND (?='' OR json_extract(body,'$.type')=?) AND (?='' OR json_extract(body,'$.sourceAppId')=?) ORDER BY rowid LIMIT ?",tenantId,cursor.rowid as number,options.type??"",options.type??"",options.sourceAppId??"",options.sourceAppId??"",options.limit);
+  }
   appendAudit(record: AuditRecordV1) { this.db.prepare("INSERT INTO audit_records(id, tenant_id, body) VALUES(?, ?, ?)").run(record.id, record.tenantId ?? null, json(record)); this.journal("audit", record.id, record, record.tenantId); }
   listAudit(tenantId?: string) { return tenantId === undefined ? this.allJson<AuditRecordV1>("SELECT body FROM audit_records ORDER BY rowid") : this.allJson<AuditRecordV1>("SELECT body FROM audit_records WHERE tenant_id = ? ORDER BY rowid", tenantId); }
   getOutbox(id: string) { return this.oneJson<OutboxRecordV1>("SELECT body FROM outbox WHERE id = ?", id); }

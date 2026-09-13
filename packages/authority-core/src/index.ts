@@ -138,6 +138,7 @@ export interface AuthorityStore {
   listXp(tenantId: string, userId: string): XpEventV1[];
   appendEvent(event: PlatformEventV1): void;
   listEvents(tenantId: string): PlatformEventV1[];
+  listEventsAfter?(tenantId:string,afterId:string,options:{type?:string;sourceAppId?:string;limit:number}):PlatformEventV1[];
   appendAudit(record: AuditRecordV1): void;
   listAudit(tenantId?: string): AuditRecordV1[];
   getOutbox(id: string): OutboxRecordV1 | undefined;
@@ -421,7 +422,7 @@ export class AuthorityService {
 
   listEvents(
     tenantId: string,
-    options: { type?: string; sourceAppId?: string; limit?: number } = {},
+    options: { type?: string; sourceAppId?: string; limit?: number; afterId?:string } = {},
   ): PlatformEventV1[] {
     requireId(tenantId, "tenantId");
     if (options.type !== undefined) requireId(options.type, "type");
@@ -429,6 +430,13 @@ export class AuthorityService {
     const limit = options.limit ?? 100;
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 200) {
       throw new AuthorityValidationError("event limit must be an integer from 1 through 200");
+    }
+    if(options.afterId!==undefined){
+      if(options.afterId!=="")requireId(options.afterId,"afterId");
+      if(this.store.listEventsAfter)return this.store.listEventsAfter(tenantId,options.afterId,{...options,limit});
+      const all=this.store.listEvents(tenantId),position=options.afterId?all.findIndex(e=>e.id===options.afterId):-1;
+      if(options.afterId&&position<0)throw new AuthorityValidationError("Event cursor does not belong to this tenant");
+      return all.slice(position+1).filter(e=>(options.type===undefined||e.type===options.type)&&(options.sourceAppId===undefined||e.sourceAppId===options.sourceAppId)).slice(0,limit);
     }
     return this.store.listEvents(tenantId)
       .filter((event) => options.type === undefined || event.type === options.type)

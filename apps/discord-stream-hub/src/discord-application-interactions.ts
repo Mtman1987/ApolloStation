@@ -14,7 +14,7 @@ export class DshDiscordApplicationInteractions {
     const raw = await body(request, 1024 * 1024), timestamp = String(request.headers["x-signature-timestamp"] ?? ""), signature = String(request.headers["x-signature-ed25519"] ?? "");
     if (!timestamp || !/^[a-f0-9]{128}$/i.test(signature) || !verify(null, Buffer.concat([Buffer.from(timestamp), raw]), createPublicKey({ key: Buffer.concat([Buffer.from("302a300506032b6570032100", "hex"), Buffer.from(this.options.publicKey, "hex")]), format: "der", type: "spki" }), Buffer.from(signature, "hex"))) return json(response, 401, { error: "invalid_signature" });
     const interaction = JSON.parse(raw.toString("utf8")) as Record<string, any>;
-    const customId=String(interaction.data?.custom_id??""),train=/^(calendar:raid|raid_(signup|view|cancel|day)_)/.test(customId),calendar=customId.startsWith("calendar:"),defer=train||calendar&&(interaction.type===5||/^calendar:(previous|next):/.test(customId));
+    const customId=String(interaction.data?.custom_id??""),train=/^(calendar:raid|raid_(signup|view|cancel|day)_)/.test(customId),calendar=customId.startsWith("calendar:"),defer=/^(spmt_join_recover$|spmt_onboard$|link_twitch_)/.test(customId)||this.options.config.tenants.some(t=>t.branding?.onboardingCustomId===customId)||/^(partner:(refresh|submit):|show_schedule_|partner_schedule_refresh_)/.test(customId)||train||calendar&&(interaction.type===5||/^calendar:(previous|next):/.test(customId));
     const respond=async()=>await this.options.respond?.(interaction)??respondDshApplicationInteraction(this.options,interaction);
     if(defer){
       const month=!train&&interaction.type===3;

@@ -1,3 +1,6 @@
+import {DshOnboardingPanel} from "./onboarding-panel.js";
+import { DshMemberActivityStore, DshMemberActivityWorker } from "./member-activity.js";
+import { DshPartnerSchedules } from "./partner-schedules.js";
 import { DshChannelCleanup } from "./channel-cleanup.js";
 import { DshChannelModerationService } from "./channel-moderation.js";
 import { DshApplicationDecisionService } from "./application-decision.js";
@@ -158,6 +161,10 @@ export class SupervisedDshLiveService {
   private readonly calendar: SqliteDshCalendarStore;
   private readonly calendarSync: DshCalendarSync;
   private readonly calendarDelivery:DshCalendarDelivery;
+  private readonly partnerSchedules:DshPartnerSchedules;
+  private readonly onboarding?:DshOnboardingPanel;
+  private readonly activityStore:DshMemberActivityStore;
+  private readonly activity:DshMemberActivityWorker;
   private calendarCycle:Promise<void>|undefined;
   private readonly applications: SqliteDshApplicationStore;
   private readonly applicationDecisions: DshApplicationDecisionService;
@@ -177,6 +184,7 @@ export class SupervisedDshLiveService {
     this.getAccessToken = createDshWorkerTokenProvider({ spmtOrigin: options.spmtOrigin, credential: options.credential, fetchImpl });
     this.client = new SpmtClient({ baseUrl: options.spmtOrigin, appId: "discord-stream-hub", getAccessToken: this.getAccessToken, fetchImpl });
     if(options.operationMode==="active"&&options.publicOrigin)this.nebulaMedia=new DshNebulaMediaWorker(this.client,{databasePath:options.databasePath,publicOrigin:options.publicOrigin,workerId:`${options.workerId}-nebula-media`,tenantIds:options.config.tenants.map(tenant=>tenant.tenantId),sourceOrigins:(process.env.DSH_MEDIA_SOURCE_ORIGINS||"").split(",").filter(Boolean)},fetchImpl);
+    this.activityStore=new DshMemberActivityStore(options.databasePath);this.activity=new DshMemberActivityWorker(this.activityStore,this.client,options.config);
     this.settings = new DshTenantSettingsStore(options.databasePath, now);
     const directory = this.directory = new ConfigDirectory(options.config, this.settings);
     this.monitor = new SqliteDshLiveMonitor(options.databasePath, options.config.pollIntervalSeconds * 1_000);
@@ -192,6 +200,8 @@ export class SupervisedDshLiveService {
     this.calendar = new SqliteDshCalendarStore(options.databasePath);
     this.calendarSync = new DshCalendarSync(options.databasePath, this.calendar, discord, now, options.publicOrigin);
     this.calendarDelivery=new DshCalendarDelivery(this.calendar,this.messages,discord,now,this.client,options.operationMode==="read-only");
+    if(options.publicOrigin)this.onboarding=new DshOnboardingPanel(this.calendar,this.messages,discord,this.client,options.config,options.publicOrigin,now);
+    this.partnerSchedules=new DshPartnerSchedules(this.calendar,this.messages,this.client,options.config,discord,fetchImpl,now);
     this.applications = new SqliteDshApplicationStore(options.databasePath);
     this.applicationDecisions=new DshApplicationDecisionService(this.applications,{discord,publicOrigin:options.publicOrigin,preview:options.operationMode==="read-only",now});
     const operations = new DshSuiteActionOperations({ cleanup:this.cleanup,cleanupLiveWrites:options.operationMode==="active",guestLookup:async(tenantId,twitchLogin)=>{const grant=await twitchGrants.getGrant(tenantId);if(grant.status!=="ready")throw Error(grant.reason);return twitch.getGuest({...grant,twitchLogin});},config: options.config, monitor: this.monitor, messages: this.messages, calendar: this.calendar, applications: this.applications, discord, simulationDiscord, applicationInteractionsReady: options.applicationInteractionsReady, ...(options.publicOrigin?{publicOrigin:options.publicOrigin}:{}), now });
@@ -215,7 +225,7 @@ export class SupervisedDshLiveService {
     }
   }
   async runCalendar(signal:AbortSignal) {while(!signal.aborted&&!this.closed){const cycle=this.syncCalendars();this.calendarCycle=cycle;try{await cycle;}finally{this.calendarCycle=undefined;}await pause(5000,signal);}}
-  private async syncCalendars(){for(const tenant of this.options.config.tenants){for(const guild of tenant.discordGuildIds??[]){const last=this.calendarSync.state(tenant.tenantId,guild).checkedAt;if(!last||Date.parse(this.now())-Date.parse(last)>=30000)await this.calendarSync.sync(tenant.tenantId,guild).catch(()=>undefined);}await this.calendarDelivery.flush(tenant.tenantId);await this.applicationDecisions.flush(tenant.tenantId);await this.runtime.flushGuests(tenant.tenantId,this.now());}}
+  private async syncCalendars(){for(const tenant of this.options.config.tenants){await this.activity.runOnce(tenant.tenantId).catch(()=>undefined);for(const guild of tenant.discordGuildIds??[]){const last=this.calendarSync.state(tenant.tenantId,guild).checkedAt;if(!last||Date.parse(this.now())-Date.parse(last)>=30000)await this.calendarSync.sync(tenant.tenantId,guild).catch(()=>undefined);}await this.onboarding?.flush(tenant.tenantId);await this.partnerSchedules.flush(tenant.tenantId);await this.calendarDelivery.flush(tenant.tenantId);await this.applicationDecisions.flush(tenant.tenantId);await this.runtime.flushGuests(tenant.tenantId,this.now());}}
   async runNebulaMedia(signal:AbortSignal){this.nebulaMediaCycle=this.nebulaMedia?.run(AbortSignal.any([signal,this.nebulaMediaAbort.signal]));await this.nebulaMediaCycle;}
   runSuiteActions(signal: AbortSignal) { return this.suiteActions.run(signal); }
   close() {
@@ -228,7 +238,7 @@ export class SupervisedDshLiveService {
       let failed = false;
       try { await this.nebulaMediaCycle; await this.calendarCycle; await activeCycle; } catch (error) { failure = error; failed = true; }
       this.nebulaMedia?.close();
-      this.settings.close();this.cleanup.close();
+      this.settings.close();this.cleanup.close();this.activityStore.close();
       try { this.messages.close(); } catch (error) { if (!failed) { failure = error; failed = true; } }
       try { this.calendarSync?.close(); this.calendar.close(); } catch (error) { if (!failed) { failure = error; failed = true; } }
       try { this.applications.close(); } catch (error) { if (!failed) { failure = error; failed = true; } }

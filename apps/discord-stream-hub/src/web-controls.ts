@@ -1,3 +1,7 @@
+import {DshOnboardingPanel} from "./onboarding-panel.js";
+import { DshMemberActivityStore } from "./member-activity.js";
+import { DshPartnerSchedules } from "./partner-schedules.js";
+import { respondDshPartnerSchedule } from "./partner-schedule-interactions.js";
 import { DshChannelCleanup } from "./channel-cleanup.js";
 import { dshGuestLogin } from "./guest-shoutouts.js";
 import { SqliteDshLiveMonitor } from "./live-monitor.js";
@@ -39,6 +43,7 @@ type SessionContext = Awaited<ReturnType<typeof fetchAppSessionContext>>;
 /** Authenticated, app-owned controls used by the DSH browser surface. */
 export class DshWebControls {
   private readonly cleanup?:DshChannelCleanup;
+  private readonly activity?:DshMemberActivityStore;
   private readonly monitor?:SqliteDshLiveMonitor;
   private readonly calendar?: SqliteDshCalendarStore;
   private readonly settings?: DshTenantSettingsStore;
@@ -49,6 +54,8 @@ export class DshWebControls {
   private readonly discord?: DshSimulationRoomDiscordTransport;
   private client?:SpmtClient;
   private sync?:DshCalendarSync;
+  private partners?:DshPartnerSchedules;
+  private onboarding?:DshOnboardingPanel;
   private delivery?:DshCalendarDelivery;
   private liveDiscord?:DshDiscordApi;
   private readonly now: () => string;
@@ -56,6 +63,7 @@ export class DshWebControls {
   constructor(private readonly options: DshWebControlOptionsV1) {
     this.now = options.now ?? (() => new Date().toISOString());
     if (options.databasePath) {
+      this.activity=new DshMemberActivityStore(options.databasePath);
       this.cleanup=new DshChannelCleanup(options.databasePath);
       this.monitor=new SqliteDshLiveMonitor(options.databasePath);
       this.calendar = new SqliteDshCalendarStore(options.databasePath);
@@ -79,11 +87,11 @@ export class DshWebControls {
       const liveDiscord = new DshDiscordApi(grants, options.fetchImpl);
       this.client=client;this.liveDiscord=liveDiscord;
       this.discord = new DshSimulationRoomDiscordTransport(liveDiscord, client, { guildIds: (tenantId) => this.config?.tenants.find((tenant) => tenant.tenantId === tenantId)?.discordGuildIds ?? [], now: this.now, liveWrites: options.operationMode !== "read-only" });
-      if(this.calendar&&this.messages){this.sync=new DshCalendarSync(options.databasePath!,this.calendar,this.discord,this.now,options.publicOrigin);this.delivery=new DshCalendarDelivery(this.calendar,this.messages,this.discord,this.now,client,options.operationMode==="read-only");}
+      if(this.calendar&&this.messages){this.sync=new DshCalendarSync(options.databasePath!,this.calendar,this.discord,this.now,options.publicOrigin);if(this.config&&options.publicOrigin)this.onboarding=new DshOnboardingPanel(this.calendar,this.messages,this.discord,client,this.config,options.publicOrigin,this.now);if(this.config)this.partners=new DshPartnerSchedules(this.calendar,this.messages,client,this.config,this.discord,options.fetchImpl,this.now);this.delivery=new DshCalendarDelivery(this.calendar,this.messages,this.discord,this.now,client,options.operationMode==="read-only");}
     }
   }
 
-  close() { this.cleanup?.close();this.monitor?.close(); this.calendar?.close(); this.settings?.close(); this.messages?.close(); this.applications?.close(); this.shoutouts?.close(); }
+  close() { this.activity?.close();this.cleanup?.close();this.monitor?.close(); this.calendar?.close(); this.settings?.close(); this.messages?.close(); this.applications?.close(); this.shoutouts?.close(); }
 
   async handle(request: IncomingMessage, response: ServerResponse, url: URL): Promise<boolean> {
     if (!url.pathname.startsWith("/api/discord-stream-hub/control")) return false;
@@ -107,6 +115,10 @@ export class DshWebControls {
         const guild=url.searchParams.get("guildId")?this.guild(context.tenantId,url.searchParams.get("guildId")):"workspace",month=String(url.searchParams.get("month")??this.now().slice(0,7));
         const png=await renderDshCalendarPng(this.requireCalendar().month(context.tenantId,guild,month),month,this.options.fetchImpl,this.now().slice(0,10));response.writeHead(200,{"content-type":"image/png","cache-control":"no-store","content-disposition":`attachment; filename="community-calendar-${month}.png"`});response.end(png);return true;
       }
+      if(request.method==="GET"&&url.pathname==="/api/discord-stream-hub/control/calendar/partner-image"){
+        if(!this.partners)throw Error("Connect DSH to view partner calendars");const guild=this.guild(context.tenantId,url.searchParams.get("guildId")),month=String(url.searchParams.get("month")??this.now().slice(0,7)),view=this.partners.view(context.tenantId,guild,text(url.searchParams.get("userId"),"userId",180),month);
+        const png=await renderDshCalendarPng(view.events,month,this.options.fetchImpl,this.now().slice(0,10));response.writeHead(200,{"content-type":"image/png","cache-control":"no-store"});response.end(png);return true;
+      }
       if(request.method==="GET"&&url.pathname==="/api/discord-stream-hub/control/calendar")return sendJson(response,200,this.calendarView(context.tenantId,url.searchParams.get("guildId"),String(url.searchParams.get("month")??this.now().slice(0,7))));
       if(request.method==="GET"&&url.pathname==="/api/discord-stream-hub/control/calendar/raid-train")return sendJson(response,200,{slots:this.requireCalendar().raidTrainSlots(context.tenantId,this.calendarScope(context.tenantId,url.searchParams.get("guildId")),day(url.searchParams.get("date")))});
       if (request.method === "GET" && url.pathname === "/api/discord-stream-hub/control") return await this.read(request, response, context, url);
@@ -114,6 +126,15 @@ export class DshWebControls {
       if (request.method !== "POST") return sendJson(response, 405, { error: "method_not_allowed" });
       requireSameOrigin(request);
       const body = await readJsonBody(request);
+      if(url.pathname.startsWith("/api/discord-stream-hub/control/calendar/partner/")){
+        if(!this.partners)throw Error("Connect DSH to use partner calendars");
+        const guild=this.guild(context.tenantId,body.serverId),user=text(body.userId,"userId",180),month=String(body.month??this.now().slice(0,7)),actor=String(context.session.actorId),owner=this.role(context)==="owner",action=url.pathname.split("/").at(-1);
+        if(action==="refresh")return sendJson(response,200,{...await this.partners.sync(context.tenantId,guild,user,month),message:"Schedule refreshed. Provider status is shown with the calendar."});
+        if(action==="add")return sendJson(response,200,this.partners.add(context.tenantId,guild,user,actor,owner,{name:text(body.name,"name",100),date:day(body.date),time:clock(body.time),description:String(body.description??"Personal event"),requestId:text(body.requestId,"requestId",100)}));
+        if(action==="remove")return sendJson(response,200,this.partners.remove(context.tenantId,guild,user,actor,owner,text(body.eventId,"eventId",180)));
+        if(action==="publish"){this.requireOwner(context);return sendJson(response,200,await this.partners.publish(context.tenantId,guild,user,snowflake(body.channelId,"channelId"),month));}
+        return sendJson(response,404,{error:"not_found"});
+      }
       if(url.pathname==="/api/discord-stream-hub/control/calendar/raid-train/reserve"||url.pathname==="/api/discord-stream-hub/control/calendar/raid-train/cancel") {
         const store=this.requireCalendar(),serverId=this.calendarScope(context.tenantId,body.serverId),member=await this.member(context,request),reserve=url.pathname.endsWith("/reserve");
         const result=store.once(context.tenantId,`raid:${reserve?"reserve":"cancel"}:${this.requestKey(context,body)??text(body.requestId,"requestId",100)}`,()=>reserve?
@@ -125,6 +146,7 @@ export class DshWebControls {
       if (url.pathname === "/api/discord-stream-hub/control/calendar/update") return await this.changeCalendar(response, context, body, false);
       if (url.pathname === "/api/discord-stream-hub/control/calendar/delete") return await this.changeCalendar(response, context, body, true);
       this.requireOwner(context);
+      if(url.pathname==="/api/discord-stream-hub/control/onboarding/publish"){if(!this.onboarding)throw Error("Connect SPMT and configure its public address before publishing a linking panel");if(!this.options.applicationInteractionsReady)throw Error("Configure the Discord interaction endpoint before publishing a linking panel");return sendJson(response,200,await this.onboarding.publish(context.tenantId,this.guild(context.tenantId,body.serverId),snowflake(body.channelId,"channelId")));}
       if(url.pathname==="/api/discord-stream-hub/control/moderation/preview"||url.pathname==="/api/discord-stream-hub/control/moderation/execute") {
         if(!this.client)throw new Error("Connect DSH before using channel cleanup");
         const preview=url.pathname.endsWith("/preview"),userId=String(context.session.actorId),requestId=text(body.requestId,"requestId",100),action=preview?"dsh.moderation.preview":"dsh.moderation.execute";
@@ -220,6 +242,10 @@ export class DshWebControls {
       selectedShadowRoomId: guildId && isSimulationDiscordId(guildId) ? (await this.discord?.target(tenantId,guildId))?.roomId : null,
       ...view,
       participation: dshCaptainParticipation(calendar, this.config?.tenants.find(tenant => tenant.tenantId === tenantId)?.members.filter(member => member.group === "Crew").map(member => ({userId: member.canonicalUserId, username: member.twitchLogin})) ?? [], this.settings?.read(tenantId).captainMinimumDays ?? 0),
+      partnerSchedules:guildId&&!isSimulationDiscordId(guildId)?this.partners?.partners(tenantId).map(p=>this.partners!.view(tenantId,guildId,p.userId,month))??[]:[],
+      onboardingPanels:(this.config?.tenants.find(t=>t.tenantId===tenantId)?.discordGuildIds??[]).map(g=>this.onboarding?.view(tenantId,g)).filter(Boolean),
+      memberActivity:this.activity?.list(tenantId,guildId&&!isSimulationDiscordId(guildId)?guildId:undefined)??[],
+      activityStatus:this.activity?.cursor(tenantId).error??null,
       calendarMonth: month,
       ...shoutouts,
       trackedMessages: this.messages?.list(tenantId) ?? [],
@@ -269,6 +295,8 @@ export class DshWebControls {
   }
   async interaction(interaction:Record<string,any>){
     if(!this.config||!this.calendar)return undefined;
+    if(this.onboarding){const result=await this.onboarding.interaction(interaction);if(result)return result;}
+    if(this.partners){const result=await respondDshPartnerSchedule({schedules:this.partners,config:this.config,now:this.now,resolve:async(tenant,id)=>{if(!this.client)throw Error("Connect DSH first");const identity=await resolveProviderIdentity(this.client,tenant,"discord",id);return {userId:identity.userId,role:identity.tenantRole??null};}},interaction);if(result)return result;}
     return respondDshCalendarInteraction({config:this.config,calendar:this.calendar,now:this.now,changed:tenant=>this.changed(tenant),resolve:async(tenant,id)=>{
       if(!this.client)throw new Error("Connect the DSH service before using calendar controls");
       const identity=await resolveProviderIdentity(this.client,tenant,"discord",id);

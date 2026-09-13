@@ -30,31 +30,46 @@ Source baseline: Apollo `8ecd34b748bea47fbb718955a86c4d48509dc9bf`. The donor co
 | P20 | Approved | Approved; implementation remains outstanding. |
 | P21 | Approved | Approved; implementation remains outstanding. |
 | P22 | Approved | Typed hourly Raid Train reservations share the existing calendar and publication worker. Atomic claims, identity-bound cancellation, native web controls, shared suite actions, existing Discord button aliases and calendar artwork are implemented. Separate-process contention, restart publication, stale cancellation, tenant/guild isolation and web/chat/Discord integration tests pass. Live Discord acceptance remains outstanding. |
-| P23 | Approved | Approved; implementation remains outstanding. |
+| P23 | Approved | Twitch schedules now resolve the existing SPMT provider identity and grant, retain successful snapshots during outages, and share the DSH calendar/image renderer. Native custom events, web controls, donor button aliases, tracked publication and restart refresh are implemented and tested. Private Google iCal imports and full partner forum-thread setup remain outstanding; live provider acceptance is pending. |
 | P24 | Approved | Approved; implementation remains outstanding. |
 | P25 | Approved | Moderation controls under DSH Settings now create exact message selections through shared suite jobs and the real Discord grant adapter. Bot/all/until scopes, durable previews, selected-ID execution, resumable partial deletion, server validation and job/plan leases are wired. Simulation and runtime read-only modes cannot execute live deletion. Six integration tests cover scope, newer-message preservation, restart/retry, concurrency, adapter grants, shared jobs and authenticated web controls. No live channel cleanup was performed. |
 | P26 | Approved | Approved; implementation remains outstanding. |
-| P27 | Approved | Approved; implementation remains outstanding. |
+| P27 | Approved | Native linking-panel publication and repair, destination recovery, signed donor button aliases and private SPMT setup links are wired. Community enrollment reuses the canonical account/ticket service and keeps each member separate from the workspace owner. New/returning members, conflicting provider identities, stale links and deleted channel/message recovery are tested. Cross-account conflicts retain the existing explicit recovery requirement; production OAuth acceptance remains pending. |
 | P28 | Approved | Approved; implementation remains outstanding. |
 | P29 | Approved | Approved; implementation remains outstanding. |
 | P30 | Approved | Approved; implementation remains outstanding. |
-| P31 | Approved | Approved; implementation remains outstanding. |
+| P31 | Approved | Shared Commlink ingress emits idempotent message metadata events without a second message history. Forward event pagination and DSH durable cursors feed the Members view with actual message counts, distinct UTC active days and last-seen channels. Bursts, restart, duplicate delivery, delayed messages, tenant boundaries and canonical identity resolution are tested. Unmeasured metrics remain null; historical donor totals remain P33. |
 | P32 | Approved | Approved; implementation remains outstanding. |
 | P33 | Approved | Approved; implementation remains outstanding. |
 
 ## Validation
 
-- `npm run test:offline`: 1,080 passing, zero failures (full offline suite after P17/P22/P25).
+- `npm run test:offline`: 1,093 passing, zero failures (full offline suite after partner schedules, participation and linking panels).
 - `scripts/test-hmo-media-browser.mjs`: two independent Chromium contexts with actual decoded audio and canonical room state.
 - Required contracts/RTC CI now includes the room-media browser test.
 - Existing room expiry and donor-bridge recovery tests remain passing; deliberately deleted rooms were not reimported.
 
 ## Deployment
 
-Implementation is saved in draft PR #99 (`approved-hmo-dsh-parity`). Checkpoint `a4359e0` passed required GitHub contracts and RTC/media browser CI in run `34729277608`. Checkpoint `6e40e87` passed run `34729947698`, including real screen pixels, decoded RTC/media audio and the actual home-page library. Checkpoint ae91c0b passed run 34731200815; f36191b passed run 34731644459. P17/P22 checkpoint a7e3801 passed all 1,074 local offline tests and required GitHub contracts/RTC/media/console browser checks in run 34736435460. P25 changes pass all 1,080 local offline tests; required GitHub browser checks follow the next checkpoint.
+Implementation is saved in draft PR #99 (`approved-hmo-dsh-parity`). Checkpoint `a4359e0` passed required GitHub contracts and RTC/media browser CI in run `34729277608`. Checkpoint `6e40e87` passed run `34729947698`, including real screen pixels, decoded RTC/media audio and the actual home-page library. Checkpoint ae91c0b passed run 34731200815; f36191b passed run 34731644459. P17/P22 checkpoint a7e3801 passed all 1,074 local offline tests and required GitHub contracts/RTC/media/console browser checks in run 34736435460. P25 checkpoint b582e2 passed all 1,080 local offline tests and required GitHub checks in run 34736953904.
 
 This implementation checkpoint has not replaced live HMO or DSH. Public traffic replacement follows completion and acceptance of the full approved parity scope. The existing production rollout also has shared core, ingress and companion-client work; StreamWeaver and Nebula Arcade are not the only unverified cutover items.
 
 ## Development checkpoint
 
 `ae91c0b` passed required GitHub CI run `34731200815`; all 1,060 offline tests and RTC/media/console browser checks passed. Auto-radio was preserved and validated in f36191b after the development environment disconnected. On recovery, work resumed from that exact remote checkpoint in a separate checkout to preserve an unrelated local asset edit. P17/P22 add temporary guest shoutouts and hourly Raid Train reservations. P25 adds reachable moderation previews and selected-message cleanup through the existing shared job system. The expanded suite-action catalog remains inside the existing Stellar prompt budget by grouping repeated authority labels. No live deployment occurred.
+
+
+## Continuation: partner schedules, participation and account panels
+
+The restored checkout started from `b582e2947351a95b103cf738224a75c43831100b`. Thirteen additional integration tests cover P23/P27/P31. No production provider state or room data was imported or changed.
+
+- Twitch schedule semantics follow https://dev.twitch.tv/docs/api/schedule/: SPMT supplies an existing app/user token; an explicit 404 represents an empty schedule. Authorization/transport failures preserve the last successful snapshot. The donor's next-25-entry presentation is retained and identified when limited. Custom events survive provider refreshes and never produce calendar-admin XP.
+- The donor also has private Google iCal import and partner forum-thread setup; those subfeatures are recorded as remaining rather than hidden by the new Twitch path.
+- Shared event pagination keeps insertion order and accepts a tenant-bound `afterId`. SQLite reads the next bounded page directly. Existing newest-first reads are unchanged. DSH counts reference provider message IDs and contain no message text.
+- DSH production identity scopes now cover its existing canonical identity/enrollment APIs. Sandbox credentials retain the prior prohibition on identity writes and onboarding. Unlinked live-ingress identities in a sandbox remain pending rather than silently acquiring production authority.
+- A community enrollment path was necessary because the earlier SPMT invite method provisions a workspace owner. The new path uses existing canonical provider resolution and one-time setup tickets, grants community membership only after both providers are verified and password setup completes, and cannot replace the tenant owner. Conflicting already-linked people are not merged automatically.
+
+The full approved list is still in progress. HMO Watch/HLS/Discord activity, media production, remaining community/reward/communications features and donor reconciliation must be completed before public replacement.
+
+Validation for this continuation: `npm run test:offline` passed all 1,093 tests; `git diff --check` is clean. Required GitHub browser checks will run on the saved checkpoint.
