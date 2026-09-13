@@ -16,8 +16,7 @@ export class HearMeOutPlaybackSource {
     const url = new URL(value, location.href);
     const source = /^\/v1\/media\/public\/[A-Za-z0-9_-]{43}$/.test(url.pathname) ? url.pathname : url.href;
     const playlist = isHls || /\.m3u8$/i.test(url.pathname);
-    if (playlist && !this.media.canPlayType('application/vnd.apple.mpegurl')) {
-      if (!Hls.isSupported()) { this.report(Error('This browser cannot play HLS streams. Open this room in a browser with media streaming support.')); return; }
+    if (playlist && Hls.isSupported()) {
       const hls = this.hls = new Hls({
         enableWorker: true, backBufferLength: 30, maxBufferLength: 30,
         manifestLoadPolicy: { default: { maxTimeToFirstByteMs: 15000, maxLoadTimeMs: 20000,
@@ -31,6 +30,7 @@ export class HearMeOutPlaybackSource {
       hls.on(Hls.Events.ERROR, (_event, data) => { if (data.fatal) { this.failed = true; this.report(Error('This stream could not load. Retry the source; your room queue is preserved.')); } });
       hls.loadSource(source); hls.attachMedia(this.media);
     } else {
+      if (playlist && !this.media.canPlayType('application/vnd.apple.mpegurl')) { this.failed = true; this.report(Error('This browser cannot play HLS streams. Open this room in a browser with media streaming support.')); return; }
       this.media.src = source;
       const tracks = (this.media as HTMLMediaElement & { audioTracks?: NativeTracks }).audioTracks;
       if (tracks) { this.nativeChanged = () => this.tracks(Array.from({ length: tracks.length }, (_, index) => ({ index, name: tracks[index]!.label || tracks[index]!.language || `Audio ${index + 1}` })), Array.from({ length: tracks.length }, (_, i) => i).find(i => tracks[i]!.enabled) ?? 0); tracks.addEventListener('addtrack', this.nativeChanged); tracks.addEventListener('change', this.nativeChanged); this.nativeChanged(); }
