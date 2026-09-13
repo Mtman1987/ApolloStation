@@ -32,7 +32,7 @@ Source baseline: Apollo `8ecd34b748bea47fbb718955a86c4d48509dc9bf`. The donor co
 | P22 | Approved | Typed hourly Raid Train reservations share the existing calendar and publication worker. Atomic claims, identity-bound cancellation, native web controls, shared suite actions, existing Discord button aliases and calendar artwork are implemented. Separate-process contention, restart publication, stale cancellation, tenant/guild isolation and web/chat/Discord integration tests pass. Live Discord acceptance remains outstanding. |
 | P23 | Approved | Approved; implementation remains outstanding. |
 | P24 | Approved | Approved; implementation remains outstanding. |
-| P25 | Approved | Approved; implementation remains outstanding. |
+| P25 | Approved | Moderation controls under DSH Settings now create exact message selections through shared suite jobs and the real Discord grant adapter. Bot/all/until scopes, durable previews, selected-ID execution, resumable partial deletion, server validation and job/plan leases are wired. Simulation and runtime read-only modes cannot execute live deletion. Six integration tests cover scope, newer-message preservation, restart/retry, concurrency, adapter grants, shared jobs and authenticated web controls. No live channel cleanup was performed. |
 | P26 | Approved | Approved; implementation remains outstanding. |
 | P27 | Approved | Approved; implementation remains outstanding. |
 | P28 | Approved | Approved; implementation remains outstanding. |
@@ -44,17 +44,17 @@ Source baseline: Apollo `8ecd34b748bea47fbb718955a86c4d48509dc9bf`. The donor co
 
 ## Validation
 
-- `npm run test:offline`: 1,074 passing, zero failures (full offline suite after P17/P22).
+- `npm run test:offline`: 1,080 passing, zero failures (full offline suite after P17/P22/P25).
 - `scripts/test-hmo-media-browser.mjs`: two independent Chromium contexts with actual decoded audio and canonical room state.
 - Required contracts/RTC CI now includes the room-media browser test.
 - Existing room expiry and donor-bridge recovery tests remain passing; deliberately deleted rooms were not reimported.
 
 ## Deployment
 
-Implementation is saved in draft PR #99 (`approved-hmo-dsh-parity`). Checkpoint `a4359e0` passed required GitHub contracts and RTC/media browser CI in run `34729277608`. Checkpoint `6e40e87` passed run `34729947698`, including real screen pixels, decoded RTC/media audio and the actual home-page library. Checkpoint ae91c0b passed run 34731200815; f36191b passed run 34731644459. P17/P22 changes passed all 1,074 local offline tests; required GitHub browser acceptance follows the next checkpoint.
+Implementation is saved in draft PR #99 (`approved-hmo-dsh-parity`). Checkpoint `a4359e0` passed required GitHub contracts and RTC/media browser CI in run `34729277608`. Checkpoint `6e40e87` passed run `34729947698`, including real screen pixels, decoded RTC/media audio and the actual home-page library. Checkpoint ae91c0b passed run 34731200815; f36191b passed run 34731644459. P17/P22 checkpoint a7e3801 passed all 1,074 local offline tests and required GitHub contracts/RTC/media/console browser checks in run 34736435460. P25 changes pass all 1,080 local offline tests; required GitHub browser checks follow the next checkpoint.
 
 This implementation checkpoint has not replaced live HMO or DSH. Public traffic replacement follows completion and acceptance of the full approved parity scope. The existing production rollout also has shared core, ingress and companion-client work; StreamWeaver and Nebula Arcade are not the only unverified cutover items.
 
 ## Development checkpoint
 
-`ae91c0b` passed required GitHub CI run `34731200815`; all 1,060 offline tests and RTC/media/console browser checks passed. Auto-radio was preserved and validated in f36191b after the development environment disconnected. On recovery, work resumed from that exact remote checkpoint in a separate checkout to preserve an unrelated local asset edit. P17/P22 now add temporary guest shoutouts and hourly Raid Train reservations. The expanded suite-action catalog remains inside the existing Stellar prompt budget by grouping repeated authority labels. No live deployment occurred.
+`ae91c0b` passed required GitHub CI run `34731200815`; all 1,060 offline tests and RTC/media/console browser checks passed. Auto-radio was preserved and validated in f36191b after the development environment disconnected. On recovery, work resumed from that exact remote checkpoint in a separate checkout to preserve an unrelated local asset edit. P17/P22 add temporary guest shoutouts and hourly Raid Train reservations. P25 adds reachable moderation previews and selected-message cleanup through the existing shared job system. The expanded suite-action catalog remains inside the existing Stellar prompt budget by grouping repeated authority labels. No live deployment occurred.

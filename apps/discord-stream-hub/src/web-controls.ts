@@ -1,3 +1,4 @@
+import { DshChannelCleanup } from "./channel-cleanup.js";
 import { dshGuestLogin } from "./guest-shoutouts.js";
 import { SqliteDshLiveMonitor } from "./live-monitor.js";
 import { dshShoutoutGroupSlug } from './shoutout-groups.js';
@@ -37,6 +38,7 @@ type SessionContext = Awaited<ReturnType<typeof fetchAppSessionContext>>;
 
 /** Authenticated, app-owned controls used by the DSH browser surface. */
 export class DshWebControls {
+  private readonly cleanup?:DshChannelCleanup;
   private readonly monitor?:SqliteDshLiveMonitor;
   private readonly calendar?: SqliteDshCalendarStore;
   private readonly settings?: DshTenantSettingsStore;
@@ -54,6 +56,7 @@ export class DshWebControls {
   constructor(private readonly options: DshWebControlOptionsV1) {
     this.now = options.now ?? (() => new Date().toISOString());
     if (options.databasePath) {
+      this.cleanup=new DshChannelCleanup(options.databasePath);
       this.monitor=new SqliteDshLiveMonitor(options.databasePath);
       this.calendar = new SqliteDshCalendarStore(options.databasePath);
       this.settings = new DshTenantSettingsStore(options.databasePath, this.now);
@@ -80,12 +83,19 @@ export class DshWebControls {
     }
   }
 
-  close() { this.monitor?.close(); this.calendar?.close(); this.settings?.close(); this.messages?.close(); this.applications?.close(); this.shoutouts?.close(); }
+  close() { this.cleanup?.close();this.monitor?.close(); this.calendar?.close(); this.settings?.close(); this.messages?.close(); this.applications?.close(); this.shoutouts?.close(); }
 
   async handle(request: IncomingMessage, response: ServerResponse, url: URL): Promise<boolean> {
     if (!url.pathname.startsWith("/api/discord-stream-hub/control")) return false;
     try {
       const context = await fetchAppSessionContext({ appId: "discord-stream-hub", spmtOrigin: this.options.spmtOrigin, request });
+      if(request.method==="GET"&&url.pathname==="/api/discord-stream-hub/control/moderation") {this.requireOwner(context);return sendJson(response,200,{plans:this.cleanup?.list(context.tenantId,String(context.session.actorId),"owner")??[]});}
+      if(request.method==="GET"&&url.pathname==="/api/discord-stream-hub/control/moderation/job") {
+        this.requireOwner(context);if(!this.client)throw new Error("Connect DSH to read cleanup job status");
+        const job=await this.client.getExecutionJob(context.tenantId,text(url.searchParams.get("id"),"jobId",180));
+        if(job.executionOwner!=="discord-stream-hub"||!String(job.input.action).startsWith("dsh.moderation."))throw new Error("Choose a DSH cleanup job");
+        return sendJson(response,200,{jobId:job.id,state:job.state,result:job.result,error:job.error});
+      }
       if(url.pathname==="/api/discord-stream-hub/control/checkin-members"){
         this.requireOwner(context);if(request.method!=="GET")return sendJson(response,405,{message:"Use GET"});
         if(this.options.operationMode!=="active")throw new Error("Live Discord role lookup is disabled in this environment");
@@ -115,6 +125,15 @@ export class DshWebControls {
       if (url.pathname === "/api/discord-stream-hub/control/calendar/update") return await this.changeCalendar(response, context, body, false);
       if (url.pathname === "/api/discord-stream-hub/control/calendar/delete") return await this.changeCalendar(response, context, body, true);
       this.requireOwner(context);
+      if(url.pathname==="/api/discord-stream-hub/control/moderation/preview"||url.pathname==="/api/discord-stream-hub/control/moderation/execute") {
+        if(!this.client)throw new Error("Connect DSH before using channel cleanup");
+        const preview=url.pathname.endsWith("/preview"),userId=String(context.session.actorId),requestId=text(body.requestId,"requestId",100),action=preview?"dsh.moderation.preview":"dsh.moderation.execute";
+        let args:Record<string,string>;
+        if(preview){const guildId=this.guild(context.tenantId,body.serverId);if(isSimulationDiscordId(guildId))throw new Error("Choose a live Discord server to preview its messages");args={guildId,channelId:snowflake(body.channelId,"channelId"),mode:text(body.mode,"mode",10),...(body.mode==="until"?{untilMessageId:snowflake(body.untilMessageId,"untilMessageId")}: {})};}
+        else args={planId:text(body.planId,"planId",180)};
+        const result=await this.client.createSuiteActionJob(context.tenantId,{schemaVersion:1,action,args,actor:{userId,username:String(context.session.username??context.session.displayName??userId),role:"owner"},source:{kind:"api",requestId,...(this.options.operationMode==="read-only"?{simulation:true}:{})}},`${action}:${userId}:${requestId}`);
+        return sendJson(response,202,{jobId:result.job.id,state:result.job.state,message:preview?"Cleanup preview queued. Its exact selection will appear below.":"Cleanup queued. Its progress will appear below."});
+      }
       if (url.pathname === "/api/discord-stream-hub/control/shoutouts/generate") {
         if (!this.client || !this.shoutouts) throw new Error("The shoutout writer is not connected yet");
         const feed = await this.shoutoutView(request, context), member = feed.liveMembers.find(row => row.id === body.eventId && row.twitchLogin === body.twitchLogin);
@@ -204,6 +223,7 @@ export class DshWebControls {
       calendarMonth: month,
       ...shoutouts,
       trackedMessages: this.messages?.list(tenantId) ?? [],
+      cleanupPlans:this.role(context)==="owner"?this.cleanup?.list(tenantId,String(context.session.actorId),"owner")??[]:[],
       applications: this.role(context) === "owner" ? this.applications?.list(tenantId, undefined, 100) ?? [] : [],
       settings: this.settings ? this.effectiveSettings(tenantId) : null,
     });

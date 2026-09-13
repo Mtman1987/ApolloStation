@@ -1,3 +1,5 @@
+import { DshChannelCleanup } from "./channel-cleanup.js";
+import { DshChannelModerationService } from "./channel-moderation.js";
 import { DshApplicationDecisionService } from "./application-decision.js";
 import { dshEmbedTemplateOverrides, dshHttps, type DshEmbedTemplates } from "./shoutout-presentation.js";
 import { DshNebulaMediaWorker } from "./nebula-media-worker.js";
@@ -152,6 +154,7 @@ export class SupervisedDshLiveService {
   private readonly client: SpmtClient;
   private readonly monitor: SqliteDshLiveMonitor;
   private readonly messages: SqliteDshDiscordMessageStore;
+  private readonly cleanup:DshChannelCleanup;
   private readonly calendar: SqliteDshCalendarStore;
   private readonly calendarSync: DshCalendarSync;
   private readonly calendarDelivery:DshCalendarDelivery;
@@ -179,6 +182,7 @@ export class SupervisedDshLiveService {
     this.monitor = new SqliteDshLiveMonitor(options.databasePath, options.config.pollIntervalSeconds * 1_000);
     this.messages = new SqliteDshDiscordMessageStore(options.databasePath);
     const liveDiscord = new DshDiscordApi(new SpmtDshDiscordGrantSource(this.client, directory), fetchImpl);
+    this.cleanup=new DshChannelCleanup(options.databasePath,new DshChannelModerationService(liveDiscord.moderationPort()));
     const simulationDiscord = new DshSimulationRoomDiscordTransport(liveDiscord, this.client, { guildIds: (tenantId) => options.config.tenants.find((tenant) => tenant.tenantId === tenantId)?.discordGuildIds ?? [], now });
     const discord = options.operationMode === "read-only" ? simulationDiscord : new DshSimulationRoomDiscordTransport(liveDiscord, this.client, { guildIds: (tenantId) => options.config.tenants.find((tenant) => tenant.tenantId === tenantId)?.discordGuildIds ?? [], now, liveWrites: true });
     const publisher = new DshDiscordLivePublisher(discord, this.messages, directory, undefined, now,this.monitor.guests);
@@ -190,7 +194,7 @@ export class SupervisedDshLiveService {
     this.calendarDelivery=new DshCalendarDelivery(this.calendar,this.messages,discord,now,this.client,options.operationMode==="read-only");
     this.applications = new SqliteDshApplicationStore(options.databasePath);
     this.applicationDecisions=new DshApplicationDecisionService(this.applications,{discord,publicOrigin:options.publicOrigin,preview:options.operationMode==="read-only",now});
-    const operations = new DshSuiteActionOperations({ guestLookup:async(tenantId,twitchLogin)=>{const grant=await twitchGrants.getGrant(tenantId);if(grant.status!=="ready")throw Error(grant.reason);return twitch.getGuest({...grant,twitchLogin});},config: options.config, monitor: this.monitor, messages: this.messages, calendar: this.calendar, applications: this.applications, discord, simulationDiscord, applicationInteractionsReady: options.applicationInteractionsReady, ...(options.publicOrigin?{publicOrigin:options.publicOrigin}:{}), now });
+    const operations = new DshSuiteActionOperations({ cleanup:this.cleanup,cleanupLiveWrites:options.operationMode==="active",guestLookup:async(tenantId,twitchLogin)=>{const grant=await twitchGrants.getGrant(tenantId);if(grant.status!=="ready")throw Error(grant.reason);return twitch.getGuest({...grant,twitchLogin});},config: options.config, monitor: this.monitor, messages: this.messages, calendar: this.calendar, applications: this.applications, discord, simulationDiscord, applicationInteractionsReady: options.applicationInteractionsReady, ...(options.publicOrigin?{publicOrigin:options.publicOrigin}:{}), now });
     this.suiteActions = new DshSuiteActionWorker(this.client, new DshBotActionAdapter(operations), { workerId: `${options.workerId}-suite-actions`, tenantIds: options.config.tenants.map((tenant) => tenant.tenantId) });
   }
   async ready() { await this.getAccessToken(); return { schemaVersion: 1 as const, workerId: this.options.workerId, operationMode: this.options.operationMode, liveIngressEnabled: this.options.liveIngressEnabled, egressMode: this.options.operationMode === "read-only" ? "shadow" as const : "provider" as const, configuredTenants: this.options.config.tenants.length, pollIntervalSeconds: this.options.config.pollIntervalSeconds }; }
@@ -224,7 +228,7 @@ export class SupervisedDshLiveService {
       let failed = false;
       try { await this.nebulaMediaCycle; await this.calendarCycle; await activeCycle; } catch (error) { failure = error; failed = true; }
       this.nebulaMedia?.close();
-      this.settings.close();
+      this.settings.close();this.cleanup.close();
       try { this.messages.close(); } catch (error) { if (!failed) { failure = error; failed = true; } }
       try { this.calendarSync?.close(); this.calendar.close(); } catch (error) { if (!failed) { failure = error; failed = true; } }
       try { this.applications.close(); } catch (error) { if (!failed) { failure = error; failed = true; } }

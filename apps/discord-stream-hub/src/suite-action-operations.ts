@@ -1,3 +1,4 @@
+import type { DshChannelCleanup } from "./channel-cleanup.js";
 import { dshGuestLogin, type DshGuestProfileV1 } from "./guest-shoutouts.js";
 import { DshApplicationDecisionService } from "./application-decision.js";
 import { buildDshTierShoutout, dshStreamShoutout } from "./shoutout-presentation.js";
@@ -12,7 +13,20 @@ import type { DshLiveRuntimeConfigV1, DshLiveRuntimeTenantV1 } from "./live-work
 
 /** Concrete DSH-owned operations used by web, chat, voice, APK, and Companion requests. */
 export class DshSuiteActionOperations implements DshBotActionOperationsV1 {
-  constructor(private readonly options: { config: DshLiveRuntimeConfigV1; monitor: SqliteDshLiveMonitor; messages: SqliteDshDiscordMessageStore; calendar: SqliteDshCalendarStore; applications: SqliteDshApplicationStore; discord: DshDiscordTransportV1; simulationDiscord?: DshDiscordTransportV1; applicationInteractionsReady: boolean; publicOrigin?: string; guestLookup?:(tenantId:string,login:string)=>Promise<DshGuestProfileV1>; now?: () => string }) {}
+  constructor(private readonly options: { config: DshLiveRuntimeConfigV1; monitor: SqliteDshLiveMonitor; messages: SqliteDshDiscordMessageStore; calendar: SqliteDshCalendarStore; applications: SqliteDshApplicationStore; discord: DshDiscordTransportV1; simulationDiscord?: DshDiscordTransportV1; applicationInteractionsReady: boolean; publicOrigin?: string; cleanup?:DshChannelCleanup;cleanupLiveWrites?:boolean;guestLookup?:(tenantId:string,login:string)=>Promise<DshGuestProfileV1>; now?: () => string }) {}
+  async cleanupChannel(input:DshBotActionRequestV1) {
+    const cleanup=this.options.cleanup;if(!cleanup)throw Error("Discord channel cleanup is unavailable");
+    const actor=required(input.actorUserId,"actorUserId"),tenant=this.tenant(input.tenantId);
+    if(input.action==="dsh.moderation.preview") {
+      const guildId=this.guild(input),channelId=await this.channel(input),mode=input.args.mode;
+      if(mode!=="bot"&&mode!=="all"&&mode!=="until")throw Error("Choose bot, all, or until cleanup mode");
+      const plan=await cleanup.preview({schemaVersion:1,tenantId:input.tenantId,guildId,channelId,mode,actorRole:input.actorRole,...(mode==="until"?{untilMessageId:required(input.args.untilMessageId,"untilMessageId")}: {})},actor,input.idempotencyKey,input.progress);
+      return {plan,text:`Cleanup preview saved: ${plan.selected} messages selected in channel ${channelId}. Review this selection in DSH Moderation before executing it.`};
+    }
+    if(input.simulation||!this.options.cleanupLiveWrites){const plan=cleanup.list(input.tenantId,actor,input.actorRole).find(plan=>plan.id===input.args.planId);if(!plan)throw Error("Cleanup preview was not found");return {plan,simulation:true,text:`Previewed deletion of ${plan.remaining} selected messages in channel ${plan.channelId}.`};}
+    const plan=await cleanup.execute(input.tenantId,required(input.args.planId,"planId"),actor,input.actorRole,tenant.discordGuildIds??[],input.progress);
+    return {plan,text:`Channel cleanup: ${plan.deleted}/${plan.selected} messages deleted; ${plan.remaining} remain.${plan.remaining?" Retry this same selection to finish failed deletions.":""}`};
+  }
   async raidTrain(input:DshBotActionRequestV1) {
     const serverId=this.calendarScope(input),date=day(input.args.date),slots=this.options.calendar.raidTrainSlots(input.tenantId,serverId,date);
     if(input.action==="dsh.calendar.raid.read")return {slots,text:`Raid Train ${date}: ${slots.filter(slot=>slot.event).map(slot=>`${String(slot.hour).padStart(2,"0")}:00 ${slot.event!.username}`).join("; ")||"all 24 hours available"}. All times UTC.`};

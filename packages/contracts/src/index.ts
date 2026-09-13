@@ -250,6 +250,7 @@ export interface ExecutionJobCreateV1 {
 
 export const SPMT_SUITE_ACTION_CATALOG = Object.freeze([
   suiteAction("dsh.shoutouts.active.read", "read", "member"), suiteAction("dsh.shoutouts.live.read", "read", "member"), suiteAction("dsh.shoutouts.post", "broadcast", "moderator"), suiteAction("dsh.message.delete", "write", "admin"),
+  suiteAction("dsh.moderation.preview", "read", "admin"), suiteAction("dsh.moderation.execute", "write", "admin"),
   suiteAction("dsh.shoutouts.guest.remove", "write", "moderator"),
   suiteAction("dsh.calendar.raid.read", "read", "member"), suiteAction("dsh.calendar.raid.reserve", "write", "member"), suiteAction("dsh.calendar.raid.cancel", "write", "member"),
   suiteAction("dsh.calendar.read", "read", "member"), suiteAction("dsh.calendar.captain.read", "read", "member"), suiteAction("dsh.calendar.captain.create", "write", "member"), suiteAction("dsh.calendar.event.create", "write", "admin"), suiteAction("dsh.calendar.deploy", "broadcast", "admin"), suiteAction("dsh.calendar.refresh", "write", "admin"),

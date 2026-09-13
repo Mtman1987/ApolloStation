@@ -1,7 +1,8 @@
-export const DSH_BOT_ACTIONS = ["dsh.shoutouts.guest.remove", "dsh.calendar.raid.read", "dsh.calendar.raid.reserve", "dsh.calendar.raid.cancel", "dsh.shoutouts.active.read", "dsh.shoutouts.live.read", "dsh.shoutouts.post", "dsh.message.delete", "dsh.calendar.read", "dsh.calendar.captain.read", "dsh.calendar.captain.create", "dsh.calendar.event.create", "dsh.calendar.deploy", "dsh.calendar.refresh", "dsh.applications.read", "dsh.applications.deploy", "dsh.applications.decide"] as const;
+export const DSH_BOT_ACTIONS = ["dsh.moderation.preview", "dsh.moderation.execute", "dsh.shoutouts.guest.remove", "dsh.calendar.raid.read", "dsh.calendar.raid.reserve", "dsh.calendar.raid.cancel", "dsh.shoutouts.active.read", "dsh.shoutouts.live.read", "dsh.shoutouts.post", "dsh.message.delete", "dsh.calendar.read", "dsh.calendar.captain.read", "dsh.calendar.captain.create", "dsh.calendar.event.create", "dsh.calendar.deploy", "dsh.calendar.refresh", "dsh.applications.read", "dsh.applications.deploy", "dsh.applications.decide"] as const;
 export type DshBotActionIdV1 = typeof DSH_BOT_ACTIONS[number];
-export interface DshBotActionRequestV1 { action: DshBotActionIdV1; tenantId: string; actorUserId?: string; actorRole: "guest" | "member" | "moderator" | "admin" | "owner"; args: Record<string, string>; idempotencyKey: string; simulation?: boolean; }
+export interface DshBotActionRequestV1 { action: DshBotActionIdV1; tenantId: string; actorUserId?: string; actorRole: "guest" | "member" | "moderator" | "admin" | "owner"; args: Record<string, string>; idempotencyKey: string; simulation?: boolean; progress?:()=>Promise<void>; }
 export interface DshBotActionOperationsV1 {
+  cleanupChannel?(input:DshBotActionRequestV1):Promise<Record<string,unknown>>;
   removeGuestShoutout?(input:DshBotActionRequestV1):Promise<Record<string,unknown>>;
   raidTrain?(input: DshBotActionRequestV1): Promise<Record<string, unknown>>;
   readShoutouts(input: DshBotActionRequestV1, liveOnly: boolean): Promise<Record<string, unknown>>;
@@ -23,6 +24,7 @@ export class DshBotActionAdapter {
     if (!(DSH_BOT_ACTIONS as readonly string[]).includes(input.action)) throw new Error("Unsupported Discord Stream Hub bot action");
     const minimum = DSH_BOT_ACTION_MINIMUM_ROLE[input.action];
     if (roleLevel(input.actorRole) < roleLevel(minimum)) throw new Error(`${input.action} requires ${minimum} access`);
+    if (input.action.startsWith("dsh.moderation.")){if(!this.operations.cleanupChannel)throw Error("Channel cleanup is unavailable");return this.operations.cleanupChannel(input);}
     if (input.action==="dsh.shoutouts.guest.remove") {if(!this.operations.removeGuestShoutout)throw Error("Guest shoutout removal is unavailable");return this.operations.removeGuestShoutout(input);}
     if (input.action.startsWith("dsh.calendar.raid.")) { if(!this.operations.raidTrain)throw new Error("Raid Train is unavailable"); return this.operations.raidTrain(input); }
     if (input.action === "dsh.shoutouts.active.read" || input.action === "dsh.shoutouts.live.read") return this.operations.readShoutouts(input, input.action.endsWith(".live.read"));
@@ -39,6 +41,7 @@ export class DshBotActionAdapter {
 }
 
 const DSH_BOT_ACTION_MINIMUM_ROLE: Record<DshBotActionIdV1, DshBotActionRequestV1["actorRole"]> = {
+  "dsh.moderation.preview": "admin", "dsh.moderation.execute": "admin",
   "dsh.shoutouts.guest.remove": "moderator",
   "dsh.calendar.raid.read": "member", "dsh.calendar.raid.reserve": "member", "dsh.calendar.raid.cancel": "member",
   "dsh.shoutouts.active.read": "member", "dsh.shoutouts.live.read": "member", "dsh.shoutouts.post": "moderator",

@@ -1,3 +1,4 @@
+import type { DshDiscordModerationPortV1 } from "./channel-moderation.js";
 import { buildDshGuestShoutout, type DshGuestShoutoutStore, type DshGuestLiveActionV1 } from "./guest-shoutouts.js";
 import { dshShoutoutGroupSlug } from './shoutout-groups.js';
 import { buildDshTierShoutout, dshStreamShoutout, type DshEmbedTemplates } from "./shoutout-presentation.js";
@@ -35,6 +36,17 @@ export class SqliteDshDiscordMessageStore {
 export class DshDiscordApi {
   constructor(private readonly grants:DshDiscordGrantSourceV1,private readonly fetchImpl:typeof fetch=fetch,private readonly origin="https://discord.com/api/v10"){
     const url=new URL(origin);if(url.protocol!=="https:"||url.username||url.password||url.search||url.hash)throw new Error("Discord API origin must be credential-free HTTPS");
+  }
+  moderationPort():DshDiscordModerationPortV1 {
+    const history=(row:{id:string;author?:{id?:string;bot?:boolean}})=>({id:row.id,...(row.author?.id?{authorId:row.author.id}:{}),...(row.author?.bot===undefined?{}:{authorIsBot:row.author.bot})});
+    return {
+      channel:async(tenant,id)=>{const channel=await this.request<{id:string;guild_id?:string;name?:string}>(tenant,`/channels/${snowflake(id,"channelId")}`,"GET",undefined,"channels:read");if(!channel?.guild_id)throw Error("Choose a Discord server channel");return{id:channel.id,guildId:channel.guild_id,...(channel.name?{name:channel.name}:{})};},
+      botIdentity:async tenant=>{const user=await this.request<{id:string}>(tenant,"/users/@me","GET",undefined,"guilds:read");if(!user?.id)throw Error("Discord bot identity is unavailable");return user;},
+      message:async(tenant,channel,id)=>{try{const row=await this.request<{id:string;author?:{id?:string;bot?:boolean}}>(tenant,`/channels/${snowflake(channel,"channelId")}/messages/${snowflake(id,"messageId")}`,"GET",undefined,"channels:read");return row?history(row):undefined;}catch(error){if(error instanceof DshDiscordError&&error.status===404)return undefined;throw error;}},
+      messages:async(tenant,channel,input)=>{const rows=await this.request<Array<{id:string;author?:{id?:string;bot?:boolean}}>>(tenant,`/channels/${snowflake(channel,"channelId")}/messages?limit=100${input.before?`&before=${snowflake(input.before,"before")}`:""}`,"GET",undefined,"channels:read");if(!Array.isArray(rows))throw Error("Discord returned an invalid history page");return rows.map(history);},
+      bulkDelete:async(tenant,channel,ids)=>{await this.request(tenant,`/channels/${snowflake(channel,"channelId")}/messages/bulk-delete`,"POST",{messages:ids.map(id=>snowflake(id,"messageId"))});},
+      deleteMessage:(tenant,channel,id)=>this.deleteMessage(tenant,channel,id),
+    };
   }
   async createMessage(tenantId:string,channelId:string,payload:Record<string,unknown>){const body=await this.request<{id?:string}>(tenantId,`/channels/${snowflake(channelId,"channelId")}/messages`,"POST",payload);if(!body?.id)throw new Error("Discord did not return a message id");return body.id;}
   async getUser(tenantId:string,userId:string){return (await this.request<{id:string;avatar?:string|null}>(tenantId,`/users/${snowflake(userId,"userId")}`,"GET",undefined,"guilds:read"))!;}
