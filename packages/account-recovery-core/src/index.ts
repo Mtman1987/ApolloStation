@@ -49,6 +49,7 @@ export interface ProviderIdentityResultV1 {
 }
 
 export interface AccountSetupTicketV1 {
+  joinCommunity?:boolean;
   tokenHash: string;
   purpose: SetupPurposeV1;
   userId: string;
@@ -211,6 +212,16 @@ export class AccountRecoveryService {
     };
   }
 
+  /** Credential-free community directory; provider references remain canonical here. */
+  listCommunityIdentities(tenantIdInput: string, afterUserId = "", limit = 200) {
+    const tenantId = requireId(tenantIdInput, "tenantId");
+    if (this.control.getTenant(tenantId).status !== "active" || this.control.getApp("discord-stream-hub").status !== "active" || !this.control.listInstalls(tenantId).some(app => app.appId === "discord-stream-hub" && app.enabled)) throw new AccountSetupError("Discord Stream Hub is not enabled for this community");
+    if (!Number.isInteger(limit) || limit < 1 || limit > 200 || typeof afterUserId !== "string" || afterUserId.length > 200) throw new AccountSetupError("Invalid community directory page");
+    const profiles = this.platformStore.listUserProfilesByTenant(tenantId).filter(profile => profile.userId > afterUserId).sort((a, b) => a.userId < b.userId ? -1 : a.userId > b.userId ? 1 : 0);
+    const members = profiles.slice(0, limit).map(profile => ({ userId: profile.userId, username: profile.username, displayName: profile.displayName, providers: this.authorityStore.listProviderLinks(profile.userId).filter(link => !link.revokedAt && (link.provider === "discord" || link.provider === "twitch")).map(link => ({ provider: link.provider as "discord" | "twitch", providerUserId: link.providerUserId })) }));
+    return { schemaVersion: 1 as const, tenantId, members, nextAfterUserId: profiles.length > limit ? members.at(-1)!.userId : null };
+  }
+
   provisionAccount(input: AccountProvisionInputV1): AccountProvisionResultV1 {
     const tenantId = requireId(input.tenantId, "tenantId");
     requireId(input.sourceAppId, "sourceAppId");
@@ -300,6 +311,15 @@ export class AccountRecoveryService {
     return { account, ticket: token };
   }
 
+  /** Community enrollment resolves the person; it never adopts the community owner's identity. */
+  createDiscordCommunityInvite(input:AccountProvisionInputV1 & {discord:{id:string;username?:string}}){
+    this.control.getTenant(requireId(input.tenantId,"tenantId"));
+    const identity=this.grandfatherProviderIdentity({sourceAppId:input.sourceAppId,provider:"discord",providerUserId:input.discord.id,...(input.discord.username?{providerUsername:input.discord.username}:{}),...(input.displayName?{displayName:input.displayName}:{})});
+    const token=this.tokenFactory(),now=this.now();
+    this.setupStore.putTicket({tokenHash:sha256(token),purpose:"first-time-setup",userId:identity.userId,tenantId:input.tenantId,sourceAppId:input.sourceAppId,discordUserId:input.discord.id,discordVerifiedAt:now,joinCommunity:true,createdAt:now,expiresAt:addMinutes(now,30)});
+    return {account:{userId:identity.userId,tenantId:input.tenantId,profile:identity.profile,credentialState:identity.credentialState,createdUser:identity.createdUser,createdTenant:false},ticket:token};
+  }
+
   beginTwitchVerification(ticketToken: string) {
     const ticket = this.requireTicket(ticketToken, "first-time-setup");
     if (!ticket.discordVerifiedAt) throw new AccountSetupError("Discord verification is required before Twitch verification");
@@ -326,7 +346,12 @@ export class AccountRecoveryService {
   completeFirstTimePassword(ticketToken: string, password: string) {
     const ticket = this.requireTicket(ticketToken, "first-time-setup");
     if (!ticket.discordVerifiedAt || !ticket.twitchVerifiedAt) throw new AccountSetupError("Discord and Twitch verification are both required");
-    this.setPassword(ticket.userId, password);
+    if(ticket.joinCommunity){
+      for(const [provider,id] of [["discord",ticket.discordUserId],["twitch",ticket.twitchUserId]] as const){const link=id?this.authorityStore.getProviderLink(provider,id):undefined;if(!link||link.revokedAt||link.userId!==ticket.userId)throw new AccountSetupError("Account links changed; restart verified account setup");}
+      const profile=this.platformStore.getUserProfile(ticket.userId);if(!profile)throw new AccountSetupError("Account profile is unavailable");
+      this.setPassword(ticket.userId,password);
+      if(!profile.tenantIds.includes(ticket.tenantId))this.platformStore.putUserProfile({...profile,tenantIds:[...profile.tenantIds,ticket.tenantId].sort(),updatedAt:this.now()});
+    }else this.setPassword(ticket.userId, password);
     const usedAt = this.now();
     this.setupStore.putTicket({ ...ticket, usedAt });
     return { userId: ticket.userId, tenantId: ticket.tenantId, credentialState: "password-set" as const };

@@ -6,6 +6,7 @@ const DSH_SUITE_ACTION_CAPABILITIES = DSH_BOT_ACTIONS.map(spmtSuiteActionCapabil
 
 export interface DshSuiteActionWorkerClientV1 {
   claimAnyExecutionJob(workerId: string, executionTarget: "sprite", options: { executionOwner: string; capabilityIds: string[]; leaseMs: number }): Promise<ExecutionJobV1 | null>;
+  heartbeatExecutionJob?(tenantId:string,jobId:string,workerId:string,leaseId:string,fencingEpoch:number,progress:{percent:number;message:string},leaseMs:number):Promise<unknown>;
   succeedExecutionJob(tenantId: string, jobId: string, workerId: string, leaseId: string, fencingEpoch: number, result: Record<string, unknown>): Promise<unknown>;
   failExecutionJob(tenantId: string, jobId: string, workerId: string, leaseId: string, fencingEpoch: number, code: string, message: string, retryable: boolean): Promise<unknown>;
   reportExecutionWorker(input: Record<string, unknown>): Promise<unknown>;
@@ -20,7 +21,7 @@ export class DshSuiteActionWorker {
   constructor(private readonly client: DshSuiteActionWorkerClientV1, private readonly adapter: DshBotActionAdapter, private readonly options: { workerId: string; tenantIds: string[] }) {}
   async runOnce() {
     await this.reportIfDue();
-    const job = await this.client.claimAnyExecutionJob(this.options.workerId, "sprite", { executionOwner: "discord-stream-hub", capabilityIds: DSH_SUITE_ACTION_CAPABILITIES, leaseMs: 60_000 });
+    const job = await this.client.claimAnyExecutionJob(this.options.workerId, "sprite", { executionOwner: "discord-stream-hub", capabilityIds: DSH_SUITE_ACTION_CAPABILITIES, leaseMs: 300_000 });
     if (!job) return undefined;
     if (!job.leaseId) throw new Error("Claimed DSH suite-action job has no lease");
     const lease = [job.tenantId, job.id, this.options.workerId, job.leaseId, job.fencingEpoch] as const;
@@ -29,7 +30,7 @@ export class DshSuiteActionWorker {
       const input = assertSpmtSuiteActionJobInputV1(job.input);
       if (!input.action.startsWith("dsh.")) throw new Error("DSH worker received an action owned by another app");
       const args = { ...input.args, ...(!input.args.channelId && input.source.channelId ? { channelId: input.source.channelId } : {}), ...(!input.args.roomId && input.source.roomId ? { roomId: input.source.roomId } : {}) };
-      const result = await this.adapter.execute({ action: input.action as DshBotActionIdV1, tenantId: job.tenantId, actorUserId: input.actor.userId, actorRole: input.actor.role, args, idempotencyKey: job.idempotencyKey, ...(input.source.simulation === true ? { simulation: true } : {}) });
+      const result = await this.adapter.execute({ action: input.action as DshBotActionIdV1, tenantId: job.tenantId, actorUserId: input.actor.userId, actorRole: input.actor.role, args, progress:async()=>{await this.client.heartbeatExecutionJob?.(...lease,{percent:30,message:"Applying the selected DSH operation"},300000);}, idempotencyKey: job.idempotencyKey, ...(input.source.simulation === true ? { simulation: true } : {}) });
       await this.client.succeedExecutionJob(...lease, { schemaVersion: 1, text: resultText(input.action, result), ...result });
       if (input.source.simulation === true && this.client.publishSimulationRoomEvent) await this.client.publishSimulationRoomEvent(job.tenantId, simulationResult(input, resultText(input.action, result)), `dsh-suite-simulation:${job.id}`).catch(() => undefined);
       this.completedJobs += 1;

@@ -3,11 +3,11 @@ import { randomUUID } from "node:crypto";
 import rrule from "rrule";
 import { DatabaseSync } from "node:sqlite";
 
-export type DshCalendarEventTypeV1 = "captains-log" | "event";
+export type DshCalendarEventTypeV1 = "captains-log" | "event" | "raid-train";
 export interface DshCalendarMemberV1 { userId:string; username:string; avatarUrl?:string|null }
 export interface DshCalendarEventV1 {
   schemaVersion:1; id:string; tenantId:string; serverId:string; eventName:string; eventDateTime:string; description:string;
-  type:DshCalendarEventTypeV1; userId:string; username:string; userAvatar:string|null; dayKey:string; createdAt:string; updatedAt:string; source?:"discord";color?:string; endDateTime?:string|null; location?:string; status?:number; discordEventId?:string; discordGuildId?:string;discordEntityType?:number; recurrence?:Record<string,any>|null;
+  type:DshCalendarEventTypeV1; userId:string; username:string; userAvatar:string|null; dayKey:string; createdAt:string; updatedAt:string; source?:"discord"|"twitch"|"partner";color?:string; endDateTime?:string|null; location?:string; status?:number; discordEventId?:string; discordGuildId?:string;discordEntityType?:number; recurrence?:Record<string,any>|null;
 }
 export interface DshCalendarMutationV1 { event:DshCalendarEventV1; points:{ eventType:"admin_captains_log"|"admin_calendar_event"; quantity:1; metadata:Record<string,string> }; refreshDiscordCalendar:true }
 
@@ -17,6 +17,7 @@ export class SqliteDshCalendarStore {
     if(!path)throw new Error("DSH calendar database path is required");
     this.db=new DatabaseSync(path,{timeout:5_000});
     this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;
+      BEGIN IMMEDIATE;
       CREATE TABLE IF NOT EXISTS dsh_calendar_events(
         tenant_id TEXT NOT NULL, server_id TEXT NOT NULL, event_id TEXT NOT NULL, type TEXT NOT NULL, day_key TEXT NOT NULL,
         event_at TEXT NOT NULL, user_id TEXT NOT NULL, body TEXT NOT NULL,
@@ -24,14 +25,17 @@ export class SqliteDshCalendarStore {
       ) STRICT;
       CREATE INDEX IF NOT EXISTS dsh_calendar_by_day ON dsh_calendar_events(tenant_id,server_id,day_key,event_at);
       CREATE UNIQUE INDEX IF NOT EXISTS dsh_calendar_captain_day ON dsh_calendar_events(tenant_id,server_id,day_key) WHERE type='captains-log';
+      CREATE UNIQUE INDEX IF NOT EXISTS dsh_calendar_raid_hour ON dsh_calendar_events(tenant_id,server_id,event_at) WHERE type='raid-train';
       CREATE TABLE IF NOT EXISTS dsh_calendar_state(tenant TEXT NOT NULL,key TEXT NOT NULL,body TEXT NOT NULL,PRIMARY KEY(tenant,key)) STRICT;
       CREATE TABLE IF NOT EXISTS dsh_calendar_awards(tenant TEXT NOT NULL,id TEXT NOT NULL,body TEXT NOT NULL,PRIMARY KEY(tenant,id)) STRICT;
-      CREATE TRIGGER IF NOT EXISTS dsh_calendar_award AFTER INSERT ON dsh_calendar_events WHEN NEW.user_id!='' AND coalesce(json_extract(NEW.body,'$.source'),'')!='discord' BEGIN INSERT OR IGNORE INTO dsh_calendar_awards VALUES(NEW.tenant_id,NEW.event_id,NEW.body); END;
+      DROP TRIGGER IF EXISTS dsh_calendar_award;
+      CREATE TRIGGER dsh_calendar_award AFTER INSERT ON dsh_calendar_events WHEN NEW.type IN ('captains-log','event') AND NEW.user_id!='' AND coalesce(json_extract(NEW.body,'$.source'),'')='' BEGIN INSERT OR IGNORE INTO dsh_calendar_awards VALUES(NEW.tenant_id,NEW.event_id,NEW.body); END;
       CREATE TABLE IF NOT EXISTS dsh_calendar_revision(tenant TEXT PRIMARY KEY,revision INTEGER NOT NULL) STRICT;
       CREATE TABLE IF NOT EXISTS dsh_calendar_leases(tenant TEXT NOT NULL,key TEXT NOT NULL,owner TEXT NOT NULL,expires INTEGER NOT NULL,PRIMARY KEY(tenant,key)) STRICT;
       CREATE TRIGGER IF NOT EXISTS dsh_calendar_insert AFTER INSERT ON dsh_calendar_events BEGIN INSERT INTO dsh_calendar_revision VALUES(NEW.tenant_id,1) ON CONFLICT(tenant) DO UPDATE SET revision=revision+1; END;
       CREATE TRIGGER IF NOT EXISTS dsh_calendar_update AFTER UPDATE ON dsh_calendar_events BEGIN INSERT INTO dsh_calendar_revision VALUES(NEW.tenant_id,1) ON CONFLICT(tenant) DO UPDATE SET revision=revision+1; END;
-      CREATE TRIGGER IF NOT EXISTS dsh_calendar_delete AFTER DELETE ON dsh_calendar_events BEGIN INSERT INTO dsh_calendar_revision VALUES(OLD.tenant_id,1) ON CONFLICT(tenant) DO UPDATE SET revision=revision+1; END;`);
+      CREATE TRIGGER IF NOT EXISTS dsh_calendar_delete AFTER DELETE ON dsh_calendar_events BEGIN INSERT INTO dsh_calendar_revision VALUES(OLD.tenant_id,1) ON CONFLICT(tenant) DO UPDATE SET revision=revision+1; END;
+      COMMIT;`);
     for(const row of this.db.prepare("SELECT tenant_id,server_id,event_id,body FROM dsh_calendar_events WHERE type='event' AND json_extract(body,'$.color') IS NULL ORDER BY event_at,event_id").all() as {tenant_id:string;server_id:string;event_id:string;body:string}[]){const event=parse(row.body);event.color=this.nextColor(row.tenant_id);this.db.prepare("UPDATE dsh_calendar_events SET body=? WHERE tenant_id=? AND server_id=? AND event_id=?").run(JSON.stringify(event),row.tenant_id,row.server_id,row.event_id);}
   }
   close(){this.db.close();}
@@ -48,6 +52,19 @@ export class SqliteDshCalendarStore {
     const start=timestamp(input.start,"start"),existing=this.get(tenantId,serverId,id);
     const event:DshCalendarEventV1={schemaVersion:1,id:cleanId(id,"eventId"),tenantId:cleanId(tenantId,"tenantId"),serverId:cleanId(serverId,"serverId"),type:"event",color:existing?.color??this.nextColor(tenantId),source:existing?.source??"discord",eventName:cleanText(input.name,"name",100),description:input.description,eventDateTime:start,dayKey:start.slice(0,10),userId:existing?.userId??"",username:existing?.username??"Discord community",userAvatar:existing?.userAvatar??null,createdAt:existing?.createdAt??now,updatedAt:now,endDateTime:input.end??null,location:input.location??"",status:input.status??1,discordEventId:input.discordEventId,discordGuildId:input.discordGuildId,discordEntityType:input.entityType??3,recurrence:input.recurrence??null};
     this.db.prepare("INSERT INTO dsh_calendar_events(tenant_id,server_id,event_id,type,day_key,event_at,user_id,body) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(tenant_id,server_id,event_id) DO UPDATE SET day_key=excluded.day_key,event_at=excluded.event_at,body=excluded.body").run(tenantId,serverId,id,"event",event.dayKey,start,event.userId,JSON.stringify(event));return event;
+  }
+  /** Replace only a provider's completed monthly snapshot; custom entries survive. */
+  replaceTwitchMonth(tenant:string,scope:string,month:string,events:DshCalendarEventV1[]) {
+    if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(month))throw Error("Choose a valid calendar month");
+    for(const event of events)if(event.tenantId!==tenant||event.serverId!==scope||event.source!=="twitch"||!event.dayKey.startsWith(month))throw Error("Schedule snapshot scope mismatch");
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const existing=this.all(tenant,scope).filter(e=>e.source==="twitch"&&e.dayKey.startsWith(month)),wanted=new Map(events.map(e=>[e.id,e]));
+      for(const old of existing)if(!wanted.has(old.id))this.deleteEvent(tenant,scope,old.id);
+      for(const event of events){const old=existing.find(e=>e.id===event.id);if(old&&JSON.stringify({...old,createdAt:"",updatedAt:""})===JSON.stringify({...event,createdAt:"",updatedAt:""}))continue;
+        if(old)this.deleteEvent(tenant,scope,old.id);this.insert({...event,createdAt:old?.createdAt??event.createdAt});}
+      this.db.exec("COMMIT");
+    }catch(error){this.db.exec("ROLLBACK");throw error;}
   }
   all(tenant:string,scope:string){return (this.db.prepare("SELECT body FROM dsh_calendar_events WHERE tenant_id=? AND server_id=? ORDER BY event_at,event_id").all(tenant,scope) as {body:string}[]).map(row=>parse(row.body));}
   setAvatar(tenant:string,userId:string,url:string){for(const row of this.db.prepare("SELECT server_id,body FROM dsh_calendar_events WHERE tenant_id=? AND user_id=? AND type='captains-log'").all(tenant,userId) as {server_id:string;body:string}[]){const event=parse(row.body);if(event.userAvatar===url)continue;event.userAvatar=url;this.db.prepare("UPDATE dsh_calendar_events SET body=? WHERE tenant_id=? AND server_id=? AND event_id=?").run(JSON.stringify(event),tenant,row.server_id,event.id);}}
@@ -67,13 +84,37 @@ export class SqliteDshCalendarStore {
     try{this.insert(event);}catch(error){if(/UNIQUE constraint failed/i.test(String(error)))throw new Error("That day is already claimed.");throw error;}
     return{event,points:{eventType:"admin_captains_log",quantity:1,metadata:{username:member.username,date:dayKey}},refreshDiscordCalendar:true};
   }
-  scheduleMission(input:{tenantId:string;serverId:string;member:DshCalendarMemberV1;missionName:string;missionDescription:string;missionDate:string;missionTime?:string;endDateTime?:string;location?:string;now?:string}):DshCalendarMutationV1{
+  scheduleMission(input:{tenantId:string;serverId:string;member:DshCalendarMemberV1;missionName:string;missionDescription:string;missionDate:string;missionTime?:string;endDateTime?:string;location?:string;source?:"partner";now?:string}):DshCalendarMutationV1{
     const tenantId=cleanId(input.tenantId,"tenantId"),serverId=cleanId(input.serverId,"serverId"),member=cleanMember(input.member),dayKey=cleanDay(input.missionDate),clock=cleanClock(input.missionTime),now=timestamp(input.now??new Date().toISOString(),"now"),eventAt=`${dayKey}T${clock}:00.000Z`,name=cleanText(input.missionName,"missionName",120),description=cleanText(input.missionDescription,"missionDescription",2000);
-    const event:DshCalendarEventV1={endDateTime:missionEnd(input.endDateTime,eventAt),location:cleanText(input.location??"SPMT Community","location",100),status:1,schemaVersion:1,id:randomUUID(),tenantId,serverId,eventName:name,eventDateTime:eventAt,description,type:"event",userId:member.userId,username:member.username,userAvatar:member.avatarUrl??null,dayKey,createdAt:now,updatedAt:now};this.insert(event);
+    const event:DshCalendarEventV1={...(input.source?{source:input.source}:{}),endDateTime:missionEnd(input.endDateTime,eventAt),location:cleanText(input.location??"SPMT Community","location",100),status:1,schemaVersion:1,id:randomUUID(),tenantId,serverId,eventName:name,eventDateTime:eventAt,description,type:"event",userId:member.userId,username:member.username,userAvatar:member.avatarUrl??null,dayKey,createdAt:now,updatedAt:now};this.insert(event);
     return{event,points:{eventType:"admin_calendar_event",quantity:1,metadata:{username:member.username,missionName:name}},refreshDiscordCalendar:true};
+  }
+  /** The calendar owns reservations; a unique hourly slot is the cross-process arbiter. */
+  reserveRaidTrain(input:{tenantId:string;serverId:string;member:DshCalendarMemberV1;date:string;hour:number;now?:string}) {
+    const tenantId=cleanId(input.tenantId,"tenantId"),serverId=cleanId(input.serverId,"serverId"),member=cleanMember(input.member),dayKey=cleanDay(input.date),now=timestamp(input.now??new Date().toISOString(),"now");
+    if(!Number.isInteger(input.hour)||input.hour<0||input.hour>23)throw new Error("Choose an hourly slot from 00:00 to 23:00 UTC");
+    const eventDateTime=`${dayKey}T${String(input.hour).padStart(2,"0")}:00:00.000Z`;
+    const existing=this.raidTrainSlots(tenantId,serverId,dayKey)[input.hour]!.event;
+    if(existing?.userId===member.userId)return {event:existing,duplicate:true,refreshDiscordCalendar:true as const};
+    if(dayKey<=now.slice(0,10))throw new Error("Raid Train signup is for future dates; same-day signup is closed");
+    const event:DshCalendarEventV1={schemaVersion:1,id:randomUUID(),tenantId,serverId,type:"raid-train",dayKey,eventDateTime,endDateTime:new Date(Date.parse(eventDateTime)+3_600_000).toISOString(),eventName:`Raid Train — ${member.username}`,description:`${member.username} leads this hourly Raid Train slot.`,userId:member.userId,username:member.username,userAvatar:member.avatarUrl??null,createdAt:now,updatedAt:now,color:"#fb923c"};
+    try{this.insert(event);}catch(error){if(/UNIQUE constraint failed/i.test(String(error))){const won=this.raidTrainSlots(tenantId,serverId,dayKey)[input.hour]!.event;if(won?.userId===member.userId)return{event:won,duplicate:true,refreshDiscordCalendar:true as const};throw new Error("That Raid Train hour is already claimed");}throw error;}
+    return {event,duplicate:false,refreshDiscordCalendar:true as const};
+  }
+  raidTrainSlots(tenantId:string,serverId:string,date:string) {
+    const day=cleanDay(date),events=this.list(tenantId,serverId,{from:day,to:day,limit:500}).filter(event=>event.type==="raid-train");
+    return Array.from({length:24},(_,hour)=>({date:day,hour,event:events.find(event=>Number(event.eventDateTime.slice(11,13))===hour)}));
+  }
+  cancelRaidTrain(tenantId:string,serverId:string,eventId:string,actorUserId:string,owner=false) {
+    const event=this.get(tenantId,serverId,eventId);if(!event)return {deleted:false};
+    if(event.type!=="raid-train")throw new Error("Choose a Raid Train reservation");
+    if(!owner&&event.userId!==cleanId(actorUserId,"actorUserId"))throw new Error("Only the claimant or workspace owner can cancel this Raid Train slot");
+    return {deleted:this.deleteEvent(tenantId,serverId,eventId)};
   }
   updateEvent(tenantIdValue:string,serverIdValue:string,eventIdValue:string,patch:{eventName?:string;description?:string;eventDate?:string;eventTime?:string;endDateTime?:string;location?:string},now=new Date().toISOString()):DshCalendarEventV1{
     const tenantId=cleanId(tenantIdValue,"tenantId"),serverId=cleanId(serverIdValue,"serverId"),eventId=cleanId(eventIdValue,"eventId"),current=this.get(tenantId,serverId,eventId);if(!current)throw new Error("Calendar event not found");
+    if(current.source==="twitch")throw new Error("Edit this stream schedule on Twitch, then refresh the calendar");
+    if(current.type==="raid-train")throw new Error("Cancel this Raid Train reservation and claim another hour to move it");
     const dayKey=patch.eventDate?cleanDay(patch.eventDate):current.dayKey,clock=patch.eventTime?cleanClock(patch.eventTime):current.eventDateTime.slice(11,16),next:DshCalendarEventV1={...current,eventName:patch.eventName===undefined?(current.type==="captains-log"&&patch.eventDate?`Captain's Log - ${formatMonthDay(dayKey)}`:current.eventName):cleanText(patch.eventName,"eventName",120),description:patch.description===undefined?current.description:cleanText(patch.description,"description",2000),dayKey,eventDateTime:`${dayKey}T${clock}:00.000Z`,updatedAt:timestamp(now,"now")};
     if(current.type==="event"){const delta=Date.parse(next.eventDateTime)-Date.parse(current.eventDateTime);if((current.discordEntityType===1||current.discordEntityType===2)&&patch.location!==undefined&&patch.location!==current.location)throw new Error("Change the voice or stage channel in Discord; the linked calendar will follow.");next.endDateTime=current.endDateTime===null&&!patch.endDateTime?null:missionEnd(patch.endDateTime??(current.endDateTime?new Date(Date.parse(current.endDateTime)+delta).toISOString():undefined),next.eventDateTime);next.location=patch.location===undefined?(current.location??""):cleanText(patch.location,"location",100);if(next.recurrence&&delta)next.recurrence={...next.recurrence,start:next.eventDateTime};}
     try{this.db.prepare("UPDATE dsh_calendar_events SET type=?,day_key=?,event_at=?,user_id=?,body=? WHERE tenant_id=? AND server_id=? AND event_id=?").run(next.type,next.dayKey,next.eventDateTime,next.userId,JSON.stringify(next),tenantId,serverId,eventId);}catch(error){if(/UNIQUE constraint failed/i.test(String(error)))throw new Error("That day is already claimed.");throw error;}return structuredClone(next);

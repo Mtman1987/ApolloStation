@@ -37,7 +37,7 @@ function setMode(mode){html.dataset.spmtSurfaceMode=mode}
 function send(message){if(window.parent!==window)window.parent.postMessage(message,hostOrigin)}
 function publish(){send({protocol:'spmt.surface',version:1,type:'surface.manifest',manifest})}
 function report(pageId){send({protocol:'spmt.surface',version:1,type:'page.changed',appId:manifest.appId,pageId})}
-function showDirectory(){const detail=document.querySelector('[data-hmo-room-detail]');if(detail){detail.hidden=true;detail.replaceChildren()}report('rooms')}
+function showDirectory(){window.HearMeOutMedia?.park();const detail=document.querySelector('[data-hmo-room-detail]');if(detail){detail.hidden=true;detail.replaceChildren()}report('rooms')}
 function makeIcon(label,title,hook){const button=document.createElement('button');button.type='button';button.className='hmo-icon';button.textContent=label;button.title=title;button.setAttribute('aria-label',title);button.dataset[hook]='1';return button}
 function enhanceRoom(){
   const room=document.querySelector('.hmo-console');if(!room)return;

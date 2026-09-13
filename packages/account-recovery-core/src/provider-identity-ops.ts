@@ -1,7 +1,7 @@
 import { AuthDeniedError, AuthService } from "@spmt/auth-core";
 import type { AccountRecoveryService, GrandfatherProviderV1 } from "./index.js";
 
-export const PROVIDER_IDENTITY_OPERATION_NAMES = ["identity.provider.resolve", "identity.provider.grandfather"] as const;
+export const PROVIDER_IDENTITY_OPERATION_NAMES = ["identity.provider.resolve", "identity.provider.grandfather", "identity.community.list"] as const;
 export type ProviderIdentityOperationNameV1 = (typeof PROVIDER_IDENTITY_OPERATION_NAMES)[number];
 export interface ProviderIdentityOperationRequestV1 { name: ProviderIdentityOperationNameV1; input: Record<string, unknown>; }
 export interface ProviderIdentityOperationContextV1 { accessToken: string; }
@@ -19,6 +19,11 @@ export class ProviderIdentityOperations {
   execute(request: ProviderIdentityOperationRequestV1, context: ProviderIdentityOperationContextV1) {
     try {
       const tenantId = text(request.input.tenantId, "tenantId");
+      if (request.name === "identity.community.list") {
+        const principal = this.auth.authorize(context.accessToken, "identity:read", tenantId);
+        if (principal.actorType !== "service" || principal.actorId !== "discord-stream-hub") throw new AuthDeniedError("Community provider references require the installed DSH service");
+        return this.accounts.listCommunityIdentities(tenantId, String(request.input.afterUserId ?? ""), Number(request.input.limit ?? 200));
+      }
       if (request.name === "identity.provider.resolve") {
         this.auth.authorize(context.accessToken, "identity:read", tenantId);
         const value = this.accounts.resolveProviderIdentity(request.input.provider === "youtube" ? "youtube" : provider(request.input.provider), text(request.input.providerUserId, "providerUserId"));

@@ -138,6 +138,7 @@ function toLiveChatRecord(message: NormalizedChatMessageV1): CommlinkLiveChatRec
   return {
     schemaVersion: 1,
     tenantId: message.tenantId,
+    ...(message.guildId?{guildId:message.guildId}:{}),
     provider: message.provider,
     connectionId: message.connectionId,
     channelId: message.channelId,

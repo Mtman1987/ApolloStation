@@ -55,6 +55,34 @@ export class DshChannelModerationService {
     private readonly now: () => number = () => Date.now(),
   ) {}
 
+  async preview(input:DshNukeRequestV1,progress:()=>Promise<void>=async()=>{}) {
+    const request=validateRequest(input);await this.authorize(request);
+    if(request.mode==="until"&&!await this.discord.message(request.tenantId,request.channelId,request.untilMessageId!))throw Error("The stop message was not found in this Discord channel");
+    const botId=(await this.discord.botIdentity(request.tenantId)).id;if(!snowflake(botId))throw Error("Discord bot identity is invalid");
+    const ids:string[]=[];let before:string|undefined,reached=request.mode!=="until";
+    for(let page=0;page<10000;page++) {
+      await progress();const messages=await this.discord.messages(request.tenantId,request.channelId,{limit:100,...(before?{before}:{})});
+      if(!messages.length)break;
+      if(messages.length>100||messages.some(message=>!snowflake(message.id)))throw Error("Discord returned an invalid history page");
+      const next=messages.at(-1)!.id;if(before&&BigInt(next)>=BigInt(before))throw Error("Discord history pagination did not advance");before=next;
+      let selected=messages;if(request.mode==="until"){const index=messages.findIndex(message=>message.id===request.untilMessageId);if(index>=0){selected=messages.slice(0,index);reached=true;}}
+      ids.push(...selected.filter(message=>request.mode!=="bot"||message.authorId===botId).map(message=>message.id));
+      if(request.mode==="until"&&reached||messages.length<100)break;
+      if(page===9999)throw Error("This channel exceeds the history scan limit; the incomplete preview cannot execute");
+    }
+    if(!reached)throw Error("The stop message changed during preview; choose it again");
+    return {request,ids:[...new Set(ids)]};
+  }
+  async executeSelected(input:DshNukeRequestV1,ids:string[],progress:()=>Promise<void>=async()=>{}) {
+    const request=validateRequest(input);await this.authorize(request);
+    if(ids.some(id=>!snowflake(id)))throw Error("Cleanup selection contains an invalid Discord message");
+    return this.deleteSelected(request.tenantId,request.channelId,ids,progress);
+  }
+  private async authorize(request:DshNukeRequestV1) {
+    if(request.actorRole!=="admin"&&request.actorRole!=="owner")throw Error("DSH admin or owner role is required for channel deletion");
+    const channel=await this.discord.channel(request.tenantId,request.channelId);if(channel.guildId!==request.guildId)throw Error("The Discord channel is outside the configured tenant guild");
+  }
+
   async nuke(input: DshNukeRequestV1): Promise<DshNukeResultV1> {
     const request = validateRequest(input);
     if (request.actorRole !== "admin" && request.actorRole !== "owner") {
@@ -105,34 +133,39 @@ export class DshChannelModerationService {
     return { schemaVersion: 1, success: failed === 0, deleted, failed, pages, reachedTarget, log };
   }
 
-  private async deleteSelected(tenantId: string, channelId: string, ids: string[]) {
+  private async deleteSelected(tenantId: string, channelId: string, ids: string[],progress:()=>Promise<void>=async()=>{}) {
     const recent = ids.filter((id) => bulkEligible(id, this.now()));
     const old = ids.filter((id) => !bulkEligible(id, this.now()));
     let deleted = 0;
     let failed = 0;
     const log: string[] = [];
+    const deletedIds:string[]=[],failedIds:string[]=[];
 
     for (let offset = 0; offset < recent.length; offset += 100) {
       const chunk = recent.slice(offset, offset + 100);
       if (chunk.length > 1) {
+        await progress();
         try {
           await this.discord.bulkDelete(tenantId, channelId, chunk);
           deleted += chunk.length;
+          deletedIds.push(...chunk);
           continue;
         } catch (error) {
           log.push(`Bulk delete failed; retrying individually. ${safeError(error)}`);
         }
       }
       for (const id of chunk) {
-        try { await this.discord.deleteMessage(tenantId, channelId, id); deleted += 1; }
-        catch (error) { failed += 1; log.push(safeError(error)); }
+        await progress();
+        try { await this.discord.deleteMessage(tenantId, channelId, id); deleted += 1; deletedIds.push(id); }
+        catch (error) { if(missing(error)){deleted+=1;deletedIds.push(id);}else{failed += 1; failedIds.push(id);log.push(safeError(error));} }
       }
     }
     for (const id of old) {
-      try { await this.discord.deleteMessage(tenantId, channelId, id); deleted += 1; }
-      catch (error) { failed += 1; log.push(safeError(error)); }
+      await progress();
+      try { await this.discord.deleteMessage(tenantId, channelId, id); deleted += 1; deletedIds.push(id); }
+      catch (error) { if(missing(error)){deleted+=1;deletedIds.push(id);}else{failed += 1; failedIds.push(id);log.push(safeError(error));} }
     }
-    return { deleted, failed, log };
+    return { deleted, failed, log,deletedIds,failedIds };
   }
 }
 
@@ -157,3 +190,4 @@ function validateRequest(input: DshNukeRequestV1): DshNukeRequestV1 {
 function snowflake(value: unknown): value is string { return typeof value === "string" && /^\d{16,22}$/.test(value.trim()); }
 function clean(value: string) { const result = String(value ?? "").trim(); if (!result || result.length > 200 || /[\r\n\0]/.test(result)) throw new Error("DSH tenant identity is invalid"); return result; }
 function safeError(value: unknown) { return (value instanceof Error ? value.message : String(value)).replace(/(?:token|secret|authorization|password)\s*[:=]?\s*\S+/gi, "$1=[redacted]").slice(0, 240); }
+function missing(error:unknown){return typeof error==="object"&&error!==null&&"status" in error&&error.status===404;}

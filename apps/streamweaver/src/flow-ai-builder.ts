@@ -10,7 +10,9 @@ export const STREAMWEAVER_AI_FLOW_REPAIR_LIMIT=2;
 
 /** Apollo's registered StreamWeaver tools are the authoring truth. Live StreamWeaver is reference material only. */
 export function buildStreamWeaverAiFlowPrompt(idea: string, context: StreamWeaverAiFlowPromptContextV1 = {}) {
-  const suite = SPMT_SUITE_ACTION_CATALOG.map((item) => `${item.id}[${item.minimumRole}/${item.risk}]`).join(",");
+  const suiteGroups=new Map<string,string[]>();
+  for(const item of SPMT_SUITE_ACTION_CATALOG){const key=`${item.minimumRole}/${item.risk}`,group=suiteGroups.get(key)??[];group.push(item.id);suiteGroups.set(key,group);}
+  const suite = [...suiteGroups].map(([authority,ids])=>`[${authority}] ${ids.join(",")}`).join("; ");
   const native = STREAMWEAVER_DONOR_COMMANDS.filter(item=>item.donorId!=="secure-choice-session").map((item) => `${item.donorId}=${item.trigger}`).join(",");
   const deviceActions = Object.entries(DEVICE_AUTOMATION_ACTIONS).map(([action, capability]) => `${action}:${capability}`).join(",");
   const devices = context.devices?.slice(0, 40).flatMap((value) => {

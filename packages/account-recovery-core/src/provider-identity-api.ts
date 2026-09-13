@@ -13,13 +13,14 @@ export class ProviderIdentityApiAdapter {
   constructor(private readonly operations: ProviderIdentityOperations) {}
   handle(request: ProviderIdentityApiRequestV1): ProviderIdentityApiResponseV1 | undefined {
     const url = new URL(request.path, "https://spmt.invalid");
-    if (url.pathname !== "/v1/identity/provider" && url.pathname !== "/v1/identity/provider/grandfather") return undefined;
+    if (!["/v1/identity/provider", "/v1/identity/provider/grandfather", "/v1/identity/community-members"].includes(url.pathname)) return undefined;
     try {
       const headers = Object.fromEntries(Object.entries(request.headers ?? {}).map(([key, value]) => [key.toLowerCase(), value]));
       const authorization = headers.authorization;
       if (!authorization?.startsWith("Bearer ") || authorization.length <= 7) return { status: 401, body: { error: "unauthorized" } };
       const tenantId = headers["x-spmt-tenant"];
       if (!tenantId) return { status: 400, body: { error: "invalid", message: "x-spmt-tenant is required" } };
+      if (request.method === "GET" && url.pathname === "/v1/identity/community-members") return { status: 200, body: this.operations.execute({ name: "identity.community.list", input: { tenantId, afterUserId: url.searchParams.get("afterUserId") ?? "", limit: url.searchParams.get("limit") ?? 200 } }, { accessToken: authorization.slice(7) }) };
       if (request.method === "GET" && url.pathname === "/v1/identity/provider") {
         return { status: 200, body: this.operations.execute({ name: "identity.provider.resolve", input: { tenantId, provider: url.searchParams.get("provider") ?? "", providerUserId: url.searchParams.get("providerUserId") ?? "" } }, { accessToken: authorization.slice(7) }) };
       }

@@ -23,7 +23,7 @@ export class DshCalendarDelivery {
       this.messages.put({tenantId:tenant,kind:"calendar",key:guild,channelId:channel,messageId,updatedAt:this.now()});
       this.calendar.setState(tenant,`delivered:${guild}`,{revision,month,today,artworkRevision:COMMUNITY_CALENDAR_ARTWORK_REVISION});
       this.calendar.setState(tenant,`image-error:${guild}`,null);
-      return {messageId,channelId:channel,eventCount:events.filter(e=>e.type==="event").length};
+      return {messageId,channelId:channel,eventCount:events.filter(e=>e.type==="event"||e.type==="raid-train").length};
     }catch(error){this.calendar.setState(tenant,`image-error:${guild}`,error instanceof Error?error.message:"Image refresh failed");throw error;}
     finally{this.calendar.release(tenant,`image:${guild}`,owner);}
   }

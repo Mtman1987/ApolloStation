@@ -4,7 +4,7 @@ import { HEARMEOUT_BOT_ACTIONS, type HearMeOutBotActionIdV1 } from "./bot-action
 
 export interface HearMeOutSuiteActionExecutorV1 { execute(input: SpmtSuiteActionJobInputV1 & { action: HearMeOutBotActionIdV1 }, context: { tenantId: string; idempotencyKey: string }): Promise<Record<string, unknown>>; }
 export interface HearMeOutSuiteActionWorkerClientV1 {
-  claimAnyExecutionJob(workerId: string, executionTarget: "sprite", options: { executionOwner: string; capabilityIds: string[]; leaseMs: number }): Promise<ExecutionJobV1 | null>;
+  claimAnyExecutionJob(workerId: string, executionTarget: "sprite", options: { executionOwner: string; capabilityIds: string[]; tenantIds?: string[]; leaseMs: number }): Promise<ExecutionJobV1 | null>;
   succeedExecutionJob(tenantId: string, jobId: string, workerId: string, leaseId: string, fencingEpoch: number, result: Record<string, unknown>): Promise<unknown>;
   failExecutionJob(tenantId: string, jobId: string, workerId: string, leaseId: string, fencingEpoch: number, code: string, message: string, retryable: boolean): Promise<unknown>;
   reportExecutionWorker(input: Record<string, unknown>): Promise<unknown>;
@@ -20,7 +20,7 @@ export class HearMeOutSuiteActionWorker {
   constructor(private readonly client: HearMeOutSuiteActionWorkerClientV1, private readonly executor: HearMeOutSuiteActionExecutorV1, private readonly options: { workerId: string; actions: HearMeOutBotActionIdV1[]; tenantIds?: string[] }) { this.capabilities = options.actions.map(spmtSuiteActionCapabilityId); }
   async runOnce() {
     await this.reportIfDue();
-    const job = await this.client.claimAnyExecutionJob(this.options.workerId, "sprite", { executionOwner: "hearmeout", capabilityIds: this.capabilities, leaseMs: 60_000 });
+    const job = await this.client.claimAnyExecutionJob(this.options.workerId, "sprite", { executionOwner: "hearmeout", capabilityIds: this.capabilities, ...(this.options.tenantIds ? { tenantIds: this.options.tenantIds } : {}), leaseMs: 300_000 });
     if (!job) return undefined;
     if (!job.leaseId) throw new Error("Claimed HearMeOut suite-action job has no lease");
     const lease = [job.tenantId, job.id, this.options.workerId, job.leaseId, job.fencingEpoch] as const;

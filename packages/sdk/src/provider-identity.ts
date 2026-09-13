@@ -1,6 +1,10 @@
 import type { SpmtClient } from "./index.js";
 
 export type SpmtProviderIdentityKindV1 = "discord" | "twitch" | "youtube";
+export interface SpmtCommunityIdentityV1 { userId: string; username: string; displayName: string; providers: Array<{provider: "discord" | "twitch"; providerUserId: string}>; }
+export function listCommunityIdentities(client: SpmtClient, tenantId: string, afterUserId = "") {
+  return client.request<{schemaVersion: 1; tenantId: string; members: SpmtCommunityIdentityV1[]; nextAfterUserId: string | null}>(`/v1/identity/community-members?${new URLSearchParams({afterUserId, limit: "200"})}`, {tenantId});
+}
 export interface SpmtProviderIdentityProfileV1 {
   userId: string;
   username: string;

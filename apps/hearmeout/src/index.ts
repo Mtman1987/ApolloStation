@@ -37,3 +37,5 @@ export function hearMeOutCatalogRegistration(launchUrl:string):AppCatalogRegistr
   if (canonical.searchParams.get("surface") === "workspace") canonical.searchParams.delete("surface");
   return createAppCatalogRegistrationV1(manifest,{version:"0.1.0-green",launchUrl:canonical.toString(),surfaces:["shell","standalone","overlay","popout"]});
 }
+
+export * from "./discord-http.js";

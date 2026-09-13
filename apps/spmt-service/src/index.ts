@@ -264,7 +264,9 @@ export function createSpmtService(options: SpmtServiceOptions) {
         if (!token) return json(response, 401, { error: "unauthorized" });
         const principal = auth.authorize(token, "identity:onboard", tenantId);
         if (!isIdentity(body.discord)) return json(response, 400, { error: "discord_identity_required" });
-        const result = accounts.createDiscordInvite({
+        const community=principal.actorType==="service"&&principal.actorId==="discord-stream-hub";
+        if(community&&!control.listInstalls(tenantId).some(i=>i.appId==="discord-stream-hub"&&i.enabled))return json(response,403,{error:"app_not_installed"});
+        const result = (community?accounts.createDiscordCommunityInvite.bind(accounts):accounts.createDiscordInvite.bind(accounts))({
           tenantId,
           sourceAppId: principal.actorId,
           discord: body.discord,
@@ -539,7 +541,10 @@ export function createSpmtService(options: SpmtServiceOptions) {
           const body = await readBody(request);
           const message = assertNormalizedChatMessageV1(body as unknown as NormalizedChatMessageV1);
           if (message.tenantId !== tenantId) return json(response, 403, { error: "tenant_mismatch" });
-          replayMessage=message;return json(response, 201, commlinkLiveChat.ingest(message));
+          replayMessage=message;const ingested=commlinkLiveChat.ingest(message),record=ingested.record;
+          // Metadata references the one Commlink history. Retried ingestion repairs a failed event publication.
+          authority.publishEvent({tenantId,sourceAppId:"chat-gateway",type:"spmt.chat.message.received.v1",idempotencyKey:`chat-received:${createHash("sha256").update(JSON.stringify([record.provider,record.connectionId,record.channelId,record.messageId])).digest("hex")}`,payload:{schemaVersion:1,provider:record.provider,connectionId:record.connectionId,channelId:record.channelId,...(record.guildId?{guildId:record.guildId}:{}),messageId:record.messageId,occurredAt:record.occurredAt,actor:{providerUserId:record.providerUserId,username:record.username,...(record.displayName?{displayName:record.displayName}:{}),isBot:record.isBot,roles:record.roles},...(message.supportEvent?{supportEvent:message.supportEvent}:{})}});
+          return json(response, 201, ingested);
         } catch (error) {
           if (error instanceof AuthDeniedError) return json(response, 403, { error: "forbidden" });
           commlinkOperator.recordFailure(tenantId,"Chat message was rejected during ingestion",replayMessage);
@@ -776,13 +781,13 @@ function ensureStreamWeaverIdentity(auth: AuthService, credential: string) {
   auth.reconcileServiceIdentity({ serviceId: "streamweaver", credential, scopes, tenantMode: "any" });
 }
 function ensureDshIdentity(auth: AuthService, credential: string, production:boolean) {
-  auth.reconcileServiceIdentity({ serviceId: "discord-stream-hub", credential, scopes: ["events:read", "assistants:invoke", "jobs:write", "identity:read", "providers:grant", "events:write", "jobs:read", "jobs:work", "runtime:write", ...(production?["xp:read","xp:write"]:[])], tenantMode: "any" });
+  auth.reconcileServiceIdentity({ serviceId: "discord-stream-hub", credential, scopes: ["events:read", "assistants:invoke", "jobs:write", "identity:read", "providers:grant", "events:write", "jobs:read", "jobs:work", "runtime:write", ...(production?["xp:read","xp:write","identity:write","identity:onboard"]:[])], tenantMode: "any" });
 }
 function ensureNebulaArcadeIdentity(auth: AuthService, credential: string) {
   auth.reconcileServiceIdentity({ serviceId: "nebula-arcade", credential, scopes: ["events:write", "xp:write", "runtime:write", "jobs:read", "jobs:write"], tenantMode: "any" });
 }
 function ensureHearMeOutIdentity(auth: AuthService, credential: string) {
-  auth.reconcileServiceIdentity({ serviceId: "hearmeout", credential, scopes: ["providers:grant", "events:write", "jobs:read", "jobs:write", "jobs:work", "runtime:write"], tenantMode: "any" });
+  auth.reconcileServiceIdentity({ serviceId: "hearmeout", credential, scopes: ["identity:read", "assistants:read", "assistants:invoke", "providers:grant", "events:write", "jobs:read", "jobs:write", "jobs:work", "runtime:write"], tenantMode: "any" });
 }
 function syncCommunityAssistantCapability(data: PlatformDataService, status: ReturnType<CommunityAssistantRuntimeV1["status"]>) {
   data.upsertStellarCapability({ id: "spmt.community-assistant", sourceAppId: "stellar-core", title: "Stella Community Assistant", description: "Invoke the app-neutral SPMT Community Assistant through the durable, metered Stellar Core job contract.", requiredScopes: ["assistants:invoke"], availability: status.availability, ...(status.availability === "unavailable" ? { unavailableReason: status.unavailableReason } : {}) });

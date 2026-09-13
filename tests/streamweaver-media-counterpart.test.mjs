@@ -29,7 +29,7 @@ test("StreamWeaver's HearMeOut media endpoints share queues, reject conflicting 
     let state=await (await request(path)).json();assert.equal(state.music.current.item.title,"First track");assert.equal(state.music.queue.length,1);
     const next={action:"next",expectedRequestId:state.music.current.requestId};await request(path+"/media/music/control",next,"next-1");await request(path+"/media/music/control",next,"next-1");
     state=await (await request(path)).json();assert.equal(state.music.current.item.title,"Second track");assert.equal(state.music.queue.length,0);
-    await request(path+"/media/music/control",{action:"volume",position:23},"volume-1");state=await (await request(path)).json();assert.equal(state.music.playback.volume,23);
+    const before=state.music;const localOnly=await request(path+"/media/music/control",{action:"volume",position:23},"volume-1");assert.equal(localOnly.status,400);assert.match((await localOnly.json()).message,/local to each viewer/);state=await (await request(path)).json();assert.deepEqual(state.music,before);assert.ok(state.music.broadcast.playbackUrl.endsWith("/broadcast/music/index.m3u8"));
     const crossOrigin=await fetch(origin+"/api/hearmeout/rooms"+path+"/media/music/control",{method:"POST",headers:{cookie,origin:"https://foreign.test","content-type":"application/json"},body:JSON.stringify({action:"clear"})});assert.equal(crossOrigin.status,403);
     const unauth=await fetch(origin+"/api/hearmeout/rooms"+path);assert.equal(unauth.status,401);
   }finally{if(web)await web.close();if(hmo)await hmo.close();await service.close();rmSync(dir,{recursive:true,force:true})}

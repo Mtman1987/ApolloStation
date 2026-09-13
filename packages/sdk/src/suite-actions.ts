@@ -5,6 +5,9 @@ export interface SpmtSuiteActionCommandV1 { action: SpmtSuiteActionIdV1; args: R
 /** Device- and surface-neutral deterministic intent parser for the shared suite-action pipeline. */
 export function detectSpmtSuiteActionCommand(message: string, now = new Date()): SpmtSuiteActionCommandV1 | undefined {
   const value = normalized(message);
+  const legacyMedia = message.trim().match(/^!(wr|watchrequest|sr|songrequest)\s+(.+)$/is);
+  if (legacyMedia) return request("hmo.media.request", { query: clean(legacyMedia[2], 500), lane: /^(wr|watchrequest)$/i.test(legacyMedia[1]!) ? "movie" : "music", roomId: "" });
+  if (/^!(np|nowplaying)$/i.test(value)) return request("hmo.media.state.read", {});
   const channel = clean(message.match(/(?:to|in|into|on)\s+#([a-z0-9_-]{1,100})\b/i)?.[1]);
   const roomId = clean(message.match(/\b(?:room|chat)\s+(?:called|named)?\s*["“]?([a-z0-9][a-z0-9 _-]{0,159}?)["”]?(?:\s+(?:please|now)|[,.!?]|$)/i)?.[1]);
   const image = clean(message.match(/\b(?:generate|make|create|draw)\s+(?:me\s+)?(?:an?\s+)?(?:ai\s+)?(?:image|picture|photo|artwork|illustration)\s*(?:of|showing|for)?\s+(.+?)\s*$/i)?.[1], 3_000).replace(/\s+please$/i, "");
@@ -29,6 +32,12 @@ export function detectSpmtSuiteActionCommand(message: string, now = new Date()):
   if (/\b(?:deploy|post|publish|send)\b.*\b(?:mod(?:erator)?|partner|dev(?:eloper|elopment)?)\b.*\bapplications?\b/.test(value)) return request("dsh.applications.deploy", { channel });
   if (/\b(?:deploy|post|publish|send)\b.*\b(?:admin\s+)?calendar\b/.test(value)) return request("dsh.calendar.deploy", { channel });
   if (/\b(?:refresh|update|regenerate)\b.*\b(?:deployed\s+)?(?:admin\s+)?calendar\b/.test(value)) return request("dsh.calendar.refresh", {});
+  if (/\braid[ -]?train\b/.test(value)) {
+    const date=extractDate(message,now),clock=/\b(?:at\s+)?([01]?\d|2[0-3]):00\b/.exec(value),hour=clock?String(Number(clock[1])):"";
+    if (/\b(?:cancel|leave|release)\b/.test(value))return request("dsh.calendar.raid.cancel",{date,hour});
+    if (/\b(?:claim|reserve|signup|sign\s+up|join)\b/.test(value))return request("dsh.calendar.raid.reserve",{date,hour});
+    if (/\b(?:show|view|list|read|schedule|available)\b/.test(value))return request("dsh.calendar.raid.read",{date});
+  }
   if (/\b(?:claim|schedule|set|put|add|sign)\b.*\bcaptain'?s?\s+log\b/.test(value)) return request("dsh.calendar.captain.create", { selectedDate: extractDate(message, now) });
   if (/\b(?:who|read|show|list|check|what)\b.*\bcaptain'?s?\s+log\b/.test(value)) return request("dsh.calendar.captain.read", {});
   if (/\b(?:read|show|list|check|what(?:'s| is))\b.*\b(?:dsh|discord\s*stream\s*hubs?|admin)\b.*\bcalendar\b/.test(value)) return request("dsh.calendar.read", {});

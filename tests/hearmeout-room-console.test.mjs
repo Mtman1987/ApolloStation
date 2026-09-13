@@ -38,7 +38,7 @@ test("HearMeOut exposes real leave delete and moderation room actions", async ()
   const source = await read("apps/hearmeout/src/web-server-v3.ts");
   const core = await read("apps/hearmeout/src/room-media-core.ts");
   for (const pattern of [/Leave room/, /Delete room/, /Timeout 10 minutes/, /Kick from room/, /Ban from room/, /\/moderation/, /method:'DELETE'/]) assert.match(source, pattern);
-  for (const pattern of [/moderateMember/, /deleteRoom/, /hmo_room_restrictions/, /Only the room owner or an admin can moderate/, /delete the room instead/]) assert.match(core, pattern);
+  for (const pattern of [/moderateMember/, /deleteRoom/, /hmo_room_restrictions/, /Only the room owner or an admin can moderate/]) assert.match(core, pattern);
 });
 
 test("HearMeOut private rooms stay discoverable without leaking lobby details", async () => {

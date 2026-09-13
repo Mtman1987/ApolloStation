@@ -1,18 +1,19 @@
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { basename, isAbsolute, resolve } from "node:path";
 import { promisify } from "node:util";
 import type { ExecutionJobV1, ExecutionTargetV1 } from "@spmt/contracts";
 import { SpmtApiError, SpmtClient } from "@spmt/sdk";
 import { HearMeOutWorkerMediaCache } from "./worker-media-cache.js";
-import { HearMeOutWorkerMusicCatalog } from "./worker-music-catalog.js";
+import { HearMeOutWorkerMusicCatalog, type HearMeOutMusicCatalogTrackV1 } from "./worker-music-catalog.js";
 import { HearMeOutYoutubeResolverCoordinator, type HearMeOutResolvedYoutubeV1, type HearMeOutYoutubeResolverAdapterV1 } from "./youtube-resolver.js";
 
 export const HEARMEOUT_EXECUTION_CAPABILITIES = ["hearmeout.music.search", "hearmeout.youtube.resolve", "hearmeout.music.remember"] as const;
 export type HearMeOutExecutionCapabilityV1 = (typeof HEARMEOUT_EXECUTION_CAPABILITIES)[number];
 
 export interface HearMeOutExecutionClientV1 {
-  claimAnyExecutionJob(workerId: string, executionTarget: ExecutionTargetV1, options: { executionOwner: string; capabilityIds: string[]; leaseMs: number }): Promise<ExecutionJobV1 | null>;
+  claimAnyExecutionJob(workerId: string, executionTarget: ExecutionTargetV1, options: { executionOwner: string; capabilityIds: string[]; tenantIds?: string[]; leaseMs: number }): Promise<ExecutionJobV1 | null>;
   heartbeatExecutionJob(tenantId: string, jobId: string, workerId: string, leaseId: string, fencingEpoch: number, progress: { percent: number; message: string }, leaseMs: number): Promise<unknown>;
   succeedExecutionJob(tenantId: string, jobId: string, workerId: string, leaseId: string, fencingEpoch: number, result: Record<string, unknown>): Promise<unknown>;
   failExecutionJob(tenantId: string, jobId: string, workerId: string, leaseId: string, fencingEpoch: number, code: string, message: string, retryable: boolean): Promise<unknown>;
@@ -87,21 +88,23 @@ export function createHearMeOutWorkerTokenProvider(options: { spmtOrigin: string
 export class HearMeOutExecutionWorker {
   private completedJobs = 0;
   private failedJobs = 0;
-  constructor(private readonly client: HearMeOutExecutionClientV1, private readonly options: { workerId: string; executionTarget: "fly" | "sprite"; capabilities: HearMeOutExecutionCapabilityV1[]; catalog: HearMeOutWorkerMusicCatalog; cache: HearMeOutWorkerMediaCache; resolver?: HearMeOutYoutubeResolverCoordinator }) {}
+  constructor(private readonly client: HearMeOutExecutionClientV1, private readonly options: { workerId: string; executionTarget: "fly" | "sprite"; capabilities: HearMeOutExecutionCapabilityV1[]; tenantIds?: string[]; catalog: HearMeOutWorkerMusicCatalog; cache: HearMeOutWorkerMediaCache; catalogForTenant?: (tenantId: string) => HearMeOutWorkerMusicCatalog; cacheForTenant?: (tenantId: string) => HearMeOutWorkerMediaCache; search?: (query: string, limit: number) => Promise<HearMeOutMusicCatalogTrackV1[]>; resolver?: HearMeOutYoutubeResolverCoordinator }) {}
   async runOnce() {
-    const job = await this.client.claimAnyExecutionJob(this.options.workerId, this.options.executionTarget, { executionOwner: "hearmeout", capabilityIds: this.options.capabilities, leaseMs: 300_000 });
+    if (this.options.tenantIds?.length === 0) return undefined;
+    const job = await this.client.claimAnyExecutionJob(this.options.workerId, this.options.executionTarget, { executionOwner: "hearmeout", capabilityIds: this.options.capabilities, ...(this.options.tenantIds ? { tenantIds: this.options.tenantIds } : {}), leaseMs: 300_000 });
     if (!job) return undefined;
     await this.execute(job);
     return job.id;
   }
   async run(signal: AbortSignal, pollMs = 1_000) { while (!signal.aborted) { if (!await this.runOnce()) await pause(pollMs, signal); } }
-  async report(startedAt: string) { return this.client.reportExecutionWorker({ executionOwner: "hearmeout", workerId: this.options.workerId, executionTarget: this.options.executionTarget, state: "ready", capabilityIds: this.options.capabilities, providerHealthy: true, startedAt, metrics: { completedJobs: this.completedJobs, failedJobs: this.failedJobs }, leaseMs: 30_000 }); }
+  async report(startedAt: string) { return this.client.reportExecutionWorker({ executionOwner: "hearmeout", workerId: this.options.workerId, executionTarget: this.options.executionTarget, state: "ready", capabilityIds: this.options.capabilities, ...(this.options.tenantIds ? { tenantIds: this.options.tenantIds } : {}), providerHealthy: true, startedAt, metrics: { completedJobs: this.completedJobs, failedJobs: this.failedJobs }, leaseMs: 30_000 }); }
   private async execute(job: ExecutionJobV1) {
     if (!job.leaseId) throw new Error("Claimed HearMeOut job has no lease");
     const lease = [job.tenantId, job.id, this.options.workerId, job.leaseId, job.fencingEpoch] as const;
     try {
+      if (this.options.tenantIds && !this.options.tenantIds.includes(job.tenantId)) throw new Error("This tenant is not assigned to the HearMeOut worker");
       await this.client.heartbeatExecutionJob(...lease, { percent: 20, message: "Preparing HearMeOut media operation" }, 300_000);
-      const result = await this.handle(job.capabilityId as HearMeOutExecutionCapabilityV1, job.input);
+      const result = await this.handle(job.capabilityId as HearMeOutExecutionCapabilityV1, job.input, job.tenantId);
       await this.client.succeedExecutionJob(...lease, result);
       this.completedJobs += 1;
     } catch (error) {
@@ -110,13 +113,23 @@ export class HearMeOutExecutionWorker {
       await this.client.failExecutionJob(...lease, unavailable ? "media-unavailable" : "invalid-request", safeError(error), unavailable);
     }
   }
-  private async handle(capability: HearMeOutExecutionCapabilityV1, input: Record<string, unknown>): Promise<Record<string, unknown>> {
-    if (capability === "hearmeout.music.search") return { schemaVersion: 1, kind: "hearmeout.music.search.result", items: this.options.catalog.search(text(input.query, "query", 300), optionalInteger(input.limit, 1, 100) ?? 25) };
+  private async handle(capability: HearMeOutExecutionCapabilityV1, input: Record<string, unknown>, tenantId: string): Promise<Record<string, unknown>> {
+    const catalog = this.options.catalogForTenant?.(tenantId) ?? this.options.catalog;
+    const cache = this.options.cacheForTenant?.(tenantId) ?? this.options.cache;
+    if (capability === "hearmeout.music.search") {
+      const query = text(input.query, "query", 300), limit = optionalInteger(input.limit, 1, 100) ?? 25;
+      const remembered = catalog.search(query, limit);
+      let found: HearMeOutMusicCatalogTrackV1[] = [], providerError = false;
+      if (this.options.search) try { found = await this.options.search(query, limit); } catch { providerError = true; }
+      if (!remembered.length && providerError) throw new HearMeOutWorkerError("Online search is unavailable. Retry or use a direct media link.", true);
+      const items = [...new Map([...remembered, ...found].map(item => [item.id, item])).values()].slice(0, limit);
+      return { schemaVersion: 1, kind: "hearmeout.music.search.result", items, providerAvailable: Boolean(this.options.search) && !providerError };
+    }
     if (capability === "hearmeout.music.remember") {
       const userId = text(input.userId, "userId", 200), videoId = text(input.videoId, "videoId", 20);
       const title = optionalText(input.title, 300), artist = optionalText(input.artist, 300), thumbnail = optionalText(input.thumbnail, 2_000), duration = optionalInteger(input.duration, 0, 86_400_000), query = optionalText(input.query, 300);
-      const saved = this.options.catalog.save({ track: { id: videoId, url: text(input.url, "url", 2_000), ...(title ? { title } : {}), ...(artist ? { artist } : {}), ...(thumbnail ? { thumbnail } : {}), ...(duration === undefined ? {} : { duration }) }, ...(query ? { query } : {}) });
-      return { schemaVersion: 1, kind: "hearmeout.music.remember.result", saved, recent: this.options.cache.recordUserMusicPlay(userId, videoId).entries };
+      const saved = catalog.save({ track: { id: videoId, url: text(input.url, "url", 2_000), ...(title ? { title } : {}), ...(artist ? { artist } : {}), ...(thumbnail ? { thumbnail } : {}), ...(duration === undefined ? {} : { duration }) }, ...(query ? { query } : {}) });
+      return { schemaVersion: 1, kind: "hearmeout.music.remember.result", saved, recent: cache.recordUserMusicPlay(userId, videoId).entries };
     }
     if (capability === "hearmeout.youtube.resolve") {
       if (!this.options.resolver) throw new HearMeOutWorkerError("YouTube resolution is not configured on this worker", true);
@@ -131,12 +144,19 @@ export class HearMeOutExecutionWorker {
 export class YtDlpHearMeOutResolverAdapter implements HearMeOutYoutubeResolverAdapterV1 {
   private readonly run = promisify(execFile);
   constructor(private readonly binary: string) { if (!isAbsolute(binary)) throw new Error("yt-dlp binary must be absolute"); }
+  async search(query: string, limit: number): Promise<HearMeOutMusicCatalogTrackV1[]> {
+    const count = Math.max(1, Math.min(25, limit));
+    const { stdout } = await this.run(this.binary, ["--ignore-config", "--dump-single-json", "--flat-playlist", "--skip-download", "--no-warnings", "--", `ytsearch${count}:${text(query, "query", 300)}`], { timeout: 45_000, maxBuffer: 8 * 1024 * 1024, windowsHide: true });
+    const body = JSON.parse(stdout) as { entries?: Array<Record<string, unknown>> }, now = new Date().toISOString();
+    return (body.entries ?? []).filter(item => /^[A-Za-z0-9_-]{11}$/.test(String(item.id))).slice(0, count).map(item => ({ id: String(item.id), title: String(item.title || item.id).slice(0, 300), artist: String(item.channel || item.uploader || "Unknown Artist").slice(0, 300), url: `https://www.youtube.com/watch?v=${item.id}`, thumbnail: `https://i.ytimg.com/vi/${item.id}/hqdefault.jpg`, duration: Number.isFinite(Number(item.duration)) ? Math.max(0, Math.round(Number(item.duration) * 1000)) : 0, queries: [query], savedAt: now, updatedAt: now }));
+  }
   async ytDlp(videoId: string): Promise<HearMeOutResolvedYoutubeV1 | null> {
-    const { stdout } = await this.run(this.binary, ["--dump-single-json", "--no-playlist", "--no-warnings", `https://www.youtube.com/watch?v=${videoId}`], { timeout: 120_000, maxBuffer: 8 * 1024 * 1024, windowsHide: true });
+    if (!/^[A-Za-z0-9_-]{11}$/.test(videoId)) throw new Error("Invalid YouTube video id");
+    const { stdout } = await this.run(this.binary, ["--ignore-config", "--dump-single-json", "--no-playlist", "--no-warnings", "--", `https://www.youtube.com/watch?v=${videoId}`], { timeout: 120_000, maxBuffer: 8 * 1024 * 1024, windowsHide: true });
     const body = JSON.parse(stdout) as { title?: unknown; duration?: unknown; url?: unknown; formats?: Array<{ url?: unknown; vcodec?: unknown; acodec?: unknown }> };
     const formats = Array.isArray(body.formats) ? body.formats : [];
-    const video = formats.find((item) => typeof item.url === "string" && item.vcodec !== "none")?.url ?? body.url;
-    const audio = formats.find((item) => typeof item.url === "string" && item.acodec !== "none" && item.vcodec === "none")?.url ?? video;
+    const video = [...formats].reverse().find((item) => typeof item.url === "string" && item.vcodec && item.vcodec !== "none" && item.acodec && item.acodec !== "none")?.url;
+    const audio = [...formats].reverse().find((item) => typeof item.url === "string" && item.acodec && item.acodec !== "none" && item.vcodec === "none")?.url ?? video;
     if (typeof video !== "string" || typeof audio !== "string") return null;
     return { videoId, videoUrl: video, audioUrl: audio, ...(typeof body.title === "string" ? { title: body.title } : {}), ...(typeof body.duration === "number" ? { durationMs: Math.trunc(body.duration * 1_000) } : {}), stage: "yt-dlp", resolvedAt: new Date().toISOString() };
   }
@@ -147,8 +167,10 @@ export function createSupervisedHearMeOutWorker(options: HearMeOutWorkerEnvironm
   const client = new SpmtClient({ baseUrl: options.spmtOrigin, appId: "hearmeout", getAccessToken, ...(fetchImpl ? { fetchImpl } : {}) });
   const catalog = new HearMeOutWorkerMusicCatalog({ catalogFile: resolve(options.cacheDir, "music-catalog.json") });
   const cache = new HearMeOutWorkerMediaCache({ cacheDir: options.cacheDir });
-  const resolver = options.ytDlpBinary ? new HearMeOutYoutubeResolverCoordinator(new YtDlpHearMeOutResolverAdapter(options.ytDlpBinary)) : undefined;
-  return { getAccessToken, worker: new HearMeOutExecutionWorker(client, { workerId: options.workerId, executionTarget: options.executionTarget, capabilities: options.config.capabilities, catalog, cache, ...(resolver ? { resolver } : {}) }) };
+  const adapter = options.ytDlpBinary ? new YtDlpHearMeOutResolverAdapter(options.ytDlpBinary) : undefined;
+  const resolver = adapter ? new HearMeOutYoutubeResolverCoordinator(adapter) : undefined;
+  const tenantPath = (tenantId: string) => resolve(options.cacheDir, "tenants", createHash("sha256").update(tenantId).digest("hex"));
+  return { getAccessToken, worker: new HearMeOutExecutionWorker(client, { workerId: options.workerId, executionTarget: options.executionTarget, capabilities: options.config.capabilities, tenantIds: options.config.tenants.map(tenant => tenant.tenantId), catalog, cache, catalogForTenant: tenantId => new HearMeOutWorkerMusicCatalog({ catalogFile: resolve(tenantPath(tenantId), "music-catalog.json") }), cacheForTenant: tenantId => new HearMeOutWorkerMediaCache({ cacheDir: tenantPath(tenantId) }), ...(adapter ? { search: (query, limit) => adapter.search(query, limit) } : {}), ...(resolver ? { resolver } : {}) }) };
 }
 
 class HearMeOutWorkerError extends Error { constructor(message: string, readonly retryable: boolean) { super(message); } }

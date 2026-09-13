@@ -8,7 +8,7 @@ import { HearMeOutBotActionAdapter, SqliteHearMeOutPersonaRoomController, Sqlite
 const owner = { tenantId: "tenant-a", userId: "owner-a", displayName: "Owner", roles: ["admin", "member"] };
 const member = { tenantId: "tenant-a", userId: "member-a", displayName: "Member", roles: ["member"] };
 
-test("HearMeOut bot actions never fall into a global media queue and preserve exact volume", async () => {
+test("HearMeOut bot actions never fall into a global media queue or change another viewer volume", async () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), "apollo-hmo-actions-"));
   const rooms = new SqliteHearMeOutRoomMediaRuntime(path.join(dir, "hmo.sqlite"));
   const now = new Date().toISOString();
@@ -23,8 +23,9 @@ test("HearMeOut bot actions never fall into a global media queue and preserve ex
     const requested = await adapter.execute("hmo.media.request", member, { roomId: "studio", query: "Space Oddity" }, "request-song");
     assert.equal(resolved, 1);
     assert.equal(requested.session.current.item.title, "Song");
-    const volume = await adapter.execute("hmo.media.control", owner, { roomId: "studio", control: "volume", value: "42" }, "volume-42");
-    assert.equal(volume.session.playback.volume, 42);
+    const before = rooms.getSession(owner.tenantId, "studio", "music");
+    for (const control of ["volume", "mute", "unmute"]) await assert.rejects(() => adapter.execute("hmo.media.control", owner, { roomId: "studio", control, value: "42" }, "local-" + control), /local to each viewer/);
+    assert.deepEqual(rooms.getSession(owner.tenantId, "studio", "music"), before);
   } finally { rooms.close(); rmSync(dir, { recursive: true, force: true }); }
 });
 
