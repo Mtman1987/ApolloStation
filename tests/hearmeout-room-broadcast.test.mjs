@@ -4,10 +4,10 @@ import test from 'node:test';
 import {mkdtemp,readFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {execFileSync} from 'node:child_process';
+import {execFile,execFileSync} from 'node:child_process';
 import {createServer} from 'node:http';
 import {SqliteHearMeOutRoomMediaRuntime} from '../apps/hearmeout/dist/room-media-core.js';
-import {HearMeOutRoomBroadcast} from '../apps/hearmeout/dist/room-broadcast.js';
+import {HearMeOutRoomBroadcast,HEARMEOUT_BROADCAST_PROTOCOLS} from '../apps/hearmeout/dist/room-broadcast.js';
 import {HearMeOutBroadcastEgress,isPublicBroadcastAddress} from '../apps/hearmeout/dist/broadcast-egress.js';
 import {createHearMeOutWebServer} from '../apps/hearmeout/dist/web-server-v3.js';
 const owner={tenantId:'room-clock',userId:'owner',displayName:'Owner',roles:['admin']},start='2026-09-13T12:00:00.000Z',at=seconds=>new Date(Date.parse(start)+seconds*1000).toISOString();
@@ -53,4 +53,15 @@ test('one actual ffmpeg room broadcast serves many windows, runs without viewers
 test('broadcast source proxy blocks private network roots and nested references',async()=>{
  for(const ip of ['127.0.0.1','10.0.0.1','169.254.169.254','172.16.0.1','192.168.1.1','100.64.0.1','::1','::ffff:127.0.0.1','fd00::1'])assert.equal(isPublicBroadcastAddress(ip),false,ip);assert.equal(isPublicBroadcastAddress('8.8.8.8'),true);
  const proxy=new HearMeOutBroadcastEgress();try{const origin=await proxy.listen();const response=await new Promise((resolve,reject)=>{import('node:http').then(({request})=>{const req=request(origin,{path:'http://127.0.0.1:1/private'},res=>{res.resume();resolve(res.statusCode)});req.on('error',reject);req.end();});});assert.equal(response,403);}finally{await proxy.close();}
+});
+
+
+test('real ffprobe tunnels HTTPS through the room proxy before a denied source fails',async()=>{
+ const proxy=createServer();let tunnel='';proxy.on('connect',(request,socket)=>{tunnel=request.url;socket.end('HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n')});
+ await new Promise(resolve=>proxy.listen(0,'127.0.0.1',resolve));
+ try{
+  const origin='http://127.0.0.1:'+proxy.address().port;
+  const result=await new Promise(resolve=>execFile(mediaBinary('ffprobe'),['-v','error','-protocol_whitelist',HEARMEOUT_BROADCAST_PROTOCOLS,'-rw_timeout','1000000','-show_streams','-of','json','https://example.com/fixture.mp4'],{env:{PATH:process.env.PATH,http_proxy:origin,https_proxy:origin,no_proxy:''},timeout:5000},(error,stdout,stderr)=>resolve({error,stderr})));
+  assert.equal(tunnel,'example.com:443');assert.ok(result.error);assert.doesNotMatch(result.stderr,/not on whitelist/);
+ }finally{await new Promise(resolve=>proxy.close(resolve));}
 });
