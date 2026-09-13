@@ -1,0 +1,28 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { hearMeOutCutoverEnvironment } from '../scripts/sprites/hearmeout-cutover-config.mjs';
+import { enableHearMeOutBroadcastTest } from '../scripts/sprites/enable-hearmeout-broadcast-test.mjs';
+
+test('broadcast activation preserves transferred owner and voice configuration and scopes the worker to that owner', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'hmo-activation-'));
+  t.after(() => rm(root, {recursive:true, force:true}));
+  const config = {schemaVersion:1, tenantId:'existing-owner', workerOrigin:'https://hmo-dj-worker.fly.dev', workerAuthorization:'Bearer test-only-value-not-a-live-token', livekitUrl:'wss://fixture.invalid', livekitApiKey:'fixture-key', livekitApiSecret:'fixture-secret'};
+  await writeFile(join(root, 'hearmeout-cutover.json'), JSON.stringify(config));
+  await writeFile(join(root, 'hearmeout-room-owner-canary.sqlite'), '');
+  assert.equal((await hearMeOutCutoverEnvironment(root)).HEARMEOUT_BROADCAST_CACHE_PATH, undefined);
+  await assert.rejects(enableHearMeOutBroadcastTest(root, root), /ENOENT/);
+  assert.deepEqual(JSON.parse(await readFile(join(root, 'hearmeout-cutover.json'))), config);
+  for (const name of ['ffmpeg','ffprobe','yt-dlp']) await writeFile(join(root,name),'#!/bin/sh\nexit 0\n',{mode:0o700});
+  await enableHearMeOutBroadcastTest(root,root);
+  const saved = JSON.parse(await readFile(join(root, 'hearmeout-cutover.json')));
+  for (const [key,value] of Object.entries(config)) assert.equal(saved[key],value);
+  const environment = await hearMeOutCutoverEnvironment(root);
+  assert.equal(environment.HEARMEOUT_MEDIA_TENANT_ID, config.tenantId);
+  assert.equal(environment.HEARMEOUT_ACTIVITY_TENANT_ID, config.tenantId);
+  assert.equal(environment.HEARMEOUT_CONTROLLED_MEDIA, '1');
+  assert.equal(environment.HEARMEOUT_FFPROBE_BINARY, join(root,'ffprobe'));
+  assert.equal(environment.DISCORD_PUBLIC_KEY, undefined);
+});

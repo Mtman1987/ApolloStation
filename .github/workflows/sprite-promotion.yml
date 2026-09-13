@@ -162,7 +162,7 @@ jobs:
           fi
           url_details="$(sprite url -o "$SPRITE_ORG" -s "$SPRITE_NAME")"
           grep -Fq "$SPRITE_PUBLIC_URL" <<<"$url_details"
-          grep -Eiq 'auth[^[:alnum:]]+sprite|sprite[^[:alnum:]]+auth' <<<"$url_details"
+          grep -Eiq 'auth[^[:alnum:]]+(sprite|public)|(sprite|public)[^[:alnum:]]+auth' <<<"$url_details"
 
       - name: Create protected pre-promotion checkpoint
         run: sprite checkpoint create -o "$SPRITE_ORG" -s "$SPRITE_NAME" --comment "Before release $BUILD_SHA"
@@ -229,7 +229,17 @@ jobs:
             --env "DEPLOY_ROLE=$DEPLOY_ROLE,BUILD_SHA=$BUILD_SHA,REPOSITORY_URL=$REPOSITORY_URL,SPRITE_PUBLIC_URL=$SPRITE_PUBLIC_URL" \
             -- /bin/bash /tmp/deploy-sandbox-release.sh
 
-      - name: Record protected promotion
+      - name: Open the verified Apollo test entry
+        shell: bash
+        run: |
+          set -euo pipefail
+          sprite config update -o "$SPRITE_ORG" -s "$SPRITE_NAME" --url-auth public
+          # If public verification fails, restore org-only access automatically.
+          trap 'sprite config update -o "$SPRITE_ORG" -s "$SPRITE_NAME" --url-auth sprite' ERR
+          node scripts/sprites/verify-hearmeout-broadcast-test.mjs "$SPRITE_PUBLIC_URL" "$BUILD_SHA"
+          trap - ERR
+
+      - name: Record test deployment
         shell: bash
         run: |
           {

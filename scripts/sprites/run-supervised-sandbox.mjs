@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { hearMeOutCutoverEnvironment } from "./hearmeout-cutover-config.mjs";
@@ -32,6 +32,12 @@ const offlineNetworkGuardPath = resolve("scripts/offline-network-guard.mjs");
 if (offlineNetworkGuard) await import(offlineNetworkGuardPath);
 const flowOpenAiKey=await readPrivateCredential("openai-api-key");
 const hearMeOutCutover = await hearMeOutCutoverEnvironment(dataRoot);
+let hearMeOutMediaEnvironment = {};
+if (hearMeOutCutover.HEARMEOUT_YT_DLP_BINARY) {
+  const configPath = resolve(dataRoot, "hearmeout-media-runtime.json");
+  await writeFile(configPath, JSON.stringify({schemaVersion:1, revision:"approved-broadcast-test-v1", pollMs:500, capabilities:["hearmeout.music.search","hearmeout.youtube.resolve","hearmeout.music.remember"], tenants:[{tenantId:hearMeOutCutover.HEARMEOUT_MEDIA_TENANT_ID}]}), {mode:0o600});
+  hearMeOutMediaEnvironment = { SPMT_RUNTIME_MODE:"production", HEARMEOUT_RUNTIME_CONFIG_PATH:configPath, HEARMEOUT_EXECUTION_TARGET:"sprite", HEARMEOUT_YT_DLP_BINARY:hearMeOutCutover.HEARMEOUT_YT_DLP_BINARY };
+}
 const meshyAvatarKey=await readPrivateCredential("streamweaver-meshy-api-key");
 const keenToolsAvatarKey=await readPrivateCredential("streamweaver-keentools-api-key");
 if(Boolean(meshyAvatarKey)!==Boolean(keenToolsAvatarKey))throw new Error("Meshy and KeenTools avatar credentials must be installed together");
@@ -200,6 +206,7 @@ const hearMeOut = start("HearMeOut media worker", "apps/hearmeout/dist/execution
   HEARMEOUT_RUNTIME_CONFIG_PATH: resolve("config/hearmeout-runtime.sandbox.v1.json"),
   HEARMEOUT_WORKER_CREDENTIAL: hearMeOutWorkerCredential,
   HEARMEOUT_EXECUTION_TARGET: "fly",
+  ...hearMeOutMediaEnvironment,
 });
 hearMeOut.once("exit", (code, signal) => { if (!stopping) void stop(signal === "SIGINT" || signal === "SIGTERM" ? 0 : code ?? (signal ? 1 : 0)); });
 if (stellarWorkerCredential) {

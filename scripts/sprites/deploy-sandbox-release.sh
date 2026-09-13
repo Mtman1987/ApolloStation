@@ -38,6 +38,7 @@ llama_ref="b6335"
 media_root="/home/sprite/runtime/ffmpeg-b6.1.1"
 llama_archive_sha256="6ffee01c8fe2481faf8b614bbd8ca9bdaa563f47d4d9e00dc44f423962812d25"
 previous_release=""
+previous_hearmeout_config=""
 switched=0
 bootstrap_service_removed=0
 
@@ -74,6 +75,16 @@ provision_media_runtime() {
     rm -f "$archive"
   fi
   echo "e7e7fb30477f717e6f55f9180a70386c62677ef8a4d4d1a5d948f4098aa3eb99  $media_root/ffmpeg" | sha256sum --check --strict
+  if [[ ! -x "$media_root/ffprobe" ]]; then
+    local probe_archive="$media_root/ffprobe.gz"
+    curl -fsSL --retry 2 "https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/ffprobe-linux-x64.gz" -o "$probe_archive"
+    echo "25d9b6ccb05e3d9de9e04e31e2506d8dd7f9f0418981965ac6df12e8d3afd067  $probe_archive" | sha256sum --check --strict
+    gzip -dc "$probe_archive" > "$media_root/ffprobe.next"
+    chmod +x "$media_root/ffprobe.next"
+    mv "$media_root/ffprobe.next" "$media_root/ffprobe"
+    rm -f "$probe_archive"
+  fi
+  echo "4f231a1960d83e403d08f7971e271707bec278a9ae18e21b8b5b03186668450d  $media_root/ffprobe" | sha256sum --check --strict
   if [[ ! -f "$media_root/LICENSE" ]]; then
     curl -fsSL "https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/linux-x64.LICENSE" -o "$media_root/LICENSE"
   fi
@@ -86,6 +97,17 @@ RUNNER
   chmod +x "$media_root/run-node"
   export PATH="$media_root:$PATH"
   ffmpeg -version >/dev/null
+  ffprobe -version >/dev/null
+  if [[ "$DEPLOY_ROLE" == "release" ]]; then
+    if [[ ! -x "$media_root/yt-dlp" ]]; then
+      curl -fsSL --retry 2 "https://github.com/yt-dlp/yt-dlp/releases/download/2026.08.19/yt-dlp_linux" -o "$media_root/yt-dlp.next"
+      echo "58162f9bfdc27458ea47bfcb311cf47028f17d8154a8bf7d689861d46399230a  $media_root/yt-dlp.next" | sha256sum --check --strict
+      chmod +x "$media_root/yt-dlp.next"
+      mv "$media_root/yt-dlp.next" "$media_root/yt-dlp"
+    fi
+    echo "58162f9bfdc27458ea47bfcb311cf47028f17d8154a8bf7d689861d46399230a  $media_root/yt-dlp" | sha256sum --check --strict
+    "$media_root/yt-dlp" --version
+  fi
 }
 
 provision_llm_runtime() {
@@ -158,6 +180,9 @@ verify_app_web_cohort() {
 
 rollback() {
   status=$?
+  if (( status != 0 )) && [[ -n "$previous_hearmeout_config" ]]; then
+    cp -p "$previous_hearmeout_config" "$data_root/hearmeout-cutover.json"
+  fi
   if (( status != 0 && switched == 1 )) && [[ -n "$previous_release" && -d "$previous_release" ]]; then
     echo "Deployment failed; restoring $previous_release" >&2
     ln -sfn "$previous_release" "$next_link"
@@ -208,6 +233,13 @@ npm run typecheck
 NODE_OPTIONS="--import=$release_dir/scripts/sprites/supervisor-test-port-isolation.mjs" timeout --signal=TERM --kill-after=15s 10m npm test
 
 provision_llm_runtime
+
+if [[ "$DEPLOY_ROLE" == "release" ]]; then
+  mkdir -p "$data_root/recovery"
+  previous_hearmeout_config="$data_root/recovery/hearmeout-cutover-before-$BUILD_SHA.json"
+  cp -p "$data_root/hearmeout-cutover.json" "$previous_hearmeout_config"
+  node scripts/sprites/enable-hearmeout-broadcast-test.mjs
+fi
 
 ln -sfn "$release_dir" "$next_link"
 mv -Tf "$next_link" "$current_link"
@@ -265,3 +297,6 @@ printf 'Active release: %s\n' "$(readlink -f "$current_link")"
 sprite-env services get "$service_name"
 trap - EXIT
 
+if [[ "$DEPLOY_ROLE" == "release" ]]; then
+  node scripts/sprites/verify-hearmeout-broadcast-test.mjs http://127.0.0.1:8080 "$BUILD_SHA"
+fi

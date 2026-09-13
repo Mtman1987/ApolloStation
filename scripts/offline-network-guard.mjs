@@ -6,6 +6,11 @@ import tls from "node:tls";
 const privateFlowOpenAi=process.env.SPMT_PRIVATE_FLOW_OPENAI_ENABLED==="1";
 const hearMeOutBridge = process.env.HEARMEOUT_CONTROLLED_BRIDGE === "1" && process.env.HEARMEOUT_VOICE_BRIDGE_ORIGIN === "https://hmo-dj-worker.fly.dev";
 const avatarAiOutbound=process.env.SPMT_AVATAR_AI_OUTBOUND_MODE==="enabled";
+// Only HMO's provisioned broadcast process can open its DNS-pinned public
+// media sockets. The Sprite DNS policy still limits the reachable domains.
+const publicMediaAddress = process.env.HEARMEOUT_CONTROLLED_MEDIA === "1"
+  ? (await import("../apps/hearmeout/dist/broadcast-egress.js")).isPublicBroadcastAddress
+  : () => false;
 const marker = Symbol.for("apollostation.offline-network-guard");
 const liveReadUrl = configuredLiveReadUrl(process.env.SPMT_LIVE_READ_ORIGIN);
 
@@ -54,6 +59,7 @@ function assertRequestTarget(value, options, label) {
     return;
   }
   if (!value || value.socketPath) return;
+  if (["GET", "HEAD"].includes(String(value.method ?? "GET").toUpperCase()) && mediaSocket(value.hostname ?? value.host, value.port ?? 80)) return;
   if (isLiveReadHost(value.hostname ?? value.host) && String(value.method ?? "GET").toUpperCase() === "GET") return;
   assertLoopbackHost(value.hostname ?? value.host ?? "localhost", label);
 }
@@ -62,6 +68,7 @@ function assertSocketTarget(args, label) {
   const first = args[0];
   if (typeof first === "object" && first !== null) {
     if (first.path) return;
+    if (mediaSocket(first.host ?? first.hostname, first.port)) return;
     if (isLiveReadHost(first.host ?? first.hostname ?? first.servername) && Number(first.port ?? 443) === 443) return;
     if (hearMeOutBridge && String(first.host ?? first.hostname ?? first.servername) === "hmo-dj-worker.fly.dev" && Number(first.port ?? 443) === 443) return;
     if(privateFlowOpenAi&&String(first.host??first.hostname??first.servername)==="api.openai.com"&&Number(first.port??443)===443)return;
@@ -70,6 +77,7 @@ function assertSocketTarget(args, label) {
     return;
   }
   const host = typeof args[1] === "string" ? args[1] : "localhost";
+  if (mediaSocket(host, first)) return;
   if (isLiveReadHost(host) && Number(first ?? 443) === 443) return;
   if (hearMeOutBridge && host === "hmo-dj-worker.fly.dev" && Number(first ?? 443) === 443) return;
   if(privateFlowOpenAi&&host==="api.openai.com"&&Number(first??443)===443)return;
@@ -124,3 +132,4 @@ function configuredLiveReadUrl(value) {
 }
 
 function isLiveReadHost(value) { return Boolean(liveReadUrl && String(value ?? "").toLowerCase() === liveReadUrl.hostname.toLowerCase()); }
+function mediaSocket(host, port) { return [80, 443].includes(Number(port)) && publicMediaAddress(String(host ?? "")); }

@@ -37,6 +37,12 @@ function httpsRequest() {
   return https.get("https://example.com/apollo-should-never-leave");
 }
 
+test('controlled broadcast permits pinned public media sockets while keeping provider writes and private addresses blocked',()=>{
+ const source=`import net from 'node:net';import http from 'node:http';let calls=0;net.createConnection=()=>{calls++;return {}};http.request=()=>{calls++;return {}};await import(process.env.GUARD_URL);net.createConnection({host:'8.8.8.8',port:443});http.request({host:'8.8.8.8',port:80,method:'GET'});let blocked=0;for(const f of [()=>net.createConnection({host:'10.0.0.1',port:443}),()=>net.createConnection({host:'8.8.8.8',port:22}),()=>http.request({host:'8.8.8.8',port:80,method:'POST'}),()=>fetch('https://discord.com/api/webhooks/1/2',{method:'POST'})]){try{f()}catch(e){if(/OFFLINE_NETWORK_BLOCKED/.test(String(e)))blocked++}}if(calls!==2||blocked!==4)process.exit(1);`;
+ const child=spawnSync(process.execPath,['--input-type=module','--eval',source],{encoding:'utf8',env:{...process.env,GUARD_URL:new URL('../scripts/offline-network-guard.mjs',import.meta.url).href,HEARMEOUT_CONTROLLED_MEDIA:'1'}});
+ assert.equal(child.status,0,child.stderr);
+});
+
 
 test('private flow credential scope allows only OpenAI Responses POST',()=>{
  const source=`globalThis.fetch=async()=>new Response('ok');await import(process.env.GUARD_URL);await fetch('https://api.openai.com/v1/responses',{method:'POST'});let blocked=0;for(const [url,method] of [['https://api.openai.com/v1/responses','GET'],['https://api.openai.com/v1/files','POST'],['https://example.com/data','POST']]){try{fetch(url,{method})}catch(error){if(/OFFLINE_NETWORK_BLOCKED/.test(String(error)))blocked++}}if(blocked!==3)process.exit(1);`;
