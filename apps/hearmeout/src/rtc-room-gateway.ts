@@ -18,14 +18,16 @@ export interface RoomRtcOptions {
   membershipCheckMs?: number;
   hasVoiceBridge?: (tenantId: string, roomId: string) => boolean;
   isServerMuted?: (tenantId: string, roomId: string, userId: string) => boolean;
+  maxParticipants?: number;
 }
-type Member = { id: number; principal: HearMeOutPrincipalV1; socket: WebSocket; sequence: number; alive: boolean; request: IncomingMessage; authorizedAt: number };
+type Member = { id: number; principal: HearMeOutPrincipalV1; socket: WebSocket; sequence: number; alive: boolean; request: IncomingMessage; authorizedAt: number; screenSharing?: boolean };
 type Room = { key: string; roomId: string; mode: Exclude<RoomRtcMode, 'waiting'>; epoch: number; members: Map<number, Member> };
 
 /** One authority chooses the transport for every member. Audio is never decoded here. */
 export class HearMeOutRoomRtcGateway {
   private readonly sockets = new WebSocketServer({ noServer: true, maxPayload: 32_768, perMessageDeflate: false });
-  private readonly relay = new SpmtRtcRelayHubV1({ maxParticipants: 8, maxFrameBytes: 1292, maxFramesPerSecond: 30 });
+  private readonly relay: SpmtRtcRelayHubV1;
+  private readonly capacity: number;
   private readonly rooms = new Map<string, Room>();
   private readonly timer: ReturnType<typeof setInterval>;
   private cloudUnavailableUntil = 0;
@@ -35,6 +37,10 @@ export class HearMeOutRoomRtcGateway {
   private readonly pendingProvider = new Map<string, { room: string; identity: string; remove: boolean; muted: boolean }>();
 
   constructor(private options: RoomRtcOptions) {
+    // Reuse the established SPMT relay capacity and its configurable bounds.
+    this.capacity = options.maxParticipants ?? 32;
+    if (!Number.isSafeInteger(this.capacity) || this.capacity < 2 || this.capacity > 256) throw new Error('RTC capacity must be between 2 and 256 connections');
+    this.relay = new SpmtRtcRelayHubV1({ maxParticipants: this.capacity, maxFrameBytes: 1292, maxFramesPerSecond: 30 });
     if (options.livekit) {
       if (!/^wss:\/\//.test(options.livekit.url)) throw new Error('LiveKit URL must use wss');
       this.signer = new HearMeOutLiveKitSigner(options.livekit.apiKey, options.livekit.apiSecret);
@@ -69,7 +75,7 @@ export class HearMeOutRoomRtcGateway {
       room = { key, roomId, mode: this.signer && Date.now() >= this.cloudUnavailableUntil ? 'livekit-cloud' : 'peer-webrtc', epoch: 1, members: new Map() };
       this.rooms.set(key, room);
     }
-    if (room.members.size >= 8) return this.reject(socket, 429);
+    if (room.members.size >= this.capacity) return this.reject(socket, 429);
     const target = room;
     this.sockets.handleUpgrade(request, socket, head, ws => this.join(target, principal, request, ws));
   }
@@ -107,7 +113,9 @@ export class HearMeOutRoomRtcGateway {
           return;
         }
         const message = JSON.parse(bytes.toString('utf8'));
-        if (message.type === 'signal' && room.mode === 'peer-webrtc' && message.epoch === room.epoch) {
+        if (message.type === 'screen' && typeof message.sharing === 'boolean') {
+          member.screenSharing = message.sharing && !this.muted(room, member); this.broadcast(room);
+        } else if (message.type === 'signal' && (room.mode === 'peer-webrtc' || room.mode === 'wss-relay') && message.epoch === room.epoch) {
           const target = room.members.get(Number(message.to));
           if (target && target !== member && (message.description || message.candidate)) {
             this.send(target, { type: 'signal', from: id, epoch: room.epoch, description: message.description, candidate: message.candidate });
@@ -150,7 +158,7 @@ export class HearMeOutRoomRtcGateway {
         ttlSeconds: 600, canPublish: !this.muted(room, member), canSubscribe: true, canPublishData: false }),
     } : undefined;
     this.send(member, { type: 'room', id: member.id, mode, epoch: room.epoch,
-      peers: [...room.members.values()].map(value => ({ id: value.id, userId: value.principal.userId, name: value.principal.displayName, serverMuted: this.muted(room, value) })),
+      peers: [...room.members.values()].map(value => ({ id: value.id, userId: value.principal.userId, name: value.principal.displayName, serverMuted: this.muted(room, value), screenSharing: value.screenSharing === true && !this.muted(room, value) })),
       iceServers: this.options.iceServers ?? [{ urls: 'stun:stun.l.google.com:19302' }], livekit });
   }
   private broadcast(room: Room) { for (const member of room.members.values()) this.snapshot(room, member); }

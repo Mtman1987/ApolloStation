@@ -1,5 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
-import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 
 export const HEARMEOUT_ROOM_LIFETIME_MS = 6 * 60 * 60 * 1_000;
 export const HEARMEOUT_PRESENCE_STALE_MS = 45_000;
@@ -141,6 +141,14 @@ export class SqliteHearMeOutRoomMediaRuntime {
       CREATE TABLE IF NOT EXISTS hmo_operations(
         tenant_id TEXT NOT NULL, operation_id TEXT NOT NULL, kind TEXT NOT NULL, body TEXT NOT NULL,
         PRIMARY KEY(tenant_id,operation_id)
+      ) STRICT;
+      CREATE TABLE IF NOT EXISTS hmo_music_favorites(
+        tenant_id TEXT NOT NULL, user_id TEXT NOT NULL, item_id TEXT NOT NULL, saved_at TEXT NOT NULL, body TEXT NOT NULL,
+        PRIMARY KEY(tenant_id,user_id,item_id)
+      ) STRICT;
+      CREATE TABLE IF NOT EXISTS hmo_music_history(
+        tenant_id TEXT NOT NULL, user_id TEXT NOT NULL, request_id TEXT NOT NULL, item_id TEXT NOT NULL, played_at TEXT NOT NULL, body TEXT NOT NULL,
+        PRIMARY KEY(tenant_id,request_id)
       ) STRICT;
     `);
     const columns=this.db.prepare("PRAGMA table_info(hmo_operations)").all() as {name:string}[];
@@ -439,6 +447,7 @@ export class SqliteHearMeOutRoomMediaRuntime {
     session.revision += 1;
     this.transaction(() => {
       this.writeSession(session);
+      if (input.lane === 'music' && session.current?.requestId === request.requestId) this.recordMusicStart(session, at);
       this.remember(principal.tenantId, input.operationId, "enqueue", session,signature);
     });
     return structuredClone(session);
@@ -488,8 +497,41 @@ export class SqliteHearMeOutRoomMediaRuntime {
     this.transaction(() => {
       this.writeSession(session);
       this.remember(principal.tenantId, input.operationId, "control", session,signature);
+      if (input.lane === 'music' && session.playback.status === 'playing') this.recordMusicStart(session, at);
     });
     return structuredClone(session);
+  }
+
+  saveFavorite(principal: HearMeOutPrincipalV1, item: HearMeOutMediaItemV1, now?: string) {
+    assertPrincipal(principal); assertItem(item); if (item.type !== 'music') throw new Error('Choose a music track to save');
+    const itemId = musicLibraryId(item), savedAt = validNow(now);
+    this.db.prepare('INSERT INTO hmo_music_favorites(tenant_id,user_id,item_id,saved_at,body) VALUES(?,?,?,?,?) ON CONFLICT(tenant_id,user_id,item_id) DO UPDATE SET body=excluded.body').run(principal.tenantId, principal.userId, itemId, savedAt, JSON.stringify(item));
+    return { itemId, item: structuredClone(item) };
+  }
+
+  removeFavorite(principal: HearMeOutPrincipalV1, itemId: string) {
+    assertPrincipal(principal); this.db.prepare('DELETE FROM hmo_music_favorites WHERE tenant_id=? AND user_id=? AND item_id=?').run(principal.tenantId, principal.userId, cleanId(itemId, 'itemId'));
+    return { removed: true };
+  }
+
+  musicLibrary(principal: HearMeOutPrincipalV1, offset = 0) {
+    assertPrincipal(principal); if (!Number.isSafeInteger(offset) || offset < 0) throw new Error('Invalid library page');
+    const rows = this.db.prepare('SELECT item_id AS itemId,saved_at AS savedAt,body FROM hmo_music_favorites WHERE tenant_id=? AND user_id=? ORDER BY saved_at DESC,item_id LIMIT 101 OFFSET ?').all(principal.tenantId, principal.userId, offset);
+    const favorites = rows.slice(0,100).map(row => ({ itemId: String(row.itemId), savedAt: String(row.savedAt), item: JSON.parse(String(row.body)) as HearMeOutMediaItemV1 }));
+    const history = this.db.prepare('SELECT item_id AS itemId,MAX(played_at) AS lastPlayedAt,COUNT(*) AS playCount,body FROM hmo_music_history WHERE tenant_id=? AND user_id=? GROUP BY item_id ORDER BY lastPlayedAt DESC LIMIT 100').all(principal.tenantId, principal.userId).map(row => ({ itemId: String(row.itemId), lastPlayedAt: String(row.lastPlayedAt), playCount: Number(row.playCount), item: JSON.parse(String(row.body)) as HearMeOutMediaItemV1 }));
+    const mostPlayed = this.db.prepare('SELECT item_id AS itemId,MAX(played_at) AS lastPlayedAt,COUNT(*) AS playCount,body FROM hmo_music_history WHERE tenant_id=? AND user_id=? GROUP BY item_id ORDER BY playCount DESC,lastPlayedAt DESC LIMIT 100').all(principal.tenantId, principal.userId).map(row => ({ itemId: String(row.itemId), lastPlayedAt: String(row.lastPlayedAt), playCount: Number(row.playCount), item: JSON.parse(String(row.body)) as HearMeOutMediaItemV1 }));
+    return { favorites, recent: history, mostPlayed, ...(rows.length > 100 ? { nextOffset: offset + 100 } : {}) };
+  }
+
+  queueFavorite(principal: HearMeOutPrincipalV1, roomId: string, itemId: string, operationId: string, now?: string) {
+    const row = this.db.prepare('SELECT body FROM hmo_music_favorites WHERE tenant_id=? AND user_id=? AND item_id=?').get(principal.tenantId, principal.userId, cleanId(itemId, 'itemId')) as { body: string } | undefined;
+    if (!row) throw new Error('Saved track not found');
+    return this.enqueue(principal, { roomId, lane: 'music', item: JSON.parse(row.body), operationId, ...(now ? { now } : {}) });
+  }
+
+  private recordMusicStart(session: HearMeOutMediaSessionV1, at: string) {
+    const current = session.current; if (!current || current.item.type !== 'music') return;
+    this.db.prepare('INSERT INTO hmo_music_history(tenant_id,user_id,request_id,item_id,played_at,body) VALUES(?,?,?,?,?,?) ON CONFLICT(tenant_id,request_id) DO NOTHING').run(session.tenantId, current.requestedBy.userId, current.requestId, musicLibraryId(current.item), at, JSON.stringify(current.item));
   }
 
   private assertCanControl(principal: HearMeOutPrincipalV1, room: HearMeOutRoomV1, session: HearMeOutMediaSessionV1, action: HearMeOutControlActionV1): void {
@@ -603,6 +645,8 @@ export class SqliteHearMeOutRoomMediaRuntime {
     catch (error) { this.db.exec("ROLLBACK"); throw error; }
   }
 }
+
+function musicLibraryId(item: HearMeOutMediaItemV1) { return createHash('sha256').update(JSON.stringify([item.source, item.metadata?.videoId ?? (item.source === 'user-url' ? item.playbackUrl : item.itemId)])).digest('hex'); }
 
 export function playbackPosition(session: HearMeOutMediaSessionV1, now?: string): number {
   const at = Date.parse(validNow(now));

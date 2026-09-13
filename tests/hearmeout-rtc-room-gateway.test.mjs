@@ -61,6 +61,13 @@ test('server mute drops relay frames even when the sender ignores its microphone
   assert.equal((await closed)[0], 4403);
 });
 
+test('the room gateway reuses SPMT capacity instead of rejecting the ninth connection', async t => {
+  const { connect, gateway, allowed } = await fixture(t); let last;
+  for (let index = 0; index < 9; index++) { const userId = 'participant-' + index; allowed.add(userId); last = await connect(userId); }
+  assert.equal((await last.next(value => value.type === 'room' && value.peers.length === 9)).peers.length, 9);
+  assert.equal(gateway.diagnostics().relay[0].participants.length, 9);
+});
+
 test('room coordinator keeps solo users idle, isolates tenants, and forwards real relay frames after a coordinated switch', { timeout: 8000 }, async t => {
   const { connect, gateway, allowed } = await fixture(t);
   const alice = await connect('alice');
