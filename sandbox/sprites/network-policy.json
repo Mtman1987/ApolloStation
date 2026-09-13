@@ -69,6 +69,34 @@
       "action": "allow"
     },
     {
+      "domain": "youtube.com",
+      "action": "allow"
+    },
+    {
+      "domain": "*.youtube.com",
+      "action": "allow"
+    },
+    {
+      "domain": "youtu.be",
+      "action": "allow"
+    },
+    {
+      "domain": "*.googlevideo.com",
+      "action": "allow"
+    },
+    {
+      "domain": "*.ytimg.com",
+      "action": "allow"
+    },
+    {
+      "domain": "youtubei.googleapis.com",
+      "action": "allow"
+    },
+    {
+      "domain": "storage.googleapis.com",
+      "action": "allow"
+    },
+    {
       "domain": "*",
       "action": "deny"
     }

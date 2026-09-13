@@ -152,7 +152,7 @@ export class YtDlpHearMeOutResolverAdapter implements HearMeOutYoutubeResolverAd
   }
   async ytDlp(videoId: string): Promise<HearMeOutResolvedYoutubeV1 | null> {
     if (!/^[A-Za-z0-9_-]{11}$/.test(videoId)) throw new Error("Invalid YouTube video id");
-    const { stdout } = await this.run(this.binary, ["--ignore-config", "--dump-single-json", "--no-playlist", "--no-warnings", "--", `https://www.youtube.com/watch?v=${videoId}`], { timeout: 120_000, maxBuffer: 8 * 1024 * 1024, windowsHide: true });
+    const { stdout } = await this.run(this.binary, ["--ignore-config", "--js-runtimes", "node", "--dump-single-json", "--no-playlist", "--no-warnings", "--", `https://www.youtube.com/watch?v=${videoId}`], { timeout: 120_000, maxBuffer: 8 * 1024 * 1024, windowsHide: true });
     const body = JSON.parse(stdout) as { title?: unknown; duration?: unknown; url?: unknown; formats?: Array<{ url?: unknown; vcodec?: unknown; acodec?: unknown }> };
     const formats = Array.isArray(body.formats) ? body.formats : [];
     const video = [...formats].reverse().find((item) => typeof item.url === "string" && item.vcodec && item.vcodec !== "none" && item.acodec && item.acodec !== "none")?.url;
