@@ -14,9 +14,9 @@ export class HearMeOutBroadcastEgress {
       const address = await this.address(url);
       const upstream = httpRequest({host:address,port:Number(url.port||80),method:request.method,path:url.pathname+url.search,headers:{host:url.host,...(request.headers.range?{range:request.headers.range}:{}),'user-agent':'HearMeOut room broadcast'},timeout:15000},remote=>{response.writeHead(remote.statusCode??502,remote.headers);remote.pipe(response);});
       upstream.on('timeout',()=>upstream.destroy());upstream.on('error',()=>{if(!response.headersSent)response.writeHead(502);response.end();});response.on('close',()=>upstream.destroy());upstream.end();
-    } catch {response.writeHead(403);response.end('Media source is unavailable');}
+    } catch (error) {this.onError?.(error);response.writeHead(403);response.end('Media source is unavailable');}
   });
-  constructor(private readonly trustedMedia?: {origin:string; pathPrefix:string}) {
+  constructor(private readonly trustedMedia?: {origin:string; pathPrefix:string}, private readonly onError?: (error:unknown)=>void) {
     this.server.on('connection',socket=>{this.sockets.add(socket);socket.on('close',()=>this.sockets.delete(socket));});
     this.server.on('connect',async(request,socket,head)=>{
       try {
@@ -26,8 +26,8 @@ export class HearMeOutBroadcastEgress {
         const remote = createConnection({host:address,port:Number(url.port||443)});
         this.sockets.add(remote);remote.on('close',()=>this.sockets.delete(remote));remote.setTimeout(30000,()=>remote.destroy());
         remote.on('connect',()=>{socket.write('HTTP/1.1 200 Connection Established\r\n\r\n');if(head.length)remote.write(head);remote.pipe(socket);socket.pipe(remote);});
-        remote.on('error',()=>socket.destroy());socket.on('error',()=>remote.destroy());socket.on('close',()=>remote.destroy());
-      } catch {socket.end('HTTP/1.1 403 Forbidden\r\n\r\n');}
+        remote.on('error',error=>{this.onError?.(error);socket.destroy();});socket.on('error',()=>remote.destroy());socket.on('close',()=>remote.destroy());
+      } catch (error) {this.onError?.(error);socket.end('HTTP/1.1 403 Forbidden\r\n\r\n');}
     });
   }
   private async address(url:URL,allowTrusted=true) {
