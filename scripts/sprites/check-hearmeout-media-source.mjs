@@ -15,6 +15,12 @@ let output;
 try {
   console.log('Media source DNS:',JSON.stringify(await lookup('storage.googleapis.com',{all:true})));
   const origin=await proxy.listen();
+  // Only the fixed, credential-free asset is diagnosed here. A bounded range
+  // reveals an upstream XML/HTTP rejection without logging user media URLs.
+  const request=await promisify(execFile)('/usr/bin/curl',['--silent','--show-error','--proxy',origin,'--noproxy','','--range','0-1023','--max-time','15','--max-filesize','4096','--include',source],{env:{PATH:process.env.PATH},timeout:20000,maxBuffer:16384}).catch(error=>({stdout:error.stdout??'',stderr:error.stderr??''}));
+  const httpResponse=String(request.stdout);
+  console.log('Fixed source HTTP response:',/HTTP\/[^ ]+ [45]\d\d/.test(httpResponse)?httpResponse.slice(0,4096):httpResponse.split('\r\n\r\n').filter(part=>part.startsWith('HTTP/')).join('\n').slice(0,4096));
+  if(request.stderr)console.log('Fixed source HTTP error:',request.stderr);
   const result=await promisify(execFile)('/home/sprite/runtime/ffmpeg-b6.1.1/ffprobe',['-v','error','-protocol_whitelist',HEARMEOUT_BROADCAST_PROTOCOLS,'-rw_timeout','10000000','-show_streams','-of','json',source],{env:{PATH:process.env.PATH,http_proxy:origin,https_proxy:origin,no_proxy:''},timeout:20000,maxBuffer:1024*1024});
   console.log('Media source streams:',JSON.stringify(JSON.parse(result.stdout).streams?.map(stream=>({type:stream.codec_type,codec:stream.codec_name}))));
   output=await mkdtemp(join(tmpdir(),'hmo-source-preflight-'));
