@@ -6,12 +6,12 @@ export interface CommunityCalendarItem {
 }
 export interface CommunityCalendarView { month: string; today: string; events: readonly CommunityCalendarItem[] }
 /** Bump when artwork changes so already-published Discord attachments refresh once. */
-export const COMMUNITY_CALENDAR_ARTWORK_REVISION = 2;
+export const COMMUNITY_CALENDAR_ARTWORK_REVISION = 3;
 const palette = ["#4ade80", "#38bdf8", "#fb7185", "#c084fc", "#facc15", "#2dd4bf", "#fb923c", "#e879f9", "#a3e635", "#818cf8"];
 export function communityCalendarColor(index:number){return palette[index]??`hsl(${Math.round(index*137.508)%360},75%,65%)`;}
 export function communityCalendarMissions(view: CommunityCalendarView) {
   const indices=new Map<string,number>();
-  return view.events.filter(e => e.type === "event" && e.dayKey.startsWith(view.month)).sort((a,b) => a.eventDateTime.localeCompare(b.eventDateTime) || a.id.localeCompare(b.id)).map(event => {if(!indices.has(event.id))indices.set(event.id,indices.size);const index=indices.get(event.id)!;return {...event,color:event.color&&/^(#[a-f0-9]{6}|hsl\(\d{1,3},75%,65%\))$/i.test(event.color)?event.color:communityCalendarColor(index),number:index+1};});
+  return view.events.filter(e => (e.type === "event" || e.type === "raid-train") && e.dayKey.startsWith(view.month)).sort((a,b) => a.eventDateTime.localeCompare(b.eventDateTime) || a.id.localeCompare(b.id)).map(event => {if(!indices.has(event.id))indices.set(event.id,indices.size);const index=indices.get(event.id)!;return {...event,color:event.color&&/^(#[a-f0-9]{6}|hsl\(\d{1,3},75%,65%\))$/i.test(event.color)?event.color:communityCalendarColor(index),number:index+1};});
 }
 export function renderCommunityCalendarSvg(view: CommunityCalendarView) {
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(view.month)) throw new Error("Choose a valid month");

@@ -81,7 +81,7 @@ test("the canonical suite-action MCP tool derives routing and human authority se
     const mcp = new SpmtMcpServer(env.operations);
     const listed = mcp.handle({ jsonrpc: "2.0", id: 20, method: "tools/list" }, { accessToken: env.userAToken, protocolVersion: SPMT_MCP_PROTOCOL_VERSION });
     const tool = listed.result.tools.find((item) => item.name === "spmt.suite-actions.create");
-    assert.equal(tool.inputSchema.properties.input.properties.action.enum.length, 21);
+    assert.equal(tool.inputSchema.properties.input.properties.action.enum.length, 25);
     const created = mcp.handle({
       jsonrpc: "2.0", id: 21, method: "tools/call",
       params: {

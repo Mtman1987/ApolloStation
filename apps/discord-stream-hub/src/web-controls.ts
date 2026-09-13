@@ -1,3 +1,5 @@
+import { dshGuestLogin } from "./guest-shoutouts.js";
+import { SqliteDshLiveMonitor } from "./live-monitor.js";
 import { dshShoutoutGroupSlug } from './shoutout-groups.js';
 import { communityCalendarMissions } from "@spmt/ui";
 import { DshCalendarSync } from "./calendar-sync.js";
@@ -35,6 +37,7 @@ type SessionContext = Awaited<ReturnType<typeof fetchAppSessionContext>>;
 
 /** Authenticated, app-owned controls used by the DSH browser surface. */
 export class DshWebControls {
+  private readonly monitor?:SqliteDshLiveMonitor;
   private readonly calendar?: SqliteDshCalendarStore;
   private readonly settings?: DshTenantSettingsStore;
   private readonly messages?: SqliteDshDiscordMessageStore;
@@ -51,6 +54,7 @@ export class DshWebControls {
   constructor(private readonly options: DshWebControlOptionsV1) {
     this.now = options.now ?? (() => new Date().toISOString());
     if (options.databasePath) {
+      this.monitor=new SqliteDshLiveMonitor(options.databasePath);
       this.calendar = new SqliteDshCalendarStore(options.databasePath);
       this.settings = new DshTenantSettingsStore(options.databasePath, this.now);
       this.messages = new SqliteDshDiscordMessageStore(options.databasePath);
@@ -76,7 +80,7 @@ export class DshWebControls {
     }
   }
 
-  close() { this.calendar?.close(); this.settings?.close(); this.messages?.close(); this.applications?.close(); this.shoutouts?.close(); }
+  close() { this.monitor?.close(); this.calendar?.close(); this.settings?.close(); this.messages?.close(); this.applications?.close(); this.shoutouts?.close(); }
 
   async handle(request: IncomingMessage, response: ServerResponse, url: URL): Promise<boolean> {
     if (!url.pathname.startsWith("/api/discord-stream-hub/control")) return false;
@@ -94,11 +98,19 @@ export class DshWebControls {
         const png=await renderDshCalendarPng(this.requireCalendar().month(context.tenantId,guild,month),month,this.options.fetchImpl,this.now().slice(0,10));response.writeHead(200,{"content-type":"image/png","cache-control":"no-store","content-disposition":`attachment; filename="community-calendar-${month}.png"`});response.end(png);return true;
       }
       if(request.method==="GET"&&url.pathname==="/api/discord-stream-hub/control/calendar")return sendJson(response,200,this.calendarView(context.tenantId,url.searchParams.get("guildId"),String(url.searchParams.get("month")??this.now().slice(0,7))));
+      if(request.method==="GET"&&url.pathname==="/api/discord-stream-hub/control/calendar/raid-train")return sendJson(response,200,{slots:this.requireCalendar().raidTrainSlots(context.tenantId,this.calendarScope(context.tenantId,url.searchParams.get("guildId")),day(url.searchParams.get("date")))});
       if (request.method === "GET" && url.pathname === "/api/discord-stream-hub/control") return await this.read(request, response, context, url);
       if (request.method === "GET" && url.pathname === "/api/discord-stream-hub/control/shoutouts") return sendJson(response, 200, await this.shoutoutView(request, context));
       if (request.method !== "POST") return sendJson(response, 405, { error: "method_not_allowed" });
       requireSameOrigin(request);
       const body = await readJsonBody(request);
+      if(url.pathname==="/api/discord-stream-hub/control/calendar/raid-train/reserve"||url.pathname==="/api/discord-stream-hub/control/calendar/raid-train/cancel") {
+        const store=this.requireCalendar(),serverId=this.calendarScope(context.tenantId,body.serverId),member=await this.member(context,request),reserve=url.pathname.endsWith("/reserve");
+        const result=store.once(context.tenantId,`raid:${reserve?"reserve":"cancel"}:${this.requestKey(context,body)??text(body.requestId,"requestId",100)}`,()=>reserve?
+          store.reserveRaidTrain({tenantId:context.tenantId,serverId,member,date:day(body.date),hour:integer(body.hour,0,23,"hour"),now:this.now()}):
+          store.cancelRaidTrain(context.tenantId,serverId,text(body.eventId,"eventId",180),member.userId,this.role(context)==="owner"));
+        return sendJson(response,200,{...result,effects:await this.changed(context.tenantId)});
+      }
       if (url.pathname === "/api/discord-stream-hub/control/calendar/captain") return await this.captain(response, context, body,request);
       if (url.pathname === "/api/discord-stream-hub/control/calendar/update") return await this.changeCalendar(response, context, body, false);
       if (url.pathname === "/api/discord-stream-hub/control/calendar/delete") return await this.changeCalendar(response, context, body, true);
@@ -112,21 +124,28 @@ export class DshWebControls {
       }
       if (url.pathname === "/api/discord-stream-hub/control/shoutouts/post") {
         if (!this.client) throw new Error("Connect DSH before posting a shoutout");
-        const tenant=this.config?.tenants.find(t=>t.tenantId===context.tenantId), target=text(body.twitchLogin,"twitchLogin",32).toLowerCase();
+        const tenant=this.config?.tenants.find(t=>t.tenantId===context.tenantId), target=dshGuestLogin(text(body.twitchLogin,"twitchLogin",300));
         const guildId=this.guild(context.tenantId,body.serverId),requestId=text(body.requestId,"requestId",100),userId=String(context.session.actorId);
         if(isSimulationDiscordId(guildId)){
           const room=await this.discord?.target(context.tenantId,guildId);if(!room||!this.discord)throw new Error("The shadow room is no longer available");
           const channelId=simulationDiscordIds(context.tenantId,room.roomId).channelId;
           await this.validateDestination(context.tenantId,guildId,channelId);
-          const feed=await this.shoutoutView(request,context),member=feed.liveMembers.find(m=>m.twitchLogin===target);if(!member)throw new Error("This creator is no longer in the live feed");
-          const saved=this.requireCalendar().once(context.tenantId,`shoutout-preview:${userId}:${requestId}`,()=>({target,channelId,payload:buildDshTierShoutout(member,{timestamp:this.now(),...(tenant?.branding.embedTemplates?{templates:tenant.branding.embedTemplates}:{})})}));
+          const feed=await this.shoutoutView(request,context),member=feed.liveMembers.find(m=>m.twitchLogin===target);
+          const saved=this.requireCalendar().once(context.tenantId,`shoutout-preview:${userId}:${requestId}`,()=>({target,channelId,payload:member?buildDshTierShoutout(member,{timestamp:this.now(),...(tenant?.branding.embedTemplates?{templates:tenant.branding.embedTemplates}:{})}):{embeds:[{title:`Temporary guest shoutout · ${target}`,description:"Preview: Twitch will supply the creator profile and live status before posting.",url:`https://twitch.tv/${target}`}],allowed_mentions:{parse:[]}}}));
           if(saved.target!==target||saved.channelId!==channelId)throw new Error("This request belongs to another shoutout destination");
           const messageId=await this.discord.createMessage(context.tenantId,channelId,saved.payload);
           return sendJson(response,200,{messageId,simulation:true,shadowRoomId:room.roomId});
         }
-        if (!tenant?.members.some(m=>m.twitchLogin===target)) throw new Error("Choose a tracked DSH member for the shoutout");
-        const result=await this.client.createSuiteActionJob(context.tenantId,{schemaVersion:1,action:"dsh.shoutouts.post",args:{target,guildId},actor:{userId,username:String(context.session.username??context.session.displayName??userId),role:"owner"},source:{kind:"api",requestId,...(this.options.operationMode==="read-only"?{simulation:true}:{})}},`dsh-post:${userId}:${requestId}`);
+        if(!tenant)throw new Error("DSH is not configured for this tenant");
+        const channelId=body.channelId?snowflake(body.channelId,"channelId"):tenant.members.find(member=>member.twitchLogin===target)?.shoutoutChannelId;
+        if(!channelId)throw new Error("Choose a channel for the temporary guest shoutout");
+        const result=await this.client.createSuiteActionJob(context.tenantId,{schemaVersion:1,action:"dsh.shoutouts.post",args:{target,guildId,...(body.channelId?{channelId}:{})},actor:{userId,username:String(context.session.username??context.session.displayName??userId),role:"owner"},source:{kind:"api",requestId,...(this.options.operationMode==="read-only"?{simulation:true}:{})}},`dsh-post:${userId}:${requestId}`);
         return sendJson(response,202,{jobId:result.job.id,state:result.job.state,simulation:this.options.operationMode==="read-only"});
+      }
+      if(url.pathname==="/api/discord-stream-hub/control/shoutouts/guest/remove") {
+        if(!this.monitor)throw new Error("DSH shoutout storage is unavailable");
+        const result=this.monitor.guests.remove(context.tenantId,text(body.targetId,"targetId",100),String(context.session.actorId),`web-remove:${this.requestKey(context,body)??text(body.requestId,"requestId",100)}`,this.now());
+        return sendJson(response,200,{...result,message:"Guest shoutout removed. Discord deletion is queued and will retry if needed."});
       }
       if(url.pathname==="/api/discord-stream-hub/control/calendar/sync"){if(!this.sync)throw new Error("Connect Discord before synchronizing events");await this.sync.sync(context.tenantId,this.guild(context.tenantId,body.serverId));await this.delivery?.flush(context.tenantId);return sendJson(response,200,{saved:true});}
       if(url.pathname==="/api/discord-stream-hub/control/calendar/resolve"){if(!this.sync)throw new Error("Connect Discord before synchronizing events");if(!["calendar","discord","retry"].includes(String(body.choice)))throw new Error("Choose a calendar or Discord version");await this.sync.resolve(context.tenantId,this.guild(context.tenantId,body.serverId),text(body.eventId,"eventId",180),body.choice as "calendar"|"discord"|"retry");await this.delivery?.flush(context.tenantId);return sendJson(response,200,{saved:true});}
@@ -196,7 +215,8 @@ export class DshWebControls {
     const members:DshShoutoutView[]=available?(community!.shoutouts as unknown[]).flatMap(row=>{const view=dshShoutoutView(row);return view?[view]:[]}):[];
     const tracked=new Set(this.config?.tenants.find(t=>t.tenantId===context.tenantId)?.members.map(m=>m.twitchLogin)??[]);
     const liveMembers=await Promise.all(members.map(async member=>{const generated=await this.shoutouts?.latest(context.tenantId,member,this.client);return {...member,...(generated?{generated}:{}),canPost:this.role(context)==="owner"&&tracked.has(member.twitchLogin)}}));
-    return {presence:{source:"ecosystem",state:available?"ready":"unavailable"},liveMembers,spotlight:liveMembers.find(m=>m.isSpotlight)??null,shoutoutPostingReady:Boolean(this.client&&this.calendar)&&this.role(context)==="owner",shoutoutWriterReady:Boolean(this.client&&this.shoutouts)&&this.role(context)==="owner"};
+    const guests=(this.monitor?.guests.list(context.tenantId,false)??[]).flatMap(target=>{const message=this.messages?.get(context.tenantId,"guest-shoutout",target.id);return target.state==="active"||message?[{...target,...(message?{messageId:message.messageId}:{}),deliveryPending:target.state!=="active"||!message||message.updatedAt<target.updatedAt}]:[]});
+    return {guests,presence:{source:"ecosystem",state:available?"ready":"unavailable"},liveMembers,spotlight:liveMembers.find(m=>m.isSpotlight)??null,shoutoutPostingReady:Boolean(this.client&&this.calendar)&&this.role(context)==="owner",shoutoutWriterReady:Boolean(this.client&&this.shoutouts)&&this.role(context)==="owner"};
   }
 
   private calendarView(tenant:string,rawGuild:unknown,month:string){

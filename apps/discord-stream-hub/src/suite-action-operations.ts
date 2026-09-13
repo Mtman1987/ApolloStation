@@ -1,3 +1,4 @@
+import { dshGuestLogin, type DshGuestProfileV1 } from "./guest-shoutouts.js";
 import { DshApplicationDecisionService } from "./application-decision.js";
 import { buildDshTierShoutout, dshStreamShoutout } from "./shoutout-presentation.js";
 import { DshCalendarDelivery } from "./calendar-delivery.js";
@@ -11,20 +12,41 @@ import type { DshLiveRuntimeConfigV1, DshLiveRuntimeTenantV1 } from "./live-work
 
 /** Concrete DSH-owned operations used by web, chat, voice, APK, and Companion requests. */
 export class DshSuiteActionOperations implements DshBotActionOperationsV1 {
-  constructor(private readonly options: { config: DshLiveRuntimeConfigV1; monitor: SqliteDshLiveMonitor; messages: SqliteDshDiscordMessageStore; calendar: SqliteDshCalendarStore; applications: SqliteDshApplicationStore; discord: DshDiscordTransportV1; simulationDiscord?: DshDiscordTransportV1; applicationInteractionsReady: boolean; publicOrigin?: string; now?: () => string }) {}
+  constructor(private readonly options: { config: DshLiveRuntimeConfigV1; monitor: SqliteDshLiveMonitor; messages: SqliteDshDiscordMessageStore; calendar: SqliteDshCalendarStore; applications: SqliteDshApplicationStore; discord: DshDiscordTransportV1; simulationDiscord?: DshDiscordTransportV1; applicationInteractionsReady: boolean; publicOrigin?: string; guestLookup?:(tenantId:string,login:string)=>Promise<DshGuestProfileV1>; now?: () => string }) {}
+  async raidTrain(input:DshBotActionRequestV1) {
+    const serverId=this.calendarScope(input),date=day(input.args.date),slots=this.options.calendar.raidTrainSlots(input.tenantId,serverId,date);
+    if(input.action==="dsh.calendar.raid.read")return {slots,text:`Raid Train ${date}: ${slots.filter(slot=>slot.event).map(slot=>`${String(slot.hour).padStart(2,"0")}:00 ${slot.event!.username}`).join("; ")||"all 24 hours available"}. All times UTC.`};
+    const hour=Number(required(input.args.hour,"hour"));if(!Number.isInteger(hour)||hour<0||hour>23)throw new Error("Choose an hourly slot from 0 to 23 UTC");
+    const member={userId:required(input.actorUserId,"actorUserId"),username:input.args.username||input.actorUserId!};
+    if(input.simulation)return {simulation:true,slots,text:`Previewed Raid Train ${input.action.endsWith("reserve")?"reservation":"cancellation"} for ${date} at ${hour}:00 UTC.`};
+    const result=this.options.calendar.once(input.tenantId,input.idempotencyKey?`raid:${member.userId}:${input.idempotencyKey}`:undefined,()=>{
+      if(input.action==="dsh.calendar.raid.reserve")return this.options.calendar.reserveRaidTrain({tenantId:input.tenantId,serverId,member,date,hour,now:this.now()});
+      const current=this.options.calendar.raidTrainSlots(input.tenantId,serverId,date)[hour]!.event;
+      if(!current)return {deleted:false};
+      return this.options.calendar.cancelRaidTrain(input.tenantId,serverId,current.id,member.userId,input.actorRole==="owner");
+    });
+    return {...result,serverId,text:`Raid Train ${input.action.endsWith("reserve")?"hour reserved":"reservation canceled"} for ${date} at ${String(hour).padStart(2,"0")}:00 UTC. The published calendar will refresh.`};
+  }
   async readShoutouts(input: DshBotActionRequestV1, liveOnly: boolean) {
     const tenant = this.tenant(input.tenantId), live = new Set(this.options.monitor.getLiveMembers(input.tenantId).map((member) => member.canonicalUserId));
     const members = liveOnly ? tenant.members.filter((member) => live.has(member.canonicalUserId)) : tenant.members.filter((member) => this.options.messages.get(input.tenantId, "shoutout", member.canonicalUserId));
-    return { text: members.length ? `${liveOnly ? "Live" : "Active shoutout"} members: ${members.map((member) => member.twitchLogin).join(", ")}.` : `No ${liveOnly ? "tracked members are live" : "active shoutouts were found"}.`, members: members.map(({ canonicalUserId, twitchLogin, group, shoutoutChannelId }) => ({ canonicalUserId, twitchLogin, group, shoutoutChannelId })) };
+    const guests=this.options.monitor.guests.list(input.tenantId).filter(target=>liveOnly?target.stream&&!target.offlineDetectedAt:Boolean(this.options.messages.get(input.tenantId,"guest-shoutout",target.id))),names=[...new Set([...members.map(member=>member.twitchLogin),...guests.map(target=>target.twitchLogin)])];
+    return {text:names.length?`${liveOnly?"Live":"Active shoutout"} creators: ${names.join(", ")}.`:`No ${liveOnly?"tracked creators are live":"active shoutouts were found"}.`,members:members.map(({canonicalUserId,twitchLogin,group,shoutoutChannelId})=>({canonicalUserId,twitchLogin,group,shoutoutChannelId})),guests};
   }
   async postShoutout(input: DshBotActionRequestV1) {
-    const tenant = this.tenant(input.tenantId), target = required(input.args.target, "target").replace(/^@/, "").toLowerCase(), member = tenant.members.find((item) => item.twitchLogin.toLowerCase() === target || item.canonicalUserId.toLowerCase() === target);
-    if (!member) throw new Error("Choose a tracked DSH member for the shoutout");
-    const stream=this.options.monitor.getLiveStream(input.tenantId,member.canonicalUserId);
-    if(!stream)throw new Error("This creator has no current live stream snapshot. Wait for the live feed to refresh.");
-    const payload=buildDshTierShoutout(dshStreamShoutout(member,stream),{...(tenant.branding.embedTemplates?{templates:tenant.branding.embedTemplates}:{}),timestamp:this.now()});
-    const channelId = await this.channel(input, member.shoutoutChannelId), messageId = await this.discord(input).createMessage(input.tenantId, channelId, payload);
-    return { text: `Posted a shoutout for ${member.twitchLogin}.`, channelId, messageId };
+    const tenant=this.tenant(input.tenantId),raw=required(input.args.target,"target"),target=dshGuestLogin(tenant.members.find(item=>item.canonicalUserId===raw)?.twitchLogin??raw),member=tenant.members.find(item=>item.twitchLogin.toLowerCase()===target),guildId=this.guild(input),channelId=await this.channel(input,member?.shoutoutChannelId);
+    if(!input.simulation&&!(await this.options.discord.listGuildChannels(input.tenantId,guildId)).some(channel=>channel.id===channelId&&(channel.type===0||channel.type===5)))throw Error("Choose a text channel in the selected Discord server");
+    if(input.simulation){const stream=member?this.options.monitor.getLiveStream(input.tenantId,member.canonicalUserId):undefined,payload=stream&&member?buildDshTierShoutout(dshStreamShoutout(member,stream),{timestamp:this.now(),...(tenant.branding.embedTemplates?{templates:tenant.branding.embedTemplates}:{})}):{embeds:[{title:`Temporary guest shoutout · ${target}`,description:"Preview: the creator profile and live status will be looked up before posting.",url:`https://twitch.tv/${target}`}],allowed_mentions:{parse:[]}};const messageId=await this.discord(input).createMessage(input.tenantId,channelId,payload);return {simulation:true,text:`Previewed temporary guest shoutout for ${target}.`,channelId,messageId};}
+    if(!this.options.guestLookup)throw Error("Twitch guest lookup is not connected");
+    const profile=await this.options.guestLookup(input.tenantId,target),guest=this.options.monitor.guests.register({tenantId:input.tenantId,guildId,channelId,profile,requesterUserId:required(input.actorUserId,"actorUserId"),operationId:required(input.idempotencyKey,"idempotencyKey"),...(member?{group:member.group,canonicalUserId:member.canonicalUserId}:{}),now:this.now()});
+    return {text:`Temporary shoutout for ${target} is queued. ${guest.trackWhileLive?"It refreshes while live and expires after the offline grace period.":"The offline post expires in one hour."}`,guest,channelId};
+  }
+  async removeGuestShoutout(input:DshBotActionRequestV1){
+    const id=required(input.args.targetId,"targetId"),target=this.options.monitor.guests.get(input.tenantId,id);if(!target)throw Error("Guest shoutout was not found");
+    if(!this.tenant(input.tenantId).discordGuildIds?.includes(target.guildId))throw Error("Guest shoutout server is no longer configured for this tenant");
+    if(input.simulation)return {simulation:true,text:`Previewed removal of ${target.twitchLogin}'s temporary shoutout.`};
+    const result=this.options.monitor.guests.remove(input.tenantId,id,required(input.actorUserId,"actorUserId"),required(input.idempotencyKey,"idempotencyKey"),this.now());
+    return {...result,text:"Temporary shoutout removed. Discord deletion is queued and will retry if needed."};
   }
   async deleteMessage(input: DshBotActionRequestV1) { const channelId = snowflake(input.args.channelId, "channelId"), messageId = snowflake(input.args.messageId, "messageId"); await this.discord(input).deleteMessage(input.tenantId, channelId, messageId); return { text: input.simulation ? "Previewed the Discord message deletion in Simulation Rooms." : "Deleted the Discord message.", channelId, messageId }; }
   async readCalendar(input: DshBotActionRequestV1, captainsLogOnly: boolean) { const guildId = this.calendarScope(input), events = [...new Set(["workspace", guildId])].flatMap((scope) => this.options.calendar.list(input.tenantId, scope, { from: dayOffset(-31), to: dayOffset(366), limit: 300 })).sort((a, b) => a.eventDateTime.localeCompare(b.eventDateTime)).filter((event) => !captainsLogOnly || event.type === "captains-log"); return { text: events.length ? `${captainsLogOnly ? "Captain's Log" : "Calendar"}: ${events.slice(0, 8).map((event) => `${event.dayKey} ${event.eventName}`).join("; ")}${events.length > 8 ? `; and ${events.length - 8} more` : ""}.` : `No ${captainsLogOnly ? "Captain's Log entries" : "calendar events"} are scheduled.`, guildId, events }; }

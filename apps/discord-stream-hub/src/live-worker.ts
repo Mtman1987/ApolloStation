@@ -181,15 +181,16 @@ export class SupervisedDshLiveService {
     const liveDiscord = new DshDiscordApi(new SpmtDshDiscordGrantSource(this.client, directory), fetchImpl);
     const simulationDiscord = new DshSimulationRoomDiscordTransport(liveDiscord, this.client, { guildIds: (tenantId) => options.config.tenants.find((tenant) => tenant.tenantId === tenantId)?.discordGuildIds ?? [], now });
     const discord = options.operationMode === "read-only" ? simulationDiscord : new DshSimulationRoomDiscordTransport(liveDiscord, this.client, { guildIds: (tenantId) => options.config.tenants.find((tenant) => tenant.tenantId === tenantId)?.discordGuildIds ?? [], now, liveWrites: true });
-    const publisher = new DshDiscordLivePublisher(discord, this.messages, directory, undefined, now);
+    const publisher = new DshDiscordLivePublisher(discord, this.messages, directory, undefined, now,this.monitor.guests);
     this.runtime = new DshLiveRuntime(this.monitor, publisher);
-    this.poller = new DshTwitchLivePoller(directory, new SpmtDshTwitchGrantSource(this.client, directory), new TwitchHelixLiveClient(fetchImpl), this.runtime);
+    const twitchGrants=new SpmtDshTwitchGrantSource(this.client,directory),twitch=new TwitchHelixLiveClient(fetchImpl);
+    this.poller = new DshTwitchLivePoller(directory,twitchGrants,twitch,this.runtime);
     this.calendar = new SqliteDshCalendarStore(options.databasePath);
     this.calendarSync = new DshCalendarSync(options.databasePath, this.calendar, discord, now, options.publicOrigin);
     this.calendarDelivery=new DshCalendarDelivery(this.calendar,this.messages,discord,now,this.client,options.operationMode==="read-only");
     this.applications = new SqliteDshApplicationStore(options.databasePath);
     this.applicationDecisions=new DshApplicationDecisionService(this.applications,{discord,publicOrigin:options.publicOrigin,preview:options.operationMode==="read-only",now});
-    const operations = new DshSuiteActionOperations({ config: options.config, monitor: this.monitor, messages: this.messages, calendar: this.calendar, applications: this.applications, discord, simulationDiscord, applicationInteractionsReady: options.applicationInteractionsReady, ...(options.publicOrigin?{publicOrigin:options.publicOrigin}:{}), now });
+    const operations = new DshSuiteActionOperations({ guestLookup:async(tenantId,twitchLogin)=>{const grant=await twitchGrants.getGrant(tenantId);if(grant.status!=="ready")throw Error(grant.reason);return twitch.getGuest({...grant,twitchLogin});},config: options.config, monitor: this.monitor, messages: this.messages, calendar: this.calendar, applications: this.applications, discord, simulationDiscord, applicationInteractionsReady: options.applicationInteractionsReady, ...(options.publicOrigin?{publicOrigin:options.publicOrigin}:{}), now });
     this.suiteActions = new DshSuiteActionWorker(this.client, new DshBotActionAdapter(operations), { workerId: `${options.workerId}-suite-actions`, tenantIds: options.config.tenants.map((tenant) => tenant.tenantId) });
   }
   async ready() { await this.getAccessToken(); return { schemaVersion: 1 as const, workerId: this.options.workerId, operationMode: this.options.operationMode, liveIngressEnabled: this.options.liveIngressEnabled, egressMode: this.options.operationMode === "read-only" ? "shadow" as const : "provider" as const, configuredTenants: this.options.config.tenants.length, pollIntervalSeconds: this.options.config.pollIntervalSeconds }; }
@@ -210,7 +211,7 @@ export class SupervisedDshLiveService {
     }
   }
   async runCalendar(signal:AbortSignal) {while(!signal.aborted&&!this.closed){const cycle=this.syncCalendars();this.calendarCycle=cycle;try{await cycle;}finally{this.calendarCycle=undefined;}await pause(5000,signal);}}
-  private async syncCalendars(){for(const tenant of this.options.config.tenants){for(const guild of tenant.discordGuildIds??[]){const last=this.calendarSync.state(tenant.tenantId,guild).checkedAt;if(!last||Date.parse(this.now())-Date.parse(last)>=30000)await this.calendarSync.sync(tenant.tenantId,guild).catch(()=>undefined);}await this.calendarDelivery.flush(tenant.tenantId);await this.applicationDecisions.flush(tenant.tenantId);}}
+  private async syncCalendars(){for(const tenant of this.options.config.tenants){for(const guild of tenant.discordGuildIds??[]){const last=this.calendarSync.state(tenant.tenantId,guild).checkedAt;if(!last||Date.parse(this.now())-Date.parse(last)>=30000)await this.calendarSync.sync(tenant.tenantId,guild).catch(()=>undefined);}await this.calendarDelivery.flush(tenant.tenantId);await this.applicationDecisions.flush(tenant.tenantId);await this.runtime.flushGuests(tenant.tenantId,this.now());}}
   async runNebulaMedia(signal:AbortSignal){this.nebulaMediaCycle=this.nebulaMedia?.run(AbortSignal.any([signal,this.nebulaMediaAbort.signal]));await this.nebulaMediaCycle;}
   runSuiteActions(signal: AbortSignal) { return this.suiteActions.run(signal); }
   close() {

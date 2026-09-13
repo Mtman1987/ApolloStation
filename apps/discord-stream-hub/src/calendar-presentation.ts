@@ -20,7 +20,19 @@ export function buildDshCalendarMessage(events: readonly DshCalendarEventV1[], i
     {type:2,style:2,label:"Previous month",custom_id:`calendar:previous:${input.guildId}:${input.month}`},
     {type:2,style:1,label:"Claim Captain’s Log",custom_id:`calendar:captain:${input.guildId}:${input.month}`},
     {type:2,style:1,label:"Add mission",custom_id:`calendar:mission:${input.guildId}:${input.month}`},
+    {type:2,style:1,label:"Raid Train",custom_id:`calendar:raid:${input.guildId}:${input.month}`},
     {type:2,style:2,label:"Next month",custom_id:`calendar:next:${input.guildId}:${input.month}`}
+  ]}]};
+}
+
+export function buildDshRaidTrainMessage(events:readonly DshCalendarEventV1[],input:{date:string;guildId:string;today:string}) {
+  const slots=events.filter(e=>e.type==="raid-train"&&e.dayKey===input.date).sort((a,b)=>a.eventDateTime.localeCompare(b.eventDateTime));
+  const hours=new Set(slots.map(e=>Number(e.eventDateTime.slice(11,13))));
+  const available=Array.from({length:24},(_,hour)=>hour).filter(hour=>!hours.has(hour));
+  return {embeds:[{title:`Raid Train · ${input.date}`,description:slots.length?slots.map(e=>`${e.eventDateTime.slice(11,16)} UTC — ${e.username.replace(/[\r\n`*_~|\\]/g," ").slice(0,80)}`).join("\n"):"No hourly reservations yet.",color:0xfb923c,fields:[{name:"Available hours (UTC)",value:available.map(hour=>String(hour).padStart(2,"0")+":00").join(", ")||"All 24 hours are claimed"}],footer:{text:`${hours.size}/24 hours claimed · Signup closes on the day`}}],allowed_mentions:{parse:[]},components:[{type:1,components:[
+    {type:2,style:1,label:"Sign up",custom_id:`raid_signup_${input.date}`,disabled:input.date<=input.today||!available.length},
+    {type:2,style:2,label:"View schedule",custom_id:`raid_view_${input.date}`},
+    {type:2,style:4,label:"Cancel slot",custom_id:`raid_cancel_${input.date}`},
   ]}]};
 }
 

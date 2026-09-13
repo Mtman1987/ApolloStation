@@ -14,10 +14,10 @@ export class DshDiscordApplicationInteractions {
     const raw = await body(request, 1024 * 1024), timestamp = String(request.headers["x-signature-timestamp"] ?? ""), signature = String(request.headers["x-signature-ed25519"] ?? "");
     if (!timestamp || !/^[a-f0-9]{128}$/i.test(signature) || !verify(null, Buffer.concat([Buffer.from(timestamp), raw]), createPublicKey({ key: Buffer.concat([Buffer.from("302a300506032b6570032100", "hex"), Buffer.from(this.options.publicKey, "hex")]), format: "der", type: "spki" }), Buffer.from(signature, "hex"))) return json(response, 401, { error: "invalid_signature" });
     const interaction = JSON.parse(raw.toString("utf8")) as Record<string, any>;
-    const calendar=String(interaction.data?.custom_id??"").startsWith("calendar:"),defer=calendar&&(interaction.type===5||/^calendar:(previous|next):/.test(String(interaction.data?.custom_id)));
+    const customId=String(interaction.data?.custom_id??""),train=/^(calendar:raid|raid_(signup|view|cancel|day)_)/.test(customId),calendar=customId.startsWith("calendar:"),defer=train||calendar&&(interaction.type===5||/^calendar:(previous|next):/.test(customId));
     const respond=async()=>await this.options.respond?.(interaction)??respondDshApplicationInteraction(this.options,interaction);
     if(defer){
-      const month=interaction.type===3;
+      const month=!train&&interaction.type===3;
       if(!/^\d{5,30}$/.test(String(interaction.application_id??""))||! /^[A-Za-z0-9._-]{10,300}$/.test(String(interaction.token??"")))return json(response,200,ephemeral("Discord did not provide a valid response token."));
       json(response,200,{type:month?6:5,...(month?{}:{data:{flags:64}})});
       const task=(async()=>{const result=await respond().catch(error=>ephemeral(error instanceof Error?error.message:"Calendar update failed"));const payload=result.data??{},fetchImpl=this.options.fetchImpl??fetch;

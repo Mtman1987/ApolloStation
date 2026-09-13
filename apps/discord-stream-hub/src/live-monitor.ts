@@ -1,3 +1,4 @@
+import { DshGuestShoutoutStore, type DshGuestLiveActionV1 } from "./guest-shoutouts.js";
 import { DatabaseSync } from "node:sqlite";
 
 export const DSH_MEMBER_GROUPS = ["Crew", "Partners", "Honored Guests", "Raid Pile", "Everyone Else"] as const;
@@ -25,7 +26,7 @@ export interface DshTwitchStreamV1 {
   startedAt: string;
 }
 
-export type DshLiveActionV1 =
+export type DshLiveActionV1 = DshGuestLiveActionV1
   | { schemaVersion: 1; type: "shoutout.create" | "shoutout.update"; idempotencyKey: string; tenantId: string; member: DshLiveMemberV1; stream: DshTwitchStreamV1 }
   | { schemaVersion: 1; type: "shoutout.remove"; idempotencyKey: string; tenantId: string; member: DshLiveMemberV1; priorStreamId: string }
   | { schemaVersion: 1; type: "spotlight.update"; idempotencyKey: string; tenantId: string; member: DshLiveMemberV1; stream: DshTwitchStreamV1; priorUserId?: string; nextIndex: number; rotatesEveryMs: number }
@@ -49,12 +50,14 @@ export interface DshLiveActionPublisherV1 { publish(action: DshLiveActionV1): vo
 /** DSH-private durable projection. Canonical identity and XP remain in SPMT. */
 export class SqliteDshLiveMonitor {
   private readonly db: DatabaseSync;
+  readonly guests:DshGuestShoutoutStore;
   constructor(path: string, private readonly spotlightRotationMs = 10 * 60 * 1_000) {
     if (!path) throw new Error("DSH live monitor database path is required");
     if (!Number.isSafeInteger(spotlightRotationMs) || spotlightRotationMs < 1) throw new Error("spotlightRotationMs must be positive");
     this.db = new DatabaseSync(path, { timeout: 5_000 });
     this.db.exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON;");
     this.migrate();
+    this.guests=new DshGuestShoutoutStore(this.db);
   }
   close(): void { this.db.close(); }
 
@@ -100,6 +103,7 @@ export class SqliteDshLiveMonitor {
         actions.push({ schemaVersion: 1, type: "spotlight.update", idempotencyKey: "dsh:spotlight.update:" + poll.tenantId + ":" + selected.member.canonicalUserId + ":" + poll.pollId, tenantId: poll.tenantId, member: selected.member, stream: selected.stream, ...(spotlight ? { priorUserId: spotlight.userId } : {}), nextIndex, rotatesEveryMs: this.spotlightRotationMs });
         this.db.prepare("INSERT INTO spotlight(tenant_id,user_id,next_index,rotated_at,body) VALUES(?,?,?,?,?) ON CONFLICT(tenant_id) DO UPDATE SET user_id=excluded.user_id,next_index=excluded.next_index,rotated_at=excluded.rotated_at,body=excluded.body").run(poll.tenantId, selected.member.canonicalUserId, nextIndex, poll.observedAt, JSON.stringify({ member: selected.member, stream: selected.stream }));
       }
+      this.guests.observe(poll.tenantId,poll.streams,poll.observedAt);
       const result: DshLivePollResultV1 = { duplicate: false, actions, liveCount: live.length };
       const queue = this.db.prepare("INSERT INTO live_action_outbox(id,tenant_id,state,attempts,created_at,body) VALUES(?,?,'pending',0,?,?) ON CONFLICT(id) DO NOTHING");
       for (const action of actions) queue.run(action.idempotencyKey, poll.tenantId, poll.observedAt, JSON.stringify(action));
@@ -121,10 +125,10 @@ export class SqliteDshLiveMonitor {
     return row ? (JSON.parse(row.body) as {stream?:DshTwitchStreamV1}).stream : undefined;
   }
 
-  listPendingActions(tenantId: string, limit = 100): PendingDshLiveActionV1[] {
+  listPendingActions(tenantId: string, limit = 100, guestsOnly=false): PendingDshLiveActionV1[] {
     requireId(tenantId, "tenantId");
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 500) throw new Error("limit must be from 1 to 500");
-    const rows = this.db.prepare("SELECT attempts,body FROM live_action_outbox WHERE tenant_id=? AND state='pending' ORDER BY rowid LIMIT ?").all(tenantId, limit) as Array<{ attempts: number; body: string }>;
+    const rows = this.db.prepare(`SELECT attempts,body FROM live_action_outbox WHERE tenant_id=? AND state='pending' ${guestsOnly?"AND json_extract(body,'$.type')='guest.refresh'":""} ORDER BY rowid LIMIT ?`).all(tenantId, limit) as Array<{ attempts: number; body: string }>;
     return rows.map((row) => ({ attempts: row.attempts, action: JSON.parse(row.body) as DshLiveActionV1 }));
   }
   completeAction(idempotencyKey: string): void { requireId(idempotencyKey, "idempotencyKey"); this.db.prepare("UPDATE live_action_outbox SET state='delivered',last_error=NULL WHERE id=?").run(idempotencyKey); }
@@ -159,8 +163,10 @@ export class DshLiveRuntime {
     const delivery = await this.flush(poll.tenantId);
     return { ...result, delivery };
   }
-  async flush(tenantId: string, limit = 100): Promise<DshLiveDeliveryReportV1> {
-    const pending = this.monitor.listPendingActions(tenantId, limit);
+  guestTargets(tenantId:string){return this.monitor.guests.list(tenantId).filter(target=>target.trackWhileLive);}
+  flushGuests(tenantId:string,now:string){this.monitor.guests.expire(tenantId,now);return this.flush(tenantId,100,true);}
+  async flush(tenantId: string, limit = 100,guestsOnly=false): Promise<DshLiveDeliveryReportV1> {
+    const pending = this.monitor.listPendingActions(tenantId, limit,guestsOnly);
     const report = { attempted: pending.length, delivered: 0, failed: 0 };
     for (const item of pending) {
       try { await this.publisher.publish(item.action); this.monitor.completeAction(item.action.idempotencyKey); report.delivered += 1; }

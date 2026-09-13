@@ -1,3 +1,4 @@
+import { buildDshGuestShoutout, type DshGuestShoutoutStore, type DshGuestLiveActionV1 } from "./guest-shoutouts.js";
 import { dshShoutoutGroupSlug } from './shoutout-groups.js';
 import { buildDshTierShoutout, dshStreamShoutout, type DshEmbedTemplates } from "./shoutout-presentation.js";
 import { DatabaseSync } from "node:sqlite";
@@ -19,7 +20,7 @@ export interface DshDiscordBrandingV1 { communityMemberName:string; spotlightCha
 export interface DshDiscordBrandingSourceV1 { getBranding(tenantId:string):Promise<DshDiscordBrandingV1>|DshDiscordBrandingV1; }
 export interface DshSpotlightMediaSourceV1 { getImage(input:{tenantId:string;member:DshLiveMemberV1;stream:DshTwitchStreamV1}):Promise<string|undefined>|string|undefined; }
 
-export interface DshTrackedDiscordMessageV1 { tenantId:string; kind:"shoutout"|"spotlight"|"calendar"|"applications"; key:string; channelId:string; messageId:string; updatedAt:string; }
+export interface DshTrackedDiscordMessageV1 { tenantId:string; kind:"shoutout"|"spotlight"|"calendar"|"applications"|"guest-shoutout"; key:string; channelId:string; messageId:string; updatedAt:string; }
 
 export class SqliteDshDiscordMessageStore {
   private readonly db:DatabaseSync;
@@ -67,15 +68,33 @@ export class DshDiscordError extends Error{constructor(readonly status:number,re
 
 /** Publishes DSH's durable live outbox to Discord while retaining message ids for edit/remove parity. */
 export class DshDiscordLivePublisher implements DshLiveActionPublisherV1 {
-  constructor(private readonly api:DshDiscordTransportV1,private readonly state:SqliteDshDiscordMessageStore,private readonly branding:DshDiscordBrandingSourceV1,private readonly media?:DshSpotlightMediaSourceV1,private readonly now:()=>string=()=>new Date().toISOString()){}
+  constructor(private readonly api:DshDiscordTransportV1,private readonly state:SqliteDshDiscordMessageStore,private readonly branding:DshDiscordBrandingSourceV1,private readonly media?:DshSpotlightMediaSourceV1,private readonly now:()=>string=()=>new Date().toISOString(),private readonly guests?:DshGuestShoutoutStore){}
   async publish(action:DshLiveActionV1){
     switch(action.type){
+      case "guest.refresh": await this.publishGuest(action); return;
       case "shoutout.create": await this.upsertShoutout(action.tenantId,action.member,action.stream,false); return;
       case "shoutout.update": await this.upsertShoutout(action.tenantId,action.member,action.stream,false); return;
       case "shoutout.remove": await this.removeShoutout(action.tenantId,action.member); return;
       case "spotlight.update": await this.upsertSpotlight(action.tenantId,action.member,action.stream); return;
       case "spotlight.clear": await this.clearSpotlight(action.tenantId); return;
     }
+  }
+  private async publishGuest(action:DshGuestLiveActionV1){
+    const guests=this.guests;if(!guests)throw Error("Guest shoutout delivery is unavailable");
+    const tenant=action.tenantId,id=action.targetId,owner=guests.acquire(tenant,id);if(!owner)throw Error("Guest shoutout delivery is already in progress");
+    try{
+      const current=guests.get(tenant,id);if(!current||current.generation!==action.generation||current.revision!==action.revision)return;
+      let tracked=this.state.get(tenant,"guest-shoutout",id);
+      const remove=async()=>{if(!tracked)return;guests.renew(tenant,id,owner);await this.api.deleteMessage(tenant,tracked.channelId,tracked.messageId).catch(error=>{if(!(error instanceof DshDiscordError)||error.status!==404)throw error;});this.state.remove(tenant,"guest-shoutout",id);tracked=undefined;};
+      if(current.state!=="active"){await remove();return;}
+      const brand=await this.branding.getBranding(tenant),payload=buildDshGuestShoutout(current,brand.embedTemplates);
+      if(tracked&&tracked.channelId!==current.channelId)await remove();
+      if(tracked){guests.renew(tenant,id,owner);try{await this.api.editMessage(tenant,tracked.channelId,tracked.messageId,payload);}catch(error){if(!(error instanceof DshDiscordError)||error.status!==404)throw error;this.state.remove(tenant,"guest-shoutout",id);tracked=undefined;}}
+      if(!tracked){guests.renew(tenant,id,owner);const messageId=await this.api.createMessage(tenant,current.channelId,payload);tracked={tenantId:tenant,kind:"guest-shoutout",key:id,channelId:current.channelId,messageId,updatedAt:this.now()};}
+      guests.renew(tenant,id,owner);this.state.put({...tracked,updatedAt:this.now()});
+      // A removal committed while Discord was replying must not leave an orphan behind.
+      if(guests.get(tenant,id)?.state!=="active")await remove();
+    }finally{guests.release(tenant,id,owner);}
   }
   private async upsertShoutout(tenantId:string,member:DshLiveMemberV1,stream:DshTwitchStreamV1,spotlight:boolean){
     const brand=await this.branding.getBranding(tenantId);let tracked=this.state.get(tenantId,"shoutout",member.canonicalUserId);const channelId=brand.groupChannels?.[dshShoutoutGroupSlug(member.group)||'']||member.shoutoutChannelId;const payload=buildDshTierShoutout(dshStreamShoutout(member,stream),{...(brand.embedTemplates?{templates:brand.embedTemplates}:{}),timestamp:this.now()});

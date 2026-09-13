@@ -1,12 +1,14 @@
 import type { DshLiveRuntimeConfigV1 } from "./live-worker.js";
 import type { DshCalendarMemberV1, SqliteDshCalendarStore } from "./calendar.js";
 import { buildDshCalendarMessage } from "./calendar-presentation.js";
+import { respondDshRaidTrainInteraction } from "./raid-train-interactions.js";
 export interface DshCalendarInteractionOptions {
   config:DshLiveRuntimeConfigV1; calendar:SqliteDshCalendarStore;
   resolve:(tenant:string,discordUserId:string)=>Promise<DshCalendarMemberV1&{role:"owner"|"member"|null}>;
   changed?:(tenant:string)=>Promise<unknown>; now?:()=>string;
 }
 export async function respondDshCalendarInteraction(options:DshCalendarInteractionOptions,interaction:Record<string,any>):Promise<{type:number;data?:Record<string,any>}|undefined> {
+  const train=await respondDshRaidTrainInteraction(options,interaction);if(train)return train;
   const id=String(interaction.data?.custom_id??"");if(!id.startsWith("calendar:"))return undefined;
   const match=/^calendar:(captain|mission|previous|next|captain-submit|mission-submit):(\d{5,30}):(\d{4}-(?:0[1-9]|1[0-2]))$/.exec(id);
   if(!match||match[2]!==String(interaction.guild_id??""))return ephemeral("This calendar action belongs to a different server.");
