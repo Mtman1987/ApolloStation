@@ -58,3 +58,5 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - name: Verify real audio and fallback recovery
         run: npm run test:rtc-browser
+      - name: Verify shared room media playback
+        run: node scripts/test-hmo-media-browser.mjs

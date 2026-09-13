@@ -1,6 +1,6 @@
 import { Room, RoomEvent, Track } from 'livekit-client';
 
-type Peer = { id: number; userId: string; name: string };
+type Peer = { id: number; userId: string; name: string; serverMuted?: boolean };
 type Snapshot = { type: 'room'; id: number; mode: string; epoch: number; peers: Peer[]; iceServers: RTCIceServer[]; livekit?: { url: string; token: string } };
 type Link = { pc: RTCPeerConnection; candidates: RTCIceCandidateInit[]; timer: ReturnType<typeof setTimeout> };
 
@@ -61,6 +61,7 @@ export class HearMeOutRtc {
         if (this.socket !== socket) return;
         const message = JSON.parse(String(event.data));
         if (message.type === 'room') await this.applySnapshot(message);
+        else if (message.type === 'move' && typeof message.targetRoomId === 'string') window.dispatchEvent(new CustomEvent('hmo:room-moved', { detail: { roomId: message.targetRoomId } }));
         else if (message.type === 'signal') await this.receiveSignal(message);
       }).catch(error => this.failed(error));
     };
@@ -111,7 +112,7 @@ export class HearMeOutRtc {
   private makePeer(id: number): Link {
     const existing = this.links.get(id); if (existing) return existing;
     const pc = new RTCPeerConnection({ iceServers: this.snapshot?.iceServers || [], bundlePolicy: 'max-bundle' });
-    const track = this.input?.getAudioTracks()[0];
+    const track = this.canPublish() ? this.input?.getAudioTracks()[0] : undefined;
     if (track && this.input) pc.addTrack(track, this.input);
     else pc.addTransceiver('audio', { direction: 'sendrecv' });
     const generation = this.generation;
@@ -160,7 +161,7 @@ export class HearMeOutRtc {
     room.on(RoomEvent.Disconnected, () => { if (generation === this.generation) this.failed(new Error('LiveKit disconnected')); });
     await room.connect(snapshot.livekit.url, snapshot.livekit.token, { peerConnectionTimeout: 15_000, websocketTimeout: 10_000 });
     if (generation !== this.generation) { await room.disconnect(false); return; }
-    const track = this.input?.getAudioTracks()[0];
+    const track = this.canPublish() ? this.input?.getAudioTracks()[0] : undefined;
     if (track) await room.localParticipant.publishTrack(track, { source: Track.Source.Microphone });
     this.options.onStatus('Room audio connected.');
   }
@@ -179,7 +180,7 @@ export class HearMeOutRtc {
 
   async setInput(stream: MediaStream | null) {
     this.input = stream;
-    const track = stream?.getAudioTracks()[0] || null;
+    const track = this.canPublish() ? stream?.getAudioTracks()[0] || null : null;
     for (const link of this.links.values()) await link.pc.getSenders()[0]?.replaceTrack(track);
     if (this.livekit) {
       for (const publication of this.livekit.localParticipant.audioTrackPublications.values()) {
@@ -198,10 +199,11 @@ export class HearMeOutRtc {
     }
     void this.context.resume().catch(() => {}); return this.context;
   }
+  private canPublish() { return !this.snapshot?.peers.find(peer => peer.id === this.snapshot?.id)?.serverMuted; }
   async resumeAudio() { await this.audioContext(); for (const audio of this.media.values()) await audio.play().catch(() => {}); }
   private async startCapture() {
     this.stopCapture();
-    if (!this.input || this.mode !== 'wss-relay') return;
+    if (!this.input || this.mode !== 'wss-relay' || !this.canPublish()) return;
     const captureGeneration = this.captureGeneration;
     const context = await this.audioContext();
     if (captureGeneration !== this.captureGeneration) return;
@@ -214,7 +216,7 @@ export class HearMeOutRtc {
     this.capture = new AudioWorkletNode(context, 'spmt-rtc-capture');
     this.capture.port.onmessage = event => {
       if (this.mode !== 'wss-relay' || this.socket?.readyState !== WebSocket.OPEN || this.socket.bufferedAmount > 6400) return;
-      if (!this.input?.getAudioTracks().some(track => track.enabled && track.readyState === 'live')) return;
+      if (!this.canPublish() || !this.input?.getAudioTracks().some(track => track.enabled && track.readyState === 'live')) return;
       this.socket.send(event.data); this.framesSent++;
     };
     this.captureSource = context.createMediaStreamSource(this.input);
@@ -249,7 +251,7 @@ export class HearMeOutRtc {
 
   setVolume(volume: number) { this.master = Math.max(0, Math.min(1, volume)); this.updateVolumes(); }
   setPersonVolume(userId: string, volume: number) { this.personVolumes.set(userId, Math.max(0, Math.min(1, volume))); this.updateVolumes(); }
-  private volume(id: number) { const userId = this.snapshot?.peers.find(peer => peer.id === id)?.userId || ''; return this.master * (this.personVolumes.get(userId) ?? Number(localStorage.getItem(`hmo-volume:${this.roomId}:${userId}`) ?? 100) / 100); }
+  private volume(id: number) { const peer = this.snapshot?.peers.find(peer => peer.id === id); if (peer?.serverMuted) return 0; const userId = peer?.userId || ''; return this.master * (this.personVolumes.get(userId) ?? Number(localStorage.getItem(`hmo-volume:${this.roomId}:${userId}`) ?? 100) / 100); }
   private updateVolumes() { for (const [id, audio] of this.media) audio.volume = this.volume(id); for (const [id, output] of this.playout) output.gain.gain.value = this.volume(id); }
   async setOutput(id: string) {
     this.outputDevice = id;

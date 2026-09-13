@@ -1,3 +1,4 @@
+import { dshShoutoutGroupSlug } from './shoutout-groups.js';
 import { buildDshTierShoutout, dshStreamShoutout, type DshEmbedTemplates } from "./shoutout-presentation.js";
 import { DatabaseSync } from "node:sqlite";
 import { dshDiscordRequestBody } from "./calendar-presentation.js";
@@ -14,7 +15,7 @@ export interface DshDiscordTransportV1 extends Partial<DshCalendarTransportV1> {
   deleteMessage(tenantId:string,channelId:string,messageId:string):Promise<void>;
   sendDirectMessage(tenantId:string,userId:string,payload:Record<string,unknown>):Promise<string>;
 }
-export interface DshDiscordBrandingV1 { communityMemberName:string; spotlightChannelId?:string; onboardingCustomId?:string; embedTemplates?:DshEmbedTemplates; }
+export interface DshDiscordBrandingV1 { communityMemberName:string; spotlightChannelId?:string; spotlightEnabled?:boolean; groupChannels?:Record<string,string>; onboardingCustomId?:string; embedTemplates?:DshEmbedTemplates; }
 export interface DshDiscordBrandingSourceV1 { getBranding(tenantId:string):Promise<DshDiscordBrandingV1>|DshDiscordBrandingV1; }
 export interface DshSpotlightMediaSourceV1 { getImage(input:{tenantId:string;member:DshLiveMemberV1;stream:DshTwitchStreamV1}):Promise<string|undefined>|string|undefined; }
 
@@ -77,13 +78,14 @@ export class DshDiscordLivePublisher implements DshLiveActionPublisherV1 {
     }
   }
   private async upsertShoutout(tenantId:string,member:DshLiveMemberV1,stream:DshTwitchStreamV1,spotlight:boolean){
-    const brand=await this.branding.getBranding(tenantId);const tracked=this.state.get(tenantId,"shoutout",member.canonicalUserId);const payload=buildDshTierShoutout(dshStreamShoutout(member,stream),{...(brand.embedTemplates?{templates:brand.embedTemplates}:{}),timestamp:this.now()});
+    const brand=await this.branding.getBranding(tenantId);let tracked=this.state.get(tenantId,"shoutout",member.canonicalUserId);const channelId=brand.groupChannels?.[dshShoutoutGroupSlug(member.group)||'']||member.shoutoutChannelId;const payload=buildDshTierShoutout(dshStreamShoutout(member,stream),{...(brand.embedTemplates?{templates:brand.embedTemplates}:{}),timestamp:this.now()});
+    if(tracked&&tracked.channelId!==channelId){await this.api.deleteMessage(tenantId,tracked.channelId,tracked.messageId).catch(error=>{if(!repostable(error))throw error});this.state.remove(tenantId,"shoutout",member.canonicalUserId);tracked=undefined;}
     if(tracked){try{await this.api.editMessage(tenantId,tracked.channelId,tracked.messageId,payload);this.state.put({...tracked,updatedAt:this.now()});return;}catch(error){if(!repostable(error))throw error;await this.api.deleteMessage(tenantId,tracked.channelId,tracked.messageId).catch(()=>undefined);}}
-    const messageId=await this.api.createMessage(tenantId,member.shoutoutChannelId,payload);this.state.put({tenantId,kind:"shoutout",key:member.canonicalUserId,channelId:member.shoutoutChannelId,messageId,updatedAt:this.now()});
+    const messageId=await this.api.createMessage(tenantId,channelId,payload);this.state.put({tenantId,kind:"shoutout",key:member.canonicalUserId,channelId,messageId,updatedAt:this.now()});
   }
   private async removeShoutout(tenantId:string,member:DshLiveMemberV1){const tracked=this.state.get(tenantId,"shoutout",member.canonicalUserId);if(!tracked)return;await this.api.deleteMessage(tenantId,tracked.channelId,tracked.messageId).catch((error)=>{if(!repostable(error))throw error;});this.state.remove(tenantId,"shoutout",member.canonicalUserId);}
   private async upsertSpotlight(tenantId:string,member:DshLiveMemberV1,stream:DshTwitchStreamV1){
-    const brand=await this.branding.getBranding(tenantId);const channelId=brand.spotlightChannelId??member.shoutoutChannelId;const image=await this.media?.getImage({tenantId,member,stream});const tracked=this.state.get(tenantId,"spotlight","current");const embed=buildSpotlightEmbed(member,stream,image);const components=brand.onboardingCustomId?[{type:1,components:[{type:2,style:1,label:"Join SpaceMountain",custom_id:brand.onboardingCustomId}]}]:[];const payload={embeds:[embed],components,allowed_mentions:{parse:[]}};
+    const brand=await this.branding.getBranding(tenantId);if(brand.spotlightEnabled===false){await this.clearSpotlight(tenantId);return;}const channelId=brand.spotlightChannelId??member.shoutoutChannelId;const image=await this.media?.getImage({tenantId,member,stream});const tracked=this.state.get(tenantId,"spotlight","current");const embed=buildSpotlightEmbed(member,stream,image);const components=brand.onboardingCustomId?[{type:1,components:[{type:2,style:1,label:"Join SpaceMountain",custom_id:brand.onboardingCustomId}]}]:[];const payload={embeds:[embed],components,allowed_mentions:{parse:[]}};
     if(tracked){await this.api.deleteMessage(tenantId,tracked.channelId,tracked.messageId).catch((error)=>{if(!repostable(error))throw error;});}
     const messageId=await this.api.createMessage(tenantId,channelId,payload);this.state.put({tenantId,kind:"spotlight",key:"current",channelId,messageId,updatedAt:this.now()});
     await this.upsertShoutout(tenantId,member,stream,true);

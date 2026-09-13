@@ -1,3 +1,4 @@
+import { dshShoutoutGroupSlug } from './shoutout-groups.js';
 import { communityCalendarMissions } from "@spmt/ui";
 import { DshCalendarSync } from "./calendar-sync.js";
 import { DshCalendarDelivery } from "./calendar-delivery.js";
@@ -5,7 +6,7 @@ import { respondDshCalendarInteraction } from "./calendar-interactions.js";
 import { resolveProviderIdentity } from "@spmt/sdk/provider-identity";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { dshCaptainParticipation, renderDshCalendarPng } from "./calendar-presentation.js";
-import { buildDshTierShoutout, dshShoutoutView, type DshShoutoutView } from "./shoutout-presentation.js";
+import { buildDshTierShoutout, DSH_LIVE_EMBED_TEMPLATES, dshShoutoutView, type DshShoutoutView } from "./shoutout-presentation.js";
 import { DshShoutoutGenerationStore } from "./shoutout-generation.js";
 import { fetchAppPlatformSnapshot, fetchAppSessionContext, readJsonBody, requireSameOrigin, safeError, sendJson } from "@spmt/app-foundation/product-web";
 import { isSimulationDiscordId, simulationDiscordIds, type SpmtOperationModeV1 } from "@spmt/contracts";
@@ -185,7 +186,7 @@ export class DshWebControls {
       ...shoutouts,
       trackedMessages: this.messages?.list(tenantId) ?? [],
       applications: this.role(context) === "owner" ? this.applications?.list(tenantId, undefined, 100) ?? [] : [],
-      settings: this.settings?.read(tenantId) ?? null,
+      settings: this.settings ? this.effectiveSettings(tenantId) : null,
     });
   }
 
@@ -244,13 +245,28 @@ export class DshWebControls {
     return sendJson(response, 200, { schemaVersion: 1, messageId, channelId, ...(isSimulationDiscordId(serverId) ? {shadowRoomId:(await this.discord?.target(context.tenantId,serverId))?.roomId} : {}) });
   }
 
+  private effectiveSettings(tenantId: string) {
+    const saved = this.requireSettings().read(tenantId), tenant = this.config?.tenants.find(value => value.tenantId === tenantId);
+    return { ...saved, pollIntervalSeconds: saved.revision ? saved.pollIntervalSeconds : this.config?.pollIntervalSeconds ?? saved.pollIntervalSeconds,
+      spotlightChannelId: saved.spotlightChannelId ?? tenant?.branding.spotlightChannelId ?? '',
+      groupChannels: { ...Object.fromEntries((tenant?.members ?? []).map(member => [dshShoutoutGroupSlug(member.group) || '', member.shoutoutChannelId])), ...saved.groupChannels },
+      embedTemplates: saved.embedTemplates ?? tenant?.branding.embedTemplates ?? DSH_LIVE_EMBED_TEMPLATES };
+  }
+
   private async updateSettings(response: ServerResponse, context: SessionContext, body: Record<string, unknown>) {
-    const store = this.requireSettings(), current = store.readDocument(context.tenantId), values: Record<string, string | number | boolean | null> = {};
+    const store = this.requireSettings(), current = store.readDocument(context.tenantId), effective = this.effectiveSettings(context.tenantId), values: Record<string, string | number | boolean | null> = current.revision ? {} : { pollIntervalSeconds: effective.pollIntervalSeconds };
     for (const key of ["spotlightChannelId", "signalChannelId", "gifStorageChannelId"] as const) if (body[key] !== undefined) values[key] = body[key] === "" ? "" : snowflake(body[key], key);
     for (const value of Object.values(values)) if (typeof value === "string" && isSimulationDiscordId(value)) { if (!this.discord) throw new Error("Shadow room delivery is unavailable"); await this.discord.target(context.tenantId,value); }
     for (const key of ["spotlightEnabled", "signalSeekerEnabled"] as const) if (typeof body[key] === "boolean") values[key] = body[key];
+    const groups = { ...effective.groupChannels }, templates = structuredClone(effective.embedTemplates);
+    for (const [key, value] of Object.entries(body)) {
+      if (key.startsWith('group:')) { const slug = dshShoutoutGroupSlug(key.slice(6)); if (!slug) throw new Error('Choose a shoutout group'); if (value === '') delete groups[slug]; else groups[slug] = snowflake(value, 'Group channel'); values.groupChannels = JSON.stringify(groups); }
+      if (key.startsWith('template:')) { const [,group,field] = key.split(':'); if (!group || !field || !Object.hasOwn(templates,group) || !Object.hasOwn(templates[group as keyof typeof templates],field)) throw new Error('Unknown shoutout template field'); (templates[group as keyof typeof templates] as Record<string,string>)[field] = String(value); values.embedTemplates = JSON.stringify(templates); }
+    }
+    if (body.groupChannels !== undefined) values.groupChannels = typeof body.groupChannels === 'string' ? body.groupChannels : JSON.stringify(body.groupChannels);
+    if (body.embedTemplates !== undefined) values.embedTemplates = typeof body.embedTemplates === 'string' ? body.embedTemplates : JSON.stringify(body.embedTemplates);
     if (body.captainMinimumDays !== undefined) values.captainMinimumDays = integer(body.captainMinimumDays, 0, 31, "captainMinimumDays");
-    if (body.pollIntervalSeconds !== undefined) values.pollIntervalSeconds = integer(body.pollIntervalSeconds, 15, 900, "pollIntervalSeconds");
+    if (body.pollIntervalSeconds !== undefined) values.pollIntervalSeconds = integer(body.pollIntervalSeconds, 15, 3600, "pollIntervalSeconds");
     const next = store.patch(context.tenantId, { schemaVersion: 1, expectedRevision: current.revision, values });
     return sendJson(response, 200, next);
   }

@@ -1,6 +1,6 @@
 import type { DshLiveMemberV1, DshLivePollResultV1, DshLiveRuntime, DshTwitchStreamV1 } from "./live-monitor.js";
 
-export interface DshLiveMemberDirectoryV1 { listLiveTrackedMembers(tenantId: string): Promise<DshLiveMemberV1[]>; }
+export interface DshLiveMemberDirectoryV1 { listLiveTrackedMembers(tenantId: string): Promise<DshLiveMemberV1[]>; getPollSettings?(tenantId: string): { spotlightEnabled: boolean }; }
 export type DshTwitchGrantResultV1 =
   | { status: "ready"; clientId: string; accessToken: string; expiresAt: string }
   | { status: "reauthorization-required"; reason: string }
@@ -21,9 +21,10 @@ export class DshTwitchLivePoller {
     requireId(tenantId, "tenantId"); requireId(pollId, "pollId");
     if (!Number.isFinite(Date.parse(observedAt))) throw new Error("DSH poll observedAt is invalid");
     const tracked = await this.members.listLiveTrackedMembers(tenantId);
+    const spotlightEnabled = this.members.getPollSettings?.(tenantId).spotlightEnabled ?? true;
     const unique = validateMembers(tracked);
     if (!unique.length) {
-      const result = await this.runtime.reconcile({ schemaVersion: 1, tenantId, pollId, observedAt: new Date(observedAt).toISOString(), members: [], streams: [] });
+      const result = await this.runtime.reconcile({ schemaVersion: 1, tenantId, pollId, observedAt: new Date(observedAt).toISOString(), members: [], streams: [], spotlightEnabled });
       return { status: "completed", poll: { tenantId, pollId, observedAt: new Date(observedAt).toISOString(), memberCount: 0, liveCount: 0 }, result };
     }
     let grant: DshTwitchGrantResultV1;
@@ -42,7 +43,7 @@ export class DshTwitchLivePoller {
       if (error instanceof TwitchHelixError && error.status === 401) return { status: "reauthorization-required", reason: "Twitch rejected the current SPMT provider grant" };
       return { status: "unavailable", reason: redact(errorText(error)) };
     }
-    const result = await this.runtime.reconcile({ schemaVersion: 1, tenantId, pollId, observedAt: new Date(observedAt).toISOString(), members: unique, streams });
+    const result = await this.runtime.reconcile({ schemaVersion: 1, tenantId, pollId, observedAt: new Date(observedAt).toISOString(), members: unique, streams, spotlightEnabled });
     return { status: "completed", poll: { tenantId, pollId, observedAt: new Date(observedAt).toISOString(), memberCount: unique.length, liveCount: streams.length }, result };
   }
 }

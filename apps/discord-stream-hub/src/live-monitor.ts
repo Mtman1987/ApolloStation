@@ -38,6 +38,7 @@ export interface DshLivePollV1 {
   observedAt: string;
   members: DshLiveMemberV1[];
   streams: DshTwitchStreamV1[];
+  spotlightEnabled?: boolean;
 }
 
 export interface DshLivePollResultV1 { duplicate: boolean; actions: DshLiveActionV1[]; liveCount: number; }
@@ -89,7 +90,7 @@ export class SqliteDshLiveMonitor {
         }
       }
       const spotlight = this.getSpotlight(poll.tenantId);
-      if (!live.length) {
+      if (!live.length || poll.spotlightEnabled === false) {
         if (spotlight) actions.push({ schemaVersion: 1, type: "spotlight.clear", idempotencyKey: "dsh:spotlight.clear:" + poll.tenantId + ":" + spotlight.userId + ":" + poll.pollId, tenantId: poll.tenantId, priorUserId: spotlight.userId });
         this.db.prepare("DELETE FROM spotlight WHERE tenant_id=?").run(poll.tenantId);
       } else if (!spotlight || Date.parse(poll.observedAt) - Date.parse(spotlight.rotatedAt) >= this.spotlightRotationMs || !live.some((item) => item.member.canonicalUserId === spotlight.userId)) {

@@ -7,6 +7,7 @@ import { HearMeOutRoomRtcGateway } from '../apps/hearmeout/dist/rtc-room-gateway
 
 async function fixture(t) {
   const allowed = new Set(['alice', 'bob', 'outsider']);
+  const muted = new Set();
   let sessionStatus = 200;
   const server = createServer();
   const gateway = new HearMeOutRoomRtcGateway({
@@ -18,6 +19,7 @@ async function fixture(t) {
     },
     requireMembership: (principal, roomId) => { if (roomId !== 'room' || !allowed.has(principal.userId)) throw new Error('Not admitted'); },
     membershipCheckMs: 50, iceServers: [],
+    isServerMuted: (_tenantId, _roomId, userId) => muted.has(userId),
   });
   gateway.attach(server);
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
@@ -37,8 +39,27 @@ async function fixture(t) {
       throw new Error('Expected RTC message did not arrive');
     } };
   };
-  return { connect, allowed, gateway, setStatus: status => { sessionStatus = status; } };
+  return { connect, allowed, muted, gateway, setStatus: status => { sessionStatus = status; } };
 }
+
+test('server mute drops relay frames even when the sender ignores its microphone state', async t => {
+  const { connect, gateway, muted } = await fixture(t), alice = await connect('alice'), bob = await connect('bob');
+  const direct = await alice.next(value => value.mode === 'peer-webrtc');
+  alice.send({ type: 'failed', epoch: direct.epoch, transport: 'peer-webrtc', reason: 'test fallback' });
+  await bob.next(value => value.mode === 'wss-relay');
+  muted.add('alice'); await gateway.moderateMember('tenant', 'room', 'alice', 'mute');
+  await bob.next(value => value.type === 'room' && value.peers.some(peer => peer.userId === 'alice' && peer.serverMuted));
+  alice.socket.send(Buffer.alloc(1280, 45));
+  await new Promise(resolve => setTimeout(resolve, 80));
+  assert.equal(bob.messages.some(Buffer.isBuffer), false);
+  muted.delete('alice'); await gateway.moderateMember('tenant', 'room', 'alice', 'unmute');
+  await bob.next(value => value.type === 'room' && value.epoch > direct.epoch + 1 && value.peers.every(peer => !peer.serverMuted));
+  alice.socket.send(Buffer.alloc(1280, 45)); assert.equal((await bob.next(Buffer.isBuffer)).length, 1292);
+  const closed = once(alice.socket, 'close');
+  await gateway.moderateMember('tenant', 'room', 'alice', 'move', 'destination');
+  assert.equal((await alice.next(value => value.type === 'move')).targetRoomId, 'destination');
+  assert.equal((await closed)[0], 4403);
+});
 
 test('room coordinator keeps solo users idle, isolates tenants, and forwards real relay frames after a coordinated switch', { timeout: 8000 }, async t => {
   const { connect, gateway, allowed } = await fixture(t);

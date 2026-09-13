@@ -56,3 +56,35 @@ test("room owner deletes an active room instead of leaving it", () => {
     assert.equal(runtime.getRoom("tenant-a", "delete-me", at), undefined);
   } finally { runtime.close(); }
 });
+
+test("mute survives leave and re-entry, unban restores admission, and moves remain tenant scoped", () => {
+  const runtime = fixture(), owner = principal('owner'), guest = principal('guest'), otherOwner = principal('other-owner');
+  try {
+    for (const [who, roomId, privacy] of [[owner, 'source', 'public'], [owner, 'target', 'private'], [otherOwner, 'restricted', 'private']]) runtime.createRoom(who, { roomId, name: roomId, privacy, operationId: 'create-' + roomId, now: at });
+    runtime.joinRoom(guest, 'source', 'join', at);
+    runtime.moderateMember(owner, { roomId: 'source', targetUserId: guest.userId, action: 'mute', operationId: 'mute', now: at });
+    assert.equal(runtime.isServerMuted(owner.tenantId, 'source', guest.userId), true);
+    runtime.leaveRoom(guest, 'source', 'leave', at); runtime.joinRoom(guest, 'source', 'rejoin', at);
+    assert.equal(runtime.listMembers(owner.tenantId, 'source', at).find(member => member.userId === 'guest').serverMuted, true);
+    assert.throws(() => runtime.moderateMember(guest, { roomId: 'source', targetUserId: 'owner', action: 'unmute', operationId: 'self-unmute', now: at }), /owner or an admin/);
+    runtime.moderateMember(owner, { roomId: 'source', targetUserId: guest.userId, action: 'unmute', operationId: 'unmute', now: at });
+    assert.equal(runtime.isServerMuted(owner.tenantId, 'source', guest.userId), false);
+    assert.throws(() => runtime.moderateMember(owner, { roomId: 'source', targetUserId: guest.userId, action: 'move', targetRoomId: 'restricted', operationId: 'denied-move', now: at }), /admission/);
+    assert.equal(runtime.listMembers(owner.tenantId, 'source', at).some(member => member.userId === guest.userId), true);
+    runtime.moderateMember(owner, { roomId: 'source', targetUserId: guest.userId, action: 'move', targetRoomId: 'target', operationId: 'move', now: at });
+    assert.equal(runtime.listMembers(owner.tenantId, 'source', at).some(member => member.userId === guest.userId), false);
+    assert.equal(runtime.listMembers(owner.tenantId, 'target', at).some(member => member.userId === guest.userId), true);
+    assert.equal(runtime.memberMovement(guest, 'source').targetRoomId, 'target');
+    assert.equal(runtime.memberMovement({ ...guest, tenantId: 'other' }, 'source'), undefined);
+    runtime.moderateMember(owner, { roomId: 'target', targetUserId: guest.userId, action: 'ban', operationId: 'ban-target', now: at });
+    assert.equal(runtime.listRestrictions(owner, 'target', at)[0].kind, 'ban');
+    runtime.moderateMember(owner, { roomId: 'target', targetUserId: guest.userId, action: 'unban', operationId: 'unban-target', now: at });
+    assert.deepEqual(runtime.listRestrictions(owner, 'target', at), []);
+    runtime.inviteToRoom(owner, { roomId: 'target', inviteeUserId: guest.userId, operationId: 'invite-again', now: at });
+    runtime.joinRoom(guest, 'target', 'rejoin-unbanned', at, {});
+    runtime.deleteRoom(owner, 'target', 'delete-target', at);
+    assert.equal(runtime.memberMovement(guest, 'source'), undefined);
+    runtime.deleteRoom(owner, 'source', 'delete-source', at);
+    assert.equal(runtime.isServerMuted(owner.tenantId, 'source', guest.userId), false);
+  } finally { runtime.close(); }
+});

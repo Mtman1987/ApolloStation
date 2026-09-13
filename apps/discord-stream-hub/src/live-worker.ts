@@ -21,6 +21,8 @@ import { DshBotActionAdapter } from "./bot-action-adapter.js";
 import { DshSuiteActionOperations } from "./suite-action-operations.js";
 import { DshSuiteActionWorker } from "./suite-action-worker.js";
 import { DshSimulationRoomDiscordTransport } from "./simulation-room.js";
+import { DshTenantSettingsStore } from './settings.js';
+import { dshShoutoutGroupSlug } from './shoutout-groups.js';
 
 export interface DshLiveRuntimeTenantV1 {
   tenantId: string;
@@ -107,11 +109,12 @@ export function createDshWorkerTokenProvider(options: { spmtOrigin: string; cred
   };
 }
 
-class ConfigDirectory implements DshLiveMemberDirectoryV1, DshDiscordBrandingSourceV1 {
+export class ConfigDirectory implements DshLiveMemberDirectoryV1, DshDiscordBrandingSourceV1 {
   private readonly tenants = new Map<string, DshLiveRuntimeTenantV1>();
-  constructor(config: DshLiveRuntimeConfigV1) { config.tenants.forEach((tenant) => this.tenants.set(tenant.tenantId, tenant)); }
-  async listLiveTrackedMembers(tenantId: string) { return structuredClone(this.require(tenantId).members); }
-  getBranding(tenantId: string) { return structuredClone(this.require(tenantId).branding); }
+  constructor(private readonly config: DshLiveRuntimeConfigV1, private readonly settings?: DshTenantSettingsStore) { config.tenants.forEach((tenant) => this.tenants.set(tenant.tenantId, tenant)); }
+  async listLiveTrackedMembers(tenantId: string) { const saved = this.settings?.read(tenantId); return structuredClone(this.require(tenantId).members).map(member => ({ ...member, shoutoutChannelId: saved?.groupChannels[dshShoutoutGroupSlug(member.group) || ''] || member.shoutoutChannelId })); }
+  getBranding(tenantId: string) { const saved = this.settings?.read(tenantId), base = structuredClone(this.require(tenantId).branding); return { ...base, ...(saved?.spotlightChannelId ? { spotlightChannelId: saved.spotlightChannelId } : {}), ...(saved?.embedTemplates ? { embedTemplates: saved.embedTemplates } : {}), ...(saved ? { spotlightEnabled: saved.spotlightEnabled, groupChannels: saved.groupChannels } : {}) }; }
+  getPollSettings(tenantId: string) { const saved = this.settings?.read(tenantId); return { intervalSeconds: saved?.revision ? saved.pollIntervalSeconds : this.config.pollIntervalSeconds, revision: saved?.revision ?? 0, spotlightEnabled: saved?.spotlightEnabled ?? true }; }
   providerUserId(tenantId: string, provider: "twitch" | "discord") { const tenant = this.require(tenantId); return provider === "twitch" ? tenant.twitchProviderUserId : tenant.discordProviderUserId; }
   private require(tenantId: string) { const value = this.tenants.get(tenantId); if (!value) throw new Error(`DSH tenant ${tenantId} is not configured`); return value; }
 }
@@ -159,6 +162,9 @@ export class SupervisedDshLiveService {
   private readonly nebulaMediaAbort=new AbortController();
   private readonly nebulaMedia?:DshNebulaMediaWorker;
   private readonly suiteActions: DshSuiteActionWorker;
+  private readonly settings: DshTenantSettingsStore;
+  private readonly directory: ConfigDirectory;
+  private readonly scheduledPeriods = new Map<string, string>();
   private activeCycle: Promise<{ schemaVersion: 1; skipped: false; results: DshLiveWorkerTenantResultV1[] }> | undefined;
   private closing: Promise<void> | undefined;
   private closed = false;
@@ -166,7 +172,8 @@ export class SupervisedDshLiveService {
     this.getAccessToken = createDshWorkerTokenProvider({ spmtOrigin: options.spmtOrigin, credential: options.credential, fetchImpl });
     this.client = new SpmtClient({ baseUrl: options.spmtOrigin, appId: "discord-stream-hub", getAccessToken: this.getAccessToken, fetchImpl });
     if(options.operationMode==="active"&&options.publicOrigin)this.nebulaMedia=new DshNebulaMediaWorker(this.client,{databasePath:options.databasePath,publicOrigin:options.publicOrigin,workerId:`${options.workerId}-nebula-media`,tenantIds:options.config.tenants.map(tenant=>tenant.tenantId),sourceOrigins:(process.env.DSH_MEDIA_SOURCE_ORIGINS||"").split(",").filter(Boolean)},fetchImpl);
-    const directory = new ConfigDirectory(options.config);
+    this.settings = new DshTenantSettingsStore(options.databasePath, now);
+    const directory = this.directory = new ConfigDirectory(options.config, this.settings);
     this.monitor = new SqliteDshLiveMonitor(options.databasePath, options.config.pollIntervalSeconds * 1_000);
     this.messages = new SqliteDshDiscordMessageStore(options.databasePath);
     const liveDiscord = new DshDiscordApi(new SpmtDshDiscordGrantSource(this.client, directory), fetchImpl);
@@ -183,18 +190,20 @@ export class SupervisedDshLiveService {
     this.suiteActions = new DshSuiteActionWorker(this.client, new DshBotActionAdapter(operations), { workerId: `${options.workerId}-suite-actions`, tenantIds: options.config.tenants.map((tenant) => tenant.tenantId) });
   }
   async ready() { await this.getAccessToken(); return { schemaVersion: 1 as const, workerId: this.options.workerId, operationMode: this.options.operationMode, liveIngressEnabled: this.options.liveIngressEnabled, egressMode: this.options.operationMode === "read-only" ? "shadow" as const : "provider" as const, configuredTenants: this.options.config.tenants.length, pollIntervalSeconds: this.options.config.pollIntervalSeconds }; }
-  async runOnce(): Promise<{ schemaVersion: 1; skipped: boolean; results: DshLiveWorkerTenantResultV1[] }> {
+  async runOnce(scheduled = false): Promise<{ schemaVersion: 1; skipped: boolean; results: DshLiveWorkerTenantResultV1[] }> {
     if (this.closed) throw new Error("Discord Stream Hub worker is closed");
     if (this.activeCycle) return { schemaVersion: 1, skipped: true, results: [] };
-    const cycle = this.executeCycle();
+    const cycle = this.executeCycle(scheduled);
     this.activeCycle = cycle;
     try { return await cycle; }
     finally { if (this.activeCycle === cycle) this.activeCycle = undefined; }
   }
   async run(signal: AbortSignal) {
     while (!signal.aborted) {
-      await this.runOnce();
-      await pause(dshMillisecondsUntilNextPeriod(this.now(), this.options.config.pollIntervalSeconds), signal);
+      const due = this.options.config.tenants.some(tenant => this.scheduledPeriods.get(tenant.tenantId) !== this.period(tenant.tenantId));
+      if (due) await this.runOnce(true);
+      // Saved settings become visible without restarting or issuing extra provider polls.
+      await pause(15000, signal);
     }
   }
   async runCalendar(signal:AbortSignal) {while(!signal.aborted&&!this.closed){const cycle=this.syncCalendars();this.calendarCycle=cycle;try{await cycle;}finally{this.calendarCycle=undefined;}await pause(5000,signal);}}
@@ -211,6 +220,7 @@ export class SupervisedDshLiveService {
       let failed = false;
       try { await this.nebulaMediaCycle; await this.calendarCycle; await activeCycle; } catch (error) { failure = error; failed = true; }
       this.nebulaMedia?.close();
+      this.settings.close();
       try { this.messages.close(); } catch (error) { if (!failed) { failure = error; failed = true; } }
       try { this.calendarSync?.close(); this.calendar.close(); } catch (error) { if (!failed) { failure = error; failed = true; } }
       try { this.applications.close(); } catch (error) { if (!failed) { failure = error; failed = true; } }
@@ -219,18 +229,21 @@ export class SupervisedDshLiveService {
     })();
     return this.closing;
   }
-  private async executeCycle(): Promise<{ schemaVersion: 1; skipped: false; results: DshLiveWorkerTenantResultV1[] }> {
+  private async executeCycle(scheduled: boolean): Promise<{ schemaVersion: 1; skipped: false; results: DshLiveWorkerTenantResultV1[] }> {
     const results: DshLiveWorkerTenantResultV1[] = [];
     const observedAt = new Date(this.now()).toISOString();
-    const period = Math.floor(Date.parse(observedAt) / (this.options.config.pollIntervalSeconds * 1_000));
     for (const tenant of this.options.config.tenants) {
-      const result = await this.poller.poll(tenant.tenantId, `dsh-live:${period}`, observedAt);
+      const period = this.period(tenant.tenantId);
+      if (scheduled && this.scheduledPeriods.get(tenant.tenantId) === period) continue;
+      const result = await this.poller.poll(tenant.tenantId, period, observedAt);
+      this.scheduledPeriods.set(tenant.tenantId, period);
       if (result.status === "completed") results.push({ tenantId: tenant.tenantId, status: "completed", liveCount: result.poll.liveCount, memberCount: result.poll.memberCount, delivered: result.result.delivery.delivered, failed: result.result.delivery.failed });
       else results.push({ tenantId: tenant.tenantId, status: result.status, reason: safeReason(result.reason) });
       await this.reportRuntime(tenant.tenantId, result.status === "completed" ? (result.result.delivery.failed ? "degraded" : "ready") : "degraded", result.status === "completed" ? `${result.poll.liveCount}/${result.poll.memberCount} tracked members live; ${result.result.delivery.failed} Discord deliveries pending` : safeReason(result.reason));
     }
     return { schemaVersion: 1, skipped: false, results };
   }
+  private period(tenantId: string) { const settings = this.directory.getPollSettings(tenantId); return `dsh-live:${settings.intervalSeconds}:${settings.revision}:${Math.floor(Date.parse(this.now()) / (settings.intervalSeconds * 1000))}`; }
   private async reportRuntime(tenantId: string, state: "ready" | "degraded", detail: string) { try { await this.client.reportRuntimeState(tenantId, state, detail); } catch { /* A status projection cannot invalidate a completed provider cycle. */ } }
 }
 
