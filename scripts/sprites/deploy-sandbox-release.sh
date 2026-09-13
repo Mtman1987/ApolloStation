@@ -232,6 +232,10 @@ npm ci --ignore-scripts
 npm run typecheck
 NODE_OPTIONS="--import=$release_dir/scripts/sprites/supervisor-test-port-isolation.mjs" timeout --signal=TERM --kill-after=15s 10m npm test
 
+if [[ "$DEPLOY_ROLE" == "release" ]]; then
+  HEARMEOUT_CONTROLLED_MEDIA=1 NODE_OPTIONS="--import=$release_dir/scripts/offline-network-guard.mjs" node scripts/sprites/check-hearmeout-media-source.mjs
+fi
+
 provision_llm_runtime
 
 if [[ "$DEPLOY_ROLE" == "release" ]]; then
