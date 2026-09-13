@@ -14,7 +14,7 @@ Source baseline: Apollo `8ecd34b748bea47fbb718955a86c4d48509dc9bf`. The donor co
 | P04 | Approved | Screen capture, remote viewing and optional shared-system audio wired into existing cloud/peer RTC, including peer video alongside fallback voice. Reuses the established configurable SPMT relay capacity instead of the eight-connection override. GitHub browser acceptance passed in run 34729947698, including received screen pixels alongside fallback voice. |
 | P05 | Approved | UI and suite actions now share title/artist search and YouTube resolution jobs; current capable worker selection replaces the fixed Fly assumption. Added yt-dlp search, tenant-scoped production catalogs, stable retry keys and query UI. API/provider-adapter tests pass. Live provider activation and media delivery remain unverified (P09/P33). |
 | P06 | Approved | User-scoped saved music, removal, pagination, recent/most-played records and enqueue-from-favorites implemented. Saved music is reachable from the home page with zero rooms and survives room expiry. Isolation, replay counting and deletion tests pass; the real home-page browser test lists and removes favorites with zero rooms. Donor favorites data transfer remains P33. |
-| P07 | Approved | Approved; implementation remains outstanding. |
+| P07 | Approved | Room-owned auto-radio controller, shared Stellar recommendation call, durable history, manual queue priority, controller leases and late-result fencing implemented. Validation is pending GitHub CI after the development environment disconnected. Live provider acceptance remains outstanding. |
 | P08 | Approved | Approved; implementation remains outstanding. |
 | P09 | Approved | Approved; implementation remains outstanding. |
 | P10 | Approved | Approved; implementation remains outstanding. |
@@ -54,3 +54,7 @@ Source baseline: Apollo `8ecd34b748bea47fbb718955a86c4d48509dc9bf`. The donor co
 Implementation is saved in draft PR #99 (`approved-hmo-dsh-parity`). Checkpoint `a4359e0` passed required GitHub contracts and RTC/media browser CI in run `34729277608`. Checkpoint `6e40e87` passed run `34729947698`, including real screen pixels, decoded RTC/media audio and the actual home-page library. Subsequent work needs its own validation.
 
 This implementation checkpoint has not replaced live HMO or DSH. Public traffic replacement follows completion and acceptance of the full approved parity scope. The existing production rollout also has shared core, ingress and companion-client work; StreamWeaver and Nebula Arcade are not the only unverified cutover items.
+
+## Development checkpoint
+
+`ae91c0b` passed required GitHub CI run `34731200815`; all 1,060 offline tests and RTC/media/console browser checks passed. The development environment disconnected while adding auto-radio. Auto-radio source and its pending tests have been preserved on the same draft branch through GitHub; no live deployment occurred.

@@ -8,19 +8,19 @@ import type { HearMeOutSuiteActionExecutorV1 } from "./suite-action-worker.js";
 import type { HearMeOutVoiceBridgeController } from "./voice-bridge.js";
 
 export interface HearMeOutSuitePersonaStoreV1 { listPersonas(tenantId: string, roomId: string): Array<{ personaId: string; targetTenantId: string; displayName: string }>; putPersona(principal: HearMeOutPrincipalV1, roomId: string, persona: HearMeOutPublicPersonaV1 & { transportHealthy?: boolean }): unknown; removePersona(tenantId: string, roomId: string, personaId: string): unknown; }
-export interface HearMeOutSuiteMediaResolverV1 { resolve(input: { tenantId: string; query: string; lane: "music" | "movie"; operationId?: string }): Promise<HearMeOutMediaItemV1>; }
+export interface HearMeOutSuiteMediaResolverV1 { resolve(input: { tenantId: string; query: string; lane: "music" | "movie"; operationId?: string; excludeItemIds?: string[] }): Promise<HearMeOutMediaItemV1>; }
 
 /** Uses the existing HearMeOut media worker rather than resolving media in a browser or duplicating provider credentials. */
 export class SpmtHearMeOutSuiteMediaResolver implements HearMeOutSuiteMediaResolverV1 {
   constructor(private readonly client: Pick<SpmtClient, "createExecutionJob" | "getExecutionJob" | "listExecutionWorkers">, private readonly options: { maxWaitMs?: number; pollMs?: number } = {}) {}
-  async resolve(input: { tenantId: string; query: string; lane: "music" | "movie"; operationId?: string }) {
+  async resolve(input: { tenantId: string; query: string; lane: "music" | "movie"; operationId?: string; excludeItemIds?: string[] }) {
     const operationId = input.operationId ?? randomUUID();
     const youtubeId = hearMeOutYoutubeId(input.query);
-    if (youtubeId) return this.youtube(input, youtubeId, operationId);
+    if (youtubeId) { if(input.excludeItemIds?.includes(youtubeId))throw Error("Auto-radio needs a different recommendation");return this.youtube(input, youtubeId, operationId); }
     const direct = httpUrl(input.query);
-    if (direct) return mediaItem(input.lane, input.query, direct);
-    const result = await this.job(input.tenantId, "hearmeout.music.search", { query: input.query, limit: 5 }, operationId);
-    const items = Array.isArray(result.items) ? result.items : [], item = items.find((value) => value && typeof value === "object" && typeof (value as Record<string, unknown>).url === "string") as Record<string, unknown> | undefined;
+    if (direct) { const item=mediaItem(input.lane,input.query,direct);if(input.excludeItemIds?.includes(item.itemId))throw Error("Auto-radio needs a different recommendation");return item; }
+    const result = await this.job(input.tenantId, "hearmeout.music.search", { query: input.query, limit: input.excludeItemIds ? 25 : 5 }, operationId);
+    const items = Array.isArray(result.items) ? result.items : [], item = items.find((value) => value && typeof value === "object" && typeof (value as Record<string, unknown>).url === "string" && !input.excludeItemIds?.includes(String((value as Record<string, unknown>).id))) as Record<string, unknown> | undefined;
     if (!item) throw new Error("No music matched. Try the title and artist or a YouTube link.");
     const id = hearMeOutYoutubeId(String(item.url));
     if (id) return this.youtube(input, id, operationId, item);

@@ -54,6 +54,11 @@ export interface HearMeOutVoiceQueueEntryV1 {
   invitationId?: string; expiresAt?: string;
 }
 
+export interface HearMeOutRadioV1 {
+  enabled: boolean; seed: string; revision: number; principal: HearMeOutPrincipalV1;
+  history: Array<{ itemId: string; title: string; selectedAt: string }>; error?: string;
+}
+
 export interface HearMeOutMediaItemV1 {
   itemId: string;
   type: "movie" | "live" | "music" | "tts";
@@ -139,6 +144,10 @@ export class SqliteHearMeOutRoomMediaRuntime {
         tenant_id TEXT NOT NULL, room_id TEXT NOT NULL, user_id TEXT NOT NULL, added_at TEXT NOT NULL, body TEXT NOT NULL,
         PRIMARY KEY(tenant_id,room_id,user_id)
       ) STRICT;
+      CREATE TABLE IF NOT EXISTS hmo_room_radio(
+        tenant_id TEXT NOT NULL, room_id TEXT NOT NULL, body TEXT NOT NULL, lease_owner TEXT, lease_until TEXT, next_attempt_at TEXT,
+        PRIMARY KEY(tenant_id,room_id)
+      ) STRICT;
       CREATE TABLE IF NOT EXISTS hmo_room_presence(
         tenant_id TEXT NOT NULL, room_id TEXT NOT NULL, user_id TEXT NOT NULL, connection_id TEXT NOT NULL, last_seen_at TEXT NOT NULL, body TEXT NOT NULL,
         PRIMARY KEY(tenant_id,room_id,user_id,connection_id)
@@ -184,7 +193,7 @@ export class SqliteHearMeOutRoomMediaRuntime {
 
   private removeRoomData(tenantId: string, roomId: string): void {
     const tables = new Set((this.db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as Array<{ name: string }>).map(row => row.name));
-    for (const table of ["hmo_media_sessions", "hmo_room_presence", "hmo_room_restrictions", "hmo_room_member_controls", "hmo_room_moves", "hmo_room_voice_queue", "hmo_room_admissions", "hmo_room_invitations", "hmo_room_access", "hmo_room_members", "hmo_room_chat", "hmo_room_personas", "hmo_persona_rooms"]) {
+    for (const table of ["hmo_media_sessions", "hmo_room_presence", "hmo_room_restrictions", "hmo_room_member_controls", "hmo_room_moves", "hmo_room_voice_queue", "hmo_room_radio", "hmo_room_admissions", "hmo_room_invitations", "hmo_room_access", "hmo_room_members", "hmo_room_chat", "hmo_room_personas", "hmo_persona_rooms"]) {
       if (tables.has(table)) this.db.prepare(`DELETE FROM ${table} WHERE tenant_id=? AND room_id=?`).run(tenantId, roomId);
     }
     this.db.prepare("DELETE FROM hmo_room_moves WHERE tenant_id=? AND target_room_id=?").run(tenantId, roomId);
@@ -474,7 +483,36 @@ export class SqliteHearMeOutRoomMediaRuntime {
     return this.readSession(tenantId, cleanId(roomId, "roomId"), lane) ?? emptySession(tenantId, cleanId(roomId, "roomId"), lane, at);
   }
 
+  radio(tenant:string,roomId:string):HearMeOutRadioV1|undefined{const row=this.db.prepare('SELECT body FROM hmo_room_radio WHERE tenant_id=? AND room_id=?').get(tenant,roomId);return row?JSON.parse(String(row.body)):undefined;}
+  configureRadio(principal:HearMeOutPrincipalV1,roomId:string,enabled:boolean,seed:string,now?:string){
+    assertPrincipal(principal);const room=this.requireRoom(principal.tenantId,roomId,validNow(now));this.requireMember(principal.tenantId,roomId,principal.userId);if(!this.canManage(principal,room))throw Error('Only the room host or an admin can change auto-radio');
+    const query=String(seed).trim();if(enabled&&(!query||query.length>300))throw Error('Choose a song, artist or style for auto-radio');
+    const prior=this.radio(principal.tenantId,roomId),state:HearMeOutRadioV1={enabled,seed:query||prior?.seed||'',revision:(prior?.revision??0)+1,principal:structuredClone(principal),history:prior?.history??[]};
+    this.db.prepare('INSERT INTO hmo_room_radio(tenant_id,room_id,body) VALUES(?,?,?) ON CONFLICT(tenant_id,room_id) DO UPDATE SET body=excluded.body,lease_owner=NULL,lease_until=NULL,next_attempt_at=NULL').run(principal.tenantId,roomId,JSON.stringify(state));return state;
+  }
+  radioRooms(){return this.db.prepare('SELECT tenant_id,room_id,body FROM hmo_room_radio').all().map(row=>({tenantId:String(row.tenant_id),roomId:String(row.room_id),state:JSON.parse(String(row.body)) as HearMeOutRadioV1})).filter(item=>item.state.enabled);}
+  claimRadio(tenant:string,roomId:string,owner:string,now:string){return this.db.prepare('UPDATE hmo_room_radio SET lease_owner=?,lease_until=? WHERE tenant_id=? AND room_id=? AND (lease_until IS NULL OR lease_until<=?) AND (next_attempt_at IS NULL OR next_attempt_at<=?)').run(owner,new Date(Date.parse(now)+300000).toISOString(),tenant,roomId,now,now).changes===1;}
+  completeRadio(tenant:string,roomId:string,owner:string,radioRevision:number,sessionRevision:number,item:HearMeOutMediaItemV1|undefined,error:string|undefined,now:string){return this.transaction(()=>{
+    const row=this.db.prepare('SELECT lease_owner FROM hmo_room_radio WHERE tenant_id=? AND room_id=?').get(tenant,roomId),state=this.radio(tenant,roomId);
+    if(!row||row.lease_owner!==owner||!state||state.revision!==radioRevision||!state.enabled)return false;
+    let added=false;
+    if(item&&this.getRoom(tenant,roomId,now)){
+      const session=this.getSession(tenant,roomId,'music',now);
+      if(session.revision===sessionRevision&&!session.queue.length){
+        this.enqueue(state.principal,{roomId,lane:'music',item:{...item,metadata:{...item.metadata,autoRadio:true}},operationId:'radio:'+owner,now});
+        state.history=[...state.history,{itemId:item.itemId,title:item.title,selectedAt:now}].slice(-50);delete state.error;added=true;
+      }
+    }
+    if(error)state.error=error.slice(0,500);
+    this.db.prepare('UPDATE hmo_room_radio SET body=?,lease_owner=NULL,lease_until=NULL,next_attempt_at=? WHERE tenant_id=? AND room_id=?').run(JSON.stringify(state),new Date(Date.parse(now)+(error?30000:5000)).toISOString(),tenant,roomId);
+    return added;
+  });}
+
   enqueue(principal: HearMeOutPrincipalV1, input: { roomId: string; lane: HearMeOutMediaLaneV1; item: HearMeOutMediaItemV1; operationId: string; now?: string }): HearMeOutMediaSessionV1 {
+    return this.transaction(() => this.enqueueInTransaction(principal,input));
+  }
+
+  private enqueueInTransaction(principal: HearMeOutPrincipalV1, input: { roomId: string; lane: HearMeOutMediaLaneV1; item: HearMeOutMediaItemV1; operationId: string; now?: string }): HearMeOutMediaSessionV1 {
     assertPrincipal(principal);
     const at = validNow(input.now);
     const room = this.requireRoom(principal.tenantId, input.roomId, at);
@@ -494,7 +532,8 @@ export class SqliteHearMeOutRoomMediaRuntime {
       session.current = request;
       session.playback = { ...session.playback, status: "playing", position: 0, updatedAt: at };
     } else {
-      session.queue.push(request);
+      const radioIndex=input.lane==='music'&&input.item.metadata?.autoRadio!==true?session.queue.findIndex(entry=>entry.item.metadata?.autoRadio===true):-1;
+      if(radioIndex<0)session.queue.push(request);else session.queue.splice(radioIndex,0,request);
     }
     session.revision += 1;
     this.transaction(() => {
@@ -506,6 +545,10 @@ export class SqliteHearMeOutRoomMediaRuntime {
   }
 
   control(principal: HearMeOutPrincipalV1, input: { roomId: string; lane: HearMeOutMediaLaneV1; action: HearMeOutControlActionV1; operationId: string; position?: number; targetIndex?: number; expectedRequestId?: string; now?: string }): HearMeOutMediaSessionV1 {
+    return this.transaction(() => this.controlInTransaction(principal,input));
+  }
+
+  private controlInTransaction(principal: HearMeOutPrincipalV1, input: { roomId: string; lane: HearMeOutMediaLaneV1; action: HearMeOutControlActionV1; operationId: string; position?: number; targetIndex?: number; expectedRequestId?: string; now?: string }): HearMeOutMediaSessionV1 {
     assertPrincipal(principal);
     const at = validNow(input.now);
     const room = this.requireRoom(principal.tenantId, input.roomId, at);
