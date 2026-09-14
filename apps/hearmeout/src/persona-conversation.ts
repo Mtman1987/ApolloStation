@@ -9,6 +9,14 @@ export interface HearMeOutPublicPersonaV1 {
   canTalk?: boolean;
   transportHealthy: boolean;
   blockedReason?: string;
+  ownerName?: string;
+  aliases?: string[];
+  interests?: string[];
+  voice?: string;
+  livekitTtsDescriptor?: string;
+  avatarUrl?: string;
+  idleAvatarUrl?: string;
+  talkingAvatarUrl?: string;
 }
 
 export interface HearMeOutPersonaSpeechV1 {
@@ -95,11 +103,21 @@ export class HearMeOutPersonaConversationCoordinator {
 
 export class HearMeOutPersonaUnavailableError extends Error {}
 
-function normalizePersona(value: HearMeOutPublicPersonaV1): HearMeOutPublicPersonaV1 { const blockedReason=optionalLabel(value.blockedReason,300);return { personaId: identifier(value.personaId, "personaId"), targetTenantId: identifier(value.targetTenantId, "targetTenantId"), displayName: optionalLabel(value.displayName, 120) || value.personaId, wakeNames: [...new Set((value.wakeNames ?? []).map((item) => optionalLabel(item, 96)).filter((item): item is string => Boolean(item)))].slice(0, 50), canInvite: value.canInvite === true,canTalk:value.canTalk!==false, transportHealthy: value.transportHealthy === true,...(blockedReason?{blockedReason}:{}) }; }
+function normalizePersona(value: HearMeOutPublicPersonaV1): HearMeOutPublicPersonaV1 {
+  const blockedReason=optionalLabel(value.blockedReason,300),ownerName=optionalLabel(value.ownerName,120),voice=optionalLabel(value.voice,128),livekitTtsDescriptor=optionalIdentifier(value.livekitTtsDescriptor),aliases=strings(value.aliases,96),interests=strings(value.interests,96);
+  return {
+    personaId: identifier(value.personaId, "personaId"), targetTenantId: identifier(value.targetTenantId, "targetTenantId"), displayName: optionalLabel(value.displayName, 120) || value.personaId,
+    wakeNames: strings(value.wakeNames,96), canInvite: value.canInvite === true, canTalk:value.canTalk!==false, transportHealthy: value.transportHealthy === true,
+    ...(blockedReason?{blockedReason}:{}),...(ownerName?{ownerName}:{}),...(aliases.length?{aliases}:{}),...(interests.length?{interests}:{}),...(voice?{voice}:{}),...(livekitTtsDescriptor?{livekitTtsDescriptor}:{}),
+    ...(value.avatarUrl?{avatarUrl:httpsUrl(value.avatarUrl)}:{}),...(value.idleAvatarUrl?{idleAvatarUrl:httpsUrl(value.idleAvatarUrl)}:{}),...(value.talkingAvatarUrl?{talkingAvatarUrl:httpsUrl(value.talkingAvatarUrl)}:{}),
+  };
+}
+function strings(values:unknown,max:number){return [...new Set((Array.isArray(values)?values:[]).map(item=>optionalLabel(item,max)).filter(Boolean))].slice(0,50);}
+function httpsUrl(value:unknown){const url=new URL(String(value??""));if(url.protocol!=="https:"||url.username||url.password)throw new Error("HearMeOut persona media URL is invalid");return url.toString();}
 function validateAudioBase64(value: string) { const result = String(value ?? "").trim(); if (!result || result.length > HEARMEOUT_PERSONA_AUDIO_MAX_BASE64_LENGTH || !/^[A-Za-z0-9+/]+={0,2}$/.test(result)) throw new Error("HearMeOut recorded audio is invalid or too large"); return result; }
 function validateAudioDataUri(value: string) { if (!/^data:audio\/(?:mpeg|mp3|wav|ogg|webm);base64,[A-Za-z0-9+/]+={0,2}$/.test(value) || value.length > 30_000_000) throw new Error("HearMeOut persona speech audio is invalid"); return value; }
 function identifier(value: unknown, name: string) { const result = String(value ?? "").trim(); if (!/^[A-Za-z0-9._:@/-]{1,200}$/.test(result)) throw new Error(`HearMeOut ${name} is invalid`); return result; }
-function optionalIdentifier(value: unknown) { const result = String(value ?? "").trim(); return result ? identifier(result, "actor user id") : ""; }
+function optionalIdentifier(value: unknown) { const result = String(value ?? "").trim(); return result ? identifier(result, "identifier") : ""; }
 function optionalLabel(value: unknown, max: number) { const result = String(value ?? "").trim(); if (!result) return ""; if (result.length > max || /[\r\n\0]/.test(result)) throw new Error("HearMeOut label is invalid"); return result; }
 function message(value: unknown, name: string, max: number) { const result = String(value ?? "").trim(); if (!result || result.length > max || /\0/.test(result)) throw new Error(`HearMeOut ${name} is invalid`); return result; }
 function safeError(value: unknown) { return (value instanceof Error ? value.message : String(value)).replace(/(?:authorization|token|secret|password|cookie)\s*[:=]?\s*\S+/gi, "$1=[redacted]").slice(0, 500); }
