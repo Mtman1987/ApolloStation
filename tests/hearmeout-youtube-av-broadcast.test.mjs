@@ -23,7 +23,7 @@ test('separate YouTube video and audio inputs become one advancing music broadca
     server=createServer((req,res)=>{if(req.url===`/v1/media/public/${videoToken}`)return serveBytes(video,videoReads)(req,res);if(req.url===`/v1/media/public/${audioToken}`)return serveBytes(audio,audioReads)(req,res);res.statusCode=404;res.end();});
     await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const origin=`http://127.0.0.1:${server.address().port}`;
     rooms=new SqliteHearMeOutRoomMediaRuntime(':memory:');rooms.createRoom(owner,{roomId:'room',name:'YouTube',privacy:'public',operationId:'create'});
-    rooms.enqueue(owner,{roomId:'room',lane:'music',operationId:'play',item:{itemId:'abcdefghijk',type:'music',title:'Split YouTube source',source:'youtube',playbackUrl:`${origin}/v1/media/public/${videoToken}`,durationSeconds:20,metadata:{videoId:'abcdefghijk',audioPlaybackUrl:`${origin}/v1/media/public/${audioToken}`}}});
+    rooms.enqueue(owner,{roomId:'room',lane:'music',operationId:'play',item:{itemId:'abcdefghijk',type:'music',title:'Split YouTube source',source:'youtube',playbackUrl:`/v1/media/public/${videoToken}`,durationSeconds:20,metadata:{videoId:'abcdefghijk',audioPlaybackUrl:`/v1/media/public/${audioToken}`}}});
     broadcast=new HearMeOutRoomBroadcast(rooms,{ffmpegBinary:mediaBinary('ffmpeg'),ffprobeBinary:mediaBinary('ffprobe'),cachePath:join(dir,'feed'),spmtOrigin:origin});await broadcast.listen();
     await waitFor(()=>broadcast.status(),status=>status.active===1&&status.startedProcesses===1);
     const [cacheDir]=await waitFor(()=>readdir(join(dir,'feed')),entries=>entries.length===1),root=join(dir,'feed',cacheDir);
