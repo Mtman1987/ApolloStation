@@ -64,10 +64,19 @@ export class HearMeOutRoomBroadcast {
     const audioSource=rawAudio&&rawAudio.href!==rawSource.href?(this.prepared?.localSource(rawAudio,session.tenantId,this.proxy)??rawAudio):undefined;
     if(audioSource&&!validSource(audioSource))throw Error('Invalid broadcast audio source');
     const env={PATH:process.env.PATH??'/usr/bin:/bin',http_proxy:this.proxy,https_proxy:this.proxy,no_proxy:''};
-    const probe=async(url:URL)=>{const {stdout}=await promisify(execFile)(this.options.ffprobeBinary,['-v','error','-protocol_whitelist',HEARMEOUT_BROADCAST_PROTOCOLS,'-rw_timeout','15000000','-show_streams','-of','json',url.href],{env,timeout:20000,maxBuffer:1024*1024,signal:this.abort.signal});return JSON.parse(stdout) as {streams?:Array<{index:number;codec_type:string;tags?:{language?:string;title?:string}}>};};
-    const [primaryProbe,audioProbe]=await Promise.all([probe(source),audioSource?probe(audioSource):Promise.resolve(undefined)]),primaryStreams=primaryProbe.streams??[],audioStreams=audioSource?(audioProbe?.streams??[]):primaryStreams;
-    const media:HearMeOutWatchMediaProbeV1={hasVideo:primaryStreams.some(stream=>stream.codec_type==='video'),audio:audioStreams.filter(stream=>stream.codec_type==='audio').map((stream,index)=>({sourceIndex:stream.index,sourceSpecifier:(audioSource?'1:':'0:')+stream.index,index,...(stream.tags?.language?{language:stream.tags.language}:{}),...(stream.tags?.title?{title:stream.tags.title}:{})}))};
-    if(!media.hasVideo&&!media.audio.length)throw Error('Source has no playable media');
+    const youtube=item.source==='youtube';
+    let media:HearMeOutWatchMediaProbeV1;
+    if(youtube){
+      // The YouTube resolver already selected these tracks. Opening both signed
+      // GoogleVideo URLs with ffprobe before FFmpeg only duplicates network
+      // startup and can consume most of the request latency budget.
+      media={hasVideo:true,audio:[{sourceIndex:0,sourceSpecifier:audioSource?'1:0':'0:a:0',index:0}]};
+    }else{
+      const probe=async(url:URL)=>{const {stdout}=await promisify(execFile)(this.options.ffprobeBinary,['-v','error','-protocol_whitelist',HEARMEOUT_BROADCAST_PROTOCOLS,'-rw_timeout','15000000','-show_streams','-of','json',url.href],{env,timeout:20000,maxBuffer:1024*1024,signal:this.abort.signal});return JSON.parse(stdout) as {streams?:Array<{index:number;codec_type:string;tags?:{language?:string;title?:string}}>};};
+      const [primaryProbe,audioProbe]=await Promise.all([probe(source),audioSource?probe(audioSource):Promise.resolve(undefined)]),primaryStreams=primaryProbe.streams??[],audioStreams=audioSource?(audioProbe?.streams??[]):primaryStreams;
+      media={hasVideo:primaryStreams.some(stream=>stream.codec_type==='video'),audio:audioStreams.filter(stream=>stream.codec_type==='audio').map((stream,index)=>({sourceIndex:stream.index,sourceSpecifier:(audioSource?'1:':'0:')+stream.index,index,...(stream.tags?.language?{language:stream.tags.language}:{}),...(stream.tags?.title?{title:stream.tags.title}:{})}))};
+      if(!media.hasVideo&&!media.audio.length)throw Error('Source has no playable media');
+    }
     const latest=this.rooms.getBroadcastIdentity(session.tenantId,session.roomId)?this.rooms.getSession(session.tenantId,session.roomId,session.lane):undefined;
     if(this.closed||!latest||this.cacheKey(latest)!==run.cacheKey||signatureFor(latest)!==signature||latest.playback.status!=='playing'||!this.rooms.claimBroadcast(session.tenantId,session.roomId,session.lane,run.owner))return;
     const dir=join(this.options.cachePath,run.cacheKey);await mkdir(dir,{recursive:true});
