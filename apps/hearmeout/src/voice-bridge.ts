@@ -3,6 +3,9 @@ import type { HearMeOutPrincipalV1, SqliteHearMeOutRoomMediaRuntime } from "./ro
 import { HEARMEOUT_DISCORD_DEFAULT_INGRESS_GAIN, clampHearMeOutDiscordReceiveGain, type HearMeOutDiscordReceiveProfileV1 } from "./discord-receive-audio.js";
 
 export type HearMeOutVoiceAudioProfileV1 = HearMeOutDiscordReceiveProfileV1;
+export interface HearMeOutDiscordVoiceChannelV1 { id: string; name: string; type: 2 | 13; position?: number; parentId?: string; }
+export interface HearMeOutDiscordGuildV1 { id: string; name: string; icon?: string; channels: HearMeOutDiscordVoiceChannelV1[]; }
+export interface HearMeOutDiscordVoiceDirectoryV1 { guilds: HearMeOutDiscordGuildV1[]; }
 
 export interface HearMeOutVoiceBridgeConfigV1 {
   schemaVersion: 1;
@@ -26,6 +29,11 @@ export interface HearMeOutVoiceBridgeWorkerV1 {
   setRoomOutbound(input: { tenantId: string; roomId: string; roomVoiceOutboundEnabled: boolean }): Promise<Record<string, unknown>>;
   setAudioProfile(input: { tenantId: string; roomId: string; audioProfile: HearMeOutVoiceAudioProfileV1 }): Promise<Record<string, unknown>>;
   setDiscordReceiveGain?(input: { tenantId: string; roomId: string; discordReceiveGain: number }): Promise<Record<string, unknown>>;
+  discordDirectory?(input: { tenantId: string }): Promise<HearMeOutDiscordVoiceDirectoryV1>;
+  joinPersona?(input: { tenantId: string; roomId: string; personaId: string; displayName: string; ownerTenantId?: string; wakeNames?: string[]; voice?: string; avatar?: string; idleAvatar?: string; talkingAvatar?: string }): Promise<Record<string, unknown>>;
+  leavePersona?(input: { tenantId: string; roomId: string; personaId: string; displayName?: string }): Promise<Record<string, unknown>>;
+  personaStatus?(input: { tenantId: string; roomId: string; personaId?: string }): Promise<Record<string, unknown>>;
+  speakPersona?(input: { tenantId: string; roomId: string; personaId: string; audioDataUri: string }): Promise<Record<string, unknown>>;
 }
 
 export interface HearMeOutVoiceBridgeReconcileResultV1 {
@@ -79,8 +87,11 @@ export class HearMeOutVoiceBridgeController {
   async status(principal: HearMeOutPrincipalV1, roomId: string) {
     const room = this.requireManager(principal, roomId);
     const config = this.store.get(principal.tenantId, room.roomId);
-    const worker = await this.worker.status({ tenantId: principal.tenantId, roomId: room.roomId });
-    return { config, worker };
+    const [worker, directory] = await Promise.all([
+      this.worker.status({ tenantId: principal.tenantId, roomId: room.roomId }),
+      this.worker.discordDirectory?.({ tenantId: principal.tenantId }).catch(() => undefined),
+    ]);
+    return { config, worker, ...(directory ? { directory } : {}) };
   }
 
   async start(principal: HearMeOutPrincipalV1, input: { roomId: string; guildId: string; voiceChannelId: string }) {
@@ -105,8 +116,6 @@ export class HearMeOutVoiceBridgeController {
       this.requireManager(principal, room.roomId);
       return { success: true as const, config: next, worker, gate };
     } catch (error) {
-      // A timed-out HTTP start may still finish at the provider. The worker's
-      // stop route waits for that in-flight start before removing its bridge.
       let cleanupPending = false;
       try { await this.worker.stop({ tenantId: principal.tenantId, roomId: room.roomId }); } catch { cleanupPending = true; }
       if (cleanupPending || this.rooms.getRoom(principal.tenantId, room.roomId, this.now())) this.store.put({ ...next, enabled: false, ...(cleanupPending ? { cleanupPending: true } : {}), updatedAt: this.now() });
@@ -155,23 +164,16 @@ export class HearMeOutVoiceBridgeController {
     return { success: true as const, config, worker };
   }
 
-  /** Reconcile persisted desired bridge state after a process/worker restart. */
   async reconcileEnabled(): Promise<HearMeOutVoiceBridgeReconcileResultV1[]> {
     const results: HearMeOutVoiceBridgeReconcileResultV1[] = [];
     const claimed = new Map<string, string>();
     for (const config of this.store.listEnabled()) {
       const identity = `${config.tenantId}:${config.roomId}`;
       const room = this.rooms.getRoom(config.tenantId, config.roomId, this.now());
-      if (!room) {
-        results.push(await this.cleanupBridge(config));
-        continue;
-      }
+      if (!room) { results.push(await this.cleanupBridge(config)); continue; }
       const channelKey = `${config.guildId}:${config.voiceChannelId}`;
       const prior = claimed.get(channelKey);
-      if (prior && prior !== identity) {
-        results.push({ tenantId: config.tenantId, roomId: config.roomId, outcome: "conflict", message: `Discord voice channel already claimed by ${prior}` });
-        continue;
-      }
+      if (prior && prior !== identity) { results.push({ tenantId: config.tenantId, roomId: config.roomId, outcome: "conflict", message: `Discord voice channel already claimed by ${prior}` }); continue; }
       claimed.set(channelKey, identity);
       try {
         const status = await this.worker.status({ tenantId: config.tenantId, roomId: config.roomId });
@@ -193,7 +195,6 @@ export class HearMeOutVoiceBridgeController {
     return results;
   }
 
-  /** Retry provider stops independently of deleting the room and its contents. */
   async cleanupDeletedRooms(): Promise<HearMeOutVoiceBridgeReconcileResultV1[]> {
     const results: HearMeOutVoiceBridgeReconcileResultV1[] = [];
     for (const config of this.store.listPendingCleanup()) results.push(await this.cleanupBridge(config));
