@@ -57,16 +57,22 @@ export class HearMeOutRoomBroadcast {
   }
   private async start(run:Run,signature:string){
     await this.stop(run);if(this.closed)return;
-    const session=run.session,item=session.current!.item,rawSource=new URL(item.playbackUrl,this.options.spmtOrigin),source=/^\/v1\/media\/public\/[A-Za-z0-9_-]{43}$/.test(rawSource.pathname)?new URL(rawSource.pathname,this.options.spmtOrigin):this.prepared?.localSource(rawSource,session.tenantId,this.proxy)??rawSource;
+    const startedAt=Date.now(),session=run.session,item=session.current!.item,rawSource=new URL(item.playbackUrl,this.options.spmtOrigin),source=/^\/v1\/media\/public\/[A-Za-z0-9_-]{43}$/.test(rawSource.pathname)?new URL(rawSource.pathname,this.options.spmtOrigin):this.prepared?.localSource(rawSource,session.tenantId,this.proxy)??rawSource;
     if(!validSource(source))throw Error('Invalid broadcast source');
     const audioValue=typeof item.metadata?.audioPlaybackUrl==='string'?item.metadata.audioPlaybackUrl:'';
     const rawAudio=audioValue?new URL(audioValue,this.options.spmtOrigin):undefined;
     const audioSource=rawAudio&&rawAudio.href!==rawSource.href?(this.prepared?.localSource(rawAudio,session.tenantId,this.proxy)??rawAudio):undefined;
     if(audioSource&&!validSource(audioSource))throw Error('Invalid broadcast audio source');
     const env={PATH:process.env.PATH??'/usr/bin:/bin',http_proxy:this.proxy,https_proxy:this.proxy,no_proxy:''};
-    const probe=async(url:URL)=>{const {stdout}=await promisify(execFile)(this.options.ffprobeBinary,['-v','error','-protocol_whitelist',HEARMEOUT_BROADCAST_PROTOCOLS,'-rw_timeout','15000000','-show_streams','-of','json',url.href],{env,timeout:20000,maxBuffer:1024*1024,signal:this.abort.signal});return JSON.parse(stdout) as {streams?:Array<{index:number;codec_type:string;tags?:{language?:string;title?:string}}>};};
-    const [primaryProbe,audioProbe]=await Promise.all([probe(source),audioSource?probe(audioSource):Promise.resolve(undefined)]),primaryStreams=primaryProbe.streams??[],audioStreams=audioSource?(audioProbe?.streams??[]):primaryStreams;
-    const media:HearMeOutWatchMediaProbeV1={hasVideo:primaryStreams.some(stream=>stream.codec_type==='video'),audio:audioStreams.filter(stream=>stream.codec_type==='audio').map((stream,index)=>({sourceIndex:stream.index,sourceSpecifier:(audioSource?'1:':'0:')+stream.index,index,...(stream.tags?.language?{language:stream.tags.language}:{}),...(stream.tags?.title?{title:stream.tags.title}:{})}))};
+    let media:HearMeOutWatchMediaProbeV1;
+    if(item.source==='youtube'&&audioSource){
+      media={hasVideo:true,audio:[{sourceIndex:0,sourceSpecifier:'1:0',index:0}]};
+      this.options.onDiagnostic?.({phase:'prepare',message:`YouTube selected tracks accepted without preflight probes (${Date.now()-startedAt}ms)`});
+    }else{
+      const probe=async(url:URL)=>{const {stdout}=await promisify(execFile)(this.options.ffprobeBinary,['-v','error','-protocol_whitelist',HEARMEOUT_BROADCAST_PROTOCOLS,'-rw_timeout','15000000','-show_streams','-of','json',url.href],{env,timeout:20000,maxBuffer:1024*1024,signal:this.abort.signal});return JSON.parse(stdout) as {streams?:Array<{index:number;codec_type:string;tags?:{language?:string;title?:string}}>};};
+      const [primaryProbe,audioProbe]=await Promise.all([probe(source),audioSource?probe(audioSource):Promise.resolve(undefined)]),primaryStreams=primaryProbe.streams??[],audioStreams=audioSource?(audioProbe?.streams??[]):primaryStreams;
+      media={hasVideo:primaryStreams.some(stream=>stream.codec_type==='video'),audio:audioStreams.filter(stream=>stream.codec_type==='audio').map((stream,index)=>({sourceIndex:stream.index,sourceSpecifier:(audioSource?'1:':'0:')+stream.index,index,...(stream.tags?.language?{language:stream.tags.language}:{}),...(stream.tags?.title?{title:stream.tags.title}:{})}))};
+    }
     if(!media.hasVideo&&!media.audio.length)throw Error('Source has no playable media');
     const latest=this.rooms.getBroadcastIdentity(session.tenantId,session.roomId)?this.rooms.getSession(session.tenantId,session.roomId,session.lane):undefined;
     if(this.closed||!latest||this.cacheKey(latest)!==run.cacheKey||signatureFor(latest)!==signature||latest.playback.status!=='playing'||!this.rooms.claimBroadcast(session.tenantId,session.roomId,session.lane,run.owner))return;
@@ -83,6 +89,7 @@ export class HearMeOutRoomBroadcast {
     const child=spawn(this.options.lockBinary??'/usr/bin/flock',['-n','-F',join(dir,'encoder.lock'),this.options.ffmpegBinary,...args],{env,stdio:['ignore','ignore',this.options.onDiagnostic?'pipe':'ignore']});
     child.stderr?.on('data',bytes=>this.options.onDiagnostic?.({phase:'encoder',message:String(bytes)}));
     (child as ChildProcess & {hmoSignature?:string}).hmoSignature=signature;run.process=child;run.started++;this.startedProcesses++;run.failed=false;
+    this.options.onDiagnostic?.({phase:'encoder-start',message:`Broadcast encoder started in ${Date.now()-startedAt}ms`});
     child.on('error',()=>{if(run.process===child){delete run.process;run.failed=true;run.retryAt=Date.now()+5000;}});
     child.on('exit',code=>{if(run.process!==child)return;delete run.process;if(this.closed)return;if(code===0&&this.rooms.getBroadcastIdentity(session.tenantId,session.roomId)&&signatureFor(this.rooms.getSession(session.tenantId,session.roomId,session.lane))===signature)this.rooms.finishBroadcastRequest(session.tenantId,session.roomId,session.lane,session.current!.requestId);else{run.failed=true;run.retryAt=Date.now()+5000;}});
     void this.prune(dir);
