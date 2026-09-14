@@ -143,6 +143,7 @@ export interface PersonalUsageSummaryV1 {
   schemaVersion: 1;
   userId: string;
   period: string;
+  limitsEnforced?: boolean;
   plan: { planId: BillingPlanIdV1; name: string; monthlyPriceUsd: number; companionLocalProcessing: "fair-use" | "unmetered-local" };
   resources: PersonalUsageResourceV1[];
 }

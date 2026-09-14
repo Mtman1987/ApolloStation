@@ -39,6 +39,26 @@ test("warning thresholds fire at 70, 90, and 100 percent", () => {
   assert.equal(usage.consume({ ...base, quantity: 30, idempotencyKey: "w-100" }).warning, 100);
 });
 
+test("development usage crosses a persisted cap without resetting accounting or upgrading the plan", () => {
+  const dir = mkdtempSync(join(tmpdir(), "spmt-development-usage-")), path = join(dir, "authority.sqlite");
+  const event = { tenantId: "tenant-a", userId: "user-a", planId: "free", resource: "hosted-worker-minutes", executionTarget: "hosted", occurredAt: at };
+  let store;
+  try {
+    store = new SqliteAuthorityStore(path);
+    service(store).consume({ ...event, quantity: 30, idempotencyKey: "existing-usage" });
+    store.close(); store = new SqliteAuthorityStore(path);
+    const development = new MonetizationService(manifest(), store, () => at, { enforceLimits: false });
+    assert.equal(development.preflight({ ...event, quantity: 1 }).allowed, true);
+    const request = { ...event, quantity: 1, idempotencyKey: "development-request" };
+    assert.equal(development.consume(request).used, 31);
+    assert.equal(development.consume(request).used, 31);
+    const summary = development.summary("tenant-a", "user-a", "free", at);
+    assert.equal(summary.limitsEnforced, false); assert.equal(summary.plan.planId, "free");
+    assert.equal(summary.resources.find(item => item.resource === "hosted-worker-minutes").hosted, 31);
+    assert.equal(service(store).preflight({ ...event, quantity: 1 }).allowed, false, "Production still enforces the actual allowance");
+  } finally { store?.close(); rmSync(dir, { recursive: true, force: true }); }
+});
+
 test("paid Companion work is unmetered locally but Free remains fair-use bounded", () => {
   const usage = service();
   const paid = { tenantId: "paid", userId: "paid-user", planId: "creator", resource: "hosted-worker-minutes", executionTarget: "companion", occurredAt: at };

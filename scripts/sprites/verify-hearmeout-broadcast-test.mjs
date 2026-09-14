@@ -7,6 +7,8 @@ for(let attempt=0;attempt<30;attempt++){
  if(health.mediaWorker?.ready)break;await new Promise(resolve=>setTimeout(resolve,1000));
 }
 assert.equal(health.buildSha,buildSha);assert.equal(health.broadcast?.singleProgram,true);assert.equal(health.broadcast?.configured,true);assert.equal(health.mediaWorker?.ready,true);
+const stationResponse=await request('/sandbox/health');assert.equal(stationResponse.status,200);
+const station=await stationResponse.json();assert.equal(station.spmt?.runtimeMode,'sandbox');assert.equal(station.spmt?.usageLimitsEnforced,false,'Development media requests must not be stopped by a production plan allowance');
 for(const path of ['/watch','/activity?roomId=any-room','/apps/hearmeout'])assert.equal((await request(path)).status,200);
 const stateResponse=await request('/api/watch/broadcast/state');assert.equal(stateResponse.status,200);
 let state=await stateResponse.json();const cookie=stateResponse.headers.get('set-cookie')?.split(';')[0];assert.ok(cookie);
@@ -30,4 +32,4 @@ for(const alias of ['discord-watch-room','discord-music-room','watch-room-anywhe
  const window=await(await request('/api/watch/sessions/'+alias+'/state')).json();
  assert.equal(window.sessionId,canonical.sessionId);assert.equal(window.broadcast.playbackUrl,canonical.broadcast.playbackUrl);
 }
-console.log(JSON.stringify({buildSha,origin,singleBroadcast:true,publicViewerEntry:true,mediaWorkerReady:true,privateRoomAccessProtected:true,playbackStatus:canonical.playback.status,queuedRequests:canonical.queue.length,testUrl:origin+'/apps/hearmeout'}));
+console.log(JSON.stringify({buildSha,origin,singleBroadcast:true,publicViewerEntry:true,mediaWorkerReady:true,privateRoomAccessProtected:true,developmentUsageLimitsEnforced:station.spmt.usageLimitsEnforced,playbackStatus:canonical.playback.status,queuedRequests:canonical.queue.length,testUrl:origin+'/apps/hearmeout'}));

@@ -42,10 +42,10 @@ test('one program survives zero rooms, owner departure, restart and retries',asy
  }finally{program.close();rooms.close();}
 });
 
-test('guest HTTP requests cross real SPMT media jobs; all room and Activity windows see one source', {timeout:20000},async t=>{
+for (const runtimeMode of ['production','sandbox']) test('guest HTTP requests cross real SPMT media jobs in '+runtimeMode+'; all windows see one source', {timeout:20000},async t=>{
  const dir=await mkdtemp(join(tmpdir(),'hmo-single-http-'));t.after(()=>rm(dir,{recursive:true,force:true}));
  const credential='single-broadcast-test-credential-123456789';
- const spmt=createSpmtService({databasePath:join(dir,'spmt.sqlite'),webhookKey:Buffer.alloc(32,7),port:0,hearMeOutRuntimeEnabled:true,hearMeOutWorkerCredential:credential});
+ const spmt=createSpmtService({runtimeMode,databasePath:join(dir,'spmt.sqlite'),webhookKey:Buffer.alloc(32,7),port:0,hearMeOutRuntimeEnabled:true,hearMeOutWorkerCredential:credential});
  let host,rooms,workerTask;const stop=new AbortController();
  try{
   spmt.authority.ensureUser('owner');spmt.control.registerTenant({tenantId:'tenant',ownerUserId:'owner',displayName:'Test'});
@@ -82,9 +82,10 @@ test('guest HTTP requests cross real SPMT media jobs; all room and Activity wind
   const musicJobs=await client.listExecutionJobs('tenant',{executionOwner:'hearmeout'});assert.equal(musicJobs.length,2);assert.ok(musicJobs.some(job=>job.input.lane==='music'&&job.billedUserId==='owner'&&job.state==='succeeded'));
   spmt.billing.consume({tenantId:'tenant',userId:'owner',planId:'free',resource:'hosted-worker-minutes',quantity:28,executionTarget:'hosted',idempotencyKey:'other-fixture-work'});
   const limited=await fetch(base+'/api/watch/broadcast/requests',{method:'POST',headers:{cookie,origin:base,'content-type':'application/json','idempotency-key':'another-video'},body:JSON.stringify({query:'https://youtu.be/abcdefghijk',lane:'movie'})});
-  assert.equal(limited.status,409);assert.equal((await limited.json()).error,'SPMT API request failed with status 409: Free hosted-worker-minutes allowance reached');
+  if(runtimeMode==='production'){assert.equal(limited.status,409);assert.equal((await limited.json()).error,'SPMT API request failed with status 409: Free hosted-worker-minutes allowance reached');}
+  else{assert.equal(limited.status,201,await limited.text());const usage=spmt.billing.summary('tenant','owner','free');assert.equal(usage.limitsEnforced,false);assert.equal(usage.plan.planId,'free');assert.equal(usage.resources.find(item=>item.resource==='hosted-worker-minutes').hosted,31);assert.equal((await(await fetch(spmtOrigin+'/health/ready')).json()).usageLimitsEnforced,false);}
   assert.deepEqual((await(await fetch(base+'/api/watch/broadcast/state')).json()).current,musicState.current,'A refused request leaves the current program playing');
   assert.equal((await add()).status,201,'An already accepted request remains replayable at the allowance limit');
-  assert.equal((await client.listExecutionJobs('tenant',{executionOwner:'hearmeout'})).length,2,'A refused request creates no job or duplicate charge');
+  assert.equal((await client.listExecutionJobs('tenant',{executionOwner:'hearmeout'})).length,runtimeMode==='sandbox'?3:2,'Only accepted requests create a job; replay never duplicates usage');
  }finally{stop.abort();await workerTask;rooms?.close();await host?.close();await spmt.close();}
 });
