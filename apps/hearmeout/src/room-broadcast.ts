@@ -2,6 +2,7 @@ import {createHash,randomUUID} from 'node:crypto';
 import {execFile,spawn,type ChildProcess} from 'node:child_process';
 import {promisify} from 'node:util';
 import {access,mkdir,readFile,readdir,rm,stat} from 'node:fs/promises';
+import {existsSync,readFileSync} from 'node:fs';
 import {isAbsolute,join} from 'node:path';
 import type {ServerResponse} from 'node:http';
 import {HearMeOutBroadcastEgress} from './broadcast-egress.js';
@@ -36,6 +37,17 @@ export class HearMeOutRoomBroadcast {
   }
   async listen(){await Promise.all([access(this.options.ffmpegBinary),access(this.options.ffprobeBinary),access(this.options.lockBinary??'/usr/bin/flock'),mkdir(this.options.cachePath,{recursive:true})]);this.proxy=await this.egress.listen();this.tick();this.timer=setInterval(()=>this.tick(),500);this.timer.unref();}
   status(){return {configured:true,startedProcesses:this.startedProcesses,active:[...this.runs.values()].filter(run=>run.process).length,starting:[...this.runs.values()].filter(run=>run.pending).length,failed:[...this.runs.values()].filter(run=>run.failed).length};}
+  ready(tenantId:string,roomId:string,lane:'music'|'movie'){
+    const session=this.rooms.getSession(tenantId,roomId,lane);if(!session.current)return false;
+    const dir=join(this.options.cachePath,this.cacheKey(session)),master=join(dir,'index.m3u8');
+    try{
+      if(!existsSync(master))return false;
+      const masterBody=readFileSync(master,'utf8'),variant=masterBody.split(/\r?\n/).map(line=>line.trim()).find(line=>line&&!line.startsWith('#'));
+      if(!variant||!/^[A-Za-z0-9_-]+\.m3u8$/.test(variant))return false;
+      const variantBody=readFileSync(join(dir,variant),'utf8'),segment=variantBody.split(/\r?\n/).map(line=>line.trim()).find(line=>line&&!line.startsWith('#'));
+      return Boolean(segment&&/^[A-Za-z0-9_-]+\.ts$/.test(segment)&&existsSync(join(dir,segment)));
+    }catch{return false;}
+  }
   browserCache(videoId:string,track?:'audio'|'video',body?:Buffer){if(!this.prepared)throw Error('Browser media caching is not configured');return this.prepared.browserCache(videoId,track,body);}
   private tick(){
     if(this.closed)return;

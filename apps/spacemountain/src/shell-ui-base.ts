@@ -521,6 +521,9 @@ export class SpaceMountainShellUi {
     this.workspaceService = service; this.simulationRoomsOpen = false; this.workspaceOpen = true; this.workspaceExpanded = true; this.workspaceClickThrough = false; this.syncWorkspaceTray();
   }
 
+  /** Opens a shared tool in the in-shell workspace tray without launching a second browser window. */
+  openWorkspaceTool(service: "commlink" | "overlay-bay" | "settings") { this.openWorkspaceService(service); }
+
   private copyTenantOutput(output: "public" | "personal") {
     const url = this.snapshot.tenantOutputs?.[output].url;
     if (!url) return;
