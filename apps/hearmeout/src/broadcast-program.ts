@@ -64,17 +64,22 @@ export class HearMeOutBroadcastProgram {
     });
   }
   control(principal:HearMeOutPrincipalV1,input:{action:string;position?:number;expectedRequestId?:string}){
-    if(principal.tenantId!==this.binding.tenantId||!(principal.userId===this.binding.executionUserId||principal.roles.includes('admin')))throw Object.assign(Error('Only the broadcast host can change playback'),{status:403});
-    if(['mute','unmute','volume'].includes(input.action))throw Error('Volume affects only your window');
-    return this.transaction(()=>{const session=this.read(),now=new Date().toISOString();
+    if(principal.tenantId!==this.binding.tenantId)throw Error('Broadcast belongs to another deployment');
+    // Testing policy: every viewer may skip or clear upcoming requests.
+    // No viewer, including the original requester, owns the broadcast clock.
+    if(!['next','skip','clear'].includes(input.action))throw Error('Broadcasts support only skip and clear queue; playback cannot be paused or stopped');
+    return this.transaction(()=>{const session=this.read();
       if(input.expectedRequestId&&session.current?.requestId!==input.expectedRequestId)return session;
-      if(input.action==='next'){this.next(session);this.write(session);return session;}
-      if(input.action==='clear'){session.current=null;session.queue=[];session.playback={...session.playback,status:'idle',position:0,updatedAt:now};}
-      else if(input.action==='play'||input.action==='pause'){if(session.current){const position=session.playback.position+(session.playback.status==='playing'?Math.max(0,(Date.parse(now)-Date.parse(session.playback.updatedAt))/1000):0);session.playback={...session.playback,status:input.action==='play'?'playing':'paused',position,updatedAt:now};}}
-      else if(input.action==='seek'){if(!Number.isFinite(input.position)||input.position!<0)throw Error('Choose a valid playback position');session.playback={...session.playback,position:input.position!,updatedAt:now};}
-      else throw Error('Unsupported broadcast control');
-      session.revision++;this.write(session);return session;
+      if(input.action==='next'||input.action==='skip'){
+        if(!session.current)return session;
+        this.next(session);
+      }else{
+        if(!session.queue.length)return session;
+        session.queue=[];session.revision++;
+      }
+      this.write(session);return session;
     });
   }
+
 }
 function validateItem(item:HearMeOutMediaItemV1){const url=new URL(item.playbackUrl);if(!['https:','http:'].includes(url.protocol)||url.username||url.password||!item.itemId||!item.title)throw Error('The provider did not return playable media');if(item.durationSeconds!==undefined&&(!Number.isFinite(item.durationSeconds)||item.durationSeconds<0))throw Error('Invalid media duration');}

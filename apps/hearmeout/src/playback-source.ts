@@ -29,7 +29,7 @@ export class HearMeOutPlaybackSource {
       });
       hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, () => this.tracks(hls.audioTracks.map((track, index) => ({ index, name: track.name || track.lang || `Audio ${index + 1}` })), hls.audioTrack));
       hls.on(Hls.Events.AUDIO_TRACK_SWITCHED, (_event, data) => { if (this.audio) this.audio.value = String(data.id); });
-      hls.on(Hls.Events.ERROR, (_event, data) => { if (data.fatal) { this.failed = true; this.report(Error('This stream could not load. Retry the source; your room queue is preserved.')); } });
+      hls.on(Hls.Events.ERROR, (_event, data) => { if (data.fatal) { this.failed = true; this.report(Error('This window lost the stream. Reconnecting does not change the broadcast or its queue.')); } });
       hls.loadSource(source); hls.attachMedia(this.media);
     } else {
       if (playlist && !this.media.canPlayType('application/vnd.apple.mpegurl')) { this.failed = true; this.report(Error('This browser cannot play HLS streams. Open this room in a browser with media streaming support.')); return; }
