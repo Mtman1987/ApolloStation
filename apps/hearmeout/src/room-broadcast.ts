@@ -12,7 +12,7 @@ import type {HearMeOutMediaSessionV1,SqliteHearMeOutRoomMediaRuntime} from './ro
 export const HEARMEOUT_BROADCAST_PROTOCOLS='http,https,httpproxy,tcp,tls,crypto';
 
 type Run={session:HearMeOutMediaSessionV1;cacheKey:string;signature:string;owner:string;process?:ChildProcess;pending?:Promise<void>;retryAt:number;failed:boolean;started:number};
-export interface HearMeOutRoomBroadcastOptions {ffmpegBinary:string;ffprobeBinary:string;cachePath:string;spmtOrigin:string;lockBinary?:string;preparedMedia?:HearMeOutPreparedMediaOptions;}
+export interface HearMeOutRoomBroadcastOptions {ffmpegBinary:string;ffprobeBinary:string;cachePath:string;spmtOrigin:string;lockBinary?:string;preparedMedia?:HearMeOutPreparedMediaOptions;onDiagnostic?:(value:{phase:string;message:string})=>void;}
 
 /** HMO's one playout worker per room/lane. Browsers read the output of this
  * process; viewer connect/disconnect never starts, pauses or seeks the source. */
@@ -49,7 +49,7 @@ export class HearMeOutRoomBroadcast {
       // Signature is stored independently of ffmpeg argv; it contains no URL.
       if(run.process&&(run.process as ChildProcess & {hmoSignature?:string}).hmoSignature===signature)continue;
       const current=run;
-      current.pending=this.start(current,signature).catch(()=>{current.failed=true;current.retryAt=Date.now()+5000;}).finally(()=>{delete current.pending;});
+      current.pending=this.start(current,signature).catch(error=>{this.options.onDiagnostic?.({phase:'prepare',message:String(error?.stderr||error?.message||error)});current.failed=true;current.retryAt=Date.now()+5000;}).finally(()=>{delete current.pending;});
     }
   }
   private async start(run:Run,signature:string){
@@ -71,7 +71,8 @@ export class HearMeOutRoomBroadcast {
     // Directory creation yields: a delete/close may have removed this run meanwhile.
     if(this.closed||this.runs.get(run.cacheKey)!==run||!this.rooms.getRoom(session.tenantId,session.roomId)||this.cacheKey(session)!==run.cacheKey||signatureFor(this.rooms.getSession(session.tenantId,session.roomId,session.lane))!==signature)return;
     // An OS lock survives a stalled Node supervisor and fences the encoder itself.
-    const child=spawn(this.options.lockBinary??'/usr/bin/flock',['-n','-F',join(dir,'encoder.lock'),this.options.ffmpegBinary,...args],{env,stdio:['ignore','ignore','ignore']});
+    const child=spawn(this.options.lockBinary??'/usr/bin/flock',['-n','-F',join(dir,'encoder.lock'),this.options.ffmpegBinary,...args],{env,stdio:['ignore','ignore',this.options.onDiagnostic?'pipe':'ignore']});
+    child.stderr?.on('data',bytes=>this.options.onDiagnostic?.({phase:'encoder',message:String(bytes)}));
     (child as ChildProcess & {hmoSignature?:string}).hmoSignature=signature;run.process=child;run.started++;this.startedProcesses++;run.failed=false;
     child.on('error',()=>{if(run.process===child){delete run.process;run.failed=true;run.retryAt=Date.now()+5000;}});
     child.on('exit',code=>{if(run.process!==child)return;delete run.process;if(this.closed)return;if(code===0&&this.rooms.getRoom(session.tenantId,session.roomId)&&signatureFor(this.rooms.getSession(session.tenantId,session.roomId,session.lane))===signature)this.rooms.finishBroadcastRequest(session.tenantId,session.roomId,session.lane,session.current!.requestId);else{run.failed=true;run.retryAt=Date.now()+5000;}});

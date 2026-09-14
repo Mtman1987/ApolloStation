@@ -21,10 +21,10 @@ try {
   const httpResponse=String(request.stdout);
   console.log('Fixed source HTTP response:',/HTTP\/[^ ]+ [45]\d\d/.test(httpResponse)?httpResponse.slice(0,4096):httpResponse.split('\r\n\r\n').filter(part=>part.startsWith('HTTP/')).join('\n').slice(0,4096));
   if(request.stderr)console.log('Fixed source HTTP error:',request.stderr);
-  const result=await promisify(execFile)('/home/sprite/runtime/ffmpeg-b6.1.1/ffprobe',['-v','error','-protocol_whitelist',HEARMEOUT_BROADCAST_PROTOCOLS,'-rw_timeout','10000000','-show_streams','-of','json',source],{env:{PATH:process.env.PATH,http_proxy:origin,https_proxy:origin,no_proxy:''},timeout:20000,maxBuffer:1024*1024});
+  const result=await promisify(execFile)('/home/sprite/runtime/ffmpeg-btbn-8.1.2-g1a748fe2cd/ffprobe',['-v','error','-protocol_whitelist',HEARMEOUT_BROADCAST_PROTOCOLS,'-rw_timeout','10000000','-show_streams','-of','json',source],{env:{PATH:process.env.PATH,http_proxy:origin,https_proxy:origin,no_proxy:''},timeout:20000,maxBuffer:1024*1024});
   console.log('Media source streams:',JSON.stringify(JSON.parse(result.stdout).streams?.map(stream=>({type:stream.codec_type,codec:stream.codec_name}))));
   output=await mkdtemp(join(tmpdir(),'hmo-source-preflight-'));
-  await promisify(execFile)('/home/sprite/runtime/ffmpeg-b6.1.1/ffmpeg',['-hide_banner','-loglevel','error','-nostdin','-threads','2','-protocol_whitelist',HEARMEOUT_BROADCAST_PROTOCOLS,'-rw_timeout','10000000','-i',source,'-t','6','-c:v','libx264','-preset','veryfast','-pix_fmt','yuv420p','-c:a','aac','-f','hls','-hls_time','2',join(output,'index.m3u8')],{env:{PATH:process.env.PATH,http_proxy:origin,https_proxy:origin,no_proxy:''},timeout:30000,maxBuffer:1024*1024});
+  await promisify(execFile)('/home/sprite/runtime/ffmpeg-btbn-8.1.2-g1a748fe2cd/ffmpeg',['-hide_banner','-loglevel','error','-nostdin','-threads','2','-protocol_whitelist',HEARMEOUT_BROADCAST_PROTOCOLS,'-rw_timeout','10000000','-i',source,'-t','6','-c:v','libx264','-preset','veryfast','-pix_fmt','yuv420p','-c:a','aac','-f','hls','-hls_time','2',join(output,'index.m3u8')],{env:{PATH:process.env.PATH,http_proxy:origin,https_proxy:origin,no_proxy:''},timeout:30000,maxBuffer:1024*1024});
   if(!(await readFile(join(output,'index.m3u8'),'utf8')).includes('#EXTM3U'))throw Error('Pinned FFmpeg produced no HLS manifest');
   console.log('PASS: pinned FFprobe and FFmpeg read the external HTTPS source through the controlled proxy');
 } catch(error) {

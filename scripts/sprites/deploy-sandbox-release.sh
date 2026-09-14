@@ -35,7 +35,7 @@ service_name="apollo-sandbox"
 bootstrap_service_name="webtmux"
 llama_root="/home/sprite/runtime/llama-b6335"
 llama_ref="b6335"
-media_root="/home/sprite/runtime/ffmpeg-b6.1.1"
+media_root="/home/sprite/runtime/ffmpeg-btbn-8.1.2-g1a748fe2cd"
 llama_archive_sha256="6ffee01c8fe2481faf8b614bbd8ca9bdaa563f47d4d9e00dc44f423962812d25"
 previous_release=""
 previous_hearmeout_config=""
@@ -65,29 +65,21 @@ create_apollo_service() {
 # The media renderer and its tests need the same verified FFmpeg on the Sprite.
 provision_media_runtime() {
   mkdir -p "$media_root"
-  if [[ ! -x "$media_root/ffmpeg" ]]; then
-    local archive="$media_root/ffmpeg.gz"
-    curl -fsSL --retry 2 "https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/ffmpeg-linux-x64.gz" -o "$archive"
-    echo "bfe8a8fc511530457b528c48d77b5737527b504a3797a9bc4866aeca69c2dffa  $archive" | sha256sum --check --strict
-    gzip -dc "$archive" > "$media_root/ffmpeg.next"
-    chmod +x "$media_root/ffmpeg.next"
-    mv "$media_root/ffmpeg.next" "$media_root/ffmpeg"
+  # The previous static build crashes on MPEG-TS HLS, including local files.
+  # Pin a retained monthly BtbN release, archive digest and both binary digests.
+  if [[ ! -x "$media_root/ffmpeg" || ! -x "$media_root/ffprobe" || ! -f "$media_root/LICENSE" ]]; then
+    local archive="$media_root/runtime.tar.xz"
+    local package="ffmpeg-n8.1.2-50-g1a748fe2cd-linux64-gpl-8.1"
+    curl -fsSL --retry 2 "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-08-31-13-27/$package.tar.xz" -o "$archive"
+    echo "c733b4b2951e5957e15505f788b2c65a7a41b6da4b289e295852cc38079b4d2b  $archive" | sha256sum --check --strict
+    tar -xJf "$archive" -C "$media_root" --strip-components=2 "$package/bin/ffmpeg" "$package/bin/ffprobe"
+    tar -xJf "$archive" -C "$media_root" --strip-components=1 "$package/LICENSE.txt"
+    mv "$media_root/LICENSE.txt" "$media_root/LICENSE"
+    chmod +x "$media_root/ffmpeg" "$media_root/ffprobe"
     rm -f "$archive"
   fi
-  echo "e7e7fb30477f717e6f55f9180a70386c62677ef8a4d4d1a5d948f4098aa3eb99  $media_root/ffmpeg" | sha256sum --check --strict
-  if [[ ! -x "$media_root/ffprobe" ]]; then
-    local probe_archive="$media_root/ffprobe.gz"
-    curl -fsSL --retry 2 "https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/ffprobe-linux-x64.gz" -o "$probe_archive"
-    echo "25d9b6ccb05e3d9de9e04e31e2506d8dd7f9f0418981965ac6df12e8d3afd067  $probe_archive" | sha256sum --check --strict
-    gzip -dc "$probe_archive" > "$media_root/ffprobe.next"
-    chmod +x "$media_root/ffprobe.next"
-    mv "$media_root/ffprobe.next" "$media_root/ffprobe"
-    rm -f "$probe_archive"
-  fi
-  echo "4f231a1960d83e403d08f7971e271707bec278a9ae18e21b8b5b03186668450d  $media_root/ffprobe" | sha256sum --check --strict
-  if [[ ! -f "$media_root/LICENSE" ]]; then
-    curl -fsSL "https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/linux-x64.LICENSE" -o "$media_root/LICENSE"
-  fi
+  echo "ad7a8c8e8fe4f50972f32f63705cfcc57f44cd3531f57aa8defe388372242f5e  $media_root/ffmpeg" | sha256sum --check --strict
+  echo "150bfd75016992a8d495a5f5c16cd93387a21c059f4309ed1e6342659aef48b3  $media_root/ffprobe" | sha256sum --check --strict
   echo "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903  $media_root/LICENSE" | sha256sum --check --strict
   cat > "$media_root/run-node" <<'RUNNER'
 #!/usr/bin/env bash

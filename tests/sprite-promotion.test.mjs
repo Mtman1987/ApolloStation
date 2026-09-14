@@ -43,7 +43,7 @@ test("Sprite deployment verifies, tests, switches atomically, rolls back, and la
   assert.match(script, /actual_sha=.*git -C "\$release_dir" rev-parse HEAD/);
   assert.match(script, /npm ci --ignore-scripts/);
   assert.match(script, /provision_media_runtime\n.*npm ci/);
-  assert.match(script, /bfe8a8fc511530457b528c48d77b5737527b504a3797a9bc4866aeca69c2dffa/);
+  assert.match(script, /c733b4b2951e5957e15505f788b2c65a7a41b6da4b289e295852cc38079b4d2b/);
   assert.match(script, /--cmd "\$media_root\/run-node"/);
   assert.match(script, /npm run typecheck/);
   assert.match(script, /timeout --signal=TERM --kill-after=15s 10m npm test/);
