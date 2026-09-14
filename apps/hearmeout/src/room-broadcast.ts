@@ -9,12 +9,14 @@ import {HearMeOutPreparedMedia,type HearMeOutPreparedMediaOptions} from './prepa
 import {buildHearMeOutXtreamVariantMap,type HearMeOutWatchMediaProbeV1} from './watch-hls-policy.js';
 import type {HearMeOutMediaSessionV1,SqliteHearMeOutRoomMediaRuntime} from './room-media-core.js';
 
+export type HearMeOutBroadcastRuntime = Pick<SqliteHearMeOutRoomMediaRuntime,'broadcastSessions'|'claimBroadcast'|'releaseBroadcast'|'getSession'|'finishBroadcastRequest'|'getBroadcastIdentity'>;
+
 export const HEARMEOUT_BROADCAST_PROTOCOLS='http,https,httpproxy,tcp,tls,crypto';
 
 type Run={session:HearMeOutMediaSessionV1;cacheKey:string;signature:string;owner:string;process?:ChildProcess;pending?:Promise<void>;retryAt:number;failed:boolean;started:number};
 export interface HearMeOutRoomBroadcastOptions {ffmpegBinary:string;ffprobeBinary:string;cachePath:string;spmtOrigin:string;lockBinary?:string;preparedMedia?:HearMeOutPreparedMediaOptions;onDiagnostic?:(value:{phase:string;message:string})=>void;}
 
-/** HMO's one playout worker per room/lane. Browsers read the output of this
+/** HMO's playout worker for each supplied program. Browsers read the output of this
  * process; viewer connect/disconnect never starts, pauses or seeks the source. */
 export class HearMeOutRoomBroadcast {
   private readonly owner=randomUUID();
@@ -27,7 +29,7 @@ export class HearMeOutRoomBroadcast {
   private proxy='';
   private timer:ReturnType<typeof setInterval>|undefined;
   private closed=false;
-  constructor(private readonly rooms:SqliteHearMeOutRoomMediaRuntime,private readonly options:HearMeOutRoomBroadcastOptions){
+  constructor(private readonly rooms:HearMeOutBroadcastRuntime,private readonly options:HearMeOutRoomBroadcastOptions){
     if(![options.ffmpegBinary,options.ffprobeBinary,options.cachePath,options.lockBinary??'/usr/bin/flock'].every(isAbsolute))throw Error('Broadcast binaries and cache must use absolute paths');
     this.prepared=options.preparedMedia?new HearMeOutPreparedMedia(options.preparedMedia):undefined;
     this.egress=new HearMeOutBroadcastEgress({origin:new URL(options.spmtOrigin).origin,pathPrefix:'/v1/media/public/'},undefined,this.prepared);
@@ -61,7 +63,7 @@ export class HearMeOutRoomBroadcast {
     const probe=JSON.parse(stdout) as {streams?:Array<{index:number;codec_type:string;tags?:{language?:string;title?:string}}>},streams=probe.streams??[];
     const media:HearMeOutWatchMediaProbeV1={hasVideo:session.lane==='movie'&&streams.some(stream=>stream.codec_type==='video'),audio:streams.filter(stream=>stream.codec_type==='audio').map((stream,index)=>({sourceIndex:stream.index,index,...(stream.tags?.language?{language:stream.tags.language}:{}),...(stream.tags?.title?{title:stream.tags.title}:{})}))};
     if(!media.hasVideo&&!media.audio.length)throw Error('Source has no playable media');
-    const latest=this.rooms.getRoom(session.tenantId,session.roomId)?this.rooms.getSession(session.tenantId,session.roomId,session.lane):undefined;
+    const latest=this.rooms.getBroadcastIdentity(session.tenantId,session.roomId)?this.rooms.getSession(session.tenantId,session.roomId,session.lane):undefined;
     if(this.closed||!latest||this.cacheKey(latest)!==run.cacheKey||signatureFor(latest)!==signature||latest.playback.status!=='playing'||!this.rooms.claimBroadcast(session.tenantId,session.roomId,session.lane,run.owner))return;
     const dir=join(this.options.cachePath,run.cacheKey);await mkdir(dir,{recursive:true});
     // Each restart appends a discontinuity to the same live feed. Bounded HLS
@@ -69,17 +71,17 @@ export class HearMeOutRoomBroadcast {
     const epoch=Date.now().toString(36)+'-'+randomUUID().slice(0,8),position=Math.max(0,latest.playback.position+(Date.now()-Date.parse(latest.playback.updatedAt))/1000),variants=buildHearMeOutXtreamVariantMap(media);
     const args=['-hide_banner','-loglevel','error','-nostdin','-y','-threads','2','-protocol_whitelist',HEARMEOUT_BROADCAST_PROTOCOLS,'-rw_timeout','15000000','-re',...(item.type==='live'||position<.1?[]:['-ss',String(position)]),'-i',source.href,...(media.hasVideo?['-map','0:v:0']:[]),...media.audio.flatMap(track=>['-map','0:'+track.sourceIndex]),'-c:v','libx264','-preset','veryfast','-pix_fmt','yuv420p','-force_key_frames','expr:gte(t,n_forced*2)','-c:a','aac','-ac','2','-b:a','128k','-f','hls','-hls_time','2','-hls_list_size','8','-hls_delete_threshold','3','-hls_flags','delete_segments+append_list+discont_start+omit_endlist','-var_stream_map',variants,'-master_pl_name','index.m3u8','-hls_segment_filename',join(dir,epoch+'_%v_%06d.ts'),join(dir,'stream_%v.m3u8')];
     // Directory creation yields: a delete/close may have removed this run meanwhile.
-    if(this.closed||this.runs.get(run.cacheKey)!==run||!this.rooms.getRoom(session.tenantId,session.roomId)||this.cacheKey(session)!==run.cacheKey||signatureFor(this.rooms.getSession(session.tenantId,session.roomId,session.lane))!==signature)return;
+    if(this.closed||this.runs.get(run.cacheKey)!==run||!this.rooms.getBroadcastIdentity(session.tenantId,session.roomId)||this.cacheKey(session)!==run.cacheKey||signatureFor(this.rooms.getSession(session.tenantId,session.roomId,session.lane))!==signature)return;
     // An OS lock survives a stalled Node supervisor and fences the encoder itself.
     const child=spawn(this.options.lockBinary??'/usr/bin/flock',['-n','-F',join(dir,'encoder.lock'),this.options.ffmpegBinary,...args],{env,stdio:['ignore','ignore',this.options.onDiagnostic?'pipe':'ignore']});
     child.stderr?.on('data',bytes=>this.options.onDiagnostic?.({phase:'encoder',message:String(bytes)}));
     (child as ChildProcess & {hmoSignature?:string}).hmoSignature=signature;run.process=child;run.started++;this.startedProcesses++;run.failed=false;
     child.on('error',()=>{if(run.process===child){delete run.process;run.failed=true;run.retryAt=Date.now()+5000;}});
-    child.on('exit',code=>{if(run.process!==child)return;delete run.process;if(this.closed)return;if(code===0&&this.rooms.getRoom(session.tenantId,session.roomId)&&signatureFor(this.rooms.getSession(session.tenantId,session.roomId,session.lane))===signature)this.rooms.finishBroadcastRequest(session.tenantId,session.roomId,session.lane,session.current!.requestId);else{run.failed=true;run.retryAt=Date.now()+5000;}});
+    child.on('exit',code=>{if(run.process!==child)return;delete run.process;if(this.closed)return;if(code===0&&this.rooms.getBroadcastIdentity(session.tenantId,session.roomId)&&signatureFor(this.rooms.getSession(session.tenantId,session.roomId,session.lane))===signature)this.rooms.finishBroadcastRequest(session.tenantId,session.roomId,session.lane,session.current!.requestId);else{run.failed=true;run.retryAt=Date.now()+5000;}});
     void this.prune(dir);
   }
   private stop(run:Run){const child=run.process;if(!child)return Promise.resolve();delete run.process;const done=new Promise<void>(resolve=>{const timer=setTimeout(()=>child.kill('SIGKILL'),2000);child.once('exit',()=>{clearTimeout(timer);resolve();});if(child.exitCode!==null||child.signalCode!==null){clearTimeout(timer);resolve();}else child.kill('SIGTERM');});this.stopping.add(done);void done.finally(()=>this.stopping.delete(done));return done;}
-  private async prune(dir:string){try{for(const file of await readdir(dir)){if(!/\.ts$/.test(file))continue;const path=join(dir,file);if(Date.now()-(await stat(path)).mtimeMs>60000)await rm(path,{force:true});}}catch{/* A room can expire while the cache is being pruned. */}}
+  private async prune(dir:string){try{for(const file of await readdir(dir)){if(!/\.ts$/.test(file))continue;const path=join(dir,file);if(Date.now()-(await stat(path)).mtimeMs>60000)await rm(path,{force:true});}}catch{/* A program can stop while the cache is being pruned. */}}
   async serve(tenantId:string,roomId:string,lane:'music'|'movie',file:string,response:ServerResponse){
     if(!/^(?:index\.m3u8|stream_[A-Za-z0-9_-]+\.m3u8|[A-Za-z0-9_-]+\.ts)$/.test(file))return this.unavailable(response,404);
     const session=this.rooms.getSession(tenantId,roomId,lane);if(!session.current)return this.unavailable(response,404);
@@ -87,7 +89,7 @@ export class HearMeOutRoomBroadcast {
     try{const bytes=await readFile(path);response.writeHead(200,{'content-type':file.endsWith('.m3u8')?'application/vnd.apple.mpegurl':'video/mp2t','cache-control':'no-store','x-content-type-options':'nosniff'});response.end(bytes);}catch{this.unavailable(response,503);}
   }
   private unavailable(response:ServerResponse,status:number){response.writeHead(status,{'content-type':'application/json','cache-control':'no-store','retry-after':'2'});response.end(JSON.stringify({error:'Room broadcast is starting or unavailable. The room timeline is preserved.'}));}
-  private cacheKey(session:HearMeOutMediaSessionV1){const room=this.rooms.getRoom(session.tenantId,session.roomId);return key(session,room?.instanceId??room?.createdAt??'deleted');}
+  private cacheKey(session:HearMeOutMediaSessionV1){const room=this.rooms.getBroadcastIdentity(session.tenantId,session.roomId);return key(session,room?.instanceId??room?.createdAt??'deleted');}
   async close(){this.closed=true;if(this.timer)clearInterval(this.timer);this.abort.abort();await Promise.allSettled([...this.runs.values()].map(run=>run.pending));await Promise.allSettled([...this.runs.values()].map(run=>this.stop(run)));await Promise.allSettled([...this.stopping]);for(const run of this.runs.values())this.rooms.releaseBroadcast(run.session.tenantId,run.session.roomId,run.session.lane,run.owner);this.runs.clear();await this.egress.close();}
 }
 function key(session:Pick<HearMeOutMediaSessionV1,'tenantId'|'roomId'|'lane'>,instance:string){return createHash('sha256').update(JSON.stringify([session.tenantId,session.roomId,session.lane,instance])).digest('hex');}

@@ -1,3 +1,4 @@
+import {DatabaseSync} from 'node:sqlite';
 import { access, readFile, rename, writeFile } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { resolve } from 'node:path';
@@ -12,7 +13,11 @@ export async function enableHearMeOutBroadcastTest(dataRoot, mediaRoot) {
   const config = JSON.parse(await readFile(path, 'utf8'));
   const ffmpegBinary = resolve(mediaRoot, 'ffmpeg'), ffprobeBinary = resolve(mediaRoot, 'ffprobe'), ytDlpBinary = resolve(mediaRoot, 'yt-dlp');
   for (const binary of [ffmpegBinary, ffprobeBinary, ytDlpBinary]) await access(binary, constants.X_OK);
-  config.broadcast = {ffmpegBinary, ffprobeBinary};
+  const identity=new DatabaseSync(resolve(dataRoot,'spmt-empty-catalog-sandbox.sqlite'),{readOnly:true});
+  let executionUserId;
+  try{executionUserId=identity.prepare("SELECT owner_user_id FROM tenants WHERE id=? AND status='active'").get(config.tenantId)?.owner_user_id;}finally{identity.close();}
+  if(typeof executionUserId!=='string'||!executionUserId)throw Error('The existing broadcast execution account is missing');
+  config.broadcast = {ffmpegBinary, ffprobeBinary, singleProgram:true, executionUserId};
   config.mediaWorker = {ytDlpBinary};
   // Public application ID from hearmeout-main/fly.toml. The developer URL
   // override points this existing Activity at Apollo only for the tester.

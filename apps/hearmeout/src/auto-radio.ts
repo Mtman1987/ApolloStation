@@ -19,7 +19,7 @@ export class HearMeOutAutoRadio {
       try{
         const recent=[...state.history.map(item=>item.title),...(session.current?[session.current.item.title]:[])];
         const query=this.options.recommend?await this.options.recommend({tenantId,userId:state.principal.userId,seed:state.seed,recent}):state.seed;
-        const item=await this.media.resolve({tenantId,query,lane:'music',operationId:'radio:'+owner,excludeItemIds:[...state.history.map(item=>item.itemId),...(session.current?[session.current.item.itemId]:[])]});
+        const item=await this.media.resolve({tenantId,billedUserId:state.principal.userId,requesterId:state.principal.userId,query,lane:'music',operationId:'radio:'+owner,excludeItemIds:[...state.history.map(item=>item.itemId),...(session.current?[session.current.item.itemId]:[])]});
         this.rooms.completeRadio(tenantId,roomId,owner,state.revision,session.revision,item,undefined,this.now());
       }catch(error){this.rooms.completeRadio(tenantId,roomId,owner,state.revision,session.revision,undefined,safe(error),this.now());}
     }

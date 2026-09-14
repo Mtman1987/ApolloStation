@@ -1,3 +1,4 @@
+import {HEARMEOUT_SINGLE_PROGRAM_ID,type HearMeOutBroadcastProgram} from "./broadcast-program.js";
 import { createPublicKey, verify } from "node:crypto";
 import type { HearMeOutPrincipalV1, SqliteHearMeOutRoomMediaRuntime } from "./room-media-core.js";
 import {
@@ -34,6 +35,7 @@ export interface HearMeOutDiscordInteractionPrincipalResolverV1 {
 }
 export interface HearMeOutDiscordInteractionRouterOptionsV1 {
   publicKeyHex: string;
+  singleProgram?: HearMeOutBroadcastProgram;
   rooms: SqliteHearMeOutRoomMediaRuntime;
   tenants: HearMeOutDiscordInteractionTenantResolverV1;
   principals: HearMeOutDiscordInteractionPrincipalResolverV1;
@@ -75,6 +77,27 @@ export class HearMeOutDiscordInteractionRouter {
       if (customId.startsWith("request_song:") || customId === "request_song_modal_trigger") return { status: 200, body: { type: 9, data: buildRequestModal(customId.startsWith("request_song:") ? customId.slice(13) : HEARMEOUT_ACTIVITY_ROOM_ID) } };
     }
     const displayName = cleanDisplayName(discordUser.global_name ?? discordUser.username ?? "Discord User");
+    const program=this.options.singleProgram;
+    if(program){
+      const interactionId=requiredInteractionId(body.id),name=String(body.data?.name??'').toLowerCase();
+      if(this.options.readOnly)return ephemeral('Broadcast requests are unavailable in this preview.',200);
+      const query=body.type===5&&customId.startsWith('request_song_modal')?readModalValue(body.data,'song_request_input'):['wr','watchrequest','sr','songrequest'].includes(name)?String((body.data?.options??[]).find((option:any)=>['query','song','movie','request'].includes(option.name))?.value??''):undefined;
+      if(query!==undefined){
+        // Discord already authenticated this viewer in the signed interaction.
+        // Requesting media needs no Apollo account, room, or membership.
+        const principal:HearMeOutPrincipalV1={tenantId,userId:'discord:'+discordUserId,displayName,roles:['member']};
+        try{if(!this.options.requestMedia)throw Error('Media requests are unavailable');await this.options.requestMedia({principal,interactionId,roomId:HEARMEOUT_SINGLE_PROGRAM_ID,query,lane:'movie',guildId:guildId??'',channelId:channelId??''});return ephemeral('Your video is in the shared broadcast.',200);}catch(error){return ephemeral((error as Error).message,200);}
+      }
+      if(['np','nowplaying'].includes(name))return ephemeral(program.getSession().current?.item.title??'Nothing is playing.',200);
+      if(customId.startsWith('hmo_watch_control:')||customId==='music_play_pause_btn'||customId==='music_skip_btn'){
+        const canonical=await this.options.principals.resolve({tenantId,discordUserId,displayName});
+        if(!canonical)return ephemeral('Only the broadcast host can change playback. You can still request a video.',200);
+        const requested=customId==='music_skip_btn'?'next':customId==='music_play_pause_btn'?'play-pause':customId.split(':')[1]??'';
+        if(['mute','unmute','mute-unmute','volume'].includes(requested))return localVolumeHelp();
+        try{const session=program.control({tenantId,userId:canonical.userId,displayName:canonical.displayName??displayName,roles:canonical.tenantRole==='owner'?['admin']:['member']},{action:resolveToggleAction(requested,program.getSession().playback.status)});return{status:200,body:{type:7,data:buildWatchUpdate(session,HEARMEOUT_SINGLE_PROGRAM_ID)}};}catch(error){return ephemeral((error as Error).message,200);}
+      }
+      return ephemeral('Open the Activity to watch the shared broadcast or request a video.',200);
+    }
     const canonical = await this.options.principals.resolve({ tenantId, discordUserId, displayName });
     if (!canonical?.userId) return ephemeral("Link your Discord account to SPMT before using HearMeOut controls.", 403);
     const canManage = canonical.tenantRole === "owner" || discordMemberCanManageHearMeOutWatch(body.member?.permissions);
