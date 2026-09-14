@@ -19,7 +19,7 @@ export class HearMeOutRtc {
   private epoch = 0;
   private generation = 0;
   private links = new Map<number, Link>();
-  private media = new Map<string, { id: number; audio: HTMLAudioElement }>();
+  private media = new Map<string, { id: string; audio: HTMLAudioElement }>();
   private screens = new Map<number, HTMLVideoElement>();
   private screen: MediaStream | null = null;
   private livekit: Room | null = null;
@@ -177,9 +177,14 @@ export class HearMeOutRtc {
     if (!snapshot.livekit) throw new Error('LiveKit is unavailable');
     const room = new Room(); this.livekit = room;
     room.on(RoomEvent.TrackSubscribed, (track, _publication, participant) => {
-      if (track.kind === Track.Kind.Audio) this.attachAudio(Number(participant.identity), track.mediaStreamTrack);
-      else if (track.kind === Track.Kind.Video) this.attachScreen(Number(participant.identity), track.mediaStreamTrack);
+      if (track.kind === Track.Kind.Audio) this.attachAudio(participant.identity, track.mediaStreamTrack);
+      else if (track.kind === Track.Kind.Video && /^\d+$/.test(participant.identity)) this.attachScreen(Number(participant.identity), track.mediaStreamTrack);
     });
+    room.on(RoomEvent.ActiveSpeakersChanged, participants => {
+      const active = new Set(participants.map(participant => participant.identity));
+      for (const participant of room.remoteParticipants.values()) this.publishSpeaking(participant.identity, active.has(participant.identity));
+    });
+    room.on(RoomEvent.ParticipantDisconnected, participant => this.publishSpeaking(participant.identity, false));
     room.on(RoomEvent.Disconnected, () => { if (generation === this.generation) this.failed(new Error('LiveKit disconnected')); });
     await room.connect(snapshot.livekit.url, snapshot.livekit.token, { peerConnectionTimeout: 15_000, websocketTimeout: 10_000 });
     if (generation !== this.generation) { await room.disconnect(false); return; }
@@ -189,18 +194,22 @@ export class HearMeOutRtc {
     this.options.onStatus('Room audio connected.');
   }
 
-  private attachAudio(id: number, track: MediaStreamTrack) {
-    const key = `${id}:${track.id}`; this.media.get(key)?.audio.parentElement?.remove();
+  private attachAudio(id: string | number, track: MediaStreamTrack) {
+    const identity = String(id);
+    const key = `${identity}:${track.id}`; this.media.get(key)?.audio.parentElement?.remove();
     const audio = document.createElement('audio'); audio.autoplay = true;
-    audio.dataset.hmoRtcPeer = String(id); audio.srcObject = new MediaStream([track]);
+    audio.dataset.hmoRtcPeer = identity; audio.srcObject = new MediaStream([track]);
     const holder = document.createElement('span'); holder.hidden = true;
-    holder.dataset.hmoUserId = this.snapshot?.peers.find(peer => peer.id === id)?.userId || '';
+    holder.dataset.hmoUserId = this.userIdForIdentity(identity);
     holder.append(audio); document.body.append(holder);
-    this.media.set(key, { id, audio }); this.updateVolumes();
-    track.addEventListener('ended', () => { audio.pause(); holder.remove(); this.media.delete(key); }, { once: true });
+    this.media.set(key, { id: identity, audio }); this.updateVolumes();
+    track.addEventListener('ended', () => { audio.pause(); holder.remove(); this.media.delete(key); this.publishSpeaking(identity, false); }, { once: true });
     if (this.outputDevice && 'setSinkId' in audio) void audio.setSinkId(this.outputDevice).catch(() => {});
     void audio.play().catch(() => this.options.onStatus('Tap to enable room audio.'));
   }
+
+  private userIdForIdentity(identity: string) { return this.snapshot?.peers.find(peer => String(peer.id) === identity)?.userId || identity.replace(/^(?:user|persona|service):/, '').replace(/:(?:listener|media)$/, ''); }
+  private publishSpeaking(identity: string, speaking: boolean) { window.dispatchEvent(new CustomEvent('hmo:participant-speaking', { detail: { identity, userId: this.userIdForIdentity(identity), speaking } })); }
 
   private createScreenVideo(id: number, track: MediaStreamTrack, local = false) {
     this.screens.get(id)?.remove();
@@ -339,7 +348,7 @@ export class HearMeOutRtc {
 
   setVolume(volume: number) { this.master = Math.max(0, Math.min(1, volume)); this.updateVolumes(); }
   setPersonVolume(userId: string, volume: number) { this.personVolumes.set(userId, Math.max(0, Math.min(1, volume))); this.updateVolumes(); }
-  private volume(id: number) { const peer = this.snapshot?.peers.find(peer => peer.id === id); if (peer?.serverMuted) return 0; const userId = peer?.userId || ''; return this.master * (this.personVolumes.get(userId) ?? Number(localStorage.getItem(`hmo-volume:${this.roomId}:${userId}`) ?? 100) / 100); }
+  private volume(id: string | number) { const identity=String(id),peer = this.snapshot?.peers.find(peer => String(peer.id) === identity); if (peer?.serverMuted) return 0; const userId = peer?.userId || this.userIdForIdentity(identity); return this.master * (this.personVolumes.get(userId) ?? Number(localStorage.getItem(`hmo-volume:${this.roomId}:${userId}`) ?? 100) / 100); }
   private updateVolumes() { for (const { id, audio } of this.media.values()) audio.volume = this.volume(id); for (const [id, output] of this.playout) output.gain.gain.value = this.volume(id); }
   async setOutput(id: string) {
     this.outputDevice = id;
