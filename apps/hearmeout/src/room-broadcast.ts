@@ -58,11 +58,15 @@ export class HearMeOutRoomBroadcast {
   private async start(run:Run,signature:string){
     await this.stop(run);if(this.closed)return;
     const session=run.session,item=session.current!.item,rawSource=new URL(item.playbackUrl,this.options.spmtOrigin),source=/^\/v1\/media\/public\/[A-Za-z0-9_-]{43}$/.test(rawSource.pathname)?new URL(rawSource.pathname,this.options.spmtOrigin):this.prepared?.localSource(rawSource,session.tenantId,this.proxy)??rawSource;
-    if(!['http:','https:'].includes(source.protocol)||source.username||source.password)throw Error('Invalid broadcast source');
+    if(!validSource(source))throw Error('Invalid broadcast source');
+    const audioValue=typeof item.metadata?.audioPlaybackUrl==='string'?item.metadata.audioPlaybackUrl:'';
+    const rawAudio=audioValue?new URL(audioValue,this.options.spmtOrigin):undefined;
+    const audioSource=rawAudio&&rawAudio.href!==rawSource.href?(this.prepared?.localSource(rawAudio,session.tenantId,this.proxy)??rawAudio):undefined;
+    if(audioSource&&!validSource(audioSource))throw Error('Invalid broadcast audio source');
     const env={PATH:process.env.PATH??'/usr/bin:/bin',http_proxy:this.proxy,https_proxy:this.proxy,no_proxy:''};
-    const {stdout}=await promisify(execFile)(this.options.ffprobeBinary,['-v','error','-protocol_whitelist',HEARMEOUT_BROADCAST_PROTOCOLS,'-rw_timeout','15000000','-show_streams','-of','json',source.href],{env,timeout:20000,maxBuffer:1024*1024,signal:this.abort.signal});
-    const probe=JSON.parse(stdout) as {streams?:Array<{index:number;codec_type:string;tags?:{language?:string;title?:string}}>},streams=probe.streams??[];
-    const media:HearMeOutWatchMediaProbeV1={hasVideo:session.lane==='movie'&&streams.some(stream=>stream.codec_type==='video'),audio:streams.filter(stream=>stream.codec_type==='audio').map((stream,index)=>({sourceIndex:stream.index,index,...(stream.tags?.language?{language:stream.tags.language}:{}),...(stream.tags?.title?{title:stream.tags.title}:{})}))};
+    const probe=async(url:URL)=>{const {stdout}=await promisify(execFile)(this.options.ffprobeBinary,['-v','error','-protocol_whitelist',HEARMEOUT_BROADCAST_PROTOCOLS,'-rw_timeout','15000000','-show_streams','-of','json',url.href],{env,timeout:20000,maxBuffer:1024*1024,signal:this.abort.signal});return JSON.parse(stdout) as {streams?:Array<{index:number;codec_type:string;tags?:{language?:string;title?:string}}>};};
+    const [primaryProbe,audioProbe]=await Promise.all([probe(source),audioSource?probe(audioSource):Promise.resolve(undefined)]),primaryStreams=primaryProbe.streams??[],audioStreams=audioSource?(audioProbe?.streams??[]):primaryStreams;
+    const media:HearMeOutWatchMediaProbeV1={hasVideo:primaryStreams.some(stream=>stream.codec_type==='video'),audio:audioStreams.filter(stream=>stream.codec_type==='audio').map((stream,index)=>({sourceIndex:stream.index,sourceSpecifier:(audioSource?'1:':'0:')+stream.index,index,...(stream.tags?.language?{language:stream.tags.language}:{}),...(stream.tags?.title?{title:stream.tags.title}:{})}))};
     if(!media.hasVideo&&!media.audio.length)throw Error('Source has no playable media');
     const latest=this.rooms.getBroadcastIdentity(session.tenantId,session.roomId)?this.rooms.getSession(session.tenantId,session.roomId,session.lane):undefined;
     if(this.closed||!latest||this.cacheKey(latest)!==run.cacheKey||signatureFor(latest)!==signature||latest.playback.status!=='playing'||!this.rooms.claimBroadcast(session.tenantId,session.roomId,session.lane,run.owner))return;
@@ -70,8 +74,9 @@ export class HearMeOutRoomBroadcast {
     // Each restart appends a discontinuity to the same live feed. Bounded HLS
     // windows prevent a returning viewer from replaying their old song segment.
     const epoch=Date.now().toString(36)+'-'+randomUUID().slice(0,8),position=Math.max(0,latest.playback.position+(Date.now()-Date.parse(latest.playback.updatedAt))/1000),variants=buildHearMeOutXtreamVariantMap(media);
-    const hlsSource=item.type!=='live'&&/\.m3u8$/i.test(source.pathname);
-    const args=['-hide_banner','-loglevel','error','-nostdin','-y','-threads','2','-protocol_whitelist',HEARMEOUT_BROADCAST_PROTOCOLS,'-rw_timeout','15000000','-re',...(hlsSource?['-live_start_index','0']:[]),...(item.type==='live'||position<.1?[]:['-ss',String(position)]),'-i',source.href,...(media.hasVideo?['-map','0:v:0']:[]),...media.audio.flatMap(track=>['-map','0:'+track.sourceIndex]),'-c:v','libx264','-preset','veryfast','-pix_fmt','yuv420p','-force_key_frames','expr:gte(t,n_forced*2)','-c:a','aac','-ac','2','-b:a','128k','-f','hls','-hls_time','2','-hls_list_size','8','-hls_delete_threshold','3','-hls_flags','delete_segments+append_list+discont_start+omit_endlist','-var_stream_map',variants,'-master_pl_name','index.m3u8','-hls_segment_filename',join(dir,epoch+'_%v_%06d.ts'),join(dir,'stream_%v.m3u8')];
+    const hlsSource=item.type!=='live'&&/\.m3u8$/i.test(source.pathname),seek=item.type==='live'||position<.1?[]:['-ss',String(position)];
+    const inputArgs=(url:URL,hls=false)=>['-protocol_whitelist',HEARMEOUT_BROADCAST_PROTOCOLS,'-rw_timeout','15000000','-re',...(hls?['-live_start_index','0']:[]),...seek,'-i',url.href];
+    const args=['-hide_banner','-loglevel','error','-nostdin','-y','-threads','2',...inputArgs(source,hlsSource),...(audioSource?inputArgs(audioSource):[]),...(media.hasVideo?['-map','0:v:0']:[]),...media.audio.flatMap(track=>['-map',track.sourceSpecifier??'0:'+track.sourceIndex]),'-c:v','libx264','-preset','veryfast','-pix_fmt','yuv420p','-force_key_frames','expr:gte(t,n_forced*2)','-c:a','aac','-ac','2','-b:a','128k',...(audioSource?['-shortest']:[]),'-f','hls','-hls_time','2','-hls_list_size','8','-hls_delete_threshold','3','-hls_flags','delete_segments+append_list+discont_start+omit_endlist','-var_stream_map',variants,'-master_pl_name','index.m3u8','-hls_segment_filename',join(dir,epoch+'_%v_%06d.ts'),join(dir,'stream_%v.m3u8')];
     // Directory creation yields: a delete/close may have removed this run meanwhile.
     if(this.closed||this.runs.get(run.cacheKey)!==run||!this.rooms.getBroadcastIdentity(session.tenantId,session.roomId)||this.cacheKey(session)!==run.cacheKey||signatureFor(this.rooms.getSession(session.tenantId,session.roomId,session.lane))!==signature)return;
     // An OS lock survives a stalled Node supervisor and fences the encoder itself.
@@ -94,5 +99,6 @@ export class HearMeOutRoomBroadcast {
   private cacheKey(session:HearMeOutMediaSessionV1){const room=this.rooms.getBroadcastIdentity(session.tenantId,session.roomId);return key(session,room?.instanceId??room?.createdAt??'deleted');}
   async close(){this.closed=true;if(this.timer)clearInterval(this.timer);this.abort.abort();await Promise.allSettled([...this.runs.values()].map(run=>run.pending));await Promise.allSettled([...this.runs.values()].map(run=>this.stop(run)));await Promise.allSettled([...this.stopping]);for(const run of this.runs.values())this.rooms.releaseBroadcast(run.session.tenantId,run.session.roomId,run.session.lane,run.owner);this.runs.clear();await this.egress.close();}
 }
+function validSource(source:URL){return ['http:','https:'].includes(source.protocol)&&!source.username&&!source.password;}
 function key(session:Pick<HearMeOutMediaSessionV1,'tenantId'|'roomId'|'lane'>,instance:string){return createHash('sha256').update(JSON.stringify([session.tenantId,session.roomId,session.lane,instance])).digest('hex');}
 function signatureFor(session:HearMeOutMediaSessionV1){return createHash('sha256').update(JSON.stringify([session.current?.requestId,session.current?.item.playbackUrl,session.playback.status,session.playback.position,session.playback.updatedAt])).digest('hex');}
