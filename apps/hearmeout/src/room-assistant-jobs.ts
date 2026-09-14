@@ -3,8 +3,9 @@ import {DatabaseSync} from 'node:sqlite';
 import type {ExecutionJobV1} from '@spmt/contracts';
 
 type Scope={tenantId:string;userId:string;roomId:string};
-type Binding={id:string;kind:'reply'|'transcription';input:string;jobId?:string;personaId?:string;displayName?:string;speak?:boolean;speechJobId?:string;voice?:string};
+type Binding={id:string;kind:'reply'|'transcription';input:string;jobId?:string;personaId?:string;displayName?:string;speak?:boolean;speechJobId?:string;voice?:string;speechDelivered?:boolean};
 export type RoomAssistantRequest=(path:string,body?:Record<string,unknown>,key?:string)=>Promise<any>;
+export type RoomAssistantSpeechDelivery=(input:{requestId:string;personaId:string;displayName:string;mediaAssetId:string})=>Promise<void>;
 /** Room admission is checked by the HTTP controller; job ownership is rechecked on every read. */
 export class HearMeOutRoomAssistantJobs {
  private readonly db:DatabaseSync;
@@ -22,7 +23,7 @@ export class HearMeOutRoomAssistantJobs {
   }
   return {requestId:id,jobId:binding.jobId,kind:binding.kind};
  }
- async read(scope:Scope,id:string,request:RoomAssistantRequest,append:(id:string,personaId:string,name:string,text:string)=>void){
+ async read(scope:Scope,id:string,request:RoomAssistantRequest,append:(id:string,personaId:string,name:string,text:string)=>void,deliverSpeech?:RoomAssistantSpeechDelivery){
   const binding=this.get(scope,id);if(!binding?.jobId)throw Error('Room assistant request was not found');
   const job=await request('/v1/jobs/'+encodeURIComponent(binding.jobId)) as ExecutionJobV1;
   this.requireRoom?.(scope);
@@ -37,6 +38,10 @@ export class HearMeOutRoomAssistantJobs {
   } catch {return {requestId:id,state:'failed',reply,error:'The text reply is ready, but speech is unavailable. Retry this request to resume speech.'};}
   const speech=(await request('/v1/assistant/speech/jobs/'+encodeURIComponent(binding.speechJobId!))).job as ExecutionJobV1;this.requireJob(scope,speech);
   const mediaAssetId=speech.state==='succeeded'?String(speech.result?.mediaAssetId??''):undefined;
+  if(mediaAssetId&&deliverSpeech){
+   if(!binding.speechDelivered){await deliverSpeech({requestId:id,personaId:binding.personaId!,displayName:binding.displayName!,mediaAssetId});binding.speechDelivered=true;this.save(scope,binding)}
+   return {requestId:id,state:'succeeded',reply,spokenThroughRoom:true};
+  }
   return {requestId:id,state:speech.state,reply,...(mediaAssetId?{audioUrl:'/v1/media/assets/'+encodeURIComponent(mediaAssetId)+'/content?tenantId='+encodeURIComponent(scope.tenantId)}:{}),...(['failed','cancelled','dead-letter'].includes(speech.state)?{error:'The text reply is ready, but speech could not complete'}:{})};
  }
  private requireJob(scope:Scope,job:ExecutionJobV1,reply=false,personaId?:string){if(!job||job.tenantId!==scope.tenantId||job.billedUserId!==scope.userId||(reply?(job.ownerAppId!=='stellar-core'||job.input.conversationId!==`hearmeout:${scope.roomId}${personaId?.startsWith("swpublic_")?":"+personaId:""}`):job.ownerAppId!=='hearmeout'))throw Error('Room assistant job was not found')}
