@@ -24,7 +24,7 @@ try{
   if(req.url===mediaPath){const range=/bytes=(\d+)-(\d*)/.exec(req.headers.range??''),start=Number(range?.[1]??0),end=range?.[2]?Number(range[2]):fixture.length-1;res.writeHead(range?206:200,{'content-type':'video/mp4','accept-ranges':'bytes','content-length':end-start+1,...(range?{'content-range':`bytes ${start}-${end}/${fixture.length}`}:{})});res.end(fixture.subarray(start,end+1));return;}
   res.setHeader('content-type','application/json');if(req.url==='/v1/session')res.end(JSON.stringify({actorId:'owner',displayName:'Owner',tenantIds:['tenant'],scopes:['admin']}));else{res.statusCode=404;res.end('{}');}
  });await new Promise(r=>spmt.listen(0,'127.0.0.1',r));const spmtOrigin='http://127.0.0.1:'+spmt.address().port;
- host=createHearMeOutWebServer({spmtOrigin,databasePath:path,port:0,singleBroadcast:{tenantId:'tenant',executionUserId:'owner'},broadcast:{ffmpegBinary:mediaBinary('ffmpeg'),ffprobeBinary:mediaBinary('ffprobe'),cachePath:join(directory,'broadcast')},suiteMediaResolver:{async resolve(input){requests.push(input);if(requests.length===1)throw Error('The fixture media worker is temporarily unavailable');return {itemId:'requested-video',title:input.query,type:input.lane,source:'fixture',playbackUrl:'https://media.example'+mediaPath,durationSeconds:180};}}});
+ host=createHearMeOutWebServer({spmtOrigin,databasePath:path,port:0,singleBroadcast:{tenantId:'tenant',executionUserId:'owner'},broadcast:{ffmpegBinary:mediaBinary('ffmpeg'),ffprobeBinary:mediaBinary('ffprobe'),cachePath:join(directory,'broadcast')},suiteMediaResolver:{async searchMovies(){return [{itemId:'xtream-vod-1',title:'Another movie',overview:''},{itemId:'xtream-vod-42',title:'My requested movie',year:2026,overview:''}];},async resolve(input){assert.equal(input.selectedItemId,'xtream-vod-42');requests.push(input);if(requests.length===1)throw Error('The fixture media worker is temporarily unavailable');return {itemId:'requested-video',title:input.query,type:input.lane,source:'fixture',playbackUrl:'https://media.example'+mediaPath,durationSeconds:180};}}});
  await host.listen();const origin='http://127.0.0.1:'+host.server.address().port;
  // The real AppFrame host sends launch snapshots on shell clock/usage updates.
  // Match the shell's remembered-page response to the app's surface manifest.
@@ -54,6 +54,9 @@ try{
  assert.equal(await window.locator('#error').textContent(),'','Idle polling must not interrupt a pending play request');
  await window.getByRole('textbox',{name:'Music or movie request'}).fill('My requested movie');
  await window.getByRole('button',{name:'Request',exact:true}).click();
+ await window.getByRole('button',{name:'My requested movie (2026)',exact:true}).waitFor();
+ assert.equal(requestPosts,0,'Searching movies must not request the first match');assert.equal(requests.length,0);assert.equal(program.getSession().current,null);
+ await window.getByRole('button',{name:'My requested movie (2026)',exact:true}).click();
  await window.getByRole('alert').filter({hasText:'The fixture media worker is temporarily unavailable'}).waitFor();
  await window.locator('#request-form').evaluate(form=>{form.requestSubmit();form.requestSubmit();});
  await window.getByRole('heading',{name:'My requested movie',exact:true}).waitFor();

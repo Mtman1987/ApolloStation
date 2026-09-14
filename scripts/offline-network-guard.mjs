@@ -8,6 +8,8 @@ const hearMeOutBridge = process.env.HEARMEOUT_CONTROLLED_BRIDGE === "1" && proce
 const hearMeOutPreparedMedia = process.env.HEARMEOUT_PREPARED_MEDIA_ENABLED === '1' && process.env.HEARMEOUT_VOICE_BRIDGE_ORIGIN === 'https://hmo-dj-worker.fly.dev';
 const preparedMediaUrl = hearMeOutPreparedMedia
   ? (await import('../apps/hearmeout/dist/prepared-media.js')).preparedHearMeOutUrl : () => false;
+const movieProvider=process.env.HEARMEOUT_MOVIE_PROVIDER_ORIGIN==='https://hearmeout-main.fly.dev';
+const movieProviderUrl=movieProvider?(await import('../apps/hearmeout/dist/movie-provider.js')).hearMeOutMovieProviderUrl:()=>false;
 const avatarAiOutbound=process.env.SPMT_AVATAR_AI_OUTBOUND_MODE==="enabled";
 // Only HMO's provisioned broadcast process can open its DNS-pinned public
 // media sockets. The Sprite DNS policy still limits the reachable domains.
@@ -76,6 +78,7 @@ function assertSocketTarget(args, label) {
     if ((hearMeOutBridge || hearMeOutPreparedMedia) && String(first.host ?? first.hostname ?? first.servername) === "hmo-dj-worker.fly.dev" && Number(first.port ?? 443) === 443) return;
     if(privateFlowOpenAi&&String(first.host??first.hostname??first.servername)==="api.openai.com"&&Number(first.port??443)===443)return;
     if(avatarAiOutbound&&isAvatarAiHost(first.host??first.hostname??first.servername)&&Number(first.port??443)===443)return;
+    if(movieProvider&&String(first.host??first.hostname??first.servername)==='hearmeout-main.fly.dev'&&Number(first.port??443)===443)return;
     assertLoopbackHost(first.host ?? first.hostname ?? "localhost", label);
     return;
   }
@@ -85,6 +88,7 @@ function assertSocketTarget(args, label) {
   if ((hearMeOutBridge || hearMeOutPreparedMedia) && host === "hmo-dj-worker.fly.dev" && Number(first ?? 443) === 443) return;
   if(privateFlowOpenAi&&host==="api.openai.com"&&Number(first??443)===443)return;
   if(avatarAiOutbound&&isAvatarAiHost(host)&&Number(first??443)===443)return;
+  if(movieProvider&&host==='hearmeout-main.fly.dev'&&Number(first??443)===443)return;
   assertLoopbackHost(host, label);
 }
 
@@ -93,6 +97,7 @@ function assertAllowedUrl(value, method, label) {
   const url = value instanceof URL ? value : new URL(String(value), "http://localhost");
   if (!["http:", "https:", "ws:", "wss:"].includes(url.protocol)) return;
   if (liveReadUrl && url.origin === liveReadUrl.origin && String(method).toUpperCase() === "GET") return;
+  if (String(method).toUpperCase() === 'GET' && movieProviderUrl(url)) return;
   if (String(method).toUpperCase() === 'GET' && preparedMediaUrl(url, 'https://hmo-dj-worker.fly.dev')) return;
   if (hearMeOutBridge && url.origin === "https://hmo-dj-worker.fly.dev" && !url.username && !url.password && ["GET", "POST"].includes(String(method).toUpperCase()) && /^\/voice-bridge(?:\/(?:gate|audio-profile|receive-gain))?$/.test(url.pathname)) return;
   if(privateFlowOpenAi&&url.origin==="https://api.openai.com"&&url.pathname==="/v1/responses"&&String(method).toUpperCase()==="POST")return;

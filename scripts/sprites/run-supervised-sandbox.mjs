@@ -35,8 +35,8 @@ const hearMeOutCutover = await hearMeOutCutoverEnvironment(dataRoot);
 let hearMeOutMediaEnvironment = {};
 if (hearMeOutCutover.HEARMEOUT_YT_DLP_BINARY) {
   const configPath = resolve(dataRoot, "hearmeout-media-runtime.json");
-  await writeFile(configPath, JSON.stringify({schemaVersion:1, revision:"approved-broadcast-test-v1", pollMs:500, capabilities:["hearmeout.music.search","hearmeout.youtube.resolve","hearmeout.music.remember"], tenants:[{tenantId:hearMeOutCutover.HEARMEOUT_MEDIA_TENANT_ID}]}), {mode:0o600});
-  hearMeOutMediaEnvironment = { SPMT_RUNTIME_MODE:"production", HEARMEOUT_RUNTIME_CONFIG_PATH:configPath, HEARMEOUT_EXECUTION_TARGET:"sprite", HEARMEOUT_YT_DLP_BINARY:hearMeOutCutover.HEARMEOUT_YT_DLP_BINARY, ...Object.fromEntries(['HEARMEOUT_PREPARED_MEDIA_ENABLED','HEARMEOUT_VOICE_BRIDGE_ORIGIN','HEARMEOUT_VOICE_BRIDGE_AUTHORIZATION','HEARMEOUT_VOICE_BRIDGE_TENANT_ID','HEARMEOUT_MEDIA_TENANT_ID'].filter(key=>hearMeOutCutover[key]).map(key=>[key,hearMeOutCutover[key]])) };
+  await writeFile(configPath, JSON.stringify({schemaVersion:1, revision:"approved-broadcast-test-v1", pollMs:500, capabilities:["hearmeout.music.search","hearmeout.youtube.resolve","hearmeout.music.remember","hearmeout.movie.search","hearmeout.movie.resolve"], tenants:[{tenantId:hearMeOutCutover.HEARMEOUT_MEDIA_TENANT_ID}]}), {mode:0o600});
+  hearMeOutMediaEnvironment = { SPMT_RUNTIME_MODE:"production", HEARMEOUT_RUNTIME_CONFIG_PATH:configPath, HEARMEOUT_EXECUTION_TARGET:"sprite", HEARMEOUT_YT_DLP_BINARY:hearMeOutCutover.HEARMEOUT_YT_DLP_BINARY, ...Object.fromEntries(['HEARMEOUT_MOVIE_PROVIDER_ORIGIN','HEARMEOUT_PREPARED_MEDIA_ENABLED','HEARMEOUT_VOICE_BRIDGE_ORIGIN','HEARMEOUT_VOICE_BRIDGE_AUTHORIZATION','HEARMEOUT_VOICE_BRIDGE_TENANT_ID','HEARMEOUT_MEDIA_TENANT_ID'].filter(key=>hearMeOutCutover[key]).map(key=>[key,hearMeOutCutover[key]])) };
 }
 const meshyAvatarKey=await readPrivateCredential("streamweaver-meshy-api-key");
 const keenToolsAvatarKey=await readPrivateCredential("streamweaver-keentools-api-key");
