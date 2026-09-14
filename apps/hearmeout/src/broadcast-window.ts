@@ -7,10 +7,10 @@ import type {HearMeOutSuiteMediaResolverV1} from './suite-action-executor.js';
 
 const browserRequests=new Map<string,{videoId:string;until:number}>();
 
-export function broadcastView(program:HearMeOutBroadcastProgram,configured:boolean){
+export function broadcastView(program:HearMeOutBroadcastProgram,configured:boolean,ready=false){
   const session=program.getSession();
   const visible=(request:typeof session.current)=>{if(!request)return request;const metadata=request.item.metadata?Object.fromEntries(Object.entries(request.item.metadata).filter(([key])=>key!=='audioPlaybackUrl')):undefined;return {...request,item:{...request.item,...(metadata?{metadata}:{})}};};
-  return {sessionId:HEARMEOUT_SINGLE_PROGRAM_ID,current:visible(session.current),queue:session.queue.map(request=>visible(request)!),playback:session.playback,revision:session.revision,broadcast:{configured,playbackUrl:'/api/watch/broadcast/index.m3u8'}};
+  return {sessionId:HEARMEOUT_SINGLE_PROGRAM_ID,current:visible(session.current),queue:session.queue.map(request=>visible(request)!),playback:session.playback,revision:session.revision,broadcast:{configured,ready,playbackUrl:'/api/watch/broadcast/index.m3u8'}};
 }
 function guest(request:IncomingMessage,response:ServerResponse){
   let token=String(request.headers.cookie??'').match(/(?:^|;\s*)hmo_viewer=([a-f0-9]{64})(?:;|$)/)?.[1];
@@ -85,7 +85,7 @@ export async function handleHearMeOutBroadcastWindow(request:IncomingMessage,res
     if(entry){guest(request,response);response.writeHead(200,{'content-type':'text/html; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'});response.end(renderHearMeOutBroadcastWindow(clientId));return true;}
     if(feed){if(!worker)return send(response,503,{error:'The broadcast worker is unavailable'});await worker.serve(program.binding.tenantId,HEARMEOUT_SINGLE_PROGRAM_ID,'movie',feed[1]!,response);return true;}
     guest(request,response);
-    return send(response,200,defaults?{sessionId:HEARMEOUT_SINGLE_PROGRAM_ID}:broadcastView(program,Boolean(worker)));
+    return send(response,200,defaults?{sessionId:HEARMEOUT_SINGLE_PROGRAM_ID}:broadcastView(program,Boolean(worker),worker?.ready(program.binding.tenantId,HEARMEOUT_SINGLE_PROGRAM_ID,'movie')??false));
   }catch(error){return send(response,error instanceof SpmtApiError?error.status:400,{error:(error instanceof Error?error.message:String(error)).replace(/((?:token|authorization|secret|password|cookie))\s*[:=]\s*\S+/gi,'$1=[redacted]').slice(0,400)});}
 }
 function send(response:ServerResponse,status:number,value:unknown){response.writeHead(status,{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'});response.end(JSON.stringify(value));return true;}
@@ -135,6 +135,7 @@ export const BROADCAST_WINDOW_JS=String.raw`
     retry.disabled=!connected||!state.current;
     if(!connected||!state.current){if(sourceUrl){sourceUrl='';source.clear();}currentRequest='';playbackError.textContent='';return;}
     if(!state.broadcast.configured){playbackError.textContent='The broadcast worker is unavailable.';return;}
+    if(!state.broadcast.ready){if(sourceUrl){sourceUrl='';source.clear();}playbackError.textContent='Preparing the first playable segment…';return;}
     if(sourceUrl!==state.broadcast.playbackUrl||currentRequest!==state.current.requestId||(source.failed&&Date.now()>=retryAt)){
       sourceUrl=state.broadcast.playbackUrl;currentRequest=state.current.requestId;retryAt=Date.now()+10000;playbackError.textContent='Connecting to the broadcast…';source.load(sourceUrl,true,true);
     }
