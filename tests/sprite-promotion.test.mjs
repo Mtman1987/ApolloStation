@@ -1,10 +1,20 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { spawnSync } from "node:child_process";
 
 const workflowPath = new URL("../.github/workflows/sprite-promotion.yml", import.meta.url);
 const deployScriptPath = new URL("../scripts/sprites/deploy-sandbox-release.sh", import.meta.url);
 const networkPolicyPath = new URL("../sandbox/sprites/network-policy.json", import.meta.url);
+
+test("A failed public probe fails promotion without closing the approved test entry", async () => {
+  const workflow = await readFile(workflowPath, "utf8");
+  const step = workflow.split("      - name: Open the verified Apollo test entry\n")[1].split("      - name:")[0];
+  const script = step.split("        run: |\n")[1].split("\n").map(line => line.replace(/^          /, "")).join("\n");
+  const result = spawnSync("bash", ["--noprofile", "--norc", "-c", 'sprite(){ printf "%s\\n" "$*"; }; node(){ return 1; };\n'+script], {encoding:"utf8",env:{...process.env,SPRITE_ORG:"testing-968",SPRITE_NAME:"web-terminal",SPRITE_PUBLIC_URL:"https://test.example",BUILD_SHA:"test-build"}});
+  assert.equal(result.status, 1, result.stderr);
+  assert.equal(result.stdout.trim(), "config update -o testing-968 -s web-terminal --url-auth public");
+});
 
 test("Sprite promotion keeps review and release targets isolated", async () => {
   const workflow = await readFile(workflowPath, "utf8");

@@ -234,10 +234,10 @@ jobs:
         run: |
           set -euo pipefail
           sprite config update -o "$SPRITE_ORG" -s "$SPRITE_NAME" --url-auth public
-          # If public verification fails, restore org-only access automatically.
-          trap 'sprite config update -o "$SPRITE_ORG" -s "$SPRITE_NAME" --url-auth sprite' ERR
+          # This is the owner's approved public test entry. A network failure
+          # must fail verification without changing it into a Sprite login page.
+          # Apollo account/private-room checks still run before and after opening.
           node scripts/sprites/verify-hearmeout-broadcast-test.mjs "$SPRITE_PUBLIC_URL" "$BUILD_SHA"
-          trap - ERR
 
       - name: Record test deployment
         shell: bash

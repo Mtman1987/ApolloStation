@@ -1,6 +1,16 @@
 import assert from 'node:assert/strict';
 const origin=new URL(process.argv[2]).origin,buildSha=process.argv[3];
-async function request(path,init){return fetch(origin+path,{redirect:'manual',signal:AbortSignal.timeout(15000),...init});}
+async function request(path,init){
+ for(let attempt=0;;attempt++){
+  try{return await fetch(origin+path,{redirect:'manual',signal:AbortSignal.timeout(15000),...init});}
+  catch(error){
+   // Retry transport failures only for reads. HTTP/auth assertions still fail,
+   // and this verification never replays a write or queues media.
+   if(init?.method&&init.method!=='GET'||attempt>=2||!(error instanceof TypeError||error?.name==='TimeoutError'))throw error;
+   await new Promise(resolve=>setTimeout(resolve,1000));
+  }
+ }
+}
 let health;
 for(let attempt=0;attempt<30;attempt++){
  const response=await request('/health/hearmeout');assert.equal(response.status,200);health=await response.json();

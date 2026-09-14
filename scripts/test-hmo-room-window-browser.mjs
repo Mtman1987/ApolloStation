@@ -56,11 +56,15 @@ try{
  await window.getByRole('button',{name:'Request',exact:true}).click();
  await window.getByRole('button',{name:'My requested movie (2026)',exact:true}).waitFor();
  assert.equal(requestPosts,0,'Searching movies must not request the first match');assert.equal(requests.length,0);assert.equal(program.getSession().current,null);
+ let htmlResponses=0;await page.route('**/api/watch/broadcast/requests',async route=>{if(!htmlResponses++){await route.fulfill({status:200,contentType:'text/html',body:'<!DOCTYPE html><html><body>Temporary access page</body></html>'});return;}await route.continue();});
  await window.getByRole('button',{name:'My requested movie (2026)',exact:true}).click();
+ await window.getByRole('alert').filter({hasText:'The media service returned an unexpected page. Reconnect and retry.'}).waitFor();
+ assert.equal(await window.locator('#request-submit').isEnabled(),true);assert.notEqual(await window.locator('#status').textContent(),'Preparing your request…');assert.equal(requests.length,0);
+ await window.locator('#request-form').evaluate(form=>form.requestSubmit());
  await window.getByRole('alert').filter({hasText:'The fixture media worker is temporarily unavailable'}).waitFor();
  await window.locator('#request-form').evaluate(form=>{form.requestSubmit();form.requestSubmit();});
  await window.getByRole('heading',{name:'My requested movie',exact:true}).waitFor();
- assert.equal(requestPosts,2,'Retry sends once even with rapid repeated submissions');assert.notEqual(requestKeys[0],requestKeys[1],'A known failed request must be retried with a fresh operation key');
+ assert.equal(requestPosts,3,'Retry sends once even with rapid repeated submissions');assert.equal(requestKeys[0],requestKeys[1],'An HTML response cannot confirm whether the operation ran, so retry keeps its key');assert.notEqual(requestKeys[1],requestKeys[2],'A known failed request must be retried with a fresh operation key');
  async function playing(){await window.locator('video').evaluate(v=>new Promise((resolve,reject)=>{const limit=Date.now()+25000;const timer=setInterval(()=>{if(!v.paused&&v.currentTime>.1&&v.videoWidth>0){clearInterval(timer);resolve();}else if(Date.now()>limit){clearInterval(timer);reject(Error('Video not playing: '+v.readyState+' '+v.error?.message));}},100)}));}
  await playing();assert.equal(await window.locator('video').isVisible(),true);assert.equal(requests.length,2);assert.equal(requests[1].query,'My requested movie');assert.equal(requests[0].lane,'movie');
  assert.equal(await window.locator('#error').textContent(),'');
