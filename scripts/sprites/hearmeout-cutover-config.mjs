@@ -18,7 +18,7 @@ export async function hearMeOutCutoverEnvironment(dataRoot) {
     ...(config.broadcast?.singleProgram ? { HEARMEOUT_SINGLE_BROADCAST: "1", HEARMEOUT_BROADCAST_EXECUTION_USER_ID: config.broadcast.executionUserId } : {}),
     HEARMEOUT_CONTROLLED_BRIDGE: '1',
     ...(config.broadcast ? { HEARMEOUT_CONTROLLED_MEDIA: '1', HEARMEOUT_BROADCAST_CACHE_PATH: resolve(root, 'hearmeout-broadcast-cache'), HEARMEOUT_FFMPEG_BINARY: config.broadcast.ffmpegBinary, HEARMEOUT_FFPROBE_BINARY: config.broadcast.ffprobeBinary } : {}),
-    ...(config.mediaWorker ? { HEARMEOUT_YT_DLP_BINARY: config.mediaWorker.ytDlpBinary, HEARMEOUT_MEDIA_TENANT_ID: config.tenantId, HEARMEOUT_PREPARED_MEDIA_ENABLED: '1' } : {}),
+    ...(config.mediaWorker ? { HEARMEOUT_YT_DLP_BINARY: config.mediaWorker.ytDlpBinary, HEARMEOUT_MEDIA_TENANT_ID: config.tenantId, HEARMEOUT_PREPARED_MEDIA_ENABLED: '1', HEARMEOUT_MOVIE_PROVIDER_ORIGIN: 'https://hearmeout-main.fly.dev' } : {}),
     ...(config.activity ? { HEARMEOUT_ACTIVITY_TENANT_ID: config.tenantId, DISCORD_CLIENT_ID: config.activity.clientId } : {}),
     ...(config.discord ? { HEARMEOUT_ACTIVITY_TENANT_ID: config.tenantId, DISCORD_CLIENT_ID: config.discord.clientId, DISCORD_PUBLIC_KEY: config.discord.publicKey, HEARMEOUT_DISCORD_GUILD_IDS: config.discord.guildIds.join(',') } : {}),
     HEARMEOUT_ROOM_DATABASE_PATH: database,

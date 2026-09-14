@@ -1,3 +1,4 @@
+import type {HearMeOutMovieMatch} from "./movie-provider.js";
 import {type HearMeOutBroadcastProgram} from "./broadcast-program.js";
 import { HEARMEOUT_ACTIVITY_ROOM_ID, HEARMEOUT_ACTIVITY_ROOM_NAME } from "./activity-contract.js";
 import { ensureHearMeOutDiscordActivityRoom, joinHearMeOutDiscordActivityRoom } from "./activity-room.js";
@@ -12,24 +13,35 @@ import type { HearMeOutSuiteActionExecutorV1 } from "./suite-action-worker.js";
 import type { HearMeOutVoiceBridgeController } from "./voice-bridge.js";
 
 export interface HearMeOutSuitePersonaStoreV1 { listPersonas(tenantId: string, roomId: string): Array<{ personaId: string; targetTenantId: string; displayName: string }>; putPersona(principal: HearMeOutPrincipalV1, roomId: string, persona: HearMeOutPublicPersonaV1 & { transportHealthy?: boolean }): unknown; removePersona(tenantId: string, roomId: string, personaId: string): unknown; }
-export interface HearMeOutSuiteMediaResolverV1 { resolve(input: { tenantId: string; billedUserId?: string; requesterId?: string; query: string; lane: "music" | "movie"; operationId?: string; excludeItemIds?: string[] }): Promise<HearMeOutMediaItemV1>; }
+export interface HearMeOutSuiteMediaResolverV1 { resolve(input: { tenantId: string; billedUserId?: string; requesterId?: string; query: string; lane: "music" | "movie"; operationId?: string; excludeItemIds?: string[]; selectedItemId?:string }): Promise<HearMeOutMediaItemV1>; searchMovies?(input:{tenantId:string;billedUserId?:string;requesterId:string;query:string;operationId?:string}):Promise<HearMeOutMovieMatch[]>; }
 
 /** Uses the existing HearMeOut media worker rather than resolving media in a browser or duplicating provider credentials. */
 export class SpmtHearMeOutSuiteMediaResolver implements HearMeOutSuiteMediaResolverV1 {
   constructor(private readonly client: Pick<SpmtClient, "createExecutionJob" | "getExecutionJob" | "listExecutionWorkers">, private readonly options: { maxWaitMs?: number; pollMs?: number } = {}) {}
-  async resolve(input: { tenantId: string; billedUserId?: string; requesterId?: string; query: string; lane: "music" | "movie"; operationId?: string; excludeItemIds?: string[] }) {
+  async resolve(input: { tenantId: string; billedUserId?: string; requesterId?: string; query: string; lane: "music" | "movie"; operationId?: string; excludeItemIds?: string[]; selectedItemId?:string }) {
     const operationId = input.operationId ?? randomUUID();
     const youtubeId = hearMeOutYoutubeId(input.query);
     if (youtubeId) { if(input.excludeItemIds?.includes(youtubeId))throw Error("Auto-radio needs a different recommendation");return this.youtube(input, youtubeId, operationId); }
     const direct = httpUrl(input.query);
     if (direct) { const item=mediaItem(input.lane,input.query,direct);if(input.excludeItemIds?.includes(item.itemId))throw Error("Auto-radio needs a different recommendation");return item; }
+    if(input.lane==='movie'){
+      if(!input.selectedItemId)throw Error('Search the IPTV catalog and choose a movie before requesting playback');
+      const result=await this.job(input.tenantId,input.billedUserId,'hearmeout.movie.resolve',{query:input.query,selectedItemId:input.selectedItemId,requesterId:input.requesterId},operationId);
+      const item=result.item as HearMeOutMediaItemV1|undefined;
+      if(!item||!httpUrl(item.playbackUrl))throw Error('The IPTV provider did not return playable movie media');
+      return item;
+    }
     const result = await this.job(input.tenantId, input.billedUserId, "hearmeout.music.search", { requesterId: input.requesterId, query: input.query, limit: input.excludeItemIds ? 25 : 5 }, operationId);
     const items = Array.isArray(result.items) ? result.items : [], item = items.find((value) => value && typeof value === "object" && typeof (value as Record<string, unknown>).url === "string" && !input.excludeItemIds?.includes(String((value as Record<string, unknown>).id))) as Record<string, unknown> | undefined;
     if (!item) throw new Error("No music matched. Try the title and artist or a YouTube link.");
     const id = hearMeOutYoutubeId(String(item.url));
     if (id) return this.youtube(input, id, operationId, item);
     const playbackUrl = httpUrl(item.url); if (!playbackUrl) throw new Error("This search result has no playable source");
-    return { itemId: clean(item.id || randomUUID(), 200), type: input.lane === "movie" ? "movie" as const : "music" as const, title: clean(item.title || input.query, 300), source: "hearmeout-catalog", playbackUrl, ...(httpUrl(item.thumbnail) ? { posterUrl: httpUrl(item.thumbnail)! } : {}), ...(Number.isFinite(Number(item.duration)) ? { durationSeconds: Math.max(0, Math.round(Number(item.duration) / 1_000)) } : {}) };
+    return { itemId: clean(item.id || randomUUID(), 200), type: "music" as const, title: clean(item.title || input.query, 300), source: "hearmeout-catalog", playbackUrl, ...(httpUrl(item.thumbnail) ? { posterUrl: httpUrl(item.thumbnail)! } : {}), ...(Number.isFinite(Number(item.duration)) ? { durationSeconds: Math.max(0, Math.round(Number(item.duration) / 1_000)) } : {}) };
+  }
+  async searchMovies(input:{tenantId:string;billedUserId?:string;requesterId:string;query:string;operationId?:string}){
+    const result=await this.job(input.tenantId,input.billedUserId,'hearmeout.movie.search',{query:input.query,requesterId:input.requesterId},input.operationId??randomUUID());
+    return (Array.isArray(result.items)?result.items:[]) as HearMeOutMovieMatch[];
   }
   private async youtube(input: { tenantId: string; billedUserId?: string; requesterId?: string; lane: "music" | "movie" }, videoId: string, operationId: string, search?: Record<string, unknown>): Promise<HearMeOutMediaItemV1> {
     const result = await this.job(input.tenantId, input.billedUserId, "hearmeout.youtube.resolve", { videoId, lane: input.lane, requesterId: input.requesterId }, operationId);

@@ -97,6 +97,10 @@
       "action": "allow"
     },
     {
+      "domain": "hearmeout-main.fly.dev",
+      "action": "allow"
+    },
+    {
       "domain": "*",
       "action": "deny"
     }
