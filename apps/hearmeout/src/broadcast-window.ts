@@ -64,7 +64,15 @@ export const BROADCAST_WINDOW_JS=String.raw`
   setVolume(level);
   const params=new URLSearchParams(location.search),frameId=params.get('frame_id');
   if(frameId&&CLIENT_ID){let origin='*';try{if(document.referrer)origin=new URL(document.referrer).origin}catch{}window.parent.postMessage([0,{v:1,encoding:'json',client_id:CLIENT_ID,frame_id:frameId,sdk_version:'2.5.0'}],origin);}
-  async function api(path,init){const response=await fetch(path,{cache:'no-store',signal:AbortSignal.timeout(init?190000:path.startsWith('/api/watch/broadcast/movies?')?60000:15000),...init}),data=await response.json();if(!response.ok)throw Object.assign(Error(data.error||data.message||'Broadcast unavailable'),{status:response.status});return data;}
+  async function api(path,init){
+    const response=await fetch(path,{cache:'no-store',signal:AbortSignal.timeout(init?190000:path.startsWith('/api/watch/broadcast/movies?')?60000:15000),...init});
+    const unavailable=()=>Error('The media service returned an unexpected page'+(response.ok?'':' (HTTP '+response.status+')')+'. Reconnect and retry.');
+    // An edge/login page cannot tell us whether the request reached the worker.
+    // Keep the same operation key when retrying an unconfirmed response.
+    if(!/application\/(?:[a-z0-9.+-]+\+)?json\b/i.test(response.headers.get('content-type')||'')){await response.body?.cancel();throw unavailable();}
+    let data;try{data=await response.json();}catch{throw unavailable();}
+    if(!response.ok)throw Object.assign(Error(data?.error||data?.message||'Broadcast unavailable'),{status:response.status});return data;
+  }
   function play(){
     if(disposed||!sourceUrl)return Promise.resolve();
     if(playPending)return playPending;
@@ -106,7 +114,7 @@ export const BROADCAST_WINDOW_JS=String.raw`
         status.textContent='Choose a movie from the results';pendingRequest=undefined;return;
       }
       const state=await api('/api/watch/broadcast/requests',{method:'POST',headers:{'content-type':'application/json','idempotency-key':pendingRequest.key},body:JSON.stringify({query,lane,...(selectedItemId?{selectedItemId}:{})})});pendingRequest=undefined;selectedMovie=undefined;movieResults.replaceChildren();movieResults.hidden=true;if(event.target.elements.query.value.trim()===query&&event.target.elements.lane.value===lane)event.target.reset();error.textContent='';requestInFlight=false;applyState(state);}
-    catch(e){if(e.status)pendingRequest=undefined;error.textContent=e.message;}finally{requestInFlight=false;button.disabled=false;}
+    catch(e){if(e.status)pendingRequest=undefined;error.textContent=e.message;status.textContent='Request not completed. You can retry.';}finally{requestInFlight=false;button.disabled=false;}
   });
   document.getElementById('request-form').addEventListener('input',()=>{selectedMovie=undefined;movieResults.replaceChildren();movieResults.hidden=true;});
   video.addEventListener('canplay',()=>{void play()});
