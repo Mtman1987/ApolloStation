@@ -47,9 +47,9 @@ export class SpmtHearMeOutSuiteMediaResolver implements HearMeOutSuiteMediaResol
     if(input.browserPreparation)throw Object.assign(Error('Prepare YouTube media in your browser'),{code:'youtube-browser-required',videoId,title:clean(search?.title||videoId,300)});
     const result = await this.job(input.tenantId, input.billedUserId, "hearmeout.youtube.resolve", { videoId, lane: input.lane, requesterId: input.requesterId }, operationId);
     const resolved = result.media as Record<string, unknown> | undefined;
-    const playbackUrl = httpUrl(resolved?.videoUrl);
-    if (!playbackUrl) throw new Error("The provider did not return playable media; the room queue is unchanged");
-    return { itemId: videoId, type: input.lane === "movie" ? "movie" : "music", title: clean(resolved?.title || search?.title || videoId, 300), source: "youtube", playbackUrl, posterUrl: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`, ...(Number.isFinite(Number(resolved?.durationMs)) ? { durationSeconds: Math.max(0, Math.round(Number(resolved!.durationMs) / 1000)) } : {}), metadata: { videoId, resolvedAt: String(resolved?.resolvedAt ?? ""), sourceUrl: `https://www.youtube.com/watch?v=${videoId}` } };
+    const playbackUrl = httpUrl(resolved?.videoUrl), audioPlaybackUrl = httpUrl(resolved?.audioUrl);
+    if (!playbackUrl || !audioPlaybackUrl) throw new Error("The provider did not return playable media; the room queue is unchanged");
+    return { itemId: videoId, type: input.lane === "movie" ? "movie" : "music", title: clean(resolved?.title || search?.title || videoId, 300), source: "youtube", playbackUrl, posterUrl: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`, ...(Number.isFinite(Number(resolved?.durationMs)) ? { durationSeconds: Math.max(0, Math.round(Number(resolved!.durationMs) / 1000)) } : {}), metadata: { videoId, resolvedAt: String(resolved?.resolvedAt ?? ""), sourceUrl: `https://www.youtube.com/watch?v=${videoId}`, ...(audioPlaybackUrl!==playbackUrl?{audioPlaybackUrl}:{}) } };
   }
   private async job(tenantId: string, billedUserId: string | undefined, capabilityId: string, input: Record<string, unknown>, operationId: string) {
     const workers = await this.client.listExecutionWorkers({ executionOwner: "hearmeout", capabilityId, tenantId });
