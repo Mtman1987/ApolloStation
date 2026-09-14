@@ -81,8 +81,9 @@ test('existing authenticated prepared video feeds one real Apollo room encoder a
     const variant=master.split('\n').find(line=>line&&!line.startsWith('#'));
     const before=await (await fetch(feedOrigin+'/'+variant)).text();
     rooms.leaveRoom(owner,'isolated','leave');
-    await new Promise(resolve=>setTimeout(resolve,2500));
-    assert.notEqual(await (await fetch(feedOrigin+'/'+variant)).text(),before);
+    let after=before;const progressDeadline=Date.now()+8000;
+    while(Date.now()<progressDeadline&&after===before){await new Promise(resolve=>setTimeout(resolve,200));const response=await fetch(feedOrigin+'/'+variant);if(response.ok)after=await response.text();}
+    assert.match(after,/#EXTM3U/);assert.notEqual(after,before,'The same encoder must produce another segment while no members are present');
     for(let window=0;window<4;window++)assert.equal((await fetch(feedOrigin+'/index.m3u8')).status,200);
     assert.equal(broadcast.status().startedProcesses,1);assert.ok(requested.some(value=>value.endsWith('.ts')));
     assert.equal(requested.some(value=>value.startsWith('/dj')||value.startsWith('/voice-bridge')),false);

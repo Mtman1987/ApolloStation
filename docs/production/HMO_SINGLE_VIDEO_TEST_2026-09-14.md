@@ -55,3 +55,9 @@ Cached-audio buffering correction, September 14, 2026:
 - Broadcast HLS now uses complete segments, an eight-second target offset and four initial segments before starting. It retains a playback rate of 1 and no forced maximum-latency catch-up. Native return-to-live also retains eight seconds of headroom. This trades a short startup buffer for tolerance of segment delivery delays.
 - A real-browser regression covers cached audio through the existing authenticated prepared-media adapter and one real Apollo encoder. A five-second segment delay produces no waiting/rebuffer event or rate change, both with an established feed and after the startup correction. The startup case is retained in CI. The existing two-language, independent-volume and close/reopen browser test also passes.
 - This addresses a reproduced delivery problem. It does not resolve new YouTube sources that the provider refuses, and it does not claim immunity to longer network interruptions or sustained encoder overload.
+
+Sprite validation load correction, September 14, 2026:
+
+- Both the PR and merged-main CI runs passed for the buffer correction. Sprite promotion of `9bcf6f64b83a394c7f662d392463f98fe3c20449` then hit a supervised-app startup timeout. One retry passed that check but failed two media tests that required a new two-second segment after a fixed 2.2/2.5-second sleep.
+- Sprite validation now runs the same complete test file set with Node test concurrency 1. This bounds simultaneous test servers and encoders on the shared test machine; no test is skipped and the ten-minute release gate remains.
+- The two media tests poll actual segment progress with an eight-second upper bound. They still require the same encoder to advance while no members are present. The private-room test observes its generated fixture playlist before rejoining, so joining cannot manufacture the progress being asserted.
