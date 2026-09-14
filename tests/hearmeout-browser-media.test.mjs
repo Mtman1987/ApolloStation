@@ -63,3 +63,73 @@ test('movie searches reuse the worker credential only on the internal catalog ro
  assert.equal((await provider.resolve('Selected movie','xtream-vod-42')).itemId,'xtream-vod-42');
  assert.deepEqual(calls,['/api/internal/watch/search','/api/watch/xtream/hls/vod-42/index.m3u8']);
 });
+
+function youtubeTracks(){return Response.json({playabilityStatus:{status:'OK'},streamingData:{adaptiveFormats:[
+ {mimeType:'video/mp4',height:720,url:'https://rr1.googlevideo.com/video'},
+ {mimeType:'audio/mp4',url:'https://rr1.googlevideo.com/audio'},
+]}});}
+
+test('cold music and movie preparation overlap both downloads and wait for both uploads',async()=>{
+ const original=globalThis.fetch;
+ try{for(const lane of ['music','movie']){
+  const downloads=[],uploads=[];let releaseVideo,finished=false;
+  const videoUploaded=new Promise(resolve=>{releaseVideo=resolve;});
+  globalThis.fetch=async(value,init={})=>{
+   const url=String(value);
+   if(url.endsWith('/status'))return Response.json({});
+   if(url.includes('youtubei'))return youtubeTracks();
+   if(url.startsWith('https://rr1.googlevideo.com/')){
+    return new Promise(resolve=>{downloads.push(()=>resolve(new Response('media bytes')));if(downloads.length===2)downloads.forEach(release=>release());});
+   }
+   uploads.push(url);
+   if(url.endsWith('/video'))await videoUploaded;
+   return Response.json({ok:true});
+  };
+  const preparation=prepareHearMeOutYoutube(id,lane,()=>{}).then(()=>{finished=true;});
+  await new Promise(resolve=>setImmediate(resolve));
+  try{
+   assert.equal(downloads.length,2,'both downloads must start without waiting for the other');
+   assert.equal(uploads.length,2,'audio upload must not wait for video upload');
+   assert.equal(finished,false,'both tracks must finish before broadcast submission');
+  }finally{releaseVideo();}
+  await preparation;
+ }}finally{globalThis.fetch=original;}
+});
+
+test('failed track cancels its sibling before fallback and the next attempt can succeed',async()=>{
+ const original=globalThis.fetch;let aborted=false,uploads=0,fail=true;
+ globalThis.fetch=async(value,init={})=>{
+  const url=String(value);
+  if(url.endsWith('/status'))return Response.json({});
+  if(url.includes('youtubei'))return youtubeTracks();
+  if(url.startsWith('https://rr1.googlevideo.com/')){
+   if(!fail)return new Response('media bytes');
+   if(url.endsWith('/video'))return new Response(null,{status:403});
+   return new Promise((resolve,reject)=>init.signal.addEventListener('abort',()=>{aborted=true;reject(init.signal.reason);},{once:true}));
+  }
+  uploads++;return Response.json({ok:true});
+ };
+ try{
+  await assert.rejects(prepareHearMeOutYoutube(id,'movie',()=>{}),/403/);
+  assert.equal(aborted,true);assert.equal(uploads,0);
+  fail=false;await prepareHearMeOutYoutube(id,'movie',()=>{});assert.equal(uploads,2);
+ }finally{globalThis.fetch=original;}
+});
+
+test('saved HLS bypasses acquisition and a partial movie cache only transfers the missing track',async()=>{
+ const original=globalThis.fetch;let cached={hls:true},calls=[];
+ globalThis.fetch=async(value)=>{
+  const url=String(value);calls.push(url);
+  if(url.endsWith('/status'))return Response.json(cached);
+  if(url.includes('youtubei'))return youtubeTracks();
+  if(url.startsWith('https://rr1.googlevideo.com/'))return new Response('media bytes');
+  return Response.json({ok:true});
+ };
+ try{
+  await prepareHearMeOutYoutube(id,'movie',()=>{});assert.equal(calls.length,1);
+  cached={video:true};calls=[];
+  await prepareHearMeOutYoutube(id,'movie',()=>{});
+  assert.equal(calls.some(url=>url.endsWith('/video')),false);
+  assert.equal(calls.filter(url=>url.endsWith('/audio')).length,2);
+ }finally{globalThis.fetch=original;}
+});
