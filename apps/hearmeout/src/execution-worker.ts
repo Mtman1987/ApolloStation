@@ -163,14 +163,14 @@ export class YtDlpHearMeOutResolverAdapter implements HearMeOutYoutubeResolverAd
   constructor(private readonly binary: string) { if (!isAbsolute(binary)) throw new Error("yt-dlp binary must be absolute"); }
   async search(query: string, limit: number): Promise<HearMeOutMusicCatalogTrackV1[]> {
     const count = Math.max(1, Math.min(25, limit));
-    const { stdout } = await this.run(this.binary, ["--ignore-config", "--dump-single-json", "--flat-playlist", "--skip-download", "--no-warnings", "--", `ytsearch${count}:${text(query, "query", 300)}`], { timeout: 45_000, maxBuffer: 8 * 1024 * 1024, windowsHide: true });
+    const { stdout } = await this.run(this.binary, ["--ignore-config", "--dump-single-json", "--flat-playlist", "--skip-download", "--no-warnings", "--", `ytsearch${count}:${text(query, "query", 300)}`], { timeout: 15_000, maxBuffer: 8 * 1024 * 1024, windowsHide: true });
     const body = JSON.parse(stdout) as { entries?: Array<Record<string, unknown>> }, now = new Date().toISOString();
     return (body.entries ?? []).filter(item => /^[A-Za-z0-9_-]{11}$/.test(String(item.id))).slice(0, count).map(item => ({ id: String(item.id), title: String(item.title || item.id).slice(0, 300), artist: String(item.channel || item.uploader || "Unknown Artist").slice(0, 300), url: `https://www.youtube.com/watch?v=${item.id}`, thumbnail: `https://i.ytimg.com/vi/${item.id}/hqdefault.jpg`, duration: Number.isFinite(Number(item.duration)) ? Math.max(0, Math.round(Number(item.duration) * 1000)) : 0, queries: [query], savedAt: now, updatedAt: now }));
   }
   async ytDlp(videoId: string): Promise<HearMeOutResolvedYoutubeV1 | null> {
     if (!/^[A-Za-z0-9_-]{11}$/.test(videoId)) throw new Error("Invalid YouTube video id");
     const selector = "bv[height<=720]+ba/b[height<=720]/b";
-    const { stdout } = await this.run(this.binary, ["--ignore-config", "--js-runtimes", "node", "-f", selector, "--dump-single-json", "--no-playlist", "--no-warnings", "--", `https://www.youtube.com/watch?v=${videoId}`], { timeout: 120_000, maxBuffer: 8 * 1024 * 1024, windowsHide: true });
+    const { stdout } = await this.run(this.binary, ["--ignore-config", "--js-runtimes", "node", "-f", selector, "--dump-single-json", "--no-playlist", "--no-warnings", "--", `https://www.youtube.com/watch?v=${videoId}`], { timeout: 25_000, maxBuffer: 8 * 1024 * 1024, windowsHide: true });
     const body = JSON.parse(stdout) as { title?: unknown; duration?: unknown; url?: unknown; vcodec?: unknown; acodec?: unknown; requested_formats?: Array<{ url?: unknown; vcodec?: unknown; acodec?: unknown }> };
     const selected = Array.isArray(body.requested_formats) ? body.requested_formats : [];
     const selectedVideo = selected.find(item => typeof item.url === "string" && item.vcodec && item.vcodec !== "none");
