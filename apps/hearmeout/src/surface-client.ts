@@ -15,7 +15,22 @@ const manifest = JSON.stringify(HEARMEOUT_SURFACE_MANIFEST).replace(/</g, "\\u00
 
 export const HEARMEOUT_SURFACE_BROWSER_JS = String.raw`;(()=>{
 const manifest=${manifest},body=document.body,html=document.documentElement;
-let hostOrigin='*',lastLaunch='';
+let hostOrigin='*',lastLaunch='',bridgeDirectory=null;
+const originalFetch=window.fetch.bind(window);
+window.fetch=async(input,init)=>{
+  const response=await originalFetch(input,init);
+  try{
+    const raw=typeof input==='string'?input:input instanceof URL?input.href:input?.url;
+    const url=new URL(raw||'',window.location.href),method=String(init?.method||'GET').toUpperCase();
+    if(method==='GET'&&/^\/api\/hearmeout\/rooms\/[^/]+\/bridge$/.test(url.pathname)&&response.ok){
+      response.clone().json().then(data=>{
+        const directory=data?.worker?.directory||data?.worker?.status?.directory||data?.directory;
+        if(directory&&Array.isArray(directory.guilds)){bridgeDirectory=directory;queueMicrotask(enhanceRoom)}
+      }).catch(()=>{});
+    }
+  }catch{}
+  return response;
+};
 const style=document.createElement('style');
 style.dataset.spmtSurfaceClient='1';
 style.textContent=[
@@ -31,6 +46,7 @@ style.textContent=[
 '.hmo-console{height:100%!important;min-height:0!important}.hmo-console-head .hmo-toolbar{display:none!important}.hmo-console-head h3{font-size:clamp(24px,3vw,34px)!important}.hmo-console-grid{grid-template-columns:minmax(0,1fr)!important}.hmo-console-grid>[data-hmo-watch-pane]{display:none!important}',
 '.hmo-screen-stage{grid-column:1/-1!important;min-width:0!important;border:1px solid color-mix(in srgb,var(--spmt-accent-secondary) 55%,var(--spmt-border));border-radius:14px;overflow:hidden;background:#000;box-shadow:0 12px 36px #0008}.hmo-screen-stage[hidden]{display:none!important}.hmo-screen-stage:not([hidden]){display:grid!important;place-items:center!important}.hmo-screen-stage video{display:block!important;width:100%!important;max-height:min(62vh,720px)!important;object-fit:contain!important;background:#000!important}',
 '.hmo-watch-drawer{grid-column:1/-1!important;margin-top:8px!important;max-height:min(58vh,520px)!important;border-color:color-mix(in srgb,var(--spmt-accent-secondary) 55%,var(--spmt-border))!important}.hmo-watch-drawer[hidden]{display:none!important}.hmo-watch-drawer:not([hidden]){display:block!important}',
+'.hmo-bridge-select{width:100%;min-height:40px;border:1px solid var(--spmt-border);border-radius:10px;background:var(--spmt-surface-depth-2);color:var(--spmt-ink);padding:8px 10px}',
 '@media(max-width:560px){.hmo-app[data-surface="shell"] .hmo-stage{padding:8px!important}.hmo-app[data-surface="shell"] .hmo-hero{gap:10px!important;padding:12px!important}.hmo-app[data-surface="shell"] .hmo-hero h1{font-size:clamp(42px,17vw,70px)!important}.hmo-screen-stage video{max-height:44vh!important}}'
 ].join('');
 document.head.append(style);
@@ -58,9 +74,28 @@ function enhancePersonaControls(room){
     if(!textarea.dataset.hmoEnterSend){textarea.dataset.hmoEnterSend='1';textarea.addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.shiftKey&&!event.isComposing){event.preventDefault();send?.click()}})}
   }
 }
+function enhanceBridgeControls(room){
+  if(!bridgeDirectory)return;
+  const guildInput=room.querySelector('input[aria-label="Discord server ID"]'),channelInput=room.querySelector('input[aria-label="Discord voice channel ID"]');
+  if(!guildInput||!channelInput||guildInput.dataset.hmoNamedPicker==='1')return;
+  guildInput.dataset.hmoNamedPicker='1';channelInput.dataset.hmoNamedPicker='1';
+  const guilds=Array.isArray(bridgeDirectory.guilds)?bridgeDirectory.guilds:[],guildSelect=document.createElement('select'),channelSelect=document.createElement('select');
+  guildSelect.className='hmo-bridge-select';channelSelect.className='hmo-bridge-select';guildSelect.setAttribute('aria-label','Discord server');channelSelect.setAttribute('aria-label','Discord voice channel');
+  const renderChannels=()=>{
+    const guild=guilds.find(item=>String(item.id)===guildSelect.value),channels=Array.isArray(guild?.channels)?guild.channels:[],prior=channelInput.value;
+    channelSelect.replaceChildren(new Option(guildSelect.value?'Select a voice channel':'Select a server first',''),...channels.map(item=>new Option(String(item.name),String(item.id))));
+    channelSelect.value=channels.some(item=>String(item.id)===prior)?prior:'';channelInput.value=channelSelect.value;channelSelect.disabled=!guildSelect.value;
+  };
+  guildSelect.replaceChildren(new Option('Select a server',''),...guilds.map(item=>new Option(String(item.name),String(item.id))));
+  guildSelect.value=guilds.some(item=>String(item.id)===guildInput.value)?guildInput.value:'';
+  guildSelect.addEventListener('change',()=>{guildInput.value=guildSelect.value;channelInput.value='';renderChannels()});
+  channelSelect.addEventListener('change',()=>{channelInput.value=channelSelect.value});
+  guildInput.hidden=true;channelInput.hidden=true;guildInput.insertAdjacentElement('beforebegin',guildSelect);channelInput.insertAdjacentElement('beforebegin',channelSelect);renderChannels();
+}
 function enhanceRoom(){
   const room=document.querySelector('.hmo-console');if(!room)return;
   room.querySelector('.hmo-console-head .hmo-toolbar')?.remove();
+  enhanceBridgeControls(room);
   const grid=room.querySelector('.hmo-console-grid');if(!grid)return;
   const screens=grid.querySelector('[data-hmo-screens]');if(screens)screens.classList.add('hmo-screen-stage');
   const direct=[...grid.children];
