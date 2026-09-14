@@ -25,5 +25,5 @@ export async function enableHearMeOutBroadcastTest(dataRoot, mediaRoot) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   if (process.env.DEPLOY_ROLE !== 'release') throw Error('Broadcast test activation requires the approved release target');
-  console.log(JSON.stringify(await enableHearMeOutBroadcastTest('/home/sprite/data/release', '/home/sprite/runtime/ffmpeg-b6.1.1')));
+  console.log(JSON.stringify(await enableHearMeOutBroadcastTest('/home/sprite/data/release', '/home/sprite/runtime/ffmpeg-btbn-8.1.2-g1a748fe2cd')));
 }

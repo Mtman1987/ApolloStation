@@ -35,11 +35,11 @@ test('prepared input is confined to the configured tenant and media paths withou
   assert.equal(configured.tenantId,owner.tenantId);
 });
 
-test('existing authenticated prepared video feeds one real Apollo room encoder and keeps advancing without windows',{timeout:30000},async()=>{
+test('existing authenticated prepared video feeds one real Apollo room encoder and keeps advancing without windows',{timeout:40000},async()=>{
   const root=await mkdtemp(join(tmpdir(),'hmo-prepared-input-'));
-  let upstream,feed,broadcast,rooms;const requested=[];
+  let upstream,feed,broadcast,rooms;const requested=[],diagnostics=[];
   try {
-    execFileSync(mediaBinary('ffmpeg'),['-hide_banner','-loglevel','error','-f','lavfi','-i','color=c=blue:s=96x64:r=25','-f','lavfi','-i','sine=frequency=440:sample_rate=44100','-t','24','-c:v','libx264','-preset','ultrafast','-g','50','-c:a','aac','-f','hls','-hls_time','2','-hls_list_size','0','-hls_segment_filename',join(root,'part%03d.ts'),join(root,'index.m3u8')],{timeout:10000});
+    execFileSync(mediaBinary('ffmpeg'),['-hide_banner','-loglevel','error','-f','lavfi','-i','color=c=blue:s=96x64:r=25','-f','lavfi','-i','sine=frequency=440:sample_rate=44100','-t','60','-c:v','libx264','-preset','ultrafast','-g','50','-c:a','aac','-f','hls','-hls_time','2','-hls_list_size','0','-hls_segment_filename',join(root,'part%03d.ts'),join(root,'index.m3u8')],{timeout:10000});
     upstream=createServer(async(req,res)=>{
       try {
         assert.equal(req.headers.authorization,authorization);assert.equal(req.method,'GET');
@@ -60,13 +60,15 @@ test('existing authenticated prepared video feeds one real Apollo room encoder a
     rooms.createRoom(owner,{roomId:'isolated',name:'Isolated broadcast',privacy:'public',operationId:'create'});
     // The loopback fixture uses the existing relative-media URL contract;
     // the configured production worker returns its HTTPS media URL.
-    rooms.enqueue(owner,{roomId:'isolated',lane:'movie',operationId:'video',item:{itemId:id,type:'movie',title:'Prepared video',source:'youtube',playbackUrl:new URL(resolved.result.videoUrl).pathname,durationSeconds:24}});
-    broadcast=new HearMeOutRoomBroadcast(rooms,{ffmpegBinary:mediaBinary('ffmpeg'),ffprobeBinary:mediaBinary('ffprobe'),cachePath:join(root,'broadcast'),spmtOrigin:origin,preparedMedia:options});await broadcast.listen();
+    rooms.enqueue(owner,{roomId:'isolated',lane:'movie',operationId:'video',item:{itemId:id,type:'movie',title:'Prepared video',source:'youtube',playbackUrl:new URL(resolved.result.videoUrl).pathname,durationSeconds:60}});
+    // Diagnostics are enabled only for this credential-free local fixture.
+    broadcast=new HearMeOutRoomBroadcast(rooms,{ffmpegBinary:mediaBinary('ffmpeg'),ffprobeBinary:mediaBinary('ffprobe'),cachePath:join(root,'broadcast'),spmtOrigin:origin,preparedMedia:options,onDiagnostic:value=>{diagnostics.push({...value,message:value.message.slice(-1600)});if(diagnostics.length>10)diagnostics.shift();}});await broadcast.listen();
     feed=createServer((req,res)=>broadcast.serve(owner.tenantId,'isolated','movie',req.url.slice(1),res));await new Promise(resolve=>feed.listen(0,'127.0.0.1',resolve));
     const feedOrigin=`http://127.0.0.1:${feed.address().port}`;
-    let master='';const deadline=Date.now()+14000;
+    // The production source probe itself has a 20-second budget.
+    let master='';const deadline=Date.now()+25000;
     while(Date.now()<deadline){const response=await fetch(feedOrigin+'/index.m3u8');if(response.ok){master=await response.text();break;}await new Promise(resolve=>setTimeout(resolve,150));}
-    assert.match(master,/#EXTM3U/);assert.equal(broadcast.status().startedProcesses,1);
+    assert.match(master,/#EXTM3U/,JSON.stringify({status:broadcast.status(),requested:requested.slice(-12),diagnostics}));assert.equal(broadcast.status().startedProcesses,1);
     const variant=master.split('\n').find(line=>line&&!line.startsWith('#'));
     const before=await (await fetch(feedOrigin+'/'+variant)).text();
     rooms.leaveRoom(owner,'isolated','leave');
