@@ -24,7 +24,7 @@ function fixtureClient() {
 test('title and YouTube page requests choose a current capable worker and resolve actual media', async () => {
   const f = fixtureClient(), resolver = new SpmtHearMeOutSuiteMediaResolver(f.client);
   const item = await resolver.resolve({ tenantId: 'tenant', query: 'new song title', lane: 'music', operationId: 'request-1' });
-  assert.equal(item.playbackUrl, 'https://rr1.googlevideo.com/audio'); assert.equal(item.metadata.videoId, 'abcdefghijk');
+  assert.equal(item.playbackUrl, 'https://rr1.googlevideo.com/video'); assert.equal(item.metadata.videoId, 'abcdefghijk');
   assert.deepEqual(f.jobs.map(j => [j.capabilityId, j.executionTarget]), [['hearmeout.music.search', 'sprite'], ['hearmeout.youtube.resolve', 'sprite']]);
   const keys = f.jobs.map(j => j.key); await resolver.resolve({ tenantId: 'tenant', query: 'new song title', lane: 'music', operationId: 'request-1' }); assert.deepEqual(f.jobs.slice(2).map(j => j.key), keys);
   const movie = await resolver.resolve({ tenantId: 'tenant', query: 'https://www.youtube.com/watch?v=abcdefghijk', lane: 'movie' }); assert.equal(movie.playbackUrl, 'https://rr1.googlevideo.com/video');
