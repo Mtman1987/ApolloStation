@@ -1,3 +1,4 @@
+import { HEARMEOUT_ROOM_CONTROLS_BROWSER_JS } from "./room-controls-client.js";
 import { assertAppSurfaceManifestV1 } from "@spmt/contracts/surface";
 
 export const HEARMEOUT_SURFACE_MANIFEST = assertAppSurfaceManifestV1({
@@ -13,9 +14,9 @@ export const HEARMEOUT_SURFACE_MANIFEST = assertAppSurfaceManifestV1({
 
 const manifest = JSON.stringify(HEARMEOUT_SURFACE_MANIFEST).replace(/</g, "\\u003c");
 
-export const HEARMEOUT_SURFACE_BROWSER_JS = String.raw`;(()=>{
+export const HEARMEOUT_SURFACE_BROWSER_JS = HEARMEOUT_ROOM_CONTROLS_BROWSER_JS + String.raw`;(()=>{
 const manifest=${manifest},body=document.body,html=document.documentElement;
-let hostOrigin='*',lastLaunch='';
+let hostOrigin='*',lastLaunch='',launchContext={};
 const style=document.createElement('style');
 style.dataset.spmtSurfaceClient='1';
 style.textContent=[
@@ -45,6 +46,7 @@ window.addEventListener('hmo:open-watch',openWatch);
 function makeIcon(label,title,hook){const button=document.createElement('button');button.type='button';button.className='hmo-icon';button.textContent=label;button.title=title;button.setAttribute('aria-label',title);button.dataset[hook]='1';return button}
 function enhanceRoom(){
   const room=document.querySelector('.hmo-console');if(!room)return;
+  window.HearMeOutRoomControls.enhancePersonas(room);
   room.querySelector('.hmo-console-head .hmo-toolbar')?.remove();
   const grid=room.querySelector('.hmo-console-grid');if(!grid)return;
   const direct=[...grid.children];
@@ -55,7 +57,7 @@ function enhanceRoom(){
   const more=[...icons.querySelectorAll('.hmo-icon')].find(button=>button.getAttribute('aria-label')==='More')||null;
   if(!own.querySelector('[data-hmo-commlink-icon]')){
     const chat=makeIcon('\u{1f4ac}','Open Commlink','hmoCommlinkIcon');
-    chat.addEventListener('click',()=>window.open('/?app=commlink','_top'));
+    chat.addEventListener('click',()=>window.HearMeOutRoomControls.openCommlink({origin:hostOrigin==='*'?location.origin:hostOrigin,tenantId:launchContext.tenantId||new URLSearchParams(location.search).get('tenantId')||''}));
     icons.insertBefore(chat,more);
   }
   let watch=own.querySelector('[data-hmo-watch-drawer]');
@@ -101,7 +103,7 @@ function relabel(){
 }
 window.addEventListener('message',event=>{
   const message=event.data;
-  if(message?.protocol==='spmt.embed'&&message?.version===1&&message?.type==='host.hello'&&message.launch?.appId===manifest.appId){hostOrigin=event.origin||hostOrigin;setMode(message.launch.surfaceMode||'standalone');const launch=JSON.stringify(message.launch);if(launch!==lastLaunch){lastLaunch=launch;publish()}return}
+  if(message?.protocol==='spmt.embed'&&message?.version===1&&message?.type==='host.hello'&&message.launch?.appId===manifest.appId){hostOrigin=event.origin||hostOrigin;launchContext=message.launch;setMode(message.launch.surfaceMode||'standalone');const launch=JSON.stringify(message.launch);if(launch!==lastLaunch){lastLaunch=launch;publish()}return}
   if(!message||message.protocol!=='spmt.surface'||message.version!==1||message.type!=='page.open'||message.appId!==manifest.appId)return;
   if(hostOrigin!=='*'&&event.origin!==hostOrigin)return;
   if(message.pageId==='rooms')document.querySelector('[data-hmo-open-rooms]')?.click();

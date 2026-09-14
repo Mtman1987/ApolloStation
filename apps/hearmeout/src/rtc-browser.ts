@@ -22,6 +22,7 @@ export class HearMeOutRtc {
   private media = new Map<string, { id: number; audio: HTMLAudioElement }>();
   private screens = new Map<number, HTMLVideoElement>();
   private screen: MediaStream | null = null;
+  private localScreenVideo: HTMLVideoElement | null = null;
   private livekit: Room | null = null;
   private context: AudioContext | null = null;
   private capture: AudioWorkletNode | null = null;
@@ -90,7 +91,7 @@ export class HearMeOutRtc {
     this.snapshot = snapshot;
     if (!this.canPublish() && this.screen) await this.setScreen(null);
     if (changed) { this.stopTransport(); this.mode = snapshot.mode; this.epoch = snapshot.epoch; }
-    if (snapshot.mode === 'waiting') { this.options.onStatus('Waiting for another person. Room audio is idle.'); return; }
+    if (snapshot.mode === 'waiting') { this.updateScreens(); this.options.onStatus('Waiting for another person. Room audio is idle.'); return; }
     const generation = this.generation;
     if (snapshot.mode === 'livekit-cloud' && changed) await this.connectLiveKit(snapshot, generation);
     else if (snapshot.mode === 'peer-webrtc') {
@@ -177,8 +178,14 @@ export class HearMeOutRtc {
     if (!snapshot.livekit) throw new Error('LiveKit is unavailable');
     const room = new Room(); this.livekit = room;
     room.on(RoomEvent.TrackSubscribed, (track, _publication, participant) => {
+      if (generation !== this.generation) return;
       if (track.kind === Track.Kind.Audio) this.attachAudio(Number(participant.identity), track.mediaStreamTrack);
       else if (track.kind === Track.Kind.Video) this.attachScreen(Number(participant.identity), track.mediaStreamTrack);
+    });
+    room.on(RoomEvent.TrackUnsubscribed, (track, _publication, participant) => {
+      if (generation !== this.generation || track.kind !== Track.Kind.Video) return;
+      const id = Number(participant.identity), video = this.screens.get(id);
+      if ((video?.srcObject as MediaStream | null)?.getVideoTracks().includes(track.mediaStreamTrack)) this.removeScreen(id, video!);
     });
     room.on(RoomEvent.Disconnected, () => { if (generation === this.generation) this.failed(new Error('LiveKit disconnected')); });
     await room.connect(snapshot.livekit.url, snapshot.livekit.token, { peerConnectionTimeout: 15_000, websocketTimeout: 10_000 });
@@ -202,34 +209,69 @@ export class HearMeOutRtc {
     void audio.play().catch(() => this.options.onStatus('Tap to enable room audio.'));
   }
 
+  private removeScreen(id: number, video: HTMLVideoElement) {
+    video.pause(); video.srcObject = null; video.remove();
+    // An old track can end after the participant has published its replacement.
+    if (this.screens.get(id) === video) this.screens.delete(id);
+    this.updateScreens();
+  }
   private attachScreen(id: number, track: MediaStreamTrack) {
-    this.screens.get(id)?.remove();
+    const prior = this.screens.get(id);
+    if (prior) this.removeScreen(id, prior);
     const video = document.createElement('video'); video.autoplay = true; video.muted = true; video.playsInline = true;
-    video.dataset.hmoScreen = String(id); video.srcObject = new MediaStream([track]); video.style.cssText = 'display:block;width:100%;max-height:55vh;background:#000';
+    video.dataset.hmoScreen = String(id); video.srcObject = new MediaStream([track]); video.style.cssText = 'width:100%;max-height:55vh;background:#000';
     this.screens.set(id, video); this.updateScreens(); void video.play().catch(() => this.options.onStatus('Tap to enable the shared screen.'));
-    track.addEventListener('ended', () => { video.remove(); this.screens.delete(id); }, { once: true });
+    track.addEventListener('ended', () => this.removeScreen(id, video), { once: true });
   }
   private updateScreens() {
     let host = document.querySelector<HTMLElement>('[data-hmo-screens]');
     if (!host) { host = document.createElement('section'); host.dataset.hmoScreens = '1'; document.body.append(host); }
     const target = document.querySelector('.hmo-console-grid'); if (target && host.parentElement !== target) target.append(host);
+    host.style.gridColumn = '1 / -1';
+    // Preview capture directly: a sender does not subscribe to its own LiveKit track.
+    const localTrack = this.screen?.getVideoTracks().find(track => track.readyState === 'live');
+    if (localTrack && this.canPublish()) {
+      if (!this.localScreenVideo) {
+        const video = document.createElement('video'); video.autoplay = true; video.muted = true; video.playsInline = true;
+        video.dataset.hmoLocalScreen = '1'; video.setAttribute('aria-label', 'Your shared screen');
+        video.style.cssText = 'display:block;width:100%;max-height:55vh;background:#000';
+        this.localScreenVideo = video;
+      }
+      const video = this.localScreenVideo;
+      if ((video.srcObject as MediaStream | null)?.getVideoTracks()[0] !== localTrack) {
+        // Exclude capture audio from local preview to prevent feedback.
+        video.srcObject = new MediaStream([localTrack]);
+        void video.play().catch(() => this.options.onStatus('Tap to enable the shared screen.'));
+      }
+      if (video.parentElement !== host) host.prepend(video);
+    } else if (this.localScreenVideo) {
+      this.localScreenVideo.pause(); this.localScreenVideo.srcObject = null; this.localScreenVideo.remove(); this.localScreenVideo = null;
+    }
     for (const [id, video] of this.screens) {
-      const peer = this.snapshot?.peers.find(value => value.id === id); video.hidden = !peer?.screenSharing || peer.serverMuted === true;
+      const peer = this.snapshot?.peers.find(value => value.id === id);
+      video.hidden = !peer?.screenSharing || peer.serverMuted === true;
+      // Explicit display also wins over app/video styling in embedded surfaces.
+      video.style.display = video.hidden ? 'none' : 'block';
       video.setAttribute('aria-label', `${peer?.name || 'Participant'} shared screen`); if (video.parentElement !== host) host.append(video);
     }
-    host.hidden = ![...this.screens.values()].some(video => !video.hidden);
+    host.hidden = !this.localScreenVideo && ![...this.screens.values()].some(video => !video.hidden);
   }
   async shareScreen() {
     if (this.screen) { await this.setScreen(null); return; }
     if (!this.canPublish()) throw new Error('The room host has muted your publishing.');
+    if (!navigator.mediaDevices?.getDisplayMedia) throw new Error('Screen sharing is not available in this browser. Open HearMeOut in a supported desktop browser.');
     const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
-    try { await this.setScreen(stream); } catch (error) { for (const track of stream.getTracks()) track.stop(); throw error; }
+    try { await this.setScreen(stream); } catch (error) {
+      if (this.screen === stream) await this.setScreen(null).catch(() => {});
+      for (const track of stream.getTracks()) track.stop(); throw error;
+    }
   }
   async setScreen(stream: MediaStream | null) {
     if (stream && !this.canPublish()) throw new Error('The room host has muted your publishing.');
     const prior = this.screen; this.screen = stream;
     if (prior && prior !== stream) for (const track of prior.getTracks()) track.stop();
-    if (stream) stream.getVideoTracks()[0]?.addEventListener('ended', () => { if (this.screen === stream) void this.setScreen(null); }, { once: true });
+    this.updateScreens();
+    if (stream) stream.getVideoTracks()[0]?.addEventListener('ended', () => { if (this.screen === stream) void this.setScreen(null).catch(error => this.options.onStatus(String(error))); }, { once: true });
     for (const link of this.links.values()) { await link.screen?.sender.replaceTrack(stream?.getVideoTracks()[0] || null); await link.screenAudio?.sender.replaceTrack(stream?.getAudioTracks()[0] || null); }
     if (this.livekit) {
       for (const publication of this.livekit.localParticipant.trackPublications.values()) if ([Track.Source.ScreenShare, Track.Source.ScreenShareAudio].includes(publication.source) && publication.track) await this.livekit.localParticipant.unpublishTrack(publication.track, false);
@@ -267,7 +309,7 @@ export class HearMeOutRtc {
     void this.context.resume().catch(() => {}); return this.context;
   }
   private canPublish() { return !this.snapshot?.peers.find(peer => peer.id === this.snapshot?.id)?.serverMuted; }
-  async resumeAudio() { await this.audioContext(); for (const { audio } of this.media.values()) await audio.play().catch(() => {}); for (const video of this.screens.values()) await video.play().catch(() => {}); }
+  async resumeAudio() { await this.audioContext(); for (const { audio } of this.media.values()) await audio.play().catch(() => {}); for (const video of this.screens.values()) await video.play().catch(() => {}); await this.localScreenVideo?.play().catch(() => {}); }
   private async startCapture() {
     this.stopCapture();
     if (!this.input || this.mode !== 'wss-relay' || !this.canPublish()) return;
@@ -340,8 +382,9 @@ export class HearMeOutRtc {
     this.scheduled.clear();
     for (const output of this.playout.values()) output.gain.disconnect();
     this.playout.clear();
+    this.updateScreens();
   }
-  diagnostics() { return { mode: this.mode, epoch: this.epoch, framesSent: this.framesSent, framesReceived: this.framesReceived, peers: [...this.links.values()].map(link => link.pc.connectionState), inputLive: this.input?.getAudioTracks().some(track => track.readyState === 'live') || false }; }
+  diagnostics() { return { screenSharing: this.screen?.getVideoTracks().some(track => track.readyState === 'live') || false, mode: this.mode, epoch: this.epoch, framesSent: this.framesSent, framesReceived: this.framesReceived, peers: [...this.links.values()].map(link => link.pc.connectionState), inputLive: this.input?.getAudioTracks().some(track => track.readyState === 'live') || false }; }
   close() {
     if (this.screen) { for (const track of this.screen.getTracks()) track.stop(); this.screen = null; }
     this.roomId = ''; if (this.reconnect) clearTimeout(this.reconnect); this.reconnect = null;
