@@ -242,6 +242,7 @@ const web = start("SpaceMountain web", "apps/spacemountain-web/dist/integrated-s
   DSH_WEB_ORIGIN: `http://127.0.0.1:${dshWebPort}`,
   STREAMWEAVER_WEB_ORIGIN: `http://127.0.0.1:${streamweaverWebPort}`,
   HEARMEOUT_WEB_ORIGIN: `http://127.0.0.1:${hearMeOutWebPort}`,
+  ...(hearMeOutCutover.DISCORD_CLIENT_ID ? { HEARMEOUT_ACTIVITY_CLIENT_ID: hearMeOutCutover.DISCORD_CLIENT_ID } : {}),
   MOUNTAINVIEW_WEB_ORIGIN: `http://127.0.0.1:${mountainViewWebPort}`,
   COMPANION_WEB_ORIGIN: `http://127.0.0.1:${companionWebPort}`,
   HOST: "0.0.0.0",

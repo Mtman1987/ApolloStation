@@ -138,7 +138,10 @@ export class HearMeOutExecutionWorker {
     if (capability === "hearmeout.youtube.resolve") {
       if (!this.options.resolver) throw new HearMeOutWorkerError("YouTube resolution is not configured on this worker", true);
       const resolution = await this.options.resolver.resolve(text(input.videoId, "videoId", 20));
-      if (!resolution.result) throw new HearMeOutWorkerError("No safe media source could be resolved", true);
+      if (!resolution.result) {
+        const preparedFailure=resolution.attempts.find(attempt=>attempt.stage==='upstream'&&attempt.outcome==='error');
+        throw new HearMeOutWorkerError(preparedFailure?.message||"No safe media source could be resolved", true);
+      }
       return { schemaVersion: 1, kind: "hearmeout.youtube.resolve.result", media: resolution.result, attempts: resolution.attempts };
     }
     throw new Error("Unsupported HearMeOut capability");

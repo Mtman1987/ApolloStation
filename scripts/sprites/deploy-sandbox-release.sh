@@ -235,6 +235,7 @@ NODE_OPTIONS="--import=$release_dir/scripts/sprites/supervisor-test-port-isolati
 
 if [[ "$DEPLOY_ROLE" == "release" ]]; then
   HEARMEOUT_CONTROLLED_MEDIA=1 NODE_OPTIONS="--import=$release_dir/scripts/offline-network-guard.mjs" node scripts/sprites/check-hearmeout-media-source.mjs
+  node scripts/sprites/check-hearmeout-prepared-source.mjs
 fi
 
 provision_llm_runtime

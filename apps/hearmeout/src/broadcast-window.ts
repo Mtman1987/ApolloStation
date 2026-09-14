@@ -11,7 +11,7 @@ export function broadcastView(program:HearMeOutBroadcastProgram,configured:boole
 }
 function guest(request:IncomingMessage,response:ServerResponse){
   let token=String(request.headers.cookie??'').match(/(?:^|;\s*)hmo_viewer=([a-f0-9]{64})(?:;|$)/)?.[1];
-  if(!token){token=randomBytes(32).toString('hex');const secure=String(request.headers['x-forwarded-proto']??'').startsWith('https')||!/^(localhost|127\.0\.0\.1)(:|$)/.test(String(request.headers.host??''));response.setHeader('set-cookie','hmo_viewer='+token+'; Path=/; HttpOnly; Max-Age=2592000; SameSite='+(secure?'None; Secure':'Lax'));}
+  if(!token){token=randomBytes(32).toString('hex');const secure=String(request.headers['x-forwarded-proto']??'').startsWith('https')||!/^(localhost|127\.0\.0\.1)(:|$)/.test(String(request.headers.host??''));response.setHeader('set-cookie','hmo_viewer='+token+'; Path=/; HttpOnly; Max-Age=2592000; SameSite='+(secure?'None; Secure; Partitioned':'Lax'));}
   return 'guest:'+createHash('sha256').update(token).digest('hex');
 }
 export async function handleHearMeOutBroadcastWindow(request:IncomingMessage,response:ServerResponse,url:URL,program:HearMeOutBroadcastProgram,worker:HearMeOutRoomBroadcast|undefined,media:HearMeOutSuiteMediaResolverV1|undefined,clientId='',readOnly=false){
@@ -50,36 +50,45 @@ export const BROADCAST_WINDOW_JS=String.raw`
 (()=>{
   const video=document.getElementById('player'),status=document.getElementById('status'),error=document.getElementById('error'),volume=document.getElementById('volume'),sound=document.getElementById('sound');
   const source=new window.HearMeOutPlaybackSource(video,e=>{error.textContent=e.message},document.getElementById('audio-language'));
-  let level=Number(localStorage.getItem('hmo-broadcast-volume')||0),lastAudible=level||85,sourceUrl='',busy=false,disposed=false,pendingRequest;
+  let level=Number(localStorage.getItem('hmo-broadcast-volume')||0),lastAudible=level||85,sourceUrl='',busy=false,disposed=false,pendingRequest,requestInFlight=false,lastRevision=-1,playPending;
   function setVolume(value){level=Math.max(0,Math.min(100,value));if(level)lastAudible=level;video.volume=level/100;volume.value=String(level);sound.textContent=level?'Mute locally':'Enable sound';localStorage.setItem('hmo-broadcast-volume',String(level));}
   setVolume(level);
   const params=new URLSearchParams(location.search),frameId=params.get('frame_id');
   if(frameId&&CLIENT_ID){let origin='*';try{if(document.referrer)origin=new URL(document.referrer).origin}catch{}window.parent.postMessage([0,{v:1,encoding:'json',client_id:CLIENT_ID,frame_id:frameId,sdk_version:'2.5.0'}],origin);}
-  async function api(path,init){const response=await fetch(path,{cache:'no-store',signal:AbortSignal.timeout(init?150000:15000),...init}),data=await response.json();if(!response.ok)throw Error(data.error||data.message||'Broadcast unavailable');return data;}
+  async function api(path,init){const response=await fetch(path,{cache:'no-store',signal:AbortSignal.timeout(init?190000:15000),...init}),data=await response.json();if(!response.ok)throw Object.assign(Error(data.error||data.message||'Broadcast unavailable'),{status:response.status});return data;}
+  function play(){
+    if(disposed||!sourceUrl)return Promise.resolve();
+    if(playPending)return playPending;
+    playPending=video.play().catch(e=>{if(disposed||!sourceUrl||e.name==='AbortError')return;if(e.name==='NotAllowedError')status.textContent='Tap Enable sound to watch';else error.textContent=e.message;}).finally(()=>{playPending=undefined});
+    return playPending;
+  }
+  function applyState(state){
+    if(disposed||state.revision<lastRevision)return;lastRevision=state.revision;
+    status.textContent=requestInFlight?'Preparing your request…':state.playback.status==='idle'?'Nothing playing. Request music or a movie below.':'Broadcast: '+state.playback.status;
+    document.getElementById('title').textContent=state.current?.item.title||'Nothing playing';
+    const queue=document.getElementById('queue');queue.replaceChildren();for(const request of state.queue){const li=document.createElement('li');li.textContent=request.item.title;queue.append(li);}
+    if(!state.current){if(sourceUrl){sourceUrl='';source.clear();}return;}
+    if(!state.broadcast.configured){error.textContent='The broadcast worker is unavailable.';return;}
+    if(sourceUrl!==state.broadcast.playbackUrl){sourceUrl=state.broadcast.playbackUrl;source.load(sourceUrl,true,true);}
+    if(video.readyState>=2)void play();
+  }
   async function refresh(){
     if(busy||disposed)return;busy=true;
     try{
-      const state=await api('/api/watch/broadcast/state');if(disposed)return;
-      status.textContent=state.playback.status==='idle'?'Nothing playing. Request music or a movie below.':'Broadcast: '+state.playback.status;
-      document.getElementById('title').textContent=state.current?.item.title||'Nothing playing';
-      const queue=document.getElementById('queue');queue.replaceChildren();for(const request of state.queue){const li=document.createElement('li');li.textContent=request.item.title;queue.append(li);}
-      if(!state.current){source.clear();sourceUrl='';return;}
-      if(!state.broadcast.configured){error.textContent='The broadcast worker is unavailable.';return;}
-      if(sourceUrl!==state.broadcast.playbackUrl){sourceUrl=state.broadcast.playbackUrl;source.load(sourceUrl,true,true);}
-      if(video.readyState>=2)try{await video.play()}catch{status.textContent='Tap Enable sound to watch';}
+      applyState(await api('/api/watch/broadcast/state'));
     }catch(e){error.textContent=e.message;}finally{busy=false;}
   }
-  sound.addEventListener('click',async()=>{setVolume(level?0:lastAudible);try{await video.play()}catch(e){error.textContent=e.message}});
+  sound.addEventListener('click',()=>{setVolume(level?0:lastAudible);void play()});
   volume.addEventListener('input',event=>setVolume(Number(event.target.value)));
   document.getElementById('retry').addEventListener('click',()=>{source.clear();sourceUrl='';error.textContent='';refresh()});
   document.getElementById('request-form').addEventListener('submit',async event=>{
-    event.preventDefault();const query=event.target.elements.query.value.trim(),lane=event.target.elements.lane.value,button=document.getElementById('request-submit');
+    event.preventDefault();if(requestInFlight||disposed)return;const query=event.target.elements.query.value.trim(),lane=event.target.elements.lane.value,button=document.getElementById('request-submit');
     if(pendingRequest?.query!==query||pendingRequest?.lane!==lane)pendingRequest={query,lane,key:crypto.randomUUID()};
-    button.disabled=true;status.textContent='Preparing your request…';
-    try{await api('/api/watch/broadcast/requests',{method:'POST',headers:{'content-type':'application/json','idempotency-key':pendingRequest.key},body:JSON.stringify({query,lane})});pendingRequest=undefined;event.target.reset();error.textContent='';await refresh();}
-    catch(e){error.textContent=e.message;}finally{button.disabled=false;}
+    requestInFlight=true;button.disabled=true;error.textContent='';status.textContent='Preparing your request…';
+    try{const state=await api('/api/watch/broadcast/requests',{method:'POST',headers:{'content-type':'application/json','idempotency-key':pendingRequest.key},body:JSON.stringify({query,lane})});pendingRequest=undefined;if(event.target.elements.query.value.trim()===query&&event.target.elements.lane.value===lane)event.target.reset();error.textContent='';requestInFlight=false;applyState(state);}
+    catch(e){if(e.status)pendingRequest=undefined;error.textContent=e.message;}finally{requestInFlight=false;button.disabled=false;}
   });
-  video.addEventListener('canplay',()=>{void video.play().catch(()=>{status.textContent='Tap Enable sound to watch';})});
+  video.addEventListener('canplay',()=>{void play()});
   document.addEventListener('visibilitychange',()=>{if(!document.hidden)source.joinLive()});
   refresh();const timer=setInterval(refresh,1500);window.addEventListener('pagehide',()=>{disposed=true;clearInterval(timer);source.clear()});
 })();`;
