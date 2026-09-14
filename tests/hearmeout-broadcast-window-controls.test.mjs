@@ -17,6 +17,7 @@ test('broadcast window exposes local audio/video toggles without exposing signed
   const view=broadcastView(programFixture(),true);
   assert.equal(view.current.item.metadata.videoId,'abcdefghijk');
   assert.equal(view.current.item.metadata.audioPlaybackUrl,undefined);
-  assert.equal(view.queue[0].item.metadata,undefined);
+  assert.equal(view.queue[0].item.metadata?.audioPlaybackUrl,undefined);
+  assert.doesNotMatch(JSON.stringify(view),/private-audio/);
   assert.equal(view.broadcast.playbackUrl,'/api/watch/broadcast/index.m3u8');
 });
