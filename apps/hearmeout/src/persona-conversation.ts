@@ -5,6 +5,14 @@ export interface HearMeOutPublicPersonaV1 {
   targetTenantId: string;
   displayName: string;
   wakeNames: string[];
+  aliases?: string[];
+  interests?: string[];
+  ownerName?: string;
+  voice?: string;
+  livekitTtsDescriptor?: string;
+  avatarUrl?: string;
+  idleAvatarUrl?: string;
+  talkingAvatarUrl?: string;
   canInvite: boolean;
   canTalk?: boolean;
   transportHealthy: boolean;
@@ -35,11 +43,7 @@ export interface HearMeOutPersonaConversationPortsV1 {
 
 export interface HearMeOutPublicActorV1 { userId?: string; username?: string; displayName?: string; }
 
-/**
- * Public room conversation orchestration. The adapter is expected to use the
- * canonical SPMT/StreamWeaver service boundary; browsers never receive a
- * provider token, StreamWeaver secret, or a persona-owner credential.
- */
+/** Public room conversation orchestration. Provider secrets remain server-side. */
 export class HearMeOutPersonaConversationCoordinator {
   constructor(private readonly ports: HearMeOutPersonaConversationPortsV1) {}
 
@@ -95,11 +99,22 @@ export class HearMeOutPersonaConversationCoordinator {
 
 export class HearMeOutPersonaUnavailableError extends Error {}
 
-function normalizePersona(value: HearMeOutPublicPersonaV1): HearMeOutPublicPersonaV1 { const blockedReason=optionalLabel(value.blockedReason,300);return { personaId: identifier(value.personaId, "personaId"), targetTenantId: identifier(value.targetTenantId, "targetTenantId"), displayName: optionalLabel(value.displayName, 120) || value.personaId, wakeNames: [...new Set((value.wakeNames ?? []).map((item) => optionalLabel(item, 96)).filter((item): item is string => Boolean(item)))].slice(0, 50), canInvite: value.canInvite === true,canTalk:value.canTalk!==false, transportHealthy: value.transportHealthy === true,...(blockedReason?{blockedReason}:{}) }; }
+function normalizePersona(value: HearMeOutPublicPersonaV1): HearMeOutPublicPersonaV1 {
+  const blockedReason = optionalLabel(value.blockedReason, 300), aliases = strings(value.aliases, 96), interests = strings(value.interests, 96), ownerName = optionalLabel(value.ownerName, 100), voice = optionalLabel(value.voice, 128), livekitTtsDescriptor = optionalLabel(value.livekitTtsDescriptor, 128), avatarUrl = optionalHttps(value.avatarUrl), idleAvatarUrl = optionalHttps(value.idleAvatarUrl), talkingAvatarUrl = optionalHttps(value.talkingAvatarUrl);
+  return {
+    personaId: identifier(value.personaId, "personaId"), targetTenantId: identifier(value.targetTenantId, "targetTenantId"), displayName: optionalLabel(value.displayName, 120) || value.personaId,
+    wakeNames: [...new Set((value.wakeNames ?? []).map(item => optionalLabel(item, 96)).filter((item): item is string => Boolean(item)))].slice(0, 50),
+    ...(aliases.length ? { aliases } : {}), ...(interests.length ? { interests } : {}), ...(ownerName ? { ownerName } : {}), ...(voice ? { voice } : {}), ...(livekitTtsDescriptor ? { livekitTtsDescriptor } : {}),
+    ...(avatarUrl ? { avatarUrl } : {}), ...(idleAvatarUrl ? { idleAvatarUrl } : {}), ...(talkingAvatarUrl ? { talkingAvatarUrl } : {}),
+    canInvite: value.canInvite === true, canTalk: value.canTalk !== false, transportHealthy: value.transportHealthy === true, ...(blockedReason ? { blockedReason } : {}),
+  };
+}
 function validateAudioBase64(value: string) { const result = String(value ?? "").trim(); if (!result || result.length > HEARMEOUT_PERSONA_AUDIO_MAX_BASE64_LENGTH || !/^[A-Za-z0-9+/]+={0,2}$/.test(result)) throw new Error("HearMeOut recorded audio is invalid or too large"); return result; }
 function validateAudioDataUri(value: string) { if (!/^data:audio\/(?:mpeg|mp3|wav|ogg|webm);base64,[A-Za-z0-9+/]+={0,2}$/.test(value) || value.length > 30_000_000) throw new Error("HearMeOut persona speech audio is invalid"); return value; }
 function identifier(value: unknown, name: string) { const result = String(value ?? "").trim(); if (!/^[A-Za-z0-9._:@/-]{1,200}$/.test(result)) throw new Error(`HearMeOut ${name} is invalid`); return result; }
 function optionalIdentifier(value: unknown) { const result = String(value ?? "").trim(); return result ? identifier(result, "actor user id") : ""; }
 function optionalLabel(value: unknown, max: number) { const result = String(value ?? "").trim(); if (!result) return ""; if (result.length > max || /[\r\n\0]/.test(result)) throw new Error("HearMeOut label is invalid"); return result; }
+function strings(values: unknown, max: number) { return Array.isArray(values) ? [...new Set(values.map(item => optionalLabel(item, max)).filter(Boolean))].slice(0, 50) : []; }
+function optionalHttps(value: unknown) { const raw = String(value ?? "").trim(); if (!raw) return ""; const url = new URL(raw); if (url.protocol !== "https:" || url.username || url.password || url.href.length > 1000) throw new Error("HearMeOut persona media URL is invalid"); return url.href; }
 function message(value: unknown, name: string, max: number) { const result = String(value ?? "").trim(); if (!result || result.length > max || /\0/.test(result)) throw new Error(`HearMeOut ${name} is invalid`); return result; }
 function safeError(value: unknown) { return (value instanceof Error ? value.message : String(value)).replace(/(?:authorization|token|secret|password|cookie)\s*[:=]?\s*\S+/gi, "$1=[redacted]").slice(0, 500); }
