@@ -103,8 +103,7 @@ function enhanceRoom(){
   const menu=own.querySelector('.hmo-person-menu');
   if(menu){
     for(const button of [...menu.querySelectorAll('.hmo-button')]){
-      if(button.textContent?.includes('Open Commlink')){button.textContent='Open Commlink';button.onclick=openCommlink}
-      if(button.textContent?.includes('Bots & personas'))button.remove();
+      if(button.textContent?.includes('Open Commlink')||button.textContent?.includes('Bots & personas'))button.remove();
     }
   }
 }
