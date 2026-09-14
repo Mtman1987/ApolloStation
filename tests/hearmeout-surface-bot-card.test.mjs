@@ -5,6 +5,7 @@ import test from "node:test";
 const source = readFileSync(new URL("../apps/hearmeout/src/web-server.ts", import.meta.url), "utf8");
 const runtime = readFileSync(new URL("../apps/hearmeout/src/web-server-v3.ts", import.meta.url), "utf8");
 const surface = readFileSync(new URL("../apps/hearmeout/src/surface-client.ts", import.meta.url), "utf8");
+const rtc = readFileSync(new URL("../apps/hearmeout/src/rtc-browser.ts", import.meta.url), "utf8");
 
 test("HearMeOut app-owned surface exposes real room creation membership media and compact controls", () => {
   for (const pattern of [/Create Room/, /\/api\/hearmeout\/rooms/, /joinRoom/, /heartbeatPresence/, /listMembers/, /getSession/, /Commlink/, /Music Bot/, /Bridge/, /Personas/, /Watch together/, /Leave room/, /Delete room/]) assert.match(source, pattern);
@@ -34,6 +35,14 @@ test("HearMeOut uses the Discord directory and the native persona room transport
   assert.match(runtime, /data-speaking/);
 });
 
+test("HearMeOut drives human and persona speaking indicators from LiveKit participants", () => {
+  assert.match(rtc, /RoomEvent\.ActiveSpeakersChanged/);
+  assert.match(rtc, /hmo:participant-speaking/);
+  assert.doesNotMatch(rtc, /attachAudio\(Number\(participant\.identity\)/);
+  assert.match(runtime, /data-hmo-persona-id/);
+  assert.match(runtime, /data-hmo-user-id/);
+  assert.match(runtime, /toggleAttribute\('data-speaking',speaking\)/);
+});
 test("HearMeOut surface browser bundle parses before room controls initialize", () => {
   const marker = "String.raw`";
   const start = surface.indexOf(marker);
