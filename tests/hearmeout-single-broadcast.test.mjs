@@ -56,7 +56,7 @@ test('guest HTTP requests cross real SPMT media jobs; all room and Activity wind
   const client=new SpmtClient({baseUrl:spmtOrigin,appId:'hearmeout',getAccessToken:()=>spmt.auth.issueServiceAccess('hearmeout',credential).accessToken});
   const worker=new HearMeOutExecutionWorker(client,{workerId:'single-test',executionTarget:'sprite',tenantIds:['tenant'],capabilities:['hearmeout.music.search','hearmeout.youtube.resolve'],catalog:new HearMeOutWorkerMusicCatalog({catalogFile:join(dir,'catalog.json')}),cache:new HearMeOutWorkerMediaCache({cacheDir:join(dir,'cache')}),search:async()=>[{id:'abcdefghijk',title:'Video',url:'https://youtu.be/abcdefghijk'}],resolver:new HearMeOutYoutubeResolverCoordinator({upstream:async videoId=>({videoId,videoUrl:'https://rr1.googlevideo.com/video',audioUrl:'https://rr1.googlevideo.com/audio',title:'Video',stage:'upstream',resolvedAt:new Date().toISOString()})})});
   await worker.report(new Date().toISOString());workerTask=worker.run(stop.signal,10);
-  host=createHearMeOutWebServer({spmtOrigin,databasePath:join(dir,'rooms.sqlite'),port:0,credential,singleBroadcast:binding,activity:{tenantId:'tenant',clientId:'234567890123456789'}});
+  host=createHearMeOutWebServer({spmtOrigin,databasePath:join(dir,'rooms.sqlite'),port:0,credential,operationMode:'read-only',singleBroadcast:binding,activity:{tenantId:'tenant',clientId:'234567890123456789'}});
   await host.listen();const base='http://127.0.0.1:'+host.server.address().port;
   rooms=new SqliteHearMeOutRoomMediaRuntime(join(dir,'rooms.sqlite'));const owner={tenantId:'tenant',userId:'owner',displayName:'Owner',roles:['admin']};
   assert.equal(rooms.listRooms(owner).length,0,'Opening the service creates no room');
