@@ -16,7 +16,7 @@ export class HearMeOutDiscordHttp {
   constructor(private readonly options: { binding: HearMeOutActivityBinding; publicKeyHex: string; rooms: SqliteHearMeOutRoomMediaRuntime; client: SpmtClient; singleProgram?: HearMeOutBroadcastProgram; media?: HearMeOutSuiteMediaResolverV1; readOnly?: boolean; fetchImpl?: typeof fetch; deferAfterMs?: number }) {
     if (!/^\d{5,30}$/.test(options.binding.clientId) || !options.binding.tenantId || !options.binding.guildIds?.length || options.binding.guildIds.some(id => !/^\d{5,30}$/.test(id))) throw new Error("HearMeOut Discord requires a community, application and allowed guilds");
     this.router = new HearMeOutDiscordInteractionRouter({
-      singleProgram:options.singleProgram, publicKeyHex: options.publicKeyHex, rooms: options.rooms, readOnly: options.readOnly === true,
+      ...(options.singleProgram?{singleProgram:options.singleProgram}:{}), publicKeyHex: options.publicKeyHex, rooms: options.rooms, readOnly: options.readOnly === true,
       tenants: { resolve: input => input.applicationId === options.binding.clientId && input.guildId && options.binding.guildIds!.includes(input.guildId) ? options.binding.tenantId : undefined },
       principals: { resolve: async input => {
         try {
