@@ -149,18 +149,18 @@ export async function resolveYoutubeStream(videoId: string): Promise<ResolvedStr
 
 const MAX_TRACK_BYTES = 200 * 1024 * 1024;
 
-async function cacheApi(path:string,body?:Blob){
-  const response=await fetch(path,{method:body?'POST':'GET',credentials:'same-origin',cache:'no-store',...(body?{headers:{'content-type':'application/octet-stream'},body}:{}),signal:AbortSignal.timeout(180000)});
+async function cacheApi(path:string,body?:Blob,signal?:AbortSignal){
+  const response=await fetch(path,{method:body?'POST':'GET',credentials:'same-origin',cache:'no-store',...(body?{headers:{'content-type':'application/octet-stream'},body}:{}),signal:signal?AbortSignal.any([signal,AbortSignal.timeout(180000)]):AbortSignal.timeout(15000)});
   const data=await response.json().catch(()=>null);
   if(!response.ok||!data)throw Error(data?.error||'The media cache did not accept this request');
   return data;
 }
-async function downloadTrack(value:string){
+async function downloadTrack(value:string,signal:AbortSignal){
   const url=new URL(value);
   if(url.protocol!=='https:'||url.username||url.password||!(url.hostname==='googlevideo.com'||url.hostname.endsWith('.googlevideo.com')))throw Error('YouTube returned an invalid media source');
   // This fetch deliberately runs in the viewer's browser. Never send the URL
   // to an app endpoint to have a server fetch it instead.
-  const response=await fetch(url,{signal:AbortSignal.timeout(180000)});
+  const response=await fetch(url,{signal:AbortSignal.any([signal,AbortSignal.timeout(180000)])});
   if(!response.ok||!response.body)throw Error('YouTube did not allow this browser to download the media (HTTP '+response.status+')');
   const reader=response.body.getReader(),chunks:Uint8Array<ArrayBuffer>[]=[];let bytes=0;
   try{while(true){const part=await reader.read();if(part.done)break;bytes+=part.value.byteLength;if(bytes>MAX_TRACK_BYTES)throw Error('This media track is too large to cache');chunks.push(new Uint8Array(part.value));}}
@@ -178,8 +178,25 @@ export async function prepareHearMeOutYoutube(videoId:string,lane:'music'|'movie
   if(!resolved)throw Error('YouTube could not resolve this video in your browser. The worker has not retried it.');
   const hasVideo=resolved.videoUrl!==resolved.audioUrl;
   if(lane==='movie'&&!hasVideo)throw Error('YouTube did not return a video track for this browser');
-  if(hasVideo&&!cached.video){progress('Downloading video in your browser…');await cacheApi(base+'/video',await downloadTrack(resolved.videoUrl));}
-  if(!cached.audio){progress('Downloading audio in your browser…');await cacheApi(base+'/audio',await downloadTrack(resolved.audioUrl));}
+  // Transfer both tracks concurrently, but do not submit the broadcast request
+  // until every required upload has completed. Uploads only populate the cache.
+  const controller = new AbortController();
+  const tracks: Array<{name:'video'|'audio';url:string}> = [];
+  if(hasVideo&&!cached.video)tracks.push({name:'video',url:resolved.videoUrl});
+  if(!cached.audio)tracks.push({name:'audio',url:resolved.audioUrl});
+  progress('Preparing '+tracks.map(track=>track.name).join(' and ')+'…');
+  const transfers = tracks.map(async track => {
+    const body = await downloadTrack(track.url,controller.signal);
+    controller.signal.throwIfAborted();
+    await cacheApi(base+'/'+track.name,body,controller.signal);
+  });
+  try { await Promise.all(transfers); }
+  catch(error) {
+    // Settle sibling transfers before the caller starts shared-source fallback.
+    controller.abort();
+    await Promise.allSettled(transfers);
+    throw error;
+  }
   progress('Starting playback from the media cache…');
 }
 if(typeof window!=='undefined')Object.assign(window,{prepareHearMeOutYoutube});
