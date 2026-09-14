@@ -16,7 +16,7 @@ function guest(request:IncomingMessage,response:ServerResponse){
 export async function handleHearMeOutBroadcastWindow(request:IncomingMessage,response:ServerResponse,url:URL,program:HearMeOutBroadcastProgram,worker:HearMeOutRoomBroadcast|undefined,media:HearMeOutSuiteMediaResolverV1|undefined,clientId='',readOnly=false){
   const entry=['/watch','/activity','/activity-lite'].includes(url.pathname)||(url.pathname==='/'&&url.searchParams.has('frame_id'));
   const state=url.pathname==='/api/watch/broadcast/state'||/^\/api\/watch\/sessions\/[^/]+\/state$/.test(url.pathname);
-  const feed=url.pathname.match(/^\/api\/watch\/(?:broadcast|sessions\/[^/]+\/broadcast)\/([^/]+)$/);
+  const feed=!state&&url.pathname.match(/^\/api\/watch\/(?:broadcast|sessions\/[^/]+\/broadcast)\/([^/]+)$/);
   const defaults=url.pathname==='/api/watch/activity-default',requestVideo=url.pathname==='/api/watch/broadcast/requests';
   if(!entry&&!state&&!feed&&!defaults&&!requestVideo)return false;
   try{
