@@ -38,11 +38,15 @@ export class HttpHearMeOutVoiceBridgeWorker implements HearMeOutVoiceBridgeWorke
     this.timeoutMs = boundedInteger(options.timeoutMs ?? 20_000, 1_000, 60_000, "timeoutMs");
   }
 
-  status(input: { tenantId: string; roomId: string }) {
+  async status(input: { tenantId: string; roomId: string }) {
     this.requireTenant(input.tenantId);
     cleanId(input.tenantId, "tenantId");
     const roomId = hearMeOutProviderRoomName(input.tenantId, cleanId(input.roomId, "roomId"));
-    return this.request("/voice-bridge", { query: { roomId } });
+    const [status, directory] = await Promise.all([
+      this.request("/voice-bridge", { query: { roomId } }),
+      this.request("/discord/directory").then(safeDiscordDirectory).catch(() => undefined),
+    ]);
+    return { ...status, ...(directory ? { directory } : {}) };
   }
 
   start(input: { tenantId: string; roomId: string; guildId: string; voiceChannelId: string; audioProfile: HearMeOutVoiceAudioProfileV1; discordReceiveGain: number }) {
@@ -139,6 +143,22 @@ export class HttpHearMeOutVoiceBridgeWorker implements HearMeOutVoiceBridgeWorke
     if ((payload as Record<string, unknown>).success === false) throw new HttpHearMeOutVoiceBridgeWorkerError(response.status, safeProviderMessage(payload) ?? "Worker did not apply the request");
     return payload as Record<string, unknown>;
   }
+}
+
+function safeDiscordDirectory(payload: Record<string, unknown>) {
+  const guilds = Array.isArray(payload.guilds) ? payload.guilds : [];
+  return { guilds: guilds.slice(0, 100).flatMap(value => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+    const guild = value as Record<string, unknown>, id = String(guild.id ?? ""), name = String(guild.name ?? "").trim();
+    if (!/^\d{5,30}$/.test(id) || !name || name.length > 120 || /[\r\n\0]/.test(name)) return [];
+    const channels = (Array.isArray(guild.channels) ? guild.channels : []).slice(0, 500).flatMap(entry => {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) return [];
+      const channel = entry as Record<string, unknown>, channelId = String(channel.id ?? ""), channelName = String(channel.name ?? "").trim(), type = Number(channel.type);
+      if (!/^\d{5,30}$/.test(channelId) || !channelName || channelName.length > 120 || /[\r\n\0]/.test(channelName) || (type !== 2 && type !== 13)) return [];
+      return [{ id: channelId, name: channelName, type, ...(Number.isFinite(Number(channel.position)) ? { position: Number(channel.position) } : {}) }];
+    });
+    return [{ id, name, channels }];
+  }) };
 }
 
 function confirmGain(result: Record<string, unknown>, expected: number) {
