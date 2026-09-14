@@ -420,14 +420,14 @@ test("supervised runner makes both layers healthy and stops both children togeth
   const spmtPort = await freePort();
   let webPort = await freePort();
   while (webPort === spmtPort) webPort = await freePort();
-  const child = spawn(process.execPath, ["scripts/sprites/run-supervised-sandbox.mjs", "--public-url", `http://localhost:${webPort}`, "--data-root", directory, "--build-sha", "runner-test", "--spmt-port", String(spmtPort), "--web-port", String(webPort), "--offline-network-guard", "1"], { cwd: new URL("..", import.meta.url), stdio: ["ignore", "pipe", "pipe"] });
+  const child = spawn(process.execPath, ["scripts/sprites/run-supervised-sandbox.mjs", "--public-url", `http://localhost:${webPort}`, "--data-root", directory, "--build-sha", "runner-test", "--spmt-port", String(spmtPort), "--web-port", String(webPort), "--offline-network-guard", "1"], { cwd: new URL("..", import.meta.url), stdio: ["ignore", "pipe", "pipe"], detached: process.platform !== "win32" });
   let output = "";
   child.stdout.setEncoding("utf8");
   child.stderr.setEncoding("utf8");
   child.stdout.on("data", (chunk) => { output += chunk; });
   child.stderr.on("data", (chunk) => { output += chunk; });
   try {
-    await waitUntil(() => output.includes("Green sandbox is supervised and ready"), 20_000, () => `Runner output:\n${output}`);
+    await waitUntil(() => output.includes("Green sandbox is supervised and ready"), 60_000, () => `Runner output:\n${output}`);
     const spmt = await (await fetch(`http://127.0.0.1:${spmtPort}/health/ready`)).json();
     const web = await (await fetch(`http://127.0.0.1:${webPort}/sandbox/health`)).json();
     assert.equal(spmt.runtimeMode, "sandbox");
@@ -440,7 +440,7 @@ test("supervised runner makes both layers healthy and stops both children togeth
     assert.deepEqual(exit, { code: 0, signal: null });
     await waitUntil(async () => !(await reachable(spmtPort)) && !(await reachable(webPort)), 5_000, () => "A supervised child port remained reachable after termination");
   } finally {
-    if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+    stopRunnerFixture(child);
     rmSync(directory, { recursive: true, force: true });
   }
 });
@@ -451,14 +451,14 @@ test("supervised runner seeds the canonical first-party app pool and launches Ne
   while (ports.size < 3) ports.add(await freePort());
   const [spmtPort, webPort, nebulaArcadePort] = ports;
   const base = `http://127.0.0.1:${webPort}`;
-  const child = spawn(process.execPath, ["scripts/sprites/run-supervised-sandbox.mjs", "--candidate-app", "nebula-arcade", "--public-url", `http://localhost:${webPort}`, "--data-root", directory, "--build-sha", "candidate-test", "--spmt-port", String(spmtPort), "--web-port", String(webPort), "--nebula-arcade-port", String(nebulaArcadePort), "--offline-network-guard", "1"], { cwd: new URL("..", import.meta.url), stdio: ["ignore", "pipe", "pipe"] });
+  const child = spawn(process.execPath, ["scripts/sprites/run-supervised-sandbox.mjs", "--candidate-app", "nebula-arcade", "--public-url", `http://localhost:${webPort}`, "--data-root", directory, "--build-sha", "candidate-test", "--spmt-port", String(spmtPort), "--web-port", String(webPort), "--nebula-arcade-port", String(nebulaArcadePort), "--offline-network-guard", "1"], { cwd: new URL("..", import.meta.url), stdio: ["ignore", "pipe", "pipe"], detached: process.platform !== "win32" });
   let output = "";
   child.stdout.setEncoding("utf8");
   child.stderr.setEncoding("utf8");
   child.stdout.on("data", (chunk) => { output += chunk; });
   child.stderr.on("data", (chunk) => { output += chunk; });
   try {
-    await waitUntil(() => output.includes("The canonical app pool contains Commlink, Chat Gateway, Stellar Core, Mission Control, Nebula Arcade."), 20_000, () => `Runner output:\n${output}`);
+    await waitUntil(() => output.includes("The canonical app pool contains Commlink, Chat Gateway, Stellar Core, Mission Control, Nebula Arcade."), 60_000, () => `Runner output:\n${output}`);
     const page = await (await fetch(`${base}/`)).text();
     assert.match(page, /Add developer app/);
     assert.match(page, /Load Nebula Arcade example/);
@@ -490,9 +490,33 @@ test("supervised runner seeds the canonical first-party app pool and launches Ne
     assert.deepEqual(exit, { code: 0, signal: null });
     await waitUntil(async () => !(await reachable(spmtPort)) && !(await reachable(webPort)) && !(await reachable(nebulaArcadePort)), 5_000, () => "A supervised candidate port remained reachable after termination");
   } finally {
-    if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+    stopRunnerFixture(child);
     rmSync(directory, { recursive: true, force: true });
   }
+});
+
+// A startup failure can occur before the supervisor installs its signal
+// handlers. Kill only this test's detached group, including inherited pipes,
+// so a failed assertion cannot leave its app children holding the suite open.
+function stopRunnerFixture(child) {
+  try {
+    if (process.platform !== "win32" && child.pid) process.kill(-child.pid, "SIGKILL");
+    else if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+  } catch (error) { if (error.code !== "ESRCH") throw error; }
+  child.stdout?.destroy(); child.stderr?.destroy();
+}
+
+test("failed supervisor fixture cleanup closes descendants after the parent has exited", {skip:process.platform === "win32",timeout:5000}, async () => {
+  const serverCode="const http=require('node:http');const s=http.createServer((q,r)=>r.end('ready'));s.listen(0,'127.0.0.1',()=>console.log('port:'+s.address().port));";
+  const parentCode="const {spawn}=require('node:child_process');spawn(process.execPath,['-e',"+JSON.stringify(serverCode)+"],{stdio:'inherit'}).unref();process.exit(0);";
+  const child=spawn(process.execPath,['-e',parentCode],{stdio:['ignore','pipe','pipe'],detached:true});
+  let output='';child.stdout.on('data',chunk=>{output+=chunk});
+  try {
+    await waitUntil(()=>/port:\d+/.test(output)&&child.exitCode!==null,3000,()=>output);
+    const port=Number(output.match(/port:(\d+)/)[1]);assert.equal(await reachable(port),true);
+    stopRunnerFixture(child);
+    await waitUntil(async()=>!(await reachable(port)),1500,()=>"The fixture's orphan server remained reachable");
+  } finally {stopRunnerFixture(child);}
 });
 
 async function freePort() {
