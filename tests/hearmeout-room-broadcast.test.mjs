@@ -1,7 +1,7 @@
 import {mediaBinary} from '../scripts/test-media-binaries.mjs';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {mkdtemp,readFile,rm} from 'node:fs/promises';
+import {mkdtemp,readFile,readdir,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {execFile,execFileSync} from 'node:child_process';
@@ -42,7 +42,8 @@ test('one actual ffmpeg room broadcast serves many windows, runs without viewers
  const before=(await health()).broadcast.startedProcesses;for(let i=0;i<6;i++)assert.equal((await fetch(feed)).status,200);assert.equal((await health()).broadcast.startedProcesses,before);assert.ok(reads>=2); // probe + one source reader, never one decoder per viewer
  replica=new HearMeOutRoomBroadcast(rooms,{...options,spmtOrigin});await replica.listen();assert.equal(replica.status().active,0);await replica.close();replica=undefined;
  const variants=manifest.body.split('\n').filter(line=>line&&!line.startsWith('#'));assert.ok(variants.length);const playlist=await (await fetch(new URL(variants[0],feed))).text();assert.match(playlist,/#EXT-X-MEDIA-SEQUENCE:/);assert.doesNotMatch(playlist,/#EXT-X-ENDLIST/);
- rooms.leaveRoom(owner,'room','leave');await new Promise(r=>setTimeout(r,2200));assert.equal((await health()).broadcast.active,1);assert.equal((await fetch(feed)).status,403); // membership still gates private/native feeds
+ const [cacheDirectory]=await readdir(join(dir,'feed'));
+ rooms.leaveRoom(owner,'room','leave');await waitFor(()=>readFile(join(dir,'feed',cacheDirectory,variants[0]),'utf8'),body=>body!==playlist,8000);assert.equal((await health()).broadcast.active,1);assert.equal((await fetch(feed)).status,403); // membership still gates private/native feeds
  rooms.joinRoom(owner,'room','return');const after=await (await fetch(new URL(variants[0],feed))).text();assert.notEqual(after,playlist);assert.equal((await health()).broadcast.startedProcesses,before);
  rooms.deleteRoom(owner,'room','delete');await waitFor(health,h=>h.broadcast.active===0);
  rooms.createRoom(owner,{roomId:'room',name:'Fresh broadcast',privacy:'public',operationId:'recreate'});rooms.enqueue(owner,{roomId:'room',lane:'movie',operationId:'fresh-movie',item:{...item('fresh-film',30),type:'movie',playbackUrl:'https://media.example/v1/media/public/'+'a'.repeat(43)}});
