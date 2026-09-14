@@ -66,3 +66,5 @@ jobs:
         run: node scripts/test-hmo-media-browser.mjs
       - name: Verify saved music remains accessible without rooms
         run: node scripts/test-hmo-console-browser.mjs
+      - name: Verify room-first video window and sustained room presence
+        run: node scripts/test-hmo-room-window-browser.mjs

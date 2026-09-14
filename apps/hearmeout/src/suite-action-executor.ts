@@ -68,7 +68,7 @@ export class HearMeOutWebSuiteActionExecutor implements HearMeOutSuiteActionExec
     const program=this.options.singleProgram;
     if(program&&input.action==='hmo.media.request'){
       if(input.source.simulation)return {simulation:true,text:'Previewed a request for the shared broadcast.'};
-      const session=await program.request({requesterId:principal.userId,displayName:principal.displayName,query:required(input.args.query,'query'),operationId:context.idempotencyKey},this.media);
+      const session=await program.request({requesterId:principal.userId,displayName:principal.displayName,query:required(input.args.query,'query'),lane:input.args.lane==='music'?'music':'movie',operationId:context.idempotencyKey},this.media);
       return {text:'Your video is in the shared broadcast.',session};
     }
     if(program&&input.action==='hmo.media.state.read')return {text:program.getSession().current?.item.title??'Nothing is playing.',session:program.getSession()};

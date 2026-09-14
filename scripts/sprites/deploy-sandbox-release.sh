@@ -275,6 +275,9 @@ for _ in {1..30}; do
   fi
   sleep 0.2
 done
+if [[ "$DEPLOY_ROLE" == "release" ]]; then
+  node scripts/sprites/retire-hearmeout-deployment-sample.mjs
+fi
 create_apollo_service "$BUILD_SHA"
 
 ready=0

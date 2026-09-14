@@ -3,7 +3,7 @@ import type { HearMeOutMediaSessionV1 } from './room-media-core.js';
 
 type RoomMediaSession = HearMeOutMediaSessionV1 & {broadcast?:{playbackUrl:string;configured:boolean}};
 type Lane = 'music' | 'movie';
-type RoomView = { room: { roomId: string }; member?: boolean; locked?: boolean; move?: { targetRoomId: string }; viewer: { userId: string; canManage: boolean }; music: RoomMediaSession; movie: RoomMediaSession };
+type RoomView = { singleBroadcast?: boolean; room: { roomId: string }; member?: boolean; locked?: boolean; move?: { targetRoomId: string }; viewer: { userId: string; canManage: boolean }; music: RoomMediaSession; movie: RoomMediaSession };
 
 export function hearMeOutPlaybackPosition(session: HearMeOutMediaSessionV1, now = Date.now()) {
   const elapsed = session.playback.status === 'playing' ? Math.max(0, now - Date.parse(session.playback.updatedAt)) / 1000 : 0;
@@ -23,7 +23,7 @@ export class HearMeOutRoomMediaBrowser {
 
   constructor() { this.parking.hidden = true; this.parking.dataset.hmoMediaParking = '1'; document.body.append(this.parking); }
   bindRoom(room: RoomView) {
-    if (!room.member || room.locked) { this.close(); return; }
+    if (room.singleBroadcast || !room.member || room.locked) { this.close(); return; }
     if (this.room?.room.roomId !== room.room.roomId) this.close();
     if (this.room) for (const lane of ['music', 'movie'] as const) {
       if (this.room[lane].revision > room[lane].revision) room = { ...room, [lane]: this.room[lane] };
