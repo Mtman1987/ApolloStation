@@ -220,8 +220,11 @@ if [[ ! -d "$release_dir/.git" ]]; then
   git -c http.version=HTTP/1.1 -c http.lowSpeedLimit=1024 -c http.lowSpeedTime=60 clone --filter=blob:none --no-checkout "${clone_reference[@]}" "$REPOSITORY_URL" "$release_dir"
 fi
 
-git -C "$release_dir" -c http.version=HTTP/1.1 -c http.lowSpeedLimit=1024 -c http.lowSpeedTime=60 fetch --depth=1 origin "$BUILD_SHA"
-git -C "$release_dir" -c http.version=HTTP/1.1 -c http.lowSpeedLimit=1024 -c http.lowSpeedTime=60 checkout --detach --force "$BUILD_SHA"
+git -C "$release_dir" config http.version HTTP/1.1
+git -C "$release_dir" config http.lowSpeedLimit 1024
+git -C "$release_dir" config http.lowSpeedTime 60
+git -C "$release_dir" fetch --depth=1 origin "$BUILD_SHA"
+git -C "$release_dir" checkout --detach --force "$BUILD_SHA"
 actual_sha="$(git -C "$release_dir" rev-parse HEAD)"
 if [[ "$actual_sha" != "$BUILD_SHA" ]]; then
   echo "Checked-out SHA $actual_sha does not match requested SHA $BUILD_SHA" >&2
