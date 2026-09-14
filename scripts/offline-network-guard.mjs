@@ -8,6 +8,7 @@ const hearMeOutBridge = process.env.HEARMEOUT_CONTROLLED_BRIDGE === "1" && proce
 const hearMeOutPreparedMedia = process.env.HEARMEOUT_PREPARED_MEDIA_ENABLED === '1' && process.env.HEARMEOUT_VOICE_BRIDGE_ORIGIN === 'https://hmo-dj-worker.fly.dev';
 const preparedMediaUrl = hearMeOutPreparedMedia
   ? (await import('../apps/hearmeout/dist/prepared-media.js')).preparedHearMeOutUrl : () => false;
+const browserCacheUrl=hearMeOutPreparedMedia?(await import('../apps/hearmeout/dist/prepared-media.js')).hearMeOutBrowserCacheUrl:()=>false;
 const movieProvider=process.env.HEARMEOUT_MOVIE_PROVIDER_ORIGIN==='https://hearmeout-main.fly.dev';
 const movieProviderUrl=movieProvider?(await import('../apps/hearmeout/dist/movie-provider.js')).hearMeOutMovieProviderUrl:()=>false;
 const avatarAiOutbound=process.env.SPMT_AVATAR_AI_OUTBOUND_MODE==="enabled";
@@ -98,6 +99,7 @@ function assertAllowedUrl(value, method, label) {
   if (!["http:", "https:", "ws:", "wss:"].includes(url.protocol)) return;
   if (liveReadUrl && url.origin === liveReadUrl.origin && String(method).toUpperCase() === "GET") return;
   if (String(method).toUpperCase() === 'GET' && movieProviderUrl(url)) return;
+  if (browserCacheUrl(url,'https://hmo-dj-worker.fly.dev') && (String(method).toUpperCase()==='GET'&&!/\/(audio|video)$/.test(url.pathname)||String(method).toUpperCase()==='POST'&&/\/(audio|video)$/.test(url.pathname))) return;
   if (String(method).toUpperCase() === 'GET' && preparedMediaUrl(url, 'https://hmo-dj-worker.fly.dev')) return;
   if (hearMeOutBridge && url.origin === "https://hmo-dj-worker.fly.dev" && !url.username && !url.password && ["GET", "POST"].includes(String(method).toUpperCase()) && /^\/voice-bridge(?:\/(?:gate|audio-profile|receive-gain))?$/.test(url.pathname)) return;
   if(privateFlowOpenAi&&url.origin==="https://api.openai.com"&&url.pathname==="/v1/responses"&&String(method).toUpperCase()==="POST")return;

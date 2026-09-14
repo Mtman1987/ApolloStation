@@ -36,6 +36,7 @@ export class HearMeOutRoomBroadcast {
   }
   async listen(){await Promise.all([access(this.options.ffmpegBinary),access(this.options.ffprobeBinary),access(this.options.lockBinary??'/usr/bin/flock'),mkdir(this.options.cachePath,{recursive:true})]);this.proxy=await this.egress.listen();this.tick();this.timer=setInterval(()=>this.tick(),500);this.timer.unref();}
   status(){return {configured:true,startedProcesses:this.startedProcesses,active:[...this.runs.values()].filter(run=>run.process).length,starting:[...this.runs.values()].filter(run=>run.pending).length,failed:[...this.runs.values()].filter(run=>run.failed).length};}
+  browserCache(videoId:string,track?:'audio'|'video',body?:Buffer){if(!this.prepared)throw Error('Browser media caching is not configured');return this.prepared.browserCache(videoId,track,body);}
   private tick(){
     if(this.closed)return;
     const sessions=this.rooms.broadcastSessions(),present=new Set(sessions.map(session=>this.cacheKey(session)));

@@ -13,6 +13,11 @@ export class HearMeOutPreparedMediaError extends Error {
   constructor(readonly code:string,message:string,readonly httpStatus?:number){super(message);}
 }
 
+export function hearMeOutBrowserCacheUrl(value:string|URL, origin:string){
+  let url:URL;try{url=new URL(value);}catch{return undefined;}
+  return url.origin===origin&&!url.username&&!url.password&&!url.search&&!url.hash&&/^\/watch\/youtube\/browser\/[A-Za-z0-9_-]{11}(?:\/(?:audio|video))?$/.test(url.pathname)?url:undefined;
+}
+
 // The existing DJ worker prepares media. It never receives Apollo room control
 // requests through this adapter, and its credential never enters FFmpeg argv.
 export function preparedHearMeOutUrl(value: string | URL, origin: string): URL | undefined {
@@ -37,8 +42,21 @@ export class HearMeOutPreparedMedia implements HearMeOutYoutubeResolverAdapterV1
   private readonly localPrefix = '/_hmo_prepared/' + randomBytes(32).toString('base64url') + '/';
   constructor(readonly options: HearMeOutPreparedMediaOptions, private readonly fetchImpl: typeof fetch = fetch) {}
 
+  async browserCache(videoId:string,track?:'audio'|'video',body?:Buffer){
+    const url=new URL(`/watch/youtube/browser/${videoId}${track?'/'+track:''}`,this.options.origin);
+    if(!hearMeOutBrowserCacheUrl(url,this.options.origin))throw Error('Invalid browser media request');
+    if(track&&(!body?.length||body.length>200*1024*1024))throw Error('Invalid browser media size');
+    const response=await this.fetchImpl(url,{method:track?'POST':'GET',redirect:'manual',headers:{authorization:this.options.authorization,...(track?{'content-type':'application/octet-stream'}:{})},...(track?{body:new Uint8Array(body!)}:{}),signal:AbortSignal.timeout(120000)});
+    if(!response.ok)throw await preparedMediaFailure(response);
+    return JSON.parse(await boundedManifest(response)) as {audio?:boolean;video?:boolean;ok?:boolean};
+  }
+
   async upstream(videoId: string): Promise<HearMeOutResolvedYoutubeV1 | null> {
     if (!/^[A-Za-z0-9_-]{11}$/.test(videoId)) throw Error('Invalid YouTube video id');
+    // The worker may transcode cached bytes, but must not request a cold
+    // YouTube source from its datacenter IP on Apollo's behalf.
+    const cached=await this.browserCache(videoId);
+    if(!cached.audio)throw new HearMeOutPreparedMediaError('browser-required','Open the broadcast in your browser to prepare this YouTube media');
     const url = new URL(`/watch/youtube/hls/${videoId}/index.m3u8`, this.options.origin);
     for (let attempt = 0; attempt < 2; attempt++) {
       const response = await this.read(url);
@@ -103,7 +121,7 @@ export class HearMeOutPreparedMedia implements HearMeOutYoutubeResolverAdapterV1
   private read(url: URL, range?: string, signal?: AbortSignal) {
     if (!preparedHearMeOutUrl(url, this.options.origin)) throw Error('Invalid prepared media source');
     const machine = url.searchParams.get('machine');
-    return this.fetchImpl(url, { method: 'GET', redirect: 'manual', headers: { authorization: this.options.authorization, 'user-agent': 'HearMeOut/1.0', ...(range ? { range } : {}), ...(machine ? { 'fly-force-instance-id': machine } : {}) }, signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(55000)]) : AbortSignal.timeout(55000) });
+    return this.fetchImpl(url, { method: 'GET', redirect: 'manual', headers: { authorization: this.options.authorization, 'x-hmo-browser-media':'1', 'user-agent': 'HearMeOut/1.0', ...(range ? { range } : {}), ...(machine ? { 'fly-force-instance-id': machine } : {}) }, signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(55000)]) : AbortSignal.timeout(55000) });
   }
 }
 

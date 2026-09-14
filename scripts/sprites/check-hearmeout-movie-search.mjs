@@ -9,7 +9,7 @@ try{
   if(!env.HEARMEOUT_MOVIE_PROVIDER_ORIGIN)throw Error('Movie provider is not configured');
   process.env.HEARMEOUT_MOVIE_PROVIDER_ORIGIN=env.HEARMEOUT_MOVIE_PROVIDER_ORIGIN;
   await import('../offline-network-guard.mjs');
-  await new HearMeOutMovieProvider(env.HEARMEOUT_MOVIE_PROVIDER_ORIGIN).search('Big Buck Bunny');
+  await new HearMeOutMovieProvider(env.HEARMEOUT_MOVIE_PROVIDER_ORIGIN,fetch,env.HEARMEOUT_VOICE_BRIDGE_AUTHORIZATION).search('Big Buck Bunny');
   result={iptvSearchEndpoint:true};
 }catch(error){
   result.errorCode=/HTTP \d{3}/.exec(String(error?.message))?.[0]??'request-failed';

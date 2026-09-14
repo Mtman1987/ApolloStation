@@ -30,13 +30,14 @@ test('prepared input is confined to the configured tenant and media paths withou
   assert.throws(()=>acceptHearMeOutBrowserResolvedStream({videoId:id,videoUrl:remoteOrigin+path,audioUrl:remoteOrigin+path}),/not allowed/);
   let calls=0;
   const prepared=new HearMeOutPreparedMedia({origin:remoteOrigin,authorization,tenantId:owner.tenantId},async(url,init)=>{
+    if(new URL(url).pathname.includes('/browser/'))return Response.json({audio:true,video:true});
     calls++;assert.equal(new URL(url).pathname,path);assert.equal(init.headers.authorization,authorization);assert.equal(init.redirect,'manual');
     return new Response(null,{status:302,headers:{location:'https://unrelated.example/private'}});
   });
   assert.throws(()=>prepared.localSource(new URL(remoteOrigin+path),'other-tenant','http://127.0.0.1:1'),/not available/);
   await assert.rejects(()=>prepared.upstream(id),/HTTP 302/);assert.equal(calls,1);
   for(const manifest of ['#EXTM3U\nhttps://unrelated.example/segment.ts', '#EXTM3U\n/watch/youtube/hls/abcdefghijk/part000.ts', '#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI="https://unrelated.example/key"']){
-    const unsafe=new HearMeOutPreparedMedia({origin:remoteOrigin,authorization,tenantId:owner.tenantId},async()=>new Response(manifest));
+    const unsafe=new HearMeOutPreparedMedia({origin:remoteOrigin,authorization,tenantId:owner.tenantId},async url=>new URL(url).pathname.includes('/browser/')?Response.json({audio:true,video:true}):new Response(manifest));
     await assert.rejects(()=>unsafe.upstream(id),/unrelated source/);
   }
   assert.throws(()=>preparedHearMeOutEnvironment({HEARMEOUT_PREPARED_MEDIA_ENABLED:'1'}),/incomplete/);
@@ -53,6 +54,7 @@ test('existing authenticated prepared video feeds one real Apollo room encoder a
       try {
         assert.equal(req.headers.authorization,authorization);assert.equal(req.method,'GET');
         const url=new URL(req.url,'http://worker');requested.push(url.pathname);
+        if(url.pathname===`/watch/youtube/browser/${id}`){res.setHeader('content-type','application/json');res.end(JSON.stringify({audio:true,video:true}));return;}
         assert.ok(url.pathname.startsWith(`/watch/youtube/hls/${id}/`));
         const name=url.pathname.split('/').at(-1);assert.match(name,/^(?:index\.m3u8|part\d+\.ts)$/);
         let bytes=await readFile(join(root,name));

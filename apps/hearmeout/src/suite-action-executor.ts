@@ -13,12 +13,12 @@ import type { HearMeOutSuiteActionExecutorV1 } from "./suite-action-worker.js";
 import type { HearMeOutVoiceBridgeController } from "./voice-bridge.js";
 
 export interface HearMeOutSuitePersonaStoreV1 { listPersonas(tenantId: string, roomId: string): Array<{ personaId: string; targetTenantId: string; displayName: string }>; putPersona(principal: HearMeOutPrincipalV1, roomId: string, persona: HearMeOutPublicPersonaV1 & { transportHealthy?: boolean }): unknown; removePersona(tenantId: string, roomId: string, personaId: string): unknown; }
-export interface HearMeOutSuiteMediaResolverV1 { resolve(input: { tenantId: string; billedUserId?: string; requesterId?: string; query: string; lane: "music" | "movie"; operationId?: string; excludeItemIds?: string[]; selectedItemId?:string }): Promise<HearMeOutMediaItemV1>; searchMovies?(input:{tenantId:string;billedUserId?:string;requesterId:string;query:string;operationId?:string}):Promise<HearMeOutMovieMatch[]>; }
+export interface HearMeOutSuiteMediaResolverV1 { resolve(input: { tenantId: string; billedUserId?: string; requesterId?: string; query: string; lane: "music" | "movie"; operationId?: string; excludeItemIds?: string[]; selectedItemId?:string; browserPreparation?:boolean }): Promise<HearMeOutMediaItemV1>; searchMovies?(input:{tenantId:string;billedUserId?:string;requesterId:string;query:string;operationId?:string}):Promise<HearMeOutMovieMatch[]>; }
 
 /** Uses the existing HearMeOut media worker rather than resolving media in a browser or duplicating provider credentials. */
 export class SpmtHearMeOutSuiteMediaResolver implements HearMeOutSuiteMediaResolverV1 {
   constructor(private readonly client: Pick<SpmtClient, "createExecutionJob" | "getExecutionJob" | "listExecutionWorkers">, private readonly options: { maxWaitMs?: number; pollMs?: number } = {}) {}
-  async resolve(input: { tenantId: string; billedUserId?: string; requesterId?: string; query: string; lane: "music" | "movie"; operationId?: string; excludeItemIds?: string[]; selectedItemId?:string }) {
+  async resolve(input: { tenantId: string; billedUserId?: string; requesterId?: string; query: string; lane: "music" | "movie"; operationId?: string; excludeItemIds?: string[]; selectedItemId?:string; browserPreparation?:boolean }) {
     const operationId = input.operationId ?? randomUUID();
     const youtubeId = hearMeOutYoutubeId(input.query);
     if (youtubeId) { if(input.excludeItemIds?.includes(youtubeId))throw Error("Auto-radio needs a different recommendation");return this.youtube(input, youtubeId, operationId); }
@@ -43,7 +43,8 @@ export class SpmtHearMeOutSuiteMediaResolver implements HearMeOutSuiteMediaResol
     const result=await this.job(input.tenantId,input.billedUserId,'hearmeout.movie.search',{query:input.query,requesterId:input.requesterId},input.operationId??randomUUID());
     return (Array.isArray(result.items)?result.items:[]) as HearMeOutMovieMatch[];
   }
-  private async youtube(input: { tenantId: string; billedUserId?: string; requesterId?: string; lane: "music" | "movie" }, videoId: string, operationId: string, search?: Record<string, unknown>): Promise<HearMeOutMediaItemV1> {
+  private async youtube(input: { tenantId: string; billedUserId?: string; requesterId?: string; lane: "music" | "movie"; browserPreparation?:boolean }, videoId: string, operationId: string, search?: Record<string, unknown>): Promise<HearMeOutMediaItemV1> {
+    if(input.browserPreparation)throw Object.assign(Error('Prepare YouTube media in your browser'),{code:'youtube-browser-required',videoId,title:clean(search?.title||videoId,300)});
     const result = await this.job(input.tenantId, input.billedUserId, "hearmeout.youtube.resolve", { videoId, lane: input.lane, requesterId: input.requesterId }, operationId);
     const resolved = result.media as Record<string, unknown> | undefined;
     const playbackUrl = httpUrl(input.lane === "music" ? resolved?.audioUrl : resolved?.videoUrl);
