@@ -45,13 +45,14 @@ export class HearMeOutBroadcastProgram {
     return this.transaction(()=>{const session=this.read();if(session.current?.requestId!==requestId||session.playback.status!=='playing')return false;this.next(session);this.write(session);return true;});
   }
   private next(session:HearMeOutMediaSessionV1){session.current=session.queue.shift()??null;session.playback={...session.playback,status:session.current?'playing':'idle',position:0,updatedAt:new Date().toISOString()};session.revision++;}
-  async request(input:{requesterId:string;displayName:string;query:string;operationId:string},media:HearMeOutSuiteMediaResolverV1){
+  async request(input:{requesterId:string;displayName:string;query:string;operationId:string;lane?:HearMeOutMediaLaneV1},media:HearMeOutSuiteMediaResolverV1){
+    const lane=input.lane??'movie';if(lane!=='music'&&lane!=='movie')throw Error('Choose music or movie');
     const query=input.query.trim();if(!query||query.length>300)throw Error('Enter a video link or title');
-    const id=createHash('sha256').update(JSON.stringify([input.requesterId,input.operationId])).digest('hex'),intent=JSON.stringify([input.requesterId,query]);
+    const id=createHash('sha256').update(JSON.stringify([input.requesterId,input.operationId])).digest('hex'),intent=JSON.stringify(lane==='movie'?[input.requesterId,query]:[input.requesterId,query,lane]);
     const replay=()=>{const prior=this.db.prepare('SELECT intent,request_id FROM hmo_program_requests WHERE id=?').get(id);if(prior&&prior.intent!==intent)throw Error('This request key already belongs to another video');return prior;};
     if(replay())return this.read();
     // Viewer attribution is separate from the existing operator execution account.
-    const item=await media.resolve({tenantId:this.binding.tenantId,billedUserId:this.binding.executionUserId,requesterId:input.requesterId,query,lane:'movie',operationId:'broadcast:'+id});
+    const item=await media.resolve({tenantId:this.binding.tenantId,billedUserId:this.binding.executionUserId,requesterId:input.requesterId,query,lane,operationId:'broadcast:'+id});
     validateItem(item);
     return this.transaction(()=>{if(replay())return this.read();const session=this.read(),at=new Date().toISOString(),entry={requestId:'broadcast-request:'+id,requestedBy:{userId:input.requesterId,displayName:input.displayName.slice(0,120)||'Viewer'},addedAt:at,item};
       if(session.current)session.queue.push(entry);else{session.current=entry;session.playback={...session.playback,status:'playing',position:0,updatedAt:at};}

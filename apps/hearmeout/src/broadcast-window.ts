@@ -27,9 +27,10 @@ export async function handleHearMeOutBroadcastWindow(request:IncomingMessage,res
       const chunks:Buffer[]=[];let size=0;for await(const chunk of request){const bytes=Buffer.from(chunk);size+=bytes.length;if(size>4096)throw Error('Request is too large');chunks.push(bytes);}
       const body=JSON.parse(Buffer.concat(chunks).toString('utf8'));
       if(!body||typeof body.query!=='string')throw Error('Enter a video title or link');
+      if(body.lane!==undefined&&body.lane!=='music'&&body.lane!=='movie')throw Error('Choose music or movie');
       if(!media)return send(response,503,{error:'The media worker is unavailable'});
       const rawKey=request.headers['idempotency-key'];if(rawKey!==undefined&&(typeof rawKey!=='string'||rawKey.length>200))throw Error('Invalid request key');
-      await program.request({requesterId:guest(request,response),displayName:typeof body.displayName==='string'?body.displayName.replace(/[\r\n\0]/g,' ').slice(0,120):'Viewer',query:body.query,operationId:rawKey??randomUUID()},media);
+      await program.request({requesterId:guest(request,response),displayName:typeof body.displayName==='string'?body.displayName.replace(/[\r\n\0]/g,' ').slice(0,120):'Viewer',query:body.query,lane:body.lane??'movie',operationId:rawKey??randomUUID()},media);
       return send(response,201,broadcastView(program,Boolean(worker)));
     }
     if(request.method!=='GET'&&request.method!=='HEAD')return send(response,405,{error:'Method not allowed'});
@@ -42,7 +43,7 @@ export async function handleHearMeOutBroadcastWindow(request:IncomingMessage,res
 function send(response:ServerResponse,status:number,value:unknown){response.writeHead(status,{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'});response.end(JSON.stringify(value));return true;}
 
 export function renderHearMeOutBroadcastWindow(clientId:string){
-  return '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>HearMeOut broadcast</title><style>html,body{margin:0;background:#080d18;color:#eef2ff;font:16px system-ui}main{max-width:1100px;margin:auto;padding:12px}video{display:block;width:100%;max-height:65vh;background:#000}nav,form{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:12px 0}button,input,select{font:inherit;padding:9px;border:1px solid #526179;border-radius:7px;background:#18243b;color:inherit}input[name=query]{flex:1;min-width:200px}#error{color:#fbbf24}h1{font-size:20px}</style></head><body><main><h1>HearMeOut</h1><p id="status" role="status">Connecting to the broadcast…</p><p id="error" role="alert"></p><video id="player" playsinline></video><nav><button id="sound">Enable sound</button><input id="volume" type="range" min="0" max="100" value="0" aria-label="Volume on this device"><select id="audio-language" aria-label="Audio language" hidden></select><button id="retry">Reconnect</button></nav><h2 id="title">Request a video</h2><form id="request-form"><input name="query" aria-label="Video request" placeholder="Video link or title" maxlength="300" required><button id="request-submit">Request video</button></form><p>Everyone sees this same broadcast. No account or room needed.</p><ol id="queue"></ol></main><script src="/api/hearmeout/playback-source.js"></script><script>const CLIENT_ID='+JSON.stringify(clientId).replace(/</g,'\\u003c')+';'+BROADCAST_WINDOW_JS+'</script></body></html>';
+  return '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>HearMeOut broadcast</title><style>html,body{margin:0;background:#080d18;color:#eef2ff;font:16px system-ui}main{max-width:1100px;margin:auto;padding:12px}video{display:block;width:100%;aspect-ratio:16/9;max-height:65vh;background:#000}nav,form{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:12px 0}button,input,select{font:inherit;padding:9px;border:1px solid #526179;border-radius:7px;background:#18243b;color:inherit}input[name=query]{flex:1;min-width:200px}#error{color:#fbbf24}h1{font-size:20px}</style></head><body><main><h1>HearMeOut</h1><p id="status" role="status">Connecting to the broadcast…</p><p id="error" role="alert"></p><video id="player" playsinline></video><nav><button id="sound">Enable sound</button><input id="volume" type="range" min="0" max="100" value="0" aria-label="Volume on this device"><select id="audio-language" aria-label="Audio language" hidden></select><button id="retry">Reconnect</button></nav><h2 id="title">Nothing playing</h2><form id="request-form"><select name="lane" aria-label="Request type"><option value="movie">Movie / video</option><option value="music">Music</option></select><input name="query" aria-label="Music or movie request" placeholder="Song, movie title, or media link" maxlength="300" required><button id="request-submit">Request</button></form><ol id="queue"></ol></main><script src="/api/hearmeout/playback-source.js"></script><script>const CLIENT_ID='+JSON.stringify(clientId).replace(/</g,'\\u003c')+';'+BROADCAST_WINDOW_JS+'</script></body></html>';
 }
 export const BROADCAST_WINDOW_JS=String.raw`
 (()=>{
@@ -58,8 +59,8 @@ export const BROADCAST_WINDOW_JS=String.raw`
     if(busy||disposed)return;busy=true;
     try{
       const state=await api('/api/watch/broadcast/state');if(disposed)return;
-      status.textContent=state.playback.status==='idle'?'Ready for a video':'Broadcast: '+state.playback.status;
-      document.getElementById('title').textContent=state.current?.item.title||'Request a video';
+      status.textContent=state.playback.status==='idle'?'Nothing playing. Request music or a movie below.':'Broadcast: '+state.playback.status;
+      document.getElementById('title').textContent=state.current?.item.title||'Nothing playing';
       const queue=document.getElementById('queue');queue.replaceChildren();for(const request of state.queue){const li=document.createElement('li');li.textContent=request.item.title;queue.append(li);}
       if(!state.current){source.clear();sourceUrl='';return;}
       if(!state.broadcast.configured){error.textContent='The broadcast worker is unavailable.';return;}
@@ -71,10 +72,10 @@ export const BROADCAST_WINDOW_JS=String.raw`
   volume.addEventListener('input',event=>setVolume(Number(event.target.value)));
   document.getElementById('retry').addEventListener('click',()=>{source.clear();sourceUrl='';error.textContent='';refresh()});
   document.getElementById('request-form').addEventListener('submit',async event=>{
-    event.preventDefault();const query=event.target.elements.query.value.trim(),button=document.getElementById('request-submit');
-    if(pendingRequest?.query!==query)pendingRequest={query,key:crypto.randomUUID()};
+    event.preventDefault();const query=event.target.elements.query.value.trim(),lane=event.target.elements.lane.value,button=document.getElementById('request-submit');
+    if(pendingRequest?.query!==query||pendingRequest?.lane!==lane)pendingRequest={query,lane,key:crypto.randomUUID()};
     button.disabled=true;status.textContent='Preparing your request…';
-    try{await api('/api/watch/broadcast/requests',{method:'POST',headers:{'content-type':'application/json','idempotency-key':pendingRequest.key},body:JSON.stringify({query})});pendingRequest=undefined;event.target.reset();error.textContent='';await refresh();}
+    try{await api('/api/watch/broadcast/requests',{method:'POST',headers:{'content-type':'application/json','idempotency-key':pendingRequest.key},body:JSON.stringify({query,lane})});pendingRequest=undefined;event.target.reset();error.textContent='';await refresh();}
     catch(e){error.textContent=e.message;}finally{button.disabled=false;}
   });
   video.addEventListener('canplay',()=>{void video.play().catch(()=>{status.textContent='Tap Enable sound to watch';})});

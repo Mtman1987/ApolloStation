@@ -77,5 +77,8 @@ test('guest HTTP requests cross real SPMT media jobs; all room and Activity wind
   rooms.deleteRoom(owner,'a','delete-a');rooms.deleteRoom(owner,'b','delete-b');
   assert.deepEqual((await(await fetch(base+'/api/watch/broadcast/state')).json()).current,current.current);
   assert.equal(rooms.listRooms(owner).length,0);
+  const music=await fetch(base+'/api/watch/broadcast/requests',{method:'POST',headers:{cookie,origin:base,'content-type':'application/json','idempotency-key':'one-song'},body:JSON.stringify({query:'https://youtu.be/abcdefghijk',lane:'music'})});
+  assert.equal(music.status,201);const musicState=await music.json();assert.equal(musicState.current.requestId,current.current.requestId);assert.equal(musicState.queue.length,1);assert.equal(musicState.queue[0].item.type,'music');assert.equal(musicState.queue[0].item.playbackUrl,'https://rr1.googlevideo.com/audio');
+  const musicJobs=await client.listExecutionJobs('tenant',{executionOwner:'hearmeout'});assert.equal(musicJobs.length,2);assert.ok(musicJobs.some(job=>job.input.lane==='music'&&job.billedUserId==='owner'&&job.state==='succeeded'));
  }finally{stop.abort();await workerTask;rooms?.close();await host?.close();await spmt.close();}
 });

@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import {HEARMEOUT_TEST_SOURCE} from './hearmeout-test-source.mjs';
 const origin=new URL(process.argv[2]).origin,buildSha=process.argv[3];
 async function request(path,init){return fetch(origin+path,{redirect:'manual',signal:AbortSignal.timeout(15000),...init});}
 let health;
@@ -14,17 +13,10 @@ let state=await stateResponse.json();const cookie=stateResponse.headers.get('set
 assert.equal(state.sessionId,'main-broadcast');
 assert.equal((await request('/api/hearmeout/rooms')).status,401,'Private room and host workspace access remains protected');
 if(origin==='http://127.0.0.1:8080'&&process.env.DEPLOY_ROLE==='release'){
- // The owner asked for one working video. If the program is empty, start the
- // verified public sample and leave it playing for the owner's test. No room is
- // created, and no existing viewer request is replaced or cleared.
- if(!state.current&&state.queue.length===0){
-  const accepted=await request('/api/watch/broadcast/requests',{method:'POST',headers:{cookie,'content-type':'application/json','idempotency-key':'deployment-single-video:'+buildSha},body:JSON.stringify({query:HEARMEOUT_TEST_SOURCE})});
-  assert.equal(accepted.status,201,await accepted.text());state=await(await request('/api/watch/broadcast/state')).json();
- }
  if(state.playback.status==='playing'){
   let master;const feed='/api/watch/broadcast/index.m3u8';
   for(let attempt=0;attempt<45;attempt++){const response=await request(feed);if(response.status===200){master=await response.text();break;}await new Promise(resolve=>setTimeout(resolve,1000));}
-  assert.match(master??'',/#EXTM3U/);assert.match(master,/stream_video\.m3u8/,'The broadcast contains actual video');
+  assert.match(master??'',/#EXTM3U/);assert.match(master,/stream_[A-Za-z0-9_-]+\.m3u8/,'The requested broadcast contains playable media');
   const variant=master.split('\n').find(line=>line&&!line.startsWith('#'));assert.ok(variant);
   const path=new URL(variant,origin+feed).pathname,before=await(await request(path)).text(),starts=(await(await request('/health/hearmeout')).json()).broadcast.startedProcesses;
   await new Promise(resolve=>setTimeout(resolve,5000));
@@ -38,4 +30,4 @@ for(const alias of ['discord-watch-room','discord-music-room','watch-room-anywhe
  const window=await(await request('/api/watch/sessions/'+alias+'/state')).json();
  assert.equal(window.sessionId,canonical.sessionId);assert.equal(window.broadcast.playbackUrl,canonical.broadcast.playbackUrl);
 }
-console.log(JSON.stringify({buildSha,origin,singleBroadcast:true,publicViewerEntry:true,mediaWorkerReady:true,privateRoomAccessProtected:true,testUrl:origin+'/watch'}));
+console.log(JSON.stringify({buildSha,origin,singleBroadcast:true,publicViewerEntry:true,mediaWorkerReady:true,privateRoomAccessProtected:true,playbackStatus:canonical.playback.status,queuedRequests:canonical.queue.length,testUrl:origin+'/apps/hearmeout'}));

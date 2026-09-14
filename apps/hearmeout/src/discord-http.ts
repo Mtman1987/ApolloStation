@@ -25,7 +25,7 @@ export class HearMeOutDiscordHttp {
         } catch (error) { if (error instanceof SpmtApiError && error.status === 404) return undefined; throw error; }
       } },
       requestMedia: async input => {
-        if(options.singleProgram){if(!options.media)throw Error("The media worker is unavailable");await options.singleProgram.request({requesterId:input.principal.userId,displayName:input.principal.displayName,query:input.query,operationId:"discord:"+input.interactionId},options.media);return{jobId:HEARMEOUT_SINGLE_PROGRAM_ID};}
+        if(options.singleProgram){if(!options.media)throw Error("The media worker is unavailable");await options.singleProgram.request({requesterId:input.principal.userId,displayName:input.principal.displayName,query:input.query,lane:input.lane,operationId:"discord:"+input.interactionId},options.media);return{jobId:HEARMEOUT_SINGLE_PROGRAM_ID};}
         const created = await options.client.createSuiteActionJob(input.principal.tenantId, {
           schemaVersion: 1, action: "hmo.media.request", args: { query: input.query, lane: input.lane, roomId: input.roomId },
           actor: { userId: input.principal.userId, username: input.principal.displayName, role: input.principal.roles.includes("admin") ? "admin" : "member" },

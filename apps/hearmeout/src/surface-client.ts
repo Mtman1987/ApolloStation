@@ -15,7 +15,7 @@ const manifest = JSON.stringify(HEARMEOUT_SURFACE_MANIFEST).replace(/</g, "\\u00
 
 export const HEARMEOUT_SURFACE_BROWSER_JS = String.raw`;(()=>{
 const manifest=${manifest},body=document.body,html=document.documentElement;
-let hostOrigin='*';
+let hostOrigin='*',lastLaunch='';
 const style=document.createElement('style');
 style.dataset.spmtSurfaceClient='1';
 style.textContent=[
@@ -37,7 +37,11 @@ function setMode(mode){html.dataset.spmtSurfaceMode=mode}
 function send(message){if(window.parent!==window)window.parent.postMessage(message,hostOrigin)}
 function publish(){send({protocol:'spmt.surface',version:1,type:'surface.manifest',manifest})}
 function report(pageId){send({protocol:'spmt.surface',version:1,type:'page.changed',appId:manifest.appId,pageId})}
-function showDirectory(){window.HearMeOutMedia?.park();const detail=document.querySelector('[data-hmo-room-detail]');if(detail){detail.hidden=true;detail.replaceChildren()}report('rooms')}
+function showDirectory(){closeWatch();window.HearMeOutMedia?.close();const detail=document.querySelector('[data-hmo-room-detail]');if(detail){detail.hidden=true;detail.replaceChildren()}report('rooms')}
+function closeWatch(){const watch=document.querySelector('[data-hmo-watch-drawer]');if(!watch)return;watch.querySelectorAll('iframe').forEach(frame=>frame.remove());watch.hidden=true;document.querySelector('[data-hmo-watch-icon]')?.setAttribute('aria-expanded','false')}
+function openWatch(){const watch=document.querySelector('[data-hmo-watch-drawer]');if(!watch)return;watch.hidden=false;document.querySelector('[data-hmo-watch-icon]')?.setAttribute('aria-expanded','true');if(watch.dataset.hmoBroadcastWindow==='1'&&!watch.querySelector('iframe')){const frame=document.createElement('iframe');frame.dataset.hmoBroadcastFrame='1';frame.src='/watch?embed=1';frame.title='Music and movie window';frame.allow='autoplay';frame.style.cssText='display:block;border:0;width:100%;height:480px;max-height:65vh';watch.querySelector('[data-hmo-broadcast-host]').replaceChildren(frame)}watch.scrollIntoView({block:'nearest'})}
+window.addEventListener('hmo:close-watch',closeWatch);
+window.addEventListener('hmo:open-watch',openWatch);
 function makeIcon(label,title,hook){const button=document.createElement('button');button.type='button';button.className='hmo-icon';button.textContent=label;button.title=title;button.setAttribute('aria-label',title);button.dataset[hook]='1';return button}
 function enhanceRoom(){
   const room=document.querySelector('.hmo-console');if(!room)return;
@@ -56,12 +60,14 @@ function enhanceRoom(){
   }
   let watch=own.querySelector('[data-hmo-watch-drawer]');
   if(!watch){
-    const candidate=direct.find(node=>node.classList?.contains('hmo-pane')&&node.querySelector('h4')?.textContent?.trim()==='Watch together');
+    const candidate=direct.find(node=>node.hasAttribute('data-hmo-watch-pane')||node.classList?.contains('hmo-pane')&&node.querySelector('h4')?.textContent?.trim()==='Watch together');
     if(candidate){candidate.dataset.hmoWatchDrawer='1';candidate.classList.add('hmo-watch-drawer');candidate.hidden=true;own.append(candidate);watch=candidate}
   }
   if(watch&&!own.querySelector('[data-hmo-watch-icon]')){
-    const watchButton=makeIcon('\u{1f3ac}','Watch party','hmoWatchIcon');
-    watchButton.addEventListener('click',()=>{watch.hidden=!watch.hidden;if(!watch.hidden)watch.scrollIntoView({block:'nearest'})});
+    const watchButton=makeIcon('\u{1f3ac}','Music and movie window','hmoWatchIcon');
+    watchButton.setAttribute('aria-expanded','false');
+    watchButton.addEventListener('click',()=>{if(watch.hidden)openWatch();else closeWatch()});
+    const close=makeIcon('×','Close music and movie window','hmoCloseWatch');close.addEventListener('click',closeWatch);watch.querySelector('header')?.append(close);
     icons.insertBefore(watchButton,more);
   }
   const bots=people.querySelector('[data-bot-drawer]');
@@ -95,7 +101,7 @@ function relabel(){
 }
 window.addEventListener('message',event=>{
   const message=event.data;
-  if(message?.protocol==='spmt.embed'&&message?.version===1&&message?.type==='host.hello'&&message.launch?.appId===manifest.appId){hostOrigin=event.origin||hostOrigin;setMode(message.launch.surfaceMode||'standalone');publish();return}
+  if(message?.protocol==='spmt.embed'&&message?.version===1&&message?.type==='host.hello'&&message.launch?.appId===manifest.appId){hostOrigin=event.origin||hostOrigin;setMode(message.launch.surfaceMode||'standalone');const launch=JSON.stringify(message.launch);if(launch!==lastLaunch){lastLaunch=launch;publish()}return}
   if(!message||message.protocol!=='spmt.surface'||message.version!==1||message.type!=='page.open'||message.appId!==manifest.appId)return;
   if(hostOrigin!=='*'&&event.origin!==hostOrigin)return;
   if(message.pageId==='rooms')document.querySelector('[data-hmo-open-rooms]')?.click();
