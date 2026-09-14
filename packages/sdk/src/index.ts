@@ -88,6 +88,6 @@ export class SpmtClient {
   private json<T>(path:string,method:string,tenantId:string|undefined,body:unknown){return this.request<T>(path,{method,...(tenantId?{tenantId}:{}),headers:{"content-type":"application/json"},body:JSON.stringify(body)});}
 }
 export class SpmtApiError extends Error{constructor(public readonly status:number,public readonly responseBody:string){super(spmtErrorMessage(status,responseBody));this.name="SpmtApiError";}}
-function spmtErrorMessage(status:number,body:string):string{try{const data:unknown=JSON.parse(body);if(data&&typeof data==="object"&&"message" in data&&typeof data.message==="string"&&data.message.trim())return data.message.replace(/[\r\n\0]/g," ").trim().slice(0,400);}catch{}return `SPMT API request failed with status ${status}`;}
+function spmtErrorMessage(status:number,body:string):string{const fallback=`SPMT API request failed with status ${status}`;try{const data:unknown=JSON.parse(body);if(data&&typeof data==="object"&&"message" in data&&typeof data.message==="string"&&data.message.trim())return `${fallback}: ${data.message.replace(/[\r\n\0]/g," ").trim().slice(0,350)}`;}catch{}return fallback;}
 
 function mediaJobHeaders(job?:MediaAssetJobContextV1):Record<string,string>{return job?{"x-spmt-job-id":job.jobId,"x-spmt-job-lease":job.leaseId,"x-spmt-job-epoch":String(job.fencingEpoch)}:{}}

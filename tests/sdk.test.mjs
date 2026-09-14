@@ -5,7 +5,7 @@ import { SpmtApiError, SpmtClient } from "../packages/sdk/dist/index.js";
 test("SDK preserves the API reason for a request conflict without exposing an HTML response", async () => {
   const body = JSON.stringify({ error: "conflict", message: "Free hosted-worker-minutes allowance reached" });
   const client = new SpmtClient({ baseUrl: "https://spmt.test", appId: "hearmeout", fetchImpl: async () => new Response(body, { status: 409 }) });
-  await assert.rejects(() => client.request("/v1/jobs"), error => error instanceof SpmtApiError && error.status === 409 && error.message === "Free hosted-worker-minutes allowance reached" && error.responseBody === body);
+  await assert.rejects(() => client.request("/v1/jobs"), error => error instanceof SpmtApiError && error.status === 409 && error.message === "SPMT API request failed with status 409: Free hosted-worker-minutes allowance reached" && error.responseBody === body);
   for (const response of ["<html>Proxy failed</html>", "null", "{}", '{"message":{}}']) assert.equal(new SpmtApiError(502, response).message, "SPMT API request failed with status 502");
 });
 
