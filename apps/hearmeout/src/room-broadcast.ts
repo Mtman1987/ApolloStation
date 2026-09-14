@@ -5,13 +5,14 @@ import {access,mkdir,readFile,readdir,rm,stat} from 'node:fs/promises';
 import {isAbsolute,join} from 'node:path';
 import type {ServerResponse} from 'node:http';
 import {HearMeOutBroadcastEgress} from './broadcast-egress.js';
+import {HearMeOutPreparedMedia,type HearMeOutPreparedMediaOptions} from './prepared-media.js';
 import {buildHearMeOutXtreamVariantMap,type HearMeOutWatchMediaProbeV1} from './watch-hls-policy.js';
 import type {HearMeOutMediaSessionV1,SqliteHearMeOutRoomMediaRuntime} from './room-media-core.js';
 
 export const HEARMEOUT_BROADCAST_PROTOCOLS='http,https,httpproxy,tcp,tls,crypto';
 
 type Run={session:HearMeOutMediaSessionV1;cacheKey:string;signature:string;owner:string;process?:ChildProcess;pending?:Promise<void>;retryAt:number;failed:boolean;started:number};
-export interface HearMeOutRoomBroadcastOptions {ffmpegBinary:string;ffprobeBinary:string;cachePath:string;spmtOrigin:string;lockBinary?:string;}
+export interface HearMeOutRoomBroadcastOptions {ffmpegBinary:string;ffprobeBinary:string;cachePath:string;spmtOrigin:string;lockBinary?:string;preparedMedia?:HearMeOutPreparedMediaOptions;}
 
 /** HMO's one playout worker per room/lane. Browsers read the output of this
  * process; viewer connect/disconnect never starts, pauses or seeks the source. */
@@ -21,13 +22,15 @@ export class HearMeOutRoomBroadcast {
   private readonly stopping=new Set<Promise<void>>();
   private readonly abort=new AbortController();
   private readonly egress:HearMeOutBroadcastEgress;
+  private readonly prepared:HearMeOutPreparedMedia|undefined;
   private startedProcesses=0;
   private proxy='';
   private timer:ReturnType<typeof setInterval>|undefined;
   private closed=false;
   constructor(private readonly rooms:SqliteHearMeOutRoomMediaRuntime,private readonly options:HearMeOutRoomBroadcastOptions){
     if(![options.ffmpegBinary,options.ffprobeBinary,options.cachePath,options.lockBinary??'/usr/bin/flock'].every(isAbsolute))throw Error('Broadcast binaries and cache must use absolute paths');
-    this.egress=new HearMeOutBroadcastEgress({origin:new URL(options.spmtOrigin).origin,pathPrefix:'/v1/media/public/'});
+    this.prepared=options.preparedMedia?new HearMeOutPreparedMedia(options.preparedMedia):undefined;
+    this.egress=new HearMeOutBroadcastEgress({origin:new URL(options.spmtOrigin).origin,pathPrefix:'/v1/media/public/'},undefined,this.prepared);
   }
   async listen(){await Promise.all([access(this.options.ffmpegBinary),access(this.options.ffprobeBinary),access(this.options.lockBinary??'/usr/bin/flock'),mkdir(this.options.cachePath,{recursive:true})]);this.proxy=await this.egress.listen();this.tick();this.timer=setInterval(()=>this.tick(),500);this.timer.unref();}
   status(){return {configured:true,startedProcesses:this.startedProcesses,active:[...this.runs.values()].filter(run=>run.process).length,starting:[...this.runs.values()].filter(run=>run.pending).length,failed:[...this.runs.values()].filter(run=>run.failed).length};}
@@ -51,7 +54,7 @@ export class HearMeOutRoomBroadcast {
   }
   private async start(run:Run,signature:string){
     await this.stop(run);if(this.closed)return;
-    const session=run.session,item=session.current!.item,rawSource=new URL(item.playbackUrl,this.options.spmtOrigin),source=/^\/v1\/media\/public\/[A-Za-z0-9_-]{43}$/.test(rawSource.pathname)?new URL(rawSource.pathname,this.options.spmtOrigin):rawSource;
+    const session=run.session,item=session.current!.item,rawSource=new URL(item.playbackUrl,this.options.spmtOrigin),source=/^\/v1\/media\/public\/[A-Za-z0-9_-]{43}$/.test(rawSource.pathname)?new URL(rawSource.pathname,this.options.spmtOrigin):this.prepared?.localSource(rawSource,session.tenantId,this.proxy)??rawSource;
     if(!['http:','https:'].includes(source.protocol)||source.username||source.password)throw Error('Invalid broadcast source');
     const env={PATH:process.env.PATH??'/usr/bin:/bin',http_proxy:this.proxy,https_proxy:this.proxy,no_proxy:''};
     const {stdout}=await promisify(execFile)(this.options.ffprobeBinary,['-v','error','-protocol_whitelist',HEARMEOUT_BROADCAST_PROTOCOLS,'-rw_timeout','15000000','-show_streams','-of','json',source.href],{env,timeout:20000,maxBuffer:1024*1024,signal:this.abort.signal});

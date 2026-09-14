@@ -6,14 +6,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { HearMeOutBroadcastEgress } from '../../apps/hearmeout/dist/broadcast-egress.js';
 import { HEARMEOUT_BROADCAST_PROTOCOLS } from '../../apps/hearmeout/dist/room-broadcast.js';
+import { HEARMEOUT_TEST_SOURCE as source } from './hearmeout-test-source.mjs';
 
 // A fixed, public test asset: diagnostics never include a user's signed source
 // URL, provider credential or room contents. Run before switching the release.
-const source='https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
 const proxy=new HearMeOutBroadcastEgress(undefined,error=>console.error('Media proxy preflight:',String(error?.message??error)));
 let output;
 try {
-  console.log('Media source DNS:',JSON.stringify(await lookup('storage.googleapis.com',{all:true})));
+  console.log('Media source DNS:',JSON.stringify(await lookup(new URL(source).hostname,{all:true})));
   const origin=await proxy.listen();
   // Only the fixed, credential-free asset is diagnosed here. A bounded range
   // reveals an upstream XML/HTTP rejection without logging user media URLs.

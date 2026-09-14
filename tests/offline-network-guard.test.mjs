@@ -59,3 +59,9 @@ test('controlled HearMeOut bridge permits only its bounded worker routes', () =>
  const result=spawnSync(process.execPath,['--input-type=module','-e',source],{encoding:'utf8',env:{...process.env,GUARD_URL:new URL('../scripts/offline-network-guard.mjs',import.meta.url).href,HEARMEOUT_CONTROLLED_BRIDGE:'1',HEARMEOUT_VOICE_BRIDGE_ORIGIN:'https://hmo-dj-worker.fly.dev'}});
  assert.equal(result.status,0,result.stderr);
 });
+
+test('prepared HearMeOut media permits bounded reads without enabling live DJ or cache controls',()=>{
+ const source=`globalThis.fetch=async()=>new Response('ok');await import(process.env.GUARD_URL);await fetch('https://hmo-dj-worker.fly.dev/watch/youtube/hls/aqz-KE-bpKQ/index.m3u8');await fetch('https://hmo-dj-worker.fly.dev/watch/youtube/hls/aqz-KE-bpKQ/part001.ts?machine=abc123');let blocked=0;for(const [path,method] of [['/voice-bridge','POST'],['/dj','POST'],['/watch/cache/control','POST'],['/watch/youtube/hls/aqz-KE-bpKQ/index.m3u8','POST'],['/watch/youtube/hls/aqz-KE-bpKQ/index.m3u8?source=https://example.com','GET'],['/offline-music/catalog','GET']]){try{fetch('https://hmo-dj-worker.fly.dev'+path,{method})}catch(error){if(/OFFLINE_NETWORK_BLOCKED/.test(String(error)))blocked++}}if(blocked!==6)process.exit(1);`;
+ const result=spawnSync(process.execPath,['--input-type=module','-e',source],{encoding:'utf8',env:{...process.env,GUARD_URL:new URL('../scripts/offline-network-guard.mjs',import.meta.url).href,HEARMEOUT_CONTROLLED_BRIDGE:'0',HEARMEOUT_VOICE_BRIDGE_ORIGIN:'https://hmo-dj-worker.fly.dev',HEARMEOUT_PREPARED_MEDIA_ENABLED:'1'}});
+ assert.equal(result.status,0,result.stderr);
+});

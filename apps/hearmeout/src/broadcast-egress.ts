@@ -1,22 +1,25 @@
 import {createServer,request as httpRequest} from 'node:http';
 import {lookup} from 'node:dns/promises';
 import {createConnection,isIP,type Socket} from 'node:net';
+import type {HearMeOutPreparedMedia} from './prepared-media.js';
 
 /** FFmpeg's HTTP(S) inputs, redirects and nested HLS references all traverse
  * this loopback proxy. DNS is checked then pinned for the actual socket. */
 export class HearMeOutBroadcastEgress {
+  private origin = '';
   private readonly sockets = new Set<Socket>();
   private readonly server = createServer(async (request,response) => {
     try {
       if (request.method !== 'GET' && request.method !== 'HEAD') throw Error('Read-only media egress');
-      const url = new URL(request.url ?? '');
+      const url = new URL(request.url ?? '', this.origin);
       if (url.protocol !== 'http:' || url.username || url.password) throw Error('Invalid media URL');
+      if (await this.prepared?.serve(url,this.origin,request,response)) return;
       const address = await this.address(url);
       const upstream = httpRequest({host:address,port:Number(url.port||80),method:request.method,path:url.pathname+url.search,headers:{host:url.host,...(request.headers.range?{range:request.headers.range}:{}),'user-agent':'HearMeOut room broadcast'},timeout:15000},remote=>{response.writeHead(remote.statusCode??502,remote.headers);remote.pipe(response);});
       upstream.on('timeout',()=>upstream.destroy());upstream.on('error',()=>{if(!response.headersSent)response.writeHead(502);response.end();});response.on('close',()=>upstream.destroy());upstream.end();
     } catch (error) {this.onError?.(error);response.writeHead(403);response.end('Media source is unavailable');}
   });
-  constructor(private readonly trustedMedia?: {origin:string; pathPrefix:string}, private readonly onError?: (error:unknown)=>void) {
+  constructor(private readonly trustedMedia?: {origin:string; pathPrefix:string}, private readonly onError?: (error:unknown)=>void, private readonly prepared?: HearMeOutPreparedMedia) {
     this.server.on('connection',socket=>{this.sockets.add(socket);socket.on('close',()=>this.sockets.delete(socket));});
     this.server.on('connect',async(request,socket,head)=>{
       try {
@@ -36,7 +39,7 @@ export class HearMeOutBroadcastEgress {
     if(!addresses.length||(!trusted&&addresses.some(entry=>!isPublicBroadcastAddress(entry.address))))throw Error('Media address is not public');
     return addresses[0]!.address;
   }
-  async listen(){await new Promise<void>((resolve,reject)=>{this.server.once('error',reject);this.server.listen(0,'127.0.0.1',()=>{this.server.off('error',reject);resolve();});});return `http://127.0.0.1:${(this.server.address() as {port:number}).port}`;}
+  async listen(){await new Promise<void>((resolve,reject)=>{this.server.once('error',reject);this.server.listen(0,'127.0.0.1',()=>{this.server.off('error',reject);resolve();});});return this.origin=`http://127.0.0.1:${(this.server.address() as {port:number}).port}`;}
   async close(){for(const socket of this.sockets)socket.destroy();if(this.server.listening)await new Promise<void>(resolve=>this.server.close(()=>resolve()));}
 }
 export function isPublicBroadcastAddress(address:string){
