@@ -1,0 +1,32 @@
+name: HearMeOut request diagnostics
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths: ['scripts/sprites/diagnose-hearmeout-requests.mjs', '.github/workflows/hearmeout-diagnostics.yml']
+permissions:
+  contents: read
+jobs:
+  inspect:
+    if: github.event_name == 'workflow_dispatch' || (github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'fix/hmo-request-conflicts')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: sprite-release
+    env:
+      SPRITES_TOKEN: ${{ secrets.SPRITES_TOKEN }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Sprites CLI
+        run: |
+          curl -fsSL https://sprites.dev/install.sh | bash
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Read only the existing HearMeOut request diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+          sprite auth setup --token "$SPRITES_TOKEN"
+          actual_id="$(sprite api '/v1/sprites/web-terminal' -- --silent | jq -r '.id')"
+          test "$actual_id" = 'sprite-fec8d6f2-49f0-4e28-bc6d-e8a7ae364280'
+          sprite exec --no-port-forward -o testing-968 -s web-terminal \
+            --file scripts/sprites/diagnose-hearmeout-requests.mjs:/tmp/diagnose-hearmeout-requests.mjs \
+            -- node /tmp/diagnose-hearmeout-requests.mjs
