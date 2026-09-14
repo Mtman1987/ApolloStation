@@ -80,5 +80,11 @@ test('guest HTTP requests cross real SPMT media jobs; all room and Activity wind
   const music=await fetch(base+'/api/watch/broadcast/requests',{method:'POST',headers:{cookie,origin:base,'content-type':'application/json','idempotency-key':'one-song'},body:JSON.stringify({query:'https://youtu.be/abcdefghijk',lane:'music'})});
   assert.equal(music.status,201);const musicState=await music.json();assert.equal(musicState.current.requestId,current.current.requestId);assert.equal(musicState.queue.length,1);assert.equal(musicState.queue[0].item.type,'music');assert.equal(musicState.queue[0].item.playbackUrl,'https://rr1.googlevideo.com/audio');
   const musicJobs=await client.listExecutionJobs('tenant',{executionOwner:'hearmeout'});assert.equal(musicJobs.length,2);assert.ok(musicJobs.some(job=>job.input.lane==='music'&&job.billedUserId==='owner'&&job.state==='succeeded'));
+  spmt.billing.consume({tenantId:'tenant',userId:'owner',planId:'free',resource:'hosted-worker-minutes',quantity:28,executionTarget:'hosted',idempotencyKey:'other-fixture-work'});
+  const limited=await fetch(base+'/api/watch/broadcast/requests',{method:'POST',headers:{cookie,origin:base,'content-type':'application/json','idempotency-key':'another-video'},body:JSON.stringify({query:'https://youtu.be/abcdefghijk',lane:'movie'})});
+  assert.equal(limited.status,409);assert.equal((await limited.json()).error,'SPMT API request failed with status 409: Free hosted-worker-minutes allowance reached');
+  assert.deepEqual((await(await fetch(base+'/api/watch/broadcast/state')).json()).current,musicState.current,'A refused request leaves the current program playing');
+  assert.equal((await add()).status,201,'An already accepted request remains replayable at the allowance limit');
+  assert.equal((await client.listExecutionJobs('tenant',{executionOwner:'hearmeout'})).length,2,'A refused request creates no job or duplicate charge');
  }finally{stop.abort();await workerTask;rooms?.close();await host?.close();await spmt.close();}
 });

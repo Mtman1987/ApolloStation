@@ -1,4 +1,5 @@
 import type {IncomingMessage,ServerResponse} from 'node:http';
+import {SpmtApiError} from '@spmt/sdk';
 import {createHash,randomBytes,randomUUID} from 'node:crypto';
 import {HEARMEOUT_SINGLE_PROGRAM_ID,type HearMeOutBroadcastProgram} from './broadcast-program.js';
 import type {HearMeOutRoomBroadcast} from './room-broadcast.js';
@@ -38,7 +39,7 @@ export async function handleHearMeOutBroadcastWindow(request:IncomingMessage,res
     if(feed){if(!worker)return send(response,503,{error:'The broadcast worker is unavailable'});await worker.serve(program.binding.tenantId,HEARMEOUT_SINGLE_PROGRAM_ID,'movie',feed[1]!,response);return true;}
     guest(request,response);
     return send(response,200,defaults?{sessionId:HEARMEOUT_SINGLE_PROGRAM_ID}:broadcastView(program,Boolean(worker)));
-  }catch(error){return send(response,400,{error:(error instanceof Error?error.message:String(error)).replace(/((?:token|authorization|secret|password|cookie))\s*[:=]\s*\S+/gi,'$1=[redacted]').slice(0,400)});}
+  }catch(error){return send(response,error instanceof SpmtApiError?error.status:400,{error:(error instanceof Error?error.message:String(error)).replace(/((?:token|authorization|secret|password|cookie))\s*[:=]\s*\S+/gi,'$1=[redacted]').slice(0,400)});}
 }
 function send(response:ServerResponse,status:number,value:unknown){response.writeHead(status,{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'});response.end(JSON.stringify(value));return true;}
 
