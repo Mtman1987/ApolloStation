@@ -20,6 +20,20 @@ test("HearMeOut no longer reserves a permanent Bot Hub header surface", () => {
   assert.match(runtime, /Audio settings/);
 });
 
+test("HearMeOut opens Commlink in the shell workspace instead of a popup window", () => {
+  assert.match(surface, /type:'workspace\.open'.*service:'commlink'/);
+  assert.doesNotMatch(surface, /window\.open\('\/\?app=commlink','hmo-commlink'/);
+});
+
+test("HearMeOut uses the Discord directory and the native persona room transport", () => {
+  assert.match(runtime, /channelKind=voice/);
+  assert.match(runtime, /Discord server/);
+  assert.match(runtime, /Discord voice channel/);
+  assert.match(runtime, /result\.personaSpeech\?\.attempted/);
+  assert.match(runtime, /talkingAvatarUrl/);
+  assert.match(runtime, /data-speaking/);
+});
+
 test("HearMeOut surface browser bundle parses before room controls initialize", () => {
   const marker = "String.raw`";
   const start = surface.indexOf(marker);
