@@ -22,8 +22,10 @@ export class HearMeOutPlaybackSource {
         manifestLoadPolicy: { default: { maxTimeToFirstByteMs: 15000, maxLoadTimeMs: 20000,
           timeoutRetry: { maxNumRetry: 2, retryDelayMs: 1000, maxRetryDelayMs: 4000 },
           errorRetry: { maxNumRetry: 8, retryDelayMs: 1000, maxRetryDelayMs: 4000 } } },
-        // Join the feed once; never speed up or chase another viewer's clock.
-        ...(broadcast ? { startPosition: -1, liveSyncDurationCount: 2, liveMaxLatencyDurationCount: Infinity, maxLiveSyncPlaybackRate: 1 } : {}),
+        // Complete two-second segments cross the worker, Apollo and sometimes
+        // Discord's proxy. Keep eight seconds of headroom for a delayed segment.
+        // The encoder remains the clock; every window stays at normal speed.
+        ...(broadcast ? { startPosition: -1, lowLatencyMode: false, initialLiveManifestSize: 4, liveSyncDurationCount: 4, liveMaxLatencyDurationCount: Infinity, maxLiveSyncPlaybackRate: 1 } : {}),
       });
       hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, () => this.tracks(hls.audioTracks.map((track, index) => ({ index, name: track.name || track.lang || `Audio ${index + 1}` })), hls.audioTrack));
       hls.on(Hls.Events.AUDIO_TRACK_SWITCHED, (_event, data) => { if (this.audio) this.audio.value = String(data.id); });
@@ -38,7 +40,7 @@ export class HearMeOutPlaybackSource {
     }
   }
   retry() { this.load(this.source, Boolean(this.hls), this.broadcast); }
-  joinLive() { if (!this.broadcast) return; const position=this.hls?.liveSyncPosition ?? (this.media.seekable.length ? Math.max(this.media.seekable.start(0),this.media.seekable.end(this.media.seekable.length-1)-2) : undefined); if (position !== undefined && Number.isFinite(position)) this.media.currentTime=position; }
+  joinLive() { if (!this.broadcast) return; const position=this.hls?.liveSyncPosition ?? (this.media.seekable.length ? Math.max(this.media.seekable.start(0),this.media.seekable.end(this.media.seekable.length-1)-8) : undefined); if (position !== undefined && Number.isFinite(position)) this.media.currentTime=position; }
   clear() {
     this.hls?.destroy(); this.hls = undefined;
     const tracks = (this.media as HTMLMediaElement & { audioTracks?: NativeTracks }).audioTracks;

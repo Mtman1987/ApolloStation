@@ -56,12 +56,13 @@ test('broadcast source proxy blocks private network roots and nested references'
 });
 
 
-test('real ffprobe tunnels HTTPS through the room proxy before a denied source fails',async()=>{
+test('real ffprobe tunnels HTTPS through the room proxy before a denied source fails',{timeout:25000},async()=>{
  const proxy=createServer();let tunnel='';proxy.on('connect',(request,socket)=>{tunnel=request.url;socket.end('HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n')});
  await new Promise(resolve=>proxy.listen(0,'127.0.0.1',resolve));
  try{
   const origin='http://127.0.0.1:'+proxy.address().port;
-  const result=await new Promise(resolve=>execFile(mediaBinary('ffprobe'),['-v','error','-protocol_whitelist',HEARMEOUT_BROADCAST_PROTOCOLS,'-rw_timeout','1000000','-show_streams','-of','json','https://example.com/fixture.mp4'],{env:{PATH:process.env.PATH,http_proxy:origin,https_proxy:origin,no_proxy:''},timeout:5000},(error,stdout,stderr)=>resolve({error,stderr})));
+  // Match the production probe's process-start budget under full-suite load.
+  const result=await new Promise(resolve=>execFile(mediaBinary('ffprobe'),['-v','error','-protocol_whitelist',HEARMEOUT_BROADCAST_PROTOCOLS,'-rw_timeout','1000000','-show_streams','-of','json','https://example.com/fixture.mp4'],{env:{PATH:process.env.PATH,http_proxy:origin,https_proxy:origin,no_proxy:''},timeout:20000},(error,stdout,stderr)=>resolve({error,stderr})));
   assert.equal(tunnel,'example.com:443');assert.ok(result.error);assert.doesNotMatch(result.stderr,/not on whitelist/);
  }finally{await new Promise(resolve=>proxy.close(resolve));}
 });
