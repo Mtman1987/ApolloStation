@@ -1,3 +1,4 @@
+import {DatabaseSync} from 'node:sqlite';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
@@ -16,10 +17,13 @@ test('broadcast activation preserves transferred owner and voice configuration a
   await assert.rejects(enableHearMeOutBroadcastTest(root, root), /ENOENT/);
   assert.deepEqual(JSON.parse(await readFile(join(root, 'hearmeout-cutover.json'))), config);
   for (const name of ['ffmpeg','ffprobe','yt-dlp']) await writeFile(join(root,name),'#!/bin/sh\nexit 0\n',{mode:0o700});
+  const identity=new DatabaseSync(join(root,'spmt-empty-catalog-sandbox.sqlite'));identity.exec("CREATE TABLE tenants(id TEXT,owner_user_id TEXT,status TEXT)");identity.prepare("INSERT INTO tenants VALUES(?,?,?)").run(config.tenantId,'owner','active');identity.close();
   await enableHearMeOutBroadcastTest(root,root);
   const saved = JSON.parse(await readFile(join(root, 'hearmeout-cutover.json')));
   for (const [key,value] of Object.entries(config)) assert.equal(saved[key],value);
   const environment = await hearMeOutCutoverEnvironment(root);
+  assert.equal(environment.HEARMEOUT_SINGLE_BROADCAST,'1');
+  assert.equal(environment.HEARMEOUT_BROADCAST_EXECUTION_USER_ID,'owner');
   assert.equal(environment.HEARMEOUT_MEDIA_TENANT_ID, config.tenantId);
   assert.equal(environment.HEARMEOUT_ACTIVITY_TENANT_ID, config.tenantId);
   assert.equal(environment.HEARMEOUT_CONTROLLED_MEDIA, '1');

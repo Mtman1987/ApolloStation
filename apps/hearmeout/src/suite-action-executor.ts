@@ -1,3 +1,4 @@
+import {type HearMeOutBroadcastProgram} from "./broadcast-program.js";
 import { HEARMEOUT_ACTIVITY_ROOM_ID, HEARMEOUT_ACTIVITY_ROOM_NAME } from "./activity-contract.js";
 import { ensureHearMeOutDiscordActivityRoom, joinHearMeOutDiscordActivityRoom } from "./activity-room.js";
 import type { HearMeOutActivityBinding } from "./activity-web.js";
@@ -11,18 +12,18 @@ import type { HearMeOutSuiteActionExecutorV1 } from "./suite-action-worker.js";
 import type { HearMeOutVoiceBridgeController } from "./voice-bridge.js";
 
 export interface HearMeOutSuitePersonaStoreV1 { listPersonas(tenantId: string, roomId: string): Array<{ personaId: string; targetTenantId: string; displayName: string }>; putPersona(principal: HearMeOutPrincipalV1, roomId: string, persona: HearMeOutPublicPersonaV1 & { transportHealthy?: boolean }): unknown; removePersona(tenantId: string, roomId: string, personaId: string): unknown; }
-export interface HearMeOutSuiteMediaResolverV1 { resolve(input: { tenantId: string; query: string; lane: "music" | "movie"; operationId?: string; excludeItemIds?: string[] }): Promise<HearMeOutMediaItemV1>; }
+export interface HearMeOutSuiteMediaResolverV1 { resolve(input: { tenantId: string; billedUserId?: string; requesterId?: string; query: string; lane: "music" | "movie"; operationId?: string; excludeItemIds?: string[] }): Promise<HearMeOutMediaItemV1>; }
 
 /** Uses the existing HearMeOut media worker rather than resolving media in a browser or duplicating provider credentials. */
 export class SpmtHearMeOutSuiteMediaResolver implements HearMeOutSuiteMediaResolverV1 {
   constructor(private readonly client: Pick<SpmtClient, "createExecutionJob" | "getExecutionJob" | "listExecutionWorkers">, private readonly options: { maxWaitMs?: number; pollMs?: number } = {}) {}
-  async resolve(input: { tenantId: string; query: string; lane: "music" | "movie"; operationId?: string; excludeItemIds?: string[] }) {
+  async resolve(input: { tenantId: string; billedUserId?: string; requesterId?: string; query: string; lane: "music" | "movie"; operationId?: string; excludeItemIds?: string[] }) {
     const operationId = input.operationId ?? randomUUID();
     const youtubeId = hearMeOutYoutubeId(input.query);
     if (youtubeId) { if(input.excludeItemIds?.includes(youtubeId))throw Error("Auto-radio needs a different recommendation");return this.youtube(input, youtubeId, operationId); }
     const direct = httpUrl(input.query);
     if (direct) { const item=mediaItem(input.lane,input.query,direct);if(input.excludeItemIds?.includes(item.itemId))throw Error("Auto-radio needs a different recommendation");return item; }
-    const result = await this.job(input.tenantId, "hearmeout.music.search", { query: input.query, limit: input.excludeItemIds ? 25 : 5 }, operationId);
+    const result = await this.job(input.tenantId, input.billedUserId, "hearmeout.music.search", { requesterId: input.requesterId, query: input.query, limit: input.excludeItemIds ? 25 : 5 }, operationId);
     const items = Array.isArray(result.items) ? result.items : [], item = items.find((value) => value && typeof value === "object" && typeof (value as Record<string, unknown>).url === "string" && !input.excludeItemIds?.includes(String((value as Record<string, unknown>).id))) as Record<string, unknown> | undefined;
     if (!item) throw new Error("No music matched. Try the title and artist or a YouTube link.");
     const id = hearMeOutYoutubeId(String(item.url));
@@ -30,19 +31,19 @@ export class SpmtHearMeOutSuiteMediaResolver implements HearMeOutSuiteMediaResol
     const playbackUrl = httpUrl(item.url); if (!playbackUrl) throw new Error("This search result has no playable source");
     return { itemId: clean(item.id || randomUUID(), 200), type: input.lane === "movie" ? "movie" as const : "music" as const, title: clean(item.title || input.query, 300), source: "hearmeout-catalog", playbackUrl, ...(httpUrl(item.thumbnail) ? { posterUrl: httpUrl(item.thumbnail)! } : {}), ...(Number.isFinite(Number(item.duration)) ? { durationSeconds: Math.max(0, Math.round(Number(item.duration) / 1_000)) } : {}) };
   }
-  private async youtube(input: { tenantId: string; lane: "music" | "movie" }, videoId: string, operationId: string, search?: Record<string, unknown>): Promise<HearMeOutMediaItemV1> {
-    const result = await this.job(input.tenantId, "hearmeout.youtube.resolve", { videoId, lane: input.lane }, operationId);
+  private async youtube(input: { tenantId: string; billedUserId?: string; requesterId?: string; lane: "music" | "movie" }, videoId: string, operationId: string, search?: Record<string, unknown>): Promise<HearMeOutMediaItemV1> {
+    const result = await this.job(input.tenantId, input.billedUserId, "hearmeout.youtube.resolve", { videoId, lane: input.lane, requesterId: input.requesterId }, operationId);
     const resolved = result.media as Record<string, unknown> | undefined;
     const playbackUrl = httpUrl(input.lane === "music" ? resolved?.audioUrl : resolved?.videoUrl);
     if (!playbackUrl) throw new Error("The provider did not return playable media; the room queue is unchanged");
     return { itemId: videoId, type: input.lane === "movie" ? "movie" : "music", title: clean(resolved?.title || search?.title || videoId, 300), source: "youtube", playbackUrl, posterUrl: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`, ...(Number.isFinite(Number(resolved?.durationMs)) ? { durationSeconds: Math.max(0, Math.round(Number(resolved!.durationMs) / 1000)) } : {}), metadata: { videoId, resolvedAt: String(resolved?.resolvedAt ?? ""), sourceUrl: `https://www.youtube.com/watch?v=${videoId}` } };
   }
-  private async job(tenantId: string, capabilityId: string, input: Record<string, unknown>, operationId: string) {
+  private async job(tenantId: string, billedUserId: string | undefined, capabilityId: string, input: Record<string, unknown>, operationId: string) {
     const workers = await this.client.listExecutionWorkers({ executionOwner: "hearmeout", capabilityId, tenantId });
     const worker = workers.filter(worker => worker.state === "ready" && worker.providerHealthy && worker.capabilityIds.includes(capabilityId) && (!worker.tenantIds || worker.tenantIds.includes(tenantId)) && Date.parse(worker.leaseExpiresAt) > Date.now()).sort((a, b) => a.workerId.localeCompare(b.workerId))[0];
     if (!worker) throw new Error("No HearMeOut media worker is available for this request. Try again when the worker reconnects.");
-    const key = createHash("sha256").update(JSON.stringify([operationId, capabilityId, input])).digest("hex");
-    const created = await this.client.createExecutionJob(tenantId, { ownerAppId: "hearmeout", capabilityId, executionOwner: "hearmeout", meteredResource: "hosted-worker-minutes", usageQuantity: 1, executionTarget: worker.executionTarget, meteringTarget: worker.executionTarget === "companion" ? "companion" : "hosted", input }, `hearmeout-media:${key}`);
+    const key = createHash("sha256").update(JSON.stringify([billedUserId, operationId, capabilityId, input])).digest("hex");
+    const created = await this.client.createExecutionJob(tenantId, { ownerAppId: "hearmeout", ...(billedUserId?{billedUserId}:{}), capabilityId, executionOwner: "hearmeout", meteredResource: "hosted-worker-minutes", usageQuantity: 1, executionTarget: worker.executionTarget, meteringTarget: worker.executionTarget === "companion" ? "companion" : "hosted", input }, `hearmeout-media:${key}`);
     let job = created.job; const deadline = Date.now() + (this.options.maxWaitMs ?? 130_000), pollMs = this.options.pollMs ?? 300;
     while (!["succeeded", "failed", "dead-letter", "cancelled"].includes(job.state) && Date.now() < deadline) { await wait(pollMs); job = await this.client.getExecutionJob(tenantId, job.id); }
     if (job.state !== "succeeded") throw new Error(job.error?.message || "HearMeOut media search is still unavailable");
@@ -61,14 +62,25 @@ export function hearMeOutYoutubeId(value: string): string | undefined {
 }
 
 export class HearMeOutWebSuiteActionExecutor implements HearMeOutSuiteActionExecutorV1 {
-  constructor(private readonly rooms: SqliteHearMeOutRoomMediaRuntime, private readonly media: HearMeOutSuiteMediaResolverV1, private readonly options: { activity?: HearMeOutActivityBinding; personaConversation?: HearMeOutPersonaConversationCoordinator; personaDirectory?: (tenantId: string) => Promise<HearMeOutPublicPersonaV1[]>; personaStore?: HearMeOutSuitePersonaStoreV1; voiceBridge?: HearMeOutVoiceBridgeController } = {}) {}
+  constructor(private readonly rooms: SqliteHearMeOutRoomMediaRuntime, private readonly media: HearMeOutSuiteMediaResolverV1, private readonly options: { singleProgram?: HearMeOutBroadcastProgram; activity?: HearMeOutActivityBinding; personaConversation?: HearMeOutPersonaConversationCoordinator; personaDirectory?: (tenantId: string) => Promise<HearMeOutPublicPersonaV1[]>; personaStore?: HearMeOutSuitePersonaStoreV1; voiceBridge?: HearMeOutVoiceBridgeController } = {}) {}
   async execute(input: SpmtSuiteActionJobInputV1 & { action: HearMeOutBotActionIdV1 }, context: { tenantId: string; idempotencyKey: string }) {
     const principal = this.principal(input, context.tenantId);
+    const program=this.options.singleProgram;
+    if(program&&input.action==='hmo.media.request'){
+      if(input.source.simulation)return {simulation:true,text:'Previewed a request for the shared broadcast.'};
+      const session=await program.request({requesterId:principal.userId,displayName:principal.displayName,query:required(input.args.query,'query'),operationId:context.idempotencyKey},this.media);
+      return {text:'Your video is in the shared broadcast.',session};
+    }
+    if(program&&input.action==='hmo.media.state.read')return {text:program.getSession().current?.item.title??'Nothing is playing.',session:program.getSession()};
+    if(program&&input.action==='hmo.media.control'){
+      if(input.source.simulation)return {simulation:true,text:'Previewed broadcast control.'};
+      return {text:'Broadcast updated.',session:program.control(principal,{action:input.args.control==='stop'?'clear':input.args.control??''})};
+    }
     if (input.action === "hmo.rooms.read") { const rooms = this.rooms.listRooms(principal).map((room) => ({ roomId: room.roomId, name: room.name, privacy: room.privacy, owned: room.ownerUserId === principal.userId })); return { text: rooms.length ? `HearMeOut rooms: ${rooms.map((room) => room.name).join(", ")}.` : "There are no active HearMeOut rooms.", rooms }; }
     let requestedRoom = input.args.roomId || input.source.roomId;
     const activity = this.options.activity;
     const discordActivity = activity?.tenantId === principal.tenantId && input.source.provider === "discord" && Boolean(input.source.guildId && activity.guildIds?.includes(input.source.guildId)) && (!requestedRoom || requestedRoom === HEARMEOUT_ACTIVITY_ROOM_ID);
-    if (discordActivity) {
+    if (discordActivity && !program) {
       requestedRoom = HEARMEOUT_ACTIVITY_ROOM_ID;
       if (input.source.simulation === true && spmtSuiteActionDescriptor(input.action).risk !== "read") return this.simulationPreview(input, requestedRoom);
       ensureHearMeOutDiscordActivityRoom(this.rooms, { tenantId: principal.tenantId, userId: HEARMEOUT_ACTIVITY_ROOM_ID, displayName: HEARMEOUT_ACTIVITY_ROOM_NAME, roles: ["admin"] });
@@ -78,7 +90,7 @@ export class HearMeOutWebSuiteActionExecutor implements HearMeOutSuiteActionExec
     if (!this.rooms.listMembers(principal.tenantId, roomId).some(member => member.userId === principal.userId)) throw new Error("Join this HearMeOut room before reading or controlling its media");
     if (input.action === "hmo.media.state.read") { const music = this.rooms.getSession(principal.tenantId, roomId, "music"), movie = this.rooms.getSession(principal.tenantId, roomId, "movie"), playing = [music.current?.item.title, movie.current?.item.title].filter(Boolean); return { text: playing.length ? `Now playing in HearMeOut: ${playing.join(" and ")}.` : "Nothing is playing in that HearMeOut room.", roomId, music, movie }; }
     if (input.source.simulation === true && spmtSuiteActionDescriptor(input.action).risk !== "read") return this.simulationPreview(input, roomId);
-    if (input.action === "hmo.media.request") { const query = required(input.args.query, "query"), lane = input.args.lane === "movie" ? "movie" : "music", session = await this.rooms.enqueueResolved(principal, { roomId, lane, intent: query, operationId: context.idempotencyKey, resolve: () => this.media.resolve({ tenantId: principal.tenantId, query, lane, operationId: context.idempotencyKey }) }), request = [session.current,...session.queue].find(item => item?.requestId === "hmo-request:" + context.idempotencyKey); return { text: `${request?.item.title ?? query} was ${session.current?.requestId === request?.requestId ? "started" : "added to the queue"}.`, roomId, lane, session }; }
+    if (input.action === "hmo.media.request") { const query = required(input.args.query, "query"), lane = input.args.lane === "movie" ? "movie" : "music", session = await this.rooms.enqueueResolved(principal, { roomId, lane, intent: query, operationId: context.idempotencyKey, resolve: () => this.media.resolve({ tenantId: principal.tenantId, billedUserId: principal.userId, requesterId: principal.userId, query, lane, operationId: context.idempotencyKey }) }), request = [session.current,...session.queue].find(item => item?.requestId === "hmo-request:" + context.idempotencyKey); return { text: `${request?.item.title ?? query} was ${session.current?.requestId === request?.requestId ? "started" : "added to the queue"}.`, roomId, lane, session }; }
     if (input.action === "hmo.media.control") { const control = input.args.control === "stop" ? "clear" : input.args.control, allowed = ["play", "pause", "next", "clear", "mute", "unmute", "volume"] as const; if (!allowed.includes(control as typeof allowed[number])) throw new Error("Unsupported HearMeOut media control"); const lane = input.args.lane === "movie" ? "movie" : "music", current = this.rooms.getSession(principal.tenantId, roomId, lane).current, session = this.rooms.control(principal, { roomId, lane, action: control as typeof allowed[number], operationId: context.idempotencyKey, ...(control === "next" && current ? { expectedRequestId: current.requestId } : {}), ...(control === "volume" ? { position: percent(input.args.value) } : {}) }); return { text: `${lane === "movie" ? "Watch" : "Music"} playback is now ${session.playback.status}.`, roomId, lane, session }; }
     if (input.action === "hmo.bot.control") return this.persona(principal, roomId, input.args);
     const voice = this.options.voiceBridge; if (!voice) throw new Error("HearMeOut voice-bridge adapter is unavailable");

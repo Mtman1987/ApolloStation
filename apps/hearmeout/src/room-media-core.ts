@@ -488,6 +488,8 @@ export class SqliteHearMeOutRoomMediaRuntime {
     return this.readSession(tenantId, cleanId(roomId, "roomId"), lane) ?? emptySession(tenantId, cleanId(roomId, "roomId"), lane, at);
   }
 
+  getBroadcastIdentity(tenantId:string,roomId:string){const room=this.getRoom(tenantId,roomId);return room?{instanceId:room.instanceId??room.createdAt,createdAt:room.createdAt}:undefined;}
+
   claimBroadcast(tenantId: string, roomId: string, lane: HearMeOutMediaLaneV1, owner: string, now = new Date().toISOString()) {
     if (!this.getRoom(tenantId, roomId, now)) return false;
     return this.db.prepare("INSERT INTO hmo_broadcast_leases(tenant_id,room_id,lane,owner,expires_at) VALUES(?,?,?,?,?) ON CONFLICT(tenant_id,room_id,lane) DO UPDATE SET owner=excluded.owner,expires_at=excluded.expires_at WHERE hmo_broadcast_leases.owner=excluded.owner OR hmo_broadcast_leases.expires_at<=?").run(tenantId, roomId, lane, owner, new Date(Date.parse(now)+30000).toISOString(), now).changes === 1;

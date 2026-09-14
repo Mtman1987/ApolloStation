@@ -1,3 +1,5 @@
+import {HEARMEOUT_SINGLE_PROGRAM_ID,type HearMeOutBroadcastProgram} from "./broadcast-program.js";
+import type {HearMeOutSuiteMediaResolverV1} from "./suite-action-executor.js";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { SpmtApiError, type SpmtClient } from "@spmt/sdk";
 import { resolveProviderIdentity } from "@spmt/sdk/provider-identity";
@@ -11,10 +13,10 @@ export class HearMeOutDiscordHttp {
   private readonly router: HearMeOutDiscordInteractionRouter;
   private readonly pending = new Set<Promise<void>>();
   private deliveryFailed = false;
-  constructor(private readonly options: { binding: HearMeOutActivityBinding; publicKeyHex: string; rooms: SqliteHearMeOutRoomMediaRuntime; client: SpmtClient; readOnly?: boolean; fetchImpl?: typeof fetch; deferAfterMs?: number }) {
+  constructor(private readonly options: { binding: HearMeOutActivityBinding; publicKeyHex: string; rooms: SqliteHearMeOutRoomMediaRuntime; client: SpmtClient; singleProgram?: HearMeOutBroadcastProgram; media?: HearMeOutSuiteMediaResolverV1; readOnly?: boolean; fetchImpl?: typeof fetch; deferAfterMs?: number }) {
     if (!/^\d{5,30}$/.test(options.binding.clientId) || !options.binding.tenantId || !options.binding.guildIds?.length || options.binding.guildIds.some(id => !/^\d{5,30}$/.test(id))) throw new Error("HearMeOut Discord requires a community, application and allowed guilds");
     this.router = new HearMeOutDiscordInteractionRouter({
-      publicKeyHex: options.publicKeyHex, rooms: options.rooms, readOnly: options.readOnly === true,
+      singleProgram:options.singleProgram, publicKeyHex: options.publicKeyHex, rooms: options.rooms, readOnly: options.readOnly === true,
       tenants: { resolve: input => input.applicationId === options.binding.clientId && input.guildId && options.binding.guildIds!.includes(input.guildId) ? options.binding.tenantId : undefined },
       principals: { resolve: async input => {
         try {
@@ -23,6 +25,7 @@ export class HearMeOutDiscordHttp {
         } catch (error) { if (error instanceof SpmtApiError && error.status === 404) return undefined; throw error; }
       } },
       requestMedia: async input => {
+        if(options.singleProgram){if(!options.media)throw Error("The media worker is unavailable");await options.singleProgram.request({requesterId:input.principal.userId,displayName:input.principal.displayName,query:input.query,operationId:"discord:"+input.interactionId},options.media);return{jobId:HEARMEOUT_SINGLE_PROGRAM_ID};}
         const created = await options.client.createSuiteActionJob(input.principal.tenantId, {
           schemaVersion: 1, action: "hmo.media.request", args: { query: input.query, lane: input.lane, roomId: input.roomId },
           actor: { userId: input.principal.userId, username: input.principal.displayName, role: input.principal.roles.includes("admin") ? "admin" : "member" },
