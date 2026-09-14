@@ -1,0 +1,68 @@
+name: HMO YouTube single A/V proof
+
+on:
+  push:
+    branches:
+      - test/hmo-youtube-single-av-proof
+
+permissions:
+  contents: read
+
+jobs:
+  youtube-single-av:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+
+      - name: Install yt-dlp and verify media tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --user --upgrade yt-dlp
+          echo "$(python3 -m site --user-base)/bin" >> "$GITHUB_PATH"
+          command -v ffmpeg >/dev/null || (sudo apt-get update && sudo apt-get install -y ffmpeg)
+          command -v ffprobe >/dev/null
+          "$(python3 -m site --user-base)/bin/yt-dlp" --version
+          ffmpeg -version | head -n 1
+          ffprobe -version | head -n 1
+
+      - name: Prove one muxed YouTube A/V URL feeds one encoder
+        shell: bash
+        env:
+          YT_DLP_BINARY: /home/runner/.local/bin/yt-dlp
+        run: |
+          set -euo pipefail
+
+          run_proof() {
+            local label="$1"
+            local video_id="$2"
+            local log="$RUNNER_TEMP/${label}.log"
+
+            echo "===== ${label}: ${video_id} ====="
+            set +e
+            timeout --signal=TERM --kill-after=10s 75s \
+              node scripts/diagnostics/hmo-youtube-single-broadcast-proof.mjs "$video_id" \
+              >"$log" 2>&1
+            local status=$?
+            set -e
+
+            cat "$log"
+            echo "wrapper exit status: $status"
+
+            grep -F "PASS: one source -> one encoder -> one shared live broadcast" "$log"
+            grep -F "source inputs: 1" "$log"
+            grep -F "encoders:      1" "$log"
+            grep -E "ffprobe: +[1-9][0-9]* video \+ [1-9][0-9]* audio stream\(s\) in ONE input" "$log"
+            grep -E "output probe: +[1-9][0-9]* video \+ [1-9][0-9]* audio" "$log"
+          }
+
+          # Real music video: exercises the exact YouTube-music case.
+          run_proof music dQw4w9WgXcQ
+
+          # Public Blender fixture already used elsewhere in the HearMeOut ecosystem.
+          run_proof blender aqz-KE-bpKQ
