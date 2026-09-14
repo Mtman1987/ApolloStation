@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { HEARMEOUT_TEST_SOURCE, HEARMEOUT_TEST_TITLE } from './hearmeout-test-source.mjs';
 
 const origin = new URL(process.argv[2]).origin, buildSha = process.argv[3];
 async function request(path) { return fetch(origin + path, {redirect:'manual', signal:AbortSignal.timeout(15000)}); }
@@ -39,7 +40,7 @@ if (origin === 'http://127.0.0.1:8080' && process.env.DEPLOY_ROLE === 'release')
   try {
     // Never replace or clear a person's existing selection.
     if (!current.current && current.queue.length === 0) {
-      const queued = rooms.enqueue(principal,{roomId:'discord-activity',lane:'movie',operationId:'deployment-broadcast:'+buildSha,item:{itemId:'deployment-broadcast:'+buildSha,type:'movie',title:'Big Buck Bunny — deployment playback check',source:'deployment-check',playbackUrl:'https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',durationSeconds:596}});
+      const queued = rooms.enqueue(principal,{roomId:'discord-activity',lane:'movie',operationId:'deployment-broadcast:'+buildSha,item:{itemId:'deployment-broadcast:'+buildSha,type:'movie',title:HEARMEOUT_TEST_TITLE,source:'deployment-check',playbackUrl:HEARMEOUT_TEST_SOURCE}});
       probeRequest = queued.current?.requestId;
     }
     if (probeRequest || current.playback.status === 'playing') {
@@ -51,6 +52,7 @@ if (origin === 'http://127.0.0.1:8080' && process.env.DEPLOY_ROLE === 'release')
         await new Promise(resolve=>setTimeout(resolve,1000));
       }
       assert.match(master ?? '',/#EXTM3U/,'The deployed encoder must produce a playable HLS manifest');
+      assert.match(master,/stream_video\.m3u8/,'The movie broadcast must contain actual video');
       const variant=master.split('\n').find(line=>line&&!line.startsWith('#'));
       assert.ok(variant);
       const path=new URL(variant,origin+feed).pathname;

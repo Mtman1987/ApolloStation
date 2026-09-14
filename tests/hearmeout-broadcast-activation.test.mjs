@@ -23,6 +23,8 @@ test('broadcast activation preserves transferred owner and voice configuration a
   assert.equal(environment.HEARMEOUT_MEDIA_TENANT_ID, config.tenantId);
   assert.equal(environment.HEARMEOUT_ACTIVITY_TENANT_ID, config.tenantId);
   assert.equal(environment.HEARMEOUT_CONTROLLED_MEDIA, '1');
+  assert.equal(environment.HEARMEOUT_PREPARED_MEDIA_ENABLED, '1');
+  assert.equal(environment.HEARMEOUT_VOICE_BRIDGE_AUTHORIZATION, config.workerAuthorization);
   assert.equal(environment.HEARMEOUT_FFPROBE_BINARY, join(root,'ffprobe'));
   assert.equal(environment.DISCORD_PUBLIC_KEY, undefined);
 });
