@@ -105,7 +105,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
   const auth = new AuthService({ store, refreshRotationKey: options.webhookKey });
   const publicBaseUrl = (options.publicBaseUrl ?? "https://spmt.live").replace(/\/$/, "");
   const control = new ControlService({ store, outputBaseUrl: publicBaseUrl });
-  const billing = new MonetizationService(options.billingManifest ?? loadBillingManifest(), store);
+  const billing = new MonetizationService(options.billingManifest ?? loadBillingManifest(), store, undefined, { enforceLimits: runtimeMode !== "sandbox" });
   const data = new PlatformDataService({ store: platformStore, auth, webhookKey: options.webhookKey });
   const fetchImpl = options.fetchImpl ?? fetch;
   const providerCredentials = options.providerCredentialKey ? new SqliteProviderCredentialAuthority(options.databasePath, options.providerCredentialKey, createFirstPartyProviderRefreshAdapters(fetchImpl), { ...(options.providerOAuthClients ? { clients: options.providerOAuthClients } : {}) }) : undefined;
@@ -194,7 +194,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
         else health.setDependency("authority-storage", "ready", `sqlite:${probe.journalMode}`);
         const state = health.snapshot();
         const ready = probe.ready && state.state !== "unavailable";
-        return json(response, ready ? 200 : 503, { ...state, storage: probe, runtimeMode, outboundIntegrations: runtimeMode === "sandbox" ? "disabled" : "enabled", sandboxFixtures: Boolean(options.sandboxFixtures), buildSha: options.buildSha ?? "dev" });
+        return json(response, ready ? 200 : 503, { ...state, storage: probe, runtimeMode, usageLimitsEnforced: billing.limitsEnforced, outboundIntegrations: runtimeMode === "sandbox" ? "disabled" : "enabled", sandboxFixtures: Boolean(options.sandboxFixtures), buildSha: options.buildSha ?? "dev" });
       }
       if (request.method === "GET" && url.pathname === "/health/stellar") {
         const status = communityAssistant.status();

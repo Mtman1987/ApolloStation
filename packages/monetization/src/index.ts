@@ -55,9 +55,11 @@ export interface UsageRequestV1 {
 
 export class MonetizationService {
   readonly manifest: BillingManifestV1;
+  readonly limitsEnforced: boolean;
   private readonly plans: Map<BillingPlanIdV1, BillingPlanV1>;
-  constructor(manifest: BillingManifestV1, private readonly store: UsageLedgerStoreV1, private readonly now: () => string = () => new Date().toISOString()) {
+  constructor(manifest: BillingManifestV1, private readonly store: UsageLedgerStoreV1, private readonly now: () => string = () => new Date().toISOString(), options: { enforceLimits?: boolean } = {}) {
     this.manifest = structuredClone(assertBillingManifestV1(manifest));
+    this.limitsEnforced = options.enforceLimits !== false;
     this.plans = new Map(this.manifest.plans.map((plan) => [plan.planId, plan]));
   }
 
@@ -65,24 +67,24 @@ export class MonetizationService {
     const event = this.event({ ...input, idempotencyKey: "preflight" });
     const plan = this.plan(event.planId);
     const used = this.store.total(event.tenantId, event.userId, event.period, event.resource, event.executionTarget);
-    return decide(plan, event, used);
+    return decide(plan, event, used, this.limitsEnforced);
   }
 
   consume(input: UsageRequestV1): UsageDecisionV1 {
     const event = this.event(input);
     const plan = this.plan(event.planId);
     if (this.store.find(event.tenantId, event.idempotencyKey)) {
-      const committed = this.store.commit(event, applicableLimit(plan, event));
-      return { ...decide(plan, { ...event, quantity: 0, operation: "consume" }, committed.used), requested: signed(event) };
+      const committed = this.store.commit(event, applicableLimit(plan, event, this.limitsEnforced));
+      return { ...decide(plan, { ...event, quantity: 0, operation: "consume" }, committed.used, this.limitsEnforced), requested: signed(event) };
     }
     const before = this.store.total(event.tenantId, event.userId, event.period, event.resource, event.executionTarget);
-    const decision = decide(plan, event, before);
+    const decision = decide(plan, event, before, this.limitsEnforced);
     if (!decision.allowed) throw new UsageLimitError(decision);
     try {
-      const committed = this.store.commit(event, applicableLimit(plan, event));
-      return { ...decide(plan, { ...event, quantity: 0, operation: "consume" }, committed.used), requested: signed(event) };
+      const committed = this.store.commit(event, applicableLimit(plan, event, this.limitsEnforced));
+      return { ...decide(plan, { ...event, quantity: 0, operation: "consume" }, committed.used, this.limitsEnforced), requested: signed(event) };
     } catch (error) {
-      if (error instanceof Error && error.message === "usage-limit-exceeded") throw new UsageLimitError(decide(plan, event, this.store.total(event.tenantId, event.userId, event.period, event.resource, event.executionTarget)));
+      if (error instanceof Error && error.message === "usage-limit-exceeded") throw new UsageLimitError(decide(plan, event, this.store.total(event.tenantId, event.userId, event.period, event.resource, event.executionTarget), this.limitsEnforced));
       throw error;
     }
   }
@@ -96,7 +98,7 @@ export class MonetizationService {
       const limit = plan.limits[key];
       return { resource: key, hosted, companion, limit, percent: limit === 0 ? 100 : Math.min(100, Math.round(hosted / limit * 100)), warning: warning(hosted, limit) };
     });
-    return { schemaVersion: 1, userId, period, plan: { planId: plan.planId, name: plan.name, monthlyPriceUsd: plan.monthlyPriceUsd, companionLocalProcessing: plan.companionLocalProcessing }, resources };
+    return { schemaVersion: 1, userId, period, limitsEnforced: this.limitsEnforced, plan: { planId: plan.planId, name: plan.name, monthlyPriceUsd: plan.monthlyPriceUsd, companionLocalProcessing: plan.companionLocalProcessing }, resources };
   }
 
   private plan(planId: BillingPlanIdV1) { const plan = this.plans.get(planId); if (!plan) throw new Error("Unknown billing plan"); return plan; }
@@ -110,11 +112,11 @@ export class MonetizationService {
 }
 
 export function billingPeriod(at: string) { const date = new Date(at); if (!Number.isFinite(date.getTime())) throw new Error("Billing period time is invalid"); return date.toISOString().slice(0, 7); }
-function applicableLimit(plan: BillingPlanV1, event: UsageEventV1) { return event.executionTarget === "companion" && plan.companionLocalProcessing === "unmetered-local" ? null : plan.limits[event.resource]; }
-function decide(plan: BillingPlanV1, event: UsageEventV1, used: number): UsageDecisionV1 {
-  const limit = applicableLimit(plan, event), projected = Math.max(0, used + signed(event));
+function applicableLimit(plan: BillingPlanV1, event: UsageEventV1, enforceLimits = true) { return !enforceLimits || (event.executionTarget === "companion" && plan.companionLocalProcessing === "unmetered-local") ? null : plan.limits[event.resource]; }
+function decide(plan: BillingPlanV1, event: UsageEventV1, used: number, enforceLimits = true): UsageDecisionV1 {
+  const limit = applicableLimit(plan, event, enforceLimits), projected = Math.max(0, used + signed(event));
   const allowed = limit === null || projected <= limit;
-  return { schemaVersion: 1, tenantId: event.tenantId, planId: plan.planId, period: event.period, resource: event.resource, executionTarget: event.executionTarget, allowed, used, requested: signed(event), limit, warning: limit === null ? 0 : warning(projected, limit), reason: allowed ? (limit === null ? "Companion-local processing does not consume hosted allowance" : "Usage is within the plan allowance") : `${plan.name} ${event.resource} allowance reached` };
+  return { schemaVersion: 1, tenantId: event.tenantId, planId: plan.planId, period: event.period, resource: event.resource, executionTarget: event.executionTarget, allowed, used, requested: signed(event), limit, warning: limit === null ? 0 : warning(projected, limit), reason: !enforceLimits ? "Development usage is recorded without enforcing plan allowances" : allowed ? (limit === null ? "Companion-local processing does not consume hosted allowance" : "Usage is within the plan allowance") : `${plan.name} ${event.resource} allowance reached` };
 }
 function warning(used: number, limit: number): 0 | 70 | 90 | 100 { if (limit === 0 || used >= limit) return 100; const ratio = used / limit; return ratio >= 0.9 ? 90 : ratio >= 0.7 ? 70 : 0; }
 function signed(event: UsageEventV1) { return event.operation === "release" ? -event.quantity : event.quantity; }
