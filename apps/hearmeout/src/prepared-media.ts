@@ -15,7 +15,7 @@ export class HearMeOutPreparedMediaError extends Error {
 
 export function hearMeOutBrowserCacheUrl(value:string|URL, origin:string){
   let url:URL;try{url=new URL(value);}catch{return undefined;}
-  return url.origin===origin&&!url.username&&!url.password&&!url.search&&!url.hash&&/^\/watch\/youtube\/browser\/[A-Za-z0-9_-]{11}(?:\/(?:audio|video))?$/.test(url.pathname)?url:undefined;
+  return url.origin===origin&&!url.username&&!url.password&&!url.search&&!url.hash&&/^\/watch\/youtube\/browser\/[A-Za-z0-9_-]{11}(?:\/(?:audio|video|prepare))?$/.test(url.pathname)?url:undefined;
 }
 
 // The existing DJ worker prepares media. It never receives Apollo room control
@@ -42,21 +42,22 @@ export class HearMeOutPreparedMedia implements HearMeOutYoutubeResolverAdapterV1
   private readonly localPrefix = '/_hmo_prepared/' + randomBytes(32).toString('base64url') + '/';
   constructor(readonly options: HearMeOutPreparedMediaOptions, private readonly fetchImpl: typeof fetch = fetch) {}
 
-  async browserCache(videoId:string,track?:'audio'|'video',body?:Buffer){
+  async browserCache(videoId:string,track?:'audio'|'video'|'prepare',body?:Buffer){
     const url=new URL(`/watch/youtube/browser/${videoId}${track?'/'+track:''}`,this.options.origin);
     if(!hearMeOutBrowserCacheUrl(url,this.options.origin))throw Error('Invalid browser media request');
-    if(track&&(!body?.length||body.length>200*1024*1024))throw Error('Invalid browser media size');
-    const response=await this.fetchImpl(url,{method:track?'POST':'GET',redirect:'manual',headers:{authorization:this.options.authorization,...(track?{'content-type':'application/octet-stream'}:{})},...(track?{body:new Uint8Array(body!)}:{}),signal:AbortSignal.timeout(120000)});
+    const upload=track==='audio'||track==='video';
+    if(upload&&(!body?.length||body.length>200*1024*1024))throw Error('Invalid browser media size');
+    const response=await this.fetchImpl(url,{method:track?'POST':'GET',redirect:'manual',headers:{authorization:this.options.authorization,...(upload?{'content-type':'application/octet-stream'}:{})},...(upload?{body:new Uint8Array(body!)}:{}),signal:AbortSignal.timeout(120000)});
     if(!response.ok)throw await preparedMediaFailure(response);
     return JSON.parse(await boundedManifest(response)) as {audio?:boolean;video?:boolean;hls?:boolean;ok?:boolean};
   }
 
   async upstream(videoId: string): Promise<HearMeOutResolvedYoutubeV1 | null> {
     if (!/^[A-Za-z0-9_-]{11}$/.test(videoId)) throw Error('Invalid YouTube video id');
-    // The worker may transcode cached bytes, but must not request a cold
-    // YouTube source from its datacenter IP on Apollo's behalf.
+    // Reuse saved media first. Cold acquisition explicitly starts one shared
+    // source player; HLS reads themselves never start the URL extractor.
     const cached=await this.browserCache(videoId);
-    if(!cached.audio&&!cached.hls)throw new HearMeOutPreparedMediaError('browser-required','Open the broadcast in your browser to prepare this YouTube media');
+    if(!cached.audio&&!cached.hls)await this.browserCache(videoId,'prepare');
     const url = new URL(`/watch/youtube/hls/${videoId}/index.m3u8`, this.options.origin);
     for (let attempt = 0; attempt < 2; attempt++) {
       const response = await this.read(url);
@@ -133,6 +134,8 @@ async function preparedMediaFailure(response:Response){
   const status=response.status;
   if(status===401||status===403)return new HearMeOutPreparedMediaError('worker-auth',`Existing HearMeOut media worker rejected its configured service access (HTTP ${status})`,status);
   if(status===404)return new HearMeOutPreparedMediaError('worker-route','Existing HearMeOut prepared-media endpoint was not found (HTTP 404)',status);
+  if(/YouTube (?:refused|did not permit playback)/i.test(body))return new HearMeOutPreparedMediaError('provider-denied','YouTube refused playback in the shared source player. This player does not inherit your browser’s YouTube session.',status);
+  if(/shared YouTube|YouTube did not load|YouTube sources are already/i.test(body))return new HearMeOutPreparedMediaError('capture-unavailable','The shared YouTube source could not be saved. Retry the request; the current broadcast is preserved.',status);
   if(/No YouTube video stream resolved/i.test(body))return new HearMeOutPreparedMediaError('video-unavailable','The existing HearMeOut worker could not obtain the YouTube video stream',status);
   if(/No YouTube audio stream resolved/i.test(body))return new HearMeOutPreparedMediaError('audio-unavailable','The existing HearMeOut worker could not obtain the YouTube audio stream',status);
   if(/sign.?in|confirm.*bot|forbidden|(?:HTTP|status|error)[^\n]{0,20}403/i.test(body))return new HearMeOutPreparedMediaError('provider-denied','YouTube refused the media source requested by the existing HearMeOut worker',status);

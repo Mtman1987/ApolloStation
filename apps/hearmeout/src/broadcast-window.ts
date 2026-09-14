@@ -192,7 +192,8 @@ export const BROADCAST_WINDOW_JS=String.raw`
       const submit=(browserPrepared=false)=>api('/api/watch/broadcast/requests',{method:'POST',headers:{'content-type':'application/json','idempotency-key':pendingRequest.key},body:JSON.stringify({query,lane,browserPlayback:true,browserPrepared,...(selectedItemId?{selectedItemId}:{})})});
       let state;try{state=await submit();}catch(e){
         if(e.code!=='youtube-browser-required')throw e;
-        await window.prepareHearMeOutYoutube(e.videoId,lane,message=>{status.textContent=message;});
+        try{await window.prepareHearMeOutYoutube(e.videoId,lane,message=>{status.textContent=message;});}
+        catch{status.textContent='Starting the shared YouTube source…';}
         state=await submit(true);
       }pendingRequest=undefined;selectedMovie=undefined;movieResults.replaceChildren();movieResults.hidden=true;if(event.target.elements.query.value.trim()===query&&event.target.elements.lane.value===lane)event.target.reset();error.textContent='';requestInFlight=false;applyState(state);}
     catch(e){if(e.status)pendingRequest=undefined;error.textContent=e.message;status.textContent='Request not completed. You can retry.';}finally{requestInFlight=false;button.disabled=false;}

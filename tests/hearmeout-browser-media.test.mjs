@@ -12,7 +12,7 @@ test('browser downloads the actual video and audio bytes before cache upload; no
  globalThis.fetch=async(value,init={})=>{
   const url=String(value);calls.push({url,init});
   if(url.endsWith('/status'))return Response.json({audio:false,video:false});
-  if(url.startsWith('https://www.youtube.com/')){assert.equal(init.credentials,'include');return Response.json({playabilityStatus:{status:'OK'},videoDetails:{title:'Browser track'},streamingData:{adaptiveFormats:[{mimeType:'video/mp4',height:720,url:'https://rr1.googlevideo.com/video',bitrate:1000},{mimeType:'audio/mp4',url:'https://rr1.googlevideo.com/audio',bitrate:100}]}});}
+  if(url.startsWith('https://www.youtube.com/')){assert.equal(init.credentials,undefined);return Response.json({playabilityStatus:{status:'OK'},videoDetails:{title:'Browser track'},streamingData:{adaptiveFormats:[{mimeType:'video/mp4',height:720,url:'https://rr1.googlevideo.com/video',bitrate:1000},{mimeType:'audio/mp4',url:'https://rr1.googlevideo.com/audio',bitrate:100}]}});}
   if(url.startsWith('https://rr1.googlevideo.com/'))return new Response(url.endsWith('video')?'video bytes':'audio bytes');
   assert.equal(init.method,'POST');assert.ok(init.body instanceof Blob);
   assert.equal(await init.body.text(),url.endsWith('video')?'video bytes':'audio bytes');
@@ -32,15 +32,20 @@ test('a browser denial never falls back to a worker download or uploads empty da
  try{await assert.rejects(()=>prepareHearMeOutYoutube(id,'music',()=>{}),/this browser.*403/);assert.equal(calls.length,3);}finally{globalThis.fetch=original;}
 });
 
-test('cold worker resolution stops before requesting HLS; cached bytes enable preparation',async()=>{
- let audio=false;const calls=[];
+test('cold resolution starts the shared capture; saved audio or HLS bypasses capture',async()=>{
+ let audio=false,hls=false;const calls=[];
  const prepared=new HearMeOutPreparedMedia({origin,authorization,tenantId:'tenant'},async(url,init)=>{
   calls.push(String(url));assert.equal(init.headers.authorization,authorization);
-  if(String(url).includes('/browser/'))return Response.json({audio});
+  assert.equal(init.headers.cookie,undefined);
+  if(String(url).endsWith('/prepare')){assert.equal(init.method,'POST');assert.equal(init.body,undefined);return Response.json({hls:false,preparing:true},{status:202});}
+  if(String(url).includes('/browser/'))return Response.json({audio,hls});
   assert.equal(init.headers['x-hmo-browser-media'],'1');return new Response('#EXTM3U\npart001.ts');
  });
- await assert.rejects(()=>prepared.upstream(id),e=>e.code==='browser-required');assert.equal(calls.length,1);
- audio=true;assert.equal((await prepared.upstream(id)).stage,'upstream');assert.equal(calls.length,3);
+ assert.equal((await prepared.upstream(id)).stage,'upstream');assert.equal(calls.length,3);
+ assert.equal(calls[1],origin+'/watch/youtube/browser/'+id+'/prepare');
+ audio=true;assert.equal((await prepared.upstream(id)).stage,'upstream');assert.equal(calls.length,5);
+ audio=false;hls=true;assert.equal((await prepared.upstream(id)).stage,'upstream');assert.equal(calls.length,7);
+ assert.equal(calls.filter(url=>url.endsWith('/prepare')).length,1);
 });
 
 test('YouTube browser preparation returns a video ID before starting any worker resolution job',async()=>{
