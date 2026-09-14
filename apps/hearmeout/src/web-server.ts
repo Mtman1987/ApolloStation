@@ -1,14 +1,14 @@
-export * from "./web-server-v3.js";
+export * from "./web-server-v4.js";
 export { HEARMEOUT_SURFACE_BROWSER_JS } from "./surface-client.js";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { startHearMeOutWebServerFromEnvironment } from "./web-server-v3.js";
+import { startHearMeOutWebServerFromEnvironment } from "./web-server-v4.js";
 
 /**
  * Stable source-level compatibility marker for repository contract tests and
  * downstream tooling that still locates HearMeOut from its executable entrypoint.
- * The implementation lives in web-server-v3.ts; these are public surface facts,
- * not a second renderer.
+ * The implementation lives in web-server-v3.ts; v4 supplies production donor
+ * persona transport wiring without introducing a second renderer.
  */
 export const HEARMEOUT_WEB_SURFACE_CONTRACT = Object.freeze({
   appMarker: "data-app",
