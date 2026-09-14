@@ -68,7 +68,6 @@ const INNERTUBE_CLIENTS: InnertubeClient[] = [
 async function fetchInnertubePlayer(videoId: string, client: InnertubeClient): Promise<any> {
   const response = await fetch(`https://www.youtube.com/youtubei/v1/player?key=${INNERTUBE_API_KEY}`, {
     method: 'POST',
-    credentials: 'include',
     signal: AbortSignal.timeout(20000),
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -173,7 +172,7 @@ export async function prepareHearMeOutYoutube(videoId:string,lane:'music'|'movie
   if(!/^[A-Za-z0-9_-]{11}$/.test(videoId))throw Error('Invalid YouTube video');
   const base='/api/watch/broadcast/youtube/'+videoId;
   const cached=await cacheApi(base+'/status');
-  if(cached.audio&&(lane==='music'||cached.video))return;
+  if(cached.hls||(cached.audio&&(lane==='music'||cached.video)))return;
   progress('Preparing YouTube in your browser…');
   const resolved=await resolveYoutubeStream(videoId);
   if(!resolved)throw Error('YouTube could not resolve this video in your browser. The worker has not retried it.');

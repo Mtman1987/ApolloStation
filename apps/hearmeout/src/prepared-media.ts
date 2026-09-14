@@ -48,7 +48,7 @@ export class HearMeOutPreparedMedia implements HearMeOutYoutubeResolverAdapterV1
     if(track&&(!body?.length||body.length>200*1024*1024))throw Error('Invalid browser media size');
     const response=await this.fetchImpl(url,{method:track?'POST':'GET',redirect:'manual',headers:{authorization:this.options.authorization,...(track?{'content-type':'application/octet-stream'}:{})},...(track?{body:new Uint8Array(body!)}:{}),signal:AbortSignal.timeout(120000)});
     if(!response.ok)throw await preparedMediaFailure(response);
-    return JSON.parse(await boundedManifest(response)) as {audio?:boolean;video?:boolean;ok?:boolean};
+    return JSON.parse(await boundedManifest(response)) as {audio?:boolean;video?:boolean;hls?:boolean;ok?:boolean};
   }
 
   async upstream(videoId: string): Promise<HearMeOutResolvedYoutubeV1 | null> {
@@ -56,7 +56,7 @@ export class HearMeOutPreparedMedia implements HearMeOutYoutubeResolverAdapterV1
     // The worker may transcode cached bytes, but must not request a cold
     // YouTube source from its datacenter IP on Apollo's behalf.
     const cached=await this.browserCache(videoId);
-    if(!cached.audio)throw new HearMeOutPreparedMediaError('browser-required','Open the broadcast in your browser to prepare this YouTube media');
+    if(!cached.audio&&!cached.hls)throw new HearMeOutPreparedMediaError('browser-required','Open the broadcast in your browser to prepare this YouTube media');
     const url = new URL(`/watch/youtube/hls/${videoId}/index.m3u8`, this.options.origin);
     for (let attempt = 0; attempt < 2; attempt++) {
       const response = await this.read(url);
