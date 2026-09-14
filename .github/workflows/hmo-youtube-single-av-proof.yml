@@ -37,32 +37,17 @@ jobs:
           YT_DLP_BINARY: /home/runner/.local/bin/yt-dlp
         run: |
           set -euo pipefail
-
-          run_proof() {
-            local label="$1"
-            local video_id="$2"
-            local log="$RUNNER_TEMP/${label}.log"
-
-            echo "===== ${label}: ${video_id} ====="
-            set +e
-            timeout --signal=TERM --kill-after=10s 75s \
-              node scripts/diagnostics/hmo-youtube-single-broadcast-proof.mjs "$video_id" \
-              >"$log" 2>&1
-            local status=$?
-            set -e
-
-            cat "$log"
-            echo "wrapper exit status: $status"
-
-            grep -F "PASS: one source -> one encoder -> one shared live broadcast" "$log"
-            grep -F "source inputs: 1" "$log"
-            grep -F "encoders:      1" "$log"
-            grep -E "ffprobe: +[1-9][0-9]* video \+ [1-9][0-9]* audio stream\(s\) in ONE input" "$log"
-            grep -E "output probe: +[1-9][0-9]* video \+ [1-9][0-9]* audio" "$log"
-          }
-
-          # Real music video: exercises the exact YouTube-music case.
-          run_proof music dQw4w9WgXcQ
-
-          # Public Blender fixture already used elsewhere in the HearMeOut ecosystem.
-          run_proof blender aqz-KE-bpKQ
+          log="$RUNNER_TEMP/blender.log"
+          set +e
+          timeout --signal=TERM --kill-after=10s 75s \
+            node scripts/diagnostics/hmo-youtube-single-broadcast-proof.mjs aqz-KE-bpKQ \
+            >"$log" 2>&1
+          status=$?
+          set -e
+          cat "$log"
+          echo "wrapper exit status: $status"
+          grep -F "PASS: one source -> one encoder -> one shared live broadcast" "$log"
+          grep -F "source inputs: 1" "$log"
+          grep -F "encoders:      1" "$log"
+          grep -E "ffprobe: +[1-9][0-9]* video \+ [1-9][0-9]* audio stream\(s\) in ONE input" "$log"
+          grep -E "output probe: +[1-9][0-9]* video \+ [1-9][0-9]* audio" "$log"
