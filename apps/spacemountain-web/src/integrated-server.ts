@@ -12,16 +12,22 @@ type GreenAppId=typeof GREEN_APP_IDS[number];
 
 export interface IntegratedSpaceMountainWebHostOptions extends BaseIntegratedSpaceMountainWebHostOptions {
   greenAppOrigins?:Partial<Record<GreenAppId,string>>;
+  hearMeOutActivityClientId?:string;
 }
 
 export function createIntegratedSpaceMountainWebHost(options:IntegratedSpaceMountainWebHostOptions){
+  if(options.hearMeOutActivityClientId&&!/^\d{5,30}$/.test(options.hearMeOutActivityClientId))throw new Error("Invalid HearMeOut Activity client ID");
+  const activityOrigin=options.hearMeOutActivityClientId?`https://${options.hearMeOutActivityClientId}.discordsays.com`:undefined;
   const base=createBaseIntegratedHost({...options,port:0,host:"127.0.0.1"});let basePort=0;
   const outer=createServer(async(request,response)=>{try{const url=new URL(request.url??"/","http://spacemountain.parity");
     // Validate the browser origin before rewriting it for a loopback app.
     if (!["GET", "HEAD", "OPTIONS"].includes(request.method ?? "GET") && request.headers.origin) {
       let sameOrigin = false;
       try { const origin = new URL(request.headers.origin); sameOrigin = ["http:", "https:"].includes(origin.protocol) && origin.host === request.headers.host; } catch {}
-      if (!sameOrigin) return json(response, 403, { error: "cross_origin_request", message: "Open this action from the signed-in app." });
+      // Discord changes Host to the mapped Sprite while retaining its iframe
+      // Origin. This public request route uses the configured Activity identity.
+      const activityRequest=request.method==='POST'&&url.pathname==='/api/watch/broadcast/requests'&&activityOrigin!==undefined&&request.headers.origin===activityOrigin;
+      if (!sameOrigin&&!activityRequest) return json(response, 403, { error: "cross_origin_request", message: "Open this action from the signed-in app." });
     }
 
     if(request.method==="GET"&&(url.pathname==="/apps/companion"||url.pathname==="/apps/mountainview")) { response.writeHead(302,{location:url.pathname==="/apps/companion"?"/downloads/companion":"/downloads/mountainview","cache-control":"no-store"}); response.end(); return; }
@@ -43,4 +49,4 @@ function proxyDirect(request:IncomingMessage,response:ServerResponse,originValue
 function proxyInner(request:IncomingMessage,response:ServerResponse,port:number){if(!port)throw new Error("SpaceMountain parity base host is not ready");const headers={...request.headers};delete headers.connection;const upstream=httpRequest({hostname:"127.0.0.1",port,path:request.url??"/",method:request.method,headers},(incoming)=>{response.writeHead(incoming.statusCode??502,incoming.headers);incoming.pipe(response);});upstream.on("error",(error)=>response.headersSent?response.destroy(error):json(response,502,{error:"base_host_unavailable",message:error.message}));request.pipe(upstream);}
 function listen(server:ReturnType<typeof createServer>,port:number,host:string){return new Promise<void>((done,reject)=>{server.once("error",reject);server.listen(port,host,()=>{server.off("error",reject);done();});});}function close(server:ReturnType<typeof createServer>){return new Promise<void>((done,reject)=>server.close((error)=>error?reject(error):done()));}function json(response:ServerResponse,status:number,value:unknown){const body=Buffer.from(JSON.stringify(value));response.writeHead(status,{"content-type":"application/json; charset=utf-8","content-length":String(body.byteLength),"cache-control":"no-store"});response.end(body);}
 
-if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){const checked=validateSandboxWebEnvironment(process.env);const greenAppOrigins:Partial<Record<GreenAppId,string>>={};for(const [appId,name] of [["discord-stream-hub","DSH_WEB_ORIGIN"],["streamweaver","STREAMWEAVER_WEB_ORIGIN"],["hearmeout","HEARMEOUT_WEB_ORIGIN"],["mountainview","MOUNTAINVIEW_WEB_ORIGIN"],["companion","COMPANION_WEB_ORIGIN"]] as const){const value=process.env[name];if(value)greenAppOrigins[appId]=value;}const host=createIntegratedSpaceMountainWebHost({spmtOrigin:checked.spmtOrigin,port:Number(process.env.PORT??8080),host:process.env.HOST??"0.0.0.0",buildSha:process.env.BUILD_SHA??"dev",...(checked.nebulaArcadeOrigin?{nebulaArcadeOrigin:checked.nebulaArcadeOrigin}:{}),...(Object.keys(greenAppOrigins).length?{greenAppOrigins}:{}),...(checked.candidateManifest?{candidateManifest:checked.candidateManifest}:{})});await host.listen();}
+if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){const checked=validateSandboxWebEnvironment(process.env);const greenAppOrigins:Partial<Record<GreenAppId,string>>={};for(const [appId,name] of [["discord-stream-hub","DSH_WEB_ORIGIN"],["streamweaver","STREAMWEAVER_WEB_ORIGIN"],["hearmeout","HEARMEOUT_WEB_ORIGIN"],["mountainview","MOUNTAINVIEW_WEB_ORIGIN"],["companion","COMPANION_WEB_ORIGIN"]] as const){const value=process.env[name];if(value)greenAppOrigins[appId]=value;}const host=createIntegratedSpaceMountainWebHost({spmtOrigin:checked.spmtOrigin,port:Number(process.env.PORT??8080),host:process.env.HOST??"0.0.0.0",buildSha:process.env.BUILD_SHA??"dev",...(process.env.HEARMEOUT_ACTIVITY_CLIENT_ID?{hearMeOutActivityClientId:process.env.HEARMEOUT_ACTIVITY_CLIENT_ID}:{}),...(checked.nebulaArcadeOrigin?{nebulaArcadeOrigin:checked.nebulaArcadeOrigin}:{}),...(Object.keys(greenAppOrigins).length?{greenAppOrigins}:{}),...(checked.candidateManifest?{candidateManifest:checked.candidateManifest}:{})});await host.listen();}

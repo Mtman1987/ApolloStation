@@ -9,6 +9,10 @@ export interface HearMeOutPreparedMediaOptions {
   tenantId: string;
 }
 
+export class HearMeOutPreparedMediaError extends Error {
+  constructor(readonly code:string,message:string,readonly httpStatus?:number){super(message);}
+}
+
 // The existing DJ worker prepares media. It never receives Apollo room control
 // requests through this adapter, and its credential never enters FFmpeg argv.
 export function preparedHearMeOutUrl(value: string | URL, origin: string): URL | undefined {
@@ -39,12 +43,12 @@ export class HearMeOutPreparedMedia implements HearMeOutYoutubeResolverAdapterV1
     for (let attempt = 0; attempt < 2; attempt++) {
       const response = await this.read(url);
       if (response.status === 202) { await response.body?.cancel(); continue; }
-      if (!response.ok) { await response.body?.cancel(); throw Error(`Existing HearMeOut media worker returned HTTP ${response.status}`); }
+      if (!response.ok) throw await preparedMediaFailure(response);
       const manifest = await boundedManifest(response);
       this.manifest(manifest, url);
       return { videoId, videoUrl: url.href, audioUrl: url.href, stage: 'upstream', resolvedAt: new Date().toISOString() };
     }
-    throw Error('Existing HearMeOut media worker is still preparing this video');
+    throw new HearMeOutPreparedMediaError('preparing','Existing HearMeOut media worker is still preparing this video. Retry the request.',202);
   }
 
   localSource(source: URL, tenantId: string, proxyOrigin: string): URL {
@@ -101,6 +105,20 @@ export class HearMeOutPreparedMedia implements HearMeOutYoutubeResolverAdapterV1
     const machine = url.searchParams.get('machine');
     return this.fetchImpl(url, { method: 'GET', redirect: 'manual', headers: { authorization: this.options.authorization, 'user-agent': 'HearMeOut/1.0', ...(range ? { range } : {}), ...(machine ? { 'fly-force-instance-id': machine } : {}) }, signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(55000)]) : AbortSignal.timeout(55000) });
   }
+}
+
+// Worker responses can contain FFmpeg command lines and signed source URLs.
+// Return only known failure categories to viewers and release verification.
+async function preparedMediaFailure(response:Response){
+  let body='';const reader=response.body?.getReader();
+  if(reader)try{let bytes=0;while(bytes<8192){const next=await reader.read();if(next.done)break;bytes+=next.value.byteLength;body+=Buffer.from(next.value.subarray(0,8192-body.length)).toString('utf8');}}catch{}finally{await reader.cancel().catch(()=>{});}
+  const status=response.status;
+  if(status===401||status===403)return new HearMeOutPreparedMediaError('worker-auth',`Existing HearMeOut media worker rejected its configured service access (HTTP ${status})`,status);
+  if(status===404)return new HearMeOutPreparedMediaError('worker-route','Existing HearMeOut prepared-media endpoint was not found (HTTP 404)',status);
+  if(/No YouTube video stream resolved/i.test(body))return new HearMeOutPreparedMediaError('video-unavailable','The existing HearMeOut worker could not obtain the YouTube video stream',status);
+  if(/No YouTube audio stream resolved/i.test(body))return new HearMeOutPreparedMediaError('audio-unavailable','The existing HearMeOut worker could not obtain the YouTube audio stream',status);
+  if(/sign.?in|confirm.*bot|forbidden|(?:HTTP|status|error)[^\n]{0,20}403/i.test(body))return new HearMeOutPreparedMediaError('provider-denied','YouTube refused the media source requested by the existing HearMeOut worker',status);
+  return new HearMeOutPreparedMediaError('worker-http',`Existing HearMeOut media worker returned HTTP ${status}`,status);
 }
 
 async function boundedManifest(response: Response) {

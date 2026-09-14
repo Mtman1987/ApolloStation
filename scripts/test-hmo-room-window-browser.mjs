@@ -15,7 +15,7 @@ import {SqliteHearMeOutRoomMediaRuntime} from '../apps/hearmeout/dist/room-media
 const directory=await mkdtemp(join(tmpdir(),'hmo-window-browser-')),path=join(directory,'rooms.sqlite');
 const owner={tenantId:'tenant',userId:'owner',displayName:'Owner',roles:['admin']};
 const program=new HearMeOutBroadcastProgram(path,{tenantId:'tenant',executionUserId:'owner'}),rooms=new SqliteHearMeOutRoomMediaRuntime(path);
-let host,spmt,shell,browser;const requests=[],errors=[];
+let host,spmt,shell,browser;let requestPosts=0;const requests=[],errors=[],requestKeys=[];
 try{
  const videoFile=join(directory,'video.mp4');
  execFileSync(mediaBinary('ffmpeg'),['-hide_banner','-loglevel','error','-f','lavfi','-i','color=c=blue:s=160x90:r=25','-f','lavfi','-i','sine=frequency=440:sample_rate=44100','-t','180','-c:v','libx264','-preset','ultrafast','-g','50','-c:a','aac','-b:a','32k','-ac','1','-movflags','+faststart',videoFile],{timeout:30000});
@@ -24,7 +24,7 @@ try{
   if(req.url===mediaPath){const range=/bytes=(\d+)-(\d*)/.exec(req.headers.range??''),start=Number(range?.[1]??0),end=range?.[2]?Number(range[2]):fixture.length-1;res.writeHead(range?206:200,{'content-type':'video/mp4','accept-ranges':'bytes','content-length':end-start+1,...(range?{'content-range':`bytes ${start}-${end}/${fixture.length}`}:{})});res.end(fixture.subarray(start,end+1));return;}
   res.setHeader('content-type','application/json');if(req.url==='/v1/session')res.end(JSON.stringify({actorId:'owner',displayName:'Owner',tenantIds:['tenant'],scopes:['admin']}));else{res.statusCode=404;res.end('{}');}
  });await new Promise(r=>spmt.listen(0,'127.0.0.1',r));const spmtOrigin='http://127.0.0.1:'+spmt.address().port;
- host=createHearMeOutWebServer({spmtOrigin,databasePath:path,port:0,singleBroadcast:{tenantId:'tenant',executionUserId:'owner'},broadcast:{ffmpegBinary:mediaBinary('ffmpeg'),ffprobeBinary:mediaBinary('ffprobe'),cachePath:join(directory,'broadcast')},suiteMediaResolver:{async resolve(input){requests.push(input);return {itemId:'requested-video',title:input.query,type:input.lane,source:'fixture',playbackUrl:'https://media.example'+mediaPath,durationSeconds:180};}}});
+ host=createHearMeOutWebServer({spmtOrigin,databasePath:path,port:0,singleBroadcast:{tenantId:'tenant',executionUserId:'owner'},broadcast:{ffmpegBinary:mediaBinary('ffmpeg'),ffprobeBinary:mediaBinary('ffprobe'),cachePath:join(directory,'broadcast')},suiteMediaResolver:{async resolve(input){requests.push(input);if(requests.length===1)throw Error('The fixture media worker is temporarily unavailable');return {itemId:'requested-video',title:input.query,type:input.lane,source:'fixture',playbackUrl:'https://media.example'+mediaPath,durationSeconds:180};}}});
  await host.listen();const origin='http://127.0.0.1:'+host.server.address().port;
  // The real AppFrame host sends launch snapshots on shell clock/usage updates.
  // Match the shell's remembered-page response to the app's surface manifest.
@@ -35,7 +35,7 @@ try{
  const host=createAppFrameHost({frame,allowedOrigin:origin,launch:{schemaVersion:1,appId:'hearmeout',tenantId:'tenant',surfaceMode:'shell',launchId:'window-test',requestedScopes:[]},getState:()=>({authenticated:true,userId:'owner',tenantId:'tenant',grants:[],runtimeState:'ready',layout:{schemaVersion:1,availableWidth:390,availableHeight:844,headerHeight:0,safeTop:0,safeRight:0,safeBottom:0,safeLeft:0,measuredAt:new Date().toISOString()}})});host.start();setInterval(()=>host.sync(),1000);
  </script>`);});attachHearMeOutRtcProxy(shell,origin);await new Promise(r=>shell.listen(0,'127.0.0.1',r));
  browser=await chromium.launch({executablePath:process.env.HMO_TEST_BROWSER_PATH||chromium.executablePath(),headless:true,args:['--no-sandbox','--disable-dev-shm-usage','--autoplay-policy=no-user-gesture-required']});
- const segments=[];const page=await browser.newPage({viewport:{width:390,height:844}});page.on('request',r=>{const match=new URL(r.url()).pathname.match(/_video_(\d+)\.ts$/);if(match)segments.push(Number(match[1]));});page.on('pageerror',e=>errors.push(e.message));page.on('dialog',d=>d.accept());
+ const segments=[];const page=await browser.newPage({viewport:{width:390,height:844}});page.on('request',r=>{const path=new URL(r.url()).pathname;if(r.method()==='POST'&&path==='/api/watch/broadcast/requests'){requestPosts++;requestKeys.push(r.headers()['idempotency-key']);}const match=path.match(/_video_(\d+)\.ts$/);if(match)segments.push(Number(match[1]));});page.on('pageerror',e=>errors.push(e.message));page.on('dialog',d=>d.accept());
  await page.goto('http://127.0.0.1:'+shell.address().port+'/test-shell');
  const app=page.frameLocator('[data-shell-app-frame]');
  await app.getByRole('button',{name:'Browse Rooms',exact:true}).waitFor();
@@ -49,12 +49,18 @@ try{
  let window=app.frameLocator('[data-hmo-broadcast-frame]');
  await window.getByText('Nothing playing',{exact:true}).waitFor();
  assert.equal(await window.locator('video').evaluate(v=>v.currentSrc), '');
+ await window.getByRole('button',{name:'Enable sound',exact:true}).click();
+ await new Promise(r=>setTimeout(r,1800));
+ assert.equal(await window.locator('#error').textContent(),'','Idle polling must not interrupt a pending play request');
  await window.getByRole('textbox',{name:'Music or movie request'}).fill('My requested movie');
  await window.getByRole('button',{name:'Request',exact:true}).click();
+ await window.getByRole('alert').filter({hasText:'The fixture media worker is temporarily unavailable'}).waitFor();
+ await window.locator('#request-form').evaluate(form=>{form.requestSubmit();form.requestSubmit();});
  await window.getByRole('heading',{name:'My requested movie',exact:true}).waitFor();
- await window.getByRole('button',{name:'Enable sound',exact:true}).click();
+ assert.equal(requestPosts,2,'Retry sends once even with rapid repeated submissions');assert.notEqual(requestKeys[0],requestKeys[1],'A known failed request must be retried with a fresh operation key');
  async function playing(){await window.locator('video').evaluate(v=>new Promise((resolve,reject)=>{const limit=Date.now()+25000;const timer=setInterval(()=>{if(!v.paused&&v.currentTime>.1&&v.videoWidth>0){clearInterval(timer);resolve();}else if(Date.now()>limit){clearInterval(timer);reject(Error('Video not playing: '+v.readyState+' '+v.error?.message));}},100)}));}
- await playing();assert.equal(await window.locator('video').isVisible(),true);assert.equal(requests.length,1);assert.equal(requests[0].query,'My requested movie');assert.equal(requests[0].lane,'movie');
+ await playing();assert.equal(await window.locator('video').isVisible(),true);assert.equal(requests.length,2);assert.equal(requests[1].query,'My requested movie');assert.equal(requests[0].lane,'movie');
+ assert.equal(await window.locator('#error').textContent(),'');
  assert.equal(await app.locator('video,audio').count(),0,'No legacy music or video player exists behind the iframe');
  assert.equal(await app.locator('[data-hmo-broadcast-frame]').count(),1);
  const original=program.getSession(),starts=(await(await fetch(origin+'/health/ready')).json()).broadcast.startedProcesses;

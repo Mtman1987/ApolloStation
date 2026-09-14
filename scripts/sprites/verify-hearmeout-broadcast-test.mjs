@@ -7,6 +7,13 @@ for(let attempt=0;attempt<30;attempt++){
  if(health.mediaWorker?.ready)break;await new Promise(resolve=>setTimeout(resolve,1000));
 }
 assert.equal(health.buildSha,buildSha);assert.equal(health.broadcast?.singleProgram,true);assert.equal(health.broadcast?.configured,true);assert.equal(health.mediaWorker?.ready,true);
+assert.match(health.activityClientId,/^\d{5,30}$/);
+const activityOrigin=`https://${health.activityClientId}.discordsays.com`;
+// An empty request reaches validation without resolving, billing or queuing media.
+const activityRequest=await request('/api/watch/broadcast/requests',{method:'POST',headers:{origin:activityOrigin,'content-type':'application/json'},body:'{}'});
+assert.equal(activityRequest.status,400,'Configured Discord requests must reach the broadcast route');
+assert.equal((await activityRequest.json()).error,'Enter a video title or link');
+assert.equal((await request('/api/hearmeout/rooms',{method:'POST',headers:{origin:activityOrigin,'content-type':'application/json'},body:'{}'})).status,403);
 const stationResponse=await request('/sandbox/health');assert.equal(stationResponse.status,200);
 const station=await stationResponse.json();assert.equal(station.spmt?.runtimeMode,'sandbox');assert.equal(station.spmt?.usageLimitsEnforced,false,'Development media requests must not be stopped by a production plan allowance');
 for(const path of ['/watch','/activity?roomId=any-room','/apps/hearmeout'])assert.equal((await request(path)).status,200);
@@ -32,4 +39,4 @@ for(const alias of ['discord-watch-room','discord-music-room','watch-room-anywhe
  const window=await(await request('/api/watch/sessions/'+alias+'/state')).json();
  assert.equal(window.sessionId,canonical.sessionId);assert.equal(window.broadcast.playbackUrl,canonical.broadcast.playbackUrl);
 }
-console.log(JSON.stringify({buildSha,origin,singleBroadcast:true,publicViewerEntry:true,mediaWorkerReady:true,privateRoomAccessProtected:true,developmentUsageLimitsEnforced:station.spmt.usageLimitsEnforced,playbackStatus:canonical.playback.status,queuedRequests:canonical.queue.length,testUrl:origin+'/apps/hearmeout'}));
+console.log(JSON.stringify({buildSha,origin,singleBroadcast:true,publicViewerEntry:true,mediaWorkerReady:true,discordRequestOriginAccepted:true,privateRoomAccessProtected:true,developmentUsageLimitsEnforced:station.spmt.usageLimitsEnforced,playbackStatus:canonical.playback.status,queuedRequests:canonical.queue.length,testUrl:origin+'/apps/hearmeout'}));

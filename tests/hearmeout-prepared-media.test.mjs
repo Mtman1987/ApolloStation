@@ -14,6 +14,15 @@ import { SqliteHearMeOutRoomMediaRuntime } from '../apps/hearmeout/dist/room-med
 const id = 'aqz-KE-bpKQ', owner = { tenantId: 'owner-tenant', userId: 'owner', displayName: 'Owner', roles: ['admin'] };
 const remoteOrigin = 'https://hmo-dj-worker.fly.dev', path = `/watch/youtube/hls/${id}/index.m3u8`, authorization = 'Bearer prepared-worker-test-credential';
 
+test('prepared-media failures identify the failing worker stage without exposing provider response details',async()=>{
+ for(const [status,body,code,message] of [[401,'Unauthorized','worker-auth',/service access/],[502,'No YouTube video stream resolved https://r1.googlevideo.com/v?token=secret','video-unavailable',/video stream/],[502,'HTTP Error 403 Forbidden Bearer secret','provider-denied',/YouTube refused/],[503,'private debug output','worker-http',/HTTP 503/]]){
+  const prepared=new HearMeOutPreparedMedia({origin:remoteOrigin,authorization,tenantId:owner.tenantId},async()=>new Response(body,{status}));
+  await assert.rejects(()=>prepared.upstream(id),error=>{assert.equal(error.code,code);assert.equal(error.httpStatus,status);assert.match(error.message,message);assert.doesNotMatch(error.message,/secret|googlevideo|debug output/);return true;});
+  const resolution=await new HearMeOutYoutubeResolverCoordinator(prepared,{preparedMediaOrigin:remoteOrigin}).resolve(id);
+  assert.equal(resolution.result,null);assert.match(resolution.attempts.find(attempt=>attempt.stage==='upstream').message,message);
+ }
+});
+
 test('prepared input is confined to the configured tenant and media paths without forwarding credentials to redirects', async () => {
   for (const value of ['/dj', '/voice-bridge', '/watch/cache/control', path+'?source=https://example.com', path+'?machine=x&machine=y', `/watch/youtube/hls/${id}/../private.ts`])
     assert.equal(preparedHearMeOutUrl(remoteOrigin+value,remoteOrigin),undefined,value);
