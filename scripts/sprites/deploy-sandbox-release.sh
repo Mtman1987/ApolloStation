@@ -211,9 +211,18 @@ if [[ ! -d "$release_dir/.git" ]]; then
     echo "Refusing to replace non-Git release path $release_dir" >&2
     exit 1
   fi
-  git clone --filter=blob:none --no-checkout "$REPOSITORY_URL" "$release_dir"
+  clone_reference=()
+  if [[ -n "$previous_release" && -d "$previous_release/.git" ]]; then
+    # Reuse verified Git objects already on this Sprite, then detach the new
+    # repository from its reference so rollback/release retention stay independent.
+    clone_reference=(--reference-if-able "$previous_release" --dissociate)
+  fi
+  git -c http.version=HTTP/1.1 -c http.lowSpeedLimit=1024 -c http.lowSpeedTime=60 clone --filter=blob:none --no-checkout "${clone_reference[@]}" "$REPOSITORY_URL" "$release_dir"
 fi
 
+git -C "$release_dir" config http.version HTTP/1.1
+git -C "$release_dir" config http.lowSpeedLimit 1024
+git -C "$release_dir" config http.lowSpeedTime 60
 git -C "$release_dir" fetch --depth=1 origin "$BUILD_SHA"
 git -C "$release_dir" checkout --detach --force "$BUILD_SHA"
 actual_sha="$(git -C "$release_dir" rev-parse HEAD)"
