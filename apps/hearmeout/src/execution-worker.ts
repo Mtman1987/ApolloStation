@@ -169,11 +169,15 @@ export class YtDlpHearMeOutResolverAdapter implements HearMeOutYoutubeResolverAd
   }
   async ytDlp(videoId: string): Promise<HearMeOutResolvedYoutubeV1 | null> {
     if (!/^[A-Za-z0-9_-]{11}$/.test(videoId)) throw new Error("Invalid YouTube video id");
-    const { stdout } = await this.run(this.binary, ["--ignore-config", "--js-runtimes", "node", "--dump-single-json", "--no-playlist", "--no-warnings", "--", `https://www.youtube.com/watch?v=${videoId}`], { timeout: 120_000, maxBuffer: 8 * 1024 * 1024, windowsHide: true });
-    const body = JSON.parse(stdout) as { title?: unknown; duration?: unknown; url?: unknown; formats?: Array<{ url?: unknown; vcodec?: unknown; acodec?: unknown }> };
-    const formats = Array.isArray(body.formats) ? body.formats : [];
-    const video = [...formats].reverse().find((item) => typeof item.url === "string" && item.vcodec && item.vcodec !== "none" && item.acodec && item.acodec !== "none")?.url;
-    const audio = [...formats].reverse().find((item) => typeof item.url === "string" && item.acodec && item.acodec !== "none" && item.vcodec === "none")?.url ?? video;
+    const selector = "bv[height<=720]+ba/b[height<=720]/b";
+    const { stdout } = await this.run(this.binary, ["--ignore-config", "--js-runtimes", "node", "-f", selector, "--dump-single-json", "--no-playlist", "--no-warnings", "--", `https://www.youtube.com/watch?v=${videoId}`], { timeout: 120_000, maxBuffer: 8 * 1024 * 1024, windowsHide: true });
+    const body = JSON.parse(stdout) as { title?: unknown; duration?: unknown; url?: unknown; vcodec?: unknown; acodec?: unknown; requested_formats?: Array<{ url?: unknown; vcodec?: unknown; acodec?: unknown }> };
+    const selected = Array.isArray(body.requested_formats) ? body.requested_formats : [];
+    const selectedVideo = selected.find(item => typeof item.url === "string" && item.vcodec && item.vcodec !== "none");
+    const selectedAudio = selected.find(item => typeof item.url === "string" && item.acodec && item.acodec !== "none" && (!item.vcodec || item.vcodec === "none"));
+    const combined = typeof body.url === "string" && body.vcodec && body.vcodec !== "none" && body.acodec && body.acodec !== "none" ? body.url : undefined;
+    const video = typeof selectedVideo?.url === "string" ? selectedVideo.url : combined;
+    const audio = typeof selectedAudio?.url === "string" ? selectedAudio.url : combined;
     if (typeof video !== "string" || typeof audio !== "string") return null;
     return { videoId, videoUrl: video, audioUrl: audio, ...(typeof body.title === "string" ? { title: body.title } : {}), ...(typeof body.duration === "number" ? { durationMs: Math.trunc(body.duration * 1_000) } : {}), stage: "yt-dlp", resolvedAt: new Date().toISOString() };
   }
@@ -185,7 +189,7 @@ export function createSupervisedHearMeOutWorker(options: HearMeOutWorkerEnvironm
   const catalog = new HearMeOutWorkerMusicCatalog({ catalogFile: resolve(options.cacheDir, "music-catalog.json") });
   const cache = new HearMeOutWorkerMediaCache({ cacheDir: options.cacheDir });
   const adapter = options.ytDlpBinary ? new YtDlpHearMeOutResolverAdapter(options.ytDlpBinary) : undefined;
-  const resolver = options.preparedMedia ? new HearMeOutYoutubeResolverCoordinator(new HearMeOutPreparedMedia(options.preparedMedia, fetchImpl), {preparedMediaOrigin:options.preparedMedia.origin}) : adapter ? new HearMeOutYoutubeResolverCoordinator(adapter) : undefined;
+  const resolver = adapter ? new HearMeOutYoutubeResolverCoordinator(adapter) : options.preparedMedia ? new HearMeOutYoutubeResolverCoordinator(new HearMeOutPreparedMedia(options.preparedMedia, fetchImpl), {preparedMediaOrigin:options.preparedMedia.origin}) : undefined;
   const tenantPath = (tenantId: string) => resolve(options.cacheDir, "tenants", createHash("sha256").update(tenantId).digest("hex"));
   return { getAccessToken, worker: new HearMeOutExecutionWorker(client, { workerId: options.workerId, executionTarget: options.executionTarget, capabilities: options.config.capabilities, tenantIds: options.config.tenants.map(tenant => tenant.tenantId), catalog, cache, catalogForTenant: tenantId => new HearMeOutWorkerMusicCatalog({ catalogFile: resolve(tenantPath(tenantId), "music-catalog.json") }), cacheForTenant: tenantId => new HearMeOutWorkerMediaCache({ cacheDir: tenantPath(tenantId) }), ...(adapter ? { search: (query, limit) => adapter.search(query, limit) } : {}), ...(resolver ? { resolver } : {}), ...(options.movieProviderOrigin?{movieProvider:new HearMeOutMovieProvider(options.movieProviderOrigin,fetchImpl,options.preparedMedia?.authorization)}:{}) }) };
 }
