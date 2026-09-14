@@ -41,19 +41,43 @@ test("legacy HMO worker adapter sends bounded authenticated requests without cre
   assert.deepEqual(JSON.parse(calls[3].init.body), { action: "stop", roomId: providerRoomId });
 });
 
-test("legacy HMO worker adapter status uses query only for room identity and refuses redirects", async () => {
-  let seen;
+test("legacy HMO worker status keeps room identity scoped and projects a safe named Discord directory", async () => {
+  const calls = [];
   const worker = new HttpHearMeOutVoiceBridgeWorker({
     workerOrigin: "https://worker.example/",
     getAuthorization: async () => "Bearer canary-worker-secret-value",
     fetchImpl: async (url, init) => {
-      seen = { url: String(url), init };
-      return new Response("", { status: 302, headers: { location: "https://other.example" } });
+      calls.push({ url: String(url), init });
+      if (String(url).includes("/discord/directory")) return Response.json({ guilds: [
+        { id: "123456789012345678", name: "Mountaineers", channels: [
+          { id: "987654321098765432", name: "General VC", type: 2, position: 1 },
+          { id: "987654321098765433", name: "Stage", type: 13, position: 2 },
+          { id: "987654321098765434", name: "text", type: 0 },
+        ] },
+        { id: "bad", name: "Rejected", channels: [] },
+      ] });
+      return Response.json({ success: true, running: false });
     },
   });
+  const status = await worker.status(base);
+  assert.equal(calls[0].url, `https://worker.example/voice-bridge?roomId=${providerRoomId}`);
+  assert.equal(calls[0].init.headers.authorization, "Bearer canary-worker-secret-value");
+  assert.equal(calls[1].url, "https://worker.example/discord/directory");
+  assert.deepEqual(status.directory, { guilds: [{ id: "123456789012345678", name: "Mountaineers", channels: [
+    { id: "987654321098765432", name: "General VC", type: 2, position: 1 },
+    { id: "987654321098765433", name: "Stage", type: 13, position: 2 },
+  ] }] });
+});
+
+test("legacy HMO worker adapter refuses bridge redirects even when directory lookup is optional", async () => {
+  const worker = new HttpHearMeOutVoiceBridgeWorker({
+    workerOrigin: "https://worker.example/",
+    getAuthorization: async () => "Bearer canary-worker-secret-value",
+    fetchImpl: async (url) => String(url).includes("/discord/directory")
+      ? Response.json({ guilds: [] })
+      : new Response("", { status: 302, headers: { location: "https://other.example" } }),
+  });
   await assert.rejects(() => worker.status(base), /redirect refused/);
-  assert.equal(seen.url, `https://worker.example/voice-bridge?roomId=${providerRoomId}`);
-  assert.equal(seen.init.headers.authorization, "Bearer canary-worker-secret-value");
 });
 
 test("legacy HMO worker adapter rejects unsafe origins and redacts worker error detail", async () => {
