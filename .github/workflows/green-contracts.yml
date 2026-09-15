@@ -1,5 +1,12 @@
 name: Green shared contracts
 
+# A force-push should replace its obsolete PR check instead of making two
+# browser/media suites compete for the same GitHub-hosted runner capacity.
+# Main checks are release evidence, so never cancel those after they start.
+concurrency:
+  group: green-contracts-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 on:
   pull_request:
     paths:
@@ -45,7 +52,12 @@ jobs:
       - run: npm ci --ignore-scripts
       - name: Install media test dependency
         run: command -v ffmpeg || (sudo apt-get update && sudo apt-get install -y ffmpeg)
-      - run: npm test
+      # The repository contains timing-sensitive SQLite, media, and process
+      # lifecycle contracts. Running every test file at once on a small hosted
+      # runner caused nondeterministic failures that did not reproduce on the
+      # deployed commit. Use the existing release-grade serial test command.
+      - name: Run deterministic shared contracts
+        run: npm run test:sprite
   rtc-audio:
     runs-on: ubuntu-latest
     timeout-minutes: 15
