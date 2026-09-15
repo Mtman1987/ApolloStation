@@ -1,6 +1,7 @@
 import type { HearMeOutVoiceAudioProfileV1, HearMeOutVoiceBridgeWorkerV1 } from "./voice-bridge.js";
 import { clampHearMeOutDiscordReceiveGain } from "./discord-receive-audio.js";
 import { hearMeOutProviderRoomName } from "./room-identity.js";
+import {personaWorkerId,type HearMeOutPersonaPublisher,type PersonaRoomScope,type RoomSpeechPersona} from './room-persona-speech.js';
 
 export interface HttpHearMeOutVoiceBridgeWorkerOptionsV1 {
   workerOrigin: string;
@@ -16,8 +17,8 @@ export interface HttpHearMeOutVoiceBridgeWorkerOptionsV1 {
  * playback and desired bridge state remain in Apollo's HearMeOut SQLite
  * authority.
  *
- * This adapter intentionally exposes only the donor worker's bounded voice
- * bridge API. It never receives provider tokens, never puts credentials in a
+ * This adapter intentionally exposes the donor worker's bounded voice bridge API and the
+ * persona subclass's room-audio endpoints. It never receives provider tokens, never puts credentials in a
  * URL, never follows redirects, and never persists the worker authorization
  * value. The adapter can therefore be removed once the concrete bridge worker
  * is fully native to Apollo without changing the room/voice authority model.
@@ -102,11 +103,11 @@ export class HttpHearMeOutVoiceBridgeWorker implements HearMeOutVoiceBridgeWorke
       .then((result) => confirmGain(result, discordReceiveGain));
   }
 
-  private requireTenant(tenantId: string) {
+  protected requireTenant(tenantId: string) {
     if (this.options.allowedTenantIds && !this.options.allowedTenantIds.includes(tenantId)) throw new Error("Discord voice is not enabled for this workspace");
   }
 
-  private async request(path: string, options: { method?: string; body?: unknown; query?: Record<string, string> } = {}): Promise<Record<string, unknown>> {
+  protected async request(path: string, options: { method?: string; body?: unknown; query?: Record<string, string>; timeoutMs?:number } = {}): Promise<Record<string, unknown>> {
     const authorization = String(await this.options.getAuthorization()).trim();
     if (!/^Bearer [^\r\n]{16,}$/.test(authorization)) throw new Error("HearMeOut worker authorization is unavailable");
     const url = new URL(path, `${this.origin}/`);
@@ -122,7 +123,7 @@ export class HttpHearMeOutVoiceBridgeWorker implements HearMeOutVoiceBridgeWorke
         },
         ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),
         redirect: "manual",
-        signal: AbortSignal.timeout(this.timeoutMs),
+        signal: AbortSignal.timeout(options.timeoutMs??this.timeoutMs),
       });
     } catch {
       throw new Error("HearMeOut worker request failed before a response was received");
@@ -139,6 +140,21 @@ export class HttpHearMeOutVoiceBridgeWorker implements HearMeOutVoiceBridgeWorke
     if ((payload as Record<string, unknown>).success === false) throw new HttpHearMeOutVoiceBridgeWorkerError(response.status, safeProviderMessage(payload) ?? "Worker did not apply the request");
     return payload as Record<string, unknown>;
   }
+}
+
+/** Reuses hearmeout-main's authenticated persona PCM publisher. The caller
+ * owns bridge-dependent admission/lifetime; adding a persona alone never calls join. */
+export class HttpHearMeOutPersonaPublisher extends HttpHearMeOutVoiceBridgeWorker implements HearMeOutPersonaPublisher {
+ private providerRoom(scope:PersonaRoomScope){this.requireTenant(scope.tenantId);return hearMeOutProviderRoomName(scope.tenantId,cleanId(scope.roomId,'roomId'))}
+ async join(scope:PersonaRoomScope,persona:RoomSpeechPersona){
+  const result=await this.request('/persona',{method:'POST',body:{action:'join',roomId:this.providerRoom(scope),personaId:personaWorkerId(persona.personaId),displayName:persona.displayName,ownerTenantId:persona.targetTenantId||scope.tenantId,serviceSession:true,research:false,wakeNames:persona.wakeNames||[],voice:persona.voice||'',avatar:persona.avatarUrl||'',idleAvatar:persona.idleAvatarUrl||persona.avatarUrl||'',talkingAvatar:persona.talkingAvatarUrl||persona.idleAvatarUrl||persona.avatarUrl||''}});
+  if(result.transportHealthy!==true)throw Error('Persona LiveKit publisher did not become ready');
+ }
+ async leave(scope:PersonaRoomScope,personaId:string){await this.request('/persona',{method:'POST',body:{action:'leave',roomId:this.providerRoom(scope),personaId:personaWorkerId(personaId)}})}
+ async speak(scope:PersonaRoomScope,personaId:string,audio:Buffer,duration:number){
+  const result=await this.request('/persona/speak',{method:'POST',timeoutMs:Math.min(190000,Math.max(20000,duration*1000+10000)),body:{roomId:this.providerRoom(scope),personaId:personaWorkerId(personaId),audioDataUri:'data:audio/wav;base64,'+audio.toString('base64')}});
+  if(result.transportHealthy!==true)throw Error('Persona LiveKit speech failed');
+ }
 }
 
 function confirmGain(result: Record<string, unknown>, expected: number) {

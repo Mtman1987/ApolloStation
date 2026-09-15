@@ -1,4 +1,5 @@
 import {HearMeOutScreenPublisher} from "./screen-publisher.js";
+import {HearMeOutRoomPersonaPlayer} from './room-persona-browser.js';
 import { Room, RoomEvent, Track } from 'livekit-client';
 
 type Peer = { id: number; userId: string; name: string; serverMuted?: boolean; screenSharing?: boolean };
@@ -41,12 +42,13 @@ export class HearMeOutRtc {
   private messages: Promise<void> = Promise.resolve();
   private framesReceived = 0;
   private framesSent = 0;
+  private readonly personas=new HearMeOutRoomPersonaPlayer({canHearNative:identity=>Boolean(this.livekit?.state==='connected'&&[...this.media.values()].some(item=>item.id===identity)),volume:identity=>this.volume(identity)});
 
   constructor(private options: { onStatus(message: string): void }) {}
 
   async start(roomId: string, stream: MediaStream | null = null) {
-    if (this.roomId === roomId && this.socket) { if (stream !== this.input) await this.setInput(stream); this.updateScreens(); return; }
-    this.close(); this.roomId = roomId; this.input = stream; this.connect();
+    if (this.roomId === roomId && this.socket) { if (stream !== this.input) await this.setInput(stream); this.updateScreens();this.personas.start(roomId); return; }
+    this.close(); this.roomId = roomId; this.input = stream; this.personas.start(roomId);this.connect();
   }
 
   private connect() {
@@ -72,7 +74,7 @@ export class HearMeOutRtc {
     socket.onclose = event => {
       if (this.socket !== socket) return;
       this.socket = null; this.stopTransport(); this.snapshot = null;
-      if ([4401, 4403].includes(event.code)) { void this.setScreen(null);this.roomId = ''; this.options.onStatus('Room access ended.'); return; }
+      if ([4401, 4403].includes(event.code)) { void this.setScreen(null);this.personas.close();this.roomId = ''; this.options.onStatus('Room access ended.'); return; }
       if (!this.roomId) return;
       this.options.onStatus('Connection lost. Reconnecting room audio…');
       this.reconnect = setTimeout(() => this.connect(), Math.min(30_000, 1000 * 2 ** this.reconnectAttempt++) + Math.random() * 500);
@@ -178,18 +180,34 @@ export class HearMeOutRtc {
   private async connectLiveKit(snapshot: Snapshot, generation: number) {
     if (!snapshot.livekit) throw new Error('LiveKit is unavailable');
     const room = new Room(); this.livekit = room;
+    const roster=()=>{if(this.livekit===room)this.personas.setRemote([...room.remoteParticipants.values()].map(participant=>({identity:participant.identity,name:participant.name||participant.identity,metadata:participant.metadata,isSpeaking:participant.isSpeaking})))};
+    room.on(RoomEvent.ParticipantConnected,roster);
+    room.on(RoomEvent.ParticipantMetadataChanged,roster);
+    room.on(RoomEvent.ParticipantNameChanged,roster);
+    room.on(RoomEvent.ParticipantDisconnected,roster);
     room.on(RoomEvent.TrackSubscribed, (track, _publication, participant) => {
       if (track.kind === Track.Kind.Audio) this.attachAudio(participant.identity, track.mediaStreamTrack);
       else if (track.kind === Track.Kind.Video && /^\d+$/.test(participant.identity)) this.attachScreen(Number(participant.identity), track.mediaStreamTrack);
+      roster();
+    });
+    room.on(RoomEvent.TrackUnsubscribed, (track, _publication, participant) => {
+      if (track.kind === Track.Kind.Audio) {
+        for (const [key, item] of this.media) if (item.id === participant.identity && (item.audio.srcObject as MediaStream | null)?.getTracks().some(value => value.id === track.mediaStreamTrack.id)) {
+          item.audio.pause(); item.audio.srcObject = null; item.audio.parentElement?.remove(); this.media.delete(key);
+        }
+      }
+      roster();
     });
     room.on(RoomEvent.ActiveSpeakersChanged, participants => {
       const active = new Set(participants.map(participant => participant.identity));
       for (const participant of room.remoteParticipants.values()) this.publishSpeaking(participant.identity, active.has(participant.identity));
+      roster();
     });
     room.on(RoomEvent.ParticipantDisconnected, participant => this.publishSpeaking(participant.identity, false));
     room.on(RoomEvent.Disconnected, () => { if (generation === this.generation) this.failed(new Error('LiveKit disconnected')); });
     await room.connect(snapshot.livekit.url, snapshot.livekit.token, { peerConnectionTimeout: 15_000, websocketTimeout: 10_000 });
     if (generation !== this.generation) { await room.disconnect(false); return; }
+    roster();
     const track = this.canPublish() ? this.input?.getAudioTracks()[0] : undefined;
     if (track) await room.localParticipant.publishTrack(track, { source: Track.Source.Microphone });
     if (this.screen && !this.screenPublisher && this.canPublish()) await this.publishScreen();
@@ -313,7 +331,7 @@ export class HearMeOutRtc {
     void this.context.resume().catch(() => {}); return this.context;
   }
   private canPublish() { return !this.snapshot?.peers.find(peer => peer.id === this.snapshot?.id)?.serverMuted; }
-  async resumeAudio() { await this.audioContext(); for (const { audio } of this.media.values()) await audio.play().catch(() => {}); for (const video of this.screens.values()) await video.play().catch(() => {}); }
+  async resumeAudio() { this.personas.resume();await this.audioContext(); for (const { audio } of this.media.values()) await audio.play().catch(() => {}); for (const video of this.screens.values()) await video.play().catch(() => {}); }
   private async startCapture() {
     this.stopCapture();
     if (!this.input || this.mode !== 'wss-relay' || !this.canPublish()) return;
@@ -365,9 +383,10 @@ export class HearMeOutRtc {
   setVolume(volume: number) { this.master = Math.max(0, Math.min(1, volume)); this.updateVolumes(); }
   setPersonVolume(userId: string, volume: number) { this.personVolumes.set(userId, Math.max(0, Math.min(1, volume))); this.updateVolumes(); }
   private volume(id: string | number) { const identity=String(id),peer = this.snapshot?.peers.find(peer => String(peer.id) === identity); if (peer?.serverMuted) return 0; const userId = peer?.userId || this.userIdForIdentity(identity); return this.master * (this.personVolumes.get(userId) ?? Number(localStorage.getItem(`hmo-volume:${this.roomId}:${userId}`) ?? 100) / 100); }
-  private updateVolumes() { for (const { id, audio } of this.media.values()) audio.volume = this.volume(id); for (const [id, output] of this.playout) output.gain.gain.value = this.volume(id); }
+  private updateVolumes() { this.personas.updateVolume();for (const { id, audio } of this.media.values()) audio.volume = this.volume(id); for (const [id, output] of this.playout) output.gain.gain.value = this.volume(id); }
   async setOutput(id: string) {
     this.outputDevice = id;
+    await this.personas.setOutput(id);
     for (const { audio } of this.media.values()) if ('setSinkId' in audio) await audio.setSinkId(id).catch(() => {});
     const context = this.context as AudioContext & { setSinkId?(id: string): Promise<void> } | null;
     if (context?.setSinkId) await context.setSinkId(id).catch(() => {});
@@ -381,6 +400,7 @@ export class HearMeOutRtc {
     const room = this.livekit; this.livekit = null; if (room) void room.disconnect(false);
     for (const { audio } of this.media.values()) { audio.pause(); audio.srcObject = null; audio.parentElement?.remove(); }
     this.media.clear();
+    this.personas.setRemote([]);
     for (const [id, video] of this.screens) { if (id === this.snapshot?.id && this.screen) continue; video.pause(); video.srcObject = null; video.remove(); this.screens.delete(id); }
     for (const source of this.scheduled) { try { source.stop(); } catch {} source.disconnect(); }
     this.scheduled.clear();
@@ -389,6 +409,7 @@ export class HearMeOutRtc {
   }
   diagnostics() { return { screenSharing: Boolean(this.screen), mode: this.mode, epoch: this.epoch, framesSent: this.framesSent, framesReceived: this.framesReceived, peers: [...this.links.values()].map(link => link.pc.connectionState), inputLive: this.input?.getAudioTracks().some(track => track.readyState === 'live') || false }; }
   close() {
+    this.personas.close();
     this.screenPublisher?.stop();this.screenPublisher=null;
     if (this.screen) { for (const track of this.screen.getTracks()) track.stop(); this.screen = null; }
     this.roomId = ''; if (this.reconnect) clearTimeout(this.reconnect); this.reconnect = null;

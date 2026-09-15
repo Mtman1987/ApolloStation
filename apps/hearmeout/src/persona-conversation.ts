@@ -67,9 +67,12 @@ export class HearMeOutPersonaConversationCoordinator {
     return { action: input.action, roomId, persona, worker };
   }
 
-  async command(input: { roomId: string; targetTenantId: string; command: string; actor?: HearMeOutPublicActorV1; voice?: string; speak?: boolean }) {
+  async command(input: { roomId: string; targetTenantId: string; command: string; actor?: HearMeOutPublicActorV1; voice?: string; speak?: boolean; transport?: "shared-browser" }) {
     const roomId = identifier(input.roomId, "roomId"), targetTenantId = identifier(input.targetTenantId, "targetTenantId"), command = message(input.command, "command", 5_000);
-    const live = await this.ports.inspectWorkerPersona(roomId, targetTenantId);
+    const shared = input.transport === "shared-browser";
+    const listed = shared ? (await this.gallery()).find(p => p.targetTenantId === targetTenantId && p.canInvite && p.canTalk !== false) : undefined;
+    if (shared && !listed) throw new HearMeOutPersonaUnavailableError("That persona is no longer shared for room use");
+    const live = shared ? {active:true, transportHealthy:true, displayName:listed!.displayName} : await this.ports.inspectWorkerPersona(roomId, targetTenantId);
     if (!live.active || !live.transportHealthy) {
       await this.ports.clearStalePresence?.(roomId, targetTenantId).catch(() => undefined);
       throw new HearMeOutPersonaUnavailableError("That persona is not active and healthy in this room");
@@ -82,7 +85,7 @@ export class HearMeOutPersonaConversationCoordinator {
     const reply = message(response.response, "persona response", 20_000), personaId = identifier(response.bot?.tenantId || targetTenantId, "personaId"), botName = optionalLabel(response.bot?.name, 120) || live.displayName || targetTenantId;
     let personaSpeech: { attempted: boolean; ok?: boolean; error?: string; bytes?: number; transportHealthy?: boolean } = { attempted: false };
     const audioDataUri = response.tts?.audioDataUri;
-    if (input.speak !== false && audioDataUri) {
+    if (!shared && input.speak !== false && audioDataUri) {
       try {
         const audio = validateAudioDataUri(audioDataUri), result = await this.ports.speak({ roomId, personaId, audioDataUri: audio });
         personaSpeech = { attempted: true, ok: result.transportHealthy, ...(result.bytes === undefined ? {} : { bytes: result.bytes }), transportHealthy: result.transportHealthy };

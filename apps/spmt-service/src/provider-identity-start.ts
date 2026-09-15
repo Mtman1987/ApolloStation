@@ -68,6 +68,7 @@ const service = createSpmtServiceWithProviderIdentity({
   ...(Object.keys(providerOAuthClients).length ? { providerOAuthClients } : {}),
   ...(discordBotToken ? { discordBotToken } : {}),
   stellarChatEnabled,
+  speechEnabled:process.env.SPMT_SPEECH_ENABLED === "1",
   ...(stellarWorkerCredential ? { stellarWorkerCredential } : {}),
   chatGatewayEnabled,
   ...(chatGatewayCredential ? { chatGatewayCredential } : {}),

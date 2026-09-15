@@ -31,6 +31,9 @@ const llmCache = resolve(argumentsMap.get("llm-cache") ?? resolve(dataRoot, "mod
 const offlineNetworkGuard = requireBooleanFlag(argumentsMap.get("offline-network-guard") ?? "0", "offline-network-guard");
 const offlineNetworkGuardPath = resolve("scripts/offline-network-guard.mjs");
 if (offlineNetworkGuard) await import(offlineNetworkGuardPath);
+const deepgramSpeechKey=process.env.DEEPGRAM_API_KEY || await readPrivateCredential("deepgram-api-key");
+const edenSpeechKey=process.env.EDENAI_API_KEY || await readPrivateCredential("edenai-api-key");
+const speechEnvironment={SPMT_SPEECH_OUTBOUND_ENABLED:"1",...(deepgramSpeechKey?{DEEPGRAM_API_KEY:deepgramSpeechKey}:{}),...(edenSpeechKey?{EDENAI_API_KEY:edenSpeechKey}:{})};
 const flowOpenAiKey=await readPrivateCredential("openai-api-key");
 const hearMeOutCutover = await hearMeOutCutoverEnvironment(dataRoot);
 let hearMeOutMediaEnvironment = {};
@@ -142,6 +145,7 @@ const spmt = start("SPMT", "apps/spmt-service/dist/provider-identity-start.js", 
   SPMT_PUBLIC_URL: publicUrl,
   SPMT_HOST: "127.0.0.1",
   SPMT_SANDBOX_FIXTURES: "0",
+  SPMT_SPEECH_ENABLED: "1",
   SPMT_SANDBOX_OWNER_USERNAME: ownerUsername,
   SPMT_SANDBOX_APPS: JSON.stringify(sandboxManifests),
   SPMT_CHAT_GATEWAY_ENABLED: "1",
@@ -218,6 +222,7 @@ if (stellarWorkerCredential) {
     STELLAR_PROVIDER_MODEL: "Qwen/Qwen3-8B-GGUF:Q4_K_M",
     STELLAR_EXECUTION_TARGET: "sprite",
     STELLAR_WORKER_CREDENTIAL: stellarWorkerCredential,
+    ...speechEnvironment,
     ...(llm?.pid ? { STELLAR_PROVIDER_PID: String(llm.pid) } : {}),
   });
   stellar.once("exit", (code, signal) => { if (!stopping) void stop(signal === "SIGINT" || signal === "SIGTERM" ? 0 : code ?? (signal ? 1 : 0)); });

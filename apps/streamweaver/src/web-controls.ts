@@ -92,7 +92,7 @@ export class StreamWeaverWebControls {
         if(request.method!=="POST")return sendJson(response,405,{message:"Use GET or POST"});requireSameOrigin(request);const body=await readJsonBody(request);
         if(body.action==="withdraw")return sendJson(response,200,await this.deviceApi(request,context,{action:"withdraw"},path));
         const persona=this.persona?.get(context.tenantId);if(!persona)throw Error("Save your persona before publishing");
-        return sendJson(response,200,await this.deviceApi(request,context,{action:"publish",personaId:persona.personaId,displayName:persona.displayName,aliases:persona.aliases,instructions:persona.instructions,voice:body.voice},path));
+        return sendJson(response,200,await this.deviceApi(request,context,{action:"publish",personaId:persona.personaId,displayName:persona.displayName,aliases:persona.aliases,instructions:persona.instructions,voice:body.voice,...(this.runtimeSettings?.appearance(context.tenantId)?.avatarUrl?{avatarUrl:this.runtimeSettings.appearance(context.tenantId).avatarUrl,idleAvatarUrl:this.runtimeSettings.appearance(context.tenantId).avatarUrl}:{}),...(this.runtimeSettings?.appearance(context.tenantId)?.talkingUrl?{talkingAvatarUrl:this.runtimeSettings.appearance(context.tenantId).talkingUrl}:{})},path));
       }
       if(url.pathname==="/api/streamweaver/control/generation") {
         if(!this.generation)throw new Error("Generation settings are unavailable");

@@ -17,7 +17,7 @@ const client = new SpmtClient({ baseUrl: spmtOrigin, appId: "stellar-core", getA
 const provider = new OpenAiCompatibleChatProvider({ origin: providerOrigin, model });
 const research=new StellarResearchService(process.env.SPMT_OUTBOUND_MODE!=="disabled"&&process.env.STELLAR_BRAVE_SEARCH_CREDENTIAL?new BraveStellarSearchProvider(process.env.STELLAR_BRAVE_SEARCH_CREDENTIAL):undefined);
 const worker = new StellarChatWorker(client, provider, { workerId, executionTarget,research });
-const speech = new StellarSpeechWorker(client, new StellarSpeechProvider({ enabled: process.env.SPMT_OUTBOUND_MODE !== "disabled", ...(process.env.DEEPGRAM_API_KEY ? { deepgramKey: process.env.DEEPGRAM_API_KEY } : {}), ...(process.env.EDENAI_API_KEY ? { edenKey: process.env.EDENAI_API_KEY } : {}) }), `${workerId}-speech`);
+const speech = new StellarSpeechWorker(client, new StellarSpeechProvider({ enabled: process.env.SPMT_OUTBOUND_MODE !== "disabled" || process.env.SPMT_SPEECH_OUTBOUND_ENABLED === "1", ...(process.env.DEEPGRAM_API_KEY ? { deepgramKey: process.env.DEEPGRAM_API_KEY } : {}), ...(process.env.EDENAI_API_KEY ? { edenKey: process.env.EDENAI_API_KEY } : {}) }), `${workerId}-speech`);
 const controller = new AbortController();
 const startedAt = new Date().toISOString();
 const startedMs = Date.now();

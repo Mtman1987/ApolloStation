@@ -19,6 +19,8 @@ let hostOrigin='*',lastLaunch='';
 const style=document.createElement('style');
 style.dataset.spmtSurfaceClient='1';
 style.textContent=[
+'.hmo-remote-person{display:flex!important;align-items:center;gap:12px;flex-wrap:wrap}.hmo-remote-person .hmo-persona-avatar{width:48px;height:48px;flex:0 0 48px;border-radius:50%;object-fit:cover}.hmo-remote-person[data-speaking]{outline:2px solid var(--spmt-accent-secondary,#57d9cf)}.hmo-discord-members{flex-basis:100%;display:flex;flex-wrap:wrap;gap:6px}.hmo-discord-members span{padding:3px 8px;border-radius:12px;background:#ffffff0c}.hmo-discord-members [data-speaking]{color:var(--spmt-accent-secondary,#57d9cf)}',
+
 '.hmo-app[data-surface="shell"]>.spmt-product-backdrop{display:block!important}',
 '.hmo-app[data-surface="shell"] .hmo-stage{height:var(--spmt-shell-available-height,100dvh)!important;min-height:0!important;padding:clamp(8px,1.4vw,18px)!important}',
 '.hmo-home[hidden],.hmo-rooms[hidden]{display:none!important}',

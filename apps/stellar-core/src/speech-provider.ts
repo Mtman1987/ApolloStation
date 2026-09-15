@@ -105,3 +105,15 @@ async function audioBytes(response: Response) {
   if (!size) throw new StellarSpeechError("Speech provider returned empty audio");
   return Buffer.concat(chunks);
 }
+
+/** Speech-only exception for the sandbox worker; live messaging stays blocked. */
+export function isStellarSpeechHost(value: unknown) {
+ const host=String(value??'').toLowerCase();
+ return host==='api.deepgram.com'||host==='api.edenai.run'||/(?:^|\.)(?:edenai\.run|edenai\.co|amazonaws\.com|googleapis\.com|cloudfront\.net|azureedge\.net|blob\.core\.windows\.net)$/.test(host);
+}
+export function isStellarSpeechUrl(url:URL,method:string) {
+ if(url.protocol!=='https:'||url.username||url.password)return false;
+ if(url.hostname==='api.deepgram.com')return method==='POST'&&['/v1/speak','/v1/listen'].includes(url.pathname);
+ if(url.hostname==='api.edenai.run')return method==='POST'&&['/v3/universal-ai','/v2/audio/text_to_speech','/v2/audio/speech_to_text_async'].includes(url.pathname)||method==='GET'&&/^\/v2\/audio\/speech_to_text_async\/[A-Za-z0-9_-]+$/.test(url.pathname);
+ return method==='GET'&&isStellarSpeechHost(url.hostname);
+}

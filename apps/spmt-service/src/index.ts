@@ -72,6 +72,7 @@ export interface SpmtServiceOptions {
   providerOAuthClients?: ProviderOAuthClientsV1;
   twitchBotRoles?: TwitchBotRole[];
   stellarChatEnabled?: boolean;
+  speechEnabled?: boolean;
   stellarWorkerCredential?: string;
   chatGatewayEnabled?: boolean;
   chatGatewayCredential?: string;
@@ -144,7 +145,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
   const publicMemory=new StellarPublicMemory(options.databasePath,executionJobs,communityAssistant,tenant=>commlinkLiveChat.list({tenantId:tenant,limit:500}),tenant=>control.getTenant(tenant).ownerUserId);
   const twitchBots=new TwitchBotApi({databasePath:options.databasePath,auth,authority,control,publicBaseUrl,enabled:runtimeMode==="production",fetchImpl,accessToken,roles:parseTwitchBotRoles(JSON.stringify(options.twitchBotRoles??[])),...(providerCredentials?{credentials:providerCredentials}:{}),...(accountProviderOAuthClient(options,"twitch")?{client:accountProviderOAuthClient(options,"twitch")!}:{})});
   const youtubeOAuth=new YouTubeOAuthApi({databasePath:options.databasePath,auth,authority,control,publicBaseUrl,enabled:runtimeMode==="production",fetchImpl,accessToken,...(providerCredentials?{credentials:providerCredentials}:{}),...(options.providerOAuthClients?.youtube?{client:options.providerOAuthClients.youtube}:{})});
-  const assistantApi = new SpmtAssistantApi({store:assistantStore,publicMemory,speechPresence,privateAssistant:new StellarPrivateAssistant(assistantStore,executionJobs,communityAssistant),auth,control,jobs:executionJobs,assets:mediaAssets,enabled:runtimeMode === "production",accessToken});
+  const assistantApi = new SpmtAssistantApi({store:assistantStore,publicMemory,speechPresence,privateAssistant:new StellarPrivateAssistant(assistantStore,executionJobs,communityAssistant),auth,control,jobs:executionJobs,assets:mediaAssets,enabled:runtimeMode === "production" || options.speechEnabled === true,accessToken});
   mediaAssets.sweep();
   const mediaSweepTimer = setInterval(() => {mediaAssets.sweep();socialStreamStore.sweepPrivate();}, 15 * 60_000); mediaSweepTimer.unref();
   const health = new HealthRegistry();
@@ -865,6 +866,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     ...(Object.keys(providerOAuthClients).length ? { providerOAuthClients } : {}),
     ...(discordBotToken ? { discordBotToken } : {}),
     stellarChatEnabled,
+    speechEnabled:process.env.SPMT_SPEECH_ENABLED === "1",
     ...(stellarWorkerCredential ? { stellarWorkerCredential } : {}),
     chatGatewayEnabled,
     ...(chatGatewayCredential ? { chatGatewayCredential } : {}),

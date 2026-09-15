@@ -3,6 +3,8 @@ import https from "node:https";
 import net from "node:net";
 import tls from "node:tls";
 
+const speechOutbound=process.env.SPMT_SPEECH_OUTBOUND_ENABLED==="1";
+const speechPolicy=speechOutbound?await import('../apps/stellar-core/dist/speech-provider.js'):undefined;
 const privateFlowOpenAi=process.env.SPMT_PRIVATE_FLOW_OPENAI_ENABLED==="1";
 const hearMeOutBridge = process.env.HEARMEOUT_CONTROLLED_BRIDGE === "1" && process.env.HEARMEOUT_VOICE_BRIDGE_ORIGIN === "https://hmo-dj-worker.fly.dev";
 const hearMeOutPreparedMedia = process.env.HEARMEOUT_PREPARED_MEDIA_ENABLED === '1' && process.env.HEARMEOUT_VOICE_BRIDGE_ORIGIN === 'https://hmo-dj-worker.fly.dev';
@@ -77,6 +79,7 @@ function assertSocketTarget(args, label) {
     if (mediaSocket(first.host ?? first.hostname, first.port)) return;
     if (isLiveReadHost(first.host ?? first.hostname ?? first.servername) && Number(first.port ?? 443) === 443) return;
     if ((hearMeOutBridge || hearMeOutPreparedMedia) && String(first.host ?? first.hostname ?? first.servername) === "hmo-dj-worker.fly.dev" && Number(first.port ?? 443) === 443) return;
+    if(speechPolicy?.isStellarSpeechHost(first.host??first.hostname??first.servername)&&Number(first.port??443)===443)return;
     if(privateFlowOpenAi&&String(first.host??first.hostname??first.servername)==="api.openai.com"&&Number(first.port??443)===443)return;
     if(avatarAiOutbound&&isAvatarAiHost(first.host??first.hostname??first.servername)&&Number(first.port??443)===443)return;
     if(movieProvider&&String(first.host??first.hostname??first.servername)==='hearmeout-main.fly.dev'&&Number(first.port??443)===443)return;
@@ -87,6 +90,7 @@ function assertSocketTarget(args, label) {
   if (mediaSocket(host, first)) return;
   if (isLiveReadHost(host) && Number(first ?? 443) === 443) return;
   if ((hearMeOutBridge || hearMeOutPreparedMedia) && host === "hmo-dj-worker.fly.dev" && Number(first ?? 443) === 443) return;
+  if(speechPolicy?.isStellarSpeechHost(host)&&Number(first??443)===443)return;
   if(privateFlowOpenAi&&host==="api.openai.com"&&Number(first??443)===443)return;
   if(avatarAiOutbound&&isAvatarAiHost(host)&&Number(first??443)===443)return;
   if(movieProvider&&host==='hearmeout-main.fly.dev'&&Number(first??443)===443)return;
@@ -102,6 +106,8 @@ function assertAllowedUrl(value, method, label) {
   if (browserCacheUrl(url,'https://hmo-dj-worker.fly.dev') && (String(method).toUpperCase()==='GET'&&!/\/(audio|video|prepare)$/.test(url.pathname)||String(method).toUpperCase()==='POST'&&/\/(audio|video|prepare)$/.test(url.pathname))) return;
   if (String(method).toUpperCase() === 'GET' && preparedMediaUrl(url, 'https://hmo-dj-worker.fly.dev')) return;
   if (hearMeOutBridge && url.origin === "https://hmo-dj-worker.fly.dev" && !url.username && !url.password && ["GET", "POST"].includes(String(method).toUpperCase()) && /^\/voice-bridge(?:\/(?:gate|audio-profile|receive-gain))?$/.test(url.pathname)) return;
+  if (hearMeOutBridge && url.origin === "https://hmo-dj-worker.fly.dev" && !url.username && !url.password && String(method).toUpperCase() === 'POST' && /^\/persona(?:\/speak)?$/.test(url.pathname)) return;
+  if(speechPolicy?.isStellarSpeechUrl(url,String(method).toUpperCase()))return;
   if(privateFlowOpenAi&&url.origin==="https://api.openai.com"&&url.pathname==="/v1/responses"&&String(method).toUpperCase()==="POST")return;
   if(avatarAiOutbound&&isAllowedAvatarAiUrl(url,String(method).toUpperCase()))return;
   assertLoopbackHost(url.hostname, label);

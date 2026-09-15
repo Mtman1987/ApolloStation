@@ -132,14 +132,13 @@ export class HearMeOutWebSuiteActionExecutor implements HearMeOutSuiteActionExec
       const gallery=coordinator?await coordinator.gallery():await directory!(principal.tenantId);
       const matches=gallery.filter(persona=>persona.canInvite&&[persona.personaId,persona.targetTenantId,persona.displayName,...persona.wakeNames].some(value=>value.toLowerCase()===query));
       if(matches.length!==1)throw Error(matches.length?'More than one public persona matches that name':'That public persona was not found');
-      const persona=matches[0]!,result=coordinator?await coordinator.control({action:'join',roomId,persona}):undefined;
-      store.putPersona(principal,roomId,{...persona,transportHealthy:result?.worker.transportHealthy===true});
+      const persona=matches[0]!;
+      store.putPersona(principal,roomId,{...persona,transportHealthy:false});
       return{roomId,persona,text:`${persona.displayName} joined the HearMeOut room.`};
     }
     const matches=store.listPersonas(principal.tenantId,roomId).filter(persona=>[persona.personaId,persona.targetTenantId,persona.displayName].some(value=>value.toLowerCase()===query));
     if(matches.length!==1)throw Error(matches.length?'More than one joined persona matches that name':'That persona is not in the room');
     const present=matches[0]!;
-    if(coordinator){const gallery=await coordinator.gallery(),persona=gallery.find(item=>item.personaId===present.personaId);if(persona)await coordinator.control({action:'leave',roomId,persona});}
     store.removePersona(principal.tenantId,roomId,present.personaId);
     return{roomId,text:`${present.displayName} left the HearMeOut room.`};
   }
