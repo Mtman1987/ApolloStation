@@ -46,8 +46,8 @@ export class HearMeOutRoomBroadcast {
       if(!existsSync(master))return false;
       const masterBody=readFileSync(master,'utf8'),variant=masterBody.split(/\r?\n/).map(line=>line.trim()).find(line=>line&&!line.startsWith('#'));
       if(!variant||!/^[A-Za-z0-9_-]+\.m3u8$/.test(variant))return false;
-      const variantBody=readFileSync(join(dir,variant),'utf8'),segment=variantBody.split(/\r?\n/).map(line=>line.trim()).find(line=>line&&!line.startsWith('#'));
-      return Boolean(segment&&segment.startsWith(run.outputEpoch+'_')&&/^[A-Za-z0-9_-]+\.ts$/.test(segment)&&existsSync(join(dir,segment)));
+      const variantBody=readFileSync(join(dir,variant),'utf8'),segments=variantBody.split(/\r?\n/).map(line=>line.trim()).filter(line=>line&&!line.startsWith('#'));
+      return segments.some(segment=>segment.startsWith(run.outputEpoch+'_')&&/^[A-Za-z0-9_-]+\.ts$/.test(segment)&&existsSync(join(dir,segment)));
     }catch{return false;}
   }
   browserCache(videoId:string,track?:'audio'|'video',body?:Buffer){if(!this.prepared)throw Error('Browser media caching is not configured');return this.prepared.browserCache(videoId,track,body);}
@@ -91,12 +91,13 @@ export class HearMeOutRoomBroadcast {
     const latest=this.rooms.getBroadcastIdentity(session.tenantId,session.roomId)?this.rooms.getSession(session.tenantId,session.roomId,session.lane):undefined;
     if(this.closed||!latest||this.cacheKey(latest)!==run.cacheKey||signatureFor(latest)!==signature||latest.playback.status!=='playing'||!this.rooms.claimBroadcast(session.tenantId,session.roomId,session.lane,run.owner))return;
     const dir=join(this.options.cachePath,run.cacheKey);await mkdir(dir,{recursive:true});
-    // Each restart appends a discontinuity to the same live feed. Bounded HLS
-    // windows prevent a returning viewer from replaying their old song segment.
+    // Each restart gets distinct segment names and replaces the playlists. Do
+    // not append the prior request's playlist: every window reloads when the
+    // shared request changes, and appended entries can replay the previous song.
     const epoch=Date.now().toString(36)+'-'+randomUUID().slice(0,8),position=Math.max(0,latest.playback.position+(Date.now()-Date.parse(latest.playback.updatedAt))/1000),variants=buildHearMeOutXtreamVariantMap(media);run.outputEpoch=epoch;
     const hlsSource=item.type!=='live'&&/\.m3u8$/i.test(source.pathname),seek=item.type==='live'||position<.1?[]:['-ss',String(position)];
     const inputArgs=(url:URL,hls=false)=>['-protocol_whitelist',HEARMEOUT_BROADCAST_PROTOCOLS,'-rw_timeout','15000000','-re',...(hls?['-live_start_index','0']:[]),...seek,'-i',url.href];
-    const args=['-hide_banner','-loglevel','error','-nostdin','-y','-threads','2',...inputArgs(source,hlsSource),...(audioSource?inputArgs(audioSource):[]),...(media.hasVideo?['-map','0:v:0']:[]),...media.audio.flatMap(track=>['-map',track.sourceSpecifier??'0:'+track.sourceIndex]),'-c:v','libx264','-preset','veryfast','-pix_fmt','yuv420p','-force_key_frames','expr:gte(t,n_forced*2)','-c:a','aac','-ac','2','-b:a','128k',...(audioSource?['-shortest']:[]),'-f','hls','-hls_time','2','-hls_list_size','8','-hls_delete_threshold','3','-hls_flags','delete_segments+append_list+discont_start+omit_endlist','-var_stream_map',variants,'-master_pl_name','index.m3u8','-hls_segment_filename',join(dir,epoch+'_%v_%06d.ts'),join(dir,'stream_%v.m3u8')];
+    const args=['-hide_banner','-loglevel','error','-nostdin','-y','-threads','2',...inputArgs(source,hlsSource),...(audioSource?inputArgs(audioSource):[]),...(media.hasVideo?['-map','0:v:0']:[]),...media.audio.flatMap(track=>['-map',track.sourceSpecifier??'0:'+track.sourceIndex]),'-c:v','libx264','-preset','veryfast','-pix_fmt','yuv420p','-force_key_frames','expr:gte(t,n_forced*2)','-c:a','aac','-ac','2','-b:a','128k',...(audioSource?['-shortest']:[]),'-f','hls','-hls_time','2','-hls_list_size','8','-hls_delete_threshold','3','-hls_flags','delete_segments+discont_start+omit_endlist','-var_stream_map',variants,'-master_pl_name','index.m3u8','-hls_segment_filename',join(dir,epoch+'_%v_%06d.ts'),join(dir,'stream_%v.m3u8')];
     // Directory creation yields: a delete/close may have removed this run meanwhile.
     if(this.closed||this.runs.get(run.cacheKey)!==run||!this.rooms.getBroadcastIdentity(session.tenantId,session.roomId)||this.cacheKey(session)!==run.cacheKey||signatureFor(this.rooms.getSession(session.tenantId,session.roomId,session.lane))!==signature)return;
     // An OS lock survives a stalled Node supervisor and fences the encoder itself.
@@ -113,6 +114,7 @@ export class HearMeOutRoomBroadcast {
   async serve(tenantId:string,roomId:string,lane:'music'|'movie',file:string,response:ServerResponse){
     if(!/^(?:index\.m3u8|stream_[A-Za-z0-9_-]+\.m3u8|[A-Za-z0-9_-]+\.ts)$/.test(file))return this.unavailable(response,404);
     const session=this.rooms.getSession(tenantId,roomId,lane);if(!session.current)return this.unavailable(response,404);
+    if(file.endsWith('.m3u8')&&!this.ready(tenantId,roomId,lane))return this.unavailable(response,503);
     const path=join(this.options.cachePath,this.cacheKey(session),file);
     try{const bytes=await readFile(path);response.writeHead(200,{'content-type':file.endsWith('.m3u8')?'application/vnd.apple.mpegurl':'video/mp2t','cache-control':'no-store','x-content-type-options':'nosniff'});response.end(bytes);}catch{this.unavailable(response,503);}
   }
