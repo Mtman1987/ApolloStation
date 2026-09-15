@@ -41,6 +41,14 @@ test("HearMeOut uses the Discord directory and the native persona room transport
   assert.match(runtime, /data-speaking/);
 });
 
+test("HearMeOut never republishes fallback persona audio as the human microphone", () => {
+  assert.match(runtime, /private browser playback/);
+  assert.match(runtime, /new Audio\(result\.audioUrl\)/);
+  assert.doesNotMatch(runtime, /createMediaStreamDestination/);
+  assert.doesNotMatch(runtime, /personaMix/);
+  assert.match(runtime, /rtc\?\.setInput\(micStream\)/);
+});
+
 test("HearMeOut drives human and persona speaking indicators from LiveKit participants", () => {
   assert.match(rtc, /RoomEvent\.ActiveSpeakersChanged/);
   assert.match(rtc, /hmo:participant-speaking/);
@@ -49,6 +57,7 @@ test("HearMeOut drives human and persona speaking indicators from LiveKit partic
   assert.match(runtime, /data-hmo-user-id/);
   assert.match(runtime, /toggleAttribute\('data-speaking',speaking\)/);
 });
+
 test("HearMeOut surface browser bundle parses before room controls initialize", () => {
   const marker = "String.raw`";
   const start = surface.indexOf(marker);
