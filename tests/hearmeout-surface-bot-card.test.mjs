@@ -5,6 +5,7 @@ import test from "node:test";
 const source = readFileSync(new URL("../apps/hearmeout/src/web-server.ts", import.meta.url), "utf8");
 const runtime = readFileSync(new URL("../apps/hearmeout/src/web-server-v3.ts", import.meta.url), "utf8");
 const surface = readFileSync(new URL("../apps/hearmeout/src/surface-client.ts", import.meta.url), "utf8");
+const rtc = readFileSync(new URL("../apps/hearmeout/src/rtc-browser.ts", import.meta.url), "utf8");
 
 test("HearMeOut app-owned surface exposes real room creation membership media and compact controls", () => {
   for (const pattern of [/Create Room/, /\/api\/hearmeout\/rooms/, /joinRoom/, /heartbeatPresence/, /listMembers/, /getSession/, /Commlink/, /Music Bot/, /Bridge/, /Personas/, /Watch together/, /Leave room/, /Delete room/]) assert.match(source, pattern);
@@ -18,6 +19,36 @@ test("HearMeOut no longer reserves a permanent Bot Hub header surface", () => {
   assert.match(runtime, /Bots & personas/);
   assert.match(runtime, /hmo-person-menu/);
   assert.match(runtime, /Audio settings/);
+});
+
+test("HearMeOut opens Commlink in the shell workspace instead of a popup window", () => {
+  assert.match(surface, /type:'workspace\.open'.*service:'commlink'/);
+  assert.doesNotMatch(surface, /window\.open\('\/\?app=commlink','hmo-commlink'/);
+});
+
+test("HearMeOut persona text controls send directly without relying on shell enhancement", () => {
+  assert.match(runtime, /const call=button\('Send'/);
+  assert.match(runtime, /ta\.dataset\.hmoEnterSend='1'/);
+  assert.match(runtime, /event\.key==='Enter'.*call\.click\(\)/);
+  assert.doesNotMatch(runtime, /const call=button\('Call '/);
+});
+
+test("HearMeOut uses the Discord directory and the native persona room transport", () => {
+  assert.match(runtime, /channelKind=voice/);
+  assert.match(runtime, /Discord server/);
+  assert.match(runtime, /Discord voice channel/);
+  assert.match(runtime, /result\.personaSpeech\?\.attempted/);
+  assert.match(runtime, /talkingAvatarUrl/);
+  assert.match(runtime, /data-speaking/);
+});
+
+test("HearMeOut drives human and persona speaking indicators from LiveKit participants", () => {
+  assert.match(rtc, /RoomEvent\.ActiveSpeakersChanged/);
+  assert.match(rtc, /hmo:participant-speaking/);
+  assert.doesNotMatch(rtc, /attachAudio\(Number\(participant\.identity\)/);
+  assert.match(runtime, /data-hmo-persona-id/);
+  assert.match(runtime, /data-hmo-user-id/);
+  assert.match(runtime, /toggleAttribute\('data-speaking',speaking\)/);
 });
 
 test("HearMeOut surface browser bundle parses before room controls initialize", () => {

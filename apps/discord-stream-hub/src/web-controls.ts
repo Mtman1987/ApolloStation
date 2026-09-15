@@ -218,7 +218,10 @@ export class DshWebControls {
     if (this.discord) {
       try {
         guilds = (await this.discord.listGuilds(tenantId)).filter((item) => typeof item.id === "string" && (allowedGuildIds.has(item.id) || isSimulationDiscordId(item.id))).map((item) => ({ id: item.id, name: item.name ?? item.id, icon: item.icon ?? null, ...(isSimulationDiscordId(String(item.id)) ? { shadow: true } : {}) }));
-        if (guildId) channels = (await this.discord.listGuildChannels(tenantId, guildId)).filter((item) => typeof item.id === "string" && (item.type === 0 || item.type === 5)).sort((a, b) => Number(a.position ?? 0) - Number(b.position ?? 0)).map((item) => ({ id: item.id, name: item.name ?? item.id, type: item.type ?? 0 }));
+        if (guildId) {
+          const voice = url.searchParams.get("channelKind") === "voice", allowedTypes = voice ? new Set([2, 13]) : new Set([0, 5]);
+          channels = (await this.discord.listGuildChannels(tenantId, guildId)).filter((item) => typeof item.id === "string" && allowedTypes.has(Number(item.type))).sort((a, b) => Number(a.position ?? 0) - Number(b.position ?? 0)).map((item) => ({ id: item.id, name: item.name ?? item.id, type: item.type ?? 0 }));
+        }
       } catch (error) { providerState = "unavailable"; providerMessage = safeError(error); }
     }
     const month = String(url.searchParams.get("month") ?? this.now().slice(0, 7));
