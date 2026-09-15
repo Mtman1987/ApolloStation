@@ -7,7 +7,8 @@ export class HearMeOutPlaybackSource {
   private source = '';
   private broadcast = false;
   private recoveryTimer: ReturnType<typeof setTimeout> | undefined;
-  private recoveryAttempts = 0;
+  private networkRecoveryAttempts = 0;
+  private mediaRecoveryAttempts = 0;
   failed = false;
   constructor(private readonly media: HTMLMediaElement, private readonly report: (error: Error) => void, private readonly audio?: HTMLSelectElement) {
     if (audio) { audio.hidden = true; audio.setAttribute('aria-label', 'Audio language'); audio.addEventListener('change', () => this.selectAudio(Number(audio.value))); }
@@ -31,14 +32,15 @@ export class HearMeOutPlaybackSource {
       });
       hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, () => this.tracks(hls.audioTracks.map((track, index) => ({ index, name: track.name || track.lang || `Audio ${index + 1}` })), hls.audioTrack));
       hls.on(Hls.Events.AUDIO_TRACK_SWITCHED, (_event, data) => { if (this.audio) this.audio.value = String(data.id); });
-      hls.on(Hls.Events.MANIFEST_PARSED, () => { this.recoveryAttempts = 0; });
-      hls.on(Hls.Events.FRAG_LOADED, () => { this.recoveryAttempts = 0; });
+      hls.on(Hls.Events.MANIFEST_PARSED, () => { this.resetRecoveryAttempts(); });
+      hls.on(Hls.Events.FRAG_LOADED, () => { this.resetRecoveryAttempts(); });
       hls.on(Hls.Events.ERROR, (_event, data) => {
         if (!data.fatal || this.hls !== hls) return;
-        const action = hearMeOutHlsRecoveryAction(data.type, this.recoveryAttempts++);
+        const attempts = data.type === Hls.ErrorTypes.NETWORK_ERROR ? this.networkRecoveryAttempts++ : data.type === Hls.ErrorTypes.MEDIA_ERROR ? this.mediaRecoveryAttempts++ : 0;
+        const action = hearMeOutHlsRecoveryAction(data.type, attempts);
         if (action === 'retry-network') {
           clearTimeout(this.recoveryTimer);
-          this.recoveryTimer = setTimeout(() => { if (this.hls === hls) hls.startLoad(-1); }, Math.min(8_000, 500 * 2 ** Math.min(this.recoveryAttempts, 4)));
+          this.recoveryTimer = setTimeout(() => { if (this.hls === hls) hls.startLoad(-1); }, Math.min(8_000, 500 * 2 ** Math.min(this.networkRecoveryAttempts, 4)));
           return;
         }
         if (action === 'recover-media') { hls.recoverMediaError(); return; }
@@ -64,7 +66,7 @@ export class HearMeOutPlaybackSource {
     this.media.currentTime = target; return true;
   }
   clear() {
-    clearTimeout(this.recoveryTimer); this.recoveryTimer = undefined; this.recoveryAttempts = 0;
+    clearTimeout(this.recoveryTimer); this.recoveryTimer = undefined; this.resetRecoveryAttempts();
     this.hls?.destroy(); this.hls = undefined;
     const tracks = (this.media as HTMLMediaElement & { audioTracks?: NativeTracks }).audioTracks;
     if (tracks && this.nativeChanged) { tracks.removeEventListener('addtrack', this.nativeChanged); tracks.removeEventListener('change', this.nativeChanged); }
@@ -82,6 +84,7 @@ export class HearMeOutPlaybackSource {
     const tracks = (this.media as HTMLMediaElement & { audioTracks?: NativeTracks }).audioTracks;
     if (tracks && index < tracks.length) for (let i = 0; i < tracks.length; i++) tracks[i]!.enabled = i === index;
   }
+  private resetRecoveryAttempts() { this.networkRecoveryAttempts = 0; this.mediaRecoveryAttempts = 0; }
 }
 export function hearMeOutHlsRecoveryAction(type: string, attempts: number): 'retry-network' | 'recover-media' | 'stop' {
   if (type === Hls.ErrorTypes.NETWORK_ERROR && attempts < 6) return 'retry-network';
