@@ -95,7 +95,7 @@ export function createHearMeOutWebServer(options:HearMeOutWebServerOptions){
     rooms:()=>consoleStore.personaRooms(),personas:scope=>consoleStore.listPersonas(scope.tenantId,scope.roomId),exists:scope=>Boolean(rooms.getRoom(scope.tenantId,scope.roomId)),
     bridgeEnabled:scope=>voiceStore.get(scope.tenantId,scope.roomId).enabled,
     bridgeStatus:async scope=>{const value=await options.voiceBridgeWorker?.status(scope);const state=value?.status as Record<string,unknown>|undefined;return (state??value)?.running===true},
-    ...(options.personaPublisher?{publisher:options.personaPublisher}:{}),ffmpegBinary:options.broadcast?.ffmpegBinary??'/usr/bin/ffmpeg',
+    ...(options.personaPublisher?{publisher:options.personaPublisher}:{}),ffmpegBinary:options.broadcast?.ffmpegBinary??'ffmpeg',
   });
   const program=options.singleBroadcast?new HearMeOutBroadcastProgram(databasePath,options.singleBroadcast):undefined;
   const broadcast=options.broadcast?new HearMeOutRoomBroadcast(program??rooms,{...options.broadcast,spmtOrigin}):undefined;

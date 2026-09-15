@@ -126,7 +126,7 @@ export class HearMeOutRoomPersonaSpeech {
  async close(){this.closed=true;clearInterval(this.timer);await this.reconciling;await Promise.allSettled(this.pending.values());for(const row of this.db.prepare('SELECT * FROM hmo_persona_transports').all() as Transport[]){try{await this.options.publisher?.leave({tenantId:row.tenant,roomId:row.room},row.persona);this.db.prepare('DELETE FROM hmo_persona_transports WHERE tenant=? AND room=? AND persona=?').run(row.tenant,row.room,row.persona)}catch{}}this.db.close()}
 }
 
-export async function decodePersonaSpeech(input:Buffer,binary='/usr/bin/ffmpeg'):Promise<{audio:Buffer;duration:number}>{
+export async function decodePersonaSpeech(input:Buffer,binary='ffmpeg'):Promise<{audio:Buffer;duration:number}>{
  const pcm=await new Promise<Buffer>((resolve,reject)=>{
   const child=spawn(binary,['-hide_banner','-loglevel','error','-protocol_whitelist','pipe','-i','pipe:0','-t','181','-f','s16le','-acodec','pcm_s16le','-ar','24000','-ac','1','pipe:1'],{stdio:'pipe'}),chunks:Buffer[]=[];let size=0;
   const timeout=setTimeout(()=>{child.kill('SIGKILL');reject(Error('Persona audio decoding timed out'))},15000);
