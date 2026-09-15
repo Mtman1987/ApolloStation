@@ -16,6 +16,11 @@ test('broadcast window exposes local audio/video toggles without exposing signed
   assert.match(html,/@media\(hover:none\)/);
   assert.match(html,/video\.muted=!audioEnabled/);assert.match(html,/classList\.toggle\('video-off',!videoEnabled\)/);
   assert.match(html,/canplay[^]*source\.joinLive\(\)/);assert.match(html,/source\.syncLive\(\)/);
+  assert.match(html,/if\(!state\.broadcast\.ready\)\{if\(!sourceUrl\)/);
+  assert.doesNotMatch(html,/!state\.broadcast\.ready\)\{if\(sourceUrl\)\{sourceUrl='';source\.clear\(\)/);
+  assert.match(html,/broadcast connection was interrupted\. Reconnecting automatically/);
+  assert.match(html,/statePollFailed\)\{error\.textContent='';statePollFailed=false/);
+  assert.match(html,/addEventListener\('playing'.*playbackError\.textContent=''/);
   assert.doesNotMatch(html,/\/api\/watch\/broadcast\/control[^]*audio-toggle/);
   const view=broadcastView(programFixture(),true);
   assert.equal(view.current.item.metadata.videoId,'abcdefghijk');
