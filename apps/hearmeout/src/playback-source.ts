@@ -28,7 +28,7 @@ export class HearMeOutPlaybackSource {
         // Complete two-second segments cross the worker, Apollo and sometimes
         // Discord's proxy. Keep eight seconds of headroom for a delayed segment.
         // The encoder remains the clock; every window stays at normal speed.
-        ...(broadcast ? { startPosition: -1, lowLatencyMode: false, initialLiveManifestSize: 2, liveSyncDurationCount: 3, liveMaxLatencyDurationCount: Infinity, maxLiveSyncPlaybackRate: 1 } : {}),
+        ...(broadcast ? { startPosition: -1, lowLatencyMode: false, initialLiveManifestSize: 4, liveSyncDurationCount: 4, liveMaxLatencyDurationCount: Infinity, maxLiveSyncPlaybackRate: 1 } : {}),
       });
       hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, () => this.tracks(hls.audioTracks.map((track, index) => ({ index, name: track.name || track.lang || `Audio ${index + 1}` })), hls.audioTrack));
       hls.on(Hls.Events.AUDIO_TRACK_SWITCHED, (_event, data) => { if (this.audio) this.audio.value = String(data.id); });
@@ -58,11 +58,18 @@ export class HearMeOutPlaybackSource {
   }
   retry() { this.load(this.source, Boolean(this.hls), this.broadcast); }
   joinLive() { if (!this.broadcast) return; const position=this.hls?.liveSyncPosition ?? (this.media.seekable.length ? Math.max(this.media.seekable.start(0),this.media.seekable.end(this.media.seekable.length-1)-8) : undefined); if (position !== undefined && Number.isFinite(position)) this.media.currentTime=position; }
-  syncLive(maximumDriftSeconds = 4) {
-    if (!this.broadcast || this.media.readyState < 2) return false;
+  syncLive(maximumDriftSeconds = 12) {
+    if (!this.broadcast || this.media.readyState < 2 || this.media.seeking || this.media.paused) return false;
     const live = this.hls?.liveSyncPosition ?? (this.media.seekable.length ? Math.max(this.media.seekable.start(0), this.media.seekable.end(this.media.seekable.length - 1) - 8) : undefined);
     const target = hearMeOutLiveSyncTarget(this.media.currentTime, live, maximumDriftSeconds);
     if (target === undefined) return false;
+    // A late playlist is not a reason to throw away playable media. Correct a
+    // large forward drift only after the destination has actually buffered.
+    let buffered = false;
+    for (let index = 0; index < this.media.buffered.length; index++) {
+      if (target >= this.media.buffered.start(index) && target + 2 <= this.media.buffered.end(index)) buffered = true;
+    }
+    if (!buffered) return false;
     this.media.currentTime = target; return true;
   }
   clear() {
@@ -91,9 +98,9 @@ export function hearMeOutHlsRecoveryAction(type: string, attempts: number): 'ret
   if (type === Hls.ErrorTypes.MEDIA_ERROR && attempts < 3) return 'recover-media';
   return 'stop';
 }
-export function hearMeOutLiveSyncTarget(current: number, live: number | undefined, maximumDriftSeconds = 4): number | undefined {
+export function hearMeOutLiveSyncTarget(current: number, live: number | undefined, maximumDriftSeconds = 12): number | undefined {
   if (!Number.isFinite(current) || live === undefined || !Number.isFinite(live) || !Number.isFinite(maximumDriftSeconds) || maximumDriftSeconds <= 0) return undefined;
-  return Math.abs(live - current) > maximumDriftSeconds ? live : undefined;
+  return live - current > maximumDriftSeconds ? live : undefined;
 }
 interface NativeTracks extends EventTarget { length: number; [index: number]: { enabled: boolean; label: string; language: string }; }
 if (typeof window !== 'undefined') Object.assign(window, { HearMeOutPlaybackSource });

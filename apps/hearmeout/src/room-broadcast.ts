@@ -37,6 +37,11 @@ export class HearMeOutRoomBroadcast {
   }
   async listen(){await Promise.all([access(this.options.ffmpegBinary),access(this.options.ffprobeBinary),access(this.options.lockBinary??'/usr/bin/flock'),mkdir(this.options.cachePath,{recursive:true})]);this.proxy=await this.egress.listen();this.tick();this.timer=setInterval(()=>this.tick(),500);this.timer.unref();}
   status(){return {configured:true,startedProcesses:this.startedProcesses,active:[...this.runs.values()].filter(run=>run.process).length,starting:[...this.runs.values()].filter(run=>run.pending).length,failed:[...this.runs.values()].filter(run=>run.failed).length};}
+  epoch(tenantId:string,roomId:string,lane:'music'|'movie'){
+    const session=this.rooms.getSession(tenantId,roomId,lane);
+    const run=this.runs.get(this.cacheKey(session));
+    return run?.process&&run.signature===signatureFor(session)?run.outputEpoch:undefined;
+  }
   ready(tenantId:string,roomId:string,lane:'music'|'movie'){
     const session=this.rooms.getSession(tenantId,roomId,lane);if(!session.current)return false;
     const cacheKey=this.cacheKey(session),run=this.runs.get(cacheKey);
@@ -103,7 +108,9 @@ export class HearMeOutRoomBroadcast {
     const epoch=Date.now().toString(36)+'-'+randomUUID().slice(0,8),elapsed=Math.max(0,latest.playback.position+(Date.now()-Date.parse(latest.playback.updatedAt))/1000),position=run.started===0?0:elapsed,variants=buildHearMeOutXtreamVariantMap(media);run.outputEpoch=epoch;delete run.readyEpoch;
     const hlsSource=item.type!=='live'&&/\.m3u8$/i.test(source.pathname),seek=item.type==='live'||position<.1?[]:['-ss',String(position)];
     const inputArgs=(url:URL,hls=false)=>['-protocol_whitelist',HEARMEOUT_BROADCAST_PROTOCOLS,'-rw_timeout','15000000','-re',...(hls?['-live_start_index','0']:[]),...seek,'-i',url.href];
-    const args=['-hide_banner','-loglevel','error','-nostdin','-y','-threads','2',...inputArgs(source,hlsSource),...(audioSource?inputArgs(audioSource):[]),...(media.hasVideo?['-map','0:v:0']:[]),...media.audio.flatMap(track=>['-map',track.sourceSpecifier??'0:'+track.sourceIndex]),'-c:v','libx264','-preset','veryfast','-pix_fmt','yuv420p','-force_key_frames','expr:gte(t,n_forced*2)','-c:a','aac','-ac','2','-b:a','128k',...(audioSource?['-shortest']:[]),'-f','hls','-hls_time','2','-hls_list_size','8','-hls_delete_threshold','3','-hls_flags','delete_segments+discont_start+omit_endlist','-var_stream_map',variants,'-master_pl_name','index.m3u8','-hls_segment_filename',join(dir,epoch+'_%v_%06d.ts'),join(dir,'stream_%v.m3u8')];
+    // Decoder options belong before the inputs; cap the output encoder too.
+    // Keep a longer live window and publish completed segments atomically.
+    const args=['-hide_banner','-loglevel','error','-nostdin','-y','-threads','2',...inputArgs(source,hlsSource),...(audioSource?inputArgs(audioSource):[]),...(media.hasVideo?['-map','0:v:0']:[]),...media.audio.flatMap(track=>['-map',track.sourceSpecifier??'0:'+track.sourceIndex]),'-c:v','libx264','-threads:v','2','-filter_threads','1','-preset','veryfast','-pix_fmt','yuv420p','-force_key_frames','expr:gte(t,n_forced*2)','-c:a','aac','-ac','2','-b:a','128k',...(audioSource?['-shortest']:[]),'-f','hls','-hls_time','2','-hls_list_size','15','-hls_delete_threshold','5','-hls_flags','delete_segments+discont_start+omit_endlist+temp_file','-var_stream_map',variants,'-master_pl_name','index.m3u8','-hls_segment_filename',join(dir,epoch+'_%v_%06d.ts'),join(dir,'stream_%v.m3u8')];
     // Directory creation yields: a delete/close may have removed this run meanwhile.
     if(this.closed||this.runs.get(run.cacheKey)!==run||!this.rooms.getBroadcastIdentity(session.tenantId,session.roomId)||this.cacheKey(session)!==run.cacheKey||signatureFor(this.rooms.getSession(session.tenantId,session.roomId,session.lane))!==signature)return;
     // An OS lock survives a stalled Node supervisor and fences the encoder itself.

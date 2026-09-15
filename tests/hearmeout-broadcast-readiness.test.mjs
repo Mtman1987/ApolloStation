@@ -23,6 +23,7 @@ test('broadcast readiness waits for a real current-epoch segment instead of send
   assert.equal(broadcast.ready(session.tenantId,session.roomId,session.lane),false);
   writeFileSync(join(dir,'current-epoch_0_000001.ts'),'media');
   assert.equal(broadcast.ready(session.tenantId,session.roomId,session.lane),true);
+  assert.equal(broadcast.epoch(session.tenantId,session.roomId,session.lane),epoch);
   // Readiness is latched for this encoder epoch so an in-place FFmpeg playlist
   // rewrite cannot make every connected viewer clear and reload its player.
   writeFileSync(join(dir,'stream_0.m3u8'),'');
