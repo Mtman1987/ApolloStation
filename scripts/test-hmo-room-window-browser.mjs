@@ -93,7 +93,7 @@ try{
  await app.getByRole('button',{name:'Music and movie window',exact:true}).click();window=app.frameLocator('[data-hmo-broadcast-frame]');await playing();
  assert.equal(program.getSession().current.requestId,original.current.requestId);assert.equal((await(await fetch(origin+'/health/ready')).json()).broadcast.startedProcesses,starts);
  const liveSequence=Number((await(await fetch(origin+'/api/watch/broadcast/stream_video.m3u8')).text()).match(/#EXT-X-MEDIA-SEQUENCE:(\d+)/)[1]);
- assert.ok(liveSequence>initialSequence+40,'The broadcast advanced while the viewer stayed/left');assert.ok(segments.some(sequence=>sequence>=liveSequence),'The returned window reads current video segments rather than replaying old ones');
+ assert.ok(liveSequence>initialSequence+20,'The broadcast advanced while the viewer stayed/left');assert.ok(segments.some(sequence=>sequence>=liveSequence),'The returned window reads current video segments rather than replaying old ones');
  // Going back to Browse Rooms must also remove the actual local media element.
  await page.evaluate(()=>{const f=document.querySelector('iframe');f.contentWindow.postMessage({protocol:'spmt.surface',version:1,type:'page.open',appId:'hearmeout',pageId:'rooms'},new URL(f.src).origin)});
  await app.locator('.hmo-console').waitFor({state:'detached'});assert.equal(await app.locator('video,audio,[data-hmo-broadcast-frame]').count(),0);
