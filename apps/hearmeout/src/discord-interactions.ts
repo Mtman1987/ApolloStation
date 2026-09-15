@@ -1,4 +1,4 @@
-import {HEARMEOUT_SINGLE_PROGRAM_ID,type HearMeOutBroadcastProgram} from "./broadcast-program.js";
+import {type HearMeOutBroadcastProgram} from "./broadcast-program.js";
 import { createPublicKey, verify } from "node:crypto";
 import type { HearMeOutPrincipalV1, SqliteHearMeOutRoomMediaRuntime } from "./room-media-core.js";
 import {
@@ -80,23 +80,34 @@ export class HearMeOutDiscordInteractionRouter {
     const program=this.options.singleProgram;
     if(program){
       const interactionId=requiredInteractionId(body.id),name=String(body.data?.name??'').toLowerCase();
+      const channel=guildId&&channelId?{guildId,channelId}:undefined;
+      const hosted=channel?program.channelRoom(channel):undefined;
+      const menu=():HearMeOutDiscordInteractionResultV1=>({status:200,body:{type:4,data:{content:'Watch parties\n'+program.listRooms().slice(0,15).map(room=>room.name+': '+(program.getSession(tenantId,room.roomId).current?.item.title??'Nothing playing')).join('\n').slice(0,1500)+'\nOpen the Activity to watch any party while staying in your own voice chat, or create a party for this channel.',flags:64,allowed_mentions:{parse:[]},components:[{type:1,components:[{type:2,style:1,label:'Watch parties',custom_id:'hmo_party_open'},{type:2,style:2,label:hosted?'Open channel party':'Create watch party',custom_id:hosted?'hmo_party_open':'hmo_party_create'}]}]}}});
+      if(customId==='hmo_party_open')return{status:200,body:{type:12}};
       if(this.options.readOnly)return ephemeral('Broadcast requests are unavailable in this preview.',200);
+      if(customId==='hmo_party_create')return{status:200,body:{type:9,data:{custom_id:'hmo_party_create_modal',title:'Create watch party',components:[{type:1,components:[{type:4,custom_id:'party_name',label:'Watch party name',style:1,required:true,max_length:120}]}]}}};
+      if(body.type===5&&customId==='hmo_party_create_modal'){
+        if(!channel)return ephemeral('Open HearMeOut in a Discord server channel to host a party.',200);
+        try{const room=program.createRoom({name:readModalValue(body.data,'party_name'),requesterId:'discord:'+discordUserId,operationId:interactionId,channel});return{status:200,body:{type:4,data:{content:'This channel hosts '+room.name+'. Open Watch parties in the Activity to view it.',flags:64,allowed_mentions:{parse:[]},components:[{type:1,components:[{type:2,style:1,label:'Watch parties',custom_id:'hmo_party_open'}]}]}}};}catch(error){return ephemeral((error as Error).message,200);}
+      }
       const query=body.type===5&&customId.startsWith('request_song_modal')?readModalValue(body.data,'song_request_input'):['wr','watchrequest','sr','songrequest'].includes(name)?String((body.data?.options??[]).find((option:any)=>['query','song','movie','request'].includes(option.name))?.value??''):undefined;
       if(query!==undefined){
-        // Discord already authenticated this viewer in the signed interaction.
-        // Requesting media needs no Apollo account, room, or membership.
+        const requested=body.type===5?customId.split(':')[1]:undefined;
+        const roomId=requested&&!['discord-activity','discord-watch-room','discord-music-room'].includes(requested)?requested:hosted?.roomId;
+        if(!roomId)return menu();
         const principal:HearMeOutPrincipalV1={tenantId,userId:'discord:'+discordUserId,displayName,roles:['member']};
-        try{if(!this.options.requestMedia)throw Error('Media requests are unavailable');await this.options.requestMedia({principal,interactionId,roomId:HEARMEOUT_SINGLE_PROGRAM_ID,query,lane:'movie',guildId:guildId??'',channelId:channelId??''});return ephemeral('Your video is in the shared broadcast.',200);}catch(error){return ephemeral((error as Error).message,200);}
+        try{program.getRoom(roomId);if(!this.options.requestMedia)throw Error('Media requests are unavailable');await this.options.requestMedia({principal,interactionId,roomId,query,lane:['sr','songrequest'].includes(name)||body.type===5?'music':'movie',guildId:guildId??'',channelId:channelId??''});return ephemeral('Your request is in '+program.getRoom(roomId).name+'.',200);}catch(error){return ephemeral((error as Error).message,200);}
       }
-      if(['np','nowplaying'].includes(name))return ephemeral(program.getSession().current?.item.title??'Nothing is playing.',200);
+      if(['np','nowplaying'].includes(name))return hosted?ephemeral(hosted.name+': '+(program.getSession(tenantId,hosted.roomId).current?.item.title??'Nothing is playing.'),200):menu();
       if(customId.startsWith('hmo_watch_control:')||customId==='music_play_pause_btn'||customId==='music_skip_btn'){
+        const roomId=customId.split(':')[2]??hosted?.roomId;if(!roomId)return menu();
         const canonical=await this.options.principals.resolve({tenantId,discordUserId,displayName});
-        if(!canonical)return ephemeral('Only the broadcast host can change playback. You can still request a video.',200);
+        if(!canonical)return ephemeral('Link your Discord account to use playback controls. You can still watch any party.',200);
         const requested=customId==='music_skip_btn'?'next':customId==='music_play_pause_btn'?'play-pause':customId.split(':')[1]??'';
         if(['mute','unmute','mute-unmute','volume'].includes(requested))return localVolumeHelp();
-        try{const session=program.control({tenantId,userId:canonical.userId,displayName:canonical.displayName??displayName,roles:canonical.tenantRole==='owner'?['admin']:['member']},{action:resolveToggleAction(requested,program.getSession().playback.status)});return{status:200,body:{type:7,data:buildWatchUpdate(session,HEARMEOUT_SINGLE_PROGRAM_ID)}};}catch(error){return ephemeral((error as Error).message,200);}
+        try{const session=program.control({tenantId,userId:canonical.userId,displayName:canonical.displayName??displayName,roles:canonical.tenantRole==='owner'?['admin']:['member']},{roomId,action:requested});return{status:200,body:{type:7,data:buildWatchUpdate(session,roomId)}};}catch(error){return ephemeral((error as Error).message,200);}
       }
-      return ephemeral('Open the Activity to watch the shared broadcast or request a video.',200);
+      return menu();
     }
     const canonical = await this.options.principals.resolve({ tenantId, discordUserId, displayName });
     if (!canonical?.userId) return ephemeral("Link your Discord account to SPMT before using HearMeOut controls.", 403);

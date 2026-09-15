@@ -1,12 +1,18 @@
 # Broadcast controls
 
-The broadcast service owns the program ID, queue, and clock. Rooms, Discord Activities, and browser popouts are viewers. Closing a viewer does not stop, pause, or delete the program.
+The broadcast service owns one durable program, mixed music/movie queue, and clock per watch party. The opening Watch parties menu lists party names and current media, and lets viewers watch an existing party or create one. The previous `main-broadcast` program remains intact as Main watch party; the existing deployment flag continues to select this broadcast implementation.
+
+Voice and viewing are independent. Watching another room's public broadcast does not join that room, leave the viewer's current voice conversation, expose private chat, or move Discord users between channels. A pair of viewers can stay in their own private conversation while watching the same movie as another party.
+
+An Apollo room or configured Discord channel can host at most one party, enforced transactionally in the durable store. Concurrent creates and retries return that room's existing party. Viewing another party never replaces the hosted party. A separate hosted broadcast needs a different/new room or Discord channel. Closing a viewer does not stop, pause, or delete a broadcast or release the hosting assignment.
+
+Each party has its own state and HLS feed. Requests, skip/clear controls, playback completion, and encoder leases are scoped to that party across music and movies. Unknown party IDs fail rather than falling back to the main program. Only the two explicit legacy Discord session aliases still reference Main watch party. Public directory/state responses contain media information, not voice membership or private room messages.
 
 ## Current testing policy
 
 Anyone using the broadcast window can Skip the current item or Clear queue. Clear removes upcoming requests and leaves the current item and its clock unchanged. Skip advances to the next request, or leaves the broadcast idle if the queue is empty. Shared play, pause, stop, and seek are not supported. A stale skip cannot skip the following item.
 
-Disconnect, sound, volume, fullscreen, and Reset player affect only that window. HearMeOut popout disconnects the in-room player; Watch again closes its popout before reconnecting. Discord uses its native Activity Pop Out control. Every view attaches to the existing broadcast.
+Disconnect, sound, volume, fullscreen, and Reset player affect only that window. HearMeOut popout disconnects the in-room player; Watch again closes its popout before reconnecting. Discord uses its native Activity Pop Out control. Every view attaches to the selected party’s existing broadcast.
 
 ## Before public rollout
 

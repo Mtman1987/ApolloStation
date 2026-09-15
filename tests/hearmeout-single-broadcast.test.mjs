@@ -42,7 +42,7 @@ test('one program survives zero rooms, owner departure, restart and retries',asy
  }finally{program.close();rooms.close();}
 });
 
-for (const runtimeMode of ['production','sandbox']) test('guest HTTP requests cross real SPMT media jobs in '+runtimeMode+'; all windows see one source', {timeout:20000},async t=>{
+for (const runtimeMode of ['production','sandbox']) test('guest HTTP requests cross real SPMT media jobs in '+runtimeMode+'; legacy windows retain their source and other rooms stay independent', {timeout:20000},async t=>{
  const dir=await mkdtemp(join(tmpdir(),'hmo-single-http-'));t.after(()=>rm(dir,{recursive:true,force:true}));
  const credential='single-broadcast-test-credential-123456789';
  const spmt=createSpmtService({runtimeMode,databasePath:join(dir,'spmt.sqlite'),webhookKey:Buffer.alloc(32,7),port:0,hearMeOutRuntimeEnabled:true,hearMeOutWorkerCredential:credential});
@@ -65,14 +65,15 @@ for (const runtimeMode of ['production','sandbox']) test('guest HTTP requests cr
   const add=()=>fetch(base+'/api/watch/broadcast/requests',{method:'POST',headers:{cookie,origin:base,'content-type':'application/json','idempotency-key':'one-video'},body:JSON.stringify({query:'https://youtu.be/abcdefghijk',userId:'owner',billedUserId:'attacker',roomId:'missing',tenantId:'foreign'})});
   const added=await add();assert.equal(added.status,201,await added.text());
   const current=await(await fetch(base+'/api/watch/broadcast/state')).json();assert.match(current.current.requestedBy.userId,/^guest:/);
-  for(const alias of ['discord-watch-room','discord-music-room','watch-room-private-movie','anything']){
+  for(const alias of ['discord-watch-room','discord-music-room']){
    const state=await(await fetch(base+'/api/watch/sessions/'+alias+'/state')).json();assert.deepEqual(state,current);
   }
+  for(const missing of ['watch-room-private-movie','anything'])assert.equal((await fetch(base+'/api/watch/sessions/'+missing+'/state')).status,404);
   const jobs=await client.listExecutionJobs('tenant',{executionOwner:'hearmeout'});
   assert.equal(jobs.length,1);assert.equal(jobs[0].billedUserId,'owner');assert.equal(jobs[0].state,'succeeded');assert.equal(jobs[0].input.requesterId,current.current.requestedBy.userId);
   assert.equal((await add()).status,201);assert.equal((await client.listExecutionJobs('tenant',{executionOwner:'hearmeout'})).length,1);
   rooms.createRoom(owner,{roomId:'a',name:'A',privacy:'public',operationId:'a'});rooms.createRoom(owner,{roomId:'b',name:'B',privacy:'private',operationId:'b'});
-  for(const id of ['a','b']){const view=await(await fetch(base+'/api/hearmeout/rooms/'+id,{headers:{cookie:ownerCookie}})).json();assert.equal(view.singleBroadcast,true);assert.equal(view.movie.current.requestId,current.current.requestId);}
+  for(const id of ['a','b']){const view=await(await fetch(base+'/api/hearmeout/rooms/'+id,{headers:{cookie:ownerCookie}})).json();assert.equal(view.singleBroadcast,true);assert.equal(view.movie.current,null,'Unrelated voice rooms must not inherit the main broadcast');}
   assert.equal((await fetch(base+'/api/hearmeout/rooms/b')).status,401);
   rooms.deleteRoom(owner,'a','delete-a');rooms.deleteRoom(owner,'b','delete-b');
   assert.deepEqual((await(await fetch(base+'/api/watch/broadcast/state')).json()).current,current.current);

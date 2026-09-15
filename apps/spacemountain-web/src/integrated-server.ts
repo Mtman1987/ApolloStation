@@ -26,7 +26,7 @@ export function createIntegratedSpaceMountainWebHost(options:IntegratedSpaceMoun
       try { const origin = new URL(request.headers.origin); sameOrigin = ["http:", "https:"].includes(origin.protocol) && origin.host === request.headers.host; } catch {}
       // Discord changes Host to the mapped Sprite while retaining its iframe
       // Origin. This public request route uses the configured Activity identity.
-      const activityRequest=request.method==='POST'&&url.pathname==='/api/watch/broadcast/requests'&&activityOrigin!==undefined&&request.headers.origin===activityOrigin;
+      const activityRequest=request.method==='POST'&&/^\/api\/watch\/broadcast\/(?:requests|rooms|control|youtube\/[A-Za-z0-9_-]{11}\/(?:audio|video))$/.test(url.pathname)&&activityOrigin!==undefined&&request.headers.origin===activityOrigin;
       if (!sameOrigin&&!activityRequest) return json(response, 403, { error: "cross_origin_request", message: "Open this action from the signed-in app." });
     }
 
