@@ -39,10 +39,8 @@ function send(message){if(window.parent!==window)window.parent.postMessage(messa
 function publish(){send({protocol:'spmt.surface',version:1,type:'surface.manifest',manifest})}
 function report(pageId){send({protocol:'spmt.surface',version:1,type:'page.changed',appId:manifest.appId,pageId})}
 function openCommlink(){
-  const prior=window.hmoCommlinkPopout;
-  if(prior&&!prior.closed){prior.focus();return}
-  const popup=window.open('/?app=commlink','hmo-commlink','popup,width=520,height=780,resizable=yes,scrollbars=yes');
-  if(popup){window.hmoCommlinkPopout=popup;popup.focus()}
+  if(window.parent!==window){send({protocol:'spmt.surface',version:1,type:'workspace.open',appId:manifest.appId,service:'commlink'});return}
+  location.assign('/?app=commlink')
 }
 function showDirectory(){closeWatch();window.HearMeOutMedia?.close();const detail=document.querySelector('[data-hmo-room-detail]');if(detail){detail.hidden=true;detail.replaceChildren()}report('rooms')}
 function closeWatch(){const watch=document.querySelector('[data-hmo-watch-drawer]');if(!watch)return;watch.querySelectorAll('iframe').forEach(frame=>frame.remove());watch.hidden=true;document.querySelector('[data-hmo-watch-icon]')?.setAttribute('aria-expanded','false')}
