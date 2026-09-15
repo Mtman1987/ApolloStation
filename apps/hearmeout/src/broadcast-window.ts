@@ -98,7 +98,7 @@ export const BROADCAST_WINDOW_JS=String.raw`
   const video=document.getElementById('player'),status=document.getElementById('status'),error=document.getElementById('error'),volume=document.getElementById('volume'),sound=document.getElementById('sound');
   const playbackError=document.getElementById('playback-error'),disconnect=document.getElementById('disconnect'),retry=document.getElementById('retry'),audioToggle=document.getElementById('audio-toggle'),videoToggle=document.getElementById('video-toggle');
   const source=new window.HearMeOutPlaybackSource(video,e=>{playbackError.textContent=e.message},document.getElementById('audio-language'));
-  let level=Number(localStorage.getItem('hmo-broadcast-volume')||0),lastAudible=level||85,sourceUrl='',busy=false,disposed=false,pendingRequest,requestInFlight=false,lastRevision=-1,playPending,selectedMovie,connected=true,currentRequest='',retryAt=0,latestState,controlBusy=false;
+  let level=Number(localStorage.getItem('hmo-broadcast-volume')||0),lastAudible=level||85,sourceUrl='',busy=false,disposed=false,pendingRequest,requestInFlight=false,lastRevision=-1,playPending,selectedMovie,connected=true,currentRequest='',retryAt=0,latestState,controlBusy=false,statePollFailed=false;
   let audioEnabled=localStorage.getItem('hmo-broadcast-audio')!=='off',videoEnabled=localStorage.getItem('hmo-broadcast-video')!=='off';
   const movieResults=document.getElementById('movie-results');
   function setVolume(value){level=Math.max(0,Math.min(100,value));if(level)lastAudible=level;video.volume=level/100;volume.value=String(level);sound.textContent=level?'Mute locally':'Enable sound';localStorage.setItem('hmo-broadcast-volume',String(level));}
@@ -112,7 +112,8 @@ export const BROADCAST_WINDOW_JS=String.raw`
   if(frameId){popout.hidden=true;document.getElementById('discord-window-hint').hidden=false;}
   if(frameId&&CLIENT_ID){let origin='*';try{if(document.referrer)origin=new URL(document.referrer).origin}catch{}window.parent.postMessage([0,{v:1,encoding:'json',client_id:CLIENT_ID,frame_id:frameId,sdk_version:'2.5.0'}],origin);}
   async function api(path,init){
-    const response=await fetch(path,{cache:'no-store',signal:AbortSignal.timeout(init?190000:path.startsWith('/api/watch/broadcast/movies?')?60000:15000),...init});
+    let response;try{response=await fetch(path,{cache:'no-store',signal:AbortSignal.timeout(init?190000:path.startsWith('/api/watch/broadcast/movies?')?60000:15000),...init});}
+    catch(cause){throw Object.assign(Error(init?'The request is taking longer than expected. It may still complete; retry without changing the request.':'The broadcast connection was interrupted. Reconnecting automatically…'),{cause,transient:true});}
     const unavailable=()=>Error('The media service returned an unexpected page'+(response.ok?'':' (HTTP '+response.status+')')+'. Reconnect and retry.');
     // An edge/login page cannot tell us whether the request reached the worker.
     // Keep the same operation key when retrying an unconfirmed response.
@@ -135,7 +136,10 @@ export const BROADCAST_WINDOW_JS=String.raw`
     retry.disabled=!connected||!state.current;
     if(!connected||!state.current){if(sourceUrl){sourceUrl='';source.clear();}currentRequest='';playbackError.textContent='';return;}
     if(!state.broadcast.configured){playbackError.textContent='The broadcast worker is unavailable.';return;}
-    if(!state.broadcast.ready){if(sourceUrl){sourceUrl='';source.clear();}playbackError.textContent='Preparing the first playable segment…';return;}
+    // Readiness can briefly disappear while FFmpeg atomically replaces a live
+    // playlist. Keep the attached player (and its buffered audio) alive during
+    // that gap instead of producing a black/audio blip on every state poll.
+    if(!state.broadcast.ready){if(!sourceUrl)playbackError.textContent='Preparing the first playable segment…';return;}
     if(sourceUrl!==state.broadcast.playbackUrl||currentRequest!==state.current.requestId||(source.failed&&Date.now()>=retryAt)){
       sourceUrl=state.broadcast.playbackUrl;currentRequest=state.current.requestId;retryAt=Date.now()+10000;playbackError.textContent='Connecting to the broadcast…';source.load(sourceUrl,true,true);
     }
@@ -144,8 +148,8 @@ export const BROADCAST_WINDOW_JS=String.raw`
   async function refresh(){
     if(busy||disposed)return;busy=true;
     try{
-      applyState(await api('/api/watch/broadcast/state'));
-    }catch(e){error.textContent=e.message;}finally{busy=false;}
+      const state=await api('/api/watch/broadcast/state');if(statePollFailed){error.textContent='';statePollFailed=false;}applyState(state);
+    }catch(e){statePollFailed=true;error.textContent=e.message;}finally{busy=false;}
   }
   audioToggle.addEventListener('click',()=>{setAudioEnabled(!audioEnabled);if(audioEnabled&&level===0)setVolume(lastAudible);void play()});
   videoToggle.addEventListener('click',()=>setVideoEnabled(!videoEnabled));
@@ -207,6 +211,7 @@ export const BROADCAST_WINDOW_JS=String.raw`
   });
   document.getElementById('request-form').addEventListener('input',()=>{selectedMovie=undefined;movieResults.replaceChildren();movieResults.hidden=true;});
   video.addEventListener('canplay',()=>{playbackError.textContent='';source.joinLive();void play()});
+  video.addEventListener('playing',()=>{playbackError.textContent='';});
   document.addEventListener('visibilitychange',()=>{if(!document.hidden)source.joinLive()});
   refresh();const timer=setInterval(refresh,1500),syncTimer=setInterval(()=>{if(!document.hidden)source.syncLive()},5000);window.addEventListener('pagehide',()=>{disposed=true;clearInterval(timer);clearInterval(syncTimer);source.clear()});
 })();`;
