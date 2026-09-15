@@ -34,13 +34,18 @@ if(origin==='http://127.0.0.1:8080'&&process.env.DEPLOY_ROLE==='release'){
   const path=new URL(variant,origin+feed).pathname,before=await(await request(path)).text(),starts=(await(await request('/health/hearmeout')).json()).broadcast.startedProcesses;
   await new Promise(resolve=>setTimeout(resolve,5000));
   assert.notEqual(await(await request(path)).text(),before);assert.equal((await(await request('/health/hearmeout')).json()).broadcast.startedProcesses,starts);
-  assert.equal((await(await request('/health/hearmeout')).json()).broadcast.active,1);
+  assert.ok((await(await request('/health/hearmeout')).json()).broadcast.active>=1);
   console.log('PASS: one independent video broadcast advances with no viewing windows or room requirement');
  }
 }
 const canonical=await(await request('/api/watch/broadcast/state')).json();
-for(const alias of ['discord-watch-room','discord-music-room','watch-room-anywhere-movie']){
+for(const alias of ['discord-watch-room','discord-music-room']){
  const window=await(await request('/api/watch/sessions/'+alias+'/state')).json();
  assert.equal(window.sessionId,canonical.sessionId);assert.equal(window.broadcast.playbackUrl,canonical.broadcast.playbackUrl);
 }
-console.log(JSON.stringify({buildSha,origin,singleBroadcast:true,publicViewerEntry:true,mediaWorkerReady:true,discordRequestOriginAccepted:true,privateRoomAccessProtected:true,developmentUsageLimitsEnforced:station.spmt.usageLimitsEnforced,playbackStatus:canonical.playback.status,queuedRequests:canonical.queue.length,testUrl:origin+'/apps/hearmeout'}));
+assert.equal((await request('/api/watch/sessions/watch-room-anywhere-movie/state')).status,404,'Unknown parties cannot alias another room');
+const directoryResponse=await request('/api/watch/broadcast/rooms');assert.equal(directoryResponse.status,200);const directory=await directoryResponse.json();
+assert.ok(directory.rooms.some(room=>room.roomId==='main-broadcast'),'The existing main party survives migration');
+const feeds=new Set();for(const room of directory.rooms){const response=await request('/api/watch/broadcast/state?roomId='+encodeURIComponent(room.roomId));assert.equal(response.status,200);const state=await response.json();assert.equal(state.sessionId,room.roomId);assert.ok(!feeds.has(state.broadcast.playbackUrl),'Each party has its own feed');feeds.add(state.broadcast.playbackUrl);}
+for(const entry of ['/watch','/activity']){const html=await(await request(entry)).text();assert.match(html,/id="party-lobby"/);assert.match(html,/id="party-create"/);assert.match(html,/Keep your own voice conversation/);}
+console.log(JSON.stringify({buildSha,origin,independentWatchParties:true,publicViewerEntry:true,mediaWorkerReady:true,discordRequestOriginAccepted:true,privateRoomAccessProtected:true,developmentUsageLimitsEnforced:station.spmt.usageLimitsEnforced,playbackStatus:canonical.playback.status,queuedRequests:canonical.queue.length,testUrl:origin+'/apps/hearmeout'}));

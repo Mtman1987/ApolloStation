@@ -22,6 +22,10 @@ export class SpmtAssistantApi {
       if (this.options.control.getTenant(tenant).status !== "active") return json(response,403,{message:"Workspace is suspended"});
       const user = principal.actorId, path = url.pathname.slice("/v1/assistant/".length);
       if (request.method === "GET") {
+        if (path === "speech/status") return json(response,200,{
+          synthesis:this.options.enabled&&this.options.jobs.hasReadyWorker({executionOwner:"stellar-core",executionTarget:"sprite",capabilityId:STELLAR_SPEECH_CAPABILITIES[0]!}),
+          transcription:this.options.enabled&&this.options.jobs.hasReadyWorker({executionOwner:"stellar-core",executionTarget:"sprite",capabilityId:STELLAR_SPEECH_CAPABILITIES[1]!}),
+        });
         if(path==="public-memory"){if(this.options.control.getTenant(tenant).ownerUserId!==user)return json(response,403,{message:"Only the workspace owner can manage public memory"});return json(response,200,{memories:this.options.publicMemory?.list(tenant)??[]});}
         if(path==="streams"){if(this.options.control.getTenant(tenant).ownerUserId!==user)return json(response,403,{message:"Only the workspace owner can inspect stream listeners"});return json(response,200,{listeners:this.options.speechPresence?.list(tenant)??[],widgets:this.options.control.listOverlayWidgets(tenant,"streamweaver").filter(w=>w.manifest.widgetId==="tts-player"),generatedAt:new Date().toISOString()});}
         if (path === "preferences") return json(response,200,{preferences:this.options.store.preferences(tenant,user),voices:TTS_VOICE_OPTIONS.map(({id,label,description})=>({id,label,description}))});

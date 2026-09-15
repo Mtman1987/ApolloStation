@@ -1,3 +1,5 @@
+import {HEARMEOUT_DISCORD_HANDSHAKE_JS} from "./discord-activity-handshake.js";
+import type {HearMeOutScreenBroadcast} from "./screen-broadcast.js";
 import type {IncomingMessage,ServerResponse} from 'node:http';
 import {SpmtApiError} from '@spmt/sdk';
 import {createHash,randomBytes,randomUUID} from 'node:crypto';
@@ -17,7 +19,8 @@ function guest(request:IncomingMessage,response:ServerResponse){
   if(!token){token=randomBytes(32).toString('hex');const secure=String(request.headers['x-forwarded-proto']??'').startsWith('https')||!/^(localhost|127\.0\.0\.1)(:|$)/.test(String(request.headers.host??''));response.setHeader('set-cookie','hmo_viewer='+token+'; Path=/; HttpOnly; Max-Age=2592000; SameSite='+(secure?'None; Secure; Partitioned':'Lax'));}
   return 'guest:'+createHash('sha256').update(token).digest('hex');
 }
-export async function handleHearMeOutBroadcastWindow(request:IncomingMessage,response:ServerResponse,url:URL,program:HearMeOutBroadcastProgram,worker:HearMeOutRoomBroadcast|undefined,media:HearMeOutSuiteMediaResolverV1|undefined,clientId='',readOnly=false,hosting?:{guildIds?:string[];authorizeRoom:(request:IncomingMessage,roomId:string)=>Promise<void>}){
+export async function handleHearMeOutBroadcastWindow(request:IncomingMessage,response:ServerResponse,url:URL,program:HearMeOutBroadcastProgram,worker:HearMeOutRoomBroadcast|undefined,media:HearMeOutSuiteMediaResolverV1|undefined,clientId='',readOnly=false,hosting?:{guildIds?:string[];authorizeRoom:(request:IncomingMessage,roomId:string)=>Promise<void>},screens?:HearMeOutScreenBroadcast){
+  const screenFeed=url.pathname.match(/^\/api\/watch\/sessions\/([^/]+)\/screen\/([a-f0-9-]{36})\/([^/]+)$/);
   const parties=url.pathname==='/api/watch/broadcast/rooms';
   const entry=['/watch','/activity','/activity-lite'].includes(url.pathname)||(url.pathname==='/'&&url.searchParams.has('frame_id'));
   const state=url.pathname==='/api/watch/broadcast/state'||/^\/api\/watch\/sessions\/[^/]+\/state$/.test(url.pathname);
@@ -25,7 +28,7 @@ export async function handleHearMeOutBroadcastWindow(request:IncomingMessage,res
   const movieSearch=url.pathname==='/api/watch/broadcast/movies',control=url.pathname==='/api/watch/broadcast/control';
   const defaults=url.pathname==='/api/watch/activity-default',requestVideo=url.pathname==='/api/watch/broadcast/requests';
   const browserMedia=url.pathname.match(/^\/api\/watch\/broadcast\/youtube\/([A-Za-z0-9_-]{11})\/(status|audio|video)$/);
-  if(!parties&&!entry&&!state&&!feed&&!defaults&&!requestVideo&&!movieSearch&&!browserMedia&&!control)return false;
+  if(!screenFeed&&!parties&&!entry&&!state&&!feed&&!defaults&&!requestVideo&&!movieSearch&&!browserMedia&&!control)return false;
   try{
     const channel=():HearMeOutPartyChannel|undefined=>{
       const guildId=url.searchParams.get('guildId'),channelId=url.searchParams.get('channelId');
@@ -37,7 +40,7 @@ export async function handleHearMeOutBroadcastWindow(request:IncomingMessage,res
       const viewer=guest(request,response);
       if(request.method==='GET')return send(response,200,{rooms:program.listRooms().map(room=>{
         const session=program.getSession(program.binding.tenantId,room.roomId);
-        return {roomId:room.roomId,name:room.name,createdAt:room.createdAt,title:session.current?.item.title??null,mediaType:session.current?.item.type??null,status:session.playback.status,queueLength:session.queue.length};
+        return {roomId:room.roomId,name:room.name,createdAt:room.createdAt,title:session.current?.item.title??null,mediaType:session.current?.item.type??null,status:session.playback.status,queueLength:session.queue.length,screen:screens?.state(room.roomId)??{active:false,ready:false}};
       }),hostedRoomId:channel()?program.channelRoom(channel()!)?.roomId??null:program.hostedRoom(url.searchParams.get('appRoomId')??'')?.roomId??null});
       if(request.method!=='POST')return send(response,405,{error:'Method not allowed'});
       if(readOnly)return send(response,503,{error:'Creating watch parties is unavailable in this preview'});
@@ -55,6 +58,7 @@ export async function handleHearMeOutBroadcastWindow(request:IncomingMessage,res
     const selected=url.searchParams.get('roomId')??(alias?decodeURIComponent(alias):HEARMEOUT_SINGLE_PROGRAM_ID);
     const roomId=['discord-watch-room','discord-music-room'].includes(selected)?HEARMEOUT_SINGLE_PROGRAM_ID:selected;
     if(!entry)program.getRoom(roomId);
+    if(screenFeed){if(request.method!=='GET'||!screens)return send(response,404,{error:'Screen share not found'});await screens.serve(roomId,screenFeed[2]!,screenFeed[3]!,response);return true;}
     if(control){
       if(request.method!=='POST')return send(response,405,{error:'Method not allowed'});
       if(readOnly)return send(response,503,{error:'Broadcast controls are unavailable in this preview'});
@@ -65,7 +69,7 @@ export async function handleHearMeOutBroadcastWindow(request:IncomingMessage,res
       if(!body||!['skip','clear'].includes(body.action))throw Error('Choose skip or clear queue');
       if(body.expectedRequestId!==undefined&&typeof body.expectedRequestId!=='string')throw Error('Invalid request reference');
       program.control({tenantId:program.binding.tenantId,userId:guest(request,response),displayName:'Viewer',roles:[]},{roomId,action:body.action,...(body.expectedRequestId?{expectedRequestId:body.expectedRequestId}:{})});
-      return send(response,200,broadcastView(program,Boolean(worker),false,undefined,roomId));
+      return send(response,200,{...broadcastView(program,Boolean(worker),false,undefined,roomId),screen:screens?.state(roomId)??{active:false,ready:false}});
     }
     if(browserMedia){
       if(readOnly||!worker)return send(response,503,{error:'Browser media caching is unavailable'});
@@ -108,48 +112,51 @@ export async function handleHearMeOutBroadcastWindow(request:IncomingMessage,res
         browserRequests.set(requesterId,{videoId:browserError.videoId!,until:Date.now()+15*60*1000});
         return send(response,409,{error:browserError.message,code:browserError.code,videoId:browserError.videoId,title:browserError.title});
       }
-      return send(response,201,broadcastView(program,Boolean(worker),false,undefined,roomId));
+      return send(response,201,{...broadcastView(program,Boolean(worker),false,undefined,roomId),screen:screens?.state(roomId)??{active:false,ready:false}});
     }
     if(request.method!=='GET'&&request.method!=='HEAD')return send(response,405,{error:'Method not allowed'});
     if(entry){guest(request,response);response.writeHead(200,{'content-type':'text/html; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'});response.end(renderHearMeOutBroadcastWindow(clientId));return true;}
     if(feed){if(!worker)return send(response,503,{error:'The broadcast worker is unavailable'});await worker.serve(program.binding.tenantId,roomId,'movie',feed[1]!,response);return true;}
     guest(request,response);
-    return send(response,200,defaults?{sessionId:roomId}:broadcastView(program,Boolean(worker),worker?.ready(program.binding.tenantId,roomId,'movie')??false,worker?.epoch(program.binding.tenantId,roomId,'movie'),roomId));
+    return send(response,200,defaults?{sessionId:roomId}:{...broadcastView(program,Boolean(worker),worker?.ready(program.binding.tenantId,roomId,'movie')??false,worker?.epoch(program.binding.tenantId,roomId,'movie'),roomId),screen:screens?.state(roomId)??{active:false,ready:false}});
   }catch(error){return send(response,error instanceof SpmtApiError?error.status:(error as {status?:number}).status??400,{error:(error instanceof Error?error.message:String(error)).replace(/((?:token|authorization|secret|password|cookie))\s*[:=]\s*\S+/gi,'$1=[redacted]').slice(0,400)});}
 }
 function send(response:ServerResponse,status:number,value:unknown){response.writeHead(status,{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'});response.end(JSON.stringify(value));return true;}
 
 export function renderHearMeOutBroadcastWindow(clientId:string){
-  return '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>HearMeOut watch parties</title><style>html,body{margin:0;background:#080d18;color:#eef2ff;font:16px system-ui}main:fullscreen{overflow:auto;background:#080d18;max-width:none}main{max-width:1100px;margin:auto;padding:12px}video{display:block;width:100%;aspect-ratio:16/9;max-height:65vh;background:#000}video.video-off{visibility:hidden}nav,form{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:12px 0}button,input,select{font:inherit;padding:9px;border:1px solid #526179;border-radius:7px;background:#18243b;color:inherit}input[name=query]{flex:1;min-width:200px}#error{color:#fbbf24}#movie-results button{display:block;width:100%;text-align:left;margin:8px 0}h1{font-size:20px}.viewer-controls{position:absolute;z-index:2;inset:auto 12px 12px;max-height:min(70vh,620px);overflow:auto;padding:12px;border:1px solid #526179;border-radius:12px;background:#080d18e8;box-shadow:0 12px 36px #000b;opacity:0;transform:translateY(8px);pointer-events:none;transition:opacity .18s ease,transform .18s ease}main:hover .viewer-controls,.viewer-controls:focus-within,.viewer-controls:hover{opacity:1;transform:none;pointer-events:auto}main{position:relative;max-width:none;height:100dvh;padding:0;overflow:hidden}video{height:100%;max-height:none;object-fit:contain}@media(hover:none){.viewer-controls{opacity:1;transform:none;pointer-events:auto;max-height:48vh}}@media(prefers-reduced-motion:reduce){.viewer-controls{transition:none}}[hidden]{display:none!important}#party-lobby{box-sizing:border-box;max-width:1100px;margin:auto;padding:clamp(16px,4vw,40px)}#party-lobby h1{font-size:28px}#party-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,250px),1fr));gap:12px}.party-card{padding:20px;border:1px solid #526179;border-radius:12px;background:#111d32}.party-card h2{margin:0 0 12px;font-size:20px;overflow-wrap:anywhere}.party-card p{overflow-wrap:anywhere;color:#cbd5e1}.party-card button{width:100%;cursor:pointer}#party-create input{flex:1;min-width:0}#party-error{color:#fbbf24}button:focus-visible,input:focus-visible{outline:2px solid #7dd3fc;outline-offset:3px}</style></head><body><section id="party-lobby"><h1>Watch parties</h1><p>Watch together. Keep your own voice conversation.</p><form id="party-create"><input name="name" aria-label="Watch party name" placeholder="Name your watch party" maxlength="120" required><button type="submit">Create watch party</button></form><p id="party-context"></p><p id="party-error" role="alert"></p><nav><button id="party-refresh" type="button">Refresh parties</button></nav><div id="party-list" aria-live="polite">Loading watch parties…</div></section><main hidden><video id="player" playsinline></video><section class="viewer-controls"><nav><button id="party-back" type="button">Watch parties</button><strong id="party-name"></strong></nav><p id="status" role="status">Connecting to the broadcast…</p><p id="error" role="alert"></p><p id="playback-error" role="status"></p><nav><button id="audio-toggle" aria-pressed="true">Audio: on</button><button id="video-toggle" aria-pressed="true">Video: on</button><button id="sound">Enable sound</button><input id="volume" type="range" min="0" max="100" value="0" aria-label="Volume on this device"><select id="audio-language" aria-label="Audio language" hidden></select><button id="disconnect">Disconnect</button><button id="retry">Reset player</button><button id="fullscreen">Fullscreen</button><button id="popout">Pop out</button><span id="discord-window-hint" hidden>Use Discord’s Pop Out control to detach this Activity.</span></nav><h2 id="title">Nothing playing</h2><form id="request-form"><select name="lane" aria-label="Request type"><option value="movie">Movie / video</option><option value="music">Music</option></select><input name="query" aria-label="Music or movie request" placeholder="Song, movie title, or media link" maxlength="300" required><button id="request-submit">Request</button></form><section id="movie-results" aria-label="Matching movies" hidden></section><nav aria-label="Shared queue controls"><button id="skip" disabled>Skip</button><button id="clear-queue" disabled>Clear queue</button><span>Clear queue keeps the current item playing.</span></nav><ol id="queue"></ol></section></main><script src="/api/hearmeout/playback-source.js"></script><script src="/api/hearmeout/youtube-browser.js"></script><script>const CLIENT_ID='+JSON.stringify(clientId).replace(/</g,'\\u003c')+';'+BROADCAST_WINDOW_JS+'</script></body></html>';
+  return '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>HearMeOut watch parties</title><style>html,body{margin:0;width:100%;max-width:100%;overflow-x:hidden;background:#080d18;color:#eef2ff;font:16px system-ui}main:fullscreen{overflow:auto;background:#080d18;max-width:none}main{max-width:1100px;margin:auto;padding:12px}video{display:block;width:100%;aspect-ratio:16/9;max-height:65vh;background:#000}video.video-off{visibility:hidden}nav,form{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:12px 0}button,input,select{font:inherit;padding:9px;border:1px solid #526179;border-radius:7px;background:#18243b;color:inherit}input[name=query]{flex:1;min-width:200px}#error{color:#fbbf24}#movie-results button{display:block;width:100%;text-align:left;margin:8px 0}h1{font-size:20px}.viewer-controls{position:absolute;z-index:2;inset:auto 12px 12px;max-height:min(70vh,620px);overflow:auto;padding:12px;border:1px solid #526179;border-radius:12px;background:#080d18e8;box-shadow:0 12px 36px #000b;opacity:0;transform:translateY(8px);pointer-events:none;transition:opacity .18s ease,transform .18s ease}main:hover .viewer-controls,.viewer-controls:focus-within,.viewer-controls:hover{opacity:1;transform:none;pointer-events:auto}main{position:relative;max-width:none;height:100dvh;padding:0;overflow:hidden}video{height:100%;min-width:0;max-width:100%;max-height:none;object-fit:contain}#view-toggle,#exit-expanded{position:absolute;right:12px;top:12px;z-index:4}#exit-expanded{right:120px}main.controls-hidden .viewer-controls{display:none}main.expanded{position:fixed;inset:0;z-index:9999;width:100%;height:100dvh}@media(hover:none){.viewer-controls{opacity:1;transform:none;pointer-events:auto;max-height:48vh}}@media(prefers-reduced-motion:reduce){.viewer-controls{transition:none}}[hidden]{display:none!important}#party-lobby{box-sizing:border-box;max-width:1100px;margin:auto;padding:clamp(16px,4vw,40px)}#party-lobby h1{font-size:28px}#party-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,250px),1fr));gap:12px}.party-card{padding:20px;border:1px solid #526179;border-radius:12px;background:#111d32}.party-card h2{margin:0 0 12px;font-size:20px;overflow-wrap:anywhere}.party-card p{overflow-wrap:anywhere;color:#cbd5e1}.party-card button{width:100%;cursor:pointer}#party-create input{flex:1;min-width:0}#party-error{color:#fbbf24}button:focus-visible,input:focus-visible{outline:2px solid #7dd3fc;outline-offset:3px}</style></head><body><section id="party-lobby"><h1>Watch parties</h1><p>Watch together. Keep your own voice conversation.</p><form id="party-create"><input name="name" aria-label="Watch party name" placeholder="Name your watch party" maxlength="120" required><button type="submit">Create watch party</button></form><p id="party-context"></p><p id="discord-status" role="status"></p><p id="party-error" role="alert"></p><nav><button id="party-refresh" type="button">Refresh parties</button></nav><div id="party-list" aria-live="polite">Loading watch parties…</div></section><main hidden><video id="player" playsinline></video><button id="view-toggle" aria-pressed="false">Controls</button><button id="exit-expanded" hidden>Exit full view</button><section class="viewer-controls"><nav><button id="party-back" type="button">Watch parties</button><strong id="party-name"></strong><label>Output <select id="output"><option value="program">Movie / music</option><option value="screen">Screen share</option></select></label></nav><p id="status" role="status">Connecting to the broadcast…</p><p id="error" role="alert"></p><p id="playback-error" role="status"></p><nav><button id="audio-toggle" aria-pressed="true">Audio: on</button><button id="video-toggle" aria-pressed="true">Video: on</button><button id="sound">Enable sound</button><input id="volume" type="range" min="0" max="100" value="0" aria-label="Volume on this device"><select id="audio-language" aria-label="Audio language" hidden></select><button id="disconnect">Disconnect</button><button id="retry">Reset player</button><button id="fullscreen">Fullscreen</button><button id="popout">Pop out</button></nav><h2 id="title">Nothing playing</h2><form id="request-form"><select name="lane" aria-label="Request type"><option value="movie">Movie / video</option><option value="music">Music</option></select><input name="query" aria-label="Music or movie request" placeholder="Song, movie title, or media link" maxlength="300" required><button id="request-submit">Request</button></form><section id="movie-results" aria-label="Matching movies" hidden></section><nav aria-label="Shared queue controls"><button id="skip" disabled>Skip</button><button id="clear-queue" disabled>Clear queue</button><span>Clear queue keeps the current item playing.</span></nav><ol id="queue"></ol></section></main><script src="/api/hearmeout/playback-source.js"></script><script src="/api/hearmeout/youtube-browser.js"></script><script>const CLIENT_ID='+JSON.stringify(clientId).replace(/</g,'\\u003c')+';'+HEARMEOUT_DISCORD_HANDSHAKE_JS+BROADCAST_WINDOW_JS+'</script></body></html>';
 }
 export const BROADCAST_WINDOW_JS=String.raw`
 (()=>{
+  const preferences={getItem:key=>{try{return localStorage.getItem(key)}catch{return null}},setItem:(key,value)=>{try{localStorage.setItem(key,value)}catch{}}};
   const video=document.getElementById('player'),status=document.getElementById('status'),error=document.getElementById('error'),volume=document.getElementById('volume'),sound=document.getElementById('sound');
   const playbackError=document.getElementById('playback-error'),disconnect=document.getElementById('disconnect'),retry=document.getElementById('retry'),audioToggle=document.getElementById('audio-toggle'),videoToggle=document.getElementById('video-toggle');
   const source=new window.HearMeOutPlaybackSource(video,e=>{playbackError.textContent=e.message},document.getElementById('audio-language'));
-  let level=Number(localStorage.getItem('hmo-broadcast-volume')||0),lastAudible=level||85,sourceUrl='',busy=false,disposed=false,pendingRequest,requestInFlight=false,lastRevision=-1,playPending,selectedMovie,connected=true,currentRequest='',currentEpoch='',retryAt=0,latestState,controlBusy=false,statePollFailed=false;
-  let audioEnabled=localStorage.getItem('hmo-broadcast-audio')!=='off',videoEnabled=localStorage.getItem('hmo-broadcast-video')!=='off';
+  let level=Number(preferences.getItem('hmo-broadcast-volume')||0),lastAudible=level||85,sourceUrl='',busy=false,disposed=false,pendingRequest,requestInFlight=false,lastRevision=-1,playPending,selectedMovie,connected=true,currentRequest='',currentEpoch='',retryAt=0,latestState,controlBusy=false,statePollFailed=false;
+  let audioEnabled=preferences.getItem('hmo-broadcast-audio')!=='off',videoEnabled=preferences.getItem('hmo-broadcast-video')!=='off';
   const movieResults=document.getElementById('movie-results');
-  function setVolume(value){level=Math.max(0,Math.min(100,value));if(level)lastAudible=level;video.volume=level/100;volume.value=String(level);sound.textContent=level?'Mute locally':'Enable sound';localStorage.setItem('hmo-broadcast-volume',String(level));}
-  function setAudioEnabled(value){audioEnabled=Boolean(value);video.muted=!audioEnabled;audioToggle.textContent='Audio: '+(audioEnabled?'on':'off');audioToggle.setAttribute('aria-pressed',String(audioEnabled));localStorage.setItem('hmo-broadcast-audio',audioEnabled?'on':'off');}
-  function setVideoEnabled(value){videoEnabled=Boolean(value);video.classList.toggle('video-off',!videoEnabled);videoToggle.textContent='Video: '+(videoEnabled?'on':'off');videoToggle.setAttribute('aria-pressed',String(videoEnabled));localStorage.setItem('hmo-broadcast-video',videoEnabled?'on':'off');}
+  function setVolume(value){level=Math.max(0,Math.min(100,value));if(level)lastAudible=level;video.volume=level/100;volume.value=String(level);sound.textContent=level?'Mute locally':'Enable sound';preferences.setItem('hmo-broadcast-volume',String(level));}
+  function setAudioEnabled(value){audioEnabled=Boolean(value);video.muted=!audioEnabled;audioToggle.textContent='Audio: '+(audioEnabled?'on':'off');audioToggle.setAttribute('aria-pressed',String(audioEnabled));preferences.setItem('hmo-broadcast-audio',audioEnabled?'on':'off');}
+  function setVideoEnabled(value){videoEnabled=Boolean(value);video.classList.toggle('video-off',!videoEnabled);videoToggle.textContent='Video: '+(videoEnabled?'on':'off');videoToggle.setAttribute('aria-pressed',String(videoEnabled));preferences.setItem('hmo-broadcast-video',videoEnabled?'on':'off');}
   setVolume(level);setAudioEnabled(audioEnabled);setVideoEnabled(videoEnabled);
   const params=new URLSearchParams(location.search),frameId=params.get('frame_id');
+  const output=document.getElementById('output');let selectedOutput=params.get('output')==='screen'?'screen':'program';output.value=selectedOutput;
+  const storage={getItem:key=>{try{return sessionStorage.getItem(key)}catch{return null}},setItem:(key,value)=>{try{sessionStorage.setItem(key,value)}catch{}}};
   let activeParty='',partyName='',lobbyBusy=false,directorySignature='',pendingCreation;
   const lobby=document.getElementById('party-lobby'),playerPane=document.querySelector('main'),partyList=document.getElementById('party-list'),partyError=document.getElementById('party-error');
   const hostingParams=new URLSearchParams();
   if(params.get('appRoomId'))hostingParams.set('appRoomId',params.get('appRoomId'));
   if(frameId&&params.get('guild_id')&&params.get('channel_id')){hostingParams.set('guildId',params.get('guild_id'));hostingParams.set('channelId',params.get('channel_id'));}
   const partiesUrl='/api/watch/broadcast/rooms'+(hostingParams.size?'?'+hostingParams:'');
-  function showParties(){if(params.has('popout')&&localOwner.hearMeOutWatchPopouts[activeParty]===window)delete localOwner.hearMeOutWatchPopouts[activeParty];activeParty='';lastRevision=-1;latestState=undefined;sourceUrl='';source.clear();lobby.hidden=false;playerPane.hidden=true;const next=new URL(location.href);next.searchParams.delete('roomId');history.replaceState(null,'',next);void refreshParties();}
-  function watchParty(room){activeParty=room.roomId;if(params.has('popout'))localOwner.hearMeOutWatchPopouts[activeParty]=window;connected=params.has('popout')||!localOwner.hearMeOutWatchPopouts[activeParty]||localOwner.hearMeOutWatchPopouts[activeParty].closed;disconnect.textContent=connected?'Disconnect':'Watch again';partyName=room.name;lastRevision=-1;latestState=undefined;currentRequest='';currentEpoch='';sourceUrl='';source.clear();error.textContent='';playbackError.textContent='';lobby.hidden=true;playerPane.hidden=false;document.getElementById('party-name').textContent=partyName;const next=new URL(location.href);next.searchParams.set('roomId',activeParty);history.replaceState(null,'',next);void refresh();}
+  function showParties(){if(params.has('popout')&&localOwner.hearMeOutWatchPopouts[activeParty]===window)delete localOwner.hearMeOutWatchPopouts[activeParty];storage.setItem('hmo-party:'+(params.get('instance_id')||'browser'),'');activeParty='';lastRevision=-1;latestState=undefined;sourceUrl='';source.clear();lobby.hidden=false;playerPane.hidden=true;const next=new URL(location.href);next.searchParams.delete('roomId');history.replaceState(null,'',next);void refreshParties();}
+  function watchParty(room){activeParty=room.roomId;storage.setItem('hmo-party:'+ (params.get('instance_id')||'browser'),activeParty);if(params.has('popout'))localOwner.hearMeOutWatchPopouts[activeParty]=window;connected=params.has('popout')||!localOwner.hearMeOutWatchPopouts[activeParty]||localOwner.hearMeOutWatchPopouts[activeParty].closed;disconnect.textContent=connected?'Disconnect':'Watch again';partyName=room.name;lastRevision=-1;latestState=undefined;currentRequest='';currentEpoch='';sourceUrl='';source.clear();error.textContent='';playbackError.textContent='';lobby.hidden=true;playerPane.hidden=false;document.getElementById('party-name').textContent=partyName;const next=new URL(location.href);next.searchParams.set('roomId',activeParty);history.replaceState(null,'',next);void refresh();}
   async function refreshParties(){
     if(lobbyBusy||disposed||activeParty)return;lobbyBusy=true;
     try{const data=await api(partiesUrl);if(activeParty)return;partyError.textContent='';document.querySelector('#party-create button').textContent=data.hostedRoomId?'Watch hosted party':'Create watch party';document.querySelector('#party-create input').required=!data.hostedRoomId;document.querySelector('#party-create input').hidden=Boolean(data.hostedRoomId);document.querySelector('#party-create').dataset.hostedRoomId=data.hostedRoomId||'';
       document.getElementById('party-context').textContent=data.hostedRoomId?'This room already hosts a party. You can watch any party here; use another room to host a separate one.':hostingParams.has('appRoomId')?'Create hosts a party for your current room. Watching another party keeps you in your own voice chat.':'';
       const signature=JSON.stringify(data.rooms);if(signature===directorySignature)return;directorySignature=signature;partyList.replaceChildren();
       if(!data.rooms.length)partyList.textContent='No watch parties yet. Create one to get started.';
-      for(const room of data.rooms){const card=document.createElement('article');card.className='party-card';const name=document.createElement('h2');name.textContent=room.name;const now=document.createElement('p');now.textContent=room.title?(room.mediaType==='music'?'Listening: ':'Watching: ')+room.title:'Nothing playing yet';const button=document.createElement('button');button.textContent='Watch party';button.addEventListener('click',()=>watchParty(room));card.append(name,now,button);partyList.append(card);}
+      for(const room of data.rooms){const card=document.createElement('article');card.className='party-card';const name=document.createElement('h2');name.textContent=room.name;const now=document.createElement('p');now.textContent=room.screen?.active?'Sharing: '+room.screen.title:room.title?(room.mediaType==='music'?'Listening: ':'Watching: ')+room.title:'Nothing playing yet';const button=document.createElement('button');button.textContent='Watch party';button.addEventListener('click',()=>watchParty(room));card.append(name,now,button);partyList.append(card);}
     }catch(e){partyError.textContent=e.message;}finally{lobbyBusy=false;}
   }
   document.getElementById('party-refresh').addEventListener('click',refreshParties);
@@ -160,8 +167,8 @@ export const BROADCAST_WINDOW_JS=String.raw`
   let localOwner=window;try{if(window.opener?.location.origin===location.origin)localOwner=window.opener;else if(window.top.location.origin===location.origin)localOwner=window.top;}catch{}
   localOwner.hearMeOutWatchPopouts=localOwner.hearMeOutWatchPopouts||{};
   if(!params.has('popout')&&localOwner.hearMeOutWatchPopouts[activeParty]&&!localOwner.hearMeOutWatchPopouts[activeParty].closed){connected=false;disconnect.textContent='Watch again';}
-  if(frameId){if(!hostingParams.has('channelId')){document.querySelector('#party-create button').disabled=true;partyError.textContent='Reopen the Activity from a server voice channel to host a party.';}popout.hidden=true;document.getElementById('discord-window-hint').hidden=false;}
-  if(frameId&&CLIENT_ID){let origin='*';try{if(document.referrer)origin=new URL(document.referrer).origin}catch{}window.parent.postMessage([0,{v:1,encoding:'json',client_id:CLIENT_ID,frame_id:frameId,sdk_version:'2.5.0'}],origin);}
+  if(frameId){if(!hostingParams.has('channelId')){document.querySelector('#party-create button').disabled=true;partyError.textContent='Reopen the Activity from a server voice channel to host a party.';}popout.hidden=true;}
+  window.connectHearMeOutDiscord?.(CLIENT_ID,message=>{document.getElementById('discord-status').textContent=message});
   async function api(path,init){
     if(activeParty&&path.startsWith('/api/watch/broadcast/')&&!path.startsWith('/api/watch/broadcast/rooms'))path+=(path.includes('?')?'&':'?')+'roomId='+encodeURIComponent(activeParty);
     let response;try{response=await fetch(path,{cache:'no-store',signal:AbortSignal.timeout(init?190000:path.startsWith('/api/watch/broadcast/movies?')?60000:15000),...init});}
@@ -185,6 +192,15 @@ export const BROADCAST_WINDOW_JS=String.raw`
     status.textContent=!connected?'Disconnected on this device. The broadcast continues.':requestInFlight?'Preparing your request…':state.playback.status==='idle'?'Nothing playing. Request music or a movie below.':'Broadcast: '+state.playback.status;
     document.getElementById('title').textContent=state.current?.item.title||'Nothing playing';
     const queue=document.getElementById('queue');queue.replaceChildren();for(const request of state.queue){const li=document.createElement('li');li.textContent=request.item.title;queue.append(li);}
+    if(selectedOutput==='screen'){
+      const screen=state.screen||{};retry.disabled=!connected||!screen.active;
+      document.getElementById('title').textContent=screen.title||'Screen share';
+      status.textContent=!connected?'Disconnected on this device.':screen.active?'Screen share · '+(screen.ready?'Live':'Preparing…'):'No screen is being shared. Choose Movie / music or ask someone in this party to share.';
+      if(!connected||!screen.active){sourceUrl='';source.clear();currentRequest='';currentEpoch='';return;}
+      if(!screen.ready){playbackError.textContent='Preparing the shared screen…';return;}
+      if(sourceUrl!==screen.playbackUrl||currentEpoch!==screen.epoch||(source.failed&&Date.now()>=retryAt)){sourceUrl=screen.playbackUrl;currentEpoch=screen.epoch;currentRequest='';retryAt=Date.now()+10000;source.load(sourceUrl,true,true);}
+      if(video.readyState>=2)void play();return;
+    }
     retry.disabled=!connected||!state.current;
     if(!connected||!state.current){if(sourceUrl){sourceUrl='';source.clear();}currentRequest='';playbackError.textContent='';return;}
     if(!state.broadcast.configured){playbackError.textContent='The broadcast worker is unavailable.';return;}
@@ -203,6 +219,7 @@ export const BROADCAST_WINDOW_JS=String.raw`
       const state=await api('/api/watch/broadcast/state');if(statePollFailed){error.textContent='';statePollFailed=false;}applyState(state);
     }catch(e){statePollFailed=true;error.textContent=e.message;}finally{busy=false;}
   }
+  output.addEventListener('change',()=>{selectedOutput=output.value;source.clear();sourceUrl='';currentRequest='';currentEpoch='';playbackError.textContent='';const next=new URL(location.href);next.searchParams.set('output',selectedOutput);history.replaceState(null,'',next);if(latestState)applyState(latestState);});
   audioToggle.addEventListener('click',()=>{setAudioEnabled(!audioEnabled);if(audioEnabled&&level===0)setVolume(lastAudible);void play()});
   videoToggle.addEventListener('click',()=>setVideoEnabled(!videoEnabled));
   sound.addEventListener('click',()=>{if(!audioEnabled)setAudioEnabled(true);setVolume(level?0:lastAudible);void play()});
@@ -221,15 +238,22 @@ export const BROADCAST_WINDOW_JS=String.raw`
     const prior=connected;setConnected(false);
     const existing=localOwner.hearMeOutWatchPopouts[activeParty];
     if(existing&&!existing.closed){existing.focus();return;}
-    const popup=window.open('/watch?popout=1&roomId='+encodeURIComponent(activeParty),'hmo-watch-'+crypto.randomUUID(),'popup,width=1100,height=800');
+    const popup=window.open('/watch?popout=1&roomId='+encodeURIComponent(activeParty)+'&output='+encodeURIComponent(selectedOutput),'hmo-watch-'+crypto.randomUUID(),'popup,width=1100,height=800');
     if(!popup){setConnected(prior);playbackError.textContent='Allow popups for HearMeOut to open this window.';return;}
     localOwner.hearMeOutWatchPopouts[activeParty]=popup;popup.focus();
   });
   if(params.has('popout'))popout.hidden=true;
+  function setExpanded(value){playerPane.classList.toggle('expanded',value);playerPane.classList.toggle('controls-hidden',value);document.getElementById('exit-expanded').hidden=!value;document.getElementById('fullscreen').textContent=value?'Exit full view':'Fullscreen';if(window.parent!==window&&!frameId)window.parent.postMessage({type:'hmo:player-expanded',expanded:value},location.origin);}
+  document.getElementById('view-toggle').addEventListener('click',()=>{const hidden=playerPane.classList.toggle('controls-hidden');document.getElementById('view-toggle').setAttribute('aria-pressed',String(!hidden));});
+  document.getElementById('exit-expanded').addEventListener('click',async()=>{if(document.fullscreenElement)await document.exitFullscreen().catch(()=>{});setExpanded(false);});
   document.getElementById('fullscreen').addEventListener('click',async()=>{
-    try{if(document.fullscreenElement)await document.exitFullscreen();else if(document.querySelector('main').requestFullscreen)await document.querySelector('main').requestFullscreen();else if(video.webkitEnterFullscreen)video.webkitEnterFullscreen();else throw Error('Fullscreen unavailable');}
-    catch{playbackError.textContent=frameId?'Use Discord’s fullscreen control for this Activity.':'Fullscreen is unavailable in this window.';}
+    if(document.fullscreenElement){await document.exitFullscreen();setExpanded(false);return;}
+    if(playerPane.classList.contains('expanded')){setExpanded(false);return;}
+    setExpanded(true);playbackError.textContent='';
+    try{if(playerPane.requestFullscreen)await playerPane.requestFullscreen();else if(video.webkitEnterFullscreen)video.webkitEnterFullscreen();}catch{/* Full-view layout remains available when Discord restricts native fullscreen. */}
   });
+  document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement)setExpanded(false)});
+  document.addEventListener('keydown',event=>{if(event.key==='Escape')setExpanded(false)});
   async function controlQueue(action){
     if(controlBusy||!latestState)return;controlBusy=true;skip.disabled=true;clearQueue.disabled=true;error.textContent='';
     try{applyState(await api('/api/watch/broadcast/control',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action,...(action==='skip'?{expectedRequestId:latestState.current?.requestId}:{})})}));}
@@ -265,6 +289,9 @@ export const BROADCAST_WINDOW_JS=String.raw`
   video.addEventListener('canplay',()=>{playbackError.textContent='';void play()});
   video.addEventListener('playing',()=>{playbackError.textContent='';});
   document.addEventListener('visibilitychange',()=>{if(!document.hidden)source.joinLive()});
-  if(params.get('roomId'))watchParty({roomId:params.get('roomId'),name:'Watch party'});else void refreshParties();
-  const timer=setInterval(()=>{if(activeParty)void refresh();else void refreshParties();},1500),syncTimer=setInterval(()=>{if(!document.hidden)source.syncLive()},5000);window.addEventListener('pagehide',()=>{disposed=true;clearInterval(timer);clearInterval(syncTimer);source.clear()});
+  const restoredParty=params.get('roomId')||(frameId?storage.getItem('hmo-party:'+(params.get('instance_id')||'browser')):null);if(restoredParty)watchParty({roomId:restoredParty,name:'Watch party'});else void refreshParties();
+  let timer,syncTimer;
+  function resume(){disposed=false;busy=false;clearInterval(timer);clearInterval(syncTimer);timer=setInterval(()=>{if(activeParty)void refresh();else void refreshParties();},1500);syncTimer=setInterval(()=>{if(!document.hidden)source.syncLive()},5000);if(activeParty)void refresh();else void refreshParties();}
+  resume();window.addEventListener('pageshow',event=>{if(event.persisted){sourceUrl='';currentEpoch='';resume();}});
+  window.addEventListener('pagehide',()=>{disposed=true;clearInterval(timer);clearInterval(syncTimer);source.clear();sourceUrl='';});
 })();`;

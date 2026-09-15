@@ -43,15 +43,18 @@ try{
  await page.goto('http://127.0.0.1:'+shell.address().port+'/test-shell');
  const app=page.frameLocator('[data-shell-app-frame]');
  await app.getByRole('button',{name:'Browse Rooms',exact:true}).waitFor();
- assert.equal(await app.locator('a[href="/watch"]').count(),0);
+ assert.equal(await app.getByRole('link',{name:'Watch parties',exact:true}).isVisible(),true,'The party menu is available before joining a voice room');
  assert.equal(await app.locator('video,audio,[data-hmo-broadcast-frame]').count(),0);
- async function createRoom(name){await app.getByRole('button',{name:'Create Room',exact:true}).click();await app.locator('[name=name]').fill(name);await app.getByRole('button',{name:'Create & join',exact:true}).click();await app.getByRole('button',{name:'Music and movie window',exact:true}).waitFor();}
+ async function createRoom(name){await app.getByRole('button',{name:'Create Room',exact:true}).click();await app.locator('[name=name]').fill(name);await app.getByRole('button',{name:'Create & join',exact:true}).click();await app.getByRole('button',{name:'Watch party player',exact:true}).waitFor();}
  await createRoom('First room');
  assert.equal(await app.locator('video,audio,[data-hmo-broadcast-frame]').count(),0);
  assert.equal(program.getSession().current,null);assert.equal(requests.length,0);
- await app.getByRole('button',{name:'Music and movie window',exact:true}).click();
+ await app.getByRole('button',{name:'Watch party player',exact:true}).click();
  let window=app.frameLocator('[data-hmo-broadcast-frame]');
+ await window.getByRole('heading',{name:'Watch parties',exact:true}).waitFor();
+ await window.getByRole('textbox',{name:'Watch party name',exact:true}).fill('First movie night');await window.getByRole('button',{name:'Create watch party',exact:true}).click();
  await window.getByText('Nothing playing',{exact:true}).waitFor();
+ const firstPartyId=program.hostedRoom(rooms.listRooms(owner)[0].roomId).roomId;const feedPrefix='/api/watch/sessions/'+firstPartyId+'/broadcast/';
  assert.equal(await window.locator('video').evaluate(v=>v.currentSrc), '');
  await window.getByRole('button',{name:'Enable sound',exact:true}).click();
  await new Promise(r=>setTimeout(r,1800));
@@ -59,8 +62,8 @@ try{
  await window.getByRole('textbox',{name:'Music or movie request'}).fill('My requested movie');
  await window.getByRole('button',{name:'Request',exact:true}).click();
  await window.getByRole('button',{name:'My requested movie (2026)',exact:true}).waitFor();
- assert.equal(requestPosts,0,'Searching movies must not request the first match');assert.equal(requests.length,0);assert.equal(program.getSession().current,null);
- let htmlResponses=0;await page.route('**/api/watch/broadcast/requests',async route=>{if(!htmlResponses++){await route.fulfill({status:200,contentType:'text/html',body:'<!DOCTYPE html><html><body>Temporary access page</body></html>'});return;}await route.continue();});
+ assert.equal(requestPosts,0,'Searching movies must not request the first match');assert.equal(requests.length,0);assert.equal(program.getSession('tenant',firstPartyId).current,null);
+ let htmlResponses=0;await page.route('**/api/watch/broadcast/requests*',async route=>{if(!htmlResponses++){await route.fulfill({status:200,contentType:'text/html',body:'<!DOCTYPE html><html><body>Temporary access page</body></html>'});return;}await route.continue();});
  await window.getByRole('button',{name:'My requested movie (2026)',exact:true}).click();
  await window.getByRole('alert').filter({hasText:'The media service returned an unexpected page. Reconnect and retry.'}).waitFor();
  assert.equal(await window.locator('#request-submit').isEnabled(),true);assert.notEqual(await window.locator('#status').textContent(),'Preparing your request…');assert.equal(requests.length,0);
@@ -74,8 +77,8 @@ try{
  assert.equal(await window.locator('#error').textContent(),'');
  assert.equal(await app.locator('video,audio').count(),0,'No legacy music or video player exists behind the iframe');
  assert.equal(await app.locator('[data-hmo-broadcast-frame]').count(),1);
- const original=program.getSession(),starts=(await(await fetch(origin+'/health/ready')).json()).broadcast.startedProcesses;
- const initialSequence=Number((await(await fetch(origin+'/api/watch/broadcast/stream_video.m3u8')).text()).match(/#EXT-X-MEDIA-SEQUENCE:(\d+)/)[1]);
+ const original=program.getSession('tenant',firstPartyId),starts=(await(await fetch(origin+'/health/ready')).json()).broadcast.startedProcesses;
+ const initialSequence=Number((await(await fetch(origin+feedPrefix+'stream_video.m3u8')).text()).match(/#EXT-X-MEDIA-SEQUENCE:(\d+)/)[1]);
  // Pass both reported disconnect boundaries with real heartbeat, real shell
  // snapshots, and real encoder time (not a mocked timer or transport).
  await new Promise(r=>setTimeout(r,100000));
@@ -83,19 +86,19 @@ try{
  assert.equal(await app.locator('[data-hmo-broadcast-frame]').count(),1);
  await playing();assert.equal(rooms.listMembers('tenant',rooms.listRooms(owner)[0].roomId).length,1);
  assert.equal((await(await fetch(origin+'/health/ready')).json()).broadcast.startedProcesses,starts);
- await app.getByRole('button',{name:'Close music and movie window',exact:true}).click();
+ await app.getByRole('button',{name:'Close watch party player',exact:true}).click();
  assert.equal(await app.locator('video,audio,[data-hmo-broadcast-frame]').count(),0);
  await app.getByRole('button',{name:'More',exact:true}).click();await app.getByRole('button',{name:'Delete room',exact:true}).click();
- await app.locator('.hmo-console').waitFor({state:'detached'});assert.equal(rooms.listRooms(owner).length,0);assert.equal(program.getSession().current.requestId,original.current.requestId);
+ await app.locator('.hmo-console').waitFor({state:'detached'});assert.equal(rooms.listRooms(owner).length,0);assert.equal(program.getSession('tenant',firstPartyId).current.requestId,original.current.requestId);
  // Navigate through the actual shell's Home action, then make a fresh room.
  await page.evaluate(()=>{const f=document.querySelector('iframe');f.contentWindow.postMessage({protocol:'spmt.surface',version:1,type:'page.open',appId:'hearmeout',pageId:'home'},new URL(f.src).origin)});
  segments.length=0;await createRoom('Second room');assert.equal(await app.locator('video,audio,[data-hmo-broadcast-frame]').count(),0);
- await app.getByRole('button',{name:'Music and movie window',exact:true}).click();window=app.frameLocator('[data-hmo-broadcast-frame]');await playing();
- assert.equal(program.getSession().current.requestId,original.current.requestId);assert.equal((await(await fetch(origin+'/health/ready')).json()).broadcast.startedProcesses,starts);
- const liveSequence=Number((await(await fetch(origin+'/api/watch/broadcast/stream_video.m3u8')).text()).match(/#EXT-X-MEDIA-SEQUENCE:(\d+)/)[1]);
+ await app.getByRole('button',{name:'Watch party player',exact:true}).click();window=app.frameLocator('[data-hmo-broadcast-frame]');await window.getByRole('heading',{name:'Watch parties',exact:true}).waitFor();await window.locator('.party-card').filter({hasText:'First movie night'}).getByRole('button',{name:'Watch party',exact:true}).click();await playing();assert.equal(program.hostedRoom(rooms.listRooms(owner)[0].roomId),undefined,'Watching another party does not assign its broadcast to this room');
+ assert.equal(program.getSession('tenant',firstPartyId).current.requestId,original.current.requestId);assert.equal((await(await fetch(origin+'/health/ready')).json()).broadcast.startedProcesses,starts);
+ const liveSequence=Number((await(await fetch(origin+feedPrefix+'stream_video.m3u8')).text()).match(/#EXT-X-MEDIA-SEQUENCE:(\d+)/)[1]);
  assert.ok(liveSequence>initialSequence+20,'The broadcast advanced while the viewer stayed/left');assert.ok(segments.some(sequence=>sequence>=liveSequence),'The returned window reads current video segments rather than replaying old ones');
  // Going back to Browse Rooms must also remove the actual local media element.
  await page.evaluate(()=>{const f=document.querySelector('iframe');f.contentWindow.postMessage({protocol:'spmt.surface',version:1,type:'page.open',appId:'hearmeout',pageId:'rooms'},new URL(f.src).origin)});
  await app.locator('.hmo-console').waitFor({state:'detached'});assert.equal(await app.locator('video,audio,[data-hmo-broadcast-frame]').count(),0);
- assert.deepEqual(errors,[]);console.log('PASS: mobile HMO room starts silent, clapper opens one blank request window, a typed request plays real video, 100 seconds of shell updates retain the room, closing/deleting is silent, and a new room sees the advancing video only after opening its clapper.');
+ assert.deepEqual(errors,[]);console.log('PASS: mobile HMO room starts silent, clapper opens the party menu and creates one hosted request window, a typed request plays real video, 100 seconds of shell updates retain the room, closing/deleting is silent, and a new room sees the advancing video only after choosing the existing party from its menu.');
 }finally{await browser?.close();if(shell)await new Promise(r=>shell.close(r));await host?.close();if(spmt)await new Promise(r=>spmt.close(r));rooms.close();program.close();await rm(directory,{recursive:true,force:true});}

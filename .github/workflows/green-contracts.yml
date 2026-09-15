@@ -82,3 +82,5 @@ jobs:
         run: node scripts/test-hmo-room-window-browser.mjs
       - name: Verify cached audio withstands delayed broadcast segments
         run: node scripts/test-hmo-cached-audio-browser.mjs
+      - name: Verify screen sharing through the room and Discord player
+        run: node scripts/test-hmo-screen-browser.mjs

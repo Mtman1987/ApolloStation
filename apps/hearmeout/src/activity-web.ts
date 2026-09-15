@@ -1,3 +1,4 @@
+import {HEARMEOUT_DISCORD_HANDSHAKE_JS} from "./discord-activity-handshake.js";
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { SqliteHearMeOutRoomMediaRuntime } from './room-media-core.js';
 import { HEARMEOUT_ACTIVITY_ROOM_ID, HEARMEOUT_GLOBAL_WATCH_SESSION_ID, HEARMEOUT_MUSIC_WATCH_SESSION_ID, isHearMeOutDiscordActivityWatchSession, normalizeHearMeOutWatchSessionAlias } from './activity-contract.js';
@@ -60,7 +61,7 @@ export function renderHearMeOutActivity(clientId: string) {
 <nav><h1>HearMeOut</h1><button data-session="discord-music-room">Music</button><button data-session="discord-watch-room">Movies</button><button id="sound">Enable sound</button><input id="volume" type="range" min="0" max="100" value="0" aria-label="Volume on this device"><button id="retry">Reconnect</button><select id="audio-language" aria-label="Audio language" hidden></select></nav>
 <p id="status" role="status">Connecting to the shared room…</p><p id="error" role="alert"></p><video id="player" playsinline></video><h2 id="title">Waiting for a request</h2><p>Requests and playback follow the same room as HearMeOut and Discord commands.</p><ol id="queue"></ol></main><script src="/api/hearmeout/playback-source.js"></script><script>
 const CLIENT_ID=${config};
-${HEARMEOUT_ACTIVITY_BROWSER_JS}
+${HEARMEOUT_DISCORD_HANDSHAKE_JS}${HEARMEOUT_ACTIVITY_BROWSER_JS}
 </script></body></html>`;
 }
 
@@ -73,11 +74,7 @@ export const HEARMEOUT_ACTIVITY_BROWSER_JS = String.raw`
   setLocalVolume(localVolume);
   let sessionId=params.get('sessionId')||params.get('session_id')||'', busy=false, currentId='', state=null;
   const frameId=params.get('frame_id');
-  if(frameId&&CLIENT_ID){
-    let origin='*';try{if(document.referrer)origin=new URL(document.referrer).origin}catch{}
-    window.addEventListener('message',event=>{if(event.source!==window.parent||!Array.isArray(event.data))return;if(event.data[1]?.evt==='READY')status.textContent='Discord connected';});
-    window.parent.postMessage([0,{v:1,encoding:'json',client_id:CLIENT_ID,frame_id:frameId,sdk_version:'2.5.0'}],origin);
-  }
+  window.connectHearMeOutDiscord?.(CLIENT_ID,message=>{if(message)status.textContent=message});
   async function api(path){const response=await fetch(path,{cache:'no-store',signal:AbortSignal.timeout(15000)});const data=await response.json();if(!response.ok)throw Error(data.error||'The shared room is unavailable');return data;}
   function mediaUrl(value){const url=new URL(value,location.href);if(/^\/v1\/media\/public\/[A-Za-z0-9_-]{43}$/.test(url.pathname))return url.pathname;return value;}
   function position(playback){return Math.max(0,Number(playback.position||0)+(playback.status==='playing'?Math.max(0,Date.now()-Date.parse(playback.updatedAt))/1000:0));}
