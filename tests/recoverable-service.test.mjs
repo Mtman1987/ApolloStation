@@ -18,8 +18,9 @@ test('a media crash restarts only its service and removes orphan encoders before
   const events = [];
   const script = `
     const {spawn}=require('node:child_process'),{appendFileSync}=require('node:fs');
-    const encoder=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'});
-    appendFileSync(process.argv[1],JSON.stringify({pid:process.pid,encoder:encoder.pid})+'\\n');
+    const heartbeat=process.argv[1]+'.'+process.pid;
+    const encoder=spawn(process.execPath,['-e',"const {writeFileSync}=require('node:fs');setInterval(()=>writeFileSync(process.argv[1],String(Date.now())),25)",heartbeat],{stdio:'ignore'});
+    appendFileSync(process.argv[1],JSON.stringify({pid:process.pid,encoder:encoder.pid,heartbeat})+'\\n');
     setInterval(()=>{},1000);
   `;
   const service = startRecoverableService({label:'media',command:process.execPath,args:['-e',script,records],env:process.env,restartDelayMs:100,maximumDelayMs:200,report:line=>events.push(line)});
@@ -27,12 +28,14 @@ test('a media crash restarts only its service and removes orphan encoders before
   const readStarts = async () => {try{return (await readFile(records,'utf8')).trim().split('\n').map(JSON.parse)}catch{return []}};
   try {
     const [first] = await waitFor(readStarts, rows=>rows.length===1);
+    await waitFor(async()=>{try{return await readFile(first.heartbeat,'utf8')}catch{return ''}},value=>Boolean(value));
     const siblingPid = sibling.current.pid;
     process.kill(first.pid,'SIGKILL');
     const rows = await waitFor(readStarts, rows=>rows.length===2);
     assert.notEqual(rows[1].pid,first.pid);
     assert.equal(sibling.current.pid,siblingPid,'The shell must survive the media crash');
-    await waitFor(async()=>{try{return (await readFile(`/proc/${first.encoder}/stat`,'utf8')).split(' ')[2]}catch{return 'gone'}},state=>state==='gone'||state==='Z');
+    const finalHeartbeat=await readFile(first.heartbeat,'utf8');await delay(150);
+    assert.equal(await readFile(first.heartbeat,'utf8'),finalHeartbeat,'The orphan encoder must stop writing before replacement');
     assert.match(events[0],/SIGKILL.*restarting/);
     await service.close();
     await delay(300);
