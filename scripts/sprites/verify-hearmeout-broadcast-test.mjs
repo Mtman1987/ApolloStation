@@ -1,21 +1,15 @@
 import assert from 'node:assert/strict';
+import {deploymentRequest} from './deployment-request.mjs';
 const origin=new URL(process.argv[2]).origin,buildSha=process.argv[3];
-async function request(path,init){
- for(let attempt=0;;attempt++){
-  try{return await fetch(origin+path,{redirect:'manual',signal:AbortSignal.timeout(15000),...init});}
-  catch(error){
-   // Retry transport failures only for reads. HTTP/auth assertions still fail,
-   // and this verification never replays a write or queues media.
-   if(init?.method&&init.method!=='GET'||attempt>=2||!(error instanceof TypeError||error?.name==='TimeoutError'))throw error;
-   await new Promise(resolve=>setTimeout(resolve,1000));
-  }
- }
-}
+const request=(path,init,options)=>deploymentRequest(origin,path,init,options);
 let health;
-for(let attempt=0;attempt<30;attempt++){
- const response=await request('/health/hearmeout');assert.equal(response.status,200);health=await response.json();
- if(health.mediaWorker?.ready)break;await new Promise(resolve=>setTimeout(resolve,1000));
+let healthFailure;const healthDeadline=Date.now()+5*60_000;
+while(Date.now()<healthDeadline){
+ try{const response=await request('/health/hearmeout',undefined,{attempts:1,timeoutMs:5000});assert.equal(response.status,200);health=await response.json();healthFailure=undefined;}
+ catch(error){healthFailure=error;}
+ if(health?.mediaWorker?.ready)break;await new Promise(resolve=>setTimeout(resolve,1000));
 }
+if(!health?.mediaWorker?.ready&&healthFailure)throw new Error('HearMeOut health did not become reachable before the deployment deadline',{cause:healthFailure});
 assert.equal(health.buildSha,buildSha);assert.equal(health.broadcast?.singleProgram,true);assert.equal(health.broadcast?.configured,true);assert.equal(health.mediaWorker?.ready,true);
 assert.match(health.activityClientId,/^\d{5,30}$/);
 const activityOrigin=`https://${health.activityClientId}.discordsays.com`;
