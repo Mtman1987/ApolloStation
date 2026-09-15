@@ -20,7 +20,6 @@ const style=document.createElement('style');
 style.dataset.spmtSurfaceClient='1';
 style.textContent=[
 '.hmo-remote-person{display:flex!important;align-items:center;gap:12px;flex-wrap:wrap}.hmo-remote-person .hmo-persona-avatar{width:48px;height:48px;flex:0 0 48px;border-radius:50%;object-fit:cover}.hmo-remote-person[data-speaking]{outline:2px solid var(--spmt-accent-secondary,#57d9cf)}.hmo-discord-members{flex-basis:100%;display:flex;flex-wrap:wrap;gap:6px}.hmo-discord-members span{padding:3px 8px;border-radius:12px;background:#ffffff0c}.hmo-discord-members [data-speaking]{color:var(--spmt-accent-secondary,#57d9cf)}',
-
 '.hmo-app[data-surface="shell"]>.spmt-product-backdrop{display:block!important}',
 '.hmo-app[data-surface="shell"] .hmo-stage{height:var(--spmt-shell-available-height,100dvh)!important;min-height:0!important;padding:clamp(8px,1.4vw,18px)!important}',
 '.hmo-home[hidden],.hmo-rooms[hidden]{display:none!important}',
@@ -30,21 +29,29 @@ style.textContent=[
 '.hmo-page-head{display:none!important}',
 '.hmo-home{overflow:hidden!important}.hmo-hero{max-height:100%!important;overflow:hidden!important}',
 '.hmo-room-scroll{scrollbar-width:thin;scrollbar-color:transparent transparent}.hmo-room-scroll:hover{scrollbar-color:color-mix(in srgb,var(--spmt-accent) 62%,transparent) transparent}.hmo-room-scroll::-webkit-scrollbar{width:4px;height:4px}.hmo-room-scroll::-webkit-scrollbar-track{background:transparent}.hmo-room-scroll::-webkit-scrollbar-thumb{border-radius:99px;background:transparent}.hmo-room-scroll:hover::-webkit-scrollbar-thumb{background:color-mix(in srgb,var(--spmt-accent) 62%,transparent)}',
-'.hmo-console{height:100%!important;min-height:0!important}.hmo-console-head .hmo-toolbar{display:none!important}.hmo-console-head h3{font-size:clamp(24px,3vw,34px)!important}.hmo-console-grid{grid-template-columns:minmax(0,1fr)!important}.hmo-console-grid>[data-hmo-watch-pane]{display:none!important}',
+'.hmo-console{height:100%!important;min-height:0!important}.hmo-console-head .hmo-toolbar{display:none!important}.hmo-console-head h3{font-size:clamp(24px,3vw,34px)!important}.hmo-console-grid{align-items:start!important}.hmo-console-grid>[data-hmo-watch-pane]{display:none!important}',
 '[data-hmo-screen][hidden]{display:none!important}',
 '.hmo-screen-stage{grid-column:1/-1!important;min-width:0!important;width:100%!important;max-width:100%!important;box-sizing:border-box!important;height:min(56vw,480px)!important;contain:inline-size!important;border:1px solid color-mix(in srgb,var(--spmt-accent-secondary) 55%,var(--spmt-border));border-radius:14px;overflow:hidden;background:#000;box-shadow:0 12px 36px #0008}.hmo-screen-stage[hidden]{display:none!important}.hmo-screen-stage:not([hidden]){display:grid!important;place-items:center!important}.hmo-screen-stage video{display:block!important;width:100%!important;min-width:0!important;height:100%!important;max-width:100%!important;max-height:100%!important;object-fit:contain!important;background:#000!important}',
 '.hmo-watch-drawer.hmo-player-expanded{position:fixed!important;inset:12px!important;z-index:1000!important;margin:0!important;max-height:none!important;background:#080d18!important}.hmo-watch-drawer.hmo-player-expanded iframe{height:calc(100dvh - 100px)!important;max-height:none!important}',
 '.hmo-watch-drawer{grid-column:1/-1!important;min-width:0!important;max-width:100%!important;box-sizing:border-box!important;contain:inline-size!important;margin-top:8px!important;max-height:min(58vh,520px)!important;border-color:color-mix(in srgb,var(--spmt-accent-secondary) 55%,var(--spmt-border))!important}.hmo-watch-drawer[hidden]{display:none!important}.hmo-watch-drawer:not([hidden]){display:block!important}',
-'@media(max-width:560px){.hmo-app[data-surface="shell"] .hmo-stage{padding:8px!important}.hmo-app[data-surface="shell"] .hmo-hero{gap:10px!important;padding:12px!important}.hmo-app[data-surface="shell"] .hmo-hero h1{font-size:clamp(42px,17vw,70px)!important}.hmo-screen-stage video{max-height:44vh!important}}'
+'.hmo-room-tools{margin:8px 0 0!important;padding:10px!important;border:1px solid color-mix(in srgb,var(--spmt-accent) 45%,var(--spmt-border));border-radius:14px;background:color-mix(in srgb,var(--spmt-panel) 94%,transparent)}.hmo-room-tools[hidden]{display:none!important}.hmo-room-tools .hmo-button{width:100%!important;margin:3px 0!important}',
+'.hmo-person .hmo-person-menu{display:none!important}.hmo-person,.hmo-bot-person,.hmo-remote-person{min-width:0!important;max-width:100%!important;box-sizing:border-box!important;align-self:start!important}',
+'.hmo-persona-card{display:grid!important;grid-template-columns:auto minmax(0,1fr) auto!important;gap:8px 10px!important;align-items:center!important;padding:10px!important;border-radius:13px!important;background:var(--spmt-surface-depth-3)!important}.hmo-persona-card .hmo-persona-avatar{width:42px!important;height:42px!important}.hmo-persona-card .hmo-persona-card-copy{display:grid;gap:2px;min-width:0}.hmo-persona-card .hmo-persona-card-copy strong{font-size:11px}.hmo-persona-card .hmo-persona-card-copy small{font-size:9px;color:var(--spmt-muted)}.hmo-persona-card .hmo-persona-card-actions{display:flex;gap:5px;align-items:center}.hmo-persona-card>.hmo-button{display:none!important}',
+'.hmo-persona-actions>textarea,.hmo-persona-actions>button[aria-label^="Send message to"],.hmo-persona-actions>.hmo-talk-button{display:none!important}.hmo-persona-actions .hmo-status{margin-top:6px}',
+'.hmo-bot-drawer .hmo-bot-tabs{margin-bottom:8px}.hmo-bot-drawer textarea{min-height:0!important}',
+'.hmo-bridge-note{margin:7px 0!important;padding:8px 10px;border:1px solid color-mix(in srgb,var(--spmt-accent-secondary) 35%,var(--spmt-border));border-radius:10px;background:#ffffff05;color:var(--spmt-muted);font-size:10px;line-height:1.4}.hmo-bridge-note[data-state="error"]{border-color:#ef444477;color:#fecaca}',
+'@media(max-width:560px){.hmo-app[data-surface="shell"] .hmo-stage{padding:8px!important}.hmo-app[data-surface="shell"] .hmo-hero{gap:10px!important;padding:12px!important}.hmo-app[data-surface="shell"] .hmo-hero h1{font-size:clamp(42px,17vw,70px)!important}.hmo-screen-stage video{max-height:44vh!important}.hmo-persona-card{grid-template-columns:auto minmax(0,1fr) auto!important}}'
 ].join('');
 document.head.append(style);
 function setMode(mode){html.dataset.spmtSurfaceMode=mode}
 function send(message){if(window.parent!==window)window.parent.postMessage(message,hostOrigin)}
 function publish(){send({protocol:'spmt.surface',version:1,type:'surface.manifest',manifest})}
 function report(pageId){send({protocol:'spmt.surface',version:1,type:'page.changed',appId:manifest.appId,pageId})}
-function openCommlink(){
-  if(window.parent!==window){send({protocol:'spmt.surface',version:1,type:'workspace.open',appId:manifest.appId,service:'commlink'});return}
-  location.assign('/?app=commlink')
+function roomContext(personaId,displayName){const room=document.querySelector('.hmo-console');return{roomId:room?.dataset.roomId||'',...(personaId?{personaId}:{}),...(displayName?{displayName}:{})}}
+function openCommlink(context={}){
+  const room=roomContext(context.personaId,context.displayName),message={protocol:'spmt.surface',version:1,type:'workspace.open',appId:manifest.appId,service:'commlink',context:{kind:'hearmeout-room',...room}};
+  if(window.parent!==window){send(message);return}
+  const query=new URLSearchParams({app:'commlink'});if(room.roomId)query.set('hmoRoomId',room.roomId);if(room.personaId)query.set('hmoPersonaId',room.personaId);location.assign('/?'+query.toString())
 }
 function showDirectory(){closeWatch();window.HearMeOutMedia?.close();const detail=document.querySelector('[data-hmo-room-detail]');if(detail){detail.hidden=true;detail.replaceChildren()}report('rooms')}
 function closeWatch(){const watch=document.querySelector('[data-hmo-watch-drawer]');if(!watch)return;watch.querySelectorAll('iframe').forEach(frame=>frame.remove());watch.classList.remove('hmo-player-expanded');watch.hidden=true;document.querySelector('[data-hmo-watch-icon]')?.setAttribute('aria-expanded','false')}
@@ -54,12 +61,47 @@ window.addEventListener('hmo:close-watch',closeWatch);
 window.addEventListener('hmo:open-watch',event=>openWatch(event.detail));
 function makeIcon(label,title,hook){const button=document.createElement('button');button.type='button';button.className='hmo-icon';button.textContent=label;button.title=title;button.setAttribute('aria-label',title);button.dataset[hook]='1';return button}
 function enhancePersonaControls(room){
-  for(const textarea of room.querySelectorAll('textarea[placeholder^="Message "]')){
-    const wrap=textarea.parentElement;if(!wrap)continue;
-    const send=[...wrap.querySelectorAll('button')].find(button=>/^Call\s+/.test(button.textContent||''));
-    if(send){send.textContent='Send';send.setAttribute('aria-label','Send message to persona')}
-    if(!textarea.dataset.hmoEnterSend){textarea.dataset.hmoEnterSend='1';textarea.addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.shiftKey&&!event.isComposing){event.preventDefault();send?.click()}})}
+  const wrappers=[...room.querySelectorAll('.hmo-persona-actions')];
+  for(const wrap of wrappers){
+    const rows=[...wrap.querySelectorAll('.hmo-personas .hmo-persona')],talks=[...wrap.querySelectorAll('button')].filter(button=>/^Talk to\s+/.test(button.textContent||''));
+    const textareas=[...wrap.querySelectorAll('textarea[placeholder^="Message "]')],sends=[...wrap.querySelectorAll('button')].filter(button=>/^Call\s+|^Send$/.test(button.textContent||''));
+    textareas.forEach(node=>node.hidden=true);sends.forEach(node=>{node.hidden=true;node.setAttribute('aria-hidden','true')});
+    rows.forEach((row,index)=>{
+      if(row.dataset.hmoCardEnhanced)return;row.dataset.hmoCardEnhanced='1';row.classList.add('hmo-persona-card');
+      const personaId=row.dataset.hmoPersonaId||'',name=(row.querySelector('span')?.textContent||('Persona '+(index+1))).replace(/\s+·\s+connected$/,'').replace(/^🤖\s*/,''),existingImg=row.querySelector('.hmo-persona-avatar');
+      const oldName=row.querySelector('span');if(oldName)oldName.remove();
+      const remove=[...row.querySelectorAll('.hmo-button')].find(button=>/Remove/i.test(button.textContent||''));if(remove)remove.hidden=true;
+      const copy=document.createElement('div');copy.className='hmo-persona-card-copy';const strong=document.createElement('strong');strong.textContent=name;const small=document.createElement('small');small.textContent='Persona · room participant';copy.append(strong,small);
+      const actions=document.createElement('div');actions.className='hmo-persona-card-actions';
+      const chat=makeIcon('💬','Message '+name+' in Commlink','hmoPersonaCommlink');chat.addEventListener('click',()=>openCommlink({personaId,displayName:name}));actions.append(chat);
+      const talk=talks[index];if(talk){talk.classList.add('hmo-talk-button');const mic=makeIcon('🎙','Talk to '+name,'hmoPersonaTalk');mic.addEventListener('click',()=>talk.click());actions.append(mic)}
+      if(remove){const del=makeIcon('×','Remove '+name+' from room','hmoPersonaRemove');del.addEventListener('click',()=>remove.click());actions.append(del)}
+      if(existingImg)existingImg.after(copy);else{const avatar=document.createElement('div');avatar.className='hmo-persona-avatar';avatar.textContent='🤖';avatar.style.display='grid';avatar.style.placeItems='center';row.prepend(avatar);avatar.after(copy)}
+      row.append(actions);
+    });
   }
+}
+function relocateRoomTools(own,icons){
+  const menu=own.querySelector('.hmo-person-menu');if(!menu)return;
+  let tools=own.parentElement?.querySelector(':scope > .hmo-room-tools');
+  if(!tools){tools=document.createElement('div');tools.className='hmo-room-tools';tools.hidden=true;while(menu.firstChild)tools.append(menu.firstChild);own.after(tools);menu.remove()}
+  const more=[...icons.querySelectorAll('.hmo-icon')].find(button=>button.getAttribute('aria-label')==='More');
+  if(more&&!more.dataset.hmoRoomTools){more.dataset.hmoRoomTools='1';more.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();tools.hidden=!tools.hidden;if(!tools.hidden)tools.scrollIntoView({block:'nearest'})},{capture:true})}
+}
+function enhanceBridge(room){
+  const guild=room.querySelector('select[aria-label="Discord server"]'),channel=room.querySelector('select[aria-label="Discord voice channel"]');if(!guild||!channel)return;
+  const panel=guild.closest('.hmo-media-panel');if(!panel)return;
+  let note=panel.querySelector('.hmo-bridge-note');if(!note){note=document.createElement('p');note.className='hmo-bridge-note';guild.before(note)}
+  const sync=()=>{
+    const all=[...guild.options].filter(option=>option.value),live=all.filter(option=>!/^Shadow\s*·/i.test(option.textContent||''));
+    for(const option of all)if(/^Shadow\s*·/i.test(option.textContent||''))option.disabled=true;
+    if(live.length&&(!guild.value||/^Shadow\s*·/i.test(guild.selectedOptions[0]?.textContent||''))){guild.value=live[0].value;guild.dispatchEvent(new Event('change',{bubbles:true}));note.textContent='Using a live Discord server. Choose a real voice or stage channel below.';note.dataset.state='ready'}
+    else if(!live.length&&all.length){note.textContent='Only preview/shadow Discord destinations are available here. A voice bridge needs a real Discord server from your linked Discord Stream Hub connection.';note.dataset.state='error'}
+    else if(!all.length){note.textContent='No Discord servers are available yet. Link the Discord bot in Discord Stream Hub, then reopen Bridge.';note.dataset.state='error'}
+    const shadow=/^Shadow\s*·/i.test(guild.selectedOptions[0]?.textContent||''),connect=[...panel.querySelectorAll('button')].find(button=>/^(Connect|Reconnect)$/.test(button.textContent||''));if(connect)connect.disabled=shadow||!guild.value||!channel.value;
+  };
+  if(!guild.dataset.hmoBridgeEnhanced){guild.dataset.hmoBridgeEnhanced='1';guild.addEventListener('change',()=>setTimeout(sync,0));channel.addEventListener('change',sync)}
+  sync();
 }
 function enhanceRoom(){
   const room=document.querySelector('.hmo-console');if(!room)return;
@@ -69,13 +111,13 @@ function enhanceRoom(){
   const direct=[...grid.children];
   const people=direct.find(node=>node.classList?.contains('hmo-pane')&&node.querySelector('h4')?.textContent?.trim()==='People')||grid.querySelector('.hmo-pane');
   if(!people)return;
-  enhancePersonaControls(room);
+  enhancePersonaControls(room);enhanceBridge(room);
   const own=people.querySelector('[data-mic-button]')?.closest('.hmo-person');if(!own)return;
   const icons=own.querySelector('.hmo-person-icons');if(!icons)return;
   const more=[...icons.querySelectorAll('.hmo-icon')].find(button=>button.getAttribute('aria-label')==='More')||null;
   if(!own.querySelector('[data-hmo-commlink-icon]')){
-    const chat=makeIcon('\u{1f4ac}','Open Commlink','hmoCommlinkIcon');
-    chat.addEventListener('click',openCommlink);
+    const chat=makeIcon('💬','Open Commlink','hmoCommlinkIcon');
+    chat.addEventListener('click',()=>openCommlink());
     icons.insertBefore(chat,more);
   }
   let watch=own.querySelector('[data-hmo-watch-drawer]');
@@ -84,7 +126,7 @@ function enhanceRoom(){
     if(candidate){candidate.dataset.hmoWatchDrawer='1';candidate.classList.add('hmo-watch-drawer');candidate.hidden=true;own.append(candidate);watch=candidate}
   }
   if(watch&&!own.querySelector('[data-hmo-watch-icon]')){
-    const watchButton=makeIcon('\u{1f3ac}','Watch party player','hmoWatchIcon');
+    const watchButton=makeIcon('🎬','Watch party player','hmoWatchIcon');
     watchButton.setAttribute('aria-expanded','false');
     watchButton.addEventListener('click',()=>{if(watch.hidden)openWatch();else closeWatch()});
     const close=makeIcon('×','Close watch party player','hmoCloseWatch');close.addEventListener('click',closeWatch);watch.querySelector('header')?.append(close);
@@ -92,32 +134,28 @@ function enhanceRoom(){
   }
   const bots=people.querySelector('[data-bot-drawer]');
   if(bots&&!own.querySelector('[data-hmo-bots-icon]')){
-    const botButton=makeIcon('\u{1f916}','Bots & personas','hmoBotsIcon');
+    const botButton=makeIcon('🤖','Bots & personas','hmoBotsIcon');
     botButton.addEventListener('click',()=>{
       bots.hidden=!bots.hidden;
       if(!bots.hidden){
         const personaTab=[...bots.querySelectorAll('.hmo-bot-tabs .hmo-button')].find(button=>button.textContent?.includes('Personas'));
         personaTab?.click();
+        enhancePersonaControls(room);enhanceBridge(room);
         bots.scrollIntoView({block:'nearest'});
       }
     });
     icons.insertBefore(botButton,more);
   }
-  const menu=own.querySelector('.hmo-person-menu');
-  if(menu){
-    for(const button of [...menu.querySelectorAll('.hmo-button')]){
-      if(button.textContent?.includes('Open Commlink')||button.textContent?.includes('Bots & personas'))button.remove();
-    }
-  }
+  relocateRoomTools(own,icons);
 }
 function relabel(){
   const mark=document.querySelector('.hmo-mark span');if(mark)mark.textContent='VOICE - COMMLINK - WATCH - ROOMS';
-  const hero=document.querySelector('.hmo-hero p');if(hero)hero.textContent='Join a voice room, keep chat in Commlink, watch together, and open audio, watch, bot, or moderation controls only when you need them.';
+  const hero=document.querySelector('.hmo-hero p');if(hero)hero.textContent='Join a voice room, keep chat in Commlink, watch together, and open audio, watch, bot, bridge, or moderation controls only when you need them.';
   const features=[...document.querySelectorAll('.hmo-feature-strip span')];
-  if(features[0])features[0].textContent='\u{1f399} Voice';
-  if(features[1])features[1].textContent='\u{1f4ac} Commlink';
-  if(features[2])features[2].textContent='\u{1f3ac} Watch together';
-  if(features[3])features[3].textContent='\u{1f465} Participant cards';
+  if(features[0])features[0].textContent='🎙 Voice';
+  if(features[1])features[1].textContent='💬 Commlink';
+  if(features[2])features[2].textContent='🎬 Watch together';
+  if(features[3])features[3].textContent='👥 Participant cards';
 }
 window.addEventListener('message',event=>{
   const message=event.data;
