@@ -28,7 +28,7 @@ export class HearMeOutPlaybackSource {
         // Complete two-second segments cross the worker, Apollo and sometimes
         // Discord's proxy. Keep eight seconds of headroom for a delayed segment.
         // The encoder remains the clock; every window stays at normal speed.
-        ...(broadcast ? { startPosition: -1, lowLatencyMode: false, initialLiveManifestSize: 4, liveSyncDurationCount: 4, liveMaxLatencyDurationCount: Infinity, maxLiveSyncPlaybackRate: 1 } : {}),
+        ...(broadcast ? { startPosition: -1, lowLatencyMode: false, initialLiveManifestSize: 2, liveSyncDurationCount: 3, liveMaxLatencyDurationCount: Infinity, maxLiveSyncPlaybackRate: 1 } : {}),
       });
       hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, () => this.tracks(hls.audioTracks.map((track, index) => ({ index, name: track.name || track.lang || `Audio ${index + 1}` })), hls.audioTrack));
       hls.on(Hls.Events.AUDIO_TRACK_SWITCHED, (_event, data) => { if (this.audio) this.audio.value = String(data.id); });

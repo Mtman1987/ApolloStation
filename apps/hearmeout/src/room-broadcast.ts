@@ -14,7 +14,7 @@ export type HearMeOutBroadcastRuntime = Pick<SqliteHearMeOutRoomMediaRuntime,'br
 
 export const HEARMEOUT_BROADCAST_PROTOCOLS='http,https,httpproxy,tcp,tls,crypto';
 
-type Run={session:HearMeOutMediaSessionV1;cacheKey:string;signature:string;owner:string;process?:ChildProcess;pending?:Promise<void>;retryAt:number;failed:boolean;started:number;outputEpoch?:string};
+type Run={session:HearMeOutMediaSessionV1;cacheKey:string;signature:string;owner:string;process?:ChildProcess;pending?:Promise<void>;retryAt:number;failed:boolean;started:number;outputEpoch?:string;readyEpoch?:string};
 export interface HearMeOutRoomBroadcastOptions {ffmpegBinary:string;ffprobeBinary:string;cachePath:string;spmtOrigin:string;lockBinary?:string;preparedMedia?:HearMeOutPreparedMediaOptions;onDiagnostic?:(value:{phase:string;message:string})=>void;}
 
 /** HMO's playout worker for each supplied program. Browsers read the output of this
@@ -41,13 +41,19 @@ export class HearMeOutRoomBroadcast {
     const session=this.rooms.getSession(tenantId,roomId,lane);if(!session.current)return false;
     const cacheKey=this.cacheKey(session),run=this.runs.get(cacheKey);
     if(!run?.process||run.signature!==signatureFor(session)||!run.outputEpoch)return false;
+    // FFmpeg replaces live playlists in place. Once this encoder epoch has
+    // produced playable media, do not flicker back to "preparing" while a
+    // concurrent request catches the playlist between writes.
+    if(run.readyEpoch===run.outputEpoch)return true;
     const dir=join(this.options.cachePath,cacheKey),master=join(dir,'index.m3u8');
     try{
       if(!existsSync(master))return false;
       const masterBody=readFileSync(master,'utf8'),variant=masterBody.split(/\r?\n/).map(line=>line.trim()).find(line=>line&&!line.startsWith('#'));
       if(!variant||!/^[A-Za-z0-9_-]+\.m3u8$/.test(variant))return false;
       const variantBody=readFileSync(join(dir,variant),'utf8'),segments=variantBody.split(/\r?\n/).map(line=>line.trim()).filter(line=>line&&!line.startsWith('#'));
-      return segments.some(segment=>segment.startsWith(run.outputEpoch+'_')&&/^[A-Za-z0-9_-]+\.ts$/.test(segment)&&existsSync(join(dir,segment)));
+      const ready=segments.some(segment=>segment.startsWith(run.outputEpoch+'_')&&/^[A-Za-z0-9_-]+\.ts$/.test(segment)&&existsSync(join(dir,segment)));
+      if(ready)run.readyEpoch=run.outputEpoch;
+      return ready;
     }catch{return false;}
   }
   browserCache(videoId:string,track?:'audio'|'video',body?:Buffer){if(!this.prepared)throw Error('Browser media caching is not configured');return this.prepared.browserCache(videoId,track,body);}
@@ -60,7 +66,7 @@ export class HearMeOutRoomBroadcast {
       if(!this.rooms.claimBroadcast(session.tenantId,session.roomId,session.lane,this.owner)){if(run){void this.stop(run);this.runs.delete(id);}continue;}
       if(!run){run={session,cacheKey:id,signature,owner:this.owner,retryAt:0,failed:false,started:0};this.runs.set(id,run);}
       if(run.pending)continue;
-      if(run.signature!==signature){run.session=session;run.signature=signature;run.retryAt=0;run.failed=false;delete run.outputEpoch;}
+      if(run.signature!==signature){run.session=session;run.signature=signature;run.retryAt=0;run.failed=false;delete run.outputEpoch;delete run.readyEpoch;}
       if(session.playback.status!=='playing'){if(run.process)void this.stop(run);continue;}
       if(Date.now()<run.retryAt)continue;
       // Signature is stored independently of ffmpeg argv; it contains no URL.
@@ -94,7 +100,7 @@ export class HearMeOutRoomBroadcast {
     // Each restart gets distinct segment names and replaces the playlists. Do
     // not append the prior request's playlist: every window reloads when the
     // shared request changes, and appended entries can replay the previous song.
-    const epoch=Date.now().toString(36)+'-'+randomUUID().slice(0,8),position=Math.max(0,latest.playback.position+(Date.now()-Date.parse(latest.playback.updatedAt))/1000),variants=buildHearMeOutXtreamVariantMap(media);run.outputEpoch=epoch;
+    const epoch=Date.now().toString(36)+'-'+randomUUID().slice(0,8),elapsed=Math.max(0,latest.playback.position+(Date.now()-Date.parse(latest.playback.updatedAt))/1000),position=run.started===0?0:elapsed,variants=buildHearMeOutXtreamVariantMap(media);run.outputEpoch=epoch;delete run.readyEpoch;
     const hlsSource=item.type!=='live'&&/\.m3u8$/i.test(source.pathname),seek=item.type==='live'||position<.1?[]:['-ss',String(position)];
     const inputArgs=(url:URL,hls=false)=>['-protocol_whitelist',HEARMEOUT_BROADCAST_PROTOCOLS,'-rw_timeout','15000000','-re',...(hls?['-live_start_index','0']:[]),...seek,'-i',url.href];
     const args=['-hide_banner','-loglevel','error','-nostdin','-y','-threads','2',...inputArgs(source,hlsSource),...(audioSource?inputArgs(audioSource):[]),...(media.hasVideo?['-map','0:v:0']:[]),...media.audio.flatMap(track=>['-map',track.sourceSpecifier??'0:'+track.sourceIndex]),'-c:v','libx264','-preset','veryfast','-pix_fmt','yuv420p','-force_key_frames','expr:gte(t,n_forced*2)','-c:a','aac','-ac','2','-b:a','128k',...(audioSource?['-shortest']:[]),'-f','hls','-hls_time','2','-hls_list_size','8','-hls_delete_threshold','3','-hls_flags','delete_segments+discont_start+omit_endlist','-var_stream_map',variants,'-master_pl_name','index.m3u8','-hls_segment_filename',join(dir,epoch+'_%v_%06d.ts'),join(dir,'stream_%v.m3u8')];
@@ -105,8 +111,8 @@ export class HearMeOutRoomBroadcast {
     child.stderr?.on('data',bytes=>this.options.onDiagnostic?.({phase:'encoder',message:String(bytes)}));
     (child as ChildProcess & {hmoSignature?:string}).hmoSignature=signature;run.process=child;run.started++;this.startedProcesses++;run.failed=false;
     this.options.onDiagnostic?.({phase:'encoder-start',message:`Broadcast encoder started in ${Date.now()-startedAt}ms`});
-    child.on('error',()=>{if(run.process===child){delete run.process;delete run.outputEpoch;run.failed=true;run.retryAt=Date.now()+5000;}});
-    child.on('exit',code=>{if(run.process!==child)return;delete run.process;delete run.outputEpoch;if(this.closed)return;if(code===0&&this.rooms.getBroadcastIdentity(session.tenantId,session.roomId)&&signatureFor(this.rooms.getSession(session.tenantId,session.roomId,session.lane))===signature)this.rooms.finishBroadcastRequest(session.tenantId,session.roomId,session.lane,session.current!.requestId);else{run.failed=true;run.retryAt=Date.now()+5000;}});
+    child.on('error',()=>{if(run.process===child){delete run.process;delete run.outputEpoch;delete run.readyEpoch;run.failed=true;run.retryAt=Date.now()+5000;}});
+    child.on('exit',code=>{if(run.process!==child)return;delete run.process;delete run.outputEpoch;delete run.readyEpoch;if(this.closed)return;if(code===0&&this.rooms.getBroadcastIdentity(session.tenantId,session.roomId)&&signatureFor(this.rooms.getSession(session.tenantId,session.roomId,session.lane))===signature)this.rooms.finishBroadcastRequest(session.tenantId,session.roomId,session.lane,session.current!.requestId);else{run.failed=true;run.retryAt=Date.now()+5000;}});
     void this.prune(dir);
   }
   private stop(run:Run){const child=run.process;if(!child)return Promise.resolve();delete run.process;const done=new Promise<void>(resolve=>{const timer=setTimeout(()=>child.kill('SIGKILL'),2000);child.once('exit',()=>{clearTimeout(timer);resolve();});if(child.exitCode!==null||child.signalCode!==null){clearTimeout(timer);resolve();}else child.kill('SIGTERM');});this.stopping.add(done);void done.finally(()=>this.stopping.delete(done));return done;}

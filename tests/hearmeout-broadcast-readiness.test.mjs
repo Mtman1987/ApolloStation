@@ -23,6 +23,10 @@ test('broadcast readiness waits for a real current-epoch segment instead of send
   assert.equal(broadcast.ready(session.tenantId,session.roomId,session.lane),false);
   writeFileSync(join(dir,'current-epoch_0_000001.ts'),'media');
   assert.equal(broadcast.ready(session.tenantId,session.roomId,session.lane),true);
+  // Readiness is latched for this encoder epoch so an in-place FFmpeg playlist
+  // rewrite cannot make every connected viewer clear and reload its player.
+  writeFileSync(join(dir,'stream_0.m3u8'),'');
+  assert.equal(broadcast.ready(session.tenantId,session.roomId,session.lane),true);
   const playable=response();await broadcast.serve(session.tenantId,session.roomId,session.lane,'index.m3u8',playable);assert.equal(playable.status,200);assert.match(String(playable.body),/#EXTM3U/);
 });
 
@@ -32,4 +36,5 @@ test('encoder replaces the prior request playlist instead of appending stale son
   const source=readFileSync(new URL('../apps/hearmeout/src/room-broadcast.ts',import.meta.url),'utf8');
   assert.match(source,/delete_segments\+discont_start\+omit_endlist/);
   assert.doesNotMatch(source,/append_list/);
+  assert.match(source,/position=run\.started===0\?0:elapsed/);
 });

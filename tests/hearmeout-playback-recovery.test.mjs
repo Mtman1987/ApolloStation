@@ -18,6 +18,8 @@ test('network and decoder recovery budgets remain independent in the player', as
   assert.match(source, /mediaRecoveryAttempts/);
   assert.doesNotMatch(source, /private recoveryAttempts/);
   assert.match(source, /resetRecoveryAttempts\(\)/);
+  assert.match(source, /initialLiveManifestSize: 2/);
+  assert.match(source, /liveSyncDurationCount: 3/);
 });
 
 test('shared viewers correct meaningful live drift without continuously seeking', () => {
