@@ -206,7 +206,7 @@ export const BROADCAST_WINDOW_JS=String.raw`
     catch(e){if(e.status)pendingRequest=undefined;error.textContent=e.message;status.textContent='Request not completed. You can retry.';}finally{requestInFlight=false;button.disabled=false;}
   });
   document.getElementById('request-form').addEventListener('input',()=>{selectedMovie=undefined;movieResults.replaceChildren();movieResults.hidden=true;});
-  video.addEventListener('canplay',()=>{playbackError.textContent='';void play()});
+  video.addEventListener('canplay',()=>{playbackError.textContent='';source.joinLive();void play()});
   document.addEventListener('visibilitychange',()=>{if(!document.hidden)source.joinLive()});
-  refresh();const timer=setInterval(refresh,1500);window.addEventListener('pagehide',()=>{disposed=true;clearInterval(timer);source.clear()});
+  refresh();const timer=setInterval(refresh,1500),syncTimer=setInterval(()=>{if(!document.hidden)source.syncLive()},5000);window.addEventListener('pagehide',()=>{disposed=true;clearInterval(timer);clearInterval(syncTimer);source.clear()});
 })();`;

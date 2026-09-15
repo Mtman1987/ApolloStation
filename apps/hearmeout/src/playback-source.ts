@@ -56,6 +56,13 @@ export class HearMeOutPlaybackSource {
   }
   retry() { this.load(this.source, Boolean(this.hls), this.broadcast); }
   joinLive() { if (!this.broadcast) return; const position=this.hls?.liveSyncPosition ?? (this.media.seekable.length ? Math.max(this.media.seekable.start(0),this.media.seekable.end(this.media.seekable.length-1)-8) : undefined); if (position !== undefined && Number.isFinite(position)) this.media.currentTime=position; }
+  syncLive(maximumDriftSeconds = 4) {
+    if (!this.broadcast || this.media.readyState < 2) return false;
+    const live = this.hls?.liveSyncPosition ?? (this.media.seekable.length ? Math.max(this.media.seekable.start(0), this.media.seekable.end(this.media.seekable.length - 1) - 8) : undefined);
+    const target = hearMeOutLiveSyncTarget(this.media.currentTime, live, maximumDriftSeconds);
+    if (target === undefined) return false;
+    this.media.currentTime = target; return true;
+  }
   clear() {
     clearTimeout(this.recoveryTimer); this.recoveryTimer = undefined; this.recoveryAttempts = 0;
     this.hls?.destroy(); this.hls = undefined;
@@ -80,6 +87,10 @@ export function hearMeOutHlsRecoveryAction(type: string, attempts: number): 'ret
   if (type === Hls.ErrorTypes.NETWORK_ERROR && attempts < 6) return 'retry-network';
   if (type === Hls.ErrorTypes.MEDIA_ERROR && attempts < 3) return 'recover-media';
   return 'stop';
+}
+export function hearMeOutLiveSyncTarget(current: number, live: number | undefined, maximumDriftSeconds = 4): number | undefined {
+  if (!Number.isFinite(current) || live === undefined || !Number.isFinite(live) || !Number.isFinite(maximumDriftSeconds) || maximumDriftSeconds <= 0) return undefined;
+  return Math.abs(live - current) > maximumDriftSeconds ? live : undefined;
 }
 interface NativeTracks extends EventTarget { length: number; [index: number]: { enabled: boolean; label: string; language: string }; }
 if (typeof window !== 'undefined') Object.assign(window, { HearMeOutPlaybackSource });
