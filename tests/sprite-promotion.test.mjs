@@ -7,13 +7,15 @@ const workflowPath = new URL("../.github/workflows/sprite-promotion.yml", import
 const deployScriptPath = new URL("../scripts/sprites/deploy-sandbox-release.sh", import.meta.url);
 const networkPolicyPath = new URL("../sandbox/sprites/network-policy.json", import.meta.url);
 
-test("A failed public probe fails promotion without closing the approved test entry", async () => {
+test("public probing is isolated from the completed promotion mutation", async () => {
   const workflow = await readFile(workflowPath, "utf8");
-  const step = workflow.split("      - name: Open the verified Apollo test entry\n")[1].split("      - name:")[0];
+  const step = workflow.split("      - name: Open the Apollo test entry\n")[1].split("      - name:")[0];
   const script = step.split("        run: |\n")[1].split("\n").map(line => line.replace(/^          /, "")).join("\n");
-  const result = spawnSync("bash", ["--noprofile", "--norc", "-c", 'sprite(){ printf "%s\\n" "$*"; }; node(){ return 1; };\n'+script], {encoding:"utf8",env:{...process.env,SPRITE_ORG:"testing-968",SPRITE_NAME:"web-terminal",SPRITE_PUBLIC_URL:"https://test.example",BUILD_SHA:"test-build"}});
-  assert.equal(result.status, 1, result.stderr);
+  const result = spawnSync("bash", ["--noprofile", "--norc", "-c", 'sprite(){ printf "%s\\n" "$*"; }; node(){ echo "public probe must not run during promotion" >&2; return 1; };\n'+script], {encoding:"utf8",env:{...process.env,SPRITE_ORG:"testing-968",SPRITE_NAME:"web-terminal",SPRITE_PUBLIC_URL:"https://test.example",BUILD_SHA:"test-build"}});
+  assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stdout.trim(), "config update -o testing-968 -s web-terminal --url-auth public");
+  assert.match(workflow, /^  release-verification:\n    name: Verify promoted public entry\n    needs: release$/m);
+  assert.match(workflow, /Verify the released Apollo test entry\n        run: node scripts\/sprites\/verify-hearmeout-broadcast-test\.mjs/);
 });
 
 test("Sprite promotion keeps review and release targets isolated", async () => {
