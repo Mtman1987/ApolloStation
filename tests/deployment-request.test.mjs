@@ -21,3 +21,8 @@ test('HLS browser verification activates auto-hiding viewer controls without poi
  assert.match(source,/const activate=locator=>locator\.evaluate\(button=>button\.click\(\)\)/);
  assert.doesNotMatch(source,/getByRole\('button',\{name:'Enable sound',exact:true\}\)\.click\(\)/);
 });
+test('room-window browser verification uses a real touch media profile',()=>{
+ const source=readFileSync(new URL('../scripts/test-hmo-room-window-browser.mjs',import.meta.url),'utf8');
+ assert.match(source,/viewport:\{width:390,height:844\},hasTouch:true,isMobile:true/);
+ assert.match(source,/@media\(hover:none\)/);
+});

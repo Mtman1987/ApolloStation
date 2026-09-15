@@ -35,7 +35,11 @@ try{
  const host=createAppFrameHost({frame,allowedOrigin:origin,launch:{schemaVersion:1,appId:'hearmeout',tenantId:'tenant',surfaceMode:'shell',launchId:'window-test',requestedScopes:[]},getState:()=>({authenticated:true,userId:'owner',tenantId:'tenant',grants:[],runtimeState:'ready',layout:{schemaVersion:1,availableWidth:390,availableHeight:844,headerHeight:0,safeTop:0,safeRight:0,safeBottom:0,safeLeft:0,measuredAt:new Date().toISOString()}})});host.start();setInterval(()=>host.sync(),1000);
  </script>`);});attachHearMeOutRtcProxy(shell,origin);await new Promise(r=>shell.listen(0,'127.0.0.1',r));
  browser=await chromium.launch({executablePath:process.env.HMO_TEST_BROWSER_PATH||chromium.executablePath(),headless:true,args:['--no-sandbox','--disable-dev-shm-usage','--autoplay-policy=no-user-gesture-required']});
- const segments=[];const page=await browser.newPage({viewport:{width:390,height:844}});page.on('request',r=>{const path=new URL(r.url()).pathname;if(r.method()==='POST'&&path==='/api/watch/broadcast/requests'){requestPosts++;requestKeys.push(r.headers()['idempotency-key']);}const match=path.match(/_video_(\d+)\.ts$/);if(match)segments.push(Number(match[1]));});page.on('pageerror',e=>errors.push(e.message));page.on('dialog',d=>d.accept());
+ // This is the mobile room contract. A narrow desktop page still advertises
+ // hover support, which intentionally keeps the viewer controls auto-hidden
+ // and makes Playwright race the video overlay. Match the touch phone that the
+ // contract represents so @media(hover:none) keeps those controls interactive.
+ const segments=[];const page=await browser.newPage({viewport:{width:390,height:844},hasTouch:true,isMobile:true});page.on('request',r=>{const path=new URL(r.url()).pathname;if(r.method()==='POST'&&path==='/api/watch/broadcast/requests'){requestPosts++;requestKeys.push(r.headers()['idempotency-key']);}const match=path.match(/_video_(\d+)\.ts$/);if(match)segments.push(Number(match[1]));});page.on('pageerror',e=>errors.push(e.message));page.on('dialog',d=>d.accept());
  await page.goto('http://127.0.0.1:'+shell.address().port+'/test-shell');
  const app=page.frameLocator('[data-shell-app-frame]');
  await app.getByRole('button',{name:'Browse Rooms',exact:true}).waitFor();
