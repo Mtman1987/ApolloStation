@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { spawn } from "node:child_process";
+import { startRecoverableService } from "./recoverable-service.mjs";
 import { hearMeOutCutoverEnvironment } from "./hearmeout-cutover-config.mjs";
 
 const argumentsMap = parseArguments(process.argv.slice(2));
@@ -102,6 +103,7 @@ const sandboxManifests = [
   ...(candidateManifest ? [candidateManifest] : []),
 ];
 const children = new Set();
+const recoverableServices = new Set();
 let stopping = false;
 const stellarWorkerCredential = llmBinary ? randomBytes(32).toString("base64url") : undefined;
 const chatGatewayCredential = randomBytes(32).toString("base64url");
@@ -161,10 +163,10 @@ const spmtOrigin = `http://127.0.0.1:${spmtPort}`;
 
 const dshWeb = start("Discord Stream Hub web", "apps/discord-stream-hub/dist/web-server.js", { ...common, ...liveReadEnvironment, SPMT_ORIGIN: spmtOrigin, DSH_DATABASE_PATH: resolve(dataRoot, "discord-stream-hub-live-sandbox.sqlite"), DSH_RUNTIME_CONFIG_PATH: resolve("config/discord-stream-hub-runtime.sandbox.v1.json"), DSH_WORKER_CREDENTIAL: dshWorkerCredential, HOST: "127.0.0.1", PORT: String(dshWebPort) });
 const streamweaverWeb = start("StreamWeaver web", "apps/streamweaver/dist/web-server.js", { ...common, ...(flowOpenAiKey ? { OPENAI_API_KEY:flowOpenAiKey, SPMT_PRIVATE_FLOW_OPENAI_ENABLED:"1", STREAMWEAVER_PRIVATE_AI_DRAFTS_ENABLED: "1" } : {}), ...(avatarAiEnabled?{STREAMWEAVER_AVATAR_BUILD_ENABLED:"1"}:{}), ...liveReadEnvironment, SPMT_ORIGIN: spmtOrigin, STREAMWEAVER_DATABASE_PATH: resolve(dataRoot, "streamweaver-provider-sandbox.sqlite"), STREAMWEAVER_WORKER_CREDENTIAL: streamweaverWorkerCredential, CHAT_GATEWAY_CONNECTIONS: "[]", HOST: "127.0.0.1", PORT: String(streamweaverWebPort) });
-const hearMeOutWeb = start("HearMeOut web", "apps/hearmeout/dist/web-server.js", { ...common, ...liveReadEnvironment, SPMT_ORIGIN: spmtOrigin, ...Object.fromEntries(["LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET"].filter(key => process.env[key]).map(key => [key, process.env[key]])), HEARMEOUT_ROOM_DATABASE_PATH: resolve(dataRoot, "hearmeout-room-sandbox.sqlite"), HEARMEOUT_WORKER_CREDENTIAL: hearMeOutWorkerCredential, ...hearMeOutCutover, HOST: "127.0.0.1", PORT: String(hearMeOutWebPort) });
+const hearMeOutWeb = startRecoverable("HearMeOut web", "apps/hearmeout/dist/web-server.js", { ...common, ...liveReadEnvironment, SPMT_ORIGIN: spmtOrigin, ...Object.fromEntries(["LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET"].filter(key => process.env[key]).map(key => [key, process.env[key]])), HEARMEOUT_ROOM_DATABASE_PATH: resolve(dataRoot, "hearmeout-room-sandbox.sqlite"), HEARMEOUT_WORKER_CREDENTIAL: hearMeOutWorkerCredential, ...hearMeOutCutover, HOST: "127.0.0.1", PORT: String(hearMeOutWebPort) });
 const mountainViewWeb = start("MountainView web", "apps/mountainview/dist/web-server.js", { ...common, ...liveReadEnvironment, SPMT_ORIGIN: spmtOrigin, MOUNTAINVIEW_DATABASE_PATH: resolve(dataRoot, "mountainview-green-sandbox.sqlite"), HOST: "127.0.0.1", PORT: String(mountainViewWebPort) });
 const companionWeb = start("Companion web", "apps/companion/dist/web-server.js", { ...common, ...liveReadEnvironment, SPMT_ORIGIN: spmtOrigin, HOST: "127.0.0.1", PORT: String(companionWebPort) });
-for (const child of [dshWeb, streamweaverWeb, hearMeOutWeb, mountainViewWeb, companionWeb]) child.once("exit", (code, signal) => { if (!stopping) void stop(signal === "SIGINT" || signal === "SIGTERM" ? 0 : code ?? (signal ? 1 : 0)); });
+for (const child of [dshWeb, streamweaverWeb, mountainViewWeb, companionWeb]) child.once("exit", (code, signal) => { if (!stopping) void stop(signal === "SIGINT" || signal === "SIGTERM" ? 0 : code ?? (signal ? 1 : 0)); });
 await Promise.all([
   waitForUrl(dshWeb, `http://127.0.0.1:${dshWebPort}/health/ready`, "Discord Stream Hub web"),
   waitForUrl(streamweaverWeb, `http://127.0.0.1:${streamweaverWebPort}/health/ready`, "StreamWeaver web"),
@@ -198,7 +200,7 @@ const dsh = start("Discord Stream Hub live worker", "apps/discord-stream-hub/dis
   DSH_WORKER_CREDENTIAL: dshWorkerCredential,
 });
 dsh.once("exit", (code, signal) => { if (!stopping) void stop(signal === "SIGINT" || signal === "SIGTERM" ? 0 : code ?? (signal ? 1 : 0)); });
-const hearMeOut = start("HearMeOut media worker", "apps/hearmeout/dist/execution-worker-start.js", {
+const hearMeOut = startRecoverable("HearMeOut media worker", "apps/hearmeout/dist/execution-worker-start.js", {
   ...common,
   SPMT_ORIGIN: spmtOrigin,
   HEARMEOUT_DATABASE_PATH: resolve(dataRoot, "hearmeout-runtime-sandbox.sqlite"),
@@ -208,7 +210,6 @@ const hearMeOut = start("HearMeOut media worker", "apps/hearmeout/dist/execution
   HEARMEOUT_EXECUTION_TARGET: "fly",
   ...hearMeOutMediaEnvironment,
 });
-hearMeOut.once("exit", (code, signal) => { if (!stopping) void stop(signal === "SIGINT" || signal === "SIGTERM" ? 0 : code ?? (signal ? 1 : 0)); });
 if (stellarWorkerCredential) {
   const stellar = start("Stellar Core worker", "apps/stellar-core/dist/worker-start.js", {
     ...common,
@@ -264,6 +265,14 @@ process.on("SIGTERM", () => void stop(0));
 await new Promise((done) => web.once("exit", (code, signal) => { if (!stopping) void stop(signal === "SIGINT" || signal === "SIGTERM" ? 0 : code ?? (signal ? 1 : 0)).then(done); else done(); }));
 }
 
+function startRecoverable(label, script, environment) {
+  const service = startRecoverableService({label, command:process.execPath, args:[script], cwd:process.cwd(), env:environment,
+    onChild(child) { children.add(child); child.once("exit", () => children.delete(child)); child.once("error", () => children.delete(child)); },
+  });
+  recoverableServices.add(service);
+  return service;
+}
+
 function start(label, script, environment) {
   return startCommand(label, process.execPath, [script], environment);
 }
@@ -293,12 +302,14 @@ async function waitForUrl(child, url, label, timeoutMs = 15_000) {
 async function stop(code) {
   if (stopping) return;
   stopping = true;
+  const recoveringStops = [...recoverableServices].map(service => service.close());
   for (const child of children) child.kill("SIGTERM");
   await Promise.race([
     Promise.all([...children].map((child) => child.exitCode !== null ? Promise.resolve() : new Promise((done) => child.once("exit", done)))),
     new Promise((done) => setTimeout(done, 3000)),
   ]);
   for (const child of children) child.kill("SIGKILL");
+  await Promise.allSettled(recoveringStops);
   process.exitCode = code;
 }
 

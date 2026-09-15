@@ -7,10 +7,10 @@ import type {HearMeOutSuiteMediaResolverV1} from './suite-action-executor.js';
 
 const browserRequests=new Map<string,{videoId:string;until:number}>();
 
-export function broadcastView(program:HearMeOutBroadcastProgram,configured:boolean,ready=false){
+export function broadcastView(program:HearMeOutBroadcastProgram,configured:boolean,ready=false,epoch?:string){
   const session=program.getSession();
   const visible=(request:typeof session.current)=>{if(!request)return request;const metadata=request.item.metadata?Object.fromEntries(Object.entries(request.item.metadata).filter(([key])=>key!=='audioPlaybackUrl')):undefined;return {...request,item:{...request.item,...(metadata?{metadata}:{})}};};
-  return {sessionId:HEARMEOUT_SINGLE_PROGRAM_ID,current:visible(session.current),queue:session.queue.map(request=>visible(request)!),playback:session.playback,revision:session.revision,broadcast:{configured,ready,playbackUrl:'/api/watch/broadcast/index.m3u8'}};
+  return {sessionId:HEARMEOUT_SINGLE_PROGRAM_ID,current:visible(session.current),queue:session.queue.map(request=>visible(request)!),playback:session.playback,revision:session.revision,broadcast:{configured,ready,...(epoch?{epoch}:{}),playbackUrl:'/api/watch/broadcast/index.m3u8'}};
 }
 function guest(request:IncomingMessage,response:ServerResponse){
   let token=String(request.headers.cookie??'').match(/(?:^|;\s*)hmo_viewer=([a-f0-9]{64})(?:;|$)/)?.[1];
@@ -85,7 +85,7 @@ export async function handleHearMeOutBroadcastWindow(request:IncomingMessage,res
     if(entry){guest(request,response);response.writeHead(200,{'content-type':'text/html; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'});response.end(renderHearMeOutBroadcastWindow(clientId));return true;}
     if(feed){if(!worker)return send(response,503,{error:'The broadcast worker is unavailable'});await worker.serve(program.binding.tenantId,HEARMEOUT_SINGLE_PROGRAM_ID,'movie',feed[1]!,response);return true;}
     guest(request,response);
-    return send(response,200,defaults?{sessionId:HEARMEOUT_SINGLE_PROGRAM_ID}:broadcastView(program,Boolean(worker),worker?.ready(program.binding.tenantId,HEARMEOUT_SINGLE_PROGRAM_ID,'movie')??false));
+    return send(response,200,defaults?{sessionId:HEARMEOUT_SINGLE_PROGRAM_ID}:broadcastView(program,Boolean(worker),worker?.ready(program.binding.tenantId,HEARMEOUT_SINGLE_PROGRAM_ID,'movie')??false,worker?.epoch(program.binding.tenantId,HEARMEOUT_SINGLE_PROGRAM_ID,'movie')));
   }catch(error){return send(response,error instanceof SpmtApiError?error.status:400,{error:(error instanceof Error?error.message:String(error)).replace(/((?:token|authorization|secret|password|cookie))\s*[:=]\s*\S+/gi,'$1=[redacted]').slice(0,400)});}
 }
 function send(response:ServerResponse,status:number,value:unknown){response.writeHead(status,{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'});response.end(JSON.stringify(value));return true;}
@@ -98,7 +98,7 @@ export const BROADCAST_WINDOW_JS=String.raw`
   const video=document.getElementById('player'),status=document.getElementById('status'),error=document.getElementById('error'),volume=document.getElementById('volume'),sound=document.getElementById('sound');
   const playbackError=document.getElementById('playback-error'),disconnect=document.getElementById('disconnect'),retry=document.getElementById('retry'),audioToggle=document.getElementById('audio-toggle'),videoToggle=document.getElementById('video-toggle');
   const source=new window.HearMeOutPlaybackSource(video,e=>{playbackError.textContent=e.message},document.getElementById('audio-language'));
-  let level=Number(localStorage.getItem('hmo-broadcast-volume')||0),lastAudible=level||85,sourceUrl='',busy=false,disposed=false,pendingRequest,requestInFlight=false,lastRevision=-1,playPending,selectedMovie,connected=true,currentRequest='',retryAt=0,latestState,controlBusy=false,statePollFailed=false;
+  let level=Number(localStorage.getItem('hmo-broadcast-volume')||0),lastAudible=level||85,sourceUrl='',busy=false,disposed=false,pendingRequest,requestInFlight=false,lastRevision=-1,playPending,selectedMovie,connected=true,currentRequest='',currentEpoch='',retryAt=0,latestState,controlBusy=false,statePollFailed=false;
   let audioEnabled=localStorage.getItem('hmo-broadcast-audio')!=='off',videoEnabled=localStorage.getItem('hmo-broadcast-video')!=='off';
   const movieResults=document.getElementById('movie-results');
   function setVolume(value){level=Math.max(0,Math.min(100,value));if(level)lastAudible=level;video.volume=level/100;volume.value=String(level);sound.textContent=level?'Mute locally':'Enable sound';localStorage.setItem('hmo-broadcast-volume',String(level));}
@@ -140,8 +140,8 @@ export const BROADCAST_WINDOW_JS=String.raw`
     // playlist. Keep the attached player (and its buffered audio) alive during
     // that gap instead of producing a black/audio blip on every state poll.
     if(!state.broadcast.ready){if(!sourceUrl)playbackError.textContent='Preparing the first playable segment…';return;}
-    if(sourceUrl!==state.broadcast.playbackUrl||currentRequest!==state.current.requestId||(source.failed&&Date.now()>=retryAt)){
-      sourceUrl=state.broadcast.playbackUrl;currentRequest=state.current.requestId;retryAt=Date.now()+10000;playbackError.textContent='Connecting to the broadcast…';source.load(sourceUrl,true,true);
+    if(sourceUrl!==state.broadcast.playbackUrl||currentRequest!==state.current.requestId||(state.broadcast.epoch&&currentEpoch!==state.broadcast.epoch)||(source.failed&&Date.now()>=retryAt)){
+      sourceUrl=state.broadcast.playbackUrl;currentRequest=state.current.requestId;currentEpoch=state.broadcast.epoch||'';retryAt=Date.now()+10000;playbackError.textContent='Connecting to the broadcast…';source.load(sourceUrl,true,true);
     }
     if(video.readyState>=2)void play();
   }
@@ -210,7 +210,7 @@ export const BROADCAST_WINDOW_JS=String.raw`
     catch(e){if(e.status)pendingRequest=undefined;error.textContent=e.message;status.textContent='Request not completed. You can retry.';}finally{requestInFlight=false;button.disabled=false;}
   });
   document.getElementById('request-form').addEventListener('input',()=>{selectedMovie=undefined;movieResults.replaceChildren();movieResults.hidden=true;});
-  video.addEventListener('canplay',()=>{playbackError.textContent='';source.joinLive();void play()});
+  video.addEventListener('canplay',()=>{playbackError.textContent='';void play()});
   video.addEventListener('playing',()=>{playbackError.textContent='';});
   document.addEventListener('visibilitychange',()=>{if(!document.hidden)source.joinLive()});
   refresh();const timer=setInterval(refresh,1500),syncTimer=setInterval(()=>{if(!document.hidden)source.syncLive()},5000);window.addEventListener('pagehide',()=>{disposed=true;clearInterval(timer);clearInterval(syncTimer);source.clear()});

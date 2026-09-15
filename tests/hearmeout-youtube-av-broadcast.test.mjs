@@ -28,6 +28,9 @@ test('separate YouTube video and audio inputs become one advancing music broadca
     // split YouTube sources go straight into the one FFmpeg encoder.
     broadcast=new HearMeOutRoomBroadcast(rooms,{ffmpegBinary:mediaBinary('ffmpeg'),ffprobeBinary:process.execPath,cachePath:join(dir,'feed'),spmtOrigin:origin,onDiagnostic:value=>diagnostics.push(value)});await broadcast.listen();
     await waitFor(()=>broadcast.status(),status=>status.active===1&&status.startedProcesses===1);
+    const argv=[...broadcast.runs.values()][0].process.spawnargs;
+    assert.ok(argv.indexOf('-threads:v')>argv.lastIndexOf('-i'),'The encoder thread cap must follow all inputs');
+    assert.equal(argv[argv.indexOf('-threads:v')+1],'2');
     const [cacheDir]=await waitFor(()=>readdir(join(dir,'feed')),entries=>entries.length===1),root=join(dir,'feed',cacheDir);
     const master=await waitFor(async()=>{try{return await readFile(join(root,'index.m3u8'),'utf8')}catch{return''}},body=>body.includes('#EXTM3U')&&body.includes('stream_video.m3u8')&&body.includes('TYPE=AUDIO'));
     assert.match(master,/stream_video\.m3u8/);assert.match(master,/TYPE=AUDIO/);

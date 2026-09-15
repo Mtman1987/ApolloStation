@@ -27,13 +27,23 @@ try{
  await program.request({requesterId:'guest:test',displayName:'Viewer',query:'Cached song',lane:'music',operationId:'cached-song'},{async resolve(){return {itemId:videoId,title:'Cached song',type:'music',source:'fixture',playbackUrl:resolved.audioUrl};}});
  worker=new HearMeOutRoomBroadcast(program,{ffmpegBinary:mediaBinary('ffmpeg'),ffprobeBinary:mediaBinary('ffprobe'),cachePath:join(dir,'broadcast'),spmtOrigin:origin,preparedMedia});await worker.listen();
  browser=await chromium.launch({executablePath:process.env.HMO_TEST_BROWSER_PATH||chromium.executablePath(),headless:true,args:['--no-sandbox','--disable-dev-shm-usage','--autoplay-policy=no-user-gesture-required']});
- const page=await browser.newPage();await page.goto(origin+'/watch');await page.waitForFunction(()=>{const v=document.querySelector('video');return v&&!v.paused&&v.currentTime>.1;});
+ const page=await browser.newPage({hasTouch:true});await page.goto(origin+'/watch');await page.waitForFunction(()=>{const v=document.querySelector('video');return v&&!v.paused&&v.currentTime>.1;});
  assert.equal(await page.locator('video').evaluate(v=>v.videoWidth),0,'The cached fixture has audio only');
  await page.getByRole('button',{name:'Enable sound',exact:true}).click();await delay(2500);
- await page.evaluate(()=>{const v=document.querySelector('video');window.audioMetrics={waiting:0,rates:[],started:v.currentTime};v.addEventListener('waiting',()=>window.audioMetrics.waiting++);v.addEventListener('ratechange',()=>window.audioMetrics.rates.push(v.playbackRate));});
+ await page.evaluate(()=>{const v=document.querySelector('video');window.audioMetrics={waiting:0,seeks:0,rates:[],started:v.currentTime};v.addEventListener('waiting',()=>window.audioMetrics.waiting++);v.addEventListener('seeking',()=>window.audioMetrics.seeks++);v.addEventListener('ratechange',()=>window.audioMetrics.rates.push(v.playbackRate));});
+ // Repeated readiness events must not jump back to the moving live position.
+ await page.evaluate(()=>{const v=document.querySelector('video');for(let i=0;i<3;i++)v.dispatchEvent(new Event('canplay'));});
  let delayed=0;await page.route('**/*.ts',async route=>{if(!delayed++){await delay(5000);}await route.continue().catch(()=>{});});
  await delay(15000);
  const metrics=await page.evaluate(()=>{const v=document.querySelector('video');return {...window.audioMetrics,time:v.currentTime,rate:v.playbackRate,error:v.error?.message??null,buffer:v.buffered.length?v.buffered.end(v.buffered.length-1)-v.currentTime:0};});
- assert.ok(delayed>0);assert.equal(metrics.error,null);assert.equal(metrics.rate,1);assert.ok(metrics.rates.every(rate=>rate===1));assert.equal(worker.status().startedProcesses,1);assert.equal(metrics.waiting,0,JSON.stringify(metrics));assert.ok(metrics.time-metrics.started>=14,JSON.stringify(metrics));
- console.log('PASS: cached audio crosses the existing prepared-media adapter and one real broadcaster; a five-second segment delay causes no rebuffering or playback-rate change.');
+ assert.ok(delayed>0);assert.equal(metrics.error,null);assert.equal(metrics.rate,1);assert.ok(metrics.rates.every(rate=>rate===1));assert.equal(worker.status().startedProcesses,1);assert.equal(metrics.waiting,0,JSON.stringify(metrics));assert.equal(metrics.seeks,0,JSON.stringify(metrics));assert.ok(metrics.time-metrics.started>=14,JSON.stringify(metrics));
+ // A restarted encoder replaces the timeline even when the queued request is unchanged.
+ await page.evaluate(()=>{window.reloaded=0;document.querySelector('video').addEventListener('loadstart',()=>window.reloaded++);});
+ const previousEpoch=(await(await fetch(origin+'/api/watch/broadcast/state')).json()).broadcast.epoch;
+ await worker.close();
+ worker=new HearMeOutRoomBroadcast(program,{ffmpegBinary:mediaBinary('ffmpeg'),ffprobeBinary:mediaBinary('ffprobe'),cachePath:join(dir,'broadcast'),spmtOrigin:origin,preparedMedia});await worker.listen();
+ await page.waitForFunction(()=>window.reloaded>0&&!document.querySelector('video').paused&&document.querySelector('video').currentTime>1);
+ const restarted=(await(await fetch(origin+'/api/watch/broadcast/state')).json()).broadcast.epoch;
+ assert.ok(restarted);assert.notEqual(restarted,previousEpoch);assert.equal(worker.status().startedProcesses,1);
+ console.log('PASS: cached audio crosses the existing prepared-media adapter and one real broadcaster; a five-second segment delay causes no rebuffering, seeks or playback-rate change, and an encoder restart recovers automatically.');
 }finally{await browser?.close();await worker?.close();for(const host of [server,provider])if(host){host.closeAllConnections();await new Promise(resolve=>host.close(resolve));}program.close();await rm(dir,{recursive:true,force:true});}
