@@ -43,7 +43,6 @@ test("HearMeOut drives human and persona speaking indicators from LiveKit partic
   assert.match(runtime, /data-hmo-user-id/);
   assert.match(runtime, /toggleAttribute\('data-speaking',speaking\)/);
 });
-
 test("HearMeOut surface browser bundle parses before room controls initialize", () => {
   const marker = "String.raw`";
   const start = surface.indexOf(marker);
