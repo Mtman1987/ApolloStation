@@ -229,15 +229,11 @@ jobs:
             --env "DEPLOY_ROLE=$DEPLOY_ROLE,BUILD_SHA=$BUILD_SHA,REPOSITORY_URL=$REPOSITORY_URL,SPRITE_PUBLIC_URL=$SPRITE_PUBLIC_URL" \
             -- /bin/bash /tmp/deploy-sandbox-release.sh
 
-      - name: Open the verified Apollo test entry
+      - name: Open the Apollo test entry
         shell: bash
         run: |
           set -euo pipefail
           sprite config update -o "$SPRITE_ORG" -s "$SPRITE_NAME" --url-auth public
-          # This is the owner's approved public test entry. A network failure
-          # must fail verification without changing it into a Sprite login page.
-          # Apollo account/private-room checks still run before and after opening.
-          node scripts/sprites/verify-hearmeout-broadcast-test.mjs "$SPRITE_PUBLIC_URL" "$BUILD_SHA"
 
       - name: Record test deployment
         shell: bash
@@ -248,3 +244,29 @@ jobs:
             echo "- Target: \`$SPRITE_ORG/$SPRITE_NAME\`"
             echo "- URL: $SPRITE_PUBLIC_URL"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  release-verification:
+    name: Verify promoted public entry
+    needs: release
+    if: >-
+      vars.SPRITES_AUTODEPLOY_ENABLED == 'true' &&
+      ((github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+       (github.event_name == 'workflow_dispatch' && inputs.target == 'release'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SPRITE_PUBLIC_URL: https://web-terminal-bvesa.sprites.app
+      BUILD_SHA: ${{ github.sha }}
+    steps:
+      - name: Check out verification tooling
+        uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+
+      # Keep the post-promotion public probe separate from the mutation job.
+      # A probe failure is still visible and blocking, but it cannot make a
+      # completed, internally verified deployment look as though it rolled back.
+      - name: Verify the released Apollo test entry
+        run: node scripts/sprites/verify-hearmeout-broadcast-test.mjs "$SPRITE_PUBLIC_URL" "$BUILD_SHA"
