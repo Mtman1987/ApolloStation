@@ -32,7 +32,6 @@ test("HearMeOut persona text controls send directly without relying on shell enh
   assert.match(runtime, /event\.key==='Enter'.*call\.click\(\)/);
   assert.doesNotMatch(runtime, /const call=button\('Call '/);
 });
-
 test("HearMeOut uses the Discord directory and the native persona room transport", () => {
   assert.match(runtime, /channelKind=voice/);
   assert.match(runtime, /Discord server/);
