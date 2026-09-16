@@ -3,90 +3,39 @@ import test from 'node:test';
 import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {createServer} from 'node:http';
-import {DatabaseSync} from 'node:sqlite';
-import {HearMeOutBroadcastProgram} from '../apps/hearmeout/dist/broadcast-program.js';
-import {createHearMeOutWebServer} from '../apps/hearmeout/dist/web-server-v3.js';
-import {SqliteHearMeOutRoomMediaRuntime} from '../apps/hearmeout/dist/room-media-core.js';
-import {createSpmtService} from '../apps/spmt-service/dist/index.js';
-import {SpmtClient} from '../packages/sdk/dist/index.js';
-import {HearMeOutExecutionWorker} from '../apps/hearmeout/dist/execution-worker.js';
-import {HearMeOutWorkerMusicCatalog} from '../apps/hearmeout/dist/worker-music-catalog.js';
-import {HearMeOutWorkerMediaCache} from '../apps/hearmeout/dist/worker-media-cache.js';
-import {HearMeOutYoutubeResolverCoordinator} from '../apps/hearmeout/dist/youtube-resolver.js';
-import {hearMeOutCatalogRegistration} from '../apps/hearmeout/dist/index.js';
-const binding={tenantId:'tenant',executionUserId:'owner'};
-const item={itemId:'video',title:'One video',type:'movie',source:'fixture',playbackUrl:'https://media.example/video.mp4',durationSeconds:210};
-const media={async resolve(){return item;}};
+import {HearMeOutBroadcastProgram,HEARMEOUT_SINGLE_PROGRAM_ID} from '../apps/hearmeout/dist/broadcast-program.js';
 
-test('one program survives zero rooms, owner departure, restart and retries',async t=>{
- const dir=await mkdtemp(join(tmpdir(),'hmo-independent-'));t.after(()=>rm(dir,{recursive:true,force:true}));
- const path=join(dir,'state.sqlite');let program=new HearMeOutBroadcastProgram(path,binding);
- const rooms=new SqliteHearMeOutRoomMediaRuntime(path),owner={tenantId:'tenant',userId:'owner',displayName:'Owner',roles:['admin']};
- try{
-  assert.equal(rooms.listRooms(owner).length,0);
-  await program.request({requesterId:'guest:viewer',displayName:'Viewer',query:'A video',operationId:'request'},media);
-  const first=program.getSession(),start=Date.parse(first.playback.updatedAt);
-  rooms.createRoom(owner,{roomId:'a',name:'A',privacy:'public',operationId:'create-a'});
-  rooms.createRoom(owner,{roomId:'b',name:'B',privacy:'private',operationId:'create-b'});
-  rooms.deleteRoom(owner,'a','delete-a');rooms.deleteRoom(owner,'b','delete-b');
-  assert.equal(rooms.listRooms(owner).length,0);
-  program.close();program=new HearMeOutBroadcastProgram(path,binding);
-  program.advance(new Date(start+180000).toISOString());
-  const returned=program.getSession();assert.equal(returned.current.requestId,first.current.requestId);assert.equal(returned.playback.updatedAt,first.playback.updatedAt);
-  assert.equal(210-(180+returned.playback.position),30);
-  await program.request({requesterId:'guest:viewer',displayName:'Viewer',query:'A video',operationId:'request'}, {resolve(){throw Error('Replay must not resolve again');}});
-  assert.equal(program.getSession().queue.length,0);
-  program.advance(new Date(start+211000).toISOString());assert.equal(program.getSession().playback.status,'idle');
-  assert.equal(program.broadcastSessions().length,0);
- }finally{program.close();rooms.close();}
+const binding={tenantId:'tenant',executionUserId:'owner'};
+const media={async resolve({query,lane}){return {itemId:query,title:query,type:lane,source:'fixture',playbackUrl:'https://media.example/video.mp4',durationSeconds:10};}};
+async function fixture(t){const dir=await mkdtemp(join(tmpdir(),'hmo-room-owned-'));t.after(()=>rm(dir,{recursive:true,force:true}));return join(dir,'state.sqlite');}
+
+test('HearMeOut starts with no permanent player and refuses orphan media sessions',async t=>{
+ const path=await fixture(t),program=new HearMeOutBroadcastProgram(path,binding);t.after(()=>program.close());
+ assert.deepEqual(program.listRooms(),[]);
+ assert.throws(()=>program.getSession(),/Choose a watch party/);
+ assert.throws(()=>program.getSession('tenant',HEARMEOUT_SINGLE_PROGRAM_ID),/Choose a watch party/);
+ assert.throws(()=>program.createRoom({name:'Orphan',requesterId:'viewer',operationId:'orphan'}),/Join a HearMeOut room or Discord voice channel/);
+ await assert.rejects(()=>program.request({requesterId:'viewer',displayName:'Viewer',query:'video',operationId:'orphan'},media),/Choose a watch party/);
 });
 
-for (const runtimeMode of ['production','sandbox']) test('guest HTTP requests cross real SPMT media jobs in '+runtimeMode+'; legacy windows retain their source and other rooms stay independent', {timeout:20000},async t=>{
- const dir=await mkdtemp(join(tmpdir(),'hmo-single-http-'));t.after(()=>rm(dir,{recursive:true,force:true}));
- const credential='single-broadcast-test-credential-123456789';
- const spmt=createSpmtService({runtimeMode,databasePath:join(dir,'spmt.sqlite'),webhookKey:Buffer.alloc(32,7),port:0,hearMeOutRuntimeEnabled:true,hearMeOutWorkerCredential:credential});
- let host,rooms,workerTask;const stop=new AbortController();
- try{
-  spmt.authority.ensureUser('owner');spmt.control.registerTenant({tenantId:'tenant',ownerUserId:'owner',displayName:'Test'});
-  spmt.control.registerApp(hearMeOutCatalogRegistration('https://apollo.example/apps/hearmeout'));spmt.control.installApp('tenant','hearmeout');
-  spmt.data.registerUser({userId:'owner',username:'owner',displayName:'Owner',password:'test-password-only',tenantIds:['tenant']});
-  const ownerCookie='spmt_token='+spmt.auth.issueHumanSession({userId:'owner',tenantIds:['tenant'],scopes:['identity:read','jobs:read']}).accessToken;
-  await spmt.listen();const spmtOrigin='http://127.0.0.1:'+spmt.server.address().port;
-  const client=new SpmtClient({baseUrl:spmtOrigin,appId:'hearmeout',getAccessToken:()=>spmt.auth.issueServiceAccess('hearmeout',credential).accessToken});
-  const worker=new HearMeOutExecutionWorker(client,{workerId:'single-test',executionTarget:'sprite',tenantIds:['tenant'],capabilities:['hearmeout.music.search','hearmeout.youtube.resolve'],catalog:new HearMeOutWorkerMusicCatalog({catalogFile:join(dir,'catalog.json')}),cache:new HearMeOutWorkerMediaCache({cacheDir:join(dir,'cache')}),search:async()=>[{id:'abcdefghijk',title:'Video',url:'https://youtu.be/abcdefghijk'}],resolver:new HearMeOutYoutubeResolverCoordinator({upstream:async videoId=>({videoId,videoUrl:'https://rr1.googlevideo.com/video',audioUrl:'https://rr1.googlevideo.com/audio',title:'Video',stage:'upstream',resolvedAt:new Date().toISOString()})})});
-  await worker.report(new Date().toISOString());workerTask=worker.run(stop.signal,10);
-  host=createHearMeOutWebServer({spmtOrigin,databasePath:join(dir,'rooms.sqlite'),port:0,credential,operationMode:'read-only',singleBroadcast:binding,activity:{tenantId:'tenant',clientId:'234567890123456789'}});
-  await host.listen();const base='http://127.0.0.1:'+host.server.address().port;
-  rooms=new SqliteHearMeOutRoomMediaRuntime(join(dir,'rooms.sqlite'));const owner={tenantId:'tenant',userId:'owner',displayName:'Owner',roles:['admin']};
-  assert.equal(rooms.listRooms(owner).length,0,'Opening the service creates no room');
-  for(const path of ['/watch','/activity?roomId=anything','/activity?sessionId=anything&tenantId=foreign'])assert.equal((await fetch(base+path)).status,200);
-  const stateResponse=await fetch(base+'/api/watch/broadcast/state'),cookie=stateResponse.headers.get('set-cookie').split(';')[0];
-  const add=()=>fetch(base+'/api/watch/broadcast/requests',{method:'POST',headers:{cookie,origin:base,'content-type':'application/json','idempotency-key':'one-video'},body:JSON.stringify({query:'https://youtu.be/abcdefghijk',userId:'owner',billedUserId:'attacker',roomId:'missing',tenantId:'foreign'})});
-  const added=await add();assert.equal(added.status,201,await added.text());
-  const current=await(await fetch(base+'/api/watch/broadcast/state')).json();assert.match(current.current.requestedBy.userId,/^guest:/);
-  for(const alias of ['discord-watch-room','discord-music-room']){
-   const state=await(await fetch(base+'/api/watch/sessions/'+alias+'/state')).json();assert.deepEqual(state,current);
-  }
-  for(const missing of ['watch-room-private-movie','anything'])assert.equal((await fetch(base+'/api/watch/sessions/'+missing+'/state')).status,404);
-  const jobs=await client.listExecutionJobs('tenant',{executionOwner:'hearmeout'});
-  assert.equal(jobs.length,1);assert.equal(jobs[0].billedUserId,'owner');assert.equal(jobs[0].state,'succeeded');assert.equal(jobs[0].input.requesterId,current.current.requestedBy.userId);
-  assert.equal((await add()).status,201);assert.equal((await client.listExecutionJobs('tenant',{executionOwner:'hearmeout'})).length,1);
-  rooms.createRoom(owner,{roomId:'a',name:'A',privacy:'public',operationId:'a'});rooms.createRoom(owner,{roomId:'b',name:'B',privacy:'private',operationId:'b'});
-  for(const id of ['a','b']){const view=await(await fetch(base+'/api/hearmeout/rooms/'+id,{headers:{cookie:ownerCookie}})).json();assert.equal(view.singleBroadcast,true);assert.equal(view.movie.current,null,'Unrelated voice rooms must not inherit the main broadcast');}
-  assert.equal((await fetch(base+'/api/hearmeout/rooms/b')).status,401);
-  rooms.deleteRoom(owner,'a','delete-a');rooms.deleteRoom(owner,'b','delete-b');
-  assert.deepEqual((await(await fetch(base+'/api/watch/broadcast/state')).json()).current,current.current);
-  assert.equal(rooms.listRooms(owner).length,0);
-  const music=await fetch(base+'/api/watch/broadcast/requests',{method:'POST',headers:{cookie,origin:base,'content-type':'application/json','idempotency-key':'one-song'},body:JSON.stringify({query:'https://youtu.be/abcdefghijk',lane:'music'})});
-  assert.equal(music.status,201);const musicState=await music.json();assert.equal(musicState.current.requestId,current.current.requestId);assert.equal(musicState.queue.length,1);assert.equal(musicState.queue[0].item.type,'music');assert.equal(musicState.queue[0].item.playbackUrl,'https://rr1.googlevideo.com/video');
-  const musicJobs=await client.listExecutionJobs('tenant',{executionOwner:'hearmeout'});assert.equal(musicJobs.length,2);assert.ok(musicJobs.some(job=>job.input.lane==='music'&&job.billedUserId==='owner'&&job.state==='succeeded'));
-  spmt.billing.consume({tenantId:'tenant',userId:'owner',planId:'free',resource:'hosted-worker-minutes',quantity:28,executionTarget:'hosted',idempotencyKey:'other-fixture-work'});
-  const limited=await fetch(base+'/api/watch/broadcast/requests',{method:'POST',headers:{cookie,origin:base,'content-type':'application/json','idempotency-key':'another-video'},body:JSON.stringify({query:'https://youtu.be/abcdefghijk',lane:'movie'})});
-  if(runtimeMode==='production'){assert.equal(limited.status,409);assert.equal((await limited.json()).error,'SPMT API request failed with status 409: Free hosted-worker-minutes allowance reached');}
-  else{assert.equal(limited.status,201,await limited.text());const usage=spmt.billing.summary('tenant','owner','free');assert.equal(usage.limitsEnforced,false);assert.equal(usage.plan.planId,'free');assert.equal(usage.resources.find(item=>item.resource==='hosted-worker-minutes').hosted,31);assert.equal((await(await fetch(spmtOrigin+'/health/ready')).json()).usageLimitsEnforced,false);}
-  assert.deepEqual((await(await fetch(base+'/api/watch/broadcast/state')).json()).current,musicState.current,'A refused request leaves the current program playing');
-  assert.equal((await add()).status,201,'An already accepted request remains replayable at the allowance limit');
-  assert.equal((await client.listExecutionJobs('tenant',{executionOwner:'hearmeout'})).length,runtimeMode==='sandbox'?3:2,'Only accepted requests create a job; replay never duplicates usage');
- }finally{stop.abort();await workerTask;rooms?.close();await host?.close();await spmt.close();}
+test('room-owned player survives restart and is destroyed with its hosting context',async t=>{
+ const path=await fixture(t);let program=new HearMeOutBroadcastProgram(path,binding);t.after(()=>program.close());
+ const room=program.createRoom({name:'Room movie',requesterId:'viewer',operationId:'create',sourceRoomId:'hmo-room'});
+ await program.request({roomId:room.roomId,requesterId:'viewer',displayName:'Viewer',query:'video',operationId:'request'},media);
+ const before=program.getSession('tenant',room.roomId);program.close();program=new HearMeOutBroadcastProgram(path,binding);
+ assert.deepEqual(program.getSession('tenant',room.roomId),before);
+ assert.equal(program.deleteHostedRoom('hmo-room'),true);
+ assert.equal(program.hostedRoom('hmo-room'),undefined);
+ assert.throws(()=>program.getSession('tenant',room.roomId),/not found/);
+ assert.deepEqual(program.listRooms(),[]);
+});
+
+test('each Discord voice channel receives one deterministic hidden player and can be torn down independently',async t=>{
+ const path=await fixture(t),program=new HearMeOutBroadcastProgram(path,binding);t.after(()=>program.close());
+ const first={guildId:'123456789012345678',channelId:'234567890123456789'},second={guildId:first.guildId,channelId:'345678901234567890'};
+ const a=program.createRoom({name:'VC one',requesterId:'viewer-a',operationId:'a',channel:first});
+ const duplicate=program.createRoom({name:'VC one duplicate',requesterId:'viewer-b',operationId:'b',channel:first});
+ const b=program.createRoom({name:'VC two',requesterId:'viewer-c',operationId:'c',channel:second});
+ assert.equal(a.roomId,duplicate.roomId);assert.notEqual(a.roomId,b.roomId);assert.match(a.roomId,/^discord-/);
+ assert.equal(program.deleteChannelRoom(first),true);assert.equal(program.channelRoom(first),undefined);assert.equal(program.channelRoom(second).roomId,b.roomId);
 });
