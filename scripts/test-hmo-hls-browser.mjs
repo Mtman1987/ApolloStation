@@ -40,8 +40,8 @@ try{
  await controlsToggle.waitFor({state:'visible'});
  if(await controlsToggle.getAttribute('aria-pressed')!=='true')await activate(controlsToggle);
  const enableSound=pages[1].getByRole('button',{name:'Enable sound',exact:true}),restoreSound=pages[1].getByRole('button',{name:'Restore sound',exact:true}),muteLocally=pages[1].getByRole('button',{name:'Mute locally',exact:true});
- if(await enableSound.isVisible())await activate(enableSound);
- else if(await restoreSound.isVisible())await activate(restoreSound);
+ if(await enableSound.count())await activate(enableSound);
+ else if(await restoreSound.count())await activate(restoreSound);
  else await muteLocally.waitFor({state:'visible'});
  for(const page of pages){assert.equal(await page.evaluate(()=>document.querySelector('video').playbackRate),1);const select=page.getByRole('combobox',{name:'Audio language'});await select.waitFor({state:'visible'});assert.equal(await select.locator('option').count(),2);await select.selectOption('1');assert.equal(await select.inputValue(),'1');await page.waitForFunction(()=>{const v=document.querySelector('video');return !v.paused&&!v.error;});}
  const revision=program.getSession('hls',partyId).revision;
