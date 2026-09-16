@@ -52,7 +52,7 @@ test('public watch windows view any party without joining voice; hosting remains
  rooms.createRoom(owner,{roomId:'private-chat',name:'Our private conversation',privacy:'private',operationId:'private'});rooms.createRoom(owner,{roomId:'other-chat',name:'Their conversation',privacy:'private',operationId:'other'});const before=rooms.listMembers('crew','private-chat');
  const initial=await fetch(base+'/api/watch/broadcast/rooms'),cookie=initial.headers.get('set-cookie').split(';')[0];
  const post=(path,body,key,headers={})=>fetch(base+path,{method:'POST',headers:{cookie,origin:base,'content-type':'application/json','idempotency-key':key,...headers},body:JSON.stringify(body)});
- assert.equal((await post('/api/watch/broadcast/rooms',{name:'Orphan party'},'orphan')).status,400);
+ assert.equal((await post('/api/watch/broadcast/rooms',{name:'Orphan party'},'orphan')).status,403);
  const aResponse=await post('/api/watch/broadcast/rooms?appRoomId=private-chat',{name:'Our movie'},'a',{cookie:'session=owner'});assert.equal(aResponse.status,201,await aResponse.clone().text());const a=await aResponse.json();
  const b=await(await post('/api/watch/broadcast/rooms?appRoomId=other-chat',{name:'Their movie'},'b',{cookie:'session=owner'})).json();assert.notEqual(a.roomId,b.roomId);
  const duplicate=await(await post('/api/watch/broadcast/rooms?appRoomId=private-chat',{name:'Second player'},'another',{cookie:'session=owner'})).json();assert.equal(duplicate.roomId,a.roomId);
@@ -60,9 +60,11 @@ test('public watch windows view any party without joining voice; hosting remains
  assert.equal((await post('/api/hearmeout/rooms/private-chat/media/movie',{query:'Movie A'},'movie-a',{cookie:'session=owner'})).status,201);assert.equal((await post('/api/hearmeout/rooms/other-chat/media/music',{query:'Song B'},'song-b',{cookie:'session=owner'})).status,201);
  const read=id=>fetch(base+'/api/watch/broadcast/state?roomId='+id).then(r=>r.json());const stateA=await read(a.roomId),stateB=await read(b.roomId);assert.equal(stateA.current.item.title,'Movie A');assert.equal(stateB.current.item.title,'Song B');assert.notEqual(stateA.broadcast.playbackUrl,stateB.broadcast.playbackUrl);assert.deepEqual(await(await fetch(base+'/api/watch/sessions/'+b.roomId+'/state')).json(),stateB);
  assert.deepEqual(rooms.listMembers('crew','private-chat'),before);assert.equal(rooms.listMembers('crew','other-chat').some(member=>member.userId==='viewer'),false);assert.equal((await fetch(base+'/api/hearmeout/rooms/other-chat')).status,401);
- assert.equal((await post('/api/watch/broadcast/control?roomId='+a.roomId,{action:'skip',expectedRequestId:stateA.current.requestId},'skip')).status,200);assert.deepEqual(await read(b.roomId),stateB);assert.equal((await fetch(base+'/api/watch/broadcast/state?roomId=missing')).status,404);assert.equal((await fetch(base+'/api/watch/broadcast/state')).status,400);
- const directory=await(await fetch(base+'/api/watch/broadcast/rooms')).json();assert.equal(directory.rooms.find(room=>room.roomId===b.roomId).title,'Song B');assert.equal(directory.hostedRoomId,null);assert.doesNotMatch(JSON.stringify(directory),/sourceRoomId|members|private-chat|other-chat|Main watch party|main-broadcast/);
- for(const path of ['/watch','/activity','/activity-lite']){const html=await(await fetch(base+path)).text();assert.match(html,/id="party-lobby"/);assert.match(html,/Keep your own voice conversation/);}
+ assert.equal((await post('/api/watch/broadcast/control?roomId='+a.roomId,{action:'skip',expectedRequestId:stateA.current.requestId},'skip-viewer')).status,403);
+ assert.equal((await post('/api/watch/broadcast/control?roomId='+a.roomId+'&appRoomId=private-chat',{action:'skip',expectedRequestId:stateA.current.requestId},'skip-owner',{cookie:'session=owner'})).status,200);
+ assert.deepEqual(await read(b.roomId),stateB);assert.equal((await fetch(base+'/api/watch/broadcast/state?roomId=missing')).status,404);assert.equal((await fetch(base+'/api/watch/broadcast/state')).status,400);
+ const directory=await(await fetch(base+'/api/watch/broadcast/rooms')).json();assert.equal(directory.rooms.find(room=>room.roomId===b.roomId).title,'Song B');assert.equal(directory.hostedRoomId,null);assert.equal(directory.canHost,false);assert.doesNotMatch(JSON.stringify(directory),/sourceRoomId|members|private-chat|other-chat|Main watch party|main-broadcast/);
+ for(const path of ['/watch','/activity','/activity-lite']){const html=await(await fetch(base+path)).text();assert.match(html,/id="party-lobby"/);assert.match(html,/Browse and watch any active party/);}
 });
 
 test('signed Discord menus create one hidden channel party per VC and route songs locally',async t=>{
