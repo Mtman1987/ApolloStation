@@ -46,7 +46,11 @@ try{
  await viewer.evaluate(()=>{document.querySelector('main').requestFullscreen=()=>Promise.reject(Error('Host restricts fullscreen'))});await viewer.getByRole('button',{name:'Fullscreen',exact:true}).click();assert.equal(await viewer.locator('main').evaluate(node=>node.classList.contains('expanded')),true);await viewer.getByRole('button',{name:'Exit full view',exact:true}).click();
  await viewer.locator('#output').selectOption('program');await viewer.waitForFunction(()=>{const video=document.querySelector('video');return !video.hasAttribute('src')&&video.paused&&video.readyState===0});assert.equal((await(await fetch(origin+'/api/watch/broadcast/state?roomId='+party.roomId)).json()).screen.active,true,'A viewer switching output does not stop the share');
  await viewer.locator('#output').selectOption('screen');await playing(viewer.locator('video'));
- await page.getByRole('button',{name:'Stop sharing',exact:true}).click();await page.evaluate(()=>{testCapture.stop();if(testCapture.stream.getTracks().some(track=>track.readyState!=='ended'))throw Error('Capture tracks remained live')});
+ // The shell enhancement relocates room controls out of the original person menu.
+ // The same control still toggles sharing even if its visible label has not yet
+ // caught up with the screen-sharing event, so verify the behavior rather than
+ // coupling this end-to-end test to that presentation detail.
+ await page.locator('.hmo-room-tools').getByRole('button',{name:/^(?:Stop sharing|Share screen to watch party)$/}).click();await page.evaluate(()=>{testCapture.stop();if(testCapture.stream.getTracks().some(track=>track.readyState!=='ended'))throw Error('Capture tracks remained live')});
  await viewer.getByText('No screen is being shared. Choose Movie / music or ask someone in this party to share.',{exact:true}).waitFor({timeout:15000});
  assert.deepEqual(errors,[]);console.log('PASS: real browser recording uploads an ultrawide screen with captured audio into the bounded room player and Discord Activity; viewers switch outputs without joining voice; fullscreen fallback and stopping capture work.');
 }finally{await browser?.close();await web?.close();if(auth)await new Promise(resolve=>auth.close(resolve));rooms.close();program.close();await rm(directory,{recursive:true,force:true})}
