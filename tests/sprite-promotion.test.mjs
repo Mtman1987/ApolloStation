@@ -7,37 +7,35 @@ const workflowPath = new URL("../.github/workflows/sprite-promotion.yml", import
 const deployScriptPath = new URL("../scripts/sprites/deploy-sandbox-release.sh", import.meta.url);
 const networkPolicyPath = new URL("../sandbox/sprites/network-policy.json", import.meta.url);
 
-test("public probing is isolated from the completed promotion mutation", async () => {
+test("public probing runs only after the completed promotion mutation", async () => {
   const workflow = await readFile(workflowPath, "utf8");
   const step = workflow.split("      - name: Open the Apollo test entry\n")[1].split("      - name:")[0];
   const script = step.split("        run: |\n")[1].split("\n").map(line => line.replace(/^          /, "")).join("\n");
   const result = spawnSync("bash", ["--noprofile", "--norc", "-c", 'sprite(){ printf "%s\\n" "$*"; }; node(){ echo "public probe must not run during promotion" >&2; return 1; };\n'+script], {encoding:"utf8",env:{...process.env,SPRITE_ORG:"testing-968",SPRITE_NAME:"web-terminal",SPRITE_PUBLIC_URL:"https://test.example",BUILD_SHA:"test-build"}});
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stdout.trim(), "config update -o testing-968 -s web-terminal --url-auth public");
-  assert.match(workflow, /^  release-verification:\n    name: Verify promoted public entry\n    needs: release$/m);
-  assert.match(workflow, /Verify the released Apollo test entry\n        run: node scripts\/sprites\/verify-hearmeout-broadcast-test\.mjs/);
+  assert.match(workflow, /- name: Verify promoted public entry\n        run: node scripts\/sprites\/verify-hearmeout-broadcast-test\.mjs/);
+  assert.ok(workflow.indexOf("- name: Verify promoted public entry") > workflow.indexOf("- name: Promote and verify exact main commit"));
 });
 
-test("Sprite promotion keeps review and release targets isolated", async () => {
+test("Sprite promotion has one protected release target", async () => {
   const workflow = await readFile(workflowPath, "utf8");
 
   assert.match(workflow, /^  push:\n    branches: \[main\]/m);
-  assert.match(workflow, /github\.event_name == 'push' && github\.ref == 'refs\/heads\/main'/);
-  assert.match(workflow, /github\.event_name == 'workflow_dispatch' && inputs\.target == 'release'/);
+  assert.match(workflow, /github\.ref == 'refs\/heads\/main'/);
   assert.doesNotMatch(workflow, /work\/\*\*/);
-  assert.match(workflow, /github\.event_name == 'workflow_dispatch' && inputs\.target == 'review'/);
+  assert.doesNotMatch(workflow, /sprite-review|DEPLOY_ROLE: review/);
   assert.match(workflow, /SPRITES_AUTODEPLOY_ENABLED == 'true'/);
-  assert.match(workflow, /environment: sprite-review/);
   assert.match(workflow, /environment: sprite-release/);
-  assert.match(workflow, /SPRITE_ORG: mtman-new/);
-  assert.match(workflow, /EXPECTED_SPRITE_ID: sprite-2249fee2-ecf3-4b10-8bc1-314f4b9e5bcc/);
-  assert.match(workflow, /SPRITE_PUBLIC_URL: https:\/\/web-terminal-bpp4n\.sprites\.app/);
   assert.match(workflow, /SPRITE_NAME: web-terminal/);
   assert.match(workflow, /EXPECTED_SPRITE_ID: sprite-fec8d6f2-49f0-4e28-bc6d-e8a7ae364280/);
   assert.match(workflow, /SPRITE_PUBLIC_URL: https:\/\/web-terminal-bvesa\.sprites\.app/);
-  assert.match(workflow, /grep -Eiq 'auth\[\^\[:alnum:\]\]\+sprite\|sprite\[\^\[:alnum:\]\]\+auth'/);
+  assert.match(workflow, /grep -Eiq 'auth.*\(sprite\|public\).*\|\(sprite\|public\).*auth'/);
   assert.match(workflow, /sprite exec --no-port-forward/);
   assert.match(workflow, /--file scripts\/sprites\/deploy-sandbox-release\.sh:\/tmp\/deploy-sandbox-release\.sh/);
+  assert.match(workflow, /--file scripts\/sprites\/start-detached-release\.sh:\/tmp\/start-detached-release\.sh/);
+  assert.match(workflow, /timeout-minutes: 25/);
+  assert.match(workflow, /Remote release did not finish within 20 minutes/);
   assert.doesNotMatch(workflow, /SPMT_LIVE_READ_ACCESS_TOKEN|spmt-live-read-token/);
   assert.doesNotMatch(workflow, /sprite exec --http-post/);
   assert.match(workflow, /secrets\.STREAMWEAVER_MESHY_API_KEY/);

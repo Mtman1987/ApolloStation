@@ -140,14 +140,46 @@ jobs:
           fi
 
       - name: Promote and verify exact main commit
+        timeout-minutes: 25
         shell: bash
         run: |
           set -euo pipefail
+          run_root="/home/sprite/data/release/deploy-runs/$BUILD_SHA"
           sprite exec --no-port-forward \
             -o "$SPRITE_ORG" -s "$SPRITE_NAME" \
             --file scripts/sprites/deploy-sandbox-release.sh:/tmp/deploy-sandbox-release.sh \
+            --file scripts/sprites/start-detached-release.sh:/tmp/start-detached-release.sh \
             --env "DEPLOY_ROLE=$DEPLOY_ROLE,BUILD_SHA=$BUILD_SHA,REPOSITORY_URL=$REPOSITORY_URL,SPRITE_PUBLIC_URL=$SPRITE_PUBLIC_URL" \
-            -- /bin/bash /tmp/deploy-sandbox-release.sh
+            -- /bin/bash /tmp/start-detached-release.sh
+
+          deadline=$((SECONDS + 20 * 60))
+          while (( SECONDS < deadline )); do
+            set +e
+            state="$(sprite exec --no-port-forward -o "$SPRITE_ORG" -s "$SPRITE_NAME" -- /bin/bash -c "cat '$run_root/status' 2>/dev/null || printf running" 2>/dev/null)"
+            poll_status=$?
+            set -e
+            if (( poll_status != 0 )); then
+              echo "Sprite status connection dropped; retrying."
+              sleep 10
+              continue
+            fi
+            state="$(tr -d '\r\n[:space:]' <<<"$state")"
+            if [[ "$state" == "0" ]]; then
+              sprite exec --no-port-forward -o "$SPRITE_ORG" -s "$SPRITE_NAME" -- tail -n 80 "$run_root/deploy.log"
+              break
+            fi
+            if [[ "$state" =~ ^[1-9][0-9]*$ ]]; then
+              sprite exec --no-port-forward -o "$SPRITE_ORG" -s "$SPRITE_NAME" -- tail -n 160 "$run_root/deploy.log" || true
+              echo "Remote release failed with exit code $state." >&2
+              exit "$state"
+            fi
+            sleep 10
+          done
+          if (( SECONDS >= deadline )); then
+            sprite exec --no-port-forward -o "$SPRITE_ORG" -s "$SPRITE_NAME" -- tail -n 160 "$run_root/deploy.log" || true
+            echo "Remote release did not finish within 20 minutes." >&2
+            exit 124
+          fi
 
       - name: Open the Apollo test entry
         shell: bash
