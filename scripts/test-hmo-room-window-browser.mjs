@@ -44,7 +44,7 @@ try{
   await app.locator('[name=name]').fill(name);
   await app.getByRole('button',{name:'Create & join',exact:true}).click();
   await app.getByRole('button',{name:'Room controls',exact:true}).click();
-  await app.getByRole('button',{name:'Deploy HearMeOut DJ',exact:true}).click();
+  await app.getByRole('button',{name:'Show HearMeOut DJ',exact:true}).click();
   await app.getByRole('button',{name:'Close Room controls',exact:true}).click();
   await app.getByRole('button',{name:'Close Room controls',exact:true}).waitFor({state:'detached'});
   await app.getByRole('button',{name:'Movies and watch player',exact:true}).waitFor({timeout:60000});
