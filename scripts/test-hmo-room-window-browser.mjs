@@ -39,7 +39,16 @@ try{
  await app.getByRole('button',{name:'Browse Rooms',exact:true}).waitFor();
  assert.equal(await app.getByRole('link',{name:'Watch parties',exact:true}).count(),0,'Watch parties are opened from the deployed room DJ, not the home page');
  assert.equal(await app.locator('video,audio,[data-hmo-broadcast-frame]').count(),0);
- async function createRoom(name){await app.getByRole('button',{name:'Create Room',exact:true}).click();await app.locator('[name=name]').fill(name);await app.getByRole('button',{name:'Create & join',exact:true}).click();await app.getByRole('button',{name:'Room controls',exact:true}).click();await app.getByRole('button',{name:'Deploy HearMeOut DJ',exact:true}).click();await app.getByRole('button',{name:'Close Room controls',exact:true}).click();await app.getByRole('button',{name:'Movies and watch player',exact:true}).waitFor();}
+ async function createRoom(name){
+  await app.getByRole('button',{name:'Create Room',exact:true}).click();
+  await app.locator('[name=name]').fill(name);
+  await app.getByRole('button',{name:'Create & join',exact:true}).click();
+  await app.getByRole('button',{name:'Room controls',exact:true}).click();
+  await app.getByRole('button',{name:'Deploy HearMeOut DJ',exact:true}).click();
+  await app.getByRole('button',{name:'Close Room controls',exact:true}).click();
+  await app.getByRole('button',{name:'Close Room controls',exact:true}).waitFor({state:'detached'});
+  await app.getByRole('button',{name:'Movies and watch player',exact:true}).waitFor({timeout:60000});
+ }
  await createRoom('First room');
  assert.equal(await app.locator('video,audio,[data-hmo-broadcast-frame]').count(),0);
  const firstRoomId=rooms.listRooms(owner)[0].roomId;assert.equal(program.hostedRoom(firstRoomId),undefined);assert.equal(requests.length,0);
