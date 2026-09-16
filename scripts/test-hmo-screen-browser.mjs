@@ -52,8 +52,11 @@ try{
  // Close only the local watch window first; the shared-screen backend must remain live.
  await page.getByRole('button',{name:'Close watch player',exact:true}).click();
  assert.equal((await(await fetch(origin+'/api/watch/broadcast/state?roomId='+party.roomId)).json()).screen.active,true,'Closing the local player must not stop the shared screen');
- // Screen sharing belongs to the local user's participant-card menu.
- await page.getByRole('button',{name:'User profile and settings',exact:true}).click();await page.getByRole('button',{name:'Stop sharing',exact:true}).click();await page.evaluate(()=>{testCapture.stop();if(testCapture.stream.getTracks().some(track=>track.readyState!=='ended'))throw Error('Capture tracks remained live')});
+ // The user menu can still be open from starting the share. Do not toggle it closed.
+ const screenToggle=page.locator('[data-hmo-user-id="owner"] .hmo-person-menu button').first();
+ if(!await screenToggle.isVisible())await page.getByRole('button',{name:'User profile and settings',exact:true}).click();
+ await screenToggle.waitFor({state:'visible'});await screenToggle.click();
+ await page.evaluate(()=>{testCapture.stop();if(testCapture.stream.getTracks().some(track=>track.readyState!=='ended'))throw Error('Capture tracks remained live')});
  let stopped=false;for(let attempt=0;attempt<30;attempt++){const state=await(await fetch(origin+'/api/watch/broadcast/state?roomId='+party.roomId)).json();if(state.screen?.active===false){stopped=true;break}await new Promise(resolve=>setTimeout(resolve,500))}assert.equal(stopped,true,'Stopping capture must revoke the shared-screen backend');
  await viewer.getByText('No screen is being shared.',{exact:true}).waitFor({timeout:15000});
  assert.deepEqual(errors,[]);console.log('PASS: real browser recording uploads an ultrawide screen with captured audio into the bounded room player and Discord Activity; viewers switch outputs without joining voice; fullscreen fallback and stopping capture work.');
