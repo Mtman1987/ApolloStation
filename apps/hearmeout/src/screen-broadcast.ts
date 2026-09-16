@@ -46,6 +46,7 @@ export class HearMeOutScreenBroadcast {
   catch{this.stop(run);throw failure('Screen encoder stopped. Share your screen again.',503)}finally{run.writing=false}
  }
  end(roomId:string,id:string,publisher:Publisher){const run=this.runs.get(roomId);if(!run)return;this.stop(this.owned(roomId,id,publisher))}
+ stopRoom(roomId:string){const run=this.runs.get(roomId);if(!run)return false;this.stop(run);return true}
  private owned(roomId:string,id:string,publisher:Publisher){
   const run=this.runs.get(roomId);if(!run||run.id!==id||(['tenantId','sourceRoomId','userId'] as const).some(key=>run.publisher[key]!==publisher[key]))throw failure('Screen share was not found',404);
   if(!this.options.allowed(publisher)){this.stop(run);throw failure('Room publishing is unavailable',403)}return run;
