@@ -3,7 +3,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { HearMeOutBroadcastEgress } from '../../apps/hearmeout/dist/broadcast-egress.js';
 import { HEARMEOUT_BROADCAST_PROTOCOLS } from '../../apps/hearmeout/dist/room-broadcast.js';
-import { HEARMEOUT_TEST_SOURCE as source } from './hearmeout-test-source.mjs';
+import { HEARMEOUT_MEDIA_DIAGNOSTIC_SOURCE as source } from './hearmeout-test-source.mjs';
 
 // A fixed, public test asset: diagnostics never include a user's signed source
 // URL, provider credential or room contents. Run before switching the release.
