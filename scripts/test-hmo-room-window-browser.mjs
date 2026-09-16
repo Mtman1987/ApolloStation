@@ -57,6 +57,7 @@ try{
  await window.getByText('Nothing playing',{exact:true}).waitFor({state:'attached'});
  const firstPartyId=program.hostedRoom(firstRoomId).roomId;const feedPrefix='/api/watch/sessions/'+firstPartyId+'/broadcast/';
  assert.equal(await window.locator('video').evaluate(v=>v.currentSrc), '');
+ await app.getByRole('button',{name:'Player controls',exact:true}).click();
  await window.getByRole('button',{name:'Enable sound',exact:true}).click();
  await new Promise(r=>setTimeout(r,1800));
  assert.equal(await window.locator('#error').textContent(),'','Idle polling must not interrupt a pending play request');
