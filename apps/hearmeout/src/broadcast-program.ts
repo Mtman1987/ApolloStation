@@ -5,6 +5,7 @@ import type {HearMeOutSuiteMediaResolverV1} from './suite-action-executor.js';
 
 /** Legacy identifier kept only so old URLs/data can be rejected and migrated away. */
 export const HEARMEOUT_SINGLE_PROGRAM_ID='main-broadcast';
+export const HEARMEOUT_IDLE_PLAYER_TTL_MS=10*60*1000;
 export interface HearMeOutPartyRoom {roomId:string;name:string;createdAt:string;sourceRoomId?:string;}
 export interface HearMeOutPartyChannel {guildId:string;channelId:string;}
 export interface HearMeOutProgramBinding {tenantId:string;executionUserId:string;}
@@ -14,6 +15,7 @@ export interface HearMeOutProgramBinding {tenantId:string;executionUserId:string
  * Viewers may discover/watch parties without joining the hosting voice context. */
 export class HearMeOutBroadcastProgram {
   private readonly db:DatabaseSync;
+  private cleanupTimer:ReturnType<typeof setInterval>|undefined;
   constructor(path:string,readonly binding:HearMeOutProgramBinding){
     if(!binding.tenantId||!binding.executionUserId)throw Error('Broadcast execution binding is incomplete');
     this.db=new DatabaseSync(path,{timeout:5000});
@@ -34,6 +36,10 @@ export class HearMeOutBroadcastProgram {
     this.db.prepare('DELETE FROM hmo_program WHERE id=?').run(HEARMEOUT_SINGLE_PROGRAM_ID);
     const foreign=this.db.prepare('SELECT id FROM hmo_program WHERE tenant_id<>? LIMIT 1').get(binding.tenantId);
     if(foreign)throw Error('Stored broadcast belongs to a different deployment binding');
+    // Player lifetime is automatic. Empty HMO and Discord players disappear after
+    // ten idle minutes even if nobody opens the party directory again.
+    this.cleanupTimer=setInterval(()=>{try{this.pruneIdleRooms()}catch{}},30_000);
+    this.cleanupTimer.unref();
   }
   listRooms():HearMeOutPartyRoom[]{return this.db.prepare('SELECT * FROM hmo_program_rooms WHERE id<>? ORDER BY created_at,id').all(HEARMEOUT_SINGLE_PROGRAM_ID).map(row=>this.roomFromRow(row as Record<string,unknown>));}
   getRoom(roomId:string):HearMeOutPartyRoom{const id=requireRoomId(roomId);const row=this.db.prepare('SELECT * FROM hmo_program_rooms WHERE id=?').get(id);if(!row)throw Object.assign(Error('Watch party not found'),{status:404});return this.roomFromRow(row as Record<string,unknown>);}
@@ -73,7 +79,10 @@ export class HearMeOutBroadcastProgram {
     const deterministicRoomId=input.channel?'discord-'+createHash('sha256').update(JSON.stringify([input.channel.guildId,input.channel.channelId])).digest('hex'):'room-'+createHash('sha256').update(JSON.stringify([this.binding.tenantId,requireRoomId(input.sourceRoomId)])).digest('hex');
     return this.transaction(()=>{
       const previous=this.db.prepare('SELECT intent,program_id FROM hmo_program_room_operations WHERE id=?').get(operation) as {intent?:string;program_id?:string}|undefined;
-      if(previous){if(previous.intent!==intent)throw Error('This request key already belongs to another party');return this.getRoom(String(previous.program_id));}
+      if(previous){
+        if(previous.intent!==intent)throw Error('This request key already belongs to another party');
+        try{return this.getRoom(String(previous.program_id));}catch(error){if((error as {status?:number}).status!==404)throw error;this.db.prepare('DELETE FROM hmo_program_room_operations WHERE id=?').run(operation);}
+      }
       const occupied=input.channel?this.channelRoom(input.channel):this.hostedRoom(input.sourceRoomId!);
       const room=occupied??this.insertRoom(deterministicRoomId,name,input.sourceRoomId);
       if(input.channel)this.bindChannel(room.roomId,input.channel);
@@ -99,14 +108,24 @@ export class HearMeOutBroadcastProgram {
       return true;
     });
   }
-  /** Garbage-collect idle Discord-backed hidden rooms after the Activity stops touching them. */
-  pruneExpiredDiscordRooms(maxIdleMs=30*60*1000,now=new Date().toISOString()){
-    const cutoff=new Date(Date.parse(now)-Math.max(60_000,maxIdleMs)).toISOString(),rows=this.db.prepare(`SELECT DISTINCT r.id FROM hmo_program_rooms r JOIN hmo_program_channels c ON c.program_id=r.id WHERE COALESCE(r.last_active_at,r.created_at)<=?`).all(cutoff) as Array<{id:string}>;
+  /** Remove every empty player after ten continuous idle minutes.
+   * Passive viewers do not keep an empty player alive; actual media requests,
+   * controls and screen-share chunks update last_active_at. */
+  pruneIdleRooms(maxIdleMs=HEARMEOUT_IDLE_PLAYER_TTL_MS,now=new Date().toISOString()){
+    const cutoff=new Date(Date.parse(now)-Math.max(60_000,maxIdleMs)).toISOString();
+    const rows=this.db.prepare('SELECT id FROM hmo_program_rooms WHERE id<>? AND COALESCE(last_active_at,created_at)<=?').all(HEARMEOUT_SINGLE_PROGRAM_ID,cutoff) as Array<{id:string}>;
     const removed:string[]=[];
-    for(const row of rows){const session=this.read(row.id);if(session.current||session.queue.length||session.playback.status==='playing')continue;if(this.deleteRoom(row.id))removed.push(row.id);}
+    for(const row of rows){
+      let session:HearMeOutMediaSessionV1;
+      try{session=this.read(row.id);}catch(error){if((error as {status?:number}).status===404){if(this.deleteRoom(row.id))removed.push(row.id);continue;}throw error;}
+      if(session.current||session.queue.length||session.playback.status==='playing')continue;
+      if(this.deleteRoom(row.id))removed.push(row.id);
+    }
     return removed;
   }
-  close(){this.db.close();}
+  /** Backward-compatible alias; idle cleanup now applies to both HMO and Discord players. */
+  pruneExpiredDiscordRooms(maxIdleMs=HEARMEOUT_IDLE_PLAYER_TTL_MS,now=new Date().toISOString()){return this.pruneIdleRooms(maxIdleMs,now);}
+  close(){if(this.cleanupTimer)clearInterval(this.cleanupTimer);this.db.close();}
   private installSourceRoomCleanupTrigger(){
     if(!this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='hmo_rooms'").get())return;
     this.db.exec(`CREATE TRIGGER IF NOT EXISTS hmo_program_cleanup_after_room_delete AFTER DELETE ON hmo_rooms BEGIN
