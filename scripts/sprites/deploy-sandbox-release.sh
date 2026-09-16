@@ -278,7 +278,7 @@ done
 if [[ "$DEPLOY_ROLE" == "release" ]]; then
   node scripts/sprites/retire-hearmeout-deployment-sample.mjs
 fi
-create_apollo_service "$BUILD_SHA"
+NODE_OPTIONS="--import=$release_dir/scripts/sprites/supervisor-test-port-isolation.mjs" create_apollo_service "$BUILD_SHA"
 
 ready=0
 for _ in {1..1260}; do
