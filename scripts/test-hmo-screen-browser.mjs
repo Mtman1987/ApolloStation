@@ -30,8 +30,8 @@ try{
   window.testCapture={stream,stop(){clearInterval(timer);tone.stop();void audio.close()}};return stream;
  }});
  await page.goto(origin+'/apps/hearmeout');await page.getByRole('button',{name:'Create Room',exact:true}).click();await page.locator('[name=name]').fill('Screen hosts');await page.getByRole('button',{name:'Create & join',exact:true}).click();await page.getByRole('button',{name:'Room controls',exact:true}).waitFor();
- await page.getByRole('button',{name:'Room controls',exact:true}).click();await page.getByRole('button',{name:'Share screen',exact:true}).click();
- const player=page.frameLocator('[data-hmo-broadcast-frame]');await player.locator('#output').waitFor();assert.equal(await player.locator('#output').inputValue(),'screen');
+ await page.getByRole('button',{name:'User profile and settings',exact:true}).click();await page.getByRole('button',{name:'Share screen',exact:true}).click();
+ const player=page.frameLocator('[data-hmo-broadcast-frame]');await player.locator('#output').waitFor({state:'attached'});assert.equal(await player.locator('#output').inputValue(),'screen');
  async function playing(video){await video.evaluate(v=>new Promise((resolve,reject)=>{const deadline=Date.now()+40000,timer=setInterval(()=>{if(!v.paused&&v.currentTime>.1&&v.videoWidth){clearInterval(timer);resolve()}else if(Date.now()>deadline){clearInterval(timer);reject(Error('Screen failed to play: '+v.readyState+' '+v.error?.message))}},100)}))}
  await playing(player.locator('video'));
  const room=rooms.listRooms(owner)[0],party=program.hostedRoom(room.roomId);assert.ok(party);
@@ -40,16 +40,23 @@ try{
  assert.ok((await page.locator('[data-hmo-broadcast-frame]').boundingBox()).width<=390);
  assert.equal(await player.locator('video').evaluate(v=>v.videoWidth),1280);
  const viewer=await browser.newPage({viewport:{width:600,height:700},hasTouch:true});viewer.on('pageerror',error=>errors.push(error.message));await viewer.goto(origin+'/activity');
- await viewer.locator('.party-card').filter({hasText:'Screen hosts'}).getByRole('button',{name:'Watch party',exact:true}).click();await viewer.locator('#output').selectOption('screen');await playing(viewer.locator('video'));
+ await viewer.locator('.party-card').filter({hasText:'Screen hosts'}).getByRole('button',{name:'Watch party',exact:true}).click();
+ const viewerControls=viewer.getByRole('button',{name:'Controls',exact:true});await viewerControls.waitFor({state:'visible'});if(await viewerControls.getAttribute('aria-pressed')!=='true')await viewerControls.evaluate(button=>button.click());
+ await viewer.locator('#output').selectOption('screen');await playing(viewer.locator('video'));
  const pixel=await viewer.locator('video').evaluate(v=>{const canvas=document.createElement('canvas');canvas.width=1;canvas.height=1;const ctx=canvas.getContext('2d');ctx.drawImage(v,0,0,1,1);return [...ctx.getImageData(0,0,1,1).data]});assert.ok(pixel[0]>100&&pixel[1]<110,'Discord Activity decodes the actual shared-screen pixels');
  assert.equal(rooms.listMembers('tenant',room.roomId).length,1,'Viewing the share does not join its voice room');
  await viewer.evaluate(()=>{document.querySelector('main').requestFullscreen=()=>Promise.reject(Error('Host restricts fullscreen'))});await viewer.getByRole('button',{name:'Fullscreen',exact:true}).click();assert.equal(await viewer.locator('main').evaluate(node=>node.classList.contains('expanded')),true);await viewer.getByRole('button',{name:'Exit full view',exact:true}).click();
  await viewer.locator('#output').selectOption('program');await viewer.waitForFunction(()=>{const video=document.querySelector('video');return !video.hasAttribute('src')&&video.paused&&video.readyState===0});assert.equal((await(await fetch(origin+'/api/watch/broadcast/state?roomId='+party.roomId)).json()).screen.active,true,'A viewer switching output does not stop the share');
  await viewer.locator('#output').selectOption('screen');await playing(viewer.locator('video'));
- // The shell enhancement relocates room controls out of the original person menu.
- // Verify that stopping capture revokes the backend share and then reaches the
- // viewer, instead of coupling the test to an older empty-state sentence.
- await page.getByRole('button',{name:'Room controls',exact:true}).click();await page.getByRole('button',{name:'Stop screen sharing',exact:true}).click();await page.evaluate(()=>{testCapture.stop();if(testCapture.stream.getTracks().some(track=>track.readyState!=='ended'))throw Error('Capture tracks remained live')});
+ // The floating local player can cover participant-card controls on a mobile viewport.
+ // Close only the local watch window first; the shared-screen backend must remain live.
+ await page.getByRole('button',{name:'Close watch player',exact:true}).click();
+ assert.equal((await(await fetch(origin+'/api/watch/broadcast/state?roomId='+party.roomId)).json()).screen.active,true,'Closing the local player must not stop the shared screen');
+ // The user menu can still be open from starting the share. Do not toggle it closed.
+ const screenToggle=page.locator('[data-hmo-user-id="owner"] .hmo-person-menu button').first();
+ if(!await screenToggle.isVisible())await page.getByRole('button',{name:'User profile and settings',exact:true}).click();
+ await screenToggle.waitFor({state:'visible'});await screenToggle.click();
+ await page.evaluate(()=>{testCapture.stop();if(testCapture.stream.getTracks().some(track=>track.readyState!=='ended'))throw Error('Capture tracks remained live')});
  let stopped=false;for(let attempt=0;attempt<30;attempt++){const state=await(await fetch(origin+'/api/watch/broadcast/state?roomId='+party.roomId)).json();if(state.screen?.active===false){stopped=true;break}await new Promise(resolve=>setTimeout(resolve,500))}assert.equal(stopped,true,'Stopping capture must revoke the shared-screen backend');
  await viewer.getByText('No screen is being shared.',{exact:true}).waitFor({timeout:15000});
  assert.deepEqual(errors,[]);console.log('PASS: real browser recording uploads an ultrawide screen with captured audio into the bounded room player and Discord Activity; viewers switch outputs without joining voice; fullscreen fallback and stopping capture work.');
