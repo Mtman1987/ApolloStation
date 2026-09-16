@@ -16,6 +16,22 @@ async function fixture(t){
  return join(dir,'state.sqlite');
 }
 
+test('closing a watch player preserves its HearMeOut room',async t=>{
+ const path=await fixture(t),rooms=new SqliteHearMeOutRoomMediaRuntime(path),program=new HearMeOutBroadcastProgram(path,binding);
+ t.after(()=>{program.close();rooms.close();});
+ const room=rooms.createRoom(principal,{roomId:'voice-only-room',name:'Voice only room',privacy:'public',operationId:'create-room'});
+ const party=program.createRoom({name:'Temporary watch party',requesterId:'owner',operationId:'create-party',sourceRoomId:room.roomId});
+ assert.equal(program.hostedRoom(room.roomId).roomId,party.roomId);
+ assert.equal(program.deleteHostedRoom(room.roomId),true);
+ assert.equal(program.hostedRoom(room.roomId),undefined);
+ assert.throws(()=>program.getSession('tenant',party.roomId),/not found/);
+ assert.equal(rooms.getRoom('tenant',room.roomId).roomId,room.roomId);
+ assert.equal(rooms.listMembers('tenant',room.roomId).some(member=>member.userId==='owner'),true);
+ const replacement=program.createRoom({name:'New watch party',requesterId:'owner',operationId:'create-replacement',sourceRoomId:room.roomId});
+ assert.notEqual(replacement.roomId,'');
+ assert.equal(program.hostedRoom(room.roomId).roomId,replacement.roomId);
+});
+
 test('deleting a HearMeOut room atomically removes its watch player',async t=>{
  const path=await fixture(t),rooms=new SqliteHearMeOutRoomMediaRuntime(path),program=new HearMeOutBroadcastProgram(path,binding);
  t.after(()=>{program.close();rooms.close();});
