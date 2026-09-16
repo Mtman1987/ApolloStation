@@ -20,7 +20,7 @@ assert.equal((await activityRequest.json()).error,'Choose a watch party');
 assert.equal((await request('/api/hearmeout/rooms',{method:'POST',headers:{origin:activityOrigin,'content-type':'application/json'},body:'{}'})).status,403);
 const stationResponse=await request('/sandbox/health');assert.equal(stationResponse.status,200);
 const station=await stationResponse.json();assert.equal(station.spmt?.runtimeMode,'sandbox');assert.equal(station.spmt?.usageLimitsEnforced,false,'Development media requests must not be stopped by a production plan allowance');
-for(const path of ['/watch','/activity?roomId=any-room','/apps/hearmeout'])assert.equal((await request(path)).status,200);
+for(const path of ['/watch','/activity','/apps/hearmeout'])assert.equal((await request(path)).status,200);
 assert.equal((await request('/api/watch/broadcast/state')).status,400,'A state read without a party cannot fall back to a global player');
 assert.equal((await request('/api/hearmeout/rooms')).status,401,'Private room and host workspace access remains protected');
 for(const alias of ['main-broadcast','discord-watch-room','discord-music-room']){
