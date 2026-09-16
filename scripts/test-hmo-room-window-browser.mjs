@@ -80,9 +80,9 @@ try{
  assert.equal((await(await fetch(origin+'/health/ready')).json()).broadcast.startedProcesses,starts);
  const liveSequence=Number((await(await fetch(origin+feedPrefix+'stream_video.m3u8')).text()).match(/#EXT-X-MEDIA-SEQUENCE:(\d+)/)[1]);
  assert.ok(liveSequence>initialSequence+20,'The room-owned broadcast advances independently of shell snapshots');assert.ok(segments.some(sequence=>sequence>=liveSequence),'The active window reads current video segments rather than replaying old ones');
- await app.getByRole('button',{name:'Close watch party player',exact:true}).click();
+ await app.getByRole('button',{name:'Close watch player',exact:true}).click();
  assert.equal(await app.locator('video,audio,[data-hmo-broadcast-frame]').count(),0);
- await app.getByRole('button',{name:'More',exact:true}).click();await app.getByRole('button',{name:'Delete room',exact:true}).click();
+ await app.getByRole('button',{name:'Room controls',exact:true}).click();await app.getByRole('button',{name:'Delete room',exact:true}).click();
  await app.locator('.hmo-console').waitFor({state:'detached'});assert.equal(rooms.listRooms(owner).length,0);assert.equal(program.hostedRoom(firstRoomId),undefined);assert.throws(()=>program.getSession('tenant',firstPartyId),/not found/);
  await page.evaluate(()=>{const f=document.querySelector('iframe');f.contentWindow.postMessage({protocol:'spmt.surface',version:1,type:'page.open',appId:'hearmeout',pageId:'home'},new URL(f.src).origin)});
  await createRoom('Second room');assert.equal(await app.locator('video,audio,[data-hmo-broadcast-frame]').count(),0);
