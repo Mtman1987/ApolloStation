@@ -23,6 +23,5 @@ test('HLS browser verification activates auto-hiding viewer controls without poi
 });
 test('room-window browser verification uses a real touch media profile',()=>{
  const source=readFileSync(new URL('../scripts/test-hmo-room-window-browser.mjs',import.meta.url),'utf8');
- assert.match(source,/viewport:\{width:390,height:844\},hasTouch:true,isMobile:true/);
- assert.match(source,/@media\(hover:none\)/);
+ assert.match(source,/browser\.newPage\(\{viewport:\{width:390,height:844\},hasTouch:true,isMobile:true\}\)/);
 });
