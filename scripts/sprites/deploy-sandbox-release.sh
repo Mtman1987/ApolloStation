@@ -62,11 +62,8 @@ create_apollo_service() {
     --duration 15s
 }
 
-# The media renderer and its tests need the same verified FFmpeg on the Sprite.
 provision_media_runtime() {
   mkdir -p "$media_root"
-  # The previous static build crashes on MPEG-TS HLS, including local files.
-  # Pin a retained monthly BtbN release, archive digest and both binary digests.
   if [[ ! -x "$media_root/ffmpeg" || ! -x "$media_root/ffprobe" || ! -f "$media_root/LICENSE" ]]; then
     local archive="$media_root/runtime.tar.xz"
     local package="ffmpeg-n8.1.2-50-g1a748fe2cd-linux64-gpl-8.1"
@@ -182,7 +179,10 @@ rollback() {
     sprite-env services stop "$service_name" || true
     sprite-env services delete "$service_name" || true
     stop_orphan_app_web_processes
-    create_apollo_service "$(basename "$previous_release")" 0 || true
+    # A rollback is still the live Green sandbox. Keep the local Stellar/Qwen
+    # path enabled so a failed release cannot silently turn every persona into
+    # an unusable card until the next successful deployment.
+    create_apollo_service "$(basename "$previous_release")" 1 || true
   fi
   if (( status != 0 && bootstrap_service_removed == 1 )) && [[ -z "$previous_release" ]]; then
     echo "Deployment failed; restoring bootstrap service $bootstrap_service_name" >&2
@@ -205,8 +205,6 @@ if [[ ! -d "$release_dir/.git" ]]; then
   fi
   clone_reference=()
   if [[ -n "$previous_release" && -d "$previous_release/.git" ]]; then
-    # Reuse verified Git objects already on this Sprite, then detach the new
-    # repository from its reference so rollback/release retention stay independent.
     clone_reference=(--reference-if-able "$previous_release" --dissociate)
   fi
   git -c http.version=HTTP/1.1 -c http.lowSpeedLimit=1024 -c http.lowSpeedTime=60 clone --filter=blob:none --no-checkout "${clone_reference[@]}" "$REPOSITORY_URL" "$release_dir"
@@ -297,7 +295,6 @@ if (( ready != 1 )); then
   exit 1
 fi
 
-# Owner-approved one-time test credit, after the Green release is healthy.
 if [[ "$DEPLOY_ROLE" == "release" ]]; then
   SPMT_RUNTIME_MODE=sandbox DEPLOY_ROLE=release node scripts/sprites/credit-green-test-xp.mjs
 fi

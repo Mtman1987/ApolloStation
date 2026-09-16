@@ -67,7 +67,7 @@ test("Sprite deployment verifies, tests, switches atomically, rolls back, and la
   assert.match(script, /--live-read-origin,https:\/\/spmt\.live/);
   assert.doesNotMatch(script, /SPMT_LIVE_READ_ACCESS_TOKEN|live-read-token-file|spmt-live-read-token/);
   assert.doesNotMatch(script, /--candidate-app,nebula-tag/);
-  assert.match(script, /create_apollo_service "\$\(basename "\$previous_release"\)" 0/);
+  assert.match(script, /create_apollo_service "\$\(basename "\$previous_release"\)" 1/);
   assert.match(script, /services_json="\$\(sprite-env services list\)"/);
   assert.match(script, /select\(\.http_port != null\)/);
   assert.match(script, /for stale_service in "\$\{http_services\[@\]\}" "\$service_name" "\$bootstrap_service_name" spmt-qwen/);
