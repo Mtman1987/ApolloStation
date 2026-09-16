@@ -45,9 +45,9 @@ test("HearMeOut menus stay inline while only the watch player floats", async () 
   assert.doesNotMatch(source, /hmo-floating-dialog|openFloatingPanel/);
   assert.match(source, /function personCard\(p,person,isActive\).*menu=userCardMenu\(\).*more\.addEventListener\('click',\(\)=>menu\.hidden=!menu\.hidden\)/);
   assert.match(source, /function djCard\(p\).*hmo-dj-panel.*openRoomPanel\(p,row,'music'\).*hmo:open-watch.*openRoomPanel\(p,row,'personas'\).*openRoomPanel\(p,row,'bridge'\)/);
-  assert.match(source, /function peoplePane\(p\).*for\(const person.*for\(const persona.*if\(deployedDjRooms.*bindCardMasonry\(rows\)/);
-  assert.match(source, /function bindCardMasonry\(rows\).*minCard=250.*heights=Array\(columns\)\.fill\(0\).*ResizeObserver.*MutationObserver/);
-  assert.match(source, /card\.style\.position='absolute'.*card\.style\.left=.*card\.style\.top=.*rows\.style\.height=/);
+  assert.match(source, /function peoplePane\(p\).*for\(const person.*for\(const persona.*if\(deployedDjRooms.*pane\.append\(rows\);return pane/);
+  assert.match(source, /\.hmo-person-list\{display:grid;grid-template-columns:repeat\(auto-fit,minmax\(min\(100%,250px\),1fr\)\);align-items:start;gap:12px/);
+  assert.doesNotMatch(source, /bindCardMasonry|hmoMasonry|card\.style\.position='absolute'/);
 });
 
 test("HearMeOut watch player is a movable resizable popover with opt-in controls", async () => {
