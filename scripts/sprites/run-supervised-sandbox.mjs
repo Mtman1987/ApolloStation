@@ -108,7 +108,7 @@ const sandboxManifests = [
 const children = new Set();
 const recoverableServices = new Set();
 let stopping = false;
-const stellarWorkerCredential = (llmBinary || flowOpenAiKey) ? randomBytes(32).toString("base64url") : undefined;
+const stellarWorkerCredential = llmBinary ? randomBytes(32).toString("base64url") : undefined;
 const chatGatewayCredential = randomBytes(32).toString("base64url");
 const streamweaverWorkerCredential = randomBytes(32).toString("base64url");
 const dshWorkerCredential = randomBytes(32).toString("base64url");
@@ -218,21 +218,15 @@ if (stellarWorkerCredential) {
   const stellar = start("Stellar Core worker", "apps/stellar-core/dist/worker-start.js", {
     ...common,
     SPMT_ORIGIN: spmtOrigin,
-    ...(flowOpenAiKey ? {
-      OPENAI_API_KEY: flowOpenAiKey,
-      STELLAR_HOSTED_MODEL: "gpt-5.6-luna",
-      SPMT_PRIVATE_FLOW_OPENAI_ENABLED: "1",
-    } : {
-      STELLAR_PROVIDER_ORIGIN: "http://127.0.0.1:8081",
-      STELLAR_PROVIDER_MODEL: "Qwen/Qwen3-8B-GGUF:Q4_K_M",
-    }),
+    STELLAR_PROVIDER_ORIGIN: "http://127.0.0.1:8081",
+    STELLAR_PROVIDER_MODEL: "Qwen/Qwen3-8B-GGUF:Q4_K_M",
     STELLAR_EXECUTION_TARGET: "sprite",
     STELLAR_WORKER_CREDENTIAL: stellarWorkerCredential,
     ...speechEnvironment,
     ...(llm?.pid ? { STELLAR_PROVIDER_PID: String(llm.pid) } : {}),
   });
   stellar.once("exit", (code, signal) => { if (!stopping) void stop(signal === "SIGINT" || signal === "SIGTERM" ? 0 : code ?? (signal ? 1 : 0)); });
-  await waitForUrl(stellar, `${spmtOrigin}/health/stellar`, "Stellar Core inference", 10 * 60_000);
+  await waitForUrl(stellar, `${spmtOrigin}/health/stellar`, "Stellar Core hosted inference", 10 * 60_000);
 }
 let nebulaArcade;
 if (candidateApp === "nebula-arcade") {
