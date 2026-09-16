@@ -26,6 +26,7 @@ export class HearMeOutBroadcastProgram {
     const columns=this.db.prepare('PRAGMA table_info(hmo_program_rooms)').all() as Array<{name?:string}>;
     if(!columns.some(column=>column.name==='last_active_at'))this.db.exec('ALTER TABLE hmo_program_rooms ADD COLUMN last_active_at TEXT');
     this.db.prepare('UPDATE hmo_program_rooms SET last_active_at=COALESCE(last_active_at,created_at)').run();
+    this.installSourceRoomCleanupTrigger();
     // The old immortal fallback player is no longer a valid hosting context.
     this.db.prepare('DELETE FROM hmo_program_channels WHERE program_id=?').run(HEARMEOUT_SINGLE_PROGRAM_ID);
     this.db.prepare('DELETE FROM hmo_program_room_operations WHERE program_id=?').run(HEARMEOUT_SINGLE_PROGRAM_ID);
@@ -45,6 +46,7 @@ export class HearMeOutBroadcastProgram {
   }
   ensureAppRoom(tenantId:string,roomId:string,name:string){
     if(tenantId!==this.binding.tenantId)throw Error('Watch party belongs to another deployment');
+    this.installSourceRoomCleanupTrigger();
     const source=requireRoomId(roomId),id='room-'+createHash('sha256').update(JSON.stringify([tenantId,source])).digest('hex');
     return this.transaction(()=>{const room=this.hostedRoom(source)??this.insertRoom(id,name,source);this.touch(room.roomId);return room;});
   }
@@ -63,6 +65,7 @@ export class HearMeOutBroadcastProgram {
   createRoom(input:{name:string;requesterId:string;operationId:string;channel?:HearMeOutPartyChannel;sourceRoomId?:string}){
     if(input.channel&&input.sourceRoomId)throw Error('Choose one hosting room');
     if(!input.channel&&!input.sourceRoomId)throw Error('Join a HearMeOut room or Discord voice channel to host a watch party');
+    if(input.sourceRoomId)this.installSourceRoomCleanupTrigger();
     const name=input.name.trim();if(!name||name.length>120||/[\r\n\0]/.test(name))throw Error('Enter a party name up to 120 characters');
     if(!input.requesterId||!input.operationId||input.operationId.length>200)throw Error('Invalid room request key');
     if(input.channel)validateChannel(input.channel);
@@ -104,6 +107,15 @@ export class HearMeOutBroadcastProgram {
     return removed;
   }
   close(){this.db.close();}
+  private installSourceRoomCleanupTrigger(){
+    if(!this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='hmo_rooms'").get())return;
+    this.db.exec(`CREATE TRIGGER IF NOT EXISTS hmo_program_cleanup_after_room_delete AFTER DELETE ON hmo_rooms BEGIN
+      DELETE FROM hmo_program_channels WHERE program_id IN (SELECT id FROM hmo_program_rooms WHERE source_room_id=OLD.room_id);
+      DELETE FROM hmo_program_room_operations WHERE program_id IN (SELECT id FROM hmo_program_rooms WHERE source_room_id=OLD.room_id);
+      DELETE FROM hmo_program WHERE id IN (SELECT id FROM hmo_program_rooms WHERE source_room_id=OLD.room_id);
+      DELETE FROM hmo_program_rooms WHERE source_room_id=OLD.room_id;
+    END;`);
+  }
   private touch(roomId:string,at=new Date().toISOString()){this.db.prepare('UPDATE hmo_program_rooms SET last_active_at=? WHERE id=?').run(at,roomId);}
   private empty(now:string,roomId:string):HearMeOutMediaSessionV1{return {schemaVersion:1,tenantId:this.binding.tenantId,roomId,sessionId:roomId,lane:'movie',current:null,queue:[],playback:{status:'idle',position:0,updatedAt:now,muted:false,volume:100},revision:0};}
   private transaction<T>(run:()=>T):T{this.db.exec('BEGIN IMMEDIATE');try{const result=run();this.db.exec('COMMIT');return result;}catch(error){this.db.exec('ROLLBACK');throw error;}}
