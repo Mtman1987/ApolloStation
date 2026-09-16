@@ -88,6 +88,8 @@ test("HearMeOut room UI stays truthful when no media or provider session is acti
 });
 
 test("HearMeOut home exposes only room navigation until music saving is a complete workflow", () => {
-  assert.match(runtime, /data-hmo-library.*remove\(\)/);
-  assert.match(runtime, /hmo-hero-actions.*href="\/watch".*remove\(\)/);
+  const page = runtime.split("\n").find((line) => line.includes('class="hmo-hero-actions"')) ?? "";
+  assert.doesNotMatch(page, /data-hmo-library|href="\/watch"/);
+  assert.match(page, /data-hmo-create-home/);
+  assert.match(page, /data-hmo-open-rooms/);
 });
