@@ -16,7 +16,7 @@ test("Nebula Arcade sandbox keeps the tag game functional while all games report
     assert.deepEqual(await health.json(), { ready: true, app: "nebula-arcade", runtimeMode: "sandbox", outboundIntegrations: "disabled", buildSha: "test-sha" });
 
     const home = await (await fetch(origin)).text();
-    assert.match(home, /NEBULA ARCADE/);
+    assert.match(home, /NEBULA(?:\s|<span>)+ARCADE/);
     assert.match(home, /GAMES HUB · 20 EQUAL TITLES/);
     assert.match(home, /class="hero-logo"/);
     assert.match(home, /spmt-star-layer/);
