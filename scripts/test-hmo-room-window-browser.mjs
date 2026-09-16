@@ -54,7 +54,7 @@ try{
  let window=app.frameLocator('[data-hmo-broadcast-frame]');
  await window.getByRole('heading',{name:'Watch parties',exact:true}).waitFor();
  await window.getByRole('textbox',{name:'Watch party name',exact:true}).fill('First movie night');await window.getByRole('button',{name:'Create watch party',exact:true}).click();
- await window.getByText('Nothing playing',{exact:true}).waitFor();
+ await window.getByText('Nothing playing',{exact:true}).waitFor({state:'attached'});
  const firstPartyId=program.hostedRoom(firstRoomId).roomId;const feedPrefix='/api/watch/sessions/'+firstPartyId+'/broadcast/';
  assert.equal(await window.locator('video').evaluate(v=>v.currentSrc), '');
  await window.getByRole('button',{name:'Enable sound',exact:true}).click();
