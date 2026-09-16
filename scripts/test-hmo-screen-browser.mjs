@@ -29,8 +29,8 @@ try{
   const stream=canvas.captureStream(24),audio=new AudioContext(),tone=audio.createOscillator(),destination=audio.createMediaStreamDestination();tone.connect(destination);tone.start();await audio.resume();stream.addTrack(destination.stream.getAudioTracks()[0]);
   window.testCapture={stream,stop(){clearInterval(timer);tone.stop();void audio.close()}};return stream;
  }});
- await page.goto(origin+'/apps/hearmeout');await page.getByRole('button',{name:'Create Room',exact:true}).click();await page.locator('[name=name]').fill('Screen hosts');await page.getByRole('button',{name:'Create & join',exact:true}).click();await page.getByRole('button',{name:'Watch party player',exact:true}).waitFor();
- await page.getByRole('button',{name:'More',exact:true}).click();await page.getByRole('button',{name:'Share screen to watch party',exact:true}).click();
+ await page.goto(origin+'/apps/hearmeout');await page.getByRole('button',{name:'Create Room',exact:true}).click();await page.locator('[name=name]').fill('Screen hosts');await page.getByRole('button',{name:'Create & join',exact:true}).click();await page.getByRole('button',{name:'Room controls',exact:true}).waitFor();
+ await page.getByRole('button',{name:'Room controls',exact:true}).click();await page.getByRole('button',{name:'Share screen',exact:true}).click();
  const player=page.frameLocator('[data-hmo-broadcast-frame]');await player.locator('#output').waitFor();assert.equal(await player.locator('#output').inputValue(),'screen');
  async function playing(video){await video.evaluate(v=>new Promise((resolve,reject)=>{const deadline=Date.now()+40000,timer=setInterval(()=>{if(!v.paused&&v.currentTime>.1&&v.videoWidth){clearInterval(timer);resolve()}else if(Date.now()>deadline){clearInterval(timer);reject(Error('Screen failed to play: '+v.readyState+' '+v.error?.message))}},100)}))}
  await playing(player.locator('video'));
@@ -49,7 +49,7 @@ try{
  // The shell enhancement relocates room controls out of the original person menu.
  // Verify that stopping capture revokes the backend share and then reaches the
  // viewer, instead of coupling the test to an older empty-state sentence.
- await page.locator('.hmo-room-tools').getByRole('button',{name:/^(?:Stop sharing|Share screen to watch party)$/}).click();await page.evaluate(()=>{testCapture.stop();if(testCapture.stream.getTracks().some(track=>track.readyState!=='ended'))throw Error('Capture tracks remained live')});
+ await page.getByRole('button',{name:'Room controls',exact:true}).click();await page.getByRole('button',{name:'Stop screen sharing',exact:true}).click();await page.evaluate(()=>{testCapture.stop();if(testCapture.stream.getTracks().some(track=>track.readyState!=='ended'))throw Error('Capture tracks remained live')});
  let stopped=false;for(let attempt=0;attempt<30;attempt++){const state=await(await fetch(origin+'/api/watch/broadcast/state?roomId='+party.roomId)).json();if(state.screen?.active===false){stopped=true;break}await new Promise(resolve=>setTimeout(resolve,500))}assert.equal(stopped,true,'Stopping capture must revoke the shared-screen backend');
  await viewer.getByText('No screen is being shared.',{exact:true}).waitFor({timeout:15000});
  assert.deepEqual(errors,[]);console.log('PASS: real browser recording uploads an ultrawide screen with captured audio into the bounded room player and Discord Activity; viewers switch outputs without joining voice; fullscreen fallback and stopping capture work.');

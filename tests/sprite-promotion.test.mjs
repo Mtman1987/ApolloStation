@@ -21,8 +21,9 @@ test("public probing runs only after the completed promotion mutation", async ()
 test("Sprite promotion has one protected release target", async () => {
   const workflow = await readFile(workflowPath, "utf8");
 
-  assert.match(workflow, /^  push:\n    branches: \[main\]/m);
-  assert.match(workflow, /github\.ref == 'refs\/heads\/main'/);
+  assert.match(workflow, /^  workflow_run:\n    workflows: \["Green shared contracts"\]\n    types: \[completed\]\n    branches: \[main\]/m);
+  assert.match(workflow, /github\.event\.workflow_run\.conclusion == 'success'/);
+  assert.match(workflow, /github\.event\.workflow_run\.head_sha/);
   assert.doesNotMatch(workflow, /work\/\*\*/);
   assert.doesNotMatch(workflow, /sprite-review|DEPLOY_ROLE: review/);
   assert.match(workflow, /SPRITES_AUTODEPLOY_ENABLED == 'true'/);
@@ -56,7 +57,8 @@ test("Sprite deployment verifies, tests, switches atomically, rolls back, and la
   assert.match(script, /c733b4b2951e5957e15505f788b2c65a7a41b6da4b289e295852cc38079b4d2b/);
   assert.match(script, /--cmd "\$media_root\/run-node"/);
   assert.match(script, /npm run typecheck/);
-  assert.match(script, /timeout --signal=TERM --kill-after=15s 10m npm run test:sprite/);
+  assert.match(script, /npm run build/);
+  assert.doesNotMatch(script, /npm run test:sprite/);
   assert.match(script, /mv -Tf "\$next_link" "\$current_link"/);
   assert.match(script, /Deployment failed; restoring/);
   assert.match(script, /create_apollo_service "\$BUILD_SHA"/);

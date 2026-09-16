@@ -229,7 +229,7 @@ cd "$release_dir"
 provision_media_runtime
 npm ci --ignore-scripts
 npm run typecheck
-NODE_OPTIONS="--import=$release_dir/scripts/sprites/supervisor-test-port-isolation.mjs" timeout --signal=TERM --kill-after=15s 10m npm run test:sprite
+npm run build
 
 if [[ "$DEPLOY_ROLE" == "release" ]]; then
   HEARMEOUT_CONTROLLED_MEDIA=1 NODE_OPTIONS="--import=$release_dir/scripts/offline-network-guard.mjs" node scripts/sprites/check-hearmeout-media-source.mjs
