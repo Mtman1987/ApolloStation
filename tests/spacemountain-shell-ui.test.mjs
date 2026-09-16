@@ -54,8 +54,10 @@ test("Commlink retains saved ChatSpaces, Desks, feed, compose, search, pop-out a
   assert.match(base, /commlinkComposer\.requestSubmit\(\)/);
 });
 
-test("the shared Commlink icon opens over the active app instead of navigating away", () => {
-  assert.match(base, /node\.dataset\.launchApp === "commlink".*openWorkspaceService\("commlink"\).*return/s);
+test("the shared Commlink icon opens the Commlink app while Workspace keeps its own button", () => {
+  assert.doesNotMatch(base, /node\.dataset\.launchApp === "commlink".*openWorkspaceService\("commlink"\).*return/s);
+  assert.match(base, /data-launch-app="commlink"/);
+  assert.match(base, /data-workspace-toggle/);
 });
 
 test("Simulation Rooms mirror only the canonical Public or Personal Overlay Bay output", () => {

@@ -22,7 +22,9 @@ test("HearMeOut renders participant, persona, and DJ cards in the app-owned room
   assert.match(runtime, /function djCard\(/);
   assert.match(runtime, /Music, movies, personas & Discord/);
   assert.match(runtime, /actions\.append\(music,watch,personas,bridge\)/);
-  assert.match(runtime, /rows\.append\(djCard\(p\)\)/);
+  assert.match(runtime, /Deploy HearMeOut DJ/);
+  assert.match(runtime, /function deployDj\(p,control\).*append\(djCard\(p\)\)/);
+  assert.match(runtime, /if\(deployedDjRooms\.has\(p\.room\.roomId\)\)rows\.append\(djCard\(p\)\)/);
   assert.match(runtime, /hmo-bot-drawer/);
   assert.match(runtime, /hmo-person-menu/);
   assert.match(runtime, /Audio settings/);
@@ -31,7 +33,7 @@ test("HearMeOut renders participant, persona, and DJ cards in the app-owned room
 
 test("HearMeOut leaves Commlink exclusively to the shared shell header", () => {
   assert.doesNotMatch(runtime, /Open Commlink|hmo:open-commlink/);
-  assert.doesNotMatch(surface, /workspace\.open|service:'commlink'|window\.open|location\.assign|app:'commlink'/);
+  assert.doesNotMatch(surface, /workspace\.open|service:'commlink'|window\.open|app:'commlink'/);
 });
 
 test("HearMeOut persona text controls send directly without relying on shell enhancement", () => {

@@ -214,7 +214,6 @@ export class SpaceMountainShellUi {
 
   private openApp(app: SpaceMountainAppCardV1) {
     if (app.appId === "mission-control") { const stellar = this.shellApp("stellar-core"); if (stellar) { this.openApp(stellar); const panel = this.options.root.querySelector<HTMLDetailsElement>("[data-mission-control]"); if (panel) panel.open = true; } return; }
-    if (app.appId === "commlink" && !this.serviceEmbed) { this.openWorkspaceService("commlink"); return; }
     if (app.appId === "companion" || app.appId === "mountainview") { window.location.assign(`/downloads/${app.appId}`); return; }
     if (!this.shellApp(app.appId)) return this.options.onLaunchApp?.(app);
     this.activeAppId = app.appId;
@@ -292,7 +291,6 @@ export class SpaceMountainShellUi {
     root.querySelectorAll<HTMLElement>("[data-nav]").forEach((node) => node.addEventListener("click", () => this.navigate(node.dataset.nav as SpaceMountainViewV1)));
     root.querySelector<HTMLElement>(".spmt-account-summary")?.addEventListener("click", () => this.navigate("account"));
     root.querySelectorAll<HTMLElement>("[data-launch-app]").forEach((node) => node.addEventListener("click", () => {
-      if (node.dataset.launchApp === "commlink" && !this.serviceEmbed) { this.openWorkspaceService("commlink"); return; }
       const app = this.snapshot.apps.find((item) => item.appId === node.dataset.launchApp);
       if (app) this.openApp(app);
     }));
