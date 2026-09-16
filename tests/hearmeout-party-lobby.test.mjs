@@ -18,10 +18,11 @@ async function fixture(t){const dir=await mkdtemp(join(tmpdir(),'hmo-parties-'))
 const create=(program,name,extra={})=>program.createRoom({name,requesterId:'viewer',operationId:name,...extra});
 const request=(program,roomId,query,lane='movie',operationId=query)=>program.request({roomId,query,lane,operationId,requesterId:'viewer',displayName:'Viewer'},media);
 
-test('parties isolate mixed queues, idempotency, clocks and encoder leases across connections and restart',async t=>{
+test('parties isolate mixed queues, idempotency, clocks and encoder leases across room-owned players',async t=>{
  const path=await fixture(t);let program=new HearMeOutBroadcastProgram(path,binding);
  const other=new HearMeOutBroadcastProgram(path,binding);t.after(()=>{program.close();other.close();});
- const a=create(program,'Movie night'),b=create(program,'Music night');assert.notEqual(a.roomId,b.roomId);assert.deepEqual(create(other,'Movie night'),a);
+ assert.equal(program.listRooms().length,0);assert.throws(()=>create(program,'Orphan'),/Join a HearMeOut room or Discord voice channel/);assert.throws(()=>program.getSession(),/Choose a watch party/);
+ const a=create(program,'Movie night',{sourceRoomId:'room-a'}),b=create(program,'Music night',{sourceRoomId:'room-b'});assert.notEqual(a.roomId,b.roomId);assert.deepEqual(create(other,'Movie night',{sourceRoomId:'room-a'}),a);
  await Promise.all([request(program,a.roomId,'Movie','movie','same-key'),request(other,a.roomId,'Movie','movie','same-key'),request(other,b.roomId,'Song','music','same-key')]);
  await request(program,a.roomId,'Next song','music');const before=program.getSession('crew',b.roomId);
  assert.equal(program.getSession('crew',a.roomId).queue.length,1);assert.equal(before.current.item.title,'Song');assert.notEqual(before.current.requestId,program.getSession('crew',a.roomId).current.requestId);
@@ -30,25 +31,28 @@ test('parties isolate mixed queues, idempotency, clocks and encoder leases acros
  const first=program.getSession('crew',a.roomId).current.requestId;program.control(owner,{roomId:a.roomId,action:'skip',expectedRequestId:first});program.control(owner,{roomId:a.roomId,action:'skip',expectedRequestId:first});
  assert.equal(program.getSession('crew',a.roomId).current.item.title,'Next song');assert.deepEqual(program.getSession('crew',b.roomId),before);assert.equal(program.finishBroadcastRequest('crew',a.roomId,'movie',before.current.requestId),false);
  const aBefore=program.getSession('crew',a.roomId);program.close();program=new HearMeOutBroadcastProgram(path,binding);
- assert.deepEqual(program.getSession('crew',a.roomId),aBefore);assert.deepEqual(program.getSession('crew',b.roomId),before);await request(program,b.roomId,'Song','music','same-key');assert.deepEqual(program.getSession('crew',b.roomId),before);assert.equal(program.getSession().current,null);
+ assert.deepEqual(program.getSession('crew',a.roomId),aBefore);assert.deepEqual(program.getSession('crew',b.roomId),before);await request(program,b.roomId,'Song','music','same-key');assert.deepEqual(program.getSession('crew',b.roomId),before);assert.throws(()=>program.getSession(),/Choose a watch party/);
 });
 
-test('simultaneous hosts in separate workers create one program per Discord channel or Apollo room',async t=>{
+test('simultaneous hosts create exactly one hidden program per Discord channel or HearMeOut room',async t=>{
  const path=await fixture(t),program=new HearMeOutBroadcastProgram(path,binding);t.after(()=>program.close());const moduleUrl=new URL('../apps/hearmeout/dist/broadcast-program.js',import.meta.url).href;
  for(const hosting of [{channel},{sourceRoomId:'private-conversation'}]){
   const workers=[0,1,2].map(i=>new Worker(`const {parentPort,workerData}=require('node:worker_threads');(async()=>{const {HearMeOutBroadcastProgram}=await import(workerData.moduleUrl);const p=new HearMeOutBroadcastProgram(workerData.path,workerData.binding);parentPort.postMessage('ready');parentPort.once('message',()=>{try{parentPort.postMessage(p.createRoom({...workerData.hosting,name:'Party '+workerData.i,requesterId:'viewer-'+workerData.i,operationId:'create-'+JSON.stringify(workerData.hosting)}));}finally{p.close();}});})()`,{eval:true,workerData:{moduleUrl,path,binding,hosting,i}}));
   t.after(()=>Promise.all(workers.map(worker=>worker.terminate())));await Promise.all(workers.map(worker=>new Promise((resolve,reject)=>{worker.once('message',resolve);worker.once('error',reject);})));const results=workers.map(worker=>new Promise((resolve,reject)=>{worker.once('message',resolve);worker.once('error',reject);}));workers.forEach(worker=>worker.postMessage('create'));const rooms=await Promise.all(results);assert.equal(new Set(rooms.map(room=>room.roomId)).size,1);
  }
- assert.equal(program.listRooms().length,3);const existing=program.channelRoom(channel),remote=create(program,'Elsewhere',{channel:{...channel,channelId:'345678901234567890'}});assert.notEqual(existing.roomId,remote.roomId);program.joinRoom(remote.roomId);assert.deepEqual(program.channelRoom(channel),existing);assert.equal(create(program,'Attempt second host',{channel}).roomId,existing.roomId);
+ assert.equal(program.listRooms().length,2);const existing=program.channelRoom(channel),remote=create(program,'Elsewhere',{channel:{...channel,channelId:'345678901234567890'}});assert.notEqual(existing.roomId,remote.roomId);program.joinRoom(remote.roomId);assert.deepEqual(program.channelRoom(channel),existing);assert.equal(create(program,'Attempt second host',{channel}).roomId,existing.roomId);
+ assert.equal(program.deleteChannelRoom(channel),true);assert.equal(program.channelRoom(channel),undefined);assert.equal(program.listRooms().some(room=>room.roomId===existing.roomId),false);
+ assert.equal(program.deleteHostedRoom('private-conversation'),true);assert.equal(program.hostedRoom('private-conversation'),undefined);
 });
 
-test('public watch windows view any party without joining voice; hosting and legacy room actions stay scoped',async t=>{
+test('public watch windows view any party without joining voice; hosting remains scoped to a room or Discord VC',async t=>{
  const path=await fixture(t),rooms=new SqliteHearMeOutRoomMediaRuntime(path);
  const auth=createServer((req,res)=>{res.setHeader('content-type','application/json');if(req.headers.cookie!=='session=owner'){res.writeHead(401);res.end('{}');return;}res.end(JSON.stringify({actorId:'owner',tenantIds:['crew'],scopes:['identity:read']}));});await new Promise(resolve=>auth.listen(0,'127.0.0.1',resolve));
  const host=createHearMeOutWebServer({spmtOrigin:'http://127.0.0.1:'+auth.address().port,databasePath:path,port:0,singleBroadcast:binding,suiteMediaResolver:media,activity:{tenantId:'crew',clientId:'456789012345678901',guildIds:[channel.guildId]}});await host.listen();t.after(async()=>{await host.close();rooms.close();await new Promise(resolve=>auth.close(resolve));});const base='http://127.0.0.1:'+host.server.address().port;
  rooms.createRoom(owner,{roomId:'private-chat',name:'Our private conversation',privacy:'private',operationId:'private'});rooms.createRoom(owner,{roomId:'other-chat',name:'Their conversation',privacy:'private',operationId:'other'});const before=rooms.listMembers('crew','private-chat');
  const initial=await fetch(base+'/api/watch/broadcast/rooms'),cookie=initial.headers.get('set-cookie').split(';')[0];
  const post=(path,body,key,headers={})=>fetch(base+path,{method:'POST',headers:{cookie,origin:base,'content-type':'application/json','idempotency-key':key,...headers},body:JSON.stringify(body)});
+ assert.equal((await post('/api/watch/broadcast/rooms',{name:'Orphan party'},'orphan')).status,400);
  const aResponse=await post('/api/watch/broadcast/rooms?appRoomId=private-chat',{name:'Our movie'},'a',{cookie:'session=owner'});assert.equal(aResponse.status,201,await aResponse.clone().text());const a=await aResponse.json();
  const b=await(await post('/api/watch/broadcast/rooms?appRoomId=other-chat',{name:'Their movie'},'b',{cookie:'session=owner'})).json();assert.notEqual(a.roomId,b.roomId);
  const duplicate=await(await post('/api/watch/broadcast/rooms?appRoomId=private-chat',{name:'Second player'},'another',{cookie:'session=owner'})).json();assert.equal(duplicate.roomId,a.roomId);
@@ -56,12 +60,12 @@ test('public watch windows view any party without joining voice; hosting and leg
  assert.equal((await post('/api/hearmeout/rooms/private-chat/media/movie',{query:'Movie A'},'movie-a',{cookie:'session=owner'})).status,201);assert.equal((await post('/api/hearmeout/rooms/other-chat/media/music',{query:'Song B'},'song-b',{cookie:'session=owner'})).status,201);
  const read=id=>fetch(base+'/api/watch/broadcast/state?roomId='+id).then(r=>r.json());const stateA=await read(a.roomId),stateB=await read(b.roomId);assert.equal(stateA.current.item.title,'Movie A');assert.equal(stateB.current.item.title,'Song B');assert.notEqual(stateA.broadcast.playbackUrl,stateB.broadcast.playbackUrl);assert.deepEqual(await(await fetch(base+'/api/watch/sessions/'+b.roomId+'/state')).json(),stateB);
  assert.deepEqual(rooms.listMembers('crew','private-chat'),before);assert.equal(rooms.listMembers('crew','other-chat').some(member=>member.userId==='viewer'),false);assert.equal((await fetch(base+'/api/hearmeout/rooms/other-chat')).status,401);
- assert.equal((await post('/api/watch/broadcast/control?roomId='+a.roomId,{action:'skip',expectedRequestId:stateA.current.requestId},'skip')).status,200);assert.deepEqual(await read(b.roomId),stateB);assert.equal((await fetch(base+'/api/watch/broadcast/state?roomId=missing')).status,404);
- const directory=await(await fetch(base+'/api/watch/broadcast/rooms')).json();assert.equal(directory.rooms.find(room=>room.roomId===b.roomId).title,'Song B');assert.doesNotMatch(JSON.stringify(directory),/sourceRoomId|members|private-chat|other-chat/);
+ assert.equal((await post('/api/watch/broadcast/control?roomId='+a.roomId,{action:'skip',expectedRequestId:stateA.current.requestId},'skip')).status,200);assert.deepEqual(await read(b.roomId),stateB);assert.equal((await fetch(base+'/api/watch/broadcast/state?roomId=missing')).status,404);assert.equal((await fetch(base+'/api/watch/broadcast/state')).status,400);
+ const directory=await(await fetch(base+'/api/watch/broadcast/rooms')).json();assert.equal(directory.rooms.find(room=>room.roomId===b.roomId).title,'Song B');assert.equal(directory.hostedRoomId,null);assert.doesNotMatch(JSON.stringify(directory),/sourceRoomId|members|private-chat|other-chat|Main watch party|main-broadcast/);
  for(const path of ['/watch','/activity','/activity-lite']){const html=await(await fetch(base+path)).text();assert.match(html,/id="party-lobby"/);assert.match(html,/Keep your own voice conversation/);}
 });
 
-test('signed Discord menus create channel parties, route songs locally and require no voice membership to watch',async t=>{
+test('signed Discord menus create one hidden channel party per VC and route songs locally',async t=>{
  const path=await fixture(t),program=new HearMeOutBroadcastProgram(path,binding),rooms=new SqliteHearMeOutRoomMediaRuntime(path);t.after(()=>{program.close();rooms.close();});const {privateKey,publicKey}=generateKeyPairSync('ed25519');
  const router=new HearMeOutDiscordInteractionRouter({publicKeyHex:publicKey.export({format:'der',type:'spki'}).subarray(-32).toString('hex'),singleProgram:program,rooms,tenants:{resolve:()=>binding.tenantId},principals:{resolve(){throw Error('Public viewing must not require account or room membership');}},requestMedia:async input=>{await request(program,input.roomId,input.query,input.lane,input.interactionId);return{jobId:input.roomId};}});
  let seq=0;const call=async(data,type=3,channelId=channel.channelId)=>{const rawBody=JSON.stringify({type,id:String(567890123456789000n+BigInt(++seq)),guild_id:channel.guildId,channel_id:channelId,application_id:'456789012345678901',member:{user:{id:'678901234567890123',username:'Viewer'}},data}),timestamp=String(Math.floor(Date.now()/1000));return router.handle({rawBody,timestamp,signature:sign(null,Buffer.from(timestamp+rawBody),privateKey).toString('hex')});};
