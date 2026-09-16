@@ -152,6 +152,13 @@ export const PRODUCT_UI_CSS = `
   --spmt-panel-strong: color-mix(in srgb,var(--spmt-accent) 6%,rgb(8 10 17 / min(.94,calc(var(--spmt-glass-opacity,.76) * .98))));
   --spmt-border: rgba(255,255,255,.11);
   --spmt-shadow: -12px 18px 60px color-mix(in srgb,var(--spmt-accent) 11%,transparent),12px 22px 72px color-mix(in srgb,var(--spmt-accent-secondary) 9%,rgba(0,0,0,.42));
+  --spmt-layer-base: 0;
+  --spmt-layer-sticky: 100;
+  --spmt-layer-popover: 700;
+  --spmt-layer-shell: 800;
+  --spmt-layer-modal: 900;
+  --spmt-layer-toast: 950;
+  --spmt-layer-blocking: 1000;
   color: var(--spmt-ink);
   position: relative;
   isolation: isolate;

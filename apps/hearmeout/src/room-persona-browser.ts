@@ -54,13 +54,13 @@ export class HearMeOutRoomPersonaPlayer {
   const list=root.querySelector('.hmo-person-list');if(!list)return;
   let host=list.querySelector<HTMLElement>('[data-hmo-remote-roster]');if(!host){host=document.createElement('div');host.dataset.hmoRemoteRoster='1';list.append(host)}
   const cards=new Map<string,{name:string;avatar:string;idle:string;talking:string;kind:string;members?:Array<{name:string;avatar:string;speaking:boolean}>;remaining?:number}>();
-  for(const p of this.state?.personas||[])cards.set(p.livekitIdentity,{name:p.displayName,avatar:photo(p.avatarUrl),idle:photo(p.idleAvatarUrl)||photo(p.avatarUrl),talking:photo(p.talkingAvatarUrl)||photo(p.idleAvatarUrl)||photo(p.avatarUrl),kind:'Persona'});
+  for(const p of this.state?.personas||[]){if(root.querySelector('[data-hmo-persona-id="'+CSS.escape(p.personaId)+'"]'))continue;cards.set(p.livekitIdentity,{name:p.displayName,avatar:photo(p.avatarUrl),idle:photo(p.idleAvatarUrl)||photo(p.avatarUrl),talking:photo(p.talkingAvatarUrl)||photo(p.idleAvatarUrl)||photo(p.avatarUrl),kind:'Persona'});}
   for(const p of this.remote){let metadata:any={};try{metadata=JSON.parse(p.metadata||'{}')}catch{}if(metadata.hidden===true)continue;
    if(metadata.source==='discord'||p.identity.startsWith('discord-')){
     if(p.identity.startsWith('discord-bridge-listener'))continue;
     const members=Array.isArray(metadata.discordMembers)?metadata.discordMembers.slice(0,100).map((m:any)=>({name:String(m.username||m.displayName||'Discord member').slice(0,120),avatar:photo(m.photoURL),speaking:Array.isArray(metadata.activeSpeakers)&&metadata.activeSpeakers.includes(m.userId)})):undefined;
     cards.set(p.identity,{name:String(metadata.displayName||p.name||'Discord voice'),avatar:photo(metadata.photoURL),idle:photo(metadata.photoURL),talking:photo(metadata.photoURL),kind:'Discord',...(members?{members,remaining:Math.max(0,Number(metadata.memberCount||0)-members.length)}:{})});
-   }else if(p.identity.startsWith('persona:')||metadata.type==='persona')cards.set(p.identity,{name:String(metadata.displayName||p.name),avatar:photo(metadata.avatar),idle:photo(metadata.idleAvatar)||photo(metadata.avatar),talking:photo(metadata.talkingAvatar)||photo(metadata.idleAvatar)||photo(metadata.avatar),kind:'Persona'});
+   }else if(p.identity.startsWith('persona:')||metadata.type==='persona'){const personaId=String(metadata.personaId||p.identity.replace(/^persona:/,''));if(!root.querySelector('[data-hmo-persona-id="'+CSS.escape(personaId)+'"]'))cards.set(p.identity,{name:String(metadata.displayName||p.name),avatar:photo(metadata.avatar),idle:photo(metadata.idleAvatar)||photo(metadata.avatar),talking:photo(metadata.talkingAvatar)||photo(metadata.idleAvatar)||photo(metadata.avatar),kind:'Persona'});}
   }
   const signature=JSON.stringify([...cards]);if(host.dataset.signature!==signature){host.dataset.signature=signature;host.replaceChildren();for(const [identity,p] of cards){
    const card=document.createElement('article');card.className='hmo-person hmo-remote-person';card.dataset.hmoRemoteIdentity=identity;

@@ -12,13 +12,18 @@ test("HearMeOut app-owned surface exposes real room creation membership media an
   assert.doesNotMatch(source, /Music \/ DJ/);
 });
 
-test("HearMeOut no longer reserves a permanent Bot Hub header surface", () => {
+test("HearMeOut renders participant, persona, and DJ cards in the app-owned room renderer", () => {
   assert.doesNotMatch(surface, /hmo-bot-hub/);
   assert.doesNotMatch(surface, /hmo-bot-icon/);
+  assert.doesNotMatch(surface, /MutationObserver/);
+  assert.doesNotMatch(surface, /function personaCard/);
+  assert.match(runtime, /function peoplePane\(p\).*personaCard\(p,persona,p\.personaData\).*djCard\(p\)/);
+  assert.match(runtime, /function personaCard\(/);
+  assert.match(runtime, /function djCard\(/);
   assert.match(runtime, /hmo-bot-drawer/);
-  assert.match(runtime, /Bots & personas/);
   assert.match(runtime, /hmo-person-menu/);
   assert.match(runtime, /Audio settings/);
+  assert.doesNotMatch(runtime, /label\.textContent=own\?'Room volume'/);
 });
 
 test("HearMeOut opens Commlink in the shell workspace instead of a popup window", () => {
@@ -27,9 +32,9 @@ test("HearMeOut opens Commlink in the shell workspace instead of a popup window"
 });
 
 test("HearMeOut persona text controls send directly without relying on shell enhancement", () => {
-  assert.match(runtime, /const call=button\('Send'/);
-  assert.match(runtime, /ta\.dataset\.hmoEnterSend='1'/);
-  assert.match(runtime, /event\.key==='Enter'.*call\.click\(\)/);
+  assert.match(runtime, /call=button\('Send'/);
+  assert.match(runtime, /input\.dataset\.hmoEnterSend='1'/);
+  assert.match(runtime, /(?:event|e)\.key==='Enter'.*call\.click\(\)/);
   assert.doesNotMatch(runtime, /const call=button\('Call '/);
 });
 test("HearMeOut uses the Discord directory and the native persona room transport", () => {

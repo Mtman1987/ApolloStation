@@ -27,9 +27,12 @@ test("HearMeOut keeps audio and bot controls collapsed into participant cards", 
 
 test("HearMeOut uses Commlink instead of a second visible room chat", async () => {
   const source = await read("apps/hearmeout/src/web-server-v3.ts");
+  const surface = await read("apps/hearmeout/src/surface-client.ts");
   assert.match(source, /Open Commlink/);
-  assert.match(source, /\?app=commlink/);
-  assert.match(source, /surface:\"commlink\"/);
+  assert.match(source, /hmo:open-commlink/);
+  assert.match(surface, /workspace\.open/);
+  assert.match(surface, /service:'commlink'/);
+  assert.match(surface, /URLSearchParams\(\{app:'commlink'\}\)/);
   assert.match(await read("apps/hearmeout/src/room-assistant-jobs.ts"), /\/v1\/assistants\/community\/invocations/);
   assert.doesNotMatch(source, />Room chat</);
 });
