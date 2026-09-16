@@ -41,7 +41,7 @@ function openWatch(selection){const watch=document.querySelector('[data-hmo-watc
 function initials(value){const parts=String(value||'?').trim().split(/\s+/).filter(Boolean);return (parts.length>1?parts[0][0]+parts[parts.length-1][0]:parts[0]?.slice(0,2)||'?').toUpperCase()}
 function enhancePersonCards(){for(const card of document.querySelectorAll('[data-hmo-user-id]')){if(card.querySelector('.hmo-user-avatar'))continue;const avatar=document.createElement('div');avatar.className='hmo-user-avatar';avatar.setAttribute('aria-hidden','true');avatar.textContent=initials(card.querySelector('.hmo-person-main strong')?.textContent);card.prepend(avatar)}}
 let micFrame=0;function syncMicRing(){cancelAnimationFrame(micFrame);const run=()=>{enhancePersonCards();const own=document.querySelector('[data-mic-button]')?.closest('[data-hmo-user-id]'),avatar=own?.querySelector('.hmo-user-avatar'),bar=own?.querySelector('.hmo-mic-meter .hmo-level>i');if(avatar&&bar){const level=Math.max(0,Math.min(1,(parseFloat(bar.style.width)||0)/100));avatar.style.setProperty('--hmo-mic-level',String(level))}micFrame=requestAnimationFrame(run)};run()}
-new MutationObserver(enhancePersonCards).observe(document.body,{childList:true,subtree:true});enhancePersonCards();syncMicRing();
+enhancePersonCards();syncMicRing();
 window.addEventListener('hmo:open-watch',event=>openWatch(event.detail));
 window.addEventListener('hmo:close-watch',closeWatch);
 window.addEventListener('hmo:toggle-watch-controls',()=>document.querySelector('[data-hmo-broadcast-frame]')?.contentWindow?.postMessage({type:'hmo:toggle-controls'},location.origin));
