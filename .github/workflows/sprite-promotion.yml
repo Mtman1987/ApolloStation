@@ -69,7 +69,25 @@ jobs:
           grep -Eiq 'auth[^[:alnum:]]+sprite|sprite[^[:alnum:]]+auth' <<<"$url_details"
 
       - name: Create pre-deployment checkpoint
-        run: sprite checkpoint create -o "$SPRITE_ORG" -s "$SPRITE_NAME" --comment "Before review $BUILD_SHA"
+        shell: bash
+        run: |
+          set -euo pipefail
+          checkpoint_log="$(mktemp)"
+          set +e
+          sprite checkpoint create -o "$SPRITE_ORG" -s "$SPRITE_NAME" --comment "Before review $BUILD_SHA" 2>&1 | tee "$checkpoint_log"
+          checkpoint_status=${PIPESTATUS[0]}
+          set -e
+          if (( checkpoint_status != 0 )); then
+            if ! grep -Fq 'file exists' "$checkpoint_log"; then
+              exit "$checkpoint_status"
+            fi
+            checkpoints="$(curl -fsS -H "Authorization: Bearer $SPRITES_TOKEN" "https://api.sprites.dev/v1/sprites/$SPRITE_NAME/checkpoints")"
+            if [[ "$(jq 'length' <<<"$checkpoints")" -lt 1 ]]; then
+              echo "Checkpoint collision reported but no rollback checkpoint exists." >&2
+              exit "$checkpoint_status"
+            fi
+            echo "Sprites reported a duplicate checkpoint version; preserving the existing rollback checkpoint and continuing."
+          fi
 
       - name: Apply model-safe deny-by-default network policy
         shell: bash
@@ -165,7 +183,25 @@ jobs:
           grep -Eiq 'auth[^[:alnum:]]+(sprite|public)|(sprite|public)[^[:alnum:]]+auth' <<<"$url_details"
 
       - name: Create protected pre-promotion checkpoint
-        run: sprite checkpoint create -o "$SPRITE_ORG" -s "$SPRITE_NAME" --comment "Before release $BUILD_SHA"
+        shell: bash
+        run: |
+          set -euo pipefail
+          checkpoint_log="$(mktemp)"
+          set +e
+          sprite checkpoint create -o "$SPRITE_ORG" -s "$SPRITE_NAME" --comment "Before release $BUILD_SHA" 2>&1 | tee "$checkpoint_log"
+          checkpoint_status=${PIPESTATUS[0]}
+          set -e
+          if (( checkpoint_status != 0 )); then
+            if ! grep -Fq 'file exists' "$checkpoint_log"; then
+              exit "$checkpoint_status"
+            fi
+            checkpoints="$(curl -fsS -H "Authorization: Bearer $SPRITES_TOKEN" "https://api.sprites.dev/v1/sprites/$SPRITE_NAME/checkpoints")"
+            if [[ "$(jq 'length' <<<"$checkpoints")" -lt 1 ]]; then
+              echo "Checkpoint collision reported but no rollback checkpoint exists." >&2
+              exit "$checkpoint_status"
+            fi
+            echo "Sprites reported a duplicate checkpoint version; preserving the existing rollback checkpoint and continuing."
+          fi
 
       - name: Apply model-safe deny-by-default network policy
         shell: bash
