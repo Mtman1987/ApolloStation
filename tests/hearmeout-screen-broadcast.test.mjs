@@ -12,11 +12,11 @@ import {createHearMeOutWebServer} from '../apps/hearmeout/dist/web-server-v3.js'
 import {SqliteHearMeOutRoomMediaRuntime} from '../apps/hearmeout/dist/room-media-core.js';
 const command=promisify(execFile),publisher={tenantId:'t',sourceRoomId:'voice',userId:'host'},host={tenantId:'t',userId:'host',displayName:'Host',roles:['admin']};
 const available=existsSync('/usr/bin/ffmpeg')&&existsSync('/usr/bin/ffprobe');
-async function fixture(t){const dir=await mkdtemp(join(tmpdir(),'hmo-screen-'));t.after(()=>rm(dir,{recursive:true,force:true}));return dir}
+async function fixture(){return mkdtemp(join(tmpdir(),'hmo-screen-'))}
 async function recording(){return (await command('/usr/bin/ffmpeg',['-v','error','-f','lavfi','-i','testsrc2=size=320x180:rate=24','-f','lavfi','-i','sine=frequency=440:sample_rate=48000','-t','9','-c:v','libvpx','-deadline','realtime','-threads','1','-b:v','300k','-c:a','libopus','-f','webm','pipe:1'],{encoding:'buffer',maxBuffer:10*1024*1024})).stdout}
 async function until(check){for(let i=0;i<100;i++){const result=await check();if(result)return result;await new Promise(r=>setTimeout(r,50))}throw Error('Screen output never became ready')}
 test('screen encoder isolates parties, produces playable video/audio HLS, and revokes old output on stop or admission loss',{skip:!available,timeout:20000},async t=>{
- const dir=await fixture(t);let allowed=true,now=Date.now();const worker=new HearMeOutScreenBroadcast({ffmpegBinary:'/usr/bin/ffmpeg',cachePath:dir,allowed:()=>allowed,now:()=>now});t.after(()=>worker.close());
+ const dir=await fixture();let allowed=true,now=Date.now();const worker=new HearMeOutScreenBroadcast({ffmpegBinary:'/usr/bin/ffmpeg',cachePath:dir,allowed:()=>allowed,now:()=>now});t.after(async()=>{await worker.close();await rm(dir,{recursive:true,force:true,maxRetries:5,retryDelay:100})});
  const a=await worker.start('a',publisher,'Host screen'),other={...publisher,sourceRoomId:'other'};const b=await worker.start('b',other,'Other screen');
  await assert.rejects(()=>worker.start('a',publisher,'Duplicate'),/already sharing/);
  const bytes=await recording(),chunks=[bytes.subarray(0,10000),bytes.subarray(10000)];
@@ -33,9 +33,9 @@ test('screen encoder isolates parties, produces playable video/audio HLS, and re
  allowed=false;assert.equal(worker.state('b').active,false);allowed=true;const c=await worker.start('c',publisher,'Again');now+=21000;assert.equal(worker.state('c').active,false);await assert.rejects(()=>worker.append('c',c.id,publisher,0,chunks[0]),/not found/);
 });
 test('authenticated screen uploads are visible through public watch output without joining the publisher voice room',{skip:!available,timeout:20000},async t=>{
- const dir=await fixture(t),databasePath=join(dir,'rooms.sqlite'),rooms=new SqliteHearMeOutRoomMediaRuntime(databasePath);
+ const dir=await fixture(),databasePath=join(dir,'rooms.sqlite'),rooms=new SqliteHearMeOutRoomMediaRuntime(databasePath);
  const auth=createServer((req,res)=>{res.setHeader('content-type','application/json');if(req.headers.cookie!=='session=host'){res.writeHead(401);res.end('{}');return}res.end(JSON.stringify({actorId:'host',tenantIds:['t'],scopes:['identity:read']}))});await new Promise(resolve=>auth.listen(0,'127.0.0.1',resolve));
- const web=createHearMeOutWebServer({spmtOrigin:'http://127.0.0.1:'+auth.address().port,databasePath,port:0,singleBroadcast:{tenantId:'t',executionUserId:'host'},broadcast:{cachePath:join(dir,'cache'),ffmpegBinary:'/usr/bin/ffmpeg',ffprobeBinary:'/usr/bin/ffprobe'}});await web.listen();t.after(async()=>{await web.close();rooms.close();await new Promise(resolve=>auth.close(resolve))});const base='http://127.0.0.1:'+web.server.address().port;
+ const web=createHearMeOutWebServer({spmtOrigin:'http://127.0.0.1:'+auth.address().port,databasePath,port:0,singleBroadcast:{tenantId:'t',executionUserId:'host'},broadcast:{cachePath:join(dir,'cache'),ffmpegBinary:'/usr/bin/ffmpeg',ffprobeBinary:'/usr/bin/ffprobe'}});await web.listen();t.after(async()=>{await web.close();rooms.close();await new Promise(resolve=>auth.close(resolve));await rm(dir,{recursive:true,force:true,maxRetries:5,retryDelay:100})});const base='http://127.0.0.1:'+web.server.address().port;
  rooms.createRoom(host,{roomId:'voice',name:'Private conversation',privacy:'private',operationId:'create'});const members=rooms.listMembers('t','voice'),post=(path,body,headers={})=>fetch(base+path,{method:'POST',headers:{cookie:'session=host',origin:base,...headers},...(body?{body}:{})});
  assert.equal((await post('/api/hearmeout/rooms/voice/screen',undefined,{cookie:''})).status,401);assert.equal((await post('/api/hearmeout/rooms/voice/screen',undefined,{origin:'https://foreign.example'})).status,400);
  const start=await post('/api/hearmeout/rooms/voice/screen');assert.equal(start.status,201,await start.clone().text());const accepted=await start.json();
