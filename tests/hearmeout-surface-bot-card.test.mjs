@@ -22,7 +22,8 @@ test("HearMeOut renders participant, persona, and DJ cards in the app-owned room
   assert.match(runtime, /function djCard\(/);
   assert.match(runtime, /Music, movies, personas & Discord/);
   assert.match(runtime, /actions\.append\(music,watch,personas,bridge\)/);
-  assert.match(runtime, /Deploy HearMeOut DJ/);
+  assert.match(runtime, /Show HearMeOut DJ/);
+  assert.match(runtime, /Hide HearMeOut DJ/);
   assert.match(runtime, /function deployDj\(p,control\).*append\(djCard\(p\)\)/);
   assert.match(runtime, /if\(deployedDjRooms\.has\(p\.room\.roomId\)\)rows\.append\(djCard\(p\)\)/);
   assert.match(runtime, /hmo-bot-drawer/);
