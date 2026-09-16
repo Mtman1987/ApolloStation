@@ -37,8 +37,11 @@ function isAppSurfaceMessageV1(value: unknown): value is AppSurfaceMessageV1 {
 
 const APPFRAME_PRESENTATION_STYLE_ID = "spmt-appframe-presentation-contract";
 const APPFRAME_PRESENTATION_CSS = `
-.spmt-embedded-app-shell{border:0!important;border-radius:0!important;background:transparent!important;box-shadow:none!important}
-.spmt-embedded-app-shell iframe[data-shell-app-frame]{display:block!important;width:100%!important;height:100%!important;border:0!important;border-radius:0!important;background:transparent!important;color-scheme:normal!important}
+.spmt-embedded-app-shell{box-sizing:border-box!important;border:1px solid var(--theme-border,var(--border))!important;border-radius:28px!important;background:transparent!important;box-shadow:none!important;overflow:hidden!important}
+.spmt-embedded-app-shell iframe[data-shell-app-frame]{display:block!important;width:100%!important;height:100%!important;border:0!important;border-radius:inherit!important;background:transparent!important;color-scheme:normal!important}
+.spmt-space-root .spmt-space-main{padding:0!important;overflow:hidden!important}
+.spmt-space-root[data-spmt-view="home"] .spmt-hero{width:100%!important;height:100%!important;box-sizing:border-box!important}
+.spmt-space-root[data-spmt-view="home"] .spmt-hero-logo-large{width:min(100%,760px)!important;height:min(58cqh,520px)!important;max-width:none!important;max-height:none!important}
 .spmt-space-root[data-spmt-view="app"] .spmt-space-main{position:fixed!important;right:14px!important;bottom:14px!important;left:14px!important;width:auto!important;max-width:none!important;height:auto!important;min-height:0!important;margin:0!important;padding:0!important;overflow:hidden!important}
 .spmt-space-root[data-spmt-view="app"] .spmt-embedded-app-shell{width:100%!important;height:100%!important;min-height:0!important;overflow:hidden!important}
 .spmt-rocket-dock{z-index:860!important}.spmt-workspace-tray{z-index:870!important}.spmt-shell-header-stack{z-index:880!important}
@@ -190,7 +193,7 @@ export class SpaceMountainShellUi {
       dock.style.setProperty("height", `${toggleSize}px`, "important");
       dock.style.setProperty("min-height", `${toggleSize}px`, "important");
     } else {
-      dock.style.setProperty("bottom", mobile ? "10px" : "18px", "important");
+      dock.style.setProperty("bottom", `${edge}px`, "important");
       dock.style.setProperty("height", "auto", "important");
       dock.style.setProperty("min-height", "0", "important");
     }

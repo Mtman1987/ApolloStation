@@ -35,12 +35,17 @@ test("shell viewport and fixed chrome derive geometry from the real header", asy
   assert.match(source, /const toggleSize = Math\.max\(48, Math\.ceil\(headerRect\.height\)\)/);
   assert.match(source, /header\.style\.setProperty\("left", `\$\{dockLeft \+ toggleSize \+ gap\}px`, "important"\)/);
   assert.match(source, /dock\.style\.setProperty\("width", `\$\{toggleSize\}px`, "important"\)/);
+  assert.match(source, /dock\.style\.setProperty\("bottom", `\$\{edge\}px`, "important"\)/);
   assert.match(source, /orbit\.style\.setProperty\("width", `\$\{orbitSize\}px`, "important"\)/);
   assert.match(source, /orbit\.style\.setProperty\("height", `\$\{orbitSize\}px`, "important"\)/);
   assert.doesNotMatch(source, /data-spmt-dock="collapsed"\][\s\S]*\.spmt-shell-header-stack\{left:/);
   assert.match(source, /window\.visualViewport\?\.addEventListener\("resize", this\.geometryListener\)/);
   assert.match(source, /\.spmt-workspace-tray\{z-index:870!important\}/);
   assert.match(source, /\.spmt-rocket-dock\{z-index:860!important\}/);
+  assert.match(source, /\.spmt-space-root \.spmt-space-main\{padding:0!important;overflow:hidden!important\}/);
+  assert.match(source, /\.spmt-space-root\[data-spmt-view="home"\] \.spmt-hero\{width:100%!important;height:100%!important/);
+  assert.match(source, /\.spmt-embedded-app-shell\{box-sizing:border-box!important;border:1px solid/);
+  assert.match(source, /\.spmt-hero-logo-large\{width:min\(100%,760px\)!important;height:min\(58cqh,520px\)!important/);
 });
 
 test("generic product apps keep their app-owned scene while shell controls layout", async () => {
