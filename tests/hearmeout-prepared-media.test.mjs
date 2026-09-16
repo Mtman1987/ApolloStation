@@ -49,7 +49,7 @@ test('existing authenticated prepared video feeds one real Apollo room encoder a
   const root=await mkdtemp(join(tmpdir(),'hmo-prepared-input-'));
   let upstream,feed,broadcast,rooms;const requested=[],diagnostics=[];
   try {
-    execFileSync(mediaBinary('ffmpeg'),['-hide_banner','-loglevel','error','-f','lavfi','-i','color=c=blue:s=96x64:r=25','-f','lavfi','-i','sine=frequency=440:sample_rate=44100','-t','60','-c:v','libx264','-preset','ultrafast','-g','50','-c:a','aac','-f','hls','-hls_time','2','-hls_list_size','0','-hls_segment_filename',join(root,'part%03d.ts'),join(root,'index.m3u8')],{timeout:10000});
+    execFileSync(mediaBinary('ffmpeg'),['-hide_banner','-loglevel','error','-f','lavfi','-i','color=c=blue:s=96x64:r=25','-f','lavfi','-i','sine=frequency=440:sample_rate=44100','-t','60','-c:v','libx264','-preset','ultrafast','-g','50','-c:a','aac','-f','hls','-hls_time','2','-hls_list_size','0','-hls_segment_filename',join(root,'part%03d.ts'),join(root,'index.m3u8')],{timeout:30000});
     upstream=createServer(async(req,res)=>{
       try {
         assert.equal(req.headers.authorization,authorization);assert.equal(req.method,'GET');
