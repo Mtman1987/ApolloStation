@@ -29,6 +29,7 @@ try{
  browser=await chromium.launch({executablePath:process.env.HMO_TEST_BROWSER_PATH||chromium.executablePath(),headless:true,args:['--no-sandbox','--disable-dev-shm-usage','--autoplay-policy=no-user-gesture-required']});
  const page=await browser.newPage({hasTouch:true});await page.goto(origin+'/watch');await page.getByRole('heading',{name:'Watch parties',exact:true}).waitFor();await page.getByRole('button',{name:'Watch party',exact:true}).click();await page.waitForFunction(()=>{const v=document.querySelector('video');return v&&!v.paused&&v.currentTime>.1;});
  assert.equal(await page.locator('video').evaluate(v=>v.videoWidth),0,'The cached fixture has audio only');
+ const controls=page.getByRole('button',{name:'Controls',exact:true});await controls.waitFor({state:'visible'});if(await controls.getAttribute('aria-pressed')!=='true')await controls.evaluate(button=>button.click());
  await page.getByRole('button',{name:'Enable sound',exact:true}).click();await delay(2500);
  await page.evaluate(()=>{const v=document.querySelector('video');window.audioMetrics={waiting:0,seeks:0,rates:[],started:v.currentTime};v.addEventListener('waiting',()=>window.audioMetrics.waiting++);v.addEventListener('seeking',()=>window.audioMetrics.seeks++);v.addEventListener('ratechange',()=>window.audioMetrics.rates.push(v.playbackRate));});
  await page.evaluate(()=>{const v=document.querySelector('video');for(let i=0;i<3;i++)v.dispatchEvent(new Event('canplay'));});
