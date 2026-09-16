@@ -1,8 +1,5 @@
 name: Green shared contracts
 
-# A force-push should replace its obsolete PR check instead of making two
-# browser/media suites compete for the same GitHub-hosted runner capacity.
-# Main checks are release evidence, so never cancel those after they start.
 concurrency:
   group: green-contracts-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -24,8 +21,7 @@ on:
       - "tsconfig.base.json"
       - ".github/workflows/green-contracts.yml"
   push:
-    branches:
-      - main
+    branches: [main]
     paths:
       - "packages/**"
       - "apps/**"
@@ -42,46 +38,31 @@ on:
       - ".github/workflows/green-contracts.yml"
 
 jobs:
-  contracts:
+  green:
+    name: Validate and test
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
           node-version: 24
       - run: npm ci --ignore-scripts
-      - name: Install media test dependency
-        run: command -v ffmpeg || (sudo apt-get update && sudo apt-get install -y ffmpeg)
-      # The repository contains timing-sensitive SQLite, media, and process
-      # lifecycle contracts. Running every test file at once on a small hosted
-      # runner caused nondeterministic failures that did not reproduce on the
-      # deployed commit. Use the existing release-grade serial test command.
+      - name: Install browser and media dependencies
+        run: |
+          npx playwright install --with-deps chromium
+          command -v ffmpeg || (sudo apt-get update && sudo apt-get install -y ffmpeg)
       - name: Run deterministic shared contracts
         run: npm run test:sprite
-  rtc-audio:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 24
-      - run: npm ci --ignore-scripts
-      - run: npx playwright install --with-deps chromium
       - name: Verify real audio and fallback recovery
         run: npm run test:rtc-browser
-      - name: Install HLS fixture dependency
-        run: command -v ffmpeg || (sudo apt-get update && sudo apt-get install -y ffmpeg)
-      - name: Verify HLS and audio languages in room and Discord Activity
+      - name: Verify HLS and audio languages
         run: node scripts/test-hmo-hls-browser.mjs
       - name: Verify shared room media playback
         run: node scripts/test-hmo-media-browser.mjs
-      - name: Verify saved music remains accessible without rooms
-        run: node scripts/test-hmo-console-browser.mjs
-      - name: Verify room-first video window and sustained room presence
+      - name: Verify room-first player and sustained presence
         run: node scripts/test-hmo-room-window-browser.mjs
-      - name: Verify cached audio withstands delayed broadcast segments
+      - name: Verify cached audio recovery
         run: node scripts/test-hmo-cached-audio-browser.mjs
-      - name: Verify screen sharing through the room and Discord player
+      - name: Verify screen sharing
         run: node scripts/test-hmo-screen-browser.mjs

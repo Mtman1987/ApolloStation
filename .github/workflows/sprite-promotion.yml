@@ -1,133 +1,17 @@
-name: Sprite promotion
+name: Release Sprite
 
 on:
   push:
     branches: [main]
   workflow_dispatch:
-    inputs:
-      target:
-        description: Deploy the current commit to the selected Sprite tier
-        required: true
-        type: choice
-        options:
-          - review
-          - release
 
 permissions:
   contents: read
 
 jobs:
-  review:
-    name: Deploy review Sprite
-    if: github.event_name == 'workflow_dispatch' && inputs.target == 'review'
-    runs-on: ubuntu-latest
-    concurrency:
-      group: apollo-review-sprite
-      cancel-in-progress: true
-    environment: sprite-review
-    env:
-      SPRITE_ORG: mtman-new
-      SPRITE_NAME: web-terminal
-      EXPECTED_SPRITE_ID: sprite-2249fee2-ecf3-4b10-8bc1-314f4b9e5bcc
-      SPRITE_PUBLIC_URL: https://web-terminal-bpp4n.sprites.app
-      DEPLOY_ROLE: review
-      BUILD_SHA: ${{ github.sha }}
-      REPOSITORY_URL: https://github.com/${{ github.repository }}.git
-      SPRITES_TOKEN: ${{ secrets.SPRITES_TOKEN }}
-    steps:
-      - name: Check out deployment tooling
-        uses: actions/checkout@v5
-
-      - name: Validate deployment configuration
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [[ -z "${SPRITES_TOKEN:-}" ]]; then
-            echo "Missing SPRITES_TOKEN in the sprite-review environment." >&2
-            exit 1
-          fi
-
-      - name: Install Sprites CLI
-        shell: bash
-        run: |
-          set -euo pipefail
-          curl -fsSL https://sprites.dev/install.sh | bash
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-
-      - name: Authenticate and verify exact Sprite
-        shell: bash
-        run: |
-          set -euo pipefail
-          sprite auth setup --token "$SPRITES_TOKEN"
-          actual_id="$(sprite api "/v1/sprites/$SPRITE_NAME" -- --silent | jq -r '.id')"
-          if [[ "$actual_id" != "$EXPECTED_SPRITE_ID" ]]; then
-            echo "Refusing deployment: $SPRITE_NAME resolved to unexpected ID $actual_id" >&2
-            exit 1
-          fi
-          url_details="$(sprite url -o "$SPRITE_ORG" -s "$SPRITE_NAME")"
-          grep -Fq "$SPRITE_PUBLIC_URL" <<<"$url_details"
-          grep -Eiq 'auth[^[:alnum:]]+sprite|sprite[^[:alnum:]]+auth' <<<"$url_details"
-
-      - name: Create pre-deployment checkpoint
-        shell: bash
-        run: |
-          set -euo pipefail
-          checkpoint_log="$(mktemp)"
-          set +e
-          sprite checkpoint create -o "$SPRITE_ORG" -s "$SPRITE_NAME" --comment "Before review $BUILD_SHA" 2>&1 | tee "$checkpoint_log"
-          checkpoint_status=${PIPESTATUS[0]}
-          set -e
-          if (( checkpoint_status != 0 )); then
-            if ! grep -Fq 'file exists' "$checkpoint_log"; then
-              exit "$checkpoint_status"
-            fi
-            checkpoints="$(curl -fsS -H "Authorization: Bearer $SPRITES_TOKEN" "https://api.sprites.dev/v1/sprites/$SPRITE_NAME/checkpoints")"
-            if [[ "$(jq 'length' <<<"$checkpoints")" -lt 1 ]]; then
-              echo "Checkpoint collision reported but no rollback checkpoint exists." >&2
-              exit "$checkpoint_status"
-            fi
-            echo "Sprites reported a duplicate checkpoint version; preserving the existing rollback checkpoint and continuing."
-          fi
-
-      - name: Apply model-safe deny-by-default network policy
-        shell: bash
-        run: |
-          set -euo pipefail
-          curl -fsS -X POST "https://api.sprites.dev/v1/sprites/$SPRITE_NAME/policy/network" \
-            -H "Authorization: Bearer $SPRITES_TOKEN" \
-            -H "Content-Type: application/json" \
-            --data-binary @sandbox/sprites/network-policy.json >/tmp/network-policy-response.json
-          curl -fsS "https://api.sprites.dev/v1/sprites/$SPRITE_NAME/policy/network" \
-            -H "Authorization: Bearer $SPRITES_TOKEN" | jq -S . >/tmp/network-policy-actual.json
-          jq -S . sandbox/sprites/network-policy.json >/tmp/network-policy-expected.json
-          diff -u /tmp/network-policy-expected.json /tmp/network-policy-actual.json
-
-      - name: Deploy and verify review release
-        shell: bash
-        run: |
-          set -euo pipefail
-          sprite exec --no-port-forward \
-            -o "$SPRITE_ORG" -s "$SPRITE_NAME" \
-            --file scripts/sprites/deploy-sandbox-release.sh:/tmp/deploy-sandbox-release.sh \
-            --env "DEPLOY_ROLE=$DEPLOY_ROLE,BUILD_SHA=$BUILD_SHA,REPOSITORY_URL=$REPOSITORY_URL,SPRITE_PUBLIC_URL=$SPRITE_PUBLIC_URL" \
-            -- /bin/bash /tmp/deploy-sandbox-release.sh
-
-      - name: Record review deployment
-        shell: bash
-        run: |
-          {
-            echo "### Review Sprite"
-            echo "- Commit: \`$BUILD_SHA\`"
-            echo "- Target: \`$SPRITE_ORG/$SPRITE_NAME\`"
-            echo "- URL: $SPRITE_PUBLIC_URL"
-          } >> "$GITHUB_STEP_SUMMARY"
-
   release:
-    name: Promote main to web-terminal
-    if: >-
-      vars.SPRITES_AUTODEPLOY_ENABLED == 'true' &&
-      ((github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-       (github.event_name == 'workflow_dispatch' && inputs.target == 'release'))
+    name: Release Sprite
+    if: github.ref == 'refs/heads/main' && vars.SPRITES_AUTODEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
     concurrency:
       group: apollo-release-sprite
@@ -281,28 +165,9 @@ jobs:
             echo "- URL: $SPRITE_PUBLIC_URL"
           } >> "$GITHUB_STEP_SUMMARY"
 
-  release-verification:
-    name: Verify promoted public entry
-    needs: release
-    if: >-
-      vars.SPRITES_AUTODEPLOY_ENABLED == 'true' &&
-      ((github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-       (github.event_name == 'workflow_dispatch' && inputs.target == 'release'))
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    env:
-      SPRITE_PUBLIC_URL: https://web-terminal-bvesa.sprites.app
-      BUILD_SHA: ${{ github.sha }}
-    steps:
-      - name: Check out verification tooling
-        uses: actions/checkout@v5
-
       - uses: actions/setup-node@v5
         with:
           node-version: 24
 
-      # Keep the post-promotion public probe separate from the mutation job.
-      # A probe failure is still visible and blocking, but it cannot make a
-      # completed, internally verified deployment look as though it rolled back.
-      - name: Verify the released Apollo test entry
+      - name: Verify promoted public entry
         run: node scripts/sprites/verify-hearmeout-broadcast-test.mjs "$SPRITE_PUBLIC_URL" "$BUILD_SHA"
