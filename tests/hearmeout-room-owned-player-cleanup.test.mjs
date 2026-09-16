@@ -8,6 +8,7 @@ import {HearMeOutBroadcastProgram} from '../apps/hearmeout/dist/broadcast-progra
 
 const principal={tenantId:'tenant',userId:'owner',displayName:'Owner',roles:['admin']};
 const binding={tenantId:'tenant',executionUserId:'owner'};
+const media={async resolve({query,lane}){return {itemId:query,title:query,type:lane,source:'fixture',playbackUrl:'https://media.example/video.mp4',durationSeconds:600};}};
 
 async function fixture(t){
  const dir=await mkdtemp(join(tmpdir(),'hmo-player-cleanup-'));
@@ -27,13 +28,13 @@ test('deleting a HearMeOut room atomically removes its watch player',async t=>{
  assert.equal(program.listRooms().some(room=>room.roomId===party.roomId),false);
 });
 
-test('idle Discord hidden players can be garbage-collected without touching another VC',async t=>{
+test('idle Discord hidden players can be garbage-collected without touching an active VC',async t=>{
  const path=await fixture(t),program=new HearMeOutBroadcastProgram(path,binding);t.after(()=>program.close());
  const old={guildId:'123456789012345678',channelId:'234567890123456789'},active={guildId:old.guildId,channelId:'345678901234567890'};
  const first=program.createRoom({name:'Old VC',requesterId:'one',operationId:'one',channel:old});
  const second=program.createRoom({name:'Active VC',requesterId:'two',operationId:'two',channel:active});
+ await program.request({roomId:second.roomId,requesterId:'two',displayName:'Two',query:'movie',operationId:'active-media',lane:'movie'},media);
  const future=new Date(Date.now()+31*60*1000).toISOString();
- program.touchRoom(second.roomId);
  const removed=program.pruneExpiredDiscordRooms(30*60*1000,future);
  assert.ok(removed.includes(first.roomId));
  assert.equal(program.channelRoom(old),undefined);
