@@ -29,7 +29,8 @@ test("app surface navigation survives an iframe launch reload", () => {
 test("the rocket rail overlays full-width app surfaces and resets its geometry on toggle", () => {
   assert.match(wrapper, /main\.style\.setProperty\("left", `\$\{edge\}px`/);
   assert.doesNotMatch(wrapper, /const mainLeft = mobile \? 108/);
-  assert.match(wrapper, /const toggleSize = Math\.max\(48, Math\.ceil\(headerRect\.height\)\)/);
-  assert.match(wrapper, /dock\.style\.setProperty\("height", "auto"/);
+  assert.match(wrapper, /const toggleSize = 72;/);
+  assert.match(wrapper, /if \(root\.dataset\.spmtDock === "collapsed"\)[\s\S]{0,400}dock\.style\.setProperty\("height", `\$\{toggleSize\}px`, "important"\)/);
+  assert.match(wrapper, /const mainBottom = Math\.floor\(main\.getBoundingClientRect\(\)\.bottom\);[\s\S]{0,400}dock\.style\.setProperty\("height", `\$\{Math\.max\(toggleSize, mainBottom - Math\.ceil\(headerRect\.top\)\)\}px`, "important"\)/);
   assert.match(wrapper, /attributeFilter: \["data-spmt-dock"\]/);
 });
