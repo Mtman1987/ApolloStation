@@ -20,6 +20,9 @@ test("HearMeOut renders participant, persona, and DJ cards in the app-owned room
   assert.match(runtime, /function peoplePane\(p\).*personaCard\(p,persona,p\.personaData\).*djCard\(p\)/);
   assert.match(runtime, /function personaCard\(/);
   assert.match(runtime, /function djCard\(/);
+  assert.match(runtime, /Music, movies, personas & Discord/);
+  assert.match(runtime, /actions\.append\(music,watch,personas,bridge\)/);
+  assert.match(runtime, /rows\.append\(djCard\(p\)\)/);
   assert.match(runtime, /hmo-bot-drawer/);
   assert.match(runtime, /hmo-person-menu/);
   assert.match(runtime, /Audio settings/);

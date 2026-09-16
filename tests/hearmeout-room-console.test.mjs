@@ -8,11 +8,11 @@ test("HearMeOut keeps audio and bot controls collapsed into participant cards", 
   const source = await read("apps/hearmeout/src/web-server-v3.ts");
   assert.match(source, /hmo-person/);
   assert.match(source, /Audio settings/);
-  assert.match(source, /Add personas/);
+  assert.match(source, /Movies and watch player/);
   assert.match(source, /hmo-bot-drawer/);
-  assert.match(source, /Music Bot/);
+  assert.match(source, /Music, movies, personas & Discord/);
   assert.match(source, /Personas/);
-  assert.match(source, /Bridge/);
+  assert.match(source, /Discord bridge/);
   assert.match(source, /navigator\.mediaDevices\.getUserMedia/);
   assert.match(source, /audiooutput/);
   assert.match(source, /noiseSuppression/);
@@ -23,6 +23,21 @@ test("HearMeOut keeps audio and bot controls collapsed into participant cards", 
   assert.match(source, /hmo-volume:/);
   assert.doesNotMatch(source, /hmo-chat-pane/);
   assert.doesNotMatch(source, /Room chat/);
+});
+
+test("HearMeOut keeps the room bar compact and owns room actions from the local participant card", async () => {
+  const source = await read("apps/hearmeout/src/web-server-v3.ts");
+  assert.match(source, /function roomConsole\(p\).*head\.append\(copy\).*root\.append\(head,grid,watch\)/);
+  assert.match(source, /function ownRoomMenu\(p\).*Voice waiting queue.*Share screen.*Room moderation.*Back to rooms.*Refresh room.*Delete room/);
+  assert.doesNotMatch(source, /function roomConsole\(p\).*Room moderation/);
+});
+
+test("HearMeOut floating controls are singleton dialogs instead of header children", async () => {
+  const source = await read("apps/hearmeout/src/web-server-v3.ts");
+  assert.match(source, /function openFloatingPanel\(.*data-hmo-floating-dialog/);
+  assert.match(source, /document\.querySelector\('\[data-hmo-floating-dialog\]'\)\?\.remove\(\)/);
+  assert.match(source, /function roomModeration\(p\).*openFloatingPanel\('Room moderation'/);
+  assert.doesNotMatch(source, /function roomModeration\(p\).*hmo-console-head/);
 });
 
 test("HearMeOut relies on the shared header for Commlink instead of adding room chat controls", async () => {
