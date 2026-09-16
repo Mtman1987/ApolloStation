@@ -191,6 +191,133 @@ export const PRODUCT_UI_CSS = `
 .spmt-product-status::before { width: 6px; height: 6px; border-radius: 50%; background: currentColor; box-shadow: 0 0 14px currentColor; content: ""; }
 .spmt-rocket-dock [data-spmt-product-nav] { touch-action: manipulation; }
 .spmt-rocket-dock [data-spmt-product-nav][aria-current="page"] { color: var(--spmt-ink); border-color: color-mix(in srgb,var(--spmt-accent) 34%,transparent); background: color-mix(in srgb,var(--spmt-accent) 14%,transparent); }
+
+/* Shared first-party presentation rules: the same visual grammar must be used by app-owned homes and participant cards. */
+.owned[data-app="streamweaver"] .home .hero {
+  max-width: 1120px;
+  margin: 0 auto;
+  border: 1px solid var(--spmt-border);
+  border-radius: 26px;
+  background: var(--spmt-surface-depth-2);
+  box-shadow: 0 18px 54px rgba(0,0,0,.24),0 0 34px color-mix(in srgb,var(--spmt-accent-secondary) 8%,transparent);
+  backdrop-filter: none;
+}
+.owned[data-app="streamweaver"] .home .mark { align-items:center; gap:16px; }
+.owned[data-app="streamweaver"] .home .mark img { width:clamp(92px,14vw,150px); height:clamp(92px,14vw,150px); object-fit:contain; }
+.owned[data-app="streamweaver"] .home .hero h1 { font-size:clamp(38px,7vw,78px); line-height:.94; letter-spacing:-.045em; }
+.owned[data-app="streamweaver"] .home .hero p { max-width:760px; font-size:clamp(14px,2vw,18px); line-height:1.5; }
+.owned[data-app="streamweaver"] .home-summary { grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; }
+.owned[data-app="streamweaver"] .home-summary>* { min-height:82px; border:1px solid var(--spmt-border); border-radius:16px; background:var(--spmt-surface-depth-3); }
+.owned[data-app="streamweaver"] .actions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+.owned[data-app="streamweaver"] .actions .button { min-height:48px; }
+
+.spmt-space-root[data-spmt-app="stellar-core"] .spmt-app-page-title,
+.spmt-space-root[data-spmt-app="stellar-core"] .spmt-stella-chat,
+.spmt-space-root[data-spmt-app="stellar-core"] .spmt-account-section {
+  border:1px solid var(--spmt-border);
+  border-radius:22px;
+  background:var(--spmt-surface-depth-2);
+  box-shadow:0 18px 50px rgba(0,0,0,.2),0 0 30px color-mix(in srgb,var(--spmt-accent-secondary) 7%,transparent);
+  backdrop-filter:none;
+}
+.spmt-space-root[data-spmt-app="stellar-core"] .spmt-app-page-title { padding:clamp(18px,3vw,32px); }
+.spmt-space-root[data-spmt-app="stellar-core"] .spmt-app-page-title>img { width:clamp(92px,13vw,152px); height:clamp(92px,13vw,152px); }
+.spmt-space-root[data-spmt-app="stellar-core"] .spmt-stella-chat,
+.spmt-space-root[data-spmt-app="stellar-core"] .spmt-account-section { padding:clamp(16px,2vw,24px); }
+.spmt-space-root[data-spmt-app="stellar-core"] .spmt-stella-chat form { gap:10px; }
+.spmt-space-root[data-spmt-app="stellar-core"] .spmt-command-grid { grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:10px; }
+
+/* HearMeOut uses a neutral orbital lounge scene; the global tint layer supplies the selected theme colors. */
+.spmt-product-surface.hmo-app .spmt-product-backdrop-image {
+  background-image:
+    radial-gradient(ellipse at 68% 20%,rgba(255,255,255,.23) 0 1.5%,transparent 1.7% 9%,rgba(255,255,255,.12) 9.2% 9.7%,transparent 10%),
+    radial-gradient(ellipse at 66% 24%,transparent 0 18%,rgba(255,255,255,.16) 18.3% 19%,transparent 19.3% 31%,rgba(255,255,255,.08) 31.2% 31.8%,transparent 32%),
+    linear-gradient(118deg,transparent 0 39%,rgba(255,255,255,.08) 39.3% 40.1%,transparent 40.4% 59%,rgba(255,255,255,.06) 59.3% 60.2%,transparent 60.5%),
+    radial-gradient(circle at 24% 68%,rgba(255,255,255,.15),transparent 10%),
+    radial-gradient(circle at 82% 74%,rgba(255,255,255,.1),transparent 12%),
+    linear-gradient(180deg,#20232a 0%,#0e1118 44%,#05070b 100%) !important;
+  background-size:cover !important;
+  background-position:center !important;
+  filter:grayscale(1) saturate(0) contrast(1.16) brightness(.9) !important;
+}
+.spmt-product-surface.hmo-app .spmt-product-backdrop-shade {
+  background:radial-gradient(circle at 68% 22%,color-mix(in srgb,var(--spmt-accent-secondary) 16%,transparent),transparent 35%),radial-gradient(circle at 20% 72%,color-mix(in srgb,var(--spmt-accent) 15%,transparent),transparent 38%),linear-gradient(rgba(2,4,8,.08),rgba(2,4,8,.48)) !important;
+}
+.spmt-product-surface.hmo-app .hmo-console-head,
+.spmt-product-surface.hmo-app .hmo-room-card,
+.spmt-product-surface.hmo-app .hmo-pane,
+.spmt-product-surface.hmo-app .hmo-lobby,
+.spmt-product-surface.hmo-app .hmo-person {
+  background:var(--spmt-surface-depth-3) !important;
+  box-shadow:none !important;
+  backdrop-filter:none !important;
+}
+.spmt-product-surface.hmo-app .hmo-people-pane { background:transparent !important; border:0 !important; }
+.spmt-product-surface.hmo-app .hmo-person-list {
+  align-items:start !important;
+  gap:12px !important;
+  grid-auto-flow:row dense !important;
+  grid-template-columns:repeat(auto-fill,minmax(min(100%,240px),1fr)) !important;
+}
+.spmt-product-surface.hmo-app .hmo-person-list>.hmo-person {
+  min-width:0 !important;
+  min-height:148px;
+  height:148px;
+  margin:0 !important;
+  border:1px solid var(--spmt-border) !important;
+  border-radius:16px !important;
+  padding:12px !important;
+  align-content:start;
+}
+.spmt-product-surface.hmo-app .hmo-person-list>.hmo-person:has(.hmo-person-menu:not([hidden])),
+.spmt-product-surface.hmo-app .hmo-person-list>.hmo-person:has(.hmo-audio-settings:not([hidden])),
+.spmt-product-surface.hmo-app .hmo-person-list>.hmo-person:has(.hmo-persona-compose:not([hidden])),
+.spmt-product-surface.hmo-app .hmo-person-list>.hmo-person:has(.hmo-dj-panel:not([hidden])) { height:auto; min-height:148px; }
+.spmt-product-surface.hmo-app .hmo-person[data-hmo-user-id] { grid-template-columns:50px minmax(0,1fr); column-gap:10px; }
+.spmt-product-surface.hmo-app .hmo-person[data-hmo-user-id]::before {
+  content:"👤";
+  grid-column:1;
+  grid-row:1 / span 2;
+  width:48px;
+  height:48px;
+  box-sizing:border-box;
+  display:grid;
+  place-items:center;
+  border-radius:50%;
+  border:1px solid var(--spmt-border);
+  background:color-mix(in srgb,var(--spmt-accent) 14%,var(--spmt-surface-depth-4));
+  font-size:23px;
+  box-shadow:0 0 0 2px color-mix(in srgb,var(--spmt-accent-secondary) 22%,transparent);
+}
+.spmt-product-surface.hmo-app .hmo-person[data-hmo-user-id] .hmo-person-main { grid-column:2; }
+.spmt-product-surface.hmo-app .hmo-person[data-hmo-user-id] .hmo-person-icons,
+.spmt-product-surface.hmo-app .hmo-person[data-hmo-user-id] .hmo-volume,
+.spmt-product-surface.hmo-app .hmo-person[data-hmo-user-id] .hmo-person-menu,
+.spmt-product-surface.hmo-app .hmo-person[data-hmo-user-id] .hmo-audio-settings { grid-column:1 / -1; }
+.spmt-product-surface.hmo-app .hmo-mic-meter { display:none !important; }
+.spmt-product-surface.hmo-app .hmo-person[data-speaking]::before,
+.spmt-product-surface.hmo-app .hmo-persona-card[data-speaking] .hmo-persona-avatar,
+.spmt-product-surface.hmo-app .hmo-persona-card[data-speaking] .hmo-persona-fallback {
+  border-color:color-mix(in srgb,var(--spmt-accent-secondary) 65%,var(--spmt-accent)) !important;
+  box-shadow:0 0 0 2px color-mix(in srgb,var(--spmt-accent) 55%,transparent),0 0 24px color-mix(in srgb,var(--spmt-accent-secondary) 62%,transparent) !important;
+}
+.spmt-product-surface.hmo-app .hmo-persona-avatar,
+.spmt-product-surface.hmo-app .hmo-persona-fallback,
+.spmt-product-surface.hmo-app .hmo-dj-avatar { width:48px !important; height:48px !important; }
+@supports (grid-template-rows:masonry) {
+  .spmt-product-surface.hmo-app .hmo-person-list { grid-template-rows:masonry !important; }
+}
+@supports not (grid-template-rows:masonry) {
+  .spmt-product-surface.hmo-app .hmo-person-list { display:block !important; columns:240px; column-gap:12px; }
+  .spmt-product-surface.hmo-app .hmo-person-list>.hmo-person { width:100% !important; break-inside:avoid; margin:0 0 12px !important; }
+}
+@media(max-width:700px) {
+  .owned[data-app="streamweaver"] .home-summary { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .owned[data-app="streamweaver"] .actions { grid-template-columns:1fr; }
+}
+@media(max-width:520px) {
+  .spmt-product-surface.hmo-app .hmo-person-list { columns:1 !important; grid-template-columns:1fr !important; }
+}
 @media (prefers-reduced-motion: reduce) { .spmt-product-surface * { scroll-behavior: auto !important; animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; } }
 `;
 
