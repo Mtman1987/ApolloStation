@@ -1,4 +1,5 @@
 import {createServer,request as httpRequest} from 'node:http';
+import {request as httpsRequest} from 'node:https';
 import {lookup} from 'node:dns/promises';
 import {createConnection,isIP,type Socket} from 'node:net';
 import type {HearMeOutPreparedMedia} from './prepared-media.js';
@@ -12,10 +13,10 @@ export class HearMeOutBroadcastEgress {
     try {
       if (request.method !== 'GET' && request.method !== 'HEAD') throw Error('Read-only media egress');
       const url = new URL(request.url ?? '', this.origin);
-      if (url.protocol !== 'http:' || url.username || url.password) throw Error('Invalid media URL');
+      if ((url.protocol !== 'http:' && url.protocol !== 'https:') || url.username || url.password) throw Error('Invalid media URL');
       if (await this.prepared?.serve(url,this.origin,request,response)) return;
-      const address = await this.address(url);
-      const upstream = httpRequest({host:address,port:Number(url.port||80),method:request.method,path:url.pathname+url.search,headers:{host:url.host,...(request.headers.range?{range:request.headers.range}:{}),'user-agent':'HearMeOut room broadcast'},timeout:15000},remote=>{response.writeHead(remote.statusCode??502,remote.headers);remote.pipe(response);});
+      const address = await this.address(url),family=isIP(address) as 4|6,secure=url.protocol==='https:',requestUpstream=secure?httpsRequest:httpRequest;
+      const upstream = requestUpstream({hostname:url.hostname.replace(/^\[|\]$/g,''),family,lookup:(_hostname,_options,callback)=>callback(null,address,family),port:Number(url.port||(secure?443:80)),method:request.method,path:url.pathname+url.search,headers:{host:url.host,...(request.headers.range?{range:request.headers.range}:{}),'user-agent':'HearMeOut room broadcast'},timeout:15000},remote=>{response.writeHead(remote.statusCode??502,remote.headers);remote.pipe(response);});
       upstream.on('timeout',()=>upstream.destroy());upstream.on('error',()=>{if(!response.headersSent)response.writeHead(502);response.end();});response.on('close',()=>upstream.destroy());upstream.end();
     } catch (error) {this.onError?.(error);response.writeHead(403);response.end('Media source is unavailable');}
   });
