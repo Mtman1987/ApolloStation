@@ -2,11 +2,11 @@
 export const HEARMEOUT_PERSONA_TALK_BROWSER_JS = String.raw`
 (()=>{
 const MAX_RECORDING_MS=8000;
-async function api(url,init){const response=await fetch(url,{...init,signal:AbortSignal.timeout(20000)});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.message||data.error||('HearMeOut request failed ('+response.status+')'));return data}
+async function api(url,init){const response=await fetch(url,{...init,signal:AbortSignal.timeout(45000)});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.message||data.error||('HearMeOut request failed ('+response.status+')'));return data}
 async function waitReply(roomId,result,onProgress){
  if(!result.requestId)return result;
  let reply;
- for(let i=0;i<24;i++){
+ for(let i=0;i<80;i++){
   let value;
   try{value=await api('/api/hearmeout/rooms/'+encodeURIComponent(roomId)+'/personas/requests/'+encodeURIComponent(result.requestId))}
   catch(error){if(reply)return {...reply,error:'The reply is ready, but audio could not be loaded.'};throw error}
@@ -14,7 +14,7 @@ async function waitReply(roomId,result,onProgress){
   onProgress?.(value);
   if(value.state==='succeeded')return value;
   if(['failed','cancelled','dead-letter'].includes(value.state)){if(value.reply)return value;throw new Error(value.error||'The assistant request failed')}
-  if(reply&&i>=5)return {...reply,pendingAudio:true,error:reply.error||'Text reply is ready; voice is still finishing in the background.'};
+  if(reply&&i>=10)return {...reply,pendingAudio:true,error:reply.error||'Text reply is ready; voice is still finishing in the background.'};
   await new Promise(r=>setTimeout(r,750));
  }
  if(reply)return {...reply,pendingAudio:true,error:'Text reply is ready; voice is still finishing in the background.'};
@@ -35,7 +35,6 @@ function showReply(status,result,name,prefix=''){
  if(result.reply)status.textContent=prefix+name+': '+result.reply+(result.error?' · '+result.error:'');
 }
 function playReply(result,onDone,status){
- // Autoplay or a long audio reply must never hold the input or hide its text.
  if(onDone)Promise.resolve().then(()=>onDone(result)).catch(()=>{status.textContent+=' · Audio could not play. Your text reply is above.'});
 }
 function attachSend(button,input,status,{roomId,personaId,displayName,speech,onDone}){
@@ -77,23 +76,21 @@ function attach(button,status,{roomId,tenantId,personaId,displayName,speech,onDo
   if(recorder&&recorder.state==='recording'){recorder.stop();return}
   if(busy)return;busy=true;button.disabled=true;status.textContent='Requesting microphone…';
   try{
-   // Browser dictation is an explicit user action, independent of the server's
-   // optional paid speech workers. No provider credentials leave the server.
    if(speech?.transcription===false){
-    if(!Recognition)throw new Error('Voice input is unavailable in this browser. Type your message in Commlink instead.');
+    if(!Recognition)throw new Error('Voice input is unavailable in this browser. Type your message instead.');
     const current=new Recognition();recognition=current;let transcript='',ended=false;
     current.lang=document.documentElement.lang||navigator.language||'en-US';current.continuous=false;current.interimResults=true;
     current.onstart=()=>{if(ended)return;button.disabled=false;button.textContent='Stop & send';status.textContent='Listening with browser speech recognition…';timer=setTimeout(()=>{current.stop();button.disabled=true},MAX_RECORDING_MS)};
     current.onresult=event=>{transcript=Array.from(event.results,result=>result[0].transcript).join(' ').trim();status.textContent='You said: '+transcript};
-    current.onerror=event=>{if(ended)return;ended=true;current.abort();fail(new Error(event.error==='not-allowed'?'Microphone access was denied. Allow it in browser settings and try again.':event.error==='no-speech'?'I did not hear any words. Please try again.':'Browser speech recognition failed. Try again or use Commlink.'))};
+    current.onerror=event=>{if(ended)return;ended=true;current.abort();fail(new Error(event.error==='not-allowed'?'Microphone access was denied. Allow it in browser settings and try again.':event.error==='no-speech'?'I did not hear any words. Please try again.':'Browser speech recognition failed. Try again or type your message.'))};
     current.onend=()=>{if(ended)return;ended=true;recognition=null;void send(transcript)};
-    finishTimer=setTimeout(()=>{if(ended)return;ended=true;current.abort();fail(new Error('Speech recognition timed out. Try again or use Commlink.'))},MAX_RECORDING_MS+12000);
+    finishTimer=setTimeout(()=>{if(ended)return;ended=true;current.abort();fail(new Error('Speech recognition timed out. Try again or type your message.'))},MAX_RECORDING_MS+12000);
     current.start();return;
    }
-   if(!navigator.mediaDevices?.getUserMedia||!window.MediaRecorder)throw new Error('Voice recording is unavailable in this browser. Use Commlink instead.');
+   if(!navigator.mediaDevices?.getUserMedia||!window.MediaRecorder)throw new Error('Voice recording is unavailable in this browser. Type your message instead.');
    stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
    const mimeType=['audio/webm;codecs=opus','audio/webm','audio/ogg;codecs=opus'].find(type=>MediaRecorder.isTypeSupported(type));
-   if(!mimeType)throw new Error('This browser cannot record a supported audio format. Use Commlink instead.');
+   if(!mimeType)throw new Error('This browser cannot record a supported audio format. Type your message instead.');
    const chunks=[];recorder=new MediaRecorder(stream,{mimeType});
    recorder.ondataavailable=event=>{if(event.data.size)chunks.push(event.data)};
    recorder.onerror=()=>{const current=recorder;if(current)current.onstop=null;fail(new Error('Microphone recording failed. Please try again.'))};
