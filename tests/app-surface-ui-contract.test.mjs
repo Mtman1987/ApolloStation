@@ -27,17 +27,17 @@ test("SpaceMountain consumes published surface metadata without reading iframe D
 
 test("shell viewport and fixed chrome derive geometry from the real header", async () => {
   const source = await read("apps/spacemountain/src/shell-ui.ts");
-  assert.match(source, /header\.getBoundingClientRect\(\)/);
+  assert.match(source, /headerBar\.getBoundingClientRect\(\)/);
   assert.match(source, /main\.style\.setProperty\("position", "fixed", "important"\)/);
-  assert.match(source, /main\.style\.setProperty\("top", `\$\{Math\.ceil\(headerRect\.bottom\) \+ gap\}px`, "important"\)/);
+  assert.match(source, /main\.style\.setProperty\("top", `\$\{Math\.ceil\(headerRect\.top\) \+ toggleSize \+ gap\}px`, "important"\)/);
   assert.match(source, /dock\.style\.setProperty\("top", `\$\{Math\.max\(8, Math\.ceil\(headerRect\.top\)\)\}px`, "important"\)/);
   assert.match(source, /root\.dataset\.spmtDock === "collapsed"[\s\S]*dock\.style\.setProperty\("bottom", "auto", "important"\)/);
-  assert.match(source, /const toggleSize = Math\.max\(48, Math\.ceil\(headerRect\.height\)\)/);
+  assert.match(source, /const toggleSize = 72/);
   assert.match(source, /header\.style\.setProperty\("left", `\$\{dockLeft \+ toggleSize \+ gap\}px`, "important"\)/);
   assert.match(source, /dock\.style\.setProperty\("width", `\$\{toggleSize\}px`, "important"\)/);
-  assert.match(source, /dock\.style\.setProperty\("bottom", `\$\{edge\}px`, "important"\)/);
-  assert.match(source, /orbit\.style\.setProperty\("width", `\$\{orbitSize\}px`, "important"\)/);
-  assert.match(source, /orbit\.style\.setProperty\("height", `\$\{orbitSize\}px`, "important"\)/);
+  assert.match(source, /const mainBottom = Math\.floor\(main\.getBoundingClientRect\(\)\.bottom\)/);
+  assert.match(source, /orbit\.style\.setProperty\("width", `\$\{toggleSize\}px`, "important"\)/);
+  assert.match(source, /orbit\.style\.setProperty\("height", `\$\{toggleSize\}px`, "important"\)/);
   assert.doesNotMatch(source, /data-spmt-dock="collapsed"\][\s\S]*\.spmt-shell-header-stack\{left:/);
   assert.match(source, /window\.visualViewport\?\.addEventListener\("resize", this\.geometryListener\)/);
   assert.match(source, /\.spmt-workspace-tray\{z-index:870!important\}/);
@@ -100,7 +100,7 @@ test("HearMeOut keeps its own shell scene and delegates Rooms navigation to real
   assert.match(surface, /\.hmo-app\[data-hmo-view="rooms"\] \.hmo-rooms\{display:grid!important;[^}]*height:100%!important;[^}]*min-height:0!important;[^}]*overflow:hidden!important\}/);
   assert.match(surface, /grid-template-rows:auto minmax\(0,1fr\)!important/);
   assert.match(web, /HEARMEOUT_SURFACE_BROWSER_JS/);
-  assert.match(webV3, /\.hmo-console-head\{[^}]*color-mix\(in srgb,var\(--spmt-accent\) 16%/);
+  assert.match(webV3, /\.hmo-console-head\{[^}]*background:var\(--spmt-surface-depth-1\)/);
 });
 
 test("Nebula Arcade keeps its app-owned scene in shell mode", async () => {

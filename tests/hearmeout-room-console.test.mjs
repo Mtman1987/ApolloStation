@@ -29,10 +29,12 @@ test("HearMeOut keeps the room bar compact and owns room actions from one header
   const source = await read("apps/hearmeout/src/web-server-v3.ts");
   assert.match(source, /function roomConsole\(p\).*Room controls.*head\.append\(identity,menu\).*root\.append\(head,grid,watch\)/);
   assert.match(source, /hmo-room-logo.*hearmeout\.png/);
-  assert.match(source, /function roomHeaderMenu\(p\).*Deploy HearMeOut DJ.*Voice waiting queue.*Share screen.*Room moderation.*Back to rooms.*Refresh room.*Delete room/);
+  assert.match(source, /function roomHeaderMenu\(p\).*Hide HearMeOut DJ.*Show HearMeOut DJ.*Voice waiting queue.*Room moderation.*Back to rooms.*Refresh room.*Delete room/);
+  assert.match(source, /function deployDj\(p,control\).*data-hmo-dj-card.*Show HearMeOut DJ.*Hide HearMeOut DJ/);
+  assert.doesNotMatch(source, /function roomHeaderMenu\(p\)[^\n]*Share screen/);
   assert.doesNotMatch(source, /function personCard\(p,person,isActive\).*Room and connection controls/);
   assert.match(source, /User profile and settings/);
-  assert.match(source, /function userCardMenu\(\).*User profile.*User settings/);
+  assert.match(source, /function userCardMenu\(\).*Share screen.*User profile.*User settings/);
 });
 
 test("HearMeOut floating controls are singleton dialogs instead of header children", async () => {
