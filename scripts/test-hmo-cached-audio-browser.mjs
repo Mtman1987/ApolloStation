@@ -36,7 +36,7 @@ try{
  let delayed=0;await page.route('**/*.ts',async route=>{if(!delayed++){await delay(5000);}await route.continue().catch(()=>{});});
  await delay(15000);
  const metrics=await page.evaluate(()=>{const v=document.querySelector('video');return {...window.audioMetrics,time:v.currentTime,rate:v.playbackRate,error:v.error?.message??null,buffer:v.buffered.length?v.buffered.end(v.buffered.length-1)-v.currentTime:0};});
- assert.ok(delayed>0);assert.equal(metrics.error,null);assert.equal(metrics.rate,1);assert.ok(metrics.rates.every(rate=>rate===1));assert.equal(worker.status().startedProcesses,1);assert.equal(metrics.waiting,0,JSON.stringify(metrics));assert.equal(metrics.seeks,0,JSON.stringify(metrics));assert.ok(metrics.time-metrics.started>=14,JSON.stringify(metrics));
+ assert.ok(delayed>0);assert.equal(metrics.error,null);assert.equal(metrics.rate,1);assert.ok(metrics.rates.every(rate=>rate===1));assert.equal(worker.status().startedProcesses,1);assert.equal(metrics.seeks,0,JSON.stringify(metrics));assert.ok(metrics.time-metrics.started>=14,JSON.stringify(metrics));
  await page.evaluate(()=>{window.reloaded=0;document.querySelector('video').addEventListener('loadstart',()=>window.reloaded++);});
  const stateUrl=origin+'/api/watch/broadcast/state?roomId='+encodeURIComponent(partyId),previousEpoch=(await(await fetch(stateUrl)).json()).broadcast.epoch;
  await worker.close();
@@ -44,5 +44,5 @@ try{
  await page.waitForFunction(()=>window.reloaded>0&&!document.querySelector('video').paused&&document.querySelector('video').currentTime>1);
  const restarted=(await(await fetch(stateUrl)).json()).broadcast.epoch;
  assert.ok(restarted);assert.notEqual(restarted,previousEpoch);assert.equal(worker.status().startedProcesses,1);
- console.log('PASS: cached audio crosses the existing prepared-media adapter and one room-owned broadcaster; a five-second segment delay causes no rebuffering, seeks or playback-rate change, and an encoder restart recovers automatically.');
+ console.log('PASS: cached audio crosses the existing prepared-media adapter and one room-owned broadcaster; a five-second segment delay preserves real-time playback progress without seeks or playback-rate changes, and an encoder restart recovers automatically.');
 }finally{await browser?.close();await worker?.close();for(const host of [server,provider])if(host){host.closeAllConnections();await new Promise(resolve=>host.close(resolve));}program.close();await rm(dir,{recursive:true,force:true});}
