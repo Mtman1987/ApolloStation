@@ -83,6 +83,7 @@ test("Green app-owned web surfaces publish their own scenes and pages", async ()
 test("HearMeOut keeps its own shell scene and delegates Rooms navigation to real app controls", async () => {
   const surface = await read("apps/hearmeout/src/surface-client.ts");
   const web = await read("apps/hearmeout/src/web-server.ts");
+  const webV3 = await read("apps/hearmeout/src/web-server-v3.ts");
   assert.match(surface, /hearmeout-background\.webp/);
   assert.match(surface, /id: "rooms"/);
   assert.match(surface, /data-hmo-open-rooms/);
@@ -92,15 +93,26 @@ test("HearMeOut keeps its own shell scene and delegates Rooms navigation to real
   assert.doesNotMatch(surface, /body\.style\.setProperty\('background','transparent','important'\)/);
   assert.match(surface, /function setMode\(mode\)\{html\.dataset\.spmtSurfaceMode=mode\}/);
   assert.match(surface, /hmo-room-scroll[\s\S]*scrollbar-width:thin/);
+  assert.match(surface, /\.hmo-home\{[^}]*border:1px solid var\(--spmt-border\)!important/);
+  assert.match(surface, /\.hmo-mark img\{width:clamp\(180px,30vh,300px\)!important/);
   assert.match(surface, /\.hmo-home\[hidden\],\.hmo-rooms\[hidden\]\{display:none!important\}/);
   assert.ok(surface.includes('.hmo-app[data-hmo-view="rooms"] .hmo-home{display:none!important}'));
   assert.match(surface, /\.hmo-app\[data-hmo-view="rooms"\] \.hmo-rooms\{display:grid!important;[^}]*height:100%!important;[^}]*min-height:0!important;[^}]*overflow:hidden!important\}/);
   assert.match(surface, /grid-template-rows:auto minmax\(0,1fr\)!important/);
   assert.match(web, /HEARMEOUT_SURFACE_BROWSER_JS/);
+  assert.match(webV3, /\.hmo-console-head\{[^}]*color-mix\(in srgb,var\(--spmt-accent\) 16%/);
 });
 
 test("Nebula Arcade keeps its app-owned scene in shell mode", async () => {
   const source = await read("apps/nebula-arcade/src/nebula-theme-css.ts");
   assert.match(source, /data-surface="shell"\]>\.spmt-product-backdrop\{display:block\}/);
+  assert.match(source, /nebula-hero-icon\{width:clamp\(180px,30vh,300px\)/);
+  assert.match(source, /data-view="home"\] \.hero\{[^}]*border:1px solid var\(--nebula-border\)/);
   assert.doesNotMatch(source, /data-surface="shell"\]>\.spmt-product-backdrop,[\s\S]*display:none/);
+});
+
+test("Discord Stream Hub uses the canonical bordered logo-first home", async () => {
+  const source = await read("apps/discord-stream-hub/src/web-server.ts");
+  assert.match(source, /data-surface="shell"\] \.home\{[^}]*border:1px solid var\(--spmt-border\)/);
+  assert.match(source, /\.mark img\{width:clamp\(180px,30vh,300px\)/);
 });

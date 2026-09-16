@@ -294,7 +294,7 @@ export const HEARMEOUT_WEB_CSS=HEARMEOUT_WEB_BASE_CSS+`
 .hmo-password-bubble{z-index:var(--spmt-layer-popover);background:var(--spmt-surface-depth-2)}
 .hmo-room-detail,.hmo-console{height:100%;min-height:0}.hmo-console-grid{min-height:0;overflow:auto;overscroll-behavior:contain}
 .hmo-room-actions{display:flex;align-items:center;justify-content:flex-end;gap:6px;flex-wrap:wrap}
-.hmo-console-head{min-height:56px;box-sizing:border-box;padding:8px 12px}.hmo-console-head h3{font-size:18px}.hmo-console-head .hmo-muted{white-space:nowrap}
+.hmo-console-head{min-height:56px;box-sizing:border-box;padding:8px 12px;background:linear-gradient(135deg,color-mix(in srgb,var(--spmt-accent) 16%,var(--spmt-surface-depth-1)),color-mix(in srgb,var(--spmt-accent-secondary) 9%,var(--spmt-surface-depth-1)))}.hmo-console-head h3{font-size:18px}.hmo-console-head .hmo-muted{white-space:nowrap}
 .hmo-room-identity{display:flex;align-items:center;min-width:0;gap:10px}.hmo-room-logo{width:44px;height:44px;flex:0 0 44px;object-fit:contain}.hmo-room-copy{min-width:0}
 .hmo-console-grid{display:block}.hmo-people-pane{border:0;background:transparent;box-shadow:none;padding:2px;overflow:visible}
 .hmo-person-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,250px));align-items:start;justify-content:start;gap:12px}
