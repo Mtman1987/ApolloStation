@@ -39,7 +39,7 @@ const APPFRAME_PRESENTATION_STYLE_ID = "spmt-appframe-presentation-contract";
 const APPFRAME_PRESENTATION_CSS = `
 .spmt-shell-header-stack{box-sizing:border-box!important}
 .spmt-cosmic-header{height:72px!important;min-height:72px!important;max-height:72px!important;box-sizing:border-box!important;overflow:hidden!important}
-.spmt-brand-cluster{min-width:0;display:flex;align-items:center;gap:10px}
+.spmt-brand-cluster{min-width:max-content;display:flex;align-items:center;gap:10px;flex:0 0 auto!important}
 .spmt-brand{flex:0 1 auto!important}.spmt-brand strong{display:block!important}
 .spmt-header-clocks{flex:0 0 auto!important;margin-left:0!important}
 .spmt-header-actions{min-width:0!important;flex:1 1 auto!important;overflow-x:auto!important;overflow-y:hidden!important;justify-content:flex-start!important;scrollbar-width:none!important}.spmt-header-actions::-webkit-scrollbar{display:none!important}

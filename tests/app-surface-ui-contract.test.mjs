@@ -115,4 +115,5 @@ test("Discord Stream Hub uses the canonical bordered logo-first home", async () 
   const source = await read("apps/discord-stream-hub/src/web-server.ts");
   assert.match(source, /data-surface="shell"\] \.home\{[^}]*border:1px solid var\(--spmt-border\)/);
   assert.match(source, /\.mark img\{width:clamp\(180px,30vh,300px\)/);
+  assert.match(source, /dsh-edit-dialog\{[^}]*background:var\(--spmt-surface-depth-1\);color:var\(--spmt-ink\)/);
 });

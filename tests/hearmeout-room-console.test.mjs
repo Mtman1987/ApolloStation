@@ -27,7 +27,7 @@ test("HearMeOut keeps audio and bot controls collapsed into participant cards", 
 
 test("HearMeOut keeps the room bar compact and owns room actions from one header menu", async () => {
   const source = await read("apps/hearmeout/src/web-server-v3.ts");
-  assert.match(source, /function roomConsole\(p\).*Room controls.*head\.append\(identity,menu\).*root\.append\(head,grid,watch\)/);
+  assert.match(source, /function roomConsole\(p\).*Room controls.*head\.append\(identity,menu\).*root\.append\(head,roomMenu,grid,watch\)/);
   assert.match(source, /hmo-room-logo.*hearmeout\.png/);
   assert.match(source, /function roomHeaderMenu\(p\).*Hide HearMeOut DJ.*Show HearMeOut DJ.*Voice waiting queue.*Room moderation.*Back to rooms.*Refresh room.*Delete room/);
   assert.match(source, /function deployDj\(p,control\).*data-hmo-dj-card.*Show HearMeOut DJ.*Hide HearMeOut DJ/);
@@ -37,14 +37,17 @@ test("HearMeOut keeps the room bar compact and owns room actions from one header
   assert.match(source, /function userCardMenu\(\).*Share screen.*User profile.*User settings/);
 });
 
-test("HearMeOut floating controls are singleton dialogs instead of header children", async () => {
+test("HearMeOut menus stay inline while only the watch player floats", async () => {
   const source = await read("apps/hearmeout/src/web-server-v3.ts");
-  assert.match(source, /function openFloatingPanel\(.*data-hmo-floating-dialog/);
-  assert.match(source, /document\.querySelector\('\[data-hmo-floating-dialog\]'\)\?\.remove\(\)/);
-  assert.match(source, /function roomModeration\(p\).*openFloatingPanel\('Room moderation'/);
-  assert.match(source, /dialog\.show\(\)/);
-  assert.doesNotMatch(source, /function openFloatingPanel\(.*dialog\.showModal\(\)/);
-  assert.doesNotMatch(source, /function roomModeration\(p\).*hmo-console-head/);
+  assert.match(source, /function showInlinePanel\(owner,title,content\)/);
+  assert.match(source, /function roomModeration\(p,owner\).*showInlinePanel\(owner,'Room moderation'/);
+  assert.match(source, /function openVoiceQueue\(roomId,owner\).*showInlinePanel\(owner,'Voice waiting queue'/);
+  assert.doesNotMatch(source, /hmo-floating-dialog|openFloatingPanel/);
+  assert.match(source, /function personCard\(p,person,isActive\).*menu=userCardMenu\(\).*more\.addEventListener\('click',\(\)=>menu\.hidden=!menu\.hidden\)/);
+  assert.match(source, /function djCard\(p\).*hmo-dj-panel.*openRoomPanel\(p,row,'music'\).*hmo:open-watch.*openRoomPanel\(p,row,'personas'\).*openRoomPanel\(p,row,'bridge'\)/);
+  assert.match(source, /function peoplePane\(p\).*for\(const person.*for\(const persona.*if\(deployedDjRooms.*bindCardMasonry\(rows\)/);
+  assert.match(source, /function bindCardMasonry\(rows\).*minCard=250.*heights=Array\(columns\)\.fill\(0\).*ResizeObserver.*MutationObserver/);
+  assert.match(source, /card\.style\.position='absolute'.*card\.style\.left=.*card\.style\.top=.*rows\.style\.height=/);
 });
 
 test("HearMeOut watch player is a movable resizable popover with opt-in controls", async () => {
