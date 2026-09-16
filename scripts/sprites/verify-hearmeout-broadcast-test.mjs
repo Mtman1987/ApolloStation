@@ -13,39 +13,34 @@ if(!health?.mediaWorker?.ready&&healthFailure)throw new Error('HearMeOut health 
 assert.equal(health.buildSha,buildSha);assert.equal(health.broadcast?.singleProgram,true);assert.equal(health.broadcast?.configured,true);assert.equal(health.mediaWorker?.ready,true);
 assert.match(health.activityClientId,/^\d{5,30}$/);
 const activityOrigin=`https://${health.activityClientId}.discordsays.com`;
-// An empty request reaches validation without resolving, billing or queuing media.
+// A Discord-origin request reaches HearMeOut but cannot invent a global player.
 const activityRequest=await request('/api/watch/broadcast/requests',{method:'POST',headers:{origin:activityOrigin,'content-type':'application/json'},body:'{}'});
 assert.equal(activityRequest.status,400,'Configured Discord requests must reach the broadcast route');
-assert.equal((await activityRequest.json()).error,'Enter a video title or link');
+assert.equal((await activityRequest.json()).error,'Choose a watch party');
 assert.equal((await request('/api/hearmeout/rooms',{method:'POST',headers:{origin:activityOrigin,'content-type':'application/json'},body:'{}'})).status,403);
 const stationResponse=await request('/sandbox/health');assert.equal(stationResponse.status,200);
 const station=await stationResponse.json();assert.equal(station.spmt?.runtimeMode,'sandbox');assert.equal(station.spmt?.usageLimitsEnforced,false,'Development media requests must not be stopped by a production plan allowance');
 for(const path of ['/watch','/activity?roomId=any-room','/apps/hearmeout'])assert.equal((await request(path)).status,200);
-const stateResponse=await request('/api/watch/broadcast/state');assert.equal(stateResponse.status,200);
-let state=await stateResponse.json();const cookie=stateResponse.headers.get('set-cookie')?.split(';')[0];assert.ok(cookie);
-assert.equal(state.sessionId,'main-broadcast');
+assert.equal((await request('/api/watch/broadcast/state')).status,400,'A state read without a party cannot fall back to a global player');
 assert.equal((await request('/api/hearmeout/rooms')).status,401,'Private room and host workspace access remains protected');
-if(origin==='http://127.0.0.1:8080'&&process.env.DEPLOY_ROLE==='release'){
- if(state.playback.status==='playing'){
-  let master;const feed='/api/watch/broadcast/index.m3u8';
-  for(let attempt=0;attempt<45;attempt++){const response=await request(feed);if(response.status===200){master=await response.text();break;}await new Promise(resolve=>setTimeout(resolve,1000));}
-  assert.match(master??'',/#EXTM3U/);assert.match(master,/stream_[A-Za-z0-9_-]+\.m3u8/,'The requested broadcast contains playable media');
-  const variant=master.split('\n').find(line=>line&&!line.startsWith('#'));assert.ok(variant);
-  const path=new URL(variant,origin+feed).pathname,before=await(await request(path)).text(),starts=(await(await request('/health/hearmeout')).json()).broadcast.startedProcesses;
-  await new Promise(resolve=>setTimeout(resolve,5000));
-  assert.notEqual(await(await request(path)).text(),before);assert.equal((await(await request('/health/hearmeout')).json()).broadcast.startedProcesses,starts);
-  assert.ok((await(await request('/health/hearmeout')).json()).broadcast.active>=1);
-  console.log('PASS: one independent video broadcast advances with no viewing windows or room requirement');
- }
-}
-const canonical=await(await request('/api/watch/broadcast/state')).json();
-for(const alias of ['discord-watch-room','discord-music-room']){
- const window=await(await request('/api/watch/sessions/'+alias+'/state')).json();
- assert.equal(window.sessionId,canonical.sessionId);assert.equal(window.broadcast.playbackUrl,canonical.broadcast.playbackUrl);
+for(const alias of ['main-broadcast','discord-watch-room','discord-music-room']){
+ const response=await request('/api/watch/sessions/'+alias+'/state');assert.equal(response.status,410,'Legacy shared player aliases stay retired');
 }
 assert.equal((await request('/api/watch/sessions/watch-room-anywhere-movie/state')).status,404,'Unknown parties cannot alias another room');
 const directoryResponse=await request('/api/watch/broadcast/rooms');assert.equal(directoryResponse.status,200);const directory=await directoryResponse.json();
-assert.ok(directory.rooms.some(room=>room.roomId==='main-broadcast'),'The existing main party survives migration');
-const feeds=new Set();for(const room of directory.rooms){const response=await request('/api/watch/broadcast/state?roomId='+encodeURIComponent(room.roomId));assert.equal(response.status,200);const state=await response.json();assert.equal(state.sessionId,room.roomId);assert.ok(!feeds.has(state.broadcast.playbackUrl),'Each party has its own feed');feeds.add(state.broadcast.playbackUrl);}
-for(const entry of ['/watch','/activity']){const html=await(await request(entry)).text();assert.match(html,/id="party-lobby"/);assert.match(html,/id="party-create"/);assert.match(html,/Keep your own voice conversation/);}
-console.log(JSON.stringify({buildSha,origin,independentWatchParties:true,publicViewerEntry:true,mediaWorkerReady:true,discordRequestOriginAccepted:true,privateRoomAccessProtected:true,developmentUsageLimitsEnforced:station.spmt.usageLimitsEnforced,playbackStatus:canonical.playback.status,queuedRequests:canonical.queue.length,testUrl:origin+'/apps/hearmeout'}));
+assert.ok(Array.isArray(directory.rooms));assert.equal(directory.rooms.some(room=>['main-broadcast','discord-watch-room','discord-music-room'].includes(room.roomId)),false,'No retired shared player appears in the directory');
+const feeds=new Set();let playingState;
+for(const room of directory.rooms){
+ const response=await request('/api/watch/broadcast/state?roomId='+encodeURIComponent(room.roomId));assert.equal(response.status,200);const state=await response.json();assert.equal(state.sessionId,room.roomId);assert.ok(!feeds.has(state.broadcast.playbackUrl),'Each party has its own feed');feeds.add(state.broadcast.playbackUrl);if(!playingState&&state.playback.status==='playing'&&state.current)playingState=state;
+}
+if(origin==='http://127.0.0.1:8080'&&process.env.DEPLOY_ROLE==='release'&&playingState){
+ let master;const feed=playingState.broadcast.playbackUrl;
+ for(let attempt=0;attempt<45;attempt++){const response=await request(feed);if(response.status===200){master=await response.text();break;}await new Promise(resolve=>setTimeout(resolve,1000));}
+ assert.match(master??'',/#EXTM3U/);assert.match(master,/stream_[A-Za-z0-9_-]+\.m3u8/,'The active room-owned broadcast contains playable media');
+ const variant=master.split('\n').find(line=>line&&!line.startsWith('#'));assert.ok(variant);
+ const path=new URL(variant,origin+feed).pathname,before=await(await request(path)).text(),starts=(await(await request('/health/hearmeout')).json()).broadcast.startedProcesses;
+ await new Promise(resolve=>setTimeout(resolve,5000));
+ assert.notEqual(await(await request(path)).text(),before);assert.equal((await(await request('/health/hearmeout')).json()).broadcast.startedProcesses,starts);assert.ok((await(await request('/health/hearmeout')).json()).broadcast.active>=1);
+}
+for(const entry of ['/watch','/activity']){const html=await(await request(entry)).text();assert.match(html,/id="party-lobby"/);assert.match(html,/id="party-create"/);assert.match(html,/Browse and watch any active party/);}
+console.log(JSON.stringify({buildSha,origin,roomOwnedWatchParties:true,activeParties:directory.rooms.length,publicViewerEntry:true,mediaWorkerReady:true,discordRequestOriginAccepted:true,privateRoomAccessProtected:true,developmentUsageLimitsEnforced:station.spmt.usageLimitsEnforced,testUrl:origin+'/apps/hearmeout'}));
