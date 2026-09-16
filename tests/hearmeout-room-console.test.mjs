@@ -45,6 +45,20 @@ test("HearMeOut floating controls are singleton dialogs instead of header childr
   assert.doesNotMatch(source, /function roomModeration\(p\).*hmo-console-head/);
 });
 
+test("HearMeOut watch player is a movable resizable popover with opt-in controls", async () => {
+  const source = await read("apps/hearmeout/src/web-server-v3.ts");
+  const surface = await read("apps/hearmeout/src/surface-client.ts");
+  const player = await read("apps/hearmeout/src/broadcast-window.ts");
+  assert.match(source, /resize:both/);
+  assert.match(source, /hmo-player-head/);
+  assert.match(source, /Player controls/);
+  assert.match(surface, /function restoreWatchGeometry/);
+  assert.match(surface, /hmo:toggle-watch-controls/);
+  assert.match(surface, /height:100%/);
+  assert.match(player, /controls-hidden \.viewer-controls\{display:none!important\}/);
+  assert.match(player, /main:hover #view-toggle/);
+});
+
 test("deleting an active room invalidates stale renders before returning to the directory", async () => {
   const source = await read("apps/hearmeout/src/web-server-v3.ts");
   assert.match(source, /const token=\+\+roomRenderToken/);

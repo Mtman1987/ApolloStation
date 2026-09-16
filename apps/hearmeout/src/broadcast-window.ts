@@ -150,6 +150,7 @@ export function renderHearMeOutBroadcastWindow(clientId:string){
 }
 export const BROADCAST_WINDOW_JS=String.raw`
 (()=>{
+  const refinement=document.createElement('style');refinement.textContent='main{background:#000}.viewer-controls{inset:auto 10px 10px;max-height:min(72vh,560px);border:0;border-radius:10px;background:#080d18f2}.controls-hidden .viewer-controls{display:none!important}main:not(.controls-hidden) .viewer-controls{opacity:1;transform:none;pointer-events:auto}main:hover #view-toggle,main:focus-within #view-toggle,#view-toggle:focus-visible{opacity:1;pointer-events:auto}#view-toggle{opacity:0;pointer-events:none;border:0;background:#080d18d9;transition:opacity .16s ease}@media(hover:none){#view-toggle{opacity:1;pointer-events:auto}.viewer-controls{opacity:1;transform:none;pointer-events:auto}}';document.head.append(refinement);
   const preferences={getItem:key=>{try{return localStorage.getItem(key)}catch{return null}},setItem:(key,value)=>{try{localStorage.setItem(key,value)}catch{}}};
   const video=document.getElementById('player'),status=document.getElementById('status'),error=document.getElementById('error'),volume=document.getElementById('volume'),sound=document.getElementById('sound');
   const playbackError=document.getElementById('playback-error'),disconnect=document.getElementById('disconnect'),retry=document.getElementById('retry'),audioToggle=document.getElementById('audio-toggle'),videoToggle=document.getElementById('video-toggle');
@@ -166,6 +167,7 @@ export const BROADCAST_WINDOW_JS=String.raw`
   const storage={getItem:key=>{try{return sessionStorage.getItem(key)}catch{return null}},setItem:(key,value)=>{try{sessionStorage.setItem(key,value)}catch{}}};
   let activeParty='',partyName='',lobbyBusy=false,directorySignature='',pendingCreation,hostedRoomId='';
   const lobby=document.getElementById('party-lobby'),playerPane=document.querySelector('main'),partyList=document.getElementById('party-list'),partyError=document.getElementById('party-error'),partyCreate=document.getElementById('party-create');
+  playerPane.classList.add('controls-hidden');
   const hostingParams=new URLSearchParams();
   if(params.get('appRoomId'))hostingParams.set('appRoomId',params.get('appRoomId'));
   if(frameId&&params.get('guild_id')&&params.get('channel_id')){hostingParams.set('guildId',params.get('guild_id'));hostingParams.set('channelId',params.get('channel_id'));}
@@ -252,6 +254,7 @@ export const BROADCAST_WINDOW_JS=String.raw`
   if(params.has('popout'))popout.hidden=true;
   function setExpanded(value){playerPane.classList.toggle('expanded',value);playerPane.classList.toggle('controls-hidden',value);document.getElementById('exit-expanded').hidden=!value;document.getElementById('fullscreen').textContent=value?'Exit full view':'Fullscreen';if(window.parent!==window&&!frameId)window.parent.postMessage({type:'hmo:player-expanded',expanded:value},location.origin);}
   document.getElementById('view-toggle').addEventListener('click',()=>{const hidden=playerPane.classList.toggle('controls-hidden');document.getElementById('view-toggle').setAttribute('aria-pressed',String(!hidden));});
+  window.addEventListener('message',event=>{if(event.origin===location.origin&&event.data?.type==='hmo:toggle-controls')document.getElementById('view-toggle').click()});
   document.getElementById('exit-expanded').addEventListener('click',async()=>{if(document.fullscreenElement)await document.exitFullscreen().catch(()=>{});setExpanded(false);});
   document.getElementById('fullscreen').addEventListener('click',async()=>{if(document.fullscreenElement){await document.exitFullscreen();setExpanded(false);return;}if(playerPane.classList.contains('expanded')){setExpanded(false);return;}setExpanded(true);playbackError.textContent='';try{if(playerPane.requestFullscreen)await playerPane.requestFullscreen();else if(video.webkitEnterFullscreen)video.webkitEnterFullscreen();}catch{}});
   document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement)setExpanded(false)});
