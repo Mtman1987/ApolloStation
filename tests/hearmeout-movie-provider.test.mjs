@@ -29,8 +29,8 @@ test('IPTV searches and selected preparation use existing provider routes, witho
  await assert.rejects(()=>failed.search('A movie'),error=>error.message==='The IPTV movie search returned HTTP 403');
 });
 
-test('guest movie search and explicit selection cross real SPMT jobs without creating a room or playing on search',{timeout:20000},async()=>{
- const dir=await mkdtemp(join(tmpdir(),'hmo-movie-jobs-')),credential='movie-broadcast-test-credential-123456789';
+test('guest movie search and explicit selection cross real SPMT jobs without creating an HMO room or playing on search',{timeout:20000},async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'hmo-movie-jobs-')),credential='movie-broadcast-test-credential-123456789',clientId='1279582181768957963',guildId='123456789012345678',channelId='234567890123456789';
  const spmt=createSpmtService({runtimeMode:'sandbox',databasePath:join(dir,'spmt.sqlite'),webhookKey:Buffer.alloc(32,7),port:0,hearMeOutRuntimeEnabled:true,hearMeOutWorkerCredential:credential});
  const stop=new AbortController();let host,workerTask;const prepared=[];
  try{
@@ -41,13 +41,15 @@ test('guest movie search and explicit selection cross real SPMT jobs without cre
   const provider=new HearMeOutMovieProvider(providerOrigin,async url=>{const path=new URL(url).pathname;if(path==='/api/watch/search')return Response.json({results:matches});prepared.push(path);return new Response('#EXTM3U\npart001.ts');});
   const worker=new HearMeOutExecutionWorker(client,{workerId:'movie-test',executionTarget:'sprite',tenantIds:['tenant'],capabilities:['hearmeout.movie.search','hearmeout.movie.resolve'],catalog:new HearMeOutWorkerMusicCatalog({catalogFile:join(dir,'catalog.json')}),cache:new HearMeOutWorkerMediaCache({cacheDir:join(dir,'cache')}),movieProvider:provider});
   await worker.report(new Date().toISOString());workerTask=worker.run(stop.signal,10);
-  host=createHearMeOutWebServer({spmtOrigin,databasePath:join(dir,'rooms.sqlite'),port:0,credential,operationMode:'read-only',singleBroadcast:{tenantId:'tenant',executionUserId:'owner'}});await host.listen();
-  const base='http://127.0.0.1:'+host.server.address().port;
-  const search=await fetch(base+'/api/watch/broadcast/movies?q=A%20movie');assert.equal(search.status,200,await search.clone().text());const cookie=search.headers.get('set-cookie').split(';')[0];assert.equal((await search.json()).items.length,2);
-  assert.equal((await(await fetch(base+'/api/watch/broadcast/state')).json()).current,null);assert.deepEqual(prepared,[]);
-  const request=(selectedItemId,key='chosen')=>fetch(base+'/api/watch/broadcast/requests',{method:'POST',headers:{cookie,origin:base,'content-type':'application/json','idempotency-key':key},body:JSON.stringify({query:'A movie',lane:'movie',...(selectedItemId?{selectedItemId}:{})})});
-  const noChoice=await request(undefined,'no-choice');assert.equal(noChoice.status,400);assert.match((await noChoice.json()).error,/choose a movie/);assert.deepEqual(prepared,[]);
-  const response=await request('xtream-vod-42');assert.equal(response.status,201,await response.clone().text());const state=await response.json();assert.equal(state.current.item.itemId,'xtream-vod-42');assert.equal(state.current.item.title,'Chosen matching movie');assert.equal(state.queue.length,0);
+  host=createHearMeOutWebServer({spmtOrigin,databasePath:join(dir,'rooms.sqlite'),port:0,credential,operationMode:'read-only',singleBroadcast:{tenantId:'tenant',executionUserId:'owner'},activity:{tenantId:'tenant',clientId,guildIds:[guildId]}});await host.listen();
+  const base='http://127.0.0.1:'+host.server.address().port,context=`guildId=${guildId}&channelId=${channelId}`;
+  const created=await fetch(base+`/api/watch/broadcast/rooms?${context}`,{method:'POST',headers:{'content-type':'application/json','idempotency-key':'movie-party'},body:JSON.stringify({name:'Movie test party'})});assert.equal(created.status,201,await created.clone().text());const party=await created.json();
+  const scoped=`roomId=${encodeURIComponent(party.roomId)}&${context}`;
+  const search=await fetch(base+`/api/watch/broadcast/movies?q=A%20movie&${scoped}`);assert.equal(search.status,200,await search.clone().text());const cookie=search.headers.get('set-cookie').split(';')[0];assert.equal((await search.json()).items.length,2);
+  assert.equal((await(await fetch(base+`/api/watch/broadcast/state?${scoped}`)).json()).current,null);assert.deepEqual(prepared,[]);
+  const request=(selectedItemId,key='chosen')=>fetch(base+`/api/watch/broadcast/requests?${scoped}`,{method:'POST',headers:{cookie,origin:base,'content-type':'application/json','idempotency-key':key},body:JSON.stringify({query:'A movie',lane:'movie',...(selectedItemId?{selectedItemId}:{})})});
+  const noChoice=await request(undefined,'no-choice');assert.equal(noChoice.status,400);assert.match((await noChoice.json()).error,/choose a movie/i);assert.deepEqual(prepared,[]);
+  const response=await request('xtream-vod-42');assert.equal(response.status,201,await response.clone().text());const state=await response.json();assert.equal(state.sessionId,party.roomId);assert.equal(state.current.item.itemId,'xtream-vod-42');assert.equal(state.current.item.title,'Chosen matching movie');assert.equal(state.queue.length,0);
   assert.equal((await request('xtream-vod-42')).status,201);assert.equal((await request('xtream-vod-1')).status,400);assert.deepEqual(prepared,['/api/watch/xtream/hls/vod-42/index.m3u8']);
   const jobs=await client.listExecutionJobs('tenant',{executionOwner:'hearmeout'});assert.equal(jobs.length,2);assert.ok(jobs.every(job=>job.billedUserId==='owner'&&job.state==='succeeded'));assert.deepEqual(new Set(jobs.map(job=>job.capabilityId)),new Set(['hearmeout.movie.search','hearmeout.movie.resolve']));
  }finally{stop.abort();await workerTask;await host?.close();await spmt.close();await rm(dir,{recursive:true,force:true});}
