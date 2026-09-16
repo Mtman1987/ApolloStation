@@ -13,5 +13,6 @@ test("HearMeOut v3 room browser bundle parses before deployment", () => {
   assert.ok(end > bodyStart, "HearMeOut v3 room browser source must terminate before server helpers");
   const browserSource = source.slice(bodyStart, end);
   assert.doesNotThrow(() => new Function(browserSource));
-  for (const pattern of [/Enter password/, /Open Commlink/, /Audio settings/, /Bots & personas/, /Leave room/, /Delete room/, /Timeout 10 minutes/, /Watch together/]) assert.match(browserSource, pattern);
+  for (const pattern of [/Enter password/, /Audio settings/, /Add personas/, /Leave room/, /Delete room/, /Timeout 10 minutes/, /Watch together/]) assert.match(browserSource, pattern);
+  assert.doesNotMatch(browserSource, /Open Commlink|hmo:open-commlink/);
 });

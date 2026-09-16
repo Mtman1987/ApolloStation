@@ -26,9 +26,9 @@ test("HearMeOut renders participant, persona, and DJ cards in the app-owned room
   assert.doesNotMatch(runtime, /label\.textContent=own\?'Room volume'/);
 });
 
-test("HearMeOut opens Commlink in the shell workspace instead of a popup window", () => {
-  assert.match(surface, /type:'workspace\.open'.*service:'commlink'/);
-  assert.doesNotMatch(surface, /window\.open\('\/\?app=commlink','hmo-commlink'/);
+test("HearMeOut leaves Commlink exclusively to the shared shell header", () => {
+  assert.doesNotMatch(runtime, /Open Commlink|hmo:open-commlink/);
+  assert.doesNotMatch(surface, /workspace\.open|service:'commlink'|window\.open|location\.assign|app:'commlink'/);
 });
 
 test("HearMeOut persona text controls send directly without relying on shell enhancement", () => {

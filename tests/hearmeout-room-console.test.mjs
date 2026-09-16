@@ -8,7 +8,7 @@ test("HearMeOut keeps audio and bot controls collapsed into participant cards", 
   const source = await read("apps/hearmeout/src/web-server-v3.ts");
   assert.match(source, /hmo-person/);
   assert.match(source, /Audio settings/);
-  assert.match(source, /Bots & personas/);
+  assert.match(source, /Add personas/);
   assert.match(source, /hmo-bot-drawer/);
   assert.match(source, /Music Bot/);
   assert.match(source, /Personas/);
@@ -25,14 +25,11 @@ test("HearMeOut keeps audio and bot controls collapsed into participant cards", 
   assert.doesNotMatch(source, /Room chat/);
 });
 
-test("HearMeOut uses Commlink instead of a second visible room chat", async () => {
+test("HearMeOut relies on the shared header for Commlink instead of adding room chat controls", async () => {
   const source = await read("apps/hearmeout/src/web-server-v3.ts");
   const surface = await read("apps/hearmeout/src/surface-client.ts");
-  assert.match(source, /Open Commlink/);
-  assert.match(source, /hmo:open-commlink/);
-  assert.match(surface, /workspace\.open/);
-  assert.match(surface, /service:'commlink'/);
-  assert.match(surface, /URLSearchParams\(\{app:'commlink'\}\)/);
+  assert.doesNotMatch(source, /Open Commlink|hmo:open-commlink/);
+  assert.doesNotMatch(surface, /workspace\.open|service:'commlink'|location\.assign|app:'commlink'/);
   assert.match(await read("apps/hearmeout/src/room-assistant-jobs.ts"), /\/v1\/assistants\/community\/invocations/);
   assert.doesNotMatch(source, />Room chat</);
 });

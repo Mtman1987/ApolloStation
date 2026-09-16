@@ -289,7 +289,11 @@ export class SpaceMountainShellUi {
     bindProductRocketNavigation(root, NAV, this.view, (view) => this.navigate(view));
     root.querySelectorAll<HTMLElement>("[data-nav]").forEach((node) => node.addEventListener("click", () => this.navigate(node.dataset.nav as SpaceMountainViewV1)));
     root.querySelector<HTMLElement>(".spmt-account-summary")?.addEventListener("click", () => this.navigate("account"));
-    root.querySelectorAll<HTMLElement>("[data-launch-app]").forEach((node) => node.addEventListener("click", () => { const app = this.snapshot.apps.find((item) => item.appId === node.dataset.launchApp); if (app) this.openApp(app); }));
+    root.querySelectorAll<HTMLElement>("[data-launch-app]").forEach((node) => node.addEventListener("click", () => {
+      if (node.dataset.launchApp === "commlink" && !this.serviceEmbed) { this.openWorkspaceService("commlink"); return; }
+      const app = this.snapshot.apps.find((item) => item.appId === node.dataset.launchApp);
+      if (app) this.openApp(app);
+    }));
     root.querySelectorAll<HTMLElement>("[data-app-dock-target]").forEach((node) => node.addEventListener("click", () => this.openAppDockTarget(node.dataset.appDockTarget ?? "")));
     root.querySelectorAll<HTMLElement>("[data-install-app]").forEach((node) => node.addEventListener("click", () => { const app = this.snapshot.apps.find((item) => item.appId === node.dataset.installApp); if (app) this.options.onInstallApp?.(app); }));
     root.querySelectorAll<HTMLElement>("[data-commlink-space]").forEach((node) => node.addEventListener("click", () => { this.commlinkConversationId = ""; this.commlinkSidebarOpen = false; this.updateCommlink({ activeChatSpaceId: node.dataset.commlinkSpace ?? "", view: "focus" }); }));

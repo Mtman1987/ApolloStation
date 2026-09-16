@@ -54,6 +54,10 @@ test("Commlink retains saved ChatSpaces, Desks, feed, compose, search, pop-out a
   assert.match(base, /commlinkComposer\.requestSubmit\(\)/);
 });
 
+test("the shared Commlink icon opens over the active app instead of navigating away", () => {
+  assert.match(base, /node\.dataset\.launchApp === "commlink".*openWorkspaceService\("commlink"\).*return/s);
+});
+
 test("Simulation Rooms mirror only the canonical Public or Personal Overlay Bay output", () => {
   assert.match(simulation, /Public · current OBS profile/);
   assert.match(simulation, /Personal · current private profile/);
