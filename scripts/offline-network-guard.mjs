@@ -14,6 +14,11 @@ const browserCacheUrl=hearMeOutPreparedMedia?(await import('../apps/hearmeout/di
 const movieProvider=process.env.HEARMEOUT_MOVIE_PROVIDER_ORIGIN==='https://hearmeout-main.fly.dev';
 const movieProviderUrl=movieProvider?(await import('../apps/hearmeout/dist/movie-provider.js')).hearMeOutMovieProviderUrl:()=>false;
 const avatarAiOutbound=process.env.SPMT_AVATAR_AI_OUTBOUND_MODE==="enabled";
+// A controlled HearMeOut release is allowed to execute normal room actions in
+// Green. The guard below still prevents arbitrary network egress, so Twitch and
+// Discord message delivery remains blocked while the bounded voice bridge,
+// prepared media, local AI and browser room features can be exercised for real.
+const controlledHearMeOutActive=hearMeOutBridge;
 // Only HMO's provisioned broadcast process can open its DNS-pinned public
 // media sockets. The Sprite DNS policy still limits the reachable domains.
 const publicMediaAddress = process.env.HEARMEOUT_CONTROLLED_MEDIA === "1"
@@ -24,7 +29,7 @@ const liveReadUrl = configuredLiveReadUrl(process.env.SPMT_LIVE_READ_ORIGIN);
 
 if (!globalThis[marker]) {
   globalThis[marker] = true;
-  process.env.SPMT_OUTBOUND_MODE = "disabled";
+  process.env.SPMT_OUTBOUND_MODE = controlledHearMeOutActive ? "active" : "disabled";
   installFetchGuard();
   installRequestGuard(http, "http");
   installRequestGuard(https, "https");
@@ -120,7 +125,6 @@ function isAllowedAvatarAiUrl(url,method){
   if(url.hostname==="api.keentools.io")return (method==="POST"&&url.pathname==="/v1/avatar/init")||(method==="POST"&&/^\/v1\/avatar\/[A-Za-z0-9_-]{4,160}\/process$/.test(url.pathname))||(method==="GET"&&/^\/v1\/avatar\/[A-Za-z0-9_-]{4,160}\/(?:get-status|get-3d-model)$/.test(url.pathname));
   return isSignedS3Url(url)&&(method==="GET"||method==="PUT");
 }
-
 function isSignedS3Url(url){return isS3Host(url.hostname)&&url.searchParams.get("X-Amz-Algorithm")==="AWS4-HMAC-SHA256"&&url.searchParams.has("X-Amz-Credential")&&url.searchParams.has("X-Amz-Signature");}
 function isAvatarAiHost(value){const host=String(value??"").toLowerCase();return host==="api.meshy.ai"||host==="assets.meshy.ai"||host==="api.keentools.io"||isS3Host(host);}
 function isS3Host(value){return /^(?:[a-z0-9.-]+\.)?s3(?:[.-][a-z0-9-]+)?\.amazonaws\.com$/.test(String(value??"").toLowerCase());}
