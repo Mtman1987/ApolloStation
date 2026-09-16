@@ -31,7 +31,7 @@ try{
  }});
  await page.goto(origin+'/apps/hearmeout');await page.getByRole('button',{name:'Create Room',exact:true}).click();await page.locator('[name=name]').fill('Screen hosts');await page.getByRole('button',{name:'Create & join',exact:true}).click();await page.getByRole('button',{name:'Room controls',exact:true}).waitFor();
  await page.getByRole('button',{name:'User profile and settings',exact:true}).click();await page.getByRole('button',{name:'Share screen',exact:true}).click();
- const player=page.frameLocator('[data-hmo-broadcast-frame]');await player.locator('#output').waitFor();assert.equal(await player.locator('#output').inputValue(),'screen');
+ const player=page.frameLocator('[data-hmo-broadcast-frame]');await player.locator('#output').waitFor({state:'attached'});assert.equal(await player.locator('#output').inputValue(),'screen');
  async function playing(video){await video.evaluate(v=>new Promise((resolve,reject)=>{const deadline=Date.now()+40000,timer=setInterval(()=>{if(!v.paused&&v.currentTime>.1&&v.videoWidth){clearInterval(timer);resolve()}else if(Date.now()>deadline){clearInterval(timer);reject(Error('Screen failed to play: '+v.readyState+' '+v.error?.message))}},100)}))}
  await playing(player.locator('video'));
  const room=rooms.listRooms(owner)[0],party=program.hostedRoom(room.roomId);assert.ok(party);
@@ -40,7 +40,9 @@ try{
  assert.ok((await page.locator('[data-hmo-broadcast-frame]').boundingBox()).width<=390);
  assert.equal(await player.locator('video').evaluate(v=>v.videoWidth),1280);
  const viewer=await browser.newPage({viewport:{width:600,height:700},hasTouch:true});viewer.on('pageerror',error=>errors.push(error.message));await viewer.goto(origin+'/activity');
- await viewer.locator('.party-card').filter({hasText:'Screen hosts'}).getByRole('button',{name:'Watch party',exact:true}).click();await viewer.locator('#output').selectOption('screen');await playing(viewer.locator('video'));
+ await viewer.locator('.party-card').filter({hasText:'Screen hosts'}).getByRole('button',{name:'Watch party',exact:true}).click();
+ const viewerControls=viewer.getByRole('button',{name:'Controls',exact:true});await viewerControls.waitFor({state:'visible'});if(await viewerControls.getAttribute('aria-pressed')!=='true')await viewerControls.evaluate(button=>button.click());
+ await viewer.locator('#output').selectOption('screen');await playing(viewer.locator('video'));
  const pixel=await viewer.locator('video').evaluate(v=>{const canvas=document.createElement('canvas');canvas.width=1;canvas.height=1;const ctx=canvas.getContext('2d');ctx.drawImage(v,0,0,1,1);return [...ctx.getImageData(0,0,1,1).data]});assert.ok(pixel[0]>100&&pixel[1]<110,'Discord Activity decodes the actual shared-screen pixels');
  assert.equal(rooms.listMembers('tenant',room.roomId).length,1,'Viewing the share does not join its voice room');
  await viewer.evaluate(()=>{document.querySelector('main').requestFullscreen=()=>Promise.reject(Error('Host restricts fullscreen'))});await viewer.getByRole('button',{name:'Fullscreen',exact:true}).click();assert.equal(await viewer.locator('main').evaluate(node=>node.classList.contains('expanded')),true);await viewer.getByRole('button',{name:'Exit full view',exact:true}).click();
