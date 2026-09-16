@@ -2,11 +2,11 @@
 export const HEARMEOUT_PERSONA_TALK_BROWSER_JS = String.raw`
 (()=>{
 const MAX_RECORDING_MS=8000;
-async function api(url,init){const response=await fetch(url,{...init,signal:AbortSignal.timeout(45000)});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.message||data.error||('HearMeOut request failed ('+response.status+')'));return data}
+async function api(url,init){const response=await fetch(url,{...init,signal:AbortSignal.timeout(20000)});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.message||data.error||('HearMeOut request failed ('+response.status+')'));return data}
 async function waitReply(roomId,result,onProgress){
  if(!result.requestId)return result;
  let reply;
- for(let i=0;i<80;i++){
+ for(let i=0;i<24;i++){
   let value;
   try{value=await api('/api/hearmeout/rooms/'+encodeURIComponent(roomId)+'/personas/requests/'+encodeURIComponent(result.requestId))}
   catch(error){if(reply)return {...reply,error:'The reply is ready, but audio could not be loaded.'};throw error}
@@ -14,7 +14,7 @@ async function waitReply(roomId,result,onProgress){
   onProgress?.(value);
   if(value.state==='succeeded')return value;
   if(['failed','cancelled','dead-letter'].includes(value.state)){if(value.reply)return value;throw new Error(value.error||'The assistant request failed')}
-  if(reply&&i>=10)return {...reply,pendingAudio:true,error:reply.error||'Text reply is ready; voice is still finishing in the background.'};
+  if(reply&&i>=5)return {...reply,pendingAudio:true,error:reply.error||'Text reply is ready; voice is still finishing in the background.'};
   await new Promise(r=>setTimeout(r,750));
  }
  if(reply)return {...reply,pendingAudio:true,error:'Text reply is ready; voice is still finishing in the background.'};
