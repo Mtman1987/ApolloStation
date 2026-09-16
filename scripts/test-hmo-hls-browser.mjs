@@ -37,7 +37,7 @@ try{
  pages.push(await open('/apps/hearmeout'));pages.push(await open('/activity'));
  const activate=locator=>locator.evaluate(button=>button.click());
  const controlsToggle=pages[1].getByRole('button',{name:'Controls',exact:true});
- await controlsToggle.waitFor({state:'attached'});
+ await controlsToggle.waitFor({state:'visible'});
  if(await controlsToggle.getAttribute('aria-pressed')!=='true')await activate(controlsToggle);
  const enableSound=pages[1].getByRole('button',{name:'Enable sound',exact:true}),restoreSound=pages[1].getByRole('button',{name:'Restore sound',exact:true}),muteLocally=pages[1].getByRole('button',{name:'Mute locally',exact:true});
  if(await enableSound.isVisible())await activate(enableSound);
