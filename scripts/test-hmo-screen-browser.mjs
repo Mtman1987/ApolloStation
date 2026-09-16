@@ -48,8 +48,11 @@ try{
  await viewer.evaluate(()=>{document.querySelector('main').requestFullscreen=()=>Promise.reject(Error('Host restricts fullscreen'))});await viewer.getByRole('button',{name:'Fullscreen',exact:true}).click();assert.equal(await viewer.locator('main').evaluate(node=>node.classList.contains('expanded')),true);await viewer.getByRole('button',{name:'Exit full view',exact:true}).click();
  await viewer.locator('#output').selectOption('program');await viewer.waitForFunction(()=>{const video=document.querySelector('video');return !video.hasAttribute('src')&&video.paused&&video.readyState===0});assert.equal((await(await fetch(origin+'/api/watch/broadcast/state?roomId='+party.roomId)).json()).screen.active,true,'A viewer switching output does not stop the share');
  await viewer.locator('#output').selectOption('screen');await playing(viewer.locator('video'));
+ // The floating local player can cover participant-card controls on a mobile viewport.
+ // Close only the local watch window first; the shared-screen backend must remain live.
+ await page.getByRole('button',{name:'Close watch player',exact:true}).click();
+ assert.equal((await(await fetch(origin+'/api/watch/broadcast/state?roomId='+party.roomId)).json()).screen.active,true,'Closing the local player must not stop the shared screen');
  // Screen sharing belongs to the local user's participant-card menu.
- // Verify that stopping capture revokes the backend share and then reaches the viewer.
  await page.getByRole('button',{name:'User profile and settings',exact:true}).click();await page.getByRole('button',{name:'Stop sharing',exact:true}).click();await page.evaluate(()=>{testCapture.stop();if(testCapture.stream.getTracks().some(track=>track.readyState!=='ended'))throw Error('Capture tracks remained live')});
  let stopped=false;for(let attempt=0;attempt<30;attempt++){const state=await(await fetch(origin+'/api/watch/broadcast/state?roomId='+party.roomId)).json();if(state.screen?.active===false){stopped=true;break}await new Promise(resolve=>setTimeout(resolve,500))}assert.equal(stopped,true,'Stopping capture must revoke the shared-screen backend');
  await viewer.getByText('No screen is being shared.',{exact:true}).waitFor({timeout:15000});
