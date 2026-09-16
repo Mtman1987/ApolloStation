@@ -25,15 +25,19 @@ test("SpaceMountain consumes published surface metadata without reading iframe D
   assert.doesNotMatch(source, /contentDocument/);
 });
 
-test("shell viewport starts below the real header and collapsed dock never steals header width", async () => {
+test("shell viewport and fixed chrome derive geometry from the real header", async () => {
   const source = await read("apps/spacemountain/src/shell-ui.ts");
   assert.match(source, /header\.getBoundingClientRect\(\)/);
   assert.match(source, /main\.style\.setProperty\("position", "fixed", "important"\)/);
   assert.match(source, /main\.style\.setProperty\("top", `\$\{Math\.ceil\(headerRect\.bottom\) \+ gap\}px`, "important"\)/);
   assert.match(source, /dock\.style\.setProperty\("top", `\$\{Math\.max\(8, Math\.ceil\(headerRect\.top\)\)\}px`, "important"\)/);
   assert.match(source, /root\.dataset\.spmtDock === "collapsed"[\s\S]*dock\.style\.setProperty\("bottom", "auto", "important"\)/);
-  assert.match(source, /data-spmt-dock="collapsed"\][\s\S]*\.spmt-shell-header-stack\{left:108px!important\}/);
-  assert.doesNotMatch(source, /\.spmt-shell-header-stack\{left:94px!important\}/);
+  assert.match(source, /const toggleSize = Math\.max\(48, Math\.ceil\(headerRect\.height\)\)/);
+  assert.match(source, /header\.style\.setProperty\("left", `\$\{dockLeft \+ toggleSize \+ gap\}px`, "important"\)/);
+  assert.match(source, /dock\.style\.setProperty\("width", `\$\{toggleSize\}px`, "important"\)/);
+  assert.match(source, /orbit\.style\.setProperty\("width", `\$\{orbitSize\}px`, "important"\)/);
+  assert.match(source, /orbit\.style\.setProperty\("height", `\$\{orbitSize\}px`, "important"\)/);
+  assert.doesNotMatch(source, /data-spmt-dock="collapsed"\][\s\S]*\.spmt-shell-header-stack\{left:/);
   assert.match(source, /window\.visualViewport\?\.addEventListener\("resize", this\.geometryListener\)/);
   assert.match(source, /\.spmt-workspace-tray\{z-index:870!important\}/);
   assert.match(source, /\.spmt-rocket-dock\{z-index:860!important\}/);

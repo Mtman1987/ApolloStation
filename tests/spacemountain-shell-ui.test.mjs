@@ -137,7 +137,7 @@ test("header and rocket dock share one complete core navigation icon contract", 
   assert.match(base, /data-themed-app-art/);
 });
 
-test("Account owns personal identity and usage while Settings owns advanced configuration", () => {
+test("Account owns personal identity, Workspace owns shared UI, and apps own product settings", () => {
   assert.match(base, /type SpaceMountainViewV1 = "home" \| "apps" \| "workspace" \| "settings" \| "account"/);
   assert.match(base, /<button type="button" class="spmt-account-summary"[^>]*title="Account and personal usage"/);
   assert.match(base, /this\.navigate\("account"\)/);
@@ -148,9 +148,10 @@ test("Account owns personal identity and usage while Settings owns advanced conf
   assert.match(base, /window\.location\.assign\(`\/v1\/identity\/providers\/\$\{provider\}\/start/);
   assert.match(base, /role="progressbar"/);
   assert.match(THEMED_SURFACE_CSS, /\.spmt-usage-track i\{[^}]*linear-gradient\(90deg,var\(--accent\),var\(--accent2\)\)/);
-  assert.match(base, /page\("App and ecosystem settings", "Advanced controls stay with the app or shared system they configure\./);
-  assert.match(base, /Advanced controls by owning app/);
-  assert.match(base, /without mixing them into your personal account/);
+  assert.match(base, /page\("SpaceMountain settings", "Shared appearance, layout, motion, and workspace behavior live in one canonical profile\./);
+  assert.match(base, /Product controls stay with their product/);
+  assert.match(base, /They are intentionally not duplicated here/);
+  assert.doesNotMatch(base, /Advanced controls by owning app/);
 });
 
 test("Overlay Bay retains donor editor controls and all source families", () => {

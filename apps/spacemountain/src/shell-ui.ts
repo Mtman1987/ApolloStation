@@ -45,15 +45,15 @@ const APPFRAME_PRESENTATION_CSS = `
 .spmt-dock-owned header{position:sticky;top:0;z-index:2;display:grid;grid-template-columns:26px minmax(0,1fr);align-items:center;gap:7px;padding:5px 5px 7px;background:linear-gradient(180deg,rgba(8,9,14,.96),rgba(8,9,14,.72));font-size:8px}.spmt-dock-owned header img{width:26px;height:26px;object-fit:contain}.spmt-dock-owned header strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.spmt-surface-glyph{width:27px;height:27px;display:grid;place-items:center;flex:0 0 auto;border:1px solid color-mix(in srgb,var(--accent2) 25%,transparent);border-radius:9px;color:var(--accent2);font-size:13px;font-weight:900}.spmt-dock-owned button[aria-current="page"]{color:#fff;border-color:color-mix(in srgb,var(--accent) 34%,transparent);background:color-mix(in srgb,var(--accent) 14%,transparent);box-shadow:inset 3px 0 0 var(--accent)}
 .spmt-space-root *{scrollbar-width:thin;scrollbar-color:transparent transparent}.spmt-space-root *:hover{scrollbar-color:color-mix(in srgb,var(--accent) 62%,transparent) transparent}.spmt-space-root *::-webkit-scrollbar{width:4px;height:4px}.spmt-space-root *::-webkit-scrollbar-track{background:transparent}.spmt-space-root *::-webkit-scrollbar-thumb{border-radius:999px;background:transparent}.spmt-space-root *:hover::-webkit-scrollbar-thumb{background:color-mix(in srgb,var(--accent) 62%,transparent)}
 @media(max-width:900px){
- .spmt-shell-header-stack{left:108px!important;right:10px!important;min-height:82px!important}
+ .spmt-shell-header-stack{right:10px!important;min-height:82px!important}
  .spmt-cosmic-header{min-height:82px!important;box-sizing:border-box!important}
- .spmt-rocket-dock{left:10px!important;right:auto!important;width:88px!important;height:auto!important;max-height:calc(100dvh - var(--guard-height,38px) - 20px)!important;box-sizing:border-box!important;display:flex!important;flex-direction:column!important;align-items:stretch!important;padding:7px!important;border-radius:34px!important}
- .spmt-dock-orbit{display:grid!important;width:68px!important;height:62px!important;margin:0 auto 3px!important}
+ .spmt-rocket-dock{left:10px!important;right:auto!important;height:auto!important;max-height:calc(100dvh - var(--guard-height,38px) - 20px)!important;box-sizing:border-box!important;display:flex!important;flex-direction:column!important;align-items:stretch!important;padding:5px!important}
+ .spmt-dock-orbit{display:grid!important;aspect-ratio:1!important;margin:0 auto 3px!important}
  .spmt-rocket-dock nav{width:100%!important;min-height:0!important;display:flex!important;flex:1!important;flex-direction:column!important;justify-content:flex-start!important;overflow:hidden!important}
  .spmt-dock-core,.spmt-dock-account,.spmt-dock-apps{min-width:0!important;display:flex!important;flex-direction:column!important}.spmt-dock-apps{overflow-y:auto!important;overflow-x:hidden!important}
  .spmt-rocket-dock nav button{min-height:43px!important;flex:0 0 auto!important;flex-direction:column!important;justify-content:center!important;gap:2px!important;padding:4px!important}.spmt-rocket-dock nav label{display:none!important}.spmt-dock-owned header{grid-template-columns:1fr;justify-items:center}.spmt-dock-owned header strong{display:none}
- .spmt-space-root[data-spmt-dock="collapsed"] .spmt-rocket-dock{left:10px!important;right:auto!important;bottom:auto!important;width:82px!important;height:82px!important;min-height:82px!important;padding:5px!important;border-radius:50%!important;overflow:hidden!important}.spmt-space-root[data-spmt-dock="collapsed"] .spmt-dock-orbit{display:grid!important;width:100%!important;height:100%!important;margin:0!important;border-radius:50%!important}.spmt-space-root[data-spmt-dock="collapsed"] .spmt-shell-header-stack{left:108px!important}
- .spmt-space-root .spmt-space-main,.spmt-space-root[data-spmt-view="app"] .spmt-space-main{right:9px!important;bottom:9px!important;left:108px!important}
+ .spmt-space-root[data-spmt-dock="collapsed"] .spmt-rocket-dock{left:10px!important;right:auto!important;bottom:auto!important;padding:5px!important;border-radius:50%!important;overflow:hidden!important}.spmt-space-root[data-spmt-dock="collapsed"] .spmt-dock-orbit{display:grid!important;width:100%!important;height:100%!important;margin:0!important;border-radius:50%!important}
+ .spmt-space-root .spmt-space-main,.spmt-space-root[data-spmt-view="app"] .spmt-space-main{right:9px!important;bottom:9px!important;left:9px!important}
  .spmt-workspace-tray{left:10px!important;right:10px!important;bottom:max(10px,env(safe-area-inset-bottom))!important}.spmt-workspace-frames{height:min(68dvh,640px)!important}.spmt-workspace-tray.maximized .spmt-workspace-frames{left:10px!important;right:10px!important;bottom:84px!important}
 }
 `;
@@ -152,6 +152,12 @@ export class SpaceMountainShellUi {
     const mobile = window.matchMedia("(max-width:900px)").matches;
     const gap = mobile ? 10 : 14;
     const edge = mobile ? 9 : 14;
+    const dockLeft = mobile ? 10 : 16;
+    const toggleSize = Math.max(48, Math.ceil(headerRect.height));
+    const dockPadding = 5;
+    header.style.setProperty("position", "fixed", "important");
+    header.style.setProperty("left", `${dockLeft + toggleSize + gap}px`, "important");
+    header.style.setProperty("right", `${mobile ? 10 : 16}px`, "important");
     main.style.setProperty("position", "fixed", "important");
     main.style.setProperty("top", `${Math.ceil(headerRect.bottom) + gap}px`, "important");
     main.style.setProperty("right", `${edge}px`, "important");
@@ -167,22 +173,26 @@ export class SpaceMountainShellUi {
       main.style.setProperty("overflow", "hidden", "important");
     }
     dock.style.setProperty("position", "fixed", "important");
-    dock.style.setProperty("left", mobile ? "10px" : "16px", "important");
+    dock.style.setProperty("left", `${dockLeft}px`, "important");
     dock.style.setProperty("right", "auto", "important");
     dock.style.setProperty("top", `${Math.max(8, Math.ceil(headerRect.top))}px`, "important");
+    dock.style.setProperty("width", `${toggleSize}px`, "important");
+    dock.style.setProperty("border-radius", `${Math.ceil(toggleSize / 2)}px`, "important");
+    const orbit = dock.querySelector<HTMLElement>(".spmt-dock-orbit");
+    if (orbit) {
+      const orbitSize = Math.max(38, toggleSize - dockPadding * 2);
+      orbit.style.setProperty("width", `${orbitSize}px`, "important");
+      orbit.style.setProperty("height", `${orbitSize}px`, "important");
+      orbit.style.setProperty("border-radius", "50%", "important");
+    }
     if (root.dataset.spmtDock === "collapsed") {
-      const toggleSize = Math.max(48, Math.ceil(headerRect.height));
       dock.style.setProperty("bottom", "auto", "important");
-      dock.style.setProperty("width", `${toggleSize}px`, "important");
       dock.style.setProperty("height", `${toggleSize}px`, "important");
       dock.style.setProperty("min-height", `${toggleSize}px`, "important");
-      dock.style.setProperty("border-radius", "50%", "important");
     } else {
       dock.style.setProperty("bottom", mobile ? "10px" : "18px", "important");
-      dock.style.setProperty("width", mobile ? "88px" : "112px", "important");
       dock.style.setProperty("height", "auto", "important");
       dock.style.setProperty("min-height", "0", "important");
-      dock.style.setProperty("border-radius", mobile ? "34px" : "42px", "important");
     }
   }
 
