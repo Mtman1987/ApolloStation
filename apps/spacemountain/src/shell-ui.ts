@@ -152,12 +152,11 @@ export class SpaceMountainShellUi {
     const mobile = window.matchMedia("(max-width:900px)").matches;
     const gap = mobile ? 10 : 14;
     const edge = mobile ? 9 : 14;
-    const mainLeft = mobile ? 108 : edge;
     main.style.setProperty("position", "fixed", "important");
     main.style.setProperty("top", `${Math.ceil(headerRect.bottom) + gap}px`, "important");
     main.style.setProperty("right", `${edge}px`, "important");
     main.style.setProperty("bottom", `${edge}px`, "important");
-    main.style.setProperty("left", `${mainLeft}px`, "important");
+    main.style.setProperty("left", `${edge}px`, "important");
     main.style.setProperty("width", "auto", "important");
     main.style.setProperty("max-width", "none", "important");
     main.style.setProperty("height", "auto", "important");
@@ -172,18 +171,25 @@ export class SpaceMountainShellUi {
     dock.style.setProperty("right", "auto", "important");
     dock.style.setProperty("top", `${Math.max(8, Math.ceil(headerRect.top))}px`, "important");
     if (root.dataset.spmtDock === "collapsed") {
+      const toggleSize = Math.max(48, Math.ceil(headerRect.height));
       dock.style.setProperty("bottom", "auto", "important");
-      dock.style.setProperty("width", mobile ? "82px" : "112px", "important");
-      dock.style.setProperty("height", "82px", "important");
-      dock.style.setProperty("min-height", "82px", "important");
+      dock.style.setProperty("width", `${toggleSize}px`, "important");
+      dock.style.setProperty("height", `${toggleSize}px`, "important");
+      dock.style.setProperty("min-height", `${toggleSize}px`, "important");
       dock.style.setProperty("border-radius", "50%", "important");
+    } else {
+      dock.style.setProperty("bottom", mobile ? "10px" : "18px", "important");
+      dock.style.setProperty("width", mobile ? "88px" : "112px", "important");
+      dock.style.setProperty("height", "auto", "important");
+      dock.style.setProperty("min-height", "0", "important");
+      dock.style.setProperty("border-radius", mobile ? "34px" : "42px", "important");
     }
   }
 
   private observe() {
     this.observer?.disconnect();
     this.observer = new MutationObserver(() => queueMicrotask(() => { this.overlayBay.mount(); this.applyShellGeometry(); this.syncAppFrame(); this.applyAppSurfaceManifest(); }));
-    this.observer.observe(this.options.root, { childList: true, subtree: true });
+    this.observer.observe(this.options.root, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-spmt-dock"] });
   }
 
   private syncAppFrame() {

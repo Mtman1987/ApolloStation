@@ -84,3 +84,8 @@ test("HearMeOut room UI stays truthful when no media or provider session is acti
   assert.match(runtime, /async function renderBridge/);
   assert.doesNotMatch(source, /hearmeout-main\.fly\.dev/);
 });
+
+test("HearMeOut home exposes only room navigation until music saving is a complete workflow", () => {
+  assert.match(runtime, /data-hmo-library.*remove\(\)/);
+  assert.match(runtime, /hmo-hero-actions.*href="\/watch".*remove\(\)/);
+});

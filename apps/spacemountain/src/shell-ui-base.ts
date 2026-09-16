@@ -119,7 +119,7 @@ export class SpaceMountainShellUi {
   private workspaceTarget = 0;
   private simulationRoomsOpen = false;
   private simulationRoomsUi: SimulationRoomsUi | undefined;
-  private dockCollapsed = false;
+  private dockCollapsed = true;
   private commlinkDraft: CommlinkWorkspaceUiV1 | undefined;
   private commlinkConversationId = "";
   private commlinkSidebarOpen = false;
@@ -133,6 +133,7 @@ export class SpaceMountainShellUi {
 
   constructor(private readonly options: SpaceMountainUiOptions) {
     this.snapshot = options.snapshot;
+    this.dockCollapsed = recordBoolean(recordObject(options.snapshot.workspace, "appearance"), "sidebarCollapsed", true);
     if (typeof window !== "undefined") {
       const requested = new URLSearchParams(window.location.search).get("view");
       if (requested === "account" || NAV.some((item) => item.id === requested)) this.view = requested as SpaceMountainViewV1;
@@ -174,6 +175,7 @@ export class SpaceMountainShellUi {
   update(snapshot: SpaceMountainShellSnapshotV1) { if (snapshot.tenantId !== this.snapshot.tenantId) { this.commlinkLocal.clear(); this.commlinkConversationId = ""; this.simulationRoomsUi?.destroy(); this.simulationRoomsUi = undefined; } this.snapshot = snapshot; this.commlinkDraft = undefined; if (this.activeAppId && !this.shellApp(this.activeAppId)) this.activeAppId = undefined; this.render(); }
   updateWorkspace(workspace: Record<string, unknown>, tenantOutputs: SpaceMountainShellSnapshotV1["tenantOutputs"]) {
     this.snapshot = { ...this.snapshot, workspace, ...(tenantOutputs ? { tenantOutputs } : {}) };
+    this.dockCollapsed = recordBoolean(recordObject(workspace, "appearance"), "sidebarCollapsed", true);
     this.personalOverlayVisible = recordBoolean(workspace, "personalOverlayEnabled", true);
     this.syncPersonalOverlay(); this.syncWorkspaceTray();
   }

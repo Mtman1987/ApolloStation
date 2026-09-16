@@ -25,3 +25,11 @@ test("app surface navigation survives an iframe launch reload", () => {
   assert.match(wrapper, /this\.applyAppSurfaceManifest\(\);[\s\S]{0,400}this\.openSurfacePage\(this\.activeSurfacePage\);/);
   assert.match(wrapper, /private openSurfacePage\(pageId: string\)[\s\S]*this\.activeSurfacePage = pageId;\s*this\.syncSurfacePageState\(\);[\s\S]*type: "page\.open"/);
 });
+
+test("the rocket rail overlays full-width app surfaces and resets its geometry on toggle", () => {
+  assert.match(wrapper, /main\.style\.setProperty\("left", `\$\{edge\}px`/);
+  assert.doesNotMatch(wrapper, /const mainLeft = mobile \? 108/);
+  assert.match(wrapper, /const toggleSize = Math\.max\(48, Math\.ceil\(headerRect\.height\)\)/);
+  assert.match(wrapper, /dock\.style\.setProperty\("height", "auto"/);
+  assert.match(wrapper, /attributeFilter: \["data-spmt-dock"\]/);
+});
