@@ -36,11 +36,13 @@ try{
  const errors=[],pages=[];async function open(path){const page=await browser.newPage(),network=[],messages=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>messages.push(m.text()));page.on('response',r=>{if(r.status()>=400)network.push({path:new URL(r.url()).pathname,status:r.status()})});page.on('requestfailed',r=>network.push({path:new URL(r.url()).pathname,error:r.failure()?.errorText}));await page.goto(origin+path);if(path.startsWith('/activity')){await page.getByRole('heading',{name:'Watch parties',exact:true}).waitFor();await page.getByRole('button',{name:'Watch party',exact:true}).click();}try{await page.waitForFunction(()=>{const v=document.querySelector('video');return v&&!v.paused&&v.currentTime>.1;});}catch(e){console.error(JSON.stringify({path,worker:worker.status(),errors,network:network.slice(-20),messages:messages.slice(-20),media:await page.evaluate(()=>{const v=document.querySelector('video');return {status:document.body.innerText,readyState:v?.readyState,networkState:v?.networkState,paused:v?.paused,time:v?.currentTime,error:v?.error?.message,nativeHls:v?.canPlayType('application/vnd.apple.mpegurl'),mse:Boolean(window.MediaSource),source:v?.currentSrc}})},null,2));throw e;}return page;}
  pages.push(await open('/apps/hearmeout'));pages.push(await open('/activity'));
  const activate=locator=>locator.evaluate(button=>button.click());
- await pages[1].evaluate(()=>{const main=document.querySelector('main');if(main?.classList.contains('controls-hidden'))document.getElementById('view-toggle')?.click();});
- const soundToggle=pages[1].getByRole('button',{name:/^(Enable sound|Restore sound|Mute locally)$/});
- await soundToggle.waitFor({state:'visible'});
- const soundState=(await soundToggle.textContent())?.trim();
- if(soundState==='Enable sound'||soundState==='Restore sound')await activate(soundToggle);
+ const controlsToggle=pages[1].getByRole('button',{name:'Controls',exact:true});
+ await controlsToggle.waitFor({state:'attached'});
+ if(await controlsToggle.getAttribute('aria-pressed')!=='true')await activate(controlsToggle);
+ const enableSound=pages[1].getByRole('button',{name:'Enable sound',exact:true}),restoreSound=pages[1].getByRole('button',{name:'Restore sound',exact:true}),muteLocally=pages[1].getByRole('button',{name:'Mute locally',exact:true});
+ if(await enableSound.isVisible())await activate(enableSound);
+ else if(await restoreSound.isVisible())await activate(restoreSound);
+ else await muteLocally.waitFor({state:'visible'});
  for(const page of pages){assert.equal(await page.evaluate(()=>document.querySelector('video').playbackRate),1);const select=page.getByRole('combobox',{name:'Audio language'});await select.waitFor({state:'visible'});assert.equal(await select.locator('option').count(),2);await select.selectOption('1');assert.equal(await select.inputValue(),'1');await page.waitForFunction(()=>{const v=document.querySelector('video');return !v.paused&&!v.error;});}
  const revision=program.getSession('hls',partyId).revision;
  await pages[0].getByRole('slider',{name:'movie volume on this device'}).evaluate(el => { el.value = '37'; el.dispatchEvent(new Event('input', { bubbles: true })); });await pages[1].getByRole('slider',{name:'Volume on this device',exact:true}).evaluate(el => { el.value = '61'; el.dispatchEvent(new Event('input', { bubbles: true })); });
