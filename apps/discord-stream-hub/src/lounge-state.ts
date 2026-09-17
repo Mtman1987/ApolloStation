@@ -24,6 +24,9 @@ export interface DshLoungeStateV1 {
   updatedAt: string;
 }
 
+type MutableLoungeKeyV1 = Exclude<keyof DshLoungeStateV1, "schemaVersion" | "tenantId" | "twitchLogin" | "updatedAt">;
+type DshLoungeStatePatchV1 = { [K in MutableLoungeKeyV1]?: DshLoungeStateV1[K] | undefined };
+
 /**
  * Durable presentation/context state for the SpaceMountainLive Lounge. The overlay
  * and Stella consume the same record so Stella can talk about what viewers are
@@ -57,11 +60,13 @@ export class DshLoungeStateStore {
     };
   }
 
-  update(tenantId: string, patch: Partial<Omit<DshLoungeStateV1, "schemaVersion" | "tenantId" | "twitchLogin" | "updatedAt">>) {
+  update(tenantId: string, patch: DshLoungeStatePatchV1) {
     const current = this.view(tenantId);
     const next: DshLoungeStateV1 = {
       ...current,
-      ...patch,
+      ...(patch.mode === undefined ? {} : { mode: patch.mode }),
+      ...(patch.headline === undefined ? {} : { headline: patch.headline }),
+      ...(patch.raidReturnPending === undefined ? {} : { raidReturnPending: patch.raidReturnPending }),
       schemaVersion: 1,
       tenantId,
       twitchLogin: "spacemountainlive",
@@ -69,6 +74,14 @@ export class DshLoungeStateStore {
       pileIds: patch.pileIds ? [...new Set(patch.pileIds)] : current.pileIds,
       updatedAt: this.now(),
     };
+    if ("physicalAudienceHolder" in patch) {
+      if (patch.physicalAudienceHolder === undefined) delete next.physicalAudienceHolder;
+      else next.physicalAudienceHolder = patch.physicalAudienceHolder;
+    }
+    if ("announcedTarget" in patch) {
+      if (patch.announcedTarget === undefined) delete next.announcedTarget;
+      else next.announcedTarget = patch.announcedTarget;
+    }
     validate(next);
     this.db.prepare("INSERT INTO dsh_lounge_state(tenant_id,body) VALUES(?,?) ON CONFLICT(tenant_id) DO UPDATE SET body=excluded.body").run(tenantId, JSON.stringify(next));
     return next;
@@ -92,8 +105,8 @@ export class DshLoungeStateStore {
       headline: input.returnPending ? "Raid Pile handoff in progress" : "Raid Pile Lounge",
       pileIds: input.pileIds,
       physicalAudienceHolder: input.physicalAudienceHolder,
-      announcedTarget: input.announcedTarget,
       raidReturnPending: Boolean(input.returnPending),
+      ...(input.announcedTarget === undefined ? {} : { announcedTarget: input.announcedTarget }),
       ...(input.features ? { features: input.features } : {}),
     });
   }
