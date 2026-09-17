@@ -1,24 +1,22 @@
 import { DatabaseSync } from "node:sqlite";
 import type { DshRaidPileMemberV1 } from "./raid-pile.js";
 
-export type DshRaidPileRelayKindV1 = "raid-train" | "partner-train";
-export interface DshRaidPileRelayTargetV1 {
-  kind: DshRaidPileRelayKindV1;
-  trainId: string;
-  userId: string;
+export interface DshRaidPileHoldingChannelV1 {
+  providerUserId: string;
   twitchLogin: string;
   displayName: string;
   live: boolean;
 }
+
 export interface DshRaidPileRelayStateV1 {
   tenantId: string;
   pileId: string;
-  mode: "pile" | "train";
+  mode: "pile" | "holding";
   physicalTargetUserId?: string;
   physicalTargetLogin?: string;
   physicalTargetName?: string;
-  relayKind?: DshRaidPileRelayKindV1;
-  relayTrainId?: string;
+  holdingProviderUserId?: string;
+  holdingLogin?: string;
   announcedTargetUserId?: string;
   announcedTargetLogin?: string;
   announcedTargetName?: string;
@@ -27,9 +25,10 @@ export interface DshRaidPileRelayStateV1 {
 }
 
 /**
- * Tracks where the lurker audience physically is, separately from the target DSH is announcing next.
- * A train fallback is not complete until an observed raid proves the train handed the audience back
- * to a Raid Pile member. This prevents UI state from pretending stranded lurkers moved when they did not.
+ * Tracks where the lurker audience physically is separately from the next announced pile target.
+ * When no pile member is live, the controlled Twitch holding channel becomes the actual holder.
+ * The system never claims the audience returned to a member until Twitch reports the holding
+ * channel raided that member. This keeps passive lurkers physically inside the pile chain.
  */
 export class DshRaidPileRelayStore {
   private readonly db: DatabaseSync;
@@ -49,28 +48,29 @@ export class DshRaidPileRelayStore {
     return row ? JSON.parse(row.body) as DshRaidPileRelayStateV1 : { tenantId, pileId, mode: "pile", returnPending: false, updatedAt: this.now() };
   }
 
-  /** Prefer our own train; approved partner trains are the second transport fallback. */
-  chooseTrain(ownTrain: DshRaidPileRelayTargetV1[], partnerTrains: DshRaidPileRelayTargetV1[]) {
-    const eligible = (values: DshRaidPileRelayTargetV1[], kind: DshRaidPileRelayKindV1) => values.filter(value => value.kind === kind && value.live).sort((a, b) => a.trainId.localeCompare(b.trainId) || a.userId.localeCompare(b.userId));
-    return eligible(ownTrain, "raid-train")[0] ?? eligible(partnerTrains, "partner-train")[0];
-  }
-
-  attachTrain(tenantId: string, pileId: string, target: DshRaidPileRelayTargetV1) {
-    if (!target.live) throw new Error("Raid Pile can only attach to a live train target");
+  attachHoldingChannel(tenantId: string, pileId: string, holding: DshRaidPileHoldingChannelV1) {
+    if (!holding.live) throw new Error("Raid Pile holding channel must be live before receiving the pile");
+    requireId(holding.providerUserId, "holding provider user id");
     const state: DshRaidPileRelayStateV1 = {
-      tenantId, pileId, mode: "train",
-      physicalTargetUserId: target.userId, physicalTargetLogin: target.twitchLogin, physicalTargetName: target.displayName,
-      relayKind: target.kind, relayTrainId: target.trainId,
-      announcedTargetUserId: target.userId, announcedTargetLogin: target.twitchLogin, announcedTargetName: target.displayName,
-      returnPending: false, updatedAt: this.now(),
+      tenantId, pileId, mode: "holding",
+      physicalTargetUserId: holding.providerUserId,
+      physicalTargetLogin: holding.twitchLogin,
+      physicalTargetName: holding.displayName,
+      holdingProviderUserId: holding.providerUserId,
+      holdingLogin: holding.twitchLogin,
+      announcedTargetUserId: holding.providerUserId,
+      announcedTargetLogin: holding.twitchLogin,
+      announcedTargetName: holding.displayName,
+      returnPending: false,
+      updatedAt: this.now(),
     };
     this.put(state); return state;
   }
 
-  /** A pile member is available again, but lurkers stay on the train until the real handoff is observed. */
+  /** A pile member is available again. Announce them, but physical audience stays on holding until Twitch confirms the raid. */
   requestReturn(tenantId: string, pileId: string, member: DshRaidPileMemberV1) {
     const current = this.view(tenantId, pileId);
-    if (current.mode !== "train") return this.setPile(tenantId, pileId, member);
+    if (current.mode !== "holding") return this.setPile(tenantId, pileId, member);
     const state: DshRaidPileRelayStateV1 = {
       ...current,
       announcedTargetUserId: member.userId,
@@ -82,20 +82,25 @@ export class DshRaidPileRelayStore {
     this.put(state); return state;
   }
 
-  /** Only an observed train -> member raid is allowed to move the physical audience state back to pile mode. */
-  observeRaid(tenantId: string, pileId: string, fromUserId: string, to: DshRaidPileMemberV1) {
+  /** Only a confirmed holding-channel -> pile-member raid may move the physical audience state back to pile mode. */
+  observeRaid(tenantId: string, pileId: string, fromProviderUserId: string, to: DshRaidPileMemberV1) {
     const current = this.view(tenantId, pileId);
-    if (current.mode !== "train" || !current.returnPending) return current;
-    if (current.physicalTargetUserId !== fromUserId || current.announcedTargetUserId !== to.userId) return current;
+    if (current.mode !== "holding" || !current.returnPending) return current;
+    if (current.holdingProviderUserId !== fromProviderUserId || current.announcedTargetUserId !== to.userId) return current;
     return this.setPile(tenantId, pileId, to);
   }
 
   setPile(tenantId: string, pileId: string, member: DshRaidPileMemberV1) {
     const state: DshRaidPileRelayStateV1 = {
       tenantId, pileId, mode: "pile",
-      physicalTargetUserId: member.userId, physicalTargetLogin: member.twitchLogin, physicalTargetName: member.displayName,
-      announcedTargetUserId: member.userId, announcedTargetLogin: member.twitchLogin, announcedTargetName: member.displayName,
-      returnPending: false, updatedAt: this.now(),
+      physicalTargetUserId: member.userId,
+      physicalTargetLogin: member.twitchLogin,
+      physicalTargetName: member.displayName,
+      announcedTargetUserId: member.userId,
+      announcedTargetLogin: member.twitchLogin,
+      announcedTargetName: member.displayName,
+      returnPending: false,
+      updatedAt: this.now(),
     };
     this.put(state); return state;
   }
@@ -104,3 +109,5 @@ export class DshRaidPileRelayStore {
     this.db.prepare("INSERT INTO raid_pile_relay(tenant_id,pile_id,body) VALUES(?,?,?) ON CONFLICT(tenant_id,pile_id) DO UPDATE SET body=excluded.body").run(state.tenantId, state.pileId, JSON.stringify(state));
   }
 }
+
+function requireId(value: string, name: string) { if (!value || value.length > 180 || /[\r\n\0]/.test(value)) throw new Error(`${name} is invalid`); }
