@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
+import { isDshSystemOwnedTwitchLogin } from "./system-live-channels.js";
 
 export interface DshRaidPileSettingsV1 {
   maxSize: number;
@@ -55,24 +56,39 @@ export class DshRaidPileStore {
 
   join(tenantId: string, input: { userId: string; twitchLogin: string; displayName: string }) {
     requireId(tenantId, "tenantId"); requireId(input.userId, "userId");
+    const normalizedLogin = login(input.twitchLogin), displayName = text(input.displayName, 100);
+    if (isDshSystemOwnedTwitchLogin(normalizedLogin)) throw new Error("System-owned Lounge channels cannot join the Raid Pile");
     const existing = this.member(tenantId, input.userId);
     if (existing) return { duplicate: true, member: existing, piles: this.piles(tenantId) };
-    const piles = this.piles(tenantId), pileId = smallestPileId(piles) ?? this.createPile(tenantId);
-    const joinedAt = this.now();
-    this.db.prepare("INSERT INTO raid_pile_members(tenant_id,user_id,pile_id,twitch_login,display_name,joined_at,last_raided_at,current_viewers,is_live) VALUES(?,?,?,?,?,?,NULL,0,0)")
-      .run(tenantId, input.userId, pileId, login(input.twitchLogin), text(input.displayName, 100), joinedAt);
-    this.rebalance(tenantId, "grow");
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const piles = this.piles(tenantId), pileId = smallestPileId(piles) ?? this.createPile(tenantId);
+      const at = this.now();
+      const profile = this.db.prepare("SELECT first_joined_at AS firstJoinedAt,last_raided_at AS lastRaidedAt FROM raid_pile_profiles WHERE tenant_id=? AND user_id=?").get(tenantId, input.userId) as { firstJoinedAt: string; lastRaidedAt: string | null } | undefined;
+      this.db.prepare("INSERT INTO raid_pile_profiles(tenant_id,user_id,twitch_login,display_name,first_joined_at,last_raided_at) VALUES(?,?,?,?,?,?) ON CONFLICT(tenant_id,user_id) DO UPDATE SET twitch_login=excluded.twitch_login,display_name=excluded.display_name")
+        .run(tenantId, input.userId, normalizedLogin, displayName, profile?.firstJoinedAt ?? at, profile?.lastRaidedAt ?? null);
+      this.db.prepare("INSERT INTO raid_pile_members(tenant_id,user_id,pile_id,twitch_login,display_name,joined_at,last_raided_at,current_viewers,is_live) VALUES(?,?,?,?,?,?,?,?,0)")
+        .run(tenantId, input.userId, pileId, normalizedLogin, displayName, at, profile?.lastRaidedAt ?? null, 0);
+      this.db.prepare("INSERT INTO raid_pile_events(tenant_id,user_id,event_type,created_at,body) VALUES(?,?,?,?,?)").run(tenantId, input.userId, "join", at, JSON.stringify({ pileId }));
+      this.rebalance(tenantId, "grow");
+      this.ensureTargets(tenantId);
+      this.db.exec("COMMIT");
+    } catch (error) { this.db.exec("ROLLBACK"); throw error; }
     return { duplicate: false, member: this.member(tenantId, input.userId)!, piles: this.piles(tenantId) };
   }
 
   leave(tenantId: string, userId: string, reason = "left") {
     const member = this.member(tenantId, userId); if (!member) return { removed: false, piles: this.piles(tenantId) };
-    this.db.prepare("DELETE FROM raid_pile_members WHERE tenant_id=? AND user_id=?").run(tenantId, userId);
-    this.db.prepare("INSERT INTO raid_pile_events(tenant_id,user_id,event_type,created_at,body) VALUES(?,?,?,?,?)").run(tenantId, userId, "leave", this.now(), JSON.stringify({ reason }));
-    const target = this.target(member.pileId, tenantId);
-    if (target?.userId === userId) this.clearTarget(tenantId, member.pileId);
-    this.rebalance(tenantId, "shrink");
-    this.ensureTargets(tenantId);
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const wasTarget = this.target(member.pileId, tenantId)?.userId === userId;
+      if (wasTarget) this.clearTarget(tenantId, member.pileId);
+      this.db.prepare("DELETE FROM raid_pile_members WHERE tenant_id=? AND user_id=?").run(tenantId, userId);
+      this.db.prepare("INSERT INTO raid_pile_events(tenant_id,user_id,event_type,created_at,body) VALUES(?,?,?,?,?)").run(tenantId, userId, "leave", this.now(), JSON.stringify({ reason, pileId: member.pileId }));
+      this.rebalance(tenantId, "shrink");
+      this.ensureTargets(tenantId);
+      this.db.exec("COMMIT");
+    } catch (error) { this.db.exec("ROLLBACK"); throw error; }
     return { removed: true, piles: this.piles(tenantId) };
   }
 
@@ -83,12 +99,12 @@ export class DshRaidPileStore {
 
   /** Returns the weighted recommendation without changing state. 60% low viewers, 40% longest wait. */
   next(tenantId: string, pileId: string, excludeUserId?: string) {
-    const members = this.members(tenantId, pileId).filter((member) => member.isLive && member.userId !== excludeUserId);
+    const members = this.members(tenantId, pileId).filter((member) => member.isLive && member.userId !== excludeUserId && !isDshSystemOwnedTwitchLogin(member.twitchLogin));
     if (!members.length) return undefined;
     return [...members].sort((a, b) => score(b, this.now()) - score(a, this.now()) || a.joinedAt.localeCompare(b.joinedAt) || a.userId.localeCompare(b.userId))[0];
   }
 
-  /** Moves the canonical pile target; it does not and cannot force the prior streamer to raid or end stream. */
+  /** Moves the announced pile target. Physical audience location is separately confirmed by the relay store. */
   advance(tenantId: string, pileId: string, reason: "manual" | "handoff" | "initial" = "manual") {
     const prior = this.target(pileId, tenantId), selected = this.next(tenantId, pileId, prior?.userId);
     if (!selected) return prior;
@@ -96,6 +112,7 @@ export class DshRaidPileStore {
     this.db.prepare("INSERT INTO raid_pile_targets(tenant_id,pile_id,user_id,target_since) VALUES(?,?,?,?) ON CONFLICT(tenant_id,pile_id) DO UPDATE SET user_id=excluded.user_id,target_since=excluded.target_since")
       .run(tenantId, pileId, selected.userId, at);
     this.db.prepare("UPDATE raid_pile_members SET last_raided_at=? WHERE tenant_id=? AND user_id=?").run(at, tenantId, selected.userId);
+    this.db.prepare("UPDATE raid_pile_profiles SET last_raided_at=? WHERE tenant_id=? AND user_id=?").run(at, tenantId, selected.userId);
     this.db.prepare("INSERT INTO raid_pile_events(tenant_id,user_id,event_type,created_at,body) VALUES(?,?,?,?,?)").run(tenantId, selected.userId, "target", at, JSON.stringify({ pileId, reason, priorUserId: prior?.userId }));
     return this.member(tenantId, selected.userId);
   }
@@ -103,12 +120,15 @@ export class DshRaidPileStore {
   ensureTargets(tenantId: string) {
     for (const pile of this.piles(tenantId)) {
       const current = pile.target;
-      if (!current || !current.isLive) this.advance(tenantId, pile.id, "initial");
+      if (!current || current.pileId !== pile.id || !current.isLive || isDshSystemOwnedTwitchLogin(current.twitchLogin)) {
+        this.clearTarget(tenantId, pile.id);
+        this.advance(tenantId, pile.id, "initial");
+      }
     }
     return this.piles(tenantId);
   }
 
-  /** After the configured hold time, announce a soft handoff and move all surfaces to the new canonical target. */
+  /** After the configured hold time, recommend the next announced target without claiming the physical audience moved. */
   dueHandoffs(tenantId: string): DshRaidPileHandoffV1[] {
     const settings = validateSettings(this.settings()), now = Date.parse(this.now()), output: DshRaidPileHandoffV1[] = [];
     for (const pile of this.piles(tenantId)) {
@@ -117,19 +137,24 @@ export class DshRaidPileStore {
       if (heldHours < settings.handoffHours) continue;
       const prior = pile.target, next = this.advance(tenantId, pile.id, "handoff");
       if (!next || next.userId === prior.userId) continue;
-      output.push({ pileId: pile.id, priorTarget: prior, nextTarget: next, heldHours, message: `${prior.displayName} has had the Raid Pile for ${Math.floor(heldHours)} hours. It would help the most people if they raid the pile onward when convenient. The canonical pile is now on ${next.displayName}; late joiners should go there.` });
+      output.push({ pileId: pile.id, priorTarget: prior, nextTarget: next, heldHours, message: `${prior.displayName} has had the Raid Pile for ${Math.floor(heldHours)} hours. It would help the most people if they pass it onward when convenient. ${next.displayName} is the announced next target; the physical pile remains with ${prior.displayName} until Twitch confirms the raid.` });
     }
     return output;
   }
 
-  /** Records a voluntary raid choice. Off-pile raids are strikes; the third strike in a UTC month removes membership. */
+  /** Records a voluntary raid choice. No canonical target means compliance cannot be judged and never creates a strike. */
   recordRaidOut(tenantId: string, raiderUserId: string, targetUserId: string, eventId: string) {
     requireId(eventId, "eventId"); const raider = this.member(tenantId, raiderUserId); if (!raider) return { member: false, compliant: true, strikes: 0, removed: false };
-    const canonical = this.target(raider.pileId, tenantId), compliant = canonical?.userId === targetUserId;
-    const at = this.now(), month = at.slice(0, 7);
+    const canonical = this.target(raider.pileId, tenantId), at = this.now(), month = at.slice(0, 7);
+    if (!canonical) {
+      this.db.prepare("INSERT INTO raid_pile_events(tenant_id,user_id,event_type,created_at,body,event_key) VALUES(?,?,?,?,?,?) ON CONFLICT(event_key) DO NOTHING")
+        .run(tenantId, raiderUserId, "raid-unroutable", at, JSON.stringify({ pileId: raider.pileId, targetUserId }), `${tenantId}:${eventId}`);
+      return { member: true, compliant: true, strikes: this.strikes(tenantId, raiderUserId, month), removed: false, limit: validateSettings(this.settings()).monthlyStrikeLimit, canonicalTarget: undefined };
+    }
+    const compliant = canonical.userId === targetUserId;
     const inserted = this.db.prepare("INSERT INTO raid_pile_events(tenant_id,user_id,event_type,created_at,body,event_key) VALUES(?,?,?,?,?,?) ON CONFLICT(event_key) DO NOTHING")
-      .run(tenantId, raiderUserId, compliant ? "raid-compliant" : "raid-off-pile", at, JSON.stringify({ pileId: raider.pileId, targetUserId, canonicalTargetUserId: canonical?.userId }), `${tenantId}:${eventId}`).changes;
-    const strikes = Number((this.db.prepare("SELECT COUNT(*) AS count FROM raid_pile_events WHERE tenant_id=? AND user_id=? AND event_type='raid-off-pile' AND substr(created_at,1,7)=?").get(tenantId, raiderUserId, month) as { count: number }).count);
+      .run(tenantId, raiderUserId, compliant ? "raid-compliant" : "raid-off-pile", at, JSON.stringify({ pileId: raider.pileId, targetUserId, canonicalTargetUserId: canonical.userId }), `${tenantId}:${eventId}`).changes;
+    const strikes = this.strikes(tenantId, raiderUserId, month);
     const limit = validateSettings(this.settings()).monthlyStrikeLimit, removed = !compliant && inserted > 0 && strikes >= limit;
     if (removed) this.leave(tenantId, raiderUserId, "monthly-strike-limit");
     return { member: true, compliant, strikes, removed, limit, canonicalTarget: canonical };
@@ -144,6 +169,9 @@ export class DshRaidPileStore {
     return row ? normalize(row) : undefined;
   }
 
+  private strikes(tenantId: string, userId: string, month: string) {
+    return Number((this.db.prepare("SELECT COUNT(*) AS count FROM raid_pile_events WHERE tenant_id=? AND user_id=? AND event_type='raid-off-pile' AND substr(created_at,1,7)=?").get(tenantId, userId, month) as { count: number }).count);
+  }
   private members(tenantId: string, pileId: string) {
     return (this.db.prepare("SELECT user_id AS userId,pile_id AS pileId,twitch_login AS twitchLogin,display_name AS displayName,joined_at AS joinedAt,last_raided_at AS lastRaidedAt,current_viewers AS currentViewers,is_live AS isLive FROM raid_pile_members WHERE tenant_id=? AND pile_id=? ORDER BY joined_at,user_id").all(tenantId, pileId) as any[]).map(normalize);
   }
@@ -156,26 +184,32 @@ export class DshRaidPileStore {
   private createPile(tenantId: string) { const id = `pile-${randomUUID()}`; this.db.prepare("INSERT INTO raid_piles(tenant_id,pile_id,created_at) VALUES(?,?,?)").run(tenantId, id, this.now()); return id; }
 
   private rebalance(tenantId: string, direction: "grow" | "shrink") {
-    const settings = validateSettings(this.settings()), members = this.piles(tenantId).flatMap((pile) => pile.members).sort((a, b) => a.joinedAt.localeCompare(b.joinedAt) || a.userId.localeCompare(b.userId));
-    let piles = this.piles(tenantId); let desired = Math.max(1, piles.length || 1);
+    const settings = validateSettings(this.settings()), before = this.piles(tenantId), members = before.flatMap((pile) => pile.members).sort((a, b) => a.joinedAt.localeCompare(b.joinedAt) || a.userId.localeCompare(b.userId));
+    let piles = before; let desired = Math.max(1, piles.length || 1);
     if (direction === "grow") desired = Math.max(desired, Math.ceil(members.length / settings.maxSize));
     else while (desired > 1 && members.length < (desired - 1) * settings.minSize) desired -= 1;
+    if (desired === piles.length && piles.length) return false;
     while (piles.length < desired) { this.createPile(tenantId); piles = this.piles(tenantId); }
     if (!piles.length) { this.createPile(tenantId); piles = this.piles(tenantId); }
     const keep = piles.slice(0, desired);
+    for (const pile of piles) this.clearTarget(tenantId, pile.id);
     members.forEach((member, index) => this.db.prepare("UPDATE raid_pile_members SET pile_id=? WHERE tenant_id=? AND user_id=?").run(keep[index % keep.length]!.id, tenantId, member.userId));
-    for (const doomed of piles.slice(desired)) { this.clearTarget(tenantId, doomed.id); this.db.prepare("DELETE FROM raid_piles WHERE tenant_id=? AND pile_id=?").run(tenantId, doomed.id); }
+    for (const doomed of piles.slice(desired)) this.db.prepare("DELETE FROM raid_piles WHERE tenant_id=? AND pile_id=?").run(tenantId, doomed.id);
+    return true;
   }
 
   private migrate() {
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS raid_piles(tenant_id TEXT NOT NULL,pile_id TEXT NOT NULL,created_at TEXT NOT NULL,PRIMARY KEY(tenant_id,pile_id)) STRICT;
+      CREATE TABLE IF NOT EXISTS raid_pile_profiles(tenant_id TEXT NOT NULL,user_id TEXT NOT NULL,twitch_login TEXT NOT NULL,display_name TEXT NOT NULL,first_joined_at TEXT NOT NULL,last_raided_at TEXT,PRIMARY KEY(tenant_id,user_id)) STRICT;
       CREATE TABLE IF NOT EXISTS raid_pile_members(tenant_id TEXT NOT NULL,user_id TEXT NOT NULL,pile_id TEXT NOT NULL,twitch_login TEXT NOT NULL,display_name TEXT NOT NULL,joined_at TEXT NOT NULL,last_raided_at TEXT,current_viewers INTEGER NOT NULL,is_live INTEGER NOT NULL,PRIMARY KEY(tenant_id,user_id),FOREIGN KEY(tenant_id,pile_id) REFERENCES raid_piles(tenant_id,pile_id) ON DELETE CASCADE) STRICT;
       CREATE INDEX IF NOT EXISTS raid_pile_members_pile ON raid_pile_members(tenant_id,pile_id,is_live,current_viewers);
       CREATE TABLE IF NOT EXISTS raid_pile_targets(tenant_id TEXT NOT NULL,pile_id TEXT NOT NULL,user_id TEXT NOT NULL,target_since TEXT NOT NULL,PRIMARY KEY(tenant_id,pile_id)) STRICT;
       CREATE TABLE IF NOT EXISTS raid_pile_events(id INTEGER PRIMARY KEY,tenant_id TEXT NOT NULL,user_id TEXT NOT NULL,event_type TEXT NOT NULL,created_at TEXT NOT NULL,body TEXT NOT NULL,event_key TEXT UNIQUE) STRICT;
       CREATE INDEX IF NOT EXISTS raid_pile_events_strikes ON raid_pile_events(tenant_id,user_id,event_type,created_at);
     `);
+    this.db.exec(`INSERT OR IGNORE INTO raid_pile_profiles(tenant_id,user_id,twitch_login,display_name,first_joined_at,last_raided_at)
+      SELECT tenant_id,user_id,twitch_login,display_name,joined_at,last_raided_at FROM raid_pile_members;`);
   }
 }
 
