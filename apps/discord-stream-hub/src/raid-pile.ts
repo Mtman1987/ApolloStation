@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 
 export interface DshRaidPileSettingsV1 {
@@ -152,7 +153,7 @@ export class DshRaidPileStore {
     if (!row) return {}; const target = this.member(tenantId, row.userId); return target ? { target, targetSince: row.targetSince } : {};
   }
   private clearTarget(tenantId: string, pileId: string) { this.db.prepare("DELETE FROM raid_pile_targets WHERE tenant_id=? AND pile_id=?").run(tenantId, pileId); }
-  private createPile(tenantId: string) { const id = `pile-${crypto.randomUUID()}`; this.db.prepare("INSERT INTO raid_piles(tenant_id,pile_id,created_at) VALUES(?,?,?)").run(tenantId, id, this.now()); return id; }
+  private createPile(tenantId: string) { const id = `pile-${randomUUID()}`; this.db.prepare("INSERT INTO raid_piles(tenant_id,pile_id,created_at) VALUES(?,?,?)").run(tenantId, id, this.now()); return id; }
 
   private rebalance(tenantId: string, direction: "grow" | "shrink") {
     const settings = validateSettings(this.settings()), members = this.piles(tenantId).flatMap((pile) => pile.members).sort((a, b) => a.joinedAt.localeCompare(b.joinedAt) || a.userId.localeCompare(b.userId));
@@ -160,9 +161,10 @@ export class DshRaidPileStore {
     if (direction === "grow") desired = Math.max(desired, Math.ceil(members.length / settings.maxSize));
     else while (desired > 1 && members.length < (desired - 1) * settings.minSize) desired -= 1;
     while (piles.length < desired) { this.createPile(tenantId); piles = this.piles(tenantId); }
-    while (piles.length > desired) { const doomed = piles.at(-1)!; this.clearTarget(tenantId, doomed.id); this.db.prepare("DELETE FROM raid_piles WHERE tenant_id=? AND pile_id=?").run(tenantId, doomed.id); piles = this.piles(tenantId); }
-    piles = this.piles(tenantId); if (!piles.length) { this.createPile(tenantId); piles = this.piles(tenantId); }
-    members.forEach((member, index) => this.db.prepare("UPDATE raid_pile_members SET pile_id=? WHERE tenant_id=? AND user_id=?").run(piles[index % piles.length]!.id, tenantId, member.userId));
+    if (!piles.length) { this.createPile(tenantId); piles = this.piles(tenantId); }
+    const keep = piles.slice(0, desired);
+    members.forEach((member, index) => this.db.prepare("UPDATE raid_pile_members SET pile_id=? WHERE tenant_id=? AND user_id=?").run(keep[index % keep.length]!.id, tenantId, member.userId));
+    for (const doomed of piles.slice(desired)) { this.clearTarget(tenantId, doomed.id); this.db.prepare("DELETE FROM raid_piles WHERE tenant_id=? AND pile_id=?").run(tenantId, doomed.id); }
   }
 
   private migrate() {
