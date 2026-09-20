@@ -27,7 +27,7 @@ test('Lounge commands use only the hosting room or Discord channel while every l
 
 test('Lounge environment uses the canonical permanent room and requires a complete optional Discord binding',()=>{
   assert.equal(hearMeOutLoungeEnvironment({}),undefined);
-  assert.deepEqual(hearMeOutLoungeEnvironment({HEARMEOUT_LOUNGE_ENABLED:'1'}),{roomId:'system-spacemountainlive-lounge',name:'24-Hour Lounge',radioSeed:'A varied mix of music matching recent 24-Hour Lounge requests'});
+  assert.deepEqual(hearMeOutLoungeEnvironment({HEARMEOUT_LOUNGE_ENABLED:'1'}),{roomId:'system-spacemountainlive-lounge',name:'24-Hour Lounge',radioSeed:'A varied mix of music matching recent 24-Hour Lounge requests',twitchChannel:'mtman1987'});
   assert.throws(()=>hearMeOutLoungeEnvironment({HEARMEOUT_LOUNGE_ENABLED:'1',HEARMEOUT_LOUNGE_GUILD_ID:loungeChannel.guildId}),/configured together/);
   assert.deepEqual(hearMeOutLoungeEnvironment({HEARMEOUT_LOUNGE_ENABLED:'1',HEARMEOUT_LOUNGE_GUILD_ID:loungeChannel.guildId,HEARMEOUT_LOUNGE_CHANNEL_ID:loungeChannel.channelId}).channel,loungeChannel);
 });
