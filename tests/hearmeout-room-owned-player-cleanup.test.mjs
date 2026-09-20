@@ -58,3 +58,12 @@ test('deleting a HearMeOut room atomically removes its watch player',async t=>{
  assert.throws(()=>program.getSession('tenant',party.roomId),/not found/);
  assert.equal(program.listRooms().some(room=>room.roomId===party.roomId),false);
 });
+
+test('the 24-Hour Lounge player is permanent, discoverable and bound to only its configured channel',async t=>{
+ const path=await fixture(t),program=new HearMeOutBroadcastProgram(path,binding);t.after(()=>program.close());
+ const loungeChannel={guildId:'123456789012345678',channelId:'234567890123456789'},elsewhere={...loungeChannel,channelId:'345678901234567890'};
+ const lounge=program.ensurePermanentRoom({roomId:'system-spacemountainlive-lounge',sourceRoomId:'system-spacemountainlive-lounge',name:'24-Hour Lounge',channel:loungeChannel});
+ assert.equal(lounge.permanent,true);assert.equal(program.channelRoom(loungeChannel).roomId,lounge.roomId);assert.equal(program.channelRoom(elsewhere),undefined);
+ const future=new Date(Date.now()+HEARMEOUT_IDLE_PLAYER_TTL_MS*20).toISOString();assert.deepEqual(program.pruneIdleRooms(HEARMEOUT_IDLE_PLAYER_TTL_MS,future),[]);
+ assert.equal(program.deleteRoom(lounge.roomId),false);assert.equal(program.getRoom(lounge.roomId).name,'24-Hour Lounge');
+});

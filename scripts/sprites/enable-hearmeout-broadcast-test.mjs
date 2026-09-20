@@ -17,7 +17,7 @@ export async function enableHearMeOutBroadcastTest(dataRoot, mediaRoot) {
   let executionUserId;
   try{executionUserId=identity.prepare("SELECT owner_user_id FROM tenants WHERE id=? AND status='active'").get(config.tenantId)?.owner_user_id;}finally{identity.close();}
   if(typeof executionUserId!=='string'||!executionUserId)throw Error('The existing broadcast execution account is missing');
-  config.broadcast = {ffmpegBinary, ffprobeBinary, singleProgram:true, executionUserId};
+  config.broadcast = {ffmpegBinary, ffprobeBinary, singleProgram:true, executionUserId,lounge:config.broadcast?.lounge??{roomId:'system-spacemountainlive-lounge',name:'24-Hour Lounge',radioSeed:'A varied mix of music matching recent 24-Hour Lounge requests'}};
   config.mediaWorker = {ytDlpBinary};
   // Public application ID from hearmeout-main/fly.toml. The developer URL
   // override points this existing Activity at Apollo only for the tester.

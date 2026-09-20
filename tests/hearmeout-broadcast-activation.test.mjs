@@ -24,6 +24,8 @@ test('broadcast activation preserves transferred owner and voice configuration a
   const environment = await hearMeOutCutoverEnvironment(root);
   assert.equal(environment.HEARMEOUT_SINGLE_BROADCAST,'1');
   assert.equal(environment.HEARMEOUT_BROADCAST_EXECUTION_USER_ID,'owner');
+  assert.equal(environment.HEARMEOUT_LOUNGE_ENABLED,'1');
+  assert.equal(environment.HEARMEOUT_LOUNGE_ROOM_ID,'system-spacemountainlive-lounge');
   assert.equal(environment.HEARMEOUT_MEDIA_TENANT_ID, config.tenantId);
   assert.equal(environment.HEARMEOUT_ACTIVITY_TENANT_ID, config.tenantId);
   assert.equal(environment.HEARMEOUT_CONTROLLED_MEDIA, '1');

@@ -93,14 +93,16 @@ export class HearMeOutDiscordInteractionRouter {
       const query=body.type===5&&customId.startsWith('request_song_modal')?readModalValue(body.data,'song_request_input'):['wr','watchrequest','sr','songrequest'].includes(name)?String((body.data?.options??[]).find((option:any)=>['query','song','movie','request'].includes(option.name))?.value??''):undefined;
       if(query!==undefined){
         const requested=body.type===5?customId.split(':')[1]:undefined;
-        const roomId=requested&&!['discord-activity','discord-watch-room','discord-music-room'].includes(requested)?requested:hosted?.roomId;
+        if(requested&&!['discord-activity','discord-watch-room','discord-music-room'].includes(requested)&&requested!==hosted?.roomId)return ephemeral('Join the Discord channel that owns this player before requesting media.',200);
+        const roomId=hosted?.roomId;
         if(!roomId)return menu();
         const principal:HearMeOutPrincipalV1={tenantId,userId:'discord:'+discordUserId,displayName,roles:['member']};
         try{program.getRoom(roomId);if(!this.options.requestMedia)throw Error('Media requests are unavailable');await this.options.requestMedia({principal,interactionId,roomId,query,lane:['sr','songrequest'].includes(name)||body.type===5?'music':'movie',guildId:guildId??'',channelId:channelId??''});return ephemeral('Your request is in '+program.getRoom(roomId).name+'.',200);}catch(error){return ephemeral((error as Error).message,200);}
       }
       if(['np','nowplaying'].includes(name))return hosted?ephemeral(hosted.name+': '+(program.getSession(tenantId,hosted.roomId).current?.item.title??'Nothing is playing.'),200):menu();
       if(customId.startsWith('hmo_watch_control:')||customId==='music_play_pause_btn'||customId==='music_skip_btn'){
-        const roomId=customId.split(':')[2]??hosted?.roomId;if(!roomId)return menu();
+        const requestedRoom=customId.split(':')[2],roomId=hosted?.roomId;if(!roomId)return menu();
+        if(requestedRoom&&requestedRoom!==roomId)return ephemeral('Join the Discord channel that owns this player before controlling it.',200);
         const canonical=await this.options.principals.resolve({tenantId,discordUserId,displayName});
         if(!canonical)return ephemeral('Link your Discord account to use playback controls. You can still watch any party.',200);
         const requested=customId==='music_skip_btn'?'next':customId==='music_play_pause_btn'?'play-pause':customId.split(':')[1]??'';

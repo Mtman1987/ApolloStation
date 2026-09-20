@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { SpmtClient } from '@spmt/sdk';
 import type { SqliteHearMeOutRoomMediaRuntime } from './room-media-core.js';
+import type { HearMeOutBroadcastProgram } from './broadcast-program.js';
 import type { HearMeOutSuiteMediaResolverV1 } from './suite-action-executor.js';
 
 /** A room-owned policy over the existing queue; browser count never adds DJ loops. */
@@ -22,6 +23,27 @@ export class HearMeOutAutoRadio {
         const item=await this.media.resolve({tenantId,billedUserId:state.principal.userId,requesterId:state.principal.userId,query,lane:'music',operationId:'radio:'+owner,excludeItemIds:[...state.history.map(item=>item.itemId),...(session.current?[session.current.item.itemId]:[])]});
         this.rooms.completeRadio(tenantId,roomId,owner,state.revision,session.revision,item,undefined,this.now());
       }catch(error){this.rooms.completeRadio(tenantId,roomId,owner,state.revision,session.revision,undefined,safe(error),this.now());}
+    }
+  }
+  async run(signal:AbortSignal){while(!signal.aborted){await this.tick();await new Promise<void>(done=>{if(signal.aborted)return done();const finish=()=>{clearTimeout(timer);signal.removeEventListener('abort',finish);done();},timer=setTimeout(finish,5000);signal.addEventListener('abort',finish,{once:true});});}}
+  private now(){return(this.options.now??(()=>new Date().toISOString()))();}
+}
+
+/** Auto-radio for the selectable room-owned broadcast players. */
+export class HearMeOutProgramAutoRadio {
+  constructor(private readonly program:HearMeOutBroadcastProgram,private readonly media:HearMeOutSuiteMediaResolverV1,private readonly options:{now?:()=>string;recommend?:(input:{tenantId:string;userId:string;seed:string;recent:string[]})=>Promise<string>}={}){}
+  async tick(){
+    const now=this.now();this.program.advance(now);
+    for(const state of this.program.radioRooms()){
+      const session=this.program.getSession(this.program.binding.tenantId,state.roomId);
+      if(session.queue.length||session.playback.status==='paused'||(session.current&&session.current.item.type!=='music'))continue;
+      const owner=randomUUID();if(!this.program.claimRadio(state.roomId,owner,now))continue;
+      try{
+        const recent=[...state.history.map(item=>item.title),...(session.current?[session.current.item.title]:[])];
+        const query=this.options.recommend?await this.options.recommend({tenantId:this.program.binding.tenantId,userId:this.program.binding.executionUserId,seed:state.seed,recent}):state.seed;
+        const item=await this.media.resolve({tenantId:this.program.binding.tenantId,billedUserId:this.program.binding.executionUserId,requesterId:this.program.binding.executionUserId,query,lane:'music',operationId:'program-radio:'+owner,excludeItemIds:[...state.history.map(item=>item.itemId),...(session.current?[session.current.item.itemId]:[])]});
+        this.program.completeRadio(state.roomId,owner,session.revision,item,undefined,this.now());
+      }catch(error){this.program.completeRadio(state.roomId,owner,session.revision,undefined,safe(error),this.now());}
     }
   }
   async run(signal:AbortSignal){while(!signal.aborted){await this.tick();await new Promise<void>(done=>{if(signal.aborted)return done();const finish=()=>{clearTimeout(timer);signal.removeEventListener('abort',finish);done();},timer=setTimeout(finish,5000);signal.addEventListener('abort',finish,{once:true});});}}

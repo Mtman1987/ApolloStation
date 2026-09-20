@@ -6,9 +6,13 @@ import type {HearMeOutSuiteMediaResolverV1} from './suite-action-executor.js';
 /** Legacy identifier kept only so old URLs/data can be rejected and migrated away. */
 export const HEARMEOUT_SINGLE_PROGRAM_ID='main-broadcast';
 export const HEARMEOUT_IDLE_PLAYER_TTL_MS=10*60*1000;
-export interface HearMeOutPartyRoom {roomId:string;name:string;createdAt:string;sourceRoomId?:string;}
+export const HEARMEOUT_LOUNGE_ROOM_ID='system-spacemountainlive-lounge';
+export const HEARMEOUT_PROGRAM_RADIO_USER_ID='hearmeout-auto-radio';
+export interface HearMeOutPartyRoom {roomId:string;name:string;createdAt:string;sourceRoomId?:string;permanent?:true;}
 export interface HearMeOutPartyChannel {guildId:string;channelId:string;}
 export interface HearMeOutProgramBinding {tenantId:string;executionUserId:string;}
+export interface HearMeOutLoungeBinding {roomId:string;name:string;radioSeed:string;channel?:HearMeOutPartyChannel;}
+export interface HearMeOutProgramRadioState {roomId:string;enabled:boolean;seed:string;history:Array<{itemId:string;title:string}>;revision:number;selectionOwner?:string;selectionUntil?:string;error?:string;}
 
 /** One durable mixed music/movie/share clock per hosting context.
  * A party must belong to either a HearMeOut room or a Discord voice channel.
@@ -27,6 +31,11 @@ export class HearMeOutBroadcastProgram {
       CREATE TABLE IF NOT EXISTS hmo_program_room_operations(id TEXT PRIMARY KEY,intent TEXT NOT NULL,program_id TEXT NOT NULL) STRICT;`);
     const columns=this.db.prepare('PRAGMA table_info(hmo_program_rooms)').all() as Array<{name?:string}>;
     if(!columns.some(column=>column.name==='last_active_at'))this.db.exec('ALTER TABLE hmo_program_rooms ADD COLUMN last_active_at TEXT');
+    if(!columns.some(column=>column.name==='permanent'))this.db.exec('ALTER TABLE hmo_program_rooms ADD COLUMN permanent INTEGER NOT NULL DEFAULT 0 CHECK(permanent IN (0,1))');
+    this.db.exec(`CREATE TABLE IF NOT EXISTS hmo_program_radio(
+      room_id TEXT PRIMARY KEY,enabled INTEGER NOT NULL,seed TEXT NOT NULL,history TEXT NOT NULL,revision INTEGER NOT NULL,
+      selection_owner TEXT,selection_until TEXT,error TEXT
+    ) STRICT;`);
     this.db.prepare('UPDATE hmo_program_rooms SET last_active_at=COALESCE(last_active_at,created_at)').run();
     this.installSourceRoomCleanupTrigger();
     // The old immortal fallback player is no longer a valid hosting context.
@@ -43,12 +52,26 @@ export class HearMeOutBroadcastProgram {
   }
   listRooms():HearMeOutPartyRoom[]{return this.db.prepare('SELECT * FROM hmo_program_rooms WHERE id<>? ORDER BY created_at,id').all(HEARMEOUT_SINGLE_PROGRAM_ID).map(row=>this.roomFromRow(row as Record<string,unknown>));}
   getRoom(roomId:string):HearMeOutPartyRoom{const id=requireRoomId(roomId);const row=this.db.prepare('SELECT * FROM hmo_program_rooms WHERE id=?').get(id);if(!row)throw Object.assign(Error('Watch party not found'),{status:404});return this.roomFromRow(row as Record<string,unknown>);}
-  private roomFromRow(row:Record<string,unknown>):HearMeOutPartyRoom{return {roomId:String(row.id),name:String(row.name),createdAt:String(row.created_at),...(row.source_room_id?{sourceRoomId:String(row.source_room_id)}:{})};}
-  private insertRoom(roomId:string,name:string,sourceRoomId?:string){
+  private roomFromRow(row:Record<string,unknown>):HearMeOutPartyRoom{return {roomId:String(row.id),name:String(row.name),createdAt:String(row.created_at),...(row.source_room_id?{sourceRoomId:String(row.source_room_id)}:{}),...(Number(row.permanent)===1?{permanent:true as const}:{})};}
+  private insertRoom(roomId:string,name:string,sourceRoomId?:string,permanent=false){
     const now=new Date().toISOString();
     this.db.prepare('INSERT OR IGNORE INTO hmo_program(id,tenant_id,instance_id,created_at,body) VALUES(?,?,?,?,?)').run(roomId,this.binding.tenantId,randomUUID(),now,JSON.stringify(this.empty(now,roomId)));
-    this.db.prepare('INSERT OR IGNORE INTO hmo_program_rooms(id,name,created_at,source_room_id,last_active_at) VALUES(?,?,?,?,?)').run(roomId,name,now,sourceRoomId??null,now);
+    this.db.prepare('INSERT OR IGNORE INTO hmo_program_rooms(id,name,created_at,source_room_id,last_active_at,permanent) VALUES(?,?,?,?,?,?)').run(roomId,name,now,sourceRoomId??null,now,permanent?1:0);
     return this.getRoom(roomId);
+  }
+  ensurePermanentRoom(input:{roomId:string;name:string;sourceRoomId:string;channel?:HearMeOutPartyChannel}){
+    const id=requireRoomId(input.roomId),source=requireRoomId(input.sourceRoomId),name=input.name.trim();
+    if(!name||name.length>120||/[\r\n\0]/.test(name))throw Error('Enter a Lounge name up to 120 characters');
+    if(input.channel)validateChannel(input.channel);
+    return this.transaction(()=>{
+      const bySource=this.hostedRoom(source);if(bySource&&bySource.roomId!==id)throw Error('The Lounge room already hosts another player');
+      let room:HearMeOutPartyRoom;
+      try{room=this.getRoom(id);if(room.sourceRoomId&&room.sourceRoomId!==source)throw Error('The Lounge player belongs to another room');}
+      catch(error){if((error as {status?:number}).status!==404)throw error;room=this.insertRoom(id,name,source,true);}
+      this.db.prepare('UPDATE hmo_program_rooms SET name=?,source_room_id=?,permanent=1,last_active_at=? WHERE id=?').run(name,source,new Date().toISOString(),id);
+      if(input.channel)this.bindChannel(id,input.channel);
+      return this.getRoom(id);
+    });
   }
   ensureAppRoom(tenantId:string,roomId:string,name:string){
     if(tenantId!==this.binding.tenantId)throw Error('Watch party belongs to another deployment');
@@ -100,9 +123,10 @@ export class HearMeOutBroadcastProgram {
   deleteRoom(roomId:string){
     const id=requireRoomId(roomId);
     return this.transaction(()=>{
-      const exists=this.db.prepare('SELECT 1 ok FROM hmo_program_rooms WHERE id=?').get(id);if(!exists)return false;
+      const exists=this.db.prepare('SELECT permanent FROM hmo_program_rooms WHERE id=?').get(id) as {permanent?:number}|undefined;if(!exists||Number(exists.permanent)===1)return false;
       this.db.prepare('DELETE FROM hmo_program_channels WHERE program_id=?').run(id);
       this.db.prepare('DELETE FROM hmo_program_room_operations WHERE program_id=?').run(id);
+      this.db.prepare('DELETE FROM hmo_program_radio WHERE room_id=?').run(id);
       this.db.prepare('DELETE FROM hmo_program_rooms WHERE id=?').run(id);
       this.db.prepare('DELETE FROM hmo_program WHERE id=?').run(id);
       return true;
@@ -113,7 +137,7 @@ export class HearMeOutBroadcastProgram {
    * controls and screen-share chunks update last_active_at. */
   pruneIdleRooms(maxIdleMs=HEARMEOUT_IDLE_PLAYER_TTL_MS,now=new Date().toISOString()){
     const cutoff=new Date(Date.parse(now)-Math.max(60_000,maxIdleMs)).toISOString();
-    const rows=this.db.prepare('SELECT id FROM hmo_program_rooms WHERE id<>? AND COALESCE(last_active_at,created_at)<=?').all(HEARMEOUT_SINGLE_PROGRAM_ID,cutoff) as Array<{id:string}>;
+    const rows=this.db.prepare('SELECT id FROM hmo_program_rooms WHERE id<>? AND permanent=0 AND COALESCE(last_active_at,created_at)<=?').all(HEARMEOUT_SINGLE_PROGRAM_ID,cutoff) as Array<{id:string}>;
     const removed:string[]=[];
     for(const row of rows){
       let session:HearMeOutMediaSessionV1;
@@ -128,11 +152,13 @@ export class HearMeOutBroadcastProgram {
   close(){if(this.cleanupTimer)clearInterval(this.cleanupTimer);this.db.close();}
   private installSourceRoomCleanupTrigger(){
     if(!this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='hmo_rooms'").get())return;
-    this.db.exec(`CREATE TRIGGER IF NOT EXISTS hmo_program_cleanup_after_room_delete AFTER DELETE ON hmo_rooms BEGIN
-      DELETE FROM hmo_program_channels WHERE program_id IN (SELECT id FROM hmo_program_rooms WHERE source_room_id=OLD.room_id);
-      DELETE FROM hmo_program_room_operations WHERE program_id IN (SELECT id FROM hmo_program_rooms WHERE source_room_id=OLD.room_id);
-      DELETE FROM hmo_program WHERE id IN (SELECT id FROM hmo_program_rooms WHERE source_room_id=OLD.room_id);
-      DELETE FROM hmo_program_rooms WHERE source_room_id=OLD.room_id;
+    this.db.exec(`DROP TRIGGER IF EXISTS hmo_program_cleanup_after_room_delete;
+    CREATE TRIGGER hmo_program_cleanup_after_room_delete AFTER DELETE ON hmo_rooms BEGIN
+      DELETE FROM hmo_program_channels WHERE program_id IN (SELECT id FROM hmo_program_rooms WHERE source_room_id=OLD.room_id AND permanent=0);
+      DELETE FROM hmo_program_room_operations WHERE program_id IN (SELECT id FROM hmo_program_rooms WHERE source_room_id=OLD.room_id AND permanent=0);
+      DELETE FROM hmo_program_radio WHERE room_id IN (SELECT id FROM hmo_program_rooms WHERE source_room_id=OLD.room_id AND permanent=0);
+      DELETE FROM hmo_program WHERE id IN (SELECT id FROM hmo_program_rooms WHERE source_room_id=OLD.room_id AND permanent=0);
+      DELETE FROM hmo_program_rooms WHERE source_room_id=OLD.room_id AND permanent=0;
     END;`);
   }
   private touch(roomId:string,at=new Date().toISOString()){this.db.prepare('UPDATE hmo_program_rooms SET last_active_at=? WHERE id=?').run(at,roomId);}
@@ -162,6 +188,35 @@ export class HearMeOutBroadcastProgram {
     return this.transaction(()=>{const session=this.read(scope);if(session.current?.requestId!==requestId||session.playback.status!=='playing')return false;this.next(session);this.write(session);return true;});
   }
   private next(session:HearMeOutMediaSessionV1){session.current=session.queue.shift()??null;session.playback={...session.playback,status:session.current?'playing':'idle',position:0,updatedAt:new Date().toISOString()};session.revision++;}
+  ensureRadio(roomId:string,seed:string){
+    const id=requireRoomId(roomId);this.read(id);const value=seed.trim();if(!value||value.length>300||/[\r\n\0]/.test(value))throw Error('Enter a radio theme up to 300 characters');
+    this.db.prepare('INSERT INTO hmo_program_radio(room_id,enabled,seed,history,revision) VALUES(?,1,?,\'[]\',0) ON CONFLICT(room_id) DO UPDATE SET enabled=1,seed=CASE WHEN hmo_program_radio.seed=\'\' THEN excluded.seed ELSE hmo_program_radio.seed END').run(id,value);
+    return this.radio(id)!;
+  }
+  radio(roomId:string):HearMeOutProgramRadioState|undefined{
+    const row=this.db.prepare('SELECT * FROM hmo_program_radio WHERE room_id=?').get(requireRoomId(roomId)) as Record<string,unknown>|undefined;
+    if(!row)return undefined;let history:Array<{itemId:string;title:string}>=[];try{const value=JSON.parse(String(row.history));if(Array.isArray(value))history=value.filter(item=>item&&typeof item.itemId==='string'&&typeof item.title==='string').slice(-50);}catch{}
+    return{roomId:String(row.room_id),enabled:Number(row.enabled)===1,seed:String(row.seed),history,revision:Number(row.revision),...(row.selection_owner?{selectionOwner:String(row.selection_owner)}:{}),...(row.selection_until?{selectionUntil:String(row.selection_until)}:{}),...(row.error?{error:String(row.error)}:{})};
+  }
+  radioRooms(){return(this.db.prepare('SELECT room_id FROM hmo_program_radio WHERE enabled=1 ORDER BY room_id').all() as Array<{room_id:string}>).map(row=>this.radio(row.room_id)!).filter(Boolean);}
+  claimRadio(roomId:string,owner:string,now=new Date().toISOString()){
+    return this.db.prepare('UPDATE hmo_program_radio SET selection_owner=?,selection_until=? WHERE room_id=? AND enabled=1 AND (selection_owner IS NULL OR selection_owner=? OR selection_until<=?)').run(owner,new Date(Date.parse(now)+60_000).toISOString(),requireRoomId(roomId),owner,now).changes===1;
+  }
+  completeRadio(roomId:string,owner:string,expectedSessionRevision:number,item?:HearMeOutMediaItemV1,error?:string,now=new Date().toISOString()){
+    const id=requireRoomId(roomId);
+    return this.transaction(()=>{
+      const state=this.radio(id);if(!state||!state.enabled||state.selectionOwner!==owner)return false;
+      const session=this.read(id);let accepted=false;
+      if(item&&session.revision===expectedSessionRevision&&!session.queue.length&&(session.current===null||session.current.item.type==='music')){
+        validateItem(item);const entry={requestId:'radio-request:'+owner,requestedBy:{userId:HEARMEOUT_PROGRAM_RADIO_USER_ID,displayName:'HearMeOut DJ'},addedAt:now,item};
+        if(session.current)session.queue.push(entry);else{session.current=entry;session.playback={...session.playback,status:'playing',position:0,updatedAt:now};}
+        session.revision++;this.write(session);accepted=true;
+      }
+      const history=accepted&&item?[...state.history,{itemId:item.itemId,title:item.title}].slice(-50):state.history;
+      this.db.prepare('UPDATE hmo_program_radio SET history=?,revision=revision+1,selection_owner=NULL,selection_until=NULL,error=? WHERE room_id=? AND selection_owner=?').run(JSON.stringify(history),error?.slice(0,500)??null,id,owner);
+      return accepted;
+    });
+  }
   async searchMovies(query:string,requesterId:string,media:HearMeOutSuiteMediaResolverV1){
     if(!media.searchMovies)throw Error('The IPTV movie search is unavailable');
     return media.searchMovies({tenantId:this.binding.tenantId,billedUserId:this.binding.executionUserId,requesterId,query});
@@ -176,7 +231,7 @@ export class HearMeOutBroadcastProgram {
     const item=await media.resolve({tenantId:this.binding.tenantId,billedUserId:this.binding.executionUserId,requesterId:input.requesterId,query,lane,...(input.selectedItemId?{selectedItemId:input.selectedItemId}:{}),operationId:'broadcast:'+id});
     validateItem(item);
     return this.transaction(()=>{if(replay())return this.read(roomId);const session=this.read(roomId),at=new Date().toISOString(),entry={requestId:'broadcast-request:'+id,requestedBy:{userId:input.requesterId,displayName:input.displayName.slice(0,120)||'Viewer'},addedAt:at,item};
-      if(session.current)session.queue.push(entry);else{session.current=entry;session.playback={...session.playback,status:'playing',position:0,updatedAt:at};}
+      if(session.current){const automatic=session.queue.findIndex(request=>request.requestedBy.userId===HEARMEOUT_PROGRAM_RADIO_USER_ID);if(automatic<0)session.queue.push(entry);else session.queue.splice(automatic,0,entry);}else{session.current=entry;session.playback={...session.playback,status:'playing',position:0,updatedAt:at};}
       session.revision++;this.write(session);this.db.prepare('INSERT INTO hmo_program_requests(id,intent,request_id) VALUES(?,?,?)').run(id,intent,entry.requestId);return session;
     });
   }
