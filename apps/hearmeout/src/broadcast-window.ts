@@ -8,6 +8,7 @@ import type {HearMeOutRoomBroadcast} from './room-broadcast.js';
 import type {HearMeOutSuiteMediaResolverV1} from './suite-action-executor.js';
 
 const browserRequests=new Map<string,{videoId:string;until:number}>();
+const LOUNGE_TWITCH_CHANNEL='spacemountainlive';
 
 export function broadcastView(program:HearMeOutBroadcastProgram,configured:boolean,ready=false,epoch?:string,roomId?:string){
   if(!roomId)throw Object.assign(Error('Choose a watch party'),{status:400});
@@ -38,7 +39,7 @@ export async function handleHearMeOutBroadcastWindow(request:IncomingMessage,res
       if(!expected||request.headers.authorization!==expected)return send(response,401,{error:'Lounge relay authorization failed'});
       if(!media)return send(response,503,{error:'The Lounge media resolver is unavailable'});
       const chunks:Buffer[]=[];let size=0;for await(const chunk of request){const bytes=Buffer.from(chunk);size+=bytes.length;if(size>8192)throw Error('Request is too large');chunks.push(bytes);}
-      const body=JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string,unknown>,channel=String(body.channel??'').trim().replace(/^#/,'').toLowerCase(),allowed=String(process.env.HEARMEOUT_LOUNGE_TWITCH_CHANNEL??'mtman1987').trim().replace(/^#/,'').toLowerCase();
+      const body=JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string,unknown>,channel=String(body.channel??'').trim().replace(/^#/,'').toLowerCase(),allowed=LOUNGE_TWITCH_CHANNEL;
       if(!channel||channel!==allowed)return send(response,403,{error:'This Twitch channel does not own the Lounge player'});
       const command=String(body.command??'').trim(),match=command.match(/^!(sr|wr)\s+(.{1,500})$/is);if(!match)return send(response,400,{error:'Use !sr or !wr with a request'});
       const messageId=String(body.messageId??'').trim(),userId=String(body.userId??'').trim(),displayName=String(body.displayName??'').replace(/[\r\n\0]/g,' ').trim().slice(0,120)||'Twitch viewer';
