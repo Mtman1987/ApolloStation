@@ -11,7 +11,7 @@ export const HEARMEOUT_PROGRAM_RADIO_USER_ID='hearmeout-auto-radio';
 export interface HearMeOutPartyRoom {roomId:string;name:string;createdAt:string;sourceRoomId?:string;permanent?:true;}
 export interface HearMeOutPartyChannel {guildId:string;channelId:string;}
 export interface HearMeOutProgramBinding {tenantId:string;executionUserId:string;}
-export interface HearMeOutLoungeBinding {roomId:string;name:string;radioSeed:string;channel?:HearMeOutPartyChannel;}
+export interface HearMeOutLoungeBinding {roomId:string;name:string;radioSeed:string;channel?:HearMeOutPartyChannel;twitchChannel?:string;}
 export interface HearMeOutProgramRadioState {roomId:string;enabled:boolean;seed:string;history:Array<{itemId:string;title:string}>;revision:number;selectionOwner?:string;selectionUntil?:string;error?:string;}
 
 /** One durable mixed music/movie/share clock per hosting context.

@@ -3,7 +3,7 @@ import type {HearMeOutScreenBroadcast} from "./screen-broadcast.js";
 import type {IncomingMessage,ServerResponse} from 'node:http';
 import {SpmtApiError} from '@spmt/sdk';
 import {createHash,randomBytes,randomUUID} from 'node:crypto';
-import type {HearMeOutBroadcastProgram,HearMeOutPartyChannel} from './broadcast-program.js';
+import {HEARMEOUT_LOUNGE_ROOM_ID,type HearMeOutBroadcastProgram,type HearMeOutPartyChannel} from './broadcast-program.js';
 import type {HearMeOutRoomBroadcast} from './room-broadcast.js';
 import type {HearMeOutSuiteMediaResolverV1} from './suite-action-executor.js';
 
@@ -21,6 +21,7 @@ function guest(request:IncomingMessage,response:ServerResponse){
   return 'guest:'+createHash('sha256').update(token).digest('hex');
 }
 export async function handleHearMeOutBroadcastWindow(request:IncomingMessage,response:ServerResponse,url:URL,program:HearMeOutBroadcastProgram,worker:HearMeOutRoomBroadcast|undefined,media:HearMeOutSuiteMediaResolverV1|undefined,clientId='',readOnly=false,hosting?:{guildIds?:string[];authorizeRoom:(request:IncomingMessage,roomId:string)=>Promise<void>},screens?:HearMeOutScreenBroadcast){
+  const twitchRelay=url.pathname==='/api/watch/broadcast/lounge-twitch-request';
   const screenFeed=url.pathname.match(/^\/api\/watch\/sessions\/([^/]+)\/screen\/([a-f0-9-]{36})\/([^/]+)$/);
   const parties=url.pathname==='/api/watch/broadcast/rooms';
   const entry=['/watch','/activity','/activity-lite'].includes(url.pathname)||(url.pathname==='/'&&url.searchParams.has('frame_id'));
@@ -29,8 +30,22 @@ export async function handleHearMeOutBroadcastWindow(request:IncomingMessage,res
   const movieSearch=url.pathname==='/api/watch/broadcast/movies',control=url.pathname==='/api/watch/broadcast/control';
   const defaults=url.pathname==='/api/watch/activity-default',requestVideo=url.pathname==='/api/watch/broadcast/requests';
   const browserMedia=url.pathname.match(/^\/api\/watch\/broadcast\/youtube\/([A-Za-z0-9_-]{11})\/(status|audio|video)$/);
-  if(!screenFeed&&!parties&&!entry&&!state&&!feed&&!defaults&&!requestVideo&&!movieSearch&&!browserMedia&&!control)return false;
+  if(!twitchRelay&&!screenFeed&&!parties&&!entry&&!state&&!feed&&!defaults&&!requestVideo&&!movieSearch&&!browserMedia&&!control)return false;
   try{
+    if(twitchRelay){
+      if(request.method!=='POST')return send(response,405,{error:'Method not allowed'});
+      const expected=String(process.env.HEARMEOUT_VOICE_BRIDGE_AUTHORIZATION??'');
+      if(!expected||request.headers.authorization!==expected)return send(response,401,{error:'Lounge relay authorization failed'});
+      if(!media)return send(response,503,{error:'The Lounge media resolver is unavailable'});
+      const chunks:Buffer[]=[];let size=0;for await(const chunk of request){const bytes=Buffer.from(chunk);size+=bytes.length;if(size>8192)throw Error('Request is too large');chunks.push(bytes);}
+      const body=JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string,unknown>,channel=String(body.channel??'').trim().replace(/^#/,'').toLowerCase(),allowed=String(process.env.HEARMEOUT_LOUNGE_TWITCH_CHANNEL??'mtman1987').trim().replace(/^#/,'').toLowerCase();
+      if(!channel||channel!==allowed)return send(response,403,{error:'This Twitch channel does not own the Lounge player'});
+      const command=String(body.command??'').trim(),match=command.match(/^!(sr|wr)\s+(.{1,500})$/is);if(!match)return send(response,400,{error:'Use !sr or !wr with a request'});
+      const messageId=String(body.messageId??'').trim(),userId=String(body.userId??'').trim(),displayName=String(body.displayName??'').replace(/[\r\n\0]/g,' ').trim().slice(0,120)||'Twitch viewer';
+      if(!/^[A-Za-z0-9-]{1,160}$/.test(messageId)||!/^[A-Za-z0-9._:-]{1,160}$/.test(userId))return send(response,400,{error:'Invalid Twitch request identity'});
+      const lane=match[1]!.toLowerCase()==='sr'?'music':'movie';await program.request({roomId:HEARMEOUT_LOUNGE_ROOM_ID,requesterId:'twitch:'+userId,displayName,query:match[2]!.trim(),lane,operationId:'twitch-lounge:'+messageId},media);
+      return send(response,201,{accepted:true,roomId:HEARMEOUT_LOUNGE_ROOM_ID,text:'Added to the 24-Hour Lounge queue.'});
+    }
     const channel=():HearMeOutPartyChannel|undefined=>{
       const guildId=url.searchParams.get('guildId'),channelId=url.searchParams.get('channelId');
       if(!guildId&&!channelId)return undefined;
