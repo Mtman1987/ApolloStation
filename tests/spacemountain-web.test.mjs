@@ -84,6 +84,7 @@ test("private SpaceMountain host serves explicit browser modules with restrictiv
     assert.match((await fetch(`${base}/assets/product/commlink-communications-background.webp`)).headers.get("content-type") ?? "", /image\/webp/);
     assert.match((await fetch(`${base}/assets/product/stellar-core-background.webp`)).headers.get("content-type") ?? "", /image\/webp/);
     assert.match((await fetch(`${base}/assets/product/mission-control-background.webp`)).headers.get("content-type") ?? "", /image\/webp/);
+    const starfield=await fetch(`${base}/assets/overlay-bay/starfield-pingpong.mp4`);assert.equal(starfield.status,200);assert.match(starfield.headers.get("content-type")??"",/video\/mp4/);assert.ok((await starfield.arrayBuffer()).byteLength>500_000);
     assert.equal((await fetch(`${base}/assets/../../package.json`)).status, 404);
     assert.equal((await fetch(`${base}/sandbox/beacon`)).status, 200);
 

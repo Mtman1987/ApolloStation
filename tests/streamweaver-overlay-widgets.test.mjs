@@ -31,11 +31,18 @@ test("registered StreamWeaver widgets render and poll through real opaque grants
     service.control.registerApp(streamweaverCatalogRegistration("https://station.test/apps/streamweaver"));service.control.installApp("a","streamweaver");
     for(const manifest of streamWeaverWidgetManifests("https://station.test"))service.control.registerOverlayWidget({tenantId:"a",manifest});
     service.authority.publishEvent({tenantId:"a",sourceAppId:"streamweaver",type:"streamweaver.social.interaction.v1",payload:{trigger:"!boop",actor:{displayName:"Captain"}},idempotencyKey:"boop"});
+    service.authority.publishEvent({tenantId:"a",sourceAppId:"commlink",type:"commlink.chat.featured.v1",payload:{text:"Featured and visible",username:"Passenger",style:"glass",durationMs:15000},idempotencyKey:"featured"});
+    service.authority.publishEvent({tenantId:"a",sourceAppId:"streamweaver",type:"streamweaver.economy.overlay.v1",payload:{command:"pleader",currencyName:"Mountain Credits",leaderboard:[{displayName:"Commander M.T.",balance:4242},{displayName:"Passenger",balance:1900}]},idempotencyKey:"leaderboard"});
     service.authority.publishEvent({tenantId:"b",sourceAppId:"streamweaver",type:"streamweaver.social.interaction.v1",payload:{trigger:"!boop",actor:{displayName:"Other tenant"}},idempotencyKey:"other"});
     const grant=service.control.issueOverlayOutputGrant({tenantId:"a",appId:"streamweaver",widgetId:"social",createdByUserId:"owner"});
     await gateway.listen();const base=`http://127.0.0.1:${gateway.server.address().port}`,path=new URL(grant.browserSourceUrl).pathname;
     const page=await fetch(base+path);assert.equal(page.status,200);assert.match(await page.text(),/data-widget="social"/);
     const data=await (await fetch(base+path,{headers:{accept:"application/json"}})).json();assert.equal(data.items[0].text,"Captain boops chat!");assert.doesNotMatch(JSON.stringify(data),/Other tenant/);
+    for(const [widgetId,verify] of [["featured-chat",data=>{assert.equal(data.items[0].text,"Featured and visible");assert.equal(data.items[0].durationMs,15000)}],["leaderboard",data=>{assert.equal(data.items[0].text,"Mountain Credits");assert.deepEqual(data.items[0].rows,[{name:"Commander M.T.",balance:4242},{name:"Passenger",balance:1900}])}]]){
+      const output=service.control.issueOverlayOutputGrant({tenantId:"a",appId:"streamweaver",widgetId,createdByUserId:"owner"}),widgetPath=new URL(output.browserSourceUrl).pathname;
+      const html=await fetch(base+widgetPath);assert.equal(html.status,200);assert.match(await html.text(),new RegExp(`data-widget="${widgetId}"`));
+      verify(await(await fetch(base+widgetPath,{headers:{accept:"application/json"}})).json());
+    }
     service.control.revokeOverlayOutputGrant({tenantId:"a",grantId:grant.grant.grantId,revokedByUserId:"owner"});
     assert.equal((await fetch(base+path,{headers:{accept:"application/json"}})).status,404);
   }finally{await gateway.close();rmSync(dir,{recursive:true,force:true});}

@@ -94,7 +94,11 @@ test("SPMT exposes stable Public and signed-in Personal tenant overlay outputs",
     activePublicOverlaySceneId: "public-scene",
     activePersonalOverlaySceneId: "personal-scene",
     overlayScenes: [
-      { schemaVersion: 1, id: "public-scene", name: "Public", sources: [{ id: "public-text", kind: "text", name: "Public title", visible: true, x: 0, y: 0, width: 100, height: 20, opacity: 1, zIndex: 1, config: { text: "PUBLIC OUTPUT" } }] },
+      { schemaVersion: 1, id: "public-scene", name: "Public", sources: [
+        { id: "stars", kind: "video", name: "Starfield", visible: true, x: 0, y: 0, width: 100, height: 100, opacity: 1, zIndex: 0, config: { url: "/assets/overlay-bay/starfield-pingpong.mp4", fit: "cover" } },
+        { id: "public-text", kind: "text", name: "Public title", visible: true, x: 0, y: 0, width: 100, height: 20, opacity: 1, zIndex: 1, config: { text: "PUBLIC OUTPUT" } },
+        { id: "frame", kind: "frame", name: "Frame", visible: true, x: 0, y: 0, width: 100, height: 100, opacity: 1, zIndex: 2, config: { accent: "#21e6ff", secondary: "#7557ff" } },
+      ] },
       { schemaVersion: 1, id: "personal-scene", name: "Personal", sources: [{ id: "personal-text", kind: "text", name: "Private controls", visible: true, x: 0, y: 0, width: 100, height: 20, opacity: 1, zIndex: 1, config: { text: "PERSONAL OUTPUT" } }] },
     ],
   };
@@ -121,7 +125,8 @@ test("SPMT exposes stable Public and signed-in Personal tenant overlay outputs",
     });
     const publicOutput = await fetch(`${base}/t/tenant-a/public`);
     assert.equal(publicOutput.status, 200);
-    assert.match(await publicOutput.text(), /PUBLIC OUTPUT/);
+    const publicHtml=await publicOutput.text();
+    assert.match(publicHtml, /PUBLIC OUTPUT/);assert.match(publicHtml, /<video[^>]+starfield-pingpong\.mp4[^>]+autoplay muted loop playsinline/);assert.match(publicHtml, /class="source source-frame"/);assert.match(publicHtml, /data-slot="activity"/);
     const anonymousPersonal = await fetch(`${base}/t/tenant-a/personal`);
     assert.equal(anonymousPersonal.status, 401);
     const browserPersonal = await fetch(`${base}/t/tenant-a/personal`, { headers: { accept: "text/html" } });

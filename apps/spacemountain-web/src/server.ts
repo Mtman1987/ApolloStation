@@ -59,6 +59,7 @@ const ASSETS = new Map<string, { file: string; type: string }>([
   ["/assets/product/mountainview-background.webp", { file: resolve(REPOSITORY_ROOT, "apps/spacemountain-web/assets/mountainview-background.webp"), type: "image/webp" }],
   ["/assets/product/companion-background.webp", { file: resolve(REPOSITORY_ROOT, "apps/spacemountain-web/assets/companion-background.webp"), type: "image/webp" }],
   ["/assets/product/streamweaver-background.webp", { file: resolve(REPOSITORY_ROOT, "apps/spacemountain-web/assets/streamweaver-background.webp"), type: "image/webp" }],
+  ["/assets/overlay-bay/starfield-pingpong.mp4", { file: resolve(REPOSITORY_ROOT, "apps/spacemountain-web/assets/overlay-bay/starfield-pingpong.mp4"), type: "video/mp4" }],
   ["/assets/product/theme-aurora-green-background.webp", { file: resolve(REPOSITORY_ROOT, "apps/spacemountain-web/assets/theme-aurora-green-background.webp"), type: "image/webp" }],
   ["/assets/product/theme-nebula-purple-background.webp", { file: resolve(REPOSITORY_ROOT, "apps/spacemountain-web/assets/theme-nebula-purple-background.webp"), type: "image/webp" }],
   ["/assets/product/theme-oceanic-blue-background.webp", { file: resolve(REPOSITORY_ROOT, "apps/spacemountain-web/assets/theme-oceanic-blue-background.webp"), type: "image/webp" }],

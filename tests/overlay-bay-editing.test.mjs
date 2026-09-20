@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createOverlayScene,createOverlaySource,mergeOverlaySceneEdits} from '../apps/spacemountain/dist/overlay-scenes.js';
+import {createBroadcastOverlayScene,createOverlayScene,createOverlaySource,fitOverlaySourceToBroadcastSlot,mergeOverlaySceneEdits} from '../apps/spacemountain/dist/overlay-scenes.js';
 import {OverlayBayParityController} from '../apps/spacemountain/dist/overlay-bay-ui.js';
 const root={querySelector(){return null},querySelectorAll(){return []}};
 function fixture(){const scene=createOverlayScene('Personal'),alert={...createOverlaySource('alert','Alerts'),id:'alerts',x:0,y:0,width:25,height:25},chat={...createOverlaySource('widget','Chat'),id:'chat',x:70,y:0,width:25,height:25,zIndex:1};scene.sources=[alert,chat];return{scene,alert,chat,snapshot:{tenantId:'tenant-a',workspace:{revision:1,activePersonalOverlaySceneId:scene.id,activePublicOverlaySceneId:scene.id,overlayScenes:[scene]},apps:[],session:{scopes:['workspace:write','overlay:outputs:write']}}};}
@@ -27,4 +27,13 @@ test('background workspace updates preserve an unfinished layout and save rebase
 test('rebasing overlay edits retains new remote sources and independent configuration fields',()=>{
  const {scene}=fixture(),local=structuredClone([scene]),remote=structuredClone([scene]);local[0].sources[0].opacity=.5;local[0].sources[1].config={widgetId:'chat',theme:'blue'};remote[0].sources[1].config={rendererUrl:'https://renderer.example/chat'};remote[0].sources.push({...createOverlaySource('text','Clock'),zIndex:2});
  const merged=mergeOverlaySceneEdits([scene],local,remote);assert.equal(merged[0].sources.length,3);assert.equal(merged[0].sources[0].opacity,.5);assert.deepEqual(merged[0].sources[1].config,{widgetId:'chat',theme:'blue',rendererUrl:'https://renderer.example/chat'});
+});
+
+test('24/7 channel preset layers a looping starfield under a transparent frame',()=>{
+ const scene=createBroadcastOverlayScene('Channel','2026-09-20T00:00:00.000Z');
+ assert.equal(scene.canvasWidth,1920);assert.equal(scene.canvasHeight,1080);assert.deepEqual(scene.sources.map(source=>source.kind),['video','frame']);
+ assert.deepEqual(scene.sources[0].config,{url:'/assets/overlay-bay/starfield-pingpong.mp4',fit:'cover',loop:true,muted:true});
+ assert.equal(scene.sources[0].locked,true);assert.equal(scene.sources[1].locked,true);
+ const activity=fitOverlaySourceToBroadcastSlot(createOverlaySource('widget','Activity'),'activity');
+ assert.deepEqual({x:activity.x,y:activity.y,width:activity.width,height:activity.height,slot:activity.config.layoutSlot},{x:75.5,y:44,width:22,height:49,slot:'activity'});
 });

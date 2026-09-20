@@ -130,11 +130,12 @@ function handleAction(response: ServerResponse, body: Record<string, unknown>, o
 
 function gameMixState(tenantId: string, channelId: string, mix: NebulaGameMixV1, runtimeStore: SqliteNebulaGameRuntimeStore, actionStore: SqliteNebulaGameActionStore, activityStore: SqliteNebulaArcadeActivityStore) {
   const runtime = runtimeStore.get(tenantId), gameIds = mix.layers.filter((layer) => layer.enabled).map((layer) => layer.gameId), recent = actionStore.list(tenantId, { channel: channelId, gameIds, limit: 100 }), newest = new Map<string, (typeof recent)[number]>();
-  const activity=activityStore.snapshot(tenantId,channelId,gameIds,resolveNebulaChannelGameIds(runtime,channelId,activityStore.configuredGames(tenantId,channelId)));
+  const runningGameIds=resolveNebulaChannelGameIds(runtime,channelId,activityStore.configuredGames(tenantId,channelId)),runningOverlayGameIds=gameIds.filter((gameId)=>runningGameIds.includes(gameId));
+  const activity=activityStore.snapshot(tenantId,channelId,gameIds,runningGameIds);
   for (const action of recent) newest.set(action.gameId, action);
-  let visibleGameIds = [...gameIds];
-  if (mix.mode === "activity") { const current = [...recent].reverse()[0]; visibleGameIds = current ? [current.gameId] : visibleGameIds.slice(0,1); }
-  else if (mix.mode === "manual") visibleGameIds = mix.activeGameId ? [mix.activeGameId] : visibleGameIds.slice(0,1);
+  let visibleGameIds = [...runningOverlayGameIds];
+  if (mix.mode === "activity") { const current = [...recent].reverse().find((action)=>runningOverlayGameIds.includes(action.gameId)); visibleGameIds = current ? [current.gameId] : visibleGameIds.slice(0,1); }
+  else if (mix.mode === "manual") visibleGameIds = mix.activeGameId&&runningOverlayGameIds.includes(mix.activeGameId) ? [mix.activeGameId] : visibleGameIds.slice(0,1);
   else if (mix.mode === "rotate" && visibleGameIds.length) visibleGameIds = [visibleGameIds[Math.floor(Date.now() / (mix.rotationSeconds * 1000)) % visibleGameIds.length]!];
   return { schemaVersion:1, mix, visibleGameIds, ...(mix.activityBox?{activity}:{}), games:Object.fromEntries(gameIds.map((gameId)=>{const stats=getNebulaGameStats(runtime,gameId),action=newest.get(gameId);return[gameId,{playerCount:activity.games.find(game=>game.id===gameId)?.players??0,leaderboard:stats.leaderboard.slice(0,5),latestAction:action??null}];})) };
 }
