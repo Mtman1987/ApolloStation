@@ -38,7 +38,7 @@ test('radio recommendations use the existing assistant without personal memory a
   assert.equal(await hearMeOutRadioRecommendation({...client,invokeCommunityAssistant:async()=>({status:'unavailable'})},input),'Soul music');
 });
 
-test('the permanent Lounge player owns a durable radio and manual requests stay ahead of its automatic pick',async()=>{
+test('the permanent Lounge player owns a durable radio and manual requests immediately replace its automatic current track',async()=>{
   const dir=mkdtempSync(join(tmpdir(),'hmo-lounge-radio-')),path=join(dir,'rooms.sqlite'),binding={tenantId:'tenant',executionUserId:'owner'};let clock=Date.now(),calls=0,program=new HearMeOutBroadcastProgram(path,binding);const now=()=>new Date(clock).toISOString();
   try{
     program.ensurePermanentRoom({roomId:'system-spacemountainlive-lounge',sourceRoomId:'system-spacemountainlive-lounge',name:'24-Hour Lounge'});program.ensureRadio('system-spacemountainlive-lounge','Soul music');
@@ -46,7 +46,7 @@ test('the permanent Lounge player owns a durable radio and manual requests stay 
     await worker.tick();assert.equal(program.getSession('tenant','system-spacemountainlive-lounge').current.item.itemId,'auto-1');
     await worker.tick();assert.deepEqual(program.getSession('tenant','system-spacemountainlive-lounge').queue.map(entry=>entry.item.itemId),['auto-2']);
     await program.request({roomId:'system-spacemountainlive-lounge',requesterId:'listener',displayName:'Listener',query:'manual',lane:'music',operationId:'manual'}, {resolve:async()=>track('manual')});
-    assert.deepEqual(program.getSession('tenant','system-spacemountainlive-lounge').queue.map(entry=>entry.item.itemId),['manual','auto-2']);
+    assert.equal(program.getSession('tenant','system-spacemountainlive-lounge').current.item.itemId,'manual');\n    assert.deepEqual(program.getSession('tenant','system-spacemountainlive-lounge').queue.map(entry=>entry.item.itemId),['auto-2']);
     const history=program.radio('system-spacemountainlive-lounge').history.map(item=>item.itemId);program.close();program=new HearMeOutBroadcastProgram(path,binding);
     assert.deepEqual(program.radio('system-spacemountainlive-lounge').history.map(item=>item.itemId),history);assert.equal(program.getRoom('system-spacemountainlive-lounge').permanent,true);
   }finally{program.close();rmSync(dir,{recursive:true,force:true});}
