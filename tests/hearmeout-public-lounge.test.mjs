@@ -49,7 +49,11 @@ test('the public overlay views the room player without creating sessions, joinin
   const publicPath='/api/watch/broadcast/state?roomId='+PUBLIC_LOUNGE_ID;
   for(let i=0;i<3;i++){
    const view=await fetch(base+'/watch?roomId='+PUBLIC_LOUNGE_ID);assert.equal(view.status,200);assert.match(await view.text(),/<video/);
-   const state=await fetch(base+publicPath);assert.equal(state.status,200);const value=await state.json();assert.equal(value.current.requestId,before.current.requestId);assert.equal(value.canManage,false);assert.equal(value.broadcast.playbackUrl,'/api/watch/sessions/'+PUBLIC_LOUNGE_ID+'/broadcast/index.m3u8');
+   const state=await fetch(base+publicPath);assert.equal(state.status,200);const value=await state.json();assert.equal(value.sessionId,party.roomId);assert.equal(value.current.requestId,before.current.requestId);assert.equal(value.canManage,false);assert.equal(value.broadcast.playbackUrl,'/api/watch/sessions/'+PUBLIC_LOUNGE_ID+'/broadcast/index.m3u8');
+  }
+  for(const room of directory.rooms){
+   const response=await fetch(base+'/api/watch/broadcast/state?roomId='+encodeURIComponent(room.roomId));
+   assert.equal(response.status,200);const state=await response.json();assert.equal(state.sessionId,room.roomId);
   }
   const session=await(await fetch(base+'/api/watch/sessions/'+PUBLIC_LOUNGE_ID+'/state')).json();assert.equal(session.current.requestId,before.current.requestId);
   const denied=await fetch(base+'/api/watch/broadcast/control?roomId='+PUBLIC_LOUNGE_ID,{method:'POST',headers:{origin:base,'content-type':'application/json'},body:JSON.stringify({action:'skip'})});assert.equal(denied.status,403);await denied.text();

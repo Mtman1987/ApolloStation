@@ -15,7 +15,7 @@ export function broadcastView(program:HearMeOutBroadcastProgram,configured:boole
   const session=program.getSession(program.binding.tenantId,roomId);
   const visible=(request:typeof session.current)=>{if(!request)return request;const metadata=request.item.metadata?Object.fromEntries(Object.entries(request.item.metadata).filter(([key])=>key!=='audioPlaybackUrl')):undefined;return {...request,item:{...request.item,...(metadata?{metadata}:{})}};};
   const publicId=program.getRoom(roomId).sourceRoomId===PUBLIC_LOUNGE_ID?PUBLIC_LOUNGE_ID:roomId;
-  return {sessionId:publicId,current:visible(session.current),queue:session.queue.map(request=>visible(request)!),playback:session.playback,revision:session.revision,broadcast:{configured,ready,...(epoch?{epoch}:{}),playbackUrl:'/api/watch/sessions/'+encodeURIComponent(publicId)+'/broadcast/index.m3u8'}};
+  return {sessionId:roomId,current:visible(session.current),queue:session.queue.map(request=>visible(request)!),playback:session.playback,revision:session.revision,broadcast:{configured,ready,...(epoch?{epoch}:{}),playbackUrl:'/api/watch/sessions/'+encodeURIComponent(publicId)+'/broadcast/index.m3u8'}};
 }
 function guest(request:IncomingMessage,response:ServerResponse){
   let token=String(request.headers.cookie??'').match(/(?:^|;\s*)hmo_viewer=([a-f0-9]{64})(?:;|$)/)?.[1];
