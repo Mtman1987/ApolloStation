@@ -102,6 +102,8 @@ export class HearMeOutWebSuiteActionExecutor implements HearMeOutSuiteActionExec
       if (!this.rooms.listMembers(principal.tenantId, requestedRoom).some(member => member.userId === principal.userId)) joinHearMeOutDiscordActivityRoom(this.rooms, principal, `discord-suite-join:${context.idempotencyKey}`);
     }
     const roomId = this.roomId(principal, requestedRoom);
+    const loungeGuest = roomId === PUBLIC_LOUNGE_ID && input.source.provider === "twitch";
+    if (loungeGuest && !this.rooms.listMembers(principal.tenantId, roomId).some(member => member.userId === principal.userId)) this.rooms.joinRoom(principal, roomId, `twitch-lounge:${context.idempotencyKey}`);
     if (!this.rooms.listMembers(principal.tenantId, roomId).some(member => member.userId === principal.userId)) throw new Error("Join this HearMeOut room before reading or controlling its media");
     if (input.action === "hmo.media.state.read") { const music = this.rooms.getSession(principal.tenantId, roomId, "music"), movie = this.rooms.getSession(principal.tenantId, roomId, "movie"), playing = [music.current?.item.title, movie.current?.item.title].filter(Boolean); return { text: playing.length ? `Now playing in HearMeOut: ${playing.join(" and ")}.` : "Nothing is playing in that HearMeOut room.", roomId, music, movie }; }
     if (input.source.simulation === true && spmtSuiteActionDescriptor(input.action).risk !== "read") return this.simulationPreview(input, roomId);
