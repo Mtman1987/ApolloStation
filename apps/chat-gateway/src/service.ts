@@ -229,6 +229,8 @@ export class SupervisedChatGatewayService {
       const suiteActions = new StreamWeaverSuiteActionJobExecutor(streamweaverClient);
       const generationSettings=this.generationSettings=new StreamWeaverGenerationStore(options.streamweaver.databasePath);
       const guardedSuiteActions: StreamWeaverBotActionExecutorV1 = options.operationMode === "active" ? {execute:async(request,context)=>{if(request.action==="sw.image.generate"){const access=generationSettings.read(context.tenantId).publicAccess;if(access==="off"||(access==="mods"&&!["owner","admin","moderator"].includes(context.actor.role)))return {response:"The streamer has restricted image generation."};}return suiteActions.execute(request,context);}} : { execute: async (request, context) => {
+        const loungeMedia = context.source === "twitch" && request.action.startsWith("hmo.media.") && options.connections.some(connection => connection.tenantId === context.tenantId && connection.provider === "twitch" && connection.desired && connection.channelId === context.channelId);
+        if (loungeMedia) return suiteActions.execute(request, context);
         const descriptor = spmtSuiteActionDescriptor(request.action), roomId = `${context.source}:${context.connectionId ?? "chat"}:${context.channelId}`;
         const argumentList = Object.entries(request.args).map(([name, value]) => ({ name, value }));
         await streamweaverClient.publishSimulationRoomEvent(context.tenantId, {
