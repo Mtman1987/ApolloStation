@@ -229,8 +229,6 @@ export class SupervisedChatGatewayService {
       const suiteActions = new StreamWeaverSuiteActionJobExecutor(streamweaverClient);
       const generationSettings=this.generationSettings=new StreamWeaverGenerationStore(options.streamweaver.databasePath);
       const guardedSuiteActions: StreamWeaverBotActionExecutorV1 = options.operationMode === "active" ? {execute:async(request,context)=>{if(request.action==="sw.image.generate"){const access=generationSettings.read(context.tenantId).publicAccess;if(access==="off"||(access==="mods"&&!["owner","admin","moderator"].includes(context.actor.role)))return {response:"The streamer has restricted image generation."};}return suiteActions.execute(request,context);}} : { execute: async (request, context) => {
-        const loungeMedia = context.source === "twitch" && request.action.startsWith("hmo.media.") && options.connections.some(connection => connection.tenantId === context.tenantId && connection.provider === "twitch" && connection.desired && connection.channelId === context.channelId);
-        if (loungeMedia) return suiteActions.execute(request, context);
         const descriptor = spmtSuiteActionDescriptor(request.action), roomId = `${context.source}:${context.connectionId ?? "chat"}:${context.channelId}`;
         const argumentList = Object.entries(request.args).map(([name, value]) => ({ name, value }));
         await streamweaverClient.publishSimulationRoomEvent(context.tenantId, {
@@ -265,7 +263,7 @@ export class SupervisedChatGatewayService {
           return { response: message };
         }
       } };
-      this.streamweaver = new StreamWeaverProviderRuntime({ databasePath: options.streamweaver.databasePath, client: streamweaverClient, connections:options.connections, botActions: guardedSuiteActions, providerGrants:client,allowProviderWrites:egressMode==="provider",allowAssistant: !options.liveIngressEnabled, egress: { send: (message) => { if (!connectedGateway) throw new Error("Chat Gateway egress is not ready"); return connectedGateway.send(message); } } });
+      this.streamweaver = new StreamWeaverProviderRuntime({ databasePath: options.streamweaver.databasePath, client: streamweaverClient, connections:options.connections, allowTwitchMedia: options.runtimeMode !== "production", botActions: guardedSuiteActions, providerGrants:client,allowProviderWrites:egressMode==="provider",allowAssistant: !options.liveIngressEnabled, egress: { send: (message) => { if (!connectedGateway) throw new Error("Chat Gateway egress is not ready"); return connectedGateway.send(message); } } });
       if(options.streamweaver.image&&options.operationMode==="active") {
         const image=options.streamweaver.image,providers=[...(image.cloudflareAccountId&&image.cloudflareToken?[new CloudflareStreamWeaverImageProvider(image.cloudflareAccountId,image.cloudflareToken,fetchImpl)]:[]),...(image.token?[new SeaArtCliProvider(image.token,new NodeSeaArtCommandRunner(image.binary))]:[]),...(image.edenKey?[new EdenStreamWeaverImageProvider(image.edenKey,image.edenModel,fetchImpl)]:[]),...(image.pollinationsToken?[new PollinationsStreamWeaverImageProvider(image.pollinationsToken,fetchImpl)]:[])],tenantIds=[...new Set(options.connections.map(connection=>connection.tenantId))];
         const enhancer={enhance:async(prompt:string,input?:import("@spmt/streamweaver").SeaArtImageRequestV1)=>{
