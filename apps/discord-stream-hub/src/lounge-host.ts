@@ -6,13 +6,13 @@ export interface DshLoungeHostStateV1 {
   tenantId: string;
   host: "stella";
   persistent: DshStellaAvatarPersistentStateV1;
-  gesture?: DshStellaAvatarGestureV1;
+  gesture?: DshStellaAvatarGestureV1 | undefined;
   gestureNonce: number;
   speaking: boolean;
-  currentTopic?: string;
-  currentSpeech?: string;
-  speechAudioUrl?: string;
-  speechStartedAt?: string;
+  currentTopic?: string | undefined;
+  currentSpeech?: string | undefined;
+  speechAudioUrl?: string | undefined;
+  speechStartedAt?: string | undefined;
   updatedAt: string;
 }
 
