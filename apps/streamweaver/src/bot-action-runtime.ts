@@ -124,7 +124,10 @@ export class StreamWeaverBotActionConsumer {
       receipt = { action: request.action, context, message, ...((result.result?.pending === true || request.action === "sw.image.generate") && typeof result.result?.jobId === "string" ? { jobId: result.result.jobId, completionReply: result.result.pending === true } : {}) };
       receipt = this.replies?.remember(receipt) ?? receipt;
     }
-    await this.egress.send(receipt.message);
+    // Media requests may resolve asynchronously. The durable completion reply is
+    // the only chat message we want for those actions; sending the provisional
+    // queued acknowledgement creates the visible duplicate in Twitch chat.
+    if (!(receipt.completionReply === true && request.action.startsWith("hmo.media."))) await this.egress.send(receipt.message);
     this.replies?.acknowledge(context);
   }
 }
