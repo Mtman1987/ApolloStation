@@ -26,15 +26,13 @@ const streamweaverWebPort = requirePort(argumentsMap.get("streamweaver-web-port"
 const mountainViewWebPort = requirePort(argumentsMap.get("mountainview-web-port") ?? "3203", "mountainview-web-port");
 const companionWebPort = requirePort(argumentsMap.get("companion-web-port") ?? "3204", "companion-web-port");
 const ownerUsername = requireUsername(argumentsMap.get("owner-username") ?? "mtman1987");
-const llmBinary = argumentsMap.get("llm-binary");
-const llmCache = resolve(argumentsMap.get("llm-cache") ?? resolve(dataRoot, "models"));
 const offlineNetworkGuard = requireBooleanFlag(argumentsMap.get("offline-network-guard") ?? "0", "offline-network-guard");
 const offlineNetworkGuardPath = resolve("scripts/offline-network-guard.mjs");
 if (offlineNetworkGuard) await import(offlineNetworkGuardPath);
 const deepgramSpeechKey=process.env.DEEPGRAM_API_KEY || await readPrivateCredential("deepgram-api-key");
 const edenSpeechKey=process.env.EDENAI_API_KEY || await readPrivateCredential("edenai-api-key");
 const speechEnvironment={SPMT_SPEECH_OUTBOUND_ENABLED:"1",...(deepgramSpeechKey?{DEEPGRAM_API_KEY:deepgramSpeechKey}:{}),...(edenSpeechKey?{EDENAI_API_KEY:edenSpeechKey}:{})};
-const flowOpenAiKey=await readPrivateCredential("openai-api-key");
+const openAiKey=await readPrivateCredential("openai-api-key");
 const hearMeOutCutover = await hearMeOutCutoverEnvironment(dataRoot);
 let hearMeOutMediaEnvironment = {};
 if (hearMeOutCutover.HEARMEOUT_YT_DLP_BINARY) {
@@ -108,7 +106,7 @@ const sandboxManifests = [
 const children = new Set();
 const recoverableServices = new Set();
 let stopping = false;
-const stellarWorkerCredential = llmBinary ? randomBytes(32).toString("base64url") : undefined;
+const stellarWorkerCredential = openAiKey ? randomBytes(32).toString("base64url") : undefined;
 const chatGatewayCredential = randomBytes(32).toString("base64url");
 const streamweaverWorkerCredential = randomBytes(32).toString("base64url");
 const dshWorkerCredential = randomBytes(32).toString("base64url");
@@ -133,11 +131,6 @@ if (app === "nebula-arcade") {
   process.on("SIGTERM", () => void stop(0));
   await new Promise((done) => nebulaArcade.once("exit", (code, signal) => { if (!stopping) void stop(signal === "SIGINT" || signal === "SIGTERM" ? 0 : code ?? (signal ? 1 : 0)).then(done); else done(); }));
 } else {
-let llm;
-if (llmBinary) {
-  llm = startCommand("Qwen", resolve(llmBinary), ["--host", "127.0.0.1", "--port", "8081", "-hf", "Qwen/Qwen3-8B-GGUF:Q4_K_M", "--ctx-size", "8192", "--threads", "8", "--parallel", "1", "--jinja", "--no-webui"], { ...common, LLAMA_CACHE: llmCache });
-  llm.once("exit", (code, signal) => { if (!stopping) void stop(signal === "SIGINT" || signal === "SIGTERM" ? 0 : code ?? (signal ? 1 : 0)); });
-}
 const spmt = start("SPMT", "apps/spmt-service/dist/provider-identity-start.js", {
   ...common,
   DATABASE_PATH: databasePath,
@@ -166,7 +159,7 @@ await waitForUrl(spmt, `http://127.0.0.1:${spmtPort}/health/ready`, "SPMT");
 const spmtOrigin = `http://127.0.0.1:${spmtPort}`;
 
 const dshWeb = start("Discord Stream Hub web", "apps/discord-stream-hub/dist/web-server.js", { ...common, ...liveReadEnvironment, SPMT_ORIGIN: spmtOrigin, DSH_DATABASE_PATH: resolve(dataRoot, "discord-stream-hub-live-sandbox.sqlite"), DSH_RUNTIME_CONFIG_PATH: resolve("config/discord-stream-hub-runtime.sandbox.v1.json"), DSH_WORKER_CREDENTIAL: dshWorkerCredential, HOST: "127.0.0.1", PORT: String(dshWebPort) });
-const streamweaverWeb = start("StreamWeaver web", "apps/streamweaver/dist/web-server.js", { ...common, ...(flowOpenAiKey ? { OPENAI_API_KEY:flowOpenAiKey, SPMT_PRIVATE_FLOW_OPENAI_ENABLED:"1", STREAMWEAVER_PRIVATE_AI_DRAFTS_ENABLED: "1" } : {}), ...(avatarAiEnabled?{STREAMWEAVER_AVATAR_BUILD_ENABLED:"1"}:{}), ...liveReadEnvironment, SPMT_ORIGIN: spmtOrigin, STREAMWEAVER_DATABASE_PATH: resolve(dataRoot, "streamweaver-provider-sandbox.sqlite"), STREAMWEAVER_WORKER_CREDENTIAL: streamweaverWorkerCredential, CHAT_GATEWAY_CONNECTIONS: "[]", HOST: "127.0.0.1", PORT: String(streamweaverWebPort) });
+const streamweaverWeb = start("StreamWeaver web", "apps/streamweaver/dist/web-server.js", { ...common, ...(openAiKey ? { OPENAI_API_KEY:openAiKey, SPMT_PRIVATE_FLOW_OPENAI_ENABLED:"1", STREAMWEAVER_PRIVATE_AI_DRAFTS_ENABLED: "1" } : {}), ...(avatarAiEnabled?{STREAMWEAVER_AVATAR_BUILD_ENABLED:"1"}:{}), ...liveReadEnvironment, SPMT_ORIGIN: spmtOrigin, STREAMWEAVER_DATABASE_PATH: resolve(dataRoot, "streamweaver-provider-sandbox.sqlite"), STREAMWEAVER_WORKER_CREDENTIAL: streamweaverWorkerCredential, CHAT_GATEWAY_CONNECTIONS: "[]", HOST: "127.0.0.1", PORT: String(streamweaverWebPort) });
 const hearMeOutWeb = startRecoverable("HearMeOut web", "apps/hearmeout/dist/web-server.js", { ...common, ...liveReadEnvironment, SPMT_ORIGIN: spmtOrigin, ...Object.fromEntries(["LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET"].filter(key => process.env[key]).map(key => [key, process.env[key]])), HEARMEOUT_ROOM_DATABASE_PATH: resolve(dataRoot, "hearmeout-room-sandbox.sqlite"), HEARMEOUT_WORKER_CREDENTIAL: hearMeOutWorkerCredential, ...hearMeOutCutover, HOST: "127.0.0.1", PORT: String(hearMeOutWebPort) });
 const mountainViewWeb = start("MountainView web", "apps/mountainview/dist/web-server.js", { ...common, ...liveReadEnvironment, SPMT_ORIGIN: spmtOrigin, MOUNTAINVIEW_DATABASE_PATH: resolve(dataRoot, "mountainview-green-sandbox.sqlite"), HOST: "127.0.0.1", PORT: String(mountainViewWebPort) });
 const companionWeb = start("Companion web", "apps/companion/dist/web-server.js", { ...common, ...liveReadEnvironment, SPMT_ORIGIN: spmtOrigin, HOST: "127.0.0.1", PORT: String(companionWebPort) });
@@ -218,17 +211,15 @@ if (stellarWorkerCredential) {
   const stellar = start("Stellar Core worker", "apps/stellar-core/dist/worker-start.js", {
     ...common,
     SPMT_ORIGIN: spmtOrigin,
-    STELLAR_PROVIDER_ORIGIN: "http://127.0.0.1:8081",
-    STELLAR_PROVIDER_MODEL: "Qwen/Qwen3-8B-GGUF:Q4_K_M",
+    OPENAI_API_KEY: openAiKey,
+    OPENAI_CHAT_MODEL: process.env.OPENAI_CHAT_MODEL || "gpt-5.6-luna",
+    SPMT_STELLAR_OPENAI_ENABLED: "1",
     STELLAR_EXECUTION_TARGET: "sprite",
     STELLAR_WORKER_CREDENTIAL: stellarWorkerCredential,
     ...speechEnvironment,
-    ...(llm?.pid ? { STELLAR_PROVIDER_PID: String(llm.pid) } : {}),
   });
   stellar.once("exit", (code, signal) => { if (!stopping) void stop(signal === "SIGINT" || signal === "SIGTERM" ? 0 : code ?? (signal ? 1 : 0)); });
-  // Qwen is an elastic capability. Its multi-gigabyte cold start must not block
-  // the web ingress or room-owned HearMeOut player from becoming available.
-  process.stdout.write("Stellar Core hosted inference is warming independently.\\n");
+  process.stdout.write("Stellar Core temporary OpenAI worker started independently.\\n");
 }
 let nebulaArcade;
 if (candidateApp === "nebula-arcade") {
@@ -353,7 +344,7 @@ function parseArguments(values) {
     if (!flag?.startsWith("--") || !value) throw new Error("Arguments must be --name value pairs");
     result.set(flag.slice(2), value);
   }
-  const allowed = ["app", "candidate-app", "catalog", "public-url", "data-root", "build-sha", "spmt-port", "web-port", "nebula-arcade-port", "hearmeout-web-port", "dsh-web-port", "streamweaver-web-port", "mountainview-web-port", "companion-web-port", "tenant-id", "channel-id", "owner-username", "llm-binary", "llm-cache", "offline-network-guard", "live-read-origin"];
+  const allowed = ["app", "candidate-app", "catalog", "public-url", "data-root", "build-sha", "spmt-port", "web-port", "nebula-arcade-port", "hearmeout-web-port", "dsh-web-port", "streamweaver-web-port", "mountainview-web-port", "companion-web-port", "tenant-id", "channel-id", "owner-username", "offline-network-guard", "live-read-origin"];
   for (const name of result.keys()) if (!allowed.includes(name)) throw new Error(`Unknown argument --${name}`);
   return result;
 }
