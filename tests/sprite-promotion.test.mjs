@@ -61,13 +61,13 @@ test("Sprite deployment verifies, tests, switches atomically, rolls back, and la
   assert.doesNotMatch(script, /npm run test:sprite/);
   assert.match(script, /mv -Tf "\$next_link" "\$current_link"/);
   assert.match(script, /Deployment failed; restoring/);
-  assert.match(script, /create_apollo_service "\$BUILD_SHA"/);
+  assert.match(script, /create_apollo_service "\$BUILD_SHA" 0/);
   assert.match(script, /--candidate-app,nebula-arcade,--catalog,current/);
   assert.match(script, /--offline-network-guard,1/);
   assert.match(script, /--live-read-origin,https:\/\/spmt\.live/);
   assert.doesNotMatch(script, /SPMT_LIVE_READ_ACCESS_TOKEN|live-read-token-file|spmt-live-read-token/);
   assert.doesNotMatch(script, /--candidate-app,nebula-tag/);
-  assert.match(script, /create_apollo_service "\$\(basename "\$previous_release"\)" 1/);
+  assert.match(script, /create_apollo_service "\$\(basename "\$previous_release"\)" 0/);
   assert.match(script, /services_json="\$\(sprite-env services list\)"/);
   assert.match(script, /select\(\.http_port != null\)/);
   assert.match(script, /for stale_service in "\$\{http_services\[@\]\}" "\$service_name" "\$bootstrap_service_name" spmt-qwen/);
@@ -76,6 +76,7 @@ test("Sprite deployment verifies, tests, switches atomically, rolls back, and la
   assert.match(script, /llama_ref="b6335"/);
   assert.match(script, /--llm-binary,\$llama_root\/build\/bin\/llama-server/);
   assert.match(script, /local enable_stellar="\$\{2:-1\}"/);
+  assert.doesNotMatch(script, /^provision_llm_runtime$/m);
   assert.match(script, /for _ in \{1\.\.1260\}/);
   assert.match(script, /sprite-env services create "\$bootstrap_service_name"/);
   assert.match(script, /grep -Fq "\$BUILD_SHA"/);

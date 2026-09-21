@@ -179,10 +179,9 @@ rollback() {
     sprite-env services stop "$service_name" || true
     sprite-env services delete "$service_name" || true
     stop_orphan_app_web_processes
-    # A rollback is still the live Green sandbox. Keep the local Stellar/Qwen
-    # path enabled so a failed release cannot silently turn every persona into
-    # an unusable card until the next successful deployment.
-    create_apollo_service "$(basename "$previous_release")" 1 || true
+    # Keep recovery lightweight: room media and web ingress must return even
+    # while elastic Stellar/Qwen capacity is unavailable.
+    create_apollo_service "$(basename "$previous_release")" 0 || true
   fi
   if (( status != 0 && bootstrap_service_removed == 1 )) && [[ -z "$previous_release" ]]; then
     echo "Deployment failed; restoring bootstrap service $bootstrap_service_name" >&2
@@ -237,7 +236,8 @@ if [[ "$DEPLOY_ROLE" == "release" ]]; then
   node scripts/sprites/check-hearmeout-movie-search.mjs
 fi
 
-provision_llm_runtime
+# Qwen is elastic capacity and is intentionally not booted by the Lounge release.
+# The rolling CPU backend will start it independently when that system is ready.
 
 if [[ "$DEPLOY_ROLE" == "release" ]]; then
   mkdir -p "$data_root/recovery"
@@ -278,7 +278,7 @@ done
 if [[ "$DEPLOY_ROLE" == "release" ]]; then
   node scripts/sprites/retire-hearmeout-deployment-sample.mjs
 fi
-NODE_OPTIONS="--import=$release_dir/scripts/sprites/supervisor-test-port-isolation.mjs" create_apollo_service "$BUILD_SHA"
+NODE_OPTIONS="--import=$release_dir/scripts/sprites/supervisor-test-port-isolation.mjs" create_apollo_service "$BUILD_SHA" 0
 
 ready=0
 for _ in {1..1260}; do
