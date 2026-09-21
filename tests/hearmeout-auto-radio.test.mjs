@@ -46,7 +46,8 @@ test('the permanent Lounge player owns a durable radio and manual requests immed
     await worker.tick();assert.equal(program.getSession('tenant','system-spacemountainlive-lounge').current.item.itemId,'auto-1');
     await worker.tick();assert.deepEqual(program.getSession('tenant','system-spacemountainlive-lounge').queue.map(entry=>entry.item.itemId),['auto-2']);
     await program.request({roomId:'system-spacemountainlive-lounge',requesterId:'listener',displayName:'Listener',query:'manual',lane:'music',operationId:'manual'}, {resolve:async()=>track('manual')});
-    assert.equal(program.getSession('tenant','system-spacemountainlive-lounge').current.item.itemId,'manual');\n    assert.deepEqual(program.getSession('tenant','system-spacemountainlive-lounge').queue.map(entry=>entry.item.itemId),['auto-2']);
+    assert.equal(program.getSession('tenant','system-spacemountainlive-lounge').current.item.itemId,'manual');
+    assert.deepEqual(program.getSession('tenant','system-spacemountainlive-lounge').queue.map(entry=>entry.item.itemId),['auto-2']);
     const history=program.radio('system-spacemountainlive-lounge').history.map(item=>item.itemId);program.close();program=new HearMeOutBroadcastProgram(path,binding);
     assert.deepEqual(program.radio('system-spacemountainlive-lounge').history.map(item=>item.itemId),history);assert.equal(program.getRoom('system-spacemountainlive-lounge').permanent,true);
   }finally{program.close();rmSync(dir,{recursive:true,force:true});}
