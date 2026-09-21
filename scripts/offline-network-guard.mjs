@@ -5,7 +5,7 @@ import tls from "node:tls";
 
 const speechOutbound=process.env.SPMT_SPEECH_OUTBOUND_ENABLED==="1";
 const speechPolicy=speechOutbound?await import('../apps/stellar-core/dist/speech-provider.js'):undefined;
-const privateFlowOpenAi=process.env.SPMT_PRIVATE_FLOW_OPENAI_ENABLED==="1"||process.env.SPMT_STELLAR_OPENAI_ENABLED==="1";
+const privateFlowOpenAi=process.env.SPMT_PRIVATE_FLOW_OPENAI_ENABLED==="1";
 const hearMeOutBridge = process.env.HEARMEOUT_CONTROLLED_BRIDGE === "1" && process.env.HEARMEOUT_VOICE_BRIDGE_ORIGIN === "https://hmo-dj-worker.fly.dev";
 const hearMeOutPreparedMedia = process.env.HEARMEOUT_PREPARED_MEDIA_ENABLED === '1' && process.env.HEARMEOUT_VOICE_BRIDGE_ORIGIN === 'https://hmo-dj-worker.fly.dev';
 const preparedMediaUrl = hearMeOutPreparedMedia

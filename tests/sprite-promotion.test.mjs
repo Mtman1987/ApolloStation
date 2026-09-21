@@ -67,13 +67,15 @@ test("Sprite deployment verifies, tests, switches atomically, rolls back, and la
   assert.match(script, /--live-read-origin,https:\/\/spmt\.live/);
   assert.doesNotMatch(script, /SPMT_LIVE_READ_ACCESS_TOKEN|live-read-token-file|spmt-live-read-token/);
   assert.doesNotMatch(script, /--candidate-app,nebula-tag/);
-  assert.match(script, /create_apollo_service "\$\(basename "\$previous_release"\)"/);
+  assert.match(script, /create_apollo_service "\$\(basename "\$previous_release"\)" 1/);
   assert.match(script, /services_json="\$\(sprite-env services list\)"/);
   assert.match(script, /select\(\.http_port != null\)/);
   assert.match(script, /for stale_service in "\$\{http_services\[@\]\}" "\$service_name" "\$bootstrap_service_name" spmt-qwen/);
   assert.match(script, /Deployment failed; restoring bootstrap service/);
   assert.match(script, /sprite-env services delete "\$service_name"/);
-  assert.doesNotMatch(script, /llama_ref|llama_root|llm-binary|llm-cache|provision_llm_runtime/);
+  assert.match(script, /llama_ref="b6335"/);
+  assert.match(script, /--llm-binary,\$llama_root\/build\/bin\/llama-server/);
+  assert.match(script, /local enable_stellar="\$\{2:-1\}"/);
   assert.match(script, /for _ in \{1\.\.1260\}/);
   assert.match(script, /sprite-env services create "\$bootstrap_service_name"/);
   assert.match(script, /grep -Fq "\$BUILD_SHA"/);

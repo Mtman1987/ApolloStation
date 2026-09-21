@@ -80,18 +80,14 @@ export class HearMeOutWebSuiteActionExecutor implements HearMeOutSuiteActionExec
     const principal = this.principal(input, context.tenantId);
     const program=this.options.singleProgram;
     if(program&&input.action==='hmo.media.request'){
-      const room=this.programRoom(program,principal,input);if(!room)throw Error('Join the HearMeOut room or Discord channel that owns a player before requesting media');
-      if(input.args.roomId&&input.args.roomId!==room.roomId&&input.args.roomId!==room.sourceRoomId)throw Error('This location cannot add to that player');
-      if(input.source.simulation)return {simulation:true,text:'Previewed a request for '+room.name+'.',roomId:room.roomId};
-      const session=await program.request({roomId:room.roomId,requesterId:principal.userId,displayName:principal.displayName,query:required(input.args.query,'query'),lane:input.args.lane==='music'?'music':'movie',operationId:context.idempotencyKey},this.media);
-      return {text:'Your request is in '+room.name+'.',roomId:room.roomId,session};
+      if(input.source.simulation)return {simulation:true,text:'Previewed a request for the shared broadcast.'};
+      const session=await program.request({requesterId:principal.userId,displayName:principal.displayName,query:required(input.args.query,'query'),lane:input.args.lane==='music'?'music':'movie',operationId:context.idempotencyKey},this.media);
+      return {text:'Your video is in the shared broadcast.',session};
     }
-    if(program&&input.action==='hmo.media.state.read'){const room=this.programRoom(program,principal,input);if(!room)throw Error('Choose a room-owned player');const session=program.getSession(program.binding.tenantId,room.roomId);return {text:session.current?.item.title??'Nothing is playing.',roomId:room.roomId,session};}
+    if(program&&input.action==='hmo.media.state.read')return {text:program.getSession().current?.item.title??'Nothing is playing.',session:program.getSession()};
     if(program&&input.action==='hmo.media.control'){
-      const room=this.programRoom(program,principal,input);if(!room)throw Error('Join the room or channel that owns this player before controlling it');
-      if(input.args.roomId&&input.args.roomId!==room.roomId&&input.args.roomId!==room.sourceRoomId)throw Error('This location cannot control that player');
-      if(input.source.simulation)return {simulation:true,text:'Previewed broadcast control.',roomId:room.roomId};
-      return {text:'Broadcast updated.',roomId:room.roomId,session:program.control(principal,{roomId:room.roomId,action:input.args.control==='stop'?'clear':input.args.control??''})};
+      if(input.source.simulation)return {simulation:true,text:'Previewed broadcast control.'};
+      return {text:'Broadcast updated.',session:program.control(principal,{action:input.args.control==='stop'?'clear':input.args.control??''})};
     }
     if (input.action === "hmo.rooms.read") { const rooms = this.rooms.listRooms(principal).map((room) => ({ roomId: room.roomId, name: room.name, privacy: room.privacy, owned: room.ownerUserId === principal.userId })); return { text: rooms.length ? `HearMeOut rooms: ${rooms.map((room) => room.name).join(", ")}.` : "There are no active HearMeOut rooms.", rooms }; }
     let requestedRoom = input.args.roomId || input.source.roomId;
@@ -120,11 +116,6 @@ export class HearMeOutWebSuiteActionExecutor implements HearMeOutSuiteActionExec
     throw new Error("Unsupported HearMeOut voice-bridge control");
   }
   private principal(input: SpmtSuiteActionJobInputV1, tenantId: string): HearMeOutPrincipalV1 { return { tenantId, userId: input.actor.userId, displayName: input.actor.username, roles: input.actor.role === "member" || input.actor.role === "guest" ? ["member"] : ["admin"] }; }
-  private programRoom(program:HearMeOutBroadcastProgram,principal:HearMeOutPrincipalV1,input:SpmtSuiteActionJobInputV1){
-    if(input.source.provider==='discord'&&input.source.guildId&&input.source.channelId)return program.channelRoom({guildId:input.source.guildId,channelId:input.source.channelId});
-    if(input.source.roomId){if(!this.rooms.listMembers(principal.tenantId,input.source.roomId).some(member=>member.userId===principal.userId))return undefined;return program.hostedRoom(input.source.roomId);}
-    return undefined;
-  }
   private roomId(principal: HearMeOutPrincipalV1, requested: string | undefined) { if (requested) return requested; const joined = this.rooms.listRooms(principal).filter((room) => this.rooms.listMembers(principal.tenantId, room.roomId).some((member) => member.userId === principal.userId)); if (joined.length !== 1) throw new Error("Choose a HearMeOut room for this action"); return joined[0]!.roomId; }
   private simulationPreview(input: SpmtSuiteActionJobInputV1 & { action: HearMeOutBotActionIdV1 }, roomId: string) {
     const detail = input.action === "hmo.media.request" ? `request ${required(input.args.query, "query")}`

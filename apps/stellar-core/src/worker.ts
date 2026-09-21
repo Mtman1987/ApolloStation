@@ -46,51 +46,6 @@ export class OpenAiCompatibleChatProvider implements StellarChatProviderV1 {
   }
 }
 
-/** Hosted OpenAI inference for Stella while the dedicated lore model is prepared. */
-export class OpenAiResponsesChatProvider implements StellarChatProviderV1 {
-  constructor(private readonly options: { apiKey: string; model: string; fetchImpl?: typeof fetch; timeoutMs?: number }) {
-    if (!options.apiKey.trim()) throw new Error("OpenAI API key is required");
-    if (!options.model.trim()) throw new Error("OpenAI chat model is required");
-  }
-  async healthy() { return true; }
-  async complete(messages: StellarChatMessageV1[]) {
-    const first = await this.request(messages, 1_200);
-    let text = first.text;
-    let finishReason = first.finishReason;
-    let inputTokens = first.usage?.inputTokens ?? 0;
-    let outputTokens = first.usage?.outputTokens ?? 0;
-    let attempts = 0;
-    while (looksIncompleteCompletion(text, finishReason) && attempts < 2 && text.length < 49_000) {
-      attempts += 1;
-      const continuation = await this.request([...messages, { role: "assistant", content: text }, { role: "user", content: "Continue exactly where the response stopped. Finish the thought in complete sentences. Do not repeat prior text, add a heading, or mention that you are continuing." }], 600);
-      text = joinStellarContinuation(text, continuation.text);
-      finishReason = continuation.finishReason;
-      inputTokens += continuation.usage?.inputTokens ?? 0;
-      outputTokens += continuation.usage?.outputTokens ?? 0;
-    }
-    if (looksIncompleteCompletion(text, finishReason)) throw new StellarProviderError(`OpenAI returned an incomplete response after ${attempts} continuation attempt(s)`, true);
-    return { text: capAtCompleteSentence(text, 50_000), ...(finishReason ? { finishReason } : {}), usage: { inputTokens, outputTokens } };
-  }
-  private async request(messages: StellarChatMessageV1[], maxOutputTokens: number): Promise<StellarChatCompletionV1> {
-    let response: Response;
-    try {
-      response = await (this.options.fetchImpl ?? fetch)("https://api.openai.com/v1/responses", {
-        method: "POST",
-        headers: { accept: "application/json", authorization: `Bearer ${this.options.apiKey}`, "content-type": "application/json" },
-        body: JSON.stringify({ model: this.options.model, input: messages, store: false, max_output_tokens: maxOutputTokens }),
-        redirect: "error",
-        signal: AbortSignal.timeout(this.options.timeoutMs ?? 10 * 60_000),
-      });
-    } catch (error) { throw new StellarProviderError(error instanceof Error ? error.message : "OpenAI request failed", true); }
-    if (!response.ok) throw new StellarProviderError(`OpenAI returned ${response.status}`, response.status === 408 || response.status === 429 || response.status >= 500);
-    const body = await response.json() as { output_text?: unknown; output?: Array<{ type?: unknown; content?: Array<{ type?: unknown; text?: unknown }> }>; status?: unknown; incomplete_details?: { reason?: unknown }; usage?: { input_tokens?: unknown; output_tokens?: unknown } };
-    const outputText = typeof body.output_text === "string" ? body.output_text : (body.output ?? []).flatMap((item) => item.type === "message" ? item.content ?? [] : []).filter((item) => item.type === "output_text" && typeof item.text === "string").map((item) => item.text as string).join("");
-    if (!outputText.trim()) throw new StellarProviderError("OpenAI returned no assistant text", true);
-    const finishReason = body.status === "incomplete" ? String(body.incomplete_details?.reason ?? "max_output_tokens") : "stop";
-    return { text: outputText.trim(), finishReason, usage: { ...(typeof body.usage?.input_tokens === "number" ? { inputTokens: body.usage.input_tokens } : {}), ...(typeof body.usage?.output_tokens === "number" ? { outputTokens: body.usage.output_tokens } : {}) } };
-  }
-}
-
 export function looksIncompleteCompletion(text: string, finishReason?: string): boolean {
   if (["length", "max_tokens", "max_output_tokens", "token_limit"].includes(String(finishReason ?? "").toLowerCase())) return true;
   const clean = text.trim();

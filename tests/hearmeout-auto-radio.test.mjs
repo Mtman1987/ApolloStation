@@ -3,8 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { HearMeOutAutoRadio, HearMeOutProgramAutoRadio, hearMeOutRadioRecommendation } from '../apps/hearmeout/dist/auto-radio.js';
-import { HearMeOutBroadcastProgram } from '../apps/hearmeout/dist/broadcast-program.js';
+import { HearMeOutAutoRadio, hearMeOutRadioRecommendation } from '../apps/hearmeout/dist/auto-radio.js';
 import { SqliteHearMeOutRoomMediaRuntime } from '../apps/hearmeout/dist/room-media-core.js';
 
 const owner={tenantId:'tenant',userId:'owner',displayName:'Owner',roles:['member']};
@@ -36,19 +35,4 @@ test('radio recommendations use the existing assistant without personal memory a
   const calls=[],client={async invokeCommunityAssistant(t,input,key){calls.push(input);return{status:'accepted',jobId:'recommendation'}},async getExecutionJob(){return{state:'succeeded',result:{text:'{"query":"New song by Artist"}'}}}};
   const input={tenantId:'tenant',userId:'owner',seed:'Soul music',recent:['Yesterday']};assert.equal(await hearMeOutRadioRecommendation(client,input),'New song by Artist');assert.equal(calls[0].remember,false);assert.equal(calls[0].userId,'owner');assert.match(calls[0].message,/Yesterday/);
   assert.equal(await hearMeOutRadioRecommendation({...client,invokeCommunityAssistant:async()=>({status:'unavailable'})},input),'Soul music');
-});
-
-test('the permanent Lounge player owns a durable radio and manual requests immediately replace its automatic current track',async()=>{
-  const dir=mkdtempSync(join(tmpdir(),'hmo-lounge-radio-')),path=join(dir,'rooms.sqlite'),binding={tenantId:'tenant',executionUserId:'owner'};let clock=Date.now(),calls=0,program=new HearMeOutBroadcastProgram(path,binding);const now=()=>new Date(clock).toISOString();
-  try{
-    program.ensurePermanentRoom({roomId:'system-spacemountainlive-lounge',sourceRoomId:'system-spacemountainlive-lounge',name:'24-Hour Lounge'});program.ensureRadio('system-spacemountainlive-lounge','Soul music');
-    const worker=new HearMeOutProgramAutoRadio(program,{resolve:async()=>track('auto-'+(++calls))},{now});
-    await worker.tick();assert.equal(program.getSession('tenant','system-spacemountainlive-lounge').current.item.itemId,'auto-1');
-    await worker.tick();assert.deepEqual(program.getSession('tenant','system-spacemountainlive-lounge').queue.map(entry=>entry.item.itemId),['auto-2']);
-    await program.request({roomId:'system-spacemountainlive-lounge',requesterId:'listener',displayName:'Listener',query:'manual',lane:'music',operationId:'manual'}, {resolve:async()=>track('manual')});
-    assert.equal(program.getSession('tenant','system-spacemountainlive-lounge').current.item.itemId,'manual');
-    assert.deepEqual(program.getSession('tenant','system-spacemountainlive-lounge').queue.map(entry=>entry.item.itemId),['auto-2']);
-    const history=program.radio('system-spacemountainlive-lounge').history.map(item=>item.itemId);program.close();program=new HearMeOutBroadcastProgram(path,binding);
-    assert.deepEqual(program.radio('system-spacemountainlive-lounge').history.map(item=>item.itemId),history);assert.equal(program.getRoom('system-spacemountainlive-lounge').permanent,true);
-  }finally{program.close();rmSync(dir,{recursive:true,force:true});}
 });
