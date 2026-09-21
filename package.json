@@ -29,7 +29,8 @@
     "agents:inspect": "python3 scripts/agents/openai_runner.py inspect",
     "agents:check-openai": "python3 scripts/agents/openai_runner.py check-openai",
     "agents:chat": "python3 scripts/agents/openai_runner.py chat",
-    "agents:test": "python3 scripts/agents/test_runner.py"
+    "agents:test": "python3 scripts/agents/test_runner.py",
+    "validate:local": "node scripts/validate-local.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",

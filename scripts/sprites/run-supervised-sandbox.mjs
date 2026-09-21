@@ -26,8 +26,6 @@ const streamweaverWebPort = requirePort(argumentsMap.get("streamweaver-web-port"
 const mountainViewWebPort = requirePort(argumentsMap.get("mountainview-web-port") ?? "3203", "mountainview-web-port");
 const companionWebPort = requirePort(argumentsMap.get("companion-web-port") ?? "3204", "companion-web-port");
 const ownerUsername = requireUsername(argumentsMap.get("owner-username") ?? "mtman1987");
-const llmBinary = argumentsMap.get("llm-binary");
-const llmCache = resolve(argumentsMap.get("llm-cache") ?? resolve(dataRoot, "models"));
 const offlineNetworkGuard = requireBooleanFlag(argumentsMap.get("offline-network-guard") ?? "0", "offline-network-guard");
 const offlineNetworkGuardPath = resolve("scripts/offline-network-guard.mjs");
 if (offlineNetworkGuard) await import(offlineNetworkGuardPath);
@@ -108,7 +106,7 @@ const sandboxManifests = [
 const children = new Set();
 const recoverableServices = new Set();
 let stopping = false;
-const stellarWorkerCredential = llmBinary ? randomBytes(32).toString("base64url") : undefined;
+const stellarWorkerCredential = flowOpenAiKey ? randomBytes(32).toString("base64url") : undefined;
 const chatGatewayCredential = randomBytes(32).toString("base64url");
 const streamweaverWorkerCredential = randomBytes(32).toString("base64url");
 const dshWorkerCredential = randomBytes(32).toString("base64url");
@@ -236,15 +234,13 @@ spmt.once("exit", (code, signal) => { if (!stopping) void stop(signal === "SIGIN
 await waitForUrl(web, `http://127.0.0.1:${webPort}/sandbox/health`, "SpaceMountain web");
 for (const appId of ["discord-stream-hub", "streamweaver", "hearmeout", "mountainview", "companion"]) await waitForUrl(web, `http://127.0.0.1:${webPort}/health/${appId}`, `${appId} ingress`);
 
-if (llmBinary) {
-  startRecoverableCommand("Qwen", resolve(llmBinary), ["--host", "127.0.0.1", "--port", "8081", "-hf", "Qwen/Qwen3-8B-GGUF:Q4_K_M", "--ctx-size", "8192", "--threads", "8", "--parallel", "1", "--jinja", "--no-webui"], { ...common, LLAMA_CACHE: llmCache });
-}
 if (stellarWorkerCredential) {
   startRecoverable("Stellar Core worker", "apps/stellar-core/dist/worker-start.js", {
     ...common,
     SPMT_ORIGIN: spmtOrigin,
-    STELLAR_PROVIDER_ORIGIN: "http://127.0.0.1:8081",
-    STELLAR_PROVIDER_MODEL: "Qwen/Qwen3-8B-GGUF:Q4_K_M",
+    OPENAI_API_KEY: flowOpenAiKey,
+    OPENAI_CHAT_MODEL: process.env.OPENAI_CHAT_MODEL || "gpt-5.6-luna",
+    SPMT_STELLAR_OPENAI_ENABLED: "1",
     STELLAR_EXECUTION_TARGET: "sprite",
     STELLAR_WORKER_CREDENTIAL: stellarWorkerCredential,
     ...speechEnvironment,
@@ -346,7 +342,7 @@ function parseArguments(values) {
     if (!flag?.startsWith("--") || !value) throw new Error("Arguments must be --name value pairs");
     result.set(flag.slice(2), value);
   }
-  const allowed = ["app", "candidate-app", "catalog", "public-url", "data-root", "build-sha", "spmt-port", "web-port", "nebula-arcade-port", "hearmeout-web-port", "dsh-web-port", "streamweaver-web-port", "mountainview-web-port", "companion-web-port", "tenant-id", "channel-id", "owner-username", "llm-binary", "llm-cache", "offline-network-guard", "live-read-origin"];
+  const allowed = ["app", "candidate-app", "catalog", "public-url", "data-root", "build-sha", "spmt-port", "web-port", "nebula-arcade-port", "hearmeout-web-port", "dsh-web-port", "streamweaver-web-port", "mountainview-web-port", "companion-web-port", "tenant-id", "channel-id", "owner-username", "offline-network-guard", "live-read-origin"];
   for (const name of result.keys()) if (!allowed.includes(name)) throw new Error(`Unknown argument --${name}`);
   return result;
 }

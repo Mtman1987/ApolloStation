@@ -33,10 +33,7 @@ next_link="$deployment_root/current.next"
 data_root="/home/sprite/data/$DEPLOY_ROLE"
 service_name="apollo-sandbox"
 bootstrap_service_name="webtmux"
-llama_root="/home/sprite/runtime/llama-b6335"
-llama_ref="b6335"
 media_root="/home/sprite/runtime/ffmpeg-btbn-8.1.2-g1a748fe2cd"
-llama_archive_sha256="6ffee01c8fe2481faf8b614bbd8ca9bdaa563f47d4d9e00dc44f423962812d25"
 previous_release=""
 previous_hearmeout_config=""
 switched=0
@@ -49,11 +46,7 @@ fi
 
 create_apollo_service() {
   local release_sha="$1"
-  local enable_stellar="${2:-1}"
   local runner_args="scripts/sprites/run-supervised-sandbox.mjs,--app,platform,--candidate-app,nebula-arcade,--catalog,current,--public-url,$SPRITE_PUBLIC_URL,--data-root,$data_root,--build-sha,$release_sha,--owner-username,mtman1987,--offline-network-guard,1,--live-read-origin,https://spmt.live"
-  if [[ "$enable_stellar" == "1" ]] && grep -Fq '"llm-binary"' "$current_link/scripts/sprites/run-supervised-sandbox.mjs"; then
-    runner_args="$runner_args,--llm-binary,$llama_root/build/bin/llama-server,--llm-cache,/home/sprite/models"
-  fi
   sprite-env services create "$service_name" \
     --cmd "$media_root/run-node" \
     --args "$runner_args" \
@@ -96,22 +89,6 @@ RUNNER
     fi
     echo "58162f9bfdc27458ea47bfcb311cf47028f17d8154a8bf7d689861d46399230a  $media_root/yt-dlp" | sha256sum --check --strict
     "$media_root/yt-dlp" --version
-  fi
-}
-
-provision_llm_runtime() {
-  mkdir -p "$(dirname "$llama_root")" /home/sprite/models
-  if [[ ! -x "$llama_root/build/bin/llama-server" ]]; then
-    rm -rf "$llama_root.next"
-    mkdir -p "$llama_root.next"
-    archive="$llama_root.next/llama.zip"
-    curl -fsSL "https://github.com/ggml-org/llama.cpp/releases/download/$llama_ref/llama-$llama_ref-bin-ubuntu-x64.zip" -o "$archive"
-    echo "$llama_archive_sha256  $archive" | sha256sum --check --strict
-    python3 -m zipfile -e "$archive" "$llama_root.next"
-    rm -f "$archive"
-    chmod +x "$llama_root.next/build/bin/llama-server"
-    rm -rf "$llama_root"
-    mv "$llama_root.next" "$llama_root"
   fi
 }
 
@@ -179,10 +156,7 @@ rollback() {
     sprite-env services stop "$service_name" || true
     sprite-env services delete "$service_name" || true
     stop_orphan_app_web_processes
-    # A rollback is still the live Green sandbox. Keep the local Stellar/Qwen
-    # path enabled so a failed release cannot silently turn every persona into
-    # an unusable card until the next successful deployment.
-    create_apollo_service "$(basename "$previous_release")" 1 || true
+    create_apollo_service "$(basename "$previous_release")" || true
   fi
   if (( status != 0 && bootstrap_service_removed == 1 )) && [[ -z "$previous_release" ]]; then
     echo "Deployment failed; restoring bootstrap service $bootstrap_service_name" >&2
@@ -228,7 +202,6 @@ fi
 cd "$release_dir"
 provision_media_runtime
 npm ci --ignore-scripts
-npm run typecheck
 npm run build
 
 if [[ "$DEPLOY_ROLE" == "release" ]]; then
@@ -237,7 +210,6 @@ if [[ "$DEPLOY_ROLE" == "release" ]]; then
   node scripts/sprites/check-hearmeout-movie-search.mjs
 fi
 
-provision_llm_runtime
 
 if [[ "$DEPLOY_ROLE" == "release" ]]; then
   mkdir -p "$data_root/recovery"
