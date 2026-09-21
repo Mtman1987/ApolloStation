@@ -24,6 +24,9 @@ test("supervised Green catalog uses canonical app URLs and app-owned web process
     "apps/mountainview/dist/web-server.js",
     "apps/companion/dist/web-server.js",
   ]) assert.match(source, new RegExp(script.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.match(source, /const spmt = startRecoverable\(/);
+  assert.match(source, /const web = startRecoverable\(/);
+  assert.match(source, /timeoutMs = 45_000/);
 });
 
 test("owned Green app frontends live with their product owners", async () => {

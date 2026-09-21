@@ -104,7 +104,12 @@ export class HearMeOutExecutionWorker {
     await this.execute(job);
     return job.id;
   }
-  async run(signal: AbortSignal, pollMs = 1_000) { while (!signal.aborted) { if (!await this.runOnce()) await pause(pollMs, signal); } }
+  async run(signal: AbortSignal, pollMs = 1_000) {
+    while (!signal.aborted) {
+      try { if (!await this.runOnce()) await pause(pollMs, signal); }
+      catch { if (!signal.aborted) await pause(pollMs, signal); }
+    }
+  }
   async report(startedAt: string) { return this.client.reportExecutionWorker({ executionOwner: "hearmeout", workerId: this.options.workerId, executionTarget: this.options.executionTarget, state: "ready", capabilityIds: this.options.capabilities, ...(this.options.tenantIds ? { tenantIds: this.options.tenantIds } : {}), providerHealthy: true, startedAt, metrics: { completedJobs: this.completedJobs, failedJobs: this.failedJobs, inputUnits: 0, outputUnits: 0 }, leaseMs: 30_000 }); }
   private async execute(job: ExecutionJobV1) {
     if (!job.leaseId) throw new Error("Claimed HearMeOut job has no lease");
@@ -198,10 +203,12 @@ export function createSupervisedHearMeOutWorker(options: HearMeOutWorkerEnvironm
   const catalog = new HearMeOutWorkerMusicCatalog({ catalogFile: resolve(options.cacheDir, "music-catalog.json") });
   const cache = new HearMeOutWorkerMediaCache({ cacheDir: options.cacheDir });
   const adapter = options.ytDlpBinary ? new YtDlpHearMeOutResolverAdapter(options.ytDlpBinary) : undefined;
-  // Local yt-dlp remains the catalog searcher. Once a video is selected, the
-  // configured always-live HearMeOut worker is the canonical playback source;
-  // do not bypass it with short-lived googlevideo URLs from the Sprite.
-  const resolverAdapter = options.preparedMedia ? new HearMeOutPreparedMedia(options.preparedMedia, fetchImpl) : adapter;
+  // Keep the established server-side yt-dlp path available for Twitch requests.
+  // The always-live prepared worker remains the upstream fallback for cached HLS.
+  const prepared = options.preparedMedia ? new HearMeOutPreparedMedia(options.preparedMedia, fetchImpl) : undefined;
+  const resolverAdapter:HearMeOutYoutubeResolverAdapterV1|undefined = adapter && prepared
+    ? {ytDlp:videoId=>adapter.ytDlp(videoId),upstream:videoId=>prepared.upstream(videoId)}
+    : prepared ?? adapter;
   const resolver = resolverAdapter ? new HearMeOutYoutubeResolverCoordinator(resolverAdapter, options.preparedMedia ? {preparedMediaOrigin:options.preparedMedia.origin} : {}) : undefined;
   const tenantPath = (tenantId: string) => resolve(options.cacheDir, "tenants", createHash("sha256").update(tenantId).digest("hex"));
   return { getAccessToken, worker: new HearMeOutExecutionWorker(client, { workerId: options.workerId, executionTarget: options.executionTarget, capabilities: options.config.capabilities, tenantIds: options.config.tenants.map(tenant => tenant.tenantId), catalog, cache, catalogForTenant: tenantId => new HearMeOutWorkerMusicCatalog({ catalogFile: resolve(tenantPath(tenantId), "music-catalog.json") }), cacheForTenant: tenantId => new HearMeOutWorkerMediaCache({ cacheDir: tenantPath(tenantId) }), ...(adapter ? { search: (query, limit) => adapter.search(query, limit) } : {}), ...(resolver ? { resolver } : {}), ...(options.movieProviderOrigin?{movieProvider:new HearMeOutMovieProvider(options.movieProviderOrigin,fetchImpl,options.preparedMedia?.authorization)}:{}) }) };
