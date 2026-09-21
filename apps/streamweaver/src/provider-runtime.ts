@@ -61,7 +61,6 @@ export interface StreamWeaverProviderRuntimeOptionsV1 {
   simulation?:boolean;
   providerFetch?: typeof fetch;
   connections?:Array<{tenantId:string;provider:string;connectionId:string;channelId:string;desired:boolean}>;
-  allowTwitchMedia?: boolean;
 }
 
 /** Owns StreamWeaver's app-private chat state while Chat Gateway owns sockets. */
@@ -108,7 +107,7 @@ export class StreamWeaverProviderRuntime {
     this.messageObservers = [{ id: "streamweaver.relay-identities", observe: (message) => { this.relayStore.observe(message); } }];
     this.botActionReplies = new StreamWeaverBotActionReplies(options.databasePath, options.nowMs);
     const twitchChannelAllowed = (message: NormalizedChatMessageV1) => message.provider !== "twitch" || message.channelId === this.runtimeSettings.twitchBroadcaster(message.tenantId);
-    const botActions = options.botActions ? new StreamWeaverBotActionConsumer(options.botActions, egress, this.botActionReplies, twitchChannelAllowed, options.allowTwitchMedia !== false) : undefined;
+    const botActions = options.botActions ? new StreamWeaverBotActionConsumer(options.botActions, egress, this.botActionReplies, twitchChannelAllowed) : undefined;
     const priorGate = { willHandle: (message: NormalizedChatMessageV1) => relay.willHandle(message) || Boolean(botActions?.willHandle(message)) };
     const secureChoiceExecutor={execute:(invocation:import("./donor-command-runtime.js").StreamWeaverDonorCommandInvocationV1)=>{
       if(invocation.command.donorId!==STREAMWEAVER_SECURE_CHOICE_DONOR_ID)return undefined;
