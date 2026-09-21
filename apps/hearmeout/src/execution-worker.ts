@@ -166,7 +166,7 @@ export class YtDlpHearMeOutResolverAdapter implements HearMeOutYoutubeResolverAd
     const args = ["--ignore-config", "--dump-single-json", "--flat-playlist", "--skip-download", "--no-warnings", "--", `ytsearch${count}:${text(query, "query", 300)}`];
     let stdout = "", failure: unknown;
     // YouTube search occasionally outlives the old 15-second deadline on the
-    // always-on worker. Retry once so a transient provider reset cannot make a
+    // always-live worker. Retry once so a transient provider reset cannot make a
     // Twitch request disappear after chat has acknowledged it.
     for (let attempt = 0; attempt < 2; attempt++) {
       try { ({ stdout } = await this.run(this.binary, args, { timeout: 30_000, maxBuffer: 8 * 1024 * 1024, windowsHide: true })); failure = undefined; break; }
