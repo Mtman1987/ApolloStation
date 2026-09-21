@@ -82,13 +82,14 @@ export class HearMeOutWebSuiteActionExecutor implements HearMeOutSuiteActionExec
     const program=this.options.singleProgram;
     if(program&&input.action==='hmo.media.request'){
       if(input.source.simulation)return {simulation:true,text:'Previewed a request for the shared broadcast.'};
-      const session=await program.request({roomId:input.args.roomId||PUBLIC_LOUNGE_ID,requesterId:principal.userId,displayName:principal.displayName,query:required(input.args.query,'query'),lane:input.args.lane==='music'?'music':'movie',operationId:context.idempotencyKey},this.media);
+      const roomId=this.programRoomId(program,input.args.roomId);
+      const session=await program.request({roomId,requesterId:principal.userId,displayName:principal.displayName,query:required(input.args.query,'query'),lane:input.args.lane==='music'?'music':'movie',operationId:context.idempotencyKey},this.media);
       return {text:'Your video is in the shared broadcast.',session};
     }
-    if(program&&input.action==='hmo.media.state.read'){const roomId=input.args.roomId||PUBLIC_LOUNGE_ID,session=program.getSession(program.binding.tenantId,roomId);return {text:session.current?.item.title??'Nothing is playing.',session};}
+    if(program&&input.action==='hmo.media.state.read'){const roomId=this.programRoomId(program,input.args.roomId),session=program.getSession(program.binding.tenantId,roomId);return {text:session.current?.item.title??'Nothing is playing.',session};}
     if(program&&input.action==='hmo.media.control'){
       if(input.source.simulation)return {simulation:true,text:'Previewed broadcast control.'};
-      return {text:'Broadcast updated.',session:program.control(principal,{roomId:input.args.roomId||PUBLIC_LOUNGE_ID,action:input.args.control==='stop'?'clear':input.args.control??''})};
+      return {text:'Broadcast updated.',session:program.control(principal,{roomId:this.programRoomId(program,input.args.roomId),action:input.args.control==='stop'?'clear':input.args.control??''})};
     }
     if (input.action === "hmo.rooms.read") { const rooms = this.rooms.listRooms(principal).map((room) => ({ roomId: room.roomId, name: room.name, privacy: room.privacy, owned: room.ownerUserId === principal.userId })); return { text: rooms.length ? `HearMeOut rooms: ${rooms.map((room) => room.name).join(", ")}.` : "There are no active HearMeOut rooms.", rooms }; }
     let requestedRoom = input.args.roomId || input.source.roomId;
@@ -115,6 +116,10 @@ export class HearMeOutWebSuiteActionExecutor implements HearMeOutSuiteActionExec
     if (control === "listen-only" || control === "two-way") { const result = await voice.setRoomOutbound(principal, roomId, control === "two-way"); return { text: `Set the bridge to ${control}.`, roomId, ...result }; }
     if (control === "profile") { const result = await voice.setAudioProfile(principal, roomId, input.args.audioProfile as "low-latency" | "balanced" | "resilient" | "clean"); return { text: `Set the bridge audio profile to ${input.args.audioProfile}.`, roomId, ...result }; }
     throw new Error("Unsupported HearMeOut voice-bridge control");
+  }
+  private programRoomId(program: HearMeOutBroadcastProgram, requested?: string) {
+    const source = requested || PUBLIC_LOUNGE_ID;
+    return source === PUBLIC_LOUNGE_ID ? (program.hostedRoom(source)?.roomId ?? source) : source;
   }
   private principal(input: SpmtSuiteActionJobInputV1, tenantId: string): HearMeOutPrincipalV1 { return { tenantId, userId: input.actor.userId, displayName: input.actor.username, roles: input.actor.role === "member" || input.actor.role === "guest" ? ["member"] : ["admin"] }; }
   private roomId(principal: HearMeOutPrincipalV1, requested: string | undefined) { if (requested) return requested; const joined = this.rooms.listRooms(principal).filter((room) => this.rooms.listMembers(principal.tenantId, room.roomId).some((member) => member.userId === principal.userId)); if (joined.length !== 1) throw new Error("Choose a HearMeOut room for this action"); return joined[0]!.roomId; }
