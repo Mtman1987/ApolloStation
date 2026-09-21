@@ -80,15 +80,15 @@ jobs:
           checkpoint_status=${PIPESTATUS[0]}
           set -e
           if (( checkpoint_status != 0 )); then
-            if ! grep -Fq 'file exists' "$checkpoint_log"; then
+            if ! grep -Eiq 'file exists|No process is running to checkpoint' "$checkpoint_log"; then
               exit "$checkpoint_status"
             fi
             checkpoints="$(curl -fsS -H "Authorization: Bearer $SPRITES_TOKEN" "https://api.sprites.dev/v1/sprites/$SPRITE_NAME/checkpoints")"
             if [[ "$(jq 'length' <<<"$checkpoints")" -lt 1 ]]; then
-              echo "Checkpoint collision reported but no rollback checkpoint exists." >&2
+              echo "Checkpoint unavailable and no existing rollback checkpoint exists." >&2
               exit "$checkpoint_status"
             fi
-            echo "Sprites reported a duplicate checkpoint version; preserving the existing rollback checkpoint and continuing."
+            echo "A new checkpoint is unavailable; preserving the existing rollback checkpoint and continuing."
           fi
 
       - name: Apply model-safe deny-by-default network policy
