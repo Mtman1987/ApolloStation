@@ -8,6 +8,7 @@ import type {HearMeOutRoomBroadcast} from './room-broadcast.js';
 import type {HearMeOutSuiteMediaResolverV1} from './suite-action-executor.js';
 
 const browserRequests=new Map<string,{videoId:string;until:number}>();
+const loungeTwitchRequests=new Map<string,Promise<void>>();
 const LOUNGE_TWITCH_CHANNEL='spacemountainlive';
 
 export function broadcastView(program:HearMeOutBroadcastProgram,configured:boolean,ready=false,epoch?:string,roomId?:string){
@@ -44,8 +45,16 @@ export async function handleHearMeOutBroadcastWindow(request:IncomingMessage,res
       const command=String(body.command??'').trim(),match=command.match(/^!(sr|wr)\s+(.{1,500})$/is);if(!match)return send(response,400,{error:'Use !sr or !wr with a request'});
       const messageId=String(body.messageId??'').trim(),userId=String(body.userId??'').trim(),displayName=String(body.displayName??'').replace(/[\r\n\0]/g,' ').trim().slice(0,120)||'Twitch viewer';
       if(!/^[A-Za-z0-9-]{1,160}$/.test(messageId)||!/^[A-Za-z0-9._:-]{1,160}$/.test(userId))return send(response,400,{error:'Invalid Twitch request identity'});
-      const lane=match[1]!.toLowerCase()==='sr'?'music':'movie';await program.request({roomId:HEARMEOUT_LOUNGE_ROOM_ID,requesterId:'twitch:'+userId,displayName,query:match[2]!.trim(),lane,operationId:'twitch-lounge:'+messageId},media);
-      return send(response,201,{accepted:true,roomId:HEARMEOUT_LOUNGE_ROOM_ID,text:'Added to the 24-Hour Lounge queue.'});
+      const lane=match[1]!.toLowerCase()==='sr'?'music':'movie',operationId='twitch-lounge:'+messageId;
+      if(!loungeTwitchRequests.has(operationId)){
+        let task:Promise<void>;
+        task=program.request({roomId:HEARMEOUT_LOUNGE_ROOM_ID,requesterId:'twitch:'+userId,displayName,query:match[2]!.trim(),lane,operationId},media)
+          .then(()=>undefined)
+          .catch(error=>console.error('[HearMeOutLoungeRelay] request failed',{operationId,error:error instanceof Error?error.message:String(error)}))
+          .finally(()=>{if(loungeTwitchRequests.get(operationId)===task)loungeTwitchRequests.delete(operationId)});
+        loungeTwitchRequests.set(operationId,task);
+      }
+      return send(response,202,{accepted:true,roomId:HEARMEOUT_LOUNGE_ROOM_ID,text:'Searching now; your request will be added to the 24-Hour Lounge queue when ready.'});
     }
     const channel=():HearMeOutPartyChannel|undefined=>{
       const guildId=url.searchParams.get('guildId'),channelId=url.searchParams.get('channelId');
