@@ -106,6 +106,8 @@ const sandboxManifests = [
 const children = new Set();
 const recoverableServices = new Set();
 let stopping = false;
+let finishShutdown;
+const shutdown = new Promise((done) => { finishShutdown = done; });
 const stellarWorkerCredential = openAiKey ? randomBytes(32).toString("base64url") : undefined;
 const chatGatewayCredential = randomBytes(32).toString("base64url");
 const streamweaverWorkerCredential = randomBytes(32).toString("base64url");
@@ -254,7 +256,7 @@ process.stdout.write("Press Ctrl+C once to stop the supervised cohort.\n\n");
 
 process.on("SIGINT", () => void stop(0));
 process.on("SIGTERM", () => void stop(0));
-await new Promise(() => {});
+await shutdown;
 }
 
 function startRecoverable(label, script, environment) {
@@ -303,6 +305,7 @@ async function stop(code) {
   for (const child of children) child.kill("SIGKILL");
   await Promise.allSettled(recoveringStops);
   process.exitCode = code;
+  finishShutdown();
 }
 
 function safeEnvironment(source) {

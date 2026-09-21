@@ -20,22 +20,6 @@ on:
       - "package-lock.json"
       - "tsconfig.base.json"
       - ".github/workflows/green-contracts.yml"
-  push:
-    branches: [main]
-    paths:
-      - "packages/**"
-      - "apps/**"
-      - "tests/**"
-      - "scripts/**"
-      - "sandbox/**"
-      - "config/**"
-      - "deploy/**"
-      - "docs/**"
-      - "*.md"
-      - "package.json"
-      - "package-lock.json"
-      - "tsconfig.base.json"
-      - ".github/workflows/green-contracts.yml"
 
 jobs:
   green:

@@ -24,9 +24,9 @@ test('the configured Discord proxy can request the same public broadcast through
   assert.equal(entry.status,200);assert.match(await entry.text(),/Music or movie request/);
   const setCookie=entry.headers.get('set-cookie');assert.match(setCookie,/SameSite=None; Secure; Partitioned/);const cookie=setCookie.split(';')[0];
   const requestPath=`/api/watch/broadcast/requests?roomId=${encodeURIComponent(party.roomId)}&${context}`;
-  const request=(origin,path=requestPath,method='POST')=>fetch(base+path,{method,headers:{origin,cookie,'content-type':'application/json','idempotency-key':'discord-request'},body:JSON.stringify({query:'A video',lane:'movie'})});
+  const request=(origin,path=requestPath,method='POST')=>fetch(base+path,{method,headers:{origin,cookie,'content-type':'application/json','idempotency-key':'discord-request'},body:JSON.stringify({query:'A video',lane:'movie',browserPlayback:true,browserPrepared:false})});
   const accepted=await request(discordOrigin);assert.equal(accepted.status,201,await accepted.clone().text());const state=await accepted.json();assert.equal(state.sessionId,party.roomId);assert.match(state.current.requestedBy.userId,/^guest:/);
-  assert.equal((await request(discordOrigin)).status,201);assert.equal(resolved.length,1);
+  assert.equal((await request(discordOrigin)).status,201);assert.equal(resolved.length,1);assert.equal(resolved[0].browserPreparation,undefined,'Direct player requests always use the server resolver, even if a stale client sends browser fallback flags');
   const current=await(await fetch(base+`/api/watch/broadcast/state?roomId=${encodeURIComponent(party.roomId)}&${context}`)).json();assert.equal(current.current.requestId,state.current.requestId);
   for(const origin of ['https://other.discordsays.com',`http://${clientId}.discordsays.com`,discordOrigin+'.example',discordOrigin+':444','https://discord.com','null'])assert.equal((await request(origin)).status,403,origin);
   for(const path of ['/api/hearmeout/rooms','/v1/apps','/sandbox/auth/register','/api/watch/broadcast/requests/extra'])assert.equal((await request(discordOrigin,path)).status,403,path);

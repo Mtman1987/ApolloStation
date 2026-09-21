@@ -48,11 +48,6 @@ test('cold resolution starts the shared capture; saved audio or HLS bypasses cap
  assert.equal(calls.filter(url=>url.endsWith('/prepare')).length,1);
 });
 
-test('YouTube browser preparation returns a video ID before starting any worker resolution job',async()=>{
- const resolver=new SpmtHearMeOutSuiteMediaResolver({listExecutionWorkers(){throw Error('No job should start');}});
- await assert.rejects(()=>resolver.resolve({tenantId:'tenant',query:'https://youtu.be/'+id,lane:'movie',browserPreparation:true}),e=>e.code==='youtube-browser-required'&&e.videoId===id);
-});
-
 test('movie searches reuse the worker credential only on the internal catalog route',async()=>{
  const calls=[];
  const provider=new HearMeOutMovieProvider('https://hearmeout-main.fly.dev',async(url,init)=>{

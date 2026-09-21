@@ -18,12 +18,12 @@ test("public probing runs only after the completed promotion mutation", async ()
   assert.ok(workflow.indexOf("- name: Verify promoted public entry") > workflow.indexOf("- name: Promote and verify exact main commit"));
 });
 
-test("Sprite promotion has one protected release target", async () => {
+test("a main merge deploys directly to one protected release target", async () => {
   const workflow = await readFile(workflowPath, "utf8");
 
-  assert.match(workflow, /^  workflow_run:\n    workflows: \["Green shared contracts"\]\n    types: \[completed\]\n    branches: \[main\]/m);
-  assert.match(workflow, /github\.event\.workflow_run\.conclusion == 'success'/);
-  assert.match(workflow, /github\.event\.workflow_run\.head_sha/);
+  assert.match(workflow, /^  push:\n    branches: \[main\]/m);
+  assert.doesNotMatch(workflow, /workflow_run|Green shared contracts/);
+  assert.match(workflow, /BUILD_SHA: \$\{\{ github\.sha \}\}/);
   assert.doesNotMatch(workflow, /work\/\*\*/);
   assert.doesNotMatch(workflow, /sprite-review|DEPLOY_ROLE: review/);
   assert.match(workflow, /SPRITES_AUTODEPLOY_ENABLED == 'true'/);

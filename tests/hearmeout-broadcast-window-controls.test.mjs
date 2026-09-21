@@ -12,6 +12,8 @@ function programFixture(){
 test('broadcast window exposes local audio/video toggles without exposing signed audio inputs',()=>{
   const html=renderHearMeOutBroadcastWindow('client');
   assert.match(html,/id="audio-toggle"/);assert.match(html,/id="video-toggle"/);
+  assert.doesNotMatch(html,/youtube-browser\.js|prepareHearMeOutYoutube|browserPlayback|browserPrepared|youtube-browser-required/);
+  assert.match(html,/body:JSON\.stringify\(\{query,lane,\.\.\.\(selectedItemId/);
   assert.match(html,/class="viewer-controls"/);assert.match(html,/controls-hidden \.viewer-controls\{display:none!important\}/);
   assert.match(html,/main:hover #view-toggle/);assert.match(html,/hmo:toggle-controls/);
   assert.match(html,/@media\(hover:none\)/);

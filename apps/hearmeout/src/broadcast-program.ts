@@ -235,7 +235,7 @@ export class HearMeOutBroadcastProgram {
     if(!media.searchMovies)throw Error('The IPTV movie search is unavailable');
     return media.searchMovies({tenantId:this.binding.tenantId,billedUserId:this.binding.executionUserId,requesterId,query});
   }
-  async request(input:{roomId?:string;requesterId:string;displayName:string;query:string;operationId:string;lane?:HearMeOutMediaLaneV1;selectedItemId?:string;browserPreparation?:boolean},media:HearMeOutSuiteMediaResolverV1){
+  async request(input:{roomId?:string;requesterId:string;displayName:string;query:string;operationId:string;lane?:HearMeOutMediaLaneV1;selectedItemId?:string},media:HearMeOutSuiteMediaResolverV1){
     const roomId=requireRoomId(input.roomId);this.read(roomId);this.touch(roomId);
     const lane=input.lane??'movie';if(lane!=='music'&&lane!=='movie')throw Error('Choose music or movie');
     const query=input.query.trim();if(!query||query.length>300)throw Error('Enter a video link or title');
