@@ -231,7 +231,7 @@ export class HearMeOutBroadcastProgram {
     const item=await media.resolve({tenantId:this.binding.tenantId,billedUserId:this.binding.executionUserId,requesterId:input.requesterId,query,lane,...(input.selectedItemId?{selectedItemId:input.selectedItemId}:{}),operationId:'broadcast:'+id});
     validateItem(item);
     return this.transaction(()=>{if(replay())return this.read(roomId);const session=this.read(roomId),at=new Date().toISOString(),entry={requestId:'broadcast-request:'+id,requestedBy:{userId:input.requesterId,displayName:input.displayName.slice(0,120)||'Viewer'},addedAt:at,item};
-      if(session.current){const automatic=session.queue.findIndex(request=>request.requestedBy.userId===HEARMEOUT_PROGRAM_RADIO_USER_ID);if(automatic<0)session.queue.push(entry);else session.queue.splice(automatic,0,entry);}else{session.current=entry;session.playback={...session.playback,status:'playing',position:0,updatedAt:at};}
+      if(session.current?.requestedBy.userId===HEARMEOUT_PROGRAM_RADIO_USER_ID){session.current=entry;session.playback={...session.playback,status:'playing',position:0,updatedAt:at};}\n      else if(session.current){const automatic=session.queue.findIndex(request=>request.requestedBy.userId===HEARMEOUT_PROGRAM_RADIO_USER_ID);if(automatic<0)session.queue.push(entry);else session.queue.splice(automatic,0,entry);}\n      else{session.current=entry;session.playback={...session.playback,status:'playing',position:0,updatedAt:at};}
       session.revision++;this.write(session);this.db.prepare('INSERT INTO hmo_program_requests(id,intent,request_id) VALUES(?,?,?)').run(id,intent,entry.requestId);return session;
     });
   }
