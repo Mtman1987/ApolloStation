@@ -300,7 +300,21 @@ if [[ "$DEPLOY_ROLE" == "release" ]]; then
 fi
 
 if [[ "$DEPLOY_ROLE" == "release" ]]; then
-  node scripts/sprites/verify-hearmeout-broadcast-test.mjs http://127.0.0.1:8080 "$BUILD_SHA"
+  verified=0
+  for attempt in {1..6}; do
+    if node scripts/sprites/verify-hearmeout-broadcast-test.mjs http://127.0.0.1:8080 "$BUILD_SHA"; then
+      verified=1
+      break
+    fi
+    if (( attempt < 6 )); then
+      echo "Local HearMeOut verification lost the supervised service; retrying ($attempt/6)." >&2
+      sleep 5
+    fi
+  done
+  if (( verified != 1 )); then
+    echo "Local HearMeOut verification did not pass after the supervised service stabilized." >&2
+    exit 1
+  fi
 fi
 
 printf 'Deployed %s commit %s\n' "$DEPLOY_ROLE" "$BUILD_SHA"
