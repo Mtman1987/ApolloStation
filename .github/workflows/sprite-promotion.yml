@@ -78,6 +78,10 @@ jobs:
           checkpoint_status=${PIPESTATUS[0]}
           set -e
           if (( checkpoint_status != 0 )); then
+            if grep -Fq 'No process is running to checkpoint' "$checkpoint_log"; then
+              echo "Sprite is cold; continuing to the detached release starter so it can wake and launch the app."
+              exit 0
+            fi
             if ! grep -Fq 'file exists' "$checkpoint_log"; then
               exit "$checkpoint_status"
             fi
