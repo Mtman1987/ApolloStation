@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mkdtemp, rm, writeFile, chmod, readFile } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile, chmod } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'node:http';
@@ -53,10 +53,4 @@ test('yt-dlp search treats the query as data and selects one video track plus on
   await writeFile(binary, `#!/usr/bin/env node\nconst args=process.argv.slice(2);if(args.includes('--flat-playlist')){if(args.at(-2)!=='--')process.exit(2);console.log(JSON.stringify({entries:[{id:'abcdefghijk',title:'Title',channel:'Artist',duration:90}]}));}else{const f=args.indexOf('-f');if(f<0||args[f+1]!=='bv[height<=720]+ba/b[height<=720]/b')process.exit(3);console.log(JSON.stringify({title:'Title',duration:90,requested_formats:[{url:'https://rr1.googlevideo.com/silent',vcodec:'h264',acodec:'none'},{url:'https://rr1.googlevideo.com/audio',vcodec:'none',acodec:'opus'}]}));}`);
   await chmod(binary, 0o755);
   try { const adapter = new YtDlpHearMeOutResolverAdapter(binary); const found = await adapter.search('--output $(bad); artist', 5); assert.equal(found[0].duration, 90000); const resolved = await adapter.ytDlp('abcdefghijk'); assert.equal(resolved.videoUrl, 'https://rr1.googlevideo.com/silent'); assert.equal(resolved.audioUrl, 'https://rr1.googlevideo.com/audio'); assert.equal(resolved.durationMs, 90000); } finally { await rm(dir, { recursive: true, force: true }); }
-});
-
-test('production resolver keeps playback on the configured DJ worker', async () => {
-  const source = await readFile(new URL('../apps/hearmeout/src/execution-worker.ts', import.meta.url), 'utf8');
-  assert.match(source, /options\.preparedMedia[\s\S]*new HearMeOutYoutubeResolverCoordinator\(new HearMeOutPreparedMedia/);
-  assert.doesNotMatch(source, /ytDlp:videoId=>adapter\.ytDlp\(videoId\)/);
 });

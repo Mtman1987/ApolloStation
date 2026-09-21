@@ -54,9 +54,10 @@ export class HearMeOutPreparedMedia implements HearMeOutYoutubeResolverAdapterV1
 
   async upstream(videoId: string): Promise<HearMeOutResolvedYoutubeV1 | null> {
     if (!/^[A-Za-z0-9_-]{11}$/.test(videoId)) throw Error('Invalid YouTube video id');
-    // The established DJ worker resolves separate video/audio tracks and feeds
-    // both into its FFmpeg HLS encoder. Reading this route starts or reuses that
-    // one worker-owned preparation job; Apollo must not force browser capture.
+    // Reuse saved media first. Cold acquisition explicitly starts one shared
+    // source player; HLS reads themselves never start the URL extractor.
+    const cached=await this.browserCache(videoId);
+    if(!cached.audio&&!cached.hls)await this.browserCache(videoId,'prepare');
     const url = new URL(`/watch/youtube/hls/${videoId}/index.m3u8`, this.options.origin);
     for (let attempt = 0; attempt < 2; attempt++) {
       const response = await this.read(url);
@@ -121,7 +122,7 @@ export class HearMeOutPreparedMedia implements HearMeOutYoutubeResolverAdapterV1
   private read(url: URL, range?: string, signal?: AbortSignal) {
     if (!preparedHearMeOutUrl(url, this.options.origin)) throw Error('Invalid prepared media source');
     const machine = url.searchParams.get('machine');
-    return this.fetchImpl(url, { method: 'GET', redirect: 'manual', headers: { authorization: this.options.authorization, 'user-agent': 'HearMeOut/1.0', ...(range ? { range } : {}), ...(machine ? { 'fly-force-instance-id': machine } : {}) }, signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(55000)]) : AbortSignal.timeout(55000) });
+    return this.fetchImpl(url, { method: 'GET', redirect: 'manual', headers: { authorization: this.options.authorization, 'x-hmo-browser-media':'1', 'user-agent': 'HearMeOut/1.0', ...(range ? { range } : {}), ...(machine ? { 'fly-force-instance-id': machine } : {}) }, signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(55000)]) : AbortSignal.timeout(55000) });
   }
 }
 

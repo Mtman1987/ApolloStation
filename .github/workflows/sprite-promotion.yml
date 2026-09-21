@@ -1,7 +1,9 @@
 name: Release Sprite
 
 on:
-  push:
+  workflow_run:
+    workflows: ["Green shared contracts"]
+    types: [completed]
     branches: [main]
   workflow_dispatch:
 
@@ -11,7 +13,7 @@ permissions:
 jobs:
   release:
     name: Release Sprite
-    if: vars.SPRITES_AUTODEPLOY_ENABLED == 'true'
+    if: (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success') && vars.SPRITES_AUTODEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
     concurrency:
       group: apollo-release-sprite
@@ -23,10 +25,16 @@ jobs:
       EXPECTED_SPRITE_ID: sprite-fec8d6f2-49f0-4e28-bc6d-e8a7ae364280
       SPRITE_PUBLIC_URL: https://web-terminal-bvesa.sprites.app
       DEPLOY_ROLE: release
-      BUILD_SHA: ${{ github.sha }}
+      BUILD_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
       REPOSITORY_URL: https://github.com/${{ github.repository }}.git
       SPRITES_TOKEN: ${{ secrets.SPRITES_TOKEN }}
     steps:
+      - name: Require main for release promotion
+        if: github.event_name == 'workflow_run' && github.event.workflow_run.head_branch != 'main'
+        run: |
+          echo "Release promotion is permitted only from main." >&2
+          exit 1
+
       - name: Check out deployment tooling
         uses: actions/checkout@v5
         with:
@@ -72,15 +80,15 @@ jobs:
           checkpoint_status=${PIPESTATUS[0]}
           set -e
           if (( checkpoint_status != 0 )); then
-            if ! grep -Eiq 'file exists|No process is running to checkpoint' "$checkpoint_log"; then
+            if ! grep -Fq 'file exists' "$checkpoint_log"; then
               exit "$checkpoint_status"
             fi
             checkpoints="$(curl -fsS -H "Authorization: Bearer $SPRITES_TOKEN" "https://api.sprites.dev/v1/sprites/$SPRITE_NAME/checkpoints")"
             if [[ "$(jq 'length' <<<"$checkpoints")" -lt 1 ]]; then
-              echo "Checkpoint unavailable and no existing rollback checkpoint exists." >&2
+              echo "Checkpoint collision reported but no rollback checkpoint exists." >&2
               exit "$checkpoint_status"
             fi
-            echo "A new checkpoint is unavailable; preserving the existing rollback checkpoint and continuing."
+            echo "Sprites reported a duplicate checkpoint version; preserving the existing rollback checkpoint and continuing."
           fi
 
       - name: Apply model-safe deny-by-default network policy
