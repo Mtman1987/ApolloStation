@@ -203,13 +203,11 @@ export function createSupervisedHearMeOutWorker(options: HearMeOutWorkerEnvironm
   const catalog = new HearMeOutWorkerMusicCatalog({ catalogFile: resolve(options.cacheDir, "music-catalog.json") });
   const cache = new HearMeOutWorkerMediaCache({ cacheDir: options.cacheDir });
   const adapter = options.ytDlpBinary ? new YtDlpHearMeOutResolverAdapter(options.ytDlpBinary) : undefined;
-  // Keep the established server-side yt-dlp path available for Twitch requests.
-  // The always-live prepared worker remains the upstream fallback for cached HLS.
-  const prepared = options.preparedMedia ? new HearMeOutPreparedMedia(options.preparedMedia, fetchImpl) : undefined;
-  const resolverAdapter:HearMeOutYoutubeResolverAdapterV1|undefined = adapter && prepared
-    ? {ytDlp:videoId=>adapter.ytDlp(videoId),upstream:videoId=>prepared.upstream(videoId)}
-    : prepared ?? adapter;
-  const resolver = resolverAdapter ? new HearMeOutYoutubeResolverCoordinator(resolverAdapter, options.preparedMedia ? {preparedMediaOrigin:options.preparedMedia.origin} : {}) : undefined;
+  // Search remains local, but playback resolution belongs to the established
+  // always-live DJ worker whenever that worker is configured.
+  const resolver = options.preparedMedia
+    ? new HearMeOutYoutubeResolverCoordinator(new HearMeOutPreparedMedia(options.preparedMedia, fetchImpl), {preparedMediaOrigin:options.preparedMedia.origin})
+    : adapter ? new HearMeOutYoutubeResolverCoordinator(adapter) : undefined;
   const tenantPath = (tenantId: string) => resolve(options.cacheDir, "tenants", createHash("sha256").update(tenantId).digest("hex"));
   return { getAccessToken, worker: new HearMeOutExecutionWorker(client, { workerId: options.workerId, executionTarget: options.executionTarget, capabilities: options.config.capabilities, tenantIds: options.config.tenants.map(tenant => tenant.tenantId), catalog, cache, catalogForTenant: tenantId => new HearMeOutWorkerMusicCatalog({ catalogFile: resolve(tenantPath(tenantId), "music-catalog.json") }), cacheForTenant: tenantId => new HearMeOutWorkerMediaCache({ cacheDir: tenantPath(tenantId) }), ...(adapter ? { search: (query, limit) => adapter.search(query, limit) } : {}), ...(resolver ? { resolver } : {}), ...(options.movieProviderOrigin?{movieProvider:new HearMeOutMovieProvider(options.movieProviderOrigin,fetchImpl,options.preparedMedia?.authorization)}:{}) }) };
 }

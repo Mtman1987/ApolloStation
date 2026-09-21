@@ -55,8 +55,8 @@ test('yt-dlp search treats the query as data and selects one video track plus on
   try { const adapter = new YtDlpHearMeOutResolverAdapter(binary); const found = await adapter.search('--output $(bad); artist', 5); assert.equal(found[0].duration, 90000); const resolved = await adapter.ytDlp('abcdefghijk'); assert.equal(resolved.videoUrl, 'https://rr1.googlevideo.com/silent'); assert.equal(resolved.audioUrl, 'https://rr1.googlevideo.com/audio'); assert.equal(resolved.durationMs, 90000); } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
-test('production resolver keeps server-side yt-dlp ahead of prepared-media fallback', async () => {
+test('production resolver keeps playback on the configured DJ worker', async () => {
   const source = await readFile(new URL('../apps/hearmeout/src/execution-worker.ts', import.meta.url), 'utf8');
-  assert.match(source, /ytDlp:videoId=>adapter\.ytDlp\(videoId\)/);
-  assert.match(source, /upstream:videoId=>prepared\.upstream\(videoId\)/);
+  assert.match(source, /options\.preparedMedia[\s\S]*new HearMeOutYoutubeResolverCoordinator\(new HearMeOutPreparedMedia/);
+  assert.doesNotMatch(source, /ytDlp:videoId=>adapter\.ytDlp\(videoId\)/);
 });

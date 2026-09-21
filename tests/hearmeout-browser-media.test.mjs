@@ -32,20 +32,15 @@ test('a browser denial never falls back to a worker download or uploads empty da
  try{await assert.rejects(()=>prepareHearMeOutYoutube(id,'music',()=>{}),/this browser.*403/);assert.equal(calls.length,3);}finally{globalThis.fetch=original;}
 });
 
-test('cold resolution starts the shared capture; saved audio or HLS bypasses capture',async()=>{
- let audio=false,hls=false;const calls=[];
+test('cold resolution uses the DJ worker two-input HLS route without browser capture',async()=>{
+ const calls=[];
  const prepared=new HearMeOutPreparedMedia({origin,authorization,tenantId:'tenant'},async(url,init)=>{
   calls.push(String(url));assert.equal(init.headers.authorization,authorization);
   assert.equal(init.headers.cookie,undefined);
-  if(String(url).endsWith('/prepare')){assert.equal(init.method,'POST');assert.equal(init.body,undefined);return Response.json({hls:false,preparing:true},{status:202});}
-  if(String(url).includes('/browser/'))return Response.json({audio,hls});
-  assert.equal(init.headers['x-hmo-browser-media'],'1');return new Response('#EXTM3U\npart001.ts');
+  assert.equal(init.method,'GET');assert.equal(init.headers['x-hmo-browser-media'],undefined);
+  return new Response('#EXTM3U\npart001.ts');
  });
- assert.equal((await prepared.upstream(id)).stage,'upstream');assert.equal(calls.length,3);
- assert.equal(calls[1],origin+'/watch/youtube/browser/'+id+'/prepare');
- audio=true;assert.equal((await prepared.upstream(id)).stage,'upstream');assert.equal(calls.length,5);
- audio=false;hls=true;assert.equal((await prepared.upstream(id)).stage,'upstream');assert.equal(calls.length,7);
- assert.equal(calls.filter(url=>url.endsWith('/prepare')).length,1);
+ assert.equal((await prepared.upstream(id)).stage,'upstream');assert.deepEqual(calls,[origin+'/watch/youtube/hls/'+id+'/index.m3u8']);
 });
 
 test('movie searches reuse the worker credential only on the internal catalog route',async()=>{
