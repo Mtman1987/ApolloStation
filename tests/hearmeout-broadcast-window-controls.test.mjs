@@ -5,6 +5,7 @@ import {broadcastView,renderHearMeOutBroadcastWindow} from '../apps/hearmeout/di
 function programFixture(){
   return {
     binding:{tenantId:'tenant'},
+    getRoom(){return {roomId:'party-room'};},
     getSession(){return {revision:1,playback:{status:'playing',position:0,updatedAt:new Date().toISOString(),muted:false,volume:100},current:{requestId:'one',item:{itemId:'abcdefghijk',type:'music',title:'Music video',source:'youtube',playbackUrl:'https://rr1.googlevideo.com/video',metadata:{videoId:'abcdefghijk',audioPlaybackUrl:'https://rr1.googlevideo.com/private-audio'}}},queue:[{requestId:'two',item:{itemId:'two',type:'music',title:'Next',source:'youtube',playbackUrl:'https://rr1.googlevideo.com/video2',metadata:{audioPlaybackUrl:'https://rr1.googlevideo.com/private-audio2'}}}]};}
   };
 }

@@ -113,9 +113,14 @@ export class HearMeOutBroadcastProgram {
    * controls and screen-share chunks update last_active_at. */
   pruneIdleRooms(maxIdleMs=HEARMEOUT_IDLE_PLAYER_TTL_MS,now=new Date().toISOString()){
     const cutoff=new Date(Date.parse(now)-Math.max(60_000,maxIdleMs)).toISOString();
-    const rows=this.db.prepare('SELECT id FROM hmo_program_rooms WHERE id<>? AND COALESCE(last_active_at,created_at)<=?').all(HEARMEOUT_SINGLE_PROGRAM_ID,cutoff) as Array<{id:string}>;
+    // A system room lives until its owner deletes it. Its player must share
+    // that lifetime, including when the queue is empty and nobody is watching.
+    const hasRooms=this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='hmo_rooms'").get();
+    const persistentSources=new Set(hasRooms?this.db.prepare("SELECT room_id FROM hmo_rooms WHERE tenant_id=? AND json_extract(body,'$.systemRoom')=1").all(this.binding.tenantId).map(row=>String(row.room_id)):[]);
+    const rows=this.db.prepare('SELECT id,source_room_id FROM hmo_program_rooms WHERE id<>? AND COALESCE(last_active_at,created_at)<=?').all(HEARMEOUT_SINGLE_PROGRAM_ID,cutoff) as Array<{id:string;source_room_id:string|null}>;
     const removed:string[]=[];
     for(const row of rows){
+      if(row.source_room_id&&persistentSources.has(row.source_room_id))continue;
       let session:HearMeOutMediaSessionV1;
       try{session=this.read(row.id);}catch(error){if((error as {status?:number}).status===404){if(this.deleteRoom(row.id))removed.push(row.id);continue;}throw error;}
       if(session.current||session.queue.length||session.playback.status==='playing')continue;

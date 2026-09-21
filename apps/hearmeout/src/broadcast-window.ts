@@ -1,3 +1,4 @@
+import {PUBLIC_LOUNGE_ID} from './lounge-room.js';
 import {HEARMEOUT_DISCORD_HANDSHAKE_JS} from "./discord-activity-handshake.js";
 import type {HearMeOutScreenBroadcast} from "./screen-broadcast.js";
 import type {IncomingMessage,ServerResponse} from 'node:http';
@@ -13,7 +14,8 @@ export function broadcastView(program:HearMeOutBroadcastProgram,configured:boole
   if(!roomId)throw Object.assign(Error('Choose a watch party'),{status:400});
   const session=program.getSession(program.binding.tenantId,roomId);
   const visible=(request:typeof session.current)=>{if(!request)return request;const metadata=request.item.metadata?Object.fromEntries(Object.entries(request.item.metadata).filter(([key])=>key!=='audioPlaybackUrl')):undefined;return {...request,item:{...request.item,...(metadata?{metadata}:{})}};};
-  return {sessionId:roomId,current:visible(session.current),queue:session.queue.map(request=>visible(request)!),playback:session.playback,revision:session.revision,broadcast:{configured,ready,...(epoch?{epoch}:{}),playbackUrl:'/api/watch/sessions/'+encodeURIComponent(roomId)+'/broadcast/index.m3u8'}};
+  const publicId=program.getRoom(roomId).sourceRoomId===PUBLIC_LOUNGE_ID?PUBLIC_LOUNGE_ID:roomId;
+  return {sessionId:publicId,current:visible(session.current),queue:session.queue.map(request=>visible(request)!),playback:session.playback,revision:session.revision,broadcast:{configured,ready,...(epoch?{epoch}:{}),playbackUrl:'/api/watch/sessions/'+encodeURIComponent(publicId)+'/broadcast/index.m3u8'}};
 }
 function guest(request:IncomingMessage,response:ServerResponse){
   let token=String(request.headers.cookie??'').match(/(?:^|;\s*)hmo_viewer=([a-f0-9]{64})(?:;|$)/)?.[1];
@@ -72,7 +74,7 @@ export async function handleHearMeOutBroadcastWindow(request:IncomingMessage,res
     const alias=url.pathname.match(/^\/api\/watch\/sessions\/([^/]+)\//)?.[1];
     const selected=url.searchParams.get('roomId')??(alias?decodeURIComponent(alias):undefined);
     if(selected&&['main-broadcast','discord-watch-room','discord-music-room'].includes(selected))throw Object.assign(Error('This legacy shared player no longer exists. Choose a room-owned watch party.'),{status:410});
-    const roomId=selected??'';
+    const roomId=selected===PUBLIC_LOUNGE_ID?(program.hostedRoom(PUBLIC_LOUNGE_ID)?.roomId??selected):(selected??'');
     if(!entry&&!roomId)throw Object.assign(Error('Choose a watch party'),{status:400});
     if(roomId)program.getRoom(roomId);
     if(screenFeed){if(request.method!=='GET'||!screens)return send(response,404,{error:'Screen share not found'});await screens.serve(roomId,screenFeed[2]!,screenFeed[3]!,response);return true;}

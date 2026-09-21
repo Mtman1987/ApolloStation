@@ -47,11 +47,14 @@ try{
   await app.getByRole('button',{name:'Show HearMeOut DJ',exact:true}).click();
   await app.getByRole('button',{name:'Watch together · Movies and watch player',exact:true}).waitFor({timeout:60000});
  }
+ let window;
+ async function playing(){await window.locator('video').evaluate(v=>new Promise((resolve,reject)=>{const limit=Date.now()+25000;const timer=setInterval(()=>{if(!v.paused&&v.currentTime>.1&&v.videoWidth>0){clearInterval(timer);resolve();}else if(Date.now()>limit){clearInterval(timer);reject(Error('Video not playing: '+v.readyState+' '+v.error?.message));}},100)}));}
+ if(!process.env.HMO_TEST_LOUNGE_ONLY){
  await createRoom('First room');
  assert.equal(await app.locator('video,audio,[data-hmo-broadcast-frame]').count(),0);
  const firstRoomId=rooms.listRooms(owner)[0].roomId;assert.equal(program.hostedRoom(firstRoomId),undefined);assert.equal(requests.length,0);
  await app.getByRole('button',{name:'Watch together · Movies and watch player',exact:true}).click();
- let window=app.frameLocator('[data-hmo-broadcast-frame]');
+ window=app.frameLocator('[data-hmo-broadcast-frame]');
  await window.getByRole('heading',{name:'Watch parties',exact:true}).waitFor();
  await window.getByRole('textbox',{name:'Watch party name',exact:true}).fill('First movie night');await window.getByRole('button',{name:'Create watch party',exact:true}).click();
  await window.getByText('Nothing playing',{exact:true}).waitFor({state:'attached'});
@@ -74,7 +77,7 @@ try{
  await window.locator('#request-form').evaluate(form=>{form.requestSubmit();form.requestSubmit();});
  await window.getByRole('heading',{name:'My requested movie',exact:true}).waitFor();
  assert.equal(requestPosts,3,'Retry sends once even with rapid repeated submissions');assert.equal(requestKeys[0],requestKeys[1],'An HTML response cannot confirm whether the operation ran, so retry keeps its key');assert.notEqual(requestKeys[1],requestKeys[2],'A known failed request must be retried with a fresh operation key');
- async function playing(){await window.locator('video').evaluate(v=>new Promise((resolve,reject)=>{const limit=Date.now()+25000;const timer=setInterval(()=>{if(!v.paused&&v.currentTime>.1&&v.videoWidth>0){clearInterval(timer);resolve();}else if(Date.now()>limit){clearInterval(timer);reject(Error('Video not playing: '+v.readyState+' '+v.error?.message));}},100)}));}
+
  await playing();assert.equal(await window.locator('video').isVisible(),true);assert.equal(requests.length,2);assert.equal(requests[1].query,'My requested movie');assert.equal(requests[0].lane,'movie');
  assert.equal(await window.locator('#error').textContent(),'');
  assert.equal(await app.locator('video,audio').count(),0,'No legacy music or video player exists behind the iframe');
@@ -91,11 +94,33 @@ try{
  await app.getByRole('button',{name:'Close watch player',exact:true}).click();
  assert.equal(await app.locator('video,audio,[data-hmo-broadcast-frame]').count(),0);
  const deleteRoom=app.getByRole('button',{name:'Delete room',exact:true});if(!await deleteRoom.isVisible())await app.getByRole('button',{name:'Room controls',exact:true}).click();await deleteRoom.click();
- await app.locator('.hmo-console').waitFor({state:'detached'});assert.equal(rooms.listRooms(owner).length,0);assert.equal(program.hostedRoom(firstRoomId),undefined);assert.throws(()=>program.getSession('tenant',firstPartyId),/not found/);
+ await app.locator('.hmo-console').waitFor({state:'detached'});assert.deepEqual(rooms.listRooms(owner).map(room=>room.roomId),['system-spacemountainlive-lounge']);assert.equal(program.hostedRoom(firstRoomId),undefined);assert.throws(()=>program.getSession('tenant',firstPartyId),/not found/);
  await page.evaluate(()=>{const f=document.querySelector('iframe');f.contentWindow.postMessage({protocol:'spmt.surface',version:1,type:'page.open',appId:'hearmeout',pageId:'home'},new URL(f.src).origin)});
  await createRoom('Second room');assert.equal(await app.locator('video,audio,[data-hmo-broadcast-frame]').count(),0);
- await app.getByRole('button',{name:'Watch together · Movies and watch player',exact:true}).click();window=app.frameLocator('[data-hmo-broadcast-frame]');await window.getByRole('heading',{name:'Watch parties',exact:true}).waitFor();assert.equal(await window.locator('.party-card').filter({hasText:'First movie night'}).count(),0,'Deleting the hosting HMO room removes its player from the directory');assert.equal(program.listRooms().length,0);
+ await app.getByRole('button',{name:'Watch together · Movies and watch player',exact:true}).click();window=app.frameLocator('[data-hmo-broadcast-frame]');await window.getByRole('heading',{name:'Watch parties',exact:true}).waitFor();assert.equal(await window.locator('.party-card').filter({hasText:'First movie night'}).count(),0,'Deleting the hosting HMO room removes its player from the directory');assert.equal(program.listRooms().length,1);assert.equal(program.listRooms()[0].sourceRoomId,'system-spacemountainlive-lounge');
  await page.evaluate(()=>{const f=document.querySelector('iframe');f.contentWindow.postMessage({protocol:'spmt.surface',version:1,type:'page.open',appId:'hearmeout',pageId:'rooms'},new URL(f.src).origin)});
  await app.locator('.hmo-console').waitFor({state:'detached'});assert.equal(await app.locator('video,audio,[data-hmo-broadcast-frame]').count(),0);
- assert.deepEqual(errors,[]);console.log('PASS: mobile HMO starts without a player, creates one only on demand, sustains real playback through shell updates, closes the local window without changing playback, and deleting the hosting HMO room removes its player so no orphan remains in the directory.');
+ }else await app.getByRole('button',{name:'Browse Rooms',exact:true}).click();
+ // The permanent lounge opens the existing watch window without creating a player.
+ const loungeId='system-spacemountainlive-lounge',loungeParty=program.hostedRoom(loungeId);
+ const loungeCard=app.locator('.hmo-room-card').filter({hasText:'24-Hour Lounge'});
+ await loungeCard.getByRole('button',{name:'Open',exact:true}).click();
+ window=app.frameLocator('[data-hmo-broadcast-frame]');
+ await window.getByText('Nothing playing',{exact:true}).waitFor({state:'attached'});
+ await program.request({roomId:loungeParty.roomId,query:'Lounge fixture',requesterId:'owner',displayName:'Owner',operationId:'lounge-fixture'}, {async resolve(){return {itemId:'lounge-fixture',title:'Lounge fixture',type:'movie',source:'fixture',playbackUrl:'https://media.example'+mediaPath,durationSeconds:180}}});
+ await playing();
+ const publicView=await browser.newPage();
+ await publicView.goto(origin+'/watch?roomId='+loungeId);
+ await publicView.locator('video').evaluate(v=>new Promise((resolve,reject)=>{const deadline=Date.now()+25000;const timer=setInterval(()=>{if(!v.paused&&v.currentTime>.1&&v.videoWidth>0){clearInterval(timer);resolve();}else if(Date.now()>deadline){clearInterval(timer);reject(Error('Public lounge window did not display broadcast'));}},100)}));
+ const shared=program.getSession('tenant',loungeParty.roomId),sharedIdentity=program.getBroadcastIdentity('tenant',loungeParty.roomId);
+ assert.equal(await publicView.locator('#request-form').isVisible(),false,'Public window has no playback controls');
+ const encoders=(await(await fetch(origin+'/health/ready')).json()).broadcast.startedProcesses;
+ await publicView.close();
+ await app.getByRole('button',{name:'Close watch player',exact:true}).click();
+ assert.equal(program.getSession('tenant',loungeParty.roomId).current.requestId,shared.current.requestId,'Closing all windows must not stop the room player');
+ assert.deepEqual(program.getBroadcastIdentity('tenant',loungeParty.roomId),sharedIdentity);
+ assert.equal((await(await fetch(origin+'/health/ready')).json()).broadcast.startedProcesses,encoders,'Viewing windows must not start another encoder');
+ assert.equal(program.listRooms().filter(room=>room.sourceRoomId===loungeId).length,1);
+ console.log('PASS: permanent lounge opens its existing watch window; a public window displays the same broadcast without controls, a new encoder, or changing playback when closed.');
+ assert.deepEqual(errors,[]);if(!process.env.HMO_TEST_LOUNGE_ONLY)console.log('PASS: mobile HMO starts without a player, creates one only on demand, sustains real playback through shell updates, closes the local window without changing playback, and deleting the hosting HMO room removes its player so no orphan remains in the directory.');
 }finally{await browser?.close();if(shell)await new Promise(r=>shell.close(r));await host?.close();if(spmt)await new Promise(r=>spmt.close(r));rooms.close();program.close();await rm(directory,{recursive:true,force:true});}
