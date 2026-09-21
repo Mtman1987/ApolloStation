@@ -1,3 +1,4 @@
+# Diagnostic trigger: nonblocking Qwen release in progress
 name: Manual Sprite Diagnostics
 
 on:
