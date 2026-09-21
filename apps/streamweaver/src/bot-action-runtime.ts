@@ -105,12 +105,11 @@ function detectStreamWeaverBotActionLegacy(message: string, now = new Date()): S
 
 export class StreamWeaverBotActionConsumer {
   readonly id = "streamweaver.bot-actions" as const;
-  constructor(private readonly executor: StreamWeaverBotActionExecutorV1, private readonly egress: StreamWeaverBotActionEgressV1, private readonly replies?: StreamWeaverBotActionReplies, private readonly channelAllowed?: (message: NormalizedChatMessageV1) => boolean, private readonly allowMedia = true) {}
+  constructor(private readonly executor: StreamWeaverBotActionExecutorV1, private readonly egress: StreamWeaverBotActionEgressV1, private readonly replies?: StreamWeaverBotActionReplies, private readonly channelAllowed?: (message: NormalizedChatMessageV1) => boolean) {}
   accepts(message: NormalizedChatMessageV1): boolean { return !message.actor.isBot && this.willHandle(message); }
-  willHandle(message: NormalizedChatMessageV1): boolean { const request=detectStreamWeaverBotAction(message.text, new Date(message.occurredAt)); return (this.channelAllowed?.(message) ?? true) && Boolean(request) && (this.allowMedia || !request!.action.startsWith("hmo.media.")); }
+  willHandle(message: NormalizedChatMessageV1): boolean { return (this.channelAllowed?.(message) ?? true) && Boolean(detectStreamWeaverBotAction(message.text, new Date(message.occurredAt))); }
   async deliver(delivery: NormalizedChatDeliveryV1): Promise<void> {
     if (this.channelAllowed && !this.channelAllowed(delivery.message)) return;
-    if (!this.allowMedia && detectStreamWeaverBotAction(delivery.message.text, new Date(delivery.message.occurredAt))?.action.startsWith("hmo.media.")) return;
     const request = detectStreamWeaverBotAction(delivery.message.text, new Date(delivery.message.occurredAt));
     if (!request) return;
     const role = providerRole(delivery.message);
