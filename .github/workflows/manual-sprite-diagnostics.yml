@@ -1,4 +1,4 @@
-# Diagnostic trigger: nonblocking Qwen release in progress
+# Diagnostic trigger: Lounge handoff failure 2026-09-21T05:54:38.035Z
 name: Manual Sprite Diagnostics
 
 on:
