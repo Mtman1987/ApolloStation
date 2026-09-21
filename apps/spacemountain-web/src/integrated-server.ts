@@ -30,6 +30,21 @@ export function createIntegratedSpaceMountainWebHost(options:IntegratedSpaceMoun
       if (!sameOrigin&&!activityRequest) return json(response, 403, { error: "cross_origin_request", message: "Open this action from the signed-in app." });
     }
 
+    if(request.method === "GET" && url.pathname === "/sandbox/health") {
+      const fetchHealth = async (origin: string, path: string) => {
+        try {
+          const result = await (options.fetchImpl ?? fetch)(`${origin}${path}`, {signal: AbortSignal.timeout(5000), redirect: "manual"});
+          return {ready: result.ok, detail: await result.json()};
+        } catch { return {ready: false, detail: {error: "Health endpoint unavailable"}}; }
+      };
+      const [core, ...apps] = await Promise.all([
+        fetchHealth(`http://127.0.0.1:${basePort}`, "/sandbox/health"),
+        ...Object.entries(options.greenAppOrigins ?? {}).map(async ([appId, origin]) => ({appId, ...await fetchHealth(origin, "/health/ready")})),
+      ]);
+      const ready = core.ready && apps.every(app => app.ready);
+      return json(response, ready ? 200 : 503, {...core.detail, ready, apps: Object.fromEntries(apps.map(({appId, ...health}) => [appId, health]))});
+    }
+
     if(request.method==="GET"&&(url.pathname==="/apps/companion"||url.pathname==="/apps/mountainview")) { response.writeHead(302,{location:url.pathname==="/apps/companion"?"/downloads/companion":"/downloads/mountainview","cache-control":"no-store"}); response.end(); return; }
     if(SPMT_OVERLAY.test(url.pathname))return proxyDirect(request,response,options.spmtOrigin,url.pathname+url.search,true);
     if(NEBULA_RUNTIME.test(url.pathname)&&options.nebulaArcadeOrigin)return proxyDirect(request,response,options.nebulaArcadeOrigin,url.pathname+url.search,true);

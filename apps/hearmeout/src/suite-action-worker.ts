@@ -17,7 +17,7 @@ export class HearMeOutSuiteActionWorker {
   private readonly startedAt = new Date().toISOString();
   private lastReportAt = 0;
   private readonly capabilities: string[];
-  constructor(private readonly client: HearMeOutSuiteActionWorkerClientV1, private readonly executor: HearMeOutSuiteActionExecutorV1, private readonly options: { workerId: string; actions: HearMeOutBotActionIdV1[]; tenantIds?: string[] }) { this.capabilities = options.actions.map(spmtSuiteActionCapabilityId); }
+  constructor(private readonly client: HearMeOutSuiteActionWorkerClientV1, private readonly executor: HearMeOutSuiteActionExecutorV1, private readonly options: { workerId: string; actions: HearMeOutBotActionIdV1[]; tenantIds?: string[]; onHealth?: (failure: string) => void }) { this.capabilities = options.actions.map(spmtSuiteActionCapabilityId); }
   async runOnce() {
     await this.reportIfDue();
     const job = await this.client.claimAnyExecutionJob(this.options.workerId, "sprite", { executionOwner: "hearmeout", capabilityIds: this.capabilities, ...(this.options.tenantIds ? { tenantIds: this.options.tenantIds } : {}), leaseMs: 300_000 });
@@ -37,8 +37,24 @@ export class HearMeOutSuiteActionWorker {
     }
     return job.id;
   }
-  async run(signal: AbortSignal, pollMs = 500) { while (!signal.aborted) { if (!await this.runOnce()) await pause(pollMs, signal); } }
-  async report() { this.lastReportAt = Date.now(); return this.client.reportExecutionWorker({ executionOwner: "hearmeout", workerId: this.options.workerId, executionTarget: "sprite", state: "ready", capabilityIds: this.capabilities, ...(this.options.tenantIds ? { tenantIds: this.options.tenantIds } : {}), providerHealthy: true, startedAt: this.startedAt, leaseMs: 30_000, metrics: { completedJobs: this.completedJobs, failedJobs: this.failedJobs, inputUnits: 0, outputUnits: 0 } }); }
+  async run(signal: AbortSignal, pollMs = 500) {
+    let failures = 0;
+    while (!signal.aborted) {
+      try {
+        const job = await this.runOnce();
+        failures = 0;
+        this.options.onHealth?.("");
+        if (!job) await pause(pollMs, signal);
+      } catch (error) {
+        if (signal.aborted) break;
+        this.options.onHealth?.(safe(error));
+        const delay = Math.min(30_000, Math.max(500, pollMs) * 2 ** Math.min(failures++, 6));
+        console.error(`HearMeOut action worker: ${safe(error)}; retrying in ${delay}ms`);
+        await pause(delay, signal);
+      }
+    }
+  }
+  async report() { const result = await this.client.reportExecutionWorker({ executionOwner: "hearmeout", workerId: this.options.workerId, executionTarget: "sprite", state: "ready", capabilityIds: this.capabilities, ...(this.options.tenantIds ? { tenantIds: this.options.tenantIds } : {}), providerHealthy: true, startedAt: this.startedAt, leaseMs: 30_000, metrics: { completedJobs: this.completedJobs, failedJobs: this.failedJobs, inputUnits: 0, outputUnits: 0 } }); this.lastReportAt = Date.now(); return result; }
   private reportIfDue() { return Date.now() - this.lastReportAt >= 15_000 ? this.report() : Promise.resolve(undefined); }
 }
 
@@ -46,4 +62,4 @@ export const ALL_HEARMEOUT_SUITE_ACTIONS = [...HEARMEOUT_BOT_ACTIONS];
 function resultText(action: string, result: Record<string, unknown>) { if (typeof result.text === "string" && result.text.trim()) return result.text.trim().slice(0, 8_000); return `${action} completed.`; }
 function simulationResult(input: SpmtSuiteActionJobInputV1, body: string): PublishSimulationRoomEventInputV1 { const room = input.args.roomId || input.source.roomId, channelId = input.source.channelId; return { roomId: room ? `hearmeout:${room}` : input.source.provider && channelId ? `${input.source.provider}:${input.source.connectionId ?? input.source.kind}:${channelId}` : `streamweaver:${input.source.kind}:${input.actor.userId}`, lane: "app", direction: "preview", title: `${input.action} simulation completed`, body, ...(input.source.provider ? { provider: input.source.provider } : {}), ...(input.source.connectionId ? { connectionId: input.source.connectionId } : {}), ...(channelId ? { channelId } : {}), data: { action: input.action, phase: "completed", executionOwner: "hearmeout" } }; }
 function safe(error: unknown) { return (error instanceof Error ? error.message : "HearMeOut suite action failed").replace(/(bearer|token|secret|password|authorization)\s*[:=]\s*\S+/gi, "$1=[redacted]").replace(/[\r\n]+/g, " ").slice(0, 900); }
-function pause(ms: number, signal: AbortSignal) { return new Promise<void>((done) => { if (signal.aborted) return done(); const timer = setTimeout(done, ms); signal.addEventListener("abort", () => { clearTimeout(timer); done(); }, { once: true }); }); }
+function pause(ms: number, signal: AbortSignal) { return new Promise<void>((done) => { if (signal.aborted) return done(); const finish = () => { clearTimeout(timer); signal.removeEventListener("abort", finish); done(); }; const timer = setTimeout(finish, ms); signal.addEventListener("abort", finish, { once: true }); }); }

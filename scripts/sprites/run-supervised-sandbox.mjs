@@ -165,12 +165,11 @@ const spmt = start("SPMT", "apps/spmt-service/dist/provider-identity-start.js", 
 await waitForUrl(spmt, `http://127.0.0.1:${spmtPort}/health/ready`, "SPMT");
 const spmtOrigin = `http://127.0.0.1:${spmtPort}`;
 
-const dshWeb = start("Discord Stream Hub web", "apps/discord-stream-hub/dist/web-server.js", { ...common, ...liveReadEnvironment, SPMT_ORIGIN: spmtOrigin, DSH_DATABASE_PATH: resolve(dataRoot, "discord-stream-hub-live-sandbox.sqlite"), DSH_RUNTIME_CONFIG_PATH: resolve("config/discord-stream-hub-runtime.sandbox.v1.json"), DSH_WORKER_CREDENTIAL: dshWorkerCredential, HOST: "127.0.0.1", PORT: String(dshWebPort) });
-const streamweaverWeb = start("StreamWeaver web", "apps/streamweaver/dist/web-server.js", { ...common, ...(flowOpenAiKey ? { OPENAI_API_KEY:flowOpenAiKey, SPMT_PRIVATE_FLOW_OPENAI_ENABLED:"1", STREAMWEAVER_PRIVATE_AI_DRAFTS_ENABLED: "1" } : {}), ...(avatarAiEnabled?{STREAMWEAVER_AVATAR_BUILD_ENABLED:"1"}:{}), ...liveReadEnvironment, SPMT_ORIGIN: spmtOrigin, STREAMWEAVER_DATABASE_PATH: resolve(dataRoot, "streamweaver-provider-sandbox.sqlite"), STREAMWEAVER_WORKER_CREDENTIAL: streamweaverWorkerCredential, CHAT_GATEWAY_CONNECTIONS: "[]", HOST: "127.0.0.1", PORT: String(streamweaverWebPort) });
+const dshWeb = startRecoverable("Discord Stream Hub web", "apps/discord-stream-hub/dist/web-server.js", { ...common, ...liveReadEnvironment, SPMT_ORIGIN: spmtOrigin, DSH_DATABASE_PATH: resolve(dataRoot, "discord-stream-hub-live-sandbox.sqlite"), DSH_RUNTIME_CONFIG_PATH: resolve("config/discord-stream-hub-runtime.sandbox.v1.json"), DSH_WORKER_CREDENTIAL: dshWorkerCredential, HOST: "127.0.0.1", PORT: String(dshWebPort) });
+const streamweaverWeb = startRecoverable("StreamWeaver web", "apps/streamweaver/dist/web-server.js", { ...common, ...(flowOpenAiKey ? { OPENAI_API_KEY:flowOpenAiKey, SPMT_PRIVATE_FLOW_OPENAI_ENABLED:"1", STREAMWEAVER_PRIVATE_AI_DRAFTS_ENABLED: "1" } : {}), ...(avatarAiEnabled?{STREAMWEAVER_AVATAR_BUILD_ENABLED:"1"}:{}), ...liveReadEnvironment, SPMT_ORIGIN: spmtOrigin, STREAMWEAVER_DATABASE_PATH: resolve(dataRoot, "streamweaver-provider-sandbox.sqlite"), STREAMWEAVER_WORKER_CREDENTIAL: streamweaverWorkerCredential, CHAT_GATEWAY_CONNECTIONS: "[]", HOST: "127.0.0.1", PORT: String(streamweaverWebPort) });
 const hearMeOutWeb = startRecoverable("HearMeOut web", "apps/hearmeout/dist/web-server.js", { ...common, ...liveReadEnvironment, SPMT_ORIGIN: spmtOrigin, ...Object.fromEntries(["LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET"].filter(key => process.env[key]).map(key => [key, process.env[key]])), HEARMEOUT_ROOM_DATABASE_PATH: resolve(dataRoot, "hearmeout-room-sandbox.sqlite"), HEARMEOUT_WORKER_CREDENTIAL: hearMeOutWorkerCredential, ...hearMeOutCutover, HOST: "127.0.0.1", PORT: String(hearMeOutWebPort) });
-const mountainViewWeb = start("MountainView web", "apps/mountainview/dist/web-server.js", { ...common, ...liveReadEnvironment, SPMT_ORIGIN: spmtOrigin, MOUNTAINVIEW_DATABASE_PATH: resolve(dataRoot, "mountainview-green-sandbox.sqlite"), HOST: "127.0.0.1", PORT: String(mountainViewWebPort) });
-const companionWeb = start("Companion web", "apps/companion/dist/web-server.js", { ...common, ...liveReadEnvironment, SPMT_ORIGIN: spmtOrigin, HOST: "127.0.0.1", PORT: String(companionWebPort) });
-for (const child of [dshWeb, streamweaverWeb, mountainViewWeb, companionWeb]) child.once("exit", (code, signal) => { if (!stopping) void stop(signal === "SIGINT" || signal === "SIGTERM" ? 0 : code ?? (signal ? 1 : 0)); });
+const mountainViewWeb = startRecoverable("MountainView web", "apps/mountainview/dist/web-server.js", { ...common, ...liveReadEnvironment, SPMT_ORIGIN: spmtOrigin, MOUNTAINVIEW_DATABASE_PATH: resolve(dataRoot, "mountainview-green-sandbox.sqlite"), HOST: "127.0.0.1", PORT: String(mountainViewWebPort) });
+const companionWeb = startRecoverable("Companion web", "apps/companion/dist/web-server.js", { ...common, ...liveReadEnvironment, SPMT_ORIGIN: spmtOrigin, HOST: "127.0.0.1", PORT: String(companionWebPort) });
 await Promise.all([
   waitForUrl(dshWeb, `http://127.0.0.1:${dshWebPort}/health/ready`, "Discord Stream Hub web"),
   waitForUrl(streamweaverWeb, `http://127.0.0.1:${streamweaverWebPort}/health/ready`, "StreamWeaver web"),
@@ -179,7 +178,7 @@ await Promise.all([
   waitForUrl(companionWeb, `http://127.0.0.1:${companionWebPort}/health/ready`, "Companion web"),
 ]);
 
-const chatGateway = start("Chat Gateway", "apps/chat-gateway/dist/service-start.js", {
+const chatGateway = startRecoverable("Chat Gateway", "apps/chat-gateway/dist/service-start.js", {
   ...common,
   SPMT_ORIGIN: spmtOrigin,
   CHAT_GATEWAY_DATABASE_PATH: resolve(dataRoot, "chat-gateway-sandbox.sqlite"),
@@ -195,15 +194,13 @@ const chatGateway = start("Chat Gateway", "apps/chat-gateway/dist/service-start.
   NEBULA_ARCADE_DATABASE_PATH: resolve(dataRoot, "nebula-arcade-provider-sandbox.sqlite"),
   NEBULA_ARCADE_RUNTIME_CONFIG_PATH: resolve("config/nebula-arcade-runtime.sandbox.v1.json"),
 });
-chatGateway.once("exit", (code, signal) => { if (!stopping) void stop(signal === "SIGINT" || signal === "SIGTERM" ? 0 : code ?? (signal ? 1 : 0)); });
-const dsh = start("Discord Stream Hub live worker", "apps/discord-stream-hub/dist/live-worker-start.js", {
+const dsh = startRecoverable("Discord Stream Hub live worker", "apps/discord-stream-hub/dist/live-worker-start.js", {
   ...common,
   SPMT_ORIGIN: spmtOrigin,
   DSH_DATABASE_PATH: resolve(dataRoot, "discord-stream-hub-live-sandbox.sqlite"),
   DSH_RUNTIME_CONFIG_PATH: resolve("config/discord-stream-hub-runtime.sandbox.v1.json"),
   DSH_WORKER_CREDENTIAL: dshWorkerCredential,
 });
-dsh.once("exit", (code, signal) => { if (!stopping) void stop(signal === "SIGINT" || signal === "SIGTERM" ? 0 : code ?? (signal ? 1 : 0)); });
 const hearMeOut = startRecoverable("HearMeOut media worker", "apps/hearmeout/dist/execution-worker-start.js", {
   ...common,
   SPMT_ORIGIN: spmtOrigin,
@@ -215,7 +212,7 @@ const hearMeOut = startRecoverable("HearMeOut media worker", "apps/hearmeout/dis
   ...hearMeOutMediaEnvironment,
 });
 if (stellarWorkerCredential) {
-  const stellar = start("Stellar Core worker", "apps/stellar-core/dist/worker-start.js", {
+  const stellar = startRecoverable("Stellar Core worker", "apps/stellar-core/dist/worker-start.js", {
     ...common,
     SPMT_ORIGIN: spmtOrigin,
     STELLAR_PROVIDER_ORIGIN: "http://127.0.0.1:8081",
@@ -225,12 +222,11 @@ if (stellarWorkerCredential) {
     ...speechEnvironment,
     ...(llm?.pid ? { STELLAR_PROVIDER_PID: String(llm.pid) } : {}),
   });
-  stellar.once("exit", (code, signal) => { if (!stopping) void stop(signal === "SIGINT" || signal === "SIGTERM" ? 0 : code ?? (signal ? 1 : 0)); });
   await waitForUrl(stellar, `${spmtOrigin}/health/stellar`, "Stellar Core hosted inference", 10 * 60_000);
 }
 let nebulaArcade;
 if (candidateApp === "nebula-arcade") {
-  nebulaArcade = start("Nebula Arcade candidate", "apps/nebula-arcade/dist/nebula-arcade-sandbox-server.js", {
+  nebulaArcade = startRecoverable("Nebula Arcade candidate", "apps/nebula-arcade/dist/nebula-arcade-sandbox-server.js", {
     ...common,
     NEBULA_ARCADE_PUBLIC_ORIGIN: publicUrl,
     NEBULA_ARCADE_DATABASE_PATH: resolve(dataRoot, "nebula-arcade-green-sandbox.sqlite"),
@@ -239,7 +235,6 @@ if (candidateApp === "nebula-arcade") {
     HOST: "127.0.0.1",
     PORT: String(nebulaArcadePort),
   });
-  nebulaArcade.once("exit", (code, signal) => { if (!stopping) void stop(signal === "SIGINT" || signal === "SIGTERM" ? 0 : code ?? (signal ? 1 : 0)); });
   await waitForUrl(nebulaArcade, `http://127.0.0.1:${nebulaArcadePort}/health/ready`, "Nebula Arcade candidate");
 }
 const web = start("SpaceMountain web", "apps/spacemountain-web/dist/integrated-server.js", {
