@@ -133,11 +133,6 @@ if (app === "nebula-arcade") {
   process.on("SIGTERM", () => void stop(0));
   await new Promise((done) => nebulaArcade.once("exit", (code, signal) => { if (!stopping) void stop(signal === "SIGINT" || signal === "SIGTERM" ? 0 : code ?? (signal ? 1 : 0)).then(done); else done(); }));
 } else {
-let llm;
-if (llmBinary) {
-  llm = startCommand("Qwen", resolve(llmBinary), ["--host", "127.0.0.1", "--port", "8081", "-hf", "Qwen/Qwen3-8B-GGUF:Q4_K_M", "--ctx-size", "8192", "--threads", "8", "--parallel", "1", "--jinja", "--no-webui"], { ...common, LLAMA_CACHE: llmCache });
-  llm.once("exit", (code, signal) => { if (!stopping) void stop(signal === "SIGINT" || signal === "SIGTERM" ? 0 : code ?? (signal ? 1 : 0)); });
-}
 const spmt = start("SPMT", "apps/spmt-service/dist/provider-identity-start.js", {
   ...common,
   DATABASE_PATH: databasePath,
@@ -211,19 +206,6 @@ const hearMeOut = startRecoverable("HearMeOut media worker", "apps/hearmeout/dis
   HEARMEOUT_EXECUTION_TARGET: "fly",
   ...hearMeOutMediaEnvironment,
 });
-if (stellarWorkerCredential) {
-  const stellar = startRecoverable("Stellar Core worker", "apps/stellar-core/dist/worker-start.js", {
-    ...common,
-    SPMT_ORIGIN: spmtOrigin,
-    STELLAR_PROVIDER_ORIGIN: "http://127.0.0.1:8081",
-    STELLAR_PROVIDER_MODEL: "Qwen/Qwen3-8B-GGUF:Q4_K_M",
-    STELLAR_EXECUTION_TARGET: "sprite",
-    STELLAR_WORKER_CREDENTIAL: stellarWorkerCredential,
-    ...speechEnvironment,
-    ...(llm?.pid ? { STELLAR_PROVIDER_PID: String(llm.pid) } : {}),
-  });
-  await waitForUrl(stellar, `${spmtOrigin}/health/stellar`, "Stellar Core hosted inference", 10 * 60_000);
-}
 let nebulaArcade;
 if (candidateApp === "nebula-arcade") {
   nebulaArcade = startRecoverable("Nebula Arcade candidate", "apps/nebula-arcade/dist/nebula-arcade-sandbox-server.js", {
@@ -254,6 +236,20 @@ spmt.once("exit", (code, signal) => { if (!stopping) void stop(signal === "SIGIN
 await waitForUrl(web, `http://127.0.0.1:${webPort}/sandbox/health`, "SpaceMountain web");
 for (const appId of ["discord-stream-hub", "streamweaver", "hearmeout", "mountainview", "companion"]) await waitForUrl(web, `http://127.0.0.1:${webPort}/health/${appId}`, `${appId} ingress`);
 
+if (llmBinary) {
+  startRecoverableCommand("Qwen", resolve(llmBinary), ["--host", "127.0.0.1", "--port", "8081", "-hf", "Qwen/Qwen3-8B-GGUF:Q4_K_M", "--ctx-size", "8192", "--threads", "8", "--parallel", "1", "--jinja", "--no-webui"], { ...common, LLAMA_CACHE: llmCache });
+}
+if (stellarWorkerCredential) {
+  startRecoverable("Stellar Core worker", "apps/stellar-core/dist/worker-start.js", {
+    ...common,
+    SPMT_ORIGIN: spmtOrigin,
+    STELLAR_PROVIDER_ORIGIN: "http://127.0.0.1:8081",
+    STELLAR_PROVIDER_MODEL: "Qwen/Qwen3-8B-GGUF:Q4_K_M",
+    STELLAR_EXECUTION_TARGET: "sprite",
+    STELLAR_WORKER_CREDENTIAL: stellarWorkerCredential,
+    ...speechEnvironment,
+  });
+}
 process.stdout.write(`\nGreen sandbox is supervised and ready at ${publicUrl}\n`);
 process.stdout.write(`The canonical app pool contains ${sandboxManifests.map((item) => item.name).join(", ")}.\n`);
 process.stdout.write("App-owned Green frontends are isolated behind the common catalog/AppFrame ingress.\n");
@@ -266,7 +262,11 @@ await new Promise((done) => web.once("exit", (code, signal) => { if (!stopping) 
 }
 
 function startRecoverable(label, script, environment) {
-  const service = startRecoverableService({label, command:process.execPath, args:[script], cwd:process.cwd(), env:environment,
+  return startRecoverableCommand(label, process.execPath, [script], environment);
+}
+
+function startRecoverableCommand(label, command, args, environment) {
+  const service = startRecoverableService({label, command, args, cwd:process.cwd(), env:environment,
     onChild(child) { children.add(child); child.once("exit", () => children.delete(child)); child.once("error", () => children.delete(child)); },
   });
   recoverableServices.add(service);
