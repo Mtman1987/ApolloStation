@@ -16,3 +16,10 @@ test("HearMeOut Open does not redundantly rejoin an existing membership", () => 
   assert.match(room, /button\(room\.member\?'Open':'Preview',\(\)=>showRoom\(room\.roomId\)/);
   assert.doesNotMatch(room, /button\(room\.member\?'Open':'Join',\(\)=>joinRoom/);
 });
+
+
+test("SpaceMountain lounge embeds the canonical live player instead of an Apollo duplicate", () => {
+  assert.match(surface, /system-spacemountainlive-lounge/);
+  assert.match(surface, /https:\/\/hearmeout-main\.fly\.dev\/watch\/watch-room-system-spacemountainlive-lounge-music/);
+  assert.match(room, /frame-src 'self' https:\/\/hearmeout-main\.fly\.dev/);
+});
