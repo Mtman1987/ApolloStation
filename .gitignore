@@ -27,3 +27,6 @@ test-results/
 # Private canonical agent assets and experiment outputs
 .local/agents/
 **/__pycache__/
+
+# Local validation browser, never part of the deployed app
+scripts/local-browser/runtime/

@@ -2,7 +2,8 @@
 
 Run validation locally before merging or pushing changes to main. Use Node 24,
 `npm ci --ignore-scripts`, FFmpeg, and Playwright Chromium
-(`npx playwright install --with-deps chromium` for initial setup).
+(`npm run setup:browser` prepares a cached Linux browser without the Playwright CDN;
+other platforms may use `npx playwright install --with-deps chromium`).
 
 Run `npm run validate:local`. This runs the full serialized contract suite and
 all six browser/media checks formerly run by Green shared contracts in GitHub.

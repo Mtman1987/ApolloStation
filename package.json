@@ -30,7 +30,8 @@
     "agents:check-openai": "python3 scripts/agents/openai_runner.py check-openai",
     "agents:chat": "python3 scripts/agents/openai_runner.py chat",
     "agents:test": "python3 scripts/agents/test_runner.py",
-    "validate:local": "node scripts/validate-local.mjs"
+    "validate:local": "node scripts/validate-local.mjs",
+    "setup:browser": "node scripts/setup-local-browser.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",
