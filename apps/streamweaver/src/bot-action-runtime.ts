@@ -111,8 +111,9 @@ export class StreamWeaverBotActionConsumer {
   async deliver(delivery: NormalizedChatDeliveryV1): Promise<void> {
     if (this.channelAllowed && !this.channelAllowed(delivery.message)) return;
     if (!this.allowMedia && detectStreamWeaverBotAction(delivery.message.text, new Date(delivery.message.occurredAt))?.action.startsWith("hmo.media.")) return;
-    const request = detectStreamWeaverBotAction(delivery.message.text, new Date(delivery.message.occurredAt));
+    let request = detectStreamWeaverBotAction(delivery.message.text, new Date(delivery.message.occurredAt));
     if (!request) return;
+    if (request.action.startsWith("hmo.media.") && delivery.message.provider === "twitch") request = { ...request, args: { ...request.args, roomId: "system-spacemountainlive-lounge" } };
     const role = providerRole(delivery.message);
     const descriptor = STREAMWEAVER_BOT_ACTION_CATALOG.find((item) => item.id === request.action)!;
     const context: StreamWeaverBotActionContextV1 = { tenantId: delivery.message.tenantId, source: delivery.message.provider, connectionId: delivery.message.connectionId, ...(delivery.message.guildId ? { guildId: delivery.message.guildId } : {}), channelId: delivery.message.channelId, requestId: delivery.deliveryId, actor: { ...(delivery.message.actor.canonicalUserId ? { userId: delivery.message.actor.canonicalUserId } : {}), username: delivery.message.actor.username, role } };
@@ -128,7 +129,7 @@ export class StreamWeaverBotActionConsumer {
     // Media requests may resolve asynchronously. The durable completion reply is
     // the only chat message we want for those actions; sending the provisional
     // queued acknowledgement creates the visible duplicate in Twitch chat.
-    if (!(receipt.completionReply === true && request.action.startsWith("hmo.media."))) await this.egress.send(receipt.message);
+    if (!request.action.startsWith("hmo.media.")) await this.egress.send(receipt.message);
     this.replies?.acknowledge(context);
   }
 }
