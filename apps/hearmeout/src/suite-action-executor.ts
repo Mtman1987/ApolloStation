@@ -1,5 +1,6 @@
 import type {HearMeOutMovieMatch} from "./movie-provider.js";
 import {type HearMeOutBroadcastProgram} from "./broadcast-program.js";
+import {PUBLIC_LOUNGE_ID} from "./lounge-room.js";
 import { HEARMEOUT_ACTIVITY_ROOM_ID, HEARMEOUT_ACTIVITY_ROOM_NAME } from "./activity-contract.js";
 import { ensureHearMeOutDiscordActivityRoom, joinHearMeOutDiscordActivityRoom } from "./activity-room.js";
 import type { HearMeOutActivityBinding } from "./activity-web.js";
@@ -81,13 +82,13 @@ export class HearMeOutWebSuiteActionExecutor implements HearMeOutSuiteActionExec
     const program=this.options.singleProgram;
     if(program&&input.action==='hmo.media.request'){
       if(input.source.simulation)return {simulation:true,text:'Previewed a request for the shared broadcast.'};
-      const session=await program.request({requesterId:principal.userId,displayName:principal.displayName,query:required(input.args.query,'query'),lane:input.args.lane==='music'?'music':'movie',operationId:context.idempotencyKey},this.media);
+      const session=await program.request({roomId:input.args.roomId||PUBLIC_LOUNGE_ID,requesterId:principal.userId,displayName:principal.displayName,query:required(input.args.query,'query'),lane:input.args.lane==='music'?'music':'movie',operationId:context.idempotencyKey},this.media);
       return {text:'Your video is in the shared broadcast.',session};
     }
-    if(program&&input.action==='hmo.media.state.read')return {text:program.getSession().current?.item.title??'Nothing is playing.',session:program.getSession()};
+    if(program&&input.action==='hmo.media.state.read'){const roomId=input.args.roomId||PUBLIC_LOUNGE_ID,session=program.getSession(program.binding.tenantId,roomId);return {text:session.current?.item.title??'Nothing is playing.',session};}
     if(program&&input.action==='hmo.media.control'){
       if(input.source.simulation)return {simulation:true,text:'Previewed broadcast control.'};
-      return {text:'Broadcast updated.',session:program.control(principal,{action:input.args.control==='stop'?'clear':input.args.control??''})};
+      return {text:'Broadcast updated.',session:program.control(principal,{roomId:input.args.roomId||PUBLIC_LOUNGE_ID,action:input.args.control==='stop'?'clear':input.args.control??''})};
     }
     if (input.action === "hmo.rooms.read") { const rooms = this.rooms.listRooms(principal).map((room) => ({ roomId: room.roomId, name: room.name, privacy: room.privacy, owned: room.ownerUserId === principal.userId })); return { text: rooms.length ? `HearMeOut rooms: ${rooms.map((room) => room.name).join(", ")}.` : "There are no active HearMeOut rooms.", rooms }; }
     let requestedRoom = input.args.roomId || input.source.roomId;

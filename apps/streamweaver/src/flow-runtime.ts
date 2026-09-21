@@ -25,6 +25,9 @@ interface FlowExecution {
 }
 class PendingStep extends Error { constructor(readonly pending:NonNullable<FlowExecution["pending"]>){super("Flow is waiting for a step");} }
 
+const EXCLUSIVE_MEDIA_COMMANDS=new Set(["!sr","!wr","!songrequest","!watchrequest"]);
+function isExclusiveMediaCommand(value:string){return EXCLUSIVE_MEDIA_COMMANDS.has(value.trim().toLowerCase());}
+
 /** A saved run pins its package and delivery. Chat Gateway retries and the host reconciler resume that same run. */
 export class StreamWeaverInstalledFlowConsumer {
   readonly id="streamweaver.installed-flows" as const;
@@ -104,6 +107,7 @@ export class StreamWeaverInstalledFlowConsumer {
     const rawFirst=message.text.trim().split(/\s+/)[0]??"";
     for(const item of this.packages.listInstalledPackages(message.tenantId))for(const command of item.commands){
       if(!command.enabled||command.runtime!=="flow")continue;
+      if(isExclusiveMediaCommand(command.trigger)||command.aliases.some(isExclusiveMediaCommand))continue;
       const norm=(value:string)=>command.caseSensitive?value:value.toLowerCase(),first=norm(rawFirst);
       if(command.matcher==="command"&&(norm(command.trigger)===first||command.aliases.some(a=>norm(a)===first)))return {package:item,command};
       if(command.matcher==="bare"&&(norm(message.text.trim())===norm(command.trigger)||first===`!${norm(command.trigger)}`))return {package:item,command};

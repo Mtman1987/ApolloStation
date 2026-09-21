@@ -15,8 +15,9 @@ export interface StreamWeaverBotActionEgressV1 { send(message: OutboundChatMessa
 export class StreamWeaverSuiteActionJobExecutor implements StreamWeaverBotActionExecutorV1 {
   constructor(private readonly client: Pick<SpmtClient, "createSuiteActionJob" | "getExecutionJob">, private readonly options: { maxWaitMs?: number; pollMs?: number } = {}) {}
   async execute(request: StreamWeaverBotActionRequestV1, context: StreamWeaverBotActionContextV1) {
-    if (!context.actor.userId) return { response: "Link this chat account to your SPMT identity before running cross-app actions." };
-    const created = await this.client.createSuiteActionJob(context.tenantId, { schemaVersion: 1, action: request.action, args: request.args, actor: { userId: context.actor.userId, username: context.actor.username, role: context.actor.role }, source: { kind: "chat", provider: context.source, ...(context.guildId ? { guildId: context.guildId } : {}), ...(context.connectionId ? { connectionId: context.connectionId } : {}), channelId: context.channelId, requestId: context.requestId, ...(context.simulation ? { simulation: true } : {}) } }, `streamweaver-suite:${context.requestId}`);
+    const requesterId=context.actor.userId??(request.action.startsWith("hmo.media.")&&context.source==="twitch"?`twitch:${context.channelId}:${context.actor.username.toLowerCase()}`:undefined);
+    if (!requesterId) return { response: "Link this chat account to your SPMT identity before running cross-app actions." };
+    const created = await this.client.createSuiteActionJob(context.tenantId, { schemaVersion: 1, action: request.action, args: request.args, actor: { userId: requesterId, username: context.actor.username, role: context.actor.role }, source: { kind: "chat", provider: context.source, ...(context.guildId ? { guildId: context.guildId } : {}), ...(context.connectionId ? { connectionId: context.connectionId } : {}), channelId: context.channelId, requestId: context.requestId, ...(context.simulation ? { simulation: true } : {}) } }, `streamweaver-suite:${context.requestId}`);
     const maxWaitMs = Math.max(0, this.options.maxWaitMs ?? 5_000), pollMs = Math.max(10, this.options.pollMs ?? 200), deadline = Date.now() + maxWaitMs;
     let job = created.job;
     while (!["succeeded", "failed", "dead-letter", "cancelled"].includes(job.state) && Date.now() < deadline) {
@@ -104,10 +105,11 @@ function detectStreamWeaverBotActionLegacy(message: string, now = new Date()): S
 
 export class StreamWeaverBotActionConsumer {
   readonly id = "streamweaver.bot-actions" as const;
-  constructor(private readonly executor: StreamWeaverBotActionExecutorV1, private readonly egress: StreamWeaverBotActionEgressV1, private readonly replies?: StreamWeaverBotActionReplies) {}
+  constructor(private readonly executor: StreamWeaverBotActionExecutorV1, private readonly egress: StreamWeaverBotActionEgressV1, private readonly replies?: StreamWeaverBotActionReplies, private readonly channelAllowed?: (message: NormalizedChatMessageV1) => boolean) {}
   accepts(message: NormalizedChatMessageV1): boolean { return !message.actor.isBot && this.willHandle(message); }
-  willHandle(message: NormalizedChatMessageV1): boolean { return Boolean(detectStreamWeaverBotAction(message.text, new Date(message.occurredAt))); }
+  willHandle(message: NormalizedChatMessageV1): boolean { return (this.channelAllowed?.(message) ?? true) && Boolean(detectStreamWeaverBotAction(message.text, new Date(message.occurredAt))); }
   async deliver(delivery: NormalizedChatDeliveryV1): Promise<void> {
+    if (this.channelAllowed && !this.channelAllowed(delivery.message)) return;
     const request = detectStreamWeaverBotAction(delivery.message.text, new Date(delivery.message.occurredAt));
     if (!request) return;
     const role = providerRole(delivery.message);

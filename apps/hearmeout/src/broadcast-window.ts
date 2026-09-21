@@ -157,25 +157,26 @@ export const BROADCAST_WINDOW_JS=String.raw`
   const video=document.getElementById('player'),status=document.getElementById('status'),error=document.getElementById('error'),volume=document.getElementById('volume'),sound=document.getElementById('sound');
   const playbackError=document.getElementById('playback-error'),disconnect=document.getElementById('disconnect'),retry=document.getElementById('retry'),audioToggle=document.getElementById('audio-toggle'),videoToggle=document.getElementById('video-toggle');
   const source=new window.HearMeOutPlaybackSource(video,e=>{playbackError.textContent=e.message},document.getElementById('audio-language'));
-  let level=Number(preferences.getItem('hmo-broadcast-volume')||0),lastAudible=level||85,sourceUrl='',busy=false,disposed=false,pendingRequest,requestInFlight=false,lastRevision=-1,playPending,selectedMovie,connected=true,currentRequest='',currentEpoch='',retryAt=0,latestState,controlBusy=false,statePollFailed=false;
-  let audioEnabled=preferences.getItem('hmo-broadcast-audio')!=='off',videoEnabled=preferences.getItem('hmo-broadcast-video')!=='off';
+  const params=new URLSearchParams(location.search),frameId=params.get('frame_id'),fixedLounge=params.get('roomId')==='system-spacemountainlive-lounge';
+  let level=fixedLounge?85:Number(preferences.getItem('hmo-broadcast-volume')||0),lastAudible=level||85,sourceUrl='',busy=false,disposed=false,pendingRequest,requestInFlight=false,lastRevision=-1,playPending,selectedMovie,connected=true,currentRequest='',currentEpoch='',retryAt=0,latestState,controlBusy=false,statePollFailed=false;
+  let audioEnabled=fixedLounge||preferences.getItem('hmo-broadcast-audio')!=='off',videoEnabled=preferences.getItem('hmo-broadcast-video')!=='off';
   const movieResults=document.getElementById('movie-results'),requestForm=document.getElementById('request-form'),queueControls=document.getElementById('queue-controls');
   function setVolume(value){level=Math.max(0,Math.min(100,value));if(level)lastAudible=level;video.volume=level/100;volume.value=String(level);sound.textContent=level?'Mute locally':'Enable sound';preferences.setItem('hmo-broadcast-volume',String(level));}
   function setAudioEnabled(value){audioEnabled=Boolean(value);video.muted=!audioEnabled;audioToggle.textContent='Audio: '+(audioEnabled?'on':'off');audioToggle.setAttribute('aria-pressed',String(audioEnabled));preferences.setItem('hmo-broadcast-audio',audioEnabled?'on':'off');}
   function setVideoEnabled(value){videoEnabled=Boolean(value);video.classList.toggle('video-off',!videoEnabled);videoToggle.textContent='Video: '+(videoEnabled?'on':'off');videoToggle.setAttribute('aria-pressed',String(videoEnabled));preferences.setItem('hmo-broadcast-video',videoEnabled?'on':'off');}
   setVolume(level);setAudioEnabled(audioEnabled);setVideoEnabled(videoEnabled);
-  const params=new URLSearchParams(location.search),frameId=params.get('frame_id');
   const output=document.getElementById('output');let selectedOutput=params.get('output')==='screen'?'screen':'program';output.value=selectedOutput;
   const storage={getItem:key=>{try{return sessionStorage.getItem(key)}catch{return null}},setItem:(key,value)=>{try{sessionStorage.setItem(key,value)}catch{}}};
   let activeParty='',partyName='',lobbyBusy=false,directorySignature='',pendingCreation,hostedRoomId='';
   const lobby=document.getElementById('party-lobby'),playerPane=document.querySelector('main'),partyList=document.getElementById('party-list'),partyError=document.getElementById('party-error'),partyCreate=document.getElementById('party-create');
   playerPane.classList.add('controls-hidden');
+  if(fixedLounge){document.getElementById('view-toggle').hidden=true;document.getElementById('party-back').hidden=true;}
   const hostingParams=new URLSearchParams();
   if(params.get('appRoomId'))hostingParams.set('appRoomId',params.get('appRoomId'));
   if(frameId&&params.get('guild_id')&&params.get('channel_id')){hostingParams.set('guildId',params.get('guild_id'));hostingParams.set('channelId',params.get('channel_id'));}
   for(const key of ['guildId','channelId'])if(params.get(key)&&!hostingParams.has(key))hostingParams.set(key,params.get(key));
   const partiesUrl='/api/watch/broadcast/rooms'+(hostingParams.size?'?'+hostingParams:'');
-  function showParties(){if(params.has('popout')&&localOwner.hearMeOutWatchPopouts[activeParty]===window)delete localOwner.hearMeOutWatchPopouts[activeParty];storage.setItem('hmo-party:'+(params.get('instance_id')||'browser'),'');activeParty='';lastRevision=-1;latestState=undefined;sourceUrl='';source.clear();lobby.hidden=false;playerPane.hidden=true;const next=new URL(location.href);next.searchParams.delete('roomId');history.replaceState(null,'',next);void refreshParties();}
+  function showParties(){if(fixedLounge)return;if(params.has('popout')&&localOwner.hearMeOutWatchPopouts[activeParty]===window)delete localOwner.hearMeOutWatchPopouts[activeParty];storage.setItem('hmo-party:'+(params.get('instance_id')||'browser'),'');activeParty='';lastRevision=-1;latestState=undefined;sourceUrl='';source.clear();lobby.hidden=false;playerPane.hidden=true;const next=new URL(location.href);next.searchParams.delete('roomId');history.replaceState(null,'',next);void refreshParties();}
   function watchParty(room){activeParty=room.roomId;storage.setItem('hmo-party:'+ (params.get('instance_id')||'browser'),activeParty);if(params.has('popout'))localOwner.hearMeOutWatchPopouts[activeParty]=window;connected=params.has('popout')||!localOwner.hearMeOutWatchPopouts[activeParty]||localOwner.hearMeOutWatchPopouts[activeParty].closed;disconnect.textContent=connected?'Disconnect':'Watch again';partyName=room.name;lastRevision=-1;latestState=undefined;currentRequest='';currentEpoch='';sourceUrl='';source.clear();error.textContent='';playbackError.textContent='';lobby.hidden=true;playerPane.hidden=false;document.getElementById('party-name').textContent=partyName;const next=new URL(location.href);next.searchParams.set('roomId',activeParty);history.replaceState(null,'',next);void refresh();}
   async function refreshParties(){
     if(lobbyBusy||disposed||activeParty)return;lobbyBusy=true;
@@ -212,7 +213,7 @@ export const BROADCAST_WINDOW_JS=String.raw`
     return playPending;
   }
   function applyState(state){
-    if(disposed||state.sessionId!==activeParty||state.revision<lastRevision)return;lastRevision=state.revision;latestState=state;
+    if(disposed||(state.sessionId!==activeParty&&!(fixedLounge&&activeParty==='system-spacemountainlive-lounge'))||state.revision<lastRevision)return;lastRevision=state.revision;latestState=state;
     const canManage=state.canManage===true;requestForm.hidden=!canManage;queueControls.hidden=!canManage;skip.disabled=!canManage||controlBusy||!state.current;clearQueue.disabled=!canManage||controlBusy||!state.queue.length;
     status.textContent=!connected?'Disconnected on this device. The broadcast continues.':requestInFlight?'Preparing your request…':state.playback.status==='idle'?(canManage?'Nothing playing. Request music or a movie below.':'Nothing playing. You are watching this party in view-only mode.'):'Broadcast: '+state.playback.status;
     document.getElementById('title').textContent=state.current?.item.title||'Nothing playing';
@@ -255,8 +256,8 @@ export const BROADCAST_WINDOW_JS=String.raw`
   });
   if(params.has('popout'))popout.hidden=true;
   function setExpanded(value){playerPane.classList.toggle('expanded',value);playerPane.classList.toggle('controls-hidden',value);document.getElementById('exit-expanded').hidden=!value;document.getElementById('fullscreen').textContent=value?'Exit full view':'Fullscreen';if(window.parent!==window&&!frameId)window.parent.postMessage({type:'hmo:player-expanded',expanded:value},location.origin);}
-  document.getElementById('view-toggle').addEventListener('click',()=>{const hidden=playerPane.classList.toggle('controls-hidden');document.getElementById('view-toggle').setAttribute('aria-pressed',String(!hidden));});
-  window.addEventListener('message',event=>{if(event.origin===location.origin&&event.data?.type==='hmo:toggle-controls')document.getElementById('view-toggle').click()});
+  document.getElementById('view-toggle').addEventListener('click',()=>{if(fixedLounge)return;const hidden=playerPane.classList.toggle('controls-hidden');document.getElementById('view-toggle').setAttribute('aria-pressed',String(!hidden));});
+  window.addEventListener('message',event=>{if(!fixedLounge&&event.origin===location.origin&&event.data?.type==='hmo:toggle-controls')document.getElementById('view-toggle').click()});
   document.getElementById('exit-expanded').addEventListener('click',async()=>{if(document.fullscreenElement)await document.exitFullscreen().catch(()=>{});setExpanded(false);});
   document.getElementById('fullscreen').addEventListener('click',async()=>{if(document.fullscreenElement){await document.exitFullscreen();setExpanded(false);return;}if(playerPane.classList.contains('expanded')){setExpanded(false);return;}setExpanded(true);playbackError.textContent='';try{if(playerPane.requestFullscreen)await playerPane.requestFullscreen();else if(video.webkitEnterFullscreen)video.webkitEnterFullscreen();}catch{}});
   document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement)setExpanded(false)});

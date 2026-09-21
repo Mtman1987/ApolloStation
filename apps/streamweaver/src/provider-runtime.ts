@@ -106,7 +106,8 @@ export class StreamWeaverProviderRuntime {
     const relay = new StreamWeaverBotRelayConsumer(this.relayStore, egress);
     this.messageObservers = [{ id: "streamweaver.relay-identities", observe: (message) => { this.relayStore.observe(message); } }];
     this.botActionReplies = new StreamWeaverBotActionReplies(options.databasePath, options.nowMs);
-    const botActions = options.botActions ? new StreamWeaverBotActionConsumer(options.botActions, egress, this.botActionReplies) : undefined;
+    const twitchChannelAllowed = (message: NormalizedChatMessageV1) => message.provider !== "twitch" || message.channelId === this.runtimeSettings.twitchBroadcaster(message.tenantId);
+    const botActions = options.botActions ? new StreamWeaverBotActionConsumer(options.botActions, egress, this.botActionReplies, twitchChannelAllowed) : undefined;
     const priorGate = { willHandle: (message: NormalizedChatMessageV1) => relay.willHandle(message) || Boolean(botActions?.willHandle(message)) };
     const secureChoiceExecutor={execute:(invocation:import("./donor-command-runtime.js").StreamWeaverDonorCommandInvocationV1)=>{
       if(invocation.command.donorId!==STREAMWEAVER_SECURE_CHOICE_DONOR_ID)return undefined;
@@ -133,7 +134,11 @@ export class StreamWeaverProviderRuntime {
       persona:secureChoiceExecutor,
       system:{execute:invocation=>invocation.canonicalTrigger==="!commands" ? `Installed commands: ${this.flows.listInstalledPackages(invocation.tenantId).flatMap(pkg=>pkg.commands.filter(c=>c.enabled).map(c=>c.trigger)).join(", ") || "none"}. Currency: !points, !givepoints, !gamble, !pleader.` : community.system(invocation)}
     });
-    const commands = new StreamWeaverDonorCommandConsumer({ services, identities, state: this.commandState, egress, enabled: (tenantId, donorId) => donorId === "commands-chat" || donorId === "commands-system" || this.flows.donorEnabled(tenantId, donorId), ...(options.nowMs ? { nowMs: options.nowMs } : {}) });
+    const commands = new StreamWeaverDonorCommandConsumer({ services, identities, state: this.commandState, egress, enabled: (tenantId, donorId) => {
+      // !sr/!wr belong exclusively to the native HearMeOut suite-action path.
+      if (donorId === "sr" || donorId === "wr" || donorId === "songrequest" || donorId === "watchrequest") return false;
+      return donorId === "commands-chat" || donorId === "commands-system" || this.flows.donorEnabled(tenantId, donorId);
+    }, ...(options.nowMs ? { nowMs: options.nowMs } : {}) });
     const persona = new StreamWeaverChatGatewayConsumer(this.summons, this.settings, new SpmtStreamWeaverPersonaRuntime(options.client,this.research), egress, priorGate,this.research);
     const flows = this.installedFlows = new StreamWeaverInstalledFlowConsumer(this.flows, this.commandState, egress, options.botActions, commands, options.nowMs, {
       device:async ({delivery,deviceId,ownerUserId,action,payload,requestId})=>{
