@@ -18,8 +18,8 @@ test("HearMeOut Open does not redundantly rejoin an existing membership", () => 
 });
 
 
-test("SpaceMountain lounge embeds the canonical live player instead of an Apollo duplicate", () => {
+test("SpaceMountain lounge opens Apollo's passive broadcast viewer", () => {
   assert.match(surface, /system-spacemountainlive-lounge/);
-  assert.match(surface, /https:\/\/hearmeout-main\.fly\.dev\/watch\/watch-room-system-spacemountainlive-lounge-music/);
-  assert.match(room, /frame-src 'self' https:\/\/hearmeout-main\.fly\.dev/);
+  assert.match(surface, /frame\.src='\/watch\?embed=1&appRoomId='/);
+  assert.doesNotMatch(surface, /hearmeout-main\.fly\.dev\/watch\/watch-room-system-spacemountainlive-lounge-music/);
 });
