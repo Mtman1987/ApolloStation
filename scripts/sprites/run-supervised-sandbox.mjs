@@ -226,7 +226,7 @@ if (stellarWorkerCredential) {
     ...(llm?.pid ? { STELLAR_PROVIDER_PID: String(llm.pid) } : {}),
   });
   stellar.once("exit", (code, signal) => { if (!stopping) void stop(signal === "SIGINT" || signal === "SIGTERM" ? 0 : code ?? (signal ? 1 : 0)); });
-  await waitForUrl(stellar, `${spmtOrigin}/health/stellar`, "Stellar Core hosted inference", 10 * 60_000);
+  // Qwen is an elastic capability. Its multi-gigabyte cold start must not block\n  // the web ingress or room-owned HearMeOut player from becoming available.\n  process.stdout.write("Stellar Core hosted inference is warming independently.\\n");
 }
 let nebulaArcade;
 if (candidateApp === "nebula-arcade") {
