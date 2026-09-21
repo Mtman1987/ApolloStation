@@ -31,6 +31,11 @@ test('storage restrictions do not blank the player, and restored windows resume 
 test('browser popout retains the party and selected output and pauses only the current viewer',async()=>{
  const f=fixture('?roomId=party&output=screen');await tick();f.node('popout').listeners.click();assert.match(f.opened[0],/roomId=party&output=screen/);assert.match(f.node('status').textContent,/Disconnected/);assert.equal(f.requests.some(path=>/control|pause/.test(path)),false);
 });
+test('one viewer click unlocks the existing player and later media starts automatically',async()=>{
+ const f=fixture();let plays=0;f.node('player').play=async()=>{plays++};await tick();const automaticAttempts=plays;
+ assert.equal(f.node('sound').textContent,'Play / enable sound');await f.node('sound').listeners.click();await tick();assert.equal(f.node('sound').textContent,'Mute locally');assert.equal(plays,automaticAttempts+1);
+ f.node('player').listeners.canplay();await tick();assert.equal(plays,automaticAttempts+2,'the next ready source reuses the unlocked player without another click');
+});
 test('the delivered watch page contains the shared output controls and a parseable Discord opener handshake',()=>{
- const html=renderHearMeOutBroadcastWindow('app');assert.match(html,/id="output"/);assert.match(html,/window\.parent\.opener/);assert.doesNotMatch(html,/Use Discord’s fullscreen|Use Discord’s Pop Out/);for(const match of html.matchAll(/<script>([\s\S]*?)<\/script>/g))assert.doesNotThrow(()=>new vm.Script(match[1]));
+ const html=renderHearMeOutBroadcastWindow('app');assert.match(html,/id="output"/);assert.match(html,/<video id="player" playsinline autoplay>/);assert.match(html,/window\.parent\.opener/);assert.doesNotMatch(html,/Use Discord’s fullscreen|Use Discord’s Pop Out/);for(const match of html.matchAll(/<script>([\s\S]*?)<\/script>/g))assert.doesNotThrow(()=>new vm.Script(match[1]));
 });
