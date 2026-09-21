@@ -4,17 +4,17 @@ import vm from 'node:vm';
 import {BROADCAST_WINDOW_JS,renderHearMeOutBroadcastWindow} from '../apps/hearmeout/dist/broadcast-window.js';
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 function element(){const classes=new Set();return{listeners:{},dataset:{},value:'',textContent:'',hidden:false,disabled:false,readyState:2,children:[],classList:{add:name=>classes.add(name),remove:name=>classes.delete(name),contains:name=>classes.has(name),toggle(name,force){const add=force??!classes.has(name);add?classes.add(name):classes.delete(name);return add}},addEventListener(name,fn){this.listeners[name]=fn},setAttribute(){},append(...children){this.children.push(...children)},replaceChildren(...children){this.children=children},play:async()=>{},pause(){}}}
-function fixture(search='?roomId=party',storageBlocked=false){
+function fixture(search='?roomId=party',storageBlocked=false,stored={}){
  const nodes=new Map(),node=id=>{if(!nodes.has(id))nodes.set(id,element());return nodes.get(id)};const main=node('main');
  const document={hidden:false,referrer:'https://discord.com',listeners:{},head:element(),getElementById:node,querySelector:selector=>selector==='main'?main:node(selector),createElement:element,addEventListener(name,fn){this.listeners[name]=fn}};
  const listeners={},intervals=new Map(),loads=[],clears=[],opened=[],messages=[],location={search,origin:'https://watch.example',href:'https://watch.example/watch'+search};let sequence=0;
- const storage={getItem(){if(storageBlocked)throw Error('Storage denied');return null},setItem(){if(storageBlocked)throw Error('Storage denied')}};
+ const values=new Map(Object.entries(stored));const storage={getItem(key){if(storageBlocked)throw Error('Storage denied');return values.has(key)?values.get(key):null},setItem(key,value){if(storageBlocked)throw Error('Storage denied');values.set(key,String(value))}};
  let state={sessionId:'party',revision:1,current:{requestId:'movie',item:{title:'Movie'}},queue:[],playback:{status:'playing'},broadcast:{configured:true,ready:true,epoch:'movie1',playbackUrl:'/movie/index.m3u8'},screen:{active:true,ready:true,title:'Host screen',epoch:'screen1',playbackUrl:'/screen/index.m3u8'}};
  const window={addEventListener:(name,fn)=>listeners[name]=fn,open:url=>{opened.push(url);return{focus(){}}},parent:{postMessage:(...args)=>messages.push(args)}};window.top=window;
  window.HearMeOutPlaybackSource=class{load(...args){loads.push(args)}clear(){clears.push(true)}syncLive(){}joinLive(){}};
  const requests=[];
  vm.runInNewContext(BROADCAST_WINDOW_JS,{window,document,location,URL,URLSearchParams,localStorage:storage,sessionStorage:storage,history:{replaceState:(_,__,url)=>{location.href=String(url)}},CLIENT_ID:'app',crypto:{randomUUID:()=>String(++sequence)},AbortSignal,setInterval:fn=>{intervals.set(++sequence,fn);return sequence},clearInterval:id=>intervals.delete(id),fetch:async path=>{requests.push(path);return{ok:true,headers:{get:()=> 'application/json'},json:async()=>state}}});
- return{node,main,document,listeners,intervals,loads,clears,opened,messages,requests,setState:value=>state={...state,...value}};
+ return{node,main,document,listeners,intervals,loads,clears,opened,messages,requests,storage,setState:value=>state={...state,...value}};
 }
 test('one player switches independently between movie/music and live screen output, even without a queued movie',async()=>{
  const f=fixture();await tick();assert.equal(f.loads.at(-1)[0],'/movie/index.m3u8');f.node('output').value='screen';f.node('output').listeners.change();assert.equal(f.loads.at(-1)[0],'/screen/index.m3u8');assert.equal(f.node('title').textContent,'Host screen');
@@ -33,4 +33,19 @@ test('browser popout retains the party and selected output and pauses only the c
 });
 test('the delivered watch page contains the shared output controls and a parseable Discord opener handshake',()=>{
  const html=renderHearMeOutBroadcastWindow('app');assert.match(html,/id="output"/);assert.match(html,/window\.parent\.opener/);assert.doesNotMatch(html,/Use Discord’s fullscreen|Use Discord’s Pop Out/);for(const match of html.matchAll(/<script>([\s\S]*?)<\/script>/g))assert.doesNotThrow(()=>new vm.Script(match[1]));
+});
+
+
+test('Lounge volume is per-viewer and survives playback refresh without changing the broadcast',async()=>{
+ const f=fixture('?roomId=system-spacemountainlive-lounge',false,{'hmo-broadcast-volume':'9','hmo-broadcast-audio':'on'});await tick();
+ const player=f.node('player');
+ assert.equal(f.node('volume').value,'9');
+ assert.equal(player.volume,0.09);
+ assert.equal(player.muted,false);
+ const before=f.requests.length;
+ player.volume=0.85;
+ player.listeners.volumechange();
+ assert.equal(player.volume,0.09,'a media reload cannot override this viewer local volume');
+ assert.equal(f.node('volume').value,'9');
+ assert.equal(f.requests.length,before,'local volume changes never call the shared broadcast backend');
 });
