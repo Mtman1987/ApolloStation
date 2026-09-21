@@ -1,4 +1,4 @@
-# Diagnostic trigger: Lounge handoff failure 2026-09-21T05:54:38.035Z
+# Diagnostic trigger: Lounge runtime log 2026-09-21T05:57:11.994Z
 name: Manual Sprite Diagnostics
 
 on:
@@ -58,7 +58,7 @@ jobs:
             echo "=== local HearMeOut health ==="
             curl -sS --max-time 10 -D - http://127.0.0.1:8080/health/hearmeout
             echo
-            echo "=== recent release deploy log ==="
+            echo "=== HearMeOut runtime log ==="\n            tail -n 500 /.sprite/logs/services/apollo-sandbox.log 2>/dev/null\n            echo "=== HearMeOut broadcast cache ==="\n            find /home/sprite/data/release/hearmeout-broadcast-cache -maxdepth 2 -type f -printf "%TY-%Tm-%TdT%TH:%TM:%TS %s %p\\n" 2>/dev/null | sort | tail -n 160\n            echo "=== media processes ==="\n            ps -eo pid,ppid,stat,etime,cmd | grep -E "ffmpeg|ffprobe|flock" | grep -v grep\n            echo "=== recent release deploy log ==="
             latest="$(find /home/sprite/data/release/deploy-runs -mindepth 1 -maxdepth 1 -type d -printf "%T@ %p\n" 2>/dev/null | sort -nr | head -1 | cut -d" " -f2-)"
             test -n "$latest" && tail -n 240 "$latest/deploy.log"
           ' > diagnostics/sprite-service.txt 2>&1
