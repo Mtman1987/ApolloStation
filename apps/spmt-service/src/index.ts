@@ -179,6 +179,12 @@ export function createSpmtService(options: SpmtServiceOptions) {
     try {
       const path = request.url ?? "/";
       const url = new URL(`http://spmt.local${path}`);
+      const browserToken = cookie(request, "spmt_token");
+      if (browserToken && auth.isBrowserSession(browserToken)) response.setHeader("set-cookie", browserSessionCookie(browserToken));
+      else if (browserToken && request.method === "GET" && url.pathname === "/v1/session" && request.headers["x-spmt-app"] === "spacemountain" && auth.authenticateAccessToken(browserToken)?.actorType === "user") {
+        const persistent = auth.issueBrowserSession(browserToken);
+        response.setHeader("set-cookie", browserSessionCookie(persistent.accessToken));
+      }
       if (await humanReferenceApi.handle(request, response, url)) return;
       if (await mediaApi.handle(request, response, url)) return;
       if (await publicPersonas.handle(request,response,url)) return;
@@ -436,11 +442,14 @@ export function createSpmtService(options: SpmtServiceOptions) {
           const ownerUsername = options.sandboxOwnerUsername?.trim().toLowerCase();
           const isSandboxOwner = runtimeMode === "sandbox" && Boolean(ownerUsername) && username.trim().toLowerCase() === ownerUsername;
           const result = data.login(username, str(body.password, "password"), isSandboxOwner ? [...USER_SCOPES, ...SANDBOX_OWNER_SCOPES] : USER_SCOPES);
-          return json(response, 200, result, { "set-cookie": sessionCookie(result.tokens.accessToken) });
+          const browser = auth.issueBrowserSession(result.tokens.accessToken);
+          return json(response, 200, result, { "set-cookie": browserSessionCookie(browser.accessToken) });
         } catch { return json(response, 401, { error: "invalid_credentials" }); }
       }
 
       if (request.method === "POST" && url.pathname === "/v1/auth/logout") {
+        const browserToken = cookie(request, "spmt_token");
+        if (browserToken) auth.revokeBrowserSession(browserToken);
         return json(response, 200, { ok: true }, { "set-cookie": clearCookie("spmt_token") });
       }
 
@@ -881,3 +890,5 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   });
   await service.listen();
 }
+
+function browserSessionCookie(token: string) { return `${sessionCookie(token)}; Max-Age=34560000`; }

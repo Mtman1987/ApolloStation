@@ -179,6 +179,9 @@ export function createSpaceMountainWebHost(options: SpaceMountainWebHostOptions)
       }
       if (request.method === "POST" && url.pathname === "/sandbox/auth/logout") {
         requireSameOrigin(request);
+        const upstream = await fetchImpl(`${spmtOrigin}/v1/auth/logout`, {method:"POST", headers:{cookie:request.headers.cookie ?? ""}, redirect:"manual", signal:AbortSignal.timeout(10000)});
+        if (!upstream.ok) throw new WebHostError(503, "Sign-out could not complete. Please retry.");
+        await upstream.arrayBuffer();
         return json(response, 200, { ok: true }, { "set-cookie": clearSessionCookie() });
       }
       if (request.method === "POST" && url.pathname === "/sandbox/auth/login") {

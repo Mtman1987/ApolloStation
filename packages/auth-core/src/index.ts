@@ -19,6 +19,7 @@ export interface ServiceIdentityV1 {
 }
 
 export interface AccessSessionV1 {
+  browserSession?: boolean;
   id: string;
   tokenHash: string;
   actorType: AuthActorTypeV1;
@@ -302,6 +303,32 @@ export class AuthService {
       throw new AuthDeniedError("Refresh token replay detected; token family revoked");
     }
     return outcome.result;
+  }
+
+  issueBrowserSession(accessToken: string): IssuedAccessV1 {
+    return this.store.transaction(() => {
+      const principal = this.authenticateAccessToken(accessToken);
+      if (!principal || principal.actorType !== "user") throw new AuthDeniedError("A signed-in user is required");
+      const issued = this.issueAccess({actorType:"user", actorId:principal.actorId, scopes:principal.scopes, tenantMode:principal.tenantMode, tenantIds:principal.tenantIds, ttlSeconds:900});
+      const session = this.store.getAccessSessionByTokenHash(hashToken(issued.accessToken))!;
+      // Browser login is explicitly revoked by logout, not by an idle/access-token timer.
+      session.browserSession = true;
+      session.expiresAt = "9999-12-31T23:59:59.999Z";
+      this.store.putAccessSession(session);
+      return {accessToken:issued.accessToken, accessExpiresAt:session.expiresAt};
+    });
+  }
+
+  isBrowserSession(accessToken: string): boolean {
+    const session = this.store.getAccessSessionByTokenHash(hashToken(accessToken));
+    return Boolean(session?.browserSession && !session.revokedAt && this.authenticateAccessToken(accessToken));
+  }
+
+  revokeBrowserSession(accessToken: string): void {
+    this.store.transaction(() => {
+      const session = this.store.getAccessSessionByTokenHash(hashToken(accessToken));
+      if (session?.browserSession && !session.revokedAt) this.store.putAccessSession({...session, revokedAt:this.now()});
+    });
   }
 
   authenticateAccessToken(accessToken: string): AuthPrincipalV1 | undefined {
