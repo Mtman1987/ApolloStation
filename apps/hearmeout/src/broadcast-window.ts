@@ -38,11 +38,19 @@ export async function handleHearMeOutBroadcastWindow(request:IncomingMessage,res
       if(request.method!=='POST')return send(response,405,{error:'Method not allowed'});
       const expected=String(process.env.HEARMEOUT_VOICE_BRIDGE_AUTHORIZATION??'');
       if(!expected||request.headers.authorization!==expected)return send(response,401,{error:'Lounge relay authorization failed'});
-      if(!media)return send(response,503,{error:'The Lounge media resolver is unavailable'});
       const chunks:Buffer[]=[];let size=0;for await(const chunk of request){const bytes=Buffer.from(chunk);size+=bytes.length;if(size>8192)throw Error('Request is too large');chunks.push(bytes);}
       const body=JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string,unknown>,channel=String(body.channel??'').trim().replace(/^#/,'').toLowerCase(),allowed=LOUNGE_TWITCH_CHANNEL;
       if(!channel||channel!==allowed)return send(response,403,{error:'This Twitch channel does not own the Lounge player'});
-      const command=String(body.command??'').trim(),match=command.match(/^!(sr|wr)\s+(.{1,500})$/is);if(!match)return send(response,400,{error:'Use !sr or !wr with a request'});
+      const command=String(body.command??'').trim(),radioMatch=command.match(/^!radio(?:\s+(on|off|status))?\s*$/i);
+      if(radioMatch){
+        const action=(radioMatch[1]??'status').toLowerCase(),current=program.radio(HEARMEOUT_LOUNGE_ROOM_ID);if(!current)throw Error('The Lounge radio is not configured');
+        if(action==='status')return send(response,200,{accepted:true,roomId:HEARMEOUT_LOUNGE_ROOM_ID,text:`24-Hour Lounge auto-radio is ${current.enabled?'on':'off'}.`});
+        if(body.canManage!==true)return send(response,403,{error:'Only the broadcaster or a channel moderator can change auto-radio'});
+        const state=program.configureRadio(HEARMEOUT_LOUNGE_ROOM_ID,action==='on');
+        return send(response,200,{accepted:true,roomId:HEARMEOUT_LOUNGE_ROOM_ID,text:`24-Hour Lounge auto-radio turned ${state.enabled?'on':'off'}.`});
+      }
+      const match=command.match(/^!(sr|wr)\s+(.{1,500})$/is);if(!match)return send(response,400,{error:'Use !sr or !wr with a request, or !radio on/off/status'});
+      if(!media)return send(response,503,{error:'The Lounge media resolver is unavailable'});
       const messageId=String(body.messageId??'').trim(),userId=String(body.userId??'').trim(),displayName=String(body.displayName??'').replace(/[\r\n\0]/g,' ').trim().slice(0,120)||'Twitch viewer';
       if(!/^[A-Za-z0-9-]{1,160}$/.test(messageId)||!/^[A-Za-z0-9._:-]{1,160}$/.test(userId))return send(response,400,{error:'Invalid Twitch request identity'});
       const lane=match[1]!.toLowerCase()==='sr'?'music':'movie',operationId='twitch-lounge:'+messageId;

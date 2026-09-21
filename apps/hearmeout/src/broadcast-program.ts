@@ -190,8 +190,22 @@ export class HearMeOutBroadcastProgram {
   private next(session:HearMeOutMediaSessionV1){session.current=session.queue.shift()??null;session.playback={...session.playback,status:session.current?'playing':'idle',position:0,updatedAt:new Date().toISOString()};session.revision++;}
   ensureRadio(roomId:string,seed:string){
     const id=requireRoomId(roomId);this.read(id);const value=seed.trim();if(!value||value.length>300||/[\r\n\0]/.test(value))throw Error('Enter a radio theme up to 300 characters');
-    this.db.prepare('INSERT INTO hmo_program_radio(room_id,enabled,seed,history,revision) VALUES(?,1,?,\'[]\',0) ON CONFLICT(room_id) DO UPDATE SET enabled=1,seed=CASE WHEN hmo_program_radio.seed=\'\' THEN excluded.seed ELSE hmo_program_radio.seed END').run(id,value);
+    this.db.prepare('INSERT INTO hmo_program_radio(room_id,enabled,seed,history,revision) VALUES(?,1,?,\'[]\',0) ON CONFLICT(room_id) DO UPDATE SET seed=CASE WHEN hmo_program_radio.seed=\'\' THEN excluded.seed ELSE hmo_program_radio.seed END').run(id,value);
     return this.radio(id)!;
+  }
+  configureRadio(roomId:string,enabled:boolean,seed?:string,now=new Date().toISOString()){
+    const id=requireRoomId(roomId),prior=this.radio(id);if(!prior)throw Error('Auto-radio is not configured for this player');
+    const value=seed?.trim()||prior.seed;if(enabled&&(!value||value.length>300||/[\r\n\0]/.test(value)))throw Error('Enter a radio theme up to 300 characters');
+    return this.transaction(()=>{
+      this.db.prepare('UPDATE hmo_program_radio SET enabled=?,seed=?,revision=revision+1,selection_owner=NULL,selection_until=NULL,error=NULL WHERE room_id=?').run(enabled?1:0,value,id);
+      if(!enabled){
+        const session=this.read(id),wasCurrent=session.current?.requestedBy.userId===HEARMEOUT_PROGRAM_RADIO_USER_ID;
+        session.queue=session.queue.filter(request=>request.requestedBy.userId!==HEARMEOUT_PROGRAM_RADIO_USER_ID);
+        if(wasCurrent){session.current=session.queue.shift()??null;session.playback={...session.playback,status:session.current?'playing':'idle',position:0,updatedAt:now};}
+        session.revision++;this.write(session);
+      }
+      return this.radio(id)!;
+    });
   }
   radio(roomId:string):HearMeOutProgramRadioState|undefined{
     const row=this.db.prepare('SELECT * FROM hmo_program_radio WHERE room_id=?').get(requireRoomId(roomId)) as Record<string,unknown>|undefined;

@@ -163,7 +163,16 @@ export class YtDlpHearMeOutResolverAdapter implements HearMeOutYoutubeResolverAd
   constructor(private readonly binary: string) { if (!isAbsolute(binary)) throw new Error("yt-dlp binary must be absolute"); }
   async search(query: string, limit: number): Promise<HearMeOutMusicCatalogTrackV1[]> {
     const count = Math.max(1, Math.min(25, limit));
-    const { stdout } = await this.run(this.binary, ["--ignore-config", "--dump-single-json", "--flat-playlist", "--skip-download", "--no-warnings", "--", `ytsearch${count}:${text(query, "query", 300)}`], { timeout: 15_000, maxBuffer: 8 * 1024 * 1024, windowsHide: true });
+    const args = ["--ignore-config", "--dump-single-json", "--flat-playlist", "--skip-download", "--no-warnings", "--", `ytsearch${count}:${text(query, "query", 300)}`];
+    let stdout = "", failure: unknown;
+    // YouTube search occasionally outlives the old 15-second deadline on the
+    // always-on worker. Retry once so a transient provider reset cannot make a
+    // Twitch request disappear after chat has acknowledged it.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try { ({ stdout } = await this.run(this.binary, args, { timeout: 30_000, maxBuffer: 8 * 1024 * 1024, windowsHide: true })); failure = undefined; break; }
+      catch (error) { failure = error; }
+    }
+    if (failure) throw failure;
     const body = JSON.parse(stdout) as { entries?: Array<Record<string, unknown>> }, now = new Date().toISOString();
     return (body.entries ?? []).filter(item => /^[A-Za-z0-9_-]{11}$/.test(String(item.id))).slice(0, count).map(item => ({ id: String(item.id), title: String(item.title || item.id).slice(0, 300), artist: String(item.channel || item.uploader || "Unknown Artist").slice(0, 300), url: `https://www.youtube.com/watch?v=${item.id}`, thumbnail: `https://i.ytimg.com/vi/${item.id}/hqdefault.jpg`, duration: Number.isFinite(Number(item.duration)) ? Math.max(0, Math.round(Number(item.duration) * 1000)) : 0, queries: [query], savedAt: now, updatedAt: now }));
   }
@@ -189,7 +198,11 @@ export function createSupervisedHearMeOutWorker(options: HearMeOutWorkerEnvironm
   const catalog = new HearMeOutWorkerMusicCatalog({ catalogFile: resolve(options.cacheDir, "music-catalog.json") });
   const cache = new HearMeOutWorkerMediaCache({ cacheDir: options.cacheDir });
   const adapter = options.ytDlpBinary ? new YtDlpHearMeOutResolverAdapter(options.ytDlpBinary) : undefined;
-  const resolver = adapter ? new HearMeOutYoutubeResolverCoordinator(adapter) : options.preparedMedia ? new HearMeOutYoutubeResolverCoordinator(new HearMeOutPreparedMedia(options.preparedMedia, fetchImpl), {preparedMediaOrigin:options.preparedMedia.origin}) : undefined;
+  // Local yt-dlp remains the catalog searcher. Once a video is selected, the
+  // configured always-live HearMeOut worker is the canonical playback source;
+  // do not bypass it with short-lived googlevideo URLs from the Sprite.
+  const resolverAdapter = options.preparedMedia ? new HearMeOutPreparedMedia(options.preparedMedia, fetchImpl) : adapter;
+  const resolver = resolverAdapter ? new HearMeOutYoutubeResolverCoordinator(resolverAdapter, options.preparedMedia ? {preparedMediaOrigin:options.preparedMedia.origin} : {}) : undefined;
   const tenantPath = (tenantId: string) => resolve(options.cacheDir, "tenants", createHash("sha256").update(tenantId).digest("hex"));
   return { getAccessToken, worker: new HearMeOutExecutionWorker(client, { workerId: options.workerId, executionTarget: options.executionTarget, capabilities: options.config.capabilities, tenantIds: options.config.tenants.map(tenant => tenant.tenantId), catalog, cache, catalogForTenant: tenantId => new HearMeOutWorkerMusicCatalog({ catalogFile: resolve(tenantPath(tenantId), "music-catalog.json") }), cacheForTenant: tenantId => new HearMeOutWorkerMediaCache({ cacheDir: tenantPath(tenantId) }), ...(adapter ? { search: (query, limit) => adapter.search(query, limit) } : {}), ...(resolver ? { resolver } : {}), ...(options.movieProviderOrigin?{movieProvider:new HearMeOutMovieProvider(options.movieProviderOrigin,fetchImpl,options.preparedMedia?.authorization)}:{}) }) };
 }
