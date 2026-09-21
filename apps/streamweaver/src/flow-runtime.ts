@@ -105,6 +105,9 @@ export class StreamWeaverInstalledFlowConsumer {
   }
   private match(message:NormalizedChatMessageV1){
     const rawFirst=message.text.trim().split(/\s+/)[0]??"";
+    // Media commands are owned exclusively by the native HearMeOut action
+    // consumer. Block every installed-flow matcher, including regex flows.
+    if(message.provider==="twitch"&&isExclusiveMediaCommand(rawFirst))return undefined;
     for(const item of this.packages.listInstalledPackages(message.tenantId))for(const command of item.commands){
       if(!command.enabled||command.runtime!=="flow")continue;
       if(isExclusiveMediaCommand(command.trigger)||command.aliases.some(isExclusiveMediaCommand))continue;
