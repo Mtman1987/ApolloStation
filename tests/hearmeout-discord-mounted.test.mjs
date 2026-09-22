@@ -62,3 +62,13 @@ test('shared chat preserves the actual guild and auto-enters only the bound publ
  const result=await executor.execute({...input,source:{...inputs[0].source,simulation:true}},{tenantId:tenant,idempotencyKey:'preview'});assert.equal(result.simulation,true);assert.equal(rooms.listMembers(tenant,'discord-activity').some(m=>m.userId==='outsider'),false);
  }finally{rooms.close();}
 });
+
+
+test('Twitch media chat routes unlinked viewers into the permanent public Lounge without service auth',async()=>{
+ const inputs=[],sent=[];
+ const client={async createSuiteActionJob(t,input,key){inputs.push({t,input,key});return {job:{id:key,state:'succeeded',result:{text:'queued'}}};},async getExecutionJob(){throw Error('not needed')}};
+ const consumer=new StreamWeaverBotActionConsumer(new StreamWeaverSuiteActionJobExecutor(client),{async send(message){sent.push(message);return {providerMessageId:'sent'}}});
+ const message={schemaVersion:1,tenantId:tenant,provider:'twitch',connectionId:'twitch-main',channelId:'spacemountainlive',messageId:'twitch-message',occurredAt:new Date().toISOString(),text:'!sr Space Oddity',actor:{providerUserId:'987654321',username:'Viewer',roles:['member'],isBot:false},mentions:[],attachments:[]};
+ await consumer.deliver({deliveryId:'twitch-delivery',message});
+ assert.equal(inputs.length,1);assert.equal(inputs[0].input.action,'hmo.media.request');assert.equal(inputs[0].input.args.roomId,'system-spacemountainlive-lounge');assert.equal(inputs[0].input.args.lane,'music');assert.equal(inputs[0].input.actor.userId,'twitch:spacemountainlive:viewer');assert.equal(inputs[0].input.source.provider,'twitch');assert.equal(sent.length,0,'media completion owns the Twitch reply, so the provisional chat acknowledgement stays suppressed');
+});
