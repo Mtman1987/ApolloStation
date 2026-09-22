@@ -22,16 +22,16 @@ function guest(request:IncomingMessage,response:ServerResponse){
   if(!token){token=randomBytes(32).toString('hex');const secure=String(request.headers['x-forwarded-proto']??'').startsWith('https')||!/^(localhost|127\.0\.0\.1)(:|$)/.test(String(request.headers.host??''));response.setHeader('set-cookie','hmo_viewer='+token+'; Path=/; HttpOnly; Max-Age=2592000; SameSite='+(secure?'None; Secure; Partitioned':'Lax'));}
   return 'guest:'+createHash('sha256').update(token).digest('hex');
 }
-export async function handleHearMeOutBroadcastWindow(request:IncomingMessage,response:ServerResponse,url:URL,program:HearMeOutBroadcastProgram,worker:HearMeOutRoomBroadcast|undefined,media:HearMeOutSuiteMediaResolverV1|undefined,clientId='',readOnly=false,hosting?:{guildIds?:string[];authorizeRoom:(request:IncomingMessage,roomId:string)=>Promise<void>},screens?:HearMeOutScreenBroadcast){
+export async function handleHearMeOutBroadcastWindow(request:IncomingMessage,response:ServerResponse,url:URL,program:HearMeOutBroadcastProgram,worker:HearMeOutRoomBroadcast|undefined,media:HearMeOutSuiteMediaResolverV1|undefined,clientId='',readOnly=false,hosting?:{guildIds?:string[];authorizeRoom:(request:IncomingMessage,roomId:string)=>Promise<void>;authorizeServiceRequest?:(request:IncomingMessage)=>Promise<{userId:string;displayName:string}>},screens?:HearMeOutScreenBroadcast){
   const screenFeed=url.pathname.match(/^\/api\/watch\/sessions\/([^/]+)\/screen\/([a-f0-9-]{36})\/([^/]+)$/);
   const parties=url.pathname==='/api/watch/broadcast/rooms';
   const entry=['/watch','/activity','/activity-lite'].includes(url.pathname)||(url.pathname==='/'&&url.searchParams.has('frame_id'));
   const state=url.pathname==='/api/watch/broadcast/state'||/^\/api\/watch\/sessions\/[^/]+\/state$/.test(url.pathname);
   const feed=!state&&url.pathname.match(/^\/api\/watch\/(?:broadcast|sessions\/[^/]+\/broadcast)\/([^/]+)$/);
   const movieSearch=url.pathname==='/api/watch/broadcast/movies',control=url.pathname==='/api/watch/broadcast/control';
-  const defaults=url.pathname==='/api/watch/activity-default',requestVideo=url.pathname==='/api/watch/broadcast/requests';
+  const defaults=url.pathname==='/api/watch/activity-default',requestVideo=url.pathname==='/api/watch/broadcast/requests',serviceRequest=url.pathname==='/api/watch/broadcast/service-request';
   const browserMedia=url.pathname.match(/^\/api\/watch\/broadcast\/youtube\/([A-Za-z0-9_-]{11})\/(status|audio|video)$/);
-  if(!screenFeed&&!parties&&!entry&&!state&&!feed&&!defaults&&!requestVideo&&!movieSearch&&!browserMedia&&!control)return false;
+  if(!screenFeed&&!parties&&!entry&&!state&&!feed&&!defaults&&!requestVideo&&!serviceRequest&&!movieSearch&&!browserMedia&&!control)return false;
   try{
     const channel=():HearMeOutPartyChannel|undefined=>{
       const guildId=url.searchParams.get('guildId'),channelId=url.searchParams.get('channelId');
@@ -78,6 +78,22 @@ export async function handleHearMeOutBroadcastWindow(request:IncomingMessage,res
     if(!entry&&!roomId)throw Object.assign(Error('Choose a watch party'),{status:400});
     if(roomId)program.getRoom(roomId);
     if(screenFeed){if(request.method!=='GET'||!screens)return send(response,404,{error:'Screen share not found'});await screens.serve(roomId,screenFeed[2]!,screenFeed[3]!,response);return true;}
+    if(serviceRequest){
+      if(request.method!=='POST')return send(response,405,{error:'Method not allowed'});
+      if(readOnly)return send(response,503,{error:'Broadcast requests are unavailable in this preview'});
+      if(!hosting?.authorizeServiceRequest)return send(response,403,{error:'Service service requests are unavailable'});
+      const lounge=program.hostedRoom(PUBLIC_LOUNGE_ID);
+      if(!lounge||roomId!==lounge.roomId)return send(response,404,{error:'The permanent Lounge player was not found'});
+      const actor=await hosting.authorizeServiceRequest(request);
+      const chunks:Buffer[]=[];let size=0;for await(const chunk of request){const bytes=Buffer.from(chunk);size+=bytes.length;if(size>4096)throw Error('Request is too large');chunks.push(bytes);}
+      const body=JSON.parse(Buffer.concat(chunks).toString('utf8'));
+      if(!body||typeof body.query!=='string')throw Error('Enter a video title or link');
+      if(body.lane!==undefined&&body.lane!=='music'&&body.lane!=='movie')throw Error('Choose music or movie');
+      if(!media)return send(response,503,{error:'The media worker is unavailable'});
+      const rawKey=request.headers['idempotency-key'];if(rawKey!==undefined&&(typeof rawKey!=='string'||rawKey.length>200))throw Error('Invalid request key');
+      const session=await program.request({roomId,requesterId:actor.userId,displayName:actor.displayName,query:body.query,lane:body.lane??'music',operationId:rawKey??randomUUID()},media);
+      return send(response,201,{success:true,publicRoomId:PUBLIC_LOUNGE_ID,programRoomId:roomId,sessionId:session.sessionId,current:session.current,queue:session.queue,revision:session.revision});
+    }
     if(control){
       if(request.method!=='POST')return send(response,405,{error:'Method not allowed'});
       if(readOnly)return send(response,503,{error:'Broadcast controls are unavailable in this preview'});
