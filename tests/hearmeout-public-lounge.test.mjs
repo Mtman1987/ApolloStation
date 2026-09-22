@@ -36,7 +36,7 @@ test('one public lounge and its normal room-owned player survive empty cleanup a
 
 test('the public overlay views the room player without creating sessions, joining voice or controlling playback',async()=>{
  const dir=await mkdtemp(join(tmpdir(),'hmo-lounge-http-')),path=join(dir,'rooms.sqlite');
- const auth=createServer((req,res)=>{res.setHeader('content-type','application/json');if(req.headers.cookie!=='session=owner'){res.writeHead(401);res.end('{}');return;}res.end(JSON.stringify({actorId:'owner',tenantIds:['crew'],scopes:['identity:read']}));});
+ const auth=createServer((req,res)=>{res.setHeader('content-type','application/json');if(req.headers.authorization==='Bearer streamweaver-service')return res.end(JSON.stringify({actorType:'service',actorId:'streamweaver',tenantMode:'any',tenantIds:[],scopes:['jobs:read','jobs:write']}));if(req.headers.cookie!=='session=owner'){res.writeHead(401);res.end('{}');return;}res.end(JSON.stringify({actorType:'user',actorId:'owner',tenantIds:['crew'],scopes:['identity:read']}));});
  await new Promise(r=>auth.listen(0,'127.0.0.1',r));
  const host=createHearMeOutWebServer({spmtOrigin:'http://127.0.0.1:'+auth.address().port,databasePath:path,port:0,singleBroadcast:binding,suiteMediaResolver:media});
  const rooms=new SqliteHearMeOutRoomMediaRuntime(path),program=new HearMeOutBroadcastProgram(path,binding);
@@ -48,6 +48,12 @@ test('the public overlay views the room player without creating sessions, joinin
   const party=program.hostedRoom(PUBLIC_LOUNGE_ID),members=rooms.listMembers('crew',PUBLIC_LOUNGE_ID);
   const requested=await fetch(base+'/api/hearmeout/rooms/'+PUBLIC_LOUNGE_ID+'/media/movie',{method:'POST',headers:{cookie:'session=owner',origin:base,'content-type':'application/json','idempotency-key':'room-movie'},body:JSON.stringify({query:'Shared movie'})});assert.equal(requested.status,201,await requested.text());
   const before=program.getSession('crew',party.roomId),identity=program.getBroadcastIdentity('crew',party.roomId);
+  const direct=await fetch(base+'/api/watch/broadcast/service-request?roomId='+PUBLIC_LOUNGE_ID,{method:'POST',headers:{authorization:'Bearer streamweaver-service','content-type':'application/json','idempotency-key':'direct-thriller'},body:JSON.stringify({query:'Thriller',lane:'music'})});
+  assert.equal(direct.status,201,await direct.clone().text());const directBody=await direct.json();
+  assert.equal(directBody.publicRoomId,PUBLIC_LOUNGE_ID);
+  assert.equal(directBody.programRoomId,party.roomId);
+  assert.equal(directBody.sessionId,party.roomId);
+  assert.equal(directBody.queue.at(-1)?.item.title,'Thriller');
   const publicPath='/api/watch/broadcast/state?roomId='+PUBLIC_LOUNGE_ID;
   for(let i=0;i<3;i++){
    const view=await fetch(base+'/watch?roomId='+PUBLIC_LOUNGE_ID);assert.equal(view.status,200);assert.match(await view.text(),/<video/);
