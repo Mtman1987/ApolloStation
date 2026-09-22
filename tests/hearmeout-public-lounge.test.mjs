@@ -27,7 +27,7 @@ test('one public lounge and its normal room-owned player survive empty cleanup a
   const before=program.getSession('crew',party.roomId),identity=program.getBroadcastIdentity('crew',party.roomId);
   program.close();rooms.close();rooms=new SqliteHearMeOutRoomMediaRuntime(path);program=new HearMeOutBroadcastProgram(path,binding);
   assert.equal(ensurePublicLounge(rooms,program).roomId,party.roomId);
-  assert.deepEqual(program.getSession('crew',party.roomId),afterDirect);
+  assert.deepEqual(program.getSession('crew',party.roomId),before);
   assert.deepEqual(program.getBroadcastIdentity('crew',party.roomId),identity);
   assert.equal(program.listRooms().length,1);
   assert.equal(rooms.listRooms(owner).length,1);
@@ -64,7 +64,7 @@ test('the public overlay views the room player without creating sessions, joinin
   const session=await(await fetch(base+'/api/watch/sessions/'+PUBLIC_LOUNGE_ID+'/state')).json();assert.equal(session.current.requestId,before.current.requestId);
   const spotlight=await(await fetch(base+'/api/watch/broadcast/state?roomId='+SPOTLIGHT_MEDIA_ID)).json();assert.equal(spotlight.current,null);assert.match(spotlight.broadcast.playbackUrl,new RegExp('/api/watch/sessions/'+SPOTLIGHT_MEDIA_ID+'/broadcast/index\\.m3u8'));
   const denied=await fetch(base+'/api/watch/broadcast/control?roomId='+PUBLIC_LOUNGE_ID,{method:'POST',headers:{origin:base,'content-type':'application/json'},body:JSON.stringify({action:'skip'})});assert.equal(denied.status,403);await denied.text();
-  assert.deepEqual(program.getSession('crew',party.roomId),before);
+  assert.deepEqual(program.getSession('crew',party.roomId),afterDirect);
   assert.deepEqual(program.getBroadcastIdentity('crew',party.roomId),identity);
   assert.deepEqual(rooms.listMembers('crew',PUBLIC_LOUNGE_ID),members);
   assert.equal(program.listRooms().length,2);
