@@ -35,3 +35,8 @@ function session(requestId){
   playback:{status:'playing',position:12,updatedAt:Date.now()},
  };
 }
+
+test('environment wiring never starts the live donor bridge in sandbox',async()=>{
+ const source=await import('node:fs/promises').then(fs=>fs.readFile(new URL('../apps/hearmeout/src/web-server-v3.ts',import.meta.url),'utf8'));
+ assert.match(source,/environment\.SPMT_RUNTIME_MODE!==["']sandbox["']&&environment\.HEARMEOUT_SINGLE_BROADCAST===["']1["']/);
+});
