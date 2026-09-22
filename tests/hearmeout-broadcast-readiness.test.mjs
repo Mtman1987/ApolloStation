@@ -37,5 +37,5 @@ test('encoder replaces the prior request playlist instead of appending stale son
   const source=readFileSync(new URL('../apps/hearmeout/src/room-broadcast.ts',import.meta.url),'utf8');
   assert.match(source,/delete_segments\+discont_start\+omit_endlist/);
   assert.doesNotMatch(source,/append_list/);
-  assert.match(source,/position=run\.started===0\?0:elapsed/);
+  assert.match(source,/startAtSessionClock\?elapsed:\(run\.started===0\?0:elapsed\)/);
 });
