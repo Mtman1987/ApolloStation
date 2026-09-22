@@ -49,3 +49,13 @@ test('Lounge volume is per-viewer and survives playback refresh without changing
  assert.equal(f.node('volume').value,'9');
  assert.equal(f.requests.length,before,'local volume changes never call the shared broadcast backend');
 });
+
+test('permanent Lounge hides mute controls and forces browser-source audio on',async()=>{
+ const f=fixture('?roomId=system-spacemountainlive-lounge',false,{'hmo-broadcast-volume':'0','hmo-broadcast-audio':'off'});await tick();
+ const player=f.node('player');
+ assert.equal(f.node('audio-toggle').hidden,true);
+ assert.equal(f.node('sound').hidden,true);
+ assert.equal(player.muted,false);
+ assert.equal(f.node('volume').value,'85');
+ assert.equal(player.volume,0.85);
+});

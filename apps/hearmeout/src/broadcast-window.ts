@@ -221,7 +221,15 @@ export const BROADCAST_WINDOW_JS=String.raw`
   const lobby=document.getElementById('party-lobby'),playerPane=document.querySelector('main'),partyList=document.getElementById('party-list'),partyError=document.getElementById('party-error'),partyCreate=document.getElementById('party-create');
   playerPane.classList.add('controls-hidden');
   if(consumerMode){sound.style.cssText='position:absolute;z-index:6;left:50%;bottom:8px;transform:translateX(-50%);padding:7px 10px;border:0;border-radius:999px;background:#ff7a3d;color:#fff;font:700 12px system-ui;box-shadow:0 4px 16px #0009';playerPane.append(sound);}
-  if(fixedPublicMedia){document.getElementById('view-toggle').hidden=true;document.getElementById('party-back').hidden=true;}
+  if(fixedPublicMedia){
+    document.getElementById('view-toggle').hidden=true;
+    document.getElementById('party-back').hidden=true;
+    audioToggle.hidden=true;
+    sound.hidden=true;
+    audioEnabled=true;
+    setAudioEnabled(true);
+    if(level<=0)setVolume(85);
+  }
   const hostingParams=new URLSearchParams();
   if(params.get('appRoomId'))hostingParams.set('appRoomId',params.get('appRoomId'));
   if(frameId&&params.get('guild_id')&&params.get('channel_id')){hostingParams.set('guildId',params.get('guild_id'));hostingParams.set('channelId',params.get('channel_id'));}
@@ -260,7 +268,7 @@ export const BROADCAST_WINDOW_JS=String.raw`
   function play(){
     if(disposed||!connected||!sourceUrl)return Promise.resolve();
     if(playPending)return playPending;
-    playPending=video.play().catch(e=>{if(disposed||!sourceUrl||e.name==='AbortError')return;if(e.name==='NotAllowedError')status.textContent='Tap Enable sound to watch';else error.textContent=e.message;}).finally(()=>{playPending=undefined});
+    playPending=video.play().catch(e=>{if(disposed||!sourceUrl||e.name==='AbortError')return;if(e.name==='NotAllowedError')status.textContent=fixedPublicMedia?'Browser source blocked autoplay audio. Enable browser-source audio in the host.':'Tap Enable sound to watch';else error.textContent=e.message;}).finally(()=>{playPending=undefined});
     return playPending;
   }
   function syncLiveQueuePlayback(state){
@@ -306,10 +314,10 @@ export const BROADCAST_WINDOW_JS=String.raw`
     catch(e){statePollFailed=true;if(e.status===404){showParties();return;}error.textContent=e.message;}finally{busy=false;}
   }
   output.addEventListener('change',()=>{selectedOutput=output.value;source.clear();sourceUrl='';currentRequest='';currentEpoch='';playbackError.textContent='';const next=new URL(location.href);next.searchParams.set('output',selectedOutput);history.replaceState(null,'',next);if(latestState)applyState(latestState);});
-  audioToggle.addEventListener('click',()=>{setAudioEnabled(!audioEnabled);if(audioEnabled&&level===0)setVolume(lastAudible);void play()});
+  audioToggle.addEventListener('click',()=>{if(fixedPublicMedia)return;setAudioEnabled(!audioEnabled);if(audioEnabled&&level===0)setVolume(lastAudible);void play()});
   videoToggle.addEventListener('click',()=>setVideoEnabled(!videoEnabled));
-  sound.addEventListener('click',()=>{if(!audioEnabled)setAudioEnabled(true);setVolume(level?0:lastAudible);void play()});
-  volume.addEventListener('input',event=>{if(!audioEnabled&&Number(event.target.value)>0)setAudioEnabled(true);setVolume(Number(event.target.value))});
+  sound.addEventListener('click',()=>{if(fixedPublicMedia)return;if(!audioEnabled)setAudioEnabled(true);setVolume(level?0:lastAudible);void play()});
+  volume.addEventListener('input',event=>{if(fixedPublicMedia&&!audioEnabled)setAudioEnabled(true);else if(!audioEnabled&&Number(event.target.value)>0)setAudioEnabled(true);setVolume(Number(event.target.value))});
   retry.addEventListener('click',()=>{source.clear();sourceUrl='';playbackError.textContent='';refresh()});
   function setConnected(value){connected=value;disconnect.textContent=value?'Disconnect':'Watch again';sourceUrl='';currentRequest='';source.clear();playbackError.textContent='';retry.disabled=!value;if(!value)status.textContent='Disconnected on this device. The broadcast continues.';if(latestState)applyState(latestState);else refresh();}
   disconnect.addEventListener('click',()=>{if(!connected&&localOwner.hearMeOutWatchPopouts[activeParty]&&!localOwner.hearMeOutWatchPopouts[activeParty].closed){localOwner.hearMeOutWatchPopouts[activeParty].close();localOwner.hearMeOutWatchPopouts[activeParty]=undefined;}setConnected(!connected);});
