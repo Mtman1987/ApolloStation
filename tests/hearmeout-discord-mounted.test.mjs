@@ -56,9 +56,19 @@ test('shared chat preserves the actual guild and auto-enters only the bound publ
  const client={async createSuiteActionJob(t,input,key){inputs.push(input);const result=await executor.execute(input,{tenantId:t,idempotencyKey:key});return {job:{id:key,state:'succeeded',result}};}};
  const replies=[],consumer=new StreamWeaverBotActionConsumer(new StreamWeaverSuiteActionJobExecutor(client),{async send(m){replies.push(m);return {providerMessageId:'reply'};}});
  const message={schemaVersion:1,tenantId:tenant,provider:'discord',connectionId:'connection',channelId:channel,guildId:guild,messageId:'message',occurredAt:new Date().toISOString(),text:'!wr A film',actor:{providerUserId:discordUser,canonicalUserId:'viewer',username:'Viewer',roles:['member'],isBot:false},mentions:[],attachments:[]};
- try{await consumer.deliver({deliveryId:'delivery-1',message});assert.equal(inputs[0].source.guildId,guild);assert.equal(rooms.getSession(tenant,'discord-activity','movie').current.item.title,'A film');assert.match(replies[0].text,/started/);assert.equal(detectSpmtSuiteActionCommand('!sr A song').args.lane,'music');assert.equal(detectSpmtSuiteActionCommand('!srwhatever'),undefined);
+ try{await consumer.deliver({deliveryId:'delivery-1',message});assert.equal(inputs[0].source.guildId,guild);assert.equal(rooms.getSession(tenant,'discord-activity','movie').current.item.title,'A film');assert.equal(replies.length,0,'media requests wait for the durable completion reply instead of sending a provisional chat acknowledgement');assert.equal(detectSpmtSuiteActionCommand('!sr A song').args.lane,'music');assert.equal(detectSpmtSuiteActionCommand('!srwhatever'),undefined);
  const input={...inputs[0],actor:{userId:'outsider',username:'Outsider',role:'member'},source:{...inputs[0].source,guildId:'999999999999999999'}};await assert.rejects(()=>executor.execute(input,{tenantId:tenant,idempotencyKey:'wrong-guild'}),/Choose/);
  const owner={tenantId:tenant,userId:'owner',displayName:'Owner',roles:['admin']};rooms.createRoom(owner,{roomId:'private',name:'Private',privacy:'private',password:'secret-password',operationId:'create-private'});await assert.rejects(()=>executor.execute({...input,args:{...input.args,roomId:'private'},source:inputs[0].source},{tenantId:tenant,idempotencyKey:'private-request'}),/Join/);assert.equal(rooms.getSession(tenant,'private','movie').current,null);
  const result=await executor.execute({...input,source:{...inputs[0].source,simulation:true}},{tenantId:tenant,idempotencyKey:'preview'});assert.equal(result.simulation,true);assert.equal(rooms.listMembers(tenant,'discord-activity').some(m=>m.userId==='outsider'),false);
  }finally{rooms.close();}
+});
+
+
+test('Twitch media chat routes unlinked viewers into the permanent public Lounge without service auth',async()=>{
+ const inputs=[],sent=[];
+ const client={async createSuiteActionJob(t,input,key){inputs.push({t,input,key});return {job:{id:key,state:'succeeded',result:{text:'queued'}}};},async getExecutionJob(){throw Error('not needed')}};
+ const consumer=new StreamWeaverBotActionConsumer(new StreamWeaverSuiteActionJobExecutor(client),{async send(message){sent.push(message);return {providerMessageId:'sent'}}});
+ const message={schemaVersion:1,tenantId:tenant,provider:'twitch',connectionId:'twitch-main',channelId:'spacemountainlive',messageId:'twitch-message',occurredAt:new Date().toISOString(),text:'!sr Space Oddity',actor:{providerUserId:'987654321',username:'Viewer',roles:['member'],isBot:false},mentions:[],attachments:[]};
+ await consumer.deliver({deliveryId:'twitch-delivery',message});
+ assert.equal(inputs.length,1);assert.equal(inputs[0].input.action,'hmo.media.request');assert.equal(inputs[0].input.args.roomId,'system-spacemountainlive-lounge');assert.equal(inputs[0].input.args.lane,'music');assert.equal(inputs[0].input.actor.userId,'twitch:spacemountainlive:viewer');assert.equal(inputs[0].input.source.provider,'twitch');assert.equal(sent.length,0,'media completion owns the Twitch reply, so the provisional chat acknowledgement stays suppressed');
 });
