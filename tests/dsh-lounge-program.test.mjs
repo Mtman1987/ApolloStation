@@ -28,5 +28,5 @@ test('Lounge main panel embeds the permanent Spotlight Media source instead of r
  const dir=mkdtempSync(join(tmpdir(),'dsh-lounge-overlay-')),overlay=new DshLoungeOverlayWeb(join(dir,'state.sqlite')),server=createServer((req,res)=>{const url=new URL(req.url,'http://local');if(!overlay.handle(req,res,url)){res.writeHead(404);res.end();}});
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));t.after(async()=>{overlay.close();await new Promise(resolve=>server.close(resolve));rmSync(dir,{recursive:true,force:true})});
  const base='http://127.0.0.1:'+server.address().port,response=await fetch(base+'/apps/discord-stream-hub/overlay/lounge?tenant=tenant'),html=await response.text();
- assert.equal(response.status,200);assert.match(html,/src="\/watch\?embed=1&amp;roomId=system-spacemountainlive-lounge&amp;output=program"/);assert.match(html,/class="spotlight-media"/);assert.doesNotMatch(html,/spotlight-media\/player|streamweaver-new\.fly\.dev|spotlight-lab\/player/);
+ assert.equal(response.status,200);assert.match(html,/src="\/watch\?embed=1&amp;appRoomId=system-spacemountainlive-lounge&amp;roomId=system-spacemountainlive-lounge&amp;output=program"/);assert.match(html,/class="spotlight-media"/);assert.doesNotMatch(html,/spotlight-media\/player|streamweaver-new\.fly\.dev|spotlight-lab\/player/);
 });
