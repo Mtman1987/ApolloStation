@@ -42,8 +42,8 @@ test('the public overlay views the room player without creating sessions, joinin
  const rooms=new SqliteHearMeOutRoomMediaRuntime(path),program=new HearMeOutBroadcastProgram(path,binding);
  try{
   await host.listen();const base='http://127.0.0.1:'+host.server.address().port;
-  const control=await fetch(base+'/spotlight-media');assert.equal(control.status,200);const controlHtml=await control.text();assert.match(controlHtml,/own permanent Spotlight program/);assert.match(controlHtml,new RegExp('/api/hearmeout/rooms/'+SPOTLIGHT_MEDIA_ID+'/screen'));
-  const player=await fetch(base+'/spotlight-media/player');assert.equal(player.status,200);assert.match(await player.text(),/new Twitch\.Player/);
+  const control=await fetch(base+'/spotlight-media');assert.equal(control.status,200);const controlHtml=await control.text();assert.match(controlHtml,/own permanent Spotlight program/);assert.match(controlHtml,/\/spotlight-media\/player/);assert.doesNotMatch(controlHtml,/screen share|Share that player tab/i);
+  const player=await fetch(base+'/spotlight-media/player');assert.equal(player.status,200);const playerHtml=await player.text();assert.match(playerHtml,/new Twitch\.Player/);assert.match(playerHtml,/\/api\/spotlight-media\/channels/);assert.doesNotMatch(playerHtml,/spotlight-lab\/player|<iframe/i);
   const directory=await(await fetch(base+'/api/watch/broadcast/rooms')).json();assert.equal(directory.rooms.length,2);assert.ok(directory.rooms.some(room=>room.name==='Spotlight Media'));
   const party=program.hostedRoom(PUBLIC_LOUNGE_ID),members=rooms.listMembers('crew',PUBLIC_LOUNGE_ID);
   const requested=await fetch(base+'/api/hearmeout/rooms/'+PUBLIC_LOUNGE_ID+'/media/movie',{method:'POST',headers:{cookie:'session=owner',origin:base,'content-type':'application/json','idempotency-key':'room-movie'},body:JSON.stringify({query:'Shared movie'})});assert.equal(requested.status,201,await requested.text());
