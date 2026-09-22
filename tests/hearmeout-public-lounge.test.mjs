@@ -7,7 +7,7 @@ import {createServer} from 'node:http';
 import {HearMeOutBroadcastProgram,HEARMEOUT_IDLE_PLAYER_TTL_MS} from '../apps/hearmeout/dist/broadcast-program.js';
 import {SqliteHearMeOutRoomMediaRuntime} from '../apps/hearmeout/dist/room-media-core.js';
 import {createHearMeOutWebServer} from '../apps/hearmeout/dist/web-server-v3.js';
-import {ensurePublicLounge,PUBLIC_LOUNGE_ID} from '../apps/hearmeout/dist/lounge-room.js';
+import {ensurePublicLounge,PUBLIC_LOUNGE_ID,SPOTLIGHT_MEDIA_ID} from '../apps/hearmeout/dist/lounge-room.js';
 const binding={tenantId:'crew',executionUserId:'owner'};
 const owner={tenantId:'crew',userId:'owner',displayName:'Owner',roles:['admin']};
 const media={async resolve({query,lane}){return {itemId:query,title:query,type:lane,source:'fixture',playbackUrl:'https://media.example/video.mp4',durationSeconds:600};}};
@@ -42,7 +42,9 @@ test('the public overlay views the room player without creating sessions, joinin
  const rooms=new SqliteHearMeOutRoomMediaRuntime(path),program=new HearMeOutBroadcastProgram(path,binding);
  try{
   await host.listen();const base='http://127.0.0.1:'+host.server.address().port;
-  const directory=await(await fetch(base+'/api/watch/broadcast/rooms')).json();assert.equal(directory.rooms.length,1);
+  const control=await fetch(base+'/spotlight-media');assert.equal(control.status,200);const controlHtml=await control.text();assert.match(controlHtml,/own permanent Spotlight program/);assert.match(controlHtml,new RegExp('/api/hearmeout/rooms/'+SPOTLIGHT_MEDIA_ID+'/screen'));
+  const player=await fetch(base+'/spotlight-media/player');assert.equal(player.status,200);assert.match(await player.text(),/new Twitch\.Player/);
+  const directory=await(await fetch(base+'/api/watch/broadcast/rooms')).json();assert.equal(directory.rooms.length,2);assert.ok(directory.rooms.some(room=>room.name==='Spotlight Media'));
   const party=program.hostedRoom(PUBLIC_LOUNGE_ID),members=rooms.listMembers('crew',PUBLIC_LOUNGE_ID);
   const requested=await fetch(base+'/api/hearmeout/rooms/'+PUBLIC_LOUNGE_ID+'/media/movie',{method:'POST',headers:{cookie:'session=owner',origin:base,'content-type':'application/json','idempotency-key':'room-movie'},body:JSON.stringify({query:'Shared movie'})});assert.equal(requested.status,201,await requested.text());
   const before=program.getSession('crew',party.roomId),identity=program.getBroadcastIdentity('crew',party.roomId);
@@ -56,10 +58,11 @@ test('the public overlay views the room player without creating sessions, joinin
    assert.equal(response.status,200);const state=await response.json();assert.equal(state.sessionId,room.roomId);
   }
   const session=await(await fetch(base+'/api/watch/sessions/'+PUBLIC_LOUNGE_ID+'/state')).json();assert.equal(session.current.requestId,before.current.requestId);
+  const spotlight=await(await fetch(base+'/api/watch/broadcast/state?roomId='+SPOTLIGHT_MEDIA_ID)).json();assert.equal(spotlight.current,null);assert.match(spotlight.broadcast.playbackUrl,new RegExp('/api/watch/sessions/'+SPOTLIGHT_MEDIA_ID+'/broadcast/index\\.m3u8'));
   const denied=await fetch(base+'/api/watch/broadcast/control?roomId='+PUBLIC_LOUNGE_ID,{method:'POST',headers:{origin:base,'content-type':'application/json'},body:JSON.stringify({action:'skip'})});assert.equal(denied.status,403);await denied.text();
   assert.deepEqual(program.getSession('crew',party.roomId),before);
   assert.deepEqual(program.getBroadcastIdentity('crew',party.roomId),identity);
   assert.deepEqual(rooms.listMembers('crew',PUBLIC_LOUNGE_ID),members);
-  assert.equal(program.listRooms().length,1);
+  assert.equal(program.listRooms().length,2);
  }finally{await host.close();program.close();rooms.close();await new Promise(r=>auth.close(r));await rm(dir,{recursive:true,force:true});}
 });
