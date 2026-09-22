@@ -26,5 +26,5 @@ document.querySelector('#share').onclick=async()=>{try{stream=await navigator.me
 }
 
 function renderSpotlightPlayer() {
-  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Spotlight Media player</title><style>html,body,iframe{margin:0;width:100%;height:100%;border:0;background:#000;overflow:hidden}</style></head><body><iframe src="${STREAMWEAVER_ORIGIN}/spotlight-lab/player" allow="autoplay; fullscreen" allowfullscreen title="Spotlight Media"></iframe></body></html>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Spotlight Media player</title><style>html,body,iframe{margin:0;width:100%;height:100%;border:0;background:#000;overflow:hidden}</style></head><body><iframe id="spotlight" allow="autoplay; fullscreen" allowfullscreen title="Spotlight Media"></iframe><script>const source=new URL('${STREAMWEAVER_ORIGIN}/spotlight-lab/player');source.searchParams.set('parent',location.hostname);document.querySelector('#spotlight').src=source;</script></body></html>`;
 }
