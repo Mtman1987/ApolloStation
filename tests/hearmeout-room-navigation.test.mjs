@@ -21,5 +21,6 @@ test("HearMeOut Open does not redundantly rejoin an existing membership", () => 
 test("SpaceMountain lounge opens Apollo's passive broadcast viewer", () => {
   assert.match(surface, /system-spacemountainlive-lounge/);
   assert.match(surface, /frame\.src='\/watch\?embed=1&appRoomId='/);
+  assert.match(surface, /roomId==='system-spacemountainlive-lounge'\?'&roomId='/);
   assert.doesNotMatch(surface, /hearmeout-main\.fly\.dev\/watch\/watch-room-system-spacemountainlive-lounge-music/);
 });
