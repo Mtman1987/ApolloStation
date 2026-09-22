@@ -1,4 +1,4 @@
-import {isPublicSystemMediaRoom, PUBLIC_LOUNGE_ID} from './lounge-room.js';
+import {isPublicSystemMediaRoom, PUBLIC_LOUNGE_ID, SPOTLIGHT_MEDIA_ID} from './lounge-room.js';
 import {handleSpotlightMedia} from './spotlight-media.js';
 import {HEARMEOUT_DISCORD_HANDSHAKE_JS} from "./discord-activity-handshake.js";
 import type {HearMeOutScreenBroadcast} from "./screen-broadcast.js";
@@ -25,6 +25,9 @@ function guest(request:IncomingMessage,response:ServerResponse){
   return 'guest:'+createHash('sha256').update(token).digest('hex');
 }
 export async function handleHearMeOutBroadcastWindow(request:IncomingMessage,response:ServerResponse,url:URL,program:HearMeOutBroadcastProgram,worker:HearMeOutRoomBroadcast|undefined,media:HearMeOutSuiteMediaResolverV1|undefined,clientId='',readOnly=false,hosting?:{guildIds?:string[];authorizeRoom:(request:IncomingMessage,roomId:string)=>Promise<void>;authorizeServiceRequest?:(request:IncomingMessage)=>Promise<{userId:string;displayName:string}>},screens?:HearMeOutScreenBroadcast){
+  if (request.method === 'GET' && url.pathname === '/watch' && url.searchParams.get('roomId') === SPOTLIGHT_MEDIA_ID) {
+    response.writeHead(302, {location: '/spotlight-media/player', 'cache-control': 'no-store'}); response.end(); return true;
+  }
   if (await handleSpotlightMedia(request, response, url)) return true;
   const screenFeed=url.pathname.match(/^\/api\/watch\/sessions\/([^/]+)\/screen\/([a-f0-9-]{36})\/([^/]+)$/);
   const parties=url.pathname==='/api/watch/broadcast/rooms';
