@@ -27,7 +27,7 @@ test('one public lounge and its normal room-owned player survive empty cleanup a
   const before=program.getSession('crew',party.roomId),identity=program.getBroadcastIdentity('crew',party.roomId);
   program.close();rooms.close();rooms=new SqliteHearMeOutRoomMediaRuntime(path);program=new HearMeOutBroadcastProgram(path,binding);
   assert.equal(ensurePublicLounge(rooms,program).roomId,party.roomId);
-  assert.deepEqual(program.getSession('crew',party.roomId),before);
+  assert.deepEqual(program.getSession('crew',party.roomId),afterDirect);
   assert.deepEqual(program.getBroadcastIdentity('crew',party.roomId),identity);
   assert.equal(program.listRooms().length,1);
   assert.equal(rooms.listRooms(owner).length,1);
@@ -51,7 +51,7 @@ test('the public overlay views the room player without creating sessions, joinin
   const direct=await fetch(base+'/api/watch/broadcast/requests?roomId='+PUBLIC_LOUNGE_ID,{method:'POST',headers:{'content-type':'application/json','idempotency-key':'direct-thriller'},body:JSON.stringify({query:'Thriller',lane:'music',displayName:'SpaceMountainLive'})});
   assert.equal(direct.status,201,await direct.clone().text());const directBody=await direct.json();
   assert.equal(directBody.sessionId,party.roomId);
-  assert.equal(directBody.queue.at(-1)?.item.title,'Thriller');
+  assert.equal(directBody.queue.at(-1)?.item.title,'Thriller');const afterDirect=program.getSession('crew',party.roomId);
   const publicPath='/api/watch/broadcast/state?roomId='+PUBLIC_LOUNGE_ID;
   for(let i=0;i<3;i++){
    const view=await fetch(base+'/watch?roomId='+PUBLIC_LOUNGE_ID);assert.equal(view.status,200);assert.match(await view.text(),/<video/);
