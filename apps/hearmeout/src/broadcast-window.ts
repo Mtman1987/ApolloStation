@@ -9,6 +9,7 @@ import type {HearMeOutBroadcastProgram,HearMeOutPartyChannel} from './broadcast-
 import type {HearMeOutRoomBroadcast} from './room-broadcast.js';
 import type {HearMeOutSuiteMediaResolverV1} from './suite-action-executor.js';
 import type {HearMeOutLiveLoungeBridge,HearMeOutLiveLoungeSession} from './live-lounge-bridge.js';
+import type {HearMeOutSpotlightBridge} from './spotlight-media-bridge.js';
 
 const browserRequests=new Map<string,{videoId:string;until:number}>();
 
@@ -21,8 +22,7 @@ export function broadcastView(program:HearMeOutBroadcastProgram,configured:boole
   return {sessionId:roomId,current:visible(session.current),queue:session.queue.map(request=>visible(request)!),playback:session.playback,revision:session.revision,broadcast:{configured,ready,...(epoch?{epoch}:{}),playbackUrl:'/api/watch/sessions/'+encodeURIComponent(publicId)+'/broadcast/index.m3u8'}};
 }
 
-function liveLoungeView(session:HearMeOutLiveLoungeSession,canManage:boolean,screen:unknown){
-  const playbackUrl=String(session.current?.item?.playbackUrl??'');
+function liveLoungeView(session:HearMeOutLiveLoungeSession,canManage:boolean,screen:unknown,broadcast?:HearMeOutRoomBroadcast,tenantId=''){
   return {
     sessionId:PUBLIC_LOUNGE_ID,
     current:session.current,
@@ -30,7 +30,12 @@ function liveLoungeView(session:HearMeOutLiveLoungeSession,canManage:boolean,scr
     playback:session.playback,
     revision:Number(session.playback?.updatedAt||0),
     liveLounge:true,
-    broadcast:{configured:true,ready:Boolean(playbackUrl),playbackUrl},
+    broadcast:{
+      configured:Boolean(broadcast),
+      ready:Boolean(broadcast?.ready(tenantId,PUBLIC_LOUNGE_ID,'movie')),
+      ...(broadcast?.epoch(tenantId,PUBLIC_LOUNGE_ID,'movie')?{epoch:broadcast.epoch(tenantId,PUBLIC_LOUNGE_ID,'movie')}:{}),
+      playbackUrl:'/api/watch/sessions/'+encodeURIComponent(PUBLIC_LOUNGE_ID)+'/broadcast/index.m3u8',
+    },
     canManage,
     screen,
   };
@@ -40,11 +45,11 @@ function guest(request:IncomingMessage,response:ServerResponse){
   if(!token){token=randomBytes(32).toString('hex');const secure=String(request.headers['x-forwarded-proto']??'').startsWith('https')||!/^(localhost|127\.0\.0\.1)(:|$)/.test(String(request.headers.host??''));response.setHeader('set-cookie','hmo_viewer='+token+'; Path=/; HttpOnly; Max-Age=2592000; SameSite='+(secure?'None; Secure; Partitioned':'Lax'));}
   return 'guest:'+createHash('sha256').update(token).digest('hex');
 }
-export async function handleHearMeOutBroadcastWindow(request:IncomingMessage,response:ServerResponse,url:URL,program:HearMeOutBroadcastProgram,worker:HearMeOutRoomBroadcast|undefined,media:HearMeOutSuiteMediaResolverV1|undefined,clientId='',readOnly=false,hosting?:{guildIds?:string[];authorizeRoom:(request:IncomingMessage,roomId:string)=>Promise<void>;authorizeServiceRequest?:(request:IncomingMessage)=>Promise<{userId:string;displayName:string}>},screens?:HearMeOutScreenBroadcast,liveLounge?:HearMeOutLiveLoungeBridge){
+export async function handleHearMeOutBroadcastWindow(request:IncomingMessage,response:ServerResponse,url:URL,program:HearMeOutBroadcastProgram,worker:HearMeOutRoomBroadcast|undefined,media:HearMeOutSuiteMediaResolverV1|undefined,clientId='',readOnly=false,hosting?:{guildIds?:string[];authorizeRoom:(request:IncomingMessage,roomId:string)=>Promise<void>;authorizeServiceRequest?:(request:IncomingMessage)=>Promise<{userId:string;displayName:string}>},screens?:HearMeOutScreenBroadcast,liveLounge?:HearMeOutLiveLoungeBridge,liveLoungeBroadcast?:HearMeOutRoomBroadcast,spotlight?:HearMeOutSpotlightBridge){
   if (request.method === 'GET' && url.pathname === '/watch' && url.searchParams.get('roomId') === SPOTLIGHT_MEDIA_ID) {
     response.writeHead(302, {location: '/spotlight-media/player', 'cache-control': 'no-store'}); response.end(); return true;
   }
-  if (await handleSpotlightMedia(request, response, url)) return true;
+  if (await handleSpotlightMedia(request, response, url, spotlight)) return true;
   const screenFeed=url.pathname.match(/^\/api\/watch\/sessions\/([^/]+)\/screen\/([a-f0-9-]{36})\/([^/]+)$/);
   const parties=url.pathname==='/api/watch/broadcast/rooms';
   const entry=['/watch','/activity','/activity-lite'].includes(url.pathname)||(url.pathname==='/'&&url.searchParams.has('frame_id'));
@@ -130,7 +135,7 @@ export async function handleHearMeOutBroadcastWindow(request:IncomingMessage,res
       if(body.expectedRequestId!==undefined&&typeof body.expectedRequestId!=='string')throw Error('Invalid request reference');
       if(liveLoungeSelected){
         const session=await liveLounge!.control(body.action,body.expectedRequestId);
-        return send(response,200,liveLoungeView(session,true,screens?.state(roomId)??{active:false,ready:false}));
+        return send(response,200,liveLoungeView(session,true,screens?.state(roomId)??{active:false,ready:false},liveLoungeBroadcast,program.binding.tenantId));
       }
       program.control({tenantId:program.binding.tenantId,userId:guest(request,response),displayName:'Viewer',roles:[]},{roomId,action:body.action,...(body.expectedRequestId?{expectedRequestId:body.expectedRequestId}:{})});
       return send(response,200,{...broadcastView(program,Boolean(worker),false,undefined,roomId),canManage:true,screen:screens?.state(roomId)??{active:false,ready:false}});
@@ -184,13 +189,20 @@ export async function handleHearMeOutBroadcastWindow(request:IncomingMessage,res
     }
     if(request.method!=='GET'&&request.method!=='HEAD')return send(response,405,{error:'Method not allowed'});
     if(entry){guest(request,response);response.writeHead(200,{'content-type':'text/html; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'});response.end(renderHearMeOutBroadcastWindow(clientId));return true;}
-    if(feed){if(!worker)return send(response,503,{error:'The broadcast worker is unavailable'});await worker.serve(program.binding.tenantId,roomId,'movie',feed[1]!,response);return true;}
+    if(feed){
+      if(liveLoungeSelected){
+        if(!liveLoungeBroadcast)return send(response,503,{error:'The permanent Lounge broadcast is unavailable'});
+        await liveLoungeBroadcast.serve(program.binding.tenantId,PUBLIC_LOUNGE_ID,'movie',feed[1]!,response);return true;
+      }
+      if(!worker)return send(response,503,{error:'The broadcast worker is unavailable'});
+      await worker.serve(program.binding.tenantId,roomId,'movie',feed[1]!,response);return true;
+    }
     guest(request,response);
     const hosted=contextualRoom();
     const canManage=hosted?.roomId===roomId;
     if(liveLoungeSelected){
       const session=await liveLounge!.read();
-      return send(response,200,liveLoungeView(session,canManage,screens?.state(roomId)??{active:false,ready:false}));
+      return send(response,200,liveLoungeView(session,canManage,screens?.state(roomId)??{active:false,ready:false},liveLoungeBroadcast,program.binding.tenantId));
     }
     return send(response,200,{...broadcastView(program,Boolean(worker),worker?.ready(program.binding.tenantId,roomId,'movie')??false,worker?.epoch(program.binding.tenantId,roomId,'movie'),roomId),canManage,screen:screens?.state(roomId)??{active:false,ready:false}});
   }catch(error){return send(response,error instanceof SpmtApiError?error.status:(error as {status?:number}).status??400,{error:(error instanceof Error?error.message:String(error)).replace(/((?:token|authorization|secret|password|cookie))\s*[:=]\s*\S+/gi,'$1=[redacted]').slice(0,400)});}
@@ -271,13 +283,6 @@ export const BROADCAST_WINDOW_JS=String.raw`
     playPending=video.play().catch(e=>{if(disposed||!sourceUrl||e.name==='AbortError')return;if(e.name==='NotAllowedError')status.textContent=fixedPublicMedia?'Browser source blocked autoplay audio. Enable browser-source audio in the host.':'Tap Enable sound to watch';else error.textContent=e.message;}).finally(()=>{playPending=undefined});
     return playPending;
   }
-  function syncLiveQueuePlayback(state){
-    if(!state?.liveLounge||!state.current||video.readyState<1)return;
-    const playback=state.playback||{},base=Number(playback.position||0),updated=Number(playback.updatedAt||Date.now());
-    const target=Math.max(0,base+(playback.status==='playing'?Math.max(0,Date.now()-updated)/1000:0));
-    if(Number.isFinite(target)&&Math.abs(Number(video.currentTime||0)-target)>4){try{video.currentTime=target}catch{}}
-    if(playback.status==='playing')void play();else video.pause();
-  }
   function applyState(state){
     if(disposed||(state.sessionId!==activeParty&&!(fixedPublicMedia&&state.sessionId===activeParty))||state.revision<lastRevision)return;lastRevision=state.revision;latestState=state;
     const canManage=state.canManage===true;requestForm.hidden=state.liveLounge===true||!canManage;queueControls.hidden=!canManage;skip.disabled=!canManage||controlBusy||!state.current;clearQueue.disabled=!canManage||controlBusy||(!state.current&&!state.queue.length);
@@ -297,12 +302,6 @@ export const BROADCAST_WINDOW_JS=String.raw`
     if(!connected||!state.current){if(sourceUrl){sourceUrl='';source.clear();}currentRequest='';playbackError.textContent='';return;}
     if(!state.broadcast.configured){playbackError.textContent='The broadcast worker is unavailable.';return;}
     if(!state.broadcast.ready){if(!sourceUrl)playbackError.textContent='Preparing the first playable segment…';return;}
-    if(state.liveLounge===true){
-      if(sourceUrl!==state.broadcast.playbackUrl||currentRequest!==state.current.requestId||(source.failed&&Date.now()>=retryAt)){
-        sourceUrl=state.broadcast.playbackUrl;currentRequest=state.current.requestId;currentEpoch='';retryAt=Date.now()+10000;playbackError.textContent='Connecting to the live HearMeOut queue…';source.load(sourceUrl,/\.m3u8(?:$|\?)/i.test(sourceUrl),false);
-      }
-      syncLiveQueuePlayback(state);return;
-    }
     if(sourceUrl!==state.broadcast.playbackUrl||currentRequest!==state.current.requestId||(state.broadcast.epoch&&currentEpoch!==state.broadcast.epoch)||(source.failed&&Date.now()>=retryAt)){
       sourceUrl=state.broadcast.playbackUrl;currentRequest=state.current.requestId;currentEpoch=state.broadcast.epoch||'';retryAt=Date.now()+10000;playbackError.textContent='Connecting to the broadcast…';source.load(sourceUrl,true,true);
     }
@@ -354,7 +353,7 @@ export const BROADCAST_WINDOW_JS=String.raw`
     }catch(e){if(e.status)pendingRequest=undefined;error.textContent=e.message;status.textContent='Request not completed. You can retry.';}finally{requestInFlight=false;button.disabled=false;}
   });
   requestForm.addEventListener('input',()=>{selectedMovie=undefined;movieResults.replaceChildren();movieResults.hidden=true;});
-  video.addEventListener('canplay',()=>{playbackError.textContent='';if(latestState?.liveLounge)syncLiveQueuePlayback(latestState);else void play()});video.addEventListener('playing',()=>{playbackError.textContent='';});video.addEventListener('ended',()=>{if(latestState?.liveLounge&&latestState.canManage===true&&latestState.current?.requestId)void controlQueue('skip')});document.addEventListener('visibilitychange',()=>{if(!document.hidden){if(latestState?.liveLounge)syncLiveQueuePlayback(latestState);else source.joinLive()}});
+  video.addEventListener('canplay',()=>{playbackError.textContent='';void play()});video.addEventListener('playing',()=>{playbackError.textContent='';});document.addEventListener('visibilitychange',()=>{if(!document.hidden)source.joinLive()});
   const restoredParty=params.get('roomId')||(frameId?storage.getItem('hmo-party:'+(params.get('instance_id')||'browser')):null);if(restoredParty)watchParty({roomId:restoredParty,name:'Watch party'});else void refreshParties();
   let timer,syncTimer;function resume(){disposed=false;busy=false;clearInterval(timer);clearInterval(syncTimer);timer=setInterval(()=>{if(activeParty)void refresh();else void refreshParties();},1500);syncTimer=setInterval(()=>{if(!document.hidden)source.syncLive()},5000);if(activeParty)void refresh();else void refreshParties();}
   resume();window.addEventListener('pageshow',event=>{if(event.persisted){sourceUrl='';currentEpoch='';resume();}});window.addEventListener('pagehide',()=>{disposed=true;clearInterval(timer);clearInterval(syncTimer);source.clear();sourceUrl='';});

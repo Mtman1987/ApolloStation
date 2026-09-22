@@ -15,7 +15,7 @@ export type HearMeOutBroadcastRuntime = Pick<SqliteHearMeOutRoomMediaRuntime,'br
 export const HEARMEOUT_BROADCAST_PROTOCOLS='http,https,httpproxy,tcp,tls,crypto';
 
 type Run={session:HearMeOutMediaSessionV1;cacheKey:string;signature:string;owner:string;process?:ChildProcess;pending?:Promise<void>;retryAt:number;failed:boolean;started:number;outputEpoch?:string;readyEpoch?:string};
-export interface HearMeOutRoomBroadcastOptions {ffmpegBinary:string;ffprobeBinary:string;cachePath:string;spmtOrigin:string;lockBinary?:string;preparedMedia?:HearMeOutPreparedMediaOptions;onDiagnostic?:(value:{phase:string;message:string})=>void;}
+export interface HearMeOutRoomBroadcastOptions {ffmpegBinary:string;ffprobeBinary:string;cachePath:string;spmtOrigin:string;lockBinary?:string;preparedMedia?:HearMeOutPreparedMediaOptions;startAtSessionClock?:boolean;onDiagnostic?:(value:{phase:string;message:string})=>void;}
 
 /** HMO's playout worker for each supplied program. Browsers read the output of this
  * process; viewer connect/disconnect never starts, pauses or seeks the source. */
@@ -105,7 +105,7 @@ export class HearMeOutRoomBroadcast {
     // Each restart gets distinct segment names and replaces the playlists. Do
     // not append the prior request's playlist: every window reloads when the
     // shared request changes, and appended entries can replay the previous song.
-    const epoch=Date.now().toString(36)+'-'+randomUUID().slice(0,8),elapsed=Math.max(0,latest.playback.position+(Date.now()-Date.parse(latest.playback.updatedAt))/1000),position=run.started===0?0:elapsed,variants=buildHearMeOutXtreamVariantMap(media);run.outputEpoch=epoch;delete run.readyEpoch;
+    const epoch=Date.now().toString(36)+'-'+randomUUID().slice(0,8),elapsed=Math.max(0,latest.playback.position+(Date.now()-Date.parse(latest.playback.updatedAt))/1000),position=this.options.startAtSessionClock?elapsed:(run.started===0?0:elapsed),variants=buildHearMeOutXtreamVariantMap(media);run.outputEpoch=epoch;delete run.readyEpoch;
     const hlsSource=item.type!=='live'&&/\.m3u8$/i.test(source.pathname),seek=item.type==='live'||position<.1?[]:['-ss',String(position)];
     const inputArgs=(url:URL,hls=false)=>['-protocol_whitelist',HEARMEOUT_BROADCAST_PROTOCOLS,'-rw_timeout','15000000','-re',...(hls?['-live_start_index','0']:[]),...seek,'-i',url.href];
     // Decoder options belong before the inputs; cap the output encoder too.

@@ -1,7 +1,5 @@
 import type {IncomingMessage, ServerResponse} from 'node:http';
-type Creator = {username: string; displayName: string};
-
-const SPMT_ORIGIN = (process.env.SPMT_BASE_URL || 'https://spmt.live').replace(/\/+$/, '');
+import type {HearMeOutSpotlightBridge} from './spotlight-media-bridge.js';
 
 function send(response: ServerResponse, status: number, body: string, type = 'text/html; charset=utf-8') {
   response.writeHead(status, {'content-type': type, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff'});
@@ -9,55 +7,71 @@ function send(response: ServerResponse, status: number, body: string, type = 'te
   return true;
 }
 
-function cleanCreators(value: unknown): Creator[] {
-  const seen = new Set<string>();
-  return (Array.isArray(value) ? value : []).flatMap((row: any) => {
-    const live = row?.isLive === true || row?.live === true || String(row?.status || '').toLowerCase() === 'live';
-    const username = String(row?.twitchLogin || row?.username || row?.twitchUsername || row?.login || '').trim().replace(/^@/, '').toLowerCase();
-    if (!live || !/^[a-z0-9_]{1,25}$/.test(username) || seen.has(username)) return [];
-    seen.add(username);
-    return [{username, displayName: String(row?.displayName || row?.twitchDisplayName || username).trim() || username}];
-  });
+function sendJson(response: ServerResponse, status: number, body: unknown) {
+  return send(response, status, JSON.stringify(body), 'application/json; charset=utf-8');
 }
 
-async function creators(): Promise<Creator[]> {
-  const response = await fetch(`${SPMT_ORIGIN}/api/live-community`, {
-    headers: {Accept: 'application/json'}, cache: 'no-store', signal: AbortSignal.timeout(8_000),
-  });
-  if (!response.ok) throw new Error(`Canonical live creator feed returned ${response.status}`);
-  const body = await response.json() as any;
-  const data = body?.data && typeof body.data === 'object' ? body.data : body;
-  const rows = [data?.shoutouts, data?.liveMembers, data?.items, data?.rows, data?.community].find((value) => Array.isArray(value)) || [];
-  return cleanCreators(rows);
-}
-
-export async function handleSpotlightMedia(request: IncomingMessage, response: ServerResponse, url: URL) {
-  if (url.pathname === '/api/spotlight-media/channels') {
-    if (request.method !== 'GET') return send(response, 405, JSON.stringify({error: 'method_not_allowed'}), 'application/json; charset=utf-8');
-    try { return send(response, 200, JSON.stringify({creators: await creators()}), 'application/json; charset=utf-8'); }
-    catch { return send(response, 200, JSON.stringify({creators: [], error: 'live_creator_feed_unavailable'}), 'application/json; charset=utf-8'); }
+export async function handleSpotlightMedia(request: IncomingMessage, response: ServerResponse, url: URL, bridge?: HearMeOutSpotlightBridge) {
+  if (url.pathname === '/spotlight-media') {
+    if (request.method !== 'GET') return sendJson(response, 405, {error: 'method_not_allowed'});
+    return send(response, 200, renderSpotlightControl(Boolean(bridge)));
   }
-  if (url.pathname === '/spotlight-media') return send(response, 200, renderSpotlightControl());
-  if (url.pathname === '/spotlight-media/player') return send(response, 200, renderSpotlightPlayer());
+  if (url.pathname === '/spotlight-media/player') {
+    if (request.method !== 'GET') return sendJson(response, 405, {error: 'method_not_allowed'});
+    return send(response, 200, renderSpotlightPlayer());
+  }
+  if (url.pathname === '/api/spotlight-media/status') {
+    if (request.method !== 'GET') return sendJson(response, 405, {error: 'method_not_allowed'});
+    if (!bridge) return sendJson(response, 503, {error: 'Spotlight source is unavailable'});
+    try { return sendJson(response, 200, await bridge.status()); }
+    catch (error) { return sendJson(response, Number((error as {status?: number}).status || 502), {error: error instanceof Error ? error.message : String(error)}); }
+  }
+  if (url.pathname === '/api/spotlight-media/start') {
+    if (request.method !== 'POST') return sendJson(response, 405, {error: 'method_not_allowed'});
+    if (!bridge) return sendJson(response, 503, {error: 'Spotlight source is unavailable'});
+    if (request.headers.origin && new URL(request.headers.origin).host !== request.headers.host) return sendJson(response, 403, {error: 'Invalid request origin'});
+    try { return sendJson(response, 200, await bridge.start()); }
+    catch (error) { return sendJson(response, Number((error as {status?: number}).status || 502), {error: error instanceof Error ? error.message : String(error)}); }
+  }
+  const media = url.pathname.match(/^\/api\/spotlight-media\/broadcast\/(index\.m3u8|spotlight_\d{6}\.ts)$/);
+  if (media) {
+    if (request.method !== 'GET' && request.method !== 'HEAD') return sendJson(response, 405, {error: 'method_not_allowed'});
+    if (!bridge) return sendJson(response, 503, {error: 'Spotlight source is unavailable'});
+    try {
+      const upstream = await bridge.media(media[1]!, typeof request.headers.range === 'string' ? request.headers.range : undefined);
+      const bytes = request.method === 'HEAD' ? Buffer.alloc(0) : Buffer.from(await upstream.arrayBuffer());
+      const headers: Record<string,string> = {
+        'content-type': upstream.headers.get('content-type') || (media[1]!.endsWith('.m3u8') ? 'application/vnd.apple.mpegurl' : 'video/mp2t'),
+        'cache-control': 'no-store',
+        'x-content-type-options': 'nosniff',
+      };
+      for (const name of ['content-range','accept-ranges']) {
+        const value = upstream.headers.get(name); if (value) headers[name] = value;
+      }
+      headers['content-length'] = String(bytes.byteLength);
+      response.writeHead(upstream.status, headers); response.end(bytes); return true;
+    } catch (error) {
+      return sendJson(response, Number((error as {status?: number}).status || 503), {error: error instanceof Error ? error.message : String(error)});
+    }
+  }
   return false;
 }
 
-function renderSpotlightControl() {
-  const player = '/spotlight-media/player';
-  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Spotlight Media</title><style>body{margin:0;background:#071025;color:#edf7ff;font:16px system-ui}main{max-width:760px;margin:0 auto;padding:28px}a{display:inline-block;margin:8px 8px 8px 0;padding:12px 16px;border:0;border-radius:10px;background:#69e8ff;color:#031120;font:700 16px system-ui;text-decoration:none;cursor:pointer}p{color:#bdcae6;line-height:1.5}</style></head><body><main><h1>Spotlight Media</h1><p>This is its own permanent Spotlight program. Your HMO Music/Movie program is separate and unchanged.</p><a href="${player}" target="spotlight-media-player">Open permanent Spotlight source</a><p>Use that same URL as your OBS browser source. It reads the canonical live-community feed and rotates the approved live Twitch creators automatically.</p></main></body></html>`;
+function renderSpotlightControl(configured: boolean) {
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Spotlight source control</title><style>
+html,body{margin:0;background:#071025;color:#edf7ff;font:16px system-ui}main{max-width:900px;margin:0 auto;padding:24px}button{padding:12px 18px;border:0;border-radius:10px;background:#69e8ff;color:#031120;font:800 16px system-ui;cursor:pointer}button:disabled{opacity:.55;cursor:default}p{color:#bdcae6;line-height:1.5}.preview{margin-top:18px;aspect-ratio:16/9;background:#000;border-radius:14px;overflow:hidden}.preview iframe{width:100%;height:100%;border:0}#status{font-weight:700}
+</style></head><body><main><h1>Spotlight source</h1><p>This controls the one persistent Twitch player. Press Start once. The Lounge and OBS only watch its shared output and never create their own Twitch player.</p><button id="start" type="button" ${configured?'':'disabled'}>${configured?'Start Spotlight':'Spotlight source unavailable'}</button><p id="status">Checking source…</p><div class="preview"><iframe src="/spotlight-media/player" title="Spotlight shared output" allow="autoplay"></iframe></div></main><script>
+const start=document.getElementById('start'),status=document.getElementById('status');
+async function read(){try{const r=await fetch('/api/spotlight-media/status',{cache:'no-store'}),data=await r.json();if(!r.ok)throw Error(data.error||'status '+r.status);status.textContent=data.ready?'Spotlight is running · @'+(data.currentLogin||'live'):data.active?(data.activated?'Starting shared output…':'Source ready — press Start Spotlight'):'Source stopped — press Start Spotlight';if(data.activated)start.hidden=true;return data}catch(e){status.textContent=e.message;return null}}
+start.addEventListener('click',async()=>{start.disabled=true;status.textContent='Starting the one Spotlight source…';try{const r=await fetch('/api/spotlight-media/start',{method:'POST',headers:{accept:'application/json'}}),data=await r.json();if(!r.ok)throw Error(data.error||'start '+r.status);start.hidden=true;status.textContent='Spotlight started'+(data.currentLogin?' · @'+data.currentLogin:'')}catch(e){status.textContent=e.message;start.disabled=false}});
+read();setInterval(read,3000);
+</script></body></html>`;
 }
 
 function renderSpotlightPlayer() {
-  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Spotlight Media player</title><style>html,body,#player{margin:0;width:100%;height:100%;background:#000;overflow:hidden}#readonly{position:fixed;z-index:2;inset:0;background:transparent;pointer-events:auto}#notice{position:fixed;z-index:4;left:12px;bottom:12px;padding:8px 10px;border-radius:8px;background:#071025d9;color:#dceaff;font:13px system-ui;pointer-events:none}</style></head><body><div id="player"></div><div id="readonly" aria-hidden="true"></div><div id="notice">Loading Spotlight Media…</div><script>
-const ROTATE_MS=600000,REFRESH_MS=60000;let list=[],index=-1,player,rotateTimer,refreshTimer;const notice=document.querySelector('#notice');
-function slotIndex(){return list.length?Math.floor(Date.now()/ROTATE_MS)%list.length:0}
-function forceAudio(){if(!player)return;player.setMuted(false);player.setVolume(1);player.play()}
-function show(force=false){if(!list.length)return;const nextIndex=slotIndex(),next=list[nextIndex];if(!next)return;if(force||nextIndex!==index){index=nextIndex;if(player){player.setChannel(next.username);forceAudio()}}notice.textContent='@'+next.username+' · Spotlight Media'}
-function schedule(){clearTimeout(rotateTimer);show();const wait=ROTATE_MS-(Date.now()%ROTATE_MS)+100;rotateTimer=setTimeout(schedule,wait)}
-async function load(){const r=await fetch('/api/spotlight-media/channels',{cache:'no-store'}),data=await r.json();if(!r.ok)throw Error(data.error||'Could not load creators');return Array.isArray(data.creators)?data.creators:[]}
-async function refresh(){const fresh=await load().catch(()=>[]);if(fresh.length){list=fresh;show()}}
-function twitchParents(){const hosts=[location.hostname];try{const ref=new URL(document.referrer).hostname;if(ref&&!hosts.includes(ref))hosts.push(ref)}catch{}for(const host of ['spmt.live','www.spmt.live'])if(!hosts.includes(host))hosts.push(host);return hosts}\nasync function start(){list=await load();if(!list.length){notice.textContent='No approved live creators right now.';return}const first=list[slotIndex()];const script=document.createElement('script');script.src='https://player.twitch.tv/js/embed/v1.js';script.onload=()=>{player=new Twitch.Player('player',{channel:first.username,width:'100%',height:'100%',parent:twitchParents(),autoplay:true,muted:false,controls:false});player.addEventListener(Twitch.Player.READY,()=>{index=slotIndex();forceAudio();notice.textContent='@'+list[index].username+' · Spotlight Media';schedule();refreshTimer=setInterval(refresh,REFRESH_MS)});player.addEventListener(Twitch.Player.PLAY,forceAudio)};document.head.append(script)}
-start().catch(()=>{notice.textContent='Could not load the Spotlight creator feed.'});
-addEventListener('beforeunload',()=>{clearTimeout(rotateTimer);clearInterval(refreshTimer)});
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Spotlight shared output</title><style>html,body,video{margin:0;width:100%;height:100%;overflow:hidden;background:#000}video{display:block;object-fit:contain}</style></head><body><video id="player" autoplay playsinline></video><script src="/api/hearmeout/playback-source.js"></script><script>
+const video=document.getElementById('player'),source=new window.HearMeOutPlaybackSource(video,()=>{});
+video.volume=.58;video.muted=false;source.load('/api/spotlight-media/broadcast/index.m3u8',true,true);
+video.addEventListener('canplay',()=>video.play().catch(()=>{}));document.addEventListener('visibilitychange',()=>{if(!document.hidden){source.joinLive();video.play().catch(()=>{})}});setInterval(()=>{if(source.failed)source.retry();else source.syncLive();video.play().catch(()=>{})},5000);
 </script></body></html>`;
 }
