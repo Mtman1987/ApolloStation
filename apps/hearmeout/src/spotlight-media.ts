@@ -72,6 +72,6 @@ function renderSpotlightPlayer() {
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Spotlight shared output</title><style>html,body,video{margin:0;width:100%;height:100%;overflow:hidden;background:#000}video{display:block;object-fit:contain}</style></head><body><video id="player" autoplay playsinline></video><script src="/api/hearmeout/playback-source.js"></script><script>
 const video=document.getElementById('player'),source=new window.HearMeOutPlaybackSource(video,()=>{});
 video.volume=.58;video.muted=false;source.load('/api/spotlight-media/broadcast/index.m3u8',true,true);
-video.addEventListener('canplay',()=>video.play().catch(()=>{}));document.addEventListener('visibilitychange',()=>{if(!document.hidden){source.joinLive();video.play().catch(()=>{})}});setInterval(()=>source.syncLive(),5000);
+video.addEventListener('canplay',()=>video.play().catch(()=>{}));document.addEventListener('visibilitychange',()=>{if(!document.hidden){source.joinLive();video.play().catch(()=>{})}});setInterval(()=>{if(source.failed)source.retry();else source.syncLive();video.play().catch(()=>{})},5000);
 </script></body></html>`;
 }
