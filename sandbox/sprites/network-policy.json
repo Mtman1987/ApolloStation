@@ -45,6 +45,10 @@
       "action": "allow"
     },
     {
+      "domain": "streamweaver-new.fly.dev",
+      "action": "allow"
+    },
+    {
       "domain": "api.openai.com",
       "action": "allow"
     },
