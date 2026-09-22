@@ -137,7 +137,7 @@ export async function handleHearMeOutBroadcastWindow(request:IncomingMessage,res
       if(request.method!=='POST')return send(response,405,{error:'Method not allowed'});
       if(readOnly)return send(response,503,{error:'Broadcast requests are unavailable in this preview'});
       if(request.headers.origin&&new URL(request.headers.origin).host!==request.headers.host)return send(response,403,{error:'Invalid request origin'});
-      await authorizeHost(roomId);
+      if(selected&&isPublicSystemMediaRoom(selected))program.touchRoom(roomId);else await authorizeHost(roomId);
       const chunks:Buffer[]=[];let size=0;for await(const chunk of request){const bytes=Buffer.from(chunk);size+=bytes.length;if(size>4096)throw Error('Request is too large');chunks.push(bytes);}
       const body=JSON.parse(Buffer.concat(chunks).toString('utf8'));
       if(!body||typeof body.query!=='string')throw Error('Enter a video title or link');
