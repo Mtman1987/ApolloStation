@@ -46,7 +46,7 @@ test('the public overlay views the room player without creating sessions, joinin
   const party=program.hostedRoom(PUBLIC_LOUNGE_ID),members=rooms.listMembers('crew',PUBLIC_LOUNGE_ID);
   const requested=await fetch(base+'/api/hearmeout/rooms/'+PUBLIC_LOUNGE_ID+'/media/movie',{method:'POST',headers:{cookie:'session=owner',origin:base,'content-type':'application/json','idempotency-key':'room-movie'},body:JSON.stringify({query:'Shared movie'})});assert.equal(requested.status,201,await requested.text());
   const before=program.getSession('crew',party.roomId),identity=program.getBroadcastIdentity('crew',party.roomId);
-  const direct=await fetch(base+'/api/watch/broadcast/test-request?roomId='+PUBLIC_LOUNGE_ID,{method:'POST',headers:{authorization:'Bearer streamweaver-service','content-type':'application/json','idempotency-key':'direct-thriller'},body:JSON.stringify({query:'Thriller',lane:'music'})});
+  const direct=await fetch(base+'/api/watch/broadcast/service-request?roomId='+PUBLIC_LOUNGE_ID,{method:'POST',headers:{authorization:'Bearer streamweaver-service','content-type':'application/json','idempotency-key':'direct-thriller'},body:JSON.stringify({query:'Thriller',lane:'music'})});
   assert.equal(direct.status,201,await direct.clone().text());const directBody=await direct.json();
   assert.equal(directBody.publicRoomId,PUBLIC_LOUNGE_ID);
   assert.equal(directBody.programRoomId,party.roomId);
