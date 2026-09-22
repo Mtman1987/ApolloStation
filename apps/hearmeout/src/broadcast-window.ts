@@ -9,6 +9,7 @@ import type {HearMeOutBroadcastProgram,HearMeOutPartyChannel} from './broadcast-
 import type {HearMeOutRoomBroadcast} from './room-broadcast.js';
 import type {HearMeOutSuiteMediaResolverV1} from './suite-action-executor.js';
 import type {HearMeOutLiveLoungeBridge,HearMeOutLiveLoungeSession} from './live-lounge-bridge.js';
+import type {HearMeOutSpotlightBridge} from './spotlight-media-bridge.js';
 
 const browserRequests=new Map<string,{videoId:string;until:number}>();
 
@@ -44,11 +45,11 @@ function guest(request:IncomingMessage,response:ServerResponse){
   if(!token){token=randomBytes(32).toString('hex');const secure=String(request.headers['x-forwarded-proto']??'').startsWith('https')||!/^(localhost|127\.0\.0\.1)(:|$)/.test(String(request.headers.host??''));response.setHeader('set-cookie','hmo_viewer='+token+'; Path=/; HttpOnly; Max-Age=2592000; SameSite='+(secure?'None; Secure; Partitioned':'Lax'));}
   return 'guest:'+createHash('sha256').update(token).digest('hex');
 }
-export async function handleHearMeOutBroadcastWindow(request:IncomingMessage,response:ServerResponse,url:URL,program:HearMeOutBroadcastProgram,worker:HearMeOutRoomBroadcast|undefined,media:HearMeOutSuiteMediaResolverV1|undefined,clientId='',readOnly=false,hosting?:{guildIds?:string[];authorizeRoom:(request:IncomingMessage,roomId:string)=>Promise<void>;authorizeServiceRequest?:(request:IncomingMessage)=>Promise<{userId:string;displayName:string}>},screens?:HearMeOutScreenBroadcast,liveLounge?:HearMeOutLiveLoungeBridge,liveLoungeBroadcast?:HearMeOutRoomBroadcast){
+export async function handleHearMeOutBroadcastWindow(request:IncomingMessage,response:ServerResponse,url:URL,program:HearMeOutBroadcastProgram,worker:HearMeOutRoomBroadcast|undefined,media:HearMeOutSuiteMediaResolverV1|undefined,clientId='',readOnly=false,hosting?:{guildIds?:string[];authorizeRoom:(request:IncomingMessage,roomId:string)=>Promise<void>;authorizeServiceRequest?:(request:IncomingMessage)=>Promise<{userId:string;displayName:string}>},screens?:HearMeOutScreenBroadcast,liveLounge?:HearMeOutLiveLoungeBridge,liveLoungeBroadcast?:HearMeOutRoomBroadcast,spotlight?:HearMeOutSpotlightBridge){
   if (request.method === 'GET' && url.pathname === '/watch' && url.searchParams.get('roomId') === SPOTLIGHT_MEDIA_ID) {
     response.writeHead(302, {location: '/spotlight-media/player', 'cache-control': 'no-store'}); response.end(); return true;
   }
-  if (await handleSpotlightMedia(request, response, url)) return true;
+  if (await handleSpotlightMedia(request, response, url, spotlight)) return true;
   const screenFeed=url.pathname.match(/^\/api\/watch\/sessions\/([^/]+)\/screen\/([a-f0-9-]{36})\/([^/]+)$/);
   const parties=url.pathname==='/api/watch/broadcast/rooms';
   const entry=['/watch','/activity','/activity-lite'].includes(url.pathname)||(url.pathname==='/'&&url.searchParams.has('frame_id'));
