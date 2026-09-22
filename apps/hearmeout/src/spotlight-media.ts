@@ -4,6 +4,7 @@ import {SPOTLIGHT_MEDIA_ID} from './lounge-room.js';
 type Creator = {username: string; displayName: string};
 
 const STREAMWEAVER_ORIGIN = (process.env.STREAMWEAVER_ORIGIN || 'https://streamweaver-new.fly.dev').replace(/\/+$/, '');
+const SPMT_ORIGIN = (process.env.SPMT_BASE_URL || 'https://spmt.live').replace(/\/+$/, '');
 
 function send(response: ServerResponse, status: number, body: string, type = 'text/html; charset=utf-8') {
   response.writeHead(status, {'content-type': type, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff'});
@@ -14,14 +15,25 @@ function send(response: ServerResponse, status: number, body: string, type = 'te
 function cleanCreators(value: unknown): Creator[] {
   const seen = new Set<string>();
   return (Array.isArray(value) ? value : []).flatMap((row: any) => {
-    const username = String(row?.username || '').trim().replace(/^@/, '').toLowerCase();
+    const username = String(row?.username || row?.twitchLogin || row?.twitchUsername || row?.login || '').trim().replace(/^@/, '').toLowerCase();
     if (!/^[a-z0-9_]{1,25}$/.test(username) || seen.has(username)) return [];
     seen.add(username);
-    return [{username, displayName: String(row?.displayName || username).trim() || username}];
+    return [{username, displayName: String(row?.displayName || row?.twitchDisplayName || username).trim() || username}];
   });
 }
 
 async function creators(): Promise<Creator[]> {
+  const loadSpmt = async () => {
+    const response = await fetch(`${SPMT_ORIGIN}/api/community/shoutouts`, {
+      headers: {Accept: 'application/json'}, cache: 'no-store', signal: AbortSignal.timeout(8_000),
+    });
+    if (!response.ok) throw new Error(`Canonical live feed returned ${response.status}`);
+    const body = await response.json();
+    const data = body?.data && typeof body.data === 'object' ? body.data : body;
+    const rows = Array.isArray(data?.liveMembers) ? data.liveMembers
+      : [data?.shoutouts, data?.items, data?.rows, data?.community].find((value) => Array.isArray(value)) || [];
+    return cleanCreators(rows.filter((row: any) => row?.isLive === true || row?.live === true || String(row?.status || '').toLowerCase() === 'live'));
+  };
   const load = async (group: string) => {
     const response = await fetch(`${STREAMWEAVER_ORIGIN}/api/lounge/live-shoutouts?group=${group}`, {
       headers: {Accept: 'application/json'}, cache: 'no-store', signal: AbortSignal.timeout(8_000),
@@ -29,8 +41,10 @@ async function creators(): Promise<Creator[]> {
     if (!response.ok) throw new Error(`Live creator feed returned ${response.status}`);
     return cleanCreators((await response.json())?.creators);
   };
-  const results = await Promise.allSettled([load('community'), load('partner')]);
-  return cleanCreators(results.flatMap((result) => result.status === 'fulfilled' ? result.value : []));
+  const results = await Promise.allSettled([loadSpmt(), load('community'), load('partner')]);
+  const available = results.filter((result): result is PromiseFulfilledResult<Creator[]> => result.status === 'fulfilled');
+  if (!available.length) throw new Error('All live creator feeds are unavailable');
+  return cleanCreators(available.flatMap((result) => result.value));
 }
 
 export async function handleSpotlightMedia(request: IncomingMessage, response: ServerResponse, url: URL) {
@@ -55,5 +69,5 @@ document.querySelector('#share').onclick=async()=>{try{stream=await navigator.me
 }
 
 function renderSpotlightPlayer() {
-  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Spotlight Media player</title><style>html,body,#player{margin:0;width:100%;height:100%;background:#000;overflow:hidden}#notice{position:fixed;z-index:2;left:12px;bottom:12px;padding:8px 10px;border-radius:8px;background:#071025d9;color:#dceaff;font:13px system-ui}</style></head><body><div id="player"></div><div id="notice">Loading Spotlight Media…</div><script>let list=[],index=0,player;const notice=document.querySelector('#notice');function show(){const next=list[index];if(!next)return;if(player){player.setChannel(next.username);player.play()}notice.textContent='@'+next.username+' · rotates every 30 seconds'}async function start(){const r=await fetch('/api/spotlight-media/channels',{cache:'no-store'}),data=await r.json();list=Array.isArray(data.creators)?data.creators:[];if(!list.length){notice.textContent='No approved live creators right now.';return}const script=document.createElement('script');script.src='https://player.twitch.tv/js/embed/v1.js';script.onload=()=>{player=new Twitch.Player('player',{channel:list[0].username,width:'100%',height:'100%',parent:[location.hostname],autoplay:true,muted:false});player.addEventListener(Twitch.Player.READY,()=>{player.play();notice.textContent='Click Twitch Start Watching once if it asks.';setInterval(()=>{index=(index+1)%list.length;show()},30000);setInterval(async()=>{const fresh=await fetch('/api/spotlight-media/channels',{cache:'no-store'}).then(r=>r.json()).catch(()=>({}));if(Array.isArray(fresh.creators)&&fresh.creators.length)list=fresh.creators},30000)})};document.head.append(script)}start().catch(()=>notice.textContent='Could not load the Spotlight creator feed.')</script></body></html>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Spotlight Media player</title><style>html,body,#player{margin:0;width:100%;height:100%;background:#000;overflow:hidden}#notice{position:fixed;z-index:2;left:12px;bottom:12px;padding:8px 10px;border-radius:8px;background:#071025d9;color:#dceaff;font:13px system-ui}</style></head><body><div id="player"></div><div id="notice">Loading Spotlight Media…</div><script>let list=[],index=0,player;const notice=document.querySelector('#notice');function show(){const next=list[index];if(!next)return;if(player){player.setChannel(next.username);player.play()}notice.textContent='@'+next.username+' · rotates every 30 seconds'}async function start(){const r=await fetch('/api/spotlight-media/channels',{cache:'no-store'}),data=await r.json();list=Array.isArray(data.creators)?data.creators:[];if(!list.length){notice.textContent=data.error?'Could not reach the creator feed. Reload shortly.':'No approved live creators right now.';return}const script=document.createElement('script');script.src='https://player.twitch.tv/js/embed/v1.js';script.onload=()=>{player=new Twitch.Player('player',{channel:list[0].username,width:'100%',height:'100%',parent:[location.hostname],autoplay:true,muted:false});player.addEventListener(Twitch.Player.READY,()=>{player.play();notice.textContent='Click Twitch Start Watching once if it asks.';setInterval(()=>{index=(index+1)%list.length;show()},30000);setInterval(async()=>{const fresh=await fetch('/api/spotlight-media/channels',{cache:'no-store'}).then(r=>r.json()).catch(()=>({}));if(Array.isArray(fresh.creators)&&fresh.creators.length)list=fresh.creators},30000)})};document.head.append(script)}start().catch(()=>notice.textContent='Could not load the Spotlight creator feed.')</script></body></html>`;
 }
