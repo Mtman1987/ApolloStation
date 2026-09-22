@@ -29,9 +29,9 @@ export async function handleHearMeOutBroadcastWindow(request:IncomingMessage,res
   const state=url.pathname==='/api/watch/broadcast/state'||/^\/api\/watch\/sessions\/[^/]+\/state$/.test(url.pathname);
   const feed=!state&&url.pathname.match(/^\/api\/watch\/(?:broadcast|sessions\/[^/]+\/broadcast)\/([^/]+)$/);
   const movieSearch=url.pathname==='/api/watch/broadcast/movies',control=url.pathname==='/api/watch/broadcast/control';
-  const defaults=url.pathname==='/api/watch/activity-default',requestVideo=url.pathname==='/api/watch/broadcast/requests',testRequest=url.pathname==='/api/watch/broadcast/test-request';
+  const defaults=url.pathname==='/api/watch/activity-default',requestVideo=url.pathname==='/api/watch/broadcast/requests',serviceRequest=url.pathname==='/api/watch/broadcast/service-request';
   const browserMedia=url.pathname.match(/^\/api\/watch\/broadcast\/youtube\/([A-Za-z0-9_-]{11})\/(status|audio|video)$/);
-  if(!screenFeed&&!parties&&!entry&&!state&&!feed&&!defaults&&!requestVideo&&!testRequest&&!movieSearch&&!browserMedia&&!control)return false;
+  if(!screenFeed&&!parties&&!entry&&!state&&!feed&&!defaults&&!requestVideo&&!serviceRequest&&!movieSearch&&!browserMedia&&!control)return false;
   try{
     const channel=():HearMeOutPartyChannel|undefined=>{
       const guildId=url.searchParams.get('guildId'),channelId=url.searchParams.get('channelId');
@@ -78,10 +78,10 @@ export async function handleHearMeOutBroadcastWindow(request:IncomingMessage,res
     if(!entry&&!roomId)throw Object.assign(Error('Choose a watch party'),{status:400});
     if(roomId)program.getRoom(roomId);
     if(screenFeed){if(request.method!=='GET'||!screens)return send(response,404,{error:'Screen share not found'});await screens.serve(roomId,screenFeed[2]!,screenFeed[3]!,response);return true;}
-    if(testRequest){
+    if(serviceRequest){
       if(request.method!=='POST')return send(response,405,{error:'Method not allowed'});
       if(readOnly)return send(response,503,{error:'Broadcast requests are unavailable in this preview'});
-      if(!hosting?.authorizeServiceRequest)return send(response,403,{error:'Service test requests are unavailable'});
+      if(!hosting?.authorizeServiceRequest)return send(response,403,{error:'Service service requests are unavailable'});
       const lounge=program.hostedRoom(PUBLIC_LOUNGE_ID);
       if(!lounge||roomId!==lounge.roomId)return send(response,404,{error:'The permanent Lounge player was not found'});
       const actor=await hosting.authorizeServiceRequest(request);
