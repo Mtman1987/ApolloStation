@@ -1,6 +1,4 @@
 import type {IncomingMessage, ServerResponse} from 'node:http';
-import {SPOTLIGHT_MEDIA_ID} from './lounge-room.js';
-
 type Creator = {username: string; displayName: string};
 
 const SPMT_ORIGIN = (process.env.SPMT_BASE_URL || 'https://spmt.live').replace(/\/+$/, '');
