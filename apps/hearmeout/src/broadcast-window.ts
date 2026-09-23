@@ -40,14 +40,53 @@ function liveLoungeView(session:HearMeOutLiveLoungeSession,canManage:boolean,scr
     screen,
   };
 }
+function renderPermanentLoungePlayer(){
+  const room=JSON.stringify(PUBLIC_LOUNGE_ID);
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SpaceMountain Lounge media</title><style>html,body,video{margin:0;width:100%;height:100%;overflow:hidden;background:#000}video{display:block;object-fit:contain}</style></head><body><video id="player" autoplay playsinline></video><script src="/api/hearmeout/playback-source.js"></script><script>
+const roomId=${room},video=document.getElementById('player'),source=new window.HearMeOutPlaybackSource(video,()=>{});
+video.volume=.85;video.muted=false;
+let sourceUrl='',epoch='',requestId='',disposed=false,busy=false;
+async function refresh(){
+  if(disposed||busy)return;busy=true;
+  try{
+    const response=await fetch('/api/watch/broadcast/state?roomId='+encodeURIComponent(roomId),{cache:'no-store'});
+    if(!response.ok)throw Error('state '+response.status);
+    const state=await response.json();
+    if(!state.current){
+      source.clear();sourceUrl='';epoch='';requestId='';return;
+    }
+    const next=String(state.broadcast?.playbackUrl||''),nextEpoch=String(state.broadcast?.epoch||''),nextRequest=String(state.current?.requestId||'');
+    if(!next||state.broadcast?.ready!==true)return;
+    if(source.failed||next!==sourceUrl||nextEpoch!==epoch||nextRequest!==requestId){
+      sourceUrl=next;epoch=nextEpoch;requestId=nextRequest;
+      source.load(sourceUrl,/\.m3u8(?:$|\?)/i.test(sourceUrl),true);
+    }
+    video.play().catch(()=>{});
+  }catch{}finally{busy=false}
+}
+video.addEventListener('canplay',()=>video.play().catch(()=>{}));
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){if(source.failed)source.retry();else source.joinLive();void refresh()}});
+setInterval(()=>{if(source.failed)source.retry();else source.syncLive();void refresh()},3000);
+void refresh();
+window.addEventListener('pagehide',()=>{disposed=true;source.clear()});
+</script></body></html>`;
+}
+
 function guest(request:IncomingMessage,response:ServerResponse){
   let token=String(request.headers.cookie??'').match(/(?:^|;\s*)hmo_viewer=([a-f0-9]{64})(?:;|$)/)?.[1];
   if(!token){token=randomBytes(32).toString('hex');const secure=String(request.headers['x-forwarded-proto']??'').startsWith('https')||!/^(localhost|127\.0\.0\.1)(:|$)/.test(String(request.headers.host??''));response.setHeader('set-cookie','hmo_viewer='+token+'; Path=/; HttpOnly; Max-Age=2592000; SameSite='+(secure?'None; Secure; Partitioned':'Lax'));}
   return 'guest:'+createHash('sha256').update(token).digest('hex');
 }
 export async function handleHearMeOutBroadcastWindow(request:IncomingMessage,response:ServerResponse,url:URL,program:HearMeOutBroadcastProgram,worker:HearMeOutRoomBroadcast|undefined,media:HearMeOutSuiteMediaResolverV1|undefined,clientId='',readOnly=false,hosting?:{guildIds?:string[];authorizeRoom:(request:IncomingMessage,roomId:string)=>Promise<void>;authorizeServiceRequest?:(request:IncomingMessage)=>Promise<{userId:string;displayName:string}>},screens?:HearMeOutScreenBroadcast,liveLounge?:HearMeOutLiveLoungeBridge,liveLoungeBroadcast?:HearMeOutRoomBroadcast,spotlight?:HearMeOutSpotlightBridge){
+  if (request.method === 'GET' && url.pathname === '/watch' && url.searchParams.get('roomId') === PUBLIC_LOUNGE_ID) {
+    response.writeHead(302, {location: '/lounge-media/player', 'cache-control': 'no-store'}); response.end(); return true;
+  }
   if (request.method === 'GET' && url.pathname === '/watch' && url.searchParams.get('roomId') === SPOTLIGHT_MEDIA_ID) {
     response.writeHead(302, {location: '/spotlight-media/player', 'cache-control': 'no-store'}); response.end(); return true;
+  }
+  if (request.method === 'GET' && url.pathname === '/lounge-media/player') {
+    response.writeHead(200, {'content-type':'text/html; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'});
+    response.end(renderPermanentLoungePlayer()); return true;
   }
   if (await handleSpotlightMedia(request, response, url, spotlight)) return true;
   const screenFeed=url.pathname.match(/^\/api\/watch\/sessions\/([^/]+)\/screen\/([a-f0-9-]{36})\/([^/]+)$/);

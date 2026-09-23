@@ -54,7 +54,8 @@ test('the public overlay views the room player without creating sessions, joinin
   assert.equal(directBody.queue.at(-1)?.item.title,'Thriller');const afterDirect=program.getSession('crew',party.roomId);
   const publicPath='/api/watch/broadcast/state?roomId='+PUBLIC_LOUNGE_ID;
   for(let i=0;i<3;i++){
-   const view=await fetch(base+'/watch?roomId='+PUBLIC_LOUNGE_ID);assert.equal(view.status,200);assert.match(await view.text(),/<video/);
+   const legacy=await fetch(base+'/watch?roomId='+PUBLIC_LOUNGE_ID,{redirect:'manual'});assert.equal(legacy.status,302);assert.equal(legacy.headers.get('location'),'/lounge-media/player');
+   const view=await fetch(base+'/lounge-media/player');assert.equal(view.status,200);const html=await view.text();assert.match(html,/id="player"/);assert.match(html,/system-spacemountainlive-lounge/);assert.doesNotMatch(html,/Watch parties|party-lobby|Create watch party|Request/);
    const state=await fetch(base+publicPath);assert.equal(state.status,200);const value=await state.json();assert.equal(value.sessionId,party.roomId);assert.equal(value.current.requestId,before.current.requestId);assert.equal(value.canManage,false);assert.equal(value.broadcast.playbackUrl,'/api/watch/sessions/'+PUBLIC_LOUNGE_ID+'/broadcast/index.m3u8');
   }
   for(const room of directory.rooms){
