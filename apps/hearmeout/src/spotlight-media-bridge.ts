@@ -20,6 +20,10 @@ export class HearMeOutSpotlightBridge {
     return this.json('/spotlight/start', { method: 'POST' });
   }
 
+  consent() {
+    return this.json('/spotlight/consent', { method: 'POST' });
+  }
+
   async media(file: string, range?: string) {
     if (!/^(?:index\.m3u8|spotlight_\d{6}\.ts)$/.test(file)) throw Object.assign(Error('Spotlight media file is invalid'), { status: 404 });
     const response = await this.fetchImpl(new URL('/spotlight/hls/' + encodeURIComponent(file), this.workerOrigin), {
