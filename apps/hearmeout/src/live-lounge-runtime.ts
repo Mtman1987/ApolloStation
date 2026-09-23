@@ -19,7 +19,7 @@ export class HearMeOutLiveLoungeRuntime implements HearMeOutBroadcastRuntime {
 
   async listen() {
     await this.refresh().catch(() => {});
-    this.timer = setInterval(() => void this.refresh(), 750);
+    this.timer = setInterval(() => { void this.refresh().catch(() => {}); }, 750);
     this.timer.unref();
   }
 
@@ -61,7 +61,11 @@ export class HearMeOutLiveLoungeRuntime implements HearMeOutBroadcastRuntime {
     this.advancingRequestId = requestId;
     void this.bridge.control('skip', requestId)
       .then((remote) => { this.session = mapSession(remote, this.tenantId); })
-      .finally(() => { this.advancingRequestId = ''; void this.refresh(); });
+      .catch(() => {})
+      .finally(() => {
+        this.advancingRequestId = '';
+        void this.refresh().catch(() => {});
+      });
     return true;
   }
 
