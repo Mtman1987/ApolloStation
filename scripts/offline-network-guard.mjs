@@ -110,12 +110,20 @@ function assertAllowedUrl(value, method, label) {
   if (String(method).toUpperCase() === 'GET' && movieProviderUrl(url)) return;
   if (browserCacheUrl(url,'https://hmo-dj-worker.fly.dev') && (String(method).toUpperCase()==='GET'&&!/\/(audio|video|prepare)$/.test(url.pathname)||String(method).toUpperCase()==='POST'&&/\/(audio|video|prepare)$/.test(url.pathname))) return;
   if (String(method).toUpperCase() === 'GET' && preparedMediaUrl(url, 'https://hmo-dj-worker.fly.dev')) return;
+  if (hearMeOutBridge && isAllowedSpotlightWorkerUrl(url, String(method).toUpperCase())) return;
   if (hearMeOutBridge && url.origin === "https://hmo-dj-worker.fly.dev" && !url.username && !url.password && ["GET", "POST"].includes(String(method).toUpperCase()) && /^\/voice-bridge(?:\/(?:gate|audio-profile|receive-gain))?$/.test(url.pathname)) return;
   if (hearMeOutBridge && url.origin === "https://hmo-dj-worker.fly.dev" && !url.username && !url.password && String(method).toUpperCase() === 'POST' && /^\/persona(?:\/speak)?$/.test(url.pathname)) return;
   if(speechPolicy?.isStellarSpeechUrl(url,String(method).toUpperCase()))return;
   if(privateFlowOpenAi&&url.origin==="https://api.openai.com"&&url.pathname==="/v1/responses"&&String(method).toUpperCase()==="POST")return;
   if(avatarAiOutbound&&isAllowedAvatarAiUrl(url,String(method).toUpperCase()))return;
   assertLoopbackHost(url.hostname, label);
+}
+
+function isAllowedSpotlightWorkerUrl(url,method){
+  if(url.origin!=="https://hmo-dj-worker.fly.dev"||url.username||url.password||url.search||url.hash)return false;
+  if(method==="GET"&&url.pathname==="/spotlight/status")return true;
+  if(method==="POST"&&url.pathname==="/spotlight/start")return true;
+  return method==="GET"&&/^\/spotlight\/hls\/(?:index\.m3u8|spotlight_\d{6}\.ts)$/.test(url.pathname);
 }
 
 function isAllowedAvatarAiUrl(url,method){
