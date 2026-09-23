@@ -36,7 +36,8 @@ function session(requestId){
  };
 }
 
-test('environment wiring never starts the live donor bridge in sandbox',async()=>{
+test('environment wiring enables the live donor only for the configured single broadcast',async()=>{
  const source=await import('node:fs/promises').then(fs=>fs.readFile(new URL('../apps/hearmeout/src/web-server-v3.ts',import.meta.url),'utf8'));
- assert.match(source,/environment\.SPMT_RUNTIME_MODE!==["']sandbox["']&&environment\.HEARMEOUT_SINGLE_BROADCAST===["']1["']/);
+ assert.match(source,/environment\.HEARMEOUT_SINGLE_BROADCAST===["']1["']&&bridgeAuthorization\?new HearMeOutLiveLoungeBridge/);
+ assert.doesNotMatch(source,/SPMT_RUNTIME_MODE!==["']sandbox["']&&environment\.HEARMEOUT_SINGLE_BROADCAST/);
 });
