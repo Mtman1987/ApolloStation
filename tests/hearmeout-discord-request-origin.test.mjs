@@ -22,6 +22,8 @@ test('the configured Discord proxy can request the same public broadcast through
   const base=`http://127.0.0.1:${ingress.server.address().port}`;
   const entry=await fetch(base+`/?frame_id=discord-window&guild_id=${guildId}&channel_id=${channelId}`,{headers:{'x-forwarded-proto':'https'}});
   assert.equal(entry.status,200);assert.match(await entry.text(),/Music or movie request/);
+  const directLounge=await fetch(base+'/lounge-media/player');assert.equal(directLounge.status,200);const directLoungeHtml=await directLounge.text();assert.match(directLoungeHtml,/SpaceMountain Lounge media/);assert.doesNotMatch(directLoungeHtml,/Watch parties|party-lobby|Create watch party/);
+  const legacyLounge=await fetch(base+'/watch?roomId=system-spacemountainlive-lounge',{redirect:'manual'});assert.equal(legacyLounge.status,302);assert.equal(legacyLounge.headers.get('location'),'/lounge-media/player');
   const setCookie=entry.headers.get('set-cookie');assert.match(setCookie,/SameSite=None; Secure; Partitioned/);const cookie=setCookie.split(';')[0];
   const requestPath=`/api/watch/broadcast/requests?roomId=${encodeURIComponent(party.roomId)}&${context}`;
   const request=(origin,path=requestPath,method='POST')=>fetch(base+path,{method,headers:{origin,cookie,'content-type':'application/json','idempotency-key':'discord-request'},body:JSON.stringify({query:'A video',lane:'movie'})});
