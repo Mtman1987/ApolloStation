@@ -12,6 +12,7 @@ const preparedMediaUrl = hearMeOutPreparedMedia
   ? (await import('../apps/hearmeout/dist/prepared-media.js')).preparedHearMeOutUrl : () => false;
 const browserCacheUrl=hearMeOutPreparedMedia?(await import('../apps/hearmeout/dist/prepared-media.js')).hearMeOutBrowserCacheUrl:()=>false;
 const movieProvider=process.env.HEARMEOUT_MOVIE_PROVIDER_ORIGIN==='https://hearmeout-main.fly.dev';
+const hearMeOutLoungeDonor=process.env.HEARMEOUT_SINGLE_BROADCAST==="1"&&process.env.HEARMEOUT_VOICE_BRIDGE_AUTHORIZATION&&process.env.HEARMEOUT_VOICE_BRIDGE_ORIGIN==="https://hmo-dj-worker.fly.dev";
 const movieProviderUrl=movieProvider?(await import('../apps/hearmeout/dist/movie-provider.js')).hearMeOutMovieProviderUrl:()=>false;
 const avatarAiOutbound=process.env.SPMT_AVATAR_AI_OUTBOUND_MODE==="enabled";
 // A controlled HearMeOut release is allowed to execute normal room actions in
@@ -87,7 +88,7 @@ function assertSocketTarget(args, label) {
     if(speechPolicy?.isStellarSpeechHost(first.host??first.hostname??first.servername)&&Number(first.port??443)===443)return;
     if(privateFlowOpenAi&&String(first.host??first.hostname??first.servername)==="api.openai.com"&&Number(first.port??443)===443)return;
     if(avatarAiOutbound&&isAvatarAiHost(first.host??first.hostname??first.servername)&&Number(first.port??443)===443)return;
-    if(movieProvider&&String(first.host??first.hostname??first.servername)==='hearmeout-main.fly.dev'&&Number(first.port??443)===443)return;
+    if((movieProvider||hearMeOutLoungeDonor)&&String(first.host??first.hostname??first.servername)==='hearmeout-main.fly.dev'&&Number(first.port??443)===443)return;
     assertLoopbackHost(first.host ?? first.hostname ?? "localhost", label);
     return;
   }
@@ -98,7 +99,7 @@ function assertSocketTarget(args, label) {
   if(speechPolicy?.isStellarSpeechHost(host)&&Number(first??443)===443)return;
   if(privateFlowOpenAi&&host==="api.openai.com"&&Number(first??443)===443)return;
   if(avatarAiOutbound&&isAvatarAiHost(host)&&Number(first??443)===443)return;
-  if(movieProvider&&host==='hearmeout-main.fly.dev'&&Number(first??443)===443)return;
+  if((movieProvider||hearMeOutLoungeDonor)&&host==='hearmeout-main.fly.dev'&&Number(first??443)===443)return;
   assertLoopbackHost(host, label);
 }
 
@@ -108,6 +109,7 @@ function assertAllowedUrl(value, method, label) {
   if (!["http:", "https:", "ws:", "wss:"].includes(url.protocol)) return;
   if (liveReadUrl && url.origin === liveReadUrl.origin && String(method).toUpperCase() === "GET") return;
   if (String(method).toUpperCase() === 'GET' && movieProviderUrl(url)) return;
+  if (hearMeOutLoungeDonor && url.origin === "https://hearmeout-main.fly.dev" && !url.username && !url.password && !url.search && !url.hash && url.pathname === "/api/internal/lounge/media" && ["GET","POST"].includes(String(method).toUpperCase())) return;
   if (browserCacheUrl(url,'https://hmo-dj-worker.fly.dev') && (String(method).toUpperCase()==='GET'&&!/\/(audio|video|prepare)$/.test(url.pathname)||String(method).toUpperCase()==='POST'&&/\/(audio|video|prepare)$/.test(url.pathname))) return;
   if (String(method).toUpperCase() === 'GET' && preparedMediaUrl(url, 'https://hmo-dj-worker.fly.dev')) return;
   if (hearMeOutBridge && isAllowedSpotlightWorkerUrl(url, String(method).toUpperCase())) return;
@@ -122,7 +124,7 @@ function assertAllowedUrl(value, method, label) {
 function isAllowedSpotlightWorkerUrl(url,method){
   if(url.origin!=="https://hmo-dj-worker.fly.dev"||url.username||url.password||url.search||url.hash)return false;
   if(method==="GET"&&url.pathname==="/spotlight/status")return true;
-  if(method==="POST"&&url.pathname==="/spotlight/start")return true;
+  if(method==="POST"&&(url.pathname==="/spotlight/start"||url.pathname==="/spotlight/consent"))return true;
   return method==="GET"&&/^\/spotlight\/hls\/(?:index\.m3u8|spotlight_\d{6}\.ts)$/.test(url.pathname);
 }
 
