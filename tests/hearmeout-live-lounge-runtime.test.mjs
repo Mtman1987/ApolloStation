@@ -41,3 +41,22 @@ test('environment wiring enables the live donor only for the configured single b
  assert.match(source,/environment\.HEARMEOUT_SINGLE_BROADCAST===["']1["']&&bridgeAuthorization\?new HearMeOutLiveLoungeBridge/);
  assert.doesNotMatch(source,/SPMT_RUNTIME_MODE!==["']sandbox["']&&environment\.HEARMEOUT_SINGLE_BROADCAST/);
 });
+
+test('live Lounge keeps serving the last donor state through transient poll and control failures',async()=>{
+ let reads=0,controls=0;
+ const bridge={
+  async read(){reads++;if(reads===1)return session('one');throw new DOMException('The operation was aborted due to timeout','TimeoutError')},
+  async control(){controls++;throw new DOMException('The operation was aborted due to timeout','TimeoutError')},
+ };
+ const runtime=new HearMeOutLiveLoungeRuntime(bridge,'tenant');
+ await runtime.listen();
+ try{
+  await new Promise(resolve=>setTimeout(resolve,850));
+  assert.ok(reads>=2);
+  assert.equal(runtime.getSession('tenant','system-spacemountainlive-lounge','movie').current.requestId,'one');
+  assert.equal(runtime.finishBroadcastRequest('tenant','system-spacemountainlive-lounge','movie','one'),true);
+  await tick();await tick();
+  assert.equal(controls,1);
+  assert.equal(runtime.getSession('tenant','system-spacemountainlive-lounge','movie').current.requestId,'one');
+ }finally{runtime.close()}
+});
