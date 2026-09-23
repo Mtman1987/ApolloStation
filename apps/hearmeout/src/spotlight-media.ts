@@ -49,7 +49,7 @@ export async function handleSpotlightMedia(request: IncomingMessage, response: S
       const bytes = request.method === 'HEAD' ? Buffer.alloc(0) : Buffer.from(await upstream.arrayBuffer());
       const headers: Record<string,string> = {
         'content-type': upstream.headers.get('content-type') || (media[1]!.endsWith('.m3u8') ? 'application/vnd.apple.mpegurl' : 'video/mp2t'),
-        'cache-control': 'no-store',
+        'cache-control': media[1]!.endsWith('.m3u8') ? 'no-store' : 'public, max-age=120, immutable',
         'x-content-type-options': 'nosniff',
       };
       for (const name of ['content-range','accept-ranges']) {
