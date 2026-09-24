@@ -59,7 +59,7 @@ async function refresh(){
     if(!next||state.broadcast?.ready!==true)return;
     if(source.failed||next!==sourceUrl||nextEpoch!==epoch||nextRequest!==requestId){
       sourceUrl=next;epoch=nextEpoch;requestId=nextRequest;
-      source.load(sourceUrl,/\.m3u8(?:$|\?)/i.test(sourceUrl),true);
+      source.load(sourceUrl,true,true);
     }
     video.play().catch(()=>{});
   }catch{}finally{busy=false}
