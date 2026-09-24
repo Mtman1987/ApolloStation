@@ -24,15 +24,12 @@ export class HearMeOutSpotlightBridge {
     return this.json('/spotlight/consent', { method: 'POST' });
   }
 
-  async media(file: string, range?: string) {
-    if (!/^(?:index\.m3u8|spotlight_\d{6}\.ts)$/.test(file)) throw Object.assign(Error('Spotlight media file is invalid'), { status: 404 });
-    const response = await this.fetchImpl(new URL('/spotlight/hls/' + encodeURIComponent(file), this.workerOrigin), {
-      headers: { authorization: this.authorization, accept: '*/*', ...(range ? { range } : {}) },
-      redirect: 'error',
-      cache: 'no-store',
-      signal: AbortSignal.timeout(10_000),
+  async live(signal: AbortSignal) {
+    const response = await this.fetchImpl(new URL('/spotlight/live.mp4', this.workerOrigin), {
+      headers: { authorization: this.authorization, accept: 'application/octet-stream' },
+      redirect: 'error', cache: 'no-store', signal,
     });
-    if (!response.ok && response.status !== 206) throw Object.assign(Error('Spotlight broadcast is not ready'), { status: response.status });
+    if (!response.ok || !response.body) throw Object.assign(Error('Spotlight live feed is starting'), { status: response.status });
     return response;
   }
 
