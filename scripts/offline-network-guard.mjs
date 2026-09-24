@@ -125,7 +125,7 @@ function isAllowedSpotlightWorkerUrl(url,method){
   if(url.origin!=="https://hmo-dj-worker.fly.dev"||url.username||url.password||url.search||url.hash)return false;
   if(method==="GET"&&url.pathname==="/spotlight/status")return true;
   if(method==="POST"&&(url.pathname==="/spotlight/start"||url.pathname==="/spotlight/consent"))return true;
-  return method==="GET"&&/^\/spotlight\/hls\/(?:index\.m3u8|spotlight_\d{6}\.ts)$/.test(url.pathname);
+  return method==="GET"&&url.pathname==="/spotlight/live.mp4";
 }
 
 function isAllowedAvatarAiUrl(url,method){
