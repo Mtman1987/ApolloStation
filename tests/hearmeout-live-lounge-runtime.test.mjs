@@ -36,10 +36,10 @@ function session(requestId){
  };
 }
 
-test('environment wiring enables the live donor only for the configured single broadcast',async()=>{
+test('Apollo environment cannot wire the retired Live HMO donor bridge',async()=>{
  const source=await import('node:fs/promises').then(fs=>fs.readFile(new URL('../apps/hearmeout/src/web-server-v3.ts',import.meta.url),'utf8'));
- assert.match(source,/environment\.HEARMEOUT_SINGLE_BROADCAST===["']1["']&&bridgeAuthorization\?new HearMeOutLiveLoungeBridge/);
- assert.doesNotMatch(source,/SPMT_RUNTIME_MODE!==["']sandbox["']&&environment\.HEARMEOUT_SINGLE_BROADCAST/);
+ assert.doesNotMatch(source,/environment\.HEARMEOUT_SINGLE_BROADCAST===["']1["']&&bridgeAuthorization\?new HearMeOutLiveLoungeBridge/);
+ assert.doesNotMatch(source,/liveLoungeBridge\?\{liveLoungeBridge\}/);
 });
 
 test('live Lounge keeps serving the last donor state through transient poll and control failures',async()=>{
