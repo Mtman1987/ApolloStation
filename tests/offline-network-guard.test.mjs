@@ -72,8 +72,8 @@ test('the configured IPTV adapter reaches existing read routes without opening l
  assert.equal(result.status,0,result.stderr);
 });
 
-test('canonical Lounge donor permits only its exact authenticated state/control endpoint',()=>{
- const source=`globalThis.fetch=async()=>new Response('{}',{headers:{'content-type':'application/json'}});await import(process.env.GUARD_URL);await fetch('https://hearmeout-main.fly.dev/api/internal/lounge/media');await fetch('https://hearmeout-main.fly.dev/api/internal/lounge/media',{method:'POST'});let blocked=0;for(const [path,method] of [['/api/internal/lounge/media/extra','GET'],['/api/watch/sessions','GET'],['/api/internal/lounge/media','DELETE'],['/api/internal/lounge/media?x=1','GET']]){try{fetch('https://hearmeout-main.fly.dev'+path,{method})}catch(error){if(/OFFLINE_NETWORK_BLOCKED/.test(String(error)))blocked++}}if(blocked!==4)process.exit(1);`;
+test('Apollo cannot access the retired Live HMO Lounge state/control endpoint',()=>{
+ const source=`globalThis.fetch=async()=>new Response('{}',{headers:{'content-type':'application/json'}});await import(process.env.GUARD_URL);let blocked=0;for(const method of ['GET','POST']){try{fetch('https://hearmeout-main.fly.dev/api/internal/lounge/media',{method})}catch(error){if(/OFFLINE_NETWORK_BLOCKED/.test(String(error)))blocked++}}if(blocked!==2)process.exit(1);`;
  const result=spawnSync(process.execPath,['--input-type=module','-e',source],{encoding:'utf8',env:{...process.env,GUARD_URL:new URL('../scripts/offline-network-guard.mjs',import.meta.url).href,HEARMEOUT_SINGLE_BROADCAST:'1',HEARMEOUT_VOICE_BRIDGE_ORIGIN:'https://hmo-dj-worker.fly.dev',HEARMEOUT_VOICE_BRIDGE_AUTHORIZATION:'Bearer 1234567890abcdef'}});
  assert.equal(result.status,0,result.stderr);
 });
