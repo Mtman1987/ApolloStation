@@ -49,7 +49,8 @@ test("!t supports one-shot target languages plus persistent per-user auto-transl
     assert.equal(store.preference("tenant","twitch","viewer-p").targetLanguage,"en");
 
     assert.equal(runtime.observe(chat()),true);
-    let result=await runtime.reconcile();assert.equal(result.published,1);
+    let result=await runtime.reconcile();assert.equal(result.waiting,1);
+    result=await runtime.reconcile();assert.equal(result.published,1);
     assert.match(sent[0].text,/🌐 @Viewer → EN: hello everyone/);
     assert.equal(events[0].type,STREAMWEAVER_TRANSLATION_SUBTITLE);
     assert.equal(events[0].payload.sourceText,"hola a todos");
@@ -84,7 +85,8 @@ test("auto-translation suppresses already-target-language messages and renders a
   try{
     store.setAuto({tenantId:"tenant",provider:"twitch",providerUserId:"viewer-p",username:"viewer",targetLanguage:"en"});
     runtime.observe(chat({text:"hello everyone"}));
-    const result=await runtime.reconcile();
+    let result=await runtime.reconcile();assert.equal(result.waiting,1);
+    result=await runtime.reconcile();
     assert.equal(result.skipped,1);assert.equal(sent.length,0);assert.equal(events.length,0);
 
     const now="2026-09-25T13:05:00.000Z",snapshot=streamWeaverWidgetSnapshot([{id:"tr",sourceAppId:"streamweaver",type:STREAMWEAVER_TRANSLATION_SUBTITLE,createdAt:now,payload:{displayName:"Viewer",sourceText:"hola",translatedText:"hello",targetLanguage:"en",durationMs:9000}}],now,"translation-subtitle");
