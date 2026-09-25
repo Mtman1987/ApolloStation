@@ -10,6 +10,8 @@ import {
   StreamWeaverBicCommandExecutor,
   StreamWeaverBicRuntime,
   StreamWeaverSocialActionExecutor,
+  StreamWeaverSocialReactionReconciler,
+  SqliteStreamWeaverSocialReactionStore,
   findBestStreamWeaverUsernameMatch,
   streamWeaverUsernameSimilarity,
 } from "../apps/streamweaver/dist/index.js";
@@ -43,12 +45,47 @@ function invocation(trigger, overrides = {}) {
   };
 }
 
-test("starter-social preserves all 12 frozen action identities including Bic voice and economy-side _roll", () => {
-  assert.equal(STREAMWEAVER_DONOR_SOCIAL_ACTIONS.length, 12);
-  assert.equal(new Set(STREAMWEAVER_DONOR_SOCIAL_ACTIONS.map((action) => action.id)).size, 12);
+test("starter-social preserves donor identities and includes the Lounge hug alert", () => {
+  assert.equal(STREAMWEAVER_DONOR_SOCIAL_ACTIONS.length, 13);
+  assert.equal(new Set(STREAMWEAVER_DONOR_SOCIAL_ACTIONS.map((action) => action.id)).size, 13);
+  assert.equal(STREAMWEAVER_DONOR_SOCIAL_ACTIONS.some((action) => action.trigger === "!hug" && action.kind === "interaction"), true);
   assert.equal(STREAMWEAVER_DONOR_SOCIAL_ACTIONS.some((action) => action.id === "athena-bic"), true);
   assert.equal(STREAMWEAVER_DONOR_SOCIAL_ACTIONS.some((action) => action.id === "bic-lighter-action"), true);
   assert.equal(STREAMWEAVER_DONOR_SOCIAL_ACTIONS.some((action) => action.id === "4d8cf691-44d3-43eb-86fa-69d64578d2cb" && action.kind === "economy-side-effect"), true);
+});
+
+
+test("social reactions use durable AI copy, reject exact repeats, and publish animation-ready alerts", async () => {
+  const store=new SqliteStreamWeaverSocialReactionStore(":memory:",()=>new Date("2026-09-25T12:00:00Z").toISOString());
+  const published=[],jobs=new Map(),invoked=[];
+  const client={
+    async publishEvent(tenantId,type,payload,idempotencyKey){published.push({tenantId,type,payload,idempotencyKey});return{id:"evt-"+published.length}},
+    async invokeCommunityAssistant(tenantId,input,key){invoked.push({tenantId,input,key});const id="job-"+invoked.length;jobs.set(id,{id,tenantId,billedUserId:"owner",ownerAppId:"stellar-core",input:{conversationId:input.conversationId},state:"queued"});return{status:"accepted",jobId:id}},
+    async getExecutionJob(_tenant,id){return jobs.get(id)},
+  };
+  const executor=new StreamWeaverSocialActionExecutor(client,store);
+  const reconciler=new StreamWeaverSocialReactionReconciler(store,client,()=> "owner");
+  try{
+    await executor.execute(invocation("!highfive",{deliveryId:"social-1",target:{providerUserId:"2",username:"friend"}}));
+    assert.equal(published.some(event=>event.type===STREAMWEAVER_SOCIAL_INTERACTION),false,"AI alert waits for reaction copy");
+    let pass=await reconciler.runOnce();assert.equal(pass.waiting,1);assert.equal(invoked[0].input.remember,false);assert.equal(invoked[0].input.presentation.memoryPolicy,"off");
+    jobs.get("job-1").state="succeeded";jobs.get("job-1").result={text:"That high five just achieved escape velocity."};
+    pass=await reconciler.runOnce();assert.equal(pass.published,1);
+    const alert=published.find(event=>event.type===STREAMWEAVER_SOCIAL_INTERACTION);
+    assert.equal(alert.payload.reaction,"That high five just achieved escape velocity.");
+    assert.equal(alert.payload.animationKey,"highfive");
+    assert.match(alert.payload.interactionText,/Owner high fives friend/);
+
+    await executor.execute(invocation("!highfive",{deliveryId:"social-2",target:{providerUserId:"2",username:"friend"}}));
+    await reconciler.runOnce();jobs.get("job-2").state="succeeded";jobs.get("job-2").result={text:"That high five just achieved escape velocity."};
+    pass=await reconciler.runOnce();assert.equal(pass.waiting,1,"an exact repeat is regenerated");
+    assert.equal(invoked.length,2);
+    pass=await reconciler.runOnce();assert.equal(invoked.length,3);
+    jobs.get("job-3").state="succeeded";jobs.get("job-3").result={text:"Friendship thrusters are officially online."};
+    await reconciler.runOnce();
+    const social=published.filter(event=>event.type===STREAMWEAVER_SOCIAL_INTERACTION);
+    assert.deepEqual(social.map(event=>event.payload.reaction),["That high five just achieved escape velocity.","Friendship thrusters are officially online."]);
+  }finally{store.close();}
 });
 
 test("username matching preserves donor exact, prefix, contains, and fuzzy subsequence behavior", () => {

@@ -19,6 +19,7 @@ export * from "./donor-command-services.js";
 export * from "./donor-event-actions.js";
 export * from "./donor-redeem-actions.js";
 export * from "./donor-social-actions.js";
+export * from "./social-reaction-store.js";
 export * from "./donor-shoutout-actions.js";
 export * from "./shoutout-matcher.js";
 export * from "./shoutout-store.js";

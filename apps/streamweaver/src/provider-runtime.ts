@@ -37,7 +37,8 @@ import { StreamWeaverFlowPackageStore } from "./flow-packages.js";
 import { StreamWeaverInstalledFlowConsumer } from "./flow-runtime.js";
 import { StreamWeaverRuntimeSettingsStore } from "./runtime-settings.js";
 import { SqliteStreamWeaverBicStore } from "./bic-store.js";
-import { StreamWeaverBicRuntime, StreamWeaverBicCommandExecutor, StreamWeaverSocialActionExecutor } from "./donor-social-actions.js";
+import { StreamWeaverBicRuntime, StreamWeaverBicCommandExecutor, StreamWeaverSocialActionExecutor, StreamWeaverSocialReactionReconciler } from "./donor-social-actions.js";
+import { SqliteStreamWeaverSocialReactionStore } from "./social-reaction-store.js";
 import { secureChoiceActionFromExecution, STREAMWEAVER_SECURE_CHOICE_DONOR_ID, StreamWeaverSecureChoiceStore } from "./secure-choice.js";
 
 export interface StreamWeaverProviderConsumerV1 {
@@ -78,6 +79,8 @@ export class StreamWeaverProviderRuntime {
   private readonly runtimeSettings: StreamWeaverRuntimeSettingsStore;
   private readonly research:StreamWeaverResearchConversation;
   private readonly bic: SqliteStreamWeaverBicStore;
+  private readonly socialReactions:SqliteStreamWeaverSocialReactionStore;
+  private readonly socialReactionReconciler:StreamWeaverSocialReactionReconciler;
   private readonly eventsub?:StreamWeaverTwitchEventSub;
   private readonly twitch?:StreamWeaverTwitchCommandAdapter;
   private lastWatchPoll=0;
@@ -103,6 +106,8 @@ export class StreamWeaverProviderRuntime {
     this.runtimeSettings = new StreamWeaverRuntimeSettingsStore(options.databasePath);
     this.research=new StreamWeaverResearchConversation(options.databasePath,tenantId=>this.runtimeSettings.research(tenantId),options.nowMs);
     this.bic = new SqliteStreamWeaverBicStore(options.databasePath);
+    this.socialReactions = new SqliteStreamWeaverSocialReactionStore(options.databasePath,options.now);
+    this.socialReactionReconciler = new StreamWeaverSocialReactionReconciler(this.socialReactions,options.client,tenant=>this.settings.get(tenant)?.ownerCanonicalUserId);
     this.secureChoices = new StreamWeaverSecureChoiceStore(options.databasePath, options.now);
     const relay = new StreamWeaverBotRelayConsumer(this.relayStore, egress);
     this.messageObservers = [{ id: "streamweaver.relay-identities", observe: (message) => { this.relayStore.observe(message); } }];
@@ -131,7 +136,7 @@ export class StreamWeaverProviderRuntime {
       pokemon:{execute:invocation=>executePokemonCommand(this.pokemon,invocation)},
 
       bic:new StreamWeaverBicCommandExecutor(new StreamWeaverBicRuntime({store:this.bic,client:options.client})),
-      socialEffects:new StreamWeaverSocialActionExecutor(options.client),
+      socialEffects:new StreamWeaverSocialActionExecutor(options.client,this.socialReactions),
       persona:secureChoiceExecutor,
       system:{execute:invocation=>invocation.canonicalTrigger==="!commands" ? `Installed commands: ${this.flows.listInstalledPackages(invocation.tenantId).flatMap(pkg=>pkg.commands.filter(c=>c.enabled).map(c=>c.trigger)).join(", ") || "none"}. Currency: !points, !givepoints, !gamble, !pleader.` : community.system(invocation)}
     });
@@ -173,7 +178,7 @@ export class StreamWeaverProviderRuntime {
   }
   consumerIds() { return this.consumers.map((consumer) => consumer.id); }
   setBotShare(tenantId: string, enabled: boolean) { this.relayStore.setBotShare(tenantId, enabled); }
-  async reconcile(limit = 100) { if(this.options.allowProviderWrites===true&&!this.options.simulation)await this.botActionReplies.flush(this.options.client,message=>this.options.egress.send(message),message=>Boolean(this.options.connections?.some(connection=>connection.desired&&connection.tenantId===message.tenantId&&connection.provider===message.provider&&connection.channelId===message.channelId&&connection.connectionId===message.connectionId)),limit,(...args)=>this.options.client.publishEvent(...args)); await this.reconcileProviderEvents(); await this.presentation?.runOnce(); await this.community.flush((tenant,type,payload,key)=>this.options.client.publishEvent(tenant,type,payload,key)); await this.pokemon.flush((tenant,type,payload,key)=>this.options.client.publishEvent(tenant,type,payload,key)); const replies=await this.replies.runOnce(undefined, limit);const flows=await this.installedFlows.reconcile(limit);const secureChoices=await this.secureChoices.flushOutbox(message=>this.options.egress.send(message),limit);return {...replies,flows,secureChoices}; }
+  async reconcile(limit = 100) { if(this.options.allowProviderWrites===true&&!this.options.simulation)await this.botActionReplies.flush(this.options.client,message=>this.options.egress.send(message),message=>Boolean(this.options.connections?.some(connection=>connection.desired&&connection.tenantId===message.tenantId&&connection.provider===message.provider&&connection.channelId===message.channelId&&connection.connectionId===message.connectionId)),limit,(...args)=>this.options.client.publishEvent(...args)); await this.reconcileProviderEvents(); await this.presentation?.runOnce(); await this.community.flush((tenant,type,payload,key)=>this.options.client.publishEvent(tenant,type,payload,key)); await this.pokemon.flush((tenant,type,payload,key)=>this.options.client.publishEvent(tenant,type,payload,key)); const social=await this.socialReactionReconciler.runOnce(Math.min(limit,50));const replies=await this.replies.runOnce(undefined, limit);const flows=await this.installedFlows.reconcile(limit);const secureChoices=await this.secureChoices.flushOutbox(message=>this.options.egress.send(message),limit);return {...replies,flows,secureChoices,social}; }
   private async reconcileProviderEvents(){
     if(this.options.allowProviderWrites!==true)return;
     const tenants=this.community.configuredTenants();
@@ -222,5 +227,5 @@ export class StreamWeaverProviderRuntime {
     }
   }
   settleFlows() { return this.installedFlows.settle(); }
-  close() { this.botActionReplies.close(); this.shoutoutStore.close(); this.eventsub?.close(); this.community.close(); this.pokemon.close(); this.secureChoices.close(); this.research.close(); this.bic.close(); this.runtimeSettings.close(); this.flows.close(); this.relayStore.close(); this.economy.close(); this.commandState.close(); this.summons.close(); this.settings.close(); }
+  close() { this.botActionReplies.close(); this.shoutoutStore.close(); this.eventsub?.close(); this.community.close(); this.pokemon.close(); this.secureChoices.close(); this.research.close(); this.bic.close(); this.socialReactions.close(); this.runtimeSettings.close(); this.flows.close(); this.relayStore.close(); this.economy.close(); this.commandState.close(); this.summons.close(); this.settings.close(); }
 }

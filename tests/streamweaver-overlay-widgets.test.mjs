@@ -10,16 +10,16 @@ import { streamweaverCatalogRegistration,streamWeaverWidgetSnapshot,streamWeaver
 
 test("widget projection preserves visible data and excludes credentials, untrusted sources and other widget data",()=>{
   const now=new Date().toISOString(),events=[
-    {id:"social",sourceAppId:"streamweaver",type:"streamweaver.social.interaction.v1",createdAt:now,payload:{trigger:"!boop",actor:{displayName:"Captain"},target:{username:"Friend"},token:"never-public"}},
+    {id:"social",sourceAppId:"streamweaver",type:"streamweaver.social.interaction.v1",createdAt:now,payload:{trigger:"!boop",actor:{displayName:"Captain"},target:{username:"Friend"},interactionText:"Captain boops Friend!",reaction:"Boop trajectory confirmed.",animationKey:"boop",token:"never-public"}},
     {id:"avatar",sourceAppId:"streamweaver",type:"streamweaver.avatar.updated.v1",createdAt:now,payload:{avatarUrl:"https://assets.test/idle.png",talkingUrl:"javascript:alert(1)",secret:"never-public"}},
     {id:"fake",sourceAppId:"other",type:"streamweaver.social.interaction.v1",createdAt:now,payload:{trigger:"!boop",actor:{displayName:"Imposter"}}},
     {id:"tts",sourceAppId:"streamweaver",type:"streamweaver.media.playback.v1",createdAt:now,payload:{kind:"tts-player",mediaUrl:"https://assets.test/speech.wav",text:"Voice result"}},
   ];
-  const all=streamWeaverWidgetSnapshot(events,now);assert.equal(all.items.length,3);assert.equal(all.items[0].text,"Captain boops Friend!");assert.doesNotMatch(JSON.stringify(all),/never-public|javascript|Imposter/);
+  const all=streamWeaverWidgetSnapshot(events,now);assert.equal(all.items.length,3);assert.equal(all.items[0].text,"Boop trajectory confirmed.");assert.equal(all.items[0].actor,"Captain boops Friend!");assert.equal(all.items[0].animationKey,"boop");assert.doesNotMatch(JSON.stringify(all),/never-public|javascript|Imposter/);
   const social=streamWeaverWidgetSnapshot(events,now,"social");assert.equal(social.items.length,1);assert.doesNotMatch(JSON.stringify(social),/Voice result|idle.png/);
   const voice=streamWeaverWidgetSnapshot(events,now,"tts-player");assert.deepEqual(voice.items.map(x=>x.kind),["avatar","tts-player"]);
   assert.doesNotThrow(()=>new Function(STREAMWEAVER_WIDGET_CLIENT));assert.ok(STREAMWEAVER_WIDGET_CSP.includes(createHash("sha256").update(STREAMWEAVER_WIDGET_CLIENT).digest("base64")));
-  assert.match(renderStreamWeaverWidget("auto",true),/data-simulation="true"/);
+  assert.match(renderStreamWeaverWidget("auto",true),/data-simulation="true"/);assert.match(renderStreamWeaverWidget("social"),/🧑‍🚀|data-widget="social"/);assert.match(renderStreamWeaverWidget("social"),/astronautFloat/);
 });
 
 test("registered StreamWeaver widgets render and poll through real opaque grants and revoke immediately",async()=>{
