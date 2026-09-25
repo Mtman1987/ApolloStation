@@ -42,36 +42,20 @@ function liveLoungeView(session:HearMeOutLiveLoungeSession,canManage:boolean,scr
 }
 function renderPermanentLoungePlayer(){
   const room=JSON.stringify(PUBLIC_LOUNGE_ID);
-  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SpaceMountain Lounge media</title><style>html,body,video{margin:0;width:100%;height:100%;overflow:hidden;background:#000}video{display:block;object-fit:contain}</style></head><body><video id="player" autoplay playsinline></video><script src="/api/hearmeout/playback-source.js"></script><script>
-const roomId=${room},video=document.getElementById('player'),source=new window.HearMeOutPlaybackSource(video,()=>{});
-video.volume=.85;video.muted=false;
-let sourceUrl='',epoch='',requestId='',disposed=false,busy=false;
-async function refresh(){
-  if(disposed||busy)return;busy=true;
-  try{
-    const response=await fetch('/api/watch/broadcast/state?roomId='+encodeURIComponent(roomId),{cache:'no-store'});
-    if(!response.ok)throw Error('state '+response.status);
-    const state=await response.json();
-    if(!state.current){
-      source.clear();sourceUrl='';epoch='';requestId='';return;
-    }
-    const next=String(state.broadcast?.playbackUrl||''),nextEpoch=String(state.broadcast?.epoch||''),nextRequest=String(state.current?.requestId||'');
-    if(!next||state.broadcast?.ready!==true)return;
-    if(source.failed||next!==sourceUrl||nextEpoch!==epoch||nextRequest!==requestId){
-      sourceUrl=next;epoch=nextEpoch;requestId=nextRequest;
-      source.load(sourceUrl,true,true);
-    }
-    video.play().catch(()=>{});
-  }catch{}finally{busy=false}
-}
-video.addEventListener('canplay',()=>video.play().catch(()=>{}));
-document.addEventListener('visibilitychange',()=>{if(!document.hidden){if(source.failed)source.retry();else source.joinLive();void refresh()}});
-setInterval(()=>{if(source.failed)source.retry();else source.syncLive();void refresh()},3000);
-void refresh();
-window.addEventListener('pagehide',()=>{disposed=true;source.clear()});
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SpaceMountain Lounge media</title><style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:#fff;font:14px system-ui}body{display:grid;place-items:center}#status{position:absolute;left:12px;bottom:10px;right:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:.75}audio{display:none}</style></head><body><audio id="player" autoplay preload="auto"></audio><div id="status">Lounge idle</div><script>
+const roomId=${room},player=document.getElementById('player'),status=document.getElementById('status');
+player.volume=.85;player.muted=false;
+let requestId='',sourceUrl='',disposed=false,busy=false;
+function mediaUrl(state){const item=state?.current?.item;return String(item?.metadata?.audioPlaybackUrl||item?.audioPlaybackUrl||item?.playbackUrl||'')}
+async function refresh(){if(disposed||busy)return;busy=true;try{const response=await fetch('/api/watch/broadcast/state?roomId='+encodeURIComponent(roomId),{cache:'no-store'});if(!response.ok)throw Error('state '+response.status);const state=await response.json(),nextRequest=String(state.current?.requestId||''),next=mediaUrl(state);if(!state.current||!next){if(sourceUrl){player.removeAttribute('src');player.load()}sourceUrl='';requestId='';status.textContent='Lounge idle';return}status.textContent=state.current?.item?.title||'Lounge';if(next!==sourceUrl||nextRequest!==requestId){sourceUrl=next;requestId=nextRequest;player.src=sourceUrl;player.load()}await player.play().catch(error=>{status.textContent=(state.current?.item?.title||'Lounge')+' · '+error.name})}catch(error){status.textContent='Lounge player: '+error.message}finally{busy=false}}
+player.addEventListener('canplay',()=>player.play().catch(()=>{}));
+player.addEventListener('error',()=>{status.textContent='Lounge media error '+(player.error?.code||'')});
+player.addEventListener('ended',()=>{sourceUrl='';void refresh()});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)void refresh()});
+setInterval(refresh,1500);void refresh();
+window.addEventListener('pagehide',()=>{disposed=true;player.pause();player.removeAttribute('src')});
 </script></body></html>`;
 }
-
 function guest(request:IncomingMessage,response:ServerResponse){
   let token=String(request.headers.cookie??'').match(/(?:^|;\s*)hmo_viewer=([a-f0-9]{64})(?:;|$)/)?.[1];
   if(!token){token=randomBytes(32).toString('hex');const secure=String(request.headers['x-forwarded-proto']??'').startsWith('https')||!/^(localhost|127\.0\.0\.1)(:|$)/.test(String(request.headers.host??''));response.setHeader('set-cookie','hmo_viewer='+token+'; Path=/; HttpOnly; Max-Age=2592000; SameSite='+(secure?'None; Secure; Partitioned':'Lax'));}
