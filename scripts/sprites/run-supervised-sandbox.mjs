@@ -94,7 +94,7 @@ const coreManifests = [
 const currentManifests = [
   discordStreamHubCatalogRegistration(appLaunchUrl(publicUrl, "/apps/discord-stream-hub")),
   streamweaverCatalogRegistration(appLaunchUrl(publicUrl, "/apps/streamweaver")),
-  hearMeOutCatalogRegistration(appLaunchUrl(publicUrl, "/apps/hearmeout")),
+  hearMeOutCatalogRegistration("https://hearmeout.spacemountain.live/"),
   mountainViewCatalogRegistration(appLaunchUrl(publicUrl, "/apps/mountainview")),
   companionCatalogRegistration(appLaunchUrl(publicUrl, "/apps/companion")),
 ];
