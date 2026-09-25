@@ -69,6 +69,12 @@ test('HTTP guides expose all games, optional activity mixes persist, and opted-o
 test('activity box expires without another poll and restarts its timer on another spmt',()=>{
  let now=0,task;const box={hidden:true,querySelector:()=>({replaceChildren(){}})};const window={};vm.runInNewContext(NEBULA_ACTIVITY_JS,{window,document:{getElementById:()=>box},Date:{now:()=>now},clearTimeout(){task=undefined},setTimeout(fn,delay){task={fn,delay}}});window.renderNebulaActivity({remainingMs:30000,games:[]});assert.equal(box.hidden,false);now=25000;window.renderNebulaActivity({remainingMs:30000,games:[]});assert.equal(task.delay,30000);now=55000;task.fn();assert.equal(box.hidden,true);
 });
+test('Bingo overlay stays hidden until SPMT Bingo activity, then auto-hides after 30 seconds',()=>{
+ const listeners={},frames=[{dataset:{game:'bingo'},contentWindow:{postMessage(){}},hidden:false}],parent={postMessage(){}},selector={value:'auto',addEventListener(){}},output={dataset:{},textContent:''};let timer;
+ vm.runInNewContext(NEBULA_WIDGET_STAGE_JS,{window:{parent,addEventListener(type,fn){listeners[type]=fn}},document:{body:{dataset:{simulation:'true'}},querySelectorAll:()=>frames,getElementById:id=>id==='game-select'?selector:output},location:{origin:'https://spmt.example'},setTimeout(fn,delay){timer={fn,delay};return 1},clearTimeout(){timer=undefined}});
+ listeners.message({source:frames[0].contentWindow,data:{type:'spmt.nebula.ready'}});assert.equal(frames[0].hidden,true);
+ listeners.message({source:parent,origin:'https://spmt.example',data:{type:'spmt.simulation.arcade',inputs:[{id:'b1',gameIds:['bingo'],message:'spmt bingo card'}],tabletop:{bingo:{phrases:[]}}}});assert.equal(frames[0].hidden,false);assert.equal(timer.delay,30000);timer.fn();assert.equal(frames[0].hidden,true);
+});
 test('Word Chain widget bridge accepts only SPMT-prefixed answers and strips the prefix',()=>{
  const delivered=[],listeners={},frame={dataset:{game:'wordchain'},contentWindow:{postMessage(value){delivered.push(value)}},hidden:true};const parent={postMessage(){}},selector={value:'auto',addEventListener(){}},output={dataset:{},textContent:''};vm.runInNewContext(NEBULA_WIDGET_STAGE_JS,{window:{parent,addEventListener(type,fn){listeners[type]=fn}},document:{body:{dataset:{simulation:'true'}},querySelectorAll:()=>[frame],getElementById:id=>id==='game-select'?selector:output},location:{origin:'https://spmt.example'},setTimeout(){},clearTimeout(){}});
  listeners.message({source:frame.contentWindow,data:{type:'spmt.nebula.ready'}});
