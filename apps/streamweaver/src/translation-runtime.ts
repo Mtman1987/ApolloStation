@@ -70,9 +70,11 @@ export class StreamWeaverTranslationRuntime {
     private readonly client:SpmtClient,
     private readonly egress:{send(message:OutboundChatMessageV1):Promise<unknown>},
     private readonly owner:(tenantId:string)=>string|undefined,
+    private readonly enabled=true,
   ){}
-  observe(message:NormalizedChatMessageV1){return this.store.observe(message);}
+  observe(message:NormalizedChatMessageV1){return this.enabled?this.store.observe(message):false;}
   async command(invocation:StreamWeaverDonorCommandInvocationV1){
+    if(!this.enabled)throw new Error("Translation is unavailable in this environment.");
     const args=[...invocation.args];
     if(invocation.target&&args[0]?.replace(/^@/,"").toLowerCase()===invocation.target.username.toLowerCase()&&args[1]){
       const mode=args[1]!.toLowerCase();
@@ -97,6 +99,7 @@ export class StreamWeaverTranslationRuntime {
     return this.translateOnce(invocation.tenantId,invocation.actor.userId,targetLanguage,text,invocation.provider,invocation.deliveryId);
   }
   async translate(input:{tenantId:string;text:string;requestedByUserId?:string;provider:string;requestId?:string}){
+    if(!this.enabled)throw new Error("Translation is unavailable in this environment.");
     if(!input.requestedByUserId)throw new Error("Link your account before using translation.");
     return this.translateOnce(input.tenantId,input.requestedByUserId,"en",input.text,input.provider,input.requestId??input.text);
   }
@@ -114,6 +117,7 @@ export class StreamWeaverTranslationRuntime {
   }
   async reconcile(limit=50){
     let observed=0,waiting=0,published=0,skipped=0,failed=0;
+    if(!this.enabled)return{observed,waiting,published,skipped,failed};
     for(const item of this.store.pending(limit)){
       observed++;
       const owner=this.owner(item.tenantId);
@@ -125,6 +129,8 @@ export class StreamWeaverTranslationRuntime {
         this.store.setJob(item,result.jobId);waiting++;continue;
       }
       const job=await this.client.getExecutionJob(item.tenantId,item.jobId);
+      const conversationId=`streamweaver:auto-translation:${item.provider}:${item.messageId}`;
+      if(job.tenantId!==item.tenantId||job.billedUserId!==owner||job.ownerAppId!=="stellar-core"||job.input?.conversationId!==conversationId){this.store.finish(item,"failed");failed++;continue;}
       if(!["succeeded","failed","cancelled","dead-letter"].includes(job.state)){waiting++;continue;}
       if(job.state!=="succeeded"){this.store.finish(item,"failed");failed++;continue;}
       const translated=clean(job.result?.text,1000);
