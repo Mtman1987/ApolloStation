@@ -15,4 +15,4 @@ cp "$1" "$work/Athena_Stella_Agent_Package_v3.zip"
 python3 "$work/bootstrap.py" "$work/Athena_Stella_Agent_Package_v3.zip" --root "$work/verified"
 rm -rf "$work/verified"
 flyctl_bin="${FLYCTL_BIN:-flyctl}"
-"$flyctl_bin" deploy "$work" --remote-only --no-public-ips --ha=false --yes
+"$flyctl_bin" deploy "$work" --remote-only --depot=false --no-public-ips --ha=false --yes
