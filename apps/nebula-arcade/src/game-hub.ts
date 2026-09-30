@@ -97,7 +97,7 @@ export function routeNebulaCommand(text: string, enabledGameIds: readonly string
     return NEBULA_ARCADE_GAMES.filter((item) => enabled.has(item.id) && pending.has(item.id) && item.commands.includes("accept")).map((item) => ({ gameId: item.id, command, args }));
   }
 
-  return NEBULA_ARCADE_GAMES.filter((item) => enabled.has(item.id) && (item.commands.includes(command) || ["leave","status"].includes(command))).map((item) => ({ gameId: item.id, command, args }));
+  return NEBULA_ARCADE_GAMES.filter((item) => enabled.has(item.id) && (item.commands.includes(command) || ["leave","status","start","stop"].includes(command))).map((item) => ({ gameId: item.id, command, args }));
 }
 
 export function resolveNebulaCommand(text: string, enabledGameIds: readonly string[], pendingGameIds: readonly string[] = []): NebulaCommandResolutionV1 {
