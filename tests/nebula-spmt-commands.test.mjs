@@ -45,6 +45,10 @@ test('one enrollment survives restart across chats; leaving the pool removes mem
  assert.equal(s.activity.snapshot('tenant-a','chat-a',['wordchain'],ids,epoch).games[0].players,2);assert.equal(s.activity.snapshot('tenant-a','chat-b',['wordchain'],ids,epoch).games[0].players,0);
  }finally{s.close()}
 });
+test('bare numbered reply selects a pending start/stop choice',async()=>{
+ const s=setup(['wordchain','wordstorm']);try{await s.send('spmt stop',{roles:['moderator']});assert.match(s.sent.at(-1).text,/1 for Word Chain/);await s.send('1',{roles:['moderator'],at:epoch+1000});assert.match(s.sent.at(-1).text,/Word Chain accepted stop/i);s.sent.length=0;await s.send('spmt wordchain join');assert.match(s.sent.at(-1).text,/not active|stopped/i);
+ }finally{s.close()}
+});
 test('global guides bypass Tag and stopped games are excluded without falling into another game',async()=>{
  const s=setup();try{await s.send('spmt help');assert.ok(s.sent.some(item=>/Word Chain:/.test(item.text)));assert.ok(s.sent.every(item=>item.text.length<=440));await s.send('spmt chat garden stop',{roles:['moderator']});s.sent.length=0;await s.send('spmt rules');assert.doesNotMatch(s.sent.map(item=>item.text).join(' '),/Chat Garden:/);const n=s.feed.list('tenant-a').length;await s.send('spmt grow');assert.match(s.sent.at(-1).text,/not active/);assert.equal(s.feed.list('tenant-a').length,n);
  }finally{s.close()}
