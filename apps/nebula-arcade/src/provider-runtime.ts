@@ -142,7 +142,10 @@ export class NebulaArcadeProviderRuntime {
       }
       if(!parseNebulaMessage(message.text))return;
     }
-    const parsed=parseNebulaMessage(message.text);
+    const now=Date.parse(message.occurredAt),actor=gameActorId(message),choiceKey=`${messageKey(message)}\0${actor}`;
+    const pendingChoice=this.activity.choice(message.tenantId,choiceKey,actor,now);
+    const rawChoice=/^\d+$/.test(String(message.text||"").trim())&&pendingChoice;
+    const parsed=parseNebulaMessage(rawChoice?`spmt ${String(message.text||"").trim()}`:message.text);
     if (parsed?.command==="optout" && (!parsed.gameId || parsed.gameId==="tag")) {
       const outcome=await experience.ingest(toTagMessage(message,"spmt optout"));
       if(outcome.kind==="reply") {
@@ -152,7 +155,6 @@ export class NebulaArcadeProviderRuntime {
       }
       return;
     }
-    const now=Date.parse(message.occurredAt),actor=gameActorId(message);
     this.activity.observe(message.tenantId,channel.stateChannelId,actor,message.text,now);
     if(!parsed || !parsed.body){if(!parsed&&this.tagRuntime.getState(message.tenantId).state.players[actorId(message)]?.eligible!==false&&this.tagRuntime.getState(message.tenantId).state.players[actorId(message)])await this.tagRuntime.ingest(toTagMessage(message,message.text));return;}
     const activeIds=resolveNebulaChannelGameIds(this.gameStore.get(message.tenantId),channel.stateChannelId,channel.enabledGameIds);
@@ -171,7 +173,7 @@ export class NebulaArcadeProviderRuntime {
     }
     const guide=nebulaGuideReplies(message.text,activeIds,this.options.publicOrigin??this.options.discordDashboard?.publicOrigin);
     if(guide){for(const [index,body] of guide.entries())await this.reply(message,delivery.deliveryId,`guide-${index}`,body);return;}
-    const choiceKey=`${messageKey(message)}\0${actor}`,choice=this.activity.choice(message.tenantId,choiceKey,actor,now);
+    const choice=pendingChoice;
     let selected:NebulaCommandTargetV1|undefined;
     if(/^\d+$/.test(parsed.body)&&choice){selected=choice[Number(parsed.body)-1];if(!selected){await this.reply(message,delivery.deliveryId,"choice-invalid",`Choose spmt 1 through spmt ${choice.length}.`);return;}this.activity.clearChoice(message.tenantId,choiceKey,actor);}
     else if(!/^\d+$/.test(parsed.body))this.activity.clearChoice(message.tenantId,choiceKey,actor);
