@@ -113,9 +113,9 @@ export function resolveNebulaCommand(text: string, enabledGameIds: readonly stri
 
   const choices = targets.map((target, index) => {
     const item = NEBULA_ARCADE_GAMES.find((candidate) => candidate.id === target.gameId);
-    return `spmt ${index + 1} for ${item?.name ?? target.gameId}`;
+    return `${index + 1} for ${item?.name ?? target.gameId}`;
   });
-  return { kind: "choose-game", command: parsed.command, args: parsed.args, targets, prompt: `More than one active game uses spmt ${parsed.command}. Choose a game: ${choices.join(", ")}.` };
+  return { kind: "choose-game", command: parsed.command, args: parsed.args, targets, prompt: `More than one active game uses spmt ${parsed.command}. Choose a game: ${choices.join(", ")}. Type the number within 30 seconds (or spmt <number>).` };
 }
 
 export function nebulaGameCommandHelp(gameId: string): string[] {
