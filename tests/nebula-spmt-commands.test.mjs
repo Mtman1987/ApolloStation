@@ -46,7 +46,7 @@ test('one enrollment survives restart across chats; leaving the pool removes mem
  }finally{s.close()}
 });
 test('bare numbered reply selects a pending start/stop choice',async()=>{
- const s=setup(['wordchain','wordstorm']);try{await s.send('spmt stop',{roles:['moderator']});assert.match(s.sent.at(-1).text,/spmt 1 for Word Chain/);await s.send('1',{roles:['moderator'],at:epoch+1000});assert.match(s.sent.at(-1).text,/Word Chain accepted stop/i);s.sent.length=0;await s.send('spmt wordchain join');assert.match(s.sent.at(-1).text,/not active|stopped/i);
+ const s=setup(['wordchain','wordstorm']);try{await s.send('spmt stop',{roles:['moderator']});assert.match(s.sent.at(-1).text,/1 for Word Chain/);await s.send('1',{roles:['moderator'],at:epoch+1000});assert.match(s.sent.at(-1).text,/Word Chain accepted stop/i);s.sent.length=0;await s.send('spmt wordchain join');assert.match(s.sent.at(-1).text,/not active|stopped/i);
  }finally{s.close()}
 });
 test('global guides bypass Tag and stopped games are excluded without falling into another game',async()=>{
