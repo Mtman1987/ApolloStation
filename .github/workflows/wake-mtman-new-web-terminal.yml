@@ -1,0 +1,84 @@
+name: Wake and verify mtman-new web-terminal
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mtman-new-web-terminal-wake
+  cancel-in-progress: false
+
+jobs:
+  wake-and-verify:
+    name: Wake and verify authenticated terminal
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    environment: sprite-release
+    env:
+      SPRITE_ORG: mtman-new
+      SPRITE_NAME: web-terminal
+      EXPECTED_SPRITE_ID: sprite-2249fee2-ecf3-4b10-8bc1-314f4b9e5bcc
+      SPRITES_TOKEN: ${{ secrets.SPRITES_TOKEN }}
+    steps:
+      - name: Validate credentials and target identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${SPRITES_TOKEN:-}" || { echo "Missing SPRITES_TOKEN in sprite-release environment." >&2; exit 1; }
+          actual_id="$(curl -fsS --retry 2 -H "Authorization: Bearer $SPRITES_TOKEN" "https://api.sprites.dev/v1/sprites/$SPRITE_NAME" | jq -r '.id')"
+          if [[ "$actual_id" != "$EXPECTED_SPRITE_ID" ]]; then
+            echo "Refusing to wake unexpected Sprite ID: $actual_id" >&2
+            exit 1
+          fi
+          auth="$(curl -fsS --retry 2 -H "Authorization: Bearer $SPRITES_TOKEN" "https://api.sprites.dev/v1/sprites/$SPRITE_NAME" | jq -r '.url_settings.auth // "unknown"')"
+          if [[ "$auth" != "sprite" ]]; then
+            echo "Refusing to continue: Sprite URL auth is '$auth', expected private 'sprite' auth." >&2
+            exit 1
+          fi
+          echo "Target identity verified; private URL authentication preserved."
+
+      - name: Install Sprites CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL https://sprites.dev/install.sh | bash
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Wake Sprite and verify terminal, Fly CLI, and Fly authentication
+        shell: bash
+        run: |
+          set -euo pipefail
+          sprite auth setup --token "$SPRITES_TOKEN"
+          last_status=1
+          for attempt in 1 2 3; do
+            echo "Wake/readiness attempt $attempt of 3"
+            if sprite exec --no-port-forward -o "$SPRITE_ORG" -s "$SPRITE_NAME" -- /bin/bash -lc '
+              set -euo pipefail
+              printf "SPMT_TERMINAL_READY\n"
+              printf "user=%s\n" "$(id -un)"
+              printf "cwd=%s\n" "$PWD"
+              if command -v flyctl >/dev/null 2>&1; then
+                flyctl auth whoami >/dev/null
+                echo "fly_cli=flyctl"
+              elif command -v fly >/dev/null 2>&1; then
+                fly auth whoami >/dev/null
+                echo "fly_cli=fly"
+              else
+                echo "Fly CLI is not installed." >&2
+                exit 41
+              fi
+              echo "fly_auth=verified"
+            '; then
+              last_status=0
+              break
+            else
+              last_status=$?
+              if (( attempt < 3 )); then sleep 10; fi
+            fi
+          done
+          if (( last_status != 0 )); then
+            echo "Sprite did not reach verified terminal readiness after bounded retries." >&2
+            exit "$last_status"
+          fi
