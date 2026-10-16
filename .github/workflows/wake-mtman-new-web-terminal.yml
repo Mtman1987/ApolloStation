@@ -26,17 +26,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test -n "${SPRITES_TOKEN:-}" || { echo "Missing SPRITES_TOKEN in sprite-release environment." >&2; exit 1; }
-          actual_id="$(curl -fsS --retry 2 -H "Authorization: Bearer $SPRITES_TOKEN" "https://api.sprites.dev/v1/sprites/$SPRITE_NAME" | jq -r '.id')"
-          if [[ "$actual_id" != "$EXPECTED_SPRITE_ID" ]]; then
-            echo "Refusing to wake unexpected Sprite ID: $actual_id" >&2
-            exit 1
-          fi
-          auth="$(curl -fsS --retry 2 -H "Authorization: Bearer $SPRITES_TOKEN" "https://api.sprites.dev/v1/sprites/$SPRITE_NAME" | jq -r '.url_settings.auth // "unknown"')"
-          if [[ "$auth" != "sprite" ]]; then
-            echo "Refusing to continue: Sprite URL auth is '$auth', expected private 'sprite' auth." >&2
-            exit 1
-          fi
+          test -n "${SPRITES_TOKEN:-}" || { echo "::error::Missing SPRITES_TOKEN in sprite-release environment."; exit 1; }
+          sprite_json="$(curl -fsS --retry 2 --retry-all-errors -H "Authorization: Bearer $SPRITES_TOKEN" "https://api.sprites.dev/v1/sprites/$SPRITE_NAME")"
+          actual_id="$(jq -r '.id // empty' <<<"$sprite_json")"
+          [[ "$actual_id" == "$EXPECTED_SPRITE_ID" ]] || { echo "::error::Refusing unexpected Sprite ID: $actual_id"; exit 1; }
+          auth="$(jq -r '.url_settings.auth // "unknown"' <<<"$sprite_json")"
+          [[ "$auth" == "sprite" ]] || { echo "::error::Sprite URL auth is '$auth'; expected private sprite auth."; exit 1; }
           echo "Target identity verified; private URL authentication preserved."
 
       - name: Install Sprites CLI
@@ -45,16 +40,18 @@ jobs:
           set -euo pipefail
           curl -fsSL https://sprites.dev/install.sh | bash
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/sprite" --version
 
       - name: Wake Sprite and verify terminal, Fly CLI, and Fly authentication
         shell: bash
         run: |
-          set -euo pipefail
+          set -uo pipefail
           sprite auth setup --token "$SPRITES_TOKEN"
           last_status=1
           for attempt in 1 2 3; do
             echo "Wake/readiness attempt $attempt of 3"
-            if sprite exec --no-port-forward -o "$SPRITE_ORG" -s "$SPRITE_NAME" -- /bin/bash -lc '
+            set +e
+            output="$(timeout 45s sprite exec --no-port-forward -o "$SPRITE_ORG" -s "$SPRITE_NAME" -- /bin/bash -lc '
               set -euo pipefail
               printf "SPMT_TERMINAL_READY\n"
               printf "user=%s\n" "$(id -un)"
@@ -70,15 +67,16 @@ jobs:
                 exit 41
               fi
               echo "fly_auth=verified"
-            '; then
-              last_status=0
-              break
-            else
-              last_status=$?
-              if (( attempt < 3 )); then sleep 10; fi
+            ' 2>&1)"
+            last_status=$?
+            set -e
+            printf '%s\n' "$output" | sed -E 's/(Bearer|token|secret|password)[=: ]+[^ ]+/\1=[REDACTED]/Ig'
+            if (( last_status == 0 )) && grep -q '^SPMT_TERMINAL_READY$' <<<"$output" && grep -q '^fly_auth=verified$' <<<"$output"; then
+              echo "startup_result=ready"
+              exit 0
             fi
+            echo "attempt_result=failed exit=$last_status"
+            if (( attempt < 3 )); then sleep 10; fi
           done
-          if (( last_status != 0 )); then
-            echo "Sprite did not reach verified terminal readiness after bounded retries." >&2
-            exit "$last_status"
-          fi
+          echo "::error::Sprite failed bounded terminal/Fly-auth readiness checks."
+          exit "$last_status"
