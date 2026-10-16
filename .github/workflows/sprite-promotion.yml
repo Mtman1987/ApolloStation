@@ -187,11 +187,16 @@ jobs:
             exit 124
           fi
 
-      - name: Open the Apollo test entry
+      - name: Keep the Release Sprite private
         shell: bash
         run: |
           set -euo pipefail
-          sprite config update -o "$SPRITE_ORG" -s "$SPRITE_NAME" --url-auth public
+          actual_auth="$(sprite api "/v1/sprites/$SPRITE_NAME" -- --silent | jq -r '.url_settings.auth // "unknown"')"
+          if [[ "$actual_auth" != "sprite" ]]; then
+            echo "Refusing to continue: Release Sprite URL auth is '$actual_auth'; expected private 'sprite' auth." >&2
+            exit 1
+          fi
+          echo "Release Sprite URL remains private."
 
       - name: Record test deployment
         shell: bash
@@ -203,9 +208,13 @@ jobs:
             echo "- URL: $SPRITE_PUBLIC_URL"
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 24
-
-      - name: Verify promoted public entry
-        run: node scripts/sprites/verify-hearmeout-broadcast-test.mjs "$SPRITE_PUBLIC_URL" "$BUILD_SHA"
+      - name: Verify promoted entry from inside the private Sprite
+        shell: bash
+        run: |
+          set -euo pipefail
+          sprite exec --no-port-forward \
+            -o "$SPRITE_ORG" -s "$SPRITE_NAME" \
+            --file scripts/sprites/verify-hearmeout-broadcast-test.mjs:/tmp/verify-hearmeout-broadcast-test.mjs \
+            --file scripts/sprites/deployment-request.mjs:/tmp/deployment-request.mjs \
+            --env "BUILD_SHA=$BUILD_SHA,DEPLOY_ROLE=release" \
+            -- /bin/bash -lc 'node /tmp/verify-hearmeout-broadcast-test.mjs http://127.0.0.1:8080 "$BUILD_SHA"'
