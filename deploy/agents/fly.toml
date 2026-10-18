@@ -1,0 +1,12 @@
+app = "spmt-agents"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  OPENAI_CHAT_MODEL = "gpt-4.1-mini"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

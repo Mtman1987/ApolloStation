@@ -30,3 +30,7 @@ test-results/
 
 # Local validation browser, never part of the deployed app
 scripts/local-browser/runtime/
+
+# Never commit the private sister package or extracted lore
+Athena_Stella_Agent_Package_v3.zip
+deploy/agents/private/
