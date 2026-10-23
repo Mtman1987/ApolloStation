@@ -28,6 +28,8 @@ export type MosaicColorCode = keyof typeof MOSAIC_COLORS;
 export type MosaicPaletteId = "classic" | "neon" | "pastel" | "mono" | "ocean";
 export type MosaicBoardNumber = 1 | 2 | 3 | 4;
 export type MosaicBrushDirection = "right" | "left" | "down" | "up";
+export type MosaicBrushCommand = 1 | 2 | 3 | 4 | 5 | "status" | MosaicBrushDirection | { size: 1 | 2 | 3 | 4 | 5; direction: MosaicBrushDirection };
+export type MosaicViewCommand = "all" | MosaicBoardNumber;
 
 export const MOSAIC_PALETTES = {
   classic: { R:"#ef4444", B:"#3b82f6", G:"#22c55e", Y:"#eab308", P:"#a855f7", O:"#f97316", PK:"#ec4899", W:"#f8fafc", K:"#111827", C:"#06b6d4" },
@@ -57,28 +59,48 @@ export function mosaicPricing() {
   // Keep theme requests free until the shared SPMT XP redemption contract is wired.
   return { testingFree: false, controlsCost: 0, brushCost: 0, revealCost: 0 };
 }
+function mosaicCommandBody(value: unknown): string {
+  return String(value ?? "").trim().toLowerCase()
+    .replace(/^!?@?spmt(?:\\s+|$)/i, "").trim()
+    .replace(/^pixel(?:battle)?\\s+|^mosaic\\s+/i, "").trim();
+}
 export function parseMosaicPaintCommand(value: unknown): { coordinate: string; column: number; row: number; color: MosaicColorCode } | null {
-  const text = String(value ?? "").trim().replace(/^!?(?:mosaic|pixelbattle|pixel)\s+/i, "");
-  const match = text.match(/^(?:paint\s+)?([a-z]{1,2}\d{1,2}|\d{1,2}\s*[, ]\s*\d{1,2})\s+([a-z]+)$/i);
-  if (!match) return null;
-  let column: number, row: number;
-  const coordinate = match[1]!.replace(/\s/g, "").toUpperCase();
-  const letters = coordinate.match(/^([A-Z]{1,2})(\d{1,2})$/);
-  if (letters) {
-    column = letters[1]!.split("").reduce((n, c) => n * 26 + c.charCodeAt(0) - 64, 0) - 1;
-    row = Number(letters[2]) - 1;
-  } else {
-    const parts = coordinate.split(",");
-    if (parts.length === 2) { column = Number(parts[0]) - 1; row = Number(parts[1]) - 1; }
-    else {
-      const numeric = coordinate.match(/^(\d{1,2})(\d{1,2})$/);
-      if (!numeric) return null;
-      column = Number(numeric[1]) - 1; row = Number(numeric[2]) - 1;
-    }
+  const source = mosaicCommandBody(value).replace(/^play\\s+|^paint\\s+/i, "").trim();
+  const compact = source.replace(/[^a-z0-9]/g, "");
+  const compactMatch = compact.match(/^([a-t])(2[0-5]|1\\d|[1-9])([a-z]{1,6})$/i);
+  if (compactMatch) {
+    const color = COLOR_ALIASES[compactMatch[3]!.toLowerCase()];
+    if (color) return { coordinate: `${compactMatch[1]!.toUpperCase()}${Number(compactMatch[2])}`, column: compactMatch[1]!.toLowerCase().charCodeAt(0) - 97, row: Number(compactMatch[2]) - 1, color };
   }
-  const color = COLOR_ALIASES[match[2]!.toLowerCase()];
-  if (!color || column < 0 || column >= MOSAIC_WIDTH || row < 0 || row >= MOSAIC_HEIGHT) return null;
-  return { coordinate, column, row, color };
+  const coordinateMatch = source.match(/\\b([a-t])\\s*(2[0-5]|1\\d|[1-9])\\b/i);
+  if (!coordinateMatch) return null;
+  const remainder = source.replace(coordinateMatch[0], " ").replace(/[^a-z]+/g, " ").trim();
+  const color = remainder.split(/\\s+/).map((token) => COLOR_ALIASES[token]).find(Boolean);
+  if (!color) return null;
+  return { coordinate: `${coordinateMatch[1]!.toUpperCase()}${Number(coordinateMatch[2])}`, column: coordinateMatch[1]!.toLowerCase().charCodeAt(0) - 97, row: Number(coordinateMatch[2]) - 1, color };
+}
+export function parseMosaicBrushCommand(value: unknown): MosaicBrushCommand | null {
+  const source = mosaicCommandBody(value);
+  const match = source.match(/^brush(?:\\s+(.*))?$/);
+  if (!match) return null;
+  const args = String(match[1] || "").trim().split(/\\s+/).filter(Boolean);
+  if (!args.length) return "status";
+  if (args.length === 1 && args[0] === "off") return 1;
+  const direction = args.find((item) => ["right", "left", "down", "up"].includes(item)) as MosaicBrushDirection | undefined;
+  const sizeToken = args.find((item) => /^[1-5]$/.test(item));
+  if (args.length === 1 && direction) return direction;
+  if (args.length === 1 && sizeToken) return Number(sizeToken) as 1 | 2 | 3 | 4 | 5;
+  if (direction && sizeToken && args.length === 2) return { size: Number(sizeToken) as 1 | 2 | 3 | 4 | 5, direction };
+  return null;
+}
+export function parseMosaicViewCommand(value: unknown): MosaicViewCommand | null {
+  const match = mosaicCommandBody(value).match(/^(?:view|show)\\s+(all|[1-4])$/);
+  if (!match) return null;
+  return match[1] === "all" ? "all" : Number(match[1]) as MosaicBoardNumber;
+}
+export function parseMosaicPaletteCommand(value: unknown): MosaicPaletteId | null {
+  const match = mosaicCommandBody(value).match(/^palette\\s+(classic|neon|pastel|mono|ocean)$/);
+  return match ? match[1] as MosaicPaletteId : null;
 }
 export function validateMosaicTemplate(value: unknown): { theme: string; paletteId: MosaicPaletteId; target: MosaicColorCode[] } {
   if (!value || typeof value !== "object") throw new Error("Invalid Mosaic template.");
