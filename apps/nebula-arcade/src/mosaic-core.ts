@@ -98,6 +98,9 @@ export function parseMosaicViewCommand(value: unknown): MosaicViewCommand | null
   if (!match) return null;
   return match[1] === "all" ? "all" : Number(match[1]) as MosaicBoardNumber;
 }
+export function parseMosaicRevealCommand(value: unknown): boolean {
+  return /^!?@?spmt\\s+(?:mosaic\\s+)?reveal$/i.test(String(value ?? "").trim());
+}
 export function parseMosaicPaletteCommand(value: unknown): MosaicPaletteId | null {
   const match = mosaicCommandBody(value).match(/^palette\s+(classic|neon|pastel|mono|ocean)$/);
   return match ? match[1] as MosaicPaletteId : null;
