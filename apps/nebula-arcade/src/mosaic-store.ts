@@ -36,7 +36,11 @@ function normalizeArtwork(value: unknown): MosaicArtwork | undefined {
 }
 export function normalizeMosaicQueueState(value: unknown): MosaicQueueState {
   const state = value && typeof value === "object" ? value as Record<string, unknown> : {};
-  const queue = Array.isArray(state.queue) ? state.queue.filter((item): item is MosaicQueueRequest => Boolean(item && typeof item === "object" && typeof (item as MosaicQueueRequest).id === "string" && typeof (item as MosaicQueueRequest).theme === "string" && ["pending", "generating", "failed", "cancelled"].includes((item as MosaicQueueRequest).status)).slice(-20) : [];
+  const queue = Array.isArray(state.queue) ? state.queue.filter((item): item is MosaicQueueRequest => {
+    if (!item || typeof item !== "object") return false;
+    const request = item as MosaicQueueRequest;
+    return typeof request.id === "string" && typeof request.theme === "string" && ["pending", "generating", "failed", "cancelled"].includes(request.status);
+  }).slice(-20) : [];
   const saves = Array.isArray(state.saves) ? state.saves.map(normalizeArtwork).filter((art): art is MosaicArtwork => Boolean(art)).slice(0, 20) : [];
   const current = normalizeArtwork(state.current);
   const sharedProjects = Array.isArray(state.sharedProjects) ? state.sharedProjects.filter((item) => item && typeof item === "object").flatMap((item) => {
