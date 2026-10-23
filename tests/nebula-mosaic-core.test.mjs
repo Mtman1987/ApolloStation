@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { MOSAIC_CELL_COUNT, MOSAIC_COLORS, MOSAIC_PALETTES, MOSAIC_WIDTH, MOSAIC_HEIGHT, MOSAIC_REVEAL_MS, mosaicPricing, normalizeMosaicTheme, validateMosaicTheme, parseMosaicPaintCommand, parseMosaicBrushCommand, parseMosaicViewCommand, parseMosaicPaletteCommand, parseMosaicRevealCommand, validateMosaicTemplate, paintMosaicCell, createMosaicQueueState, queueMosaicThemeRequest, claimNextMosaicRequest, failMosaicQueueRequest, installMosaicQueueTemplate, startMosaicReveal, isMosaicRevealVisible, paintMosaicArtworkCell } from "../apps/nebula-arcade/dist/mosaic-core.js";
+import { MOSAIC_CELL_COUNT, MOSAIC_COLORS, MOSAIC_PALETTES, MOSAIC_WIDTH, MOSAIC_HEIGHT, MOSAIC_REVEAL_MS, mosaicPricing, normalizeMosaicTheme, validateMosaicTheme, parseMosaicPaintCommand, parseMosaicBrushCommand, parseMosaicViewCommand, parseMosaicPaletteCommand, parseMosaicRevealCommand, validateMosaicTemplate, paintMosaicCell, createMosaicQueueState, queueMosaicThemeRequest, claimNextMosaicRequest, failMosaicQueueRequest, installMosaicQueueTemplate, startMosaicReveal, isMosaicRevealVisible, paintMosaicArtworkCell, paintMosaicBrush } from "../apps/nebula-arcade/dist/mosaic-core.js";
 
 test("Mosaic theme normalization and guardrails match the donor contract", () => {
   assert.equal(normalizeMosaicTheme("  owl\n in   space  "), "owl in space");
@@ -118,4 +118,25 @@ test("Mosaic artwork painting tracks the painter and timestamps without mutating
   assert.equal(next.lastInteractionAt, new Date(9000).toISOString());
   assert.equal(artwork.painted[4 * MOSAIC_WIDTH + 3], "");
   assert.throws(() => paintMosaicArtworkCell({ ...artwork, status: "archived" }, 3, 4, "PK", "player-7"), /active Mosaic/);
+});
+
+test("Mosaic directional brush paints matching cells, stops at mismatches, and respects board edges", () => {
+  const state = createMosaicQueueState();
+  queueMosaicThemeRequest(state, { id: "brush-1", theme: "sunrise", playerId: "player-1", now: 1000 });
+  claimNextMosaicRequest(state, 2000);
+  const target = Array(MOSAIC_CELL_COUNT).fill("B");
+  target[0] = "R"; target[1] = "R";
+  const artwork = installMosaicQueueTemplate(state, "brush-1", target, {}, 3000);
+  const result = paintMosaicBrush(artwork, { coordinate: "A1", column: 0, row: 0, color: "R" }, "player-9", { size: 5, direction: "right", now: 4000 });
+  assert.equal(result.outcome, "painted");
+  assert.deepEqual(result.paintedCoordinates, ["A1", "B1"]);
+  assert.equal(result.stoppedAt, "C1");
+  assert.equal(result.artwork.paintedBy[0], "player-9");
+  assert.equal(artwork.painted[0], "");
+  const wrong = paintMosaicBrush(artwork, { coordinate: "A1", column: 0, row: 0, color: "G" }, "player-9", { size: 3 });
+  assert.equal(wrong.outcome, "wrong");
+  const edge = paintMosaicBrush(artwork, { coordinate: "T1", column: 19, row: 0, color: "B" }, "player-9", { size: 5, direction: "right" });
+  assert.equal(edge.paintedCount, 1);
+  assert.deepEqual(edge.paintedCoordinates, ["T1"]);
+  assert.throws(() => paintMosaicBrush(artwork, { coordinate: "A26", column: 0, row: 25, color: "B" }, "player-9"), /active 20×25 board/);
 });
