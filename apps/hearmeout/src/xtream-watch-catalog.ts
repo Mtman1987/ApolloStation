@@ -111,6 +111,17 @@ export class HearMeOutXtreamWatchCatalog {
     });
   }
 
+  /** Resolve an upstream stream URL for server-side proxying only; never return this URL to the browser. */
+  upstreamPlaybackUrl(kind: "vod" | "live" | "episode", providerId: string, extension: string) {
+    const id = numericId(providerId, "providerId");
+    const safeExt = safeExtension(extension);
+    if (!safeExt || !new Set(["mp4", "m4v", "mov", "mkv", "ts"]).has(safeExt)) {
+      throw new Error("This Watch format is not supported by the direct playback proxy yet");
+    }
+    const pathKind = kind === "vod" ? "movie" : kind === "live" ? "live" : "series";
+    return new URL("/" + pathKind + "/" + encodeURIComponent(this.credentials.username) + "/" + encodeURIComponent(this.credentials.password) + "/" + id + "." + safeExt, this.credentials.baseUrl);
+  }
+
   /** Convert a selected catalog item into a safe, local HMO route, not an upstream URL. */
   playbackPath(item: Pick<HearMeOutXtreamCatalogItemV1, "kind" | "providerId" | "extension">) {
     const id = numericId(item.providerId, "providerId");
