@@ -33,6 +33,13 @@ test("Xtream catalog normalizes VOD, live channels, and series without exposing 
   assert.equal(JSON.stringify(items).includes("pass-private"), false);
   assert.equal(JSON.stringify(items).includes("iptv.example"), false);
   assert.equal(calls.every(url => url.searchParams.get("username") === "user-private" && url.searchParams.get("password") === "pass-private"), true);
+  const proxied = catalog.upstreamPlaybackUrl("vod", "42", "mp4");
+  assert.equal(proxied.origin, "https://iptv.example");
+  assert.equal(proxied.pathname, "/movie/user-private/pass-private/42.mp4");
+  assert.equal(catalog.upstreamPlaybackUrl("episode", "1001", "mkv").pathname, "/series/user-private/pass-private/1001.mkv");
+  assert.equal(catalog.upstreamPlaybackUrl("live", "7", "ts").pathname, "/live/user-private/pass-private/7.ts");
+  assert.throws(() => catalog.upstreamPlaybackUrl("vod", "../42", "mp4"), /providerId is invalid/);
+  assert.throws(() => catalog.upstreamPlaybackUrl("vod", "42", "m3u8"), /format is not supported/);
 });
 
 test("Xtream search ranks exact title matches and bounds results", async () => {
