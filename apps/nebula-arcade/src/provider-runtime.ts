@@ -16,6 +16,7 @@ import { buildNebulaDiscordDashboard, nebulaDiscordDashboardSignature, SqliteNeb
 import { isNebulaChannelOptedOut, NebulaTagExperienceService, SqliteNebulaTagExperienceStore } from "./nebula-tag-experience.js";
 import { NebulaTagRuntime, SqliteNebulaTagStore } from "./nebula-tag-runtime.js";
 import { NebulaMosaicRuntime } from "./mosaic-runtime.js";
+import { createStreamWeaverMosaicGenerator } from "./mosaic-generation.js";
 
 export interface NebulaArcadeProviderChannelV1 {
   provider: "twitch" | "discord" | "kick" | "youtube";
@@ -86,7 +87,7 @@ export class NebulaArcadeProviderRuntime {
     this.experienceStore = new SqliteNebulaTagExperienceStore(options.databasePath);
     this.gameStore = new SqliteNebulaGameRuntimeStore(options.databasePath);
     this.actionStore = new SqliteNebulaGameActionStore(options.databasePath);
-    this.mosaicRuntime = new NebulaMosaicRuntime(options.databasePath);
+    this.mosaicRuntime = new NebulaMosaicRuntime(options.databasePath, createStreamWeaverMosaicGenerator());
     if (options.discordDashboard) this.dashboardStore = new SqliteNebulaDiscordDashboardStore(options.databasePath);
     this.tagRuntime = new NebulaTagRuntime(this.tagStore, options.client);
     for (const tenant of options.config.tenants) {
