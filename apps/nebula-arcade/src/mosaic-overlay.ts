@@ -57,7 +57,7 @@ export const NEBULA_MOSAIC_OVERLAY_JS = String.raw`(() => {
       const cell = document.createElement("div"); cell.className = "cell";
       const painted = art.painted[i] || "";
       const target = art.target && art.target[i] || "";
-      const visible = painted && target === painted ? painted : (showTarget ? target : "");
+      const visible = painted ? painted : (showTarget ? target : "");
       cell.style.backgroundColor = palette[visible] || "#0a1425";
       cells.appendChild(cell);
     }
