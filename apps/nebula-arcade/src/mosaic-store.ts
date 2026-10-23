@@ -28,9 +28,9 @@ function normalizeArtwork(value: unknown): MosaicArtwork | undefined {
     ...(typeof item.sourceImageUrl === "string" ? { sourceImageUrl: item.sourceImageUrl } : {}),
     ...(typeof item.revealUntil === "string" ? { revealUntil: item.revealUntil } : {}),
     ...(typeof item.viewUntil === "string" ? { viewUntil: item.viewUntil } : {}),
-    ...(typeof item.paletteId === "string" ? { paletteId: item.paletteId as MosaicArtwork["paletteId"] } : {}),
+    ...(typeof item.paletteId === "string" ? { paletteId: item.paletteId as NonNullable<MosaicArtwork["paletteId"]> } : {}),
     ...(item.brushByPlayer && typeof item.brushByPlayer === "object" ? { brushByPlayer: item.brushByPlayer as Record<string, number> } : {}),
-    ...(item.brushDirectionByPlayer && typeof item.brushDirectionByPlayer === "object" ? { brushDirectionByPlayer: item.brushDirectionByPlayer as MosaicArtwork["brushDirectionByPlayer"] } : {}),
+    ...(item.brushDirectionByPlayer && typeof item.brushDirectionByPlayer === "object" ? { brushDirectionByPlayer: item.brushDirectionByPlayer as NonNullable<MosaicArtwork["brushDirectionByPlayer"]> } : {}),
     ...(item.brushUnlockedByPlayer && typeof item.brushUnlockedByPlayer === "object" ? { brushUnlockedByPlayer: item.brushUnlockedByPlayer as Record<string, string> } : {}),
   };
 }
