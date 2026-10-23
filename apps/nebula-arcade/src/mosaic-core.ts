@@ -10,6 +10,7 @@ export const MOSAIC_BOARD_HEIGHT = 25;
 export const MOSAIC_GENERATION_MAX_ATTEMPTS = 3;
 export const MOSAIC_GENERATION_RETRY_MS = 10_000;
 export const MOSAIC_GENERATION_STALE_MS = 3 * 60_000;
+export const MOSAIC_REVEAL_MS = 15_000;
 export const MOSAIC_XP_COST = Math.max(0, Math.floor(Number(process.env.MOSAIC_REQUEST_XP_COST || 0)));
 
 export const MOSAIC_COLORS = {
@@ -127,7 +128,7 @@ export type MosaicArtwork = {
   id: string; theme: string; requestedBy: string; requestedByPlayerId: string;
   createdAt: string; updatedAt: string; lastInteractionAt: string;
   status: "active" | "suspended" | "completed" | "archived";
-  provider?: string; sourceImageUrl?: string; target: MosaicColorCode[];
+  provider?: string; sourceImageUrl?: string; revealUntil?: string; target: MosaicColorCode[];
   painted: string[]; paintedBy: string[]; activeBoard: MosaicBoardNumber;
   viewMode: "board" | "all"; awardedMilestones: string[]; paletteId?: MosaicPaletteId;
 };
@@ -184,6 +185,25 @@ export function installMosaicQueueTemplate(state: MosaicQueueState, requestId: s
   const artwork: MosaicArtwork = { id: `mosaic:${now}`, theme: request.theme, requestedBy: request.displayName, requestedByPlayerId: request.playerId, createdAt, updatedAt: createdAt, lastInteractionAt: createdAt, status: "active", ...(generation.provider ? { provider: generation.provider } : {}), ...(generation.sourceImageUrl ? { sourceImageUrl: generation.sourceImageUrl } : {}), target, painted: Array(MOSAIC_CELL_COUNT).fill(""), paintedBy: Array(MOSAIC_CELL_COUNT).fill(""), activeBoard: 1, viewMode: "board", awardedMilestones: [] };
   state.current = artwork; state.queue = state.queue.filter((item) => item.id !== requestId);
   return structuredClone(artwork);
+}
+export function startMosaicReveal(artwork: MosaicArtwork, now = Date.now()): { artwork: MosaicArtwork; until: string; alreadyActive: boolean } {
+  if (artwork.status !== "active") throw new Error("An active, unfinished Mosaic is needed for a reveal.");
+  if (Date.parse(String(artwork.revealUntil || "")) > now) return { artwork: structuredClone(artwork), until: artwork.revealUntil!, alreadyActive: true };
+  const until = new Date(now + MOSAIC_REVEAL_MS).toISOString();
+  const next = { ...structuredClone(artwork), revealUntil: until, updatedAt: new Date(now).toISOString() };
+  return { artwork: next, until, alreadyActive: false };
+}
+export function isMosaicRevealVisible(artwork: Pick<MosaicArtwork, "revealUntil">, now = Date.now()): boolean {
+  return Date.parse(String(artwork.revealUntil || "")) > now;
+}
+export function paintMosaicArtworkCell(artwork: MosaicArtwork, column: number, row: number, color: MosaicColorCode, playerId: string, now = Date.now()): MosaicArtwork {
+  if (artwork.status !== "active") throw new Error("Only an active Mosaic can be painted.");
+  const painted = paintMosaicCell(artwork.painted, column, row, color);
+  const index = row * MOSAIC_WIDTH + column;
+  const paintedBy = Array.isArray(artwork.paintedBy) ? [...artwork.paintedBy] : Array(MOSAIC_CELL_COUNT).fill("");
+  paintedBy[index] = String(playerId);
+  const timestamp = new Date(now).toISOString();
+  return { ...structuredClone(artwork), painted, paintedBy, updatedAt: timestamp, lastInteractionAt: timestamp };
 }
 export function paintMosaicCell(paintedValue: unknown, column: number, row: number, color: MosaicColorCode): string[] {
   if (!Number.isInteger(column) || !Number.isInteger(row) || column < 0 || column >= MOSAIC_WIDTH || row < 0 || row >= MOSAIC_HEIGHT) throw new Error("Choose a cell inside the Mosaic board.");
