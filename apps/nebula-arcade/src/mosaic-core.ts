@@ -134,8 +134,10 @@ export type MosaicArtwork = {
   painted: string[]; paintedBy: string[]; activeBoard: MosaicBoardNumber;
   viewMode: "board" | "all"; awardedMilestones: string[]; paletteId?: MosaicPaletteId;
 };
-export type MosaicQueueState = { current?: MosaicArtwork; queue: MosaicQueueRequest[]; saves: MosaicArtwork[] };
-export function createMosaicQueueState(): MosaicQueueState { return { queue: [], saves: [] }; }
+export type MosaicTemplateV1 = { format: "nebula-mosaic"; version: 1; width: 40; height: 50; theme: string; paletteId: MosaicPaletteId; target: MosaicColorCode[] };
+export type MosaicSharedProject = { id: string; artworkId: string; template: MosaicTemplateV1; publishedAt: string };
+export type MosaicQueueState = { current?: MosaicArtwork; queue: MosaicQueueRequest[]; saves: MosaicArtwork[]; sharedProjects: MosaicSharedProject[] };
+export function createMosaicQueueState(): MosaicQueueState { return { queue: [], saves: [], sharedProjects: [] }; }
 export function queueMosaicThemeRequest(state: MosaicQueueState, input: { id: string; theme: unknown; playerId: string; username?: string; displayName?: string; xpCost?: number; now?: number }): { request: MosaicQueueRequest; position: number } {
   const theme = validateMosaicTheme(input.theme);
   const now = Math.max(0, Math.floor(Number(input.now ?? Date.now())));
@@ -146,6 +148,43 @@ export function queueMosaicThemeRequest(state: MosaicQueueState, input: { id: st
   const request: MosaicQueueRequest = { id: String(input.id), theme, playerId: String(input.playerId), username: String(input.username || input.playerId), displayName: String(input.displayName || input.username || input.playerId), requestedAt: new Date(now).toISOString(), xpCost: Math.max(0, Math.floor(Number(input.xpCost || 0))), status: "pending" };
   state.queue = [...state.queue, request].slice(-20);
   return { request: structuredClone(request), position: state.queue.filter((item) => !["failed", "cancelled"].includes(item.status)).length };
+}
+export function findMosaicArtwork(state: MosaicQueueState, id?: string): MosaicArtwork | undefined {
+  return [state.current, ...state.saves].find((art) => art && (!id || art.id === id));
+}
+export function mosaicTemplate(artwork: MosaicArtwork): MosaicTemplateV1 {
+  return { format: "nebula-mosaic", version: 1, width: MOSAIC_WIDTH, height: MOSAIC_HEIGHT, theme: artwork.theme, paletteId: artwork.paletteId || "classic", target: [...artwork.target] };
+}
+export function sharedMosaicProjects(state: MosaicQueueState): MosaicSharedProject[] {
+  return (state.sharedProjects || []).map((project) => structuredClone(project));
+}
+export function publishMosaic(state: MosaicQueueState, artworkId: string, publish: boolean, now = Date.now()): MosaicSharedProject | null {
+  state.sharedProjects = Array.isArray(state.sharedProjects) ? state.sharedProjects : [];
+  const existing = state.sharedProjects.find((item) => item.artworkId === artworkId);
+  if (!publish) { state.sharedProjects = state.sharedProjects.filter((item) => item.artworkId !== artworkId); return null; }
+  const artwork = findMosaicArtwork(state, artworkId);
+  if (!artwork) throw new Error("That saved painting was not found.");
+  const project: MosaicSharedProject = { id: existing?.id || "mosaic-project:" + artworkId, artworkId, template: mosaicTemplate(artwork), publishedAt: new Date(now).toISOString() };
+  state.sharedProjects = [project, ...state.sharedProjects.filter((item) => item.artworkId !== artworkId)].slice(0, 20);
+  return structuredClone(project);
+}
+export function startMosaicProject(state: MosaicQueueState, templateValue: unknown, replace = false, now = Date.now()): MosaicArtwork {
+  const template = validateMosaicTemplate(templateValue);
+  if (state.current?.status === "active" && !replace) throw new Error("Your painting is still active. Save it and switch to start this one.");
+  if (state.current) { const previous = structuredClone(state.current); if (previous.status === "active") previous.status = "suspended"; state.saves = [previous, ...state.saves.filter((art) => art.id !== previous.id)].slice(0, 20); }
+  for (const request of state.queue) if (request.status === "generating") { request.status = "cancelled"; request.error = "Cancelled to load a saved project."; delete request.retryAt; }
+  const timestamp = new Date(now).toISOString();
+  const artwork: MosaicArtwork = { id: "mosaic:project:" + now, theme: template.theme, requestedBy: "shared project", requestedByPlayerId: "", createdAt: timestamp, updatedAt: timestamp, lastInteractionAt: timestamp, status: "active", target: [...template.target], painted: Array(MOSAIC_CELL_COUNT).fill(""), paintedBy: Array(MOSAIC_CELL_COUNT).fill(""), activeBoard: 1, viewMode: "board", awardedMilestones: [], paletteId: template.paletteId };
+  state.current = artwork; return structuredClone(artwork);
+}
+export function resumeMosaicProject(state: MosaicQueueState, id: string, replace = false, now = Date.now()): MosaicArtwork {
+  const saved = findMosaicArtwork(state, id);
+  if (!saved || !["active", "suspended"].includes(saved.status)) throw new Error("Choose an unfinished saved painting.");
+  if (state.current?.id !== id && state.current?.status === "active" && !replace) throw new Error("Save your active painting and switch first.");
+  if (state.current && state.current.id !== id) { const previous = structuredClone(state.current); if (previous.status === "active") previous.status = "suspended"; state.saves = [previous, ...state.saves.filter((art) => art.id !== previous.id)].slice(0, 20); }
+  const resumed = structuredClone(saved); resumed.status = "active"; resumed.updatedAt = resumed.lastInteractionAt = new Date(now).toISOString(); delete resumed.viewUntil; delete resumed.revealUntil;
+  for (const request of state.queue) if (request.status === "generating") { request.status = "cancelled"; request.error = "Cancelled to resume a saved project."; delete request.retryAt; }
+  state.current = resumed; return structuredClone(resumed);
 }
 export function removeMosaicQueueRequest(state: MosaicQueueState, selector: number | string): MosaicQueueRequest {
   const visible = state.queue.filter((item) => item.status !== "cancelled");
