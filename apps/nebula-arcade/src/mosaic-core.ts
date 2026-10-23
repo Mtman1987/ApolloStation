@@ -314,7 +314,6 @@ export function mosaicPublicSnapshot(state: MosaicQueueState, now = Date.now()) 
   return {
     artwork: { id: artwork.id, theme: artwork.theme, requestedBy: artwork.requestedBy, status: artwork.status, activeBoard: artwork.activeBoard, viewMode, revealing, revealUntil: revealing ? artwork.revealUntil : undefined,
       target: viewMode === "all" ? artwork.target : boardTarget, painted: viewMode === "all" ? artwork.painted : boardPainted,
-      paintedBy: viewMode === "all" ? artwork.paintedBy : boardPainted.map((_, index) => artwork.paintedBy[(originY + Math.floor(index / MOSAIC_BOARD_WIDTH)) * MOSAIC_WIDTH + originX + index % MOSAIC_BOARD_WIDTH] || ""),
       progress, total: MOSAIC_CELL_COUNT, progressPercent: Math.round(progress / MOSAIC_CELL_COUNT * 100), paletteId: artwork.paletteId || "classic", createdAt: artwork.createdAt, updatedAt: artwork.updatedAt, sourceImageUrl: artwork.sourceImageUrl },
     queueLength, queue: queue.map((item, index) => ({ position: index + 1, id: item.id, theme: item.theme, displayName: item.displayName, status: item.status, attempts: Math.max(0, Number(item.attempts || 0)) })), generation, saves, pricing: mosaicPricing(),
   };
