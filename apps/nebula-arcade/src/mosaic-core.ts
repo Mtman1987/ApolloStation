@@ -62,7 +62,7 @@ export function mosaicPricing() {
 function mosaicCommandBody(value: unknown): string {
   return String(value ?? "").trim().toLowerCase()
     .replace(/^!?@?spmt(?:\s+|$)/i, "").trim()
-    .replace(/^pixel(?:battle)?\s+|^mosaic\s+/i, "").trim();
+    .replace(/^!?pixel(?:battle)?\s+|^!?mosaic\s+/i, "").trim();
 }
 export function parseMosaicPaintCommand(value: unknown): { coordinate: string; column: number; row: number; color: MosaicColorCode } | null {
   const source = mosaicCommandBody(value).replace(/^play\s+|^paint\s+/i, "").trim();
