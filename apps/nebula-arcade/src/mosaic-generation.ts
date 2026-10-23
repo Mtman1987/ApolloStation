@@ -86,7 +86,7 @@ export function createStreamWeaverMosaicGenerator(options: StreamWeaverMosaicGen
           method: "POST", signal: AbortSignal.timeout(45_000),
           headers: { "Content-Type": "application/json", "x-mountainview-bridge": "1", Authorization: `Bearer ${serviceToken}`, "x-bot-secret": serviceToken },
           body: JSON.stringify({
-            prompt: promptForTheme(subject), scope: "public", tenantId: String(context?.tenantId || process.env.MOSAIC_STREAMWEAVER_TENANT_ID || "spacemountainlive"),
+            prompt: promptForTheme(subject), scope: "public", tenantId: String(process.env.MOSAIC_STREAMWEAVER_TENANT_ID || context?.tenantId || "spacemountainlive"),
             resolution: "1024x1024", numImages: 1, providerOverride: provider,
             providerParams: { quality: "low", seed: Math.floor(Math.random() * 2_147_483_646) + 1, negativePrompt: NEGATIVE_PROMPT },
           }),
