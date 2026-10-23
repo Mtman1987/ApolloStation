@@ -120,10 +120,13 @@ export class NebulaMosaicRuntime {
         if (!input.moderator) return { reply: "Only a broadcaster or moderator can change the Mosaic queue.", queued: false };
         if (/^clear$/i.test(command)) return { reply: `Removed ${clearMosaicQueue(state)} queued Mosaic request(s).`, queued: false };
         const selector = command.replace(/^remove\s+/i, "").trim();
-        const item = removeMosaicQueueRequest(state, /^\d+$/.test(selector) ? Number(selector) : selector);
-        return { reply: `Removed Mosaic request “${item.theme}”.`, queued: false };
+        if (!selector) return { reply: "Choose a queue position or theme: !mosaic remove 1.", queued: false };
+        try { const item = removeMosaicQueueRequest(state, /^\d+$/.test(selector) ? Number(selector) : selector); return { reply: `Removed Mosaic request “${item.theme}”.`, queued: false }; }
+        catch (error) { return { reply: error instanceof Error ? error.message : "That Mosaic queue item was not found.", queued: false }; }
       }
-      const theme = validateMosaicTheme(command.replace(/^request\s+/i, ""));
+      let theme: string;
+      try { theme = validateMosaicTheme(command.replace(/^request\s+/i, "")); }
+      catch (error) { return { reply: error instanceof Error ? error.message : "That Mosaic theme is invalid.", queued: false }; }
       const queued = queueMosaicThemeRequest(state, { id: randomUUID(), theme, playerId, username: input.username, displayName: input.displayName || input.username, now });
       return { reply: `Mosaic “${theme}” queued at position ${queued.position}.`, queued: true };
     }, now);
