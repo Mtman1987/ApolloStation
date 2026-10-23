@@ -149,7 +149,9 @@ async function handleApi(request:IncomingMessage,response:ServerResponse,url:URL
       const upstreamUrl=xtreamWatchCatalog.upstreamPlaybackUrl(watchPlaybackRoute[2] as "vod"|"live"|"episode",watchPlaybackRoute[3]!,watchPlaybackRoute[4]!);
       const headers:Record<string,string>={accept:"video/*,application/octet-stream;q=0.9,*/*;q=0.8"};
       const range=request.headers.range;if(typeof range==="string"&&/^bytes=\d*-\d*(,\d*-\d*)*$/.test(range))headers.range=range;
-      const upstream=await fetch(upstreamUrl,{method:request.method,headers,redirect:"error",signal:AbortSignal.timeout(30_000)});
+      let upstream:Response;
+      try{upstream=await fetch(upstreamUrl,{method:request.method,headers,redirect:"error",signal:AbortSignal.timeout(30_000)})}
+      catch{throw new Error("Xtream playback upstream is unavailable")}
       const responseHeaders:Record<string,string>={"cache-control":"private, no-store","x-content-type-options":"nosniff","content-type":upstream.headers.get("content-type")??"application/octet-stream"};
       for(const name of ["content-length","content-range","accept-ranges"]) {const value=upstream.headers.get(name);if(value)responseHeaders[name]=value}
       response.writeHead(upstream.status,responseHeaders);
