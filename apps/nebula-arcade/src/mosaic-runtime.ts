@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
   clearMosaicQueue, claimNextMosaicRequest, failMosaicQueueRequest, installMosaicQueueTemplate,
-  isMosaicRevealVisible, mosaicPublicSnapshot, paintMosaicBrush, parseMosaicBrushCommand,
+  mosaicPublicSnapshot, paintMosaicBrush, parseMosaicBrushCommand,
   parseMosaicPaintCommand, parseMosaicPaletteCommand, parseMosaicRevealCommand, parseMosaicViewCommand,
   queueMosaicThemeRequest, removeMosaicQueueRequest, setMosaicPalette, setMosaicView, startMosaicReveal,
   validateMosaicTheme, type MosaicArtwork, type MosaicBrushDirection, type MosaicColorCode,
@@ -18,7 +18,6 @@ function mosaicBody(value: string): string | null {
   if (!/^(?:!?@?spmt\s+(?:mosaic|pixelbattle)\b|!?mosaic\b|!?pixelbattle\b)/i.test(original)) return null;
   return original.replace(/^!?@?spmt\s+/i, "").replace(/^!?mosaic\s*/i, "").replace(/^!?pixelbattle\s*/i, "").trim();
 }
-function coordinateMessage(coordinate: string, color: MosaicColorCode): string { return `Paint ${coordinate} ${color} accepted.`; }
 
 export class NebulaMosaicRuntime {
   private readonly store: SqliteNebulaMosaicStore;
@@ -129,6 +128,7 @@ export class NebulaMosaicRuntime {
       generated = started.started && !started.error;
       if (started.error) reply += ` Generation attempt failed and was recorded for retry: ${started.error}`;
       else if (generated) reply += " Artwork generated and installed.";
+      else reply += " The request remains queued; an existing artwork or another generation attempt currently blocks it.";
     } else if (result.result.queued) {
       reply += " The request is saved, but the image-generation runner is not configured yet.";
     }
