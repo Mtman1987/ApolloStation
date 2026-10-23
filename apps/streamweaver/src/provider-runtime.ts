@@ -181,7 +181,7 @@ export class StreamWeaverProviderRuntime {
     const goLiveConfig = options.spaceMountainGoLive;
     const spaceMountainGoLive: StreamWeaverProviderConsumerV1 | undefined = goLiveConfig ? {
       id: "streamweaver.spacemountain-golive",
-      accepts: (message) => message.channelId === goLiveConfig.channelId && /^!golive$/i.test(message.text.trim()),
+      accepts: (message) => message.tenantId === "spacemountainlive" && message.channelId === goLiveConfig.channelId && /^!golive$/i.test(message.text.trim()),
       deliver: async (delivery) => {
         const message = delivery.message;
         const source = message as typeof message & { rich?: { mirrored?: boolean } };
