@@ -366,8 +366,9 @@ function mountWatchCatalog(detail,roomId,api,el,empty,msg){
   const panel=el('section','hmo-pane');panel.dataset.hmoWatchCatalog='1';
   const head=el('div','hmo-pane-head'),title=el('h3');title.textContent='Watch catalog';head.append(title);
   const form=el('form','hmo-media-add'),query=el('input');query.type='search';query.name='q';query.placeholder='Search movies, series, live TV';query.minLength=2;query.maxLength=200;query.required=true;query.setAttribute('aria-label','Search Watch catalog');
-  const submit=el('button','hmo-button primary');submit.type='submit';submit.textContent='Search';form.append(query,submit);
-  const status=el('p','hmo-status');status.setAttribute('role','status');status.textContent='Search the configured Watch provider. Playback and queue acceptance are not enabled yet.';
+  const kind=el('select');kind.setAttribute('aria-label','Catalog type');for(const [value,label] of [['vod,live,series','All media'],['vod','Movies'],['series','Series'],['live','Live TV']]){const option=el('option');option.value=value;option.textContent=label;kind.append(option)}
+  const submit=el('button','hmo-button primary');submit.type='submit';submit.textContent='Search';form.append(query,kind,submit);
+  const status=el('p','hmo-status');status.setAttribute('role','status');status.textContent='Search the configured provider. Catalog browsing is available; secure playback and shared queue are still being wired up.';
   const results=el('div','hmo-queue');panel.append(head,form,status,results);
   const existing=detail.querySelector('.hmo-console-grid')||detail.firstElementChild;
   if(existing)existing.prepend(panel);else detail.prepend(panel);
@@ -375,7 +376,7 @@ function mountWatchCatalog(detail,roomId,api,el,empty,msg){
     event.preventDefault();const q=query.value.trim();if(q.length<2){status.textContent='Enter at least two characters.';return}
     submit.disabled=true;status.textContent='Searching catalog…';results.replaceChildren();
     try{
-      const data=await api('/api/hearmeout/rooms/'+encodeURIComponent(roomId)+'/watch/catalog?q='+encodeURIComponent(q)+'&limit=20');
+      const data=await api('/api/hearmeout/rooms/'+encodeURIComponent(roomId)+'/watch/catalog?q='+encodeURIComponent(q)+'&limit=20&kind='+encodeURIComponent(kind.value));
       const items=Array.isArray(data.items)?data.items:[];
       if(!items.length)results.append(empty('No catalog matches. Try another title.'));
       for(const item of items){
@@ -383,12 +384,12 @@ function mountWatchCatalog(detail,roomId,api,el,empty,msg){
         name.textContent=String(item.title||'Untitled');meta.textContent=String(item.kind||'media').toUpperCase()+(item.year?' · '+item.year:'');copy.append(name,meta);row.append(copy,actions);
         if(item.kind==='series'){
           const episodes=el('button','hmo-button');episodes.type='button';episodes.textContent='Episodes';episodes.addEventListener('click',async()=>{
-            episodes.disabled=true;try{const data=await api('/api/hearmeout/rooms/'+encodeURIComponent(roomId)+'/watch/series/'+encodeURIComponent(String(item.providerId)));const list=Array.isArray(data.episodes)?data.episodes:[];const wrap=el('div','hmo-queue');if(!list.length)wrap.append(empty('No episodes returned.'));for(const episode of list){const line=el('div','hmo-queue-row'),label=el('span');label.textContent=String(episode.episodeNumber??'')+' · '+String(episode.title||'Episode');line.append(label);wrap.append(line)}row.after(wrap)}catch(error){status.textContent=msg(error)}finally{episodes.disabled=false}
+            episodes.disabled=true;try{const data=await api('/api/hearmeout/rooms/'+encodeURIComponent(roomId)+'/watch/series/'+encodeURIComponent(String(item.providerId)));const list=Array.isArray(data.episodes)?data.episodes:[];const wrap=el('div','hmo-queue');if(!list.length)wrap.append(empty('No episodes returned.'));for(const episode of list){const line=el('div','hmo-queue-row'),label=el('span');label.textContent=(episode.categoryId?'Season '+String(episode.categoryId)+' · ':'')+'Episode '+String(episode.episodeNumber??'')+' · '+String(episode.title||'Episode');line.append(label);wrap.append(line)}row.after(wrap)}catch(error){status.textContent=msg(error)}finally{episodes.disabled=false}
           });actions.append(episodes);
         }
         results.append(row);
       }
-      status.textContent=items.length+' result(s). Playback and queue acceptance remain disabled until the secure media proxy is implemented.';
+      status.textContent=items.length+' result(s). Choose a type to narrow searches. Playback and shared queue acceptance are the next integration step.';
     }catch(error){status.textContent=msg(error)}
     finally{submit.disabled=false}
   });
