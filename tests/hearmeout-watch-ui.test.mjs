@@ -18,4 +18,9 @@ test("HearMeOut Watch room UI exposes catalog type filters and scoped catalog/ep
   assert.match(source, /watch.*queue/);
   assert.match(source, /enqueueResolved\(principal/);
   assert.match(source, /player\.play\(\)/);
+  assert.match(source, /upstreamPlaybackUrl\(/);
+  assert.match(source, /redirect:"error"/);
+  assert.match(source, /requireMembership\(rooms,principal,roomId\)/);
+  assert.match(source, /watch\/queue/);
+  assert.match(source, /rooms\.enqueueResolved\(principal/);
 });
