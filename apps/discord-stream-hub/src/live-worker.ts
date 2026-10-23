@@ -30,7 +30,7 @@ import { DshSuiteActionWorker } from "./suite-action-worker.js";
 import { DshSimulationRoomDiscordTransport } from "./simulation-room.js";
 import { DshTenantSettingsStore } from './settings.js';
 import { dshShoutoutGroupSlug } from './shoutout-groups.js';
-import { isDshSystemOwnedTwitchLogin } from "./system-live-channels.js";
+import { dshSystemLiveChannelByLogin } from "./system-live-channels.js";
 
 export interface DshLiveRuntimeTenantV1 {
   tenantId: string;
@@ -120,7 +120,7 @@ export function createDshWorkerTokenProvider(options: { spmtOrigin: string; cred
 export class ConfigDirectory implements DshLiveMemberDirectoryV1, DshDiscordBrandingSourceV1 {
   private readonly tenants = new Map<string, DshLiveRuntimeTenantV1>();
   constructor(private readonly config: DshLiveRuntimeConfigV1, private readonly settings?: DshTenantSettingsStore, private readonly memberDirectory?: DshMemberDirectoryStore) { config.tenants.forEach((tenant) => this.tenants.set(tenant.tenantId, tenant)); }
-  async listLiveTrackedMembers(tenantId: string) { this.require(tenantId); const saved = this.settings?.read(tenantId); return (this.memberDirectory?.trackedMembers(tenantId) ?? structuredClone(this.require(tenantId).members)).map(member => ({ ...member, spotlightEligible: !isDshSystemOwnedTwitchLogin(member.twitchLogin) && member.spotlightEligible !== false, shoutoutChannelId: saved?.groupChannels[dshShoutoutGroupSlug(member.group) || ''] || member.shoutoutChannelId })); }
+  async listLiveTrackedMembers(tenantId: string) { this.require(tenantId); const saved = this.settings?.read(tenantId); return (this.memberDirectory?.trackedMembers(tenantId) ?? structuredClone(this.require(tenantId).members)).map(member => ({ ...member, spotlightEligible: dshSystemLiveChannelByLogin(member.twitchLogin)?.spotlightEligible ?? member.spotlightEligible ?? true, shoutoutChannelId: saved?.groupChannels[dshShoutoutGroupSlug(member.group) || ''] || member.shoutoutChannelId })); }
   members(tenantId: string, guild?: string) { this.require(tenantId); return this.memberDirectory?.members(tenantId, guild) ?? structuredClone(this.require(tenantId).members); }
   getBranding(tenantId: string) { const saved = this.settings?.read(tenantId), base = structuredClone(this.require(tenantId).branding); return { ...base, ...(saved?.spotlightChannelId ? { spotlightChannelId: saved.spotlightChannelId } : {}), ...(saved?.embedTemplates ? { embedTemplates: saved.embedTemplates } : {}), ...(saved ? { spotlightEnabled: saved.spotlightEnabled, groupChannels: saved.groupChannels } : {}) }; }
   getPollSettings(tenantId: string) { const saved = this.settings?.read(tenantId); return { intervalSeconds: saved?.revision ? saved.pollIntervalSeconds : this.config.pollIntervalSeconds, revision: saved?.revision ?? 0, spotlightEnabled: saved?.spotlightEnabled ?? true }; }
