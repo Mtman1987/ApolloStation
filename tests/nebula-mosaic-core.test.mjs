@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { MOSAIC_CELL_COUNT, MOSAIC_COLORS, MOSAIC_PALETTES, MOSAIC_WIDTH, MOSAIC_HEIGHT, MOSAIC_REVEAL_MS, mosaicPricing, normalizeMosaicTheme, validateMosaicTheme, parseMosaicPaintCommand, parseMosaicBrushCommand, parseMosaicViewCommand, parseMosaicPaletteCommand, parseMosaicRevealCommand, validateMosaicTemplate, paintMosaicCell, createMosaicQueueState, queueMosaicThemeRequest, claimNextMosaicRequest, failMosaicQueueRequest, installMosaicQueueTemplate, removeMosaicQueueRequest, clearMosaicQueue, startMosaicReveal, isMosaicRevealVisible, paintMosaicArtworkCell, paintMosaicBrush, collectCompletedMosaicMilestones, setMosaicView, setMosaicPalette, resetMosaicForReplay, mosaicPublicSnapshot, mosaicTemplate, publishMosaic, sharedMosaicProjects, startMosaicProject, resumeMosaicProject, findMosaicArtwork } from "../apps/nebula-arcade/dist/mosaic-core.js";
+import { MOSAIC_CELL_COUNT, MOSAIC_COLORS, MOSAIC_PALETTES, MOSAIC_WIDTH, MOSAIC_HEIGHT, MOSAIC_REVEAL_MS, mosaicPricing, normalizeMosaicTheme, validateMosaicTheme, parseMosaicPaintCommand, parseMosaicBrushCommand, parseMosaicViewCommand, parseMosaicPaletteCommand, parseMosaicRevealCommand, validateMosaicTemplate, paintMosaicCell, createMosaicQueueState, queueMosaicThemeRequest, claimNextMosaicRequest, failMosaicQueueRequest, installMosaicQueueTemplate, removeMosaicQueueRequest, clearMosaicQueue, startMosaicReveal, isMosaicRevealVisible, paintMosaicArtworkCell, paintMosaicBrush, collectCompletedMosaicMilestones, setMosaicView, setMosaicPalette, resetMosaicForReplay, mosaicPublicSnapshot, mosaicTemplate, publishMosaic, sharedMosaicProjects, startMosaicProject, resumeMosaicProject, findMosaicArtwork, mosaicTemplateSvg } from "../apps/nebula-arcade/dist/mosaic-core.js";
 
 test("Mosaic theme normalization and guardrails match the donor contract", () => {
   assert.equal(normalizeMosaicTheme("  owl\n in   space  "), "owl in space");
@@ -234,4 +234,14 @@ test("Mosaic shared projects can be published, started, suspended, and resumed w
   assert.equal(resumed.paintedBy[0], "p1");
   assert.equal(publishMosaic(state, artwork.id, false), null);
   assert.equal(sharedMosaicProjects(state).length, 0);
+});
+
+test("Mosaic SVG export renders only validated palette cells and fixed dimensions", () => {
+  const template = { format: "nebula-mosaic", version: 1, width: MOSAIC_WIDTH, height: MOSAIC_HEIGHT, theme: "safe <svg> title", paletteId: "neon", target: Array(MOSAIC_CELL_COUNT).fill("PK") };
+  const svg = mosaicTemplateSvg(template);
+  assert.match(svg, /width="800" height="1000" viewBox="0 0 800 1000"/);
+  assert.equal((svg.match(/<rect /g) || []).length, MOSAIC_CELL_COUNT);
+  assert.match(svg, /fill="#ff4081"/);
+  assert.doesNotMatch(svg, /safe <svg> title/);
+  assert.throws(() => mosaicTemplateSvg({ ...template, target: ["bad"] }), /dimensions/);
 });
