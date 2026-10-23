@@ -175,6 +175,7 @@ async function handleApi(request:IncomingMessage,response:ServerResponse,url:URL
           if(!/^\d{1,20}$/.test(seriesId))throw new Error("Series context is required for an episode");
           const episodes=await xtreamWatchCatalog.seriesEpisodes(seriesId),episode=episodes.find(item=>item.providerId===providerId);
           if(!episode)throw new Error("Episode was not found in this series");
+          if(episode.extension&&episode.extension!==extension)throw new Error("Episode format does not match the catalog");
           title=episode.title;metadata={...metadata,seriesId,season:episode.categoryId,episodeNumber:episode.episodeNumber};
         }else{
           const items=await xtreamWatchCatalog.catalog(),item=items.find(candidate=>candidate.kind===kind&&candidate.providerId===providerId);
