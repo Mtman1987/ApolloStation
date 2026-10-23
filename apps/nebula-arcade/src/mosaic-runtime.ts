@@ -127,8 +127,10 @@ export class NebulaMosaicRuntime {
       let theme: string;
       try { theme = validateMosaicTheme(command.replace(/^request\s+/i, "")); }
       catch (error) { return { reply: error instanceof Error ? error.message : "That Mosaic theme is invalid.", queued: false }; }
-      const queued = queueMosaicThemeRequest(state, { id: randomUUID(), theme, playerId, username: input.username, displayName: input.displayName || input.username, now });
-      return { reply: `Mosaic “${theme}” queued at position ${queued.position}.`, queued: true };
+      try {
+        const queued = queueMosaicThemeRequest(state, { id: randomUUID(), theme, playerId, username: input.username, displayName: input.displayName || input.username, now });
+        return { reply: `Mosaic “${theme}” queued at position ${queued.position}.`, queued: true };
+      } catch (error) { return { reply: error instanceof Error ? error.message : "That Mosaic request could not be queued.", queued: false }; }
     }, now);
     let reply = result.result.reply;
     let generated = false;
