@@ -21,7 +21,7 @@ function mosaicBody(value: string): string | null {
 
 export class NebulaMosaicRuntime {
   private readonly store: SqliteNebulaMosaicStore;
-  private readonly generate?: MosaicGenerator;
+  private readonly generate: MosaicGenerator | undefined;
   constructor(databasePath: string, generate?: MosaicGenerator) {
     this.store = new SqliteNebulaMosaicStore(databasePath);
     this.generate = generate;
