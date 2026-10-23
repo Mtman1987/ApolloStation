@@ -25,6 +25,7 @@ test("SQLite Mosaic state survives store restart and isolates tenant/channel rec
     store = new SqliteNebulaMosaicStore(path);
     const recovered = store.get("tenant-a", "main");
     assert.equal(recovered.current?.theme, "pixel ocean");
+    assert.equal(recovered.current?.status, "active");
     assert.equal(recovered.current?.painted[0], "C");
     assert.equal(recovered.current?.paintedBy[0], "player-a");
     assert.equal(store.get("tenant-a", "other").current, undefined);
