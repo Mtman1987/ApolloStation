@@ -41,6 +41,7 @@ import { StreamWeaverBicRuntime, StreamWeaverBicCommandExecutor, StreamWeaverSoc
 import { SqliteStreamWeaverSocialReactionStore } from "./social-reaction-store.js";
 import { secureChoiceActionFromExecution, STREAMWEAVER_SECURE_CHOICE_DONOR_ID, StreamWeaverSecureChoiceStore } from "./secure-choice.js";
 import { SqliteStreamWeaverTranslationStore, StreamWeaverTranslationRuntime } from "./translation-runtime.js";
+import { handleSpaceMountainGoLiveMessage, type SpaceMountainGoLiveResult } from "./spacemountain-golive.js";
 
 export interface StreamWeaverProviderConsumerV1 {
   id: string;
@@ -177,9 +178,10 @@ export class StreamWeaverProviderRuntime {
       assistant:async ({delivery,prompt,requestId})=>{if(options.simulation)return{status:"accepted",jobId:`simulation:assistant:${createHash("sha256").update(requestId+prompt).digest("hex")}`};if(options.allowAssistant===false)return {status:"unavailable",reason:"External assistant execution is disabled in this environment."};const userId=delivery.message.actor.canonicalUserId;if(!userId)return {status:"unavailable",reason:"Link your chat account to SPMT before using assistant flows."};const persona=this.settings.get(delivery.message.tenantId),intent=streamWeaverResearchIntent(prompt),preferences=this.runtimeSettings.research(delivery.message.tenantId);return options.client.invokeCommunityAssistant(delivery.message.tenantId,{userId,message:prompt,...(intent.kind==="query"&&preferences.enabled?{research:{...preferences,query:intent.query}}:{}),surface:"stream",conversationId:`streamweaver:flow:${requestId}`,routingPreference:"automatic",remember:false,...(persona?{presentation:{personaId:persona.personaId,displayName:persona.displayName,instructions:persona.instructions,memoryPolicy:persona.memoryPolicy}}:{})},`streamweaver-assistant:${requestId}`);},
     });
     const economy = new MultiTenantStreamWeaverEconomyCommandConsumer(this.economy, options.client, identities, this.commandState, egress, options.nowMs, Math.random);
-    const spaceMountainGoLive: StreamWeaverProviderConsumerV1 | undefined = options.spaceMountainGoLive ? {
+    const goLiveConfig = options.spaceMountainGoLive;
+    const spaceMountainGoLive: StreamWeaverProviderConsumerV1 | undefined = goLiveConfig ? {
       id: "streamweaver.spacemountain-golive",
-      accepts: (message) => message.channelId === options.spaceMountainGoLive!.channelId && /^!golive$/i.test(message.text.trim()),
+      accepts: (message) => message.channelId === goLiveConfig.channelId && /^!golive$/i.test(message.text.trim()),
       deliver: async (delivery) => {
         const message = delivery.message;
         const source = message as typeof message & { rich?: { mirrored?: boolean } };
@@ -191,8 +193,8 @@ export class StreamWeaverProviderRuntime {
           self: message.actor.isBot === true, mirrored: source.rich?.mirrored === true,
           botAuthored: message.actor.isBot === true, broadcasterBadge: message.actor.roles.includes("broadcaster"),
         }, {
-          start: options.spaceMountainGoLive.start,
-          reply: async (text) => options.egress.send({
+          start: goLiveConfig.start,
+          reply: async (text: string) => options.egress.send({
             schemaVersion: 1, tenantId: message.tenantId, provider: message.provider,
             connectionId: message.connectionId, channelId: message.channelId, text,
             idempotencyKey: `space-mountain-golive:${delivery.deliveryId}:${++replyIndex}`,
