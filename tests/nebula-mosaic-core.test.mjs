@@ -217,6 +217,8 @@ test("Mosaic shared projects can be published, started, suspended, and resumed w
   const artwork = installMosaicQueueTemplate(state, "project-1", Array(MOSAIC_CELL_COUNT).fill("B"), {}, 3000);
   artwork.painted[0] = "B";
   artwork.paintedBy[0] = "p1";
+  state.current.painted[0] = "B";
+  state.current.paintedBy[0] = "p1";
   const template = mosaicTemplate(artwork);
   assert.equal(template.format, "nebula-mosaic");
   assert.equal(template.target.length, MOSAIC_CELL_COUNT);
