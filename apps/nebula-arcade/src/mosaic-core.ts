@@ -31,6 +31,7 @@ export type MosaicBoardNumber = 1 | 2 | 3 | 4;
 export type MosaicBrushDirection = "right" | "left" | "down" | "up";
 export type MosaicBrushCommand = 1 | 2 | 3 | 4 | 5 | "status" | MosaicBrushDirection | { size: 1 | 2 | 3 | 4 | 5; direction: MosaicBrushDirection };
 export type MosaicViewCommand = "all" | MosaicBoardNumber;
+export type MosaicPaintCommand = { coordinate: string; column: number; row: number; color: MosaicColorCode };
 
 export const MOSAIC_PALETTES = {
   classic: { R:"#ef4444", B:"#3b82f6", G:"#22c55e", Y:"#eab308", P:"#a855f7", O:"#f97316", PK:"#ec4899", W:"#f8fafc", K:"#111827", C:"#06b6d4" },
@@ -195,6 +196,41 @@ export function startMosaicReveal(artwork: MosaicArtwork, now = Date.now()): { a
 }
 export function isMosaicRevealVisible(artwork: Pick<MosaicArtwork, "revealUntil">, now = Date.now()): boolean {
   return Date.parse(String(artwork.revealUntil || "")) > now;
+}
+export function paintMosaicBrush(artwork: MosaicArtwork, command: MosaicPaintCommand, playerId: string, options: { size?: number; direction?: MosaicBrushDirection; now?: number } = {}): { artwork: MosaicArtwork; outcome: "wrong" | "already-painted" | "painted"; expected: MosaicColorCode; paintedCoordinates: string[]; paintedCount: number; brush: number; direction: MosaicBrushDirection; stoppedAt: string } {
+  if (artwork.status !== "active") throw new Error("Only an active Mosaic can be painted.");
+  if (!Number.isInteger(command.column) || command.column < 0 || command.column >= MOSAIC_BOARD_WIDTH || !Number.isInteger(command.row) || command.row < 0 || command.row >= MOSAIC_BOARD_HEIGHT) throw new Error("The paint coordinate must be inside the active 20×25 board.");
+  const size = Math.min(5, Math.max(1, Math.floor(Number(options.size || 1))));
+  const direction = options.direction || "right";
+  const originX = artwork.activeBoard === 2 || artwork.activeBoard === 4 ? MOSAIC_BOARD_WIDTH : 0;
+  const originY = artwork.activeBoard === 3 || artwork.activeBoard === 4 ? MOSAIC_BOARD_HEIGHT : 0;
+  const globalX = originX + command.column;
+  const globalY = originY + command.row;
+  const startIndex = globalY * MOSAIC_WIDTH + globalX;
+  const expected = artwork.target[startIndex];
+  const timestamp = new Date(options.now ?? Date.now()).toISOString();
+  const base = { ...structuredClone(artwork), updatedAt: timestamp, lastInteractionAt: timestamp, viewMode: "board" as const };
+  if (command.color !== expected) return { artwork: base, outcome: "wrong", expected, paintedCoordinates: [], paintedCount: 0, brush: size, direction, stoppedAt: "" };
+  const painted = [...base.painted];
+  const paintedBy = [...base.paintedBy];
+  const paintedCoordinates: string[] = [];
+  let stoppedAt = "";
+  for (let offset = 0; offset < size; offset++) {
+    const dx = direction === "left" ? -offset : direction === "right" ? offset : 0;
+    const dy = direction === "up" ? -offset : direction === "down" ? offset : 0;
+    const localColumn = command.column + dx;
+    const localRow = command.row + dy;
+    if (localColumn < 0 || localColumn >= MOSAIC_BOARD_WIDTH || localRow < 0 || localRow >= MOSAIC_BOARD_HEIGHT) break;
+    const index = (originY + localRow) * MOSAIC_WIDTH + originX + localColumn;
+    const coordinate = `${String.fromCharCode(65 + localColumn)}${localRow + 1}`;
+    if (base.target[index] !== command.color) { stoppedAt = coordinate; break; }
+    if (painted[index] === command.color) continue;
+    painted[index] = command.color;
+    paintedBy[index] = String(playerId);
+    paintedCoordinates.push(coordinate);
+  }
+  if (!paintedCoordinates.length) return { artwork: base, outcome: "already-painted", expected, paintedCoordinates, paintedCount: 0, brush: size, direction, stoppedAt };
+  return { artwork: { ...base, painted, paintedBy }, outcome: "painted", expected, paintedCoordinates, paintedCount: paintedCoordinates.length, brush: size, direction, stoppedAt };
 }
 export function paintMosaicArtworkCell(artwork: MosaicArtwork, column: number, row: number, color: MosaicColorCode, playerId: string, now = Date.now()): MosaicArtwork {
   if (artwork.status !== "active") throw new Error("Only an active Mosaic can be painted.");
