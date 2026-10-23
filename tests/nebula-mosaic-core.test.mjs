@@ -12,7 +12,7 @@ test("Mosaic theme normalization and guardrails match the donor contract", () =>
 test("Mosaic paint commands parse aliases and reject invalid coordinates", () => {
   assert.deepEqual(parseMosaicPaintCommand("!mosaic paint A1 red"), { coordinate: "A1", column: 0, row: 0, color: "R" });
   assert.deepEqual(parseMosaicPaintCommand("pixelbattle B25 cyan"), { coordinate: "B25", column: 1, row: 24, color: "C" });
-  assert.equal(parseMosaicPaintCommand("!mosaic AN1 blue"), null);
+  assert.equal(parseMosaicPaintCommand("!mosaic AO1 blue"), null);
   assert.equal(parseMosaicPaintCommand("!mosaic AZ99 blue"), null);
   assert.equal(parseMosaicPaintCommand("!mosaic A1 chartreuse"), null);
 });
