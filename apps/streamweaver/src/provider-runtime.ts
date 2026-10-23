@@ -64,6 +64,7 @@ export interface StreamWeaverProviderRuntimeOptionsV1 {
   providerFetch?: typeof fetch;
   connections?:Array<{tenantId:string;provider:string;connectionId:string;channelId:string;desired:boolean}>;
   allowTwitchMedia?: boolean;
+  spaceMountainGoLive?: { channelId: string; start: () => Promise<SpaceMountainGoLiveResult> };
 }
 
 /** Owns StreamWeaver's app-private chat state while Chat Gateway owns sockets. */
@@ -176,12 +177,35 @@ export class StreamWeaverProviderRuntime {
       assistant:async ({delivery,prompt,requestId})=>{if(options.simulation)return{status:"accepted",jobId:`simulation:assistant:${createHash("sha256").update(requestId+prompt).digest("hex")}`};if(options.allowAssistant===false)return {status:"unavailable",reason:"External assistant execution is disabled in this environment."};const userId=delivery.message.actor.canonicalUserId;if(!userId)return {status:"unavailable",reason:"Link your chat account to SPMT before using assistant flows."};const persona=this.settings.get(delivery.message.tenantId),intent=streamWeaverResearchIntent(prompt),preferences=this.runtimeSettings.research(delivery.message.tenantId);return options.client.invokeCommunityAssistant(delivery.message.tenantId,{userId,message:prompt,...(intent.kind==="query"&&preferences.enabled?{research:{...preferences,query:intent.query}}:{}),surface:"stream",conversationId:`streamweaver:flow:${requestId}`,routingPreference:"automatic",remember:false,...(persona?{presentation:{personaId:persona.personaId,displayName:persona.displayName,instructions:persona.instructions,memoryPolicy:persona.memoryPolicy}}:{})},`streamweaver-assistant:${requestId}`);},
     });
     const economy = new MultiTenantStreamWeaverEconomyCommandConsumer(this.economy, options.client, identities, this.commandState, egress, options.nowMs, Math.random);
+    const spaceMountainGoLive: StreamWeaverProviderConsumerV1 | undefined = options.spaceMountainGoLive ? {
+      id: "streamweaver.spacemountain-golive",
+      accepts: (message) => message.channelId === options.spaceMountainGoLive!.channelId && /^!golive$/i.test(message.text.trim()),
+      deliver: async (delivery) => {
+        const message = delivery.message;
+        const source = message as typeof message & { rich?: { mirrored?: boolean } };
+        let replyIndex = 0;
+        await handleSpaceMountainGoLiveMessage({
+          message: message.text, channel: message.channelId === options.spaceMountainGoLive!.channelId ? "spacemountainlive" : message.channelId,
+          tenantId: message.tenantId, username: message.actor.username,
+          userId: message.actor.canonicalUserId || message.actor.providerUserId,
+          self: message.actor.isBot === true, mirrored: source.rich?.mirrored === true,
+          botAuthored: message.actor.isBot === true, broadcasterBadge: message.actor.roles.includes("broadcaster"),
+        }, {
+          start: options.spaceMountainGoLive.start,
+          reply: async (text) => options.egress.send({
+            schemaVersion: 1, tenantId: message.tenantId, provider: message.provider,
+            connectionId: message.connectionId, channelId: message.channelId, text,
+            idempotencyKey: `space-mountain-golive:${delivery.deliveryId}:${++replyIndex}`,
+          }),
+        });
+      },
+    } : undefined;
     const eventAwards:StreamWeaverProviderConsumerV1={id:"streamweaver.provider-awards",accepts:message=>message.provider==="youtube"&&Boolean(message.rich?.eventType),deliver:async({message})=>{
       if(options.allowProviderWrites!==true)return;
       const userId=message.actor.canonicalUserId??await identities.resolve({tenantId:message.tenantId,provider:message.provider,providerUserId:message.actor.providerUserId,username:message.actor.username,displayName:message.actor.displayName??message.actor.username});
       awardStreamWeaverProviderEvent(this.community,this.economy,{tenantId:message.tenantId,event:`youtube:${message.rich!.eventType}`,sourceId:JSON.stringify([message.provider,message.connectionId,message.channelId,message.messageId]),userId:userId??""});
     }};
-    this.consumers = [eventAwards,relay, ...(botActions ? [botActions] : []), ...(options.allowAssistant === false ? [] : [persona]), flows, commands, economy];
+    this.consumers = [eventAwards, relay, ...(spaceMountainGoLive ? [spaceMountainGoLive] : []), ...(botActions ? [botActions] : []), ...(options.allowAssistant === false ? [] : [persona]), flows, commands, economy];
     this.replies = new StreamWeaverPersonaReplyReconciler(this.summons, options.client, egress, { ...(options.now ? { now: options.now } : {}), ...(options.retryDelayMs ? { retryDelayMs: options.retryDelayMs } : {}) });
   }
   consumerIds() { return this.consumers.map((consumer) => consumer.id); }
