@@ -61,3 +61,4 @@ export * from "./quackverse-art-store.js";
 export * from "./media-delivery.js";
 
 export * from "./mosaic-core.js";
+export * from "./mosaic-store.js";
