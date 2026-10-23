@@ -178,7 +178,7 @@ export function installMosaicQueueTemplate(state: MosaicQueueState, requestId: s
   if (target.length !== MOSAIC_CELL_COUNT || !target.every((color) => Object.prototype.hasOwnProperty.call(MOSAIC_COLORS, color))) throw new Error("Generated Mosaic did not contain exactly 2,000 supported cells.");
   if (state.current) state.saves = [structuredClone(state.current), ...state.saves.filter((item) => item.id !== state.current!.id)].slice(0, 20);
   const createdAt = new Date(now).toISOString();
-  const artwork: MosaicArtwork = { id: `mosaic:${now}`, theme: request.theme, requestedBy: request.displayName, requestedByPlayerId: request.playerId, createdAt, updatedAt: createdAt, lastInteractionAt: createdAt, status: "active", provider: generation.provider, sourceImageUrl: generation.sourceImageUrl, target, painted: Array(MOSAIC_CELL_COUNT).fill(""), paintedBy: Array(MOSAIC_CELL_COUNT).fill(""), activeBoard: 1, viewMode: "board", awardedMilestones: [] };
+  const artwork: MosaicArtwork = { id: `mosaic:${now}`, theme: request.theme, requestedBy: request.displayName, requestedByPlayerId: request.playerId, createdAt, updatedAt: createdAt, lastInteractionAt: createdAt, status: "active", ...(generation.provider ? { provider: generation.provider } : {}), ...(generation.sourceImageUrl ? { sourceImageUrl: generation.sourceImageUrl } : {}), target, painted: Array(MOSAIC_CELL_COUNT).fill(""), paintedBy: Array(MOSAIC_CELL_COUNT).fill(""), activeBoard: 1, viewMode: "board", awardedMilestones: [] };
   state.current = artwork; state.queue = state.queue.filter((item) => item.id !== requestId);
   return structuredClone(artwork);
 }
