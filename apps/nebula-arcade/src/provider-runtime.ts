@@ -208,7 +208,7 @@ export class NebulaArcadeProviderRuntime {
         continue;
       }
       const game=NEBULA_ARCADE_GAMES.find(item=>item.id===target.gameId)!;
-      const continuation=target.command==="input"||(NEBULA_CONTINUATION_GAMES.has(target.gameId)&&!["join","leave","status","start","stop"].includes(target.command)&&!game.commands.includes(target.command)&&!(target.gameId==="bingo"&&["center","reset","edit","generate","share","phrases","claim","card"].includes(target.command)));
+      const continuation=target.command==="input"||(NEBULA_CONTINUATION_GAMES.has(target.gameId)&&!["join","leave","status","start","stop"].includes(target.command)&&!(target.gameId==="bingo"&&["center","reset","edit","generate","share","phrases","claim","card"].includes(target.command)));
       if(continuation){
         if(!joined.includes(target.gameId)){replies.push(`Join ${game.name} first with spmt ${game.id} join.`);continue;}
         if(target.gameId==="bingo"){const reply=this.tabletop.observeBingo({...message,channelId:channel.stateChannelId});if(!reply)continue;replies.push(reply);}
