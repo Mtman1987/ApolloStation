@@ -98,12 +98,18 @@ export class NebulaMosaicRuntime {
         return { reply: `Mosaic palette changed to ${palette}.`, queued: false };
       }
       if (parseMosaicRevealCommand(input.text)) {
-        if (!current) return { reply: "No active Mosaic is ready for a reveal.", queued: false };
+        if (!current || current.status !== "active") return { reply: "No active Mosaic is ready for a reveal.", queued: false };
         const reveal = startMosaicReveal(current, now);
         state.current = reveal.artwork;
         return { reply: reveal.alreadyActive ? `Mosaic reveal is already active until ${reveal.until}.` : `Mosaic target reveal started for 15 seconds, until ${reveal.until}.`, queued: false };
       }
       const command = body.toLowerCase();
+      if (!command || command === "help") return { reply: "Mosaic: !mosaic <theme>, !mosaic status, !mosaic queue, !mosaic paint A1 red, !mosaic brush 3 right, !mosaic view 1|2|3|4|all, !mosaic palette classic|neon|pastel|mono|ocean. Use !spmt reveal for a temporary target reveal.", queued: false };
+      if (/^(?:paint|play)\\b/i.test(command)) return { reply: "Use !mosaic paint A1 red with a valid A1–AN50 coordinate and supported color.", queued: false };
+      if (/^brush\\b/i.test(command)) return { reply: "Brush options: !mosaic brush, !mosaic brush 1–5, or !mosaic brush 3 right|left|up|down.", queued: false };
+      if (/^(?:view|show)\\b/i.test(command)) return { reply: "Choose !mosaic view 1, 2, 3, 4, or all.", queued: false };
+      if (/^palette\\b/i.test(command)) return { reply: "Choose a Mosaic palette: classic, neon, pastel, mono, or ocean.", queued: false };
+      if (command === "reveal") return { reply: "Use !spmt reveal or !spmt mosaic reveal for the 15-second target reveal.", queued: false };
       if (command === "status" || command === "queue") {
         const snapshot = mosaicPublicSnapshot(state, now);
         const currentLine = snapshot.artwork ? `Current: ${snapshot.artwork.theme} (${snapshot.artwork.progressPercent}% complete).` : "No active artwork.";
