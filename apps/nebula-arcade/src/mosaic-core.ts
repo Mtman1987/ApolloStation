@@ -133,6 +133,7 @@ export type MosaicArtwork = {
   provider?: string; sourceImageUrl?: string; revealUntil?: string; viewUntil?: string; target: MosaicColorCode[];
   painted: string[]; paintedBy: string[]; activeBoard: MosaicBoardNumber;
   viewMode: "board" | "all"; awardedMilestones: string[]; paletteId?: MosaicPaletteId;
+  brushByPlayer?: Record<string, number>; brushDirectionByPlayer?: Record<string, MosaicBrushDirection>; brushUnlockedByPlayer?: Record<string, string>;
 };
 export type MosaicTemplateV1 = { format: "nebula-mosaic"; version: 1; width: 40; height: 50; theme: string; paletteId: MosaicPaletteId; target: MosaicColorCode[] };
 export type MosaicSharedProject = { id: string; artworkId: string; template: MosaicTemplateV1; publishedAt: string };
