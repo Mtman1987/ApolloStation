@@ -386,8 +386,10 @@ function mountWatchCatalog(detail,roomId,api,el,empty,msg){
   const form=el('form','hmo-media-add'),query=el('input');query.type='search';query.name='q';query.placeholder='Search movies, series, live TV';query.minLength=2;query.maxLength=200;query.required=true;query.setAttribute('aria-label','Search Watch catalog');
   const kind=el('select');kind.setAttribute('aria-label','Catalog type');for(const [value,label] of [['vod,live,series','All media'],['vod','Movies'],['series','Series'],['live','Live TV']]){const option=el('option');option.value=value;option.textContent=label;kind.append(option)}
   const submit=el('button','hmo-button primary');submit.type='submit';submit.textContent='Search';form.append(query,kind,submit);
-  const status=el('p','hmo-status');status.setAttribute('role','status');status.textContent='Search the configured provider. Catalog browsing is available; secure playback and shared queue are still being wired up.';
-  const results=el('div','hmo-queue');panel.append(head,form,status,results);
+  const status=el('p','hmo-status');status.setAttribute('role','status');status.textContent='Search the configured provider. Playback is proxied through Apollo; HLS and shared queue acceptance are still pending.';
+  const player=el('video','hmo-watch-player');player.controls=true;player.playsInline=true;player.hidden=true;player.preload='metadata';player.setAttribute('aria-label','Watch playback');
+  const playItem=(kind,id,extension,label)=>{const ext=String(extension|| (kind==='live'?'ts':'mp4')).toLowerCase().replace(/^\\./,'');if(!['mp4','m4v','mov','mkv','ts'].includes(ext)){status.textContent='This stream format is not supported by direct playback yet.';return}player.pause();player.src='/api/hearmeout/rooms/'+encodeURIComponent(roomId)+'/watch/play/'+kind+'/'+encodeURIComponent(String(id))+'.'+ext;player.hidden=false;player.load();player.play().catch(()=>{status.textContent='Playback is ready. Press Play in the player to begin.'});status.textContent='Playing '+label+' through the authenticated Apollo proxy.'};
+  const results=el('div','hmo-queue');panel.append(head,form,status,player,results);
   const existing=detail.querySelector('.hmo-console-grid')||detail.firstElementChild;
   if(existing)existing.prepend(panel);else detail.prepend(panel);
   form.addEventListener('submit',async event=>{
@@ -399,15 +401,16 @@ function mountWatchCatalog(detail,roomId,api,el,empty,msg){
       if(!items.length)results.append(empty('No catalog matches. Try another title.'));
       for(const item of items){
         const row=el('article','hmo-queue-row'),copy=el('div'),name=el('strong'),meta=el('p','hmo-muted'),actions=el('div','hmo-toolbar');
-        name.textContent=String(item.title||'Untitled');meta.textContent=String(item.kind||'media').toUpperCase()+(item.year?' · '+item.year:'');copy.append(name,meta);row.append(copy,actions);
+        name.textContent=String(item.title||'Untitled');meta.textContent=String(item.kind||'media').toUpperCase()+(item.year?' · '+item.year:'');if(item.plot)meta.textContent+=' · '+String(item.plot).slice(0,180);copy.append(name,meta);row.append(copy,actions);
+        if(item.kind==='vod'||item.kind==='live'){const ext=String(item.extension||(item.kind==='live'?'ts':'mp4')).toLowerCase();if(['mp4','m4v','mov','mkv','ts'].includes(ext)){const play=el('button','hmo-button primary');play.type='button';play.textContent='Play';play.addEventListener('click',()=>playItem(item.kind==='live'?'live':'vod',item.providerId,ext,String(item.title||'media')));actions.append(play)}}
         if(item.kind==='series'){
           const episodes=el('button','hmo-button');episodes.type='button';episodes.textContent='Episodes';episodes.addEventListener('click',async()=>{
-            episodes.disabled=true;try{const data=await api('/api/hearmeout/rooms/'+encodeURIComponent(roomId)+'/watch/series/'+encodeURIComponent(String(item.providerId)));const list=Array.isArray(data.episodes)?data.episodes:[];const wrap=el('div','hmo-queue');if(!list.length)wrap.append(empty('No episodes returned.'));for(const episode of list){const line=el('div','hmo-queue-row'),label=el('span');label.textContent=(episode.categoryId?'Season '+String(episode.categoryId)+' · ':'')+'Episode '+String(episode.episodeNumber??'')+' · '+String(episode.title||'Episode');line.append(label);wrap.append(line)}row.after(wrap)}catch(error){status.textContent=msg(error)}finally{episodes.disabled=false}
+            episodes.disabled=true;try{const data=await api('/api/hearmeout/rooms/'+encodeURIComponent(roomId)+'/watch/series/'+encodeURIComponent(String(item.providerId)));const list=Array.isArray(data.episodes)?data.episodes:[];const wrap=el('div','hmo-queue');if(!list.length)wrap.append(empty('No episodes returned.'));for(const episode of list){const line=el('div','hmo-queue-row'),label=el('span'),episodeActions=el('div','hmo-toolbar');label.textContent=(episode.categoryId?'Season '+String(episode.categoryId)+' · ':'')+'Episode '+String(episode.episodeNumber??'')+' · '+String(episode.title||'Episode');line.append(label,episodeActions);const ext=String(episode.extension||'mp4').toLowerCase();if(['mp4','m4v','mov','mkv','ts'].includes(ext)){const play=el('button','hmo-button primary');play.type='button';play.textContent='Play';play.addEventListener('click',()=>playItem('episode',episode.providerId,ext,String(episode.title||'episode')));episodeActions.append(play)}wrap.append(line)}row.after(wrap)}catch(error){status.textContent=msg(error)}finally{episodes.disabled=false}
           });actions.append(episodes);
         }
         results.append(row);
       }
-      status.textContent=items.length+' result(s). Choose a type to narrow searches. Playback and shared queue acceptance are the next integration step.';
+      status.textContent=items.length+' result(s). Play is enabled for supported direct-stream formats. HLS proxying and shared queue acceptance remain next.';
     }catch(error){status.textContent=msg(error)}
     finally{submit.disabled=false}
   });
