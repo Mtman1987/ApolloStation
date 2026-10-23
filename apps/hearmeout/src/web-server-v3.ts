@@ -17,6 +17,8 @@ import { readFile } from 'node:fs/promises';
 import { HearMeOutRoomRtcGateway, type RoomRtcOptions } from './rtc-room-gateway.js';
 import { createHash, randomBytes } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { PRODUCT_UI_CSS } from "@spmt/ui";
@@ -139,6 +141,22 @@ export async function startHearMeOutWebServerFromEnvironment(environment:NodeJS.
 async function handleApi(request:IncomingMessage,response:ServerResponse,url:URL,rooms:SqliteHearMeOutRoomMediaRuntime,consoleStore:HearMeOutRoomConsoleStore,spmtOrigin:string,roomAssistant:HearMeOutRoomAssistantJobs,personaConversation?:HearMeOutPersonaConversationCoordinator,voiceBridge?:HearMeOutVoiceBridgeController,refreshBridge?:(tenantId:string,roomId:string)=>void,onRoomDeleted?:(tenantId:string,roomId:string)=>void,onModerated?:(tenantId:string,roomId:string,userId:string,action:string,targetRoomId?:string)=>Promise<{providerPending:boolean}>,mediaResolver?:HearMeOutSuiteMediaResolverV1,broadcast?:HearMeOutRoomBroadcast,program?:HearMeOutBroadcastProgram,screenBroadcast?:HearMeOutScreenBroadcast,personaSpeech?:HearMeOutRoomPersonaSpeech,xtreamWatchCatalog?:HearMeOutXtreamWatchCatalog){
   try{
     const principal=await resolvePrincipal(request,spmtOrigin);
+    const watchPlaybackRoute=url.pathname.match(/^\/api\/hearmeout\/rooms\/([^/]+)\/watch\/play\/(vod|live|episode)\/([0-9]{1,20})\.([a-z0-9]{2,5})$/);
+    if(watchPlaybackRoute){
+      if(request.method!=="GET"&&request.method!=="HEAD")return sendJson(response,405,{error:"method_not_allowed"});
+      if(!xtreamWatchCatalog)return sendJson(response,503,{error:"watch_catalog_unavailable"});
+      const roomId=decodeURIComponent(watchPlaybackRoute[1]!);requireMembership(rooms,principal,roomId);
+      const upstreamUrl=xtreamWatchCatalog.upstreamPlaybackUrl(watchPlaybackRoute[2] as "vod"|"live"|"episode",watchPlaybackRoute[3]!,watchPlaybackRoute[4]!);
+      const headers:Record<string,string>={accept:"video/*,application/octet-stream;q=0.9,*/*;q=0.8"};
+      const range=request.headers.range;if(typeof range==="string"&&/^bytes=\d*-\d*(,\d*-\d*)*$/.test(range))headers.range=range;
+      const upstream=await fetch(upstreamUrl,{method:request.method,headers,redirect:"error",signal:AbortSignal.timeout(30_000)});
+      const responseHeaders:Record<string,string>={"cache-control":"private, no-store","x-content-type-options":"nosniff","content-type":upstream.headers.get("content-type")??"application/octet-stream"};
+      for(const name of ["content-length","content-range","accept-ranges"]) {const value=upstream.headers.get(name);if(value)responseHeaders[name]=value}
+      response.writeHead(upstream.status,responseHeaders);
+      if(request.method==="HEAD"||!upstream.body){response.end();return}
+      await pipeline(Readable.fromWeb(upstream.body as import("node:stream/web").ReadableStream),response);
+      return;
+    }
     const watchCatalogRoute=url.pathname.match(/^\/api\/hearmeout\/rooms\/([^/]+)\/watch\/(catalog|series\/([0-9]{1,20}))/);
     if(watchCatalogRoute){
       if(request.method!=="GET")return sendJson(response,405,{error:"method_not_allowed"});
