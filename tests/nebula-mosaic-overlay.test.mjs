@@ -20,6 +20,9 @@ test("Nebula serves the public Mosaic overlay and a sanitized live snapshot for 
     const page = await fetch(origin + "/overlay/mosaic?channel=main");
     assert.equal(page.status, 200);
     assert.match(await page.text(), /Community Mosaic/);
+    const pixelbattleOverlay = await fetch(origin + "/overlay/arcade/pixelbattle");
+    assert.equal(pixelbattleOverlay.status, 200);
+    assert.match(await pixelbattleOverlay.text(), /Nebula Arcade · Community Mosaic/);
     const script = await fetch(origin + "/assets/nebula-arcade/mosaic-overlay.js");
     assert.equal(script.status, 200);
     assert.match(await script.text(), /v1\/nebula\/mosaic\/snapshot/);
