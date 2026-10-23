@@ -159,6 +159,34 @@ async function handleApi(request:IncomingMessage,response:ServerResponse,url:URL
       await pipeline(Readable.fromWeb(upstream.body as import("node:stream/web").ReadableStream),response);
       return;
     }
+    const watchQueueRoute=url.pathname.match(/^\/api\/hearmeout\/rooms\/([^/]+)\/watch\/queue$/);
+    if(watchQueueRoute){
+      if(request.method!=="POST")return sendJson(response,405,{error:"method_not_allowed"});
+      requireSameOrigin(request);if(!xtreamWatchCatalog)return sendJson(response,503,{error:"watch_catalog_unavailable"});
+      const roomId=decodeURIComponent(watchQueueRoute[1]!);requireMembership(rooms,principal,roomId);
+      const body=await readJson(request),kind=String(body.kind??""),providerId=String(body.providerId??""),extension=String(body.extension??"mp4").toLowerCase().replace(/^\./,"");
+      if(!["vod","live","episode"].includes(kind))return sendJson(response,400,{error:"invalid_watch_kind"});
+      if(!/^\d{1,20}$/.test(providerId)||!["mp4","m4v","mov","mkv","ts"].includes(extension))return sendJson(response,400,{error:"invalid_watch_item"});
+      const seriesId=String(body.seriesId??"");
+      const operationId=mediaOperationId(request,principal,"watch-queue");
+      const session=await rooms.enqueueResolved(principal,{roomId,lane:"movie",intent:"xtream:"+kind+":"+providerId+":"+seriesId,operationId,resolve:async()=>{
+        let title="",posterUrl:string|undefined,metadata:Record<string,unknown>={provider:"xtream",kind,providerId};
+        if(kind==="episode"){
+          if(!/^\d{1,20}$/.test(seriesId))throw new Error("Series context is required for an episode");
+          const episodes=await xtreamWatchCatalog.seriesEpisodes(seriesId),episode=episodes.find(item=>item.providerId===providerId);
+          if(!episode)throw new Error("Episode was not found in this series");
+          title=episode.title;metadata={...metadata,seriesId,season:episode.categoryId,episodeNumber:episode.episodeNumber};
+        }else{
+          const items=await xtreamWatchCatalog.catalog(),item=items.find(candidate=>candidate.kind===kind&&candidate.providerId===providerId);
+          if(!item)throw new Error("Watch item is no longer in the provider catalog");
+          if(item.extension&&item.extension!==extension)throw new Error("Watch item format does not match the catalog");
+          title=item.title;posterUrl=item.posterUrl;metadata={...metadata,...(item.year?{year:item.year}:{}),...(item.plot?{plot:item.plot}:{})};
+        }
+        const playbackUrl="/api/hearmeout/rooms/"+encodeURIComponent(roomId)+"/watch/play/"+kind+"/"+providerId+"."+extension;
+        return {itemId:"xtream-"+kind+"-"+providerId,type:kind==="live"?"live" as const:"movie" as const,title,source:"xtream",playbackUrl,...(posterUrl?{posterUrl}:{}),metadata};
+      }});
+      return sendJson(response,201,session);
+    }
     const watchCatalogRoute=url.pathname.match(/^\/api\/hearmeout\/rooms\/([^/]+)\/watch\/(catalog|series\/([0-9]{1,20}))/);
     if(watchCatalogRoute){
       if(request.method!=="GET")return sendJson(response,405,{error:"method_not_allowed"});
