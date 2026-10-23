@@ -262,7 +262,7 @@ export function collectCompletedMosaicMilestones(artwork: MosaicArtwork): { artw
   if (awarded.has("complete")) next.status = "completed";
   return { artwork: next, milestones };
 }
-export function paintMosaicBrush(artwork: MosaicArtwork, command: MosaicPaintCommand, playerId: string, options: { size?: number; direction?: MosaicBrushDirection; now?: number } = {}): { artwork: MosaicArtwork; outcome: "wrong" | "already-painted" | "painted"; expected: MosaicColorCode; paintedCoordinates: string[]; paintedCount: number; brush: number; direction: MosaicBrushDirection; stoppedAt: string } {
+export function paintMosaicBrush(artwork: MosaicArtwork, command: MosaicPaintCommand, playerId: string, options: { size?: number; direction?: MosaicBrushDirection; now?: number } = {}): { artwork: MosaicArtwork; outcome: "wrong" | "already-painted" | "painted"; expected: MosaicColorCode; paintedCoordinates: string[]; paintedCount: number; brush: number; direction: MosaicBrushDirection; stoppedAt: string; milestones: Array<{ id: string; contributors: string[] }> } {
   if (artwork.status !== "active") throw new Error("Only an active Mosaic can be painted.");
   if (!Number.isInteger(command.column) || command.column < 0 || command.column >= MOSAIC_BOARD_WIDTH || !Number.isInteger(command.row) || command.row < 0 || command.row >= MOSAIC_BOARD_HEIGHT) throw new Error("The paint coordinate must be inside the active 20×25 board.");
   const size = Math.min(5, Math.max(1, Math.floor(Number(options.size || 1))));
@@ -275,7 +275,7 @@ export function paintMosaicBrush(artwork: MosaicArtwork, command: MosaicPaintCom
   const expected = artwork.target[startIndex];
   const timestamp = new Date(options.now ?? Date.now()).toISOString();
   const base = { ...structuredClone(artwork), updatedAt: timestamp, lastInteractionAt: timestamp, viewMode: "board" as const };
-  if (command.color !== expected) return { artwork: base, outcome: "wrong", expected, paintedCoordinates: [], paintedCount: 0, brush: size, direction, stoppedAt: "" };
+  if (command.color !== expected) return { artwork: base, outcome: "wrong", expected, paintedCoordinates: [], paintedCount: 0, brush: size, direction, stoppedAt: "", milestones: [] };
   const painted = [...base.painted];
   const paintedBy = [...base.paintedBy];
   const paintedCoordinates: string[] = [];
@@ -294,8 +294,9 @@ export function paintMosaicBrush(artwork: MosaicArtwork, command: MosaicPaintCom
     paintedBy[index] = String(playerId);
     paintedCoordinates.push(coordinate);
   }
-  if (!paintedCoordinates.length) return { artwork: base, outcome: "already-painted", expected, paintedCoordinates, paintedCount: 0, brush: size, direction, stoppedAt };
-  return { artwork: { ...base, painted, paintedBy }, outcome: "painted", expected, paintedCoordinates, paintedCount: paintedCoordinates.length, brush: size, direction, stoppedAt };
+  if (!paintedCoordinates.length) return { artwork: base, outcome: "already-painted", expected, paintedCoordinates, paintedCount: 0, brush: size, direction, stoppedAt, milestones: [] };
+  const collected = collectCompletedMosaicMilestones({ ...base, painted, paintedBy });
+  return { artwork: collected.artwork, outcome: "painted", expected, paintedCoordinates, paintedCount: paintedCoordinates.length, brush: size, direction, stoppedAt, milestones: collected.milestones };
 }
 export function paintMosaicArtworkCell(artwork: MosaicArtwork, column: number, row: number, color: MosaicColorCode, playerId: string, now = Date.now()): MosaicArtwork {
   if (artwork.status !== "active") throw new Error("Only an active Mosaic can be painted.");
