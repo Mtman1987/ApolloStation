@@ -59,3 +59,5 @@ export * from "./quackverse-effects.js";
 export * from "./quackverse-npc.js";
 export * from "./quackverse-art-store.js";
 export * from "./media-delivery.js";
+
+export * from "./mosaic-core.js";
