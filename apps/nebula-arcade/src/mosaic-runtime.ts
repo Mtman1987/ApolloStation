@@ -9,7 +9,7 @@ import {
 import { SqliteNebulaMosaicStore } from "./mosaic-store.js";
 
 export type MosaicGenerationResult = { target: MosaicColorCode[]; provider?: string; sourceImageUrl?: string };
-export type MosaicGenerator = (theme: string) => Promise<MosaicGenerationResult>;
+export type MosaicGenerator = (theme: string, context?: { tenantId: string; channel: string }) => Promise<MosaicGenerationResult>;
 export type MosaicChatInput = { tenantId: string; channel: string; playerId: string; username: string; displayName?: string; text: string; moderator?: boolean; now?: number };
 export type MosaicChatResult = { handled: boolean; reply?: string; generated?: boolean; state?: ReturnType<typeof mosaicPublicSnapshot> };
 
@@ -36,7 +36,7 @@ export class NebulaMosaicRuntime {
     const request = claim.result;
     if (!request) return { started: false };
     try {
-      const generated = await this.generate(request.theme);
+      const generated = await this.generate(request.theme, { tenantId: String(tenantId), channel: String(channel) });
       this.store.update(tenantId, channel, (state) => {
         installMosaicQueueTemplate(state, request.id, generated.target, {
           ...(generated.provider ? { provider: generated.provider } : {}),
