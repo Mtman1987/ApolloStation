@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { MOSAIC_CELL_COUNT, MOSAIC_COLORS, MOSAIC_PALETTES, MOSAIC_WIDTH, MOSAIC_HEIGHT, MOSAIC_REVEAL_MS, mosaicPricing, normalizeMosaicTheme, validateMosaicTheme, parseMosaicPaintCommand, parseMosaicBrushCommand, parseMosaicViewCommand, parseMosaicPaletteCommand, parseMosaicRevealCommand, validateMosaicTemplate, paintMosaicCell, createMosaicQueueState, queueMosaicThemeRequest, claimNextMosaicRequest, failMosaicQueueRequest, installMosaicQueueTemplate, removeMosaicQueueRequest, clearMosaicQueue, startMosaicReveal, isMosaicRevealVisible, paintMosaicArtworkCell, paintMosaicBrush, collectCompletedMosaicMilestones, setMosaicView, setMosaicPalette, resetMosaicForReplay, mosaicPublicSnapshot } from "../apps/nebula-arcade/dist/mosaic-core.js";
+import { MOSAIC_CELL_COUNT, MOSAIC_COLORS, MOSAIC_PALETTES, MOSAIC_WIDTH, MOSAIC_HEIGHT, MOSAIC_REVEAL_MS, mosaicPricing, normalizeMosaicTheme, validateMosaicTheme, parseMosaicPaintCommand, parseMosaicBrushCommand, parseMosaicViewCommand, parseMosaicPaletteCommand, parseMosaicRevealCommand, validateMosaicTemplate, paintMosaicCell, createMosaicQueueState, queueMosaicThemeRequest, claimNextMosaicRequest, failMosaicQueueRequest, installMosaicQueueTemplate, removeMosaicQueueRequest, clearMosaicQueue, startMosaicReveal, isMosaicRevealVisible, paintMosaicArtworkCell, paintMosaicBrush, collectCompletedMosaicMilestones, setMosaicView, setMosaicPalette, resetMosaicForReplay, mosaicPublicSnapshot, mosaicTemplate, publishMosaic, sharedMosaicProjects, startMosaicProject, resumeMosaicProject, findMosaicArtwork } from "../apps/nebula-arcade/dist/mosaic-core.js";
 
 test("Mosaic theme normalization and guardrails match the donor contract", () => {
   assert.equal(normalizeMosaicTheme("  owl\n in   space  "), "owl in space");
@@ -208,4 +208,30 @@ test("Mosaic board views, palettes, public snapshots, and replay preserve the pr
   assert.equal(replay.painted.every((cell) => cell === ""), true);
   assert.equal(replay.activeBoard, 1);
   assert.equal(state.saves[0]?.status, "completed");
+});
+
+test("Mosaic shared projects can be published, started, suspended, and resumed without losing progress", () => {
+  const state = createMosaicQueueState();
+  queueMosaicThemeRequest(state, { id: "project-1", theme: "blue whale", playerId: "p1", now: 1000 });
+  claimNextMosaicRequest(state, 2000);
+  const artwork = installMosaicQueueTemplate(state, "project-1", Array(MOSAIC_CELL_COUNT).fill("B"), {}, 3000);
+  artwork.painted[0] = "B";
+  artwork.paintedBy[0] = "p1";
+  const template = mosaicTemplate(artwork);
+  assert.equal(template.format, "nebula-mosaic");
+  assert.equal(template.target.length, MOSAIC_CELL_COUNT);
+  const project = publishMosaic(state, artwork.id, true, 4000);
+  assert.equal(project?.artworkId, artwork.id);
+  assert.equal(sharedMosaicProjects(state).length, 1);
+  assert.equal(findMosaicArtwork(state, artwork.id)?.theme, "blue whale");
+  assert.throws(() => startMosaicProject(state, template), /painting is still active/);
+  const started = startMosaicProject(state, template, true, 5000);
+  assert.equal(started.painted[0], "");
+  assert.equal(state.saves[0]?.status, "suspended");
+  const resumed = resumeMosaicProject(state, state.saves[0].id, true, 6000);
+  assert.equal(resumed.status, "active");
+  assert.equal(resumed.painted[0], "B");
+  assert.equal(resumed.paintedBy[0], "p1");
+  assert.equal(publishMosaic(state, artwork.id, false), null);
+  assert.equal(sharedMosaicProjects(state).length, 0);
 });
