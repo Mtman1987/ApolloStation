@@ -152,6 +152,7 @@ async function handleApi(request:IncomingMessage,response:ServerResponse,url:URL
       let upstream:Response;
       try{upstream=await fetch(upstreamUrl,{method:request.method,headers,redirect:"error",signal:AbortSignal.timeout(30_000)})}
       catch{throw new Error("Xtream playback upstream is unavailable")}
+      if(![200,206,416].includes(upstream.status))return sendJson(response,502,{error:"Xtream playback source unavailable"});
       const responseHeaders:Record<string,string>={"cache-control":"private, no-store","x-content-type-options":"nosniff","content-type":upstream.headers.get("content-type")??"application/octet-stream"};
       for(const name of ["content-length","content-range","accept-ranges"]) {const value=upstream.headers.get(name);if(value)responseHeaders[name]=value}
       response.writeHead(upstream.status,responseHeaders);
