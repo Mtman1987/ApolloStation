@@ -15,9 +15,9 @@ test("SQLite Mosaic state survives store restart and isolates tenant/channel rec
       queueMosaicThemeRequest(state, { id: "request-a", theme: "pixel ocean", playerId: "player-a", now: 1000 });
       claimNextMosaicRequest(state, 2000);
       installMosaicQueueTemplate(state, "request-a", Array(MOSAIC_CELL_COUNT).fill("C"), {}, 3000);
-      state.current!.painted[0] = "C";
-      state.current!.paintedBy[0] = "player-a";
-      return state.current!.id;
+      state.current.painted[0] = "C";
+      state.current.paintedBy[0] = "player-a";
+      return state.current.id;
     }, 4000);
     assert.match(saved.result, /^mosaic:/);
     store.close();
