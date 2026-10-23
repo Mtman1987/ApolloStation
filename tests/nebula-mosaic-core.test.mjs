@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { MOSAIC_CELL_COUNT, MOSAIC_COLORS, MOSAIC_PALETTES, MOSAIC_WIDTH, MOSAIC_HEIGHT, MOSAIC_REVEAL_MS, mosaicPricing, normalizeMosaicTheme, validateMosaicTheme, parseMosaicPaintCommand, parseMosaicBrushCommand, parseMosaicViewCommand, parseMosaicPaletteCommand, parseMosaicRevealCommand, validateMosaicTemplate, paintMosaicCell, createMosaicQueueState, queueMosaicThemeRequest, claimNextMosaicRequest, failMosaicQueueRequest, installMosaicQueueTemplate, removeMosaicQueueRequest, clearMosaicQueue, startMosaicReveal, isMosaicRevealVisible, paintMosaicArtworkCell, paintMosaicBrush } from "../apps/nebula-arcade/dist/mosaic-core.js";
+import { MOSAIC_CELL_COUNT, MOSAIC_COLORS, MOSAIC_PALETTES, MOSAIC_WIDTH, MOSAIC_HEIGHT, MOSAIC_REVEAL_MS, mosaicPricing, normalizeMosaicTheme, validateMosaicTheme, parseMosaicPaintCommand, parseMosaicBrushCommand, parseMosaicViewCommand, parseMosaicPaletteCommand, parseMosaicRevealCommand, validateMosaicTemplate, paintMosaicCell, createMosaicQueueState, queueMosaicThemeRequest, claimNextMosaicRequest, failMosaicQueueRequest, installMosaicQueueTemplate, removeMosaicQueueRequest, clearMosaicQueue, startMosaicReveal, isMosaicRevealVisible, paintMosaicArtworkCell, paintMosaicBrush, collectCompletedMosaicMilestones } from "../apps/nebula-arcade/dist/mosaic-core.js";
 
 test("Mosaic theme normalization and guardrails match the donor contract", () => {
   assert.equal(normalizeMosaicTheme("  owl\n in   space  "), "owl in space");
@@ -157,4 +157,25 @@ test("Mosaic moderator queue controls remove queued items and safely cancel in-f
   queueMosaicThemeRequest(state, { id: "queued-d", theme: "fourth theme", playerId: "p4", now: 5000 });
   assert.equal(clearMosaicQueue(state), 2);
   assert.equal(state.queue.length, 0);
+});
+
+test("Mosaic completion detection awards each milestone once and marks the artwork completed", () => {
+  const state = createMosaicQueueState();
+  queueMosaicThemeRequest(state, { id: "milestone-1", theme: "solid blue", playerId: "p1", now: 1000 });
+  claimNextMosaicRequest(state, 2000);
+  const artwork = installMosaicQueueTemplate(state, "milestone-1", Array(MOSAIC_CELL_COUNT).fill("B"), {}, 3000);
+  artwork.activeBoard = 4;
+  artwork.painted = Array(MOSAIC_CELL_COUNT).fill("B");
+  artwork.painted[MOSAIC_CELL_COUNT - 1] = "";
+  artwork.paintedBy = Array(MOSAIC_CELL_COUNT).fill("player-a");
+  artwork.paintedBy[MOSAIC_CELL_COUNT - 1] = "";
+  artwork.awardedMilestones = [];
+  for (let sy = 0; sy < 5; sy++) for (let sx = 0; sx < 4; sx++) if (!(sx === 3 && sy === 4)) artwork.awardedMilestones.push(`sector:${sx}:${sy}`);
+  artwork.awardedMilestones.push("board:1", "board:2", "board:3");
+  const result = paintMosaicBrush(artwork, { coordinate: "T25", column: 19, row: 24, color: "B" }, "player-b", { now: 4000 });
+  assert.equal(result.artwork.status, "completed");
+  assert.deepEqual(result.milestones.map((item) => item.id).sort(), ["board:4", "color:B", "complete", "sector:3:4"].sort());
+  assert.equal(result.milestones.find((item) => item.id === "complete")?.contributors.includes("player-b"), true);
+  const again = collectCompletedMosaicMilestones(result.artwork);
+  assert.deepEqual(again.milestones, []);
 });
