@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { MOSAIC_CELL_COUNT, MOSAIC_COLORS, MOSAIC_PALETTES, MOSAIC_WIDTH, MOSAIC_HEIGHT, mosaicPricing, normalizeMosaicTheme, validateMosaicTheme, parseMosaicPaintCommand, validateMosaicTemplate, paintMosaicCell } from "../apps/nebula-arcade/dist/mosaic-core.js";
+import { MOSAIC_CELL_COUNT, MOSAIC_COLORS, MOSAIC_PALETTES, MOSAIC_WIDTH, MOSAIC_HEIGHT, mosaicPricing, normalizeMosaicTheme, validateMosaicTheme, parseMosaicPaintCommand, parseMosaicBrushCommand, parseMosaicViewCommand, parseMosaicPaletteCommand, validateMosaicTemplate, paintMosaicCell } from "../apps/nebula-arcade/dist/mosaic-core.js";
 
 test("Mosaic theme normalization and guardrails match the donor contract", () => {
   assert.equal(normalizeMosaicTheme("  owl\n in   space  "), "owl in space");
@@ -15,6 +15,20 @@ test("Mosaic paint commands parse aliases and reject invalid coordinates", () =>
   assert.equal(parseMosaicPaintCommand("!mosaic AO1 blue"), null);
   assert.equal(parseMosaicPaintCommand("!mosaic AZ99 blue"), null);
   assert.equal(parseMosaicPaintCommand("!mosaic A1 chartreuse"), null);
+  assert.deepEqual(parseMosaicPaintCommand("!spmt pixelbattle paint T25 PK"), { coordinate: "T25", column: 19, row: 24, color: "PK" });
+});
+
+test("Mosaic brush, board view, and palette commands match the donor vocabulary", () => {
+  assert.equal(parseMosaicBrushCommand("!mosaic brush"), "status");
+  assert.equal(parseMosaicBrushCommand("!mosaic brush off"), 1);
+  assert.equal(parseMosaicBrushCommand("pixelbattle brush 4 left")?.size, 4);
+  assert.deepEqual(parseMosaicBrushCommand("mosaic brush 4 left"), { size: 4, direction: "left" });
+  assert.equal(parseMosaicBrushCommand("mosaic brush 9"), null);
+  assert.equal(parseMosaicViewCommand("!spmt mosaic view all"), "all");
+  assert.equal(parseMosaicViewCommand("pixelbattle show 4"), 4);
+  assert.equal(parseMosaicViewCommand("mosaic view 5"), null);
+  assert.equal(parseMosaicPaletteCommand("mosaic palette ocean"), "ocean");
+  assert.equal(parseMosaicPaletteCommand("mosaic palette rainbow"), null);
 });
 
 test("Mosaic template validation enforces dimensions, palette, and every cell color", () => {
