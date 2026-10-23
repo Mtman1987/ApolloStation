@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { MOSAIC_CELL_COUNT, MOSAIC_COLORS, MOSAIC_PALETTES, MOSAIC_WIDTH, MOSAIC_HEIGHT, mosaicPricing, normalizeMosaicTheme, validateMosaicTheme, parseMosaicPaintCommand, parseMosaicBrushCommand, parseMosaicViewCommand, parseMosaicPaletteCommand, validateMosaicTemplate, paintMosaicCell, createMosaicQueueState, queueMosaicThemeRequest, claimNextMosaicRequest, failMosaicQueueRequest, installMosaicQueueTemplate } from "../apps/nebula-arcade/dist/mosaic-core.js";
+import { MOSAIC_CELL_COUNT, MOSAIC_COLORS, MOSAIC_PALETTES, MOSAIC_WIDTH, MOSAIC_HEIGHT, mosaicPricing, normalizeMosaicTheme, validateMosaicTheme, parseMosaicPaintCommand, parseMosaicBrushCommand, parseMosaicViewCommand, parseMosaicPaletteCommand, parseMosaicRevealCommand, validateMosaicTemplate, paintMosaicCell, createMosaicQueueState, queueMosaicThemeRequest, claimNextMosaicRequest, failMosaicQueueRequest, installMosaicQueueTemplate } from "../apps/nebula-arcade/dist/mosaic-core.js";
 
 test("Mosaic theme normalization and guardrails match the donor contract", () => {
   assert.equal(normalizeMosaicTheme("  owl\n in   space  "), "owl in space");
@@ -29,6 +29,9 @@ test("Mosaic brush, board view, and palette commands match the donor vocabulary"
   assert.equal(parseMosaicViewCommand("mosaic view 5"), null);
   assert.equal(parseMosaicPaletteCommand("mosaic palette ocean"), "ocean");
   assert.equal(parseMosaicPaletteCommand("mosaic palette rainbow"), null);
+  assert.equal(parseMosaicRevealCommand("!spmt reveal"), true);
+  assert.equal(parseMosaicRevealCommand("!spmt mosaic reveal"), true);
+  assert.equal(parseMosaicRevealCommand("!mosaic reveal"), false);
 });
 
 test("Mosaic template validation enforces dimensions, palette, and every cell color", () => {
