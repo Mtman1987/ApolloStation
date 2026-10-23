@@ -222,7 +222,9 @@ export function setMosaicView(artwork: MosaicArtwork, view: MosaicViewCommand, n
   if (!artwork || !["active", "suspended", "completed", "archived"].includes(artwork.status)) throw new Error("No saved Nebula Mosaic is ready yet.");
   const timestamp = new Date(now).toISOString();
   if (view === "all") return { ...structuredClone(artwork), viewMode: "all", viewUntil: new Date(now + MOSAIC_OVERVIEW_MS).toISOString(), updatedAt: timestamp, lastInteractionAt: timestamp };
-  return { ...structuredClone(artwork), activeBoard: view, viewMode: "board", updatedAt: timestamp, lastInteractionAt: timestamp, viewUntil: undefined };
+  const next = { ...structuredClone(artwork), activeBoard: view, viewMode: "board" as const, updatedAt: timestamp, lastInteractionAt: timestamp };
+  delete next.viewUntil;
+  return next;
 }
 export function setMosaicPalette(artwork: MosaicArtwork, paletteValue: unknown, now = Date.now()): MosaicArtwork {
   const paletteId = String(paletteValue || "").trim().toLowerCase() as MosaicPaletteId;
@@ -307,7 +309,7 @@ export function collectCompletedMosaicMilestones(artwork: MosaicArtwork): { artw
   for (const check of checks) {
     if (awarded.has(check.id) || !check.indices.length) continue;
     if (!check.indices.every((index) => next.painted[index] === next.target[index])) continue;
-    const contributors = [...new Set(check.indices.map((index) => paintedBy[index]).filter(Boolean))];
+    const contributors = [...new Set(check.indices.map((index) => paintedBy[index]).filter((id): id is string => Boolean(id)))];
     if (!contributors.length) continue;
     next.awardedMilestones = [...(next.awardedMilestones || []), check.id];
     awarded.add(check.id);
@@ -326,7 +328,7 @@ export function paintMosaicBrush(artwork: MosaicArtwork, command: MosaicPaintCom
   const globalX = originX + command.column;
   const globalY = originY + command.row;
   const startIndex = globalY * MOSAIC_WIDTH + globalX;
-  const expected = artwork.target[startIndex];
+  const expected = artwork.target[startIndex]!;
   const timestamp = new Date(options.now ?? Date.now()).toISOString();
   const base = { ...structuredClone(artwork), updatedAt: timestamp, lastInteractionAt: timestamp, viewMode: "board" as const };
   if (command.color !== expected) return { artwork: base, outcome: "wrong", expected, paintedCoordinates: [], paintedCount: 0, brush: size, direction, stoppedAt: "", milestones: [] };
