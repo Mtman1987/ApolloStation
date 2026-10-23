@@ -43,6 +43,8 @@ test("Nebula serves the public Mosaic overlay and a sanitized live snapshot for 
     const snapshot = await snapshotResponse.json();
     assert.equal(snapshot.artwork.theme, "blue bird");
     assert.equal(snapshot.artwork.painted[0], "B");
+    assert.equal(snapshot.artwork.target[0], "");
+    assert.equal(snapshot.artwork.target[1], "");
     assert.equal("paintedBy" in snapshot.artwork, false);
     const denied = await fetch(origin + "/v1/nebula/mosaic/snapshot?channel=not-allowed");
     assert.equal(denied.status, 404);
