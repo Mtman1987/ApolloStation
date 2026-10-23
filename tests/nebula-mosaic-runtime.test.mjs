@@ -16,6 +16,9 @@ test("Mosaic chat runtime persists queued requests and never claims generation w
     assert.match(result.reply, /queued at position 1/);
     assert.match(result.reply, /runner is not configured/);
     assert.equal(result.generated, false);
+    const duplicate = await runtime.handle({ tenantId: "tenant-a", channel: "#main", playerId: "player-b", username: "owl2", text: "!mosaic OWL IN SPACE", now: 1500 });
+    assert.match(duplicate.reply, /already active or queued/);
+    assert.equal(runtime.snapshot("tenant-a", "main").queueLength, 1);
     runtime.close();
 
     runtime = new NebulaMosaicRuntime(path);
