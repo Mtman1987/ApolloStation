@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { MOSAIC_CELL_COUNT, MOSAIC_COLORS, MOSAIC_PALETTES, MOSAIC_WIDTH, MOSAIC_HEIGHT, MOSAIC_REVEAL_MS, mosaicPricing, normalizeMosaicTheme, validateMosaicTheme, parseMosaicPaintCommand, parseMosaicBrushCommand, parseMosaicViewCommand, parseMosaicPaletteCommand, parseMosaicRevealCommand, validateMosaicTemplate, paintMosaicCell, createMosaicQueueState, queueMosaicThemeRequest, claimNextMosaicRequest, failMosaicQueueRequest, installMosaicQueueTemplate, startMosaicReveal, isMosaicRevealVisible, paintMosaicArtworkCell, paintMosaicBrush } from "../apps/nebula-arcade/dist/mosaic-core.js";
+import { MOSAIC_CELL_COUNT, MOSAIC_COLORS, MOSAIC_PALETTES, MOSAIC_WIDTH, MOSAIC_HEIGHT, MOSAIC_REVEAL_MS, mosaicPricing, normalizeMosaicTheme, validateMosaicTheme, parseMosaicPaintCommand, parseMosaicBrushCommand, parseMosaicViewCommand, parseMosaicPaletteCommand, parseMosaicRevealCommand, validateMosaicTemplate, paintMosaicCell, createMosaicQueueState, queueMosaicThemeRequest, claimNextMosaicRequest, failMosaicQueueRequest, installMosaicQueueTemplate, removeMosaicQueueRequest, clearMosaicQueue, startMosaicReveal, isMosaicRevealVisible, paintMosaicArtworkCell, paintMosaicBrush } from "../apps/nebula-arcade/dist/mosaic-core.js";
 
 test("Mosaic theme normalization and guardrails match the donor contract", () => {
   assert.equal(normalizeMosaicTheme("  owl\n in   space  "), "owl in space");
@@ -139,4 +139,22 @@ test("Mosaic directional brush paints matching cells, stops at mismatches, and r
   assert.equal(edge.paintedCount, 1);
   assert.deepEqual(edge.paintedCoordinates, ["T1"]);
   assert.throws(() => paintMosaicBrush(artwork, { coordinate: "A26", column: 0, row: 25, color: "B" }, "player-9"), /active 20×25 board/);
+});
+
+test("Mosaic moderator queue controls remove queued items and safely cancel in-flight work", () => {
+  const state = createMosaicQueueState();
+  queueMosaicThemeRequest(state, { id: "queued-a", theme: "first theme", playerId: "p1", now: 1000 });
+  queueMosaicThemeRequest(state, { id: "queued-b", theme: "second theme", playerId: "p2", now: 2000 });
+  assert.equal(removeMosaicQueueRequest(state, "first theme").id, "queued-a");
+  assert.equal(state.queue.length, 1);
+  assert.throws(() => removeMosaicQueueRequest(state, "missing"), /not found/);
+  const claimed = claimNextMosaicRequest(state, 3000);
+  assert.equal(claimed?.id, "queued-b");
+  assert.equal(removeMosaicQueueRequest(state, 1).status, "cancelled");
+  assert.equal(state.queue[0]?.status, "cancelled");
+  assert.equal(claimNextMosaicRequest(state, 100000), null);
+  queueMosaicThemeRequest(state, { id: "queued-c", theme: "third theme", playerId: "p3", now: 4000 });
+  queueMosaicThemeRequest(state, { id: "queued-d", theme: "fourth theme", playerId: "p4", now: 5000 });
+  assert.equal(clearMosaicQueue(state), 2);
+  assert.equal(state.queue.length, 0);
 });
