@@ -227,6 +227,41 @@ export function startMosaicReveal(artwork: MosaicArtwork, now = Date.now()): { a
 export function isMosaicRevealVisible(artwork: Pick<MosaicArtwork, "revealUntil">, now = Date.now()): boolean {
   return Date.parse(String(artwork.revealUntil || "")) > now;
 }
+export function collectCompletedMosaicMilestones(artwork: MosaicArtwork): { artwork: MosaicArtwork; milestones: Array<{ id: string; contributors: string[] }> } {
+  const next = structuredClone(artwork);
+  const milestones: Array<{ id: string; contributors: string[] }> = [];
+  const paintedBy = Array.isArray(next.paintedBy) ? next.paintedBy : [];
+  const checks: Array<{ id: string; indices: number[] }> = [];
+  for (let sy = 0; sy < 5; sy++) for (let sx = 0; sx < 4; sx++) {
+    const indices: number[] = [];
+    for (let y = sy * 10; y < sy * 10 + 10; y++) for (let x = sx * 10; x < sx * 10 + 10; x++) indices.push(y * MOSAIC_WIDTH + x);
+    checks.push({ id: `sector:${sx}:${sy}`, indices });
+  }
+  for (let board = 1; board <= 4; board++) {
+    const ox = board === 2 || board === 4 ? MOSAIC_BOARD_WIDTH : 0;
+    const oy = board === 3 || board === 4 ? MOSAIC_BOARD_HEIGHT : 0;
+    const indices: number[] = [];
+    for (let y = oy; y < oy + MOSAIC_BOARD_HEIGHT; y++) for (let x = ox; x < ox + MOSAIC_BOARD_WIDTH; x++) indices.push(y * MOSAIC_WIDTH + x);
+    checks.push({ id: `board:${board}`, indices });
+  }
+  for (const color of Object.keys(MOSAIC_COLORS) as MosaicColorCode[]) {
+    const indices = next.target.map((value, index) => value === color ? index : -1).filter((index) => index >= 0);
+    if (indices.length) checks.push({ id: `color:${color}`, indices });
+  }
+  checks.push({ id: "complete", indices: Array.from({ length: MOSAIC_CELL_COUNT }, (_, index) => index) });
+  const awarded = new Set(next.awardedMilestones || []);
+  for (const check of checks) {
+    if (awarded.has(check.id) || !check.indices.length) continue;
+    if (!check.indices.every((index) => next.painted[index] === next.target[index])) continue;
+    const contributors = [...new Set(check.indices.map((index) => paintedBy[index]).filter(Boolean))];
+    if (!contributors.length) continue;
+    next.awardedMilestones = [...(next.awardedMilestones || []), check.id];
+    awarded.add(check.id);
+    milestones.push({ id: check.id, contributors });
+  }
+  if (awarded.has("complete")) next.status = "completed";
+  return { artwork: next, milestones };
+}
 export function paintMosaicBrush(artwork: MosaicArtwork, command: MosaicPaintCommand, playerId: string, options: { size?: number; direction?: MosaicBrushDirection; now?: number } = {}): { artwork: MosaicArtwork; outcome: "wrong" | "already-painted" | "painted"; expected: MosaicColorCode; paintedCoordinates: string[]; paintedCount: number; brush: number; direction: MosaicBrushDirection; stoppedAt: string } {
   if (artwork.status !== "active") throw new Error("Only an active Mosaic can be painted.");
   if (!Number.isInteger(command.column) || command.column < 0 || command.column >= MOSAIC_BOARD_WIDTH || !Number.isInteger(command.row) || command.row < 0 || command.row >= MOSAIC_BOARD_HEIGHT) throw new Error("The paint coordinate must be inside the active 20×25 board.");
