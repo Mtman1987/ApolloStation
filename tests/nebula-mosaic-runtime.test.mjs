@@ -53,6 +53,7 @@ test("Mosaic chat runtime generates, paints with per-player brush settings, and 
     const reveal = await runtime.handle({ tenantId: "tenant-a", channel: "main", playerId: "player-a", username: "owl", text: "!spmt mosaic reveal", now: 4000 });
     assert.match(reveal.reply, /reveal started for 15 seconds/);
     assert.equal(reveal.state?.artwork?.revealing, true);
+    assert.equal(reveal.state?.artwork?.target.every((cell) => cell === "G"), true);
     runtime.close();
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
