@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { MOSAIC_CELL_COUNT, MOSAIC_COLORS, MOSAIC_PALETTES, MOSAIC_WIDTH, MOSAIC_HEIGHT, MOSAIC_REVEAL_MS, mosaicPricing, normalizeMosaicTheme, validateMosaicTheme, parseMosaicPaintCommand, parseMosaicBrushCommand, parseMosaicViewCommand, parseMosaicPaletteCommand, parseMosaicRevealCommand, validateMosaicTemplate, paintMosaicCell, createMosaicQueueState, queueMosaicThemeRequest, claimNextMosaicRequest, failMosaicQueueRequest, installMosaicQueueTemplate, removeMosaicQueueRequest, clearMosaicQueue, startMosaicReveal, isMosaicRevealVisible, paintMosaicArtworkCell, paintMosaicBrush, collectCompletedMosaicMilestones } from "../apps/nebula-arcade/dist/mosaic-core.js";
+import { MOSAIC_CELL_COUNT, MOSAIC_COLORS, MOSAIC_PALETTES, MOSAIC_WIDTH, MOSAIC_HEIGHT, MOSAIC_REVEAL_MS, mosaicPricing, normalizeMosaicTheme, validateMosaicTheme, parseMosaicPaintCommand, parseMosaicBrushCommand, parseMosaicViewCommand, parseMosaicPaletteCommand, parseMosaicRevealCommand, validateMosaicTemplate, paintMosaicCell, createMosaicQueueState, queueMosaicThemeRequest, claimNextMosaicRequest, failMosaicQueueRequest, installMosaicQueueTemplate, removeMosaicQueueRequest, clearMosaicQueue, startMosaicReveal, isMosaicRevealVisible, paintMosaicArtworkCell, paintMosaicBrush, collectCompletedMosaicMilestones, setMosaicView, setMosaicPalette, resetMosaicForReplay, mosaicPublicSnapshot } from "../apps/nebula-arcade/dist/mosaic-core.js";
 
 test("Mosaic theme normalization and guardrails match the donor contract", () => {
   assert.equal(normalizeMosaicTheme("  owl\n in   space  "), "owl in space");
@@ -178,4 +178,34 @@ test("Mosaic completion detection awards each milestone once and marks the artwo
   assert.equal(result.milestones.find((item) => item.id === "complete")?.contributors.includes("player-b"), true);
   const again = collectCompletedMosaicMilestones(result.artwork);
   assert.deepEqual(again.milestones, []);
+});
+
+test("Mosaic board views, palettes, public snapshots, and replay preserve the project lifecycle", () => {
+  const state = createMosaicQueueState();
+  queueMosaicThemeRequest(state, { id: "view-1", theme: "coral reef", playerId: "p1", now: 1000 });
+  claimNextMosaicRequest(state, 2000);
+  const artwork = installMosaicQueueTemplate(state, "view-1", Array(MOSAIC_CELL_COUNT).fill("C"), {}, 3000);
+  const board = setMosaicView(artwork, 4, 4000);
+  assert.equal(board.activeBoard, 4);
+  assert.equal(board.viewMode, "board");
+  const overview = setMosaicView(board, "all", 5000);
+  assert.equal(overview.viewMode, "all");
+  assert.equal(Date.parse(overview.viewUntil), 5000 + 15_000);
+  const palette = setMosaicPalette(overview, "ocean", 6000);
+  assert.equal(palette.paletteId, "ocean");
+  assert.throws(() => setMosaicPalette(palette, "rainbow"), /supported Mosaic palette/);
+  state.current = palette;
+  const snapshot = mosaicPublicSnapshot(state, 7000);
+  assert.equal(snapshot.artwork?.viewMode, "all");
+  assert.equal(snapshot.artwork?.target.length, MOSAIC_CELL_COUNT);
+  assert.equal(snapshot.artwork?.progressPercent, 0);
+  state.current.status = "completed";
+  state.current.painted = [...state.current.target];
+  state.saves = [structuredClone(state.current)];
+  const replay = resetMosaicForReplay(state, 8000);
+  assert.equal(replay.status, "active");
+  assert.equal(replay.painted.length, MOSAIC_CELL_COUNT);
+  assert.equal(replay.painted.every((cell) => cell === ""), true);
+  assert.equal(replay.activeBoard, 1);
+  assert.equal(state.saves[0]?.status, "completed");
 });
