@@ -155,6 +155,12 @@ export function findMosaicArtwork(state: MosaicQueueState, id?: string): MosaicA
 export function mosaicTemplate(artwork: MosaicArtwork): MosaicTemplateV1 {
   return { format: "nebula-mosaic", version: 1, width: MOSAIC_WIDTH, height: MOSAIC_HEIGHT, theme: artwork.theme, paletteId: artwork.paletteId || "classic", target: [...artwork.target] };
 }
+export function mosaicTemplateSvg(templateValue: unknown): string {
+  const template = validateMosaicTemplate(templateValue);
+  const palette = MOSAIC_PALETTES[template.paletteId];
+  const cells = template.target.map((code, index) => `<rect x="${(index % MOSAIC_WIDTH) * 20}" y="${Math.floor(index / MOSAIC_WIDTH) * 20}" width="20" height="20" fill="${palette[code]}"/>`).join("");
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="1000" viewBox="0 0 800 1000">${cells}</svg>`;
+}
 export function sharedMosaicProjects(state: MosaicQueueState): MosaicSharedProject[] {
   return (state.sharedProjects || []).map((project) => structuredClone(project));
 }
