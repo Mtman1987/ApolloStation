@@ -146,6 +146,36 @@ export function queueMosaicThemeRequest(state: MosaicQueueState, input: { id: st
   state.queue = [...state.queue, request].slice(-20);
   return { request: structuredClone(request), position: state.queue.filter((item) => !["failed", "cancelled"].includes(item.status)).length };
 }
+export function removeMosaicQueueRequest(state: MosaicQueueState, selector: number | string): MosaicQueueRequest {
+  const visible = state.queue.filter((item) => item.status !== "cancelled");
+  let request: MosaicQueueRequest | undefined;
+  if (typeof selector === "number" && Number.isInteger(selector) && selector > 0) request = visible[selector - 1];
+  else {
+    const value = String(selector || "").trim().toLowerCase();
+    request = visible.find((item) => item.id.toLowerCase() === value || item.theme.toLowerCase() === value);
+  }
+  if (!request) throw new Error("That Mosaic queue item was not found.");
+  if (request.status === "generating") {
+    request.status = "cancelled";
+    request.error = "Removed by a streamer or moderator.";
+    delete request.retryAt;
+  } else state.queue = state.queue.filter((item) => item.id !== request!.id);
+  return structuredClone(request);
+}
+export function clearMosaicQueue(state: MosaicQueueState): number {
+  const active = state.queue.filter((item) => item.status !== "cancelled");
+  const generating = new Set<string>();
+  for (const item of active) {
+    if (item.status === "generating") {
+      item.status = "cancelled";
+      item.error = "Removed by a streamer or moderator.";
+      delete item.retryAt;
+      generating.add(item.id);
+    }
+  }
+  state.queue = state.queue.filter((item) => generating.has(item.id));
+  return active.length;
+}
 export function claimNextMosaicRequest(state: MosaicQueueState, now = Date.now()): MosaicQueueRequest | null {
   if (state.current && !["completed", "archived"].includes(state.current.status)) return null;
   if (state.queue.some((item) => item.status === "generating" && item.lastAttemptAt && now - Date.parse(item.lastAttemptAt) < MOSAIC_GENERATION_STALE_MS)) return null;
