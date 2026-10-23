@@ -11,6 +11,7 @@ export const MOSAIC_GENERATION_MAX_ATTEMPTS = 3;
 export const MOSAIC_GENERATION_RETRY_MS = 10_000;
 export const MOSAIC_GENERATION_STALE_MS = 3 * 60_000;
 export const MOSAIC_REVEAL_MS = 15_000;
+export const MOSAIC_OVERVIEW_MS = 15_000;
 export const MOSAIC_XP_COST = Math.max(0, Math.floor(Number(process.env.MOSAIC_REQUEST_XP_COST || 0)));
 
 export const MOSAIC_COLORS = {
@@ -129,7 +130,7 @@ export type MosaicArtwork = {
   id: string; theme: string; requestedBy: string; requestedByPlayerId: string;
   createdAt: string; updatedAt: string; lastInteractionAt: string;
   status: "active" | "suspended" | "completed" | "archived";
-  provider?: string; sourceImageUrl?: string; revealUntil?: string; target: MosaicColorCode[];
+  provider?: string; sourceImageUrl?: string; revealUntil?: string; viewUntil?: string; target: MosaicColorCode[];
   painted: string[]; paintedBy: string[]; activeBoard: MosaicBoardNumber;
   viewMode: "board" | "all"; awardedMilestones: string[]; paletteId?: MosaicPaletteId;
 };
@@ -216,6 +217,59 @@ export function installMosaicQueueTemplate(state: MosaicQueueState, requestId: s
   const artwork: MosaicArtwork = { id: `mosaic:${now}`, theme: request.theme, requestedBy: request.displayName, requestedByPlayerId: request.playerId, createdAt, updatedAt: createdAt, lastInteractionAt: createdAt, status: "active", ...(generation.provider ? { provider: generation.provider } : {}), ...(generation.sourceImageUrl ? { sourceImageUrl: generation.sourceImageUrl } : {}), target, painted: Array(MOSAIC_CELL_COUNT).fill(""), paintedBy: Array(MOSAIC_CELL_COUNT).fill(""), activeBoard: 1, viewMode: "board", awardedMilestones: [] };
   state.current = artwork; state.queue = state.queue.filter((item) => item.id !== requestId);
   return structuredClone(artwork);
+}
+export function setMosaicView(artwork: MosaicArtwork, view: MosaicViewCommand, now = Date.now()): MosaicArtwork {
+  if (!artwork || !["active", "suspended", "completed", "archived"].includes(artwork.status)) throw new Error("No saved Nebula Mosaic is ready yet.");
+  const timestamp = new Date(now).toISOString();
+  if (view === "all") return { ...structuredClone(artwork), viewMode: "all", viewUntil: new Date(now + MOSAIC_OVERVIEW_MS).toISOString(), updatedAt: timestamp, lastInteractionAt: timestamp };
+  return { ...structuredClone(artwork), activeBoard: view, viewMode: "board", updatedAt: timestamp, lastInteractionAt: timestamp, viewUntil: undefined };
+}
+export function setMosaicPalette(artwork: MosaicArtwork, paletteValue: unknown, now = Date.now()): MosaicArtwork {
+  const paletteId = String(paletteValue || "").trim().toLowerCase() as MosaicPaletteId;
+  if (!Object.prototype.hasOwnProperty.call(MOSAIC_PALETTES, paletteId)) throw new Error("Choose a supported Mosaic palette.");
+  const timestamp = new Date(now).toISOString();
+  return { ...structuredClone(artwork), paletteId, updatedAt: timestamp, lastInteractionAt: timestamp };
+}
+export function resetMosaicForReplay(state: MosaicQueueState, now = Date.now()): MosaicArtwork {
+  const current = state.current || state.saves[0];
+  if (!current) throw new Error("No saved Nebula Mosaic is ready to replay.");
+  if (current.status === "completed") state.saves = [structuredClone(current), ...state.saves.filter((item) => item.id !== current.id)].slice(0, 20);
+  const timestamp = new Date(now).toISOString();
+  const replay: MosaicArtwork = {
+    ...structuredClone(current), id: `mosaic:${now}`, painted: Array(MOSAIC_CELL_COUNT).fill(""), paintedBy: Array(MOSAIC_CELL_COUNT).fill(""),
+    status: "active", activeBoard: 1, viewMode: "board", awardedMilestones: [], createdAt: timestamp, updatedAt: timestamp, lastInteractionAt: timestamp,
+  };
+  delete replay.viewUntil;
+  delete replay.revealUntil;
+  state.current = replay;
+  return structuredClone(replay);
+}
+export function mosaicPublicSnapshot(state: MosaicQueueState, now = Date.now()) {
+  const queue = state.queue.filter((item) => item.status !== "cancelled");
+  const queueLength = queue.filter((item) => item.status !== "failed" || Math.max(0, Number(item.attempts || 0)) < MOSAIC_GENERATION_MAX_ATTEMPTS || Math.max(0, Number(item.recoveryVersion || 0)) < 1).length;
+  const latestRequest = queue.at(-1);
+  const generation = latestRequest ? { theme: latestRequest.theme, status: latestRequest.status, error: latestRequest.error || "", attempts: Math.max(0, Number(latestRequest.attempts || 0)), maxAttempts: MOSAIC_GENERATION_MAX_ATTEMPTS, retryAt: latestRequest.retryAt || "" } : null;
+  const saves = state.saves.slice(0, 20).map((item) => ({ id: item.id, theme: item.theme, status: item.status, updatedAt: item.updatedAt, createdAt: item.createdAt, paletteId: item.paletteId || "classic", requestedBy: item.requestedBy }));
+  const artwork = state.current;
+  if (!artwork) return { artwork: null, queueLength, queue: queue.map((item, index) => ({ position: index + 1, id: item.id, theme: item.theme, displayName: item.displayName, status: item.status, attempts: Math.max(0, Number(item.attempts || 0)) })), generation, saves, pricing: mosaicPricing() };
+  const revealing = artwork.status !== "completed" && isMosaicRevealVisible(artwork, now);
+  const viewMode = artwork.status === "completed" || revealing || (artwork.viewMode === "all" && Date.parse(String(artwork.viewUntil || "")) > now) ? "all" : "board";
+  const originX = artwork.activeBoard === 2 || artwork.activeBoard === 4 ? MOSAIC_BOARD_WIDTH : 0;
+  const originY = artwork.activeBoard === 3 || artwork.activeBoard === 4 ? MOSAIC_BOARD_HEIGHT : 0;
+  const boardTarget: MosaicColorCode[] = [];
+  const boardPainted: string[] = [];
+  for (let row = 0; row < MOSAIC_BOARD_HEIGHT; row++) for (let column = 0; column < MOSAIC_BOARD_WIDTH; column++) {
+    const index = (originY + row) * MOSAIC_WIDTH + originX + column;
+    boardTarget.push(artwork.target[index]!); boardPainted.push(artwork.painted[index] || "");
+  }
+  const progress = artwork.painted.reduce((count, color, index) => count + (color === artwork.target[index] ? 1 : 0), 0);
+  return {
+    artwork: { id: artwork.id, theme: artwork.theme, requestedBy: artwork.requestedBy, status: artwork.status, activeBoard: artwork.activeBoard, viewMode, revealing, revealUntil: revealing ? artwork.revealUntil : undefined,
+      target: viewMode === "all" ? artwork.target : boardTarget, painted: viewMode === "all" ? artwork.painted : boardPainted,
+      paintedBy: viewMode === "all" ? artwork.paintedBy : boardPainted.map((_, index) => artwork.paintedBy[(originY + Math.floor(index / MOSAIC_BOARD_WIDTH)) * MOSAIC_WIDTH + originX + index % MOSAIC_BOARD_WIDTH] || ""),
+      progress, total: MOSAIC_CELL_COUNT, progressPercent: Math.round(progress / MOSAIC_CELL_COUNT * 100), paletteId: artwork.paletteId || "classic", createdAt: artwork.createdAt, updatedAt: artwork.updatedAt, sourceImageUrl: artwork.sourceImageUrl },
+    queueLength, queue: queue.map((item, index) => ({ position: index + 1, id: item.id, theme: item.theme, displayName: item.displayName, status: item.status, attempts: Math.max(0, Number(item.attempts || 0)) })), generation, saves, pricing: mosaicPricing(),
+  };
 }
 export function startMosaicReveal(artwork: MosaicArtwork, now = Date.now()): { artwork: MosaicArtwork; until: string; alreadyActive: boolean } {
   if (artwork.status !== "active") throw new Error("An active, unfinished Mosaic is needed for a reveal.");
