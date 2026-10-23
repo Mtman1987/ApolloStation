@@ -121,6 +121,11 @@ export class NebulaArcadeProviderRuntime {
         }
         }catch{/* Keep the last fresh observation; a failed poll never means offline. */}
       }
+      for (const mosaicChannel of tenant.channels) {
+        if (resolveNebulaChannelGameIds(this.gameStore.get(tenant.tenantId), mosaicChannel.stateChannelId, mosaicChannel.enabledGameIds).includes("pixelbattle")) {
+          void this.mosaicRuntime.processNext(tenant.tenantId, mosaicChannel.stateChannelId).catch(() => undefined);
+        }
+      }
       const channel=tenant.channels.find(channel=>resolveNebulaChannelGameIds(this.gameStore.get(tenant.tenantId),channel.stateChannelId,channel.enabledGameIds).includes("tag")&&!isNebulaChannelOptedOut(this.experienceStore,tenant.tenantId,channel.channelId,channel.stateChannelId));
       if(presence&&channel){const rotation=await this.tagRuntime.reconcileRotation({tenantId:tenant.tenantId,channelId:channel.channelId,now:this.options.now?.()??new Date().toISOString(),liveUserIds:presence.liveUserIds});rotations.push(rotation);if("result" in rotation&&rotation.result.status==="applied")await this.announce(tenant.tenantId,rotation.result.commandId,rotation.result.message);}
     }
