@@ -5,7 +5,7 @@ on:
     branches: [main]
     paths:
       - "apps/nebula-arcade/**"
-      - "tests/nebula-spmt-commands.test.mjs"
+      - "tests/nebula-*.test.mjs"
       - "packages/contracts/**"
       - "packages/runtime/**"
       - "package-lock.json"
@@ -34,5 +34,5 @@ jobs:
         run: npm ci
       - name: Build Nebula Arcade and its project references
         run: npx tsc -b apps/nebula-arcade --pretty false
-      - name: Run Nebula command and widget regression tests
-        run: node --test tests/nebula-spmt-commands.test.mjs
+      - name: Run Nebula command and Mosaic domain regression tests
+        run: node --test tests/nebula-spmt-commands.test.mjs tests/nebula-mosaic-core.test.mjs
