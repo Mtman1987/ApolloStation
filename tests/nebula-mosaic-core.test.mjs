@@ -198,7 +198,11 @@ test("Mosaic board views, palettes, public snapshots, and replay preserve the pr
   const snapshot = mosaicPublicSnapshot(state, 7000);
   assert.equal(snapshot.artwork?.viewMode, "all");
   assert.equal(snapshot.artwork?.target.length, MOSAIC_CELL_COUNT);
+  assert.equal(snapshot.artwork?.target.every((cell) => cell === ""), true, "unrevealed target must not leak through the public snapshot");
   assert.equal(snapshot.artwork?.progressPercent, 0);
+  state.current = startMosaicReveal(palette, 7000).artwork;
+  const revealedSnapshot = mosaicPublicSnapshot(state, 7001);
+  assert.equal(revealedSnapshot.artwork?.target.every((cell) => cell === "C"), true);
   state.current.status = "completed";
   state.current.painted = [...state.current.target];
   state.saves = [structuredClone(state.current)];
