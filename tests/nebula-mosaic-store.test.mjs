@@ -30,7 +30,7 @@ test("SQLite Mosaic state survives store restart and isolates tenant/channel rec
     assert.equal(recovered.current?.paintedBy[0], "player-a");
     assert.equal(store.get("tenant-a", "other").current, undefined);
     assert.equal(store.get("tenant-b", "main").current, undefined);
-    store.update("tenant-a", "main", (state) => { state.current!.painted[1] = "C"; return true; }, 5000);
+    store.update("tenant-a", "main", (state) => { state.current.painted[1] = "C"; return true; }, 5000);
     assert.equal(store.get("tenant-a", "main").current?.painted[1], "C");
     store.close();
   } finally {
