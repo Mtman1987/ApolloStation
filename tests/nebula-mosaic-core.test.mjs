@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { MOSAIC_CELL_COUNT, MOSAIC_COLORS, MOSAIC_PALETTES, MOSAIC_WIDTH, MOSAIC_HEIGHT, mosaicPricing, normalizeMosaicTheme, validateMosaicTheme, parseMosaicPaintCommand, parseMosaicBrushCommand, parseMosaicViewCommand, parseMosaicPaletteCommand, parseMosaicRevealCommand, validateMosaicTemplate, paintMosaicCell, createMosaicQueueState, queueMosaicThemeRequest, claimNextMosaicRequest, failMosaicQueueRequest, installMosaicQueueTemplate } from "../apps/nebula-arcade/dist/mosaic-core.js";
+import { MOSAIC_CELL_COUNT, MOSAIC_COLORS, MOSAIC_PALETTES, MOSAIC_WIDTH, MOSAIC_HEIGHT, MOSAIC_REVEAL_MS, mosaicPricing, normalizeMosaicTheme, validateMosaicTheme, parseMosaicPaintCommand, parseMosaicBrushCommand, parseMosaicViewCommand, parseMosaicPaletteCommand, parseMosaicRevealCommand, validateMosaicTemplate, paintMosaicCell, createMosaicQueueState, queueMosaicThemeRequest, claimNextMosaicRequest, failMosaicQueueRequest, installMosaicQueueTemplate, startMosaicReveal, isMosaicRevealVisible, paintMosaicArtworkCell } from "../apps/nebula-arcade/dist/mosaic-core.js";
 
 test("Mosaic theme normalization and guardrails match the donor contract", () => {
   assert.equal(normalizeMosaicTheme("  owl\n in   space  "), "owl in space");
@@ -89,4 +89,33 @@ test("Mosaic generation lifecycle rejects malformed output and respects active a
   installMosaicQueueTemplate(state, "req-a", Array(MOSAIC_CELL_COUNT).fill("R"), {}, 3000);
   queueMosaicThemeRequest(state, { id: "req-b", theme: "second artwork", playerId: "player-2", now: 4000 });
   assert.equal(claimNextMosaicRequest(state, 5000), null);
+});
+
+test("Mosaic reveal is temporary, idempotent while active, and does not mutate the source artwork", () => {
+  const state = createMosaicQueueState();
+  queueMosaicThemeRequest(state, { id: "reveal-1", theme: "moon garden", playerId: "player-1", now: 1000 });
+  claimNextMosaicRequest(state, 2000);
+  const artwork = installMosaicQueueTemplate(state, "reveal-1", Array(MOSAIC_CELL_COUNT).fill("G"), {}, 3000);
+  const reveal = startMosaicReveal(artwork, 5000);
+  assert.equal(Date.parse(reveal.until), 5000 + MOSAIC_REVEAL_MS);
+  assert.equal(isMosaicRevealVisible(reveal.artwork, 5001), true);
+  assert.equal(isMosaicRevealVisible(reveal.artwork, 5000 + MOSAIC_REVEAL_MS), false);
+  assert.equal(artwork.revealUntil, undefined);
+  const repeated = startMosaicReveal(reveal.artwork, 6000);
+  assert.equal(repeated.alreadyActive, true);
+  assert.equal(repeated.until, reveal.until);
+  assert.throws(() => startMosaicReveal({ ...artwork, status: "completed" }, 5000), /active, unfinished/);
+});
+
+test("Mosaic artwork painting tracks the painter and timestamps without mutating prior state", () => {
+  const state = createMosaicQueueState();
+  queueMosaicThemeRequest(state, { id: "paint-1", theme: "pixel forest", playerId: "player-1", now: 1000 });
+  claimNextMosaicRequest(state, 2000);
+  const artwork = installMosaicQueueTemplate(state, "paint-1", Array(MOSAIC_CELL_COUNT).fill("G"), {}, 3000);
+  const next = paintMosaicArtworkCell(artwork, 3, 4, "PK", "player-7", 9000);
+  assert.equal(next.painted[4 * MOSAIC_WIDTH + 3], "PK");
+  assert.equal(next.paintedBy[4 * MOSAIC_WIDTH + 3], "player-7");
+  assert.equal(next.lastInteractionAt, new Date(9000).toISOString());
+  assert.equal(artwork.painted[4 * MOSAIC_WIDTH + 3], "");
+  assert.throws(() => paintMosaicArtworkCell({ ...artwork, status: "archived" }, 3, 4, "PK", "player-7"), /active Mosaic/);
 });
