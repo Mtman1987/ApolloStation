@@ -114,6 +114,74 @@ export function validateMosaicTemplate(value: unknown): { theme: string; palette
   if (!Object.prototype.hasOwnProperty.call(MOSAIC_PALETTES, paletteId)) throw new Error("Choose a supported Mosaic palette.");
   return { theme: validateMosaicTheme(item.theme), paletteId, target };
 }
+export type MosaicQueueStatus = "pending" | "generating" | "failed" | "cancelled";
+export type MosaicQueueRequest = {
+  id: string; theme: string; playerId: string; username: string; displayName: string;
+  requestedAt: string; xpCost: number; status: MosaicQueueStatus; error?: string;
+  attempts?: number; lastAttemptAt?: string; retryAt?: string; recoveryVersion?: number;
+};
+export type MosaicArtwork = {
+  id: string; theme: string; requestedBy: string; requestedByPlayerId: string;
+  createdAt: string; updatedAt: string; lastInteractionAt: string;
+  status: "active" | "suspended" | "completed" | "archived";
+  provider?: string; sourceImageUrl?: string; target: MosaicColorCode[];
+  painted: string[]; paintedBy: string[]; activeBoard: MosaicBoardNumber;
+  viewMode: "board" | "all"; awardedMilestones: string[]; paletteId?: MosaicPaletteId;
+};
+export type MosaicQueueState = { current?: MosaicArtwork; queue: MosaicQueueRequest[]; saves: MosaicArtwork[] };
+export function createMosaicQueueState(): MosaicQueueState { return { queue: [], saves: [] }; }
+export function queueMosaicThemeRequest(state: MosaicQueueState, input: { id: string; theme: unknown; playerId: string; username?: string; displayName?: string; xpCost?: number; now?: number }): { request: MosaicQueueRequest; position: number } {
+  const theme = validateMosaicTheme(input.theme);
+  const now = Math.max(0, Math.floor(Number(input.now ?? Date.now())));
+  state.queue = Array.isArray(state.queue) ? state.queue : [];
+  state.saves = Array.isArray(state.saves) ? state.saves : [];
+  const duplicate = state.queue.some((item) => ["pending", "generating"].includes(item.status) && item.theme.toLowerCase() === theme.toLowerCase());
+  if (duplicate || state.current?.theme.toLowerCase() === theme.toLowerCase()) throw new Error(`“${theme}” is already active or queued.`);
+  const request: MosaicQueueRequest = { id: String(input.id), theme, playerId: String(input.playerId), username: String(input.username || input.playerId), displayName: String(input.displayName || input.username || input.playerId), requestedAt: new Date(now).toISOString(), xpCost: Math.max(0, Math.floor(Number(input.xpCost || 0))), status: "pending" };
+  state.queue = [...state.queue, request].slice(-20);
+  return { request: structuredClone(request), position: state.queue.filter((item) => !["failed", "cancelled"].includes(item.status)).length };
+}
+export function claimNextMosaicRequest(state: MosaicQueueState, now = Date.now()): MosaicQueueRequest | null {
+  if (state.current && !["completed", "archived"].includes(state.current.status)) return null;
+  if (state.queue.some((item) => item.status === "generating" && item.lastAttemptAt && now - Date.parse(item.lastAttemptAt) < MOSAIC_GENERATION_STALE_MS)) return null;
+  for (const item of state.queue) {
+    if (item.status === "failed" && Math.max(0, Number(item.attempts || 0)) >= MOSAIC_GENERATION_MAX_ATTEMPTS && Math.max(0, Number(item.recoveryVersion || 0)) < 1) {
+      item.status = "pending"; item.attempts = 0; item.recoveryVersion = 1; delete item.retryAt; delete item.error; break;
+    }
+  }
+  const request = state.queue.find((item) => {
+    const attempts = Math.max(0, Number(item.attempts || 0));
+    if (attempts >= MOSAIC_GENERATION_MAX_ATTEMPTS) return false;
+    if (item.status === "pending") return true;
+    if (item.status === "failed") return !item.retryAt || Date.parse(item.retryAt) <= now;
+    return item.status === "generating" && (!item.lastAttemptAt || now - Date.parse(item.lastAttemptAt) >= MOSAIC_GENERATION_STALE_MS);
+  });
+  if (!request) return null;
+  request.status = "generating"; request.attempts = Math.max(0, Number(request.attempts || 0)) + 1; request.lastAttemptAt = new Date(now).toISOString(); delete request.retryAt; delete request.error;
+  return structuredClone(request);
+}
+export function failMosaicQueueRequest(state: MosaicQueueState, requestId: string, error: unknown, now = Date.now()): MosaicQueueRequest | null {
+  const request = state.queue.find((item) => item.id === requestId);
+  if (!request || request.status === "cancelled") return request || null;
+  request.status = "failed"; request.error = String(error || "Mosaic generation failed.").slice(0, 240);
+  if (Math.max(0, Number(request.attempts || 0)) < MOSAIC_GENERATION_MAX_ATTEMPTS) request.retryAt = new Date(now + MOSAIC_GENERATION_RETRY_MS).toISOString();
+  else delete request.retryAt;
+  return structuredClone(request);
+}
+export function installMosaicQueueTemplate(state: MosaicQueueState, requestId: string, targetValue: unknown, generation: { provider?: string; sourceImageUrl?: string } = {}, now = Date.now()): MosaicArtwork {
+  const request = state.queue.find((item) => item.id === requestId);
+  if (!request) throw new Error("Mosaic request was not found.");
+  if (state.current && !["completed", "archived"].includes(state.current.status)) throw new Error("Another Mosaic is already active.");
+  if (request.status === "cancelled") throw new Error("Mosaic request was cancelled by a streamer or moderator.");
+  if (!Array.isArray(targetValue)) throw new Error("Generated Mosaic template must contain 2,000 cells.");
+  const target = targetValue.map((color) => String(color || "").toUpperCase()) as MosaicColorCode[];
+  if (target.length !== MOSAIC_CELL_COUNT || !target.every((color) => Object.prototype.hasOwnProperty.call(MOSAIC_COLORS, color))) throw new Error("Generated Mosaic did not contain exactly 2,000 supported cells.");
+  if (state.current) state.saves = [structuredClone(state.current), ...state.saves.filter((item) => item.id !== state.current!.id)].slice(0, 20);
+  const createdAt = new Date(now).toISOString();
+  const artwork: MosaicArtwork = { id: `mosaic:${now}`, theme: request.theme, requestedBy: request.displayName, requestedByPlayerId: request.playerId, createdAt, updatedAt: createdAt, lastInteractionAt: createdAt, status: "active", provider: generation.provider, sourceImageUrl: generation.sourceImageUrl, target, painted: Array(MOSAIC_CELL_COUNT).fill(""), paintedBy: Array(MOSAIC_CELL_COUNT).fill(""), activeBoard: 1, viewMode: "board", awardedMilestones: [] };
+  state.current = artwork; state.queue = state.queue.filter((item) => item.id !== requestId);
+  return structuredClone(artwork);
+}
 export function paintMosaicCell(paintedValue: unknown, column: number, row: number, color: MosaicColorCode): string[] {
   if (!Number.isInteger(column) || !Number.isInteger(row) || column < 0 || column >= MOSAIC_WIDTH || row < 0 || row >= MOSAIC_HEIGHT) throw new Error("Choose a cell inside the Mosaic board.");
   if (!Object.prototype.hasOwnProperty.call(MOSAIC_COLORS, color)) throw new Error("Choose a supported Mosaic color.");
