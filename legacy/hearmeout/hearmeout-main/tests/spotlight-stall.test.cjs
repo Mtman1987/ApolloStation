@@ -1,0 +1,297 @@
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const { inspectSpotlightPlaylist, shouldRecycleSpotlight } = require('../worker/src/spotlight-hls');
+const { spotlightTimestampFilter, inspectSpotlightCommercial } = require('../worker/src/spotlight-hls');
+
+const playlist = durations => '#EXTM3U\n' + durations.map((duration, index) =>
+  '#EXTINF:' + duration + ',\nseg_' + String(index).padStart(6, '0') + '.ts\n').join('');
+
+test('Spotlight treats a fresh progressing HLS playlist as playable', () => {
+  assert.deepEqual(inspectSpotlightPlaylist(playlist([4, 4, 4]), 3000),
+    { segmentCount: 3, stalled: false });
+});
+
+test('Spotlight exposes only a current stitched ad marker and its relay expiry', () => {
+  const now = Date.parse('2026-10-02T08:00:10Z');
+  const marker = '#EXT-X-DATERANGE:ID="ad-1",CLASS="twitch-stitched-ad",START-DATE="2026-10-02T08:00:00Z",DURATION=30,X-SECRET="signed-url"';
+  assert.deepEqual(inspectSpotlightCommercial(marker, now), {
+    id: 'ad-1', breakStartedAt: now - 10000, sourceEndsAt: now + 20000, activeUntil: now + 32000,
+  });
+  assert.equal(inspectSpotlightCommercial(marker, now + 32000), null);
+  assert.equal(inspectSpotlightCommercial(marker.replace('DURATION=30', 'PLANNED-DURATION=30'), now)?.id, 'ad-1');
+  assert.equal(inspectSpotlightCommercial(marker.replace('twitch-stitched-ad', 'other'), now), null);
+  assert.equal(inspectSpotlightCommercial(marker.replace('DURATION=30', 'DURATION=NaN'), now), null);
+  assert.equal(inspectSpotlightCommercial(marker, now - 20000), null);
+});
+
+test('Spotlight stream copy repairs a large presentation clock jump with audio intact', t => {
+  const { spawnSync } = require('node:child_process');
+  const fs = require('node:fs');
+  const path = require('node:path');
+  if (spawnSync('ffmpeg', ['-version']).error?.code === 'ENOENT') {
+    t.skip('ffmpeg is required for the packet-clock integration check'); return;
+  }
+  const folder = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'spotlight-clock-test-'));
+  t.after(() => fs.rmSync(folder, { recursive: true, force: true }));
+  function run(args) {
+    const result = spawnSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-nostdin', ...args], { timeout: 30000 });
+    assert.equal(result.status, 0, String(result.stderr));
+  }
+  const input = path.join(folder, 'jump.ts');
+  run(['-f', 'lavfi', '-i', 'testsrc2=size=160x90:rate=30', '-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=48000',
+    '-t', '12', '-c:v', 'libx264', '-preset', 'ultrafast', '-g', '120', '-c:a', 'aac',
+    '-bsf:v', "setts=pts='PTS+gte(N,120)*1000/TB'", '-f', 'mpegts', input]);
+  const output = path.join(folder, 'index.m3u8');
+  run(['-i', input, '-map', '0:v:0', '-map', '0:a:0?', '-c', 'copy',
+    '-bsf:v', spotlightTimestampFilter(), '-bsf:a', spotlightTimestampFilter(true),
+    '-f', 'hls', '-hls_time', '4', '-hls_list_size', '20', output]);
+  const durations = [...fs.readFileSync(output, 'utf8').matchAll(/#EXTINF:([\d.]+)/g)].map(m => Number(m[1]));
+  assert.ok(durations.length >= 3);
+  assert.ok(Math.max(...durations) < 6, JSON.stringify(durations));
+  assert.ok(Math.abs(durations.reduce((a, b) => a + b, 0) - 12) < 1);
+  // Decode both tracks, rather than accepting a healthy-looking manifest alone.
+  run(['-i', output, '-map', '0:v:0', '-map', '0:a:0', '-f', 'null', '-']);
+});
+
+test('Spotlight rejects Twitch timestamp jumps even with eight segments', () => {
+  assert.deepEqual(inspectSpotlightPlaylist(playlist([4, 4, 5213.499]), 1000),
+    { segmentCount: 3, stalled: true });
+});
+
+test('Spotlight rejects segments that stopped arriving', () => {
+  assert.deepEqual(inspectSpotlightPlaylist(playlist([4, 4, 4]), 21000),
+    { segmentCount: 3, stalled: true });
+});
+
+
+test('Spotlight keeps one Twitch session through a temporary preroll stall', () => {
+  assert.equal(shouldRecycleSpotlight({ stalled: true, playlistAgeMs: 21000 }), false);
+  assert.equal(shouldRecycleSpotlight({ stalled: true, playlistAgeMs: 29000 }), false);
+  assert.equal(shouldRecycleSpotlight({ stalled: true, playlistAgeMs: 30000 }), true);
+});
+
+test('Spotlight allows healthy long keyframe chunks while they are progressing', () => {
+  assert.deepEqual(inspectSpotlightPlaylist(playlist([4, 20, 20]), 21000),
+    { segmentCount: 3, stalled: false });
+  assert.equal(inspectSpotlightPlaylist(playlist([20, 20]), 41000).stalled, true);
+});
+
+test('Spotlight recovers a stuck initial encoder and a repeatedly corrupt timeline', () => {
+  assert.equal(inspectSpotlightPlaylist('', 121000).stalled, true);
+  assert.equal(shouldRecycleSpotlight({ stalled: true, playlistAgeMs: 1000, stalledForMs: 120000 }), true);
+  assert.equal(shouldRecycleSpotlight({ stalled: false, playlistAgeMs: 1000, stalledForMs: 120000 }), false);
+});
+test('Spotlight waits through one preroll and reuses its session for stall recovery', async () => {
+  const vm = require('node:vm');
+  const fs = require('node:fs');
+  const { EventEmitter } = require('node:events');
+  let now = 1000000, modifiedAt = now, resolves = 0, spawned = [], preroll = true;
+  let marker = '#EXT-X-DATERANGE:ID="ad",CLASS="twitch-stitched-ad",START-DATE="' + new Date(now).toISOString() + '",DURATION=30';
+  let outputPlaylist = playlist([4, 4, 4]);
+  const fakeFs = {
+    existsSync: () => true,
+    mkdirSync() {}, rmSync() {}, createReadStream() {},
+    readFileSync: () => outputPlaylist,
+    statSync: () => ({ mtimeMs: modifiedAt }),
+  };
+  const fakeChild = {
+    execFile(_cmd, _args, _opts, cb) { resolves++; cb(null, { stdout: 'https://example.com/live.m3u8' }); },
+    spawn() {
+      const child = new EventEmitter();
+      Object.assign(child, { exitCode: null, killed: false, stderr: { resume() {} },
+        kill() { this.killed = true; } });
+      spawned.push(child);
+      return child;
+    },
+  };
+  const sandbox = { module: { exports: {} }, Date: { now: () => now, parse: Date.parse }, Math,
+    require(name) {
+      if (name === 'node:fs') return fakeFs;
+      if (name === 'node:child_process') return fakeChild;
+      return require(name);
+    },
+    fetch: async () => ({ ok: true, json: async () => ({ spotlight: { twitchLogin: 'captain' } }), text: async () => preroll ? marker : '' }),
+    AbortSignal, setInterval: () => 1, setTimeout: () => ({ unref() {} }),
+  };
+  vm.runInNewContext(fs.readFileSync(require.resolve('../worker/src/spotlight-hls'), 'utf8'), sandbox);
+  const worker = sandbox.module.exports.createSpotlightHls({ spotlightEndpoint: 'https://example.com/directory' });
+  await worker.start();
+  assert.equal(resolves, 1);
+  assert.equal(spawned.length, 0, 'preroll must finish before opening the encoder');
+  assert.equal(worker.status().commercialBreak.active, true);
+  now += 20000;
+  await worker.start();
+  assert.equal(resolves, 1, 'pending preroll keeps the original Twitch session');
+  assert.equal(spawned.length, 0);
+  now += 30000; preroll = false; modifiedAt = now;
+  await worker.start();
+  assert.equal(spawned.length, 1);
+  assert.equal(resolves, 1);
+  assert.equal(worker.status().recoveryCount, 0);
+  now += 21000;
+  await worker.start();
+  assert.equal(spawned.length, 1, 'short stalls preserve the Twitch session');
+  now = modifiedAt + 30000;
+  await worker.start();
+  assert.equal(spawned.length, 2, 'thirty seconds without progress replaces the encoder');
+  assert.equal(spawned[0].killed, true);
+  assert.equal(worker.status().recoveryCount, 1);
+  assert.equal(resolves, 1, 'recovery must not resolve a new session with another preroll');
+  now += 31000;
+  await worker.start();
+  assert.equal(spawned.length, 3, 'a second stalled encoder is replaced');
+  assert.equal(resolves, 2, 'repeated failure obtains a fresh Twitch session');
+  modifiedAt = now;
+  await worker.start();
+  assert.equal(spawned.length, 3, 'a healthy replacement is not repeatedly restarted');
+  preroll = true;
+  marker = '#EXT-X-DATERANGE:ID="buffered-ad",CLASS="twitch-stitched-ad",START-DATE="' + new Date(now).toISOString() + '",DURATION=30';
+  await worker.start();
+  now += 50000; preroll = false; modifiedAt = now;
+  await worker.start();
+  assert.equal(worker.status().commercialBreak, null, 'the source ad has ended');
+  assert.equal(worker.status().recentCommercialBreak.id, 'buffered-ad', 'retain the interval for buffered viewers');
+  // A marker can arrive after a clean preflight but before any output exists.
+  outputPlaylist = '';
+  now += 21000;
+  preroll = true;
+  marker = '#EXT-X-DATERANGE:ID="late-ad",CLASS="twitch-stitched-ad",START-DATE="' + new Date(now).toISOString() + '",DURATION=30';
+  await worker.start();
+  assert.equal(spawned[2].killed, true, 'late preroll releases the stuck empty encoder');
+  assert.equal(worker.status().active, false);
+  assert.equal(worker.status().commercialBreak.id, 'late-ad');
+  assert.equal(spawned.length, 3);
+  now += 10000;
+  await worker.start();
+  assert.equal(spawned.length, 3, 'do not reopen while the same preroll is active');
+  now += 40000; preroll = false; modifiedAt = now;
+  outputPlaylist = playlist([4, 4, 4]);
+  await worker.start();
+  assert.equal(spawned.length, 4, 'reopen the retained session after its late preroll');
+  assert.equal(resolves, 2, 'late preroll must not create another Twitch ad session');
+  assert.equal(worker.status().ready, true);
+
+
+});
+
+test('an empty directory is not reported as stalled video', async () => {
+  const vm = require('node:vm');
+  const fs = require('node:fs');
+  const sandbox = { module: { exports: {} }, Date: { now: () => 200000 },
+    require(name) {
+      if (name === 'node:fs') return { existsSync: () => false };
+      return require(name);
+    },
+    fetch: async () => ({ ok: true, json: async () => ({ spotlight: null }) }),
+    AbortSignal, setInterval: () => 1, setTimeout,
+  };
+  vm.runInNewContext(fs.readFileSync(require.resolve('../worker/src/spotlight-hls'), 'utf8'), sandbox);
+  const worker = sandbox.module.exports.createSpotlightHls({ spotlightEndpoint: 'https://example.com/directory' });
+  const status = await worker.start();
+  assert.equal(status.active, false);
+  assert.equal(status.stalled, false);
+  assert.equal(status.error, 'No live community Spotlight is available');
+});
+
+test('the viewer preserves buffered playback through a short same-source stall', async () => {
+  const vm = require('node:vm'), fs = require('node:fs');
+  let program = { active: true, ready: true, generation: 'same', currentLogin: 'captain' };
+  let destroyed = 0; const timers = [];
+  const video = { paused: false, readyState: 4, muted: false, currentTime: 10,
+    buffered: { length: 1, start: () => 0, end: () => 40 },
+    play() { this.paused = false; return Promise.resolve(); },
+    pause() { this.paused = true; }, load() {}, removeAttribute() {},
+    addEventListener() {}, canPlayType() { return ''; },
+  };
+  class Hls {
+    static isSupported() { return true; }
+    static Events = { ERROR: 'error', MEDIA_ATTACHED: 'attached' };
+    destroy() { destroyed++; } on() {} attachMedia() {} loadSource() {}
+  }
+  const nodes = { player: video, status: { hidden: false }, 'enable-audio': { hidden: true, addEventListener() {} } };
+  const context = { Hls, window: { Hls, parent: { postMessage() {} }, addEventListener() {} },
+    document: { getElementById: id => nodes[id] }, AbortSignal, console,
+    fetch: async url => ({ ok: true, json: async () => String(url).includes('/spotlight/program') ? program : { levels: { spotlight: 80 } } }),
+    setInterval: (fn, ms) => { timers.push({ fn, ms }); return 1; },
+  };
+  const html = fs.readFileSync(require('node:path').join(__dirname, '../public/spotlight-media/worker-spotlight.html'), 'utf8');
+  vm.runInNewContext(html.match(/<script>\n([\s\S]*?)<\/script>/)[1], context);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(destroyed, 0);
+  program = { ...program, ready: false, stalled: true };
+  await timers.find(t => t.ms === 2500).fn();
+  assert.equal(destroyed, 0, 'a temporary stall does not discard already buffered video');
+  assert.equal(video.paused, false);
+  program = { ...program, active: false };
+  await timers.find(t => t.ms === 2500).fn();
+  assert.equal(destroyed, 0, 'a reconnecting source keeps its playable buffer');
+  program = { ...program, currentLogin: '', generation: '' };
+  await timers.find(t => t.ms === 2500).fn();
+  assert.equal(destroyed, 1, 'an explicitly removed Spotlight source is released');
+});
+
+test('Spotlight buffers before autoplay and recovers network/media errors without discarding video', async () => {
+  const vm=require('node:vm'),fs=require('node:fs');
+  let ahead=4, clock=1000000;const handlers={},players=[], timers=[], messages=[];
+  const video={paused:true,readyState:4,currentTime:100,
+    buffered:{length:1,start:()=>100,end:()=>100+ahead},
+    addEventListener:(event,fn)=>{handlers[event]=fn;},
+    play:async()=>{video.paused=false;},pause:()=>{video.paused=true;},load(){},removeAttribute(){},canPlayType(){return '';}};
+  class Hls{
+    static isSupported(){return true;}
+    static Events={ERROR:'error',MEDIA_ATTACHED:'attached'};
+    static ErrorTypes={NETWORK_ERROR:'network',MEDIA_ERROR:'media'};
+    constructor(config){this.config=config;this.events={};players.push(this);}
+    on(event,fn){this.events[event]=fn;}attachMedia(){}loadSource(){}
+    destroy(){this.destroyed=true;}startLoad(position){this.position=position;}
+    recoverMediaError(){this.recovered=true;}
+  }
+  const nodes={player:video,status:{},'enable-audio':{addEventListener(){}}};
+  const html=fs.readFileSync(require('node:path').join(__dirname,'../public/spotlight-media/worker-spotlight.html'),'utf8');
+  vm.runInNewContext(html.match(/<script>\n([\s\S]*?)<\/script>/)[1],{
+    Date: {now:()=>clock}, Hls,window:{Hls,parent:{postMessage(value){messages.push(value);}},addEventListener(){}},AbortSignal,setInterval(fn,ms){timers.push({fn,ms});},
+    document:{getElementById:id=>nodes[id]},
+    fetch:async url=>({ok:true,json:async()=>url.endsWith('/spotlight/program')?{ready:true,generation:'one',currentLogin:'captain'}:{levels:{spotlight:80}}}),
+  });
+  await new Promise(setImmediate);
+  assert.equal(video.paused,true);
+  assert.doesNotMatch(html,/<video[^>]*autoplay/);
+  ahead=12;await handlers.canplay();assert.equal(video.paused,false);
+  players[0].latency=24;
+  timers.find(t=>t.ms===1000).fn();
+  assert.equal(messages.at(-1).delayMs,36000);
+  clock+=30000; // HLS's cached latency stays 24 while both media and source stall.
+  timers.find(t=>t.ms===1000).fn();
+  assert.equal(messages.at(-1).delayMs,66000, 'a paused playhead extends its own cover');
+  assert.equal(players[0].config.maxLiveSyncPlaybackRate,1);
+  assert.equal(players[0].config.liveMaxLatencyDurationCount,Infinity);
+  players[0].events.error(null,{fatal:true,type:'network'});
+  assert.equal(players[0].position,100);assert.equal(players[0].destroyed,undefined);
+  players[0].events.error(null,{fatal:true,type:'media'});
+  assert.equal(players[0].recovered,true);
+  ahead=1;handlers.waiting();assert.equal(video.paused,true);
+  ahead=8;await handlers.progress();assert.equal(video.paused,true);
+  ahead=12;await handlers.progress();assert.equal(video.paused,false);
+});
+
+test('Spotlight publishes live segments before input ends when Twitch starts hours into its clock', async t => {
+  const { spawn, spawnSync }=require('node:child_process');
+  const fs=require('node:fs'),path=require('node:path');
+  if(spawnSync('ffmpeg',['-version']).error?.code==='ENOENT'){t.skip('ffmpeg required');return;}
+  const folder=fs.mkdtempSync(path.join(require('node:os').tmpdir(),'spotlight-live-clock-'));
+  const input=path.join(folder,'input.ts'),output=path.join(folder,'index.m3u8');
+  t.after(()=>fs.rmSync(folder,{recursive:true,force:true}));
+  const fixture=spawnSync('ffmpeg',['-hide_banner','-loglevel','error','-f','lavfi','-i','testsrc2=size=160x90:rate=30','-f','lavfi','-i','sine=frequency=440:sample_rate=48000','-t','6','-c:v','libx264','-preset','ultrafast','-g','60','-c:a','aac','-output_ts_offset','18000','-f','mpegts',input],{timeout:15000});
+  assert.equal(fixture.status,0,String(fixture.stderr));
+  const child=spawn('ffmpeg',['-hide_banner','-loglevel','error','-nostdin','-stream_loop','-1','-re','-i',input,'-map','0:v:0','-map','0:a:0','-c','copy','-bsf:v',spotlightTimestampFilter(),'-bsf:a',spotlightTimestampFilter(true),'-f','hls','-hls_time','2','-hls_list_size','24','-hls_flags','delete_segments+independent_segments+temp_file','-hls_segment_filename',path.join(folder,'seg_%06d.ts'),output],{stdio:'ignore'});
+  t.after(()=>child.kill('SIGKILL'));
+  const deadline=Date.now()+8500;let manifest='';
+  while(Date.now()<deadline){
+    if(fs.existsSync(output))manifest=fs.readFileSync(output,'utf8');
+    if((manifest.match(/^seg_\d+\.ts$/gm)||[]).length>=2)break;
+    await new Promise(resolve=>setTimeout(resolve,250));
+  }
+  assert.equal(child.exitCode,null,'verify segments while the input is still running');
+  assert.ok((manifest.match(/^seg_\d+\.ts$/gm)||[]).length>=2,'a live HLS playlist must advance before EOF flush');
+  assert.ok(!manifest.includes('#EXT-X-ENDLIST'));
+});

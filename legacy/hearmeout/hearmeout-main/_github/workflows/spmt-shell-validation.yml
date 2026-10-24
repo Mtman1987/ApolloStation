@@ -1,0 +1,63 @@
+name: SPMT Shell Validation
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Test Discord Activity proxy routing and playback startup
+        run: node --import tsx --test tests/discord-activity-startup.test.ts
+      - name: Test SPMT bot command routing
+        run: node --import tsx --test tests/spmt-athena-route.test.ts
+      - name: Test visible persona card talk flow
+        run: node --import tsx --test tests/persona-card-talk.test.ts
+      - name: Test persistent wake-word and persona lifecycle
+        run: |
+          node --test tests/persona-runtime.test.cjs
+          node --test tests/stella-wake-buffer.test.cjs
+          node --import tsx --test tests/livekit-persona-audio.test.ts
+      - name: Test Discord receive gain, jitter and privacy contracts
+        run: |
+          node worker/scripts/patch-voice-bridge-audio-state.cjs
+          node --check worker/src/discord-voice-bridge.js
+          node --test tests/discord-speaker-presence.test.cjs tests/discord-voice-gain-contract.test.cjs tests/discord-voice-jitter-buffer.test.cjs tests/voice-bridge-privacy-gate.test.cjs
+      - name: Test SPMT OAuth callback routing
+        run: node --import tsx --test tests/spmt-auth-callback.test.ts
+      - name: Test private Athena bootstrap routing
+        run: node --import tsx --test tests/private-assistant-middleware.test.ts
+      - name: Test workspace shell parity
+        run: node --import tsx --test tests/spmt-shell-parity.test.ts
+      - name: Test workspace theme contract
+        run: npm run test:workspace-theme
+      - name: Test Lounge media resilience
+        run: |
+          node --check worker/src/lounge-direct.js
+          node --check worker/src/server.js
+          node --test worker/tests/lounge-program.test.cjs
+      - name: Test persistent Spotlight source
+        run: |
+          node --check worker/src/spotlight-broadcast.js
+          node --check worker/src/server.js
+          node --test tests/spotlight-source-contract.test.cjs
+      - name: Test bounded Restream controller
+        run: |
+          node --check worker/src/restream-control.js
+          node --test tests/restream-control-contract.test.cjs
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Production build
+        run: npm run build

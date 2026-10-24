@@ -1,0 +1,39 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { isValidVideoId } from '@/lib/validate-video-id';
+import { getDjWorkerUrl } from '@/lib/dj-worker-config';
+import { getDjWorkerRequestHeaders } from '@/lib/dj-worker-auth';
+
+const DJ_WORKER_URL = getDjWorkerUrl();
+
+export async function GET(req: NextRequest, { params }: { params: Promise<{ videoId: string }> }) {
+  const { videoId } = await params;
+  const requestId = Math.random().toString(36).slice(2, 8);
+  if (!isValidVideoId(videoId)) {
+    return NextResponse.json({ error: 'Invalid video ID' }, { status: 400 });
+  }
+
+  if (!DJ_WORKER_URL) return new NextResponse('Worker not configured', { status: 503 });
+
+  try {
+    const workerRes = await fetch(`${DJ_WORKER_URL}/music/${videoId}`, { headers: getDjWorkerRequestHeaders() });
+    console.log('[MusicProxy] worker response', { requestId, videoId, status: workerRes.status });
+
+    if (!workerRes.ok) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    }
+
+    const h: Record<string, string> = {
+      'Cache-Control': 'public, max-age=604800',
+      'Accept-Ranges': 'bytes',
+    };
+    const ct = workerRes.headers.get('content-type');
+    if (ct) h['Content-Type'] = ct;
+    const cl = workerRes.headers.get('content-length');
+    if (cl) h['Content-Length'] = cl;
+
+    return new NextResponse(workerRes.body, { headers: h });
+  } catch (err: any) {
+    console.error('[MusicProxy] worker proxy error', { requestId, videoId, message: err.message });
+    return NextResponse.json({ error: 'Stream error' }, { status: 500 });
+  }
+}

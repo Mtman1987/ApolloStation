@@ -1,0 +1,60 @@
+import { isTwitchMusicSession } from './twitch-media-scope';
+import { GLOBAL_WATCH_SESSION_ID, MUSIC_WATCH_SESSION_ID, normalizeWatchSessionAlias } from './watch-session';
+import { SPACEMOUNTAIN_LOUNGE_MUSIC_SESSION_ID, SPACEMOUNTAIN_LOUNGE_MOVIE_SESSION_ID, SPACEMOUNTAIN_LOUNGE_ROOM_ID } from './spacemountain-lounge';
+
+// These two rooms are deliberately shared by Discord commands, Activities,
+// and HearMeOut. Discord's proxy cannot carry the website's SPMT cookie.
+function isSharedSession(value: string | null) {
+  const id = normalizeWatchSessionAlias(value, GLOBAL_WATCH_SESSION_ID);
+  return id === GLOBAL_WATCH_SESSION_ID
+    || id === MUSIC_WATCH_SESSION_ID
+    || id === SPACEMOUNTAIN_LOUNGE_MUSIC_SESSION_ID
+    || id === SPACEMOUNTAIN_LOUNGE_MOVIE_SESSION_ID;
+}
+
+export function isActivityEntry(url: URL) {
+  return ['/activity', '/activity-lite', '/activity-lite.js'].includes(url.pathname)
+    || (url.pathname === '/' && Boolean(url.searchParams.get('frame_id')));
+}
+
+export function isPublicActivityRequest(url: URL, method: string) {
+  const path = url.pathname;
+  const read = method === 'GET' || method === 'HEAD' || method === 'OPTIONS';
+
+  // The permanent SpaceMountain Lounge is intentionally auth-free while its
+  // shared player is under development. Its overlay must be able to poll the
+  // visible room roster and both media queues without an SPMT browser session.
+  if (
+    read
+    && path === '/api/db'
+    && url.searchParams.get('collection') === `rooms/${SPACEMOUNTAIN_LOUNGE_ROOM_ID}/users`
+  ) {
+    return true;
+  }
+
+  if (isActivityEntry(url) || path === '/api/watch/activity-default') {
+    return read && isSharedSession(url.searchParams.get('sessionId') || url.searchParams.get('session_id'));
+  }
+
+  // Cookie-free, bounded player diagnostics for the same public shared rooms.
+  if (path === '/api/activity/audio-report') {
+    return method === 'POST' && isSharedSession(url.searchParams.get('sessionId'));
+  }
+
+  const canonical = path.match(/^\/(?:api\/watch\/sessions|activity\/session)\/([^/]+)\/(state|request|accept|control|quick-control)$/);
+  const legacy = path.match(/^\/activity-(state|request|control)\/([^/]+)(?:\/(accept))?$/);
+  const sessionRoute = canonical || (legacy ? [legacy[0], legacy[2], legacy[3] || legacy[1]] : null);
+  if (sessionRoute) {
+    if (isTwitchMusicSession(sessionRoute[1])) return read && sessionRoute[2] === 'state';
+    if (!isSharedSession(sessionRoute[1])) return false;
+    return read || (method === 'POST' && ['request', 'accept', 'control'].includes(sessionRoute[2]));
+  }
+
+  // Only playback resources, not provider settings, worker controls, cache
+  // uploads, or arbitrary private-room endpoints, bypass website login.
+  if (!read) return false;
+  if (['/api/activity/hls', '/activity-hls', '/activity/hls', '/api/watch/proxy', '/activity-proxy', '/activity/proxy'].includes(path)) return true;
+  return /^\/(?:api\/watch|activity\/watch|activity-provider)\/(?:youtube|xtream)\/hls\/[^/]+\/[^/]+$/.test(path)
+    || /^\/activity-provider\/xtream\/(?:vod|series|episode)\/[^/]+$/.test(path)
+    || /^\/api\/youtube-audio\/[A-Za-z0-9_-]{11}$/.test(path);
+}

@@ -1,0 +1,487 @@
+# Legacy source snapshot: Mtman1987/hearmeout-main
+
+Commit: 7b0665d47bb7f8d1f7cad7887ec29d5c1a0f5c45. Code only (no assets/lockfiles/node_modules). NOT built or wired; excluded from the root tsc build. Reference for remaining parity work.
+
+## Donor commits since 2026-09-12 (verify each is reflected in apps/)
+- 7b0665d 2026-10-23 Add one-time encrypted recovery attempt for HMO DJ worker volume
+- b81564d 2026-10-23 Remove temporary export logic after successful recovery
+- 296e2f6 2026-10-23 Fix encrypted export archive command for Fly SSH shell
+- 62fa93b 2026-10-23 Add encrypted export of HearMeOut player and SQLite recovery data
+- bfe8ff1 2026-10-23 Fix read-only volume file inventory command
+- af63d3e 2026-10-23 Inspect persistent volume file inventory without reading contents
+- 44145d4 2026-10-23 Add read-only persistent volume inventory workflow
+- ad2c5d5 2026-10-23 fix: export Xtream catalog loader for direct probe
+- 0e18826 2026-10-22 Let direct-playback probe select a real VOD automatically (#225)
+- fd3d0e6 2026-10-22 Add safe Xtream direct-playback probe
+- 046ae83 2026-10-22 Use independent watch-party players with shared movie/music commands (#223)
+- 39d3f81 2026-10-21 test: align voice bridge contract with PeerJS default (#222)
+- 09cf16a 2026-10-21 Route Discord bridge audio through PeerJS by default (#221)
+- d523026 2026-10-20 Expose browser wake-word test from HearMeOut mic icon
+- c2af69d 2026-10-20 Keep bot speech on HearMeOut hidden room Say Player
+- 73ff178 2026-10-20 Fix OBS voice source routing for bot speech
+- 3db926d 2026-10-20 chore: trigger HearMeOut runtime diagnostics
+- f8446b8 2026-10-20 Keep StreamWeaver Say listeners active for stream overlay
+- 06d0f24 2026-10-19 Refresh active stream bot roster while listening
+- 1a60492 2026-10-19 Make stream Say audio regression assertions robust
+- 2160ed4 2026-10-19 Test source-authenticated stream bot speech playback
+- 59a4aa5 2026-10-19 Apply stream volume controls to bot Say audio
+- ed368ab 2026-10-19 Play queued bot Say audio in stream voice overlay
+- ba173c8 2026-10-19 Add source-key protected stream bot speech queue
+- c696f02 2026-10-19 Keep stream voice PeerJS sender track alive
+- c94e2bc 2026-10-19 Make stream voice overlay use observable PeerJS audio path (#215)
+- f4c8d8d 2026-10-19 Use PeerJS immediately for stream voice rooms
+- c7b9c39 2026-10-19 Fix voice overlay TypeScript build error
+- 5fea1d9 2026-10-19 Unblock voice overlay deployment
+- 85bd2c5 2026-10-19 Fix PeerJS voice bridge deployment test
+- 4f56491 2026-10-19 Restore Lounge stream voice when HearMeOut uses PeerJS fallback (#209)
+- 39eff27 2026-10-19 Use existing shared secret for persona voice bridge (#208)
+- 35ce921 2026-10-19 Fix persona voice service connection (#207)
+- a83445b 2026-10-19 Scope persona voice edits to room members
+- 6bfa77a 2026-10-19 Add bot-card voice settings and test samples
+- 2344d1c 2026-10-18 Retry HearMeOut Say Player startup race
+- f1a47b1 2026-10-18 Stop duplicate room audio and bound Say Player backlog
+- a556b20 2026-10-18 Sync HearMeOut voice bridge and Say Player audio (#202)
+- 4df60c8 2026-10-18 Remove redundant mobile microphone status card (#201)
+- 1cd14fc 2026-10-18 Fix deterministic backup playlist test for shuffle mode
+- df589ab 2026-10-18 Add Twitch backup playlist shuffle controls
+- 4713ed4 2026-10-18 Fix shuffle for existing tenant playlists
+- 8d2f620 2026-10-19 fix: show Twitch OBS source and shuffle backup playlists
+- 11abd3a 2026-10-18 Remove failed wake-test UI and compact mobile cards
+- d27c63b 2026-10-18 Deploy requested HearMeOut room UI fixes
+- 18577e4 2026-10-18 Compact room controls and move bot volume onto cards
+- bce53a8 2026-10-18 Safely compact HearMeOut room UI while preserving Discord bridge (#194)
+- eddc1c2 2026-10-18 Allow room-authenticated peer voice signaling
+- 19eb8fb 2026-10-18 Allow Discord bridge startup to complete
+- f5a2854 2026-10-18 Route bridge control through private worker network
+- d5487e0 2026-10-18 Prefer private Fly route for Discord bridge
+- 795a086 2026-10-18 Fix DJ worker private-network binding
+- ba4d007 2026-10-18 Expose bridge transport diagnostics
+- 4282895 2026-10-18 Log Discord bridge worker transport failures
+- 8737c89 2026-10-18 Fix Discord bridge worker reachability
+- 73d9056 2026-10-18 Try private Fly DNS for Discord voice bridge worker (#192)
+- 30adda5 2026-10-18 Recover Discord voice bridge after worker restart
+- 9bc9b99 2026-10-17 Restore Discord voice bridge when worker secret is unset (#190)
+- 9d6123f 2026-10-17 Restore Discord voice bridge with PeerJS fallback
+- 61ef937 2026-10-17 Guard room Say queue access
+- e5bbda4 2026-10-17 Add room-scoped Say Player audio to HearMeOut
+- 563d676 2026-10-17 Correct room provider test regex escaping
+- 33c4f39 2026-10-17 Fix room context regression test regex
+- 9f69b01 2026-10-17 Cover room context fallback when LiveKit is unavailable
+- ba37d64 2026-10-17 Keep room UI inside context when LiveKit is unavailable
+- 4c6cff3 2026-10-17 Test persona command admission without RTC health
+- 4511827 2026-10-17 Align persona tests with roster-based admission
+- 6baab05 2026-10-17 Clarify persona speech is independent of LiveKit
+- b4826fd 2026-10-17 Remove unused RTC worker dependencies from bot commands
+- 471de0a 2026-10-17 Test roster-only bot action invites
+- e0aa47a 2026-10-17 Assert persona roster commands do not require RTC
+- 91561f5 2026-10-17 Remove obsolete RTC persona command type
+- 81df24d 2026-10-17 Fix roster-only bot action response
+- 88d2278 2026-10-17 Remove unused RTC worker imports from persona invites
+- 0640931 2026-10-17 Remove RTC dependency from room persona invites
+- f0e95fe 2026-10-17 Remove RTC dependency from room persona invites
+- 83856e4 2026-10-17 Remove RTC dependency from room persona invites
+- bb9bcef 2026-10-17 Remove RTC dependency from room persona invites
+- 9a16723 2026-10-17 Remove RTC dependency from room persona invites
+- 745bfad 2026-10-17 Correct room-presence routing regression assertion
+- d4135ca 2026-10-17 Guard typed persona routing against LiveKit fallback regressions
+- aeb1e9d 2026-10-17 Restore typed persona chat routing during P2P and Say Player fallback
+- 1c6ba80 2026-10-17 Wire P2P microphone activity into room indicators
+- b0463f7 2026-10-17 Show blue P2P activity ring on remote voice cards
+- e692734 2026-10-17 Show blue ring for active P2P microphone audio
+- 14080eb 2026-10-17 Add live P2P microphone activity detection
+- 936f53b 2026-10-17 Remove Stella fallback from companion wake routing
+- f5fa158 2026-10-17 Remove implicit hardcoded Athena wake alias
+- 5c460d2 2026-10-17 Use configured room bot names for companion wake routing
+- 22eb437 2026-10-17 Match wake names across rolling speech transcript
+- d6e261a 2026-10-17 Use each room bot's configured name and aliases for wake routing
+- 7c5f779 2026-10-17 Use positive Say Player connection status on persona cards
+- 9aa6d09 2026-10-17 Signal recognized wake-test speech to the local avatar
+- 0294f78 2026-10-17 Show local avatar activity when wake test recognizes speech
+- 790378d 2026-10-17 Avoid duplicate Say Player persona cards across room audio modes
+- b6a0a9b 2026-10-17 Render Say Player personas once with standard persona controls
+- 8162053 2026-10-17 Correct Stella wake phrase matching
+- b6643c2 2026-10-17 Route Stella wake phrases to the active Say Player persona
+- 4548599 2026-10-17 Keep Say Player personas visible without RTC participation
+- ca3487e 2026-10-17 Allow wake listener to wait for active bot presence
+- 4cc1ddc 2026-10-17 Cover Say Player-only persona wake routing
+- 0bd5b75 2026-10-17 Show persona Say Player presence without P2P status
+- 3831754 2026-10-17 Keep invited personas on Say Player without RTC session
+- 97b1eb4 2026-10-17 Resolve local wake commands from active room bot presence
+- 82ed157 2026-10-17 Fix wake test bot discovery and Stella wake phrase
+- a782bae 2026-10-17 Update persona Say Player routing regression test
+- 9b38254 2026-10-17 Route HearMeOut persona speech to its room Say Player stream (#185)
+- 4a09ee1 2026-10-16 Fix persona Say Player fallback when worker is unreachable (#184)
+- 9ceebdf 2026-10-16 Trigger fresh HearMeOut runtime diagnostics
+- 2261876 2026-10-16 Allow persona speech fallback when LiveKit join fails (#182)
+- 91d5643 2026-10-16 Route HearMeOut persona speech through StreamWeaver Say
+- 676adb8 2026-10-16 Allow P2P voice fallback in stream-enabled rooms
+- c4ccba1 2026-10-16 Report aggregate LiveKit room usage for idle connection diagnosis
+- f34bb20 2026-10-16 Disconnect idle background room voice to conserve LiveKit minutes
+- 354d7bf 2026-10-16 Probe LiveKit API credentials in health diagnostics
+- 39dced4 2026-10-16 Print complete sanitized HearMeOut error log records
+- 0f74809 2026-10-16 Add bounded GitHub Actions collection for HearMeOut runtime logs
+- d26aa28 2026-10-16 Add LiveKit host and connection state to room error diagnostics (#180)
+- aecfc59 2026-10-16 Prefer canonical LiveKit WSS URL for worker transports
+- 4fdf841 2026-10-16 Restore HearMeOut LiveKit URL to StreamWeaver project (#178)
+- 9948ea6 2026-10-16 Remove committed inline credentials from App Hosting config (#177)
+- 9839baf 2026-10-16 Fix Lounge program proxy to use healthy Lounge service
+- 181ee94 2026-10-16 Fix LiveKit URL mismatch with configured credentials (#176)
+- 7e16856 2026-10-16 Align worker LiveKit fallback with deployed project (#175)
+- 5708cf0 2026-10-16 Log LiveKit signaling diagnostics in client-log endpoint (#174)
+- 2842ede 2026-10-16 Capture LiveKit signaling diagnostics
+- 60ac5ff 2026-10-16 Restore HearMeOut's previously working LiveKit endpoint
+- e1eb71d 2026-10-16 Route Lounge proxy through Fly private network (#171)
+- 4985c5b 2026-10-16 Fix Lounge program proxy stuck loading
+- 687a0f1 2026-10-16 Fix Lounge media worker upstream routing
+- d93a106 2026-10-16 Align HearMeOut LiveKit endpoints
+- cc48e7d 2026-10-16 Diagnose LiveKit stream voice failures
+- 4f6f9e0 2026-10-16 Fix LiveKit health-check access and configuration reporting (#165)
+- 4ab6779 2026-10-16 Fix Athena wake test and persona join diagnostics
+- 47ced5e 2026-10-14 Add opt-in Stella wake buffer test
+- aee6082 2026-10-14 Fix mobile popouts and Discord bridge listener status
+- 50587ce 2026-10-13 Bind worker health server explicitly for Fly probes
+- 7af5176 2026-10-12 Merge pull request #158 from Mtman1987/fix/mobile-microphone-talk-20261012
+- 298ba73 2026-10-12 Use bounded microphone capture for reliable mobile voice controls
+- d4010f4 2026-10-12 Merge pull request #157 from Mtman1987/fix/native-discord-pickers-20261012
+- ac1a85a 2026-10-12 Use native Discord server and voice channel pickers for mouse and touch
+- 47b3865 2026-10-12 Request ecosystem-wide Administrator permissions in Discord bot invites
+- eb1a660 2026-10-12 Include explicit bot installation scopes in HearMeOut server invite
+- cd32952 2026-10-12 Refresh Discord server selectors after bot installation
+- e51a884 2026-10-12 Offer Discord Activity bot invite when the bridge bot is missing
+- 0a5e69b 2026-10-12 Fix Discord Activity volume with persistent local audio gain
+- fc3a7b4 2026-10-12 Reduce Discord Activity playback controls to volume
+- c2e2fc3 2026-10-12 Play Activity songs at normal speed without skipping buffered time
+- 897f264 2026-10-12 Keep restored Activity video playlists and segments on the Discord proxy
+- 03a4fca 2026-10-12 Restore Activity music to the existing full video and audio source
+- f4ca54c 2026-10-12 Stream Activity songs directly without cache or HLS conversion
+- 904b5a4 2026-10-12 Stream Discord audio from the worker that resolved its source
+- 24e3148 2026-10-11 Reproduce non-settling cached media cancellation in fallback regression
+- f08dd54 2026-10-11 Do not wait on Next upstream body cancellation before media fallback
+- 2dc3c4f 2026-10-11 Use worker playlist metadata and native Opus for Discord music
+- 9d0155f 2026-10-11 Add isolated backup playlists for Twitch song-request streams
+- 32da0d0 2026-10-11 Allow room-scoped stream listeners through user session middleware
+- 2b50947 2026-10-11 Move shared YouTube URL cache out of Next route exports
+- c790b60 2026-10-11 Align private-room password screen with server owner access
+- 76bf002 2026-10-11 Add protected room voice sources for console streams and Lounge
+- 26aa200 2026-10-11 Fix Lounge H.264 movie packets for decodable HLS video
+- ef775d5 2026-10-11 Preserve song playback clock on mix changes and avoid live-edge catch-up
+- 4205efe 2026-10-09 Keep music search results when YouTube omits channel navigation metadata
+- 0d1d538 2026-10-09 Apply tenant Twitch queue volume and mute controls to the broadcast player
+- 76c08e0 2026-10-09 Report actual song playback so parent overlay hides the browser surface
+- d760566 2026-10-09 Hide idle and stalled clean song overlays when hideIdle is enabled
+- 2fda5d1 2026-10-08 Merge pull request #156 from Mtman1987/fix/movie-probe-recovery-language-copies
+- 163decb 2026-10-08 Test movie probe recovery and safe language-copy fallback
+- beab69e 2026-10-08 Recheck transient movie failures and recognize language copies
+- 04904b6 2026-10-08 Merge pull request #155 from Mtman1987/fix/lounge-movie-source-validation
+- a82a1aa 2026-10-08 Bound movie validation and compare structured catalog years
+- 0e0ad0b 2026-10-08 Validate lounge movie sources and fall back within the same title and year
+- c360562 2026-10-07 Merge pull request #154 from Mtman1987/fix-twitch-music-advance-20261008
+- 5182893 2026-10-07 Advance Twitch songs on completion without replaying finished requests
+- 3638f96 2026-10-07 Retain Activity routing when refreshing an expired YouTube audio source
+- 5d5069c 2026-10-07 Isolate Discord media worker with idle suspend and buffered normal-speed playback
+- 97d0625 2026-10-07 Load full HLS library so Discord movies include their separate audio rendition
+- dee1476 2026-10-07 Keep Discord media on native audio output and report actual playback diagnostics
+- fbc06c2 2026-10-07 Activate Discord audio from sound buttons instead of movie taps
+- 99e47fd 2026-10-07 Handle movie-container taps in Discord sound recovery
+- 237f80f 2026-10-07 Fix Discord mobile audio unlock and avoid suspended output routing
+- 0cbe2fa 2026-10-07 Try Discord Activity autoplay with sound and recover browser blocks
+- 23e4068 2026-10-07 Keep Discord movies through growing buffers and fix mobile player controls
+- 9e7a55b 2026-10-07 Reconnect Discord Activity room and isolate Twitch music browser sources
+- cd457b1 2026-10-06 Merge pull request #153 from Mtman1987/fix/restream-approved-automation-contract-20261006
+- 9df93ba 2026-10-06 Align Restream contract with approved enabled automation and retain mutation guards
+- da40c68 2026-10-05 Merge pull request #152 from Mtman1987/ops/lounge-shared-cpu-policy
+- 29fc42d 2026-10-05 Use two shared lounge CPUs and scope its configuration-only deployment
+- 80d9e78 2026-10-02 Restore Lounge music video and audio through the existing worker HLS player
+- 747a8a7 2026-10-02 Merge pull request #151 from Mtman1987/fix/fill-empty-media-box
+- d6a1990 2026-10-02 Fill the empty media panel and enlarge request instructions
+- 7384ebb 2026-10-02 Merge pull request #150 from Mtman1987/fix/compact-media-request-lines
+- d8d3c53 2026-10-02 Keep both media request commands within the small lounge card
+- 322dc39 2026-10-02 Merge pull request #149 from Mtman1987/fix/fit-empty-media-prompt
+- be09d93 2026-10-02 Fit empty request prompt within the lounge media panel
+- 0afee9e 2026-10-02 Merge pull request #148 from Mtman1987/fix/direct-media-empty-prompt
+- dd8bb30 2026-10-02 Show request prompt directly when lounge program is idle
+- f1054d8 2026-10-02 Merge pull request #147 from Mtman1987/fix/lounge-empty-request-prompt
+- 052a476 2026-10-02 Show song and watch request guidance when lounge media queue is empty
+- 27e90cb 2026-10-02 Merge pull request #146 from Mtman1987/fix/commercial-cover-frozen-latency
+- ff8c500 2026-10-02 Keep commercial playback delay advancing when HLS latency is cached during a stall
+- 07de200 2026-10-02 Merge pull request #145 from Mtman1987/fix/playback-aware-commercial-cover
+- f0bdf01 2026-10-02 Retain Spotlight ad intervals for buffered playback and report viewer latency
+- ccd76cd 2026-10-02 Preserve Spotlight decode timestamps and repair only invalid presentation offsets (#144)
+- 579ae1d 2026-10-02 Fix Spotlight live HLS stall caused by resetting the input clock (#143)
+- b4606d1 2026-10-02 Merge pull request #141 from Mtman1987/fix/commercial-gif-late-preroll
+- 5360c11 2026-10-02 Merge current smooth-playback update into late-preroll fix
+- 5a9c12f 2026-10-02 Keep discarded Spotlight generation for normal file cleanup
+- c7dd039 2026-10-02 Keep movie and Spotlight playback buffered at normal speed (#142)
+- 3bad743 2026-10-02 Recover Spotlight after late preroll and preserve movie audio
+- f5c9f4c 2026-10-02 Merge pull request #140 from Mtman1987/fix/spotlight-preroll-session-loop
+- defae27 2026-10-02 Reuse the Twitch session and wait for preroll before opening Spotlight
+- 51cc621 2026-10-02 Reuse the Twitch session and wait for preroll before opening Spotlight
+- 970d3ea 2026-10-02 Merge pull request #139 from Mtman1987/fix/lounge-program-and-spotlight-buffer
+- 0fd1cfd 2026-10-02 Fix lounge media readiness and source continuity
+- dea320b 2026-10-02 Fix lounge media readiness and source continuity
+- a6d9474 2026-10-02 Fix lounge media readiness and source continuity
+- 4f71a31 2026-10-02 Fix lounge media readiness and source continuity
+- 7a250e7 2026-10-02 Merge pull request #138 from Mtman1987/fix/lounge-media-load-heartbeat
+- 341cc15 2026-10-02 Signal loaded Lounge media players to prevent periodic iframe reloads
+- 4da38c9 2026-10-02 Signal loaded Lounge media players to prevent periodic iframe reloads
+- e819104 2026-10-02 Repair Spotlight playback clocks at Twitch ad transitions (#136)
+- 3afd865 2026-10-02 Recover stalled Spotlight feeds without restarting Lounge movies (#135)
+- ca178bf 2026-10-02 fix: restore lounge media volume helper so worker playback starts (#134)
+- 2c8bb83 2026-10-02 Enable lounge restream automation
+- 66d996a 2026-10-01 Restore Lounge worker authority and durable movie checkpoints (#133)
+- b458882 2026-10-01 Harden Lounge movie playback recovery and health checks
+- 7dbf1f3 2026-10-01 Isolate Lounge movie HLS segments across playback generations
+- 298962a 2026-09-30 Align radio handoff test with skipped-song blacklist
+- b51a499 2026-09-30 Merge pull request #129 from Mtman1987/fix/skip-song-family-dedupe
+- 25688e9 2026-09-30 Test skipped-song family dedupe
+- 9a400af 2026-09-30 Blacklist skipped song families in Lounge radio
+- 4aa661c 2026-09-30 Merge pull request #128 from Mtman1987/fix/commercial-player-isolation
+- 108ec63 2026-09-30 Test HMO commercial isolation
+- dfa7fcc 2026-09-30 Keep commercial audio out of HMO legacy player
+- 1cf4486 2026-09-30 Keep commercial audio out of HMO player
+- 824ad20 2026-09-30 Keep autoradio candidate failures out of chat
+- bb4164a 2026-09-30 Never recycle a live Spotlight session for preroll stalls
+- f70177f 2026-09-30 Do not restart ended Lounge songs
+- 4bf8713 2026-09-30 Use completed HLS duration to end Lounge songs
+- ce90f49 2026-09-30 Derive Lounge song duration from completed HLS
+- 4a593ff 2026-09-30 Test immediate Lounge skip behavior
+- 0f959ac 2026-09-30 Make Lounge skip stop the current song immediately
+- 1d4e2b4 2026-09-30 Test Spotlight preroll stall grace
+- dff7adf 2026-09-30 Do not restart Spotlight during Twitch prerolls
+- 03da63f 2026-09-30 Preserve deterministic Lounge resolver tests
+- 9658d76 2026-09-30 Restore resilient Lounge YouTube song search
+- 3c3cb0a 2026-09-30 Keep Lounge music playback at normal speed
+- e74c3ab 2026-09-30 Merge pull request #127 from Mtman1987/fix/restream-start-only-recovery
+- 0813130 2026-09-30 Test Restream start-only safety contract
+- 5b2b967 2026-09-30 Proxy Restream start-only action
+- d2d464f 2026-09-30 Expose authenticated Restream start-only endpoint
+- 440b21d 2026-09-30 Add fail-closed Restream start-only control
+- ab87742 2026-09-30 Merge pull request #126 from Mtman1987/feature/restream-controlled-reset
+- 2df6fd1 2026-09-30 Restore retired standalone lounge config
+- 45f5641 2026-09-30 Test active hmo-dj-worker lounge topology
+- 0b24fa6 2026-09-30 Route Restream control to active lounge process group
+- 589b909 2026-09-30 Persist Restream profile on active lounge process volume
+- be6f0ed 2026-09-30 Validate bounded Restream controller in PR checks
+- 5b04cc6 2026-09-30 Test bounded Restream session-reset controller
+- 999a770 2026-09-30 Add service-authenticated Restream control proxy
+- 9e23ab7 2026-09-30 Persist Restream browser profile on lounge volume
+- 74b1e57 2026-09-30 Allow service-authenticated Restream control route through middleware
+- d8273d4 2026-09-30 Expose authenticated Restream control on lounge worker
+- d064c0b 2026-09-30 Add bounded persistent Restream browser controller
+- a22cfec 2026-09-29 Align Lounge radio handoff test with title cooldown
+- 9c25ad5 2026-09-29 Add distinct radio fallback to handoff fixture
+- 3b235a0 2026-09-29 Update radio handoff fixture for title cooldown
+- 933c655 2026-09-29 Fix radio title cooldown selector calls
+- 88338aa 2026-09-29 Test radio title-version deduplication
+- eac9970 2026-09-29 Keep radio title cooldown without blocking room taste
+- a0e9eb4 2026-09-29 Reject radio title variants and covers
+- f76a97b 2026-09-29 Dedupe Lounge radio by normalized song title
+- 794479b 2026-09-29 Drain old Lounge ffmpeg before seek restart
+- b204819 2026-09-29 Ignore superseded Lounge ffmpeg seek callbacks
+- cbec071 2026-09-29 Avoid redundant AAC transcode in Lounge direct feed
+- b90bb29 2026-09-29 Read Lounge players directly from isolated worker feeds
+- 4ffc1fe 2026-09-29 Recover lounge spotlight frame and cancel cleared media requests
+- f77406d 2026-09-29 Allow slow Fly media routes to complete without poll overlap
+- 9faa445 2026-09-29 Bound Lounge and Spotlight polling during slow network responses
+- a9b1216 2026-09-29 Autoplay Lounge and Spotlight unmuted with direct tap fallback
+- 9cd5a8a 2026-09-29 Report Lounge media viewer readiness (#125)
+- 26de9d8 2026-09-28 Allow public read-only worker media proxy requests
+- e0dccc5 2026-09-28 Proxy Lounge and Spotlight media through the app's private worker network
+- 63f8015 2026-09-28 Resume and preserve active Lounge media in embedded player
+- 3acb7be 2026-09-28 Meet Fly memory minimum for dedicated Lounge CPU
+- 5684038 2026-09-28 Keep direct Lounge movie output current
+- 65c4841 2026-09-28 Bind DJ worker on Fly private IPv6 network
+- 5ccb153 2026-09-28 Keep DJ available and right-size lounge media roles
+- 1c7cd0b 2026-09-28 Merge pull request #124 from Mtman1987/fix/lounge-single-live-movie-feed-20260928
+- 3a9c9dd 2026-09-28 Test movie ownership over auto-radio playback
+- fb60897 2026-09-28 Suppress auto-radio while a movie is playing
+- 8a87e50 2026-09-28 Keep every Lounge viewer on the same movie live edge
+- 18f5f28 2026-09-28 Make the Lounge movie worker a real-time sliding live feed
+- fcb874c 2026-09-28 Merge pull request #123 from Mtman1987/fix/radio-title-dedupe-20260928
+- 708089d 2026-09-28 Limit radio title dedupe to the current song
+- 896059f 2026-09-28 Deduplicate radio songs across alternate uploads
+- d160ff0 2026-09-28 Merge pull request #122 from Mtman1987/fix/restore-legacy-lounge-radio-20260928
+- 3fdf3f4 2026-09-28 Restore legacy seeded Lounge radio state on restart
+- 961dc79 2026-09-28 Merge pull request #121 from Mtman1987/fix/radio-advance-regression-20260928
+- acc3739 2026-09-28 Keep radio opt-in while avoiding same-track fallback
+- 0ad5b83 2026-09-28 Merge pull request #120 from Mtman1987/fix/lounge-advance-radio-20260928
+- 11dca9b 2026-09-28 Wire direct movie completion into Lounge queue
+- 3ae81a3 2026-09-28 Advance Lounge movie queue when playback ends
+- 9e1165f 2026-09-28 Fix radio repeat and preserve explicit radio state
+- 271e63b 2026-09-28 Merge pull request #119 from Mtman1987/fix/lounge-direct-cache-leak-20260928
+- 7eb5e27 2026-09-28 Keep only the current Lounge direct movie cache
+- 762e6bf 2026-09-28 Merge pull request #118 from Mtman1987/fix/hmo-cache-headroom-20260928
+- 6c8e553 2026-09-28 Auto-prune old HLS cache before media preparation fails
+- d546d84 2026-09-28 Reserve Lounge worker disk headroom for new media
+- 69a3fb6 2026-09-28 Merge pull request #117 from Mtman1987/fix/lounge-commercial-resume-20260928
+- b461da8 2026-09-28 Update BRB audio regression expectations
+- 58ed198 2026-09-28 Stop retry-looping offline Spotlight creators
+- 13ded7f 2026-09-28 Latch commercial music without muting Lounge media
+- d55ef1d 2026-09-28 Keep Lounge media audible during commercials
+- 477fecd 2026-09-28 Resume direct Lounge movies at the real playhead
+- ba34270 2026-09-28 Fix Lounge movie playhead and seek state
+- 9d0a3d4 2026-09-28 Stabilize Lounge autoplay fallback
+- 7b1ef34 2026-09-28 Deploy Lounge autoplay recovery
+- 7f7722c 2026-09-28 Recover Lounge autoplay with muted bootstrap
+- 65b95d8 2026-09-27 Recover stalled Spotlight HLS and signal Lounge BRB fallback
+- 669f45b 2026-09-27 Package Lounge songs without encoding and search compatible alternate uploads
+- c5ff88f 2026-09-27 Avoid repeating the same six Lounge radio playlist songs
+- 611ab72 2026-09-27 Prepare Lounge radio songs before handoff and isolate music HLS cache
+- 8f98d6e 2026-09-27 Drive Lounge radio from human requests, with playlist only for startup
+- a44e7c2 2026-09-27 Import full YouTube playlists into Lounge auto-radio
+- 2c4165e 2026-09-27 Restore persistent auto-radio to live Lounge worker
+- 24b236a 2026-09-27 Give Lounge main-window audio priority without restarting viewers
+- 5e07bb8 2026-09-27 Restore animated Munch TV channel bug and smooth Lounge playback recovery
+- 2bd0a88 2026-09-27 Advance Lounge active media atomically for skip commands
+- 9350736 2026-09-27 Expose worker viewers through public HearMeOut media paths
+- 0bcf59b 2026-09-27 Serve direct worker viewers from existing HearMeOut player origin
+- a6bfe80 2026-09-27 Relay Spotlight Twitch video directly without memory-heavy browser capture
+- 9770453 2026-09-27 Fit isolated worker processes within shared CPU memory limit
+- ba3534f 2026-09-27 Deploy isolated HearMeOut worker groups on main changes
+- ed1d1ef 2026-09-27 Isolate DJ, Lounge, and Spotlight worker playback
+- a3b4cf6 2026-09-27 Restore direct Lounge video autoplay
+- 23a221f 2026-09-27 Revert ineffective unmuted autoplay attribute test
+- 861f0d4 2026-09-27 Match legacy Lounge unmuted video autoplay attribute
+- 484cc38 2026-09-27 Restore unmuted movie playback in Lounge
+- 697c11b 2026-09-27 Remove viewer-facing movie sound button
+- c666d51 2026-09-27 Expose sound activation when embedded browser mutes movie autoplay
+- 53fcc5f 2026-09-27 Allow silent movie autoplay when browser blocks sound
+- 86ba61d 2026-09-27 Use relative Lounge player redirect behind Fly proxy
+- 475d849 2026-09-27 Verify direct Lounge player in Fly deployment smoke test
+- 5b406b0 2026-09-27 Serve Lounge movies directly from dedicated two CPU worker
+- b3bd0b6 2026-09-27 Buffer Lounge viewer playback on two shared CPUs (#113)
+- 707b245 2026-09-27 Fix Lounge selection, preparation card, and captured viewport
+- 7812ef6 2026-09-26 Narrow direct VOD response before converting catalog item
+- a287dda 2026-09-26 Resolve selected movie directly without reloading full Xtream catalog
+- 3d56d69 2026-09-26 Stop HearMeOut from using owner Twitch identity in other channels
+- b7e821a 2026-09-26 Start growing movie HLS renditions at beginning
+- f4bae7b 2026-09-26 Capture Lounge directly at 480p to reduce browser and encoder load
+- f30ef92 2026-09-26 Reject prematurely completed movie rendition and rebuild from local cache
+- 61ee812 2026-09-26 Prepare 480p movies from complete local source cache
+- 9de96de 2026-09-26 Prepare 480p 30fps movie HLS for smooth Lounge decode
+- 3b313a4 2026-09-26 Keep lounge Pulse audio queue large under legacy startup patch
+- 56ccf1f 2026-09-26 Preserve captured Lounge audio instead of filling clock gaps with silence
+- c3c9455 2026-09-26 Recover lounge viewer when frames stop advancing despite incoming media
+- 5906c23 2026-09-26 Recover movie HLS playback errors and preserve song audio fallback
+- 949626a 2026-09-26 Expose complete cached audio as fallback for lounge song video
+- 3780d96 2026-09-26 Advance lounge queue only after song actually ends and prefetch audio fallback
+- 3026b3a 2026-09-26 Remove unused wall-clock auto-advance imports
+- c3907c5 2026-09-26 Stop advancing lounge songs based on elapsed wall clock
+- 07ef94d 2026-09-26 Stop repeated watch seeks while HLS buffers
+- 53e033c 2026-09-26 Deduplicate identical movie choices in chat
+- 5f2c65a 2026-09-26 Retry empty watch catalogs instead of caching false negatives
+- a067e01 2026-09-26 Reject stale selected watch items instead of queuing another title
+- 98e3bcc 2026-09-26 Return real watch provider choices for Lounge chat
+- 14a9358 2026-09-26 Bound watch catalog lookup and report provider failures
+- 8a5885d 2026-09-26 Prefetch saved songs in canonical lounge player and avoid repeated seeks
+- e6a1a3f 2026-09-26 Require actual video playback for lounge renderer health
+- 5a715c6 2026-09-26 Show song video in clean Lounge broadcast and ignore paused movie
+- df3cb40 2026-09-26 Apply Lounge all-volume master to media video and BRB music
+- 9dda46a 2026-09-26 Play BRB theme tracks in existing HearMeOut lounge media frame
+- fcbdaad 2026-09-26 Make Lounge route smoke check consume the full HTTP response
+- fdd0b43 2026-09-26 Accept Overlay Bay source audio trim in Lounge media players
+- e8e39fe 2026-09-26 Mute HearMeOut lounge audio while BRB is active
+- 91a13be 2026-09-26 Use actual channel theme song lengths in music requests
+- 1b2b32e 2026-09-26 Let unattended Lounge player stream only four local channel theme files
+- 0bec5cb 2026-09-26 Serve four channel theme tracks from existing DJ volume for Lounge BRB
+- 40ce7b6 2026-09-25 Apply owner volume commands to the two broadcast video elements
+- 84721a5 2026-09-25 Retry Spotlight and Lounge sound when viewer playback starts
+- 0efafa2 2026-09-25 Keep Spotlight and Lounge fragment viewers connected under normal backpressure
+- 645b800 2026-09-25 Reconnect existing Spotlight process and preserve viewer audio through BRB
+- 33c3e85 2026-09-25 Keep Lounge and Spotlight video visible when autoplay requires muted playback
+- da6ca79 2026-09-25 Allow Spotlight audio where autoplay is permitted and recover muted visuals
+- 7212842 2026-09-25 Render community Spotlight from live worker stream without click
+- 8e036ef 2026-09-25 Recover stale SpaceMountain Lounge music playback and advance its queue
+- 51c48ed 2026-09-25 Bootstrap HMO Twitch and Discord bots at server startup
+- ad22d93 2026-09-25 Allow authenticated server boot to initialize HMO bots
+- 042cfca 2026-09-25 Make HearMeOut live deploy path deterministic
+- b1ee3d6 2026-09-25 Play Lounge songs from complete cached audio (#108)
+- 26ec212 2026-09-24 Build HearMeOut image before direct Fly release
+- 2c2020c 2026-09-24 Add durable community Spotlight source
+- 76f2bd7 2026-09-24 Fix Lounge Twitch Spotlight playback
+- 66c4f61 2026-09-24 Keep Discord voice contract scoped to voice routes
+- ce4ab1b 2026-09-24 Test isolated renderer workers
+- 962dabb 2026-09-24 Limit private renderer bypass to media routes
+- 9376558 2026-09-24 Deploy Lounge and Spotlight on separate Fly machines
+- 2507432 2026-09-24 Route spotlight proxy to dedicated worker
+- c893bb7 2026-09-24 Route lounge proxy to dedicated worker
+- bf8f660 2026-09-24 Add dedicated Lounge Fly worker
+- b00d532 2026-09-24 Add dedicated Spotlight Fly worker
+- 0870115 2026-09-24 Keep DJ worker focused on media and cache
+- 8a654d2 2026-09-24 Isolate DJ Spotlight and Lounge worker roles
+- 8b1ee63 2026-09-24 Route SpaceMountainLive chat directly to Lounge
+- 642e293 2026-09-24 Point Lounge commands at SpaceMountainLive chat
+- 9b41f26 2026-09-24 Give Spotlight PulseAudio a stable startup window
+- 5f62f03 2026-09-24 Give Lounge PulseAudio a stable startup window
+- 9ecea26 2026-09-24 Keep Spotlight source alive while Twitch initializes
+- 2a4c825 2026-09-24 Stop persistent media watchdogs from restart-churning
+- 7bfd455 2026-09-24 Merge pull request #107 from Mtman1987/fix/retrigger-fly-deploy-20260924
+- f5d5357 2026-09-24 Allow manual Fly deploy dispatch
+- 4642acd 2026-09-24 Expose passive Lounge media viewer publicly
+- e559b7e 2026-09-24 Run persistent Lounge media source independently of viewers
+- 47c345a 2026-09-24 Expose Lounge broadcast start
+- e10ccd5 2026-09-24 Expose Lounge broadcast status
+- 1d29802 2026-09-24 Proxy Lounge live broadcast
+- 85a7977 2026-09-24 Expose passive Lounge player
+- e9bf12b 2026-09-24 Add passive Lounge live viewer
+- 3922f91 2026-09-24 Add Lounge worker client
+- 1ca9843 2026-09-24 Add persistent Lounge broadcast source
+- dc6ea1c 2026-09-24 Lock Spotlight viewport and consent persistence
+- 447dfa6 2026-09-24 Fix persistent Spotlight viewport and Twitch consent
+- a63978e 2026-09-24 Allow Spotlight controls without new Origin gate (#105)
+- 214e498 2026-09-24 Serve passive Spotlight feed from always-on HearMeOut app (#104)
+- f725c93 2026-09-24 Keep Spotlight source running and fan out current frames (#103)
+- aacc207 2026-09-24 Remove Lounge read and playback auth gates
+- e488efc 2026-09-24 Remove Chromium Lounge deployment gate
+- d902b31 2026-09-24 Make Lounge media auth-free and restore separate queues (#99)
+- 1feabb4 2026-09-23 Fix Spotlight mid-stream freezes
+- 378d362 2026-09-23 Make Lounge browser smoke prove the real public media path (#97)
+- 542a264 2026-09-23 Remove second auth gate from SpaceMountain Lounge media (#96)
+- 90d2330 2026-09-23 Allow canonical SpaceMountain Lounge queue requests without service auth (#95)
+- 9d897ea 2026-09-23 Make Lounge playback prove real video after skip
+- a2dc288 2026-09-23 Make Live HMO the single production media authority
+- f0f8d27 2026-09-23 Remove Chromium automation infobar from Spotlight capture (#91)
+- 6bb3f38 2026-09-23 Fix Spotlight content-warning click (#90)
+- 854a687 2026-09-23 Control Twitch content warnings on the canonical Spotlight source (#89)
+- ae58fcf 2026-09-22 Run one persistent Spotlight source (#88)
+- 913908f 2026-09-22 Expose the permanent Lounge queue to Apollo (#87)
+- 1b00026 2026-09-21 Use one permanent SpaceMountain lounge player
+- 0a34bcb 2026-09-21 Route SpaceMountain requests to lounge queue
+- 7904d0d 2026-09-21 Show Munch TV attribution on watch media
+- eb537f2 2026-09-21 Add Munch TV media attribution bug
+- 769ee33 2026-09-21 Remove legacy Apollo Lounge playback sync
+- da3b076 2026-09-21 Use supported YouTube clients for AV streams
+- 7ba4a5f 2026-09-21 Keep YouTube AV extraction inside DJ worker
+- 0c20cb2 2026-09-21 Relay Lounge radio controls from Twitch
+- ae1049d 2026-09-20 Wake Apollo before relaying Lounge requests
+- e4626a5 2026-09-20 Retry Apollo while the Lounge sandbox wakes
+- 69bcf08 2026-09-20 Allow Apollo Lounge media resolution to finish
+- 4f7fbbe 2026-09-20 Bridge the Apollo Lounge channel rollout
+- 6ef099a 2026-09-20 Finish live Lounge cutover to Apollo
+- 194bff1 2026-09-20 Cut Lounge player over to Apollo
+- 768b003 2026-09-20 Hand Lounge media commands to Apollo
+- 29d8be2 2026-09-20 Cover HearMeOut auto-radio end transition
+- 89505c6 2026-09-20 Stop ended songs restarting while auto-radio resolves
+- 1392c27 2026-09-20 Use browser embed for Lounge music
+- b38659e 2026-09-20 Follow the active Lounge media lane
+- 6490e44 2026-09-20 Advance Lounge media after playback ends
+- f3a6d68 2026-09-20 Allow Lounge owner playback controls
+- b1a3a81 2026-09-20 Normalize public queue success response
+- 46cefd3 2026-09-20 Fix public media request build typing
+- c716001 2026-09-20 Allow public requests to global media queues
+- cd84a16 2026-09-20 Route bot requests to global music and movie queues
+- 4edd1dc 2026-09-20 Add Twitch media playback controls for Lounge
+- 763e3fd 2026-09-20 Wire SpaceMountain Lounge to global media queues
+- e708302 2026-09-19 Force Hear Me Out overlay background transparent
+- 019e532 2026-09-19 Hide clean Hear Me Out overlay while idle
+- d3e31e2 2026-09-18 Keep media overlay document transparent
+- 801e809 2026-09-17 Add self-healing SpaceMountainLive HMO system room
+- 40d85fd 2026-09-17 Add clean reusable Hear Me Out media overlay mode
+- f5d79d2 2026-09-15 Publish Discord bridge member names and active speaker avatars
+- a2e011d 2026-09-14 Expose Discord voice directory to Apollo bridge
+- 840b39b 2026-09-14 Remove unused YouTube AV helper
+- e6fba01 2026-09-14 Add combined YouTube format selector
+- 64422b6 2026-09-14 Capture one persistent YouTube source into the shared HLS cache
+- 39ad8dd 2026-09-14 Reuse prepared YouTube HLS without requiring a separate raw audio cache
+- aac5c23 2026-09-14 Retain complete movie sources for independent broadcast playout
+- 5997e29 2026-09-14 Cache browser-downloaded YouTube tracks and authenticate Apollo catalog search

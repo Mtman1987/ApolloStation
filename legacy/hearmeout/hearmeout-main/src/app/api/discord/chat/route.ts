@@ -1,0 +1,313 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { replaceDiscordUserMentions } from '@/lib/discord-mentions';
+import {
+  processDueHearMeOutDiscordCleanups,
+  sendHearMeOutDiscordMessage,
+  type HearMeOutDiscordPayload as DiscordMessagePayload,
+} from '@/lib/discord-messaging';
+import { handleMusicCommand } from '@/lib/music-command-service';
+import { GLOBAL_WATCH_SESSION_ID, MUSIC_WATCH_SESSION_ID, normalizeWatchSessionAlias } from '@/lib/watch-session';
+import {
+  buildWatchJoinMessage,
+  getDefaultActivitySessionId,
+  getActivityUrl,
+  getResolvedWatchSession,
+  handleWatchRequestCommand,
+  watchControlsPromptComponents,
+} from '@/lib/watch/watch-request-service';
+
+const processedDiscordMessages = new Map<string, number>();
+const PROCESSED_MESSAGE_TTL_MS = 10 * 60 * 1000;
+
+function getRequestBaseUrl(request: NextRequest) {
+  const forwardedProto = request.headers.get('x-forwarded-proto');
+  const forwardedHost = request.headers.get('x-forwarded-host');
+  const proto = forwardedProto || request.nextUrl.protocol.replace(':', '');
+  const host = forwardedHost || request.headers.get('host') || request.nextUrl.host;
+  return `${proto}://${host}`;
+}
+
+function parseJsonText(raw: string) {
+  if (!raw.trim()) return {};
+  try {
+    return JSON.parse(raw);
+  } catch {}
+
+  return JSON.parse(escapeControlCharactersInsideStrings(raw));
+}
+
+function parseNestedJsonValue(value: unknown) {
+  if (typeof value !== 'string') return value;
+  const trimmed = value.trim();
+  if (!trimmed || (!trimmed.startsWith('{') && !trimmed.startsWith('['))) return value;
+  return JSON.parse(trimmed);
+}
+
+function escapeControlCharactersInsideStrings(source: string) {
+  let output = '';
+  let inString = false;
+  let escaped = false;
+
+  for (const char of source) {
+    if (!inString) {
+      output += char;
+      if (char === '"') inString = true;
+      continue;
+    }
+
+    if (escaped) {
+      output += char;
+      escaped = false;
+      continue;
+    }
+
+    if (char === '\\') {
+      output += char;
+      escaped = true;
+      continue;
+    }
+
+    if (char === '"') {
+      output += char;
+      inString = false;
+      continue;
+    }
+
+    if (char === '\n') output += '\\n';
+    else if (char === '\r') output += '\\r';
+    else if (char === '\t') output += '\\t';
+    else if (char < ' ' || char === '\u007F') output += ' ';
+    else output += char;
+  }
+
+  return output;
+}
+
+function unwrapDiscordChatRoot(body: any): any {
+  let current = parseNestedJsonValue(body);
+  const seen = new Set<unknown>();
+
+  while (current && typeof current === 'object' && 'root' in current && !seen.has(current)) {
+    seen.add(current);
+    current = parseNestedJsonValue((current as { root?: unknown }).root);
+  }
+
+  return current && typeof current === 'object' ? current : {};
+}
+
+async function parseDiscordChatRequest(request: NextRequest) {
+  const raw = await request.text();
+  if (!raw.trim()) return {};
+
+  const contentType = request.headers.get('content-type') || '';
+  if (contentType.includes('application/x-www-form-urlencoded')) {
+    const params = new URLSearchParams(raw);
+    const payloadJson = params.get('payload_json');
+    if (payloadJson) return parseJsonText(payloadJson);
+
+    const rootJson = params.get('root');
+    if (rootJson) return { root: parseNestedJsonValue(rootJson) };
+
+    return Object.fromEntries(params.entries());
+  }
+
+  try {
+    return parseJsonText(raw);
+  } catch (initialError) {
+    const sanitized = raw.replace(/[\u0000-\u001F\u007F]/g, '');
+    if (sanitized !== raw) return parseJsonText(sanitized);
+    throw initialError;
+  }
+}
+
+function markDiscordMessageSeen(guildId: string, channelId: string, messageId: string) {
+  if (!messageId || !channelId) return false;
+
+  const now = Date.now();
+  for (const [key, seenAt] of processedDiscordMessages) {
+    if (now - seenAt > PROCESSED_MESSAGE_TTL_MS) {
+      processedDiscordMessages.delete(key);
+    }
+  }
+
+  const key = `${guildId}:${channelId}:${messageId}`;
+  if (processedDiscordMessages.has(key)) return true;
+  processedDiscordMessages.set(key, now);
+  return false;
+}
+
+function isDirectDiscordMessage(data: any) {
+  const explicit = data.isDM ?? data.isDirectMessage ?? data.is_direct_message ?? data.dm;
+  if (explicit !== undefined) return Boolean(explicit);
+
+  const channelType = String(data.channelType ?? data.channel_type ?? data.channel?.type ?? '').toLowerCase();
+  return channelType === 'dm' || channelType === '1';
+}
+
+function getActivityVoiceChannelId(data: any) {
+  return String(
+    data.activityVoiceChannelId ||
+    data.voiceChannelId ||
+    data.voice_channel_id ||
+    data.voiceChannel?.id ||
+    data.voice?.channelId ||
+    data.voice?.channel_id ||
+    data.member?.voice?.channel_id ||
+    ''
+  ).trim();
+}
+
+function parseWatchControlsCommand(message: string) {
+  const match = message.trim().match(/^!(controls?|watch-controls)(?:\s+(.+))?$/i);
+  if (!match) return null;
+  const rawTarget = String(match[2] || '').trim();
+  return {
+    allSessions: !rawTarget,
+    sessionId: normalizeWatchSessionAlias(rawTarget, GLOBAL_WATCH_SESSION_ID),
+  };
+}
+
+function buildWatchControlsReply(publicBaseUrl: string, sessionId = GLOBAL_WATCH_SESSION_ID): DiscordMessagePayload {
+  const joinUrl = getActivityUrl(publicBaseUrl, sessionId);
+  const session = getResolvedWatchSession(sessionId);
+  const label = session.metadata?.mediaKind === 'music' || sessionId === MUSIC_WATCH_SESSION_ID ? 'Channel Music Videos' : 'Channel Watch Party';
+
+  if (session.current) {
+    const status = session.playback.status === 'playing'
+      ? 'now playing'
+      : session.playback.status === 'paused'
+        ? 'paused'
+        : 'ready';
+    const payload = buildWatchJoinMessage(session.current.item.title, status, joinUrl, session.current.item, session.id);
+    return {
+      ...payload,
+      content: `${label}: click Controls for your private panel.`,
+    };
+  }
+
+  return {
+    content: `${label}: click Controls for your private panel. ${joinUrl}`,
+    components: watchControlsPromptComponents(joinUrl, sessionId),
+    allowed_mentions: { parse: [] },
+  };
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    processDueHearMeOutDiscordCleanups().catch(() => {});
+    let body: any;
+    try {
+      body = await parseDiscordChatRequest(request);
+    } catch (error) {
+      console.log('[Discord Chat] Rejected malformed JSON payload:', error instanceof Error ? error.message : String(error));
+      return NextResponse.json({
+        success: false,
+        error: 'Invalid JSON payload. Send valid JSON with Content-Type: application/json and build the body with JSON.stringify.',
+      }, { status: 400 });
+    }
+    const data = unwrapDiscordChatRoot(body);
+    const message = replaceDiscordUserMentions(data.message || data.content || '', data).trim();
+    const channelId = String(data.channelId || '').trim();
+    const guildId = String(data.guildId || data.serverId || 'local').trim();
+    const userId = String(data.userId || data.authorId || 'discord').trim();
+    const userName = String(data.userName || data.displayName || data.username || 'Discord User').trim();
+    const userAvatar = String(data.userAvatar || data.avatarUrl || data.avatar_url || data.author?.avatarUrl || data.author?.displayAvatarURL || '').trim();
+    const isDM = isDirectDiscordMessage(data);
+    const activityVoiceChannelId = getActivityVoiceChannelId(data);
+    const replies: Array<string | DiscordMessagePayload> = [];
+    const watchControlsCommand = parseWatchControlsCommand(message);
+
+    if (!message) {
+      return NextResponse.json({ success: true, handled: false, skipped: 'empty message' });
+    }
+
+    if (!channelId) {
+      return NextResponse.json({ success: false, error: 'Missing channelId' }, { status: 400 });
+    }
+
+    const messageId = String(data.messageId || data.id || '').trim();
+    if (markDiscordMessageSeen(guildId, channelId, messageId)) {
+      console.log(`[Discord Chat] Duplicate message ignored: ${guildId}/${channelId}/${messageId}`);
+      return NextResponse.json({ success: true, handled: true, skipped: 'duplicate-message', replies: [] });
+    }
+
+    let handled = false;
+    if (watchControlsCommand) {
+      const baseUrl = getRequestBaseUrl(request);
+      if (watchControlsCommand.allSessions) {
+        replies.push(buildWatchControlsReply(baseUrl, getDefaultActivitySessionId()));
+      } else {
+        const requestedSession = watchControlsCommand.sessionId === GLOBAL_WATCH_SESSION_ID
+          ? GLOBAL_WATCH_SESSION_ID
+          : watchControlsCommand.sessionId === MUSIC_WATCH_SESSION_ID
+            ? MUSIC_WATCH_SESSION_ID
+            : watchControlsCommand.sessionId;
+        replies.push(buildWatchControlsReply(baseUrl, requestedSession));
+      }
+      handled = true;
+    }
+
+    if (!handled) {
+      handled = await handleWatchRequestCommand({
+        message,
+        discordUserId: userId,
+        discordUserName: userName,
+        guildId,
+        channelId,
+        activityVoiceChannelId,
+        userMessageId: data.messageId || data.id,
+        publicBaseUrl: getRequestBaseUrl(request),
+        reply: (content) => {
+          replies.push(content);
+        },
+        richReply: (content) => {
+          replies.push(content);
+        },
+      });
+    }
+
+    if (!handled) {
+      handled = await handleMusicCommand({
+        message,
+        userId,
+        username: userName,
+        platform: 'discord',
+        guildId,
+        channelId,
+        activityVoiceChannelId,
+        publicBaseUrl: getRequestBaseUrl(request),
+        reply: (content) => {
+          replies.push(content);
+        },
+        richReply: (content) => {
+          replies.push(content);
+        },
+      });
+    }
+
+    const discordSends = handled
+      ? await Promise.all(replies.map((reply) => sendHearMeOutDiscordMessage(
+          channelId,
+          reply,
+          {
+            sourceUser: userName,
+            sourceMessage: message,
+            sourceUserAvatarUrl: userAvatar,
+            sourceMessageId: messageId,
+            isDirectMessage: isDM,
+          },
+        )))
+      : [];
+
+    return NextResponse.json({
+      success: true,
+      handled,
+      replies,
+      reply: replies[0] || null,
+      discordSends,
+    });
+  } catch (error) {
+    console.error('[Discord Chat] watch command failed:', error);
+    return NextResponse.json({ success: false, error: 'Internal error' }, { status: 500 });
+  }
+}

@@ -1,0 +1,67 @@
+name: Deploy HearMeOut to Fly
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hearmeout-main-deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy-main:
+    name: Deploy hearmeout-main
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check smooth movie playback
+        run: node --test tests/lounge-smooth-playback.test.cjs
+      - name: Verify Twitch queue isolation and Discord Activity startup
+        run: npm ci --ignore-scripts && node --import tsx --test tests/twitch-media-isolation.test.ts tests/twitch-backup-playlist.test.ts tests/overlay-media-end.test.ts tests/discord-activity-startup.test.ts tests/activity-worker-routing.test.ts tests/discord-media-source.test.ts tests/stream-voice-access.test.ts tests/room-voice-access.test.cjs tests/livekit-persona-audio.test.ts tests/room-say-player-audio.test.cjs tests/voice-bridge-privacy-gate.test.cjs
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: Provision persona voice credential from existing shared secret
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN_MAIN || secrets.FLY_API_TOKEN }}
+          BOT_SECRET_KEY: ${{ secrets.BOT_SECRET_KEY }}
+          STREAMWEAVER_SECRET: ${{ secrets.STREAMWEAVER_SECRET }}
+          HEARMEOUT_PERSONA_VOICE_SECRET: ${{ secrets.HEARMEOUT_PERSONA_VOICE_SECRET }}
+        run: |
+          set -euo pipefail
+          voice_secret="${HEARMEOUT_PERSONA_VOICE_SECRET:-${BOT_SECRET_KEY:-${STREAMWEAVER_SECRET:-}}}"
+          if [ -z "$voice_secret" ]; then
+            echo "::warning::No shared persona voice credential is available in GitHub Actions; leaving the existing Fly secret untouched and continuing deployment."
+          else
+            flyctl secrets set HEARMEOUT_PERSONA_VOICE_SECRET="$voice_secret" --app hearmeout-main
+            unset voice_secret
+          fi
+      - name: Deploy live app
+        run: flyctl deploy . --remote-only --config fly.toml --build-arg BUILD_SHA=${GITHUB_SHA} --build-arg GITHUB_SHA=${GITHUB_SHA} --build-arg GH_SHA=${GITHUB_SHA} --yes
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN_MAIN || secrets.FLY_API_TOKEN }}
+      - name: Verify HearMeOut health
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
+            if curl --fail --show-error --silent --max-time 15 https://hearmeout-main.fly.dev/api/health; then
+              echo
+              echo "HearMeOut is healthy."
+              exit 0
+            fi
+            echo "Health probe $attempt/12 failed; retrying in 5s..."
+            sleep 5
+          done
+          echo "HearMeOut did not become healthy after deployment."
+          exit 1
+      - name: Verify Lounge direct player route
+        run: |
+          set -euo pipefail
+          curl --fail --show-error --silent --max-time 10 --output /tmp/hearmeout-lounge-direct.html https://hearmeout-main.fly.dev/lounge-media/direct
+          grep -q 'Preparing your movie' /tmp/hearmeout-lounge-direct.html
+          echo "Lounge direct player route is serving the movie surface."

@@ -1,0 +1,185 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { createRefreshedHmoLocalSession, HMO_SPMT_REFRESH_COOKIE, refreshHmoSpmtSession, type RefreshedHmoSpmtSession } from '@/lib/spmt-session';
+import { isActivityEntry, isPublicActivityRequest } from '@/lib/activity-access';
+
+const SPMT_BASE_URL = String(process.env.SPMT_BASE_URL || 'https://spmt.live').replace(/\/$/, '');
+const SPMT_COOKIE = 'hmo_spmt_session';
+const PUBLIC_THEME_IDS = new Set(['c3BhY2Vtb3VudGFpbmxpdmUvc3BtdC5tcDM', 'c3BhY2Vtb3VudGFpbmxpdmUvc3BtdDIubXAz', 'c3BhY2Vtb3VudGFpbmxpdmUvc3BtdDMubXAz', 'c3BhY2Vtb3VudGFpbmxpdmUvc3BtdDQubXAz']);
+
+const PUBLIC_PREFIXES = [
+  '/login',
+  '/api/auth/',
+  '/api/health',
+  '/api/webhooks/',
+  '/api/discord/',
+  '/api/worker/',
+  // Peer voice routes perform their own room-session/worker authorization;
+  // do not require a separate SPMT cookie before they can inspect that access.
+  '/api/peer-voice/',
+  '/api/livekit/webhook',
+  '/api/livekit-token',
+  // Read-only configuration probe; exposes booleans only, never credentials.
+  '/api/livekit-health',
+  // Public chatbot interaction must never be stopped by the SPMT user-session
+  // middleware. These routes perform only room/persona interaction; account,
+  // owner, and administrator controls remain protected elsewhere.
+  '/api/bots',
+  '/api/bot/commands',
+  // Public room-scoped speech listener; handler validates that the persona is in the room.
+  '/api/rooms/persona-speech',
+  '/api/athena/commands',
+  '/api/internal/persona-transcribe',
+  '/api/internal/persona-command',
+  // This route has its own server-to-server SPMT launch-code exchange. It must
+  // be reachable before a HearMeOut browser/session cookie exists; otherwise
+  // MountainView's authenticated private-Athena bootstrap is rejected here.
+  '/api/private-assistant',
+  // This route performs its own service-auth check; SPMT user middleware must
+  // not consume its machine credential first.
+  '/api/internal/bot/actions',
+  // Authenticated with the existing DJ worker credential inside the route.
+  '/api/internal/watch/search',
+  // Service-authenticated controller for the planned 48-hour Restream/Twitch session reset.
+  '/api/internal/restream-control',
+  // The source resolver verifies HMO_WORKER_SHARED_SECRET inside its handler.
+  // The Lounge worker has no user browser session when it prepares a movie.
+  '/api/watch/xtream/source/',
+  '/api/voice/stream-source', // Checks room-scoped listener keys or owner/service auth inside its handler.
+  '/api/twitch-source/', // Narrow source credential is checked by the ended handler.
+  '/overlay',
+  '/embed',
+  '/room-overlay',
+  '/now-playing',
+  '/spotlight-media',
+  '/api/spotlight-media/',
+  '/lounge-media',
+  '/api/lounge-media/',
+  // Read-only Lounge and Spotlight media proxy for unattended browser sources.
+  '/api/worker-media/',
+  // Exactly four channel theme tracks are public for the unattended BRB overlay.
+  '/api/lounge/theme-music',
+  '/_next/',
+  '/favicon.ico',
+];
+
+const ADMIN_PREFIXES = ['/admin', '/api/admin/', '/api/settings/admin', '/api/moderation/'];
+
+function isStatic(pathname: string) {
+  return pathname.includes('.') && !pathname.endsWith('.html');
+}
+
+function isAdmin(identity: any): boolean {
+  if (identity?.isAdmin === true || identity?.is_admin === true || identity?.is_admin === 1) return true;
+  const role = String(identity?.role || '').toLowerCase();
+  const roles = Array.isArray(identity?.roles) ? identity.roles.map((value: unknown) => String(value).toLowerCase()) : [];
+  return role === 'admin' || role === 'owner' || roles.includes('admin') || roles.includes('owner');
+}
+
+async function fetchIdentity(token: string) {
+  if (!token) return null;
+  const response = await fetch(`${SPMT_BASE_URL}/api/oauth/userinfo`, {
+    headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+    cache: 'no-store',
+    signal: AbortSignal.timeout(5000),
+  }).catch(() => null);
+  if (!response?.ok) return null;
+  const payload = await response.json().catch(() => null);
+  const identity = payload?.user || payload?.profile || payload;
+  return identity?.id ? identity : null;
+}
+
+async function resolveIdentity(request: NextRequest): Promise<{ identity: any; refreshed: RefreshedHmoSpmtSession | null }> {
+  const bearer = request.headers.get('authorization')?.replace(/^Bearer\s+/i, '') || '';
+  const cookieToken = request.cookies.get(SPMT_COOKIE)?.value || '';
+  const token = cookieToken || bearer;
+  let identity = await fetchIdentity(token);
+  // When the browser cookie selected the identity, a stale Authorization header
+  // must not disable that cookie's refresh path. Bearer-only callers do not renew cookies.
+  if (identity || (!cookieToken && bearer)) return { identity, refreshed: null };
+  const refreshed = await refreshHmoSpmtSession(request.cookies.get(HMO_SPMT_REFRESH_COOKIE)?.value || '');
+  if (!refreshed) return { identity: null, refreshed: null };
+  identity = refreshed.user?.id ? refreshed.user : await fetchIdentity(refreshed.accessToken);
+  if (identity?.id) refreshed.localSession = await createRefreshedHmoLocalSession(String(identity.id));
+  return { identity, refreshed };
+}
+
+function withRefresh(response: NextResponse, refreshed: RefreshedHmoSpmtSession | null) {
+  if (refreshed) {
+    if (refreshed.localSession) response.cookies.set('hmo_session', refreshed.localSession, { httpOnly: true, secure: true, sameSite: 'none', path: '/', maxAge: 2592000 });
+    response.cookies.set(SPMT_COOKIE, refreshed.accessToken, { httpOnly: true, secure: true, sameSite: 'none', path: '/', maxAge: refreshed.expiresIn });
+    response.cookies.set(HMO_SPMT_REFRESH_COOKIE, refreshed.refreshToken, { httpOnly: true, secure: true, sameSite: 'none', path: '/', maxAge: refreshed.refreshExpiresIn });
+  }
+  return response;
+}
+
+export async function middleware(request: NextRequest) {
+  const pathname = request.nextUrl.pathname;
+  if (pathname.startsWith('/overlay/twitch-') || pathname.startsWith('/overlay/voices/')) {
+    const response = NextResponse.next();
+    response.headers.set('Referrer-Policy', 'no-referrer');
+    response.headers.set('Cache-Control', 'no-store');
+    return response;
+  }
+  if (isPublicActivityRequest(request.nextUrl, request.method)) {
+    // Root URL mappings must reach the standalone player before the React
+    // account shell mounts. Keep Discord's origin and all launch parameters.
+    if (pathname === '/' && isActivityEntry(request.nextUrl)) {
+      const activity = request.nextUrl.clone();
+      activity.pathname = '/activity';
+      return NextResponse.rewrite(activity);
+    }
+    return NextResponse.next();
+  }
+  // The public Lounge and chat audio player may load only these four channel themes.
+  if (pathname === '/api/offline-music' && request.method === 'GET'
+      && PUBLIC_THEME_IDS.has(request.nextUrl.searchParams.get('id') || '')) {
+    return NextResponse.next();
+  }
+  // The .js entry can contain a private session id; do not let the generic
+  // static-file exception turn that into a public entry point.
+  if (
+    PUBLIC_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(prefix))
+    || (isStatic(pathname) && !isActivityEntry(request.nextUrl))
+  ) {
+    return NextResponse.next();
+  }
+
+  // The server's own boot probe may initialize the chat listeners after an
+  // unattended restart. Only the two read-only boot requests accept this
+  // machine credential; user and administrator routes keep SPMT session auth.
+  if (
+    request.method === 'GET'
+    && (pathname === '/api/twitch-bot' || pathname === '/api/discord-bot')
+  ) {
+    const expected = String(process.env.HMO_WORKER_SHARED_SECRET || '').trim();
+    const supplied = String(request.headers.get('x-hmo-bot-boot-key') || '').trim();
+    if (expected && supplied && expected === supplied) return NextResponse.next();
+  }
+
+  const { identity, refreshed } = await resolveIdentity(request);
+  if (!identity) {
+    if (pathname.startsWith('/api/')) return withRefresh(NextResponse.json({ error: 'SPMT session required' }, { status: 401 }), refreshed);
+    const login = new URL('/login', request.url);
+    login.searchParams.set('next', `${pathname}${request.nextUrl.search}`);
+    return withRefresh(NextResponse.redirect(login), refreshed);
+  }
+
+  if (ADMIN_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(prefix)) && !isAdmin(identity)) {
+    if (pathname.startsWith('/api/')) return withRefresh(NextResponse.json({ error: 'SPMT admin required' }, { status: 403 }), refreshed);
+    return withRefresh(NextResponse.redirect(new URL('/', request.url)), refreshed);
+  }
+
+  if (refreshed) {
+    request.cookies.set('hmo_spmt_session', refreshed.accessToken);
+    request.cookies.set('hmo_spmt_refresh', refreshed.refreshToken);
+    if (refreshed.localSession) request.cookies.set('hmo_session', refreshed.localSession);
+  }
+  const headers = new Headers(request.headers);
+  headers.set('x-spmt-user-id', String(identity.id));
+  headers.set('x-spmt-is-admin', isAdmin(identity) ? '1' : '0');
+  return withRefresh(NextResponse.next({ request: { headers } }), refreshed);
+}
+
+export const config = {
+  matcher: ['/((?!_next/static|_next/image).*)'],
+};

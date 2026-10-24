@@ -1,0 +1,45 @@
+app = "hearmeout-main"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+  [build.args]
+    NEXT_PUBLIC_APP_URL = "https://hearmeout-main.fly.dev"
+    NEXT_PUBLIC_BASE_URL = "https://hearmeout-main.fly.dev"
+    NEXT_PUBLIC_DISCORD_CLIENT_ID = "1279582181768957963"
+    NEXT_PUBLIC_LIVEKIT_URL = "wss://streamweaver-7atx04ct.livekit.cloud"
+    NEXT_PUBLIC_TWITCH_CLIENT_ID = "rxmohc28tthq0nudfd6iwx0sgy88dp"
+
+[env]
+  # Bridge control traffic stays on Fly's private IPv6 network. The DJ worker
+  # listens dual-stack; the public hostname remains the proxy fallback.
+  DJ_WORKER_URL = "http://dj.process.hmo-dj-worker.internal:3002"
+  ACTIVITY_WORKER_URL = "https://hmo-dj-worker.fly.dev:4446"
+  SPOTLIGHT_WORKER_URL = "http://spotlight.process.hmo-dj-worker.internal:3002"
+  LOUNGE_WORKER_URL = "http://lounge.process.hmo-dj-worker.internal:3002"
+  NEXT_PUBLIC_LIVEKIT_URL = "wss://streamweaver-7atx04ct.livekit.cloud"
+  NODE_ENV = "production"
+
+[mounts]
+  source = "data"
+  destination = "/data"
+  initial_size = "3gb"
+
+[http_service]
+  internal_port = 3001
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    interval = "20s"
+    timeout = "10s"
+    grace_period = "60s"
+    method = "GET"
+    path = "/api/health"
+
+[[vm]]
+  memory = "1gb"
+  cpu_kind = "shared"
+  cpus = 1

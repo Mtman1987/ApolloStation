@@ -1,0 +1,100 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { existsSync, readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
+function source(relativePath: string) {
+  return readFileSync(fileURLToPath(new URL(`../${relativePath}`, import.meta.url)), 'utf8');
+}
+
+test('HearMeOut public queues and scoped SpaceMountain owner controls remain usable', () => {
+  const route = source('src/app/api/internal/bot/actions/route.ts');
+  assert.match(route, /isPublicQueueRequest/);
+  assert.match(route, /action === 'hmo\.media\.request' \|\| action === 'hmo\.media\.state\.read'/);
+  assert.match(route, /const isGlobalSession = sessionId === getMusicWatchSessionId\(\) \|\| sessionId === getGlobalWatchSessionId\(\)/);
+  assert.match(route, /const isSpaceMountainLoungeControl = !room/);
+  assert.match(route, /action === 'hmo\.media\.control'/);
+  assert.match(route, /tenantId === 'spacemountainlive'/);
+  assert.match(route, /actorRole === 'owner' \|\| actorRole === 'moderator'/);
+  assert.match(route, /!isPublicQueueRequest && !isSpaceMountainLoungeControl && !isBotActionServiceRequest\(request\)/);
+  assert.match(source('src/lib/bot-action-service-auth.ts'), /timingSafeEqual/);
+});
+
+test('the bot adapter reuses the canonical HearMeOut media services', () => {
+  const route = source('src/app/api/internal/bot/actions/route.ts');
+  assert.match(route, /getPublicWatchSession\(/);
+  assert.match(route, /requestWatchMusicItem\(/);
+  assert.match(route, /controlWatchSession\(/);
+  assert.match(route, /getRoomWatchSessionId\(roomId, 'music'\)/);
+});
+
+test('the service-authenticated route bypasses only user middleware and authenticates itself', () => {
+  const middleware = source('src/middleware.ts');
+  assert.match(middleware, /'\/api\/internal\/bot\/actions'/);
+  const route = source('src/app/api/internal/bot/actions/route.ts');
+  assert.match(route, /return NextResponse\.json\(\{ error: 'Unauthorized' \}, \{ status: 401 \}\)/);
+});
+
+test('media controls are restricted to the explicit safe control set', () => {
+  const route = source('src/app/api/internal/bot/actions/route.ts');
+  assert.match(route, /new Set\(\['play', 'pause', 'next', 'clear', 'mute', 'unmute', 'volume'\]\)/);
+  assert.match(route, /Unsupported media control/);
+  assert.match(route, /expectedRequestId: text\(body\?\.expectedRequestId, 200\) \|\| undefined/);
+});
+
+test('clean overlay keeps its embedded video directly interactive', () => {
+  const overlay = source('src/app/overlay/[roomId]/page.tsx');
+  assert.match(overlay, /className="pointer-events-auto h-full w-full border-0 bg-black"/);
+  assert.match(overlay, /style=\{\{ pointerEvents: 'auto' \}\}/);
+});
+
+test('the internal adapter exposes room, tenant persona, and voice bridge actions', () => {
+  const route = source('src/app/api/internal/bot/actions/route.ts');
+  for (const action of [
+    'hmo.rooms.read',
+    'hmo.bot.control',
+    'hmo.voice.bridge.state',
+    'hmo.voice.bridge.control',
+  ]) assert.match(route, new RegExp(action.replaceAll('.', '\\.')));
+  assert.match(route, /listRoomsForBotAction\(/);
+  assert.match(route, /changeRoomPersonaForBotAction\(/);
+  assert.match(route, /readVoiceBridgeForBotAction\(/);
+  assert.match(route, /controlVoiceBridgeForBotAction\(/);
+});
+
+test('room actions enforce management, hide unrelated private rooms, and use worker authentication', () => {
+  const service = source('src/lib/bot-room-action-service.ts');
+  assert.match(service, /!room\.isPrivate \|\| canActorManageRoom/);
+  assert.match(service, /resolveManagedRoomForBotAction/);
+  assert.match(service, /canManageRoom\(actor, ownerId\)/);
+  assert.doesNotMatch(service, /isActivityRoomId\(text\(room\?\.id/);
+  assert.doesNotMatch(service, /callWorker\('\/persona'/);
+  assert.match(service, /joinMode:\s*'say-player-only'/);
+});
+
+test('voice bridge bot actions apply the privacy gate and roll back a failed start', () => {
+  const service = source('src/lib/bot-room-action-service.ts');
+  assert.match(service, /'\/voice-bridge\/gate'/);
+  assert.match(service, /roomVoiceOutboundEnabled/);
+  assert.match(service, /body: JSON\.stringify\(\{ action: 'stop', roomId: room\.id \}\)/);
+  assert.match(service, /voiceBridge: \{ \.\.\.next, enabled: false \}/);
+});
+
+test('room persona worker no longer forwards speech commands or owns STT', () => {
+  const runtime = source('worker/src/persona-runtime-adapter.js');
+  const bootstrap = source('worker/src/persona-bootstrap.js');
+  assert.doesNotMatch(runtime, /onAudioFrame\s*\(/);
+  assert.doesNotMatch(runtime, /processUtterance\s*\(/);
+  assert.doesNotMatch(runtime, /fetch\([^\n]*persona-transcribe/);
+  assert.doesNotMatch(runtime, /fetch\([^\n]*\/api\/internal\/persona-command/);
+  assert.match(runtime, /speechInputRoute:\s*'browser-persona-transcribe-to-bot-commands'/);
+  assert.match(bootstrap, /serviceSession: req\.body\?\.serviceSession === true/);
+  assert.match(bootstrap, /app\.post\('\/persona\/speak'/);
+});
+
+test('the retired Apollo Lounge bridge cannot return', () => {
+  const bridgeUrl = new URL('../src/app/api/internal/lounge/media/route.ts', import.meta.url);
+  assert.equal(existsSync(fileURLToPath(bridgeUrl)), false);
+  const middleware = source('src/middleware.ts');
+  assert.doesNotMatch(middleware, /\/api\/internal\/lounge\/media/);
+});

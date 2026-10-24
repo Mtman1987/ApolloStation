@@ -1,0 +1,1227 @@
+'use client';
+
+// OBS overlay media lane.
+//
+// Voice chat stays in the normal room browser. Movies and music play here so
+// streamers can route this browser source to a separate OBS audio track.
+
+import { useParams, useSearchParams } from 'next/navigation';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import Image from 'next/image';
+import { Music, Play, Volume2, VolumeX, Film, Users, ListMusic } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Slider } from '@/components/ui/slider';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { usePopout } from '@/components/PopoutWidgets/PopoutProvider';
+import { createOverlayCompletionTracker, overlayEndTarget } from '@/lib/overlay-media-end';
+import { shouldRenderCleanIdle, shouldShowNowPlayingPanel } from '@/lib/overlay-display';
+import { twitchMusicSessionId } from '@/lib/twitch-media-scope';
+import { getRoomWatchSessionId } from '@/lib/watch-session';
+import { useCollection } from '@/hooks/use-db';
+
+type WatchPlayback = {
+  status: 'idle' | 'paused' | 'playing';
+  position: number;
+  updatedAt: number | string;
+  muted?: boolean;
+  volume?: number;
+};
+
+type WatchRequest = {
+  requestId: string;
+  item: any;
+  requestedBy?: { username?: string };
+};
+
+type WatchState = {
+  id?: string;
+  sessionId?: string;
+  queue: WatchRequest[];
+  current: WatchRequest | null;
+  playback: WatchPlayback;
+  broadcast?: {
+    configured?: boolean;
+    ready?: boolean;
+    playbackUrl?: string;
+  };
+};
+
+type MediaLane = 'auto' | 'music' | 'movie';
+
+type OverlayProfile = {
+  id: string;
+  uid?: string;
+  displayName?: string;
+  photoURL?: string;
+  lastSeen?: number;
+  bot?: boolean;
+};
+
+type OverlayViewState = {
+  volume: number;
+  muted: boolean;
+  musicPlaybackMode: 'video' | 'audio';
+  showNowPlaying: boolean;
+  showMusicQueue: boolean;
+  showProfiles: boolean;
+};
+
+async function api(path: string) {
+  const response = await fetch(path, { cache: 'no-store' });
+  if (!response.ok) throw new Error(`Request failed: ${response.status}`);
+  return response.json();
+}
+
+function mediaRuntimeSeconds(value: unknown) {
+  const text = String(value || '').toLowerCase();
+  const hours = Number(text.match(/(\d+(?:\.\d+)?)\s*h/)?.[1] || 0);
+  const minutes = Number(text.match(/(\d+(?:\.\d+)?)\s*m/)?.[1] || 0);
+  const seconds = Number(text.match(/(\d+(?:\.\d+)?)\s*s/)?.[1] || 0);
+  return hours * 3600 + minutes * 60 + seconds;
+}
+
+function playbackPosition(playback?: WatchPlayback) {
+  if (!playback) return 0;
+  if (playback.status !== 'playing') return playback.position || 0;
+  const updatedAt = typeof playback.updatedAt === 'string' ? Date.parse(playback.updatedAt) : playback.updatedAt;
+  return (playback.position || 0) + (Date.now() - updatedAt) / 1000;
+}
+
+function musicModeOptions(item: any) {
+  const metadata = item?.metadata || {};
+  return {
+    // Prefer the public YouTube embed, but always keep the prepared HMO proxy
+    // available as a recovery path when an embed is black, blocked, or stalled.
+    video: metadata.embedPlaybackUrl || metadata.videoPlaybackUrl || item?.playbackUrl || '',
+    proxy: metadata.videoPlaybackUrl || item?.playbackUrl || '',
+    audio: metadata.audioPlaybackUrl || '',
+  };
+}
+
+function hasMusicModeToggle(item: any) {
+  const options = musicModeOptions(item);
+  return item?.type === 'music' && Boolean(options.video && options.audio);
+}
+
+function playbackUrlForItem(item: any, mode: 'video' | 'audio' = 'video', preferProxy = false) {
+  if (item?.type === 'music') {
+    const options = musicModeOptions(item);
+    if (mode === 'video' && preferProxy && options.proxy) return options.proxy;
+    if (mode === 'video' && options.video) return options.video;
+    if (mode === 'audio' && options.audio) return options.audio;
+  }
+  return item?.playbackUrl || '';
+}
+
+function hlsFallbackUrlFor(item: any, mode: 'video' | 'audio' = 'video') {
+  const playbackUrl = String(playbackUrlForItem(item, mode) || '');
+  const isBrowserLimitedVideo = String(item?.overview || '').toLowerCase().includes('(mkv)');
+  const episodeMatch = playbackUrl.match(/^\/activity-provider\/xtream\/episode\/(\d+-[a-z0-9]+)$/i);
+  const match = playbackUrl.match(/^\/activity-provider\/xtream\/(vod|series)\/(\d+)$/i);
+  if (episodeMatch) return `/api/watch/xtream/hls/episode-${episodeMatch[1].toLowerCase()}/index.m3u8`;
+  if (!match || !isBrowserLimitedVideo) return playbackUrl;
+  return `/api/watch/xtream/hls/${match[1].toLowerCase()}-${match[2]}/index.m3u8`;
+}
+
+function isEmbeddedVideoUrl(value: string) {
+  const raw = String(value || '').toLowerCase();
+  return raw.includes('youtube.com/embed/') || raw.includes('youtube-nocookie.com/embed/');
+}
+
+function iframeUrlFor(value: string) {
+  if (!value) return '';
+  try {
+    const url = new URL(value, window.location.origin);
+    if (!isEmbeddedVideoUrl(url.toString())) return value;
+    url.searchParams.set('enablejsapi', '1');
+    url.searchParams.set('origin', window.location.origin);
+    url.searchParams.set('autoplay', '1');
+    url.searchParams.set('playsinline', '1');
+    return url.toString();
+  } catch {
+    return value;
+  }
+}
+
+function isHlsPlaybackUrl(value: string) {
+  if (!value) return false;
+  if (value.split('?')[0].endsWith('.m3u8')) return true;
+  try {
+    const parsed = new URL(value, window.location.origin);
+    const proxied = parsed.searchParams.get('url');
+    return Boolean(proxied?.split('?')[0].endsWith('.m3u8'));
+  } catch {
+    return false;
+  }
+}
+
+function sessionHasActiveMedia(state: WatchState | null) {
+  return Boolean(state?.current && state.playback?.status === 'playing');
+}
+
+function newerPlaybackFirst(
+  left: { state: WatchState | null },
+  right: { state: WatchState | null },
+) {
+  return Number(right.state?.playback?.updatedAt || 0) - Number(left.state?.playback?.updatedAt || 0);
+}
+
+export default function OverlayPage() {
+  const params = useParams<{ roomId: string }>();
+  const searchParams = useSearchParams();
+  const roomId = params.roomId;
+  const twitchTenant = roomId.startsWith('twitch-') ? roomId.slice(7) : '';
+  const sourceKey = searchParams.get('sourceKey') || '';
+  const movieSessionId = getRoomWatchSessionId(roomId, 'movie');
+  const musicSessionId = twitchTenant ? twitchMusicSessionId(twitchTenant) : getRoomWatchSessionId(roomId, 'music');
+  const requestedLane = (searchParams.get('media') || searchParams.get('lane') || 'auto').toLowerCase();
+  const lane: MediaLane = twitchTenant ? 'music' : requestedLane === 'music' || requestedLane === 'movie' ? requestedLane : 'auto';
+  const cleanMode = ['1', 'true', 'yes', 'on'].includes(String(searchParams.get('clean') || '').toLowerCase());
+  const sourceRequestedNowPlaying = searchParams.get('nowPlaying') === '1';
+  const hideIdle = cleanMode && searchParams.get('hideIdle') === '1';
+  const directLoungeMode = cleanMode && roomId === 'system-spacemountainlive-lounge' && searchParams.get('direct') === '1';
+  const volumeParam = searchParams.get('volume');
+  const requestedVolume = Number(volumeParam);
+  const hasRequestedVolume = volumeParam !== null && Number.isFinite(requestedVolume);
+  const initialVolume = hasRequestedVolume ? Math.max(0, Math.min(1, requestedVolume)) : 0.5;
+  const mutedParam = searchParams.get('muted');
+  const requestedMuted = mutedParam === null ? null : ['1', 'true', 'yes', 'on'].includes(mutedParam.toLowerCase());
+  const { popouts, openPopout, closePopout } = usePopout();
+
+  useEffect(() => {
+    // The shared HearMeOut shell paints bg-background on html/body. Browser
+    // sources must clear that shell paint or clean-mode cannot be transparent.
+    document.documentElement.classList.add('overlay-document');
+    document.body.classList.add('overlay-document');
+    return () => {
+      document.documentElement.classList.remove('overlay-document');
+      document.body.classList.remove('overlay-document');
+    };
+  }, []);
+
+  const activeRequestRef = useRef('');
+  const completionRef = useRef(createOverlayCompletionTracker());
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const hlsRef = useRef<any>(null);
+  const hlsRecoveryCountRef = useRef(0);
+  const offlineBlobUrlRef = useRef<string | null>(null);
+  const currentRequestIdRef = useRef<string | null>(null);
+  const applyingRemoteState = useRef(false);
+  const embeddedCurrentTimeRef = useRef(0);
+  const embeddedProgressBaselineRef = useRef<number | null>(null);
+  const nativeProgressBaselineRef = useRef<number | null>(null);
+  const lastEmbeddedPlaybackKeyRef = useRef('');
+  const lastNativePlaybackKeyRef = useRef('');
+  const volumeRef = useRef(initialVolume);
+  const mutedRef = useRef(requestedMuted ?? false);
+
+  const [movieState, setMovieState] = useState<WatchState | null>(null);
+  const [musicState, setMusicState] = useState<WatchState | null>(null);
+  const [connected, setConnected] = useState(false);
+  const [volume, setVolume] = useState(initialVolume);
+  const [isMuted, setIsMuted] = useState(requestedMuted ?? false);
+  const [audioReady, setAudioReady] = useState(false);
+  const [mediaStatus, setMediaStatus] = useState('Waiting for media');
+  const [renderingHealthy, setRenderingHealthy] = useState(false);
+  const [forceProxyPlayback, setForceProxyPlayback] = useState(directLoungeMode);
+  const [audioTracks, setAudioTracks] = useState<Array<{ index: number; name: string; language: string }>>([]);
+  const [selectedAudioTrack, setSelectedAudioTrack] = useState(0);
+  const [musicPlaybackMode, setMusicPlaybackMode] = useState<'video' | 'audio'>(cleanMode ? 'video' : 'audio');
+  const [showNowPlaying, setShowNowPlaying] = useState(true);
+  const [showMusicQueue, setShowMusicQueue] = useState(true);
+  const [showProfiles, setShowProfiles] = useState(true);
+  const [viewStateHydrated, setViewStateHydrated] = useState(false);
+  const { data: roomProfiles } = useCollection<OverlayProfile>(`rooms/${roomId}/users`, { pollInterval: 3000 });
+
+  const activeProfiles = useMemo(() => (roomProfiles || []).filter((profile) => {
+    if (profile.bot) return true;
+    const lastSeen = Number(profile.lastSeen || 0);
+    return lastSeen > 0 && Date.now() - lastSeen < 45_000;
+  }), [roomProfiles]);
+
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(window.localStorage.getItem(`hearmeout-overlay-view:v1:${roomId}`) || '{}') as Partial<OverlayViewState>;
+      if (!hasRequestedVolume && typeof saved.volume === 'number') {
+        const nextVolume = Math.max(0, Math.min(1, saved.volume));
+        volumeRef.current = nextVolume;
+        setVolume(nextVolume);
+      }
+      if (requestedMuted === null && typeof saved.muted === 'boolean') {
+        mutedRef.current = saved.muted;
+        setIsMuted(saved.muted);
+      } else if (requestedMuted !== null) {
+        mutedRef.current = requestedMuted;
+        setIsMuted(requestedMuted);
+      }
+      // The unattended broadcast must show the song video regardless of an old browser preference.
+      if (!cleanMode && (saved.musicPlaybackMode === 'audio' || saved.musicPlaybackMode === 'video')) setMusicPlaybackMode(saved.musicPlaybackMode);
+      if (typeof saved.showNowPlaying === 'boolean') setShowNowPlaying(saved.showNowPlaying);
+      if (typeof saved.showMusicQueue === 'boolean') setShowMusicQueue(saved.showMusicQueue);
+      if (typeof saved.showProfiles === 'boolean') setShowProfiles(saved.showProfiles);
+    } catch {}
+    setViewStateHydrated(true);
+  }, [cleanMode, hasRequestedVolume, requestedMuted, roomId]);
+
+  useEffect(() => {
+    if (!viewStateHydrated) return;
+    window.localStorage.setItem(`hearmeout-overlay-view:v1:${roomId}`, JSON.stringify({
+      volume,
+      muted: isMuted,
+      musicPlaybackMode,
+      showNowPlaying,
+      showMusicQueue,
+      showProfiles,
+    } satisfies OverlayViewState));
+  }, [isMuted, musicPlaybackMode, roomId, showMusicQueue, showNowPlaying, showProfiles, viewStateHydrated, volume]);
+
+  // The Restream Lounge can render this page directly inside its existing widget.
+  // Its parent owns the broadcast mix; keep the watch page as a passive player.
+  useEffect(() => {
+    if (!cleanMode || roomId !== 'system-spacemountainlive-lounge') return;
+    const onBroadcastVolume = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin || event.source !== window.parent
+        || event.data?.type !== 'hmo.lounge.broadcast-volume') return;
+      const nextVolume = Number(event.data.volume);
+      if (!Number.isFinite(nextVolume) || nextVolume < 0 || nextVolume > 1
+        || typeof event.data.muted !== 'boolean') return;
+      volumeRef.current = nextVolume;
+      mutedRef.current = event.data.muted;
+      setVolume(nextVolume);
+      setIsMuted(event.data.muted);
+      if (videoRef.current) {
+        videoRef.current.volume = nextVolume;
+        videoRef.current.muted = event.data.muted;
+      }
+    };
+    window.addEventListener('message', onBroadcastVolume);
+    return () => window.removeEventListener('message', onBroadcastVolume);
+  }, [cleanMode, roomId]);
+
+  useEffect(() => { volumeRef.current = volume; }, [volume]);
+  useEffect(() => { mutedRef.current = isMuted; }, [isMuted]);
+
+  const activeBundle = useMemo(() => {
+    if (lane === 'music') return { lane: 'music' as const, sessionId: musicSessionId, state: musicState };
+    if (lane === 'movie') return { lane: 'movie' as const, sessionId: movieSessionId, state: movieState };
+
+    const bundles = [
+      { lane: 'music' as const, sessionId: musicSessionId, state: musicState },
+      { lane: 'movie' as const, sessionId: movieSessionId, state: movieState },
+    ];
+    const playing = bundles.filter((bundle) => sessionHasActiveMedia(bundle.state)).sort(newerPlaybackFirst);
+    if (playing[0]) return playing[0];
+    // A paused movie is not the Lounge program. In the clean broadcast view,
+    // show the idle music lane until a lane is actually playing.
+    if (cleanMode) return bundles[0];
+    const loaded = bundles.filter((bundle) => bundle.state?.current).sort(newerPlaybackFirst);
+    return loaded[0] || bundles[0];
+  }, [cleanMode, lane, movieSessionId, movieState, musicSessionId, musicState]);
+
+  const activeState = activeBundle.state;
+
+  // Tenant broadcast sources follow their own queue's chat-controlled mix.
+  // Personal and Lounge observers keep their existing local volume behavior.
+  useEffect(() => {
+    if (!twitchTenant || !cleanMode || !activeState?.playback) return;
+    const remoteVolume = activeState.playback.volume;
+    if (typeof remoteVolume === 'number' && Number.isFinite(remoteVolume)) {
+      const nextVolume = Math.max(0, Math.min(1, remoteVolume / 100));
+      volumeRef.current = nextVolume;
+      setVolume(nextVolume);
+    }
+    if (typeof activeState.playback.muted === 'boolean') {
+      mutedRef.current = activeState.playback.muted;
+      setIsMuted(activeState.playback.muted);
+    }
+  }, [twitchTenant, cleanMode, activeState?.playback?.volume, activeState?.playback?.muted]);
+  const currentItem = activeState?.current?.item || null;
+  const currentPlaybackUrl = currentItem
+    ? hlsFallbackUrlFor(
+        currentItem,
+        currentItem?.type === 'music' ? musicPlaybackMode : 'video',
+      )
+    : '';
+  const selectedPlaybackUrl = currentItem
+    ? playbackUrlForItem(
+        currentItem,
+        currentItem?.type === 'music' ? musicPlaybackMode : 'video',
+        forceProxyPlayback,
+      )
+    : '';
+  const effectivePlaybackUrl = currentItem
+    ? hlsFallbackUrlFor(
+        { ...currentItem, metadata: forceProxyPlayback ? { ...(currentItem.metadata || {}), embedPlaybackUrl: undefined } : currentItem.metadata, playbackUrl: selectedPlaybackUrl },
+        currentItem?.type === 'music' ? musicPlaybackMode : 'video',
+      )
+    : '';
+  const embeddedMode = Boolean(effectivePlaybackUrl && isEmbeddedVideoUrl(effectivePlaybackUrl));
+  const showNowPlayingPanel = shouldShowNowPlayingPanel({ cleanMode, userPreference: showNowPlaying, sourceRequested: sourceRequestedNowPlaying });
+  const cleanIdle = shouldRenderCleanIdle({ cleanMode, hasPlaybackUrl: Boolean(effectivePlaybackUrl), showNowPlayingPanel });
+
+  useEffect(() => {
+    if (!hideIdle) return;
+    const report = () => window.parent.postMessage({
+      type: 'hmo.overlay.playback',
+      playing: renderingHealthy && activeState?.playback?.status === 'playing',
+    }, 'https://spmt.live');
+    report();
+    const timer = window.setInterval(report, 1000);
+    return () => {
+      window.clearInterval(timer);
+      window.parent.postMessage({ type: 'hmo.overlay.playback', playing: false }, 'https://spmt.live');
+    };
+  }, [hideIdle, renderingHealthy, activeState?.playback?.status]);
+
+
+  const youtubeCommand = useCallback((func: string, args: unknown[] = []) => {
+    const frame = iframeRef.current;
+    if (!frame?.contentWindow) return false;
+    try {
+      frame.contentWindow.postMessage(JSON.stringify({ event: 'command', func, args }), '*');
+      return true;
+    } catch (error) {
+      console.warn('[Overlay] YouTube command failed', func, error);
+      return false;
+    }
+  }, []);
+
+  const applyVolume = useCallback(() => {
+    const nextVolume = Math.max(0, Math.min(1, volumeRef.current));
+    const muted = mutedRef.current || nextVolume === 0;
+    if (embeddedMode) {
+      youtubeCommand('setVolume', [Math.round(nextVolume * 100)]);
+      youtubeCommand(muted ? 'mute' : 'unMute');
+      return;
+    }
+    const video = videoRef.current;
+    if (!video) return;
+    video.volume = nextVolume;
+    video.muted = muted;
+  }, [embeddedMode, youtubeCommand]);
+
+  const registerYouTubeListeners = useCallback(() => {
+    const frame = iframeRef.current;
+    if (!frame?.contentWindow) return;
+    try {
+      frame.contentWindow.postMessage(JSON.stringify({ event: 'listening' }), '*');
+    } catch (error) {
+      console.warn('[Overlay] YouTube listener registration failed', error);
+    }
+  }, []);
+
+  const applyPlaybackState = useCallback((nextState = activeState) => {
+    if (!nextState?.current) return;
+    if (completionRef.current.hasEnded(nextState.current.requestId)) {
+      advanceRef.current(nextState.current.requestId);
+      return; // A poll must not play a completed item again.
+    }
+
+    if (embeddedMode) {
+      const remotePosition = playbackPosition(nextState.playback);
+      const playbackKey = [
+        nextState.current.requestId,
+        nextState.playback.status,
+        Math.round(Number(nextState.playback.position || 0)),
+        Number(nextState.playback.updatedAt || 0),
+      ].join(':');
+
+      if (playbackKey !== lastEmbeddedPlaybackKeyRef.current && Number.isFinite(remotePosition)) {
+        lastEmbeddedPlaybackKeyRef.current = playbackKey;
+        youtubeCommand('seekTo', [Math.max(0, remotePosition), true]);
+      }
+      youtubeCommand(nextState.playback.status === 'playing' ? 'playVideo' : 'pauseVideo');
+      applyVolume();
+      setMediaStatus(nextState.playback.status === 'playing' ? 'Overlay media playing' : 'Overlay media paused');
+      return;
+    }
+
+    const video = videoRef.current;
+    if (!video) return;
+    const remotePosition = playbackPosition(nextState.playback);
+    const drift = Math.abs((video.currentTime || 0) - remotePosition);
+    applyingRemoteState.current = true;
+
+    // Apply a seek only when the authoritative playback position changes
+    // (new request, resume, or explicit seek). While an HLS source buffers,
+    // chasing the wall clock every poll prevents its first frame from loading.
+    const playbackKey = [
+      nextState.current.requestId,
+      nextState.playback.position,
+      nextState.playback.updatedAt,
+    ].join(':');
+    if (nextState.current.item?.metadata?.provider !== 'offline'
+      && video.readyState >= 1
+      && playbackKey !== lastNativePlaybackKeyRef.current
+      && Number.isFinite(remotePosition)) {
+      lastNativePlaybackKeyRef.current = playbackKey;
+      if (drift > 2.5) video.currentTime = remotePosition;
+    }
+
+    if (nextState.playback.status === 'playing' && video.paused) {
+      video.play()
+        .then(() => setAudioReady(true))
+        .catch((error) => {
+          const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+          setMediaStatus(`Overlay autoplay blocked: ${message}`);
+          console.warn('[Overlay] media.play() failed', message);
+        });
+    }
+
+    if (nextState.playback.status !== 'playing' && !video.paused) {
+      video.pause();
+    }
+
+    window.setTimeout(() => {
+      applyingRemoteState.current = false;
+    }, 100);
+  }, [activeState, applyVolume, embeddedMode, youtubeCommand]);
+
+  useEffect(() => {
+    setForceProxyPlayback(false);
+    setRenderingHealthy(false);
+    embeddedCurrentTimeRef.current = 0;
+    embeddedProgressBaselineRef.current = null;
+    nativeProgressBaselineRef.current = null;
+  }, [activeBundle.sessionId, activeState?.current?.requestId]);
+
+  useEffect(() => {
+    if (!embeddedMode || forceProxyPlayback || activeState?.playback?.status !== 'playing' || renderingHealthy) return;
+    const timer = window.setTimeout(() => {
+      setMediaStatus('YouTube embed stalled; switching to HMO proxy');
+      setForceProxyPlayback(true);
+      setRenderingHealthy(false);
+    }, 12_000);
+    return () => window.clearTimeout(timer);
+  }, [
+    activeState?.current?.requestId,
+    activeState?.playback?.status,
+    embeddedMode,
+    forceProxyPlayback,
+    renderingHealthy,
+  ]);
+
+  const startOverlayAudio = useCallback(async () => {
+    if (activeState?.current && completionRef.current.hasEnded(activeState.current.requestId)) {
+      advanceRef.current(activeState.current.requestId);
+      return;
+    }
+    mutedRef.current = false;
+    setIsMuted(false);
+    applyVolume();
+
+    if (embeddedMode) {
+      youtubeCommand('unMute');
+      youtubeCommand('playVideo');
+      setAudioReady(true);
+      setMediaStatus('Overlay media unlocked');
+      return;
+    }
+
+    const video = videoRef.current;
+    if (!video) return;
+    video.muted = false;
+    video.volume = volumeRef.current;
+    await video.play();
+    setAudioReady(true);
+    setMediaStatus('Overlay media unlocked');
+  }, [activeState, applyVolume, embeddedMode, youtubeCommand]);
+
+  useEffect(() => {
+    const refresh = async () => {
+      try {
+        const directLounge = directLoungeMode;
+        const [movie, music] = directLounge
+          ? await api('/api/lounge-media/program').then((program) => [program.movie, program.music])
+          : twitchTenant ? [null, await api(`/api/watch/sessions/${musicSessionId}/state`)] : await Promise.all([
+              api(`/api/watch/sessions/${movieSessionId}/state`),
+              api(`/api/watch/sessions/${musicSessionId}/state`),
+            ]);
+        setMovieState(movie);
+        setMusicState(music);
+        setConnected(true);
+      } catch (error) {
+        setConnected(false);
+        console.warn('[Overlay] watch-session refresh failed', error);
+      }
+    };
+
+    refresh();
+    const interval = window.setInterval(refresh, 1000);
+    return () => window.clearInterval(interval);
+  }, [directLoungeMode, movieSessionId, musicSessionId]);
+
+  useEffect(() => {
+    const unlockOverlayAudio = () => {
+      void startOverlayAudio().catch((error) => console.warn('[Overlay] start audio failed:', error));
+    };
+    window.addEventListener('pointerdown', unlockOverlayAudio, { passive: true });
+    window.addEventListener('keydown', unlockOverlayAudio);
+    window.addEventListener('touchstart', unlockOverlayAudio, { passive: true });
+    return () => {
+      window.removeEventListener('pointerdown', unlockOverlayAudio);
+      window.removeEventListener('keydown', unlockOverlayAudio);
+      window.removeEventListener('touchstart', unlockOverlayAudio);
+    };
+  }, [startOverlayAudio]);
+
+  useEffect(() => {
+    const requestId = activeState?.current?.requestId || null;
+    const item = activeState?.current?.item;
+    if (!item || !requestId) {
+      currentRequestIdRef.current = null;
+      if (offlineBlobUrlRef.current) {
+        URL.revokeObjectURL(offlineBlobUrlRef.current);
+        offlineBlobUrlRef.current = null;
+      }
+      setRenderingHealthy(false);
+      setAudioTracks([]);
+      setSelectedAudioTrack(0);
+      videoRef.current?.pause();
+      if (videoRef.current) {
+        videoRef.current.removeAttribute('src');
+        videoRef.current.load();
+      }
+      if (iframeRef.current) iframeRef.current.removeAttribute('src');
+      setMediaStatus('Waiting for media');
+      return;
+    }
+
+    if (currentRequestIdRef.current === `${activeBundle.sessionId}:${requestId}:${effectivePlaybackUrl}`) {
+      applyPlaybackState(activeState);
+      return;
+    }
+
+    currentRequestIdRef.current = `${activeBundle.sessionId}:${requestId}:${effectivePlaybackUrl}`;
+    embeddedCurrentTimeRef.current = 0;
+    embeddedProgressBaselineRef.current = null;
+    nativeProgressBaselineRef.current = null;
+    setRenderingHealthy(false);
+    lastEmbeddedPlaybackKeyRef.current = '';
+    lastNativePlaybackKeyRef.current = '';
+    hlsRecoveryCountRef.current = 0;
+
+    if (offlineBlobUrlRef.current) {
+      URL.revokeObjectURL(offlineBlobUrlRef.current);
+      offlineBlobUrlRef.current = null;
+    }
+    if (hlsRef.current) {
+      hlsRef.current.destroy();
+      hlsRef.current = null;
+    }
+    setAudioTracks([]);
+    setSelectedAudioTrack(0);
+
+    const video = videoRef.current;
+    if (video) {
+      video.pause();
+      video.removeAttribute('src');
+      video.load();
+    }
+
+    setMediaStatus(`Loading ${item.title || 'media'}`);
+
+    if (embeddedMode) {
+      if (iframeRef.current) iframeRef.current.src = iframeUrlFor(effectivePlaybackUrl);
+      window.setTimeout(() => {
+        registerYouTubeListeners();
+        applyPlaybackState(activeState);
+      }, 600);
+      return;
+    }
+
+    if (!video || !effectivePlaybackUrl) return;
+
+    if (isHlsPlaybackUrl(effectivePlaybackUrl)) {
+      import('hls.js')
+        .then(({ default: Hls }) => {
+          if (!videoRef.current || currentRequestIdRef.current !== `${activeBundle.sessionId}:${requestId}:${effectivePlaybackUrl}`) return;
+          if (Hls.isSupported()) {
+            hlsRef.current = new Hls({
+              enableWorker: false,
+              startPosition: item.type === 'movie' ? 0 : -1,
+              lowLatencyMode: false,
+              liveSyncDurationCount: 6,
+              liveMaxLatencyDurationCount: Infinity,
+              maxLiveSyncPlaybackRate: 1,
+              backBufferLength: 30,
+              manifestLoadingTimeOut: 60000,
+              manifestLoadingMaxRetry: 4,
+              manifestLoadingRetryDelay: 1000,
+              manifestLoadingMaxRetryTimeout: 8000,
+              fragLoadingTimeOut: 60000,
+              fragLoadingMaxRetry: 4,
+              fragLoadingRetryDelay: 1000,
+              fragLoadingMaxRetryTimeout: 8000,
+            });
+            hlsRef.current.on(Hls.Events.MANIFEST_PARSED, () => {
+              const tracks: Array<{ index: number; name: string; language: string }> =
+                (hlsRef.current?.audioTracks || []).map((track: any, index: number) => ({
+                  index,
+                  name: String(track?.name || track?.lang || `Audio ${index + 1}`),
+                  language: String(track?.lang || '').toLowerCase(),
+                }));
+              setAudioTracks(tracks);
+              const english = tracks.find((track) => /^(?:en|eng|english)$/i.test(track.language) || /\benglish\b/i.test(track.name));
+              const preferred = english?.index ?? Math.max(0, Number(hlsRef.current?.audioTrack || 0));
+              hlsRef.current.audioTrack = preferred;
+              setSelectedAudioTrack(preferred);
+              setMediaStatus('Overlay media ready');
+              applyPlaybackState(activeState);
+            });
+            hlsRef.current.on(Hls.Events.ERROR, (_event: unknown, data: any) => {
+              const detail = data?.details || data?.type || 'HLS playback error';
+              if (data?.fatal && hlsRecoveryCountRef.current < 2) {
+                hlsRecoveryCountRef.current += 1;
+                setMediaStatus(`Recovering video stream (${hlsRecoveryCountRef.current}/2)`);
+                if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+                  hlsRef.current?.startLoad(videoRef.current?.currentTime || 0);
+                  return;
+                }
+                if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+                  hlsRef.current?.recoverMediaError();
+                  return;
+                }
+              }
+              if (data?.fatal && item?.type === 'music' && musicPlaybackMode === 'video'
+                && musicModeOptions(item).audio) {
+                setMediaStatus('Video stream failed; trying the saved song');
+                setMusicPlaybackMode('audio');
+                return;
+              }
+              setMediaStatus(`Overlay HLS error: ${detail}`);
+              console.error('[Overlay] HLS error', data);
+            });
+            hlsRef.current.loadSource(effectivePlaybackUrl);
+            hlsRef.current.attachMedia(videoRef.current);
+            return;
+          }
+
+          if (videoRef.current.canPlayType('application/vnd.apple.mpegurl')) {
+            videoRef.current.src = effectivePlaybackUrl;
+          } else {
+            setMediaStatus('HLS is not supported in this browser');
+          }
+        })
+        .catch((error) => {
+          setMediaStatus('Failed to load HLS player');
+          console.error('[Overlay] Failed to load HLS player', error);
+        });
+    } else if (item?.metadata?.provider === 'offline' || (item?.type === 'music' && musicPlaybackMode === 'audio')) {
+      // Fetch the complete saved song before starting playback. Once loaded,
+      // later byte-range requests cannot interrupt the audio fallback.
+      const playbackKey = `${activeBundle.sessionId}:${requestId}:${effectivePlaybackUrl}`;
+      void fetch(effectivePlaybackUrl, { cache: 'force-cache' })
+        .then((response) => {
+          if (!response.ok) throw new Error(`Saved song unavailable: ${response.status}`);
+          return response.blob();
+        })
+        .then((blob) => {
+          const blobUrl = URL.createObjectURL(blob);
+          if (currentRequestIdRef.current !== playbackKey || !videoRef.current) {
+            URL.revokeObjectURL(blobUrl);
+            return;
+          }
+          offlineBlobUrlRef.current = blobUrl;
+          videoRef.current.src = blobUrl;
+          videoRef.current.load();
+          applyVolume();
+        })
+        .catch((error) => {
+          if (currentRequestIdRef.current !== playbackKey || !videoRef.current) return;
+          console.warn('[Overlay] Saved song prefetch failed; using original file URL', error);
+          videoRef.current.src = effectivePlaybackUrl;
+          videoRef.current.load();
+          applyVolume();
+        });
+    } else {
+      video.src = effectivePlaybackUrl;
+      video.load();
+      applyVolume();
+    }
+  }, [
+    activeBundle.sessionId,
+    activeState?.current?.requestId,
+    effectivePlaybackUrl,
+    embeddedMode,
+    registerYouTubeListeners,
+    applyPlaybackState,
+    applyVolume,
+    activeState,
+  ]);
+
+  useEffect(() => () => {
+    if (offlineBlobUrlRef.current) URL.revokeObjectURL(offlineBlobUrlRef.current);
+  }, []);
+
+  useEffect(() => {
+    applyPlaybackState(activeState);
+  }, [activeState?.playback.status, activeState?.playback.position, activeState?.playback.updatedAt, applyPlaybackState, activeState]);
+
+  useEffect(() => {
+    applyVolume();
+  }, [applyVolume, volume, isMuted]);
+
+  useEffect(() => {
+    const onMessage = (event: MessageEvent) => {
+      const frame = iframeRef.current;
+      if (!frame || event.source !== frame.contentWindow) return;
+      let payload: any = event.data;
+      if (typeof payload === 'string') {
+        try {
+          payload = JSON.parse(payload);
+        } catch {
+          return;
+        }
+      }
+      if (!payload || typeof payload !== 'object') return;
+
+      if (payload.event === 'onError') {
+        setRenderingHealthy(false);
+        setMediaStatus(`YouTube embed error ${String(payload.info || 'unknown')}; switching to HMO proxy`);
+        setForceProxyPlayback(true);
+        return;
+      }
+
+      if (payload.event === 'infoDelivery' && typeof payload.info?.currentTime === 'number') {
+        const nextTime = Number(payload.info.currentTime);
+        embeddedCurrentTimeRef.current = nextTime;
+        if (embeddedProgressBaselineRef.current === null) {
+          embeddedProgressBaselineRef.current = nextTime;
+        } else if (nextTime - embeddedProgressBaselineRef.current >= 0.75) {
+          setRenderingHealthy(true);
+          setAudioReady(true);
+          setMediaStatus('Overlay media playing');
+        }
+      }
+
+      if (payload.event !== 'onStateChange') return;
+      const code = Number(payload.info);
+      if (code === 1) {
+        setAudioReady(true);
+        setMediaStatus('Overlay media starting');
+      } else if (code === 2) {
+        setMediaStatus('Overlay media paused');
+      } else if (code === 0) {
+        setMediaStatus('Overlay media ended');
+        const id = String(activeRequestRef.current || '');
+        completionRef.current.markEnded(id);
+        advanceRef.current(id);
+      } else if (code === 3) {
+        setMediaStatus('Overlay media buffering');
+      }
+    };
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, []);
+
+  const advanceRef = useRef<(id: string) => void>(() => {});
+  advanceRef.current = (id: string) => {
+    const target = overlayEndTarget({
+      clean: cleanMode, lane: activeBundle.lane, roomId, twitchTenant, sourceKey,
+      sessionId: activeBundle.sessionId, requestId: id,
+    });
+    if (!target) return;
+    void completionRef.current.report(id, async () => {
+      const response = await fetch(target.url, target.init);
+      if (!response.ok) throw new Error('Queue advance failed: ' + response.status);
+      const next = await response.json();
+      // Ignore a late acknowledgment for an item the user already changed.
+      if (activeRequestRef.current === id && next?.id === activeBundle.sessionId
+        && Object.prototype.hasOwnProperty.call(next, 'current')) setMusicState(next);
+    }).catch(error => {
+      setMediaStatus('Song finished; retrying queue advance');
+      console.warn('[Overlay] stream advance failed', error);
+    });
+  };
+  const hasPopout = (source: string) => popouts.some((p) => p.type === 'chat' && p.customSettings?.source === source);
+  const hasQueue = popouts.some((p) => p.type === 'queue');
+  const hasAddSong = popouts.some((p) => p.type === 'addSong');
+  const hasWatch = popouts.some((p) => p.type === 'watch');
+  const hasScreenShare = popouts.some((p) => p.type === 'screenShare');
+  const togglePopout = (kind: 'chat' | 'queue' | 'addSong' | 'watch' | 'screenShare', source: string, size: { width: number; height: number }) => {
+    const existing = popouts.find((p) => p.type === kind && (kind !== 'chat' || p.customSettings?.source === source));
+    if (existing) closePopout(existing.id);
+    else openPopout(kind, size, { source });
+  };
+
+  const mediaTitle = currentItem?.title || 'Waiting for media';
+  activeRequestRef.current = activeState?.current?.requestId || '';
+  completionRef.current.retain(activeRequestRef.current);
+  const mediaSubtitle = currentItem?.artist || currentItem?.source || activeBundle.sessionId;
+  const mediaImage = currentItem?.thumbnail || currentItem?.poster || currentItem?.image;
+  const queueLength = activeState?.queue?.length || 0;
+  const laneLabel = activeBundle.lane === 'music' ? 'Music Videos' : 'Watch Party';
+  const musicQueue = musicState?.queue || [];
+
+  if (cleanIdle) {
+    return (
+      <>
+        <style jsx global>{`
+          html, body, #__next { background: transparent !important; background-color: transparent !important; }
+        `}</style>
+        <div className="h-screen w-screen bg-transparent" aria-hidden="true" />
+      </>
+    );
+  }
+
+  return (
+    <>
+      <style jsx global>{`
+        html, body, #__next { background: transparent !important; background-color: transparent !important; }
+      `}</style>
+      <div
+        className="relative min-h-screen overflow-hidden bg-transparent text-white"
+        data-testid="overlay-root"
+        data-request-id={activeState?.current?.requestId || ''}
+        data-media-title={currentItem?.title || ''}
+        data-player-mode={embeddedMode ? 'youtube-embed' : isHlsPlaybackUrl(effectivePlaybackUrl) ? 'proxy-hls' : effectivePlaybackUrl ? 'direct-media' : 'idle'}
+        data-media-healthy={renderingHealthy ? 'true' : 'false'}
+        style={{ opacity: hideIdle && (!renderingHealthy || activeState?.playback?.status !== 'playing') ? 0 : 1 }}
+      >
+      <div className="absolute inset-0 bg-transparent">
+        {embeddedMode && currentPlaybackUrl && (
+          <iframe
+            ref={iframeRef}
+            className="pointer-events-auto h-full w-full border-0 bg-black"
+            style={{ pointerEvents: 'auto' }}
+            title="Overlay media player"
+            src={iframeUrlFor(effectivePlaybackUrl)}
+            allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
+            allowFullScreen
+            onLoad={() => {
+              registerYouTubeListeners();
+              applyPlaybackState(activeState);
+            }}
+          />
+        )}
+        <video
+          ref={videoRef}
+          className={`h-full w-full object-contain ${cleanMode && !currentPlaybackUrl ? 'bg-transparent opacity-0' : 'bg-black'} ${embeddedMode ? 'hidden' : ''}`}
+          muted={isMuted}
+          playsInline
+          onCanPlay={() => {
+            setMediaStatus('Overlay media ready');
+            applyPlaybackState(activeState);
+          }}
+          onPlaying={() => {
+            nativeProgressBaselineRef.current = null;
+            setAudioReady(true);
+            setMediaStatus('Overlay media starting');
+          }}
+          onTimeUpdate={() => {
+            const video = videoRef.current;
+            // A remote seek emits timeupdate even when autoplay was blocked.
+            // Count only actual playback progress as renderer health.
+            if (!video || video.paused || applyingRemoteState.current) return;
+            const nextTime = Number(video.currentTime || 0);
+            if (nativeProgressBaselineRef.current === null) {
+              nativeProgressBaselineRef.current = nextTime;
+            } else if (nextTime - nativeProgressBaselineRef.current >= 0.75) {
+              setRenderingHealthy(true);
+              setMediaStatus('Overlay media playing');
+            }
+          }}
+          onPause={() => {
+            nativeProgressBaselineRef.current = null;
+            setRenderingHealthy(false);
+            if (!applyingRemoteState.current) setMediaStatus('Overlay media paused');
+          }}
+          onEnded={() => {
+            const video = videoRef.current;
+            const requestId = activeState?.current?.requestId;
+            nativeProgressBaselineRef.current = null;
+            setRenderingHealthy(false);
+            const expectedDuration = mediaRuntimeSeconds(currentItem?.runtime);
+            if (currentItem?.type === 'music' && musicPlaybackMode === 'video'
+              && musicModeOptions(currentItem).audio && expectedDuration > 0
+              && Number(video?.currentTime || 0) < expectedDuration - 3) {
+              setMediaStatus('Song video ended early; trying the saved audio');
+              if (musicPlaybackMode === 'video' && musicModeOptions(currentItem).audio) setMusicPlaybackMode('audio');
+              return;
+            }
+            setMediaStatus('Overlay media ended');
+            if (requestId && activeState?.playback.status === 'playing') {
+              completionRef.current.markEnded(requestId);
+              advanceRef.current(requestId);
+            }
+          }}
+          onError={() => {
+            const error = videoRef.current?.error;
+            setMediaStatus(error ? `Overlay media error ${error.code}` : 'Overlay media error');
+            console.error('[Overlay] media error', error);
+          }}
+        />
+      </div>
+
+      {!cleanMode && showProfiles && (
+        <div style={{ position: 'absolute', left: 20, top: 20 }}>
+          <div className="min-w-[240px] max-w-[360px] rounded-lg bg-black/80 p-3 shadow-2xl backdrop-blur-md">
+            <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-sky-300">
+              <Users className="h-4 w-4" /> In the room ({activeProfiles.length})
+            </div>
+            {activeProfiles.length ? (
+              <div className="flex flex-wrap gap-2">
+                {activeProfiles.map((profile) => {
+                  const name = profile.displayName || 'HearMeOut User';
+                  return (
+                    <div key={profile.id} className="flex max-w-[160px] items-center gap-2 rounded-full bg-white/10 py-1 pl-1 pr-3">
+                      <Avatar className="h-7 w-7">
+                        <AvatarImage src={profile.photoURL} alt={name} />
+                        <AvatarFallback>{name.charAt(0).toUpperCase()}</AvatarFallback>
+                      </Avatar>
+                      <span className="truncate text-xs font-medium">{name}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-xs text-gray-400">Waiting for room profiles…</p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {showNowPlayingPanel && (
+        <div style={{ position: 'absolute', left: 20, bottom: 20 }}>
+          <div className="flex min-w-[320px] max-w-[520px] items-center gap-4 rounded-lg bg-black/80 p-4 shadow-2xl backdrop-blur-md">
+            {mediaImage ? (
+              <Image src={mediaImage} alt="" width={64} height={64} className="rounded-md object-cover" unoptimized />
+            ) : (
+              <div className="flex h-16 w-16 items-center justify-center rounded-md bg-white/10">
+                {activeBundle.lane === 'music' ? <Music className="h-8 w-8 text-white/80" /> : <Film className="h-8 w-8 text-white/80" />}
+              </div>
+            )}
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-semibold uppercase tracking-normal text-emerald-300">{laneLabel}</p>
+              <h2 className="truncate text-lg font-bold">{mediaTitle}</h2>
+              <p className="truncate text-sm text-gray-300">{mediaSubtitle}</p>
+              <p className="truncate text-xs text-gray-400">{mediaStatus} · queue {queueLength}</p>
+            </div>
+            {connected && activeState?.playback.status === 'playing' && <div className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-green-500" />}
+          </div>
+        </div>
+      )}
+
+      {!cleanMode && showMusicQueue && (
+        <div style={{ position: 'absolute', right: 20, bottom: 20 }}>
+          <div className="w-[340px] max-w-[calc(100vw-40px)] rounded-lg bg-black/80 p-4 shadow-2xl backdrop-blur-md">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-emerald-300">
+                <ListMusic className="h-4 w-4" /> Music Queue
+              </div>
+              <span className="rounded-full bg-white/10 px-2 py-0.5 text-xs text-gray-300">{musicQueue.length}</span>
+            </div>
+            {musicState?.current && (
+              <div className="mb-2 rounded-md bg-emerald-500/15 p-2">
+                <p className="text-[10px] font-semibold uppercase text-emerald-300">Now playing</p>
+                <p className="truncate text-sm font-semibold">{musicState.current.item?.title || 'Untitled'}</p>
+              </div>
+            )}
+            <div className="space-y-1.5">
+              {musicQueue.slice(0, 5).map((request, index) => (
+                <div key={request.requestId} className="flex items-center gap-2 rounded-md bg-white/5 px-2 py-1.5 text-xs">
+                  <span className="w-5 shrink-0 text-center text-gray-400">{index + 1}</span>
+                  <span className="min-w-0 flex-1 truncate">{request.item?.title || 'Untitled'}</span>
+                  {request.requestedBy?.username && <span className="max-w-[90px] truncate text-gray-400">{request.requestedBy.username}</span>}
+                </div>
+              ))}
+              {!musicQueue.length && <p className="py-2 text-center text-xs text-gray-400">The music queue is empty.</p>}
+              {musicQueue.length > 5 && <p className="text-right text-[11px] text-gray-400">+{musicQueue.length - 5} more</p>}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {!cleanMode && <div style={{ position: 'absolute', right: 20, top: 20 }} className="opacity-20 transition-opacity hover:opacity-100">
+        <div className="flex items-center gap-2 rounded-lg bg-black/80 p-3 shadow-2xl backdrop-blur-md">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-white hover:bg-white/20"
+                aria-label="Start overlay audio"
+                onClick={() => startOverlayAudio().catch((error) => console.warn('[Overlay] start audio failed:', error))}
+              >
+                <Play className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent><p>{audioReady ? 'Overlay audio ready' : 'Start overlay audio'}</p></TooltipContent>
+          </Tooltip>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-8 w-8 text-white hover:bg-white/20" aria-label="Overlay widgets">
+                <Music className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuLabel>Overlay Widgets</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuCheckboxItem checked={showNowPlaying} onCheckedChange={(checked) => setShowNowPlaying(checked === true)}>
+                Now Playing
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuCheckboxItem checked={showMusicQueue} onCheckedChange={(checked) => setShowMusicQueue(checked === true)}>
+                Music Queue HUD
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuCheckboxItem checked={showProfiles} onCheckedChange={(checked) => setShowProfiles(checked === true)}>
+                Room Profiles
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuCheckboxItem
+                checked={hasPopout('space')}
+                onCheckedChange={() => togglePopout('chat', 'space', { width: 440, height: 620 })}
+              >
+                Space Mountain Chat
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuCheckboxItem
+                checked={hasPopout('discord')}
+                onCheckedChange={() => togglePopout('chat', 'discord', { width: 520, height: 680 })}
+              >
+                Discord Chat
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuCheckboxItem
+                checked={hasPopout('twitch')}
+                onCheckedChange={() => togglePopout('chat', 'twitch', { width: 440, height: 620 })}
+              >
+                Twitch Chat
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuCheckboxItem
+                checked={hasQueue}
+                onCheckedChange={() => togglePopout('queue', 'queue', { width: 760, height: 720 })}
+              >
+                Queue
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuCheckboxItem
+                checked={hasAddSong}
+                onCheckedChange={() => {
+                  const existing = popouts.find((p) => p.type === 'addSong');
+                  if (existing) closePopout(existing.id);
+                  else openPopout('addSong', { width: 460, height: 560 }, { source: 'addSong', sessionScope: 'overlay', roomId });
+                }}
+              >
+                Add Song
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuCheckboxItem
+                checked={hasWatch}
+                onCheckedChange={() => {
+                  const existing = popouts.find((p) => p.type === 'watch');
+                  if (existing) closePopout(existing.id);
+                  else openPopout('watch', { width: 760, height: 620 }, { source: 'watch', sessionScope: 'overlay', roomId });
+                }}
+              >
+                Watch Party
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuCheckboxItem
+                checked={hasScreenShare}
+                onCheckedChange={() => togglePopout('screenShare', 'screenShare', { width: 720, height: 520 })}
+              >
+                Screen Share
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuCheckboxItem
+                checked={lane === 'music'}
+                onCheckedChange={() => { window.location.search = '?media=music'; }}
+              >
+                Lock to Music
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuCheckboxItem
+                checked={lane === 'movie'}
+                onCheckedChange={() => { window.location.search = '?media=movie'; }}
+              >
+                Lock to Movies
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuCheckboxItem
+                checked={lane === 'auto'}
+                onCheckedChange={() => { window.location.search = '?media=auto'; }}
+              >
+                Auto Media Lane
+              </DropdownMenuCheckboxItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          {currentItem?.type === 'music' && hasMusicModeToggle(currentItem) && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 text-white hover:bg-white/20"
+                  onClick={() => {
+                    setMusicPlaybackMode((current) => current === 'audio' ? 'video' : 'audio');
+                    currentRequestIdRef.current = null;
+                  }}
+                >
+                  {musicPlaybackMode === 'audio' ? 'Audio' : 'Video'}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent><p>Switch music playback mode</p></TooltipContent>
+            </Tooltip>
+          )}
+          {audioTracks.length > 1 && (
+            <select
+              aria-label="Overlay audio language"
+              className="h-8 max-w-36 rounded-md border border-white/20 bg-black/80 px-2 text-xs text-white"
+              value={selectedAudioTrack}
+              onChange={(event) => {
+                const nextTrack = Number(event.target.value);
+                setSelectedAudioTrack(nextTrack);
+                if (hlsRef.current) hlsRef.current.audioTrack = nextTrack;
+              }}
+            >
+              {audioTracks.map((track) => (
+                <option key={`${track.index}-${track.name}`} value={track.index}>
+                  {track.name}{track.language ? ` (${track.language})` : ''}
+                </option>
+              ))}
+            </select>
+          )}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-white hover:bg-white/20"
+                aria-label={isMuted ? 'Unmute overlay media' : 'Mute overlay media'}
+                onClick={() => {
+                  const nextMuted = !isMuted;
+                  mutedRef.current = nextMuted;
+                  setIsMuted(nextMuted);
+                }}
+              >
+                {isMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent><p>{isMuted ? 'Unmute overlay media' : 'Mute overlay media'}</p></TooltipContent>
+          </Tooltip>
+          <Slider
+            value={[isMuted ? 0 : volume]}
+            onValueChange={(nextValue) => {
+              const nextVolume = nextValue[0];
+              volumeRef.current = nextVolume;
+              setVolume(nextVolume);
+              if (isMuted) {
+                mutedRef.current = false;
+                setIsMuted(false);
+              }
+            }}
+            max={1}
+            step={0.05}
+            className="w-24"
+          />
+        </div>
+      </div>}
+      </div>
+    </>
+  );
+}
