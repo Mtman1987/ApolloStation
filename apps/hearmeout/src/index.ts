@@ -41,3 +41,4 @@ export function hearMeOutCatalogRegistration(launchUrl:string):AppCatalogRegistr
 export * from "./discord-http.js";
 
 export * from './prepared-media.js';
+export * from "./xtream-direct-probe.js";

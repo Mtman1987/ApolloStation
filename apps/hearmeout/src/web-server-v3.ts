@@ -3,6 +3,7 @@ import {HearMeOutRoomPersonaSpeech,type HearMeOutPersonaPublisher} from './room-
 import {HearMeOutScreenBroadcast} from "./screen-broadcast.js";
 import {HearMeOutBroadcastProgram,type HearMeOutProgramBinding} from "./broadcast-program.js";
 import {handleHearMeOutBroadcastWindow} from "./broadcast-window.js";
+import {probeHearMeOutXtreamDirect} from "./xtream-direct-probe.js";
 import { preparedHearMeOutEnvironment } from './prepared-media.js';
 import { HearMeOutRoomBroadcast, type HearMeOutRoomBroadcastOptions } from "./room-broadcast.js";
 import { HearMeOutDiscordHttp } from "./discord-http.js";
@@ -137,6 +138,8 @@ export async function startHearMeOutWebServerFromEnvironment(environment:NodeJS.
 async function handleApi(request:IncomingMessage,response:ServerResponse,url:URL,rooms:SqliteHearMeOutRoomMediaRuntime,consoleStore:HearMeOutRoomConsoleStore,spmtOrigin:string,roomAssistant:HearMeOutRoomAssistantJobs,personaConversation?:HearMeOutPersonaConversationCoordinator,voiceBridge?:HearMeOutVoiceBridgeController,refreshBridge?:(tenantId:string,roomId:string)=>void,onRoomDeleted?:(tenantId:string,roomId:string)=>void,onModerated?:(tenantId:string,roomId:string,userId:string,action:string,targetRoomId?:string)=>Promise<{providerPending:boolean}>,mediaResolver?:HearMeOutSuiteMediaResolverV1,broadcast?:HearMeOutRoomBroadcast,program?:HearMeOutBroadcastProgram,screenBroadcast?:HearMeOutScreenBroadcast,personaSpeech?:HearMeOutRoomPersonaSpeech){
   try{
     const principal=await resolvePrincipal(request,spmtOrigin);
+    const xtreamProbe=url.pathname.match(/^\/api\/hearmeout\/watch\/xtream\/direct-test\/([^/]+)$/);
+    if(xtreamProbe){if(request.method!=="GET")return sendJson(response,405,{error:"method_not_allowed"});const result=await probeHearMeOutXtreamDirect(decodeURIComponent(xtreamProbe[1]!));return sendJson(response,result.status,result.body);}
     const screenRoute=url.pathname.match(/^\/api\/hearmeout\/rooms\/([^/]+)\/screen(?:\/([a-f0-9-]{36}))?$/);
     if(screenRoute){
       requireSameOrigin(request);const sourceRoomId=decodeURIComponent(screenRoute[1]!);requireMembership(rooms,principal,sourceRoomId);
