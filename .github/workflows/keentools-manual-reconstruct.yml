@@ -43,7 +43,7 @@ jobs:
 
       - name: Reconstruct head and facial expressions with KeenTools
         env:
-          STREAMWEAVER_KEENTOOLS_API_KEY: ${{ secrets.STREAMWEAVER_KEENTOOLS_API_KEY }}
+          STREAMWEAVER_KEENTOOLS_API_KEY_SECOND: ${{ secrets.STREAMWEAVER_KEENTOOLS_API_KEY_SECOND }}
         run: node .github/scripts/keentools-manual-reconstruct.mjs
 
       - name: Upload generated GLB
