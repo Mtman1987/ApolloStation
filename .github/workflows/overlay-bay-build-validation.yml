@@ -17,7 +17,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: overlay-bay-build-${{ github.event.pull_request.number || github.ref }}
+  group: overlay-bay-focused-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
