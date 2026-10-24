@@ -23,7 +23,7 @@ jobs:
           origin = os.environ.get("ORIGIN", "").rstrip("/")
           if not origin: print("::error::LOUNGE_STREAMWEAVER_ORIGIN is not set"); sys.exit(1)
           checks = [
-            ("Health", "/health", None),
+            ("Health", "/health/ready", {"state"}),
             ("Layout", "/api/lounge/media-layout", {"mode", "locked"}),
             ("Marquee", "/api/lounge/marquee", {"mode", "text"}),
             ("Commercial break", "/api/lounge/commercial-break", {"phase"}),
