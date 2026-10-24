@@ -4,6 +4,7 @@ import { buildLoungeCommandMarquee, loungeMarqueeMoment, LOUNGE_THANKS_MESSAGE, 
 import { getLoungeAudioMix } from "./lounge-audio-mix.js";
 import { getCommercialBreakState, withSpotlightCommercialBreak } from "./lounge-commercial-break.js";
 import { isStreamWeaverLoungeTenant } from "./lounge-chat.js";
+import { buildLoungeBrbPlaylist, type LoungeBrbSourcesV1 } from "./lounge-brb.js";
 
 export interface StreamWeaverLoungeWebOptionsV1 {
   /** Active Nebula games to advertise in the marquee. */
@@ -12,6 +13,8 @@ export interface StreamWeaverLoungeWebOptionsV1 {
   spotlightProgram?: () => Promise<unknown> | unknown;
   /** Public media sources for the commercial-break player. Old fly.dev hosts are retired, so these must be configured. */
   breakGifsUrl?: string; breakThemeMusicUrls?: string[];
+  /** BRB fallback media sources; /api/lounge/brb-fallback returns 503 until configured. */
+  brb?: LoungeBrbSourcesV1;
   now?: () => number;
 }
 
@@ -36,6 +39,10 @@ export function createStreamWeaverLoungeWebHandler(options: StreamWeaverLoungeWe
         const delay = Number(url.searchParams.get("playbackDelayMs") ?? 60000);
         const state = await getCommercialBreakState(tenant);
         return json(response, options.spotlightProgram ? withSpotlightCommercialBreak(state, await options.spotlightProgram(), now(), delay) : state);
+      }
+      case "/api/lounge/brb-fallback": {
+        if (!options.brb) return json(response, { clips: [], gifs: [] }, 503);
+        return json(response, await buildLoungeBrbPlaylist(tenant, options.brb));
       }
       case "/lounge/commercial-break-player": {
         response.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });

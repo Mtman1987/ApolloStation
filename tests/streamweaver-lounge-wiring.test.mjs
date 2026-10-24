@@ -71,3 +71,15 @@ test("lounge web routes", async () => {
     assert.match(await (await fetch(base + "/lounge/commercial-break-player")).text(), /spmt-commercial-ready/);
   } finally { server.close(); }
 });
+
+test("BRB playlist prefers chatter clips, falls back to community, filters gifs", async () => {
+  const media = await sw.buildLoungeBrbPlaylist("spacemountainlive", {
+    chatters: async () => ["SpaceMountainLive", "friend", "nightbot", "x"],
+    communityLogins: async () => ["creator"],
+    clipsFor: async (l) => l === "friend" ? [{ url: "https://clips.twitch.tv/abc", duration: 10 }] : [],
+    gifs: async () => [{ url: "https://cdn/x.gif", user: "friend" }, { url: "http://bad", user: "y" }],
+    excluded: (l) => l === "nightbot", random: () => 0,
+  });
+  assert.equal(media.clips.length, 1); assert.equal(media.clips[0].user, "friend"); assert.equal(media.clips[0].duration, 10700);
+  assert.equal(media.gifs.length, 1);
+});

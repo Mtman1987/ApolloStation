@@ -1,0 +1,47 @@
+# Lounge 24/7 uptime watchdog (ported from Mtman1987/streamweaver .github/workflows/lounge-uptime-watchdog.yml).
+# Install by copying to .github/workflows/ (requires a token with `workflow` scope).
+# Set repo variable LOUNGE_STREAMWEAVER_ORIGIN to the Apollo StreamWeaver public origin.
+# The donor's Fly auto-restart step is intentionally not ported; failed runs alert instead.
+name: Lounge 24/7 Uptime Watchdog
+on:
+  schedule: [{ cron: "*/5 * * * *" }]
+  workflow_dispatch:
+permissions: { contents: read }
+concurrency: { group: lounge-uptime-watchdog, cancel-in-progress: false }
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Probe Lounge surfaces (3 bounded attempts each)
+        env:
+          ORIGIN: ${{ vars.LOUNGE_STREAMWEAVER_ORIGIN }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json, os, sys, time, urllib.request
+          origin = os.environ.get("ORIGIN", "").rstrip("/")
+          if not origin: print("::error::LOUNGE_STREAMWEAVER_ORIGIN is not set"); sys.exit(1)
+          checks = [
+            ("Health", "/health", None),
+            ("Layout", "/api/lounge/media-layout", {"mode", "locked"}),
+            ("Marquee", "/api/lounge/marquee", {"mode", "text"}),
+            ("Commercial break", "/api/lounge/commercial-break", {"phase"}),
+            ("Audio mix", "/api/lounge/audio-mix", {"levels"}),
+          ]
+          failed = []
+          for name, path, keys in checks:
+            ok = False
+            for attempt in range(3):
+              try:
+                with urllib.request.urlopen(urllib.request.Request(origin + path, headers={"Cache-Control": "no-cache"}), timeout=8) as r:
+                  body = r.read(65536)
+                  ok = r.status == 200 and (keys is None or keys <= set(json.loads(body)))
+              except Exception as e:
+                print(f"{name} attempt {attempt+1}: {e}")
+              if ok: break
+              time.sleep(5)
+            print(f"{name}: {'healthy' if ok else 'UNHEALTHY'}")
+            if not ok: failed.append(name)
+          if failed: print("::error::Unhealthy Lounge surfaces: " + ", ".join(failed)); sys.exit(1)
+          PY
