@@ -15,8 +15,8 @@ export type MosaicChatResult = { handled: boolean; reply?: string; generated?: b
 
 function mosaicBody(value: string): string | null {
   const original = String(value || "").trim();
-  if (!/^(?:!?@?spmt\s+(?:mosaic|pixelbattle)\b|!?mosaic\b|!?pixelbattle\b)/i.test(original)) return null;
-  return original.replace(/^!?@?spmt\s+/i, "").replace(/^!?mosaic\s*/i, "").replace(/^!?pixelbattle\s*/i, "").trim();
+  if (!/^(?:!?@?spmt\s+(?:mosaic|pixelbattle|reveal)\b|!?mosaic\b|!?pixelbattle\b)/i.test(original)) return null;
+  return original.replace(/^!?@?spmt\s+/i, "").replace(/^!?mosaic\s*/i, "").replace(/^!?pixelbattle\s*/i, "").replace(/^!?reveal\s*/i, "").trim();
 }
 
 export class NebulaMosaicRuntime {
