@@ -32,11 +32,11 @@ try {
   for(let start=0;start<names.length;start+=4) {
     const chunk=names.slice(start,start+4);
     const form=new FormData();
-    const payload={content:`Neon Lock In Gamer — KeenTools reference views ${start+1}–${start+chunk.length} of 10. Keep this message for the manual head reconstruction test.`,allowed_mentions:{parse:[]}};
+    const payload={content:`Neon Lock In Gamer — KeenTools reference views ${start+1}–${start+chunk.length} of 10. Keep this message for the manual head reconstruction test.`,allowed_mentions:{parse:[]},attachments:chunk.map((name,i)=>({id:String(i),filename:name}))};
     form.append("payload_json",JSON.stringify(payload));
     for(const name of chunk) {
       const bytes=await readFile(byName.get(name));
-      form.append("files[]",new Blob([bytes],{type:"image/png"}),name);
+      form.append(`files[${chunk.indexOf(name)}]`,new Blob([bytes],{type:"image/png"}),name);
     }
     const resp=await fetch(webhook+"?wait=true",{method:"POST",body:form,redirect:"error",signal:AbortSignal.timeout(120000)});
     const body=await resp.json().catch(()=>({}));
