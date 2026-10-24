@@ -62,3 +62,14 @@ test("Mosaic status and invalid theme commands never spend XP", async t => {
   });
   assert.equal(calls.filter(call => call[0] === "spend").length, 0);
 });
+
+test("Mosaic refuses charged requests without a stable provider message ID", async t => {
+  const { runtime, calls } = fixture(t);
+  const result = await runtime.handle({
+    tenantId: "tenant-a", channel: "channel-a", playerId: "user-a",
+    username: "viewer", text: "!mosaic blue comet", now: 1000,
+  });
+  assert.match(result.reply, /stable message ID is unavailable/i);
+  assert.equal(calls.length, 0);
+  assert.equal(runtime.snapshot("tenant-a", "channel-a").queue.length, 0);
+});
