@@ -27,3 +27,10 @@ test("all StreamWeaver synthesis entry points normalize text before creating spe
     assert.match(source, /There is no speakable text after removing emotes and emoji/);
   }
 });
+
+test("TTS normalization preserves ordinary punctuation, URLs, and unknown words", () => {
+  assert.equal(
+    normalizeTextForTTS("Visit https://example.test/hello at 10:30, Kappa and myfriend!"),
+    "Visit https://example.test/hello at 10:30, and myfriend!",
+  );
+});
