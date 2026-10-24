@@ -1,0 +1,63 @@
+name: Meshy Avatar Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_image_path:
+        description: Repository-relative path to the source avatar PNG/JPEG
+        required: true
+        type: string
+      artifact_name:
+        description: Name for the output artifact
+        required: true
+        default: meshy-avatar-build
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: meshy-avatar-build
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Generate textured GLB with Meshy
+        env:
+          MESHY_API_KEY: ${{ secrets.MESHY_API_KEY }}
+          SOURCE_IMAGE_PATH: ${{ inputs.source_image_path }}
+          OUTPUT_PATH: output/avatar.glb
+        run: python tools/meshy-avatar/build.py
+
+      - name: Validate output container
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path("output/avatar.glb")
+          data = p.read_bytes()
+          if len(data) < 20 or data[:4] != b"glTF":
+              raise SystemExit("Output is not a valid GLB container")
+          declared = int.from_bytes(data[8:12], "little")
+          if declared != len(data):
+              raise SystemExit(f"GLB length mismatch: header={declared}, actual={len(data)}")
+          print(f"Validated GLB container: {len(data)} bytes")
+          PY
+
+      - name: Upload generated avatar
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: output/avatar.glb
+          if-no-files-found: error
+          retention-days: 14
