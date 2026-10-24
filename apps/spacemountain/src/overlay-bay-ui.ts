@@ -74,7 +74,7 @@ export class OverlayBayParityController {
     const expanded = new Map([...bay.querySelectorAll<HTMLDetailsElement>("details[data-ob-section]")].map(node => [node.dataset.obSection,node.open]));
     const scene = this.activeScene();
     const owner = hasScope(this.snapshot.session, "overlay:outputs:write");
-    const headActions = [`<button type="button" data-ob-broadcast>24/7 channel</button>`, `<button type="button" data-ob-new>New scene</button>`];
+    const headActions = [`<button type="button" data-ob-avatar-studio>3D Avatar Studio</button>`, `<button type="button" data-ob-broadcast>24/7 channel</button>`, `<button type="button" data-ob-new>New scene</button>`];
     if (scene) headActions.push(`<button type="button" data-ob-duplicate>Duplicate</button>`, `<button type="button" data-ob-delete>Delete</button>`);
     const tabs = this.scenes.length ? this.scenes.map((item) => `<button type="button" data-ob-scene="${esc(item.id)}" class="${item.id === this.activeSceneId ? "active" : ""}">${esc(item.name)}</button>`).join("") : `<span>No saved scenes yet.</span>`;
     const body = scene ? this.editor(scene, owner) : `<div class="ob-first"><h3>Create your first overlay scene</h3><p>Combine app widgets, a Nebula Game Mix, URLs, images, video, transparent frames, text, alerts, camera, screen, Xbox, links, ticker, and weather in one final browser source.</p><button type="button" data-ob-broadcast class="primary">Create 24/7 channel</button><button type="button" data-ob-new>Create blank scene</button></div>`;
@@ -152,7 +152,7 @@ export class OverlayBayParityController {
     return `<section class="ob-outputs"><details data-ob-section="output-links"><summary>Overlay URLs</summary>${named}<details data-ob-section="temporary-grants"><summary>Temporary app/widget grants</summary>${items || `<p>No temporary grants.</p>`}</details></details></section>`;
   }
 
-  private bind(bay: HTMLElement) {
+  private bind(bay: HTMLElement) {\n    bay.querySelector<HTMLElement>("[data-ob-avatar-studio]")?.addEventListener("click", () => { window.open("/avatar-studio", "_blank", "noopener,noreferrer"); });
     bay.querySelector<HTMLElement>("[data-ob-refresh-widgets]")?.addEventListener("click",()=>void this.discoverWidgets(bay));
     bay.querySelectorAll<HTMLElement>("[data-ob-broadcast]").forEach((node) => node.onclick = () => this.newBroadcastScene(bay));
     bay.querySelectorAll<HTMLElement>("[data-ob-new]").forEach((node) => node.onclick = () => this.newScene(bay));
