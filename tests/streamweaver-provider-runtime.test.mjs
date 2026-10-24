@@ -17,8 +17,8 @@ function configurePersona(path, tenantId, displayName, ownerCanonicalUserId) {
   } finally { settings.close(); }
 }
 
-function envelope({ tenantId = "tenant-a", messageId, text, isBot = false, roles = ["member"] }) {
-  return { schemaVersion: 1, tenantId, provider: "discord", connectionId: "discord-main", channelId: "home", messageId, text, occurredAt: iso(), providerUserId: "discord-owner", canonicalUserId: "owner-a", username: "owner", displayName: "Owner", isBot, roles, mentions: [] };
+function envelope({ tenantId = "tenant-a", provider = "discord", connectionId = "discord-main", channelId = "home", messageId, text, isBot = false, roles = ["member"], providerUserId = "discord-owner", canonicalUserId = "owner-a", username = "owner", displayName = "Owner" }) {
+  return { schemaVersion: 1, tenantId, provider, connectionId, channelId, messageId, text, occurredAt: iso(), providerUserId, canonicalUserId, username, displayName, isBot, roles, mentions: [] };
 }
 
 test("supervised Chat Gateway validates and authenticates the separate StreamWeaver runtime", async () => {
@@ -133,4 +133,39 @@ test("StreamWeaver commands and persona results traverse one restart-safe provid
     const bot = await gateway.ingest(envelope({ messageId: "bot-1", text: "Athena hello", isBot: true }));
     assert.equal(bot.delivery.attempted, 0);
   } finally { runtime.close(); gatewayStore.close(); rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("SpaceMountainLive !golive is wired to provider ingress and only reports verified start results", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "spmt-streamweaver-golive-runtime-"));
+  const databasePath = join(dir, "streamweaver.sqlite");
+  const gatewayPath = join(dir, "gateway.sqlite");
+  const sent = [];
+  let starts = 0;
+  let gateway;
+  const client = {
+    async request() { throw new Error("unexpected SPMT request"); },
+    async awardXp() { throw new Error("unexpected XP award"); },
+    async invokeCommunityAssistant() { throw new Error("unexpected assistant call"); },
+    async getExecutionJob() { throw new Error("unexpected execution job"); },
+  };
+  const runtime = new StreamWeaverProviderRuntime({
+    databasePath, client, egress: { send: (message) => gateway.send(message) },
+    spaceMountainGoLive: { channelId: "provider-channel", start: async () => { starts++; return { ok: true, state: "live", verifiedAt: iso(), startedAt: iso() }; } },
+  });
+  const gatewayStore = new SqliteChatGatewayStore(gatewayPath);
+  gateway = new ChatGatewayRuntime(gatewayStore, runtime.consumers, [{ provider: "twitch", async send(message) { sent.push(structuredClone(message)); return { providerMessageId: `twitch-out-${sent.length}` }; } }]);
+  try {
+    const accepted = await gateway.ingest(envelope({ tenantId: "spacemountainlive", provider: "twitch", connectionId: "tw-main", channelId: "provider-channel", messageId: "golive-1", text: "!golive", roles: ["broadcaster", "member"], providerUserId: "twitch-owner-id", canonicalUserId: "owner-id", username: "spacemountainlive", displayName: "SpaceMountainLive" }));
+    assert.equal(accepted.delivery.delivered, 1);
+    assert.equal(starts, 1);
+    assert.equal(sent.length, 2);
+    assert.match(sent[0].text, /checking the saved Restream browser/);
+    assert.match(sent[1].text, /Twitch confirms SpaceMountainLive is live/);
+
+    await gateway.ingest(envelope({ tenantId: "spacemountainlive", provider: "twitch", connectionId: "tw-main", channelId: "provider-channel", messageId: "golive-2", text: "!golive", roles: ["member"], providerUserId: "viewer-id", canonicalUserId: "viewer-id", username: "viewer", displayName: "Viewer" }));
+    assert.equal(starts, 1);
+    assert.equal(sent.length, 2);
+  } finally {
+    runtime.close(); gatewayStore.close(); rmSync(dir, { recursive: true, force: true });
+  }
 });
