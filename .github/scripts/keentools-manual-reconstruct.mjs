@@ -5,8 +5,8 @@ import {execFile} from "node:child_process";
 import {promisify} from "node:util";
 
 const execFileAsync = promisify(execFile);
-const apiKey = process.env.STREAMWEAVER_KEENTOOLS_API_KEY;
-if (!apiKey) throw new Error("Repository secret STREAMWEAVER_KEENTOOLS_API_KEY is missing.");
+const apiKey = process.env.STREAMWEAVER_KEENTOOLS_API_KEY_SECOND;
+if (!apiKey) throw new Error("Repository secret STREAMWEAVER_KEENTOOLS_API_KEY_SECOND is missing.");
 
 const manifestPath = ".github/data/keentools-discord-reference-upload.json";
 const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
