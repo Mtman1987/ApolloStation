@@ -1,0 +1,87 @@
+name: Avatar reference pipeline
+
+on:
+  workflow_dispatch:
+    inputs:
+      glb_url:
+        description: "HTTPS URL to the original textured avatar GLB"
+        required: true
+        type: string
+      render_views:
+        description: "Render 10 textured views and publish URLs to Discord"
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  render-and-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Blender and Python dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y blender
+          python -m pip install --upgrade pip requests pillow
+
+      - name: Download source GLB
+        env:
+          GLB_URL: ${{ inputs.glb_url }}
+        run: |
+          python - <<'PY'
+          import os, urllib.request
+          from urllib.parse import urlparse
+          url = os.environ["GLB_URL"].strip()
+          if urlparse(url).scheme != "https":
+              raise SystemExit("glb_url must be HTTPS")
+          req = urllib.request.Request(url, headers={"User-Agent":"ApolloStation-avatar-pipeline"})
+          with urllib.request.urlopen(req, timeout=120) as r, open("source-avatar.glb","wb") as f:
+              f.write(r.read())
+          if __import__("os").path.getsize("source-avatar.glb") < 100_000:
+              raise SystemExit("Downloaded GLB is unexpectedly small")
+          print("Downloaded source GLB:", os.path.getsize("source-avatar.glb"), "bytes")
+          PY
+
+      - name: Render ten views from the actual textured GLB
+        run: |
+          blender -b -t 2 --python scripts/render_avatar_reference_views.py -- source-avatar.glb reference-views
+          python - <<'PY'
+          from pathlib import Path
+          from PIL import Image, ImageStat
+          files=sorted(Path("reference-views").glob("*.png"))
+          if len(files) != 10:
+              raise SystemExit(f"Expected 10 renders, got {len(files)}")
+          for f in files:
+              im=Image.open(f).convert("RGB")
+              if im.width < 512 or im.height < 512:
+                  raise SystemExit(f"Image too small: {f}")
+              stat=ImageStat.Stat(im)
+              if max(stat.stddev) < 5:
+                  raise SystemExit(f"Image appears blank/flat: {f}")
+              print(f"{f}: {im.size}, channel stddev={stat.stddev}")
+          PY
+
+      - name: Upload views to Discord and collect CDN URLs
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_HEAD_UPLOAD_WEBHOOK }}
+        run: |
+          python scripts/publish_avatar_views.py reference-views head-reference-urls.json
+
+      - name: Upload reference images and URL manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: avatar-reference-views-and-urls
+          path: |
+            reference-views/*.png
+            head-reference-urls.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Report generator integration requirement
+        run: |
+          echo "::notice title=Reference pipeline complete::Ten textured renders and Discord URLs are saved as the avatar-reference-views-and-urls artifact. Rigged-head generation is not invoked because no verified multi-view head-generator API/CLI is configured in this repository."
