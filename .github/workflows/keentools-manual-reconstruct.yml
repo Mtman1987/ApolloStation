@@ -4,9 +4,10 @@ run-name: KeenTools manual reconstruction — Neon Lock In Gamer
 on:
   workflow_dispatch:
     inputs:
-      reference_archive_url:
-        description: "Direct HTTPS download URL for the prepared 10-view ZIP (must be accessible to GitHub Actions)"
+      discord_message_url:
+        description: "Discord message link containing the approved 10-view ZIP"
         required: true
+        default: "https://discord.com/channels/1240832965865635881/1476540488147533895/1563458971489271818"
         type: string
 
 permissions:
@@ -33,7 +34,8 @@ jobs:
       - name: Call KeenTools directly
         env:
           STREAMWEAVER_KEENTOOLS_API_KEY: ${{ secrets.STREAMWEAVER_KEENTOOLS_API_KEY }}
-          REFERENCE_ARCHIVE_URL: ${{ inputs.reference_archive_url }}
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+          DISCORD_MESSAGE_URL: ${{ inputs.discord_message_url }}
         run: node .github/scripts/keentools-manual-reconstruct.mjs
 
       - name: Upload generated GLB
