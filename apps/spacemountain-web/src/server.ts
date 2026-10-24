@@ -148,7 +148,7 @@ export function createSpaceMountainWebHost(options: SpaceMountainWebHostOptions)
       }
       if (request.method === "GET" && url.pathname === "/avatar-studio") {
         response.removeHeader("x-frame-options");
-        response.setHeader("content-security-policy", `default-src 'none'; script-src 'self' 'nonce-${nonce}' https://cdn.jsdelivr.net; style-src 'unsafe-inline'; connect-src 'self' https://cdn.jsdelivr.net blob:; img-src 'self' https: data: blob:; media-src 'self' blob:; frame-ancestors 'self'; base-uri 'none'; object-src 'none'`);
+        response.setHeader("content-security-policy", `default-src 'none'; script-src 'self' 'nonce-${nonce}' https://cdn.jsdelivr.net; style-src 'unsafe-inline'; connect-src 'self' https://cdn.jsdelivr.net https://three.ws blob:; img-src 'self' https: data: blob:; media-src 'self' blob:; frame-ancestors 'self'; base-uri 'none'; object-src 'none'`);
         return html(response, 200, renderAvatarStudioPage(nonce));
       }
       if (request.method === "GET" && url.pathname === "/workspace/overlay") {
