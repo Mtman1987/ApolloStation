@@ -216,3 +216,13 @@ test("crown decoration preserves mentions, skips URLs, and does not double-crown
   assert.equal(decorateNebulaTagCrowns("👑van_braak wins", winners), "👑van_braak wins");
   assert.equal(decorateNebulaTagCrowns("https://twitch.tv/van_braak", winners), "https://twitch.tv/van_braak");
 });
+
+test("no-tag-back is reported before sleeping/offline (chat-tag cebccd8 parity)", () => {
+  let state = createNebulaTagState(TENANT);
+  ({ state } = apply(state, command("join", "nt-join-a", "user-a", 0, { username: "Alpha" })));
+  ({ state } = apply(state, command("join", "nt-join-b", "user-b", 1, { username: "Beta" })));
+  state.players["user-b"].noTagbackFromUserId = "user-a";
+  state.players["user-b"].sleeping = true;
+  const { result } = apply(state, command("tag", "nt-tag", "user-a", 2, { targetUserId: "user-b" }));
+  assert.equal(result.code, "target-no-tagback");
+});

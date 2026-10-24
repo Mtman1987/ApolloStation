@@ -273,11 +273,12 @@ function requireModerator(command: NebulaTagCommandV1): NebulaTagCommandResultV1
 }
 
 function availabilityDenial(player: NebulaTagPlayerStateV1, actorUserId: string, nowMs: number): string | null {
-  if (player.sleeping) return "target-sleeping";
-  if (player.offline) return "target-offline";
+  // Donor chat-tag cebccd8: no-tag-back is checked first, then timed immunity, then availability.
   if (player.noTagbackFromUserId === actorUserId) return "target-no-tagback";
   const immuneUntil = player.timedImmunityUntil ? Date.parse(player.timedImmunityUntil) : 0;
   if (Number.isFinite(immuneUntil) && immuneUntil > nowMs) return "target-timed-immunity";
+  if (player.sleeping) return "target-sleeping";
+  if (player.offline) return "target-offline";
   return null;
 }
 
