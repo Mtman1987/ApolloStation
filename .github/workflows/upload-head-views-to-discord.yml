@@ -1,0 +1,77 @@
+name: Upload original head views to Discord
+
+on:
+  workflow_dispatch:
+    inputs:
+      archive_url:
+        description: "HTTPS URL to the ZIP containing the 10 original head-view images"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  upload-head-views:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Download and upload views
+        env:
+          ARCHIVE_URL: ${{ inputs.archive_url }}
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_HEAD_UPLOAD_WEBHOOK }}
+        run: |
+          python - <<'PY'
+          import json, os, pathlib, sys, tempfile, urllib.request, zipfile
+          from urllib.parse import urlparse
+          import requests
+
+          webhook = os.environ.get("DISCORD_WEBHOOK", "").strip()
+          archive_url = os.environ["ARCHIVE_URL"].strip()
+          if not webhook:
+              sys.exit("Missing repository secret DISCORD_HEAD_UPLOAD_WEBHOOK.")
+          if urlparse(archive_url).scheme != "https":
+              sys.exit("archive_url must be HTTPS.")
+          if urlparse(webhook).scheme != "https" or "discord.com/api/webhooks/" not in webhook:
+              sys.exit("DISCORD_HEAD_UPLOAD_WEBHOOK is not a Discord webhook URL.")
+
+          with tempfile.TemporaryDirectory() as td:
+              archive_path = pathlib.Path(td) / "views.zip"
+              req = urllib.request.Request(archive_url, headers={"User-Agent": "ApolloStation-head-view-uploader"})
+              with urllib.request.urlopen(req, timeout=60) as response, archive_path.open("wb") as out:
+                  out.write(response.read())
+              with zipfile.ZipFile(archive_path) as zf:
+                  members = [m for m in zf.infolist() if not m.is_dir() and pathlib.Path(m.filename).suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}]
+                  members.sort(key=lambda m: m.filename.lower())
+                  if len(members) != 10:
+                      sys.exit(f"Expected exactly 10 image files in ZIP; found {len(members)}.")
+                  files = {}
+                  opened = []
+                  try:
+                      payload_files = []
+                      for i, member in enumerate(members):
+                          name = pathlib.Path(member.filename).name
+                          data = zf.read(member)
+                          if len(data) > 8 * 1024 * 1024:
+                              sys.exit(f"Image {name} exceeds 8 MiB.")
+                          opened.append((f"files[{i}]", (name, data, "application/octet-stream")))
+                          payload_files.append({"id": str(i), "filename": name})
+                      response = requests.post(
+                          webhook + ("&" if "?" in webhook else "?") + "wait=true",
+                          data={"payload_json": json.dumps({"content": "Original-model head reference views (10 images)", "attachments": payload_files})},
+                          files=opened,
+                          timeout=90,
+                      )
+                      if response.status_code not in (200, 201):
+                          sys.exit(f"Discord upload failed with HTTP {response.status_code}: {response.text[:500]}")
+                      result = response.json()
+                      attachments = result.get("attachments", [])
+                      if len(attachments) != 10 or not all(a.get("url") for a in attachments):
+                          sys.exit(f"Discord returned {len(attachments)} attachment URLs; expected 10.")
+                      print("Upload succeeded. Message ID:", result.get("id"))
+                      for i, attachment in enumerate(attachments, 1):
+                          print(f"VIEW_{i}_URL={attachment['url']}")
+                      print("All 10 Discord attachment URLs were returned successfully.")
+                  finally:
+                      pass
+          PY
