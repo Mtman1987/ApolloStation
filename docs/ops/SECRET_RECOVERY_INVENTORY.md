@@ -10,9 +10,9 @@ Last reviewed: 2026-10-23
 - Keep the canonical credential inventory in a private password manager or encrypted secret vault. Store recovery notes here only if they contain names, owners, scopes, rotation status, and verification status—never values.
 - Do not rotate all credentials at once. Identify each dependency, restore/rotate one credential, verify its consumer, and record the result before proceeding.
 
-## Recovery material located in ChatGPT Library
+## Private recovery-source review
 
-The Library contains files named `env.txt` and `gemini-key.txt`. A metadata-only inspection found non-empty values in both; `env.txt` includes entries named `FLY_TOKEN` and `SPRITE_TOKEN`. The values are intentionally not copied here or printed. These are recovery leads, not a safe long-term vault. Move credentials to a dedicated password manager/secret vault and delete the plaintext Library copies only after verifying the new copies and any necessary recovery backups.
+Potential recovery files and backups must be inventoried privately. Do not record their paths, contents, or existence in this public repository. Treat any plaintext credential file as temporary recovery material: move values into a dedicated password manager/secret vault and remove plaintext copies only after verifying the new copies and necessary recovery backups.
 
 ## Names observed in ApolloStation code
 
