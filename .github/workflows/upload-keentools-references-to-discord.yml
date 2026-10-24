@@ -2,6 +2,10 @@ name: Upload KeenTools References to Discord
 run-name: Upload Neon Lock In Gamer reference views to Discord
 
 on:
+  push:
+    branches: [fix/keentools-discord-cdn-reconstruction]
+    paths:
+      - ".github/workflows/upload-keentools-references-to-discord.yml"
   workflow_dispatch:
     inputs:
       reference_archive_url:
@@ -23,7 +27,7 @@ jobs:
       - name: Upload the ten PNG views to Discord
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.KEENTOOLS_TEST_DISCORD_WEBHOOK }}
-          REFERENCE_ARCHIVE_URL: ${{ inputs.reference_archive_url }}
+          REFERENCE_ARCHIVE_URL: ${{ inputs.reference_archive_url || 'https://raw.githubusercontent.com/Mtman1987/ApolloStation/fix/keentools-discord-cdn-reconstruction/neon_lock_in_gamer_keentools_reference_views.zip' }}
         run: node .github/scripts/post-keentools-references-to-discord.mjs
 
       - name: Persist Discord message IDs and CDN URLs for the next workflow
