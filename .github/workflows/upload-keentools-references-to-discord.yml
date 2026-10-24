@@ -6,6 +6,7 @@ on:
     branches: [fix/keentools-discord-cdn-reconstruction]
     paths:
       - ".github/workflows/upload-keentools-references-to-discord.yml"
+      - ".github/scripts/post-keentools-references-to-discord.mjs"
   workflow_dispatch:
     inputs:
       reference_archive_url:
