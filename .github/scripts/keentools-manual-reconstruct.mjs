@@ -15,9 +15,17 @@ if (!/^\d{17,20}$/.test(messageId)) throw new Error("Discord reference message I
 
 const temp = await mkdtemp(join(tmpdir(), "keentools-exact-discord-"));
 try {
-  const auth = {authorization: `Bot ${discordToken}`};
+  // GitHub secrets are sometimes stored with the Discord scheme prefix already included.
+  // Normalize it so we never send the invalid header "Bot Bot <token>".
+  const normalizedToken = discordToken.trim().replace(/^Bot\s+/i, "");
+  const auth = {authorization: `Bot ${normalizedToken}`, accept: "application/json"};
   const messageResponse = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages/${messageId}`, {headers:auth, signal:AbortSignal.timeout(30000)});
-  if (!messageResponse.ok) throw new Error(`Could not read requested Discord message ${messageId}: HTTP ${messageResponse.status}`);
+  if (!messageResponse.ok) {
+    const discordError = await messageResponse.json().catch(() => ({}));
+    const code = discordError.code ? `; Discord code ${discordError.code}` : "";
+    const detail = discordError.message ? `; ${String(discordError.message).slice(0,160)}` : "";
+    throw new Error(`Could not read requested Discord message ${messageId}: HTTP ${messageResponse.status}${code}${detail}. Auth scheme was normalized without logging the token.`);
+  }
   const message = await messageResponse.json();
   if (message.id !== messageId || message.channel_id !== channelId) throw new Error("Discord returned a different message/channel; refusing to use it.");
   const attachments = Array.isArray(message.attachments) ? message.attachments : [];
