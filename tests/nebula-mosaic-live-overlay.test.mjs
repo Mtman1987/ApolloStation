@@ -38,7 +38,10 @@ test("public Mosaic overlay and snapshot are wired, cache-safe, and tenant-chann
   const snapshot = await fetch(`${origin}/v1/nebula/mosaic/snapshot?channel=channel-b`);
   assert.equal(snapshot.status, 200);
   assert.match(snapshot.headers.get("cache-control") || "", /no-store/);
-  assert.deepEqual(await snapshot.json(), { artwork: null, queueLength: 0 });
+  const publicState = await snapshot.json();
+  assert.equal(publicState.artwork, null);
+  assert.equal(publicState.queueLength, 0);
+  assert.deepEqual(publicState.queue, []);
 
   const denied = await fetch(`${origin}/v1/nebula/mosaic/snapshot?channel=not-configured`);
   assert.equal(denied.status, 404);
