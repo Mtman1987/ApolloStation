@@ -12,8 +12,9 @@ if (!apiKey) throw new Error("Repository secret STREAMWEAVER_KEENTOOLS_API_KEY i
 if (!discordToken) throw new Error("Repository secret DISCORD_BOT_TOKEN is missing; a Discord webhook URL cannot read channel messages.");
 if (!messageUrl) throw new Error("Provide the Discord message link containing the reference ZIP.");
 const messageLink = new URL(messageUrl);
-if (messageLink.protocol !== "https:" || messageLink.hostname !== "discord.com" || !/^\\/channels\\/\\d+\\/\\d+\\/\\d+$/.test(messageLink.pathname)) throw new Error("Discord message URL must use https://discord.com/channels/GUILD_ID/CHANNEL_ID/MESSAGE_ID.");
-const [,guildId,channelId,messageId] = messageLink.pathname.split("/");
+const pathParts = messageLink.pathname.split("/").filter(Boolean);
+if (messageLink.protocol !== "https:" || messageLink.hostname !== "discord.com" || pathParts.length !== 4 || pathParts[0] !== "channels" || pathParts.slice(1).some(part => !/^\\d{5,30}$/.test(part))) throw new Error("Discord message URL must use https://discord.com/channels/GUILD_ID/CHANNEL_ID/MESSAGE_ID.");
+const [,guildId,channelId,messageId] = pathParts;
 if (guildId !== "1240832965865635881" || channelId !== "1476540488147533895" || messageId !== "1563458971489271818") throw new Error("Discord message link does not match the approved Neon Lock In Gamer reference upload.");
 async function getDiscordAttachment() {
   const response = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages/${messageId}`, {headers:{authorization:`Bot ${discordToken}`}, redirect:"error", signal:AbortSignal.timeout(30000)});
