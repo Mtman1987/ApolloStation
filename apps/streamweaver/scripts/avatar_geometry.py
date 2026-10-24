@@ -159,10 +159,14 @@ def assemble(body_path,head_path,hair_path,alignment_path,output_path,report_pat
     body_fit=bounds_fit_matrix(fitted_low,fitted_high,target_low,target_high)
     apply_world_transform(head_meshes+hair_objects,body_fit)
     bind_to_head(head_meshes,rig);hair_bones=add_hair_bones_and_weights(hair_objects,rig)
-    blendshapes=len({block.name for obj in head_meshes if obj.data.shape_keys for block in obj.data.shape_keys.key_blocks if block.name!="Basis"})
+    facial_controls={block.name for obj in head_meshes if obj.data.shape_keys for block in obj.data.shape_keys.key_blocks if block.name!="Basis"}
+    blendshapes=len(facial_controls)
     if blendshapes<51: raise RuntimeError(f"KeenTools head exposed only {blendshapes} blendshapes; 51 ARKit shapes are required")
+    required_controls={"eyeBlinkLeft","eyeBlinkRight","mouthSmileLeft","mouthSmileRight","jawOpen"}
+    missing_controls=sorted(required_controls-facial_controls)
+    if missing_controls: raise RuntimeError("KeenTools head is missing required facial controls: "+", ".join(missing_controls))
     bpy.ops.object.select_all(action="SELECT");bpy.ops.export_scene.gltf(filepath=output_path,export_format="GLB",export_animations=True,export_morph=True,export_skins=True,export_apply=False)
-    with open(report_path,"w",encoding="utf8") as file:json.dump({"headBone":"Head","hairBones":hair_bones,"blendshapeCount":blendshapes,"bodySkinPreserved":bool(rig and body_meshes)},file)
+    with open(report_path,"w",encoding="utf8") as file:json.dump({"headBone":"Head","hairBones":hair_bones,"blendshapeCount":blendshapes,"facialControls":sorted(facial_controls),"requiredFacialControls":sorted(required_controls),"bodySkinPreserved":bool(rig and body_meshes)},file)
 
 if __name__=="__main__":
     values=args()
