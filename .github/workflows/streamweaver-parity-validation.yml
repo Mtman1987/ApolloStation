@@ -1,0 +1,39 @@
+name: StreamWeaver parity validation
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "apps/streamweaver/**"
+      - "apps/stellar-core/**"
+      - "tests/streamweaver-*.test.mjs"
+      - "tests/public-room-personas.test.mjs"
+      - "packages/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/streamweaver-parity-validation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: streamweaver-parity-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  offline-parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Build and run offline-safe regression suite
+        run: npm run test:offline
