@@ -31,4 +31,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm run test:offline
+      - name: Compile all apps and packages
+        run: npm run build
+      - name: Run Overlay Bay regression tests
+        run: node --import ./scripts/offline-network-guard.mjs --test tests/overlay-bay-editing.test.mjs tests/overlay-output-grants.test.mjs tests/spacemountain-shell-ui.test.mjs
