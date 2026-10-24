@@ -20,16 +20,19 @@ function mosaicBody(value: string): string | null {
 }
 
 export type MosaicXpAward = (tenantId: string, playerId: string, delta: number, reason: string, idempotencyKey: string, options?: { eventType?: string; metadata?: Record<string, unknown> }) => Promise<{ duplicate?: boolean }>;
+export type MosaicXpSpend = (tenantId: string, playerId: string, amount: number, eventType: string, idempotencyKey: string, metadata?: Record<string, unknown>) => Promise<{ duplicate?: boolean }>;
 export class NebulaMosaicRuntime {
   private readonly store: SqliteNebulaMosaicStore;
   private readonly generate: MosaicGenerator | undefined;
   private readonly requestXpCost: number;
   private readonly awardXp: MosaicXpAward | undefined;
-  constructor(databasePath: string, generate?: MosaicGenerator, options: { requestXpCost?: number; awardXp?: MosaicXpAward } = {}) {
+  private readonly spendXp: MosaicXpSpend | undefined;
+  constructor(databasePath: string, generate?: MosaicGenerator, options: { requestXpCost?: number; awardXp?: MosaicXpAward; spendXp?: MosaicXpSpend } = {}) {
     this.store = new SqliteNebulaMosaicStore(databasePath);
     this.generate = generate;
     this.requestXpCost = Math.max(0, Math.floor(Number(options.requestXpCost ?? 0)));
     this.awardXp = options.awardXp;
+    this.spendXp = options.spendXp;
   }
   close() { this.store.close(); }
   snapshot(tenantId: string, channel: string, now = Date.now()) {
@@ -69,15 +72,15 @@ export class NebulaMosaicRuntime {
       try { requestTheme = validateMosaicTheme(commandText.replace(/^request\s+/i, "")); } catch { /* Invalid themes are rejected by the normal command path without a charge. */ }
     }
     let chargeKey: string | undefined;
+    let chargeWasDuplicate = false;
     if (requestTheme && this.requestXpCost > 0) {
-      if (!this.awardXp || !String(input.requestId || "").trim()) {
+      if (!this.spendXp || !this.awardXp || !String(input.requestId || "").trim()) {
         return { handled: true, reply: "Mosaic XP charging is configured but the canonical XP service or stable message ID is unavailable. Nothing was queued." };
       }
       chargeKey = `mosaic:${input.tenantId}:${input.channel}:${input.requestId}:${playerId}`;
       try {
-        await this.awardXp(input.tenantId, playerId, -this.requestXpCost, "nebula.mosaic.request", chargeKey, {
-          eventType: "nebula.mosaic.request", metadata: { channel: input.channel, theme: requestTheme },
-        });
+        const charge = await this.spendXp(input.tenantId, playerId, this.requestXpCost, "nebula.mosaic.request", chargeKey, { channel: input.channel, theme: requestTheme });
+        chargeWasDuplicate = charge.duplicate === true;
       } catch {
         return { handled: true, reply: `The ${this.requestXpCost.toLocaleString()} SPMT XP charge could not be completed, so nothing was queued.` };
       }
@@ -158,7 +161,7 @@ export class NebulaMosaicRuntime {
       } catch (error) { return { reply: error instanceof Error ? error.message : "That Mosaic request could not be queued.", queued: false }; }
     }, now);
     let reply = result.result.reply;
-    if (chargeKey && !result.result.queued && this.awardXp) {
+    if (chargeKey && !chargeWasDuplicate && !result.result.queued && this.awardXp) {
       try {
         await this.awardXp(input.tenantId, playerId, this.requestXpCost, "nebula.mosaic.refund", `${chargeKey}:refund`, {
           eventType: "nebula.mosaic.refund", metadata: { channel: input.channel, theme: requestTheme, reason: "queue-rejected" },
