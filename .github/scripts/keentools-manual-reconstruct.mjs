@@ -51,7 +51,7 @@ try {
   }
   function signedUrl(value) {
     const u = new URL(String(value ?? ""));
-    if (u.protocol !== "https:" || u.username || u.password || !/^(?:[a-z0-9.-]+\\.)?s3(?:[.-][a-z0-9-]+)?\\.amazonaws\\.com$/.test(u.hostname.toLowerCase()) || u.searchParams.get("X-Amz-Algorithm") !== "AWS4-HMAC-SHA256" || !u.searchParams.has("X-Amz-Credential") || !u.searchParams.has("X-Amz-Signature")) {
+    if (u.protocol !== "https:" || u.username || u.password || !/^(?:[a-z0-9.-]+\.)?s3(?:[.-][a-z0-9-]+)?\.amazonaws\.com$/.test(u.hostname.toLowerCase()) || u.searchParams.get("X-Amz-Algorithm") !== "AWS4-HMAC-SHA256" || !u.searchParams.has("X-Amz-Credential") || !u.searchParams.has("X-Amz-Signature")) {
       throw new Error("KeenTools returned an invalid signed upload/download URL.");
     }
     return u.toString();
