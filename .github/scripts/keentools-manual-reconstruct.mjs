@@ -6,19 +6,36 @@ import {promisify} from "node:util";
 
 const execFileAsync = promisify(execFile);
 const apiKey = process.env.STREAMWEAVER_KEENTOOLS_API_KEY;
-const archiveUrl = process.env.REFERENCE_ARCHIVE_URL;
+const discordToken = process.env.DISCORD_BOT_TOKEN;
+const messageUrl = process.env.DISCORD_MESSAGE_URL;
 if (!apiKey) throw new Error("Repository secret STREAMWEAVER_KEENTOOLS_API_KEY is missing.");
-if (!archiveUrl) throw new Error("Provide a direct HTTPS download URL for the prepared reference ZIP.");
-const parsed = new URL(archiveUrl);
-if (parsed.protocol !== "https:" || parsed.username || parsed.password) throw new Error("Reference archive URL must be HTTPS without embedded credentials.");
+if (!discordToken) throw new Error("Repository secret DISCORD_BOT_TOKEN is missing; a Discord webhook URL cannot read channel messages.");
+if (!messageUrl) throw new Error("Provide the Discord message link containing the reference ZIP.");
+const messageLink = new URL(messageUrl);
+if (messageLink.protocol !== "https:" || messageLink.hostname !== "discord.com" || !/^\\/channels\\/\\d+\\/\\d+\\/\\d+$/.test(messageLink.pathname)) throw new Error("Discord message URL must use https://discord.com/channels/GUILD_ID/CHANNEL_ID/MESSAGE_ID.");
+const [,guildId,channelId,messageId] = messageLink.pathname.split("/");
+if (guildId !== "1240832965865635881" || channelId !== "1476540488147533895" || messageId !== "1563458971489271818") throw new Error("Discord message link does not match the approved Neon Lock In Gamer reference upload.");
+async function getDiscordAttachment() {
+  const response = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages/${messageId}`, {headers:{authorization:`Bot ${discordToken}`}, redirect:"error", signal:AbortSignal.timeout(30000)});
+  if (!response.ok) throw new Error(`Discord message lookup failed (HTTP ${response.status}); verify the bot can view the channel and read message history.`);
+  const message = await response.json();
+  if (message.id !== messageId || message.channel_id !== channelId) throw new Error("Discord returned a different message than the approved reference link.");
+  const attachments = Array.isArray(message.attachments) ? message.attachments : [];
+  const attachment = attachments.find(item => String(item.filename ?? "").toLowerCase().endsWith(".zip"));
+  if (!attachment?.url) throw new Error("The specified Discord message has no ZIP attachment.");
+  const asset = new URL(attachment.url);
+  if (asset.protocol !== "https:" || !["cdn.discordapp.com","media.discordapp.net"].includes(asset.hostname.toLowerCase())) throw new Error("Discord returned an unexpected attachment host.");
+  const download = await fetch(asset, {redirect:"follow", signal:AbortSignal.timeout(120000)});
+  if (!download.ok) throw new Error(`Discord attachment download failed (HTTP ${download.status}).`);
+  const bytes = new Uint8Array(await download.arrayBuffer());
+  if (bytes.byteLength === 0 || bytes.byteLength > 30 * 1024 * 1024) throw new Error("Discord ZIP attachment is empty or exceeds 30 MB.");
+  return bytes;
+}
 
 const work = await mkdtemp(join(tmpdir(), "keentools-manual-"));
 try {
   const zipPath = join(work, "references.zip");
-  const response = await fetch(parsed, {redirect: "error", signal: AbortSignal.timeout(120000)});
-  if (!response.ok) throw new Error(`Reference archive download failed (HTTP ${response.status}).`);
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  if (bytes.byteLength > 30 * 1024 * 1024) throw new Error("Reference archive exceeds 30 MB.");
+  const bytes = await getDiscordAttachment();
   await writeFile(zipPath, bytes);
   await execFileAsync("unzip", ["-q", zipPath, "-d", join(work, "views")]);
   const root = join(work, "views");
