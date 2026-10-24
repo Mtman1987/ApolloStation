@@ -3,7 +3,7 @@
 Run only through Blender: blender --background --factory-startup --python avatar_geometry.py -- ...
 """
 import bpy, json, math, os, sys
-from mathutils import Vector
+from mathutils import Matrix, Vector
 
 def args():
     marker=sys.argv.index("--")
@@ -77,15 +77,23 @@ def prepare(source,hair_path,views_dir,report_path):
         scene.render.filepath=os.path.join(views_dir,f"view-{index:02d}.png");bpy.ops.render.render(write_still=True)
     with open(report_path,"w",encoding="utf8") as file: json.dump({"schemaVersion":1,"sourceHeadBounds":{"min":vector(head_low),"max":vector(head_high)},"sourceHairBounds":{"min":vector(hair_low),"max":vector(hair_high)},"viewAngles":[0,36,72,108,144,180,216,252,288,324]},file)
 
-def transform_to_bounds(objects,source_low,source_high,target_low,target_high):
+def bounds_fit_matrix(source_low,source_high,target_low,target_high):
+    """Return one world-space uniform fit transform from source bounds to target bounds."""
     source_size=source_high-source_low;target_size=target_high-target_low
     scale=min(target_size[i]/max(source_size[i],1e-6) for i in range(3))
     source_center=(source_low+source_high)/2;target_center=(target_low+target_high)/2
+    return Matrix.Translation(target_center) @ Matrix.Scale(scale,4) @ Matrix.Translation(-source_center)
+
+def apply_world_transform(objects,transform):
+    """Apply the same world-space transform to each object's full transform, not just its origin."""
     for obj in objects:
-        obj.scale*=scale
-        obj.location=target_center+(obj.location-source_center)*scale
+        obj.matrix_world=transform @ obj.matrix_world
     bpy.context.view_layer.update()
-    return scale
+
+def transform_to_bounds(objects,source_low,source_high,target_low,target_high):
+    transform=bounds_fit_matrix(source_low,source_high,target_low,target_high)
+    apply_world_transform(objects,transform)
+    return transform
 
 def armature(objects):
     result=next((obj for obj in objects if obj.type=="ARMATURE"),None)
@@ -141,13 +149,24 @@ def assemble(body_path,head_path,hair_path,alignment_path,output_path,report_pat
     head_objects=import_glb(head_path);head_meshes=meshes(head_objects);hair_objects=meshes(import_glb(hair_path))
     with open(alignment_path,encoding="utf8") as file: alignment=json.load(file)
     source_low=Vector(alignment["sourceHeadBounds"]["min"]);source_high=Vector(alignment["sourceHeadBounds"]["max"]);keen_low,keen_high=bounds(head_meshes)
+    # First put the reconstructed head back into the source model's coordinate frame.
+    # Hair remains in that original frame, so it must not be used to calculate the skull fit.
     transform_to_bounds(head_meshes,keen_low,keen_high,source_low,source_high)
-    combined_low,combined_high=bounds(head_meshes+hair_objects);transform_to_bounds(head_meshes+hair_objects,combined_low,combined_high,target_low,target_high)
+    # Fit using the skull alone, then apply that exact same transform to the hair so their
+    # relative placement is preserved. Fitting the combined bounds incorrectly scales the skull
+    # to accommodate hair volume and is a likely cause of the visibly bad reconnection.
+    fitted_low,fitted_high=bounds(head_meshes)
+    body_fit=bounds_fit_matrix(fitted_low,fitted_high,target_low,target_high)
+    apply_world_transform(head_meshes+hair_objects,body_fit)
     bind_to_head(head_meshes,rig);hair_bones=add_hair_bones_and_weights(hair_objects,rig)
-    blendshapes=len({block.name for obj in head_meshes if obj.data.shape_keys for block in obj.data.shape_keys.key_blocks if block.name!="Basis"})
+    facial_controls={block.name for obj in head_meshes if obj.data.shape_keys for block in obj.data.shape_keys.key_blocks if block.name!="Basis"}
+    blendshapes=len(facial_controls)
     if blendshapes<51: raise RuntimeError(f"KeenTools head exposed only {blendshapes} blendshapes; 51 ARKit shapes are required")
+    required_controls={"eyeBlinkLeft","eyeBlinkRight","mouthSmileLeft","mouthSmileRight","jawOpen"}
+    missing_controls=sorted(required_controls-facial_controls)
+    if missing_controls: raise RuntimeError("KeenTools head is missing required facial controls: "+", ".join(missing_controls))
     bpy.ops.object.select_all(action="SELECT");bpy.ops.export_scene.gltf(filepath=output_path,export_format="GLB",export_animations=True,export_morph=True,export_skins=True,export_apply=False)
-    with open(report_path,"w",encoding="utf8") as file:json.dump({"headBone":"Head","hairBones":hair_bones,"blendshapeCount":blendshapes,"bodySkinPreserved":bool(rig and body_meshes)},file)
+    with open(report_path,"w",encoding="utf8") as file:json.dump({"headBone":"Head","hairBones":hair_bones,"blendshapeCount":blendshapes,"facialControls":sorted(facial_controls),"requiredFacialControls":sorted(required_controls),"bodySkinPreserved":bool(rig and body_meshes)},file)
 
 if __name__=="__main__":
     values=args()
