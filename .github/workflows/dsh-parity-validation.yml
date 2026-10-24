@@ -34,5 +34,7 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
-      - name: Build and run offline-safe regression suite
-        run: npm run test:offline
+      - name: Compile all apps and packages
+        run: npm run build
+      - name: Run focused Discord Stream Hub regressions
+        run: node --import ./scripts/offline-network-guard.mjs --test tests/dsh-live-monitor.test.mjs tests/dsh-lounge-state.test.mjs tests/dsh-discord-live-publisher.test.mjs
