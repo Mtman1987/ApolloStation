@@ -1,0 +1,38 @@
+name: Nebula Arcade parity tests
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "apps/nebula-arcade/**"
+      - "tests/nebula-*.test.mjs"
+      - "packages/contracts/**"
+      - "packages/runtime/**"
+      - "package-lock.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nebula-parity-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  nebula:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Build Nebula Arcade and its project references
+        run: npx tsc -b apps/nebula-arcade --pretty false
+      - name: Run Nebula command and Mosaic domain regression tests
+        run: node --test tests/nebula-spmt-commands.test.mjs tests/nebula-mosaic-core.test.mjs tests/nebula-mosaic-store.test.mjs tests/nebula-mosaic-runtime.test.mjs tests/nebula-mosaic-generation.test.mjs tests/nebula-mosaic-overlay.test.mjs tests/nebula-mosaic-xp.test.mjs

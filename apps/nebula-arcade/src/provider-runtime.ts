@@ -15,6 +15,8 @@ import { SqliteNebulaGameRuntimeStore } from "./game-runtime-store.js";
 import { buildNebulaDiscordDashboard, nebulaDiscordDashboardSignature, SqliteNebulaDiscordDashboardStore, type NebulaDiscordDashboardEgressV1 } from "./discord-dashboard.js";
 import { isNebulaChannelOptedOut, NebulaTagExperienceService, SqliteNebulaTagExperienceStore } from "./nebula-tag-experience.js";
 import { NebulaTagRuntime, SqliteNebulaTagStore } from "./nebula-tag-runtime.js";
+import { NebulaMosaicRuntime } from "./mosaic-runtime.js";
+import { createStreamWeaverMosaicGenerator } from "./mosaic-generation.js";
 
 export interface NebulaArcadeProviderChannelV1 {
   provider: "twitch" | "discord" | "kick" | "youtube";
@@ -68,6 +70,7 @@ export class NebulaArcadeProviderRuntime {
   private readonly experienceStore: SqliteNebulaTagExperienceStore;
   private readonly gameStore: SqliteNebulaGameRuntimeStore;
   private readonly actionStore: SqliteNebulaGameActionStore;
+  private readonly mosaicRuntime: NebulaMosaicRuntime;
   private readonly dashboardStore?: SqliteNebulaDiscordDashboardStore;
   private readonly tagRuntime: NebulaTagRuntime;
   private readonly experiences = new Map<string, NebulaTagExperienceService>();
@@ -84,6 +87,7 @@ export class NebulaArcadeProviderRuntime {
     this.experienceStore = new SqliteNebulaTagExperienceStore(options.databasePath);
     this.gameStore = new SqliteNebulaGameRuntimeStore(options.databasePath);
     this.actionStore = new SqliteNebulaGameActionStore(options.databasePath);
+    this.mosaicRuntime = new NebulaMosaicRuntime(options.databasePath, createStreamWeaverMosaicGenerator(), { requestXpCost: Math.max(0, Math.floor(Number(process.env.MOSAIC_REQUEST_XP_COST || 0))), spendXp: (tenantId, userId, amount, eventType, idempotencyKey, metadata) => options.client.spendXp(tenantId, userId, amount, eventType, idempotencyKey, metadata), awardXp: (tenantId, userId, delta, reason, idempotencyKey, awardOptions) => options.client.awardXp(tenantId, userId, delta, reason, idempotencyKey, awardOptions) });
     if (options.discordDashboard) this.dashboardStore = new SqliteNebulaDiscordDashboardStore(options.databasePath);
     this.tagRuntime = new NebulaTagRuntime(this.tagStore, options.client);
     for (const tenant of options.config.tenants) {
@@ -117,6 +121,11 @@ export class NebulaArcadeProviderRuntime {
         }
         }catch{/* Keep the last fresh observation; a failed poll never means offline. */}
       }
+      for (const mosaicChannel of tenant.channels) {
+        if (resolveNebulaChannelGameIds(this.gameStore.get(tenant.tenantId), mosaicChannel.stateChannelId, mosaicChannel.enabledGameIds).includes("pixelbattle")) {
+          void this.mosaicRuntime.processNext(tenant.tenantId, mosaicChannel.stateChannelId).catch(() => undefined);
+        }
+      }
       const channel=tenant.channels.find(channel=>resolveNebulaChannelGameIds(this.gameStore.get(tenant.tenantId),channel.stateChannelId,channel.enabledGameIds).includes("tag")&&!isNebulaChannelOptedOut(this.experienceStore,tenant.tenantId,channel.channelId,channel.stateChannelId));
       if(presence&&channel){const rotation=await this.tagRuntime.reconcileRotation({tenantId:tenant.tenantId,channelId:channel.channelId,now:this.options.now?.()??new Date().toISOString(),liveUserIds:presence.liveUserIds});rotations.push(rotation);if("result" in rotation&&rotation.result.status==="applied")await this.announce(tenant.tenantId,rotation.result.commandId,rotation.result.message);}
     }
@@ -126,7 +135,7 @@ export class NebulaArcadeProviderRuntime {
   close() {
     if (this.closed) return;
     this.closed = true;
-    this.media.close();this.network.close();this.tabletop.close(); this.inputStore.close(); this.activity.close(); this.dashboardStore?.close(); this.actionStore.close(); this.gameStore.close(); this.experienceStore.close(); this.tagStore.close();
+    this.media.close();this.network.close();this.tabletop.close(); this.inputStore.close(); this.activity.close(); this.dashboardStore?.close(); this.actionStore.close(); this.mosaicRuntime.close(); this.gameStore.close(); this.experienceStore.close(); this.tagStore.close();
   }
   private async deliver(delivery: NormalizedChatDeliveryV1) {
     if (this.closed) throw new Error("Nebula Arcade provider runtime is closed");
@@ -156,8 +165,16 @@ export class NebulaArcadeProviderRuntime {
       return;
     }
     this.activity.observe(message.tenantId,channel.stateChannelId,actor,message.text,now);
-    if(!parsed || !parsed.body){if(!parsed&&this.tagRuntime.getState(message.tenantId).state.players[actorId(message)]?.eligible!==false&&this.tagRuntime.getState(message.tenantId).state.players[actorId(message)])await this.tagRuntime.ingest(toTagMessage(message,message.text));return;}
     const activeIds=resolveNebulaChannelGameIds(this.gameStore.get(message.tenantId),channel.stateChannelId,channel.enabledGameIds);
+    if (activeIds.includes("pixelbattle")) {
+      const mosaic = await this.mosaicRuntime.handle({
+        tenantId: message.tenantId, channel: channel.stateChannelId, playerId: actor,
+        username: message.actor.username, displayName: message.actor.displayName ?? message.actor.username,
+        text: message.text, moderator: message.actor.roles.some((role) => role === "moderator" || role === "broadcaster"), requestId: delivery.deliveryId, now,
+      });
+      if (mosaic.handled) { if (mosaic.reply) await this.reply(message, delivery.deliveryId, "mosaic", mosaic.reply); return; }
+    }
+    if(!parsed || !parsed.body){if(!parsed&&this.tagRuntime.getState(message.tenantId).state.players[actorId(message)]?.eligible!==false&&this.tagRuntime.getState(message.tenantId).state.players[actorId(message)])await this.tagRuntime.ingest(toTagMessage(message,message.text));return;}
     if(!parsed.gameId && ["join","leave"].includes(parsed.command)){
       const enrolled=parsed.command==="join";this.network.enroll(actor,enrolled,message.occurredAt);
       this.gameStore.update(message.tenantId,state=>{for(const gameId of NEBULA_ARCADE_GAMES.map(game=>game.id))if(enrolled)joinNebulaGame(state,{userId:actor,username:message.actor.username,displayName:message.actor.displayName,gameId},new Date(message.occurredAt));else leaveNebulaGame(state,actor,gameId,new Date(message.occurredAt));});
@@ -208,7 +225,7 @@ export class NebulaArcadeProviderRuntime {
         continue;
       }
       const game=NEBULA_ARCADE_GAMES.find(item=>item.id===target.gameId)!;
-      const continuation=target.command==="input"||(NEBULA_CONTINUATION_GAMES.has(target.gameId)&&!["join","leave","status","start","stop"].includes(target.command)&&!game.commands.includes(target.command)&&!(target.gameId==="bingo"&&["center","reset","edit","generate","share","phrases","claim","card"].includes(target.command)));
+      const continuation=target.command==="input"||(NEBULA_CONTINUATION_GAMES.has(target.gameId)&&!["join","leave","status","start","stop"].includes(target.command)&&!(target.gameId==="bingo"&&["center","reset","edit","generate","share","phrases","claim","card"].includes(target.command)));
       if(continuation){
         if(!joined.includes(target.gameId)){replies.push(`Join ${game.name} first with spmt ${game.id} join.`);continue;}
         if(target.gameId==="bingo"){const reply=this.tabletop.observeBingo({...message,channelId:channel.stateChannelId});if(!reply)continue;replies.push(reply);}
