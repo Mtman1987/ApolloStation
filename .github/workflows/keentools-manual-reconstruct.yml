@@ -7,6 +7,7 @@ on:
     paths:
       - ".github/workflows/keentools-manual-reconstruct.yml"
       - ".github/data/keentools-discord-reference-upload.json"
+      - ".github/scripts/keentools-manual-reconstruct.mjs"
   workflow_dispatch:
 
 permissions:
