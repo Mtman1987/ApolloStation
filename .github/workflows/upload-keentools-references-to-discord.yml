@@ -1,0 +1,35 @@
+name: Upload KeenTools References to Discord
+run-name: Upload Neon Lock In Gamer reference views to Discord
+
+on:
+  workflow_dispatch:
+    inputs:
+      reference_archive_url:
+        description: "Direct HTTPS download URL for the prepared 10-view ZIP"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  upload-references:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out ApolloStation
+        uses: actions/checkout@v5
+
+      - name: Upload the ten PNG views to Discord
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.KEENTOOLS_TEST_DISCORD_WEBHOOK }}
+          REFERENCE_ARCHIVE_URL: ${{ inputs.reference_archive_url }}
+        run: node .github/scripts/post-keentools-references-to-discord.mjs
+
+      - name: Save returned Discord message IDs and CDN URLs
+        uses: actions/upload-artifact@v4
+        with:
+          name: keentools-discord-reference-message-ids
+          path: discord-reference-upload-result.json
+          if-no-files-found: error
+          retention-days: 90
