@@ -1,0 +1,37 @@
+name: Overlay Bay build validation
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "apps/spacemountain/src/overlay-bay-ui.ts"
+      - "apps/spacemountain/**"
+      - "packages/**"
+      - "tests/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/overlay-bay-build-validation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: overlay-bay-focused-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-offline-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Compile all apps and packages
+        run: npm run build
+      - name: Run Overlay Bay regression tests
+        run: node --import ./scripts/offline-network-guard.mjs --test tests/overlay-bay-editing.test.mjs tests/overlay-output-grants.test.mjs tests/spacemountain-shell-ui.test.mjs
