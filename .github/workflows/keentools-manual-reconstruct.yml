@@ -2,6 +2,11 @@ name: Manual KeenTools Avatar Reconstruction
 run-name: KeenTools manual reconstruction — Neon Lock In Gamer
 
 on:
+  push:
+    branches: [fix/keentools-discord-cdn-reconstruction]
+    paths:
+      - ".github/workflows/keentools-manual-reconstruct.yml"
+      - ".github/data/keentools-discord-reference-upload.json"
   workflow_dispatch:
 
 permissions:
