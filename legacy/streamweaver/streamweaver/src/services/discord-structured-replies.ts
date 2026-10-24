@@ -1,0 +1,512 @@
+import { listTenants } from '@/lib/tenant';
+import { readWorldLore } from '@/lib/world-lore-store';
+import { getBotName } from '@/lib/bot-settings-store';
+import { getStoredTokens } from '@/lib/token-utils.server';
+import { deleteMessage, editDiscordMessage, sendDiscordEmbed, type DiscordTextAttachment } from './discord-local';
+import {
+  buildDiscordBotEmbed,
+  getDiscordBotWebhookIdentity,
+} from './discord-branding';
+import { getAvatarUrlForTenant } from './discord-webhook-avatar';
+import { recordDiscordMessageCleanup, getDiscordMessageCleanupDeleteAt } from './discord-message-cleanup';
+import { deleteWebhookMessage, editWebhookMessage, sendWebhookMessage } from './discord-webhooks';
+import { getTwitchUser } from './twitch';
+import { attachPrivateDmControls, attachPublicDiscordControls } from './private-dm-controls';
+import { listPrivateGeneratedImageUrls } from './private-image-library';
+import { registerPrivateImageCarousel } from './private-image-carousel';
+import { readPrivateChatSettings } from '@/lib/private-chat-settings-store';
+import { getPublicBotTtsEnabled } from './public-bot-tts';
+import { hasActiveTtsConsumer } from './tts-consumer-presence';
+import { generateTTS } from './tts-provider';
+import { addSayQueueItem } from '@/app/api/say/_store';
+import { getConfiguredAppUrl } from '@/lib/runtime-origin';
+import { THE_COUNT_AVATAR_PATH, THE_COUNT_OWNER_TITLE, isTheCountName } from '@/lib/the-count';
+
+const SPACEMOUNTAIN_FALLBACK_LOGO = 'https://spacemountain.live/assets/space-logo-main.png';
+
+function theCountAvatarUrl(): string {
+  return `${getConfiguredAppUrl()}${THE_COUNT_AVATAR_PATH}`;
+}
+
+export type DiscordReplySpeaker = {
+  botName: string;
+  tenantId?: string;
+  stableId: string;
+};
+
+export type StructuredDiscordReplyInput = {
+  channelId: string;
+  message: string;
+  content?: string;
+  tenantId?: string;
+  botName?: string;
+  title?: string;
+  responseType?: string;
+  rotateSpeaker?: boolean;
+  speaker?: DiscordReplySpeaker;
+  sourceMessageId?: string;
+  sourceMessage?: string;
+  sourceUser?: string;
+  sourceUserAvatarUrl?: string;
+  isPrivate?: boolean;
+  gifEnabled?: boolean;
+  ttsEnabled?: boolean;
+  adultMode?: boolean;
+  includeConfiguredMedia?: boolean;
+  imageUrl?: string;
+  thumbnailUrl?: string;
+  color?: number;
+  fields?: Array<{ name: string; value: string; inline?: boolean }>;
+  components?: Record<string, unknown>[];
+  extraEmbeds?: Record<string, unknown>[];
+  embedUrl?: string;
+  footerText?: string;
+  forceCleanup?: boolean;
+  files?: DiscordTextAttachment[];
+};
+
+let rotatingSpeakerIndex = 0;
+
+function firstUrl(...values: unknown[]): string {
+  for (const value of values) {
+    if (typeof value !== 'string') continue;
+    const text = value.trim();
+    if (/^https?:\/\//i.test(text)) return text;
+  }
+  return '';
+}
+
+function uniqueSpeakers(speakers: DiscordReplySpeaker[]): DiscordReplySpeaker[] {
+  const seen = new Set<string>();
+  const unique: DiscordReplySpeaker[] = [];
+  for (const speaker of speakers) {
+    const key = `${speaker.tenantId || 'global'}:${speaker.botName.toLowerCase()}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(speaker);
+  }
+  return unique;
+}
+
+async function getCommandReplySpeakers(fallbackTenantId?: string): Promise<DiscordReplySpeaker[]> {
+  const speakers: DiscordReplySpeaker[] = [];
+  const lore = await readWorldLore().catch(() => null);
+  const characters = Object.values(lore?.characters || {});
+
+  for (const character of characters) {
+    const [tenantId] = String(character.stableId || '').split(':');
+    speakers.push({
+      botName: character.currentName,
+      tenantId: tenantId && !['unknown', 'discordUserId', 'twitchUserId'].includes(tenantId) ? tenantId : undefined,
+      stableId: character.stableId,
+    });
+  }
+
+  for (const tenantId of await listTenants().catch(() => [])) {
+    if (tenantId.startsWith('__kick_silent__')) continue;
+    const botName = getBotName(tenantId);
+    if (!botName) continue;
+    speakers.push({
+      botName,
+      tenantId,
+      stableId: `${tenantId}:${botName.toLowerCase()}`,
+    });
+  }
+
+  const unique = uniqueSpeakers(speakers);
+  if (unique.length > 0) return unique;
+
+  const fallbackBotName = getBotName(fallbackTenantId) || getBotName() || 'StreamWeaver';
+  return [{
+    botName: fallbackBotName,
+    tenantId: fallbackTenantId,
+    stableId: `${fallbackTenantId || 'global'}:${fallbackBotName.toLowerCase()}`,
+  }];
+}
+
+export async function resolveStructuredDiscordReplySpeaker(input: {
+  tenantId?: string;
+  botName?: string;
+  rotateSpeaker?: boolean;
+  isPrivate?: boolean;
+}): Promise<DiscordReplySpeaker> {
+  if (input.isPrivate) {
+    const tenantBotName = input.tenantId ? getBotName(input.tenantId) : '';
+    const botName = tenantBotName || getBotName() || 'StreamWeaver';
+    const tenantId = tenantBotName ? input.tenantId : undefined;
+    return {
+      botName,
+      tenantId,
+      stableId: `${tenantId || 'global'}:${botName.toLowerCase()}`,
+    };
+  }
+
+  if (!input.rotateSpeaker) {
+    const botName = input.botName || getBotName(input.tenantId) || getBotName() || 'StreamWeaver';
+    return {
+      botName,
+      tenantId: input.tenantId,
+      stableId: `${input.tenantId || 'global'}:${botName.toLowerCase()}`,
+    };
+  }
+
+  const speakers = await getCommandReplySpeakers(input.tenantId);
+  const speaker = speakers[rotatingSpeakerIndex % speakers.length];
+  rotatingSpeakerIndex = (rotatingSpeakerIndex + 1) % Math.max(1, speakers.length);
+  return speaker;
+}
+
+async function resolveTenantOwnerBranding(
+  tenantId: string | undefined,
+): Promise<{ name: string; logo: string }> {
+  if (!tenantId) return { name: 'SpaceMountain.live', logo: SPACEMOUNTAIN_FALLBACK_LOGO };
+
+  const tokens = await getStoredTokens(tenantId).catch(() => null) as Record<string, unknown> | null;
+  const ownerName = String(
+    tokens?.broadcasterDisplayName ||
+    tokens?.broadcasterUsername ||
+    tokens?.loginDisplayName ||
+    tokens?.loginUsername ||
+    'SpaceMountain.live'
+  ).trim();
+
+  const configured = firstUrl(
+    tokens?.broadcasterAvatarUrl,
+    tokens?.broadcasterProfileImageUrl,
+    tokens?.loginAvatarUrl,
+    tokens?.loginProfileImageUrl,
+  );
+  if (configured) return { name: ownerName, logo: configured };
+
+  if (ownerName && ownerName !== 'SpaceMountain.live') {
+    const profile = await getTwitchUser(ownerName).catch(() => null);
+    const profileImage = firstUrl(profile?.profileImageUrl);
+    if (profileImage) return { name: ownerName, logo: profileImage };
+  }
+
+  return { name: ownerName || 'SpaceMountain.live', logo: SPACEMOUNTAIN_FALLBACK_LOGO };
+}
+
+export async function resolveStructuredDiscordReplyInput(
+  input: StructuredDiscordReplyInput,
+): Promise<StructuredDiscordReplyInput> {
+  if (!input.isPrivate || !input.tenantId) return input;
+  const settings = await readPrivateChatSettings(input.tenantId).catch(() => null);
+  if (!settings) return input;
+  return {
+    ...input,
+    gifEnabled: settings.gifEnabled,
+    ttsEnabled: settings.ttsEnabled,
+    adultMode: settings.adultMode,
+  };
+}
+
+export async function buildStructuredDiscordReplyPayload(input: StructuredDiscordReplyInput): Promise<{
+  content: string;
+  embeds: Record<string, unknown>[];
+  username: string;
+  deleteAt: string;
+  speaker: DiscordReplySpeaker;
+}> {
+  const effectiveInput = await resolveStructuredDiscordReplyInput(input);
+  const speaker = effectiveInput.speaker || await resolveStructuredDiscordReplySpeaker({
+    tenantId: effectiveInput.tenantId,
+    botName: effectiveInput.botName,
+    rotateSpeaker: effectiveInput.isPrivate ? false : effectiveInput.rotateSpeaker,
+    isPrivate: effectiveInput.isPrivate,
+  });
+  const deleteAt = effectiveInput.isPrivate && !effectiveInput.forceCleanup
+    ? ''
+    : getDiscordMessageCleanupDeleteAt();
+  const webhookIdentity = getDiscordBotWebhookIdentity(speaker.tenantId, speaker.botName);
+  const botAvatar = firstUrl(
+    isTheCountName(speaker.botName) ? theCountAvatarUrl() : '',
+    await getAvatarUrlForTenant(speaker.tenantId),
+    webhookIdentity.avatarUrl,
+    SPACEMOUNTAIN_FALLBACK_LOGO,
+  );
+  const owner = isTheCountName(speaker.botName)
+    ? { name: THE_COUNT_OWNER_TITLE, logo: theCountAvatarUrl() }
+    : await resolveTenantOwnerBranding(speaker.tenantId);
+  const requesterLogo = firstUrl(effectiveInput.sourceUserAvatarUrl, SPACEMOUNTAIN_FALLBACK_LOGO);
+
+  const embed = await buildDiscordBotEmbed({
+    description: effectiveInput.message,
+    tenantId: speaker.tenantId,
+    botName: speaker.botName,
+    title: effectiveInput.title,
+    responseType: effectiveInput.responseType,
+    sourceMessage: effectiveInput.sourceMessage,
+    sourceUser: effectiveInput.sourceUser,
+    sourceUserAvatarUrl: requesterLogo,
+    deleteAt: deleteAt || undefined,
+    mediaSlot: effectiveInput.isPrivate ? 'private' : 'public',
+    includeConfiguredMedia: effectiveInput.includeConfiguredMedia
+      ?? (Boolean(effectiveInput.isPrivate) && effectiveInput.gifEnabled !== false),
+    imageUrl: effectiveInput.imageUrl,
+    thumbnailUrl: firstUrl(effectiveInput.thumbnailUrl, botAvatar),
+    color: effectiveInput.color,
+    fields: effectiveInput.fields,
+    footerText: effectiveInput.footerText,
+  });
+
+  embed.author = {
+    ...embed.author,
+    name: `Bot owned by ${owner.name}`,
+    icon_url: firstUrl(owner.logo, SPACEMOUNTAIN_FALLBACK_LOGO),
+  };
+  embed.thumbnail = { url: firstUrl(effectiveInput.thumbnailUrl, botAvatar, SPACEMOUNTAIN_FALLBACK_LOGO) };
+  embed.footer = { ...embed.footer, icon_url: requesterLogo };
+
+  return {
+    content: effectiveInput.content || '',
+    embeds: [
+      effectiveInput.embedUrl ? { ...embed, url: effectiveInput.embedUrl } : embed,
+      ...(effectiveInput.extraEmbeds || []),
+    ],
+    username: webhookIdentity.username,
+    deleteAt,
+    speaker,
+  };
+}
+
+async function queuePersistentPublicBotTts(input: { channelId: string; tenantId: string; text: string }): Promise<number> {
+  if (!await getPublicBotTtsEnabled(input.channelId, input.tenantId)) return 0;
+  const streamKey = `discord:${input.channelId}`;
+  if (!hasActiveTtsConsumer(streamKey, 'say')) return 0;
+  const text = String(input.text || '').trim();
+  if (!text) return 0;
+  const chunks = text.match(/[\s\S]{1,450}/g) || [];
+  let queued = 0;
+  for (const chunk of chunks) {
+    const audioDataUri = await generateTTS(chunk, undefined, streamKey, { requireActiveConsumer: true, consumerScope: 'say' });
+    if (!audioDataUri) continue;
+    addSayQueueItem(streamKey, audioDataUri);
+    queued += 1;
+  }
+  return queued;
+}
+
+async function finalizePublicControls(input: {
+  channelId: string;
+  messageId: string;
+  tenantId: string;
+  embeds: Record<string, unknown>[];
+}): Promise<void> {
+  const controlledEmbeds = attachPublicDiscordControls(input.embeds, {
+    channelId: input.channelId,
+    messageId: input.messageId,
+    tenantId: input.tenantId,
+    gifVisible: false,
+  });
+
+  try {
+    await editDiscordMessage(input.channelId, input.messageId, { embeds: controlledEmbeds });
+    return;
+  } catch {
+    // Tenant-branded public replies normally use Discord webhooks.
+  }
+
+  if (!await editWebhookMessage(input.channelId, input.messageId, { embeds: controlledEmbeds })) {
+    throw new Error('Could not attach public Discord controls to the reply.');
+  }
+}
+
+export async function sendStructuredDiscordReply(input: StructuredDiscordReplyInput): Promise<{ messageId?: string; deleteAt: string; speaker: DiscordReplySpeaker }> {
+  const effectiveInput = await resolveStructuredDiscordReplyInput(input);
+  const isPrivateImageLibraryRequest = Boolean(
+    effectiveInput.isPrivate &&
+    effectiveInput.tenantId &&
+    /^!img\s*$/i.test(String(effectiveInput.sourceMessage || ''))
+  );
+  const galleryImages = isPrivateImageLibraryRequest && effectiveInput.tenantId
+    ? await listPrivateGeneratedImageUrls(effectiveInput.tenantId).catch((error) => {
+        console.warn('[Discord Reply] Failed to load private image library:', error);
+        return [] as string[];
+      })
+    : [];
+  const replyInput: StructuredDiscordReplyInput = isPrivateImageLibraryRequest
+    ? {
+        ...effectiveInput,
+        includeConfiguredMedia: false,
+        ...(galleryImages[0] ? { imageUrl: galleryImages[0] } : {}),
+      }
+    : effectiveInput;
+
+  const payload = await buildStructuredDiscordReplyPayload(replyInput);
+  const { deleteAt, speaker } = payload;
+  const webhookIdentity = getDiscordBotWebhookIdentity(speaker.tenantId, speaker.botName);
+  const avatarUrl = firstUrl(
+    isTheCountName(speaker.botName) ? theCountAvatarUrl() : '',
+    await getAvatarUrlForTenant(speaker.tenantId),
+    webhookIdentity.avatarUrl,
+    SPACEMOUNTAIN_FALLBACK_LOGO,
+  );
+
+  const botTokenPayload = {
+    content: payload.content,
+    embeds: payload.embeds,
+    ...(replyInput.components?.length ? { components: replyInput.components } : {}),
+    ...(replyInput.files?.length ? { files: replyInput.files } : {}),
+  };
+
+  let sent: any;
+  try {
+    sent = replyInput.isPrivate || replyInput.components?.length || replyInput.files?.length || (!speaker.tenantId && !replyInput.tenantId)
+      ? await sendDiscordEmbed(replyInput.channelId, botTokenPayload)
+      : await sendWebhookMessage(replyInput.channelId, payload.content, webhookIdentity.username, avatarUrl, payload.embeds);
+  } catch (error) {
+    console.warn('[Discord Reply] Webhook reply failed; retrying through the bot-token embed route:', error);
+    sent = await sendDiscordEmbed(replyInput.channelId, botTokenPayload);
+  }
+
+  const sentId = typeof sent?.id === 'string' ? sent.id : '';
+
+  if (sentId && replyInput.isPrivate) {
+    try {
+      const controlledEmbeds = attachPrivateDmControls(payload.embeds, {
+        channelId: replyInput.channelId,
+        messageId: sentId,
+        gifEnabled: replyInput.gifEnabled !== false,
+        ttsEnabled: replyInput.ttsEnabled === true,
+        adultMode: replyInput.adultMode === true,
+      });
+      await editDiscordMessage(replyInput.channelId, sentId, {
+        embeds: controlledEmbeds,
+        ...(replyInput.components?.length ? { components: replyInput.components } : {}),
+      });
+    } catch (error) {
+      console.warn('[Discord Reply] Failed to attach private emoji controls:', error);
+    }
+  } else if (sentId) {
+    const controlTenantId = speaker.tenantId || replyInput.tenantId;
+    if (controlTenantId) {
+      await finalizePublicControls({
+        channelId: replyInput.channelId,
+        messageId: sentId,
+        tenantId: controlTenantId,
+        embeds: payload.embeds,
+      }).catch((error) => {
+        console.warn('[Discord Reply] Failed to attach public emoji controls:', error);
+      });
+    }
+  }
+
+  if (sentId && !replyInput.isPrivate) {
+    const publicTtsTenantId = speaker.tenantId || replyInput.tenantId;
+    if (publicTtsTenantId) {
+      await queuePersistentPublicBotTts({
+        channelId: replyInput.channelId,
+        tenantId: publicTtsTenantId,
+        text: replyInput.message,
+      }).catch((error) => console.warn('[Discord Reply] Persistent public bot TTS failed:', error));
+    }
+  }
+
+  if (sentId && isPrivateImageLibraryRequest && replyInput.tenantId && galleryImages.length) {
+    await registerPrivateImageCarousel({
+      tenantId: replyInput.tenantId,
+      channelId: replyInput.channelId,
+      messageId: sentId,
+      images: galleryImages,
+    }).catch((error) => {
+      console.warn('[Discord Reply] Failed to start private image library carousel:', error);
+      return false;
+    });
+  }
+
+  if (sentId && replyInput.sourceMessageId && !replyInput.isPrivate) {
+    await deleteMessage(replyInput.channelId, replyInput.sourceMessageId).catch(() => {});
+  }
+
+  if (!replyInput.isPrivate || replyInput.forceCleanup) {
+    await recordDiscordMessageCleanup({
+      tenantId: speaker.tenantId || replyInput.tenantId,
+      channelId: replyInput.channelId,
+      triggerMessageId: sentId ? replyInput.sourceMessageId : undefined,
+      replyMessageIds: [sentId],
+      replyMessages: [replyInput.message],
+      sourceUser: replyInput.sourceUser,
+      botName: speaker.botName,
+      triggerMessage: replyInput.sourceMessage,
+    }).catch(() => {});
+  }
+
+  return {
+    messageId: sentId || undefined,
+    deleteAt,
+    speaker,
+  };
+}
+
+export async function editStructuredDiscordReply(
+  messageId: string,
+  input: StructuredDiscordReplyInput,
+): Promise<{ edited: boolean; deleteAt: string; speaker: DiscordReplySpeaker }> {
+  const effectiveInput = await resolveStructuredDiscordReplyInput(input);
+  const payload = await buildStructuredDiscordReplyPayload(effectiveInput);
+  let embeds = payload.embeds;
+  try {
+    if (effectiveInput.isPrivate) {
+      embeds = attachPrivateDmControls(embeds, {
+        channelId: effectiveInput.channelId,
+        messageId,
+        gifEnabled: effectiveInput.gifEnabled !== false,
+        ttsEnabled: effectiveInput.ttsEnabled === true,
+        adultMode: effectiveInput.adultMode === true,
+      });
+    } else {
+      const controlTenantId = payload.speaker.tenantId || effectiveInput.tenantId;
+      if (controlTenantId) {
+        embeds = attachPublicDiscordControls(embeds, {
+          channelId: effectiveInput.channelId,
+          messageId,
+          tenantId: controlTenantId,
+          gifVisible: false,
+        });
+      }
+    }
+  } catch (error) {
+    console.warn('[Discord Reply] Failed to preserve emoji controls while editing:', error);
+  }
+  const body = {
+    content: payload.content,
+    embeds,
+    ...(effectiveInput.components?.length ? { components: effectiveInput.components } : {}),
+    ...(effectiveInput.files?.length ? { files: effectiveInput.files } : {}),
+  };
+
+  let edited = false;
+  try {
+    await editDiscordMessage(effectiveInput.channelId, messageId, body);
+    edited = true;
+  } catch {
+    edited = await editWebhookMessage(effectiveInput.channelId, messageId, body);
+  }
+
+  if (edited && effectiveInput.sourceMessageId && !effectiveInput.isPrivate) {
+    await deleteMessage(effectiveInput.channelId, effectiveInput.sourceMessageId).catch(() => {});
+  }
+  if (edited && (!effectiveInput.isPrivate || effectiveInput.forceCleanup)) {
+    await recordDiscordMessageCleanup({
+      tenantId: payload.speaker.tenantId || effectiveInput.tenantId,
+      channelId: effectiveInput.channelId,
+      replyMessageIds: [messageId],
+      replyMessages: [effectiveInput.message],
+      sourceUser: effectiveInput.sourceUser,
+      botName: payload.speaker.botName,
+      triggerMessage: effectiveInput.sourceMessage,
+    }).catch(() => {});
+  }
+
+  return { edited, deleteAt: payload.deleteAt, speaker: payload.speaker };
+}
+
+export async function deleteStructuredDiscordReply(channelId: string, messageId: string): Promise<boolean> {
+  try {
+    await deleteMessage(channelId, messageId);
+    return true;
+  } catch {
+    return deleteWebhookMessage(channelId, messageId).catch(() => false);
+  }
+}

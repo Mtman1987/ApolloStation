@@ -1,0 +1,376 @@
+import { sendChatMessage } from './twitch';
+import { getTwitchUser } from './twitch';
+import { readJsonFile, writeJsonFile } from './storage';
+import { getStoredTokens, ensureValidToken } from '../lib/token-utils.server';
+import { readUserConfig } from '../lib/user-config';
+import { isKnownBot } from './known-bots';
+import { getExcludedUsers } from './welcome-wagon-tracker';
+import { internalServiceHeaders } from '../lib/internal-service-auth';
+import { readSharedChatReplay } from './shared-chat-ingestion';
+import { recentTwitchChatters } from './brb-viewer-targets';
+
+const runtimeByTenant = new Map<string, { isPlaying: boolean; stopRequested: boolean }>();
+const testBRBActiveTenants = new Set<string>();
+
+const CLIP_MODE_FILE = 'brb-clip-mode.json';
+
+function bc(msg: object, tenantId?: string) {
+  if (typeof (global as any).broadcast === 'function') {
+    console.log(`[BRB] Broadcasting ${(msg as any).type} to tenant ${tenantId || 'all'}`);
+    (global as any).broadcast(msg, tenantId);
+  } else {
+    console.error('[BRB] global.broadcast is NOT available!');
+  }
+}
+
+async function getClipModeFromStorage(tenantId?: string): Promise<boolean> {
+  const { getMode } = await import('./modes-manager');
+  const clipMode = await getMode('clipmode', tenantId);
+  return clipMode === 'viewer';
+}
+
+async function setClipModeToStorage(useViewerClips: boolean): Promise<void> {
+  await writeJsonFile(CLIP_MODE_FILE, { useViewerClips });
+}
+
+export function isBRBActive(tenantId?: string): boolean {
+  const key = String(tenantId || '').trim();
+  if (!key) return false;
+  const runtime = runtimeByTenant.get(key);
+  return testBRBActiveTenants.has(key) || Boolean(runtime?.isPlaying && !runtime.stopRequested);
+}
+
+export async function toggleClipMode(tenantId?: string): Promise<void> {
+  const { toggleMode } = await import('./modes-manager');
+  await toggleMode('clipmode', tenantId);
+}
+
+export async function getClipMode(tenantId?: string): Promise<'broadcaster' | 'viewer'> {
+  const { getMode } = await import('./modes-manager');
+  const mode = await getMode('clipmode', tenantId);
+  return mode === 'viewer' ? 'viewer' : 'broadcaster';
+}
+
+async function fetchClipsForUser(username: string): Promise<any[]> {
+  try {
+    const clientId = process.env.TWITCH_CLIENT_ID;
+    const clientSecret = process.env.TWITCH_CLIENT_SECRET;
+    if (!clientId || !clientSecret) { console.log('[BRB] Missing Twitch credentials'); return []; }
+
+    const user = await getTwitchUser(username, 'login');
+    if (!user?.id) { console.log(`[BRB] User ${username} not found`); return []; }
+
+    const tokenRes = await fetch(
+      `https://id.twitch.tv/oauth2/token?client_id=${clientId}&client_secret=${clientSecret}&grant_type=client_credentials`,
+      { method: 'POST' }
+    );
+    const { access_token } = await tokenRes.json();
+
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setFullYear(startDate.getFullYear() - 2);
+
+    const res = await fetch(
+      `https://api.twitch.tv/helix/clips?broadcaster_id=${user.id}&started_at=${startDate.toISOString()}&ended_at=${endDate.toISOString()}&first=100`,
+      { headers: { 'Authorization': `Bearer ${access_token}`, 'Client-ID': clientId } }
+    );
+
+    const data = await res.json();
+    console.log(`[BRB] Found ${data.data?.length || 0} clips for ${username}`);
+    return data.data || [];
+  } catch (err: any) {
+    console.error(`[BRB] Clip fetch failed for ${username}:`, err.message);
+    return [];
+  }
+}
+
+async function getChatters(tenantId: string, broadcasterName: string): Promise<string[]> {
+  // IRC messages, including !brb itself, are already recorded for this tenant
+  // before command dispatch. This path works when broadcaster OAuth is absent.
+  const recent = recentTwitchChatters(
+    await readSharedChatReplay(tenantId, { limit: 500 }).catch(() => []),
+    broadcasterName,
+  );
+
+  // The Twitch chatters API can also include quiet viewers when authorized.
+  // Avoid calling its auth path if this tenant has no broadcaster credentials.
+  const tokens = await getStoredTokens(tenantId).catch(() => null);
+  if (!tokens?.broadcasterToken && !tokens?.broadcasterRefreshToken) {
+    console.log(`[BRB] Using ${recent.length} recent Twitch chatters; broadcaster token unavailable`);
+    return recent;
+  }
+
+  try {
+    const res = await fetch(`http://127.0.0.1:${process.env.PORT || 3000}/api/chat/chatters?tenant=${encodeURIComponent(tenantId)}`, {
+      headers: internalServiceHeaders(),
+    });
+    if (!res.ok) {
+      console.warn(`[BRB] Chatters API returned ${res.status}; using ${recent.length} recent Twitch chatters`);
+      return recent;
+    }
+    const data = await res.json();
+    const apiChatters = Array.isArray(data.chatters)
+      ? data.chatters.map((c: any) => String(c.user_login || '').toLowerCase()).filter(Boolean)
+      : [];
+    return [...new Set([...recent, ...apiChatters])];
+  } catch {
+    console.warn(`[BRB] Chatters API unavailable; using ${recent.length} recent Twitch chatters`);
+    return recent;
+  }
+}
+
+async function getEligibleViewerClipTargets(chatters: string[], broadcasterName: string, tenantId?: string): Promise<string[]> {
+  const broadcaster = broadcasterName.toLowerCase();
+  const excluded = new Set((await getExcludedUsers(tenantId).catch(() => [])).map(u => u.toLowerCase()));
+  const eligible: string[] = [];
+
+  for (const chatter of chatters) {
+    const lower = chatter.toLowerCase();
+    if (!lower || lower === broadcaster) continue;
+    if (excluded.has(lower)) {
+      console.log(`[BRB] Skipping ${chatter}: excluded from welcome/shoutout list`);
+      continue;
+    }
+    if (await isKnownBot(lower, tenantId)) {
+      console.log(`[BRB] Skipping ${chatter}: known/ignored bot`);
+      continue;
+    }
+    eligible.push(chatter);
+  }
+
+  return [...new Set(eligible.map(u => u.toLowerCase()))];
+}
+
+const CHAT_TAG_URL = String(process.env.CHAT_TAG_BASE_URL || 'https://chat-tag-new.fly.dev').replace(/\/$/, '');
+const DSH_URL = 'https://discord-stream-hub-new.fly.dev';
+
+export type BRBMedia = {
+  clips: { clipUrl: string; thumbnailUrl: string; user: string; duration: number; videoId?: string; vodOffset?: number }[];
+  gifs: { url: string; user: string }[];
+};
+
+async function getCommunityClipTargets(broadcasterName: string, tenantId: string): Promise<string[]> {
+  let logins: string[] = [];
+  try {
+    const response = await fetch(`${CHAT_TAG_URL}/api/discord/live-members`, {
+      signal: AbortSignal.timeout(5_000), cache: 'no-store',
+    });
+    if (response.ok) {
+      const data = await response.json();
+      if (Array.isArray(data.liveMembers)) {
+        logins = data.liveMembers.map((row: any) => String(row.twitchUsername || row.username || '').toLowerCase());
+      }
+    }
+  } catch (error) {
+    console.warn('[BRB] Live community list unavailable:', error);
+  }
+  if (!logins.length) {
+    try {
+      const response = await fetch(`${DSH_URL}/api/community-spotlight`, {
+        signal: AbortSignal.timeout(5_000), cache: 'no-store',
+      });
+      if (response.ok) {
+        const data = await response.json();
+        logins = (Array.isArray(data.users) ? data.users : [])
+          .map((row: any) => String(row.twitchLogin || '').toLowerCase());
+      }
+    } catch (error) {
+      console.warn('[BRB] Community roster unavailable:', error);
+    }
+  }
+  return getEligibleViewerClipTargets(logins.filter((login) => /^[a-z0-9_]{3,25}$/.test(login)), broadcasterName, tenantId);
+}
+
+async function getStoredShoutoutGifs(users: string[]): Promise<BRBMedia['gifs']> {
+  try {
+    const query = users.length ? `?users=${encodeURIComponent(users.slice(0, 20).join(','))}` : '';
+    const response = await fetch(`${DSH_URL}/api/lounge/brb-gifs${query}`, {
+      signal: AbortSignal.timeout(5_000), cache: 'no-store',
+    });
+    if (!response.ok) return [];
+    const data = await response.json();
+    return (Array.isArray(data.gifs) ? data.gifs : [])
+      .filter((gif: any) => typeof gif.url === 'string' && gif.url.startsWith(`${DSH_URL}/api/media/`))
+      .map((gif: any) => ({ url: gif.url, user: String(gif.user || '') })).slice(0, 100);
+  } catch (error) {
+    console.warn('[BRB] Stored shoutout GIF lookup unavailable:', error);
+    return [];
+  }
+}
+
+export async function getBRBMediaPlaylist(broadcasterName: string, tenantId: string): Promise<BRBMedia> {
+  const chatters = await getEligibleViewerClipTargets(await getChatters(tenantId, broadcasterName), broadcasterName, tenantId);
+  const community = await getCommunityClipTargets(broadcasterName, tenantId);
+  const chatTargets = [...new Set(chatters)].slice(0, 12);
+  const communityTargets = [...new Set(community)].filter((user) => !chatTargets.includes(user)).slice(0, 12);
+  const clips: BRBMedia['clips'] = [];
+  const fetchTargetClips = async (targets: string[]) => {
+  for (const user of targets) {
+    const userClips = await fetchClipsForUser(user);
+    const clip = userClips[Math.floor(Math.random() * userClips.length)];
+    if (!clip?.url) continue;
+    clips.push({
+      clipUrl: clip.url.replace('twitch.tv/', 'twitch.tv/embed?clip='),
+      thumbnailUrl: clip.thumbnail_url || '',
+      user: clip.broadcaster_name || user,
+      duration: Math.floor((clip.duration || 30) * 1000) + 700,
+      videoId: String(clip.video_id || ''),
+      vodOffset: Number.isFinite(clip.vod_offset) && clip.vod_offset >= 0 ? clip.vod_offset : undefined,
+    });
+  }
+  };
+  await fetchTargetClips(chatTargets);
+  if (!clips.length) await fetchTargetClips(communityTargets);
+  // GIFs are a second media source if clip discovery or browser playback fails.
+  const gifs = await getStoredShoutoutGifs([...chatTargets, ...communityTargets]);
+  if (!gifs.length) gifs.push(...await getStoredShoutoutGifs([]));
+  console.log(`[BRB] Media: ${chatters.length} chatters, ${community.length} live community creators, ${clips.length} clips, ${gifs.length} stored GIFs`);
+  return { clips, gifs };
+}
+
+export async function startTestBRB(broadcasterName: string, tenantId: string): Promise<number> {
+  if (tenantId !== 'spacemountainlive') throw new Error('The stream test is only available in the SpaceMountain lounge');
+  const users = await getCommunityClipTargets(broadcasterName, tenantId);
+  if (!users.length) return 0;
+  stopBRB(tenantId);
+  testBRBActiveTenants.add(tenantId);
+  bc({ type: 'testbrb-start', payload: { users, duration: 30_000 } }, tenantId);
+  console.log(`[TestBRB:${tenantId}] Trying ${users.length} live community channels`);
+  return users.length;
+}
+
+export async function startBRB(broadcasterName: string, tenantId?: string): Promise<void> {
+  // Resolve tenant from broadcaster name if not provided
+  if (!tenantId) {
+    try {
+      const { getActiveTenantIds } = require('./twitch-client');
+      const { getStoredTokens: gst } = require('../lib/token-utils.server');
+      for (const tid of getActiveTenantIds()) {
+        const tokens = await gst(tid);
+        if (tokens?.broadcasterUsername?.toLowerCase() === broadcasterName.toLowerCase()) { tenantId = tid; break; }
+      }
+    } catch {}
+  }
+  if (!tenantId) throw new Error('BRB playback requires tenant context');
+  testBRBActiveTenants.delete(tenantId);
+  const runtime = runtimeByTenant.get(tenantId) || { isPlaying: false, stopRequested: false };
+  runtimeByTenant.set(tenantId, runtime);
+  if (runtime.isPlaying) { console.log(`[BRB:${tenantId}] Already playing`); return; }
+
+  runtime.isPlaying = true;
+  runtime.stopRequested = false;
+  console.log(`[BRB] Starting for ${broadcasterName}, tenant ${tenantId}`);
+
+  const { getConfigSection } = require('../lib/local-config/service');
+  const obsConfig = await getConfigSection('obs', tenantId);
+  const scene = obsConfig?.scenes?.brb || 'BRB';
+  const liveScene = obsConfig?.scenes?.live || 'Live';
+
+  const loungeBRB = tenantId === 'spacemountainlive' || tenantId === '539605850' || broadcasterName.toLowerCase() === 'spacemountainlive';
+  if (!loungeBRB) bc({ type: 'obs-switch-scene', payload: { sceneName: scene } }, tenantId);
+  bc({ type: 'brb-start', payload: { scene } }, tenantId);
+
+  await new Promise(r => setTimeout(r, 2000));
+
+  let noMediaNotified = false;
+  let gifIndex = 0;
+
+  if (loungeBRB) {
+    // The SpaceMountain Lounge owns a large stored GIF bank. Do not rebuild a
+    // viewer/community playlist between every GIF; that creates visible gaps
+    // when chat is quiet. Fetch once, shuffle, and run ~3 minutes continuously.
+    const stored = await getStoredShoutoutGifs([]);
+    const shuffle = <T,>(items: T[]): T[] => {
+      const copy = [...items];
+      for (let index = copy.length - 1; index > 0; index--) {
+        const swap = Math.floor(Math.random() * (index + 1));
+        [copy[index], copy[swap]] = [copy[swap], copy[index]];
+      }
+      return copy;
+    };
+    let block = shuffle(stored).slice(0, 15);
+    while (!runtime.stopRequested) {
+      if (!block.length) {
+        if (!noMediaNotified) {
+          bc({ type: 'brb-no-media' }, tenantId);
+          noMediaNotified = true;
+          console.warn('[BRB] No stored sponsor GIFs are available');
+        }
+        await new Promise(r => setTimeout(r, 5000));
+        block = shuffle(await getStoredShoutoutGifs([])).slice(0, 15);
+        continue;
+      }
+      noMediaNotified = false;
+      for (const gif of block) {
+        if (runtime.stopRequested) break;
+        bc({ type: 'brb-gif', payload: gif }, tenantId);
+        const endTime = Date.now() + 12_000;
+        while (Date.now() < endTime && !runtime.stopRequested) await new Promise(r => setTimeout(r, 500));
+      }
+      block = shuffle(await getStoredShoutoutGifs([])).slice(0, 15);
+    }
+
+    if (!testBRBActiveTenants.has(tenantId)) bc({ type: 'brb-stop' }, tenantId);
+    runtime.isPlaying = false;
+    console.log('[BRB] Stopped');
+    return;
+  }
+
+  while (!runtime.stopRequested) {
+    const useViewerClips = loungeBRB || await getClipModeFromStorage(tenantId);
+    const playlist: BRBMedia = useViewerClips
+      ? await getBRBMediaPlaylist(broadcasterName, tenantId)
+      : { clips: [], gifs: [] };
+    if (!useViewerClips) {
+      const ownClips = await fetchClipsForUser(broadcasterName);
+      playlist.clips = ownClips.slice(0, 1).map((clip: any) => ({
+        clipUrl: clip.url.replace('twitch.tv/', 'twitch.tv/embed?clip='),
+        thumbnailUrl: clip.thumbnail_url || '',
+        user: clip.broadcaster_name || broadcasterName,
+        duration: Math.floor((clip.duration || 30) * 1000) + 700,
+        videoId: String(clip.video_id || ''),
+        vodOffset: Number.isFinite(clip.vod_offset) && clip.vod_offset >= 0 ? clip.vod_offset : undefined,
+      }));
+    }
+
+    let played = false;
+    for (const clip of playlist.clips) {
+      if (runtime.stopRequested) break;
+      played = true;
+      noMediaNotified = false;
+      bc({ type: 'brb-clip', payload: { ...clip, gifUrl: playlist.gifs[gifIndex++ % (playlist.gifs.length || 1)]?.url || '' } }, tenantId);
+      const endTime = Date.now() + clip.duration + 2000;
+      while (Date.now() < endTime && !runtime.stopRequested) await new Promise(r => setTimeout(r, 1000));
+    }
+    if (!played && playlist.gifs.length && !runtime.stopRequested) {
+      const gif = playlist.gifs[gifIndex++ % playlist.gifs.length];
+      noMediaNotified = false;
+      bc({ type: 'brb-gif', payload: gif }, tenantId);
+      const endTime = Date.now() + 12_000;
+      while (Date.now() < endTime && !runtime.stopRequested) await new Promise(r => setTimeout(r, 1000));
+    } else if (!played && !runtime.stopRequested) {
+      if (!noMediaNotified) {
+        bc({ type: 'brb-no-media' }, tenantId);
+        noMediaNotified = true;
+        console.warn('[BRB] No chat or community clips and no stored shoutout GIFs');
+      }
+      await new Promise(r => setTimeout(r, 5_000));
+    }
+  }
+
+  if (!testBRBActiveTenants.has(tenantId)) bc({ type: 'brb-stop' }, tenantId);
+  if (!loungeBRB) bc({ type: 'obs-switch-scene', payload: { sceneName: liveScene } }, tenantId);
+
+  runtime.isPlaying = false;
+  console.log('[BRB] Stopped');
+}
+
+export function stopBRB(tenantId?: string): void {
+  if (!tenantId) {
+    if (process.env.NODE_ENV === 'production') throw new Error('Stopping BRB requires tenant context');
+    return;
+  }
+  testBRBActiveTenants.delete(tenantId);
+  const runtime = runtimeByTenant.get(tenantId);
+  if (runtime) runtime.stopRequested = true;
+}

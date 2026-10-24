@@ -1,0 +1,29 @@
+name: Free AI policy
+on:
+  pull_request:
+    paths:
+      - 'src/services/**'
+      - 'src/lib/tts-voices.ts'
+      - 'workers/free-tts/**'
+      - 'docker-entrypoint.js'
+      - 'Dockerfile'
+      - 'tests/free-voice-entrypoint.test.mjs'
+      - 'tests/free-ai-policy.test.ts'
+      - 'tests/gemini-scottish-tts.test.ts'
+      - 'tests/free-ai-chain.test.ts'
+      - 'config/ai-cost-policy.json'
+      - '.github/workflows/free-ai-policy.yml'
+      - '.github/workflows/fly-deploy.yml'
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: node --import tsx --test tests/free-ai-policy.test.ts tests/free-gemini-chat.test.ts tests/free-ai-chain.test.ts tests/gemini-scottish-tts.test.ts
+      - run: node --test tests/free-voice-entrypoint.test.mjs
+      - run: npm run typecheck

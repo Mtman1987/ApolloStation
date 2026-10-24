@@ -1,0 +1,174 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+
+import {
+  buildStellaLoungeSnapshot,
+  detectStellaLoungeIntent,
+  formatStellaLoungeContext,
+  planStellaWordChainEvent,
+  resolveStellaLoungeIntent,
+} from '../src/services/stella-lounge-host';
+
+test('detects Stella host questions and social gestures', () => {
+  assert.equal(detectStellaLoungeIntent("Stella, what's happening in the Lounge?"), 'overview');
+  assert.equal(detectStellaLoungeIntent('how can I join the game?'), 'join-game');
+  assert.equal(detectStellaLoungeIntent("what's playing right now?"), 'playing');
+  assert.equal(detectStellaLoungeIntent("who's live in the Spotlight right now?"), 'live');
+  assert.equal(detectStellaLoungeIntent('Stella how many people live today? Like right now'), 'live');
+  assert.equal(detectStellaLoungeIntent('I need a moderator'), 'moderator');
+  assert.equal(detectStellaLoungeIntent('fist bump, Stella'), 'fist-bump');
+  assert.equal(detectStellaLoungeIntent('what did you think of that book?'), null);
+});
+
+function fixtureFetch(input: string | URL | Request): Promise<Response> {
+  const url = String(input);
+  if (url.includes('/lounge/media/program')) {
+    return Promise.resolve(new Response(JSON.stringify({
+      movie: { current: null, playback: { status: 'idle' }, queue: [], queueCount: 0 },
+      music: { current: { item: { title: 'Rocket Man', artist: 'Elton John' } }, playback: { status: 'playing', position: 91 }, queue: [], queueCount: 2 },
+    }), { status: 200, headers: { 'content-type': 'application/json' } }));
+  }
+  if (url.includes('/spotlight/program')) return Promise.resolve(new Response(JSON.stringify({ ready: true, currentLogin: 'CaptainOne' }), { status: 200 }));
+  if (url.includes('/api/integrations/chat-tag/state') || url.endsWith('/api/tag')) {
+    return Promise.resolve(new Response(JSON.stringify({
+      currentIt: 'user_8f3c9b',
+      players: [
+        { id: 'user_8f3c9b', username: 'Nova', isIt: true, isActive: true },
+        { id: 'user_223abc', username: 'Orion', isActive: false },
+      ],
+    }), { status: 200, headers: { 'content-type': 'application/json' } }));
+  }
+  if (url.includes('/api/game-hub/channel')) {
+    return Promise.resolve(new Response(JSON.stringify({
+      games: [{ id: 'bingo', shortName: 'Bingo', playerCommands: [{ trigger: '!bingo join' }] }],
+    }), { status: 200, headers: { 'content-type': 'application/json' } }));
+  }
+  if (url.includes('discord-stream-hub-new.fly.dev/api/community-spotlight')) {
+    return Promise.resolve(new Response(JSON.stringify({
+      source: 'discord-stream-hub',
+      count: 2,
+      users: [
+        { username: 'CaptainOne', twitchLogin: 'captainone', group: 'Community' },
+        { username: 'CaptainTwo', twitchLogin: 'captaintwo', group: 'Partners' },
+      ],
+      spotlight: { twitchLogin: 'CaptainOne' },
+    }), { status: 200, headers: { 'content-type': 'application/json' } }));
+  }
+  return Promise.resolve(new Response('{}', { status: 404 }));
+}
+
+test('builds one bounded snapshot from the live services', async () => {
+  const snapshot = await buildStellaLoungeSnapshot(fixtureFetch as typeof fetch, Date.parse('2026-09-21T12:00:00Z'));
+  assert.equal(snapshot.media.currentTitle, 'Rocket Man');
+  assert.equal(snapshot.media.queueCount, 2);
+  assert.equal(snapshot.media.positionSeconds, 91);
+  assert.equal(snapshot.overlay.spotlight, 'CaptainOne');
+  assert.equal(snapshot.nebula.playerCount, 2);
+  assert.equal(snapshot.nebula.activePlayerCount, 1);
+  assert.equal(snapshot.nebula.currentPlayer, 'Nova');
+  assert.equal(snapshot.nebula.playerNamesById.user_8f3c9b, 'Nova');
+  assert.doesNotMatch(formatStellaLoungeContext(snapshot), /user_8f3c9b/);
+  assert.deepEqual(snapshot.nebula.games, [{ name: 'Bingo', joinCommand: '!bingo join' }]);
+  assert.equal(snapshot.community.liveCount, 2);
+  assert.deepEqual(snapshot.community.liveNames, ['CaptainOne', 'CaptainTwo']);
+  const prompt = formatStellaLoungeContext(snapshot);
+  assert.match(prompt, /Rocket Man by Elton John/);
+  assert.match(prompt, /Current media playhead: 91 seconds/);
+  assert.match(prompt, /Nebula Arcade has 2 players/);
+  assert.match(prompt, /Available now: Bingo/);
+  assert.match(prompt, /spmt join/);
+  assert.match(prompt, /!mtfixit/);
+});
+
+test('answers high-value Lounge questions from facts without a model guess', async () => {
+  assert.equal(
+    await resolveStellaLoungeIntent('playing', fixtureFetch as typeof fetch),
+    'The Lounge music worker reports Rocket Man by Elton John playing.',
+  );
+  assert.match(await resolveStellaLoungeIntent('live', fixtureFetch as typeof fetch), /Discord Stream Hub reports 2 SpaceMountain community members live right now: CaptainOne, CaptainTwo/);
+  assert.match(await resolveStellaLoungeIntent('live', fixtureFetch as typeof fetch), /@CaptainOne on the Spotlight feed/);
+  assert.match(await resolveStellaLoungeIntent('join-game', fixtureFetch as typeof fetch), /spmt join.*!bingo join/);
+  assert.match(await resolveStellaLoungeIntent('game-status', fixtureFetch as typeof fetch), /Nova currently has the active turn/);
+  assert.match(await resolveStellaLoungeIntent('overview', fixtureFetch as typeof fetch), /CaptainOne/);
+  assert.match(await resolveStellaLoungeIntent('moderator', fixtureFetch as typeof fetch), /!mtfixit/);
+  assert.match(await resolveStellaLoungeIntent('fist-bump', fixtureFetch as typeof fetch), /happy_gesture/);
+});
+
+test('reports a paused movie alongside playing music without saying the movie ended', async () => {
+  const fetchPausedMovie = (input: string | URL | Request) => {
+    if (String(input).includes('/lounge/media/program')) return Promise.resolve(new Response(JSON.stringify({
+      movie: { current: { item: { title: 'The Fifth Element' } }, playback: { status: 'paused' }, queue: [] },
+      music: { current: { item: { title: 'Rocket Man', artist: 'Elton John' } }, playback: { status: 'playing' }, queue: [] },
+    }), { status: 200 }));
+    return fixtureFetch(input);
+  };
+  const snapshot = await buildStellaLoungeSnapshot(fetchPausedMovie as typeof fetch);
+  assert.equal(snapshot.media.kind, 'music');
+  assert.equal(snapshot.media.pausedMovieTitle, 'The Fifth Element');
+  assert.match(formatStellaLoungeContext(snapshot), /Rocket Man.*playing.*The movie The Fifth Element is selected but not playing/);
+});
+
+
+test('Stella reacts selectively to Word Chain plays, round transitions, and the five-round finish', () => {
+  const base = {
+    roundSlot: 4,
+    roundNumber: 5,
+    theme: 'Movies',
+    currentWord: 'SCENE',
+    phase: 'play' as const,
+    secondsLeft: 200,
+    lastPlay: null,
+    reviewWords: [],
+    reviewLeaders: [],
+    gameEnded: false,
+    gameParticipants: [],
+    gameWinner: null,
+    gameWinners: [],
+  };
+
+  const ordinary = {
+    ...base,
+    lastPlay: { word: 'EDIT', displayName: 'Nova', points: 4, combo: 1, position: 1 },
+  };
+  assert.equal(planStellaWordChainEvent(base, ordinary, 1), null, 'Stella should not narrate every word');
+  const sampled = planStellaWordChainEvent(base, ordinary, 3);
+  assert.equal(sampled?.kind, 'game-play');
+  assert.equal(sampled?.actor, 'Nova');
+  assert.match(sampled?.text || '', /EDIT/);
+
+  const combo = planStellaWordChainEvent(base, {
+    ...ordinary,
+    lastPlay: { word: 'TRAILER', displayName: 'Orion', points: 10, combo: 2, position: 2 },
+  }, 2);
+  assert.equal(combo?.kind, 'game-play');
+  assert.match(combo?.text || '', /2x combo/);
+
+  const voting = planStellaWordChainEvent(ordinary, {
+    ...ordinary,
+    phase: 'review',
+    secondsLeft: 60,
+    reviewWords: [{ word: 'EDIT', displayName: 'Nova', points: 4 }],
+  }, 3);
+  assert.equal(voting?.kind, 'game-round');
+  assert.match(voting?.text || '', /voting is open for 60 seconds/i);
+
+  const finished = planStellaWordChainEvent({
+    ...ordinary,
+    phase: 'review',
+  }, {
+    ...ordinary,
+    phase: 'tally',
+    secondsLeft: 30,
+    gameEnded: true,
+    gameParticipants: [
+      { displayName: 'Nova', points: 31 },
+      { displayName: 'Orion', points: 24 },
+    ],
+    gameWinner: { displayName: 'Nova', points: 31 },
+    gameWinners: [{ displayName: 'Nova', points: 31 }],
+  }, 3);
+  assert.equal(finished?.kind, 'game-winner');
+  assert.equal(finished?.actor, 'Nova');
+  assert.match(finished?.text || '', /GAME OVER/);
+  assert.match(finished?.text || '', /#1 Nova 31/);
+});

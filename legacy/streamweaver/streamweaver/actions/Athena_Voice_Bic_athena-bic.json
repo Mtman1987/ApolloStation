@@ -1,0 +1,12 @@
+{
+  "id": "athena-bic",
+  "name": "Athena Voice Bic",
+  "description": "Voice-activated lighter steal - finds closest matching username like voice shoutout",
+  "trigger": "athena bic",
+  "type": "Execute Code",
+  "code": "// Extract username from voice command\nconst fullCommand = args.join(' ');\nconst targetName = fullCommand.trim();\n\nif (!targetName) {\n  console.log('[Voice Bic] No username provided');\n  return;\n}\n\nconst { findBestUsernameMatch } = require('./src/lib/username-matcher');\nconst { stealLighter } = require('./src/services/bic-storage');\nconst { publishBicOverlay } = require('./src/services/bic-service');\nconst { sendChatMessage } = require('./src/services/twitch');\n\nconst matched = await findBestUsernameMatch(targetName);\n\nif (!matched) {\n  console.log(`[Voice Bic] No match found for \"${targetName}\"`);\n  return;\n}\n\nconst normalized = matched.toLowerCase();\nconst { total, userCount } = stealLighter(normalized);\nawait publishBicOverlay({ total, lastUser: normalized, lastUserCount: userCount });\nawait sendChatMessage(`fatkid4ev4 has stolen ${total} lighters, of those ${userCount} have been ${normalized}'s`, 'bot', 'fatkid4ev4').catch(() => {});\n\nconsole.log(`[Voice Bic] Recorded lighter theft for ${normalized}: ${total} total`);",
+  "enabled": true,
+  "group": "Fun Commands",
+  "createdAt": "2025-07-15T00:00:00.000Z",
+  "updatedAt": "2025-07-15T00:00:00.000Z"
+}

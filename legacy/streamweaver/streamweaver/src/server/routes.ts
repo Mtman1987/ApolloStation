@@ -1,0 +1,784 @@
+import * as http from 'http';
+import { sendSignedInTwitchMessage } from '../services/signed-in-twitch-send';
+import * as url from 'url';
+import { resolve } from 'path';
+import { promises as fs } from 'fs';
+import { validateLocalApiKeySync } from '../lib/local-config/service';
+import { readDiscordConfig } from '../lib/discord-config';
+import { getConfiguredAppUrl, isAllowedOrigin } from '../lib/runtime-origin';
+import { getAdminTwitchId, tenantPath, SPACEMOUNTAIN_SYSTEM_TENANT_ID, SPACEMOUNTAIN_SYSTEM_TWITCH_CHANNEL } from '../lib/tenant';
+import { readUserConfigSync } from '../lib/user-config';
+import { isKnownInternalSecret } from '../lib/internal-service-auth';
+import { cancelForcedSayEcho, cancelNextSayEcho, forceNextSayEcho, suppressNextSayEcho } from '../services/say-tts';
+
+function isAuthorized(headers: http.IncomingHttpHeaders): boolean {
+    const key = headers['x-api-key'];
+    const apiKey = Array.isArray(key) ? key[0] : key;
+    return validateLocalApiKeySync(apiKey || '');
+}
+
+function getStatusWebSocketUrl(): string {
+    const explicitUrl = process.env.NEXT_PUBLIC_STREAMWEAVE_WS_URL;
+    if (explicitUrl) {
+        return explicitUrl;
+    }
+
+    const appUrl = new URL(getConfiguredAppUrl());
+    const wsProtocol = appUrl.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsPort = process.env.NEXT_PUBLIC_STREAMWEAVE_WS_PORT || process.env.WS_PORT || '8090';
+    return `${wsProtocol}//${appUrl.hostname}:${wsPort}`;
+}
+
+async function getDiscordBridgeTarget(tenantId?: string): Promise<string | null> {
+    if (!tenantId) return null;
+
+    try {
+        const channels = await readDiscordConfig(tenantId);
+        if (channels?.discordBridgeEnabled === false) return null;
+        return typeof channels?.logChannelId === 'string' ? channels.logChannelId.trim() || null : null;
+    } catch {}
+    return null;
+}
+
+function isInternalServiceAuthorized(headers: http.IncomingHttpHeaders): boolean {
+    const authorization = String(headers.authorization || '');
+    const bearer = authorization.startsWith('Bearer ') ? authorization.slice('Bearer '.length).trim() : '';
+    const botSecretHeader = headers['x-bot-secret'];
+    const botSecret = Array.isArray(botSecretHeader) ? botSecretHeader[0] : String(botSecretHeader || '');
+    return isKnownInternalSecret(bearer || botSecret);
+}
+
+function getChatTagBotBridgeConfig(): { url: string; secret: string } {
+    const url = String(
+        process.env.CHAT_TAG_BOT_BASE_URL
+        || 'https://chat-tag-bot-new.fly.dev'
+    ).replace(/\/+$/, '');
+    const secret = String(
+        process.env.CHAT_TAG_BOT_SECRET
+        || process.env.CHAT_TAG_SECRET
+        || process.env.BOT_SECRET_KEY
+        || ''
+    ).trim();
+    return { url, secret };
+}
+
+async function sendSpaceMountainBroadcasterMessage(message: string): Promise<void> {
+    const { url, secret } = getChatTagBotBridgeConfig();
+    if (!secret) {
+        throw new Error('ChatTag bot service secret is not configured for spacemountainlive broadcaster sends');
+    }
+    const response = await fetch(`${url}/internal/spacemountainlive-send`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'x-bot-secret': secret,
+            'x-spacemountain-lounge': '1',
+        },
+        body: JSON.stringify({ message }),
+    });
+    if (!response.ok) {
+        const payload = await response.json().catch(() => null) as { error?: string } | null;
+        throw new Error(payload?.error || `ChatTag live bot spacemountainlive send failed (${response.status})`);
+    }
+}
+
+async function mirrorOutboundTwitchMessageToDiscord(input: {
+    bridgeToDiscord: unknown;
+    tenantId?: string;
+    message: unknown;
+    displayName: string;
+}): Promise<void> {
+    const { bridgeToDiscord, tenantId, message, displayName } = input;
+    if (bridgeToDiscord !== true) return;
+    if (!tenantId || typeof message !== 'string' || !message.trim()) return;
+    if (message.startsWith('[Discord]')) return;
+
+    const logChannelId = await getDiscordBridgeTarget(tenantId);
+    if (!logChannelId) {
+        if (process.env.STREAMWEAVER_VERBOSE_LOGS === 'true') {
+            console.log(`[HTTP /api/twitch/send-message] No Discord bridge channel for tenant ${tenantId}`);
+        }
+        return;
+    }
+
+    try {
+        const { sendDiscordMessage } = require('../services/discord');
+        await sendDiscordMessage(logChannelId, `**[Twitch] ${displayName}:** ${message}`);
+    } catch (error) {
+        console.error('[HTTP /api/twitch/send-message] Failed to mirror outbound Twitch message to Discord:', error);
+    }
+}
+
+export function createHttpHandler(broadcast: (message: object, tenantId?: string) => number | void): http.RequestListener {
+    // Import twitch-client at handler creation time (same module instance as server.ts)
+    const twitchClientModule = require('../services/twitch-client');
+
+    return async (req, res) => {
+        const parsedUrl = url.parse(req.url || '', true);
+        const pathname = parsedUrl.pathname;
+        console.log(`[HTTP] ${req.method} ${pathname}`);
+
+        const origin = req.headers.origin;
+        if (!isAllowedOrigin(origin)) {
+            res.writeHead(403, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Forbidden origin' }));
+            return;
+        }
+        
+        if (isAllowedOrigin(origin)) {
+            res.setHeader('Access-Control-Allow-Origin', origin || getConfiguredAppUrl());
+        }
+        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-API-Key');
+        
+        if (req.method === 'OPTIONS') {
+            res.writeHead(200);
+            res.end();
+            return;
+        }
+        
+        try {
+            if (pathname === '/api/overlay/broadcast' && req.method === 'POST') {
+                if (!isInternalServiceAuthorized(req.headers)) {
+                    res.writeHead(401, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: 'Unauthorized' }));
+                    return;
+                }
+
+                let body = '';
+                req.on('data', chunk => body += chunk);
+                req.on('end', () => {
+                    try {
+                        const parsed = JSON.parse(body);
+                        const tenantId = String(parsed?.tenantId || '').trim();
+                        const messages = Array.isArray(parsed?.messages) ? parsed.messages : [];
+                        const allowedTypes = new Set(['card-pack-opened', 'pokemon-pack-opened', 'quackverse-pack-opened', 'public-image-generated']);
+                        if (!tenantId || messages.length === 0 || messages.some((message: any) => !message || !allowedTypes.has(String(message.type || '')))) {
+                            res.writeHead(400, { 'Content-Type': 'application/json' });
+                            res.end(JSON.stringify({ error: 'Invalid overlay broadcast request' }));
+                            return;
+                        }
+
+                        const delivered = messages.reduce(
+                            (total: number, message: object) => total + Number(broadcast(message, tenantId) || 0),
+                            0,
+                        );
+                        res.writeHead(200, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ success: true, tenantId, delivered }));
+                    } catch (error) {
+                        console.error('[HTTP /api/overlay/broadcast] Error:', error);
+                        res.writeHead(400, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ error: 'Invalid request body' }));
+                    }
+                });
+                return;
+            }
+
+            if (pathname === '/api/auth/share' && req.method === 'GET') {
+                if (!isAuthorized(req.headers)) {
+                    res.writeHead(401, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: 'Unauthorized' }));
+                    return;
+                }
+
+                // In multi-tenant mode this endpoint is less useful; return basic status
+                const authData = {
+                    twitch: {
+                        connected: false
+                    },
+                    discord: {
+                        connected: Boolean(process.env.DISCORD_BOT_TOKEN)
+                    }
+                };
+                
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify(authData));
+                return;
+            }
+            
+            if (pathname === '/api/discord/members' && req.method === 'GET') {
+                if (!isAuthorized(req.headers)) {
+                    res.writeHead(401, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: 'Unauthorized' }));
+                    return;
+                }
+
+                const botToken = process.env.DISCORD_BOT_TOKEN;
+                if (!botToken) {
+                    res.writeHead(500, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: 'Discord bot token not configured' }));
+                    return;
+                }
+                
+                const guildId = parsedUrl.query.guildId || '1340315377774755890';
+                const response = await fetch(`https://discord.com/api/v10/guilds/${guildId}/members?limit=1000`, {
+                    headers: {
+                        'Authorization': `Bot ${botToken}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (!response.ok) {
+                    res.writeHead(response.status, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: 'Failed to fetch Discord members' }));
+                    return;
+                }
+                
+                const members = await response.json();
+                const memberList = members.map((member: any) => ({
+                    id: member.user?.id,
+                    username: member.user?.username,
+                    displayName: member.nick || member.user?.display_name || member.user?.username,
+                    avatar: member.user?.avatar,
+                    joinedAt: member.joined_at,
+                    roles: member.roles || []
+                }));
+                
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ members: memberList }));
+                return;
+            }
+            
+            if (pathname === '/api/twitch/send-message' && req.method === 'POST') {
+                let body = '';
+                req.on('data', chunk => body += chunk);
+                req.on('end', async () => {
+                    try {
+                        const {
+                            message,
+                            as = 'bot',
+                            targetChannel,
+                            tenantId: requestedTenantId,
+                            bridgeToDiscord,
+                            suppressSayTts,
+                            forceSayTts,
+                            signedInSenderLogin,
+                        } = JSON.parse(body);
+                        if (typeof message !== 'string' || !message.trim()) {
+                            throw new Error('message is required');
+                        }
+                        if (!['bot', 'broadcaster', 'count'].includes(as)) {
+                            throw new Error('unsupported Twitch send identity');
+                        }
+                        if (as === 'count' && !isInternalServiceAuthorized(req.headers)) {
+                            res.writeHead(401, { 'Content-Type': 'application/json' });
+                            res.end(JSON.stringify({ error: 'Unauthorized Count identity send' }));
+                            return;
+                        }
+
+                        if (message.startsWith('[Discord]') && requestedTenantId) {
+                            try {
+                                const channels = await readDiscordConfig(requestedTenantId);
+                                if (channels.discordBridgeEnabled === false) {
+                                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                                    res.end(JSON.stringify({ success: true, skipped: true }));
+                                    return;
+                                }
+                            } catch {}
+                        }
+
+                        const { getActiveTenantIds, getTwitchClient: getTc } = twitchClientModule;
+                        const { sendWithSharedChatAwareness } = require('../services/shared-chat');
+                        const requestedIdentity: 'bot' | 'broadcaster' | 'count' =
+                            as === 'count' ? 'count' : as === 'broadcaster' ? 'broadcaster' : 'bot';
+                        // Only the authenticated Next route may pin a human sender.
+                        // Never derive microphone credentials from the destination channel.
+                        if (signedInSenderLogin !== undefined) {
+                            if (!isInternalServiceAuthorized(req.headers)) {
+                                res.writeHead(401, { 'Content-Type': 'application/json' });
+                                res.end(JSON.stringify({ success: false, error: 'Unauthorized signed-in sender' }));
+                                return;
+                            }
+                            if (requestedIdentity !== 'broadcaster') throw new Error('Microphone requires a signed-in broadcaster identity');
+                            const identity = await sendSignedInTwitchMessage({
+                                tenantId: String(requestedTenantId || ''),
+                                login: String(signedInSenderLogin || ''),
+                                channel: targetChannel,
+                                message,
+                            }, {
+                                getClient: (tenantId) => getTc('broadcaster', tenantId),
+                                reconnect: (tenantId) => twitchClientModule.setupTwitchClient(tenantId),
+                                send: async (client, destination, login) => {
+                                    if (forceSayTts === true) forceNextSayEcho(destination, login, message);
+                                    try {
+                                        await sendWithSharedChatAwareness({
+                                            client, channel: destination, message, as: 'broadcaster',
+                                            tenantId: String(requestedTenantId), expectedSenderLogin: login,
+                                        });
+                                    } catch (error) {
+                                        if (forceSayTts === true) cancelForcedSayEcho(destination, login, message);
+                                        throw error;
+                                    }
+                                },
+                            });
+                            res.writeHead(200, { 'Content-Type': 'application/json' });
+                            res.end(JSON.stringify({ success: true, identity }));
+                            return;
+                        }
+
+                        let channel = String(targetChannel || '').replace(/^#/, '').trim().toLowerCase();
+                        let tid: string | undefined = requestedTenantId ? String(requestedTenantId) : undefined;
+
+                        if (!tid && channel) {
+                            tid = twitchClientModule.getTenantIdFromChannel(channel);
+                        }
+
+                        const outboundRoute = twitchClientModule.resolveOutboundTwitchRoute({
+                            tenantId: tid,
+                            channel,
+                            as: requestedIdentity,
+                        });
+                        tid = outboundRoute.tenantId;
+                        channel = outboundRoute.channel;
+                        const isCountSend = requestedIdentity === 'count';
+                        const clientType: 'bot' | 'broadcaster' = outboundRoute.clientType;
+                        let sendAs: 'bot' | 'broadcaster' | 'count' = outboundRoute.sendAs;
+
+                        if (outboundRoute.systemTranslated) {
+                            console.log('[HTTP /api/twitch/send-message] System route translation applied');
+                        }
+
+                        const isSpaceMountainBroadcasterSend =
+                            requestedIdentity === 'broadcaster'
+                            && tid === SPACEMOUNTAIN_SYSTEM_TENANT_ID
+                            && channel === SPACEMOUNTAIN_SYSTEM_TWITCH_CHANNEL;
+
+                        if (isSpaceMountainBroadcasterSend) {
+                            const suppressEchoSpeaker = SPACEMOUNTAIN_SYSTEM_TWITCH_CHANNEL;
+                            if (suppressSayTts === true) suppressNextSayEcho(channel, suppressEchoSpeaker, message);
+                            if (forceSayTts === true) forceNextSayEcho(channel, suppressEchoSpeaker, message);
+                            try {
+                                await sendSpaceMountainBroadcasterMessage(message.trim());
+                            } catch (error) {
+                                if (suppressSayTts === true) cancelNextSayEcho(channel, suppressEchoSpeaker, message);
+                                if (forceSayTts === true) cancelForcedSayEcho(channel, suppressEchoSpeaker, message);
+                                throw error;
+                            }
+                            await mirrorOutboundTwitchMessageToDiscord({
+                                bridgeToDiscord,
+                                tenantId: SPACEMOUNTAIN_SYSTEM_TENANT_ID,
+                                message,
+                                displayName: SPACEMOUNTAIN_SYSTEM_TWITCH_CHANNEL,
+                            });
+                            res.writeHead(200, { 'Content-Type': 'application/json' });
+                            res.end(JSON.stringify({
+                                success: true,
+                                delegated: 'chat-tag',
+                                identity: SPACEMOUNTAIN_SYSTEM_TWITCH_CHANNEL,
+                            }));
+                            return;
+                        }
+
+                        // The lounge's bot sends conversation as Stella. Links and
+                        // machine receipts belong to the broadcaster and must not
+                        // become a Stella TTS line.
+                        const isLoungeDataMessage =
+                            tid === SPACEMOUNTAIN_SYSTEM_TENANT_ID
+                            && channel === SPACEMOUNTAIN_SYSTEM_TWITCH_CHANNEL
+                            && (/https?:\/\/|www\./i.test(message)
+                                || /^\s*[✅❌]\s*(?:@\S+\s*)?(?:24-Hour Lounge|HearMeOut)\b/i.test(message));
+                        if (requestedIdentity === 'bot' && isLoungeDataMessage) {
+                            await sendSpaceMountainBroadcasterMessage(message.trim());
+                            await mirrorOutboundTwitchMessageToDiscord({
+                                bridgeToDiscord,
+                                tenantId: tid,
+                                message,
+                                displayName: SPACEMOUNTAIN_SYSTEM_TWITCH_CHANNEL,
+                            });
+                            res.writeHead(200, { 'Content-Type': 'application/json' });
+                            res.end(JSON.stringify({ success: true, delegated: 'chat-tag', identity: SPACEMOUNTAIN_SYSTEM_TWITCH_CHANNEL }));
+                            return;
+                        }
+
+                        if (requestedIdentity === 'bot'
+                            && tid === SPACEMOUNTAIN_SYSTEM_TENANT_ID
+                            && channel === SPACEMOUNTAIN_SYSTEM_TWITCH_CHANNEL) {
+                            const messageId = await twitchClientModule.sendConfirmedLoungeStellaMessage(message.trim());
+                            await mirrorOutboundTwitchMessageToDiscord({
+                                bridgeToDiscord,
+                                tenantId: tid,
+                                message,
+                                displayName: 'stellabot87',
+                            });
+                            res.writeHead(200, { 'Content-Type': 'application/json' });
+                            res.end(JSON.stringify({ success: true, messageId }));
+                            return;
+                        }
+
+                        if (!channel && tid) {
+                            try {
+                                const { getStoredTokens } = require('../lib/token-utils.server');
+                                const tokens = await getStoredTokens(tid);
+                                channel = String(tokens?.broadcasterUsername || '').trim().toLowerCase();
+                            } catch (resolveChannelError) {
+                                console.warn('[HTTP /api/twitch/send-message] Failed to resolve tenant broadcaster channel:', resolveChannelError);
+                            }
+                        }
+
+                        let client = isCountSend
+                            ? twitchClientModule.getTheCountTwitchClient()
+                            : (tid ? getTc(clientType, tid) : null);
+
+                        if (!client && !isCountSend && channel) {
+                            tid = tid || twitchClientModule.getTenantIdFromChannel(channel);
+                            if (tid) client = getTc(clientType, tid);
+                        }
+
+                        if (!client && !isCountSend && !requestedTenantId) {
+                            const ownerTenantId = getAdminTwitchId();
+                            if (ownerTenantId) {
+                                tid = ownerTenantId;
+                                client = getTc(clientType, tid);
+                                if (!channel) {
+                                    try {
+                                        const { getStoredTokens } = require('../lib/token-utils.server');
+                                        const tokens = await getStoredTokens(tid);
+                                        channel = String(tokens?.broadcasterUsername || '').trim().toLowerCase();
+                                    } catch {}
+                                }
+                            }
+                        }
+
+                        if (!client && !isCountSend && !requestedTenantId) {
+                            const tenantIds = getActiveTenantIds();
+                            if (tenantIds.length === 1) {
+                                tid = tenantIds[0];
+                                client = getTc(clientType, tid);
+                            }
+                        }
+
+                        if (!client) {
+                            try {
+                                if (isCountSend) {
+                                    client = await twitchClientModule.reconnectTheCountTwitchClient();
+                                } else if (tid) {
+                                    await twitchClientModule.setupTwitchClient(tid);
+                                    client = getTc(clientType, tid);
+                                }
+                            } catch (reconnectError) {
+                                console.error('[HTTP /api/twitch/send-message] Reconnect attempt failed:', reconnectError);
+                            }
+                        }
+
+                        if (!client && !isCountSend && clientType === 'broadcaster' && tid) {
+                            client = getTc('bot', tid);
+                            if (client) sendAs = 'bot';
+                        }
+
+                        if (!client) {
+                            res.writeHead(503, { 'Content-Type': 'application/json' });
+                            res.end(JSON.stringify({
+                                error: isCountSend
+                                    ? 'The Count Twitch client is not authorized or connected'
+                                    : `${clientType} client not available`,
+                            }));
+                            return;
+                        }
+
+                        const finalChannel = channel || (client.getChannels?.()[0]?.replace('#', '') || '');
+                        if (!finalChannel) {
+                            throw new Error('No Twitch channel could be resolved for outbound message');
+                        }
+
+                        // Registered captains opt into shared-bot speech with spmt wake on.
+                        if (!await twitchClientModule.canSharedCommunityBotSpeak(client, finalChannel, tid)) {
+                            console.warn(`[HTTP /api/twitch/send-message] Shared bot is asleep or unauthorized in #${finalChannel}`);
+                            res.writeHead(409, { 'Content-Type': 'application/json' });
+                            res.end(JSON.stringify({ success: false, skipped: true,
+                                reason: 'shared-bot-asleep-or-channel-not-authorized',
+                                error: 'Shared bot is asleep or this channel is not authorized. Broadcaster/mod: spmt wake on.' }));
+                            return;
+                        }
+
+                        const suppressEchoSpeaker = String((client as any).getUsername?.() || finalChannel).replace(/^#/, '');
+                        if (suppressSayTts === true) suppressNextSayEcho(finalChannel, suppressEchoSpeaker, message);
+                        try {
+                            await sendWithSharedChatAwareness({
+                                client,
+                                channel: finalChannel,
+                                message,
+                                as: sendAs,
+                                tenantId: tid,
+                            });
+                        } catch (error) {
+                            if (suppressSayTts === true) cancelNextSayEcho(finalChannel, suppressEchoSpeaker, message);
+                            throw error;
+                        }
+                        await mirrorOutboundTwitchMessageToDiscord({
+                            bridgeToDiscord,
+                            tenantId: tid,
+                            message,
+                            displayName: String((client as any).getUsername?.() || sendAs),
+                        });
+
+                        res.writeHead(200, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ success: true }));
+                    } catch (e: any) {
+                        console.error('[HTTP /api/twitch/send-message] Error:', e);
+                        res.writeHead(500, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ error: e.message }));
+                    }
+                });
+                return;
+            }
+
+            if (pathname === '/api/twitch/send-whisper' && req.method === 'POST') {
+                let body = '';
+                req.on('data', chunk => body += chunk);
+                req.on('end', async () => {
+                    try {
+                        const { username, message, tenantId } = JSON.parse(body);
+                        const target = String(username || '').replace(/^@/, '').trim();
+                        const text = String(message || '').trim();
+                        if (!target || !text) throw new Error('username and message are required');
+                        const { getTwitchClient, setupTwitchClient } = twitchClientModule;
+                        let client = getTwitchClient('bot', tenantId);
+                        if (!client && tenantId) {
+                            await setupTwitchClient(String(tenantId));
+                            client = getTwitchClient('bot', tenantId);
+                        }
+                        if (!client || typeof (client as any).whisper !== 'function') {
+                            throw new Error('Twitch bot whisper client is unavailable');
+                        }
+                        await (client as any).whisper(target, text);
+                        res.writeHead(200, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ success: true }));
+                    } catch (error: any) {
+                        console.error('[HTTP /api/twitch/send-whisper] Error:', error);
+                        res.writeHead(500, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ error: error.message }));
+                    }
+                });
+                return;
+            }
+
+            if (pathname === '/api/__health' && req.method === 'GET') {
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ status: 'ok' }));
+                return;
+            }
+
+            if (pathname === '/api/kick/connect' && req.method === 'POST') {
+                let body = '';
+                req.on('data', chunk => body += chunk);
+                req.on('end', async () => {
+                    try {
+                        const { channelName, tenantId } = JSON.parse(body);
+                        if (!channelName) {
+                            res.writeHead(400, { 'Content-Type': 'application/json' });
+                            res.end(JSON.stringify({ error: 'channelName required' }));
+                            return;
+                        }
+                        const { getMultiPlatformManager } = require('../services/multi-platform');
+                        const mp = getMultiPlatformManager();
+                        await mp.connectKick(channelName, tenantId);
+                        console.log(`[HTTP] ✅ Kick connected for ${channelName} (tenant: ${tenantId})`);
+                        res.writeHead(200, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ success: true }));
+                    } catch (e: any) {
+                        console.error('[HTTP] Kick connect failed:', e);
+                        res.writeHead(500, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ error: e.message }));
+                    }
+                });
+                return;
+            }
+
+            if (pathname === '/api/kick/disconnect' && req.method === 'POST') {
+                let body = '';
+                req.on('data', chunk => body += chunk);
+                req.on('end', async () => {
+                    try {
+                        const { tenantId } = JSON.parse(body || '{}');
+                        const { getKickService } = require('../services/kick');
+                        getKickService(tenantId).disconnect();
+                        console.log(`[HTTP] ✅ Kick disconnected (tenant: ${tenantId || 'global'})`);
+                        res.writeHead(200, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ success: true }));
+                    } catch (e: any) {
+                        console.error('[HTTP] Kick disconnect failed:', e);
+                        res.writeHead(500, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ error: e.message }));
+                    }
+                });
+                return;
+            }
+
+            if (pathname === '/api/twitch/reconnect' && req.method === 'POST') {
+                let body = '';
+                req.on('data', chunk => body += chunk);
+                req.on('end', async () => {
+                    try {
+                        const { tenantId } = JSON.parse(body);
+                        if (!tenantId) {
+                            res.writeHead(400, { 'Content-Type': 'application/json' });
+                            res.end(JSON.stringify({ error: 'tenantId required' }));
+                            return;
+                        }
+                        console.log(`[HTTP] Reconnecting Twitch IRC for tenant ${tenantId}...`);
+                        const { setupTwitchClient } = twitchClientModule;
+                        await setupTwitchClient(tenantId);
+                        console.log(`[HTTP] Twitch IRC reconnected for tenant ${tenantId}`);
+                        // Reload EventSub after OAuth too; new follower scopes must take effect without a deploy.
+                        const { startEventSub } = require('../services/eventsub');
+                        await startEventSub(tenantId).catch((error: unknown) => console.warn('[HTTP] EventSub reconnect failed:', error));
+
+                        res.writeHead(200, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ success: true }));
+                    } catch (e: any) {
+                        console.error('[HTTP] Twitch reconnect failed:', e);
+                        res.writeHead(500, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ error: e.message }));
+                    }
+                });
+                return;
+            }
+
+            if (pathname === '/api/twitch/disconnect' && req.method === 'POST') {
+                let body = '';
+                req.on('data', chunk => body += chunk);
+                req.on('end', async () => {
+                    try {
+                        const { tenantId } = JSON.parse(body || '{}');
+                        if (!tenantId) {
+                            res.writeHead(400, { 'Content-Type': 'application/json' });
+                            res.end(JSON.stringify({ error: 'tenantId required' }));
+                            return;
+                        }
+                        console.log(`[HTTP] Disconnecting Twitch IRC for tenant ${tenantId}...`);
+                        const { disconnectTenant } = twitchClientModule;
+                        await disconnectTenant(tenantId);
+                        console.log(`[HTTP] Twitch IRC disconnected for tenant ${tenantId}`);
+                        res.writeHead(200, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ success: true }));
+                    } catch (e: any) {
+                        console.error('[HTTP] Twitch disconnect failed:', e);
+                        res.writeHead(500, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ error: e.message }));
+                    }
+                });
+                return;
+            }
+
+            if (pathname === '/api/twitch/the-count/reconnect' && req.method === 'POST') {
+                if (!isInternalServiceAuthorized(req.headers)) {
+                    res.writeHead(401, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: 'Unauthorized' }));
+                    return;
+                }
+                try {
+                    const client = await twitchClientModule.reconnectTheCountTwitchClient();
+                    res.writeHead(client ? 200 : 503, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({
+                        success: Boolean(client),
+                        error: client ? undefined : 'The Count Twitch credential is unavailable',
+                    }));
+                } catch (e: any) {
+                    console.error('[HTTP] The Count Twitch reconnect failed:', e);
+                    res.writeHead(500, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: e.message }));
+                }
+                return;
+            }
+
+            if (pathname === '/api/twitch/community-bot/reconnect' && req.method === 'POST') {
+                if (!isInternalServiceAuthorized(req.headers)) {
+                    res.writeHead(401, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: 'Unauthorized' }));
+                    return;
+                }
+                try {
+                    console.log('[HTTP] Reconnecting shared community bot...');
+                    const { disconnectCommunityBot, getCommunityBotRuntimeState } = twitchClientModule;
+                    await disconnectCommunityBot();
+                    const { syncSignalCarrierRosterOnce } = require('../services/signal-carrier-sync');
+                    await syncSignalCarrierRosterOnce();
+                    const state = getCommunityBotRuntimeState();
+                    console.log('[HTTP] Shared community bot reconnect result:', state);
+                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ success: true, state }));
+                } catch (e: any) {
+                    console.error('[HTTP] Shared community bot reconnect failed:', e);
+                    res.writeHead(500, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: e.message }));
+                }
+                return;
+            }
+
+            if (pathname === '/api/twitch/community-bot/disconnect' && req.method === 'POST') {
+                if (!isInternalServiceAuthorized(req.headers)) {
+                    res.writeHead(401, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: 'Unauthorized' }));
+                    return;
+                }
+                try {
+                    console.log('[HTTP] Disconnecting shared community bot...');
+                    const { disconnectCommunityBot } = twitchClientModule;
+                    await disconnectCommunityBot();
+                    console.log('[HTTP] Shared community bot disconnected');
+                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ success: true }));
+                } catch (e: any) {
+                    console.error('[HTTP] Shared community bot disconnect failed:', e);
+                    res.writeHead(500, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: e.message }));
+                }
+                return;
+            }
+            
+            if (pathname === '/api/brb' && req.method === 'POST') {
+                let body = '';
+                req.on('data', chunk => body += chunk);
+                req.on('end', async () => {
+                    try {
+                        const { action, broadcasterUsername, tenantId } = JSON.parse(body);
+                        if (action === 'start') {
+                            const { startBRB } = require('../services/brb-clips');
+                            startBRB(broadcasterUsername, tenantId).catch((err: any) => console.error('[BRB] Error:', err));
+                            res.writeHead(200, { 'Content-Type': 'application/json' });
+                            res.end(JSON.stringify({ success: true }));
+                        } else if (action === 'stop') {
+                            const { stopBRB } = require('../services/brb-clips');
+                            stopBRB(tenantId);
+                            broadcast({ type: 'brb-stop' }, tenantId);
+                            try {
+                                const { getConfigSection } = require('../lib/local-config/service');
+                                const obsConfig = await getConfigSection('obs', tenantId);
+                                const liveScene = obsConfig?.scenes?.live || 'Live';
+                                broadcast({ type: 'obs-switch-scene', payload: { sceneName: liveScene } }, tenantId);
+                            } catch {}
+                            res.writeHead(200, { 'Content-Type': 'application/json' });
+                            res.end(JSON.stringify({ success: true }));
+                        } else {
+                            res.writeHead(400, { 'Content-Type': 'application/json' });
+                            res.end(JSON.stringify({ error: 'Invalid action' }));
+                        }
+                    } catch (e: any) {
+                        console.error('[HTTP /api/brb] Error:', e);
+                        res.writeHead(500, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ error: e.message }));
+                    }
+                });
+                return;
+            }
+
+            if (pathname === '/' && req.method === 'GET') {
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ 
+                    status: 'StreamWeaver Server Running',
+                    version: '2.0',
+                    websocket: getStatusWebSocketUrl(),
+                    timestamp: new Date().toISOString()
+                }));
+                return;
+            }
+            
+            res.writeHead(404, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Not found' }));
+        } catch (error) {
+            console.error('[HTTP Server] Error:', error);
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Internal server error' }));
+        }
+    };
+}

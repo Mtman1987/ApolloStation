@@ -1,0 +1,20 @@
+name: Validate OpenAI Qwen fallback patch
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Apply the canonical production fallback patch
+        run: node scripts/patch-openai-qwen-fallback.mjs

@@ -1,0 +1,506 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { promises as fs } from 'fs';
+import { createHash } from 'crypto';
+import path from 'path';
+import { tenantPath } from '@/lib/tenant';
+import { getTenantFromRequest } from '@/lib/tenant-context';
+import {
+  deletePrivateGeneratedImage,
+  isSafePrivateGeneratedGifFilename,
+  readPrivateGeneratedGif,
+} from '@/services/private-image-library';
+import { getConfiguredAppUrl } from '@/lib/runtime-origin';
+import {
+  getDiscordMediaPublicPath,
+  importDiscordStreamHubMedia,
+  isDiscordStreamHubStoredMediaUrl,
+  readTenantDiscordMedia,
+  writeDiscordMedia,
+} from '@/lib/discord-media-store';
+import { readUserConfigSync, writeUserConfig } from '@/lib/user-config';
+import { writePrivateChatSettings } from '@/lib/private-chat-settings-store';
+
+// SECURITY NOTE: GET intentionally takes tenantId from the query string without
+// authentication so generated image URLs can be embedded by Discord's CDN proxy.
+// Mutating the library is different: DELETE and POST always require the signed-in
+// StreamWeaver session to own the requested tenantId.
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function isValidTenantId(tenantId: string): boolean {
+  return /^[a-zA-Z0-9_-]+$/.test(tenantId);
+}
+
+function libraryMediaUrl(tenantId: string, scope: 'private' | 'public', filename: string): string {
+  const params = new URLSearchParams();
+  if (tenantId) params.set('tenantId', tenantId);
+  if (scope === 'private') params.set('scope', scope);
+  const query = params.toString();
+  return `/api/ai/image/file/${encodeURIComponent(filename)}${query ? `?${query}` : ''}`;
+}
+
+function renderCard(input: {
+  filename: string;
+  tenantId: string;
+  scope: 'private' | 'public';
+  canMutate: boolean;
+  gif: boolean;
+}): string {
+  const safeName = escapeHtml(input.filename);
+  const imageUrl = libraryMediaUrl(input.tenantId, input.scope, input.filename);
+  const safeImageUrl = escapeHtml(imageUrl);
+
+  let controls = '';
+  if (input.canMutate) {
+    const deleteParams = new URLSearchParams({
+      tenantId: input.tenantId,
+      scope: input.scope,
+      name: input.filename,
+    });
+    const deleteUrl = escapeHtml(`/api/ai/image/library?${deleteParams.toString()}`);
+    controls += `<button class="delete-button" type="button" data-delete-url="${deleteUrl}" data-filename="${safeName}">Delete</button>`;
+    if (input.gif) {
+      controls += `<button class="apply-button" type="button" data-apply-gif="${safeName}" data-tenant-id="${escapeHtml(input.tenantId)}" data-apply-scope="${input.scope}">Set</button>`;
+    }
+  }
+
+  return `<article class="image-card" data-image-card data-library-kind="${input.gif ? 'gif' : 'image'}">
+    <div class="image-toolbar">
+      <div class="toolbar-links">
+        <a href="${safeImageUrl}" target="_blank" rel="noopener noreferrer">Open full size</a>
+        <a href="${safeImageUrl}" download="${safeName}">Download</a>
+      </div>
+      <div class="card-actions">${controls}</div>
+    </div>
+    <a href="${safeImageUrl}" target="_blank" rel="noopener noreferrer" class="image-link">
+      <img src="${safeImageUrl}" loading="lazy" alt="${safeName}" />
+    </a>
+    <div class="filename" title="${safeName}">${safeName}</div>
+  </article>`;
+}
+
+function renderActiveGifCard(url: string, canMutate: boolean): string {
+  const safeUrl = escapeHtml(url);
+  const controls = [
+    canMutate
+      ? '<button class="delete-button" type="button" data-delete-url="/api/discord-media?slot=private-dm" data-filename="active private-DM GIF">Delete</button>'
+      : '',
+    '<span class="active-badge">✓ Active DM GIF</span>',
+  ].filter(Boolean).join('');
+
+  return `<article class="image-card active-gif-card" data-image-card data-library-kind="gif" data-active-dm-gif>
+    <div class="image-toolbar">
+      <div class="toolbar-links">
+        <a href="${safeUrl}" target="_blank" rel="noopener noreferrer">Open full size</a>
+        <a href="${safeUrl}" download="active-private-dm.gif">Download</a>
+      </div>
+      <div class="card-actions">${controls}</div>
+    </div>
+    <a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="image-link">
+      <img src="${safeUrl}" loading="lazy" alt="Active private DM GIF" />
+    </a>
+    <div class="filename" title="Canonical private-DM media slot">Canonical private-DM media slot</div>
+  </article>`;
+}
+
+function canonicalPrivateGifUrl(tenantId: string): string {
+  const relativeUrl = getDiscordMediaPublicPath('private-dm', tenantId);
+  const baseUrl = getConfiguredAppUrl();
+  return baseUrl ? `${baseUrl}${relativeUrl}` : relativeUrl;
+}
+
+function isCanonicalPrivateGifUrl(value: string, tenantId: string): boolean {
+  const configured = String(value || '').trim();
+  if (!configured) return false;
+  try {
+    const url = new URL(configured, getConfiguredAppUrl());
+    return url.pathname === '/api/discord-media/private-dm.gif' &&
+      url.searchParams.get('tenant') === tenantId;
+  } catch {
+    return false;
+  }
+}
+
+async function resolveActivePrivateGifUrl(tenantId: string): Promise<string> {
+  const configured = String(readUserConfigSync(tenantId).PRIVATE_DM_GIF_URL || '').trim();
+  const canonicalUrl = canonicalPrivateGifUrl(tenantId);
+
+  // Existing MP4 conversions used to remain hosted by DiscordStreamHub while an
+  // older StreamWeaver GIF could still exist. The configured URL is what the bot
+  // actually uses, so migrate that file into the tenant slot before considering
+  // any older local bytes.
+  if (configured && isDiscordStreamHubStoredMediaUrl(configured)) {
+    try {
+      await importDiscordStreamHubMedia('private-dm', configured, tenantId);
+      await writeUserConfig({ PRIVATE_DM_GIF_URL: canonicalUrl }, tenantId);
+      return canonicalUrl;
+    } catch (error) {
+      console.warn('[Private Image Library] Failed to migrate DSH active GIF into StreamWeaver:', error);
+      return configured;
+    }
+  }
+
+  if (configured && /^https?:\/\//i.test(configured) && !isCanonicalPrivateGifUrl(configured, tenantId)) {
+    return configured;
+  }
+
+  const stored = await readTenantDiscordMedia('private-dm', tenantId).catch(() => null);
+  if (stored) {
+    // Keep the content-version query written by the Set action. Rewriting this
+    // to the stable slot URL while rendering the gallery reintroduces Discord's
+    // stale embed-image cache and can make newly sent DMs show an older GIF.
+    // Only migrate configurations that do not already point at this tenant's
+    // canonical media endpoint.
+    if (!isCanonicalPrivateGifUrl(configured, tenantId)) {
+      await writeUserConfig({ PRIVATE_DM_GIF_URL: canonicalUrl }, tenantId).catch(() => undefined);
+    }
+    return configured && isCanonicalPrivateGifUrl(configured, tenantId) ? configured : canonicalUrl;
+  }
+
+  return '';
+}
+
+export async function GET(request: NextRequest) {
+  const searchParams = new URL(request.url).searchParams;
+  const tenantId = (searchParams.get('tenantId') || '').trim();
+  const scope = searchParams.get('scope') === 'private' ? 'private' : 'public';
+  if (tenantId && !isValidTenantId(tenantId)) {
+    return NextResponse.json({ error: 'invalid tenantId' }, { status: 400 });
+  }
+
+  const storagePath = scope === 'private' ? 'data/private-generated-images' : 'data/generated-images';
+  const dir = tenantId ? tenantPath(tenantId, storagePath) : `${process.cwd()}/${storagePath}`;
+  let files: string[] = [];
+  try {
+    files = (await fs.readdir(dir))
+      .filter((file) => /\.(gif|png|jpg|jpeg|webp)$/i.test(file))
+      .sort()
+      .reverse();
+  } catch {}
+
+  const session = getTenantFromRequest(request);
+  const canMutate = Boolean(tenantId) && session?.tenantId === tenantId;
+  const gifFiles = files.filter((filename) => /\.gif$/i.test(filename));
+  const imageFiles = files.filter((filename) => !/\.gif$/i.test(filename));
+  const activePrivateGifUrl = scope === 'private' && tenantId
+    ? await resolveActivePrivateGifUrl(tenantId)
+    : '';
+  const savedGifCount = gifFiles.length + (activePrivateGifUrl ? 1 : 0);
+  const totalMediaCount = imageFiles.length + savedGifCount;
+
+  const imageRows = imageFiles.map((filename) => renderCard({
+    filename,
+    tenantId,
+    scope,
+    canMutate,
+    gif: false,
+  })).join('');
+  const generatedGifRows = gifFiles.map((filename) => renderCard({
+    filename,
+    tenantId,
+    scope,
+    canMutate,
+    gif: true,
+  })).join('');
+  const gifRows = [
+    activePrivateGifUrl ? renderActiveGifCard(activePrivateGifUrl, canMutate) : '',
+    generatedGifRows,
+  ].filter(Boolean).join('');
+
+  const title = scope === 'private' ? 'Private Generated Media' : 'Generated Images';
+  const ownerNote = scope === 'private'
+    ? canMutate
+      ? '<p class="note">Images and GIFs are stored separately below. The active private-DM GIF is one canonical StreamWeaver media slot, including MP4s converted by DiscordStreamHub. Saved GIFs remain available after you use <strong>Set</strong> to replace the active one.</p>'
+      : '<p class="note warning">Viewing mode. Sign in to StreamWeaver as this account in this browser to enable Set and Delete controls.</p>'
+    : canMutate
+      ? '<p class="note">Saved public images and GIFs stay in the gallery. Use <strong>Set</strong> on a GIF to change the active public Discord GIF without deleting the saved copy.</p>'
+      : '<p class="note warning">Viewing mode. Sign in to StreamWeaver as this account in this browser to enable Set and Delete controls.</p>';
+
+  const mutationScript = canMutate ? `<script>
+    document.addEventListener('click', async function (event) {
+      const target = event.target;
+      if (!target || !target.closest) return;
+
+      const deleteButton = target.closest('[data-delete-url]');
+      if (deleteButton) {
+        const filename = deleteButton.getAttribute('data-filename') || 'this media file';
+        if (!window.confirm('Permanently delete ' + filename + '?')) return;
+        const originalText = deleteButton.textContent;
+        deleteButton.disabled = true;
+        deleteButton.textContent = 'Deleting...';
+        try {
+          const response = await fetch(deleteButton.getAttribute('data-delete-url'), {
+            method: 'DELETE',
+            credentials: 'same-origin'
+          });
+          const payload = await response.json().catch(function () { return {}; });
+          if (!response.ok) throw new Error(payload.error || ('Delete failed (' + response.status + ')'));
+          const card = deleteButton.closest('[data-image-card]');
+          const kind = card && card.getAttribute('data-library-kind') === 'gif' ? 'gif' : 'image';
+          if (card) card.remove();
+          const total = document.getElementById('media-count');
+          if (total) total.textContent = String(Math.max(0, Number(total.textContent || '0') - 1));
+          const kindCount = document.getElementById(kind + '-count');
+          const nextKindCount = Math.max(0, Number(kindCount && kindCount.textContent ? kindCount.textContent : '0') - 1);
+          if (kindCount) kindCount.textContent = String(nextKindCount);
+          const gallery = document.getElementById(kind + '-gallery');
+          if (gallery && nextKindCount === 0) gallery.innerHTML = '<p class="empty">Nothing saved in this section yet.</p>';
+        } catch (error) {
+          window.alert(error && error.message ? error.message : 'Delete failed.');
+          deleteButton.disabled = false;
+          deleteButton.textContent = originalText;
+        }
+        return;
+      }
+
+      const applyButton = target.closest('[data-apply-gif]');
+      if (!applyButton) return;
+      const filename = applyButton.getAttribute('data-apply-gif') || '';
+      const tenantId = applyButton.getAttribute('data-tenant-id') || '';
+      const scope = applyButton.getAttribute('data-apply-scope') || 'private';
+      const buttons = Array.from(document.querySelectorAll('[data-apply-gif]'));
+      applyButton.disabled = true;
+      applyButton.textContent = 'Setting...';
+      try {
+        const response = await fetch('/api/ai/image/library', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tenantId: tenantId, scope: scope, name: filename, action: 'apply-gif' })
+        });
+        const payload = await response.json().catch(function () { return {}; });
+        if (!response.ok) throw new Error(payload.error || ('Apply failed (' + response.status + ')'));
+        buttons.forEach(function (button) {
+          button.disabled = false;
+          button.textContent = button === applyButton ? '✓ Set' : 'Set';
+          button.classList.toggle('active', button === applyButton);
+        });
+        window.location.reload();
+      } catch (error) {
+        window.alert(error && error.message ? error.message : 'Apply failed.');
+        applyButton.disabled = false;
+        applyButton.textContent = 'Set';
+      }
+    });
+  </script>` : '';
+
+  const gifSection = `
+    <section class="library-section">
+      <div class="section-heading">
+        <div>
+          <h2>${scope === 'private' ? 'Saved GIFs' : 'Saved Public GIFs'} (<span id="gif-count">${savedGifCount}</span>)</h2>
+          <p>${scope === 'private'
+            ? 'The active private-DM slot appears first. Saved GIFs remain in the gallery when you set a different one.'
+            : 'GIFs stay animated here. Set makes a saved GIF active for public Discord media without removing it from the gallery.'}</p>
+        </div>
+      </div>
+      <div id="gif-gallery" class="media-gallery">${gifRows || '<p class="empty">Nothing saved in this section yet.</p>'}</div>
+    </section>`;
+
+  return new NextResponse(`<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>${title}</title>
+  <style>
+    :root { color-scheme: dark; font-family: Arial, Helvetica, sans-serif; }
+    body { margin: 0; background: #111318; color: #f4f5f7; }
+    .page { max-width: 1400px; margin: 0 auto; padding: 20px; }
+    .header { position: sticky; top: 0; z-index: 5; background: rgba(17,19,24,.96); backdrop-filter: blur(8px); padding: 10px 0 14px; border-bottom: 1px solid #30343c; }
+    h1, h2 { margin: 0 0 8px; }
+    .note, .section-heading p { margin: 0; color: #c9ced8; line-height: 1.45; }
+    .warning { color: #f0c674; }
+    .library-section { padding-top: 24px; }
+    .section-heading { display: flex; justify-content: space-between; gap: 16px; align-items: end; }
+    .media-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; padding-top: 14px; }
+    .image-card { min-width: 0; background: #1a1d24; border: 1px solid #30343c; border-radius: 12px; overflow: hidden; }
+    .active-gif-card { border-color: #247a4b; }
+    .image-toolbar { min-height: 40px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; }
+    .toolbar-links { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+    .image-toolbar a { color: #9ecbff; text-decoration: none; font-size: 14px; }
+    .image-toolbar a:hover { text-decoration: underline; }
+    .card-actions { display: flex; gap: 7px; flex-wrap: wrap; justify-content: flex-end; }
+    .delete-button, .apply-button { border: 0; border-radius: 7px; padding: 8px 11px; color: white; font-weight: 700; cursor: pointer; }
+    .delete-button { background: #b4232d; }
+    .apply-button { background: #2459a8; }
+    .apply-button.active { background: #247a4b; }
+    .active-badge { border-radius: 7px; padding: 8px 11px; color: white; background: #247a4b; font-size: 12px; font-weight: 700; }
+    .delete-button:hover, .apply-button:hover { filter: brightness(1.12); }
+    .delete-button:disabled, .apply-button:disabled { opacity: .65; cursor: wait; }
+    .image-link { display: block; background: #090a0d; }
+    img { display: block; width: 100%; height: 340px; object-fit: contain; }
+    .filename { padding: 10px 12px 12px; color: #9aa2af; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .empty { color: #aeb5c0; }
+    @media (max-width: 600px) {
+      .page { padding: 12px; }
+      .media-gallery { grid-template-columns: 1fr; }
+      img { height: auto; max-height: 70vh; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="header">
+      <h1>${title} (<span id="media-count">${totalMediaCount}</span>)</h1>
+      ${ownerNote}
+    </header>
+    <section class="library-section">
+      <div class="section-heading">
+        <div>
+          <h2>${scope === 'private' ? 'Generated Images' : 'Images'} (<span id="image-count">${imageFiles.length}</span>)</h2>
+          ${scope === 'private' ? '<p>Bare <strong>!img</strong> can still browse your saved media; image generation behavior is unchanged.</p>' : ''}
+        </div>
+      </div>
+      <div id="image-gallery" class="media-gallery">${imageRows || '<p class="empty">Nothing saved in this section yet.</p>'}</div>
+    </section>
+    ${gifSection}
+  </main>
+  ${mutationScript}
+</body>
+</html>`, {
+    headers: { 'Content-Type': 'text/html; charset=utf-8' },
+  });
+}
+
+export async function POST(request: NextRequest) {
+  const body = await request.json().catch(() => null) as {
+    tenantId?: unknown;
+    scope?: unknown;
+    name?: unknown;
+    action?: unknown;
+  } | null;
+  const tenantId = String(body?.tenantId || '').trim();
+  const scope = String(body?.scope || '').trim();
+  const filename = String(body?.name || '').trim();
+  const action = String(body?.action || '').trim();
+
+  if (!tenantId || !isValidTenantId(tenantId)) {
+    return NextResponse.json({ error: 'invalid tenantId' }, { status: 400 });
+  }
+  if ((scope !== 'private' && scope !== 'public') || action !== 'apply-gif') {
+    return NextResponse.json({ error: 'Only applying a saved GIF is supported.' }, { status: 400 });
+  }
+  if (!isSafePrivateGeneratedGifFilename(filename)) {
+    return NextResponse.json({ error: 'invalid GIF filename' }, { status: 400 });
+  }
+
+  const session = getTenantFromRequest(request);
+  if (!session?.tenantId) {
+    return NextResponse.json({ error: 'Sign in to StreamWeaver to apply GIFs.' }, { status: 401 });
+  }
+  if (session.tenantId !== tenantId) {
+    return NextResponse.json({ error: 'You can only apply GIFs from your own library.' }, { status: 403 });
+  }
+
+  try {
+    let gif: Buffer | null = null;
+    if (scope === 'private') {
+      gif = await readPrivateGeneratedGif(tenantId, filename);
+    } else {
+      try {
+        gif = await fs.readFile(tenantPath(tenantId, `data/generated-images/${filename}`));
+      } catch (error: any) {
+        if (error?.code !== 'ENOENT') throw error;
+      }
+    }
+    if (!gif) return NextResponse.json({ error: 'GIF not found' }, { status: 404 });
+
+    const slot = scope === 'private' ? 'private-dm' : 'public-discord';
+
+    // Preserve the previous active private GIF before replacing the canonical
+    // slot. Use a content-addressed filename so re-applying/changing GIFs never
+    // creates duplicate gallery entries for the same previous media.
+    if (scope === 'private') {
+      const configuredUrl = String(readUserConfigSync(tenantId).PRIVATE_DM_GIF_URL || '').trim();
+      const previous = await readTenantDiscordMedia('private-dm', tenantId).catch(() => null);
+      const slotIsConfiguredActive = !configuredUrl || isCanonicalPrivateGifUrl(configuredUrl, tenantId);
+      if (previous && slotIsConfiguredActive && !previous.body.equals(gif)) {
+        const galleryDir = tenantPath(tenantId, 'data/private-generated-images');
+        await fs.mkdir(galleryDir, { recursive: true });
+        const archiveHash = createHash('sha256').update(previous.body).digest('hex').slice(0, 32);
+        const archivePath = path.join(galleryDir, `active-${archiveHash}.gif`);
+        try {
+          await fs.access(archivePath);
+        } catch {
+          await fs.writeFile(archivePath, previous.body, { flag: 'wx' }).catch(async (error: any) => {
+            if (error?.code !== 'EEXIST') throw error;
+          });
+        }
+      }
+    }
+
+    await writeDiscordMedia(slot, gif, tenantId);
+    const relativeUrl = getDiscordMediaPublicPath(slot, tenantId);
+    const baseUrl = getConfiguredAppUrl();
+    // Discord caches embed images by URL. A content-derived version makes each
+    // selected GIF a new URL so Discord fetches the newly active media.
+    const version = createHash('sha256').update(gif).digest('hex').slice(0, 16);
+    const versionedRelativeUrl = `${relativeUrl}&v=${version}`;
+    const publicUrl = baseUrl ? `${baseUrl}${versionedRelativeUrl}` : versionedRelativeUrl;
+    await writeUserConfig({
+      [scope === 'private' ? 'PRIVATE_DM_GIF_URL' : 'PUBLIC_DISCORD_GIF_URL']: publicUrl,
+    }, tenantId);
+    if (scope === 'private') await writePrivateChatSettings({ gifEnabled: true }, tenantId);
+
+    return NextResponse.json({ ok: true, applied: filename, scope, url: publicUrl, ...(scope === 'private' ? { gifEnabled: true } : {}) });
+  } catch (error) {
+    console.error('[Private Image Library] Apply GIF failed:', error);
+    return NextResponse.json({ error: 'Failed to apply saved GIF.' }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  const searchParams = new URL(request.url).searchParams;
+  const tenantId = (searchParams.get('tenantId') || '').trim();
+  const scope = searchParams.get('scope') === 'private' ? 'private' : 'public';
+  const filename = (searchParams.get('name') || '').trim();
+
+  if (!tenantId || !isValidTenantId(tenantId)) {
+    return NextResponse.json({ error: 'invalid tenantId' }, { status: 400 });
+  }
+  if (scope !== 'private' && scope !== 'public') {
+    return NextResponse.json({ error: 'Invalid image library scope.' }, { status: 400 });
+  }
+
+  const session = getTenantFromRequest(request);
+  if (!session?.tenantId) {
+    return NextResponse.json({ error: 'Sign in to StreamWeaver to delete images.' }, { status: 401 });
+  }
+  if (session.tenantId !== tenantId) {
+    return NextResponse.json({ error: 'You can only delete images from your own library.' }, { status: 403 });
+  }
+
+  try {
+    if (scope === 'private') {
+      const result = await deletePrivateGeneratedImage(tenantId, filename);
+      if (result === 'invalid') {
+        return NextResponse.json({ error: 'invalid image filename' }, { status: 400 });
+      }
+      if (result === 'not_found') {
+        return NextResponse.json({ error: 'image not found' }, { status: 404 });
+      }
+    } else {
+      if (!/^[a-zA-Z0-9_-]+\.(gif|png|jpg|jpeg|webp)$/i.test(filename) || path.basename(filename) !== filename) {
+        return NextResponse.json({ error: 'invalid image filename' }, { status: 400 });
+      }
+      try {
+        await fs.unlink(tenantPath(tenantId, `data/generated-images/${filename}`));
+      } catch (error: any) {
+        if (error?.code === 'ENOENT') return NextResponse.json({ error: 'image not found' }, { status: 404 });
+        throw error;
+      }
+    }
+    return NextResponse.json({ ok: true, deleted: filename });
+  } catch (error) {
+    console.error('[Private Image Library] Delete failed:', error);
+    return NextResponse.json({ error: 'Failed to delete image.' }, { status: 500 });
+  }
+}

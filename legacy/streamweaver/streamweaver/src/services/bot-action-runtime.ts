@@ -1,0 +1,1245 @@
+import { generateAIResponse } from '@/services/ai-provider';
+import { readDiscordConfig } from '@/lib/discord-config';
+import {
+  executeDiscordStreamHubBotAction,
+  getDiscordStreamHubDefaultGuildId,
+  type DiscordStreamHubBotAction,
+} from '@/services/discord-stream-hub';
+import {
+  detectDiscordAdminCalendarCommand,
+  formatDiscordAdminCalendarEvent,
+} from '@/services/discord-admin-calendar-command';
+import {
+  executeHearMeOutBotAction,
+  type HearMeOutBotAction,
+} from '@/services/hearmeout-actions';
+import { canUsePublicImageGeneration, runImageCommand } from '@/services/image-command';
+import { readGenerationSettings } from '@/lib/gen-settings-store';
+import { resolveBotPersonaForAction } from '@/services/bot-persona-catalog';
+import { setLoungeMixVolume } from '@/services/lounge-audio-mix';
+import { setLoungeMediaLayout } from '@/services/lounge-media-layout';
+import { startBRB, stopBRB } from '@/services/brb-clips';
+import { requestSpotlightRestart, requestLoungeBrowserRefresh, requestLoungeMediaPlayerRestart } from '@/services/lounge-player-control';
+import { executeNebulaCommand, manageNebulaOverlay, readNebulaChannelState, readNebulaOverlayProfile, reshapeNebulaLiveOverlay, createNebulaStreamBattle, linkChatWarsStreams, linkWordGameStreams } from '@/services/nebula-actions';
+import { setStellaChaosMode, setStellaRoleMode } from '@/services/stella-chaos-mode';
+import { SPACEMOUNTAIN_SYSTEM_TENANT_ID } from '@/lib/tenant';
+import { SPACEMOUNTAIN_LOUNGE_MUSIC_SESSION_ID, SPACEMOUNTAIN_LOUNGE_MOVIE_SESSION_ID } from '@/lib/spacemountain-lounge';
+import { invalidateStellaLoungeSnapshot } from '@/services/stella-lounge-host';
+
+export type BotActionSource = 'discord' | 'twitch' | 'kick' | 'mountainview' | 'hearmeout' | 'spmt';
+export type BotActorRole = 'guest' | 'member' | 'moderator' | 'admin' | 'owner';
+export type BotActionRisk = 'read' | 'write' | 'broadcast' | 'destructive';
+
+export type StreamWeaverBotAction = 'sw.image.generate' | 'sw.lounge.volume' | 'sw.lounge.layout' | 'sw.lounge.brb' | 'sw.lounge.spotlight.restart' | 'sw.lounge.media.restart' | 'sw.lounge.browser.refresh' | 'nebula.command' | 'nebula.overlay.manage' | 'nebula.game.director' | 'stella.mode' | 'stella.role' | 'nebula.live-overlay' | 'nebula.stream-battle' | 'nebula.chatwars.stream-battle' | 'nebula.wordgame.stream-battle';
+export type BotActionId = DiscordStreamHubBotAction | HearMeOutBotAction | StreamWeaverBotAction;
+
+export type BotActionDescriptor = {
+  id: BotActionId;
+  title: string;
+  app: 'Discord Stream Hubs' | 'HearMeOut' | 'StreamWeaver';
+  risk: BotActionRisk;
+  minimumRole: BotActorRole;
+  examples: string[];
+};
+
+export type BotActionRequest = {
+  action: BotActionId;
+  args: Record<string, string>;
+  detection: 'explicit' | 'ai';
+};
+
+export type BotActionContext = {
+  tenantId: string;
+  sourceTenantId?: string;
+  sourceActorRole?: BotActorRole;
+  /** Set by the authenticated Lounge dispatcher, never from viewer input. */
+  executorAuthority?: 'stella-lounge-moderator';
+  botName: string;
+  source: BotActionSource;
+  message: string;
+  requestId?: string;
+  guildId?: string;
+  roomId?: string;
+  /** Derived by an authenticated server for local companion playback only. */
+  playbackSessionId?: string;
+  visibility?: 'public' | 'private';
+  actor: {
+    userId?: string;
+    username?: string;
+    displayName?: string;
+    role: BotActorRole;
+  };
+};
+
+export type BotActionOutcome = {
+  handled: true;
+  action: BotActionId;
+  status: 'completed' | 'needs_input' | 'forbidden' | 'failed';
+  response: string;
+  result?: Record<string, unknown>;
+};
+
+export type BotActionRuntimeDependencies = {
+  readDiscordConfig: typeof readDiscordConfig;
+  getDiscordStreamHubDefaultGuildId: typeof getDiscordStreamHubDefaultGuildId;
+  executeDiscordStreamHubBotAction: typeof executeDiscordStreamHubBotAction;
+  executeHearMeOutBotAction: typeof executeHearMeOutBotAction;
+  runImageCommand?: typeof runImageCommand;
+  readGenerationSettings?: typeof readGenerationSettings;
+  resolveBotPersonaForAction?: typeof resolveBotPersonaForAction;
+};
+
+const DEFAULT_DEPENDENCIES: BotActionRuntimeDependencies = {
+  readDiscordConfig,
+  getDiscordStreamHubDefaultGuildId,
+  executeDiscordStreamHubBotAction,
+  executeHearMeOutBotAction,
+  runImageCommand,
+  readGenerationSettings,
+  resolveBotPersonaForAction,
+};
+
+export const BOT_ACTION_CATALOG: readonly BotActionDescriptor[] = [
+  {
+    id: 'dsh.shoutouts.active.read',
+    title: 'Read the Discord Stream Hubs shoutout list',
+    app: 'Discord Stream Hubs', risk: 'read', minimumRole: 'member',
+    examples: ['read the DSH shoutout list', 'show the active shoutouts'],
+  },
+  {
+    id: 'dsh.shoutouts.live.read',
+    title: 'Read which DSH shoutout members are live',
+    app: 'Discord Stream Hubs', risk: 'read', minimumRole: 'member',
+    examples: ["who's live in DSH?", 'read the live shoutouts'],
+  },
+  {
+    id: 'dsh.shoutouts.post',
+    title: 'Post a named DSH shoutout to Discord',
+    app: 'Discord Stream Hubs', risk: 'broadcast', minimumRole: 'moderator',
+    examples: ['post a DSH shoutout for @creator in #shoutouts'],
+  },
+  {
+    id: 'dsh.calendar.read',
+    title: 'Read the DSH Admin Calendar',
+    app: 'Discord Stream Hubs', risk: 'read', minimumRole: 'member',
+    examples: ["what's on the DSH Admin Calendar?", 'read the admin calendar'],
+  },
+  {
+    id: 'dsh.calendar.captain.read',
+    title: "Read the Captain's Log schedule",
+    app: 'Discord Stream Hubs', risk: 'read', minimumRole: 'member',
+    examples: ["who has Captain's Log?", "read the Captain's Log dates"],
+  },
+  {
+    id: 'dsh.calendar.captain.create',
+    title: "Claim a Captain's Log date",
+    app: 'Discord Stream Hubs', risk: 'write', minimumRole: 'member',
+    examples: ["put me on Captain's Log tomorrow", "claim Captain's Log for 2026-09-02"],
+  },
+  {
+    id: 'dsh.calendar.event.create',
+    title: 'Create a DSH Admin Calendar event',
+    app: 'Discord Stream Hubs', risk: 'write', minimumRole: 'admin',
+    examples: ['add an event to the DSH Admin Calendar titled "record video" for 3 AM UTC September 1st 2026'],
+  },
+  {
+    id: 'dsh.calendar.deploy',
+    title: 'Deploy the Admin Calendar to a Discord channel',
+    app: 'Discord Stream Hubs', risk: 'broadcast', minimumRole: 'admin',
+    examples: ['deploy the admin calendar to #storage'],
+  },
+  {
+    id: 'dsh.calendar.refresh',
+    title: 'Refresh the deployed Admin Calendar message',
+    app: 'Discord Stream Hubs', risk: 'write', minimumRole: 'admin',
+    examples: ['refresh the deployed admin calendar'],
+  },
+  {
+    id: 'dsh.applications.read',
+    title: 'Read DSH applications',
+    app: 'Discord Stream Hubs', risk: 'read', minimumRole: 'admin',
+    examples: ['read the pending mod applications', 'show partner applications'],
+  },
+  {
+    id: 'dsh.applications.deploy',
+    title: 'Deploy the mod, partner, and developer application embeds',
+    app: 'Discord Stream Hubs', risk: 'broadcast', minimumRole: 'admin',
+    examples: ['deploy the mod and partner applications to #storage'],
+  },
+  {
+    id: 'dsh.applications.decide',
+    title: 'Approve or reject a DSH application and notify the applicant',
+    app: 'Discord Stream Hubs', risk: 'write', minimumRole: 'owner',
+    examples: ["approve Jordan's moderator application", 'reject application 1234'],
+  },
+  {
+    id: 'hmo.rooms.read',
+    title: 'List available HearMeOut rooms',
+    app: 'HearMeOut', risk: 'read', minimumRole: 'member',
+    examples: ['which HearMeOut rooms are open?', 'list my HearMeOut rooms'],
+  },
+  {
+    id: 'hmo.media.state.read',
+    title: 'Read what HearMeOut is playing and queued',
+    app: 'HearMeOut', risk: 'read', minimumRole: 'member',
+    examples: ["what's playing in HearMeOut?", 'read the HearMeOut queue'],
+  },
+  {
+    id: 'hmo.media.request',
+    title: 'Request a song, story, audiobook, or other audio in HearMeOut',
+    app: 'HearMeOut', risk: 'write', minimumRole: 'member',
+    examples: ['play the song "Space Oddity" in HearMeOut', 'queue a story called The Tell-Tale Heart'],
+  },
+  {
+    id: 'hmo.media.control',
+    title: 'Control HearMeOut playback and its queue',
+    app: 'HearMeOut', risk: 'write', minimumRole: 'moderator',
+    examples: ['pause HearMeOut', 'skip the current song', 'clear the HearMeOut queue'],
+  },
+  {
+    id: 'hmo.media.radio',
+    title: 'Read or control the SpaceMountain Lounge automatic music DJ',
+    app: 'HearMeOut', risk: 'write', minimumRole: 'member',
+    examples: ['Stella turn on autoradio', 'Stella turn off the Lounge DJ', 'Stella is autoradio on?'],
+  },
+  {
+    id: 'hmo.bot.control',
+    title: 'Invite or remove a tenant bot in a HearMeOut room',
+    app: 'HearMeOut', risk: 'write', minimumRole: 'member',
+    examples: ['tell my bot to join the HearMeOut studio room', 'remove the shared bot from the studio room'],
+  },
+  {
+    id: 'hmo.voice.bridge.state',
+    title: 'Read the HearMeOut Discord voice bridge state',
+    app: 'HearMeOut', risk: 'read', minimumRole: 'member',
+    examples: ['what Discord VC is HearMeOut bridged to?', 'is the voice bridge running?'],
+  },
+  {
+    id: 'hmo.voice.bridge.control',
+    title: 'Control the HearMeOut Discord voice bridge',
+    app: 'HearMeOut', risk: 'write', minimumRole: 'member',
+    examples: ['bridge HearMeOut to Discord VC General', 'make the voice bridge listen only', 'stop the Discord voice bridge'],
+  },
+  {
+    id: 'nebula.chatwars.stream-battle',
+    title: 'Link multiple streams into a Chat Wars battle',
+    app: 'StreamWeaver', risk: 'broadcast', minimumRole: 'moderator',
+    examples: ['start Chat Wars between @alpha and @beta', 'start a stream vs stream Chat Wars with alpha and beta'],
+  },
+  {
+    id: 'nebula.wordgame.stream-battle',
+    title: 'Link multiple streams into Phrase Guess or Word Chain',
+    app: 'StreamWeaver', risk: 'broadcast', minimumRole: 'moderator',
+    examples: ['start Phrase Guess against @alpha', 'start Word Chain with alpha and beta'],
+  },
+  {
+    id: 'stella.role',
+    title: 'Set Stella host, producer, collab, or Arcade Steward role',
+    app: 'StreamWeaver', risk: 'write', minimumRole: 'moderator',
+    examples: ['Stella collab with me', 'Stella producer mode', 'call Stella as Arcade Steward'],
+  },
+  {
+    id: 'nebula.stream-battle',
+    title: 'Link streamer channels into a Nebula stream battle',
+    app: 'StreamWeaver', risk: 'broadcast', minimumRole: 'moderator',
+    examples: ['start Chat Wars against @otherstreamer', 'link my stream with @otherstreamer for Chat Wars'],
+  },
+  {
+    id: 'nebula.game.director',
+    title: 'Direct Nebula games and the live game overlay',
+    app: 'StreamWeaver', risk: 'broadcast', minimumRole: 'moderator',
+    examples: ['start Bingo and put it on the overlay', 'take Mosaic off the overlay', 'switch to Word Chain', 'shuffle the active games'],
+  },
+  {
+    id: 'nebula.live-overlay',
+    title: 'Reshape the existing live Nebula overlay URL in place',
+    app: 'StreamWeaver', risk: 'broadcast', minimumRole: 'moderator',
+    examples: ['put Chat Wars and Bingo on the Lounge Nebula overlay', 'show every Nebula game in an auto grid'],
+  },
+  {
+    id: 'nebula.command',
+    title: 'Run a Nebula Arcade game or controller command privately',
+    app: 'StreamWeaver', risk: 'write', minimumRole: 'moderator',
+    examples: ['Nebula run spmt join', 'run spmt instructions bingo', 'Nebula start chicken royale'],
+  },
+  {
+    id: 'nebula.overlay.manage',
+    title: 'Create or change a Nebula Arcade games overlay',
+    app: 'StreamWeaver', risk: 'write', minimumRole: 'moderator',
+    examples: ['create a Nebula overlay with bingo and mosaic', 'set my Nebula overlay to auto grid'],
+  },
+  {
+    id: 'stella.mode',
+    title: 'Set the experimental Stella behavior intensity from chill to WTF one million',
+    app: 'StreamWeaver', risk: 'write', minimumRole: 'moderator',
+    examples: ['Stella chill vibes', 'Stella mode 500', 'Stella WTF one million'],
+  },
+  {
+    id: 'sw.lounge.brb',
+    title: 'Start or stop the tenant Lounge BRB player',
+    app: 'StreamWeaver', risk: 'broadcast', minimumRole: 'moderator',
+    examples: ['start the BRB player', 'stop BRB', 'we are back from break'],
+  },
+  {
+    id: 'sw.lounge.media.restart',
+    title: 'Restart only the SpaceMountain Lounge HearMeOut media player',
+    app: 'StreamWeaver', risk: 'write', minimumRole: 'moderator',
+    examples: ['Stella restart the media player', 'Stella reconnect the Lounge media player'],
+  },
+  {
+    id: 'sw.lounge.browser.refresh',
+    title: 'Refresh the SpaceMountain Lounge browser source after a freeze report',
+    app: 'StreamWeaver', risk: 'broadcast', minimumRole: 'member',
+    examples: ['Stella, this froze', 'Stella, the lounge browser source is frozen', 'Stella, refresh the lounge'],
+  },
+  {
+    id: 'sw.lounge.spotlight.restart',
+    title: 'Restart the tenant Lounge Spotlight player',
+    app: 'StreamWeaver', risk: 'write', minimumRole: 'moderator',
+    examples: ['restart the Spotlight player', 'turn Spotlight off and back on'],
+  },
+  {
+    id: 'sw.lounge.layout',
+    title: 'Move the Lounge movie or Spotlight between the main and small windows',
+    app: 'StreamWeaver', risk: 'broadcast', minimumRole: 'moderator',
+    examples: ['swap the screens', 'bump them', 'put the movie in the main window'],
+  },
+  {
+    id: 'sw.lounge.volume',
+    title: 'Set the live Lounge mixer volume for Stella, Spotlight, or media',
+    app: 'StreamWeaver', risk: 'write', minimumRole: 'moderator',
+    examples: ['turn the media volume down to 30 percent', 'set Spotlight volume to 45', 'make Stella volume 80 percent'],
+  },
+  {
+    id: 'sw.image.generate',
+    title: 'Generate images with the tenant StreamWeaver settings',
+    app: 'StreamWeaver', risk: 'write', minimumRole: 'member',
+    examples: ['generate an image of a rocket flying past Saturn', 'make a picture of a moonlit forest'],
+  },
+] as const;
+
+const DESCRIPTORS = new Map(BOT_ACTION_CATALOG.map((entry) => [entry.id, entry]));
+const ROLE_LEVEL: Record<BotActorRole, number> = { guest: 0, member: 1, moderator: 2, admin: 3, owner: 4 };
+
+function clean(value: unknown, max = 500): string {
+  return String(value || '').replace(/\s+/g, ' ').trim().slice(0, max);
+}
+
+function normalized(message: string): string {
+  return clean(message, 5000).toLowerCase().replace(/[’]/g, "'");
+}
+
+function extractChannel(message: string): string {
+  return clean(message.match(/(?:to|in|into|on)\s+#([a-z0-9_-]{1,100})\b/i)?.[1], 100);
+}
+
+function isoDate(date: Date): string {
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
+}
+
+function extractDate(message: string, now = new Date()): string {
+  const explicit = message.match(/\b(20\d{2})-(\d{2})-(\d{2})\b/);
+  if (explicit) return explicit[0];
+  const dayOffset = /\btomorrow\b/i.test(message) ? 1 : /\btoday\b/i.test(message) ? 0 : null;
+  if (dayOffset !== null) {
+    const date = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + dayOffset));
+    return isoDate(date);
+  }
+  const monthNames: Record<string, number> = {
+    january: 0, jan: 0, february: 1, feb: 1, march: 2, mar: 2, april: 3, apr: 3,
+    may: 4, june: 5, jun: 5, july: 6, jul: 6, august: 7, aug: 7, september: 8,
+    sep: 8, sept: 8, october: 9, oct: 9, november: 10, nov: 10, december: 11, dec: 11,
+  };
+  const monthDate = message.match(/\b(january|jan|february|feb|march|mar|april|apr|may|june|jun|july|jul|august|aug|september|sept?|october|oct|november|nov|december|dec)\s+(\d{1,2})(?:st|nd|rd|th)?(?:,)?\s+(20\d{2})\b/i);
+  if (!monthDate) return '';
+  return isoDate(new Date(Date.UTC(Number(monthDate[3]), monthNames[monthDate[1].toLowerCase()], Number(monthDate[2]))));
+}
+
+function extractMediaQuery(message: string): string {
+  const quoted = message.match(/["“]([^"”]{1,500})["”]/)?.[1];
+  if (quoted) return clean(quoted, 500);
+  const match = message.match(/\b(?:play|queue|request|put\s+on|add)\s+(?:(?:the|a|an)\s+)?(?:(?:song|track|music|story|audiobook|audio)\s+)?(?:(?:called|named|titled)\s+)?(.+?)\s*$/i);
+  if (!match) return '';
+  const query = clean(match[1], 500)
+    .replace(/\s+(?:on|in|through)\s+(?:hearmeout|hear\s+me\s+out)\b.*$/i, '')
+    .replace(/^(?:on|in|through)\s+(?:hearmeout|hear\s+me\s+out)\b.*$/i, '')
+    .replace(/\s+please$/i, '')
+    .trim();
+  return /^(?:a|an|the)?\s*(?:song|track|music|story|audiobook|audio|something)$/i.test(query) ? '' : query;
+}
+
+function extractImagePrompt(message: string): string {
+  const match = message.match(/\b(?:generate|make|create|draw)\s+(?:me\s+)?(?:an?\s+)?(?:ai\s+)?(?:image|picture|photo|artwork|illustration)\s*(?:of|showing|for)?\s+(.+?)\s*$/i);
+  return clean(match?.[1], 3000).replace(/\s+please$/i, '').trim();
+}
+
+function extractRoomSelector(message: string): string {
+  const quoted = message.match(/\b(?:room|chat)\s+(?:called|named)?\s*["“]([^"”]{1,160})["”]/i)?.[1];
+  if (quoted) return clean(quoted, 160);
+  const named = message.match(/\b(?:room|chat)\s+(?:called|named)\s+([a-z0-9][a-z0-9 _-]{0,159}?)(?:\s+(?:please|now)|[,.!?]|$)/i)?.[1];
+  return clean(named, 160);
+}
+
+function extractBotSelector(message: string): string {
+  const patterns = [
+    /\btell\s+(.+?)\s+to\s+(?:join|enter|leave|exit)\b/i,
+    /\b(?:invite|add|bring)\s+(.+?)\s+(?:to|into)\s+(?:my\s+|the\s+)?(?:hearmeout|hear\s+me\s+out)/i,
+    /\b(?:remove|send|take)\s+(.+?)\s+(?:from|out of)\s+(?:my\s+|the\s+)?(?:hearmeout|hear\s+me\s+out)/i,
+  ];
+  for (const pattern of patterns) {
+    const value = clean(message.match(pattern)?.[1], 160).replace(/^(?:the|my)\s+bot\s+/i, '').replace(/^@/, '');
+    if (value) return value;
+  }
+  return '';
+}
+
+function botSelectorForContext(reference: string, botName: string): string {
+  const value = normalized(reference);
+  if (/^(?:a|any|some)\s+bot$/.test(value)) return '';
+  if (/^(?:(?:my|our|this|the)\s+)?(?:tenant\s+)?bot$/.test(value)) return clean(botName, 160);
+  return clean(reference, 160);
+}
+
+function extractVoiceChannel(message: string): string {
+  const mention = message.match(/<#(\d{15,24})>/)?.[1];
+  if (mention) return mention;
+  const match = message.match(/\b(?:vc|voice\s+channel)\s+#?["“]?([a-z0-9][a-z0-9 _-]{0,119}?)["”]?(?:\s+(?:in|for|with|please|now)\b|[,.!?]|$)/i);
+  return clean(match?.[1], 120);
+}
+
+function extractApplicationDecision(message: string) {
+  const value = normalized(message);
+  const decision = /\b(?:approve|accept)\b/.test(value) ? 'approved' : /\b(?:reject|deny|decline)\b/.test(value) ? 'rejected' : '';
+  const type = /\b(?:moderator|moderation|modship|mod)\b/.test(value)
+    ? 'mod'
+    : /\b(?:partner|partnership)\b/.test(value)
+      ? 'partner'
+      : /\b(?:developer|development|sdk|dev)\b/.test(value)
+        ? 'dev'
+        : '';
+  const before = message.match(/\b(?:approve|accept|reject|deny|decline)\s+(?:the\s+)?(.+?)'?s?\s+(?:(?:moderator|moderation|modship|mod|partner|partnership|developer|development|sdk|dev)\s+)?application\b/i)?.[1];
+  const after = message.match(/\bapplication\s+(?:id\s+)?([a-z0-9_-]{2,160})\b/i)?.[1];
+  return { decision, type, application: clean(before || after, 160).replace(/["“”']/g, '').trim() };
+}
+
+function mediaOffsetSeconds(amount: string, unit: string): number {
+  const value = Math.max(0, Number(amount) || 0);
+  return /^(?:m|min|mins|minute|minutes)$/i.test(unit) ? value * 60 : value;
+}
+
+function detectExplicitAction(message: string): BotActionRequest | null {
+  const value = normalized(message);
+  const channel = extractChannel(message);
+  const radio = /\b(?:auto\s*radio|lounge\s+(?:dj|radio)|radio)\b/.test(value);
+  if (radio) {
+    if (/\b(?:is|are|what(?:'s| is)|check|status|how)\b.*\b(?:auto\s*radio|lounge\s+(?:dj|radio)|radio)\b|\b(?:auto\s*radio|lounge\s+(?:dj|radio)|radio)\b.*\b(?:status|enabled|running)\b/.test(value)) {
+      return { action: 'hmo.media.radio', args: { control: 'status' }, detection: 'explicit' };
+    }
+    const control = /\b(?:turn|switch|set)\s+(?:the\s+)?(?:lounge\s+)?(?:dj\s+|auto\s*radio\s+|radio\s+)?on\b|\b(?:turn|switch|set)\s+on\s+(?:the\s+)?(?:auto\s*radio|lounge\s+(?:dj|radio)|radio)\b|\b(?:enable|start|activate)\s+(?:the\s+)?(?:auto\s*radio|lounge\s+(?:dj|radio)|radio)\b/.test(value) ? 'on'
+      : /\b(?:turn|switch|set)\s+(?:the\s+)?(?:lounge\s+)?(?:dj\s+|auto\s*radio\s+|radio\s+)?off\b|\b(?:turn|switch|set)\s+off\s+(?:the\s+)?(?:auto\s*radio|lounge\s+(?:dj|radio)|radio)\b|\b(?:disable|stop|deactivate)\s+(?:the\s+)?(?:auto\s*radio|lounge\s+(?:dj|radio)|radio)\b/.test(value) ? 'off'
+      : /\b(?:is|status|check|what|how)\b.*\b(?:auto\s*radio|lounge\s+(?:dj|radio)|radio)\b|\b(?:auto\s*radio|lounge\s+(?:dj|radio)|radio)\b.*\b(?:status|enabled|running|on\?)\b/.test(value) ? 'status' : '';
+    if (control) return { action: 'hmo.media.radio', args: { control }, detection: 'explicit' };
+  }
+
+  const wordBattle=value.match(/\b(?:start|create|make|link|launch|begin)\b.*\b(phrase guess|word chain|word guess)\b.*\b(?:with|between|against|vs\.?|versus)\b\s+(.{2,180})$/);
+  if(wordBattle){
+    const gameId=/phrase/.test(wordBattle[1])?'phraseguess':'wordchain';
+    const channels=[...message.matchAll(/@([a-z0-9_]{2,80})/gi)].map(match=>match[1].toLowerCase());
+    const parsed=channels.length?channels:wordBattle[2]
+      .split(/\s*(?:,|\band\b|\bvs\.?\b|\bversus\b|\bagainst\b)\s*/i)
+      .map(part=>part.replace(/^@/,'').match(/^([a-z0-9_]{2,80})\b/)?.[1]||'')
+      .filter(Boolean);
+    if(parsed.length) return {action:'nebula.wordgame.stream-battle',args:{gameId,channels:[...new Set(parsed)].join(',')},detection:'explicit'};
+  }
+
+  const battleIntent=/\b(?:start|create|make|link|launch|begin)\b/.test(value)
+    && /\b(?:chat wars|stream\s*(?:vs|versus)\s*stream|stream battle)\b/.test(value);
+  if(battleIntent){
+    let channels=[...message.matchAll(/@([a-z0-9_]{2,80})/gi)].map(match=>match[1].toLowerCase());
+    if(!channels.length){
+      const afterGame=value.slice(value.lastIndexOf('chat wars') + 'chat wars'.length);
+      const tail=afterGame.match(/\b(?:with|between|against|vs\.?|versus)\s+(.{2,180})$/)?.[1]||'';
+      channels=tail
+        .replace(/\b(?:in|for)\s+chat\s+wars\b.*$/,'')
+        .split(/\s*(?:,|\band\b|\bvs\.?\b|\bversus\b|\bagainst\b)\s*/i)
+        .map(part=>part.replace(/^@/,'').match(/^([a-z0-9_]{2,80})\b/)?.[1]||'')
+        .filter(Boolean);
+    }
+    if(channels.length>=1) return {action:'nebula.chatwars.stream-battle',args:{channels:[...new Set(channels)].join(',')},detection:'explicit'};
+  }
+  const roleMatch=value.match(/\bstella\b.*\b(collab|producer|host|(?:arcade\s+)?steward)\b(?:\s+(?:with|for)\s+@?([a-z0-9_]{2,80}))?/);
+  if(roleMatch){ const raw=roleMatch[1]; const role=raw.includes('steward')?'arcade-steward':raw; return {action:'stella.role',args:{role,partner:roleMatch[2]||''},detection:'explicit'}; }
+  const gameNames:Record<string,string>={'chat wars':'chatwars','bingo':'bingo','mosaic':'pixelbattle','treasure hunt':'treasurehunt','word chain':'wordchain','phrase guess':'phraseguess','chicken royale':'chickenroyale','emoji rain':'emojirain','dancing parade':'dancingparade','chat tag':'chat-tag','quackverse':'quackverse','chaos mode':'chaosmode','chat garden':'chatgarden','color symphony':'colorsymphony','emoji tower':'emojitower','pet race':'petrace','rhythm pulse':'rhythmpulse','word storm':'wordstorm'};
+  const namedGame=Object.entries(gameNames).find(([name])=>value.includes(name));
+  const gameDirectorIntent = /\b(?:start|launch|begin|activate|stop|end|deactivate|shut|close|hide|remove|take|show|put|place|display|add|switch|swap|change|shuffle|randomize|rotate|turn)\b/.test(value)
+    && (Boolean(namedGame) || /\b(?:game|games|nebula|overlay|screen|stage|rotation)\b/.test(value));
+  if (gameDirectorIntent) {
+    const gameId=namedGame?.[1]||'';
+    const stop=/\b(?:stop|end|deactivate|close)\b|\bshut\b(?:\s+(?:down|off))?|\bturn\b.*\boff\b/.test(value);
+    const start=/\b(?:start|launch|begin|activate|turn on)\b|\bturn\b.*\bon\b/.test(value);
+    const hide=/\b(?:hide|remove|take)\b/.test(value);
+    const show=/\b(?:show|put|place|display|add)\b/.test(value);
+    const switchGame=/\b(?:switch|swap|change)\b.*\b(?:game|to|into)\b/.test(value);
+    const shuffle=/\b(?:shuffle|randomize|mix up|rotate)\b.*\b(?:game|games|rotation|overlay)\b/.test(value);
+    const operation=shuffle?'shuffle':switchGame?'switch':(stop||hide)?'stop-hide':start?'start-show':show?'show':'';
+    if(operation) {
+      const surface=/\b(?:main|primary)\b.*\b(?:overlay|screen|stage|section|panel)\b/.test(value)?'main':/\bactivity\b/.test(value)?'activity':'';
+      return {action:'nebula.game.director',args:{operation,gameId,...(surface?{surface}:{})},detection:'explicit'};
+    }
+  }
+  if(/\b(?:overlay|screen|stage)\b/.test(value)&&/\b(?:nebula|lounge|game)\b/.test(value)){
+    const ids=Object.entries(gameNames).filter(([name])=>value.includes(name)).map(([,id])=>id);
+    if(ids.length) return {action:'nebula.live-overlay',args:{gameIds:ids.join(','),layout:/\bgrid\b/.test(value)?'auto-grid':/\bstack\b/.test(value)?'stack':'rotation'},detection:'explicit'};
+  }
+  const battle=value.match(/\b(?:start|make|create|link)\b.*\b(?:chat wars|stream battle|stream vs stream)\b.*(?:against|with|versus|vs\.?)[\s@]+([a-z0-9_]{2,80})\b/);
+  if(battle) return {action:'nebula.stream-battle',args:{opponent:battle[1]},detection:'explicit'};
+
+  const stellaNamedMode = value.match(/\bstella\b.*\b(chill(?: vibes?)?|normal|playful|chaos|ludicrous|insanity|wtf(?:\s+(?:one\s+)?million)?)\b/);
+  const stellaNumericMode = value.match(/\bstella\b.*\b(?:mode|intensity|chaos\s+level)\b\s*(?:to|at|=)?\s*(\d{1,7})\b/);
+  const stellaMode = stellaNamedMode || stellaNumericMode;
+  if (stellaMode) {
+    const raw=stellaMode[1]; const numeric=/^\d+$/.test(raw)?raw:'';
+    const mode = /chill/.test(raw)?'chill':/playful/.test(raw)?'playful':/(?:chaos|ludicrous|insanity)/.test(raw)?'chaos':/wtf/.test(raw)?'wtf-million':'normal';
+    return {action:'stella.mode',args:{mode,intensity:numeric},detection:'explicit'};
+  }
+  const nebulaRun=message.match(/\b(?:nebula|stella)\s+(?:run|do|execute)\s+((?:!?spmt|!mosaic)\b[^\n]{0,380})/i);
+  if(nebulaRun) return {action:'nebula.command',args:{command:nebulaRun[1].trim()},detection:'explicit'};
+  const overlayCreate=value.match(/\b(?:create|make|build)\b.*\bnebula\b.*\boverlay\b/);
+  if(overlayCreate) return {action:'nebula.overlay.manage',args:{operation:'create'},detection:'explicit'};
+
+  if (
+    /\b(?:restart|reload|reconnect|reset|clear)\b.*\b(?:lounge\s+)?(?:media|movie|hearmeout|hear me out)(?:\s+(?:player|viewer))?\b/.test(value)
+    || /\b(?:media|movie|hearmeout|hear me out)(?:\s+(?:player|viewer))?\b.*\b(?:restart|reload|reconnect|reset|clear)\b/.test(value)
+  ) {
+    return { action: 'sw.lounge.media.restart', args: {}, detection: 'explicit' };
+  }
+  if (
+    (/\bstella\b/.test(value) || /^this (?:froze|is frozen|is stuck|crashed)[.!?]*$/.test(value))
+    && (/\b(?:this|lounge|browser source|overlay|screen)\b.*\b(?:froze|frozen|stuck|crashed)\b/.test(value)
+      || /\b(?:froze|frozen|stuck|crashed)\b.*\b(?:lounge|browser(?:\s+source)?|overlay|screen)\b/.test(value)
+      || /\b(?:refresh|reload|restart|reset)\b.*\b(?:lounge|browser(?:\s+source)?|overlay|screen)\b/.test(value)
+      || /\b(?:lounge|browser(?:\s+source)?|overlay|screen)\b.*\b(?:refresh|reload|restart|reset)\b/.test(value))
+  ) {
+    return { action: 'sw.lounge.browser.refresh', args: {}, detection: 'explicit' };
+  }
+  if (/\b(?:restart|reboot|power[- ]?cycle|turn off and (?:back )?on)\b.*\bspotlight\b|\bspotlight\b.*\b(?:restart|reboot|power[- ]?cycle)\b/.test(value)) {
+    return { action: 'sw.lounge.spotlight.restart', args: {}, detection: 'explicit' };
+  }
+  if (
+    /\b(?:swap|switch|flip)\s+(?:(?:the|those|these)\s+)?(?:screens|windows|players|them)\b|\bbump\s+(?:(?:the|those|these)\s+)?(?:screens|windows|players|them|spotlight|stream|movie|media)\b/.test(value)
+    || /\b(?:swap|switch|flip)\b.*\b(?:media|movie|hearmeout|hear me out)\b.*\b(?:spotlight|stream|streamer)\b/.test(value)
+    || /\b(?:swap|switch|flip)\b.*\b(?:spotlight|stream|streamer)\b.*\b(?:media|movie|hearmeout|hear me out)\b/.test(value)
+  ) {
+    return { action: 'sw.lounge.layout', args: { target: 'toggle' }, detection: 'explicit' };
+  }
+  if (/\b(?:put|move|show|focus|bring)\b.*\b(?:movie|media|hearmeout|hear me out|spotlight|stream|streamer)\b.*\b(?:main|big|large)\s*(?:window|screen|stage)?\b/.test(value)) {
+    const target = /\b(?:movie|media|hearmeout|hear me out)\b/.test(value) ? 'media' : 'stream';
+    return { action: 'sw.lounge.layout', args: { target }, detection: 'explicit' };
+  }
+  if (/\b(?:start|show|turn on)\b.*\bbrb\b|\b(?:brb|be right back)\s+(?:player|screen)\b/.test(value)) {
+    return { action: 'sw.lounge.brb', args: { control: 'start' }, detection: 'explicit' };
+  }
+  if (/\b(?:stop|end|turn off)\b.*\bbrb\b|\bback from break\b/.test(value)) {
+    return { action: 'sw.lounge.brb', args: { control: 'stop' }, detection: 'explicit' };
+  }
+
+  if (/\b(?:mute|silence)\b.*\b(?:everything|all|whole stream)\b|\b(?:everything|all)\b.*\b(?:mute|silence)\b/.test(value)) {
+    return { action: 'sw.lounge.volume', args: { output: 'all', value: '0' }, detection: 'explicit' };
+  }
+  const loungeVolume = value.match(/\b(?:set|change|turn|make|lower|raise)\b.*\b(stella|spotlight|media|all)\b.*\b(?:volume|audio|sound)?\b.*?\b(\d{1,3})\s*(?:%|percent)?\b/);
+  if (loungeVolume) {
+    return { action: 'sw.lounge.volume', args: { output: loungeVolume[1], value: loungeVolume[2] }, detection: 'explicit' };
+  }
+
+  const imagePrompt = extractImagePrompt(message);
+  if (imagePrompt) {
+    return { action: 'sw.image.generate', args: { prompt: imagePrompt }, detection: 'explicit' };
+  }
+
+  if (/\b(?:which|what|show|list|read)\b.*\b(?:hearmeout|hear\s+me\s+out)\b.*\brooms?\b|\blist\s+(?:my\s+)?(?:hearmeout|hear\s+me\s+out)\s+rooms?\b/.test(value)) {
+    return { action: 'hmo.rooms.read', args: {}, detection: 'explicit' };
+  }
+
+  if (/\b(?:tell|invite|add|bring|remove|send|take)\b.*\b(?:join|enter|leave|exit|to|from|out of)\b.*\b(?:hearmeout|hear\s+me\s+out)\b/.test(value)) {
+    const control = /\b(?:leave|exit|remove|send|take)\b/.test(value) ? 'leave' : 'join';
+    return { action: 'hmo.bot.control', args: { control, bot: extractBotSelector(message), room: extractRoomSelector(message) }, detection: 'explicit' };
+  }
+
+  if (/\b(?:what|which|where|is|show|read|check)\b.*\b(?:discord\s+)?(?:voice\s+bridge|bridged|vc)\b/.test(value)) {
+    return { action: 'hmo.voice.bridge.state', args: { room: extractRoomSelector(message) }, detection: 'explicit' };
+  }
+
+  if (/\b(?:bridge|connect|start|stop|disconnect|listen[- ]only|two[- ]way|low[- ]latency|balanced|resilient)\b.*\b(?:discord|voice\s+bridge|vc|hearmeout|hear\s+me\s+out)\b/.test(value)) {
+    const control = /\b(?:stop|disconnect)\b/.test(value)
+      ? 'stop'
+      : /\blisten[- ]only\b/.test(value)
+        ? 'listen-only'
+        : /\btwo[- ]way\b/.test(value)
+          ? 'two-way'
+          : /\b(?:low[- ]latency|balanced|resilient)\b/.test(value)
+            ? 'profile'
+            : 'start';
+    const audioProfile = /\blow[- ]latency\b/.test(value) ? 'low-latency' : /\bresilient\b/.test(value) ? 'resilient' : /\bbalanced\b/.test(value) ? 'balanced' : '';
+    return { action: 'hmo.voice.bridge.control', args: { control, audioProfile, voiceChannel: extractVoiceChannel(message), room: extractRoomSelector(message) }, detection: 'explicit' };
+  }
+
+  if (/\b(?:clear|empty)\b.*\b(?:hearmeout|hear\s+me\s+out|music)?\s*queue\b/.test(value)) {
+    return { action: 'hmo.media.control', args: { control: 'clear' }, detection: 'explicit' };
+  }
+  const mediaForward = value.match(/\b(?:fast\s*forward|forward|skip\s+ahead)\b.*?\b(\d+(?:\.\d+)?)\s*(seconds?|secs?|s|minutes?|mins?|m)\b/);
+  if (mediaForward) {
+    return {
+      action: 'hmo.media.control',
+      args: { control: 'forward', value: String(mediaOffsetSeconds(mediaForward[1], mediaForward[2])), lane: 'movie' },
+      detection: 'explicit',
+    };
+  }
+  const mediaRewind = value.match(/\b(?:rewind|go\s+back)\b.*?\b(\d+(?:\.\d+)?)\s*(seconds?|secs?|s|minutes?|mins?|m)\b/);
+  if (mediaRewind) {
+    return {
+      action: 'hmo.media.control',
+      args: { control: 'rewind', value: String(mediaOffsetSeconds(mediaRewind[1], mediaRewind[2])), lane: 'movie' },
+      detection: 'explicit',
+    };
+  }
+  if (/\b(?:skip|next)\b.*\b(?:song|track|story|audio|hearmeout|hear\s+me\s+out)\b|\b(?:hearmeout|hear\s+me\s+out)\b.*\b(?:skip|next)\b/.test(value)) {
+    return { action: 'hmo.media.control', args: { control: 'next' }, detection: 'explicit' };
+  }
+  if (/\bpause\b.*\b(?:music|song|track|story|audio|hearmeout|hear\s+me\s+out)\b|\b(?:hearmeout|hear\s+me\s+out)\b.*\bpause\b/.test(value)) {
+    return { action: 'hmo.media.control', args: { control: 'pause' }, detection: 'explicit' };
+  }
+  if (/\b(?:resume|continue)\b.*\b(?:music|song|track|story|audio|hearmeout|hear\s+me\s+out)\b|\b(?:hearmeout|hear\s+me\s+out)\b.*\b(?:resume|continue)\b/.test(value)) {
+    return { action: 'hmo.media.control', args: { control: 'play' }, detection: 'explicit' };
+  }
+  if (/\bunmute\b.*\b(?:hearmeout|hear\s+me\s+out|music|audio)\b/.test(value)) {
+    return { action: 'hmo.media.control', args: { control: 'unmute' }, detection: 'explicit' };
+  }
+  if (/\bmute\b.*\b(?:hearmeout|hear\s+me\s+out|music|audio)\b/.test(value)) {
+    return { action: 'hmo.media.control', args: { control: 'mute' }, detection: 'explicit' };
+  }
+  const volume = value.match(/\b(?:set|change|turn)\b.*\b(?:hearmeout|hear\s+me\s+out|music|audio)?\s*volume\b.*?\b(\d{1,3})\b/);
+  if (volume) return { action: 'hmo.media.control', args: { control: 'volume', value: volume[1] }, detection: 'explicit' };
+  if (/\b(?:play|queue|request|put\s+on|add)\b.*\b(?:song|track|music|story|audiobook|audio|hearmeout|hear\s+me\s+out)\b/.test(value) || /\b(?:play|queue|put\s+on)\s+.+?\s+by\s+\S/.test(value) || /\b(?:play|queue|put\s+on)\s+["“][^"”]+["”]/.test(value)) {
+    return { action: 'hmo.media.request', args: { query: extractMediaQuery(message) }, detection: 'explicit' };
+  }
+  if (/\b(?:what(?:'s| is)|read|show|list|check)\b.*\b(?:playing|queued?|hearmeout|hear\s+me\s+out)\b/.test(value)) {
+    return { action: 'hmo.media.state.read', args: {}, detection: 'explicit' };
+  }
+
+  const calendarEvent = detectDiscordAdminCalendarCommand(message);
+  if (calendarEvent.matched) {
+    if (!calendarEvent.event) {
+      return { action: 'dsh.calendar.event.create', args: { parseError: calendarEvent.error || 'The event details are incomplete.' }, detection: 'explicit' };
+    }
+    return {
+      action: 'dsh.calendar.event.create',
+      detection: 'explicit',
+      args: {
+        missionName: calendarEvent.event.missionName,
+        missionDescription: calendarEvent.event.missionDescription || '',
+        missionDate: calendarEvent.event.missionDate,
+        missionTime: calendarEvent.event.missionTime,
+        missionTimeZone: calendarEvent.event.missionTimeZone,
+      },
+    };
+  }
+
+  if (/\b(?:approve|accept|reject|deny|decline)\b.*\bapplication\b/.test(value)) {
+    const decision = extractApplicationDecision(message);
+    return { action: 'dsh.applications.decide', args: decision, detection: 'explicit' };
+  }
+
+  if (/\b(?:post|send|publish)\b.*\b(?:dsh|discord\s*stream\s*hubs?)?\s*shoutout\b/.test(value)) {
+    const target = clean(message.match(/\bshoutout\s+(?:for|to)\s+@?([a-z0-9_]{2,40})\b/i)?.[1], 40);
+    return { action: 'dsh.shoutouts.post', args: { target, channel }, detection: 'explicit' };
+  }
+
+  if (/\b(?:deploy|post|publish|send)\b.*\b(?:mod(?:erator)?|partner|dev(?:eloper|elopment)?)\b.*\bapplications?\b/.test(value)) {
+    return { action: 'dsh.applications.deploy', args: { channel }, detection: 'explicit' };
+  }
+  if (/\b(?:deploy|post|publish|send)\b.*\b(?:admin\s+)?calendar\b/.test(value)) {
+    return { action: 'dsh.calendar.deploy', args: { channel }, detection: 'explicit' };
+  }
+  if (/\b(?:refresh|update|regenerate)\b.*\b(?:deployed\s+)?(?:admin\s+)?calendar\b/.test(value)) {
+    return { action: 'dsh.calendar.refresh', args: {}, detection: 'explicit' };
+  }
+  if (/\b(?:claim|schedule|set|put|add|sign)\b.*\bcaptain'?s?\s+log\b|\bcaptain'?s?\s+log\b.*\b(?:for me|me on|me for)\b/.test(value)) {
+    return { action: 'dsh.calendar.captain.create', args: { selectedDate: extractDate(message) }, detection: 'explicit' };
+  }
+  if (/\b(?:who|read|show|list|check|what)\b.*\bcaptain'?s?\s+log\b/.test(value)) {
+    return { action: 'dsh.calendar.captain.read', args: {}, detection: 'explicit' };
+  }
+  if (/\b(?:read|show|list|check|what(?:'s| is))\b.*\b(?:dsh|discord\s*stream\s*hubs?)\b.*\b(?:admin\s+)?calendar\b|\b(?:read|show|list|check|what(?:'s| is))\b.*\badmin\s+calendar\b/.test(value)) {
+    return { action: 'dsh.calendar.read', args: {}, detection: 'explicit' };
+  }
+  if (/\b(?:read|show|list|check)\b.*\b(?:pending\s+)?(?:mod(?:erator)?|partner)?\s*applications?\b/.test(value)) {
+    const type = /\bpartner\b/.test(value) ? 'partner' : /\bmod(?:erator)?\b/.test(value) ? 'moderator' : '';
+    const status = /\bpending\b/.test(value) ? 'pending' : '';
+    return { action: 'dsh.applications.read', args: { type, status }, detection: 'explicit' };
+  }
+  if (/\b(?:who(?:'s| is)|read|show|list|check)\b.*\blive\b.*\b(?:dsh|shoutouts?)\b|\b(?:live\s+shoutouts?|shoutouts?\s+live)\b/.test(value)) {
+    return { action: 'dsh.shoutouts.live.read', args: {}, detection: 'explicit' };
+  }
+  if (/\b(?:read|show|list|check)\b.*\b(?:dsh|discord\s*stream\s*hubs?)?\s*shoutouts?\s+list\b|\b(?:read|show|list)\b.*\bactive\s+shoutouts?\b/.test(value)) {
+    return { action: 'dsh.shoutouts.active.read', args: {}, detection: 'explicit' };
+  }
+  return null;
+}
+
+export async function detectBotAction(
+  message: string,
+  tenantId?: string,
+  aiResponder: typeof generateAIResponse = generateAIResponse,
+): Promise<BotActionRequest | null> {
+  const explicit = detectExplicitAction(message);
+  if (explicit) return explicit;
+
+  const value = normalized(message);
+  if (!/\b(?:read|show|list|check|what|who|which|where|is)\b/.test(value) || !/\b(?:dsh|discord\s*stream\s*hubs?|calendar|shoutouts?|applications?|captain'?s?\s+log|hearmeout|hear\s+me\s+out|music|queue|rooms?|bridge|vc)\b/.test(value)) {
+    return null;
+  }
+
+  const aiSafeCatalog = BOT_ACTION_CATALOG.filter((entry) => entry.risk === 'read');
+  try {
+    const response = await aiResponder(
+      [
+        `Human message: ${clean(message, 1000)}`,
+        '',
+        ...aiSafeCatalog.map((entry) => `${entry.id}: ${entry.title}. Examples: ${entry.examples.join(' | ')}`),
+      ].join('\n'),
+      'Classify this request as one supplied read-only action. Return exactly the action ID, or none. Never choose a write, broadcast, or destructive action.',
+      tenantId,
+      { maxTokens: 80, temperature: 0 },
+    );
+    const answer = normalized(response);
+    const match = aiSafeCatalog.find((entry) => answer === entry.id || answer.includes(entry.id));
+    return match ? { action: match.id, args: {}, detection: 'ai' } : null;
+  } catch (error) {
+    console.warn('[BotActionRuntime] read-only classification failed:', error);
+    return null;
+  }
+}
+
+export function botActionRole(action: BotActionId, context: BotActionContext): BotActorRole {
+  const loungeControl = action.startsWith('sw.lounge.') || action.startsWith('nebula.')
+    || action.startsWith('hmo.media.') || action.startsWith('stella.');
+  const stellaExecutor = context.executorAuthority === 'stella-lounge-moderator'
+    && context.tenantId === SPACEMOUNTAIN_SYSTEM_TENANT_ID
+    && context.sourceTenantId === SPACEMOUNTAIN_SYSTEM_TENANT_ID
+    && context.source === 'twitch' && context.botName === 'Stella';
+  // The requester keeps their own identity and role; Stella supplies only her
+  // stream moderator authority, never owner/admin authority for other apps.
+  return loungeControl && stellaExecutor && !hasRole(context.actor.role, 'moderator')
+    ? 'moderator' : context.actor.role;
+}
+
+function hasRole(actual: BotActorRole, minimum: BotActorRole): boolean {
+  return ROLE_LEVEL[actual] >= ROLE_LEVEL[minimum];
+}
+
+function formatDate(value: unknown): string {
+  const date = new Date(String(value || ''));
+  if (Number.isNaN(date.getTime())) return clean(value, 80) || 'unknown date';
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: 'UTC', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short',
+  }).format(date);
+}
+
+function formatResult(action: BotActionId, result: Record<string, any>): string {
+  if (action === 'hmo.media.radio') {
+    const current = clean(result.program?.music?.current?.item?.title, 100);
+    return `📻 Lounge DJ is ${result.radio.enabled ? 'on' : 'off'}; ${result.radio.recentCount || 0} human picks guide it, and ${result.radio.seedCount || 0} playlist references help it start${current ? `; now selected: ${current}` : ''}.`;
+  }
+  if (action === 'sw.lounge.volume') return `✅ Lounge ${clean(result.output, 20)} volume is now ${Number(result.value)}%.`;
+  if (action === 'sw.image.generate') {
+    const images = Array.isArray(result.images) ? result.images.filter(Boolean) : [];
+    if (!images.length) return 'Image generation completed but returned no image URL.';
+    return `✅ Generated ${images.length} image${images.length === 1 ? '' : 's'}: ${images.join(' ')}`;
+  }
+  if (action === 'hmo.rooms.read') {
+    const rooms = Array.isArray(result.rooms) ? result.rooms : [];
+    if (!rooms.length) return 'No available HearMeOut rooms were found.';
+    const shown = rooms.slice(0, 12).map((room: any) => `${room.owned ? '⭐' : '•'} ${clean(room.name || room.id, 120)}${room.isPrivate ? ' (private)' : ''}`);
+    return `HearMeOut rooms (${rooms.length}): ${shown.join(', ')}${rooms.length > shown.length ? `, and ${rooms.length - shown.length} more` : ''}.`;
+  }
+  if (action === 'hmo.media.state.read') {
+    const session = result.session || {};
+    const current = session.current?.item || null;
+    const queue = Array.isArray(session.queue) ? session.queue : [];
+    if (current?.title) return `🎵 HearMeOut is playing **${clean(current.title, 160)}**. ${queue.length} item${queue.length === 1 ? '' : 's'} queued.`;
+    if (queue[0]?.item?.title) return `HearMeOut is idle. Next in the ${queue.length}-item queue: **${clean(queue[0].item.title, 160)}**.`;
+    return 'HearMeOut is idle and its queue is empty.';
+  }
+  if (action === 'hmo.media.request') return `✅ ${clean(result.message, 500) || 'Queued the HearMeOut request.'}`;
+  if (action === 'hmo.media.control') return `✅ HearMeOut ${clean(result.control, 40)} completed.`;
+  if (action === 'hmo.bot.control') return `✅ ${clean(result.bot?.name, 100) || 'The bot'} ${result.control === 'leave' ? 'left' : 'joined'} ${clean(result.room?.name, 120) || 'the HearMeOut room'}.`;
+  if (action === 'hmo.voice.bridge.state') {
+    const running = Boolean(result.worker?.running || result.config?.enabled);
+    const mode = result.worker?.mode || (result.config?.roomVoiceOutboundEnabled === false ? 'listen-only' : 'two-way');
+    const channel = clean(result.worker?.voiceChannelName || result.config?.voiceChannelId, 120);
+    return running
+      ? `The Discord voice bridge for ${clean(result.room?.name, 120) || 'HearMeOut'} is running${channel ? ` in ${channel}` : ''} (${mode}).`
+      : `The Discord voice bridge for ${clean(result.room?.name, 120) || 'HearMeOut'} is stopped.`;
+  }
+  if (action === 'hmo.voice.bridge.control') {
+    const channel = clean(result.channel?.name || result.config?.voiceChannelId, 120);
+    return `✅ HearMeOut voice bridge ${clean(result.control, 40)} completed${channel ? ` for ${channel}` : ''}.`;
+  }
+  if (action.startsWith('dsh.shoutouts.')) {
+    if (action === 'dsh.shoutouts.post') {
+      return `✅ Posted the DSH shoutout for @${clean(result.targetName, 100)} in #${clean(result.channel?.name, 100) || clean(result.channel?.id, 64)}.`;
+    }
+    const rows = Array.isArray(result.shoutouts) ? result.shoutouts : [];
+    if (!rows.length) return action.endsWith('.live.read') ? 'No one on the DSH shoutout list is live right now.' : 'The DSH shoutout list is empty.';
+    const shown = rows.slice(0, 15).map((row: any) => `${row.isLive ? '🟢' : '⚪'} ${clean(row.username || row.twitchLogin, 100)}`);
+    return `DSH shoutouts (${rows.length}): ${shown.join(', ')}${rows.length > shown.length ? `, and ${rows.length - shown.length} more` : ''}.`;
+  }
+  if (action === 'dsh.calendar.read' || action === 'dsh.calendar.captain.read') {
+    const rows = Array.isArray(result.events) ? result.events : [];
+    if (!rows.length) return action.endsWith('.captain.read') ? "There are no Captain's Log dates scheduled." : 'The DSH Admin Calendar has no scheduled events.';
+    const shown = rows.slice(0, 10).map((row: any) => `${clean(row.eventName, 120)} — ${formatDate(row.eventDateTime)}`);
+    return `${action.endsWith('.captain.read') ? "Captain's Log" : 'DSH Admin Calendar'} (${rows.length}): ${shown.join(' | ')}${rows.length > shown.length ? ` | and ${rows.length - shown.length} more` : ''}.`;
+  }
+  if (action === 'dsh.applications.read') {
+    const rows = Array.isArray(result.applications) ? result.applications : [];
+    if (!rows.length) return 'No matching DSH applications were found.';
+    const shown = rows.slice(0, 12).map((row: any) => `${clean(row.username || row.userId, 100)} (${clean(row.type, 40) || 'application'}: ${clean(row.status, 40)})`);
+    return `DSH applications (${rows.length}): ${shown.join(', ')}${rows.length > shown.length ? `, and ${rows.length - shown.length} more` : ''}.`;
+  }
+  if (action === 'dsh.calendar.event.create') {
+    return `✅ Added **${clean(result.eventName || result.missionName, 160) || 'the event'}** to the DSH Admin Calendar.`;
+  }
+  if (action === 'dsh.calendar.captain.create') return `✅ ${clean(result.message, 500) || "Captain's Log date claimed."}`;
+  if (action === 'dsh.calendar.deploy') return `✅ Deployed the DSH Admin Calendar to #${clean(result.channel?.name, 100) || clean(result.channelId, 64)}.`;
+  if (action === 'dsh.calendar.refresh') return '✅ Refreshed the deployed DSH Admin Calendar.';
+  if (action === 'dsh.applications.deploy') return `✅ Deployed the moderator, partner, and developer application embeds to #${clean(result.channel?.name, 100) || clean(result.channelId, 64)}.`;
+  if (action === 'dsh.applications.decide') {
+    const application = result.application || {};
+    return `✅ ${clean(application.status, 40) === 'approved' ? 'Approved' : 'Rejected'} ${clean(application.username || application.userId, 100) || 'the applicant'}'s ${clean(application.type, 40) || ''} application and delivered the Discord decision message.`;
+  }
+  return '✅ Action completed.';
+}
+
+async function resolveDshScope(context: BotActionContext, dependencies: BotActionRuntimeDependencies) {
+  const config = await dependencies.readDiscordConfig(context.tenantId);
+  const serverId = clean(context.guildId || config.guildId, 64) || await dependencies.getDiscordStreamHubDefaultGuildId();
+  const actorUserId = context.source === 'discord'
+    ? clean(context.actor.userId, 64)
+    : hasRole(context.actor.role, 'admin')
+      ? clean(config.discordUserId, 64)
+      : '';
+  return { serverId, actorUserId };
+}
+
+export async function executeBotAction(
+  request: BotActionRequest,
+  context: BotActionContext,
+  dependencies: BotActionRuntimeDependencies = DEFAULT_DEPENDENCIES,
+): Promise<BotActionOutcome> {
+  const descriptor = DESCRIPTORS.get(request.action);
+  if (!descriptor) {
+    return { handled: true, action: request.action, status: 'failed', response: 'That bot action is not installed.' };
+  }
+  if (!context.tenantId) {
+    return { handled: true, action: request.action, status: 'failed', response: 'I could not resolve which tenant bot should perform that action.' };
+  }
+  const executorRole = botActionRole(request.action, context);
+  if (!hasRole(executorRole, descriptor.minimumRole)) {
+    return {
+      handled: true,
+      action: request.action,
+      status: 'forbidden',
+      response: `${context.botName} cannot perform that action for this account. ${descriptor.minimumRole} access is required.`,
+    };
+  }
+  if (request.action === 'hmo.media.radio') {
+    if (context.tenantId !== SPACEMOUNTAIN_SYSTEM_TENANT_ID || context.sourceTenantId && context.sourceTenantId !== SPACEMOUNTAIN_SYSTEM_TENANT_ID) {
+      return { handled: true, action: request.action, status: 'forbidden', response: 'Lounge radio belongs to SpaceMountainLive.' };
+    }
+    if (!/^(on|off|status)$/.test(request.args.control || '')) {
+      return { handled: true, action: request.action, status: 'needs_input', response: 'Tell me to turn Lounge radio on or off, or ask for its status.' };
+    }
+    if (request.args.control !== 'status' && !hasRole(executorRole, 'moderator')) {
+      return { handled: true, action: request.action, status: 'forbidden', response: 'Only the broadcaster or a moderator can change Lounge radio.' };
+    }
+  }
+  if (request.args.parseError) {
+    return { handled: true, action: request.action, status: 'needs_input', response: request.args.parseError };
+  }
+  if ((request.action === 'dsh.calendar.deploy' || request.action === 'dsh.applications.deploy') && !request.args.channel) {
+    return { handled: true, action: request.action, status: 'needs_input', response: 'Tell me the Discord channel, such as `#storage`.' };
+  }
+  if (request.action === 'dsh.shoutouts.post' && (!request.args.channel || !request.args.target)) {
+    return { handled: true, action: request.action, status: 'needs_input', response: 'Tell me both the creator and Discord channel, such as `post a DSH shoutout for @creator in #shoutouts`.' };
+  }
+  if (request.action === 'dsh.applications.decide' && (!request.args.application || !request.args.decision)) {
+    return { handled: true, action: request.action, status: 'needs_input', response: 'Tell me the applicant or application ID and whether to approve or reject it.' };
+  }
+  if (request.action === 'dsh.calendar.captain.create' && !request.args.selectedDate) {
+    return { handled: true, action: request.action, status: 'needs_input', response: "Tell me the Captain's Log date, including the year, or say today or tomorrow." };
+  }
+  if (request.action === 'hmo.media.request' && !request.args.query) {
+    return { handled: true, action: request.action, status: 'needs_input', response: 'Tell me which song, story, audiobook, or audio you want HearMeOut to play.' };
+  }
+  if (request.action === 'hmo.media.request' && !context.roomId && !context.playbackSessionId) {
+    return {
+      handled: true,
+      action: request.action,
+      status: 'needs_input',
+      response: 'Private song playback handoff is not enabled yet, so I did not put this in a public HearMeOut queue. Open a HearMeOut room for room-scoped playback.',
+    };
+  }
+  const botSelector = request.action === 'hmo.bot.control'
+    ? botSelectorForContext(request.args.bot, context.botName)
+    : '';
+  if (request.action === 'hmo.bot.control' && !botSelector) {
+    return { handled: true, action: request.action, status: 'needs_input', response: 'Name the tenant bot that should join or leave HearMeOut.' };
+  }
+  if (request.action === 'hmo.voice.bridge.control' && request.args.control === 'start' && !request.args.voiceChannel) {
+    return { handled: true, action: request.action, status: 'needs_input', response: 'Name the Discord voice channel, such as `bridge HearMeOut to Discord VC General`.' };
+  }
+  if (request.action === 'hmo.voice.bridge.control' && request.args.control === 'profile' && !request.args.audioProfile) {
+    return { handled: true, action: request.action, status: 'needs_input', response: 'Choose the voice bridge profile: low-latency, balanced, or resilient.' };
+  }
+  if (request.action === 'sw.lounge.brb' && !/^(start|stop)$/.test(request.args.control || '')) {
+    return { handled: true, action: request.action, status: 'needs_input', response: 'Tell me whether to start or stop BRB.' };
+  }
+  if (request.action === 'sw.lounge.volume' && (!/^(stella|spotlight|media|all)$/.test(request.args.output || '') || !/^\d{1,3}$/.test(request.args.value || ''))) {
+    return { handled: true, action: request.action, status: 'needs_input', response: 'Tell me Stella, Spotlight, media, or all and a volume from 0 to 100.' };
+  }
+  if (request.action === 'sw.image.generate' && !request.args.prompt) {
+    return { handled: true, action: request.action, status: 'needs_input', response: 'Tell me what image to generate.' };
+  }
+
+  try {
+    if (request.action === 'sw.lounge.media.restart') {
+      if (context.tenantId !== SPACEMOUNTAIN_SYSTEM_TENANT_ID) {
+        return { handled: true, action: request.action, status: 'forbidden', response: 'That Lounge media player belongs to SpaceMountainLive.' };
+      }
+      const result = await requestLoungeMediaPlayerRestart(context.actor.username || context.botName);
+      invalidateStellaLoungeSnapshot();
+      return { handled: true, action: request.action, status: 'completed',
+        response: result.accepted
+          ? '✅ Restarting only the Lounge media player. Spotlight and the HearMeOut movie/session stay running.'
+          : '✅ The Lounge media player restart was already requested a few seconds ago. Spotlight and the movie/session were left alone.',
+        result };
+    }
+    if (request.action === 'sw.lounge.browser.refresh') {
+      if (context.tenantId !== SPACEMOUNTAIN_SYSTEM_TENANT_ID) {
+        return { handled: true, action: request.action, status: 'forbidden', response: 'That Lounge source belongs to SpaceMountainLive.' };
+      }
+      const result = await requestLoungeBrowserRefresh(context.actor.username || context.botName);
+      return { handled: true, action: request.action, status: 'completed',
+        response: result.accepted
+          ? "I'm refreshing the Lounge browser source now. Tell me if it comes back."
+          : "I already requested a Lounge refresh. Tell me if it came back; I can retry in a couple of minutes.",
+        result };
+    }
+    if (request.action === 'nebula.wordgame.stream-battle') {
+      const gameId=request.args.gameId==='phraseguess'?'phraseguess':'wordchain';
+      const requested=String(request.args.channels||'').split(',').map(v=>v.trim().replace(/^@/,'').toLowerCase()).filter(Boolean);
+      const channels=[...new Set([context.tenantId,...requested])].slice(0,4);
+      if(channels.length<2) return {handled:true,action:request.action,status:'needs_input',response:'Name at least one other stream.'};
+      const result=await linkWordGameStreams({gameId,channels,createdBy:context.tenantId,active:true}) as any;
+      const ownOverlay=Array.isArray(result?.overlays)?result.overlays.find((entry:any)=>entry.channel===context.tenantId):null;
+      const overlayLine=ownOverlay?.overlayUrl?` Overlay: ${ownOverlay.overlayUrl}`:'';
+      const label=gameId==='phraseguess'?'Phrase Guess':'Word Chain';
+      const rules=gameId==='phraseguess'
+        ? ' How to play: everyone sees the same hidden phrase and guesses normally in chat. The first linked stream to solve it wins the round; shared hints reveal more of the same phrase for everyone.'
+        : ' How to play: every linked chat extends the same word chain. A valid word must start with the previous word’s final letter; accepted words add points to the stream that supplied them, and unknown words can go to the shared YES/NO vote.';
+      return {handled:true,action:request.action,status:'completed',response:`✅ ${label} stream battle linked: ${channels.map(v=>'@'+v).join(' vs ')}.${overlayLine}${rules}`,result};
+    }
+    if (request.action === 'nebula.chatwars.stream-battle') {
+      const requested=String(request.args.channels||'').split(',').map(v=>v.trim().replace(/^@/,'').toLowerCase()).filter(Boolean);
+      const channels=[...new Set([context.tenantId,...requested])].slice(0,4);
+      if(channels.length<2) return {handled:true,action:request.action,status:'needs_input',response:'Name at least one other stream for the Chat Wars battle.'};
+      const result=await linkChatWarsStreams({channels,createdBy:context.tenantId,active:true}) as any;
+      const ownOverlay=Array.isArray(result?.overlays)?result.overlays.find((entry:any)=>entry.channel===context.tenantId):null;
+      const overlayLine=ownOverlay?.overlayUrl?` Overlay: ${ownOverlay.overlayUrl}`:'';
+      const rules=' How to play: viewers choose a team with spmt red, spmt blue, spmt green, or spmt yellow, then talk normally. Useful words claim territory; longer words score more, levels increase with participation, and level 6+ can steal opponent tiles. The first field ends at halftime, then the second field opens.';
+      return {handled:true,action:request.action,status:'completed',response:`✅ Chat Wars stream battle linked: ${channels.map(v=>'@'+v).join(' vs ')}.${overlayLine}${rules}`,result};
+    }
+    if (request.action === 'stella.role') {
+      const result=setStellaRoleMode(request.args.role as any,request.args.partner);
+      return {handled:true,action:request.action,status:'completed',response:`✅ Stella role: ${result.role}${result.collabWith?' with @'+result.collabWith:''}.`,result};
+    }
+    if (request.action === 'nebula.stream-battle') {
+      const opponent=String(request.args.opponent||'').trim().replace(/^@/,'').toLowerCase();
+      if(!opponent) return {handled:true,action:request.action,status:'needs_input',response:'Tell me which streamer to battle.'};
+      const result=await createNebulaStreamBattle({channels:[context.tenantId,opponent],createdBy:context.tenantId,active:true});
+      return {handled:true,action:request.action,status:'completed',response:`⚔️ Chat Wars stream battle linked: #${context.tenantId} vs #${opponent}.`,result};
+    }
+    if (request.action === 'nebula.game.director') {
+      const operation=String(request.args.operation||'');
+      const knownIds=new Set(['chatwars','bingo','pixelbattle','treasurehunt','wordchain','phraseguess','chickenroyale','emojirain','dancingparade','chat-tag','quackverse','chaosmode','chatgarden','colorsymphony','emojitower','petrace','rhythmpulse','wordstorm']);
+      const channel=context.tenantId;
+      let gameId=String(request.args.gameId||'').trim();
+      const state=await readNebulaChannelState(channel) as any;
+      const activeIds=Array.isArray(state?.gameIds)?state.gameIds.map(String).filter((id:string)=>knownIds.has(id)):[];
+      if (!gameId && activeIds.length===1) gameId=activeIds[0];
+      if (!gameId && activeIds.length > 1) {
+        const visibleCandidates = new Set<string>();
+        for (const target of ['main', 'activity'] as const) {
+          const body = await readNebulaOverlayProfile(channel, target) as any;
+          for (const id of Array.isArray(body?.profile?.gameIds) ? body.profile.gameIds : []) {
+            const normalizedId = String(id);
+            if (activeIds.includes(normalizedId) && normalizedId !== 'chat-tag' && normalizedId !== 'quackverse') {
+              visibleCandidates.add(normalizedId);
+            }
+          }
+        }
+        if (visibleCandidates.size === 1) gameId = [...visibleCandidates][0];
+      }
+      const surface=request.args.surface==='main'?'main':request.args.surface==='activity'?'activity':gameId==='wordchain'||gameId==='phraseguess'?'main':'activity';
+      const readProfile=async(target:'main'|'activity')=>{
+        const body=await readNebulaOverlayProfile(channel,target) as any;
+        if(!Array.isArray(body?.profile?.gameIds)) throw new Error('Nebula did not return the live overlay games.');
+        return body.profile as {gameIds:string[];layout:string};
+      };
+      const setProfile=async(target:'main'|'activity',ids:string[],layout:string)=>{
+        await reshapeNebulaLiveOverlay({channel,surface:target,gameIds:ids,layout});
+        const saved=await readProfile(target);
+        if(ids.length!==saved.gameIds.length || ids.some((id,index)=>saved.gameIds[index]!==id)) throw new Error('Nebula did not confirm the live overlay change.');
+        return saved;
+      };
+      if(operation==='shuffle'){
+        const profile=await readProfile(surface);
+        const visible=profile.gameIds.filter((id:string)=>activeIds.includes(id) && id!=='chat-tag' && id!=='quackverse');
+        if(!visible.length) return {handled:true,action:request.action,status:'needs_input',response:'There are no active games visible on that overlay to shuffle.'};
+        const shuffled=[...visible].sort(()=>Math.random()-.5);
+        const result=await setProfile(surface,shuffled,'rotation');
+        return {handled:true,action:request.action,status:'completed',response:'✅ Shuffled the '+surface+' game rotation: '+shuffled.join(', ')+'.',result};
+      }
+      if(!gameId || !knownIds.has(gameId)) return {handled:true,action:request.action,status:'needs_input',response:'Tell me which Nebula game you want me to control.'};
+      if(gameId==='chat-tag') return {handled:true,action:request.action,status:'needs_input',response:'Chat Tag runs globally and has no per-channel start or stop. Name another game to control in the Lounge.'};
+      if(gameId==='quackverse') {
+        if(operation==='start-show'||operation==='show') {
+          const username=clean(context.actor.username||context.actor.displayName||channel,80);
+          const result=await executeNebulaCommand({channel,username,userId:context.actor.userId,displayName:context.actor.displayName||username,message:'spmt quackverse start'}) as any;
+          if(result?.handled!==true || result?.overlayMode!=='pack-only' || !result?.launchUrl) throw new Error('Quackverse did not confirm its play link.');
+          return {handled:true,action:request.action,status:'completed',response:'🦆 Quackverse is ready at '+result.launchUrl+'. Packs use their own overlay.',result};
+        }
+        return {handled:true,action:request.action,status:'needs_input',response:'Quackverse is a browser game with a separate pack overlay and no persistent Lounge game to remove or stop.'};
+      }
+      const username=clean(context.actor.username||context.actor.displayName||channel,80);
+      const run=async(id:string,action:'start'|'stop')=>{
+        const result=await executeNebulaCommand({channel,username,userId:context.actor.userId,displayName:context.actor.displayName||username,message:'spmt '+id+' '+action}) as any;
+        const confirmed=await readNebulaChannelState(channel) as any;
+        if(result?.handled!==true || !Array.isArray(confirmed?.gameIds) || confirmed.gameIds.includes(id)!==(action==='start')) {
+          throw new Error('Nebula did not confirm '+id+' '+action+'.');
+        }
+        return result;
+      };
+      const profile=await readProfile(surface);
+      const visible=profile.gameIds.filter((id:string)=>knownIds.has(id) && activeIds.includes(id) && id!=='chat-tag' && id!=='quackverse');
+      const shouldStart=operation==='start-show'||operation==='show'||operation==='switch';
+      const shouldStop=operation==='stop-hide'||operation==='hide';
+      if(shouldStart && !activeIds.includes(gameId)) await run(gameId,'start');
+      if(operation==='switch'){
+        const otherActive=visible.filter((id:string)=>id!==gameId);
+        for(const id of otherActive) await run(id,'stop');
+        const result=await setProfile(surface,[gameId],'focus');
+        return {handled:true,action:request.action,status:'completed',response:'✅ Switched to '+gameId+' on the '+surface+' overlay.',result};
+      }
+      if(shouldStop) { await run(gameId,'stop'); invalidateStellaLoungeSnapshot(); }
+      if(shouldStart){
+        const ids=visible.includes(gameId)?visible:[...visible,gameId];
+        const result=await setProfile(surface,ids,ids.length===1?'focus':profile.layout==='focus'?'rotation':profile.layout);
+        return {handled:true,action:request.action,status:'completed',response:'✅ '+gameId+' is active and visible on the '+surface+' overlay.',result};
+      }
+      if(operation==='hide'||shouldStop){
+        const ids=visible.filter((id:string)=>id!==gameId);
+        const result=await setProfile(surface,ids,ids.length===1?'focus':profile.layout);
+        return {handled:true,action:request.action,status:'completed',response:'✅ '+gameId+' is stopped and removed from the '+surface+' overlay.',result};
+      }
+      return {handled:true,action:request.action,status:'needs_input',response:'Tell me whether to start, add, remove, or stop '+gameId+'.'};
+    }
+    if (request.action === 'nebula.live-overlay') {
+      const gameIds=String(request.args.gameIds||'').split(',').map(v=>v.trim()).filter(Boolean);
+      if(!gameIds.length) return {handled:true,action:request.action,status:'needs_input',response:'Tell me which games should be on the Nebula overlay.'};
+      const result=await reshapeNebulaLiveOverlay({channel:context.tenantId,gameIds,layout:request.args.layout});
+      return {handled:true,action:request.action,status:'completed',response:`✅ Live Nebula overlay now carries ${gameIds.join(', ')}.`,result};
+    }
+    if (request.action === 'stella.mode') {
+      const result=setStellaChaosMode(request.args.mode as any, request.args.intensity?Number(request.args.intensity):undefined);
+      return {handled:true,action:request.action,status:'completed',response:`✅ Stella mode: ${result.mode} (${result.intensity}).`,result};
+    }
+    if (request.action === 'nebula.command') {
+      const command=clean(request.args.command,400); if(!command) return {handled:true,action:request.action,status:'needs_input',response:'Tell me which Nebula command to run.'};
+      const username=clean(context.actor.username||context.actor.displayName||context.tenantId,80);
+      const result=await executeNebulaCommand({channel:context.tenantId,username,userId:context.actor.userId,displayName:context.actor.displayName||username,message:command});
+      const gameControl=command.match(/^!?spmt\s+(\S+)\s+(start|stop)$/i);
+      const rawGameId=String(gameControl?.[1]||'').toLowerCase();
+      const requestedId=rawGameId==='chattag'?'chat-tag':rawGameId;
+      const active=Array.isArray((result as any).activeGameIds)?(result as any).activeGameIds.map(String):null;
+      const confirmed=!gameControl || Boolean(active && (requestedId==='quackverse'
+        || active.includes(requestedId)===(gameControl[2].toLowerCase()==='start')));
+      if ((result as any).handled !== true || !confirmed) {
+        return {handled:true,action:request.action,status:'failed',response:'Nebula did not confirm that game change.',result};
+      }
+      return {handled:true,action:request.action,status:'completed',response:clean((result as any).reply,500)||'Nebula accepted the command, but did not return a game status.',result};
+    }
+    if (request.action === 'nebula.overlay.manage') {
+      const result=await manageNebulaOverlay({operation:(request.args.operation as any)||'create',channel:context.tenantId,name:request.args.name});
+      return {handled:true,action:request.action,status:'completed',response:'✅ Nebula overlay operation completed.',result};
+    }
+    if (request.action === 'sw.lounge.spotlight.restart') {
+      const result = requestSpotlightRestart();
+      invalidateStellaLoungeSnapshot();
+      return { handled: true, action: request.action, status: 'completed', response: '✅ Spotlight player restart requested.', result };
+    }
+    if (request.action === 'sw.lounge.layout') {
+      if (context.tenantId !== SPACEMOUNTAIN_SYSTEM_TENANT_ID) throw new Error('Lounge layout belongs to the SpaceMountain channel.');
+      const target = request.args.target === 'media' || request.args.target === 'stream' ? request.args.target : 'toggle';
+      const layout = await setLoungeMediaLayout(target, context.actor.username || context.botName);
+      invalidateStellaLoungeSnapshot();
+      return { handled: true, action: request.action, status: 'completed',
+        response: layout.mode === 'media'
+          ? 'Layout saved: HearMeOut is set as the main window; Spotlight is set as the small window. The viewer updates on its next poll.'
+          : 'Layout saved: Spotlight is set as the main window; HearMeOut is set as the small window. The viewer updates on its next poll.',
+        result: layout };
+    }
+    if (request.action === 'sw.lounge.brb') {
+      if (request.args.control === 'stop') {
+        stopBRB(context.tenantId);
+        invalidateStellaLoungeSnapshot();
+        return { handled: true, action: request.action, status: 'completed', response: '✅ BRB player stopped.', result: { control: 'stop' } };
+      }
+      const broadcaster = clean(context.actor.username || context.actor.displayName || context.tenantId, 100);
+      void startBRB(broadcaster, context.tenantId).catch((error) => console.error('[BotActionRuntime] BRB start failed:', error));
+      invalidateStellaLoungeSnapshot();
+      return { handled: true, action: request.action, status: 'completed', response: '✅ BRB player started.', result: { control: 'start' } };
+    }
+    if (request.action === 'sw.lounge.volume') {
+      const value = Number(request.args.value);
+      const output = request.args.output as 'stella' | 'spotlight' | 'media' | 'all';
+      const mix = await setLoungeMixVolume(output, value);
+      invalidateStellaLoungeSnapshot();
+      return { handled: true, action: request.action, status: 'completed', response: formatResult(request.action, { output, value: mix.levels[output] }), result: { output, value: mix.levels[output], mix } };
+    }
+    if (request.action === 'sw.image.generate') {
+      const scope = context.visibility || (context.source === 'mountainview' || context.source === 'spmt' ? 'private' : 'public');
+      if (scope === 'public') {
+        const settings = await (dependencies.readGenerationSettings || readGenerationSettings)(context.tenantId);
+        if (!canUsePublicImageGeneration(settings.publicImageAccess, hasRole(context.actor.role, 'moderator'))) {
+          return {
+            handled: true,
+            action: request.action,
+            status: 'forbidden',
+            response: settings.publicImageAccess === 'off'
+              ? 'Public image generation is turned off for this tenant.'
+              : 'Public image generation is limited to moderators for this tenant.',
+          };
+        }
+      }
+      const result = await (dependencies.runImageCommand || runImageCommand)(`!img ${request.args.prompt}`, context.tenantId, { scope });
+      return { handled: true, action: request.action, status: 'completed', response: formatResult(request.action, { ...result }), result: { ...result } };
+    }
+    if (request.action.startsWith('hmo.')) {
+      const discordConfig = await dependencies.readDiscordConfig(context.tenantId).catch(() => null);
+      const bot = request.action === 'hmo.bot.control'
+        ? await (dependencies.resolveBotPersonaForAction || resolveBotPersonaForAction)(botSelector, context.tenantId)
+        : undefined;
+      const requestedLane = request.args.lane === 'movie' ? 'movie' : request.args.lane === 'music' ? 'music' : undefined;
+      const loungeSessionId = request.action === 'hmo.media.radio'
+        ? 'discord-music-room'
+        : context.tenantId === SPACEMOUNTAIN_SYSTEM_TENANT_ID && request.action.startsWith('hmo.media.') && requestedLane
+          ? (requestedLane === 'movie' ? SPACEMOUNTAIN_LOUNGE_MOVIE_SESSION_ID : SPACEMOUNTAIN_LOUNGE_MUSIC_SESSION_ID)
+          : request.action.startsWith('hmo.media.') && context.playbackSessionId
+            ? context.playbackSessionId
+            : undefined;
+      const result = await dependencies.executeHearMeOutBotAction({
+        action: request.action as HearMeOutBotAction,
+        tenantId: context.tenantId,
+        roomId: context.roomId,
+        ...(loungeSessionId ? { sessionId: loungeSessionId } : {}),
+        ...(requestedLane ? { lane: requestedLane, targetLane: requestedLane } : {}),
+        actorUserId: context.actor.userId,
+        actorName: context.actor.displayName || context.actor.username,
+        query: request.args.query,
+        control: request.args.control,
+        value: request.args.value ? Number(request.args.value) : undefined,
+        ...(request.args.room ? { room: request.args.room } : {}),
+        ...(request.action === 'hmo.rooms.read' || request.action === 'hmo.bot.control' || request.action.startsWith('hmo.voice.bridge.')
+          ? { actorRole: context.actor.role }
+          : {}),
+        ...(bot ? { bot } : {}),
+        ...(request.action.startsWith('hmo.voice.bridge.') ? {
+          guildId: clean(context.guildId || discordConfig?.guildId, 80) || undefined,
+          voiceChannel: request.args.voiceChannel,
+          audioProfile: request.args.audioProfile,
+        } : {}),
+        idempotencyKey: clean(context.requestId, 160) || undefined,
+      });
+      if (request.action === 'hmo.media.radio' && typeof (result as any)?.radio?.enabled !== 'boolean') throw new Error('Lounge worker did not confirm its radio state.');
+      if (context.tenantId === SPACEMOUNTAIN_SYSTEM_TENANT_ID) invalidateStellaLoungeSnapshot();
+      return { handled: true, action: request.action, status: 'completed', response: formatResult(request.action, result), result };
+    }
+    const { serverId, actorUserId } = await resolveDshScope(context, dependencies);
+    if ((request.action === 'dsh.calendar.captain.create' || request.action === 'dsh.calendar.event.create') && !actorUserId) {
+      return {
+        handled: true,
+        action: request.action,
+        status: 'needs_input',
+        response: `Link a Discord identity to ${context.botName}'s tenant before creating DSH calendar entries from ${context.source}.`,
+      };
+    }
+    const result = await dependencies.executeDiscordStreamHubBotAction({
+      action: request.action as DiscordStreamHubBotAction,
+      serverId,
+      actorUserId,
+      channel: request.args.channel,
+      selectedDate: request.args.selectedDate,
+      missionName: request.args.missionName,
+      missionDescription: request.args.missionDescription || (context.actor.displayName ? `Added by ${context.actor.displayName} through ${context.source}.` : `Added through ${context.source}.`),
+      missionDate: request.args.missionDate,
+      missionTime: request.args.missionTime,
+      missionTimeZone: request.args.missionTimeZone,
+      status: request.args.status,
+      type: request.args.type,
+      ...(request.args.target ? { target: request.args.target } : {}),
+      ...(request.args.application ? { application: request.args.application } : {}),
+      ...(request.args.decision ? { decision: request.args.decision } : {}),
+      ...(request.action === 'dsh.shoutouts.post' ? { requesterName: context.actor.displayName || context.actor.username } : {}),
+      idempotencyKey: clean(context.requestId, 160) || undefined,
+    });
+    const enriched = request.action === 'dsh.calendar.event.create'
+      ? { ...result, eventName: request.args.missionName, formattedDate: formatDiscordAdminCalendarEvent(request.args as any) }
+      : result;
+    return { handled: true, action: request.action, status: 'completed', response: formatResult(request.action, enriched), result: enriched };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`[BotActionRuntime:${context.tenantId}] ${request.action} failed:`, error);
+    return { handled: true, action: request.action, status: 'failed', response: `⚠️ ${context.botName} could not complete that action. ${message}` };
+  }
+}
+
+export async function routeBotAction(message: string, context: BotActionContext): Promise<BotActionOutcome | null> {
+  let request = await detectBotAction(message, context.tenantId);
+  if (!request && context.playbackSessionId) {
+    let value = message.trim().replace(/^hey\s+/i, '');
+    if (value.toLowerCase().startsWith(context.botName.toLowerCase() + ' ') || value.toLowerCase().startsWith(context.botName.toLowerCase() + ',')) value = value.slice(context.botName.length).replace(/^[, ]+/, '');
+    const controls: Record<string, string> = { pause: 'pause', stop: 'pause', resume: 'play', continue: 'play', skip: 'next', next: 'next', mute: 'mute', unmute: 'unmute' };
+    const control = controls[value.toLowerCase().replace(/[.!]$/, '')];
+    if (control) request = { action: 'hmo.media.control', args: { control }, detection: 'explicit' };
+    else if (/^(?:(?:please|can you|could you)\s+)?(?:play|put on|queue)\s+/i.test(value) && !/\b(?:game|chess|checkers|poker|roleplay)\b/i.test(value)) {
+      request = { action: 'hmo.media.request', args: { query: extractMediaQuery(value) }, detection: 'explicit' };
+    }
+  }
+  if (!request) return null;
+  const loungeScoped = context.sourceTenantId === SPACEMOUNTAIN_SYSTEM_TENANT_ID
+    && (request.action.startsWith('sw.lounge.') || request.action.startsWith('nebula.') || request.action.startsWith('hmo.media.'));
+  if (loungeScoped) {
+    const mediaAction = request.action.startsWith('hmo.media.') && request.action !== 'hmo.media.radio';
+    const movieLane = /\b(?:movie|film|watch|watchroom|watch room)\b/i.test(context.message);
+    return executeBotAction(request, {
+      ...context,
+      tenantId: SPACEMOUNTAIN_SYSTEM_TENANT_ID,
+      playbackSessionId: mediaAction
+        ? (movieLane ? SPACEMOUNTAIN_LOUNGE_MOVIE_SESSION_ID : SPACEMOUNTAIN_LOUNGE_MUSIC_SESSION_ID)
+        : context.playbackSessionId,
+      actor: { ...context.actor, role: context.sourceActorRole || context.actor.role },
+    });
+  }
+  return executeBotAction(request, context);
+}

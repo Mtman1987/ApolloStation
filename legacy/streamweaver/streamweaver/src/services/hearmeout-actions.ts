@@ -1,0 +1,160 @@
+import { SPACEMOUNTAIN_LOUNGE_ROOM_ID, SPACEMOUNTAIN_LOUNGE_MUSIC_SESSION_ID, SPACEMOUNTAIN_LOUNGE_MOVIE_SESSION_ID, SPACEMOUNTAIN_LOUNGE_TENANT_ID } from '@/lib/spacemountain-lounge';
+const HEARMEOUT_URL = String(
+  process.env.HEARMEOUT_BASE_URL || process.env.NEXT_PUBLIC_HEARMEOUT_URL || 'https://hearmeout-main.fly.dev',
+).replace(/\/+$/, '');
+const LOUNGE_WORKER_URL = String(process.env.HMO_LOUNGE_WORKER_URL || 'https://hmo-dj-worker.fly.dev:4444').replace(/\/+$/, '');
+
+import { twitchMusicSessionId } from '@/lib/twitch-media-scope';
+import type { ActionBotPersona } from '@/services/bot-persona-catalog';
+
+export type HearMeOutBotAction =
+  | 'hmo.media.source'
+  | 'hmo.media.state.read'
+  | 'hmo.media.request'
+  | 'hmo.media.search'
+  | 'hmo.media.control'
+  | 'hmo.media.radio'
+  | 'hmo.media.playlist'
+  | 'hmo.rooms.read'
+  | 'hmo.bot.control'
+  | 'hmo.voice.bridge.state'
+  | 'hmo.voice.bridge.control'
+  | 'hmo.tts.speak';
+
+export type HearMeOutBotActionPayload = {
+  action: HearMeOutBotAction;
+  streamMode?: 'twitch';
+  tenantId: string;
+  roomId?: string;
+  room?: string;
+  sessionId?: string;
+  actorUserId?: string;
+  actorName?: string;
+  actorRole?: string;
+  query?: string;
+  itemId?: string;
+  lane?: 'music' | 'movie';
+  targetLane?: 'music' | 'movie';
+  channelId?: string;
+  control?: string;
+  value?: number;
+  bot?: ActionBotPersona;
+  guildId?: string;
+  voiceChannel?: string;
+  audioProfile?: string;
+  audioDataUri?: string;
+  idempotencyKey?: string;
+};
+
+function getHearMeOutServiceSecrets(): string[] {
+  // HearMeOut accepts these two existing credentials, never STREAMWEAVER_SECRET.
+  return [...new Set([process.env.HEARMEOUT_SERVICE_SECRET, process.env.BOT_SECRET_KEY]
+    .map(value => String(value || '').trim()).filter(Boolean))];
+}
+
+function isSpaceMountainLoungeMedia(payload: HearMeOutBotActionPayload): boolean {
+  if (String(payload.tenantId || '').trim().toLowerCase() !== SPACEMOUNTAIN_LOUNGE_TENANT_ID) return false;
+  if (!payload.action.startsWith('hmo.media.')) return false;
+  const roomId = String(payload.roomId || '').trim();
+  const sessionId = String(payload.sessionId || '').trim();
+  return roomId === SPACEMOUNTAIN_LOUNGE_ROOM_ID
+    || sessionId === SPACEMOUNTAIN_LOUNGE_MUSIC_SESSION_ID
+    || sessionId === SPACEMOUNTAIN_LOUNGE_MOVIE_SESSION_ID
+    || sessionId === 'discord-music-room'
+    || sessionId === 'discord-watch-room';
+}
+
+function spaceMountainLane(payload: HearMeOutBotActionPayload): 'music' | 'movie' {
+  if (payload.lane === 'movie' || payload.lane === 'music') return payload.lane;
+  const sessionId = String(payload.sessionId || '');
+  return sessionId === 'discord-watch-room' || sessionId === SPACEMOUNTAIN_LOUNGE_MOVIE_SESSION_ID ? 'movie' : 'music';
+}
+
+function liveHearMeOutPayload(payload: HearMeOutBotActionPayload): HearMeOutBotActionPayload {
+  if (!isSpaceMountainLoungeMedia(payload)) return payload;
+  const lane = spaceMountainLane(payload);
+  return {
+    ...payload,
+    roomId: undefined,
+    room: undefined,
+    sessionId: lane === 'movie' ? SPACEMOUNTAIN_LOUNGE_MOVIE_SESSION_ID : SPACEMOUNTAIN_LOUNGE_MUSIC_SESSION_ID,
+    lane,
+  };
+}
+
+export async function executeHearMeOutBotAction(payload: HearMeOutBotActionPayload): Promise<Record<string, unknown>> {
+  if (payload.streamMode === 'twitch' && (payload.lane === 'movie' || payload.sessionId === 'discord-watch-room')) throw new Error('Movie requests are disabled for this Twitch stream');
+  const effectivePayload = payload.streamMode === 'twitch'
+    ? { ...payload, roomId: undefined, room: undefined, sessionId: twitchMusicSessionId(payload.tenantId), lane: 'music' as const }
+    : liveHearMeOutPayload(payload);
+  if (isSpaceMountainLoungeMedia(effectivePayload)) {
+    const secret = String(process.env.HMO_WORKER_SHARED_SECRET || '').trim();
+    if (!secret) throw new Error('Lounge worker service credential is not configured');
+    const response = await fetch(`${LOUNGE_WORKER_URL}/lounge/media/actions`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify(effectivePayload),
+      cache: 'no-store',
+      // A failed source can require checking five alternate uploads before
+      // Stella tells chat that the requested song is unavailable.
+      signal: AbortSignal.timeout(200_000),
+    });
+    const data = await response.json().catch(() => ({})) as Record<string, unknown>;
+    if (!response.ok || data.success !== true) throw new Error(String(data.error || `Lounge worker returned ${response.status}`));
+    return data;
+  }
+  // SpaceMountain Lounge media is under active development. Do not let the
+  // StreamWeaver<->HearMeOut service credential block queue or playback work.
+  // Twitch-facing permissions are enforced by the chat dispatcher.
+  const bypassServiceAuthForLoungeMedia = isSpaceMountainLoungeMedia(effectivePayload);
+  const secrets = bypassServiceAuthForLoungeMedia ? [] : effectivePayload.streamMode === 'twitch' && process.env.HMO_WORKER_SHARED_SECRET
+    ? [String(process.env.HMO_WORKER_SHARED_SECRET).trim(), ...getHearMeOutServiceSecrets()]
+    : getHearMeOutServiceSecrets();
+  if (!bypassServiceAuthForLoungeMedia && !secrets.length) {
+    throw new Error('HearMeOut shared service credential is not configured');
+  }
+  const send = (secret?: string) => fetch(`${HEARMEOUT_URL}/api/internal/bot/actions`, {
+    method: 'POST',
+    headers: {
+      ...(secret ? { Authorization: `Bearer ${secret}` } : {}),
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify(effectivePayload),
+    cache: 'no-store',
+    // Live HearMeOut may need media resolution before it can acknowledge a
+    // Lounge request, so keep the command timeout wider than a cold resolver.
+    signal: typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(105_000) : undefined,
+  });
+  let response = await send(secrets[0]);
+  // Retry only a rejected, unexecuted protected request with the other existing key.
+  if (!bypassServiceAuthForLoungeMedia && response.status === 401 && secrets[1]) {
+    await response.body?.cancel();
+    response = await send(secrets[1]);
+  }
+  const raw = await response.text();
+  let data: any = {};
+  try { data = raw ? JSON.parse(raw) : {}; } catch { data = { error: raw }; }
+  if (!response.ok) throw new Error(String(data?.error || `HearMeOut action failed (${response.status})`));
+  if (data?.success !== true) throw new Error(`HearMeOut did not confirm ${effectivePayload.action}`);
+  return data;
+}
+
+export async function speakInHearMeOutRoom(input: {
+  audioDataUri: string;
+  roomId?: string;
+  tenantId?: string;
+  actorUserId?: string;
+  actorName?: string;
+}): Promise<Record<string, unknown>> {
+  const audioDataUri = String(input.audioDataUri || '').trim();
+  if (!audioDataUri.startsWith('data:audio')) throw new Error('Room TTS requires an audio data URI');
+  return executeHearMeOutBotAction({
+    action: 'hmo.tts.speak',
+    tenantId: String(input.tenantId || 'public-tts').trim() || 'public-tts',
+    roomId: String(input.roomId || process.env.HEARMEOUT_PUBLIC_TTS_ROOM_ID || 'discord-activity').trim() || 'discord-activity',
+    actorUserId: input.actorUserId,
+    actorName: input.actorName,
+    audioDataUri,
+  });
+}

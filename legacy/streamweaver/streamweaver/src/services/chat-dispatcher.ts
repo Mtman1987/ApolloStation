@@ -1,0 +1,6775 @@
+import { handleTenantMusicCommand } from './tenant-music-command';
+import { getAllCommands } from '../lib/commands-store';
+import { getActionById, getAllActions } from '../lib/actions-store';
+import { runFlowGraph, defaultFlowServices } from '../lib/flow-runtime';
+import { deleteMessage, sendDiscordEmbed, sendDiscordMessage, uploadBinaryFileToDiscord } from './discord';
+import { buildDiscordUserAvatarUrl } from './discord-branding';
+import { getTwitchChannelLiveStatus, sendChatMessage, sendTwitchChatMessage } from './twitch';
+import { getKickService } from './kick';
+import { addPoints, awardChatPoints, formatCompactPointAmount } from './points';
+import { givePoints, stealPoints } from './points-transfer';
+import { getWelcomeEligibility, markUserWelcomed, getWelcomeMode } from './welcome-wagon';
+import { handleWalkOnShoutout } from './walk-on-shoutout';
+import { handleVoiceShoutout } from './voice-shoutout';
+import { extractShoutoutRequestTarget, matchShoutoutTarget } from './shoutout-matcher';
+import { auditError, recordShoutoutAudit } from './shoutout-audit';
+import { autoTranslateIncoming, isTranslationActive, handleOneOffTranslation, isUserAutoTranslate } from './translation-manager';
+import { publishTranslationSubtitleEvent } from './translation-subtitle-events';
+import { handleLeaderboardCommand } from './leaderboard-commands';
+import { startBRB, startTestBRB, stopBRB, toggleClipMode, getClipMode } from './brb-clips';
+import { handleGamble as handleClassicGamble, handleRoll, handleDouble } from './gamble/classic-gamble';
+import { getPoints, getPointBalance, setPoints, settleWager } from './points';
+import { getAIConfig } from './ai-provider';
+import { getBotName } from '../lib/bot-settings-store';
+import { getSpmtEasterEggEntitlement } from '../lib/spmt-easter-eggs';
+import {
+    THE_COUNT_NAME,
+    THE_COUNT_PERSONALITY,
+    isTheCountTwitchLogin,
+    messageInvokesTheCount,
+} from '../lib/the-count';
+import { internalServiceHeaders } from '../lib/internal-service-auth';
+import { replaceDiscordUserMentions } from './discord-mentions';
+import { getTenantIdFromChannel } from './twitch-client';
+import { handleBotWakeCommand, isSharedBotAwake, setSharedBotAwake } from './shared-bot-wake';
+import { handleSpaceMountainGoLiveMessage, requestSpaceMountainGoLive } from './spacemountain-golive';
+import { isConfirmedLoungeStellaShoutout } from './lounge-stella-shoutout-command';
+import { incrementMetric } from './metrics';
+import { isKnownBot } from './known-bots';
+import { ATHENA_WHITELIST_TENANT_ID } from './athena-whitelist';
+import { readWorldLore, type WorldLoreCharacter } from '../lib/world-lore-store';
+import { readUserConfigSync } from '../lib/user-config';
+import { handleKickMessage as dispatchKickMessage } from './kick-dispatcher';
+import { SubActionType, TriggerType } from './automation/types';
+import type { KickMessage } from './kick';
+import * as fs from 'fs/promises';
+import { resolve } from 'path';
+import {
+    globalPath,
+    listTenants,
+    tenantPath,
+    SPACEMOUNTAIN_SYSTEM_TENANT_ID,
+    SPACEMOUNTAIN_SYSTEM_TWITCH_CHANNEL,
+} from '../lib/tenant';
+import { SPACEMOUNTAIN_LOUNGE_ROOM_ID } from '../lib/spacemountain-lounge';
+import { queueTtsOverlay } from './tts-overlay-queue';
+import { prepareStellaLoungeReply } from './stella-lounge-replies';
+import { rewriteSpmtLegacyAlias } from './spmt-command-aliases';
+import { buildPokemonBrowserUrl } from './pokemon-browser';
+import { readDiscordConfig } from '../lib/discord-config';
+import { recordDashboardActivity } from '../lib/dashboard-activity-store';
+import { appendPublicChatMessages } from '../lib/public-chat-store';
+import type { StorageContext } from './storage';
+import { getChatOutputContext, runWithChatOutputContext } from './chat-output-context';
+import { sendDiscordCommandShoutout } from './discord-command-shoutout';
+import { handleDiscordSignalCommand, handleTwitchSignalCommand } from './signal-system';
+import {
+    deleteStructuredDiscordReply,
+    editStructuredDiscordReply,
+    resolveStructuredDiscordReplySpeaker,
+    sendStructuredDiscordReply,
+} from './discord-structured-replies';
+import {
+    buildDiscordAdminCommandsSummary,
+    buildDiscordCommandDirectoryFields,
+    buildDiscordCommandsSummary,
+    DISCORD_ROUTED_COMMAND_NAMES,
+    DISCORD_UNSUPPORTED_COMMAND_MESSAGES,
+} from './discord-command-catalog';
+import {
+    beginLoungeCommandMenu,
+    clearLoungeCommandMenu,
+    consumeLoungeCommandMenuChoice,
+    directLoungeCommandCategory,
+} from './lounge-command-menu';
+import { handleDiscordPokemonCommand } from './discord-pokemon-commands';
+import { generateSocialCommandReply, isSocialCommandName, SOCIAL_COMMAND_NAMES } from './social-command-replies';
+import { isSocialOverlayCommand, publishSocialOverlayEvent } from './social-overlay-events';
+import { executeHearMeOutBotAction } from './hearmeout-actions';
+import { twitchMusicSessionId } from '@/lib/twitch-media-scope';
+import { getLoungeMediaLayout, overrideLoungeMediaLayout, voteLoungeMediaLayout } from './lounge-media-layout';
+import { getLoungeAudioMix, pulseLoungePlaybackUnmute, selectLoungeMixOutput, setLoungeMixVolume, type LoungeMixOutput } from './lounge-audio-mix';
+import { hasDiscordModAccess } from './discord-permissions';
+import { detectBotRelayRequest, detectBotRelayRequestWithAi } from './bot-relay';
+import {
+    buildRelayReplyInstructions,
+    extractRelayQuotedSegments,
+    extractRelayReplyCommand,
+    preserveRelayQuotedSegments,
+} from './relay-message-format';
+import {
+    completeRelayReplyThread,
+    getLatestRelayReplyThread,
+    recordRelayReplyThread,
+    type RelayConversationTurn,
+} from '../lib/relay-reply-thread-store';
+import {
+    addDiscordStreamHubPointsToAll,
+    checkDiscordStreamHubAdminAccess,
+    getDiscordStreamHubActivityLeaderboard,
+    getDiscordStreamHubActivitySummary,
+    getDiscordStreamHubPoints,
+    getDiscordStreamHubPointsLeaderboard,
+    getDiscordStreamHubTenantPoints,
+    getDiscordStreamHubTenantActivity,
+    getDiscordStreamHubLeaderboardPost,
+    lookupDiscordStreamHubTwitchTarget,
+    resolveDiscordStreamHubTwitchIdentity,
+    setDiscordStreamHubPoints,
+    setDiscordStreamHubPointsToAll,
+} from './discord-stream-hub';
+import { getTenantBroadcasterChannel, resolveTwitchReplyChannel } from './tenant-chat-routing';
+import {
+    beginPendingMtSupportRequest,
+    consumePendingMtSupportRequest,
+    detectMtFixItIntent,
+    getMtFixItPublicReply,
+    getMtSupportPrompt,
+    submitMtSupportReport,
+} from './mt-support-report';
+import { findDiscordLastSeenForNames, findDiscordLastSeenForUserId } from './discord-last-seen';
+import { lookupDiscordRelayPresence } from './discord-relay-presence';
+import { deliverDirectHumanRelay } from './direct-human-relay';
+import { getInternalAppUrl } from '../lib/runtime-origin';
+import { routeBotAction, type BotActorRole } from './bot-action-runtime';
+import {
+    applySayState,
+    cleanSayTextForSpeech,
+    consumeForcedSayEcho,
+    consumeNextSayEcho,
+    formatSaySpeechText,
+    isSayEnabled,
+    hasSayEnabledInChannel,
+    isSaySuppressedForTenant,
+    isSayTextSpeakable,
+    normalizeSayUser,
+    parseSayState,
+    readSayUsers,
+    resolveSayStreamKey,
+    sayAllKey,
+    sayUserKey,
+    buildSayPlayerUrl,
+    stripTwitchEmotesFromText,
+    writeSayUsers,
+} from './say-tts';
+
+type DiscordDispatchOptions = {
+    skipPublicHistory?: boolean;
+    skipAiMentions?: boolean;
+    skipTwitchBridge?: boolean;
+    replyMode?: 'structured' | 'bot';
+};
+
+// Gamble handlers report the net change, while the wallet settles stake vs payout:
+// a 500 stake returning +250 profit is a 500 wager with a 750 payout.
+async function settleWagerResult(
+    username: string,
+    result: { betAmount: string; change: string; newTotal: string },
+    eventType: 'gamble' | 'roll' | 'double',
+    ctx?: StorageContext,
+) {
+    const wager = BigInt(result.betAmount || '0');
+    const change = BigInt(result.change || '0');
+    const payout = wager + change > 0n ? wager + change : 0n;
+    await settleWager(username, { wager, payout, newTotal: result.newTotal, eventType }, ctx);
+}
+
+function parseTimeoutDuration(input: string | undefined): { seconds: number; consumed: boolean } {
+    const raw = String(input || '').trim().toLowerCase();
+    if (!raw) return { seconds: 600, consumed: false };
+    const match = raw.match(/^(\d+)(s|sec|secs|second|seconds|m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days)?$/i);
+    if (!match) return { seconds: 600, consumed: false };
+
+    const value = Number(match[1]);
+    const unit = match[2] || 's';
+    const multiplier =
+        unit.startsWith('d') ? 86400 :
+        unit.startsWith('h') ? 3600 :
+        unit.startsWith('m') ? 60 :
+        1;
+    return { seconds: Math.max(1, Math.min(1_209_600, value * multiplier)), consumed: true };
+}
+
+function formatDiscordActivityMinutes(minutes: number): string {
+    const totalMinutes = Math.max(0, Math.trunc(Number(minutes || 0)));
+    const hours = Math.floor(totalMinutes / 60);
+    const remainder = totalMinutes % 60;
+    if (!hours) return `${remainder}m`;
+    if (!remainder) return `${hours}h`;
+    return `${hours}h ${remainder}m`;
+}
+
+function formatIsoDateLabel(value?: string | null): string {
+    const iso = String(value || '').trim();
+    if (!iso) return 'unknown';
+    const date = new Date(iso);
+    if (Number.isNaN(date.getTime())) return 'unknown';
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function formatDiscordLeaderboard(entries: Array<{ displayName?: string; username?: string; points?: number }>, emptyLabel: string): string {
+    if (!entries.length) return emptyLabel;
+    return entries
+        .map((entry, index) => `#${index + 1} ${(entry.displayName || entry.username || `User ${index + 1}`)} ${Number(entry.points || 0).toLocaleString()}`)
+        .join(' | ');
+}
+
+function formatDiscordActivityLeaderboard(entries: Array<{
+    displayName?: string;
+    username?: string;
+    messageCount: number;
+    activeDays: number;
+    voiceMinutes: number;
+}>, emptyLabel: string): string {
+    if (!entries.length) return emptyLabel;
+    return entries
+        .map((entry, index) => `#${index + 1} ${(entry.displayName || entry.username || `User ${index + 1}`)} ${entry.messageCount} msgs, ${entry.activeDays} days, ${formatDiscordActivityMinutes(entry.voiceMinutes)}`)
+        .join(' | ');
+}
+
+type DiscordCommandEmbedOptions = {
+    title?: string;
+    imageUrl?: string;
+    thumbnailUrl?: string;
+    color?: number;
+    fields?: Array<{ name: string; value: string; inline?: boolean }>;
+    components?: Record<string, unknown>[];
+};
+
+const DISCORD_POINTS_COLOR = 0xF5A524;
+const DISCORD_POINTS_ICON = '💠';
+const DISCORD_LEADERBOARD_ICON = '🏆';
+
+function rankMedal(rank: number): string {
+    if (rank === 1) return '🥇';
+    if (rank === 2) return '🥈';
+    if (rank === 3) return '🥉';
+    return `\`#${String(rank).padStart(2, ' ')}\``;
+}
+
+function parseDiscordCommandTarget(msg: any, rawTarget: string): { userId: string; username?: string; displayName?: string; avatarUrl?: string } | null {
+    const target = String(rawTarget || '').trim();
+    const mentionMatch = target.match(/^<@!?(\d+)>$/);
+    if (!mentionMatch) return null;
+
+    const targetId = mentionMatch[1];
+    const mentionsUsers = msg.mentions?.users;
+    const mentionsMembers = msg.mentions?.members;
+
+    const readMention = (source: any) => {
+        if (!source) return null;
+        if (typeof source.get === 'function') {
+            return source.get(targetId) || null;
+        }
+        if (Array.isArray(source)) {
+            return source.find((entry: any) => String(entry?.id || entry?.user?.id) === targetId) || null;
+        }
+        return source[targetId] || null;
+    };
+
+    const user = readMention(mentionsUsers);
+    const member = readMention(mentionsMembers);
+    const avatarHash = user?.avatar || member?.user?.avatar;
+    return {
+        userId: targetId,
+        username: user?.username || member?.user?.username,
+        displayName: user?.globalName || user?.global_name || member?.displayName || member?.nick || user?.username,
+        avatarUrl: (typeof user?.avatarUrl === 'string' && user.avatarUrl)
+            || buildDiscordUserAvatarUrl(targetId, avatarHash)
+            || undefined,
+    };
+}
+
+const PERMANENT_APP_OWNER_DISCORD_IDS = new Set([
+    '767875979561009173',
+    String(process.env.STREAMWEAVER_OWNER_DISCORD_ID || '').trim(),
+    String(process.env.NEXT_PUBLIC_HARDCODED_ADMIN_DISCORD_ID || '').trim(),
+].filter(Boolean));
+
+function isPermanentDiscordOwner(msg: any): boolean {
+    const userId = String(msg.author?.id || msg.userId || msg.user_id || '').trim();
+    return Boolean(userId && PERMANENT_APP_OWNER_DISCORD_IDS.has(userId));
+}
+
+async function hasEffectiveDiscordModAccess(msg: any): Promise<boolean> {
+    // The application owner must never depend on a network permission lookup.
+    if (isPermanentDiscordOwner(msg)) return true;
+    if (hasDiscordModAccess(msg)) return true;
+
+    const guildId = msg.guildId || msg.guild_id;
+    const userId = msg.author?.id || msg.userId || msg.user_id;
+    const access = await checkDiscordStreamHubAdminAccess({ guildId, userId });
+    return Boolean(access?.isAdmin || access?.isMod || access?.isOwner);
+}
+
+const DISCORD_PRIVILEGED_ROUTED_COMMANDS = new Set([
+    'admin', 'ignore', 'timeout',
+    'addpoints', 'setpoints', 'addtoall', 'settoall', 'resetallpoints',
+    'greetingmode', 'welcomemode', 'clipmode', 'chatmode', 'athenaeverywhere',
+    'addflow', 'approveflow', 'disableflow', 'deleteflow',
+]);
+
+const DISCORD_NATIVE_SOCIAL_COMMANDS = new Set(SOCIAL_COMMAND_NAMES);
+
+const DISCORD_NATIVE_COMMAND_NAMES = new Set([
+    ...DISCORD_NATIVE_SOCIAL_COMMANDS,
+    'commands', 'admin', 'so', 'signal', 'watchtime', 'time', 'coinflip', 'leaderboard', 'raffle', 'tickets',
+    'followers', 'uptime', 'stats',
+    'timeout', 'raidmessage', 'mtfixit',
+    'ignore',
+    'addflow', 'approveflow', 'disableflow', 'deleteflow',
+]);
+
+async function commandHasActionTrigger(commandId: string, tenantId?: string): Promise<boolean> {
+    if (!commandId) return false;
+    const actions = await getAllActions(tenantId);
+    return actions.some((action: any) =>
+        action?.enabled &&
+        Array.isArray(action.triggers) &&
+        action.triggers.some((trigger: any) =>
+            trigger?.enabled !== false &&
+            Number(trigger?.type) === 401 &&
+            String(trigger?.commandId || '') === String(commandId)
+        )
+    );
+}
+
+async function routeDiscordCommandThroughTwitchRuntime(msg: any, tenantId?: string): Promise<boolean> {
+    const sourceChannelId = msg.channelId || msg.channel_id;
+    const actualMessage = String(msg.content || '').trim();
+    if (!sourceChannelId || !actualMessage.startsWith('!')) return false;
+
+    const cmdName = actualMessage.slice(1).split(/\s+/)[0]?.toLowerCase() || '';
+    if (!cmdName) return false;
+
+    const configuredCommands = await getAllCommands(tenantId);
+    const configuredCommand = configuredCommands.find((command: any) =>
+        String(command?.command || '').toLowerCase().replace(/^!/, '') === cmdName
+    );
+
+    // Let the native Discord executor handle commands that already have a real
+    // Discord-side implementation. Route the remaining built-ins through the
+    // Twitch dispatcher so shared handlers like mode toggles still work.
+    if (
+        configuredCommand &&
+        (
+            DISCORD_NATIVE_COMMAND_NAMES.has(cmdName) ||
+            Boolean((configuredCommand as any)?.response) ||
+            Boolean((configuredCommand as any)?.actionId) ||
+            Boolean((configuredCommand as any)?.actions?.length) ||
+            await commandHasActionTrigger(String((configuredCommand as any)?.id || ''), tenantId)
+        )
+    ) {
+        return false;
+    }
+
+    if (!DISCORD_ROUTED_COMMAND_NAMES.includes(cmdName)) {
+        return false;
+    }
+
+    const discordUserId = String(msg.author?.id || msg.userId || msg.user_id || '').trim();
+    const guildId = String(msg.guildId || msg.guild_id || '').trim();
+    const linkedIdentity = discordUserId && guildId
+        ? await resolveDiscordStreamHubTwitchIdentity(discordUserId, guildId).catch(() => null)
+        : null;
+    const username = String(
+        linkedIdentity?.twitchLogin ||
+        msg.author?.username ||
+        msg.author?.globalName ||
+        msg.author?.global_name ||
+        'DiscordUser'
+    ).trim().toLowerCase();
+    // Public commands such as !points and !pleader must never wait on
+    // DiscordStreamHub admin lookup. Only commands that actually require
+    // elevated Twitch-style tags perform the remote permission check.
+    const isMod = DISCORD_PRIVILEGED_ROUTED_COMMANDS.has(cmdName)
+        ? await hasEffectiveDiscordModAccess(msg)
+        : (isPermanentDiscordOwner(msg) || hasDiscordModAccess(msg));
+
+    const tags = {
+        username,
+        'display-name': msg.author?.globalName || msg.author?.global_name || username,
+        mod: isMod,
+        badges: {
+            broadcaster: Boolean(msg.isOwner),
+        },
+        id: msg.messageId || msg.message_id || `${Date.now()}`,
+    };
+
+    const broadcasterChannel = await getTenantBroadcasterChannel(tenantId);
+    await runWithChatOutputContext({
+        platform: 'discord',
+        channelId: sourceChannelId,
+        guildId: msg.guildId || msg.guild_id,
+        userId: msg.author?.id || msg.userId || msg.user_id,
+        username,
+        displayName: msg.author?.globalName || msg.author?.global_name || username,
+        userAvatarUrl: msg.author?.avatarUrl
+            || msg.author?.displayAvatarURL
+            || msg.userAvatar
+            || msg.avatarUrl
+            || msg.avatar_url
+            || buildDiscordUserAvatarUrl(msg.author?.id || msg.userId || msg.user_id, msg.author?.avatar),
+        messageId: msg.messageId || msg.message_id,
+        messageContent: actualMessage,
+        speakerMode: 'command',
+    }, async () => {
+        await handleTwitchMessage(`#${broadcasterChannel}`, tags, actualMessage, false);
+    });
+
+    return true;
+}
+
+async function bridgeDiscordMessageToTwitch(msg: any, tenantId?: string) {
+    const rawContent = String(msg.content || '');
+    if (rawContent.startsWith('[') || rawContent.startsWith('!')) return;
+
+    let processedContent = replaceDiscordUserMentions(msg.content, msg.mentions);
+    processedContent = processedContent.replace(/<:(\w+):(\d+)>/g, ':$1:');
+
+    const sourceUserName = msg.author?.username || msg.author?.globalName || msg.author?.global_name || 'Discord User';
+    const twitchMessage = `[Discord] ${sourceUserName}: ${processedContent}`;
+    await sendChatMessage(twitchMessage, 'bot', undefined, tenantId).catch(e => console.error('[Bridge] Failed:', e));
+}
+
+async function getTenantDiscordDmChannelId(tenantId?: string): Promise<string | null> {
+    if (!tenantId) return null;
+    try {
+        const config = await readDiscordConfig(tenantId);
+        const value = String(config?.dmChannelId || '').trim();
+        return value || null;
+    } catch {
+        return null;
+    }
+}
+
+export async function resolveRelayTarget(input: {
+    namedTarget?: string;
+    structuredTarget?: WorldLoreCharacter;
+    fallbackTenantId?: string;
+}): Promise<{ tenantId?: string; character: WorldLoreCharacter } | null> {
+    if (input.structuredTarget) {
+        const tenantId = await resolveTenantForLoreBot(input.structuredTarget, input.fallbackTenantId);
+        if (tenantId) {
+            return { tenantId, character: input.structuredTarget };
+        }
+    }
+
+    const rawTarget = String(input.namedTarget || '').replace(/^@/, '').trim().toLowerCase();
+    if (!rawTarget) return null;
+
+    try {
+        const { listTenants } = await import('../lib/tenant');
+        const { getStoredTokens } = await import('../lib/token-utils.server');
+        const { getBotName, getBotAliases } = await import('../lib/bot-settings-store');
+        const discordLastSeenTarget = await findDiscordLastSeenForNames([rawTarget]).catch(() => null);
+        for (const tid of await listTenants()) {
+            const tokens = await getStoredTokens(tid).catch(() => null);
+            const broadcasterUsername = String(tokens?.broadcasterUsername || tokens?.loginUsername || '').trim().toLowerCase();
+            const discordConfig = await readDiscordConfig(tid).catch(() => null);
+            const discordUsername = String(discordConfig?.discordUsername || '').trim().replace(/^@/, '').toLowerCase();
+            const discordUserId = String(discordConfig?.discordUserId || '').trim();
+            const matchesLinkedDiscordDisplayName = Boolean(
+                discordUserId
+                && discordLastSeenTarget?.userId
+                && String(discordLastSeenTarget.userId) === discordUserId
+            );
+            const configuredBotName = String(getBotName(tid) || '').trim();
+            const configuredAliases = String(getBotAliases(tid) || '').split(',').map((value) => value.trim()).filter(Boolean);
+            const botNames = new Set([configuredBotName, ...configuredAliases].map((value) => value.toLowerCase()));
+            if (
+                broadcasterUsername === rawTarget
+                || discordUsername === rawTarget
+                || matchesLinkedDiscordDisplayName
+                || botNames.has(rawTarget)
+            ) {
+                const loreCharacter = await getLoreCharacterForTenant(tid);
+                return {
+                    tenantId: tid,
+                    character: loreCharacter || {
+                        stableId: `${tid}:bot`,
+                        currentName: configuredBotName || rawTarget,
+                        aliases: Array.from(new Set([rawTarget, ...configuredAliases])),
+                    },
+                };
+            }
+        }
+    } catch (error) {
+        console.error('[Dispatcher] Failed to resolve relay target:', error);
+    }
+
+    return null;
+}
+
+const DIRECT_HUMAN_RELAY_STOP_TARGETS = new Set([
+    'your',
+    'my',
+    'his',
+    'her',
+    'their',
+    'our',
+    'the',
+    'a',
+    'an',
+    'this',
+    'that',
+    'streamweaverbot',
+    'athena',
+    'athenabot87',
+]);
+
+function normalizeRelayHandle(value: unknown): string {
+    return String(value || '')
+        .trim()
+        .replace(/^@/, '')
+        .replace(/[^a-zA-Z0-9_-]+/g, '')
+        .slice(0, 64);
+}
+
+export function isDirectHumanRelayTarget(value: unknown): boolean {
+    const handle = normalizeRelayHandle(value);
+    if (handle.length < 2) return false;
+    if (DIRECT_HUMAN_RELAY_STOP_TARGETS.has(handle.toLowerCase())) return false;
+    return /^[a-zA-Z0-9_][a-zA-Z0-9_-]{1,63}$/.test(handle);
+}
+
+
+export async function resolveHumanRelaySpeaker(input: {
+    sourcePlatform: 'twitch' | 'discord';
+    sourceUserName: string;
+    sourceUserId?: string;
+}): Promise<{ character: WorldLoreCharacter; tenantId?: string; usesCommunityBot: boolean }> {
+    const sourceName = normalizeRelayHandle(input.sourceUserName).toLowerCase();
+    const sourceUserId = String(input.sourceUserId || '').trim();
+
+    try {
+        for (const tid of await listTenants()) {
+            let matchesAccount = input.sourcePlatform === 'twitch' && Boolean(
+                (sourceUserId && sourceUserId === tid)
+                || (
+                    sourceName
+                    && normalizeRelayHandle(readUserConfigSync(tid).TWITCH_BROADCASTER_USERNAME).toLowerCase() === sourceName
+                )
+            );
+
+            if (input.sourcePlatform === 'discord') {
+                const discordConfig = await readDiscordConfig(tid).catch(() => null);
+                matchesAccount = Boolean(
+                    (sourceUserId && sourceUserId === String(discordConfig?.discordUserId || '').trim())
+                    || (
+                        sourceName
+                        && normalizeRelayHandle(discordConfig?.discordUsername).toLowerCase() === sourceName
+                    )
+                );
+            }
+
+            if (!matchesAccount) continue;
+            const { getBotAliases } = await import('../lib/bot-settings-store');
+            const botName = getBotName(tid);
+            return {
+                tenantId: tid,
+                usesCommunityBot: false,
+                character: await getLoreCharacterForTenant(tid) || buildFallbackLoreCharacter({
+                    tenantId: tid,
+                    name: botName,
+                    aliases: String(getBotAliases(tid) || '').split(',').map((value) => value.trim()).filter(Boolean),
+                }),
+            };
+        }
+    } catch (error) {
+        console.warn('[Dispatcher] Failed to resolve relay sender account; using community bot:', error);
+    }
+
+    const communityName = getBotName(undefined) || 'StreamWeaver87';
+    return {
+        usesCommunityBot: true,
+        character: {
+            stableId: 'community:streamweaverbot',
+            currentName: communityName,
+            aliases: Array.from(new Set([communityName, 'StreamWeaverBot', 'StreamWeaver87'])),
+        },
+    };
+}
+
+
+export function buildDirectHumanRelayMessage(input: {
+    targetName: string;
+    sourceUserName: string;
+    relayMessage: string;
+}): string {
+    const handle = normalizeRelayHandle(input.targetName);
+    const body = String(input.relayMessage || '').trim();
+    return `${handle}, ${input.sourceUserName} says: ${body}`;
+}
+
+const DISCORD_RELAY_REPLY_FOOTER = 'Reply with "reply" or "yes" plus your message; "no" closes this relay • expires and deletes 10m after last activity';
+
+function appendRelayHistory(
+    history: RelayConversationTurn[] | undefined,
+    turn: Omit<RelayConversationTurn, 'createdAt'>,
+): RelayConversationTurn[] {
+    return [
+        ...(history || []),
+        { ...turn, createdAt: new Date().toISOString() },
+    ].slice(-12);
+}
+
+function buildDiscordRelayTranscript(history: RelayConversationTurn[]): string {
+    const turns = history.slice(-2);
+    return turns.map((turn) =>
+        `**${turn.senderUsername} via ${turn.botName}:** ${turn.message}`
+    ).join('\n\n');
+}
+
+function buildDiscordRelayHistoryFile(history: RelayConversationTurn[]) {
+    if (history.length <= 2) return [];
+    const archived = history.slice(0, -2);
+    const body = archived.map((turn) => {
+        const when = turn.createdAt ? new Date(turn.createdAt).toISOString() : '';
+        return `${when ? `[${when}] ` : ''}${turn.senderUsername} via ${turn.botName}: ${turn.message}`;
+    }).join('\n\n');
+    return [{ name: 'relay-history.txt', content: body || 'No archived relay messages.' }];
+}
+
+async function sendDiscordRelayCard(input: {
+    channelId: string;
+    recipientUserId?: string;
+    tenantId?: string;
+    bot: WorldLoreCharacter;
+    history: RelayConversationTurn[];
+    isPrivate?: boolean;
+}): Promise<string | undefined> {
+    const sent = await sendStructuredDiscordReply({
+        channelId: input.channelId,
+        content: input.recipientUserId ? `<@${input.recipientUserId}>` : '',
+        message: buildDiscordRelayTranscript(input.history),
+        tenantId: input.tenantId,
+        botName: input.bot.currentName,
+        responseType: 'Message Relay',
+        footerText: DISCORD_RELAY_REPLY_FOOTER,
+        isPrivate: input.isPrivate,
+        forceCleanup: true,
+        includeConfiguredMedia: false,
+        files: buildDiscordRelayHistoryFile(input.history),
+    });
+    return sent.messageId;
+}
+
+async function updateDiscordRelayCard(input: {
+    channelId: string;
+    messageId: string;
+    tenantId?: string;
+    bot: WorldLoreCharacter;
+    history: RelayConversationTurn[];
+    sourceMessageId?: string;
+    sourceMessage?: string;
+    sourceUser?: string;
+    isPrivate?: boolean;
+    footerText?: string;
+}): Promise<boolean> {
+    const result = await editStructuredDiscordReply(input.messageId, {
+        channelId: input.channelId,
+        message: buildDiscordRelayTranscript(input.history),
+        tenantId: input.tenantId,
+        botName: input.bot.currentName,
+        responseType: 'Message Relay',
+        footerText: input.footerText || DISCORD_RELAY_REPLY_FOOTER,
+        sourceMessageId: input.sourceMessageId,
+        sourceMessage: input.sourceMessage,
+        sourceUser: input.sourceUser,
+        isPrivate: input.isPrivate,
+        forceCleanup: true,
+        includeConfiguredMedia: false,
+        files: buildDiscordRelayHistoryFile(input.history),
+    });
+    return result.edited;
+}
+
+async function buildRelayDeliveryMessage(input: {
+    sourceUserName: string;
+    speaker: WorldLoreCharacter;
+    target: WorldLoreCharacter;
+    relayMessage: string;
+    targetAudienceName?: string;
+    targetTenantId?: string;
+    deliveryMode: 'live' | 'discord' | 'dm';
+    includeReplyInstructions?: boolean;
+}): Promise<string> {
+    const quotedSegments = extractRelayQuotedSegments(input.relayMessage);
+    const targetAudienceName = String(input.targetAudienceName || input.target.currentName || 'this chat').trim();
+    const deliveryInstruction = input.deliveryMode === 'live'
+        ? `You are speaking in ${targetAudienceName}'s Twitch chat. Deliver the message to that chat in one short natural sentence.`
+        : input.deliveryMode === 'discord'
+            ? `Tell ${targetAudienceName} in the Discord channel where they were last active in one short natural sentence.`
+            : `Tell ${targetAudienceName} privately in one short natural sentence.`;
+    const targetPersonality = [
+        `You are ${input.target.currentName}.`,
+        input.target.archetype ? `Archetype: ${input.target.archetype}.` : '',
+        input.target.summary || '',
+        input.target.personalityNotes?.length ? input.target.personalityNotes.join(' ') : '',
+        input.deliveryMode === 'live'
+            ? 'You are speaking in your streamer live chat.'
+            : input.deliveryMode === 'discord'
+                ? 'You are speaking in the Discord channel where your streamer was last active.'
+                : 'You are privately DMing your streamer because they are offline.',
+    ].filter(Boolean).join('\n');
+    const quotePolicy = quotedSegments.length
+        ? [
+            'Text inside quote marks is immutable. Preserve the exact spelling, casing, punctuation, and word order inside every quoted span.',
+            ...quotedSegments.map((segment, index) => `Immutable quote ${index + 1}: ${segment.full}`),
+            'You may restyle only the words outside those quoted spans.',
+        ]
+        : [
+            'No text is explicitly quoted, so you may naturally restyle the wording in your own personality while preserving its meaning.',
+        ];
+
+    const prompt = [
+        'Human-directed cross-bot relay delivery.',
+        `Original human sender: ${input.sourceUserName}.`,
+        `Bot instructed by the human: ${input.speaker.currentName}.`,
+        `Receiving bot speaking now: ${input.target.currentName}.`,
+        `Receiving chat or streamer: ${targetAudienceName}.`,
+        `Original message: ${input.relayMessage}`,
+        `Make it clear that the message originated with ${input.sourceUserName} and was handed to you through ${input.speaker.currentName}.`,
+        'Preserve the message meaning. Do not invent extra facts, promises, or actions.',
+        ...quotePolicy,
+        deliveryInstruction,
+        `Do not address ${input.sourceUserName} as "you".`,
+        'Do not mention internal systems or say this is automated.',
+    ].filter(Boolean).join('\n');
+
+    const aiRes = await fetch(`http://127.0.0.1:${process.env.PORT||3100}/api/ai/chat-with-memory`, {
+        method: 'POST',
+        headers: internalServiceHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+            username: targetAudienceName,
+            displayName: targetAudienceName,
+            message: prompt,
+            personality: targetPersonality,
+            responseName: input.target.currentName,
+            tenantId: input.targetTenantId,
+            context: input.deliveryMode === 'live' ? 'twitch-cross-bot' : 'discord-cross-bot',
+        }),
+    });
+
+    if (!aiRes.ok) {
+        throw new Error(`Relay AI failed: ${aiRes.status}`);
+    }
+
+    const data = await aiRes.json();
+    const reply = String(data.response || data.data?.response || '').trim();
+    if (!reply) throw new Error('Relay AI returned an empty response');
+    const personalityReply = preserveRelayQuotedSegments(reply, input.relayMessage);
+    return input.includeReplyInstructions
+        ? `${personalityReply} ${buildRelayReplyInstructions(input.sourceUserName)}`.trim()
+        : personalityReply;
+}
+
+export type BotRelayDeliveryResult = {
+    delivered: boolean;
+    mode?: 'live' | 'discord' | 'dm';
+    error?: string;
+    history?: RelayConversationTurn[];
+    discordMessageId?: string;
+    summary: string;
+};
+
+function relayDeliverySummary(targetName: string, mode?: BotRelayDeliveryResult['mode'], destination?: string, error?: string): string {
+    if (mode === 'live') return `Delivered to ${targetName} in #${destination || 'their channel'} on Twitch.`;
+    if (mode === 'discord') return `${targetName} was not reachable in Twitch chat, so I delivered it in their active Discord channel.`;
+    if (mode === 'dm') return `${targetName} was not reachable in Twitch chat or an active Discord channel, so I sent them a DM.`;
+    return `I couldn't reach ${targetName}: ${error || 'no delivery destination accepted the message'}`;
+}
+
+export async function deliverBotRelay(input: {
+    sourcePlatform: 'twitch' | 'discord';
+    sourceChannelId?: string;
+    sourceContextTenantId?: string;
+    sourceDiscordIsPrivate?: boolean;
+    sourceDiscordRelayMessageId?: string;
+    sourceUserName: string;
+    sourceUserId?: string;
+    triggerMessage: string;
+    speaker: WorldLoreCharacter;
+    speakerTenantId?: string;
+    target: WorldLoreCharacter;
+    targetTenantId?: string;
+    targetPlatformOverride?: 'twitch' | 'discord';
+    targetChannelOverride?: string;
+    targetReplyContextTenantId?: string;
+    targetDiscordIsPrivate?: boolean;
+    replaceTargetDiscordMessageId?: string;
+    recipientUsername?: string;
+    recipientUserId?: string;
+    relayMessage: string;
+    conversationId?: string;
+    history?: RelayConversationTurn[];
+    /**
+     * True only when a real person explicitly asked the speaking bot to deliver
+     * this message. Bot-share consent governs autonomous bot conversation, not
+     * a human-issued relay command.
+     */
+    humanDirected?: boolean;
+}): Promise<BotRelayDeliveryResult> {
+    const targetTenantId = input.targetTenantId || await resolveTenantForLoreBot(input.target, undefined);
+    const hasExactTarget = Boolean(input.targetPlatformOverride && input.targetChannelOverride);
+    const replyConversationId = input.conversationId
+        || `relay-conversation-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    if (!targetTenantId && !hasExactTarget) {
+        const error = `could not resolve ${input.target.currentName}`;
+        return { delivered: false, error, summary: relayDeliverySummary(input.target.currentName, undefined, undefined, error) };
+    }
+
+    if (
+        !input.humanDirected
+        && (!targetTenantId || !(await isBotRelayAllowed(input.speakerTenantId, targetTenantId)))
+    ) {
+        const error = `${input.target.currentName} has not enabled bot sharing`;
+        return { delivered: false, error, summary: relayDeliverySummary(input.target.currentName, undefined, undefined, error) };
+    }
+
+    const recordReplyPath = async (delivery: {
+        platform: 'twitch' | 'discord';
+        channelId: string;
+        defaultRecipientUsername?: string;
+        defaultRecipientUserId?: string;
+        messageId?: string;
+        isPrivate?: boolean;
+        history?: RelayConversationTurn[];
+    }) => {
+        if (!input.humanDirected || !input.sourceChannelId) return;
+        const recipientUsername = String(input.recipientUsername || delivery.defaultRecipientUsername || '').trim();
+        const recipientUserId = String(input.recipientUserId || delivery.defaultRecipientUserId || '').trim();
+        if (!recipientUsername && !recipientUserId) return;
+        await recordRelayReplyThread({
+            recipientContextTenantId: input.targetReplyContextTenantId || targetTenantId,
+            conversationId: replyConversationId,
+            recipientBot: input.target,
+            recipientUsername: recipientUsername || undefined,
+            recipientUserId: recipientUserId || undefined,
+            deliveryPlatform: delivery.platform,
+            deliveryChannelId: delivery.channelId,
+            deliveryMessageId: delivery.messageId,
+            deliveryIsPrivate: delivery.isPrivate,
+            history: delivery.history,
+            originPlatform: input.sourcePlatform,
+            originChannelId: input.sourceChannelId,
+            originContextTenantId: input.sourceContextTenantId,
+            originTenantId: input.speakerTenantId,
+            originBot: input.speaker,
+            originSenderUsername: input.sourceUserName,
+            originSenderUserId: input.sourceUserId,
+            originMessageId: input.sourceDiscordRelayMessageId,
+            originIsPrivate: input.sourceDiscordIsPrivate,
+        });
+    };
+
+    try {
+        if (hasExactTarget) {
+            const targetPlatform = input.targetPlatformOverride!;
+            const targetChannel = input.targetChannelOverride!;
+            const relayText = await buildRelayDeliveryMessage({
+                sourceUserName: input.sourceUserName,
+                speaker: input.speaker,
+                target: input.target,
+                relayMessage: input.relayMessage,
+                targetAudienceName: input.recipientUsername || targetChannel,
+                targetTenantId,
+                deliveryMode: targetPlatform === 'twitch' ? 'live' : 'discord',
+                includeReplyInstructions: false,
+            });
+            const relayHistory = appendRelayHistory(input.history, {
+                senderUsername: input.sourceUserName,
+                botName: input.speaker.currentName,
+                message: relayText,
+            });
+            let discordMessageId: string | undefined;
+            if (targetPlatform === 'twitch') {
+                const twitchText = input.humanDirected
+                    ? `${relayText} ${buildRelayReplyInstructions(input.sourceUserName)}`.trim()
+                    : relayText;
+                await sendTwitchChatMessage(twitchText, 'bot', targetChannel, targetTenantId);
+            } else {
+                discordMessageId = await sendDiscordRelayCard({
+                    channelId: targetChannel,
+                    recipientUserId: input.recipientUserId,
+                    tenantId: targetTenantId,
+                    bot: input.target,
+                    history: relayHistory,
+                    isPrivate: input.targetDiscordIsPrivate,
+                });
+                if (discordMessageId && input.replaceTargetDiscordMessageId) {
+                    await deleteStructuredDiscordReply(
+                        targetChannel,
+                        input.replaceTargetDiscordMessageId,
+                    ).catch(() => false);
+                }
+            }
+            await recordReplyPath({
+                platform: targetPlatform,
+                channelId: targetChannel,
+                defaultRecipientUsername: input.recipientUsername,
+                defaultRecipientUserId: input.recipientUserId,
+                messageId: discordMessageId,
+                isPrivate: targetPlatform === 'discord' ? input.targetDiscordIsPrivate : undefined,
+                history: relayHistory,
+            }).catch((error) => console.warn('[Dispatcher] Failed to record reverse relay reply path:', error));
+            return {
+                delivered: true,
+                mode: targetPlatform === 'twitch' ? 'live' : 'discord',
+                history: relayHistory,
+                discordMessageId,
+                summary: relayDeliverySummary(
+                    input.target.currentName,
+                    targetPlatform === 'twitch' ? 'live' : 'discord',
+                    targetPlatform === 'twitch' ? targetChannel : undefined,
+                ),
+            };
+        }
+
+        const resolvedTargetTenantId = targetTenantId!;
+        const broadcasterChannel = await getTenantBroadcasterChannel(resolvedTargetTenantId);
+        const [directTwitchLive, liveLookup] = await Promise.all([
+            getTwitchChannelLiveStatus(broadcasterChannel),
+            lookupDiscordStreamHubTwitchTarget(broadcasterChannel).catch(() => null),
+        ]);
+        // Either live source is enough to attempt delivery. DSH announcements
+        // and its clip lookup can update at different moments, while Helix can
+        // also fail transiently; a positive result from either must win.
+        const twitchIsLive = directTwitchLive === true || liveLookup?.isLive === true;
+        const targetDiscordConfig = await readDiscordConfig(resolvedTargetTenantId).catch(() => null);
+        const linkedDiscordUserId = String(targetDiscordConfig?.discordUserId || '').trim();
+        const linkedDiscordGuildId = String(targetDiscordConfig?.guildId || '').trim();
+        const discordPresence = linkedDiscordUserId
+            ? await lookupDiscordRelayPresence(linkedDiscordUserId, linkedDiscordGuildId || undefined).catch(() => null)
+            : null;
+        console.log('[Dispatcher] Bot relay delivery target resolved:', {
+            targetTenantId: resolvedTargetTenantId,
+            broadcasterChannel,
+            targetBot: input.target.currentName,
+            liveLookup,
+            directTwitchLive,
+            twitchIsLive,
+            linkedDiscordUserId: linkedDiscordUserId || null,
+            discordPresence: discordPresence ? {
+                inVoice: discordPresence.inVoice,
+                recentlyChatting: discordPresence.recentlyChatting,
+                preferredKind: discordPresence.preferredKind,
+                preferredChannelId: discordPresence.preferredChannelId,
+            } : null,
+            firstDelivery: twitchIsLive ? 'twitch-chat' : (discordPresence?.preferredChannelId ? `discord-${discordPresence.preferredKind || 'active'}` : 'discord-dm'),
+        });
+        const relayText = await buildRelayDeliveryMessage({
+            sourceUserName: input.sourceUserName,
+            speaker: input.speaker,
+            target: input.target,
+            relayMessage: input.relayMessage,
+            targetAudienceName: broadcasterChannel,
+            targetTenantId: resolvedTargetTenantId,
+            deliveryMode: 'live',
+            includeReplyInstructions: false,
+        });
+        const relayHistory = appendRelayHistory(input.history, {
+            senderUsername: input.sourceUserName,
+            botName: input.speaker.currentName,
+            message: relayText,
+        });
+        const twitchRelayText = input.humanDirected
+            ? `${relayText} ${buildRelayReplyInstructions(input.sourceUserName)}`.trim()
+            : relayText;
+
+        let chatDelivered = false;
+        let chatError = '';
+        if (twitchIsLive) {
+            try {
+                await sendTwitchChatMessage(twitchRelayText, 'bot', broadcasterChannel, resolvedTargetTenantId);
+                chatDelivered = true;
+                await recordReplyPath({
+                    platform: 'twitch',
+                    channelId: broadcasterChannel,
+                    defaultRecipientUsername: broadcasterChannel,
+                    history: relayHistory,
+                }).catch((error) => console.warn('[Dispatcher] Failed to record Twitch relay reply path:', error));
+            } catch (error: any) {
+                chatError = error?.message || 'unknown Twitch chat error';
+                console.warn('[Dispatcher] Bot relay live Twitch delivery failed; continuing to Discord fallbacks:', {
+                    targetTenantId: resolvedTargetTenantId,
+                    broadcasterChannel,
+                    targetBot: input.target.currentName,
+                    error: chatError,
+                });
+            }
+        }
+
+        if (chatDelivered) {
+            await appendPublicChatMessages([{
+                type: 'ai',
+                username: input.target.currentName,
+                message: twitchRelayText,
+                timestamp: new Date().toISOString(),
+            }], 300, resolvedTargetTenantId).catch(() => {});
+
+            recordDashboardActivity({
+                id: `relay-${Date.now()}`,
+                tenantId: resolvedTargetTenantId,
+                platform: 'Twitch',
+                user: input.target.currentName,
+                message: `${input.speaker.currentName} relayed: ${input.relayMessage}`,
+            });
+            return {
+                delivered: true,
+                mode: 'live',
+                history: relayHistory,
+                summary: relayDeliverySummary(input.target.currentName, 'live', broadcasterChannel),
+            };
+        }
+
+        let discordDelivered = false;
+        let discordError = '';
+        try {
+            const presenceChannelId = String(discordPresence?.preferredChannelId || '').trim();
+            const idLastSeen = linkedDiscordUserId
+                ? await findDiscordLastSeenForUserId(linkedDiscordUserId).catch(() => null)
+                : null;
+            const nameLastSeen = !idLastSeen
+                ? await findDiscordLastSeenForNames([
+                    broadcasterChannel,
+                    input.target.currentName,
+                    ...(input.target.aliases || []),
+                    ...(input.target.previousNames || []),
+                ]).catch(() => null)
+                : null;
+            const fallbackLastSeen = idLastSeen || nameLastSeen;
+            const fallbackAgeMs = fallbackLastSeen?.lastSeenAt
+                ? Date.now() - new Date(fallbackLastSeen.lastSeenAt).getTime()
+                : Number.POSITIVE_INFINITY;
+            const recentFallback = fallbackLastSeen && fallbackAgeMs >= 0 && fallbackAgeMs <= 10 * 60 * 1000
+                ? fallbackLastSeen
+                : null;
+            const discordLastSeen = presenceChannelId
+                ? {
+                    userId: linkedDiscordUserId || discordPresence?.userId,
+                    username: discordPresence?.username || targetDiscordConfig?.discordUsername,
+                    displayName: discordPresence?.displayName || targetDiscordConfig?.discordUsername,
+                    guildId: discordPresence?.guildId || linkedDiscordGuildId,
+                    channelId: presenceChannelId,
+                    channelName: discordPresence?.preferredChannelName || undefined,
+                    tenantId: resolvedTargetTenantId,
+                    lastSeenAt: discordPresence?.voiceObservedAt || discordPresence?.lastChatAt || new Date().toISOString(),
+                }
+                : recentFallback;
+            if (!discordLastSeen?.channelId) {
+                throw new Error(`${input.target.currentName} is not currently active in Discord`);
+            }
+            const discordText = await buildRelayDeliveryMessage({
+                sourceUserName: input.sourceUserName,
+                speaker: input.speaker,
+                target: input.target,
+                relayMessage: input.relayMessage,
+                targetAudienceName: discordLastSeen.displayName || discordLastSeen.username || broadcasterChannel,
+                targetTenantId: resolvedTargetTenantId,
+                deliveryMode: 'discord',
+                includeReplyInstructions: false,
+            });
+            const discordHistory = appendRelayHistory(input.history, {
+                senderUsername: input.sourceUserName,
+                botName: input.speaker.currentName,
+                message: discordText,
+            });
+            const discordMessageId = await sendDiscordRelayCard({
+                channelId: discordLastSeen.channelId,
+                recipientUserId: discordLastSeen.userId,
+                tenantId: resolvedTargetTenantId,
+                bot: input.target,
+                history: discordHistory,
+            });
+            discordDelivered = true;
+            await recordReplyPath({
+                platform: 'discord',
+                channelId: discordLastSeen.channelId,
+                defaultRecipientUsername: discordLastSeen.displayName || discordLastSeen.username || broadcasterChannel,
+                defaultRecipientUserId: discordLastSeen.userId,
+                messageId: discordMessageId,
+                history: discordHistory,
+            }).catch((error) => console.warn('[Dispatcher] Failed to record Discord relay reply path:', error));
+        } catch (error: any) {
+            discordError = error?.message || 'unknown Discord last-seen error';
+            console.warn('[Dispatcher] Bot relay Discord last-seen backup failed:', {
+                targetTenantId: resolvedTargetTenantId,
+                targetBot: input.target.currentName,
+                error: discordError,
+            });
+        }
+
+        let dmDelivered = false;
+        let dmError = '';
+        if (!discordDelivered) try {
+            const dmChannelId = await getTenantDiscordDmChannelId(resolvedTargetTenantId);
+            if (!dmChannelId) {
+                throw new Error(`${input.target.currentName} does not have a DM channel configured`);
+            }
+            const dmText = chatDelivered
+                ? await buildRelayDeliveryMessage({
+                    sourceUserName: input.sourceUserName,
+                    speaker: input.speaker,
+                    target: input.target,
+                    relayMessage: input.relayMessage,
+                    targetAudienceName: broadcasterChannel,
+                    targetTenantId: resolvedTargetTenantId,
+                    deliveryMode: 'dm',
+                    includeReplyInstructions: false,
+                })
+                : relayText;
+            const discordConfig = await readDiscordConfig(resolvedTargetTenantId).catch(() => null);
+            const dmHistory = appendRelayHistory(input.history, {
+                senderUsername: input.sourceUserName,
+                botName: input.speaker.currentName,
+                message: dmText,
+            });
+            const dmMessageId = await sendDiscordRelayCard({
+                channelId: dmChannelId,
+                recipientUserId: discordConfig?.discordUserId,
+                tenantId: resolvedTargetTenantId,
+                bot: input.target,
+                history: dmHistory,
+                isPrivate: true,
+            });
+            dmDelivered = true;
+            await recordReplyPath({
+                platform: 'discord',
+                channelId: dmChannelId,
+                defaultRecipientUsername: discordConfig?.discordUsername || broadcasterChannel,
+                defaultRecipientUserId: discordConfig?.discordUserId,
+                messageId: dmMessageId,
+                isPrivate: true,
+                history: dmHistory,
+            }).catch((error) => console.warn('[Dispatcher] Failed to record DM relay reply path:', error));
+        } catch (error: any) {
+            dmError = error?.message || 'unknown Discord DM error';
+            console.warn('[Dispatcher] Bot relay DM backup failed:', {
+                targetTenantId: resolvedTargetTenantId,
+                targetBot: input.target.currentName,
+                error: dmError,
+            });
+        }
+
+        if (chatDelivered || discordDelivered || dmDelivered) {
+            await appendPublicChatMessages([{
+                type: 'ai',
+                username: input.target.currentName,
+                message: relayText,
+                timestamp: new Date().toISOString(),
+            }], 300, resolvedTargetTenantId).catch(() => {});
+
+            recordDashboardActivity({
+                id: `relay-${Date.now()}`,
+                tenantId: resolvedTargetTenantId,
+                platform: chatDelivered && !discordDelivered ? 'Twitch' : 'Discord',
+                user: input.target.currentName,
+                message: `${input.speaker.currentName} relayed: ${input.relayMessage}`,
+            });
+
+            const mode = discordDelivered ? 'discord' : chatDelivered ? 'live' : 'dm';
+            return {
+                delivered: true,
+                mode,
+                summary: relayDeliverySummary(input.target.currentName, mode, mode === 'live' ? broadcasterChannel : undefined),
+            };
+        }
+
+        const error = chatError || discordError || dmError || `could not deliver to ${input.target.currentName}`;
+        return { delivered: false, error, summary: relayDeliverySummary(input.target.currentName, undefined, undefined, error) };
+    } catch (error: any) {
+        console.error('[Dispatcher] Bot relay delivery failed:', error);
+        const detail = error?.message || 'unknown error';
+        return { delivered: false, error: detail, summary: relayDeliverySummary(input.target.currentName, undefined, undefined, detail) };
+    }
+}
+
+export async function handleBotRelayReply(input: {
+    sourcePlatform: 'twitch' | 'discord';
+    sourceChannelId: string;
+    sourceContextTenantId?: string;
+    sourceUserName: string;
+    sourceUserId?: string;
+    sourceMessageId?: string;
+    sourceDiscordIsPrivate?: boolean;
+    speaker: WorldLoreCharacter;
+    speakerTenantId?: string;
+    message: string;
+    botNames?: string[];
+}): Promise<{
+    matched: boolean;
+    delivered?: boolean;
+    closed?: boolean;
+    missingMessage?: boolean;
+    targetName?: string;
+    cardUpdated?: boolean;
+    error?: string;
+}> {
+    const command = extractRelayReplyCommand({
+        message: input.message,
+        botNames: input.botNames,
+    });
+    if (!command.matched) return { matched: false };
+
+    const thread = await getLatestRelayReplyThread({
+        recipientContextTenantId: input.sourceContextTenantId,
+        platform: input.sourcePlatform,
+        channelId: input.sourceChannelId,
+        recipientUsername: input.sourceUserName,
+        recipientUserId: input.sourceUserId,
+    });
+    if (!thread) return { matched: true, error: 'no-pending-relay' };
+
+    if (command.action === 'close') {
+        const cardUpdated = input.sourcePlatform === 'discord' && thread.delivery.messageId
+            ? await updateDiscordRelayCard({
+                channelId: input.sourceChannelId,
+                messageId: thread.delivery.messageId,
+                tenantId: input.speakerTenantId,
+                bot: thread.recipientBot,
+                history: thread.history || [],
+                sourceMessageId: input.sourceMessageId,
+                sourceMessage: input.message,
+                sourceUser: input.sourceUserName,
+                isPrivate: input.sourceDiscordIsPrivate ?? thread.delivery.isPrivate,
+                footerText: 'Relay closed • deletes 10m after last activity',
+            }).catch(() => false)
+            : false;
+        await completeRelayReplyThread(thread.recipientContextTenantId, thread.id);
+        return { matched: true, closed: true, targetName: thread.origin.senderUsername, cardUpdated };
+    }
+    if (command.missingMessage || !command.message) {
+        const cardUpdated = input.sourcePlatform === 'discord' && thread.delivery.messageId
+            ? await updateDiscordRelayCard({
+                channelId: input.sourceChannelId,
+                messageId: thread.delivery.messageId,
+                tenantId: input.speakerTenantId,
+                bot: thread.recipientBot,
+                history: thread.history || [],
+                sourceMessageId: input.sourceMessageId,
+                sourceMessage: input.message,
+                sourceUser: input.sourceUserName,
+                isPrivate: input.sourceDiscordIsPrivate ?? thread.delivery.isPrivate,
+                footerText: 'Add your message after "reply" or "yes"; "no" closes • expires and deletes 10m after last activity',
+            }).catch(() => false)
+            : false;
+        return {
+            matched: true,
+            missingMessage: true,
+            targetName: thread.origin.senderUsername,
+            cardUpdated,
+        };
+    }
+
+    const result = await deliverBotRelay({
+        sourcePlatform: input.sourcePlatform,
+        sourceChannelId: input.sourceChannelId,
+        sourceContextTenantId: input.sourceContextTenantId,
+        sourceDiscordIsPrivate: input.sourceDiscordIsPrivate ?? thread.delivery.isPrivate,
+        sourceDiscordRelayMessageId: thread.delivery.messageId,
+        sourceUserName: input.sourceUserName,
+        sourceUserId: input.sourceUserId,
+        triggerMessage: input.message,
+        speaker: input.speaker,
+        speakerTenantId: input.speakerTenantId,
+        target: thread.origin.bot,
+        targetTenantId: thread.origin.tenantId,
+        targetPlatformOverride: thread.origin.platform,
+        targetChannelOverride: thread.origin.channelId,
+        targetReplyContextTenantId: thread.origin.contextTenantId,
+        targetDiscordIsPrivate: thread.origin.isPrivate,
+        replaceTargetDiscordMessageId: thread.origin.messageId,
+        recipientUsername: thread.origin.senderUsername,
+        recipientUserId: thread.origin.senderUserId,
+        relayMessage: command.message,
+        history: thread.history || [],
+        humanDirected: true,
+    });
+
+    let cardUpdated = false;
+    if (result.delivered) {
+        if (
+            input.sourcePlatform === 'discord'
+            && thread.delivery.messageId
+            && result.history
+        ) {
+            cardUpdated = await updateDiscordRelayCard({
+                channelId: input.sourceChannelId,
+                messageId: thread.delivery.messageId,
+                tenantId: input.speakerTenantId,
+                bot: thread.recipientBot,
+                history: result.history,
+                sourceMessageId: input.sourceMessageId,
+                sourceMessage: input.message,
+                sourceUser: input.sourceUserName,
+                isPrivate: input.sourceDiscordIsPrivate ?? thread.delivery.isPrivate,
+            }).catch(() => false);
+        }
+        await completeRelayReplyThread(thread.recipientContextTenantId, thread.id);
+    }
+    return {
+        matched: true,
+        delivered: result.delivered,
+        targetName: thread.origin.senderUsername,
+        cardUpdated,
+        error: result.error,
+    };
+}
+
+async function executeDiscordCommandMessage(msg: any, tenantId?: string, options: DiscordDispatchOptions = {}): Promise<boolean> {
+    const content = String(msg.content || '').trim();
+    if (!content.startsWith('!')) return false;
+
+    const sourceChannelId = msg.channelId || msg.channel_id;
+    if (!sourceChannelId) return false;
+
+    const sourceUserName = msg.author?.username || msg.author?.globalName || msg.author?.global_name || 'Discord User';
+    const actualUsername = sourceUserName.replace(/^@/, '').trim() || 'DiscordUser';
+    const actualMessage = content;
+    const sourceUserAvatarUrl = String(
+        msg.author?.avatarUrl ||
+        msg.author?.displayAvatarURL ||
+        msg.userAvatar ||
+        msg.avatarUrl ||
+        msg.avatar_url ||
+        buildDiscordUserAvatarUrl(msg.author?.id || msg.userId || msg.user_id, msg.author?.avatar || msg.member?.user?.avatar) ||
+        '',
+    ).trim();
+    const cmdName = actualMessage.slice(1).split(/\s+/)[0]?.toLowerCase() || '';
+    if (!cmdName) return false;
+
+    const tenantCtx: StorageContext | undefined = tenantId ? { tenantId, username: actualUsername } : undefined;
+    const reply = (message: string, embed: DiscordCommandEmbedOptions = {}) => {
+        return sendStructuredDiscordReply({
+            channelId: sourceChannelId,
+            message,
+            tenantId,
+            // Bot-token mode controls transport, never presentation. Every
+            // Discord command still uses the canonical structured embed.
+            rotateSpeaker: options.replyMode !== 'bot',
+            sourceMessageId: msg.messageId || msg.message_id,
+            sourceMessage: actualMessage,
+            sourceUser: actualUsername,
+            sourceUserAvatarUrl,
+            isPrivate: Boolean(msg.isDM || msg.isDirectMessage || msg.is_direct_message || options.replyMode === 'bot'),
+            ...embed,
+        }).catch((error) => {
+            console.error('[Discord Dispatcher] Failed to send command embed:', error);
+        });
+    };
+    // Resolved lazily: public commands must not wait on (or fail because of) the
+    // DiscordStreamHub admin lookup.
+    let modAccess: Promise<boolean> | undefined;
+    const resolveIsMod = () => (modAccess ||= hasEffectiveDiscordModAccess(msg));
+    const discordServerId = msg.guildId || msg.guild_id;
+
+    if (/^!raffle(?:\s|$)/i.test(actualMessage)) {
+        const isDm = Boolean(msg.isDM || msg.isDirectMessage || msg.is_direct_message);
+        if (!isPermanentDiscordOwner(msg)) {
+            await reply('@' + actualUsername + ', raffle administration is owner-only.');
+            return true;
+        }
+        if (!isDm) {
+            await reply('Raffle administration is DM-only. Send me !raffle in our private DM.');
+            return true;
+        }
+        let subcommand = actualMessage.replace(/^!raffle\b/i, '').trim().toLowerCase();
+        const raffle = await import('./raffle-system');
+        const selected = subcommand.match(/^(merch|giftcard|general)(?:\s|$)/)?.[1] as import('./raffle-system').RaffleId | undefined;
+        if (!selected && subcommand !== 'sync') {
+            const summaries = await Promise.all(raffle.RAFFLE_IDS.map(id => raffle.getRaffleSummary(id)));
+            await reply(summaries.map(s => `${s.label}: ${s.uniqueEntrants} entrants / ${s.totalTickets} tickets.`).join('\n') + '\n\nChoose a drawing: !raffle merch or !raffle giftcard. Draw with !raffle merch draw / !raffle giftcard draw. Use !raffle sync to import both rewards.', { title: '🎟️ Separate Raffles' });
+            return true;
+        }
+        const raffleId = selected || 'general';
+        if (selected) subcommand = subcommand.slice(selected.length).trim();
+        if (!subcommand || subcommand === 'list' || subcommand === 'status') {
+            const summary = await raffle.getRaffleSummary(raffleId);
+            const lines = summary.entrants.map((entry, index) =>
+                `${index + 1}. ${entry.displayName || entry.username} — ${entry.tickets} ticket${entry.tickets === 1 ? '' : 's'}`
+            );
+            const header = `${summary.label} #${summary.cycleId}: ${summary.uniqueEntrants} entrant${summary.uniqueEntrants === 1 ? '' : 's'}, ${summary.totalTickets} total tickets.`;
+            const chunks: string[] = [];
+            let current = header;
+            for (const line of lines) {
+                if ((current + '\n' + line).length > 3400) {
+                    chunks.push(current);
+                    current = line;
+                } else {
+                    current += '\n' + line;
+                }
+            }
+            chunks.push(current);
+            for (let index = 0; index < chunks.length; index += 1) {
+                await reply(chunks[index], { title: index === 0 ? '🎟️ Space Mountain Raffle Master List' : '🎟️ Raffle Master List · continued' });
+            }
+            return true;
+        }
+        if (subcommand === 'draw' || subcommand === 'spin') {
+            try {
+                const draw = await raffle.startRaffleDraw(raffleId);
+                const seconds = Math.max(1, Math.ceil((Date.parse(draw.revealAt) - Date.parse(draw.startedAt)) / 1000));
+                await reply(
+                    `${draw.label} draw #${draw.cycleId} started: ${draw.entrants.length} entrants / ${draw.totalTickets} tickets. Stella's elimination wheel is live in the Lounge; winner reveal in about ${seconds}s.`,
+                    { title: '🎡 Raffle Draw Started' },
+                );
+            } catch (error: any) {
+                await reply(error?.message || 'The raffle could not start.');
+            }
+            return true;
+        }
+        if (subcommand === 'rewards') {
+            const summary = await raffle.getRaffleSummary(raffleId);
+            const rows = summary.rewardRules.length
+                ? summary.rewardRules.map((rule, index) => `${index + 1}. ${rule.title} → ${rule.tickets} ticket${rule.tickets === 1 ? '' : 's'}`).join('\n')
+                : 'No raffle reward has been observed yet. Use !raffle sync to import the current Twitch raffle rewards.';
+            await reply(rows + `\n\nAdjust one with: !raffle ${raffleId} set <number> <tickets>`, { title: '🎟️ Raffle Reward Mapping' });
+            return true;
+        }
+        if (subcommand === 'sync') {
+            try {
+                const result = await raffle.syncRaffleRedemptionsFromTwitch(SPACEMOUNTAIN_SYSTEM_TENANT_ID);
+                await reply(
+                    `Synced ${result.rewards} raffle reward${result.rewards === 1 ? '' : 's'} and ${result.imported} redemption records. Ledger now has ${result.uniqueEntrants} entrants / ${result.totalTickets} tickets.`,
+                    { title: '🔄 Raffle Sync Complete' },
+                );
+            } catch (error: any) {
+                await reply(error?.message || 'Raffle sync failed.');
+            }
+            return true;
+        }
+        const setReward = subcommand.match(/^set\s+(\d+)\s+(\d+)$/);
+        if (setReward) {
+            try {
+                const rule = await raffle.setRaffleRewardTickets(setReward[1], Number(setReward[2]), raffleId);
+                await reply(`${rule.title} now awards ${rule.tickets} raffle ticket${rule.tickets === 1 ? '' : 's'} per redemption. Existing entries were recalculated too.`, { title: '🎟️ Raffle Reward Updated' });
+            } catch (error: any) {
+                await reply(error?.message || 'Raffle reward update failed.');
+            }
+            return true;
+        }
+        if (subcommand === 'reset confirm') {
+            const next = await raffle.resetRaffleCycle(raffleId);
+            await reply(`Raffle ledger archived and cleared. New raffle cycle: #${next.cycleId}.`, { title: '🧹 Raffle Reset' });
+            return true;
+        }
+        if (subcommand === 'reset') {
+            await reply(`To archive ${raffle.RAFFLE_LABELS[raffleId]} and clear its tickets, send !raffle ${raffleId} reset confirm.`);
+            return true;
+        }
+        await reply(`Owner raffle commands: !raffle ${raffleId} list, !raffle sync, !raffle ${raffleId} rewards, !raffle ${raffleId} set <number> <tickets>, !raffle ${raffleId} draw, !raffle ${raffleId} reset confirm.`);
+        return true;
+    }
+
+    if (/^!say(?:\s|$)/i.test(actualMessage)) {
+        const args = actualMessage.substring('!say'.length).trim().split(/\s+/).filter(Boolean);
+        const firstState = parseSayState(args[0]);
+        const targetToken = firstState ? '' : (args[0] || '');
+        const requestedState = firstState || parseSayState(args[1]);
+        const sayUsers = await readSayUsers();
+
+        if (!targetToken || targetToken.toLowerCase() === 'all') {
+            if (!await resolveIsMod()) {
+                await reply(`@${actualUsername}, only mods can change !say for everyone.`);
+                return true;
+            }
+            const nextState = applySayState(sayUsers, sayAllKey(sourceChannelId), requestedState);
+            await writeSayUsers(sayUsers);
+            await reply(`TTS for everyone in this Discord channel is now ${nextState}. Listen: ${buildSayPlayerUrl(undefined, 'discord', sourceChannelId)}`);
+            return true;
+        }
+
+        const mentionTarget = parseDiscordCommandTarget(msg, targetToken);
+        const targetUserId = mentionTarget?.userId || '';
+        if (!targetUserId) {
+            await reply(`@${actualUsername}, mention the Discord user you want to update.`);
+            return true;
+        }
+        const isSelf = targetUserId === (msg.author?.id || msg.userId || '');
+        if (!isSelf && !await resolveIsMod()) {
+            await reply(`@${actualUsername}, only mods can change !say for another user.`);
+            return true;
+        }
+        const nextState = applySayState(sayUsers, sayUserKey(targetUserId, sourceChannelId), requestedState);
+        await writeSayUsers(sayUsers);
+        const suffix = nextState === 'on' ? ` Listen: ${buildSayPlayerUrl(undefined, 'discord', sourceChannelId)}` : '';
+        await reply(`TTS for @${mentionTarget?.username || targetUserId} is now ${nextState}.${suffix}`);
+        return true;
+    }
+
+    if (await handleDiscordPokemonCommand(msg, tenantId)) {
+        return true;
+    }
+
+    const unsupportedMessage = DISCORD_UNSUPPORTED_COMMAND_MESSAGES[cmdName];
+    if (unsupportedMessage) {
+        await reply(`@${actualUsername}, ${unsupportedMessage}`);
+        return true;
+    }
+
+    const mtFixItIntent = detectMtFixItIntent(content);
+    if (mtFixItIntent.matched) {
+        if (!mtFixItIntent.description) {
+            beginPendingMtSupportRequest({
+                platform: 'discord',
+                tenantId,
+                username: actualUsername,
+                channelId: sourceChannelId,
+            });
+            await reply(`@${actualUsername}, ${getMtSupportPrompt('discord')}`);
+            return true;
+        }
+
+        await submitMtSupportReport({
+            platform: 'discord',
+            tenantId,
+            username: actualUsername,
+            reporterId: String(msg.author?.id || ''),
+            channelId: sourceChannelId,
+            description: mtFixItIntent.description,
+            triggerMessage: content,
+        });
+        await reply(getMtFixItPublicReply(actualUsername));
+        return true;
+    }
+
+    if (actualMessage.toLowerCase() === '!commands') {
+        await reply(buildDiscordCommandsSummary(), {
+            title: 'StreamWeaver Discord Commands',
+            fields: buildDiscordCommandDirectoryFields(),
+        });
+        return true;
+    }
+
+    const discordCommandCategory = /^!commands\s+[1-8]$/i.test(actualMessage)
+        ? directLoungeCommandCategory(actualMessage, await resolveIsMod())
+        : null;
+    if (discordCommandCategory) {
+        for (const line of discordCommandCategory) await reply(line);
+        return true;
+    }
+
+    if (actualMessage.toLowerCase() === '!admin') {
+        await reply(buildDiscordAdminCommandsSummary({ isMod: await resolveIsMod() }));
+        return true;
+    }
+
+    if (/^!(?:points|pints)(?:\s|$)/i.test(actualMessage)) {
+        const targetText = actualMessage.replace(/^!(?:points|pints)\b/i, '').trim();
+        const mentionTarget = parseDiscordCommandTarget(msg, targetText);
+        const targetUserId = mentionTarget?.userId || msg.author?.id || msg.userId || msg.user_id;
+        const targetName = mentionTarget?.displayName || mentionTarget?.username || actualUsername;
+        const identity = {
+            userId: targetUserId,
+            username: mentionTarget?.username || actualUsername,
+            displayName: targetName,
+            serverId: discordServerId,
+        };
+        try {
+            const [spmt, balances] = await Promise.all([
+                getDiscordStreamHubPoints(identity),
+                getDiscordStreamHubTenantPoints(identity),
+            ]);
+            const tenantsWithPoints = balances.tenants
+                .filter((entry) => entry.currentPoints > 0 || entry.lifetimePoints > 0)
+                .sort((a, b) => Number(b.isCurrent) - Number(a.isCurrent) || b.currentPoints - a.currentPoints);
+            const rows = tenantsWithPoints
+                .map((entry) => `${entry.isCurrent ? '★' : '•'} **${entry.tenantName}** — ${entry.currentPoints.toLocaleString()} current / ${entry.lifetimePoints.toLocaleString()} lifetime`)
+                .join('\n');
+            await reply(rows || 'No tenant points have been recorded yet.', {
+                title: `${DISCORD_POINTS_ICON} ${targetName}'s Space Mountain points`,
+                color: DISCORD_POINTS_COLOR,
+                fields: [
+                    { name: 'SPMT XP', value: spmt.lifetimePoints.toLocaleString(), inline: true },
+                    { name: 'Global rank', value: spmt.rank ? `#${spmt.rank}` : 'Unranked', inline: true },
+                    { name: 'Tenant balances', value: String(tenantsWithPoints.length), inline: true },
+                ],
+            });
+        } catch (error: any) {
+            console.error('[Discord Dispatcher] !points failed:', error);
+            await reply(`@${actualUsername}, I couldn't load Space Mountain points right now.`);
+        }
+        return true;
+    }
+
+    if (cmdName === 'leader') {
+        const targetText = actualMessage.replace(/^!leader\b/i, '').trim();
+        const mentionTarget = parseDiscordCommandTarget(msg, targetText);
+        const targetUserId = mentionTarget?.userId || msg.author?.id || msg.userId || msg.user_id;
+        const targetName = mentionTarget?.displayName || mentionTarget?.username || actualUsername;
+        try {
+            const { getUser, getUserRank } = require('./user-stats');
+            const { getUserCards } = require('./pokemon-collection');
+            const [spmt, profile, cards, entitlement] = await Promise.all([
+                getDiscordStreamHubPoints({
+                    userId: targetUserId,
+                    username: mentionTarget?.username || actualUsername,
+                    displayName: targetName,
+                    serverId: discordServerId,
+                }),
+                getUser(String(mentionTarget?.username || actualUsername).toLowerCase()),
+                getUserCards(String(mentionTarget?.username || actualUsername).toLowerCase()),
+                getSpmtEasterEggEntitlement({ provider: 'discord', providerUserId: String(targetUserId || '') }).catch(() => null),
+            ]);
+            const [watchRank, cardRank, badgeRank] = await Promise.all([
+                getUserRank(profile.user, 'watchtime'),
+                getUserRank(profile.user, 'totalCards'),
+                getUserRank(profile.user, 'badges'),
+            ]);
+            const badges = Array.isArray(profile.badges) ? profile.badges : [];
+            const eggsFound = entitlement ? Object.values(entitlement.eggs).filter(Boolean).length : 0;
+            const chatTag = String(profile.chatTag || profile.activeChatTag || 'None');
+            await reply('Global Space Mountain profile across every connected community.', {
+                title: `🌌 ${targetName}'s Global Profile`,
+                color: DISCORD_POINTS_COLOR,
+                thumbnailUrl: mentionTarget?.avatarUrl || sourceUserAvatarUrl,
+                fields: [
+                    { name: 'SPMT XP', value: spmt.lifetimePoints.toLocaleString(), inline: true },
+                    { name: 'XP rank', value: spmt.rank ? `#${spmt.rank}` : 'Unranked', inline: true },
+                    { name: 'Global watchtime', value: formatDiscordActivityMinutes(Number(profile.watchtime || 0)), inline: true },
+                    { name: 'Watchtime rank', value: watchRank ? `#${watchRank}` : 'Unranked', inline: true },
+                    { name: 'Global cards', value: cards.length.toLocaleString(), inline: true },
+                    { name: 'Card rank', value: cardRank ? `#${cardRank}` : 'Unranked', inline: true },
+                    { name: 'Gym Badges', value: String(badges.length), inline: true },
+                    { name: 'Eggs Found', value: `${eggsFound}/3`, inline: true },
+                    { name: 'Badge rank', value: badgeRank ? `#${badgeRank}` : 'Unranked', inline: true },
+                    { name: 'Chat tag', value: chatTag, inline: true },
+                ],
+            });
+        } catch (error: any) {
+            console.error('[Discord Dispatcher] !leader profile failed:', error);
+            await reply(`@${actualUsername}, I couldn't load that global profile right now.`);
+        }
+        return true;
+    }
+
+    if (cmdName === 'pleader') {
+        try {
+            const board = await getDiscordStreamHubLeaderboardPost({
+                serverId: discordServerId,
+                userId: msg.author?.id || msg.userId || msg.user_id,
+                limit: 10,
+            });
+            await reply(board.scope ? `Scope: **${board.scope}** • Global SPMT XP` : 'Global SPMT XP leaderboard.', {
+                title: board.title,
+                imageUrl: board.imageUrl,
+                fields: board.updatedAt ? [{ name: 'Updated', value: formatIsoDateLabel(board.updatedAt), inline: true }] : undefined,
+                components: [{
+                    type: 1,
+                    components: [{
+                        type: 2,
+                        style: 1,
+                        label: 'Check My Rank',
+                        custom_id: board.rankButtonCustomId,
+                    }],
+                }],
+            });
+        } catch (error: any) {
+            console.error('[Discord Dispatcher] !pleader failed:', error);
+            await reply(`@${actualUsername}, I couldn't render the SPMT XP leaderboard right now.`);
+        }
+        return true;
+    }
+
+    if (actualMessage.toLowerCase() === '!watchtime' || actualMessage.toLowerCase() === '!watch time') {
+        try {
+            const activity = await getDiscordStreamHubTenantActivity({
+                userId: msg.author?.id || msg.userId || msg.user_id,
+                serverId: discordServerId,
+            });
+            const rows = activity.tenants
+                .sort((a, b) => Number(b.isCurrent) - Number(a.isCurrent) || b.watchMinutes - a.watchMinutes)
+                .map((entry) => `${entry.isCurrent ? '★' : '•'} **${entry.tenantName}** — ${formatDiscordActivityMinutes(entry.watchMinutes)}`)
+                .join('\n');
+            await reply(rows || 'No StreamWeaver watch activity has been recorded yet.', {
+                title: `⏱️ ${actualUsername}'s watchtime`,
+                fields: [
+                    { name: 'Total StreamWeaver time', value: formatDiscordActivityMinutes(activity.totalWatchMinutes), inline: true },
+                    { name: 'Communities', value: String(activity.tenants.length), inline: true },
+                ],
+            });
+        } catch (error: any) {
+            console.error('[Discord Dispatcher] !watchtime failed:', error);
+            await reply(`@${actualUsername}, I couldn't load your StreamWeaver watchtime right now.`);
+        }
+        return true;
+    }
+
+    if (cmdName === 'leaderboard') {
+        try {
+            const board = await getDiscordStreamHubLeaderboardPost({
+                serverId: discordServerId,
+                userId: msg.author?.id || msg.userId || msg.user_id,
+                limit: 10,
+            });
+            await reply(board.scope ? `Scope: **${board.scope}**` : 'The live DiscordStreamHub leaderboard.', {
+                title: board.title,
+                imageUrl: board.imageUrl,
+                fields: board.updatedAt ? [{ name: 'Updated', value: formatIsoDateLabel(board.updatedAt), inline: true }] : undefined,
+                components: [{
+                    type: 1,
+                    components: [{
+                        type: 2,
+                        style: 1,
+                        label: 'Check My Rank',
+                        custom_id: board.rankButtonCustomId,
+                    }],
+                }],
+            });
+        } catch (error: any) {
+            console.error('[Discord Dispatcher] !leaderboard failed:', error);
+            await reply(`@${actualUsername}, I couldn't render the DiscordStreamHub leaderboard right now.`);
+        }
+        return true;
+    }
+
+    if (cmdName === 'signal') {
+        try {
+            const result = await handleDiscordSignalCommand({
+                msg,
+                tenantId,
+                actualUsername,
+                actualMessage,
+                sourceChannelId,
+                sourceUserAvatarUrl,
+            });
+            if (!result.ok && result.message) {
+                await reply(`@${actualUsername}, ${result.message}`);
+            }
+        } catch (error: any) {
+            console.error('[Discord Dispatcher] !signal failed:', error);
+            await reply(`@${actualUsername}, Signal failed: ${error?.message || 'unknown error'}`);
+        }
+        return true;
+    }
+
+    if (cmdName === 'so') {
+        const rawTarget = actualMessage.substring(4).trim();
+        if (!rawTarget) {
+            await reply(`@${actualUsername}, usage: !so @username`);
+            return true;
+        }
+        try {
+            const mentionTarget = parseDiscordCommandTarget(msg, rawTarget);
+            const sent = await sendDiscordCommandShoutout({
+                serverId: discordServerId,
+                channelId: sourceChannelId,
+                requesterName: actualUsername,
+                requesterDiscordId: msg.author?.id || msg.userId || msg.user_id,
+                targetName: rawTarget,
+                targetDiscordUserId: mentionTarget?.userId,
+                sourceMessageId: msg.messageId || msg.message_id,
+                tenantId,
+            });
+            if (sent.messageId) {
+                const sourceMessageId = msg.messageId || msg.message_id;
+                if (sourceMessageId) {
+                    await deleteMessage(sourceChannelId, sourceMessageId).catch((error) => {
+                        console.warn('[Discord Dispatcher] Failed to delete source !so command:', error);
+                    });
+                }
+            }
+        } catch (error: any) {
+            console.error('[Discord Dispatcher] !so failed:', error);
+            await reply(`@${actualUsername}, shoutout failed: ${error?.message || 'unknown error'}`);
+        }
+        return true;
+    }
+
+    if (cmdName === 'timeout') {
+        if (!await resolveIsMod()) {
+            await reply(`@${actualUsername}, only mods can use !timeout.`);
+            return true;
+        }
+
+        const cmdArgs = actualMessage.substring(cmdName.length + 2).trim().split(/\s+/).filter(Boolean);
+        const targetUser = cmdArgs[0]?.replace(/^@/, '').trim();
+        if (!targetUser) {
+            await reply(`@${actualUsername}, usage: !timeout @user [duration] [reason]`);
+            return true;
+        }
+
+        const parsedDuration = parseTimeoutDuration(cmdArgs[1]);
+        const reason = parsedDuration.consumed ? cmdArgs.slice(2).join(' ') : cmdArgs.slice(1).join(' ');
+        try {
+            const { timeoutUser } = await import('./twitch');
+            const ok = await timeoutUser(targetUser, parsedDuration.seconds, reason, tenantId);
+            await reply(
+                ok
+                    ? `@${actualUsername}, timed out @${targetUser} for ${parsedDuration.seconds}s${reason ? `: ${reason}` : '.'}`
+                    : `@${actualUsername}, timeout failed for @${targetUser}.`
+            );
+        } catch (error) {
+            console.error('[Discord Dispatcher] !timeout failed:', error);
+            await reply(`@${actualUsername}, timeout failed for @${targetUser}.`);
+        }
+        return true;
+    }
+
+    if (await routeDiscordCommandThroughTwitchRuntime(msg, tenantId)) {
+        return true;
+    }
+
+    if (actualMessage.toLowerCase() === '!coinflip') {
+        const result = Math.random() < 0.5 ? 'Heads' : 'Tails';
+        await reply(`@${actualUsername} flipped a coin: ${result}! 🪙`);
+        return true;
+    }
+
+    if (actualMessage.toLowerCase() === '!time') {
+        const now = new Date();
+        const pst = now.toLocaleString('en-US', { timeZone: 'America/Los_Angeles', hour: '2-digit', minute: '2-digit' });
+        const mst = now.toLocaleString('en-US', { timeZone: 'America/Denver', hour: '2-digit', minute: '2-digit' });
+        const cst = now.toLocaleString('en-US', { timeZone: 'America/Chicago', hour: '2-digit', minute: '2-digit' });
+        const est = now.toLocaleString('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit' });
+        const utc = now.toLocaleString('en-US', { timeZone: 'UTC', hour: '2-digit', minute: '2-digit' });
+
+        await reply(`🕐 PST: ${pst} | MST: ${mst} | CST: ${cst} | EST: ${est} | UTC: ${utc}`);
+        return true;
+    }
+
+    if (actualMessage.toLowerCase() === '!followers') {
+        try {
+            const { getChannelInfo } = require('./twitch');
+            const info = await getChannelInfo(tenantId);
+            await reply(
+                info
+                    ? `Current followers: ${info.followerCount?.toLocaleString() || 'Unknown'}`
+                    : `@${actualUsername}, couldn't fetch follower count!`
+            );
+        } catch (error: any) {
+            console.error('[Discord Dispatcher] !followers failed:', error);
+            await reply(`@${actualUsername}, couldn't fetch follower count!`);
+        }
+        return true;
+    }
+
+    if (actualMessage.toLowerCase() === '!uptime') {
+        try {
+            const { getStreamUptime } = require('./twitch');
+            const uptime = await getStreamUptime(tenantId);
+            await reply(
+                uptime
+                    ? `Stream uptime: ${uptime.hours}h ${uptime.minutes}m`
+                    : 'Stream is offline!'
+            );
+        } catch (error: any) {
+            console.error('[Discord Dispatcher] !uptime failed:', error);
+            await reply(`@${actualUsername}, couldn't fetch uptime!`);
+        }
+        return true;
+    }
+
+    if (actualMessage.toLowerCase() === '!stats') {
+        try {
+            const { getChannelInfo } = require('./twitch');
+            const info = await getChannelInfo(tenantId);
+            await reply(
+                info
+                    ? `📊 Followers: ${info.followerCount?.toLocaleString() || 0} | Views: ${info.viewCount?.toLocaleString() || 0}`
+                    : `@${actualUsername}, couldn't fetch stats!`
+            );
+        } catch (error: any) {
+            console.error('[Discord Dispatcher] !stats failed:', error);
+            await reply(`@${actualUsername}, stats request timed out!`);
+        }
+        return true;
+    }
+
+    const commands = await getAllCommands(tenantId);
+    const configuredCommand = commands.find((c: any) => String(c.command || '').toLowerCase().replace(/^!/, '') === cmdName);
+    const command = configuredCommand || commands.find((c: any) => String(c.command || '').toLowerCase().replace(/^!/, '') === cmdName && c.enabled);
+
+    if (!command) return false;
+
+    const cmdArgs = actualMessage.substring(cmdName.length + 2).trim().split(/\s+/).filter(Boolean);
+    const targetRaw = cmdArgs[0]?.replace('@', '') || '';
+    const execArgs: Record<string, any> = {};
+    cmdArgs.forEach((arg: string, index: number) => {
+        execArgs[`input${index}`] = arg;
+    });
+    execArgs.rawInput = cmdArgs.join(' ');
+    execArgs.tenantId = tenantId || '';
+
+    const executionContext = {
+        user: actualUsername,
+        userName: actualUsername,
+        message: actualMessage,
+        rawInput: cmdArgs.join(' '),
+        platform: 'discord',
+        channel: sourceChannelId,
+        tenantId: tenantId || undefined,
+        args: execArgs,
+        variables: {
+            user: actualUsername,
+            userName: actualUsername,
+            channel: sourceChannelId,
+            discordChannelId: sourceChannelId,
+            tenantId: tenantId || '',
+            targetUser: targetRaw,
+            targetUserName: targetRaw,
+            rawInput: cmdArgs.join(' '),
+        },
+    };
+
+    const actionsForCommand = (await getAllActions(tenantId)).filter((action: any) =>
+        action?.enabled &&
+        Array.isArray(action.triggers) &&
+        action.triggers.some((trigger: any) =>
+            trigger?.enabled !== false &&
+            Number(trigger?.type) === 401 &&
+            String(trigger?.commandId || '') === String((command as any).id || '')
+        )
+    );
+
+    if (actionsForCommand.length > 0) {
+        const { SubActionExecutor } = await import('./automation/SubActionExecutor');
+        const executor = new SubActionExecutor();
+        await runWithChatOutputContext({
+            platform: 'discord',
+            channelId: sourceChannelId,
+            guildId: msg.guildId || msg.guild_id,
+            userId: msg.author?.id || msg.userId || msg.user_id,
+            username: actualUsername,
+            displayName: actualUsername,
+            userAvatarUrl: sourceUserAvatarUrl,
+            messageId: msg.messageId || msg.message_id,
+            messageContent: actualMessage,
+            speakerMode: 'command',
+        }, async () => {
+            for (const action of actionsForCommand) {
+                console.log(`[Discord Dispatcher] Executing command-triggered action ${action.id} for ${cmdName}`);
+                await executor.executeAction(action, executionContext);
+            }
+        });
+        return true;
+    }
+
+    if ((command as any).response && !(command as any).actionId && !(command as any).actions) {
+        await reply((command as any).response);
+        return true;
+    }
+
+    if (!(command as any).actionId && isSocialCommandName(cmdName)) {
+        const speaker = await resolveStructuredDiscordReplySpeaker({
+            tenantId,
+            rotateSpeaker: true,
+        });
+        const response = await generateSocialCommandReply({
+            platform: 'discord',
+            commandName: cmdName,
+            userName: actualUsername,
+            target: actualMessage.substring(cmdName.length + 2).trim(),
+            tenantId: speaker.tenantId || tenantId,
+            botName: speaker.botName,
+        });
+        if (response) {
+            if (isSocialOverlayCommand(cmdName)) {
+                publishSocialOverlayEvent({
+                    command: cmdName,
+                    tenantId: speaker.tenantId || tenantId,
+                    actor: {
+                        id: msg.author?.id || msg.userId || msg.user_id,
+                        name: actualUsername,
+                        avatarUrl: sourceUserAvatarUrl,
+                    },
+                    ...(actualMessage.substring(cmdName.length + 2).trim()
+                        ? { target: { name: actualMessage.substring(cmdName.length + 2).trim() } }
+                        : {}),
+                    bot: { name: speaker.botName },
+                    reaction: response,
+                    animation: {
+                        theme: cmdName,
+                        durationMs: cmdName === 'love' ? 10_000 : 9_000,
+                        particleCount: cmdName === 'love' ? 48 : 32,
+                        reducedMotionSafe: true,
+                    },
+                });
+                if ((speaker.tenantId || tenantId) === SPACEMOUNTAIN_SYSTEM_TENANT_ID
+                    && /stella/i.test(String(speaker.botName || ''))
+                    && !Boolean(msg.isDM || msg.isDirectMessage || msg.is_direct_message)) {
+                    await sendTwitchChatMessage(response, 'bot', SPACEMOUNTAIN_SYSTEM_TWITCH_CHANNEL, SPACEMOUNTAIN_SYSTEM_TENANT_ID)
+                        .catch((error) => console.warn('[Stella Lounge] Discord social line was not sent to Twitch:', error));
+                }
+            }
+            await sendStructuredDiscordReply({
+                channelId: sourceChannelId,
+                message: response,
+                tenantId: speaker.tenantId || tenantId,
+                botName: speaker.botName,
+                speaker,
+                sourceMessageId: msg.messageId || msg.message_id,
+                sourceMessage: actualMessage,
+                sourceUser: actualUsername,
+                sourceUserAvatarUrl,
+                isPrivate: Boolean(msg.isDM || msg.isDirectMessage || msg.is_direct_message),
+            }).catch((error) => {
+                console.error('[Discord Dispatcher] Failed to send social command reply:', error);
+            });
+            return true;
+        }
+    }
+
+    if ((command as any).actionId) {
+        const action = await getActionById((command as any).actionId, tenantId);
+        if (action?.subActions?.length) {
+            const { SubActionExecutor } = await import('./automation/SubActionExecutor');
+            const executor = new SubActionExecutor();
+            await runWithChatOutputContext({
+                platform: 'discord',
+                channelId: sourceChannelId,
+                guildId: msg.guildId || msg.guild_id,
+                userId: msg.author?.id || msg.userId || msg.user_id,
+                username: actualUsername,
+                displayName: actualUsername,
+                userAvatarUrl: sourceUserAvatarUrl,
+                messageId: msg.messageId || msg.message_id,
+                messageContent: actualMessage,
+                speakerMode: 'command',
+            }, async () => {
+                await executor.executeAction(action, executionContext);
+            });
+            return true;
+        }
+    }
+
+    return false;
+}
+
+const CORE_POKEMON_CONFIRMATION_COMMANDS = new Set(['accept', 'cancel', 'swap']);
+const VERBOSE_LOGS = process.env.STREAMWEAVER_VERBOSE_LOGS === 'true';
+
+// Track processed messages to prevent duplicates
+const processedMessages = new Set<string>();
+const pendingWatchChoices = new Map<string, { options: Array<{ id: string; title: string; year: number | null }>; expiresAt: number }>();
+function retireRedemptionNumberChoices(tenantId: string | undefined, username: string): void {
+    const { pendingCheckins, pendingPackRedeems } = require('./eventsub');
+    const tenantKey = tenantId || 'global';
+    pendingCheckins.get(tenantKey)?.delete(username.toLowerCase());
+    pendingPackRedeems.get(tenantKey)?.delete(username.toLowerCase());
+}
+
+
+// Track messages that already have TTS (e.g. from shoutout flow) to prevent double TTS
+const ttsHandledMessages = new Set<string>();
+
+// Track auto welcome shoutouts already in flight so rapid first messages do not
+// launch duplicate walk-ons while we wait for Twitch/AI/TTS work to finish.
+const pendingWelcomeUsers = new Set<string>();
+
+async function recordAutoWelcomeSkip(params: {
+    username: string;
+    displayName?: string;
+    tenantId?: string;
+    reason: string;
+    metadata?: Record<string, unknown>;
+}) {
+    const metadata = params.metadata || {};
+    console.log(`[AutoWelcome] Skipping ${params.username} for tenant ${params.tenantId || 'global'}: ${params.reason}`, metadata);
+    await recordShoutoutAudit({
+        status: 'skipped',
+        username: params.username,
+        displayName: params.displayName,
+        tenantId: params.tenantId,
+        source: 'auto-welcome',
+        reason: params.reason,
+        metadata,
+    });
+}
+
+const LORE_BOT_USERNAME_CACHE_MS = 30_000;
+let loreBotUsernameCache: { expiresAt: number; usernames: Set<string> } | null = null;
+
+export function markTtsHandled(message: string) {
+    ttsHandledMessages.add(message.slice(0, 100));
+    // Auto-cleanup after 10 seconds
+    setTimeout(() => ttsHandledMessages.delete(message.slice(0, 100)), 10000);
+}
+
+export async function handleKickMessage(message: KickMessage, tenantId: string) {
+    return dispatchKickMessage(message, tenantId);
+}
+
+function normalizeBotHandle(value: string): string {
+    return value.toLowerCase().replace(/^@/, '').trim();
+}
+
+function loreCharacterNames(character: WorldLoreCharacter): string[] {
+    return [
+        character.currentName,
+        ...(character.aliases || []),
+        ...(character.previousNames || []),
+    ].filter(Boolean);
+}
+
+async function isLoreBotUsername(username: string): Promise<boolean> {
+    const normalized = normalizeBotHandle(username);
+    if (!normalized) return false;
+
+    try {
+        const now = Date.now();
+        if (!loreBotUsernameCache || loreBotUsernameCache.expiresAt <= now) {
+            const lore = await readWorldLore();
+            const usernames = new Set<string>();
+            for (const character of Object.values(lore?.characters || {})) {
+                for (const name of loreCharacterNames(character)) {
+                    usernames.add(normalizeBotHandle(name));
+                }
+            }
+            loreBotUsernameCache = {
+                expiresAt: now + LORE_BOT_USERNAME_CACHE_MS,
+                usernames,
+            };
+        }
+        return loreBotUsernameCache.usernames.has(normalized);
+    } catch {
+        return false;
+    }
+}
+
+function pickCrossBotReplyLimit(): number {
+    const weightedLimits = [1, 2, 2, 3, 3];
+    return weightedLimits[Math.floor(Math.random() * weightedLimits.length)] || 2;
+}
+
+function randomCrossBotDelayMs(): number {
+    return 10_000 + Math.floor(Math.random() * 5_001);
+}
+
+function delay(ms: number): Promise<void> {
+    return new Promise((resolveDelay) => setTimeout(resolveDelay, ms));
+}
+
+const configuredTwitchBotCache = {
+    expiresAt: 0,
+    usernames: new Set<string>(),
+};
+
+async function isConfiguredTwitchBotUsername(username: string): Promise<boolean> {
+    const normalized = normalizeBotHandle(username);
+    if (!normalized) return false;
+
+    const now = Date.now();
+    if (now >= configuredTwitchBotCache.expiresAt) {
+        const usernames = new Set<string>();
+        try {
+            const { getActiveTenantIds } = await import('./twitch-client');
+            const { getStoredTokens } = await import('../lib/token-utils.server');
+            for (const tenantId of getActiveTenantIds()) {
+                const tokens: any = await getStoredTokens(tenantId).catch(() => null);
+                const botUsername = normalizeBotHandle(tokens?.botUsername || '');
+                if (botUsername) usernames.add(botUsername);
+                const communityBotUsername = normalizeBotHandle(tokens?.communityBotUsername || '');
+                if (communityBotUsername) usernames.add(communityBotUsername);
+            }
+        } catch {}
+        configuredTwitchBotCache.usernames = usernames;
+        configuredTwitchBotCache.expiresAt = now + 60_000;
+    }
+
+    return configuredTwitchBotCache.usernames.has(normalized);
+}
+
+async function buildTwitchListenLinks(channelName: string): Promise<Array<{ label: string; url: string }>> {
+    const normalizedChannel = String(channelName || '').trim().replace(/^#/, '').toLowerCase();
+    const sayUsers = await readSayUsers();
+    if (!hasSayEnabledInChannel(sayUsers, normalizedChannel)) return [];
+
+    return [{
+        label: 'This Twitch chat',
+        url: buildSayPlayerUrl(undefined, 'twitch', normalizedChannel),
+    }];
+}
+
+// Pagination state for card listings
+const cardListings = new Map<string, { cards: string[], page: number }>();
+
+function formatPokemonPackCardInfo(pack: any[]): string {
+    return pack.map((card: any) => {
+        const isHolo = card.rarity && card.rarity.includes('Holo');
+        const isRare = card.rarity && card.rarity.includes('Rare');
+        const marker = isRare ? ' ✨' : (isHolo ? ' ⭐' : '');
+        return `${card.name} #${card.number}${marker}`;
+    }).join(', ');
+}
+
+async function sendDiscordPokemonPackSummary(
+    channelId: string,
+    username: string,
+    result: any,
+    totalCards: number,
+    rareCount: number,
+    fallbackMessage: string,
+): Promise<void> {
+    const rarityScore = (rarity?: string) => {
+        const normalized = String(rarity || '').toLowerCase();
+        if (normalized.includes('secret')) return 6;
+        if (normalized.includes('ultra')) return 5;
+        if (normalized.includes('holo')) return 4;
+        if (normalized.includes('rare')) return 3;
+        if (normalized.includes('uncommon')) return 2;
+        return 1;
+    };
+    const featureCard = [...(result.pack || [])].sort((a, b) => rarityScore(b.rarity) - rarityScore(a.rarity))[0];
+    const cardLines = (result.pack || []).map((card: any) =>
+        `${card.name} #${card.number} - ${card.rarity || 'Common'}`
+    );
+
+    const embed: Record<string, unknown> = {
+        title: `${result.setName} Pack Opened`,
+        description: cardLines.join('\n').slice(0, 3900),
+        color: 0xf5c542,
+        footer: { text: `Total: ${totalCards} cards (${rareCount} rare)` },
+    };
+    const payload = {
+        content: `@${username} opened a ${result.setName} pack.`,
+        embeds: [embed],
+    };
+
+    const inferImageExtension = (url: string, contentType: string) => {
+        const normalizedContentType = String(contentType || '').split(';')[0].trim().toLowerCase();
+        if (normalizedContentType.includes('jpeg') || normalizedContentType.includes('jpg')) return 'jpg';
+        if (normalizedContentType.includes('png')) return 'png';
+        if (normalizedContentType.includes('gif')) return 'gif';
+
+        const match = url.match(/\.([a-z0-9]+)(?:\?|$)/i);
+        if (match) {
+            const ext = match[1].toLowerCase();
+            if (ext === 'jpeg') return 'jpg';
+            if (['jpg', 'png', 'gif', 'webp'].includes(ext)) return ext;
+        }
+
+        return 'png';
+    };
+
+    try {
+        if (featureCard?.imageUrl) {
+            try {
+                const response = await fetch(featureCard.imageUrl);
+                if (response.ok) {
+                    const arrayBuffer = await response.arrayBuffer();
+                    const buffer = Buffer.from(arrayBuffer);
+                    const contentType = String(response.headers.get('content-type') || '').split(';')[0].trim();
+                    const extension = inferImageExtension(featureCard.imageUrl, contentType);
+                    const fileName = `pokemon-card.${extension}`;
+                    embed.image = { url: `attachment://${fileName}` };
+                    await uploadBinaryFileToDiscord(channelId, buffer, fileName, contentType || 'application/octet-stream', payload);
+                    return;
+                }
+                console.warn('[Pokemon] feature card image fetch returned non-ok response', response.status, featureCard.imageUrl);
+            } catch (error) {
+                console.warn('[Pokemon] failed to attach feature card image for Discord embed; falling back to remote URL', error);
+            }
+            embed.image = { url: featureCard.imageUrl };
+        }
+
+        await sendDiscordEmbed(channelId, payload);
+    } catch (error) {
+        console.warn('[Pokemon] Discord pack embed failed, falling back to text:', error);
+        await sendDiscordMessage(channelId, fallbackMessage);
+    }
+}
+
+async function sendTwitchCrossBotFollowUp(input: {
+    channel: string;
+    userName: string;
+    triggerMessage: string;
+    speakerName: string;
+    speakerStableId?: string;
+    speakerTenantId?: string;
+    speakerReply: string;
+    targets?: any[];
+}) {
+    try {
+        const { getBotShareMode, appendBotInteraction } = await import('../lib/bot-interactions-store');
+        if (await getBotShareMode(input.speakerTenantId) !== 'on') return;
+
+        if (await isKnownBot(input.userName.toLowerCase(), input.speakerTenantId)) return;
+
+        const { isBotTriggerIgnored } = require('../lib/bot-trigger-ignore-store');
+        const speakerId = input.speakerStableId || '';
+        const seedTargets = Array.isArray(input.targets) ? input.targets : [];
+        if (!seedTargets.length) return;
+
+        const tenantFromStableId = (stableId: string): string | undefined => {
+            const [prefix] = stableId.split(':');
+            if (!prefix || prefix === 'unknown' || prefix === 'discordUserId' || prefix === 'twitchUserId') return undefined;
+            return prefix;
+        };
+
+        const initialTargets: any[] = [];
+        for (const t of seedTargets) {
+            if (speakerId && t.stableId === speakerId) continue;
+            if (!(await isBotTriggerIgnored({ tenantId: tenantFromStableId(t.stableId), stableId: t.stableId, botName: t.currentName }, input.speakerTenantId))) {
+                initialTargets.push(t);
+            }
+        }
+        if (!initialTargets.length) return;
+
+        const responded = new Set<string>();
+        const queue = [...initialTargets];
+        const replyLimit = pickCrossBotReplyLimit();
+        let count = 0;
+        let lastSpeakerName = input.speakerName;
+        let lastSpeakerId = speakerId;
+        let lastReply = input.speakerReply;
+
+        while (queue.length > 0 && count < replyLimit) {
+            const target: any = queue.shift();
+            if (responded.has(target.stableId)) continue;
+            responded.add(target.stableId);
+
+            const targetTenantId = await resolveTenantForLoreBot(target, input.speakerTenantId);
+            const targetPersonality = [
+                `You are ${target.currentName}.`,
+                target.archetype ? `Archetype: ${target.archetype}.` : '',
+                target.summary || '',
+                target.personalityNotes?.length ? target.personalityNotes.join(' ') : '',
+                'Stay in this bot identity for this single Twitch follow-up.',
+            ].filter(Boolean).join('\n');
+            const prompt = [
+                'Cross-bot follow-up on Twitch.',
+                `${lastSpeakerName} replied: "${lastReply}"`,
+                `${input.userName} originally asked: "${input.triggerMessage}"`,
+                'Answer as yourself in 1 short Twitch-friendly sentence. Do not impersonate the other bot. Do not keep the chain going.',
+            ].join('\n');
+
+            const response = await fetch(`http://127.0.0.1:${process.env.PORT||3100}/api/ai/chat-with-memory`, {
+                method: 'POST',
+                headers: internalServiceHeaders({ 'Content-Type': 'application/json' }),
+                body: JSON.stringify({
+                    username: input.userName,
+                    message: prompt,
+                    personality: targetPersonality,
+                    responseName: target.currentName,
+                    tenantId: targetTenantId,
+                    context: 'twitch-cross-bot',
+                }),
+            });
+            if (!response.ok) {
+                console.error('[Dispatcher] Twitch cross-bot AI failed:', response.status, await response.text().catch(() => ''));
+                continue;
+            }
+
+            const data = await response.json();
+            const reply = data.response?.trim() || data.data?.response?.trim() || '';
+            if (!reply) continue;
+
+            const waitMs = randomCrossBotDelayMs();
+            console.log(`[Dispatcher] Waiting ${Math.round(waitMs / 1000)}s before ${target.currentName} cross-bot follow-up (${count + 1}/${replyLimit})`);
+            await delay(waitMs);
+
+            const targetChannel = await resolveTwitchReplyChannel({
+                sourceChannel: input.channel,
+                sourceTenantId: input.speakerTenantId,
+                responseTenantId: targetTenantId,
+            });
+
+            await sendChatMessage(reply, 'bot', targetChannel, targetTenantId).catch((error) => {
+                console.error('[Dispatcher] Twitch cross-bot send failed:', error);
+            });
+            if (targetTenantId) {
+                await appendBotInteraction({
+                    platform: 'twitch',
+                    tenantId: targetTenantId,
+                    channelId: targetChannel,
+                    sourceUser: input.userName,
+                    speakerBotId: target.stableId,
+                    speakerBotName: target.currentName,
+                    targetBotIds: lastSpeakerId ? [lastSpeakerId] : [],
+                    targetBotNames: [lastSpeakerName],
+                    triggerMessage: input.triggerMessage,
+                    responseMessage: reply,
+                }).catch(() => {});
+            }
+            count++;
+            lastSpeakerId = target.stableId;
+            lastSpeakerName = target.currentName;
+            lastReply = reply;
+        }
+    } catch (error) {
+        console.error('[Dispatcher] Twitch cross-bot follow-up failed:', error);
+    }
+}
+
+async function getDiscordLogChannelId(tenantId?: string): Promise<string | null> {
+    if (!tenantId) return null;
+    try {
+        const config = await readDiscordConfig(tenantId);
+        if (config.discordBridgeEnabled === false) return null;
+        return config.logChannelId;
+    } catch { return null; }
+}
+
+const ATHENA_STABLE_ID = `${ATHENA_WHITELIST_TENANT_ID}:athena`;
+const ATHENA_ALIAS_OVERRIDE_USERS = new Set(['mtman1987', 'mtman']);
+
+async function getAthenaEverywhereMode(): Promise<'on' | 'off'> {
+    if (process.env.ATHENA_EVERYWHERE_MODE === 'false') return 'off';
+    try {
+        const raw = await fs.readFile(globalPath('athena-everywhere-mode.json'), 'utf-8');
+        const parsed = JSON.parse(raw);
+        return parsed.mode === 'off' ? 'off' : 'on';
+    } catch {
+        return 'on';
+    }
+}
+
+async function setAthenaEverywhereMode(mode: 'on' | 'off'): Promise<'on' | 'off'> {
+    const filePath = globalPath('athena-everywhere-mode.json');
+    await fs.mkdir(resolve(filePath, '..'), { recursive: true });
+    await fs.writeFile(filePath, JSON.stringify({ mode }, null, 2));
+    return mode;
+}
+
+async function toggleAthenaEverywhereMode(): Promise<'on' | 'off'> {
+    const current = await getAthenaEverywhereMode();
+    return setAthenaEverywhereMode(current === 'on' ? 'off' : 'on');
+}
+
+async function canRouteAthenaForUser(input: {
+    username: string;
+    tenantId?: string;
+}): Promise<boolean> {
+    try {
+        const { canUseAthenaEverywhere } = await import('./athena-whitelist');
+        return canUseAthenaEverywhere(input);
+    } catch (error) {
+        console.error('[Dispatcher] Athena whitelist check failed:', error);
+        return false;
+    }
+}
+
+function canUseAthenaAliasOverride(username: string): boolean {
+    return ATHENA_ALIAS_OVERRIDE_USERS.has(String(username || '').trim().replace(/^@/, '').toLowerCase());
+}
+
+async function getFirstMentionedLoreBot(message: string) {
+    const lower = message.toLowerCase();
+    const athenaIndex = firstNameIndex(lower, ['athena', 'annie', 'athenabot87']);
+    try {
+        const { readWorldLore } = await import('../lib/world-lore-store');
+        const { firstMentionedCharacter } = await import('../lib/bot-interactions-store');
+        const lore = await readWorldLore();
+        const characters = Object.values(lore?.characters || {});
+        const first = firstMentionedCharacter(message, characters);
+        if (athenaIndex >= 0) {
+            const firstIndex = first ? firstNameIndex(lower, [
+                first.currentName,
+                ...(first.aliases || []),
+                ...(first.previousNames || []),
+            ]) : -1;
+            if (firstIndex < 0 || athenaIndex <= firstIndex) {
+                return {
+                    stableId: ATHENA_STABLE_ID,
+                    currentName: 'Athena',
+                    aliases: ['Athena', 'Annie', 'Athenabot87'],
+                };
+            }
+        }
+        return first;
+    } catch {
+        if (athenaIndex >= 0) {
+            return {
+                stableId: ATHENA_STABLE_ID,
+                currentName: 'Athena',
+                aliases: ['Athena', 'Annie', 'Athenabot87'],
+            };
+        }
+        return null;
+    }
+}
+
+function firstNameIndex(messageLower: string, names: string[]): number {
+    let best = -1;
+    for (const rawName of names) {
+        const name = String(rawName || '').toLowerCase().replace(/^@/, '').trim();
+        if (!name) continue;
+        const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const match = new RegExp(`(^|[^a-z0-9_])@?${escaped}([^a-z0-9_]|$)`, 'i').exec(messageLower);
+        if (!match) continue;
+        if (best < 0 || match.index < best) best = match.index;
+    }
+    return best;
+}
+
+async function resolveTenantForLoreBot(character: any, fallbackTenantId?: string): Promise<string | undefined> {
+    const stableId = String(character?.stableId || '');
+    const [stableTenant] = stableId.split(':');
+    if (stableTenant === 'community') return fallbackTenantId;
+    if (stableTenant && stableTenant !== 'unknown' && stableTenant !== 'discordUserId' && stableTenant !== 'twitchUserId') {
+        return stableTenant;
+    }
+
+    try {
+        const { listTenants } = await import('../lib/tenant');
+        const { getBotName, getBotAliases } = await import('../lib/bot-settings-store');
+        const names = [
+            character?.currentName,
+            ...(character?.aliases || []),
+            ...(character?.previousNames || []),
+        ].filter(Boolean).map((value: string) => value.toLowerCase());
+
+        for (const tid of await listTenants()) {
+            const botName = getBotName(tid).toLowerCase();
+            const aliases = String(getBotAliases(tid) || '').toLowerCase().split(',').map((v) => v.trim());
+            if (names.includes(botName) || aliases.some((alias) => alias && names.includes(alias))) {
+                return tid;
+            }
+        }
+    } catch {}
+
+    return fallbackTenantId;
+}
+
+function getLoreCharacterFirstIndex(message: string, character: WorldLoreCharacter | null | undefined): number {
+    if (!character) return -1;
+    return firstNameIndex(message.toLowerCase(), [
+        character.currentName,
+        ...(character.aliases || []),
+        ...(character.previousNames || []),
+    ]);
+}
+
+async function getLoreCharacterForTenant(tenantId?: string): Promise<WorldLoreCharacter | null> {
+    if (!tenantId) return null;
+    try {
+        const { getBotName, getBotAliases } = await import('../lib/bot-settings-store');
+        const lore = await readWorldLore();
+        const characters = Object.values(lore?.characters || {});
+        const names = new Set([
+            getBotName(tenantId),
+            ...String(getBotAliases(tenantId) || '').split(',').map((value) => value.trim()),
+        ].map((value) => normalizeBotHandle(value)).filter(Boolean));
+        return characters.find((character) =>
+            loreCharacterNames(character).some((name) => names.has(normalizeBotHandle(name)))
+        ) || null;
+    } catch {
+        return null;
+    }
+}
+
+function buildFallbackLoreCharacter(input: {
+    tenantId?: string;
+    name: string;
+    aliases?: string[];
+}): WorldLoreCharacter {
+    const normalizedName = normalizeBotHandle(input.name) || 'bot';
+    return {
+        stableId: input.tenantId ? `${input.tenantId}:${normalizedName}` : `unknown:${normalizedName}`,
+        currentName: input.name || 'Bot',
+        aliases: Array.from(new Set((input.aliases || []).filter(Boolean))),
+    };
+}
+
+async function getExplicitTwitchBotMentions(message: string): Promise<Array<{
+    index: number;
+    trigger: string;
+    tenantId?: string;
+    character: WorldLoreCharacter;
+}>> {
+    const matches = Array.from(message.toLowerCase().matchAll(/(^|[^a-z0-9_])@([a-z0-9_]+)/gi));
+    if (!matches.length) return [];
+
+    try {
+        const handles = new Map<string, number>();
+        for (const match of matches) {
+            const handle = normalizeBotHandle(match[2] || '');
+            if (!handle) continue;
+            const index = typeof match.index === 'number' ? match.index : message.toLowerCase().indexOf(`@${handle}`);
+            const existing = handles.get(handle);
+            if (existing === undefined || index < existing) {
+                handles.set(handle, index);
+            }
+        }
+        if (!handles.size) return [];
+
+        const lore = await readWorldLore();
+        const characters = Object.values(lore?.characters || {});
+        const { listTenants } = await import('../lib/tenant');
+        const { getStoredTokens } = await import('../lib/token-utils.server');
+        const { getBotName, getBotAliases } = await import('../lib/bot-settings-store');
+        const resolved: Array<{
+            index: number;
+            trigger: string;
+            tenantId?: string;
+            character: WorldLoreCharacter;
+        }> = [];
+
+        for (const tid of await listTenants()) {
+            const tokens = await getStoredTokens(tid);
+            const botUsername = normalizeBotHandle(tokens?.botUsername || '');
+            if (!botUsername || !handles.has(botUsername)) continue;
+
+            const configuredName = getBotName(tid).trim() || tokens?.botUsername || botUsername;
+            const configuredAliases = String(getBotAliases(tid) || '')
+                .split(',')
+                .map((value) => value.trim())
+                .filter(Boolean);
+            const candidateNames = new Set([
+                configuredName,
+                tokens?.botUsername || '',
+                ...configuredAliases,
+            ].map((value) => normalizeBotHandle(value)).filter(Boolean));
+            const loreCharacter = characters.find((character) =>
+                loreCharacterNames(character).some((name) => candidateNames.has(normalizeBotHandle(name)))
+            );
+
+            resolved.push({
+                index: handles.get(botUsername) ?? 0,
+                trigger: `@${botUsername}`,
+                tenantId: tid,
+                character: loreCharacter || {
+                    stableId: `${tid}:bot`,
+                    currentName: configuredName,
+                    aliases: Array.from(new Set([tokens?.botUsername, ...configuredAliases].filter((value): value is string => Boolean(value)))),
+                },
+            });
+        }
+
+        return resolved.sort((a, b) => a.index - b.index || a.character.currentName.localeCompare(b.character.currentName));
+    } catch (error) {
+        console.error('[Dispatcher] Failed to resolve explicit Twitch bot mentions:', error);
+        return [];
+    }
+}
+
+export async function handleTwitchMessage(channel: string, tags: any, message: string, self: boolean) {
+    // Chat Tag owns this SPMT command in every player channel and delivers
+    // its own chat/overlay result. Leave legacy !space commands here.
+    if (/^!?@?spmt\s+checkin(?:\s|$)/i.test(message.trim())) return;
+    const username = tags.username!;
+    const displayName = tags['display-name'] || username;
+    const replyChannel = channel.replace(/^#/, '');
+    
+    // Resolve tenant from channel
+    let tenantId = getTenantIdFromChannel(replyChannel);
+    
+    // Fallback: resolve tenant from username if channel didn't map
+    if (!tenantId) {
+        try {
+            const { getActiveTenantIds, getTenantIdFromChannel: getTid } = require('./twitch-client');
+            const { getStoredTokens: gst } = require('../lib/token-utils.server');
+            for (const tid of getActiveTenantIds()) {
+                const tokens = await gst(tid);
+                if (tokens?.broadcasterUsername?.toLowerCase() === replyChannel.toLowerCase()) { tenantId = tid; break; }
+            }
+        } catch {}
+    }
+    
+    // Wake controls are deterministic and run before AI/imported commands.
+    // A broadcaster's own IRC echo may carry self=true; ownership is checked
+    // against the direct source channel, not against AI or a supplied tenant.
+    if (await handleBotWakeCommand({
+        message, tenantId, channel: replyChannel, username,
+        moderator: tags.mod === true || tags.mod === '1',
+        mirrored: Boolean(tags['source-room-id'] && tags['source-room-id'] !== tags['room-id']),
+        botAuthored: Boolean(tags.badges?.bot) || String(tags.id || '').startsWith('app-chat-'),
+    }, {
+        read: isSharedBotAwake,
+        write: setSharedBotAwake,
+        acknowledge: async (tid) => {
+            const { acknowledgeBotWakeCommand } = await import('./twitch-client');
+            await acknowledgeBotWakeCommand(tid);
+        },
+    }).catch((error) => {
+        console.error('[BotWake] Command failed:', error instanceof Error ? error.message : String(error));
+        return true;
+    })) return;
+
+    // Build storage context for tenant-scoped services
+    const tenantCtx: StorageContext | undefined = tenantId ? { tenantId, username: replyChannel } : undefined;
+    
+    // Helper: send chat message to Twitch (shared-chat aware)
+    const reply = (msg: string, as: 'bot' | 'broadcaster' = 'broadcaster') => {
+        const lounge = tenantId === SPACEMOUNTAIN_SYSTEM_TENANT_ID
+            && replyChannel.toLowerCase() === SPACEMOUNTAIN_SYSTEM_TWITCH_CHANNEL;
+        const outgoing = lounge ? prepareStellaLoungeReply(msg, as) : { message: msg, as };
+        return sendChatMessage(outgoing.message, outgoing.as, replyChannel, tenantId);
+    };
+
+    // !golive is reserved for the SpaceMountainLive owner. It uses the
+    // existing SPMT Restream browser and consumes untrusted attempts silently.
+    if (await handleSpaceMountainGoLiveMessage({
+        message,
+        channel: replyChannel,
+        tenantId,
+        username: String(username || ''),
+        userId: String(tags['user-id'] || ''),
+        self,
+        mirrored: Boolean(
+            (tags['source-room-id'] && tags['source-room-id'] !== tags['room-id'])
+            || (tags['source-id'] && tags['source-id'] !== tags['room-id'])
+        ),
+        botAuthored: Boolean(tags.badges?.bot) || String(tags.id || '').startsWith('app-chat-'),
+        broadcasterBadge: String(tags.badges?.broadcaster || '') === '1' || tags.badges?.broadcaster === true,
+    }, {
+        start: requestSpaceMountainGoLive,
+        reply: (text) => reply(text, 'bot'),
+    })) return;
+
+    // Mirror Twitch dispatcher outputs to Kick for duel-stream mode.
+    // Enable with: KICK_MIRROR_CHAT=true
+
+    // Notes:
+    // - We always send the same text to Kick; Kick handles the formatting internally.
+    // - Some features (like points/storage) are handled independently on Kick; mirroring is for outputs/replies only.
+
+    const shouldMirrorToKick = () => {
+        // Enable with: KICK_MIRROR_CHAT=true
+        return process.env.KICK_MIRROR_CHAT === 'true';
+    };
+
+    const replyToKick = async (msg: string) => {
+        try {
+            const kick = getKickService(tenantId);
+            if (!kick.isConnected()) return;
+            await kick.sendChatMessage(msg);
+        } catch {}
+    };
+
+    const replyToKickIfEnabled = async (msg: string) => {
+        if (!shouldMirrorToKick()) return;
+        await replyToKick(msg);
+    };
+
+    const runChatAutomationTriggers = async (): Promise<boolean> => {
+        if (self || isBotMessage || !actualMessage || actualMessage.startsWith('!')) return false;
+
+        const actions = await getAllActions(tenantId);
+        const matchingActions = actions.filter((action: any) =>
+            action?.enabled &&
+            Array.isArray(action.triggers) &&
+            action.triggers.some((trigger: any) => {
+                if (trigger?.enabled === false) return false;
+                if (Number(trigger?.type) !== TriggerType.CHAT_MESSAGE) return false;
+                if (trigger?.excludeBots !== false && isBotMessage) return false;
+                const pattern = String(trigger?.pattern || '').trim();
+                if (!pattern) return true;
+                try {
+                    return new RegExp(pattern, 'i').test(actualMessage);
+                } catch {
+                    return false;
+                }
+            })
+        );
+
+        if (matchingActions.length === 0) return false;
+
+        const { SubActionExecutor } = await import('./automation/SubActionExecutor');
+        const executor = new SubActionExecutor();
+        const executionContext = {
+            user: actualUsername,
+            userName: actualUsername,
+            message: actualMessage,
+            rawInput: actualMessage,
+            platform: 'twitch',
+            channel: replyChannel,
+            tenantId: tenantId || undefined,
+            args: {
+                user: actualUsername,
+                userName: actualUsername,
+                message: actualMessage,
+                channel: replyChannel,
+                tenantId: tenantId || '',
+                rawInput: actualMessage,
+            },
+            variables: {
+                user: actualUsername,
+                userName: actualUsername,
+                message: actualMessage,
+                channel: replyChannel,
+                tenantId: tenantId || '',
+                rawInput: actualMessage,
+                platform: 'twitch',
+            },
+            actionStack: [],
+        };
+
+        for (const action of matchingActions) {
+            console.log(`[Dispatcher] Executing chat-triggered action ${action.id} for message "${actualMessage}"`);
+            await executor.executeAction(action, executionContext);
+        }
+
+        return matchingActions.some((action: any) =>
+            !Array.isArray(action.subActions) ||
+            action.subActions.some((subAction: any) => Number(subAction?.type) !== SubActionType.VOICE_REPLY_PROMPT)
+        );
+    };
+
+    const replyMaybeKick = async (msg: string, as: 'bot' | 'broadcaster' = 'broadcaster') => {
+        await reply(msg, as).catch(() => {});
+        await replyToKickIfEnabled(msg);
+    };
+
+
+
+    
+    // The broadcaster identity is also an automated Lounge speaker. Its
+    // data replies must not become new human chat, points, or Stella prompts.
+    // Keep explicit commands and numbered choices available for testing.
+    if (tenantId === SPACEMOUNTAIN_SYSTEM_TENANT_ID
+        && replyChannel.toLowerCase() === SPACEMOUNTAIN_SYSTEM_TWITCH_CHANNEL
+        && username.toLowerCase() === SPACEMOUNTAIN_SYSTEM_TWITCH_CHANNEL
+        && !/^(?:!|spmt(?:\s|$)|[1-8]$)/i.test(message.trim())) return;
+
+    // Prevent duplicate processing with more specific ID
+    const messageId = `${tags.id || 'no-id'}-${username}-${message.slice(0, 50)}`;
+    
+    if (processedMessages.has(messageId)) {
+        console.log(`[Dispatcher] Skipping duplicate message: ${messageId}`);
+        return;
+    }
+    processedMessages.add(messageId);
+    
+    // Also check for recent identical messages
+    const contentKey = `${username}-${message}`;
+    const now = Date.now();
+    const recentMessages = (global as any).recentMessages || new Map();
+    
+    if (recentMessages.has(contentKey) && !/^!(?:raid|raidmessage)(?:\s|$)/i.test(message.trim())) {
+        const lastTime = recentMessages.get(contentKey);
+        if (now - lastTime < 5000) { // 5 second window
+            console.log(`[Dispatcher] Skipping recent duplicate content from ${username}`);
+            return;
+        }
+    }
+    recentMessages.set(contentKey, now);
+    (global as any).recentMessages = recentMessages;
+    
+    // Clean up old recent messages to prevent memory leak
+    if (recentMessages.size > 500) {
+        const entries = Array.from(recentMessages.entries()) as [string, number][];
+        entries.sort((a, b) => a[1] - b[1]);
+        for (let i = 0; i < entries.length - 200; i++) {
+            recentMessages.delete(entries[i][0]);
+        }
+    }
+    
+    // Clean up old message IDs (keep last 100)
+    if (processedMessages.size > 100) {
+        const oldIds = Array.from(processedMessages).slice(0, processedMessages.size - 100);
+        oldIds.forEach(id => processedMessages.delete(id));
+    }
+    
+    // A category number is conversational only while this same viewer has a
+    // live !commands menu. Consume it before redemption/free-text listeners.
+    const earlyCommandCategory = consumeLoungeCommandMenuChoice(message, {
+        platform: 'twitch',
+        tenantId,
+        channelId: replyChannel,
+        username,
+        isMod: Boolean(tags.mod || tags.badges?.broadcaster),
+    });
+    if (earlyCommandCategory) {
+        for (const line of earlyCommandCategory) await replyMaybeKick(`@${username} ${line}`, 'bot');
+        return;
+    }
+
+    // Track chat messages for redemptions (before any other processing)
+    let consumedByRedemption = false;
+    if (!self && !message.startsWith('!') && !message.startsWith('[')) {
+        const { trackChatMessageForRedemption } = require('./eventsub');
+        consumedByRedemption = trackChatMessageForRedemption(username, message, tenantId);
+        // A pending check-in or pack selection has already started its own
+        // result flow. Never also treat that number as ordinary Stella chat.
+        if (consumedByRedemption) return;
+    }
+    
+    // Extract actual message if it came from Discord
+    let actualMessage = message;
+    let actualUsername = username;
+    if (message.startsWith('[Discord] ')) {
+        const match = message.match(/^\[Discord\]\s+([^:]+):\s+(.+)$/);
+        if (match) {
+            actualUsername = match[1].trim();
+            actualMessage = match[2];
+            console.log(`[Dispatcher] Extracted Discord message - user: ${actualUsername}, message: ${actualMessage}`);
+        } else {
+            console.log(`[Dispatcher] Failed to parse Discord message: ${message}`);
+        }
+    }
+
+    // Canonical SPMT aliases reuse the proven legacy command handlers.
+    // Unrecognized/game-shaped SPMT commands remain untouched for Nebula.
+    const canonicalSpmtAlias = rewriteSpmtLegacyAlias(actualMessage);
+    if (canonicalSpmtAlias) actualMessage = canonicalSpmtAlias;
+
+    const mtFixItIntent = detectMtFixItIntent(actualMessage);
+
+    if (!self && mtFixItIntent.matched) {
+        if (!mtFixItIntent.description) {
+            beginPendingMtSupportRequest({
+                platform: 'twitch',
+                tenantId,
+                username: actualUsername,
+                channelId: replyChannel,
+            });
+            await replyMaybeKick(`@${actualUsername}, ${getMtSupportPrompt('twitch')}`, 'bot').catch(() => {});
+            return;
+        }
+
+        const inlineResult = await submitMtSupportReport({
+            platform: 'twitch',
+            tenantId,
+            username: actualUsername,
+            channelId: replyChannel,
+            description: mtFixItIntent.description,
+            triggerMessage: actualMessage,
+        });
+        if (!inlineResult.ok) console.error('[MtFixIt] Twitch inline report failed:', inlineResult.error);
+        await replyMaybeKick(getMtFixItPublicReply(actualUsername), 'bot').catch(() => {});
+        return;
+    }
+
+    if (!self && consumePendingMtSupportRequest({
+        platform: 'twitch',
+        tenantId,
+        username: actualUsername,
+        channelId: replyChannel,
+    })) {
+        const pendingDescription = actualMessage.startsWith('!') ? actualMessage.slice(1).trim() : actualMessage;
+        const result = await submitMtSupportReport({
+            platform: 'twitch',
+            tenantId,
+            username: actualUsername,
+            channelId: replyChannel,
+            description: pendingDescription,
+            triggerMessage: '!mtfixit',
+        });
+        if (!result.ok) console.error('[MtFixIt] Twitch pending-description report failed:', result.error);
+        await replyMaybeKick(getMtFixItPublicReply(actualUsername), 'bot').catch(() => {});
+        return;
+    }
+
+    const isCommand = actualMessage.startsWith('!');
+    
+    // Get usernames from stored tokens (OAuth source of truth), then user config as fallback
+    let botUsername = 'streamweaverbot';
+    let broadcasterUsername = 'broadcaster';
+    try {
+        const { readUserConfigSync } = require('../lib/user-config');
+        const config = readUserConfigSync(tenantId);
+        broadcasterUsername = config.TWITCH_BROADCASTER_USERNAME || 'broadcaster';
+        botUsername = config.TWITCH_BOT_USERNAME || 'streamweaverbot';
+    } catch {}
+    try {
+        const fsSync = require('fs');
+        const path = require('path');
+        const { tenantPath: tp, communityBotTokensPath } = require('../lib/tenant');
+        const tokensPath = tenantId
+            ? tp(tenantId, 'tokens/twitch-tokens.json')
+            : path.join(process.cwd(), 'tokens', 'twitch-tokens.json');
+        if (fsSync.existsSync(tokensPath)) {
+            const tokens = JSON.parse(fsSync.readFileSync(tokensPath, 'utf8'));
+            if (tokens.botUsername) botUsername = tokens.botUsername;
+            if (tokens.broadcasterUsername) broadcasterUsername = tokens.broadcasterUsername;
+        }
+        if (!botUsername || botUsername === 'streamweaverbot') {
+            const communityTokensPath = communityBotTokensPath();
+            if (fsSync.existsSync(communityTokensPath)) {
+                const communityTokens = JSON.parse(fsSync.readFileSync(communityTokensPath, 'utf8'));
+                if (communityTokens.communityBotUsername) {
+                    botUsername = communityTokens.communityBotUsername;
+                }
+            }
+        }
+    } catch {}
+    
+    const isTheCountAccountMessage = isTheCountTwitchLogin(actualUsername);
+    const isStellaShoutoutCommand = isConfirmedLoungeStellaShoutout({
+        tenantId, channel: replyChannel, tags, message,
+    });
+    const isBot = actualUsername.toLowerCase() === (botUsername || '').toLowerCase() || isTheCountAccountMessage;
+    const isBotMessage = actualUsername.toLowerCase() === (botUsername || '').toLowerCase() || isTheCountAccountMessage;
+    // SpaceMountainLive doubles as infrastructure elsewhere (including ChatTag),
+    // so it can legitimately be classified as a bot identity. In its own
+    // production channel, however, commands typed by @spacemountainlive are
+    // broadcaster commands and must reach the full command runtime. Keep the
+    // bot classification for non-command automation/points/welcome loop guards.
+    const isSpaceMountainBroadcasterCommand =
+        isCommand
+        && tenantId === SPACEMOUNTAIN_SYSTEM_TENANT_ID
+        && replyChannel.toLowerCase() === 'spacemountainlive'
+        && actualUsername.toLowerCase() === 'spacemountainlive';
+    const isHearMeOutOwner = Boolean(
+        tags.badges?.broadcaster
+        || isSpaceMountainBroadcasterCommand
+        || (tenantId === SPACEMOUNTAIN_SYSTEM_TENANT_ID && actualUsername.toLowerCase() === 'mtman1987')
+        || actualUsername.toLowerCase() === broadcasterUsername.toLowerCase()
+    );
+    const canControlHearMeOut = Boolean(tags.mod || isHearMeOutOwner);
+    const isKnownAutomationBotMessage = !isBotMessage && (
+        await isKnownBot(actualUsername, tenantId) ||
+        await isConfiguredTwitchBotUsername(actualUsername) ||
+        await isLoreBotUsername(actualUsername)
+    );
+
+    if (!self && !isBotMessage && !message.startsWith('[') && actualMessage.trim()) {
+        appendPublicChatMessages([{
+            type: 'user',
+            username: actualUsername,
+            message: actualMessage,
+            timestamp: new Date().toISOString(),
+        }], 300, tenantId).catch(() => {});
+    }
+
+    if (VERBOSE_LOGS) {
+        console.log(`[Dispatcher] Handling Twitch message: "${message}" from ${displayName} (self: ${self}, isBot: ${isBot}, isBotMessage: ${isBotMessage}, isKnownAutomationBotMessage: ${isKnownAutomationBotMessage})`);
+    }
+    
+    // A broadcaster can type these utilities through the broadcaster IRC client.
+    // Only direct channel ownership qualifies; bot replies do not start with these commands.
+    const isBroadcasterUtilityCommand = Boolean(tags.badges?.broadcaster)
+        && actualUsername.toLowerCase() === replyChannel.toLowerCase()
+        && !Boolean(tags['source-room-id'] && tags['source-room-id'] !== tags['room-id'])
+        && /^!(?:raid|raidmessage|followtest)(?:\s|$)/i.test(actualMessage.trim());
+
+    // Skip self messages (broadcaster client echoes its own sends).
+    // The dedicated Count client is send-only, so its echo arrives through the
+    // tenant listener as another bot message and must be stopped explicitly.
+    if ((self && !(tags.badges?.broadcaster && /^!(?:sr|wr)(?:\s|$)/i.test(actualMessage)) && !isSpaceMountainBroadcasterCommand && !isStellaShoutoutCommand && !isBroadcasterUtilityCommand) || isTheCountAccountMessage) return;
+
+        // Both names save with text and replay without text; blank input never clears the message.
+        {
+            const cmdName = actualMessage.trim().slice(1).split(/\s+/)[0].toLowerCase();
+            if (cmdName === 'raid' || cmdName === 'raidmessage') {
+                const { handleRaidMessageCommand, isRaidMessageOwner } = await import('./raid-message');
+                try {
+                    const canSet = isRaidMessageOwner({
+                        tenantId, senderId: tags['user-id'], senderName: tags.username,
+                        channel: replyChannel, broadcasterBadge: Boolean(tags.badges?.broadcaster),
+                        mirrored: Boolean(tags['source-room-id'] && tags['source-room-id'] !== tags['room-id']),
+                    });
+                    const output = await handleRaidMessageCommand({ message: actualMessage, tenantId, canSet });
+                    if (output) await reply(output, 'bot');
+                } catch (error) {
+                    console.error('[Dispatcher] Raid message failed:', error instanceof Error ? error.message : String(error));
+                    await reply('Could not save or load the raid message. Please try again.', 'bot').catch(() => {});
+                }
+                return;
+            }
+        }
+
+    const volumeCommand = tenantId === SPACEMOUNTAIN_SYSTEM_TENANT_ID
+        && replyChannel.toLowerCase() === 'spacemountainlive'
+        ? actualMessage.trim().match(/^!(?:vol|volume)(?:\s+(.*))?$/i)
+        : null;
+    if (volumeCommand) {
+        if (!canControlHearMeOut) {
+            await reply(`@${actualUsername}, only the broadcaster or a moderator can adjust the broadcast mix.`, 'bot').catch(() => {});
+            return;
+        }
+        const args = String(volumeCommand[1] || '').trim().toLowerCase().split(/\s+/).filter(Boolean);
+        const output = /^(stella|spotlight|media|all)$/.test(args[0] || '') ? args[0] as LoungeMixOutput : null;
+        try {
+            if (args.length === 0) {
+                const mix = await getLoungeAudioMix();
+                await reply(`Broadcast mix: All ${mix.levels.all}% · Stella ${mix.levels.stella}% · Spotlight ${mix.levels.spotlight}% · Media ${mix.levels.media}%.`, 'bot').catch(() => {});
+            } else if (args.length === 1 && output) {
+                const mix = await selectLoungeMixOutput(output);
+                await reply(`${output} volume selected: ${mix.levels[output]}%.`, 'bot').catch(() => {});
+            } else if ((args.length === 1 && /^\d{1,3}$/.test(args[0]))
+                || (args.length === 2 && output && /^\d{1,3}$/.test(args[1]))) {
+                const value = Number(args[output ? 1 : 0]);
+                const mix = await setLoungeMixVolume(output, value);
+                await reply(`${mix.selected} volume set to ${mix.levels[mix.selected]}%.`, 'bot').catch(() => {});
+            } else {
+                await reply('Usage: !vol [stella|spotlight|media|all] [0-100]', 'bot').catch(() => {});
+            }
+        } catch (error) {
+            await reply(`Volume unchanged: ${error instanceof Error ? error.message : String(error)}`, 'bot').catch(() => {});
+        }
+        return;
+    }
+
+    // Keep watch choices tied to the requester and channel; expire them so a
+    // later number cannot silently queue a title from an old search.
+    if (tenantId === SPACEMOUNTAIN_SYSTEM_TENANT_ID && /^!follow(?:\s|$)/i.test(actualMessage.trim())) {
+        const name = actualMessage.trim().replace(/^!follow\s*/i, '').replace(/^@/, '').trim().toLowerCase();
+        if (!/^[a-z0-9_]{3,25}$/.test(name)) {
+            await reply(`@${actualUsername}, use !follow @creator to share their Twitch channel.`, 'bot').catch(() => {});
+        } else {
+            await reply(`Follow @${name}: https://www.twitch.tv/${name}`, 'bot').catch(() => {});
+        }
+        return;
+    }
+
+    // !play may belong to another bot in the same chat. Ignore it silently and
+    // stop our own handlers from competing with that bot's command.
+    if (/^!play(?:\s+.*)?$/i.test(actualMessage.trim())) {
+        return;
+    }
+
+    // SML media requests are production-critical Lounge commands. Handle them
+    // before imported JSON actions and general bot/command filters so stale
+    // Streamer.bot actions cannot swallow !sr or !wr.
+    // Tenant Twitch music is handled before imported actions or shared Lounge commands.
+    if (tenantId && tenantId !== SPACEMOUNTAIN_SYSTEM_TENANT_ID
+        && await handleTenantMusicCommand({
+            message: actualMessage, tenantId, username: actualUsername,
+            userId: String(tags['user-id'] || tags.username || actualUsername),
+            canControl: canControlHearMeOut, isBroadcaster: Boolean(tags.badges?.broadcaster),
+            execute: executeHearMeOutBotAction,
+            reply: text => reply(text, 'bot'),
+        })) return;
+    const watchChoiceKey = `${replyChannel}:${String(tags['user-id'] || tags.username || actualUsername).toLowerCase()}`;
+    // A viewer can answer the three-choice movie prompt with just 1, 2, or 3.
+    // Only consume a bare digit when this same viewer has a pending !wr search;
+    // !commands category choices have already been handled above.
+    const bareWatchChoice = tenantId === SPACEMOUNTAIN_SYSTEM_TENANT_ID
+        && !self
+        && /^[1-3]$/.test(actualMessage.trim())
+        && pendingWatchChoices.has(watchChoiceKey);
+    const smlMediaRequest = tenantId === SPACEMOUNTAIN_SYSTEM_TENANT_ID
+        ? actualMessage.trim().match(/^!(sr|wr)(?:\s+(.+))?$/i)
+            || (bareWatchChoice ? ['', 'wr', actualMessage.trim()] : null)
+        : null;
+    if (smlMediaRequest) {
+        const command = smlMediaRequest[1].toLowerCase();
+        const query = String(smlMediaRequest[2] || '').trim();
+        if (!query) {
+            await reply(
+                `@${actualUsername}, usage: !${command} <${command === 'sr' ? 'song or YouTube URL' : 'movie, show, or video'}>`,
+                'bot',
+            ).catch(() => {});
+            return;
+        }
+
+        const roomId = SPACEMOUNTAIN_LOUNGE_ROOM_ID;
+        const lane = command === 'wr' ? 'movie' : 'music';
+        const choiceKey = watchChoiceKey;
+        let choice: { id: string; title: string; year: number | null } | undefined;
+        if (command === 'wr') {
+            const number = query.match(/^[1-3]$/);
+            if (number) {
+                const pending = pendingWatchChoices.get(choiceKey);
+                if (!pending || pending.expiresAt < Date.now()) {
+                    pendingWatchChoices.delete(choiceKey);
+                    await reply(`@${actualUsername}, those choices expired. Search again with !wr <movie title>.`, 'bot').catch(() => {});
+                    return;
+                }
+                choice = pending.options[Number(number[0]) - 1];
+                if (!choice) {
+                    await reply(`@${actualUsername}, choose one of the listed numbers.`, 'bot').catch(() => {});
+                    return;
+                }
+            } else {
+                const searchNotice = setTimeout(() => {
+                    void reply(`@${actualUsername}, searching playable watch choices for "${query.slice(0, 70)}"…`, 'bot').catch(() => {});
+                }, 3000);
+                try {
+                    const found: any = await executeHearMeOutBotAction({
+                        action: 'hmo.media.search',
+                        tenantId: SPACEMOUNTAIN_SYSTEM_TENANT_ID,
+                        roomId,
+                        lane: 'movie',
+                        actorUserId: String(tags['user-id'] || tags.username || actualUsername),
+                        actorName: actualUsername,
+                        query,
+                    });
+                    const options = Array.isArray(found.options)
+                        ? found.options.filter((option: any) => /^[a-z0-9-]+$/i.test(String(option?.id || '')) && option?.title).slice(0, 3)
+                            .map((option: any) => ({ id: String(option.id), title: String(option.title).slice(0, 90), year: Number(option.year) || null }))
+                        : [];
+                    if (!options.length) {
+                        pendingWatchChoices.delete(choiceKey);
+                        await reply(`@${actualUsername}, the provider returned no playable choices for "${query.slice(0, 70)}". Try a different title or year.`, 'bot').catch(() => {});
+                        return;
+                    }
+                    clearLoungeCommandMenu({ platform: 'twitch', tenantId, channelId: replyChannel, username: actualUsername, isMod: Boolean(tags.mod || tags.badges?.broadcaster) });
+                    retireRedemptionNumberChoices(tenantId, actualUsername);
+                    pendingWatchChoices.set(choiceKey, { options, expiresAt: Date.now() + 5 * 60_000 });
+                    const list = options.map((option: { title: string; year: number | null }, index: number) =>
+                        `${index + 1}) ${option.title}${option.year && !option.title.includes(String(option.year)) ? ` (${option.year})` : ''}`
+                    ).join(' | ');
+                    await reply(`@${actualUsername}, watch choices: ${list}. Reply 1, 2, or 3 (or type !wr 1, !wr 2, or !wr 3) within 5 minutes.`.slice(0, 490), 'bot').catch(() => {});
+                } catch (error) {
+                    const message = error instanceof Error ? error.message : String(error);
+                    console.error('[Dispatcher] SML !wr provider search failed:', error);
+                    await reply(`@${actualUsername}, movie search failed: ${message.slice(0, 150)}. Please try !wr ${query.slice(0, 60)} again.`, 'bot').catch(() => {});
+                } finally {
+                    clearTimeout(searchNotice);
+                }
+                return;
+            }
+        }
+        const requestNotice = lane === 'movie'
+            ? setTimeout(() => {
+                void reply(`@${actualUsername}, checking a playable watch choice for "${(choice?.title || query).slice(0, 70)}"…`, 'bot').catch(() => {});
+            }, 3000)
+            : null;
+        try {
+            const result: any = await executeHearMeOutBotAction({
+                action: 'hmo.media.request',
+                tenantId: SPACEMOUNTAIN_SYSTEM_TENANT_ID,
+                roomId,
+                lane,
+                channelId: replyChannel,
+                actorUserId: String(tags['user-id'] || tags.username || actualUsername),
+                actorName: actualUsername,
+                actorRole: isHearMeOutOwner ? 'owner' : tags.mod ? 'moderator' : 'member',
+                query: choice?.title || query,
+                itemId: choice?.id,
+                idempotencyKey: `twitch:${replyChannel}:${String(tags.id || '') || Date.now()}:${command}`,
+            });
+            const title = String(result?.request?.item?.title || query);
+            const successText = lane === 'music'
+                ? `@${actualUsername}, "${title}" is queued for the Lounge.`
+                : `@${actualUsername}, "${title}" is queued for the Lounge watch lane.`;
+            await reply(successText, 'bot').catch(() => {});
+            if (choice) pendingWatchChoices.delete(choiceKey);
+            console.log(`[Dispatcher] SML !${command} queued in HearMeOut Lounge for @${actualUsername}`);
+        } catch (error) {
+            console.error(`[Dispatcher] SML !${command} HearMeOut request failed:`, error);
+            const failureText = lane === 'music'
+                ? `@${actualUsername}, I couldn't find a playable upload for that song. Try the title with the artist, or paste a YouTube link.`
+                : `@${actualUsername}, I couldn't queue that Lounge watch request. Try another title or year.`;
+            await reply(failureText, 'bot').catch(() => {});
+        } finally {
+            if (requestNotice) clearTimeout(requestNotice);
+        }
+        return;
+    }
+
+    if (isCommand && /^!listen$/i.test(actualMessage.trim())) {
+        const links = await buildTwitchListenLinks(replyChannel);
+        const replyText = links.length === 0
+            ? 'No TTS listeners are on for this Twitch chat. Type !say all to turn this Twitch chat on.'
+            : links.length === 1
+            ? `Listen to TTS: ${links[0].url}\nType !say all to turn this Twitch chat on.`
+            : `Listen to TTS:\n${links.map((link) => `- ${link.label}: ${link.url}`).join('\n')}\nType !say all to turn this Twitch chat on.`;
+        await replyMaybeKick(replyText, 'broadcaster').catch(() => {});
+        return;
+    }
+
+    if (isCommand && /^!say(?:\s|$)/i.test(actualMessage)) {
+        const args = actualMessage.substring('!say'.length).trim().split(/\s+/).filter(Boolean);
+        const firstState = parseSayState(args[0]);
+        const targetToken = firstState ? '' : (args[0] || '');
+        const requestedState = firstState || parseSayState(args[1]);
+        const canManageSay = Boolean(tags.mod || tags.badges?.broadcaster);
+        const sayUsers = await readSayUsers();
+
+        if (!targetToken || targetToken.toLowerCase() === 'all') {
+            const nextState = applySayState(sayUsers, sayAllKey(replyChannel), requestedState);
+            await writeSayUsers(sayUsers);
+            await replyMaybeKick(`TTS for everyone in this Twitch chat is now ${nextState}. Listen: ${buildSayPlayerUrl(undefined, 'twitch', replyChannel)}`, 'broadcaster').catch(() => {});
+            return;
+        }
+
+        const targetUser = normalizeSayUser(targetToken || actualUsername);
+        const isSelfTarget = targetUser === normalizeSayUser(actualUsername);
+        if (!isSelfTarget && !canManageSay) {
+            await replyMaybeKick(`@${actualUsername}, only mods can change !say for another user.`, 'broadcaster').catch(() => {});
+            return;
+        }
+
+        const nextState = applySayState(sayUsers, sayUserKey(targetUser, replyChannel), requestedState);
+        await writeSayUsers(sayUsers);
+        const suffix = nextState === 'on'
+            ? ` Listen: ${buildSayPlayerUrl(undefined, 'twitch', replyChannel)}${isSelfTarget ? ' | Type !say again to disable.' : ''}`
+            : '';
+        await replyMaybeKick(`TTS for @${targetUser} is now ${nextState}.${suffix}`, 'broadcaster').catch(() => {});
+        return;
+    }
+
+    if (isCommand && /^!signal(?:\s|$)/i.test(actualMessage)) {
+        try {
+            const result = await handleTwitchSignalCommand({
+                providerUserId: String(tags['user-id'] || tags.userId || ''),
+                username: actualUsername,
+                broadcaster: replyChannel,
+                tenantId,
+                rawMessage: actualMessage,
+            });
+            if (!result.ok && result.message) {
+                await replyMaybeKick(result.message, 'bot').catch(() => {});
+            }
+        } catch (error: any) {
+            console.error('[Dispatcher] Twitch !signal failed:', error);
+            await replyMaybeKick(`@${actualUsername}, Signal failed: ${error?.message || 'unknown error'}`, 'bot').catch(() => {});
+        }
+        return;
+    }
+
+    recordDashboardActivity({
+        id: String(tags.id || `twitch-${Date.now()}-${Math.random().toString(36).slice(2)}`),
+        tenantId,
+        platform: message.startsWith('[Discord] ') ? 'Discord' : 'Twitch',
+        user: actualUsername,
+        message: actualMessage,
+        color: tags.color,
+    });
+
+    const sayMessage = stripTwitchEmotesFromText(actualMessage, tags.emotes);
+    const isSpaceMountainDataSpeaker = tenantId === SPACEMOUNTAIN_SYSTEM_TENANT_ID
+        && replyChannel.toLowerCase() === SPACEMOUNTAIN_SYSTEM_TWITCH_CHANNEL
+        && actualUsername.toLowerCase() === SPACEMOUNTAIN_SYSTEM_TWITCH_CHANNEL;
+    const forcedSayEcho = isSpaceMountainDataSpeaker
+        && consumeForcedSayEcho(replyChannel, actualUsername, actualMessage);
+    if (!isCommand && !isBotMessage && !isKnownAutomationBotMessage && (!isSpaceMountainDataSpeaker || forcedSayEcho) && !message.startsWith('[') && isSayTextSpeakable(sayMessage) && !consumeNextSayEcho(replyChannel, actualUsername, actualMessage)) {
+        readSayUsers().then((sayUsers) => {
+            if (!forcedSayEcho && !isSayEnabled(sayUsers, actualUsername, replyChannel)) return;
+            const sayChannelKey = resolveSayStreamKey(undefined, 'twitch', replyChannel);
+            if (isSaySuppressedForTenant(tenantId) || isSaySuppressedForTenant(sayChannelKey)) return;
+            const spokenMessage = formatSaySpeechText(sayChannelKey, displayName || actualUsername, sayMessage);
+            return fetch(`${getInternalAppUrl()}/api/say/queue`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ tenantId: sayChannelKey, text: spokenMessage }),
+            });
+        }).catch((error) => console.warn('[Say TTS] Twitch queue failed:', error));
+    }
+    
+    // Handle AI memory clear command FIRST (before any other processing)
+    const aiConfig = getAIConfig(tenantId);
+    const botName = aiConfig.botName || 'AI Bot';
+    const memoryClearPattern = new RegExp(`${botName.toLowerCase()}.*yeah i said it now get over it`, 'i');
+    
+    if (memoryClearPattern.test(actualMessage.toLowerCase())) {
+        console.log(`[Dispatcher] Memory clear command detected from ${actualUsername}`);
+        try {
+            const response = await fetch(`http://127.0.0.1:${process.env.PORT||3100}/api/ai/clear-memory`, {
+                method: 'POST'
+            });
+            
+            if (response.ok) {
+                await replyMaybeKick('ok but only because i want too, not because you told me', 'bot').catch(() => {});
+
+                console.log(`[Dispatcher] AI memory cleared by ${actualUsername}`);
+            } else {
+                console.error('[Dispatcher] Memory clear API failed:', response.status);
+            }
+        } catch (error) {
+            console.error('[Dispatcher] Memory clear failed:', error);
+        }
+        return; // Exit early to prevent further processing
+    }
+    
+    // Handle basic commands that should work regardless of bot status
+    if (isCommand) {
+        console.log(`[Dispatcher] Command detected: ${actualMessage} from ${actualUsername}`);
+        incrementMetric('totalCommands', 1, tenantId).catch(() => {});
+        
+        const commands = await getAllCommands(tenantId);
+        const cmdName = actualMessage.trim().substring(1).split(/\s+/)[0].toLowerCase();
+        const configuredCommand = commands.find((c: any) => String(c.command || '').toLowerCase().replace(/^!/, '') === cmdName);
+        if (configuredCommand && configuredCommand.enabled === false) {
+            if (!CORE_POKEMON_CONFIRMATION_COMMANDS.has(cmdName)) {
+                console.log(`[Dispatcher] Command ${cmdName} is disabled; skipping built-in and action handling.`);
+                return;
+            }
+            console.log(`[Dispatcher] Command ${cmdName} is disabled as a custom command; continuing with core Pokemon handler.`);
+        }
+
+        // Handle check-in commands (process early)
+        const lowerMessage = actualMessage.toLowerCase();
+        const checkinCommandKinds: Array<{ triggers: string[]; kind: 'partner' | 'crew' | 'mod' | 'space-mountain' }> = [
+            { triggers: ['!checkin', '!partner'], kind: 'partner' },
+            { triggers: ['!crew', '!crewcheckin'], kind: 'crew' },
+            { triggers: ['!mod', '!modcheckin'], kind: 'mod' },
+            { triggers: ['!spmt', '!spacemountain', '!space', '!spacecheckin'], kind: 'space-mountain' },
+        ];
+        const matchedCheckin = checkinCommandKinds.find((entry) => entry.triggers.some((trigger) => lowerMessage === trigger || lowerMessage.startsWith(`${trigger} `)));
+        if (matchedCheckin) {
+            console.log(`[Dispatcher] Processing ${matchedCheckin.kind} checkin command from ${actualUsername}`);
+            const cmd = actualMessage.split(' ')[0];
+            const numArg = actualMessage.substring(cmd.length).trim();
+            
+            try {
+                const { getConfigSection } = require('../lib/local-config/service');
+                const { getCheckinSource } = require('./checkin-sources');
+                const { formatCheckinList, createPendingPayload, runCheckin, runBulkCheckin } = require('./checkin-flow');
+                const redeemsConfig = await getConfigSection('redeems', tenantId);
+                const checkinConfigMap: Record<string, any> = {
+                    'partner': redeemsConfig.partnerCheckin,
+                    'crew': redeemsConfig.crewCheckin,
+                    'mod': redeemsConfig.modCheckin,
+                    'space-mountain': redeemsConfig.spaceMountainCheckin,
+                };
+                const pointCost = Number(checkinConfigMap[matchedCheckin.kind]?.pointCost || 0);
+
+                if (pointCost > 0) {
+                    const pts = await getPoints(actualUsername, tenantCtx);
+                        if (pts.points < pointCost) {
+                            await replyMaybeKick(`@${actualUsername}, you need ${formatCompactPointAmount(pointCost)} points for this check-in! (You have ${pts.pointsDisplay})`, 'broadcaster').catch(() => {});
+                            return;
+
+                    }
+                }
+
+                const source = await getCheckinSource(matchedCheckin.kind, tenantId, actualUsername);
+                console.log(`[Dispatcher] Found ${source.entries.length} ${matchedCheckin.kind} entries`);
+                
+                if (matchedCheckin.kind === 'space-mountain') {
+                    await runBulkCheckin('space-mountain', actualUsername, pointCost, tenantId);
+                    return;
+                }
+
+                if (source.entries.length === 0) {
+                    await replyMaybeKick(source.error ? `@${actualUsername}, ${source.sourceLabel} lookup failed: ${source.error}` : `@${actualUsername}, no ${source.sourceLabel.toLowerCase()} found right now.`, 'broadcaster').catch(() => {});
+                    return;
+                }
+                
+                const selectionId = parseInt(numArg, 10);
+                // A selection already has its list. Only the initial list is
+                // broadcaster data; the selected result belongs to Stella.
+                if (!selectionId || isNaN(selectionId) || selectionId < 1) {
+                    const listMessage = formatCheckinList(matchedCheckin.kind, source.entries);
+                    console.log(`[Dispatcher] Check-in list message:`, listMessage);
+                    await replyMaybeKick(listMessage, 'broadcaster').catch(() => {});
+                }
+                if (!selectionId || isNaN(selectionId) || selectionId < 1) {
+                    console.log(`[Dispatcher] Invalid ${matchedCheckin.kind} ID: ${numArg}, waiting for valid selection`);
+                    const { pendingCheckins } = require('./eventsub');
+                    if (pendingCheckins) {
+                        const tenantKey = tenantId || 'global';
+                        let tenantSelections = pendingCheckins.get(tenantKey);
+                        if (!tenantSelections) {
+                            tenantSelections = new Map();
+                            pendingCheckins.set(tenantKey, tenantSelections);
+                        }
+                        clearLoungeCommandMenu({ platform: 'twitch', tenantId, channelId: replyChannel, username: actualUsername, isMod: Boolean(tags.mod || tags.badges?.broadcaster) });
+                        pendingWatchChoices.delete(watchChoiceKey);
+                        retireRedemptionNumberChoices(tenantId, actualUsername);
+                        tenantSelections.set(actualUsername.toLowerCase(), { timestamp: Date.now(), kind: matchedCheckin.kind, pointCost });
+                        if ((global as any).broadcast) {
+                            (global as any).broadcast({ type: 'checkin-pending', payload: createPendingPayload(matchedCheckin.kind, actualUsername, source.sourceLabel) }, tenantId);
+                        }
+                    }
+                    return;
+                }
+
+                console.log(`[Dispatcher] Processing ${matchedCheckin.kind} checkin ${selectionId} for ${actualUsername}`);
+                await runCheckin(matchedCheckin.kind, actualUsername, selectionId, pointCost, tenantId);
+            } catch (error) {
+                console.error('[Dispatcher] Checkin command failed:', error);
+                await reply(`@${actualUsername}, checkin system error! Contact a mod.`, 'broadcaster').catch(() => {});
+            }
+            return;
+        }
+        
+        // Handle !pack command (most used command - process early)
+        if (actualMessage.toLowerCase().startsWith('!pack')) {
+            console.log(`[Dispatcher] Processing !pack command from ${actualUsername}`);
+            const numArg = actualMessage.substring(5).trim();
+            
+            try {
+                const { getConfigSection } = require('../lib/local-config/service');
+                const redeemsConfig = await getConfigSection('redeems', tenantId);
+                const pointCost = redeemsConfig.pokePack.pointCost;
+                console.log(`[Dispatcher] Pack cost: ${pointCost} points`);
+
+                if (pointCost > 0) {
+                    const pts = await getPoints(actualUsername, tenantCtx);
+                    if (pts.points < pointCost) {
+                        await reply(`@${actualUsername}, you need ${formatCompactPointAmount(pointCost)} points to open a pack! (You have ${pts.pointsDisplay})`, 'broadcaster').catch(() => {});
+                        return;
+                    }
+                }
+
+                const { getEnabledSetMap, formatSetList } = require('./pokemon-packs');
+                const enabledSets = redeemsConfig.pokePack.enabledSets || [];
+                console.log(`[Dispatcher] !pack tenant=${tenantId || 'global'} channel=${replyChannel} enabledSetCount=${enabledSets.length}`, enabledSets);
+                
+                const setMap = getEnabledSetMap(enabledSets);
+                const setCount = Object.keys(setMap).length;
+                console.log(`[Dispatcher] Available sets:`, setCount, setMap);
+                
+                if (setCount === 0) {
+                    await reply(`@${actualUsername}, no Pokemon packs are available! Contact a mod.`, 'broadcaster').catch(() => {});
+                    return;
+                }
+
+                const setNumber = parseInt(numArg, 10);
+                if (!setNumber || isNaN(setNumber) || setNumber < 1 || setNumber > setCount) {
+                    await reply(`${formatSetList(setMap)} | Use !pack 1-${setCount}`, 'broadcaster').catch(() => {});
+                    const { pendingPackRedeems } = require('./eventsub');
+                    const tenantKey = tenantId || 'global';
+                    let tenantPackRedeems = pendingPackRedeems.get(tenantKey);
+                    if (!tenantPackRedeems) {
+                        tenantPackRedeems = new Map();
+                        pendingPackRedeems.set(tenantKey, tenantPackRedeems);
+                    }
+                    clearLoungeCommandMenu({ platform: 'twitch', tenantId, channelId: replyChannel, username: actualUsername, isMod: Boolean(tags.mod || tags.badges?.broadcaster) });
+                    pendingWatchChoices.delete(watchChoiceKey);
+                    retireRedemptionNumberChoices(tenantId, actualUsername);
+                    tenantPackRedeems.set(actualUsername.toLowerCase(), { timestamp: Date.now(), pointCost, chatChannel: replyChannel });
+                    return;
+                }
+
+                console.log(`[Dispatcher] Opening monthly pool pack ${setNumber} for ${actualUsername}`);
+                const { handlePackOpenCmd } = require('./eventsub');
+                await handlePackOpenCmd(actualUsername, setNumber, pointCost, tenantId, replyChannel);
+            } catch (error) {
+                console.error('[Dispatcher] !pack command failed:', error);
+                await reply(`@${actualUsername}, pack system error! Contact a mod.`, 'broadcaster').catch(() => {});
+            }
+            return;
+        }
+        
+        // Handle !points command (works for everyone)
+        if (actualMessage.toLowerCase() === '!points') {
+            try {
+                // Use same tenant context as chat points awarding
+                const userPoints = await getPoints(actualUsername, tenantCtx);
+                await reply(`@${actualUsername} has ${userPoints.pointsDisplay} points!`, 'broadcaster').catch(() => {});
+            } catch (error) {
+                console.error('[Dispatcher] Points fetch failed:', error);
+                await reply(`@${actualUsername}, couldn't fetch your points!`, 'broadcaster').catch(() => {});
+            }
+            return;
+        }
+        
+        if (/^!tickets(?:\s|$)/i.test(actualMessage) && tenantId === SPACEMOUNTAIN_SYSTEM_TENANT_ID) {
+            try {
+                const { getRaffleTicketBalance } = await import('./raffle-system');
+                const userId = String(tags['user-id'] || tags.userId || '');
+                const [merch, giftcard, total] = await Promise.all(['merch', 'giftcard', 'general'].map(id => getRaffleTicketBalance(actualUsername, userId, id as import('./raffle-system').RaffleId)));
+                await reply(
+                    `🎟️ @${actualUsername}, your entries: Merch ${merch} · $25 gift card ${giftcard}${total ? ` · General ${total}` : ''}.`,
+                    'bot',
+                ).catch(() => {});
+            } catch (error) {
+                console.error('[Raffle] !tickets failed:', error);
+                await reply(`@${actualUsername}, I couldn't load your raffle tickets right now.`, 'bot').catch(() => {});
+            }
+            return;
+        }
+
+        // Handle !coinflip command (works for everyone)
+        if (actualMessage.toLowerCase() === '!coinflip') {
+            const result = Math.random() < 0.5 ? 'Heads' : 'Tails';
+            await reply(`@${actualUsername} flipped a coin: ${result}! 🪙`, 'broadcaster').catch(() => {});
+            return;
+        }
+        
+        // Handle !time command (works for everyone)
+        if (actualMessage.toLowerCase() === '!time') {
+            const now = new Date();
+            const pst = now.toLocaleString('en-US', { timeZone: 'America/Los_Angeles', hour: '2-digit', minute: '2-digit' });
+            const mst = now.toLocaleString('en-US', { timeZone: 'America/Denver', hour: '2-digit', minute: '2-digit' });
+            const cst = now.toLocaleString('en-US', { timeZone: 'America/Chicago', hour: '2-digit', minute: '2-digit' });
+            const est = now.toLocaleString('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit' });
+            const utc = now.toLocaleString('en-US', { timeZone: 'UTC', hour: '2-digit', minute: '2-digit' });
+            
+            await reply(
+                `🕐 PST: ${pst} | MST: ${mst} | CST: ${cst} | EST: ${est} | UTC: ${utc}`,
+                'broadcaster'
+            ).catch(() => {});
+            return;
+        }
+    }
+    
+    // Translation is a public utility. Anyone may translate one phrase or
+    // configure themselves; only a moderator/broadcaster may configure another viewer.
+    if (isCommand && /^!t(?:\s|$)/i.test(actualMessage)) {
+        if (!tenantId) {
+            console.warn('[Dispatcher] Ignoring translation command without tenant context');
+            return;
+        }
+        const rawArgs = actualMessage.replace(/^!t\s*/i, '').trim();
+        const args = rawArgs ? rawArgs.split(/\s+/).filter(Boolean) : [];
+        const translated = await handleOneOffTranslation(args, tenantId, {
+            requesterUsername: actualUsername,
+            canManageOthers: Boolean(tags.mod || tags.badges?.broadcaster),
+        });
+        if (translated) {
+            await reply(translated, 'bot').catch(() => {});
+            if (!args[0]?.startsWith('@') && !/^Stella could not translate/i.test(translated)) {
+                const explicitLanguage = ['en', 'es', 'fr', 'ru', 'de', 'ja'].includes(String(args[0] || '').toLowerCase())
+                    ? String(args[0]).toLowerCase()
+                    : 'en';
+                const sourceText = explicitLanguage !== 'en' || String(args[0] || '').toLowerCase() === 'en'
+                    ? args.slice(1).join(' ')
+                    : args.join(' ');
+                if (sourceText.trim()) {
+                    publishTranslationSubtitleEvent({
+                        tenantId,
+                        username: actualUsername,
+                        displayName,
+                        sourceText,
+                        translatedText: translated,
+                        targetLanguage: explicitLanguage as any,
+                        durationMs: 9000,
+                    });
+                }
+            }
+        }
+        return;
+    }
+    
+    // Skip bot-authored chatter to prevent reply loops (but allow manual commands).
+    if ((isBotMessage || isKnownAutomationBotMessage) && !actualMessage.startsWith('!')) {
+        // TTS is already handled by the original sender (AI mention handler, walk-on shoutout, etc.)
+        // Don't generate duplicate TTS or let cross-bot replies re-enter AI mention handling.
+        if (isKnownAutomationBotMessage) {
+            console.log(`[Dispatcher] Skipping bot-authored non-command message from ${actualUsername}`);
+        }
+        return;
+    }
+    
+    // Skip auto-translation for messages that start with [ to prevent loops
+    const translationEnabled = tenantId
+        ? isTranslationActive(tenantId) || await isUserAutoTranslate(actualUsername, tenantId)
+        : false;
+    if (!self && !message.startsWith('[') && translationEnabled && tenantId) {
+        const translated = await autoTranslateIncoming(actualMessage, actualUsername, tenantId);
+        if (translated) {
+            console.log(`[Dispatcher] Auto-translated incoming → ${translated.targetLanguage}: ${translated.translatedText}`);
+            await reply(`🌐 @${actualUsername} → ${translated.targetLanguage.toUpperCase()}: ${translated.translatedText}`, 'bot').catch(() => {});
+            publishTranslationSubtitleEvent({
+                tenantId,
+                username: actualUsername,
+                displayName,
+                sourceText: actualMessage,
+                translatedText: translated.translatedText,
+                targetLanguage: translated.targetLanguage,
+                durationMs: 9000,
+            });
+        }
+    }
+    
+    // Bridge to Discord (skip if message came from Discord to avoid loop)
+    if (!message.startsWith('[')) {
+        const logChannelId = await getDiscordLogChannelId(tenantId);
+        if (logChannelId) {
+            if (VERBOSE_LOGS) console.log(`[Dispatcher] Bridging to Discord: ${message}`);
+            await sendDiscordMessage(logChannelId, `**[Twitch] ${displayName}:** ${message}`).catch(() => {});
+        } else {
+            if (VERBOSE_LOGS) console.log(`[Dispatcher] Discord bridge disabled or no channel configured`);
+        }
+    } else {
+        if (VERBOSE_LOGS) console.log(`[Dispatcher] Skipping Discord bridge for message starting with [`);
+    }
+
+    if (isCommand && (!isBot || isSpaceMountainBroadcasterCommand || isStellaShoutoutCommand)) {
+        console.log(`[Dispatcher] Processing command: ${actualMessage} from ${actualUsername}`);
+        const cmdName = actualMessage.trim().substring(1).split(/\s+/)[0].toLowerCase();
+
+        // Public Twitch image generation belongs to the broadcaster whose chat
+        // received the command. The chatter is attribution only; they do not
+        // need a linked StreamWeaver account or their own provider settings.
+        if (cmdName === 'img') {
+            const prompt = actualMessage.substring('!img'.length).trim();
+            if (!prompt) {
+                await reply(`@${actualUsername}, usage: !img <description>`, 'bot').catch(() => {});
+                return;
+            }
+            if (!tenantId) {
+                console.warn('[Dispatcher] Cannot run Twitch !img without broadcaster tenant context', {
+                    channel: replyChannel,
+                    username: actualUsername,
+                });
+                await reply(`@${actualUsername}, image generation is not connected for this channel.`, 'bot').catch(() => {});
+                return;
+            }
+            const { readGenerationSettings } = await import('../lib/gen-settings-store');
+            const { canUsePublicImageGeneration } = await import('./image-command');
+            const imageSettings = await readGenerationSettings(tenantId);
+            const canUsePublicImages = canUsePublicImageGeneration(
+                imageSettings.publicImageAccess,
+                Boolean(tags.mod || tags.badges?.broadcaster),
+            );
+            if (!canUsePublicImages) {
+                const accessMessage = imageSettings.publicImageAccess === 'off'
+                    ? 'image generation is turned off for this channel.'
+                    : 'image generation is currently limited to moderators.';
+                await reply(`@${actualUsername}, ${accessMessage}`, 'bot').catch(() => {});
+                return;
+            }
+
+            await reply(`@${actualUsername}, generating your image now...`, 'bot').catch(() => {});
+
+            try {
+                const { buildPublicImageOverlayMessages, runImageCommand } = await import('./image-command');
+                const result = await runImageCommand(actualMessage, tenantId, { scope: 'public' });
+                if (!result.images.length) {
+                    await reply(`@${actualUsername}, image generation returned no image.`, 'bot').catch(() => {});
+                    return;
+                }
+
+                const promptLabel = result.originalPrompt.replace(/\s+/g, ' ').trim().slice(0, 120);
+                if (typeof (global as any).broadcast === 'function') {
+                    for (const overlayMessage of buildPublicImageOverlayMessages(result, actualUsername)) {
+                        (global as any).broadcast(overlayMessage, tenantId);
+                    }
+                }
+                for (let index = 0; index < result.images.length; index += 1) {
+                    const countLabel = result.images.length > 1 ? ` ${index + 1}/${result.images.length}` : '';
+                    await reply(
+                        `@${actualUsername} generated image${countLabel} for "${promptLabel}": ${result.images[index]}`,
+                        'bot',
+                    ).catch(() => {});
+                }
+            } catch (error) {
+                console.warn(`[Dispatcher:${tenantId}] Twitch !img failed for @${actualUsername}:`, error);
+                const { isImagePromptModerationError } = await import('./image-content-moderation');
+                const failureMessage = isImagePromptModerationError(error)
+                    ? `@${actualUsername}, that image request was blocked by this channel's content safety settings.`
+                    : `@${actualUsername}, image generation failed. Try again in a moment.`;
+                await reply(failureMessage, 'bot').catch(() => {});
+            }
+            return;
+        }
+        
+        // Pokemon collection is browser-first. Only booster reveals belong on the stream overlay.
+        if (['!collection', '!collections', '!pokedex'].includes(actualMessage.toLowerCase())) {
+            const { getUserCards } = require('./pokemon-collection');
+            const cards = await getUserCards(actualUsername);
+            const rareCount = cards.filter((c: any) => c.rarity && c.rarity.includes('Rare')).length;
+            const pokedexUrl = buildPokemonBrowserUrl(actualUsername);
+            const summary = cards.length
+                ? `@${actualUsername} has ${cards.length} cards (${rareCount} rare). Pokédex, decks and trades: ${pokedexUrl}`
+                : `@${actualUsername}, your Pokédex is empty. Open a pack with !pack, then manage cards here: ${pokedexUrl}`;
+            await reply(summary, 'broadcaster').catch(() => {});
+            return;
+        }
+
+        if (actualMessage.toLowerCase().startsWith('!shoutoutaudit')) {
+            const requester = actualUsername.toLowerCase();
+            const broadcaster = (broadcasterUsername || '').toLowerCase();
+            const extraAllowed = String(process.env.SHOUTOUT_AUDIT_COMMAND_USERS || 'mtman1987')
+                .split(',')
+                .map((user) => user.trim().toLowerCase())
+                .filter(Boolean);
+            const allowed = tags.badges?.broadcaster || requester === broadcaster || extraAllowed.includes(requester);
+
+            if (!allowed) {
+                await reply(`@${actualUsername}, only the broadcaster can use that command.`, 'bot').catch(() => {});
+                return;
+            }
+
+            const arg = actualMessage.substring('!shoutoutaudit'.length).trim().replace(/^@/, '');
+            await recordShoutoutAudit({
+                status: 'phase',
+                phase: 'audit-command',
+                username: actualUsername,
+                displayName,
+                tenantId,
+                source: 'unknown',
+                message: 'Shoutout audit command invoked',
+                metadata: {
+                    requestedUser: arg || 'latest',
+                    command: '!shoutoutaudit',
+                },
+            });
+            const { getConfiguredAppUrl } = require('../lib/runtime-origin');
+            const baseUrl = getConfiguredAppUrl();
+            const tenantQuery = tenantId ? `tenantId=${encodeURIComponent(tenantId)}` : '';
+            const allUrl = `${baseUrl}/api/shoutout-audit/download${tenantQuery ? `?${tenantQuery}` : ''}`;
+            const filteredUrl = arg && arg.toLowerCase() !== 'all'
+                ? `${baseUrl}/api/shoutout-audit/download?${tenantQuery ? `${tenantQuery}&` : ''}username=${encodeURIComponent(arg)}`
+                : '';
+            const liveFilesUrl = `${baseUrl}/debug/data-files${tenantQuery ? `?${tenantQuery}` : ''}`;
+            let latestSummary = 'No recent shoutout audit entries found.';
+            try {
+                const { readRecentShoutoutAudit } = require('./shoutout-audit');
+                const records = await readRecentShoutoutAudit(tenantId, 100);
+                const normalizedArg = arg.toLowerCase();
+                const latest = records.find((record: any) => {
+                    if (!normalizedArg || normalizedArg === 'all') return true;
+                    return String(record.username || '').toLowerCase() === normalizedArg;
+                });
+                if (latest) {
+                    const when = latest.timestamp ? new Date(latest.timestamp).toLocaleTimeString('en-US', { hour12: false }) : 'unknown time';
+                    const detail = latest.reason || latest.phase || latest.message || latest.error || 'no detail';
+                    latestSummary = `Latest ${latest.username || 'entry'}: ${latest.status || 'unknown'} (${detail}) at ${when}`;
+                }
+            } catch (error) {
+                latestSummary = 'Could not read local audit summary; use the download link.';
+            }
+            const message = filteredUrl
+                ? `${latestSummary} | Full audit for ${arg}: ${filteredUrl} | All: ${allUrl}`
+                : `${latestSummary} | All audit: ${allUrl} | Per streamer: !shoutoutaudit @username | Live Files: ${liveFilesUrl}`;
+
+            await reply(message, 'bot').catch(() => {});
+            return;
+        }
+
+        // Card details live in the browser Pokédex instead of occupying the stream overlay.
+        if (actualMessage.toLowerCase().startsWith('!show ')) {
+            const searchName = actualMessage.substring(6).trim();
+            if (!searchName) {
+                await reply(`@${actualUsername}, usage: !show <card name>`, 'broadcaster').catch(() => {});
+                return;
+            }
+            const { getUserCards } = require('./pokemon-collection');
+            const userCards = await getUserCards(actualUsername);
+            const normalized = searchName.toLowerCase();
+            const owned = userCards.find((card: any) =>
+                String(card.name || '').toLowerCase() === normalized ||
+                String(card.name || '').toLowerCase().includes(normalized) ||
+                `${card.setCode}-${card.number}`.toLowerCase() === normalized
+            );
+            if (!owned) {
+                await reply(`@${actualUsername}, you don't own any card matching "${searchName}".`, 'broadcaster').catch(() => {});
+                return;
+            }
+            const pokedexUrl = buildPokemonBrowserUrl(actualUsername, { card: `${owned.setCode}-${owned.number}` });
+            await reply(`@${actualUsername}, open ${owned.name} in your Pokédex: ${pokedexUrl}`, 'broadcaster').catch(() => {});
+            return;
+        }
+
+        // !t is handled above before generic command dispatch.
+        
+
+        // Handle !addpoints command (mod/broadcaster only)
+        if (actualMessage.toLowerCase().startsWith('!addpoints ')) {
+            if (tags.mod || tags.badges?.broadcaster) {
+                const args = actualMessage.substring(11).trim().split(/\s+/);
+                const targetUser = args[0]?.replace('@', '');
+                const amount = parseInt(args[1]);
+                if (!targetUser || isNaN(amount)) {
+                    await reply(`@${actualUsername}, usage: !addPoints @user amount`, 'bot').catch(() => {});
+                } else {
+                    const result = await addPoints(targetUser, amount, `addpoints by ${actualUsername}`, tenantCtx);
+                    await reply(`@${targetUser} now has ${result.pointsDisplay} pts (${amount > 0 ? '+' : ''}${formatCompactPointAmount(amount)})`, 'broadcaster').catch(() => {});
+                }
+            } else {
+                await reply(`@${actualUsername}, only mods can use that!`, 'bot').catch(() => {});
+            }
+            return;
+        }
+        
+        // Handle !setpoints command (mod/broadcaster only)
+        if (actualMessage.toLowerCase().startsWith('!setpoints ')) {
+            if (tags.mod || tags.badges?.broadcaster) {
+                const args = actualMessage.substring(11).trim().split(/\s+/);
+                const targetUser = args[0]?.replace('@', '');
+                const amount = parseInt(args[1]);
+                if (!targetUser || isNaN(amount)) {
+                    await reply(`@${actualUsername}, usage: !setPoints @user amount`, 'bot').catch(() => {});
+                } else {
+                    const result = await setPoints(targetUser, amount, tenantCtx);
+                    await reply(`@${targetUser} set to ${result.pointsDisplay} pts`, 'broadcaster').catch(() => {});
+                }
+            } else {
+                await reply(`@${actualUsername}, only mods can use that!`, 'bot').catch(() => {});
+            }
+            return;
+        }
+        
+        // Handle !addtoall command (mod/broadcaster only)
+        if (actualMessage.toLowerCase().startsWith('!addtoall ')) {
+            if (tags.mod || tags.badges?.broadcaster) {
+                const amount = parseInt(actualMessage.substring(10).trim());
+                if (isNaN(amount)) {
+                    await reply(`@${actualUsername}, usage: !addToAll amount`, 'bot').catch(() => {});
+                } else {
+                    const { addPointsToAll } = require('./points');
+                    const count = await addPointsToAll(amount, tenantCtx);
+                    await reply(`${amount > 0 ? '+' : ''}${formatCompactPointAmount(amount)} pts to ${count} users!`, 'broadcaster').catch(() => {});
+                }
+            } else {
+                await reply(`@${actualUsername}, only mods can use that!`, 'bot').catch(() => {});
+            }
+            return;
+        }
+        
+        // Handle !settoall command (mod/broadcaster only)
+        if (actualMessage.toLowerCase().startsWith('!settoall ')) {
+            if (tags.mod || tags.badges?.broadcaster) {
+                const amount = parseInt(actualMessage.substring(10).trim());
+                if (isNaN(amount)) {
+                    await reply(`@${actualUsername}, usage: !setToAll amount`, 'bot').catch(() => {});
+                } else {
+                    const { setPointsToAll } = require('./points');
+                    const count = await setPointsToAll(amount, tenantCtx);
+                    await reply(`Set ${count} users to ${formatCompactPointAmount(amount)} pts`, 'broadcaster').catch(() => {});
+                }
+            } else {
+                await reply(`@${actualUsername}, only mods can use that!`, 'bot').catch(() => {});
+            }
+            return;
+        }
+        
+        // Handle !unignore command (mod/broadcaster only) - explicit removal from custom known bots
+        if (actualMessage.toLowerCase().startsWith('!unignore')) {
+            if (tags.mod || tags.badges?.broadcaster) {
+                const args = actualMessage.substring(9).trim();
+                const targetUser = args.replace('@', '').toLowerCase();
+                if (!targetUser) {
+                    await reply(`@${actualUsername}, usage: !unignore @username`, 'bot').catch(() => {});
+                    return;
+                }
+                const { isKnownBot: checkBot, getDefaultBots, removeCustomBot, clearBotCache } = require('./known-bots');
+                const defaultBots = getDefaultBots();
+                if (defaultBots.includes(targetUser)) {
+                    await reply(`@${actualUsername}, ${targetUser} is a default ignored bot and cannot be removed from the default list.`, 'bot').catch(() => {});
+                    return;
+                }
+                const alreadyIgnored = await checkBot(targetUser, tenantId);
+                if (!alreadyIgnored) {
+                    await reply(`@${actualUsername}, ${targetUser} is not on the ignore list.`, 'bot').catch(() => {});
+                    return;
+                }
+                await removeCustomBot(targetUser, tenantId);
+                clearBotCache(tenantId);
+                await reply(`@${actualUsername}, ${targetUser} removed from ignore list.`, 'bot').catch(() => {});
+            } else {
+                await reply(`@${actualUsername}, only mods can manage the ignore list!`, 'bot').catch(() => {});
+            }
+            return;
+        }
+
+        // Handle !ignore command (mod/broadcaster only) - add to known bots
+        if (actualMessage.toLowerCase().startsWith('!ignore')) {
+            if (tags.mod || tags.badges?.broadcaster) {
+                const args = actualMessage.substring(7).trim();
+                const targetUser = args.replace('@', '').toLowerCase();
+                if (!targetUser) {
+                    await reply(`@${actualUsername}, usage: !ignore @username, !ignore all, !ignore bot name, or !unignore @username`, 'bot').catch(() => {});
+                    return;
+                }
+                if (targetUser === 'all') {
+                    const { toggleBotTriggerIgnoreAll } = await import('../lib/bot-trigger-ignore-store');
+                    const config = await toggleBotTriggerIgnoreAll(tenantId);
+                    await reply(`@${actualUsername}, bot trigger ignore-all is ${config.all ? 'ON' : 'OFF'}.`, 'bot').catch(() => {});
+                    return;
+                }
+                try {
+                    const { readWorldLore } = await import('../lib/world-lore-store');
+                    const { toggleIgnoredBotTrigger } = await import('../lib/bot-trigger-ignore-store');
+                    const lore = await readWorldLore();
+                    const characters = Object.values(lore?.characters || {});
+                    const targetLower = targetUser.toLowerCase();
+                    const botCharacter = characters.find((character) => {
+                        const names = [character.currentName, ...(character.aliases || []), ...(character.previousNames || [])];
+                        return names.some((name) => name.toLowerCase() === targetLower);
+                    });
+                    if (botCharacter) {
+                        const result = await toggleIgnoredBotTrigger({
+                            tenantId: botCharacter.stableId.split(':')[0],
+                            stableId: botCharacter.stableId,
+                            botName: botCharacter.currentName,
+                            trigger: targetUser,
+                        }, tenantId);
+                        await reply(`@${actualUsername}, bot trigger ignore for ${botCharacter.currentName}: ${result.ignored ? 'ON' : 'OFF'}.`, 'bot').catch(() => {});
+                        return;
+                    }
+                } catch (error) {
+                    console.warn('[Dispatcher] Bot trigger ignore lookup failed:', error);
+                }
+                const { isKnownBot: checkBot, addCustomBot, clearBotCache } = require('./known-bots');
+                const alreadyIgnored = await checkBot(targetUser, tenantId);
+                if (alreadyIgnored) {
+                    await reply(`@${actualUsername}, ${targetUser} is already on the ignore list. Use !unignore @${targetUser} to remove a custom ignore.`, 'bot').catch(() => {});
+                } else {
+                    await addCustomBot(targetUser, tenantId);
+                    clearBotCache(tenantId);
+                    await reply(`@${actualUsername}, ${targetUser} added to ignore list (no welcome/shoutout/points).`, 'bot').catch(() => {});
+                }
+            } else {
+                await reply(`@${actualUsername}, only mods can manage the ignore list!`, 'bot').catch(() => {});
+            }
+            return;
+        }
+
+        // Handle !resetallpoints command (mod/broadcaster only)
+        if (actualMessage.toLowerCase() === '!resetallpoints') {
+            if (tags.mod || tags.badges?.broadcaster) {
+                const { resetAllPoints } = require('./points');
+                const count = await resetAllPoints(tenantCtx);
+                await reply(`Reset points for ${count} users to 0`, 'broadcaster').catch(() => {});
+            } else {
+                await reply(`@${actualUsername}, only mods can use that!`, 'bot').catch(() => {});
+            }
+            return;
+        }
+        
+        // Handle !givepoints command
+        if (actualMessage.toLowerCase().startsWith('!givepoints ')) {
+            const args = actualMessage.substring(12).trim().split(/\s+/);
+            const targetUser = args[0]?.replace('@', '');
+            const amount = parseInt(args[1]);
+            
+            if (!targetUser || isNaN(amount)) {
+                await reply(`@${actualUsername}, usage: !givepoints @user amount`, 'bot').catch(() => {});
+                return;
+            }
+            
+            const result = await givePoints(actualUsername, targetUser, amount, tenantCtx);
+            await reply(result.message, 'bot').catch(() => {});
+            return;
+        }
+        
+        // Handle !stealpoints command
+        if (actualMessage.toLowerCase().startsWith('!stealpoints ')) {
+            const args = actualMessage.substring(13).trim().split(/\s+/);
+            const targetUser = args[0]?.replace('@', '');
+            const amountText = args[1] || '';
+            const amount = /^\d+$/.test(amountText) ? Number(amountText) : NaN;
+            
+            if (!targetUser || !Number.isSafeInteger(amount)) {
+                await reply(`@${actualUsername}, usage: !stealpoints @user amount`, 'bot').catch(() => {});
+                return;
+            }
+            
+            const result = await stealPoints(actualUsername, targetUser, amount, tenantCtx);
+            await reply(result.message, 'bot').catch(() => {});
+            return;
+        }
+        
+        // Handle !gamblemode command
+        if (actualMessage.toLowerCase() === '!gamblemode') {
+            if (tags.mod || tags.badges?.broadcaster) {
+                const { toggleMode } = await import('./modes-manager');
+                const toggled = await toggleMode('gamblemode', tenantId);
+                await reply(`🎰 Gamble mode: ${toggled.current.toUpperCase()}`, 'bot').catch(() => {});
+            } else {
+                await reply(`@${actualUsername}, only mods can change gamble mode!`, 'bot').catch(() => {});
+            }
+            return;
+        }
+        
+        // Handle !greetingmode / !greeting mode command
+        const greetingModeMatch = actualMessage.trim().toLowerCase().match(/^!(greetingmode|greeting\s+mode)(?:\s+(\S+))?$/);
+        if (greetingModeMatch) {
+            if (tags.mod || tags.badges?.broadcaster) {
+                const labels: Record<string, string> = { full: '🎬 FULL (clip + chat + TTS)', overlay: '📺 OVERLAY (clip + overlay + TTS)', chat: '💬 CHAT (message only, no clip/TTS)' };
+                const { getMode, setMode } = await import('./modes-manager');
+                const requested = greetingModeMatch[2]?.toLowerCase();
+                const normalized = requested === 'on' ? 'full' : requested;
+                if (!normalized || normalized === 'status') {
+                    const current = await getMode('greetingmode', tenantId);
+                    await reply(`🤖 Greeting mode is ${labels[current] || current}. Use !greetingmode full, !greetingmode overlay, or !greetingmode chat.`, 'bot').catch(() => {});
+                } else if (['full', 'overlay', 'chat'].includes(normalized)) {
+                    const set = await setMode('greetingmode', normalized, tenantId);
+                    await reply(`🤖 Greeting mode set to ${labels[set.current] || set.current}.`, 'bot').catch(() => {});
+                } else {
+                    await reply(`@${actualUsername}, use !greetingmode full, !greetingmode overlay, or !greetingmode chat.`, 'bot').catch(() => {});
+                }
+            } else {
+                await reply(`@${actualUsername}, only mods can change greeting mode!`, 'bot').catch(() => {});
+            }
+            return;
+        }
+        
+        // Handle !welcomemode / !welcome mode command
+        const welcomeModeMatch = actualMessage.trim().toLowerCase().match(/^!(welcomemode|welcome\s+mode)(?:\s+(\S+))?$/);
+        if (welcomeModeMatch) {
+            if (tags.mod || tags.badges?.broadcaster) {
+                const { getMode, setMode } = await import('./modes-manager');
+                const requested = welcomeModeMatch[2]?.toLowerCase();
+                const normalized = requested === 'on' ? 'chat' : requested;
+                const labels: Record<string, string> = {
+                    chat: 'CHAT (auto walk-ons ON)',
+                    overlay: 'OVERLAY (auto walk-ons ON)',
+                    off: 'OFF (auto walk-ons disabled)',
+                };
+                if (!normalized || normalized === 'status') {
+                    const current = await getMode('welcomemode', tenantId);
+                    await reply(`🎉 Welcome mode is ${labels[current] || current}. Use !welcomemode chat, !welcomemode overlay, or !welcomemode off.`, 'bot').catch(() => {});
+                } else if (['chat', 'overlay', 'off'].includes(normalized)) {
+                    const set = await setMode('welcomemode', normalized, tenantId);
+                    await reply(`🎉 Welcome mode set to ${labels[set.current] || set.current}.`, 'bot').catch(() => {});
+                } else {
+                    await reply(`@${actualUsername}, use !welcomemode chat, !welcomemode overlay, or !welcomemode off.`, 'bot').catch(() => {});
+                }
+            } else {
+                await reply(`@${actualUsername}, only mods can change welcome mode!`, 'bot').catch(() => {});
+            }
+            return;
+        }
+        
+        // Handle !clipmode command
+        if (actualMessage.toLowerCase() === '!clipmode') {
+            if (tags.mod || tags.badges?.broadcaster) {
+                const { toggleMode } = await import('./modes-manager');
+                const toggled = await toggleMode('clipmode', tenantId);
+                await reply(`🎬 Clip mode: ${toggled.current.toUpperCase()}`, 'bot').catch(() => {});
+            }
+            return;
+        }
+        
+        // Handle !pokemode command
+        if (actualMessage.toLowerCase() === '!pokemode') {
+            if (tags.mod || tags.badges?.broadcaster) {
+                const { toggleMode } = await import('./modes-manager');
+                const toggled = await toggleMode('pokemode', tenantId);
+                await reply(`🃏 Pokemon mode: ${toggled.current.toUpperCase()}`, 'bot').catch(() => {});
+            }
+            return;
+        }
+        
+        // Handle !gamble command (Classic Chat Gamble)
+        if (actualMessage.toLowerCase().startsWith('!gamble ')) {
+            const betInput = actualMessage.substring(8).trim();
+            const userPoints = await getPointBalance(actualUsername, tenantCtx);
+            const result = await handleClassicGamble(actualUsername, betInput, userPoints, tenantId);
+            if (result) {
+                await settleWagerResult(actualUsername, result, 'gamble', tenantCtx);
+            }
+            return;
+        }
+        
+        // Handle !gamble with no args (use default)
+        if (actualMessage.toLowerCase() === '!gamble') {
+            const userPoints = await getPointBalance(actualUsername, tenantCtx);
+            const result = await handleClassicGamble(actualUsername, '', userPoints, tenantId);
+            if (result) {
+                await settleWagerResult(actualUsername, result, 'gamble', tenantCtx);
+            }
+            return;
+        }
+        
+
+        
+        // Handle !roll command
+        if (/^!roll(?:\s|$)/i.test(actualMessage)) {
+            const betInput = actualMessage.slice(5).trim();
+            const userPoints = await getPointBalance(actualUsername, tenantCtx);
+            const result = await handleRoll(actualUsername, betInput, userPoints, tenantId);
+            if (result) {
+                await settleWagerResult(actualUsername, result, 'roll', tenantCtx);
+                // Store double-or-nothing state (30 second window)
+                const doubleState = { username: actualUsername, wager: result.change.startsWith('-') ? result.change.slice(1) : result.change || betInput, expires: Date.now() + 30000 };
+                if (!(global as any).doubleOrNothingStates) (global as any).doubleOrNothingStates = new Map();
+                (global as any).doubleOrNothingStates.set(actualUsername.toLowerCase(), doubleState);
+            }
+            return;
+        }
+        
+        // Handle !double command (double or nothing)
+        if (actualMessage.toLowerCase() === '!double') {
+            const states = (global as any).doubleOrNothingStates as Map<string, any> | undefined;
+            const doubleState = states?.get(actualUsername.toLowerCase());
+            if (!doubleState || Date.now() > doubleState.expires) {
+                await reply(`@${actualUsername}, no active double-or-nothing available!`, 'bot').catch(() => {});
+                return;
+            }
+            
+            const userPoints = await getPointBalance(actualUsername, tenantCtx);
+            const result = await handleDouble(actualUsername, doubleState.wager, userPoints, tenantId);
+            if (result) {
+                await settleWagerResult(actualUsername, result, 'double', tenantCtx);
+            }
+            
+            states?.delete(actualUsername.toLowerCase());
+            return;
+        }
+        
+
+        
+        // Exercise the BRB overlay with live community streams. The browser
+        // keeps one Twitch.Player and rotates its channel every 30 seconds.
+        if (actualMessage.toLowerCase() === '!testbrb') {
+            if (tenantId === 'spacemountainlive' && (tags.mod || tags.badges?.broadcaster)) {
+                const count = await startTestBRB(broadcasterUsername, tenantId).catch(err => {
+                    console.error('[TestBRB] Error:', err);
+                    return 0;
+                });
+                await reply(count ? '🎬 Testing community streams. Use !back to stop.' : 'No live community streams found for the BRB test.', 'bot').catch(() => {});
+            }
+            return;
+        }
+
+        // Handle !brb command
+        if (actualMessage.toLowerCase().includes('be right back') || actualMessage.toLowerCase() === '!brb') {
+            if (tags.mod || tags.badges?.broadcaster) {
+                const broadcasterName = broadcasterUsername;
+                startBRB(broadcasterName, tenantId).catch(err => console.error('[BRB] Error:', err));
+                await reply('🎬 Checking BRB clips and the live Community Spotlight...', 'bot').catch(() => {});
+            }
+            return;
+        }
+        
+        // Handle !back command
+        if (actualMessage.toLowerCase() === '!back') {
+            if (tags.mod || tags.badges?.broadcaster) {
+                stopBRB(tenantId);
+                // Immediately stop overlay and switch scene back
+                if (typeof (global as any).broadcast === 'function') {
+                    (global as any).broadcast({ type: 'brb-stop' }, tenantId);
+                    if (tenantId !== 'spacemountainlive') {
+                        try {
+                            const { getConfigSection: gcs } = require('../lib/local-config/service');
+                            const obsConfig = await gcs('obs', tenantId);
+                            const liveScene = obsConfig?.scenes?.live || 'Live';
+                            (global as any).broadcast({ type: 'obs-switch-scene', payload: { sceneName: liveScene } }, tenantId);
+                        } catch {}
+                    }
+                }
+                await reply('👋 Welcome back!', 'bot').catch(() => {});
+            }
+            return;
+        }
+        
+
+        
+        // Handle !chatmode command - now master toggle for ALL modes
+        if (actualMessage.toLowerCase() === '!chatmode') {
+            if (tags.mod || tags.badges?.broadcaster) {
+                const { toggleMasterChatmode } = await import('./modes-manager');
+                await toggleMasterChatmode(tenantId);
+                const modes = await (await import('./modes-manager')).getAllModes(tenantId);
+                await reply(
+                    `🎛️ MASTER MODE: ${modes.chatmode.toUpperCase()} — All modes synced: Gamble(${modes.gamblemode}), Welcome(${modes.welcomemode}), Greeting(${modes.greetingmode}), Clip(${modes.clipmode})`,
+                    'bot'
+                ).catch(() => {});
+            } else {
+                await reply(`@${actualUsername}, only mods can change master chat mode!`, 'bot').catch(() => {});
+            }
+            return;
+        }
+
+        // Handle !botshare command - opt-in controlled bot-to-bot lore interactions
+        if (actualMessage.toLowerCase() === '!botshare') {
+            if (tags.mod || tags.badges?.broadcaster) {
+                const { toggleBotShareMode } = await import('../lib/bot-interactions-store');
+                const mode = await toggleBotShareMode(tenantId);
+                await reply(`Bot share mode: ${mode.toUpperCase()} - cross-bot replies are ${mode === 'on' ? 'enabled' : 'disabled'}.`, 'bot').catch(() => {});
+            } else {
+                await reply(`@${actualUsername}, only mods can change bot share mode!`, 'bot').catch(() => {});
+            }
+            return;
+        }
+        // Handle !athenaeverywhere command - global Athena replies in watched/shared Twitch chats
+        const athenaEverywhereMatch = actualMessage.toLowerCase().trim().match(/^!athenaeverywhere(?:\s+(on|off|status))?$/);
+        if (athenaEverywhereMatch) {
+            if (tags.mod || tags.badges?.broadcaster) {
+                const action = athenaEverywhereMatch[1];
+                const mode = action === 'on' || action === 'off'
+                    ? await setAthenaEverywhereMode(action)
+                    : action === 'status'
+                        ? await getAthenaEverywhereMode()
+                        : await toggleAthenaEverywhereMode();
+                await reply(`Athena everywhere mode: ${mode.toUpperCase()} - Athena mentions in watched/shared chats ${mode === 'on' ? 'route to Athenabot87' : 'stay local'}.`, 'bot').catch(() => {});
+            } else {
+                await reply(`@${actualUsername}, only mods can change Athena everywhere mode!`, 'bot').catch(() => {});
+            }
+            return;
+        }
+        // Twitch chat is routed through StreamWeaver in this channel. The
+        // HearMeOut service adapter sends these legacy command shapes to the
+        // isolated Apollo Lounge player; it must not mutate the retired global
+        // HearMeOut sessions.
+        if (/^!votebump$/i.test(actualMessage.trim())) {
+            try {
+                const current = await getLoungeMediaLayout();
+                const target = current.mode === 'media' ? 'stream' : 'media';
+                const result = await voteLoungeMediaLayout(target, String(tags['user-id'] || tags.username || actualUsername));
+                if (!result.accepted) {
+                    await reply(`🔒 The Lounge bump vote is locked by a moderator. Mods can use !layout auto to reopen voting.`, 'bot').catch(() => {});
+                } else if (result.changed) {
+                    await reply(`🚀 Vote passed — ${target === 'media' ? 'HearMeOut moved to the main stage and the current Spotlight moved to the media box' : 'the current Spotlight returned to the main stage and HearMeOut moved back to the media box'}.`, 'bot').catch(() => {});
+                } else {
+                    const count = result.votes[target];
+                    await reply(`🗳️ @${actualUsername} voted to bump ${target === 'media' ? 'HearMeOut' : 'the current Spotlight'}. ${count}/${result.votes.required} votes.`, 'bot').catch(() => {});
+                }
+            } catch (error) {
+                await reply(`❌ Lounge bump vote failed: ${error instanceof Error ? error.message : String(error)}`, 'bot').catch(() => {});
+            }
+            return;
+        }
+
+        if (/^!bump$/i.test(actualMessage.trim())) {
+            if (!canControlHearMeOut) {
+                await reply(`@${actualUsername}, only the broadcaster or a moderator can use !bump.`, 'bot').catch(() => {});
+                return;
+            }
+            try {
+                const current = await getLoungeMediaLayout();
+                const target = current.mode === 'media' ? 'stream' : 'media';
+                await overrideLoungeMediaLayout(target, actualUsername);
+                await overrideLoungeMediaLayout('auto', actualUsername);
+                await reply(
+                    target === 'media'
+                        ? '✅ HearMeOut bumped to the main stage; the current Spotlight moved to the media box.'
+                        : '✅ The current Spotlight bumped back to the main stage; HearMeOut moved to the media box.',
+                    'bot',
+                ).catch(() => {});
+            } catch (error) {
+                await reply(`❌ Lounge bump failed: ${error instanceof Error ? error.message : String(error)}`, 'bot').catch(() => {});
+            }
+            return;
+        }
+
+        const loungeLayoutVote = actualMessage.trim().match(/^!bump(media|stream)$/i);
+        if (loungeLayoutVote) {
+            const target = loungeLayoutVote[1].toLowerCase() === 'media' ? 'media' : 'stream';
+            try {
+                const result = await voteLoungeMediaLayout(target, String(tags['user-id'] || tags.username || actualUsername));
+                if (!result.accepted) {
+                    await reply(`🔒 The Lounge layout is locked by a moderator. Mods can use !layout auto to reopen voting.`, 'bot').catch(() => {});
+                } else if (result.changed) {
+                    await reply(`🚀 Vote passed — ${target === 'media' ? 'HearMeOut is now on the main stage and the current Spotlight is in the media box' : 'the current Spotlight is back on the main stage and HearMeOut is in the media box'}.`, 'bot').catch(() => {});
+                } else {
+                    const count = result.votes[target];
+                    await reply(`🗳️ @${actualUsername} voted to bump ${target}. ${count}/${result.votes.required} votes.`, 'bot').catch(() => {});
+                }
+            } catch (error) {
+                await reply(`❌ Lounge layout vote failed: ${error instanceof Error ? error.message : String(error)}`, 'bot').catch(() => {});
+            }
+            return;
+        }
+
+        const loungeLayoutOverride = actualMessage.trim().match(/^!(media|hmo|stream|live)\s+big$|^!layout\s+auto$/i);
+        if (loungeLayoutOverride) {
+            if (!canControlHearMeOut) {
+                await reply(`@${actualUsername}, only the broadcaster or a moderator can override the Lounge layout.`, 'bot').catch(() => {});
+                return;
+            }
+            const target = /^!layout\s+auto$/i.test(actualMessage.trim())
+                ? 'auto'
+                : /^(?:media|hmo)$/i.test(String(loungeLayoutOverride[1] || '')) ? 'media' : 'stream';
+            try {
+                await overrideLoungeMediaLayout(target, actualUsername);
+                const message = target === 'auto'
+                    ? 'Lounge layout voting is open again.'
+                    : target === 'media'
+                        ? 'HearMeOut is locked to the main stage; the current Spotlight is in the media box.'
+                        : 'The current Spotlight is locked to the main stage; HearMeOut is in the media box.';
+                await reply(`✅ ${message}`, 'bot').catch(() => {});
+            } catch (error) {
+                await reply(`❌ Lounge layout override failed: ${error instanceof Error ? error.message : String(error)}`, 'bot').catch(() => {});
+            }
+            return;
+        }
+
+        const hearMeOutCommand = actualMessage.trim().match(/^!(sr|wr|music|songs|movie|movies|play|pause|stop|skip|next|clear|np|nowplaying|mute|unmute|vol|volume|radio|autoradio)(?:\s+(.*))?$/i);
+        if (hearMeOutCommand) {
+            const command = hearMeOutCommand[1].toLowerCase() === 'vol' ? 'volume' : hearMeOutCommand[1].toLowerCase();
+            const argument = String(hearMeOutCommand[2] || '').trim();
+            const volumeArgument = command === 'volume' ? argument.replace(/^(?:media|music|all)\s+/i, '') : argument;
+            const actorUserId = String(tags.username || tags['user-id'] || actualUsername);
+            const actionBase = {
+                tenantId: tenantId || 'spacemountainlive',
+                ...(tenantId && tenantId !== SPACEMOUNTAIN_SYSTEM_TENANT_ID ? { streamMode: 'twitch' as const } : {}),
+                actorUserId,
+                actorName: actualUsername,
+                actorRole: isHearMeOutOwner ? 'owner' : tags.mod ? 'moderator' : 'member',
+            } as const;
+            const readSession = (sessionId: string) => executeHearMeOutBotAction({
+                ...actionBase,
+                action: 'hmo.media.state.read',
+                sessionId,
+            });
+            const replyFailure = async (error: unknown) => {
+                const message = error instanceof Error ? error.message : String(error);
+                await reply(`❌ HearMeOut received !${command}, but it failed: ${message}`, 'bot').catch(() => {});
+            };
+
+            if (tenantId === SPACEMOUNTAIN_SYSTEM_TENANT_ID && command === 'unmute') {
+                try {
+                    const outcomes = await Promise.allSettled([
+                        executeHearMeOutBotAction({ ...actionBase, action: 'hmo.media.control', sessionId: 'discord-music-room', control: 'unmute' }),
+                        executeHearMeOutBotAction({ ...actionBase, action: 'hmo.media.control', sessionId: 'discord-watch-room', control: 'unmute' }),
+                    ]);
+                    await pulseLoungePlaybackUnmute();
+                    const failed = outcomes.map((outcome, index) => outcome.status === 'rejected' ? (index === 0 ? 'music' : 'movie') : null).filter(Boolean);
+                    await reply(failed.length
+                        ? `⚠️ Lounge audio retry sent to Spotlight, but ${failed.join(' and ')} worker control failed.`
+                        : '🔊 Lounge audio recovery sent to media + Spotlight.', 'bot').catch(() => {});
+                } catch (error) {
+                    await replyFailure(error);
+                }
+                return;
+            }
+
+            if (tenantId === SPACEMOUNTAIN_SYSTEM_TENANT_ID && command === 'mute' && !canControlHearMeOut) {
+                await reply(`@${actualUsername}, only the broadcaster or a moderator can mute the Lounge players.`, 'bot').catch(() => {});
+                return;
+            }
+
+            if (command === 'radio' || command === 'autoradio') {
+                const match = argument.match(/^(on|off|status|add)(?:\s+(.+))?$/i);
+                const radioControl = match?.[1]?.toLowerCase() || (!argument ? 'status' : '');
+                if (!radioControl || radioControl === 'add' && !match?.[2]) {
+                    await reply(`@${actualUsername}, use !radio on, !radio off, !radio status, or !radio add <public YouTube playlist URL>.`, 'bot').catch(() => {});
+                    return;
+                }
+                if (radioControl !== 'status' && !canControlHearMeOut) {
+                    await reply(`@${actualUsername}, only the broadcaster or a moderator can change Lounge radio.`, 'bot').catch(() => {});
+                    return;
+                }
+                try {
+                    const result: any = await executeHearMeOutBotAction({
+                        ...actionBase, action: 'hmo.media.radio', sessionId: 'discord-music-room',
+                        control: radioControl, query: match?.[2],
+                    });
+                    const current = result?.program?.music?.current?.item?.title;
+                    await reply(`📻 Lounge DJ is ${result.radio.enabled ? 'on' : 'off'}; ${result.radio.recentCount || 0} human picks guide it, and ${result.radio.seedCount || 0} playlist references help it start${current ? `; now selected: ${current}` : ''}.`, 'bot').catch(() => {});
+                } catch (error) { await replyFailure(error); }
+                return;
+            }
+
+            // On the system Lounge channel, !sr source is an OBS overlay lookup,
+            // not a song request. Keep it ahead of the legacy !sr queue path.
+            if (command === 'sr' && /^(source|overlay|obs)$/i.test(argument)) {
+                if (!isHearMeOutOwner) {
+                    await reply('The broadcaster can get their OBS source with !sr source.', 'bot').catch(() => {});
+                    return;
+                }
+                try {
+                    const result: any = await executeHearMeOutBotAction({
+                        ...actionBase,
+                        action: 'hmo.media.source',
+                    });
+                    await reply('OBS browser source (1920×1080): ' + String(result?.sourceUrl || ''), 'bot').catch(() => {});
+                } catch (error) {
+                    await replyFailure(error);
+                }
+                return;
+            }
+
+            if (command === 'sr' || command === 'wr') {
+                if (!argument) {
+                    await reply(`@${actualUsername}, usage: !${command} <${command === 'sr' ? 'song or YouTube URL' : 'movie, show, or video'}>`, 'bot').catch(() => {});
+                    return;
+                }
+                const sessionId = command === 'sr' ? 'discord-music-room' : 'discord-watch-room';
+                await reply(`📡 @${actualUsername}, !${command} received — searching the 24-Hour Lounge now.`, 'bot').catch(() => {});
+                try {
+                    const result: any = await executeHearMeOutBotAction({
+                        ...actionBase,
+                        action: 'hmo.media.request',
+                        sessionId,
+                        query: argument,
+                    });
+                    const title = result?.request?.item?.title || argument;
+                    const confirmation = String(result?.message || 'Added to the 24-Hour Lounge queue.').replace(/[.]+$/, '');
+                    await reply(`✅ 24-Hour Lounge: ${title} — ${confirmation}.`, 'bot').catch(() => {});
+                } catch (error) {
+                    await replyFailure(error);
+                }
+                return;
+            }
+
+            if (command === 'np' || command === 'nowplaying') {
+                try {
+                    const [music, movie]: any[] = await Promise.all([
+                        readSession('discord-music-room'),
+                        readSession('discord-watch-room'),
+                    ]);
+                    const summaries = [
+                        music?.session?.current?.item?.title
+                            ? `music: ${music.session.current.item.title} (${music.session.playback?.status || 'ready'}, ${music.session.queue?.length || 0} queued)`
+                            : 'music: empty',
+                        movie?.session?.current?.item?.title
+                            ? `movies: ${movie.session.current.item.title} (${movie.session.playback?.status || 'ready'}, ${movie.session.queue?.length || 0} queued)`
+                            : 'movies: empty',
+                    ];
+                    await reply(`▶️ HearMeOut — ${summaries.join(' · ')}`, 'bot').catch(() => {});
+                } catch (error) {
+                    await replyFailure(error);
+                }
+                return;
+            }
+
+            // SpaceMountain Lounge is deliberately auth-free while the shared
+            // player is under development. Other tenants keep their normal
+            // broadcaster/moderator control gate.
+            if (tenantId !== SPACEMOUNTAIN_SYSTEM_TENANT_ID && command !== 'play' && !canControlHearMeOut) {
+                await reply(`@${actualUsername}, only the broadcaster or a moderator can use !${command}.`, 'bot').catch(() => {});
+                return;
+            }
+            const requestedLane = /^(?:music|song|songs)$/i.test(argument) ? 'music'
+                : /^(?:movie|movies|video|watch)$/i.test(argument) ? 'movie'
+                : null;
+            const isLaneSwitch = ['music', 'songs', 'movie', 'movies'].includes(command);
+            const targetLane = isLaneSwitch
+                ? (command === 'music' || command === 'songs' ? 'music' : 'movie')
+                : requestedLane;
+            const control = isLaneSwitch || command === 'play' ? 'play'
+                : command === 'stop' ? 'pause'
+                    : command === 'skip' || command === 'next' ? 'next'
+                        : command;
+            const value = command === 'volume' ? Number(volumeArgument) : undefined;
+            if (command === 'volume' && (!volumeArgument || !Number.isFinite(value) || value! < 0 || value! > 100)) {
+                await reply(`@${actualUsername}, usage: !volume 0-100`, 'bot').catch(() => {});
+                return;
+            }
+            const singleLoungeSkipReply = tenantId === SPACEMOUNTAIN_SYSTEM_TENANT_ID && (command === 'skip' || command === 'next');
+            if (!singleLoungeSkipReply) {
+                await reply(`📡 @${actualUsername}, !${command} received — applying it to HearMeOut.`, 'bot').catch(() => {});
+            }
+            try {
+                if (singleLoungeSkipReply) {
+                    // Resolve the playing lane and advance it in the worker in one action.
+                    // Separate state reads can time out while StreamWeaver is busy and
+                    // select a stale lane if another request arrives between calls.
+                    const result: any = await executeHearMeOutBotAction({
+                        ...actionBase,
+                        action: 'hmo.media.control',
+                        sessionId: 'discord-music-room',
+                        control: 'next-active',
+                        targetLane: targetLane || undefined,
+                    });
+                    const active = ['movie', 'music'].find((lane) =>
+                        result?.program?.[lane]?.current && result.program[lane].playback?.status === 'playing');
+                    const rawPlaying = active ? String(result.program[active].current.item.title || '') : '';
+                    const playing = rawPlaying && !/^https?:\/\//i.test(rawPlaying) ? rawPlaying : (active ? 'the next track' : 'nothing queued');
+                    await reply(`⏭️ @${actualUsername}, skipped. Now playing: ${playing}.`, 'bot').catch(() => {});
+                    console.log(`[Dispatcher] SML !${command} advanced ${result.lane || 'unknown'}; now playing: ${playing}`);
+                    return;
+                }
+                const tenantMusicSession = tenantId && tenantId !== SPACEMOUNTAIN_SYSTEM_TENANT_ID
+                    ? twitchMusicSessionId(tenantId) : null;
+                if (tenantMusicSession && targetLane === 'movie') {
+                    await reply(`@${actualUsername}, movie playback is disabled for this Twitch stream.`, 'bot').catch(() => {});
+                    return;
+                }
+                const [music, movie]: any[] = await Promise.all([
+                    readSession(tenantMusicSession || 'discord-music-room'),
+                    ...(tenantMusicSession ? [] : [readSession('discord-watch-room')]),
+                ]);
+                const sessions = [
+                    { lane: 'music', sessionId: tenantMusicSession || 'discord-music-room', state: music?.session },
+                    ...(tenantMusicSession ? [] : [{ lane: 'movie', sessionId: 'discord-watch-room', state: movie?.session }]),
+                ];
+                const ordered = [...sessions].sort((left, right) => {
+                    const leftPlaying = left.state?.playback?.status === 'playing' ? 1 : 0;
+                    const rightPlaying = right.state?.playback?.status === 'playing' ? 1 : 0;
+                    if (leftPlaying !== rightPlaying) return rightPlaying - leftPlaying;
+                    return Number(right.state?.playback?.updatedAt || 0) - Number(left.state?.playback?.updatedAt || 0);
+                });
+                const selected = targetLane
+                    ? sessions.find((entry) => entry.lane === targetLane)!
+                    : ordered.find((entry) => entry.state?.current) || sessions[0];
+                const sessionId = selected.sessionId;
+
+                if (isLaneSwitch) {
+                    const other = sessions.find((entry) => entry.sessionId !== sessionId);
+                    if (other?.state?.current && other.state?.playback?.status === 'playing') {
+                        await executeHearMeOutBotAction({
+                            ...actionBase,
+                            action: 'hmo.media.control',
+                            sessionId: other.sessionId,
+                            control: 'pause',
+                        });
+                    }
+                }
+                const result: any = await executeHearMeOutBotAction({
+                    ...actionBase,
+                    action: 'hmo.media.control',
+                    sessionId,
+                    control,
+                    value,
+                });
+                const title = result?.session?.current?.item?.title || 'media player';
+                const laneLabel = selected.lane === 'music' ? 'music' : 'movies';
+                await reply(`✅ HearMeOut ${laneLabel} ${control}${command === 'volume' ? ` ${value}%` : ''}: ${title}.`, 'bot').catch(() => {});
+            } catch (error) {
+                await replyFailure(error);
+            }
+            return;
+        }
+
+        // Handle !bic command - Lighter theft tracker (global across all streams)
+        if (actualMessage.toLowerCase().startsWith('!bic')) {
+            const args = actualMessage.substring(4).trim();
+            try {
+                const { getBicData, stealLighter, removeLighter, getVictimList, isBlacklisted, addToBlacklist, removeFromBlacklist } = require('./bic-storage');
+
+                // !bic (no args) or !bic list [page] = show paginated leaderboard
+                if (!args || args.toLowerCase().startsWith('list')) {
+                    const data = getBicData();
+                    const victims = getVictimList();
+                    if (victims.length === 0) { await reply(`No lighters have been stolen yet!`, 'bot').catch(() => {}); return; }
+                    const PAGE_SIZE = 10;
+                    const pageArg = args ? parseInt(args.replace(/^list\s*/i, '')) : 1;
+                    const page = (isNaN(pageArg) || pageArg < 1) ? 1 : pageArg;
+                    const totalPages = Math.ceil(victims.length / PAGE_SIZE);
+                    const pageVictims = victims.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+                    const list = pageVictims.map((v: { name: string; count: number }) => `${v.name}: ${v.count}`).join(', ');
+                    let urlPart = '';
+                    try {
+                        const { getConfiguredAppUrl } = require('../lib/runtime-origin');
+                        const fullUrl = `${getConfiguredAppUrl()}/api/bic-list`;
+                        try { const tinyRes = await fetch(`https://tinyurl.com/api-create.php?url=${encodeURIComponent(fullUrl)}`, { signal: AbortSignal.timeout(3000) }); if (tinyRes.ok) { const short = await tinyRes.text(); if (short.startsWith('http')) urlPart = ` | Full list: ${short}`; } } catch {}
+                        if (!urlPart) urlPart = ` | Full list: ${fullUrl}`;
+                    } catch {}
+                    const pagePart = totalPages > 1 ? ` (pg ${page}/${totalPages} — !bic list ${page + 1})` : '';
+                    await reply(`🔥 ${data.total} lighters stolen! Victims: ${list}${pagePart}${urlPart}`, 'bot').catch(() => {});
+                    return;
+                }
+                // !bic remove @user
+                if (args.toLowerCase().startsWith('remove ')) {
+                    if (!(tags.mod || tags.badges?.broadcaster)) { await reply(`@${actualUsername}, only mods can remove bic entries!`, 'bot').catch(() => {}); return; }
+                    const removeTarget = args.substring(7).trim().replace('@', '').toLowerCase();
+                    if (!removeTarget) { await reply(`@${actualUsername}, usage: !bic remove @user`, 'bot').catch(() => {}); return; }
+                    const { total, userCount } = removeLighter(removeTarget);
+                    await reply(`Removed 1 lighter from ${removeTarget}. Total: ${total}, ${removeTarget}: ${userCount}`, 'bot').catch(() => {});
+                    const { publishBicOverlay } = require('./bic-service');
+                    await publishBicOverlay({ total, lastUser: removeTarget, lastUserCount: userCount });
+                    return;
+                }
+                // !bic blacklist @user
+                if (args.toLowerCase().startsWith('blacklist ')) {
+                    if (!(tags.mod || tags.badges?.broadcaster)) { await reply(`@${actualUsername}, only mods can manage the bic blacklist!`, 'bot').catch(() => {}); return; }
+                    const blTarget = args.substring(10).trim().replace('@', '').toLowerCase();
+                    if (!blTarget) { await reply(`@${actualUsername}, usage: !bic blacklist @user`, 'bot').catch(() => {}); return; }
+                    if (addToBlacklist(blTarget)) await reply(`${blTarget} added to bic blacklist`, 'bot').catch(() => {});
+                    else await reply(`${blTarget} is already blacklisted`, 'bot').catch(() => {});
+                    return;
+                }
+                // !bic unblacklist @user
+                if (args.toLowerCase().startsWith('unblacklist ')) {
+                    if (!(tags.mod || tags.badges?.broadcaster)) { await reply(`@${actualUsername}, only mods can manage the bic blacklist!`, 'bot').catch(() => {}); return; }
+                    const ublTarget = args.substring(12).trim().replace('@', '').toLowerCase();
+                    if (!ublTarget) { await reply(`@${actualUsername}, usage: !bic unblacklist @user`, 'bot').catch(() => {}); return; }
+                    if (removeFromBlacklist(ublTarget)) await reply(`${ublTarget} removed from bic blacklist`, 'bot').catch(() => {});
+                    else await reply(`${ublTarget} is not blacklisted`, 'bot').catch(() => {});
+                    return;
+                }
+                // !bic @user = steal a lighter
+                const targetUser = args.replace('@', '').toLowerCase();
+                if (isBlacklisted(targetUser)) { await reply(`@${actualUsername}, ${targetUser} is protected from lighter theft!`, 'bot').catch(() => {}); return; }
+                const { total, userCount } = stealLighter(targetUser);
+                await reply(`🔥 fatkid4ev4 has stolen ${total} lighters, of those ${userCount} have been ${targetUser}'s`, 'bot').catch(() => {});
+                const { publishBicOverlay } = require('./bic-service');
+                await publishBicOverlay({ total, lastUser: targetUser, lastUserCount: userCount });
+                // Notify fatkid's stream about the lighter theft
+                if (tenantId !== '757276653') {
+                    sendChatMessage(`🔥 fatkid4ev4 stole ${targetUser}'s lighter! (${total} total stolen, ${userCount} from ${targetUser})`, 'bot', undefined, '757276653').catch(() => {});
+                }
+            } catch (err) {
+                console.error('[Bic] Error:', err);
+            }
+            return;
+        }
+        
+        if (actualMessage.toLowerCase().startsWith('!so ')) {
+            const targetName = actualMessage.substring(4).trim().replace('@', '');
+            if (targetName) {
+                console.log(`[Dispatcher] Processing !so shoutout for ${targetName}`);
+                incrementMetric('shoutoutsGiven', 1, tenantId).catch(() => {});
+                const profileImage = `https://static-cdn.jtvnw.net/jtv_user_pictures/${targetName}-profile_image-300x300.png`;
+                await handleWalkOnShoutout(targetName, targetName, profileImage, true, tenantId).catch(err => {
+                    console.error('[Dispatcher] !so shoutout failed:', err);
+                    reply(`@${actualUsername}, shoutout failed: ${err.message}`, 'bot').catch(() => {});
+                });
+            }
+            return;
+        }
+        
+
+        // Trading is selected in the Pokédex browser; the resulting !swap command
+        // still performs the server-side atomic card exchange.
+        if (actualMessage.toLowerCase().startsWith('!trade')) {
+            const targetUser = actualMessage.substring('!trade'.length).trim().replace(/^@/, '');
+            const pokedexUrl = buildPokemonBrowserUrl(actualUsername, targetUser ? { tradeWith: targetUser } : {});
+            await reply(
+                targetUser
+                    ? `@${actualUsername}, trade with @${targetUser} from your Pokédex: ${pokedexUrl}`
+                    : `@${actualUsername}, choose a player and cards from your Pokédex: ${pokedexUrl}`,
+                'broadcaster',
+            ).catch(() => {});
+            return;
+        }
+
+        // Handle !offer command (Pokemon trade)
+        if (actualMessage.toLowerCase().startsWith('!offer ')) {
+            const cardIdentifier = actualMessage.substring(7).trim();
+            const { offerCard } = require('./pokemon-trade-manager');
+            await offerCard(actualUsername, cardIdentifier, tenantId);
+            return;
+        }
+        
+        // Handle !accept command (check swaps first, then Pokemon trade)
+        if (actualMessage.toLowerCase() === '!accept') {
+            const { acceptSwap, hasPendingSwap } = require('./pokemon-swap');
+            if (hasPendingSwap(actualUsername, tenantId)) {
+                await acceptSwap(actualUsername, tenantId);
+                return;
+            }
+            const { acceptTrade } = require('./pokemon-trade-manager');
+            await acceptTrade(actualUsername, tenantId);
+            return;
+        }
+        
+        // Handle !cancel command (check swaps first, then Pokemon trade)
+        if (actualMessage.toLowerCase() === '!cancel') {
+            const { cancelSwap, hasPendingSwap } = require('./pokemon-swap');
+            if (hasPendingSwap(actualUsername, tenantId)) {
+                await cancelSwap(actualUsername, tenantId);
+                return;
+            }
+            const { cancelTrade } = require('./pokemon-trade-manager');
+            await cancelTrade(actualUsername, tenantId);
+            return;
+        }
+        
+        // Handle !swap command — one-shot trade proposal
+        if (actualMessage.toLowerCase().startsWith('!swap ')) {
+            const parts = actualMessage.substring(6).trim().match(/^@?(\S+)\s+(\d+)\s+for\s+(\d+)$/i);
+            if (!parts) {
+                await reply(`@${actualUsername}, usage: !swap @user <your card#> for <their card#>`, 'broadcaster').catch(() => {});
+                return;
+            }
+            const targetUser = parts[1].replace('@', '');
+            const myCard = parseInt(parts[2]);
+            const theirCard = parseInt(parts[3]);
+            if (targetUser.toLowerCase() === actualUsername.toLowerCase()) {
+                await reply(`@${actualUsername}, you can't swap with yourself!`, 'broadcaster').catch(() => {});
+                return;
+            }
+            const { proposeSwap } = require('./pokemon-swap');
+            await proposeSwap(actualUsername, targetUser, myCard, theirCard, tenantId);
+            return;
+        }
+
+        // Handle !deck command - view saved deck
+        if (actualMessage.toLowerCase() === '!deck') {
+            const { getUserCollection } = require('./pokemon-storage-discord');
+            const col = await getUserCollection(actualUsername);
+            if (!col.deck || !col.deck.cards?.length) {
+                await reply(`@${actualUsername}, you don't have a deck yet. Use the Pok\u00e9dex deck builder and !setdeck to save one.`, 'broadcaster').catch(() => {});
+                return;
+            }
+            const { getUserCards } = require('./pokemon-collection');
+            const cards = await getUserCards(actualUsername);
+            const names = col.deck.cards.slice(0, 8).map((idx: number) => cards[idx - 1]?.name || '?').join(', ');
+            const energyStr = Object.entries(col.deck.energy || {}).filter(([, n]) => (n as number) > 0).map(([t, n]) => `${n} ${t}`).join(', ');
+            const total = col.deck.cards.length + Object.values(col.deck.energy || {}).reduce((a: number, b: any) => a + Number(b), 0);
+            await reply(`@${actualUsername}'s deck (${total}/40): ${names}${col.deck.cards.length > 8 ? '...' : ''}${energyStr ? ' | Energy: ' + energyStr : ''}`, 'broadcaster').catch(() => {});
+            return;
+        }
+
+        // Handle !setdeck command - save a 40-card deck from base64
+        if (actualMessage.toLowerCase().startsWith('!setdeck ')) {
+            const encoded = actualMessage.substring(9).trim();
+            try {
+                const decoded = JSON.parse(Buffer.from(encoded, 'base64').toString('utf-8'));
+                if (!decoded.cards || !Array.isArray(decoded.cards)) throw new Error('bad format');
+                const energy: Record<string, number> = decoded.energy || {};
+                const energyTotal = Object.values(energy).reduce((a: number, b: any) => a + Number(b), 0);
+                const total = decoded.cards.length + energyTotal;
+                if (total !== 40) {
+                    await reply(`@${actualUsername}, deck must be exactly 40 cards (got ${total}).`, 'broadcaster').catch(() => {});
+                    return;
+                }
+                const { getUserCards } = require('./pokemon-collection');
+                const cards = await getUserCards(actualUsername);
+                const invalid = decoded.cards.find((idx: number) => !cards[idx - 1]);
+                if (invalid) {
+                    await reply(`@${actualUsername}, card #${invalid} doesn't exist in your collection!`, 'broadcaster').catch(() => {});
+                    return;
+                }
+                const { getUserCollection, saveUserCollection } = require('./pokemon-storage-discord');
+                const col = await getUserCollection(actualUsername);
+                col.deck = { cards: decoded.cards, energy };
+                await saveUserCollection(actualUsername, col);
+                const pokemonCount = decoded.cards.filter((idx: number) => {
+                    const c = cards[idx - 1];
+                    try {
+                        const setData = JSON.parse(require('fs').readFileSync(require('path').join(process.cwd(), 'pokemon-tcg-data-master', 'cards', 'en', `${c.setCode}.json`), 'utf-8'));
+                        const tcg = setData.find((t: any) => t.number === c.number);
+                        return tcg?.supertype === 'Pok\u00e9mon';
+                    } catch { return false; }
+                }).length;
+                await reply(`@${actualUsername}, deck saved! ${decoded.cards.length} cards + ${energyTotal} energy (${pokemonCount} Pok\u00e9mon).`, 'broadcaster').catch(() => {});
+            } catch {
+                await reply(`@${actualUsername}, invalid deck code. Use the Pok\u00e9dex deck builder to generate one.`, 'broadcaster').catch(() => {});
+            }
+            return;
+        }
+
+        // Handle !gymteam command - set 3 cards for gym battles
+        if (actualMessage.toLowerCase().startsWith('!gymteam')) {
+            const args = actualMessage.substring(8).trim().split(/\s+/);
+            if (args.length !== 3 || args.some(a => !a.includes('-'))) {
+                await reply(`@${actualUsername}, usage: !gymteam <set-num> <set-num> <set-num> (e.g. !gymteam base1-4 base6-3 gym2-15)`, 'broadcaster').catch(() => {});
+                return;
+            }
+            const { getUserCards } = require('./pokemon-collection');
+            const cards = await getUserCards(actualUsername);
+            const matched = args.map((id: string) => cards.find((c: any) => `${c.setCode}-${c.number}` === id));
+            const missing = args.filter((_: string, i: number) => !matched[i]);
+            if (missing.length) {
+                await reply(`@${actualUsername}, card(s) not found in your collection: ${missing.join(', ')}`, 'broadcaster').catch(() => {});
+                return;
+            }
+            // Verify all are Pokemon
+            const fs = require('fs');
+            const path = require('path');
+            const CARDS_DIR = path.join(process.cwd(), 'pokemon-tcg-data-master', 'cards', 'en');
+            for (const c of matched) {
+                try {
+                    const setData = JSON.parse(fs.readFileSync(path.join(CARDS_DIR, `${c.setCode}.json`), 'utf-8'));
+                    const tcg = setData.find((t: any) => t.number === c.number);
+                    if (tcg && tcg.supertype !== 'Pok\u00e9mon') {
+                        await reply(`@${actualUsername}, ${c.name} (${c.setCode}-${c.number}) is not a Pok\u00e9mon!`, 'broadcaster').catch(() => {});
+                        return;
+                    }
+                } catch {}
+            }
+            const { setGymTeam } = require('./gym-team');
+            await setGymTeam(actualUsername, args);
+            const names = matched.map((c: any) => `${c.name} (${c.setCode}-${c.number})`).join(', ');
+            await reply(`@${actualUsername}, gym team set: ${names}`, 'broadcaster').catch(() => {});
+            return;
+        }
+
+        // Handle !challenge command (Gym Battle queue)
+        if (actualMessage.toLowerCase() === '!challenge') {
+            const { joinQueue } = require('./gym-battle');
+            await joinQueue(actualUsername, tenantId);
+            return;
+        }
+        
+
+
+        // Handle !testswap command (mod-only — propose and auto-accept a swap for overlay testing)
+        if (actualMessage.toLowerCase() === '!testswap') {
+            if (tags.mod || tags.badges?.broadcaster) {
+                const { proposeSwap, acceptSwap } = require('./pokemon-swap');
+                await proposeSwap(actualUsername, 'akhiteddy', 1, 1, tenantId);
+                setTimeout(async () => {
+                    await acceptSwap('akhiteddy', tenantId);
+                }, 5000);
+            }
+            return;
+        }
+
+        // Handle !testgym command (mod-only test battle)
+        if (actualMessage.toLowerCase() === '!testgym') {
+            if (tags.mod || tags.badges?.broadcaster) {
+                const { testGymBattle } = require('./gym-battle');
+                await testGymBattle(tenantId);
+            }
+            return;
+        }
+
+        // Handle !nextchallenger command (Streamer starts next battle)
+        if (actualMessage.toLowerCase() === '!nextchallenger') {
+            if (tags.mod || tags.badges?.broadcaster) {
+                const { startNextBattle } = require('./gym-battle');
+                await startNextBattle(tenantId);
+            } else {
+                await reply(`@${actualUsername}, only the gym leader can start battles!`, 'broadcaster').catch(() => {});
+            }
+            return;
+        }
+        
+        // Handle !attack command (Gym Battle)
+        if (actualMessage.toLowerCase() === '!attack') {
+            const { battleAttack } = require('./gym-battle');
+            await battleAttack(actualUsername, tenantId);
+            return;
+        }
+        
+        // Handle !switch command (Gym Battle)
+        if (actualMessage.toLowerCase() === '!switch') {
+            const { battleSwitch } = require('./gym-battle');
+            await battleSwitch(actualUsername, tenantId);
+            return;
+        }
+        
+        // Handle !clip command
+        if (actualMessage.toLowerCase() === '!clip') {
+            try {
+                const tenantQuery = tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : '';
+                const response = await fetch(`http://127.0.0.1:${process.env.PORT||3100}/api/twitch/create-clip${tenantQuery}`, {
+                    method: 'POST',
+                    headers: internalServiceHeaders(),
+                    signal: AbortSignal.timeout(10000),
+                });
+                const data = await response.json().catch(() => null);
+                if (response.ok) {
+                    const clipUrl = data?.url || data?.clip?.edit_url || (data?.clip?.id ? `https://clips.twitch.tv/${data.clip.id}` : '');
+                    if (clipUrl) {
+                        await reply(`📹 Clip created! ${clipUrl}`, 'broadcaster').catch(() => {});
+                    } else {
+                        await reply(`@${actualUsername}, clip created but no URL returned!`, 'broadcaster').catch(() => {});
+                    }
+                } else {
+                    const twitchError = data?.details?.twitchError;
+                    const twitchMessage = typeof twitchError === 'string'
+                        ? twitchError
+                        : twitchError?.message || twitchError?.error || data?.error || 'Unknown error';
+                    console.error('[Dispatcher] Clip creation failed:', response.status, data || twitchMessage);
+                    await reply(`@${actualUsername}, failed to create clip: ${twitchMessage} (${response.status})`, 'broadcaster').catch(() => {});
+                }
+            } catch (error) {
+                console.error('[Dispatcher] Clip creation failed:', error);
+                await reply(`@${actualUsername}, clip creation timed out or failed!`, 'broadcaster').catch(() => {});
+            }
+            return;
+        }
+        
+
+        // Handle !followage command
+        if (actualMessage.toLowerCase().startsWith('!followage')) {
+            const args = actualMessage.substring(11).trim();
+            const targetUser = (args ? args : actualUsername)
+                .replace(/^@+/, '')
+                .replace(/[^a-zA-Z0-9_]/g, '')
+                .toLowerCase();
+            if (!targetUser) {
+                await reply(`@${actualUsername}, provide a valid Twitch username.`, 'bot').catch(() => {});
+                return;
+            }
+            
+            try {
+                const { getFollowAge } = require('./twitch');
+                const followData = await getFollowAge(targetUser, tenantId);
+
+                if (followData?.followedAt) {
+                    const followDate = new Date(followData.followedAt);
+                    const now = new Date();
+                    const diffMs = now.getTime() - followDate.getTime();
+                    const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+                    const years = Math.floor(days / 365);
+                    const months = Math.floor((days % 365) / 30);
+                    const remainingDays = days % 30;
+                    
+                    let timeStr = '';
+                    if (years > 0) timeStr += `${years}y `;
+                    if (months > 0) timeStr += `${months}m `;
+                    timeStr += `${remainingDays}d`;
+                    
+                    await reply(`@${targetUser} has been following for ${timeStr}!`, 'bot').catch(() => {});
+                } else if (followData && !followData.followedAt) {
+                    await reply(`@${targetUser} is not following!`, 'bot').catch(() => {});
+                } else {
+                    await reply(`@${actualUsername}, couldn't verify follow status right now. Try again in a moment.`, 'bot').catch(() => {});
+                }
+            } catch (error) {
+                await reply(`@${actualUsername}, couldn't fetch follow data!`, 'bot').catch(() => {});
+            }
+            return;
+        }
+        
+        // Handle !followed command
+        if (actualMessage.toLowerCase() === '!followed') {
+            try {
+                const { getFollowAge } = require('./twitch');
+                const followData = await getFollowAge(actualUsername, tenantId);
+                
+                if (followData?.followedAt) {
+                    const followDate = new Date(followData.followedAt);
+                    await reply(`@${actualUsername} followed on ${followDate.toLocaleDateString()}!`, 'broadcaster').catch(() => {});
+                } else if (followData && !followData.followedAt) {
+                    await reply(`@${actualUsername}, you're not following!`, 'broadcaster').catch(() => {});
+                } else {
+                    await reply(`@${actualUsername}, I couldn't verify follow status right now. Try again in a moment.`, 'broadcaster').catch(() => {});
+                }
+            } catch (error) {
+                await reply(`@${actualUsername}, couldn't fetch follow data!`, 'broadcaster').catch(() => {});
+            }
+            return;
+        }
+        
+        // Handle !followers command
+        if (actualMessage.toLowerCase() === '!followers') {
+            try {
+                const { getChannelInfo } = require('./twitch');
+                const info = await getChannelInfo(tenantId);
+                if (info) {
+                    await reply(`Current followers: ${info.followerCount?.toLocaleString() || 'Unknown'}`, 'broadcaster').catch(() => {});
+                } else {
+                    await reply(`@${actualUsername}, couldn't fetch follower count!`, 'broadcaster').catch(() => {});
+                }
+            } catch (error) {
+                console.error('[Dispatcher] Followers fetch failed:', error);
+                await reply(`@${actualUsername}, couldn't fetch follower count!`, 'broadcaster').catch(() => {});
+            }
+            return;
+        }
+        
+
+        // Handle !uptime command
+        if (actualMessage.toLowerCase() === '!uptime') {
+            try {
+                const { getStreamUptime } = require('./twitch');
+                const uptime = await getStreamUptime(tenantId);
+                if (uptime) {
+                    await reply(`Stream uptime: ${uptime.hours}h ${uptime.minutes}m`, 'broadcaster').catch(() => {});
+                } else {
+                    await reply('Stream is offline!', 'broadcaster').catch(() => {});
+                }
+            } catch (error) {
+                console.error('[Dispatcher] Uptime fetch failed:', error);
+                await reply(`@${actualUsername}, couldn't fetch uptime!`, 'broadcaster').catch(() => {});
+            }
+            return;
+        }
+        
+        // Handle tenant watchtime, including an optional Twitch username.
+        const watchtimeMatch = actualMessage.match(/^!(?:watchtime|watch time)(?:\s+@?([a-z0-9_]{1,25}))?\s*$/i);
+        if (watchtimeMatch) {
+            try {
+                const { getUser, formatWatchtime } = require('./user-stats');
+                if (!tenantCtx) throw new Error('Missing tenant context for watchtime');
+                const user = await getUser(watchtimeMatch[1] || actualUsername, tenantCtx);
+                const msg = formatWatchtime(user);
+                await reply(msg, 'bot').catch(() => {});
+            } catch (error) {
+                console.error('[Dispatcher] Watchtime fetch failed:', error);
+                await reply(`@${actualUsername}, couldn't fetch your watchtime!`, 'bot').catch(() => {});
+            }
+            return;
+        }
+        
+        // Handle !stats command
+        if (actualMessage.toLowerCase() === '!stats') {
+            try {
+                const { getChannelInfo } = require('./twitch');
+                const info = await getChannelInfo(tenantId);
+                if (info) {
+                    await reply(
+                        `📊 Followers: ${info.followerCount?.toLocaleString() || 0} | Views: ${info.viewCount?.toLocaleString() || 0}`,
+                        'bot'
+                    ).catch(() => {});
+                } else {
+                    await reply(`@${actualUsername}, couldn't fetch stats!`, 'bot').catch(() => {});
+                }
+            } catch (error) {
+                console.error('[Dispatcher] Stats fetch failed:', error);
+                await reply(`@${actualUsername}, stats request timed out!`, 'bot').catch(() => {});
+            }
+            return;
+        }
+        
+        // Handle !setgame command (mod/broadcaster only)
+        if (actualMessage.toLowerCase().startsWith('!setgame ')) {
+            if (tags.mod || tags.badges?.broadcaster) {
+                const game = actualMessage.substring(9).trim();
+                try {
+                    const { updateChannelInfo } = require('./twitch');
+                    const ok = await updateChannelInfo({ game_name: game }, tenantId);
+                    if (ok) {
+                        await reply(`🎮 Game set to: ${game}`, 'bot').catch(() => {});
+                    } else {
+                        await reply(`Failed to set game!`, 'bot').catch(() => {});
+                    }
+                } catch (error) {
+                    console.error('[Dispatcher] Set game failed:', error);
+                    await reply(`Failed to set game!`, 'bot').catch(() => {});
+                }
+            } else {
+                await reply(`@${actualUsername}, only mods can change the game!`, 'broadcaster').catch(() => {});
+            }
+            return;
+        }
+        
+        // Handle !settitle command (mod/broadcaster only)
+        if (actualMessage.toLowerCase().startsWith('!settitle ')) {
+            if (tags.mod || tags.badges?.broadcaster) {
+                const title = actualMessage.substring(10).trim();
+                try {
+                    const { updateChannelInfo } = require('./twitch');
+                    const ok = await updateChannelInfo({ title }, tenantId);
+                    if (ok) {
+                        await reply(`📝 Title set to: ${title}`, 'bot').catch(() => {});
+                    } else {
+                        await reply(`Failed to set title!`, 'bot').catch(() => {});
+                    }
+                } catch (error) {
+                    console.error('[Dispatcher] Set title failed:', error);
+                    await reply(`Failed to set title!`, 'bot').catch(() => {});
+                }
+            } else {
+                await reply(`@${actualUsername}, only mods can change the title!`, 'broadcaster').catch(() => {});
+            }
+            return;
+        }
+        
+        if (cmdName === 'followtest') {
+            const mirrored = Boolean(tags['source-room-id'] && tags['source-room-id'] !== tags['room-id']);
+            const allowed = !mirrored && (tags.mod === true || tags.mod === '1'
+                || Boolean(tags.badges?.broadcaster)
+                || actualUsername.toLowerCase() === replyChannel.replace(/^#/, '').toLowerCase());
+            if (!allowed) { await reply('Only the broadcaster or a moderator can run !followtest.', 'bot'); return; }
+            try {
+                const { testFollowAlert } = await import('./follow-alert');
+                await reply(await testFollowAlert(tenantId, actualUsername), 'bot');
+            } catch (error) {
+                console.error('[FollowAlert] Test failed:', error);
+                await reply('Follow alert could not run. Please try again.', 'bot').catch(() => {});
+            }
+            return;
+        }
+
+        const outputContext = getChatOutputContext();
+
+        // Handle !commands
+        if (/^!commands(?:\s+[1-8])?$/i.test(actualMessage.trim())) {
+            const isMod = Boolean(tags.mod || tags.badges?.broadcaster);
+            const directCategory = directLoungeCommandCategory(actualMessage, isMod);
+            if (outputContext?.platform === 'discord' && outputContext.channelId) {
+                if (directCategory) {
+                    for (const line of directCategory) await reply(line, 'bot').catch(() => {});
+                } else {
+                    await sendStructuredDiscordReply({
+                        channelId: outputContext.channelId,
+                        message: buildDiscordCommandsSummary(),
+                        tenantId,
+                        title: 'StreamWeaver Discord Commands',
+                        responseType: 'Command Directory',
+                        fields: buildDiscordCommandDirectoryFields(),
+                        sourceMessageId: outputContext.messageId,
+                        sourceMessage: actualMessage,
+                        sourceUser: actualUsername,
+                        sourceUserAvatarUrl: outputContext.userAvatarUrl,
+                    }).catch(() => {});
+                }
+            } else {
+                if (!directCategory) {
+                    pendingWatchChoices.delete(watchChoiceKey);
+                    retireRedemptionNumberChoices(tenantId, actualUsername);
+                }
+                const lines = directCategory || [beginLoungeCommandMenu({
+                    platform: 'twitch', tenantId, channelId: replyChannel, username: actualUsername, isMod,
+                })];
+                for (const line of lines) await reply(`@${actualUsername} ${line}`, 'broadcaster').catch(() => {});
+            }
+            return;
+        }
+
+        if (actualMessage.toLowerCase().startsWith('!timeout')) {
+            if (!(tags.mod || tags.badges?.broadcaster)) {
+                await reply(`@${actualUsername}, only mods can use !timeout.`, 'broadcaster').catch(() => {});
+                return;
+            }
+
+            const cmdArgs = actualMessage.substring('!timeout'.length).trim().split(/\s+/).filter(Boolean);
+            const targetUser = cmdArgs[0]?.replace(/^@/, '').trim();
+            if (!targetUser) {
+                await reply(`@${actualUsername}, usage: !timeout @user [duration] [reason]`, 'broadcaster').catch(() => {});
+                return;
+            }
+
+            const parsedDuration = parseTimeoutDuration(cmdArgs[1]);
+            const reason = parsedDuration.consumed ? cmdArgs.slice(2).join(' ') : cmdArgs.slice(1).join(' ');
+
+            try {
+                const { timeoutUser } = require('./twitch');
+                const ok = await timeoutUser(targetUser, parsedDuration.seconds, reason, tenantId);
+                await reply(
+                    ok
+                        ? `Timed out @${targetUser} for ${parsedDuration.seconds}s${reason ? `: ${reason}` : '.'}`
+                        : `Failed to timeout @${targetUser}.`,
+                    'broadcaster'
+                ).catch(() => {});
+            } catch (error) {
+                console.error('[Dispatcher] !timeout failed:', error);
+                await reply(`Failed to timeout @${targetUser}.`, 'broadcaster').catch(() => {});
+            }
+            return;
+        }
+        
+        // Handle leaderboard commands
+        if (['!leader', '!leaderboard', '!pleader', '!wleader', '!cleader', '!bleader', '!bitsleader'].includes(actualMessage.split(' ')[0].toLowerCase())) {
+            const requestedCmd = actualMessage.split(' ')[0].toLowerCase();
+            const cmd = requestedCmd === '!leaderboard' ? '!pleader' : requestedCmd;
+            const args = actualMessage.substring(cmd.length).trim();
+            const broadcastFn = typeof (global as any).broadcast === 'function' ? (global as any).broadcast : () => {};
+            await handleLeaderboardCommand(cmd, actualUsername, args, broadcastFn, tenantId, String(tags['user-id'] || tags.userId || ''));
+            return;
+        }
+        
+        // Handle !eevee command — special Eevee booster for mothermayrien
+        if (actualMessage.toLowerCase() === '!eevee') {
+            if (actualUsername.toLowerCase() !== 'mothermayrien') {
+                await reply(`@${actualUsername}, this is mothermayrien's special Eevee pack!`, 'broadcaster').catch(() => {});
+                return;
+            }
+            try {
+                const { openEeveePack } = require('./pokemon-packs');
+                const result = await openEeveePack(actualUsername, tenantId);
+                if (result) {
+                    const { getUserCards } = require('./pokemon-collection');
+                    const allCards = await getUserCards(actualUsername);
+                    const rareCount = allCards.filter((c: any) => c.rarity?.includes('Rare')).length;
+                    const cardInfo = result.pack.map((c: any) => `${c.name} (${c.rarity})`).join(', ');
+                    await reply(`✨ @${actualUsername} opened an Eevee booster! ${cardInfo} | Total: ${allCards.length} cards (${rareCount} rare)`, 'broadcaster').catch(() => {});
+                } else {
+                    await reply(`@${actualUsername}, something went wrong opening the Eevee pack!`, 'broadcaster').catch(() => {});
+                }
+            } catch (e: any) {
+                console.error('[Eevee Pack] Error:', e);
+            }
+            return;
+        }
+
+
+        // Handle !admin
+        if (actualMessage.toLowerCase() === '!admin') {
+            if (tags.mod || tags.badges?.broadcaster) {
+                const adminSummary = outputContext?.platform === 'discord'
+                    ? buildDiscordAdminCommandsSummary({ isMod: true })
+                    : '🔧 Admin: spmt wake on/off/status, !so <user>, !setgame <game>, !settitle <title>, !raidmessage <msg>, !greetingmode, !welcomemode, !clipmode, !chatmode, !botshare, !athenaeverywhere, !brb, !back, !ignore <user>, !addflow <prompt>, !approveflow <!command>, !disableflow <!command>, !deleteflow <!command>';
+                await reply(adminSummary, 'broadcaster').catch(() => {});
+            } else {
+                const deniedSummary = outputContext?.platform === 'discord'
+                    ? buildDiscordAdminCommandsSummary({ isMod: false })
+                    : `@${actualUsername}, only mods can view admin commands!`;
+                await reply(deniedSummary, 'broadcaster').catch(() => {});
+            }
+            return;
+        }
+
+        if (actualMessage.toLowerCase().startsWith('!addflow')) {
+            if (!tags.mod && !tags.badges?.broadcaster) {
+                await reply(`@${actualUsername}, only mods can create AI workflows from chat.`, 'broadcaster').catch(() => {});
+                return;
+            }
+
+            const prompt = actualMessage.substring('!addflow'.length).trim();
+            if (!prompt) {
+                await reply(`@${actualUsername}, use !addflow followed by what the workflow should do. Example: !addflow make !go start a 5 minute countdown`, 'broadcaster').catch(() => {});
+                return;
+            }
+
+            try {
+                const { createWorkflowFromPrompt } = await import('./automation/ai-workflow-builder');
+                const created = await createWorkflowFromPrompt({
+                    message: prompt,
+                    tenantId,
+                    userName: actualUsername,
+                });
+                const commandLabel = created.commandText || (created.command ? String(created.command.command || '') : '');
+                const reviewNote = created.requiresReview
+                    ? ` It includes a programmable step, so review it before enabling.`
+                    : '';
+                await reply(
+                    `${created.action.name} drafted${commandLabel ? ` for ${commandLabel}` : ''}. It is saved disabled.${reviewNote} Use !approveflow ${commandLabel || '<!command>'} to enable it or edit it in Workflows.`,
+                    'broadcaster'
+                ).catch(() => {});
+            } catch (error: any) {
+                console.error('[Dispatcher] !addflow failed:', error);
+                await reply(`@${actualUsername}, AI flow creation failed: ${error?.message || 'unknown error'}`, 'broadcaster').catch(() => {});
+            }
+            return;
+        }
+
+        if (actualMessage.toLowerCase().startsWith('!approveflow')) {
+            if (!tags.mod && !tags.badges?.broadcaster) {
+                await reply(`@${actualUsername}, only mods can enable AI workflows from chat.`, 'broadcaster').catch(() => {});
+                return;
+            }
+
+            const commandText = actualMessage.substring('!approveflow'.length).trim();
+            if (!commandText) {
+                await reply(`@${actualUsername}, use !approveflow <!command>.`, 'broadcaster').catch(() => {});
+                return;
+            }
+
+            try {
+                const { setWorkflowEnabledByCommand } = await import('./automation/ai-workflow-builder');
+                const updated = await setWorkflowEnabledByCommand(commandText, true, tenantId);
+                await reply(`Enabled workflow for ${commandText}. Updated ${updated.linkedActions.length} linked action(s).`, 'broadcaster').catch(() => {});
+            } catch (error: any) {
+                console.error('[Dispatcher] !approveflow failed:', error);
+                await reply(`@${actualUsername}, couldn't enable ${commandText}: ${error?.message || 'unknown error'}`, 'broadcaster').catch(() => {});
+            }
+            return;
+        }
+
+        if (actualMessage.toLowerCase().startsWith('!disableflow')) {
+            if (!tags.mod && !tags.badges?.broadcaster) {
+                await reply(`@${actualUsername}, only mods can disable AI workflows from chat.`, 'broadcaster').catch(() => {});
+                return;
+            }
+
+            const commandText = actualMessage.substring('!disableflow'.length).trim();
+            if (!commandText) {
+                await reply(`@${actualUsername}, use !disableflow <!command>.`, 'broadcaster').catch(() => {});
+                return;
+            }
+
+            try {
+                const { setWorkflowEnabledByCommand } = await import('./automation/ai-workflow-builder');
+                const updated = await setWorkflowEnabledByCommand(commandText, false, tenantId);
+                await reply(`Disabled workflow for ${commandText}. Updated ${updated.linkedActions.length} linked action(s).`, 'broadcaster').catch(() => {});
+            } catch (error: any) {
+                console.error('[Dispatcher] !disableflow failed:', error);
+                await reply(`@${actualUsername}, couldn't disable ${commandText}: ${error?.message || 'unknown error'}`, 'broadcaster').catch(() => {});
+            }
+            return;
+        }
+
+        if (actualMessage.toLowerCase().startsWith('!deleteflow')) {
+            if (!tags.mod && !tags.badges?.broadcaster) {
+                await reply(`@${actualUsername}, only mods can delete AI workflows from chat.`, 'broadcaster').catch(() => {});
+                return;
+            }
+
+            const commandText = actualMessage.substring('!deleteflow'.length).trim();
+            if (!commandText) {
+                await reply(`@${actualUsername}, use !deleteflow <!command>.`, 'broadcaster').catch(() => {});
+                return;
+            }
+
+            try {
+                const { deleteWorkflowByCommand } = await import('./automation/ai-workflow-builder');
+                const deleted = await deleteWorkflowByCommand(commandText, tenantId);
+                await reply(`Deleted workflow for ${commandText}. Removed ${deleted.linkedActions.length} linked action(s).`, 'broadcaster').catch(() => {});
+            } catch (error: any) {
+                console.error('[Dispatcher] !deleteflow failed:', error);
+                await reply(`@${actualUsername}, couldn't delete ${commandText}: ${error?.message || 'unknown error'}`, 'broadcaster').catch(() => {});
+            }
+            return;
+        }
+        
+        // 1. Command Handling from JSON files
+        console.log(`[Dispatcher] Looking for command: ${cmdName}`);
+        const commands = await getAllCommands(tenantId);
+        const configuredCommand = commands.find((c: any) => String(c.command || '').toLowerCase().replace(/^!/, '') === cmdName);
+        
+        const command = configuredCommand || commands.find((c: any) => String(c.command || '').toLowerCase().replace(/^!/, '') === cmdName && c.enabled);
+        
+        if (command) {
+            console.log(`[Dispatcher] Found command: ${command.name}`);
+            console.log(`[Dispatcher] Command has actionId:`, (command as any).actionId);
+            console.log(`[Dispatcher] cmdName: ${cmdName}`);
+
+            const cmdArgs = actualMessage.substring(cmdName.length + 2).trim().split(/\s+/).filter(Boolean);
+            const targetRaw = cmdArgs[0]?.replace('@', '') || '';
+            const execArgs: Record<string, any> = {};
+            cmdArgs.forEach((a: string, i: number) => { execArgs[`input${i}`] = a; });
+            execArgs.rawInput = cmdArgs.join(' ');
+            execArgs.tenantId = tenantId || '';
+            const executionContext = {
+                user: actualUsername,
+                userName: actualUsername,
+                message: actualMessage,
+                rawInput: cmdArgs.join(' '),
+                platform: 'twitch',
+                channel: replyChannel,
+                tenantId: tenantId || undefined,
+                args: execArgs,
+                variables: {
+                    user: actualUsername,
+                    userName: actualUsername,
+                    channel: replyChannel,
+                    tenantId: tenantId || '',
+                    targetUser: targetRaw,
+                    targetUserName: targetRaw,
+                    rawInput: cmdArgs.join(' '),
+                },
+            };
+
+            const actionsForCommand = (await getAllActions(tenantId)).filter((action: any) =>
+                action?.enabled &&
+                Array.isArray(action.triggers) &&
+                action.triggers.some((trigger: any) =>
+                    trigger?.enabled !== false &&
+                    Number(trigger?.type) === 401 &&
+                    String(trigger?.commandId || '') === String((command as any).id || '')
+                )
+            );
+
+            if (actionsForCommand.length > 0) {
+                const { SubActionExecutor } = await import('./automation/SubActionExecutor');
+                const executor = new SubActionExecutor();
+                for (const action of actionsForCommand) {
+                    console.log(`[Dispatcher] Executing command-triggered action ${action.id} for ${cmdName}`);
+                    await executor.executeAction(action, executionContext);
+                }
+                return;
+            }
+            
+            if (!(command as any).actionId && isSocialCommandName(cmdName)) {
+                const target = actualMessage.substring(cmdName.length + 2).trim();
+                const botName = getBotName(tenantId);
+                const response = await generateSocialCommandReply({
+                    platform: 'twitch',
+                    commandName: cmdName,
+                    userName: actualUsername,
+                    target,
+                    tenantId,
+                    botName,
+                });
+                if (response) {
+                    if (isSocialOverlayCommand(cmdName)) {
+                        publishSocialOverlayEvent({
+                            command: cmdName,
+                            tenantId,
+                            actor: { name: actualUsername },
+                            ...(target ? { target: { name: target } } : {}),
+                            bot: { name: botName },
+                            reaction: response,
+                            animation: {
+                                theme: cmdName,
+                                durationMs: cmdName === 'love' ? 10_000 : 9_000,
+                                particleCount: cmdName === 'love' ? 48 : 32,
+                                reducedMotionSafe: true,
+                            },
+                        });
+                    }
+                    await reply(response, 'bot').catch(() => {});
+                    return;
+                }
+            }
+
+            // Handle simple responses after native social commands so legacy
+            // canned replies cannot swallow their overlay event.
+            if ((command as any).response && !(command as any).actionId && !(command as any).actions) {
+                await reply((command as any).response, 'broadcaster').catch(() => {});
+                return;
+            }
+            
+
+            
+            // Execute action if linked
+            if ((command as any).actionId) {
+                console.log(`[Dispatcher] Command has actionId: ${(command as any).actionId}`);
+                const action = await getActionById((command as any).actionId, tenantId);
+                console.log(`[Dispatcher] Action found:`, action ? 'YES' : 'NO');
+                console.log(`[Dispatcher] Action object:`, JSON.stringify(action));
+                if (action && (action as any).handler) {
+                    const handler = (action as any).handler;
+                    console.log(`[Dispatcher] Executing handler: ${handler}`);
+                    
+                    // Execute custom handlers
+                    if (handler === 'pokemon-pack-open') {
+                        const PACK_COST = 1000;
+                        const userPoints = await getPointBalance(actualUsername);
+                        
+                        if (userPoints < BigInt(PACK_COST)) {
+                            await reply(`@${actualUsername}, you need ${PACK_COST} points to open a pack! (You have ${userPoints.toString()})`, 'broadcaster').catch(() => {});
+                            return;
+                        }
+                        
+                        await addPoints(actualUsername, -PACK_COST);
+                        
+                        const { openPack } = require('./pokemon-packs');
+                        const result = await openPack(1, actualUsername, undefined, tenantId);
+                        if (result) {
+                            const cardInfo = formatPokemonPackCardInfo(result.pack);
+                            
+                            const { getUserCards } = require('./pokemon-collection');
+                            const allCards = await getUserCards(actualUsername);
+                            const rareCount = allCards.filter((c: any) => c.rarity && c.rarity.includes('Rare')).length;
+                            const packMessage = `@${actualUsername} opened a ${result.setName} pack and got: ${cardInfo} | Total: ${allCards.length} cards (${rareCount} rare)`;
+                            const outputContext = getChatOutputContext();
+                            if (outputContext?.platform === 'discord') {
+                                await sendDiscordPokemonPackSummary(outputContext.channelId, actualUsername, result, allCards.length, rareCount, packMessage);
+                            } else {
+                                await reply(packMessage, 'broadcaster').catch(() => {});
+                            }
+                        }
+                    }
+                } else if (action && action.subActions && action.subActions.length > 0) {
+                    // Execute subActions using SubActionExecutor
+                    const { SubActionExecutor } = await import('./automation/SubActionExecutor');
+                    const executor = new SubActionExecutor();
+                    await executor.executeAction(action, executionContext);
+                }
+            }
+            
+            if ((command as any).actions && (command as any).actions.length > 0) {
+                const actionType = (command as any).actions[0].type;
+                console.log(`[Dispatcher] Executing action type: ${actionType}`);
+                
+                if (actionType === 'commands-list-show') {
+                    const response = 'Commands: !pack, !collection, !show <card>, !trade <user>, !offer <card>, !accept, !cancel, !challenge, !attack, !switch, !points, !gamble, !roll, !so <user>, !leader, !discord';
+                    await reply(response, 'broadcaster').catch(() => {});
+                } else if (actionType === 'pokemon-pack-open') {
+                    const PACK_COST = 1000;
+                    const userPoints = await getPointBalance(actualUsername);
+                    
+                    if (userPoints < BigInt(PACK_COST)) {
+                        await reply(`@${actualUsername}, you need ${PACK_COST} points to open a pack! (You have ${userPoints.toString()})`, 'broadcaster').catch(() => {});
+                        return;
+                    }
+                    
+                    await addPoints(actualUsername, -PACK_COST);
+                    
+                    const { openPack } = require('./pokemon-packs');
+                    const result = await openPack(1, actualUsername, undefined, tenantId);
+                    if (result) {
+                        const cardInfo = formatPokemonPackCardInfo(result.pack);
+                        
+                        const { getUserCards } = require('./pokemon-collection');
+                        const allCards = await getUserCards(actualUsername);
+                        const rareCount = allCards.filter((c: any) => c.rarity && c.rarity.includes('Rare')).length;
+                        const packMessage = `@${actualUsername} opened a ${result.setName} pack and got: ${cardInfo} | Total: ${allCards.length} cards (${rareCount} rare)`;
+                        const outputContext = getChatOutputContext();
+                        if (outputContext?.platform === 'discord') {
+                            await sendDiscordPokemonPackSummary(outputContext.channelId, actualUsername, result, allCards.length, rareCount, packMessage);
+                        } else {
+                            await reply(packMessage, 'broadcaster').catch(() => {});
+                        }
+                    }
+                } else if (actionType === 'pokemon-collection-show') {
+                    const { getUserCards } = require('./pokemon-collection');
+                    const cards = await getUserCards(actualUsername);
+                    const rareCount = cards.filter((c: any) => c.rarity && c.rarity.includes('Rare')).length;
+                    const url = buildPokemonBrowserUrl(actualUsername);
+                    await reply(
+                        cards.length
+                            ? `@${actualUsername} has ${cards.length} cards (${rareCount} rare). Pokédex, decks and trades: ${url}`
+                            : `@${actualUsername}, your Pokédex is empty. Open a pack with !pack, then manage cards here: ${url}`,
+                        'broadcaster',
+                    ).catch(() => {});
+                } else if (actionType === 'pokemon-trade-initiate') {
+                    const args = actualMessage.substring(cmdName.length + 2).trim().split(/\s+/);
+                    const targetUser = args[0]?.replace('@', '');
+                    const url = buildPokemonBrowserUrl(actualUsername, targetUser ? { tradeWith: targetUser } : {});
+                    await reply(
+                        targetUser
+                            ? `@${actualUsername}, trade with @${targetUser} from your Pokédex: ${url}`
+                            : `@${actualUsername}, open your Pokédex to choose a trade: ${url}`,
+                        'broadcaster',
+                    ).catch(() => {});
+                }
+            }
+            return;
+        }
+    } else {
+        // Points & Welcome Wagon (only for non-self messages to avoid awarding yourself points)
+        if (!self && !isBot && !consumedByRedemption) {
+            // Skip points and welcome for known bots
+            const skipAsBot = await isKnownBot(actualUsername, tenantId);
+            if (!skipAsBot) {
+                const handledChatAutomation = await runChatAutomationTriggers();
+                if (handledChatAutomation) {
+                    return;
+                }
+
+                awardChatPoints(actualUsername, tenantCtx).catch(() => {});
+            
+                // Skip welcome wagon for broadcaster, bot, and messages from voice commands
+                const lowerActualUsername = actualUsername.toLowerCase();
+                const skipWelcomeReason = consumedByRedemption
+                    ? 'consumed-by-redemption'
+                    : tags.badges?.broadcaster
+                        ? 'broadcaster-badge'
+                        : lowerActualUsername === (botUsername || '').toLowerCase()
+                            ? 'bot-username'
+                            : lowerActualUsername === (broadcasterUsername || '').toLowerCase()
+                                ? 'broadcaster-username'
+                                : message.includes('🌟')
+                                    ? 'voice-message'
+                                    : null;
+            
+                const welcomeKey = `${tenantId || '__global__'}:${lowerActualUsername}`;
+                if (skipWelcomeReason) {
+                    await recordAutoWelcomeSkip({
+                        username: actualUsername,
+                        displayName,
+                        tenantId,
+                        reason: skipWelcomeReason,
+                        metadata: {
+                            gate: 'pre-welcome',
+                            botUsername: botUsername || null,
+                            broadcasterUsername: broadcasterUsername || null,
+                            isBroadcasterBadge: Boolean(tags.badges?.broadcaster),
+                        },
+                    });
+                } else if (pendingWelcomeUsers.has(welcomeKey)) {
+                    await recordAutoWelcomeSkip({
+                        username: actualUsername,
+                        displayName,
+                        tenantId,
+                        reason: 'already-pending',
+                        metadata: { gate: 'pending-welcome', welcomeKey },
+                    });
+                } else {
+                    const welcomeMode = await getWelcomeMode(tenantId);
+
+                    if (String(welcomeMode).toLowerCase() === 'off') {
+                        // Welcome disabled explicitly for this tenant.
+                        await recordAutoWelcomeSkip({
+                            username: actualUsername,
+                            displayName,
+                            tenantId,
+                            reason: 'welcome-mode-off',
+                            metadata: { gate: 'welcome-mode', welcomeMode },
+                        });
+                    } else {
+                        const welcomeEligibility = await getWelcomeEligibility(actualUsername, tenantId);
+                        if (!welcomeEligibility.eligible) {
+                            await recordAutoWelcomeSkip({
+                                username: actualUsername,
+                                displayName,
+                                tenantId,
+                                reason: welcomeEligibility.reason,
+                                metadata: { gate: 'first-message-per-day', welcomeKey },
+                            });
+                        } else {
+                            // First human message for this user today. Mark immediately so a
+                            // slow clip/TTS path cannot retrigger on every later chat line.
+                            const profileImage = `https://static-cdn.jtvnw.net/jtv_user_pictures/${actualUsername}-profile_image-300x300.png`;
+                            pendingWelcomeUsers.add(welcomeKey);
+                            await markUserWelcomed(actualUsername, tenantId);
+                            await recordShoutoutAudit({
+                                status: 'triggered',
+                                username: actualUsername,
+                                displayName,
+                                tenantId,
+                                source: 'auto-welcome',
+                                metadata: { welcomeMode, cooldownBypassed: false },
+                            });
+                            handleWalkOnShoutout(actualUsername, displayName, profileImage, false, tenantId, { source: 'auto-welcome' })
+                                .then((completed) => {
+                                    if (completed) return;
+                                    return recordShoutoutAudit({
+                                        status: 'skipped',
+                                        username: actualUsername,
+                                        displayName,
+                                        tenantId,
+                                        source: 'auto-welcome',
+                                        reason: 'handler-returned-false',
+                                        metadata: { gate: 'walk-on-handler', welcomeMode, cooldownBypassed: false },
+                                    });
+                                })
+                                .catch(err => {
+                                    console.error('[Dispatcher] Walk-on shoutout failed:', err);
+                                    recordShoutoutAudit({
+                                        status: 'failed',
+                                        username: actualUsername,
+                                        displayName,
+                                        tenantId,
+                                        source: 'auto-welcome',
+                                        error: auditError(err),
+                                    }).catch(() => {});
+                                    const { queueWalkOnRetry } = require('./walk-on-recovery');
+                                    return queueWalkOnRetry({
+                                        tenantId,
+                                        username: actualUsername,
+                                        displayName,
+                                        profileImage,
+                                        error: err,
+                                    }).catch((queueErr: any) => {
+                                        console.error('[Dispatcher] Failed to queue walk-on recovery:', queueErr);
+                                    });
+                                })
+                                .finally(() => {
+                                    pendingWelcomeUsers.delete(welcomeKey);
+                                });
+                        }
+                    }
+                }
+            } else {
+                await recordAutoWelcomeSkip({
+                    username: actualUsername,
+                    displayName,
+                    tenantId,
+                    reason: 'known-bot',
+                    metadata: { gate: 'known-bot' },
+                });
+            }
+        }
+        
+        const userIsKnownBot = await isKnownBot(actualUsername, tenantId);
+        const { getBotShareMode: checkBotShareMode } = require('../lib/bot-interactions-store');
+        const botShareEnabled = userIsKnownBot && (await checkBotShareMode(tenantId)) === 'on';
+        const { getTwitchClient: wakeClient, canSharedCommunityBotSpeak: wakeMaySpeak } = await import('./twitch-client');
+        const responseTransport = tenantId ? wakeClient('bot', tenantId) : null;
+        const sharedReplyAllowed = responseTransport
+            ? await wakeMaySpeak(responseTransport, replyChannel, tenantId) : false;
+        if (sharedReplyAllowed && !isBot && !self && (!userIsKnownBot || botShareEnabled)) {
+            const lowerMessage = actualMessage.toLowerCase();
+            console.log(`[Dispatcher] Non-command message from ${actualUsername}, checking mentions. lowerMessage: "${lowerMessage.slice(0, 80)}"`);
+
+            // Guardrail: in channels that are NOT the broadcaster's own channel,
+            // Athena should only respond when the broadcaster themself is speaking.
+            // Skip the guardrail entirely if broadcasterUsername was never resolved
+            // (still the default 'broadcaster'); otherwise we would silently suppress
+            // ALL bot mention responses, which is very hard to debug.
+            const resolvedBroadcaster = (broadcasterUsername || '').toLowerCase();
+            const hasResolvedBroadcaster = resolvedBroadcaster && resolvedBroadcaster !== 'broadcaster';
+            if (hasResolvedBroadcaster) {
+                const isOwnChannel = replyChannel.toLowerCase() === resolvedBroadcaster;
+                const isBroadcasterSpeaker = actualUsername.toLowerCase() === resolvedBroadcaster;
+                if (!isOwnChannel && !isBroadcasterSpeaker && !botShareEnabled) {
+                    return;
+                }
+            } else {
+                console.warn('[Dispatcher] broadcasterUsername unresolved (config/tokens unreadable); skipping foreign-channel guardrail for', { tenantId, replyChannel });
+            }
+            
+            // SpaceMountainLive is a permanent system tenant. Stella owns the
+            // spoken bot identity, so direct replies are posted to Twitch as
+            // stellabot87 and the exact same text is queued to the Lounge TTS.
+            if (
+                tenantId === SPACEMOUNTAIN_SYSTEM_TENANT_ID
+                && !isCommand
+                && !userIsKnownBot
+                && (
+                    /(^|\W)stella(\W|$)/i.test(actualMessage)
+                    || /^this (?:froze|is frozen|is stuck|crashed)[.!?]*$/i.test(actualMessage.trim())
+                )
+            ) {
+                try {
+                    const actorRole: BotActorRole = tags.badges?.broadcaster || actualUsername.toLowerCase() === replyChannel.toLowerCase()
+                        ? 'owner' : tags.mod ? 'moderator' : 'member';
+                    const { detectStellaLoungeIntent, resolveStellaLoungeIntent } = await import('./stella-lounge-host');
+                    const liveIntent = detectStellaLoungeIntent(actualMessage);
+                    if (liveIntent) {
+                        const liveReply = await resolveStellaLoungeIntent(liveIntent);
+                        await reply(liveReply, 'bot');
+                        const { rememberStellaThought, recordStellaDecision } = await import('./stella-thought-board');
+                        rememberStellaThought({ kind: 'conversation', actor: actualUsername, text: `Stella replied: ${liveReply}`, ttlMs: 25 * 60_000 });
+                        recordStellaDecision('speak', `live-intent:${liveIntent}`);
+                        return;
+                    }
+                    const botAction = await routeBotAction(actualMessage, {
+                        tenantId: SPACEMOUNTAIN_SYSTEM_TENANT_ID,
+                        sourceTenantId: SPACEMOUNTAIN_SYSTEM_TENANT_ID,
+                        sourceActorRole: actorRole,
+                        executorAuthority: 'stella-lounge-moderator',
+                        botName: 'Stella', source: 'twitch', visibility: 'public',
+                        message: actualMessage,
+                        requestId: tags.id ? `twitch:${tags.id}` : undefined,
+                        actor: { userId: String(tags?.['user-id'] || '').trim() || undefined, username: actualUsername, displayName, role: actorRole },
+                    });
+                    if (botAction) {
+                        await reply(botAction.response, 'bot');
+                        // The Lounge browser refresh needs an audible acknowledgement too:
+                        // the chat response alone does not reach the existing TTS browser source.
+                        if (botAction.action === 'sw.lounge.browser.refresh') {
+                            try {
+                                const tts = await queueTtsOverlay(botAction.response, SPACEMOUNTAIN_SYSTEM_TENANT_ID);
+                                if (!tts.ok) console.warn('[Stella Lounge refresh] TTS overlay queue failed:', tts.error);
+                            } catch (error) {
+                                console.error('[Stella Lounge refresh] TTS overlay queue failed:', error);
+                            }
+                        }
+                        const { rememberStellaThought, recordStellaDecision } = await import('./stella-thought-board');
+                        rememberStellaThought({ kind: 'conversation', actor: actualUsername, text: `Stella action: ${botAction.response}`, ttlMs: 25 * 60_000 });
+                        recordStellaDecision('speak', `action:${botAction.action}:${botAction.status}`);
+                        return;
+                    }
+                    const response = await fetch(`http://127.0.0.1:${process.env.PORT || 3100}/api/ai/chat-with-memory`, {
+                        method: 'POST',
+                        headers: internalServiceHeaders({ 'Content-Type': 'application/json' }),
+                        body: JSON.stringify({
+                            username: actualUsername,
+                            displayName,
+                            userId: String(tags?.['user-id'] || '').trim() || undefined,
+                            message: actualMessage,
+                            tenantId: SPACEMOUNTAIN_SYSTEM_TENANT_ID,
+                            channelId: replyChannel,
+                            context: 'twitch',
+                        }),
+                    });
+
+                    if (!response.ok) {
+                        console.error('[Dispatcher] Stella system-tenant AI failed:', response.status, await response.text().catch(() => ''));
+                        return;
+                    }
+
+                    const data = await response.json();
+                    const aiReply = String(data.response || data.data?.response || '').trim();
+                    if (!aiReply) return;
+
+                    await reply(aiReply, 'bot');
+                    const { openStellaThread, rememberStellaThought, recordStellaDecision } = await import('./stella-thought-board');
+                    rememberStellaThought({ kind: 'conversation', actor: actualUsername, text: `Stella replied: ${aiReply}`, ttlMs: 25 * 60_000 });
+                    recordStellaDecision('speak', 'direct-chat');
+                    if (/\?\s*$/.test(aiReply)) openStellaThread(actualUsername, aiReply);
+
+                    console.log(`[Dispatcher] Stella answered @${actualUsername} in #${replyChannel}; chat listener handles TTS`);
+                } catch (error) {
+                    console.error('[Dispatcher] Stella system-tenant response failed:', error);
+                }
+                return;
+            }
+
+            // The Count is a built-in character, not a tenant bot. His Twitch
+            // account is only a delivery identity; the canonical Black Hole
+            // entitlement remains the sole personal invocation gate.
+            if (!isCommand && !userIsKnownBot && messageInvokesTheCount(actualMessage)) {
+                const twitchUserId = String(tags?.['user-id'] || '').trim();
+                const entitlement = await getSpmtEasterEggEntitlement({
+                    provider: 'twitch',
+                    providerUserId: twitchUserId,
+                });
+                if (!entitlement.eggs.blackHole) {
+                    return;
+                }
+
+                try {
+                    const response = await fetch(`http://127.0.0.1:${process.env.PORT || 3100}/api/ai/chat-with-memory`, {
+                        method: 'POST',
+                        headers: internalServiceHeaders({ 'Content-Type': 'application/json' }),
+                        body: JSON.stringify({
+                            username: actualUsername,
+                            displayName,
+                            userId: twitchUserId,
+                            message: actualMessage,
+                            personality: THE_COUNT_PERSONALITY,
+                            responseName: THE_COUNT_NAME,
+                            tenantId: tenantId || undefined,
+                            channelId: replyChannel,
+                            context: 'twitch-cross-bot',
+                        }),
+                    });
+
+                    if (!response.ok) {
+                        console.error('[Dispatcher] The Count Twitch AI failed:', response.status);
+                        return;
+                    }
+
+                    const data = await response.json();
+                    const aiReply = String(data.response || data.data?.response || '').trim();
+                    if (!aiReply) return;
+
+                    const responseChannel = await resolveTwitchReplyChannel({
+                        sourceChannel: replyChannel,
+                        sourceTenantId: tenantId,
+                        responseTenantId: tenantId,
+                    });
+                    await sendChatMessage(aiReply, 'count', responseChannel, tenantId);
+                    console.log(`[Dispatcher] The Count answered @${actualUsername} in #${responseChannel}`);
+                } catch (error) {
+                    console.error('[Dispatcher] The Count Twitch response failed:', error);
+                }
+                return;
+            }
+
+            // The Count is a built-in character, not a tenant bot. His Twitch
+            // account is only a delivery identity; the canonical Black Hole
+            // entitlement remains the sole personal invocation gate. Before
+            // unlock, a random persona leaves a breadcrumb rather than silence.
+            if (!isCommand && !userIsKnownBot && messageInvokesTheCount(actualMessage)) {
+                const twitchUserId = String(tags?.['user-id'] || '').trim();
+                const entitlement = await getSpmtEasterEggEntitlement({
+                    provider: 'twitch',
+                    providerUserId: twitchUserId,
+                });
+                if (!entitlement.eggs.blackHole) {
+                    const breadcrumbHints: string[] = [];
+                    if (!entitlement.eggs.signal) {
+                        breadcrumbHints.push('I have heard odd static around Discord lately. Some transmissions disappear almost as fast as they arrive.');
+                    }
+                    if (!entitlement.eggs.rocket) {
+                        breadcrumbHints.push('If this is part of the hunt, I would keep poking at anything around SPMT that looks like it wants to launch.');
+                    }
+                    if (!breadcrumbHints.length) {
+                        breadcrumbHints.push('You found the signal and the launch trail already. The remaining anomaly bends instead of broadcasts — Commlink might react strangely near impossible gravity.');
+                    }
+
+                    const lore = await readWorldLore().catch(() => null);
+                    const loreNames = Object.values(lore?.characters || {})
+                        .map((character: any) => String(character?.currentName || '').trim())
+                        .filter((name) => name && name.toLowerCase() !== THE_COUNT_NAME.toLowerCase());
+                    const tenantNames = (await listTenants().catch(() => []))
+                        .map((candidateTenantId) => String(getBotName(candidateTenantId) || '').trim())
+                        .filter((name) => name && name.toLowerCase() !== THE_COUNT_NAME.toLowerCase());
+                    const denialSpeakers = Array.from(new Set([...loreNames, ...tenantNames]));
+                    const denialSpeaker = denialSpeakers[Math.floor(Math.random() * Math.max(1, denialSpeakers.length))]
+                        || String(getBotName(tenantId) || 'StreamWeaver');
+                    const hint = breadcrumbHints[Math.floor(Math.random() * breadcrumbHints.length)];
+                    const denials = [
+                        'The Count? Never heard of him.',
+                        'Count who? Not ringing any bells.',
+                        'Nobody by that name in my logs.',
+                        'The Count? Sounds suspiciously fictional.',
+                    ];
+                    const denial = denials[Math.floor(Math.random() * denials.length)];
+                    const responseChannel = await resolveTwitchReplyChannel({
+                        sourceChannel: replyChannel,
+                        sourceTenantId: tenantId,
+                        responseTenantId: tenantId,
+                    });
+                    await sendChatMessage(`@${actualUsername} [${denialSpeaker}] ${denial} 👀 ${hint}`, 'bot', responseChannel, tenantId);
+                    console.log(`[Dispatcher] Count breadcrumb delivered by ${denialSpeaker} to @${actualUsername} in #${responseChannel}`);
+                    return;
+                }
+
+                try {
+                    const response = await fetch(`http://127.0.0.1:${process.env.PORT || 3100}/api/ai/chat-with-memory`, {
+                        method: 'POST',
+                        headers: internalServiceHeaders({ 'Content-Type': 'application/json' }),
+                        body: JSON.stringify({
+                            username: actualUsername,
+                            displayName,
+                            userId: twitchUserId,
+                            message: actualMessage,
+                            personality: THE_COUNT_PERSONALITY,
+                            responseName: THE_COUNT_NAME,
+                            tenantId: tenantId || undefined,
+                            channelId: replyChannel,
+                            context: 'twitch-cross-bot',
+                        }),
+                    });
+
+                    if (!response.ok) {
+                        console.error('[Dispatcher] The Count Twitch AI failed:', response.status);
+                        return;
+                    }
+
+                    const data = await response.json();
+                    const aiReply = String(data.response || data.data?.response || '').trim();
+                    if (!aiReply) return;
+
+                    const responseChannel = await resolveTwitchReplyChannel({
+                        sourceChannel: replyChannel,
+                        sourceTenantId: tenantId,
+                        responseTenantId: tenantId,
+                    });
+                    await sendChatMessage(aiReply, 'count', responseChannel, tenantId);
+                    console.log(`[Dispatcher] The Count answered @${actualUsername} in #${responseChannel}`);
+                } catch (error) {
+                    console.error('[Dispatcher] The Count Twitch response failed:', error);
+                }
+                return;
+            }
+
+            // Check for shoutout command (without bot name)
+            // Skip messages that look like the formatted shoutout output to prevent re-triggering
+            // Skip shoutout processing for known bots to prevent automated messages from triggering shoutouts
+            const isShoutoutOutput = lowerMessage.includes('go check out') && lowerMessage.includes('twitch.tv/');
+            const requestedShoutoutTarget = extractShoutoutRequestTarget(actualMessage);
+            if (!botShareEnabled && !isShoutoutOutput && requestedShoutoutTarget) {
+                console.log('[Dispatcher] Shoutout command detected');
+                try {
+                    const tenantQuery = tenantId ? `?tenant=${encodeURIComponent(tenantId)}` : '';
+                    const chattersResponse = await fetch(`http://127.0.0.1:${process.env.PORT||3100}/api/chat/chatters${tenantQuery}`, {
+                        headers: internalServiceHeaders(),
+                    });
+                    let chatters = [];
+                    if (chattersResponse.ok) {
+                        const chattersData = await chattersResponse.json();
+                        chatters = chattersData.chatters?.map((c: any) => c.user_login || c.user_display_name).filter(Boolean) || [];
+                        console.log('[Dispatcher] Fetched chatters:', chatters.join(', '));
+                    }
+
+                    const matchedUsername = await matchShoutoutTarget(requestedShoutoutTarget, chatters);
+                    if (matchedUsername) {
+                        console.log(`[Dispatcher] Matched shoutout target: ${matchedUsername}`);
+                        const profileImage = `https://static-cdn.jtvnw.net/jtv_user_pictures/${matchedUsername}-profile_image-300x300.png`;
+                        await handleWalkOnShoutout(matchedUsername, matchedUsername, profileImage, true, tenantId).catch(() => {});
+                    } else {
+                        console.log('[Dispatcher] No shoutout target match found');
+                        await replyMaybeKick('Could not find matching user in chat', 'bot').catch(() => {});
+                    }
+                } catch (error) {
+                    console.error('[Dispatcher] Shoutout matching failed:', error);
+                }
+                return;
+            }
+            
+            const { getBotInterests, getBotAliases } = require('../lib/bot-settings-store');
+            const localConfiguredBotName = getBotName(tenantId);
+            let botName = localConfiguredBotName;
+            let responseTenantId = tenantId;
+            let responseBotName = botName;
+            let athenaDenied = false;
+            const explicitTwitchBotMentions = await getExplicitTwitchBotMentions(actualMessage);
+            const firstLoreBot = await getFirstMentionedLoreBot(actualMessage);
+            const localLoreBot = await getLoreCharacterForTenant(tenantId);
+            const localRelayTarget = localLoreBot || (tenantId
+                ? buildFallbackLoreCharacter({
+                    tenantId,
+                    name: localConfiguredBotName,
+                    aliases: String(getBotAliases(tenantId) || '').split(',').map((value) => value.trim()).filter(Boolean),
+                })
+                : undefined);
+            const firstExplicitTwitchBot = explicitTwitchBotMentions[0];
+            const firstLoreTenantId = firstLoreBot ? await resolveTenantForLoreBot(firstLoreBot, undefined) : undefined;
+            const firstLoreIndex = getLoreCharacterFirstIndex(actualMessage, firstLoreBot);
+            const isHumanSpeaker = !userIsKnownBot;
+            const canUseAthenaAliasAnywhere = isHumanSpeaker
+                && canUseAthenaAliasOverride(actualUsername)
+                && firstLoreBot?.stableId === ATHENA_STABLE_ID;
+            const shouldPreferExplicitTwitchBot = !!firstExplicitTwitchBot
+                && (firstLoreIndex < 0 || firstExplicitTwitchBot.index <= firstLoreIndex);
+            const routedExternalBot = isHumanSpeaker && (shouldPreferExplicitTwitchBot || canUseAthenaAliasAnywhere)
+                ? (shouldPreferExplicitTwitchBot ? firstExplicitTwitchBot?.character : firstLoreBot)
+                : undefined;
+            const routedExternalTenantId = isHumanSpeaker && (shouldPreferExplicitTwitchBot || canUseAthenaAliasAnywhere)
+                ? (shouldPreferExplicitTwitchBot ? firstExplicitTwitchBot?.tenantId : firstLoreTenantId)
+                : undefined;
+
+            if (routedExternalBot && routedExternalTenantId && routedExternalTenantId !== tenantId) {
+                const isAthenaEverywhere = routedExternalBot.stableId === ATHENA_STABLE_ID;
+                const canUseAthena = !isAthenaEverywhere || (
+                    await getAthenaEverywhereMode() === 'on'
+                    && await canRouteAthenaForUser({
+                        username: actualUsername,
+                        tenantId: ATHENA_WHITELIST_TENANT_ID,
+                    })
+                );
+                if (canUseAthena) {
+                    responseTenantId = routedExternalTenantId;
+                    responseBotName = routedExternalBot.currentName;
+                    botName = routedExternalBot.currentName;
+                    console.log(`[Dispatcher] Cross-bot first mention routing "${actualMessage}" from #${replyChannel} to ${routedExternalBot.currentName} tenant ${routedExternalTenantId}`);
+                } else if (isAthenaEverywhere) {
+                    athenaDenied = true;
+                    console.log(`[Dispatcher] Athena mention ignored for non-whitelisted user ${actualUsername} in #${replyChannel}`);
+                }
+            }
+            const mentionTriggers = [
+                `@${botUsername.toLowerCase()}`,
+                botUsername.toLowerCase(),
+                botName.toLowerCase(),
+                `hey ${botName.toLowerCase()}`
+            ].filter(Boolean);
+            // Add pet names / aliases (e.g. "annie" for Athena)
+            const petNames = (getBotAliases(responseTenantId) || '').toLowerCase().split(',').map((s: string) => s.trim()).filter(Boolean);
+            console.log(`[Dispatcher] Loaded aliases for tenant ${responseTenantId}: [${petNames.join(', ')}]`);
+            for (const alias of petNames) {
+                mentionTriggers.push(alias);
+                mentionTriggers.push(`hey ${alias}`);
+            }
+            console.log(`[Dispatcher] mentionTriggers for tenant ${tenantId}:`, mentionTriggers.join(', '));
+
+            try {
+                const { decideBotInteraction, appendBotInteraction } = await import('../lib/bot-interactions-store');
+                const canUseAthenaInThisChat = await getAthenaEverywhereMode() === 'on'
+                    && await canRouteAthenaForUser({
+                        username: actualUsername,
+                        tenantId: ATHENA_WHITELIST_TENANT_ID,
+                    });
+                const allowedTwitchParticipants = new Set<string>(explicitTwitchBotMentions.map((entry) => entry.character.stableId));
+                if (localLoreBot?.stableId) allowedTwitchParticipants.add(localLoreBot.stableId);
+                if (canUseAthenaInThisChat) allowedTwitchParticipants.add(ATHENA_STABLE_ID);
+                const addressedToResponseBot = mentionTriggers.some(trigger => lowerMessage.includes(trigger));
+                const leadingLoreBot = firstLoreBot && firstLoreIndex >= 0 && firstLoreIndex <= (
+                    actualMessage.trim().toLowerCase().startsWith('hey ') ? 4 : 1
+                ) ? firstLoreBot : undefined;
+
+                if (responseTenantId && (addressedToResponseBot || leadingLoreBot)) {
+                    const operatesOwnTenant = responseTenantId === tenantId;
+                    const broadcasterSpeaking = Boolean(tags.badges?.broadcaster)
+                        || (hasResolvedBroadcaster && actualUsername.toLowerCase() === resolvedBroadcaster);
+                    const actionRole: BotActorRole = operatesOwnTenant && broadcasterSpeaking
+                        ? 'owner'
+                        : operatesOwnTenant && tags.mod
+                            ? 'moderator'
+                            : 'member';
+                    const botAction = await routeBotAction(actualMessage, {
+                        tenantId: responseTenantId,
+                        sourceTenantId: tenantId,
+                        sourceActorRole: broadcasterSpeaking ? 'owner' : tags.mod ? 'moderator' : 'member',
+                        botName: responseBotName,
+                        source: 'twitch',
+                        visibility: 'public',
+                        message: actualMessage,
+                        requestId: tags.id ? `twitch:${tags.id}` : undefined,
+                        actor: {
+                            userId: String(tags?.['user-id'] || '').trim() || undefined,
+                            username: actualUsername,
+                            displayName,
+                            role: actionRole,
+                        },
+                    });
+                    if (botAction) {
+                        const responseChannel = await resolveTwitchReplyChannel({
+                            sourceChannel: replyChannel,
+                            sourceTenantId: tenantId,
+                            responseTenantId,
+                        });
+                        await sendChatMessage(botAction.response, 'bot', responseChannel, responseTenantId).catch(() => {});
+                        console.log(`[Dispatcher] Bot action ${botAction.action} ${botAction.status} for tenant ${responseTenantId} from Twitch`);
+                        return;
+                    }
+                    if (tenantId === SPACEMOUNTAIN_SYSTEM_TENANT_ID) {
+                        const { detectStellaLoungeIntent, resolveStellaLoungeIntent } = await import('./stella-lounge-host');
+                        const liveIntent = detectStellaLoungeIntent(actualMessage);
+                        if (liveIntent === 'playing' || liveIntent === 'live' || liveIntent === 'overview') {
+                            const responseChannel = await resolveTwitchReplyChannel({ sourceChannel: replyChannel, sourceTenantId: tenantId, responseTenantId });
+                            const facts = await resolveStellaLoungeIntent(liveIntent);
+                            await sendChatMessage(facts, 'bot', responseChannel, responseTenantId);
+                            return;
+                        }
+                    }
+                }
+
+                const relayCommandBot = leadingLoreBot
+                    || routedExternalBot
+                    || await getLoreCharacterForTenant(responseTenantId)
+                    || localLoreBot
+                    || buildFallbackLoreCharacter({
+                        tenantId: responseTenantId,
+                        name: responseBotName,
+                        aliases: [botUsername, ...petNames],
+                    });
+                const relayCommandTenantId = await resolveTenantForLoreBot(
+                    relayCommandBot,
+                    responseTenantId,
+                ) || responseTenantId;
+                const relayBotNames = [
+                    relayCommandBot.currentName,
+                    ...(relayCommandBot.aliases || []),
+                    ...(relayCommandBot.previousNames || []),
+                    responseBotName,
+                    botUsername,
+                    ...petNames,
+                ];
+
+                if (isHumanSpeaker) {
+                    const relayReply = await handleBotRelayReply({
+                        sourcePlatform: 'twitch',
+                        sourceChannelId: replyChannel,
+                        sourceContextTenantId: relayCommandTenantId || tenantId,
+                        sourceUserName: actualUsername,
+                        sourceUserId: String(tags?.['user-id'] || '').trim() || undefined,
+                        speaker: relayCommandBot,
+                        speakerTenantId: relayCommandTenantId,
+                        message: actualMessage,
+                        botNames: relayBotNames,
+                    });
+                    if (relayReply.matched) {
+                        const explicitlyAddressed = addressedToResponseBot || Boolean(leadingLoreBot);
+                        if (relayReply.closed) {
+                            await sendChatMessage(
+                                `Relay closed. I won't send anything back to ${relayReply.targetName || 'the original sender'}.`,
+                                'bot',
+                                replyChannel,
+                                relayCommandTenantId
+                            ).catch(() => {});
+                            return;
+                        }
+                        if (relayReply.missingMessage) {
+                            await sendChatMessage(
+                                `Add your message after "reply" or "yes", or tell me "no" to close the relay.`,
+                                'bot',
+                                replyChannel,
+                                relayCommandTenantId
+                            ).catch(() => {});
+                            return;
+                        }
+                        if (relayReply.delivered) {
+                            await sendChatMessage(
+                                `Your reply was sent back to ${relayReply.targetName || 'the original sender'} at the original location. They received the same reply options.`,
+                                'bot',
+                                replyChannel,
+                                relayCommandTenantId
+                            ).catch(() => {});
+                            return;
+                        }
+                        if (explicitlyAddressed) {
+                            await sendChatMessage(
+                                relayReply.error === 'no-pending-relay'
+                                    ? 'There is no active relay for you in this channel. Relay invitations expire after 10 minutes.'
+                                    : `I couldn't send that reply: ${relayReply.error || 'unknown relay error'}`,
+                                'bot',
+                                replyChannel,
+                                relayCommandTenantId
+                            ).catch(() => {});
+                            return;
+                        }
+                    }
+                }
+
+                if (isHumanSpeaker && (addressedToResponseBot || leadingLoreBot)) {
+                    const lore = await readWorldLore();
+                    const relayCharacters = Object.values(lore?.characters || {});
+                    const humanRelaySpeaker = await resolveHumanRelaySpeaker({
+                        sourcePlatform: 'twitch',
+                        sourceUserName: actualUsername,
+                        sourceUserId: String(tags?.['user-id'] || '').trim() || undefined,
+                    });
+                    const relayTargets = relayCharacters.filter(
+                        (target) => target.stableId !== humanRelaySpeaker.character.stableId,
+                    );
+                    if (localRelayTarget) {
+                        const contextualLocalTarget = {
+                            ...localRelayTarget,
+                            aliases: Array.from(new Set([
+                                'her bot',
+                                'their bot',
+                                'the streamer',
+                                'the channel owner',
+                                'her',
+                                ...(localRelayTarget.aliases || []),
+                            ])),
+                        };
+                        const existingTargetIndex = relayTargets.findIndex((target) => target.stableId === contextualLocalTarget.stableId);
+                        if (existingTargetIndex >= 0) relayTargets[existingTargetIndex] = contextualLocalTarget;
+                        else relayTargets.push(contextualLocalTarget);
+                    }
+                    const relayRequest = await detectBotRelayRequestWithAi({
+                        message: actualMessage,
+                        speakerName: relayCommandBot.currentName,
+                        targets: relayTargets,
+                        tenantId: relayCommandTenantId,
+                        platform: 'twitch',
+                    });
+                    if (relayRequest.matched && relayRequest.relayMessage) {
+                        console.log('[Dispatcher] Human relay intent detected:', {
+                            source: relayRequest.source || 'unknown',
+                            commandBot: relayCommandBot.currentName,
+                            deliverySpeaker: humanRelaySpeaker.character.currentName,
+                            communityFallback: humanRelaySpeaker.usesCommunityBot,
+                            targetName: relayRequest.targetName || relayRequest.target?.currentName || null,
+                            messagePreview: relayRequest.relayMessage.slice(0, 120),
+                        });
+                        const resolvedRelayTarget = await resolveRelayTarget({
+                            namedTarget: relayRequest.targetName,
+                            structuredTarget: relayRequest.target,
+                            fallbackTenantId: relayCommandTenantId,
+                        });
+                        if (!resolvedRelayTarget) {
+                            if (relayRequest.targetName && isDirectHumanRelayTarget(relayRequest.targetName)) {
+                                const directDelivery = await deliverDirectHumanRelay({
+                                    targetName: relayRequest.targetName,
+                                    sourceUserName: actualUsername,
+                                    relayMessage: relayRequest.relayMessage,
+                                });
+                                if (directDelivery.delivered) {
+                                    console.log('[Dispatcher] Direct human relay delivered through Discord:', {
+                                        targetName: relayRequest.targetName,
+                                        mode: directDelivery.mode,
+                                        channelId: directDelivery.channelId || null,
+                                    });
+                                    return;
+                                }
+                                console.warn('[Dispatcher] Direct human relay Discord delivery failed:', {
+                                    targetName: relayRequest.targetName,
+                                    error: directDelivery.error || 'target unavailable',
+                                });
+                                return;
+                            }
+                            console.warn('[Dispatcher] Human relay target unresolved:', {
+                                targetName: relayRequest.targetName || relayRequest.target?.currentName || null,
+                                triggerMessage: actualMessage,
+                            });
+                            await sendChatMessage(
+                                `I couldn't figure out which bot or streamer to pass that to.`,
+                                'bot',
+                                replyChannel,
+                                humanRelaySpeaker.tenantId
+                            ).catch(() => {});
+                            return;
+                        }
+
+                        const relayResult = await deliverBotRelay({
+                            sourcePlatform: 'twitch',
+                            sourceChannelId: replyChannel,
+                            sourceContextTenantId: tenantId,
+                            sourceUserName: actualUsername,
+                            sourceUserId: String(tags?.['user-id'] || '').trim() || undefined,
+                            triggerMessage: actualMessage,
+                            speaker: humanRelaySpeaker.character,
+                            speakerTenantId: humanRelaySpeaker.tenantId,
+                            target: resolvedRelayTarget.character,
+                            targetTenantId: resolvedRelayTarget.tenantId,
+                            relayMessage: relayRequest.relayMessage,
+                            humanDirected: true,
+                        });
+                        await sendChatMessage(
+                            relayResult.summary,
+                            'bot',
+                            replyChannel,
+                            humanRelaySpeaker.tenantId
+                        ).catch(() => {});
+                        return;
+                    }
+                }
+
+                const decision = await decideBotInteraction({
+                    message: actualMessage,
+                    currentBotName: responseBotName,
+                    tenantId: responseTenantId,
+                    platform: 'twitch',
+                    additionalMentions: explicitTwitchBotMentions.map((entry) => ({
+                        character: entry.character,
+                        trigger: entry.trigger,
+                    })),
+                    allowedSpeakerStableIds: Array.from(allowedTwitchParticipants),
+                    allowedTargetStableIds: Array.from(allowedTwitchParticipants),
+                });
+
+                if (decision?.shouldRespond) {
+                    if (athenaDenied && decision.speaker.stableId === ATHENA_STABLE_ID) {
+                        console.log(`[Dispatcher] Athena cross-bot response suppressed for non-whitelisted user ${actualUsername} in #${replyChannel}`);
+                    } else {
+                        const relayRequest = detectBotRelayRequest({
+                            message: actualMessage,
+                            speakerName: decision.speaker.currentName,
+                            targets: decision.targets,
+                        });
+                        if (relayRequest.matched && relayRequest.relayMessage) {
+                            const resolvedRelayTarget = await resolveRelayTarget({
+                                namedTarget: relayRequest.targetName,
+                                structuredTarget: relayRequest.target,
+                                fallbackTenantId: responseTenantId,
+                            });
+                            if (resolvedRelayTarget) {
+                                const relayResult = await deliverBotRelay({
+                                    sourcePlatform: 'twitch',
+                                    sourceUserName: actualUsername,
+                                    triggerMessage: actualMessage,
+                                    speaker: decision.speaker,
+                                    speakerTenantId: responseTenantId,
+                                    target: resolvedRelayTarget.character,
+                                    targetTenantId: resolvedRelayTarget.tenantId,
+                                    relayMessage: relayRequest.relayMessage,
+                                    humanDirected: !userIsKnownBot,
+                                });
+                                await sendChatMessage(
+                                    relayResult.summary,
+                                    'bot',
+                                    replyChannel,
+                                    responseTenantId
+                                ).catch(() => {});
+                                return;
+                            }
+                        }
+
+                        console.log(`[Dispatcher] Cross-bot interaction triggered: ${decision.reason}`);
+                        const response = await fetch(`http://127.0.0.1:${process.env.PORT||3100}/api/ai/chat-with-memory`, {
+                            method: 'POST',
+                            headers: internalServiceHeaders({ 'Content-Type': 'application/json' }),
+                            body: JSON.stringify({
+                                username: actualUsername,
+                                displayName: displayName,
+                                message: decision.promptInstruction,
+                                tenantId: responseTenantId || undefined,
+                                context: 'twitch',
+                            })
+                        });
+
+                        if (response.ok) {
+                            const data = await response.json();
+                            const aiReply = data.response?.trim() || data.data?.response?.trim() || '';
+                            if (aiReply) {
+                                const responseChannel = await resolveTwitchReplyChannel({
+                                    sourceChannel: replyChannel,
+                                    sourceTenantId: tenantId,
+                                    responseTenantId,
+                                });
+                                await sendChatMessage(aiReply, 'bot', responseChannel, responseTenantId)
+                                    .catch((error) => console.warn('[Dispatcher] Cross-bot Twitch chat delivery failed:', error));
+                                if (responseTenantId) {
+                                    await appendBotInteraction({
+                                        platform: 'twitch',
+                                        tenantId: responseTenantId,
+                                        sourceUser: actualUsername,
+                                        speakerBotId: decision.speaker.stableId,
+                                        speakerBotName: decision.speaker.currentName,
+                                        targetBotIds: decision.targets.map((target: any) => target.stableId),
+                                        targetBotNames: decision.targets.map((target: any) => target.currentName),
+                                        triggerMessage: actualMessage,
+                                        responseMessage: aiReply,
+                                    }).catch(() => {});
+                                }
+                                await sendTwitchCrossBotFollowUp({
+                                    channel: responseChannel,
+                                    userName: actualUsername,
+                                    triggerMessage: actualMessage,
+                                    speakerName: decision.speaker.currentName,
+                                    speakerStableId: decision.speaker.stableId,
+                                    speakerTenantId: responseTenantId,
+                                    speakerReply: aiReply,
+                                    targets: decision.targets,
+                                }).catch((error) => console.error('[Dispatcher] Twitch cross-bot follow-up failed:', error));
+                                return;
+                            }
+                        }
+                    }
+                }
+            } catch (err) {
+                console.error('[Dispatcher] Cross-bot interaction failed:', err);
+            }
+
+            const isStellaLounge = (responseTenantId || tenantId) === SPACEMOUNTAIN_SYSTEM_TENANT_ID;
+            let continuedStellaThread = false;
+            if (isStellaLounge) {
+                const { peekStellaThread } = await import('./stella-thought-board');
+                const thread = peekStellaThread(actualUsername);
+                if (thread) {
+                    continuedStellaThread = true;
+                    console.log(`[Dispatcher] Stella continuing open thread with ${actualUsername}`);
+                }
+            }
+            let mentionsBot = continuedStellaThread || mentionTriggers.some(trigger => lowerMessage.includes(trigger));
+            if (!mentionsBot && responseTenantId) {
+                const { hasPendingResearchMode } = await import('./research-mode');
+                mentionsBot = hasPendingResearchMode({
+                    tenantId: responseTenantId,
+                    platform: 'twitch',
+                    channelId: replyChannel,
+                    username: actualUsername,
+                });
+                if (mentionsBot) {
+                    console.log(`[Dispatcher] Continuing pending research question for ${actualUsername} in #${replyChannel}`);
+                }
+            }
+            
+            // Remove hardcoded Athena check - only use dynamic bot name
+            if (mentionsBot) {
+                console.log(`[Dispatcher] ${botName} mentioned by ${actualUsername}: ${actualMessage}`);
+            } else {
+                // Interests are optional invitations, not hard triggers. Match first,
+                // then let Stella decide whether this is a moment worth joining.
+                const botInterests = getBotInterests(tenantId) || '';
+                if (botInterests) {
+                    const interests = botInterests.toLowerCase().split(',').map((i: string) => i.trim()).filter(Boolean);
+                    const matchedInterest = interests.find((interest: string) => lowerMessage.split(/[^a-z0-9]+/).includes(interest) || (interest.includes(' ') && lowerMessage.includes(interest)));
+                    if (matchedInterest) {
+                        const isStella = (responseTenantId || tenantId) === SPACEMOUNTAIN_SYSTEM_TENANT_ID;
+                        let eligible = true;
+                        if (isStella) {
+                            const { interestCanChime } = await import('./stella-thought-board');
+                            eligible = interestCanChime(matchedInterest);
+                        }
+                        const baseChance = isStella ? 0.46 : 0.5;
+                        if (eligible && Math.random() < baseChance) {
+                            console.log(`[Dispatcher] Interest ${matchedInterest} invited ${botName} into message from ${actualUsername}`);
+                            mentionsBot = true;
+                            if (isStella) {
+                                const { markStellaInterestChime, rememberStellaThought, recordStellaDecision } = await import('./stella-thought-board');
+                                markStellaInterestChime(matchedInterest);
+                                rememberStellaThought({ kind: 'conversation', actor: actualUsername, text: `Interest ${matchedInterest}: ${actualMessage}`, ttlMs: 20 * 60_000 });
+                                recordStellaDecision('speak', `interest:${matchedInterest}`);
+                            }
+                        }
+                    }
+                }
+            }
+            
+            if (mentionsBot) {
+                
+                incrementMetric('athenaCommands', 1, tenantId).catch(() => {});
+                // Use chat-with-memory API for context-aware responses
+                try {
+                    console.log('[Dispatcher] Calling chat-with-memory API...');
+                    
+                    let messageToSend = actualMessage;
+                    
+                    const response = await fetch(`http://127.0.0.1:${process.env.PORT||3100}/api/ai/chat-with-memory`, {
+                        method: 'POST',
+                        headers: internalServiceHeaders({ 'Content-Type': 'application/json' }),
+                        body: JSON.stringify({
+                            username: actualUsername,
+                            message: messageToSend,
+                            tenantId: responseTenantId || undefined,
+                            channelId: replyChannel,
+                            context: message.includes('🌟') ? 'voice' : 'twitch',
+                        })
+                    });
+                    
+                    console.log('[Dispatcher] Chat-with-memory response status:', response.status);
+                    
+                    if (response.ok) {
+                        const data = await response.json();
+                        const aiReply = data.response?.trim() || '';
+                        console.log('[Dispatcher] Chat-with-memory reply:', aiReply);
+                        
+                        if (aiReply) {
+                            if (isStellaLounge) {
+                                const { closeStellaThread, openStellaThread, rememberStellaThought, recordStellaDecision } = await import('./stella-thought-board');
+                                if (continuedStellaThread) closeStellaThread(actualUsername);
+                                rememberStellaThought({ kind: 'conversation', actor: actualUsername, text: `Stella replied: ${aiReply}`, ttlMs: 25 * 60_000 });
+                                recordStellaDecision('speak', continuedStellaThread ? 'conversation-thread' : 'direct-chat');
+                                if (/\?\s*$/.test(aiReply)) openStellaThread(actualUsername, aiReply);
+                            }
+                            // Send the chat message
+                            const responseChannel = await resolveTwitchReplyChannel({
+                                sourceChannel: replyChannel,
+                                sourceTenantId: tenantId,
+                                responseTenantId,
+                            });
+                            let twitchBotPosted = true;
+                            try {
+                                await sendChatMessage(aiReply, 'bot', responseChannel, responseTenantId);
+                            } catch (error) {
+                                twitchBotPosted = false;
+                                console.warn('[Dispatcher] Twitch bot chat delivery failed:', error);
+                            }
+                            const isSpaceMountainSystemReply = responseTenantId === SPACEMOUNTAIN_SYSTEM_TENANT_ID;
+                            const shouldGenerateTtsForReply =
+                                (!responseTenantId || responseTenantId === tenantId)
+                                && (!isSpaceMountainSystemReply || twitchBotPosted);
+                            await sendTwitchCrossBotFollowUp({
+                                channel: responseChannel,
+                                userName: actualUsername,
+                                triggerMessage: actualMessage,
+                                speakerName: responseBotName,
+                                speakerStableId: firstLoreBot?.stableId,
+                                speakerTenantId: responseTenantId,
+                                speakerReply: aiReply,
+                                targets: [],
+                            }).catch((error) => console.error('[Dispatcher] Twitch cross-bot follow-up failed:', error));
+                            
+                            // Generate TTS for AI response
+                            if (shouldGenerateTtsForReply && !isSpaceMountainSystemReply) {
+                                try {
+                                    const targetTenant = responseTenantId || tenantId || undefined;
+                                    const tts = await queueTtsOverlay(aiReply, targetTenant);
+                                    if (!tts.ok) {
+                                        console.warn('[Dispatcher] TTS overlay queue failed for AI response:', tts.error);
+                                    }
+                                } catch (err) {
+                                    console.error('[Dispatcher] TTS generation failed for AI response:', err);
+                                }
+                            } else {
+                                console.log(`[Dispatcher] Skipping TTS for cross-stream bot reply from tenant ${responseTenantId} in tenant ${tenantId || 'unknown'}.`);
+                            }
+                        }
+                    } else {
+                        const errorText = await response.text();
+                        console.error('[Dispatcher] Chat-with-memory API error:', response.status, errorText);
+                    }
+                } catch (err) {
+                    console.error(`[Dispatcher] ${botName} chat failed:`, err);
+                }
+            }
+        }
+    }
+}
+
+function normalizeDiscordAttachmentsForMemory(msg: any) {
+    return Array.isArray(msg.attachments)
+        ? msg.attachments
+            .map((attachment: any) => ({
+                id: String(attachment?.id || attachment?.url || attachment?.filename || ''),
+                url: String(attachment?.url || attachment?.proxy_url || ''),
+                filename: String(attachment?.filename || attachment?.name || 'attachment'),
+                content_type: attachment?.content_type ? String(attachment.content_type) : undefined,
+            }))
+            .filter((attachment: { url: string }) => attachment.url)
+        : [];
+}
+
+export async function isBotRelayAllowed(sourceTenantId?: string, targetTenantId?: string): Promise<boolean> {
+    if (!sourceTenantId || !targetTenantId) return false;
+    const { getBotShareMode } = await import('../lib/bot-interactions-store');
+    if (await getBotShareMode(sourceTenantId) !== 'on') return false;
+    if (sourceTenantId === targetTenantId) return true;
+    return await getBotShareMode(targetTenantId) === 'on';
+}
+
+function normalizeDiscordEmbedsForMemory(msg: any) {
+    return Array.isArray(msg.embeds)
+        ? msg.embeds
+            .map((embed: any) => ({
+                title: embed?.title ? String(embed.title) : undefined,
+                description: embed?.description ? String(embed.description) : undefined,
+                url: embed?.url ? String(embed.url) : undefined,
+                image: embed?.image?.url ? { url: String(embed.image.url) } : undefined,
+                thumbnail: embed?.thumbnail?.url ? { url: String(embed.thumbnail.url) } : undefined,
+            }))
+            .filter((embed: { title?: string; description?: string; url?: string; image?: { url?: string }; thumbnail?: { url?: string } }) => embed.title || embed.description || embed.url || embed.image?.url || embed.thumbnail?.url)
+        : [];
+}
+
+export async function handleDiscordMessage(msg: any, tenantId?: string, options: DiscordDispatchOptions = {}): Promise<{ commandHandled: boolean }> {
+    const sourceChannelId = msg.channelId || msg.channel_id;
+    if (!sourceChannelId) return { commandHandled: false };
+
+    msg = {
+        ...msg,
+        content: replaceDiscordUserMentions(msg.content, msg.mentions),
+    };
+    const sourceUserName = msg.author?.username || msg.author?.globalName || msg.author?.global_name || 'Discord User';
+    const normalizedContent = String(msg.content || '').trim();
+
+    if (!msg.author?.bot && normalizedContent && !normalizedContent.startsWith('[')) {
+        const mtFixItIntent = detectMtFixItIntent(normalizedContent);
+        if (mtFixItIntent.matched) {
+            if (!mtFixItIntent.description) {
+                beginPendingMtSupportRequest({
+                    platform: 'discord',
+                    tenantId,
+                    username: sourceUserName,
+                    channelId: sourceChannelId,
+                });
+                await sendDiscordMessage(sourceChannelId, `@${sourceUserName}, ${getMtSupportPrompt('discord')}`).catch(() => {});
+                return { commandHandled: true };
+            }
+
+            const inlineRelayResult = await submitMtSupportReport({
+                platform: 'discord',
+                tenantId,
+                username: sourceUserName,
+                reporterId: String(msg.author?.id || ''),
+                channelId: sourceChannelId,
+                description: mtFixItIntent.description,
+                triggerMessage: normalizedContent,
+            });
+            if (!inlineRelayResult.ok) console.error('[MtFixIt] Discord relay inline report failed:', inlineRelayResult.error);
+            await sendDiscordMessage(sourceChannelId, getMtFixItPublicReply(sourceUserName)).catch(() => {});
+            return { commandHandled: true };
+        }
+
+        if (consumePendingMtSupportRequest({
+            platform: 'discord',
+            tenantId,
+            username: sourceUserName,
+            channelId: sourceChannelId,
+        })) {
+            const pendingRelayDescription = normalizedContent.startsWith('!') ? normalizedContent.slice(1).trim() : normalizedContent;
+            const pendingRelayResult = await submitMtSupportReport({
+                platform: 'discord',
+                tenantId,
+                username: sourceUserName,
+                reporterId: String(msg.author?.id || ''),
+                channelId: sourceChannelId,
+                description: pendingRelayDescription,
+                triggerMessage: '!mtfixit',
+            });
+            if (!pendingRelayResult.ok) console.error('[MtFixIt] Discord relay pending-description report failed:', pendingRelayResult.error);
+            await sendDiscordMessage(sourceChannelId, getMtFixItPublicReply(sourceUserName)).catch(() => {});
+            return { commandHandled: true };
+        }
+    }
+
+    const memoryAttachments = normalizeDiscordAttachmentsForMemory(msg);
+    const memoryEmbeds = normalizeDiscordEmbedsForMemory(msg);
+    if (!options.skipPublicHistory && !msg.author?.bot && !String(msg.content || '').startsWith('[') && (String(msg.content || '').trim() || memoryAttachments.length || memoryEmbeds.length)) {
+        appendPublicChatMessages([{
+            type: 'user',
+            username: sourceUserName,
+            message: String(msg.content),
+            timestamp: new Date().toISOString(),
+            ...(memoryAttachments.length ? { attachments: memoryAttachments } : {}),
+            ...(memoryEmbeds.length ? { embeds: memoryEmbeds } : {}),
+        }], 300, tenantId).catch(() => {});
+    }
+
+    if (/^!botshare(?:\s+(on|off|status))?$/i.test(msg.content.trim())) {
+        const match = msg.content.trim().toLowerCase().match(/^!botshare(?:\s+(on|off|status))?$/);
+        const action = match?.[1];
+        try {
+            const store = await import('../lib/bot-interactions-store');
+            let mode;
+            if (action === 'on' || action === 'off') {
+                mode = await store.setBotShareMode(action, tenantId);
+            } else if (action === 'status') {
+                mode = await store.getBotShareMode(tenantId);
+            } else {
+                mode = await store.toggleBotShareMode(tenantId);
+            }
+            await sendDiscordMessage(
+                sourceChannelId,
+                `Bot share mode: ${String(mode).toUpperCase()} - cross-bot replies are ${mode === 'on' ? 'enabled' : 'disabled'}.`,
+            ).catch((error) => console.error('[Discord Bridge] Failed to reply to !botshare:', error));
+        } catch (error) {
+            console.error('[Discord Bridge] !botshare command failed:', error);
+        }
+        return { commandHandled: true };
+    }
+
+    if (!msg.author?.bot && /^!t(?:\s|$)/i.test(normalizedContent)) {
+        if (!tenantId) return { commandHandled: true };
+        const args = normalizedContent.slice(2).trim().split(/\s+/).filter(Boolean);
+        const translated = await handleOneOffTranslation(args, tenantId, {
+            requesterUsername: sourceUserName,
+            canManageOthers: await hasEffectiveDiscordModAccess(msg),
+        });
+        if (translated) await sendDiscordMessage(sourceChannelId, translated).catch(() => {});
+        return { commandHandled: true };
+    }
+
+    if (!msg.author?.bot) {
+        const commandHandled = await executeDiscordCommandMessage({
+            ...msg,
+            channelId: sourceChannelId,
+        }, tenantId, options);
+        if (commandHandled) {
+            return { commandHandled: true };
+        }
+    }
+
+    if (
+        tenantId
+        && !msg.author?.bot
+        && normalizedContent
+        && !normalizedContent.startsWith('!')
+        && !normalizedContent.startsWith('[')
+        && await isUserAutoTranslate(sourceUserName, tenantId)
+    ) {
+        const translated = await autoTranslateIncoming(normalizedContent, sourceUserName, tenantId);
+        if (translated) {
+            await sendDiscordMessage(sourceChannelId, `🌐 @${sourceUserName} → ${translated.targetLanguage.toUpperCase()}: ${translated.translatedText}`).catch(() => {});
+            publishTranslationSubtitleEvent({
+                tenantId,
+                username: sourceUserName,
+                displayName: sourceUserName,
+                sourceText: normalizedContent,
+                translatedText: translated.translatedText,
+                targetLanguage: translated.targetLanguage,
+                durationMs: 9000,
+            });
+        }
+    }
+
+    if (!options.skipAiMentions && !msg.content.startsWith('[') && msg.author && !msg.author.bot) {
+        try {
+            const { getBotName } = require('../lib/bot-settings-store');
+            const { decideBotInteraction, appendBotInteraction } = await import('../lib/bot-interactions-store');
+            const botName = getBotName(tenantId);
+            const decision = await decideBotInteraction({
+                message: msg.content,
+                currentBotName: botName,
+                tenantId,
+                platform: 'discord',
+            });
+
+            if (decision?.shouldRespond) {
+                    const response = await fetch(`http://127.0.0.1:${process.env.PORT||3100}/api/ai/chat-with-memory`, {
+                    method: 'POST',
+                    headers: internalServiceHeaders({ 'Content-Type': 'application/json' }),
+                    body: JSON.stringify({
+                        username: msg.author?.username || sourceUserName,
+                        userId: msg.author?.id || msg.author?.userId || undefined,
+                        displayName: msg.author?.displayName || msg.author?.globalName || msg.author?.global_name || sourceUserName,
+                        guildId: msg.guildId || msg.guild_id || undefined,
+                        guildName: msg.guild?.name || msg.guild_name || undefined,
+                        channelId: sourceChannelId,
+                        channelName: msg.channel?.name || msg.channel_name || undefined,
+                        channelType: msg.channel?.type || msg.channelType || msg.channel_type || undefined,
+                        messageId: msg.id || msg.messageId || msg.message_id || undefined,
+                        createdAt: msg.timestamp || msg.createdAt || msg.created_at || undefined,
+                        isDirectMessage: Boolean(msg.isDM || msg.isDirectMessage || msg.is_direct_message),
+                        message: decision.promptInstruction,
+                        tenantId: tenantId || undefined,
+                        context: 'discord',
+                    })
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    const aiReply = data.response?.trim() || data.data?.response?.trim() || '';
+                    if (aiReply) {
+                        await sendDiscordMessage(sourceChannelId, aiReply).catch((error) => console.error('[Discord Bridge] Failed to send cross-bot reply:', error));
+                        if (tenantId) {
+                            await appendBotInteraction({
+                                platform: 'discord',
+                                tenantId,
+                                channelId: sourceChannelId,
+                                sourceUser: sourceUserName,
+                                speakerBotId: decision.speaker.stableId,
+                                speakerBotName: decision.speaker.currentName,
+                                targetBotIds: decision.targets.map((target: any) => target.stableId),
+                                targetBotNames: decision.targets.map((target: any) => target.currentName),
+                                triggerMessage: msg.content,
+                                responseMessage: aiReply,
+                            }).catch(() => {});
+                        }
+                        return { commandHandled: false };
+                    }
+                } else {
+                    console.error('[Discord Bridge] Cross-bot AI failed:', response.status, await response.text().catch(() => ''));
+                }
+            }
+        } catch (error) {
+            console.error('[Discord Bridge] Cross-bot handling failed:', error);
+        }
+    }
+    
+    if (!options.skipTwitchBridge) {
+        await bridgeDiscordMessageToTwitch({
+            ...msg,
+            channelId: sourceChannelId,
+        }, tenantId);
+    }
+
+    if (!msg.author?.bot && normalizedContent && !normalizedContent.startsWith('!') && !normalizedContent.startsWith('[')) {
+        const sayMessage = cleanSayTextForSpeech(normalizedContent);
+        if (isSayTextSpeakable(sayMessage)) {
+            readSayUsers().then((sayUsers) => {
+                const userId = msg.author?.id || msg.userId || sourceUserName;
+                if (!isSayEnabled(sayUsers, userId, sourceChannelId)) return;
+                const sayChannelKey = resolveSayStreamKey(undefined, 'discord', sourceChannelId);
+                if (isSaySuppressedForTenant(sayChannelKey)) return;
+                const spokenMessage = formatSaySpeechText(sayChannelKey, sourceUserName, sayMessage);
+                return fetch(`${getInternalAppUrl()}/api/say/queue`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ tenantId: sayChannelKey, text: spokenMessage }),
+                });
+            }).catch((error) => console.warn('[Say TTS] Discord queue failed:', error));
+        }
+    }
+
+    return { commandHandled: false };
+}

@@ -1,0 +1,664 @@
+# Legacy source snapshot: Mtman1987/streamweaver
+
+Commit: ebf350cae6643eb883d342e52a56323d1642d07d. Code only (no assets/lockfiles/node_modules). NOT built or wired; excluded from the root tsc build. Reference for remaining parity work.
+
+## Donor commits since 2026-09-06 (verify each is reflected in apps/)
+- ebf350c 2026-10-24 Fail watchdog runs when Lounge surfaces are unhealthy
+- c5b4a2a 2026-10-24 Add bounded Lounge uptime watchdog and StreamWeaver recovery
+- a832a0b 2026-10-23 Remove one-time fleet inventory workflow after metadata collection
+- 168e780 2026-10-23 Use explicit ecosystem app targets for scoped-token inventory
+- 7dc6d7e 2026-10-23 Add one-time read-only Fly fleet storage inventory
+- 43b93b5 2026-10-23 Remove one-time recovery workflow after encrypted export
+- 273224a 2026-10-23 Include global Pokédex assets in recovery export
+- c136c81 2026-10-23 Make encrypted recovery workflow key setup YAML-safe
+- 3c41f8f 2026-10-23 Fix recovery workflow YAML indentation
+- 96b6773 2026-10-23 Add one-time encrypted player-state recovery workflow
+- cfeacd6 2026-10-23 Remove temporary recovery export after volume inventory
+- 6a02377 2026-10-23 Limit StreamWeaver recovery bundle to player and game state
+- 85e5550 2026-10-23 Stream large volume archives directly to compression to avoid partial tar files
+- f284a2a 2026-10-23 Correct recovery archive encryption public key
+- df8f686 2026-10-23 Split encrypted StreamWeaver recovery export into downloadable bundles
+- 3e61d26 2026-10-23 Add encrypted StreamWeaver player and runtime data recovery
+- 46bf132 2026-10-23 Inventory StreamWeaver persistent file names without reading contents
+- 25803bc 2026-10-23 Add read-only StreamWeaver volume inventory
+- 6fc2d56 2026-10-21 Fix active free AI credential routing and TTS failover
+- eca9287 2026-10-21 Fix system Lounge !sr source routing
+- 70c4f7a 2026-10-20 Align public Discord control regression with GIF viewer access
+- bd80254 2026-10-20 Prefer impersonated bot avatar in Discord replies (#407)
+- 6025541 2026-10-20 Recover Discord !signal from stale webhook 404s
+- 644bd91 2026-10-20 Fix repeated free Pollinations image fallback
+- f45448a 2026-10-20 Fix direct OpenAI TTS routing and verify voice catalog (#405)
+- 1e4ba7e 2026-10-20 Restore and expand direct OpenAI TTS voice choices (#403)
+- 2b7c11d 2026-10-20 Fix SeaArt custom model URL input
+- 1cd5b0d 2026-10-20 Deploy resilient AI, TTS, and image fallback chains
+- 223d27e 2026-10-20 Add provider-level TTS and image fallback diagnostics
+- ecb2996 2026-10-20 Fix Stella Lounge browser reset and audible acknowledgement
+- 9fa87f9 2026-10-19 Disable unverified Gemini fallback models
+- e42238a 2026-10-19 Remove failing free AI model candidates
+- 77e1a04 2026-10-19 Rotate free AI providers across turns
+- 23f6d9f 2026-10-19 Show every free AI model candidate result
+- a55fd6e 2026-10-19 Add owner-only !golive Twitch command
+- 2a39750 2026-10-19 Test every free AI model and report response details
+- 5dcf590 2026-10-19 Stabilize free TTS readiness SSH check
+- 4964b77 2026-10-19 Fix free AI fallback configuration and speech diagnostics
+- f2a7fba 2026-10-19 Retry rate-limited free TTS smoke checks
+- c67fb13 2026-10-19 Fix public Discord message settings gear (#387)
+- 96a9ac9 2026-10-19 Add clickable provider chain diagnostics
+- de24836 2026-10-19 Use free Groq and OpenRouter fallback routes
+- 8e0172f 2026-10-19 Fix Athena treating 'tell me a joke' as a relay (#385)
+- fff4353 2026-10-19 fix: exclude preserved Discord messages from new cleanup jobs (#384)
+- 70d4023 2026-10-19 Fix Lounge cross-origin status requests
+- 8a9ef8b 2026-10-19 Add free model candidate test and fix GIF gallery regressions
+- 3319fa1 2026-10-19 Add per-message Discord cleanup toggle
+- 8c455bc 2026-10-19 Add temporary provider capability test page (#379)
+- 6eaf7fa 2026-10-19 Stop private DM GIF gallery duplicates (#377)
+- 962abe7 2026-10-19 Fix private DM GIF refresh cache busting
+- d9b4633 2026-10-19 Fix private GIF cache busting and add refresh control
+- aa549c8 2026-10-19 Accept dedicated HearMeOut persona voice credential (#374)
+- 92f0579 2026-10-19 Fix private DM GIF switching and Discord cache
+- d1ab60a 2026-10-19 Show public GIFs as selectable animated gallery items
+- eac564d 2026-10-19 Keep free image generation free and wire private adult mode
+- eef0b09 2026-10-19 Fix generated media gallery selection and downloads
+- 42006a1 2026-10-19 Add HearMeOut persona voice settings and voice test
+- 9788dc1 2026-10-19 Archive saved GIFs in image gallery
+- ad17dfd 2026-10-19 Add more working free Kokoro voices
+- 498528e 2026-10-19 Add natural free TTS voices and opt-in Gemini speech
+- 11ca09c 2026-10-18 Add Twitch chat shuffle commands
+- 1490b76 2026-10-18 Recover free TTS from stale worker policy
+- 1300b12 2026-10-16 Avoid duplicate TTS for HearMeOut Say delivery
+- c13ea96 2026-10-16 Add free AI provider fallback chain
+- 6315193 2026-10-16 Retry free Kokoro TTS voices after timeout (#361)
+- f13772d 2026-10-16 Fix free Gemini fallback and quota cooldown
+- b2e7429 2026-10-16 Use five current Gemini models and stop fallback on quota exhaustion
+- 8839ea5 2026-10-16 Fix free AI rate-limit fallbacks and free-only TTS choices
+- a736d21 2026-10-16 Add free browser speech fallbacks and speed deployment
+- f1ed094 2026-10-16 Add free-only speech and transcription fallbacks
+- fce86e1 2026-10-16 Fix free Gemini model fallback chain
+- eccc2b9 2026-10-16 Fall back across free Gemini models on overload
+- be34664 2026-10-16 Improve AI upstream failure diagnostics (#352)
+- bcd002e 2026-10-16 Fix Lounge bump reverting during viewer polling
+- 60835e5 2026-10-14 Silently ignore conflicting !play command
+- 4c6352f 2026-10-14 fix: disable !play globally
+- 45a17ee 2026-10-14 fix: expose tenant-toggle for built-in play command
+- 87047bc 2026-10-13 Harden WebSocket and HTTP connection lifecycle
+- e7869b8 2026-10-13 fix(kick): respect permanent Pusher reconnect block (#347)
+- fe14d2f 2026-10-13 Stop repeated watchtime polls for quarantined Twitch credentials (#346)
+- f71524f 2026-10-13 fix(kick): stop permanent Pusher configuration retry loops
+- f744482 2026-10-12 fix: fall back to saved StreamElements OAuth token
+- d6f6eea 2026-10-12 Remove one-time Snow import workflow
+- 7e7c6f8 2026-10-12 Run one-time StreamElements import for Snow
+- 3c83559 2026-10-12 Import exact StreamElements viewer record
+- d44f439 2026-10-12 Verify live Twitch tenant mapping
+- 1fdd72b 2026-10-12 Verify imported Snow watchtime
+- 1a187d4 2026-10-12 Use direct JWT for authorized StreamElements import
+- b8c82b9 2026-10-12 Permit exact Snow tenant direct import
+- 1951c20 2026-10-12 Allow protected StreamElements import through middleware
+- 91f8e5b 2026-10-12 Allow protected direct StreamElements tenant import
+- 02f9637 2026-10-12 Prefer configured StreamElements channel key
+- faf87d2 2026-10-12 Fix secret sync condition in Fly deploy
+- 20a4bdc 2026-10-12 Support secure StreamElements channel key import
+- 76eb510 2026-10-12 Sync StreamElements OAuth secrets during deploy
+- 17b6121 2026-10-12 Add StreamElements OAuth data import
+- 1eb99d4 2026-10-12 fix: queue Fly deployments instead of cancelling builds
+- b529eb7 2026-10-12 Trigger Fly deployment after fixing loyalty import test
+- 04001e4 2026-10-12 Fix loyalty import test ordering
+- 58973d4 2026-10-12 Add separate watchtime and points import modes
+- 6c64ee0 2026-10-12 Fix StreamElements points import validation
+- 849a614 2026-10-12 Merge pull request #341 from Mtman1987/fix/tenant-watchtime-loyalty-import-20261012
+- b1e5e0a 2026-10-12 Fix tenant watchtime and add StreamElements loyalty import
+- dd043c9 2026-10-12 Merge pull request #340 from Mtman1987/fix/say-discord-vc-20261012
+- 89bf913 2026-10-12 Address voice capture authentication and lifecycle review findings
+- 59643d2 2026-10-12 Route Say speech through Discord VC when connected
+- 2d55886 2026-10-12 Merge pull request #339 from Mtman1987/fix/pause-bingo-transcription-20261012
+- 8f7b412 2026-10-12 Use bounded microphone capture for reliable mobile voice controls
+- 72c08e5 2026-10-12 Keep follower EventSub listeners stable across reconnects and OAuth reloads
+- aea7982 2026-10-12 Pause Bingo transcription and remove stream/tab listening
+- b3b5c33 2026-10-12 Include bot scopes and ecosystem-wide permissions in Discord invite
+- 5bc6a45 2026-10-12 Restrict raid-message saving to the broadcaster while keeping replay public
+- 9f55a7c 2026-10-12 Refresh Discord server selectors after bot installation
+- c87a9f2 2026-10-12 Make raid aliases open and add follow alerts to the existing Shoutout Player
+- 6720775 2026-10-12 Repair AI-generated command branches and community action exports
+- 5b193a4 2026-10-11 Provide account revocation authority in isolated Twitch recovery fixtures
+- a2f7d5c 2026-10-11 Handle tenant music commands once in their own music session
+- 59e7b61 2026-10-11 Preserve deployed account revocation and session renewal protections
+- d25968a 2026-10-09 Resolve Quackverse channel aliases to the receiving overlay tenant
+- ddc1859 2026-10-09 Keep the TTS audio element mounted in audio-only mode
+- 3d7edbe 2026-10-09 Add opt-in audio-only mode for tenant TTS browser sources
+- 0e7032a 2026-10-09 Keep standalone BRB sources on clip playback when explicitly requested
+- c03fc0e 2026-10-09 Accept media/music prefixes on tenant volume commands
+- c1fc1a7 2026-10-09 Accept !vol as a tenant music volume alias
+- 9237ac5 2026-10-09 Keep tenant playback controls in their own music session
+- 5ab5cce 2026-10-09 Request follower-read permission when reconnecting Twitch broadcasters
+- 35670b0 2026-10-09 Queue brief free AI overlaps with bounded wait and provider cooldown
+- e803a2d 2026-10-09 Preserve Twitch delivery causes and avoid walk-on restarts for wake or authorization failures
+- 8cb5aa5 2026-10-07 Merge pull request #337 from Mtman1987/feat-scottish-male-voice-20261008
+- 76c8447 2026-10-07 Add free Gemini Scottish male bot voice
+- 99fcd45 2026-10-07 Merge pull request #336 from Mtman1987/fix-say-signed-in-sender-20261007
+- 8c06c53 2026-10-07 Keep microphone Twitch posts under the signed-in user's identity
+- f6249c1 2026-10-07 Merge pull request #335 from Mtman1987/fix-wake-token-recovery-fixture
+- 52a6938 2026-10-07 Fix token recovery VM fixture for shared bot wake module
+- f43cfd1 2026-10-07 Merge pull request #334 from Mtman1987/tenant-shared-bot-wake
+- fea2d50 2026-10-07 Add per-tenant shared StreamWeaver bot wake controls
+- 077d67d 2026-10-07 Merge pull request #325 from Mtman1987/restream-free-local-host-pilot
+- 3cad855 2026-10-07 Preserve tenant broadcaster music commands through the production Count patch
+- 8444831 2026-10-07 Route Twitch tenant song requests to isolated music-only OBS sessions
+- 74c4ffe 2026-10-07 Name check-in riders and recover confirmed bonus credits without public diagnostics
+- 00220a9 2026-10-07 Fix Discord DM delivery and pause unavailable broadcaster integrations safely
+- ec4550f 2026-10-07 Run Stella Lounge controls with her delegated lead moderator authority
+- 52caf19 2026-10-07 Give StreamWeaver four shared CPUs for web and free voice scheduling headroom
+- d3a1ba3 2026-10-07 Keep shared chat available after malformed replay and serialize concurrent storage writes
+- 0c61e1b 2026-10-07 Keep StreamWeaver at 4 GB RAM to prevent live memory exhaustion
+- 1622899 2026-10-06 Merge pull request #332 from Mtman1987/fix/lounge-response-deadline
+- 0e9c321 2026-10-06 Bound lounge status fetch and body parsing independently of abort
+- 8474678 2026-10-06 Merge pull request #331 from Mtman1987/fix/lounge-status-deadline-20261007
+- 5f7fec8 2026-10-06 Bound lounge status reads and serve recent status during refresh
+- ce14624 2026-10-06 Merge pull request #329 from Mtman1987/fix/free-gemini-chat-routing-20261006
+- 543e9a7 2026-10-06 Restore owner-approved free personality optimization and private memory summaries
+- 1e29add 2026-10-06 Add bounded verified free Gemini transcription and fix cooldown typing
+- 04f596e 2026-10-06 Restore verified free translations and isolate free provider failures
+- f9d0937 2026-10-06 Cover verified free private routing while requiring explicit paid/local gates
+- 33e6312 2026-10-06 Validate free text routing alongside the paid-route policy
+- a45343d 2026-10-06 Verify free public/private generation, billing gate, concurrency and quota cooldown
+- b255e7b 2026-10-06 Use verified free Gemini in private chat adapter with no paid fallback
+- a75957f 2026-10-06 Permit verified free private chat without enabling paid routes or disabled local models
+- 2d99d00 2026-10-06 Route free-only bot chat through verified Gemini instead of the global pause guard
+- a234a2c 2026-10-06 Gate free Gemini chat separately from paid AI routes
+- f5c536e 2026-10-06 Add bounded direct Gemini text generation gated on verified free-tier access
+- 1ed288b 2026-10-05 Merge pull request #328 from Mtman1987/feat/free-voice-existing-host
+- 73be38e 2026-10-05 Run free voice on the existing two shared CPU host without provisioning another app
+- e93af84 2026-10-05 Merge pull request #327 from Mtman1987/feat/free-speech-trial
+- 4b863d4 2026-10-05 Pause credit-based image routes and protect prompts and memories from paused AI output
+- 4223474 2026-10-05 Return paused private replies without recovery loops and fix source-specific live commands
+- b3de6e4 2026-10-05 Pause paid AI routes and add a private two shared CPU Kokoro voice trial
+- edd15b7 2026-10-05 Merge pull request #326 from Mtman1987/ops/shared-cpu-policy
+- 85c533d 2026-10-05 Keep StreamWeaver on two shared CPUs with existing memory
+- f14f630 2026-10-05 Test local approval behavior for media and Restream host actions
+- 1d3aa37 2026-10-05 Require runtime-advertised Companion support before enabling local hosting
+- 5535907 2026-10-05 Preserve existing local Athena wake shutdown patch marker
+- e0cc50f 2026-10-05 Release Companion 0.3.4 with tenant-isolated local Restream Studio hosting
+- c08d5ac 2026-10-05 Merge pull request #324 from Mtman1987/fix/checkin-nebula-wallet
+- c7c554a 2026-10-05 Award front-seat check-in bonuses to the shared Nebula wallet
+- 45aefbd 2026-10-05 Merge pull request #323 from Mtman1987/checkin-stella-build-compat-20261005
+- ae74a3b 2026-10-05 Preserve Stella shoutout guard in Count build patch
+- bf698c2 2026-10-05 Merge pull request #322 from Mtman1987/checkin-stella-so-handler-20261005
+- 70f897b 2026-10-05 Process confirmed Stella !so receipts through the Lounge shoutout handler
+- 56172a9 2026-10-05 Merge pull request #321 from Mtman1987/checkin-stella-so-20261005
+- 4de6530 2026-10-05 Add Stella !so chat command alongside check-in native shoutouts
+- b11f19e 2026-10-05 Merge pull request #320 from Mtman1987/fix/stella-checkin-shoutouts
+- b9e8ebc 2026-10-05 Use Stella's native Twitch shoutout grant for Lounge check-ins
+- aa01915 2026-10-05 Merge pull request #319 from Mtman1987/fix/lounge-speech-twitch-destination
+- aa8fffe 2026-10-05 Fix Lounge speech destination and reject skipped Twitch posts
+- 19842c8 2026-10-03 Merge pull request #318 from Mtman1987/fix/chat-tag-player-checkin
+- af61276 2026-10-03 Run spmt checkin through Chat Tag in player channels
+- e878cfd 2026-10-02 Merge pull request #317 from Mtman1987/codex/spmt-checkin
+- 650aaeb 2026-10-02 Make spmt checkin run the Space Mountain group check-in
+- 3eafaef 2026-10-02 Pace raffle elimination spins and announce after the rendered winner reveal
+- 00b906a 2026-10-02 Constrain raffle stage to space below its live header
+- 847ab9d 2026-10-02 Merge pull request #316 from Mtman1987/fix/raffle-spotlight-test-20261002
+- c14e084 2026-10-02 Fix raffle wheel alignment and dismissal; seed requested Merch test entrants
+- ab2d9bd 2026-10-02 Merge pull request #315 from Mtman1987/fix/separate-merch-giftcard-raffles
+- 823deaa 2026-10-02 Link merch and gift-card rewards to separate raffle drawings
+- a5ee43c 2026-10-02 Link merch and gift-card rewards to separate raffle drawings
+- fec420f 2026-10-02 Link merch and gift-card rewards to separate raffle drawings
+- d55dedd 2026-10-02 Link merch and gift-card rewards to separate raffle drawings
+- 9f513a5 2026-10-02 Link merch and gift-card rewards to separate raffle drawings
+- f05daeb 2026-10-02 Link merch and gift-card rewards to separate raffle drawings
+- a4f93f0 2026-10-02 Keep commercial songs continuous across GIF swaps and successive Twitch ads
+- 175b5a5 2026-10-02 Merge pull request #314 from Mtman1987/fix/spotlight-discord-astronaut-avatar
+- d1cf2f9 2026-10-02 Use Discord SpaceMountain astronaut GIF for featured Spotlight creator
+- 50474cf 2026-10-02 Refresh live lounge once readable ChatTag player cards are deployed
+- f9dc381 2026-10-02 Allow lounge commercial state reads and refresh matching overlay fixes once
+- 54dcbde 2026-10-02 Merge pull request #313 from Mtman1987/fix/refresh-full-media-prompt
+- 03c5606 2026-10-02 Refresh lounge after full-panel media prompt deploys
+- abcbb25 2026-10-02 Gate commercial audio on visible GIFs and fully stop removed games
+- c9ac58c 2026-10-02 Merge pull request #312 from Mtman1987/fix/refresh-fitted-media-prompt
+- b9ba656 2026-10-02 Refresh once fitted request prompt is live
+- e08bc57 2026-10-02 Merge pull request #311 from Mtman1987/fix/direct-empty-prompt-refresh
+- 1843c1b 2026-10-02 Wait for the direct media viewer empty prompt before lounge refresh
+- b7e47de 2026-10-02 Merge pull request #310 from Mtman1987/fix/refresh-empty-media-prompt
+- cc528ee 2026-10-02 Refresh lounge once empty-media request prompt is deployed
+- 8209204 2026-10-02 Merge pull request #309 from Mtman1987/fix/treasure-game-overlay-refresh
+- b1bfe8f 2026-10-02 Refresh the crashed lounge game after overlay chunk recovery is available
+- 1303a1e 2026-10-02 Merge pull request #308 from Mtman1987/fix/playback-aware-commercial-cover
+- 4e036b9 2026-10-02 Verify commercial audio gating and capped playback against the player component
+- 8339488 2026-10-02 Keep GIF commercials covering buffered ad playback and preserve warmed images
+- 49edd67 2026-10-02 Merge pull request #307 from Mtman1987/fix/commercial-gif-late-preroll
+- 9f04e87 2026-10-02 Refresh preloaded GIF catalog for each new commercial
+- 92d9f64 2026-10-02 Preload commercial GIFs and lower theme volume
+- 13c7fbd 2026-10-02 Merge pull request #306 from Mtman1987/fix/apply-lounge-player-repairs
+- 4fdd1f8 2026-10-02 Apply deployed Lounge player repairs with one browser source refresh
+- 90c7882 2026-10-02 Merge pull request #305 from Mtman1987/fix/commercial-gif-audio-readiness
+- 6fed4c0 2026-10-02 Fix lounge media readiness and source continuity
+- 604267f 2026-10-02 Fire the existing commercial GIF for selected Spotlight ads (#304)
+- d1912ea 2026-10-02 Force one Lounge browser refresh after media repair
+- 9809335 2026-10-02 Stop Stella game chatter when Word Chain is inactive (#303)
+- ac0beb3 2026-10-01 Accept natural Lounge media restart phrases (#302)
+- a21ac65 2026-10-01 Make Stella a livelier Lounge game co-host (#301)
+- 5472eb0 2026-10-01 Add Stella command to restart only Lounge media player (#300)
+- 5682528 2026-10-01 Auto-discover existing Twitch raffle rewards
+- 6726efb 2026-10-01 Expose raffle overlay state feed
+- f35790d 2026-10-01 Backfill raffle ledger from Twitch on EventSub connect
+- ed2dec6 2026-10-01 Add raffle owner sync controls
+- 291e4c9 2026-10-01 Add raffle sync and reward remapping
+- f1ac4be 2026-10-01 Add Twitch raffle ticket ledger and Stella draw wheel
+- 07207fa 2026-10-01 Update Stella hide game regression expectation
+- 2b3d711 2026-10-01 Stop Lounge games when Stella hides them
+- 3c7cdbf 2026-10-01 Use Spotlight GIF and stop hidden Lounge games
+- f8e96de 2026-10-01 Improve Lounge user names and command spotlight
+- 9596c58 2026-09-30 Post Voice Commander transcripts to live Twitch chat
+- 8c0247c 2026-09-30 Merge pull request #299 from Mtman1987/feature/lounge-command-cards
+- f96700d 2026-09-30 Preserve Say STT when browser never finalizes speech (#298)
+- 7c8cc1f 2026-09-30 Test Lounge command spotlight cards
+- f577edc 2026-09-30 Add Lounge command spotlight card overlay
+- c80c6e5 2026-09-30 Merge pull request #297 from Mtman1987/fix/manual-brb-no-sponsor
+- 05aa8be 2026-09-30 Test manual BRB and commercial banners stay distinct
+- e258d96 2026-09-30 Reserve sponsor banner for commercial player
+- d0e6256 2026-09-30 Merge pull request #296 from Mtman1987/fix/commercial-runaway-latch
+- bc85029 2026-09-30 Test commercial duplicate events cannot extend active break
+- e669156 2026-09-30 Cap commercial state to original Twitch break duration
+- 8878322 2026-09-30 Prevent duplicate ad events from extending commercial breaks
+- 327cf05 2026-09-30 Merge pull request #295 from Mtman1987/fix/commercial-overlay-transparency
+- 2adc7a8 2026-09-30 Test commercial overlay document transparency
+- ef065e8 2026-09-30 Make commercial player document transparent when idle
+- 9994a6e 2026-09-30 Merge pull request #294 from Mtman1987/fix/lounge-stella-single-reply
+- dc4a6ab 2026-09-30 Test single Stella HearMeOut confirmation
+- 6950e24 2026-09-30 Keep HearMeOut confirmations on Stella
+- 980a164 2026-09-30 Use one Stella reply for Lounge skip
+- eebca2e 2026-09-30 Merge pull request #293 from Mtman1987/fix/commercial-break-player
+- 94b4958 2026-09-30 Test dedicated commercial player separation
+- abda0a3 2026-09-30 Expose dedicated Lounge commercial player state
+- a2219a0 2026-09-30 Request Twitch ad-break EventSub scope
+- d713776 2026-09-30 Keep automatic commercials out of manual BRB player
+- 9e66280 2026-09-30 Trigger durable commercial breaks from Twitch EventSub
+- f55935d 2026-09-30 Add dedicated commercial break player
+- 673df76 2026-09-30 Expose commercial break state without touching HMO
+- 52cdd2d 2026-09-30 Add durable commercial break state machine
+- bbde4d6 2026-09-30 Test Stella Word Chain stop synonyms
+- 3004eac 2026-09-30 Make Stella game controls resolve the visible Lounge game
+- beddec1 2026-09-30 Block Twitch clips in SpaceMountain sponsor breaks
+- 19392e1 2026-09-30 Always use GIF-only BRB for SpaceMountain Lounge
+- e18b8c6 2026-09-30 Honor Lounge sponsor mute in shoutout player
+- 8f7b85d 2026-09-30 Test continuous GIF-only sponsor cover
+- e706746 2026-09-30 Make automatic Spotlight cover GIF-only
+- 755514d 2026-09-30 Play Lounge sponsor GIFs as continuous three-minute blocks
+- 0d988be 2026-09-30 Keep Lounge media failures concise in chat
+- fe594f9 2026-09-30 Lock single-response Lounge song behavior
+- cdccccb 2026-09-30 Reduce Lounge song request chat spam
+- 797b9ef 2026-09-30 Cover tenant OpenAI fallback key
+- 464d3fb 2026-09-30 Use tenant OpenAI key for Eden fallback
+- 52c04ac 2026-09-29 Align StreamWeaver runtime with Node 22 dependencies
+- ec75127 2026-09-29 Align StreamWeaver runtime with Node 22 dependencies
+- f2aae54 2026-09-29 Align StreamWeaver runtime with Node 22 dependencies
+- f954077 2026-09-29 Only demote empty Lounge media
+- 01406b4 2026-09-29 Return Spotlight to main when Lounge media empties
+- c1f3b35 2026-09-29 Update MountainView owner auth regression test
+- 73de059 2026-09-29 Preserve owner role on authenticated MountainView commands
+- bf38953 2026-09-29 Recognize authenticated MountainView owner bridge
+- 4bfd09d 2026-09-29 Prevent Stella mode from stealing media seek commands
+- 5badd4b 2026-09-29 Gate live deploy on command smoke tests
+- a37c5a1 2026-09-29 Test canonical SPMT alias routing
+- fcf7a88 2026-09-29 Route canonical SPMT aliases through legacy handlers
+- 45b529e 2026-09-29 Add canonical SPMT legacy command aliases
+- e4336bf 2026-09-29 Apply canonical no-bot blacklist to shared Twitch bots
+- 0b4cc69 2026-09-29 Disable random Signal scheduler
+- dcbe1fd 2026-09-29 Apply credential lifecycle to shared Twitch bot
+- 0c4a59a 2026-09-29 Quarantine abandoned integrations and shelve local Qwen
+- 9a15ec9 2026-09-29 Recognize Lounge follow links with normal spacing
+- ceb904f 2026-09-29 Keep lounge command choices isolated and acknowledge slow media searches
+- 3459731 2026-09-29 Enable verified Stella game control in Lounge
+- e063024 2026-09-28 Let Stella control Nebula games through natural language
+- 13803d8 2026-09-28 Allow public Lounge browser refresh status polling
+- 4e43912 2026-09-28 Let Stella request a Lounge browser refresh from chat
+- 0115509 2026-09-28 Give live Streamweaver a dedicated CPU to prevent health stalls
+- 598bdf1 2026-09-28 Merge pull request #291 from Mtman1987/fix/stella-nebula-director-20260928
+- b615ec3 2026-09-28 Test Stella flexible Nebula game direction
+- 9fcb8f7 2026-09-28 Keep proven simple Nebula start-stop routing
+- 27863de 2026-09-28 Restore Stella natural Nebula game direction
+- a4be3ca 2026-09-28 Expose Nebula channel state to Stella game director
+- 90b9722 2026-09-28 Merge pull request #290 from Mtman1987/fix/live-card-fallbacks-20260928
+- dd5b264 2026-09-28 Test honest live-card metadata fallbacks
+- 91ba0e7 2026-09-28 Render live cards without fake Just Chatting or zero counts
+- d3adaf3 2026-09-28 Stop inventing zero-viewer live metadata
+- 2c90b85 2026-09-28 Merge pull request #289 from Mtman1987/fix/deepgram-openai-tts-fallback-20260928
+- c464f5d 2026-09-28 Fall back to direct OpenAI when Deepgram speech is unavailable
+- d5b41f9 2026-09-28 Merge pull request #287 from Mtman1987/fix/lounge-translation-live-fallback-20260928
+- 477ba31 2026-09-28 Merge pull request #288 from Mtman1987/fix/say-chat-single-path-20260928
+- 68b2826 2026-09-28 Test single-path speech-to-chat TTS
+- 6c75dd9 2026-09-28 Use Twitch chat as the single source for PTT speech
+- 928c69e 2026-09-28 Speak PTT from its single Twitch chat echo
+- 51db5f2 2026-09-28 Allow one speech-to-chat broadcaster echo through TTS
+- 4ca9adc 2026-09-28 Add one-shot chat echo permit for speech-to-chat
+- d15a348 2026-09-28 Cover live translation fallback path
+- 83f6be3 2026-09-28 Publish one-off Lounge translation subtitles
+- 5ade4c2 2026-09-28 Pass tenant context and report translation failures
+- 59db1a8 2026-09-28 Route Lounge translations through configured AI fallback
+- 8a092cc 2026-09-28 Merge pull request #286 from Mtman1987/fix/lounge-live-failures-20260928
+- 6f2ba60 2026-09-28 Test Stella verified Lounge playhead
+- bafad0c 2026-09-28 Test Say Twitch routing and data TTS suppression
+- 8f1724f 2026-09-28 Test Stella Lounge movie seek commands
+- 2e75c42 2026-09-28 Wire Stella movie seek controls to the Lounge worker
+- 34af224 2026-09-28 Keep broadcaster data messages out of Say TTS
+- b978d8f 2026-09-28 Route Say chat to the selected Twitch channel
+- ac71015 2026-09-28 Ground Stella in the Lounge playhead and reduce ambient chatter
+- 5cdb02c 2026-09-28 Unlock all Lounge audio from one viewer gesture
+- 322053b 2026-09-28 Prevent duplicate STT say playback
+- 02fda34 2026-09-28 Deploy Lounge autoplay recovery
+- 900f21f 2026-09-28 Add Lounge autoplay audio recovery command
+- 571a957 2026-09-28 Allow DSH live-member formatter in prebuild
+- 9a07132 2026-09-28 Keep Lounge sponsor GIF buffer ready
+- 9da7a6f 2026-09-27 Use DSH for Lounge live-community state
+- 74a5f82 2026-09-27 Fix Lounge chat TTS and personalized greetings
+- 9902bc0 2026-09-27 Fix cross-tenant relay replies in Discord
+- f8514e8 2026-09-27 Fix Stella Lounge snapshot and screen swap intent
+- 92af494 2026-09-27 Finish Stella Lounge control and awareness polish
+- 2a44eba 2026-09-27 Keep automatic BRB debounce running across health polls
+- 7844205 2026-09-27 Play community BRB clips when Lounge Spotlight stalls
+- 8a46e93 2026-09-27 Page Stella captions by complete rendered lines
+- 72789ca 2026-09-27 Accept existing scoped Discord lore resolver during build
+- ad3c392 2026-09-27 Allow authenticated Lounge worker song notices through middleware
+- e064cf3 2026-09-27 Report exhausted Lounge song alternatives through Stella
+- a44a711 2026-09-27 Repair failing runtime checks and disable inert commands
+- 11f6e87 2026-09-27 Make lounge Stella replies conversational and show complete captions
+- 55adc1a 2026-09-27 Route Stella host commands and live answers before AI; connect Lounge radio
+- 0879b48 2026-09-27 Describe Lounge DJ's human music profile accurately in chat
+- cdd6922 2026-09-27 Make Stella's Lounge actions truthful and restore live auto-radio command
+- c77a8e6 2026-09-27 Prevent overlapping StreamWeaver sweeps and share lounge status reads
+- 8e4a087 2026-09-27 Route Lounge skip directly to active worker lane
+- 50383f2 2026-09-27 Route Lounge media commands and status to Lounge worker
+- b79ce0d 2026-09-26 Fit check-in cards and skip pending animation on failed check-ins
+- bc70a4c 2026-09-26 Replay recent check-ins to reconnecting lounge overlays
+- 97ce1c4 2026-09-26 Consume selected check-in numbers and trace overlay delivery
+- fefd5e7 2026-09-26 Merge pull request #283 from Mtman1987/fix-pokemon-pack-embed-rotation-live
+- 32cf4d4 2026-09-26 Cover Pokemon pack rotation and embedded GIF
+- fa0dfd0 2026-09-26 Force Pokemon GIF into final Discord embed
+- 73adbf3 2026-09-26 Restore rotating speaker for Pokemon packs
+- d3c370b 2026-09-26 Route check-in lists to broadcaster and results to Stella
+- e06fb50 2026-09-26 Accept bare watch choice numbers before Stella conversation
+- d60211f 2026-09-26 Merge pull request #282 from Mtman1987/fix/pokemon-gif-inside-embed-20260926
+- a74c718 2026-09-26 Cover embedded Pokemon GIF attachment
+- 0bc2540 2026-09-26 Preserve attachment URLs inside Discord embeds
+- 0d69ca6 2026-09-26 Do not borrow owner Twitch identity for other tenants' reauth notices
+- 14d3f38 2026-09-26 Merge pull request #281 from Mtman1987/fix/pack-feature-and-discord-columns-20260926
+- b5c8b7b 2026-09-26 Cover final-card GIF and unified Pokemon Discord flow
+- 3740b1a 2026-09-26 Feature the final Pokemon pack card
+- a4659dd 2026-09-26 Remove rarity-gated pack feature selection
+- 041c678 2026-09-26 Decouple Twitch chat highlights from Stella speech and prepare audio before chat send
+- 0faee0f 2026-09-26 Make Pokemon packs use one SPMT-style Discord message
+- b04a487 2026-09-26 Feature final card for legacy pack events
+- ad3d03e 2026-09-26 Always feature the final pack card
+- ab5b31c 2026-09-26 Guarantee final featured card in pack GIF
+- 85f92df 2026-09-26 Show fresh Stella highlights only after confirmed speech queueing
+- 0d9ed36 2026-09-26 Merge pull request #280 from Mtman1987/fix/discord-pack-grid-attachment-20260926
+- e367fa1 2026-09-26 Cover fixed Pokemon grid and attached GIF
+- f978764 2026-09-26 Use fixed pack grid and attach GIF on Discord
+- d2dcb8a 2026-09-26 Support webhook GIF attachment edits
+- 585281e 2026-09-26 Support binary Discord message edits
+- 64ae9f4 2026-09-26 Deliver confirmed Stella speech and show Space Mountain check-ins promptly
+- 6695a7d 2026-09-26 Merge pull request #279 from Mtman1987/fix/pack-gif-discord-grid-avatar-20260926
+- 7bc7bf8 2026-09-26 Cover GIF recording, Discord grid and broadcaster pack art
+- d48b4b9 2026-09-26 Record executor Pokemon packs as GIF
+- afa77fe 2026-09-26 Record Twitch Pokemon packs as GIF
+- b85ec31 2026-09-26 Show pack cards in three-column Discord fields
+- 524a064 2026-09-26 Use broadcaster avatar on booster pack front
+- a5be238 2026-09-26 Pass overlay tenant to pack GIF capture
+- 16e1825 2026-09-26 Brand captured pack reveals with tenant avatar
+- cb3f297 2026-09-26 Merge pull request #278 from Mtman1987/fix/lounge-card-pack-delivery-20260926
+- cbdece5 2026-09-26 Fix typed channel alias access
+- 6f06385 2026-09-26 Cover Lounge card pack alias and replay delivery
+- a9d51e6 2026-09-26 Add dedicated SpaceMountainLive broadcaster authorization
+- 6c83ffd 2026-09-26 Route Pokemon reveals to channel alias
+- e5b99d2 2026-09-26 Fan Pokemon reveals out to Twitch overlay aliases
+- 0e06471 2026-09-26 Replay missed card pack events to overlays
+- 6d611b5 2026-09-26 Retain card pack broadcasts for overlay replay
+- d7db122 2026-09-26 Retain and alias card pack overlay events
+- df5eec2 2026-09-26 Merge pull request #277 from Mtman1987/fix/pokemon-pack-overlay-quack-cardback-20260926
+- a88c8b6 2026-09-26 Fix Pokemon legacy pack event typing
+- b4cb276 2026-09-26 Cover Pokemon overlay delivery and branded backs
+- c42320f 2026-09-26 Use streamer branding on shared pack card backs
+- 3d247b0 2026-09-26 Allow canonical card-pack overlay events
+- aa51348 2026-09-26 Send Pokemon reveals to tenant overlay
+- c05f1bf 2026-09-26 Scope Pokemon pack overlay events to tenant
+- e47dfce 2026-09-26 Merge pull request #276 from Mtman1987/feat/stella-word-game-battles-20260926
+- 9a1e14a 2026-09-26 Cover Stella cross-stream word-game requests
+- f64ab76 2026-09-26 Let Stella start cross-stream word games
+- e9cdd6f 2026-09-26 Add shared word-game stream battle helper
+- 78155a3 2026-09-26 Document watch choice and follow commands
+- 8de647a 2026-09-26 Show real movie choices in chat and add creator follow links
+- 5789160 2026-09-26 Support Lounge watch search and selected movie request
+- 0418bc1 2026-09-26 Put BRB live creator label at bottom right
+- 33f067f 2026-09-26 Show BRB and Spotlight creator names at bottom right
+- f63c593 2026-09-26 Show BRB and Spotlight creator names at bottom right
+- d8f553b 2026-09-26 Keep BRB under broadcaster control when music health checks fail
+- 177d188 2026-09-26 Install live feed resolver in StreamWeaver runner
+- d6dbd6a 2026-09-26 Add one-channel muted live autoplay proof page
+- f1a23ad 2026-09-26 Add server-side Twitch HLS relay for muted BRB live proof
+- 6fb8e35 2026-09-26 Merge pull request #275 from Mtman1987/feat/stella-stream-battle-steward
+- b9e5f1f 2026-09-26 Cover safe natural Chat Wars battle requests
+- 026052b 2026-09-26 Make Stella Chat Wars setup safe and friend-ready
+- 06615f9 2026-09-26 Create usable overlays for linked Chat Wars streams
+- 184e722 2026-09-26 Let Stella create Chat Wars stream battles naturally
+- 87fbbc0 2026-09-26 Add shared Chat Wars stream battle client
+- 3f3b5e1 2026-09-26 Keep one Twitch player for testbrb channel rotation
+- fc98cbd 2026-09-26 Let Stella create Nebula stream battles from natural language (#274)
+- 3bf6726 2026-09-26 Test Twitch live streams through BRB clip embed path
+- 9ef4d28 2026-09-26 Make Stella a Nebula collab and Arcade Steward proof of concept (#273)
+- 753dc81 2026-09-26 Remove obsolete automatic BRB call
+- 40b4d55 2026-09-26 Keep BRB off until commanded instead of auto-covering Spotlight on health warnings
+- d0d00b2 2026-09-26 Give Stella Nebula controls and an experimental chaos dial (#272)
+- 0bee4ec 2026-09-26 Rotate test BRB live channels on a timer without remounting media
+- a57ec14 2026-09-26 Expose owner BRB live stream test command
+- 2fdd21b 2026-09-26 Add timed community stream BRB test command source
+- 301d553 2026-09-26 Keep visitor chats read-only while allowing bot-owned channel tests
+- 257461c 2026-09-26 Allow shared bot to speak only in its own channel
+- 0608f3c 2026-09-26 Share Lounge controls across tenant bots (#271)
+- bdcfceb 2026-09-26 Validate optional VOD offset before switching Twitch player
+- c4abb1d 2026-09-26 Use persistent Twitch player for VOD-backed BRB clips
+- a8ea251 2026-09-26 Carry Twitch clip VOD references for persistent Lounge player
+- 17e18de 2026-09-26 Start BRB and DM owner with playback evidence after repeated Lounge failure
+- ad8b03d 2026-09-26 Alert owner when queued Lounge music is not healthy in broadcast
+- f402406 2026-09-26 Give Stella a Lounge diagnostic journal and owner crash alerts (#270)
+- 125c5ae 2026-09-26 Reload Twitch clip fallback embeds when Lounge mute toggles
+- 5b44eba 2026-09-26 Make Signal carrier listening silent in visiting chats
+- 5bcdfad 2026-09-26 Route lounge command receipts through SpaceMountain broadcaster
+- 85a4e0e 2026-09-26 Send lounge data as broadcaster and prevent community bot chat output
+- b22af87 2026-09-26 Keep shared StreamWeaverBot listener read-only for reauthorization notices
+- 10e9599 2026-09-26 Let Stella read the live Lounge overlay state (#269)
+- 9c8bfc5 2026-09-26 Give Stella stronger ambient repetition memory (#268)
+- 9686cba 2026-09-26 Add reversible !vol all master level to Lounge audio mix
+- 621891a 2026-09-26 Hide unconfirmed local Twitch echoes from SpaceMountain lounge showcase
+- 77f6ef2 2026-09-26 Route SpaceMountain lounge Stella posts through confirmed chat send
+- 8955406 2026-09-26 Confirm SpaceMountain Stella chat through Twitch before overlay display
+- cdc08d6 2026-09-26 Import lounge Twitch channel for Stella social replies
+- 16f9973 2026-09-26 Send lounge Stella lines to Twitch and speak only from chat listener
+- 80f6aad 2026-09-26 Let Twitch chat receipt drive Stella lounge host TTS
+- 7690714 2026-09-26 Speak Stella lounge lines from the Twitch chat listener once
+- 0d6bf70 2026-09-26 Restore featured chat history while tracing unconfirmed Stella messages
+- 25d3a45 2026-09-26 Show only recent public human chat in Lounge featured panel
+- 2512014 2026-09-26 Make Spotlight a persistent direct Twitch player (#267)
+- 01dbd40 2026-09-26 Remove parallel BRB music player and retain visual fallback
+- 11eb42f 2026-09-26 Honor Overlay Bay source audio trims in Lounge players
+- b060cbf 2026-09-26 Use media volume for BRB theme songs
+- b57e2f2 2026-09-26 Loop channel theme music only during BRB GIF and holding slate
+- a22b073 2026-09-25 Show solid BRB program slate with persistent status banner
+- 1645e65 2026-09-25 Group Lounge BRB, shoutouts and optional chat TTS under broadcast levels
+- 2381f4d 2026-09-25 Use Twitch clip embed fallback in BRB player before community GIFs
+- b625092 2026-09-25 Give Stella direct control of the Lounge audio mixer (#266)
+- 2f37a3b 2026-09-25 Scope Stella broadcast gain to lounge placement only
+- fa44d2b 2026-09-25 Allow broadcast browser source to read lounge volume settings
+- 227246c 2026-09-25 Keep broadcast volume control in the OBS lounge player only
+- c426a3d 2026-09-25 Gate Stella media claims on verified playback state (#265)
+- 0320b46 2026-09-25 Add one broadcast audio mix controlled by owner and moderator chat commands
+- 3e82965 2026-09-25 Make Lounge chat overlay reflect real delivered chat (#264)
+- 3b85a57 2026-09-25 Make Stella ambient conversation feel intentional
+- 3dbcfab 2026-09-25 Allow the public Lounge player to read its BRB fallback playlist
+- 7d072ac 2026-09-25 Keep music under silent BRB GIFs and mute live streams during clips
+- 23c1dfc 2026-09-25 Cover failed Lounge Spotlight with clips and stored GIFs
+- 8028a58 2026-09-25 Stop Stella TTS restart loops
+- 3ccd624 2026-09-25 Use recorded Twitch chat activity for BRB viewer clips
+- dba2c15 2026-09-25 Expire old Stella speech and start listeners at live edge
+- eb659a3 2026-09-25 Pause depleted Eden calls and keep local Qwen off
+- a734cdf 2026-09-25 Restore Stella OpenAI chat and direct voice fallback
+- 93a583f 2026-09-25 Signal BRB audio modes and restore Lounge after clip playback
+- 72e2cff 2026-09-25 Fix Lounge points wallet, BRB Spotlight and Quackverse pack playback
+- 9e79709 2026-09-25 Make Stella host continuity survive failed replies (#261)
+- 84ae1b1 2026-09-25 Keep usable Eden replies and route AI through valid providers
+- a88504e 2026-09-25 Smooth Stella physical reactions in the Lounge (#259)
+- bb5ea96 2026-09-25 Show community Spotlight when Lounge BRB clips are empty
+- 2d823d2 2026-09-25 Recover Lounge shoutout clips after overlay socket drops
+- aba824a 2026-09-25 Cut Lounge social and translation improvements into live StreamWeaver
+- 3ab52c5 2026-09-25 Give Stella room pace, callbacks and producer awareness (#257)
+- da202e9 2026-09-25 Rotate scheduled community events on Lounge billboard
+- 0d3e1d3 2026-09-25 Include upcoming public community events in Lounge status
+- f5f60cf 2026-09-25 Add Stella conversation continuity and behavior decay (#255)
+- 3e436dc 2026-09-25 Trigger production deploy for Stella Lounge transcript
+- 3c0ce7e 2026-09-25 Feed broadcaster transcripts into Stella Lounge context (#254)
+- 8a1fb94 2026-09-25 Give live Stella continuity, interests, energy and silence (#253)
+- b05b326 2026-09-25 Tighten Stella Lounge event wiring (#252)
+- 058ad8c 2026-09-25 Make live Lounge Stella an event-aware co-host (#251)
+- 737cb5c 2026-09-25 Test Lounge vote bump and moderator bump
+- 8a5a15b 2026-09-25 Update Lounge bump command guide
+- 530b201 2026-09-25 Fix Lounge bump commands around current Spotlight
+- c78a6ec 2026-09-24 Open SpaceMountain Lounge Stella runtime path only
+- 5f68e60 2026-09-24 Lock Lounge-only Stella runtime bypass
+- 0be2211 2026-09-24 Restore shared StreamWeaver transport with Lounge-only pass
+- 7725366 2026-09-24 Use Fly private bridge for SpaceMountain broadcaster sends
+- 58a8642 2026-09-24 Let Lounge Stella use live bot runtime without settings gate
+- a2fe24b 2026-09-24 Remove Lounge Stella auth preflight gate
+- aa0f4af 2026-09-24 Remove stale community transport wording
+- 7f4937a 2026-09-24 Document StellaBot87 as SpaceMountain bot transport
+- fa1af7c 2026-09-24 Lock live ChatTag bridge and chat-before-TTS behavior
+- 79f673e 2026-09-24 Use live ChatTag bot client for SpaceMountain broadcaster posts
+- 857e10c 2026-09-24 Keep check-in captions aligned with Stella chat
+- 6d5187a 2026-09-24 Post ambient Stella lines before speaking them
+- da2409e 2026-09-24 Require Stella chat delivery before Lounge TTS
+- 3db2a79 2026-09-24 Lock Lounge shoutouts to full mode
+- 4f9a79e 2026-09-24 Require Stella chat plus TTS for system tenant
+- 387ef94 2026-09-24 Update Stella system routing contracts
+- 18a49b6 2026-09-24 Post Stella system replies to Twitch before Lounge TTS
+- c63013d 2026-09-24 Keep SpaceMountain shoutouts in full chat and TTS mode
+- cabb5d3 2026-09-24 Delegate SpaceMountain broadcaster chat to ChatTag
+- b86ab6c 2026-09-24 Keep SpaceMountain system tenant off community bot
+- 160c811 2026-09-24 Cover Lounge shoutout captions and avatar timing
+- ccdb1cc 2026-09-24 Switch Lounge Stella to talking as TTS starts
+- 2399a11 2026-09-24 Keep shoutout captions with Lounge TTS audio
+- 73e2a7e 2026-09-24 Cover SpaceMountain system send translation
+- cfdd9cd 2026-09-24 Translate SpaceMountain broadcaster sends at Twitch gateway
+- 8bd7c0e 2026-09-24 Route SpaceMountain system sends through bot identity
+- cdacda5 2026-09-24 Restore separate Lounge queues and remove dev auth (#250)
+- 338bb01 2026-09-23 Unblock SpaceMountain Lounge media during development (#249)
+- 450bb59 2026-09-23 Fix SpaceMountain Lounge queue authorization (#248)
+- 5f1e335 2026-09-23 Use one canonical HMO Lounge session everywhere
+- 06aa78b 2026-09-23 Route SpaceMountain Lounge media to live HearMeOut owner (#246)
+- bd6589c 2026-09-23 Allow SpaceMountain broadcaster HMO commands through self echo guard (#245)
+- 1f60c11 2026-09-21 Use the working Lounge request path for Twitch media
+- 0227902 2026-09-21 fix(spotlight): use the outer Twitch parent
+- a38bfa0 2026-09-21 feat(spotlight): expose the Lounge player as clean output
+- 520de04 2026-09-21 Use proven client scope for Lounge media auth
+- 7fb6509 2026-09-21 Fix direct Lounge service auth scope
+- e86d59e 2026-09-21 Send Twitch media directly to Apollo Lounge player
+- f46af2c 2026-09-21 Reconnect Twitch media commands to Apollo Lounge
+- 6a793a0 2026-09-21 Fix Spotlight Lab production build
+- b7fe49b 2026-09-21 Add Twitch spotlight comparison lab
+- 184aadb 2026-09-21 Handle SML !sr and !wr before legacy command actions
+- 7f7c9fa 2026-09-21 Restore complete relay dispatcher source
+- b857be5 2026-09-21 Replace shared bot relay delivery
+- 8386c3a 2026-09-20 Add Stella Lounge host runtime
+- eb68762 2026-09-20 Capture stream audio for shared Bingo
+- ae27560 2026-09-20 Restore ordered full shoutout playback
+- f38bea5 2026-09-20 Allow Lounge cold-start retries to complete
+- 6b64d5e 2026-09-20 Wait for Apollo Lounge media resolution
+- 6197d95 2026-09-20 Generate Mosaic art with OpenAI Images
+- ab8dfbb 2026-09-20 Clarify Apollo Lounge chat confirmations
+- 58e2560 2026-09-20 Read Lounge media status from Apollo
+- 6542a85 2026-09-20 Make Lounge marquee transient on the right
+- 3ddde9c 2026-09-20 Use full activity space and move banner left
+- 8c1f800 2026-09-20 Keep Lounge marquee height fixed
+- da75c51 2026-09-20 Add Lounge clocks and slimmer marquee
+- aaf2d6f 2026-09-20 Trim Lounge footer resting state
+- 31de167 2026-09-20 Keep Lounge thanks message inclusive
+- 8cf975b 2026-09-20 Add contextual Lounge marquee footer
+- 9478161 2026-09-20 Add unified Lounge command directory
+- 9b10f95 2026-09-20 Add vote-controlled Lounge media swap
+- a1030c6 2026-09-20 Auto-fit changing Lounge names and titles
+- aa57529 2026-09-20 Fix Lounge rotations, media controls, and AI fallback
+- 7ea8364 2026-09-20 Show game categories on Lounge cards
+- 3ac55d3 2026-09-20 Refine Lounge live card rotation
+- 244be91 2026-09-20 Rotate active games with live creator
+- 956d3c3 2026-09-20 Use live Twitch roster for Lounge spotlight cards
+- 4660d01 2026-09-20 Repair Lounge dispatcher and chat showcase filters
+- 9fe4746 2026-09-20 Wire live Lounge data and feature all chat
+- 1da3c30 2026-09-20 Test Lounge owner media controls
+- 1579ae0 2026-09-20 Fix Lounge owner media controls
+- 5980b72 2026-09-20 Finish Lounge broadcast surfaces
+- 8a4a073 2026-09-20 Bridge Twitch media commands to HearMeOut
+- f2d7a6c 2026-09-20 Add Lounge gamble, card reveal, and Twitch social modes
+- 16dcb12 2026-09-20 Nudge Lounge Stella up and left
+- 7b113e8 2026-09-20 Expose Lounge activity commands and compact Stella layout
+- 2808eff 2026-09-19 Make Pokemon browser-first outside pack reveals
+- e6633d8 2026-09-19 Keep legacy card-pack overlay route public
+- 6076878 2026-09-19 Add StellaBot87 OAuth and SML runtime handoff
+- 452e402 2026-09-19 Audit enabled root command runtime coverage
+- d7e2af4 2026-09-19 Trigger Dance Party parade from Twitch redeem
+- 03a8e51 2026-09-19 Allow SML broadcaster commands through bot classification
+- 0e5cc52 2026-09-19 Route SpaceMountain Stella mentions directly to Lounge TTS
+- 691b951 2026-09-19 Make SpaceMountainLive system tenant testable
+- b1833a7 2026-09-19 Fix Stella gesture transition gap
+- d542b7b 2026-09-19 Add Stella frame-bound avatar controller
+- 61c521f 2026-09-18 Fix TTS caption overlay client state
+- 6cd3be1 2026-09-18 Add Lounge TTS captions (#221)
+- ec2f828 2026-09-18 Hide TTS controls from public browser sources
+- 56155be 2026-09-18 Keep Stella visible in Space Mountain fallback overlay
+- 3a14ece 2026-09-17 Make StreamWeaver overlays transparent on first paint
+- 32febd2 2026-09-17 Mark StreamWeaver overlay documents before render
+- c5a4325 2026-09-17 Render StreamWeaver overlays without app shell
+- 937ba44 2026-09-11 Serialize Twitch credential writes across browser and bot processes
+- 3d51aba 2026-09-11 Repair Twitch refresh rotation, tenant recovery and shared bot command dispatch
+- 1523e8f 2026-09-11 Merge pull request #220 from Mtman1987/fix/discord-command-sessions
+- 4621180 2026-09-11 Let authenticated service callbacks reach their handlers
+- c09b6c3 2026-09-11 Merge pull request #219 from Mtman1987/fix/commlink-joined-twitch-chats
+- f0c98c1 2026-09-11 Expose registered community Twitch chats in Commlink
+- 32aea6c 2026-09-10 Remove stale legacy cookie copies when restoring embedded sessions
+- a2b7866 2026-09-10 Restore expired browser sessions during SPMT refresh and image requests
+- ed06bfd 2026-09-10 Send completed STT captures once while preserving voices and uncensored transcripts (#218)
+- b71d960 2026-09-10 Restore deployable websocket type dependencies
+- 6a50e37 2026-09-10 Test live Adult Mode OpenAI bridge model
+- b93be75 2026-09-10 Fix live Adult Mode OpenAI bridge model
+- 3a0fb7f 2026-09-09 fix: preserve existing date-fns dependency
+- 7c815ce 2026-09-09 fix: preserve existing lottie dependency
+- 9822fe7 2026-09-09 chore: run OpenAI Qwen fallback during builds
+- ded2e8f 2026-09-09 feat: add OpenAI fallback patch for offline Qwen
+- edf9927 2026-09-09 chore: bridge StreamWeaver Qwen gaps to OpenAI
+- 8769668 2026-09-09 fix: repair one-shot relay workflow
+- e326a07 2026-09-09 chore: apply one-shot natural relay intent fix
+- e268e05 2026-09-09 Restore browser-source TTS and persist public bot speech toggles
+- 2f88218 2026-09-09 Make direct human relay build patch compose with privacy patch
+- 02e2ed8 2026-09-08 Send speech-to-chat through shared HearMeOut room TTS
+- 1e05f64 2026-09-08 Unify public TTS controls with private TTS visual language
+- 677446a 2026-09-08 Open public reply TTS in the shared TTS control panel
+- 9e530dd 2026-09-08 Send public bot reply TTS into shared HearMeOut room
+- ab7bda1 2026-09-08 Apply Discord bot-directed TTS patch during build
+- 00317c3 2026-09-08 Patch Discord bot-directed messages into shared user TTS
+- 29bfd79 2026-09-08 Make HearMeOut room the canonical Discord TTS output
+- 7f5dc91 2026-09-08 Add signed-in user TTS voice preferences API
+- 564b781 2026-09-08 Persist per-user public TTS voice choices
+- 221fc22 2026-09-08 Expose shared HearMeOut room TTS action
+- dce2c21 2026-09-08 Run direct human relay routing patch
+- b398f95 2026-09-08 Patch direct human relay routing at build time
+- 4c50ca0 2026-09-08 Route direct human relays through Discord presence
+- c97d406 2026-09-08 Route unresolved human relays by recent presence
+- 0c127a3 2026-09-08 Support relay presence lookup by Discord name
+- ed1567a 2026-09-08 Remove one-time relay history workflow
+- 81e4edc 2026-09-08 Remove one-time relay history patch helper
+- 63e3f1a 2026-09-08 Keep relay cards compact with history attachment
+- 3d78fc7 2026-09-08 Run compact relay history patch
+- 8956702 2026-09-08 Stage compact relay history attachments
+- 2a86806 2026-09-08 Remove one-time relay hardening workflow
+- 64f7620 2026-09-08 Remove one-time relay hardening helper
+- 52edb3d 2026-09-08 Harden relay destination routing
+- acebdca 2026-09-08 Validate relay changes despite known signal error
+- d751f0c 2026-09-08 Simplify relay hardening runner
+- 929f0b4 2026-09-08 Stage relay hardening patch script
+- 4199067 2026-09-08 Fix one-time relay hardening runner
+- e0594ad 2026-09-08 Run one-time relay routing hardening
+- 0722b24 2026-09-08 Resolve Discord relay identities by user ID
+- 4d6b2c4 2026-09-08 Add Discord relay presence lookup
