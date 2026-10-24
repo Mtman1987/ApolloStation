@@ -83,3 +83,15 @@ test("BRB playlist prefers chatter clips, falls back to community, filters gifs"
   assert.equal(media.clips.length, 1); assert.equal(media.clips[0].user, "friend"); assert.equal(media.clips[0].duration, 10700);
   assert.equal(media.gifs.length, 1);
 });
+
+test("!golive is owner-only and never claims success without confirmation", async () => {
+  const sent = []; let starts = 0;
+  const consumer = new sw.StreamWeaverLoungeChatConsumer({ send: async (m) => { sent.push(m.text); return { providerMessageId: "x" }; } }, undefined, async () => { starts++; return { ok: true, state: "live" }; });
+  const owner = { ...msg("!golive", ["broadcaster"], "spacemountainlive") }; owner.channelId = "spacemountainlive";
+  const mod = { ...msg("!golive", ["moderator"], "mod") };
+  assert.equal(consumer.willHandle(mod), true);
+  await consumer.deliver({ schemaVersion: 1, deliveryId: "g1", consumerId: consumer.id, attempts: 1, message: mod });
+  assert.equal(starts, 0); assert.equal(sent.length, 0);
+  await consumer.deliver({ schemaVersion: 1, deliveryId: "g2", consumerId: consumer.id, attempts: 1, message: owner });
+  assert.equal(starts, 1); assert.match(sent.at(-1), /confirms SpaceMountainLive is live/);
+});

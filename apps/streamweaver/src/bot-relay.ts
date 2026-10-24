@@ -274,6 +274,6 @@ function identityEndpoint(identity: StreamWeaverRelayIdentityV1): RelayEndpointV
 function messageIdentityKeys(message: NormalizedChatMessageV1): string[] { return [...new Set([message.actor.canonicalUserId ? `canonical:${message.actor.canonicalUserId}` : "", `provider:${message.provider}:${message.actor.providerUserId}`].filter(Boolean))]; }
 function endpointKey(value: RelayEndpointV1): string { return value.canonicalUserId ? `canonical:${value.canonicalUserId}` : `provider:${value.provider}:${value.providerUserId}`; }
 function normalizeHandle(value: string): string { return value.trim().replace(/^@/, "").toLowerCase(); }
-function isRelayStopWord(value: string): boolean { return new Set(["me", "them", "him", "her", "it", "everyone", "everybody", "all", "chat"]).has(value); }
+function isRelayStopWord(value: string): boolean { return new Set(["me", "myself", "us", "ourselves", "you", "yourself", "yourselves", "them", "him", "her", "it", "everyone", "everybody", "all", "chat"]).has(value); }
 function id(value: string, name: string): string { if (!value || value.trim() !== value || value.length > 500 || !/^[A-Za-z0-9._:@/-]+$/.test(value)) throw new Error(`${name} is invalid`); return value; }
 function timestamp(value: string, name: string): string { const parsed = Date.parse(value); if (!Number.isFinite(parsed)) throw new Error(`${name} is invalid`); return new Date(parsed).toISOString(); }

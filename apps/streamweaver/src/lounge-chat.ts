@@ -2,6 +2,7 @@ import type { NormalizedChatDeliveryV1, NormalizedChatMessageV1, OutboundChatMes
 import { beginLoungeCommandMenu, consumeLoungeCommandMenuChoice, directLoungeCommandCategory } from "./lounge-command-menu.js";
 import { getLoungeMediaLayout, overrideLoungeMediaLayout, voteLoungeMediaLayout, type LoungeMediaLayoutMode } from "./lounge-media-layout.js";
 import { prepareStellaLoungeReply } from "./stella-lounge-replies.js";
+import { handleSpaceMountainGoLiveMessage, isSpaceMountainGoLiveCommand, requestSpaceMountainGoLive, type SpaceMountainGoLiveResult } from "./spacemountain-golive.js";
 
 /** Tenants that run the 24-hour SpaceMountain Lounge channel. Ported from StreamWeaver chat-dispatcher. */
 export function streamWeaverLoungeTenants(value = process.env.STREAMWEAVER_LOUNGE_TENANTS ?? "spacemountainlive"): Set<string> {
@@ -58,12 +59,20 @@ export async function handleStreamWeaverLoungeCommand(message: Pick<NormalizedCh
 /** Chat-gateway consumer for Lounge tenants. Runs ahead of the generic donor !commands reply. */
 export class StreamWeaverLoungeChatConsumer {
   readonly id = "streamweaver.lounge" as const;
-  constructor(private readonly egress: StreamWeaverLoungeEgressV1, private readonly tenants = streamWeaverLoungeTenants()) {}
+  constructor(private readonly egress: StreamWeaverLoungeEgressV1, private readonly tenants = streamWeaverLoungeTenants(), private readonly goLive: () => Promise<SpaceMountainGoLiveResult> = requestSpaceMountainGoLive) {}
   /** True when this consumer owns the message, so other consumers should skip it. */
-  willHandle(message: NormalizedChatMessageV1): boolean { return !message.actor.isBot && isStreamWeaverLoungeTenant(message.tenantId, this.tenants) && LOUNGE_PATTERN.test(message.text.trim()); }
+  willHandle(message: NormalizedChatMessageV1): boolean { return !message.actor.isBot && isStreamWeaverLoungeTenant(message.tenantId, this.tenants) && (LOUNGE_PATTERN.test(message.text.trim()) || (message.provider === "twitch" && isSpaceMountainGoLiveCommand(message.text, message.channelId))); }
   accepts(message: NormalizedChatMessageV1): boolean { return this.willHandle(message); }
   async deliver(delivery: NormalizedChatDeliveryV1): Promise<void> {
     const m = delivery.message;
+    if (m.provider === "twitch" && isSpaceMountainGoLiveCommand(m.text, m.channelId)) {
+      let n = 0;
+      await handleSpaceMountainGoLiveMessage({ message: m.text, channel: m.channelId, tenantId: m.tenantId, username: m.actor.username, userId: m.actor.providerUserId, self: false, mirrored: Boolean(m.sourceChannelId && m.sourceChannelId !== m.channelId), botAuthored: m.actor.isBot, broadcasterBadge: m.actor.roles.includes("broadcaster") }, {
+        start: this.goLive,
+        reply: (text) => this.egress.send({ schemaVersion: 1, tenantId: m.tenantId, provider: m.provider, connectionId: m.connectionId, channelId: m.channelId, text, idempotencyKey: `streamweaver-golive:${delivery.deliveryId}:${n++}`, replyToMessageId: m.messageId }),
+      });
+      return;
+    }
     let replies: Reply[];
     try { replies = await handleStreamWeaverLoungeCommand(m); } catch (error) { replies = [{ text: `❌ Lounge command failed: ${error instanceof Error ? error.message : String(error)}`, as: "bot" }]; }
     let index = 0;
