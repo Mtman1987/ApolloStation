@@ -32,7 +32,9 @@ export class StreamWeaverTwitchEventSub {
     if(this.closed)return;
     const parsed=new URL(address);if(parsed.protocol!=="wss:"||parsed.hostname!=="eventsub.wss.twitch.tv")throw new Error("Invalid EventSub reconnect address");
     const grant=await this.grants.getGrant({tenantId,capability:"events:read"});if(grant.status!=="ready")throw new Error(grant.reason);
-    if(this.closed)return;
+    // A config change can retire this connection while grant resolution is
+    // awaiting I/O. Never open a socket for a state that reconcile replaced.
+    if(this.closed||this.connections.get(tenantId)!==state)return;
     const socket=this.sockets(address);state.socket=socket;state.connecting=false;let lastMessage=Date.now(),heartbeat:ReturnType<typeof setInterval>|undefined;
     const failed=()=>{if(heartbeat)clearInterval(heartbeat);if(state.socket===socket){delete state.socket;state.retryAt=Date.now()+10_000;}socket.close();};
     heartbeat=setInterval(()=>{if(Date.now()-lastMessage>30000)failed()},5000);heartbeat.unref();
