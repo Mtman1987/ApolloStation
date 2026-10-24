@@ -1,3 +1,4 @@
+import { StreamWeaverLoungeChatConsumer } from "./lounge-chat.js";
 import { StreamWeaverBotActionReplies } from "./bot-action-replies.js";
 import { normalizeTextForTTS } from "./tts-text.js";
 import {activeRideLookup} from "./ride-runtime.js";
@@ -123,7 +124,9 @@ export class StreamWeaverProviderRuntime {
     this.botActionReplies = new StreamWeaverBotActionReplies(options.databasePath, options.nowMs);
     const twitchChannelAllowed = (message: NormalizedChatMessageV1) => message.provider !== "twitch" || (options.connections ?? []).some(connection => connection.tenantId === message.tenantId && connection.provider === "twitch" && connection.desired && connection.channelId === message.channelId);
     const botActions = options.botActions ? new StreamWeaverBotActionConsumer(options.botActions, egress, this.botActionReplies, twitchChannelAllowed, options.allowTwitchMedia !== false) : undefined;
-    const priorGate = { willHandle: (message: NormalizedChatMessageV1) => relay.willHandle(message) || Boolean(botActions?.willHandle(message)) };
+    const lounge = new StreamWeaverLoungeChatConsumer(egress);
+    const loungeGate = <T extends StreamWeaverProviderConsumerV1>(consumer: T): T => { const accepts = consumer.accepts.bind(consumer); consumer.accepts = (message: NormalizedChatMessageV1) => !lounge.willHandle(message) && accepts(message); return consumer; };
+    const priorGate = { willHandle: (message: NormalizedChatMessageV1) => lounge.willHandle(message) || relay.willHandle(message) || Boolean(botActions?.willHandle(message)) };
     const secureChoiceExecutor={execute:(invocation:import("./donor-command-runtime.js").StreamWeaverDonorCommandInvocationV1)=>{
       if(invocation.command.donorId!==STREAMWEAVER_SECURE_CHOICE_DONOR_ID)return undefined;
       const execution=this.flows.execution<unknown>(invocation.tenantId,invocation.deliveryId),action=secureChoiceActionFromExecution(execution);
@@ -184,7 +187,7 @@ export class StreamWeaverProviderRuntime {
       const userId=message.actor.canonicalUserId??await identities.resolve({tenantId:message.tenantId,provider:message.provider,providerUserId:message.actor.providerUserId,username:message.actor.username,displayName:message.actor.displayName??message.actor.username});
       awardStreamWeaverProviderEvent(this.community,this.economy,{tenantId:message.tenantId,event:`youtube:${message.rich!.eventType}`,sourceId:JSON.stringify([message.provider,message.connectionId,message.channelId,message.messageId]),userId:userId??""});
     }};
-    this.consumers = [eventAwards,relay, ...(botActions ? [botActions] : []), ...(options.allowAssistant === false ? [] : [persona]), flows, commands, economy];
+    this.consumers = [eventAwards,relay, lounge, ...(botActions ? [loungeGate(botActions)] : []), ...(options.allowAssistant === false ? [] : [persona]), loungeGate(flows), loungeGate(commands), loungeGate(economy)];
     this.replies = new StreamWeaverPersonaReplyReconciler(this.summons, options.client, egress, { ...(options.now ? { now: options.now } : {}), ...(options.retryDelayMs ? { retryDelayMs: options.retryDelayMs } : {}) });
   }
   consumerIds() { return this.consumers.map((consumer) => consumer.id); }
