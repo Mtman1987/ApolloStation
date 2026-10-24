@@ -152,7 +152,8 @@ export class OverlayBayParityController {
     return `<section class="ob-outputs"><details data-ob-section="output-links"><summary>Overlay URLs</summary>${named}<details data-ob-section="temporary-grants"><summary>Temporary app/widget grants</summary>${items || `<p>No temporary grants.</p>`}</details></details></section>`;
   }
 
-  private bind(bay: HTMLElement) {\n    bay.querySelector<HTMLElement>("[data-ob-avatar-studio]")?.addEventListener("click", () => { window.open("/avatar-studio", "_blank", "noopener,noreferrer"); });
+  private bind(bay: HTMLElement) {
+    bay.querySelector<HTMLElement>("[data-ob-avatar-studio]")?.addEventListener("click", () => { window.open("/avatar-studio", "_blank", "noopener,noreferrer"); });
     bay.querySelector<HTMLElement>("[data-ob-refresh-widgets]")?.addEventListener("click",()=>void this.discoverWidgets(bay));
     bay.querySelectorAll<HTMLElement>("[data-ob-broadcast]").forEach((node) => node.onclick = () => this.newBroadcastScene(bay));
     bay.querySelectorAll<HTMLElement>("[data-ob-new]").forEach((node) => node.onclick = () => this.newScene(bay));
