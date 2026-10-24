@@ -1,4 +1,5 @@
 import {presentCheckin} from "./checkin-presentation.js";
+import { normalizeTextForTTS } from "./tts-text.js";
 import type { SpmtClient } from "@spmt/sdk";
 import type { OutboundChatMessageV1 } from "@spmt/contracts";
 import { StreamWeaverCommunityStore } from "./community-store.js";
@@ -34,7 +35,7 @@ export class StreamWeaverPresentationRuntime {
       clips:{pick:async({tenantId,user})=>{const clip=(await options.twitch.clips(tenantId,user.id))[0];return clip?{url:clip.embed_url,thumbnailUrl:clip.thumbnail_url,durationSeconds:clip.duration}:undefined;}},
       effects:{execute:async({tenantId,effect,payload})=>{
         const key=`shoutout:${payload.invocationId}:${effect}`;
-        if(effect==="tts") {const userId=options.personas.get(tenantId)?.ownerCanonicalUserId;if(!userId)throw new Error("Configure the persona owner before playing spoken shoutouts");await options.client.createExecutionJob(tenantId,{ownerAppId:"streamweaver",executionOwner:"stellar-core",capabilityId:"stellar.speech.synthesize.v1",billedUserId:userId,meteredResource:"hosted-worker-minutes",usageQuantity:1,executionTarget:"sprite",meteringTarget:"hosted",input:{kind:"stellar.speech.request.v1",text:String(payload.text),voice:options.shoutoutStore.settings(tenantId).voice,remember:false,mediaVisibility:"public"}},key);return;}
+        if(effect==="tts") {const userId=options.personas.get(tenantId)?.ownerCanonicalUserId;if(!userId)throw new Error("Configure the persona owner before playing spoken shoutouts");const spokenText=normalizeTextForTTS(String(payload.text));if(!spokenText)throw new Error("There is no speakable text after removing emotes and emoji");await options.client.createExecutionJob(tenantId,{ownerAppId:"streamweaver",executionOwner:"stellar-core",capabilityId:"stellar.speech.synthesize.v1",billedUserId:userId,meteredResource:"hosted-worker-minutes",usageQuantity:1,executionTarget:"sprite",meteringTarget:"hosted",input:{kind:"stellar.speech.request.v1",text:spokenText,voice:options.shoutoutStore.settings(tenantId).voice,remember:false,mediaVisibility:"public"}},key);return;}
         if(effect==="clip"||effect==="overlay-greeting"){options.store.enqueue(tenantId,key,effect==="clip"?"streamweaver.media.playback.v1":"streamweaver.welcome.v1",effect==="clip"?{kind:"shoutout-player",mediaUrl:payload.url,text:payload.user,durationMs:Number(payload.durationSeconds)*1000}:{text:payload.text,displayName:payload.displayName});return;}
         if(effect==="discord"&&!options.shoutoutStore.settings(tenantId).discordEnabled)return;
         const provider=effect==="discord"?"discord":"twitch",connection=options.connections.find(c=>c.tenantId===tenantId&&c.provider===provider&&c.desired);
@@ -48,7 +49,7 @@ export class StreamWeaverPresentationRuntime {
       if(task.body.action==="checkin-greeting")await presentCheckin(this.options,task);
       else if(task.body.action==="say") {
         const userId=this.options.personas.get(task.tenant)?.ownerCanonicalUserId;if(!userId)throw new Error("Configure the persona owner before speaking on stream");
-        await this.options.client.createExecutionJob(task.tenant,{ownerAppId:"streamweaver",executionOwner:"stellar-core",capabilityId:"stellar.speech.synthesize.v1",billedUserId:userId,meteredResource:"hosted-worker-minutes",usageQuantity:1,executionTarget:"sprite",meteringTarget:"hosted",input:{kind:"stellar.speech.request.v1",text:String(task.body.text),voice:String(task.body.voice||"deepgram:aura-2:athena"),remember:false,mediaVisibility:"public"}},`stream-say:${task.id}`);
+        const spokenText=normalizeTextForTTS(String(task.body.text));if(!spokenText)throw new Error("There is no speakable text after removing emotes and emoji");await this.options.client.createExecutionJob(task.tenant,{ownerAppId:"streamweaver",executionOwner:"stellar-core",capabilityId:"stellar.speech.synthesize.v1",billedUserId:userId,meteredResource:"hosted-worker-minutes",usageQuantity:1,executionTarget:"sprite",meteringTarget:"hosted",input:{kind:"stellar.speech.request.v1",text:spokenText,voice:String(task.body.voice||"deepgram:aura-2:athena"),remember:false,mediaVisibility:"public"}},`stream-say:${task.id}`);
       }else if(task.body.action==="shoutout")await this.shoutouts.manual({tenantId:task.tenant,invocationId:task.id,targetLogin:String(task.body.username),source:task.body.source==="auto-welcome"?"auto-welcome":"manual",skipCooldown:task.body.source!=="auto-welcome"});
       else if(task.body.action==="voice-shoutout") {
         const channel=this.options.connections.find(c=>c.tenantId===task.tenant&&c.provider==="twitch"&&c.desired);
