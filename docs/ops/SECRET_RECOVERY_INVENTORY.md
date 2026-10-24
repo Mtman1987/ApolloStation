@@ -27,6 +27,17 @@ Potential recovery files and backups must be inventoried privately. Do not recor
 
 The repository's existing avatar promotion workflow reads `STREAMWEAVER_MESHY_API_KEY` and `STREAMWEAVER_KEENTOOLS_API_KEY`; the standalone avatar build workflow instead reads `MESHY_API_KEY`. These are different secret names and scopes. Do not rename or overwrite existing production secrets to satisfy the standalone workflow.
 
+## Existing encrypted recovery code is not a credential vault
+
+The repository's `packages/recovery-core` `FileRecoveryVault` encrypts application-consistent SQLite recovery snapshots with AES-256-GCM and verifies integrity before restore. It is designed for database recovery points, not for storing, retrieving, rotating, or distributing individual provider/API credentials. Do not repurpose it as a general secret manager or place raw credentials in recovery manifests/logs.
+
+## Current operational status
+
+- A code-level inventory has identified consumers and distinct secret names; this does not establish that the corresponding GitHub Actions or Fly secrets are present or valid.
+- Plaintext recovery material was found in private user-provided files during the review. Values were not copied into this repository or the audit. Keep those files intact until each needed value is copied into a proper private password manager/secret vault and verified.
+- No connected credential-vault integration or authenticated Fly secret-metadata access was available in this review. Therefore no credential has yet been migrated, validated against a live consumer, or safely retired.
+- Do not create or overwrite GitHub Actions secrets with guessed values. In particular, `FLY_TOKEN` and `FLY_API_TOKEN` are not assumed interchangeable, and `MESHY_API_KEY` is separate from the existing `STREAMWEAVER_MESHY_API_KEY` / `STREAMWEAVER_KEENTOOLS_API_KEY` pair.
+
 ## Recovery workflow
 
 1. Inventory secret names and consumers from source code and workflow files; never dump values.
