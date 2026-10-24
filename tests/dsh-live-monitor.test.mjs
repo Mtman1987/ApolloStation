@@ -69,6 +69,34 @@ test("poll replay, restart, and tenants cannot duplicate or bleed live state", (
   } finally { cleanup(value); }
 });
 
+test("system-owned SpaceMountainLive stays in live tracking but is excluded from Community Spotlight rotation", () => {
+  const value = setup();
+  const system = { canonicalUserId: "system-spacemountain", discordUserId: "discord-system", twitchLogin: "spacemountainlive", group: "Everyone Else", shoutoutChannelId: "channel-community", spotlightEligible: false };
+  try {
+    const result = value.monitor.reconcile({
+      schemaVersion: 1, tenantId: "tenant-a", pollId: "system-only", observedAt: iso(0),
+      members: [system], streams: [stream("spacemountainlive", "stream-system")]
+    });
+    assert.equal(result.liveCount, 1);
+    assert.equal(result.actions.some(action => action.type === "spotlight.update"), false);
+    assert.equal(result.actions.some(action => action.type === "shoutout.create"), true);
+    assert.equal(value.monitor.getLiveMembers("tenant-a").length, 1);
+  } finally { cleanup(value); }
+});
+
+test("spotlight rotation ignores ineligible system channels when eligible creators are live", () => {
+  const value = setup();
+  const system = { canonicalUserId: "system-spacemountain", discordUserId: "discord-system", twitchLogin: "spacemountainlive", group: "Everyone Else", shoutoutChannelId: "channel-community", spotlightEligible: false };
+  try {
+    const result = value.monitor.reconcile({
+      schemaVersion: 1, tenantId: "tenant-a", pollId: "system-and-creator", observedAt: iso(0),
+      members: [system, alpha], streams: [stream("spacemountainlive", "stream-system"), stream("alpha", "stream-alpha")]
+    });
+    assert.equal(result.liveCount, 2);
+    assert.equal(result.actions.find(action => action.type === "spotlight.update")?.member.canonicalUserId, "user-alpha");
+  } finally { cleanup(value); }
+});
+
 test("Discord output actions survive delivery failure and retry with stable idempotency keys", async () => {
   const value = setup();
   let failing = true;

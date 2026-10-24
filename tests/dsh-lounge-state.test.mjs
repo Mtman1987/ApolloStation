@@ -6,10 +6,10 @@ import test from 'node:test';
 import { DshLoungeStateStore } from '../apps/discord-stream-hub/dist/lounge-state.js';
 import { DSH_SYSTEM_LIVE_CHANNELS, isDshSystemOwnedTwitchLogin } from '../apps/discord-stream-hub/dist/system-live-channels.js';
 
-test('SpaceMountainLive is a spotlight-eligible system Lounge but never a Raid Pile target', () => {
+test('SpaceMountainLive is excluded from Community Spotlight but remains the Lounge continuity fallback', () => {
   const lounge = DSH_SYSTEM_LIVE_CHANNELS.find(channel => channel.twitchLogin === 'spacemountainlive');
   assert.ok(lounge);
-  assert.equal(lounge.spotlightEligible, true);
+  assert.equal(lounge.spotlightEligible, false);
   assert.equal(lounge.raidPileTargetEligible, false);
   assert.equal(lounge.raidTrainFallbackEligible, true);
   assert.equal(lounge.virtualHost, 'stella');

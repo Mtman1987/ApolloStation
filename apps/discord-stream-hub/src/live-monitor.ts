@@ -10,6 +10,8 @@ export interface DshLiveMemberV1 {
   twitchLogin: string;
   group: DshMemberGroupV1;
   shoutoutChannelId: string;
+  /** Whether this tracked member may enter ordinary Community Spotlight rotation. */
+  spotlightEligible?: boolean;
   bannerUrl?: string;
   partnerDiscordUrl?: string;
 }
@@ -93,12 +95,13 @@ export class SqliteDshLiveMonitor {
         }
       }
       const spotlight = this.getSpotlight(poll.tenantId);
-      if (!live.length || poll.spotlightEnabled === false) {
+      const spotlightCandidates = live.filter((item) => item.member.spotlightEligible !== false);
+      if (!spotlightCandidates.length || poll.spotlightEnabled === false) {
         if (spotlight) actions.push({ schemaVersion: 1, type: "spotlight.clear", idempotencyKey: "dsh:spotlight.clear:" + poll.tenantId + ":" + spotlight.userId + ":" + poll.pollId, tenantId: poll.tenantId, priorUserId: spotlight.userId });
         this.db.prepare("DELETE FROM spotlight WHERE tenant_id=?").run(poll.tenantId);
-      } else if (!spotlight || Date.parse(poll.observedAt) - Date.parse(spotlight.rotatedAt) >= this.spotlightRotationMs || !live.some((item) => item.member.canonicalUserId === spotlight.userId)) {
-        const index = live.length === 1 ? 0 : (spotlight?.nextIndex ?? 0) % live.length;
-        const selected = live[index]!;
+      } else if (!spotlight || Date.parse(poll.observedAt) - Date.parse(spotlight.rotatedAt) >= this.spotlightRotationMs || !spotlightCandidates.some((item) => item.member.canonicalUserId === spotlight.userId)) {
+        const index = spotlightCandidates.length === 1 ? 0 : (spotlight?.nextIndex ?? 0) % spotlightCandidates.length;
+        const selected = spotlightCandidates[index]!;
         const nextIndex = index + 1;
         actions.push({ schemaVersion: 1, type: "spotlight.update", idempotencyKey: "dsh:spotlight.update:" + poll.tenantId + ":" + selected.member.canonicalUserId + ":" + poll.pollId, tenantId: poll.tenantId, member: selected.member, stream: selected.stream, ...(spotlight ? { priorUserId: spotlight.userId } : {}), nextIndex, rotatesEveryMs: this.spotlightRotationMs });
         this.db.prepare("INSERT INTO spotlight(tenant_id,user_id,next_index,rotated_at,body) VALUES(?,?,?,?,?) ON CONFLICT(tenant_id) DO UPDATE SET user_id=excluded.user_id,next_index=excluded.next_index,rotated_at=excluded.rotated_at,body=excluded.body").run(poll.tenantId, selected.member.canonicalUserId, nextIndex, poll.observedAt, JSON.stringify({ member: selected.member, stream: selected.stream }));
