@@ -10,6 +10,7 @@ import {
   SqliteNebulaTagStore,
   validateNebulaArcadeProviderConfig,
   validateNebulaArcadeProviderEnvironment,
+  SqliteNebulaMosaicStore, claimNextMosaicRequest, installMosaicQueueTemplate, MOSAIC_CELL_COUNT,
 } from "../apps/nebula-arcade/dist/index.js";
 import { SupervisedChatGatewayService, validateChatGatewayWorkerEnvironment } from "../apps/chat-gateway/dist/service.js";
 import { createSpmtService } from "../apps/spmt-service/dist/index.js";
@@ -41,7 +42,7 @@ function withRuntime(work, options = {}) {
   const sent = [];
   const simulationEvents = [];
   const client = { publishEvent: async () => ({}), awardXp: async () => ({}), publishSimulationRoomEvent: async (tenantId, input, idempotencyKey) => { simulationEvents.push({ tenantId, input, idempotencyKey }); return {}; } };
-  const runtime = new NebulaArcadeProviderRuntime({ databasePath, config: validateNebulaArcadeProviderConfig(config), client, simulation: options.simulation === true, egress: { send: async (item) => { sent.push(item); return { providerMessageId: `out-${sent.length}` }; } } });
+  const runtime = new NebulaArcadeProviderRuntime({ databasePath, config: validateNebulaArcadeProviderConfig(options.config ?? config), client, simulation: options.simulation === true, egress: { send: async (item) => { sent.push(item); return { providerMessageId: `out-${sent.length}` }; } } });
   return Promise.resolve(work({ runtime, databasePath, sent, simulationEvents })).finally(() => { runtime.close(); rmSync(directory, { recursive: true, force: true }); });
 }
 
@@ -158,4 +159,28 @@ test("SPMT gives Nebula app events, XP, runtime and job scopes without provider 
     assert.throws(() => service.auth.authorize(token, "providers:grant", "tenant-a"), /scope/i);
     assert.throws(() => service.auth.authorize(token, "commlink:live:write", "tenant-a"), /scope/i);
   } finally { await service.close(); rmSync(directory, { recursive: true, force: true }); }
+});
+
+test("Nebula provider routes PixelBattle Mosaic chat commands into durable channel state", async () => {
+  const activeConfig = structuredClone(config);
+  activeConfig.tenants[0].channels[0].enabledGameIds.push("pixelbattle");
+  await withRuntime(async ({ runtime, databasePath, sent }) => {
+    await runtime.consumers[0].deliver(delivery("mosaic-request", "!mosaic green garden"));
+    assert.match(sent[0].text, /queued at position 1/);
+    assert.match(sent[0].text, /runner is not configured/);
+
+    const store = new SqliteNebulaMosaicStore(databasePath);
+    store.update("tenant-a", "apollo", (state) => {
+      const request = claimNextMosaicRequest(state, Date.parse(at(1)));
+      assert.ok(request);
+      installMosaicQueueTemplate(state, request.id, Array(MOSAIC_CELL_COUNT).fill("G"), { provider: "test" }, Date.parse(at(2)));
+    }, Date.parse(at(2)));
+    store.close();
+
+    await runtime.consumers[0].deliver(delivery("mosaic-paint", "!mosaic paint A1 green"));
+    assert.match(sent.at(-1).text, /1 cell\(s\) painted/);
+    const recovered = new SqliteNebulaMosaicStore(databasePath);
+    assert.equal(recovered.get("tenant-a", "apollo").current?.painted[0], "G");
+    recovered.close();
+  }, { config: activeConfig });
 });

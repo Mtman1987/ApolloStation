@@ -16,6 +16,9 @@ import { SqliteNebulaGameActionStore, validateNebulaGameAction } from "./game-ac
 import { SqliteNebulaGameMixStore, type NebulaGameMixV1 } from "./game-mixes.js";
 import { getNebulaGameStats, joinNebulaGame, leaveNebulaGame, normalizeNebulaPlayerId, resolveNebulaChannelGameIds, setNebulaChannelGameRunning } from "./game-runtime.js";
 import { SqliteNebulaGameRuntimeStore } from "./game-runtime-store.js";
+import { SqliteNebulaMosaicStore } from "./mosaic-store.js";
+import { mosaicPublicSnapshot } from "./mosaic-core.js";
+import { NEBULA_MOSAIC_OVERLAY_JS, renderNebulaMosaicOverlay } from "./mosaic-overlay.js";
 import { buildNebulaGameplayManifest, NEBULA_GAMEPLAY_SHOWCASE_CSS, renderNebulaGameplayCapturePage } from "./gameplay-showcase.js";
 import { createNebulaArcadeSandboxHost as createNebulaArcadeCoreHost, validateNebulaArcadeSandboxEnvironment, type NebulaArcadeSandboxHostOptions } from "./nebula-arcade-core-server.js";
 
@@ -32,6 +35,8 @@ export function createNebulaArcadeSandboxHost(options: NebulaArcadeSandboxHostOp
   const mixes = new SqliteNebulaGameMixStore(options.databasePath);
   const activity = new SqliteNebulaArcadeActivityStore(options.databasePath);
   const policy = new SqliteNebulaTagExperienceStore(options.databasePath);
+  const mosaics = new SqliteNebulaMosaicStore(options.databasePath);
+  const allowedMosaicChannels = new Set([options.channelId, ...(options.channels ?? [])].map((channel) => String(channel).replace(/^#/, "").trim().toLowerCase()));
   const controls=new NebulaControlSurface(options);
   let corePort = 0;
 
@@ -57,9 +62,21 @@ export function createNebulaArcadeSandboxHost(options: NebulaArcadeSandboxHostOp
       if(request.method==="GET"&&url.pathname==="/assets/nebula-arcade/control.js")return javascript(response,NEBULA_CONTROL_JS);
       if(request.method==="GET"&&url.pathname===APP_PATH&&( ["controls","stats","art"].includes(url.searchParams.get("view")||"") || url.searchParams.get("view")==="game"&&["bingo","quackverse"].includes(url.searchParams.get("game")||"")))return html(response,200,renderNebulaControlPage(url.searchParams.get("view")||"game",url.searchParams.get("game")||"quackverse"));
       if (request.method === "GET" && url.pathname === "/assets/nebula-arcade/widgets/thirdparty/three.min.js") { response.writeHead(200, { "content-type":"text/javascript; charset=utf-8", "cache-control":"public,max-age=86400", "access-control-allow-origin":"*" }); response.end(nebulaThreeJs()); return; }
+      if (request.method === "GET" && url.pathname === "/assets/nebula-arcade/mosaic-overlay.js") return javascript(response, NEBULA_MOSAIC_OVERLAY_JS);
+      if (request.method === "GET" && url.pathname === "/overlay/mosaic") {
+        const channel = String(url.searchParams.get("channel") || options.channelId).replace(/^#/, "").trim().toLowerCase();
+        if (!allowedMosaicChannels.has(channel)) throw new NebulaHostError(404, "Mosaic channel not found");
+        return html(response, 200, renderNebulaMosaicOverlay(channel));
+      }
+      if (request.method === "GET" && url.pathname === "/v1/nebula/mosaic/snapshot") {
+        const channel = String(url.searchParams.get("channel") || options.channelId).replace(/^#/, "").trim().toLowerCase();
+        if (!allowedMosaicChannels.has(channel)) throw new NebulaHostError(404, "Mosaic channel not found");
+        return json(response, 200, mosaicPublicSnapshot(mosaics.get(options.tenantId, channel)));
+      }
       if (request.method === "GET" && url.pathname === "/v1/nebula/game-inputs") { const feed=inputs.list(options.tenantId,options.channelId); return json(response,200,{inputs:feed,tabletop:tabletop.snapshot(options.tenantId,options.channelId)}); }
       if (request.method === "GET" && url.pathname === "/assets/nebula-arcade/widget-stage.js") return javascript(response,NEBULA_WIDGET_STAGE_JS);
       if (request.method === "GET" && url.pathname.startsWith("/assets/nebula-arcade/widgets/")) { const id=url.pathname.split("/").pop()?.replace(/\.html$/,"")||""; if(![...NEBULA_IMPORTED_WIDGET_IDS,"bingo","quackverse"].includes(id))return html(response,404,"Game not found");return widgetHtml(response,applyNebulaWidgetSettings(renderNebulaGameWidget(id),id,controls.network.settings(options.tenantId,options.channelId,id))); }
+      if (request.method === "GET" && url.pathname === "/overlay/arcade/pixelbattle") return html(response, 200, renderNebulaMosaicOverlay(options.channelId));
       if (request.method === "GET" && url.pathname.startsWith("/overlay/arcade/")) { const id = url.pathname.split("/").pop()||""; if(!GAME_IDS.has(id))return html(response,404,"Game not found");return html(response,200,renderNebulaArcadeStage(false,[id])); }
       if (request.method === "GET" && url.pathname === "/overlay/arcade") return html(response,200,renderNebulaArcadeStage(false));
       if (request.method === "GET" && url.pathname === "/assets/nebula-game-mix.js") return javascript(response, GAME_MIX_CLIENT_JS);
@@ -99,7 +116,7 @@ export function createNebulaArcadeSandboxHost(options: NebulaArcadeSandboxHostOp
   return {
     server,
     async listen() { await core.listen(); const address = core.server.address(); if (!address || typeof address === "string") throw new Error("Nebula Arcade core host did not bind a TCP port"); corePort = address.port; await listen(server, options.port ?? 8080, options.host ?? "0.0.0.0"); },
-    async close() { if (server.listening) await close(server); controls.close(); activity.close(); policy.close(); mixes.close(); actions.close(); runtime.close(); inputs.close(); tabletop.close(); await core.close(); },
+    async close() { if (server.listening) await close(server); controls.close(); activity.close(); policy.close(); mosaics.close(); mixes.close(); actions.close(); runtime.close(); inputs.close(); tabletop.close(); await core.close(); },
   };
 }
 

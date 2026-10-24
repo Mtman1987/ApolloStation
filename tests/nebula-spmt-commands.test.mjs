@@ -84,3 +84,26 @@ test('Word Chain widget bridge accepts only SPMT-prefixed answers and strips the
  listeners.message({source:frame.contentWindow,data:{type:'spmt.nebula.ready'}});
  listeners.message({source:parent,origin:'https://spmt.example',data:{type:'spmt.simulation.arcade',inputs:['spmt orange','spmt word chain elephant','!pack','orange is my favorite'].map((message,index)=>({id:String(index),gameIds:['wordchain'],message}))}});assert.deepEqual(delivered.map(item=>item.input.message),['orange','elephant']);
 });
+
+
+test('advertised continuation-game verbs preserve their payloads for the game input feed',async()=>{
+ const s=setup(['chatgarden','colorsymphony','emojirain','memorylane','phraseguess','rhythmpulse','wordchain','wordstorm']);
+ try{
+  for(const game of ['wordchain','wordstorm','chatgarden','colorsymphony','emojirain','memorylane','phraseguess','rhythmpulse'])await s.send(`spmt ${game} join`);
+  const before=s.feed.list('tenant-a').length;
+  for(const command of ['spmt wordchain chain orange','spmt wordstorm storm galaxy','spmt chatgarden garden rose','spmt colorsymphony symphony blue','spmt emojirain rain 🎉','spmt memorylane memory summer camp','spmt phraseguess phrase open sesame','spmt rhythmpulse rhythm heartbeat'])await s.send(command);
+  const inputs=s.feed.list('tenant-a').slice(before);
+  assert.equal(inputs.length,8);
+  assert.deepEqual(inputs.map(input=>input.gameIds[0]),['wordchain','wordstorm','chatgarden','colorsymphony','emojirain','memorylane','phraseguess','rhythmpulse']);
+  assert.ok(inputs.every(input=>!/^Unsupported /.test(input.message)));
+ }finally{s.close()}
+});
+test('continuation widget aliases are stripped while preserving the submitted game payload',()=>{
+ const delivered=[],listeners={},frames=['wordchain','wordstorm','chatgarden','colorsymphony','emojirain','memorylane','phraseguess','rhythmpulse'].map(game=>({dataset:{game},contentWindow:{postMessage(value){delivered.push({game,...value})}},hidden:true}));
+ const parent={postMessage(){}},selector={value:'auto',addEventListener(){}},output={dataset:{},textContent:''};
+ vm.runInNewContext(NEBULA_WIDGET_STAGE_JS,{window:{parent,addEventListener(type,fn){listeners[type]=fn}},document:{body:{dataset:{simulation:'true'}},querySelectorAll:()=>frames,getElementById:id=>id==='game-select'?selector:output},location:{origin:'https://spmt.example'},setTimeout(){},clearTimeout(){}});
+ for(const frame of frames)listeners.message({source:frame.contentWindow,data:{type:'spmt.nebula.ready'}});
+ const commands=['spmt wordchain chain orange','spmt wordstorm storm galaxy','spmt chatgarden garden rose','spmt colorsymphony symphony blue','spmt emojirain rain 🎉','spmt memorylane memory summer camp','spmt phraseguess phrase open sesame','spmt rhythmpulse rhythm heartbeat'];
+ listeners.message({source:parent,origin:'https://spmt.example',data:{type:'spmt.simulation.arcade',inputs:commands.map((message,index)=>({id:String(index),gameIds:[['wordchain','wordstorm','chatgarden','colorsymphony','emojirain','memorylane','phraseguess','rhythmpulse'][index]],message}))}});
+ assert.deepEqual(delivered.map(item=>item.input.message),['orange','galaxy','rose','blue','🎉','summer camp','open sesame','heartbeat']);
+});
