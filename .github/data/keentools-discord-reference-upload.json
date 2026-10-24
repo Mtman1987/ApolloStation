@@ -1,5 +1,49 @@
 {
   "project": "Neon Lock In Gamer",
+  "source": "Discord message 1563578985068105808; user-supplied current attachment URLs",
+  "messages": [
+    {
+      "message_id": "1563578985068105808",
+      "attachments": [
+        {
+          "filename": "01_front.png",
+          "url": "https://cdn.discordapp.com/attachments/1476540488147533895/1563578979099877396/01-front.png?ex=6ade23e6&is=6adcd266&hm=b69df82bfdfaff48e0f12cf8f3bfe86838a3e00f7a57b63c0ee0fec1d4ff0607&"
+        },
+        {
+          "filename": "02_front_threequarter_left.png",
+          "url": "https://cdn.discordapp.com/attachments/1476540488147533895/1563578979762573514/02-front-right.png?ex=6ade23e6&is=6adcd266&hm=1cecd6a7840c5e14b250dd95c2c165c918ebf20ef1f01ed78beb6f7eaa7b366e&"
+        },
+        {
+          "filename": "03_left.png",
+          "url": "https://cdn.discordapp.com/attachments/1476540488147533895/1563578980232331405/03-right.png?ex=6ade23e6&is=6adcd266&hm=71faad1cdab68a82a225c0c21a093a8725014069ac82337065af8a41b66f5f5e&"
+        },
+        {
+          "filename": "04_rear_threequarter_left.png",
+          "url": "https://cdn.discordapp.com/attachments/1476540488147533895/1563578980689383546/04-rear-right.png?ex=6ade23e6&is=6adcd266&hm=d5f0c32c04726cdec7ed0b26209ac83b5b3724d20c807a0c937ce7eecab85c9c&"
+        },
+        {
+          "filename": "05_back.png",
+          "url": "https://cdn.discordapp.com/attachments/1476540488147533895/1563578981297430759/05-back.png?ex=6ade23e7&is=6adcd267&hm=91c8d11210adbdd8ab95dbe833ca7859ff7a5c752dfca44c9f3381d16d934e79&"
+        },
+        {
+          "filename": "06_rear_threequarter_right.png",
+          "url": "https://cdn.discordapp.com/attachments/1476540488147533895/1563578982132220006/06-rear-left.png?ex=6ade23e7&is=6adcd267&hm=32a0ed7534c40d66fedf4005bb13212c4a20f88efca05793d5324e1c14ab2b39&"
+        },
+        {
+          "filename": "07_right.png",
+          "url": "https://cdn.discordapp.com/attachments/1476540488147533895/1563578982840926299/07-left.png?ex=6ade23e7&is=6adcd267&hm=a6e30f385f21fad2ecffdd082b08c748e8736f52bf2b36d6cc2033900b220cc1&"
+        },
+        {
+          "filename": "08_front_threequarter_right.png",
+          "url": "https://cdn.discordapp.com/attachments/1476540488147533895/1563578983428132894/08-front-left.png?ex=6ade23e7&is=6adcd267&hm=868fc7d766abf9666b3191c61ef52c8c93cd868eb765d64300a62d01c0985230&"
+        },
+        {
+          "filename": "09_front_high.png",
+          "url": "https://cdn.discordapp.com/attachments/1476540488147533895/1563578984040759459/09-high-front.png?ex=6ade23e7&is=6adcd267&hm=6d2ef1f8796063e30f8cb392890c88b80bcf4ace5078268cbbe8e3e7cfc87fa2&"
+        },
+        {
+          "filename": "10_front_low.png",
+          "url": "https://cdn.discordapp.com/attachments/1476540488147533895/1563578984560861395/10-low-front.png?ex=6ade23e7&is=6adcd267&hm=7a9c0f4743b09c4ce82c2d821428bd88dfafbdc20c104ae0c6d43bbf6a14d245&"
   "source": "Discord CDN URLs supplied by user",
   "messages": [
     {
