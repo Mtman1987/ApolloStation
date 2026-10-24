@@ -1,0 +1,63 @@
+'use client';
+import { Fragment, useEffect, useRef, useState } from 'react';
+export type CoordinateArtwork = {
+  width: number; height: number; target: string[]; painted: string[];
+  activeBoard: number; viewMode: 'board' | 'all'; palette?: Record<string, string>;
+};
+const COLORS: Record<string, string> = { R:'#ef4444',B:'#3b82f6',G:'#22c55e',Y:'#eab308',P:'#a855f7',O:'#f97316',PK:'#ec4899',W:'#f8fafc',K:'#111827',C:'#06b6d4' };
+export function MosaicCoordinateBoard({ art, availableHeight, cellSize = null, onCell, disabled = false }: {
+  art: CoordinateArtwork; availableHeight: number | null; cellSize?: number | null;
+  onCell?: (coordinate: string, board: number) => void; disabled?: boolean;
+}) {
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const [frameWidth, setFrameWidth] = useState(0);
+  useEffect(() => {
+    const frame = viewportRef.current?.parentElement;
+    if (!frame) return;
+    const measure = () => setFrameWidth(frame.clientWidth);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(frame);
+    return () => observer.disconnect();
+  }, []);
+  const overview = art.width > 20;
+  const boards = overview ? [1, 2, 3, 4] : [art.activeBoard];
+  const rows = Math.min(25, art.height), columns = Math.min(20, art.width);
+  const labelWidth = 34, labelHeight = 30;
+  const fittedHeight = availableHeight === null ? 700 : Math.max(200, overview ? (availableHeight - 44) / 2 : availableHeight);
+  const boardsAcross = overview ? 2 : 1, gap = overview ? 12 : 0;
+  const fittedCell = Math.max(1, Math.min((fittedHeight - labelHeight) / rows, frameWidth ? ((frameWidth - 2 - gap) / boardsAcross - labelWidth) / columns : Infinity));
+  const square = cellSize || fittedCell;
+  const boardWidth = labelWidth + columns * square;
+  const totalWidth = boardWidth * boardsAcross + gap;
+  const palette = art.palette || COLORS;
+  return <div ref={viewportRef} tabIndex={0} aria-label="Scrollable Mosaic board" className="mx-auto w-full min-w-0 overflow-auto rounded-lg border border-cyan-200/20" style={{ maxWidth: totalWidth + 2, maxHeight: cellSize ? availableHeight || 700 : undefined }}>
+    <div className={`grid gap-3 ${overview ? 'grid-cols-2' : 'grid-cols-1'}`} style={{ width: totalWidth }}>
+      {boards.map(board => <div key={board} className="min-w-0">
+        {overview ? <div className="mb-1 text-center text-sm font-bold text-cyan-100">Board {board}</div> : null}
+        <div role="grid" aria-label={`Mosaic board ${board}, columns A to T, rows 1 to ${rows}`} aria-colcount={columns + 1} aria-rowcount={rows + 1} data-testid="mosaic-controller-grid" className="grid bg-slate-950" style={{
+          gridTemplateColumns: `${labelWidth}px repeat(${columns}, ${square}px)`,
+          gridTemplateRows: `${labelHeight}px repeat(${rows}, ${square}px)`,
+          fontSize: Math.max(7, Math.min(18, Math.round(square * .56))),
+        }}>
+          <span aria-hidden="true" className="sticky left-0 top-0 z-20 bg-slate-800" />
+          {Array.from({length: columns}, (_, column) => <span key={`column-${column}`} role="columnheader" className="sticky top-0 z-10 grid min-w-0 place-items-center border-b border-cyan-300/30 bg-slate-800 font-black text-cyan-100">{String.fromCharCode(65 + column)}</span>)}
+          {Array.from({length: rows}, (_, row) => <Fragment key={row}>
+            <span role="rowheader" className="sticky left-0 z-10 grid min-h-0 place-items-center border-r border-cyan-300/30 bg-slate-800 font-black text-cyan-100">{row + 1}</span>
+            {Array.from({length: columns}, (_, column) => {
+              const x = overview ? ((board - 1) % 2) * 20 + column : column;
+              const y = overview ? Math.floor((board - 1) / 2) * 25 + row : row;
+              const index = y * art.width + x;
+              const target = art.target[index], painted = art.painted[index];
+              const coordinate = `${String.fromCharCode(65 + column)}${row + 1}`;
+              const label = `Board ${board} · ${coordinate} · ${painted ? `painted ${painted}` : `needs ${target}`} · spmt ${coordinate}${target}`;
+              const props = { 'aria-label': label, title: label, className: 'grid min-h-0 min-w-0 place-items-center overflow-hidden border border-slate-700/50 font-black', style: { background: painted ? palette[painted] || COLORS[painted] : '#020617', color: target === 'K' ? '#94a3b8' : palette[target] || COLORS[target] } };
+              return onCell ? <button key={column} type="button" role="gridcell" {...props} disabled={disabled || overview} onClick={() => onCell(coordinate, board)}>{!painted ? target : ''}</button>
+                : <span key={column} role="gridcell" {...props}>{!painted ? target : ''}</span>;
+            })}
+          </Fragment>)}
+        </div>
+      </div>)}
+    </div>
+  </div>;
+}

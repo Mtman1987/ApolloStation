@@ -1,0 +1,1089 @@
+'use client';
+
+import { useCallback, useEffect, useLayoutEffect, useState, useRef } from 'react';
+import { useParams, useSearchParams } from 'next/navigation';
+import { getChatTagSoundUrl, type ChatTagSoundKey } from '@/lib/sound-effects';
+import { crownName, decorateCrowns } from '@/lib/chat-tag-crowns';
+
+interface OverlayState {
+  me: any;
+  myRank: number | null;
+  it: { id: string; username: string } | null;
+  isFFA: boolean;
+  lastTagTime: number | null;
+  liveCount: number;
+  liveUsers?: any[];
+  playerCount: number;
+  leaderboard: any[];
+  recentHistory: any[];
+  overlayMessages?: any[];
+  activeGridLeaderboard?: { gameId: string; gameName: string; theme?: string; rows: Array<{ rank: number; username: string; score: number }> } | null;
+  activeWordLeaderboard?: { gameId: string; gameName: string; theme?: string; rows: Array<{ rank: number; username: string; score: number }> } | null;
+  activeTreasureTurn?: { current: string; next: string; expiresAt: string | null; challenge: { coordinate: string; clue: string; question: string } | null; rows: Array<{ username: string; score: number }> } | null;
+  monthlyWinners: any[];
+  timestamp: number;
+}
+
+type BroadcastType = 'tag' | 'ffa' | 'newit' | 'history' | 'message' | 'chat-wars';
+interface Broadcast { type: BroadcastType; lines: string[]; icon: string; color: string; glow: string; sound?: ChatTagSoundKey; payload?: any; }
+interface OverlayMessage {
+  type?: string;
+  message?: string;
+  payload?: any;
+  timestamp?: number;
+}
+
+const EMPTY_OVERLAY_STATE: OverlayState = {
+  me: null,
+  myRank: null,
+  it: null,
+  isFFA: false,
+  lastTagTime: null,
+  liveCount: 0,
+  liveUsers: [],
+  playerCount: 0,
+  leaderboard: [],
+  recentHistory: [],
+  overlayMessages: [],
+  activeGridLeaderboard: null,
+  activeWordLeaderboard: null,
+  monthlyWinners: [],
+  timestamp: 0,
+};
+interface ConfettiPiece {
+  id: string;
+  left: number;
+  delay: number;
+  duration: number;
+  size: number;
+  rotate: number;
+  drift: number;
+  color: string;
+}
+
+function StatItem({ value, label, color }: { value: string | number; label: string; color?: string }) {
+  return (
+    <span style={{
+      display: 'inline-flex',
+      alignItems: 'baseline',
+      gap: '0.35vw',
+      color: color || '#fff',
+    }}>
+      <span>{value}</span>
+      <small style={{ fontSize: '0.45em', opacity: 0.7, textTransform: 'uppercase' }}>{label}</small>
+    </span>
+  );
+}
+
+function FitText({ children, min = 11, max = 36 }: { children: string; min?: number; max?: number }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const element = ref.current;
+    if (!element) return;
+    const fit = () => {
+      if (!element.clientWidth) return;
+      let low = min;
+      let high = Math.min(max, (element.parentElement?.clientHeight || max) * .8);
+      element.style.fontSize = `${high}px`;
+      while (high - low > 0.25) {
+        const size = (low + high) / 2;
+        element.style.fontSize = `${size}px`;
+        if (element.scrollWidth <= element.clientWidth) low = size;
+        else high = size;
+      }
+      element.style.fontSize = `${low.toFixed(2)}px`;
+    };
+    fit();
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(fit);
+    observer?.observe(element);
+    void document.fonts?.ready.then(fit);
+    return () => observer?.disconnect();
+  }, [children, max, min]);
+  return <div ref={ref} title={children} style={{ width: '100%', minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap' }}>{children}</div>;
+}
+
+function RotationText({ lines, glow }: { lines: string[]; glow: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [page, setPage] = useState(0);
+  // Give each ranked player the whole card, rather than shrinking five rows.
+  const ranked = lines.filter(line => /^#\d+ .+ \d+ pts$/.test(line));
+  const heading = lines.filter(line => !ranked.includes(line));
+  const pages = ranked.length
+    ? ranked.map(line => {
+        const match = line.match(/^(#\d+ .+) (\d+) pts$/)!;
+        return [...heading, match[1], `${Number(match[2]).toLocaleString()} POINTS`];
+      })
+    : Array.from({ length: Math.ceil(lines.length / 3) }, (_, index) => lines.slice(index * 3, index * 3 + 3));
+  const visibleLines = pages[page % Math.max(1, pages.length)] || [];
+  const pageKey = lines.join('\n');
+  useEffect(() => {
+    setPage(0);
+    if (pages.length <= 1) return;
+    const timer = setInterval(() => setPage(current => current + 1), 15000 / pages.length);
+    return () => clearInterval(timer);
+  }, [pageKey, pages.length]);
+  useLayoutEffect(() => {
+    const element = ref.current;
+    if (!element) return;
+    const fit = () => {
+      let low = 8, high = Math.min(element.clientHeight / Math.max(1, visibleLines.length) / 1.12, 180);
+      while (high - low > .25) {
+        const size = (low + high) / 2;
+        element.style.fontSize = `${size}px`;
+        if (element.scrollHeight <= element.clientHeight && element.scrollWidth <= element.clientWidth) low = size;
+        else high = size;
+      }
+      element.style.fontSize = `${low}px`;
+    };
+    fit();
+    const observer = new ResizeObserver(fit);
+    observer.observe(element);
+    void document.fonts.ready.then(fit);
+    return () => observer.disconnect();
+  }, [pageKey, page]);
+  return <div ref={ref} data-rotation-page={page % Math.max(1, pages.length)} style={{ width: '100%', height: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column', justifyContent: 'center', fontWeight: 900, lineHeight: 1.12, textShadow: `0 0 12px ${glow}` }}>
+    {visibleLines.map((line, index) => <div key={index} style={{ flexShrink: 0, overflowWrap: 'anywhere' }}>{line}</div>)}
+  </div>;
+}
+
+function StackStat({ value, label, align = 'right', compact = false }: { value: string | number; label: string; align?: 'left' | 'center' | 'right'; compact?: boolean }) {
+  return (
+    <div style={{
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: align === 'right' ? 'flex-end' : align === 'center' ? 'center' : 'flex-start',
+      justifyContent: 'center',
+      width: '100%',
+      height: '100%',
+      lineHeight: 1,
+      minWidth: 0,
+    }}>
+      <span style={{ fontSize: compact ? 'min(14vw, 22vh)' : 'min(4vw, 4.5vh)', fontWeight: 900, whiteSpace: 'nowrap', textShadow: '0 2px 6px rgba(0,0,0,0.6)' }}>{value}</span>
+      <small style={{ fontSize: compact ? 'min(6vw, 9vh)' : 'min(1.3vw, 1.5vh)', color: '#c7ecff', opacity: 0.95, textTransform: 'uppercase', letterSpacing: '0.02em', whiteSpace: 'nowrap', textShadow: '0 1px 3px rgba(0,0,0,0.55)' }}>{label}</small>
+    </div>
+  );
+}
+
+export default function OverlayPage() {
+  const params = useParams();
+  const searchParams = useSearchParams();
+  const userId = params.userId as string;
+  const isPreview = userId === 'preview';
+  const historyInterval = Math.max(300, parseInt(searchParams.get('cycle') || '420', 10) || 420) * 1000;
+  const hudOnMs = Math.max(5, parseInt(searchParams.get('hudOn') || '45', 10) || 45) * 1000;
+  const hudOffMs = Math.max(0, parseInt(searchParams.get('hudOff') || '120', 10) || 0) * 1000;
+  const idleBarOpacity = Math.min(1, Math.max(0.2, Number(searchParams.get('idleOpacity') || '1')));
+  const announcementBarOpacity = Math.min(1, Math.max(0.05, Number(searchParams.get('announcementOpacity') || '0.12')));
+  const loungeCompact = searchParams.get('compact') === 'lounge';
+
+  // Keep the status bar mounted while the polling endpoint is starting or
+  // briefly unavailable. Announcements still dim this bar through dimBar;
+  // polling must never make the whole browser source disappear.
+  const [data, setData] = useState<OverlayState>(EMPTY_OVERLAY_STATE);
+  const [broadcast, setBroadcast] = useState<Broadcast | null>(null);
+  const [dimBar, setDimBar] = useState(false);
+  const [, setHudVisible] = useState(true);
+  const [confetti, setConfetti] = useState<ConfettiPiece[]>([]);
+  const activeBroadcastRef = useRef(false);
+  const broadcastTimer = useRef<NodeJS.Timeout | null>(null);
+  const historyTimer = useRef<NodeJS.Timeout | null>(null);
+  const pendingBroadcasts = useRef<Array<{ broadcast: Broadcast; duration: number }>>([]);
+  const prevHistoryTs = useRef<number | null>(null);
+  const prevOverlayMessageTs = useRef<number | null>(null);
+  const prevIt = useRef<string | null>(null);
+  const lastHistoryShow = useRef<number>(0);
+  const nextCycleMode = useRef<'history' | 'leaderboard' | 'grid' | 'word' | 'turn' | 'riddle' | 'live'>('leaderboard');
+  const dataRef = useRef<OverlayState | null>(null);
+  const previousTreasureTurn = useRef('');
+  const broadcastRef = useRef<Broadcast | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const audioCacheRef = useRef<Map<string, HTMLAudioElement>>(new Map());
+  const previewTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const winnersRef = useRef<any[]>([]);
+
+  const crown = useCallback(
+    (name: string) => crownName(name, data?.monthlyWinners || []),
+    [data?.monthlyWinners],
+  );
+
+  useEffect(() => {
+    winnersRef.current = data?.monthlyWinners || [];
+  }, [data?.monthlyWinners]);
+
+  useEffect(() => {
+    if (hudOffMs <= 0) {
+      setHudVisible(true);
+      return;
+    }
+
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let cancelled = false;
+    const show = () => {
+      if (cancelled) return;
+      setHudVisible(true);
+      timer = setTimeout(hide, hudOnMs);
+    };
+    const hide = () => {
+      if (cancelled) return;
+      setHudVisible(false);
+      timer = setTimeout(show, hudOffMs);
+    };
+
+    setHudVisible(true);
+    timer = setTimeout(hide, hudOnMs);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [hudOffMs, hudOnMs]);
+
+  useEffect(() => {
+    const unlockAudio = () => {
+      try {
+        const AudioCtor = window.AudioContext || (window as any).webkitAudioContext;
+        if (AudioCtor) {
+          const ctx = audioContextRef.current || new AudioCtor();
+          audioContextRef.current = ctx;
+          if (ctx.state === 'suspended') {
+            void ctx.resume().catch(() => {});
+          }
+        }
+
+        for (const audio of audioCacheRef.current.values()) {
+          audio.load();
+        }
+      } catch {}
+    };
+
+    window.addEventListener('pointerdown', unlockAudio, { passive: true });
+    window.addEventListener('keydown', unlockAudio);
+    window.addEventListener('touchstart', unlockAudio, { passive: true });
+    return () => {
+      window.removeEventListener('pointerdown', unlockAudio);
+      window.removeEventListener('keydown', unlockAudio);
+      window.removeEventListener('touchstart', unlockAudio);
+    };
+  }, []);
+
+  const playGeneratedBroadcastSound = useCallback((type: BroadcastType) => {
+    try {
+      const AudioCtor = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtor) return;
+      const ctx = audioContextRef.current || new AudioCtor();
+      audioContextRef.current = ctx;
+      if (ctx.state === 'suspended') {
+        void ctx.resume().catch(() => {});
+      }
+
+      const now = ctx.currentTime;
+      const tones: Record<BroadcastType, number[]> = {
+        tag: [523.25, 659.25, 783.99],
+        ffa: [329.63, 440.0, 587.33, 783.99],
+        newit: [493.88, 659.25, 739.99],
+        history: [392.0, 523.25],
+        message: [587.33, 698.46],
+        'chat-wars': [261.63, 392.0, 523.25],
+      };
+
+      tones[type].forEach((freq, index) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = type === 'history' ? 'triangle' : 'sine';
+        osc.frequency.setValueAtTime(freq, now + index * 0.11);
+        gain.gain.setValueAtTime(0.0001, now + index * 0.11);
+        gain.gain.exponentialRampToValueAtTime(type === 'history' ? 0.018 : 0.03, now + index * 0.11 + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + index * 0.11 + 0.22);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now + index * 0.11);
+        osc.stop(now + index * 0.11 + 0.24);
+      });
+    } catch {}
+  }, []);
+
+  const playBroadcastSound = useCallback(
+    (broadcast: Broadcast) => {
+      const soundUrl = getChatTagSoundUrl(broadcast.sound);
+      if (!soundUrl) {
+        playGeneratedBroadcastSound(broadcast.type);
+        return;
+      }
+
+      try {
+        let audio = audioCacheRef.current.get(soundUrl);
+        if (!audio) {
+          audio = new Audio(soundUrl);
+          audio.preload = 'auto';
+          audio.volume = 0.78;
+          audioCacheRef.current.set(soundUrl, audio);
+        }
+        audio.currentTime = 0;
+        void audio.play().catch(() => playGeneratedBroadcastSound(broadcast.type));
+      } catch {
+        playGeneratedBroadcastSound(broadcast.type);
+      }
+    },
+    [playGeneratedBroadcastSound],
+  );
+
+  const spawnConfetti = useCallback((colors: string[]) => {
+    const pieces: ConfettiPiece[] = Array.from({ length: 28 }, (_, index) => ({
+      id: `${Date.now()}-${index}`,
+      left: Math.random() * 100,
+      delay: Math.random() * 0.35,
+      duration: 3.8 + Math.random() * 1.8,
+      size: 0.45 + Math.random() * 0.9,
+      rotate: -40 + Math.random() * 80,
+      drift: -18 + Math.random() * 36,
+      color: colors[index % colors.length],
+    }));
+    setConfetti(pieces);
+    setTimeout(() => setConfetti([]), 5600);
+  }, []);
+
+  const fireBroadcast = useCallback(
+    (raw: Broadcast, duration = 6000) => {
+      // Winners keep their crown no matter which code path built the lines.
+      const b: Broadcast = {
+        ...raw,
+        lines: (raw.lines || []).map((line) => decorateCrowns(line, winnersRef.current)),
+      };
+      if (broadcastTimer.current) clearTimeout(broadcastTimer.current);
+      activeBroadcastRef.current = true;
+      setDimBar(true);
+      setBroadcast(b);
+      playBroadcastSound(b);
+      if (b.type !== 'history' && b.type !== 'message') {
+        spawnConfetti([b.color, '#ffffff', b.glow, '#ffd700']);
+      }
+      broadcastTimer.current = setTimeout(() => {
+        activeBroadcastRef.current = false;
+        setBroadcast(null);
+        setTimeout(() => setDimBar(false), 400);
+        setTimeout(() => {
+          const nextQueued = pendingBroadcasts.current.shift();
+          if (nextQueued) {
+            fireBroadcast(nextQueued.broadcast, nextQueued.duration);
+          }
+        }, 450);
+      }, duration);
+    },
+    [playBroadcastSound, spawnConfetti],
+  );
+
+  const queueBroadcast = useCallback(
+    (b: Broadcast, duration = 6000) => {
+      if (!activeBroadcastRef.current) {
+        fireBroadcast(b, duration);
+        return;
+      }
+      pendingBroadcasts.current.push({ broadcast: b, duration });
+    },
+    [fireBroadcast],
+  );
+
+  const fireHistoryBroadcast = useCallback(
+    (history: any[]) => {
+      const isInternalActor = (value: unknown) => {
+        const name = String(value || '').trim();
+        return !name
+          || /^(?:system|free[-_ ]?for[-_ ]?all|auto[-_ ]?(?:rotate|timeout)|discord[-_ ]?admin)$/i.test(name)
+          || /^user_[a-z0-9_-]+$/i.test(name);
+      };
+      const humanHistory = history
+        .filter((h: any) => !isInternalActor(h?.tagger) && !isInternalActor(h?.tagged))
+        .slice(0, 4);
+      if (!humanHistory.length || broadcast) return;
+      const lines = humanHistory.map((h: any) => {
+        if (h.blocked) return `🛡️ ${h.tagger} → ${h.tagged}`;
+        return `${h.doublePoints ? '🔥' : '🎯'} ${h.tagger} → ${h.tagged}${h.doublePoints ? ' · 2×' : ''}`;
+      });
+      fireBroadcast({ type: 'history', lines, icon: '📜', color: '#9146ff', glow: '#9146ff', sound: 'history' }, 15000);
+      lastHistoryShow.current = Date.now();
+    },
+    [broadcast, fireBroadcast],
+  );
+
+  const fireLeaderboardBroadcast = useCallback(
+    (leaderboard: any[]) => {
+      if (!leaderboard.length || broadcast) return;
+      const lines = leaderboard.slice(0, 5).map((player: any, index: number) =>
+        `#${index + 1} ${player.twitchUsername || player.username || '?'} ${player.score} pts`
+      );
+      fireBroadcast({ type: 'history', lines, icon: '🏆', color: '#ffd700', glow: '#ffb300', sound: 'leaderboard' }, 15000);
+      spawnConfetti(['#ffd700', '#fff2a8', '#ffffff', '#ffb300']);
+      lastHistoryShow.current = Date.now();
+    },
+    [broadcast, fireBroadcast, spawnConfetti],
+  );
+
+  const fireGridLeaderboardBroadcast = useCallback(
+    (leaderboard: NonNullable<OverlayState['activeGridLeaderboard'] | OverlayState['activeWordLeaderboard']>) => {
+      if (!leaderboard.rows.length || broadcastRef.current) return;
+      const lines = [
+        `${leaderboard.gameName}${leaderboard.theme ? ` · ${leaderboard.theme}` : ''}`,
+        ...leaderboard.rows.slice(0, 4).map((row) => `#${row.rank} ${row.username} ${row.score} pts`),
+      ];
+      const wordGame = leaderboard.gameId === 'wordchain' || leaderboard.gameId === 'phraseguess';
+      fireBroadcast({ type: 'history', lines, icon: wordGame ? '🔤' : '🧩', color: '#22d3ee', glow: '#8b5cf6', sound: 'leaderboard' }, 15000);
+      lastHistoryShow.current = Date.now();
+    },
+    [fireBroadcast],
+  );
+
+  const fireLiveBroadcast = useCallback(
+    (state: OverlayState) => {
+      const liveUsers = state.liveUsers || [];
+      const lines = liveUsers.length
+        ? liveUsers.slice(0, 5).map((user: any) => {
+            const name = user.displayName || user.username || '?';
+            const viewers = typeof user.viewerCount === 'number' ? ` • ${user.viewerCount} viewers` : '';
+            const shared = user.isSharedChat ? ' • shared chat' : '';
+            return `🟢 ${name}${viewers}${shared}`;
+          })
+        : [`${state.liveCount || 0} live right now`, `${state.playerCount || 0} players tracked`];
+
+      if (state.it?.username) {
+        lines.unshift(`IT: ${state.it.username}`);
+      } else {
+        lines.unshift('FREE FOR ALL');
+      }
+
+      fireBroadcast({ type: 'history', lines, icon: '📺', color: '#34d399', glow: '#34d399', sound: 'live' }, 15000);
+      lastHistoryShow.current = Date.now();
+    },
+    [fireBroadcast],
+  );
+
+  const buildBroadcastFromOverlayMessage = useCallback((message: OverlayMessage): Broadcast | null => {
+    const payload = message.payload || {};
+    switch (message.type) {
+      case 'leaderboard-card':
+        return {
+          type: 'history',
+          icon: '🏆',
+          color: '#ffd700',
+          glow: '#ffb300',
+          sound: 'leaderboard',
+          lines: (payload.rows || []).map((row: any) => `#${row.rank} ${row.username} ${row.score} pts`),
+        };
+      case 'chat-wars-reveal':
+        return {
+          type: 'chat-wars',
+          icon: '⚔️',
+          color: '#22d3ee',
+          glow: '#8b5cf6',
+          sound: 'leaderboard',
+          lines: ['CHAT WARS'],
+          payload,
+        };
+      case 'score-card':
+        return {
+          type: 'history',
+          icon: '📊',
+          color: '#00d9ff',
+          glow: '#00d9ff',
+          sound: 'score',
+          lines: [
+            `${payload.playerName || 'Player'} #${payload.rank || '-'}/${payload.totalPlayers || '-'}`,
+            `${payload.score || 0} pts • ${payload.tags || 0} tags • ${payload.tagged || 0} tagged`,
+            `🎟️ ${payload.passCount || 0} passes • 🏆 ${payload.wins || 0} wins${payload.winnerText ? ` • ${payload.winnerText}` : ''}`,
+          ],
+        };
+      case 'live-card':
+        return {
+          type: 'history',
+          icon: '🟢',
+          color: '#34d399',
+          glow: '#34d399',
+          sound: 'live',
+          lines: [
+            `Live now: ${payload.liveCount || 0} • Chatters: ${payload.chatterCount || 0}`,
+            ...((payload.groups || []) as string[]),
+          ],
+        };
+      case 'tag-card':
+        return {
+          type: 'tag',
+          icon: payload.doublePoints ? '🔥' : '🎯',
+          color: payload.doublePoints ? '#ff4500' : '#00d9ff',
+          glow: payload.doublePoints ? '#ff4500' : '#00d9ff',
+          sound: payload.doublePoints ? 'pass-used' : 'tag',
+          lines: [`${payload.tagger || '?'} tagged ${payload.tagged || '?'}${payload.doublePoints ? ' for DOUBLE POINTS and is now it!' : ' who is now it!'}`],
+        };
+      case 'pass-card':
+        if (payload.granted) {
+          return {
+            type: 'newit',
+            icon: '🎟️',
+            color: '#ffd700',
+            glow: '#ffd700',
+            sound: 'pass-granted',
+            lines: [`${payload.tagged || '?'} got an SPMT Pass!`, 'Use "spmt pass @username" for a DOUBLE POINTS tag!'],
+          };
+        }
+        return {
+          type: 'tag',
+          icon: '🎟️',
+          color: '#ffd700',
+          glow: '#ffd700',
+          sound: 'pass-used',
+          lines: [`${payload.tagger || '?'} used a PASS on ${payload.tagged || '?'} for DOUBLE POINTS!`],
+        };
+      case 'ffa':
+        return {
+          type: 'ffa',
+          icon: '🔥',
+          color: '#ff4500',
+          glow: '#ff8c00',
+          sound: 'ffa',
+          lines: ['FREE FOR ALL!', message.message || 'Anyone can tag for DOUBLE POINTS!'],
+        };
+      case 'newit':
+        return {
+          type: 'newit',
+          icon: '🎯',
+          color: '#00d9ff',
+          glow: '#00d9ff',
+          sound: 'new-it',
+          lines: [message.message || `${payload.username || payload.tagged || 'Someone'} is now IT!`],
+        };
+      case 'history':
+        return {
+          type: 'history',
+          icon: '📜',
+          color: '#9146ff',
+          glow: '#9146ff',
+          sound: 'history',
+          lines: payload.lines || (message.message ? [message.message] : []),
+        };
+      default:
+        if (!message.message) return null;
+        return {
+          type: 'message',
+          lines: [message.message],
+          icon: '💬',
+          color: '#9146ff',
+          glow: '#9146ff',
+          sound: 'message',
+        };
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isPreview) return;
+
+    const previewState: OverlayState = {
+      me: {
+        twitchUsername: 'mtman1987',
+        score: 700,
+        tags: 2,
+        tagged: 0,
+        passCount: 1,
+        wins: 0,
+      },
+      myRank: 1,
+      it: { id: 'preview-it', username: 'niniav 23' },
+      isFFA: false,
+      lastTagTime: Date.now() - 4 * 60 * 1000,
+      liveCount: 9,
+      liveUsers: [
+        { username: 'niniav23', displayName: 'niniav23', viewerCount: 42, isSharedChat: true },
+        { username: 'vanbraak', displayName: 'vanbraak', viewerCount: 18, isSharedChat: false },
+        { username: 'scarlett_ai420', displayName: 'scarlett_ai420', viewerCount: 9, isSharedChat: false },
+      ],
+      playerCount: 114,
+      leaderboard: [
+        { twitchUsername: 'niniav 23', score: 1200 },
+        { twitchUsername: 'mtman1987', score: 700 },
+        { twitchUsername: 'van braak', score: 650 },
+        { twitchUsername: 'scarlett_ai420', score: 620 },
+        { twitchUsername: 'pinscorpion6521', score: 500 },
+      ],
+      recentHistory: [
+        { tagger: 'van braak', tagged: 'niniav 23', doublePoints: false, blocked: null, timestamp: Date.now() - 60_000 },
+      ],
+      overlayMessages: [],
+      monthlyWinners: [],
+      timestamp: Date.now(),
+    };
+
+    setData(previewState);
+
+    const previewEvents: Record<string, OverlayMessage> = {
+      tag: { type: 'tag-card', payload: { tagger: 'van braak', tagged: 'niniav 23', doublePoints: false }, timestamp: Date.now() },
+      pass: { type: 'pass-card', payload: { tagger: 'mtman1987', tagged: 'niniav 23', doublePoints: true, passUsed: true }, timestamp: Date.now() },
+      grantpass: { type: 'pass-card', payload: { tagged: 'mtman1987', granted: true }, timestamp: Date.now() },
+      rank: { type: 'leaderboard-card', payload: { rows: previewState.leaderboard.map((row, index) => ({ rank: index + 1, username: row.twitchUsername, score: row.score })) }, timestamp: Date.now() },
+      score: { type: 'score-card', payload: { playerName: 'mtman1987', rank: 1, totalPlayers: 114, score: 700, tags: 2, tagged: 0, passCount: 1, wins: 0 }, timestamp: Date.now() },
+      live: { type: 'live-card', payload: { liveCount: 9, chatterCount: 12, page: 1, totalPages: 1, groups: ['🟢niniav23 > 💬mtman1987, vanbraak', '🟢vanbraak', '🟣Discord > 💬scarlett_ai420'] }, timestamp: Date.now() },
+      history: { type: 'history', message: 'preview history', payload: null, timestamp: Date.now() },
+      message: { type: 'message', message: 'Overlay mode ON - bot replies now appear here.', timestamp: Date.now() },
+      ffa: { type: 'ffa', message: 'preview ffa', timestamp: Date.now() },
+      newit: { type: 'newit', message: 'preview newit', timestamp: Date.now() },
+    };
+
+    const triggerPreview = (kind: string) => {
+      if (kind === 'ffa') {
+        queueBroadcast({ type: 'ffa', lines: ['FREE FOR ALL!', 'Anyone can tag for DOUBLE POINTS!'], icon: '🔥', color: '#ff4500', glow: '#ff8c00', sound: 'ffa' }, 13000);
+        return;
+      }
+      if (kind === 'newit') {
+        queueBroadcast({ type: 'newit', lines: ['niniav 23 is now IT!'], icon: '🎯', color: '#00d9ff', glow: '#00d9ff', sound: 'new-it' }, 11000);
+        return;
+      }
+      if (kind === 'history') {
+        fireHistoryBroadcast(previewState.recentHistory);
+        return;
+      }
+      const event = previewEvents[kind];
+      const built = event ? buildBroadcastFromOverlayMessage(event) : null;
+      if (built) queueBroadcast(built, built.type === 'history' ? 15000 : built.type === 'chat-wars' ? 15000 : 13000);
+    };
+
+    const onMessage = (event: MessageEvent) => {
+      if (event.data?.type !== 'overlay-preview-trigger') return;
+      triggerPreview(String(event.data.kind || 'message'));
+    };
+
+    window.addEventListener('message', onMessage);
+    const previewTimer = previewTimerRef.current;
+    return () => {
+      window.removeEventListener('message', onMessage);
+      if (previewTimer) clearTimeout(previewTimer);
+    };
+  }, [buildBroadcastFromOverlayMessage, fireHistoryBroadcast, isPreview, queueBroadcast]);
+
+  useEffect(() => {
+    if (isPreview) return;
+    const poll = async () => {
+      try {
+        const res = await fetch(`/api/overlay/state?userId=${encodeURIComponent(userId)}`, { cache: 'no-store' });
+        if (!res.ok) return;
+        const next: OverlayState = await res.json();
+        let showedOverlayMessage = false;
+
+        const latestMessage: OverlayMessage | undefined = next.overlayMessages?.[0];
+        const latestMessageTs = latestMessage?.timestamp || 0;
+        if (prevOverlayMessageTs.current !== null && latestMessageTs > prevOverlayMessageTs.current) {
+          showedOverlayMessage = true;
+          const newOverlayMessages = (next.overlayMessages || [])
+            .filter((entry: OverlayMessage) => (entry.timestamp || 0) > prevOverlayMessageTs.current!)
+            .sort((a: OverlayMessage, b: OverlayMessage) => (a.timestamp || 0) - (b.timestamp || 0));
+
+          for (const entry of newOverlayMessages) {
+            const nextBroadcast = buildBroadcastFromOverlayMessage(entry);
+            if (!nextBroadcast) continue;
+            queueBroadcast(nextBroadcast, nextBroadcast.type === 'history' ? 15000 : nextBroadcast.type === 'chat-wars' ? 15000 : 13000);
+          }
+        }
+        prevOverlayMessageTs.current = latestMessageTs;
+
+        const latestTs = next.recentHistory[0]?.timestamp || 0;
+        if (!showedOverlayMessage && prevHistoryTs.current !== null && latestTs > prevHistoryTs.current) {
+            const h = next.recentHistory[0];
+          if (h && !h.blocked) {
+            const dp = h.doublePoints ? ' for DOUBLE POINTS and is now it!' : ' who is now it!';
+            fireBroadcast({
+              type: 'tag', lines: [`${h.tagger} tagged ${h.tagged}${dp}`],
+              icon: h.doublePoints ? '🔥' : '🎯',
+              color: h.doublePoints ? '#ff4500' : '#00d9ff',
+              glow: h.doublePoints ? '#ff4500' : '#00d9ff',
+              sound: h.doublePoints ? 'pass-used' : 'tag',
+            }, 13000);
+          }
+        }
+        prevHistoryTs.current = latestTs;
+
+        const newIt = next.it?.username || null;
+        if (!showedOverlayMessage && prevIt.current !== null && newIt !== prevIt.current) {
+          if (!newIt) {
+            fireBroadcast({ type: 'ffa', lines: ['FREE FOR ALL!', 'Anyone can tag for DOUBLE POINTS!'], icon: '🔥', color: '#ff4500', glow: '#ff8c00', sound: 'ffa' }, 13000);
+          } else {
+            fireBroadcast({ type: 'newit', lines: [`${newIt} is now IT!`], icon: '🎯', color: '#00d9ff', glow: '#00d9ff', sound: 'new-it' }, 11000);
+          }
+        }
+        const treasure = next.activeTreasureTurn;
+        const treasureKey = treasure ? `${treasure.current}:${treasure.next}:${treasure.challenge?.coordinate || ''}:${treasure.challenge?.question || ''}` : '';
+        if (loungeCompact && treasure && treasureKey !== previousTreasureTurn.current) {
+          queueBroadcast({ type: 'history', icon: '🧭', color: '#22d3ee', glow: '#8b5cf6', payload: { treasureTurn: treasure }, lines: [
+            treasure.current ? `TURN: @${treasure.current.replace(/^@/, '')}` : 'JOIN: spmt treasure',
+            `UP NEXT: ${treasure.next || 'Waiting for a player'}`,
+            'CLOCK:',
+          ] }, 15000);
+        }
+        if (loungeCompact && treasure?.challenge && treasureKey !== previousTreasureTurn.current) {
+          queueBroadcast({ type: 'history', icon: '🧭', color: '#22d3ee', glow: '#8b5cf6', lines: [
+            `${treasure.challenge.coordinate} · ${treasure.challenge.clue.toUpperCase()}`,
+            treasure.challenge.question, 'spmt treasure answer <answer>',
+          ] }, 15000);
+        }
+        previousTreasureTurn.current = treasureKey;
+        prevIt.current = newIt;
+        setData(next);
+        dataRef.current = next;
+      } catch {}
+    };
+    poll();
+    const interval = setInterval(poll, 5000);
+    return () => clearInterval(interval);
+  }, [buildBroadcastFromOverlayMessage, fireBroadcast, isPreview, queueBroadcast, userId, loungeCompact]);
+
+  useEffect(() => {
+    broadcastRef.current = broadcast;
+  }, [broadcast]);
+
+  useEffect(() => {
+    if (isPreview) return;
+    historyTimer.current = setInterval(() => {
+      const current = dataRef.current;
+      if (!current || broadcastRef.current || Date.now() - lastHistoryShow.current <= (loungeCompact && current.activeTreasureTurn ? 15000 : historyInterval)) return;
+
+      if (nextCycleMode.current === 'leaderboard') {
+        nextCycleMode.current = 'grid';
+        if (current.leaderboard?.length) {
+          fireLeaderboardBroadcast(current.leaderboard);
+          return;
+        }
+      }
+
+      if (nextCycleMode.current === 'grid') {
+        nextCycleMode.current = 'word';
+        if (loungeCompact && current.activeGridLeaderboard?.rows?.length) {
+          fireGridLeaderboardBroadcast(current.activeGridLeaderboard);
+          return;
+        }
+      }
+
+      if (nextCycleMode.current === 'word') {
+        nextCycleMode.current = 'turn';
+        if (loungeCompact && current.activeWordLeaderboard?.rows?.length) {
+          fireGridLeaderboardBroadcast(current.activeWordLeaderboard);
+          return;
+        }
+      }
+
+      if (nextCycleMode.current === 'turn') {
+        nextCycleMode.current = 'riddle';
+        const turn = current.activeTreasureTurn;
+        if (loungeCompact && turn) {
+          const seconds = turn.expiresAt ? Math.max(0, Math.ceil((Date.parse(turn.expiresAt) - Date.now()) / 1000)) : 0;
+          fireBroadcast({ type: 'history', icon: '🧭', color: '#22d3ee', glow: '#8b5cf6', payload: { treasureTurn: turn }, lines: [
+            turn.current ? `TURN: @${turn.current.replace(/^@/, '')}` : 'JOIN: spmt treasure',
+            `UP NEXT: ${turn.next || 'Waiting for a player'}`,
+            `CLOCK: ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`,
+          ] }, 15000);
+          return;
+        }
+      }
+
+      if (nextCycleMode.current === 'riddle') {
+        nextCycleMode.current = 'history';
+        const riddle = current.activeTreasureTurn?.challenge;
+        if (loungeCompact && riddle) {
+          fireBroadcast({ type: 'history', icon: '🧭', color: '#22d3ee', glow: '#8b5cf6', lines: [
+            `${riddle.coordinate} · ${riddle.clue.toUpperCase()}`,
+            riddle.question,
+            'spmt treasure answer <answer>',
+          ] }, 15000);
+          return;
+        }
+      }
+
+      if (nextCycleMode.current === 'history') {
+        nextCycleMode.current = 'live';
+        if (current.recentHistory?.length) {
+          fireHistoryBroadcast(current.recentHistory);
+          return;
+        }
+      }
+
+      nextCycleMode.current = 'leaderboard';
+      fireLiveBroadcast(current);
+    }, 10000);
+    return () => { if (historyTimer.current) clearInterval(historyTimer.current); };
+  }, [fireGridLeaderboardBroadcast, fireHistoryBroadcast, fireLeaderboardBroadcast, fireLiveBroadcast, historyInterval, isPreview, loungeCompact]);
+
+  useEffect(() => {
+    const timer = setInterval(() => setBroadcast(current => {
+      const turn = current?.payload?.treasureTurn;
+      if (!current || !turn) return current;
+      const live = dataRef.current?.activeTreasureTurn;
+      if (!live) return null;
+      const seconds = live.expiresAt ? Math.max(0, Math.ceil((Date.parse(live.expiresAt) - Date.now()) / 1000)) : 0;
+      const lines = [...current.lines];
+      lines[0] = live.current ? `TURN: @${live.current.replace(/^@/, '')}` : 'JOIN: spmt treasure';
+      lines[1] = `UP NEXT: ${live.next || 'Waiting for a player'}`;
+      lines[2] = `CLOCK: ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+      return { ...current, lines };
+    }), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const elapsed = data.lastTagTime ? Math.floor((Date.now() - data.lastTagTime) / 60000) : 0;
+  const compactAnnouncementActive = loungeCompact && Boolean(broadcast);
+
+  return (
+    <div data-chat-tag-rotation="player-cards-v3" style={{ background: 'transparent', width: '100vw', height: '100vh', position: 'relative', overflow: 'hidden', fontFamily: "'Segoe UI', Arial, sans-serif", color: '#fff', boxSizing: 'border-box' }}>
+      {confetti.map((piece) => (
+        <div
+          key={piece.id}
+          style={{
+            position: 'absolute',
+            top: '-8%',
+            left: `${piece.left}%`,
+            width: `${piece.size}vw`,
+            height: `${piece.size * 1.8}vw`,
+            minWidth: '6px',
+            minHeight: '10px',
+            background: piece.color,
+            borderRadius: '2px',
+            opacity: 0.92,
+            transform: `rotate(${piece.rotate}deg)`,
+            animation: `confettiFall ${piece.duration}s linear ${piece.delay}s forwards`,
+            ['--drift' as any]: `${piece.drift}vw`,
+            zIndex: 60,
+            pointerEvents: 'none',
+            boxShadow: `0 0 12px ${piece.color}66`,
+          }}
+        />
+      ))}
+
+      {/* FULL-SCREEN BROADCAST */}
+      {broadcast && (
+        <div style={{
+          position: 'absolute',
+          top: loungeCompact ? 4 : 0,
+          left: loungeCompact ? 6 : 0,
+          right: loungeCompact ? 6 : 0,
+          bottom: loungeCompact ? 4 : 0,
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+          zIndex: 50, padding: loungeCompact ? '1% 2%' : '3%', animation: 'broadcastIn 0.3s ease-out',
+        }}>
+          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: `radial-gradient(ellipse at center, ${broadcast.glow}22 0%, transparent 70%)`, pointerEvents: 'none' }} />
+          {broadcast.type === 'chat-wars' ? (
+            <div style={{ position: 'relative', zIndex: 1, display: 'grid', gridTemplateRows: 'auto minmax(0, 1fr) auto', gap: '1.2%', width: '96%', height: '94%' }}>
+              <div style={{ textAlign: 'center', fontSize: loungeCompact ? 'min(5vw, 6vh)' : 'min(4vw, 5vh)', fontWeight: 950, letterSpacing: '.08em', textShadow: `0 0 2vw ${broadcast.glow}` }}>
+                CHAT WARS · {broadcast.payload?.phase === 'halftime' ? 'HALFTIME' : `HALF ${broadcast.payload?.activeHalf || 1}`}
+              </div>
+              <div aria-label="Full Chat Wars battlefield" style={{ display: 'grid', minHeight: 0, minWidth: 0, gridTemplateColumns: `repeat(${broadcast.payload?.width || 40}, minmax(0, 1fr))`, gridTemplateRows: `repeat(${broadcast.payload?.height || 25}, minmax(0, 1fr))`, gap: 1, padding: 2, border: '2px solid #67e8f9', borderRadius: 8, background: '#0f172a', boxShadow: `0 0 2vw ${broadcast.glow}` }}>
+                {Array.from(String(broadcast.payload?.tiles || '')).map((tile, index) => (
+                  <span key={index} style={{ minWidth: 0, minHeight: 0, background: tile === 'r' ? '#ef4444' : tile === 'b' ? '#3b82f6' : tile === 'g' ? '#22c55e' : tile === 'y' ? '#eab308' : '#374151' }} />
+                ))}
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.2fr', gap: '3%', minHeight: 0, fontSize: loungeCompact ? 'min(2.8vw, 3.2vh)' : 'min(2.2vw, 2.8vh)', fontWeight: 850, lineHeight: 1.15 }}>
+                <div>{(broadcast.payload?.teams || []).map((entry: any) => <div key={entry.team} style={{ color: entry.team === 'red' ? '#f87171' : entry.team === 'blue' ? '#60a5fa' : entry.team === 'green' ? '#4ade80' : '#fde047' }}>{String(entry.team).toUpperCase()} {entry.score}</div>)}</div>
+                <div>{(broadcast.payload?.players || []).slice(0, 4).map((entry: any, index: number) => <div key={`${entry.username}-${index}`}>#{index + 1} {entry.username} · {entry.score} pts · L{entry.level}</div>)}</div>
+              </div>
+            </div>
+          ) : <>
+          <div style={{
+            display: loungeCompact ? 'none' : undefined,
+            fontSize: loungeCompact ? 'min(9vw,18vh)' : (broadcast.type === 'history' ? 'min(18vw,18vh)' : 'min(21.6vw,21.6vh)'),
+            marginBottom: loungeCompact ? 0 : '1vh',
+            position: loungeCompact ? 'absolute' : 'static',
+            top: loungeCompact ? '3%' : undefined,
+            right: loungeCompact ? '4%' : undefined,
+            filter: `drop-shadow(0 0 3.6vw ${broadcast.glow})`,
+            animation: broadcast.type === 'ffa' ? 'pulse 0.6s ease-in-out infinite alternate' : 'iconBounce 0.4s ease-out',
+          }}>
+            {broadcast.icon}
+          </div>
+          {loungeCompact ? <RotationText lines={broadcast.lines} glow={broadcast.glow} /> : broadcast.lines.map((line, i) => (
+            <div key={i} style={{
+              fontSize: loungeCompact
+                ? (broadcast.type === 'history' ? 'min(5.8vw,8.2vh)' : 'min(9vw,14vh)')
+                : (broadcast.type === 'history' ? 'min(7.2vw,8.4vh)' : (i === 0 ? 'min(9.6vw,10.8vh)' : 'min(7.2vw,8.4vh)')),
+              fontWeight: loungeCompact || i === 0 ? 900 : 700,
+              textAlign: broadcast.type === 'history' ? 'left' : 'center',
+              textShadow: `0 0 4.8vw ${broadcast.glow}, 0 0.4vh 1.2vh rgba(0,0,0,0.9)`,
+              marginBottom: '0.3vh', width: '100%', wordWrap: 'break-word' as const, lineHeight: 1.1,
+              animation: `lineSlide 0.3s ease-out ${i * 0.06}s both`,
+              padding: broadcast.type === 'history' ? '0.3vh 2%' : undefined,
+              overflow: loungeCompact ? 'hidden' : undefined,
+              textOverflow: loungeCompact && broadcast.type !== 'history' ? 'ellipsis' : undefined,
+              whiteSpace: loungeCompact && broadcast.type !== 'history' ? 'nowrap' : 'normal',
+            }}>
+              {line}
+            </div>
+          ))}
+          <div style={{ width: '40%', height: '0.6vh', marginTop: '1.5vh', background: `linear-gradient(90deg, transparent, ${broadcast.color}, transparent)`, animation: 'lineGrow 0.5s ease-out 0.2s both' }} />
+          </>}
+        </div>
+      )}
+
+      {/* BOTTOM UI CONTAINER */}
+      <div style={{
+        position: 'absolute',
+        bottom: loungeCompact ? 3 : 0,
+        left: loungeCompact ? 4 : 0,
+        right: loungeCompact ? 4 : 0,
+        transition: 'opacity 0.4s ease, transform 0.4s ease',
+        // Keep the game-status bar present between announcements. It only
+        // dims while an announcement is active; it never fades to zero.
+        opacity: loungeCompact ? 1 : (dimBar ? announcementBarOpacity : idleBarOpacity),
+        transform: loungeCompact ? 'translateY(0)' : (dimBar ? 'translateY(5%)' : 'translateY(0)'),
+        zIndex: 20, display: 'flex', flexDirection: 'column',
+        height: loungeCompact ? 'calc(100% - 6px)' : undefined,
+        justifyContent: loungeCompact ? 'center' : undefined,
+        paddingBottom: 'max(1.25vh, env(safe-area-inset-bottom))',
+        boxSizing: 'border-box',
+      }}>
+        {/* IT / FFA Status */}
+        <div style={{
+          padding: loungeCompact ? '0.5vh 0.8vw' : '2.2vh 2.6vw',
+          position: 'relative',
+          display: 'flex',
+          flexDirection: loungeCompact ? 'column' : 'row',
+          alignItems: 'center',
+          gap: loungeCompact ? '0.35vh' : '1.35vw',
+          flex: loungeCompact ? '1 1 auto' : undefined,
+          borderTop: `0.8vh solid ${data.isFFA ? '#ff4500' : '#00d9ff'}`,
+          background: data.isFFA
+            ? 'linear-gradient(180deg, rgba(255, 69, 0, 0.75), rgba(255, 100, 0, 0.75))'
+            : 'linear-gradient(180deg, rgba(0, 180, 255, 0.75), rgba(0, 100, 200, 0.75))',
+          boxSizing: 'border-box',
+        }}>
+          <span style={{
+            position: loungeCompact ? 'absolute' : 'static',
+            top: loungeCompact ? '3%' : undefined,
+            right: loungeCompact ? '4%' : undefined,
+            zIndex: 2,
+            fontSize: loungeCompact ? 'min(9vw,18vh)' : 'min(10.5vw, 88px)',
+            lineHeight: 1,
+            opacity: compactAnnouncementActive ? 0 : 1,
+          }}>{data.isFFA ? '🔥' : '🎯'}</span>
+          <div style={{
+            display: 'flex',
+            width: loungeCompact ? '100%' : undefined,
+            minHeight: 0,
+            flex: loungeCompact ? '1 1 55%' : '1 1 auto',
+            flexDirection: 'column',
+            justifyContent: 'center',
+            overflow: 'hidden',
+            minWidth: 0,
+            paddingRight: loungeCompact ? '12vw' : undefined,
+            opacity: compactAnnouncementActive ? 0 : 1,
+          }}>
+            {data.isFFA ? (
+              <div style={{ display: 'flex', minHeight: loungeCompact ? '100%' : undefined, flexDirection: 'column', justifyContent: 'center' }}>
+                <div style={{
+                  fontSize: loungeCompact ? 'min(10vw, 17vh)' : 'min(2.6vw, 2.4vh)',
+                  lineHeight: 0.92,
+                  opacity: 0.98,
+                  fontWeight: 900,
+                  textTransform: 'uppercase',
+                  textShadow: '0 2px 6px rgba(0,0,0,0.55)',
+                }}>FREE FOR ALL</div>
+                <div style={{
+                  marginTop: loungeCompact ? '0.45vh' : undefined,
+                  fontSize: loungeCompact ? 'min(6vw, 9vh)' : 'min(3.4vw, 3vh)',
+                  lineHeight: 1.05,
+                  opacity: 0.96,
+                  fontWeight: 800,
+                  textShadow: '0 1px 4px rgba(0,0,0,0.45)',
+                }}>Anyone can tag for DOUBLE POINTS!</div>
+              </div>
+            ) : (
+              <>
+                <div style={{ fontSize: 'min(2.6vw, 2.4vh)', opacity: 0.95, fontWeight: 800, textTransform: 'uppercase', textShadow: '0 1px 4px rgba(0,0,0,0.45)' }}>IT</div>
+                {loungeCompact ? <FitText min={13} max={180}>{crown(data.it?.username || '?')}</FitText> : <div style={{
+                  fontSize: 'min(7.4vw, 7.8vh)',
+                  fontWeight: 900,
+                  lineHeight: 0.95,
+                  whiteSpace: 'nowrap',
+                  textOverflow: 'ellipsis',
+                  overflow: 'hidden',
+                  textShadow: '0 2px 6px rgba(0,0,0,0.5)',
+                }}>{crown(data.it?.username || '?')}</div>}
+              </>
+            )}
+          </div>
+          <div style={{
+            width: loungeCompact ? '100%' : undefined,
+            marginLeft: loungeCompact ? 0 : 'auto',
+            flex: loungeCompact ? '0 0 45%' : '0 0 auto',
+            display: 'grid',
+            gridTemplateColumns: loungeCompact ? 'repeat(3, minmax(0, 1fr))' : 'repeat(3, minmax(0, auto))',
+            alignItems: 'center',
+            columnGap: loungeCompact ? 0 : '1.05vw',
+            rowGap: '0.3vh',
+            padding: loungeCompact ? '0.2vh 0.7vw' : '0.95vh 1.1vw 0.85vh',
+            background: 'linear-gradient(180deg, rgba(7, 16, 30, 0.72), rgba(6, 12, 24, 0.82))',
+            border: '1px solid rgba(255,255,255,0.14)',
+            borderRadius: loungeCompact ? '1.2vw' : '0.6vw',
+            boxShadow: '0 0.4vh 1.4vh rgba(0,0,0,0.35)',
+            opacity: compactAnnouncementActive ? 0 : 1,
+          }}>
+            <StackStat value={data.liveCount || 0} label="live" align="left" compact={loungeCompact} />
+            <StackStat value={data.isFFA ? 'FFA' : `${elapsed}m`} label={data.isFFA ? 'mode' : 'it time'} align="center" compact={loungeCompact} />
+            <StackStat value={data.playerCount} label="players" align="right" compact={loungeCompact} />
+          </div>
+        </div>
+
+        {/* My Stats */}
+        {data.me && (
+          <div style={{
+            padding: '2vh 3vw 2.6vh', background: 'linear-gradient(180deg, rgba(50, 55, 80, 0.75), rgba(30, 30, 45, 0.75))',
+            display: 'grid',
+            gridTemplateColumns: 'minmax(0, auto) minmax(0, 1fr)',
+            alignItems: 'center',
+            columnGap: '1.5vw',
+            borderTop: '2px solid rgba(255,255,255,0.2)', width: '100%',
+            boxSizing: 'border-box',
+          }}>
+            <span style={{
+              fontSize: 'min(6vw, 6.5vh)',
+              fontWeight: 900,
+              lineHeight: 1,
+              whiteSpace: 'nowrap',
+              minWidth: 0,
+              maxWidth: '100%',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}>
+              {crown(data.me.twitchUsername)} <span style={{ opacity: 0.5, fontWeight: 400 }}>#{data.myRank}</span>
+            </span>
+            <div style={{
+              fontSize: 'min(4.2vw, 4.8vh)',
+              fontWeight: 900,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.8vw',
+              flexWrap: 'nowrap',
+              justifyContent: 'flex-end',
+              lineHeight: 1,
+              minWidth: 0,
+              width: '100%',
+              overflow: 'hidden',
+            }}>
+              <StatItem value={data.me.score} label="pts" />
+              <span style={{opacity: 0.3}}>|</span>
+              <StatItem value={data.me.tags} label="tags" />
+              <span style={{opacity: 0.3}}>|</span>
+              <StatItem value={data.me.tagged || 0} label="tagged" />
+              <span style={{opacity: 0.3}}>|</span>
+              <StatItem value={`🎟️${data.me.passCount || 0}`} label="passes" color="#ffd700" />
+              <span style={{opacity: 0.3}}>|</span>
+              <StatItem value={`🏆${data.me.wins || 0}`} label="wins" color="#ffd700" />
+            </div>
+          </div>
+        )}
+      </div>
+
+      <style>{`
+        @keyframes broadcastIn { 0% { opacity: 0; } 100% { opacity: 1; } }
+        @keyframes iconBounce { 0% { transform: scale(0.3) rotate(-10deg); opacity: 0; } 60% { transform: scale(1.15) rotate(3deg); } 100% { transform: scale(1) rotate(0); opacity: 1; } }
+        @keyframes pulse { 0% { transform: scale(1); } 100% { transform: scale(1.2); } }
+        @keyframes lineSlide { 0% { opacity: 0; transform: translateY(15%); } 100% { opacity: 1; transform: translateY(0); } }
+        @keyframes lineGrow { 0% { width: 0; opacity: 0; } 100% { width: 40%; opacity: 1; } }
+        @keyframes confettiFall {
+          0% { transform: translate3d(0, -5vh, 0) rotate(0deg); opacity: 0; }
+          10% { opacity: 0.95; }
+          100% { transform: translate3d(var(--drift), 112vh, 0) rotate(720deg); opacity: 0; }
+        }
+      `}</style>
+    </div>
+  );
+}

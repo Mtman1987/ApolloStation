@@ -1,0 +1,253 @@
+# Legacy source snapshot: Mtman1987/chat-tag
+
+Commit: 4091064d0607ee8820a147745f7f958c735a06d0. Code only (no assets/lockfiles/node_modules). NOT built or wired; excluded from the root tsc build. Reference for remaining parity work.
+
+## Donor commits since 2026-09-12 (verify each is reflected in apps/)
+- 4091064 2026-10-23 Add one-time encrypted recovery for chat-tag-new volume
+- 72ece12 2026-10-20 Fix Discord game board and OBS overlay links (#170)
+- 06e69af 2026-10-20 Harden Nebula Mosaic image generation prompts
+- e0abd86 2026-10-16 Use registered Chat Tag players for live checks
+- 8a7c393 2026-10-16 Fix Chat Tag scoring, immunity restoration, and live roster limits (#166)
+- cebccd8 2026-10-16 Fix no-tag-back validation order (#165)
+- 300d432 2026-10-16 Require ChatTag app admin for pass grants
+- 9e621db 2026-10-13 Bind bot health server explicitly for Fly probes
+- d2b6030 2026-10-13 Stop repeated Twitch IRC auth retries
+- 762bcaa 2026-10-12 Merge pull request #161 from Mtman1987/fix/mosaic-painter-reply-history-20261012
+- 5edb3be 2026-10-12 Use painter avatars and durable cleanup for Mosaic Discord replies
+- 241ef76 2026-10-12 Use painter avatars and durable cleanup for Mosaic Discord replies
+- cdba99e 2026-10-12 Use painter avatars and durable cleanup for Mosaic Discord replies
+- 301645d 2026-10-12 Add durable per-painter Mosaic reply history and expiry
+- 5c71fc8 2026-10-12 Add durable per-painter Mosaic reply history and expiry
+- 63328d4 2026-10-12 Merge pull request #160 from Mtman1987/fix/discord-mosaic-routing-20261012
+- 265290f 2026-10-12 Keep Discord game card inputs independent of stream overlay rotation
+- 5846354 2026-10-12 Route Discord Mosaic inputs through the existing game handler
+- 318d635 2026-10-12 Test Discord Mosaic routing and tenant isolation
+- 1af4907 2026-10-12 Resolve Discord Mosaic commands by linked game card
+- 492530f 2026-10-12 Merge pull request #159 from Mtman1987/fix/pause-bingo-transcription-20261012
+- f588f00 2026-10-12 Pause Bingo transcription while low-cost mic capture is evaluated
+- e64df3a 2026-10-11 Revoke removed accounts across Chat Tag sessions and middleware
+- 112c477 2026-10-09 Increase Chat Tag API to four shared CPUs for live command load
+- e2397af 2026-10-09 Allow tenant game overlays to use the lounge header-free display
+- fdb4d02 2026-10-09 Include and load-check the bot API retry helper in the production image
+- 16fe9ea 2026-10-09 Retry transient bot API reads once without replaying game writes
+- 0240623 2026-10-07 Merge pull request #158 from Mtman1987/streamweaver-wake-command-owner
+- 653ed87 2026-10-07 Let StreamWeaver own shared-bot wake commands
+- 8c80d2d 2026-10-07 Keep Discord game lifecycle running while Twitch reconnects
+- 2ae0ec8 2026-10-07 Authenticate private Mosaic reads and verify the extracted Saves panel
+- 71b2040 2026-10-07 Keep Nebula games available and add shared Mosaic projects and downloads
+- 627b086 2026-10-07 Authorize check-in bonus service calls and align check-in command deadlines
+- 41df0cd 2026-10-07 Retain 2 GB RAM headroom for Chat Tag web on shared CPUs
+- ae01f22 2026-10-06 Merge pull request #157 from Mtman1987/fix/chat-reply-resilience-20261006
+- 578a3ee 2026-10-06 Keep cached membership and observed shared-chat evidence explicit
+- b74c8a8 2026-10-06 Keep presenter source unchanged and preserve existing delivery test extraction
+- a570172 2026-10-06 Deduplicate shared chat before side effects and remove slow reply metadata waits
+- 166704a 2026-10-05 Merge pull request #156 from Mtman1987/fix/mosaic-expanded-layer
+- 601fcc6 2026-10-05 Keep expanded Mosaic above the workspace navigation
+- dc519cd 2026-10-05 Merge pull request #155 from Mtman1987/fix/mosaic-free-testing-week
+- f4b497d 2026-10-05 Keep fitted Mosaic squares proportional at every window width
+- 0376e75 2026-10-05 Make Mosaic testing week free and fit the controller board
+- d97bd30 2026-10-05 Merge pull request #154 from Mtman1987/fix/mosaic-reveal-rotation-charge
+- 2a87679 2026-10-05 Avoid charging chat reveals when Mosaic is offscreen
+- 16fbb62 2026-10-05 Merge pull request #153 from Mtman1987/fix/mosaic-readable-controls
+- fa0a45c 2026-10-05 Preserve general spmt commands in the Mosaic command form
+- 4d0f0a9 2026-10-05 Keep command-order regression aligned with recognized Mosaic controls
+- 4ce270c 2026-10-05 Add readable Mosaic command and touch controls with point purchases
+- 5a26283 2026-10-05 Merge pull request #152 from Mtman1987/fix/controller-sharing-theme-resilience
+- 85d597c 2026-10-05 Fix Mosaic palette indexing and validate canonical workspace outputs
+- 3c18dd5 2026-10-05 Update controller contract for Share tab and use Discord edit payload fields
+- 7efdbe5 2026-10-05 Add readable Mosaic coordinates, per-game Discord sharing and Stella guidance; tolerate workspace upstream failures
+- 7714d66 2026-10-05 Fix Twitch join loops, chat rate limits, pack timeouts and Lounge overlays (#151)
+- 8bd8c4b 2026-10-05 Merge pull request #150 from Mtman1987/fix/nebula-checkin-mosaic-fit
+- 777783c 2026-10-05 Credit check-in bonuses to Nebula wallet and fit Mosaic controller grid
+- 3713c95 2026-10-05 Merge pull request #149 from Mtman1987/fix/stella-checkin-shoutouts
+- bb2160c 2026-10-05 Delegate check-in shoutouts to Stella and suppress duplicate receipts
+- 8560637 2026-10-05 Merge pull request #148 from Mtman1987/feat/checkin-native-lounge-shoutout
+- 135b209 2026-10-05 Send native Lounge shoutouts for anyone's source-channel check-in
+- 7ab9adc 2026-10-05 Merge pull request #147 from Mtman1987/fix/word-chain-player-cooldown
+- b6c65e2 2026-10-05 Limit consecutive Word Chain answers to one per 30 seconds unless another player answers
+- 0ca3cb8 2026-10-05 Merge pull request #146 from Mtman1987/fix/word-chain-round-appeals
+- 94d9e06 2026-10-05 Add round-only Word Chain appeals and combine result announcements
+- 4bf6835 2026-10-05 Merge pull request #145 from Mtman1987/fix/word-chain-local-spellcheck
+- 814b1cb 2026-10-05 Reject misspelled and joined Word Chain guesses using a bundled dictionary
+- 05e3abd 2026-10-05 Merge pull request #144 from Mtman1987/fix/tenant-word-chain-voting-themes-results
+- a380d0a 2026-10-05 Isolate tenant delivery failures and preserve unique theme history
+- 788e801 2026-10-05 Fix tenant Word Chain voting, requested themes and automatic results
+- 7108c32 2026-10-03 Merge pull request #143 from Mtman1987/feat/quackdex-card-companion
+- 1daf0fb 2026-10-03 Build dedicated Quackdex card browser, deck builder and trading interface
+- 646266c 2026-10-03 Merge pull request #142 from Mtman1987/fix/chat-tag-player-checkin
+- 4c03688 2026-10-03 Run spmt checkin through Chat Tag in player channels
+- 580878f 2026-10-02 Merge pull request #141 from Mtman1987/codex/reserved-command-routing
+- 6645c39 2026-10-02 Reserve check-in command aliases so Mosaic cannot consume them
+- 661bd8b 2026-10-02 Keep reserved commands out of Mosaic and word-game free-text routing
+- 629130a 2026-10-02 Merge pull request #140 from Mtman1987/codex/quackdex-command
+- 38fd28f 2026-10-02 Wire spmt quackdex to the Quackdex tab in Nebula controller
+- 4ac8dc0 2026-10-02 Merge pull request #139 from Mtman1987/codex/quackdex-controller
+- c13fdb3 2026-10-02 Add Quackdex controller tab with collections, saved decks, and accepted card trades
+- 2584c6f 2026-10-02 Keep game overlay polling responsive during state writes (#138)
+- f4f55fa 2026-10-02 Verify Twitch chat delivery and report game-command timeouts
+- abfa97d 2026-10-02 Mark readable player cards ready for coordinated live overlay refresh
+- 41fe998 2026-10-02 Make shared turn labels explicit and fill ChatTag rotation with readable player cards
+- 909d039 2026-10-02 Show turn changes promptly and size each rotating game card to its box
+- 98c5c85 2026-10-02 Keep channel status reads out of the lifecycle write lock
+- 156a0b4 2026-10-02 Restore readable game overlays and fully stop idle games
+- 3b1bec1 2026-10-02 Merge pull request #137 from Mtman1987/fix/game-overlay-chunk-recovery
+- 2751284 2026-10-02 Recover game overlay chunk timeouts without changing game state
+- e32fd12 2026-10-02 Merge pull request #136 from Mtman1987/fix/treasure-overlay-fit-20261002
+- af2eebd 2026-10-02 Keep Treasure Hunt grid within the lounge overlay height
+- 387f7a6 2026-10-02 Merge pull request #135 from Mtman1987/fix/treasure-exact-square-turn-display-20261002
+- 594f19e 2026-10-02 Restore active Treasure Hunt to the lounge and keep turn speech tied to changes
+- 03ddd90 2026-10-02 Require exact Treasure Hunt digs and clarify visible turn timers and announcements
+- da6af6c 2026-10-02 Merge pull request #134 from Mtman1987/fix/shared-wordchain-crown-links
+- a3f6e2d 2026-10-02 Fix shared Word Chain state and protect crowned overlay links
+- ef276c4 2026-10-02 Fix shared Word Chain state and protect crowned overlay links
+- 1d58a21 2026-10-02 Fix shared Word Chain state and protect crowned overlay links
+- 207d3a3 2026-10-02 Fix shared Word Chain state and protect crowned overlay links
+- c2d13b5 2026-10-02 Keep Lounge main stage synced to active word games (#133)
+- 180ec06 2026-10-01 Polish Lounge Word Chain finish and voting (#132)
+- 5d7f58c 2026-10-01 Keep Games Hub channel polling off the shared state write lock (#130)
+- ccb7832 2026-10-01 Deactivate timed-out Lounge activity games
+- ddd2745 2026-10-01 Show player names in compact Chat Tag history
+- 7934791 2026-09-30 Fix Chat Tag blacklist recovery
+- 704898c 2026-09-30 Route game stop choices through controller before gameplay (#128)
+- 1519838 2026-09-30 Fix Word Chain stop numeric confirmation (#127)
+- c4afcde 2026-09-30 Keep overlay timing prebuild patch idempotent
+- 6cca2cb 2026-09-30 Test per-word command collision memory
+- 93fe743 2026-09-30 Scope Word Chain command collisions to each word
+- 3b62106 2026-09-29 Remove unused Quackverse rank helper
+- a5bc9ca 2026-09-29 Stabilize Mosaic refresh hook dependencies
+- b5b43aa 2026-09-29 Remove unused overlay HUD state binding
+- 2edd585 2026-09-29 Remove stale Chat Tag import warning
+- 5316711 2026-09-29 Handle Bingo leave before square claims
+- 7373e7a 2026-09-29 Remove flaky Google font build dependency
+- 85b468c 2026-09-29 Make Bingo join persist player state
+- 2ae0c8a 2026-09-29 Cover simplified universal Nebula commands
+- bedf4a9 2026-09-29 Add universal per-game rules status and score
+- 56ad91b 2026-09-29 Allow explicit game targets on universal Nebula commands
+- b25d98a 2026-09-29 Guarantee unique Nebula game run IDs
+- 1df35d1 2026-09-29 Gate deploy on Games Hub command contract
+- 98dfcec 2026-09-29 Test contextual Nebula focus lifecycle
+- f9c2b6a 2026-09-29 Make explicit Nebula game focus authoritative
+- 09476c0 2026-09-29 Add contextual short Nebula game routing
+- 9710c98 2026-09-29 Add per-player Nebula game focus memory
+- 1345ea6 2026-09-29 Document spmt opt-out alias
+- 78d1b01 2026-09-29 Allow linked Discord users to opt out
+- c3a4eb9 2026-09-29 Accept spmt opt-out alias
+- d8048d6 2026-09-29 Retry transient Twitch channel joins
+- 062334c 2026-09-29 Allow StreamWeaver service to direct Nebula games
+- a17cb85 2026-09-28 Right-size Chat Tag memory while keeping two CPUs
+- c39663a 2026-09-28 Align Word Chain stage checks with explicit guess prompt
+- 8e54d08 2026-09-28 Make word game guesses explicit and settle Word Chain votes after each round
+- 782139f 2026-09-28 Merge pull request #125 from Mtman1987/fix/nebula-tag-scores-away-toggle
+- 015a7bf 2026-09-28 Verify Nebula reads scored Chat Tag history
+- 92d1238 2026-09-28 Preserve away status until toggle command reads it
+- dbb05d0 2026-09-28 Show canonical Chat Tag scores on Nebula game leaderboard
+- e7ae4fe 2026-09-28 Fix Chat Tag workspace visibility and footer controls (#124)
+- 7350d90 2026-09-28 Make Nebula controllers private stream test consoles
+- e9cef66 2026-09-28 Keep workspace controls in footer
+- fbbc287 2026-09-28 Send controller and overlay links separately on game start
+- 019a3bc 2026-09-27 Deploy Chat Tag state isolation recovery
+- 9b55e86 2026-09-27 Trigger deploy for Chat Tag state isolation fix
+- c33bf7e 2026-09-27 Keep Chat Tag status reads read-only
+- c2bbaed 2026-09-27 Shard high-churn game state from Chat Tag core persistence
+- 1d53a48 2026-09-27 Merge pull request #119 from Mtman1987/fix/chat-tag-launch-pressure-20260927
+- c6d4acc 2026-09-27 Avoid redundant volume writes during Chat Tag reads and presence
+- 739ef4c 2026-09-26 Merge pull request #118 from Mtman1987/fix/pack-feature-and-discord-columns-20260926
+- 3a10759 2026-09-26 Restore collection summary variables
+- 137ea77 2026-09-26 Cover native mobile pack columns
+- d5a9c46 2026-09-26 Preserve native Discord pack columns during build
+- 98502ae 2026-09-26 Use Spotlight-style columns for Quackverse pack
+- cbebcd0 2026-09-26 Use native Discord columns for SPMT pack
+- 8b5bd72 2026-09-26 Merge pull request #117 from Mtman1987/fix/discord-chat-pack-presenter-20260926
+- 52eabdf 2026-09-26 Cover direct Discord pack presenter
+- 2c7c1b6 2026-09-26 Preserve fixed Discord pack presenter during prebuild
+- 40633d0 2026-09-26 Fix direct Discord pack grid and GIF attachment
+- 726ab56 2026-09-26 Merge pull request #116 from Mtman1987/fix/discord-pack-grid-attachment-20260926
+- 07a2d38 2026-09-26 Fix attachment editor lint
+- fdd4cff 2026-09-26 Cover fixed pack grid and attached Discord GIF
+- 09990bb 2026-09-26 Use fixed three-column pack grid and attached GIF
+- e939259 2026-09-26 Upload pack GIFs into Discord on message edit
+- 7b0c5e1 2026-09-26 Merge pull request #115 from Mtman1987/fix/quackverse-discord-grid-avatar-20260926
+- 8a3e6e0 2026-09-26 Cover Quackverse Discord grid and broadcaster GIF branding
+- 3ee06d2 2026-09-26 Pass Twitch broadcaster to Quackverse GIF presenter
+- 31dcd0f 2026-09-26 Show Quackverse Discord cards three across
+- edfbf63 2026-09-26 Use three-column Quackverse card fields and broadcaster GIF branding
+- 74fd2cd 2026-09-26 Pass broadcaster tenant into Quackverse GIF capture
+- 9f6a400 2026-09-26 Merge pull request #114 from Mtman1987/fix/quackverse-overlay-handoff-20260926
+- 547d190 2026-09-26 Cover awaited Quackverse overlay handoff
+- 4b5d1fa 2026-09-26 Await Quackverse overlay handoff before response
+- 29d8cc3 2026-09-26 Merge pull request #113 from Mtman1987/feat/cross-stream-word-games-20260926
+- 7b47180 2026-09-26 Cover shared Phrase Guess and Word Chain battles
+- d0ee6dc 2026-09-26 Show cross-stream scores on word-game stage
+- ad28bc6 2026-09-26 Keep shared Word Chain scoring on source stream
+- dbfd0dc 2026-09-26 Expose cross-stream word-game battle context
+- 97a98a2 2026-09-26 Allow word-game stream battles
+- 0e98462 2026-09-26 Share Phrase Guess and Word Chain state across streams
+- fbad850 2026-09-26 Merge pull request #112 from Mtman1987/fix/chatwars-cross-stream-overlay-20260926
+- a34cf94 2026-09-26 Cover cross-stream Chat Wars board snapshot
+- 04fd96e 2026-09-26 Render linked Chat Wars streams side by side
+- bda8a22 2026-09-26 Return cross-stream Chat Wars battle state
+- 695a0f7 2026-09-26 Expose linked Chat Wars boards in battle snapshot
+- f8135a7 2026-09-26 Add real Chat Wars stream battle sessions (#111)
+- 569ced7 2026-09-26 Let tenant bots reshape live Nebula overlays in place (#110)
+- 10ccf41 2026-09-26 Expose Nebula overlay creator to tenant bots (#109)
+- c38d00f 2026-09-25 Make Bingo playable from controller microphone transcripts
+- b72bf92 2026-09-25 Make Nebula Controllers first-class
+- e715228 2026-09-25 Build Nebula Controllers and Mosaic control suite
+- 3f57a7a 2026-09-24 Lock Lounge-only ChatTag auth bypass
+- 1a5e2ca 2026-09-24 Restore shared bot transport and allow Lounge-only pass
+- 60f5d98 2026-09-24 Move SpaceMountain broadcaster bridge to Fly private network
+- f93fa85 2026-09-24 Make live chat pressure patch idempotent
+- 7c2d517 2026-09-24 Cover live SpaceMountain broadcaster bridge
+- 6b6a834 2026-09-24 Remove duplicate web-side SpaceMountain send bridge
+- 1e9a277 2026-09-24 Expose protected SpaceMountainLive send on live ChatTag bot
+- 87fc87e 2026-09-24 Add internal SpaceMountainLive broadcaster chat bridge
+- 45de1a3 2026-09-21 Update always-ready parade regression
+- 6b6a53d 2026-09-21 Make Emoji Parade full-screen and share the real raid trigger
+- d8c3c55 2026-09-21 Allow public Word Chain stage snapshots
+- b72c172 2026-09-21 Show active Word Chain stage immediately
+- 215d758 2026-09-21 Finish main-stage word games
+- 7e110ff 2026-09-20 Expand Treasure Hunt puzzle variety
+- c1a4ea8 2026-09-20 Build shared Treasure Hunt and anti-cheat Bingo
+- fbdb149 2026-09-20 Expose Chat Wars state to activity overlays
+- 3f1359f 2026-09-20 Rebuild Chat Wars as a two-half chat game
+- 6864f8b 2026-09-20 Add per-artwork Mosaic brushes
+- b5660c5 2026-09-20 Drop instant Nebula overlay links from chat
+- 43a6aa8 2026-09-20 Attach game guides to fallback replies
+- 406bb4c 2026-09-20 Link chat commands to game popouts
+- b6d9333 2026-09-20 Add owner Mosaic preview completion
+- 8611777 2026-09-20 Accept show as a Mosaic view alias
+- df68368 2026-09-20 Route Nebula Mosaic through OpenAI Images
+- ac493ae 2026-09-20 Fail over Mosaic image generation providers
+- bd4b79e 2026-09-20 Fill activity panels and recover Mosaic generation
+- b9fcae7 2026-09-20 Keep compact Chat Tag inside its panel
+- 68a95fd 2026-09-20 Retry Mosaic generation with supported image size
+- 50d94f7 2026-09-20 Make Nebula Mosaic requests free for testing
+- 9ae5c98 2026-09-20 Build Nebula Mosaic collaborative artwork game
+- e647fdb 2026-09-20 Make Pixel Battle broadcast grid fully opaque
+- fe7deef 2026-09-20 Use the full compact Chat Tag card
+- aa0b63f 2026-09-20 Keep Nebula activity handoff stable
+- 9959985 2026-09-20 Release idle Nebula panels after 30 minutes
+- 12ca525 2026-09-20 Fill compact Lounge game surfaces
+- 1fd2f94 2026-09-20 Separate Nebula broadcast and control surfaces
+- 2ec960c 2026-09-20 Fix word game contract type narrowing
+- c45a1e6 2026-09-20 Merge complete Nebula word-game economy
+- f612d88 2026-09-20 Complete Nebula word-game economy
+- 662c3c0 2026-09-20 Show active Lounge games in the activity panel
+- eec9dff 2026-09-20 Make Phrase Guess scoring server authoritative
+- 5708f5f 2026-09-20 Merge Nebula Arcade launch blockers
+- d3811a6 2026-09-20 Harden Nebula triggers and phrase hint economy
+- c4298eb 2026-09-20 Fix Nebula Arcade launch rotation and word stages
+- 35a3b06 2026-09-20 Preserve Twitch game and viewer metadata
+- cfb5c76 2026-09-20 Enlarge Lounge Chat Tag status
+- 82230d2 2026-09-20 Hide Chat Tag idle details during announcements
+- 93fcb5f 2026-09-20 Make Lounge Chat Tag names readable
+- 969e259 2026-09-20 Add compact readable Lounge overlay mode
+- 649f304 2026-09-19 Make Quackverse browser-first with pack-only stream reveal
+- fbfe18e 2026-09-19 Upgrade Dancing Parade to Cosmic Conga Line
+- 46660f5 2026-09-18 Keep Chat Tag status visible outside announcements
+- 9bdd732 2026-09-18 Keep Chat Tag status bar present between announcements
+- 9668449 2026-09-18 Keep Chat Tag overlay document transparent
+- 8c60fb3 2026-09-18 Resolve system Chat Tag channels directly
+- 1218455 2026-09-18 Keep channel overlays out of the app shell
+- 2d2d7ce 2026-09-18 Keep embedded Emoji Rain transparent while idle
+- a864f6f 2026-09-17 Add stable SpaceMountainLive system overlay routes

@@ -1,0 +1,155 @@
+import sharp from 'sharp';
+import { MOSAIC_COLORS, MOSAIC_HEIGHT, MOSAIC_WIDTH, type MosaicColorCode } from '@/lib/nebula-mosaic';
+import { getStreamweaverSecret } from '@/lib/runtime-secrets';
+
+const STREAMWEAVER_URL = String(
+  process.env.STREAMWEAVER_URL || process.env.STREAMWEAVE_URL || 'https://streamweaver-new.fly.dev',
+).replace(/\/$/, '');
+const STREAMWEAVER_TENANT_ID = String(
+  process.env.MOSAIC_STREAMWEAVER_TENANT_ID || process.env.STREAMWEAVER_TENANT_ID || 'spacemountainlive',
+).trim();
+const MOSAIC_PROVIDER = String(process.env.MOSAIC_IMAGE_PROVIDER || 'openai').trim().toLowerCase();
+const MOSAIC_FALLBACK_PROVIDERS = String(process.env.MOSAIC_IMAGE_FALLBACK_PROVIDERS || 'pollinations')
+  .split(',')
+  .map((value) => value.trim().toLowerCase())
+  .filter(Boolean);
+
+function promptForTheme(theme: string) {
+  // Treat the submitted theme as data, not as extra prompt instructions. Keep
+  // it short and single-line so a chat command cannot smuggle in a new prompt.
+  const subject = String(theme || '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120);
+  if (!subject) throw new Error('Enter a subject for the Mosaic theme.');
+
+  return [
+    `PRIMARY SUBJECT — depict this exact subject clearly and literally: “${subject}”.`,
+    'Make one finished collaborative pixel-art mosaic. The named subject must be the dominant, unmistakable subject and occupy most of the canvas.',
+    'Do not reinterpret, replace, or omit the named subject. Do not introduce unrelated people, animals, characters, objects, or a collage. Extra decoration must never obscure or substitute for the requested subject.',
+    'Portrait 4:5 composition, one centered subject, complete readable silhouette, generous dark background around the edges.',
+    'Use only ten flat colors: red, blue, green, yellow, purple, orange, pink, white, black, and cyan.',
+    'Large connected color regions, crisp hard edges, no gradients, no antialiasing, and no tiny isolated details.',
+    'The artwork will be reduced to exactly 40 columns by 50 rows and split into four equal 20-by-25 work boards. Prioritize recognizable shape and strong contrast at tiny pixel size.',
+    'ARTWORK ONLY. No grid lines, letters, numbers, captions, labels, frame, interface, logo, or watermark.',
+  ].join(' ');
+}
+
+function normalizeStreamWeaverPayload(data: any) {
+  return data?.data && typeof data.data === 'object' ? data.data : data;
+}
+
+async function requestImage(theme: string) {
+  if (!STREAMWEAVER_TENANT_ID) throw new Error('Nebula Mosaic image generation is not configured.');
+  const serviceSecret = getStreamweaverSecret();
+  const providers = [MOSAIC_PROVIDER, ...MOSAIC_FALLBACK_PROVIDERS]
+    .filter((provider, index, all) => provider && all.indexOf(provider) === index);
+  const failures: string[] = [];
+
+  for (const provider of providers) {
+    try {
+      const response = await fetch(`${STREAMWEAVER_URL}/api/ai/image`, {
+        method: 'POST',
+        signal: AbortSignal.timeout(45_000),
+        headers: {
+          'Content-Type': 'application/json',
+          'x-mountainview-bridge': '1',
+          Authorization: `Bearer ${serviceSecret}`,
+          'x-bot-secret': serviceSecret,
+        },
+        body: JSON.stringify({
+          prompt: promptForTheme(theme),
+          scope: 'public',
+          tenantId: STREAMWEAVER_TENANT_ID,
+          // All configured providers accept this square source. Sharp crops the
+          // centered artwork to the final 40-by-50 board after download.
+          resolution: '1024x1024',
+          numImages: 1,
+          providerOverride: provider,
+          providerParams: {
+            quality: 'low',
+            // A fresh seed prevents providers that honor seeds (especially free
+            // URL-backed fallbacks) from serving the same cached artwork again.
+            seed: Math.floor(Math.random() * 2_147_483_646) + 1,
+            negativePrompt: 'unrelated subject, substituted subject, people, animals, character portrait, duck, collage, multiple main subjects, text, letters, numbers, words, UI, controls, grid labels, photo, gradients, blur, watermark, logo',
+          },
+        }),
+      });
+      const raw = await response.json().catch(() => null);
+      const data = normalizeStreamWeaverPayload(raw);
+      const imageUrl = [
+        ...(Array.isArray(data?.persistedImageUrls) ? data.persistedImageUrls : []),
+        ...(Array.isArray(data?.images) ? data.images : []),
+        data?.persistedImageUrl,
+        data?.image,
+        data?.imageResourceUrl,
+      ].map((value) => String(value || '').trim()).find(Boolean);
+      if (response.ok && raw?.ok !== false && imageUrl) {
+        return {
+          imageUrl: new URL(imageUrl, STREAMWEAVER_URL).toString(),
+          provider: String(data?.provider || provider || 'streamweaver'),
+        };
+      }
+      const reason = raw?.error || data?.error || raw?.message || data?.message
+        || (imageUrl ? `invalid response (${response.status})` : `no artwork (${response.status})`);
+      failures.push(`${provider}: ${String(reason).slice(0, 300)}`);
+      console.warn(`[Nebula Mosaic] ${provider} generation failed; trying the next provider.`, reason);
+    } catch (error) {
+      failures.push(`${provider}: ${error instanceof Error ? error.message : 'Provider unavailable'}`);
+      console.warn(`[Nebula Mosaic] ${provider} request failed; trying the next provider.`);
+    }
+  }
+
+  throw new Error(`Mosaic image generation failed across all providers: ${failures.join(' | ')}`);
+}
+
+function hexRgb(hex: string) {
+  const value = hex.replace('#', '');
+  return [Number.parseInt(value.slice(0, 2), 16), Number.parseInt(value.slice(2, 4), 16), Number.parseInt(value.slice(4, 6), 16)] as const;
+}
+
+const RGB_PALETTE = Object.entries(MOSAIC_COLORS).map(([code, value]) => ({
+  code: code as MosaicColorCode,
+  rgb: hexRgb(value.hex),
+}));
+
+function nearestColor(red: number, green: number, blue: number): MosaicColorCode {
+  let closest = RGB_PALETTE[0];
+  let closestDistance = Number.POSITIVE_INFINITY;
+  for (const candidate of RGB_PALETTE) {
+    const [r, g, b] = candidate.rgb;
+    const distance = (red - r) ** 2 + (green - g) ** 2 + (blue - b) ** 2;
+    if (distance < closestDistance) {
+      closest = candidate;
+      closestDistance = distance;
+    }
+  }
+  return closest.code;
+}
+
+async function imageToTarget(bytes: Buffer) {
+  const { data, info } = await sharp(bytes)
+    .flatten({ background: '#111827' })
+    .resize(MOSAIC_WIDTH, MOSAIC_HEIGHT, { fit: 'cover', position: 'centre', kernel: sharp.kernel.lanczos3 })
+    .removeAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  if (info.width !== MOSAIC_WIDTH || info.height !== MOSAIC_HEIGHT || info.channels < 3) {
+    throw new Error('Generated artwork could not be converted to a 40-by-50 Mosaic.');
+  }
+  const target: MosaicColorCode[] = [];
+  for (let index = 0; index < data.length; index += info.channels) {
+    target.push(nearestColor(data[index], data[index + 1], data[index + 2]));
+  }
+  return target;
+}
+
+export async function generateMosaicTemplate(theme: string) {
+  const generated = await requestImage(theme);
+  const response = await fetch(generated.imageUrl, { signal: AbortSignal.timeout(45_000) });
+  if (!response.ok) throw new Error(`Generated Mosaic could not be downloaded (${response.status}).`);
+  const bytes = Buffer.from(await response.arrayBuffer());
+  if (!bytes.length || bytes.length > 20 * 1024 * 1024) throw new Error('Generated Mosaic image was empty or too large.');
+  return {
+    target: await imageToTarget(bytes),
+    provider: generated.provider,
+    sourceImageUrl: generated.imageUrl,
+  };
+}

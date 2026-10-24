@@ -1,0 +1,40 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { requireAdminRequest } from '@/lib/auth';
+import { updateAppState } from '@/lib/volume-store';
+import { adminActor, appendAdminHistory } from '@/lib/audit';
+
+export async function POST(request: NextRequest) {
+  const auth = requireAdminRequest(request);
+  if (!auth.ok) return auth.response;
+  try {
+    const result = await updateAppState((state) => {
+      const playerUsernames = new Set<string>();
+      for (const player of Object.values(state.tagPlayers) as any[]) {
+        const username = (player.twitchUsername || '').toLowerCase();
+        if (username) playerUsernames.add(username);
+      }
+
+      const before = Object.keys(state.botChannels).length;
+      let pruned = 0;
+
+      for (const channelName of Object.keys(state.botChannels)) {
+        if (!playerUsernames.has(channelName.toLowerCase())) {
+          delete state.botChannels[channelName];
+          pruned++;
+        }
+      }
+
+      appendAdminHistory(state, {
+        action: 'prune-channels',
+        performedBy: adminActor(auth.user),
+        details: `before=${before}; after=${before - pruned}; pruned=${pruned}; players=${playerUsernames.size}`,
+      });
+
+      return { before, after: before - pruned, pruned, players: playerUsernames.size };
+    });
+
+    return NextResponse.json({ success: true, ...result });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
