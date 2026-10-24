@@ -42,7 +42,7 @@ async function api(url, init={}) {
   if (!response.ok) throw new Error(`KeenTools API returned HTTP ${response.status}: ${String(data.detail??data.message??"request failed").slice(0,250)}`);
   return data;
 }
-const init = await api("https://api.keentools.io/v1/avatar/init", {method:"POST", body:JSON.stringify({image_count:selected.length})});
+const init = await api("https://api.keenface.ai/v1/avatar/init", {method:"POST", body:JSON.stringify({image_count:selected.length})});
 const avatarId = String(init.avatar_id ?? "");
 if (!/^[A-Za-z0-9_-]{4,160}$/.test(avatarId) || !Array.isArray(init.img_urls) || init.img_urls.length !== selected.length) {
   throw new Error("KeenTools returned invalid initialization data.");
@@ -58,10 +58,10 @@ await Promise.all(init.img_urls.map(async (raw, i) => {
   const response = await fetch(signedUrl(raw), {method:"PUT", headers:{"content-type":"image/png"}, body:ordered[i].bytes, redirect:"error", signal:AbortSignal.timeout(180000)});
   if (!response.ok) throw new Error(`KeenTools reference upload ${i+1} failed (HTTP ${response.status}).`);
 }));
-await api(`https://api.keentools.io/v1/avatar/${encodeURIComponent(avatarId)}/process`, {method:"POST", body:JSON.stringify({focal_length_type:{focal_length_type:"estimate_common"}})});
+await api(`https://api.keenface.ai/v1/avatar/${encodeURIComponent(avatarId)}/process`, {method:"POST", body:JSON.stringify({focal_length_type:{focal_length_type:"estimate_common"}})});
 let complete = false;
 for (let i=0; i<180; i++) {
-  const status = await api(`https://api.keentools.io/v1/avatar/${encodeURIComponent(avatarId)}/get-status`);
+  const status = await api(`https://api.keenface.ai/v1/avatar/${encodeURIComponent(avatarId)}/get-status`);
   if (status.status === "completed") { complete = true; break; }
   if (status.status === "failed" || status.status === "deleted") throw new Error(`KeenTools processing failed: ${String(status.data?.error_message ?? status.status).slice(0,250)}`);
   await new Promise(r => setTimeout(r, 2000));
@@ -70,7 +70,7 @@ if (!complete) throw new Error("KeenTools reconstruction timed out after six min
 const query = new URLSearchParams({mesh_format:"glb", mesh_lod:"high_poly", blendshapes:"arkit", texture:"png", edges:"false"});
 let glb;
 for (let i=0; i<30; i++) {
-  const result = await api(`https://api.keentools.io/v1/avatar/${encodeURIComponent(avatarId)}/get-3d-model?${query}`);
+  const result = await api(`https://api.keenface.ai/v1/avatar/${encodeURIComponent(avatarId)}/get-3d-model?${query}`);
   if (result.event === "redirect") {
     const response = await fetch(signedUrl(result.data?.url), {redirect:"error", signal:AbortSignal.timeout(180000)});
     if (!response.ok) throw new Error(`GLB download failed (HTTP ${response.status}).`);
