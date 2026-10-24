@@ -94,6 +94,12 @@ test("spotlight rotation ignores ineligible system channels when eligible creato
     });
     assert.equal(result.liveCount, 2);
     assert.equal(result.actions.find(action => action.type === "spotlight.update")?.member.canonicalUserId, "user-alpha");
+    const replay = value.monitor.reconcile({
+      schemaVersion: 1, tenantId: "tenant-a", pollId: "system-and-creator", observedAt: iso(0),
+      members: [system, alpha], streams: [stream("spacemountainlive", "stream-system"), stream("alpha", "stream-alpha")]
+    });
+    assert.equal(replay.duplicate, true);
+    assert.deepEqual(replay.actions, result.actions);
   } finally { cleanup(value); }
 });
 
