@@ -11,9 +11,9 @@ export interface DshSystemLiveChannelV1 {
 
 /**
  * System-owned community channels are real public community surfaces, but they are
- * never ordinary Raid Pile destinations. SpaceMountainLive remains eligible for
- * normal DSH shoutouts/spotlight while acting as the controlled Lounge/continuity
- * anchor for Raid Pile and Raid Train recovery.
+ * never ordinary Raid Pile destinations. SpaceMountainLive is a controlled
+ * Lounge/continuity anchor, not a normal Community Spotlight candidate; it remains
+ * available for Raid Train fallback and continuity recovery.
  */
 export const DSH_SYSTEM_LIVE_CHANNELS: readonly DshSystemLiveChannelV1[] = Object.freeze([
   Object.freeze({
@@ -21,7 +21,7 @@ export const DSH_SYSTEM_LIVE_CHANNELS: readonly DshSystemLiveChannelV1[] = Objec
     twitchLogin: "spacemountainlive",
     displayName: "SpaceMountainLive",
     role: "lounge",
-    spotlightEligible: true,
+    spotlightEligible: false,
     raidPileTargetEligible: false,
     raidTrainFallbackEligible: true,
     virtualHost: "stella",

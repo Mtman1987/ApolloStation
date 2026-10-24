@@ -1,0 +1,40 @@
+name: Discord Stream Hub parity validation
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "apps/discord-stream-hub/**"
+      - "tests/dsh-*.test.mjs"
+      - "tests/dsh-*.test.ts"
+      - "packages/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/dsh-parity-validation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dsh-parity-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  offline-parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Compile all apps and packages
+        run: npm run build
+      - name: Run focused Discord Stream Hub regressions
+        run: node --import ./scripts/offline-network-guard.mjs --test tests/dsh-live-monitor.test.mjs tests/dsh-lounge-state.test.mjs tests/dsh-discord-live-publisher.test.mjs
