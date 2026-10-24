@@ -3,6 +3,7 @@ import type {OutboundChatMessageV1} from '@spmt/contracts';
 import type {StreamWeaverCommunityStore} from './community-store.js';
 import type {StreamWeaverPersonaSettingsStore} from './persona-settings.js';
 import {StreamWeaverGreetingPending} from './donor-shoutout-actions.js';
+import {normalizeTextForTTS} from './tts-text.js';
 
 /** Consumes only the presentation task committed alongside a successful check-in. */
 export async function presentCheckin(options:{store:StreamWeaverCommunityStore;client:SpmtClient;personas:StreamWeaverPersonaSettingsStore;connections:Array<{tenantId:string;provider:string;connectionId:string;channelId:string;desired:boolean}>;egress:{send(message:OutboundChatMessageV1):Promise<unknown>}},task:{tenant:string;id:string;body:Record<string,unknown>}){
@@ -35,6 +36,6 @@ export async function presentCheckin(options:{store:StreamWeaverCommunityStore;c
  store.enqueue(task.tenant,key,'streamweaver.welcome.v1',{text,displayName:name});
  if(settings.ttsEnabled){
   if(!owner)throw Error('Configure the persona owner before speaking check-in greetings');
-  await client.createExecutionJob(task.tenant,{ownerAppId:'streamweaver',executionOwner:'stellar-core',capabilityId:'stellar.speech.synthesize.v1',billedUserId:owner,meteredResource:'hosted-worker-minutes',usageQuantity:1,executionTarget:'sprite',meteringTarget:'hosted',input:{kind:'stellar.speech.request.v1',text,voice:settings.voice,remember:false,mediaVisibility:'public'}},`${key}:speech`);
+  const spokenText=normalizeTextForTTS(text);if(!spokenText)throw Error('There is no speakable text after removing emotes and emoji');await client.createExecutionJob(task.tenant,{ownerAppId:'streamweaver',executionOwner:'stellar-core',capabilityId:'stellar.speech.synthesize.v1',billedUserId:owner,meteredResource:'hosted-worker-minutes',usageQuantity:1,executionTarget:'sprite',meteringTarget:'hosted',input:{kind:'stellar.speech.request.v1',text:spokenText,voice:settings.voice,remember:false,mediaVisibility:'public'}},`${key}:speech`);
  }
 }
