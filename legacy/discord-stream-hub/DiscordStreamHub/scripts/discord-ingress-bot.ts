@@ -1,0 +1,223 @@
+import 'dotenv/config';
+import {
+  ActivityType,
+  Client,
+  GatewayIntentBits,
+  Message,
+  Partials,
+  PermissionFlagsBits,
+  VoiceState,
+} from 'discord.js';
+import { getDiscordIngressTimeoutMs } from '../src/lib/discord-ingress-timeout';
+import { mtFixItPublicReply } from '../src/lib/mtfixit-contract';
+import { resumePendingMtFixItDeliveries } from '../src/lib/mtfixit-delivery';
+import { sendDiscordMtFixItMessage } from '../src/lib/mtfixit-discord-delivery';
+
+const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
+const DSH_INGRESS_URL = (
+  process.env.DSH_DISCORD_INGRESS_URL
+  || process.env.NEXT_PUBLIC_BASE_URL
+  || 'http://127.0.0.1:3000'
+).replace(/\/$/, '');
+const PRESENCE_TEXT = process.env.DSH_DISCORD_PRESENCE || 'Powered by Space Mountain';
+
+const VOICE_OWNED_COMMAND = /^!(?:dj|ignore|unignore|ignored|skip|voteskip|wr|watch|add|accept)(?:\s|$)/i;
+const REPAIR_DECISION = /^(mtfixit|chatgpt)_(approve|deny):([a-zA-Z0-9_-]{8,120})$/;
+
+function shouldForward(message: Message) {
+  if (!message.guild) return false;
+  if (message.author.bot) return false;
+  if (VOICE_OWNED_COMMAND.test(message.content.trim())) return false;
+  return true;
+}
+
+function buildPayload(message: Message) {
+  const memberPermissions = message.member?.permissions;
+  const isOwner = message.guild?.ownerId === message.author.id;
+  const isAdmin = Boolean(memberPermissions?.has(PermissionFlagsBits.Administrator));
+  const isMod = Boolean(
+    isAdmin
+    || memberPermissions?.has(PermissionFlagsBits.ManageGuild)
+    || memberPermissions?.has(PermissionFlagsBits.ManageMessages)
+  );
+  const voiceChannel = message.member?.voice?.channel;
+  return {
+    userId: message.author.id,
+    userName: message.member?.displayName || message.author.globalName || message.author.username,
+    displayName: message.member?.displayName || message.author.globalName || message.author.username,
+    userAvatar: message.author.displayAvatarURL({ size: 256 }),
+    guildId: message.guildId,
+    serverId: message.guildId,
+    channelId: message.channelId,
+    channelName: 'name' in message.channel ? message.channel.name : '',
+    voiceChannelId: voiceChannel?.id || '',
+    voiceChannelName: voiceChannel?.name || '',
+    messageId: message.id,
+    message: message.content,
+    content: message.content,
+    isDM: false,
+    isDirectMessage: false,
+    isAdmin,
+    isMod,
+    isOwner,
+    memberPermissions: memberPermissions?.bitfield.toString() || '0',
+    dispatch: true,
+    source: 'dsh-discord-gateway',
+    traceId: message.id,
+    author: { id: message.author.id, username: message.author.username, bot: message.author.bot },
+    mentions: [...message.mentions.users.values()].map((user) => ({ id: user.id, username: user.username, displayName: user.globalName || user.username })),
+    attachments: [...message.attachments.values()].map((attachment) => ({
+      id: attachment.id, name: attachment.name, url: attachment.url, proxyUrl: attachment.proxyURL, contentType: attachment.contentType, size: attachment.size,
+    })),
+    embeds: message.embeds.map((embed) => embed.toJSON()),
+    stickers: [...message.stickers.values()].map((sticker) => ({ id: sticker.id, name: sticker.name, format: sticker.format })),
+  };
+}
+
+async function forwardMessage(message: Message) {
+  if (!shouldForward(message)) return;
+  if (!DISCORD_BOT_TOKEN) throw new Error('DISCORD_BOT_TOKEN is required');
+  const controller = new AbortController();
+  const mentionsBot = Boolean(message.client.user?.id && message.mentions.users.has(message.client.user.id));
+  const timeoutMs = getDiscordIngressTimeoutMs(message.content, mentionsBot);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  timeout.unref?.();
+  try {
+    const response = await fetch(`${DSH_INGRESS_URL}/api/discord/gateway-ingress`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-chat-origin': 'dsh-discord-gateway', 'x-discord-trace-id': message.id, 'x-discord-bot-token': DISCORD_BOT_TOKEN },
+      body: JSON.stringify(buildPayload(message)),
+      signal: controller.signal,
+    });
+    const result = await response.json().catch(() => null);
+    if (!response.ok) throw new Error(`DSH ingress ${response.status}: ${JSON.stringify(result)}`);
+    console.log(`[DiscordIngress] ${message.id} ${message.author.username} -> ${message.channelId} timeoutMs=${timeoutMs}`);
+  } finally { clearTimeout(timeout); }
+}
+
+async function publishVoicePresence(state: VoiceState) {
+  if (!state.guild || !state.id || state.member?.user?.bot) return;
+  if (!DISCORD_BOT_TOKEN) throw new Error('DISCORD_BOT_TOKEN is required');
+  const response = await fetch(`${DSH_INGRESS_URL}/api/discord/relay-presence`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-discord-bot-token': DISCORD_BOT_TOKEN },
+    body: JSON.stringify({
+      userId: state.id,
+      guildId: state.guild.id,
+      username: state.member?.user?.username || '',
+      displayName: state.member?.displayName || state.member?.user?.globalName || state.member?.user?.username || '',
+      channelId: state.channelId || '',
+      channelName: state.channel?.name || '',
+      observedAt: new Date().toISOString(),
+    }),
+    signal: AbortSignal.timeout(8_000),
+  });
+  if (!response.ok) throw new Error(`Relay presence ${response.status}: ${await response.text().catch(() => '')}`);
+}
+
+async function handleMtFixItDecision(interaction: any) {
+  if (!interaction?.isButton?.()) return false;
+  const match = String(interaction.customId || '').match(REPAIR_DECISION);
+  if (!match) return false;
+  if (!DISCORD_BOT_TOKEN) throw new Error('DISCORD_BOT_TOKEN is required');
+  const kind = match[1] as 'mtfixit' | 'chatgpt';
+  const action = match[2] as 'approve' | 'deny';
+  const jobId = match[3];
+  await interaction.deferUpdate();
+  const response = await fetch(`${DSH_INGRESS_URL}/api/internal/mtfixit/decision`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-discord-bot-token': DISCORD_BOT_TOKEN },
+    body: JSON.stringify({ userId: interaction.user.id, jobId, action, kind }),
+    signal: AbortSignal.timeout(20_000),
+  });
+  const result = await response.json().catch(() => null);
+  if (!response.ok) {
+    await interaction.followUp({ content: `MtFixIt ${action} failed: ${String(result?.error || `HTTP ${response.status}`).slice(0, 500)}`, ephemeral: true }).catch(() => undefined);
+    return true;
+  }
+  const state = String(result?.state?.status || (action === 'approve' ? (kind === 'chatgpt' ? 'awaiting-chatgpt' : 'deploying') : 'denied'));
+  const suffix = action === 'approve'
+    ? kind === 'chatgpt'
+      ? `\n\n✅ mtman approved ChatGPT repair. Packet is now queued for the next hourly ChatGPT pass.`
+      : `\n\n✅ mtman approved this repair. Athena is ${state === 'deployed' ? 'finished deploying it.' : 'merging/deploying it now.'}`
+    : kind === 'chatgpt'
+      ? '\n\n⛔ mtman declined ChatGPT fallback. This repair packet will not enter the ChatGPT queue.'
+      : '\n\n⛔ mtman denied automatic deployment. Athena is holding this repair for further instructions.';
+  const existing = String(interaction.message?.content || '').replace(/\n\n(?:✅|⛔)[\s\S]*$/, '');
+  await interaction.editReply({ content: `${existing}${suffix}`.slice(0, 1900), components: [] });
+  console.log(`[DiscordIngress] Repair decision kind=${kind} action=${action} job=${jobId} user=${interaction.user.id} state=${state}`);
+  return true;
+}
+
+const inventoryTimers = new Map<string, ReturnType<typeof setTimeout>>();
+function refreshInventory(guildId: string, channelId = '') {
+  const key = guildId + ':' + channelId;
+  if (inventoryTimers.has(key)) clearTimeout(inventoryTimers.get(key)!);
+  const timer = setTimeout(() => {
+    inventoryTimers.delete(key);
+    void fetch(`${DSH_INGRESS_URL}/api/discord/server-inventory`, {
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-discord-bot-token': DISCORD_BOT_TOKEN || '' },
+      body: JSON.stringify({ guildId, channelId }), signal: AbortSignal.timeout(60_000),
+    }).then(async response => {
+      if (!response.ok) throw new Error('Server inventory ' + response.status + ': ' + await response.text());
+    }).catch(error => console.warn('[DiscordIngress] Server inventory update failed:', error));
+  }, 1000);
+  timer.unref?.(); inventoryTimers.set(key, timer);
+}
+
+async function main() {
+  if (!DISCORD_BOT_TOKEN) throw new Error('DISCORD_BOT_TOKEN is required');
+  const client = new Client({
+    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.DirectMessages, GatewayIntentBits.GuildVoiceStates, GatewayIntentBits.MessageContent],
+    partials: [Partials.Channel, Partials.Message],
+  });
+  client.once('clientReady', (readyClient) => {
+    readyClient.user.setPresence({ status: 'online', activities: [{ name: PRESENCE_TEXT, type: ActivityType.Watching }] });
+    console.log(`[DiscordIngress] READY as ${readyClient.user.tag}`);
+    console.log(`[DiscordIngress] Presence: ${PRESENCE_TEXT}`);
+    console.log(`[DiscordIngress] DSH endpoint: ${DSH_INGRESS_URL}/api/discord/gateway-ingress`);
+    const publishCurrentVoiceStates = () => {
+      for (const guild of readyClient.guilds.cache.values()) {
+        for (const state of guild.voiceStates.cache.values()) {
+          if (state.channelId) publishVoicePresence(state).catch((error) => console.warn(`[DiscordIngress] Voice presence heartbeat failed ${guild.id}/${state.id}:`, error));
+        }
+      }
+    };
+    for (const guild of readyClient.guilds.cache.values()) refreshInventory(guild.id);
+    publishCurrentVoiceStates();
+    const voicePresenceHeartbeat = setInterval(publishCurrentVoiceStates, 60_000);
+    voicePresenceHeartbeat.unref?.();
+    void resumePendingMtFixItDeliveries('discord', async (record, outcome) => {
+      await sendDiscordMtFixItMessage(record.channelId, mtFixItPublicReply(outcome));
+    }).then((count) => {
+      if (count) console.log(`[DiscordIngress] Resumed ${count} pending Discord MtFixIt delivery record(s).`);
+    }).catch((error) => console.error('[DiscordIngress] Failed to resume MtFixIt deliveries:', error));
+  });
+  client.on('guildCreate', guild => refreshInventory(guild.id));
+  client.on('channelCreate', channel => { if ('guild' in channel) refreshInventory(channel.guild.id, channel.id); });
+  client.on('channelUpdate', (_old, channel) => { if ('guild' in channel) refreshInventory(channel.guild.id, channel.id); });
+  client.on('channelDelete', channel => { if ('guild' in channel) refreshInventory(channel.guild.id); });
+  client.on('roleCreate', role => refreshInventory(role.guild.id));
+  client.on('roleUpdate', (_old, role) => refreshInventory(role.guild.id));
+  client.on('roleDelete', role => refreshInventory(role.guild.id));
+  client.on('messageCreate', (message) => { forwardMessage(message).catch((error) => console.error(`[DiscordIngress] Failed ${message.id}:`, error)); });
+  client.on('voiceStateUpdate', (_oldState, newState) => {
+    publishVoicePresence(newState).catch((error) => console.warn(`[DiscordIngress] Voice presence update failed ${newState.guild.id}/${newState.id}:`, error));
+  });
+  client.on('interactionCreate', (interaction) => {
+    handleMtFixItDecision(interaction).catch(async (error) => {
+      console.error('[DiscordIngress] MtFixIt interaction failed:', error);
+      if (interaction.isRepliable?.()) await interaction.followUp?.({ content: 'MtFixIt could not process that decision. The repair has not been approved.', ephemeral: true }).catch(() => undefined);
+    });
+  });
+  client.on('error', (error) => console.error('[DiscordIngress] Client error:', error));
+  client.on('warn', (warning) => console.warn('[DiscordIngress] Client warning:', warning));
+  client.on('shardDisconnect', (event, shardId) => console.warn(`[DiscordIngress] Shard ${shardId} disconnected (${event.code})`));
+  client.on('shardResume', (shardId, replayedEvents) => console.log(`[DiscordIngress] Shard ${shardId} resumed; replayed ${replayedEvents} events`));
+  await client.login(DISCORD_BOT_TOKEN);
+}
+
+main().catch((error) => {
+  console.error('[DiscordIngress] Fatal:', error);
+  process.exit(1);
+});

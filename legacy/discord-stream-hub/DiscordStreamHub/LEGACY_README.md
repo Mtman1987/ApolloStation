@@ -1,0 +1,98 @@
+# Legacy source snapshot: Mtman1987/DiscordStreamHub
+
+Commit: eedf4113c46d1bb4529fbc734a0e990351c96b1f. Code only (no assets/lockfiles/node_modules). NOT built or wired; excluded from the root tsc build. Reference for remaining parity work.
+
+## Donor commits since 2026-09-12 (verify each is reflected in apps/)
+- eedf411 2026-10-23 Exclude SpaceMountainLive from live Community Spotlight
+- cbd9827 2026-10-23 Fix recovery artifact split step
+- 4b040b5 2026-10-23 Split encrypted Discord Stream Hub backup into downloadable parts
+- fffc1d0 2026-10-23 Recover Discord Stream Hub database/config before bulk media
+- 783e28c 2026-10-23 Add one-time encrypted recovery for discord-stream-hub-new volume
+- 26ef830 2026-10-21 fix: keep Discord calendar to one current message (#136)
+- 07ad09e 2026-10-13 Fix stale Twitch failure regression assertion
+- e7c9c02 2026-10-13 Prevent Twitch status failures from triggering retry storms
+- b0eb385 2026-10-13 Prevent duplicate concurrent Twitch token refreshes
+- 0d590b8 2026-10-13 Keep Twitch polling initialization retryable
+- 4356cf4 2026-10-13 Back off repeated Twitch app-token failures
+- f4c9892 2026-10-13 Preserve last known stream state when Twitch polling fails
+- 8da35da 2026-10-13 Scope clip-worker deployments to relevant changes
+- 1002fb1 2026-10-13 Retry transient Discord inventory reads
+- 3b72088 2026-10-13 Throttle repeated Twitch chat OAuth warnings
+- 76ab81a 2026-10-13 Back off invalid Twitch OAuth credentials
+- b525035 2026-10-13 Reduce redundant Twitch polling database writes
+- 193e224 2026-10-13 Validate Discord inventory responses before saving
+- a8e3b20 2026-10-13 Fix origin validation behind Fly proxy (#123)
+- b894b1f 2026-10-13 Log rejected request origins for diagnostics (#122)
+- 9b3673c 2026-10-12 Merge pull request #121 from Mtman1987/fix/say-vc-shared-connection-20261012
+- 0785122 2026-10-12 Preserve adopted voice streams and playback connections after Say capture
+- b8064e8 2026-10-12 Merge pull request #120 from Mtman1987/fix/say-discord-vc-20261012
+- 1916f31 2026-10-12 Address voice capture authentication and lifecycle review findings
+- 4da6e6d 2026-10-12 Add bounded Discord VC listener for on-demand Say transcription
+- fb9c3f8 2026-10-12 Run forum privacy regression tests before future web deployments
+- 1f5b0c7 2026-10-12 Block restricted channels and private threads from public forum mirrors
+- 7b47730 2026-10-12 Use friendly forum thread names, remove duplicate copies and exclude forum relay loops
+- 7bf9a71 2026-10-12 Validate owner-requested ecosystem Administrator install grant
+- d3d231b 2026-10-12 Request Administrator for full SPMT ecosystem bot installation
+- 856a200 2026-10-12 Run channel nuke as a durable background cleanup with restart-safe progress
+- 691d216 2026-10-12 Recover original forum threads from durable source-channel message history
+- 9901077 2026-10-12 Make Discord installs, channel mirrors and tenant cleanup reliable
+- 145034f 2026-10-11 Retry short Discord rate limits during server discovery
+- 15bdccc 2026-10-11 Use bot installation and verified membership for Discord server setup
+- 16f2cca 2026-10-09 Add per-account Discord server discovery, bot installation and selection
+- 902fba0 2026-10-02 Add krashoutkrissy to live shoutout spotlight roster
+- d9752e7 2026-10-02 Merge pull request #118 from Mtman1987/fix/live-spotlight-and-gif-size
+- 09871f7 2026-10-02 Fix lounge media readiness and source continuity
+- d232a7a 2026-10-02 Fix lounge media readiness and source continuity
+- 582757e 2026-09-30 Merge pull request #117 from Mtman1987/feature/stream-continuity-probe
+- f351a13 2026-09-30 Test authenticated Twitch continuity probe
+- 0043d49 2026-09-30 Add authenticated Twitch live-status continuity probe
+- 346608e 2026-09-30 Add strict Twitch stream status lookup for continuity checks
+- 536f7c3 2026-09-29 Keep DSH build storage off production volume paths
+- 8e0ef13 2026-09-29 Use resolved guild for Discord opt-out DM
+- 87996b7 2026-09-29 Clarify Twitch ban opt-out notice
+- 55b0b7c 2026-09-29 Allow SPMT opt-out from Discord DM
+- c8a7b2c 2026-09-29 Purge expired blacklist quarantine profiles
+- c2d17ad 2026-09-29 Own Discord SPMT opt-out in DSH
+- dae9d77 2026-09-29 Apply shared Twitch blacklist to MtFixIt watcher
+- af2d561 2026-09-29 Quarantine newly banned channels and notify once
+- a98e88c 2026-09-29 Add one-time Twitch ban opt-out notice
+- 9759c13 2026-09-29 Keep Signal build patch idempotent
+- 341d2b4 2026-09-29 Make Signal drops command-only
+- fd9aeea 2026-09-29 Harden SPMT Discord reward delivery
+- 5d19036 2026-09-29 Stream clip downloads and bound GIF conversion memory
+- 406b781 2026-09-29 Keep fallback clips at 10 fps for 45 seconds
+- f1e1ce7 2026-09-29 Render fallback clips within the GIF upload budget
+- 946e9c5 2026-09-28 Right-size live clip worker to one shared CPU and 1 GB
+- c3f01f2 2026-09-28 Merge pull request #116 from Mtman1987/fix/live-card-metadata-types-20260928
+- eb368a6 2026-09-28 Type live-card metadata hydration callbacks
+- 693f946 2026-09-28 Merge pull request #115 from Mtman1987/fix/live-card-metadata-20260928
+- 2100e07 2026-09-28 Test live-card Twitch metadata hydration
+- 2e8aa23 2026-09-28 Hydrate all live community cards from Twitch
+- 83a1af6 2026-09-28 Show linked Discord identity on Lounge leaderboard
+- a72532c 2026-09-25 Expose stored shoutout GIFs for Lounge BRB fallback
+- b9dcfc0 2026-09-25 Match Discord unknown channel response correctly
+- 4c5b304 2026-09-25 Preserve MtFixIt outcome when Discord channel disappears
+- 05f74a3 2026-09-25 Resume MtFixIt deliveries using scoped service OAuth
+- 55eb346 2026-09-25 Use scoped service OAuth for MtFixIt orchestration
+- 2eace42 2026-09-25 Feed Lounge from events already shown on public headless calendar
+- f80642d 2026-09-21 Make SPMT the only leaderboard and XP authority
+- 48ddbcf 2026-09-20 Make Lounge leaderboard readable at compact size
+- 57bc452 2026-09-19 Fix nested Twitch player in Lounge
+- 4b1051c 2026-09-19 Replace Lounge spotlight GIF with live Twitch
+- 97bb74a 2026-09-18 Resolve leaderboard names from linked Twitch identities
+- b722b43 2026-09-18 Crop transparent leaderboard image margins
+- 83ef245 2026-09-18 Fill leaderboard embed canvas
+- e7ce101 2026-09-18 Add minimal transparent leaderboard image embed
+- 2e66f94 2026-09-18 Use Discord leaderboard image in overlay
+- f8fa4ba 2026-09-18 Load headless leaderboard through server API
+- 5cbf693 2026-09-18 Keep idle leaderboard overlay transparent
+- e084713 2026-09-17 Use stable spotlight GIF in Community Lounge
+- 5607161 2026-09-17 Expose safe Community Lounge spotlight media
+- c347d4f 2026-09-17 Keep Community Lounge spotlight transparent until playback
+- b5aaa1f 2026-09-17 Hide stale offline Community Lounge spotlight
+- eca9cd6 2026-09-17 Force transparent DSH headless documents
+- 7b1ff37 2026-09-17 Mark DSH headless requests before render
+- e2c1171 2026-09-17 Render DSH headless routes without app chrome
+- 9dcb09f 2026-09-17 Make all headless DiscordStreamHub routes transparent
+- f1b261b 2026-09-17 Fix Community Lounge spotlight transparency
+- 89b9434 2026-09-17 Add reusable live community spotlight and scheduled leaderboard outputs

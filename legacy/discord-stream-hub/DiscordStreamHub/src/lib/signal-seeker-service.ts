@@ -1,0 +1,202 @@
+import { randomUUID } from 'node:crypto';
+import { db } from '@/lib/db';
+
+const DISCORD_API = 'https://discord.com/api/v10';
+const ROLE_NAME = 'Signal Seeker';
+export const SIGNAL_DROP_TTL_MS = 10 * 60 * 1000;
+const COMMAND_SIGNAL_CLUES = [
+  'A hidden carrier is breaking through the static. The transmission is open.',
+  'A Signal crossed the network and left a trail through the noise.',
+  'The mountain answered. A narrow transmission is holding for a few more minutes.',
+];
+
+function botToken() {
+  const token = String(process.env.DISCORD_BOT_TOKEN || '').trim();
+  if (!token) throw new Error('Discord bot token is unavailable');
+  return token;
+}
+
+async function discord(path: string, init: RequestInit = {}) {
+  const response = await fetch(`${DISCORD_API}${path}`, {
+    ...init,
+    headers: {
+      Authorization: `Bot ${botToken()}`,
+      ...(init.body ? { 'Content-Type': 'application/json' } : {}),
+      ...(init.headers || {}),
+    },
+  });
+  if (!response.ok) {
+    throw new Error(`Discord ${init.method || 'GET'} ${path} failed (${response.status})`);
+  }
+  if (response.status === 204) return null;
+  return response.json().catch(() => null);
+}
+
+export async function ensureSignalSeekerRole(guildId: string): Promise<string> {
+  const configRef = db.collection('servers').doc(guildId).collection('config').doc('signal-seeker');
+  const [configDoc, roles] = await Promise.all([
+    configRef.get(),
+    discord(`/guilds/${guildId}/roles`),
+  ]);
+  const configuredId = String(configDoc.data()?.roleId || '').trim();
+  const list = Array.isArray(roles) ? roles : [];
+  const existing = list.find((role: any) => String(role.id) === configuredId)
+    || list.find((role: any) => String(role.name).toLowerCase() === ROLE_NAME.toLowerCase());
+  if (existing?.id) {
+    if (String(existing.id) !== configuredId) {
+      await configRef.set({ roleId: String(existing.id), roleName: ROLE_NAME, updatedAt: new Date().toISOString() }, { merge: true });
+    }
+    return String(existing.id);
+  }
+
+  const created = await discord(`/guilds/${guildId}/roles`, {
+    method: 'POST',
+    body: JSON.stringify({ name: ROLE_NAME, color: 0x5865f2, mentionable: true, hoist: false }),
+  });
+  if (!created?.id) throw new Error('Discord did not return the new Signal Seeker role');
+  await configRef.set({ roleId: String(created.id), roleName: ROLE_NAME, createdAt: new Date().toISOString() }, { merge: true });
+  return String(created.id);
+}
+
+export async function setSignalSeekerMembership(input: {
+  guildId: string;
+  discordUserId: string;
+  action: 'join' | 'leave' | 'toggle';
+}): Promise<{ roleId: string; status: 'joined' | 'left' }> {
+  const roleId = await ensureSignalSeekerRole(input.guildId);
+  const [member, roles] = await Promise.all([
+    discord(`/guilds/${input.guildId}/members/${input.discordUserId}`),
+    discord(`/guilds/${input.guildId}/roles`),
+  ]);
+  const titleConfig = await db.collection('servers').doc(input.guildId).collection('config').doc('voidwalker').get();
+  const winnerRole = (Array.isArray(roles) ? roles : []).find((role: any) =>
+    String(role.id) === String(titleConfig.data()?.roleId || '') || String(role.name).toLowerCase() === 'voidwalker');
+  const isWinner = winnerRole && Array.isArray(member?.roles) && member.roles.map(String).includes(String(winnerRole.id));
+  const hasRole = Array.isArray(member?.roles) && member.roles.map(String).includes(roleId);
+  const shouldJoin = !isWinner && (input.action === 'join' || (input.action === 'toggle' && !hasRole));
+  await discord(`/guilds/${input.guildId}/members/${input.discordUserId}/roles/${roleId}`, {
+    method: shouldJoin ? 'PUT' : 'DELETE',
+  });
+  return { roleId, status: shouldJoin ? 'joined' : 'left' };
+}
+
+export function signalSeekerComponents() {
+  return [{
+    type: 1,
+    components: [
+      { type: 2, style: 3, label: 'Join the Egg Hunt', custom_id: 'signal_seekers:join', emoji: { name: '🥚' } },
+      { type: 2, style: 2, label: 'Leave the Hunt', custom_id: 'signal_seekers:leave' },
+    ],
+  }];
+}
+
+export async function postSignalSeekerPanel(input: { guildId: string; channelId: string }) {
+  await ensureSignalSeekerRole(input.guildId);
+  return discord(`/channels/${input.channelId}/messages`, {
+    method: 'POST',
+    body: JSON.stringify({
+      embeds: [{
+        title: '📡 Signal Seekers',
+        description: 'Join the hunt for all three hidden Space Mountain eggs. Signal Seekers are pinged when a new Signal appears. You can leave whenever you want.',
+        color: 0x5865f2,
+        footer: { text: 'No app login is required. Discord already knows who you are.' },
+      }],
+      components: signalSeekerComponents(),
+      allowed_mentions: { parse: [] },
+    }),
+  });
+}
+
+
+async function deleteSignalMessage(channelId: string, messageId: string) {
+  const response = await fetch(`${DISCORD_API}/channels/${channelId}/messages/${messageId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bot ${botToken()}` },
+  }).catch(() => null);
+  if (response && !response.ok && response.status !== 404) {
+    console.error(`[SignalDrop] Timed deletion failed (${response.status}) for ${channelId}/${messageId}`);
+  }
+}
+
+export async function postSignalDrop(input: {
+  guildId: string;
+  channelId: string;
+  channelName?: string;
+  clue?: string;
+  botName?: string;
+  avatarUrl?: string;
+  source?: 'command' | 'internal';
+}) {
+  const roleId = await ensureSignalSeekerRole(input.guildId).catch((error) => {
+    console.error('[SignalDrop] Unable to resolve Signal Seeker role:', error);
+    return '';
+  });
+  const dropId = randomUUID();
+  const clue = String(input.clue || COMMAND_SIGNAL_CLUES[Math.floor(Math.random() * COMMAND_SIGNAL_CLUES.length)]).trim().slice(0, 1800);
+  const message = await discord(`/channels/${input.channelId}/messages`, {
+    method: 'POST',
+    body: JSON.stringify({
+      ...(roleId ? { content: `<@&${roleId}> a Signal is ready to open.` } : {}),
+      embeds: [{
+        author: { name: String(input.botName || 'StreamWeaver').slice(0, 80), ...(input.avatarUrl ? { icon_url: input.avatarUrl } : {}) },
+        title: '📡 UNIDENTIFIED SIGNAL',
+        description: 'A carrier is waiting behind the static. Open the Signal before it fades.',
+        color: 0x5865f2,
+        footer: { text: 'Signal opens on demand • expires in 10 minutes' },
+        timestamp: new Date().toISOString(),
+      }],
+      components: [{
+        type: 1,
+        components: [{
+          type: 2,
+          style: 1,
+          label: 'OPEN SIGNAL',
+          custom_id: `signal_intercept:${dropId}`,
+          emoji: { name: '📡' },
+        }],
+      }],
+      allowed_mentions: { parse: [], roles: roleId ? [roleId] : [] },
+    }),
+  });
+  if (!message?.id) throw new Error('Discord did not return the Signal message');
+  const createdAt = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + SIGNAL_DROP_TTL_MS).toISOString();
+  await db.collection('signalDrops').doc(dropId).set({
+    id: dropId,
+    guildId: input.guildId,
+    channelId: input.channelId,
+    channelName: String(input.channelName || input.channelId),
+    messageId: String(message.id),
+    clue,
+    botName: String(input.botName || 'StreamWeaver'),
+    source: input.source || 'internal',
+    createdAt,
+    expiresAt,
+    opens: 0,
+  });
+  const timer = setTimeout(() => {
+    deleteSignalMessage(input.channelId, String(message.id)).catch((error) => {
+      console.error('[SignalDrop] Timed deletion crashed:', error);
+    });
+  }, SIGNAL_DROP_TTL_MS);
+  timer.unref?.();
+  return { id: String(message.id), dropId, messageId: String(message.id), expiresAt };
+}
+
+export async function postCommandSignalDrop(input: { guildId: string; channelId: string; channelName?: string }) {
+  return postSignalDrop({ ...input, source: 'command' });
+}
+
+export async function findDiscordMemberByTwitch(guildId: string, twitchUserId: string, twitchUsername: string) {
+  const users = db.collection('servers').doc(guildId).collection('users');
+  let snapshot = twitchUserId
+    ? await users.where('twitchId', '==', twitchUserId).limit(1).get()
+    : null;
+  if (!snapshot || snapshot.empty) {
+    snapshot = await users.where('twitchLogin', '==', twitchUsername.toLowerCase()).limit(1).get();
+  }
+  const doc = snapshot?.docs?.[0];
+  if (!doc) return null;
+  const data = doc.data() || {};
+  return String(data.discordUserId || doc.id || '').trim() || null;
+}

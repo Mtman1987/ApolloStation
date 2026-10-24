@@ -1,0 +1,164 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+function patch(relativePath, transform) {
+  const file = path.join(root, relativePath);
+  const before = fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n');
+  const after = transform(before);
+  if (after === before) {
+    console.log(`[SignalPatch] already applied: ${relativePath}`);
+    return;
+  }
+  fs.writeFileSync(file, after, 'utf8');
+  console.log(`[SignalPatch] applied: ${relativePath}`);
+}
+
+patch('src/app/api/discord/manual-shoutout/route.ts', (source) => {
+  if (!source.includes("const kind = body.kind === 'signal' ? 'signal' : 'manual';")) {
+    source = source.replace(
+      "    const sourceMessageId = String(body.sourceMessageId || '').trim() || null;",
+      "    const sourceMessageId = String(body.sourceMessageId || '').trim() || null;\n    const kind = body.kind === 'signal' ? 'signal' : 'manual';\n    const signalText = String(body.signalText || '').trim().slice(0, 1800) || null;"
+    );
+  }
+  if (!source.includes('      kind,\n      signalText,')) {
+    source = source.replace(
+      '      sourceMessageId,\n    });',
+      '      sourceMessageId,\n      kind,\n      signalText,\n    });'
+    );
+  }
+  return source;
+});
+
+patch('src/lib/manual-discord-shoutout-service.ts', (source) => {
+  if (!source.includes("buildSignalShoutoutControlField")) {
+    source = source.replace(
+      "import { deleteDiscordMessage, editDiscordMessage, postDiscordMessage, sendShoutout } from '@/lib/discord-sync-service';",
+      "import { deleteDiscordMessage, editDiscordMessage, postDiscordMessage, sendShoutout } from '@/lib/discord-sync-service';\nimport { buildSignalShoutoutControlField } from '@/lib/signal-shoutout-control';"
+    );
+  }
+
+  if (!source.includes("kind?: 'manual' | 'signal';")) {
+    source = source.replace(
+      '  sourceMessageId?: string | null;\n  createdAt: string;',
+      "  sourceMessageId?: string | null;\n  kind?: 'manual' | 'signal';\n  signalText?: string | null;\n  suppressedAt?: string | null;\n  createdAt: string;"
+    );
+    source = source.replace(
+      '  sourceMessageId?: string | null;\n};\n\ntype ResolvedManualTarget',
+      "  sourceMessageId?: string | null;\n  kind?: 'manual' | 'signal';\n  signalText?: string | null;\n};\n\ntype ResolvedManualTarget"
+    );
+  } else if (!source.includes('suppressedAt?: string | null;')) {
+    source = source.replace(
+      '  signalText?: string | null;\n  createdAt: string;',
+      '  signalText?: string | null;\n  suppressedAt?: string | null;\n  createdAt:'
+    );
+  }
+
+  if (!source.includes("kind: input.kind || 'manual'")) {
+    source = source.replace(
+      '    sourceMessageId: input.sourceMessageId || null,\n    createdAt:',
+      "    sourceMessageId: input.sourceMessageId || null,\n    kind: input.kind || 'manual',\n    signalText: input.signalText || null,\n    suppressedAt: null,\n    createdAt:"
+    );
+  } else if (!source.includes('    suppressedAt: null,')) {
+    source = source.replace(
+      '    signalText: input.signalText || null,\n    createdAt:',
+      '    signalText: input.signalText || null,\n    suppressedAt: null,\n    createdAt:'
+    );
+  }
+
+  if (!source.includes('async function buildManualPayload(entry: ManualDiscordShoutoutRecord, serverId: string)')) {
+    source = source.replace(
+      'async function buildManualPayload(entry: ManualDiscordShoutoutRecord): Promise<{',
+      'async function buildManualPayload(entry: ManualDiscordShoutoutRecord, serverId: string): Promise<{'
+    );
+    source = source.replace(
+      'await buildManualPayload(recordBase);',
+      'await buildManualPayload(recordBase, input.serverId);'
+    );
+    source = source.replace(
+      'await buildManualPayload(nextEntry);',
+      'await buildManualPayload(nextEntry, serverId);'
+    );
+  }
+
+  if (!source.includes("const isSignal = entry.kind === 'signal';")) {
+    source = source.replace(
+      '  const embeds: any[] = [];',
+      "  const isSignal = entry.kind === 'signal';\n  const embeds: any[] = [];"
+    );
+    source = source.replace(
+      '      name: `${displayName} Manual Shoutout`,',
+      "      name: isSignal ? '📡 INCOMING SIGNAL' : `${displayName} Manual Shoutout`,"
+    );
+    source = source.replace(
+      "    title: isLive ? `${displayName} is LIVE on Twitch` : `Shoutout for ${displayName}`,\n    description: entry.aiShoutout,",
+      "    title: isSignal\n      ? (isLive ? `${displayName} // LIVE CARRIER LOCKED` : `${displayName} // CARRIER LOCATED`)\n      : (isLive ? `${displayName} is LIVE on Twitch` : `Shoutout for ${displayName}`),\n    description: isSignal ? (entry.signalText || `A transmission from @${entry.requesterName} has crossed the network.`) : entry.aiShoutout,"
+    );
+    source = source.replace(
+      "        name: 'Called By',\n        value: `@${entry.requesterName}`,",
+      "        name: isSignal ? 'Transmitted By' : 'Called By',\n        value: `@${entry.requesterName}`,"
+    );
+    source = source.replace(
+      "      text: entry.trackWhileLive\n        ? 'Discord manual shoutout • refreshes every 10 minutes while live'\n        : 'Discord manual shoutout • posted while offline',",
+      "      text: isSignal\n        ? (entry.trackWhileLive ? 'SpaceMountain Signal • carrier refreshes while live' : 'SpaceMountain Signal • carrier retained for 1 hour')\n        : (entry.trackWhileLive\n          ? 'Discord manual shoutout • refreshes every 10 minutes while live'\n          : 'Discord manual shoutout • posted while offline'),"
+    );
+  }
+
+  if (!source.includes('buildSignalShoutoutControlField({ serverId, recordId: entry.id })')) {
+    source = source.replace(
+      "      {\n        name: isSignal ? 'Transmitted By' : 'Called By',\n        value: `@${entry.requesterName}`,\n        inline: true,\n      },\n    ],",
+      "      {\n        name: isSignal ? 'Transmitted By' : 'Called By',\n        value: `@${entry.requesterName}`,\n        inline: true,\n      },\n      ...(isSignal ? [buildSignalShoutoutControlField({ serverId, recordId: entry.id })] : []),\n    ],"
+    );
+  }
+
+  if (!source.includes("&& (item?.kind || 'manual') === (kind || 'manual')")) {
+    source = source.replace(
+      'async function getExistingManualRecord(serverId: string, channelId: string, twitchLogin: string): Promise<ManualDiscordShoutoutRecord | null> {',
+      "async function getExistingManualRecord(serverId: string, channelId: string, twitchLogin: string, kind: 'manual' | 'signal' = 'manual'): Promise<ManualDiscordShoutoutRecord | null> {"
+    );
+    source = source.replace(
+      '.find((item: any) => item?.channelId === channelId && item?.twitchLogin === twitchLogin);',
+      ".find((item: any) => item?.channelId === channelId && item?.twitchLogin === twitchLogin && !item?.suppressedAt && (item?.kind || 'manual') === (kind || 'manual'));"
+    );
+    source = source.replace(
+      '  const existing = await getExistingManualRecord(input.serverId, input.channelId, resolved.twitchLogin);',
+      "  const existing = await getExistingManualRecord(input.serverId, input.channelId, resolved.twitchLogin, input.kind || 'manual');"
+    );
+  } else if (!source.includes('&& !item?.suppressedAt')) {
+    source = source.replace(
+      ".find((item: any) => item?.channelId === channelId && item?.twitchLogin === twitchLogin && (item?.kind || 'manual') === (kind || 'manual'));",
+      ".find((item: any) => item?.channelId === channelId && item?.twitchLogin === twitchLogin && !item?.suppressedAt && (item?.kind || 'manual') === (kind || 'manual'));"
+    );
+  }
+
+  if (!source.includes('if (entry.suppressedAt) continue;')) {
+    source = source.replace(
+      '  for (const entry of entries) {\n    try {',
+      '  for (const entry of entries) {\n    try {\n      if (entry.suppressedAt) continue;'
+    );
+  }
+
+  if (!source.includes('const currentRecord = await manualCollection(serverId).doc(entry.id).get();')) {
+    source = source.replace(
+      'async function updateManualRecord(serverId: string, entry: ManualDiscordShoutoutRecord): Promise<void> {',
+      `async function updateManualRecord(serverId: string, entry: ManualDiscordShoutoutRecord): Promise<void> {\n  const currentRecord = await manualCollection(serverId).doc(entry.id).get();\n  if (!currentRecord.exists || currentRecord.data()?.suppressedAt) return;`
+    );
+  }
+
+  return source;
+});
+
+patch('src/app/api/discord/interactions/route.ts', (source) => {
+  if (source.includes('**SIGNAL OPENED**')) return source;
+
+  const oldReply = "        return ephemeral(claim.alreadyClaimed\n          ? '📡 **SIGNAL LOCKED** — this egg is already secured to your SPMT identity.'\n          : '🥚 **SIGNAL EGG ACQUIRED** — secured to your SPMT identity through Discord. No app sign-in required. Your reward is `!signal <message>`: on Twitch it sends your message plus your live shoutout to Space Mountain Discord; in Discord it sends your styled Signal message.');";
+  const newReply = "        const repeatSignalHints = [\n          '🚀 **HUNT BREADCRUMB** — The carrier is yours already, but another anomaly looks like it wants to **launch**. Around SPMT, curious explorers sometimes find controls where everyone else only sees decoration.',\n          '🕳️ **HUNT BREADCRUMB** — The carrier is yours already, but another anomaly does not transmit at all — it **bends**. If Commlink ever feels like gravity stopped following the rules, investigate it.',\n        ];\n        const repeatSignalHint = repeatSignalHints[Math.floor(Math.random() * repeatSignalHints.length)];\n        return ephemeral(claim.alreadyClaimed\n          ? `📡 **SIGNAL LOCKED** — this egg is already secured to your SPMT identity.\\n\\n${repeatSignalHint}`\n          : '🥚 **SIGNAL EGG ACQUIRED** — secured to your SPMT identity through Discord. No app sign-in required. Your reward is `!signal <message>`: on Twitch it sends your message plus your live shoutout to Space Mountain Discord; in Discord it sends your styled Signal message.');";
+
+  if (source.includes(oldReply)) {
+    source = source.replace(oldReply, newReply);
+  } else if (!source.includes('HUNT BREADCRUMB') || !source.includes('repeatSignalHints')) {
+    throw new Error('Signal repeat breadcrumb response marker missing');
+  }
+  return source;
+});

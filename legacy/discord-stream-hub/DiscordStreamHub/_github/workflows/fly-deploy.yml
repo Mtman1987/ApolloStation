@@ -1,0 +1,164 @@
+name: Fly Deploy
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  changes:
+    name: Select affected services
+    runs-on: ubuntu-latest
+    outputs:
+      web: ${{ steps.scope.outputs.web }}
+      clip_worker: ${{ steps.scope.outputs.clip_worker }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 2
+      - id: scope
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          if [ "$EVENT_NAME" != push ] || ! git cat-file -e "$BEFORE_SHA^{commit}" 2>/dev/null; then
+            echo 'web=true' >> "$GITHUB_OUTPUT"
+            echo 'clip_worker=true' >> "$GITHUB_OUTPUT"
+          else
+            if git diff --name-only "$BEFORE_SHA" "$GITHUB_SHA" | grep -Ev '^(clip-worker/|tests/clip-worker-gif-budget.test.cjs$|\.github/workflows/fly-deploy.yml$)'; then
+              echo 'web=true' >> "$GITHUB_OUTPUT"
+            else
+              echo 'web=false' >> "$GITHUB_OUTPUT"
+            fi
+
+            if git diff --name-only "$BEFORE_SHA" "$GITHUB_SHA" | grep -qE '^(clip-worker/|tests/clip-worker-gif-budget.test.cjs$)'; then
+              echo 'clip_worker=true' >> "$GITHUB_OUTPUT"
+            else
+              echo 'clip_worker=false' >> "$GITHUB_OUTPUT"
+            fi
+          fi
+  branch-housekeeping:
+    name: Retain newest merged branch backup
+    needs: changes
+    if: github.event_name != 'pull_request' && needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete older branches already contained in main
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const defaultBranch = context.payload.repository?.default_branch || 'main';
+            const branches = await github.paginate(github.rest.repos.listBranches, {
+              owner, repo, per_page: 100,
+            });
+            const merged = [];
+            for (const branch of branches) {
+              if (!branch?.name || branch.name === defaultBranch) continue;
+              const comparison = await github.rest.repos.compareCommits({
+                owner, repo, base: branch.name, head: defaultBranch,
+              });
+              if (!['ahead', 'identical'].includes(comparison.data.status)) {
+                core.notice(`Retaining unmerged branch ${branch.name}.`);
+                continue;
+              }
+              const commit = await github.rest.repos.getCommit({ owner, repo, ref: branch.commit.sha });
+              const date = commit.data.commit.committer?.date || commit.data.commit.author?.date || '1970-01-01T00:00:00Z';
+              merged.push({ name: branch.name, sha: branch.commit.sha, date });
+            }
+            merged.sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
+            const newest = merged[0];
+            if (newest) core.notice(`Keeping newest merged branch backup ${newest.name} (${newest.sha}).`);
+            for (const branch of merged.slice(1)) {
+              try {
+                await github.rest.git.deleteRef({ owner, repo, ref: `heads/${branch.name}` });
+                core.notice(`Deleted older merged branch ${branch.name}.`);
+              } catch (error) {
+                if (error.status === 404 || error.status === 422) {
+                  core.warning(`Could not delete ${branch.name}; it may be protected or already absent.`);
+                  continue;
+                }
+                throw error;
+              }
+            }
+  deploy-web:
+    needs: [branch-housekeeping, changes]
+    if: needs.changes.outputs.web == 'true'
+    name: Deploy discord-stream-hub-new
+    runs-on: ubuntu-latest
+    concurrency: fly-deploy-discord-stream-hub
+    env:
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: Check Fly token
+        run: |
+          if [ -z "$FLY_API_TOKEN" ]; then
+            echo "FLY_API_TOKEN is not set"
+            exit 1
+          fi
+      - name: Ensure DSH data volume has emergency headroom
+        run: |
+          VOLUMES_JSON="$(flyctl volumes list -a discord-stream-hub-new --json --access-token "$FLY_API_TOKEN")"
+          VOLUME_ID="$(printf '%s' "$VOLUMES_JSON" | jq -r '.[] | select((.Name // .name) == "discord_stream_data") | (.ID // .id)' | head -n 1)"
+          VOLUME_SIZE="$(printf '%s' "$VOLUMES_JSON" | jq -r '.[] | select((.Name // .name) == "discord_stream_data") | (.SizeGb // .size_gb // .SizeGB // .sizeGb // 0)' | head -n 1)"
+          if [ -z "$VOLUME_ID" ] || [ "$VOLUME_ID" = "null" ]; then
+            echo "discord_stream_data volume was not found"
+            exit 1
+          fi
+          VOLUME_SIZE="${VOLUME_SIZE:-0}"
+          echo "DSH volume $VOLUME_ID is ${VOLUME_SIZE}GB"
+          if [ "$VOLUME_SIZE" -lt 20 ]; then
+            flyctl volumes extend "$VOLUME_ID" -s 20 -a discord-stream-hub-new -y --access-token "$FLY_API_TOKEN"
+          fi
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Validate Discord SPMT routing
+        run: |
+          npm ci
+          node --import tsx --test tests/calendar-discord-message.test.ts
+          node --import tsx --test tests/discord-gateway-spmt-routing.test.ts tests/discord-dm-spmt-routing.test.ts tests/discord-ingress-timeout.test.ts
+          DSH_BUILD_DB=1 node --import tsx --test tests/discord-server-account-access.test.ts tests/discord-server-permissions.test.ts tests/discord-bot-server-discovery.test.ts
+          DSH_BUILD_DB=1 node --import tsx --test tests/settings-integrity.test.ts tests/forum-mirror-reliability.test.ts tests/forum-mirror-privacy.test.ts tests/forum-source-loop.test.ts tests/nuke-channel-behavior.test.ts
+          npm run test:banners
+          npm run test:nebula-gameplay
+          npm run test:voidwalker
+          npm run typecheck
+          node --import tsx --test tests/twitch-api-failure-state.test.ts
+          DSH_BUILD_DB=1 npm run build
+      - name: Deploy web app
+        run: flyctl deploy --remote-only --config fly.toml --access-token "$FLY_API_TOKEN"
+
+  deploy-clip-worker:
+    needs: changes
+    if: needs.changes.outputs.clip_worker == 'true'
+    name: Deploy dsh-clip-worker
+    runs-on: ubuntu-latest
+    concurrency: fly-deploy-dsh-clip-worker
+    env:
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: Check Fly token
+        run: |
+          if [ -z "$FLY_API_TOKEN" ]; then
+            echo "FLY_API_TOKEN is not set"
+            exit 1
+          fi
+      - name: Validate clip upload limits
+        run: |
+          node --test tests/clip-worker-gif-budget.test.cjs
+          node --check clip-worker/worker.js
+      - name: Deploy clip worker
+        # Worker-only patches do not rebuild the web app or resize its volume.
+        working-directory: clip-worker
+        run: flyctl deploy --remote-only --config fly.toml --access-token "$FLY_API_TOKEN"
