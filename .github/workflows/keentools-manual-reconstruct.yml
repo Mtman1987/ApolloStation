@@ -40,7 +40,7 @@ jobs:
         env:
           STREAMWEAVER_KEENTOOLS_API_KEY: ${{ secrets.STREAMWEAVER_KEENTOOLS_API_KEY }}
           DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
-          DISCORD_MESSAGE_URL: ${{ inputs.discord_message_url }}
+          DISCORD_MESSAGE_URL: ${{ inputs.discord_message_url || 'https://discord.com/channels/1240832965865635881/1476540488147533895/1563458971489271818' }}
         run: node .github/scripts/keentools-manual-reconstruct.mjs
 
       - name: Upload generated GLB
