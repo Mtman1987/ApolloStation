@@ -102,8 +102,8 @@ export function mtFixItIncidentFromOperationsLog(log: OperationsLogV1): MtFixItI
     sourceAppId: log.sourceAppId,
     level: log.level,
     message: `${log.kind}: ${log.summary}${log.detail ? ` — ${log.detail}` : ""}`,
-    ...(log.labels.length ? { route: log.labels.find((label) => label.startsWith("route:"))?.slice(6) } : {}),
-    ...(log.labels.length ? { code: log.labels.find((label) => label.startsWith("code:"))?.slice(5) } : {}),
+    ...(log.labels.some((label) => label.startsWith("route:")) ? { route: log.labels.find((label) => label.startsWith("route:"))!.slice(6) } : {}),
+    ...(log.labels.some((label) => label.startsWith("code:")) ? { code: log.labels.find((label) => label.startsWith("code:"))!.slice(5) } : {}),
   };
 }
 
