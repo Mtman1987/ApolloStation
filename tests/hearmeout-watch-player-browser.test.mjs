@@ -36,7 +36,7 @@ test('the delivered watch page contains the shared output controls and a parseab
 });
 
 
-test('Lounge volume is per-viewer and survives playback refresh without changing the broadcast',async()=>{
+test('Permanent Lounge enforces its fixed browser-source volume without changing the broadcast',async()=>{
  const f=fixture('?roomId=system-spacemountainlive-lounge',false,{'hmo-broadcast-volume':'9','hmo-broadcast-audio':'on'});await tick();
  const player=f.node('player');
  assert.equal(f.node('volume').value,'85');
