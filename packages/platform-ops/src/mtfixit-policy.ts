@@ -1,4 +1,4 @@
-import type { CoderJobV1, OperationsLogV1 } from "@spmt/contracts";
+import type { OperationsLogV1 } from "@spmt/contracts";
 
 /**
  * Apollo-native MtFixIt policy.
