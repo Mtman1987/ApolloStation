@@ -40,14 +40,14 @@ test("DSH makes calendar, channel delivery, application publishing, and private 
   await fixture(async ({ cookie, guildId, dshBase, privateKey }) => {
     const page = await (await fetch(dshBase)).text();
     assert.match(page, /Community Calendar/); assert.match(page, /Post Application Embed/); assert.match(page, /Application review/); assert.match(page, /Discord Delivery Settings/); assert.match(page, /Add DSH bot/); assert.match(page, /@media\(max-width:720px\)/);
-    const control = await (await fetch(`${dshBase}/api/discord-stream-hub/control?guildId=${guildId}`, { headers: { cookie } })).json();
+    const control = await (await fetch(`${dshBase}/api/discord-stream-hub/control?guildId=${guildId}&month=2026-09`, { headers: { cookie } })).json();
     assert.equal(control.role, "owner"); assert.equal(control.storageReady, true); assert.equal(control.applicationInteractionsReady, true); assert.deepEqual(control.calendar, []);
     const crossTenantGuild = await fetch(`${dshBase}/api/discord-stream-hub/control?guildId=999999999999999999`, { headers: { cookie } });
     assert.equal(crossTenantGuild.status, 400);
     const origin = new URL(dshBase).origin;
     const mission = await fetch(`${dshBase}/api/discord-stream-hub/control/calendar/mission`, { method: "POST", headers: { cookie, origin, "content-type": "application/json" }, body: JSON.stringify({ serverId: guildId, missionName: "Community night", missionDescription: "A fully wired test mission", missionDate: "2026-09-12", missionTime: "20:00" }) });
     assert.equal(mission.status, 201);
-    const refreshed = await (await fetch(`${dshBase}/api/discord-stream-hub/control?guildId=${guildId}`, { headers: { cookie } })).json(); assert.equal(refreshed.calendar[0].eventName, "Community night");
+    const refreshed = await (await fetch(`${dshBase}/api/discord-stream-hub/control?guildId=${guildId}&month=2026-09`, { headers: { cookie } })).json(); assert.equal(refreshed.calendar[0].eventName, "Community night");
 
     const answers = ["experience", "availability", "judgment", "safety", "motivation"].map((custom_id) => ({ type: 1, components: [{ type: 4, custom_id, value: `Detailed ${custom_id} response for review` }] }));
     const payload = Buffer.from(JSON.stringify({ id: "987654321098765432", type: 5, guild_id: guildId, member: { user: { id: "111111111111111111", username: "applicant" } }, data: { custom_id: `application_submit:mod:${guildId}`, components: answers } }));
