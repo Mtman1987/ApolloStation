@@ -1,4 +1,4 @@
-/** Provider-neutral domain primitives ported from Chat-Tag's Nebula Mosaic.
+/** Provider-neutral domain primitives for Nebula Mosaic.
  * Kept free of framework, storage, network, and provider dependencies so the
  * Apollo runtime, widget, and test harness can share the same contract.
  */
