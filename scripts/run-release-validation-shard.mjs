@@ -47,6 +47,12 @@ const timingHistory = {};
 const results = [];
 let cursor = 0;
 let stopped = false;
+const active = new Map();
+function terminateGroup(child, signal) {
+  if (!child?.pid) return;
+  try { process.kill(-child.pid, signal); }
+  catch { try { child.kill(signal); } catch {} }
+}
 
 function runFile(file) {
   return new Promise((resolve) => {
@@ -58,7 +64,8 @@ function runFile(file) {
     const child = spawn(process.execPath, [
       "--import", "./scripts/offline-network-guard.mjs",
       "--test", "--test-reporter=tap", file
-    ], { stdio: ["ignore", "pipe", "pipe"], env: process.env });
+    ], { stdio: ["ignore", "pipe", "pipe"], env: process.env, detached: process.platform !== "win32" });
+    active.set(file, child);
     const consume = (stream, label) => {
       const lines = createInterface({ input: stream, crlfDelay: Infinity });
       lines.on("line", (line) => {
@@ -70,14 +77,16 @@ function runFile(file) {
     consume(child.stderr, "err");
     const timer = setTimeout(() => {
       timedOut = true;
-      console.error(`[TIMEOUT] ${file} exceeded ${timeoutMs}ms; terminating its process`);
-      child.kill("SIGTERM");
-      const killTimer = setTimeout(() => child.kill("SIGKILL"), 1500);
+      console.error(`[TIMEOUT] ${file} exceeded ${timeoutMs}ms; terminating this shard's test processes`);
+      stopped = true;
+      for (const running of active.values()) terminateGroup(running, "SIGTERM");
+      const killTimer = setTimeout(() => { for (const running of active.values()) terminateGroup(running, "SIGKILL"); }, 1500);
       killTimer.unref();
     }, timeoutMs);
     child.on("error", (error) => { spawnError = error; });
     child.on("close", (code, signal) => {
       clearTimeout(timer);
+      active.delete(file);
       const durationMs = Date.now() - started;
       const summary = (label) => Number(output.match(new RegExp(`^# ${label} (\\d+)$`, "m"))?.[1] ?? NaN);
       const tests = summary("tests"), pass = summary("pass"), fail = summary("fail");
