@@ -1,0 +1,121 @@
+{
+  "schemaVersion": 1,
+  "updatedAt": "2026-10-25",
+  "repository": "Mtman1987/ApolloStation",
+  "policy": {
+    "appCodeParityCompleteDoesNotMeanLiveAcceptance": true,
+    "defaultStatusWithoutLiveEvidence": "ported-unverified",
+    "allowedStatuses": ["verified", "ported-unverified", "partial", "missing", "retired", "unknown"],
+    "productionDnsChangeAllowed": false,
+    "oracleCutoverAllowed": false,
+    "deleteDonorCodeWithoutOwnerDecision": false
+  },
+  "currentRepository": {
+    "mainCommitObserved": "dd33bef",
+    "workingTreeObservedClean": true,
+    "note": "This tracker was prepared from a fresh authoritative main checkout. Refresh before continuing."
+  },
+  "pullRequests": [
+    {
+      "number": 247,
+      "url": "https://github.com/Mtman1987/ApolloStation/pull/247",
+      "branch": "fix/hearmeout-radio-family-parity-20261025",
+      "scope": "HearMeOut radio song-family parity plus CI timeout from 30 to 45 minutes",
+      "focusedCheck": "passed",
+      "fullTestCheckAtCapture": "in_progress",
+      "mergeRule": "Merge only after full test check is SUCCESS"
+    },
+    {
+      "number": 248,
+      "url": "https://github.com/Mtman1987/ApolloStation/pull/248",
+      "branch": "fix/nebula-canonical-identity-20261025",
+      "scope": "Replace stale Chat-Tag identity marker with Nebula Arcade",
+      "focusedCheck": "passed",
+      "fullTestCheckAtCapture": "in_progress",
+      "mergeRule": "Merge only after full test check is SUCCESS"
+    }
+  ],
+  "cohorts": [
+    {
+      "id": "ecosystem-core",
+      "units": ["spmt-authority", "spacemountain-shell", "commlink", "stellar-core", "mission-control"],
+      "codePortStatus": "partial",
+      "cutoverStatus": "blocked",
+      "priority": "P0",
+      "knownGaps": ["presence/live-community", "overlay workspace/scenes/grants/migration", "Cloud Xbox worker pool", "Companion pairing/relay", "Forums/Discord bridge", "shell/download/embed compatibility"],
+      "source": "docs/donor-audits/SPMT_DEEP_AUDIT_2026-08-23.md",
+      "nextEvidence": ["route/capability matrix", "two-tenant isolation", "data reconciliation", "backup/restore", "restart/rollback"]
+    },
+    {
+      "id": "hearmeout",
+      "units": ["hearmeout"],
+      "codePortStatus": "partial",
+      "cutoverStatus": "blocked",
+      "priority": "P0",
+      "knownGaps": ["room lifecycle", "share-screen/RTC", "provider search/YouTube resolution", "favorites/recent media", "auto-radio lifecycle", "Watch catalog/episodes", "media workers/cache", "Discord Activity/controls", "personas/wake", "Commlink room context", "Overlay Bay widgets"],
+      "recentFix": "PR #247 radio song-family cooldown",
+      "source": "docs/donor-audits/FEATURE_PARITY_REVIEW_2026-09-12.md",
+      "nextEvidence": ["P01", "P05", "P08", "P09", "P10", "P11", "P12", "P13", "P14"]
+    },
+    {
+      "id": "discord-stream-hub",
+      "units": ["discord-stream-hub"],
+      "codePortStatus": "partial",
+      "cutoverStatus": "blocked",
+      "priority": "P1",
+      "knownGaps": ["effective settings", "application decisions", "temporary guests", "generated media delivery", "Signal", "reward roles", "Raid Pile", "Raid Train", "partner schedules", "points/leaderboards", "moderation cleanup", "Commlink forwarding", "linking panels", "member projections", "participation", "shared eligibility"],
+      "source": "docs/donor-audits/FEATURE_PARITY_REVIEW_2026-09-12.md",
+      "nextEvidence": ["P15", "P16", "P17", "P18", "P19", "P20", "P21", "P22", "P23", "P24", "P25", "P26", "P27", "P28", "P31", "P32"]
+    },
+    {
+      "id": "streamweaver",
+      "units": ["streamweaver"],
+      "codePortStatus": "partial",
+      "cutoverStatus": "blocked",
+      "priority": "P0",
+      "knownGaps": ["18 absent capability groups", "21 partial/unwired groups", "speech/TTS", "private assistant", "generation studio", "social ingestion", "operator desk", "redeems/events", "welcome/shoutouts", "translation/watchtime", "Pokemon workflows", "bot administration", "state migration/restore"],
+      "source": "docs/donor-audits/STREAMWEAVER_LIVE_AUDIT_2026-09-06.md",
+      "nextEvidence": ["classify each SW row implement/retire/not-live", "provider construction", "tenant-state migration", "restart/restore"]
+    },
+    {
+      "id": "nebula-arcade",
+      "units": ["nebula-arcade"],
+      "codePortStatus": "ported-unverified",
+      "cutoverStatus": "blocked",
+      "priority": "P1",
+      "knownGaps": ["live provider rehearsal", "runtime inventory", "backup/restore", "owner acceptance"],
+      "recentFix": "PR #248 stale identity marker",
+      "source": "config/live-source-slices.v1.json",
+      "nextEvidence": ["P29 alias/control exercise", "shared consumer proof", "restart/rollback"]
+    },
+    {
+      "id": "bounded-clients",
+      "units": ["mountainview", "companion"],
+      "codePortStatus": "ported-unverified",
+      "cutoverStatus": "blocked",
+      "priority": "P1",
+      "knownGaps": ["real device pairing", "offline retry", "command replay/expiry", "foreground/device acceptance", "backup/restore"],
+      "source": "config/live-source-slices.v1.json",
+      "nextEvidence": ["non-production device test", "two-device isolation", "restart/rollback"]
+    },
+    {
+      "id": "public-preview",
+      "units": ["all public surfaces"],
+      "codePortStatus": "ported-unverified",
+      "cutoverStatus": "blocked",
+      "priority": "P0",
+      "knownGaps": ["publicIngress", "isolatedPreviewStorage", "abuseAndCostBounds"],
+      "source": "config/production-rollout.v1.json",
+      "nextEvidence": ["certificate/ingress proof", "isolated restore proof", "rate limits/quotas/alerts"]
+    }
+  ],
+  "requiredCutoverGates": ["runtime inventory", "production data reconciliation", "external integration rehearsal", "backup/restart/rollback proof", "owner acceptance"],
+  "safeNextCommands": [
+    "git fetch origin --prune",
+    "gh pr checks 247 --repo Mtman1987/ApolloStation",
+    "gh pr checks 248 --repo Mtman1987/ApolloStation",
+    "npm run release:audit",
+    "npm run cutover:audit",
+    "git grep -nE 'P0[1-9]|P[12][0-9]|P3[0-3]|SW-[0-9]+' -- docs config tests"
+  ]
+}
