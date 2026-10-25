@@ -26,5 +26,9 @@ jobs:
           cache: npm
       - name: Install locked dependencies
         run: npm ci
-      - name: Build and run offline-safe regression suite
+      - name: Install local media test tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y ffmpeg
+      - name: Build and run offline-network regression suite
         run: npm run test:offline
