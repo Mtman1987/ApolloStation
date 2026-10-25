@@ -39,14 +39,14 @@ test('the delivered watch page contains the shared output controls and a parseab
 test('Lounge volume is per-viewer and survives playback refresh without changing the broadcast',async()=>{
  const f=fixture('?roomId=system-spacemountainlive-lounge',false,{'hmo-broadcast-volume':'9','hmo-broadcast-audio':'on'});await tick();
  const player=f.node('player');
- assert.equal(f.node('volume').value,'9');
- assert.equal(player.volume,0.09);
+ assert.equal(f.node('volume').value,'85');
+ assert.equal(player.volume,0.85);
  assert.equal(player.muted,false);
  const before=f.requests.length;
  player.volume=0.85;
  player.listeners.volumechange();
- assert.equal(player.volume,0.09,'a media reload cannot override this viewer local volume');
- assert.equal(f.node('volume').value,'9');
+ assert.equal(player.volume,0.85,'the permanent Lounge enforces its fixed browser-source volume');
+ assert.equal(f.node('volume').value,'85');
  assert.equal(f.requests.length,before,'local volume changes never call the shared broadcast backend');
 });
 
