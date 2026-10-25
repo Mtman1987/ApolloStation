@@ -1,0 +1,89 @@
+name: Clean merged Apollo branches
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/cleanup-merged-branches.yml"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "List eligible branches without deleting them"
+        type: boolean
+        required: true
+        default: true
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: apollo-merged-branch-cleanup
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
+    steps:
+      - name: Check out complete history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Delete only branches fully contained in main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin --prune '+refs/heads/*:refs/remotes/origin/*'
+          open_prs="$(curl -fsS \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/pulls?state=open&per_page=100")"
+
+          mapfile -t open_branches < <(
+            jq -r --arg repo "$GITHUB_REPOSITORY" '
+              .[]
+              | select(.head.repo.full_name == $repo)
+              | .head.ref
+            ' <<<"$open_prs"
+          )
+
+          is_open_pr_branch() {
+            local branch="$1" candidate
+            for candidate in "${open_branches[@]}"; do
+              [[ "$candidate" == "$branch" ]] && return 0
+            done
+            return 1
+          }
+
+          deleted=0
+          skipped=0
+          while read -r ref sha; do
+            branch="${ref#origin/}"
+            case "$branch" in
+              main|HEAD) continue ;;
+            esac
+
+            if is_open_pr_branch "$branch"; then
+              echo "KEEP $branch — has an open pull request"
+              skipped=$((skipped + 1))
+              continue
+            fi
+
+            if git merge-base --is-ancestor "$sha" origin/main; then
+              if [[ "$DRY_RUN" == "true" ]]; then
+                echo "DRY RUN — would delete fully merged branch: $branch"
+              else
+                echo "DELETE $branch — branch head is already contained in main"
+                git push origin --delete "$branch"
+                deleted=$((deleted + 1))
+              fi
+            fi
+          done < <(git for-each-ref --format='%(refname:short) %(objectname)' refs/remotes/origin | sort)
+
+          echo "Cleanup finished. Deleted: $deleted. Kept for open PRs: $skipped. Dry run: $DRY_RUN."
+          echo "Branches with unique/unmerged commits are deliberately preserved."
