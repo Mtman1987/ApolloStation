@@ -1,0 +1,89 @@
+name: ApolloStation Oracle release validation
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Type ORACLE-RELEASE-CHECK to confirm this full validation run"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apollo-oracle-release-validation
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Full test suite — shard ${{ matrix.shard }}/4
+    if: ${{ inputs.confirmation == 'ORACLE-RELEASE-CHECK' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 27
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Build all workspaces
+        run: npm run build
+      - name: Run assigned offline-safe test files
+        shell: bash
+        run: |
+          mkdir -p release-validation
+          set -o pipefail
+          node scripts/run-release-validation-shard.mjs "${{ matrix.shard }}" 4 2>&1 | tee "release-validation/shard-${{ matrix.shard }}.tap"
+      - name: Upload shard log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: oracle-validation-shard-${{ matrix.shard }}
+          path: release-validation/shard-${{ matrix.shard }}.tap
+          if-no-files-found: warn
+          retention-days: 30
+
+  report:
+    name: Aggregate release validation report
+    if: ${{ always() && inputs.confirmation == 'ORACLE-RELEASE-CHECK' }}
+    needs: [validate]
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Download shard logs
+        uses: actions/download-artifact@v4
+        with:
+          pattern: oracle-validation-shard-*
+          path: release-validation/logs
+          merge-multiple: true
+      - name: Create consolidated report
+        run: node scripts/summarize-release-validation.mjs release-validation/logs release-validation/REPORT.md
+      - name: Publish report in workflow summary
+        if: always()
+        run: cat release-validation/REPORT.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload consolidated report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: oracle-release-validation-report
+          path: release-validation/REPORT.md
+          if-no-files-found: error
+          retention-days: 90
+      - name: Enforce go/no-go
+        run: |
+          if [ "${{ needs.validate.result }}" != "success" ]; then
+            echo "NO-GO: one or more test shards failed, were cancelled, or timed out."
+            exit 1
+          fi
+          grep -q '^Overall result: PASS$' release-validation/REPORT.md
