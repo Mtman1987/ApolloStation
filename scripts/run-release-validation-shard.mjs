@@ -1,5 +1,6 @@
 import { readdir, stat } from "node:fs/promises";
-import { spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
+import { createInterface } from "node:readline";
 import path from "node:path";
 
 const shard = Number(process.argv[2]);
@@ -11,76 +12,135 @@ if (!Number.isInteger(shard) || !Number.isInteger(shardCount) || shard < 1 || sh
 
 const names = (await readdir("tests"))
   .filter((name) => name.endsWith(".test.mjs"))
-  .map((name) => path.join("tests", name));
+  .map((name) => path.join("tests", name))
+  .sort();
 if (names.length === 0) {
   console.error("No tests/*.test.mjs files found; refusing to report a false green.");
   process.exit(2);
 }
 
-// Largest-first greedy assignment balances the lanes by source-file size while
-// keeping assignment deterministic. Every discovered test file is assigned once.
-const files = await Promise.all(names.map(async (file) => ({ file, size: (await stat(file)).size })));
-files.sort((a, b) => b.size - a.size || a.file.localeCompare(b.file));
+// Keep assignment deterministic, but use each file's measured runtime from the
+// previous run when available. Source size is only a fallback for new tests.
+const historyPath = "scripts/release-validation-test-timings.json";
+let history = {};
+try {
+  history = JSON.parse(await (await import("node:fs/promises")).readFile(historyPath, "utf8"));
+} catch {}
+const files = await Promise.all(names.map(async (file) => ({
+  file,
+  size: (await stat(file)).size,
+  weight: Number.isFinite(history[file]) && history[file] > 0 ? history[file] : (await stat(file)).size
+})));
+files.sort((a, b) => b.weight - a.weight || a.file.localeCompare(b.file));
 const bins = Array.from({ length: shardCount }, (_, index) => ({ id: index + 1, files: [], weight: 0 }));
 for (const item of files) {
-  bins.sort((a, b) => a.weight - b.weight);
-  bins[0].files.push(item.file);
-  bins[0].weight += item.size;
+  bins.sort((a, b) => a.weight - b.weight || a.id - b.id);
+  bins[0].files.push(item);
+  bins[0].weight += item.weight;
 }
-const selected = bins.find((bin) => bin.id === shard).files.sort();
+const selected = bins.find((bin) => bin.id === shard).files.sort((a, b) => a.file.localeCompare(b.file));
 if (selected.length === 0) {
   console.error(`Shard ${shard} received no test files; refusing to pass silently.`);
   process.exit(2);
 }
-console.log(`Release validation shard ${shard}/${shardCount}: ${selected.length} of ${names.length} test files`);
-for (const file of selected) console.log(`  ${file}`);
-console.log("Running with the repository's offline-network guard enabled.");
 
-// Capture and replay the complete runner output so we can distinguish a completed
-// test run with failing assertions from an interrupted/crashed runner. Assertion
-// failures belong in the report; only an incomplete run should fail this job.
-const result = spawnSync(process.execPath, [
-  "--import", "./scripts/offline-network-guard.mjs",
-  "--test", ...selected
-], {
-  encoding: "utf8",
-  env: process.env,
-  maxBuffer: 50 * 1024 * 1024
-});
+const concurrency = Math.max(1, Math.min(4, Number(process.env.RELEASE_TEST_CONCURRENCY) || 4));
+const timeoutMs = Math.max(10000, Number(process.env.RELEASE_TEST_FILE_TIMEOUT_MS) || 90000);
+console.log(`Release validation shard ${shard}/${shardCount}: ${selected.length} of ${names.length} test files; ${concurrency} workers; per-file timeout ${timeoutMs}ms`);
+console.log("Each test file runs in its own process; progress and per-test output stream live.");
+for (const { file } of selected) console.log(`  ${file}`);
 
-if (result.stdout) process.stdout.write(result.stdout);
-if (result.stderr) process.stderr.write(result.stderr);
+const timingHistory = { ...history };
+const results = [];
+let cursor = 0;
+let stopped = false;
 
-if (result.error) {
-  console.error("TEST RUNNER ERROR: test process could not complete.", result.error);
-  process.exit(1);
+function runFile(file) {
+  return new Promise((resolve) => {
+    const started = Date.now();
+    let output = "";
+    let timedOut = false;
+    let spawnError = null;
+    console.log(`[START] ${file}`);
+    const child = spawn(process.execPath, [
+      "--import", "./scripts/offline-network-guard.mjs",
+      "--test", "--test-reporter=tap", file
+    ], { stdio: ["ignore", "pipe", "pipe"], env: process.env });
+    const consume = (stream, label) => {
+      const lines = createInterface({ input: stream, crlfDelay: Infinity });
+      lines.on("line", (line) => {
+        output += line + "\n";
+        console.log(`[${path.basename(file)} ${label}] ${line}`);
+      });
+    };
+    consume(child.stdout, "out");
+    consume(child.stderr, "err");
+    const timer = setTimeout(() => {
+      timedOut = true;
+      console.error(`[TIMEOUT] ${file} exceeded ${timeoutMs}ms; terminating its process`);
+      child.kill("SIGTERM");
+      const killTimer = setTimeout(() => child.kill("SIGKILL"), 1500);
+      killTimer.unref();
+    }, timeoutMs);
+    child.on("error", (error) => { spawnError = error; });
+    child.on("close", (code, signal) => {
+      clearTimeout(timer);
+      const durationMs = Date.now() - started;
+      const summary = (label) => Number(output.match(new RegExp(`^# ${label} (\\d+)$`, "m"))?.[1] ?? NaN);
+      const tests = summary("tests"), pass = summary("pass"), fail = summary("fail");
+      const cancelled = summary("cancelled"), skipped = summary("skipped");
+      const complete = [tests, pass, fail, cancelled, skipped].every(Number.isInteger)
+        && tests > 0 && pass + fail + cancelled + skipped === tests;
+      const ok = !timedOut && !spawnError && code === 0 && complete;
+      const result = { file, durationMs, tests: Number.isInteger(tests) ? tests : 0,
+        pass: Number.isInteger(pass) ? pass : 0, fail: Number.isInteger(fail) ? fail : 0,
+        cancelled: Number.isInteger(cancelled) ? cancelled : 0,
+        skipped: Number.isInteger(skipped) ? skipped : 0, complete, ok,
+        timedOut, code, signal, spawnError: spawnError?.message };
+      timingHistory[file] = durationMs;
+      console.log(`[${ok ? "DONE" : "FAIL"}] ${file}: ${durationMs}ms; tests=${result.tests}, pass=${result.pass}, fail=${result.fail}, cancelled=${result.cancelled}, skipped=${result.skipped}${timedOut ? "; TIMED OUT" : ""}`);
+      if (spawnError) console.error(spawnError);
+      resolve({ ...result, output });
+    });
+  });
 }
-if (result.signal) {
-  console.error(`TEST RUNNER INTERRUPTED: process ended from signal ${result.signal}.`);
-  process.exit(1);
+
+async function worker() {
+  while (!stopped) {
+    const item = selected[cursor++];
+    if (!item) return;
+    const result = await runFile(item.file);
+    results.push(result);
+    if (result.timedOut) stopped = true;
+  }
 }
+await Promise.all(Array.from({ length: concurrency }, () => worker()));
 
-const output = `${result.stdout ?? ""}\n${result.stderr ?? ""}`;
-const readCount = (label) => {
-  const match = output.match(new RegExp(`^# ${label} (\\d+)$`, "m"));
-  return match ? Number(match[1]) : null;
-};
-const tests = readCount("tests");
-const pass = readCount("pass");
-const fail = readCount("fail");
-const cancelled = readCount("cancelled");
-const skipped = readCount("skipped");
-const summaryComplete = [tests, pass, fail, cancelled, skipped].every(Number.isInteger)
-  && tests > 0
-  && pass + fail + cancelled + skipped === tests;
-
-if (!summaryComplete) {
-  console.error("TEST RUN INCOMPLETE: no complete Node test summary was produced; refusing to mark this shard green.");
-  process.exit(result.status === 0 ? 1 : (result.status ?? 1));
-}
-
+const ordered = results.sort((a, b) => a.file.localeCompare(b.file));
+const tests = ordered.reduce((n, r) => n + r.tests, 0);
+const pass = ordered.reduce((n, r) => n + r.pass, 0);
+const fail = ordered.reduce((n, r) => n + r.fail, 0);
+const cancelled = ordered.reduce((n, r) => n + r.cancelled, 0);
+const skipped = ordered.reduce((n, r) => n + r.skipped, 0);
+const incomplete = ordered.filter((r) => !r.complete);
+const timedOut = ordered.filter((r) => r.timedOut);
+const failedFiles = ordered.filter((r) => !r.ok);
+const wallMs = ordered.length ? Math.max(...ordered.map((r) => r.durationMs)) : 0;
 console.log(`Shard ${shard} completed: ${tests} tests; ${pass} passed; ${fail} failed; ${cancelled} cancelled; ${skipped} skipped.`);
-if (fail > 0 || cancelled > 0) {
-  console.log("Shard execution succeeded as a reporting job. Test failures are preserved in the TAP log and consolidated report; the separate release quality gate will remain NO-GO.");
+console.log(`Shard ${shard} file processes: ${ordered.length}/${selected.length}; wall upper bound ${wallMs}ms; failed files ${failedFiles.length}.`);
+console.log("# tests " + tests);
+console.log("# pass " + pass);
+console.log("# fail " + fail);
+console.log("# cancelled " + cancelled);
+console.log("# skipped " + skipped);
+console.log("# duration_ms " + wallMs);
+if (timedOut.length) console.error("# error: timed out test file(s): " + timedOut.map((r) => r.file).join(", "));
+if (incomplete.length) console.error("# error: incomplete test file output: " + incomplete.map((r) => r.file).join(", "));
+if (failedFiles.length) console.error("# error: failed test file(s): " + failedFiles.map((r) => r.file).join(", "));
+try {
+  const { writeFile } = await import("node:fs/promises");
+  await writeFile(historyPath, JSON.stringify(Object.fromEntries(Object.entries(timingHistory).sort(([a],[b]) => a.localeCompare(b))), null, 2) + "\n");
+} catch (error) {
+  console.error("Could not persist test timing history:", error);
 }
-process.exit(0);
+if (stopped || failedFiles.length || incomplete.length || fail > 0 || cancelled > 0) process.exit(1);
