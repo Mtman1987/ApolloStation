@@ -119,7 +119,7 @@ test("Quackverse deck commands read the real collection and moderator controls r
   const consumer = runtime.consumers[0];
   await consumer.deliver(delivery("deck", "spmt deck"));
   assert.match(sent.at(-1).text, /Deck \(0\/20\): empty/);
-  await consumer.deliver(delivery("start", "spmt start"));
+  await consumer.deliver(delivery("start", "spmt quackverse start"));
   assert.match(sent.at(-1).text, /Only the broadcaster or a moderator/);
   const actions = new SqliteNebulaGameActionStore(databasePath);
   assert.equal(actions.list("tenant-a").length, 0);
