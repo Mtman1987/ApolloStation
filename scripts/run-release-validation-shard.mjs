@@ -19,18 +19,10 @@ if (names.length === 0) {
   process.exit(2);
 }
 
-// Keep assignment deterministic, but use each file's measured runtime from the
-// previous run when available. Source size is only a fallback for new tests.
-const historyPath = "scripts/release-validation-test-timings.json";
-let history = {};
-try {
-  history = JSON.parse(await (await import("node:fs/promises")).readFile(historyPath, "utf8"));
-} catch {}
-const files = await Promise.all(names.map(async (file) => ({
-  file,
-  size: (await stat(file)).size,
-  weight: Number.isFinite(history[file]) && history[file] > 0 ? history[file] : (await stat(file)).size
-})));
+// Deterministic largest-first assignment balances estimated work. Actual runtime
+// is measured below, and each file is isolated so a single open handle cannot
+// keep an entire shard alive indefinitely.
+const files = await Promise.all(names.map(async (file) => ({ file, size: (await stat(file)).size, weight: (await stat(file)).size })));
 files.sort((a, b) => b.weight - a.weight || a.file.localeCompare(b.file));
 const bins = Array.from({ length: shardCount }, (_, index) => ({ id: index + 1, files: [], weight: 0 }));
 for (const item of files) {
@@ -45,12 +37,13 @@ if (selected.length === 0) {
 }
 
 const concurrency = Math.max(1, Math.min(4, Number(process.env.RELEASE_TEST_CONCURRENCY) || 4));
-const timeoutMs = Math.max(10000, Number(process.env.RELEASE_TEST_FILE_TIMEOUT_MS) || 90000);
+const timeoutMs = Math.max(10000, Number(process.env.RELEASE_TEST_FILE_TIMEOUT_MS) || 30000);
+const shardStarted = Date.now();
 console.log(`Release validation shard ${shard}/${shardCount}: ${selected.length} of ${names.length} test files; ${concurrency} workers; per-file timeout ${timeoutMs}ms`);
 console.log("Each test file runs in its own process; progress and per-test output stream live.");
 for (const { file } of selected) console.log(`  ${file}`);
 
-const timingHistory = { ...history };
+const timingHistory = {};
 const results = [];
 let cursor = 0;
 let stopped = false;
@@ -125,7 +118,7 @@ const skipped = ordered.reduce((n, r) => n + r.skipped, 0);
 const incomplete = ordered.filter((r) => !r.complete);
 const timedOut = ordered.filter((r) => r.timedOut);
 const failedFiles = ordered.filter((r) => !r.ok);
-const wallMs = ordered.length ? Math.max(...ordered.map((r) => r.durationMs)) : 0;
+const wallMs = Date.now() - shardStarted;
 console.log(`Shard ${shard} completed: ${tests} tests; ${pass} passed; ${fail} failed; ${cancelled} cancelled; ${skipped} skipped.`);
 console.log(`Shard ${shard} file processes: ${ordered.length}/${selected.length}; wall upper bound ${wallMs}ms; failed files ${failedFiles.length}.`);
 console.log("# tests " + tests);
@@ -137,10 +130,6 @@ console.log("# duration_ms " + wallMs);
 if (timedOut.length) console.error("# error: timed out test file(s): " + timedOut.map((r) => r.file).join(", "));
 if (incomplete.length) console.error("# error: incomplete test file output: " + incomplete.map((r) => r.file).join(", "));
 if (failedFiles.length) console.error("# error: failed test file(s): " + failedFiles.map((r) => r.file).join(", "));
-try {
-  const { writeFile } = await import("node:fs/promises");
-  await writeFile(historyPath, JSON.stringify(Object.fromEntries(Object.entries(timingHistory).sort(([a],[b]) => a.localeCompare(b))), null, 2) + "\n");
-} catch (error) {
-  console.error("Could not persist test timing history:", error);
-}
+// Per-file timings are printed as each subprocess completes. The workflow log is
+// the durable timing record; no generated history file is assumed to persist.
 if (stopped || failedFiles.length || incomplete.length || fail > 0 || cancelled > 0) process.exit(1);
