@@ -16,7 +16,7 @@ function openClient(port,participantId,role,overrides={}){
   const socket=new WebSocket(url,['spmt-rtc-v1',ticket]);socket.binaryType='arraybuffer';return socket;
 }
 function opened(socket){return new Promise((resolve,reject)=>{socket.addEventListener('open',resolve,{once:true});socket.addEventListener('error',reject,{once:true});});}
-function closed(socket){return new Promise(resolve=>socket.addEventListener('close',resolve,{once:true}));}
+function rejected(socket){return new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error('WebSocket handshake rejection timed out')),2000);socket.addEventListener('error',event=>{clearTimeout(timer);resolve(event);},{once:true});socket.addEventListener('open',()=>{clearTimeout(timer);reject(new Error('Unexpected WebSocket upgrade'));},{once:true});});}
 function message(socket){return new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error('message timeout')),2000);socket.addEventListener('message',event=>{clearTimeout(timer);resolve(new Uint8Array(event.data));},{once:true});});}
 
 test('fenced SPMT RTC gateway relays binary audio without sender echo',async()=>{
@@ -37,8 +37,7 @@ test('fenced SPMT RTC gateway rejects another tenant before upgrade',async()=>{
   const port=await gateway.listen();
   try{
     const socket=openClient(port,'browser-b','browser',{tenantId:'other-tenant'});
-    const event=await closed(socket);
-    assert.equal(event.wasClean,false);
+    await rejected(socket);
     assert.equal(gateway.hub.snapshot().length,0);
   }finally{await gateway.close();}
 });
