@@ -43,7 +43,6 @@ console.log(`Release validation shard ${shard}/${shardCount}: ${selected.length}
 console.log("Each test file runs in its own process; progress and per-test output stream live.");
 for (const { file } of selected) console.log(`  ${file}`);
 
-const timingHistory = {};
 const results = [];
 let cursor = 0;
 let stopped = false;
@@ -99,7 +98,6 @@ function runFile(file) {
         cancelled: Number.isInteger(cancelled) ? cancelled : 0,
         skipped: Number.isInteger(skipped) ? skipped : 0, complete, ok,
         timedOut, code, signal, spawnError: spawnError?.message };
-      timingHistory[file] = durationMs;
       console.log(`[${ok ? "DONE" : "FAIL"}] ${file}: ${durationMs}ms; tests=${result.tests}, pass=${result.pass}, fail=${result.fail}, cancelled=${result.cancelled}, skipped=${result.skipped}${timedOut ? "; TIMED OUT" : ""}`);
       if (spawnError) console.error(spawnError);
       resolve({ ...result, output });
