@@ -37,7 +37,7 @@ test("Overlay Bay links to Avatar Studio without replacing the existing video av
 });
 
 test("Avatar Studio has a retargetable shared motion library and labels GIFs honestly as references", () => {
-  assert.match(studio, /@three-ws\\/retarget/);
+  assert.match(studio, /@three-ws\/retarget/);
   assert.match(studio, /loadMotionLibrary/);
   assert.match(studio, /retargetClipToObject/);
   assert.match(studio, /for\(const sourceClip of g\.animations\)/);
