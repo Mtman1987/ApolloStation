@@ -106,7 +106,11 @@ export class DshRaidPileStore {
 
   /** Moves the announced pile target. Physical audience location is separately confirmed by the relay store. */
   advance(tenantId: string, pileId: string, reason: "manual" | "handoff" | "initial" = "manual") {
-    const prior = this.target(pileId, tenantId), selected = this.next(tenantId, pileId, prior?.userId);
+    const prior = this.target(pileId, tenantId);
+    // Initial target establishment must preserve a valid target already selected by join()/ensureTargets().
+    // Excluding it here would skip the fairest first member before the first manual rotation.
+    if (reason === "initial" && prior?.isLive && !isDshSystemOwnedTwitchLogin(prior.twitchLogin)) return prior;
+    const selected = this.next(tenantId, pileId, prior?.userId);
     if (!selected) return prior;
     const at = this.now();
     this.db.prepare("INSERT INTO raid_pile_targets(tenant_id,pile_id,user_id,target_since) VALUES(?,?,?,?) ON CONFLICT(tenant_id,pile_id) DO UPDATE SET user_id=excluded.user_id,target_since=excluded.target_since")
