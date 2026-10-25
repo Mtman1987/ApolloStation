@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { SpmtClient } from '@spmt/sdk';
-import type { SqliteHearMeOutRoomMediaRuntime } from './room-media-core.js';
+import { radioSongSignature, type HearMeOutMediaItemV1, type SqliteHearMeOutRoomMediaRuntime } from './room-media-core.js';
 import type { HearMeOutSuiteMediaResolverV1 } from './suite-action-executor.js';
 
 /** A room-owned policy over the existing queue; browser count never adds DJ loops. */
@@ -19,13 +19,27 @@ export class HearMeOutAutoRadio {
       try{
         const recent=[...state.history.map(item=>item.title),...(session.current?[session.current.item.title]:[])];
         const query=this.options.recommend?await this.options.recommend({tenantId,userId:state.principal.userId,seed:state.seed,recent}):state.seed;
-        const item=await this.media.resolve({tenantId,billedUserId:state.principal.userId,requesterId:state.principal.userId,query,lane:'music',operationId:'radio:'+owner,excludeItemIds:[...state.history.map(item=>item.itemId),...(session.current?[session.current.item.itemId]:[])]});
+        const excludedIds=new Set([...state.history.map(item=>item.itemId),...(session.current?[session.current.item.itemId]:[])]);
+        const blockedSignatures: string[]=[...state.history.map(item=>radioSongSignature(item.title,item.artist)),radioSongSignature(session.current?.item.title,session.current?.item.metadata?.artist),state.blockedTitle?.remaining?state.blockedTitle.signature:''].filter((value): value is string => Boolean(value));
+        let item: HearMeOutMediaItemV1 | undefined;
+        for(let attempt=0;attempt<4;attempt++){
+          const candidate=await this.media.resolve({tenantId,billedUserId:state.principal.userId,requesterId:state.principal.userId,query,lane:'music',operationId:'radio:'+owner+':'+attempt,excludeItemIds:[...excludedIds]});
+          const signature=radioSongSignature(candidate.title,candidate.metadata?.artist);
+          if(signature&&blockedSignatures.some(blocked=>sameRadioFamily(signature,blocked))) { excludedIds.add(candidate.itemId); continue; }
+          item=candidate; break;
+        }
+        if(!item)throw Error('Auto-radio needs a different song');
         this.rooms.completeRadio(tenantId,roomId,owner,state.revision,session.revision,item,undefined,this.now());
       }catch(error){this.rooms.completeRadio(tenantId,roomId,owner,state.revision,session.revision,undefined,safe(error),this.now());}
     }
   }
   async run(signal:AbortSignal){while(!signal.aborted){await this.tick();await new Promise<void>(done=>{if(signal.aborted)return done();const finish=()=>{clearTimeout(timer);signal.removeEventListener('abort',finish);done();},timer=setTimeout(finish,5000);signal.addEventListener('abort',finish,{once:true});});}}
   private now(){return(this.options.now??(()=>new Date().toISOString()))();}
+}
+function sameRadioFamily(candidate:string,blocked:string){
+  if(candidate===blocked)return true;
+  if(blocked.length<5)return false;
+  return (' '+candidate+' ').includes(' '+blocked+' ')||(' '+blocked+' ').includes(' '+candidate+' ');
 }
 function safe(error:unknown){return(error instanceof Error?error.message:'Auto-radio could not select a track').replace(/((?:token|authorization|secret|password|cookie))\s*[:=]\s*\S+/gi,'$1=[redacted]').slice(0,500);}
 
