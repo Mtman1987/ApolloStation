@@ -111,7 +111,7 @@ export class StreamWeaverProviderRuntime {
     this.research=new StreamWeaverResearchConversation(options.databasePath,tenantId=>this.runtimeSettings.research(tenantId),options.nowMs);
     this.bic = new SqliteStreamWeaverBicStore(options.databasePath);
     this.socialReactions = new SqliteStreamWeaverSocialReactionStore(options.databasePath,options.now);
-    this.socialReactionReconciler = new StreamWeaverSocialReactionReconciler(this.socialReactions,options.client,tenant=>this.settings.get(tenant)?.ownerCanonicalUserId);
+    this.socialReactionReconciler = new StreamWeaverSocialReactionReconciler(this.socialReactions,options.client,tenant=>options.simulation===true?undefined:this.settings.get(tenant)?.ownerCanonicalUserId);
     this.translations = new SqliteStreamWeaverTranslationStore(options.databasePath,options.now);
     this.translationRuntime = new StreamWeaverTranslationRuntime(this.translations,options.client,options.egress,tenant=>this.settings.get(tenant)?.ownerCanonicalUserId,options.allowAssistant!==false);
     this.secureChoices = new StreamWeaverSecureChoiceStore(options.databasePath, options.now);
