@@ -16,7 +16,21 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  guard:
+    name: Confirm intentional full-suite run
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require explicit confirmation
+        env:
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          if [ "$CONFIRMATION" != "ORACLE-RELEASE-CHECK" ]; then
+            echo "Confirmation phrase did not match; refusing to run validation."
+            exit 1
+          fi
+
   validate:
+    needs: [guard]
     name: Full test suite — shard ${{ matrix.shard }}/4
     if: ${{ inputs.confirmation == 'ORACLE-RELEASE-CHECK' }}
     runs-on: ubuntu-latest
@@ -54,7 +68,7 @@ jobs:
 
   report:
     name: Aggregate release validation report
-    if: ${{ always() && inputs.confirmation == 'ORACLE-RELEASE-CHECK' }}
+    if: ${{ always() }}
     needs: [validate]
     runs-on: ubuntu-latest
     timeout-minutes: 3
