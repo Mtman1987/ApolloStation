@@ -13,10 +13,10 @@ test("release verification runs only after the completed promotion mutation", as
   const verification = workflow.indexOf("- name: Verify promoted entry from inside the private Sprite");
   assert.ok(promotion >= 0, "the exact-commit promotion step must exist");
   assert.ok(verification > promotion, "the verification probe must run after promotion");
-  const promotionStep = workflow.slice(promotion, workflow.indexOf("\\n      - name:", promotion + 1));
-  assert.match(promotionStep, /start-detached-release\\.sh/);
+  const promotionStep = workflow.slice(promotion, workflow.indexOf("\n      - name:", promotion + 1));
+  assert.match(promotionStep, /start-detached-release\.sh/);
   assert.doesNotMatch(promotionStep, /verify-hearmeout-broadcast-test/);
-  assert.match(workflow, /--file scripts\\/sprites\\/verify-hearmeout-broadcast-test\\.mjs/);
+  assert.match(workflow, /--file scripts\/sprites\/verify-hearmeout-broadcast-test\.mjs/);
 });
 
 test("Sprite promotion has one protected release target", async () => {
