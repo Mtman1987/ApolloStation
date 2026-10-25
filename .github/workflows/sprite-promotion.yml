@@ -3,6 +3,12 @@ name: Release Sprite
 on:
   push:
     branches: [main]
+    # Workflow/docs-only commits do not need a live Sprite promotion attempt.
+    paths-ignore:
+      - ".github/workflows/**"
+      - ".github/archived-workflows/**"
+      - "docs/**"
+      - "**/*.md"
   workflow_dispatch:
 
 permissions:
