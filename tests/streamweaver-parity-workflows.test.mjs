@@ -79,7 +79,7 @@ test('creator links and social/Bic adapters are connected in the provider runtim
     const make=()=>new StreamWeaverProviderRuntime({databasePath:path,client:{publishEvent:async(t,type,payload)=>{events.push({t,type,payload});return{};}},egress:{send:async m=>{sent.push(m);return{providerMessageId:'sent'}}},allowAssistant:false});
     runtime=make();let flows=runtime.consumers.find(c=>c.id==='streamweaver.installed-flows');
     await flows.deliver(delivery('link','!webpage'));assert.equal(sent.at(-1).text,'https://example.org/community');
-    await flows.deliver(delivery('social','!boop'));assert.ok(events.some(e=>e.type==='streamweaver.social.interaction.v1'));
+    await flows.deliver(delivery('social','!boop'));await runtime.reconcile();assert.ok(events.some(e=>e.type==='streamweaver.social.interaction.v1'));
     await flows.deliver(delivery('bic','!bic captain'));assert.ok(events.some(e=>e.type==='streamweaver.bic.counter.updated.v1'));
     runtime.close();runtime=make();flows=runtime.consumers.find(c=>c.id==='streamweaver.installed-flows');await flows.deliver(delivery('link2','!webpage'));assert.match(sent.at(-1).text,/example.org|Wait/);
   }finally{runtime?.close();rmSync(dir,{recursive:true,force:true})}
