@@ -7,15 +7,16 @@ const workflowPath = new URL("../.github/workflows/sprite-promotion.yml", import
 const deployScriptPath = new URL("../scripts/sprites/deploy-sandbox-release.sh", import.meta.url);
 const networkPolicyPath = new URL("../sandbox/sprites/network-policy.json", import.meta.url);
 
-test("public probing runs only after the completed promotion mutation", async () => {
+test("release verification runs only after the completed promotion mutation", async () => {
   const workflow = await readFile(workflowPath, "utf8");
-  const step = workflow.split("      - name: Open the Apollo test entry\n")[1].split("      - name:")[0];
-  const script = step.split("        run: |\n")[1].split("\n").map(line => line.replace(/^          /, "")).join("\n");
-  const result = spawnSync("bash", ["--noprofile", "--norc", "-c", 'sprite(){ printf "%s\\n" "$*"; }; node(){ echo "public probe must not run during promotion" >&2; return 1; };\n'+script], {encoding:"utf8",env:{...process.env,SPRITE_ORG:"testing-968",SPRITE_NAME:"web-terminal",SPRITE_PUBLIC_URL:"https://test.example",BUILD_SHA:"test-build"}});
-  assert.equal(result.status, 0, result.stderr);
-  assert.equal(result.stdout.trim(), "config update -o testing-968 -s web-terminal --url-auth public");
-  assert.match(workflow, /- name: Verify promoted public entry\n        run: node scripts\/sprites\/verify-hearmeout-broadcast-test\.mjs/);
-  assert.ok(workflow.indexOf("- name: Verify promoted public entry") > workflow.indexOf("- name: Promote and verify exact main commit"));
+  const promotion = workflow.indexOf("- name: Promote and verify exact main commit");
+  const verification = workflow.indexOf("- name: Verify promoted entry from inside the private Sprite");
+  assert.ok(promotion >= 0, "the exact-commit promotion step must exist");
+  assert.ok(verification > promotion, "the verification probe must run after promotion");
+  const promotionStep = workflow.slice(promotion, workflow.indexOf("\\n      - name:", promotion + 1));
+  assert.match(promotionStep, /start-detached-release\\.sh/);
+  assert.doesNotMatch(promotionStep, /verify-hearmeout-broadcast-test/);
+  assert.match(workflow, /--file scripts\\/sprites\\/verify-hearmeout-broadcast-test\\.mjs/);
 });
 
 test("Sprite promotion has one protected release target", async () => {
