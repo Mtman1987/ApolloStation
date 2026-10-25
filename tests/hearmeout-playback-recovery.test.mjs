@@ -46,6 +46,6 @@ test('live correction preserves buffered playback during ordinary delays and nev
   assert.equal(player.syncLive(),false);assert.equal(media.currentTime,20);
   media.buffered.end=()=>45;media.seeking=true;
   assert.equal(player.syncLive(),false);media.seeking=false;
-  assert.equal(player.syncLive(),true);assert.equal(media.currentTime,40);
+  assert.equal(player.syncLive(12),true);assert.equal(media.currentTime,40);
   assert.equal(player.syncLive(),false);
 });
