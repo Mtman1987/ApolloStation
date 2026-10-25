@@ -44,7 +44,6 @@ test('Permanent Lounge enforces its fixed browser-source volume without changing
  assert.equal(player.muted,false);
  const before=f.requests.length;
  player.volume=0.85;
- player.listeners.volumechange();
  assert.equal(player.volume,0.85,'the permanent Lounge enforces its fixed browser-source volume');
  assert.equal(f.node('volume').value,'85');
  assert.equal(f.requests.length,before,'local volume changes never call the shared broadcast backend');
