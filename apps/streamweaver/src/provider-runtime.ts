@@ -145,7 +145,7 @@ export class StreamWeaverProviderRuntime {
       pokemon:{execute:invocation=>executePokemonCommand(this.pokemon,invocation)},
 
       bic:new StreamWeaverBicCommandExecutor(new StreamWeaverBicRuntime({store:this.bic,client:options.client})),
-      socialEffects:new StreamWeaverSocialActionExecutor(options.client,this.socialReactions),
+      socialEffects:new StreamWeaverSocialActionExecutor(options.client,options.simulation===true?undefined:this.socialReactions),
       persona:secureChoiceExecutor,
       system:{execute:invocation=>invocation.canonicalTrigger==="!commands" ? `Installed commands: ${this.flows.listInstalledPackages(invocation.tenantId).flatMap(pkg=>pkg.commands.filter(c=>c.enabled).map(c=>c.trigger)).join(", ") || "none"}. Currency: !points, !givepoints, !gamble, !pleader.` : community.system(invocation)}
     });
