@@ -89,7 +89,7 @@ export function createMtFixItFingerprint(input: MtFixItIncidentFingerprintV1): s
     .toLowerCase()
     .replace(/[0-9a-f]{8}-[0-9a-f-]{27,}/g, "<uuid>")
     .replace(/\b\d{10,}\b/g, "<number>")
-    .replace(/\b(?:bearer|token|secret|password)\s+[^\s,;]+/gi, "$1 <redacted>")
+    .replace(/\b(?:bearer|token|secret|password)\s+[^\s,;]+/gi, "[credential] <redacted>")
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 500);
@@ -101,9 +101,9 @@ export function mtFixItIncidentFromOperationsLog(log: OperationsLogV1): MtFixItI
   return {
     sourceAppId: log.sourceAppId,
     level: log.level,
-    message: log.message,
-    route: undefined,
-    code: undefined,
+    message: `${log.kind}: ${log.summary}${log.detail ? ` — ${log.detail}` : ""}`,
+    ...(log.labels.length ? { route: log.labels.find((label) => label.startsWith("route:"))?.slice(6) } : {}),
+    ...(log.labels.length ? { code: log.labels.find((label) => label.startsWith("code:"))?.slice(5) } : {}),
   };
 }
 
@@ -113,7 +113,7 @@ export function mtFixItCoderPrompt(input: {
   evidence: string[];
   attempt: number;
 }): string {
-  const evidence = input.evidence.slice(0, 20).map((line) => line.replace(/(?:bearer\s+|token[=: ]+)[^\s,;]+/gi, "$1[redacted]").slice(0, 1000));
+  const evidence = input.evidence.slice(0, 20).map((line) => line.replace(/(?:bearer\s+|token[=: ]+)[^\s,;]+/gi, "[credential-redacted]").slice(0, 1000));
   return [
     "Investigate this Apollo MtFixIt incident using only the supplied, redacted evidence.",
     "Find the root cause before proposing a patch. Do not hide, suppress, or merely restart away recurring errors.",
