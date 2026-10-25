@@ -52,6 +52,24 @@ jobs:
             ' <<<"$open_prs"
           )
 
+          merged_pr_heads_file="$(mktemp)"
+          page=1
+          while :; do
+            closed_prs="$(curl -fsS \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/pulls?state=closed&per_page=100&page=$page")"
+            count="$(jq 'length' <<<"$closed_prs")"
+            [[ "$count" -eq 0 ]] && break
+            jq -r --arg repo "$GITHUB_REPOSITORY" '
+              .[]
+              | select(.merged_at != null and .base.ref == "main" and .head.repo.full_name == $repo)
+              | "\(.head.ref) \(.head.sha)"
+            ' <<<"$closed_prs" >> "$merged_pr_heads_file"
+            [[ "$count" -lt 100 ]] && break
+            page=$((page + 1))
+          done
+
           is_open_pr_branch() {
             local branch="$1" candidate
             for candidate in "${open_branches[@]}"; do
@@ -74,16 +92,24 @@ jobs:
               continue
             fi
 
+            reason=""
             if git merge-base --is-ancestor "$sha" origin/main; then
-              if [[ "$DRY_RUN" == "true" ]]; then
-                echo "DRY RUN — would delete fully merged branch: $branch"
-              else
-                echo "DELETE $branch — branch head is already contained in main"
-                git push origin --delete "$branch"
-                deleted=$((deleted + 1))
-              fi
+              reason="branch head is already contained in main"
+            elif grep -Fxq "$branch $sha" "$merged_pr_heads_file"; then
+              reason="exact head of a pull request merged into main"
+            else
+              continue
+            fi
+
+            if [[ "$DRY_RUN" == "true" ]]; then
+              echo "DRY RUN — would delete $branch ($reason)"
+            else
+              echo "DELETE $branch — $reason"
+              git push origin --delete "$branch"
+              deleted=$((deleted + 1))
             fi
           done < <(git for-each-ref --format='%(refname:short) %(objectname)' refs/remotes/origin | sort)
+          rm -f "$merged_pr_heads_file"
 
           echo "Cleanup finished. Deleted: $deleted. Kept for open PRs: $skipped. Dry run: $DRY_RUN."
           echo "Branches with unique/unmerged commits are deliberately preserved."
