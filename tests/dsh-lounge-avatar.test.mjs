@@ -22,7 +22,7 @@ test('Stella gestures play once from canonical frame 1 and end on canonical fram
 });
 
 test('Stella weighted random gestures do not starve unseen motions',()=>{
- const bag=new DshStellaGestureBag(()=>0),pool=['wave','jump','waiting'];
+ const values=[0,0.5,0.999],bag=new DshStellaGestureBag(()=>values.shift()??0),pool=['wave','jump','waiting'];
  const seen=new Set(Array.from({length:3},()=>bag.next(pool)));
  assert.deepEqual([...seen].sort(),[...pool].sort());
 });
