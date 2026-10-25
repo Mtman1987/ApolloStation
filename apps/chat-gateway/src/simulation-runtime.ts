@@ -161,6 +161,9 @@ export class SimulationRoomRuntime {
       });
       const delivered = await gateway.ingest({ schemaVersion: 1, tenantId, provider, connectionId, channelId, sourceChannelId: channelId, messageId: job.id, text: input.message, mentions, occurredAt: job.createdAt, providerUserId: snowflake(actor.userId), canonicalUserId: actor.userId, username: actor.username, roles: actor.role === "owner" ? ["broadcaster", "moderator"] : ["member"] });
       await streamweaver?.settleFlows();
+      // Flush durable simulated social reactions before capturing the room's widget snapshot.
+      // Simulation must exercise the same queued-event path as production without live provider writes.
+      await streamweaver?.reconcile();
       if (streamweaver) await emit("streamweaver",{lane:"overlay",direction:"preview",title:"StreamWeaver widgets",body:"",provider,data:{renderer:"streamweaver",snapshot:streamWeaverWidgetSnapshot(authority.listEvents(tenantId,{sourceAppId:"streamweaver",limit:200}))}});
       if (input.appIds.includes("nebula-arcade")) {
         const tags = new SqliteNebulaTagStore(path("nebula")), experience = new SqliteNebulaTagExperienceStore(path("nebula"));
