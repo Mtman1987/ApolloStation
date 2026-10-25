@@ -21,13 +21,13 @@ if (names.length === 0) {
 // keeping assignment deterministic. Every discovered test file is assigned once.
 const files = await Promise.all(names.map(async (file) => ({ file, size: (await stat(file)).size })));
 files.sort((a, b) => b.size - a.size || a.file.localeCompare(b.file));
-const bins = Array.from({ length: shardCount }, () => ({ files: [], weight: 0 }));
+const bins = Array.from({ length: shardCount }, (_, index) => ({ id: index + 1, files: [], weight: 0 }));
 for (const item of files) {
   bins.sort((a, b) => a.weight - b.weight);
   bins[0].files.push(item.file);
   bins[0].weight += item.size;
 }
-const selected = bins[shard - 1].files.sort();
+const selected = bins.find((bin) => bin.id === shard).files.sort();
 if (selected.length === 0) {
   console.error(`Shard ${shard} received no test files; refusing to pass silently.`);
   process.exit(2);
