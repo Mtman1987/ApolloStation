@@ -111,7 +111,7 @@ export class StreamWeaverProviderRuntime {
     this.research=new StreamWeaverResearchConversation(options.databasePath,tenantId=>this.runtimeSettings.research(tenantId),options.nowMs);
     this.bic = new SqliteStreamWeaverBicStore(options.databasePath);
     this.socialReactions = new SqliteStreamWeaverSocialReactionStore(options.databasePath,options.now);
-    this.socialReactionReconciler = new StreamWeaverSocialReactionReconciler(this.socialReactions,options.client,tenant=>this.settings.get(tenant)?.ownerCanonicalUserId);
+    this.socialReactionReconciler = new StreamWeaverSocialReactionReconciler(this.socialReactions,options.client,tenant=>options.simulation===true?undefined:this.settings.get(tenant)?.ownerCanonicalUserId);
     this.translations = new SqliteStreamWeaverTranslationStore(options.databasePath,options.now);
     this.translationRuntime = new StreamWeaverTranslationRuntime(this.translations,options.client,options.egress,tenant=>this.settings.get(tenant)?.ownerCanonicalUserId,options.allowAssistant!==false);
     this.secureChoices = new StreamWeaverSecureChoiceStore(options.databasePath, options.now);
@@ -121,7 +121,7 @@ export class StreamWeaverProviderRuntime {
       { id: "streamweaver.auto-translation", observe: (message) => { this.translationRuntime.observe(message); } },
     ];
     this.botActionReplies = new StreamWeaverBotActionReplies(options.databasePath, options.nowMs);
-    const twitchChannelAllowed = (message: NormalizedChatMessageV1) => message.provider !== "twitch" || (options.connections ?? []).some(connection => connection.tenantId === message.tenantId && connection.provider === "twitch" && connection.desired && connection.channelId === message.channelId);
+    const twitchChannelAllowed = (message: NormalizedChatMessageV1) => options.simulation === true || message.provider !== "twitch" || (options.connections ?? []).some(connection => connection.tenantId === message.tenantId && connection.provider === "twitch" && connection.desired && connection.channelId === message.channelId);
     const botActions = options.botActions ? new StreamWeaverBotActionConsumer(options.botActions, egress, this.botActionReplies, twitchChannelAllowed, options.allowTwitchMedia !== false) : undefined;
     const priorGate = { willHandle: (message: NormalizedChatMessageV1) => relay.willHandle(message) || Boolean(botActions?.willHandle(message)) };
     const secureChoiceExecutor={execute:(invocation:import("./donor-command-runtime.js").StreamWeaverDonorCommandInvocationV1)=>{
@@ -145,7 +145,7 @@ export class StreamWeaverProviderRuntime {
       pokemon:{execute:invocation=>executePokemonCommand(this.pokemon,invocation)},
 
       bic:new StreamWeaverBicCommandExecutor(new StreamWeaverBicRuntime({store:this.bic,client:options.client})),
-      socialEffects:new StreamWeaverSocialActionExecutor(options.client,this.socialReactions),
+      socialEffects:new StreamWeaverSocialActionExecutor(options.client,options.simulation===true?undefined:this.socialReactions),
       persona:secureChoiceExecutor,
       system:{execute:invocation=>invocation.canonicalTrigger==="!commands" ? `Installed commands: ${this.flows.listInstalledPackages(invocation.tenantId).flatMap(pkg=>pkg.commands.filter(c=>c.enabled).map(c=>c.trigger)).join(", ") || "none"}. Currency: !points, !givepoints, !gamble, !pleader.` : community.system(invocation)}
     });

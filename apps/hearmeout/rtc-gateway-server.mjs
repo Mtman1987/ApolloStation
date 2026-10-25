@@ -19,8 +19,13 @@ export function createSpmtRtcGateway(options={}){
     if(req.method==='GET'&&url.pathname==='/health/ready') return json(res,200,{ready:true,service:'spmt-rtc-gateway',mode:'canary-hmac',rooms:hub.snapshot().length});
     return json(res,404,{error:'not_found'});
   });
+  const sockets=new Set();
   const prune=setInterval(()=>hub.pruneIdle(),15000); prune.unref();
-  server.on('upgrade',(req,socket,head)=>{void handleUpgrade(req,socket,head).catch(()=>destroy(socket));});
+  server.on('upgrade',(req,socket,head)=>{
+    sockets.add(socket);
+    socket.once('close',()=>sockets.delete(socket));
+    void handleUpgrade(req,socket,head).catch(()=>destroy(socket));
+  });
 
   async function handleUpgrade(req,socket,head){
     const url=new URL(req.url??'/','http://rtc.local');
@@ -39,7 +44,17 @@ export function createSpmtRtcGateway(options={}){
     const ws=new NarrowServerWebSocket(socket,head);
     await adapter.attach(ws,{tenantId:requested.tenantId,roomId:requested.roomId,participantId:requested.participantId,role:requested.role,authorization:'Bearer spmt-rtc-canary-authorized'});
   }
-  return {server,hub,async listen(){await new Promise((ok,no)=>{server.once('error',no);server.listen(port,host,()=>{server.off('error',no);ok();});});const address=server.address();if(!address||typeof address==='string')throw new Error('SPMT RTC gateway did not bind TCP');return address.port;},async close(){clearInterval(prune);for(const room of hub.snapshot())void room;await new Promise((ok,no)=>server.close(err=>err?no(err):ok()));}};
+  return {server,hub,async listen(){await new Promise((ok,no)=>{server.once('error',no);server.listen(port,host,()=>{server.off('error',no);ok();});});const address=server.address();if(!address||typeof address==='string')throw new Error('SPMT RTC gateway did not bind TCP');return address.port;},async close(){
+    clearInterval(prune);
+    // Upgraded WebSocket sockets are not closed by Node's HTTP server shutdown.
+    // Let close frames flush briefly, then force-close any peer that does not finish.
+    for(const socket of sockets){try{socket.end();}catch{destroy(socket);}}
+    await new Promise((ok,no)=>{
+      const timer=setTimeout(()=>{for(const socket of sockets)destroy(socket);},250);
+      timer.unref();
+      server.close(err=>{clearTimeout(timer);err?no(err):ok();});
+    });
+  }};
 }
 
 class NarrowServerWebSocket{
@@ -51,7 +66,7 @@ class NarrowServerWebSocket{
   onClose(fn){this.#closed=fn;}
   #finish(){if(this.#ended)return;this.#ended=true;this.#closed();}
   #feed(chunk){if(this.#ended)return;this.#buffer=Buffer.concat([this.#buffer,Buffer.from(chunk)]);while(this.#parse()){} }
-  #parse(){const b=this.#buffer;if(b.length<2)return false;const fin=(b[0]&0x80)!==0,rsv=b[0]&0x70,opcode=b[0]&0x0f,masked=(b[1]&0x80)!==0;let len=b[1]&0x7f,offset=2;if(!fin||rsv||!masked)return this.#protocolClose(1002,'Unsupported frame');if(len===126){if(b.length<4)return false;len=b.readUInt16BE(2);offset=4;}else if(len===127){if(b.length<10)return false;const n=b.readBigUInt64BE(2);if(n>65536n)return this.#protocolClose(1009,'Frame too large');len=Number(n);offset=10;}if(len>65536)return this.#protocolClose(1009,'Frame too large');if(b.length<offset+4+len)return false;const mask=b.subarray(offset,offset+4);offset+=4;const payload=Buffer.from(b.subarray(offset,offset+len));for(let i=0;i<payload.length;i++)payload[i]^=mask[i&3];this.#buffer=b.subarray(offset+len);if(opcode===0x2){this.#binary(payload);return true;}if(opcode===0x8){this.close(1000,'');return false;}if(opcode===0x9){this.#socket.write(frame(0xA,payload));return true;}if(opcode===0xA)return true;return this.#protocolClose(1003,'Binary audio only');}
+  #parse(){const b=this.#buffer;if(b.length<2)return false;const fin=(b[0]&0x80)!==0,rsv=b[0]&0x70,opcode=b[0]&0x0f,masked=(b[1]&0x80)!==0;let len=b[1]&0x7f,offset=2;if(!fin||rsv||!masked)return this.#protocolClose(1002,'Unsupported frame');if(len===126){if(b.length<4)return false;len=b.readUInt16BE(2);offset=4;}else if(len===127){if(b.length<10)return false;const n=b.readBigUInt64BE(2);if(n>65536n)return this.#protocolClose(1009,'Frame too large');len=Number(n);offset=10;}if(len>65536)return this.#protocolClose(1009,'Frame too large');if(b.length<offset+4+len)return false;const mask=b.subarray(offset,offset+4);offset+=4;const payload=Buffer.from(b.subarray(offset,offset+len));for(let i=0;i<payload.length;i++)payload[i]^=mask[i&3];this.#buffer=b.subarray(offset+len);if(opcode===0x2){this.#binary(payload);return true;}if(opcode===0x8){if(this.#ended){this.#socket.end();}else this.close(1000,'');return false;}if(opcode===0x9){this.#socket.write(frame(0xA,payload));return true;}if(opcode===0xA)return true;return this.#protocolClose(1003,'Binary audio only');}
   #protocolClose(code,reason){this.close(code,reason);return false;}
 }
 function frame(opcode,payload){const len=payload.length;let head;if(len<126){head=Buffer.from([0x80|opcode,len]);}else if(len<=65535){head=Buffer.alloc(4);head[0]=0x80|opcode;head[1]=126;head.writeUInt16BE(len,2);}else{head=Buffer.alloc(10);head[0]=0x80|opcode;head[1]=127;head.writeBigUInt64BE(BigInt(len),2);}return Buffer.concat([head,payload]);}
