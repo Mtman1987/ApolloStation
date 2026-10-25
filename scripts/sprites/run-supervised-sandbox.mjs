@@ -106,6 +106,8 @@ const sandboxManifests = [
 const children = new Set();
 const recoverableServices = new Set();
 let stopping = false;
+let resolveSupervisorShutdown;
+const supervisorShutdown = new Promise((resolve) => { resolveSupervisorShutdown = resolve; });
 const stellarWorkerCredential = flowOpenAiKey ? randomBytes(32).toString("base64url") : undefined;
 const chatGatewayCredential = randomBytes(32).toString("base64url");
 const streamweaverWorkerCredential = randomBytes(32).toString("base64url");
@@ -129,7 +131,7 @@ if (app === "nebula-arcade") {
   process.stdout.write("Press Ctrl+C once to stop the app.\n\n");
   process.on("SIGINT", () => void stop(0));
   process.on("SIGTERM", () => void stop(0));
-  await new Promise((done) => nebulaArcade.once("exit", (code, signal) => { if (!stopping) void stop(signal === "SIGINT" || signal === "SIGTERM" ? 0 : code ?? (signal ? 1 : 0)).then(done); else done(); }));
+  await Promise.race([new Promise((done) => nebulaArcade.once("exit", (code, signal) => { if (!stopping) void stop(signal === "SIGINT" || signal === "SIGTERM" ? 0 : code ?? (signal ? 1 : 0)).then(done); else done(); })), supervisorShutdown]);
 } else {
 const spmt = start("SPMT", "apps/spmt-service/dist/provider-identity-start.js", {
   ...common,
@@ -254,7 +256,7 @@ process.stdout.write("Press Ctrl+C once to stop the supervised cohort.\n\n");
 
 process.on("SIGINT", () => void stop(0));
 process.on("SIGTERM", () => void stop(0));
-await new Promise((done) => web.once("exit", (code, signal) => { if (!stopping) void stop(signal === "SIGINT" || signal === "SIGTERM" ? 0 : code ?? (signal ? 1 : 0)).then(done); else done(); }));
+await Promise.race([new Promise((done) => web.once("exit", (code, signal) => { if (!stopping) void stop(signal === "SIGINT" || signal === "SIGTERM" ? 0 : code ?? (signal ? 1 : 0)).then(done); else done(); })), supervisorShutdown]);
 }
 
 function startRecoverable(label, script, environment) {
@@ -307,6 +309,7 @@ async function stop(code) {
   for (const child of children) child.kill("SIGKILL");
   await Promise.allSettled(recoveringStops);
   process.exitCode = code;
+  resolveSupervisorShutdown();
 }
 
 function safeEnvironment(source) {
