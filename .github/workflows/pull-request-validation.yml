@@ -15,7 +15,7 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -26,5 +26,7 @@ jobs:
           cache: npm
       - name: Install locked dependencies
         run: npm ci
-      - name: Build and run offline-safe regression suite
-        run: npm run test:offline
+      - name: Build workspace
+        run: npm run build
+      - name: Run MtFixIt policy regression tests (offline-safe)
+        run: node --import ./scripts/offline-network-guard.mjs --test tests/mtfixit-policy.test.mjs
