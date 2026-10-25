@@ -39,7 +39,7 @@ jobs:
           ffprobe -version
       - name: Build all workspaces
         run: npm run build
-      - name: Run assigned offline-safe test files
+      - name: Run all assigned tests and record pass/fail
         shell: bash
         run: |
           mkdir -p release-validation
