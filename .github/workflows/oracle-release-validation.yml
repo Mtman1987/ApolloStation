@@ -2,11 +2,6 @@ name: ApolloStation Oracle release validation
 
 on:
   workflow_dispatch:
-    inputs:
-      confirmation:
-        description: "Type ORACLE-RELEASE-CHECK to confirm this full validation run"
-        required: true
-        type: string
 
 permissions:
   contents: read
@@ -16,23 +11,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  guard:
-    name: Confirm intentional full-suite run
-    runs-on: ubuntu-latest
-    steps:
-      - name: Require explicit confirmation
-        env:
-          CONFIRMATION: ${{ inputs.confirmation }}
-        run: |
-          if [ "$CONFIRMATION" != "ORACLE-RELEASE-CHECK" ]; then
-            echo "Confirmation phrase did not match; refusing to run validation."
-            exit 1
-          fi
-
   validate:
-    needs: [guard]
     name: Full test suite — shard ${{ matrix.shard }}/4
-    if: ${{ inputs.confirmation == 'ORACLE-RELEASE-CHECK' }}
     runs-on: ubuntu-latest
     timeout-minutes: 27
     strategy:
