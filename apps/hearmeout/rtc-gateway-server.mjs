@@ -19,8 +19,13 @@ export function createSpmtRtcGateway(options={}){
     if(req.method==='GET'&&url.pathname==='/health/ready') return json(res,200,{ready:true,service:'spmt-rtc-gateway',mode:'canary-hmac',rooms:hub.snapshot().length});
     return json(res,404,{error:'not_found'});
   });
+  const sockets=new Set();
   const prune=setInterval(()=>hub.pruneIdle(),15000); prune.unref();
-  server.on('upgrade',(req,socket,head)=>{void handleUpgrade(req,socket,head).catch(()=>destroy(socket));});
+  server.on('upgrade',(req,socket,head)=>{
+    sockets.add(socket);
+    socket.once('close',()=>sockets.delete(socket));
+    void handleUpgrade(req,socket,head).catch(()=>destroy(socket));
+  });
 
   async function handleUpgrade(req,socket,head){
     const url=new URL(req.url??'/','http://rtc.local');
@@ -39,7 +44,17 @@ export function createSpmtRtcGateway(options={}){
     const ws=new NarrowServerWebSocket(socket,head);
     await adapter.attach(ws,{tenantId:requested.tenantId,roomId:requested.roomId,participantId:requested.participantId,role:requested.role,authorization:'Bearer spmt-rtc-canary-authorized'});
   }
-  return {server,hub,async listen(){await new Promise((ok,no)=>{server.once('error',no);server.listen(port,host,()=>{server.off('error',no);ok();});});const address=server.address();if(!address||typeof address==='string')throw new Error('SPMT RTC gateway did not bind TCP');return address.port;},async close(){clearInterval(prune);for(const room of hub.snapshot())void room;await new Promise((ok,no)=>server.close(err=>err?no(err):ok()));}};
+  return {server,hub,async listen(){await new Promise((ok,no)=>{server.once('error',no);server.listen(port,host,()=>{server.off('error',no);ok();});});const address=server.address();if(!address||typeof address==='string')throw new Error('SPMT RTC gateway did not bind TCP');return address.port;},async close(){
+    clearInterval(prune);
+    // Upgraded WebSocket sockets are not closed by Node's HTTP server shutdown.
+    // Let close frames flush briefly, then force-close any peer that does not finish.
+    for(const socket of sockets){try{socket.end();}catch{destroy(socket);}}
+    await new Promise((ok,no)=>{
+      const timer=setTimeout(()=>{for(const socket of sockets)destroy(socket);},250);
+      timer.unref();
+      server.close(err=>{clearTimeout(timer);err?no(err):ok();});
+    });
+  }};
 }
 
 class NarrowServerWebSocket{
