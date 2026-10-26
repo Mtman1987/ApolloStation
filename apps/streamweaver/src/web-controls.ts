@@ -256,10 +256,10 @@ export class StreamWeaverWebControls {
         return sendJson(response,200,{appearance});
       }
       if(url.pathname==="/api/streamweaver/control/avatar-build"){
-        if(!this.avatarBuildEnabled)throw Error("Avatar creation is disabled in this environment");
-        const portraitAssetId=identifier(body.portraitAssetId,"portraitAssetId"),asset=await this.deviceApi(request,context,undefined,"/v1/media/assets/"+portraitAssetId);
-        if(asset.tenantId!==context.tenantId||asset.ownerUserId!==this.actor(context).id||!["image/png","image/jpeg"].includes(String(asset.contentType)))throw Error("Choose one of your PNG or JPEG portraits from Media Files");
-        const result=await this.requireClient().createExecutionJob(context.tenantId,{ownerAppId:"streamweaver",capabilityId:STREAMWEAVER_AVATAR_BUILD_CAPABILITY,executionOwner:"streamweaver",billedUserId:this.actor(context).id,meteredResource:"image-generations",usageQuantity:1,executionTarget:"sprite",meteringTarget:"hosted",input:{schemaVersion:1,portraitAssetId}},idempotency(body.requestId,"avatar-build"));
+        if(!this.avatarBuildEnabled)throw Error("Avatar rigging is disabled in this environment");
+        const modelAssetId=identifier(body.modelAssetId,"modelAssetId"),asset=await this.deviceApi(request,context,undefined,"/v1/media/assets/"+modelAssetId);
+        if(asset.tenantId!==context.tenantId||asset.ownerUserId!==this.actor(context).id||String(asset.contentType)!=="model/gltf-binary")throw Error("Choose a GLB model you own from Media Files");
+        const result=await this.requireClient().createExecutionJob(context.tenantId,{ownerAppId:"streamweaver",capabilityId:STREAMWEAVER_AVATAR_BUILD_CAPABILITY,executionOwner:"streamweaver",billedUserId:this.actor(context).id,meteredResource:"image-generations",usageQuantity:1,executionTarget:"sprite",meteringTarget:"hosted",input:{schemaVersion:1,modelAssetId}},idempotency(body.requestId,"avatar-build"));
         return sendJson(response,202,{jobId:result.job.id,state:result.job.state});
       }
       if(url.pathname==="/api/streamweaver/control/twitch"){
