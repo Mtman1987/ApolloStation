@@ -16,8 +16,15 @@ test("widget projection preserves visible data and excludes credentials, untrust
     {id:"tts",sourceAppId:"streamweaver",type:"streamweaver.media.playback.v1",createdAt:now,payload:{kind:"tts-player",mediaUrl:"https://assets.test/speech.wav",text:"Voice result"}},
   ];
   const all=streamWeaverWidgetSnapshot(events,now);assert.equal(all.items.length,3);assert.equal(all.items[0].text,"Boop trajectory confirmed.");assert.equal(all.items[0].actor,"Captain boops Friend!");assert.equal(all.items[0].animationKey,"boop");assert.doesNotMatch(JSON.stringify(all),/never-public|javascript|Imposter/);
-  assert.equal(all.items[1].modelUrl,"https://assets.test/rigged.glb");\n  const social=streamWeaverWidgetSnapshot(events,now,"social");assert.equal(social.items.length,1);assert.doesNotMatch(JSON.stringify(social),/Voice result|idle.png|rigged\\.glb/);
+  assert.equal(all.items[1].modelUrl,"https://assets.test/rigged.glb");
+  const social=streamWeaverWidgetSnapshot(events,now,"social");assert.equal(social.items.length,1);assert.doesNotMatch(JSON.stringify(social),/Voice result|idle.png|rigged\\.glb/);
   const voice=streamWeaverWidgetSnapshot(events,now,"tts-player");assert.deepEqual(voice.items.map(x=>x.kind),["avatar","tts-player"]);
+  const changedSource=streamWeaverWidgetSnapshot([
+    {id:"model",sourceAppId:"streamweaver",type:"streamweaver.avatar.model.updated.v1",createdAt:now,payload:{modelUrl:"https://assets.test/rigged.glb",modelAssetId:"asset-model"}},
+    {id:"2d",sourceAppId:"streamweaver",type:"streamweaver.avatar.updated.v1",createdAt:new Date(Date.parse(now)+1).toISOString(),payload:{avatarUrl:"https://assets.test/idle.png",talkingUrl:"",modelUrl:"",modelAssetId:"",audio2FaceUrl:"",morphIntensity:1}}
+  ],new Date(Date.parse(now)+2).toISOString(),"avatar");
+  assert.equal(changedSource.items.at(-1).modelUrl,"");
+  assert.equal(changedSource.items.at(-1).avatarUrl,"https://assets.test/idle.png");
   assert.doesNotThrow(()=>new Function(STREAMWEAVER_WIDGET_CLIENT));assert.ok(STREAMWEAVER_WIDGET_CSP.includes(createHash("sha256").update(STREAMWEAVER_WIDGET_CLIENT).digest("base64")));
   assert.match(renderStreamWeaverWidget("auto",true),/data-simulation="true"/);assert.match(renderStreamWeaverWidget("social"),/🧑‍🚀|data-widget="social"/);assert.match(renderStreamWeaverWidget("social"),/astronautFloat/);assert.match(renderStreamWeaverWidget("avatar"),/id="avatar-model"/);assert.ok(STREAMWEAVER_WIDGET_CSP.includes("https://esm.sh"));assert.match(STREAMWEAVER_WIDGET_CLIENT,/void setAvatarVisual\(avatarState\)/);assert.match(STREAMWEAVER_WIDGET_CLIENT,/function applyAudio2Face/);assert.match(STREAMWEAVER_WIDGET_CLIENT,/new WebSocket\(endpoint\)/);
 });
