@@ -2,13 +2,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-const studio = readFileSync(new URL("../apps/spacemountain-web/src/avatar-studio.ts", import.meta.url), "utf8");
+const studio = readFileSync(new URL("../apps/streamweaver/src/avatar-studio.ts", import.meta.url), "utf8");
 const host = readFileSync(new URL("../apps/spacemountain-web/src/server.ts", import.meta.url), "utf8");
 const bay = readFileSync(new URL("../apps/spacemountain/src/overlay-bay-ui.ts", import.meta.url), "utf8");
 
 test("Apollo exposes a dedicated Avatar Studio route with a constrained CDN policy", () => {
   assert.match(host, /url\.pathname === "\/avatar-studio"/);
   assert.match(host, /renderAvatarStudioPage\(nonce\)/);
+  assert.match(host, /@spmt\/streamweaver\/dist\/avatar-studio\.js/);
   assert.match(host, /https:\/\/cdn\.jsdelivr\.net/);
 });
 
@@ -47,4 +48,14 @@ test("Avatar Studio has a retargetable shared motion library and labels GIFs hon
     assert.ok(studio.includes(file), "missing animation reference " + file);
   }
   assert.match(studio, /GIF reference only/);
+});
+
+test("Avatar Studio saves the chosen 2D or 3D avatar and connects Audio2Face to the shared source", () => {
+  for (const id of ["avatarSourceMode", "savePngTuber", "saveAudio2Face", "rigActivate3d", "exportCombinedGlb", "audio2FaceUrl", "avatarTweakScale", "avatarTweakMorph"]) {
+    assert.ok(studio.includes('id="' + id + '"'), "missing integrated control " + id);
+  }
+  assert.match(studio, /modelAssetId:asset\.id/);
+  assert.match(studio, /audio2FaceUrl:a2fUrl\.value\.trim\(\)/);
+  assert.match(studio, /No photo turnaround or second head reconstruction/);
+  assert.match(studio, /Upload a single-file GLB/);
 });
