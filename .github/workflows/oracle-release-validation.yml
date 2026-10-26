@@ -32,9 +32,25 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
       - name: Install media test tools
+        shell: bash
         run: |
-          sudo apt-get update
-          sudo apt-get install --yes ffmpeg
+          set -euo pipefail
+          # Hosted images may already include ffmpeg. Avoid a needless apt index
+          # refresh on those runners; it can stall every shard before tests start.
+          if command -v ffmpeg >/dev/null 2>&1 && command -v ffprobe >/dev/null 2>&1; then
+            echo "ffmpeg and ffprobe are already available; skipping apt."
+          else
+            sudo timeout 120s apt-get \
+              -o Acquire::Retries=2 \
+              -o Acquire::http::Timeout=20 \
+              -o Acquire::https::Timeout=20 \
+              update
+            sudo timeout 180s env DEBIAN_FRONTEND=noninteractive apt-get \
+              -o Acquire::Retries=2 \
+              -o Acquire::http::Timeout=20 \
+              -o Acquire::https::Timeout=20 \
+              install --yes --no-install-recommends ffmpeg
+          fi
       - name: Verify media test tools
         run: |
           ffmpeg -version
