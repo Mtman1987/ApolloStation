@@ -18,7 +18,8 @@ const refs = [
   ["10_lower_face_jaw_detail.png", "4d453c304c9b527d2da68a7f42489e1e5dcb31dab7911ffa381f02987b5f670c"],
 ];
 
-const dir = resolve("head_reference_renders_relit");
+// The ten approved PNGs were committed at the repository root; consume them there without moving or rewriting the assets.
+const dir = resolve(".");
 const images = [];
 for (const [name, expected] of refs) {
   let bytes;
