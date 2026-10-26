@@ -1,21 +1,13 @@
 name: ApolloStation Oracle release validation
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
-  pull_request:
-    paths:
-      - "apps/**"
-      - "tests/**"
-      - "scripts/run-release-validation-shard.mjs"
-      - ".github/workflows/oracle-release-validation.yml"
 
 permissions:
   contents: read
-
-concurrency:
-  # Superseded commits on the same PR should not queue full four-shard test runs.
-  group: apollo-oracle-release-validation-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
 
 jobs:
   validate:
