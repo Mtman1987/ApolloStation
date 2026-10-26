@@ -58,8 +58,17 @@ export function streamWeaverWidgetSnapshot(events: Event[], now = new Date().toI
       items.push({...base,id:id+":leaderboard",kind:"leaderboard",text:short(payload.currencyName,100),rows});
       const result=object(payload.result);
       if(["gamble","gambel","roll"].includes(String(payload.command))&&result.success===true)items.push({...base,kind:"gamble",text:short(payload.text,1000),actor:short(payload.displayName,100),total:number(result.newTotal),durationMs:9000});
-    } else if(["streamweaver.avatar.updated.v1","streamweaver.avatar.model.updated.v1"].includes(event.type)) {
-      items.push({...base,kind:"avatar",text:short(payload.displayName,100),avatarUrl:media(payload.avatarUrl),talkingUrl:media(payload.talkingUrl),modelUrl:media(payload.modelUrl),audio2FaceUrl:socketUrl(payload.audio2FaceUrl),morphIntensity:number(payload.morphIntensity)});
+    } else if(event.type==="streamweaver.avatar.updated.v1") {
+      items.push({...base,kind:"avatar",text:short(payload.displayName,100),
+        ...("avatarUrl" in payload?{avatarUrl:media(payload.avatarUrl)??""}:{}),
+        ...("talkingUrl" in payload?{talkingUrl:media(payload.talkingUrl)??""}:{}),
+        ...("modelUrl" in payload?{modelUrl:media(payload.modelUrl)??""}:{}),
+        ...("audio2FaceUrl" in payload?{audio2FaceUrl:socketUrl(payload.audio2FaceUrl)??""}:{}),
+        ...("morphIntensity" in payload?{morphIntensity:number(payload.morphIntensity)??1}:{})});
+    } else if(event.type==="streamweaver.avatar.model.updated.v1") {
+      items.push({...base,kind:"avatar",text:short(payload.displayName,100),
+        ...("modelUrl" in payload?{modelUrl:media(payload.modelUrl)??""}:{}),
+        ...("modelAssetId" in payload?{modelAssetId:short(payload.modelAssetId,100)}:{})});
     } else if(["streamweaver.media.playback.v1","stellar.speech.playback.v1"].includes(event.type)) {
       const kind=String(payload.kind),mediaUrl=media(payload.mediaUrl);
       if(["tts-player","shoutout-player","brb-player"].includes(kind)&&(mediaUrl||payload.operation==="stop"))items.push({...base,kind,text:short(payload.text,2000),mediaUrl,avatarUrl:media(payload.avatarUrl),talkingUrl:media(payload.talkingUrl),durationMs:Math.max(1000,Math.min(3600000,Number(payload.durationMs)||60000))});
