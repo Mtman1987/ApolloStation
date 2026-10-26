@@ -97,7 +97,7 @@ function applyA2FMessage(payload) {
 }
 connectA2F.addEventListener('click', () => {
   const endpoint = a2fUrl.value.trim();
-  if (!endpoint || !/^wss?:\/\//i.test(endpoint)) {
+  if (!endpoint || !/^wss?:\\/\\//i.test(endpoint)) {
     a2fStatus.textContent = 'Enter a valid ws:// or wss:// bridge URL first.';
     return;
   }
