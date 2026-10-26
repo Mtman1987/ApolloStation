@@ -40,10 +40,7 @@ test("Sprite promotion has one protected release target", async () => {
   assert.match(workflow, /Remote release did not finish within 20 minutes/);
   assert.doesNotMatch(workflow, /SPMT_LIVE_READ_ACCESS_TOKEN|spmt-live-read-token/);
   assert.doesNotMatch(workflow, /sprite exec --http-post/);
-  assert.match(workflow, /secrets\.STREAMWEAVER_MESHY_API_KEY/);
-  assert.match(workflow, /secrets\.STREAMWEAVER_KEENTOOLS_API_KEY/);
-  assert.match(workflow, /streamweaver-meshy-api-key/);
-  assert.match(workflow, /streamweaver-keentools-api-key/);
+  assert.doesNotMatch(workflow, /STREAMWEAVER_MESHY_API_KEY|STREAMWEAVER_KEENTOOLS_API_KEY|streamweaver-meshy-api-key|streamweaver-keentools-api-key/);
 });
 
 test("Sprite deployment verifies, tests, switches atomically, rolls back, and launches the current app catalog", async () => {
@@ -83,7 +80,7 @@ test("Sprite deployment verifies, tests, switches atomically, rolls back, and la
 test("Sprite network policy allows the production read source but remains deny-by-default", async () => {
   const policy = JSON.parse(await readFile(networkPolicyPath, "utf8"));
   assert.ok(policy.rules.some((rule) => rule.domain === "spmt.live" && rule.action === "allow"));
-  for (const domain of ["api.meshy.ai", "assets.meshy.ai", "api.keentools.io", "*.amazonaws.com"]) assert.ok(policy.rules.some((rule) => rule.domain === domain && rule.action === "allow"));
+  for (const domain of ["api.meshy.ai", "assets.meshy.ai", "api.keentools.io", "*.amazonaws.com"]) assert.equal(policy.rules.some((rule) => rule.domain === domain && rule.action === "allow"), false, domain + " is not used by direct local GLB rigging");
   assert.equal(policy.rules.some((rule) => /twitch|discord/i.test(rule.domain) && rule.action === "allow"), false);
   assert.deepEqual(policy.rules.at(-1), { domain: "*", action: "deny" });
 });

@@ -1,5 +1,5 @@
 import {renderEcosystemDocs} from "./ecosystem-docs.js";
-import { renderAvatarStudioPage } from "./avatar-studio.js";
+import { renderAvatarStudioPage } from "@spmt/streamweaver/dist/avatar-studio.js";
 import { renderStreamWeaverWidget, STREAMWEAVER_WIDGET_CSP } from "@spmt/streamweaver/dist/overlay-widgets.js";
 import { renderNebulaTagOverlayHtml, NEBULA_TAG_OVERLAY_CSS, NEBULA_TAG_OVERLAY_CLIENT_JS, renderNebulaGameWidget, renderNebulaArcadeStage, NEBULA_IMPORTED_WIDGET_IDS, NEBULA_WIDGET_STAGE_JS, nebulaThreeJs } from "@spmt/nebula-arcade";
 import { randomBytes } from "node:crypto";
@@ -148,7 +148,7 @@ export function createSpaceMountainWebHost(options: SpaceMountainWebHostOptions)
       }
       if (request.method === "GET" && url.pathname === "/avatar-studio") {
         response.removeHeader("x-frame-options");
-        response.setHeader("content-security-policy", `default-src 'none'; script-src 'self' 'nonce-${nonce}' https://cdn.jsdelivr.net; style-src 'unsafe-inline'; connect-src 'self' https://cdn.jsdelivr.net https://three.ws blob:; img-src 'self' https: data: blob:; media-src 'self' blob:; frame-ancestors 'self'; base-uri 'none'; object-src 'none'`);
+        response.setHeader("content-security-policy", `default-src 'none'; script-src 'self' 'nonce-${nonce}' https://cdn.jsdelivr.net; style-src 'unsafe-inline'; connect-src 'self' https://cdn.jsdelivr.net https://three.ws ws: wss: blob:; img-src 'self' https: data: blob:; media-src 'self' blob:; frame-ancestors 'self'; base-uri 'none'; object-src 'none'`);
         return html(response, 200, renderAvatarStudioPage(nonce));
       }
       if (request.method === "GET" && url.pathname === "/workspace/overlay") {

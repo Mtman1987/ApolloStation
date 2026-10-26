@@ -63,15 +63,26 @@ test("DSH makes calendar, channel delivery, application publishing, and private 
 test("StreamWeaver exposes a wired Voice Commander, searchable bot catalog, integrations, persona and economy", async () => {
   await fixture(async ({ cookie, tenantId, spmtBase, streamBase }) => {
     const page = await (await fetch(streamBase)).text();
+    const studioResponse = await fetch(`${streamBase}/avatar-studio`);
+    assert.equal(studioResponse.status, 200);
+    const studioHtml = await studioResponse.text();
+    for (const id of ["avatarSourceMode","pngTuberFile","pngTuberSpeakingFile","audio2FaceUrl","savePngTuber","saveAudio2Face","rigActivate3d","exportCombinedGlb","avatarTweakScale","avatarTweakY","avatarTweakZ","avatarTweakMorph"]) assert.match(studioHtml, new RegExp('id="' + id + '"'));
+    const studioModule = studioHtml.match(/<script type="module" nonce="[^"]+">([\s\S]*?)<\/script>/)?.[1];
+    assert.ok(studioModule, "Avatar Studio module script is present");
+    assert.doesNotThrow(() => new Function(studioModule.replace(/^import[^\n]*\n/gm, "")), "Avatar Studio inline module is syntactically valid");
+    assert.match(studioHtml, /StreamWeaver avatar source/);
+    assert.match(studioHtml, /Save 2D avatar to StreamWeaver/);
+    assert.match(studioHtml, /No photo turnaround or second head reconstruction/);
+    assert.match(studioResponse.headers.get("content-security-policy") || "", /ws:/);
     assert.match(page, /Setup Guide/); assert.match(page, /Community Flows/); assert.match(page, /Build one flow with AI/); assert.match(page, /No flows installed yet/); assert.match(page, /Voice Commander/); assert.match(page, /Review your text before sending/); assert.match(page, /Provider replies are captured in Simulation Rooms/); assert.match(page, /Simulation Rooms/); assert.match(page, /Manage linked accounts/); assert.match(page, /@media\(max-width:720px\)/);
     const browserSource = page.match(/<script>([\s\S]*)<\/script>/)?.[1];
     assert.ok(browserSource); assert.doesNotThrow(() => new Function(browserSource));
     assert.match(browserSource, /Finish your flow/); assert.match(browserSource, /data-flow-intent="enable"/); assert.match(browserSource, /data-flow-intent="publish"/);
     assert.match(browserSource, /Bot & Persona unavailable/); assert.match(browserSource, /Active avatar/); assert.match(browserSource, /streamweaver:avatar-updated/); assert.match(browserSource, /Use as active avatar/);
-    assert.match(browserSource, /Create rigged 3D avatar/); assert.match(browserSource, /avatar-build/); assert.match(browserSource, /Rigged 3D avatar ready/);
-    assert.match(browserSource, /data-sw-form="avatar-build-upload"/); assert.match(browserSource, /accept="image\/png,image\/jpeg"/);
-    assert.match(browserSource, /Portrait uploaded\. Starting the Meshy avatar build/); assert.match(browserSource, /portraitAssetId:asset\.id/);
-    assert.match(browserSource, /Advanced avatar URLs/); assert.match(browserSource, /Choose picture and create avatar/);
+    assert.match(browserSource, /Rig an existing 3D model/); assert.match(browserSource, /avatar-build/); assert.match(browserSource, /3D rig ready/); assert.match(browserSource, /Open Avatar Studio/);
+    assert.match(browserSource, /data-sw-form="avatar-build-upload"/); assert.match(browserSource, /accept="\.glb,model\/gltf-binary"/);
+    assert.match(browserSource, /GLB uploaded\. Starting direct Blender rigging/); assert.match(browserSource, /modelAssetId:asset\.id/);
+    assert.match(browserSource, /Advanced avatar URLs/); assert.match(browserSource, /Upload and rig this model/);
     assert.match(browserSource, /e\.key==='Enter'.*requestSubmit\(\)/, "Enter submits Voice Commander");
     assert.match(browserSource, /!e\.shiftKey/, "Shift+Enter remains available for a new line");
     assert.match(browserSource, /data-sw-page=/);
