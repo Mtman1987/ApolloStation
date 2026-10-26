@@ -68,7 +68,7 @@ test("StreamWeaver exposes a wired Voice Commander, searchable bot catalog, inte
     assert.ok(browserSource); assert.doesNotThrow(() => new Function(browserSource));
     assert.match(browserSource, /Finish your flow/); assert.match(browserSource, /data-flow-intent="enable"/); assert.match(browserSource, /data-flow-intent="publish"/);
     assert.match(browserSource, /Bot & Persona unavailable/); assert.match(browserSource, /Active avatar/); assert.match(browserSource, /streamweaver:avatar-updated/); assert.match(browserSource, /Use as active avatar/);
-    assert.match(browserSource, /Rig an existing 3D model/); assert.match(browserSource, /avatar-build/); assert.match(browserSource, /3D rig ready/);
+    assert.match(browserSource, /Rig an existing 3D model/); assert.match(browserSource, /avatar-build/); assert.match(browserSource, /3D rig ready/); assert.match(browserSource, /Open Avatar Studio/);
     assert.match(browserSource, /data-sw-form="avatar-build-upload"/); assert.match(browserSource, /accept="image\/png,image\/jpeg"/);
     assert.match(browserSource, /Portrait uploaded\. Starting the Meshy avatar build/); assert.match(browserSource, /portraitAssetId:asset\.id/);
     assert.match(browserSource, /Advanced avatar URLs/); assert.match(browserSource, /Choose picture and create avatar/);
