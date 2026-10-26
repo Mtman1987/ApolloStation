@@ -25,7 +25,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/ffmpeg-debs
-          key: ffmpeg-debs-${{ runner.os }}-${{ runner.arch }}-${{ steps.ffmpeg-cache-key.outputs.week }}
+          key: ffmpeg-debs-${{ runner.os }}-${{ runner.arch }}-${{ steps.ffmpeg-cache-key.outputs.week }}-${{ hashFiles('.github/workflows/oracle-release-validation.yml') }}
       - name: Download and cache FFmpeg packages
         run: |
           mkdir -p "$RUNNER_TEMP/ffmpeg-debs/partial"
@@ -60,7 +60,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/ffmpeg-debs
-          key: ffmpeg-debs-${{ runner.os }}-${{ runner.arch }}-${{ steps.ffmpeg-cache-key.outputs.week }}
+          key: ffmpeg-debs-${{ runner.os }}-${{ runner.arch }}-${{ steps.ffmpeg-cache-key.outputs.week }}-${{ hashFiles('.github/workflows/oracle-release-validation.yml') }}
       - name: Install media test tools
         run: |
           mkdir -p "$RUNNER_TEMP/ffmpeg-debs/partial"
