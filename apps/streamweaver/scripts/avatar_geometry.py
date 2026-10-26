@@ -151,8 +151,7 @@ def weight_jaw(mesh_objects, rig, head_bone, pivot_world, head_height):
         group = obj.vertex_groups.get("Jaw") or obj.vertex_groups.new(name="Jaw")
         head_group = obj.vertex_groups.get(head_bone)
         if head_group is None:
-            head_group = obj.vertex_groups.new(name=head_bone)
-            head_group.add([v.index for v in obj.data.vertices], 1.0, "REPLACE")
+            raise RuntimeError(f"Mesh {obj.name!r} has no {head_bone!r} vertex group. Refusing to assign the whole mesh to the head; supply a head-only GLB or correct the existing skin weights in Blender.")
         inverse = obj.matrix_world
         low, high = bounds([obj])
         # Split lower-face vertices progressively: the jaw rotates as a unit,
@@ -217,26 +216,9 @@ def rig(source_path, output_path, report_path):
     else:
         head_bone = find_head_bone(rig)
         if head_bone is None:
-            # Re-use the existing skeleton instead of replacing it. Anchor a
-            # head bone near the uppermost mesh region if no standard head name
-            # exists; the original bones/animations remain untouched.
-            low, high = bounds(mesh_objects)
-            center = (low + high) / 2
-            inverse = rig.matrix_world.inverted()
-            bpy.context.view_layer.objects.active = rig
-            rig.select_set(True)
-            bpy.ops.object.mode_set(mode="EDIT")
-            head = rig.data.edit_bones.new("Head")
-            head.head = inverse @ Vector((center.x, center.y, low.z + (high.z-low.z)*0.72))
-            head.tail = inverse @ Vector((center.x, center.y, high.z - (high.z-low.z)*0.08))
-            existing = [bone for bone in rig.data.edit_bones if bone is not head]
-            if existing:
-                def distance_to_head(bone):
-                    return min((bone.tail - head.head).length, (bone.head - head.head).length)
-                head.parent = min(existing, key=distance_to_head)
-            bpy.ops.object.mode_set(mode="OBJECT")
-            rig.select_set(False)
-            head_bone = rig.data.bones.get("Head")
+            # Never guess at a full-character head bone: adding one without the
+            # corresponding vertex-group weights would not make a safe rig.
+            raise RuntimeError("Existing rig has no recognizable Head bone. Rename the head bone to Head in Blender before retrying.")
     if head_bone is None:
         raise RuntimeError("Could not create or locate a head bone")
     jaw_name, eye_names, pivot_world, head_height = add_face_bones(rig, head_bone)
