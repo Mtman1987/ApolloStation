@@ -19,7 +19,7 @@ test("widget projection preserves visible data and excludes credentials, untrust
   assert.equal(all.items[1].modelUrl,"https://assets.test/rigged.glb");\n  const social=streamWeaverWidgetSnapshot(events,now,"social");assert.equal(social.items.length,1);assert.doesNotMatch(JSON.stringify(social),/Voice result|idle.png|rigged\\.glb/);
   const voice=streamWeaverWidgetSnapshot(events,now,"tts-player");assert.deepEqual(voice.items.map(x=>x.kind),["avatar","tts-player"]);
   assert.doesNotThrow(()=>new Function(STREAMWEAVER_WIDGET_CLIENT));assert.ok(STREAMWEAVER_WIDGET_CSP.includes(createHash("sha256").update(STREAMWEAVER_WIDGET_CLIENT).digest("base64")));
-  assert.match(renderStreamWeaverWidget("auto",true),/data-simulation="true"/);assert.match(renderStreamWeaverWidget("social"),/🧑‍🚀|data-widget="social"/);assert.match(renderStreamWeaverWidget("social"),/astronautFloat/);assert.match(renderStreamWeaverWidget("avatar"),/id="avatar-model"/);assert.ok(STREAMWEAVER_WIDGET_CSP.includes("https://esm.sh"));
+  assert.match(renderStreamWeaverWidget("auto",true),/data-simulation="true"/);assert.match(renderStreamWeaverWidget("social"),/🧑‍🚀|data-widget="social"/);assert.match(renderStreamWeaverWidget("social"),/astronautFloat/);assert.match(renderStreamWeaverWidget("avatar"),/id="avatar-model"/);assert.ok(STREAMWEAVER_WIDGET_CSP.includes("https://esm.sh"));assert.match(STREAMWEAVER_WIDGET_CLIENT,/void setAvatarVisual\(avatarState\)/);assert.match(STREAMWEAVER_WIDGET_CLIENT,/function applyAudio2Face/);assert.match(STREAMWEAVER_WIDGET_CLIENT,/new WebSocket\(endpoint\)/);
 });
 
 test("registered StreamWeaver widgets render and poll through real opaque grants and revoke immediately",async()=>{
