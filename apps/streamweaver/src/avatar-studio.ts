@@ -138,10 +138,11 @@ function applyA2FMessage(payload) {
   const blendshapes = payload.blendshapes && typeof payload.blendshapes === 'object' ? payload.blendshapes : payload;
   const raw = Number(blendshapes.jawOpen ?? blendshapes.mouthOpen ?? blendshapes.JawOpen ?? 0);
   const mouth = Math.max(0, Math.min(1, Number.isFinite(raw) ? raw : 0));
-  pngMouthOpen = mouth > 0.18;
+  const adjustedMouth = Math.max(0, Math.min(1, mouth * tweakControls.getState().morphIntensity));
+  pngMouthOpen = adjustedMouth > 0.18;
   if (sourceMode.value === '2d' && pngLayer && pngIdleUrl) {
     pngLayer.src = pngMouthOpen && pngSpeakingUrl ? pngSpeakingUrl : pngIdleUrl;
-    pngLayer.style.transform = 'translate(-50%,-50%) scale(' + (1 + mouth * 0.025).toFixed(3) + ')';
+    pngLayer.style.transform = 'translate(-50%,-50%) scale(' + (1 + adjustedMouth * 0.025).toFixed(3) + ')';
   }
   if (avatar && blendshapes && typeof blendshapes === 'object') {
     avatar.traverse(node => {
@@ -152,14 +153,14 @@ function applyA2FMessage(payload) {
       }
       for (const key of ['jawOpen', 'mouthOpen', 'JawOpen']) {
         const idx = node.morphTargetDictionary[key];
-        if (idx !== undefined) node.morphTargetInfluences[idx] = Math.max(0, Math.min(1, mouth * tweakControls.getState().morphIntensity));
+        if (idx !== undefined) node.morphTargetInfluences[idx] = adjustedMouth;
       }
     });
     avatar.traverse(node => {
       const name = String(node.name || '').toLowerCase();
       if (node.isBone && (name === 'jaw' || name.endsWith(':jaw') || name.endsWith('_jaw'))) {
         if (!jawBaseRotations.has(node)) jawBaseRotations.set(node, node.rotation.x);
-        node.rotation.x = jawBaseRotations.get(node) + mouth * 0.45;
+        node.rotation.x = jawBaseRotations.get(node) + adjustedMouth * 0.45;
       }
     });
   }
