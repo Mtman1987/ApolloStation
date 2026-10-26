@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import {mkdtempSync,rmSync,writeFileSync} from "node:fs";
+import {mkdtempSync,readFileSync,rmSync,writeFileSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import test from "node:test";
@@ -10,6 +10,8 @@ import {validateChatGatewayWorkerEnvironment} from "../apps/chat-gateway/dist/se
 const glb=Buffer.concat([Buffer.from("glTF"),Buffer.alloc(32)]);
 const outputGlb=Buffer.concat([Buffer.from("glTF"),Buffer.alloc(96)]);
 const validation={headBone:"Head",jawBone:"Jaw",eyeBones:["LeftEye","RightEye"],jawWeightedVertices:42,existingAnimationCount:3,blendshapeCount:8,createdArmature:false,skinPreserved:true};
+const rigScript=readFileSync(new URL("../apps/streamweaver/scripts/avatar_geometry.py",import.meta.url),"utf8");
+const webControls=readFileSync(new URL("../apps/streamweaver/src/web-controls.ts",import.meta.url),"utf8");
 
 test("avatar worker rigs the uploaded GLB directly and activates the output",async()=>{
   const directory=mkdtempSync(join(tmpdir(),"avatar-worker-")),sourcePath=join(directory,"source.glb");
@@ -59,8 +61,25 @@ test("avatar worker rejects a portrait or another user's GLB instead of sending 
   }
 });
 
-test("appearance keeps the active rigged model when the portrait or talking image changes",()=>{
-  const store=new StreamWeaverRuntimeSettingsStore(":memory:");try{store.saveAppearance("tenant",{modelUrl:"https://media.test/avatar.glb",modelAssetId:"22222222-2222-2222-2222-222222222222"});const value=store.saveAppearance("tenant",{avatarUrl:"https://media.test/avatar.png",talkingUrl:"https://media.test/talking.gif"});assert.equal(value.modelUrl,"https://media.test/avatar.glb");assert.equal(value.modelAssetId,"22222222-2222-2222-2222-222222222222");}finally{store.close()}
+test("appearance persists the active rig, 2D avatar choice, Audio2Face URL and morph intensity",()=>{
+  const store=new StreamWeaverRuntimeSettingsStore(":memory:");try{
+    assert.equal(store.appearance("tenant").morphIntensity,1);
+    store.saveAppearance("tenant",{modelUrl:"https://media.test/avatar.glb",modelAssetId:"22222222-2222-2222-2222-222222222222"});
+    const value=store.saveAppearance("tenant",{avatarUrl:"https://media.test/avatar.png",talkingUrl:"https://media.test/talking.gif",audio2FaceUrl:"ws://127.0.0.1:8011/avatar",morphIntensity:1.5});
+    assert.equal(value.modelUrl,"https://media.test/avatar.glb");assert.equal(value.modelAssetId,"22222222-2222-2222-2222-222222222222");
+    assert.equal(value.audio2FaceUrl,"ws://127.0.0.1:8011/avatar");assert.equal(value.morphIntensity,1.5);
+    assert.throws(()=>store.saveAppearance("tenant",{morphIntensity:2.5}),/between 0 and 2/);
+    assert.throws(()=>store.saveAppearance("tenant",{audio2FaceUrl:"javascript:alert(1)"}),/WebSocket URL/);
+  }finally{store.close()}
+});
+
+test("Blender rigging consumes the existing GLB directly, bounds jaw weights to the head, and avoids image reconstruction",()=>{
+  assert.match(rigScript,/def rig\(source_path, output_path, report_path\)/);
+  assert.match(rigScript,/def add_face_bones\(/);
+  assert.match(rigScript,/lower_jaw_z = pivot_world\.z - head_height \* 0\.38/);
+  assert.match(rigScript,/unrigged full-body character/);
+  assert.doesNotMatch(rigScript,/view-\{String\(index\)/);
+  assert.match(webControls,/executionTarget:"fly",meteringTarget:"hosted",input:\{schemaVersion:1,modelAssetId\}/);
 });
 
 test("shared media accepts a bounded GLB avatar",()=>{const directory=mkdtempSync(join(tmpdir(),"avatar-media-")),store=new SqliteMediaAssetStore(join(directory,"media.sqlite"));try{const asset=store.upload({tenantId:"tenant",ownerUserId:"owner",sourceAppId:"streamweaver",idempotencyKey:"avatar",limitBytes:1024,name:"avatar.glb",contentType:"model/gltf-binary",purpose:"avatar"},glb);assert.equal(asset.contentType,"model/gltf-binary");}finally{store.close();rmSync(directory,{recursive:true,force:true})}});
