@@ -241,7 +241,9 @@ async function uploadStudioAsset(file, purpose, contentType, tenantId, publish) 
 }
 async function exportCombinedGlb() {
   if (!avatar || !currentModelFile) throw new Error('Load a GLB avatar first.');
-  if (!clips.length) { persistStatus('No clips are loaded. The existing GLB will be uploaded unchanged.'); return currentModelFile; }
+  const tweakState = tweakControls.toJSON();
+  const hasModelFitTweaks = tweakState.headScale !== 1 || tweakState.headOffsetY !== 0 || tweakState.headOffsetZ !== 0;
+  if (!clips.length && !hasModelFitTweaks) { persistStatus('No imported clips or model-fit changes to export. The existing GLB will be uploaded unchanged.'); return currentModelFile; }
   const {GLTFExporter} = await import('three/addons/exporters/GLTFExporter.js');
   const exporter = new GLTFExporter();
   const binary = await new Promise((resolve, reject) => exporter.parse(
@@ -250,7 +252,7 @@ async function exportCombinedGlb() {
   ));
   if (!(binary instanceof ArrayBuffer)) throw new Error('GLB exporter did not return binary data.');
   currentModelFile = new File([binary], (currentModelFile.name || 'avatar.glb').replace(/\.glb$/i,'') + '-studio.glb', {type:'model/gltf-binary'});
-  persistStatus('Exported the current model with ' + clips.length + ' animation clip(s).');
+  persistStatus('Exported the current model with ' + clips.length + ' animation clip(s) and the current model-fit transforms.');
   return currentModelFile;
 }
 exportGlbButton.addEventListener('click', async () => {
@@ -263,7 +265,7 @@ saveAudio2FaceButton.addEventListener('click', async () => {
   saveAudio2FaceButton.disabled = true;
   try {
     const current = await tenantControl();
-    await controlApi('/appearance',{audio2FaceUrl:a2fUrl.value.trim()});
+    await controlApi('/appearance',{audio2FaceUrl:a2fUrl.value.trim(),morphIntensity:tweakControls.getState().morphIntensity});
     persistStatus('Audio2Face bridge setting saved for tenant ' + current.tenantId + '. The existing browser source will reconnect to it.');
   } catch(error) { persistStatus(error?.message || 'Could not save Audio2Face settings.', true); }
   finally { saveAudio2FaceButton.disabled = false; }
@@ -284,7 +286,7 @@ savePngButton.addEventListener('click', async () => {
       const talking = await uploadStudioAsset(pngSpeakingFile,'avatar',talkType,tenantId,true);
       talkingUrl = talking.publicUrl;
     }
-    await controlApi('/appearance',{avatarUrl:idle.publicUrl,talkingUrl,modelUrl:'',modelAssetId:'',audio2FaceUrl:a2fUrl.value.trim()});
+    await controlApi('/appearance',{avatarUrl:idle.publicUrl,talkingUrl,modelUrl:'',modelAssetId:'',audio2FaceUrl:a2fUrl.value.trim(),morphIntensity:tweakControls.getState().morphIntensity});
     persistStatus('2D PNG-Tuber saved and selected as the active StreamWeaver browser-source avatar.');
   } catch(error) { persistStatus(error?.message || 'Could not save the 2D avatar.', true); }
   finally { savePngButton.disabled = false; }
@@ -312,8 +314,10 @@ rig3dButton.addEventListener('click', async () => {
     if (!currentModelFile) throw new Error('Upload a .glb model in the Model library first.');
     if (!/\.glb$/i.test(currentModelFile.name)) throw new Error('Save the model as GLB first; a standalone .gltf may reference files that were not uploaded.');
     if (currentModelFile.size > 8 * 1024 * 1024) throw new Error('The GLB must be no larger than 8 MiB for shared-media upload.');
-    if (clips.some(entry => entry.source !== 'embedded')) await exportCombinedGlb();
+    const tweakState = tweakControls.toJSON();
+    if (clips.some(entry => entry.source !== 'embedded') || tweakState.headScale !== 1 || tweakState.headOffsetY !== 0 || tweakState.headOffsetZ !== 0) await exportCombinedGlb();
     const current = await tenantControl();
+    await controlApi('/appearance',{audio2FaceUrl:a2fUrl.value.trim(),morphIntensity:tweakState.morphIntensity});
     persistStatus('Uploading the existing GLB privately…');
     const asset = await uploadStudioAsset(currentModelFile,'avatar','model/gltf-binary',current.tenantId,false);
     persistStatus('Starting direct GLB rigging. No photo turnaround or second head reconstruction is used.');
