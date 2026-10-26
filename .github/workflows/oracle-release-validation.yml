@@ -13,7 +13,29 @@ permissions:
   contents: read
 
 jobs:
+  prepare-media-cache:
+    name: Prepare shared FFmpeg package cache
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Set weekly FFmpeg package cache key
+        id: ffmpeg-cache-key
+        run: echo "week=$(date -u +%Y-%W)" >> "$GITHUB_OUTPUT"
+      - name: Restore cached FFmpeg packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/ffmpeg-debs
+          key: ffmpeg-debs-${{ runner.os }}-${{ runner.arch }}-${{ steps.ffmpeg-cache-key.outputs.week }}-${{ hashFiles('.github/workflows/oracle-release-validation.yml') }}
+      - name: Download and cache FFmpeg packages
+        run: |
+          mkdir -p "$RUNNER_TEMP/ffmpeg-debs/partial"
+          sudo apt-get update
+          sudo apt-get -o Dir::Cache::archives="$RUNNER_TEMP/ffmpeg-debs" install --yes ffmpeg
+          ffmpeg -version
+          ffprobe -version
+
   validate:
+    needs: [prepare-media-cache]
     name: Full test suite — shard ${{ matrix.shard }}/4
     runs-on: ubuntu-latest
     timeout-minutes: 27
@@ -31,10 +53,19 @@ jobs:
           cache: npm
       - name: Install locked dependencies
         run: npm ci
+      - name: Set weekly FFmpeg package cache key
+        id: ffmpeg-cache-key
+        run: echo "week=$(date -u +%Y-%W)" >> "$GITHUB_OUTPUT"
+      - name: Restore cached FFmpeg packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/ffmpeg-debs
+          key: ffmpeg-debs-${{ runner.os }}-${{ runner.arch }}-${{ steps.ffmpeg-cache-key.outputs.week }}-${{ hashFiles('.github/workflows/oracle-release-validation.yml') }}
       - name: Install media test tools
         run: |
+          mkdir -p "$RUNNER_TEMP/ffmpeg-debs/partial"
           sudo apt-get update
-          sudo apt-get install --yes ffmpeg
+          sudo apt-get -o Dir::Cache::archives="$RUNNER_TEMP/ffmpeg-debs" install --yes ffmpeg
       - name: Verify media test tools
         run: |
           ffmpeg -version
