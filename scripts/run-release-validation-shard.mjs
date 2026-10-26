@@ -92,13 +92,17 @@ function runFile(file) {
       const cancelled = summary("cancelled"), skipped = summary("skipped");
       const complete = [tests, pass, fail, cancelled, skipped].every(Number.isInteger)
         && tests > 0 && pass + fail + cancelled + skipped === tests;
-      const ok = !timedOut && !spawnError && code === 0 && complete;
+      // Node exits 1 when assertions fail. That is a completed diagnostic run
+      // when TAP is complete; only runner/collection/timeout/cancellation
+      // problems should fail the shard job itself.
+      const executionOk = !timedOut && !spawnError && complete && cancelled === 0
+        && (code === 0 || (code === 1 && fail > 0));
       const result = { file, durationMs, tests: Number.isInteger(tests) ? tests : 0,
         pass: Number.isInteger(pass) ? pass : 0, fail: Number.isInteger(fail) ? fail : 0,
         cancelled: Number.isInteger(cancelled) ? cancelled : 0,
-        skipped: Number.isInteger(skipped) ? skipped : 0, complete, ok,
+        skipped: Number.isInteger(skipped) ? skipped : 0, complete, executionOk,
         timedOut, code, signal, spawnError: spawnError?.message };
-      console.log(`[${ok ? "DONE" : "FAIL"}] ${file}: ${durationMs}ms; tests=${result.tests}, pass=${result.pass}, fail=${result.fail}, cancelled=${result.cancelled}, skipped=${result.skipped}${timedOut ? "; TIMED OUT" : ""}`);
+      console.log(`[${executionOk ? "DONE" : "EXECUTION ERROR"}] ${file}: ${durationMs}ms; tests=${result.tests}, pass=${result.pass}, fail=${result.fail}, cancelled=${result.cancelled}, skipped=${result.skipped}${timedOut ? "; TIMED OUT" : ""}`);
       if (spawnError) console.error(spawnError);
       resolve({ ...result, output });
     });
@@ -124,10 +128,11 @@ const cancelled = ordered.reduce((n, r) => n + r.cancelled, 0);
 const skipped = ordered.reduce((n, r) => n + r.skipped, 0);
 const incomplete = ordered.filter((r) => !r.complete);
 const timedOut = ordered.filter((r) => r.timedOut);
-const failedFiles = ordered.filter((r) => !r.ok);
+const assertionFailedFiles = ordered.filter((r) => r.fail > 0);
+const executionErrors = ordered.filter((r) => !r.executionOk);
 const wallMs = Date.now() - shardStarted;
 console.log(`Shard ${shard} completed: ${tests} tests; ${pass} passed; ${fail} failed; ${cancelled} cancelled; ${skipped} skipped.`);
-console.log(`Shard ${shard} file processes: ${ordered.length}/${selected.length}; wall upper bound ${wallMs}ms; failed files ${failedFiles.length}.`);
+console.log(`Shard ${shard} file processes: ${ordered.length}/${selected.length}; wall upper bound ${wallMs}ms; assertion-failing files ${assertionFailedFiles.length}; execution errors ${executionErrors.length}.`);
 console.log("# tests " + tests);
 console.log("# pass " + pass);
 console.log("# fail " + fail);
@@ -136,7 +141,10 @@ console.log("# skipped " + skipped);
 console.log("# duration_ms " + wallMs);
 if (timedOut.length) console.error("# error: timed out test file(s): " + timedOut.map((r) => r.file).join(", "));
 if (incomplete.length) console.error("# error: incomplete test file output: " + incomplete.map((r) => r.file).join(", "));
-if (failedFiles.length) console.error("# error: failed test file(s): " + failedFiles.map((r) => r.file).join(", "));
-// Per-file timings are printed as each subprocess completes. The workflow log is
-// the durable timing record; no generated history file is assumed to persist.
-if (stopped || failedFiles.length || incomplete.length || fail > 0 || cancelled > 0) process.exit(1);
+if (assertionFailedFiles.length) console.error("# test failures captured in file(s): " + assertionFailedFiles.map((r) => r.file).join(", "));
+if (executionErrors.length) console.error("# error: incomplete or failed execution in file(s): " + executionErrors.map((r) => r.file).join(", "));
+// A shard job succeeds when every assigned file completed and its results were
+// captured. Assertion failures remain visible in the TAP artifact and cause
+// the aggregate quality gate to report NO-GO; they do not hide other failures.
+// Per-file timings and output are retained in the uploaded TAP artifact.
+if (stopped || executionErrors.length || incomplete.length || cancelled > 0 || ordered.length !== selected.length) process.exit(1);
