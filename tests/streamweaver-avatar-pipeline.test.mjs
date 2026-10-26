@@ -3,32 +3,60 @@ import {mkdtempSync,rmSync,writeFileSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import test from "node:test";
-import {KeenToolsAvatarProvider,MeshyAvatarProvider,StreamWeaverAvatarWorker,STREAMWEAVER_AVATAR_BUILD_CAPABILITY,StreamWeaverRuntimeSettingsStore} from "../apps/streamweaver/dist/index.js";
+import {StreamWeaverAvatarWorker,STREAMWEAVER_AVATAR_BUILD_CAPABILITY,StreamWeaverRuntimeSettingsStore} from "../apps/streamweaver/dist/index.js";
 import {SqliteMediaAssetStore} from "../packages/platform-data-sqlite/dist/index.js";
 import {validateChatGatewayWorkerEnvironment} from "../apps/chat-gateway/dist/service.js";
 
-const png=Buffer.from([137,80,78,71,13,10,26,10]);
 const glb=Buffer.concat([Buffer.from("glTF"),Buffer.alloc(32)]);
+const outputGlb=Buffer.concat([Buffer.from("glTF"),Buffer.alloc(96)]);
+const validation={headBone:"Head",jawBone:"Jaw",eyeBones:["LeftEye","RightEye"],jawWeightedVertices:42,existingAnimationCount:3,blendshapeCount:8,createdArmature:false,skinPreserved:true};
 
-test("Meshy requests an unenhanced ultra head and downloads the completed GLB",async()=>{
-  const requests=[];const fetchImpl=async(url,init={})=>{requests.push([String(url),init]);if(String(url).endsWith("image-to-3d")&&init.method==="POST")return Response.json({result:"meshy-task-1"});if(String(url).includes("meshy-task-1"))return Response.json({status:"SUCCEEDED",model_urls:{glb:"https://assets.meshy.ai/head.glb"}});return new Response(glb,{headers:{"content-type":"model/gltf-binary"}})};
-  const value=await new MeshyAvatarProvider("meshy-key",fetchImpl,async()=>{}).generate({bytes:png,contentType:"image/png"});
-  assert.equal(value.taskId,"meshy-task-1");assert.deepEqual(Buffer.from(value.glb),glb);
-  const body=JSON.parse(requests[0][1].body);assert.equal(body.ultra_mode,true);assert.equal(body.should_remesh,false);assert.equal(body.image_enhancement,false);assert.deepEqual(body.target_formats,["glb"]);
+test("avatar worker rigs the uploaded GLB directly and activates the output",async()=>{
+  const directory=mkdtempSync(join(tmpdir(),"avatar-worker-")),sourcePath=join(directory,"source.glb");
+  writeFileSync(sourcePath,glb);
+  const calls=[],events=[],activated=[];let claimed=false,rigInput;
+  const job={id:"job",tenantId:"tenant",billedUserId:"owner",capabilityId:STREAMWEAVER_AVATAR_BUILD_CAPABILITY,leaseId:"lease",fencingEpoch:1,input:{modelAssetId:"11111111-1111-1111-1111-111111111111"}};
+  const client={
+    claimAnyExecutionJob:async(...args)=>{calls.push(["claim",...args]);return claimed?null:(claimed=true,job)},
+    heartbeatExecutionJob:async(...args)=>calls.push(["progress",...args]),
+    succeedExecutionJob:async(...args)=>calls.push(["succeeded",...args]),
+    failExecutionJob:async(...args)=>assert.fail(JSON.stringify(args)),
+    reportExecutionWorker:async()=>{},
+    getMediaAsset:async(tenant,id)=>({id,tenantId:tenant,ownerUserId:"owner",contentType:"model/gltf-binary",publicUrl:"https://media.test/source.glb"}),
+    readMediaAsset:async(_tenant,id)=>{assert.equal(id,job.input.modelAssetId);return glb},
+    uploadMediaAsset:async(_tenant,input,bytes)=>{assert.equal(input.contentType,"model/gltf-binary");assert.deepEqual(Buffer.from(bytes),outputGlb);return{id:"22222222-2222-2222-2222-222222222222"}},
+    publishMediaAsset:async()=>({publicUrl:"https://media.test/rigged-avatar.glb"}),
+    publishEvent:async(...args)=>events.push(args)
+  };
+  const geometry={rig:async bytes=>{rigInput=Buffer.from(bytes);return{glb:outputGlb,validation}}};
+  try{
+    const worker=new StreamWeaverAvatarWorker(client,geometry,{workerId:"avatar",activate:async(...args)=>activated.push(args)});
+    await worker.runOnce();
+    assert.deepEqual(rigInput,glb);
+    assert.equal(calls.find(call=>call[0]==="claim")[2],"fly");
+    assert.equal(calls.at(-1)[0],"succeeded");
+    assert.equal(activated[0][1].modelUrl,"https://media.test/rigged-avatar.glb");
+    assert.equal(events[0][1],"streamweaver.avatar.model.updated.v1");
+    assert.equal(events[0][2].sourceModelAssetId,job.input.modelAssetId);
+    assert.match(calls.find(call=>call[0]==="progress").at(-2).message,/GLB directly/i);
+  }finally{rmSync(directory,{recursive:true,force:true})}
 });
 
-test("KeenTools uploads exactly ten views, enables expressions, and downloads only once",async()=>{
-  const signed=(name)=>`https://keen-bucket.s3.us-east-1.amazonaws.com/${name}?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=test&X-Amz-Signature=signed`;let downloads=0;const uploads=[];const fetchImpl=async(url,init={})=>{url=String(url);if(url.endsWith("/init"))return Response.json({avatar_id:"keen-1",img_urls:Array.from({length:10},(_,i)=>signed(i))});if(url.startsWith("https://keen-bucket.s3.us-east-1.amazonaws.com/")){if(init.method==="PUT"){uploads.push(url);return new Response(null,{status:200})}return new Response(glb)}if(url.endsWith("/process")){const body=JSON.parse(init.body);assert.equal(body.expressions_enabled,true);return Response.json({})}if(url.endsWith("/get-status"))return Response.json({status:"completed"});if(url.includes("/get-3d-model?")){downloads++;assert.match(url,/blendshapes=arkit%2Cexpression/);return Response.json({event:"redirect",data:{url:signed("head.glb")}})}throw Error(url)};
-  const views=Array.from({length:10},()=>({bytes:new Uint8Array(png),contentType:"image/png"}));const value=await new KeenToolsAvatarProvider("keen-key",fetchImpl,async()=>{}).reconstruct(views);
-  assert.equal(value.avatarId,"keen-1");assert.equal(uploads.length,10);assert.equal(downloads,1);assert.deepEqual(Buffer.from(value.glb),glb);
-});
-
-test("avatar worker completes Meshy to hairless views to KeenTools to body assembly and activates the slot",async()=>{
-  const directory=mkdtempSync(join(tmpdir(),"avatar-worker-")),bodyPaths=[join(directory,"body.part-00"),join(directory,"body.part-01")];writeFileSync(bodyPaths[0],glb.subarray(0,17));writeFileSync(bodyPaths[1],glb.subarray(17));const calls=[],events=[],activated=[];let claimed=false;
-  const job={id:"job",tenantId:"tenant",billedUserId:"owner",capabilityId:STREAMWEAVER_AVATAR_BUILD_CAPABILITY,leaseId:"lease",fencingEpoch:1,input:{portraitAssetId:"11111111-1111-1111-1111-111111111111"}};
-  const client={claimAnyExecutionJob:async(...args)=>{calls.push(["claim",...args]);return claimed?null:(claimed=true,job)},heartbeatExecutionJob:async(...args)=>calls.push(["progress",...args]),succeedExecutionJob:async(...args)=>calls.push(["succeeded",...args]),failExecutionJob:async(...args)=>assert.fail(JSON.stringify(args)),reportExecutionWorker:async()=>{},getMediaAsset:async()=>({tenantId:"tenant",ownerUserId:"owner",contentType:"image/png",publicUrl:"https://media.test/portrait.png"}),readMediaAsset:async()=>png,uploadMediaAsset:async(_tenant,input,bytes)=>{assert.equal(input.contentType,"model/gltf-binary");assert.deepEqual(Buffer.from(bytes),glb);return{id:"22222222-2222-2222-2222-222222222222"}},publishMediaAsset:async()=>({publicUrl:"https://media.test/avatar.glb"}),publishEvent:async(...args)=>events.push(args)};
-  const meshy={generate:async()=>({taskId:"meshy",glb})},keen={reconstruct:async views=>{assert.equal(views.length,10);return{avatarId:"keen",glb}}},geometry={prepare:async()=>({hairGlb:glb,views:Array.from({length:10},()=>({bytes:png,contentType:"image/png"})),alignment:{}}),assemble:async input=>{assert.deepEqual(Buffer.from(input.bodyGlb),glb);return{glb,validation:{headBone:"Head",hairBones:["HairRoot","HairFront","HairBack","HairLeft","HairRight"],blendshapeCount:51,bodySkinPreserved:true}}}};
-  try{const worker=new StreamWeaverAvatarWorker(client,meshy,keen,geometry,{workerId:"avatar",genericBodyPaths:bodyPaths,activate:async(...args)=>activated.push(args)});await worker.runOnce();assert.equal(calls.find(call=>call[0]==="claim")[2],"fly");assert.equal(calls.at(-1)[0],"succeeded");assert.equal(activated[0][1].modelUrl,"https://media.test/avatar.glb");assert.equal(events[0][1],"streamweaver.avatar.model.updated.v1");assert.deepEqual(calls.filter(call=>call[0]==="progress").map(call=>call.at(-2).percent),[8,30,50,75,92]);}finally{rmSync(directory,{recursive:true,force:true})}
+test("avatar worker rejects a portrait or another user's GLB instead of sending it to an external provider",async()=>{
+  for (const sourceAsset of [
+    {tenantId:"tenant",ownerUserId:"owner",contentType:"image/png"},
+    {tenantId:"tenant",ownerUserId:"other",contentType:"model/gltf-binary"}
+  ]) {
+    let rigCalls=0,failed;
+    const job={id:"job",tenantId:"tenant",billedUserId:"owner",capabilityId:STREAMWEAVER_AVATAR_BUILD_CAPABILITY,leaseId:"lease",fencingEpoch:1,input:{modelAssetId:"11111111-1111-1111-1111-111111111111"}};
+    const client={claimAnyExecutionJob:async()=>job,heartbeatExecutionJob:async()=>{},succeedExecutionJob:async()=>assert.fail("invalid input succeeded"),failExecutionJob:async(...args)=>{failed=args},reportExecutionWorker:async()=>{},getMediaAsset:async()=>sourceAsset,readMediaAsset:async()=>glb,uploadMediaAsset:async()=>assert.fail("invalid input uploaded"),publishMediaAsset:async()=>assert.fail(),publishEvent:async()=>assert.fail()};
+    const worker=new StreamWeaverAvatarWorker(client,{rig:async()=>{rigCalls++;return{glb:outputGlb,validation}}},{workerId:"avatar",activate:async()=>{}});
+    await worker.runOnce();
+    assert.equal(rigCalls,0);
+    assert.ok(failed);
+    assert.match(failed[2],/ownership|format/i);
+    assert.equal(failed[3],false);
+  }
 });
 
 test("appearance keeps the active rigged model when the portrait or talking image changes",()=>{
@@ -37,4 +65,15 @@ test("appearance keeps the active rigged model when the portrait or talking imag
 
 test("shared media accepts a bounded GLB avatar",()=>{const directory=mkdtempSync(join(tmpdir(),"avatar-media-")),store=new SqliteMediaAssetStore(join(directory,"media.sqlite"));try{const asset=store.upload({tenantId:"tenant",ownerUserId:"owner",sourceAppId:"streamweaver",idempotencyKey:"avatar",limitBytes:1024,name:"avatar.glb",contentType:"model/gltf-binary",purpose:"avatar"},glb);assert.equal(asset.contentType,"model/gltf-binary");}finally{store.close();rmSync(directory,{recursive:true,force:true})}});
 
-test("avatar configuration preserves production behavior and permits only the dedicated sandbox exception",()=>{const base={SPMT_RUNTIME_MODE:"production",SPMT_ORIGIN:"http://127.0.0.1:3000",CHAT_GATEWAY_DATABASE_PATH:"/tmp/chat.sqlite",CHAT_GATEWAY_WORKER_CREDENTIAL:"x".repeat(32),CHAT_GATEWAY_CONNECTIONS:"[]",STREAMWEAVER_PROVIDER_RUNTIME_ENABLED:"1",STREAMWEAVER_WORKER_CREDENTIAL:"y".repeat(32),STREAMWEAVER_DATABASE_PATH:"/tmp/streamweaver.sqlite",STREAMWEAVER_MESHY_API_KEY:"meshy",STREAMWEAVER_KEENTOOLS_API_KEY:"keen"};const avatar=validateChatGatewayWorkerEnvironment(base).streamweaver.avatar;assert.equal(avatar.outboundEnabled,true);assert.equal(avatar.genericBodyPaths.length,4);assert.match(avatar.genericBodyPaths[0],/apps\/streamweaver\/assets\/generic-female-body\.glb\.part-00$/);assert.match(avatar.geometryScriptPath,/apps\/streamweaver\/scripts\/avatar_geometry\.py$/);assert.throws(()=>validateChatGatewayWorkerEnvironment({...base,STREAMWEAVER_KEENTOOLS_API_KEY:""}),/configured together/);const sandbox={...base,SPMT_RUNTIME_MODE:"sandbox",SPMT_OUTBOUND_MODE:"disabled",CHAT_GATEWAY_DATABASE_PATH:"/tmp/chat-sandbox.sqlite",STREAMWEAVER_DATABASE_PATH:"/tmp/streamweaver-sandbox.sqlite"};assert.throws(()=>validateChatGatewayWorkerEnvironment(sandbox),/dedicated avatar AI exception/);const allowed=validateChatGatewayWorkerEnvironment({...sandbox,SPMT_AVATAR_AI_OUTBOUND_MODE:"enabled"});assert.equal(allowed.operationMode,"read-only");assert.equal(allowed.streamweaver.avatar.outboundEnabled,true)});
+test("avatar configuration enables direct GLB rigging without external provider keys and guards sandbox execution",()=>{
+  const base={SPMT_RUNTIME_MODE:"production",SPMT_ORIGIN:"http://127.0.0.1:3000",CHAT_GATEWAY_DATABASE_PATH:"/tmp/chat.sqlite",CHAT_GATEWAY_WORKER_CREDENTIAL:"x".repeat(32),CHAT_GATEWAY_CONNECTIONS:"[]",STREAMWEAVER_PROVIDER_RUNTIME_ENABLED:"1",STREAMWEAVER_WORKER_CREDENTIAL:"y".repeat(32),STREAMWEAVER_DATABASE_PATH:"/tmp/streamweaver.sqlite",STREAMWEAVER_AVATAR_RIGGING_ENABLED:"1"};
+  const avatar=validateChatGatewayWorkerEnvironment(base).streamweaver.avatar;
+  assert.equal(avatar.outboundEnabled,true);
+  assert.match(avatar.geometryScriptPath,/apps\/streamweaver\/scripts\/avatar_geometry\.py$/);
+  assert.equal(avatar.blenderBinary,"blender");
+  assert.equal(validateChatGatewayWorkerEnvironment({...base,STREAMWEAVER_AVATAR_RIGGING_ENABLED:"0"}).streamweaver.avatar,undefined);
+  assert.throws(()=>validateChatGatewayWorkerEnvironment({...base,SPMT_RUNTIME_MODE:"sandbox",SPMT_OUTBOUND_MODE:"disabled",CHAT_GATEWAY_DATABASE_PATH:"/tmp/chat-sandbox.sqlite",STREAMWEAVER_DATABASE_PATH:"/tmp/streamweaver-sandbox.sqlite"}),/dedicated avatar AI exception/);
+  const allowed=validateChatGatewayWorkerEnvironment({...base,SPMT_RUNTIME_MODE:"sandbox",SPMT_OUTBOUND_MODE:"disabled",SPMT_AVATAR_AI_OUTBOUND_MODE:"enabled",CHAT_GATEWAY_DATABASE_PATH:"/tmp/chat-sandbox.sqlite",STREAMWEAVER_DATABASE_PATH:"/tmp/streamweaver-sandbox.sqlite"});
+  assert.equal(allowed.operationMode,"read-only");
+  assert.equal(allowed.streamweaver.avatar.outboundEnabled,true);
+});
