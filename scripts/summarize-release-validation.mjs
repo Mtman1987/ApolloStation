@@ -56,7 +56,7 @@ function failureDetails(content) {
   const lines = content.split("\n");
   const selected = new Set();
   for (let i = 0; i < lines.length; i++) {
-    if (/not ok \\d+|^# error:|^\\[TIMEOUT\\]|^\\[FAIL\\]/.test(lines[i])) {
+    if (/not ok \d+|^# error:|^\[TIMEOUT\]|^\[FAIL\]/.test(lines[i])) {
       for (let j = Math.max(0, i - 3); j <= Math.min(lines.length - 1, i + 24); j++) selected.add(j);
     }
   }
