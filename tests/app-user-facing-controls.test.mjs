@@ -66,7 +66,10 @@ test("StreamWeaver exposes a wired Voice Commander, searchable bot catalog, inte
     const studioResponse = await fetch(`${streamBase}/avatar-studio`);
     assert.equal(studioResponse.status, 200);
     const studioHtml = await studioResponse.text();
-    for (const id of ["avatarSourceMode","pngTuberFile","pngTuberSpeakingFile","audio2FaceUrl","savePngTuber","saveAudio2Face","rigActivate3d","exportCombinedGlb"]) assert.match(studioHtml, new RegExp('id="' + id + '"'));
+    for (const id of ["avatarSourceMode","pngTuberFile","pngTuberSpeakingFile","audio2FaceUrl","savePngTuber","saveAudio2Face","rigActivate3d","exportCombinedGlb","avatarTweakScale","avatarTweakY","avatarTweakZ","avatarTweakMorph"]) assert.match(studioHtml, new RegExp('id="' + id + '"'));
+    const studioModule = studioHtml.match(/<script type="module" nonce="[^"]+">([\\s\\S]*?)<\\/script>/)?.[1];
+    assert.ok(studioModule, "Avatar Studio module script is present");
+    assert.doesNotThrow(() => new Function(studioModule.replace(/^import[^\\n]*\\n/gm, "")), "Avatar Studio inline module is syntactically valid");
     assert.match(studioHtml, /StreamWeaver avatar source/);
     assert.match(studioHtml, /Save 2D avatar to StreamWeaver/);
     assert.match(studioHtml, /No photo turnaround or second head reconstruction/);
