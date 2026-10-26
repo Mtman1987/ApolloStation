@@ -57,5 +57,5 @@ test("Avatar Studio saves the chosen 2D or 3D avatar and connects Audio2Face to 
   assert.match(studio, /modelAssetId:asset\.id/);
   assert.match(studio, /audio2FaceUrl:a2fUrl\.value\.trim\(\)/);
   assert.match(studio, /No photo turnaround or second head reconstruction/);
-  assert.match(studio, /Upload a single-file GLB/);
+  assert.match(studio, /single-file GLB/);
 });
