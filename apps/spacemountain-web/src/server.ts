@@ -1,5 +1,5 @@
 import {renderEcosystemDocs} from "./ecosystem-docs.js";
-import { renderAvatarStudioPage } from "./avatar-studio.js";
+import { renderAvatarStudioPage } from "./avatar-studio-integration.js";
 import { renderStreamWeaverWidget, STREAMWEAVER_WIDGET_CSP } from "@spmt/streamweaver/dist/overlay-widgets.js";
 import { renderNebulaTagOverlayHtml, NEBULA_TAG_OVERLAY_CSS, NEBULA_TAG_OVERLAY_CLIENT_JS, renderNebulaGameWidget, renderNebulaArcadeStage, NEBULA_IMPORTED_WIDGET_IDS, NEBULA_WIDGET_STAGE_JS, nebulaThreeJs } from "@spmt/nebula-arcade";
 import { randomBytes } from "node:crypto";
