@@ -31,10 +31,19 @@ jobs:
           cache: npm
       - name: Install locked dependencies
         run: npm ci
+      - name: Set weekly FFmpeg package cache key
+        id: ffmpeg-cache-key
+        run: echo "week=$(date -u +%Y-%W)" >> "$GITHUB_OUTPUT"
+      - name: Restore cached FFmpeg packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/ffmpeg-debs
+          key: ffmpeg-debs-${{ runner.os }}-${{ runner.arch }}-${{ steps.ffmpeg-cache-key.outputs.week }}
       - name: Install media test tools
         run: |
+          mkdir -p "$RUNNER_TEMP/ffmpeg-debs/partial"
           sudo apt-get update
-          sudo apt-get install --yes ffmpeg
+          sudo apt-get -o Dir::Cache::archives="$RUNNER_TEMP/ffmpeg-debs" install --yes ffmpeg
       - name: Verify media test tools
         run: |
           ffmpeg -version
