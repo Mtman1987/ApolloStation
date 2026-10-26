@@ -56,8 +56,8 @@ test("avatar worker rejects a portrait or another user's GLB instead of sending 
     await worker.runOnce();
     assert.equal(rigCalls,0);
     assert.ok(failed);
-    assert.match(failed[2],/ownership|format/i);
-    assert.equal(failed[3],false);
+    assert.match(failed[6],/ownership|format/i);
+    assert.equal(failed[7],false);
   }
 });
 
