@@ -5,7 +5,7 @@ const inputDir = process.argv[2] ?? "release-validation/logs";
 const outputFile = process.argv[3] ?? "release-validation/REPORT.md";
 let names = [];
 try {
-  names = (await readdir(inputDir)).filter((name) => /^shard-[1-4]\\.tap$/.test(name)).sort();
+  names = (await readdir(inputDir)).filter((name) => /^shard-[1-4]\.tap$/.test(name)).sort();
 } catch {}
 const rows = [];
 const missing = [];
@@ -14,16 +14,16 @@ for (let shard = 1; shard <= 4; shard++) {
   if (!names.includes(name)) { missing.push(shard); continue; }
   const content = await readFile(path.join(inputDir, name), "utf8");
   const read = (pattern) => Number(content.match(pattern)?.[1] ?? 0);
-  const tests = read(/^# tests (\\d+)$/m);
-  const pass = read(/^# pass (\\d+)$/m);
-  const fail = read(/^# fail (\\d+)$/m);
-  const cancelled = read(/^# cancelled (\\d+)$/m);
-  const skipped = read(/^# skipped (\\d+)$/m);
-  const duration = content.match(/^# duration_ms ([\\d.]+)$/m)?.[1] ?? "unknown";
-  const processCounts = content.match(/^Shard \\d+ file processes: (\\d+)\\/(\\d+);/m);
+  const tests = read(/^# tests (\d+)$/m);
+  const pass = read(/^# pass (\d+)$/m);
+  const fail = read(/^# fail (\d+)$/m);
+  const cancelled = read(/^# cancelled (\d+)$/m);
+  const skipped = read(/^# skipped (\d+)$/m);
+  const duration = content.match(/^# duration_ms ([\d.]+)$/m)?.[1] ?? "unknown";
+  const processCounts = content.match(/^Shard \d+ file processes: (\d+)\/(\d+);/m);
   const completedFiles = processCounts ? Number(processCounts[1]) : 0;
   const expectedFiles = processCounts ? Number(processCounts[2]) : 0;
-  const executionError = /^# error:/m.test(content) || /\\[TIMEOUT\\]/.test(content);
+  const executionError = /^# error:/m.test(content) || /\[TIMEOUT\]/.test(content);
   const countsComplete = tests > 0 && pass + fail + cancelled + skipped === tests;
   const complete = countsComplete && expectedFiles > 0 && completedFiles === expectedFiles
     && cancelled === 0 && !executionError;
@@ -64,7 +64,7 @@ if (triageRows.length) {
       "",
       "Full shard output (last 160 lines):",
       "```text",
-      ...r.content.split("\\n").slice(-160),
+      ...r.content.split("\n").slice(-160),
       "```",
       ""
     );
@@ -74,5 +74,5 @@ if (triageRows.length) {
 }
 if (missing.length) lines.push("No log was produced for shard(s): " + missing.join(", ") + ". Inspect those Actions jobs for dependency, build, cancellation, or timeout errors.", "");
 if (rows.length === 0) lines.push("No shard logs were available. Inspect the four test jobs directly.", "");
-await writeFile(outputFile, lines.join("\\n") + "\\n");
+await writeFile(outputFile, lines.join("\n") + "\n");
 console.log(`Wrote ${outputFile}; diagnostic execution: ${completed ? "PASS" : "INCOMPLETE"}; test failures: ${total("fail")}`);
