@@ -31,6 +31,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/ffmpeg-debs/partial"
           sudo apt-get update
           sudo apt-get -o Dir::Cache::archives="$RUNNER_TEMP/ffmpeg-debs" install --yes ffmpeg
+          sudo chown -R "$(id -u):$(id -g)" "$RUNNER_TEMP/ffmpeg-debs"
           ffmpeg -version
           ffprobe -version
 
@@ -66,6 +67,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/ffmpeg-debs/partial"
           sudo apt-get update
           sudo apt-get -o Dir::Cache::archives="$RUNNER_TEMP/ffmpeg-debs" install --yes ffmpeg
+          sudo chown -R "$(id -u):$(id -g)" "$RUNNER_TEMP/ffmpeg-debs"
       - name: Verify media test tools
         run: |
           ffmpeg -version
