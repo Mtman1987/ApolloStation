@@ -157,8 +157,14 @@ def weight_jaw(mesh_objects, rig, head_bone, pivot_world, head_height):
         low, high = bounds([obj])
         # Split lower-face vertices progressively: the jaw rotates as a unit,
         # while a narrow transition helps avoid a hard seam at its upper edge.
+        lower_jaw_z = pivot_world.z - head_height * 0.38
+        upper_jaw_z = pivot_world.z + head_height * 0.05
         for vertex in obj.data.vertices:
             world = inverse @ vertex.co
+            # The face mesh can be a whole-character mesh. Bound the weights
+            # to the jaw-height band so torso/legs are never assigned to Jaw.
+            if world.z < lower_jaw_z or world.z > upper_jaw_z:
+                continue
             relative = (pivot_world.z - world.z) / max(head_height * 0.23, 0.001)
             weight = max(0.0, min(1.0, relative))
             if weight <= 0:
@@ -201,6 +207,10 @@ def rig(source_path, output_path, report_path):
     rig = find_armature(imported)
     created_armature = False
     if rig is None:
+        spans = source_high - source_low
+        horizontal_span = max(spans.x, spans.y, 0.001)
+        if spans.z > horizontal_span * 1.85:
+            raise RuntimeError("This appears to be an unrigged full-body character. Upload a head-only GLB, or use the original rigged full-character GLB so body skinning and animations can be preserved.")
         rig, head_name, created_armature = create_armature(mesh_objects, source_low, source_high)
         assign_new_rig(mesh_objects, rig, head_name)
         head_bone = rig.data.bones.get(head_name)
@@ -219,6 +229,11 @@ def rig(source_path, output_path, report_path):
             head = rig.data.edit_bones.new("Head")
             head.head = inverse @ Vector((center.x, center.y, low.z + (high.z-low.z)*0.72))
             head.tail = inverse @ Vector((center.x, center.y, high.z - (high.z-low.z)*0.08))
+            existing = [bone for bone in rig.data.edit_bones if bone is not head]
+            if existing:
+                def distance_to_head(bone):
+                    return min((bone.tail - head.head).length, (bone.head - head.head).length)
+                head.parent = min(existing, key=distance_to_head)
             bpy.ops.object.mode_set(mode="OBJECT")
             rig.select_set(False)
             head_bone = rig.data.bones.get("Head")
