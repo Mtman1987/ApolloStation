@@ -1,156 +1,255 @@
-"""Deterministic Meshy hair separation, KeenTools view rendering, and body assembly.
+"""Direct GLB rigging for StreamWeaver.
 
-Run only through Blender: blender --background --factory-startup --python avatar_geometry.py -- ...
+Input is the existing head/avatar GLB. This script imports that model directly,
+preserves its existing meshes, textures, skinning, actions and morphs, then adds
+a head/jaw/eye bone structure suitable for subsequent rig refinement. It does
+not render views or reconstruct another head from photos.
 """
-import bpy, json, math, os, sys
+import bpy, json, os, sys
 from mathutils import Vector
 
 def args():
-    marker=sys.argv.index("--")
-    return sys.argv[marker+1:]
+    marker = sys.argv.index("--")
+    return sys.argv[marker + 1:]
 
 def clear():
     bpy.ops.object.select_all(action="SELECT")
     bpy.ops.object.delete(use_global=False)
 
 def import_glb(path):
-    before=set(bpy.data.objects)
+    before = set(bpy.data.objects)
     bpy.ops.import_scene.gltf(filepath=path)
     return [obj for obj in bpy.data.objects if obj not in before]
 
-def meshes(objects): return [obj for obj in objects if obj.type=="MESH"]
-def semantic(obj): return " ".join([obj.name]+[slot.material.name for slot in obj.material_slots if slot.material]).lower()
+def meshes(objects):
+    return [obj for obj in objects if obj.type == "MESH"]
+
+def semantic(obj):
+    return " ".join([obj.name] + [slot.material.name for slot in obj.material_slots if slot.material]).lower()
 
 def bounds(objects):
-    points=[obj.matrix_world @ Vector(corner) for obj in objects for corner in obj.bound_box]
-    if not points: raise RuntimeError("No mesh bounds were available")
-    low=Vector((min(p.x for p in points),min(p.y for p in points),min(p.z for p in points)))
-    high=Vector((max(p.x for p in points),max(p.y for p in points),max(p.z for p in points)))
-    return low,high
+    points = [obj.matrix_world @ Vector(corner) for obj in objects for corner in obj.bound_box]
+    if not points:
+        raise RuntimeError("Uploaded GLB contains no mesh geometry")
+    low = Vector((min(p.x for p in points), min(p.y for p in points), min(p.z for p in points)))
+    high = Vector((max(p.x for p in points), max(p.y for p in points), max(p.z for p in points)))
+    return low, high
 
-def vector(value): return [round(float(item),7) for item in value]
+def world_bone_point(rig, point):
+    return rig.matrix_world @ point
 
-def export_selected(path,objects):
-    bpy.ops.object.select_all(action="DESELECT")
-    for obj in objects: obj.select_set(True)
-    bpy.context.view_layer.objects.active=objects[0]
-    bpy.ops.export_scene.gltf(filepath=path,export_format="GLB",use_selection=True,export_apply=False)
+def find_head_bone(rig):
+    names = list(rig.data.bones)
+    for bone in names:
+        normalized = bone.name.lower().replace("mixamorig:", "").replace("mixamorig_", "")
+        if normalized == "head" or normalized.endswith("_head"):
+            return bone
+    return None
 
-def separate_mesh_parts(objects):
-    # Meshy may encode detachable printing parts as materials or loose islands inside one object.
-    for obj in list(objects):
-        if obj.type!="MESH": continue
-        bpy.ops.object.select_all(action="DESELECT");obj.select_set(True);bpy.context.view_layer.objects.active=obj
-        bpy.ops.object.mode_set(mode="EDIT")
-        if len(obj.material_slots)>1:bpy.ops.mesh.separate(type="MATERIAL")
-        bpy.ops.object.mode_set(mode="OBJECT")
-    for obj in list(bpy.context.scene.objects):
-        if obj.type!="MESH": continue
-        bpy.ops.object.select_all(action="DESELECT");obj.select_set(True);bpy.context.view_layer.objects.active=obj
-        bpy.ops.object.mode_set(mode="EDIT");bpy.ops.mesh.separate(type="LOOSE");bpy.ops.object.mode_set(mode="OBJECT")
-    return list(bpy.context.scene.objects)
+def find_armature(objects):
+    candidates = [obj for obj in objects if obj.type == "ARMATURE"]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda obj: len(obj.data.bones))
 
-def prepare(source,hair_path,views_dir,report_path):
-    clear(); imported=separate_mesh_parts(import_glb(source));all_meshes=meshes(imported)
-    hair=[obj for obj in all_meshes if any(word in semantic(obj) for word in ("hair","bang","braid","ponytail","fringe"))]
-    if not hair: raise RuntimeError("Meshy model did not expose a separately named hair object or material")
-    head=[obj for obj in all_meshes if obj not in hair]
-    if not head: raise RuntimeError("Meshy model did not expose a hairless head mesh")
-    hair_low,hair_high=bounds(hair);head_low,head_high=bounds(head)
-    export_selected(hair_path,hair)
-    for obj in hair: obj.hide_render=True
-    os.makedirs(views_dir,exist_ok=True)
-    scene=bpy.context.scene
-    scene.render.engine="BLENDER_EEVEE_NEXT"
-    scene.render.resolution_x=1024;scene.render.resolution_y=1024;scene.render.resolution_percentage=100
-    scene.render.image_settings.file_format="PNG";scene.render.film_transparent=True
-    world=bpy.data.worlds.new("AvatarWorld") if not bpy.data.worlds else bpy.data.worlds[0]
-    scene.world=world;world.color=(0.04,0.04,0.04)
-    center=(head_low+head_high)/2;extent=max((head_high-head_low).length,0.1)
-    camera_data=bpy.data.cameras.new("AvatarCamera");camera=bpy.data.objects.new("AvatarCamera",camera_data);scene.collection.objects.link(camera);scene.camera=camera;camera_data.lens=70
-    for location,energy,size in [((4,-4,5),1300,5),((-4,-1,3),800,4),((0,3,1),600,3)]:
-        data=bpy.data.lights.new("AvatarLight","AREA");data.energy=energy;data.shape="DISK";data.size=size;light=bpy.data.objects.new("AvatarLight",data);scene.collection.objects.link(light);light.location=center+Vector(location)*extent/5
-    elevations=[0.0,0.08,-0.08,0.04,-0.04,0.0,0.08,-0.08,0.04,-0.04]
-    for index,angle in enumerate([0,36,72,108,144,180,216,252,288,324]):
-        radians=math.radians(angle);camera.location=center+Vector((math.sin(radians)*extent*1.45,-math.cos(radians)*extent*1.45,elevations[index]*extent))
-        camera.rotation_euler=(center-camera.location).to_track_quat("-Z","Y").to_euler()
-        scene.render.filepath=os.path.join(views_dir,f"view-{index:02d}.png");bpy.ops.render.render(write_still=True)
-    with open(report_path,"w",encoding="utf8") as file: json.dump({"schemaVersion":1,"sourceHeadBounds":{"min":vector(head_low),"max":vector(head_high)},"sourceHairBounds":{"min":vector(hair_low),"max":vector(hair_high)},"viewAngles":[0,36,72,108,144,180,216,252,288,324]},file)
+def create_armature(objects, low, high):
+    """Create a minimal armature when the source mesh has no armature at all."""
+    center = (low + high) / 2
+    height = max(high.z - low.z, 0.01)
+    data = bpy.data.armatures.new("StreamWeaverAvatarRig")
+    rig = bpy.data.objects.new("StreamWeaverAvatarRig", data)
+    bpy.context.scene.collection.objects.link(rig)
+    bpy.context.view_layer.objects.active = rig
+    rig.select_set(True)
+    bpy.ops.object.mode_set(mode="EDIT")
+    root = data.edit_bones.new("Root")
+    root.head = Vector((center.x, center.y, low.z))
+    root.tail = Vector((center.x, center.y, low.z + height * 0.15))
+    head = data.edit_bones.new("Head")
+    head.head = Vector((center.x, center.y, low.z + height * 0.12))
+    head.tail = Vector((center.x, center.y, high.z - height * 0.08))
+    head.parent = root
+    head.use_connect = False
+    bpy.ops.object.mode_set(mode="OBJECT")
+    rig.select_set(False)
+    return rig, head.name, True
 
-def transform_to_bounds(objects,source_low,source_high,target_low,target_high):
-    source_size=source_high-source_low;target_size=target_high-target_low
-    scale=min(target_size[i]/max(source_size[i],1e-6) for i in range(3))
-    source_center=(source_low+source_high)/2;target_center=(target_low+target_high)/2
-    for obj in objects:
-        obj.scale*=scale
-        obj.location=target_center+(obj.location-source_center)*scale
-    bpy.context.view_layer.update()
-    return scale
+def add_face_bones(rig, head_bone):
+    """Add a jaw hinge and eye aim bones using the existing head bone as parent."""
+    bpy.context.view_layer.objects.active = rig
+    rig.select_set(True)
+    bpy.ops.object.mode_set(mode="EDIT")
+    edit_head = rig.data.edit_bones.get(head_bone.name)
+    if edit_head is None:
+        raise RuntimeError("Could not access the head bone for facial rigging")
+    head_world = world_bone_point(rig, edit_head.head)
+    tail_world = world_bone_point(rig, edit_head.tail)
+    head_height = max(abs(tail_world.z - head_world.z), edit_head.length, 0.01)
+    pivot_world = Vector(((head_world.x + tail_world.x) / 2, (head_world.y + tail_world.y) / 2, min(head_world.z, tail_world.z) + head_height * 0.32))
+    inverse = rig.matrix_world.inverted()
+    jaw = rig.data.edit_bones.get("Jaw")
+    if jaw is None:
+        jaw = rig.data.edit_bones.new("Jaw")
+        jaw.head = inverse @ pivot_world
+        # Blender front is generally -Y. Use a short, visible hinge direction.
+        jaw.tail = inverse @ (pivot_world + Vector((0, -head_height * 0.24, -head_height * 0.06)))
+        jaw.parent = edit_head
+        jaw.use_connect = False
+    eye_z = min(head_world.z, tail_world.z) + head_height * 0.69
+    for name, dx in (("LeftEye", -0.16), ("RightEye", 0.16)):
+        eye = rig.data.edit_bones.get(name)
+        if eye is None:
+            eye = rig.data.edit_bones.new(name)
+            eye.head = inverse @ Vector((pivot_world.x + dx * head_height, pivot_world.y - head_height * 0.12, eye_z))
+            eye.tail = inverse @ Vector((pivot_world.x + dx * head_height, pivot_world.y - head_height * 0.22, eye_z))
+            eye.parent = edit_head
+            eye.use_connect = False
+    bpy.ops.object.mode_set(mode="OBJECT")
+    rig.select_set(False)
+    return "Jaw", ["LeftEye", "RightEye"], pivot_world, head_height
 
-def armature(objects):
-    result=next((obj for obj in objects if obj.type=="ARMATURE"),None)
-    if not result: raise RuntimeError("Reusable body has no armature")
+def assign_new_rig(mesh_objects, rig, head_bone):
+    """Attach previously unrigged meshes while retaining their geometry and materials."""
+    for obj in mesh_objects:
+        head = obj.vertex_groups.get(head_bone)
+        if head is None:
+            head = obj.vertex_groups.new(name=head_bone)
+        indices = [vertex.index for vertex in obj.data.vertices]
+        if indices:
+            head.add(indices, 1.0, "REPLACE")
+        if not any(mod.type == "ARMATURE" for mod in obj.modifiers):
+            modifier = obj.modifiers.new(name="StreamWeaverAvatarRig", type="ARMATURE")
+            modifier.object = rig
+
+def head_region_meshes(mesh_objects, rig, head_bone, source_low, source_high, created_armature):
+    # Named head/face meshes are the safest region to adjust. For a lone head
+    # mesh with generic naming, a newly created single-bone rig makes all meshes
+    # facial geometry. For a full humanoid rig, limit changes to geometry around
+    # the head bone rather than reweighting the torso or legs.
+    named = [obj for obj in mesh_objects if any(k in semantic(obj) for k in ("head", "face", "skull", "jaw"))]
+    if named:
+        return named
+    if created_armature:
+        return mesh_objects
+    bone = rig.data.bones.get(head_bone)
+    if bone is None:
+        return []
+    center = rig.matrix_world @ bone.head_local
+    top = rig.matrix_world @ bone.tail_local
+    low_z, high_z = sorted((center.z, top.z))
+    height = max(high_z - low_z, (source_high.z - source_low.z) * 0.12, 0.01)
+    result = []
+    for obj in mesh_objects:
+        obj_low, obj_high = bounds([obj])
+        if obj_high.z >= low_z - height * 0.18 and obj_low.z <= high_z + height * 0.15:
+            result.append(obj)
     return result
 
-def body_head_bounds(body_meshes):
-    points=[]
-    for obj in body_meshes:
-        group=obj.vertex_groups.get("Head")
-        if not group: continue
+def weight_jaw(mesh_objects, rig, head_bone, pivot_world, head_height):
+    jaw_group_count = 0
+    for obj in mesh_objects:
+        group = obj.vertex_groups.get("Jaw") or obj.vertex_groups.new(name="Jaw")
+        head_group = obj.vertex_groups.get(head_bone)
+        if head_group is None:
+            head_group = obj.vertex_groups.new(name=head_bone)
+            head_group.add([v.index for v in obj.data.vertices], 1.0, "REPLACE")
+        inverse = obj.matrix_world
+        low, high = bounds([obj])
+        # Split lower-face vertices progressively: the jaw rotates as a unit,
+        # while a narrow transition helps avoid a hard seam at its upper edge.
         for vertex in obj.data.vertices:
-            if any(item.group==group.index and item.weight>=0.35 for item in vertex.groups):points.append(obj.matrix_world@vertex.co)
-    if not points: raise RuntimeError("Reusable body has no Head-weighted geometry")
-    return Vector(tuple(min(p[i] for p in points) for i in range(3))),Vector(tuple(max(p[i] for p in points) for i in range(3)))
+            world = inverse @ vertex.co
+            relative = (pivot_world.z - world.z) / max(head_height * 0.23, 0.001)
+            weight = max(0.0, min(1.0, relative))
+            if weight <= 0:
+                continue
+            # Existing head weight may be less than one on a skinned character.
+            existing_head = 1.0
+            try:
+                for assignment in vertex.groups:
+                    if assignment.group == head_group.index:
+                        existing_head = assignment.weight
+                        break
+            except Exception:
+                pass
+            jaw_weight = max(0.0, min(1.0, existing_head * weight))
+            if jaw_weight <= 0:
+                continue
+            group.add([vertex.index], jaw_weight, "REPLACE")
+            head_group.add([vertex.index], max(0.0, existing_head - jaw_weight), "REPLACE")
+            jaw_group_count += 1
+    return jaw_group_count
 
-def remove_generic_head(body_meshes):
-    for obj in body_meshes:
-        group=obj.vertex_groups.get("Head")
-        if not group: continue
-        bpy.context.view_layer.objects.active=obj;obj.select_set(True);bpy.ops.object.mode_set(mode="EDIT");bpy.ops.mesh.select_all(action="DESELECT");bpy.ops.object.mode_set(mode="OBJECT")
-        for vertex in obj.data.vertices: vertex.select=any(item.group==group.index and item.weight>=0.35 for item in vertex.groups)
-        bpy.ops.object.mode_set(mode="EDIT");bpy.ops.mesh.delete(type="VERT");bpy.ops.object.mode_set(mode="OBJECT");obj.select_set(False)
+def shape_key_count(mesh_objects):
+    return len({key.name for obj in mesh_objects if obj.data.shape_keys for key in obj.data.shape_keys.key_blocks if key.name != "Basis"})
 
-def bind_to_head(objects,rig):
-    for obj in objects:
-        if obj.type!="MESH": continue
-        group=obj.vertex_groups.get("Head") or obj.vertex_groups.new(name="Head")
-        group.add([vertex.index for vertex in obj.data.vertices],1.0,"REPLACE")
-        modifier=obj.modifiers.new(name="AvatarArmature",type="ARMATURE");modifier.object=rig
+def action_count():
+    return len(bpy.data.actions)
 
-def add_hair_bones_and_weights(hair_objects,rig):
-    bpy.context.view_layer.objects.active=rig;rig.select_set(True);bpy.ops.object.mode_set(mode="EDIT")
-    head=rig.data.edit_bones.get("Head")
-    if not head: raise RuntimeError("Reusable body armature has no Head bone")
-    root=rig.data.edit_bones.new("HairRoot");root.parent=head;root.head=head.head;root.tail=head.tail+Vector((0,0,max(head.length*.35,0.01)))
-    children=[]
-    for name,offset in [("HairFront",(0,-1,1)),("HairBack",(0,1,1)),("HairLeft",(-1,0,1)),("HairRight",(1,0,1))]:
-        bone=rig.data.edit_bones.new(name);bone.parent=root;bone.use_connect=False;bone.head=root.tail;bone.tail=root.tail+Vector(offset).normalized()*max(head.length*.45,0.02);children.append(name)
-    bpy.ops.object.mode_set(mode="OBJECT");rig.select_set(False)
-    low,high=bounds(hair_objects);center=(low+high)/2
-    for obj in hair_objects:
-        groups={name:obj.vertex_groups.new(name=name) for name in ["HairRoot"]+children}
-        for vertex in obj.data.vertices:
-            world=obj.matrix_world@vertex.co;dx=(world.x-center.x)/max(high.x-low.x,1e-6);dy=(world.y-center.y)/max(high.y-low.y,1e-6);dz=(world.z-low.z)/max(high.z-low.z,1e-6)
-            weights={"HairRoot":max(0.2,1-dz),"HairFront":max(0,-dy)*dz,"HairBack":max(0,dy)*dz,"HairLeft":max(0,-dx)*dz,"HairRight":max(0,dx)*dz};total=sum(weights.values()) or 1
-            for name,weight in weights.items(): groups[name].add([vertex.index],weight/total,"REPLACE")
-        modifier=obj.modifiers.new(name="HairArmature",type="ARMATURE");modifier.object=rig
-    return ["HairRoot"]+children
+def export_glb(path):
+    bpy.ops.object.select_all(action="SELECT")
+    bpy.ops.export_scene.gltf(filepath=path, export_format="GLB", export_animations=True, export_morph=True, export_skins=True, export_apply=False)
 
-def assemble(body_path,head_path,hair_path,alignment_path,output_path,report_path):
-    clear();body_objects=import_glb(body_path);rig=armature(body_objects);body_meshes=meshes(body_objects);target_low,target_high=body_head_bounds(body_meshes);remove_generic_head(body_meshes)
-    head_objects=import_glb(head_path);head_meshes=meshes(head_objects);hair_objects=meshes(import_glb(hair_path))
-    with open(alignment_path,encoding="utf8") as file: alignment=json.load(file)
-    source_low=Vector(alignment["sourceHeadBounds"]["min"]);source_high=Vector(alignment["sourceHeadBounds"]["max"]);keen_low,keen_high=bounds(head_meshes)
-    transform_to_bounds(head_meshes,keen_low,keen_high,source_low,source_high)
-    combined_low,combined_high=bounds(head_meshes+hair_objects);transform_to_bounds(head_meshes+hair_objects,combined_low,combined_high,target_low,target_high)
-    bind_to_head(head_meshes,rig);hair_bones=add_hair_bones_and_weights(hair_objects,rig)
-    blendshapes=len({block.name for obj in head_meshes if obj.data.shape_keys for block in obj.data.shape_keys.key_blocks if block.name!="Basis"})
-    if blendshapes<51: raise RuntimeError(f"KeenTools head exposed only {blendshapes} blendshapes; 51 ARKit shapes are required")
-    bpy.ops.object.select_all(action="SELECT");bpy.ops.export_scene.gltf(filepath=output_path,export_format="GLB",export_animations=True,export_morph=True,export_skins=True,export_apply=False)
-    with open(report_path,"w",encoding="utf8") as file:json.dump({"headBone":"Head","hairBones":hair_bones,"blendshapeCount":blendshapes,"bodySkinPreserved":bool(rig and body_meshes)},file)
+def rig(source_path, output_path, report_path):
+    clear()
+    imported = import_glb(source_path)
+    mesh_objects = meshes(imported)
+    if not mesh_objects:
+        raise RuntimeError("Uploaded GLB has no mesh objects to rig")
+    source_low, source_high = bounds(mesh_objects)
+    original_actions = action_count()
+    rig = find_armature(imported)
+    created_armature = False
+    if rig is None:
+        rig, head_name, created_armature = create_armature(mesh_objects, source_low, source_high)
+        assign_new_rig(mesh_objects, rig, head_name)
+        head_bone = rig.data.bones.get(head_name)
+    else:
+        head_bone = find_head_bone(rig)
+        if head_bone is None:
+            # Re-use the existing skeleton instead of replacing it. Anchor a
+            # head bone near the uppermost mesh region if no standard head name
+            # exists; the original bones/animations remain untouched.
+            low, high = bounds(mesh_objects)
+            center = (low + high) / 2
+            inverse = rig.matrix_world.inverted()
+            bpy.context.view_layer.objects.active = rig
+            rig.select_set(True)
+            bpy.ops.object.mode_set(mode="EDIT")
+            head = rig.data.edit_bones.new("Head")
+            head.head = inverse @ Vector((center.x, center.y, low.z + (high.z-low.z)*0.72))
+            head.tail = inverse @ Vector((center.x, center.y, high.z - (high.z-low.z)*0.08))
+            bpy.ops.object.mode_set(mode="OBJECT")
+            rig.select_set(False)
+            head_bone = rig.data.bones.get("Head")
+    if head_bone is None:
+        raise RuntimeError("Could not create or locate a head bone")
+    jaw_name, eye_names, pivot_world, head_height = add_face_bones(rig, head_bone)
+    target_meshes = head_region_meshes(mesh_objects, rig, head_bone.name, source_low, source_high, created_armature)
+    if not target_meshes:
+        raise RuntimeError("Could not identify head geometry to weight to the jaw")
+    jaw_vertices = weight_jaw(target_meshes, rig, head_bone.name, pivot_world, head_height)
+    if jaw_vertices < 1:
+        raise RuntimeError("No vertices were weighted to the jaw; model scale or head-bone placement may be invalid")
+    export_glb(output_path)
+    # Verify that the GLB was actually exported and still contains geometry.
+    if not os.path.isfile(output_path) or os.path.getsize(output_path) < 20:
+        raise RuntimeError("Blender did not produce a valid rigged GLB")
+    with open(report_path, "w", encoding="utf8") as file:
+        json.dump({
+            "headBone": head_bone.name,
+            "jawBone": jaw_name,
+            "eyeBones": eye_names,
+            "jawWeightedVertices": jaw_vertices,
+            "existingAnimationCount": original_actions,
+            "blendshapeCount": shape_key_count(mesh_objects),
+            "createdArmature": bool(created_armature),
+            "skinPreserved": not created_armature,
+        }, file)
 
-if __name__=="__main__":
-    values=args()
-    if values[0]=="prepare" and len(values)==5:prepare(*values[1:])
-    elif values[0]=="assemble" and len(values)==7:assemble(*values[1:])
-    else:raise RuntimeError("Use prepare <meshy.glb> <hair.glb> <views> <report> or assemble <body.glb> <head.glb> <hair.glb> <alignment> <output.glb> <report>")
+if __name__ == "__main__":
+    values = args()
+    if values[0] == "rig" and len(values) == 3:
+        rig(*values[1:])
+    else:
+        raise RuntimeError("Use rig <source.glb> <rigged.glb> <report.json>")
