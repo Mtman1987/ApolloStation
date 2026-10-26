@@ -43,6 +43,8 @@ export * from "./live-member-groups.js";
 export * from "./the-count.js";
 export * from "./hearmeout-persona-service.js";
 export * from "./image-worker.js";
+export * from "./meshy-avatar-provider.js";
+export * from "./keentools-avatar-provider.js";
 export * from "./avatar-geometry.js";
 export * from "./avatar-worker.js";
 export * from "./flow-packages.js";
