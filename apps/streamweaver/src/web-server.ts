@@ -1,3 +1,5 @@
+import { randomBytes } from "node:crypto";
+import { renderAvatarStudioPage } from "./avatar-studio.js";
 import {streamWeaverTikTokBrowserJs} from "./tiktok-client.js";
 import {streamWeaverCheckinRoleBrowserJs} from "./checkin-role-client.js";
 import {streamWeaverPokemonCatalogBrowserJs} from "./pokemon-catalog-client.js";
