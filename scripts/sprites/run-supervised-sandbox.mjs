@@ -40,10 +40,8 @@ if (hearMeOutCutover.HEARMEOUT_YT_DLP_BINARY) {
   await writeFile(configPath, JSON.stringify({schemaVersion:1, revision:"approved-broadcast-test-v1", pollMs:500, capabilities:["hearmeout.music.search","hearmeout.youtube.resolve","hearmeout.music.remember","hearmeout.movie.search","hearmeout.movie.resolve"], tenants:[{tenantId:hearMeOutCutover.HEARMEOUT_MEDIA_TENANT_ID}]}), {mode:0o600});
   hearMeOutMediaEnvironment = { SPMT_RUNTIME_MODE:"production", HEARMEOUT_RUNTIME_CONFIG_PATH:configPath, HEARMEOUT_EXECUTION_TARGET:"sprite", HEARMEOUT_YT_DLP_BINARY:hearMeOutCutover.HEARMEOUT_YT_DLP_BINARY, ...Object.fromEntries(['HEARMEOUT_MOVIE_PROVIDER_ORIGIN','HEARMEOUT_PREPARED_MEDIA_ENABLED','HEARMEOUT_VOICE_BRIDGE_ORIGIN','HEARMEOUT_VOICE_BRIDGE_AUTHORIZATION','HEARMEOUT_VOICE_BRIDGE_TENANT_ID','HEARMEOUT_MEDIA_TENANT_ID'].filter(key=>hearMeOutCutover[key]).map(key=>[key,hearMeOutCutover[key]])) };
 }
-const meshyAvatarKey=await readPrivateCredential("streamweaver-meshy-api-key");
-const keenToolsAvatarKey=await readPrivateCredential("streamweaver-keentools-api-key");
-if(Boolean(meshyAvatarKey)!==Boolean(keenToolsAvatarKey))throw new Error("Meshy and KeenTools avatar credentials must be installed together");
-const avatarAiEnabled=Boolean(meshyAvatarKey&&keenToolsAvatarKey);
+// Direct GLB rigging is local Blender processing; it does not require external avatar-provider API keys.
+const avatarRiggingEnabled=process.env.STREAMWEAVER_AVATAR_RIGGING_ENABLED==="1";
 const databasePath = resolve(dataRoot, "spmt-empty-catalog-sandbox.sqlite");
 await mkdir(dataRoot, { recursive: true, mode: 0o700 });
 
@@ -159,7 +157,7 @@ await waitForUrl(spmt, `http://127.0.0.1:${spmtPort}/health/ready`, "SPMT");
 const spmtOrigin = `http://127.0.0.1:${spmtPort}`;
 
 const dshWeb = startRecoverable("Discord Stream Hub web", "apps/discord-stream-hub/dist/web-server.js", { ...common, ...liveReadEnvironment, SPMT_ORIGIN: spmtOrigin, DSH_DATABASE_PATH: resolve(dataRoot, "discord-stream-hub-live-sandbox.sqlite"), DSH_RUNTIME_CONFIG_PATH: resolve("config/discord-stream-hub-runtime.sandbox.v1.json"), DSH_WORKER_CREDENTIAL: dshWorkerCredential, HOST: "127.0.0.1", PORT: String(dshWebPort) });
-const streamweaverWeb = startRecoverable("StreamWeaver web", "apps/streamweaver/dist/web-server.js", { ...common, ...(flowOpenAiKey ? { OPENAI_API_KEY:flowOpenAiKey, SPMT_PRIVATE_FLOW_OPENAI_ENABLED:"1", STREAMWEAVER_PRIVATE_AI_DRAFTS_ENABLED: "1" } : {}), ...(avatarAiEnabled?{STREAMWEAVER_AVATAR_BUILD_ENABLED:"1"}:{}), ...liveReadEnvironment, SPMT_ORIGIN: spmtOrigin, STREAMWEAVER_DATABASE_PATH: resolve(dataRoot, "streamweaver-provider-sandbox.sqlite"), STREAMWEAVER_WORKER_CREDENTIAL: streamweaverWorkerCredential, CHAT_GATEWAY_CONNECTIONS: "[]", HOST: "127.0.0.1", PORT: String(streamweaverWebPort) });
+const streamweaverWeb = startRecoverable("StreamWeaver web", "apps/streamweaver/dist/web-server.js", { ...common, ...(flowOpenAiKey ? { OPENAI_API_KEY:flowOpenAiKey, SPMT_PRIVATE_FLOW_OPENAI_ENABLED:"1", STREAMWEAVER_PRIVATE_AI_DRAFTS_ENABLED: "1" } : {}), ...(avatarRiggingEnabled?{STREAMWEAVER_AVATAR_BUILD_ENABLED:"1"}:{}), ...liveReadEnvironment, SPMT_ORIGIN: spmtOrigin, STREAMWEAVER_DATABASE_PATH: resolve(dataRoot, "streamweaver-provider-sandbox.sqlite"), STREAMWEAVER_WORKER_CREDENTIAL: streamweaverWorkerCredential, CHAT_GATEWAY_CONNECTIONS: "[]", HOST: "127.0.0.1", PORT: String(streamweaverWebPort) });
 const hearMeOutWeb = startRecoverable("HearMeOut web", "apps/hearmeout/dist/web-server.js", { ...common, ...liveReadEnvironment, SPMT_ORIGIN: spmtOrigin, ...Object.fromEntries(["LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET"].filter(key => process.env[key]).map(key => [key, process.env[key]])), HEARMEOUT_ROOM_DATABASE_PATH: resolve(dataRoot, "hearmeout-room-sandbox.sqlite"), HEARMEOUT_WORKER_CREDENTIAL: hearMeOutWorkerCredential, ...hearMeOutCutover, HOST: "127.0.0.1", PORT: String(hearMeOutWebPort) });
 const mountainViewWeb = startRecoverable("MountainView web", "apps/mountainview/dist/web-server.js", { ...common, ...liveReadEnvironment, SPMT_ORIGIN: spmtOrigin, MOUNTAINVIEW_DATABASE_PATH: resolve(dataRoot, "mountainview-green-sandbox.sqlite"), HOST: "127.0.0.1", PORT: String(mountainViewWebPort) });
 const companionWeb = startRecoverable("Companion web", "apps/companion/dist/web-server.js", { ...common, ...liveReadEnvironment, SPMT_ORIGIN: spmtOrigin, HOST: "127.0.0.1", PORT: String(companionWebPort) });
@@ -180,7 +178,7 @@ const chatGateway = startRecoverable("Chat Gateway", "apps/chat-gateway/dist/ser
   STREAMWEAVER_PROVIDER_RUNTIME_ENABLED: "1",
   STREAMWEAVER_WORKER_CREDENTIAL: streamweaverWorkerCredential,
   STREAMWEAVER_DATABASE_PATH: resolve(dataRoot, "streamweaver-provider-sandbox.sqlite"),
-  ...(avatarAiEnabled?{SPMT_AVATAR_AI_OUTBOUND_MODE:"enabled",STREAMWEAVER_MESHY_API_KEY:meshyAvatarKey,STREAMWEAVER_KEENTOOLS_API_KEY:keenToolsAvatarKey}:{}),
+  ...(avatarRiggingEnabled?{SPMT_AVATAR_AI_OUTBOUND_MODE:"enabled",STREAMWEAVER_AVATAR_RIGGING_ENABLED:"1"}:{}),
   NEBULA_ARCADE_PROVIDER_RUNTIME_ENABLED: "1",
   NEBULA_ARCADE_WORKER_CREDENTIAL: nebulaArcadeWorkerCredential,
   ...(publicUrl.startsWith("https:") ? { NEBULA_ARCADE_PUBLIC_ORIGIN: publicUrl } : {}),
