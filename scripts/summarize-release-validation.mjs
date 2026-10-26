@@ -52,6 +52,17 @@ const lines = [
   "## Failure triage",
   ""
 ];
+function failureDetails(content) {
+  const lines = content.split("\n");
+  const selected = new Set();
+  for (let i = 0; i < lines.length; i++) {
+    if (/not ok \\d+|^# error:|^\\[TIMEOUT\\]|^\\[FAIL\\]/.test(lines[i])) {
+      for (let j = Math.max(0, i - 3); j <= Math.min(lines.length - 1, i + 24); j++) selected.add(j);
+    }
+  }
+  if (selected.size === 0) return lines.slice(-80);
+  return [...selected].sort((a, b) => a - b).map((i) => lines[i]);
+}
 const triageRows = rows.filter((r) => !r.complete || r.fail > 0 || r.cancelled > 0);
 if (triageRows.length) {
   for (const r of triageRows) {
@@ -62,9 +73,9 @@ if (triageRows.length) {
       `- Test cases: ${r.tests}; pass: ${r.pass}; fail: ${r.fail}; cancelled: ${r.cancelled}; skipped: ${r.skipped}`,
       `- Files completed: ${r.completedFiles}/${r.expectedFiles}`,
       "",
-      "Full shard output (last 160 lines):",
+      "Failure details (all matching failed-test blocks and execution errors):",
       "```text",
-      ...r.content.split("\n").slice(-160),
+      ...failureDetails(r.content),
       "```",
       ""
     );
