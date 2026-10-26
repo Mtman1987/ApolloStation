@@ -21,7 +21,7 @@ For each failure:
 - Use targeted tests for rapid feedback while debugging.
 - Use the four-shard Oracle release-validation workflow for full-suite regression discovery; shards should run concurrently, with fail-fast disabled so one shard's assertion failures do not hide results from the others.
 - Each shard must retain complete test output and a machine-readable or parseable summary. The aggregate report must include totals and actionable failure details.
-- A reporting job can succeed when it completed the run and captured results despite failed assertions. This is only reporting success; the aggregate quality/release gate remains failed unless all required tests pass.
+- The Oracle diagnostic workflow reports PASS when every assigned test file in all four shards completed and the consolidated artifact captured the results, even when assertions failed. Assertion failures must be counted and shown in failure triage; they do not make a diagnostic run incomplete. A diagnostic PASS means execution completed, not that all assertions passed. Release approval must separately inspect the reported test failures and use the dedicated quality gate.
 - A missing report, incomplete shard, runner crash, timeout, cancellation, build/setup failure, or absent test summary is a validation failure, not a pass.
 - Batch related fixes to avoid rerunning a long full suite after every tiny edit, but do not postpone focused feedback so long that failures become hard to attribute.
 - Never remove, skip, quarantine, or weaken a failing test solely to obtain a green result. Change a test only when its expectation is demonstrably wrong and the change is explained and independently validated.
