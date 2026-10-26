@@ -77,7 +77,7 @@ test("Blender rigging consumes the existing GLB directly, bounds jaw weights to 
   assert.match(rigScript,/def rig\(source_path, output_path, report_path\)/);
   assert.match(rigScript,/def add_face_bones\(/);
   assert.match(rigScript,/lower_jaw_z = pivot_world\.z - head_height \* 0\.38/);
-  assert.match(rigScript,/unrigged full-body character/);
+  assert.match(rigScript,/unrigged full-body character/);assert.match(rigScript,/no recognizable Head bone/);assert.match(rigScript,/Refusing to assign the whole mesh to the head/);assert.doesNotMatch(rigScript,/head_group\.add\(\[v\.index for v in obj\.data\.vertices\], 1\.0, "REPLACE"\)/);
   assert.doesNotMatch(rigScript,/view-\{String\(index\)/);
   assert.match(webControls,/executionTarget:"fly",meteringTarget:"hosted",input:\{schemaVersion:1,modelAssetId\}/);
 });
