@@ -1,4 +1,6 @@
-export const HEARMEOUT_LIVE_ORIGIN='https://hearmeout-main.fly.dev';
+import {configuredDonorOrigin,HEARMEOUT_DONOR_DEFAULT_ORIGIN} from './donor-origin.js';
+
+export const HEARMEOUT_LIVE_ORIGIN=HEARMEOUT_DONOR_DEFAULT_ORIGIN;
 
 export interface HearMeOutLiveLoungeSession {
   id:string;
@@ -11,12 +13,12 @@ export interface HearMeOutLiveLoungeSession {
 export class HearMeOutLiveLoungeBridge {
   constructor(
     private readonly authorization:string,
-    private readonly origin=HEARMEOUT_LIVE_ORIGIN,
+    private readonly origin=configuredDonorOrigin(),
     private readonly fetchImpl:typeof fetch=fetch,
   ){
     if(!/^Bearer [^\r\n]{16,}$/.test(authorization))throw Error('Live Lounge bridge authorization is invalid');
     const url=new URL(origin);
-    if(url.origin!==HEARMEOUT_LIVE_ORIGIN||url.pathname!=='/'||url.search||url.hash||url.username||url.password)throw Error('Live Lounge bridge origin is invalid');
+    if(url.origin!==configuredDonorOrigin()||url.pathname!=='/'||url.search||url.hash||url.username||url.password)throw Error('Live Lounge bridge origin is invalid');
   }
   async read():Promise<HearMeOutLiveLoungeSession>{
     return this.request('GET');
