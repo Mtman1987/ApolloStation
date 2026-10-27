@@ -43,10 +43,11 @@ export function resolveQuackverseTrade(
   const offer = Object.values(collections).flatMap((collection) => collection.tradeOffers || []).find((item) => item.id === id);
   if (!offer) throw new Error("Trade offer not found.");
   if (offer.status !== "pending") throw new Error("This offer has already been resolved.");
-  if (Date.parse(offer.expiresAt) <= now) throw new Error("This offer expired. Create a new offer.");
+  // Authorize before exposing expiry/state details to an unrelated player.
   if (action === "cancel" ? actorId !== offer.fromId : actorId !== offer.toId) {
     throw new Error("This trade action belongs to the other player.");
   }
+  if (Date.parse(offer.expiresAt) <= now) throw new Error("This offer expired. Create a new offer.");
   if (action === "accept") {
     const from = collections[offer.fromId], to = collections[offer.toId];
     if (!from || !to || spareQuackverseCopies(from, offer.giveCardId) < 1 || spareQuackverseCopies(to, offer.wantCardId) < 1) {
