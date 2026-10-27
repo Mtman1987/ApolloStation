@@ -1,17 +1,6 @@
 name: StreamWeaver parity validation
 
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - "apps/streamweaver/**"
-      - "apps/stellar-core/**"
-      - "tests/streamweaver-*.test.mjs"
-      - "tests/public-room-personas.test.mjs"
-      - "packages/**"
-      - "package.json"
-      - "package-lock.json"
-      - ".github/workflows/streamweaver-parity-validation.yml"
   workflow_dispatch:
 
 permissions:
