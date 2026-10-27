@@ -87,4 +87,6 @@ test("Avatar Studio generates a photo-based ARKit face on generic bodies and pre
   assert.match(studio, /if\(currentModelPurpose==='body'\)attachGeneratedFace\(\)/);
   assert.match(studio, /storage\.googleapis\.com/);
   assert.match(host, /connect-src[^;]*https:\/\/storage\.googleapis\.com/);
+  assert.match(host, /wasm-unsafe-eval/);
+  assert.match(host, /worker-src 'self' blob:/);
 });
