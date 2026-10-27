@@ -1,0 +1,148 @@
+# HearMeOut Donor API Route Coverage
+
+Baseline: `Mtman1987/hearmeout-main` current `main`, audited 2026-10-27.
+Target: `Mtman1987/ApolloStation` current `main`, principally `apps/hearmeout/` plus shared SPMT/Commlink/Stellar Core/StreamWeaver surfaces.
+
+This is a **route-by-route coverage checklist**, not proof that a route is already equivalent. The classifications are starting decisions derived from the existing approved feature review and the current route/file trees. Each route must be confirmed against the actual handler and callers before its child ledger item can be marked verified.
+
+## Rules
+
+- **SHARED / DO NOT COPY:** preserve the responsibility in Apollo's canonical shared owner; port only any missing HMO integration.
+- **EXISTS / VERIFY:** a plausible Apollo equivalent exists; prove behavior and authorization with tests.
+- **PARTIAL / VERIFY / ADAPT:** existing foundation but route contracts, producer/consumer wiring, UI, persistence or failure behavior may differ.
+- **EXCLUDE PENDING SECURITY REVIEW:** never port as-is; classify intended behavior separately from unsafe debug/proxy implementation.
+- No donor API endpoint is retired until its callers, aliases, data behavior, and compatibility needs are accounted for.
+- This ledger must be reconciled with `docs/HEARMEOUT_MEDIA_ROUTE_INVENTORY.md` on the donor. That document distinguishes canonical watch-session APIs from compatibility aliases and experimental proxy paths.
+
+## Coverage summary
+
+- Donor tree contains **106 API route handler files** under `src/app/api/**/route.ts` on current `main`.
+- Donor also has non-API routes/pages, hooks, components, Firebase persistence, workers, and operational files; those are tracked separately in `HEARMEOUT_PARITY_LEDGER.md`.
+- A route with an Apollo equivalent does not automatically imply parity; an unmounted router, missing UI caller, or unconfigured worker still counts as incomplete.
+
+## Complete donor API route list
+
+| Donor route handler | Initial classification | Apollo target / owner | Required audit decision |
+|---|---|---|---|
+| `src/app/api/activity-room/ensure/route.ts` | EXISTS / VERIFY | `room-media-core + web-server-v3 + room cleanup + activity room` | Compare room lifecycle, passwords, membership, presence, expiry, moderation, invites and migration behavior. |
+| `src/app/api/activity/audio-report/route.ts` | PARTIAL / VERIFY | `discord-activity-handshake + activity-room + activity-web + broadcast-window` | Compare Activity launch, session binding, state/control endpoints, player media, permissions and duplicate request handling. |
+| `src/app/api/activity/hls/route.ts` | PARTIAL / VERIFY | `discord-activity-handshake + activity-room + activity-web + broadcast-window` | Compare Activity launch, session binding, state/control endpoints, player media, permissions and duplicate request handling. |
+| `src/app/api/admin-chat/route.ts` | OPEN / CLASSIFY | `No exact mapping established yet` | Inspect callers, data dependencies, auth and behavior before port/exclusion decision. |
+| `src/app/api/athena/commands/route.ts` | SHARED / ADAPT | `public persona API + room-assistant-jobs + Stellar Core / SPMT` | Port HMO room wiring where needed; keep personal assistant, memory, identity and model/provider ownership shared. |
+| `src/app/api/auth/auto-login/route.ts` | SHARED / DO NOT COPY | `SPMT Account / canonical identity` | Use Apollo's shared session and identity authority; donor-specific Firebase/session code is not a parity target. |
+| `src/app/api/auth/complete/route.ts` | SHARED / DO NOT COPY | `SPMT Account / canonical identity` | Use Apollo's shared session and identity authority; donor-specific Firebase/session code is not a parity target. |
+| `src/app/api/auth/discord/callback/route.ts` | SHARED / DO NOT COPY | `SPMT Account / canonical identity` | Use Apollo's shared session and identity authority; donor-specific Firebase/session code is not a parity target. |
+| `src/app/api/auth/guest/route.ts` | SHARED / DO NOT COPY | `SPMT Account / canonical identity` | Use Apollo's shared session and identity authority; donor-specific Firebase/session code is not a parity target. |
+| `src/app/api/auth/logout/route.ts` | SHARED / DO NOT COPY | `SPMT Account / canonical identity` | Use Apollo's shared session and identity authority; donor-specific Firebase/session code is not a parity target. |
+| `src/app/api/auth/spmt/callback/route.ts` | SHARED / DO NOT COPY | `SPMT Account / canonical identity` | Use Apollo's shared session and identity authority; donor-specific Firebase/session code is not a parity target. |
+| `src/app/api/auth/spmt/login/route.ts` | SHARED / DO NOT COPY | `SPMT Account / canonical identity` | Use Apollo's shared session and identity authority; donor-specific Firebase/session code is not a parity target. |
+| `src/app/api/auth/twitch/callback/route.ts` | SHARED / DO NOT COPY | `SPMT Account / canonical identity` | Use Apollo's shared session and identity authority; donor-specific Firebase/session code is not a parity target. |
+| `src/app/api/auto-radio/route.ts` | PARTIAL / VERIFY | `room-media-core + auto-radio + worker-music-catalog + room-media-browser` | Compare provider search/resolution, durable favorites/recent history, auto-radio ownership, offline media and UI behavior. |
+| `src/app/api/bot/commands/route.ts` | PARTIAL / ADAPT | `suite-action-executor + suite-action-worker + bot-action-adapter` | Compare complete action set, tenant authorization, retry/idempotency, persona/media commands and runtime registration. |
+| `src/app/api/bots/route.ts` | PARTIAL / ADAPT | `suite-action-executor + suite-action-worker + bot-action-adapter` | Compare complete action set, tenant authorization, retry/idempotency, persona/media commands and runtime registration. |
+| `src/app/api/bots/session/route.ts` | PARTIAL / ADAPT | `suite-action-executor + suite-action-worker + bot-action-adapter` | Compare complete action set, tenant authorization, retry/idempotency, persona/media commands and runtime registration. |
+| `src/app/api/client-log/route.ts` | ADAPT / VERIFY | `health/diagnostics and room presence lifecycle` | Keep useful bounded diagnostics/health semantics; exclude donor-specific telemetry and deployment assumptions. |
+| `src/app/api/community-online/route.ts` | ADAPT / VERIFY | `health/diagnostics and room presence lifecycle` | Keep useful bounded diagnostics/health semantics; exclude donor-specific telemetry and deployment assumptions. |
+| `src/app/api/db/route.ts` | EXCLUDE PENDING SECURITY REVIEW | `No direct target` | Debug/environment disclosure and donor-local DB inspection are not features to port as-is. |
+| `src/app/api/debug/env/route.ts` | EXCLUDE PENDING SECURITY REVIEW | `No direct target` | Debug/environment disclosure and donor-local DB inspection are not features to port as-is. |
+| `src/app/api/discord-bot/route.ts` | PARTIAL / ADAPT | `discord-adapter + discord-http + discord-interactions + suite actions` | Preserve shared identity and idempotency; compare every donor command, invite, message, interaction and voice-bridge behavior. |
+| `src/app/api/discord/activity-bot/route.ts` | PARTIAL / ADAPT | `discord-adapter + discord-http + discord-interactions + suite actions` | Preserve shared identity and idempotency; compare every donor command, invite, message, interaction and voice-bridge behavior. |
+| `src/app/api/discord/bot-invite/route.ts` | PARTIAL / ADAPT | `discord-adapter + discord-http + discord-interactions + suite actions` | Preserve shared identity and idempotency; compare every donor command, invite, message, interaction and voice-bridge behavior. |
+| `src/app/api/discord/bot-token/route.ts` | PARTIAL / ADAPT | `discord-adapter + discord-http + discord-interactions + suite actions` | Preserve shared identity and idempotency; compare every donor command, invite, message, interaction and voice-bridge behavior. |
+| `src/app/api/discord/channels/route.ts` | PARTIAL / ADAPT | `discord-adapter + discord-http + discord-interactions + suite actions` | Preserve shared identity and idempotency; compare every donor command, invite, message, interaction and voice-bridge behavior. |
+| `src/app/api/discord/chat/route.ts` | PARTIAL / ADAPT | `discord-adapter + discord-http + discord-interactions + suite actions` | Preserve shared identity and idempotency; compare every donor command, invite, message, interaction and voice-bridge behavior. |
+| `src/app/api/discord/guilds/route.ts` | PARTIAL / ADAPT | `discord-adapter + discord-http + discord-interactions + suite actions` | Preserve shared identity and idempotency; compare every donor command, invite, message, interaction and voice-bridge behavior. |
+| `src/app/api/discord/interactions/route.ts` | PARTIAL / ADAPT | `discord-adapter + discord-http + discord-interactions + suite actions` | Preserve shared identity and idempotency; compare every donor command, invite, message, interaction and voice-bridge behavior. |
+| `src/app/api/discord/messages/route.ts` | PARTIAL / ADAPT | `discord-adapter + discord-http + discord-interactions + suite actions` | Preserve shared identity and idempotency; compare every donor command, invite, message, interaction and voice-bridge behavior. |
+| `src/app/api/discord/post-embed/route.ts` | PARTIAL / ADAPT | `discord-adapter + discord-http + discord-interactions + suite actions` | Preserve shared identity and idempotency; compare every donor command, invite, message, interaction and voice-bridge behavior. |
+| `src/app/api/discord/send-invite/route.ts` | PARTIAL / ADAPT | `discord-adapter + discord-http + discord-interactions + suite actions` | Preserve shared identity and idempotency; compare every donor command, invite, message, interaction and voice-bridge behavior. |
+| `src/app/api/discord/send/route.ts` | PARTIAL / ADAPT | `discord-adapter + discord-http + discord-interactions + suite actions` | Preserve shared identity and idempotency; compare every donor command, invite, message, interaction and voice-bridge behavior. |
+| `src/app/api/discord/voice-bridge/route.ts` | PARTIAL / ADAPT | `discord-adapter + discord-http + discord-interactions + suite actions` | Preserve shared identity and idempotency; compare every donor command, invite, message, interaction and voice-bridge behavior. |
+| `src/app/api/dj-debug/route.ts` | OPEN / CLASSIFY | `No exact mapping established yet` | Inspect callers, data dependencies, auth and behavior before port/exclusion decision. |
+| `src/app/api/dj/route.ts` | PARTIAL / VERIFY | `room-media-core + auto-radio + worker-music-catalog + room-media-browser` | Compare provider search/resolution, durable favorites/recent history, auto-radio ownership, offline media and UI behavior. |
+| `src/app/api/favorites/route.ts` | PARTIAL / VERIFY | `room-media-core + auto-radio + worker-music-catalog + room-media-browser` | Compare provider search/resolution, durable favorites/recent history, auto-radio ownership, offline media and UI behavior. |
+| `src/app/api/health/route.ts` | ADAPT / VERIFY | `health/diagnostics and room presence lifecycle` | Keep useful bounded diagnostics/health semantics; exclude donor-specific telemetry and deployment assumptions. |
+| `src/app/api/internal/bot/actions/route.ts` | PARTIAL / ADAPT | `suite-action-executor + suite-action-worker + bot-action-adapter` | Compare complete action set, tenant authorization, retry/idempotency, persona/media commands and runtime registration. |
+| `src/app/api/internal/persona-command/route.ts` | SHARED / ADAPT | `public persona API + room-assistant-jobs + Stellar Core / SPMT` | Port HMO room wiring where needed; keep personal assistant, memory, identity and model/provider ownership shared. |
+| `src/app/api/internal/persona-transcribe/route.ts` | SHARED / ADAPT | `public persona API + room-assistant-jobs + Stellar Core / SPMT` | Port HMO room wiring where needed; keep personal assistant, memory, identity and model/provider ownership shared. |
+| `src/app/api/internal/restream-control/route.ts` | OPEN / CLASSIFY | `No exact mapping established yet` | Inspect callers, data dependencies, auth and behavior before port/exclusion decision. |
+| `src/app/api/internal/watch/search/route.ts` | PARTIAL / VERIFY | `room-media-core + room-media-browser + watch-hls-policy` | Room/session controls exist; provider catalog, selection, accept, episodes and normalized candidates require route-by-route confirmation. |
+| `src/app/api/livekit-health/route.ts` | PARTIAL / VERIFY | `rtc-room-gateway + rtc-browser + livekit signer/grants + voice bridge` | Compare auth, participant lifecycle, mute, reconnect, speaker audio, capacity, screen/video transport and cleanup. |
+| `src/app/api/livekit-token/route.ts` | PARTIAL / VERIFY | `rtc-room-gateway + rtc-browser + livekit signer/grants + voice bridge` | Compare auth, participant lifecycle, mute, reconnect, speaker audio, capacity, screen/video transport and cleanup. |
+| `src/app/api/lounge-media/live.mp4/route.ts` | PARTIAL / VERIFY | `broadcast-program + live-lounge-bridge/runtime + spotlight bridge` | Compare media output, service authorization, source lifecycle and permanent Lounge invariants; donor deployment files are not copied. |
+| `src/app/api/lounge-media/program/route.ts` | PARTIAL / VERIFY | `broadcast-program + live-lounge-bridge/runtime + spotlight bridge` | Compare media output, service authorization, source lifecycle and permanent Lounge invariants; donor deployment files are not copied. |
+| `src/app/api/lounge-media/start/route.ts` | PARTIAL / VERIFY | `broadcast-program + live-lounge-bridge/runtime + spotlight bridge` | Compare media output, service authorization, source lifecycle and permanent Lounge invariants; donor deployment files are not copied. |
+| `src/app/api/lounge-media/status/route.ts` | PARTIAL / VERIFY | `broadcast-program + live-lounge-bridge/runtime + spotlight bridge` | Compare media output, service authorization, source lifecycle and permanent Lounge invariants; donor deployment files are not copied. |
+| `src/app/api/lounge/theme-music/route.ts` | OPEN / CLASSIFY | `No exact mapping established yet` | Inspect callers, data dependencies, auth and behavior before port/exclusion decision. |
+| `src/app/api/me/route.ts` | OPEN / CLASSIFY | `No exact mapping established yet` | Inspect callers, data dependencies, auth and behavior before port/exclusion decision. |
+| `src/app/api/music/[videoId]/route.ts` | PARTIAL / VERIFY | `room-media-core + auto-radio + worker-music-catalog + room-media-browser` | Compare provider search/resolution, durable favorites/recent history, auto-radio ownership, offline media and UI behavior. |
+| `src/app/api/music/session/control/route.ts` | PARTIAL / VERIFY | `room-media-core + auto-radio + worker-music-catalog + room-media-browser` | Compare provider search/resolution, durable favorites/recent history, auto-radio ownership, offline media and UI behavior. |
+| `src/app/api/music/session/request/route.ts` | PARTIAL / VERIFY | `room-media-core + auto-radio + worker-music-catalog + room-media-browser` | Compare provider search/resolution, durable favorites/recent history, auto-radio ownership, offline media and UI behavior. |
+| `src/app/api/music/session/state/route.ts` | PARTIAL / VERIFY | `room-media-core + auto-radio + worker-music-catalog + room-media-browser` | Compare provider search/resolution, durable favorites/recent history, auto-radio ownership, offline media and UI behavior. |
+| `src/app/api/offline-music/route.ts` | PARTIAL / VERIFY | `room-media-core + auto-radio + worker-music-catalog + room-media-browser` | Compare provider search/resolution, durable favorites/recent history, auto-radio ownership, offline media and UI behavior. |
+| `src/app/api/peer-voice/peers/route.ts` | PARTIAL / VERIFY | `rtc-room-gateway + rtc-browser + livekit signer/grants + voice bridge` | Compare auth, participant lifecycle, mute, reconnect, speaker audio, capacity, screen/video transport and cleanup. |
+| `src/app/api/peer-voice/register/route.ts` | PARTIAL / VERIFY | `rtc-room-gateway + rtc-browser + livekit signer/grants + voice bridge` | Compare auth, participant lifecycle, mute, reconnect, speaker audio, capacity, screen/video transport and cleanup. |
+| `src/app/api/persona-voice/route.ts` | SHARED / ADAPT | `public persona API + room-assistant-jobs + Stellar Core / SPMT` | Port HMO room wiring where needed; keep personal assistant, memory, identity and model/provider ownership shared. |
+| `src/app/api/presence/prune/route.ts` | ADAPT / VERIFY | `health/diagnostics and room presence lifecycle` | Keep useful bounded diagnostics/health semantics; exclude donor-specific telemetry and deployment assumptions. |
+| `src/app/api/private-assistant/route.ts` | SHARED / ADAPT | `public persona API + room-assistant-jobs + Stellar Core / SPMT` | Port HMO room wiring where needed; keep personal assistant, memory, identity and model/provider ownership shared. |
+| `src/app/api/room-admin/route.ts` | EXISTS / VERIFY | `room-media-core + web-server-v3 + room cleanup + activity room` | Compare room lifecycle, passwords, membership, presence, expiry, moderation, invites and migration behavior. |
+| `src/app/api/room-expiry/route.ts` | EXISTS / VERIFY | `room-media-core + web-server-v3 + room cleanup + activity room` | Compare room lifecycle, passwords, membership, presence, expiry, moderation, invites and migration behavior. |
+| `src/app/api/rooms/persona-speech/route.ts` | SHARED / ADAPT | `public persona API + room-assistant-jobs + Stellar Core / SPMT` | Port HMO room wiring where needed; keep personal assistant, memory, identity and model/provider ownership shared. |
+| `src/app/api/spmt/app-state/[namespace]/route.ts` | SHARED / ADAPT | `SPMT app-state and workspace-theme services` | Verify required behavior exists in shared SPMT APIs; do not create an HMO-local copy. |
+| `src/app/api/spmt/workspace-theme/route.ts` | SHARED / ADAPT | `SPMT app-state and workspace-theme services` | Verify required behavior exists in shared SPMT APIs; do not create an HMO-local copy. |
+| `src/app/api/spotlight-media/consent/route.ts` | PARTIAL / VERIFY | `broadcast-program + live-lounge-bridge/runtime + spotlight bridge` | Compare media output, service authorization, source lifecycle and permanent Lounge invariants; donor deployment files are not copied. |
+| `src/app/api/spotlight-media/current/route.ts` | PARTIAL / VERIFY | `broadcast-program + live-lounge-bridge/runtime + spotlight bridge` | Compare media output, service authorization, source lifecycle and permanent Lounge invariants; donor deployment files are not copied. |
+| `src/app/api/spotlight-media/live.mp4/route.ts` | PARTIAL / VERIFY | `broadcast-program + live-lounge-bridge/runtime + spotlight bridge` | Compare media output, service authorization, source lifecycle and permanent Lounge invariants; donor deployment files are not copied. |
+| `src/app/api/spotlight-media/start/route.ts` | PARTIAL / VERIFY | `broadcast-program + live-lounge-bridge/runtime + spotlight bridge` | Compare media output, service authorization, source lifecycle and permanent Lounge invariants; donor deployment files are not copied. |
+| `src/app/api/spotlight-media/status/route.ts` | PARTIAL / VERIFY | `broadcast-program + live-lounge-bridge/runtime + spotlight bridge` | Compare media output, service authorization, source lifecycle and permanent Lounge invariants; donor deployment files are not copied. |
+| `src/app/api/system/spacemountainlive-lounge/ensure/route.ts` | PARTIAL / VERIFY | `broadcast-program + live-lounge-bridge/runtime + spotlight bridge` | Compare media output, service authorization, source lifecycle and permanent Lounge invariants; donor deployment files are not copied. |
+| `src/app/api/twitch-bot/route.ts` | ADAPT / VERIFY | `HMO media scope + shared StreamWeaver/Twitch ownership` | Determine whether route belongs in HMO or shared StreamWeaver; don't duplicate Twitch credential authority. |
+| `src/app/api/twitch-source/[tenantId]/ended/route.ts` | ADAPT / VERIFY | `HMO media scope + shared StreamWeaver/Twitch ownership` | Determine whether route belongs in HMO or shared StreamWeaver; don't duplicate Twitch credential authority. |
+| `src/app/api/twitch/exchange/route.ts` | ADAPT / VERIFY | `HMO media scope + shared StreamWeaver/Twitch ownership` | Determine whether route belongs in HMO or shared StreamWeaver; don't duplicate Twitch credential authority. |
+| `src/app/api/twitch/initialize/route.ts` | ADAPT / VERIFY | `HMO media scope + shared StreamWeaver/Twitch ownership` | Determine whether route belongs in HMO or shared StreamWeaver; don't duplicate Twitch credential authority. |
+| `src/app/api/twitch/join/route.ts` | ADAPT / VERIFY | `HMO media scope + shared StreamWeaver/Twitch ownership` | Determine whether route belongs in HMO or shared StreamWeaver; don't duplicate Twitch credential authority. |
+| `src/app/api/twitch/send/route.ts` | ADAPT / VERIFY | `HMO media scope + shared StreamWeaver/Twitch ownership` | Determine whether route belongs in HMO or shared StreamWeaver; don't duplicate Twitch credential authority. |
+| `src/app/api/voice/hearmeout/route.ts` | PARTIAL / VERIFY | `rtc-room-gateway + rtc-browser + livekit signer/grants + voice bridge` | Compare auth, participant lifecycle, mute, reconnect, speaker audio, capacity, screen/video transport and cleanup. |
+| `src/app/api/voice/room-access/route.ts` | PARTIAL / VERIFY | `rtc-room-gateway + rtc-browser + livekit signer/grants + voice bridge` | Compare auth, participant lifecycle, mute, reconnect, speaker audio, capacity, screen/video transport and cleanup. |
+| `src/app/api/voice/stream-source/route.ts` | PARTIAL / VERIFY | `rtc-room-gateway + rtc-browser + livekit signer/grants + voice bridge` | Compare auth, participant lifecycle, mute, reconnect, speaker audio, capacity, screen/video transport and cleanup. |
+| `src/app/api/voice/stream-speech/route.ts` | PARTIAL / VERIFY | `rtc-room-gateway + rtc-browser + livekit signer/grants + voice bridge` | Compare auth, participant lifecycle, mute, reconnect, speaker audio, capacity, screen/video transport and cleanup. |
+| `src/app/api/watch/activity-default/route.ts` | PARTIAL / VERIFY | `room-media-core + room-media-browser + watch-hls-policy` | Room/session controls exist; provider catalog, selection, accept, episodes and normalized candidates require route-by-route confirmation. |
+| `src/app/api/watch/catalog/route.ts` | PARTIAL / VERIFY | `room-media-core + room-media-browser + watch-hls-policy` | Room/session controls exist; provider catalog, selection, accept, episodes and normalized candidates require route-by-route confirmation. |
+| `src/app/api/watch/proxy/route.ts` | ADAPT / SECURITY REVIEW | `HMO media provider + prepared-media/worker path` | Port required provider behavior only after credential, SSRF/redirect, byte-range, HLS and tenant-scope review. |
+| `src/app/api/watch/search/route.ts` | PARTIAL / VERIFY | `room-media-core + room-media-browser + watch-hls-policy` | Room/session controls exist; provider catalog, selection, accept, episodes and normalized candidates require route-by-route confirmation. |
+| `src/app/api/watch/service/route.ts` | ADAPT / SECURITY REVIEW | `HMO media provider + prepared-media/worker path` | Port required provider behavior only after credential, SSRF/redirect, byte-range, HLS and tenant-scope review. |
+| `src/app/api/watch/sessions/[sessionId]/accept/route.ts` | PARTIAL / VERIFY | `room-media-core + room-media-browser + watch-hls-policy` | Room/session controls exist; provider catalog, selection, accept, episodes and normalized candidates require route-by-route confirmation. |
+| `src/app/api/watch/sessions/[sessionId]/control/route.ts` | PARTIAL / VERIFY | `room-media-core + room-media-browser + watch-hls-policy` | Room/session controls exist; provider catalog, selection, accept, episodes and normalized candidates require route-by-route confirmation. |
+| `src/app/api/watch/sessions/[sessionId]/quick-control/route.ts` | PARTIAL / VERIFY | `room-media-core + room-media-browser + watch-hls-policy` | Room/session controls exist; provider catalog, selection, accept, episodes and normalized candidates require route-by-route confirmation. |
+| `src/app/api/watch/sessions/[sessionId]/request/route.ts` | PARTIAL / VERIFY | `room-media-core + room-media-browser + watch-hls-policy` | Room/session controls exist; provider catalog, selection, accept, episodes and normalized candidates require route-by-route confirmation. |
+| `src/app/api/watch/sessions/[sessionId]/state/route.ts` | PARTIAL / VERIFY | `room-media-core + room-media-browser + watch-hls-policy` | Room/session controls exist; provider catalog, selection, accept, episodes and normalized candidates require route-by-route confirmation. |
+| `src/app/api/watch/xtream/direct-test/[streamId]/route.ts` | ADAPT / SECURITY REVIEW | `HMO media provider + prepared-media/worker path` | Port required provider behavior only after credential, SSRF/redirect, byte-range, HLS and tenant-scope review. |
+| `src/app/api/watch/xtream/hls/[streamId]/[file]/route.ts` | ADAPT / SECURITY REVIEW | `HMO media provider + prepared-media/worker path` | Port required provider behavior only after credential, SSRF/redirect, byte-range, HLS and tenant-scope review. |
+| `src/app/api/watch/xtream/source/[kind]/[streamId]/route.ts` | ADAPT / SECURITY REVIEW | `HMO media provider + prepared-media/worker path` | Port required provider behavior only after credential, SSRF/redirect, byte-range, HLS and tenant-scope review. |
+| `src/app/api/watch/xtream/status/route.ts` | ADAPT / SECURITY REVIEW | `HMO media provider + prepared-media/worker path` | Port required provider behavior only after credential, SSRF/redirect, byte-range, HLS and tenant-scope review. |
+| `src/app/api/watch/youtube/hls/[videoId]/[file]/route.ts` | ADAPT / SECURITY REVIEW | `HMO media provider + prepared-media/worker path` | Port required provider behavior only after credential, SSRF/redirect, byte-range, HLS and tenant-scope review. |
+| `src/app/api/watch/youtube/player/route.ts` | ADAPT / SECURITY REVIEW | `HMO media provider + prepared-media/worker path` | Port required provider behavior only after credential, SSRF/redirect, byte-range, HLS and tenant-scope review. |
+| `src/app/api/watch/youtube/resolve/route.ts` | ADAPT / SECURITY REVIEW | `HMO media provider + prepared-media/worker path` | Port required provider behavior only after credential, SSRF/redirect, byte-range, HLS and tenant-scope review. |
+| `src/app/api/watch/youtube/upload/route.ts` | ADAPT / SECURITY REVIEW | `HMO media provider + prepared-media/worker path` | Port required provider behavior only after credential, SSRF/redirect, byte-range, HLS and tenant-scope review. |
+| `src/app/api/worker-media/[...path]/route.ts` | ADAPT / VERIFY | `prepared-media + worker-media-cache + execution-worker` | Trace actual producer/consumer and worker capability contracts; never assume helper existence means route parity. |
+| `src/app/api/youtube-audio/proxy/route.ts` | ADAPT / SECURITY REVIEW | `youtube-resolver + youtube-browser + prepared-media + worker delivery` | Keep safe resolution/preparation behavior; do not blindly port legacy proxy endpoints or expose source URLs. |
+| `src/app/api/youtube-audio/route.ts` | ADAPT / SECURITY REVIEW | `youtube-resolver + youtube-browser + prepared-media + worker delivery` | Keep safe resolution/preparation behavior; do not blindly port legacy proxy endpoints or expose source URLs. |
+| `src/app/api/youtube-audio/stream/route.ts` | ADAPT / SECURITY REVIEW | `youtube-resolver + youtube-browser + prepared-media + worker delivery` | Keep safe resolution/preparation behavior; do not blindly port legacy proxy endpoints or expose source URLs. |
+| `src/app/api/youtube-proxy/route.ts` | ADAPT / SECURITY REVIEW | `youtube-resolver + youtube-browser + prepared-media + worker delivery` | Keep safe resolution/preparation behavior; do not blindly port legacy proxy endpoints or expose source URLs. |
+| `src/app/api/youtube-video/proxy/route.ts` | ADAPT / SECURITY REVIEW | `youtube-resolver + youtube-browser + prepared-media + worker delivery` | Keep safe resolution/preparation behavior; do not blindly port legacy proxy endpoints or expose source URLs. |
+
+## Required follow-through
+
+For each route, append a child item to the main ledger recording:
+1. Donor handler behavior and all reachable callers.
+2. Apollo endpoint/module or an explicit missing implementation.
+3. Auth/session/tenant boundary and request/response contract.
+4. Persistence, idempotency, rate/size limits, redirects, timeouts and failure semantics as relevant.
+5. Decision: port, adapt, combine, already equivalent, shared owner, compatibility alias, or intentionally exclude.
+6. Focused regression test and fresh Apollo workflow evidence.
+
+The media routes require extra care. In particular, donor watch session APIs, Xtream source/HLS endpoints, YouTube resolution/upload/proxy routes and `worker-media` are not to be copied independently: map the end-to-end request → resolver → worker → playable output → room queue/control path first, and preserve credential secrecy and bounded media handling.
+
+## Completion condition
+
+This file is not complete while any route remains only heuristically classified. The final pass must confirm each route against the handler, caller, related tests and Apollo's actual runtime wiring, then record any intentional alias/retirement. The repository may be considered donor-removal-ready only when every route has an explicit disposition and required behaviors are verified in Apollo.
