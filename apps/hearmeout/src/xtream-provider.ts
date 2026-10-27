@@ -132,7 +132,7 @@ function isSeriesSearchEnabled() {
 }
 
 function getPlaylistUrl() {
-  return process.env.HEARMEOUT_XTREAM_PLAYLIST_URL || process.env.HEARMEOUT_XTREAM_PLAYLIST_URL || process.env.HEARMEOUT_XTREAM_PLAYLIST_URL || null;
+  return process.env.HEARMEOUT_XTREAM_PLAYLIST_URL?.trim() || null;
 }
 
 function getConfig() {
