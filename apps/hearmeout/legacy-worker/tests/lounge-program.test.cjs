@@ -76,15 +76,6 @@ test('Lounge worker owns movie and music state, including queue handoff', async 
   const originalFetch = global.fetch;
   try {
     process.env.LOUNGE_STATE_FILE = join(root, 'program.json');
-    // This test verifies checkpoint persistence, not network/provider health.
-    // Use a deterministic ffprobe stub so the request can exercise playback state
-    // without requiring a live Xtream account or external media source.
-    const bin = join(root, 'bin');
-    mkdirSync(bin, { recursive: true });
-    const ffprobe = join(bin, 'ffprobe');
-    writeFileSync(ffprobe, '#!/bin/sh\nprintf \'{"streams":[{"codec_type":"video"}]}\\n\'\n');
-    chmodSync(ffprobe, 0o755);
-    process.env.PATH = bin + require('node:path').delimiter + (process.env.PATH || '');
     process.env.XTREAM_BASE_URL = 'https://provider.example';
     process.env.XTREAM_USERNAME = 'demo';
     process.env.XTREAM_PASSWORD = 'private';
@@ -479,6 +470,15 @@ test('movie playback checkpoints persist the live cursor without moving backward
   const originalFetch = global.fetch;
   try {
     process.env.LOUNGE_STATE_FILE = join(root, 'program.json');
+    // This test verifies checkpoint persistence, not network/provider health.
+    // Use a deterministic ffprobe stub so the request can exercise playback state
+    // without requiring a live Xtream account or external media source.
+    const bin = join(root, 'bin');
+    mkdirSync(bin, { recursive: true });
+    const ffprobe = join(bin, 'ffprobe');
+    writeFileSync(ffprobe, '#!/bin/sh\nprintf \'{"streams":[{"codec_type":"video"}]}\\n\'\n');
+    chmodSync(ffprobe, 0o755);
+    process.env.PATH = bin + require('node:path').delimiter + (process.env.PATH || '');
     process.env.XTREAM_BASE_URL = 'https://provider.example';
     process.env.XTREAM_USERNAME = 'demo';
     process.env.XTREAM_PASSWORD = 'private';
