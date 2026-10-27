@@ -260,7 +260,7 @@ export function renderAvatarStudioPage(nonce: string) {
   <div class="cliprow"><button id="connectAudio2Face" type="button">Connect Audio2Face</button><button id="disconnectAudio2Face" type="button">Disconnect</button></div>
   <p id="audio2FaceStatus" role="status">Audio2Face is not connected. Configure a reachable bridge endpoint to enable live facial updates.</p>
   <p id="a2fTelemetry" role="status">Live Audio2Face frames received: 0. Connect the bridge and run speech through the bridge to verify real TTS-to-face output.</p>
-  <label>Browser TTS visual smoke-test sentence<textarea id="a2fTestText" rows="2">Hello! This is a StreamWeaver avatar talking test.</textarea></label><button id="a2fBrowserTtsTest" type="button">Play browser TTS visual test</button><p>Important: browser TTS visual test only checks mouth movement and audio playback. It does not run Audio2Face inference or send its audio to the bridge. For the real TTS → NVIDIA Audio2Face test, the bridge must feed TTS audio to Audio2Face and stream its returned blendshapes here. This panel counts those live frames.</p>
+  <label>Browser TTS visual smoke-test sentence<textarea id="a2fTestText" rows="2">Hello! This is a StreamWeaver avatar talking test.</textarea></label><div class="cliprow"><button id="a2fBridgeTtsTest" type="button">Send TTS test to Audio2Face bridge</button><button id="a2fBrowserTtsTest" type="button">Browser TTS visual smoke test</button></div><p>The bridge TTS test sends <code>{"type":"tts_test","text":"..."}</code> to the configured bridge. The bridge must synthesize/obtain the speech audio, feed it to NVIDIA Audio2Face, and stream returned blendshape frames back. Browser TTS visual smoke test only checks local audio and jaw movement; it is not Audio2Face inference.</p>
   <p>Bridge messages accepted: JSON objects containing a <code>blendshapes</code> object keyed by ARKit names, or <code>jawOpen</code> / <code>mouthOpen</code> numeric values from 0 to 1. This does not start NVIDIA Audio2Face itself; it connects to a bridge you run.</p>
 </aside>`;
   const sectionClose = "</section>";
@@ -384,6 +384,16 @@ disconnectA2F.addEventListener('click', () => {
   if (a2fSocket) a2fSocket.close();
   a2fSocket = null;
   a2fStatus.textContent = 'Audio2Face bridge disconnected.';
+});
+document.querySelector('#a2fBridgeTtsTest').addEventListener('click',()=>{
+ const text=document.querySelector('#a2fTestText').value.trim();
+ if(!text){a2fStatus.textContent='Enter a short sentence to send to the TTS → Audio2Face bridge.';return}
+ if(!a2fSocket||a2fSocket.readyState!==WebSocket.OPEN){a2fStatus.textContent='Connect the Audio2Face bridge first.';return}
+ try{
+  a2fSocket.send(JSON.stringify({type:'tts_test',text,requestId:'avatar-studio-tts-test-'+Date.now()}));
+  a2fStatus.textContent='TTS test request sent to the bridge. Waiting for Audio2Face blendshape frames; the bridge must support the tts_test message.';
+  a2fTelemetry.textContent='Live Audio2Face frames received: '+a2fFrameCount+'. Waiting for the TTS test response.';
+ }catch(error){a2fStatus.textContent='Could not send TTS test request: '+(error?.message||'bridge send failed')}
 });
 document.querySelector('#a2fBrowserTtsTest').addEventListener('click',()=>{
  if(!('speechSynthesis' in window)||typeof SpeechSynthesisUtterance==='undefined'){a2fStatus.textContent='This browser does not provide speech synthesis. Use a TTS audio file through your configured Audio2Face bridge.';return}
