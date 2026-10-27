@@ -50,7 +50,7 @@ test("Avatar Studio has a retargetable shared motion library and labels GIFs hon
   assert.match(studio, /idle-sitting/);
   assert.match(studio, /UAL1_Standard/);
   assert.match(studio, /UAL2_Standard/);
-  assert.match(studio, /Rig_Medium_General\\.glb/);
+  assert.match(studio, /Rig_Medium_General\.glb/);
   assert.match(studio, /KayKit General · CC0/);
   assert.match(studio, /Sitting_Idle|idle-sitting/);
   assert.match(studio, /CC0/);
