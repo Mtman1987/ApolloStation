@@ -25,7 +25,9 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ${{ runner.temp }}/ffmpeg-debs
-          key: ffmpeg-debs-${{ runner.os }}-${{ runner.arch }}-${{ steps.ffmpeg-cache-key.outputs.week }}-${{ hashFiles('.github/workflows/oracle-release-validation.yml') }}
+          key: ffmpeg-debs-${{ runner.os }}-${{ runner.arch }}-${{ steps.ffmpeg-cache-key.outputs.week }}
+          restore-keys: |
+            ffmpeg-debs-${{ runner.os }}-${{ runner.arch }}-
       - name: Download and cache FFmpeg packages
         run: |
           mkdir -p "$RUNNER_TEMP/ffmpeg-debs/partial"
@@ -52,7 +54,16 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - name: Install locked dependencies
+      - name: Restore installed workspace dependencies
+        id: node-modules-cache
+        uses: actions/cache@v6
+        with:
+          path: |
+            node_modules
+            packages/*/node_modules
+          key: node-modules-${{ runner.os }}-node22-${{ hashFiles('package-lock.json') }}
+      - name: Install locked dependencies on cache miss
+        if: steps.node-modules-cache.outputs.cache-hit != 'true'
         run: npm ci
       - name: Set weekly FFmpeg package cache key
         id: ffmpeg-cache-key
@@ -61,7 +72,9 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ${{ runner.temp }}/ffmpeg-debs
-          key: ffmpeg-debs-${{ runner.os }}-${{ runner.arch }}-${{ steps.ffmpeg-cache-key.outputs.week }}-${{ hashFiles('.github/workflows/oracle-release-validation.yml') }}
+          key: ffmpeg-debs-${{ runner.os }}-${{ runner.arch }}-${{ steps.ffmpeg-cache-key.outputs.week }}
+          restore-keys: |
+            ffmpeg-debs-${{ runner.os }}-${{ runner.arch }}-
       - name: Install media test tools
         run: |
           mkdir -p "$RUNNER_TEMP/ffmpeg-debs/partial"
