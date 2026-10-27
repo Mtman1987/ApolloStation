@@ -72,6 +72,73 @@ async function loadLibraryModel(){
  finally{button.disabled=false}
 }
 document.querySelector('#loadLibraryModel').addEventListener('click',loadLibraryModel);
+
+function makeGeneratedFace(built){
+ const geometry=new THREE.BufferGeometry();
+ geometry.setAttribute('position',new THREE.BufferAttribute(built.positions.slice(),3));
+ geometry.setAttribute('uv',new THREE.BufferAttribute(built.uvs.slice(),2));
+ geometry.setIndex(new THREE.BufferAttribute(built.indices,1));
+ geometry.computeVertexNormals();
+ geometry.morphAttributes.position=built.morphs.map(morph=>new THREE.BufferAttribute(morph.slice(),3));
+ const texture=new THREE.CanvasTexture(built.texture);texture.colorSpace=THREE.SRGBColorSpace;texture.flipY=true;texture.anisotropy=4;
+ const mesh=new THREE.Mesh(geometry,new THREE.MeshStandardMaterial({map:texture,roughness:.55,metalness:.02,side:THREE.DoubleSide}));
+ mesh.name='ARKitFace';
+ mesh.morphTargetDictionary=Object.fromEntries(window.AvatarAceFaceBuilder.ARKIT_BLENDSHAPE_NAMES.map((name,index)=>[name,index]));
+ mesh.morphTargetInfluences=built.influences.slice();mesh.userData.base=built.influences.slice();
+ return mesh;
+}
+function attachGeneratedFace(){
+ if(!headAnchor||!generatedFaces||currentModelPurpose!=='body')return;
+ if(faceMesh){headAnchor.remove(faceMesh);faceMesh.geometry.dispose();const mats=Array.isArray(faceMesh.material)?faceMesh.material:[faceMesh.material];mats.forEach(m=>{if(m.map)m.map.dispose();m.dispose()});faceMesh=null}
+ const choice=document.querySelector('#faceChoice').value||'standard';
+ faceMesh=makeGeneratedFace(generatedFaces[choice]||generatedFaces.standard);
+ headAnchor.add(faceMesh);hasGeneratedFace=true;syncGeneratedFaceFit();
+ document.querySelector('#faceGenerationStatus').textContent='3D face generated and attached to the selected generic body. Its 52 ARKit morph targets are available to Audio2Face.';
+}
+function syncGeneratedFaceFit(){
+ if(!faceMesh)return;
+ faceMesh.scale.setScalar(Number(document.querySelector('#faceHeadScale').value));
+ faceMesh.position.y=Number(document.querySelector('#faceHeadY').value);
+ faceMesh.position.z=Number(document.querySelector('#faceHeadZ').value);
+}
+async function createFaceLandmarker(gpu){
+ const {FaceLandmarker,FilesetResolver}=await import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/+esm');
+ const vision=await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm');
+ return FaceLandmarker.createFromOptions(vision,{baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',delegate:gpu?'GPU':'CPU'},runningMode:'IMAGE',numFaces:1,outputFaceBlendshapes:true});
+}
+async function getFaceLandmarker(){
+ if(!faceLandmarkerPromise)faceLandmarkerPromise=createFaceLandmarker(true).catch(()=>{usingGpu=false;return createFaceLandmarker(false)});
+ return faceLandmarkerPromise;
+}
+async function generateFaceFromPhoto(file){
+ const faceStatus=document.querySelector('#faceGenerationStatus');
+ faceStatus.textContent='Preparing photo and finding the face…';
+ try{
+  if(!window.AvatarAceFaceBuilder||typeof window.AvatarAceFaceBuilder.buildFace!=='function')throw new Error('The face-builder module has not loaded yet. Check the CDN connection and retry.');
+  const bitmap=await createImageBitmap(file,{imageOrientation:'from-image'});
+  const scale=Math.min(1,1024/Math.max(bitmap.width,bitmap.height));
+  const canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(bitmap.width*scale));canvas.height=Math.max(1,Math.round(bitmap.height*scale));
+  const ctx=canvas.getContext('2d');if(!ctx)throw new Error('Could not prepare the photo canvas.');
+  ctx.drawImage(bitmap,0,0,canvas.width,canvas.height);bitmap.close();faceSourceCanvas=canvas;
+  let landmarker=await getFaceLandmarker(),result;
+  try{result=landmarker.detect(canvas)}catch(error){if(!usingGpu)throw error;usingGpu=false;faceLandmarkerPromise=createFaceLandmarker(false);landmarker=await faceLandmarkerPromise;result=landmarker.detect(canvas)}
+  const raw=result.faceLandmarks?.[0];if(!raw||raw.length<100)throw new Error('No face found. Try a clear, front-facing photo with the whole face visible.');
+  const landmarks=raw.map(lm=>({x:lm.x,y:lm.y,z:lm.z??0}));
+  const categories=result.faceBlendshapes?.[0]?.categories??[];
+  faceStatus.textContent='Building standard and high-detail 3D faces…';
+  generatedFaces={standard:window.AvatarAceFaceBuilder.buildFace(landmarks,categories,canvas,'standard'),detail:window.AvatarAceFaceBuilder.buildFace(landmarks,categories,canvas,'detail')};
+  document.querySelector('#faceChoice').value='standard';
+  if(headAnchor&&currentModelPurpose==='body')attachGeneratedFace();
+  else faceStatus.textContent='Face generated. Load the generic male or female body to attach it; the commissioned model remains separate and untouched.';
+ }catch(error){faceStatus.textContent=error?.message||'Face generation failed. Try another photo.'}
+}
+function handleFacePhoto(event){
+ const file=event.target.files?.[0];event.target.value='';if(file)void generateFaceFromPhoto(file);
+}
+document.querySelector('#facePhotoCamera').addEventListener('change',handleFacePhoto);
+document.querySelector('#facePhotoLibrary').addEventListener('change',handleFacePhoto);
+document.querySelector('#faceChoice').addEventListener('change',attachGeneratedFace);
+for(const id of ['faceHeadScale','faceHeadY','faceHeadZ'])document.querySelector('#'+id).addEventListener('input',syncGeneratedFaceFit);
 function loadAnimation(file){const url=URL.createObjectURL(file);animationUrls.push(url);loader.load(url,g=>{if(!avatar){status.textContent='Load a target model first, then import animation clips.';return}const added=[];const rejected=[];for(const sourceClip of g.animations){try{const result=retargetClipToObject(sourceClip,avatar);if(result.clip)added.push({name:sourceClip.name||file.name,clip:result.clip,source:file.name,coverage:result.coverage});else rejected.push((sourceClip.name||file.name)+' ('+Math.round((result.coverage||0)*100)+'% bone coverage)')}catch(error){rejected.push((sourceClip.name||file.name)+' ('+(error?.message||'retarget failed')+')')}}clips.push(...added);updateClips();status.textContent='Retargeted '+added.length+' clip(s) from '+file.name+'.'+(rejected.length?' Skipped '+rejected.length+' incompatible clip(s): '+rejected.slice(0,3).join(', '):'')},undefined,e=>status.textContent='Animation import failed: '+(e?.message||'unknown error'))}
 function playIndex(i,loop='once'){if(!mixer||!clips[i])return;const entry=clips[i];if(activeAction){activeAction.stop();mixer.uncacheAction(activeAction.getClip(),avatar)}activeAction=mixer.clipAction(entry.clip);activeAction.reset();const shouldLoop=loop==='repeat'||entry.loop===true;activeAction.setLoop(shouldLoop?THREE.LoopRepeat:THREE.LoopOnce,shouldLoop?Infinity:1);activeAction.clampWhenFinished=loop!=='repeat';activeAction.play();status.textContent='Playing '+entry.name+' ('+entry.source+')'}
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
@@ -172,6 +239,15 @@ function loadPngSource(file, speaking) {
 sourceMode.addEventListener('change', setAvatarSourceMode);
 pngTuberFile.addEventListener('change', e => loadPngSource(e.target.files?.[0], false));
 pngTuberSpeakingFile.addEventListener('change', e => loadPngSource(e.target.files?.[0], true));
+document.querySelector('#generate2dPng').addEventListener('click',()=>{
+ if(!faceSourceCanvas){document.querySelector('#faceGenerationStatus').textContent='Choose or capture a face photo first.';return}
+ faceSourceCanvas.toBlob(blob=>{
+  if(!blob){document.querySelector('#faceGenerationStatus').textContent='Could not create the 2D PNG image.';return}
+  const file=new File([blob],'generated-face.png',{type:'image/png'});
+  sourceMode.value='2d';loadPngSource(file,false);setAvatarSourceMode();
+  document.querySelector('#faceGenerationStatus').textContent='2D photo avatar created. You can add a speaking image and save it using the existing 2D PNG-Tuber controls.';
+ },'image/png');
+});
 const jawBaseRotations = new WeakMap();
 function applyA2FMessage(payload) {
   if (!payload || typeof payload !== 'object') return;
