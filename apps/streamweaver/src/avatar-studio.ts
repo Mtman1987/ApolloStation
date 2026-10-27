@@ -3,9 +3,9 @@ function renderBaseAvatarStudioPage(nonce: string) {
 :root{color-scheme:dark;font:14px system-ui;color:#edf4ff;background:#070b14}*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden}#room{position:fixed;inset:0;background:radial-gradient(ellipse at 50% 65%,#202943 0,#0b1221 42%,#05070d 100%)}canvas{display:block;width:100%;height:100%}#hint{position:absolute;bottom:18px;left:50%;transform:translateX(-50%);padding:8px 12px;border:1px solid #ffffff20;border-radius:30px;background:#080d18a8;color:#b9c9e8;pointer-events:none}#editor{position:absolute;inset:12px;display:grid;grid-template-columns:minmax(190px,260px) 1fr minmax(220px,300px);gap:10px;pointer-events:none}#editor[hidden]{display:none}.panel{pointer-events:auto;overflow:auto;max-height:100%;border:1px solid #7e9bc84a;border-radius:14px;background:#08101fe8;backdrop-filter:blur(18px);padding:14px;box-shadow:0 12px 45px #0008}.panel h2{font-size:16px;margin:0 0 12px}.panel p{color:#aabbd7;font-size:12px;line-height:1.45}label{display:grid;gap:5px;margin:10px 0;color:#c7d5eb;font-size:12px}input,select,button{font:inherit;color:#eef5ff;background:#131f33;border:1px solid #4b6386;border-radius:8px;padding:9px;max-width:100%;width:100%}input[type=file]{font-size:11px}button{cursor:pointer}button.primary{background:#573dd0;border-color:#a69aff}button:disabled{opacity:.5}#toolbar{display:flex;gap:7px;flex-wrap:wrap}#toolbar button{width:auto}#status{font-size:11px;color:#9ec7ff;overflow-wrap:anywhere}.cliprow{display:flex;gap:6px;align-items:center}.cliprow select{flex:1;min-width:0}.cliprow button{width:auto}.rule{border-top:1px solid #ffffff18;margin:14px 0;padding-top:10px}.ghost{position:absolute;top:14px;right:14px;pointer-events:auto;width:auto;z-index:3;background:#0a1220b8}body.clean #hint{opacity:.4}@media(max-width:800px){#editor{grid-template-columns:1fr 1fr;inset:8px;overflow:auto}#editor .panel:last-child{grid-column:1/-1;max-height:35vh}#editor .panel{max-height:46vh;padding:10px}#editor .panel:nth-child(2){display:none}#hint{font-size:11px;white-space:nowrap;bottom:8px}}
 </style></head><body><main id="room" aria-label="3D avatar preview room"></main><button id="toggle" class="ghost" type="button">Open Avatar Studio</button><div id="hint">Clean preview · tap the room to open controls</div><section id="editor" hidden aria-label="Avatar Studio controls">
 <aside class="panel"><h2>Model library</h2><label>Upload rigged model (GLB)<input id="modelFile" type="file" accept=".glb,model/gltf-binary"></label><label>Model<select id="modelSelect"><option value="current">Current model / uploaded GLB</option><option value="male-body">Generic male body · editable</option><option value="female-body">Generic female body · editable</option><option value="commissioned">Commissioned finished model · view only</option></select></label><button id="loadLibraryModel" type="button">Load selected library model</button><p>Generic bodies are separate starting models. The commissioned finished model is opened in a view-only path and is not rebuilt, rigged, or altered.</p><div id="modelInfo" class="rule"><p>Upload a GLB to preview it in this room. Select a GLB, preview and edit its motions, then save it to StreamWeaver for direct rigging and activation.</p></div><div id="toolbar"><button id="reset" type="button">Reset camera</button><button id="pause" type="button">Pause</button></div></aside>
-<aside class="panel"><h2>3D preview</h2><p>Drag to orbit · scroll/pinch to zoom. Animation playback continues when controls are hidden.</p><div id="status" role="status">Preparing 3D renderer…</div><div class="cliprow"><button id="exportCombinedGlb" type="button">Export model + imported clips</button><button id="rigActivate3d" class="primary" type="button">Rig &amp; activate 3D avatar</button></div><p>Imported animation clips are attached to the exported GLB before upload, rather than remaining only in this browser preview.</p><p>Embedded clips, imported GLBs, and the shared retargetable motion library use one selector. Cross-rig imports are retargeted when the rig passes the library coverage check.</p><div class="rule"><h2>Model fit tweaks</h2><label>Model/head scale<input id="avatarTweakScale" type="range" min="0.6" max="1.4" step="0.01" value="1"></label><label>Vertical offset<input id="avatarTweakY" type="range" min="-0.5" max="0.5" step="0.01" value="0"></label><label>Depth offset<input id="avatarTweakZ" type="range" min="-0.5" max="0.5" step="0.01" value="0"></label><label>Facial movement intensity<input id="avatarTweakMorph" type="range" min="0" max="2" step="0.05" value="1"></label><button id="resetAvatarTweaks" type="button">Reset fit tweaks</button><p>These controls are based on the ZIP’s TweakControls module. Transform changes are included when you export or rig the model.</p></div><div class="rule"><h2>Retargetable motion library</h2><button id="loadMotionLibrary" type="button">Load shared humanoid motions</button><p>Loads reusable idle, walk and wave clips; retargets them to this avatar and reports skeleton coverage.</p><h2>Uploaded motion references</h2><div id="referenceMotions"></div></div></aside>
+<aside class="panel"><h2>3D preview</h2><p>Drag to orbit · scroll/pinch to zoom. Animation playback continues when controls are hidden.</p><div id="status" role="status">Preparing 3D renderer…</div><div class="cliprow"><button id="exportCombinedGlb" type="button">Export model + imported clips</button><button id="rigActivate3d" class="primary" type="button">Rig &amp; activate 3D avatar</button></div><p>Imported animation clips are attached to the exported GLB before upload, rather than remaining only in this browser preview.</p><p>Embedded clips, imported GLBs, and the shared retargetable motion library use one selector. Cross-rig imports are retargeted when the rig passes the library coverage check.</p><div class="rule"><h2>Model fit tweaks</h2><label>Model/head scale<input id="avatarTweakScale" type="range" min="0.6" max="1.4" step="0.01" value="1"></label><label>Vertical offset<input id="avatarTweakY" type="range" min="-0.5" max="0.5" step="0.01" value="0"></label><label>Depth offset<input id="avatarTweakZ" type="range" min="-0.5" max="0.5" step="0.01" value="0"></label><label>Facial movement intensity<input id="avatarTweakMorph" type="range" min="0" max="2" step="0.05" value="1"></label><button id="resetAvatarTweaks" type="button">Reset fit tweaks</button><p>These controls are based on the ZIP’s TweakControls module. Transform changes are included when you export or rig the model.</p></div><div class="rule"><h2>Generate a 3D face</h2><p>Use a front-facing photo or camera capture. This reuses AvatarAce's photo-to-face mesh builder with 52 ARKit morph targets for the Audio2Face bridge.</p><label>Take a face photo<input id="facePhotoCamera" type="file" accept="image/*" capture="user"></label><label>Choose a photo<input id="facePhotoLibrary" type="file" accept="image/*"></label><label>Face version<select id="faceChoice"><option value="standard">Standard · closer to photo</option><option value="detail">Higher detail · smoother</option></select></label><label>Expression preset<select id="facePreset"><option value="captured">Photo expression</option><option value="smile">Smile</option><option value="blink">Blink</option><option value="wow">Surprise</option></select></label><label>Expression strength<input id="faceExpression" type="range" min="0" max="1.4" step="0.01" value="1"></label><label>Head size<input id="faceHeadScale" type="range" min="0.8" max="1.35" step="0.01" value="1.05"></label><label>Head height<input id="faceHeadY" type="range" min="-0.06" max="0.08" step="0.005" value="0.01"></label><label>Head depth<input id="faceHeadZ" type="range" min="-0.04" max="0.1" step="0.005" value="0.02"></label><div class="cliprow"><button id="generate2dPng" type="button">Use photo as 2D PNG-Tuber</button></div><div id="faceGenerationStatus" role="status">Choose a photo to generate a 3D face for the selected generic body.</div></div><div class="rule"><h2>Retargetable motion library</h2><button id="loadMotionLibrary" type="button">Load shared humanoid motions</button><p>Loads reusable idle, walk and wave clips; retargets them to this avatar and reports skeleton coverage.</p><h2>Uploaded motion references</h2><div id="referenceMotions"></div></div></aside>
 <aside class="panel"><h2>Unified animation library</h2><label>Import animation GLB/GLTF<input id="animationFile" type="file" accept=".glb,.gltf,model/gltf-binary,model/gltf+json"></label><label>Animation<select id="clipSelect"><option value="">No clips loaded</option></select></label><div class="cliprow"><button id="play" class="primary" type="button">Play selected</button><button id="stop" type="button">Stop</button></div><div class="rule"><h2>Trigger assignments</h2><label>Trigger source<select id="triggerSource"><option>AI command</option><option>AI speaking</option><option>Twitch follow</option><option>Subscription</option><option>Raid</option><option>Channel Point redemption</option><option>Chat command</option><option>Manual</option></select></label><label>Trigger name<input id="triggerName" value="bow_gesture" placeholder="e.g. bow_gesture, !dance"></label><label>Animation for trigger<select id="triggerClip"></select></label><label>Playback behavior<select id="triggerBehavior"><option>Play once</option><option>Loop until stopped</option><option>Play while speaking</option></select></label><button id="addTrigger" type="button">Add trigger mapping</button><div id="triggerList"></div><p>Mappings are a local test draft in this first pass. Production event ingestion and durable storage are a separate integration step.</p></div></aside></section>
-<script type="importmap" nonce="${nonce}">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}</script><script type="module" nonce="${nonce}">
+<script type="importmap" nonce="${nonce}">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}</script><script src="https://cdn.jsdelivr.net/gh/Mtman1987/3davatar@main/avatarace-patch/face-builder-browser.js" nonce="${nonce}"></script><script type="module" nonce="${nonce}">
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
@@ -16,7 +16,7 @@ const camera=new THREE.PerspectiveCamera(38,innerWidth/innerHeight,.1,100);camer
 const renderer=new THREE.WebGLRenderer({antialias:true,alpha:false});renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.setSize(innerWidth,innerHeight);renderer.outputColorSpace=THREE.SRGBColorSpace;room.appendChild(renderer.domElement);
 scene.add(new THREE.HemisphereLight(0xc4d8ff,0x242033,2));const key=new THREE.DirectionalLight(0xffffff,3);key.position.set(3,6,4);scene.add(key);const rim=new THREE.PointLight(0x725cff,24,12);rim.position.set(-3,2,0);scene.add(rim);
 const floor=new THREE.Mesh(new THREE.CircleGeometry(8,64),new THREE.MeshStandardMaterial({color:0x111b2c,metalness:.3,roughness:.7}));floor.rotation.x=-Math.PI/2;floor.position.y=-.015;scene.add(floor);const grid=new THREE.GridHelper(16,32,0x32466a,0x1a2941);grid.position.y=0;scene.add(grid);
-const controls=new OrbitControls(camera,renderer.domElement);controls.target.set(0,1,0);controls.enableDamping=true;const loader=new GLTFLoader();let avatar=null,mixer=null,activeAction=null,paused=false,clips=[],modelUrl=null,animationUrls=[],triggers=[],motionManager=null,currentModelFile=null,currentModelPurpose='upload'; const referenceMotions=['Formal_Bow.gif','FunnyDancing_01.gif','Chair_Sit_Idle_M.gif','Big_Wave_Hello.gif','Confused_Scratch.gif','Discuss_While_Moving.gif','Dodge_and_Counter.gif','Call_Gesture.gif','Dozing_Elderly.gif'];
+const controls=new OrbitControls(camera,renderer.domElement);controls.target.set(0,1,0);controls.enableDamping=true;const loader=new GLTFLoader();let avatar=null,mixer=null,activeAction=null,paused=false,clips=[],modelUrl=null,animationUrls=[],triggers=[],motionManager=null,currentModelFile=null,currentModelPurpose='upload',headAnchor=null,faceMesh=null,generatedFaces=null,faceSourceCanvas=null,faceLandmarkerPromise=null,usingGpu=true,hasGeneratedFace=false; const referenceMotions=['Formal_Bow.gif','FunnyDancing_01.gif','Chair_Sit_Idle_M.gif','Big_Wave_Hello.gif','Confused_Scratch.gif','Discuss_While_Moving.gif','Dodge_and_Counter.gif','Call_Gesture.gif','Dozing_Elderly.gif'];
 const clipSelect=document.querySelector('#clipSelect'),triggerClip=document.querySelector('#triggerClip'),modelInfo=document.querySelector('#modelInfo');
 class TweakControls {
   constructor(){this.state={headScale:1,headOffsetY:0,headOffsetZ:0,morphIntensity:1};this.listeners=[];}
@@ -30,7 +30,7 @@ let baseModelScale=1,baseModelPosition=new THREE.Vector3();
 function applyAvatarTweaks(){if(!avatar||currentModelPurpose==='finished')return;const state=tweakControls.getState();avatar.scale.setScalar(baseModelScale*state.headScale);avatar.position.copy(baseModelPosition);avatar.position.y+=state.headOffsetY;avatar.position.z+=state.headOffsetZ;}
 tweakControls.onChange(applyAvatarTweaks);
 function updateClips(){clipSelect.replaceChildren();triggerClip.replaceChildren();clips.forEach((entry,i)=>{const o=new Option(entry.name+' · '+entry.source,String(i));clipSelect.add(o);triggerClip.add(new Option(entry.name,String(i)))});if(!clips.length){clipSelect.add(new Option('No clips loaded',''));triggerClip.add(new Option('No clips loaded',''))}}
-function clearAvatar(){if(avatar){scene.remove(avatar);avatar.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material){const ms=Array.isArray(o.material)?o.material:[o.material];ms.forEach(m=>m.dispose())}})}avatar=null;mixer=null;activeAction=null;clips=[];updateClips()}
+function clearAvatar(){if(avatar){scene.remove(avatar);avatar.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material){const ms=Array.isArray(o.material)?o.material:[o.material];ms.forEach(m=>m.dispose())}})}avatar=null;mixer=null;activeAction=null;clips=[];headAnchor=null;faceMesh=null;hasGeneratedFace=false;updateClips()}
 function loadModel(file){if(!/\\.glb$/i.test(file.name)){status.textContent='Please upload a single-file GLB model. A .gltf file may depend on external binary or texture files.';return}currentModelPurpose='upload';currentModelFile=file;for(const id of ['avatarTweakScale','avatarTweakY','avatarTweakZ'])document.querySelector('#'+id).disabled=false;document.querySelector('#resetAvatarTweaks').disabled=false;document.querySelector('#rigActivate3d').disabled=false;const url=URL.createObjectURL(file);if(modelUrl)URL.revokeObjectURL(modelUrl);modelUrl=url;loader.load(url,g=>{clearAvatar();avatar=g.scene;scene.add(avatar);const box=new THREE.Box3().setFromObject(avatar),size=box.getSize(new THREE.Vector3()),center=box.getCenter(new THREE.Vector3());avatar.position.x-=center.x;avatar.position.z-=center.z;avatar.position.y-=box.min.y;const scale=2.1/Math.max(size.y,.01);baseModelScale=scale;baseModelPosition.copy(avatar.position);avatar.scale.setScalar(scale);applyAvatarTweaks();mixer=new THREE.AnimationMixer(avatar);clips=g.animations.map(c=>({name:c.name||'Animation '+(clips.length+1),clip:c,source:'embedded'}));motionManager=new AnimationManager();try{motionManager.attach(avatar)}catch{}updateClips();modelInfo.innerHTML='<p><b>'+escapeHtml(file.name)+'</b><br>'+g.animations.length+' embedded animation(s) · '+Math.round(file.size/1024)+' KB</p>';status.textContent='Model loaded. '+g.animations.length+' embedded clip(s) found.';document.querySelector('#modelSelect').add(new Option(file.name,String(Date.now())));},undefined,e=>{status.textContent='Model load failed: '+(e?.message||'unknown error')})}
 const libraryModels={
  'male-body':{label:'Generic male body',url:'https://cdn.jsdelivr.net/gh/Mtman1987/3davatar@main/male-base-mesh-base_male.glb',filename:'male-base-mesh-base_male.glb',purpose:'body'},
@@ -50,10 +50,17 @@ async function loadLibraryModel(){
   const url=URL.createObjectURL(file);
   loader.load(url,g=>{
    clearAvatar();if(modelUrl)URL.revokeObjectURL(modelUrl);modelUrl=url;currentModelPurpose=def.purpose==='finished'?'finished':'body';currentModelFile=currentModelPurpose==='finished'?null:file;
-   avatar=g.scene;scene.add(avatar);
+   avatar=g.scene;
    const box=new THREE.Box3().setFromObject(avatar),size=box.getSize(new THREE.Vector3()),center=box.getCenter(new THREE.Vector3());
-   baseModelScale=1;baseModelPosition.copy(avatar.position);if(def.purpose!=='finished')avatar.scale.setScalar(1);
-   controls.target.copy(center);const distance=Math.max(size.x,size.y,size.z,1)*2.5;camera.position.set(center.x,center.y+size.y*.18,center.z+distance);camera.lookAt(center);controls.update();
+   if(currentModelPurpose==='body'){
+    headAnchor=new THREE.Group();headAnchor.name='HeadAnchor';headAnchor.position.set(center.x,box.min.y+size.y*.885,center.z+size.z*.12);avatar.add(headAnchor);
+    const fitScale=1.8/Math.max(size.y,.01);avatar.scale.multiplyScalar(fitScale);avatar.position.set(-center.x*fitScale,-box.min.y*fitScale,-center.z*fitScale);
+    baseModelScale=fitScale;baseModelPosition.copy(avatar.position);
+   }else{baseModelScale=1;baseModelPosition.copy(avatar.position)}
+   scene.add(avatar);
+   if(currentModelPurpose==='body')attachGeneratedFace();
+   const target=currentModelPurpose==='body'?new THREE.Vector3(0,.9,0):center;
+   controls.target.copy(target);const distance=Math.max(size.x,size.y,size.z,1)*2.5;camera.position.set(target.x,target.y+size.y*.18,target.z+distance);camera.lookAt(target);controls.update();
    mixer=new THREE.AnimationMixer(avatar);clips=g.animations.map((c,i)=>({name:c.name||'Animation '+(i+1),clip:c,source:'embedded'}));motionManager=new AnimationManager();try{motionManager.attach(avatar)}catch{}updateClips();
    const info=document.querySelector('#modelInfo');info.innerHTML='<p><b>'+escapeHtml(def.label)+'</b><br>'+Math.round(blob.size/1024)+' KB'+(currentModelPurpose==='finished'?'<br>View-only: the commissioned model is loaded without geometry edits, scaling, repositioning, or rigging.':'<br>Generic body loaded as a separate starting model.')+'</p>';
    for(const id of ['avatarTweakScale','avatarTweakY','avatarTweakZ'])document.querySelector('#'+id).disabled=currentModelPurpose==='finished';
@@ -65,6 +72,84 @@ async function loadLibraryModel(){
  finally{button.disabled=false}
 }
 document.querySelector('#loadLibraryModel').addEventListener('click',loadLibraryModel);
+
+function makeGeneratedFace(built){
+ const geometry=new THREE.BufferGeometry();
+ geometry.setAttribute('position',new THREE.BufferAttribute(built.positions.slice(),3));
+ geometry.setAttribute('uv',new THREE.BufferAttribute(built.uvs.slice(),2));
+ geometry.setIndex(new THREE.BufferAttribute(built.indices,1));
+ geometry.computeVertexNormals();
+ geometry.morphAttributes.position=built.morphs.map(morph=>new THREE.BufferAttribute(morph.slice(),3));
+ const texture=new THREE.CanvasTexture(built.texture);texture.colorSpace=THREE.SRGBColorSpace;texture.flipY=true;texture.anisotropy=4;
+ const mesh=new THREE.Mesh(geometry,new THREE.MeshStandardMaterial({map:texture,roughness:.55,metalness:.02,side:THREE.DoubleSide}));
+ mesh.name='ARKitFace';
+ mesh.morphTargetDictionary=Object.fromEntries(window.AvatarAceFaceBuilder.ARKIT_BLENDSHAPE_NAMES.map((name,index)=>[name,index]));
+ mesh.morphTargetInfluences=built.influences.slice();mesh.userData.base=built.influences.slice();
+ return mesh;
+}
+function attachGeneratedFace(){
+ if(!headAnchor||!generatedFaces||currentModelPurpose!=='body')return;
+ if(faceMesh){headAnchor.remove(faceMesh);faceMesh.geometry.dispose();const mats=Array.isArray(faceMesh.material)?faceMesh.material:[faceMesh.material];mats.forEach(m=>{if(m.map)m.map.dispose();m.dispose()});faceMesh=null}
+ const choice=document.querySelector('#faceChoice').value||'standard';
+ faceMesh=makeGeneratedFace(generatedFaces[choice]||generatedFaces.standard);
+ headAnchor.add(faceMesh);hasGeneratedFace=true;syncGeneratedFaceFit();applyGeneratedFaceExpression();
+ document.querySelector('#faceGenerationStatus').textContent='3D face generated and attached to the selected generic body. Its 52 ARKit morph targets are available to Audio2Face.';
+}
+function syncGeneratedFaceFit(){
+ if(!faceMesh)return;
+ faceMesh.scale.setScalar(Number(document.querySelector('#faceHeadScale').value));
+ faceMesh.position.y=Number(document.querySelector('#faceHeadY').value);
+ faceMesh.position.z=Number(document.querySelector('#faceHeadZ').value);
+}
+const faceExpressionPresets={smile:{mouthSmileLeft:.85,mouthSmileRight:.85,eyeSquintLeft:.35,eyeSquintRight:.35,cheekSquintLeft:.3,cheekSquintRight:.3},blink:{eyeBlinkLeft:1,eyeBlinkRight:1},wow:{jawOpen:.65,eyeWideLeft:.75,eyeWideRight:.75,browInnerUp:.55,browOuterUpLeft:.35,browOuterUpRight:.35}};
+function applyGeneratedFaceExpression(){
+ if(!faceMesh)return;
+ const names=window.AvatarAceFaceBuilder.ARKIT_BLENDSHAPE_NAMES,base=faceMesh.userData.base||[],preset=document.querySelector('#facePreset').value,intensity=Number(document.querySelector('#faceExpression').value);
+ const out=new Array(names.length).fill(0);
+ if(preset==='captured'){for(let i=0;i<names.length;i++)out[i]=(base[i]||0)*intensity}
+ else for(const [name,value] of Object.entries(faceExpressionPresets[preset]||{})){const index=names.indexOf(name);if(index>=0)out[index]=value*intensity}
+ faceMesh.morphTargetInfluences=out;
+}
+async function createFaceLandmarker(gpu){
+ const {FaceLandmarker,FilesetResolver}=await import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/+esm');
+ const vision=await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm');
+ return FaceLandmarker.createFromOptions(vision,{baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',delegate:gpu?'GPU':'CPU'},runningMode:'IMAGE',numFaces:1,outputFaceBlendshapes:true});
+}
+async function getFaceLandmarker(){
+ if(!faceLandmarkerPromise)faceLandmarkerPromise=createFaceLandmarker(true).catch(()=>{usingGpu=false;return createFaceLandmarker(false)});
+ return faceLandmarkerPromise;
+}
+async function generateFaceFromPhoto(file){
+ const faceStatus=document.querySelector('#faceGenerationStatus');
+ faceStatus.textContent='Preparing photo and finding the face…';
+ try{
+  if(!window.AvatarAceFaceBuilder||typeof window.AvatarAceFaceBuilder.buildFace!=='function')throw new Error('The face-builder module has not loaded yet. Check the CDN connection and retry.');
+  const bitmap=await createImageBitmap(file,{imageOrientation:'from-image'});
+  const scale=Math.min(1,1024/Math.max(bitmap.width,bitmap.height));
+  const canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(bitmap.width*scale));canvas.height=Math.max(1,Math.round(bitmap.height*scale));
+  const ctx=canvas.getContext('2d');if(!ctx)throw new Error('Could not prepare the photo canvas.');
+  ctx.drawImage(bitmap,0,0,canvas.width,canvas.height);bitmap.close();faceSourceCanvas=canvas;
+  let landmarker=await getFaceLandmarker(),result;
+  try{result=landmarker.detect(canvas)}catch(error){if(!usingGpu)throw error;usingGpu=false;faceLandmarkerPromise=createFaceLandmarker(false);landmarker=await faceLandmarkerPromise;result=landmarker.detect(canvas)}
+  const raw=result.faceLandmarks?.[0];if(!raw||raw.length<100)throw new Error('No face found. Try a clear, front-facing photo with the whole face visible.');
+  const landmarks=raw.map(lm=>({x:lm.x,y:lm.y,z:lm.z??0}));
+  const categories=result.faceBlendshapes?.[0]?.categories??[];
+  faceStatus.textContent='Building standard and high-detail 3D faces…';
+  generatedFaces={standard:window.AvatarAceFaceBuilder.buildFace(landmarks,categories,canvas,'standard'),detail:window.AvatarAceFaceBuilder.buildFace(landmarks,categories,canvas,'detail')};
+  document.querySelector('#faceChoice').value='standard';
+  if(headAnchor&&currentModelPurpose==='body')attachGeneratedFace();
+  else faceStatus.textContent='Face generated. Load the generic male or female body to attach it; the commissioned model remains separate and untouched.';
+ }catch(error){faceStatus.textContent=error?.message||'Face generation failed. Try another photo.'}
+}
+function handleFacePhoto(event){
+ const file=event.target.files?.[0];event.target.value='';if(file)void generateFaceFromPhoto(file);
+}
+document.querySelector('#facePhotoCamera').addEventListener('change',handleFacePhoto);
+document.querySelector('#facePhotoLibrary').addEventListener('change',handleFacePhoto);
+document.querySelector('#faceChoice').addEventListener('change',attachGeneratedFace);
+document.querySelector('#facePreset').addEventListener('change',applyGeneratedFaceExpression);
+document.querySelector('#faceExpression').addEventListener('input',applyGeneratedFaceExpression);
+for(const id of ['faceHeadScale','faceHeadY','faceHeadZ'])document.querySelector('#'+id).addEventListener('input',syncGeneratedFaceFit);
 function loadAnimation(file){const url=URL.createObjectURL(file);animationUrls.push(url);loader.load(url,g=>{if(!avatar){status.textContent='Load a target model first, then import animation clips.';return}const added=[];const rejected=[];for(const sourceClip of g.animations){try{const result=retargetClipToObject(sourceClip,avatar);if(result.clip)added.push({name:sourceClip.name||file.name,clip:result.clip,source:file.name,coverage:result.coverage});else rejected.push((sourceClip.name||file.name)+' ('+Math.round((result.coverage||0)*100)+'% bone coverage)')}catch(error){rejected.push((sourceClip.name||file.name)+' ('+(error?.message||'retarget failed')+')')}}clips.push(...added);updateClips();status.textContent='Retargeted '+added.length+' clip(s) from '+file.name+'.'+(rejected.length?' Skipped '+rejected.length+' incompatible clip(s): '+rejected.slice(0,3).join(', '):'')},undefined,e=>status.textContent='Animation import failed: '+(e?.message||'unknown error'))}
 function playIndex(i,loop='once'){if(!mixer||!clips[i])return;const entry=clips[i];if(activeAction){activeAction.stop();mixer.uncacheAction(activeAction.getClip(),avatar)}activeAction=mixer.clipAction(entry.clip);activeAction.reset();const shouldLoop=loop==='repeat'||entry.loop===true;activeAction.setLoop(shouldLoop?THREE.LoopRepeat:THREE.LoopOnce,shouldLoop?Infinity:1);activeAction.clampWhenFinished=loop!=='repeat';activeAction.play();status.textContent='Playing '+entry.name+' ('+entry.source+')'}
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
@@ -165,13 +250,22 @@ function loadPngSource(file, speaking) {
 sourceMode.addEventListener('change', setAvatarSourceMode);
 pngTuberFile.addEventListener('change', e => loadPngSource(e.target.files?.[0], false));
 pngTuberSpeakingFile.addEventListener('change', e => loadPngSource(e.target.files?.[0], true));
+document.querySelector('#generate2dPng').addEventListener('click',()=>{
+ if(!faceSourceCanvas){document.querySelector('#faceGenerationStatus').textContent='Choose or capture a face photo first.';return}
+ faceSourceCanvas.toBlob(blob=>{
+  if(!blob){document.querySelector('#faceGenerationStatus').textContent='Could not create the 2D PNG image.';return}
+  const file=new File([blob],'generated-face.png',{type:'image/png'});
+  sourceMode.value='2d';loadPngSource(file,false);setAvatarSourceMode();
+  document.querySelector('#faceGenerationStatus').textContent='2D photo avatar created. You can add a speaking image and save it using the existing 2D PNG-Tuber controls.';
+ },'image/png');
+});
 const jawBaseRotations = new WeakMap();
 function applyA2FMessage(payload) {
   if (!payload || typeof payload !== 'object') return;
   const blendshapes = payload.blendshapes && typeof payload.blendshapes === 'object' ? payload.blendshapes : payload;
   const raw = Number(blendshapes.jawOpen ?? blendshapes.mouthOpen ?? blendshapes.JawOpen ?? 0);
   const mouth = Math.max(0, Math.min(1, Number.isFinite(raw) ? raw : 0));
-  const adjustedMouth = Math.max(0, Math.min(1, mouth * tweakControls.getState().morphIntensity));
+  const adjustedMouth = Math.max(0, Math.min(1, mouth * tweakControls.getState().morphIntensity * Number(document.querySelector('#faceExpression').value || 1)));
   pngMouthOpen = adjustedMouth > 0.18;
   if (sourceMode.value === '2d' && pngLayer && pngIdleUrl) {
     pngLayer.src = pngMouthOpen && pngSpeakingUrl ? pngSpeakingUrl : pngIdleUrl;
@@ -182,7 +276,7 @@ function applyA2FMessage(payload) {
       if (!node.isMesh || !node.morphTargetDictionary || !node.morphTargetInfluences) return;
       for (const [name, value] of Object.entries(blendshapes)) {
         const idx = node.morphTargetDictionary[name];
-        if (idx !== undefined && Number.isFinite(Number(value))) node.morphTargetInfluences[idx] = Math.max(0, Math.min(1, Number(value) * tweakControls.getState().morphIntensity));
+        if (idx !== undefined && Number.isFinite(Number(value))) node.morphTargetInfluences[idx] = Math.max(0, Math.min(1, Number(value) * tweakControls.getState().morphIntensity * Number(document.querySelector('#faceExpression').value || 1)));
       }
       for (const key of ['jawOpen', 'mouthOpen', 'JawOpen']) {
         const idx = node.morphTargetDictionary[key];
@@ -277,7 +371,7 @@ async function exportCombinedGlb() {
   if (!avatar || !currentModelFile) throw new Error('Load a GLB avatar first.');
   const tweakState = tweakControls.toJSON();
   const hasModelFitTweaks = tweakState.headScale !== 1 || tweakState.headOffsetY !== 0 || tweakState.headOffsetZ !== 0;
-  if (!clips.length && !hasModelFitTweaks) { persistStatus('No imported clips or model-fit changes to export. The existing GLB will be uploaded unchanged.'); return currentModelFile; }
+  if (!clips.length && !hasModelFitTweaks && !hasGeneratedFace) { persistStatus('No generated face, imported clips, or model-fit changes to export. The existing GLB will be uploaded unchanged.'); return currentModelFile; }
   const {GLTFExporter} = await import('three/addons/exporters/GLTFExporter.js');
   const exporter = new GLTFExporter();
   const binary = await new Promise((resolve, reject) => exporter.parse(
@@ -350,7 +444,7 @@ rig3dButton.addEventListener('click', async () => {
     if (!/\.glb$/i.test(currentModelFile.name)) throw new Error('Save the model as GLB first; a standalone .gltf may reference files that were not uploaded.');
     if (currentModelFile.size > 50 * 1024 * 1024) throw new Error('The GLB must be no larger than 50 MiB for shared-media upload.');
     const tweakState = tweakControls.toJSON();
-    if (clips.some(entry => entry.source !== 'embedded') || tweakState.headScale !== 1 || tweakState.headOffsetY !== 0 || tweakState.headOffsetZ !== 0) await exportCombinedGlb();
+    if (hasGeneratedFace || clips.some(entry => entry.source !== 'embedded') || tweakState.headScale !== 1 || tweakState.headOffsetY !== 0 || tweakState.headOffsetZ !== 0) await exportCombinedGlb();
     const current = await tenantControl();
     await controlApi('/appearance',{audio2FaceUrl:a2fUrl.value.trim(),morphIntensity:tweakState.morphIntensity});
     persistStatus('Uploading the existing GLB privately…');

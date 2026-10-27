@@ -5,6 +5,7 @@ on:
       - feat/streamweaver-generic-body-and-finished-viewer
     paths:
       - apps/streamweaver/src/avatar-studio.ts
+      - scripts/test-avatar-studio-inline.mjs
       - tests/avatar-studio.test.mjs
       - tests/avatar-studio-integration.test.mjs
       - .github/workflows/avatar-studio-pr-check.yml
@@ -31,3 +32,5 @@ jobs:
         run: npm run build
       - name: Run Avatar Studio regression tests
         run: node --test tests/avatar-studio.test.mjs tests/avatar-studio-integration.test.mjs
+      - name: Check rendered browser script syntax
+        run: node scripts/test-avatar-studio-inline.mjs
