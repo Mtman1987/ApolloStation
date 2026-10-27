@@ -1,16 +1,6 @@
 name: Overlay Bay build validation
 
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - "apps/spacemountain/src/overlay-bay-ui.ts"
-      - "apps/spacemountain/**"
-      - "packages/**"
-      - "tests/**"
-      - "package.json"
-      - "package-lock.json"
-      - ".github/workflows/overlay-bay-build-validation.yml"
   workflow_dispatch:
 
 permissions:
