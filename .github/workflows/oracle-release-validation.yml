@@ -84,6 +84,21 @@ jobs:
           ffprobe -version
       - name: Build all workspaces
         run: npm run build
+      - name: Restore cached HearMeOut worker dependencies
+        if: matrix.shard == 4
+        id: worker-deps-cache
+        uses: actions/cache@v6
+        with:
+          path: apps/hearmeout/legacy-worker/node_modules
+          key: hmo-worker-node22-${{ hashFiles('apps/hearmeout/legacy-worker/package-lock.json') }}
+      - name: Install locked HearMeOut worker dependencies on cache miss
+        if: matrix.shard == 4 && steps.worker-deps-cache.outputs.cache-hit != 'true'
+        run: npm ci --prefix apps/hearmeout/legacy-worker
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: "1"
+      - name: Run HearMeOut worker regression tests in shard 4
+        if: matrix.shard == 4
+        run: npm test --prefix apps/hearmeout/legacy-worker
       - name: Run all assigned tests and record pass/fail
         shell: bash
         run: |

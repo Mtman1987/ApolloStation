@@ -1,15 +1,8 @@
 name: HearMeOut legacy worker validation
 
 on:
-  pull_request:
-    paths:
-      - "apps/hearmeout/legacy-worker/**"
-      - ".github/workflows/hearmeout-legacy-worker-validation.yml"
-  push:
-    branches: [main]
-    paths:
-      - "apps/hearmeout/legacy-worker/**"
-      - ".github/workflows/hearmeout-legacy-worker-validation.yml"
+  # Manual diagnostic only. The regression test is part of the canonical
+  # four-shard release suite and must not be a separate PR/merge check.
   workflow_dispatch:
 
 permissions:
@@ -26,9 +19,7 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: apps/hearmeout/legacy-worker/package-lock.json
-      - name: Install worker dependencies (cached)
-        run: npm ci --prefix apps/hearmeout/legacy-worker
+      - name: Run worker regression tests
+        run: npm ci --prefix apps/hearmeout/legacy-worker && npm test --prefix apps/hearmeout/legacy-worker
         env:
           PUPPETEER_SKIP_DOWNLOAD: "1"
-      - name: Run worker regression tests
-        run: npm test --prefix apps/hearmeout/legacy-worker
