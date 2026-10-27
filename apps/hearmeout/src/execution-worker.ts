@@ -1,4 +1,5 @@
-import {HearMeOutMovieProvider,HEARMEOUT_MOVIE_PROVIDER_ORIGIN} from "./movie-provider.js";
+import {HearMeOutMovieProvider} from "./movie-provider.js";
+import {configuredDonorOrigin} from "./donor-origin.js";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -67,7 +68,7 @@ export function validateHearMeOutWorkerEnvironment(environment: NodeJS.ProcessEn
   const config = loadHearMeOutRuntimeConfig(configPath);
   const preparedMedia = preparedHearMeOutEnvironment(environment);
   const movieProviderOrigin=environment.HEARMEOUT_MOVIE_PROVIDER_ORIGIN;
-  if(movieProviderOrigin && movieProviderOrigin!==HEARMEOUT_MOVIE_PROVIDER_ORIGIN)throw Error("Invalid HearMeOut movie provider binding");
+  if(movieProviderOrigin && movieProviderOrigin!==configuredDonorOrigin(environment))throw Error("Invalid HearMeOut movie provider binding");
   if (preparedMedia && (config.tenants.length !== 1 || config.tenants[0]?.tenantId !== preparedMedia.tenantId)) throw new Error('Prepared media must retain its existing owner tenant');
   if (config.capabilities.includes("hearmeout.youtube.resolve") && !ytDlpBinary) throw new Error("hearmeout.youtube.resolve requires HEARMEOUT_YT_DLP_BINARY");
   if (runtimeMode === "sandbox") {
