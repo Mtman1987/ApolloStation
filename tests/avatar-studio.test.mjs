@@ -46,6 +46,7 @@ test("Avatar Studio has a retargetable shared motion library and labels GIFs hon
   assert.match(studio, /id="cohostAction"/);
   assert.match(studio, /id="clipCategory"/);
   assert.match(studio, /function playCohostAction/);
+  for (const preset of ['laugh','cheer','love','sad','angry','thinking']) assert.match(studio, new RegExp('value="'+preset+'"'));
   assert.match(studio, /idle-sitting/);
   assert.match(studio, /UAL1_Standard/);
   assert.match(studio, /CC0/);
