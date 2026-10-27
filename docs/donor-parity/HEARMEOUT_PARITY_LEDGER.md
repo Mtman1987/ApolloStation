@@ -126,3 +126,19 @@ Use this as a route coverage checklist, not a raw endpoint-count target. Several
 2. Turn each remaining difference into a child ledger row with exact donor file/route, Apollo module or “missing,” and a decision.
 3. Start with P01 room player/media foundation, then provider search/resolution, worker/media delivery, Watch catalog, and Activity/control integrations as dependencies require. Do not blindly follow file order.
 4. Keep this draft PR as the audit record until the rows are concrete enough to review. Do not merge a checklist merely to make the ledger look complete; feature implementation and parity evidence are the real completion criteria.
+
+
+## Current-main revalidation findings (2026-10-27)
+
+The September audit is a starting point, not a current status report. Today's Apollo source has several capabilities that older rows called missing:
+
+- **P01 room player — implemented in source, behavior still needs verification.** `web-server-v3.ts` calls `window.HearMeOutMedia?.mount(wrap,p,lane)`; `room-media-browser.ts` creates native audio/video players per lane, polls room state, syncs sources/position and wires controls. Acceptance must prove two-browser sync, late-join seeking, pause/seek/next, and idempotent advancement. Do not rebuild this solely based on the older audit.
+- **P05 music search/resolution — implemented in source, provider parity needs verification.** Room requests use `SpmtHearMeOutSuiteMediaResolver` and execution jobs for search/YouTube resolution. Compare current donor ranking, offline/cache behavior, caller wiring and failure semantics.
+- **P06 favorites/library — implemented in source, persistence/ownership needs verification.** Apollo has music library and favorites add/remove/queue routes, core storage, and UI for favorites/recent/most-played. Test user scoping, restart durability, and owned media vs disposable cache.
+- **P07 auto-radio — implemented in source, current donor parity needs verification.** Apollo has `auto-radio.ts`, room-scoped radio routes/history and `tests/hearmeout-auto-radio.test.mjs`; include the previously merged radio song-family recovery.
+- **P08 Watch catalog — confirmed donor dependency, not parity-complete.** Apollo's `movie-provider.ts` still hardcodes `https://hearmeout-main.fly.dev` for catalog search and HLS; `execution-worker.ts` validates that origin. Port the provider catalog and required series/episode selection into Apollo, plus an Apollo-owned authenticated Xtream source/HLS path. Never expose provider credentials or signed source URLs to browsers.
+- **P09 worker — source preserved, integration/cutover incomplete.** The donor's legacy worker runtime is now copied under `apps/hearmeout/legacy-worker/` on this branch, including package lock, Dockerfile, scripts and regression tests. The Dockerfile uses the new directory layout, a test command and cached-dependency workflow were added. The worker is not deployed from Apollo yet; callback contracts, secrets, process groups and persistent volumes still need adaptation. The copied worker's donor URL fallback was removed; it requires explicit `APP_URL`.
+- **P10 Activity — implemented in part, end-to-end verify.** Apollo has Activity handshake/room/web, player/broadcast-window code and interaction tests. Verify tenant binding, request/accept/control, provider playback, shared room state and duplicate handling.
+- **P02/P03/P04/P11–P14 — partial/verify.** Current source has RTC/moderation, screen-broadcast, voice queue tests, persona jobs and surface integration. Exact donor behavior and production callers still need comparison; helper modules and type definitions do not establish parity.
+
+The current donor has **106** API `route.ts` handlers. See `HEARMEOUT_ROUTE_COVERAGE.md` for the route-by-route checklist and `HEARMEOUT_WORKER_COVERAGE.md` for worker routes/callbacks. These are classification aids, not completion evidence.
