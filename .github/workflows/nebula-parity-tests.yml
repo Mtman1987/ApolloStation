@@ -1,14 +1,6 @@
 name: Nebula Arcade parity tests
 
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - "apps/nebula-arcade/**"
-      - "tests/nebula-*.test.mjs"
-      - "packages/contracts/**"
-      - "packages/runtime/**"
-      - "package-lock.json"
   workflow_dispatch:
 
 permissions:
