@@ -1,4 +1,5 @@
 export * from "./overlay-widgets.js";
+export * from "./spacemountain-golive.js";
 import { assertAppModuleManifestV1, createAppCatalogRegistrationV1, type AppCatalogRegistrationV1, type AppModuleManifestV1 } from "@spmt/contracts";
 import { SpmtClient } from "@spmt/sdk";
 import { DISCORD_ANNOUNCEMENT_REQUESTED } from "@spmt/discord-stream-hub";
