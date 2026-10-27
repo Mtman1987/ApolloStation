@@ -392,10 +392,12 @@ function toCatalogItem(stream: XtreamStream, kind: XtreamKind): XtreamCatalogIte
     poster: stream.stream_icon || stream.cover || '',
     playbackUrl: `/activity-provider/xtream/${kind}/${streamId}`,
     overview: kind === 'series' ? 'Xtream SERIES result; starts from the first available episode.' : `Xtream ${kind.toUpperCase()} stream${extension ? ` (${extension})` : ''}.`,
-    metadata: kind === 'series' ? undefined : {
-      provider: 'xtream',
-      ...features,
-    },
+    ...(kind !== 'series' ? {
+      metadata: {
+        provider: 'xtream' as const,
+        ...features,
+      },
+    } : {}),
   };
 }
 
