@@ -74,3 +74,17 @@ test("Avatar Studio offers separate generic male/female bodies and an unchanged 
   assert.match(studio, /if\(!avatar\|\|currentModelPurpose==='finished'\)return/);
   assert.match(studio, /currentModelPurpose!=='finished'/);
 });
+
+test("Avatar Studio generates a photo-based ARKit face on generic bodies and preserves the separate finished-model viewer", () => {
+  for (const id of ["facePhotoCamera", "facePhotoLibrary", "faceChoice", "faceHeadScale", "faceHeadY", "faceHeadZ", "generate2dPng", "faceGenerationStatus"]) {
+    assert.ok(studio.includes('id="' + id + '"'), "missing face-generation control " + id);
+  }
+  assert.match(studio, /face-builder-browser\.js/);
+  assert.match(studio, /FaceLandmarker\.createFromOptions/);
+  assert.match(studio, /AvatarAceFaceBuilder\.buildFace/);
+  assert.match(studio, /ARKIT_BLENDSHAPE_NAMES/);
+  assert.match(studio, /hasGeneratedFace/);
+  assert.match(studio, /if\(currentModelPurpose==='body'\)attachGeneratedFace\(\)/);
+  assert.match(studio, /storage\.googleapis\.com/);
+  assert.match(host, /connect-src[^;]*https:\/\/storage\.googleapis\.com/);
+});
