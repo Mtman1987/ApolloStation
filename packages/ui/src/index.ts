@@ -10,13 +10,17 @@ export interface ProductThemeV1 {
   name: string;
   accent: string;
   accentSecondary: string;
+  accentTertiary: string;
+  background: string;
+  surfaceRgb: string;
+  border: string;
 }
 
 export const PRODUCT_THEME_PRESETS: Readonly<Record<ProductThemeIdV1, ProductThemeV1>> = Object.freeze({
-  "solar-flare": Object.freeze({ id: "solar-flare", name: "Solar", accent: "#f97316", accentSecondary: "#38bdf8" }),
-  "nebula-purple": Object.freeze({ id: "nebula-purple", name: "Nebula", accent: "#a855f7", accentSecondary: "#2dd4bf" }),
-  "oceanic-blue": Object.freeze({ id: "oceanic-blue", name: "Oceanic", accent: "#3b82f6", accentSecondary: "#f59e0b" }),
-  "aurora-green": Object.freeze({ id: "aurora-green", name: "Aurora", accent: "#10b981", accentSecondary: "#fbbf24" }),
+  "solar-flare": Object.freeze({ id: "solar-flare", name: "Solar", accent: "#f97316", accentSecondary: "#38bdf8", accentTertiary: "#f472b6", background: "#100d16", surfaceRgb: "24 19 31", border: "rgba(249,115,22,.28)" }),
+  "nebula-purple": Object.freeze({ id: "nebula-purple", name: "Nebula", accent: "#a855f7", accentSecondary: "#22d3ee", accentTertiary: "#f472b6", background: "#100b1b", surfaceRgb: "25 15 39", border: "rgba(168,85,247,.32)" }),
+  "oceanic-blue": Object.freeze({ id: "oceanic-blue", name: "Oceanic", accent: "#3b82f6", accentSecondary: "#22d3ee", accentTertiary: "#fbbf24", background: "#081322", surfaceRgb: "12 27 47", border: "rgba(59,130,246,.32)" }),
+  "aurora-green": Object.freeze({ id: "aurora-green", name: "Aurora", accent: "#10b981", accentSecondary: "#34d399", accentTertiary: "#fbbf24", background: "#071713", surfaceRgb: "11 31 25", border: "rgba(16,185,129,.32)" }),
 });
 
 export function resolveProductTheme(theme: unknown, customAccent?: unknown, customSecondary?: unknown): ProductThemeV1 {
@@ -69,6 +73,10 @@ export function installProductBackdrop(root: HTMLElement, backdrop: ProductBackd
   root.dataset.spmtCustomBackdrop = backdrop.customImage ? "true" : "false";
   root.style.setProperty("--spmt-accent", backdrop.theme.accent);
   root.style.setProperty("--spmt-accent-secondary", backdrop.theme.accentSecondary);
+  root.style.setProperty("--spmt-accent-tertiary", backdrop.theme.accentTertiary);
+  root.style.setProperty("--spmt-background", backdrop.theme.background);
+  root.style.setProperty("--spmt-surface-rgb", backdrop.theme.surfaceRgb);
+  root.style.setProperty("--spmt-border", backdrop.theme.border);
   root.style.setProperty("--spmt-app-backdrop-image", `url(${JSON.stringify(backdrop.imageUrl)})`);
   root.style.setProperty("--spmt-app-backdrop-position", backdrop.scene.imagePosition ?? "center");
 
@@ -137,6 +145,10 @@ export const PRODUCT_UI_CSS = `
 .spmt-product-surface {
   --spmt-accent: #f97316;
   --spmt-accent-secondary: #38bdf8;
+  --spmt-accent-tertiary: #f472b6;
+  --spmt-background: #100d16;
+  --spmt-surface-rgb: 24 19 31;
+  --spmt-border: rgba(249,115,22,.28);
   --spmt-ink: #f8fafc;
   --spmt-muted: #a8adbb;
   --spmt-glass-opacity: .76;
@@ -144,10 +156,10 @@ export const PRODUCT_UI_CSS = `
   --spmt-depth-2-alpha: calc(var(--spmt-glass-opacity,.76) * .68);
   --spmt-depth-3-alpha: calc(var(--spmt-glass-opacity,.76) * .48);
   --spmt-depth-4-alpha: calc(var(--spmt-glass-opacity,.76) * .32);
-  --spmt-surface-depth-1: color-mix(in srgb,var(--spmt-accent) 4%,rgb(8 10 17 / var(--spmt-depth-1-alpha)));
-  --spmt-surface-depth-2: color-mix(in srgb,var(--spmt-accent) 4%,rgb(8 10 17 / var(--spmt-depth-2-alpha)));
-  --spmt-surface-depth-3: color-mix(in srgb,var(--spmt-accent) 4%,rgb(8 10 17 / var(--spmt-depth-3-alpha)));
-  --spmt-surface-depth-4: color-mix(in srgb,var(--spmt-accent) 4%,rgb(8 10 17 / var(--spmt-depth-4-alpha)));
+  --spmt-surface-depth-1: color-mix(in srgb,var(--spmt-accent) 4%,rgb(var(--spmt-surface-rgb,8 10 17) / var(--spmt-depth-1-alpha)));
+  --spmt-surface-depth-2: color-mix(in srgb,var(--spmt-accent) 4%,rgb(var(--spmt-surface-rgb,8 10 17) / var(--spmt-depth-2-alpha)));
+  --spmt-surface-depth-3: color-mix(in srgb,var(--spmt-accent) 4%,rgb(var(--spmt-surface-rgb,8 10 17) / var(--spmt-depth-3-alpha)));
+  --spmt-surface-depth-4: color-mix(in srgb,var(--spmt-accent) 4%,rgb(var(--spmt-surface-rgb,8 10 17) / var(--spmt-depth-4-alpha)));
   --spmt-panel: var(--spmt-surface-depth-1);
   --spmt-panel-strong: color-mix(in srgb,var(--spmt-accent) 6%,rgb(8 10 17 / min(.94,calc(var(--spmt-glass-opacity,.76) * .98))));
   --spmt-border: rgba(255,255,255,.11);
@@ -162,15 +174,15 @@ export const PRODUCT_UI_CSS = `
   color: var(--spmt-ink);
   position: relative;
   isolation: isolate;
-  background: #050710;
+  background: var(--spmt-background,#050710);
   font-family: Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
   -webkit-font-smoothing: antialiased;
 }
-.spmt-product-backdrop { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; background: #050710; }
+.spmt-product-backdrop { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; background: var(--spmt-background,#050710); }
 .spmt-product-backdrop-image,.spmt-product-backdrop-tint,.spmt-product-backdrop-shade,.spmt-star-layer { position: absolute; inset: 0; }
 .spmt-product-backdrop-image { inset: -2%; background-image: var(--spmt-app-backdrop-image); background-position: var(--spmt-app-backdrop-position,center); background-size: cover; filter: grayscale(1) saturate(0) contrast(1.08) brightness(.84); transform: scale(1.025); }
-.spmt-product-backdrop-tint { background: var(--spmt-accent); opacity: .56; mix-blend-mode: color; }
-.spmt-product-backdrop-shade { background: radial-gradient(circle at 18% 4%,color-mix(in srgb,var(--spmt-accent) 24%,transparent),transparent 42%),radial-gradient(circle at 84% 18%,color-mix(in srgb,var(--spmt-accent-secondary) 12%,transparent),transparent 34%),linear-gradient(rgba(3,4,8,.14),rgba(3,4,8,.58)); }
+.spmt-product-backdrop-tint { background: linear-gradient(128deg,var(--spmt-accent) 0%,var(--spmt-accent-secondary) 54%,var(--spmt-accent-tertiary) 100%); opacity: .66; mix-blend-mode: color; }
+.spmt-product-backdrop-shade { background: radial-gradient(circle at 18% 4%,color-mix(in srgb,var(--spmt-accent) 34%,transparent),transparent 42%),radial-gradient(circle at 84% 18%,color-mix(in srgb,var(--spmt-accent-secondary) 22%,transparent),transparent 34%),radial-gradient(circle at 72% 82%,color-mix(in srgb,var(--spmt-accent-tertiary) 15%,transparent),transparent 36%),linear-gradient(rgba(3,4,8,.14),rgba(3,4,8,.58)); }
 .spmt-star-layer { overflow: hidden; opacity: var(--spmt-stars,.82); }
 .spmt-star-layer i { position: absolute; left: 0; top: 0; display: block; background: transparent; will-change: transform; }
 .spmt-star-layer i:nth-child(1) { width: 1px; height: 1px; box-shadow: ${PRODUCT_STAR_FIELDS[0]!.shadow}; animation: spmt-stars-up 200s linear infinite; }
