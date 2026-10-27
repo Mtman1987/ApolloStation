@@ -74,3 +74,55 @@ HearMeOut parity is complete only when all donor capabilities are classified, ev
 4. Discord Stream Hub — respect the established ownership boundary: `DiscordStreamHub/clip-worker` is the worker parity source; Apollo's `apps/discord-stream-hub` is the integrated app surface.
 5. The `.live` projects — audit each donor against its canonical Apollo app, and preserve `studio` as the SPMT documentation/operations archive rather than treating it as a production app.
 6. Final ecosystem-wide parity audit, then archive/delete donor repositories only after verified parity and retained migration/audit records.
+
+
+## Reuse of existing approved HearMeOut audit (important)
+
+Do not redo the old feature-by-feature review from scratch. Apollo already contains a more detailed approved review at [`docs/donor-audits/FEATURE_PARITY_REVIEW_2026-09-12.md`](../donor-audits/FEATURE_PARITY_REVIEW_2026-09-12.md). It records 58 live-capability review rows and 33 HMO/DSH work packages, including the HearMeOut work packages P01–P14. Treat those findings as the starting hypothesis and evidence trail; refresh them against today's donor `main` and Apollo `main` before declaring anything still missing or now complete.
+
+### Previously identified HearMeOut gaps to re-check first
+
+The existing review names these concrete behaviors. They should become child ledger items, not be lost inside broad domains:
+
+| Child item | Previously identified behavior | Existing work package | Re-check target |
+|---|---|---|---|
+| HMO-003.01 | Owner moderation: unban, enforced server mute/unmute, moving participants between rooms | P02 | Compare current donor moderation routes/UI with Apollo RTC membership controls |
+| HMO-003.02 | Voice waiting queue, invitations, admission/removal workflow | P03 | Confirm donor's queue/invite flow and Apollo's production caller/UI |
+| HMO-007.01 | Room screen capture/share and participant viewing | P04 | Confirm actual capture and RTC video path, not just grant types |
+| HMO-003.03 | Real synchronized room audio/video player with seek, next, mute, volume and queue controls | P01 | Verify the main room mounts a real player; playback labels/state alone are not parity |
+| HMO-004.01 | Search by title/artist/YouTube URL, resolve playable source, and enqueue it | P05 | Follow donor provider search → resolver → worker → player path end-to-end |
+| HMO-005.01 | Saved favorites plus recent/most-played history | P06 | Verify durable persistence and user-visible add/list/remove controls; cache entries do not equal favorites |
+| HMO-005.02 | Auto-radio lifecycle, recommendation history, and choose-next behavior | P07 | Include the later radio song-family recovery already merged into Apollo; verify current donor behavior against it |
+| HMO-008.01 | Watch catalog for movies/live channels/series/episodes, provider picker, recommendation acceptance and series progression | P08 | Include donor's current catalog routes and the closed PR #224 Xtream catalog branch as evidence only |
+| HMO-008.02 | Media preparation and delivery: HLS, probing, audio tracks, direct downloads/uploads, bounded caches | P09 | Trace real consumers and worker/server wiring; helper modules alone do not establish parity |
+| HMO-002.01 | Discord Activity shares canonical room/watch state and supports the same request/control path | P10 | Verify Activity launch, room/session binding, provider playback, request and control actions together |
+| HMO-006.01 | Persona, wake settings, local Companion input, and speech/TTS lifecycle | P11–P12 | Verify end-user configuration, producer/consumer wiring, permissions and audio routing |
+| HMO-006.02 | Commlink room context and Overlay Bay widgets | P13–P14 | Confirm integration contracts and rendered/user-observable behavior |
+
+**Important baseline warning:** the prior review froze donor `hearmeout-main` at commit `e89b266058d4aacbbb54298e2fa6ac7de35607f0`, while today's inventory reads donor `main`. The current branch has moved since that frozen review. Reconcile the changed donor files and newly added routes against these P01–P14 rows before implementing; don't assume the September findings describe all current functionality.
+
+### Current donor API family inventory
+
+The current donor tree has 106 API `route.ts` files. First-level counts from the current tree:
+
+- Watch: 18
+- Discord: 12
+- Authentication: 8
+- Internal: 5
+- Spotlight media: 5
+- Lounge media: 4
+- Music: 4
+- Twitch: 4
+- Voice: 4
+- YouTube audio: 3
+- Activity and bots: 4 combined at their top-level route groups, plus separate activity-room routes
+- Remaining route families include Xtream/YouTube provider playback, LiveKit health/token, room administration/expiry, persona voice, presence, health/system, worker-media and other single-route groups.
+
+Use this as a route coverage checklist, not a raw endpoint-count target. Several donor routes are aliases, compatibility wrappers, diagnostics, experimental provider adapters, or legacy paths; classify each as keep/adapt/alias/deprecate/remove-later based on callers and behavior. The donor's own `docs/HEARMEOUT_MEDIA_ROUTE_INVENTORY.md` already documents canonical watch-session APIs and legacy aliases and should be consulted before mapping routes.
+
+### Immediate next actions
+
+1. Reconcile P01–P14 with current donor `main`, current Apollo `main`, and the latest test tree.
+2. Turn each remaining difference into a child ledger row with exact donor file/route, Apollo module or “missing,” and a decision.
+3. Start with P01 room player/media foundation, then provider search/resolution, worker/media delivery, Watch catalog, and Activity/control integrations as dependencies require. Do not blindly follow file order.
+4. Keep this draft PR as the audit record until the rows are concrete enough to review. Do not merge a checklist merely to make the ledger look complete; feature implementation and parity evidence are the real completion criteria.
