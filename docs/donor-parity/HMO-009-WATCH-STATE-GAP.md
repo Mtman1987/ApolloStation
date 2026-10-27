@@ -1,3 +1,4 @@
+
 # HMO-009.01 — Durable Watch request state (child of HMO-009, linked from P08)
 
 Status: **OPEN — missing in Apollo.** Recorded from donor `main` `8401114` and Apollo `main` `12c4121`.
@@ -7,4 +8,6 @@ Status: **OPEN — missing in Apollo.** Recorded from donor `main` `8401114` and
 - **Apollo source:** missing. Movie playback sessions persist in `hmo_media_sessions` (`apps/hearmeout/src/room-media-core.ts`). Nothing in Apollo stores pending recommendations or series progress. `apps/hearmeout/src/xtream-provider.ts` accepts a `getProgress` callback, but no implementation is wired in.
 - **Difference:** a restart drops pending recommendations and series resume points.
 - **Decision:** port. Use a STRICT SQLite table following the `room-assistant-jobs.ts` pattern. Ship it together with its P08 consumer, because a store without a consumer is not parity. Add restart coverage in `tests/hearmeout-watch-state-restart.test.mjs`.
-- **Verification:** pending. Not yet implemented.
+- **Apollo change (store):** `apps/hearmeout/src/watch-state.ts` (`HearMeOutWatchStateStore`) adds STRICT SQLite tables `hmo_watch_recommendations` and `hmo_watch_series_progress`, scoped by tenant and user, with atomic take-on-accept. It rejects playback URL, credential and malformed fields. Restart coverage is in `tests/hearmeout-watch-state-restart.test.mjs`.
+- **Still open:** no runtime caller yet. Apollo has no pending-recommendation flow (the Internet Archive fallback is not ported), and `findXtreamSeriesEpisode` / `getNextXtreamSeriesEpisode` in `xtream-provider.ts` have no callers. HMO-009.01 is not parity until the P08 request, accept and next-episode path calls this store.
+- **Verification:** store plus restart test pending Oracle CI. Consumer pending.
