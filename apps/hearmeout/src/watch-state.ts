@@ -1,3 +1,4 @@
+
 import {DatabaseSync} from 'node:sqlite';
 
 // Durable Watch request state ported from the donor's watch-request-service
@@ -26,7 +27,7 @@ export type HearMeOutPendingRecommendationV1 = {
 export type HearMeOutWatchStateScope = { tenantId: string; userId: string };
 
 const idPattern = /^[A-Za-z0-9_:.-]{1,200}$/;
-const forbiddenKeys = ['playbackurl', 'url', 'token', 'credential', 'authorization', 'password', 'secret'];
+const forbiddenKeys = ['playbackUrl', 'url', 'token', 'credential', 'authorization', 'password', 'secret'];
 const kinds = new Set(['movie', 'series', 'episode', 'music', 'live']);
 
 function cleanId(value: unknown, label: string): string {
@@ -74,11 +75,12 @@ export class HearMeOutWatchStateStore {
   setRecommendation(scope: HearMeOutWatchStateScope, sessionId: string, input: Omit<HearMeOutPendingRecommendationV1, 'savedAt'> & { savedAt?: number }) {
     rejectSecrets(input);
     const sid = cleanId(sessionId, 'session');
-    if (!kinds.has(input.kind)) throw Error('Invalid recommendation kind');
+    const kind = input.kind;
+    if (!kinds.has(kind)) throw Error('Invalid recommendation kind');
     const item: HearMeOutPendingRecommendationV1 = {
       itemId: cleanId(input.itemId, 'recommendation item'),
       title: cleanText(input.title, 'recommendation title', 300),
-      kind: input.kind,
+      kind,
       ...(input.year === undefined ? {} : { year: cleanInteger(input.year, 'recommendation year') }),
       savedAt: input.savedAt ?? Date.now(),
     };
