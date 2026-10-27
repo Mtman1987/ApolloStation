@@ -1,12 +1,7 @@
-name: HearMeOut legacy worker validation
+name: HearMeOut legacy worker pre-merge validation
 
 on:
   pull_request:
-    paths:
-      - "apps/hearmeout/legacy-worker/**"
-      - ".github/workflows/hearmeout-legacy-worker-validation.yml"
-  push:
-    branches: [main]
     paths:
       - "apps/hearmeout/legacy-worker/**"
       - ".github/workflows/hearmeout-legacy-worker-validation.yml"
