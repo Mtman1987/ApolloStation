@@ -57,7 +57,9 @@ export interface HearMeOutVoiceQueueEntryV1 {
 
 export interface HearMeOutRadioV1 {
   enabled: boolean; seed: string; revision: number; principal: HearMeOutPrincipalV1;
-  history: Array<{ itemId: string; title: string; selectedAt: string }>; error?: string;
+  history: Array<{ itemId: string; title: string; artist?: string; selectedAt: string }>;
+  blockedTitle?: { signature: string; remaining: number };
+  error?: string;
 }
 
 export interface HearMeOutMediaItemV1 {
@@ -97,6 +99,21 @@ export interface HearMeOutMediaSessionV1 {
 }
 
 export type HearMeOutControlActionV1 = "play" | "pause" | "seek" | "mute" | "unmute" | "volume" | "next" | "jump" | "clear";
+
+/** Normalize alternate uploads of the same song to one radio family. */
+export function radioSongSignature(title: unknown, artist: unknown = ""): string {
+  let value = String(title ?? "").toLowerCase()
+    .replace(/\b(?:official\s+)?(?:music\s+)?video\b|\bofficial\s+audio\b|\blyrics?\b|\blive\b|\bremaster(?:ed)?\b|\bcover\b|\bkaraoke\b|\bacoustic\b|\b(?:radio|album|single)\s+version\b|\b(?:remix|edit|mix)\b/gi, " ")
+    .replace(/\b(?:at|in|from)\s+[a-z0-9][a-z0-9\s.'’-]{1,60}$/gi, " ")
+    .replace(/\b(?:19|20)\d{2}\b/g, " ")
+    .replace(/\([^)]*\)|\[[^\]]*\]|\{[^}]*\}/g, " ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const artistText = String(artist ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
+  if (artistText && value.includes(artistText)) value = value.split(artistText).join(" ").replace(/\s+/g, " ").trim();
+  return value;
+}
 
 export class SqliteHearMeOutRoomMediaRuntime {
   private readonly db: DatabaseSync;
@@ -514,7 +531,7 @@ export class SqliteHearMeOutRoomMediaRuntime {
           session.current = session.queue.shift() ?? null; advanced = true;
           if (session.current && session.lane === "music") this.recordMusicStart(session, new Date(Date.parse(at) - elapsed * 1000).toISOString());
         }
-        if (advanced) { session.playback = { ...session.playback, status: session.current ? "playing" : "idle", position: session.current ? elapsed : 0, updatedAt: at }; session.revision++; this.writeSession(session); changed++; }
+        if (advanced) { session.playback = { ...session.playback, status: session.current ? "playing" : "idle", position: session.current ? elapsed : 0, updatedAt: at }; session.revision++; this.writeSession(session); if (session.current && session.lane === "music") this.recordRadioStart(session); changed++; }
       }
       return changed;
     });
@@ -528,7 +545,7 @@ export class SqliteHearMeOutRoomMediaRuntime {
       if (!session || session.current?.requestId !== requestId || session.playback.status !== "playing") return false;
       session.current = session.queue.shift() ?? null;
       session.playback = { ...session.playback, status: session.current ? "playing" : "idle", position: 0, updatedAt: at };
-      session.revision++; this.writeSession(session); if (session.lane === "music") this.recordMusicStart(session, at); return true;
+      session.revision++; this.writeSession(session); if (session.lane === "music") { this.recordMusicStart(session, at); this.recordRadioStart(session); } return true;
     });
   }
 
@@ -536,7 +553,7 @@ export class SqliteHearMeOutRoomMediaRuntime {
   configureRadio(principal:HearMeOutPrincipalV1,roomId:string,enabled:boolean,seed:string,now?:string){
     assertPrincipal(principal);const room=this.requireRoom(principal.tenantId,roomId,validNow(now));this.requireMember(principal.tenantId,roomId,principal.userId);if(!this.canManage(principal,room))throw Error('Only the room host or an admin can change auto-radio');
     const query=String(seed).trim();if(enabled&&(!query||query.length>300))throw Error('Choose a song, artist or style for auto-radio');
-    const prior=this.radio(principal.tenantId,roomId),state:HearMeOutRadioV1={enabled,seed:query||prior?.seed||'',revision:(prior?.revision??0)+1,principal:structuredClone(principal),history:prior?.history??[]};
+    const prior=this.radio(principal.tenantId,roomId),state:HearMeOutRadioV1={enabled,seed:query||prior?.seed||'',revision:(prior?.revision??0)+1,principal:structuredClone(principal),history:prior?.history??[],...(prior?.blockedTitle?{blockedTitle:prior.blockedTitle}:{})};
     this.db.prepare('INSERT INTO hmo_room_radio(tenant_id,room_id,body) VALUES(?,?,?) ON CONFLICT(tenant_id,room_id) DO UPDATE SET body=excluded.body,lease_owner=NULL,lease_until=NULL,next_attempt_at=NULL').run(principal.tenantId,roomId,JSON.stringify(state));return state;
   }
   radioRooms(){return this.db.prepare('SELECT tenant_id,room_id,body FROM hmo_room_radio').all().map(row=>({tenantId:String(row.tenant_id),roomId:String(row.room_id),state:JSON.parse(String(row.body)) as HearMeOutRadioV1})).filter(item=>item.state.enabled);}
@@ -544,16 +561,18 @@ export class SqliteHearMeOutRoomMediaRuntime {
   completeRadio(tenant:string,roomId:string,owner:string,radioRevision:number,sessionRevision:number,item:HearMeOutMediaItemV1|undefined,error:string|undefined,now:string){return this.transaction(()=>{
     const row=this.db.prepare('SELECT lease_owner FROM hmo_room_radio WHERE tenant_id=? AND room_id=?').get(tenant,roomId),state=this.radio(tenant,roomId);
     if(!row||row.lease_owner!==owner||!state||state.revision!==radioRevision||!state.enabled)return false;
+    let nextState=state;
     let added=false;
     if(item&&this.getRoom(tenant,roomId,now)){
       const session=this.getSession(tenant,roomId,'music',now);
       if(session.revision===sessionRevision&&!session.queue.length){
         this.enqueue(state.principal,{roomId,lane:'music',item:{...item,metadata:{...item.metadata,autoRadio:true}},operationId:'radio:'+owner,now});
-        state.history=[...state.history,{itemId:item.itemId,title:item.title,selectedAt:now}].slice(-50);delete state.error;added=true;
+        nextState=this.radio(tenant,roomId)??state;
+        nextState.history=[...state.history,{itemId:item.itemId,title:item.title,...(typeof item.metadata?.artist==='string'?{artist:item.metadata.artist}:{}),selectedAt:now}].slice(-50);delete nextState.error;added=true;
       }
     }
-    if(error)state.error=error.slice(0,500);
-    this.db.prepare('UPDATE hmo_room_radio SET body=?,lease_owner=NULL,lease_until=NULL,next_attempt_at=? WHERE tenant_id=? AND room_id=?').run(JSON.stringify(state),new Date(Date.parse(now)+(error?30000:5000)).toISOString(),tenant,roomId);
+    if(error)nextState.error=error.slice(0,500);
+    this.db.prepare('UPDATE hmo_room_radio SET body=?,lease_owner=NULL,lease_until=NULL,next_attempt_at=? WHERE tenant_id=? AND room_id=?').run(JSON.stringify(nextState),new Date(Date.parse(now)+(error?30000:5000)).toISOString(),tenant,roomId);
     return added;
   });}
 
@@ -606,7 +625,7 @@ export class SqliteHearMeOutRoomMediaRuntime {
     session.revision += 1;
     this.transaction(() => {
       this.writeSession(session);
-      if (input.lane === 'music' && session.current?.requestId === request.requestId) this.recordMusicStart(session, at);
+      if (input.lane === 'music' && session.current?.requestId === request.requestId) { this.recordMusicStart(session, at); this.recordRadioStart(session); }
       this.remember(principal.tenantId, input.operationId, "enqueue", session,signature);
     });
     return structuredClone(session);
@@ -626,6 +645,7 @@ export class SqliteHearMeOutRoomMediaRuntime {
     const replay=this.replay<HearMeOutMediaSessionV1>(principal.tenantId,input.operationId,"control",signature);
     if(replay)return replay;
     const session = this.readSession(principal.tenantId, room.roomId, input.lane) ?? emptySession(principal.tenantId, room.roomId, input.lane, at);
+    const previousRequestId = session.current?.requestId;
     this.assertCanControl(principal, room, session, input.action);
 
     const effectivePosition = playbackPosition(session, at);
@@ -637,6 +657,7 @@ export class SqliteHearMeOutRoomMediaRuntime {
       session.playback = { ...session.playback, position: finiteNonNegative(input.position, "position"), updatedAt: at };
     } else if (input.action === "next") {
       if (!input.expectedRequestId || session.current?.requestId === input.expectedRequestId) {
+        if (input.lane === "music" && session.current && !session.current.item.metadata?.autoRadio) this.blockRadioTitle(principal.tenantId, room.roomId, session.current.item, 12);
         session.current = session.queue.shift() ?? null;
         session.playback = { ...session.playback, status: session.current ? "playing" : "idle", position: 0, updatedAt: at };
       }
@@ -656,7 +677,7 @@ export class SqliteHearMeOutRoomMediaRuntime {
     this.transaction(() => {
       this.writeSession(session);
       this.remember(principal.tenantId, input.operationId, "control", session,signature);
-      if (input.lane === 'music' && session.playback.status === 'playing') this.recordMusicStart(session, at);
+      if (input.lane === 'music' && session.playback.status === 'playing') { this.recordMusicStart(session, at); if (session.current?.requestId !== previousRequestId) this.recordRadioStart(session); }
     });
     return structuredClone(session);
   }
@@ -696,6 +717,28 @@ export class SqliteHearMeOutRoomMediaRuntime {
   private recordMusicStart(session: HearMeOutMediaSessionV1, at: string) {
     const current = session.current; if (!current || current.item.type !== 'music') return;
     this.db.prepare('INSERT INTO hmo_music_history(tenant_id,user_id,request_id,item_id,played_at,body) VALUES(?,?,?,?,?,?) ON CONFLICT(tenant_id,request_id) DO NOTHING').run(session.tenantId, current.requestedBy.userId, current.requestId, musicLibraryId(current.item), at, JSON.stringify(current.item));
+  }
+  private recordRadioStart(session: HearMeOutMediaSessionV1) {
+    const current = session.current; if (!current || current.item.type !== 'music') return;
+    const radio = this.radio(session.tenantId, session.roomId); if (!radio) return;
+    if (current.item.metadata?.autoRadio === true) {
+      if (radio.blockedTitle?.remaining && radio.blockedTitle.remaining > 0) {
+        radio.blockedTitle.remaining = Math.max(0, radio.blockedTitle.remaining - 1);
+        if (!radio.blockedTitle.remaining) delete radio.blockedTitle;
+      }
+    } else {
+      this.blockRadioTitle(session.tenantId, session.roomId, current.item, 5);
+      return;
+    }
+    this.writeRadio(session.tenantId, session.roomId, radio);
+  }
+  private blockRadioTitle(tenantId: string, roomId: string, item: HearMeOutMediaItemV1, remaining: number) {
+    const signature = radioSongSignature(item.title, item.metadata?.artist); if (!signature) return;
+    const radio = this.radio(tenantId, roomId); if (!radio) return;
+    radio.blockedTitle = { signature, remaining }; this.writeRadio(tenantId, roomId, radio);
+  }
+  private writeRadio(tenantId: string, roomId: string, radio: HearMeOutRadioV1) {
+    this.db.prepare('UPDATE hmo_room_radio SET body=? WHERE tenant_id=? AND room_id=?').run(JSON.stringify(radio), tenantId, roomId);
   }
 
   private assertCanControl(principal: HearMeOutPrincipalV1, room: HearMeOutRoomV1, session: HearMeOutMediaSessionV1, action: HearMeOutControlActionV1): void {

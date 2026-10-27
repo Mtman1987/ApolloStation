@@ -27,6 +27,28 @@ test('a second host does not duplicate selection; manual input wins while recomm
   try{const first=new HearMeOutAutoRadio(f.rooms,media,{now:f.now}),other=new HearMeOutAutoRadio(second,media,{now:f.now});const pending=first.tick();await entered;await other.tick();assert.equal(calls,1);f.rooms.enqueue(owner,{roomId:'radio',lane:'music',item:track('manual'),operationId:'manual',now:f.now()});release();await pending;const session=f.rooms.getSession('tenant','radio','music',f.now());assert.equal(session.current.item.itemId,'manual');assert.equal(session.queue.length,0);assert.equal(f.rooms.radio('tenant','radio').history.length,0);}finally{release?.();second.close();f.close();}
 });
 
+test('radio avoids alternate uploads of a recently selected song family',async()=>{
+  const f=fixture(),first={...track('first'),title:'Artist - Song (Official Video)',metadata:{artist:'Artist'}},alternate={...track('alternate'),title:'Song (Live)',metadata:{artist:'Artist'}},different={...track('different'),title:'Different Song',metadata:{artist:'Other'}};
+  const candidates=[first,alternate,different];let calls=0;const media={resolve:async input=>{calls++;return candidates.find(item=>!input.excludeItemIds?.includes(item.itemId))||different;}};
+  try{
+    const worker=new HearMeOutAutoRadio(f.rooms,media,{now:f.now});await worker.tick();f.advance(60000);await worker.tick();
+    const session=f.rooms.getSession('tenant','radio','music',f.now()),radio=f.rooms.radio('tenant','radio');
+    assert.equal(session.current.item.itemId,'different');assert.deepEqual(radio.history.map(item=>item.itemId),['first','different']);assert.equal(calls,3);
+  }finally{f.close();}
+});
+
+test('manual skip blocks the skipped song family from immediate radio replacement',async()=>{
+  const f=fixture(),manual={...track('manual'),title:'Artist - Song (Official Audio)',metadata:{artist:'Artist'}},alternate={...track('alternate'),title:'Song (Remix)',metadata:{artist:'Artist'}},different={...track('different'),title:'Different Song',metadata:{artist:'Other'}};
+  const candidates=[alternate,different];let calls=0;const media={resolve:async input=>{calls++;return candidates.find(item=>!input.excludeItemIds?.includes(item.itemId))||different;}};
+  try{
+    const started=f.rooms.enqueue(owner,{roomId:'radio',lane:'music',item:manual,operationId:'manual',now:f.now()});
+    f.rooms.control(owner,{roomId:'radio',lane:'music',action:'next',expectedRequestId:started.current.requestId,operationId:'skip-manual',now:f.now()});
+    const worker=new HearMeOutAutoRadio(f.rooms,media,{now:f.now});await worker.tick();
+    const session=f.rooms.getSession('tenant','radio','music',f.now()),radio=f.rooms.radio('tenant','radio');
+    assert.equal(session.current.item.itemId,'different');assert.equal(radio.blockedTitle.signature,'song');assert.equal(radio.blockedTitle.remaining,11);assert.equal(calls,2);
+  }finally{f.close();}
+});
+
 test('turning radio off or deleting the room fences late results and cannot recreate state',async()=>{
   for(const remove of [false,true]){const f=fixture();let release,started;const gate=new Promise(resolve=>release=resolve),entered=new Promise(resolve=>started=resolve);try{const worker=new HearMeOutAutoRadio(f.rooms,{resolve:async()=>{started();await gate;return track('late')}},{now:f.now});const pending=worker.tick();await entered;if(remove)f.rooms.deleteRoom(owner,'radio','delete',f.now());else f.rooms.configureRadio(owner,'radio',false,'',f.now());release();await pending;if(remove){assert.equal(f.rooms.getRoom('tenant','radio',f.now()),undefined);assert.equal(f.rooms.radio('tenant','radio'),undefined);}else{assert.equal(f.rooms.radio('tenant','radio').enabled,false);assert.equal(f.rooms.getSession('tenant','radio','music',f.now()).current,null);}}finally{release?.();f.close();}}
 });
