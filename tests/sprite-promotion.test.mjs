@@ -7,40 +7,14 @@ const workflowPath = new URL("../.github/workflows/sprite-promotion.yml", import
 const deployScriptPath = new URL("../scripts/sprites/deploy-sandbox-release.sh", import.meta.url);
 const networkPolicyPath = new URL("../sandbox/sprites/network-policy.json", import.meta.url);
 
-test("release verification runs only after the completed promotion mutation", async () => {
-  const workflow = await readFile(workflowPath, "utf8");
-  const promotion = workflow.indexOf("- name: Promote and verify exact main commit");
-  const verification = workflow.indexOf("- name: Verify promoted entry from inside the private Sprite");
-  assert.ok(promotion >= 0, "the exact-commit promotion step must exist");
-  assert.ok(verification > promotion, "the verification probe must run after promotion");
-  const promotionStep = workflow.slice(promotion, workflow.indexOf("\n      - name:", promotion + 1));
-  assert.match(promotionStep, /start-detached-release\.sh/);
-  assert.doesNotMatch(promotionStep, /verify-hearmeout-broadcast-test/);
-  assert.match(workflow, /--file scripts\/sprites\/verify-hearmeout-broadcast-test\.mjs/);
+test("automatic Sprite promotion remains disabled until an owner reintroduces an approved workflow", async () => {
+  const { existsSync } = await import("node:fs");
+  assert.equal(existsSync(workflowPath), false);
 });
 
-test("Sprite promotion has one protected release target", async () => {
-  const workflow = await readFile(workflowPath, "utf8");
-
-  assert.match(workflow, /^  push:\n    branches: \[main\]/m);
-  assert.doesNotMatch(workflow, /workflow_run|npm run test/);
-  assert.match(workflow, /BUILD_SHA: \$\{\{ github.sha \}\}/);
-  assert.doesNotMatch(workflow, /work\/\*\*/);
-  assert.doesNotMatch(workflow, /sprite-review|DEPLOY_ROLE: review/);
-  assert.match(workflow, /SPRITES_AUTODEPLOY_ENABLED == 'true'/);
-  assert.match(workflow, /environment: sprite-release/);
-  assert.match(workflow, /SPRITE_NAME: web-terminal/);
-  assert.match(workflow, /EXPECTED_SPRITE_ID: sprite-fec8d6f2-49f0-4e28-bc6d-e8a7ae364280/);
-  assert.match(workflow, /SPRITE_PUBLIC_URL: https:\/\/web-terminal-bvesa\.sprites\.app/);
-  assert.match(workflow, /grep -Eiq 'auth.*\(sprite\|public\).*\|\(sprite\|public\).*auth'/);
-  assert.match(workflow, /sprite exec --no-port-forward/);
-  assert.match(workflow, /--file scripts\/sprites\/deploy-sandbox-release\.sh:\/tmp\/deploy-sandbox-release\.sh/);
-  assert.match(workflow, /--file scripts\/sprites\/start-detached-release\.sh:\/tmp\/start-detached-release\.sh/);
-  assert.match(workflow, /timeout-minutes: 25/);
-  assert.match(workflow, /Remote release did not finish within 20 minutes/);
-  assert.doesNotMatch(workflow, /SPMT_LIVE_READ_ACCESS_TOKEN|spmt-live-read-token/);
-  assert.doesNotMatch(workflow, /sprite exec --http-post/);
-  assert.doesNotMatch(workflow, /STREAMWEAVER_MESHY_API_KEY|STREAMWEAVER_KEENTOOLS_API_KEY|streamweaver-meshy-api-key|streamweaver-keentools-api-key/);
+test("Sprite deployment workflow is not implicitly restored by script-level tests", async () => {
+  const { existsSync } = await import("node:fs");
+  assert.equal(existsSync(workflowPath), false);
 });
 
 test("Sprite deployment verifies, tests, switches atomically, rolls back, and launches the current app catalog", async () => {
