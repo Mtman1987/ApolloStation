@@ -59,3 +59,16 @@ test("Avatar Studio saves the chosen 2D or 3D avatar and connects Audio2Face to 
   assert.match(studio, /No photo turnaround or second head reconstruction/);
   assert.match(studio, /single-file GLB/);
 });
+
+test("Avatar Studio offers separate generic male/female bodies and an unchanged commissioned-model viewer", () => {
+  assert.match(studio, /value="male-body"/);
+  assert.match(studio, /value="female-body"/);
+  assert.match(studio, /value="commissioned"/);
+  assert.match(studio, /male-base-mesh-base_male\.glb/);
+  assert.match(studio, /female-base-mesh-base_female\.glb/);
+  assert.match(studio, /Meshy_AI_Neon_Lock_In_Gamer_All_Animations%20\(1\)\.glb/);
+  assert.match(studio, /currentModelPurpose==='finished'/);
+  assert.match(studio, /currentModelPurpose === 'finished'.*view-only/s);
+  assert.match(studio, /if\(!avatar\|\|currentModelPurpose==='finished'\)return/);
+  assert.match(studio, /currentModelPurpose!=='finished'/);
+});

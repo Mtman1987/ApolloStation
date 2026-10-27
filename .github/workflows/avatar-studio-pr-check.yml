@@ -1,0 +1,33 @@
+name: StreamWeaver Avatar Studio validation
+on:
+  push:
+    branches:
+      - feat/streamweaver-generic-body-and-finished-viewer
+    paths:
+      - apps/streamweaver/src/avatar-studio.ts
+      - tests/avatar-studio.test.mjs
+      - tests/avatar-studio-integration.test.mjs
+      - .github/workflows/avatar-studio-pr-check.yml
+  pull_request:
+    paths:
+      - apps/streamweaver/src/avatar-studio.ts
+      - tests/avatar-studio.test.mjs
+      - tests/avatar-studio-integration.test.mjs
+      - .github/workflows/avatar-studio-pr-check.yml
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Build workspace
+        run: npm run build
+      - name: Run Avatar Studio regression tests
+        run: node --test tests/avatar-studio.test.mjs tests/avatar-studio-integration.test.mjs
