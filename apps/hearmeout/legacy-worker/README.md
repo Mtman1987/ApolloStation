@@ -61,7 +61,7 @@ Health check endpoint (no auth required).
 
 ## Environment Variables
 
-- `APP_URL` — Main app URL (defaults to `https://hearmeout-main.fly.dev`)
+- `APP_URL` — Required Apollo-owned HTTPS app origin; no donor fallback is allowed. Persona and room-TTS callbacks fail closed when this is missing or invalid.
 - `PORT` — Server port (defaults to 3002)
 - `NODE_ENV` — Environment (defaults to `development`)
 - `UPSTREAM_EXTRACTOR_URL` — Optional public URL for `local-extractor.js`
