@@ -1,11 +1,12 @@
 import type {HearMeOutMediaItemV1} from './room-media-core.js';
+import {configuredDonorOrigin,HEARMEOUT_DONOR_DEFAULT_ORIGIN} from './donor-origin.js';
 
-export const HEARMEOUT_MOVIE_PROVIDER_ORIGIN='https://hearmeout-main.fly.dev';
+export const HEARMEOUT_MOVIE_PROVIDER_ORIGIN=HEARMEOUT_DONOR_DEFAULT_ORIGIN;
 export interface HearMeOutMovieMatch {itemId:string;title:string;year?:number;overview:string;quality?:string;}
 
 // Reuse the live application's configured IPTV account. Its existing routes
 // retain provider credentials and prepare HLS; Apollo owns selection and playout.
-export function hearMeOutMovieProviderUrl(value:string|URL,origin=HEARMEOUT_MOVIE_PROVIDER_ORIGIN){
+export function hearMeOutMovieProviderUrl(value:string|URL,origin=configuredDonorOrigin()){
   let url:URL;try{url=new URL(value);}catch{return undefined;}
   if(url.origin!==origin||url.username||url.password||url.hash)return undefined;
   if(url.pathname==='/api/watch/search'||url.pathname==='/api/internal/watch/search')return [...url.searchParams].length===1&&url.searchParams.has('q')?url:undefined;
@@ -15,7 +16,7 @@ export function hearMeOutMovieProviderUrl(value:string|URL,origin=HEARMEOUT_MOVI
 }
 
 export class HearMeOutMovieProvider {
-  constructor(private readonly origin=HEARMEOUT_MOVIE_PROVIDER_ORIGIN,private readonly fetchImpl:typeof fetch=fetch,private readonly authorization=''){}
+  constructor(private readonly origin=configuredDonorOrigin(),private readonly fetchImpl:typeof fetch=fetch,private readonly authorization=''){}
   async search(query:string):Promise<HearMeOutMovieMatch[]>{
     if(typeof query!=='string'||query.trim().length<2||query.length>300)throw Error('Enter at least two characters for the movie search');
     const url=new URL(this.authorization?'/api/internal/watch/search':'/api/watch/search',this.origin);url.searchParams.set('q',query.trim());

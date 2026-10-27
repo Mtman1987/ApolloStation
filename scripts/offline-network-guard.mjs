@@ -11,7 +11,9 @@ const hearMeOutPreparedMedia = process.env.HEARMEOUT_PREPARED_MEDIA_ENABLED === 
 const preparedMediaUrl = hearMeOutPreparedMedia
   ? (await import('../apps/hearmeout/dist/prepared-media.js')).preparedHearMeOutUrl : () => false;
 const browserCacheUrl=hearMeOutPreparedMedia?(await import('../apps/hearmeout/dist/prepared-media.js')).hearMeOutBrowserCacheUrl:()=>false;
-const movieProvider=process.env.HEARMEOUT_MOVIE_PROVIDER_ORIGIN==='https://hearmeout-main.fly.dev';
+const donorOriginEnv=process.env.HEARMEOUT_DONOR_ORIGIN||process.env.HEARMEOUT_MOVIE_PROVIDER_ORIGIN||'';
+const donorHost=(()=>{try{const u=new URL(donorOriginEnv);return u.protocol==='https:'&&u.pathname==='/'&&!u.search&&!u.hash&&!u.username&&!u.password?u.hostname:null;}catch{return null;}})();
+const movieProvider=donorHost!==null;
 const movieProviderUrl=movieProvider?(await import('../apps/hearmeout/dist/movie-provider.js')).hearMeOutMovieProviderUrl:()=>false;
 const avatarAiOutbound=process.env.SPMT_AVATAR_AI_OUTBOUND_MODE==="enabled";
 // A controlled HearMeOut release is allowed to execute normal room actions in
@@ -87,7 +89,7 @@ function assertSocketTarget(args, label) {
     if(speechPolicy?.isStellarSpeechHost(first.host??first.hostname??first.servername)&&Number(first.port??443)===443)return;
     if(privateFlowOpenAi&&String(first.host??first.hostname??first.servername)==="api.openai.com"&&Number(first.port??443)===443)return;
     if(avatarAiOutbound&&isAvatarAiHost(first.host??first.hostname??first.servername)&&Number(first.port??443)===443)return;
-    if(movieProvider&&String(first.host??first.hostname??first.servername)==='hearmeout-main.fly.dev'&&Number(first.port??443)===443)return;
+    if(movieProvider&&String(first.host??first.hostname??first.servername)===donorHost&&Number(first.port??443)===443)return;
     assertLoopbackHost(first.host ?? first.hostname ?? "localhost", label);
     return;
   }
@@ -98,7 +100,7 @@ function assertSocketTarget(args, label) {
   if(speechPolicy?.isStellarSpeechHost(host)&&Number(first??443)===443)return;
   if(privateFlowOpenAi&&host==="api.openai.com"&&Number(first??443)===443)return;
   if(avatarAiOutbound&&isAvatarAiHost(host)&&Number(first??443)===443)return;
-  if(movieProvider&&host==='hearmeout-main.fly.dev'&&Number(first??443)===443)return;
+  if(movieProvider&&host===donorHost&&Number(first??443)===443)return;
   assertLoopbackHost(host, label);
 }
 
