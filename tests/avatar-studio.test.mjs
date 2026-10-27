@@ -43,6 +43,10 @@ test("Avatar Studio has a retargetable shared motion library and labels GIFs hon
   assert.match(studio, /retargetClipToObject/);
   assert.match(studio, /for\(const sourceClip of g\.animations\)/);
   assert.match(studio, /Quaternius Universal Animation Library/);
+  assert.match(studio, /id="cohostAction"/);
+  assert.match(studio, /id="clipCategory"/);
+  assert.match(studio, /function playCohostAction/);
+  assert.match(studio, /idle-sitting/);
   assert.match(studio, /UAL1_Standard/);
   assert.match(studio, /CC0/);
   for (const file of ["Formal_Bow.gif","FunnyDancing_01.gif","Chair_Sit_Idle_M.gif","Big_Wave_Hello.gif","Confused_Scratch.gif","Discuss_While_Moving.gif","Dodge_and_Counter.gif","Call_Gesture.gif","Dozing_Elderly.gif"]) {
