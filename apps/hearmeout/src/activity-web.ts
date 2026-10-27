@@ -1,5 +1,6 @@
 import {HEARMEOUT_DISCORD_HANDSHAKE_JS} from "./discord-activity-handshake.js";
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { handleXtreamHlsRequest } from './xtream-hls-route.js';
 import type { SqliteHearMeOutRoomMediaRuntime } from './room-media-core.js';
 import { HEARMEOUT_ACTIVITY_ROOM_ID, HEARMEOUT_GLOBAL_WATCH_SESSION_ID, HEARMEOUT_MUSIC_WATCH_SESSION_ID, isHearMeOutDiscordActivityWatchSession, normalizeHearMeOutWatchSessionAlias } from './activity-contract.js';
 
@@ -25,6 +26,13 @@ export function readHearMeOutActivityState(rooms: SqliteHearMeOutRoomMediaRuntim
 }
 
 export function handleHearMeOutActivityRequest(request: IncomingMessage, response: ServerResponse, url: URL, rooms: SqliteHearMeOutRoomMediaRuntime, binding?: HearMeOutActivityBinding, broadcast?: {configured:boolean}): boolean {
+  // Xtream VOD HLS ladder. The async handler is fired here because this hook is synchronous; errors are answered, never thrown.
+  if (url.pathname.startsWith('/api/watch/xtream/hls/')) {
+    void handleXtreamHlsRequest(request, response, url.pathname)
+      .then(handled => { if (!handled && !response.headersSent) send(response, 404, JSON.stringify({ error: 'not_found' }), 'application/json'); })
+      .catch(() => { if (!response.headersSent) send(response, 500, JSON.stringify({ error: 'xtream_hls_failure' }), 'application/json'); else response.destroy(); });
+    return true;
+  }
   const entry = ['/activity', '/activity-lite'].includes(url.pathname) || (url.pathname === '/' && Boolean(url.searchParams.get('frame_id')));
   const stateMatch = url.pathname.match(/^\/api\/watch\/sessions\/([^/]+)\/state$/);
   const defaults = url.pathname === '/api/watch/activity-default';
