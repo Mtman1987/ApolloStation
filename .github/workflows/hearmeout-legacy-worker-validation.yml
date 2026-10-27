@@ -1,0 +1,34 @@
+name: HearMeOut legacy worker validation
+
+on:
+  pull_request:
+    paths:
+      - "apps/hearmeout/legacy-worker/**"
+      - ".github/workflows/hearmeout-legacy-worker-validation.yml"
+  push:
+    branches: [main]
+    paths:
+      - "apps/hearmeout/legacy-worker/**"
+      - ".github/workflows/hearmeout-legacy-worker-validation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  worker-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/hearmeout/legacy-worker/package-lock.json
+      - name: Install worker dependencies (cached)
+        run: npm ci --prefix apps/hearmeout/legacy-worker
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: "1"
+      - name: Run worker regression tests
+        run: npm test --prefix apps/hearmeout/legacy-worker
