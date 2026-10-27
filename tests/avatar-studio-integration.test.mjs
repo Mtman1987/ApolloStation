@@ -35,3 +35,14 @@ test("3D model adjustment and direct GLB rigging controls are present", () => {
   assert.match(studio, /single-file GLB/);
   assert.match(studio, /No photo turnaround or second head reconstruction/);
 });
+
+
+test("StreamWeaver accepts avatar GLBs and shared media files up to 50 MiB", () => {
+  const client = readFileSync(new URL("../apps/streamweaver/src/web-client.ts", import.meta.url), "utf8");
+  const assets = readFileSync(new URL("../apps/streamweaver/src/assets-client.ts", import.meta.url), "utf8");
+  assert.match(studio, /currentModelFile\.size > 50 \* 1024 \* 1024/);
+  assert.match(client, /file\.size>50\*1024\*1024/);
+  assert.match(assets, /file\.size>50\*1024\*1024/);
+  assert.match(client, /up to 50 MiB/);
+  assert.match(assets, /up to 50 MiB/);
+});
