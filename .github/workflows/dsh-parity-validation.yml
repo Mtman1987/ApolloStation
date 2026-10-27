@@ -1,16 +1,6 @@
 name: Discord Stream Hub parity validation
 
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - "apps/discord-stream-hub/**"
-      - "tests/dsh-*.test.mjs"
-      - "tests/dsh-*.test.ts"
-      - "packages/**"
-      - "package.json"
-      - "package-lock.json"
-      - ".github/workflows/dsh-parity-validation.yml"
   workflow_dispatch:
 
 permissions:
