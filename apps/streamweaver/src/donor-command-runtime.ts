@@ -66,6 +66,9 @@ export class StreamWeaverDonorCommandConsumer {
 
   accepts(message: NormalizedChatMessageV1) {
     if (message.actor.isBot) return false;
+    // !golive is an owner-only native command. Keep it out of the generic
+    // donor command router so one chat message cannot dispatch two handlers.
+    if (message.tenantId === "spacemountainlive" && /^!golive$/i.test(message.text.trim())) return false;
     return this.matchDefinitions(message.text).some((entry) => (this.options.enabled?.(message.tenantId, entry.donorId) ?? true) && !ECONOMY_TRIGGERS.has(canonicalDonorCommandTrigger(entry.trigger)));
   }
 
