@@ -314,7 +314,7 @@ rig3dButton.addEventListener('click', async () => {
     if (sourceMode.value !== '3d') throw new Error('Choose 3D rigged avatar mode first.');
     if (!currentModelFile) throw new Error('Upload a .glb model in the Model library first.');
     if (!/\.glb$/i.test(currentModelFile.name)) throw new Error('Save the model as GLB first; a standalone .gltf may reference files that were not uploaded.');
-    if (currentModelFile.size > 8 * 1024 * 1024) throw new Error('The GLB must be no larger than 8 MiB for shared-media upload.');
+    if (currentModelFile.size > 50 * 1024 * 1024) throw new Error('The GLB must be no larger than 50 MiB for shared-media upload.');
     const tweakState = tweakControls.toJSON();
     if (clips.some(entry => entry.source !== 'embedded') || tweakState.headScale !== 1 || tweakState.headOffsetY !== 0 || tweakState.headOffsetZ !== 0) await exportCombinedGlb();
     const current = await tenantControl();
