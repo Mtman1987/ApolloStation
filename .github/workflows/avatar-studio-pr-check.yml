@@ -10,6 +10,7 @@ on:
       - tests/avatar-studio-integration.test.mjs
       - tests/avatar-wardrobe-assets.test.mjs
       - apps/streamweaver/AVATAR-WARDROBE-ASSETS.md
+      - docs/STREAMWEAVER-AVATAR-STUDIO-INTEGRATION.md
       - .github/workflows/avatar-studio-pr-check.yml
   pull_request:
     paths:

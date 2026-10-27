@@ -26,6 +26,13 @@ test("Audio2Face bridge is optional and applies incoming data to the selected av
   assert.match(studio, /payload\.blendshapes/);
   assert.match(studio, /morphTargetDictionary/);
   assert.match(studio, /does not start NVIDIA Audio2Face itself/);
+  assert.match(studio, /id="a2fTelemetry"/);
+  assert.match(studio, /id="a2fBrowserTtsTest"/);
+  assert.match(studio, /id="a2fBridgeTtsTest"/);
+  assert.match(studio, /type:'tts_test'/);
+  assert.match(studio, /a2fFrameCount\+\+/);
+  assert.match(studio, /Browser TTS visual smoke test/);
+  assert.match(studio, /not Audio2Face inference/);
 });
 
 test("3D model adjustment and direct GLB rigging controls are present", () => {

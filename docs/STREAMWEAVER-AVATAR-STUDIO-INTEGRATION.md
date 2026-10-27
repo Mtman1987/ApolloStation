@@ -7,7 +7,7 @@ The same editor is served from `/avatar-studio` and `/apps/streamweaver/avatar-s
 ## 2D and 3D source selection
 
 - 2D mode uploads an idle PNG/WebP and an optional mouth-open image, publishes them, and saves the resulting URLs to the tenant's StreamWeaver appearance settings.
-- 3D mode accepts a single-file GLB. Imported animation clips can be exported together with the model before upload. The editor retains the existing orbit preview, embedded clip selector, shared motion retargeting, and local trigger-map editor.
+- 3D mode accepts a single-file GLB. Imported animation clips can be exported together with the model before upload. The editor retains the orbit preview, embedded clip selector, shared motion retargeting, and local trigger-map editor. The free Quaternius Universal Animation Library Standard GLB is loaded on demand (CC0) and compatible clips are retargeted onto the selected body skeleton; imported and embedded clips share the same selector. Stream-cohost controls group clips into idle/seated/standing, social reactions, talking/listening and other motions, with one-click standing idle, seated idle, wave, cheer, laugh, thinking and talking actions. These are best-effort name matches: if the loaded pack has no compatible clip for an action, the editor reports that rather than pretending a missing action played. Face expression presets include smile, blink, surprise, laugh, cheer, delight, sadness, anger and thinking; live Audio2Face frames can still drive the face while body motion stays idle.
 - The small model-fit controls adapt the ZIP's `TweakControls` state model. Non-default scale/offset changes are exported with the GLB; facial movement intensity is stored in tenant appearance settings.
 
 ## Direct GLB rigging (no photo round-trip)
@@ -24,7 +24,7 @@ Avatar rigging is deliberately opt-in. Enable both `STREAMWEAVER_AVATAR_RIGGING_
 
 ## Audio2Face bridge
 
-The Studio can save a credential-free `ws://` or `wss://` bridge URL. A separately running bridge must send JSON messages with either a `blendshapes` object keyed by morph-target name or numeric `jawOpen`/`mouthOpen` values from 0 to 1. The existing StreamWeaver browser source consumes those messages for the selected 2D or 3D avatar. This adapter does not start or replace NVIDIA Audio2Face itself.
+The Studio can save a credential-free `ws://` or `wss://` bridge URL. A separately running bridge must send JSON messages with either a `blendshapes` object keyed by morph-target name or numeric `jawOpen`/`mouthOpen` values from 0 to 1. The existing StreamWeaver browser source consumes those messages for the selected 2D or 3D avatar. The Studio reports received frame count and last-frame time to make live output observable. The `Send TTS test to Audio2Face bridge` button sends `{ type: "tts_test", text, requestId }`; the configured bridge must handle that request by synthesizing/obtaining the audio, feeding it to NVIDIA Audio2Face, and streaming returned blendshape frames back over the same WebSocket. The Studio does not include that backend bridge implementation or start NVIDIA Audio2Face itself, so this test requires a bridge that implements the documented request. The separate browser TTS visual smoke test animates the jaw locally but is explicitly **not** Audio2Face inference and does not send browser speech audio to the bridge.
 
 ## ZIP scope
 
