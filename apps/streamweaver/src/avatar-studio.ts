@@ -52,7 +52,7 @@ async function loadLibraryModel(){
    clearAvatar();if(modelUrl)URL.revokeObjectURL(modelUrl);modelUrl=url;currentModelPurpose=def.purpose==='finished'?'finished':'body';currentModelFile=currentModelPurpose==='finished'?null:file;
    avatar=g.scene;scene.add(avatar);
    const box=new THREE.Box3().setFromObject(avatar),size=box.getSize(new THREE.Vector3()),center=box.getCenter(new THREE.Vector3());
-   baseModelScale=1;baseModelPosition.copy(avatar.position);avatar.scale.setScalar(1);
+   baseModelScale=1;baseModelPosition.copy(avatar.position);if(def.purpose!=='finished')avatar.scale.setScalar(1);
    controls.target.copy(center);const distance=Math.max(size.x,size.y,size.z,1)*2.5;camera.position.set(center.x,center.y+size.y*.18,center.z+distance);camera.lookAt(center);controls.update();
    mixer=new THREE.AnimationMixer(avatar);clips=g.animations.map((c,i)=>({name:c.name||'Animation '+(i+1),clip:c,source:'embedded'}));motionManager=new AnimationManager();try{motionManager.attach(avatar)}catch{}updateClips();
    const info=document.querySelector('#modelInfo');info.innerHTML='<p><b>'+escapeHtml(def.label)+'</b><br>'+Math.round(blob.size/1024)+' KB'+(currentModelPurpose==='finished'?'<br>View-only: the commissioned model is loaded without geometry edits, scaling, repositioning, or rigging.':'<br>Generic body loaded as a separate starting model.')+'</p>';
