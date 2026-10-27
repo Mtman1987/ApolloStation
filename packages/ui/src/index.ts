@@ -18,7 +18,7 @@ export interface ProductThemeV1 {
 
 export const PRODUCT_THEME_PRESETS: Readonly<Record<ProductThemeIdV1, ProductThemeV1>> = Object.freeze({
   "solar-flare": Object.freeze({ id: "solar-flare", name: "Solar", accent: "#f97316", accentSecondary: "#38bdf8", accentTertiary: "#f472b6", background: "#100d16", surfaceRgb: "24 19 31", border: "rgba(249,115,22,.28)" }),
-  "nebula-purple": Object.freeze({ id: "nebula-purple", name: "Nebula", accent: "#a855f7", accentSecondary: "#22d3ee", accentTertiary: "#f472b6", background: "#100b1b", surfaceRgb: "25 15 39", border: "rgba(168,85,247,.32)" }),
+  "nebula-purple": Object.freeze({ id: "nebula-purple", name: "Nebula", accent: "#a855f7", accentSecondary: "#818cf8", accentTertiary: "#f472b6", background: "#100b1b", surfaceRgb: "25 15 39", border: "rgba(168,85,247,.32)" }),
   "oceanic-blue": Object.freeze({ id: "oceanic-blue", name: "Oceanic", accent: "#3b82f6", accentSecondary: "#22d3ee", accentTertiary: "#fbbf24", background: "#081322", surfaceRgb: "12 27 47", border: "rgba(59,130,246,.32)" }),
   "aurora-green": Object.freeze({ id: "aurora-green", name: "Aurora", accent: "#10b981", accentSecondary: "#34d399", accentTertiary: "#fbbf24", background: "#071713", surfaceRgb: "11 31 25", border: "rgba(16,185,129,.32)" }),
 });
