@@ -59,7 +59,7 @@ function redactSensitiveLogText(value) {
 
 const app = express();
 const PORT = process.env.PORT || 3002;
-const APP_URL = process.env.APP_URL || 'https://hearmeout-main.fly.dev';
+const APP_URL = process.env.APP_URL || '';
 const WORKER_SHARED_SECRET = String(process.env.HMO_WORKER_SHARED_SECRET || 'hearmeout-local-worker-development-only').trim();
 const WORKER_CALLBACK_HEADERS = WORKER_SHARED_SECRET
   ? { Authorization: `Bearer ${WORKER_SHARED_SECRET}` }
@@ -115,7 +115,7 @@ const directLounge = RUN_LOUNGE && process.env.HMO_LOUNGE_DIRECT_ONLY === 'true'
 const loungeBroadcast = RUN_LOUNGE && !directLounge ? createLoungeBroadcast({
   chromiumPath: CHROMIUM_PATH,
   puppeteer,
-  sourceUrl: process.env.LOUNGE_SOURCE_URL || 'https://hearmeout-main.fly.dev/overlay/system-spacemountainlive-lounge?clean=1',
+  sourceUrl: process.env.LOUNGE_SOURCE_URL || (APP_URL ? `${APP_URL}/overlay/system-spacemountainlive-lounge?clean=1` : ''),
 }) : null;
 const restreamControl = RUN_LOUNGE ? createRestreamControl({ chromiumPath: CHROMIUM_PATH, puppeteer }) : null;
 
@@ -3218,6 +3218,8 @@ process.on('unhandledRejection', (reason) => {
 });
 
 // ── Start ───────────────────────────────────────────────────────────────
+// Never silently fall back to the donor app. The worker must be explicitly bound to Apollo's HearMeOut service.
+if (!APP_URL) throw new Error('APP_URL must be configured to ApolloStation HearMeOut before this worker can start');
 // The DJ bridge must accept sibling-app traffic over Fly's private IPv6 6PN.
 // Node's IPv6 wildcard is dual-stack when ipv6Only is false, preserving Fly Proxy
 // health checks over IPv4. Keep unrelated worker roles on their existing bind.
