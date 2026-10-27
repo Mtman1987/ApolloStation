@@ -19,6 +19,7 @@ export * from "./game-actions.js";
 export * from "./overlay-scenes.js";
 export * from "./game-mixes.js";
 export * from "./quackverse-state.js";
+export * from "./quackverse-trades.js";
 export * from "./quackverse-packs.js";
 export * from "./quackverse-battle.js";
 export * from "./quackverse-canon-groups.js";
