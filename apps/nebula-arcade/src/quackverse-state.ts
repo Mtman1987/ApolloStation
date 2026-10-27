@@ -18,6 +18,8 @@ export type QuackverseCardInstance = { instanceId: string; cardId: number };
 export type QuackverseBattlePileState = { drawPile: QuackverseCardInstance[]; hand: QuackverseCardInstance[]; discardPile: QuackverseCardInstance[] };
 export type QuackverseTurnActions = { deployedOrMoved: boolean; attacked: string[]; usedAbility: string[]; equipped: string[] };
 export type QuackverseSavedDeck = { id: string; name: string; cardIds: number[]; wins: number; losses: number; createdAt: string; updatedAt: string };
+export type QuackverseTradeOffer = { id:string; fromId:string; toId:string; fromName:string; toName:string; giveCardId:number; wantCardId:number; status:"pending"|"accepted"|"declined"|"cancelled"; createdAt:string; expiresAt:string; resolvedAt?:string };
+
 export type QuackverseCollectionState = {
   cards: number[];
   deck: number[];
@@ -28,6 +30,7 @@ export type QuackverseCollectionState = {
   openedAtDay: string;
   openedToday: number;
   lastPack: number[];
+  tradeOffers: QuackverseTradeOffer[];
 };
 
 export type QuackverseSavedState = {
@@ -108,7 +111,7 @@ export function defaultQuackverseState(now = new Date()): QuackverseSavedState {
 }
 
 export function defaultQuackverseCollection(): QuackverseCollectionState {
-  return { cards: [], deck: [], activeDeckId: "default", savedDecks: [], deckWins: 0, deckLosses: 0, openedAtDay: "", openedToday: 0, lastPack: [] };
+  return { cards: [], deck: [], activeDeckId: "default", savedDecks: [], deckWins: 0, deckLosses: 0, openedAtDay: "", openedToday: 0, lastPack: [], tradeOffers: [] };
 }
 
 export function quackverseDayKey(date = new Date()) { return date.toISOString().slice(0, 10); }
@@ -137,6 +140,7 @@ export function normalizeQuackverseCollection(value: Partial<QuackverseCollectio
     openedAtDay,
     openedToday: openedAtDay === today ? Number(value?.openedToday || 0) : 0,
     lastPack: Array.isArray(value?.lastPack) ? value.lastPack.map(Number).filter(Number.isFinite) : fallback.lastPack,
+    tradeOffers: Array.isArray(value?.tradeOffers) ? value.tradeOffers.filter((offer) => offer && typeof offer.id === "string" && typeof offer.fromId === "string" && typeof offer.toId === "string" && ["pending","accepted","declined","cancelled"].includes(offer.status)).slice(-120) : [],
   };
 }
 
