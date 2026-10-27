@@ -31,7 +31,8 @@ test("Audio2Face bridge is optional and applies incoming data to the selected av
   assert.match(studio, /id="a2fBridgeTtsTest"/);
   assert.match(studio, /type:'tts_test'/);
   assert.match(studio, /a2fFrameCount\+\+/);
-  assert.match(studio, /does not send its audio to the bridge/);
+  assert.match(studio, /Browser TTS visual smoke test/);
+  assert.match(studio, /does not run Audio2Face inference/);
 });
 
 test("3D model adjustment and direct GLB rigging controls are present", () => {
