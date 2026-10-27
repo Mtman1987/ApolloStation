@@ -7,7 +7,7 @@ The same editor is served from `/avatar-studio` and `/apps/streamweaver/avatar-s
 ## 2D and 3D source selection
 
 - 2D mode uploads an idle PNG/WebP and an optional mouth-open image, publishes them, and saves the resulting URLs to the tenant's StreamWeaver appearance settings.
-- 3D mode accepts a single-file GLB. Imported animation clips can be exported together with the model before upload. The editor retains the existing orbit preview, embedded clip selector, shared motion retargeting, and local trigger-map editor.
+- 3D mode accepts a single-file GLB. Imported animation clips can be exported together with the model before upload. The editor retains the orbit preview, embedded clip selector, shared motion retargeting, and local trigger-map editor. The free Quaternius Universal Animation Library Standard GLB is loaded on demand (CC0) and compatible clips are retargeted onto the selected body skeleton; imported and embedded clips share the same selector.
 - The small model-fit controls adapt the ZIP's `TweakControls` state model. Non-default scale/offset changes are exported with the GLB; facial movement intensity is stored in tenant appearance settings.
 
 ## Direct GLB rigging (no photo round-trip)
@@ -24,7 +24,7 @@ Avatar rigging is deliberately opt-in. Enable both `STREAMWEAVER_AVATAR_RIGGING_
 
 ## Audio2Face bridge
 
-The Studio can save a credential-free `ws://` or `wss://` bridge URL. A separately running bridge must send JSON messages with either a `blendshapes` object keyed by morph-target name or numeric `jawOpen`/`mouthOpen` values from 0 to 1. The existing StreamWeaver browser source consumes those messages for the selected 2D or 3D avatar. This adapter does not start or replace NVIDIA Audio2Face itself.
+The Studio can save a credential-free `ws://` or `wss://` bridge URL. A separately running bridge must send JSON messages with either a `blendshapes` object keyed by morph-target name or numeric `jawOpen`/`mouthOpen` values from 0 to 1. The existing StreamWeaver browser source consumes those messages for the selected 2D or 3D avatar. The Studio reports received frame count and last-frame time to make live output observable. A browser TTS visual smoke test animates the jaw locally but is explicitly **not** Audio2Face inference. The real end-to-end test requires a running bridge that forwards the generated TTS audio to NVIDIA Audio2Face and streams the returned blendshape frames back over the configured WebSocket. The browser adapter does not itself start NVIDIA Audio2Face or send browser speech audio to it.
 
 ## ZIP scope
 
