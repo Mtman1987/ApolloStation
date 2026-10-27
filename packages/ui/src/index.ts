@@ -13,14 +13,23 @@ export interface ProductThemeV1 {
   accentTertiary: string;
   background: string;
   surfaceRgb: string;
+  surfaceStrong: string;
   border: string;
+  text: string;
+  muted: string;
+  focus: string;
+  success: string;
+  warning: string;
+  danger: string;
+  info: string;
+  data: readonly [string, string, string, string];
 }
 
 export const PRODUCT_THEME_PRESETS: Readonly<Record<ProductThemeIdV1, ProductThemeV1>> = Object.freeze({
-  "solar-flare": Object.freeze({ id: "solar-flare", name: "Solar", accent: "#f97316", accentSecondary: "#38bdf8", accentTertiary: "#f472b6", background: "#100d16", surfaceRgb: "24 19 31", border: "rgba(249,115,22,.28)" }),
-  "nebula-purple": Object.freeze({ id: "nebula-purple", name: "Nebula", accent: "#a855f7", accentSecondary: "#818cf8", accentTertiary: "#f472b6", background: "#100b1b", surfaceRgb: "25 15 39", border: "rgba(168,85,247,.32)" }),
-  "oceanic-blue": Object.freeze({ id: "oceanic-blue", name: "Oceanic", accent: "#3b82f6", accentSecondary: "#22d3ee", accentTertiary: "#fbbf24", background: "#081322", surfaceRgb: "12 27 47", border: "rgba(59,130,246,.32)" }),
-  "aurora-green": Object.freeze({ id: "aurora-green", name: "Aurora", accent: "#10b981", accentSecondary: "#34d399", accentTertiary: "#fbbf24", background: "#071713", surfaceRgb: "11 31 25", border: "rgba(16,185,129,.32)" }),
+  "solar-flare": Object.freeze({ id: "solar-flare", name: "Solar", accent: "#f97316", accentSecondary: "#38bdf8", accentTertiary: "#f472b6", background: "#100d16", surfaceRgb: "24 19 31", surfaceStrong: "#211724", border: "rgba(249,115,22,.34)", text: "#fff7ed", muted: "#c4b5c5", focus: "#7dd3fc", success: "#4ade80", warning: "#facc15", danger: "#fb7185", info: "#38bdf8", data: ["#f97316", "#38bdf8", "#f472b6", "#a3e635"] }),
+  "nebula-purple": Object.freeze({ id: "nebula-purple", name: "Nebula", accent: "#a855f7", accentSecondary: "#818cf8", accentTertiary: "#f472b6", background: "#100b1b", surfaceRgb: "25 15 39", surfaceStrong: "#21152f", border: "rgba(168,85,247,.36)", text: "#faf5ff", muted: "#c4b5d4", focus: "#c4b5fd", success: "#4ade80", warning: "#fbbf24", danger: "#fb7185", info: "#818cf8", data: ["#a855f7", "#818cf8", "#f472b6", "#22d3ee"] }),
+  "oceanic-blue": Object.freeze({ id: "oceanic-blue", name: "Oceanic", accent: "#3b82f6", accentSecondary: "#22d3ee", accentTertiary: "#fbbf24", background: "#081322", surfaceRgb: "12 27 47", surfaceStrong: "#10243a", border: "rgba(59,130,246,.36)", text: "#eff8ff", muted: "#a9c4dc", focus: "#67e8f9", success: "#34d399", warning: "#fbbf24", danger: "#fb7185", info: "#22d3ee", data: ["#3b82f6", "#22d3ee", "#fbbf24", "#a78bfa"] }),
+  "aurora-green": Object.freeze({ id: "aurora-green", name: "Aurora", accent: "#10b981", accentSecondary: "#34d399", accentTertiary: "#fbbf24", background: "#071713", surfaceRgb: "11 31 25", surfaceStrong: "#102a22", border: "rgba(16,185,129,.36)", text: "#ecfdf5", muted: "#a7c9bb", focus: "#6ee7b7", success: "#34d399", warning: "#fbbf24", danger: "#fb7185", info: "#5eead4", data: ["#10b981", "#34d399", "#fbbf24", "#60a5fa"] }),
 });
 
 export function resolveProductTheme(theme: unknown, customAccent?: unknown, customSecondary?: unknown): ProductThemeV1 {
@@ -76,7 +85,16 @@ export function installProductBackdrop(root: HTMLElement, backdrop: ProductBackd
   root.style.setProperty("--spmt-accent-tertiary", backdrop.theme.accentTertiary);
   root.style.setProperty("--spmt-background", backdrop.theme.background);
   root.style.setProperty("--spmt-surface-rgb", backdrop.theme.surfaceRgb);
+  root.style.setProperty("--spmt-surface-strong", backdrop.theme.surfaceStrong);
   root.style.setProperty("--spmt-border", backdrop.theme.border);
+  root.style.setProperty("--spmt-ink", backdrop.theme.text);
+  root.style.setProperty("--spmt-muted", backdrop.theme.muted);
+  root.style.setProperty("--spmt-focus", backdrop.theme.focus);
+  root.style.setProperty("--spmt-success", backdrop.theme.success);
+  root.style.setProperty("--spmt-warning", backdrop.theme.warning);
+  root.style.setProperty("--spmt-danger", backdrop.theme.danger);
+  root.style.setProperty("--spmt-info", backdrop.theme.info);
+  backdrop.theme.data.forEach((color, index) => root.style.setProperty(`--spmt-data-${index + 1}`, color));
   root.style.setProperty("--spmt-app-backdrop-image", `url(${JSON.stringify(backdrop.imageUrl)})`);
   root.style.setProperty("--spmt-app-backdrop-position", backdrop.scene.imagePosition ?? "center");
 
@@ -148,9 +166,19 @@ export const PRODUCT_UI_CSS = `
   --spmt-accent-tertiary: #f472b6;
   --spmt-background: #100d16;
   --spmt-surface-rgb: 24 19 31;
-  --spmt-border: rgba(249,115,22,.28);
-  --spmt-ink: #f8fafc;
-  --spmt-muted: #a8adbb;
+  --spmt-surface-strong: #211724;
+  --spmt-border: rgba(249,115,22,.34);
+  --spmt-ink: #fff7ed;
+  --spmt-muted: #c4b5c5;
+  --spmt-focus: #7dd3fc;
+  --spmt-success: #4ade80;
+  --spmt-warning: #facc15;
+  --spmt-danger: #fb7185;
+  --spmt-info: #38bdf8;
+  --spmt-data-1: #f97316;
+  --spmt-data-2: #38bdf8;
+  --spmt-data-3: #f472b6;
+  --spmt-data-4: #a3e635;
   --spmt-glass-opacity: .76;
   --spmt-depth-1-alpha: calc(var(--spmt-glass-opacity,.76) * .9);
   --spmt-depth-2-alpha: calc(var(--spmt-glass-opacity,.76) * .68);
@@ -191,7 +219,7 @@ export const PRODUCT_UI_CSS = `
 @keyframes spmt-stars-up { from { transform: translateY(0); } to { transform: translateY(-2000px); } }
 .spmt-product-surface button,.spmt-product-surface input,.spmt-product-surface select,.spmt-product-surface textarea { font: inherit; }
 .spmt-product-surface button { cursor: pointer; }
-.spmt-product-surface :focus-visible { outline: 2px solid var(--spmt-accent-secondary); outline-offset: 3px; }
+.spmt-product-surface :focus-visible { outline: 2px solid var(--spmt-focus,var(--spmt-accent-secondary)); outline-offset: 3px; }
 .spmt-product-glass { border: 1px solid var(--spmt-border); background: var(--spmt-surface-depth-1); box-shadow: var(--spmt-shadow); backdrop-filter: blur(24px) saturate(135%); }
 .spmt-surface-depth-0,.spmt-product-glass[data-spmt-depth="0"] { border-color: transparent; background: transparent; box-shadow: none; backdrop-filter: none; }
 .spmt-surface-depth-1,.spmt-product-glass[data-spmt-depth="1"] { background: var(--spmt-surface-depth-1); }
