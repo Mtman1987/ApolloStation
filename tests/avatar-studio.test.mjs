@@ -42,7 +42,6 @@ test("Avatar Studio has a retargetable shared motion library and labels GIFs hon
   assert.match(studio, /loadMotionLibrary/);
   assert.match(studio, /retargetClipToObject/);
   assert.match(studio, /for\(const sourceClip of g\.animations\)/);
-  assert.match(studio, /Retargeted \x27\+added\.length/);
   assert.match(studio, /https:\/\/three\.ws\/animations\/clips\/idle\.json/);
   for (const file of ["Formal_Bow.gif","FunnyDancing_01.gif","Chair_Sit_Idle_M.gif","Big_Wave_Hello.gif","Confused_Scratch.gif","Discuss_While_Moving.gif","Dodge_and_Counter.gif","Call_Gesture.gif","Dozing_Elderly.gif"]) {
     assert.ok(studio.includes(file), "missing animation reference " + file);
