@@ -235,8 +235,8 @@ function mediaFeatures(title: string, extension = '') {
   return {
     languages: Array.from(new Set(languages)),
     multiAudio,
-    quality,
-    containerExtension: extension || undefined,
+    ...(quality ? { quality } : {}),
+    ...(extension ? { containerExtension: extension } : {}),
   };
 }
 
@@ -436,7 +436,11 @@ function parseM3uAttributes(value: string) {
   const attrs: Record<string, string> = {};
   const regex = /([a-zA-Z0-9_-]+)="([^"]*)"/g;
   let match: RegExpExecArray | null;
-  while ((match = regex.exec(value))) attrs[match[1].toLowerCase()] = match[2];
+  while ((match = regex.exec(value))) {
+    const key = match[1];
+    const attrValue = match[2];
+    if (key && attrValue !== undefined) attrs[key.toLowerCase()] = attrValue;
+  }
   return attrs;
 }
 
@@ -452,8 +456,8 @@ function parseM3uPlaylist(text: string): M3uEntry[] {
       const title = (commaIndex >= 0 ? line.slice(commaIndex + 1) : attrs['tvg-name'] || '').trim();
       pending = {
         title: title || attrs['tvg-name'] || 'Untitled stream',
-        group: attrs['group-title'],
-        logo: attrs['tvg-logo'],
+        ...(attrs['group-title'] ? { group: attrs['group-title'] } : {}),
+        ...(attrs['tvg-logo'] ? { logo: attrs['tvg-logo'] } : {}),
       };
       continue;
     }
@@ -720,10 +724,13 @@ export async function findXtreamSeriesEpisode(
   const episodes = await getSeriesEpisodes(seriesId, series.title.replace(/\s+-\s+first episode$/i, ''));
   if (!episodes.length) return null;
 
-  const targetSeason = progress?.seasonNumber ?? intent.seasonNumber ?? episodes[0].seasonNumber;
+  const firstEpisode = episodes[0];
+  if (!firstEpisode) return null;
+  const targetSeason = progress?.seasonNumber ?? intent.seasonNumber ?? firstEpisode.seasonNumber;
   const seasonEpisodes = episodes.filter((episode) => episode.seasonNumber === targetSeason);
   const targetEpisode = progress?.episodeNumber ?? intent.episodeNumber ?? seasonEpisodes[0]?.episodeNumber;
-  const episode = seasonEpisodes.find((entry) => entry.episodeNumber === targetEpisode) || seasonEpisodes[0] || episodes[0];
+  const episode = seasonEpisodes.find((entry) => entry.episodeNumber === targetEpisode) || seasonEpisodes[0] || firstEpisode;
+  if (!episode) return null;
 
   return toEpisodeCatalogItem(episode);
 }
@@ -732,7 +739,8 @@ export async function getNextXtreamSeriesEpisode(seriesId: string, seasonNumber:
   const episodes = await getSeriesEpisodes(seriesId, seriesTitle);
   const index = episodes.findIndex((entry) => entry.seasonNumber === seasonNumber && entry.episodeNumber === episodeNumber);
   if (index < 0 || index + 1 >= episodes.length) return null;
-  return toEpisodeCatalogItem(episodes[index + 1]);
+  const nextEpisode = episodes[index + 1];
+  return nextEpisode ? toEpisodeCatalogItem(nextEpisode) : null;
 }
 
 export async function getXtreamStreamUrl(kind: XtreamKind, streamId: string) {
@@ -874,7 +882,7 @@ export async function fetchXtreamStream(kind: XtreamKind, streamId: string, rang
   const upstream = await fetch(upstreamUrl, {
     cache: 'no-store',
     headers,
-    signal,
+    ...(signal ? { signal } : {}),
   });
 
   return {
