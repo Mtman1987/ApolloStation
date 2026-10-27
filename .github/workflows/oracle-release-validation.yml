@@ -22,7 +22,7 @@ jobs:
         id: ffmpeg-cache-key
         run: echo "week=$(date -u +%Y-%W)" >> "$GITHUB_OUTPUT"
       - name: Restore cached FFmpeg packages
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ runner.temp }}/ffmpeg-debs
           key: ffmpeg-debs-${{ runner.os }}-${{ runner.arch }}-${{ steps.ffmpeg-cache-key.outputs.week }}-${{ hashFiles('.github/workflows/oracle-release-validation.yml') }}
@@ -46,9 +46,9 @@ jobs:
         shard: [1, 2, 3, 4]
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Set up Node.js 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -58,7 +58,7 @@ jobs:
         id: ffmpeg-cache-key
         run: echo "week=$(date -u +%Y-%W)" >> "$GITHUB_OUTPUT"
       - name: Restore cached FFmpeg packages
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ runner.temp }}/ffmpeg-debs
           key: ffmpeg-debs-${{ runner.os }}-${{ runner.arch }}-${{ steps.ffmpeg-cache-key.outputs.week }}-${{ hashFiles('.github/workflows/oracle-release-validation.yml') }}
@@ -82,7 +82,7 @@ jobs:
           node scripts/run-release-validation-shard.mjs "${{ matrix.shard }}" 4 2>&1 | tee "release-validation/shard-${{ matrix.shard }}.tap"
       - name: Upload shard log
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: oracle-validation-shard-${{ matrix.shard }}
           path: release-validation/shard-${{ matrix.shard }}.tap
@@ -97,9 +97,9 @@ jobs:
     timeout-minutes: 3
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Download shard logs
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: oracle-validation-shard-*
           path: release-validation/logs
@@ -111,7 +111,7 @@ jobs:
         run: cat release-validation/REPORT.md >> "$GITHUB_STEP_SUMMARY"
       - name: Upload consolidated report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: oracle-release-validation-report
           path: release-validation/REPORT.md
