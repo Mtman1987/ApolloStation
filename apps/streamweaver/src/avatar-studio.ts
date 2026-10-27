@@ -9,7 +9,7 @@ function renderBaseAvatarStudioPage(nonce: string) {
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { AnimationManager, parseClipJSON, retargetClipToObject } from 'https://cdn.jsdelivr.net/npm/@three-ws/retarget@0.1.1/+esm';
+import { AnimationManager, retargetClipToObject } from 'https://cdn.jsdelivr.net/npm/@three-ws/retarget@0.1.1/+esm';
 const room=document.querySelector('#room'),editor=document.querySelector('#editor'),toggle=document.querySelector('#toggle'),hint=document.querySelector('#hint'),status=document.querySelector('#status');
 const scene=new THREE.Scene();scene.background=new THREE.Color(0x080d18);scene.fog=new THREE.Fog(0x080d18,9,28);
 const camera=new THREE.PerspectiveCamera(38,innerWidth/innerHeight,.1,100);camera.position.set(0,1.5,5.4);
