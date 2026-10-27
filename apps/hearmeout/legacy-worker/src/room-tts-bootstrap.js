@@ -40,7 +40,8 @@ function safeIdentityPart(value, max = 72) {
 }
 
 async function mintRoomTtsToken(roomId) {
-  const appUrl = String(process.env.APP_URL || 'https://hearmeout-main.fly.dev').replace(/\/$/, '');
+  const appUrl = String(process.env.APP_URL || '').trim().replace(/\/$/, '');
+  if (!/^https:\/\/[^/]+$/.test(appUrl)) throw new Error('Apollo-owned APP_URL is not configured');
   const secret = workerSecret();
   const response = await fetch(`${appUrl}/api/livekit-token`, {
     method: 'POST',
