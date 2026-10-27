@@ -210,7 +210,23 @@ export class StreamWeaverProviderRuntime {
       const userId=message.actor.canonicalUserId??await identities.resolve({tenantId:message.tenantId,provider:message.provider,providerUserId:message.actor.providerUserId,username:message.actor.username,displayName:message.actor.displayName??message.actor.username});
       awardStreamWeaverProviderEvent(this.community,this.economy,{tenantId:message.tenantId,event:`youtube:${message.rich!.eventType}`,sourceId:JSON.stringify([message.provider,message.connectionId,message.channelId,message.messageId]),userId:userId??""});
     }};
-    this.consumers = [eventAwards, relay, ...(spaceMountainGoLive ? [spaceMountainGoLive] : []), ...(botActions ? [botActions] : []), ...(options.allowAssistant === false ? [] : [persona]), flows, commands, economy];
+    const isNativeGoLiveCommand = (message: NormalizedChatMessageV1) =>
+      message.tenantId === "spacemountainlive" && /^!golive$/i.test(message.text.trim());
+    const ordinaryConsumers: StreamWeaverProviderConsumerV1[] = [
+      eventAwards, relay, ...(botActions ? [botActions] : []),
+      ...(options.allowAssistant === false ? [] : [persona]), flows, commands, economy,
+    ];
+    // Reserve this exact message for the owner-only native handler. Some
+    // generic consumers intentionally match broad regex commands, so merely
+    // excluding it from the donor-command router is not sufficient.
+    this.consumers = [
+      ...ordinaryConsumers.map((consumer) => ({
+        id: consumer.id,
+        accepts: (message: NormalizedChatMessageV1) => !isNativeGoLiveCommand(message) && consumer.accepts(message),
+        deliver: (delivery: import("@spmt/contracts").NormalizedChatDeliveryV1) => consumer.deliver(delivery),
+      })),
+      ...(spaceMountainGoLive ? [spaceMountainGoLive] : []),
+    ];
     this.replies = new StreamWeaverPersonaReplyReconciler(this.summons, options.client, egress, { ...(options.now ? { now: options.now } : {}), ...(options.retryDelayMs ? { retryDelayMs: options.retryDelayMs } : {}) });
   }
   consumerIds() { return this.consumers.map((consumer) => consumer.id); }
