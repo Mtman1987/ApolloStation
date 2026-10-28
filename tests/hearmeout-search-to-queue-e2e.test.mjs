@@ -10,9 +10,10 @@ import {createHearMeOutWebServer} from '../apps/hearmeout/dist/web-server-v3.js'
 import {ensurePublicLounge,PUBLIC_LOUNGE_ID} from '../apps/hearmeout/dist/lounge-room.js';
 
 const binding={tenantId:'crew',executionUserId:'owner'};
+const scheduledEntries=session=>[session.current,...session.queue].filter(Boolean);
 
-// End to end: HTTP search request -> resolver -> queued item visible in state.
-test('a public search request resolves through the resolver and lands in the queue',async()=>{
+// End to end: HTTP search request -> resolver -> scheduled item visible in state.
+test('a public search request resolves through the resolver and schedules media',async()=>{
  const dir=await mkdtemp(join(tmpdir(),'hmo-search-queue-')),path=join(dir,'rooms.sqlite');
  const resolved=[];
  const media={async resolve(input){
@@ -39,19 +40,19 @@ test('a public search request resolves through the resolver and lands in the que
   assert.equal(resolved.length,1);
   assert.equal(resolved[0].query,'Thriller');
   assert.equal(resolved[0].lane,'music');
-  assert.equal(firstState.queue.at(-1)?.item.title,'Thriller');
-  assert.equal(firstState.queue.at(-1)?.item.type,'music');
+  assert.equal(scheduledEntries(firstState).at(-1)?.item.title,'Thriller');
+  assert.equal(scheduledEntries(firstState).at(-1)?.item.type,'music');
 
-  // 2. The queued item is visible through the public state endpoint.
+  // 2. The active-or-queued item is visible through the public state endpoint.
   const state=await stateOf();
-  assert.ok(state.queue.some(entry=>entry.item.title==='Thriller'),'state queue includes the search result');
+  assert.ok(scheduledEntries(state).some(entry=>entry.item.title==='Thriller'),'state includes the search result');
 
   // 3. Replaying the same idempotency key does not resolve or enqueue twice.
   const replay=await post({query:'Thriller',lane:'music',displayName:'Listener'},'e2e-thriller');
   assert.equal(replay.status,201);
   await replay.text();
   assert.equal(resolved.length,1,'idempotent replay must not call the resolver again');
-  assert.equal((await stateOf()).queue.filter(entry=>entry.item.title==='Thriller').length,1);
+  assert.equal(scheduledEntries(await stateOf()).filter(entry=>entry.item.title==='Thriller').length,1);
 
   // 4. A movie search uses the movie lane.
   const movie=await post({query:'Blade Runner',lane:'movie',displayName:'Listener'},'e2e-movie');
