@@ -16,7 +16,7 @@ const camera=new THREE.PerspectiveCamera(38,innerWidth/innerHeight,.1,100);camer
 const renderer=new THREE.WebGLRenderer({antialias:true,alpha:false});renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.setSize(innerWidth,innerHeight);renderer.outputColorSpace=THREE.SRGBColorSpace;room.appendChild(renderer.domElement);
 scene.add(new THREE.HemisphereLight(0xc4d8ff,0x242033,2));const key=new THREE.DirectionalLight(0xffffff,3);key.position.set(3,6,4);scene.add(key);const rim=new THREE.PointLight(0x725cff,24,12);rim.position.set(-3,2,0);scene.add(rim);
 const floor=new THREE.Mesh(new THREE.CircleGeometry(8,64),new THREE.MeshStandardMaterial({color:0x111b2c,metalness:.3,roughness:.7}));floor.rotation.x=-Math.PI/2;floor.position.y=-.015;scene.add(floor);const grid=new THREE.GridHelper(16,32,0x32466a,0x1a2941);grid.position.y=0;scene.add(grid);
-const controls=new OrbitControls(camera,renderer.domElement);controls.target.set(0,1,0);controls.enableDamping=true;const loader=new GLTFLoader();let avatar=null,mixer=null,activeAction=null,paused=false,clips=[],modelUrl=null,animationUrls=[],triggers=[],motionManager=null,currentModelFile=null,currentModelPurpose='upload',headAnchor=null,faceMesh=null,generatedFaces=null,faceSourceCanvas=null,faceLandmarkerPromise=null,usingGpu=true,hasGeneratedFace=false; const referenceMotions=['Formal_Bow.gif','FunnyDancing_01.gif','Chair_Sit_Idle_M.gif','Big_Wave_Hello.gif','Confused_Scratch.gif','Discuss_While_Moving.gif','Dodge_and_Counter.gif','Call_Gesture.gif','Dozing_Elderly.gif'];
+const controls=new OrbitControls(camera,renderer.domElement);controls.target.set(0,1,0);controls.enableDamping=true;const loader=new GLTFLoader();let avatar=null,mixer=null,activeAction=null,paused=false,clips=[],modelUrl=null,animationUrls=[],triggers=[],motionManager=null,currentModelFile=null,currentModelPurpose='upload',headAnchor=null,faceMesh=null,generatedFaces=null,faceSourceCanvas=null,faceLandmarkerPromise=null,usingGpu=true,hasGeneratedFace=false,hasSkinSuitMaterial=false; const referenceMotions=['Formal_Bow.gif','FunnyDancing_01.gif','Chair_Sit_Idle_M.gif','Big_Wave_Hello.gif','Confused_Scratch.gif','Discuss_While_Moving.gif','Dodge_and_Counter.gif','Call_Gesture.gif','Dozing_Elderly.gif'];
 const clipSelect=document.querySelector('#clipSelect'),triggerClip=document.querySelector('#triggerClip'),modelInfo=document.querySelector('#modelInfo');
 class TweakControls {
   constructor(){this.state={headScale:1,headOffsetY:0,headOffsetZ:0,morphIntensity:1};this.listeners=[];}
@@ -31,7 +31,7 @@ function applyAvatarTweaks(){if(!avatar||currentModelPurpose==='finished')return
 tweakControls.onChange(applyAvatarTweaks);
 function motionCategory(entry){const n=entry.name.toLowerCase();if(/sit|chair|seated/.test(n))return'idle';if(/talk|speak|convers|explain|listen|think|phone/.test(n))return'talk';if(/wave|cheer|celebr|clap|laugh|joy|happy|victory|react|greet|dance|yes|no_loop|interact/.test(n))return'social';if(/idle|stand|rest|breath/.test(n))return'idle';return'other'}
 function updateClips(){const selected=clipSelect.value,category=document.querySelector('#clipCategory')?.value||'all';clipSelect.replaceChildren();triggerClip.replaceChildren();clips.forEach((entry,i)=>{const o=new Option(entry.name+' · '+entry.source,String(i));if(category==='all'||motionCategory(entry)===category)clipSelect.add(o);triggerClip.add(new Option(entry.name,String(i)))});if(!clipSelect.options.length)clipSelect.add(new Option(clips.length?'No clips in this category':'No clips loaded',''));if(!clips.length)triggerClip.add(new Option('No clips loaded',''));if([...clipSelect.options].some(o=>o.value===selected))clipSelect.value=selected;}
-function clearAvatar(){if(avatar){scene.remove(avatar);avatar.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material){const ms=Array.isArray(o.material)?o.material:[o.material];ms.forEach(m=>m.dispose())}})}avatar=null;mixer=null;activeAction=null;clips=[];headAnchor=null;faceMesh=null;hasGeneratedFace=false;updateClips()}
+function clearAvatar(){if(avatar){scene.remove(avatar);avatar.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material){const ms=Array.isArray(o.material)?o.material:[o.material];ms.forEach(m=>m.dispose())}})}avatar=null;mixer=null;activeAction=null;clips=[];headAnchor=null;faceMesh=null;hasGeneratedFace=false;hasSkinSuitMaterial=false;updateClips()}
 function loadModel(file){if(!/\\.glb$/i.test(file.name)){status.textContent='Please upload a single-file GLB model. A .gltf file may depend on external binary or texture files.';return}currentModelPurpose='upload';currentModelFile=file;for(const id of ['avatarTweakScale','avatarTweakY','avatarTweakZ'])document.querySelector('#'+id).disabled=false;document.querySelector('#resetAvatarTweaks').disabled=false;document.querySelector('#rigActivate3d').disabled=false;const url=URL.createObjectURL(file);if(modelUrl)URL.revokeObjectURL(modelUrl);modelUrl=url;loader.load(url,g=>{clearAvatar();avatar=g.scene;scene.add(avatar);const box=new THREE.Box3().setFromObject(avatar),size=box.getSize(new THREE.Vector3()),center=box.getCenter(new THREE.Vector3());avatar.position.x-=center.x;avatar.position.z-=center.z;avatar.position.y-=box.min.y;const scale=2.1/Math.max(size.y,.01);baseModelScale=scale;baseModelPosition.copy(avatar.position);avatar.scale.setScalar(scale);applyAvatarTweaks();mixer=new THREE.AnimationMixer(avatar);clips=g.animations.map(c=>({name:c.name||'Animation '+(clips.length+1),clip:c,source:'embedded'}));motionManager=new AnimationManager();try{motionManager.attach(avatar)}catch{}updateClips();modelInfo.innerHTML='<p><b>'+escapeHtml(file.name)+'</b><br>'+g.animations.length+' embedded animation(s) · '+Math.round(file.size/1024)+' KB</p>';status.textContent='Model loaded. '+g.animations.length+' embedded clip(s) found.';document.querySelector('#modelSelect').add(new Option(file.name,String(Date.now())));},undefined,e=>{status.textContent='Model load failed: '+(e?.message||'unknown error')})}
 const libraryModels={
  'male-body':{label:'Generic male body',url:'https://cdn.jsdelivr.net/gh/Mtman1987/3davatar@main/public/models/male-base-mesh-base_male.glb',filename:'male-base-mesh-base_male.glb',purpose:'body'},
@@ -65,13 +65,17 @@ function applySkinSuit(){
     material.sheenRoughness=Math.max(material.sheenRoughness,.8);
    }
    if(!material.normalMap){
-    const width=96,height=96,data=new Uint8Array(width*height*4);
+    const width=96,height=96,canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;
+    const context=canvas.getContext('2d');
+    if(!context)return;
+    const image=context.createImageData(width,height),data=image.data;
     for(let y=0;y<height;y++)for(let x=0;x<width;x++){
      const i=(y*width+x)*4;
      const wave=Math.sin(x*1.73+Math.sin(y*.31)*2.1)*Math.cos(y*1.37+Math.sin(x*.23));
      data[i]=128+Math.round(wave*3);data[i+1]=128+Math.round(Math.cos(x*.41+y*.67)*3);data[i+2]=255;data[i+3]=255;
     }
-    const pores=new THREE.DataTexture(data,width,height,THREE.RGBAFormat);
+    context.putImageData(image,0,0);
+    const pores=new THREE.CanvasTexture(canvas);
     pores.wrapS=THREE.RepeatWrapping;pores.wrapT=THREE.RepeatWrapping;pores.repeat.set(5,5);pores.needsUpdate=true;
     material.normalMap=pores;material.normalScale.set(.025,.025);
    }
@@ -79,7 +83,8 @@ function applySkinSuit(){
   });
   mesh.material=Array.isArray(mesh.material)?next:next[0];
  });
- setSkinSuitStatus(changed?'Applied '+skinSuitTone.options[skinSuitTone.selectedIndex].text+' skin material to the editable base body. Rotate the model under the preview lights to inspect its response.':'No compatible body materials were found; inspect the GLB material names before applying a tint.');
+ if(changed)hasSkinSuitMaterial=true;
+ setSkinSuitStatus(changed?'Applied '+skinSuitTone.options[skinSuitTone.selectedIndex].text+' skin material to the editable base body. Export or rig to preserve this material in the saved GLB.':'No compatible body materials were found; inspect the GLB material names before applying a tint.');
 }
 document.querySelector('#applySkinSuit')?.addEventListener('click',applySkinSuit);
 skinSuitTone?.addEventListener('change',applySkinSuit);
@@ -462,7 +467,7 @@ async function exportCombinedGlb() {
   if (!avatar || !currentModelFile) throw new Error('Load a GLB avatar first.');
   const tweakState = tweakControls.toJSON();
   const hasModelFitTweaks = tweakState.headScale !== 1 || tweakState.headOffsetY !== 0 || tweakState.headOffsetZ !== 0;
-  if (!clips.length && !hasModelFitTweaks && !hasGeneratedFace) { persistStatus('No generated face, imported clips, or model-fit changes to export. The existing GLB will be uploaded unchanged.'); return currentModelFile; }
+  if (!clips.length && !hasModelFitTweaks && !hasGeneratedFace && !hasSkinSuitMaterial) { persistStatus('No generated face, imported clips, or model-fit changes to export. The existing GLB will be uploaded unchanged.'); return currentModelFile; }
   const {GLTFExporter} = await import('three/addons/exporters/GLTFExporter.js');
   const exporter = new GLTFExporter();
   const binary = await new Promise((resolve, reject) => exporter.parse(
@@ -535,7 +540,7 @@ rig3dButton.addEventListener('click', async () => {
     if (!/\.glb$/i.test(currentModelFile.name)) throw new Error('Save the model as GLB first; a standalone .gltf may reference files that were not uploaded.');
     if (currentModelFile.size > 50 * 1024 * 1024) throw new Error('The GLB must be no larger than 50 MiB for shared-media upload.');
     const tweakState = tweakControls.toJSON();
-    if (hasGeneratedFace || clips.some(entry => entry.source !== 'embedded') || tweakState.headScale !== 1 || tweakState.headOffsetY !== 0 || tweakState.headOffsetZ !== 0) await exportCombinedGlb();
+    if (hasGeneratedFace || hasSkinSuitMaterial || clips.some(entry => entry.source !== 'embedded') || tweakState.headScale !== 1 || tweakState.headOffsetY !== 0 || tweakState.headOffsetZ !== 0) await exportCombinedGlb();
     const current = await tenantControl();
     await controlApi('/appearance',{audio2FaceUrl:a2fUrl.value.trim(),morphIntensity:tweakState.morphIntensity});
     persistStatus('Uploading the existing GLB privately…');
