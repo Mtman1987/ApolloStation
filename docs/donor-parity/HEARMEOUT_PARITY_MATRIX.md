@@ -54,3 +54,11 @@ Donor has about 106 `route.ts` files. Apollo's HearMeOut API is about 30 endpoin
 3. YouTube upload (`watch/youtube/upload`): in scope or excluded?
 4. `watch/proxy` and `youtube-*/proxy`: confirm exclusion or port.
 5. Donor diagnostics (`xtream/direct-test`, `xtream/status`): include or exclude?
+
+## Owner decisions (2026-10-28)
+
+1. Guest login (`auth/guest`): PORT, behind SPMT. No Apollo-local anonymous identity. Guest sessions must come from SPMT and carry its tenant checks. The donor's shared `dev_local_user` behavior is NOT ported.
+2. Twitch login (`auth/twitch/callback`): PORT.
+3. YouTube upload (`watch/youtube/upload`): EXCLUDE.
+4. Proxy routes (`watch/proxy`, `youtube-audio/proxy`, `youtube-video/proxy`, `youtube-proxy`): PORT. Required tests: no provider URL, cookie, or credential in any response, and origin checks on every proxy route. The matrix reviewer had recommended EXCLUDE for leak risk. The owner chose PORT, so the leak tests are mandatory.
+5. Diagnostics (`xtream/direct-test`, `xtream/status`): PORT. They must not return credentials or raw provider URLs.
