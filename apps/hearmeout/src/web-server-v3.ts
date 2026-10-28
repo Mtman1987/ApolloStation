@@ -22,7 +22,7 @@ import { DatabaseSync } from "node:sqlite";
 import { PRODUCT_UI_CSS } from "@spmt/ui";
 import type { SpmtOperationModeV1 } from "@spmt/contracts";
 import { SpmtClient } from "@spmt/sdk";
-import { SqliteHearMeOutRoomMediaRuntime, type HearMeOutMediaLaneV1, type HearMeOutPrincipalV1, type HearMeOutRoomV1 } from "./room-media-core.js";
+import { SqliteHearMeOutRoomMediaRuntime, type HearMeOutMediaItemV1, type HearMeOutMediaLaneV1, type HearMeOutPrincipalV1, type HearMeOutRoomV1 } from "./room-media-core.js";
 import { HEARMEOUT_SURFACE_BROWSER_JS } from "./surface-client.js";
 import { HEARMEOUT_PERSONA_TALK_BROWSER_JS } from "./persona-talk-client.js";
 import { HearMeOutPersonaConversationCoordinator } from "./persona-conversation.js";
@@ -247,14 +247,19 @@ async function handleApi(request:IncomingMessage,response:ServerResponse,url:URL
     }
     if(request.method==="POST"&&media){
       requireSameOrigin(request);const roomId=decodeURIComponent(media[1]!),lane=media[2] as HearMeOutMediaLaneV1;requireMembership(rooms,principal,roomId);
-      const body=await readJson(request),operationId=mediaOperationId(request,principal,"enqueue");let item;
+      const body=await readJson(request),operationId=mediaOperationId(request,principal,"enqueue");
       if(typeof body.query==="string"){
         if(!mediaResolver)throw new Error("HearMeOut media search is not connected on this deployment");
-        item=await mediaResolver.resolve({tenantId:principal.tenantId,query:requiredText(body.query,"query",300),lane,operationId});
-      }else{
-        const title=requiredText(body.title,"title",300),playbackUrl=playableUrl(body.playbackUrl),durationSeconds=optionalDuration(body.durationSeconds);
-        item={itemId:createHash("sha256").update(playbackUrl).digest("hex"),type:lane==="movie"?"movie" as const:"music" as const,title,source:"user-url",playbackUrl,...(durationSeconds===undefined?{}:{durationSeconds})};
-        if(hearMeOutYoutubeId(playbackUrl)){if(!mediaResolver)throw new Error("YouTube resolution is not connected on this deployment");item=await mediaResolver.resolve({tenantId:principal.tenantId,query:playbackUrl,lane,operationId});}
+        const query=requiredText(body.query,"query",300);
+        const session=await rooms.enqueueResolved(principal,{roomId,lane,intent:query,operationId,resolve:()=>mediaResolver!.resolve({tenantId:principal.tenantId,query,lane,operationId})});
+        return sendJson(response,201,session);
+      }
+      const title=requiredText(body.title,"title",300),playbackUrl=playableUrl(body.playbackUrl),durationSeconds=optionalDuration(body.durationSeconds);
+      let item:HearMeOutMediaItemV1={itemId:createHash("sha256").update(playbackUrl).digest("hex"),type:lane==="movie"?"movie":"music",title,source:"user-url",playbackUrl,...(durationSeconds===undefined?{}:{durationSeconds})};
+      if(hearMeOutYoutubeId(playbackUrl)){
+        if(!mediaResolver)throw new Error("YouTube resolution is not connected on this deployment");
+        const session=await rooms.enqueueResolved(principal,{roomId,lane,intent:playbackUrl,operationId,resolve:()=>mediaResolver!.resolve({tenantId:principal.tenantId,query:playbackUrl,lane,operationId})});
+        return sendJson(response,201,session);
       }
       return sendJson(response,201,rooms.enqueue(principal,{roomId,lane,item,operationId}));
     }
