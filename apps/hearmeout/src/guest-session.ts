@@ -123,3 +123,45 @@ function sendJson(response: ServerResponse, status: number, value: unknown): voi
   });
   response.end(body);
 }
+
+// Generic signed session claims, shared by Twitch login. The guest functions above
+// are unchanged so their tests still pin the same behavior.
+export interface SessionSigningConfig {
+  secret: string;
+  tenantId: string;
+}
+
+export function signSessionClaims(subject: string, name: string, config: SessionSigningConfig, ttlSeconds: number, now: number = Date.now()): string {
+  const payload = b64url(JSON.stringify({
+    sub: subject,
+    tid: config.tenantId,
+    name: name.slice(0, 64),
+    exp: Math.floor(now / 1000) + ttlSeconds,
+  }));
+  return `${payload}.${sign(payload, config.secret)}`;
+}
+
+export function verifySessionClaims(
+  value: string | undefined,
+  config: SessionSigningConfig,
+  subjectPrefix: string,
+  now: number = Date.now(),
+): { userId: string; name: string; tenantId: string } | undefined {
+  if (!value) return undefined;
+  const [payload, signature, extra] = value.split('.');
+  if (!payload || !signature || extra !== undefined) return undefined;
+  const expected = Buffer.from(sign(payload, config.secret));
+  const given = Buffer.from(signature);
+  if (given.length !== expected.length || !timingSafeEqual(given, expected)) return undefined;
+  let claims: { sub?: unknown; tid?: unknown; name?: unknown; exp?: unknown };
+  try {
+    claims = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+  } catch {
+    return undefined;
+  }
+  if (typeof claims.sub !== 'string' || !claims.sub.startsWith(subjectPrefix)) return undefined;
+  if (claims.tid !== config.tenantId) return undefined;
+  if (typeof claims.exp !== 'number' || claims.exp * 1000 <= now) return undefined;
+  const name = typeof claims.name === 'string' && claims.name.trim() ? claims.name.trim().slice(0, 64) : claims.sub;
+  return { userId: claims.sub, name, tenantId: config.tenantId };
+}
