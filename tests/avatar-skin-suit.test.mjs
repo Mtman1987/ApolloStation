@@ -16,6 +16,10 @@ test("Avatar Studio exposes skin-suit material controls, not a wardrobe", () => 
   assert.match(studio, /material\.roughness=Math\.max\(material\.roughness,\.72\)/);
   assert.match(studio, /new THREE\.DataTexture/);
   assert.match(studio, /material\.normalScale\.set\(\.025,\.025\)/);
+  assert.match(studio, /new THREE\.CanvasTexture\(canvas\)/);
+  assert.match(studio, /hasGeneratedFace && !hasSkinSuitMaterial/);
+  assert.match(studio, /hasGeneratedFace \|\| hasSkinSuitMaterial \|\| clips\.some/);
+  assert.doesNotMatch(studio, /new THREE\.DataTexture/);
   assert.match(studio, /currentModelPurpose!==\'body\'/);
   assert.doesNotMatch(studio, /wardrobeLibrary|wardrobeAssets|wardrobeAttached|applyWardrobeAsset|CharacterCreator@master|clothing_tshirt\.glb/);
 });
