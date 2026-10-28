@@ -13,6 +13,11 @@ on main commit `ff8e31aa09857b08568108c870636d4b23bfcfc7`. All four shards
 completed: 1,404 test cases passed, with zero failures, cancellations, or skips.
 This is repository validation only; it is not a deployment claim.
 
+The resolver-backed replay follow-up merged in PR #317 and was independently
+verified by [Oracle run 40755646722](https://github.com/Mtman1987/ApolloStation/actions/runs/40755646722)
+on main commit `4c86af25f3f11f639427d796c05510af8a8c408c`: all four shards
+completed with 1,404/1,404 passing and zero failures, cancellations or skips.
+
 `tests/hearmeout-ui-api-contracts.test.mjs` adds ten mounted HTTP tests.
 It uses isolated temporary SQLite databases and a loopback SPMT session stub,
 with same-tenant members, an outsider, and the same actor in another tenant.
@@ -47,7 +52,8 @@ declaration that donor aliases can be removed. The route coverage checklist's
 - Body-size tests cover the 64 KiB JSON limit; no rate-limit proof is added.
 - Resolver-backed music replay and same-key changed-intent behavior are covered
   by the follow-up HTTP regression in `tests/hearmeout-media-resolution.test.mjs`;
-  fresh post-merge Oracle evidence for that change is pending.
+  PR #317 routes resolved requests through the durable receipt, and Oracle run
+  `40755646722` verifies the merged correction. Broader route parity remains open.
 - No claim of complete HMO-011, HMO-001, HMO-003 or P08 verification. Existing
   handoff gaps (YouTube HLS, queue/store ordering, session revocation, Twitch
   redirect registration) remain open.
@@ -61,6 +67,10 @@ declaration that donor aliases can be removed. The route coverage checklist's
 - Oracle run `40752588352` completed every assigned file in all four shards;
   its aggregate report records 1,404 passing test cases and no assertion
   failures.
+- PR #316 added the provider-work/reused-key HTTP assertions and exposed that the
+  mounted route bypassed the existing resolved-enqueue receipt. PR #317 corrected
+  the route; Oracle run `40755646722` completed every assigned file in all four
+  shards with 1,404 passes and zero assertion failures.
 - Continue route-by-route work from `HEARMEOUT_ROUTE_COVERAGE.md`, prioritizing
   remaining browser callers. The listed YouTube HLS, queue/store ordering,
   session revocation, and Twitch redirect-registration gaps remain open.

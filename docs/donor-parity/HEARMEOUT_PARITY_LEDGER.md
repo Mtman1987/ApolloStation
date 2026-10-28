@@ -60,7 +60,8 @@ Legend: **OPEN** = not yet evaluated in enough detail; **ADAPT** = known archite
 
 ## Resolver replay finding (2026-10-28)
 - Oracle run `40754875281` completed all four shards and reported 1,403/1,404 passing. The new HTTP regression showed that `/rooms/:room/media/:lane` resolved query/YouTube input before calling plain `enqueue`, bypassing the existing durable `enqueueResolved` replay receipt; same-key replay therefore repeated provider work.
-- Corrective branch `fix/hmo-resolver-route-idempotency` routes resolver-backed input through `enqueueResolved`, preserving the operation key and frozen user intent. Direct user-owned media URLs continue through ordinary enqueue. This production fix is pending merge and fresh Oracle verification.
+- PR #317 merged the correction: resolver-backed input now flows through `enqueueResolved`, preserving the operation key and frozen user intent; direct user-owned media URLs continue through ordinary enqueue.
+- Oracle run `40755646722` on main commit `4c86af25f3f11f639427d796c05510af8a8c408c` completed all four shards with 1,404/1,404 passing and zero assertion failures. The replay finding is **closed**; the wider HMO-011 parity work remains open.
 
 ## Per-item record template
 
