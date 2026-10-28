@@ -10,7 +10,7 @@ export function hearMeOutMovieProviderUrl(value:string|URL,origin=configuredDono
   let url:URL;try{url=new URL(value);}catch{return undefined;}
   if(url.origin!==origin||url.username||url.password||url.hash)return undefined;
   if(url.pathname==='/api/watch/search'||url.pathname==='/api/internal/watch/search')return [...url.searchParams].length===1&&url.searchParams.has('q')?url:undefined;
-  if(!/^\/api\/watch\/xtream\/hls\/vod-\d+\/[A-Za-z0-9_-]+\.(?:m3u8|ts)$/.test(url.pathname))return undefined;
+  if(!/^\/api\/watch\/xtream\/hls\/(?:vod-\d+|episode-\d+-[a-z0-9]+)\/[A-Za-z0-9_-]+\.(?:m3u8|ts)$/.test(url.pathname))return undefined;
   if([...url.searchParams].some(([key,value])=>key!=='machine'||!/^[A-Za-z0-9]{1,64}$/.test(value))||[...url.searchParams].length>1)return undefined;
   return url;
 }
