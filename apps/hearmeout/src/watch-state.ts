@@ -27,7 +27,7 @@ export type HearMeOutPendingRecommendationV1 = {
 export type HearMeOutWatchStateScope = { tenantId: string; userId: string };
 
 const idPattern = /^[A-Za-z0-9_:.-]{1,200}$/;
-const forbiddenKeys = ['playbackUrl', 'url', 'token', 'credential', 'authorization', 'password', 'secret'];
+const forbiddenKeys = ['playbackurl', 'url', 'token', 'credential', 'authorization', 'password', 'secret'];
 const kinds = new Set(['movie', 'series', 'episode', 'music', 'live']);
 
 function cleanId(value: unknown, label: string): string {

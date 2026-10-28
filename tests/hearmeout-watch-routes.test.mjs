@@ -92,7 +92,7 @@ test('watch request and accept routes refuse callers without a session or room m
  }
 });
 
-test('a member watch request queues the episode on the Apollo HLS route, never the donor URL',async()=>{
+test('a member watch request schedules the episode on the Apollo HLS route, never the donor URL',async()=>{
  const f=await fixture();
  try{
   const alice={'content-type':'application/json',cookie:'sid=alice'};
@@ -106,13 +106,13 @@ test('a member watch request queues the episode on the Apollo HLS route, never t
   assert.deepEqual(await miss.json(),{status:'no-match'});
   assert.equal(f.rooms.getSession(TENANT,roomId,'movie').queue.length,0);
 
-  // Matched episode: 201 queued, playback is the Apollo HLS route.
+  // Matched episode: 201 active-or-queued, playback is the Apollo HLS route.
   const hit=await fetch(f.base+`/api/hearmeout/rooms/${roomId}/watch/request`,{method:'POST',headers:alice,body:JSON.stringify({query:'Show S01E02'})});
   const text=await hit.text();
   assert.equal(hit.status,201,text);
   const body=JSON.parse(text);
   assert.equal(body.status,'queued');
-  const queued=body.session.queue.at(-1);
+  const queued=body.session.current??body.session.queue.at(-1);
   assert.equal(queued.item.itemId,'xtream-episode-7-abc');
   assert.equal(queued.item.playbackUrl,'/api/watch/xtream/hls/episode-7-abc/index.m3u8');
   assert.doesNotMatch(text,new RegExp(donorHost.replace(/\./g,'\\.')),'donor host must not appear in the client response');
@@ -127,7 +127,8 @@ test('a member watch request queues the episode on the Apollo HLS route, never t
   const none=await fetch(f.base+`/api/hearmeout/rooms/${roomId}/watch/accept`,{method:'POST',headers:alice,body:JSON.stringify({sessionId:'session-1'})});
   assert.equal(none.status,404);
   assert.deepEqual(await none.json(),{status:'none'});
-  assert.equal(f.rooms.getSession(TENANT,roomId,'movie').queue.length,1,'accept must not queue anything');
+  const scheduled=f.rooms.getSession(TENANT,roomId,'movie');
+  assert.equal([scheduled.current,...scheduled.queue].filter(Boolean).length,1,'accept must not schedule anything');
  }finally{
   await teardown(f);
  }

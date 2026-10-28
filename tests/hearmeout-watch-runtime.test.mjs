@@ -78,7 +78,7 @@ test('a matched episode is prepared through the validated HLS route and returned
     assert.equal(result.item.source, 'iptv');
     assert.equal(result.item.title, 'Show S1E2');
     assert.match(result.item.playbackUrl, /\/api\/watch\/xtream\/hls\/episode-77-mkv\/index\.m3u8$/);
-    assert.ok(result.item.playbackUrl.startsWith(origin + '/'));
+    assert.ok(result.item.playbackUrl.startsWith('/api/watch/xtream/hls/'));
     assert.doesNotMatch(result.item.playbackUrl, /activity-provider|password|token|username/i);
   });
   assert.equal(calls.length, 1);

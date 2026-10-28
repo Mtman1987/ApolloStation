@@ -50,6 +50,12 @@ Legend: **OPEN** = not yet evaluated in enough detail; **ADAPT** = known archite
 | HMO-014 | Automated tests, fixtures, validation scripts, and documented regression coverage | Existing `tests/hearmeout-*.test.mjs` and Apollo CI workflows | OPEN | Map donor tests by behavior; port/adapt missing regression coverage; run fresh checks on Apollo |
 | HMO-015 | Donor-only files, duplicate/legacy routes, generated media/assets, and dead code | No direct equivalent presumed | OPEN | Classify as required feature, operational-only, duplicate/obsolete, or donor-specific; record rationale before excluding |
 
+## Diagnostic maintenance (2026-10-28)
+
+- Oracle run `40750725850` completed all four shards and reported five assertion failures. Four were in existing HearMeOut tests: three predated the HMO-011 room-control contract batch and assumed either an always-queued first request or an exposed donor HLS origin; the fourth exposed a case-normalization defect in the Watch-state forbidden-field guard.
+- The repair branch `fix/oracle-diagnostic-contracts` keeps the Apollo-owned relative HLS boundary, makes first-request assertions examine the active-or-queued session item, and normalizes the forbidden-key table before its existing lowercase comparison. It also updates the Avatar Studio contract to cover the optional photo-matched skin-tone argument introduced by PR #311.
+- State: **in progress** until the next post-merge Oracle report is available; no parity item is advanced by this maintenance record.
+
 ## Per-item record template
 
 For each concrete difference, add a child ID (for example, `HMO-008.03`) with:
