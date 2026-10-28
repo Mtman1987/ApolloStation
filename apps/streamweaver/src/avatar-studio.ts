@@ -105,7 +105,7 @@ async function loadLibraryModel(){
    avatar=g.scene;
    const box=new THREE.Box3().setFromObject(avatar),size=box.getSize(new THREE.Vector3()),center=box.getCenter(new THREE.Vector3());
    if(currentModelPurpose==='body'){
-    headAnchor=new THREE.Group();headAnchor.name='HeadAnchor';const headBone=findHeadBone(avatar);if(headBone){headAnchor.userData.usesHeadBone=true;headBone.add(headAnchor);headAnchor.position.set(0,0,0);}else{headAnchor.userData.usesHeadBone=false;headAnchor.position.set(center.x,box.min.y+size.y*.885,center.z+size.z*.12);avatar.add(headAnchor);}
+    headAnchor=new THREE.Group();headAnchor.name='HeadAnchor';const headBone=findHeadBone(avatar);headAnchor.userData.usesHeadBone=true;headBone.add(headAnchor);headAnchor.position.set(0,0,0);
     const fitScale=1.8/Math.max(size.y,.01);avatar.scale.multiplyScalar(fitScale);avatar.position.set(-center.x*fitScale,-box.min.y*fitScale,-center.z*fitScale);
     baseModelScale=fitScale;baseModelPosition.copy(avatar.position);
    }else{baseModelScale=1;baseModelPosition.copy(avatar.position)}
@@ -125,7 +125,7 @@ async function loadLibraryModel(){
 }
 document.querySelector('#loadLibraryModel').addEventListener('click',loadLibraryModel);
 
-function findHeadBone(root){let found=null;root.traverse(object=>{if(found||!object.isBone)return;const name=String(object.name||'').toLowerCase().replace(/mixamorig|armature|skeleton/g,'').replace(/[^a-z0-9]/g,'');if(name==='head'||name==='headbone'||name==='head01')found=object;});return found;}
+function findHeadBone(root){let found=null;root.traverse(object=>{if(found||!object.isBone)return;const name=String(object.name||'').toLowerCase().replace(/mixamorig|armature|skeleton/g,'').replace(/[^a-z0-9]/g,'');if(name==='head'||name==='headbone'||name==='head01')found=object;});if(!found)throw new Error('Generic body GLB is missing its required Head bone. Male and female base bodies must share the same rig hierarchy.');return found;}
 function makeGeneratedFace(built){
  const geometry=new THREE.BufferGeometry();
  geometry.setAttribute('position',new THREE.BufferAttribute(built.positions.slice(),3));
