@@ -42,8 +42,14 @@ test('room requests use the same resolver, replay once and preserve media after 
   const owner = { tenantId: 'tenant', userId: 'owner', displayName: 'Owner', roles: ['admin'] }; rooms.createRoom(owner, { roomId: 'room', name: 'Music', privacy: 'public', operationId: 'create' });
   const origin = `http://127.0.0.1:${host.server.address().port}`, add = (query, key) => fetch(origin + '/api/hearmeout/rooms/room/media/music', { method: 'POST', headers: { origin, 'content-type': 'application/json', 'idempotency-key': key }, body: JSON.stringify({ query }) });
   try {
-    assert.equal((await add('uncached title', 'once')).status, 201); assert.equal((await add('uncached title', 'once')).status, 201);
+    const first = await add('uncached title', 'once'); assert.equal(first.status, 201, await first.clone().text());
+    const providerJobsAfterFirst = f.jobs.length; assert.ok(providerJobsAfterFirst > 0, 'the initial title request reaches the resolver');
+    const replay = await add('uncached title', 'once'); assert.equal(replay.status, 201, await replay.clone().text());
+    assert.equal(f.jobs.length, providerJobsAfterFirst, 'same-key HTTP replay must not repeat provider resolution');
     const before = rooms.getSession('tenant', 'room', 'music'); assert.equal(before.current.item.source, 'youtube'); assert.equal(before.current.item.metadata.audioPlaybackUrl, 'https://rr1.googlevideo.com/audio'); assert.equal(before.queue.length, 0);
+    const changedIntent = await add('different title', 'once'); assert.equal(changedIntent.status, 400, await changedIntent.clone().text());
+    assert.equal(f.jobs.length, providerJobsAfterFirst, 'changed intent is rejected before contacting the resolver');
+    await changedIntent.text(); assert.deepEqual(rooms.getSession('tenant', 'room', 'music'), before, 'changed intent leaves the canonical session unchanged');
     assert.equal((await add('missing', 'failure')).status, 400); assert.deepEqual(rooms.getSession('tenant', 'room', 'music'), before);
   } finally { rooms.close(); await host.close(); await new Promise(resolve => spmt.close(resolve)); await rm(dir, { recursive: true, force: true }); }
 });

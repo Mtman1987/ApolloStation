@@ -55,7 +55,8 @@ Legend: **OPEN** = not yet evaluated in enough detail; **ADAPT** = known archite
 - Oracle run `40750725850` completed all four shards and reported five assertion failures. Four were in existing HearMeOut tests: three predated the HMO-011 room-control contract batch and assumed either an always-queued first request or an exposed donor HLS origin; the fourth exposed a case-normalization defect in the Watch-state forbidden-field guard.
 - The repair branch `fix/oracle-diagnostic-contracts` keeps the Apollo-owned relative HLS boundary, makes first-request assertions examine the active-or-queued session item, and normalizes the forbidden-key table before its existing lowercase comparison. It also updates the Avatar Studio contract to cover the optional photo-matched skin-tone argument introduced by PR #311.
 - The next Oracle run (`40751831734`) reduced the diagnostics to one public-request fixture issue: its Node fetch calls discarded the `hmo_viewer` cookie issued by the server, so its supposed replay came from a newly generated guest principal. The follow-up fixture retains and asserts that viewer cookie, preserving the production contract that idempotency is principal-scoped.
-- State: **in progress** until the next post-merge Oracle report is available; no parity item is advanced by this maintenance record.
+- Oracle run `40752588352` completed the repaired main revision with all 1,404 test cases passing and no assertion failures. The subsequent docs-only merge was also followed by clean Oracle run `40753227360` (1,404/1,404, zero failures).
+- State: **closed** for this diagnostic maintenance batch; no parity item is advanced by this maintenance record.
 
 ## Per-item record template
 
