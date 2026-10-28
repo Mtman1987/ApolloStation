@@ -2,7 +2,7 @@ function renderBaseAvatarStudioPage(nonce: string) {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="color-scheme" content="dark"><title>Overlay Bay · Avatar Studio</title><style>
 :root{color-scheme:dark;font:14px system-ui;color:#edf4ff;background:#070b14}*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden}#room{position:fixed;inset:0;background:radial-gradient(ellipse at 50% 65%,#202943 0,#0b1221 42%,#05070d 100%)}canvas{display:block;width:100%;height:100%}#hint{position:absolute;bottom:18px;left:50%;transform:translateX(-50%);padding:8px 12px;border:1px solid #ffffff20;border-radius:30px;background:#080d18a8;color:#b9c9e8;pointer-events:none}#editor{position:absolute;inset:12px;display:grid;grid-template-columns:minmax(190px,260px) 1fr minmax(220px,300px);gap:10px;pointer-events:none}#editor[hidden]{display:none}.panel{pointer-events:auto;overflow:auto;max-height:100%;border:1px solid #7e9bc84a;border-radius:14px;background:#08101fe8;backdrop-filter:blur(18px);padding:14px;box-shadow:0 12px 45px #0008}.panel h2{font-size:16px;margin:0 0 12px}.panel p{color:#aabbd7;font-size:12px;line-height:1.45}label{display:grid;gap:5px;margin:10px 0;color:#c7d5eb;font-size:12px}input,select,button{font:inherit;color:#eef5ff;background:#131f33;border:1px solid #4b6386;border-radius:8px;padding:9px;max-width:100%;width:100%}input[type=file]{font-size:11px}button{cursor:pointer}button.primary{background:#573dd0;border-color:#a69aff}button:disabled{opacity:.5}#toolbar{display:flex;gap:7px;flex-wrap:wrap}#toolbar button{width:auto}#status{font-size:11px;color:#9ec7ff;overflow-wrap:anywhere}.cliprow{display:flex;gap:6px;align-items:center}.cliprow select{flex:1;min-width:0}.cliprow button{width:auto}.rule{border-top:1px solid #ffffff18;margin:14px 0;padding-top:10px}.ghost{position:absolute;top:14px;right:14px;pointer-events:auto;width:auto;z-index:3;background:#0a1220b8}body.clean #hint{opacity:.4}@media(max-width:800px){#editor{grid-template-columns:1fr 1fr;inset:8px;overflow:auto}#editor .panel:last-child{grid-column:1/-1;max-height:35vh}#editor .panel{max-height:46vh;padding:10px}#editor .panel:nth-child(2){display:none}#hint{font-size:11px;white-space:nowrap;bottom:8px}}
 </style></head><body><main id="room" aria-label="3D avatar preview room"></main><button id="toggle" class="ghost" type="button">Open Avatar Studio</button><div id="hint">Clean preview · tap the room to open controls</div><section id="editor" hidden aria-label="Avatar Studio controls">
-<aside class="panel"><h2>Model library</h2><label>Upload rigged model (GLB)<input id="modelFile" type="file" accept=".glb,model/gltf-binary"></label><label>Model<select id="modelSelect"><option value="current">Current model / uploaded GLB</option><option value="male-body">Generic male body · editable</option><option value="female-body">Generic female body · editable</option><option value="commissioned">Commissioned finished model · view only</option></select></label><button id="loadLibraryModel" type="button">Load selected library model</button><p>Generic bodies are separate starting models. The commissioned finished model is opened in a view-only path and is not rebuilt, rigged, or altered.</p><div id="modelInfo" class="rule"><p>Upload a GLB to preview it in this room. Select a GLB, preview and edit its motions, then save it to StreamWeaver for direct rigging and activation.</p></div><div class="rule" id="wardrobeLibrary"><h2>Hair library</h2><p>Real CC0 hair meshes. Hair is attached to the selected generic body’s head area; choose a style and apply it.</p><label>Hairstyle<select id="hairStyle"><option value="">No hair change</option><option value="short02">Short textured</option><option value="short04">Short swept</option><option value="bob01">Bob 1</option><option value="bob02">Bob 2</option><option value="long01">Long straight</option><option value="ponytail01">Ponytail</option><option value="braid01">Braid</option><option value="afro01">Afro</option></select></label><button id="applyHair" type="button">Apply hairstyle</button><div class="rule"><h2>Clothing library</h2><p>Real fitted garment meshes with their original materials. Apply pieces separately so you can mix tops, bottoms, outerwear and shoes.</p><label>Top<select id="wardrobeTop"><option value="">Keep current</option><option value="tshirt">T-shirt</option><option value="shirt">Long-sleeve shirt</option><option value="hoodie">Hoodie</option></select></label><label>Bottom<select id="wardrobeBottom"><option value="">Keep current</option><option value="jeans">Jeans</option><option value="shorts">Shorts</option><option value="skirt">Skirt</option></select></label><label>Outerwear / outfit<select id="wardrobeOuterwear"><option value="">Keep current</option><option value="jacket">Jacket</option><option value="trenchcoat">Long trench coat</option><option value="dress">Dress</option></select></label><label>Shoes<select id="wardrobeShoes"><option value="">Keep current</option><option value="shoes">Shoes</option><option value="boots">Boots</option></select></label><button id="applyClothing" class="primary" type="button">Apply selected clothing</button><button id="clearWardrobe" type="button">Clear hair &amp; clothing</button><div id="wardrobeStatus" role="status">Choose a generic male or female body to try on the library assets.</div></div></div><div id="toolbar"><button id="reset" type="button">Reset camera</button><button id="pause" type="button">Pause</button></div></aside>
+<aside class="panel"><h2>Model library</h2><label>Upload rigged model (GLB)<input id="modelFile" type="file" accept=".glb,model/gltf-binary"></label><label>Model<select id="modelSelect"><option value="current">Current model / uploaded GLB</option><option value="male-body">Generic male body · editable</option><option value="female-body">Generic female body · editable</option><option value="commissioned">Commissioned finished model · view only</option></select></label><button id="loadLibraryModel" type="button">Load selected library model</button><p>Generic bodies are separate starting models. The commissioned finished model is opened in a view-only path and is not rebuilt, rigged, or altered.</p><div id="modelInfo" class="rule"><p>Upload a GLB to preview it in this room. Select a GLB, preview and edit its motions, then save it to StreamWeaver for direct rigging and activation.</p></div><div class="rule" id="skinSuitControls"><h2>Skin suit material</h2><p>Choose a skin tone for the selected real male or female base GLB. The mesh, skeleton, face anchor, and animations remain the original asset; scene lighting creates the highlights and shadows.</p><label>Skin tone<select id="skinTone"><option value="#f2d3c4">Porcelain</option><option value="#e0b08a" selected>Sand</option><option value="#c68642">Amber</option><option value="#8d5524">Bronze</option><option value="#4b2e1f">Deep</option></select></label><button id="applySkinSuit" class="primary" type="button">Apply skin suit material</button><div id="skinSuitStatus" role="status">Load a generic male or female body to tune its skin material. The commissioned model is view-only.</div></div><div id="toolbar"><button id="reset" type="button">Reset camera</button><button id="pause" type="button">Pause</button></div></aside>
 <aside class="panel"><h2>3D preview</h2><p>Drag to orbit · scroll/pinch to zoom. Animation playback continues when controls are hidden.</p><div id="status" role="status">Preparing 3D renderer…</div><div class="cliprow"><button id="exportCombinedGlb" type="button">Export model + imported clips</button><button id="rigActivate3d" class="primary" type="button">Rig &amp; activate 3D avatar</button></div><p>Imported animation clips are attached to the exported GLB before upload, rather than remaining only in this browser preview.</p><p>Embedded clips, imported GLBs, and the shared retargetable motion library use one selector. Cross-rig imports are retargeted when the rig passes the library coverage check.</p><div class="rule"><h2>Model fit tweaks</h2><label>Model/head scale<input id="avatarTweakScale" type="range" min="0.6" max="1.4" step="0.01" value="1"></label><label>Vertical offset<input id="avatarTweakY" type="range" min="-0.5" max="0.5" step="0.01" value="0"></label><label>Depth offset<input id="avatarTweakZ" type="range" min="-0.5" max="0.5" step="0.01" value="0"></label><label>Facial movement intensity<input id="avatarTweakMorph" type="range" min="0" max="2" step="0.05" value="1"></label><button id="resetAvatarTweaks" type="button">Reset fit tweaks</button><p>These controls are based on the ZIP’s TweakControls module. Transform changes are included when you export or rig the model.</p></div><div class="rule"><h2>Generate a 3D face</h2><p>Use a front-facing photo or camera capture. This reuses AvatarAce's photo-to-face mesh builder with 52 ARKit morph targets for the Audio2Face bridge.</p><label>Take a face photo<input id="facePhotoCamera" type="file" accept="image/*" capture="user"></label><label>Choose a photo<input id="facePhotoLibrary" type="file" accept="image/*"></label><label>Face version<select id="faceChoice"><option value="standard">Standard · closer to photo</option><option value="detail">Higher detail · smoother</option></select></label><label>Expression preset<select id="facePreset"><option value="captured">Photo expression</option><option value="smile">Warm smile</option><option value="blink">Blink</option><option value="wow">Surprised / wow</option><option value="laugh">Laughing</option><option value="cheer">Excited / cheering</option><option value="love">Heart eyes / delighted</option><option value="sad">Sad / disappointed</option><option value="angry">Angry / frustrated</option><option value="thinking">Thinking / skeptical</option></select></label><label>Expression strength<input id="faceExpression" type="range" min="0" max="1.4" step="0.01" value="1"></label><label>Head size<input id="faceHeadScale" type="range" min="0.8" max="1.35" step="0.01" value="1.05"></label><label>Head height<input id="faceHeadY" type="range" min="-0.06" max="0.08" step="0.005" value="0.01"></label><label>Head depth<input id="faceHeadZ" type="range" min="-0.04" max="0.1" step="0.005" value="0.02"></label><div class="cliprow"><button id="generate2dPng" type="button">Use photo as 2D PNG-Tuber</button></div><div id="faceGenerationStatus" role="status">Choose a photo to generate a 3D face for the selected generic body.</div></div><div class="rule"><h2>Free CC0 humanoid animation library</h2><button id="loadMotionLibrary" type="button">Load free CC0 co-host animation packs</button><p>Loads Quaternius Universal Animation Library 1 and 2 plus KayKit's CC0 general animation pack, including standing and seated idle, sitting/talking, wave, cheer, agree/disagree, interaction and dance clips. Each clip is retargeted to the selected rig; the selector only shows actions that actually loaded.</p><h2>Uploaded motion references</h2><div id="referenceMotions"></div></div></aside>
 <aside class="panel"><h2>Unified animation library</h2><label>Import animation GLB/GLTF<input id="animationFile" type="file" accept=".glb,.gltf,model/gltf-binary,model/gltf+json"></label><label>Cohost action<select id="cohostAction"><option value="idle-standing">Standing idle</option><option value="idle-sitting">Seated idle</option><option value="wave">Wave to chat</option><option value="cheer">Cheer / celebrate</option><option value="laugh">Laugh / react</option><option value="think">Thinking / listening</option><option value="talk">Talking gesture</option><option value="stop">Stop body motion</option></select></label><button id="playCohostAction" type="button">Play cohost action</button><label>Animation category<select id="clipCategory"><option value="all">All animations</option><option value="idle">Idle / seated / standing</option><option value="social">Wave / cheer / reactions</option><option value="talk">Talking / listening</option><option value="other">Other</option></select></label><label>Animation<select id="clipSelect"><option value="">No clips loaded</option></select></label><div class="cliprow"><button id="play" class="primary" type="button">Play selected</button><button id="stop" type="button">Stop</button></div><div class="rule"><h2>Trigger assignments</h2><label>Trigger source<select id="triggerSource"><option>AI command</option><option>AI speaking</option><option>Twitch follow</option><option>Subscription</option><option>Raid</option><option>Channel Point redemption</option><option>Chat command</option><option>Manual</option></select></label><label>Trigger name<input id="triggerName" value="bow_gesture" placeholder="e.g. bow_gesture, !dance"></label><label>Animation for trigger<select id="triggerClip"></select></label><label>Playback behavior<select id="triggerBehavior"><option>Play once</option><option>Loop until stopped</option><option>Play while speaking</option></select></label><button id="addTrigger" type="button">Add trigger mapping</button><div id="triggerList"></div><p>Mappings are a local test draft in this first pass. Production event ingestion and durable storage are a separate integration step.</p></div></aside></section>
 <script type="importmap" nonce="${nonce}">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}</script><script src="https://cdn.jsdelivr.net/gh/Mtman1987/3davatar@main/avatarace-patch/face-builder-browser.js" nonce="${nonce}"></script><script type="module" nonce="${nonce}">
@@ -16,7 +16,7 @@ const camera=new THREE.PerspectiveCamera(38,innerWidth/innerHeight,.1,100);camer
 const renderer=new THREE.WebGLRenderer({antialias:true,alpha:false});renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.setSize(innerWidth,innerHeight);renderer.outputColorSpace=THREE.SRGBColorSpace;room.appendChild(renderer.domElement);
 scene.add(new THREE.HemisphereLight(0xc4d8ff,0x242033,2));const key=new THREE.DirectionalLight(0xffffff,3);key.position.set(3,6,4);scene.add(key);const rim=new THREE.PointLight(0x725cff,24,12);rim.position.set(-3,2,0);scene.add(rim);
 const floor=new THREE.Mesh(new THREE.CircleGeometry(8,64),new THREE.MeshStandardMaterial({color:0x111b2c,metalness:.3,roughness:.7}));floor.rotation.x=-Math.PI/2;floor.position.y=-.015;scene.add(floor);const grid=new THREE.GridHelper(16,32,0x32466a,0x1a2941);grid.position.y=0;scene.add(grid);
-const controls=new OrbitControls(camera,renderer.domElement);controls.target.set(0,1,0);controls.enableDamping=true;const loader=new GLTFLoader();let avatar=null,mixer=null,activeAction=null,paused=false,clips=[],modelUrl=null,animationUrls=[],triggers=[],motionManager=null,currentModelFile=null,currentModelPurpose='upload',headAnchor=null,faceMesh=null,generatedFaces=null,faceSourceCanvas=null,faceLandmarkerPromise=null,usingGpu=true,hasGeneratedFace=false; const referenceMotions=['Formal_Bow.gif','FunnyDancing_01.gif','Chair_Sit_Idle_M.gif','Big_Wave_Hello.gif','Confused_Scratch.gif','Discuss_While_Moving.gif','Dodge_and_Counter.gif','Call_Gesture.gif','Dozing_Elderly.gif'];
+const controls=new OrbitControls(camera,renderer.domElement);controls.target.set(0,1,0);controls.enableDamping=true;const loader=new GLTFLoader();let avatar=null,mixer=null,activeAction=null,paused=false,clips=[],modelUrl=null,animationUrls=[],triggers=[],motionManager=null,currentModelFile=null,currentModelPurpose='upload',headAnchor=null,faceMesh=null,generatedFaces=null,faceSourceCanvas=null,faceLandmarkerPromise=null,usingGpu=true,hasGeneratedFace=false,hasSkinSuitMaterial=false; const referenceMotions=['Formal_Bow.gif','FunnyDancing_01.gif','Chair_Sit_Idle_M.gif','Big_Wave_Hello.gif','Confused_Scratch.gif','Discuss_While_Moving.gif','Dodge_and_Counter.gif','Call_Gesture.gif','Dozing_Elderly.gif'];
 const clipSelect=document.querySelector('#clipSelect'),triggerClip=document.querySelector('#triggerClip'),modelInfo=document.querySelector('#modelInfo');
 class TweakControls {
   constructor(){this.state={headScale:1,headOffsetY:0,headOffsetZ:0,morphIntensity:1};this.listeners=[];}
@@ -31,65 +31,64 @@ function applyAvatarTweaks(){if(!avatar||currentModelPurpose==='finished')return
 tweakControls.onChange(applyAvatarTweaks);
 function motionCategory(entry){const n=entry.name.toLowerCase();if(/sit|chair|seated/.test(n))return'idle';if(/talk|speak|convers|explain|listen|think|phone/.test(n))return'talk';if(/wave|cheer|celebr|clap|laugh|joy|happy|victory|react|greet|dance|yes|no_loop|interact/.test(n))return'social';if(/idle|stand|rest|breath/.test(n))return'idle';return'other'}
 function updateClips(){const selected=clipSelect.value,category=document.querySelector('#clipCategory')?.value||'all';clipSelect.replaceChildren();triggerClip.replaceChildren();clips.forEach((entry,i)=>{const o=new Option(entry.name+' · '+entry.source,String(i));if(category==='all'||motionCategory(entry)===category)clipSelect.add(o);triggerClip.add(new Option(entry.name,String(i)))});if(!clipSelect.options.length)clipSelect.add(new Option(clips.length?'No clips in this category':'No clips loaded',''));if(!clips.length)triggerClip.add(new Option('No clips loaded',''));if([...clipSelect.options].some(o=>o.value===selected))clipSelect.value=selected;}
-function clearAvatar(){if(avatar){scene.remove(avatar);avatar.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material){const ms=Array.isArray(o.material)?o.material:[o.material];ms.forEach(m=>m.dispose())}})}avatar=null;mixer=null;activeAction=null;clips=[];headAnchor=null;faceMesh=null;hasGeneratedFace=false;updateClips()}
+function clearAvatar(){if(avatar){scene.remove(avatar);avatar.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material){const ms=Array.isArray(o.material)?o.material:[o.material];ms.forEach(m=>m.dispose())}})}avatar=null;mixer=null;activeAction=null;clips=[];headAnchor=null;faceMesh=null;hasGeneratedFace=false;hasSkinSuitMaterial=false;updateClips()}
 function loadModel(file){if(!/\\.glb$/i.test(file.name)){status.textContent='Please upload a single-file GLB model. A .gltf file may depend on external binary or texture files.';return}currentModelPurpose='upload';currentModelFile=file;for(const id of ['avatarTweakScale','avatarTweakY','avatarTweakZ'])document.querySelector('#'+id).disabled=false;document.querySelector('#resetAvatarTweaks').disabled=false;document.querySelector('#rigActivate3d').disabled=false;const url=URL.createObjectURL(file);if(modelUrl)URL.revokeObjectURL(modelUrl);modelUrl=url;loader.load(url,g=>{clearAvatar();avatar=g.scene;scene.add(avatar);const box=new THREE.Box3().setFromObject(avatar),size=box.getSize(new THREE.Vector3()),center=box.getCenter(new THREE.Vector3());avatar.position.x-=center.x;avatar.position.z-=center.z;avatar.position.y-=box.min.y;const scale=2.1/Math.max(size.y,.01);baseModelScale=scale;baseModelPosition.copy(avatar.position);avatar.scale.setScalar(scale);applyAvatarTweaks();mixer=new THREE.AnimationMixer(avatar);clips=g.animations.map(c=>({name:c.name||'Animation '+(clips.length+1),clip:c,source:'embedded'}));motionManager=new AnimationManager();try{motionManager.attach(avatar)}catch{}updateClips();modelInfo.innerHTML='<p><b>'+escapeHtml(file.name)+'</b><br>'+g.animations.length+' embedded animation(s) · '+Math.round(file.size/1024)+' KB</p>';status.textContent='Model loaded. '+g.animations.length+' embedded clip(s) found.';document.querySelector('#modelSelect').add(new Option(file.name,String(Date.now())));},undefined,e=>{status.textContent='Model load failed: '+(e?.message||'unknown error')})}
 const libraryModels={
- 'male-body':{label:'Generic male body',url:'https://cdn.jsdelivr.net/gh/Mtman1987/3davatar@main/male-base-mesh-base_male.glb',filename:'male-base-mesh-base_male.glb',purpose:'body'},
- 'female-body':{label:'Generic female body',url:'https://cdn.jsdelivr.net/gh/Mtman1987/3davatar@main/female-base-mesh-base_female.glb',filename:'female-base-mesh-base_female.glb',purpose:'body'},
- 'commissioned':{label:'Commissioned finished model',url:'https://cdn.jsdelivr.net/gh/Mtman1987/3davatar@main/Meshy_AI_Neon_Lock_In_Gamer_All_Animations%20(1).glb',filename:'commissioned-finished-model.glb',purpose:'finished'}
+ 'male-body':{label:'Generic male body',url:'https://cdn.jsdelivr.net/gh/Mtman1987/3davatar@main/public/models/male-base-mesh-base_male.glb',filename:'male-base-mesh-base_male.glb',purpose:'body'},
+ 'female-body':{label:'Generic female body',url:'https://cdn.jsdelivr.net/gh/Mtman1987/3davatar@main/public/models/female-base-mesh-base_female.glb',filename:'female-base-mesh-base_female.glb',purpose:'body'},
+ 'commissioned':{label:'Commissioned finished model',url:'https://cdn.jsdelivr.net/gh/Mtman1987/3davatar@main/public/models/commissioned-finished-model.glb',filename:'commissioned-finished-model.glb',purpose:'finished'}
 };
-// CC0 asset GLBs are hosted in the upstream asset-only output directory; no GPL code is imported.
-const wardrobeAssets={
- hair:{short02:'hair_short02.glb',short04:'hair_short04.glb',bob01:'hair_bob01.glb',bob02:'hair_bob02.glb',long01:'hair_long01.glb',ponytail01:'hair_ponytail01.glb',braid01:'hair_braid01.glb',afro01:'hair_afro01.glb'},
- top:{tshirt:'clothing_tshirt.glb',shirt:'clothing_shirt.glb',hoodie:'clothing_hoodie.glb'},
- bottom:{jeans:'clothing_jeans.glb',shorts:'clothing_shorts.glb',skirt:'clothing_skirt.glb'},
- outerwear:{jacket:'clothing_jacket.glb',trenchcoat:'clothing_trenchcoat.glb',dress:'clothing_dress.glb'},
- shoes:{shoes:'clothing_shoes.glb',boots:'clothing_boots.glb'}
-};
-const wardrobeAttached={};
-const wardrobeBaseUrl='https://cdn.jsdelivr.net/gh/kblood/CharacterCreator@master/output/';
-function disposeWardrobeObject(object){object.traverse(node=>{if(node.geometry)node.geometry.dispose();if(node.material){const materials=Array.isArray(node.material)?node.material:[node.material];materials.forEach(material=>material.dispose())}})}
-function clearWardrobeItem(slot){const old=wardrobeAttached[slot];if(old&&avatar){avatar.remove(old);disposeWardrobeObject(old);delete wardrobeAttached[slot]}}
-function setWardrobeStatus(message){const el=document.querySelector('#wardrobeStatus');if(el)el.textContent=message}
-function applyWardrobeAsset(slot,id){
- if(!avatar){setWardrobeStatus('Load a generic male or female body first.');return}
- if(currentModelPurpose==='finished'){setWardrobeStatus('The commissioned finished model is view-only; hair and clothing are not attached to it.');return}
- const filename=wardrobeAssets[slot]?.[id];if(!filename){setWardrobeStatus('Choose an available asset first.');return}
- setWardrobeStatus('Loading '+filename+'…');
- loader.load(wardrobeBaseUrl+filename,g=>{
-  if(!avatar||currentModelPurpose==='finished'){disposeWardrobeObject(g.scene);setWardrobeStatus('Wardrobe is available only on editable generic bodies.');return}
-  const item=g.scene;item.name='wardrobe-'+slot+'-'+id;
-  const bodyBox=new THREE.Box3().setFromObject(avatar);
-  const bodySize=bodyBox.getSize(new THREE.Vector3());
-  const bodyCenterWorld=bodyBox.getCenter(new THREE.Vector3());
-  const centerLocal=avatar.worldToLocal(bodyCenterWorld.clone());
-  const floorLocal=avatar.worldToLocal(new THREE.Vector3(bodyCenterWorld.x,bodyBox.min.y,bodyCenterWorld.z)).y;
-  const topLocal=avatar.worldToLocal(new THREE.Vector3(bodyCenterWorld.x,bodyBox.max.y,bodyCenterWorld.z)).y;
-  const assetBox=new THREE.Box3().setFromObject(item);
-  const assetSize=assetBox.getSize(new THREE.Vector3());
-  const assetCenter=assetBox.getCenter(new THREE.Vector3());
-  const bodyHeight=Math.max(bodySize.y/Math.max(Math.abs(avatar.scale.y),.001),.01);
-  if(slot==='hair'){
-   const targetWidth=bodyHeight*.205;
-   const scale=targetWidth/Math.max(assetSize.x,.001);
-   item.scale.setScalar(scale);
-   item.position.set(centerLocal.x-assetCenter.x*scale,topLocal-bodyHeight*.045-assetBox.max.y*scale,centerLocal.z-assetCenter.z*scale);
-  }else{
-   const scale=bodyHeight/Math.max(assetSize.y,.001);
-   item.scale.setScalar(scale);
-   item.position.set(centerLocal.x-assetCenter.x*scale,floorLocal-assetBox.min.y*scale,centerLocal.z-assetCenter.z*scale);
-  }
-  clearWardrobeItem(slot);avatar.add(item);wardrobeAttached[slot]=item;
-  setWardrobeStatus('Applied '+filename+'. Fit is normalized to this body; please check the visual fit and any clipping in the preview.');
- },undefined,error=>setWardrobeStatus('Could not load '+filename+': '+(error?.message||'network or asset error')));
+const skinSuitTone=document.querySelector('#skinTone');
+function setSkinSuitStatus(message){const el=document.querySelector('#skinSuitStatus');if(el)el.textContent=message}
+function applySkinSuit(){
+ if(!avatar){setSkinSuitStatus('Load the real generic male or female body first.');return}
+ if(currentModelPurpose!=='body'){setSkinSuitStatus('Skin-suit material controls apply only to the generic base bodies; the commissioned model remains untouched.');return}
+ const tone=skinSuitTone.value;
+ const excluded=/hair|eye|iris|pupil|brow|lash|teeth|tooth|mouth|tongue|gum|cloth|shirt|jacket|shoe|boot|accessor|nail/i;
+ let changed=0;
+ avatar.traverse(node=>{
+  const mesh=node;
+  if(!mesh.isMesh||excluded.test(mesh.name||''))return;
+  const sources=Array.isArray(mesh.material)?mesh.material:[mesh.material];
+  const next=sources.map(source=>{
+   if(excluded.test(source.name||''))return source;
+   if(source.userData.avatarSkinSuitMaterial){source.color?.set(tone);changed++;return source}
+   const material=source.clone();
+   if(!(material instanceof THREE.MeshStandardMaterial))return source;
+   material.color.set(tone);
+   material.roughness=Math.max(material.roughness,.72);
+   material.metalness=0;
+   if(material instanceof THREE.MeshPhysicalMaterial){
+    material.clearcoat=Math.min(material.clearcoat,.08);
+    material.clearcoatRoughness=Math.max(material.clearcoatRoughness,.72);
+    material.sheen=Math.max(material.sheen,.08);
+    material.sheenRoughness=Math.max(material.sheenRoughness,.8);
+   }
+   if(!material.normalMap){
+    const width=96,height=96,canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;
+    const context=canvas.getContext('2d');
+    if(!context)return;
+    const image=context.createImageData(width,height),data=image.data;
+    for(let y=0;y<height;y++)for(let x=0;x<width;x++){
+     const i=(y*width+x)*4;
+     const wave=Math.sin(x*1.73+Math.sin(y*.31)*2.1)*Math.cos(y*1.37+Math.sin(x*.23));
+     data[i]=128+Math.round(wave*3);data[i+1]=128+Math.round(Math.cos(x*.41+y*.67)*3);data[i+2]=255;data[i+3]=255;
+    }
+    context.putImageData(image,0,0);
+    const pores=new THREE.CanvasTexture(canvas);
+    pores.wrapS=THREE.RepeatWrapping;pores.wrapT=THREE.RepeatWrapping;pores.repeat.set(5,5);pores.needsUpdate=true;
+    material.normalMap=pores;material.normalScale.set(.025,.025);
+   }
+   material.userData.avatarSkinSuitMaterial=true;changed++;return material;
+  });
+  mesh.material=Array.isArray(mesh.material)?next:next[0];
+ });
+ if(changed)hasSkinSuitMaterial=true;
+ setSkinSuitStatus(changed?'Applied '+skinSuitTone.options[skinSuitTone.selectedIndex].text+' skin material to the editable base body. Export or rig to preserve this material in the saved GLB.':'No compatible body materials were found; inspect the GLB material names before applying a tint.');
 }
-document.querySelector('#applyHair')?.addEventListener('click',()=>{const id=document.querySelector('#hairStyle').value;if(id)applyWardrobeAsset('hair',id);else setWardrobeStatus('Choose a hairstyle first.')});
-document.querySelector('#applyClothing')?.addEventListener('click',()=>{
- const chosen=[['top','wardrobeTop'],['bottom','wardrobeBottom'],['outerwear','wardrobeOuterwear'],['shoes','wardrobeShoes']].filter(([,id])=>document.querySelector('#'+id).value);
- if(!chosen.length){setWardrobeStatus('Choose at least one clothing item.');return}
- chosen.forEach(([slot,id])=>applyWardrobeAsset(slot,document.querySelector('#'+id).value));
-});
-document.querySelector('#clearWardrobe')?.addEventListener('click',()=>{Object.keys(wardrobeAttached).forEach(clearWardrobeItem);setWardrobeStatus('Hair and clothing removed from the current preview.')});
+document.querySelector('#applySkinSuit')?.addEventListener('click',applySkinSuit);
+skinSuitTone?.addEventListener('change',applySkinSuit);
+
 async function loadLibraryModel(){
  const selected=document.querySelector('#modelSelect').value,def=libraryModels[selected];
  if(!def){status.textContent='Choose a library model first.';return}
@@ -111,7 +110,7 @@ async function loadLibraryModel(){
     baseModelScale=fitScale;baseModelPosition.copy(avatar.position);
    }else{baseModelScale=1;baseModelPosition.copy(avatar.position)}
    scene.add(avatar);
-   if(currentModelPurpose==='body')attachGeneratedFace();
+   if(currentModelPurpose==='body'){applySkinSuit();attachGeneratedFace();}
    const target=currentModelPurpose==='body'?new THREE.Vector3(0,.9,0):center;
    controls.target.copy(target);const distance=Math.max(size.x,size.y,size.z,1)*2.5;camera.position.set(target.x,target.y+size.y*.18,target.z+distance);camera.lookAt(target);controls.update();
    mixer=new THREE.AnimationMixer(avatar);clips=g.animations.map((c,i)=>({name:c.name||'Animation '+(i+1),clip:c,source:'embedded'}));motionManager=new AnimationManager();try{motionManager.attach(avatar)}catch{}updateClips();
@@ -468,7 +467,7 @@ async function exportCombinedGlb() {
   if (!avatar || !currentModelFile) throw new Error('Load a GLB avatar first.');
   const tweakState = tweakControls.toJSON();
   const hasModelFitTweaks = tweakState.headScale !== 1 || tweakState.headOffsetY !== 0 || tweakState.headOffsetZ !== 0;
-  if (!clips.length && !hasModelFitTweaks && !hasGeneratedFace) { persistStatus('No generated face, imported clips, or model-fit changes to export. The existing GLB will be uploaded unchanged.'); return currentModelFile; }
+  if (!clips.length && !hasModelFitTweaks && !hasGeneratedFace && !hasSkinSuitMaterial) { persistStatus('No generated face, imported clips, or model-fit changes to export. The existing GLB will be uploaded unchanged.'); return currentModelFile; }
   const {GLTFExporter} = await import('three/addons/exporters/GLTFExporter.js');
   const exporter = new GLTFExporter();
   const binary = await new Promise((resolve, reject) => exporter.parse(
@@ -541,7 +540,7 @@ rig3dButton.addEventListener('click', async () => {
     if (!/\.glb$/i.test(currentModelFile.name)) throw new Error('Save the model as GLB first; a standalone .gltf may reference files that were not uploaded.');
     if (currentModelFile.size > 50 * 1024 * 1024) throw new Error('The GLB must be no larger than 50 MiB for shared-media upload.');
     const tweakState = tweakControls.toJSON();
-    if (hasGeneratedFace || clips.some(entry => entry.source !== 'embedded') || tweakState.headScale !== 1 || tweakState.headOffsetY !== 0 || tweakState.headOffsetZ !== 0) await exportCombinedGlb();
+    if (hasGeneratedFace || hasSkinSuitMaterial || clips.some(entry => entry.source !== 'embedded') || tweakState.headScale !== 1 || tweakState.headOffsetY !== 0 || tweakState.headOffsetZ !== 0) await exportCombinedGlb();
     const current = await tenantControl();
     await controlApi('/appearance',{audio2FaceUrl:a2fUrl.value.trim(),morphIntensity:tweakState.morphIntensity});
     persistStatus('Uploading the existing GLB privately…');

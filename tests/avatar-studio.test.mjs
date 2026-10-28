@@ -76,12 +76,11 @@ test("Avatar Studio offers separate generic male/female bodies and an unchanged 
   assert.match(studio, /value="commissioned"/);
   assert.match(studio, /male-base-mesh-base_male\.glb/);
   assert.match(studio, /female-base-mesh-base_female\.glb/);
-  assert.match(studio, /Meshy_AI_Neon_Lock_In_Gamer_All_Animations%20\(1\)\.glb/);
+  assert.match(studio, /public\/models\/commissioned-finished-model\.glb/);
   assert.match(studio, /https:\/\/cdn\.jsdelivr\.net\/gh\/Mtman1987\/3davatar@main/);
   assert.doesNotMatch(studio, /raw\.githubusercontent\.com\/Mtman1987\/3davatar/);
   assert.match(studio, /currentModelPurpose==='finished'/);
   assert.match(studio, /currentModelPurpose === 'finished'.*view-only/s);
-  assert.match(studio, /if\(!avatar\|\|currentModelPurpose==='finished'\)return/);
   assert.match(studio, /currentModelPurpose!=='finished'/);
 });
 
@@ -94,7 +93,7 @@ test("Avatar Studio generates a photo-based ARKit face on generic bodies and pre
   assert.match(studio, /AvatarAceFaceBuilder\.buildFace/);
   assert.match(studio, /ARKIT_BLENDSHAPE_NAMES/);
   assert.match(studio, /hasGeneratedFace/);
-  assert.match(studio, /if\(currentModelPurpose==='body'\)attachGeneratedFace\(\)/);
+  assert.ok(studio.includes("applySkinSuit();attachGeneratedFace();"));
   assert.match(studio, /storage\.googleapis\.com/);
   assert.match(host, /connect-src[^;]*https:\/\/storage\.googleapis\.com/);
   assert.match(host, /wasm-unsafe-eval/);

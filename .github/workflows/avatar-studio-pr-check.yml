@@ -8,8 +8,6 @@ on:
       - scripts/test-avatar-studio-inline.mjs
       - tests/avatar-studio.test.mjs
       - tests/avatar-studio-integration.test.mjs
-      - tests/avatar-wardrobe-assets.test.mjs
-      - apps/streamweaver/AVATAR-WARDROBE-ASSETS.md
       - docs/STREAMWEAVER-AVATAR-STUDIO-INTEGRATION.md
       - .github/workflows/avatar-studio-pr-check.yml
   pull_request:
@@ -34,6 +32,6 @@ jobs:
       - name: Build workspace
         run: npm run build
       - name: Run Avatar Studio regression tests
-        run: node --test tests/avatar-studio.test.mjs tests/avatar-studio-integration.test.mjs tests/avatar-wardrobe-assets.test.mjs
+        run: node --test tests/avatar-studio.test.mjs tests/avatar-studio-integration.test.mjs tests/avatar-skin-suit.test.mjs
       - name: Check rendered browser script syntax
         run: node scripts/test-avatar-studio-inline.mjs
