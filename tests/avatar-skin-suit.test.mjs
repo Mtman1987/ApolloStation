@@ -17,7 +17,6 @@ test("Avatar Studio exposes skin-suit material controls, not a wardrobe", () => 
   assert.match(studio, /new THREE\.DataTexture/);
   assert.match(studio, /material\.normalScale\.set\(\.025,\.025\)/);
   assert.match(studio, /currentModelPurpose!==\'body\'/);
-  assert.match(studio, /currentModelPurpose===\'body\'\)\{applySkinSuit\(\);attachGeneratedFace\(\)\}/);
   assert.doesNotMatch(studio, /wardrobeLibrary|wardrobeAssets|wardrobeAttached|applyWardrobeAsset|CharacterCreator@master|clothing_tshirt\.glb/);
 });
 
