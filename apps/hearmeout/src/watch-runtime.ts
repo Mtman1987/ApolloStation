@@ -1,4 +1,3 @@
-
 import { dirname, join, resolve } from 'node:path';
 import { configuredDonorOrigin } from './donor-origin.js';
 import { hearMeOutMovieProviderUrl } from './movie-provider.js';
