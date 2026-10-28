@@ -62,3 +62,10 @@ Donor has about 106 `route.ts` files. Apollo's HearMeOut API is about 30 endpoin
 3. YouTube upload (`watch/youtube/upload`): EXCLUDE.
 4. Proxy routes (`watch/proxy`, `youtube-audio/proxy`, `youtube-video/proxy`, `youtube-proxy`): PORT. Required tests: no provider URL, cookie, or credential in any response, and origin checks on every proxy route. The matrix reviewer had recommended EXCLUDE for leak risk. The owner chose PORT, so the leak tests are mandatory.
 5. Diagnostics (`xtream/direct-test`, `xtream/status`): PORT. They must not return credentials or raw provider URLs.
+
+## Blockers found while starting the decided ports (2026-10-28)
+
+- **Guest login (behind SPMT):** SPMT in this repo exposes only `/v1/session` and `/v1/auth/service-token`. No guest-session endpoint exists here. Porting needs either an SPMT endpoint (lives in the SPMT repo, not this one) or an owner decision to accept an Apollo-owned guest session, which conflicts with "behind SPMT". BLOCKED on owner.
+- **Twitch login:** needs Twitch client ID and secret, plus a redirect URI for Apollo. Will request via ask_secrets. Blocked until the secrets are provided.
+- **Proxy routes (4) and diagnostics (2):** decided PORT. Not started. Donor routes to read first: `watch/proxy`, `youtube-audio/proxy`, `youtube-video/proxy`, `youtube-proxy`, `xtream/direct-test`, `xtream/status`.
+- **YouTube upload:** EXCLUDED.
