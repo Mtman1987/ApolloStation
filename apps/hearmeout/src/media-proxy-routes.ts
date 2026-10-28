@@ -39,7 +39,67 @@ export interface MediaProxyDeps {
   // Provider VOD URL. It stays in this process and is never returned.
   xtreamVodUrl?: (streamId: string) => Promise<URL>;
   fetchImpl?: typeof fetch;
+  // Registered YouTube CDN URLs. Defaults to the module-level registry.
+  youtubeStreams?: YoutubeStreamRegistry;
 }
+
+export const YOUTUBE_STREAM_TTL_MS = 2 * 60 * 60 * 1000;
+export const YOUTUBE_STREAM_WINDOW_BYTES = 1024 * 1024;
+export const YOUTUBE_STREAM_MAX_ENTRIES = 256;
+const YOUTUBE_VIDEO_ID_RE = /^[A-Za-z0-9_-]{11}$/;
+
+export type YoutubeStreamKind = 'audio' | 'video';
+
+interface YoutubeStreamEntry {
+  url: URL;
+  expiresAt: number;
+}
+
+// In-memory map of registered CDN URLs, keyed by video and kind. Entries expire after
+// the TTL and the oldest entry is dropped when the cap is reached. The CDN URL never
+// leaves this map; clients only receive a proxy path.
+export class YoutubeStreamRegistry {
+  private readonly entries = new Map<string, YoutubeStreamEntry>();
+
+  constructor(private readonly now: () => number = Date.now) {}
+
+  put(videoId: string, kind: YoutubeStreamKind, url: URL): void {
+    this.sweep();
+    const key = `${kind}:${videoId}`;
+    this.entries.delete(key);
+    while (this.entries.size >= YOUTUBE_STREAM_MAX_ENTRIES) {
+      const oldest = this.entries.keys().next().value;
+      if (oldest === undefined) break;
+      this.entries.delete(oldest);
+    }
+    this.entries.set(key, { url, expiresAt: this.now() + YOUTUBE_STREAM_TTL_MS });
+  }
+
+  get(videoId: string, kind: YoutubeStreamKind): URL | undefined {
+    const key = `${kind}:${videoId}`;
+    const entry = this.entries.get(key);
+    if (!entry) return undefined;
+    if (this.now() >= entry.expiresAt) {
+      this.entries.delete(key);
+      return undefined;
+    }
+    return entry.url;
+  }
+
+  size(): number {
+    this.sweep();
+    return this.entries.size;
+  }
+
+  private sweep(): void {
+    const current = this.now();
+    for (const [key, entry] of this.entries) {
+      if (current >= entry.expiresAt) this.entries.delete(key);
+    }
+  }
+}
+
+const youtubeStreams = new YoutubeStreamRegistry();
 
 type Handler = (request: IncomingMessage, response: ServerResponse, url: URL, deps: MediaProxyDeps) => Promise<void>;
 
@@ -82,6 +142,9 @@ export async function handleMediaProxyRoute(
 function matchRoute(method: string, pathname: string): Handler | undefined {
   if (method === 'GET' && pathname === '/api/watch/proxy') return watchProxy;
   if (method === 'POST' && pathname === '/api/hearmeout/youtube-proxy') return youtubeProxy;
+  if (method === 'POST' && pathname === '/api/hearmeout/youtube-stream/register') return youtubeStreamRegister;
+  if (method === 'GET' && pathname === '/api/hearmeout/youtube-audio/proxy') return youtubeStreamProxy('audio');
+  if (method === 'GET' && pathname === '/api/hearmeout/youtube-video/proxy') return youtubeStreamProxy('video');
   if (method === 'GET' && pathname === '/api/watch/xtream/status') return xtreamStatus;
   if (method === 'GET' && /^\/api\/watch\/xtream\/direct-test\/[^/]+$/.test(pathname)) return xtreamDirectTest;
   return undefined;
@@ -253,6 +316,87 @@ const youtubeProxy: Handler = async (request, response, _url, deps) => {
     sendProxyError(response, error);
   }
 };
+
+// Registers a checked CDN URL for one video. The client gets back a proxy path, never the URL.
+const youtubeStreamRegister: Handler = async (request, response, _url, deps) => {
+  if (!sameOrigin(request)) return sendJson(response, 403, { error: 'Cross-origin request refused' });
+  let body: unknown;
+  try {
+    body = await readBoundedJson(request, MAX_POST_BYTES);
+  } catch (error) {
+    return sendProxyError(response, error);
+  }
+  const value = (body && typeof body === 'object' ? body : {}) as Record<string, unknown>;
+  const videoId = typeof value.videoId === 'string' ? value.videoId : '';
+  const rawKind = value.kind;
+  const kind: YoutubeStreamKind | undefined = rawKind === 'audio' ? 'audio' : rawKind === 'video' ? 'video' : undefined;
+  if (!YOUTUBE_VIDEO_ID_RE.test(videoId) || !kind) return sendJson(response, 400, { error: 'Invalid videoId or kind' });
+  let target: URL;
+  try {
+    target = new URL(typeof value.url === 'string' ? value.url : '');
+  } catch {
+    return sendJson(response, 400, { error: 'Invalid or disallowed url' });
+  }
+  if (target.protocol !== 'https:' || !isAllowedYoutubeHost(target.hostname)) {
+    return sendJson(response, 400, { error: 'Invalid or disallowed url' });
+  }
+  const mime = target.searchParams.get('mime') ?? '';
+  if (kind === 'audio' && mime.startsWith('video/')) return sendJson(response, 415, { error: 'Audio stream required' });
+  if (kind === 'video' && mime.startsWith('audio/')) return sendJson(response, 415, { error: 'Video stream required' });
+  (deps.youtubeStreams ?? youtubeStreams).put(videoId, kind, target);
+  sendJson(response, 200, { ok: true, proxyPath: `/api/hearmeout/youtube-${kind}/proxy?videoId=${videoId}` });
+};
+
+// Serves one bounded byte window of a registered stream. Every hop is checked, the
+// response must be a 206 of the expected media type, and cookies are never forwarded.
+function youtubeStreamProxy(kind: YoutubeStreamKind): Handler {
+  return async (request, response, url, deps) => {
+    const videoId = url.searchParams.get('videoId') ?? '';
+    if (!YOUTUBE_VIDEO_ID_RE.test(videoId)) return sendJson(response, 400, { error: 'Invalid videoId' });
+    const stored = (deps.youtubeStreams ?? youtubeStreams).get(videoId, kind);
+    if (!stored) return sendJson(response, 404, { error: 'No stream registered for this video' });
+    const controller = new AbortController();
+    response.on('close', () => controller.abort());
+    try {
+      const upstream = await fetchChecked(
+        stored,
+        isAllowedYoutubeHost,
+        { range: windowedRange(request.headers.range ?? null), signal: controller.signal },
+        deps.fetchImpl ?? fetch,
+      );
+      const contentType = (upstream.headers.get('content-type') ?? '').toLowerCase();
+      const contentRange = upstream.headers.get('content-range');
+      const typeOk = kind === 'audio' ? contentType.startsWith('audio/') : contentType.startsWith('video/');
+      if (upstream.status !== 206 || !upstream.body || !contentRange || !typeOk) {
+        await upstream.body?.cancel().catch(() => {});
+        return sendJson(response, 502, { error: 'Upstream did not return a valid media window' });
+      }
+      const headers: Record<string, string> = {
+        'content-type': contentType,
+        'content-range': contentRange,
+        'accept-ranges': 'bytes',
+        'cache-control': 'no-store',
+        'x-content-type-options': 'nosniff',
+      };
+      const length = upstream.headers.get('content-length');
+      if (length) headers['content-length'] = length;
+      response.writeHead(206, headers);
+      Readable.fromWeb(upstream.body as never).on('error', () => response.destroy()).pipe(response);
+    } catch (error) {
+      sendProxyError(response, error);
+    }
+  };
+}
+
+// Turns any Range header into one window of at most YOUTUBE_STREAM_WINDOW_BYTES.
+function windowedRange(header: string | null): string {
+  const match = header ? /^bytes=(\d+)-(\d*)$/i.exec(header.trim()) : null;
+  const start = match ? Number(match[1]) : 0;
+  if (!Number.isSafeInteger(start)) return `bytes=0-${YOUTUBE_STREAM_WINDOW_BYTES - 1}`;
+  const windowEnd = start + YOUTUBE_STREAM_WINDOW_BYTES - 1;
+  const end = match?.[2] ? Math.min(Number(match[2]), windowEnd) : windowEnd;
+  return `bytes=${start}-${end}`;
+}
 
 const xtreamStatus: Handler = async (_request, response, _url, deps) => {
   if (!deps.xtreamStatus) return sendJson(response, 503, { error: 'Provider status is unavailable' });
