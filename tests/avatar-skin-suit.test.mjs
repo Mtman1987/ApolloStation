@@ -12,6 +12,7 @@ test("Avatar Studio exposes skin-suit material controls, not a wardrobe", () => 
     assert.ok(studio.includes(tone), "missing skin tone " + tone);
   }
   assert.match(studio, /function applySkinSuit\(\)/);
+  assert.ok(studio.includes("applySkinSuit();attachGeneratedFace();"));
   assert.match(studio, /material\.roughness=Math\.max\(material\.roughness,\.72\)/);
   assert.match(studio, /new THREE\.DataTexture/);
   assert.match(studio, /material\.normalScale\.set\(\.025,\.025\)/);
