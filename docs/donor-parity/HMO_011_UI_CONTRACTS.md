@@ -5,10 +5,13 @@ Donor inspected read-only: `Mtman1987/hearmeout-main` at `8401114`.
 
 ## Status and safeguards
 
-**AUTHORED, NOT EXECUTION-VERIFIED.** HMO-011 remains incomplete. No local
-build, typecheck or test execution; no Oracle dispatch; no deployment.
-The owner explicitly requested continuation without Oracle this round.
-`docs/hmo-handoff` stays unmerged; PR #306 is untouched.
+**ORACLE-VERIFIED (2026-10-28).** HMO-011 remains incomplete, but the mounted
+contract batch and its follow-up repair work are verified on current `main`.
+No local build, typecheck, or test execution was used; validation came only
+from [Oracle run 40752588352](https://github.com/Mtman1987/ApolloStation/actions/runs/40752588352)
+on main commit `ff8e31aa09857b08568108c870636d4b23bfcfc7`. All four shards
+completed: 1,404 test cases passed, with zero failures, cancellations, or skips.
+This is repository validation only; it is not a deployment claim.
 
 `tests/hearmeout-ui-api-contracts.test.mjs` adds ten mounted HTTP tests.
 It uses isolated temporary SQLite databases and a loopback SPMT session stub,
@@ -17,7 +20,7 @@ No real provider credentials, donor execution or donor network calls are needed.
 The tests import built `dist` modules, following the existing Oracle suite.
 They are discovered as `tests/*.test.mjs`; no workflow changes are necessary.
 
-## Child contract records (pending Oracle evidence)
+## Child contract records (Oracle evidence recorded)
 
 These records supplement the parent HMO-011 ledger row. Adaptation is not a
 declaration that donor aliases can be removed. The route coverage checklist's
@@ -48,10 +51,15 @@ declaration that donor aliases can be removed. The route coverage checklist's
   handoff gaps (YouTube HLS, queue/store ordering, session revocation, Twitch
   redirect registration) remain open.
 
-## Next verification gate
+## Verification evidence and next scope
 
-When the owner authorizes Oracle, dispatch `oracle-release-validation.yml` once
-for the completed batch, inspect all four shards and the aggregate report, and
-record the branch SHA/run URL and failures here. Until then this branch is
-unverified and must not be merged as validated parity. Continue route-by-route
-work from `HEARMEOUT_ROUTE_COVERAGE.md`, prioritizing remaining browser callers.
+- The room-control contract batch merged in `a8772f9f39874cc85caeeec8aef38eb6e047f46e`.
+  Follow-up commits `ee213844da7e92720b35bf17d92fd12c4a4ee977` and
+  `ff8e31aa09857b08568108c870636d4b23bfcfc7` corrected pre-existing diagnostic
+  assumptions without changing the documented HMO-011 route semantics.
+- Oracle run `40752588352` completed every assigned file in all four shards;
+  its aggregate report records 1,404 passing test cases and no assertion
+  failures.
+- Continue route-by-route work from `HEARMEOUT_ROUTE_COVERAGE.md`, prioritizing
+  remaining browser callers. The listed YouTube HLS, queue/store ordering,
+  session revocation, and Twitch redirect-registration gaps remain open.
