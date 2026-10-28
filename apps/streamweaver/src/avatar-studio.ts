@@ -105,7 +105,7 @@ async function loadLibraryModel(){
     baseModelScale=fitScale;baseModelPosition.copy(avatar.position);
    }else{baseModelScale=1;baseModelPosition.copy(avatar.position)}
    scene.add(avatar);
-   if(currentModelPurpose==='body')attachGeneratedFace();
+   if(currentModelPurpose==='body'){applySkinSuit();attachGeneratedFace();}
    const target=currentModelPurpose==='body'?new THREE.Vector3(0,.9,0):center;
    controls.target.copy(target);const distance=Math.max(size.x,size.y,size.z,1)*2.5;camera.position.set(target.x,target.y+size.y*.18,target.z+distance);camera.lookAt(target);controls.update();
    mixer=new THREE.AnimationMixer(avatar);clips=g.animations.map((c,i)=>({name:c.name||'Animation '+(i+1),clip:c,source:'embedded'}));motionManager=new AnimationManager();try{motionManager.attach(avatar)}catch{}updateClips();
