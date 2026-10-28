@@ -130,7 +130,8 @@ async function prepareEpisode(entry: WatchCatalogEntry, playbackPath: string, do
     }
     const manifest = await boundedText(response);
     if (!manifest.startsWith('#EXTM3U')) throw Error('The IPTV provider did not return playable episode media');
-    return { itemId: entry.id, type: 'movie', title: entry.title, source: 'iptv', playbackUrl: url.href };
+    // Store the Apollo HLS route, not the donor URL. The browser and the media worker never see the donor origin.
+    return { itemId: entry.id, type: 'movie', title: entry.title, source: 'iptv', playbackUrl: hlsPath };
   }
   throw Error('The IPTV provider is still preparing that episode. Retry your request.');
 }
