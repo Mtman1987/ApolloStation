@@ -39,7 +39,67 @@ export interface MediaProxyDeps {
   // Provider VOD URL. It stays in this process and is never returned.
   xtreamVodUrl?: (streamId: string) => Promise<URL>;
   fetchImpl?: typeof fetch;
+  // Registered YouTube CDN URLs. Defaults to the module-level registry.
+  youtubeStreams?: YoutubeStreamRegistry;
 }
+
+export const YOUTUBE_STREAM_TTL_MS = 2 * 60 * 60 * 1000;
+export const YOUTUBE_STREAM_WINDOW_BYTES = 1024 * 1024;
+export const YOUTUBE_STREAM_MAX_ENTRIES = 256;
+const YOUTUBE_VIDEO_ID_RE = /^[A-Za-z0-9_-]{11}$/;
+
+export type YoutubeStreamKind = 'audio' | 'video';
+
+interface YoutubeStreamEntry {
+  url: URL;
+  expiresAt: number;
+}
+
+// In-memory map of registered CDN URLs, keyed by video and kind. Entries expire after
+// the TTL and the oldest entry is dropped when the cap is reached. The CDN URL never
+// leaves this map; clients only receive a proxy path.
+export class YoutubeStreamRegistry {
+  private readonly entries = new Map<string, YoutubeStreamEntry>();
+
+  constructor(private readonly now: () => number = Date.now) {}
+
+  put(videoId: string, kind: YoutubeStreamKind, url: URL): void {
+    this.sweep();
+    const key = `${kind}:${videoId}`;
+    this.entries.delete(key);
+    while (this.entries.size >= YOUTUBE_STREAM_MAX_ENTRIES) {
+      const oldest = this.entries.keys().next().value;
+      if (oldest === undefined) break;
+      this.entries.delete(oldest);
+    }
+    this.entries.set(key, { url, expiresAt: this.now() + YOUTUBE_STREAM_TTL_MS });
+  }
+
+  get(videoId: string, kind: YoutubeStreamKind): URL | undefined {
+    const key = `${kind}:${videoId}`;
+    const entry = this.entries.get(key);
+    if (!entry) return undefined;
+    if (this.now() >= entry.expiresAt) {
+      this.entries.delete(key);
+      return undefined;
+    }
+    return entry.url;
+  }
+
+  size(): number {
+    this.sweep();
+    return this.entries.size;
+  }
+
+  private sweep(): void {
+    const current = this.now();
+    for (const [key, entry] of this.entries) {
+      if (current >= entry.expiresAt) this.entries.delete(key);
+    }
+  }
+}
+
+const youtubeStreams = new YoutubeStreamRegistry();
 
 type Handler = (request: IncomingMessage, response: ServerResponse, url: URL, deps: MediaProxyDeps) => Promise<void>;
 
@@ -82,6 +142,9 @@ export async function handleMediaProxyRoute(
 function matchRoute(method: string, pathname: string): Handler | undefined {
   if (method === 'GET' && pathname === '/api/watch/proxy') return watchProxy;
   if (method === 'POST' && pathname === '/api/hearmeout/youtube-proxy') return youtubeProxy;
+  if (method === 'POST' && pathname === '/api/hearmeout/youtube-stream/register') return youtubeStreamRegister;
+  if (method === 'GET' && pathname === '/api/hearmeout/youtube-audio/proxy') return youtubeStreamProxy('audio');
+  if (method === 'GET' && pathname === '/api/hearmeout/youtube-video/proxy') return youtubeStreamProxy('video');
   if (method === 'GET' && pathname === '/api/watch/xtream/status') return xtreamStatus;
   if (method === 'GET' && /^\/api\/watch\/xtream\/direct-test\/[^/]+$/.test(pathname)) return xtreamDirectTest;
   return undefined;
@@ -266,7 +329,7 @@ const youtubeStreamRegister: Handler = async (request, response, _url, deps) => 
   const value = (body && typeof body === 'object' ? body : {}) as Record<string, unknown>;
   const videoId = typeof value.videoId === 'string' ? value.videoId : '';
   const rawKind = value.kind;
-  const kind: YoutubeStreamKind | undefined = rawKind === 'audio' || rawKind === 'video' ? rawKind : undefined;
+  const kind: YoutubeStreamKind | undefined = rawKind === 'audio' ? 'audio' : rawKind === 'video' ? 'video' : undefined;
   if (!YOUTUBE_VIDEO_ID_RE.test(videoId) || !kind) return sendJson(response, 400, { error: 'Invalid videoId or kind' });
   let target: URL;
   try {
