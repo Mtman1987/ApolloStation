@@ -30,7 +30,12 @@ test('a public search request resolves through the resolver and schedules media'
   await host.listen();
   const base='http://127.0.0.1:'+host.server.address().port;
   const url=base+'/api/watch/broadcast/requests?roomId='+PUBLIC_LOUNGE_ID;
-  const post=(body,key)=>fetch(url,{method:'POST',headers:{'content-type':'application/json','idempotency-key':key},body:JSON.stringify(body)});
+  let viewerCookie='';
+  const post=async(body,key)=>{
+   const response=await fetch(url,{method:'POST',headers:{'content-type':'application/json','idempotency-key':key,...(viewerCookie?{cookie:viewerCookie}:{})},body:JSON.stringify(body)});
+   viewerCookie=response.headers.get('set-cookie')?.split(';',1)[0]??viewerCookie;
+   return response;
+  };
   const stateOf=async()=>(await(await fetch(base+'/api/watch/broadcast/state?roomId='+PUBLIC_LOUNGE_ID)).json());
 
   // 1. Music search queues one item; the resolver sees the exact query and lane.
@@ -40,6 +45,7 @@ test('a public search request resolves through the resolver and schedules media'
   assert.equal(resolved.length,1);
   assert.equal(resolved[0].query,'Thriller');
   assert.equal(resolved[0].lane,'music');
+  assert.match(viewerCookie,/^hmo_viewer=[a-f0-9]{64}$/,'public replay retains its viewer identity');
   assert.equal(scheduledEntries(firstState).at(-1)?.item.title,'Thriller');
   assert.equal(scheduledEntries(firstState).at(-1)?.item.type,'music');
 
