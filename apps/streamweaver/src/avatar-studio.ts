@@ -40,10 +40,10 @@ const libraryModels={
 };
 const skinSuitTone=document.querySelector('#skinTone');
 function setSkinSuitStatus(message){const el=document.querySelector('#skinSuitStatus');if(el)el.textContent=message}
-function applySkinSuit(){
+function applySkinSuit(toneOverride=null){
  if(!avatar){setSkinSuitStatus('Load the real generic male or female body first.');return}
  if(currentModelPurpose!=='body'){setSkinSuitStatus('Skin-suit material controls apply only to the generic base bodies; the commissioned model remains untouched.');return}
- const tone=skinSuitTone.value;
+ const tone=toneOverride||skinSuitTone.value;
  const excluded=/hair|eye|iris|pupil|brow|lash|teeth|tooth|mouth|tongue|gum|cloth|shirt|jacket|shoe|boot|accessor|nail/i;
  let changed=0;
  avatar.traverse(node=>{
@@ -84,7 +84,20 @@ function applySkinSuit(){
   mesh.material=Array.isArray(mesh.material)?next:next[0];
  });
  if(changed)hasSkinSuitMaterial=true;
- setSkinSuitStatus(changed?'Applied '+skinSuitTone.options[skinSuitTone.selectedIndex].text+' skin material to the editable base body. Export or rig to preserve this material in the saved GLB.':'No compatible body materials were found; inspect the GLB material names before applying a tint.');
+ setSkinSuitStatus(changed?(toneOverride?'Matched the generic body skin material to the generated face photo, with a subtle pore normal and natural matte finish.':'Applied '+skinSuitTone.options[skinSuitTone.selectedIndex].text+' skin material to the editable base body. Export or rig to preserve this material in the saved GLB.'):'No compatible body materials were found; inspect the GLB material names before applying a tint.');
+}
+function sampleFaceSkinTone(source){
+ if(!source||!source.getContext)return null;
+ const context=source.getContext('2d');if(!context||source.width<8||source.height<8)return null;
+ try{
+  const x0=Math.floor(source.width*.34),x1=Math.floor(source.width*.66),y0=Math.floor(source.height*.34),y1=Math.floor(source.height*.68);
+  const pixels=context.getImageData(x0,y0,Math.max(1,x1-x0),Math.max(1,y1-y0)).data;
+  let r=0,g=0,b=0,count=0;
+  for(let i=0;i<pixels.length;i+=4){const rr=pixels[i],gg=pixels[i+1],bb=pixels[i+2],a=pixels[i+3],max=Math.max(rr,gg,bb),min=Math.min(rr,gg,bb);if(a<200||max<48||max-min>100)continue;r+=rr;g+=gg;b+=bb;count++}
+  if(count<20)return null;
+  const adjust=v=>Math.max(0,Math.min(255,Math.round(v*.94)));
+  return '#'+[adjust(r/count),adjust(g/count),adjust(b/count)].map(v=>v.toString(16).padStart(2,'0')).join('');
+ }catch{return null}
 }
 document.querySelector('#applySkinSuit')?.addEventListener('click',applySkinSuit);
 skinSuitTone?.addEventListener('change',applySkinSuit);
@@ -144,8 +157,10 @@ function attachGeneratedFace(){
  if(!headAnchor||!generatedFaces||currentModelPurpose!=='body')return;
  if(faceMesh){headAnchor.remove(faceMesh);faceMesh.geometry.dispose();const mats=Array.isArray(faceMesh.material)?faceMesh.material:[faceMesh.material];mats.forEach(m=>{if(m.map)m.map.dispose();m.dispose()});faceMesh=null}
  const choice=document.querySelector('#faceChoice').value||'standard';
- faceMesh=makeGeneratedFace(generatedFaces[choice]||generatedFaces.standard);
+ const selectedFace=generatedFaces[choice]||generatedFaces.standard;
+ faceMesh=makeGeneratedFace(selectedFace);
  headAnchor.add(faceMesh);hasGeneratedFace=true;syncGeneratedFaceFit();applyGeneratedFaceExpression();
+ const matchedTone=sampleFaceSkinTone(selectedFace.texture);if(matchedTone)applySkinSuit(matchedTone);
  document.querySelector('#faceGenerationStatus').textContent='3D face generated and attached to the selected generic body. Its 52 ARKit morph targets are available to Audio2Face.';
 }
 function syncGeneratedFaceFit(){
