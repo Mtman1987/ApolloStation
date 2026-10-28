@@ -1,3 +1,4 @@
+
 import { dirname, join, resolve } from 'node:path';
 import { configuredDonorOrigin } from './donor-origin.js';
 import { hearMeOutMovieProviderUrl } from './movie-provider.js';
@@ -67,19 +68,19 @@ export function createHearMeOutWatchRuntime(options: HearMeOutWatchRuntimeOption
       getNextXtreamSeriesEpisode(seriesId, seasonNumber, episodeNumber, seriesTitle) as unknown as Promise<WatchCatalogEntry | null>);
 
   // Captures the playable route of the matched catalog item for this call only.
-  const depsFor = (capture: { item?: CatalogEpisode }): WatchRequestDeps => ({
+  const depsFor = (capture: { item?: CatalogEpisode | undefined }): WatchRequestDeps => ({
     store,
     findSeriesEpisode: async (query, getProgress) => {
       const item = await findSeries(query, getProgress);
       capture.item = item ?? undefined;
-      return item;
+      return item ?? null;
     },
     getNextSeriesEpisode: nextSeries,
   });
 
   return {
     async request(scope, query) {
-      const capture: { item?: CatalogEpisode } = {};
+      const capture: { item?: CatalogEpisode | undefined } = {};
       const result = await requestWatch(depsFor(capture), scope, query);
       if (result.status !== 'matched') return { status: 'no-match' };
       const playbackPath = capture.item?.playbackUrl;
