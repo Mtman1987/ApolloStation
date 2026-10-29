@@ -48,6 +48,28 @@ Continue porting required behavior from the read-only HearMeOut donor into
 
 ## Next action
 
+### Continuation increment (2026-10-29; Oracle pending)
+
+`tests/hearmeout-episode-hls-integration.test.mjs` now exercises an authenticated
+room request through the real Watch runtime, then fetches its Apollo-owned
+master, variant and segment through the mounted web server and real disk HLS
+handler. Catalog lookup and donor acquisition are injected; cached fixture bytes
+are not proof of FFmpeg conversion, browser decoding or live provider playback.
+
+The companion route repair adds exact single byte ranges (206/416), bounds
+manifests to 1 MiB, rejects non-local manifest children, sanitizes route errors,
+and closes file streams on viewer disconnect. It preserves public Activity HLS
+compatibility; it does not establish room/tenant authorization for that route.
+Malformed references and unsafe/oversized manifests have focused regressions.
+No local build, typecheck or tests were run. This increment is
+**ported-unverified** until its post-merge main Oracle result confirms it.
+
+After Oracle, record the result and continue with real provider acquisition and
+conversion, room/tenant media authorization, browser playback, and the remaining
+queue/progress ordering decision. P08 and HMO-011 remain open. The `/watch/accept`
+stored-recommendation path is not covered by this request-path increment;
+Internet Archive remains excluded. YouTube HLS parity also remains open.
+
 Continue the open Watch/media parity. The next concrete bounded target is the
 accepted-episode Xtream HLS integration:
 
