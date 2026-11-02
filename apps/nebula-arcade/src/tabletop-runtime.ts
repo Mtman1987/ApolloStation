@@ -127,9 +127,11 @@ export class SqliteNebulaTabletopRuntime {
     return result;
   }
   observeBingo(message:NormalizedChatMessageV1){
-    const parsed=parseNebulaMessage(message.text);if(!parsed?.body||message.actor.isBot)return;
-    const text=(parsed.gameId?`${parsed.command} ${parsed.args.join(" ")}`:parsed.body).trim().toLowerCase();
+    if(message.actor.isBot)return;
+    const parsed=parseNebulaMessage(message.text);
+    const text=(parsed?.body?(parsed.gameId?`${parsed.command} ${parsed.args.join(" ")}`:parsed.body):message.text).trim().toLowerCase();
     this.ingestBingoTranscript(message.tenantId,message.channelId,text,Date.parse(message.occurredAt));
+    if(!parsed?.body)return;
     const user=message.actor.canonicalUserId||`${message.provider}:${message.actor.providerUserId}`,state=normalizeBingoState(this.read(message.tenantId,message.channelId,"bingo") as BingoStateV1),board=state.personalBoards[user];if(!board)return;
     const square=state.templatePhrases.findIndex((phrase,index)=>{const value=index===12?board.centerPhrase:phrase;return value&&text.includes(value.toLowerCase())&&!board.covered[String(index)];});
     if(square<0||Object.values(board.covered).some(claim=>claim.channel===message.channelId))return;
