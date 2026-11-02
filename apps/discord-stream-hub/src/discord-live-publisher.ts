@@ -48,7 +48,16 @@ export class DshDiscordApi {
       deleteMessage:(tenant,channel,id)=>this.deleteMessage(tenant,channel,id),
     };
   }
+  async getChannel(tenantId:string,channelId:string){return (await this.request<any>(tenantId,"/channels/"+snowflake(channelId,"channelId"),"GET",undefined,"channels:read"))!;}
+  async listActiveThreads(tenantId:string,guildId:string){return await this.request<any>(tenantId,"/guilds/"+snowflake(guildId,"guildId")+"/threads/active","GET",undefined,"channels:read")??{threads:[]};}
+  async listArchivedForumThreads(tenantId:string,forumId:string,before?:string){const query=new URLSearchParams({limit:"100"});if(before)query.set("before",before);return await this.request<any>(tenantId,"/channels/"+snowflake(forumId,"channelId")+"/threads/archived/public?"+query.toString(),"GET",undefined,"channels:read")??{threads:[],has_more:false};}
+  async createForumThread(tenantId:string,forumId:string,name:string,message:Record<string,unknown>,appliedTags?:string[]){const value=await this.request<any>(tenantId,"/channels/"+snowflake(forumId,"channelId")+"/threads","POST",{name:name.slice(0,100),auto_archive_duration:10080,message,...(appliedTags?.length?{applied_tags:appliedTags}:{})});if(!value?.id)throw new Error("Discord did not confirm forum thread creation");return {threadId:String(value.id),messageId:typeof value.message?.id==="string"?value.message.id:undefined};}
+  async createThreadMessage(tenantId:string,threadId:string,payload:Record<string,unknown>){return this.createMessage(tenantId,threadId,payload);}
+  async editThreadMessage(tenantId:string,threadId:string,messageId:string,payload:Record<string,unknown>){return this.editMessage(tenantId,threadId,messageId,payload);}
+  async deleteThreadMessage(tenantId:string,threadId:string,messageId:string){return this.deleteMessage(tenantId,threadId,messageId);}
+  async setThreadArchived(tenantId:string,threadId:string,archived:boolean){await this.request(tenantId,"/channels/"+snowflake(threadId,"channelId"),"PATCH",{archived});}
   async createMessage(tenantId:string,channelId:string,payload:Record<string,unknown>){const body=await this.request<{id?:string}>(tenantId,`/channels/${snowflake(channelId,"channelId")}/messages`,"POST",payload);if(!body?.id)throw new Error("Discord did not return a message id");return body.id;}
+  async getGuild(tenantId:string,guildId:string){return (await this.request<any>(tenantId,"/guilds/"+snowflake(guildId,"guildId")+"?with_counts=false","GET",undefined,"guilds:read"))!;}
   async getUser(tenantId:string,userId:string){return (await this.request<{id:string;avatar?:string|null}>(tenantId,`/users/${snowflake(userId,"userId")}`,"GET",undefined,"guilds:read"))!;}
   async listGuilds(tenantId:string){return await this.request<Array<{id?:string;name?:string;icon?:string|null}>>(tenantId,"/users/@me/guilds","GET",undefined,"guilds:read")??[];}
   async memberDirectory(tenantId: string, guildId: string, progress: () => void = () => {}) {
