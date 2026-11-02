@@ -21,7 +21,7 @@ export interface DshDiscordBrandingV1 { communityMemberName:string; spotlightCha
 export interface DshDiscordBrandingSourceV1 { getBranding(tenantId:string):Promise<DshDiscordBrandingV1>|DshDiscordBrandingV1; }
 export interface DshSpotlightMediaSourceV1 { getImage(input:{tenantId:string;member:DshLiveMemberV1;stream:DshTwitchStreamV1}):Promise<string|undefined>|string|undefined; }
 
-export interface DshTrackedDiscordMessageV1 { tenantId:string; kind:"shoutout"|"spotlight"|"calendar"|"applications"|"guest-shoutout"|"partner-calendar"|"onboarding"; key:string; channelId:string; messageId:string; updatedAt:string; }
+export interface DshTrackedDiscordMessageV1 { tenantId:string; kind:"shoutout"|"spotlight"|"calendar"|"applications"|"guest-shoutout"|"partner-calendar"|"onboarding"|"raid-pile"; key:string; channelId:string; messageId:string; updatedAt:string; }
 
 export class SqliteDshDiscordMessageStore {
   private readonly db:DatabaseSync;
@@ -106,12 +106,23 @@ export class DshDiscordLivePublisher implements DshLiveActionPublisherV1 {
   async publish(action:DshLiveActionV1){
     switch(action.type){
       case "guest.refresh": await this.publishGuest(action); return;
+      case "raid-pile.handoff": await this.publishRaidPileHandoff(action); return;
       case "shoutout.create": await this.upsertShoutout(action.tenantId,action.member,action.stream,false); return;
       case "shoutout.update": await this.upsertShoutout(action.tenantId,action.member,action.stream,false); return;
       case "shoutout.remove": await this.removeShoutout(action.tenantId,action.member); return;
       case "spotlight.update": await this.upsertSpotlight(action.tenantId,action.member,action.stream); return;
       case "spotlight.clear": await this.clearSpotlight(action.tenantId); return;
     }
+  }
+  private async publishRaidPileHandoff(action:Extract<DshLiveActionV1,{type:"raid-pile.handoff"}>){
+    const brand=await this.branding.getBranding(action.tenantId),channelId=brand.groupChannels?.["raid-pile"];
+    if(!channelId)throw Error("Configure a Raid Pile Discord channel before enabling automatic handoffs");
+    const payload={embeds:[{title:"🏔️ Raid Pile handoff",description:action.message,color:0x9146ff,fields:[{name:"Previous holder",value:action.priorTargetName,inline:true},{name:"Next announced target",value:"["+action.nextTargetName+"](https://twitch.tv/"+action.nextTargetLogin+")",inline:true},{name:"Pile",value:action.pileId,inline:true}],footer:{text:"Announcement only · Twitch raids remain voluntary"},timestamp:this.now()}],allowed_mentions:{parse:[]}};
+    let tracked=this.state.get(action.tenantId,"raid-pile",action.pileId);
+    if(tracked&&tracked.channelId!==channelId){await this.api.deleteMessage(action.tenantId,tracked.channelId,tracked.messageId).catch(error=>{if(!repostable(error))throw error;});this.state.remove(action.tenantId,"raid-pile",action.pileId);tracked=undefined;}
+    if(tracked){try{await this.api.editMessage(action.tenantId,channelId,tracked.messageId,payload);this.state.put({...tracked,updatedAt:this.now()});return;}catch(error){if(!repostable(error))throw error;this.state.remove(action.tenantId,"raid-pile",action.pileId);}}
+    const messageId=await this.api.createMessage(action.tenantId,channelId,payload);
+    this.state.put({tenantId:action.tenantId,kind:"raid-pile",key:action.pileId,channelId,messageId,updatedAt:this.now()});
   }
   private async publishGuest(action:DshGuestLiveActionV1){
     const guests=this.guests;if(!guests)throw Error("Guest shoutout delivery is unavailable");

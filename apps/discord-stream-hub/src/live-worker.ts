@@ -31,6 +31,7 @@ import { DshSimulationRoomDiscordTransport } from "./simulation-room.js";
 import { DshTenantSettingsStore } from './settings.js';
 import { dshShoutoutGroupSlug } from './shoutout-groups.js';
 import { dshSystemLiveChannelByLogin } from "./system-live-channels.js";
+import { DshRaidPileStore, DEFAULT_DSH_RAID_PILE_SETTINGS } from "./raid-pile.js";
 
 export interface DshLiveRuntimeTenantV1 {
   tenantId: string;
@@ -178,6 +179,7 @@ export class SupervisedDshLiveService {
   private readonly nebulaMedia?:DshNebulaMediaWorker;
   private readonly suiteActions: DshSuiteActionWorker;
   private readonly settings: DshTenantSettingsStore;
+  private readonly raidPile: DshRaidPileStore;
   private readonly directory: ConfigDirectory;
   private readonly memberDirectory: DshMemberDirectoryStore;
   private readonly memberSync: DshMemberDirectoryWorker;
@@ -194,6 +196,7 @@ export class SupervisedDshLiveService {
     this.memberDirectory = new DshMemberDirectoryStore(options.databasePath, options.config, this.settings);
     const directory = this.directory = new ConfigDirectory(options.config, this.settings, this.memberDirectory);
     this.monitor = new SqliteDshLiveMonitor(options.databasePath, options.config.pollIntervalSeconds * 1_000);
+    this.raidPile = new DshRaidPileStore(options.databasePath, tenantId => { const saved=this.settings.read(tenantId); return { maxSize:saved.raidPileMaxSize??DEFAULT_DSH_RAID_PILE_SETTINGS.maxSize, minSize:saved.raidPileMinSize??DEFAULT_DSH_RAID_PILE_SETTINGS.minSize, pointsReward:saved.raidPilePointsReward??DEFAULT_DSH_RAID_PILE_SETTINGS.pointsReward, handoffHours:saved.raidPileHandoffHours??DEFAULT_DSH_RAID_PILE_SETTINGS.handoffHours, monthlyStrikeLimit:saved.raidPileMonthlyStrikeLimit??DEFAULT_DSH_RAID_PILE_SETTINGS.monthlyStrikeLimit }; }, now);
     this.messages = new SqliteDshDiscordMessageStore(options.databasePath);
     const liveDiscord = new DshDiscordApi(new SpmtDshDiscordGrantSource(this.client, directory), fetchImpl);
     this.cleanup=new DshChannelCleanup(options.databasePath,new DshChannelModerationService(liveDiscord.moderationPort()));
@@ -232,7 +235,14 @@ export class SupervisedDshLiveService {
     }
   }
   async runCalendar(signal:AbortSignal) {while(!signal.aborted&&!this.closed){const cycle=this.syncCalendars();this.calendarCycle=cycle;try{await cycle;}finally{this.calendarCycle=undefined;}await pause(5000,signal);}}
-  private async syncCalendars(){for(const tenant of this.options.config.tenants){await this.memberSync.sync(tenant.tenantId).catch(()=>undefined);await this.activity.runOnce(tenant.tenantId).catch(()=>undefined);for(const guild of tenant.discordGuildIds??[]){const last=this.calendarSync.state(tenant.tenantId,guild).checkedAt;if(!last||Date.parse(this.now())-Date.parse(last)>=30000)await this.calendarSync.sync(tenant.tenantId,guild).catch(()=>undefined);}await this.onboarding?.flush(tenant.tenantId);await this.partnerSchedules.flush(tenant.tenantId);await this.calendarDelivery.flush(tenant.tenantId);await this.applicationDecisions.flush(tenant.tenantId);await this.runtime.flushGuests(tenant.tenantId,this.now());}}
+  private async syncCalendars(){for(const tenant of this.options.config.tenants){await this.memberSync.sync(tenant.tenantId).catch(()=>undefined);await this.activity.runOnce(tenant.tenantId).catch(()=>undefined);for(const guild of tenant.discordGuildIds??[]){const last=this.calendarSync.state(tenant.tenantId,guild).checkedAt;if(!last||Date.parse(this.now())-Date.parse(last)>=30000)await this.calendarSync.sync(tenant.tenantId,guild).catch(()=>undefined);}await this.onboarding?.flush(tenant.tenantId);await this.partnerSchedules.flush(tenant.tenantId);await this.calendarDelivery.flush(tenant.tenantId);await this.applicationDecisions.flush(tenant.tenantId);await this.runtime.flushGuests(tenant.tenantId,this.now());await this.processRaidPileHandoffs(tenant.tenantId);}}
+  private async processRaidPileHandoffs(tenantId:string){
+    for(const pile of this.raidPile.piles(tenantId))for(const member of pile.members){const stream=this.monitor.getLiveStream(tenantId,member.userId);this.raidPile.updatePresence(tenantId,member.userId,stream?.viewerCount??0,Boolean(stream));}
+    this.raidPile.ensureTargets(tenantId);
+    const handoffs=this.raidPile.dueHandoffs(tenantId);
+    for(const handoff of handoffs){const nextAt=handoff.nextTarget.lastRaidedAt??this.now();const action={schemaVersion:1 as const,type:"raid-pile.handoff" as const,tenantId,pileId:handoff.pileId,priorTargetName:handoff.priorTarget.displayName,nextTargetName:handoff.nextTarget.displayName,nextTargetLogin:handoff.nextTarget.twitchLogin,heldHours:handoff.heldHours,message:handoff.message,idempotencyKey:"dsh:raid-pile:"+tenantId+":"+handoff.pileId+":"+handoff.nextTarget.userId+":"+nextAt};this.monitor.enqueueAction(action,this.now());}
+    await this.runtime.flush(tenantId);
+  }
   async runNebulaMedia(signal:AbortSignal){this.nebulaMediaCycle=this.nebulaMedia?.run(AbortSignal.any([signal,this.nebulaMediaAbort.signal]));await this.nebulaMediaCycle;}
   runSuiteActions(signal: AbortSignal) { return this.suiteActions.run(signal); }
   close() {
@@ -245,7 +255,7 @@ export class SupervisedDshLiveService {
       let failed = false;
       try { await this.nebulaMediaCycle; await this.calendarCycle; await activeCycle; } catch (error) { failure = error; failed = true; }
       this.nebulaMedia?.close();
-      this.memberDirectory.close();this.settings.close();this.cleanup.close();this.activityStore.close();
+      this.memberDirectory.close();this.settings.close();this.raidPile.close();this.cleanup.close();this.activityStore.close();
       try { this.messages.close(); } catch (error) { if (!failed) { failure = error; failed = true; } }
       try { this.calendarSync?.close(); this.calendar.close(); } catch (error) { if (!failed) { failure = error; failed = true; } }
       try { this.applications.close(); } catch (error) { if (!failed) { failure = error; failed = true; } }

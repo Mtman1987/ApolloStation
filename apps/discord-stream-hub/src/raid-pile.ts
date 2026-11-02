@@ -153,13 +153,13 @@ export class DshRaidPileStore {
     if (!canonical) {
       this.db.prepare("INSERT INTO raid_pile_events(tenant_id,user_id,event_type,created_at,body,event_key) VALUES(?,?,?,?,?,?) ON CONFLICT(event_key) DO NOTHING")
         .run(tenantId, raiderUserId, "raid-unroutable", at, JSON.stringify({ pileId: raider.pileId, targetUserId }), `${tenantId}:${eventId}`);
-      return { member: true, compliant: true, strikes: this.strikes(tenantId, raiderUserId, month), removed: false, limit: validateSettings(this.settings()).monthlyStrikeLimit, canonicalTarget: undefined };
+      return { member: true, compliant: true, strikes: this.strikes(tenantId, raiderUserId, month), removed: false, limit: validateSettings(this.settings(tenantId)).monthlyStrikeLimit, canonicalTarget: undefined };
     }
     const compliant = canonical.userId === targetUserId;
     const inserted = this.db.prepare("INSERT INTO raid_pile_events(tenant_id,user_id,event_type,created_at,body,event_key) VALUES(?,?,?,?,?,?) ON CONFLICT(event_key) DO NOTHING")
       .run(tenantId, raiderUserId, compliant ? "raid-compliant" : "raid-off-pile", at, JSON.stringify({ pileId: raider.pileId, targetUserId, canonicalTargetUserId: canonical.userId }), `${tenantId}:${eventId}`).changes;
     const strikes = this.strikes(tenantId, raiderUserId, month);
-    const limit = validateSettings(this.settings()).monthlyStrikeLimit, removed = !compliant && inserted > 0 && strikes >= limit;
+    const limit = validateSettings(this.settings(tenantId)).monthlyStrikeLimit, removed = !compliant && inserted > 0 && strikes >= limit;
     if (removed) this.leave(tenantId, raiderUserId, "monthly-strike-limit");
     return { member: true, compliant, strikes, removed, limit, canonicalTarget: canonical };
   }
@@ -188,7 +188,7 @@ export class DshRaidPileStore {
   private createPile(tenantId: string) { const id = `pile-${randomUUID()}`; this.db.prepare("INSERT INTO raid_piles(tenant_id,pile_id,created_at) VALUES(?,?,?)").run(tenantId, id, this.now()); return id; }
 
   private rebalance(tenantId: string, direction: "grow" | "shrink") {
-    const settings = validateSettings(this.settings()), before = this.piles(tenantId), members = before.flatMap((pile) => pile.members).sort((a, b) => a.joinedAt.localeCompare(b.joinedAt) || a.userId.localeCompare(b.userId));
+    const settings = validateSettings(this.settings(tenantId)), before = this.piles(tenantId), members = before.flatMap((pile) => pile.members).sort((a, b) => a.joinedAt.localeCompare(b.joinedAt) || a.userId.localeCompare(b.userId));
     let piles = before; let desired = Math.max(1, piles.length || 1);
     if (direction === "grow") desired = Math.max(desired, Math.ceil(members.length / settings.maxSize));
     else while (desired > 1 && members.length < (desired - 1) * settings.minSize) desired -= 1;
