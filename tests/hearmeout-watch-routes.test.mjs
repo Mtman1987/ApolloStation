@@ -38,7 +38,7 @@ async function fixture(){
  await new Promise(r=>auth.listen(0,'127.0.0.1',r));
  const watch=createHearMeOutWatchRuntime({
   statePath:join(dir,'watch-state.sqlite'),
-  findSeriesEpisode:async query=>/show/i.test(query)?episode:null,
+  findSeriesEpisode:async (query,getProgress)=>{const progress=getProgress?.('9');return /show/i.test(query)?{...episode,metadata:{...episode.metadata,seasonNumber:progress?.seasonNumber??1,episodeNumber:progress?.episodeNumber??2}}:null;},
   getNextSeriesEpisode:async()=>null,
  });
  const host=createHearMeOutWebServer({spmtOrigin:'http://127.0.0.1:'+auth.address().port,databasePath:path,port:0,watch});
@@ -172,7 +172,9 @@ test('a failed progress write returns a retry key and retry does not duplicate t
   assert.equal((await retry.json()).status,'queued');
   const session=f.rooms.getSession(TENANT,roomId,'movie');
   assert.equal([session.current,...session.queue].filter(Boolean).length,1,'retry replays the existing queue operation');
-  assert.deepEqual(f.watch.request?undefined:undefined,undefined);
+  const resumed=await f.watch.request({tenantId:TENANT,userId:'user-alice'},'Show resume');
+  assert.equal(resumed.status,'matched');
+  assert.equal(resumed.entry.metadata.episodeNumber,3,'retry persists the next episode resume point');
  }finally{
   await teardown(f);
  }
