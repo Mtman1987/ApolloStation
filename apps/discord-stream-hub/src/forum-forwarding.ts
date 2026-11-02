@@ -167,7 +167,7 @@ export class DshForumForwardingWorker {
                 let sourceChannel=messageChannel;
                 if([10,11].includes(Number(messageChannel.type))&&messageChannel.parent_id)sourceChannel=await this.discord.getChannel(tenant,messageChannel.parent_id);
                 if(![15,16].includes(Number(sourceChannel.type))){
-                  const guild=await this.discord.getGuild(tenant,record.guildId??payload.guildId);
+                  const guild=await this.discord.getGuild(tenant,record.guildId??String(payload.guildId??""));
                   const attachments=(record.rich?.attachments??[]).map(item=>({url:item.url,filename:item.name}));
                   const result=await this.service.apply({tenantId:tenant,guildId:record.guildId??String(payload.guildId),channelId:sourceChannel.id,channelName:String(sourceChannel.name??sourceChannel.id),channelType:Number(sourceChannel.type??0),messageId:record.messageId,authorId:record.providerUserId,authorName:record.displayName??record.username,content:record.text,attachments,sourceMessageUrl:"https://discord.com/channels/"+(record.guildId??String(payload.guildId))+"/"+record.channelId+"/"+record.messageId,occurredAt:record.occurredAt,sourceIsPublic:isPublicDshForumSource(guild,sourceChannel),authorIsBot:record.isBot,operation:item.type==="spmt.chat.message.mutated.v1"?(payload.operation==="delete"?"delete":"edit"):"create"});
                   if(result.status==="forwarded")forwarded++;
