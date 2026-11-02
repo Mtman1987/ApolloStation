@@ -34,6 +34,11 @@ export class StreamWeaverCommunityRuntime {
     const result=this.store.checkin(input.tenantId,input.actorId,input.partnerId,input.source,input.requestId,undefined,this.allowAssistant&&this.allowSpmtPayments?(input.displayName??"viewer"):undefined);
     return {...result,state:"complete" as const,text:`Checked in with ${result.partner.name} (${result.userTotal} total). ${result.partner.inviteUrl}`};
   }
+  bulkCheckin(input:{tenantId:string;actorId:string;source:string;requestId:string;entries:Array<{id:string;name:string}>;frontSeatId?:string}){
+    const result=this.store.bulkCheckin(input.tenantId,input.actorId,input.source,input.requestId,input.entries,input.frontSeatId);
+    const front=result.frontSeat? ` Front seat: ${result.frontSeat}.`:"";
+    return {...result,state:"complete" as const,text:`Community check-in complete: ${result.count} members recorded.${front}`};
+  }
   ride(input:import("./ride-runtime.js").StreamRideRequest){return runStreamRide(this.store,this.economy,this.client,this.rideLookup,this.allowSpmtPayments,input);}
   async redeem(invocation:StreamWeaverDonorCommandInvocationV1){
     const args=[...invocation.args],rewardId=invocation.canonicalTrigger==="!redeem"?(args.shift()??""):invocation.canonicalTrigger.replace(/^!/,"");
