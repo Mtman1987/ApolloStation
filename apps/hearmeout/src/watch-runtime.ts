@@ -1,6 +1,4 @@
 import { dirname, join, resolve } from 'node:path';
-import { configuredDonorOrigin } from './donor-origin.js';
-import { hearMeOutMovieProviderUrl } from './movie-provider.js';
 import type { HearMeOutMediaItemV1 } from './room-media-core.js';
 import { xtreamHlsUrl } from './xtream-hls.js';
 import { findXtreamSeriesEpisode, getNextXtreamSeriesEpisode } from './xtream-provider.js';
@@ -46,8 +44,6 @@ export interface HearMeOutWatchRuntime {
 
 export interface HearMeOutWatchRuntimeOptions {
   statePath: string;
-  donorOrigin: string;
-  fetchImpl?: typeof fetch;
   findSeriesEpisode?: (
     query: string,
     getProgress?: (seriesId: string) => { seasonNumber: number; episodeNumber: number } | undefined,
@@ -57,7 +53,6 @@ export interface HearMeOutWatchRuntimeOptions {
 
 export function createHearMeOutWatchRuntime(options: HearMeOutWatchRuntimeOptions): HearMeOutWatchRuntime {
   const store = new HearMeOutWatchStateStore(options.statePath);
-  const fetchImpl = options.fetchImpl ?? fetch;
   // Casts bridge the Xtream catalog item shape to the flow's entry shape. Only id, title and metadata are read from the entry.
   const findSeries = options.findSeriesEpisode
     ?? ((query: string, getProgress?: Parameters<typeof findXtreamSeriesEpisode>[1]) =>
@@ -86,7 +81,12 @@ export function createHearMeOutWatchRuntime(options: HearMeOutWatchRuntimeOption
       if (!playbackPath || result.entry.metadata?.kind !== 'series-episode') {
         throw Object.assign(new Error('That title is not playable on the IPTV provider'), { status: 422 });
       }
-      const item = await prepareEpisode(result.entry, playbackPath, options.donorOrigin, fetchImpl);
+      const playbackUrl = xtreamHlsUrl(playbackPath);
+      if (!playbackUrl.startsWith('/api/watch/xtream/hls/')) throw Error('Invalid Apollo IPTV playback route');
+      // Acquisition/conversion belongs to Apollo's HLS handler. Do not make a
+      // donor request during queueing: it duplicates work and can leave the
+      // queue pointed at a local path whose source was prepared elsewhere.
+      const item: HearMeOutMediaItemV1 = { itemId: result.entry.id, type: 'movie', title: result.entry.title, source: 'iptv', playbackUrl };
       return { status: 'matched', entry: result.entry, item };
     },
     recordQueued(scope, entry) {
@@ -104,46 +104,6 @@ export function createHearMeOutWatchRuntime(options: HearMeOutWatchRuntimeOption
 export function createHearMeOutWatchRuntimeFromEnvironment(environment: NodeJS.ProcessEnv, databasePath: string) {
   return createHearMeOutWatchRuntime({
     statePath: watchStatePathFor(environment, databasePath),
-    donorOrigin: configuredDonorOrigin(environment),
   });
 }
 
-// Same contract as the movie provider: validated route, bounded manifest read, 202 means still preparing.
-async function prepareEpisode(entry: WatchCatalogEntry, playbackPath: string, donorOrigin: string, fetchImpl: typeof fetch): Promise<HearMeOutMediaItemV1> {
-  const hlsPath = xtreamHlsUrl(playbackPath);
-  const url = new URL(hlsPath, donorOrigin);
-  if (!hearMeOutMovieProviderUrl(url, donorOrigin)) throw Error('Invalid IPTV provider route');
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const response = await fetchImpl(url, {
-      method: 'GET',
-      redirect: 'manual',
-      headers: { accept: 'application/vnd.apple.mpegurl', 'user-agent': 'HearMeOut/1.0' },
-      signal: AbortSignal.timeout(60000),
-    });
-    if (response.status === 202) {
-      await response.body?.cancel();
-      continue;
-    }
-    if (!response.ok) {
-      await response.body?.cancel();
-      throw Error(`The IPTV provider could not prepare that episode (HTTP ${response.status})`);
-    }
-    const manifest = await boundedText(response);
-    if (!manifest.startsWith('#EXTM3U')) throw Error('The IPTV provider did not return playable episode media');
-    // Store the Apollo HLS route, not the donor URL. The browser and the media worker never see the donor origin.
-    return { itemId: entry.id, type: 'movie', title: entry.title, source: 'iptv', playbackUrl: hlsPath };
-  }
-  throw Error('The IPTV provider is still preparing that episode. Retry your request.');
-}
-
-async function boundedText(response: Response) {
-  if (!response.body) throw Error('The IPTV provider returned an empty response');
-  const chunks: Uint8Array[] = [];
-  let size = 0;
-  for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
-    size += chunk.byteLength;
-    if (size > 1024 * 1024) throw Error('The IPTV provider response is too large');
-    chunks.push(chunk);
-  }
-  return Buffer.concat(chunks).toString('utf8');
-}

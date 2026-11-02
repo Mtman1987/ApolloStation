@@ -7,15 +7,11 @@ import {createServer} from 'node:http';
 import {SqliteHearMeOutRoomMediaRuntime} from '../apps/hearmeout/dist/room-media-core.js';
 import {createHearMeOutWebServer} from '../apps/hearmeout/dist/web-server-v3.js';
 import {createHearMeOutWatchRuntime,createHearMeOutWatchRuntimeFromEnvironment,watchStatePathFor,HEARMEOUT_WATCH_STATE_FILE} from '../apps/hearmeout/dist/watch-runtime.js';
-import {HEARMEOUT_DONOR_DEFAULT_ORIGIN} from '../apps/hearmeout/dist/donor-origin.js';
 
 // HMO-009 P08: route-level coverage through the real HTTP handler. The SPMT session
-// service is mocked by cookie; the Xtream lookup and donor fetch are injected fakes,
-// so no provider credential or network call is involved.
+// service and Xtream catalog are fixtures; queueing never contacts a donor or provider.
 
 const TENANT='crew';
-const donorOrigin=HEARMEOUT_DONOR_DEFAULT_ORIGIN;
-const donorHost=new URL(donorOrigin).host;
 const episode={
  id:'xtream-episode-7-abc',
  type:'movie',
@@ -40,11 +36,8 @@ async function fixture(){
  const path=join(dir,'rooms.sqlite');
  const auth=sessionServer();
  await new Promise(r=>auth.listen(0,'127.0.0.1',r));
- const donorFetches=[];
  const watch=createHearMeOutWatchRuntime({
   statePath:join(dir,'watch-state.sqlite'),
-  donorOrigin,
-  fetchImpl:async(url)=>{donorFetches.push(String(url));return new Response('#EXTM3U\n#EXTINF:6,\nseg.ts\n',{status:200,headers:{'content-type':'application/vnd.apple.mpegurl'}});},
   findSeriesEpisode:async query=>/show/i.test(query)?episode:null,
   getNextSeriesEpisode:async()=>null,
  });
@@ -52,7 +45,7 @@ async function fixture(){
  const rooms=new SqliteHearMeOutRoomMediaRuntime(path);
  await host.listen();
  const base='http://127.0.0.1:'+host.server.address().port;
- return {dir,auth,host,rooms,base,donorFetches};
+ return {dir,auth,host,rooms,base};
 }
 
 async function teardown(f){
@@ -86,7 +79,7 @@ test('watch request and accept routes refuse callers without a session or room m
   assert.notEqual(outsider.status,201);
   await outsider.text();
   assert.equal(f.rooms.getSession(TENANT,roomId,'movie').queue.length,0,'non-member must not queue anything');
-  assert.equal(f.donorFetches.length,0,'refused caller must not reach the donor');
+  // Authorization rejection happens before catalog lookup or queueing.
  }finally{
   await teardown(f);
  }
@@ -115,13 +108,10 @@ test('a member watch request schedules the episode on the Apollo HLS route, neve
   const queued=body.session.current??body.session.queue.at(-1);
   assert.equal(queued.item.itemId,'xtream-episode-7-abc');
   assert.equal(queued.item.playbackUrl,'/api/watch/xtream/hls/episode-7-abc/index.m3u8');
-  assert.doesNotMatch(text,new RegExp(donorHost.replace(/\./g,'\\.')),'donor host must not appear in the client response');
   assert.doesNotMatch(text,/https?:\/\//,'queued playback must be a relative Apollo path');
 
-  // The server validated the donor manifest once, server side.
-  assert.ok(f.donorFetches.length>=1);
-  assert.match(f.donorFetches[0],/\/api\/watch\/xtream\/hls\/episode-7-abc\/index\.m3u8$/);
-  assert.ok(f.donorFetches[0].startsWith(donorOrigin+'/'));
+  // The Apollo HLS handler owns source acquisition when a viewer requests this path.
+  assert.equal(Object.keys(body).some(key=>/donor|origin/i.test(key)),false);
 
   // Accepting with no pending recommendation returns none, never a playable item.
   const none=await fetch(f.base+`/api/hearmeout/rooms/${roomId}/watch/accept`,{method:'POST',headers:alice,body:JSON.stringify({sessionId:'session-1'})});

@@ -6,10 +6,9 @@ import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {createHearMeOutWebServer} from '../apps/hearmeout/dist/web-server-v3.js';
 import {createHearMeOutWatchRuntime} from '../apps/hearmeout/dist/watch-runtime.js';
-import {HEARMEOUT_DONOR_DEFAULT_ORIGIN} from '../apps/hearmeout/dist/donor-origin.js';
 
 // Real mounted request -> real Watch runtime -> real Apollo HLS disk handler.
-// Only catalog lookup and donor acquisition are fake; no donor/provider runs.
+// Catalog lookup is injected; queueing does not call a donor/provider.
 // Cached fixture bytes prove HTTP delivery, not conversion or browser decoding.
 const episode={id:'xtream-episode-7-mkv',title:'Example S01E02',
  metadata:{kind:'series-episode',seriesId:'9',seriesTitle:'Example',seasonNumber:1,episodeNumber:2},
@@ -35,10 +34,8 @@ test('requested episode delivers its Apollo HLS ladder and bounded ranges withou
    res.end(JSON.stringify({actorId:'alice',displayName:'Alice',tenantIds:['crew'],scopes:[]}));
   });
   await new Promise(resolve=>auth.listen(0,'127.0.0.1',resolve));
-  const acquisitions=[];
-  const watch=createHearMeOutWatchRuntime({statePath:join(root,'watch.sqlite'),donorOrigin:HEARMEOUT_DONOR_DEFAULT_ORIGIN,
-   findSeriesEpisode:async()=>episode,getNextSeriesEpisode:async()=>null,
-   fetchImpl:async url=>{acquisitions.push(String(url));return new Response(master);}});
+  const watch=createHearMeOutWatchRuntime({statePath:join(root,'watch.sqlite'),
+   findSeriesEpisode:async()=>episode,getNextSeriesEpisode:async()=>null});
   host=createHearMeOutWebServer({databasePath:join(root,'rooms.sqlite'),spmtOrigin:`http://127.0.0.1:${auth.address().port}`,port:0,watch});
   await host.listen();
   const base=`http://127.0.0.1:${host.server.address().port}`;
@@ -54,8 +51,7 @@ test('requested episode delivers its Apollo HLS ladder and bounded ranges withou
   const item=(session.current??session.queue.at(-1)).item;
   assert.equal(item.playbackUrl,'/api/watch/xtream/hls/episode-7-mkv/index.m3u8');
   assert.doesNotMatch(reply,/https?:\/\/|password|Bearer/i);
-  assert.equal(acquisitions.length,1);
-  assert.equal(acquisitions[0],HEARMEOUT_DONOR_DEFAULT_ORIGIN+item.playbackUrl);
+  assert.equal(item.playbackUrl,'/api/watch/xtream/hls/episode-7-mkv/index.m3u8');
   const indexUrl=new URL(item.playbackUrl,base);
 
   await t.test('master and child resolve inside Apollo and deliver actual bytes',async()=>{
