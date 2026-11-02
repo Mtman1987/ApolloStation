@@ -17,6 +17,7 @@ export * from "./provider-identity.js";
 export * from "./points-event-router.js";
 export * from "./points.js";
 export * from "./calendar.js";
+export * from "./forum-forwarding.js";
 export * from "./calendar-presentation.js";
 export * from "./application-flow.js";
 export * from "./applications.js";
