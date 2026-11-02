@@ -282,10 +282,8 @@
         "series progression persists correctly after enqueue and restart"
       ],
       "open": [
-        "room/tenant authorization on global Xtream HLS manifest and segment route",
-        "real provider-to-browser playback",
-        "series progression write ordering and full accepted-episode E2E",
-        "diagnostic endpoints must redact credentials and raw URLs"
+        "real provider-to-browser playback with an authorized provider account",
+        "verify diagnostic endpoints redact credentials and raw URLs"
       ]
     },
     {
@@ -315,8 +313,8 @@
         "enqueue and progress persistence are transactionally consistent"
       ],
       "open": [
-        "recordQueued failure after enqueue can leave progress unrecorded",
-        "accepted stored recommendation path needs end-to-end coverage"
+        "accepted stored recommendation path remains excluded with Internet Archive fallback by owner decision",
+        "cross-database enqueue/progress recovery is retryable but not a single distributed transaction"
       ],
       "decisions": [
         "Internet Archive fallback excluded by owner decision"
