@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "updatedAt": "2026-11-02",
+  "repository": "Mtman1987/ApolloStation",
+  "statusDefinitions": {
+    "verified": "Behavior is backed by passing automated evidence and any required acceptance proof.",
+    "ported-unverified": "Apollo implementation exists, but required evidence has not yet passed.",
+    "partial": "Some behavior exists; known requirements remain open.",
+    "missing": "Required behavior is not implemented.",
+    "blocked": "Cannot be verified or implemented until a named dependency is resolved.",
+    "retired": "Explicitly excluded by an owner-approved scope decision.",
+    "unknown": "Not yet inspected; never infer parity."
+  },
+  "products": [
+    {
+      "id": "hearmeout",
+      "name": "HearMeOut",
+      "appPath": "apps/hearmeout",
+      "status": "partial",
+      "priority": "P0",
+      "sourceDocs": ["docs/donor-parity/HANDOFF.md", "docs/donor-parity/HEARMEOUT_PARITY_LEDGER.md", "docs/donor-parity/HEARMEOUT_ROUTE_COVERAGE.md"],
+      "evidence": ["tests/hearmeout-movie-provider.test.mjs", "tests/hearmeout-episode-hls-integration.test.mjs"],
+      "knownGaps": ["configured-provider playback", "room/tenant media authorization", "browser decoding", "synchronized pause/resume/seek", "late-join and reconnect behavior"]
+    },
+    {
+      "id": "streamweaver",
+      "name": "StreamWeaver",
+      "appPath": "apps/streamweaver",
+      "status": "partial",
+      "priority": "P0",
+      "sourceDocs": ["docs/STREAMWEAVER_LIVE_PARITY_REVIEW_2026-09-05.md", "docs/STREAMWEAVER_PARITY_IMPLEMENTATION.md", "docs/STREAMWEAVER_PARITY_CHECKPOINT_2026-09-06.md"],
+      "evidence": ["tests/streamweaver-tts-text.test.mjs", "tests/streamweaver-provider-runtime.test.mjs", "tests/streamweaver-eventsub-lifecycle.test.mjs"],
+      "knownGaps": ["remaining absent and partial capability groups", "tenant-state migration and restore", "provider construction and lifecycle", "speech/TTS and generation studio acceptance"]
+    },
+    {
+      "id": "nebula-arcade",
+      "name": "Nebula Arcade",
+      "appPath": "apps/nebula-arcade",
+      "status": "ported-unverified",
+      "priority": "P1",
+      "sourceDocs": ["config/apollo-parity-tracker.v1.json", "docs/donor-audits/FEATURE_PARITY_REVIEW_2026-09-12.md"],
+      "evidence": ["tests/nebula-spmt-commands.test.mjs", "tests/nebula-mosaic-runtime.test.mjs", "tests/nebula-live-parity-build.test.mjs"],
+      "knownGaps": ["live provider rehearsal", "runtime inventory", "backup/restore", "owner acceptance"]
+    },
+    {
+      "id": "discord-stream-hub",
+      "name": "Discord StreamHub",
+      "appPath": "apps/discord-stream-hub",
+      "status": "partial",
+      "priority": "P1",
+      "sourceDocs": ["docs/DSH_LIVE_PARITY_REVIEW_2026-09-05.md", "docs/donor-audits/FEATURE_PARITY_REVIEW_2026-09-12.md"],
+      "evidence": ["tests/dsh-live-monitor.test.mjs", "tests/dsh-lounge-state.test.mjs", "tests/dsh-discord-live-publisher.test.mjs"],
+      "knownGaps": ["effective settings", "application decisions and temporary guests", "generated media delivery", "Signal and reward roles", "Raid Pile/Raid Train", "partner schedules and participation"]
+    },
+    {
+      "id": "apollo-shared-contracts",
+      "name": "Apollo shared contracts used by the five products",
+      "appPath": "packages",
+      "status": "partial",
+      "priority": "P0",
+      "sourceDocs": ["docs/PARITY_LEDGER.md", "config/apollo-parity-tracker.v1.json"],
+      "evidence": ["tests/live-counterpart-catchup.test.mjs", "tests/functional-foundation.test.mjs"],
+      "knownGaps": ["prove cross-product contract reuse", "two-tenant isolation for each consuming app", "migration/restart/rollback evidence"]
+    }
+  ],
+  "rules": {
+    "uninspectedDefaultsTo": "unknown",
+    "codePresenceIsNotParity": true,
+    "passingTestsAreRequiredForVerified": true,
+    "liveAcceptanceIsTrackedSeparately": true,
+    "donorRepositoriesAreReadOnly": true
+  }
+}
