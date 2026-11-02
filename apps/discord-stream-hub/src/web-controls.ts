@@ -106,6 +106,23 @@ export class DshWebControls {
   close() { this.memberDirectory?.close();this.activity?.close();this.cleanup?.close();this.monitor?.close(); this.calendar?.close(); this.settings?.close(); this.messages?.close(); this.applications?.close(); this.shoutouts?.close();this.signalSeekers?.close();this.forumForwardingStore?.close();this.raidPile?.close(); }
 
   async handle(request: IncomingMessage, response: ServerResponse, url: URL): Promise<boolean> {
+    if (url.pathname === "/api/internal/signal/channel") {
+      if (request.method !== "GET") return sendJson(response, 405, { message: "Use GET" });
+      if (!this.authorizeWorker(request)) return sendJson(response, 401, { message: "Unauthorized" });
+      if (this.options.operationMode !== "active" || !this.liveDiscord || !this.config) return sendJson(response, 503, { message: "Live Signal destination lookup is unavailable" });
+      try {
+        const tenantId=String(url.searchParams.get("tenantId")??"").trim();
+        if(!tenantId)return sendJson(response,400,{message:"tenantId is required"});
+        const tenant=this.config.tenants.find(item=>item.tenantId===tenantId);
+        if(!tenant)return sendJson(response,404,{message:"Signal tenant is not configured"});
+        for(const guildId of tenant.discordGuildIds??[]){
+          const channels=await this.liveDiscord.listGuildChannels(tenantId,guildId);
+          const channel=channels.find(item=>Number(item.type)===0&&String(item.name??"").toLowerCase()==="comms-lounge");
+          if(channel?.id)return sendJson(response,200,{source:"discord-stream-hub",kind:"signal-destination",guildId,channelId:channel.id,channelName:String(channel.name??"comms-lounge")});
+        }
+        return sendJson(response,404,{message:"comms-lounge was not found in the tenant's configured Discord servers",tenantId});
+      } catch(error) { return sendJson(response,502,{message:safeError(error)}); }
+    }
     if (url.pathname === "/api/internal/signal/seekers") {
       if (request.method !== "POST") return sendJson(response, 405, { message: "Use POST" });
       if (!this.authorizeWorker(request)) return sendJson(response, 401, { message: "Unauthorized" });
