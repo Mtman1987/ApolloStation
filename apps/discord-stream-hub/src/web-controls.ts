@@ -369,11 +369,11 @@ export class DshWebControls {
   }
   async interaction(interaction:Record<string,any>){
     if(!this.config)return undefined;
-    const customId=String(interaction.data?.custom_id??""),signal=/^signal_seekers:(join|leave):(\\d{5,30})$/.exec(customId);
+    const customId=String(interaction.data?.custom_id??""),signal=/^signal_seekers:(join|leave):(\d{5,30})$/.exec(customId);
     if(interaction.type===3&&signal){
       const guildId=String(interaction.guild_id??""),userId=String(interaction.member?.user?.id??interaction.user?.id??""),tenant=this.config.tenants.find(item=>item.discordGuildIds?.includes(guildId));
       const ephemeral=(content:string)=>({type:4,data:{flags:64,content,allowed_mentions:{parse:[]}}});
-      if(!tenant||!/^\\d{5,30}$/.test(guildId)||!/^\\d{5,30}$/.test(userId))return ephemeral("This Signal Seeker control is not connected to an SPMT server.");
+      if(!tenant||!/^\d{5,30}$/.test(guildId)||!/^\d{5,30}$/.test(userId))return ephemeral("This Signal Seeker control is not connected to an SPMT server.");
       if(this.options.operationMode!=="active"||!this.liveDiscord||!this.signalSeekers)return ephemeral("Signal Seeker role changes are unavailable in this environment.");
       try{
         const roleId=signal[2]!,roles=await this.liveDiscord.listGuildRoles(tenant.tenantId,guildId),role=roles.find(item=>item.id===roleId&&!item.managed&&item.name.toLowerCase()==="signal seeker");
