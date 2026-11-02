@@ -112,6 +112,27 @@ export class DshWebControls {
       try { return await this.updateSignalSeekerFromTwitch(request, response); }
       catch (error) { return sendJson(response, 502, { message: safeError(error) }); }
     }
+    if (url.pathname === "/api/internal/signal/drop") {
+      if (request.method !== "POST") return sendJson(response, 405, { message: "Use POST" });
+      if (!this.authorizeWorker(request)) return sendJson(response, 401, { message: "Unauthorized" });
+      try {
+        if(this.options.operationMode!=="active"||!this.liveDiscord||!this.signalSeekers)return sendJson(response,503,{message:"Live Signal drops are unavailable"});
+        const body=record(await readJsonBody(request))??{},tenantId=text(body.tenantId,"tenantId",180),guild=this.guild(tenantId,body.guildId),channelId=snowflake(body.channelId,"channelId");
+        const channel=await this.liveDiscord.getChannel(tenantId,channelId);
+        if(channel.guild_id!==guild||![0,5].includes(Number(channel.type)))return sendJson(response,400,{message:"Choose a text channel in the selected Discord server"});
+        const roles=await this.liveDiscord.listGuildRoles(tenantId,guild);
+        let role=roles.find(item=>!item.managed&&item.name.toLowerCase()==="signal seeker");
+        if(!role)role=await this.liveDiscord.createGuildRole(tenantId,guild,{name:"Signal Seeker",color:0x5865f2,mentionable:true,hoist:false});
+        const clue=text(body.clue,"clue",1800),botName=String(body.botName??"StreamWeaver").trim().slice(0,80)||"StreamWeaver",avatarUrl=body.avatarUrl?new URL(String(body.avatarUrl)):undefined;
+        if(avatarUrl&&(avatarUrl.protocol!=="https:"||avatarUrl.username||avatarUrl.password))return sendJson(response,400,{message:"Avatar URL must be credential-free HTTPS"});
+        const dropId=randomUUID(),payload=dshSignalDropInteractionPayload(role.id,dropId,{name:botName,...(avatarUrl?{iconUrl:avatarUrl.toString()}:{})});
+        const messageId=await this.liveDiscord.createMessage(tenantId,channelId,payload);
+        try {
+          const drop=this.signalSeekers.createDrop({dropId,tenantId,guildId:guild,channelId,messageId,roleId:role.id,clue,now:this.now()});
+          return sendJson(response,201,{ok:true,dropId,messageId,expiresAt:drop.expiresAt});
+        } catch(error) { await this.liveDiscord.deleteMessage(tenantId,channelId,messageId).catch(()=>undefined); throw error; }
+      } catch(error) { return sendJson(response,502,{message:safeError(error)}); }
+    }
     if (!url.pathname.startsWith("/api/discord-stream-hub/control")) return false;
     try {
       const context = await fetchAppSessionContext({ appId: "discord-stream-hub", spmtOrigin: this.options.spmtOrigin, request });
