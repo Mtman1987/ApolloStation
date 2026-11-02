@@ -74,7 +74,7 @@ export class DshWebControls {
       this.messages = new SqliteDshDiscordMessageStore(options.databasePath);
       this.applications = new SqliteDshApplicationStore(options.databasePath);
       this.shoutouts = new DshShoutoutGenerationStore(options.databasePath, this.now);
-      this.raidPile = new DshRaidPileStore(options.databasePath, () => this.raidPileSettings());
+      this.raidPile = new DshRaidPileStore(options.databasePath, (tenantId) => this.raidPileSettings(tenantId));
     }
     if (options.runtimeConfigPath) this.config = loadDshLiveRuntimeConfig(options.runtimeConfigPath);
     if(options.databasePath&&this.config&&this.settings)this.memberDirectory=new DshMemberDirectoryStore(options.databasePath,this.config,this.settings);
@@ -411,7 +411,7 @@ export class DshWebControls {
     return {userId:String(context.session.actorId??""),username:String(context.session.displayName??context.session.username??context.session.actorId??"SPMT member"),...(avatarUrl?{avatarUrl}:{})};
   }
   private requireRaidPile(){if(!this.raidPile)throw new Error("DSH Raid Pile storage is not configured");return this.raidPile;}
-  private raidPileSettings():DshRaidPileSettingsV1 {const tenant=this.config?.tenants[0]?.tenantId??"",saved=this.settings?.read(tenant);return {maxSize:saved?.raidPileMaxSize??DEFAULT_DSH_RAID_PILE_SETTINGS.maxSize,minSize:saved?.raidPileMinSize??DEFAULT_DSH_RAID_PILE_SETTINGS.minSize,pointsReward:saved?.raidPilePointsReward??DEFAULT_DSH_RAID_PILE_SETTINGS.pointsReward,handoffHours:saved?.raidPileHandoffHours??DEFAULT_DSH_RAID_PILE_SETTINGS.handoffHours,monthlyStrikeLimit:saved?.raidPileMonthlyStrikeLimit??DEFAULT_DSH_RAID_PILE_SETTINGS.monthlyStrikeLimit};}
+  private raidPileSettings(tenantId:string):DshRaidPileSettingsV1 {const saved=this.settings?.read(tenantId);return {maxSize:saved?.raidPileMaxSize??DEFAULT_DSH_RAID_PILE_SETTINGS.maxSize,minSize:saved?.raidPileMinSize??DEFAULT_DSH_RAID_PILE_SETTINGS.minSize,pointsReward:saved?.raidPilePointsReward??DEFAULT_DSH_RAID_PILE_SETTINGS.pointsReward,handoffHours:saved?.raidPileHandoffHours??DEFAULT_DSH_RAID_PILE_SETTINGS.handoffHours,monthlyStrikeLimit:saved?.raidPileMonthlyStrikeLimit??DEFAULT_DSH_RAID_PILE_SETTINGS.monthlyStrikeLimit};}
   private async raidPileIdentity(context:SessionContext,request:IncomingMessage){
     const snapshot=await fetchAppPlatformSnapshot({appId:"discord-stream-hub",spmtOrigin:this.options.spmtOrigin,request,sources:["providerLinks"],liveRead:null});
     const value=snapshot.providerLinks as any,links=Array.isArray(value)?value:value?.providers??value?.links??[];
@@ -425,7 +425,7 @@ export class DshWebControls {
     for(const pile of piles)for(const member of pile.members){const stream=this.monitor?.getLiveStream(context.tenantId,member.userId);store.updatePresence(context.tenantId,member.userId,stream?.viewerCount??0,Boolean(stream));}
     const refreshed=store.piles(context.tenantId),userId=String(context.session.actorId??""),membership=refreshed.flatMap(pile=>pile.members.map(member=>({pileId:pile.id,member}))).find(item=>item.member.userId===userId);
     const next=membership?store.next(context.tenantId,membership.pileId,userId):undefined;
-    return {piles:refreshed,membership:membership??null,next:next??null,settings:this.raidPileSettings(),canAdvance:this.role(context)==="owner"};
+    return {piles:refreshed,membership:membership??null,next:next??null,settings:this.raidPileSettings(context.tenantId),canAdvance:this.role(context)==="owner"};
   }
   private requireCalendar() { if (!this.calendar) throw new Error("DSH calendar storage is not configured"); return this.calendar; }
   private requireSettings() { if (!this.settings) throw new Error("DSH settings storage is not configured"); return this.settings; }
