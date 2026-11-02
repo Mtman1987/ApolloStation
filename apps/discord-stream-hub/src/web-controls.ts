@@ -153,10 +153,12 @@ export class DshWebControls {
         const requesterDiscordUserId=optionalSnowflake(body.requesterDiscordId),requesterIdentity=requesterDiscordUserId&&this.client?await resolveProviderIdentity(this.client,tenantId,"discord",requesterDiscordUserId).catch(()=>undefined):undefined,dropId=randomUUID();
         let removalControl=false;
         if(this.signalControlStore&&this.options.serviceCredential&&this.options.publicOrigin){
-          const signer=this.signalControlSigner(),token=signer.issue({tenantId,dropId,guildId:guild,channelId,messageId,...(requesterIdentity?.userId?{requesterUserId:requesterIdentity.userId}:{}),...(requesterDiscordUserId?{requesterDiscordUserId}:{})}),url=dshSignalRemovalUrl(this.options.publicOrigin,token);
-          this.signalControlStore.put({schemaVersion:1,tenantId,dropId,guildId:guild,channelId,messageId,requesterName:username,targetName:String(body.targetName??"Signal").slice(0,100),...(requesterIdentity?.userId?{requesterUserId:requesterIdentity.userId}:{}),...(requesterDiscordUserId?{requesterDiscordUserId}:{}),createdAt:this.now()});
-          await this.liveDiscord.editMessage(tenantId,channelId,messageId,{content:"",embeds:[{...embed,fields:[{name:"\\u200b",value:"[🗑️]("+url+")",inline:false}]}],allowed_mentions:{parse:[]}}).catch(()=>undefined);
-          removalControl=true;
+          try{
+            const signer=this.signalControlSigner(),token=signer.issue({tenantId,dropId,guildId:guild,channelId,messageId,...(requesterIdentity?.userId?{requesterUserId:requesterIdentity.userId}:{}),...(requesterDiscordUserId?{requesterDiscordUserId}:{})}),url=dshSignalRemovalUrl(this.options.publicOrigin,token),targetName=String(body.targetName??"").trim().slice(0,100)||"Signal";
+            this.signalControlStore.put({schemaVersion:1,tenantId,dropId,guildId:guild,channelId,messageId,requesterName:username,targetName,...(requesterIdentity?.userId?{requesterUserId:requesterIdentity.userId}:{}),...(requesterDiscordUserId?{requesterDiscordUserId}:{}),createdAt:this.now()});
+            await this.liveDiscord.editMessage(tenantId,channelId,messageId,{content:"",embeds:[{...embed,fields:[{name:"\\u200b",value:"[🗑️]("+url+")",inline:false}]}],allowed_mentions:{parse:[]}}).catch(()=>undefined);
+            removalControl=true;
+          }catch{/* A failed optional removal control must not undo a successfully posted Signal. */}
         }
         return sendJson(response,201,{ok:true,messageId,removalControl});
       } catch(error) { return sendJson(response,502,{message:safeError(error)}); }
