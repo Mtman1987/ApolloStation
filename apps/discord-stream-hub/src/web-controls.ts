@@ -375,6 +375,7 @@ export class DshWebControls {
     }
     if (body.captainMinimumDays !== undefined) values.captainMinimumDays = integer(body.captainMinimumDays, 0, 31, "captainMinimumDays");
     if (body.pollIntervalSeconds !== undefined) values.pollIntervalSeconds = integer(body.pollIntervalSeconds, 15, 3600, "pollIntervalSeconds");
+    for(const [key,min,max] of [["raidPileMaxSize",2,500],["raidPileMinSize",1,499],["raidPilePointsReward",0,100000],["raidPileHandoffHours",1,48],["raidPileMonthlyStrikeLimit",1,20],["raidPoints",0,100000],["followPoints",0,100000],["subPoints",0,100000],["giftedSubPoints",0,100000],["bitPoints",0,100000],["chatActivityPoints",0,100000],["firstMessagePoints",0,100000],["messageReactionPoints",0,100000],["adminEventPoints",0,100000],["adminLogPoints",0,100000],["adminMessagePoints",0,100000]] as const)if(body[key]!==undefined)values[key]=integer(body[key],min,max,key);
     const next = store.patch(context.tenantId, { schemaVersion: 1, expectedRevision: current.revision, values });
     return sendJson(response, 200, next);
   }
