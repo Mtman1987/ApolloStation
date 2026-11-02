@@ -1,4 +1,4 @@
-import { chromium } from "playwright";
+import { chromium, type Browser, type BrowserContext } from "playwright";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -19,7 +19,7 @@ export class DshPlaywrightNebulaGameplayRenderer implements DshNebulaGameplayRen
   const frameCount=request.captureSeconds*request.fps;
   if(!Number.isSafeInteger(frameCount)||frameCount<1||frameCount>MAX_CAPTURE_FRAMES||request.width!==960||request.height!==450||request.fps!==10||request.outputWidth!==480)throw new Error("Nebula gameplay capture dimensions or duration are invalid");
   const directory=await mkdtemp(join(tmpdir(),"dsh-nebula-gameplay-"));
-  let browser:Awaited<ReturnType<typeof chromium.launch>>|undefined,context:Awaited<ReturnType<Awaited<ReturnType<typeof chromium.launch>>["newContext"]>>|undefined;
+  let browser:Browser|undefined,context:BrowserContext|undefined;
   try{
    browser=await chromium.launch({headless:true,...(this.options.executablePath?{executablePath:this.options.executablePath}:{}),timeout:this.options.launchTimeoutMs??30000,args:["--no-sandbox","--disable-dev-shm-usage","--disable-gpu","--disable-background-networking","--disable-default-apps"]});
    context=await browser.newContext({viewport:{width:request.width,height:request.height},deviceScaleFactor:1});
