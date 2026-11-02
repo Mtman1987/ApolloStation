@@ -196,7 +196,7 @@ export class SupervisedDshLiveService {
     this.getAccessToken = createDshWorkerTokenProvider({ spmtOrigin: options.spmtOrigin, credential: options.credential, fetchImpl });
     this.client = new SpmtClient({ baseUrl: options.spmtOrigin, appId: "discord-stream-hub", getAccessToken: this.getAccessToken, fetchImpl });
     this.identities = new DshSpmtIdentityResolver(this.client);
-    this.pointsRouter = new DshPointsEventRouter(this.identities, tenantId => new DshPointsService(this.client,tenantId));
+    this.pointsRouter = new DshPointsEventRouter(this.identities, tenantId => new DshPointsService(this.client,tenantId,{getSettings:id=>{const saved=this.settings.read(id);return {raidPoints:saved.raidPoints,followPoints:saved.followPoints,subPoints:saved.subPoints,giftedSubPoints:saved.giftedSubPoints,bitPoints:saved.bitPoints,chatActivityPoints:saved.chatActivityPoints,firstMessagePoints:saved.firstMessagePoints,messageReactionPoints:saved.messageReactionPoints,adminEventPoints:saved.adminEventPoints,adminLogPoints:saved.adminLogPoints,adminMessagePoints:saved.adminMessagePoints};}}));
     if(options.operationMode==="active"&&options.publicOrigin)this.nebulaMedia=new DshNebulaMediaWorker(this.client,{databasePath:options.databasePath,publicOrigin:options.publicOrigin,workerId:`${options.workerId}-nebula-media`,tenantIds:options.config.tenants.map(tenant=>tenant.tenantId),sourceOrigins:(process.env.DSH_MEDIA_SOURCE_ORIGINS||"").split(",").filter(Boolean)},fetchImpl);
     this.activityStore=new DshMemberActivityStore(options.databasePath);this.activity=new DshMemberActivityWorker(this.activityStore,this.client,options.config);
     this.settings = new DshTenantSettingsStore(options.databasePath, now);
