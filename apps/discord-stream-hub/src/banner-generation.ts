@@ -15,6 +15,8 @@ import {
 
 export interface DshBannerRenderRequestV1 {
   schemaVersion: 1;
+  twitchLogin: string;
+  variant: DshBannerVariantV1;
   html: string;
   width: number;
   height: number;
@@ -55,7 +57,7 @@ export class SqliteDshRoleAwareBannerService {
     const variant = normalizeDshBannerVariant(requestedVariant);
     const existing = this.get(key, variant);
     if (existing) return existing;
-    const gif = await this.renderer.renderGif({ schemaVersion: 1, html: buildDshBannerHtml(key, variant), width: DSH_BANNER_WIDTH, height: DSH_BANNER_HEIGHT, frameTimesMs: dshBannerFrameTimesMs(), fps: DSH_BANNER_FPS, palette: DSH_BANNER_GIF_PALETTE });
+    const gif = await this.renderer.renderGif({ schemaVersion: 1, twitchLogin:key, variant, html: buildDshBannerHtml(key, variant), width: DSH_BANNER_WIDTH, height: DSH_BANNER_HEIGHT, frameTimesMs: dshBannerFrameTimesMs(), fps: DSH_BANNER_FPS, palette: DSH_BANNER_GIF_PALETTE });
     if (gif.byteLength < 6 || String.fromCharCode(...gif.slice(0, 6)) !== "GIF89a") throw new Error("DSH banner renderer returned an invalid GIF");
     const generatedAt = new Date(this.now()).toISOString();
     const metadata = { width: DSH_BANNER_WIDTH, height: DSH_BANNER_HEIGHT, fps: DSH_BANNER_FPS, durationSeconds: DSH_BANNER_DURATION_SECONDS };
