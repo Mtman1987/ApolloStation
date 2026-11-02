@@ -125,3 +125,12 @@ that HMO-011 or P08 is complete.
   remaining end-to-end HLS gaps.
 - `tests/hearmeout-media-resolution.test.mjs` — resolver retry integration
   regression added in PR #316.
+
+
+## Apollo-owned Watch movie catalog increment (2026-11-02; PR #326 open)
+
+PR #326 removes the production execution worker's donor movie-provider origin binding. Movie search now reads the ranked Apollo Xtream catalog and exposes only xtream-vod-* results. Explicit selection is revalidated against the catalog and resolves to Apollo's local /api/watch/xtream/hls/vod-*/index.m3u8 route; HLS acquisition remains lazy and belongs to the mounted Apollo handler. The old origin-based adapter constructor remains only for isolated legacy integration fixtures, not the production worker.
+
+A deterministic Apollo-mode adapter regression now covers VOD-only filtering, selection validation, local HLS route mapping, and no eager acquisition. This branch has no Actions check runs yet: the repository's pull-request-validation.yml workflow is manual-dispatch only. PR #326 is open and unmerged pending an Oracle/offline validation run and real configured Xtream provider verification. Do not treat the test source as executed proof.
+
+Still open after this increment: actual configured-provider catalog lookup and HLS acquisition/conversion, browser decoding, room/tenant authorization for manifest and segment requests, synchronized Watch pause/resume/seek semantics, late-join clock behavior, and reconnect/queue progression. The current shared program control contract only implements skip/clear; do not claim full synchronized transport parity.
