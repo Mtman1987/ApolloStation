@@ -38,6 +38,7 @@ export interface DshWebControlOptionsV1 {
   databasePath?: string;
   runtimeConfigPath?: string;
   credential?: string;
+  serviceCredential?: string;
   operationMode?: SpmtOperationModeV1;
   applicationInteractionsReady?: boolean;
   fetchImpl?: typeof fetch;
@@ -597,7 +598,7 @@ export class DshWebControls {
   }
 
   private authorizeWorker(request: IncomingMessage): boolean {
-    const expected=this.options.credential??"",header=String(request.headers.authorization??"");
+    const expected=this.options.serviceCredential??"",header=String(request.headers.authorization??"");
     if(!expected||!header.startsWith("Bearer "))return false;
     const supplied=header.slice(7);if(!supplied||supplied.length!==expected.length)return false;
     return timingSafeEqual(Buffer.from(supplied),Buffer.from(expected));
