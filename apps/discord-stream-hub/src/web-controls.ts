@@ -1,3 +1,4 @@
+import { forwardDshForumPost } from "./forum-forwarding.js";
 import { DshMemberDirectoryStore } from "./member-directory.js";
 import { DshRaidPileStore, DEFAULT_DSH_RAID_PILE_SETTINGS, type DshRaidPileSettingsV1 } from "./raid-pile.js";
 import {DshOnboardingPanel} from "./onboarding-panel.js";
@@ -141,6 +142,11 @@ export class DshWebControls {
         return sendJson(response,200,{target:target??null,piles:store.piles(context.tenantId),message:target?`Next announced target: ${target.displayName}. Twitch raid remains voluntary.`:"No other live member is available."});
       }
       const body = await readJsonBody(request);
+      if(url.pathname==="/api/discord-stream-hub/control/forum/forward"){
+        this.requireOwner(context);if(!this.client)throw new Error("Connect DSH before forwarding forum posts");
+        const result=await forwardDshForumPost(this.client,context.tenantId,body.post);
+        return sendJson(response,result.duplicate?200:201,{...result,message:result.duplicate?"This forum post was already forwarded.":"Forum post forwarded to the canonical SPMT event stream."});
+      }
       if(url.pathname.startsWith("/api/discord-stream-hub/control/calendar/partner/")){
         if(!this.partners)throw Error("Connect DSH to use partner calendars");
         const guild=this.guild(context.tenantId,body.serverId),user=text(body.userId,"userId",180),month=String(body.month??this.now().slice(0,7)),actor=String(context.session.actorId),owner=this.role(context)==="owner",action=url.pathname.split("/").at(-1);
