@@ -267,6 +267,7 @@ export class DshWebControls {
       activityStatus:this.activity?.cursor(tenantId).error??null,
       calendarMonth: month,
       ...shoutouts,
+      raidPile: await this.raidPileState(context,request),
       trackedMessages: this.messages?.list(tenantId) ?? [],
       cleanupPlans:this.role(context)==="owner"?this.cleanup?.list(tenantId,String(context.session.actorId),"owner")??[]:[],
       applications: this.role(context) === "owner" ? this.applications?.list(tenantId, undefined, 100) ?? [] : [],
@@ -412,13 +413,10 @@ export class DshWebControls {
   }
   private requireRaidPile(){if(!this.raidPile)throw new Error("DSH Raid Pile storage is not configured");return this.raidPile;}
   private raidPileSettings(tenantId:string):DshRaidPileSettingsV1 {const saved=this.settings?.read(tenantId);return {maxSize:saved?.raidPileMaxSize??DEFAULT_DSH_RAID_PILE_SETTINGS.maxSize,minSize:saved?.raidPileMinSize??DEFAULT_DSH_RAID_PILE_SETTINGS.minSize,pointsReward:saved?.raidPilePointsReward??DEFAULT_DSH_RAID_PILE_SETTINGS.pointsReward,handoffHours:saved?.raidPileHandoffHours??DEFAULT_DSH_RAID_PILE_SETTINGS.handoffHours,monthlyStrikeLimit:saved?.raidPileMonthlyStrikeLimit??DEFAULT_DSH_RAID_PILE_SETTINGS.monthlyStrikeLimit};}
-  private async raidPileIdentity(context:SessionContext,request:IncomingMessage){
-    const snapshot=await fetchAppPlatformSnapshot({appId:"discord-stream-hub",spmtOrigin:this.options.spmtOrigin,request,sources:["providerLinks"],liveRead:null});
-    const value=snapshot.providerLinks as any,links=Array.isArray(value)?value:value?.providers??value?.links??[];
-    const link=links.find((item:any)=>item.provider==="twitch"&&!item.revokedAt);
-    const twitchLogin=String(link?.providerUsername??link?.username??link?.login??link?.displayName??"").trim().toLowerCase().replace(/^@/,"");
-    if(!/^[a-z0-9_]{1,32}$/.test(twitchLogin))throw new Error("Link your Twitch account in Workspace before joining the Raid Pile");
-    return {twitchLogin,displayName:String(link?.displayName??link?.providerUsername??link?.username??twitchLogin).slice(0,100)};
+  private async raidPileIdentity(context:SessionContext,_request:IncomingMessage){
+    const actor=String(context.session.actorId??""),member=this.members(context.tenantId).find(item=>item.canonicalUserId===actor);
+    if(!member||!/^[a-z0-9_]{1,32}$/.test(member.twitchLogin))throw new Error("Raid Pile is available to members with a linked Twitch account in this Discord workspace");
+    return {twitchLogin:member.twitchLogin,displayName:member.displayName};
   }
   private async raidPileState(context:SessionContext,request:IncomingMessage){
     const store=this.requireRaidPile(),piles=store.piles(context.tenantId);
