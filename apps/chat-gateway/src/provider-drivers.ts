@@ -181,7 +181,7 @@ function parseDiscord(value: unknown, c: ProviderConnectionConfigV1): ProviderCh
   const m = record(value); if (!m || scalarString(m.channel_id) !== c.channelId) return;
   const rich=parseDiscordRich(m,"message");
   const embedText=rich?.embeds?.slice(0,4).flatMap(item=>[item.title,item.description].filter(Boolean)).join("\n").slice(0,2000)??"";
-  const content = stringValue(m.content)||embedText||(rich?.attachments.length?"[Attachment]":undefined), id = scalarString(m.id), author = record(m.author), providerUserId = scalarString(author?.id), username = stringValue(author?.username), timestamp = stringValue(m.timestamp);
+  const content = stringValue(m.content)||embedText||(rich?.attachments.length?"[Attachment]":rich?.embeds?.length?"[Embed]":undefined), id = scalarString(m.id), author = record(m.author), providerUserId = scalarString(author?.id), username = stringValue(author?.username), timestamp = stringValue(m.timestamp);
   if (!content || !id || !providerUserId || !username || !timestamp || !Number.isFinite(Date.parse(timestamp))) return;
   const mentions = Array.isArray(m.mentions) ? m.mentions.flatMap(v => { const x = record(v), mid = scalarString(x?.id), name = stringValue(x?.username); return mid && name ? [{ token: `<@${mid}>`, providerUserId: mid, username: name }] : []; }) : [];
   const avatarHash = stringValue(author?.avatar);
