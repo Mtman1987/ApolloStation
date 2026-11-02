@@ -67,6 +67,7 @@ export class DshForumForwardingStore {
   }
   close(){this.db.close();}
   putRule(input:DshForumForwardRuleV1){const r=validateForwardRule(input);this.db.prepare("INSERT INTO dsh_forum_rules VALUES(?,?,?) ON CONFLICT(tenant_id,source_guild_id) DO UPDATE SET body=excluded.body").run(r.tenantId,r.sourceGuildId,JSON.stringify(r));return r;}
+  listRules(tenant:string){const rows=this.db.prepare("SELECT body FROM dsh_forum_rules WHERE tenant_id=? ORDER BY source_guild_id").all(tenant) as Array<{body:string}>;return rows.map(row=>validateForwardRule(JSON.parse(row.body) as DshForumForwardRuleV1));}
   getRule(tenant:string,guild:string){const row=this.db.prepare("SELECT body FROM dsh_forum_rules WHERE tenant_id=? AND source_guild_id=?").get(tenant,guild) as {body:string}|undefined;return row?validateForwardRule(JSON.parse(row.body) as DshForumForwardRuleV1):undefined;}
   getThread(tenant:string,guild:string,channel:string){return this.db.prepare("SELECT thread_id,pending FROM dsh_forum_threads WHERE tenant_id=? AND source_guild_id=? AND source_channel_id=?").get(tenant,guild,channel) as {thread_id:string|null;pending:number}|undefined;}
   setThread(tenant:string,guild:string,channel:string,thread:string|null,pending:boolean,now:string){this.db.prepare("INSERT INTO dsh_forum_threads VALUES(?,?,?,?,?,?) ON CONFLICT(tenant_id,source_guild_id,source_channel_id) DO UPDATE SET thread_id=excluded.thread_id,pending=excluded.pending,updated_at=excluded.updated_at").run(tenant,guild,channel,thread,pending?1:0,now);}
