@@ -138,12 +138,12 @@ export class DshForumForwardingService {
   }
 }
 export function buildDshForumDiscordPayload(event:DshForumForwardMutationV1):Record<string,unknown>{
-  const attachments=(event.attachments??[]).filter(a=>typeof(a.url??a.proxyUrl)==="string").slice(0,10),sourceEmbeds=(event.embeds??[]).slice(0,5);
+  const attachments=(event.attachments??[]).flatMap(a=>{const url=forumHttps(a.url??a.proxyUrl);return url?[{...a,url}]:[];}).slice(0,10),sourceEmbeds=(event.embeds??[]).slice(0,5);
   const fields:Array<{name:string;value:string}>=[];
   if(attachments.length)fields.push({name:"Attachments",value:attachments.map(a=>"[Open "+String(a.filename||"attachment").slice(0,80)+"]("+String(a.url??a.proxyUrl)+")").join("\n").slice(0,1024)});
   for(const e of sourceEmbeds)if(e.title||e.description)fields.push({name:String(e.title||"Source embed").slice(0,256),value:String(e.description||e.url||"Embedded content").slice(0,1024)});
   const imageUrls=[...new Set([...attachments.filter(a=>String(a.contentType??"").startsWith("image/")).map(a=>a.url??a.proxyUrl),...sourceEmbeds.flatMap(e=>[forumHttps(e.imageUrl),forumHttps(e.thumbnailUrl)])].filter((url):url is string=>typeof url==="string"))];
-  const embed:Record<string,unknown>={author:{name:event.authorName,...(event.authorAvatar?{icon_url:event.authorAvatar}:{})},description:(event.content||"").slice(0,4000)||"\u200b",color:0x5865f2,footer:{text:"Discord · #"+event.channelName},timestamp:event.occurredAt,...(event.sourceMessageUrl?{url:event.sourceMessageUrl}:{}),...(imageUrls[0]?{image:{url:imageUrls[0]}}:{}),...(fields.length?{fields:fields.slice(0,10)}:{})};
+  const embed:Record<string,unknown>={author:{name:event.authorName,...(event.authorAvatar?{icon_url:event.authorAvatar}:{})},description:(event.content||"").slice(0,4000)||"\u200b",color:0x5865f2,footer:{text:"Discord · #"+event.channelName},timestamp:event.occurredAt,...(forumHttps(event.sourceMessageUrl)?{url:forumHttps(event.sourceMessageUrl)}:{}),...(imageUrls[0]?{image:{url:imageUrls[0]}}:{}),...(fields.length?{fields:fields.slice(0,10)}:{})};
   const sourceMedia=sourceEmbeds.map(e=>({...(e.title?{title:String(e.title).slice(0,256)}:{}),...(e.description?{description:String(e.description).slice(0,3500)}:{}),...(forumHttps(e.url)?{url:forumHttps(e.url)}:{}),...(forumHttps(e.imageUrl)?{image:{url:forumHttps(e.imageUrl)}}:{}),...(forumHttps(e.thumbnailUrl)?{thumbnail:{url:forumHttps(e.thumbnailUrl)}}:{})})).filter(e=>Object.keys(e).length>0);
   const extraImages=imageUrls.slice(1,5).map(url=>({image:{url}}));
   return{embeds:[embed,...sourceMedia,...extraImages].slice(0,10),allowed_mentions:{parse:[]}};
