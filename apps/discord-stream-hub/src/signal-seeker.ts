@@ -50,9 +50,12 @@ export class SqliteDshSignalSeekerStore {
       CREATE TABLE IF NOT EXISTS dsh_signal_seekers(tenant_id TEXT NOT NULL,provider_user_id TEXT NOT NULL,canonical_user_id TEXT,enabled INTEGER NOT NULL CHECK(enabled IN (0,1)),updated_at TEXT NOT NULL,PRIMARY KEY(tenant_id,provider_user_id)) STRICT;
       CREATE TABLE IF NOT EXISTS dsh_signal_drops(drop_id TEXT PRIMARY KEY,tenant_id TEXT NOT NULL,expires_at TEXT NOT NULL,state TEXT NOT NULL,body TEXT NOT NULL) STRICT;
       CREATE INDEX IF NOT EXISTS dsh_signal_open ON dsh_signal_drops(tenant_id,state,expires_at);
+      CREATE TABLE IF NOT EXISTS dsh_signal_command_cursor(tenant_id TEXT PRIMARY KEY,event_id TEXT NOT NULL) STRICT;
     `);
   }
   close(): void { this.db.close(); }
+  cursor(tenantId: string): string | undefined { const row=this.db.prepare("SELECT event_id FROM dsh_signal_command_cursor WHERE tenant_id=?").get(clean(tenantId)) as {event_id:string}|undefined; return row?.event_id; }
+  advanceCursor(tenantId: string, eventId: string): void { this.db.prepare("INSERT INTO dsh_signal_command_cursor(tenant_id,event_id) VALUES(?,?) ON CONFLICT(tenant_id) DO UPDATE SET event_id=excluded.event_id").run(clean(tenantId),clean(eventId)); }
   setSeeking(input: { tenantId: string; providerUserId: string; canonicalUserId?: string; enabled: boolean; at?: string }) {
     const at = timestamp(input.at ?? this.now());
     this.db.prepare("INSERT INTO dsh_signal_seekers(tenant_id,provider_user_id,canonical_user_id,enabled,updated_at) VALUES(?,?,?,?,?) ON CONFLICT(tenant_id,provider_user_id) DO UPDATE SET canonical_user_id=COALESCE(dsh_signal_seekers.canonical_user_id,excluded.canonical_user_id),enabled=excluded.enabled,updated_at=excluded.updated_at")
