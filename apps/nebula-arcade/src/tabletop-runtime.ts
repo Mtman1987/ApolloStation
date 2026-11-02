@@ -10,6 +10,7 @@ import { normalizeNebulaGameRuntimeState, joinNebulaGame, awardNebulaGamePoints,
 import { SqliteNebulaGameRuntimeStore } from "./game-runtime-store.js";
 import { bingoCardStats } from "./bingo-game.js";
 import { quackverseCards } from "./quackverse-data.js";
+import { normalizeNebulaSharedBingoState, ingestNebulaSharedBingoTranscript, claimNebulaSharedBingoSquare, suggestNebulaSharedBingoPhrase, buyNebulaSharedBingoStellaFlip, buyNebulaSharedBingoCenterFree, nebulaSharedBingoSnapshot, type NebulaSharedBingoStateV1 } from "./shared-bingo.js";
 
 const cards = quackverseCards.map(card => ({ ...card, type: card.type.toLowerCase(), role: card.role ?? "", atk: card.atk ?? 0, def: card.def ?? 0, hp: card.hp ?? 0, spd: card.spd ?? 0, spc: card.spc ?? 0 }));
 const catalog = { get: (id: number) => cards.find(card => card.id === id) };
@@ -41,7 +42,8 @@ export class SqliteNebulaTabletopRuntime {
     const lastPackMeta = this.read(tenant,"@arcade","quackverse-last-pack") as {userId?:string;username?:string;openedAt?:string}|undefined;
     const packUserId = userId || lastPackMeta?.userId || Object.keys(quackverse.collections).at(-1) || "";
     const collection = normalizeQuackverseCollection(quackverse.collections[packUserId]);
-    return { catalog:quackverseCards, ...(userId?{collection, savedDecks:collection.savedDecks}:{}), bingoStats:bingoCardStats(bingo), bingo: { ...personalBingoView(bingo,boardUser), owner:boardUser||null }, quackverse: { gridSize:quackverse.gridSize,grid:quackverse.grid,score:quackverse.score,turnNumber:quackverse.turnNumber,activePlayer:quackverse.activePlayer,winner:quackverse.winner,matchLog:quackverse.matchLog,claimedPlayers:quackverse.claimedPlayers,npcPlayers:quackverse.npcPlayers,formationVp:quackverse.formationVp,turnActions:quackverse.turnActions,hand:userId?quackverse.battlePiles[quackverse.claimedPlayers.playerOne===userId?"playerOne":"playerTwo"].hand.filter(()=>Object.values(quackverse.claimedPlayers).includes(userId)):[],lastPackOpenedAt:lastPackMeta?.openedAt??null,lastPackOwner:(lastPackMeta?.username??packUserId)||null,lastPack:collection.lastPack.map(id=>catalog.get(id)).filter(Boolean).map(card=>({id:card!.id,name:card!.name,rarity:card!.rarity,atk:card!.atk,def:card!.def,hp:card!.hp,imageUrl:`/apps/nebula-arcade?action=card-art&cardId=${card!.id}`})),cards:quackverse.grid.flatMap(piece=>piece ? [{id:piece.cardId,name:catalog.get(piece.cardId)?.name||String(piece.cardId)}] : []) } };
+    const sharedBingo=normalizeNebulaSharedBingoState(this.read(tenant,channel,"shared-bingo") as NebulaSharedBingoStateV1,channel,NEBULA_BINGO_STARTER_PHRASES);
+    return { catalog:quackverseCards, ...(userId?{collection, savedDecks:collection.savedDecks}:{}), bingoStats:bingoCardStats(bingo), bingo: { ...personalBingoView(bingo,boardUser), owner:boardUser||null }, sharedBingo:nebulaSharedBingoSnapshot(sharedBingo,{includePhrases:true}), quackverse: { gridSize:quackverse.gridSize,grid:quackverse.grid,score:quackverse.score,turnNumber:quackverse.turnNumber,activePlayer:quackverse.activePlayer,winner:quackverse.winner,matchLog:quackverse.matchLog,claimedPlayers:quackverse.claimedPlayers,npcPlayers:quackverse.npcPlayers,formationVp:quackverse.formationVp,turnActions:quackverse.turnActions,hand:userId?quackverse.battlePiles[quackverse.claimedPlayers.playerOne===userId?"playerOne":"playerTwo"].hand.filter(()=>Object.values(quackverse.claimedPlayers).includes(userId)):[],lastPackOpenedAt:lastPackMeta?.openedAt??null,lastPackOwner:(lastPackMeta?.username??packUserId)||null,lastPack:collection.lastPack.map(id=>catalog.get(id)).filter(Boolean).map(card=>({id:card!.id,name:card!.name,rarity:card!.rarity,atk:card!.atk,def:card!.def,hp:card!.hp,imageUrl:`/apps/nebula-arcade?action=card-art&cardId=${card!.id}`})),cards:quackverse.grid.flatMap(piece=>piece ? [{id:piece.cardId,name:catalog.get(piece.cardId)?.name||String(piece.cardId)}] : []) } };
   }
   execute(message: NormalizedChatMessageV1): string | undefined {
     this.consolidateLegacyRooms(message.tenantId);
@@ -58,6 +60,19 @@ export class SqliteNebulaTabletopRuntime {
       let response: string;
       if(game === "bingo") {
         const state = normalizeBingoState(this.read(message.tenantId,message.channelId,game) as BingoStateV1 ?? defaultBingoState(NEBULA_BINGO_STARTER_PHRASES)), action = command === "bingo" ? args.shift()?.toLowerCase() || "card" : command;
+        if(["shared","suggest","flip","free","shared-status"].includes(action)){
+          const shared=normalizeNebulaSharedBingoState(this.read(message.tenantId,message.channelId,"shared-bingo") as NebulaSharedBingoStateV1,message.channelId,NEBULA_BINGO_STARTER_PHRASES,now.getTime());
+          const runtimeRow=this.db.prepare("SELECT body FROM nebula_game_runtime WHERE tenant_id=? AND runtime_key='default'").get(message.tenantId) as {body:string}|undefined;
+          const runtime=normalizeNebulaGameRuntimeState(runtimeRow?JSON.parse(runtimeRow.body):undefined);
+          const actor={channel:message.channelId,userId:message.actor.canonicalUserId?`spmt:${message.actor.canonicalUserId}`:`provider:${message.provider}:${message.actor.providerUserId}`,username:message.actor.username,displayName:message.actor.displayName};
+          if(action==="shared"){const result=claimNebulaSharedBingoSquare(runtime,shared,{...actor,coordinate:args[0]},now.getTime());response=result.outcome==="claimed"?`${message.actor.username} claimed ${result.coordinate} for ${result.points} points.${result.won?" Bingo!":""}`:result.outcome==="blocked"?`${args[0]} is blocked by Stella. Suggest a replacement with spmt bingo suggest ${args[0]} <phrase> or flip it for 250 points.`:result.outcome==="not-triggered"?"That phrase has not been called yet. Claim it within 15 seconds after it is spoken.":result.outcome==="complete"?"This shared Bingo board is complete.":"Use spmt bingo shared B4."; }
+          else if(action==="suggest"){const result=suggestNebulaSharedBingoPhrase(runtime,shared,{...actor,coordinate:args[0],phrase:args.slice(1).join(" ")},now.getTime());response=result.outcome==="suggested"?`Replacement phrase saved for ${result.coordinate}: ${result.phrase}. Cost: ${result.cost} points.`:`Bingo phrase replacement: ${result.outcome}.`; }
+          else if(action==="flip"){const result=buyNebulaSharedBingoStellaFlip(runtime,shared,{...actor,coordinate:args[0]},now.getTime());response=result.outcome==="flipped"?`${result.coordinate} is now a chat square. Cost: ${result.cost} points.`:`Bingo flip: ${result.outcome}.`; }
+          else if(action==="free"){const result=buyNebulaSharedBingoCenterFree(runtime,shared,actor,now.getTime());response=result.outcome==="freed"?"The center square is now a free chat square. Cost: 500 points.":`Bingo free center: ${result.outcome}.`; }
+          else response=JSON.stringify(nebulaSharedBingoSnapshot(shared,{includePhrases:true,now:now.getTime()}));
+          this.put(message.tenantId,message.channelId,"shared-bingo",shared);
+          this.db.prepare("INSERT INTO nebula_game_runtime VALUES(?,'default',?,?) ON CONFLICT(tenant_id,runtime_key) DO UPDATE SET body=excluded.body,updated_at=excluded.updated_at").run(message.tenantId,JSON.stringify(runtime),message.occurredAt);
+        } else {
         getPersonalBingoBoard(state,user);
         if(action === "center") {setPersonalBingoCenter(state,user,args.join(" "),now);response="Your personal Bingo center phrase is set.";}
         else if(action === "claim") { const square = Number(args[0]); if(!Number.isInteger(square)||square<1||square>25)throw new Error("Use spmt claim <square 1–25>.");const result=claimPersonalBingoSquare(state,user,square-1,{actorUserId:user,channel:message.channelId},now);this.reward(message,1+(result.newlyWon?5:0),result.newlyWon);response=result.won?`${message.actor.username} has Bingo!`:`Bingo square ${square} marked.`; }
@@ -70,6 +85,7 @@ export class SqliteNebulaTabletopRuntime {
         else if(action === "card" || action === "join" || action === "status") response=`${message.actor.username}'s Bingo board is on the overlay. Use spmt bingo center <phrase> and spmt claim <1–25>. Shared phrases are marked by spmt-prefixed chat from joined players.`;
         else throw new Error("Bingo commands: spmt card, spmt claim 1–25, spmt bingo center <phrase>, spmt phrases, spmt bingo reset.");
         this.put(message.tenantId,message.channelId,game,state);
+        }
       } else {
         let state = this.quackverseState(message.tenantId,message.channelId,now);
         const action = command === "quackverse" ? args.shift()?.toLowerCase() || "status" : "pack";
@@ -104,10 +120,17 @@ export class SqliteNebulaTabletopRuntime {
   private seat(state:QuackverseSavedState,user:string){if(state.claimedPlayers.playerOne===user)return "playerOne" as const;if(state.claimedPlayers.playerTwo===user)return "playerTwo" as const;throw new Error("Join a Quackverse seat first with spmt quackverse join.");}
   private requireModerator(message:NormalizedChatMessageV1){if(!message.actor.roles.some(role=>["broadcaster","moderator"].includes(role)))throw new Error("Only the broadcaster or a moderator can change the shared game.");}
   succeeded(message:NormalizedChatMessageV1){return Boolean(this.db.prepare("SELECT 1 FROM nebula_tabletop_receipts WHERE tenant_id=? AND input_id=?").get(message.tenantId,`${message.provider}:${message.connectionId}:${message.messageId}`));}
+  ingestBingoTranscript(tenant:string,channel:string,text:unknown,now=Date.now()){
+    const shared=normalizeNebulaSharedBingoState(this.read(tenant,channel,"shared-bingo") as NebulaSharedBingoStateV1,channel,NEBULA_BINGO_STARTER_PHRASES,now);
+    const result=ingestNebulaSharedBingoTranscript(shared,text,now);
+    if(result.changed)this.put(tenant,channel,"shared-bingo",shared);
+    return result;
+  }
   observeBingo(message:NormalizedChatMessageV1){
     const parsed=parseNebulaMessage(message.text);if(!parsed?.body||message.actor.isBot)return;
-    const user=message.actor.canonicalUserId||`${message.provider}:${message.actor.providerUserId}`,state=normalizeBingoState(this.read(message.tenantId,message.channelId,"bingo") as BingoStateV1),board=state.personalBoards[user];if(!board)return;
     const text=(parsed.gameId?`${parsed.command} ${parsed.args.join(" ")}`:parsed.body).trim().toLowerCase();
+    this.ingestBingoTranscript(message.tenantId,message.channelId,text,Date.parse(message.occurredAt));
+    const user=message.actor.canonicalUserId||`${message.provider}:${message.actor.providerUserId}`,state=normalizeBingoState(this.read(message.tenantId,message.channelId,"bingo") as BingoStateV1),board=state.personalBoards[user];if(!board)return;
     const square=state.templatePhrases.findIndex((phrase,index)=>{const value=index===12?board.centerPhrase:phrase;return value&&text.includes(value.toLowerCase())&&!board.covered[String(index)];});
     if(square<0||Object.values(board.covered).some(claim=>claim.channel===message.channelId))return;
     return this.execute({...message,text:`spmt bingo claim ${square+1}`});
