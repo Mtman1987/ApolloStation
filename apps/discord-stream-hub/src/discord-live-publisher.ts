@@ -20,6 +20,7 @@ export interface DshDiscordTransportV1 extends Partial<DshCalendarTransportV1> {
 export interface DshDiscordBrandingV1 { communityMemberName:string; spotlightChannelId?:string; spotlightEnabled?:boolean; groupChannels?:Record<string,string>; onboardingCustomId?:string; embedTemplates?:DshEmbedTemplates; }
 export interface DshDiscordBrandingSourceV1 { getBranding(tenantId:string):Promise<DshDiscordBrandingV1>|DshDiscordBrandingV1; }
 export interface DshSpotlightMediaSourceV1 { getImage(input:{tenantId:string;member:DshLiveMemberV1;stream:DshTwitchStreamV1}):Promise<string|undefined>|string|undefined; }
+export interface DshRoleBannerSourceV1 { getBannerUrl(input:{tenantId:string;member:DshLiveMemberV1}):Promise<string|undefined>|string|undefined; }
 
 export interface DshTrackedDiscordMessageV1 { tenantId:string; kind:"shoutout"|"spotlight"|"calendar"|"applications"|"guest-shoutout"|"partner-calendar"|"onboarding"|"raid-pile"; key:string; channelId:string; messageId:string; updatedAt:string; }
 
@@ -115,7 +116,7 @@ export class DshDiscordError extends Error{constructor(readonly status:number,re
 
 /** Publishes DSH's durable live outbox to Discord while retaining message ids for edit/remove parity. */
 export class DshDiscordLivePublisher implements DshLiveActionPublisherV1 {
-  constructor(private readonly api:DshDiscordTransportV1,private readonly state:SqliteDshDiscordMessageStore,private readonly branding:DshDiscordBrandingSourceV1,private readonly media?:DshSpotlightMediaSourceV1,private readonly now:()=>string=()=>new Date().toISOString(),private readonly guests?:DshGuestShoutoutStore){}
+  constructor(private readonly api:DshDiscordTransportV1,private readonly state:SqliteDshDiscordMessageStore,private readonly branding:DshDiscordBrandingSourceV1,private readonly media?:DshSpotlightMediaSourceV1,private readonly now:()=>string=()=>new Date().toISOString(),private readonly guests?:DshGuestShoutoutStore,private readonly banners?:DshRoleBannerSourceV1){}
   async publish(action:DshLiveActionV1){
     switch(action.type){
       case "guest.refresh": await this.publishGuest(action); return;
@@ -155,7 +156,7 @@ export class DshDiscordLivePublisher implements DshLiveActionPublisherV1 {
     }finally{guests.release(tenant,id,owner);}
   }
   private async upsertShoutout(tenantId:string,member:DshLiveMemberV1,stream:DshTwitchStreamV1,spotlight:boolean){
-    const brand=await this.branding.getBranding(tenantId);let tracked=this.state.get(tenantId,"shoutout",member.canonicalUserId);const channelId=brand.groupChannels?.[dshShoutoutGroupSlug(member.group)||'']||member.shoutoutChannelId;const payload=buildDshTierShoutout(dshStreamShoutout(member,stream),{...(brand.embedTemplates?{templates:brand.embedTemplates}:{}),timestamp:this.now()});
+    const brand=await this.branding.getBranding(tenantId);let tracked=this.state.get(tenantId,"shoutout",member.canonicalUserId);const channelId=brand.groupChannels?.[dshShoutoutGroupSlug(member.group)||'']||member.shoutoutChannelId;const view=dshStreamShoutout(member,stream),bannerUrl=await this.banners?.getBannerUrl({tenantId,member})??member.bannerUrl;if(bannerUrl)view.bannerUrl=bannerUrl;const payload=buildDshTierShoutout(view,{...(brand.embedTemplates?{templates:brand.embedTemplates}:{}),timestamp:this.now()});
     if(tracked&&tracked.channelId!==channelId){await this.api.deleteMessage(tenantId,tracked.channelId,tracked.messageId).catch(error=>{if(!repostable(error))throw error});this.state.remove(tenantId,"shoutout",member.canonicalUserId);tracked=undefined;}
     if(tracked){try{await this.api.editMessage(tenantId,tracked.channelId,tracked.messageId,payload);this.state.put({...tracked,updatedAt:this.now()});return;}catch(error){if(!repostable(error))throw error;await this.api.deleteMessage(tenantId,tracked.channelId,tracked.messageId).catch(()=>undefined);}}
     const messageId=await this.api.createMessage(tenantId,channelId,payload);this.state.put({tenantId,kind:"shoutout",key:member.canonicalUserId,channelId,messageId,updatedAt:this.now()});
