@@ -1,3 +1,4 @@
+import { SqliteDshRoleAwareBannerService, DshRoleAwareBannerMediaSource } from "./banner-generation.js";
 import { DshClipAcquisitionWorker } from "./clip-acquisition.js";
 import { SqliteDshClipGifStore, DshClipGifSpotlightMediaSource } from "./clip-gif-library.js";
 import { SqliteDshSignalSeekerStore, dshSignalSeekerPanelPayload, dshSignalDropInteractionPayload, dshSignalDropClue } from "./signal-seeker.js";
@@ -200,6 +201,7 @@ export class SupervisedDshLiveService {
   private nebulaMediaCycle:Promise<void>|undefined;
   private readonly nebulaMediaAbort=new AbortController();
   private readonly nebulaMedia?:DshNebulaMediaWorker;
+  private readonly roleBanners?:DshRoleAwareBannerMediaSource;
   private readonly clipSpotlightMedia:DshClipGifSpotlightMediaSource;
   private readonly clipAcquisition:DshClipAcquisitionWorker;
   private readonly suiteActions: DshSuiteActionWorker;
@@ -235,8 +237,9 @@ export class SupervisedDshLiveService {
     const simulationDiscord = new DshSimulationRoomDiscordTransport(liveDiscord, this.client, { guildIds: (tenantId) => options.config.tenants.find((tenant) => tenant.tenantId === tenantId)?.discordGuildIds ?? [], now });
     const discord = options.operationMode === "read-only" ? simulationDiscord : new DshSimulationRoomDiscordTransport(liveDiscord, this.client, { guildIds: (tenantId) => options.config.tenants.find((tenant) => tenant.tenantId === tenantId)?.discordGuildIds ?? [], now, liveWrites: true });
     this.clipSpotlightMedia=new DshClipGifSpotlightMediaSource(new SqliteDshClipGifStore(options.databasePath),this.nebulaMedia);
+    if(this.nebulaMedia)this.roleBanners=new DshRoleAwareBannerMediaSource(new SqliteDshRoleAwareBannerService(options.databasePath,this.nebulaMedia,now),this.nebulaMedia);
     this.clipAcquisition=new DshClipAcquisitionWorker(directory,new SpmtDshTwitchGrantSource(this.client,directory),new SqliteDshClipGifStore(options.databasePath),fetchImpl,()=>Date.parse(this.now()));
-    const publisher = new DshDiscordLivePublisher(discord, this.messages, directory, this.clipSpotlightMedia, now,this.monitor.guests);
+    const publisher = new DshDiscordLivePublisher(discord, this.messages, directory, this.clipSpotlightMedia, now,this.monitor.guests,this.roleBanners);
     this.runtime = new DshLiveRuntime(this.monitor, publisher);
     const twitchGrants=new SpmtDshTwitchGrantSource(this.client,directory),twitch=new TwitchHelixLiveClient(fetchImpl);
     this.memberSync = new DshMemberDirectoryWorker(this.memberDirectory, this.client, options.config, liveDiscord, twitchGrants, twitch, now);
@@ -350,7 +353,7 @@ export class SupervisedDshLiveService {
       let failure: unknown;
       let failed = false;
       try { await this.nebulaMediaCycle; await this.calendarCycle; await activeCycle; } catch (error) { failure = error; failed = true; }
-      this.nebulaMedia?.close();this.clipSpotlightMedia.close();this.clipAcquisition.close?.();
+      this.nebulaMedia?.close();this.clipSpotlightMedia.close();this.clipAcquisition.close();this.roleBanners?.close();
       this.memberDirectory.close();this.settings.close();this.raidPile.close();this.cleanup.close();this.activityStore.close();this.forumForwardingStore.close();this.signalSeekers.close();
       try { this.messages.close(); } catch (error) { if (!failed) { failure = error; failed = true; } }
       try { this.calendarSync?.close(); this.calendar.close(); } catch (error) { if (!failed) { failure = error; failed = true; } }
