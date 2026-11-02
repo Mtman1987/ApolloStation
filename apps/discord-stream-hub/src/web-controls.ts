@@ -220,7 +220,7 @@ export class DshWebControls {
         this.requireOwner(context);requireSameOrigin(request);
         if(this.options.operationMode!=="active"||!this.liveDiscord||!this.raidTrain)throw new Error("Live Raid Train publishing is unavailable");
         const input=record(body)??{},guild=this.guild(context.tenantId,input.serverId),channelId=snowflake(input.channelId,"channelId");
-        const date=String(input.date??new Date(Date.parse(this.now())+86400000).toISOString().slice(0,10));
+        const date=String(input.date||new Date(Date.parse(this.now())+86400000).toISOString().slice(0,10));
         const channel=await this.liveDiscord.getChannel(context.tenantId,channelId);
         if(channel.guild_id!==guild||![0,5].includes(Number(channel.type)))throw new Error("Choose a text channel in the selected Discord server");
         const tenant=this.config?.tenants.find(item=>item.tenantId===context.tenantId),payload=dshRaidTrainPayload(this.raidTrain.schedule(context.tenantId,guild,date),date,tenant?.branding.communityMemberName??"Space Mountain");
