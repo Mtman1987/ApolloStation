@@ -525,7 +525,7 @@ export interface CommlinkTikTokEventV1 {
 /** Public, credential-free Commlink projection of one normalized provider message. */
 export interface CommlinkLiveChatRecordV1 {
   guildId?:string;
-  rich?: {source:string;eventType:string;attachments:Array<{url:string;name:string}>;donation?:string;membership?:string;deleted?:boolean};
+  rich?: {source:string;eventType:string;attachments:Array<{url:string;name:string;contentType?:string;size?:number}>;embeds?:Array<{title?:string;description?:string;url?:string;imageUrl?:string;thumbnailUrl?:string}>;donation?:string;membership?:string;deleted?:boolean};
   schemaVersion: 1;
   tenantId: string;
   provider: ChatProviderV1 | "social-stream" | "tiktok";
