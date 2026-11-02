@@ -151,7 +151,7 @@ export class SpmtDshTwitchGrantSource implements DshTwitchGrantSourceV1 {
 
 export class SpmtDshDiscordGrantSource implements DshDiscordGrantSourceV1 {
   constructor(private readonly client: SpmtClient, private readonly directory: ConfigDirectory) {}
-  async getGrant(input: { tenantId: string; capability: "messages:write" | "channels:read" | "guilds:read" | "events:read" | "events:write" }) {
+  async getGrant(input: { tenantId: string; capability: "messages:write" | "channels:read" | "guilds:read" | "guilds:write" | "events:read" | "events:write" }) {
     const grant = await this.client.issueProviderGrant(input.tenantId, "discord", this.directory.providerUserId(input.tenantId, "discord"), "dsh-discord-live", [input.capability], 300);
     const scheme = grant.credential.metadata.authorizationScheme ?? "Bot";
     if (scheme !== "Bot" && scheme !== "Bearer") throw new Error("Discord grant authorization scheme is invalid");
