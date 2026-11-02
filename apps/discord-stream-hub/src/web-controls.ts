@@ -248,6 +248,7 @@ export class DshWebControls {
         this.requireOwner(context);
         if (request.method !== "POST") return sendJson(response, 405, { message: "Use POST" });
         if (this.options.operationMode !== "active" || !this.liveDiscord || !this.signalSeekers) throw new Error("Live Signal drops require active Discord delivery");
+        await this.sweepSignalDrops();
         const guild = this.guild(context.tenantId, body.serverId);
         if (isSimulationDiscordId(guild)) throw new Error("Choose a live Discord server for Signal drops");
         const channelId = snowflake(body.channelId, "channelId"), roleId = snowflake(body.roleId, "roleId");
@@ -381,6 +382,12 @@ export class DshWebControls {
     await this.validateDestination(context.tenantId,guild,channel);
     return sendJson(response,200,{schemaVersion:1,...(isSimulationDiscordId(guild) ? {shadowRoomId:(await this.discord?.target(context.tenantId,guild))?.roomId} : {}),...await this.delivery.publish(context.tenantId,guild,channel,String(body.month??this.now().slice(0,7)))});
   }
+  private async sweepSignalDrops(){
+    if(!this.signalSeekers||!this.liveDiscord)return;
+    for(const drop of this.signalSeekers.expire(this.now())){
+      try{await this.liveDiscord.deleteMessage(drop.tenantId,drop.channelId,drop.messageId);}catch(error){if(!(error instanceof DshDiscordError&&error.status===404))continue;}
+    }
+  }
   async changed(tenant:string){
     const failures:string[]=[];
     for(const guild of this.config?.tenants.find(t=>t.tenantId===tenant)?.discordGuildIds??[])try{await this.sync?.sync(tenant,guild);const status=this.sync?.status(tenant,guild);for(const issue of status?.issues??[])if(issue.message)failures.push(issue.message);}catch(error){failures.push(safeError(error));}
@@ -389,6 +396,7 @@ export class DshWebControls {
   }
   async interaction(interaction:Record<string,any>){
     if(!this.config)return undefined;
+    await this.sweepSignalDrops();
     const customId=String(interaction.data?.custom_id??""),signal=/^signal_seekers:(join|leave):(\d{5,30})$/.exec(customId);
     if(interaction.type===3&&customId.startsWith("signal_intercept:")){
       const guildId=String(interaction.guild_id??""),userId=String(interaction.member?.user?.id??interaction.user?.id??""),tenant=this.config.tenants.find(item=>item.discordGuildIds?.includes(guildId)),dropId=customId.slice("signal_intercept:".length);
