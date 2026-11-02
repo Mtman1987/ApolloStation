@@ -39,37 +39,38 @@ export class SqliteDshRoleAwareBannerService {
     if (!path) throw new Error("DSH banner database path is required");
     this.db = new DatabaseSync(path, { timeout: 5_000 });
     this.db.exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;");
-    this.db.exec("CREATE TABLE IF NOT EXISTS dsh_role_banners(twitch_login TEXT PRIMARY KEY,variant TEXT NOT NULL,version TEXT NOT NULL,generated_at TEXT NOT NULL,metadata TEXT NOT NULL,gif BLOB NOT NULL) STRICT;");
+    this.db.exec("CREATE TABLE IF NOT EXISTS dsh_role_banners_v2(tenant_id TEXT NOT NULL,twitch_login TEXT NOT NULL,variant TEXT NOT NULL,version TEXT NOT NULL,generated_at TEXT NOT NULL,metadata TEXT NOT NULL,gif BLOB NOT NULL,PRIMARY KEY(tenant_id,twitch_login)) STRICT;");
   }
   close(): void { this.db.close(); }
-  get(twitchLogin: string, expectedVariant?: DshBannerVariantV1): DshStoredBannerV1 | undefined {
-    const key = dshBannerStorageKey(twitchLogin);
-    if (!key) return undefined;
-    const row = this.db.prepare("SELECT variant,version,generated_at AS generatedAt,metadata,gif FROM dsh_role_banners WHERE twitch_login=?").get(key) as { variant: string; version: string; generatedAt: string; metadata: string; gif: Uint8Array } | undefined;
-    if (!row || row.version !== DSH_BANNER_VERSION) return undefined;
-    const variant = normalizeDshBannerVariant(row.variant);
-    if (expectedVariant && variant !== expectedVariant) return undefined;
-    const metadata = JSON.parse(row.metadata) as { width: number; height: number; fps: number; durationSeconds: number };
-    return { twitchLogin: key, variant, version: row.version, generatedAt: row.generatedAt, ...metadata, gif: new Uint8Array(row.gif) };
+  get(twitchLogin: string, expectedVariant?: DshBannerVariantV1): DshStoredBannerV1 | undefined { return this.getForTenant("default",twitchLogin,expectedVariant); }
+  getForTenant(tenantId:string,twitchLogin:string,expectedVariant?:DshBannerVariantV1):DshStoredBannerV1|undefined {
+    const key=dshBannerStorageKey(twitchLogin),tenant=String(tenantId??"").trim();
+    if(!key||!tenant||tenant.length>180)return undefined;
+    const row=this.db.prepare("SELECT variant,version,generated_at AS generatedAt,metadata,gif FROM dsh_role_banners_v2 WHERE tenant_id=? AND twitch_login=?").get(tenant,key) as {variant:string;version:string;generatedAt:string;metadata:string;gif:Uint8Array}|undefined;
+    if(!row||row.version!==DSH_BANNER_VERSION)return undefined;
+    const variant=normalizeDshBannerVariant(row.variant);if(expectedVariant&&variant!==expectedVariant)return undefined;
+    const metadata=JSON.parse(row.metadata) as {width:number;height:number;fps:number;durationSeconds:number};
+    return {twitchLogin:key,variant,version:row.version,generatedAt:row.generatedAt,...metadata,gif:new Uint8Array(row.gif)};
   }
-  async generate(twitchLogin: string, requestedVariant: DshBannerVariantV1): Promise<DshStoredBannerV1> {
-    const key = dshBannerStorageKey(twitchLogin);
+  async generate(twitchLogin: string, requestedVariant: DshBannerVariantV1, tenantId="default"): Promise<DshStoredBannerV1> {
+    const key = dshBannerStorageKey(twitchLogin),tenant=String(tenantId??"").trim();
     if (!key) throw new Error("A valid Twitch login is required to generate a banner");
+    if(!tenant||tenant.length>180)throw new Error("A valid tenant ID is required to generate a banner");
     const variant = normalizeDshBannerVariant(requestedVariant);
-    const existing = this.get(key, variant);
+    const existing = this.getForTenant(tenant,key,variant);
     if (existing) return existing;
     const gif = await this.renderer.renderGif({ schemaVersion: 1, twitchLogin:key, variant, html: buildDshBannerHtml(key, variant), width: DSH_BANNER_WIDTH, height: DSH_BANNER_HEIGHT, frameTimesMs: dshBannerFrameTimesMs(), fps: DSH_BANNER_FPS, palette: DSH_BANNER_GIF_PALETTE });
     if (gif.byteLength < 6 || String.fromCharCode(...gif.slice(0, 6)) !== "GIF89a") throw new Error("DSH banner renderer returned an invalid GIF");
     const generatedAt = new Date(this.now()).toISOString();
     const metadata = { width: DSH_BANNER_WIDTH, height: DSH_BANNER_HEIGHT, fps: DSH_BANNER_FPS, durationSeconds: DSH_BANNER_DURATION_SECONDS };
-    this.db.prepare("INSERT INTO dsh_role_banners(twitch_login,variant,version,generated_at,metadata,gif) VALUES(?,?,?,?,?,?) ON CONFLICT(twitch_login) DO UPDATE SET variant=excluded.variant,version=excluded.version,generated_at=excluded.generated_at,metadata=excluded.metadata,gif=excluded.gif")
-      .run(key, variant, DSH_BANNER_VERSION, generatedAt, JSON.stringify(metadata), gif);
+    this.db.prepare("INSERT INTO dsh_role_banners_v2(tenant_id,twitch_login,variant,version,generated_at,metadata,gif) VALUES(?,?,?,?,?,?,?) ON CONFLICT(tenant_id,twitch_login) DO UPDATE SET variant=excluded.variant,version=excluded.version,generated_at=excluded.generated_at,metadata=excluded.metadata,gif=excluded.gif")
+      .run(tenant, key, variant, DSH_BANNER_VERSION, generatedAt, JSON.stringify(metadata), gif);
     return { twitchLogin: key, variant, version: DSH_BANNER_VERSION, generatedAt, ...metadata, gif: new Uint8Array(gif) };
   }
 
   /** One reusable red ticker used by Community Spotlight embeds. */
-  communitySpotlight(): Promise<DshStoredBannerV1> {
-    return this.generate("community-spotlight", "spotlight");
+  communitySpotlight(tenantId="default"): Promise<DshStoredBannerV1> {
+    return this.generate("community-spotlight", "spotlight",tenantId);
   }
 }
 
@@ -78,7 +79,7 @@ export class DshRoleAwareBannerMediaSource {
   constructor(private readonly service:SqliteDshRoleAwareBannerService,private readonly publisher:DshBannerMediaPublisherV1){}
   async getBannerUrl(input:{tenantId:string;member:{twitchLogin:string;group:string}}):Promise<string|undefined>{
     const variant=resolveDshBannerVariant({twitchLogin:input.member.twitchLogin,group:input.member.group});
-    const banner=await this.service.generate(input.member.twitchLogin,variant);
+    const banner=await this.service.generate(input.member.twitchLogin,variant,input.tenantId);
     return this.publisher.publishMedia(input.tenantId,"image/gif",banner.gif);
   }
   close(){this.service.close();}
