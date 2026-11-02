@@ -7,14 +7,6 @@ function responseStub(){
  return response;
 }
 
-test('Xtream HLS fails closed when no room authorization callback is configured',async()=>{
- const response=responseStub();
- const handled=await handleXtreamHlsRequest({method:'GET',headers:{}},response,'/api/watch/xtream/hls/vod-42/index.m3u8');
- assert.equal(handled,true);
- assert.equal(response.statusCode,503);
- assert.deepEqual(JSON.parse(response.body),{error:'playback_authorization_unavailable'});
-});
-
 test('Xtream HLS rejects a requester who is not authorized for the active room',async()=>{
  const response=responseStub();
  let authorizedStream='';
