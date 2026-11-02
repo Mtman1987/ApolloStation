@@ -1,7 +1,8 @@
+import { DshSignalControlSigner, SqliteDshSignalControlStore, dshSignalRemovalUrl, removeDshSignal } from "./signal-control.js";
 import { SqliteDshClipGifStore } from "./clip-gif-library.js";
 import { DshRaidTrainStore, dshRaidTrainPayload } from "./raid-train.js";
 import { buildDshSignalPresentation } from "./signal-presentation.js";
-import { randomUUID, timingSafeEqual } from "node:crypto";
+import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import { forwardDshForumPost, DshForumForwardingStore, DshForumForwardingService, type DshForumForwardRuleV1, type DshForumForwardMutationV1 } from "./forum-forwarding.js";
 import { DshMemberDirectoryStore } from "./member-directory.js";
 import { DshRaidPileStore, DEFAULT_DSH_RAID_PILE_SETTINGS, type DshRaidPileSettingsV1 } from "./raid-pile.js";
@@ -62,6 +63,7 @@ export class DshWebControls {
   private readonly applications?: SqliteDshApplicationStore;
   private readonly shoutouts?: DshShoutoutGenerationStore;
   private readonly clipGifs?: SqliteDshClipGifStore;
+  private readonly signalControlStore?:SqliteDshSignalControlStore;
   private readonly config?: DshLiveRuntimeConfigV1;
   private readonly discord?: DshSimulationRoomDiscordTransport;
   private client?:SpmtClient;
@@ -88,6 +90,7 @@ export class DshWebControls {
       this.raidPile = new DshRaidPileStore(options.databasePath, (tenantId) => this.raidPileSettings(tenantId));
       this.raidTrain = new DshRaidTrainStore(options.databasePath, this.now);
       this.clipGifs = new SqliteDshClipGifStore(options.databasePath);
+      this.signalControlStore=new SqliteDshSignalControlStore(options.databasePath);
     }
     if (options.runtimeConfigPath) this.config = loadDshLiveRuntimeConfig(options.runtimeConfigPath);
     if(options.databasePath&&this.config&&this.settings)this.memberDirectory=new DshMemberDirectoryStore(options.databasePath,this.config,this.settings);
@@ -110,7 +113,7 @@ export class DshWebControls {
     }
   }
 
-  close() { this.memberDirectory?.close();this.activity?.close();this.cleanup?.close();this.monitor?.close(); this.calendar?.close(); this.settings?.close(); this.messages?.close(); this.applications?.close(); this.shoutouts?.close();this.signalSeekers?.close();this.forumForwardingStore?.close();this.raidPile?.close();this.raidTrain?.close();this.clipGifs?.close(); }
+  close() { this.memberDirectory?.close();this.activity?.close();this.cleanup?.close();this.monitor?.close(); this.calendar?.close(); this.settings?.close(); this.messages?.close(); this.applications?.close(); this.shoutouts?.close();this.signalSeekers?.close();this.forumForwardingStore?.close();this.raidPile?.close();this.raidTrain?.close();this.clipGifs?.close();this.signalControlStore?.close(); }
 
   async handle(request: IncomingMessage, response: ServerResponse, url: URL): Promise<boolean> {
     if(url.pathname==="/api/internal/media/clip"){
@@ -147,7 +150,15 @@ export class DshWebControls {
         const presentation=buildDshSignalPresentation({displayName:username,username,signalText,userAvatarUrl:body.userAvatarUrl?String(body.userAvatarUrl):undefined,signalBadgeUrl:String(body.signalBadgeUrl??"https://cdn.discordapp.com/emojis/1284931162896334929.gif")});
         const embed={...presentation.embeds[0],author:{name:presentation.webhookUsername,icon_url:presentation.webhookAvatarUrl}};
         const messageId=await this.liveDiscord.createMessage(tenantId,channelId,{content:"",embeds:[embed],allowed_mentions:{parse:[]}});
-        return sendJson(response,201,{ok:true,messageId});
+        const requesterDiscordUserId=optionalSnowflake(body.requesterDiscordId),requesterIdentity=requesterDiscordUserId&&this.client?await resolveProviderIdentity(this.client,tenantId,"discord",requesterDiscordUserId).catch(()=>undefined):undefined,dropId=randomUUID();
+        let removalControl=false;
+        if(this.signalControlStore&&this.options.serviceCredential&&this.options.publicOrigin){
+          const signer=this.signalControlSigner(),token=signer.issue({tenantId,dropId,guildId:guild,channelId,messageId,...(requesterIdentity?.userId?{requesterUserId:requesterIdentity.userId}:{}),...(requesterDiscordUserId?{requesterDiscordUserId}:{})}),url=dshSignalRemovalUrl(this.options.publicOrigin,token);
+          this.signalControlStore.put({schemaVersion:1,tenantId,dropId,guildId:guild,channelId,messageId,requesterName:username,targetName:String(body.targetName??"Signal").slice(0,100),...(requesterIdentity?.userId?{requesterUserId:requesterIdentity.userId}:{}),...(requesterDiscordUserId?{requesterDiscordUserId}:{}),createdAt:this.now()});
+          await this.liveDiscord.editMessage(tenantId,channelId,messageId,{content:"",embeds:[{...embed,fields:[{name:"\\u200b",value:"[🗑️]("+url+")",inline:false}]}],allowed_mentions:{parse:[]}}).catch(()=>undefined);
+          removalControl=true;
+        }
+        return sendJson(response,201,{ok:true,messageId,removalControl});
       } catch(error) { return sendJson(response,502,{message:safeError(error)}); }
     }
     if (url.pathname === "/api/internal/signal/channel") {
@@ -193,6 +204,18 @@ export class DshWebControls {
           return sendJson(response,201,{ok:true,dropId,messageId,expiresAt:drop.expiresAt});
         } catch(error) { await this.liveDiscord.deleteMessage(tenantId,channelId,messageId).catch(()=>undefined); throw error; }
       } catch(error) { return sendJson(response,502,{message:safeError(error)}); }
+    }
+    if(url.pathname==="/signal/remove"){
+      if(request.method!=="GET")return sendJson(response,405,{message:"Use GET"});
+      try{
+        const context=await fetchAppSessionContext({appId:"discord-stream-hub",spmtOrigin:this.options.spmtOrigin,request}),token=String(url.searchParams.get("control")??"");
+        if(!this.liveDiscord||!this.signalControlStore)return sendJson(response,503,{message:"Signal removal is unavailable"});
+        const result=await removeDshSignal(this.signalControlSigner(),{
+          deleteMessage:async(tenant,channel,message)=>{try{await this.liveDiscord!.deleteMessage(tenant,channel,message);}catch(error){if(!(error instanceof DshDiscordError&&error.status===404))throw error;}},
+          removeDrop:(tenant,id)=>this.signalControlStore!.suppress(tenant,id,this.now()),
+        },{tenantId:context.tenantId,role:this.role(context),userId:String(context.session.actorId??""),discordUserId:String((context.session as any).discordUserId??"")},token);
+        return sendJson(response,200,{...result,message:result.removed?"Signal removed from the live shoutout rotation.":"Signal was already removed from the live shoutout rotation."});
+      }catch(error){return sendJson(response,403,{message:safeError(error)});}
     }
     if (!url.pathname.startsWith("/api/discord-stream-hub/control")) return false;
     try {
@@ -676,6 +699,10 @@ export class DshWebControls {
     if(this.liveDiscord)try{const snapshot=await fetchAppPlatformSnapshot({appId:"discord-stream-hub",spmtOrigin:this.options.spmtOrigin,request,sources:["providerLinks"],liveRead:null});const value=snapshot.providerLinks as any,links=Array.isArray(value)?value:value?.providers??value?.links??[];const link=links.find((l:any)=>l.provider==="discord"&&!l.revokedAt);if(link?.providerUserId){const user=await this.liveDiscord.getUser(context.tenantId,link.providerUserId);if(user.avatar)avatarUrl=`https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png?size=128`;}}catch{}
     if(avatarUrl)this.calendar?.setAvatar(context.tenantId,String(context.session.actorId),avatarUrl);
     return {userId:String(context.session.actorId??""),username:String(context.session.displayName??context.session.username??context.session.actorId??"SPMT member"),...(avatarUrl?{avatarUrl}:{})};
+  }
+  private signalControlSigner(){
+    const secret=String(this.options.serviceCredential??"").trim();if(secret.length<32)throw new Error("Signal removal signing secret is unavailable");
+    return new DshSignalControlSigner(createHash("sha256").update(secret).digest(),()=>Date.parse(this.now()));
   }
   private requireRaidPile(){if(!this.raidPile)throw new Error("DSH Raid Pile storage is not configured");return this.raidPile;}
   private raidPileSettings(tenantId:string):DshRaidPileSettingsV1 {const saved=this.settings?.read(tenantId);return {maxSize:saved?.raidPileMaxSize??DEFAULT_DSH_RAID_PILE_SETTINGS.maxSize,minSize:saved?.raidPileMinSize??DEFAULT_DSH_RAID_PILE_SETTINGS.minSize,pointsReward:saved?.raidPilePointsReward??DEFAULT_DSH_RAID_PILE_SETTINGS.pointsReward,handoffHours:saved?.raidPileHandoffHours??DEFAULT_DSH_RAID_PILE_SETTINGS.handoffHours,monthlyStrikeLimit:saved?.raidPileMonthlyStrikeLimit??DEFAULT_DSH_RAID_PILE_SETTINGS.monthlyStrikeLimit};}
