@@ -172,6 +172,11 @@ export class DshWebControls {
     if (!url.pathname.startsWith("/api/discord-stream-hub/control")) return false;
     try {
       const context = await fetchAppSessionContext({ appId: "discord-stream-hub", spmtOrigin: this.options.spmtOrigin, request });
+      if(request.method==="GET"&&url.pathname==="/api/discord-stream-hub/control/raid-train"){
+        if(!this.raidTrain)return sendJson(response,503,{message:"Raid Train storage is unavailable"});
+        const guild=this.guild(context.tenantId,url.searchParams.get("guildId")),date=String(url.searchParams.get("date")??new Date(Date.parse(this.now())+86400000).toISOString().slice(0,10));
+        return sendJson(response,200,{guildId:guild,date,slots:this.raidTrain.schedule(context.tenantId,guild,date)});
+      }
       if(request.method==="GET"&&url.pathname==="/api/discord-stream-hub/control/forum/rules"){this.requireOwner(context);return sendJson(response,200,{rules:this.forumForwardingStore?.listRules(context.tenantId)??[]});}
       if(request.method==="GET"&&url.pathname==="/api/discord-stream-hub/control/raid-pile") return sendJson(response,200,await this.raidPileState(context,request));
       if(request.method==="GET"&&url.pathname==="/api/discord-stream-hub/control/moderation") {this.requireOwner(context);return sendJson(response,200,{plans:this.cleanup?.list(context.tenantId,String(context.session.actorId),"owner")??[]});}
@@ -211,6 +216,18 @@ export class DshWebControls {
         return sendJson(response,200,{target:target??null,piles:store.piles(context.tenantId),message:target?`Next announced target: ${target.displayName}. Twitch raid remains voluntary.`:"No other live member is available."});
       }
       const body = await readJsonBody(request);
+      if(url.pathname==="/api/discord-stream-hub/control/raid-train/publish"){
+        this.requireOwner(context);requireSameOrigin(request);
+        if(this.options.operationMode!=="active"||!this.liveDiscord||!this.raidTrain)throw new Error("Live Raid Train publishing is unavailable");
+        const input=record(body)??{},guild=this.guild(context.tenantId,input.serverId),channelId=snowflake(input.channelId,"channelId");
+        const date=String(input.date??new Date(Date.parse(this.now())+86400000).toISOString().slice(0,10));
+        const channel=await this.liveDiscord.getChannel(context.tenantId,channelId);
+        if(channel.guild_id!==guild||![0,5].includes(Number(channel.type)))throw new Error("Choose a text channel in the selected Discord server");
+        const tenant=this.config?.tenants.find(item=>item.tenantId===context.tenantId),payload=dshRaidTrainPayload(this.raidTrain.schedule(context.tenantId,guild,date),date,tenant?.branding.communityMemberName??"Space Mountain");
+        const messageId=await this.liveDiscord.createMessage(context.tenantId,channelId,payload);
+        this.raidTrain.setPanel({tenantId:context.tenantId,guildId:guild,date,channelId,messageId});
+        return sendJson(response,201,{ok:true,guildId:guild,channelId,date,messageId});
+      }
       if(url.pathname==="/api/discord-stream-hub/control/forum/rules"){
         this.requireOwner(context);if(!this.forumForwardingStore||!this.liveDiscord)throw new Error("Connect DSH before configuring forum forwarding");
         const rule=body.rule as DshForumForwardRuleV1;
@@ -636,6 +653,11 @@ export class DshWebControls {
   private requireRaidPile(){if(!this.raidPile)throw new Error("DSH Raid Pile storage is not configured");return this.raidPile;}
   private raidPileSettings(tenantId:string):DshRaidPileSettingsV1 {const saved=this.settings?.read(tenantId);return {maxSize:saved?.raidPileMaxSize??DEFAULT_DSH_RAID_PILE_SETTINGS.maxSize,minSize:saved?.raidPileMinSize??DEFAULT_DSH_RAID_PILE_SETTINGS.minSize,pointsReward:saved?.raidPilePointsReward??DEFAULT_DSH_RAID_PILE_SETTINGS.pointsReward,handoffHours:saved?.raidPileHandoffHours??DEFAULT_DSH_RAID_PILE_SETTINGS.handoffHours,monthlyStrikeLimit:saved?.raidPileMonthlyStrikeLimit??DEFAULT_DSH_RAID_PILE_SETTINGS.monthlyStrikeLimit};}
 
+  private async refreshRaidTrainPanel(tenantId:string,guildId:string,date:string){
+    const panel=this.raidTrain?.panel(tenantId,guildId,date);if(!panel||!this.liveDiscord||!this.raidTrain)return;
+    const tenant=this.config?.tenants.find(item=>item.tenantId===tenantId),payload=dshRaidTrainPayload(this.raidTrain.schedule(tenantId,guildId,date),date,tenant?.branding.communityMemberName??"Space Mountain");
+    await this.liveDiscord.editMessage(tenantId,panel.channelId,panel.messageId,payload);
+  }
   private async raidTrainIdentity(tenantId:string,guildId:string,discordUserId:string){
     if(!this.client||!this.liveDiscord)throw new Error("Connect DSH to resolve Raid Train identity");
     const identity=await resolveProviderIdentity(this.client,tenantId,"discord",discordUserId);
