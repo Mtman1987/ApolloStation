@@ -22,3 +22,12 @@ Status: **OPEN — store, request-flow helpers and the web-process runtime lande
 ## Apollo-owned acquisition update (2026-11-02)
 
 PR #324 merged to Apollo main (`691590c`). The Watch runtime no longer fetches a donor manifest before queueing. It creates a validated relative `/api/watch/xtream/hls/...` playback path; Apollo's mounted HLS handler is responsible for acquisition/conversion. Regression tests remove donor fetch injection from request/queue fixtures and assert the local route. This closes the donor-preparation ownership mismatch only; live Xtream acquisition, browser decoding, tenant/room authorization on manifest and segments, and full catalog/episode progression remain open. Oracle release validation: [41487426890](https://github.com/Mtman1987/ApolloStation/actions/runs/41487426890) (pending at update time).
+
+## Follow-up evidence (2026-11-02)
+
+- PR #331 (merge 5b93633) binds every Xtream HLS manifest/segment request to an active room playback item; public rooms remain playable and private rooms require a same-tenant principal with room membership.
+- PR #332 (merge c4ca5ca) makes the HLS route fail closed if a caller omits its room authorization hook.
+- PR #333 (merge 7d64d2e) makes the cross-database failure window recoverable: if enqueue succeeds but the separate progress write fails, the route returns 503 queued_progress_pending with a retry key. Replaying with that key reuses the existing queue operation and retries the durable progress write. This is retry-safe recovery, not a distributed transaction.
+- PR #334 (merge cef5d2a) extends the episode integration test through Apollo URL resolution, ffprobe/FFmpeg orchestration, HLS output validation and cache reuse, using fixture executables. It does not claim real-provider playback or browser decoding.
+- Oracle validation for PR #333: https://github.com/Mtman1987/ApolloStation/actions/runs/41501181175 — all four shards and aggregate report succeeded. PR #334 post-merge validation is https://github.com/Mtman1987/ApolloStation/actions/runs/41501665231, pending at this note.
+- Remaining production evidence: a real Xtream account/provider-to-browser playback rehearsal, plus redaction checks for remaining diagnostic endpoints. Internet Archive fallback remains excluded by owner decision.
