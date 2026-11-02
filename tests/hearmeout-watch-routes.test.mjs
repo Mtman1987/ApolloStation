@@ -38,14 +38,14 @@ async function fixture(){
  await new Promise(r=>auth.listen(0,'127.0.0.1',r));
  const watch=createHearMeOutWatchRuntime({
   statePath:join(dir,'watch-state.sqlite'),
-  findSeriesEpisode:async query=>/show/i.test(query)?episode:null,
+  findSeriesEpisode:async (query,getProgress)=>{const progress=getProgress?.('9');return /show/i.test(query)?{...episode,metadata:{...episode.metadata,seasonNumber:progress?.seasonNumber??1,episodeNumber:progress?.episodeNumber??2}}:null;},
   getNextSeriesEpisode:async()=>null,
  });
  const host=createHearMeOutWebServer({spmtOrigin:'http://127.0.0.1:'+auth.address().port,databasePath:path,port:0,watch});
  const rooms=new SqliteHearMeOutRoomMediaRuntime(path);
  await host.listen();
  const base='http://127.0.0.1:'+host.server.address().port;
- return {dir,auth,host,rooms,base};
+ return {dir,auth,host,rooms,watch,base};
 }
 
 async function teardown(f){
@@ -142,5 +142,40 @@ test('watch state path defaults beside the room database and honours HEARMEOUT_W
   assert.ok((await stat(overridePath)).isFile(),'override path is used');
  }finally{
   await rm(dir,{recursive:true,force:true});
+ }
+});
+
+
+test('a failed progress write returns a retry key and retry does not duplicate the queued episode',async()=>{
+ const f=await fixture();
+ try{
+  const alice={'content-type':'application/json',cookie:'sid=alice'};
+  const created=await fetch(f.base+'/api/hearmeout/rooms',{method:'POST',headers:alice,body:JSON.stringify({name:'Retry Night',privacy:'public'})});
+  const roomId=(await created.json()).roomId;
+  await (await fetch(f.base+`/api/hearmeout/rooms/${roomId}/join`,{method:'POST',headers:alice,body:'{}'})).text();
+  const original=f.watch.recordQueued.bind(f.watch);
+  let failOnce=true;
+  f.watch.recordQueued=async(...args)=>{
+   if(failOnce){failOnce=false;throw new Error('simulated durable progress write failure');}
+   return original(...args);
+  };
+  const url=f.base+`/api/hearmeout/rooms/${roomId}/watch/request`;
+  const first=await fetch(url,{method:'POST',headers:alice,body:JSON.stringify({query:'Show S01E02'})});
+  assert.equal(first.status,503);
+  const pending=await first.json();
+  assert.equal(pending.status,'queued_progress_pending');
+  assert.equal(pending.retryable,true);
+  assert.ok(pending.retryKey);
+  assert.equal(f.rooms.getSession(TENANT,roomId,'movie').queue.length,1);
+  const retry=await fetch(url,{method:'POST',headers:{...alice,'idempotency-key':pending.retryKey},body:JSON.stringify({query:'Show S01E02'})});
+  assert.equal(retry.status,201,await retry.clone().text());
+  assert.equal((await retry.json()).status,'queued');
+  const session=f.rooms.getSession(TENANT,roomId,'movie');
+  assert.equal([session.current,...session.queue].filter(Boolean).length,1,'retry replays the existing queue operation');
+  const resumed=await f.watch.request({tenantId:TENANT,userId:'user-alice'},'Show resume');
+  assert.equal(resumed.status,'matched');
+  assert.equal(resumed.entry.metadata.episodeNumber,3,'retry persists the next episode resume point');
+ }finally{
+  await teardown(f);
  }
 });
