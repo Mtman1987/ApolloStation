@@ -113,6 +113,23 @@ export class StreamWeaverCommunityStore {
   saveCheckinSettings(tenant:string,input:StreamCheckinSettings){for(const key of ["enabled","aiEnabled","ttsEnabled","discordEnabled"] as const)if(typeof input[key]!=="boolean")throw Error("Choose valid check-in presentation settings");const value={enabled:input.enabled,aiEnabled:input.aiEnabled,ttsEnabled:input.ttsEnabled,discordEnabled:input.discordEnabled,greeting:text(input.greeting,1000),prompt:text(input.prompt,2000),voice:text(input.voice,128)};this.save(tenant,"checkin-settings","main",value);return value;}
   checkinGreeting(tenant:string,key:string):{jobId?:string;text?:string;failed?:boolean}|undefined{const row=this.db.prepare("SELECT body FROM sw_community_config WHERE tenant=? AND kind='checkin-greeting' AND id=?").get(tenant,key);return row?JSON.parse(String(row.body)):undefined;}
   saveCheckinGreeting(tenant:string,key:string,value:{jobId?:string;text?:string;failed?:boolean}){this.save(tenant,"checkin-greeting",key,value);}
+  bulkCheckin(tenant:string,actor:string,sourceInput:string,requestId:string,entries:Array<{id:string;name:string}>,frontSeatId?:string){
+    const request=id(requestId),source=text(sourceInput,100);text(actor,300);
+    if(!Array.isArray(entries)||entries.length<1||entries.length>1000)throw new Error("Bulk check-in requires between 1 and 1000 eligible members");
+    const seen=new Set<string>(),members=entries.map(entry=>{const memberId=id(entry.id),name=text(entry.name,120);if(seen.has(memberId))throw new Error("Bulk check-in members must be unique");seen.add(memberId);return{id:memberId,name};});
+    const front=frontSeatId?members.find(member=>member.id===frontSeatId):members[0];if(frontSeatId&&!front)throw new Error("Front-seat member must be in the eligible member list");
+    const signature=JSON.stringify([actor,source,members.map(member=>member.id),front?.id??null]);
+    this.db.exec("BEGIN IMMEDIATE");try{
+      const prior=this.db.prepare("SELECT body FROM sw_community_config WHERE tenant=? AND kind='bulk-checkin' AND id=?").get(tenant,request);
+      if(prior){const saved=JSON.parse(String(prior.body));if(saved.signature!==signature)throw new Error("Bulk check-in identifier was used for a different request");this.db.exec("COMMIT");return saved.result;}
+      const userTotal=Number(this.db.prepare("SELECT COUNT(*) AS n FROM sw_checkins WHERE tenant=? AND actor=?").get(tenant,actor)!.n)+members.length;
+      const results=members.map(member=>{const child="bulk:"+createHash("sha256").update(JSON.stringify([request,member.id])).digest("hex");this.db.prepare("INSERT OR IGNORE INTO sw_checkins VALUES(?,?,?,?,?,?)").run(tenant,child,actor,member.id,source,new Date().toISOString());return member;});
+      const result={count:results.length,names:results.map(member=>member.name),frontSeat:front?.name,userTotal};
+      this.enqueue(tenant,"bulk-checkin:"+request,"streamweaver.checkin.bulk.v1",{actor,source,...result});
+      this.save(tenant,"bulk-checkin",request,{id:request,signature,result});
+      this.db.exec("COMMIT");return result;
+    }catch(error){this.db.exec("ROLLBACK");throw error;}
+  }
   checkinStats(tenant:string){return{partners:this.db.prepare("SELECT partner,COUNT(*) AS count FROM sw_checkins WHERE tenant=? GROUP BY partner ORDER BY count DESC").all(tenant),sources:this.db.prepare("SELECT source,COUNT(*) AS count FROM sw_checkins WHERE tenant=? GROUP BY source ORDER BY count DESC").all(tenant),users:this.db.prepare("SELECT actor,COUNT(*) AS count FROM sw_checkins WHERE tenant=? GROUP BY actor ORDER BY count DESC LIMIT 500").all(tenant)};}
   recordWatchtime(tenant:string,provider:string,chatters:Array<{id:string;username:string}>,now=Date.now()){const bucket=Math.floor(now/60000);this.db.exec("BEGIN IMMEDIATE");try{for(const user of chatters)this.db.prepare("INSERT INTO sw_watchtime VALUES(?,?,?,?,1,?) ON CONFLICT(tenant,provider,user_id) DO UPDATE SET minutes=sw_watchtime.minutes+CASE WHEN excluded.last_bucket>sw_watchtime.last_bucket THEN 1 ELSE 0 END,last_bucket=MAX(sw_watchtime.last_bucket,excluded.last_bucket),username=excluded.username").run(tenant,provider,user.id,user.username,bucket);this.db.exec("COMMIT");}catch(error){this.db.exec("ROLLBACK");throw error;}}
   watchtime(tenant:string,provider:string,userId:string){return this.db.prepare("SELECT username,minutes FROM sw_watchtime WHERE tenant=? AND provider=? AND user_id=?").get(tenant,provider,userId)??{minutes:0};}
