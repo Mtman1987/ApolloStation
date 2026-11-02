@@ -9,3 +9,11 @@ test('Apollo parity inventory validates and reports all five workstreams', () =>
   }
   assert.match(output, /inventory check, not a parity pass/);
 });
+
+test('HearMeOut capability ledger reports P0 gaps and preserves unverified status', () => {
+  const output = execFileSync(process.execPath, ['scripts/parity-audit.mjs'], { encoding: 'utf8' });
+  assert.match(output, /HMO-008/);
+  assert.match(output, /room\/tenant authorization on global Xtream HLS manifest and segment route/);
+  assert.match(output, /P01 two-browser synchronized playback acceptance/);
+  assert.match(output, /ported-unverified/);
+});
