@@ -56,6 +56,21 @@ export class SqliteDshClipGifStore {
     const items = this.list(tenantId, streamerLogin);
     return items.length ? items[Math.floor(now / DSH_CLIP_ROTATION_MS) % items.length] : undefined;
   }
+  selectFresh(tenantId:string,streamerLogin:string,now=Date.now(),maxAgeMs=24*60*60*1000):DshClipGifV1|undefined {
+    const items=this.list(tenantId,streamerLogin).filter(item=>now-Date.parse(item.capturedAt)>=0&&now-Date.parse(item.capturedAt)<=maxAgeMs);
+    return items.length?items[Math.floor(now/DSH_CLIP_ROTATION_MS)%items.length]:undefined;
+  }
+}
+
+export interface DshClipMediaPublisherV1 { publishMedia(tenantId:string,mime:"image/gif",bytes:Uint8Array):string|undefined; }
+export class DshClipGifSpotlightMediaSource {
+  constructor(private readonly clips:SqliteDshClipGifStore,private readonly publisher:DshClipMediaPublisherV1|undefined){}
+  getImage(input:{tenantId:string;member:{twitchLogin:string}}):string|undefined {
+    if(!this.publisher)return undefined;
+    const clip=this.clips.selectFresh(input.tenantId,input.member.twitchLogin);
+    return clip?this.publisher.publishMedia(input.tenantId,"image/gif",clip.gif):undefined;
+  }
+  close(){this.clips.close();}
 }
 
 export function buildDshClipCaptureRequest(input: { tenantId: string; streamerLogin: string; clipId: string; sourceUrl: string }): DshClipCaptureRequestV1 {
