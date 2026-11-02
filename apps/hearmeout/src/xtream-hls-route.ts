@@ -17,7 +17,7 @@ function sendJson(response: ServerResponse, status: number, body: unknown, extra
   response.end(JSON.stringify(body));
 }
 
-export async function handleXtreamHlsRequest(request: IncomingMessage, response: ServerResponse, pathname: string): Promise<boolean> {
+export async function handleXtreamHlsRequest(request: IncomingMessage, response: ServerResponse, pathname: string, authorize?: (request: IncomingMessage, streamId: string) => Promise<void>): Promise<boolean> {
   const match = pathname.match(XTREAM_HLS_PATH);
   if (!match) return false;
   if (request.method === 'OPTIONS') {
@@ -35,6 +35,14 @@ export async function handleXtreamHlsRequest(request: IncomingMessage, response:
     catch { sendJson(response, 400, { error: 'invalid_hls_reference' }); return true; }
     if (!/^(?:(?:vod|series|live)-\d+|episode-\d+-[a-z0-9]+)$/i.test(streamId) || !/^[A-Za-z0-9_-]+\.(?:m3u8|ts)$/.test(file)) {
       sendJson(response, 400, { error: 'invalid_hls_reference' }); return true;
+    }
+    if (authorize) {
+      try { await authorize(request, streamId); }
+      catch (error) {
+        const status = Number((error as { status?: unknown })?.status);
+        sendJson(response, status === 401 || status === 403 || status === 404 ? status : 403, { error: status === 404 ? 'playback_not_active' : 'playback_forbidden' });
+        return true;
+      }
     }
     if (file === 'index.m3u8') {
       ensureXtreamHls(streamId).catch(() => {});
