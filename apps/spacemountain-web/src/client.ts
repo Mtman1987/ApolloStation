@@ -62,11 +62,13 @@ loadJsonButton.addEventListener("click", () => void loadPastedManifest());
 loadCandidateButton?.addEventListener("click", () => void loadCandidateExample());
 resetDeveloperButton.addEventListener("click", () => resetDeveloperForm());
 window.setInterval(() => void watchRegistry(), 20_000);
+window.setInterval(() => void watchEvents(), 15_000);
 window.setInterval(() => void watchWorkspace(), 5_000);
 window.addEventListener("focus", () => { void watchWorkspace(); void retryEggCompletions(); });
 window.addEventListener("online", () => void retryEggCompletions());
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") void retryEggCompletions(); });
 let watchingWorkspace = false;
+let watchingEvents = false;
 async function watchWorkspace() {
   if (watchingWorkspace || !currentPrincipal || loading || document.visibilityState !== "visible") return;
   watchingWorkspace = true;
@@ -694,6 +696,15 @@ async function logout() {
   showAuth("Signed out of the isolated sandbox.");
 }
 
+async function watchEvents() {
+  if (!currentPrincipal || loading || watchingEvents || document.visibilityState !== "visible") return;
+  watchingEvents = true;
+  try {
+    const events = await spmt.listEvents(currentPrincipal.tenantIds[0]!, { limit: 100 });
+    shellUi?.updateEvents(events);
+  } catch { /* Retain the last authorized feed through brief event-service interruptions. */ }
+  finally { watchingEvents = false; }
+}
 async function watchRegistry() {
   if (!currentPrincipal || loading || document.visibilityState !== "visible") return;
   try {
