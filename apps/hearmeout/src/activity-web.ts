@@ -25,10 +25,10 @@ export function readHearMeOutActivityState(rooms: SqliteHearMeOutRoomMediaRuntim
   return { sessionId, roomId: room.roomId, current: session.current, queue: session.queue, playback: session.playback, revision: session.revision };
 }
 
-export function handleHearMeOutActivityRequest(request: IncomingMessage, response: ServerResponse, url: URL, rooms: SqliteHearMeOutRoomMediaRuntime, binding?: HearMeOutActivityBinding, broadcast?: {configured:boolean}): boolean {
+export function handleHearMeOutActivityRequest(request: IncomingMessage, response: ServerResponse, url: URL, rooms: SqliteHearMeOutRoomMediaRuntime, binding?: HearMeOutActivityBinding, broadcast?: {configured:boolean}, authorizeXtreamHls?: (request: IncomingMessage, streamId: string) => Promise<void>): boolean {
   // Xtream VOD HLS ladder. The async handler is fired here because this hook is synchronous; errors are answered, never thrown.
   if (url.pathname.startsWith('/api/watch/xtream/hls/')) {
-    void handleXtreamHlsRequest(request, response, url.pathname)
+    void handleXtreamHlsRequest(request, response, url.pathname, authorizeXtreamHls)
       .then(handled => { if (!handled && !response.headersSent) send(response, 404, JSON.stringify({ error: 'not_found' }), 'application/json'); })
       .catch(() => { if (!response.headersSent) send(response, 500, JSON.stringify({ error: 'xtream_hls_failure' }), 'application/json'); else response.destroy(); });
     return true;
