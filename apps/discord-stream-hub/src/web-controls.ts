@@ -390,6 +390,19 @@ export class DshWebControls {
   async interaction(interaction:Record<string,any>){
     if(!this.config)return undefined;
     const customId=String(interaction.data?.custom_id??""),signal=/^signal_seekers:(join|leave):(\d{5,30})$/.exec(customId);
+    if(interaction.type===3&&customId.startsWith("signal_intercept:")){
+      const guildId=String(interaction.guild_id??""),userId=String(interaction.member?.user?.id??interaction.user?.id??""),tenant=this.config.tenants.find(item=>item.discordGuildIds?.includes(guildId)),dropId=customId.slice("signal_intercept:".length);
+      const ephemeral=(content:string)=>({type:4,data:{flags:64,content,allowed_mentions:{parse:[]}}});
+      if(!tenant||!/^[0-9]{5,30}$/.test(guildId)||!/^[0-9]{5,30}$/.test(userId)||!this.signalSeekers)return ephemeral("That Signal carrier is no longer valid.");
+      try{
+        const drop=this.signalSeekers.get(tenant.tenantId,dropId);
+        if(!drop||drop.state!=="open"||Date.parse(drop.expiresAt)<=Date.parse(this.now())){this.signalSeekers.expire(this.now());if(drop&&this.liveDiscord)await this.liveDiscord.deleteMessage(tenant.tenantId,drop.channelId,drop.messageId).catch(()=>undefined);return ephemeral("📡 That Signal faded after 10 minutes.");}
+        const identity=await resolveProviderIdentity(this.client!,tenant.tenantId,"discord",userId).catch(()=>undefined);
+        const result=this.signalSeekers.claim({dropId,tenantId:tenant.tenantId,providerUserId:userId,...(identity?.userId?{canonicalUserId:identity.userId}:{}),at:this.now()});
+        if(!result.won)return ephemeral(result.reason==="claimed"?"Another seeker already claimed this Signal.":"That Signal has faded.");
+        return ephemeral("📡 **SIGNAL OPENED**\\n\\n"+result.drop.signalUrl+"\\n\\nThis opens the Signal only; it does not perform an egg roll.");
+      }catch(error){return ephemeral(safeError(error));}
+    }
     if(interaction.type===3&&signal){
       const guildId=String(interaction.guild_id??""),userId=String(interaction.member?.user?.id??interaction.user?.id??""),tenant=this.config.tenants.find(item=>item.discordGuildIds?.includes(guildId));
       const ephemeral=(content:string)=>({type:4,data:{flags:64,content,allowed_mentions:{parse:[]}}});
