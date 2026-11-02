@@ -33,7 +33,7 @@ export class DshClipAcquisitionWorker {
     const user=await this.getUser(grant,login);if(!user)continue;
     const clips=await this.getClips(grant,user.id);if(!clips.length)continue;
     const known=new Set(this.store.list(tenantId,login).map(item=>item.clipId));
-    const candidates=[...clips].sort((a,b)=>Date.parse(b.created_at)-Date.parse(a.created_at)).slice(0,20);
+    const newest=[...clips].sort((a,b)=>Date.parse(b.created_at)-Date.parse(a.created_at)).slice(0,5),popular=[...clips].sort((a,b)=>b.view_count-a.view_count).slice(0,5),candidates=[...new Map([...newest,...popular].map(clip=>[clip.id,clip])).values()];
     let saved=0;
     for(const clip of candidates){
       if(saved>=2||known.has(clip.id))continue;
@@ -60,8 +60,8 @@ export class DshClipAcquisitionWorker {
   const url=new URL("https://api.twitch.tv/helix/clips");url.searchParams.set("broadcaster_id",broadcasterId);url.searchParams.set("first","20");
   const response=await this.fetchImpl(url,{headers:headers(grant),redirect:"error",signal:AbortSignal.timeout(15000)});
   if(!response.ok)throw new Error("Twitch clips lookup failed");
-  const body=await response.json() as {data?:Array<{id:string;url:string;created_at:string;duration:number}>};
-  return (body.data??[]).filter(row=>/^[A-Za-z0-9_-]{1,120}$/.test(row.id)&&Number.isFinite(Date.parse(row.created_at))&&Number.isFinite(row.duration)&&row.duration>0&&row.duration<=60&&isHttps(row.url));
+  const body=await response.json() as {data?:Array<{id:string;url:string;created_at:string;duration:number;view_count:number}>};
+  return (body.data??[]).filter(row=>/^[A-Za-z0-9_-]{1,120}$/.test(row.id)&&Number.isFinite(Date.parse(row.created_at))&&Number.isFinite(row.duration)&&row.duration>0&&row.duration<=60&&Number.isFinite(row.view_count)&&isHttps(row.url));
  }
  private async renderClip(grant:DshClipGrantV1,clipId:string):Promise<Uint8Array|undefined>{
   const query={query:`{ clip(slug: "${clipId}") { playbackAccessToken(params: {platform: "web", playerType: "embed"}) { signature value } videoQualities { quality sourceURL } } }`};
@@ -86,8 +86,9 @@ export class DshClipAcquisitionWorker {
    await run("ffmpeg",["-y","-threads","1","-i",input,"-i",palette,"-filter_complex_threads","1","-filter_complex","fps=12,scale=320:-1:flags=fast_bilinear[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=5","-loop","0",output],{timeout:90000,maxBuffer:1024*1024});
    let gif=await readFile(output);
    if(gif.byteLength>MAX_GIF_BYTES){
-    const bounded=join(directory,"bounded.gif");
-    await run("ffmpeg",["-y","-threads","1","-i",output,"-filter_complex_threads","1","-vf","fps=8,scale=240:-2:flags=lanczos","-loop","0",bounded],{timeout:90000,maxBuffer:1024*1024});
+    const boundedPalette=join(directory,"bounded-palette.png"),bounded=join(directory,"bounded.gif");
+    await run("ffmpeg",["-y","-threads","1","-i",output,"-vf","fps=8,scale=240:-2:flags=lanczos,palettegen=max_colors=96",boundedPalette],{timeout:90000,maxBuffer:1024*1024});
+    await run("ffmpeg",["-y","-threads","1","-i",output,"-i",boundedPalette,"-filter_complex_threads","1","-filter_complex","fps=8,scale=240:-2:flags=lanczos[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=5","-loop","0",bounded],{timeout:90000,maxBuffer:1024*1024});
     gif=await readFile(bounded);
    }
    if(gif.byteLength>MAX_GIF_BYTES||gif.toString("ascii",0,6)!=="GIF89a")throw new Error("Rendered GIF is invalid or exceeds 50 MB");
