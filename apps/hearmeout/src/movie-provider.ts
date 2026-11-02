@@ -12,13 +12,13 @@ export class HearMeOutMovieProvider {
   private readonly legacyOrigin?:string;
   private readonly legacyFetch?:typeof fetch;
   private readonly legacyAuthorization:string;
-  constructor(origin?:string,fetchImpl?:typeof fetch,authorization=''){
+  constructor(origin?:string,fetchImpl?:typeof fetch,authorization='',private readonly catalogSearch=searchXtreamCatalogRanked){
     this.legacyOrigin=origin;this.legacyFetch=fetchImpl;this.legacyAuthorization=authorization;
   }
   async search(query:string):Promise<HearMeOutMovieMatch[]>{
     if(typeof query!=='string'||query.trim().length<2||query.length>300)throw Error('Enter at least two characters for the movie search');
     if(!this.legacyOrigin){
-      const matches=await searchXtreamCatalogRanked(query.trim());
+      const matches=await this.catalogSearch(query.trim());
       return matches.filter(({item})=>item.id.startsWith('xtream-vod-')).slice(0,24).map(({item})=>({itemId:item.id,title:item.title,overview:item.overview,...(Number.isSafeInteger(item.year)&&item.year>0?{year:item.year}:{}),...(item.metadata?.quality?{quality:item.metadata.quality}:{})}));
     }
     const url=new URL(this.legacyAuthorization?'/api/internal/watch/search':'/api/watch/search',this.legacyOrigin);url.searchParams.set('q',query.trim());
@@ -29,7 +29,7 @@ export class HearMeOutMovieProvider {
   async resolve(query:string,itemId:string):Promise<HearMeOutMediaItemV1>{
     const match=(await this.search(query)).find(item=>item.itemId===itemId);if(!match)throw Error('That movie is no longer in the search results. Search again and choose a title');
     if(!this.legacyOrigin){
-      const catalogItem=(await searchXtreamCatalogRanked(query)).find(({item})=>item.id===match.itemId)?.item;
+      const catalogItem=(await this.catalogSearch(query)).find(({item})=>item.id===match.itemId)?.item;
       if(!catalogItem?.playbackUrl)throw Error('That movie no longer has a playable Apollo provider route');
       const playbackUrl=xtreamHlsUrl(catalogItem.playbackUrl);if(!playbackUrl.startsWith('/api/watch/xtream/hls/vod-'))throw Error('Invalid Apollo IPTV playback route');
       return {itemId:match.itemId,title:match.title,type:'movie',source:'iptv',playbackUrl};
