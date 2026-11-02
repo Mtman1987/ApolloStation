@@ -1,3 +1,4 @@
+import { buildDshSignalPresentation } from "./signal-presentation.js";
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import { forwardDshForumPost, DshForumForwardingStore, DshForumForwardingService, type DshForumForwardRuleV1, type DshForumForwardMutationV1 } from "./forum-forwarding.js";
 import { DshMemberDirectoryStore } from "./member-directory.js";
@@ -107,6 +108,21 @@ export class DshWebControls {
   close() { this.memberDirectory?.close();this.activity?.close();this.cleanup?.close();this.monitor?.close(); this.calendar?.close(); this.settings?.close(); this.messages?.close(); this.applications?.close(); this.shoutouts?.close();this.signalSeekers?.close();this.forumForwardingStore?.close();this.raidPile?.close(); }
 
   async handle(request: IncomingMessage, response: ServerResponse, url: URL): Promise<boolean> {
+    if (url.pathname === "/api/internal/signal/transmit") {
+      if (request.method !== "POST") return sendJson(response, 405, { message: "Use POST" });
+      if (!this.authorizeWorker(request)) return sendJson(response, 401, { message: "Unauthorized" });
+      try {
+        if(this.options.operationMode!=="active"||!this.liveDiscord||!this.config)return sendJson(response,503,{message:"Live Signal transmission is unavailable"});
+        const body=record(await readJsonBody(request))??{},tenantId=text(body.tenantId,"tenantId",180),guild=this.guild(tenantId,body.guildId),channelId=snowflake(body.channelId,"channelId");
+        const channel=await this.liveDiscord.getChannel(tenantId,channelId);
+        if(channel.guild_id!==guild||Number(channel.type)!==0)return sendJson(response,400,{message:"Signal destination must be a text channel in the selected server"});
+        const username=text(body.requesterName,"requesterName",80),signalText=text(body.signalText,"signalText",2000);
+        const presentation=buildDshSignalPresentation({displayName:username,username,signalText,userAvatarUrl:body.userAvatarUrl?String(body.userAvatarUrl):undefined,signalBadgeUrl:String(body.signalBadgeUrl??"https://cdn.discordapp.com/emojis/1284931162896334929.gif")});
+        const embed={...presentation.embeds[0],author:{name:presentation.webhookUsername,icon_url:presentation.webhookAvatarUrl}};
+        const messageId=await this.liveDiscord.createMessage(tenantId,channelId,{content:"",embeds:[embed],allowed_mentions:{parse:[]}});
+        return sendJson(response,201,{ok:true,messageId});
+      } catch(error) { return sendJson(response,502,{message:safeError(error)}); }
+    }
     if (url.pathname === "/api/internal/signal/channel") {
       if (request.method !== "GET") return sendJson(response, 405, { message: "Use GET" });
       if (!this.authorizeWorker(request)) return sendJson(response, 401, { message: "Unauthorized" });
