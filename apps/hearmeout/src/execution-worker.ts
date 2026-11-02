@@ -1,5 +1,4 @@
 import {HearMeOutMovieProvider} from "./movie-provider.js";
-import {configuredDonorOrigin} from "./donor-origin.js";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -42,7 +41,6 @@ export interface HearMeOutWorkerEnvironmentV1 {
   executionTarget: "fly" | "sprite";
   ytDlpBinary?: string;
   preparedMedia?: HearMeOutPreparedMediaOptions;
-  movieProviderOrigin?: string;
   config: HearMeOutRuntimeConfigV1;
 }
 
@@ -67,17 +65,15 @@ export function validateHearMeOutWorkerEnvironment(environment: NodeJS.ProcessEn
   const ytDlpBinary = environment.HEARMEOUT_YT_DLP_BINARY ? absolute(environment.HEARMEOUT_YT_DLP_BINARY, "HEARMEOUT_YT_DLP_BINARY") : undefined;
   const config = loadHearMeOutRuntimeConfig(configPath);
   const preparedMedia = preparedHearMeOutEnvironment(environment);
-  const movieProviderOrigin=environment.HEARMEOUT_MOVIE_PROVIDER_ORIGIN;
-  if(movieProviderOrigin && movieProviderOrigin!==configuredDonorOrigin(environment))throw Error("Invalid HearMeOut movie provider binding");
   if (preparedMedia && (config.tenants.length !== 1 || config.tenants[0]?.tenantId !== preparedMedia.tenantId)) throw new Error('Prepared media must retain its existing owner tenant');
   if (config.capabilities.includes("hearmeout.youtube.resolve") && !ytDlpBinary) throw new Error("hearmeout.youtube.resolve requires HEARMEOUT_YT_DLP_BINARY");
   if (runtimeMode === "sandbox") {
     if (environment.SPMT_OUTBOUND_MODE !== "disabled") throw new Error("Sandbox HearMeOut requires SPMT_OUTBOUND_MODE=disabled");
     for (const path of [databasePath, cacheDir, configPath]) if (!basename(path).toLowerCase().includes("sandbox")) throw new Error("Sandbox HearMeOut requires sandbox-named storage and config paths");
     if (config.tenants.length) throw new Error("Sandbox HearMeOut rejects live tenants");
-    if (ytDlpBinary || preparedMedia || movieProviderOrigin) throw new Error("Sandbox HearMeOut rejects external media resolution");
+    if (ytDlpBinary || preparedMedia) throw new Error("Sandbox HearMeOut rejects external media resolution");
   }
-  return { runtimeMode, spmtOrigin, databasePath, cacheDir, configPath, credential, workerId, executionTarget, ...(ytDlpBinary ? { ytDlpBinary } : {}), ...(preparedMedia ? { preparedMedia } : {}), ...(movieProviderOrigin?{movieProviderOrigin}:{}), config };
+  return { runtimeMode, spmtOrigin, databasePath, cacheDir, configPath, credential, workerId, executionTarget, ...(ytDlpBinary ? { ytDlpBinary } : {}), ...(preparedMedia ? { preparedMedia } : {}), config };
 }
 
 export function createHearMeOutWorkerTokenProvider(options: { spmtOrigin: string; credential: string; fetchImpl?: typeof fetch }) {
@@ -192,7 +188,7 @@ export function createSupervisedHearMeOutWorker(options: HearMeOutWorkerEnvironm
   const adapter = options.ytDlpBinary ? new YtDlpHearMeOutResolverAdapter(options.ytDlpBinary) : undefined;
   const resolver = adapter ? new HearMeOutYoutubeResolverCoordinator(adapter) : options.preparedMedia ? new HearMeOutYoutubeResolverCoordinator(new HearMeOutPreparedMedia(options.preparedMedia, fetchImpl), {preparedMediaOrigin:options.preparedMedia.origin}) : undefined;
   const tenantPath = (tenantId: string) => resolve(options.cacheDir, "tenants", createHash("sha256").update(tenantId).digest("hex"));
-  return { getAccessToken, worker: new HearMeOutExecutionWorker(client, { workerId: options.workerId, executionTarget: options.executionTarget, capabilities: options.config.capabilities, tenantIds: options.config.tenants.map(tenant => tenant.tenantId), catalog, cache, catalogForTenant: tenantId => new HearMeOutWorkerMusicCatalog({ catalogFile: resolve(tenantPath(tenantId), "music-catalog.json") }), cacheForTenant: tenantId => new HearMeOutWorkerMediaCache({ cacheDir: tenantPath(tenantId) }), ...(adapter ? { search: (query, limit) => adapter.search(query, limit) } : {}), ...(resolver ? { resolver } : {}), ...(options.movieProviderOrigin?{movieProvider:new HearMeOutMovieProvider(options.movieProviderOrigin,fetchImpl,options.preparedMedia?.authorization)}:{}) }) };
+  return { getAccessToken, worker: new HearMeOutExecutionWorker(client, { workerId: options.workerId, executionTarget: options.executionTarget, capabilities: options.config.capabilities, tenantIds: options.config.tenants.map(tenant => tenant.tenantId), catalog, cache, catalogForTenant: tenantId => new HearMeOutWorkerMusicCatalog({ catalogFile: resolve(tenantPath(tenantId), "music-catalog.json") }), cacheForTenant: tenantId => new HearMeOutWorkerMediaCache({ cacheDir: tenantPath(tenantId) }), ...(adapter ? { search: (query, limit) => adapter.search(query, limit) } : {}), ...(resolver ? { resolver } : {}), movieProvider:new HearMeOutMovieProvider() }) };
 }
 
 class HearMeOutWorkerError extends Error { constructor(message: string, readonly retryable: boolean) { super(message); } }
