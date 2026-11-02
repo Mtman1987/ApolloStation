@@ -241,7 +241,7 @@ export class SupervisedDshLiveService {
     this.raidPile.ensureTargets(tenantId);
     const handoffs=this.raidPile.dueHandoffs(tenantId);
     for(const handoff of handoffs){const nextAt=handoff.nextTarget.lastRaidedAt??this.now();const action={schemaVersion:1 as const,type:"raid-pile.handoff" as const,tenantId,pileId:handoff.pileId,priorTargetName:handoff.priorTarget.displayName,nextTargetName:handoff.nextTarget.displayName,nextTargetLogin:handoff.nextTarget.twitchLogin,heldHours:handoff.heldHours,message:handoff.message,idempotencyKey:"dsh:raid-pile:"+tenantId+":"+handoff.pileId+":"+handoff.nextTarget.userId+":"+nextAt};this.monitor.enqueueAction(action,this.now());}
-    if(handoffs.length)await this.runtime.flush(tenantId);
+    await this.runtime.flush(tenantId);
   }
   async runNebulaMedia(signal:AbortSignal){this.nebulaMediaCycle=this.nebulaMedia?.run(AbortSignal.any([signal,this.nebulaMediaAbort.signal]));await this.nebulaMediaCycle;}
   runSuiteActions(signal: AbortSignal) { return this.suiteActions.run(signal); }
