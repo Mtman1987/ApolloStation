@@ -58,7 +58,7 @@ export function defaultNebulaSharedBingoState(channelValue: string, phrases: rea
   const source = phrases.map(value => String(value ?? "").trim()).filter(Boolean);
   return {
     boardId: `${channel}:${new Date(now).toISOString().slice(0,10)}`,
-    squares: Array.from({length:25},(_,index)=>({coordinate:coordinateAt(index),phrase:String(source[index] ?? `Phrase ${index+1}`).slice(0,80),status:"open" as const})),
+    squares: Array.from({length:25},(_,index)=>({coordinate:coordinateAt(index),phrase:String(source[index] || (index===12?"Bingo":`Phrase ${index+1}`)).slice(0,80),status:"open" as const})),
     participants: {},
     recentTranscripts: [],
     updatedAt: new Date(now).toISOString(),
@@ -72,7 +72,7 @@ export function normalizeNebulaSharedBingoState(value: Partial<NebulaSharedBingo
     boardId: expected,
     squares: value.squares.map((square,index)=>({
       coordinate:coordinateAt(index),phrase:String(square?.phrase??"").slice(0,80),
-      status:["open","pending","chat","stella","replacement"].includes(String(square?.status))?square!.status!:"open",
+      status:(["open","pending","chat","stella","replacement"].includes(String(square?.status))?square!.status:"open") as NebulaSharedBingoSquareStatusV1,
       ...(square?.triggeredAt?{triggeredAt:String(square.triggeredAt)}:{}),
       ...(square?.claimUntil?{claimUntil:String(square.claimUntil)}:{}),
       ...(square?.claimedBy?{claimedBy:String(square.claimedBy)}:{}),
