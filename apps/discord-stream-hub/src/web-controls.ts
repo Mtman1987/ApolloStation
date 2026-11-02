@@ -413,7 +413,7 @@ export class DshWebControls {
         const identity=await resolveProviderIdentity(this.client!,tenant.tenantId,"discord",userId).catch(()=>undefined);
         const result=this.signalSeekers.claim({dropId,tenantId:tenant.tenantId,providerUserId:userId,...(identity?.userId?{canonicalUserId:identity.userId}:{}),at:this.now()});
         if(!result.won)return ephemeral(result.reason==="claimed"?"Another seeker already claimed this Signal.":"That Signal has faded.");
-        return ephemeral("📡 **SIGNAL OPENED**\\n\\n"+(result.drop.clue??"The transmission dissolved into static.")+(result.drop.signalUrl?"\\n\\n"+result.drop.signalUrl:"")+"\\n\\nThis opens the Signal only; it does not perform an egg roll.");
+        return ephemeral("📡 **SIGNAL OPENED**\n\n"+(result.drop.clue??"The transmission dissolved into static.")+(result.drop.signalUrl?"\n\n"+result.drop.signalUrl:"")+"\n\nThis opens the Signal only; it does not perform an egg roll.");
       }catch(error){return ephemeral(safeError(error));}
     }
     if(interaction.type===3&&signal){
