@@ -183,8 +183,8 @@ export const DEFAULT_NEBULA_TAG_ROTATION_RULES: NebulaTagRotationRulesV1 = {
 };
 
 export type NebulaTagParsedCommandV1 =
-  | { kind: "join" | "leave" | "status" | "score" | "rank" | "players" | "sleep" | "wake" | "toggle-away" | "rules" | "help" | "info" }
-  | { kind: "tag" | "pass" | "grant-pass"; targetUsername: string };
+  | { kind: "join" | "leave" | "status" | "score" | "rank" | "players" | "sleep" | "wake" | "toggle-away" | "rules" | "help" | "info" | "trigger-ffa" }
+  | { kind: "tag" | "pass" | "grant-pass" | "set-it"; targetUsername: string };
 
 export interface NebulaTagInboundMessageV1 {
   schemaVersion: 1;
@@ -325,11 +325,12 @@ export function parseNebulaTagCommandText(message: string): NebulaTagParsedComma
   if (name === "whosit") return { kind: "status" };
   if (name === "stats") return { kind: "score" };
   if (name === "away") return { kind: "toggle-away" };
-  if (name === "tag" || name === "pass" || name === "givepass") {
+  if (name === "tag" || name === "pass" || name === "givepass" || name === "setit" || name === "it") {
     const targetUsername = normalizeUsername(parsed.args[0] ?? "");
     if (!targetUsername) return null;
-    return { kind: name === "givepass" ? "grant-pass" : name, targetUsername };
+    return { kind: name === "givepass" ? "grant-pass" : name === "setit" || name === "it" ? "set-it" : name, targetUsername };
   }
+  if (name === "ffa" || name === "freeforall" || name === "free-for-all") return { kind: "trigger-ffa" };
   return null;
 }
 
@@ -376,11 +377,13 @@ export function planNebulaTagMessage(stateValue: NebulaTagStateV1, message: Nebu
   if (parsed.kind === "leave") return { kind: "command", command: { ...base, kind: "leave" } };
   if (parsed.kind === "sleep" || parsed.kind === "wake") return { kind: "command", command: { ...base, kind: parsed.kind } };
   if (parsed.kind === "toggle-away") return { kind: "command", command: { ...base, kind: actor?.sleeping || actor?.offline ? "wake" : "sleep" } };
-  if (parsed.kind !== "tag" && parsed.kind !== "pass" && parsed.kind !== "grant-pass") return { kind: "ignored" };
+  if (parsed.kind === "trigger-ffa") return { kind: "command", command: { ...base, kind: "trigger-ffa" } };
+  if (parsed.kind !== "tag" && parsed.kind !== "pass" && parsed.kind !== "grant-pass" && parsed.kind !== "set-it") return { kind: "ignored" };
 
   const target = resolveNebulaTagTarget(state, parsed.targetUsername);
   if (target.kind !== "found") return { kind: "rejected", code: target.kind === "ambiguous" ? "target-ambiguous" : "target-not-a-player", message: target.kind === "ambiguous" ? `More than one player matches ${parsed.targetUsername}.` : `${parsed.targetUsername} is not in Nebula Arcade tag game.` };
   if (parsed.kind === "grant-pass") return { kind: "command", command: { ...base, kind: "grant-pass", targetUserId: target.userId } };
+  if (parsed.kind === "set-it") return { kind: "command", command: { ...base, kind: "set-it", targetUserId: target.userId } };
   return { kind: "command", command: { ...base, kind: parsed.kind, targetUserId: target.userId } };
 }
 

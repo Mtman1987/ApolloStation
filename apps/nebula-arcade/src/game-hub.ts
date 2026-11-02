@@ -66,7 +66,7 @@ export function parseNebulaMessage(text: string) {
     const gameId = normalized === "chattag" ? "tag" : normalized;
     const game = NEBULA_ARCADE_GAMES.find(item => normalizeGameId(item.name) === gameId || item.id === gameId);
     if (!game) continue;
-    if (game.id === "tag" && words.length > length && !["join","leave","status","score","rank","tag","pass","givepass","whosit","away","sleep","wake","players","live","more","mute","unmute","optout","support","ticket","pinrank","help","commands","rules"].includes(words[length]!.toLowerCase())) break;
+    if (game.id === "tag" && words.length > length && !["join","leave","status","score","rank","tag","pass","givepass","setit","set-it","it","ffa","freeforall","free-for-all","whosit","away","sleep","wake","players","live","more","mute","unmute","optout","support","ticket","pinrank","help","commands","rules"].includes(words[length]!.toLowerCase())) break;
     return { body: words.join(" "), gameId: game.id, command: words[length]?.toLowerCase() ?? "join", args: words.slice(length + 1) };
   }
   return { body: words.join(" "), gameId: undefined, command: words[0]?.toLowerCase() ?? "", args: words.slice(1) };
