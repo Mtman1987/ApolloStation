@@ -26,6 +26,8 @@ export * from "./shoutout-groups.js";
 export * from "./clip-gif-library.js";
 export * from "./clip-acquisition.js";
 export * from "./nebula-gameplay.js";
+export * from "./nebula-gameplay-renderer.js";
+export * from "./nebula-gameplay-worker.js";
 export * from "./channel-moderation.js";
 export * from "./signal-control.js";
 export * from "./signal-presentation.js";
