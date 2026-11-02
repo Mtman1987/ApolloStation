@@ -80,10 +80,11 @@ bounds readiness manifest reads, limits ffprobe to 30 seconds, and avoids
 retaining credential-bearing child-process diagnostics. This increment remains
 **ported-unverified** until its post-merge main Oracle run confirms it.
 
-Important remaining acquisition mismatch: `watch-runtime.ts` still prepares a
-donor-side manifest before queuing a local Apollo HLS path. The new test covers
-local acquisition/conversion directly, not that separate preparation call.
-Unify preparation with the chosen Apollo delivery backend in a later increment.
+The donor-side manifest preparation mismatch is being removed in the current
+increment: Watch queueing now emits the Apollo HLS path directly, and the HLS
+handler owns acquisition/conversion. Its route regression confirms no donor
+fetch during queueing. The local FFmpeg conversion test remains synthetic-source
+evidence, not live provider/browser playback.
 
 After Oracle, record the result and continue with real provider acquisition and
 conversion, room/tenant media authorization, browser playback, and the remaining
