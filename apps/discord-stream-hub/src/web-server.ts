@@ -1,3 +1,4 @@
+import { SqliteDshNebulaGameplayStore, DshNebulaGameplayHttpAdapter } from "./nebula-gameplay.js";
 import { DshApplicationControls } from "./application-controls.js";
 import { DSH_APPLICATION_BROWSER_JS } from "./application-ui.js";
 import { DshProposalControls } from "./proposal-controls.js";
@@ -51,6 +52,14 @@ export interface DiscordStreamHubWebServerOptionsV1 {
 
 export function createDiscordStreamHubWebServer(options: DiscordStreamHubWebServerOptionsV1) {
   const media=options.databasePath?new SqliteDshMediaStore(options.databasePath):undefined;
+  const nebulaOrigin=String(process.env.NEBULA_ARCADE_PUBLIC_ORIGIN??"").trim();
+  const gameplayStore=options.databasePath&&nebulaOrigin?new SqliteDshNebulaGameplayStore(options.databasePath):undefined;
+  const gameplayAdapter=gameplayStore&&nebulaOrigin?new DshNebulaGameplayHttpAdapter(gameplayStore,new URL("/assets/nebula-arcade/games-showcase.gif?v=3",nebulaOrigin).toString()):undefined;
+  const handleGameplay=(request:import("node:http").IncomingMessage,response:import("node:http").ServerResponse,url:URL)=>{
+    if(!gameplayAdapter||!url.pathname.startsWith("/v1/discord-stream-hub/nebula-gameplay/"))return false;
+    const result=gameplayAdapter.handle({method:request.method??"",path:url.pathname,slot:url.searchParams.get("slot")});
+    response.writeHead(result.status,result.headers);response.end(result.body instanceof Uint8Array?Buffer.from(result.body):result.body??"");return true;
+  };
   const snapshot = productAppSnapshotHandler({ appId: "discord-stream-hub", spmtOrigin: options.spmtOrigin, sources: productAppSnapshotSources(DISCORD_STREAM_HUB_WEB_DESCRIPTOR) });
   const applicationStore = options.databasePath && options.discordPublicKey && options.runtimeConfigPath && options.publicOrigin ? new SqliteDshApplicationStore(options.databasePath) : undefined;
   const controls = new DshWebControls({ ...options, applicationInteractionsReady: Boolean(applicationStore) });
@@ -66,13 +75,13 @@ export function createDiscordStreamHubWebServer(options: DiscordStreamHubWebServ
     extraCss: DSH_CONTROL_CSS,
     browserJs: appSurfaceBrowserJs(SURFACE) + DSH_PAGE_ALIASES_JS + dshBotInstallBrowserJs(options.discordClientId) + DSH_CONTROL_JS
       + (applications ? DSH_APPLICATION_BROWSER_JS + DSH_PROPOSAL_BROWSER_JS : ""),
-    handleApi: async (request, response, url) => Boolean(media?.handle(request, response, url))
+    handleApi: async (request, response, url) => Boolean(handleGameplay(request,response,url)) || Boolean(media?.handle(request, response, url))
       || Boolean(await interactions?.handle(request, response, url))
       || Boolean(await applications?.handle(request, response, url))
       || Boolean(await proposals?.handle(request, response, url))
       || await controls.handle(request, response, url) || await snapshot(request, response, url),
     close: async () => {
-      media?.close(); await interactions?.close(); applicationStore?.close();
+      media?.close();gameplayStore?.close(); await interactions?.close(); applicationStore?.close();
       applications?.close(); proposals?.close(); controls.close();
     },
   });

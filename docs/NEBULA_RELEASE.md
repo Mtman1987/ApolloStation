@@ -62,13 +62,13 @@ The launch operator runs the existing supervised services with these entry point
 | SPMT | Existing production authority/identity service, with the reconciled Nebula identity |
 | Nebula web | `npm run nebula:serve` — authenticated production host, default loopback port 3100 |
 | Chat Gateway | `node apps/chat-gateway/dist/service-start.js` — Nebula consumer, presence, delivery and media-job reconciliation |
-| DSH worker | `node apps/discord-stream-hub/dist/live-worker-start.js` — active mode, ffmpeg, public origin and configured tenants |
+| DSH worker | `node apps/discord-stream-hub/dist/live-worker-start.js` — active mode, ffmpeg, public origin, configured tenants, and Chromium for the Nebula gameplay capture worker |
 | DSH web | Existing DSH web service sharing the worker's `DSH_DATABASE_PATH`; serves `/apps/discord-stream-hub/api/media/*` |
 | StreamWeaver image worker | Existing configured provider runtime with SeaArt token/model/version; needed for new AI card images |
 | Stellar Core | Existing healthy chat worker; needed for themed Bingo generation |
 | SpaceMountain | Existing front door with `NEBULA_ARCADE_ORIGIN=http://127.0.0.1:3100`; preserve the browser Host and cookies when proxying |
 
-Set `DSH_MEDIA_SOURCE_ORIGINS` to the Nebula public origin and the exact image-provider output origins. Arbitrary render-source URLs and redirects are rejected. Pack GIFs/enhancements work without AI image generation; manual Bingo phrase editing works without Stellar.
+Set `NEBULA_ARCADE_PUBLIC_ORIGIN` to the public Nebula host; DSH fetches `/v1/nebula/gameplay/showcase-manifest` and serves the captured rotation from its own media origin. Install Chromium with `npx playwright install chromium` or set `CHROMIUM_EXECUTABLE_PATH` to the system Chromium binary. Set `DSH_MEDIA_SOURCE_ORIGINS` to the Nebula public origin and the exact image-provider output origins. Arbitrary render-source URLs and redirects are rejected. Pack GIFs/enhancements work without AI image generation; manual Bingo phrase editing works without Stellar.
 
 Use a private administrator Discord channel for `supportChannelId`. `packChannelId` selects the pack destination. Both must match configured Discord connections. If no support destination is configured, tickets remain available in the authenticated inbox.
 
