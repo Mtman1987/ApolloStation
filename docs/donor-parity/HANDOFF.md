@@ -1,6 +1,6 @@
 # HearMeOut parity handoff
 
-Last updated: 2026-10-29. Read this before continuing parity work.
+Last updated: 2026-11-02. Read this before continuing parity work.
 
 ## Goal and operating rules
 
@@ -24,11 +24,11 @@ Continue porting required behavior from the read-only HearMeOut donor into
 
 ## Current repository and completed increment
 
-- Current `main`: `f40b0be30abfac62b53e3ce27d6ab72654d37fe2`
-  (`test(hearmeout): cover xtream HLS route methods`, PR #320).
+- Verified baseline `main`: `244f2f029547e8c50b33edffd8947a000208fe15`
+  (`fix(hearmeout): exercise episode HLS delivery and secure stream responses`, PR #322).
 - The latest Oracle validation is
-  [40906472006](https://github.com/Mtman1987/ApolloStation/actions/runs/40906472006):
-  all four shards completed, 1,407/1,407 tests passed, zero failures.
+  [40911859354](https://github.com/Mtman1987/ApolloStation/actions/runs/40911859354):
+  completed/success on that exact SHA; all four shards and aggregate report passed.
 - This continuation merged PR #316 (resolver replay regression), #317
   (production route fix), and #318 (verification/handoff documentation).
 - Run [40754875281](https://github.com/Mtman1987/ApolloStation/actions/runs/40754875281)
@@ -48,7 +48,7 @@ Continue porting required behavior from the read-only HearMeOut donor into
 
 ## Next action
 
-### Continuation increment (2026-10-29; Oracle pending)
+### Previous increment (PR #322; Oracle verified 2026-11-02)
 
 `tests/hearmeout-episode-hls-integration.test.mjs` now exercises an authenticated
 room request through the real Watch runtime, then fetches its Apollo-owned
@@ -61,8 +61,29 @@ manifests to 1 MiB, rejects non-local manifest children, sanitizes route errors,
 and closes file streams on viewer disconnect. It preserves public Activity HLS
 compatibility; it does not establish room/tenant authorization for that route.
 Malformed references and unsafe/oversized manifests have focused regressions.
-No local build, typecheck or tests were run. This increment is
-**ported-unverified** until its post-merge main Oracle result confirms it.
+No local build, typecheck or tests were run. Oracle 40911859354 confirms this
+cached-fixture request/delivery increment. It does not prove acquisition or conversion.
+
+### Current increment (2026-11-02; Oracle pending)
+
+`tests/hearmeout-xtream-hls-conversion.test.mjs` starts with an empty HLS directory
+and drives four simultaneous requests through the mounted Apollo HLS handler.
+The normal Xtream URL builder acquires synthetic media from a loopback HTTP
+fixture using real ffprobe and FFmpeg. Assertions cover one converter, finite
+VOD completion/ENDLIST, delivered H.264 video and AAC audio, and exact segment
+ranges. This is not live provider, browser, room authorization or Watch request
+preparation evidence. No donor is run and no production config is changed.
+
+The converter repair registers jobs before asynchronous cache/setup operations,
+limits EOF reconnect to live streams (finite episodes must release their slot),
+bounds readiness manifest reads, limits ffprobe to 30 seconds, and avoids
+retaining credential-bearing child-process diagnostics. This increment remains
+**ported-unverified** until its post-merge main Oracle run confirms it.
+
+Important remaining acquisition mismatch: `watch-runtime.ts` still prepares a
+donor-side manifest before queuing a local Apollo HLS path. The new test covers
+local acquisition/conversion directly, not that separate preparation call.
+Unify preparation with the chosen Apollo delivery backend in a later increment.
 
 After Oracle, record the result and continue with real provider acquisition and
 conversion, room/tenant media authorization, browser playback, and the remaining
