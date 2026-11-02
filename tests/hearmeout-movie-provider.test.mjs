@@ -15,6 +15,24 @@ import {createHearMeOutWebServer} from '../apps/hearmeout/dist/web-server-v3.js'
 const providerOrigin='https://hearmeout-main.fly.dev';
 const matches=[{id:'xtream-vod-1',title:'First matching movie',year:2001,overview:'First'},{id:'xtream-vod-42',title:'Chosen matching movie',year:2002,overview:'Second',quality:'1080p'}, {id:'youtube-trailer',title:'Unrelated fallback',playbackUrl:'https://private.example/secret'}];
 
+test('Apollo movie search and resolve stay on the local HLS route without donor fetches or eager acquisition',async()=>{
+ const catalogSearchCalls=[];
+ const ranked=[
+  {item:{id:'xtream-vod-42',type:'movie',title:'Chosen Apollo movie',year:2024,runtime:'2h',source:'Xtream',poster:'',playbackUrl:'/activity-provider/xtream/vod/42',overview:'Apollo-owned result',metadata:{quality:'1080p'}},score:99,reasons:['title']},
+  {item:{id:'xtream-live-9',type:'live',title:'Live channel',year:2026,runtime:'live',source:'Xtream',poster:'',playbackUrl:'/activity-provider/xtream/live/9',overview:'Not a movie'},score:80,reasons:['title']},
+  {item:{id:'xtream-vod-43',type:'movie',title:'Second Apollo movie',year:2023,runtime:'1h',source:'Xtream',poster:'',playbackUrl:'/activity-provider/xtream/vod/43',overview:'Also playable'},score:70,reasons:['title']},
+ ];
+ const provider=new HearMeOutMovieProvider(undefined,undefined,'',async query=>{catalogSearchCalls.push(query);return ranked;});
+ assert.deepEqual(await provider.search('Apollo movie'),[
+  {itemId:'xtream-vod-42',title:'Chosen Apollo movie',overview:'Apollo-owned result',year:2024,quality:'1080p'},
+  {itemId:'xtream-vod-43',title:'Second Apollo movie',overview:'Also playable',year:2023},
+ ]);
+ const selected=await provider.resolve('Apollo movie','xtream-vod-42');
+ assert.deepEqual(selected,{itemId:'xtream-vod-42',title:'Chosen Apollo movie',type:'movie',source:'iptv',playbackUrl:'/api/watch/xtream/hls/vod-42/index.m3u8'});
+ assert.deepEqual(catalogSearchCalls,['Apollo movie','Apollo movie','Apollo movie']);
+ await assert.rejects(()=>provider.resolve('Apollo movie','xtream-vod-999'),/no longer in the search results/);
+});
+
 test('IPTV searches and selected preparation use existing provider routes, without starting the first match',async()=>{
  const calls=[];
  const provider=new HearMeOutMovieProvider(providerOrigin,async(url,init)=>{calls.push(new URL(url).pathname);assert.equal(init.method,'GET');assert.equal(init.redirect,'manual');return new Response(new URL(url).pathname==='/api/watch/search'?JSON.stringify({results:matches}):'#EXTM3U\npart001.ts');});
