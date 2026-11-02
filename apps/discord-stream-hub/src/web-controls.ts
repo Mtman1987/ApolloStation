@@ -153,6 +153,7 @@ export class DshWebControls {
         if(rule.mode==="single-thread"){if(destination.guild_id!==destinationGuild||![10,11,12].includes(Number(destination.type)))throw new Error("Choose a thread in the configured destination server");}
         else if(destination.guild_id!==destinationGuild||![15,16].includes(Number(destination.type)))throw new Error("Choose a forum or media channel in the configured destination server");
         const saved=this.forumForwardingStore.putRule({...rule,tenantId:context.tenantId,sourceGuildId:sourceGuild,destinationGuildId:destinationGuild});
+        if(!this.forumForwardingStore.cursor(context.tenantId)&&this.client){const latest=await this.client.listEvents(context.tenantId,{sourceAppId:"chat-gateway",limit:1});const eventId=String(latest[0]?.id??"");if(eventId)this.forumForwardingStore.advanceCursor(context.tenantId,eventId);}
         return sendJson(response,200,{rule:saved});
       }
       if(url.pathname==="/api/discord-stream-hub/control/forum/discord-forward"){

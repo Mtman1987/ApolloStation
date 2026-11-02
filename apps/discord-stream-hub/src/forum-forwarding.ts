@@ -57,11 +57,14 @@ export class DshForumForwardingStore {
   constructor(path:string){
     this.db=new DatabaseSync(path,{timeout:5000});this.db.exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;");
     this.db.exec(`
+      CREATE TABLE IF NOT EXISTS dsh_forum_cursors(tenant_id TEXT PRIMARY KEY,event_id TEXT NOT NULL DEFAULT '') STRICT;
       CREATE TABLE IF NOT EXISTS dsh_forum_rules(tenant_id TEXT NOT NULL,source_guild_id TEXT NOT NULL,body TEXT NOT NULL,PRIMARY KEY(tenant_id,source_guild_id)) STRICT;
       CREATE TABLE IF NOT EXISTS dsh_forum_threads(tenant_id TEXT NOT NULL,source_guild_id TEXT NOT NULL,source_channel_id TEXT NOT NULL,thread_id TEXT,pending INTEGER NOT NULL,updated_at TEXT NOT NULL,PRIMARY KEY(tenant_id,source_guild_id,source_channel_id)) STRICT;
       CREATE TABLE IF NOT EXISTS dsh_forum_messages(tenant_id TEXT NOT NULL,source_guild_id TEXT NOT NULL,source_channel_id TEXT NOT NULL,source_message_id TEXT NOT NULL,thread_id TEXT NOT NULL,forwarded_message_id TEXT NOT NULL,deleted INTEGER NOT NULL,updated_at TEXT NOT NULL,PRIMARY KEY(tenant_id,source_guild_id,source_channel_id,source_message_id)) STRICT;
     `);
   }
+  cursor(tenant:string){const row=this.db.prepare("SELECT event_id FROM dsh_forum_cursors WHERE tenant_id=?").get(tenant) as {event_id:string}|undefined;return row?.event_id??"";}
+  advanceCursor(tenant:string,eventId:string){this.db.prepare("INSERT INTO dsh_forum_cursors VALUES(?,?) ON CONFLICT(tenant_id) DO UPDATE SET event_id=excluded.event_id").run(tenant,eventId);}
   close(){this.db.close();}
   putRule(input:DshForumForwardRuleV1){const r=validateForwardRule(input);this.db.prepare("INSERT INTO dsh_forum_rules VALUES(?,?,?) ON CONFLICT(tenant_id,source_guild_id) DO UPDATE SET body=excluded.body").run(r.tenantId,r.sourceGuildId,JSON.stringify(r));return r;}
   listRules(tenant:string){const rows=this.db.prepare("SELECT body FROM dsh_forum_rules WHERE tenant_id=? ORDER BY source_guild_id").all(tenant) as Array<{body:string}>;return rows.map(row=>validateForwardRule(JSON.parse(row.body) as DshForumForwardRuleV1));}
@@ -141,4 +144,53 @@ export function buildDshForumDiscordPayload(event:DshForumForwardMutationV1):Rec
   const image=attachments.find(a=>String(a.contentType??"").startsWith("image/"))?.url??embeds.find(e=>e.imageUrl)?.imageUrl;
   const embed:Record<string,unknown>={author:{name:event.authorName,...(event.authorAvatar?{icon_url:event.authorAvatar}:{})},description:(event.content||"").slice(0,4000)||"\u200b",color:0x5865f2,footer:{text:"Discord · #"+event.channelName},timestamp:event.occurredAt,...(event.sourceMessageUrl?{url:event.sourceMessageUrl}:{}),...(image?{image:{url:image}}:{}),...(fields.length?{fields:fields.slice(0,10)}:{})};
   return{embeds:[embed],allowed_mentions:{parse:[]}};
+}
+
+export class DshForumForwardingWorker {
+  private readonly service:DshForumForwardingService;
+  constructor(private readonly store:DshForumForwardingStore,private readonly client:SpmtClient,private readonly discord:DshDiscordApi,private readonly allowedGuilds:(tenant:string)=>string[]){this.service=new DshForumForwardingService(store,discord);}
+  async runOnce(tenant:string){
+    let cursor=this.store.cursor(tenant),processed=0,forwarded=0;
+    for(let page=0;page<10;page++){
+      const events=await this.client.listEvents(tenant,{sourceAppId:"chat-gateway",afterId:cursor,limit:200});
+      if(!events.length)break;
+      for(const item of events){
+        const eventId=String(item.id??item.eventId??"");if(!eventId)continue;
+        if(item.type==="spmt.chat.message.received.v1"||item.type==="spmt.chat.message.mutated.v1"){
+          const payload=(item.payload&&typeof item.payload==="object"?item.payload:{}) as Record<string,unknown>;
+          if(payload.provider==="discord"&&typeof payload.channelId==="string"&&typeof payload.messageId==="string"){
+            const records=await this.client.listCommlinkLiveChat(tenant,{provider:"discord",channelId:payload.channelId,limit:500});
+            const record=records.find(row=>row.messageId===payload.messageId);
+            if(record&&this.allowedGuilds(tenant).includes(record.guildId??String(payload.guildId??""))){
+              const messageChannel=await this.discord.getChannel(tenant,record.channelId);
+              if(Number(messageChannel.type)!==12){
+                let sourceChannel=messageChannel;
+                if([10,11].includes(Number(messageChannel.type))&&messageChannel.parent_id)sourceChannel=await this.discord.getChannel(tenant,messageChannel.parent_id);
+                if(![15,16].includes(Number(sourceChannel.type))){
+                  const guild=await this.discord.getGuild(tenant,record.guildId??String(payload.guildId??""));
+                  const attachments=(record.rich?.attachments??[]).map(item=>({url:item.url,filename:item.name}));
+                  const result=await this.service.apply({tenantId:tenant,guildId:record.guildId??String(payload.guildId),channelId:sourceChannel.id,channelName:String(sourceChannel.name??sourceChannel.id),channelType:Number(sourceChannel.type??0),messageId:record.messageId,authorId:record.providerUserId,authorName:record.displayName??record.username,content:record.text,attachments,sourceMessageUrl:"https://discord.com/channels/"+(record.guildId??String(payload.guildId))+"/"+record.channelId+"/"+record.messageId,occurredAt:record.occurredAt,sourceIsPublic:isPublicDshForumSource(guild,sourceChannel),authorIsBot:record.isBot,operation:item.type==="spmt.chat.message.mutated.v1"?(payload.operation==="delete"?"delete":"edit"):"create"});
+                  if(result.status==="forwarded")forwarded++;
+                }
+              }
+            }
+          }
+        }
+        this.store.advanceCursor(tenant,eventId);cursor=eventId;processed++;
+      }
+      if(events.length<200)break;
+    }
+    return{processed,forwarded,cursor};
+  }
+}
+export function isPublicDshForumSource(guild:any,channel:any){
+  try{
+    if(!guild?.id||channel?.guild_id!==guild.id||![0,2,5,13].includes(Number(channel.type))||!Array.isArray(guild.roles)||!Array.isArray(channel.permission_overwrites))return false;
+    const everyone=guild.roles.find((role:any)=>role.id===guild.id);if(!everyone)return false;
+    const view=BigInt("1024");let permissions=BigInt(everyone.permissions);
+    const own=channel.permission_overwrites.find((item:any)=>item.id===guild.id&&Number(item.type)===0);
+    if(own)permissions=(permissions&~BigInt(own.deny))|BigInt(own.allow);
+    if((permissions&view)===BigInt(0))return false;
+    return !channel.permission_overwrites.some((item:any)=>item.id!==guild.id&&(BigInt(item.deny)&view)!==BigInt(0));
+  }catch{return false;}
 }

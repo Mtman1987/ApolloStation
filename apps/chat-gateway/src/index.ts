@@ -28,7 +28,7 @@ export const manifest = assertAppModuleManifestV1({
   capabilities: ["chat-ingress", "chat-egress", "provider-presence", "reconnect", "replay"],
   surfaces: ["standalone"],
   requiredScopes: ["identity:read", "events:write", "chat:read", "chat:write", "runtime:write"],
-  eventTypes: ["spmt.chat.message.received.v1", "spmt.chat.provider.lifecycle.v1", SHADOW_CHAT_EGRESS_EVENT],
+  eventTypes: ["spmt.chat.message.received.v1", "spmt.chat.message.mutated.v1", "spmt.chat.provider.lifecycle.v1", SHADOW_CHAT_EGRESS_EVENT],
   integration: { identity: "connected", events: "native", runtime: "connected" },
   workers: [
     { id: "twitch-chat", role: "twitch-connection", execution: "leased", canonicalAuthority: false },
