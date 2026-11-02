@@ -19,9 +19,19 @@ export class DshRaidTrainStore {
   private readonly db: DatabaseSync;
   constructor(path: string, private readonly now: () => string = () => new Date().toISOString()) {
     this.db = new DatabaseSync(path, { timeout: 5_000 });
-    this.db.exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS dsh_raid_train_slots(tenant_id TEXT NOT NULL,guild_id TEXT NOT NULL,slot_date TEXT NOT NULL,hour INTEGER NOT NULL CHECK(hour BETWEEN 0 AND 23),user_id TEXT NOT NULL,twitch_user_id TEXT,username TEXT NOT NULL,display_name TEXT NOT NULL,avatar_url TEXT,twitch_username TEXT,signup_time TEXT NOT NULL,PRIMARY KEY(tenant_id,guild_id,slot_date,hour)) STRICT; CREATE INDEX IF NOT EXISTS dsh_raid_train_user ON dsh_raid_train_slots(tenant_id,guild_id,user_id,slot_date);");
+    this.db.exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS dsh_raid_train_slots(tenant_id TEXT NOT NULL,guild_id TEXT NOT NULL,slot_date TEXT NOT NULL,hour INTEGER NOT NULL CHECK(hour BETWEEN 0 AND 23),user_id TEXT NOT NULL,twitch_user_id TEXT,username TEXT NOT NULL,display_name TEXT NOT NULL,avatar_url TEXT,twitch_username TEXT,signup_time TEXT NOT NULL,PRIMARY KEY(tenant_id,guild_id,slot_date,hour)) STRICT; CREATE INDEX IF NOT EXISTS dsh_raid_train_user ON dsh_raid_train_slots(tenant_id,guild_id,user_id,slot_date); CREATE TABLE IF NOT EXISTS dsh_raid_train_panels(tenant_id TEXT NOT NULL,guild_id TEXT NOT NULL,slot_date TEXT NOT NULL,channel_id TEXT NOT NULL,message_id TEXT NOT NULL,updated_at TEXT NOT NULL,PRIMARY KEY(tenant_id,guild_id,slot_date)) STRICT;");
   }
   close() { this.db.close(); }
+  setPanel(input:{tenantId:string;guildId:string;date:string;channelId:string;messageId:string}) {
+    validateDate(input.date);
+    this.db.prepare("INSERT INTO dsh_raid_train_panels(tenant_id,guild_id,slot_date,channel_id,message_id,updated_at) VALUES(?,?,?,?,?,?) ON CONFLICT(tenant_id,guild_id,slot_date) DO UPDATE SET channel_id=excluded.channel_id,message_id=excluded.message_id,updated_at=excluded.updated_at")
+      .run(input.tenantId,input.guildId,input.date,input.channelId,input.messageId,this.now());
+  }
+  panel(tenantId:string,guildId:string,date:string) {
+    validateDate(date);
+    const row=this.db.prepare("SELECT channel_id AS channelId,message_id AS messageId FROM dsh_raid_train_panels WHERE tenant_id=? AND guild_id=? AND slot_date=?").get(tenantId,guildId,date) as {channelId:string;messageId:string}|undefined;
+    return row;
+  }
   schedule(tenantId: string, guildId: string, date: string): DshRaidTrainSlotV1[] {
     validateDate(date);
     const rows = this.db.prepare("SELECT * FROM dsh_raid_train_slots WHERE tenant_id=? AND guild_id=? AND slot_date=? ORDER BY hour").all(tenantId,guildId,date) as Array<Record<string,unknown>>;
