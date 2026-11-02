@@ -57,6 +57,7 @@ export class DshDiscordApi {
   async deleteThreadMessage(tenantId:string,threadId:string,messageId:string){return this.deleteMessage(tenantId,threadId,messageId);}
   async setThreadArchived(tenantId:string,threadId:string,archived:boolean){await this.request(tenantId,"/channels/"+snowflake(threadId,"channelId"),"PATCH",{archived});}
   async createMessage(tenantId:string,channelId:string,payload:Record<string,unknown>){const body=await this.request<{id?:string}>(tenantId,`/channels/${snowflake(channelId,"channelId")}/messages`,"POST",payload);if(!body?.id)throw new Error("Discord did not return a message id");return body.id;}
+  async getGuild(tenantId:string,guildId:string){return (await this.request<any>(tenantId,"/guilds/"+snowflake(guildId,"guildId")+"?with_counts=false","GET",undefined,"guilds:read"))!;}
   async getUser(tenantId:string,userId:string){return (await this.request<{id:string;avatar?:string|null}>(tenantId,`/users/${snowflake(userId,"userId")}`,"GET",undefined,"guilds:read"))!;}
   async listGuilds(tenantId:string){return await this.request<Array<{id?:string;name?:string;icon?:string|null}>>(tenantId,"/users/@me/guilds","GET",undefined,"guilds:read")??[];}
   async memberDirectory(tenantId: string, guildId: string, progress: () => void = () => {}) {
