@@ -1,3 +1,4 @@
+import { DshRaidTrainStore, dshRaidTrainPayload } from "./raid-train.js";
 import { buildDshSignalPresentation } from "./signal-presentation.js";
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import { forwardDshForumPost, DshForumForwardingStore, DshForumForwardingService, type DshForumForwardRuleV1, type DshForumForwardMutationV1 } from "./forum-forwarding.js";
@@ -83,6 +84,7 @@ export class DshWebControls {
       this.signalSeekers = new SqliteDshSignalSeekerStore(options.databasePath, this.now);
       this.forumForwardingStore = new DshForumForwardingStore(options.databasePath);
       this.raidPile = new DshRaidPileStore(options.databasePath, (tenantId) => this.raidPileSettings(tenantId));
+      this.raidTrain = new DshRaidTrainStore(options.databasePath, this.now);
     }
     if (options.runtimeConfigPath) this.config = loadDshLiveRuntimeConfig(options.runtimeConfigPath);
     if(options.databasePath&&this.config&&this.settings)this.memberDirectory=new DshMemberDirectoryStore(options.databasePath,this.config,this.settings);
@@ -105,7 +107,7 @@ export class DshWebControls {
     }
   }
 
-  close() { this.memberDirectory?.close();this.activity?.close();this.cleanup?.close();this.monitor?.close(); this.calendar?.close(); this.settings?.close(); this.messages?.close(); this.applications?.close(); this.shoutouts?.close();this.signalSeekers?.close();this.forumForwardingStore?.close();this.raidPile?.close(); }
+  close() { this.memberDirectory?.close();this.activity?.close();this.cleanup?.close();this.monitor?.close(); this.calendar?.close(); this.settings?.close(); this.messages?.close(); this.applications?.close(); this.shoutouts?.close();this.signalSeekers?.close();this.forumForwardingStore?.close();this.raidPile?.close();this.raidTrain?.close(); }
 
   async handle(request: IncomingMessage, response: ServerResponse, url: URL): Promise<boolean> {
     if (url.pathname === "/api/internal/signal/transmit") {
@@ -170,6 +172,11 @@ export class DshWebControls {
     if (!url.pathname.startsWith("/api/discord-stream-hub/control")) return false;
     try {
       const context = await fetchAppSessionContext({ appId: "discord-stream-hub", spmtOrigin: this.options.spmtOrigin, request });
+      if(request.method==="GET"&&url.pathname==="/api/discord-stream-hub/control/raid-train"){
+        if(!this.raidTrain)return sendJson(response,503,{message:"Raid Train storage is unavailable"});
+        const guild=this.guild(context.tenantId,url.searchParams.get("guildId")),date=String(url.searchParams.get("date")??new Date(Date.parse(this.now())+86400000).toISOString().slice(0,10));
+        return sendJson(response,200,{guildId:guild,date,slots:this.raidTrain.schedule(context.tenantId,guild,date)});
+      }
       if(request.method==="GET"&&url.pathname==="/api/discord-stream-hub/control/forum/rules"){this.requireOwner(context);return sendJson(response,200,{rules:this.forumForwardingStore?.listRules(context.tenantId)??[]});}
       if(request.method==="GET"&&url.pathname==="/api/discord-stream-hub/control/raid-pile") return sendJson(response,200,await this.raidPileState(context,request));
       if(request.method==="GET"&&url.pathname==="/api/discord-stream-hub/control/moderation") {this.requireOwner(context);return sendJson(response,200,{plans:this.cleanup?.list(context.tenantId,String(context.session.actorId),"owner")??[]});}
@@ -209,6 +216,18 @@ export class DshWebControls {
         return sendJson(response,200,{target:target??null,piles:store.piles(context.tenantId),message:target?`Next announced target: ${target.displayName}. Twitch raid remains voluntary.`:"No other live member is available."});
       }
       const body = await readJsonBody(request);
+      if(url.pathname==="/api/discord-stream-hub/control/raid-train/publish"){
+        this.requireOwner(context);requireSameOrigin(request);
+        if(this.options.operationMode!=="active"||!this.liveDiscord||!this.raidTrain)throw new Error("Live Raid Train publishing is unavailable");
+        const input=record(body)??{},guild=this.guild(context.tenantId,input.serverId),channelId=snowflake(input.channelId,"channelId");
+        const date=String(input.date||new Date(Date.parse(this.now())+86400000).toISOString().slice(0,10));
+        const channel=await this.liveDiscord.getChannel(context.tenantId,channelId);
+        if(channel.guild_id!==guild||![0,5].includes(Number(channel.type)))throw new Error("Choose a text channel in the selected Discord server");
+        const tenant=this.config?.tenants.find(item=>item.tenantId===context.tenantId),payload=dshRaidTrainPayload(this.raidTrain.schedule(context.tenantId,guild,date),date,tenant?.branding.communityMemberName??"Space Mountain");
+        const messageId=await this.liveDiscord.createMessage(context.tenantId,channelId,payload);
+        this.raidTrain.setPanel({tenantId:context.tenantId,guildId:guild,date,channelId,messageId});
+        return sendJson(response,201,{ok:true,guildId:guild,channelId,date,messageId});
+      }
       if(url.pathname==="/api/discord-stream-hub/control/forum/rules"){
         this.requireOwner(context);if(!this.forumForwardingStore||!this.liveDiscord)throw new Error("Connect DSH before configuring forum forwarding");
         const rule=body.rule as DshForumForwardRuleV1;
@@ -464,6 +483,41 @@ export class DshWebControls {
     if(!this.config)return undefined;
     await this.sweepSignalDrops();
     const customId=String(interaction.data?.custom_id??""),signal=/^signal_seekers:(join|leave):(\d{5,30})$/.exec(customId);
+
+    const raidTrain=/^raid_(signup|view|cancel|day)_(\d{4}-\d{2}-\d{2})$/.exec(customId),raidSlot=/^raid_slot_(\d{4}-\d{2}-\d{2})_(\d{2})$/.exec(customId),raidCancelSlot=/^raid_cancel_slot_(\d{4}-\d{2}-\d{2})_(\d{2})$/.exec(customId);
+    if(interaction.type===3&&(raidTrain||raidSlot||raidCancelSlot)){
+      const guildId=String(interaction.guild_id??""),userId=String(interaction.member?.user?.id??interaction.user?.id??""),tenant=this.config.tenants.find(item=>item.discordGuildIds?.includes(guildId));
+      const ephemeral=(content:string,components?:unknown[])=>({type:4,data:{flags:64,content,allowed_mentions:{parse:[]},...(components?{components}:{})}});
+      if(!tenant||!this.raidTrain||!this.liveDiscord||!this.client||!/^[0-9]{5,30}$/.test(userId))return ephemeral("Raid Train is unavailable in this Discord server.");
+      try{
+        const date=raidTrain?.[2]??raidSlot?.[1]??raidCancelSlot?.[1]??"";
+        const slots=this.raidTrain.schedule(tenant.tenantId,guildId,date);
+        if(raidTrain?.[1]==="day"){const messageId=optionalSnowflake(interaction.message?.id),channelId=optionalSnowflake(interaction.channel_id);if(messageId&&channelId)this.raidTrain.setPanel({tenantId:tenant.tenantId,guildId,date,channelId,messageId});return {type:7,data:dshRaidTrainPayload(slots,date)};}
+        if(raidTrain?.[1]==="view")return {type:4,data:{flags:64,...dshRaidTrainPayload(slots,date)}};
+        if(raidTrain?.[1]==="signup"){
+          if(date<=this.now().slice(0,10))return ephemeral("Raid Train signups open the day before. Choose a future date.");
+          const open=slots.filter(slot=>!slot.userId),rows=[] as Array<{type:number;components:Array<Record<string,unknown>>}>;
+          for(let i=0;i<open.length;i+=5)rows.push({type:1,components:open.slice(i,i+5).map(slot=>({type:2,style:1,label:String(slot.hour).padStart(2,"0")+":00",custom_id:"raid_slot_"+date+"_"+String(slot.hour).padStart(2,"0")}))});
+          return ephemeral(open.length?"Choose an available UTC hour:":"Every hour is already claimed.",rows);
+        }
+        if(raidTrain?.[1]==="cancel"){
+          const identity=await this.raidTrainIdentity(tenant.tenantId,guildId,userId),owned=slots.filter(slot=>slot.userId===identity.userId),rows=[] as Array<{type:number;components:Array<Record<string,unknown>>}>;
+          for(let i=0;i<owned.length;i+=5)rows.push({type:1,components:owned.slice(i,i+5).map(slot=>({type:2,style:4,label:"Cancel "+String(slot.hour).padStart(2,"0")+":00",custom_id:"raid_cancel_slot_"+date+"_"+String(slot.hour).padStart(2,"0")}))});
+          return ephemeral(owned.length?"Choose the slot to cancel:":"You have no reservations on this date.",rows);
+        }
+        if(raidSlot){
+          const identity=await this.raidTrainIdentity(tenant.tenantId,guildId,userId),hour=Number(raidSlot[2]);
+          const result=this.raidTrain.signup({tenantId:tenant.tenantId,guildId,date:raidSlot[1]!,hour,userId:identity.userId,twitchUserId:identity.twitchUserId,username:identity.twitchLogin,displayName:identity.displayName,...(identity.avatarUrl?{avatarUrl:identity.avatarUrl}:{})});
+          if(result.success)await this.refreshRaidTrainPanel(tenant.tenantId,guildId,raidSlot[1]!);
+          return ephemeral(result.success?"🚂 Your Raid Train slot is reserved for "+String(hour).padStart(2,"0")+":00 UTC.":result.reason==="same-day"?"Same-day Raid Train signups are closed.":"That hour was just claimed by someone else.");
+        }
+        if(raidCancelSlot){
+          const identity=await this.raidTrainIdentity(tenant.tenantId,guildId,userId),result=this.raidTrain.cancel({tenantId:tenant.tenantId,guildId,date:raidCancelSlot[1]!,hour:Number(raidCancelSlot[2]),userId:identity.userId});
+          if(result.success)await this.refreshRaidTrainPanel(tenant.tenantId,guildId,raidCancelSlot[1]!);
+          return ephemeral(result.success?"Your Raid Train reservation was cancelled.":"That slot is not yours or is no longer reserved.");
+        }
+      }catch(error){return ephemeral(safeError(error));}
+    }
     if(interaction.type===3&&customId.startsWith("signal_intercept:")){
       const guildId=String(interaction.guild_id??""),userId=String(interaction.member?.user?.id??interaction.user?.id??""),tenant=this.config.tenants.find(item=>item.discordGuildIds?.includes(guildId)),dropId=customId.slice("signal_intercept:".length);
       const ephemeral=(content:string)=>({type:4,data:{flags:64,content,allowed_mentions:{parse:[]}}});
@@ -600,6 +654,33 @@ export class DshWebControls {
   }
   private requireRaidPile(){if(!this.raidPile)throw new Error("DSH Raid Pile storage is not configured");return this.raidPile;}
   private raidPileSettings(tenantId:string):DshRaidPileSettingsV1 {const saved=this.settings?.read(tenantId);return {maxSize:saved?.raidPileMaxSize??DEFAULT_DSH_RAID_PILE_SETTINGS.maxSize,minSize:saved?.raidPileMinSize??DEFAULT_DSH_RAID_PILE_SETTINGS.minSize,pointsReward:saved?.raidPilePointsReward??DEFAULT_DSH_RAID_PILE_SETTINGS.pointsReward,handoffHours:saved?.raidPileHandoffHours??DEFAULT_DSH_RAID_PILE_SETTINGS.handoffHours,monthlyStrikeLimit:saved?.raidPileMonthlyStrikeLimit??DEFAULT_DSH_RAID_PILE_SETTINGS.monthlyStrikeLimit};}
+
+  private async refreshRaidTrainPanel(tenantId:string,guildId:string,date:string){
+    const panel=this.raidTrain?.panel(tenantId,guildId,date);if(!panel||!this.liveDiscord||!this.raidTrain)return;
+    const tenant=this.config?.tenants.find(item=>item.tenantId===tenantId),payload=dshRaidTrainPayload(this.raidTrain.schedule(tenantId,guildId,date),date,tenant?.branding.communityMemberName??"Space Mountain");
+    await this.liveDiscord.editMessage(tenantId,panel.channelId,panel.messageId,payload);
+  }
+  private async raidTrainIdentity(tenantId:string,guildId:string,discordUserId:string){
+    if(!this.client||!this.liveDiscord)throw new Error("Connect DSH to resolve Raid Train identity");
+    const identity=await resolveProviderIdentity(this.client,tenantId,"discord",discordUserId);
+    let after="",person:any;
+    for(let page=0;page<51&&!person;page++){
+      const directory=await listCommunityIdentities(this.client,tenantId,after);
+      person=directory.members.find(item=>item.userId===identity.userId);
+      if(person||directory.nextAfterUserId===null)break;
+      if(!directory.nextAfterUserId||directory.nextAfterUserId<=after)throw new Error("Community identity pagination is invalid");
+      after=directory.nextAfterUserId;
+    }
+    const twitch=person?.providers.find((link:any)=>link.provider==="twitch");
+    if(!twitch)throw new Error("Raid Train requires a Twitch account linked to this Discord identity in SPMT");
+    const member:any=await this.liveDiscord.getGuildMember(tenantId,guildId,discordUserId);
+    const directoryRow=this.memberDirectory?.view(tenantId,guildId).rows.find(row=>row.discordUserId===discordUserId);
+    const user=member.user as {username?:string;global_name?:string;avatar?:string}|undefined;
+    const displayName=String(member.nick??user?.global_name??user?.username??directoryRow?.displayName??discordUserId).slice(0,100);
+    const twitchLogin=String(directoryRow?.twitchLogin??"").toLowerCase();
+    if(!/^[a-z0-9_]{1,32}$/.test(twitchLogin))throw new Error("Refresh the DSH community member directory before reserving a Raid Train slot");
+    return {userId:identity.userId,twitchUserId:twitch.providerUserId,twitchLogin,displayName,avatarUrl:undefined as string|undefined};
+  }
   private async raidPileIdentity(context:SessionContext,_request:IncomingMessage){
     const actor=String(context.session.actorId??""),member=this.members(context.tenantId).find(item=>item.canonicalUserId===actor);
     if(!member||!/^[a-z0-9_]{1,32}$/.test(member.twitchLogin))throw new Error("Raid Pile is available to members with a linked Twitch account in this Discord workspace");
@@ -622,7 +703,7 @@ export class DshWebControls {
   private async updateSignalSeekerFromTwitch(request:IncomingMessage,response:ServerResponse){
     if(this.options.operationMode!=="active"||!this.client||!this.liveDiscord||!this.signalSeekers||!this.config)return sendJson(response,503,{message:"Live Signal Seeker membership is unavailable"});
     const body=record(await readJsonBody(request))??{},twitchUserId=String(body.twitchUserId??"").trim(),twitchUsername=String(body.twitchUsername??"").trim().toLowerCase(),action=["join","leave"].includes(String(body.action))?String(body.action):"toggle";
-    if(!/^\\d{5,30}$/.test(twitchUserId)&&! /^[a-z0-9_]{1,25}$/.test(twitchUsername))return sendJson(response,400,{message:"A Twitch identity is required"});
+    if(!/^\d{5,30}$/.test(twitchUserId)&&! /^[a-z0-9_]{1,25}$/.test(twitchUsername))return sendJson(response,400,{message:"A Twitch identity is required"});
     const tenantId=String(body.tenantId??"").trim();
     if(!tenantId)return sendJson(response,400,{message:"tenantId is required"});
     const tenants=this.config.tenants.filter(item=>item.tenantId===tenantId&&Array.isArray(item.discordGuildIds)&&item.discordGuildIds.length>0);
