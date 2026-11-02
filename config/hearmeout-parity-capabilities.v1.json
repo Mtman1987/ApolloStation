@@ -195,8 +195,8 @@
       ],
       "apollo": [
         "apps/hearmeout/src/room-assistant-jobs.ts",
-        "apps/hearmeout/src/persona-routing.ts",
-        "apps/hearmeout/src/persona-speech.ts"
+        "apps/hearmeout/src/room-persona-routing.ts",
+        "apps/hearmeout/src/room-persona-speech.ts"
       ],
       "tests": [
         "tests/hearmeout-bot-persona-actions.test.mjs",
@@ -442,7 +442,7 @@
         "room expiry and cleanup"
       ],
       "apollo": [
-        "apps/hearmeout/src/room-expiry.ts",
+        "apps/hearmeout/src/broadcast-program.ts",
         "apps/hearmeout/src/broadcast-program.ts",
         "apps/hearmeout/src/room-media-core.ts"
       ],
