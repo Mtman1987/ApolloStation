@@ -1,3 +1,4 @@
+import { DshRaidTrainStore, dshRaidTrainPayload } from "./raid-train.js";
 import { buildDshSignalPresentation } from "./signal-presentation.js";
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import { forwardDshForumPost, DshForumForwardingStore, DshForumForwardingService, type DshForumForwardRuleV1, type DshForumForwardMutationV1 } from "./forum-forwarding.js";
@@ -83,6 +84,7 @@ export class DshWebControls {
       this.signalSeekers = new SqliteDshSignalSeekerStore(options.databasePath, this.now);
       this.forumForwardingStore = new DshForumForwardingStore(options.databasePath);
       this.raidPile = new DshRaidPileStore(options.databasePath, (tenantId) => this.raidPileSettings(tenantId));
+      this.raidTrain = new DshRaidTrainStore(options.databasePath, this.now);
     }
     if (options.runtimeConfigPath) this.config = loadDshLiveRuntimeConfig(options.runtimeConfigPath);
     if(options.databasePath&&this.config&&this.settings)this.memberDirectory=new DshMemberDirectoryStore(options.databasePath,this.config,this.settings);
@@ -105,7 +107,7 @@ export class DshWebControls {
     }
   }
 
-  close() { this.memberDirectory?.close();this.activity?.close();this.cleanup?.close();this.monitor?.close(); this.calendar?.close(); this.settings?.close(); this.messages?.close(); this.applications?.close(); this.shoutouts?.close();this.signalSeekers?.close();this.forumForwardingStore?.close();this.raidPile?.close(); }
+  close() { this.memberDirectory?.close();this.activity?.close();this.cleanup?.close();this.monitor?.close(); this.calendar?.close(); this.settings?.close(); this.messages?.close(); this.applications?.close(); this.shoutouts?.close();this.signalSeekers?.close();this.forumForwardingStore?.close();this.raidPile?.close();this.raidTrain?.close(); }
 
   async handle(request: IncomingMessage, response: ServerResponse, url: URL): Promise<boolean> {
     if (url.pathname === "/api/internal/signal/transmit") {
