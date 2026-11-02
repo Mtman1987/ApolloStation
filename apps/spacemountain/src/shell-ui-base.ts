@@ -940,7 +940,14 @@ export class SpaceMountainShellUi {
       const embeds = Array.isArray(discord?.embeds) ? discord.embeds : [];
       return [{...event, __recordType:"chat", sourceAppId:`shadow:${payload.roomId}`, title:payload.title, text:payload.body || embeds.map(embed => recordText(embed,["title","description"]) ?? "").join("\n"), occurredAt:payload.occurredAt, shadowRoomId:payload.roomId, direction:payload.direction, shadowAppId:recordText(data,["appId"]) ?? event.sourceAppId }];
     });
-    const events = this.snapshot.events.filter(item => !String(item.type).startsWith("spmt.simulation-room")).map((item) => ({ ...item, __recordType: "event" }));
+    const events = this.snapshot.events.filter(item => !String(item.type).startsWith("spmt.simulation-room")).map((item) => {
+      if (item.type !== "dsh.forum.post-forwarded.v1") return { ...item, __recordType: "event" };
+      const post = recordObject(item, "payload") ?? {};
+      const attachments = Array.isArray(post.attachments) ? post.attachments.length : 0;
+      const embeds = Array.isArray(post.embeds) ? post.embeds.length : 0;
+      const metadata = [recordText(post, ["sourceChannelName"]), recordText(post, ["category"]), attachments ? `${attachments} attachment${attachments === 1 ? "" : "s"}` : "", embeds ? `${embeds} embed${embeds === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · ");
+      return { ...item, __recordType: "event", sourceAppId: "discord-stream-hub", title: recordText(post, ["title"]) ?? "Discord forum post", authorName: recordText(post, ["authorName"]) ?? "Discord member", text: recordText(post, ["content"]) ?? "", occurredAt: recordText(post, ["postedAt"]) ?? recordText(item, ["createdAt", "created_at"]), forumMetadata: metadata };
+    });
     const notifications = this.snapshot.notifications.map((item) => ({ ...item, __recordType: "event" }));
     return [...shadowMessages, ...liveChat, ...messages, ...conversations, ...events, ...notifications]
       .filter((item) => !sourceIds.size || sourceIds.has(commlinkRecordSource(item)) || sourceIds.has(`conversation:${recordText(item, ["conversationId", "id"]) ?? ""}`))
