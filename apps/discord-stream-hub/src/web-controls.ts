@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import { forwardDshForumPost, DshForumForwardingStore, DshForumForwardingService, type DshForumForwardRuleV1, type DshForumForwardMutationV1 } from "./forum-forwarding.js";
 import { DshMemberDirectoryStore } from "./member-directory.js";
 import { DshRaidPileStore, DEFAULT_DSH_RAID_PILE_SETTINGS, type DshRaidPileSettingsV1 } from "./raid-pile.js";
@@ -14,7 +14,7 @@ import { communityCalendarMissions } from "@spmt/ui";
 import { DshCalendarSync } from "./calendar-sync.js";
 import { DshCalendarDelivery } from "./calendar-delivery.js";
 import { respondDshCalendarInteraction } from "./calendar-interactions.js";
-import { resolveProviderIdentity } from "@spmt/sdk/provider-identity";
+import { resolveProviderIdentity, listCommunityIdentities } from "@spmt/sdk/provider-identity";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { dshCaptainParticipation, renderDshCalendarPng } from "./calendar-presentation.js";
 import { buildDshTierShoutout, DSH_LIVE_EMBED_TEMPLATES, dshShoutoutView, type DshShoutoutView } from "./shoutout-presentation.js";
@@ -106,6 +106,12 @@ export class DshWebControls {
   close() { this.memberDirectory?.close();this.activity?.close();this.cleanup?.close();this.monitor?.close(); this.calendar?.close(); this.settings?.close(); this.messages?.close(); this.applications?.close(); this.shoutouts?.close();this.signalSeekers?.close();this.forumForwardingStore?.close();this.raidPile?.close(); }
 
   async handle(request: IncomingMessage, response: ServerResponse, url: URL): Promise<boolean> {
+    if (url.pathname === "/api/internal/signal/seekers") {
+      if (request.method !== "POST") return sendJson(response, 405, { message: "Use POST" });
+      if (!this.authorizeWorker(request)) return sendJson(response, 401, { message: "Unauthorized" });
+      try { return await this.updateSignalSeekerFromTwitch(request, response); }
+      catch (error) { return sendJson(response, 502, { message: safeError(error) }); }
+    }
     if (!url.pathname.startsWith("/api/discord-stream-hub/control")) return false;
     try {
       const context = await fetchAppSessionContext({ appId: "discord-stream-hub", spmtOrigin: this.options.spmtOrigin, request });
@@ -551,6 +557,47 @@ export class DshWebControls {
     const next=membership?store.next(context.tenantId,membership.pileId,userId):undefined;
     return {piles:refreshed,membership:membership??null,next:next??null,settings:this.raidPileSettings(context.tenantId),canAdvance:this.role(context)==="owner"};
   }
+
+  private authorizeWorker(request: IncomingMessage): boolean {
+    const expected=this.options.credential??"",header=String(request.headers.authorization??"");
+    if(!expected||!header.startsWith("Bearer "))return false;
+    const supplied=header.slice(7);if(!supplied||supplied.length!==expected.length)return false;
+    return timingSafeEqual(Buffer.from(supplied),Buffer.from(expected));
+  }
+  private async updateSignalSeekerFromTwitch(request:IncomingMessage,response:ServerResponse){
+    if(this.options.operationMode!=="active"||!this.client||!this.liveDiscord||!this.signalSeekers||!this.config)return sendJson(response,503,{message:"Live Signal Seeker membership is unavailable"});
+    const body=record(await readJsonBody(request))??{},twitchUserId=String(body.twitchUserId??"").trim(),twitchUsername=String(body.twitchUsername??"").trim().toLowerCase(),action=["join","leave"].includes(String(body.action))?String(body.action):"toggle";
+    if(!/^\\d{5,30}$/.test(twitchUserId)&&! /^[a-z0-9_]{1,25}$/.test(twitchUsername))return sendJson(response,400,{message:"A Twitch identity is required"});
+    const tenantId=String(body.tenantId??"").trim();
+    const tenants=this.config.tenants.filter(item=>(!tenantId||item.tenantId===tenantId)&&Array.isArray(item.discordGuildIds)&&item.discordGuildIds.length>0);
+    if(!tenants.length)return sendJson(response,200,{ok:true,linked:false});
+    let matched=false,updated=0,status:"joined"|"left"="left";
+    for(const tenant of tenants){
+      const directory=await listCommunityIdentities(this.client,tenant.tenantId);
+      const person=directory.members.find(item=>item.providers.some(link=>link.provider==="twitch"&&((twitchUserId&&link.providerUserId===twitchUserId)||(!twitchUserId&&link.providerUserId.toLowerCase()===twitchUsername))));
+      if(!person)continue;
+      const discordIds=person.providers.filter(link=>link.provider==="discord").map(link=>link.providerUserId);if(!discordIds.length)continue;
+      matched=true;
+      for(const guildId of tenant.discordGuildIds){
+        const roleList=await this.liveDiscord.listGuildRoles(tenant.tenantId,guildId);
+        let role=roleList.find(item=>!item.managed&&item.name.toLowerCase()==="signal seeker");
+        if(!role)role=await this.liveDiscord.createGuildRole(tenant.tenantId,guildId,{name:"Signal Seeker",color:0x5865f2,mentionable:true,hoist:false});
+        const winnerRole=roleList.find(item=>item.name.toLowerCase()==="voidwalker");
+        for(const discordId of discordIds){
+          const member=await this.liveDiscord.getGuildMember(tenant.tenantId,guildId,discordId).catch(()=>undefined);if(!member?.user?.id)continue;
+          const isWinner=Boolean(winnerRole&&member.roles?.includes(winnerRole.id));
+          const hasRole=member.roles?.includes(role.id)??false;
+          const enable=action==="join"||(action==="toggle"&&!hasRole);
+          const shouldJoin=enable&&!isWinner;
+          if(hasRole!==shouldJoin)await this.liveDiscord.setGuildMemberRole(tenant.tenantId,guildId,discordId,role.id,shouldJoin);
+          this.signalSeekers.setSeeking({tenantId:tenant.tenantId,providerUserId:twitchUserId||twitchUsername,canonicalUserId:person.userId,enabled:shouldJoin,at:this.now()});
+          status=shouldJoin?"joined":"left";updated++;
+        }
+      }
+    }
+    return sendJson(response,200,{ok:true,linked:matched,...(matched?{status,updated}:{})});
+  }
+
   private requireCalendar() { if (!this.calendar) throw new Error("DSH calendar storage is not configured"); return this.calendar; }
   private requireSettings() { if (!this.settings) throw new Error("DSH settings storage is not configured"); return this.settings; }
   private guild(tenantId: string, value: unknown) { const guildId = snowflake(value, "serverId"); if (isSimulationDiscordId(guildId)) return guildId; if (!this.config?.tenants.find((tenant) => tenant.tenantId === tenantId)?.discordGuildIds?.includes(guildId)) throw new Error("Choose a Discord server configured for this tenant"); return guildId; }
