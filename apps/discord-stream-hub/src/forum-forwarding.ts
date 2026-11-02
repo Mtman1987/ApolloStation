@@ -161,7 +161,7 @@ export class DshForumForwardingWorker {
           if(payload.provider==="discord"&&typeof payload.channelId==="string"&&typeof payload.messageId==="string"){
             const records=await this.client.listCommlinkLiveChat(tenant,{provider:"discord",channelId:payload.channelId,limit:500});
             const record=records.find(row=>row.messageId===payload.messageId);
-            if(record){
+            if(record&&this.allowedGuilds(tenant).includes(record.guildId??String(payload.guildId??""))){
               const messageChannel=await this.discord.getChannel(tenant,record.channelId);
               if(Number(messageChannel.type)!==12){
                 let sourceChannel=messageChannel;
