@@ -259,7 +259,7 @@ export class DshWebControls {
         const [channels, roles] = await Promise.all([this.liveDiscord.listGuildChannels(context.tenantId, guild), this.liveDiscord.listGuildRoles(context.tenantId, guild)]);
         if (!channels.some(channel => channel.id === channelId && [0, 5].includes(Number(channel.type)))) throw new Error("Choose a text channel in the selected Discord server");
         if (!roles.some(role => role.id === roleId && !role.managed && role.name.toLowerCase() === "signal seeker")) throw new Error("Choose the Signal Seeker role from the selected Discord server");
-        const dropId = randomUUID(), payload = dshSignalDropInteractionPayload(roleId, dropId, clue);
+        const dropId = randomUUID(), payload = dshSignalDropInteractionPayload(roleId, dropId);
         const messageId = await this.liveDiscord.createMessage(context.tenantId, channelId, payload);
         try {
           const drop = this.signalSeekers.createDrop({ dropId, tenantId: context.tenantId, channelId, messageId, roleId, ...(signalUrl ? { signalUrl: signalUrl.toString() } : {}), clue, now: this.now() });
