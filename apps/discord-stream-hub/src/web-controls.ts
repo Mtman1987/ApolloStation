@@ -264,7 +264,7 @@ export class DshWebControls {
         const dropId = randomUUID(), payload = dshSignalDropInteractionPayload(roleId, dropId);
         const messageId = await this.liveDiscord.createMessage(context.tenantId, channelId, payload);
         try {
-          const drop = this.signalSeekers.createDrop({ dropId, tenantId: context.tenantId, channelId, messageId, roleId, ...(signalUrl ? { signalUrl: signalUrl.toString() } : {}), clue, now: this.now() });
+          const drop = this.signalSeekers.createDrop({ dropId, tenantId: context.tenantId, guildId: guild, channelId, messageId, roleId, ...(signalUrl ? { signalUrl: signalUrl.toString() } : {}), clue, now: this.now() });
           return sendJson(response, 201, { drop });
         } catch (error) { await this.liveDiscord.deleteMessage(context.tenantId, channelId, messageId).catch(() => undefined); throw error; }
       }
@@ -409,7 +409,7 @@ export class DshWebControls {
       if(!tenant||!/^[0-9]{5,30}$/.test(guildId)||!/^[0-9]{5,30}$/.test(userId)||!this.signalSeekers)return ephemeral("That Signal carrier is no longer valid.");
       try{
         const drop=this.signalSeekers.get(tenant.tenantId,dropId);
-        if(!drop||drop.state!=="open"||Date.parse(drop.expiresAt)<=Date.parse(this.now())){this.signalSeekers.expire(this.now());if(drop&&this.liveDiscord)await this.liveDiscord.deleteMessage(tenant.tenantId,drop.channelId,drop.messageId).catch(()=>undefined);return ephemeral("📡 That Signal faded after 10 minutes.");}
+        if(!drop||drop.guildId!==guildId||drop.state!=="open"||Date.parse(drop.expiresAt)<=Date.parse(this.now())){this.signalSeekers.expire(this.now());if(drop&&this.liveDiscord)await this.liveDiscord.deleteMessage(tenant.tenantId,drop.channelId,drop.messageId).catch(()=>undefined);return ephemeral("📡 That Signal faded after 10 minutes.");}
         const identity=await resolveProviderIdentity(this.client!,tenant.tenantId,"discord",userId).catch(()=>undefined);
         const result=this.signalSeekers.claim({dropId,tenantId:tenant.tenantId,providerUserId:userId,...(identity?.userId?{canonicalUserId:identity.userId}:{}),at:this.now()});
         if(!result.won)return ephemeral(result.reason==="claimed"?"Another seeker already claimed this Signal.":"That Signal has faded.");
