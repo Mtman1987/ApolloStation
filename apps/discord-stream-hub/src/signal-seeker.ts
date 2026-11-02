@@ -7,6 +7,7 @@ export interface DshSignalDropV1 {
   schemaVersion: 1;
   dropId: string;
   tenantId: string;
+  guildId: string;
   channelId: string;
   messageId: string;
   roleId: string;
@@ -58,9 +59,9 @@ export class SqliteDshSignalSeekerStore {
       .run(clean(input.tenantId), clean(input.providerUserId), input.canonicalUserId ? clean(input.canonicalUserId) : null, input.enabled ? 1 : 0, at);
     return { enabled: input.enabled, updatedAt: at };
   }
-  createDrop(input: { dropId: string; tenantId: string; channelId: string; messageId: string; roleId: string; signalUrl?: string; clue?: string; now?: string }): DshSignalDropV1 {
+  createDrop(input: { dropId: string; tenantId: string; guildId: string; channelId: string; messageId: string; roleId: string; signalUrl?: string; clue?: string; now?: string }): DshSignalDropV1 {
     const createdAt = timestamp(input.now ?? this.now());
-    const drop: DshSignalDropV1 = { schemaVersion: 1, dropId: clean(input.dropId), tenantId: clean(input.tenantId), channelId: snowflake(input.channelId), messageId: snowflake(input.messageId), roleId: snowflake(input.roleId), ...(input.signalUrl ? { signalUrl: credentialFreeHttps(input.signalUrl) } : {}), ...(input.clue ? { clue: clean(input.clue).slice(0,1800) } : {}), createdAt, expiresAt: new Date(Date.parse(createdAt) + DSH_SIGNAL_DROP_TTL_MS).toISOString(), state: "open" };
+    const drop: DshSignalDropV1 = { schemaVersion: 1, dropId: clean(input.dropId), tenantId: clean(input.tenantId), guildId: snowflake(input.guildId), channelId: snowflake(input.channelId), messageId: snowflake(input.messageId), roleId: snowflake(input.roleId), ...(input.signalUrl ? { signalUrl: credentialFreeHttps(input.signalUrl) } : {}), ...(input.clue ? { clue: clean(input.clue).slice(0,1800) } : {}), createdAt, expiresAt: new Date(Date.parse(createdAt) + DSH_SIGNAL_DROP_TTL_MS).toISOString(), state: "open" };
     this.db.prepare("INSERT INTO dsh_signal_drops(drop_id,tenant_id,expires_at,state,body) VALUES(?,?,?,'open',?)").run(drop.dropId, drop.tenantId, drop.expiresAt, JSON.stringify(drop));
     return drop;
   }
