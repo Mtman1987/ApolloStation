@@ -1,3 +1,4 @@
+import { SqliteDshClipGifStore } from "./clip-gif-library.js";
 import { DshRaidTrainStore, dshRaidTrainPayload } from "./raid-train.js";
 import { buildDshSignalPresentation } from "./signal-presentation.js";
 import { randomUUID, timingSafeEqual } from "node:crypto";
@@ -60,6 +61,7 @@ export class DshWebControls {
   private readonly messages?: SqliteDshDiscordMessageStore;
   private readonly applications?: SqliteDshApplicationStore;
   private readonly shoutouts?: DshShoutoutGenerationStore;
+  private readonly clipGifs?: SqliteDshClipGifStore;
   private readonly config?: DshLiveRuntimeConfigV1;
   private readonly discord?: DshSimulationRoomDiscordTransport;
   private client?:SpmtClient;
@@ -85,6 +87,7 @@ export class DshWebControls {
       this.forumForwardingStore = new DshForumForwardingStore(options.databasePath);
       this.raidPile = new DshRaidPileStore(options.databasePath, (tenantId) => this.raidPileSettings(tenantId));
       this.raidTrain = new DshRaidTrainStore(options.databasePath, this.now);
+      this.clipGifs = new SqliteDshClipGifStore(options.databasePath);
     }
     if (options.runtimeConfigPath) this.config = loadDshLiveRuntimeConfig(options.runtimeConfigPath);
     if(options.databasePath&&this.config&&this.settings)this.memberDirectory=new DshMemberDirectoryStore(options.databasePath,this.config,this.settings);
@@ -107,9 +110,31 @@ export class DshWebControls {
     }
   }
 
-  close() { this.memberDirectory?.close();this.activity?.close();this.cleanup?.close();this.monitor?.close(); this.calendar?.close(); this.settings?.close(); this.messages?.close(); this.applications?.close(); this.shoutouts?.close();this.signalSeekers?.close();this.forumForwardingStore?.close();this.raidPile?.close();this.raidTrain?.close(); }
+  close() { this.memberDirectory?.close();this.activity?.close();this.cleanup?.close();this.monitor?.close(); this.calendar?.close(); this.settings?.close(); this.messages?.close(); this.applications?.close(); this.shoutouts?.close();this.signalSeekers?.close();this.forumForwardingStore?.close();this.raidPile?.close();this.raidTrain?.close();this.clipGifs?.close(); }
 
   async handle(request: IncomingMessage, response: ServerResponse, url: URL): Promise<boolean> {
+    if(url.pathname==="/api/internal/media/clip"){
+      if(request.method!=="POST")return sendJson(response,405,{message:"Use POST"});
+      if(!this.authorizeWorker(request))return sendJson(response,401,{message:"Unauthorized"});
+      try{
+        if(this.options.operationMode!=="active"||!this.clipGifs||!this.config)return sendJson(response,503,{message:"Clip media ingestion is unavailable"});
+        const tenantId=String(url.searchParams.get("tenantId")??"").trim(),tenant=this.config.tenants.find(item=>item.tenantId===tenantId);
+        if(!tenant)return sendJson(response,403,{message:"Unknown DSH tenant"});
+        const streamerLogin=String(url.searchParams.get("streamerLogin")??"").trim().toLowerCase(),clipId=String(url.searchParams.get("clipId")??"").trim(),durationSeconds=Number(url.searchParams.get("durationSeconds")??"60");
+        if(!/^[a-z0-9_]{1,32}$/.test(streamerLogin)||!/^[A-Za-z0-9_-]{1,120}$/.test(clipId)||!Number.isFinite(durationSeconds)||durationSeconds<1||durationSeconds>60)return sendJson(response,400,{message:"Invalid clip metadata"});
+        const contentType=String(request.headers["content-type"]??"").split(";")[0].trim().toLowerCase();
+        if(contentType!=="image/gif")return sendJson(response,415,{message:"Upload a GIF image"});
+        const declared=Number(request.headers["content-length"]??0);if(declared>50*1024*1024)return sendJson(response,413,{message:"GIF exceeds the 50 MB upload limit"});
+        const chunks:Buffer[]=[];let size=0;
+        for await(const chunk of request){const part=Buffer.from(chunk);size+=part.length;if(size>50*1024*1024)return sendJson(response,413,{message:"GIF exceeds the 50 MB upload limit"});chunks.push(part);}
+        const gif=Buffer.concat(chunks);if(!gif.length)return sendJson(response,400,{message:"GIF body is empty"});
+        const capturedAt=String(url.searchParams.get("capturedAt")??this.now());
+        const sourceRaw=url.searchParams.get("sourceUrl")??undefined,sourceUrl=sourceRaw?new URL(sourceRaw):undefined;
+        if(sourceUrl&&(sourceUrl.protocol!=="https:"||sourceUrl.username||sourceUrl.password))return sendJson(response,400,{message:"sourceUrl must be credential-free HTTPS"});
+        const saved=this.clipGifs.put({schemaVersion:1,tenantId,streamerLogin,clipId,capturedAt,durationSeconds,...(sourceUrl?{sourceUrl:sourceUrl.toString()}:{}),gif});
+        return sendJson(response,201,{ok:true,tenantId,streamerLogin,clipId,capturedAt,bytes:saved.gif.byteLength});
+      }catch(error){return sendJson(response,400,{message:safeError(error)});}
+    }
     if (url.pathname === "/api/internal/signal/transmit") {
       if (request.method !== "POST") return sendJson(response, 405, { message: "Use POST" });
       if (!this.authorizeWorker(request)) return sendJson(response, 401, { message: "Unauthorized" });
