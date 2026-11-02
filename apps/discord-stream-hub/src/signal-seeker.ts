@@ -10,7 +10,8 @@ export interface DshSignalDropV1 {
   channelId: string;
   messageId: string;
   roleId: string;
-  signalUrl: string;
+  signalUrl?: string;
+  clue?: string;
   createdAt: string;
   expiresAt: string;
   state: "open" | "claimed" | "expired";
@@ -23,7 +24,7 @@ export function dshSignalSeekerPanelPayload(roleId: string) {
   return { content: `Opt in to random Signal drops with the **${DSH_SIGNAL_SEEKER_ROLE_NAME}** role.`, components: [{ type: 1, components: [{ type: 2, style: 3, label: "Join the Egg Hunt", custom_id: `signal_seekers:join:${snowflake(roleId)}` }, { type: 2, style: 2, label: "Leave the Hunt", custom_id: `signal_seekers:leave:${snowflake(roleId)}` }] }], allowed_mentions: { parse: [] } };
 }
 
-export function dshSignalDropInteractionPayload(roleId: string, dropId: string) { const id=clean(dropId); return { content: `<@&${snowflake(roleId)}> A lost Signal appeared. It fades after 10 minutes.`, components: [{ type: 1, components: [{ type: 2, style: 1, label: "OPEN SIGNAL", custom_id: `signal_intercept:${id}` }] }], allowed_mentions: { parse: [], roles: [roleId] } }; }
+export function dshSignalDropInteractionPayload(roleId: string, dropId: string, clue: string) { const id=clean(dropId), hint=clean(clue).slice(0,1800); return { content: `<@&${snowflake(roleId)}> A lost Signal appeared. It fades after 10 minutes.`, embeds: [{ title: "📡 UNIDENTIFIED SIGNAL", description: "A carrier is waiting behind the static. Open the Signal before it fades.", footer: { text: "Signal opens on demand • expires in 10 minutes" } }], components: [{ type: 1, components: [{ type: 2, style: 1, label: "OPEN SIGNAL", custom_id: `signal_intercept:${id}` }] }], allowed_mentions: { parse: [], roles: [roleId] } }; }
 
 export function dshSignalDropPayload(roleId: string, signalUrl: string) {
   const url = credentialFreeHttps(signalUrl);
@@ -57,9 +58,9 @@ export class SqliteDshSignalSeekerStore {
       .run(clean(input.tenantId), clean(input.providerUserId), input.canonicalUserId ? clean(input.canonicalUserId) : null, input.enabled ? 1 : 0, at);
     return { enabled: input.enabled, updatedAt: at };
   }
-  createDrop(input: { dropId: string; tenantId: string; channelId: string; messageId: string; roleId: string; signalUrl: string; now?: string }): DshSignalDropV1 {
+  createDrop(input: { dropId: string; tenantId: string; channelId: string; messageId: string; roleId: string; signalUrl?: string; clue?: string; now?: string }): DshSignalDropV1 {
     const createdAt = timestamp(input.now ?? this.now());
-    const drop: DshSignalDropV1 = { schemaVersion: 1, dropId: clean(input.dropId), tenantId: clean(input.tenantId), channelId: snowflake(input.channelId), messageId: snowflake(input.messageId), roleId: snowflake(input.roleId), signalUrl: credentialFreeHttps(input.signalUrl), createdAt, expiresAt: new Date(Date.parse(createdAt) + DSH_SIGNAL_DROP_TTL_MS).toISOString(), state: "open" };
+    const drop: DshSignalDropV1 = { schemaVersion: 1, dropId: clean(input.dropId), tenantId: clean(input.tenantId), channelId: snowflake(input.channelId), messageId: snowflake(input.messageId), roleId: snowflake(input.roleId), ...(input.signalUrl ? { signalUrl: credentialFreeHttps(input.signalUrl) } : {}), ...(input.clue ? { clue: clean(input.clue).slice(0,1800) } : {}), createdAt, expiresAt: new Date(Date.parse(createdAt) + DSH_SIGNAL_DROP_TTL_MS).toISOString(), state: "open" };
     this.db.prepare("INSERT INTO dsh_signal_drops(drop_id,tenant_id,expires_at,state,body) VALUES(?,?,?,'open',?)").run(drop.dropId, drop.tenantId, drop.expiresAt, JSON.stringify(drop));
     return drop;
   }
@@ -96,6 +97,7 @@ export class SqliteDshSignalSeekerStore {
   }
 }
 
+export function dshSignalDropClue(random: () => number = Math.random): string { const clues = ["A hidden carrier is breaking through the static. The transmission is open.", "A Signal crossed the network and left a trail through the noise.", "The mountain answered. A narrow transmission is holding for a few more minutes."]; return clues[Math.min(clues.length - 1, Math.floor(Math.max(0, Math.min(.999999, random())) * clues.length))]!; }
 function credentialFreeHttps(value: string): string { const url = new URL(value); if (url.protocol !== "https:" || url.username || url.password) throw new Error("Signal URL must be credential-free HTTPS"); return url.toString(); }
 function snowflake(value: string): string { if (!/^\d{5,30}$/.test(value)) throw new Error("Signal Discord identity is invalid"); return value; }
 function clean(value: string): string { if (!value || value.trim() !== value || value.length > 300 || /[\r\n\0]/.test(value)) throw new Error("Signal identity is invalid"); return value; }
