@@ -1,3 +1,5 @@
+import { DshPlaywrightNebulaGameplayRenderer } from "./nebula-gameplay-renderer.js";
+import { DshNebulaGameplayCaptureWorker } from "./nebula-gameplay-worker.js";
 import { SqliteDshRoleAwareBannerService, DshRoleAwareBannerMediaSource } from "./banner-generation.js";
 import { DshClipAcquisitionWorker } from "./clip-acquisition.js";
 import { SqliteDshClipGifStore, DshClipGifSpotlightMediaSource } from "./clip-gif-library.js";
@@ -201,6 +203,7 @@ export class SupervisedDshLiveService {
   private nebulaMediaCycle:Promise<void>|undefined;
   private readonly nebulaMediaAbort=new AbortController();
   private readonly nebulaMedia?:DshNebulaMediaWorker;
+  private readonly nebulaGameplayCapture?:DshNebulaGameplayCaptureWorker;
   private readonly roleBanners?:DshRoleAwareBannerMediaSource;
   private readonly clipSpotlightMedia:DshClipGifSpotlightMediaSource;
   private readonly clipAcquisition:DshClipAcquisitionWorker;
@@ -222,6 +225,8 @@ export class SupervisedDshLiveService {
     this.identities = new DshSpmtIdentityResolver(this.client);
     this.pointsRouter = new DshPointsEventRouter(this.identities, tenantId => new DshPointsService(this.client,tenantId,{getSettings:id=>{const saved=this.settings.read(id);return {raidPoints:saved.raidPoints,followPoints:saved.followPoints,subPoints:saved.subPoints,giftedSubPoints:saved.giftedSubPoints,bitPoints:saved.bitPoints,chatActivityPoints:saved.chatActivityPoints,firstMessagePoints:saved.firstMessagePoints,messageReactionPoints:saved.messageReactionPoints,adminEventPoints:saved.adminEventPoints,adminLogPoints:saved.adminLogPoints,adminMessagePoints:saved.adminMessagePoints};}}));
     if(options.operationMode==="active"&&options.publicOrigin)this.nebulaMedia=new DshNebulaMediaWorker(this.client,{databasePath:options.databasePath,publicOrigin:options.publicOrigin,workerId:`${options.workerId}-nebula-media`,tenantIds:options.config.tenants.map(tenant=>tenant.tenantId),sourceOrigins:(process.env.DSH_MEDIA_SOURCE_ORIGINS||"").split(",").filter(Boolean)},fetchImpl);
+    const nebulaOrigin=String(process.env.NEBULA_ARCADE_PUBLIC_ORIGIN??"").trim();
+    if(this.nebulaMedia&&nebulaOrigin){const manifestUrl=new URL("/v1/nebula/gameplay/showcase-manifest",nebulaOrigin);this.nebulaGameplayCapture=new DshNebulaGameplayCaptureWorker(options.databasePath,manifestUrl.toString(),new DshPlaywrightNebulaGameplayRenderer({executablePath:process.env.CHROMIUM_EXECUTABLE_PATH||undefined}),fetchImpl);}
     this.activityStore=new DshMemberActivityStore(options.databasePath);this.activity=new DshMemberActivityWorker(this.activityStore,this.client,options.config);
     this.settings = new DshTenantSettingsStore(options.databasePath, now);
     this.memberDirectory = new DshMemberDirectoryStore(options.databasePath, options.config, this.settings);
@@ -342,7 +347,7 @@ export class SupervisedDshLiveService {
     for(const handoff of handoffs){const nextAt=handoff.nextTarget.lastRaidedAt??this.now();const action={schemaVersion:1 as const,type:"raid-pile.handoff" as const,tenantId,pileId:handoff.pileId,priorTargetName:handoff.priorTarget.displayName,nextTargetName:handoff.nextTarget.displayName,nextTargetLogin:handoff.nextTarget.twitchLogin,heldHours:handoff.heldHours,message:handoff.message,idempotencyKey:"dsh:raid-pile:"+tenantId+":"+handoff.pileId+":"+handoff.nextTarget.userId+":"+nextAt};this.monitor.enqueueAction(action,this.now());}
     await this.runtime.flush(tenantId);
   }
-  async runNebulaMedia(signal:AbortSignal){this.nebulaMediaCycle=this.nebulaMedia?.run(AbortSignal.any([signal,this.nebulaMediaAbort.signal]));await this.nebulaMediaCycle;}
+  async runNebulaMedia(signal:AbortSignal){const combined=AbortSignal.any([signal,this.nebulaMediaAbort.signal]);this.nebulaMediaCycle=Promise.all([this.nebulaMedia?.run(combined),this.nebulaGameplayCapture?.run(combined)]).then(()=>undefined);await this.nebulaMediaCycle;}
   runSuiteActions(signal: AbortSignal) { return this.suiteActions.run(signal); }
   close() {
     if (this.closing) return this.closing;
@@ -353,7 +358,7 @@ export class SupervisedDshLiveService {
       let failure: unknown;
       let failed = false;
       try { await this.nebulaMediaCycle; await this.calendarCycle; await activeCycle; } catch (error) { failure = error; failed = true; }
-      this.nebulaMedia?.close();this.clipSpotlightMedia.close();this.clipAcquisition.close();this.roleBanners?.close();
+      this.nebulaMedia?.close();this.nebulaGameplayCapture?.close();this.clipSpotlightMedia.close();this.clipAcquisition.close();this.roleBanners?.close();
       this.memberDirectory.close();this.settings.close();this.raidPile.close();this.cleanup.close();this.activityStore.close();this.forumForwardingStore.close();this.signalSeekers.close();
       try { this.messages.close(); } catch (error) { if (!failed) { failure = error; failed = true; } }
       try { this.calendarSync?.close(); this.calendar.close(); } catch (error) { if (!failed) { failure = error; failed = true; } }
