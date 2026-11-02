@@ -135,7 +135,9 @@ export class SqliteDshLiveMonitor {
     const rows = this.db.prepare(`SELECT attempts,body FROM live_action_outbox WHERE tenant_id=? AND state='pending' ${guestsOnly?"AND json_extract(body,'$.type')='guest.refresh'":""} ORDER BY rowid LIMIT ?`).all(tenantId, limit) as Array<{ attempts: number; body: string }>;
     return rows.map((row) => ({ attempts: row.attempts, action: JSON.parse(row.body) as DshLiveActionV1 }));
   }
-  enqueueAction(action:DshLiveActionV1,createdAt=new Date().toISOString()){requireId(action.tenantId,"tenantId");requireId(action.idempotencyKey,"idempotencyKey");this.db.prepare("INSERT INTO live_action_outbox(id,tenant_id,state,attempts,created_at,body) VALUES(?,?,'pending',0,?,?) ON CONFLICT(id) DO NOTHING").run(action.idempotencyKey,action.tenantId,createdAt,JSON.stringify(action));}
+  providerActivityCursor(tenantId:string){requireId(tenantId,"tenantId");const row=this.db.prepare("SELECT cursor_id AS cursorId FROM dsh_provider_event_cursors WHERE tenant_id=? AND stream='streamweaver-provider-activity'").get(tenantId) as {cursorId:string}|undefined;return row?.cursorId;}
+  setProviderActivityCursor(tenantId:string,cursorId:string,at=new Date().toISOString()){requireId(tenantId,"tenantId");requireId(cursorId,"cursorId");this.db.prepare("INSERT INTO dsh_provider_event_cursors(tenant_id,stream,cursor_id,updated_at) VALUES(?,'streamweaver-provider-activity',?,?) ON CONFLICT(tenant_id,stream) DO UPDATE SET cursor_id=excluded.cursor_id,updated_at=excluded.updated_at").run(tenantId,cursorId,at);}
+    enqueueAction(action:DshLiveActionV1,createdAt=new Date().toISOString()){requireId(action.tenantId,"tenantId");requireId(action.idempotencyKey,"idempotencyKey");this.db.prepare("INSERT INTO live_action_outbox(id,tenant_id,state,attempts,created_at,body) VALUES(?,?,'pending',0,?,?) ON CONFLICT(id) DO NOTHING").run(action.idempotencyKey,action.tenantId,createdAt,JSON.stringify(action));}
   isCurrentAction(action: DshLiveActionV1): boolean {
     if (action.type === "guest.refresh" || action.type === "raid-pile.handoff") return true;
     if (action.type === "spotlight.clear") return !this.getSpotlight(action.tenantId);
@@ -166,6 +168,7 @@ export class SqliteDshLiveMonitor {
       CREATE TABLE IF NOT EXISTS live_polls(tenant_id TEXT NOT NULL,poll_id TEXT NOT NULL,observed_at TEXT NOT NULL,result TEXT NOT NULL,PRIMARY KEY(tenant_id,poll_id)) STRICT;
       CREATE TABLE IF NOT EXISTS live_action_outbox(id TEXT PRIMARY KEY,tenant_id TEXT NOT NULL,state TEXT NOT NULL,attempts INTEGER NOT NULL,created_at TEXT NOT NULL,last_error TEXT,body TEXT NOT NULL) STRICT;
       CREATE INDEX IF NOT EXISTS live_action_outbox_pending ON live_action_outbox(tenant_id,state,created_at);
+      CREATE TABLE IF NOT EXISTS dsh_provider_event_cursors(tenant_id TEXT NOT NULL,stream TEXT NOT NULL,cursor_id TEXT NOT NULL,updated_at TEXT NOT NULL,PRIMARY KEY(tenant_id,stream)) STRICT;
     `);
   }
 }

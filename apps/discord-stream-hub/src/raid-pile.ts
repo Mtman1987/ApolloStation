@@ -164,6 +164,8 @@ export class DshRaidPileStore {
     return { member: true, compliant, strikes, removed, limit, canonicalTarget: canonical };
   }
 
+  settingsForTenant(tenantId:string):DshRaidPileSettingsV1{return {...validateSettings(this.settings(tenantId))};}
+
   piles(tenantId: string): DshRaidPileViewV1[] {
     const ids = this.db.prepare("SELECT pile_id AS pileId FROM raid_piles WHERE tenant_id=? ORDER BY created_at,pile_id").all(tenantId) as Array<{ pileId: string }>;
     return ids.map(({ pileId }) => ({ id: pileId, members: this.members(tenantId, pileId), ...this.targetView(tenantId, pileId) }));
