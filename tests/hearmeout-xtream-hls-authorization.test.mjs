@@ -29,3 +29,12 @@ test('Xtream HLS refuses a stream that is not active in any room',async()=>{
  assert.equal(response.statusCode,404);
  assert.deepEqual(JSON.parse(response.body),{error:'playback_not_active'});
 });
+
+
+test('Xtream HLS denies valid media paths when the room authorization hook is not wired',async()=>{
+ const response=responseStub();
+ const handled=await handleXtreamHlsRequest({method:'GET',headers:{}},response,'/api/watch/xtream/hls/vod-42/index.m3u8');
+ assert.equal(handled,true);
+ assert.equal(response.statusCode,403);
+ assert.deepEqual(JSON.parse(response.body),{error:'playback_forbidden'});
+});
