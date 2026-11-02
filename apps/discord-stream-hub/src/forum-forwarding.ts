@@ -25,9 +25,6 @@ export async function forwardDshForumPost(client:SpmtClient,tenantId:string,valu
   return {accepted:true,duplicate:result.duplicate,event:result.event};
 }
 
-import { DatabaseSync } from "node:sqlite";
-import { DshDiscordApi, DshDiscordError } from "./discord-live-publisher.js";
-
 export type DshForumForwardRuleV1 = {
   schemaVersion:1; tenantId:string; sourceGuildId:string; destinationGuildId:string; forumChannelId:string;
   mode:"per-channel"|"single-thread"; sharedThreadId?:string; paused:boolean;
