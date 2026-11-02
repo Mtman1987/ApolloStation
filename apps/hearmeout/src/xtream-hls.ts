@@ -1,7 +1,7 @@
 // Ported from the donor app's src/lib/watch/xtream-hls.ts. Serves Xtream VOD as HLS.
 import { execFile, spawn } from 'node:child_process';
 import { createReadStream, existsSync } from 'node:fs';
-import { mkdir, readFile, readdir, stat, unlink } from 'node:fs/promises';
+import { mkdir, readdir, stat, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { getResolvedXtreamStreamUrl, type XtreamKind } from './xtream-provider.js';
@@ -88,8 +88,6 @@ export async function getXtreamHlsFile(streamId: string, fileName: string) {
 
 export async function ensureXtreamHls(streamId: string) {
   const { clean, dir, indexPath } = paths(streamId);
-  if (await hasUsableHlsIndex(dir, indexPath)) return;
-  if (existsSync(indexPath)) await unlink(indexPath).catch(() => {});
   if (jobs.has(clean)) return jobs.get(clean)!.promise;
 
   const maxJobs = Number(process.env.WATCH_HLS_MAX_JOBS || 1);
@@ -97,12 +95,18 @@ export async function ensureXtreamHls(streamId: string) {
     throw new Error(`HLS converter is busy (${jobs.size} active job)`);
   }
 
-  await mkdir(dir, { recursive: true });
-  await pruneHlsRoot();
-
-  const promise = runFfmpegHls(clean, dir, indexPath)
+  // Register before the first asynchronous operation. Concurrent viewers must
+  // share one acquisition/converter, including during cache checks and mkdir.
+  const promise = Promise.resolve().then(async () => {
+    if (await hasUsableHlsIndex(dir, indexPath)) return;
+    if (existsSync(indexPath)) await unlink(indexPath).catch(() => {});
+    await mkdir(dir, { recursive: true });
+    await pruneHlsRoot();
+    await runFfmpegHls(clean, dir, indexPath);
+  })
     .catch((error) => {
-      console.error(`[HearMeOutXtreamHLS] HLS conversion failed for VOD ${clean}:`, error?.message || error);
+      // Child-process errors include the credential-bearing input URL.
+      console.error(`[HearMeOutXtreamHLS] HLS conversion failed for ${clean}`);
       throw error;
     })
     .finally(() => {
@@ -125,9 +129,23 @@ export async function waitForXtreamHlsIndex(streamId: string, timeoutMs = 45_000
 
 async function hasUsableHlsIndex(dir: string, indexPath: string) {
   const stats = await stat(indexPath).catch(() => null);
-  if (!stats?.isFile() || stats.size <= 0) return false;
+  if (!stats?.isFile() || stats.size <= 0 || stats.size > 1024 * 1024) return false;
 
-  const manifest = await readFile(indexPath, 'utf8').catch(() => '');
+  // Bound the read itself as well as stat: a concurrently growing manifest
+  // must not allocate an unbounded buffer before the HTTP route validates it.
+  const input = createReadStream(indexPath);
+  const chunks: Buffer[] = [];
+  let size = 0;
+  try {
+    for await (const chunk of input) {
+      size += chunk.length;
+      if (size > 1024 * 1024) return false;
+      chunks.push(Buffer.from(chunk));
+    }
+  } catch { return false; }
+  finally { input.destroy(); }
+  const manifest = Buffer.concat(chunks).toString('utf8');
+  if (!manifest.startsWith('#EXTM3U')) return false;
   if (manifest.includes('#EXT-X-PLAYLIST-TYPE:EVENT')) return false;
   const firstSegment = manifest
     .split(/\r?\n/)
@@ -149,7 +167,7 @@ async function probeMediaStreams(upstreamUrl: string): Promise<{ hasVideo: boole
       '-show_entries', 'stream=index,codec_type:stream_tags=language,title',
       '-of', 'json',
       upstreamUrl,
-    ], { maxBuffer: 2 * 1024 * 1024 });
+    ], { maxBuffer: 2 * 1024 * 1024, timeout: 30_000, killSignal: 'SIGKILL' });
     const streams = (JSON.parse(stdout || '{}').streams || []) as Array<{ index?: number; codec_type?: string; tags?: Record<string, string> }>;
     return {
       hasVideo: streams.some((entry) => entry.codec_type === 'video'),
@@ -160,8 +178,8 @@ async function probeMediaStreams(upstreamUrl: string): Promise<{ hasVideo: boole
         index,
       })),
     };
-  } catch (error: any) {
-    console.warn(`[HearMeOutXtreamHLS] ffprobe failed; using first audio track: ${error?.message || error}`);
+  } catch {
+    console.warn('[HearMeOutXtreamHLS] ffprobe failed; using first audio track');
     return { hasVideo: true, audio: [{ sourceSpecifier: 'a:0', language: '', title: '', index: 0 }] };
   }
 }
@@ -212,8 +230,9 @@ async function runFfmpegHls(streamId: string, dir: string, indexPath: string) {
       '1',
       '-reconnect_streamed',
       '1',
-      '-reconnect_at_eof',
-      '1',
+      // Finite VOD/episodes must finish; EOF reconnect otherwise repeats the
+      // asset forever and holds the single converter slot indefinitely.
+      ...(stream.kind === 'live' ? ['-reconnect_at_eof', '1'] : []),
       '-reconnect_delay_max',
       '5',
       '-i',
@@ -246,17 +265,15 @@ async function runFfmpegHls(streamId: string, dir: string, indexPath: string) {
     const args = process.platform === 'win32' ? ffmpegArgs : ['-n', '15', 'ffmpeg', ...ffmpegArgs];
     const child = spawn(command, args, { stdio: ['ignore', 'ignore', 'pipe'] });
 
-    let stderr = '';
-    child.stderr?.on('data', (chunk) => {
-      stderr = `${stderr}${chunk}`.slice(-4000);
-    });
-    child.once('error', reject);
+    // Drain diagnostics without retaining upstream URLs or provider secrets.
+    child.stderr?.resume();
+    child.once('error', () => reject(new Error('HLS converter could not start')));
     child.once('exit', (code) => {
       if (code === 0) {
         resolve();
         return;
       }
-      reject(new Error(stderr || `ffmpeg exited with ${code}`));
+      reject(new Error(`HLS converter exited with ${code}`));
     });
   });
 }
