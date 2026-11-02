@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { SqliteDshSignalSeekerStore, dshSignalSeekerPanelPayload, dshSignalDropInteractionPayload, dshSignalDropClue } from "./signal-seeker.js";
 import { DshMemberDirectoryStore, DshMemberDirectoryWorker } from "./member-directory.js";
 import {DshOnboardingPanel} from "./onboarding-panel.js";
@@ -256,6 +255,7 @@ export class SupervisedDshLiveService {
   private async processSignalCommands(tenantId:string){
     if(this.options.operationMode!=="active")return;
     let cursor=this.signalSeekers.cursor(tenantId),processed=0,posted=0;
+    if(!cursor){const latest=await this.client.listEvents(tenantId,{sourceAppId:"chat-gateway",limit:1});const latestId=String(latest[0]?.id??latest[0]?.eventId??"");if(latestId){this.signalSeekers.advanceCursor(tenantId,latestId);return{processed:0,posted:0,cursor:latestId};}}
     const allowedGuilds=this.options.config.tenants.find(item=>item.tenantId===tenantId)?.discordGuildIds??[];
     for(let page=0;page<10;page++){
       const events=await this.client.listEvents(tenantId,{sourceAppId:"chat-gateway",...(cursor?{afterId:cursor}:{}),limit:200});
