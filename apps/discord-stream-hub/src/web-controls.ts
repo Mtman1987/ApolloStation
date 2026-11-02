@@ -1,4 +1,4 @@
-import { forwardDshForumPost } from "./forum-forwarding.js";
+import { forwardDshForumPost, DshForumForwardingStore, DshForumForwardingService, type DshForumForwardRuleV1, type DshForumForwardMutationV1 } from "./forum-forwarding.js";
 import { DshMemberDirectoryStore } from "./member-directory.js";
 import { DshRaidPileStore, DEFAULT_DSH_RAID_PILE_SETTINGS, type DshRaidPileSettingsV1 } from "./raid-pile.js";
 import {DshOnboardingPanel} from "./onboarding-panel.js";
@@ -76,6 +76,7 @@ export class DshWebControls {
       this.messages = new SqliteDshDiscordMessageStore(options.databasePath);
       this.applications = new SqliteDshApplicationStore(options.databasePath);
       this.shoutouts = new DshShoutoutGenerationStore(options.databasePath, this.now);
+      this.forumForwardingStore = new DshForumForwardingStore(options.databasePath);
       this.raidPile = new DshRaidPileStore(options.databasePath, (tenantId) => this.raidPileSettings(tenantId));
     }
     if (options.runtimeConfigPath) this.config = loadDshLiveRuntimeConfig(options.runtimeConfigPath);
@@ -93,17 +94,19 @@ export class DshWebControls {
       } };
       const liveDiscord = new DshDiscordApi(grants, options.fetchImpl);
       this.client=client;this.liveDiscord=liveDiscord;
+      if(this.forumForwardingStore)this.forumForwarding=new DshForumForwardingService(this.forumForwardingStore,liveDiscord,this.now);
       this.discord = new DshSimulationRoomDiscordTransport(liveDiscord, client, { guildIds: (tenantId) => this.config?.tenants.find((tenant) => tenant.tenantId === tenantId)?.discordGuildIds ?? [], now: this.now, liveWrites: options.operationMode !== "read-only" });
       if(this.calendar&&this.messages){this.sync=new DshCalendarSync(options.databasePath!,this.calendar,this.discord,this.now,options.publicOrigin);if(this.config&&options.publicOrigin)this.onboarding=new DshOnboardingPanel(this.calendar,this.messages,this.discord,client,this.config,options.publicOrigin,this.now);if(this.config)this.partners=new DshPartnerSchedules(this.calendar,this.messages,client,this.config,this.discord,options.fetchImpl,this.now,(tenant,guild)=>this.members(tenant,guild));this.delivery=new DshCalendarDelivery(this.calendar,this.messages,this.discord,this.now,client,options.operationMode==="read-only");}
     }
   }
 
-  close() { this.memberDirectory?.close();this.activity?.close();this.cleanup?.close();this.monitor?.close(); this.calendar?.close(); this.settings?.close(); this.messages?.close(); this.applications?.close(); this.shoutouts?.close();this.raidPile?.close(); }
+  close() { this.memberDirectory?.close();this.activity?.close();this.cleanup?.close();this.monitor?.close(); this.calendar?.close(); this.settings?.close(); this.messages?.close(); this.applications?.close(); this.shoutouts?.close();this.forumForwardingStore?.close();this.raidPile?.close(); }
 
   async handle(request: IncomingMessage, response: ServerResponse, url: URL): Promise<boolean> {
     if (!url.pathname.startsWith("/api/discord-stream-hub/control")) return false;
     try {
       const context = await fetchAppSessionContext({ appId: "discord-stream-hub", spmtOrigin: this.options.spmtOrigin, request });
+      if(request.method==="GET"&&url.pathname==="/api/discord-stream-hub/control/forum/rules"){this.requireOwner(context);return sendJson(response,200,{rules:this.forumForwardingStore?.listRules(context.tenantId)??[]});}
       if(request.method==="GET"&&url.pathname==="/api/discord-stream-hub/control/raid-pile") return sendJson(response,200,await this.raidPileState(context,request));
       if(request.method==="GET"&&url.pathname==="/api/discord-stream-hub/control/moderation") {this.requireOwner(context);return sendJson(response,200,{plans:this.cleanup?.list(context.tenantId,String(context.session.actorId),"owner")??[]});}
       if(request.method==="GET"&&url.pathname==="/api/discord-stream-hub/control/moderation/job") {
@@ -142,6 +145,28 @@ export class DshWebControls {
         return sendJson(response,200,{target:target??null,piles:store.piles(context.tenantId),message:target?`Next announced target: ${target.displayName}. Twitch raid remains voluntary.`:"No other live member is available."});
       }
       const body = await readJsonBody(request);
+      if(url.pathname==="/api/discord-stream-hub/control/forum/rules"){
+        this.requireOwner(context);if(!this.forumForwardingStore||!this.liveDiscord)throw new Error("Connect DSH before configuring forum forwarding");
+        const rule=body.rule as DshForumForwardRuleV1;
+        const sourceGuild=this.guild(context.tenantId,rule.sourceGuildId),destinationGuild=this.guild(context.tenantId,rule.destinationGuildId);
+        const destination=rule.mode==="single-thread"?await this.liveDiscord.getChannel(context.tenantId,String(rule.sharedThreadId??"")):await this.liveDiscord.getChannel(context.tenantId,rule.forumChannelId);
+        if(rule.mode==="single-thread"){if(destination.guild_id!==destinationGuild||![10,11,12].includes(Number(destination.type)))throw new Error("Choose a thread in the configured destination server");}
+        else if(destination.guild_id!==destinationGuild||![15,16].includes(Number(destination.type)))throw new Error("Choose a forum or media channel in the configured destination server");
+        const saved=this.forumForwardingStore.putRule({...rule,tenantId:context.tenantId,sourceGuildId:sourceGuild,destinationGuildId:destinationGuild});
+        return sendJson(response,200,{rule:saved});
+      }
+      if(url.pathname==="/api/discord-stream-hub/control/forum/discord-forward"){
+        this.requireOwner(context);if(!this.liveDiscord||!this.forumForwarding)throw new Error("Connect DSH before forwarding Discord messages");
+        const sourceGuild=this.guild(context.tenantId,body.guildId),channelId=snowflake(body.channelId,"channelId");
+        const [guild,channel]=await Promise.all([this.liveDiscord.getGuild(context.tenantId,sourceGuild),this.liveDiscord.getChannel(context.tenantId,channelId)]);
+        if(channel.guild_id!==sourceGuild)throw new Error("Source channel does not belong to the selected server");
+        const publicSource=isPublicDshForumSource(guild,channel);
+        const messageId=snowflake(body.messageId,"messageId"),author=record(body.author)??{};
+        const event:DshForumForwardMutationV1={tenantId:context.tenantId,guildId:sourceGuild,channelId,channelName:String(channel.name??channelId),channelType:Number(channel.type??0),messageId,authorId:String(author.id??"unknown"),authorName:String(author.global_name??author.username??body.authorName??"Discord member"),...(typeof author.avatarUrl==="string"?{authorAvatar:author.avatarUrl}:{}),content:String(body.content??""),attachments:Array.isArray(body.attachments)?body.attachments as DshForumForwardMutationV1["attachments"]:[],embeds:Array.isArray(body.embeds)?body.embeds as DshForumForwardMutationV1["embeds"]:[],sourceMessageUrl:"https://discord.com/channels/"+sourceGuild+"/"+channelId+"/"+messageId,occurredAt:String(body.occurredAt??this.now()),sourceIsPublic:publicSource,authorIsBot:Boolean(author.bot),originatedFromForwarder:Boolean(body.originatedFromForwarder),operation:body.operation==="edit"||body.operation==="delete"?body.operation:"create"};
+        const result=await this.forumForwarding.apply(event);
+        if(result.status==="forwarded"&&this.client)await forwardDshForumPost(this.client,context.tenantId,{sourceApp:"discord-stream-hub",sourceServerId:sourceGuild,sourceChannelId:channelId,sourceChannelName:event.channelName,sourceMessageId:messageId,sourceMessageUrl:event.sourceMessageUrl,authorId:event.authorId,authorName:event.authorName,title:guild.name+" / #"+event.channelName,content:event.content,postedAt:event.occurredAt,attachments:event.attachments??[],embeds:event.embeds??[]});
+        return sendJson(response,200,{result});
+      }
       if(url.pathname==="/api/discord-stream-hub/control/forum/forward"){
         this.requireOwner(context);if(!this.client)throw new Error("Connect DSH before forwarding forum posts");
         const result=await forwardDshForumPost(this.client,context.tenantId,body.post??body);
@@ -455,3 +480,15 @@ function text(value: unknown, name: string, max: number) { const result = String
 function optionalText(value: unknown, max: number) { const result = String(value ?? "").replace(/\0/g, "").trim(); if (result.length > max) throw new Error("Value is too long"); return result; }
 function integer(value: unknown, min: number, max: number, name: string) { const result = Number(value); if (!Number.isSafeInteger(result) || result < min || result > max) throw new Error(`${name} is invalid`); return result; }
 function dayOffset(offset: number) { const now = new Date(); return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + offset)).toISOString().slice(0, 10); }
+
+function isPublicDshForumSource(guild:any,channel:any){
+  try{
+    if(!guild?.id||channel?.guild_id!==guild.id||![0,2,5,13].includes(Number(channel.type))||!Array.isArray(guild.roles)||!Array.isArray(channel.permission_overwrites))return false;
+    const everyone=guild.roles.find((role:any)=>role.id===guild.id);if(!everyone)return false;
+    const view=BigInt("1024");let permissions=BigInt(everyone.permissions);
+    const own=channel.permission_overwrites.find((item:any)=>item.id===guild.id&&Number(item.type)===0);
+    if(own)permissions=(permissions&~BigInt(own.deny))|BigInt(own.allow);
+    if((permissions&view)===BigInt(0))return false;
+    return !channel.permission_overwrites.some((item:any)=>item.id!==guild.id&&(BigInt(item.deny)&view)!==BigInt(0));
+  }catch{return false;}
+}
