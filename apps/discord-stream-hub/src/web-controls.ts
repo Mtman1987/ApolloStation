@@ -569,12 +569,19 @@ export class DshWebControls {
     const body=record(await readJsonBody(request))??{},twitchUserId=String(body.twitchUserId??"").trim(),twitchUsername=String(body.twitchUsername??"").trim().toLowerCase(),action=["join","leave"].includes(String(body.action))?String(body.action):"toggle";
     if(!/^\\d{5,30}$/.test(twitchUserId)&&! /^[a-z0-9_]{1,25}$/.test(twitchUsername))return sendJson(response,400,{message:"A Twitch identity is required"});
     const tenantId=String(body.tenantId??"").trim();
-    const tenants=this.config.tenants.filter(item=>(!tenantId||item.tenantId===tenantId)&&Array.isArray(item.discordGuildIds)&&item.discordGuildIds.length>0);
+    if(!tenantId)return sendJson(response,400,{message:"tenantId is required"});
+    const tenants=this.config.tenants.filter(item=>item.tenantId===tenantId&&Array.isArray(item.discordGuildIds)&&item.discordGuildIds.length>0);
     if(!tenants.length)return sendJson(response,200,{ok:true,linked:false});
     let matched=false,updated=0,status:"joined"|"left"="left";
     for(const tenant of tenants){
-      const directory=await listCommunityIdentities(this.client,tenant.tenantId);
-      const person=directory.members.find(item=>item.providers.some(link=>link.provider==="twitch"&&((twitchUserId&&link.providerUserId===twitchUserId)||(!twitchUserId&&link.providerUserId.toLowerCase()===twitchUsername))));
+      let after="",person:any;
+      for(let page=0;page<51&&!person;page++){
+        const directory=await listCommunityIdentities(this.client,tenant.tenantId,after);
+        person=directory.members.find(item=>item.providers.some(link=>link.provider==="twitch"&&((twitchUserId&&link.providerUserId===twitchUserId)||(!twitchUserId&&link.providerUserId.toLowerCase()===twitchUsername))));
+        if(person||directory.nextAfterUserId===null)break;
+        if(!directory.nextAfterUserId||directory.nextAfterUserId<=after)throw new Error("Community identity pagination is invalid");
+        after=directory.nextAfterUserId;
+      }
       if(!person)continue;
       const discordIds=person.providers.filter(link=>link.provider==="discord").map(link=>link.providerUserId);if(!discordIds.length)continue;
       matched=true;
