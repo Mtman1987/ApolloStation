@@ -254,7 +254,7 @@ export class DshWebControls {
         const channelId = snowflake(body.channelId, "channelId"), requestedRoleId = body.roleId ? snowflake(body.roleId, "roleId") : undefined;
         const signalUrl = body.signalUrl ? new URL(String(body.signalUrl)) : undefined;
         if (signalUrl && (signalUrl.protocol !== "https:" || signalUrl.username || signalUrl.password)) throw new Error("Signal URL must be credential-free HTTPS");
-        const clue = String(body.clue ?? dshSignalDropClue()).trim().slice(0, 1800);
+        const clue = String(body.clue || dshSignalDropClue()).trim().slice(0, 1800);
         if (!clue) throw new Error("Signal clue is required");
         const [channels, roles] = await Promise.all([this.liveDiscord.listGuildChannels(context.tenantId, guild), this.liveDiscord.listGuildRoles(context.tenantId, guild)]);
         if (!channels.some(channel => channel.id === channelId && [0, 5].includes(Number(channel.type)))) throw new Error("Choose a text channel in the selected Discord server");
