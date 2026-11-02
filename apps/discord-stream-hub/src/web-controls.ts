@@ -467,7 +467,7 @@ export class DshWebControls {
     await this.sweepSignalDrops();
     const customId=String(interaction.data?.custom_id??""),signal=/^signal_seekers:(join|leave):(\d{5,30})$/.exec(customId);
 
-    const raidTrain=/^raid_(signup|view|cancel|day)_(\\d{4}-\\d{2}-\\d{2})$/.exec(customId),raidSlot=/^raid_slot_(\\d{4}-\\d{2}-\\d{2})_(\\d{2})$/.exec(customId),raidCancelSlot=/^raid_cancel_slot_(\\d{4}-\\d{2}-\\d{2})_(\\d{2})$/.exec(customId);
+    const raidTrain=/^raid_(signup|view|cancel|day)_(\d{4}-\d{2}-\d{2})$/.exec(customId),raidSlot=/^raid_slot_(\d{4}-\d{2}-\d{2})_(\d{2})$/.exec(customId),raidCancelSlot=/^raid_cancel_slot_(\d{4}-\d{2}-\d{2})_(\d{2})$/.exec(customId);
     if(interaction.type===3&&(raidTrain||raidSlot||raidCancelSlot)){
       const guildId=String(interaction.guild_id??""),userId=String(interaction.member?.user?.id??interaction.user?.id??""),tenant=this.config.tenants.find(item=>item.discordGuildIds?.includes(guildId));
       const ephemeral=(content:string,components?:unknown[])=>({type:4,data:{flags:64,content,allowed_mentions:{parse:[]},...(components?{components}:{})}});
@@ -649,7 +649,7 @@ export class DshWebControls {
     }
     const twitch=person?.providers.find((link:any)=>link.provider==="twitch");
     if(!twitch)throw new Error("Raid Train requires a Twitch account linked to this Discord identity in SPMT");
-    const member=await this.liveDiscord.getGuildMember(tenantId,guildId,discordUserId);
+    const member:any=await this.liveDiscord.getGuildMember(tenantId,guildId,discordUserId);
     const directoryRow=this.memberDirectory?.view(tenantId,guildId).rows.find(row=>row.discordUserId===discordUserId);
     const user=member.user as {username?:string;global_name?:string;avatar?:string}|undefined;
     const displayName=String(member.nick??user?.global_name??user?.username??directoryRow?.displayName??discordUserId).slice(0,100);
@@ -679,7 +679,7 @@ export class DshWebControls {
   private async updateSignalSeekerFromTwitch(request:IncomingMessage,response:ServerResponse){
     if(this.options.operationMode!=="active"||!this.client||!this.liveDiscord||!this.signalSeekers||!this.config)return sendJson(response,503,{message:"Live Signal Seeker membership is unavailable"});
     const body=record(await readJsonBody(request))??{},twitchUserId=String(body.twitchUserId??"").trim(),twitchUsername=String(body.twitchUsername??"").trim().toLowerCase(),action=["join","leave"].includes(String(body.action))?String(body.action):"toggle";
-    if(!/^\\d{5,30}$/.test(twitchUserId)&&! /^[a-z0-9_]{1,25}$/.test(twitchUsername))return sendJson(response,400,{message:"A Twitch identity is required"});
+    if(!/^\d{5,30}$/.test(twitchUserId)&&! /^[a-z0-9_]{1,25}$/.test(twitchUsername))return sendJson(response,400,{message:"A Twitch identity is required"});
     const tenantId=String(body.tenantId??"").trim();
     if(!tenantId)return sendJson(response,400,{message:"tenantId is required"});
     const tenants=this.config.tenants.filter(item=>item.tenantId===tenantId&&Array.isArray(item.discordGuildIds)&&item.discordGuildIds.length>0);
