@@ -173,6 +173,7 @@ export class SpaceMountainShellUi {
     this.syncWorkspaceTray();
   }
   update(snapshot: SpaceMountainShellSnapshotV1) { if (snapshot.tenantId !== this.snapshot.tenantId) { this.commlinkLocal.clear(); this.commlinkConversationId = ""; this.simulationRoomsUi?.destroy(); this.simulationRoomsUi = undefined; } this.snapshot = snapshot; this.commlinkDraft = undefined; if (this.activeAppId && !this.shellApp(this.activeAppId)) this.activeAppId = undefined; this.render(); }
+  updateEvents(events: Array<Record<string, unknown>>) { this.snapshot = { ...this.snapshot, events }; this.render(); }
   updateWorkspace(workspace: Record<string, unknown>, tenantOutputs: SpaceMountainShellSnapshotV1["tenantOutputs"]) {
     this.snapshot = { ...this.snapshot, workspace, ...(tenantOutputs ? { tenantOutputs } : {}) };
     this.dockCollapsed = recordBoolean(recordObject(workspace, "appearance"), "sidebarCollapsed", true);
