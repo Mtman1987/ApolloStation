@@ -7,10 +7,12 @@ export interface DshSignalDropV1 {
   schemaVersion: 1;
   dropId: string;
   tenantId: string;
+  guildId: string;
   channelId: string;
   messageId: string;
   roleId: string;
-  signalUrl: string;
+  signalUrl?: string;
+  clue?: string;
   createdAt: string;
   expiresAt: string;
   state: "open" | "claimed" | "expired";
@@ -22,6 +24,8 @@ export interface DshSignalDropV1 {
 export function dshSignalSeekerPanelPayload(roleId: string) {
   return { content: `Opt in to random Signal drops with the **${DSH_SIGNAL_SEEKER_ROLE_NAME}** role.`, components: [{ type: 1, components: [{ type: 2, style: 3, label: "Join the Egg Hunt", custom_id: `signal_seekers:join:${snowflake(roleId)}` }, { type: 2, style: 2, label: "Leave the Hunt", custom_id: `signal_seekers:leave:${snowflake(roleId)}` }] }], allowed_mentions: { parse: [] } };
 }
+
+export function dshSignalDropInteractionPayload(roleId: string, dropId: string, author?: { name?: string; iconUrl?: string }) { const id=clean(dropId), authorName=String(author?.name??"").trim().slice(0,80), iconUrl=author?.iconUrl?credentialFreeHttps(author.iconUrl):undefined; return { content: `<@&${snowflake(roleId)}> A lost Signal appeared. It fades after 10 minutes.`, embeds: [{ ...(authorName?{author:{name:authorName,...(iconUrl?{icon_url:iconUrl}:{})}}:{}), title: "📡 UNIDENTIFIED SIGNAL", description: "A carrier is waiting behind the static. Open the Signal before it fades.", footer: { text: "Signal opens on demand • expires in 10 minutes" } }], components: [{ type: 1, components: [{ type: 2, style: 1, label: "OPEN SIGNAL", custom_id: `signal_intercept:${id}` }] }], allowed_mentions: { parse: [], roles: [roleId] } }; }
 
 export function dshSignalDropPayload(roleId: string, signalUrl: string) {
   const url = credentialFreeHttps(signalUrl);
@@ -46,18 +50,21 @@ export class SqliteDshSignalSeekerStore {
       CREATE TABLE IF NOT EXISTS dsh_signal_seekers(tenant_id TEXT NOT NULL,provider_user_id TEXT NOT NULL,canonical_user_id TEXT,enabled INTEGER NOT NULL CHECK(enabled IN (0,1)),updated_at TEXT NOT NULL,PRIMARY KEY(tenant_id,provider_user_id)) STRICT;
       CREATE TABLE IF NOT EXISTS dsh_signal_drops(drop_id TEXT PRIMARY KEY,tenant_id TEXT NOT NULL,expires_at TEXT NOT NULL,state TEXT NOT NULL,body TEXT NOT NULL) STRICT;
       CREATE INDEX IF NOT EXISTS dsh_signal_open ON dsh_signal_drops(tenant_id,state,expires_at);
+      CREATE TABLE IF NOT EXISTS dsh_signal_command_cursor(tenant_id TEXT PRIMARY KEY,event_id TEXT NOT NULL) STRICT;
     `);
   }
   close(): void { this.db.close(); }
+  cursor(tenantId: string): string | undefined { const row=this.db.prepare("SELECT event_id FROM dsh_signal_command_cursor WHERE tenant_id=?").get(clean(tenantId)) as {event_id:string}|undefined; return row?.event_id; }
+  advanceCursor(tenantId: string, eventId: string): void { this.db.prepare("INSERT INTO dsh_signal_command_cursor(tenant_id,event_id) VALUES(?,?) ON CONFLICT(tenant_id) DO UPDATE SET event_id=excluded.event_id").run(clean(tenantId),clean(eventId)); }
   setSeeking(input: { tenantId: string; providerUserId: string; canonicalUserId?: string; enabled: boolean; at?: string }) {
     const at = timestamp(input.at ?? this.now());
     this.db.prepare("INSERT INTO dsh_signal_seekers(tenant_id,provider_user_id,canonical_user_id,enabled,updated_at) VALUES(?,?,?,?,?) ON CONFLICT(tenant_id,provider_user_id) DO UPDATE SET canonical_user_id=COALESCE(dsh_signal_seekers.canonical_user_id,excluded.canonical_user_id),enabled=excluded.enabled,updated_at=excluded.updated_at")
       .run(clean(input.tenantId), clean(input.providerUserId), input.canonicalUserId ? clean(input.canonicalUserId) : null, input.enabled ? 1 : 0, at);
     return { enabled: input.enabled, updatedAt: at };
   }
-  createDrop(input: { dropId: string; tenantId: string; channelId: string; messageId: string; roleId: string; signalUrl: string; now?: string }): DshSignalDropV1 {
+  createDrop(input: { dropId: string; tenantId: string; guildId: string; channelId: string; messageId: string; roleId: string; signalUrl?: string; clue?: string; now?: string }): DshSignalDropV1 {
     const createdAt = timestamp(input.now ?? this.now());
-    const drop: DshSignalDropV1 = { schemaVersion: 1, dropId: clean(input.dropId), tenantId: clean(input.tenantId), channelId: snowflake(input.channelId), messageId: snowflake(input.messageId), roleId: snowflake(input.roleId), signalUrl: credentialFreeHttps(input.signalUrl), createdAt, expiresAt: new Date(Date.parse(createdAt) + DSH_SIGNAL_DROP_TTL_MS).toISOString(), state: "open" };
+    const drop: DshSignalDropV1 = { schemaVersion: 1, dropId: clean(input.dropId), tenantId: clean(input.tenantId), guildId: snowflake(input.guildId), channelId: snowflake(input.channelId), messageId: snowflake(input.messageId), roleId: snowflake(input.roleId), ...(input.signalUrl ? { signalUrl: credentialFreeHttps(input.signalUrl) } : {}), ...(input.clue ? { clue: clean(input.clue).slice(0,1800) } : {}), createdAt, expiresAt: new Date(Date.parse(createdAt) + DSH_SIGNAL_DROP_TTL_MS).toISOString(), state: "open" };
     this.db.prepare("INSERT INTO dsh_signal_drops(drop_id,tenant_id,expires_at,state,body) VALUES(?,?,?,'open',?)").run(drop.dropId, drop.tenantId, drop.expiresAt, JSON.stringify(drop));
     return drop;
   }
@@ -94,6 +101,7 @@ export class SqliteDshSignalSeekerStore {
   }
 }
 
+export function dshSignalDropClue(random: () => number = Math.random): string { const clues = ["A hidden carrier is breaking through the static. The transmission is open.", "A Signal crossed the network and left a trail through the noise.", "The mountain answered. A narrow transmission is holding for a few more minutes."]; return clues[Math.min(clues.length - 1, Math.floor(Math.max(0, Math.min(.999999, random())) * clues.length))]!; }
 function credentialFreeHttps(value: string): string { const url = new URL(value); if (url.protocol !== "https:" || url.username || url.password) throw new Error("Signal URL must be credential-free HTTPS"); return url.toString(); }
 function snowflake(value: string): string { if (!/^\d{5,30}$/.test(value)) throw new Error("Signal Discord identity is invalid"); return value; }
 function clean(value: string): string { if (!value || value.trim() !== value || value.length > 300 || /[\r\n\0]/.test(value)) throw new Error("Signal identity is invalid"); return value; }

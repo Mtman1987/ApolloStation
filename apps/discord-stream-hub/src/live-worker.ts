@@ -1,3 +1,4 @@
+import { SqliteDshSignalSeekerStore, dshSignalSeekerPanelPayload, dshSignalDropInteractionPayload, dshSignalDropClue } from "./signal-seeker.js";
 import { DshMemberDirectoryStore, DshMemberDirectoryWorker } from "./member-directory.js";
 import {DshOnboardingPanel} from "./onboarding-panel.js";
 import { DshMemberActivityStore, DshMemberActivityWorker } from "./member-activity.js";
@@ -151,7 +152,7 @@ export class SpmtDshTwitchGrantSource implements DshTwitchGrantSourceV1 {
 
 export class SpmtDshDiscordGrantSource implements DshDiscordGrantSourceV1 {
   constructor(private readonly client: SpmtClient, private readonly directory: ConfigDirectory) {}
-  async getGrant(input: { tenantId: string; capability: "messages:write" | "channels:read" | "guilds:read" | "events:read" | "events:write" }) {
+  async getGrant(input: { tenantId: string; capability: "messages:write" | "channels:read" | "guilds:read" | "guilds:write" | "events:read" | "events:write" }) {
     const grant = await this.client.issueProviderGrant(input.tenantId, "discord", this.directory.providerUserId(input.tenantId, "discord"), "dsh-discord-live", [input.capability], 300);
     const scheme = grant.credential.metadata.authorizationScheme ?? "Bot";
     if (scheme !== "Bot" && scheme !== "Bearer") throw new Error("Discord grant authorization scheme is invalid");
@@ -175,6 +176,8 @@ export class SupervisedDshLiveService {
   private readonly activity:DshMemberActivityWorker;
   private readonly forumForwardingStore:DshForumForwardingStore;
   private readonly forumForwardingWorker:DshForumForwardingWorker;
+  private readonly signalSeekers:SqliteDshSignalSeekerStore;
+  private readonly liveDiscord:DshDiscordApi;
   private calendarCycle:Promise<void>|undefined;
   private readonly applications: SqliteDshApplicationStore;
   private readonly applicationDecisions: DshApplicationDecisionService;
@@ -208,7 +211,8 @@ export class SupervisedDshLiveService {
     this.monitor = new SqliteDshLiveMonitor(options.databasePath, options.config.pollIntervalSeconds * 1_000);
     this.raidPile = new DshRaidPileStore(options.databasePath, tenantId => { const saved=this.settings.read(tenantId); return { maxSize:saved.raidPileMaxSize??DEFAULT_DSH_RAID_PILE_SETTINGS.maxSize, minSize:saved.raidPileMinSize??DEFAULT_DSH_RAID_PILE_SETTINGS.minSize, pointsReward:saved.raidPilePointsReward??DEFAULT_DSH_RAID_PILE_SETTINGS.pointsReward, handoffHours:saved.raidPileHandoffHours??DEFAULT_DSH_RAID_PILE_SETTINGS.handoffHours, monthlyStrikeLimit:saved.raidPileMonthlyStrikeLimit??DEFAULT_DSH_RAID_PILE_SETTINGS.monthlyStrikeLimit }; }, now);
     this.messages = new SqliteDshDiscordMessageStore(options.databasePath);
-    const liveDiscord = new DshDiscordApi(new SpmtDshDiscordGrantSource(this.client, directory), fetchImpl);
+    const liveDiscord = this.liveDiscord = new DshDiscordApi(new SpmtDshDiscordGrantSource(this.client, directory), fetchImpl);
+    this.signalSeekers = new SqliteDshSignalSeekerStore(options.databasePath, now);
     this.forumForwardingStore=new DshForumForwardingStore(options.databasePath);
     this.forumForwardingWorker=new DshForumForwardingWorker(this.forumForwardingStore,this.client,liveDiscord,tenantId=>options.config.tenants.find(tenant=>tenant.tenantId===tenantId)?.discordGuildIds??[]);
     this.cleanup=new DshChannelCleanup(options.databasePath,new DshChannelModerationService(liveDiscord.moderationPort()));
@@ -247,7 +251,42 @@ export class SupervisedDshLiveService {
     }
   }
   async runCalendar(signal:AbortSignal) {while(!signal.aborted&&!this.closed){const cycle=this.syncCalendars();this.calendarCycle=cycle;try{await cycle;}finally{this.calendarCycle=undefined;}await pause(5000,signal);}}
-  private async syncCalendars(){for(const tenant of this.options.config.tenants){await this.memberSync.sync(tenant.tenantId).catch(()=>undefined);await this.activity.runOnce(tenant.tenantId).catch(()=>undefined);await this.forumForwardingWorker.runOnce(tenant.tenantId).catch(()=>undefined);for(const guild of tenant.discordGuildIds??[]){const last=this.calendarSync.state(tenant.tenantId,guild).checkedAt;if(!last||Date.parse(this.now())-Date.parse(last)>=30000)await this.calendarSync.sync(tenant.tenantId,guild).catch(()=>undefined);}await this.onboarding?.flush(tenant.tenantId);await this.partnerSchedules.flush(tenant.tenantId);await this.calendarDelivery.flush(tenant.tenantId);await this.applicationDecisions.flush(tenant.tenantId);await this.runtime.flushGuests(tenant.tenantId,this.now());await this.processRaidPileHandoffs(tenant.tenantId);await this.processProviderPoints(tenant.tenantId);}}
+  private async syncCalendars(){for(const drop of this.signalSeekers.expire(this.now()))await this.liveDiscord.deleteMessage(drop.tenantId,drop.channelId,drop.messageId).catch(()=>undefined);for(const tenant of this.options.config.tenants){await this.processSignalCommands(tenant.tenantId).catch(()=>undefined);await this.memberSync.sync(tenant.tenantId).catch(()=>undefined);await this.activity.runOnce(tenant.tenantId).catch(()=>undefined);await this.forumForwardingWorker.runOnce(tenant.tenantId).catch(()=>undefined);for(const guild of tenant.discordGuildIds??[]){const last=this.calendarSync.state(tenant.tenantId,guild).checkedAt;if(!last||Date.parse(this.now())-Date.parse(last)>=30000)await this.calendarSync.sync(tenant.tenantId,guild).catch(()=>undefined);}await this.onboarding?.flush(tenant.tenantId);await this.partnerSchedules.flush(tenant.tenantId);await this.calendarDelivery.flush(tenant.tenantId);await this.applicationDecisions.flush(tenant.tenantId);await this.runtime.flushGuests(tenant.tenantId,this.now());await this.processRaidPileHandoffs(tenant.tenantId);await this.processProviderPoints(tenant.tenantId);}}
+  private async processSignalCommands(tenantId:string){
+    if(this.options.operationMode!=="active")return;
+    let cursor=this.signalSeekers.cursor(tenantId),processed=0,posted=0;
+    if(!cursor){const latest=await this.client.listEvents(tenantId,{sourceAppId:"chat-gateway",limit:1});const latestId=String(latest[0]?.id??latest[0]?.eventId??"");if(latestId){this.signalSeekers.advanceCursor(tenantId,latestId);return{processed:0,posted:0,cursor:latestId};}}
+    const allowedGuilds=this.options.config.tenants.find(item=>item.tenantId===tenantId)?.discordGuildIds??[];
+    for(let page=0;page<10;page++){
+      const events=await this.client.listEvents(tenantId,{sourceAppId:"chat-gateway",...(cursor?{afterId:cursor}:{}),limit:200});
+      if(!events.length)break;
+      for(const event of events){
+        const eventId=String(event.id??event.eventId??"");if(!eventId)continue;
+        if(event.type==="spmt.chat.message.received.v1"){
+          const payload=(event.payload&&typeof event.payload==="object"?event.payload:{}) as Record<string,unknown>;
+          if(payload.provider==="discord"&&typeof payload.channelId==="string"&&typeof payload.messageId==="string"){
+            const records=await this.client.listCommlinkLiveChat(tenantId,{provider:"discord",channelId:payload.channelId,limit:500});
+            const record=records.find(row=>row.messageId===payload.messageId),guildId=String(record?.guildId??payload.guildId??""),dropId="signal-"+eventId;
+            if(record&&!record.isBot&&record.text.trim().toLowerCase()==="!signal"&&allowedGuilds.includes(guildId)&&!this.signalSeekers.get(tenantId,dropId)){
+              const channel=await this.liveDiscord.getChannel(tenantId,record.channelId);
+              if(channel.guild_id===guildId&&[0,5].includes(Number(channel.type))){
+                const roles=await this.liveDiscord.listGuildRoles(tenantId,guildId);
+                let role=roles.find(item=>!item.managed&&item.name.toLowerCase()==="signal seeker");
+                if(!role)role=await this.liveDiscord.createGuildRole(tenantId,guildId,{name:"Signal Seeker",color:0x5865f2,mentionable:true,hoist:false});
+                await this.liveDiscord.createMessage(tenantId,record.channelId,dshSignalSeekerPanelPayload(role.id));
+                const clue=dshSignalDropClue(),messageId=await this.liveDiscord.createMessage(tenantId,record.channelId,dshSignalDropInteractionPayload(role.id,dropId));
+                this.signalSeekers.createDrop({dropId,tenantId,guildId,channelId:record.channelId,messageId,roleId:role.id,clue,now:this.now()});
+                posted++;
+              }
+            }
+          }
+        }
+        this.signalSeekers.advanceCursor(tenantId,eventId);cursor=eventId;processed++;
+      }
+      if(events.length<200)break;
+    }
+    return{processed,posted,cursor};
+  }
   private async processProviderPoints(tenantId:string){
     let cursor=this.monitor.providerActivityCursor(tenantId);
     for(let page=0;page<10;page++){
@@ -294,7 +333,7 @@ export class SupervisedDshLiveService {
       let failed = false;
       try { await this.nebulaMediaCycle; await this.calendarCycle; await activeCycle; } catch (error) { failure = error; failed = true; }
       this.nebulaMedia?.close();
-      this.memberDirectory.close();this.settings.close();this.raidPile.close();this.cleanup.close();this.activityStore.close();this.forumForwardingStore.close();
+      this.memberDirectory.close();this.settings.close();this.raidPile.close();this.cleanup.close();this.activityStore.close();this.forumForwardingStore.close();this.signalSeekers.close();
       try { this.messages.close(); } catch (error) { if (!failed) { failure = error; failed = true; } }
       try { this.calendarSync?.close(); this.calendar.close(); } catch (error) { if (!failed) { failure = error; failed = true; } }
       try { this.applications.close(); } catch (error) { if (!failed) { failure = error; failed = true; } }
