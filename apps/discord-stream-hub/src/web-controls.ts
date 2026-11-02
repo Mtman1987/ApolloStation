@@ -251,14 +251,16 @@ export class DshWebControls {
         await this.sweepSignalDrops();
         const guild = this.guild(context.tenantId, body.serverId);
         if (isSimulationDiscordId(guild)) throw new Error("Choose a live Discord server for Signal drops");
-        const channelId = snowflake(body.channelId, "channelId"), roleId = snowflake(body.roleId, "roleId");
+        const channelId = snowflake(body.channelId, "channelId"), requestedRoleId = body.roleId ? snowflake(body.roleId, "roleId") : undefined;
         const signalUrl = body.signalUrl ? new URL(String(body.signalUrl)) : undefined;
         if (signalUrl && (signalUrl.protocol !== "https:" || signalUrl.username || signalUrl.password)) throw new Error("Signal URL must be credential-free HTTPS");
         const clue = String(body.clue ?? dshSignalDropClue()).trim().slice(0, 1800);
         if (!clue) throw new Error("Signal clue is required");
         const [channels, roles] = await Promise.all([this.liveDiscord.listGuildChannels(context.tenantId, guild), this.liveDiscord.listGuildRoles(context.tenantId, guild)]);
         if (!channels.some(channel => channel.id === channelId && [0, 5].includes(Number(channel.type)))) throw new Error("Choose a text channel in the selected Discord server");
-        if (!roles.some(role => role.id === roleId && !role.managed && role.name.toLowerCase() === "signal seeker")) throw new Error("Choose the Signal Seeker role from the selected Discord server");
+        let role = roles.find(item => item.id === requestedRoleId && !item.managed && item.name.toLowerCase() === "signal seeker") ?? roles.find(item => !item.managed && item.name.toLowerCase() === "signal seeker");
+        if (!role) role = await this.liveDiscord.createGuildRole(context.tenantId, guild, { name: "Signal Seeker", color: 0x5865f2, mentionable: true, hoist: false });
+        const roleId = role.id;
         const dropId = randomUUID(), payload = dshSignalDropInteractionPayload(roleId, dropId);
         const messageId = await this.liveDiscord.createMessage(context.tenantId, channelId, payload);
         try {
@@ -273,12 +275,13 @@ export class DshWebControls {
         if (!this.liveDiscord) throw new Error("Connect Discord Stream Hub before publishing the Signal Seeker panel");
         const guild = this.guild(context.tenantId, body.serverId);
         if (isSimulationDiscordId(guild)) throw new Error("Choose a live Discord server for the Signal Seeker panel");
-        const channelId = snowflake(body.channelId, "channelId"), roleId = snowflake(body.roleId, "roleId");
+        const channelId = snowflake(body.channelId, "channelId"), requestedRoleId = body.roleId ? snowflake(body.roleId, "roleId") : undefined;
         const channels = await this.liveDiscord.listGuildChannels(context.tenantId, guild);
         if (!channels.some(channel => channel.id === channelId && [0, 5].includes(Number(channel.type)))) throw new Error("Choose a text channel in the selected Discord server");
         const roles = await this.liveDiscord.listGuildRoles(context.tenantId, guild);
-        const role = roles.find(item => item.id === roleId && !item.managed);
-        if (!role) throw new Error("Choose an assignable role from the selected Discord server");
+        let role = roles.find(item => item.id === requestedRoleId && !item.managed && item.name.toLowerCase() === "signal seeker") ?? roles.find(item => !item.managed && item.name.toLowerCase() === "signal seeker");
+        if (!role) role = await this.liveDiscord.createGuildRole(context.tenantId, guild, { name: "Signal Seeker", color: 0x5865f2, mentionable: true, hoist: false });
+        const roleId = role.id;
         const messageId = await this.liveDiscord.createMessage(context.tenantId, channelId, dshSignalSeekerPanelPayload(roleId));
         return sendJson(response, 201, { schemaVersion: 1, guildId: guild, channelId, messageId, roleId, roleName: role.name });
       }
