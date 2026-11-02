@@ -12,7 +12,7 @@ import { DshCalendarSync } from "./calendar-sync.js";
 import { readFileSync } from "node:fs";
 import { basename, isAbsolute } from "node:path";
 import type { SpmtOperationModeV1 } from "@spmt/contracts";
-import { SpmtApiError, SpmtClient } from "@spmt/sdk";
+import { SpmtApiError, SpmtClient, buildXpIdempotencyKey } from "@spmt/sdk";
 import {
   DshDiscordApi,
   DshDiscordLivePublisher,
@@ -32,6 +32,9 @@ import { DshTenantSettingsStore } from './settings.js';
 import { dshShoutoutGroupSlug } from './shoutout-groups.js';
 import { dshSystemLiveChannelByLogin } from "./system-live-channels.js";
 import { DshRaidPileStore, DEFAULT_DSH_RAID_PILE_SETTINGS } from "./raid-pile.js";
+import { DshPointsEventRouter, type DshProviderPointsEventV1 } from "./points-event-router.js";
+import { DshPointsService } from "./points.js";
+import { DshSpmtIdentityResolver } from "./provider-identity.js";
 
 export interface DshLiveRuntimeTenantV1 {
   tenantId: string;
@@ -180,6 +183,8 @@ export class SupervisedDshLiveService {
   private readonly suiteActions: DshSuiteActionWorker;
   private readonly settings: DshTenantSettingsStore;
   private readonly raidPile: DshRaidPileStore;
+  private readonly identities: DshSpmtIdentityResolver;
+  private readonly pointsRouter: DshPointsEventRouter;
   private readonly directory: ConfigDirectory;
   private readonly memberDirectory: DshMemberDirectoryStore;
   private readonly memberSync: DshMemberDirectoryWorker;
@@ -190,6 +195,8 @@ export class SupervisedDshLiveService {
   constructor(private readonly options: DshLiveWorkerEnvironmentV1, fetchImpl: typeof fetch = fetch, private readonly now: () => string = () => new Date().toISOString()) {
     this.getAccessToken = createDshWorkerTokenProvider({ spmtOrigin: options.spmtOrigin, credential: options.credential, fetchImpl });
     this.client = new SpmtClient({ baseUrl: options.spmtOrigin, appId: "discord-stream-hub", getAccessToken: this.getAccessToken, fetchImpl });
+    this.identities = new DshSpmtIdentityResolver(this.client);
+    this.pointsRouter = new DshPointsEventRouter(this.identities, tenantId => new DshPointsService(this.client,tenantId));
     if(options.operationMode==="active"&&options.publicOrigin)this.nebulaMedia=new DshNebulaMediaWorker(this.client,{databasePath:options.databasePath,publicOrigin:options.publicOrigin,workerId:`${options.workerId}-nebula-media`,tenantIds:options.config.tenants.map(tenant=>tenant.tenantId),sourceOrigins:(process.env.DSH_MEDIA_SOURCE_ORIGINS||"").split(",").filter(Boolean)},fetchImpl);
     this.activityStore=new DshMemberActivityStore(options.databasePath);this.activity=new DshMemberActivityWorker(this.activityStore,this.client,options.config);
     this.settings = new DshTenantSettingsStore(options.databasePath, now);
@@ -235,7 +242,34 @@ export class SupervisedDshLiveService {
     }
   }
   async runCalendar(signal:AbortSignal) {while(!signal.aborted&&!this.closed){const cycle=this.syncCalendars();this.calendarCycle=cycle;try{await cycle;}finally{this.calendarCycle=undefined;}await pause(5000,signal);}}
-  private async syncCalendars(){for(const tenant of this.options.config.tenants){await this.memberSync.sync(tenant.tenantId).catch(()=>undefined);await this.activity.runOnce(tenant.tenantId).catch(()=>undefined);for(const guild of tenant.discordGuildIds??[]){const last=this.calendarSync.state(tenant.tenantId,guild).checkedAt;if(!last||Date.parse(this.now())-Date.parse(last)>=30000)await this.calendarSync.sync(tenant.tenantId,guild).catch(()=>undefined);}await this.onboarding?.flush(tenant.tenantId);await this.partnerSchedules.flush(tenant.tenantId);await this.calendarDelivery.flush(tenant.tenantId);await this.applicationDecisions.flush(tenant.tenantId);await this.runtime.flushGuests(tenant.tenantId,this.now());await this.processRaidPileHandoffs(tenant.tenantId);}}
+  private async syncCalendars(){for(const tenant of this.options.config.tenants){await this.memberSync.sync(tenant.tenantId).catch(()=>undefined);await this.activity.runOnce(tenant.tenantId).catch(()=>undefined);for(const guild of tenant.discordGuildIds??[]){const last=this.calendarSync.state(tenant.tenantId,guild).checkedAt;if(!last||Date.parse(this.now())-Date.parse(last)>=30000)await this.calendarSync.sync(tenant.tenantId,guild).catch(()=>undefined);}await this.onboarding?.flush(tenant.tenantId);await this.partnerSchedules.flush(tenant.tenantId);await this.calendarDelivery.flush(tenant.tenantId);await this.applicationDecisions.flush(tenant.tenantId);await this.runtime.flushGuests(tenant.tenantId,this.now());await this.processRaidPileHandoffs(tenant.tenantId);await this.processProviderPoints(tenant.tenantId);}}
+  private async processProviderPoints(tenantId:string){
+    let cursor=this.monitor.providerActivityCursor(tenantId);
+    for(let page=0;page<10;page++){
+      const events=await this.client.listEvents(tenantId,{...(cursor?{afterId:cursor}:{}),type:"streamweaver.provider.activity.v1",sourceAppId:"streamweaver",limit:100});
+      if(!events.length)return;
+      for(const event of events){
+        const cursorId=String(event.id??event.eventId??"");if(!cursorId)continue;
+        const payload=asRecord(event.payload),actor=asRecord(payload?.actor),target=asRecord(payload?.target),provider=String(payload?.provider??""),kind=String(payload?.kind??"");
+        const eventType=kind==="follow"?"follow":kind==="subscribe"||kind==="resubscribe"?"subscription":kind==="gift-sub"||kind==="gift-bomb"?"gifted_subscription":kind==="cheer"?"bits":kind==="raid"?"raid":undefined;
+        if(provider==="twitch"&&eventType&&actor&&!actor.anonymous&&typeof actor.providerUserId==="string"){
+          const activityId=String(payload?.eventId??cursorId),quantity=eventType==="bits"?Number(payload?.amount??1):eventType==="gifted_subscription"||eventType==="raid"?Number(payload?.count??1):1;
+          const input:DshProviderPointsEventV1={tenantId,provider:"twitch",providerUserId:actor.providerUserId,eventId:activityId,eventType,...(typeof actor.displayName==="string"?{displayName:actor.displayName}:{}),...(typeof payload?.occurredAt==="string"?{metadata:{occurredAt:payload.occurredAt,activityKind:kind,...(target?{target}:{}),...(asRecord(payload?.metadata)??{})}}:{metadata:{activityKind:kind,...(target?{target}:{}),...(asRecord(payload?.metadata)??{})}}),...(Number.isFinite(quantity)&&quantity>0?{quantity:Math.min(100_000,Math.trunc(quantity))}:{})};
+          const result=await this.pointsRouter.handle(input);
+          if(eventType==="raid"&&target&&typeof target.providerUserId==="string"){
+            const targetIdentity=await this.identities.resolveOrGrandfather({tenantId,provider:"twitch",providerUserId:target.providerUserId,...(typeof target.displayName==="string"?{displayName:target.displayName}:{})});
+            const outcome=this.raidPile.recordRaidOut(tenantId,result.identity.userId,targetIdentity.userId,activityId);
+            if(outcome.member&&outcome.compliant&&outcome.canonicalTarget){
+              const reward=this.raidPile.settingsForTenant(tenantId).pointsReward;
+              if(reward>0){const key=buildXpIdempotencyKey({sourceApp:"discord-stream-hub",eventType:"dsh-raid-pile-compliant",upstreamEventId:activityId,userId:result.identity.userId});await this.client.awardXp(tenantId,result.identity.userId,reward,"dsh-raid-pile-compliant",key,{eventType:"dsh-raid-pile-compliant",metadata:{raidEventId:activityId,pileId:outcome.canonicalTarget.pileId,targetUserId:targetIdentity.userId}});}
+            }
+          }
+        }
+        this.monitor.setProviderActivityCursor(tenantId,cursorId,this.now());cursor=cursorId;
+      }
+      if(events.length<100)return;
+    }
+  }
   private async processRaidPileHandoffs(tenantId:string){
     for(const pile of this.raidPile.piles(tenantId))for(const member of pile.members){const stream=this.monitor.getLiveStream(tenantId,member.userId);this.raidPile.updatePresence(tenantId,member.userId,stream?.viewerCount??0,Boolean(stream));}
     this.raidPile.ensureTargets(tenantId);
@@ -289,6 +323,8 @@ export function dshMillisecondsUntilNextPeriod(now: string, intervalSeconds: num
   const remainder = ((at % intervalMs) + intervalMs) % intervalMs;
   return remainder === 0 ? intervalMs : intervalMs - remainder;
 }
+
+function asRecord(value:unknown):Record<string,unknown>|undefined{return value&&typeof value==="object"&&!Array.isArray(value)?value as Record<string,unknown>:undefined;}
 
 function validateRuntimeConfig(value: unknown): DshLiveRuntimeConfigV1 {
   const root = record(value, "DSH runtime config");
