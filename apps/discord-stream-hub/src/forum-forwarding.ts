@@ -38,7 +38,7 @@ export type DshForumForwardMutationV1 = {
   sourceMessageUrl?:string; occurredAt:string; sourceIsPublic:boolean;
   authorIsBot?:boolean; originatedFromForwarder?:boolean; operation?:"create"|"edit"|"delete";
 };
-function discordSnowflake(value:string,name:string){if(!/^\\d{5,30}$/.test(value))throw new Error("Invalid "+name);return value;}
+function discordSnowflake(value:string,name:string){if(value.length<5||value.length>30||Array.from(value).some(char=>char<"0"||char>"9"))throw new Error("Invalid "+name);return value;}
 function validateForwardRule(value:DshForumForwardRuleV1){
   if(value.schemaVersion!==1||!value.tenantId||!value.sourceGuildId||!value.destinationGuildId||
     !value.forumChannelId||!["per-channel","single-thread"].includes(value.mode)||
