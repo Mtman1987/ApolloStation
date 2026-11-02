@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { forwardDshForumPost, DshForumForwardingStore, DshForumForwardingService, type DshForumForwardRuleV1, type DshForumForwardMutationV1 } from "./forum-forwarding.js";
 import { DshMemberDirectoryStore } from "./member-directory.js";
 import { DshRaidPileStore, DEFAULT_DSH_RAID_PILE_SETTINGS, type DshRaidPileSettingsV1 } from "./raid-pile.js";
@@ -29,7 +30,7 @@ import { createDshWorkerTokenProvider, loadDshLiveRuntimeConfig, type DshLiveRun
 import { DshSimulationRoomDiscordTransport } from "./simulation-room.js";
 import { DshTenantSettingsStore } from "./settings.js";
 import { DshPointsService } from "./points.js";
-import { dshSignalSeekerPanelPayload, SqliteDshSignalSeekerStore } from "./signal-seeker.js";
+import { dshSignalSeekerPanelPayload, dshSignalDropInteractionPayload, SqliteDshSignalSeekerStore } from "./signal-seeker.js";
 
 export interface DshWebControlOptionsV1 {
   spmtOrigin: string;
@@ -243,6 +244,25 @@ export class DshWebControls {
       if (url.pathname === "/api/discord-stream-hub/control/calendar/publish") return await this.publishCalendar(response, context, body);
       if (url.pathname === "/api/discord-stream-hub/control/applications/publish") return await this.publishApplications(response, context, body);
 
+      if (url.pathname === "/api/discord-stream-hub/control/signal-seeker/drop") {
+        this.requireOwner(context);
+        if (request.method !== "POST") return sendJson(response, 405, { message: "Use POST" });
+        if (this.options.operationMode !== "active" || !this.liveDiscord || !this.signalSeekers) throw new Error("Live Signal drops require active Discord delivery");
+        const guild = this.guild(context.tenantId, body.serverId);
+        if (isSimulationDiscordId(guild)) throw new Error("Choose a live Discord server for Signal drops");
+        const channelId = snowflake(body.channelId, "channelId"), roleId = snowflake(body.roleId, "roleId");
+        const signalUrl = new URL(String(body.signalUrl ?? ""));
+        if (signalUrl.protocol !== "https:" || signalUrl.username || signalUrl.password) throw new Error("Signal URL must be credential-free HTTPS");
+        const [channels, roles] = await Promise.all([this.liveDiscord.listGuildChannels(context.tenantId, guild), this.liveDiscord.listGuildRoles(context.tenantId, guild)]);
+        if (!channels.some(channel => channel.id === channelId && [0, 5].includes(Number(channel.type)))) throw new Error("Choose a text channel in the selected Discord server");
+        if (!roles.some(role => role.id === roleId && !role.managed && role.name.toLowerCase() === "signal seeker")) throw new Error("Choose the Signal Seeker role from the selected Discord server");
+        const dropId = randomUUID(), payload = dshSignalDropInteractionPayload(roleId, dropId);
+        const messageId = await this.liveDiscord.createMessage(context.tenantId, channelId, payload);
+        try {
+          const drop = this.signalSeekers.createDrop({ dropId, tenantId: context.tenantId, channelId, messageId, roleId, signalUrl: signalUrl.toString(), now: this.now() });
+          return sendJson(response, 201, { drop });
+        } catch (error) { await this.liveDiscord.deleteMessage(context.tenantId, channelId, messageId).catch(() => undefined); throw error; }
+      }
       if (url.pathname === "/api/discord-stream-hub/control/signal-seeker/publish") {
         this.requireOwner(context);
         if (request.method !== "POST") return sendJson(response, 405, { message: "Use POST" });
