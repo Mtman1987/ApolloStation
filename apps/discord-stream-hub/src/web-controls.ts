@@ -27,6 +27,7 @@ import { DshDiscordApi, DshDiscordError, SqliteDshDiscordMessageStore, type DshD
 import { createDshWorkerTokenProvider, loadDshLiveRuntimeConfig, type DshLiveRuntimeConfigV1 } from "./live-worker.js";
 import { DshSimulationRoomDiscordTransport } from "./simulation-room.js";
 import { DshTenantSettingsStore } from "./settings.js";
+import { DshPointsService } from "./points.js";
 
 export interface DshWebControlOptionsV1 {
   spmtOrigin: string;
@@ -244,6 +245,7 @@ export class DshWebControls {
     const view=this.calendarView(tenantId,guildId,month);
     const snapshot = await fetchAppPlatformSnapshot({ appId: "discord-stream-hub", spmtOrigin: this.options.spmtOrigin, request, sources: ["providerLinks", "communityLive"] }).catch(() => undefined);
     const shoutouts = await this.shoutoutView(request, context, snapshot);
+    const points = await this.pointsView(tenantId,String(context.session.actorId??""));
     return sendJson(response, 200, {
       schemaVersion: 1,
       tenantId,
@@ -267,6 +269,7 @@ export class DshWebControls {
       activityStatus:this.activity?.cursor(tenantId).error??null,
       calendarMonth: month,
       ...shoutouts,
+      points,
       raidPile: await this.raidPileState(context,request),
       trackedMessages: this.messages?.list(tenantId) ?? [],
       cleanupPlans:this.role(context)==="owner"?this.cleanup?.list(tenantId,String(context.session.actorId),"owner")??[]:[],
@@ -333,6 +336,12 @@ export class DshWebControls {
     return sendJson(response, 200, { schemaVersion: 1, messageId, channelId, ...(isSimulationDiscordId(serverId) ? {shadowRoomId:(await this.discord?.target(context.tenantId,serverId))?.roomId} : {}) });
   }
 
+  private async pointsView(tenantId:string,userId:string){
+    if(!this.client)return{leaderboard:[],me:null};
+    const service=new DshPointsService(this.client,tenantId),members=new Map(this.members(tenantId).map(member=>[member.canonicalUserId,member.displayName]));
+    const [rows,me]=await Promise.all([service.getLeaderboard(50).catch(()=>[]),userId?service.getUserRank(userId).catch(()=>null):Promise.resolve(null)]);
+    return{leaderboard:rows.map(row=>({...row,displayName:members.get(row.userId)??row.userId})),me};
+  }
   private members(tenant:string,guild?:string){return this.memberDirectory?.members(tenant,guild)??this.config?.tenants.find(t=>t.tenantId===tenant)?.members??[];}
   private effectiveSettings(tenantId: string) {
     const saved = this.requireSettings().read(tenantId), tenant = this.config?.tenants.find(value => value.tenantId === tenantId);
