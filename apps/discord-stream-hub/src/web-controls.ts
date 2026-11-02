@@ -144,7 +144,7 @@ export class DshWebControls {
       const body = await readJsonBody(request);
       if(url.pathname==="/api/discord-stream-hub/control/forum/forward"){
         this.requireOwner(context);if(!this.client)throw new Error("Connect DSH before forwarding forum posts");
-        const result=await forwardDshForumPost(this.client,context.tenantId,body.post);
+        const result=await forwardDshForumPost(this.client,context.tenantId,body.post??body);
         return sendJson(response,result.duplicate?200:201,{...result,message:result.duplicate?"This forum post was already forwarded.":"Forum post forwarded to the canonical SPMT event stream."});
       }
       if(url.pathname.startsWith("/api/discord-stream-hub/control/calendar/partner/")){
