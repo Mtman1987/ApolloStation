@@ -29,6 +29,7 @@ import { createDshWorkerTokenProvider, loadDshLiveRuntimeConfig, type DshLiveRun
 import { DshSimulationRoomDiscordTransport } from "./simulation-room.js";
 import { DshTenantSettingsStore } from "./settings.js";
 import { DshPointsService } from "./points.js";
+import { dshSignalSeekerPanelPayload } from "./signal-seeker.js";
 
 export interface DshWebControlOptionsV1 {
   spmtOrigin: string;
@@ -240,6 +241,23 @@ export class DshWebControls {
       if (url.pathname === "/api/discord-stream-hub/control/calendar/mission") return await this.mission(response, context, body,request);
       if (url.pathname === "/api/discord-stream-hub/control/calendar/publish") return await this.publishCalendar(response, context, body);
       if (url.pathname === "/api/discord-stream-hub/control/applications/publish") return await this.publishApplications(response, context, body);
+
+      if (url.pathname === "/api/discord-stream-hub/control/signal-seeker/publish") {
+        this.requireOwner(context);
+        if (request.method !== "POST") return sendJson(response, 405, { message: "Use POST" });
+        if (this.options.operationMode !== "active") throw new Error("Signal Seeker panel publishing requires active Discord delivery");
+        if (!this.liveDiscord) throw new Error("Connect Discord Stream Hub before publishing the Signal Seeker panel");
+        const guild = this.guild(context.tenantId, body.serverId);
+        if (isSimulationDiscordId(guild)) throw new Error("Choose a live Discord server for the Signal Seeker panel");
+        const channelId = snowflake(body.channelId, "channelId"), roleId = snowflake(body.roleId, "roleId");
+        const channels = await this.liveDiscord.listGuildChannels(context.tenantId, guild);
+        if (!channels.some(channel => channel.id === channelId && [0, 5].includes(Number(channel.type)))) throw new Error("Choose a text channel in the selected Discord server");
+        const roles = await this.liveDiscord.listGuildRoles(context.tenantId, guild);
+        const role = roles.find(item => item.id === roleId && !item.managed);
+        if (!role) throw new Error("Choose an assignable role from the selected Discord server");
+        const messageId = await this.liveDiscord.createMessage(context.tenantId, channelId, dshSignalSeekerPanelPayload(roleId));
+        return sendJson(response, 201, { schemaVersion: 1, guildId: guild, channelId, messageId, roleId, roleName: role.name });
+      }
       if (url.pathname === "/api/discord-stream-hub/control/settings/roles") { if (body.roleGuildId === undefined) throw Error("Choose a Discord server for role groups"); return await this.updateSettings(response, context, body); }
       if (url.pathname === "/api/discord-stream-hub/control/settings") return await this.updateSettings(response, context, body);
       return sendJson(response, 404, { error: "not_found" });
