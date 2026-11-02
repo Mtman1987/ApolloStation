@@ -32,7 +32,8 @@ export type DshLiveActionV1 = DshGuestLiveActionV1
   | { schemaVersion: 1; type: "shoutout.create" | "shoutout.update"; idempotencyKey: string; tenantId: string; member: DshLiveMemberV1; stream: DshTwitchStreamV1 }
   | { schemaVersion: 1; type: "shoutout.remove"; idempotencyKey: string; tenantId: string; member: DshLiveMemberV1; priorStreamId: string }
   | { schemaVersion: 1; type: "spotlight.update"; idempotencyKey: string; tenantId: string; member: DshLiveMemberV1; stream: DshTwitchStreamV1; priorUserId?: string; nextIndex: number; rotatesEveryMs: number }
-  | { schemaVersion: 1; type: "spotlight.clear"; idempotencyKey: string; tenantId: string; priorUserId: string };
+  | { schemaVersion: 1; type: "spotlight.clear"; idempotencyKey: string; tenantId: string; priorUserId: string }
+  | { schemaVersion: 1; type: "raid-pile.handoff"; idempotencyKey: string; tenantId: string; pileId: string; priorTargetName: string; nextTargetName: string; nextTargetLogin: string; heldHours: number; message: string };
 
 export interface DshLivePollV1 {
   schemaVersion: 1;
@@ -134,8 +135,9 @@ export class SqliteDshLiveMonitor {
     const rows = this.db.prepare(`SELECT attempts,body FROM live_action_outbox WHERE tenant_id=? AND state='pending' ${guestsOnly?"AND json_extract(body,'$.type')='guest.refresh'":""} ORDER BY rowid LIMIT ?`).all(tenantId, limit) as Array<{ attempts: number; body: string }>;
     return rows.map((row) => ({ attempts: row.attempts, action: JSON.parse(row.body) as DshLiveActionV1 }));
   }
+  enqueueAction(action:DshLiveActionV1,createdAt=new Date().toISOString()){requireId(action.tenantId,"tenantId");requireId(action.idempotencyKey,"idempotencyKey");this.db.prepare("INSERT INTO live_action_outbox(id,tenant_id,state,attempts,created_at,body) VALUES(?,?,'pending',0,?,?) ON CONFLICT(id) DO NOTHING").run(action.idempotencyKey,action.tenantId,createdAt,JSON.stringify(action));}
   isCurrentAction(action: DshLiveActionV1): boolean {
-    if (action.type === "guest.refresh") return true;
+    if (action.type === "guest.refresh" || action.type === "raid-pile.handoff") return true;
     if (action.type === "spotlight.clear") return !this.getSpotlight(action.tenantId);
     if (action.type === "shoutout.remove") return !this.getMemberState(action.tenantId, action.member.canonicalUserId)?.live;
     const row = this.db.prepare("SELECT body FROM live_members WHERE tenant_id=? AND user_id=? AND is_live=1").get(action.tenantId, action.member.canonicalUserId) as {body: string} | undefined;
