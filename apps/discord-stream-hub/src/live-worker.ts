@@ -35,6 +35,7 @@ import { DshRaidPileStore, DEFAULT_DSH_RAID_PILE_SETTINGS } from "./raid-pile.js
 import { DshPointsEventRouter, type DshProviderPointsEventV1 } from "./points-event-router.js";
 import { DshPointsService } from "./points.js";
 import { DshSpmtIdentityResolver } from "./provider-identity.js";
+import { DshForumForwardingStore, DshForumForwardingWorker } from "./forum-forwarding.js";
 
 export interface DshLiveRuntimeTenantV1 {
   tenantId: string;
@@ -172,6 +173,8 @@ export class SupervisedDshLiveService {
   private readonly onboarding?:DshOnboardingPanel;
   private readonly activityStore:DshMemberActivityStore;
   private readonly activity:DshMemberActivityWorker;
+  private readonly forumForwardingStore:DshForumForwardingStore;
+  private readonly forumForwardingWorker:DshForumForwardingWorker;
   private calendarCycle:Promise<void>|undefined;
   private readonly applications: SqliteDshApplicationStore;
   private readonly applicationDecisions: DshApplicationDecisionService;
@@ -206,6 +209,8 @@ export class SupervisedDshLiveService {
     this.raidPile = new DshRaidPileStore(options.databasePath, tenantId => { const saved=this.settings.read(tenantId); return { maxSize:saved.raidPileMaxSize??DEFAULT_DSH_RAID_PILE_SETTINGS.maxSize, minSize:saved.raidPileMinSize??DEFAULT_DSH_RAID_PILE_SETTINGS.minSize, pointsReward:saved.raidPilePointsReward??DEFAULT_DSH_RAID_PILE_SETTINGS.pointsReward, handoffHours:saved.raidPileHandoffHours??DEFAULT_DSH_RAID_PILE_SETTINGS.handoffHours, monthlyStrikeLimit:saved.raidPileMonthlyStrikeLimit??DEFAULT_DSH_RAID_PILE_SETTINGS.monthlyStrikeLimit }; }, now);
     this.messages = new SqliteDshDiscordMessageStore(options.databasePath);
     const liveDiscord = new DshDiscordApi(new SpmtDshDiscordGrantSource(this.client, directory), fetchImpl);
+    this.forumForwardingStore=new DshForumForwardingStore(options.databasePath);
+    this.forumForwardingWorker=new DshForumForwardingWorker(this.forumForwardingStore,this.client,liveDiscord,tenantId=>options.config.tenants.find(tenant=>tenant.tenantId===tenantId)?.discordGuildIds??[]);
     this.cleanup=new DshChannelCleanup(options.databasePath,new DshChannelModerationService(liveDiscord.moderationPort()));
     const simulationDiscord = new DshSimulationRoomDiscordTransport(liveDiscord, this.client, { guildIds: (tenantId) => options.config.tenants.find((tenant) => tenant.tenantId === tenantId)?.discordGuildIds ?? [], now });
     const discord = options.operationMode === "read-only" ? simulationDiscord : new DshSimulationRoomDiscordTransport(liveDiscord, this.client, { guildIds: (tenantId) => options.config.tenants.find((tenant) => tenant.tenantId === tenantId)?.discordGuildIds ?? [], now, liveWrites: true });
@@ -242,7 +247,7 @@ export class SupervisedDshLiveService {
     }
   }
   async runCalendar(signal:AbortSignal) {while(!signal.aborted&&!this.closed){const cycle=this.syncCalendars();this.calendarCycle=cycle;try{await cycle;}finally{this.calendarCycle=undefined;}await pause(5000,signal);}}
-  private async syncCalendars(){for(const tenant of this.options.config.tenants){await this.memberSync.sync(tenant.tenantId).catch(()=>undefined);await this.activity.runOnce(tenant.tenantId).catch(()=>undefined);for(const guild of tenant.discordGuildIds??[]){const last=this.calendarSync.state(tenant.tenantId,guild).checkedAt;if(!last||Date.parse(this.now())-Date.parse(last)>=30000)await this.calendarSync.sync(tenant.tenantId,guild).catch(()=>undefined);}await this.onboarding?.flush(tenant.tenantId);await this.partnerSchedules.flush(tenant.tenantId);await this.calendarDelivery.flush(tenant.tenantId);await this.applicationDecisions.flush(tenant.tenantId);await this.runtime.flushGuests(tenant.tenantId,this.now());await this.processRaidPileHandoffs(tenant.tenantId);await this.processProviderPoints(tenant.tenantId);}}
+  private async syncCalendars(){for(const tenant of this.options.config.tenants){await this.memberSync.sync(tenant.tenantId).catch(()=>undefined);await this.activity.runOnce(tenant.tenantId).catch(()=>undefined);await this.forumForwardingWorker.runOnce(tenant.tenantId).catch(()=>undefined);for(const guild of tenant.discordGuildIds??[]){const last=this.calendarSync.state(tenant.tenantId,guild).checkedAt;if(!last||Date.parse(this.now())-Date.parse(last)>=30000)await this.calendarSync.sync(tenant.tenantId,guild).catch(()=>undefined);}await this.onboarding?.flush(tenant.tenantId);await this.partnerSchedules.flush(tenant.tenantId);await this.calendarDelivery.flush(tenant.tenantId);await this.applicationDecisions.flush(tenant.tenantId);await this.runtime.flushGuests(tenant.tenantId,this.now());await this.processRaidPileHandoffs(tenant.tenantId);await this.processProviderPoints(tenant.tenantId);}}
   private async processProviderPoints(tenantId:string){
     let cursor=this.monitor.providerActivityCursor(tenantId);
     for(let page=0;page<10;page++){
@@ -289,7 +294,7 @@ export class SupervisedDshLiveService {
       let failed = false;
       try { await this.nebulaMediaCycle; await this.calendarCycle; await activeCycle; } catch (error) { failure = error; failed = true; }
       this.nebulaMedia?.close();
-      this.memberDirectory.close();this.settings.close();this.raidPile.close();this.cleanup.close();this.activityStore.close();
+      this.memberDirectory.close();this.settings.close();this.raidPile.close();this.cleanup.close();this.activityStore.close();this.forumForwardingStore.close();
       try { this.messages.close(); } catch (error) { if (!failed) { failure = error; failed = true; } }
       try { this.calendarSync?.close(); this.calendar.close(); } catch (error) { if (!failed) { failure = error; failed = true; } }
       try { this.applications.close(); } catch (error) { if (!failed) { failure = error; failed = true; } }
