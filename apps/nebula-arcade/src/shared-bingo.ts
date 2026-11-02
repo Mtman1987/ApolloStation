@@ -55,7 +55,7 @@ export function parseNebulaSharedBingoCoordinate(value: unknown) {
 
 export function defaultNebulaSharedBingoState(channelValue: string, phrases: readonly string[], now = Date.now()): NebulaSharedBingoStateV1 {
   const channel = cleanChannel(channelValue);
-  const source = phrases.map(value => String(value ?? "").trim()).filter(Boolean);
+  const source = phrases.map(value => String(value ?? "").trim());
   return {
     boardId: `${channel}:${new Date(now).toISOString().slice(0,10)}`,
     squares: Array.from({length:25},(_,index)=>({coordinate:coordinateAt(index),phrase:String(source[index] || (index===12?"Bingo":`Phrase ${index+1}`)).slice(0,80),status:"open" as const})),
