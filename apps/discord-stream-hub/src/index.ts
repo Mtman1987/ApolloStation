@@ -24,6 +24,7 @@ export * from "./applications.js";
 export * from "./discord-application-interactions.js";
 export * from "./shoutout-groups.js";
 export * from "./clip-gif-library.js";
+export * from "./clip-acquisition.js";
 export * from "./nebula-gameplay.js";
 export * from "./channel-moderation.js";
 export * from "./signal-control.js";
