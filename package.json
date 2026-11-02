@@ -32,7 +32,8 @@
     "agents:test": "python3 scripts/agents/test_runner.py",
     "validate:local": "node scripts/validate-local.mjs",
     "setup:browser": "node scripts/setup-local-browser.mjs",
-    "parity:audit": "node scripts/parity-audit.mjs"
+    "parity:audit": "node scripts/parity-audit.mjs",
+    "parity:rea": "node scripts/parity-rea.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",
