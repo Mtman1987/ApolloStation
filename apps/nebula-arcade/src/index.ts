@@ -28,6 +28,7 @@ export * from "./quackverse-visual-canon.js";
 export * from "./quackverse-pack-presentation.js";
 export * from "./quackverse-art-job.js";
 export * from "./bingo-game.js";
+export * from "./shared-bingo.js";
 export * from "./provider-runtime.js";
 export * from "./discord-dashboard.js";
 export * from "./gameplay-showcase.js";
