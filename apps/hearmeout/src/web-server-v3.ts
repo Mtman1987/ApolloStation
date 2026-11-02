@@ -241,8 +241,19 @@ async function handleApi(request:IncomingMessage,response:ServerResponse,url:URL
       if(watchRoute[2]==="accept"){const recommendation=watch.accept(scope,requiredText(body.sessionId,"sessionId",200));return recommendation?sendJson(response,200,{status:"taken",recommendation}):sendJson(response,404,{status:"none"});}
       const result=await watch.request(scope,requiredText(body.query,"query",300));
       if(result.status==="no-match")return sendJson(response,404,{status:"no-match"});
-      const session=rooms.enqueue(principal,{roomId,lane:"movie",item:result.item,operationId:mediaOperationId(request,principal,"watch")});
-      await watch.recordQueued(scope,result.entry);
+      // Generate a retry key before enqueue so a progress-store failure can be
+      // recovered without creating a duplicate queue item. The client echoes
+      // this key as Idempotency-Key on retry.
+      const retryKey=typeof request.headers["idempotency-key"]==="string"
+        ? request.headers["idempotency-key"]
+        : randomBytes(16).toString("hex");
+      const operationId=mediaOperationId(request,principal,"watch",retryKey);
+      const session=rooms.enqueue(principal,{roomId,lane:"movie",item:result.item,operationId});
+      try {
+        await watch.recordQueued(scope,result.entry);
+      } catch {
+        return sendJson(response,503,{status:"queued_progress_pending",retryable:true,retryKey,message:"The episode is queued, but resume progress could not be saved. Retry this request with the same Idempotency-Key."});
+      }
       return sendJson(response,201,{status:"queued",session});
     }
     if(request.method==="POST"&&media){
@@ -284,7 +295,7 @@ async function handleApi(request:IncomingMessage,response:ServerResponse,url:URL
   }catch(error){const message=safeError(error),status=/session|sign in|unauthor/i.test(message)?401:/not found|expired/i.test(message)?404:/password|member|admin|owner|moderate|banned|timed out|denied/i.test(message)?403:400;const explicit=(error as {status?:number}).status;return sendJson(response,explicit&&explicit>=400&&explicit<=599?explicit:status,{error:"hearmeout_green_request_failed",message});}
 }
 
-function mediaOperationId(request:IncomingMessage,principal:HearMeOutPrincipalV1,kind:string){const key=request.headers["idempotency-key"];if(key!==undefined&&(typeof key!=="string"||!key.trim()||key.length>200||/[\r\n\0]/.test(key)))throw new Error("Invalid media request key");return `web-${kind}:${createHash("sha256").update(JSON.stringify([principal.userId,key??randomBytes(16).toString("hex")])).digest("hex")}`;}
+function mediaOperationId(request:IncomingMessage,principal:HearMeOutPrincipalV1,kind:string,fallbackKey?:string){const headerKey=request.headers["idempotency-key"];if(headerKey!==undefined&&(typeof headerKey!=="string"||!headerKey.trim()||headerKey.length>200||/[\r\n\0]/.test(headerKey)))throw new Error("Invalid media request key");const key=headerKey??fallbackKey??randomBytes(16).toString("hex");return `web-${kind}:${createHash("sha256").update(JSON.stringify([principal.userId,key])).digest("hex")}`;}
 
 function roomSummary(runtime:SqliteHearMeOutRoomMediaRuntime,principal:HearMeOutPrincipalV1,room:HearMeOutRoomV1){
   const members=runtime.listMembers(principal.tenantId,room.roomId) as RoomMember[],member=members.some(item=>item.userId===principal.userId),canManage=room.ownerUserId===principal.userId||principal.roles.includes("admin"),presence=safePresence(runtime,principal.tenantId,room.roomId),activeIds=new Set(presence.map(item=>item.userId)),participantCount=activeIds.size;
