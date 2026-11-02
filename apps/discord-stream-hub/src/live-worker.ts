@@ -1,3 +1,4 @@
+import { DshClipAcquisitionWorker } from "./clip-acquisition.js";
 import { SqliteDshClipGifStore, DshClipGifSpotlightMediaSource } from "./clip-gif-library.js";
 import { SqliteDshSignalSeekerStore, dshSignalSeekerPanelPayload, dshSignalDropInteractionPayload, dshSignalDropClue } from "./signal-seeker.js";
 import { DshMemberDirectoryStore, DshMemberDirectoryWorker } from "./member-directory.js";
@@ -137,6 +138,18 @@ export class ConfigDirectory implements DshLiveMemberDirectoryV1, DshDiscordBran
 
 export class SpmtDshTwitchGrantSource implements DshTwitchGrantSourceV1 {
   constructor(private readonly client: SpmtClient, private readonly directory: ConfigDirectory) {}
+  async getClipGrant(tenantId:string){
+    try{
+      const grant=await this.client.issueProviderGrant(tenantId,"twitch",this.directory.providerUserId(tenantId,"twitch"),"dsh-clip-media",["clips:read"],300);
+      const clientId=grant.credential.metadata.clientId;
+      if(!clientId)return {status:"reauthorization-required" as const,reason:"Twitch grant does not include its public client id"};
+      return {status:"ready" as const,clientId,accessToken:grant.credential.accessToken,expiresAt:grant.expiresAt};
+    }catch(error){
+      if(error instanceof SpmtApiError&&error.status===403)return {status:"reauthorization-required" as const,reason:"Twitch clips are not authorized for Discord Stream Hub"};
+      if(error instanceof SpmtApiError&&error.status===503)return {status:"unavailable" as const,reason:"SPMT could not issue a Twitch clips grant"};
+      throw error;
+    }
+  }
   async getGrant(tenantId: string) {
     try {
       const grant = await this.client.issueProviderGrant(tenantId, "twitch", this.directory.providerUserId(tenantId, "twitch"), "dsh-live-monitor", ["streams:read"], 300);
@@ -188,6 +201,7 @@ export class SupervisedDshLiveService {
   private readonly nebulaMediaAbort=new AbortController();
   private readonly nebulaMedia?:DshNebulaMediaWorker;
   private readonly clipSpotlightMedia:DshClipGifSpotlightMediaSource;
+  private readonly clipAcquisition:DshClipAcquisitionWorker;
   private readonly suiteActions: DshSuiteActionWorker;
   private readonly settings: DshTenantSettingsStore;
   private readonly raidPile: DshRaidPileStore;
@@ -221,6 +235,7 @@ export class SupervisedDshLiveService {
     const simulationDiscord = new DshSimulationRoomDiscordTransport(liveDiscord, this.client, { guildIds: (tenantId) => options.config.tenants.find((tenant) => tenant.tenantId === tenantId)?.discordGuildIds ?? [], now });
     const discord = options.operationMode === "read-only" ? simulationDiscord : new DshSimulationRoomDiscordTransport(liveDiscord, this.client, { guildIds: (tenantId) => options.config.tenants.find((tenant) => tenant.tenantId === tenantId)?.discordGuildIds ?? [], now, liveWrites: true });
     this.clipSpotlightMedia=new DshClipGifSpotlightMediaSource(new SqliteDshClipGifStore(options.databasePath),this.nebulaMedia);
+    this.clipAcquisition=new DshClipAcquisitionWorker(directory,new SpmtDshTwitchGrantSource(this.client,directory),new SqliteDshClipGifStore(options.databasePath),fetchImpl,()=>Date.parse(this.now()));
     const publisher = new DshDiscordLivePublisher(discord, this.messages, directory, this.clipSpotlightMedia, now,this.monitor.guests);
     this.runtime = new DshLiveRuntime(this.monitor, publisher);
     const twitchGrants=new SpmtDshTwitchGrantSource(this.client,directory),twitch=new TwitchHelixLiveClient(fetchImpl);
@@ -254,7 +269,7 @@ export class SupervisedDshLiveService {
     }
   }
   async runCalendar(signal:AbortSignal) {while(!signal.aborted&&!this.closed){const cycle=this.syncCalendars();this.calendarCycle=cycle;try{await cycle;}finally{this.calendarCycle=undefined;}await pause(5000,signal);}}
-  private async syncCalendars(){for(const drop of this.signalSeekers.expire(this.now()))await this.liveDiscord.deleteMessage(drop.tenantId,drop.channelId,drop.messageId).catch(()=>undefined);for(const tenant of this.options.config.tenants){await this.processSignalCommands(tenant.tenantId).catch(()=>undefined);await this.memberSync.sync(tenant.tenantId).catch(()=>undefined);await this.activity.runOnce(tenant.tenantId).catch(()=>undefined);await this.forumForwardingWorker.runOnce(tenant.tenantId).catch(()=>undefined);for(const guild of tenant.discordGuildIds??[]){const last=this.calendarSync.state(tenant.tenantId,guild).checkedAt;if(!last||Date.parse(this.now())-Date.parse(last)>=30000)await this.calendarSync.sync(tenant.tenantId,guild).catch(()=>undefined);}await this.onboarding?.flush(tenant.tenantId);await this.partnerSchedules.flush(tenant.tenantId);await this.calendarDelivery.flush(tenant.tenantId);await this.applicationDecisions.flush(tenant.tenantId);await this.runtime.flushGuests(tenant.tenantId,this.now());await this.processRaidPileHandoffs(tenant.tenantId);await this.processProviderPoints(tenant.tenantId);}}
+  private async syncCalendars(){for(const drop of this.signalSeekers.expire(this.now()))await this.liveDiscord.deleteMessage(drop.tenantId,drop.channelId,drop.messageId).catch(()=>undefined);for(const tenant of this.options.config.tenants){await this.processSignalCommands(tenant.tenantId).catch(()=>undefined);await this.memberSync.sync(tenant.tenantId).catch(()=>undefined);if(this.options.operationMode==="active")await this.clipAcquisition.runOnce(tenant.tenantId).catch(()=>undefined);await this.activity.runOnce(tenant.tenantId).catch(()=>undefined);await this.forumForwardingWorker.runOnce(tenant.tenantId).catch(()=>undefined);for(const guild of tenant.discordGuildIds??[]){const last=this.calendarSync.state(tenant.tenantId,guild).checkedAt;if(!last||Date.parse(this.now())-Date.parse(last)>=30000)await this.calendarSync.sync(tenant.tenantId,guild).catch(()=>undefined);}await this.onboarding?.flush(tenant.tenantId);await this.partnerSchedules.flush(tenant.tenantId);await this.calendarDelivery.flush(tenant.tenantId);await this.applicationDecisions.flush(tenant.tenantId);await this.runtime.flushGuests(tenant.tenantId,this.now());await this.processRaidPileHandoffs(tenant.tenantId);await this.processProviderPoints(tenant.tenantId);}}
   private async processSignalCommands(tenantId:string){
     if(this.options.operationMode!=="active")return;
     let cursor=this.signalSeekers.cursor(tenantId),processed=0,posted=0;
@@ -335,7 +350,7 @@ export class SupervisedDshLiveService {
       let failure: unknown;
       let failed = false;
       try { await this.nebulaMediaCycle; await this.calendarCycle; await activeCycle; } catch (error) { failure = error; failed = true; }
-      this.nebulaMedia?.close();this.clipSpotlightMedia.close();
+      this.nebulaMedia?.close();this.clipSpotlightMedia.close();this.clipAcquisition.close?.();
       this.memberDirectory.close();this.settings.close();this.raidPile.close();this.cleanup.close();this.activityStore.close();this.forumForwardingStore.close();this.signalSeekers.close();
       try { this.messages.close(); } catch (error) { if (!failed) { failure = error; failed = true; } }
       try { this.calendarSync?.close(); this.calendar.close(); } catch (error) { if (!failed) { failure = error; failed = true; } }
