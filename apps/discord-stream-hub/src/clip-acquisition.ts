@@ -19,6 +19,7 @@ export class DshClipAcquisitionWorker {
  private readonly lastRun=new Map<string,number>();
  private readonly inFlight=new Set<string>();
  constructor(private readonly members:DshLiveMemberDirectoryV1,private readonly grants:DshClipGrantSourceV1,private readonly store:SqliteDshClipGifStore,private readonly fetchImpl:typeof fetch=fetch,private readonly now:()=>number=Date.now){}
+ close(){this.store.close();}
  async runOnce(tenantId:string){
   if(this.inFlight.has(tenantId)||this.now()-(this.lastRun.get(tenantId)??0)<CYCLE_MS)return {status:"skipped" as const};
   this.inFlight.add(tenantId);this.lastRun.set(tenantId,this.now());
