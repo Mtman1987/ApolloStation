@@ -45,7 +45,7 @@ async function fixture(){
  const rooms=new SqliteHearMeOutRoomMediaRuntime(path);
  await host.listen();
  const base='http://127.0.0.1:'+host.server.address().port;
- return {dir,auth,host,rooms,base};
+ return {dir,auth,host,rooms,watch,base};
 }
 
 async function teardown(f){
@@ -142,5 +142,38 @@ test('watch state path defaults beside the room database and honours HEARMEOUT_W
   assert.ok((await stat(overridePath)).isFile(),'override path is used');
  }finally{
   await rm(dir,{recursive:true,force:true});
+ }
+});
+
+
+test('a failed progress write returns a retry key and retry does not duplicate the queued episode',async()=>{
+ const f=await fixture();
+ try{
+  const alice={'content-type':'application/json',cookie:'sid=alice'};
+  const created=await fetch(f.base+'/api/hearmeout/rooms',{method:'POST',headers:alice,body:JSON.stringify({name:'Retry Night',privacy:'public'})});
+  const roomId=(await created.json()).roomId;
+  await (await fetch(f.base+`/api/hearmeout/rooms/${roomId}/join`,{method:'POST',headers:alice,body:'{}'})).text();
+  const original=f.watch.recordQueued.bind(f.watch);
+  let failOnce=true;
+  f.watch.recordQueued=async(...args)=>{
+   if(failOnce){failOnce=false;throw new Error('simulated durable progress write failure');}
+   return original(...args);
+  };
+  const url=f.base+`/api/hearmeout/rooms/${roomId}/watch/request`;
+  const first=await fetch(url,{method:'POST',headers:alice,body:JSON.stringify({query:'Show S01E02'})});
+  assert.equal(first.status,503);
+  const pending=await first.json();
+  assert.equal(pending.status,'queued_progress_pending');
+  assert.equal(pending.retryable,true);
+  assert.ok(pending.retryKey);
+  assert.equal(f.rooms.getSession(TENANT,roomId,'movie').queue.length,1);
+  const retry=await fetch(url,{method:'POST',headers:{...alice,'idempotency-key':pending.retryKey},body:JSON.stringify({query:'Show S01E02'})});
+  assert.equal(retry.status,201,await retry.clone().text());
+  assert.equal((await retry.json()).status,'queued');
+  const session=f.rooms.getSession(TENANT,roomId,'movie');
+  assert.equal([session.current,...session.queue].filter(Boolean).length,1,'retry replays the existing queue operation');
+  assert.deepEqual(f.watch.request?undefined:undefined,undefined);
+ }finally{
+  await teardown(f);
  }
 });
