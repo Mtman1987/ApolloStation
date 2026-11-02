@@ -9,7 +9,7 @@ REA (Reverse Engineer Anything) is an optional, evidence-producing investigation
 ## What this first integration does
 
 - Provides `npm run parity:rea -- <target-path>` to run REA's JavaScript application analysis against an explicitly supplied local file or directory.
-- Provides a manual GitHub Actions proof-of-concept for the Apollo app trees: HearMeOut, StreamWeaver, Nebula Arcade, and Discord StreamHub.
+- Provides a manual GitHub Actions proof-of-concept that builds and analyzes the compiled JavaScript for the Apollo app trees: HearMeOut, StreamWeaver, Nebula Arcade, and Discord StreamHub.
 - Uploads the machine-readable REA report as a workflow artifact. It does not commit generated reports, modify donor repositories, or change parity statuses.
 - Uses Node.js 24 because current REA releases require Node 22.19+, 24.11+, or 26+.
 
