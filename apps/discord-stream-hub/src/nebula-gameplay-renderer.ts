@@ -17,7 +17,7 @@ export class DshPlaywrightNebulaGameplayRenderer implements DshNebulaGameplayRen
   const url=new URL(request.captureUrl);
   if(url.protocol!=="https:"||url.username||url.password||url.search||url.hash)throw new Error("Nebula gameplay capture URL must be credential-free HTTPS");
   const frameCount=request.captureSeconds*request.fps;
-  if(!Number.isSafeInteger(frameCount)||frameCount<1||frameCount>MAX_CAPTURE_FRAMES||request.width!==960||request.height!==450||request.fps!==10||request.outputWidth!==480)throw new Error("Nebula gameplay capture dimensions or duration are invalid");
+  if(!Number.isSafeInteger(frameCount)||frameCount<1||frameCount>MAX_CAPTURE_FRAMES||request.width!==800||request.height!==450||request.fps!==10||request.outputWidth!==480)throw new Error("Nebula gameplay capture dimensions or duration are invalid");
   const directory=await mkdtemp(join(tmpdir(),"dsh-nebula-gameplay-"));
   let browser:Browser|undefined,context:BrowserContext|undefined;
   try{
