@@ -492,7 +492,7 @@ export class DshWebControls {
       try{
         const date=raidTrain?.[2]??raidSlot?.[1]??raidCancelSlot?.[1]??"";
         const slots=this.raidTrain.schedule(tenant.tenantId,guildId,date);
-        if(raidTrain?.[1]==="day")return {type:7,data:dshRaidTrainPayload(slots,date)};
+        if(raidTrain?.[1]==="day"){const messageId=optionalSnowflake(interaction.message?.id),channelId=optionalSnowflake(interaction.channel_id);if(messageId&&channelId)this.raidTrain.setPanel({tenantId:tenant.tenantId,guildId,date,channelId,messageId});return {type:7,data:dshRaidTrainPayload(slots,date)};}
         if(raidTrain?.[1]==="view")return {type:4,data:{flags:64,...dshRaidTrainPayload(slots,date)}};
         if(raidTrain?.[1]==="signup"){
           if(date<=this.now().slice(0,10))return ephemeral("Raid Train signups open the day before. Choose a future date.");
@@ -508,10 +508,12 @@ export class DshWebControls {
         if(raidSlot){
           const identity=await this.raidTrainIdentity(tenant.tenantId,guildId,userId),hour=Number(raidSlot[2]);
           const result=this.raidTrain.signup({tenantId:tenant.tenantId,guildId,date:raidSlot[1]!,hour,userId:identity.userId,twitchUserId:identity.twitchUserId,username:identity.twitchLogin,displayName:identity.displayName,...(identity.avatarUrl?{avatarUrl:identity.avatarUrl}:{})});
+          if(result.success)await this.refreshRaidTrainPanel(tenant.tenantId,guildId,raidSlot[1]!);
           return ephemeral(result.success?"🚂 Your Raid Train slot is reserved for "+String(hour).padStart(2,"0")+":00 UTC.":result.reason==="same-day"?"Same-day Raid Train signups are closed.":"That hour was just claimed by someone else.");
         }
         if(raidCancelSlot){
           const identity=await this.raidTrainIdentity(tenant.tenantId,guildId,userId),result=this.raidTrain.cancel({tenantId:tenant.tenantId,guildId,date:raidCancelSlot[1]!,hour:Number(raidCancelSlot[2]),userId:identity.userId});
+          if(result.success)await this.refreshRaidTrainPanel(tenant.tenantId,guildId,raidCancelSlot[1]!);
           return ephemeral(result.success?"Your Raid Train reservation was cancelled.":"That slot is not yours or is no longer reserved.");
         }
       }catch(error){return ephemeral(safeError(error));}
