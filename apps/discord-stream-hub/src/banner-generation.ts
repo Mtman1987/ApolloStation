@@ -10,6 +10,7 @@ import {
   dshBannerFrameTimesMs,
   dshBannerStorageKey,
   normalizeDshBannerVariant,
+  resolveDshBannerVariant,
   type DshBannerVariantV1,
 } from "./banner-policy.js";
 
@@ -70,4 +71,15 @@ export class SqliteDshRoleAwareBannerService {
   communitySpotlight(): Promise<DshStoredBannerV1> {
     return this.generate("community-spotlight", "spotlight");
   }
+}
+
+export interface DshBannerMediaPublisherV1 { publishMedia(tenantId:string,mime:"image/gif",bytes:Uint8Array):string|undefined; }
+export class DshRoleAwareBannerMediaSource {
+  constructor(private readonly service:SqliteDshRoleAwareBannerService,private readonly publisher:DshBannerMediaPublisherV1){}
+  async getBannerUrl(input:{tenantId:string;member:{twitchLogin:string;group:string}}):Promise<string|undefined>{
+    const variant=resolveDshBannerVariant({twitchLogin:input.member.twitchLogin,group:input.member.group});
+    const banner=await this.service.generate(input.member.twitchLogin,variant);
+    return this.publisher.publishMedia(input.tenantId,"image/gif",banner.gif);
+  }
+  close(){this.service.close();}
 }
