@@ -47,7 +47,7 @@ export interface DshRaidPileHandoffV1 {
 /** DSH owns Raid Pile membership/routing. Twitch remains voluntary: this state never initiates a raid. */
 export class DshRaidPileStore {
   private readonly db: DatabaseSync;
-  constructor(path: string, private readonly settings: () => DshRaidPileSettingsV1 = () => DEFAULT_DSH_RAID_PILE_SETTINGS, private readonly now: () => string = () => new Date().toISOString()) {
+  constructor(path: string, private readonly settings: (tenantId:string) => DshRaidPileSettingsV1 = () => DEFAULT_DSH_RAID_PILE_SETTINGS, private readonly now: () => string = () => new Date().toISOString()) {
     this.db = new DatabaseSync(path, { timeout: 5_000 });
     this.db.exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON;");
     this.migrate();
@@ -134,7 +134,7 @@ export class DshRaidPileStore {
 
   /** After the configured hold time, recommend the next announced target without claiming the physical audience moved. */
   dueHandoffs(tenantId: string): DshRaidPileHandoffV1[] {
-    const settings = validateSettings(this.settings()), now = Date.parse(this.now()), output: DshRaidPileHandoffV1[] = [];
+    const settings = validateSettings(this.settings(tenantId)), now = Date.parse(this.now()), output: DshRaidPileHandoffV1[] = [];
     for (const pile of this.piles(tenantId)) {
       if (!pile.target || !pile.targetSince) continue;
       const heldHours = (now - Date.parse(pile.targetSince)) / 3_600_000;

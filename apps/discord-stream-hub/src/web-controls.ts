@@ -1,4 +1,5 @@
 import { DshMemberDirectoryStore } from "./member-directory.js";
+import { DshRaidPileStore, DEFAULT_DSH_RAID_PILE_SETTINGS, type DshRaidPileSettingsV1 } from "./raid-pile.js";
 import {DshOnboardingPanel} from "./onboarding-panel.js";
 import { DshMemberActivityStore } from "./member-activity.js";
 import { DshPartnerSchedules } from "./partner-schedules.js";
@@ -73,6 +74,7 @@ export class DshWebControls {
       this.messages = new SqliteDshDiscordMessageStore(options.databasePath);
       this.applications = new SqliteDshApplicationStore(options.databasePath);
       this.shoutouts = new DshShoutoutGenerationStore(options.databasePath, this.now);
+      this.raidPile = new DshRaidPileStore(options.databasePath, (tenantId) => this.raidPileSettings(tenantId));
     }
     if (options.runtimeConfigPath) this.config = loadDshLiveRuntimeConfig(options.runtimeConfigPath);
     if(options.databasePath&&this.config&&this.settings)this.memberDirectory=new DshMemberDirectoryStore(options.databasePath,this.config,this.settings);
@@ -94,12 +96,13 @@ export class DshWebControls {
     }
   }
 
-  close() { this.memberDirectory?.close();this.activity?.close();this.cleanup?.close();this.monitor?.close(); this.calendar?.close(); this.settings?.close(); this.messages?.close(); this.applications?.close(); this.shoutouts?.close(); }
+  close() { this.memberDirectory?.close();this.activity?.close();this.cleanup?.close();this.monitor?.close(); this.calendar?.close(); this.settings?.close(); this.messages?.close(); this.applications?.close(); this.shoutouts?.close();this.raidPile?.close(); }
 
   async handle(request: IncomingMessage, response: ServerResponse, url: URL): Promise<boolean> {
     if (!url.pathname.startsWith("/api/discord-stream-hub/control")) return false;
     try {
       const context = await fetchAppSessionContext({ appId: "discord-stream-hub", spmtOrigin: this.options.spmtOrigin, request });
+      if(request.method==="GET"&&url.pathname==="/api/discord-stream-hub/control/raid-pile") return sendJson(response,200,await this.raidPileState(context,request));
       if(request.method==="GET"&&url.pathname==="/api/discord-stream-hub/control/moderation") {this.requireOwner(context);return sendJson(response,200,{plans:this.cleanup?.list(context.tenantId,String(context.session.actorId),"owner")??[]});}
       if(request.method==="GET"&&url.pathname==="/api/discord-stream-hub/control/moderation/job") {
         this.requireOwner(context);if(!this.client)throw new Error("Connect DSH to read cleanup job status");
@@ -128,6 +131,14 @@ export class DshWebControls {
       if (request.method === "GET" && url.pathname === "/api/discord-stream-hub/control/shoutouts") return sendJson(response, 200, await this.shoutoutView(request, context));
       if (request.method !== "POST") return sendJson(response, 405, { error: "method_not_allowed" });
       requireSameOrigin(request);
+      if(url.pathname==="/api/discord-stream-hub/control/raid-pile/join"||url.pathname==="/api/discord-stream-hub/control/raid-pile/leave"||url.pathname==="/api/discord-stream-hub/control/raid-pile/advance"){
+        const store=this.requireRaidPile(),actor=String(context.session.actorId??"");
+        if(url.pathname.endsWith("/join")){const linked=await this.raidPileIdentity(context,request);const result=store.join(context.tenantId,{userId:actor,twitchLogin:linked.twitchLogin,displayName:linked.displayName});return sendJson(response,200,{...result,message:result.duplicate?"You are already in the Raid Pile.":"You joined the Raid Pile."});}
+        if(url.pathname.endsWith("/leave")){const result=store.leave(context.tenantId,actor);return sendJson(response,200,{...result,message:result.removed?"You left the Raid Pile.":"You were not in the Raid Pile."});}
+        this.requireOwner(context);const pileId=text(body.pileId,"pileId",180),requestId=text(body.requestId,"requestId",120);
+        const target=this.requireCalendar().once(context.tenantId,`raid-pile-advance:${this.requestKey(context,body)??requestId}`,()=>store.advance(context.tenantId,pileId,"manual"));
+        return sendJson(response,200,{target:target??null,piles:store.piles(context.tenantId),message:target?`Next announced target: ${target.displayName}. Twitch raid remains voluntary.`:"No other live member is available."});
+      }
       const body = await readJsonBody(request);
       if(url.pathname.startsWith("/api/discord-stream-hub/control/calendar/partner/")){
         if(!this.partners)throw Error("Connect DSH to use partner calendars");
@@ -256,6 +267,7 @@ export class DshWebControls {
       activityStatus:this.activity?.cursor(tenantId).error??null,
       calendarMonth: month,
       ...shoutouts,
+      raidPile: await this.raidPileState(context,request),
       trackedMessages: this.messages?.list(tenantId) ?? [],
       cleanupPlans:this.role(context)==="owner"?this.cleanup?.list(tenantId,String(context.session.actorId),"owner")??[]:[],
       applications: this.role(context) === "owner" ? this.applications?.list(tenantId, undefined, 100) ?? [] : [],
@@ -398,6 +410,20 @@ export class DshWebControls {
     if(this.liveDiscord)try{const snapshot=await fetchAppPlatformSnapshot({appId:"discord-stream-hub",spmtOrigin:this.options.spmtOrigin,request,sources:["providerLinks"],liveRead:null});const value=snapshot.providerLinks as any,links=Array.isArray(value)?value:value?.providers??value?.links??[];const link=links.find((l:any)=>l.provider==="discord"&&!l.revokedAt);if(link?.providerUserId){const user=await this.liveDiscord.getUser(context.tenantId,link.providerUserId);if(user.avatar)avatarUrl=`https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png?size=128`;}}catch{}
     if(avatarUrl)this.calendar?.setAvatar(context.tenantId,String(context.session.actorId),avatarUrl);
     return {userId:String(context.session.actorId??""),username:String(context.session.displayName??context.session.username??context.session.actorId??"SPMT member"),...(avatarUrl?{avatarUrl}:{})};
+  }
+  private requireRaidPile(){if(!this.raidPile)throw new Error("DSH Raid Pile storage is not configured");return this.raidPile;}
+  private raidPileSettings(tenantId:string):DshRaidPileSettingsV1 {const saved=this.settings?.read(tenantId);return {maxSize:saved?.raidPileMaxSize??DEFAULT_DSH_RAID_PILE_SETTINGS.maxSize,minSize:saved?.raidPileMinSize??DEFAULT_DSH_RAID_PILE_SETTINGS.minSize,pointsReward:saved?.raidPilePointsReward??DEFAULT_DSH_RAID_PILE_SETTINGS.pointsReward,handoffHours:saved?.raidPileHandoffHours??DEFAULT_DSH_RAID_PILE_SETTINGS.handoffHours,monthlyStrikeLimit:saved?.raidPileMonthlyStrikeLimit??DEFAULT_DSH_RAID_PILE_SETTINGS.monthlyStrikeLimit};}
+  private async raidPileIdentity(context:SessionContext,_request:IncomingMessage){
+    const actor=String(context.session.actorId??""),member=this.members(context.tenantId).find(item=>item.canonicalUserId===actor);
+    if(!member||!/^[a-z0-9_]{1,32}$/.test(member.twitchLogin))throw new Error("Raid Pile is available to members with a linked Twitch account in this Discord workspace");
+    return {twitchLogin:member.twitchLogin,displayName:member.displayName};
+  }
+  private async raidPileState(context:SessionContext,request:IncomingMessage){
+    const store=this.requireRaidPile(),piles=store.piles(context.tenantId);
+    for(const pile of piles)for(const member of pile.members){const stream=this.monitor?.getLiveStream(context.tenantId,member.userId);store.updatePresence(context.tenantId,member.userId,stream?.viewerCount??0,Boolean(stream));}
+    const refreshed=store.piles(context.tenantId),userId=String(context.session.actorId??""),membership=refreshed.flatMap(pile=>pile.members.map(member=>({pileId:pile.id,member}))).find(item=>item.member.userId===userId);
+    const next=membership?store.next(context.tenantId,membership.pileId,userId):undefined;
+    return {piles:refreshed,membership:membership??null,next:next??null,settings:this.raidPileSettings(context.tenantId),canAdvance:this.role(context)==="owner"};
   }
   private requireCalendar() { if (!this.calendar) throw new Error("DSH calendar storage is not configured"); return this.calendar; }
   private requireSettings() { if (!this.settings) throw new Error("DSH settings storage is not configured"); return this.settings; }
