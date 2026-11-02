@@ -36,13 +36,17 @@ export async function handleXtreamHlsRequest(request: IncomingMessage, response:
     if (!/^(?:(?:vod|series|live)-\d+|episode-\d+-[a-z0-9]+)$/i.test(streamId) || !/^[A-Za-z0-9_-]+\.(?:m3u8|ts)$/.test(file)) {
       sendJson(response, 400, { error: 'invalid_hls_reference' }); return true;
     }
-    if (authorize) {
-      try { await authorize(request, streamId); }
-      catch (error) {
-        const status = Number((error as { status?: unknown })?.status);
-        sendJson(response, status === 401 || status === 403 || status === 404 ? status : 403, { error: status === 404 ? 'playback_not_active' : 'playback_forbidden' });
-        return true;
-      }
+    // Fail closed: a caller that forgets to wire room authorization must never
+    // turn this global media route into an unauthenticated file server.
+    if (!authorize) {
+      sendJson(response, 403, { error: 'playback_forbidden' });
+      return true;
+    }
+    try { await authorize(request, streamId); }
+    catch (error) {
+      const status = Number((error as { status?: unknown })?.status);
+      sendJson(response, status === 401 || status === 403 || status === 404 ? status : 403, { error: status === 404 ? 'playback_not_active' : 'playback_forbidden' });
+      return true;
     }
     if (file === 'index.m3u8') {
       ensureXtreamHls(streamId).catch(() => {});
