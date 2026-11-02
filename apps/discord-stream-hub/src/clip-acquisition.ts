@@ -25,7 +25,7 @@ export class DshClipAcquisitionWorker {
   this.inFlight.add(tenantId);this.lastRun.set(tenantId,this.now());
   try{
    const grant=await this.grants.getClipGrant(tenantId);if(grant.status!=="ready")return {status:grant.status,reason:grant.reason};
-   const tracked=await this.members.listLiveTrackedMembers(tenantId),unique=[...new Map(tracked.map(member=>[member.twitchLogin.toLowerCase(),member])).values()];
+   const tracked=await this.members.listLiveTrackedMembers(tenantId),unique=[...new Map<string,typeof tracked[number]>(tracked.map(member=>[member.twitchLogin.toLowerCase(),member] as const)).values()];
    let creators=0,clipsSaved=0;
    for(const member of unique.slice(0,20)){
     const login=member.twitchLogin.toLowerCase(),fresh=this.store.list(tenantId,login).filter(item=>this.now()-Date.parse(item.capturedAt)<24*60*60*1000);
