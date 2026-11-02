@@ -24,10 +24,12 @@ npx -y rea-agents@latest setup
 npx -y rea-agents@latest doctor
 ```
 
-Then analyze a local target:
+Build the Apollo workspace first, then analyze the compiled JavaScript for the selected app:
 
 ```sh
-npm run parity:rea -- apps/hearmeout
+npm ci
+npm run build
+npm run parity:rea -- apps/hearmeout/dist
 # Or point it at an authorized extracted JS/Electron application or bundle:
 npm run parity:rea -- /absolute/path/to/authorized-target
 ```
@@ -35,7 +37,7 @@ npm run parity:rea -- /absolute/path/to/authorized-target
 The command prints JSON to stdout and diagnostics to stderr. Save the report outside the source tree if desired:
 
 ```sh
-npm run parity:rea -- apps/hearmeout > /tmp/hearmeout-rea-report.json
+npm run parity:rea -- apps/hearmeout/dist > /tmp/hearmeout-rea-report.json
 ```
 
 ## Investigation loop for each donor capability
