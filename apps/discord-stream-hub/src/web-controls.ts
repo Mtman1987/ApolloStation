@@ -29,7 +29,7 @@ import { createDshWorkerTokenProvider, loadDshLiveRuntimeConfig, type DshLiveRun
 import { DshSimulationRoomDiscordTransport } from "./simulation-room.js";
 import { DshTenantSettingsStore } from "./settings.js";
 import { DshPointsService } from "./points.js";
-import { dshSignalSeekerPanelPayload } from "./signal-seeker.js";
+import { dshSignalSeekerPanelPayload, SqliteDshSignalSeekerStore } from "./signal-seeker.js";
 
 export interface DshWebControlOptionsV1 {
   spmtOrigin: string;
@@ -77,6 +77,7 @@ export class DshWebControls {
       this.messages = new SqliteDshDiscordMessageStore(options.databasePath);
       this.applications = new SqliteDshApplicationStore(options.databasePath);
       this.shoutouts = new DshShoutoutGenerationStore(options.databasePath, this.now);
+      this.signalSeekers = new SqliteDshSignalSeekerStore(options.databasePath, this.now);
       this.forumForwardingStore = new DshForumForwardingStore(options.databasePath);
       this.raidPile = new DshRaidPileStore(options.databasePath, (tenantId) => this.raidPileSettings(tenantId));
     }
@@ -101,7 +102,7 @@ export class DshWebControls {
     }
   }
 
-  close() { this.memberDirectory?.close();this.activity?.close();this.cleanup?.close();this.monitor?.close(); this.calendar?.close(); this.settings?.close(); this.messages?.close(); this.applications?.close(); this.shoutouts?.close();this.forumForwardingStore?.close();this.raidPile?.close(); }
+  close() { this.memberDirectory?.close();this.activity?.close();this.cleanup?.close();this.monitor?.close(); this.calendar?.close(); this.settings?.close(); this.messages?.close(); this.applications?.close(); this.shoutouts?.close();this.signalSeekers?.close();this.forumForwardingStore?.close();this.raidPile?.close(); }
 
   async handle(request: IncomingMessage, response: ServerResponse, url: URL): Promise<boolean> {
     if (!url.pathname.startsWith("/api/discord-stream-hub/control")) return false;
@@ -367,7 +368,26 @@ export class DshWebControls {
     return {pending:failures.length>0,message:failures.join("; ")};
   }
   async interaction(interaction:Record<string,any>){
-    if(!this.config||!this.calendar)return undefined;
+    if(!this.config)return undefined;
+    const customId=String(interaction.data?.custom_id??""),signal=/^signal_seekers:(join|leave):(\\d{5,30})$/.exec(customId);
+    if(interaction.type===3&&signal){
+      const guildId=String(interaction.guild_id??""),userId=String(interaction.member?.user?.id??interaction.user?.id??""),tenant=this.config.tenants.find(item=>item.discordGuildIds?.includes(guildId));
+      const ephemeral=(content:string)=>({type:4,data:{flags:64,content,allowed_mentions:{parse:[]}}});
+      if(!tenant||!/^\\d{5,30}$/.test(guildId)||!/^\\d{5,30}$/.test(userId))return ephemeral("This Signal Seeker control is not connected to an SPMT server.");
+      if(this.options.operationMode!=="active"||!this.liveDiscord||!this.signalSeekers)return ephemeral("Signal Seeker role changes are unavailable in this environment.");
+      try{
+        const roleId=signal[2]!,roles=await this.liveDiscord.listGuildRoles(tenant.tenantId,guildId),role=roles.find(item=>item.id===roleId&&!item.managed&&item.name.toLowerCase()==="signal seeker");
+        if(!role)return ephemeral("This Signal Seeker role is no longer configured. Ask a moderator to republish the panel.");
+        const [member,identity]=await Promise.all([this.liveDiscord.getGuildMember(tenant.tenantId,guildId,userId),resolveProviderIdentity(this.client!,tenant.tenantId,"discord",userId).catch(()=>undefined)]);
+        const winnerRole=roles.find(item=>item.name.toLowerCase()==="voidwalker"),isWinner=Boolean(winnerRole&&member.roles?.includes(winnerRole.id));
+        if(signal[1]==="join"&&isWinner)return ephemeral("You already hold the Voidwalker title; the Signal Seeker role is reserved for the active hunt.");
+        const enabled=signal[1]==="join";
+        await this.liveDiscord.setGuildMemberRole(tenant.tenantId,guildId,userId,roleId,enabled);
+        this.signalSeekers.setSeeking({tenantId:tenant.tenantId,providerUserId:userId,...(identity?.userId?{canonicalUserId:identity.userId}:{}),enabled,at:this.now()});
+        return ephemeral(enabled?"🥚 You are now a Signal Seeker. You will be notified when a new Signal appears.":"You left the Signal Seekers. You can rejoin any time from this panel.");
+      }catch(error){return ephemeral(safeError(error));}
+    }
+    if(!this.calendar)return undefined;
     if(this.onboarding){const result=await this.onboarding.interaction(interaction);if(result)return result;}
     if(this.partners){const result=await respondDshPartnerSchedule({schedules:this.partners,config:this.config,now:this.now,resolve:async(tenant,id)=>{if(!this.client)throw Error("Connect DSH first");const identity=await resolveProviderIdentity(this.client,tenant,"discord",id);return {userId:identity.userId,role:identity.tenantRole??null};}},interaction);if(result)return result;}
     return respondDshCalendarInteraction({config:this.config,calendar:this.calendar,now:this.now,changed:tenant=>this.changed(tenant),resolve:async(tenant,id)=>{
