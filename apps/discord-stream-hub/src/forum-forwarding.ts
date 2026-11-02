@@ -158,7 +158,7 @@ export class DshForumForwardingWorker {
         const eventId=String(item.id??item.eventId??"");if(!eventId)continue;
         if(item.type==="spmt.chat.message.received.v1"||item.type==="spmt.chat.message.mutated.v1"){
           const payload=(item.payload&&typeof item.payload==="object"?item.payload:{}) as Record<string,unknown>;
-          if(payload.provider==="discord"&&typeof payload.guildId==="string"&&this.allowedGuilds(tenant).includes(payload.guildId)&&typeof payload.channelId==="string"&&typeof payload.messageId==="string"){
+          if(payload.provider==="discord"&&typeof payload.channelId==="string"&&typeof payload.messageId==="string"){
             const records=await this.client.listCommlinkLiveChat(tenant,{provider:"discord",channelId:payload.channelId,limit:500});
             const record=records.find(row=>row.messageId===payload.messageId);
             if(record){
