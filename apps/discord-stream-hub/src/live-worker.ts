@@ -1,3 +1,4 @@
+import { SqliteDshClipGifStore, DshClipGifSpotlightMediaSource } from "./clip-gif-library.js";
 import { SqliteDshSignalSeekerStore, dshSignalSeekerPanelPayload, dshSignalDropInteractionPayload, dshSignalDropClue } from "./signal-seeker.js";
 import { DshMemberDirectoryStore, DshMemberDirectoryWorker } from "./member-directory.js";
 import {DshOnboardingPanel} from "./onboarding-panel.js";
@@ -186,6 +187,7 @@ export class SupervisedDshLiveService {
   private nebulaMediaCycle:Promise<void>|undefined;
   private readonly nebulaMediaAbort=new AbortController();
   private readonly nebulaMedia?:DshNebulaMediaWorker;
+  private readonly clipSpotlightMedia:DshClipGifSpotlightMediaSource;
   private readonly suiteActions: DshSuiteActionWorker;
   private readonly settings: DshTenantSettingsStore;
   private readonly raidPile: DshRaidPileStore;
@@ -218,7 +220,8 @@ export class SupervisedDshLiveService {
     this.cleanup=new DshChannelCleanup(options.databasePath,new DshChannelModerationService(liveDiscord.moderationPort()));
     const simulationDiscord = new DshSimulationRoomDiscordTransport(liveDiscord, this.client, { guildIds: (tenantId) => options.config.tenants.find((tenant) => tenant.tenantId === tenantId)?.discordGuildIds ?? [], now });
     const discord = options.operationMode === "read-only" ? simulationDiscord : new DshSimulationRoomDiscordTransport(liveDiscord, this.client, { guildIds: (tenantId) => options.config.tenants.find((tenant) => tenant.tenantId === tenantId)?.discordGuildIds ?? [], now, liveWrites: true });
-    const publisher = new DshDiscordLivePublisher(discord, this.messages, directory, undefined, now,this.monitor.guests);
+    this.clipSpotlightMedia=new DshClipGifSpotlightMediaSource(new SqliteDshClipGifStore(options.databasePath),this.nebulaMedia);
+    const publisher = new DshDiscordLivePublisher(discord, this.messages, directory, this.clipSpotlightMedia, now,this.monitor.guests);
     this.runtime = new DshLiveRuntime(this.monitor, publisher);
     const twitchGrants=new SpmtDshTwitchGrantSource(this.client,directory),twitch=new TwitchHelixLiveClient(fetchImpl);
     this.memberSync = new DshMemberDirectoryWorker(this.memberDirectory, this.client, options.config, liveDiscord, twitchGrants, twitch, now);
@@ -332,7 +335,7 @@ export class SupervisedDshLiveService {
       let failure: unknown;
       let failed = false;
       try { await this.nebulaMediaCycle; await this.calendarCycle; await activeCycle; } catch (error) { failure = error; failed = true; }
-      this.nebulaMedia?.close();
+      this.nebulaMedia?.close();this.clipSpotlightMedia.close();
       this.memberDirectory.close();this.settings.close();this.raidPile.close();this.cleanup.close();this.activityStore.close();this.forumForwardingStore.close();this.signalSeekers.close();
       try { this.messages.close(); } catch (error) { if (!failed) { failure = error; failed = true; } }
       try { this.calendarSync?.close(); this.calendar.close(); } catch (error) { if (!failed) { failure = error; failed = true; } }
