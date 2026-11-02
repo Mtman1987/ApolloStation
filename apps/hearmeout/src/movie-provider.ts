@@ -9,7 +9,7 @@ export interface HearMeOutMovieMatch {itemId:string;title:string;year?:number;ov
 
 /** Apollo-owned IPTV catalog adapter. A supplied origin is retained only for isolated legacy test fixtures. */
 export class HearMeOutMovieProvider {
-  private readonly legacyOrigin?:string;
+  private readonly legacyOrigin:string|undefined;
   private readonly legacyFetch:typeof fetch|undefined;
   private readonly legacyAuthorization:string;
   constructor(origin?:string,fetchImpl?:typeof fetch,authorization='',private readonly catalogSearch=searchXtreamCatalogRanked){
