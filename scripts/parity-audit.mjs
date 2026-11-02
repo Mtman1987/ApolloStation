@@ -41,7 +41,8 @@ else {
     if (!capability.id || capabilityIds.has(capability.id)) errors.push(`Missing or duplicate capability id: ${capability.id ?? '(empty)'}`);
     capabilityIds.add(capability.id);
     if (!allowed.has(capability.status)) errors.push(`${capability.id}: invalid status "${capability.status}"`);
-    validateReferences(capability, ['apollo', 'tests', 'acceptance', 'open']);
+    validateReferences(capability, ['apollo', 'tests']);
+    for (const field of ['acceptance', 'open']) if (!Array.isArray(capability[field])) errors.push(`${capability.id}: ${field} must be an array`);
     if (!Array.isArray(capability.donor)) errors.push(`${capability.id}: donor must be an array`);
     if (!Array.isArray(capability.decisions ?? [])) errors.push(`${capability.id}: decisions must be an array when present`);
   }
