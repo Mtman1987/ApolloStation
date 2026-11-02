@@ -208,6 +208,15 @@ export class DshWebControls {
       if (url.pathname === "/api/discord-stream-hub/control/calendar/mission") return await this.mission(response, context, body,request);
       if (url.pathname === "/api/discord-stream-hub/control/calendar/publish") return await this.publishCalendar(response, context, body);
       if (url.pathname === "/api/discord-stream-hub/control/applications/publish") return await this.publishApplications(response, context, body);
+      if(url.pathname==="/api/discord-stream-hub/control/points/adjust"){
+        this.requireOwner(context);if(!this.client)throw new Error("Canonical XP service is unavailable");
+        const userId=text(body.userId,"userId",300),action=String(body.action??""),amount=integer(body.amount,0,100000,"amount"),reason=text(body.reason,"reason",300),operationId=this.requestKey(context,body)??text(body.requestId,"requestId",120);
+        if(!["add","remove","set"].includes(action))throw new Error("Choose add, remove or set");
+        if(!this.members(context.tenantId).some(member=>member.canonicalUserId===userId))throw new Error("Choose a linked member in this Discord workspace");
+        const service=new DshPointsService(this.client,context.tenantId),metadata={source:"owner-adjustment",actorUserId:String(context.session.actorId),reason,action};
+        const wallet=action==="set"?await service.setPoints(userId,amount,operationId,metadata):await service.addPoints(userId,action==="remove"?-amount:amount,operationId,metadata);
+        return sendJson(response,200,{wallet,message:"Canonical XP adjustment saved."});
+      }
       if (url.pathname === "/api/discord-stream-hub/control/settings/roles") { if (body.roleGuildId === undefined) throw Error("Choose a Discord server for role groups"); return await this.updateSettings(response, context, body); }
       if (url.pathname === "/api/discord-stream-hub/control/settings") return await this.updateSettings(response, context, body);
       return sendJson(response, 404, { error: "not_found" });
