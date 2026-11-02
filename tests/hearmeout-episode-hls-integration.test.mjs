@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {createServer} from 'node:http';
-import {mkdtemp,mkdir,writeFile,rm} from 'node:fs/promises';
+import {chmod,mkdtemp,mkdir,readFile,writeFile,rm} from 'node:fs/promises';
+import {delimiter} from 'node:path';
+import {ensureXtreamHls} from '../apps/hearmeout/dist/xtream-hls.js';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {createHearMeOutWebServer} from '../apps/hearmeout/dist/web-server-v3.js';
@@ -100,6 +102,50 @@ test('requested episode delivers its Apollo HLS ladder and bounded ranges withou
   await host?.close();
   if(auth){auth.closeAllConnections();await new Promise(resolve=>auth.close(resolve));}
   if(previous===undefined)delete process.env.HEARMEOUT_HLS_DIR;else process.env.HEARMEOUT_HLS_DIR=previous;
+  await rm(root,{recursive:true,force:true});
+ }
+});
+
+test('episode HLS conversion runs the real FFmpeg orchestration and reuses a valid cached ladder',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'hmo-episode-convert-'));
+ const bin=join(root,'bin'),hls=join(root,'hls'),count=join(root,'ffmpeg-count');
+ const previous={PATH:process.env.PATH,HLS:process.env.HEARMEOUT_HLS_DIR,BASE:process.env.HEARMEOUT_XTREAM_BASE_URL,USER:process.env.HEARMEOUT_XTREAM_USERNAME,PASS:process.env.HEARMEOUT_XTREAM_PASSWORD};
+ try{
+  await mkdir(bin,{recursive:true});
+  const ffprobe=join(bin,'ffprobe'),ffmpeg=join(bin,'ffmpeg');
+  await writeFile(ffprobe, '#!/bin/sh\\nprintf \'%s\\n\' \'{"streams":[{"index":0,"codec_type":"video"},{"index":1,"codec_type":"audio","tags":{"language":"eng"}}]}\'\\n');
+  await writeFile(ffmpeg,`#!/bin/sh
+printf 'run\\n' >> '${count}'
+segment_pattern=''
+output=''
+want_segment=0
+for arg in "$@"; do
+ if [ "$want_segment" = "1" ]; then segment_pattern="$arg"; want_segment=0; continue; fi
+ if [ "$arg" = "-hls_segment_filename" ]; then want_segment=1; continue; fi
+ output="$arg"
+done
+dir=$(dirname "$output")
+segment=$(printf '%s' "$segment_pattern" | sed 's/%v/0/g; s/%05d/00000/g')
+printf '#EXTM3U\\n#EXT-X-STREAM-INF:BANDWIDTH=128000\\nstream_v0.m3u8\\n' > "$dir/index.m3u8"
+printf '#EXTM3U\\n#EXTINF:6,\\nstream_v0_seg_00000.ts\\n#EXT-X-ENDLIST\\n' > "$dir/stream_v0.m3u8"
+printf 'fixture-segment' > "$segment"
+exit 0
+`);
+  await chmod(ffprobe,0o755);await chmod(ffmpeg,0o755);
+  process.env.PATH=bin+delimiter+(previous.PATH||'');
+  process.env.HEARMEOUT_HLS_DIR=hls;
+  process.env.HEARMEOUT_XTREAM_BASE_URL='https://provider.example';
+  process.env.HEARMEOUT_XTREAM_USERNAME='fixture-user';
+  process.env.HEARMEOUT_XTREAM_PASSWORD='fixture-password';
+  await ensureXtreamHls('episode-7-mkv');
+  const dir=join(hls,'episode-7-mkv');
+  assert.match(await readFile(join(dir,'index.m3u8'),'utf8'),/stream_v0\\.m3u8/);
+  assert.match(await readFile(join(dir,'stream_v0.m3u8'),'utf8'),/stream_v0_seg_00000\\.ts/);
+  assert.equal(await readFile(join(dir,'stream_v0_seg_00000.ts'),'utf8'),'fixture-segment');
+  await ensureXtreamHls('episode-7-mkv');
+  assert.equal((await readFile(count,'utf8')).trim().split(/\\r?\\n/).length,1,'valid cache is not reconverted');
+ }finally{
+  for(const [key,value] of [['PATH',previous.PATH],['HEARMEOUT_HLS_DIR',previous.HLS],['HEARMEOUT_XTREAM_BASE_URL',previous.BASE],['HEARMEOUT_XTREAM_USERNAME',previous.USER],['HEARMEOUT_XTREAM_PASSWORD',previous.PASS]]){if(value===undefined)delete process.env[key];else process.env[key]=value;}
   await rm(root,{recursive:true,force:true});
  }
 });
