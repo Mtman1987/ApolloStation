@@ -30,7 +30,7 @@ import { createDshWorkerTokenProvider, loadDshLiveRuntimeConfig, type DshLiveRun
 import { DshSimulationRoomDiscordTransport } from "./simulation-room.js";
 import { DshTenantSettingsStore } from "./settings.js";
 import { DshPointsService } from "./points.js";
-import { dshSignalSeekerPanelPayload, dshSignalDropInteractionPayload, SqliteDshSignalSeekerStore } from "./signal-seeker.js";
+import { dshSignalSeekerPanelPayload, dshSignalDropInteractionPayload, dshSignalDropClue, SqliteDshSignalSeekerStore } from "./signal-seeker.js";
 
 export interface DshWebControlOptionsV1 {
   spmtOrigin: string;
@@ -252,15 +252,17 @@ export class DshWebControls {
         const guild = this.guild(context.tenantId, body.serverId);
         if (isSimulationDiscordId(guild)) throw new Error("Choose a live Discord server for Signal drops");
         const channelId = snowflake(body.channelId, "channelId"), roleId = snowflake(body.roleId, "roleId");
-        const signalUrl = new URL(String(body.signalUrl ?? ""));
-        if (signalUrl.protocol !== "https:" || signalUrl.username || signalUrl.password) throw new Error("Signal URL must be credential-free HTTPS");
+        const signalUrl = body.signalUrl ? new URL(String(body.signalUrl)) : undefined;
+        if (signalUrl && (signalUrl.protocol !== "https:" || signalUrl.username || signalUrl.password)) throw new Error("Signal URL must be credential-free HTTPS");
+        const clue = String(body.clue ?? dshSignalDropClue()).trim().slice(0, 1800);
+        if (!clue) throw new Error("Signal clue is required");
         const [channels, roles] = await Promise.all([this.liveDiscord.listGuildChannels(context.tenantId, guild), this.liveDiscord.listGuildRoles(context.tenantId, guild)]);
         if (!channels.some(channel => channel.id === channelId && [0, 5].includes(Number(channel.type)))) throw new Error("Choose a text channel in the selected Discord server");
         if (!roles.some(role => role.id === roleId && !role.managed && role.name.toLowerCase() === "signal seeker")) throw new Error("Choose the Signal Seeker role from the selected Discord server");
-        const dropId = randomUUID(), payload = dshSignalDropInteractionPayload(roleId, dropId);
+        const dropId = randomUUID(), payload = dshSignalDropInteractionPayload(roleId, dropId, clue);
         const messageId = await this.liveDiscord.createMessage(context.tenantId, channelId, payload);
         try {
-          const drop = this.signalSeekers.createDrop({ dropId, tenantId: context.tenantId, channelId, messageId, roleId, signalUrl: signalUrl.toString(), now: this.now() });
+          const drop = this.signalSeekers.createDrop({ dropId, tenantId: context.tenantId, channelId, messageId, roleId, ...(signalUrl ? { signalUrl: signalUrl.toString() } : {}), clue, now: this.now() });
           return sendJson(response, 201, { drop });
         } catch (error) { await this.liveDiscord.deleteMessage(context.tenantId, channelId, messageId).catch(() => undefined); throw error; }
       }
@@ -408,7 +410,7 @@ export class DshWebControls {
         const identity=await resolveProviderIdentity(this.client!,tenant.tenantId,"discord",userId).catch(()=>undefined);
         const result=this.signalSeekers.claim({dropId,tenantId:tenant.tenantId,providerUserId:userId,...(identity?.userId?{canonicalUserId:identity.userId}:{}),at:this.now()});
         if(!result.won)return ephemeral(result.reason==="claimed"?"Another seeker already claimed this Signal.":"That Signal has faded.");
-        return ephemeral("📡 **SIGNAL OPENED**\\n\\n"+result.drop.signalUrl+"\\n\\nThis opens the Signal only; it does not perform an egg roll.");
+        return ephemeral("📡 **SIGNAL OPENED**\\n\\n"+(result.drop.clue??"The transmission dissolved into static.")+(result.drop.signalUrl?"\\n\\n"+result.drop.signalUrl:"")+"\\n\\nThis opens the Signal only; it does not perform an egg roll.");
       }catch(error){return ephemeral(safeError(error));}
     }
     if(interaction.type===3&&signal){
