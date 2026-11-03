@@ -2,7 +2,7 @@
 
 **Repository:** `Mtman1987/ApolloStation`  
 **Authority:** `main`  
-**Last observed HEAD:** `dbf2cb8e458e3c88db7a5749fb28153dde745917`
+**Last observed baseline HEAD:** `15c806750c2b70aa1dec10d5aa3dae2343035298`
 
 ## Instructions for the next AI
 
@@ -15,12 +15,12 @@
 
 ## Current CI snapshot
 
-- Last completed full release validation: [41703486111](https://github.com/Mtman1987/ApolloStation/actions/runs/41703486111) — PASS, four shards, 1,450 tests, zero failures (333 + 361 + 377 + 379). **This run predates the latest parity and browser workflow changes.**
-- Current HEAD release validation: [41705281570](https://github.com/Mtman1987/ApolloStation/actions/runs/41705281570) — queued at last check. Recheck it.
-- HearMeOut browser acceptance: [41705262124](https://github.com/Mtman1987/ApolloStation/actions/runs/41705262124) — in progress at last check, on parent commit `13cf2d22a5e0b039f35f724ec721cf6d6055bdd5`; latest HEAD adds a test guard after it. Check whether rerun is needed.
-- Nightly donor evidence: [41704852808](https://github.com/Mtman1987/ApolloStation/actions/runs/41704852808) — pending at last check. Inspect it and its artifacts.
-- Older full validation [41704852768](https://github.com/Mtman1987/ApolloStation/actions/runs/41704852768) was still in progress on older commit `e3039342`; it is not the completed 1,450-test run.
-- Latest observed HEAD commit message: `test(hearmeout): guard real-browser acceptance workflow`.
+- Baseline release validation: [41705653182](https://github.com/Mtman1987/ApolloStation/actions/runs/41705653182) — completed/success at `15c80675`, but its downloaded report records **1,454 passed / 2 failed / 1,456 tests**, zero cancelled/skipped, all four shards complete. Actions success and the report's `Overall result: PASS` mean diagnostic execution completed, **not zero assertion failures**. Always read the findings/table.
+- Both failures are in `tests/apollo-parity-automation.test.mjs`: manual and nightly workflow tests assert the obsolete generic `rea-analysis.json` filename twice instead of validating the separate donor and Apollo files. This continuation repairs the assertions to require `jq` object validation for each actual output; no production workflow check is removed or weakened. Post-merge Oracle verification remains pending for this repair.
+- Previous baseline run [41705281570](https://github.com/Mtman1987/ApolloStation/actions/runs/41705281570) is now completed/success. Its status alone is not a zero-failure claim.
+- HearMeOut browser acceptance: [41705262124](https://github.com/Mtman1987/ApolloStation/actions/runs/41705262124) — completed/success at `13cf2d22a5e0b039f35f724ec721cf6d6055bdd5`. Retrieved job logs confirm both browser checks passed. The later `dbf2cb8` commit adds a workflow guard test, not a browser runtime change; this run is still evidence for its exact tested SHA only.
+- Nightly donor evidence: [41704852808](https://github.com/Mtman1987/ApolloStation/actions/runs/41704852808) — still in progress at inspection. Discord Stream Hub and StreamWeaver jobs completed/success; HearMeOut reached artifact upload, which remains in progress. Do not call the entire matrix complete.
+- Last historical zero-failure evidence: [41703486111](https://github.com/Mtman1987/ApolloStation/actions/runs/41703486111), 1,450 tests. It predates these changes.
 
 ## Completed forum authority port
 
@@ -49,21 +49,34 @@ Workflows:
 - `.github/workflows/rea-static-analysis.yml`: targeted Apollo REA with streamed JSON validation.
 - Tests: `tests/apollo-parity-automation.test.mjs`, `tests/parity-rea-cli.test.mjs`.
 
-Recent refinements also preserve explicit donor/Apollo commit and app-path provenance so generated port tasks map to the correct Apollo application. Workflow trigger coverage was added for parity tooling changes. **The latest nightly run was pending at last check; end-to-end artifact completeness is not yet confirmed.**
+Recent refinements also preserve explicit donor/Apollo commit and app-path provenance so generated port tasks map to the correct Apollo application. Workflow trigger coverage was added for parity tooling changes.
+
+### Evidence inspected during this continuation
+
+Downloaded and parsed the two available nightly ZIPs from run 41704852808. Each contains all seven expected files: donor/Apollo inventories, comparison, donor/Apollo REA JSON and both port-brief files. Their inventory, comparison and brief provenance agree on Apollo commit `e3039342e10d2e0a5d2dc5d26ddea55732fc8664` and the mapped app path; the Apollo REA subject/input points at that app's `dist` directory. REA does not independently attest the Git commit.
+
+| Donor | Exact donor commit | Apollo app | Artifact |
+| --- | --- | --- | --- |
+| StreamWeaver | `ad2e43fd27f03b4c11fdaa1585ee1ad7ff4fcf80` | `apps/streamweaver` | [13264644125](https://github.com/Mtman1987/ApolloStation/actions/runs/41704852808/artifacts/13264644125) |
+| Discord Stream Hub | `535fb6c52ce3b4e0b95a52567a32a67328796eff` | `apps/discord-stream-hub` | [13264149182](https://github.com/Mtman1987/ApolloStation/actions/runs/41704852808/artifacts/13264149182) |
+
+HearMeOut's bundle is not yet available, so three-row completeness remains open. StreamWeaver's generated P0 list is a triage prompt, not proof of absent functions: the September checkpoint already documents implementations for the original groups, with migration/restore and live acceptance outstanding. Inspect executing donor/Apollo paths before selecting a port; do not re-port empty graphs or duplicate existing functionality.
+
+Dispatched the manual donor workflow for all three confirmed donor/app pairs at baseline `15c80675`: runs [41706393191](https://github.com/Mtman1987/ApolloStation/actions/runs/41706393191), [41706393224](https://github.com/Mtman1987/ApolloStation/actions/runs/41706393224), and [41706393624](https://github.com/Mtman1987/ApolloStation/actions/runs/41706393624) are in progress. Inspect their inputs/job logs and complete artifacts before assigning acceptance. No donor application or dependencies were run locally.
 
 ## HearMeOut browser/media work
 
 - Room player: `apps/hearmeout/src/room-media-browser.ts` and related player/client code.
 - Local test entry point: `npm run test:hmo-media-browser`.
 - Browser workflow: `.github/workflows/hearmeout-room-player-browser.yml` (verify exact workflow from current tree).
-- Browser acceptance run 41705262124 was in progress at last check. Inspect logs and artifacts, then rerun on current HEAD if necessary.
+- Browser acceptance run 41705262124 passed both steps: actual two-browser audio with pause/seek/next, local volume, stale drawer preservation, duplicate-end protection and membership revocation; synthetic FFmpeg HLS playback across native/Activity windows, two audio languages and returning-viewer broadcast position. This workflow uploaded no standalone browser artifacts; inspected evidence is its job log.
 - Authorized provider-to-browser HLS playback still needs real provider account acceptance. Keep it **ported-unverified** until tested.
 
 ## Next work — priority order
 
-1. Reconcile the current HEAD release validation, browser acceptance and nightly evidence runs listed above.
-2. Inspect actual artifacts: verify every donor matrix row has both inventories, comparison, REA JSON outputs and port brief; verify the correct Apollo app path/commit is represented.
-3. Dispatch the manual donor workflow for each allowlisted donor and relevant Apollo app. Start with high-priority HearMeOut and StreamWeaver gaps. Record run and artifact links here.
+1. Inspect the post-merge Oracle report for this assertion repair: require zero findings before describing the tests as passing; a green diagnostic run alone is insufficient.
+2. Finish artifact inspection for the pending HearMeOut nightly row and the three dispatched manual sweeps. Verify all seven files and mapped app/commit provenance for each.
+3. Record those run/artifact results here. Browser fixture acceptance is established at its tested SHA; real configured provider acceptance remains open.
 4. Review the generated briefs, select the highest-value real capability gap, inspect donor code as reference only, implement Apollo-owned behavior, add regression tests and validate.
 5. Finish HearMeOut browser acceptance, then authorized provider-to-browser HLS rehearsal.
 6. Rehearse Discord forum egress against an authorized connection: retry/fencing, lease expiry, archived-thread recovery, edit/delete, source attribution and marker reconciliation.
