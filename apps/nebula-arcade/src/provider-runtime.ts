@@ -103,6 +103,12 @@ export class NebulaArcadeProviderRuntime {
       deliver: (delivery: NormalizedChatDeliveryV1) => this.deliver(delivery),
     }];
   }
+  awardCheckinBonus(input:{tenantId:string;awardId:string;channel:string;userId:string;username?:string;displayName?:string;occurredAt?:string}){
+    const at=input.occurredAt?new Date(input.occurredAt):new Date();
+    if(!Number.isFinite(at.getTime()))throw new Error("Nebula check-in bonus timestamp is invalid");
+    const result=this.gameStore.update(input.tenantId,state=>awardNebulaCheckinBonus(state,input,at),"default",at).result;
+    return result;
+  }
   async reconcile() {
     const delivery = { attempted: 0, delivered: 0, failed: 0 };
     for (const tenant of this.options.config.tenants) {
