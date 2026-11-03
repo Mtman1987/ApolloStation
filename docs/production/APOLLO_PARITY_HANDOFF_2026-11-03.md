@@ -49,4 +49,4 @@ These are code-port statements, not live-provider acceptance claims.
 
 ## Resume instruction
 
-The adapter fix is validated green on run 41695920142. The Chat Gateway create-thread marker/reconciliation implementation and regression are committed; first complete run 41697432822, then review lease-expiry overlap before moving on.
+The adapter fix is validated green on run 41695920142. Chat Gateway create-thread marker/reconciliation, regression, and in-flight lease renewal are committed; complete run 41697741577 before moving on.
