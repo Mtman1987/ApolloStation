@@ -75,6 +75,7 @@ export function renderDshLeaderboardPng(rows:readonly DshLeaderboardImageEntryV1
 
 /** Keep binary images at the provider boundary; simulation events retain the shared view. */
 export async function dshDiscordRequestBody(payload:Record<string,unknown>,fetchImpl:typeof fetch=fetch):Promise<{body:BodyInit;headers:Record<string,string>}> {
+  if(payload.leaderboardImage){const {leaderboardImage:raw,...message}=payload,bytes=Buffer.from(raw as Uint8Array);if(bytes.byteLength>8_000_000)throw new Error("The leaderboard image exceeds Discord's attachment size");const form=new FormData();form.set("payload_json",JSON.stringify({...message,attachments:[{id:0,filename:"community-leaderboard.png"}]}));form.set("files[0]",new Blob([new Uint8Array(bytes)],{type:"image/png"}),"community-leaderboard.png");return{body:form,headers:{}};}
   if(!payload.calendar)return{body:JSON.stringify(payload),headers:{"content-type":"application/json"}};
   const {calendar:raw,...message}=payload,calendar=raw as CommunityCalendarView;
   const bytes=await renderDshCalendarPng(calendar.events,calendar.month,fetchImpl,calendar.today),form=new FormData();
