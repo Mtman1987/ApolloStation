@@ -58,3 +58,18 @@ test("DSH forum worker routes live Discord thread replies into native Commlink",
   assert.equal(result.processed,1);assert.equal(result.forwarded,1);assert.equal(calls[0][0],"post");assert.equal(calls[1][0],"reply");assert.equal(calls[1][1],"native-post");
  }finally{store.close()}
 });
+
+test("DSH forum worker hydrates and persists canonical SPMT thread mappings and receipts",async()=>{
+ const store=new DshForumForwardingStore(":memory:"),saved=[];let delivered=false;
+ const rule={schemaVersion:1,tenantId:"tenant-a",sourceGuildId:"123456",destinationGuildId:"654321",forumChannelId:"345678",mode:"per-channel",paused:false,restrictToWhitelist:false,sourceChannelWhitelist:[]};
+ const event={id:"event-10",type:"spmt.chat.message.received.v1",payload:{provider:"discord",guildId:"123456",channelId:"234567",messageId:"456789"}};
+ const client={async listCommlinkForumForwardRules(){return{rules:[rule]};},async getCommlinkForumForwardState(){return{};},async putCommlinkForumForwardState(_tenant,state){saved.push(state);return{saved:true};},async listEvents(){if(delivered)return[];delivered=true;return[event];},async listCommlinkLiveChat(){return[{guildId:"123456",provider:"discord",channelId:"234567",messageId:"456789",providerUserId:"user-1",username:"Viewer",displayName:"Viewer",text:"Forward this",occurredAt:"2026-11-03T12:03:00.000Z",isBot:false,rich:{attachments:[]}}];}};
+ const discord={async getChannel(_tenant,id){return id==="234567"?{id,guild_id:"123456",type:0,name:"general",permission_overwrites:[]}:{id,guild_id:"654321",type:15,name:"forum"};},async getGuild(){return{id:"123456",roles:[{id:"123456",permissions:"1024"}]};},async createForumThread(){return{threadId:"777777"};},async createThreadMessage(){return"888888";},async setThreadArchived(){},async deleteThreadMessage(){},async editThreadMessage(){}};
+ try{
+  const worker=new DshForumForwardingWorker(store,client,discord,()=>["123456"]);
+  const result=await worker.runOnce("tenant-a");
+  assert.equal(result.forwarded,1);assert.equal(saved.length,1);
+  assert.equal(saved[0].thread.destinationThreadId,"777777");assert.equal(saved[0].receipt.destinationMessageId,"888888");assert.equal(saved[0].receipt.deleted,false);
+  assert.equal(store.listRules("tenant-a").length,1);
+ }finally{store.close()}
+});
