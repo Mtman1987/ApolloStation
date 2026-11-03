@@ -1,6 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
 import { buildNebulaTagOverlaySnapshot } from "./nebula-tag-overlay.js";
 import { NEBULA_GAMEPLAY_ROTATION_SECONDS } from "./gameplay-showcase.js";
+import { mosaicPublicSnapshot } from "./mosaic-core.js";
 import type { NebulaTagStateV1 } from "./nebula-tag.js";
 
 export const NEBULA_DISCORD_WEBHOOK_NAME = "Nebula Arcade";
@@ -77,7 +78,7 @@ export class SqliteNebulaDiscordDashboardStore {
 
 export function buildNebulaDiscordDashboard(
   state: NebulaTagStateV1,
-  options: { publicOrigin?: string; gameplayOrigin?: string; generatedAt?: string; webhookName?: string; avatarUrl?: string } = {},
+  options: { publicOrigin?: string; gameplayOrigin?: string; generatedAt?: string; webhookName?: string; avatarUrl?: string; mosaic?: ReturnType<typeof mosaicPublicSnapshot>; mosaicChannel?: string } = {},
 ): { webhookName: string; avatarUrl?: string; payload: NebulaDiscordDashboardPayloadV1 } {
   const snapshot = buildNebulaTagOverlaySnapshot(state, options.generatedAt ? { generatedAt: options.generatedAt } : {});
   const generatedAt = snapshot.generatedAt;
@@ -106,22 +107,45 @@ export function buildNebulaDiscordDashboard(
     };
   });
   const currentAvatarUrl = snapshot.currentIt ? safeHttpsImage(state.players[snapshot.currentIt.userId]?.avatarUrl) : undefined;
+  const embeds: NebulaDiscordDashboardPayloadV1["embeds"] = [{
+    title: "🎮 Nebula Arcade · Tag Live", ...(gamesUrl ? { url: gamesUrl } : {}), description: "One bot · 20 equal games · live community status", color: snapshot.freeForAll ? 0xff4500 : 0x00d9ff,
+    fields: [{ name: "🎯 Current Tag", value: currentTag, inline: true }, { name: "📜 Recent Tags", value: recentTags, inline: true }, { name: "🏆 Top 3", value: top3, inline: true }, ...announcements],
+    author: { name: "Nebula Arcade · 20 Games", ...(iconUrl ? { icon_url: iconUrl } : {}) }, ...(showcaseUrl ? { image: { url: showcaseUrl } } : {}), ...(currentAvatarUrl ? { thumbnail: { url: currentAvatarUrl } } : {}), footer: { text: "Nebula Arcade · type spmt controls to play Tag" }, timestamp: generatedAt,
+  }];
+  const components: NebulaDiscordDashboardPayloadV1["components"][number]["components"] = [];
+  if (gamesUrl) components.push({ type: 2, style: 5, label: "Open all 20 games", emoji: { name: "🎮" }, url: gamesUrl });
+  const cleanMosaic = (value: unknown, limit = 180) => String(value ?? "").replace(/[\r\n]/g, " ").slice(0, limit);
+  const mosaicChannel = String(options.mosaicChannel || "").replace(/^#/, "").trim().toLowerCase();
+  const mosaicUrl = origin && mosaicChannel ? new URL(`/overlay/mosaic?channel=${encodeURIComponent(mosaicChannel)}`, origin).toString() : undefined;
+  if (options.mosaic) {
+    const art = options.mosaic.artwork;
+    const mosaicFields: NebulaDiscordEmbedFieldV1[] = [
+      { name: "Artwork", value: art ? cleanMosaic(art.theme, 180) : "Waiting for a community theme", inline: true },
+      { name: "Progress", value: art ? `${art.progressPercent}% · ${art.progress}/${art.total} matching cells · Board ${art.activeBoard}/4` : "No active artwork yet", inline: true },
+      { name: "Queue", value: `${options.mosaic.queueLength} request(s)`, inline: true },
+    ];
+    embeds.push({
+      title: `🎨 Nebula Mosaic · #${cleanMosaic(mosaicChannel || "channel", 80)}`,
+      ...(mosaicUrl ? { url: mosaicUrl } : {}),
+      description: art ? `Community painting is ${art.status}. Paint with \`!mosaic paint A1 red\` in chat.` : "Queue a community artwork theme with !mosaic <theme>.",
+      color: 0x00d9ff, fields: mosaicFields,
+      author: { name: "Nebula Arcade · Mosaic" },
+      footer: { text: "Community Mosaic · updates with Nebula Arcade activity" },
+      timestamp: generatedAt,
+    });
+    if (mosaicUrl) components.push({ type: 2, style: 5, label: "Open Mosaic board", emoji: { name: "🎨" }, url: mosaicUrl });
+  }
   const payload: NebulaDiscordDashboardPayloadV1 = {
-    embeds: [{
-      title: "🎮 Nebula Arcade · Tag Live", ...(gamesUrl ? { url: gamesUrl } : {}), description: "One bot · 20 equal games · live community status", color: snapshot.freeForAll ? 0xff4500 : 0x00d9ff,
-      fields: [{ name: "🎯 Current Tag", value: currentTag, inline: true }, { name: "📜 Recent Tags", value: recentTags, inline: true }, { name: "🏆 Top 3", value: top3, inline: true }, ...announcements],
-      author: { name: "Nebula Arcade · 20 Games", ...(iconUrl ? { icon_url: iconUrl } : {}) }, ...(showcaseUrl ? { image: { url: showcaseUrl } } : {}), ...(currentAvatarUrl ? { thumbnail: { url: currentAvatarUrl } } : {}), footer: { text: "Nebula Arcade · type spmt controls to play Tag" }, timestamp: generatedAt,
-    }],
-    components: gamesUrl ? [{ type: 1, components: [{ type: 2, style: 5, label: "Open all 20 games", emoji: { name: "🎮" }, url: gamesUrl }] }] : [],
+    embeds,
+    components: components.length ? [{ type: 1, components }] : [],
     allowed_mentions: { parse: [] },
   };
   return { webhookName: cleanName(options.webhookName ?? NEBULA_DISCORD_WEBHOOK_NAME), ...(iconUrl ? { avatarUrl: iconUrl } : {}), payload };
 }
 
-export function nebulaDiscordDashboardSignature(state: NebulaTagStateV1, generatedAtMs = Date.now()): string {
-  return JSON.stringify({ gameplaySlot: Math.floor(generatedAtMs / (NEBULA_GAMEPLAY_ROTATION_SECONDS * 1_000)), currentItUserId: state.currentItUserId, lastTagAt: state.lastTagAt, players: Object.values(state.players).map((player) => [player.userId, player.username, player.avatarUrl, player.score, player.tagsMade, player.timesTagged]), history: state.history.slice(-3).map((entry) => [entry.id, entry.occurredAt, entry.actorUserId, entry.targetUserId, entry.doublePoints]) });
+export function nebulaDiscordDashboardSignature(state: NebulaTagStateV1, generatedAtMs = Date.now(), mosaic?: ReturnType<typeof mosaicPublicSnapshot>): string {
+  return JSON.stringify({ gameplaySlot: Math.floor(generatedAtMs / (NEBULA_GAMEPLAY_ROTATION_SECONDS * 1_000)), currentItUserId: state.currentItUserId, lastTagAt: state.lastTagAt, players: Object.values(state.players).map((player) => [player.userId, player.username, player.avatarUrl, player.score, player.tagsMade, player.timesTagged]), history: state.history.slice(-3).map((entry) => [entry.id, entry.occurredAt, entry.actorUserId, entry.targetUserId, entry.doublePoints]), mosaic: mosaic ? { artwork: mosaic.artwork ? [mosaic.artwork.id,mosaic.artwork.theme,mosaic.artwork.status,mosaic.artwork.activeBoard,mosaic.artwork.progress,mosaic.artwork.progressPercent,mosaic.artwork.updatedAt] : null, queue: mosaic.queue.map(item => [item.id,item.theme,item.status,item.position]), queueLength: mosaic.queueLength } : null });
 }
-
 export function nebulaGameplayDashboardImageUrl(originValue: string | URL, generatedAtMs = Date.now()): string {
   const origin = typeof originValue === "string" ? optionalOrigin(originValue, "Nebula gameplay")! : originValue;
   const url = new URL("/v1/discord-stream-hub/nebula-gameplay/current.gif", origin);

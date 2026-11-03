@@ -172,7 +172,7 @@ export class NebulaArcadeProviderRuntime {
         username: message.actor.username, displayName: message.actor.displayName ?? message.actor.username,
         text: message.text, moderator: message.actor.roles.some((role) => role === "moderator" || role === "broadcaster"), requestId: delivery.deliveryId, now,
       });
-      if (mosaic.handled) { if (mosaic.reply) await this.reply(message, delivery.deliveryId, "mosaic", mosaic.reply); return; }
+      if (mosaic.handled) { if (mosaic.reply) await this.reply(message, delivery.deliveryId, "mosaic", mosaic.reply); if(message.provider==="discord")await this.publishDashboard(message.tenantId,channel,true).catch(()=>undefined); return; }
     }
     if(!parsed || !parsed.body){if(!parsed&&this.tagRuntime.getState(message.tenantId).state.players[actorId(message)]?.eligible!==false&&this.tagRuntime.getState(message.tenantId).state.players[actorId(message)])await this.tagRuntime.ingest(toTagMessage(message,message.text));return;}
     if(!parsed.gameId && ["join","leave"].includes(parsed.command)){
@@ -329,11 +329,13 @@ export class NebulaArcadeProviderRuntime {
     if (isNebulaChannelOptedOut(this.experienceStore,tenantId,channel.channelId,channel.stateChannelId)) return false;
     const state = this.tagRuntime.getState(tenantId).state;
     const generatedAt = this.options.now?.() ?? new Date().toISOString();
-    const signature = nebulaDiscordDashboardSignature(state, Date.parse(generatedAt));
+    const activeIds = resolveNebulaChannelGameIds(this.gameStore.get(tenantId), channel.stateChannelId, channel.enabledGameIds);
+    const mosaic = activeIds.includes("pixelbattle") ? this.mosaicRuntime.snapshot(tenantId, channel.stateChannelId, Date.parse(generatedAt)) : undefined;
+    const signature = nebulaDiscordDashboardSignature(state, Date.parse(generatedAt), mosaic);
     const key = channelKey(tenantId, channel.provider, channel.connectionId, channel.channelId);
     if (!force && this.dashboardSignatures.get(key) === signature) return false;
     const existing = this.dashboardStore.get(tenantId, channel.connectionId, channel.channelId);
-    const built = buildNebulaDiscordDashboard(state, { publicOrigin: this.options.discordDashboard.publicOrigin, generatedAt, ...(this.options.discordDashboard.gameplayOrigin ? { gameplayOrigin: this.options.discordDashboard.gameplayOrigin } : {}), ...(this.options.discordDashboard.webhookName ? { webhookName: this.options.discordDashboard.webhookName } : {}), ...(this.options.discordDashboard.avatarUrl ? { avatarUrl: this.options.discordDashboard.avatarUrl } : {}) });
+    const built = buildNebulaDiscordDashboard(state, { publicOrigin: this.options.discordDashboard.publicOrigin, generatedAt, ...(this.options.discordDashboard.gameplayOrigin ? { gameplayOrigin: this.options.discordDashboard.gameplayOrigin } : {}), ...(this.options.discordDashboard.webhookName ? { webhookName: this.options.discordDashboard.webhookName } : {}), ...(this.options.discordDashboard.avatarUrl ? { avatarUrl: this.options.discordDashboard.avatarUrl } : {}), ...(mosaic ? { mosaic, mosaicChannel: channel.stateChannelId } : {}) });
     const result = await this.options.discordDashboard.egress.upsertDiscordDashboard({ schemaVersion: 1, tenantId, connectionId: channel.connectionId, channelId: channel.channelId, webhookName: built.webhookName, ...(built.avatarUrl ? { avatarUrl: built.avatarUrl } : {}), ...(existing ? { previousMessageId: existing.messageId, previousTransport: existing.transport } : {}), payload: built.payload });
     this.dashboardStore.put({ tenantId, connectionId: channel.connectionId, channelId: channel.channelId, messageId: result.providerMessageId, transport: result.transport, updatedAt: this.options.now?.() ?? new Date().toISOString() });
     this.dashboardSignatures.set(key, signature);
