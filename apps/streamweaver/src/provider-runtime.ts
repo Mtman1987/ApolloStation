@@ -228,7 +228,7 @@ export class StreamWeaverProviderRuntime {
         const source = message as typeof message & { rich?: { mirrored?: boolean } };
         let replyIndex = 0;
         await handleSpaceMountainGoLiveMessage({
-          message: message.text, channel: message.channelId === options.spaceMountainGoLive!.channelId ? "spacemountainlive" : message.channelId,
+          message: message.text, channel: message.channelId === goLiveConfig.channelId ? "spacemountainlive" : message.channelId,
           tenantId: message.tenantId, username: message.actor.username,
           userId: message.actor.canonicalUserId || message.actor.providerUserId,
           self: message.actor.isBot === true, mirrored: source.rich?.mirrored === true,
