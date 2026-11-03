@@ -44,7 +44,7 @@ export class StreamWeaverStellaLoungeHost {
     const report:StreamWeaverStellaLoungeHostReportV1={attempted:0,sent:0,skipped:0,failed:0},allowed=new Set(this.options.tenants??["spacemountainlive"]),connections=new Map<string,{tenantId:string;connectionId:string;channelId:string}>();
     for(const connection of this.options.connections)if(connection.desired&&connection.provider==="twitch"&&allowed.has(connection.tenantId)&&!connections.has(connection.tenantId))connections.set(connection.tenantId,connection);
     for(const connection of connections.values()){
-      const claimed=this.options.store.claim(connection.tenantId,nowMs,this.delay());if(!claimed)continue;
+      let claimed:StreamWeaverStellaLoungeHostStateV1|undefined;try{claimed=this.options.store.claim(connection.tenantId,nowMs,this.delay());}catch{report.failed++;continue;}if(!claimed)continue;
       report.attempted++;
       try{
         const stream=await this.options.twitch.uptime(connection.tenantId);
