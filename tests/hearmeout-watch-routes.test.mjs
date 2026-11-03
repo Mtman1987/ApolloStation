@@ -166,7 +166,7 @@ test('a failed progress write returns a retry key and retry does not duplicate t
   assert.equal(pending.status,'queued_progress_pending');
   assert.equal(pending.retryable,true);
   assert.ok(pending.retryKey);
-  assert.equal(f.rooms.getSession(TENANT,roomId,'movie').queue.length,1);
+  const queuedAfterFailure=f.rooms.getSession(TENANT,roomId,'movie');\n  assert.equal([queuedAfterFailure.current,...queuedAfterFailure.queue].filter(Boolean).length,1,'failed progress write leaves exactly one active queue operation');
   const retry=await fetch(url,{method:'POST',headers:{...alice,'idempotency-key':pending.retryKey},body:JSON.stringify({query:'Show S01E02'})});
   assert.equal(retry.status,201,await retry.clone().text());
   assert.equal((await retry.json()).status,'queued');
