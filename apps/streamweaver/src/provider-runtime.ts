@@ -1,6 +1,7 @@
 import { StreamWeaverBotActionReplies } from "./bot-action-replies.js";
 import { normalizeTextForTTS } from "./tts-text.js";
 import {activeRideLookup, type NebulaCheckinBonusAwarder} from "./ride-runtime.js";
+import { SqliteStreamWeaverStellaLoungeHostStore, StreamWeaverStellaLoungeHost } from "./stella-lounge-host.js";
 import {executePokemonCommand} from "./pokemon-commands.js";
 import {awardStreamWeaverProviderEvent} from "./provider-event-awards.js";
 import { SqliteStreamWeaverShoutoutStore, STREAMWEAVER_KNOWN_BOTS } from "./shoutout-store.js";
@@ -95,6 +96,7 @@ export class StreamWeaverProviderRuntime {
   private readonly community:StreamWeaverCommunityStore;
   private readonly shoutoutStore:SqliteStreamWeaverShoutoutStore;
   private readonly presentation?:StreamWeaverPresentationRuntime;
+  private readonly stellaLoungeHost?:StreamWeaverStellaLoungeHost;
   private readonly pokemon:StreamWeaverPokemonStore;
   private readonly secureChoices:StreamWeaverSecureChoiceStore;
   private readonly botActionReplies: StreamWeaverBotActionReplies;
@@ -139,6 +141,7 @@ export class StreamWeaverProviderRuntime {
     const grants=options.providerGrants?new SpmtStreamWeaverTwitchGrantSource(options.providerGrants,tenant=>this.runtimeSettings.twitchBroadcaster(tenant),options.allowProviderWrites===true):undefined;
     if(grants){this.twitch=new StreamWeaverTwitchCommandAdapter(grants,options.providerFetch);if(options.allowProviderWrites===true)this.eventsub=new StreamWeaverTwitchEventSub(options.databasePath,grants,options.providerFetch);}
     if(this.twitch&&options.allowProviderWrites===true)this.presentation=new StreamWeaverPresentationRuntime({store:this.community,shoutoutStore:this.shoutoutStore,twitch:this.twitch,client:options.client,personas:this.settings,connections:options.connections??[],egress:options.egress,...(options.awardNebulaCheckinBonus?{awardNebulaCheckinBonus:options.awardNebulaCheckinBonus}:{})});
+    if(this.twitch&&options.allowProviderWrites===true&&options.simulation!==true&&(options.connections??[]).some(connection=>connection.tenantId==="spacemountainlive"&&connection.provider==="twitch"&&connection.desired))this.stellaLoungeHost=new StreamWeaverStellaLoungeHost({store:new SqliteStreamWeaverStellaLoungeHostStore(options.databasePath),community:this.community,twitch:this.twitch,connections:options.connections??[],egress:options.egress,...(options.nowMs?{nowMs:options.nowMs}:{})});
     this.messageObservers.push({id:"streamweaver.welcome",observe:message=>{if(message.provider==="twitch"&&!message.actor.isBot&&!STREAMWEAVER_KNOWN_BOTS.has(message.actor.username.toLowerCase()))this.community.welcome(message.tenantId,message.provider,message.actor.providerUserId,message.actor.displayName??message.actor.username,message.actor.username);}});
     const community=new StreamWeaverCommunityRuntime(this.community,this.economy,options.client,options.allowAssistant!==false,options.simulation!==true&&options.allowProviderWrites===true,this.twitch?activeRideLookup(this.community,this.twitch,options.client):undefined,options.awardNebulaCheckinBonus);
     const services = new DefaultStreamWeaverDonorCommandServices({
@@ -270,7 +273,7 @@ export class StreamWeaverProviderRuntime {
   }
   consumerIds() { return this.consumers.map((consumer) => consumer.id); }
   setBotShare(tenantId: string, enabled: boolean) { this.relayStore.setBotShare(tenantId, enabled); }
-  async reconcile(limit = 100) { if(this.options.allowProviderWrites===true&&!this.options.simulation)await this.botActionReplies.flush(this.options.client,message=>this.options.egress.send(message),message=>Boolean(this.options.connections?.some(connection=>connection.desired&&connection.tenantId===message.tenantId&&connection.provider===message.provider&&connection.channelId===message.channelId&&connection.connectionId===message.connectionId)),limit,(...args)=>this.options.client.publishEvent(...args)); await this.reconcileProviderEvents(); await this.presentation?.runOnce(); await this.community.flush((tenant,type,payload,key)=>this.options.client.publishEvent(tenant,type,payload,key)); await this.pokemon.flush((tenant,type,payload,key)=>this.options.client.publishEvent(tenant,type,payload,key)); const social=await this.socialReactionReconciler.runOnce(Math.min(limit,50));const translations=await this.translationRuntime.reconcile(Math.min(limit,50));const replies=await this.replies.runOnce(undefined, limit);const flows=await this.installedFlows.reconcile(limit);const secureChoices=await this.secureChoices.flushOutbox(message=>this.options.egress.send(message),limit);return {...replies,flows,secureChoices,social,translations}; }
+  async reconcile(limit = 100) { if(this.options.allowProviderWrites===true&&!this.options.simulation)await this.botActionReplies.flush(this.options.client,message=>this.options.egress.send(message),message=>Boolean(this.options.connections?.some(connection=>connection.desired&&connection.tenantId===message.tenantId&&connection.provider===message.provider&&connection.channelId===message.channelId&&connection.connectionId===message.connectionId)),limit,(...args)=>this.options.client.publishEvent(...args)); await this.reconcileProviderEvents(); await this.presentation?.runOnce(); await this.stellaLoungeHost?.runOnce(); await this.community.flush((tenant,type,payload,key)=>this.options.client.publishEvent(tenant,type,payload,key)); await this.pokemon.flush((tenant,type,payload,key)=>this.options.client.publishEvent(tenant,type,payload,key)); const social=await this.socialReactionReconciler.runOnce(Math.min(limit,50));const translations=await this.translationRuntime.reconcile(Math.min(limit,50));const replies=await this.replies.runOnce(undefined, limit);const flows=await this.installedFlows.reconcile(limit);const secureChoices=await this.secureChoices.flushOutbox(message=>this.options.egress.send(message),limit);return {...replies,flows,secureChoices,social,translations}; }
   private async reconcileProviderEvents(){
     if(this.options.allowProviderWrites!==true)return;
     const tenants=this.community.configuredTenants();
@@ -319,5 +322,5 @@ export class StreamWeaverProviderRuntime {
     }
   }
   settleFlows() { return this.installedFlows.settle(); }
-  close() { this.botActionReplies.close(); this.shoutoutStore.close(); this.eventsub?.close(); this.community.close(); this.pokemon.close(); this.secureChoices.close(); this.research.close(); this.bic.close(); this.socialReactions.close(); this.translations.close(); this.runtimeSettings.close(); this.flows.close(); this.relayStore.close(); this.economy.close(); this.commandState.close(); this.summons.close(); this.settings.close(); }
+  close() { this.stellaLoungeHost?.close(); this.botActionReplies.close(); this.shoutoutStore.close(); this.eventsub?.close(); this.community.close(); this.pokemon.close(); this.secureChoices.close(); this.research.close(); this.bic.close(); this.socialReactions.close(); this.translations.close(); this.runtimeSettings.close(); this.flows.close(); this.relayStore.close(); this.economy.close(); this.commandState.close(); this.summons.close(); this.settings.close(); }
 }
