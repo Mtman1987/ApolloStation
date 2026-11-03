@@ -165,6 +165,7 @@ export class SupervisedChatGatewayService {
   private readonly generationSettings?:StreamWeaverGenerationStore;
   private readonly getNebulaArcadeAccessToken?: () => Promise<string>;
   private readonly nebulaArcade?: NebulaArcadeProviderRuntime;
+  private readonly discordDashboard: NebulaDiscordDashboardEgressV1;
   constructor(private readonly options: ChatGatewayWorkerEnvironmentV1, fetchImpl?: typeof fetch) {
     this.getAccessToken = createChatGatewayWorkerTokenProvider({ spmtOrigin: options.spmtOrigin, credential: options.credential, ...(fetchImpl ? { fetchImpl } : {}) });
     const client = new SpmtClient({ baseUrl: options.spmtOrigin, appId: "chat-gateway", getAccessToken: this.getAccessToken, ...(fetchImpl ? { fetchImpl } : {}) });
@@ -197,6 +198,7 @@ export class SupervisedChatGatewayService {
       return { providerMessageId: message.previousMessageId ?? String(Date.now()), transport: "bot" };
     } };
     const discordDashboard = egressMode === "provider" ? adapters.discord : shadowDashboard;
+    this.discordDashboard = discordDashboard;
     this.connectionStore = new SqliteProviderConnectionStore(options.databasePath);
     const consumers: ChatGatewayConsumerV1[] = [createSpmtCommlinkLiveChatConsumer(client)];
     const observers: Array<{ id: string; observe(message: import("@spmt/contracts").NormalizedChatMessageV1): void | Promise<void> }> = [];
@@ -342,10 +344,57 @@ export class SupervisedChatGatewayService {
     const mutations=await this.gateway.flushMutations();
     const streamweaver = await this.streamweaver?.reconcile();
     const voiceEgress = await this.drainStreamWeaverVoiceEgress();
+    const commlinkForumEgress = await this.drainCommlinkForumEgress();
     const nebulaArcade = await this.nebulaArcade?.reconcile();
-    return { schemaVersion: 1 as const, connections, deliveries, mutations, ...(streamweaver ? { streamweaver } : {}), ...(voiceEgress ? { voiceEgress } : {}), ...(nebulaArcade ? { nebulaArcade } : {}) };
+    return { schemaVersion: 1 as const, connections, deliveries, mutations, ...(streamweaver ? { streamweaver } : {}), ...(voiceEgress ? { voiceEgress } : {}), ...(commlinkForumEgress ? { commlinkForumEgress } : {}), ...(nebulaArcade ? { nebulaArcade } : {}) };
   }
-  private async drainStreamWeaverVoiceEgress(limit=20){const client=this.streamweaverClient;if(!client)return undefined;const report={observed:0,sent:0,failed:0};if(!this.tenants.length)return report;const workerId=`${this.options.workerId}-voice-egress`;await client.reportExecutionWorker({executionOwner:"streamweaver",workerId,executionTarget:"sprite",state:"ready",capabilityIds:["streamweaver.voice-egress.v1"],tenantIds:this.tenants,providerHealthy:true,startedAt:this.startedAt,leaseMs:60_000,metrics:{completedJobs:0,failedJobs:0,inputUnits:0,outputUnits:0}});for(let index=0;index<limit;index+=1){const job=await client.claimAnyExecutionJob(workerId,"sprite",{executionOwner:"streamweaver",capabilityIds:["streamweaver.voice-egress.v1"],leaseMs:30_000});if(!job)break;report.observed+=1;try{const input=job.input,destination=input.destination;if(destination!=="twitch"&&destination!=="discord")throw new Error("Voice egress destination is invalid");const connectionId=requiredInput(input.connectionId,"connectionId"),channelId=requiredInput(input.channelId,"channelId"),text=boundedInput(input.text,"text",5_000);const configured=this.options.connections.find((item)=>item.tenantId===job.tenantId&&item.provider===destination&&item.connectionId===connectionId&&item.channelId===channelId&&item.desired);if(!configured)throw new Error("The selected provider connection is no longer configured");const sent=await this.gateway.send({schemaVersion:1,tenantId:job.tenantId,provider:destination,connectionId,channelId,text,idempotencyKey:`streamweaver-voice-egress:${job.id}`});if(!job.leaseId)throw new Error("Voice egress job lease is unavailable");await client.succeedExecutionJob(job.tenantId,job.id,workerId,job.leaseId,job.fencingEpoch,{schemaVersion:1,provider:destination,providerMessageId:sent.providerMessageId});report.sent+=1;}catch(error){const message=error instanceof Error?error.message:"Voice egress failed";if(!job.leaseId)throw error;await client.failExecutionJob(job.tenantId,job.id,workerId,job.leaseId,job.fencingEpoch,"voice_egress_failed",message,!/invalid|no longer configured/i.test(message));report.failed+=1;}}return report;}
+
+  private async drainCommlinkForumEgress(limit=20){
+    const report={observed:0,sent:0,failed:0};
+    if(this.options.operationMode!=="active"||!this.tenants.length)return report;
+    const workerId=`${this.options.workerId}-commlink-forum-egress`;
+    const capabilityId="commlink.discord.forum-egress.v1";
+    await this.connectionClient.reportExecutionWorker({executionOwner:"chat-gateway",workerId,executionTarget:"sprite",state:"ready",capabilityIds:[capabilityId],tenantIds:this.tenants,providerHealthy:true,startedAt:this.startedAt,leaseMs:60_000,metrics:{completedJobs:0,failedJobs:0,inputUnits:0,outputUnits:0}});
+    for(let index=0;index<limit;index+=1){
+      const job=await this.connectionClient.claimAnyExecutionJob(workerId,"sprite",{executionOwner:"chat-gateway",capabilityIds:[capabilityId],tenantIds:this.tenants,leaseMs:30_000});
+      if(!job)break;
+      report.observed+=1;
+      try{
+        const input=job.input,connectionId=requiredInput(input.connectionId,"connectionId"),channelId=requiredInput(input.channelId,"channelId");
+        const configured=this.connectionStore.get(job.tenantId,"discord",connectionId);
+        if(!configured||!configured.desired||configured.channelId!==channelId)throw new Error("The selected Discord parent channel is not an active Chat Gateway connection");
+        const threadId=input.threadId===undefined?undefined:requiredInput(input.threadId,"threadId");
+        const operation=input.operation===undefined?"upsert":input.operation;
+        if(operation==="delete"){
+          const messageId=requiredInput(input.messageId,"messageId"),transport=input.transport;
+          if(transport!=="webhook"&&transport!=="bot")throw new Error("Discord forum delete transport is invalid");
+          if(!this.discordDashboard.deleteDiscordMessage)throw new Error("Discord forum delete is not supported by the active provider adapter");
+          await this.discordDashboard.deleteDiscordMessage({tenantId:job.tenantId,connectionId,channelId,...(threadId?{threadId}:{}),messageId,transport});
+        }else if(operation==="upsert"){
+          const title=boundedInput(input.title,"title",256),content=boundedInput(input.content,"content",3800),author=boundedInput(input.authorName,"authorName",100);
+          const sourceUrl=input.sourceUrl===undefined?undefined:boundedInput(input.sourceUrl,"sourceUrl",2048);
+          if(sourceUrl){const url=new URL(sourceUrl);if(url.protocol!=="https:"||url.username||url.password)throw new Error("Forum source URL must be credential-free HTTPS");}
+          const previousMessageId=input.previousMessageId===undefined?undefined:requiredInput(input.previousMessageId,"previousMessageId");
+          const previousTransport=input.previousTransport;
+          if(previousTransport!==undefined&&previousTransport!=="webhook"&&previousTransport!=="bot")throw new Error("Discord forum previous transport is invalid");
+          const result=await this.discordDashboard.upsertDiscordDashboard({schemaVersion:1,tenantId:job.tenantId,connectionId,channelId,...(threadId?{threadId}:{}),webhookName:"SpaceMountain Commlink",...(previousMessageId?{previousMessageId}:{}),...(previousTransport?{previousTransport}:{}),payload:{embeds:[{title,url:sourceUrl,description:content,color:5793266,fields:[],author:{name:`Originally posted by ${author}`},footer:{text:"SpaceMountain Commlink · Discord source attribution"},timestamp:new Date().toISOString()}],components:[],allowed_mentions:{parse:[]}}});
+          if(!job.leaseId)throw new Error("Commlink forum egress job lease is unavailable");
+          await this.connectionClient.succeedExecutionJob(job.tenantId,job.id,workerId,job.leaseId,job.fencingEpoch,{schemaVersion:1,provider:"discord",providerMessageId:result.providerMessageId,transport:result.transport,operation:"upsert"});
+          report.sent+=1;continue;
+        }else throw new Error("Commlink forum egress operation is invalid");
+        if(!job.leaseId)throw new Error("Commlink forum egress job lease is unavailable");
+        await this.connectionClient.succeedExecutionJob(job.tenantId,job.id,workerId,job.leaseId,job.fencingEpoch,{schemaVersion:1,provider:"discord",operation:"delete"});
+        report.sent+=1;
+      }catch(error){
+        const message=error instanceof Error?error.message:"Commlink forum egress failed";
+        if(!job.leaseId)throw error;
+        await this.connectionClient.failExecutionJob(job.tenantId,job.id,workerId,job.leaseId,job.fencingEpoch,"commlink_forum_egress_failed",message,!/invalid|not an active|not supported/i.test(message));
+        report.failed+=1;
+      }
+    }
+    return report;
+  }
+\n  private async drainStreamWeaverVoiceEgress(limit=20){const client=this.streamweaverClient;if(!client)return undefined;const report={observed:0,sent:0,failed:0};if(!this.tenants.length)return report;const workerId=`${this.options.workerId}-voice-egress`;await client.reportExecutionWorker({executionOwner:"streamweaver",workerId,executionTarget:"sprite",state:"ready",capabilityIds:["streamweaver.voice-egress.v1"],tenantIds:this.tenants,providerHealthy:true,startedAt:this.startedAt,leaseMs:60_000,metrics:{completedJobs:0,failedJobs:0,inputUnits:0,outputUnits:0}});for(let index=0;index<limit;index+=1){const job=await client.claimAnyExecutionJob(workerId,"sprite",{executionOwner:"streamweaver",capabilityIds:["streamweaver.voice-egress.v1"],leaseMs:30_000});if(!job)break;report.observed+=1;try{const input=job.input,destination=input.destination;if(destination!=="twitch"&&destination!=="discord")throw new Error("Voice egress destination is invalid");const connectionId=requiredInput(input.connectionId,"connectionId"),channelId=requiredInput(input.channelId,"channelId"),text=boundedInput(input.text,"text",5_000);const configured=this.options.connections.find((item)=>item.tenantId===job.tenantId&&item.provider===destination&&item.connectionId===connectionId&&item.channelId===channelId&&item.desired);if(!configured)throw new Error("The selected provider connection is no longer configured");const sent=await this.gateway.send({schemaVersion:1,tenantId:job.tenantId,provider:destination,connectionId,channelId,text,idempotencyKey:`streamweaver-voice-egress:${job.id}`});if(!job.leaseId)throw new Error("Voice egress job lease is unavailable");await client.succeedExecutionJob(job.tenantId,job.id,workerId,job.leaseId,job.fencingEpoch,{schemaVersion:1,provider:destination,providerMessageId:sent.providerMessageId});report.sent+=1;}catch(error){const message=error instanceof Error?error.message:"Voice egress failed";if(!job.leaseId)throw error;await client.failExecutionJob(job.tenantId,job.id,workerId,job.leaseId,job.fencingEpoch,"voice_egress_failed",message,!/invalid|no longer configured/i.test(message));report.failed+=1;}}return report;}
   async run(signal: AbortSignal) { await Promise.all([this.runGateway(signal),this.runSimulation(signal),this.streamweaverImage?.run(signal)??Promise.resolve(),this.streamweaverAvatar?.run(signal)??Promise.resolve()]); }
   private async runSimulation(signal:AbortSignal){while(!signal.aborted){await this.simulationWorker.runOnce();await pause(this.options.reconcileMs,signal);}}
   private async runGateway(signal:AbortSignal){while(!signal.aborted){await this.reconcile();await pause(this.options.reconcileMs,signal);}}
