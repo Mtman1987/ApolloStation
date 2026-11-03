@@ -16,7 +16,9 @@ const root = path.resolve(args.get('root') ?? '');
 const repository = args.get('repository');
 const ref = args.get('ref');
 const output = path.resolve(args.get('output') ?? 'donor-inventory.json');
-if (!args.get('root') || !repository || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository) || !ref) {
+const repositoryParts = typeof repository === 'string' ? repository.split('/') : [];
+const validRepository = repositoryParts.length === 2 && repositoryParts.every(part => /^[A-Za-z0-9_.-]+$/.test(part) && part !== '.' && part !== '..');
+if (!args.get('root') || !validRepository || !ref) {
   console.error('A root, valid owner/name repository, and ref are required.');
   process.exit(2);
 }
