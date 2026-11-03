@@ -55,4 +55,5 @@ export * from "./calendar-delivery.js";
 export * from "./forum-forwarding.js";
 export * from "./calendar-interactions.js";
 export * from "./calendar-sync.js";
-\nexport * from "./mtfixit-intake.js";\n
+
+export * from "./mtfixit-intake.js";
