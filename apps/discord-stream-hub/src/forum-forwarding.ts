@@ -136,6 +136,9 @@ export function dshForumThreadCreationIdempotencyKey(tenantId:string,forumId:str
 export class DshCommlinkForumDiscordPort implements DshForumDiscordPort {
   constructor(private readonly client:SpmtClient,private readonly reads:DshDiscordApi){}
   getChannel(tenantId:string,channelId:string){return this.reads.getChannel(tenantId,channelId);}
+  getChannelMessage(tenantId:string,channelId:string,messageId:string){return this.reads.getChannelMessage(tenantId,channelId,messageId);}
+  listActiveThreads(tenantId:string,guildId:string){return this.reads.listActiveThreads(tenantId,guildId);}
+  listArchivedForumThreads(tenantId:string,forumId:string,before?:string){return this.reads.listArchivedForumThreads(tenantId,forumId,before);}
   async createForumThread(tenantId:string,forumId:string,name:string,message:Record<string,unknown>){
     const content=String(message.content??"Forwarded Discord messages").slice(0,1900);
     const idempotencyKey=String(message.idempotencyKey??`thread:${forumId}:${name}:${content}`);const result=await this.submit(tenantId,"create-thread",forumId,{name,content},idempotencyKey);
