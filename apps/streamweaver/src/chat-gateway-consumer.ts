@@ -116,7 +116,7 @@ export class SpmtStreamWeaverPersonaRuntime implements StreamWeaverPersonaRuntim
   constructor(private readonly client: Pick<StreamWeaverAssistantClientV1, "invokeCommunityAssistant">,private readonly research?:StreamWeaverResearchConversation) {}
   async invoke(input: StreamWeaverPersonaInvocationV1) {
     const prepared=this.research?.prepare(input);if(prepared?.reply)return {status:"reply" as const,text:prepared.reply};
-    return this.client.invokeCommunityAssistant(input.tenantId, { userId: input.userId, message: input.message, surface: "stream", conversationId: input.conversationId, routingPreference: "automatic", remember: input.presentation.memoryPolicy === "conversation", presentation: input.presentation,...(prepared?.research?{research:prepared.research}:{}) }, input.idempotencyKey);
+    return this.client.invokeCommunityAssistant(input.tenantId, { userId: input.userId, message: input.message, surface: "stream", conversationId: input.conversationId, routingPreference: "automatic", remember: input.presentation.memoryPolicy === "conversation", presentation: presentationWithGestureHints(input.presentation),...(prepared?.research?{research:prepared.research}:{}) }, input.idempotencyKey);
   }
 }
 
@@ -124,7 +124,7 @@ export class StreamWeaverPersonaReplyReconciler {
   private readonly now: () => string;
   private readonly retryDelayMs: number;
   private readonly requesterAppId: string;
-  constructor(private readonly store: SqliteStreamWeaverSummonStore, private readonly client: Pick<StreamWeaverAssistantClientV1, "getExecutionJob">, private readonly egress: StreamWeaverChatEgressV1, options: { now?: () => string; retryDelayMs?: number; requesterAppId?: string } = {}) {
+  constructor(private readonly store: SqliteStreamWeaverSummonStore, private readonly client: Pick<StreamWeaverAssistantClientV1, "getExecutionJob"> & { publishEvent?: (tenantId: string, type: string, payload: Record<string, unknown>, idempotencyKey: string) => Promise<unknown> }, private readonly egress: StreamWeaverChatEgressV1, options: { now?: () => string; retryDelayMs?: number; requesterAppId?: string } = {}) {
     this.now = options.now ?? (() => new Date().toISOString());
     this.retryDelayMs = options.retryDelayMs ?? 1_000;
     this.requesterAppId = options.requesterAppId ?? "streamweaver";
@@ -138,8 +138,11 @@ export class StreamWeaverPersonaReplyReconciler {
         const job = await this.client.getExecutionJob(reply.tenantId, reply.jobId);
         if (!this.owns(reply, job)) { this.store.failReply(reply.deliveryId, "Accepted job no longer matches its StreamWeaver delivery", this.now()); report.rejected += 1; continue; }
         if (["queued", "leased", "running"].includes(job.state)) { this.defer(reply); report.waiting += 1; continue; }
-        const text = terminalReplyText(reply, job);
-        const sent = await this.egress.send({ schemaVersion: 1, tenantId: reply.tenantId, provider: reply.provider, connectionId: reply.connectionId, channelId: reply.channelId, text, idempotencyKey: `streamweaver-persona-result:${reply.deliveryId}`, replyToMessageId: reply.replyToMessageId });
+        const result = terminalReply(reply, job);
+        const sent = await this.egress.send({ schemaVersion: 1, tenantId: reply.tenantId, provider: reply.provider, connectionId: reply.connectionId, channelId: reply.channelId, text: result.text, idempotencyKey: `streamweaver-persona-result:${reply.deliveryId}`, replyToMessageId: reply.replyToMessageId });
+        if (result.gesture && this.client.publishEvent) {
+          await this.client.publishEvent(reply.tenantId, "streamweaver.avatar.updated.v1", { displayName: reply.displayName, gesture: result.gesture }, `streamweaver-avatar-gesture:${reply.deliveryId}`);
+        }
         this.store.completeReply(reply.deliveryId, sent.providerMessageId, this.now());
         report.sent += 1;
       } catch (error) {
@@ -211,7 +214,28 @@ function assertConfig(config: StreamWeaverPersonaConfigV1): void { if (config.sc
 type ReplyRow = { body: string; state: StreamWeaverPersonaReplyV1["state"]; attempts: number | bigint; availableAt: string; lastError?: string | null; providerMessageId?: string | null; completedAt?: string | null };
 function hydrateReply(row: ReplyRow): StreamWeaverPersonaReplyV1 { const body = replyBody(JSON.parse(row.body) as StreamWeaverPersonaReplyV1); return { ...body, state: row.state, attempts: Number(row.attempts), availableAt: timestamp(row.availableAt, "availableAt"), ...(row.lastError ? { lastError: row.lastError } : {}), ...(row.providerMessageId ? { providerMessageId: row.providerMessageId } : {}), ...(row.completedAt ? { completedAt: timestamp(row.completedAt, "completedAt") } : {}) }; }
 function replyBody(input: Omit<StreamWeaverPersonaReplyV1, "state" | "attempts" | "availableAt"> | StreamWeaverPersonaReplyV1) { return { schemaVersion: 1 as const, tenantId: required(input.tenantId, "tenantId"), deliveryId: required(input.deliveryId, "deliveryId"), jobId: required(input.jobId, "jobId"), displayName: label(input.displayName, "displayName"), provider: input.provider, connectionId: required(input.connectionId, "connectionId"), channelId: required(input.channelId, "channelId"), replyToMessageId: required(input.replyToMessageId, "replyToMessageId"), createdAt: timestamp(input.createdAt, "createdAt") }; }
-function terminalReplyText(reply: StreamWeaverPersonaReplyV1, job: ExecutionJobV1) { if (job.state === "succeeded") { const text = typeof job.result?.text === "string" ? job.result.text.trim() : ""; if (job.result?.kind === "stellar-chat-result.v1" && text) return text.slice(0, 8_000); return `${reply.displayName} could not deliver a valid response.`; } if (job.state === "cancelled") return `${reply.displayName}'s response was cancelled.`; if (job.state === "dead-letter") return `${reply.displayName} could not complete that request after retries.`; return `${reply.displayName} could not complete that request.`; }
+const AVATAR_GESTURE_HINTS = "Optionally append one final avatar tag when it fits naturally: [wave_gesture], [blow_kiss_gesture], [spin_gesture], [playful_tilt_gesture], [laugh_gesture], [happy_gesture], [dance_gesture], [look_gesture], or [applaud_gesture]. Use sparingly; never include a tag mid-reply.";
+const AVATAR_GESTURES = new Set(["wave_gesture","blow_kiss_gesture","spin_gesture","playful_tilt_gesture","laugh_gesture","happy_gesture","dance_gesture","look_gesture","applaud_gesture"]);
+function presentationWithGestureHints(presentation: CommunityAssistantPresentationInputV1): CommunityAssistantPresentationInputV1 {
+  if (presentation.instructions.length > 3_500) return presentation;
+  return { ...presentation, instructions: presentation.instructions + "\n\n" + AVATAR_GESTURE_HINTS };
+}
+function terminalReply(reply: StreamWeaverPersonaReplyV1, job: ExecutionJobV1): { text: string; gesture?: string } {
+  if (job.state === "succeeded") {
+    const text = typeof job.result?.text === "string" ? job.result.text.trim() : "";
+    if (job.result?.kind !== "stellar-chat-result.v1" || !text) return { text: `${reply.displayName} could not deliver a valid response.` };
+    const match = text.match(/\[([a-z_]+_gesture)\]\s*$/i);
+    const gesture = match?.[1]?.toLowerCase();
+    if (gesture && AVATAR_GESTURES.has(gesture)) {
+      const clean = text.slice(0, match!.index).trim();
+      return { text: (clean || `${reply.displayName} is here.`).slice(0, 8_000), gesture };
+    }
+    return { text: text.slice(0, 8_000) };
+  }
+  if (job.state === "cancelled") return { text: `${reply.displayName}'s response was cancelled.` };
+  if (job.state === "dead-letter") return { text: `${reply.displayName} could not complete that request after retries.` };
+  return { text: `${reply.displayName} could not complete that request.` };
+}
 function required(value: string, name: string) { if (!value || value.trim() !== value || value.length > 500 || !/^[A-Za-z0-9._:@/-]+$/.test(value)) throw new Error(`${name} is invalid`); return value; }
 function label(value: string, name: string) { const normalized = value.trim(); if (!normalized || normalized.length > 120 || /[\r\n]/.test(normalized)) throw new Error(`${name} is invalid`); return normalized; }
 function timestamp(value: string, name: string) { const parsed = Date.parse(value); if (!Number.isFinite(parsed)) throw new Error(`${name} is invalid`); return new Date(parsed).toISOString(); }

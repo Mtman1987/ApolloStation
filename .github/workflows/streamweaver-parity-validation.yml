@@ -2,6 +2,15 @@ name: StreamWeaver parity validation
 
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - apps/streamweaver/src/chat-gateway-consumer.ts
+      - apps/streamweaver/src/overlay-widgets.ts
+      - apps/streamweaver/src/community-runtime.ts
+      - apps/nebula-arcade/src/provider-runtime.ts
+      - tests/streamweaver-chat-gateway.test.mjs
+      - tests/streamweaver-overlay-widgets.test.mjs
+      - .github/workflows/streamweaver-parity-validation.yml
 
 permissions:
   contents: read
@@ -26,5 +35,9 @@ jobs:
         run: npm ci
       - name: Compile all apps and packages
         run: npm run build
-      - name: Run focused StreamWeaver regressions
-        run: node --import ./scripts/offline-network-guard.mjs --test tests/streamweaver-tts-text.test.mjs tests/streamweaver-shoutout-runtime.test.mjs tests/streamweaver-provider-runtime.test.mjs tests/streamweaver-eventsub-lifecycle.test.mjs tests/streamweaver-rides.test.mjs tests/streamweaver-stella-lounge-host.test.mjs
+      - name: Run focused pull-request regressions
+        if: github.event_name == 'pull_request'
+        run: node --import ./scripts/offline-network-guard.mjs --test tests/streamweaver-rides.test.mjs tests/streamweaver-chat-gateway.test.mjs tests/streamweaver-overlay-widgets.test.mjs
+      - name: Run full manual StreamWeaver regressions
+        if: github.event_name == 'workflow_dispatch'
+        run: node --import ./scripts/offline-network-guard.mjs --test tests/streamweaver-tts-text.test.mjs tests/streamweaver-shoutout-runtime.test.mjs tests/streamweaver-provider-runtime.test.mjs tests/streamweaver-eventsub-lifecycle.test.mjs tests/streamweaver-rides.test.mjs tests/streamweaver-stella-lounge-host.test.mjs tests/streamweaver-chat-gateway.test.mjs tests/streamweaver-overlay-widgets.test.mjs

@@ -25,6 +25,11 @@ test("widget projection preserves visible data and excludes credentials, untrust
   ],new Date(Date.parse(now)+2).toISOString(),"avatar");
   assert.equal(changedSource.items.at(-1).modelUrl,"");
   assert.equal(changedSource.items.at(-1).avatarUrl,"https://assets.test/idle.png");
+  const gesture=streamWeaverWidgetSnapshot([{id:"gesture",sourceAppId:"streamweaver",type:"streamweaver.avatar.updated.v1",createdAt:now,payload:{displayName:"Stella",gesture:"wave_gesture"}}],now,"avatar");
+  assert.equal(gesture.items[0].gesture,"wave_gesture");
+  const rejectedGesture=streamWeaverWidgetSnapshot([{id:"bad-gesture",sourceAppId:"streamweaver",type:"streamweaver.avatar.updated.v1",createdAt:now,payload:{gesture:"execute_script"}}],now,"avatar");
+  assert.equal(rejectedGesture.items[0].gesture,"");
+  assert.match(renderStreamWeaverWidget("avatar"),/data-gesture=wave_gesture/);assert.match(STREAMWEAVER_WIDGET_CLIENT,/function setAvatarGesture/);
   assert.doesNotThrow(()=>new Function(STREAMWEAVER_WIDGET_CLIENT));assert.ok(STREAMWEAVER_WIDGET_CSP.includes(createHash("sha256").update(STREAMWEAVER_WIDGET_CLIENT).digest("base64")));
   assert.match(renderStreamWeaverWidget("auto",true),/data-simulation="true"/);assert.match(renderStreamWeaverWidget("social"),/🧑‍🚀|data-widget="social"/);assert.match(renderStreamWeaverWidget("social"),/astronautFloat/);assert.match(renderStreamWeaverWidget("avatar"),/id="avatar-model"/);assert.ok(STREAMWEAVER_WIDGET_CSP.includes("https://esm.sh"));assert.match(STREAMWEAVER_WIDGET_CLIENT,/void setAvatarVisual\(avatarState\)/);assert.match(STREAMWEAVER_WIDGET_CLIENT,/function applyAudio2Face/);assert.match(STREAMWEAVER_WIDGET_CLIENT,/new WebSocket\(endpoint\)/);
 });

@@ -1,4 +1,4 @@
-import {runStreamRide,type StreamRideLookup} from "./ride-runtime.js";
+import {runStreamRide,type NebulaCheckinBonusAwarder,type StreamRideLookup} from "./ride-runtime.js";
 import { createHash } from "node:crypto";
 import { StreamWeaverRewardRuntime } from "./reward-runtime.js";
 import type { SpmtClient } from "@spmt/sdk";
@@ -14,7 +14,7 @@ export class StreamWeaverCommunityRuntime {
   }
   async community(invocation:StreamWeaverDonorCommandInvocationV1){
     if(invocation.canonicalTrigger==="!checkin"){
-      if(invocation.args[0]==="--ride")return (await this.ride({tenantId:invocation.tenantId,actorId:invocation.actor.userId??"",displayName:invocation.actor.displayName,source:invocation.provider,requestId:invocation.deliveryId,currency:invocation.args[1]==="spmt"?"spmt":"streamer",channel:invocation.message.channelId,...(invocation.args[2]?{maxSpmtCost:Number(invocation.args[2])}:{})})).text;
+      if(invocation.args[0]==="--ride")return (await this.ride({tenantId:invocation.tenantId,actorId:invocation.actor.userId??"",displayName:invocation.actor.displayName,source:invocation.provider,requestId:invocation.deliveryId,currency:invocation.args[1]==="spmt"?"spmt":"streamer",channel:invocation.channelId,...(invocation.args[2]?{maxSpmtCost:Number(invocation.args[2])}:{})})).text;
       if(!invocation.args[0])return this.store.partners(invocation.tenantId).map(p=>`${p.id}: ${p.name}${p.rewardId?" (reward-priced)":""}`).join(" | ")||"The streamer has not configured check-ins.";
       const result=await this.checkin({tenantId:invocation.tenantId,actorId:invocation.actor.userId??`${invocation.provider}:${invocation.actor.providerUserId}`,linked:!!invocation.actor.userId,displayName:invocation.actor.displayName,partnerId:invocation.args[0],source:invocation.provider,requestId:invocation.deliveryId,currency:invocation.args[1]==="spmt"?"spmt":"streamer",...(invocation.args[2]?{maxSpmtCost:Number(invocation.args[2])}:{})});return result.text;
     }
@@ -42,7 +42,7 @@ export class StreamWeaverCommunityRuntime {
   ride(input:import("./ride-runtime.js").StreamRideRequest){return runStreamRide(this.store,this.economy,this.client,this.rideLookup,this.allowSpmtPayments,input,this.awardNebulaCheckinBonus);}
   async redeem(invocation:StreamWeaverDonorCommandInvocationV1){
     const args=[...invocation.args],rewardId=invocation.canonicalTrigger==="!redeem"?(args.shift()??""):invocation.canonicalTrigger.replace(/^!/,"");
-    const result=await this.redeemReward({tenantId:invocation.tenantId,requestId:invocation.deliveryId,rewardId,userId:invocation.actor.userId??"",displayName:invocation.actor.displayName,currency:args[0]?.toLowerCase()==="spmt"?"spmt":"streamer",channel:invocation.message.channelId,...(args[1]?{maxSpmtCost:Number(args[1])}:{})});
+    const result=await this.redeemReward({tenantId:invocation.tenantId,requestId:invocation.deliveryId,rewardId,userId:invocation.actor.userId??"",displayName:invocation.actor.displayName,currency:args[0]?.toLowerCase()==="spmt"?"spmt":"streamer",channel:invocation.channelId,...(args[1]?{maxSpmtCost:Number(args[1])}:{})});
     return result.state==="complete"?result.text:`Reward declined: ${result.message}`;
   }
   async redeemReward(input:{tenantId:string;requestId:string;rewardId:string;userId:string;displayName:string;currency:"streamer"|"spmt";maxSpmtCost?:number;channel?:string}){
