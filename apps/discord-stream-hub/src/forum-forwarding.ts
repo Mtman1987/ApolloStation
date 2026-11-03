@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { SpmtClient } from "@spmt/sdk";
 import { DatabaseSync } from "node:sqlite";
 import { DshDiscordApi, DshDiscordError } from "./discord-live-publisher.js";
@@ -105,12 +105,16 @@ export class DshForumForwardingStore {
     this.db=new DatabaseSync(path,{timeout:5000});this.db.exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;");
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS dsh_forum_cursors(tenant_id TEXT PRIMARY KEY,event_id TEXT NOT NULL DEFAULT '') STRICT;
+      CREATE TABLE IF NOT EXISTS dsh_forum_worker_leases(tenant_id TEXT PRIMARY KEY,lease_id TEXT NOT NULL,expires_at TEXT NOT NULL) STRICT;
       CREATE TABLE IF NOT EXISTS dsh_forum_rules(tenant_id TEXT NOT NULL,source_guild_id TEXT NOT NULL,body TEXT NOT NULL,PRIMARY KEY(tenant_id,source_guild_id)) STRICT;
       CREATE TABLE IF NOT EXISTS dsh_forum_threads(tenant_id TEXT NOT NULL,source_guild_id TEXT NOT NULL,source_channel_id TEXT NOT NULL,thread_id TEXT,pending INTEGER NOT NULL,updated_at TEXT NOT NULL,PRIMARY KEY(tenant_id,source_guild_id,source_channel_id)) STRICT;
       CREATE TABLE IF NOT EXISTS dsh_forum_messages(tenant_id TEXT NOT NULL,source_guild_id TEXT NOT NULL,source_channel_id TEXT NOT NULL,source_message_id TEXT NOT NULL,thread_id TEXT NOT NULL,forwarded_message_id TEXT NOT NULL,deleted INTEGER NOT NULL,updated_at TEXT NOT NULL,PRIMARY KEY(tenant_id,source_guild_id,source_channel_id,source_message_id)) STRICT;
     `);
   }
   cursor(tenant:string){const row=this.db.prepare("SELECT event_id FROM dsh_forum_cursors WHERE tenant_id=?").get(tenant) as {event_id:string}|undefined;return row?.event_id??"";}
+  acquireWorkerLease(tenant:string,leaseId:string,now:string,expiresAt:string){this.db.prepare("INSERT INTO dsh_forum_worker_leases VALUES(?,?,?) ON CONFLICT(tenant_id) DO UPDATE SET lease_id=excluded.lease_id,expires_at=excluded.expires_at WHERE dsh_forum_worker_leases.expires_at<=? OR dsh_forum_worker_leases.lease_id=?").run(tenant,leaseId,expiresAt,now,leaseId);const row=this.db.prepare("SELECT lease_id FROM dsh_forum_worker_leases WHERE tenant_id=?").get(tenant) as {lease_id:string}|undefined;return row?.lease_id===leaseId;}
+  renewWorkerLease(tenant:string,leaseId:string,expiresAt:string){return this.db.prepare("UPDATE dsh_forum_worker_leases SET expires_at=? WHERE tenant_id=? AND lease_id=?").run(expiresAt,tenant,leaseId).changes===1;}
+  releaseWorkerLease(tenant:string,leaseId:string){this.db.prepare("DELETE FROM dsh_forum_worker_leases WHERE tenant_id=? AND lease_id=?").run(tenant,leaseId);}
   advanceCursor(tenant:string,eventId:string){this.db.prepare("INSERT INTO dsh_forum_cursors VALUES(?,?) ON CONFLICT(tenant_id) DO UPDATE SET event_id=excluded.event_id").run(tenant,eventId);}
   close(){this.db.close();}
   putRule(input:DshForumForwardRuleV1){const r=validateForwardRule(input);this.db.prepare("INSERT INTO dsh_forum_rules VALUES(?,?,?) ON CONFLICT(tenant_id,source_guild_id) DO UPDATE SET body=excluded.body").run(r.tenantId,r.sourceGuildId,JSON.stringify(r));return r;}
@@ -253,12 +257,16 @@ export class DshForumForwardingWorker {
   private readonly service:DshForumForwardingService;
   constructor(private readonly store:DshForumForwardingStore,private readonly client:SpmtClient,private readonly discord:DshDiscordApi,private readonly allowedGuilds:(tenant:string)=>string[]){this.service=new DshForumForwardingService(store,new DshCommlinkForumDiscordPort(client,discord));}
   async runOnce(tenant:string){
+    const leaseId=randomUUID(),now=()=>new Date().toISOString(),expires=()=>new Date(Date.now()+15*60*1000).toISOString();
+    if(!this.store.acquireWorkerLease(tenant,leaseId,now(),expires()))return{processed:0,forwarded:0,cursor:this.store.cursor(tenant),busy:true};
+    try{
     const canonicalRules=await this.client.listCommlinkForumForwardRules(tenant);this.store.replaceRules(tenant,canonicalRules.rules);
     let cursor=this.store.cursor(tenant),processed=0,forwarded=0;
     for(let page=0;page<10;page++){
       const events=await this.client.listEvents(tenant,{sourceAppId:"chat-gateway",afterId:cursor,limit:200});
       if(!events.length)break;
       for(const item of events){
+        if(!this.store.renewWorkerLease(tenant,leaseId,expires()))throw new Error("Forum forwarding worker lease was lost");
         const eventId=String(item.id??item.eventId??"");if(!eventId)continue;
         if(item.type==="spmt.chat.message.received.v1"||item.type==="spmt.chat.message.mutated.v1"){
           const payload=(item.payload&&typeof item.payload==="object"?item.payload:{}) as Record<string,unknown>;
@@ -303,6 +311,7 @@ export class DshForumForwardingWorker {
       if(events.length<200)break;
     }
     return{processed,forwarded,cursor};
+    }finally{this.store.releaseWorkerLease(tenant,leaseId);}
   }
 }
 export function isPublicDshForumSource(guild:any,channel:any){
