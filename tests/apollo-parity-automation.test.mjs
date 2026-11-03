@@ -10,7 +10,7 @@ const read = file => readFileSync(path.join(root, file), 'utf8');
 test('manual donor inventory uploads every REA and generated port-brief artifact as a separate path', () => {
   const workflow = read('.github/workflows/apollo-donor-inventory.yml');
   const section = workflow.slice(workflow.indexOf('- name: Upload complete parity evidence bundle'));
-  const paths = section.split('\n').map(line => line.trim());
+  const paths = section.split(String.fromCharCode(10)).map(line => line.trim());
   for (const artifact of [
     'donor-inventory.json',
     'apollo-inventory.json',
@@ -20,7 +20,7 @@ test('manual donor inventory uploads every REA and generated port-brief artifact
     'port-brief/port-brief.json',
     'port-brief/port-brief.md',
   ]) assert.ok(paths.includes(artifact), 'missing artifact path: ' + artifact);
-  assert.equal(section.includes('\\n'), false, 'artifact paths must not be encoded as literal backslash-n text');
+  assert.equal(section.includes(String.fromCharCode(92) + 'n'), false, 'artifact paths must not be encoded as literal backslash-n text');
   assert.match(workflow, /persist-credentials: false/);
   assert.match(workflow, /donor code is never installed or run/);
 });
