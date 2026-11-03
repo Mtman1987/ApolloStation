@@ -1,5 +1,22 @@
 # Apollo continuation follow-up — 2026-11-03
 
+## Current continuation (read first)
+
+[Repo-first continuation and merged work](APOLLO_PARITY_CONTINUATION_RUNABLE_2026-11-03.md) supersedes the pending/local-only statuses below.
+PR #384 preserved the tested workflow repair patch on main at `069c6dd`; PR #385
+merged private HLS delivery and final authorization at `43df67a`. Full build/typecheck
+and 46 targeted tests passed. The inspected baseline Oracle report at `069c6dd`
+has 1,456 passes and zero failures across four complete shards. Post-code-merge run
+[41710521401](https://github.com/Mtman1987/ApolloStation/actions/runs/41710521401)
+was rechecked and remains in progress; do not call its findings verified.
+The workflow repair is now durable in the repository, but activation still requires
+workflow-write access. See the linked continuation for its patch path and exact next steps.
+
+## Earlier follow-up snapshot
+
+The remainder records the earlier inspection and its exact evidence. Statements
+about local-only work or pending runs are historical, not current authority.
+
 This supersedes the pending-run statuses in
 [`APOLLO_PARITY_HANDOFF_2026-11-03.md`](APOLLO_PARITY_HANDOFF_2026-11-03.md).
 Keep its architecture, scope and live-provider boundaries. Fetch main before resuming.
@@ -53,7 +70,7 @@ already passed its two actual browser checks at `13cf2d22`: do not blindly port
 that functionality again. Real configured-provider playback, full authorization
 review and live acceptance remain distinct open work.
 
-## Resume
+## Historical resume instructions (use current continuation above)
 
 1. Confirm PR #382 on main and inspect Oracle reports. Baseline
    41705653182 had 1,454 pass / 2 fail even though diagnostic execution was green.
