@@ -18,10 +18,11 @@ test('donor inventory records hashes and excludes secrets, dependencies, binarie
   fs.writeFileSync(path.join(source, 'node_modules', 'pkg', 'index.js'), 'ignored');
   fs.writeFileSync(path.join(source, 'photo.png'), Buffer.from([0, 1, 2]));
 
-  const run = spawnSync(process.execPath, [script, '--root', source, '--repository', 'owner/donor', '--ref', 'main', '--output', output], { encoding: 'utf8' });
+  const run = spawnSync(process.execPath, [script, '--root', source, '--repository', 'owner/donor', '--ref', 'main', '--app-path', 'apps/hearmeout', '--output', output], { encoding: 'utf8' });
   assert.equal(run.status, 0, run.stderr);
   const report = JSON.parse(fs.readFileSync(output, 'utf8'));
   assert.equal(report.provenance.repository, 'owner/donor');
+  assert.equal(report.provenance.appPath, 'apps/hearmeout');
   assert.equal(report.provenance.donorCodeExecuted, false);
   assert.equal(report.summary.filesInventoried, 1);
   assert.equal(report.files[0].path, 'src/index.js');
