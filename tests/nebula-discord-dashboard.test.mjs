@@ -12,6 +12,8 @@ import {
   createNebulaTagState,
   nebulaDiscordDashboardSignature,
   validateNebulaArcadeProviderConfig,
+  SqliteNebulaMosaicStore,
+  createMosaicQueueState,
 } from "../apps/nebula-arcade/dist/index.js";
 import { renderNebulaArcadePage } from "../apps/nebula-arcade/dist/nebula-arcade-page.js";
 
@@ -46,6 +48,21 @@ test("Nebula dashboard ports the compact two-row embed, 20-game link, and webhoo
   assert.equal(embed.fields.every((field) => field.inline), true);
   assert.equal(built.payload.components[0].components[0].label, "Open all 20 games");
   assert.deepEqual(built.payload.allowed_mentions, { parse: [] });
+});
+
+test("Discord dashboard adds a live Mosaic card and changes its signature with board progress", () => {
+  const mosaic = { artwork: { id: "mosaic-1", theme: "Sunset Harbor", status: "active", activeBoard: 2, progress: 500, total: 2000, progressPercent: 25, updatedAt: at(5) }, queueLength: 2, queue: [{ id: "queued-1", theme: "Moon Garden", status: "pending", position: 1 }], generation: null, saves: [], pricing: {} };
+  const built = buildNebulaDiscordDashboard(dashboardState(), { publicOrigin: "https://apollo.example", generatedAt: at(5), mosaic, mosaicChannel: "snow" });
+  assert.equal(built.payload.embeds.length, 2);
+  const card = built.payload.embeds[1];
+  assert.equal(card.title, "🎨 Nebula Mosaic · #snow");
+  assert.equal(card.url, "https://apollo.example/overlay/mosaic?channel=snow");
+  assert.match(card.description, /!mosaic paint A1 red/);
+  assert.equal(card.fields[0].value, "Sunset Harbor");
+  assert.equal(card.fields[1].value, "25% · 500/2000 matching cells · Board 2/4");
+  assert.equal(built.payload.components[0].components[1].label, "Open Mosaic board");
+  const changed = { ...mosaic, artwork: { ...mosaic.artwork, progress: 501, progressPercent: 25, updatedAt: at(6) } };
+  assert.notEqual(nebulaDiscordDashboardSignature(dashboardState(), Date.parse(at(5)), mosaic), nebulaDiscordDashboardSignature(dashboardState(), Date.parse(at(5)), changed));
 });
 
 test("animated Discord showcase contains all 20 fallback frames at the improved doubled timing", () => {
@@ -94,7 +111,12 @@ test("dashboard message identity survives worker restart without storing webhook
 test("live Discord Tag mutations publish the durable Nebula dashboard through injected gateway egress", async () => {
   const directory = mkdtempSync(join(tmpdir(), "nebula-dashboard-runtime-"));
   const path = join(directory, "nebula.sqlite"), dashboards = [], replies = [];
-  const config = validateNebulaArcadeProviderConfig({ schemaVersion: 1, revision: "dashboard", tenants: [{ tenantId: "tenant-a", pinUserId: "pin", channels: [{ provider: "discord", connectionId: "discord-main", channelId: "123456", stateChannelId: "apollo", enabledGameIds: ["tag"] }] }] });
+  const config = validateNebulaArcadeProviderConfig({ schemaVersion: 1, revision: "dashboard", tenants: [{ tenantId: "tenant-a", pinUserId: "pin", channels: [{ provider: "discord", connectionId: "discord-main", channelId: "123456", stateChannelId: "apollo", enabledGameIds: ["tag", "pixelbattle"] }] }] });
+  const mosaicStore = new SqliteNebulaMosaicStore(path);
+  const mosaicState = createMosaicQueueState();
+  mosaicState.current = { id: "mosaic-1", theme: "Sunset Harbor", requestedBy: "alpha", requestedByPlayerId: "alpha", createdAt: at(0), updatedAt: at(5), lastInteractionAt: at(5), status: "active", target: Array(2000).fill("R"), painted: Array(2000).fill(""), paintedBy: Array(2000).fill(""), activeBoard: 1, viewMode: "board", awardedMilestones: [] };
+  mosaicStore.update("tenant-a", "apollo", state => { state.current = mosaicState.current; }, Date.parse(at(5)));
+  mosaicStore.close();
   const runtime = new NebulaArcadeProviderRuntime({ databasePath: path, config, client: { publishEvent: async () => ({}), awardXp: async () => ({}) }, egress: { send: async (message) => { replies.push(message); return { providerMessageId: "777771" }; } }, discordDashboard: { publicOrigin: "https://apollo.example", gameplayOrigin: "https://dsh.example", egress: { upsertDiscordDashboard: async (message) => { dashboards.push(message); return { providerMessageId: "888881", transport: "webhook" }; } } }, now: () => at(5) });
   try {
     await runtime.consumers[0].deliver({ schemaVersion: 1, deliveryId: "delivery-1", consumerId: "nebula.arcade.provider-ingress", attempts: 1, message: { schemaVersion: 1, tenantId: "tenant-a", provider: "discord", connectionId: "discord-main", channelId: "123456", messageId: "444441", text: "spmt join", occurredAt: at(1), actor: { providerUserId: "user-1", canonicalUserId: "alpha", username: "alpha", displayName: "Alpha", avatarUrl: "https://cdn.discordapp.com/avatars/user-1/hash.webp?size=256", isBot: false, roles: ["member"] }, mentions: [] } });
@@ -103,5 +125,8 @@ test("live Discord Tag mutations publish the durable Nebula dashboard through in
     assert.equal(dashboards[0].webhookName, "Nebula Arcade");
     assert.equal(dashboards[0].payload.embeds[0].fields[0].name, "🎯 Current Tag");
     assert.equal(dashboards[0].payload.embeds[0].thumbnail.url, "https://cdn.discordapp.com/avatars/user-1/hash.webp?size=256");
+    assert.equal(dashboards[0].payload.embeds[1].title, "🎨 Nebula Mosaic · #apollo");
+    assert.equal(dashboards[0].payload.embeds[1].fields[0].value, "Sunset Harbor");
+    assert.equal(dashboards[0].payload.components[0].components[1].label, "Open Mosaic board");
   } finally { runtime.close(); rmSync(directory, { recursive: true, force: true }); }
 });
