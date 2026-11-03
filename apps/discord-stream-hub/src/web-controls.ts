@@ -3,7 +3,7 @@ import { SqliteDshClipGifStore } from "./clip-gif-library.js";
 import { DshRaidTrainStore, dshRaidTrainPayload } from "./raid-train.js";
 import { buildDshSignalPresentation } from "./signal-presentation.js";
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
-import { forwardDshForumPost, DshForumForwardingStore, DshForumForwardingService, type DshForumForwardRuleV1, type DshForumForwardMutationV1 } from "./forum-forwarding.js";
+import { forwardDshForumPost, importDshDiscordForumThreads, DshForumForwardingStore, DshForumForwardingService, type DshForumForwardRuleV1, type DshForumForwardMutationV1 } from "./forum-forwarding.js";
 import { DshMemberDirectoryStore } from "./member-directory.js";
 import { DshRaidPileStore, DEFAULT_DSH_RAID_PILE_SETTINGS, type DshRaidPileSettingsV1 } from "./raid-pile.js";
 import {DshOnboardingPanel} from "./onboarding-panel.js";
@@ -288,6 +288,12 @@ export class DshWebControls {
         const saved=this.forumForwardingStore.putRule({...rule,tenantId:context.tenantId,sourceGuildId:sourceGuild,destinationGuildId:destinationGuild});
         if(!this.forumForwardingStore.cursor(context.tenantId)&&this.client){const latest=await this.client.listEvents(context.tenantId,{sourceAppId:"chat-gateway",limit:1});const eventId=String(latest[0]?.id??"");if(eventId)this.forumForwardingStore.advanceCursor(context.tenantId,eventId);}
         return sendJson(response,200,{rule:saved});
+      }
+      if(url.pathname==="/api/discord-stream-hub/control/forum/import"){
+        this.requireOwner(context);if(!this.liveDiscord||!this.client)throw new Error("Connect DSH before importing Discord forum threads");
+        const sourceGuild=this.guild(context.tenantId,body.serverId),forumChannelId=snowflake(body.forumChannelId,"forumChannelId");
+        const result=await importDshDiscordForumThreads(this.client,this.liveDiscord,context.tenantId,sourceGuild,forumChannelId);
+        return sendJson(response,200,{...result,message:"Discord forum topics and replies imported into native Commlink."});
       }
       if(url.pathname==="/api/discord-stream-hub/control/forum/discord-forward"){
         this.requireOwner(context);if(!this.liveDiscord||!this.forumForwarding)throw new Error("Connect DSH before forwarding Discord messages");
