@@ -9,6 +9,7 @@ import {
   awardNebulaGamePoints,
   awardNebulaCheckinBonus,
   SqliteNebulaGameRuntimeStore,
+  NebulaArcadeProviderRuntime,
   defaultNebulaGameRuntimeState,
   getNebulaGameStats,
   joinNebulaGame,
@@ -52,6 +53,24 @@ test("Chat Tag front-seat check-in bonus credits 100 Nebula points exactly once 
     assert.throws(() => store.update("tenant", state => awardNebulaCheckinBonus(state, { ...input, userId: "spmt:other-member" })), /already credited to another player/);
     assert.equal(store.get("tenant").players["spmt:other-member"], undefined);
   } finally { store.close(); rmSync(directory, { recursive: true, force: true }); }
+});
+
+test("Nebula provider runtime exposes the configured tenant check-in bonus service", () => {
+  const directory = mkdtempSync(join(tmpdir(), "nebula-provider-checkin-")), path = join(directory, "nebula.sqlite");
+  const runtime = new NebulaArcadeProviderRuntime({
+    databasePath: path,
+    config: { schemaVersion: 1, tenants: [{ tenantId: "tenant", channels: [] }] },
+    client: { spendXp: async () => ({}), awardXp: async () => ({}) },
+    egress: { send: async () => ({ providerMessageId: "message" }) },
+    simulation: true,
+  });
+  try {
+    const award = runtime.awardCheckinBonus({ tenantId: "tenant", awardId: "streamweaver-ride:provider-test", channel: "123456789", userId: "spmt:canonical-member", username: "captain", displayName: "Captain" });
+    assert.equal(award.amount, 100);
+    assert.equal(award.balance, 100);
+    assert.equal(runtime.awardCheckinBonus({ tenantId: "tenant", awardId: "streamweaver-ride:provider-test", channel: "123456789", userId: "spmt:canonical-member", username: "captain", displayName: "Captain" }).duplicate, true);
+    assert.throws(() => runtime.awardCheckinBonus({ tenantId: "not-configured", awardId: "ride", channel: "123456789", userId: "spmt:other", username: "other" }), /tenant is not configured/);
+  } finally { runtime.close(); rmSync(directory, { recursive: true, force: true }); }
 });
 
 test("Nebula membership records join leave plays and rejoin", () => {
