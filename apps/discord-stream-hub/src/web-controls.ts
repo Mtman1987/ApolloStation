@@ -133,7 +133,7 @@ export class DshWebControls {
         if(!tenant)return sendJson(response,403,{message:"Unknown DSH tenant"});
         const streamerLogin=String(url.searchParams.get("streamerLogin")??"").trim().toLowerCase(),clipId=String(url.searchParams.get("clipId")??"").trim(),durationSeconds=Number(url.searchParams.get("durationSeconds")??"60");
         if(!/^[a-z0-9_]{1,32}$/.test(streamerLogin)||!/^[A-Za-z0-9_-]{1,120}$/.test(clipId)||!Number.isFinite(durationSeconds)||durationSeconds<1||durationSeconds>60)return sendJson(response,400,{message:"Invalid clip metadata"});
-        const contentType=String(request.headers["content-type"]??"").split(";")[0].trim().toLowerCase();
+        const contentType=(String(request.headers["content-type"]??"").split(";")[0]??"").trim().toLowerCase();
         if(contentType!=="image/gif")return sendJson(response,415,{message:"Upload a GIF image"});
         const declared=Number(request.headers["content-length"]??0);if(declared>50*1024*1024)return sendJson(response,413,{message:"GIF exceeds the 50 MB upload limit"});
         const chunks:Buffer[]=[];let size=0;
