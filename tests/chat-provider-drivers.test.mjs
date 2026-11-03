@@ -143,6 +143,32 @@ test("Discord gateway provisions a Nebula-only webhook, applies avatar identity,
   await handle.close();
 });
 
+
+test("Discord dashboard egress targets only verified forum threads beneath its configured parent", async () => {
+  const f = socketFactoryCapture(), requests = [];
+  const response = (status, value) => ({ ok: status >= 200 && status < 300, status, async json() { return value; }, async text() { return ""; } });
+  const driver = new DiscordGatewayProviderDriver({ websocketFactory: f.factory, handshakeTimeoutMs: 2_000, fetch: async (url, init = {}) => {
+    requests.push({ url, init });
+    if (url.endsWith("/channels/654321")) return response(200, { id: "654321", parent_id: "123456", type: 11 });
+    if (url.endsWith("/channels/123456/webhooks") && init.method === "GET") return response(200, []);
+    if (url.endsWith("/channels/123456/webhooks") && init.method === "POST") return response(200, { id: "77777", token: "forum-webhook-token" });
+    if (url.includes("/webhooks/77777/forum-webhook-token")) return response(200, { id: "88888" });
+    return response(500, { message: "unexpected" });
+  } });
+  const opened = openInput("discord", "123456"), pending = driver.open(opened.input), socket = f.sockets[0];
+  socket.open(); socket.message(JSON.stringify({ op: 10, d: { heartbeat_interval: 60_000 } })); socket.message(JSON.stringify({ op: 0, t: "READY", s: 1, d: { session_id: "session" } }));
+  const handle = await pending;
+  try {
+    const result = await driver.upsertDiscordDashboard({ schemaVersion: 1, tenantId: "tenant-a", connectionId: "discord-main", channelId: "123456", threadId: "654321", webhookName: "SpaceMountain Commlink", payload: { embeds: [{ title: "Forwarded topic" }], components: [], allowed_mentions: { parse: [] } } });
+    assert.deepEqual(result, { providerMessageId: "88888", transport: "webhook" });
+    assert.ok(requests.some((request) => request.url.includes("?wait=true&thread_id=654321")));
+    const webhookRequest = requests.find((request) => request.url.includes("?wait=true&thread_id=654321"));
+    assert.equal(JSON.parse(webhookRequest.init.body).username, "SpaceMountain Commlink");
+    await assert.rejects(() => driver.upsertDiscordDashboard({ schemaVersion: 1, tenantId: "tenant-a", connectionId: "discord-main", channelId: "123456", threadId: "999999", webhookName: "SpaceMountain Commlink", payload: { embeds: [], components: [], allowed_mentions: { parse: [] } } }), /forum thread lookup failed|not beneath/);
+    assert.ok(requests.some((request) => request.url.endsWith("/channels/999999")));
+  } finally { await handle.close(); }
+});
+
 test("first-party adapter factory exposes Twitch, Discord, Kick and YouTube drivers and matching senders", () => {
   const f = socketFactoryCapture();
   const adapters = createFirstPartyChatProviderAdapters({ websocketFactory: f.factory, fetch: async () => ({ ok: true, status: 200, async json() { return {}; }, async text() { return ""; } }) });
