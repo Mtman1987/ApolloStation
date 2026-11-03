@@ -21,6 +21,17 @@ function envelope({ tenantId = "tenant-a", provider = "discord", connectionId = 
   return { schemaVersion: 1, tenantId, provider, connectionId, channelId, messageId, text, occurredAt: iso(), providerUserId, canonicalUserId, username, displayName, isBot, roles, mentions: [] };
 }
 
+test("Restream control is production-only and requires an authenticated HTTPS worker origin", () => {
+  const base = { SPMT_RUNTIME_MODE: "production", SPMT_ORIGIN: "http://127.0.0.1:3000", CHAT_GATEWAY_DATABASE_PATH: "/tmp/chat-gateway.sqlite", CHAT_GATEWAY_WORKER_CREDENTIAL: "x".repeat(32), CHAT_GATEWAY_CONNECTIONS: "[]", STREAMWEAVER_PROVIDER_RUNTIME_ENABLED: "1", STREAMWEAVER_WORKER_CREDENTIAL: "y".repeat(32), STREAMWEAVER_DATABASE_PATH: "/tmp/streamweaver.sqlite" };
+  assert.throws(() => validateChatGatewayWorkerEnvironment({ ...base, STREAMWEAVER_RESTREAM_CONTROL_ORIGIN: "https://lounge.example" }), /configured together/);
+  assert.throws(() => validateChatGatewayWorkerEnvironment({ ...base, STREAMWEAVER_RESTREAM_CONTROL_ORIGIN: "http://lounge.example", STREAMWEAVER_RESTREAM_CONTROL_CREDENTIAL: "z".repeat(32) }), /HTTPS origin/);
+  assert.throws(() => validateChatGatewayWorkerEnvironment({ ...base, STREAMWEAVER_RESTREAM_CONTROL_ORIGIN: "https://lounge.example", STREAMWEAVER_RESTREAM_CONTROL_CREDENTIAL: "short" }), /32\+ character/);
+  const configured = validateChatGatewayWorkerEnvironment({ ...base, STREAMWEAVER_RESTREAM_CONTROL_ORIGIN: "https://lounge.example", STREAMWEAVER_RESTREAM_CONTROL_CREDENTIAL: "z".repeat(32) });
+  assert.equal(configured.streamweaver.restreamControl.origin, "https://lounge.example");
+  assert.equal(configured.streamweaver.restreamControl.credential, "z".repeat(32));
+  assert.throws(() => validateChatGatewayWorkerEnvironment({ ...base, SPMT_RUNTIME_MODE: "sandbox", SPMT_OUTBOUND_MODE: "disabled", STREAMWEAVER_RESTREAM_CONTROL_ORIGIN: "https://lounge.example", STREAMWEAVER_RESTREAM_CONTROL_CREDENTIAL: "z".repeat(32) }), /rejects live Restream control/);
+});
+
 test("supervised Chat Gateway validates and authenticates the separate StreamWeaver runtime", async () => {
   const dir = mkdtempSync(join(tmpdir(), "spmt-streamweaver-provider-service-"));
   const base = { SPMT_RUNTIME_MODE: "sandbox", SPMT_OUTBOUND_MODE: "disabled", SPMT_ORIGIN: "http://127.0.0.1:3000", CHAT_GATEWAY_DATABASE_PATH: join(dir, "chat-gateway-sandbox.sqlite"), CHAT_GATEWAY_WORKER_CREDENTIAL: "chat-gateway-service-credential-123456789", CHAT_GATEWAY_CONNECTIONS: "[]", STREAMWEAVER_PROVIDER_RUNTIME_ENABLED: "1", STREAMWEAVER_WORKER_CREDENTIAL: "streamweaver-service-credential-123456789", STREAMWEAVER_DATABASE_PATH: join(dir, "streamweaver-sandbox.sqlite") };
