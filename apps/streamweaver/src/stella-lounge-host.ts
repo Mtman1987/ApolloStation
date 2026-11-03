@@ -18,7 +18,7 @@ export interface StreamWeaverStellaLoungeHostReportV1 { attempted:number;sent:nu
 /** A bounded, non-generative Stella host loop. It uses live Twitch/Community state and Chat Gateway egress; no paid AI or direct provider socket. */
 export class SqliteStreamWeaverStellaLoungeHostStore {
   private readonly db:DatabaseSync;
-  constructor(path:string){if(!path)throw new Error("Stella Lounge Host database path is required");this.db=new DatabaseSync(path,{timeout:5_000});this.db.exec("PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS sw_stella_lounge_host(tenant TEXT PRIMARY KEY,body TEXT NOT NULL) STRICT;");}
+  constructor(path:string){if(!path)throw new Error("Stella Lounge Host database path is required");this.db=new DatabaseSync(path);this.db.exec("PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS sw_stella_lounge_host(tenant TEXT PRIMARY KEY,body TEXT NOT NULL) STRICT;");}
   close(){this.db.close();}
   view(tenantId:string):StreamWeaverStellaLoungeHostStateV1{
     const tenant=cleanTenant(tenantId),row=this.db.prepare("SELECT body FROM sw_stella_lounge_host WHERE tenant=?").get(tenant) as {body:string}|undefined;
