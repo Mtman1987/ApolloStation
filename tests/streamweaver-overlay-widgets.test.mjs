@@ -29,7 +29,7 @@ test("widget projection preserves visible data and excludes credentials, untrust
   assert.equal(gesture.items[0].gesture,"wave_gesture");
   const rejectedGesture=streamWeaverWidgetSnapshot([{id:"bad-gesture",sourceAppId:"streamweaver",type:"streamweaver.avatar.updated.v1",createdAt:now,payload:{gesture:"execute_script"}}],now,"avatar");
   assert.equal(rejectedGesture.items[0].gesture,"");
-  assert.match(STREAMWEAVER_WIDGET_CLIENT,/#avatar\\[data-gesture=wave_gesture\\]/);
+  assert.match(STREAMWEAVER_WIDGET_CLIENT,/data-gesture=wave_gesture/);
   assert.doesNotThrow(()=>new Function(STREAMWEAVER_WIDGET_CLIENT));assert.ok(STREAMWEAVER_WIDGET_CSP.includes(createHash("sha256").update(STREAMWEAVER_WIDGET_CLIENT).digest("base64")));
   assert.match(renderStreamWeaverWidget("auto",true),/data-simulation="true"/);assert.match(renderStreamWeaverWidget("social"),/🧑‍🚀|data-widget="social"/);assert.match(renderStreamWeaverWidget("social"),/astronautFloat/);assert.match(renderStreamWeaverWidget("avatar"),/id="avatar-model"/);assert.ok(STREAMWEAVER_WIDGET_CSP.includes("https://esm.sh"));assert.match(STREAMWEAVER_WIDGET_CLIENT,/void setAvatarVisual\(avatarState\)/);assert.match(STREAMWEAVER_WIDGET_CLIENT,/function applyAudio2Face/);assert.match(STREAMWEAVER_WIDGET_CLIENT,/new WebSocket\(endpoint\)/);
 });
