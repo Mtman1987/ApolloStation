@@ -1,79 +1,80 @@
-# ApolloStation continuation handoff — 2026-11-03
+# ApolloStation AI continuation handoff — 2026-11-03
 
 **Repository:** `Mtman1987/ApolloStation`  
 **Authority:** `main`  
-**Purpose:** Resume Apollo-owned parity work with current implementation and validation evidence.
+**Last observed HEAD:** `dbf2cb8e458e3c88db7a5749fb28153dde745917`
 
-## Current revision and release validation
+## Instructions for the next AI
 
-- Current main code/test head: `75dda1123e9cf5725a80c3eb79bfe51bd95c6485`.
-- Latest full validation: [41703486111](https://github.com/Mtman1987/ApolloStation/actions/runs/41703486111) — **PASS**. Four shards executed 1,450 tests: shard 1 333/333, shard 2 361/361, shard 3 377/377, shard 4 379/379. Aggregate report: `diagnostic execution: PASS; test failures: 0`; aggregate go/no-go succeeded.
-- The run validates the latest fixes for Chat Gateway OAuth worker-scope fixtures, HearMeOut's authenticated internal catalog route, the parity audit's path-valued fields, donor repository identifier validation, Nebula control-script syntax, HearMeOut retry queue semantics, HLS fixture regex/segment generation, and active public-room HLS authorization.
-- The full suite is green, but this is not a live-provider acceptance test and does not authorize a production cutover.
+1. Fetch latest `main` before doing anything; this document is a status snapshot.
+2. Read this handoff and inspect the current source/workflows named below.
+3. Continue implementation on Apollo-owned `main`. User prefers concrete code, tests, commits and concise progress over extended planning.
+4. Never call queued/in-progress Actions runs green. Recheck status and artifacts before reporting.
+5. Unit/CI success is not live-provider acceptance or production readiness.
+6. Treat donor repos as read-only evidence. Do not run donor applications, install their dependencies, or use secrets from them. REA/path/hash results are candidates, not proof of parity and not permission for automatic copying or merging.
 
-## Forum authority work already on main
+## Current CI snapshot
 
-The current Commlink / DSH / Chat Gateway port includes:
+- Last completed full release validation: [41703486111](https://github.com/Mtman1987/ApolloStation/actions/runs/41703486111) — PASS, four shards, 1,450 tests, zero failures (333 + 361 + 377 + 379). **This run predates the latest parity and browser workflow changes.**
+- Current HEAD release validation: [41705281570](https://github.com/Mtman1987/ApolloStation/actions/runs/41705281570) — queued at last check. Recheck it.
+- HearMeOut browser acceptance: [41705262124](https://github.com/Mtman1987/ApolloStation/actions/runs/41705262124) — in progress at last check, on parent commit `13cf2d22a5e0b039f35f724ec721cf6d6055bdd5`; latest HEAD adds a test guard after it. Check whether rerun is needed.
+- Nightly donor evidence: [41704852808](https://github.com/Mtman1987/ApolloStation/actions/runs/41704852808) — pending at last check. Inspect it and its artifacts.
+- Older full validation [41704852768](https://github.com/Mtman1987/ApolloStation/actions/runs/41704852768) was still in progress on older commit `e3039342`; it is not the completed 1,450-test run.
+- Latest observed HEAD commit message: `test(hearmeout): guard real-browser acceptance workflow`.
 
-- Native Commlink forum post/reply authority and provider-origin receipt protection, including transactional receipt checks across SQLite connections.
-- DSH import of native Discord forum topics/replies, source attribution, edit/delete synchronization, per-channel/shared-thread forwarding, rich payload forwarding, loop prevention, and exact source-message lookup.
-- Tenant-scoped durable DSH worker leases with ownership-checked renewal/release and concurrent replay regression coverage.
-- Deterministic forum-thread starter markers and active/archived-thread recovery to reconcile uncertain DSH creates.
-- Chat Gateway-owned Discord forum thread creation/archive and durable Commlink forum egress jobs. DSH owns forwarding rules/mappings; Chat Gateway owns Discord destination egress.
+## Completed forum authority port
 
-These are code-port statements, not live-provider acceptance claims.
+Commlink / Discord Stream Hub / Chat Gateway implementation includes native forum post/reply authority, provider-origin receipts, transactional idempotency, Discord forum import, source attribution, edit/delete sync, per-channel/shared-thread forwarding, rich payloads, loop prevention, tenant-scoped worker leases, and durable egress jobs.
 
-## Chat Gateway forum-create recovery
+Chat Gateway uncertain-create recovery:
+- `apps/chat-gateway/src/service.ts` derives a stable 24-hex marker from tenant ID + durable job ID and appends it as a Discord spoiler token to the starter message.
+- `apps/chat-gateway/src/provider-drivers.ts` checks the exact parent forum, scans active threads and bounded archived public threads, inspects starter messages, and returns the original thread/message IDs when the marker is found.
+- Recovery fails closed when required listing/message reads are unavailable, archive scan bounds are exceeded, or parent guild ID is invalid. It must not create after an incomplete scan.
+- Tests simulate remote create succeeding while the durable receipt is lost, then archived-thread recovery without a second POST. Lease renewal/health checks reduce overlap but do not create a Discord-side uniqueness guarantee if a stale request remains in flight.
+- Main source/tests: `apps/discord-stream-hub/src/forum-forwarding.ts`, `apps/chat-gateway/src/service.ts`, `apps/chat-gateway/src/provider-drivers.ts`, `tests/chat-provider-drivers.test.mjs`.
+- Status: **ported-unverified** until an authorized live Discord rehearsal passes.
 
-- `apps/chat-gateway/src/service.ts` derives a stable 24-hex marker from `tenantId + job.id` and appends it as a Discord spoiler token to the forum starter message.
-- `apps/chat-gateway/src/provider-drivers.ts` checks the exact parent forum before creating. It scans active guild threads and bounded pages of archived public forum threads, reads each candidate starter message, and returns the original thread/message IDs when the marker is found.
-- Recovery fails closed if active/archived listing or starter lookup is unavailable, the archive scan exceeds its bound, or the parent lacks a valid guild ID. It does not silently create after an incomplete scan.
-- `tests/chat-provider-drivers.test.mjs` simulates a successful remote create followed by a lost durable receipt, archives the thread before retry, and verifies retry recovers the original IDs with no second POST. A distinct marker creates a distinct thread. The provider-driver suite passed 10/10 in the preceding diagnostic run and the full suite is now green.
-- The worker renews the durable job lease before and during a potentially slow create, then checks lease health before recording success. This reduces lease-expiry overlap; it does not provide a Discord server-side uniqueness guarantee if a worker loses its lease while a remote request is already in flight.
-- Key commits: `71618bf` job marker; `c18d0f3` provider reconciliation; `0672e49` initial regression; `93d7291` in-flight lease heartbeat; `4e70e65` guild-ID validation; `ee931ee` archived-thread regression.
-- This closes the retry-after-uncertain-create path covered by tests. It does not prove live Discord acceptance; keep this capability `ported-unverified`.
+## REA and donor parity automation
 
-## REA and donor-parity automation — existing foundation
+Scripts:
+- `scripts/parity-rea.mjs`: static REA analysis; target is treated as data, not launched. Output now streams to stdout (`stdio: inherit`) to avoid the previous in-memory 50 MiB buffer limit. Workflow redirects stdout to JSON files and validates them with `jq`.
+- `scripts/parity-donor-inventory.mjs`: safe file/hash inventory with exclusions for secrets, dependencies, binaries, symlinks and oversized files.
+- `scripts/parity-compare-inventories.mjs`: normalized path/hash comparison; heuristic only.
+- `scripts/parity-prepare-port.mjs`: creates review-only candidate port tasks and acceptance checklists; never auto-approves or auto-merges.
+- Config: `config/apollo-donor-sources.v1.json`, `config/apollo-parity-capabilities.v1.json`.
 
-The repository already contains a useful, guarded evidence pipeline:
+Workflows:
+- `.github/workflows/apollo-donor-inventory.yml`: manual allowlisted donor/app inventory + REA. Artifact list now includes donor/Apollo inventories, comparison, both REA reports, and both port-brief files.
+- `.github/workflows/apollo-parity-nightly.yml`: nightly evidence for HearMeOut, StreamWeaver and Discord Stream Hub; now prepares/uploads the review-only port brief.
+- `.github/workflows/rea-static-analysis.yml`: targeted Apollo REA with streamed JSON validation.
+- Tests: `tests/apollo-parity-automation.test.mjs`, `tests/parity-rea-cli.test.mjs`.
 
-- `scripts/parity-rea.mjs` runs REA static application analysis against a supplied file/directory and explicitly does not launch the target application.
-- `scripts/parity-donor-inventory.mjs` inventories source files/hashes while excluding secrets, dependencies, binaries, symlinks and oversized files; donor code is not executed.
-- `scripts/parity-compare-inventories.mjs` compares normalized paths and hashes, while warning that path overlap is only a heuristic.
-- `scripts/parity-prepare-port.mjs` converts capability gaps and donor-only path candidates into review-only port tasks with source links and acceptance checklists.
-- `.github/workflows/apollo-donor-inventory.yml` is a manually dispatched, allowlisted donor-to-Apollo inventory + REA workflow.
-- `.github/workflows/apollo-parity-nightly.yml` runs nightly evidence collection for HearMeOut, StreamWeaver and Discord Stream Hub.
-- `.github/workflows/rea-static-analysis.yml` provides targeted Apollo-app REA analysis.
+Recent refinements also preserve explicit donor/Apollo commit and app-path provenance so generated port tasks map to the correct Apollo application. Workflow trigger coverage was added for parity tooling changes. **The latest nightly run was pending at last check; end-to-end artifact completeness is not yet confirmed.**
 
-This is evidence generation and prioritization, not automatic code porting. Donor-only paths are candidates, not proof of missing behavior; generated tasks remain review-required and must never auto-merge. The next automation pass should fix the manual workflow's artifact path list and make the nightly bundle include the generated port brief, then run the pipeline for each allowlisted donor and use its REA findings to prioritize concrete ports.
+## HearMeOut browser/media work
 
-## Next implementation passes
+- Room player: `apps/hearmeout/src/room-media-browser.ts` and related player/client code.
+- Local test entry point: `npm run test:hmo-media-browser`.
+- Browser workflow: `.github/workflows/hearmeout-room-player-browser.yml` (verify exact workflow from current tree).
+- Browser acceptance run 41705262124 was in progress at last check. Inspect logs and artifacts, then rerun on current HEAD if necessary.
+- Authorized provider-to-browser HLS playback still needs real provider account acceptance. Keep it **ported-unverified** until tested.
 
-1. Finish the REA workflow integration: repair the manual evidence-bundle artifact paths, add `parity-prepare-port` to the nightly matrix, and verify each workflow uploads inventories, REA reports, comparisons and port briefs.
-2. Use the evidence pipeline to prioritize actual donor-to-Apollo code ports; start with the highest-priority open HearMeOut and StreamWeaver gaps, not path-count differences.
-3. Verify the existing HearMeOut room media player in two real browser contexts using `npm run test:hmo-media-browser` (source exists; full browser acceptance is separate from the 1,450-test run). Then verify provider-to-browser HLS with an authorized provider account. Keep provider acceptance `ported-unverified` until that rehearsal is completed.
-4. Rehearse the integrated DSH + Chat Gateway lifecycle against an authorized Discord connection: retry/fencing, lease expiry, archived-thread recovery, edit/delete and marker reconciliation.
+## Next work — priority order
 
-## Boundaries — do not cross
+1. Reconcile the current HEAD release validation, browser acceptance and nightly evidence runs listed above.
+2. Inspect actual artifacts: verify every donor matrix row has both inventories, comparison, REA JSON outputs and port brief; verify the correct Apollo app path/commit is represented.
+3. Dispatch the manual donor workflow for each allowlisted donor and relevant Apollo app. Start with high-priority HearMeOut and StreamWeaver gaps. Record run and artifact links here.
+4. Review the generated briefs, select the highest-value real capability gap, inspect donor code as reference only, implement Apollo-owned behavior, add regression tests and validate.
+5. Finish HearMeOut browser acceptance, then authorized provider-to-browser HLS rehearsal.
+6. Rehearse Discord forum egress against an authorized connection: retry/fencing, lease expiry, archived-thread recovery, edit/delete, source attribution and marker reconciliation.
 
-- No live Discord connection, production tenant egress, or real-provider recovery has been verified by this code work. Do not call the bridge live or production-ready.
-- Oracle Cloud is the intended future hosting direction, but signup/provisioning is not complete. Do not invent endpoints, secrets, deployments, or DNS records.
-- Keep `spacemountain.live`, `spmt.live`, and app subdomains on the existing authority until rollout gates, private canary, backup/restore, ingress, and rollback evidence pass.
-- Continue Apollo-owned implementation on `main`; donor repositories remain read-only. Do not run donor applications or copy donor secrets.
+## Hosting and production boundaries
 
-## Key files
-
-- `apps/discord-stream-hub/src/forum-forwarding.ts`
-- `apps/chat-gateway/src/service.ts`
-- `apps/chat-gateway/src/provider-drivers.ts`
-- `apps/hearmeout/src/room-media-browser.ts`
-- `scripts/parity-rea.mjs`
-- `scripts/parity-donor-inventory.mjs`
-- `scripts/parity-compare-inventories.mjs`
-- `scripts/parity-prepare-port.mjs`
-- `.github/workflows/apollo-donor-inventory.yml`
-- `.github/workflows/apollo-parity-nightly.yml`
+- Oracle Cloud is the intended future hosting direction; user signup/provisioning is not complete. Do not invent endpoints, deployments, credentials or DNS.
+- `spacemountain.live`, `spmt.live` and app subdomains remain on existing authority until rollout gates, private canary, backup/restore, ingress and rollback evidence pass.
+- No live Discord egress or production tenant acceptance is established by the test runs above.
+- Do not describe Apollo as production-ready or authorize return-to-live from CI evidence alone.
 
 ## Resume instruction
 
-The Chat Gateway forum-create retry recovery is implemented and the full 1,450-test release validation is green. Continue by repairing and verifying the REA evidence bundle, then use its reviewed findings to port the next highest-priority donor capabilities into Apollo. Keep live-provider status `ported-unverified` until authorized rehearsals pass.
+Start by fetching latest `main`, then inspect current Actions runs and artifacts. Finish the REA evidence sweep and use reviewed port briefs to implement the next highest-priority Apollo-owned capability. Keep live-provider and deployment status unverified until actual authorized rehearsals pass.
