@@ -1,75 +1,37 @@
 import { DatabaseSync } from "node:sqlite";
 
-export interface DshRaidTrainSlotV1 {
-  id: string;
-  tenantId: string;
-  guildId: string;
-  date: string;
-  hour: number;
-  userId?: string;
-  twitchUserId?: string;
-  username?: string;
-  displayName?: string;
-  avatarUrl?: string;
-  twitchUsername?: string;
-  signupTime?: string;
-}
-
+/** Durable hourly Raid Train reservations, isolated by tenant and Discord guild. */
+export interface DshRaidTrainSignupV1 { userId:string; username:string; displayName:string; avatarUrl?:string; twitchLogin?:string }
 export class DshRaidTrainStore {
-  private readonly db: DatabaseSync;
-  constructor(path: string, private readonly now: () => string = () => new Date().toISOString()) {
-    this.db = new DatabaseSync(path, { timeout: 5_000 });
-    this.db.exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS dsh_raid_train_slots(tenant_id TEXT NOT NULL,guild_id TEXT NOT NULL,slot_date TEXT NOT NULL,hour INTEGER NOT NULL CHECK(hour BETWEEN 0 AND 23),user_id TEXT NOT NULL,twitch_user_id TEXT,username TEXT NOT NULL,display_name TEXT NOT NULL,avatar_url TEXT,twitch_username TEXT,signup_time TEXT NOT NULL,PRIMARY KEY(tenant_id,guild_id,slot_date,hour)) STRICT; CREATE INDEX IF NOT EXISTS dsh_raid_train_user ON dsh_raid_train_slots(tenant_id,guild_id,user_id,slot_date); CREATE TABLE IF NOT EXISTS dsh_raid_train_panels(tenant_id TEXT NOT NULL,guild_id TEXT NOT NULL,slot_date TEXT NOT NULL,channel_id TEXT NOT NULL,message_id TEXT NOT NULL,updated_at TEXT NOT NULL,PRIMARY KEY(tenant_id,guild_id,slot_date)) STRICT;");
-  }
-  close() { this.db.close(); }
-  setPanel(input:{tenantId:string;guildId:string;date:string;channelId:string;messageId:string}) {
-    validateDate(input.date);
-    this.db.prepare("INSERT INTO dsh_raid_train_panels(tenant_id,guild_id,slot_date,channel_id,message_id,updated_at) VALUES(?,?,?,?,?,?) ON CONFLICT(tenant_id,guild_id,slot_date) DO UPDATE SET channel_id=excluded.channel_id,message_id=excluded.message_id,updated_at=excluded.updated_at")
-      .run(input.tenantId,input.guildId,input.date,input.channelId,input.messageId,this.now());
-  }
-  panel(tenantId:string,guildId:string,date:string) {
-    validateDate(date);
-    const row=this.db.prepare("SELECT channel_id AS channelId,message_id AS messageId FROM dsh_raid_train_panels WHERE tenant_id=? AND guild_id=? AND slot_date=?").get(tenantId,guildId,date) as {channelId:string;messageId:string}|undefined;
-    return row;
-  }
-  schedule(tenantId: string, guildId: string, date: string): DshRaidTrainSlotV1[] {
-    validateDate(date);
-    const rows = this.db.prepare("SELECT * FROM dsh_raid_train_slots WHERE tenant_id=? AND guild_id=? AND slot_date=? ORDER BY hour").all(tenantId,guildId,date) as Array<Record<string,unknown>>;
-    const byHour = new Map(rows.map(row => [Number(row.hour),row]));
-    return Array.from({length:24},(_,hour)=>slotFromRow(tenantId,guildId,date,hour,byHour.get(hour)));
-  }
-  signup(input:{tenantId:string;guildId:string;date:string;hour:number;userId:string;twitchUserId?:string;username:string;displayName:string;avatarUrl?:string;twitchUsername?:string}) {
-    validateDate(input.date);
-    if(!Number.isSafeInteger(input.hour)||input.hour<0||input.hour>23)throw new Error("Raid Train hour must be between 0 and 23");
-    if(input.date<=this.now().slice(0,10))return {success:false,reason:"same-day"};
-    this.db.exec("BEGIN IMMEDIATE");
-    try {
-      const existing=this.db.prepare("SELECT user_id AS userId FROM dsh_raid_train_slots WHERE tenant_id=? AND guild_id=? AND slot_date=? AND hour=?").get(input.tenantId,input.guildId,input.date,input.hour) as {userId:string}|undefined;
-      if(existing){this.db.exec("COMMIT");return {success:false,reason:"taken"};}
-      this.db.prepare("INSERT INTO dsh_raid_train_slots(tenant_id,guild_id,slot_date,hour,user_id,twitch_user_id,username,display_name,avatar_url,twitch_username,signup_time) VALUES(?,?,?,?,?,?,?,?,?,?,?)")
-        .run(input.tenantId,input.guildId,input.date,input.hour,input.userId,input.twitchUserId??null,input.username,input.displayName,input.avatarUrl??null,input.twitchUsername??null,this.now());
-      this.db.exec("COMMIT");
-      return {success:true,slot:this.schedule(input.tenantId,input.guildId,input.date)[input.hour]};
-    } catch(error){this.db.exec("ROLLBACK");throw error;}
-  }
-  cancel(input:{tenantId:string;guildId:string;date:string;hour:number;userId:string}) {
-    validateDate(input.date);
-    if(!Number.isSafeInteger(input.hour)||input.hour<0||input.hour>23)throw new Error("Raid Train hour must be between 0 and 23");
-    const changed=this.db.prepare("DELETE FROM dsh_raid_train_slots WHERE tenant_id=? AND guild_id=? AND slot_date=? AND hour=? AND user_id=?").run(input.tenantId,input.guildId,input.date,input.hour,input.userId).changes;
-    return {success:Number(changed)===1,reason:Number(changed)===1?undefined:"not-owner-or-empty"};
-  }
+ private readonly db:DatabaseSync;
+ constructor(path:string,private readonly now=()=>new Date().toISOString()){
+  this.db=new DatabaseSync(path,{timeout:5000});
+  this.db.exec(`PRAGMA journal_mode=WAL;
+   CREATE TABLE IF NOT EXISTS dsh_raid_train_slots(tenant TEXT NOT NULL,guild TEXT NOT NULL,date TEXT NOT NULL,hour INTEGER NOT NULL,user TEXT NOT NULL,username TEXT NOT NULL,display_name TEXT NOT NULL,avatar TEXT,twitch TEXT,signup_at TEXT NOT NULL,points INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(tenant,guild,date,hour));
+   CREATE INDEX IF NOT EXISTS dsh_raid_train_user ON dsh_raid_train_slots(tenant,guild,user,date);`);
+ }
+ close(){this.db.close();}
+ schedule(tenant:string,guild:string,date:string){
+  validDate(date);const rows=this.db.prepare("SELECT * FROM dsh_raid_train_slots WHERE tenant=? AND guild=? AND date=? ORDER BY hour").all(tenant,guild,date) as any[],byHour=new Map(rows.map(r=>[r.hour,r]));
+  return Array.from({length:24},(_,hour)=>{const r=byHour.get(hour);return{id:`${date}-${String(hour).padStart(2,"0")}`,date,hour,claimed:Boolean(r),...(r?{userId:r.user,username:r.username,displayName:r.display_name,avatarUrl:r.avatar??undefined,twitchLogin:r.twitch??undefined,signupAt:r.signup_at,points:r.points}:{})};});
+ }
+ signup(tenant:string,guild:string,date:string,hour:number,input:DshRaidTrainSignupV1){
+  validDate(date);validHour(hour);if(date<=this.now().slice(0,10))throw Error("Raid Train signups must be for a future day");
+  if(!input.userId||!input.username||!input.displayName)throw Error("A linked member profile is required");
+  try{this.db.prepare("INSERT INTO dsh_raid_train_slots(tenant,guild,date,hour,user,username,display_name,avatar,twitch,signup_at,points) VALUES(?,?,?,?,?,?,?,?,?,?,0)").run(tenant,guild,date,hour,input.userId,input.username,input.displayName,input.avatarUrl??null,input.twitchLogin??null,this.now());}
+  catch(error){if(String(error).includes("UNIQUE")||String(error).includes("constraint"))return{claimed:false,slot:this.schedule(tenant,guild,date)[hour]};throw error;}
+  return{claimed:true,slot:this.schedule(tenant,guild,date)[hour]};
+ }
+ cancel(tenant:string,guild:string,date:string,hour:number,actor:string,owner=false){
+  validDate(date);validHour(hour);const result=this.db.prepare("DELETE FROM dsh_raid_train_slots WHERE tenant=? AND guild=? AND date=? AND hour=? AND (?=1 OR user=?)").run(tenant,guild,date,hour,owner?1:0,actor);
+  return{cancelled:Number(result.changes)>0};
+ }
+ publishPayload(tenant:string,guild:string,date:string){
+  const slots=this.schedule(tenant,guild,date),claimed=slots.filter(s=>s.claimed),available=slots.filter(s=>!s.claimed),fields:any[]=[];
+  if(claimed.length)fields.push({name:"🚂 Claimed slots",value:claimed.map(s=>`${String(s.hour).padStart(2,"0")}:00 — ${s.displayName}`).join("\\n").slice(0,1024),inline:true});
+  if(available.length)fields.push({name:"⏰ Available slots",value:available.slice(0,10).map(s=>`${String(s.hour).padStart(2,"0")}:00`).join(", ")+(available.length>10?` +${available.length-10} more`:""),inline:true});
+  return{embeds:[{title:`🚂 Raid Train · ${date}`,description:"Reserve an hourly slot to lead the community raid train.",color:0xff4500,fields,footer:{text:`${claimed.length}/24 slots claimed · UTC · future dates only`},timestamp:this.now()}],allowed_mentions:{parse:[]}};
+ }
 }
-
-export function dshRaidTrainPayload(slots:DshRaidTrainSlotV1[],date:string,serverName="Space Mountain") {
-  validateDate(date);
-  const filled=slots.filter(slot=>slot.userId),available=slots.filter(slot=>!slot.userId);
-  const claimed=filled.map(slot=>`${String(slot.hour).padStart(2,"0")}:00 — ${slot.displayName}`).join("\n").slice(0,1024)||"No slots claimed yet";
-  const open=available.slice(0,10).map(slot=>`${String(slot.hour).padStart(2,"0")}:00`).join(", ")||"No open slots";
-  const tomorrow=shiftDate(date,1),dayAfter=shiftDate(date,2);
-  return {embeds:[{title:`🚂 ${serverName} Raid Train — ${date}`,description:"All aboard the cosmic express! Sign up for a time slot to lead the raid train through the galaxy.",color:0xff4500,fields:[{name:`🚂 Claimed Slots (${filled.length}/24)`,value:claimed,inline:true},{name:`⏰ Available Slots (${available.length})`,value:open+(available.length>10?` +${available.length-10} more`:""),inline:true}],footer:{text:"Cannot sign up for today • All times UTC"},timestamp:new Date().toISOString()}],components:[{type:1,components:[{type:2,style:1,label:"Sign Up",custom_id:`raid_signup_${date}`},{type:2,style:2,label:"View Schedule",custom_id:`raid_view_${date}`},{type:2,style:4,label:"Cancel Slot",custom_id:`raid_cancel_${date}`}]},{type:1,components:[{type:2,style:2,label:tomorrow,custom_id:`raid_day_${tomorrow}`},{type:2,style:2,label:dayAfter,custom_id:`raid_day_${dayAfter}`}]}],allowed_mentions:{parse:[]}};
-}
-function slotFromRow(tenantId:string,guildId:string,date:string,hour:number,row?:Record<string,unknown>):DshRaidTrainSlotV1 {
-  return {id:`${date}-${String(hour).padStart(2,"0")}`,tenantId,guildId,date,hour,...(row?{userId:String(row.user_id),...(row.twitch_user_id?{twitchUserId:String(row.twitch_user_id)}:{}),username:String(row.username),displayName:String(row.display_name),...(row.avatar_url?{avatarUrl:String(row.avatar_url)}:{}),...(row.twitch_username?{twitchUsername:String(row.twitch_username)}:{}),signupTime:String(row.signup_time)}:{})};
-}
-function validateDate(value:string){if(!/^\d{4}-\d{2}-\d{2}$/.test(value)||new Date(`${value}T00:00:00.000Z`).toISOString().slice(0,10)!==value)throw new Error("Raid Train date must be YYYY-MM-DD");}
-function shiftDate(value:string,days:number){const date=new Date(`${value}T00:00:00.000Z`);date.setUTCDate(date.getUTCDate()+days);return date.toISOString().slice(0,10);}
+function validDate(value:string){if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(value)||new Date(value+"T00:00:00Z").toISOString().slice(0,10)!==value)throw Error("Choose a valid UTC date");}
+function validHour(value:number){if(!Number.isInteger(value)||value<0||value>23)throw Error("Choose an hour from 00 through 23");}
