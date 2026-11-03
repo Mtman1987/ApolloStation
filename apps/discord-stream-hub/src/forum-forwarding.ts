@@ -152,7 +152,10 @@ class DshCommlinkForumDiscordPort implements DshForumDiscordPort {
     if(!parentId)throw new Error("Destination thread has no parent channel");
     return{parentId};
   }
-  setThreadArchived(tenantId:string,threadId:string,archived:boolean){return this.reads.setThreadArchived(tenantId,threadId,archived);}
+  async setThreadArchived(tenantId:string,threadId:string,archived:boolean){
+    const target=await this.threadTarget(tenantId,threadId);
+    await this.submit(tenantId,"archive-thread",target.parentId,{threadId,archived},`archive:${threadId}:${archived}`);
+  }
   private messageInput(payload:Record<string,unknown>){
     const embeds=Array.isArray(payload.embeds)?payload.embeds:[],first=(embeds[0]&&typeof embeds[0]==="object"?embeds[0]:{}) as Record<string,unknown>,author=(first.author&&typeof first.author==="object"?first.author:{}) as Record<string,unknown>;
     return{title:String(first.title??"Forwarded Discord message").slice(0,256),content:String(first.description??"Forwarded Discord message").slice(0,3800)||"Forwarded Discord message",authorName:String(author.name??"Discord member").slice(0,100),...(typeof first.url==="string"?{sourceUrl:first.url}:{}),payload};
