@@ -70,3 +70,22 @@ Nebula Arcade is intentionally not selectable yet: the connected repository
 inventory did not identify a separate donor repository. The registry records
 that unresolved mapping rather than guessing that another Nebula-named
 repository is the donor.
+
+
+## Donor-to-Apollo evidence bundle
+
+The **Apollo donor inventory and REA evidence** workflow now takes both a
+confirmed donor/ref and an Apollo app. It builds Apollo, inventories the
+donor and Apollo source trees, compares path/hash overlap, runs REA against
+both donor source and the built Apollo app, and uploads five artifacts:
+donor inventory, Apollo inventory, path comparison, donor REA report, and
+Apollo REA report.
+
+The comparison is deliberately conservative: same normalized path is a
+candidate mapping, and equal SHA-256 is an exact content match. Donor-only
+paths are review candidates—not proof of missing functionality. Renamed
+modules, API behavior, tenant isolation, authorization and runtime acceptance
+still require dedicated evidence.
+
+Run locally with
+`npm run parity:compare -- donor-inventory.json apollo-inventory.json [report.json]`.
