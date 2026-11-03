@@ -39,6 +39,23 @@ test('custom art migration rejects path escape and preserves binary content',asy
  const {writeFileSync,mkdirSync}=await import('node:fs'),{importNebulaLiveArt}=await import('../apps/nebula-arcade/dist/live-migration.js'),{SqliteQuackverseArtStore}=await import('../apps/nebula-arcade/dist/quackverse-art-store.js');const t=temp();
  try{const dir=join(t.dir,'art');mkdirSync(dir);const bytes=readFileSync(new URL('../apps/nebula-arcade/assets/quackverse-art/imported/card-1-light-ranger-armor-4.jpg',import.meta.url));writeFileSync(join(dir,'one.jpg'),bytes);const prepared=prepareNebulaLiveImport({gameSettings:{default:{quackverseArt:{1:{static:{fileName:'one.jpg'}}}}}},{tenantId:'tenant',now:epoch});assert.equal(importNebulaLiveArt(t.path,prepared,dir).imported,1);const art=new SqliteQuackverseArtStore(t.path);assert.deepEqual(Buffer.from(art.get('tenant',1).bytes),bytes);art.close();writeFileSync(join(t.dir,'outside.jpg'),bytes);prepared.artAssets[0].fileName='../outside.jpg';assert.throws(()=>importNebulaLiveArt(t.path,prepared,dir),/escaped/);}finally{t.close();}
 });
+test('Quackverse trade desk is connected to authenticated browser actions and shared collections',async()=>{
+ const t=temp();const {NebulaControlSurface}=await import('../apps/nebula-arcade/dist/control-surface.js');const controls=new NebulaControlSurface({databasePath:t.path,tenantId:'tenant',channelId:'room-a'});
+ const alice={userId:'alice',username:'alice',moderator:false},bob={userId:'bob',username:'bob',moderator:false};
+ try{
+  controls.tabletop.importData('tenant',{collections:{alice:normalizeQuackverseCollection({cards:[1,1,3],deck:[1]}),bob:normalizeQuackverseCollection({cards:[2,2,4],deck:[2]})}});
+  const before=await controls.handle('GET','state',{},alice);assert.equal(before.quackverseTrades.candidates[0].userId,'bob');
+  const offered=await controls.handle('POST','trade',{action:'offer',toId:'bob',giveCardId:3,wantCardId:4,requestId:'browser-offer'},alice);assert.equal(offered.result.status,'pending');
+  await assert.rejects(()=>controls.handle('POST','trade',{action:'accept',offerId:offered.result.id,requestId:'unauthorized-accept'},alice),/other player/);
+  const incoming=await controls.handle('GET','state',{},bob);assert.equal(incoming.quackverseTrades.offers[0].fromId,'alice');
+  const accepted=await controls.handle('POST','trade',{action:'accept',offerId:offered.result.id,requestId:'browser-accept'},bob);assert.equal(accepted.result.status,'accepted');
+  const aliceAfter=await controls.handle('GET','state',{},alice),bobAfter=await controls.handle('GET','state',{},bob);
+  assert.deepEqual(aliceAfter.tabletop.collection.cards.sort(),[1,1,4]);assert.deepEqual(bobAfter.tabletop.collection.cards.sort(),[2,2,3]);
+  assert.equal(aliceAfter.quackverseTrades.offers[0].status,'accepted');
+  assert.match(NEBULA_CONTROL_JS,/Trade cards/);assert.match(NEBULA_CONTROL_JS,/data-route/);
+ }finally{controls.close();t.close();}
+});
+
 test('art batch validates every card, stays moderator-only, and cancelled jobs leave the queue',async()=>{
  const {NebulaControlSurface}=await import('../apps/nebula-arcade/dist/control-surface.js');const t=temp(),controls=new NebulaControlSurface({databasePath:t.path,tenantId:'tenant',channelId:'room'}),admin={userId:'owner',username:'owner',moderator:true};
  try{await assert.rejects(controls.handle('POST','art-batch',{startCardId:1,endCardId:2},{...admin,moderator:false}),/Moderator/);await assert.rejects(controls.handle('POST','art-batch',{startCardId:100,endCardId:102},admin),/Unknown card/);assert.equal(controls.network.pending('tenant').length,0);assert.equal((await controls.handle('POST','art-batch',{startCardId:1,endCardId:2,requestId:'batch'},admin)).queued,2);const item=controls.network.pending('tenant')[0];await controls.handle('POST','art-cancel',{id:item.id},admin);assert.equal(controls.network.pending('tenant').length,1);assert.ok(!(await controls.handle('GET','state',{}, {...admin,moderator:false})).artJobs);}finally{controls.close();t.close();}
