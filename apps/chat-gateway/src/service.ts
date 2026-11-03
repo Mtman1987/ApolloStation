@@ -370,7 +370,14 @@ export class SupervisedChatGatewayService {
         const connectionId=configured.connectionId;
         const threadId=input.threadId===undefined?undefined:requiredInput(input.threadId,"threadId");
         const operation=input.operation===undefined?"upsert":input.operation;
-        if(operation==="create-thread"){
+        if(operation==="archive-thread"){
+          if(!threadId)throw new Error("Forum thread archive requires a thread ID");
+          if(typeof input.archived!=="boolean")throw new Error("Forum thread archive flag is invalid");
+          await this.discordDriver.setDiscordForumThreadArchived({tenantId:job.tenantId,connectionId,channelId,threadId,archived:input.archived});
+          if(!job.leaseId)throw new Error("Commlink forum egress job lease is unavailable");
+          await this.connectionClient.succeedExecutionJob(job.tenantId,job.id,workerId,job.leaseId,job.fencingEpoch,{schemaVersion:1,provider:"discord",operation:"archive-thread",threadId,archived:input.archived});
+          report.sent+=1;continue;
+        }else if(operation==="create-thread"){
           if(threadId)throw new Error("Forum thread creation must target a parent channel, not an existing thread");
           const name=boundedInput(input.name,"name",100),content=boundedInput(input.content,"content",1900);
           const created=await this.discordDriver.createDiscordForumThread({tenantId:job.tenantId,connectionId,channelId,name,content});
