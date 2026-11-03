@@ -43,7 +43,7 @@ export class DshMemberActivityWorker {
       if(!events.length)break;
       for(const event of events){this.store.renew(tenant,owner);if(typeof event.id!=="string"||event.tenantId!==tenant||event.type!=="spmt.chat.message.received.v1"||event.sourceAppId!=="chat-gateway")throw Error("Activity source is invalid");
         const message=event.payload as DshMessageObservation,eligible=message?.provider==="discord"&&!message.actor?.isBot&&Boolean(message.guildId&&this.config.tenants.find(t=>t.tenantId===tenant)?.discordGuildIds?.includes(message.guildId));
-        if(eligible){const identity=await this.identities.resolveOrGrandfather({tenantId:tenant,provider:"discord",providerUserId:message.actor.providerUserId,username:message.actor.username,...(message.actor.displayName?{displayName:message.actor.displayName}:{})});if(/^!mtfixit(?:\\s|$)/i.test(String(message.text??"")))await this.onMessage?.(tenant,event.id,message);this.store.advance(tenant,owner,event.id,message,identity.userId);}
+        if(eligible){const identity=await this.identities.resolveOrGrandfather({tenantId:tenant,provider:"discord",providerUserId:message.actor.providerUserId,username:message.actor.username,...(message.actor.displayName?{displayName:message.actor.displayName}:{})});if(/^!mtfixit(?:\s|$)/i.test(String(message.text??"")))await this.onMessage?.(tenant,event.id,message);this.store.advance(tenant,owner,event.id,message,identity.userId);}
         else this.store.advance(tenant,owner,event.id);processed++;
       }
       if(events.length<200)break;
