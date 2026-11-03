@@ -206,7 +206,7 @@ export class DshPointsService {
   }
 }
 
-export function buildDshLeaderboardPayload(rows:Array<{rank:number;displayName?:string;userId:string;lifetimeXp:number;spendableXp:number;level:number}>,guildId:string,updatedAt=new Date().toISOString(),interactive=true){
+export function buildDshLeaderboardPayload(rows:Array<{rank:number;displayName?:string;userId:string;lifetimeXp:number;spendableXp:number;level:number}>,guildId:string,updatedAt=new Date().toISOString(),interactive=true,imageAttachment=false){
   const guild=String(guildId??"").trim();
   if(!guild||(interactive&&!/^\d{5,30}$/.test(guild)))throw new Error("A Discord server ID is required for the leaderboard");
   const safe=(value:unknown)=>String(value??"Unknown").replace(/[\r\n]/g," ").slice(0,80);
