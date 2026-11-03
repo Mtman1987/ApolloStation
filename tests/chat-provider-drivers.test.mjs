@@ -196,3 +196,50 @@ test("Discord partial edits and bulk deletes enter only the correction path",asy
  const f=socketFactoryCapture(),driver=new DiscordGatewayProviderDriver({websocketFactory:f.factory}),opened=openInput("discord","12345"),changes=[];opened.input.onMutation=m=>changes.push(m);const pending=driver.open(opened.input),socket=f.sockets[0];socket.open();socket.message(JSON.stringify({op:0,t:"READY",s:1,d:{session_id:"session"}}));const handle=await pending;
  try{const emit=(t,d)=>socket.message(JSON.stringify({op:0,t,s:2,d}));emit("MESSAGE_UPDATE",{id:"54321",channel_id:"12345",content:"!points 500",edited_timestamp:"2026-09-06T10:01:00Z"});emit("MESSAGE_UPDATE",{id:"54321",channel_id:"12345",attachments:[{url:"javascript:bad",filename:"bad"}]});emit("MESSAGE_UPDATE",{id:"54321",channel_id:"99999",content:"other channel"});emit("MESSAGE_DELETE_BULK",{channel_id:"12345",ids:["54321","67890"]});assert.equal(opened.envelopes.length,0);assert.equal(changes.length,4);assert.equal(changes[0].text,"!points 500");assert.deepEqual(changes[1].rich.attachments,[]);assert.equal(changes[2].operation,"delete");assert.equal(changes[3].messageId,"67890");}finally{await handle.close()}
 });
+
+test("Discord forum thread create reconciles the same durable marker after an uncertain receipt and keeps distinct jobs separate", async () => {
+  const f = socketFactoryCapture(), requests = [], remoteThreads = [];
+  const response = (status, value) => ({ ok: status >= 200 && status < 300, status, async json() { return value; }, async text() { return ""; } });
+  let nextId = 700001;
+  const driver = new DiscordGatewayProviderDriver({
+    websocketFactory: f.factory,
+    handshakeTimeoutMs: 2_000,
+    fetch: async (url, init = {}) => {
+      requests.push({ url, init });
+      if (url.endsWith("/channels/123456")) return response(200, { id: "123456", guild_id: "999999", type: 15 });
+      if (url.endsWith("/guilds/999999/threads/active")) return response(200, { threads: remoteThreads.filter(thread => !thread.archived) });
+      if (url.includes("/threads/archived/public?")) return response(200, { threads: [], has_more: false });
+      const starter = remoteThreads.find(thread => url.endsWith("/channels/" + thread.id + "/messages/" + thread.id));
+      if (starter) return response(200, { id: starter.id, content: starter.content });
+      if (url.endsWith("/channels/123456/threads") && init.method === "POST") {
+        const body = JSON.parse(init.body);
+        const id = String(nextId++);
+        const thread = { id, parent_id: "123456", content: body.message.content };
+        remoteThreads.push(thread);
+        return response(200, { id, message: { id } });
+      }
+      return response(500, { message: "unexpected request" });
+    }
+  });
+  const opened = openInput("discord", "123456"), pending = driver.open(opened.input), socket = f.sockets[0];
+  socket.open();
+  socket.message(JSON.stringify({ op: 10, d: { heartbeat_interval: 60_000 } }));
+  socket.message(JSON.stringify({ op: 0, t: "READY", s: 1, d: { session_id: "session" } }));
+  const handle = await pending;
+  try {
+    const marker = "||SPMT egress key: 0123456789abcdef01234567||";
+    const input = { tenantId: "tenant-a", connectionId: "discord-main", channelId: "123456", name: "Recovered topic", content: "Topic body\n\n" + marker, idempotencyMarker: marker };
+    const first = await driver.createDiscordForumThread(input);
+    // Simulate a crash after Discord's POST succeeded but before the durable success receipt.
+    const retry = await driver.createDiscordForumThread(input);
+    assert.deepEqual(retry, first);
+    assert.equal(remoteThreads.length, 1);
+    assert.equal(requests.filter(request => request.url.endsWith("/channels/123456/threads") && request.init.method === "POST").length, 1);
+
+    const otherMarker = "||SPMT egress key: fedcba9876543210fedcba98||";
+    const distinct = await driver.createDiscordForumThread({ ...input, name: "Different topic", content: "Other body\n\n" + otherMarker, idempotencyMarker: otherMarker });
+    assert.notEqual(distinct.threadId, first.threadId);
+    assert.equal(remoteThreads.length, 2);
+    assert.equal(requests.filter(request => request.url.endsWith("/channels/123456/threads") && request.init.method === "POST").length, 2);
+  } finally { await handle.close(); }
+});
