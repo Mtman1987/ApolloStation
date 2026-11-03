@@ -208,7 +208,7 @@ test("Discord forum thread create reconciles the same durable marker after an un
       requests.push({ url, init });
       if (url.endsWith("/channels/123456")) return response(200, { id: "123456", guild_id: "999999", type: 15 });
       if (url.endsWith("/guilds/999999/threads/active")) return response(200, { threads: remoteThreads.filter(thread => !thread.archived) });
-      if (url.includes("/threads/archived/public?")) return response(200, { threads: [], has_more: false });
+      if (url.includes("/threads/archived/public?")) return response(200, { threads: remoteThreads.filter(thread => thread.archived).map(thread => ({ ...thread, thread_metadata: { archive_timestamp: "2026-11-03T18:00:00.000Z" } })), has_more: false });
       const starter = remoteThreads.find(thread => url.endsWith("/channels/" + thread.id + "/messages/" + thread.id));
       if (starter) return response(200, { id: starter.id, content: starter.content });
       if (url.endsWith("/channels/123456/threads") && init.method === "POST") {
@@ -230,7 +230,8 @@ test("Discord forum thread create reconciles the same durable marker after an un
     const marker = "||SPMT egress key: 0123456789abcdef01234567||";
     const input = { tenantId: "tenant-a", connectionId: "discord-main", channelId: "123456", name: "Recovered topic", content: "Topic body\n\n" + marker, idempotencyMarker: marker };
     const first = await driver.createDiscordForumThread(input);
-    // Simulate a crash after Discord's POST succeeded but before the durable success receipt.
+    // Simulate a crash after the remote create but before its durable receipt, then archive the post before retry.
+    remoteThreads[0].archived = true;
     const retry = await driver.createDiscordForumThread(input);
     assert.deepEqual(retry, first);
     assert.equal(remoteThreads.length, 1);
