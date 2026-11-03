@@ -8,6 +8,7 @@ export interface DshLiveMemberV1 {
   canonicalUserId: string;
   discordUserId: string;
   twitchLogin: string;
+  displayName?: string;
   group: DshMemberGroupV1;
   shoutoutChannelId: string;
   /** Whether this tracked member may enter ordinary Community Spotlight rotation. */
