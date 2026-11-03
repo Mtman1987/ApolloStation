@@ -115,7 +115,7 @@ test('episode HLS conversion runs the real FFmpeg orchestration and reuses a val
  try{
   await mkdir(bin,{recursive:true});
   const ffprobe=join(bin,'ffprobe'),ffmpeg=join(bin,'ffmpeg');
-  await writeFile(ffprobe, '#!/bin/sh\\nprintf '%s\\n' '{"streams":[{"index":0,"codec_type":"video"},{"index":1,"codec_type":"audio","tags":{"language":"eng"}}]}'\\n');
+  await writeFile(ffprobe, `#!/bin/sh\\nprintf '%s\\n' '{"streams":[{"index":0,"codec_type":"video"},{"index":1,"codec_type":"audio","tags":{"language":"eng"}}]}'\\n`);
   await writeFile(ffmpeg,`#!/bin/sh
 printf 'run\\n' >> '${count}'
 segment_pattern=''
