@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {forwardDshForumPost,importDshDiscordForumThreads} from "../apps/discord-stream-hub/dist/forum-forwarding.js";
+import {forwardDshForumPost,importDshDiscordForumThreads,importDshDiscordForumThreadMessage} from "../apps/discord-stream-hub/dist/forum-forwarding.js";
 
 const source={sourceApp:"discord-stream-hub",sourceServerId:"123456",sourceChannelId:"234567",sourceChannelName:"general",sourceMessageId:"345678",sourceMessageUrl:"https://discord.com/channels/123456/234567/345678",authorId:"456789",authorName:"Viewer",title:"Community / #general",content:"Hello community",postedAt:"2026-11-03T12:00:00.000Z"};
 function client(){
@@ -30,4 +30,19 @@ test("Discord forum import creates native topics and ordered native replies",asy
  assert.equal(result.threadsDiscovered,1);assert.equal(result.postsImported,1);assert.equal(result.repliesImported,1);
  assert.equal(calls[0][0],"post");assert.equal(calls[0][2].origin.threadId,"thread-1");assert.equal(calls[0][2].body,"Starter post");
  assert.equal(calls[2][0],"reply");assert.equal(calls[2][2],"native-1");assert.equal(calls[2][3].origin.messageId,"300000");
+});
+
+test("live Discord forum thread messages create, edit, and delete native replies",async()=>{
+ const calls=[];const client={async createCommlinkForumPost(tenant,input){calls.push(["post",tenant,input]);return {post:{id:"native-post"}};},async createCommlinkForumReply(tenant,postId,input){calls.push(["reply",tenant,postId,input]);return {reply:{id:"native-reply"}};},async mutateCommlinkForumImport(tenant,input){calls.push(["mutate",tenant,input]);return {deleted:input.operation==="delete",id:"native-reply"};},async publishEvent(...args){calls.push(["event",...args]);return {duplicate:true,event:{id:"event-1"}};}};
+ const discord={async getChannelMessage(_tenant,_thread,_starter){return {id:"200000",content:"Starter",timestamp:"2026-11-03T12:00:00.000Z",author:{id:"starter-user",username:"Starter"}};}};
+ const forum={id:"forum-1",name:"Community"},thread={id:"200000",name:"Welcome"};
+ const record={messageId:"300000",providerUserId:"reply-user",displayName:"Reply User",username:"replyuser",text:"Hello",occurredAt:"2026-11-03T12:01:00.000Z",isBot:false,rich:{attachments:[]}};
+ assert.equal(await importDshDiscordForumThreadMessage(client,discord,"tenant-a","guild-1",forum,thread,record,"create"),true);
+ assert.equal(calls.find(x=>x[0]==="reply")[2],"native-post");
+ assert.equal(calls.find(x=>x[0]==="reply")[3].origin.threadId,"200000");
+ await importDshDiscordForumThreadMessage(client,discord,"tenant-a","guild-1",forum,thread,{...record,text:"Edited reply"},"edit");
+ assert.equal(calls.filter(x=>x[0]==="mutate").at(-1)[2].kind,"reply");
+ assert.equal(calls.filter(x=>x[0]==="mutate").at(-1)[2].body,"Edited reply");
+ await importDshDiscordForumThreadMessage(client,discord,"tenant-a","guild-1",forum,thread,record,"delete");
+ assert.equal(calls.filter(x=>x[0]==="mutate").at(-1)[2].operation,"delete");
 });
