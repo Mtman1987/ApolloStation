@@ -7,6 +7,8 @@ import {StreamWeaverCommunityStore} from '../apps/streamweaver/dist/community-st
 import {SqliteStreamWeaverEconomyStore} from '../apps/streamweaver/dist/economy.js';
 import {StreamWeaverCommunityRuntime} from '../apps/streamweaver/dist/community-runtime.js';
 import {StreamWeaverRideStore} from '../apps/streamweaver/dist/ride-store.js';
+import {StreamWeaverPresentationRuntime} from '../apps/streamweaver/dist/stream-presentation-runtime.js';
+import {SqliteStreamWeaverShoutoutStore} from '../apps/streamweaver/dist/shoutout-store.js';
 import {runStreamRide,activeRideLookup} from '../apps/streamweaver/dist/ride-runtime.js';
 const riders=[{userId:'rider-a',displayName:'A',imageUrl:''},{userId:'rider-b',displayName:'B',imageUrl:''}],reward={id:'ride',title:'Ride',price:100,award:0,acceptance:'either',firstPerStream:false,text:'Ride!',mediaUrl:'',enabled:true,rewardId:'twitch-ride'},request={tenantId:'tenant',actorId:'payer',displayName:'Payer',source:'web',requestId:'one',currency:'streamer'};
 function setup(store){store.saveRedeem('tenant',reward);store.rides.configure('tenant',{enabled:true,rewardId:'ride'})}
@@ -22,6 +24,23 @@ test('front-seat selection rotates recent winners and reserves the same winner o
 test('SPMT-funded rides retain the approved supply-based price across uncertain settlement',async()=>{
  const store=new StreamWeaverCommunityStore(':memory:'),economy=new SqliteStreamWeaverEconomyStore(':memory:'),spends=[];let failed=true;const client={getXpSupply:async()=>({spendableSupply:100000}),spendXp:async(...args)=>{spends.push(args);if(failed)throw Error('uncertain transport')}};try{setup(store);economy.setBalance('tenant','supply',1000000);const input={...request,currency:'spmt',maxSpmtCost:10};await assert.rejects(()=>runStreamRide(store,economy,client,async()=>riders,true,input),/uncertain/);economy.setBalance('tenant','supply',10000000);failed=false;assert.equal((await runStreamRide(store,economy,client,async()=>riders,true,input)).state,'complete');assert.equal(spends[0][2],10);assert.equal(spends[1][2],10);assert.equal(spends[0][4],spends[1][4]);assert.equal(economy.getWallet('tenant','payer').balance,0);assert.equal(riders.reduce((n,r)=>n+economy.getWallet('tenant',r.userId).balance,0),100);}finally{store.close();economy.close()}
 });
+test('Space Mountain front-seat Nebula bonus retries durably and updates the ride receipt',async()=>{
+ const store=new StreamWeaverCommunityStore(':memory:'),economy=new SqliteStreamWeaverEconomyStore(':memory:'),shoutouts=new SqliteStreamWeaverShoutoutStore(':memory:');let initialCalls=0;
+ try{
+  setup(store);economy.setBalance('tenant','payer',500);
+  const runtime=new StreamWeaverCommunityRuntime(store,economy,{},true,true,async()=>riders,async input=>{initialCalls++;assert.equal(input.awardId.startsWith('streamweaver-ride:'),true);if(initialCalls===1)throw Error('Nebula Arcade temporarily unavailable');return{amount:100,balance:100,duplicate:false};});
+  const input={...request,requestId:'nebula-front-seat-retry',channel:'123456789'},first=await runtime.ride(input);
+  assert.equal(first.state,'complete');assert.equal(first.nebulaBonusStatus,'pending');assert.ok(first.frontSeatUserId);assert.equal(store.pendingTasks()[0].body.action,'nebula-checkin-bonus');
+  const presentation=new StreamWeaverPresentationRuntime({store,shoutoutStore:shoutouts,twitch:{},client:{},personas:{get:()=>undefined},connections:[],egress:{send:async()=>({})},awardNebulaCheckinBonus:async task=>{assert.equal(task.awardId.startsWith('streamweaver-ride:'),true);return{amount:100,balance:100,duplicate:false};}});
+  await presentation.runOnce();
+  const saved=store.rides.attempt('tenant',first.rideId).result;
+  assert.equal(saved.nebulaBonusStatus,'awarded');assert.equal(saved.nebulaBonusPoints,100);assert.match(saved.text,/100 Nebula Arcade points/);
+  assert.equal(store.pendingTasks().length,0);
+  assert.equal((await runtime.ride(input)).nebulaBonusStatus,'awarded');
+  assert.equal(initialCalls,1);
+ }finally{store.close();economy.close();shoutouts.close();}
+});
+
 test('active riders require existing Discord and Twitch links, not matching display names',async()=>{
  const store=new StreamWeaverCommunityStore(':memory:');try{store.importPartnerRole('tenant',{guildId:'123456',roleId:'654321',kind:'community',members:[{id:'100000',name:'Same Name',imageUrl:''},{id:'100001',name:'Absent',imageUrl:''}]});const client={request:async(url,options)=>{assert.equal(options.tenantId,'tenant');assert.ok(!url.includes('grandfather'));const p=new URL(url,'https://example.test').searchParams,provider=p.get('provider'),id=p.get('providerUserId');if(provider==='discord')return {userId:id==='100000'?'linked':'absent'};if(id==='200000')return {userId:'linked'};throw Object.assign(Error('not linked'),{status:404})}},lookup=activeRideLookup(store,{chatters:async()=>[{id:'200000',username:'different_name'},{id:'200001',username:'Same Name'}]},client);assert.deepEqual((await lookup('tenant')).map(r=>r.userId),['linked']);client.request=async()=>{throw Object.assign(Error('authority unavailable'),{status:503})};await assert.rejects(()=>lookup('tenant'),/authority unavailable/);}finally{store.close()}
 });
