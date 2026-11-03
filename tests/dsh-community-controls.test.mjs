@@ -35,6 +35,8 @@ async function fixture(t, operationMode = 'read-only') {
     if (path === '/v1/provider-grants') return Response.json({ expiresAt: '2099-01-01T00:00:00Z', credential: { accessToken: 'test-only-provider-token', metadata: { authorizationScheme: 'Bot' } } });
     if (path === '/v1/simulation-rooms') return Response.json([{ roomId: 'test-room', name: 'Test room' }]);
     if (path === '/v1/simulation-rooms/events') { events.push(JSON.parse(init.body)); return Response.json({}); }
+    if (path === '/v1/events') return Response.json([]);
+    if (path === '/v1/identity/community-members') return Response.json({ schemaVersion: 1, tenantId: 'tenant', members: [], nextAfterUserId: null });
     if (path === '/api/v10/users/@me/channels') return Response.json({ id: '77777' });
     if (path === '/api/v10/channels/77777/messages') { messages.push(JSON.parse(init.body)); return Response.json({ id: '67890' }); }
     if (path === '/api/v10/users/@me/guilds') return Response.json([{ id: guildId, name: 'Community' }, { id: '88888', name: 'Unrelated tenant' }]);
