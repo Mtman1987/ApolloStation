@@ -227,7 +227,7 @@ export class DshWebControls {
         const guild=this.guild(context.tenantId,url.searchParams.get("guildId")),date=String(url.searchParams.get("date")??new Date(Date.parse(this.now())+86400000).toISOString().slice(0,10));
         return sendJson(response,200,{guildId:guild,date,slots:this.raidTrain.schedule(context.tenantId,guild,date)});
       }
-      if(request.method==="GET"&&url.pathname==="/api/discord-stream-hub/control/forum/rules"){this.requireOwner(context);return sendJson(response,200,{rules:this.forumForwardingStore?.listRules(context.tenantId)??[]});}
+      if(request.method==="GET"&&url.pathname==="/api/discord-stream-hub/control/forum/rules"){this.requireOwner(context);if(!this.client)throw new Error("Connect DSH to read canonical forum forwarding rules");return sendJson(response,200,await this.client.listCommlinkForumForwardRules(context.tenantId));}
       if(request.method==="GET"&&url.pathname==="/api/discord-stream-hub/control/raid-pile") return sendJson(response,200,await this.raidPileState(context,request));
       if(request.method==="GET"&&url.pathname==="/api/discord-stream-hub/control/moderation") {this.requireOwner(context);return sendJson(response,200,{plans:this.cleanup?.list(context.tenantId,String(context.session.actorId),"owner")??[]});}
       if(request.method==="GET"&&url.pathname==="/api/discord-stream-hub/control/moderation/job") {
@@ -279,13 +279,13 @@ export class DshWebControls {
         return sendJson(response,201,{ok:true,guildId:guild,channelId,date,messageId});
       }
       if(url.pathname==="/api/discord-stream-hub/control/forum/rules"){
-        this.requireOwner(context);if(!this.forumForwardingStore||!this.liveDiscord)throw new Error("Connect DSH before configuring forum forwarding");
+        this.requireOwner(context);if(!this.forumForwardingStore||!this.liveDiscord||!this.client)throw new Error("Connect DSH before configuring forum forwarding");
         const rule=body.rule as DshForumForwardRuleV1;
         const sourceGuild=this.guild(context.tenantId,rule.sourceGuildId),destinationGuild=this.guild(context.tenantId,rule.destinationGuildId);
         const destination=rule.mode==="single-thread"?await this.liveDiscord.getChannel(context.tenantId,String(rule.sharedThreadId??"")):await this.liveDiscord.getChannel(context.tenantId,rule.forumChannelId);
         if(rule.mode==="single-thread"){if(destination.guild_id!==destinationGuild||![10,11,12].includes(Number(destination.type)))throw new Error("Choose a thread in the configured destination server");}
         else if(destination.guild_id!==destinationGuild||![15,16].includes(Number(destination.type)))throw new Error("Choose a forum or media channel in the configured destination server");
-        const saved=this.forumForwardingStore.putRule({...rule,tenantId:context.tenantId,sourceGuildId:sourceGuild,destinationGuildId:destinationGuild});
+        const saved=(await this.client.putCommlinkForumForwardRule(context.tenantId,{...rule,tenantId:context.tenantId,sourceGuildId:sourceGuild,destinationGuildId:destinationGuild})).rule;this.forumForwardingStore.putRule(saved);
         if(!this.forumForwardingStore.cursor(context.tenantId)&&this.client){const latest=await this.client.listEvents(context.tenantId,{sourceAppId:"chat-gateway",limit:1});const eventId=String(latest[0]?.id??"");if(eventId)this.forumForwardingStore.advanceCursor(context.tenantId,eventId);}
         return sendJson(response,200,{rule:saved});
       }
