@@ -169,3 +169,5 @@ function mutationKey(record:Pick<CommlinkLiveChatRecordV1,"tenantId"|"provider"|
 export * from "./tiktok.js";
 
 export * from "./forum.js";
+
+export * from "./forum-forwarding.js";

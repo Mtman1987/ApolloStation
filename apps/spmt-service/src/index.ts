@@ -8,7 +8,8 @@ import {YouTubeOAuthApi} from "./youtube-oauth-api.js";
 import {StellarPublicMemory} from "@spmt/stellar-core";
 import {CommlinkSocialStreamApi} from "./social-stream-api.js";
 import {CommlinkForumApi} from "./commlink-forum-api.js";
-import {CommlinkSocialStreamStore,CommlinkForumStore} from "@spmt/commlink-core";
+import {CommlinkForumForwardingApi} from "./commlink-forum-forwarding-api.js";
+import {CommlinkSocialStreamStore,CommlinkForumStore,CommlinkForumForwardingStore} from "@spmt/commlink-core";
 import {StellarSpeechPresence} from "@spmt/stellar-core";
 import { CommlinkOperatorApi } from "./commlink-operator-api.js";
 import { CommlinkOperatorStore } from "@spmt/commlink-core";
@@ -140,11 +141,13 @@ export function createSpmtService(options: SpmtServiceOptions) {
   const publicPersonas=new PublicPersonaApi({path:options.databasePath,auth,authority,control,runtime:communityAssistant,accessToken});
   const socialStreamStore=new CommlinkSocialStreamStore(options.databasePath);
   const commlinkForumStore=new CommlinkForumStore(options.databasePath);
+  const commlinkForumForwardingStore=new CommlinkForumForwardingStore(options.databasePath);
   const operatorApi = new CommlinkOperatorApi({store:commlinkOperator,chat:commlinkLiveChat,auth,control,authority,accessToken,resolveReferences:(tenant,references)=>humanReferenceResolver.resolveMany(tenant,references)});
   const operatorTimer=setInterval(()=>{for(const tenant of store.listTenants())if(tenant.status === "active")try{operatorApi.publish(tenant.id);}catch{/* A failed publication retries with the same revision. */}},1000);operatorTimer.unref();
   const mediaApi = new SpmtMediaApi({ assets: mediaAssets, auth, control, jobs: platformStore, publicBaseUrl, accessToken, limitBytes: (tenantId) => (billing.manifest.plans.find(plan => plan.planId === billingPlan(control.listEntitlements(tenantId)))?.limits["storage-gb"] ?? 0) * 1024 ** 3 });
   const socialStreamApi=new CommlinkSocialStreamApi({store:socialStreamStore,chat:commlinkLiveChat,operator:commlinkOperator,auth,control,accessToken,publish:tenant=>{operatorApi.publish(tenant)}});
   const commlinkForumApi=new CommlinkForumApi({store:commlinkForumStore,auth,control,accessToken});
+  const commlinkForumForwardingApi=new CommlinkForumForwardingApi({store:commlinkForumForwardingStore,auth,control,accessToken});
   const publicMemory=new StellarPublicMemory(options.databasePath,executionJobs,communityAssistant,tenant=>commlinkLiveChat.list({tenantId:tenant,limit:500}),tenant=>control.getTenant(tenant).ownerUserId);
   const twitchBots=new TwitchBotApi({databasePath:options.databasePath,auth,authority,control,publicBaseUrl,enabled:runtimeMode==="production",fetchImpl,accessToken,roles:parseTwitchBotRoles(JSON.stringify(options.twitchBotRoles??[])),...(providerCredentials?{credentials:providerCredentials}:{}),...(accountProviderOAuthClient(options,"twitch")?{client:accountProviderOAuthClient(options,"twitch")!}:{})});
   const youtubeOAuth=new YouTubeOAuthApi({databasePath:options.databasePath,auth,authority,control,publicBaseUrl,enabled:runtimeMode==="production",fetchImpl,accessToken,...(providerCredentials?{credentials:providerCredentials}:{}),...(options.providerOAuthClients?.youtube?{client:options.providerOAuthClients.youtube}:{})});
@@ -195,6 +198,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
       if (await youtubeOAuth.handle(request,response,url)) return;
       if (await assistantApi.handle(request,response,url)) return;
       if (await commlinkForumApi.handle(request,response,url)) return;
+      if (await commlinkForumForwardingApi.handle(request,response,url)) return;
       if (await socialStreamApi.handle(request,response,url)) return;
       if (await operatorApi.handle(request,response,url)) return;
 
@@ -795,7 +799,7 @@ function ensureStreamWeaverIdentity(auth: AuthService, credential: string) {
   auth.reconcileServiceIdentity({ serviceId: "streamweaver", credential, scopes, tenantMode: "any" });
 }
 function ensureDshIdentity(auth: AuthService, credential: string, production:boolean) {
-  auth.reconcileServiceIdentity({ serviceId: "discord-stream-hub", credential, scopes: ["events:read", "assistants:invoke", "jobs:write", "identity:read", "providers:grant", "events:write", "jobs:read", "jobs:work", "runtime:write", "commlink:write", ...(production?["xp:read","xp:write","identity:write","identity:onboard"]:[])], tenantMode: "any" });
+  auth.reconcileServiceIdentity({ serviceId: "discord-stream-hub", credential, scopes: ["events:read", "assistants:invoke", "jobs:write", "identity:read", "providers:grant", "events:write", "jobs:read", "jobs:work", "runtime:write", "commlink:read", "commlink:write", ...(production?["xp:read","xp:write","identity:write","identity:onboard"]:[])], tenantMode: "any" });
 }
 function ensureNebulaArcadeIdentity(auth: AuthService, credential: string) {
   auth.reconcileServiceIdentity({ serviceId: "nebula-arcade", credential, scopes: ["events:write", "xp:write", "runtime:write", "jobs:read", "jobs:write"], tenantMode: "any" });

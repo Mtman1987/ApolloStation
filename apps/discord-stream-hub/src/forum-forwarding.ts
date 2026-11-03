@@ -114,6 +114,7 @@ export class DshForumForwardingStore {
   close(){this.db.close();}
   putRule(input:DshForumForwardRuleV1){const r=validateForwardRule(input);this.db.prepare("INSERT INTO dsh_forum_rules VALUES(?,?,?) ON CONFLICT(tenant_id,source_guild_id) DO UPDATE SET body=excluded.body").run(r.tenantId,r.sourceGuildId,JSON.stringify(r));return r;}
   listRules(tenant:string){const rows=this.db.prepare("SELECT body FROM dsh_forum_rules WHERE tenant_id=? ORDER BY source_guild_id").all(tenant) as Array<{body:string}>;return rows.map(row=>validateForwardRule(JSON.parse(row.body) as DshForumForwardRuleV1));}
+  replaceRules(tenant:string,rules:DshForumForwardRuleV1[]){this.db.exec("BEGIN IMMEDIATE");try{this.db.prepare("DELETE FROM dsh_forum_rules WHERE tenant_id=?").run(tenant);for(const rule of rules)this.putRule({...rule,tenantId:tenant});this.db.exec("COMMIT");}catch(error){this.db.exec("ROLLBACK");throw error;}}
   getRule(tenant:string,guild:string){const row=this.db.prepare("SELECT body FROM dsh_forum_rules WHERE tenant_id=? AND source_guild_id=?").get(tenant,guild) as {body:string}|undefined;return row?validateForwardRule(JSON.parse(row.body) as DshForumForwardRuleV1):undefined;}
   getThread(tenant:string,guild:string,channel:string){return this.db.prepare("SELECT thread_id,pending FROM dsh_forum_threads WHERE tenant_id=? AND source_guild_id=? AND source_channel_id=?").get(tenant,guild,channel) as {thread_id:string|null;pending:number}|undefined;}
   setThread(tenant:string,guild:string,channel:string,thread:string|null,pending:boolean,now:string){this.db.prepare("INSERT INTO dsh_forum_threads VALUES(?,?,?,?,?,?) ON CONFLICT(tenant_id,source_guild_id,source_channel_id) DO UPDATE SET thread_id=excluded.thread_id,pending=excluded.pending,updated_at=excluded.updated_at").run(tenant,guild,channel,thread,pending?1:0,now);}
@@ -198,6 +199,7 @@ export class DshForumForwardingWorker {
   private readonly service:DshForumForwardingService;
   constructor(private readonly store:DshForumForwardingStore,private readonly client:SpmtClient,private readonly discord:DshDiscordApi,private readonly allowedGuilds:(tenant:string)=>string[]){this.service=new DshForumForwardingService(store,discord);}
   async runOnce(tenant:string){
+    const canonicalRules=await this.client.listCommlinkForumForwardRules(tenant);this.store.replaceRules(tenant,canonicalRules.rules);
     let cursor=this.store.cursor(tenant),processed=0,forwarded=0;
     for(let page=0;page<10;page++){
       const events=await this.client.listEvents(tenant,{sourceAppId:"chat-gateway",afterId:cursor,limit:200});
@@ -227,8 +229,16 @@ export class DshForumForwardingWorker {
                   const guild=await this.discord.getGuild(tenant,record.guildId??String(payload.guildId??""));
                   const attachments=(record.rich?.attachments??[]).map(item=>({url:item.url,filename:item.name,contentType:item.contentType}));
                   const embeds=(record.rich?.embeds??[]).map(item=>({title:item.title,description:item.description,url:item.url,imageUrl:item.imageUrl,thumbnailUrl:item.thumbnailUrl}));
-                  const result=await this.service.apply({tenantId:tenant,guildId:record.guildId??String(payload.guildId),channelId:sourceChannel.id,channelName:String(sourceChannel.name??sourceChannel.id),channelType:Number(sourceChannel.type??0),messageId:record.messageId,authorId:record.providerUserId,authorName:record.displayName??record.username,content:record.text,attachments,embeds,sourceMessageUrl:"https://discord.com/channels/"+(record.guildId??String(payload.guildId))+"/"+record.channelId+"/"+record.messageId,occurredAt:record.occurredAt,sourceIsPublic:isPublicDshForumSource(guild,sourceChannel),authorIsBot:record.isBot,operation:item.type==="spmt.chat.message.mutated.v1"?(payload.operation==="delete"?"delete":"edit"):"create"});
-                  if(result.status==="forwarded")forwarded++;
+                  const guildId=record.guildId??String(payload.guildId),forwardEvent={tenantId:tenant,guildId,channelId:sourceChannel.id,channelName:String(sourceChannel.name??sourceChannel.id),channelType:Number(sourceChannel.type??0),messageId:record.messageId,authorId:record.providerUserId,authorName:record.displayName??record.username,content:record.text,attachments,embeds,sourceMessageUrl:"https://discord.com/channels/"+guildId+"/"+record.channelId+"/"+record.messageId,occurredAt:record.occurredAt,sourceIsPublic:isPublicDshForumSource(guild,sourceChannel),authorIsBot:record.isBot,operation:item.type==="spmt.chat.message.mutated.v1"?(payload.operation==="delete"?"delete":"edit"):"create"} as DshForumForwardMutationV1;
+                  const remoteState=await this.client.getCommlinkForumForwardState(tenant,guildId,sourceChannel.id,record.messageId);
+                  if(remoteState.thread)this.store.setThread(tenant,guildId,sourceChannel.id,remoteState.thread.destinationThreadId,remoteState.thread.pending,remoteState.thread.updatedAt);
+                  if(remoteState.receipt)this.store.setMessage({tenant,guild:guildId,channel:sourceChannel.id,message:record.messageId,thread:remoteState.receipt.destinationThreadId,forwarded:remoteState.receipt.destinationMessageId,deleted:remoteState.receipt.deleted,now:remoteState.receipt.updatedAt});
+                  let result:any;
+                  try{result=await this.service.apply(forwardEvent);}finally{
+                    const thread=this.store.getThread(tenant,guildId,sourceChannel.id),receipt=this.store.getMessage(tenant,guildId,sourceChannel.id,record.messageId);
+                    if(thread||receipt)await this.client.putCommlinkForumForwardState(tenant,{...(thread?{thread:{sourceGuildId:guildId,sourceChannelId:sourceChannel.id,destinationThreadId:thread.thread_id,pending:Boolean(thread.pending),updatedAt:new Date().toISOString()}}:{}),...(receipt?{receipt:{sourceGuildId:guildId,sourceChannelId:sourceChannel.id,sourceMessageId:record.messageId,destinationThreadId:receipt.thread_id,destinationMessageId:receipt.forwarded_message_id,deleted:Boolean(receipt.deleted),updatedAt:new Date().toISOString()}}:{})});
+                  }
+                  if(result?.status==="forwarded")forwarded++;
                 }
               }
             }
