@@ -54,7 +54,7 @@ export function validateChatGatewayWorkerEnvironment(environment: NodeJS.Process
   const restreamCredential = environment.STREAMWEAVER_RESTREAM_CONTROL_CREDENTIAL;
   if (Boolean(restreamOriginValue) !== Boolean(restreamCredential)) throw new Error("StreamWeaver Restream control origin and credential must be configured together");
   if (runtimeMode === "sandbox" && (restreamOriginValue || restreamCredential)) throw new Error("Sandbox StreamWeaver rejects live Restream control");
-  if (!streamweaverEnabled && (streamweaverCredential || streamweaverDatabasePath)) throw new Error("StreamWeaver provider runtime settings require STREAMWEAVER_PROVIDER_RUNTIME_ENABLED=1");
+  if (!streamweaverEnabled && (streamweaverCredential || streamweaverDatabasePath || restreamOriginValue || restreamCredential)) throw new Error("StreamWeaver provider runtime settings require STREAMWEAVER_PROVIDER_RUNTIME_ENABLED=1");
   let streamweaver: ChatGatewayWorkerEnvironmentV1["streamweaver"];
   if (streamweaverEnabled) {
     if (!streamweaverCredential || streamweaverCredential.length < 32) throw new Error("A 32+ character STREAMWEAVER_WORKER_CREDENTIAL is required");
