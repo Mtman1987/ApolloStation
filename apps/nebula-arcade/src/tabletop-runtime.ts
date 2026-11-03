@@ -19,7 +19,7 @@ const catalog = { get: (id: number) => cards.find(card => card.id === id) };
 export const NEBULA_BINGO_STARTER_PHRASES = ["Hello chat", "Welcome back", "Thank you", "Let's go", "One more game", "Good game", "Nice shot", "Well played", "Oh no", "We got this", "Ready", "Let's try again", "", "That was close", "Watch this", "I knew it", "No way", "Amazing", "Good luck", "See you", "All right", "Here we go", "Almost", "You did it", "Next round"];
 export class SqliteNebulaTabletopRuntime {
   private readonly db: DatabaseSync;
-  constructor(path: string) { const runtime = new SqliteNebulaGameRuntimeStore(path);runtime.close(); this.db = new DatabaseSync(path, { timeout: 5000 }); this.db.exec("CREATE TABLE IF NOT EXISTS nebula_tabletop(tenant_id TEXT NOT NULL,channel_id TEXT NOT NULL,game_id TEXT NOT NULL,body TEXT NOT NULL,PRIMARY KEY(tenant_id,channel_id,game_id)); CREATE TABLE IF NOT EXISTS nebula_tabletop_receipts(tenant_id TEXT NOT NULL,input_id TEXT NOT NULL,result TEXT NOT NULL,PRIMARY KEY(tenant_id,input_id))"); }
+  constructor(path: string) { const runtime = new SqliteNebulaGameRuntimeStore(path);runtime.close(); this.db = new DatabaseSync(path, { timeout: 5000 }); this.db.exec("CREATE TABLE IF NOT EXISTS nebula_tabletop(tenant_id TEXT NOT NULL,channel_id TEXT NOT NULL,game_id TEXT NOT NULL,body TEXT NOT NULL,PRIMARY KEY(tenant_id,channel_id,game_id)); CREATE TABLE IF NOT EXISTS nebula_tabletop_receipts(tenant_id TEXT NOT NULL,input_id TEXT NOT NULL,result TEXT NOT NULL,PRIMARY KEY(tenant_id,input_id)); CREATE TABLE IF NOT EXISTS nebula_quackverse_trade_receipts(tenant_id TEXT NOT NULL,actor_id TEXT NOT NULL,request_id TEXT NOT NULL,result TEXT NOT NULL,PRIMARY KEY(tenant_id,actor_id,request_id))"); }
   close() { this.db.close(); }
   consolidateLegacyRooms(tenant:string){
     if(this.read(tenant,"@arcade","scope-v2"))return;
@@ -126,22 +126,29 @@ export class SqliteNebulaTabletopRuntime {
     const own=collections[actorId]??normalizeQuackverseCollection(undefined,new Date(now));
     return {offers,candidates,spareCards:[...new Set(own.cards)].map(cardId=>({cardId,quantity:spareQuackverseCopies(own,cardId)})).filter(card=>card.quantity>0)};
   }
-  trade(tenant:string,actorId:string,actorName:string,input:{action:"offer"|"accept"|"decline"|"cancel";toId?:string;giveCardId?:number;wantCardId?:number;offerId?:string},players:Record<string,{username?:string;displayName?:string}>={},now=Date.now()){
+  trade(tenant:string,actorId:string,actorName:string,input:{action:"offer"|"accept"|"decline"|"cancel";toId?:string;giveCardId?:number;wantCardId?:number;offerId?:string;requestId?:string},players:Record<string,{username?:string;displayName?:string}>={},now=Date.now()){
+    const requestId=String(input.requestId??"").trim()||randomUUID();
+    if(requestId.length>160||/[\\r\\n\\0]/.test(requestId))throw new Error("A valid trade request ID is required.");
     this.db.exec("BEGIN IMMEDIATE");
     try{
+      const prior=this.db.prepare("SELECT result FROM nebula_quackverse_trade_receipts WHERE tenant_id=? AND actor_id=? AND request_id=?").get(tenant,actorId,requestId) as {result:string}|undefined;
+      if(prior){const result=JSON.parse(prior.result);this.db.exec("COMMIT");return result;}
       const raw=this.read(tenant,"@arcade","collections") as Record<string,QuackverseCollectionState>|undefined,collections=Object.fromEntries(Object.entries(raw??{}).map(([id,value])=>[id,normalizeQuackverseCollection(value,new Date(now))]));
+      let result;
       if(input.action==="offer"){
         const toId=String(input.toId??"").trim(),giveCardId=Number(input.giveCardId),wantCardId=Number(input.wantCardId);
         if(!collections[actorId])throw new Error("Open a Quackverse pack before offering a trade.");
         if(!collections[toId])throw new Error("Choose a player with a Quackverse collection.");
         if(!quackverseCards.some(card=>card.id===giveCardId)||!quackverseCards.some(card=>card.id===wantCardId))throw new Error("Choose valid Quackverse cards.");
         const toName=players[`spmt:${toId}`]?.username||players[`spmt:${toId}`]?.displayName||players[toId]?.username||players[toId]?.displayName||toId;
-        const offer=offerQuackverseTrade(collections,{id:randomUUID(),fromId:actorId,toId,fromName:actorName,toName,giveCardId,wantCardId,status:"pending",createdAt:new Date(now).toISOString(),expiresAt:new Date(now+48*60*60*1000).toISOString()},now);
-        this.put(tenant,"@arcade","collections",collections);this.db.exec("COMMIT");return offer;
+        result=offerQuackverseTrade(collections,{id:randomUUID(),fromId:actorId,toId,fromName:actorName,toName,giveCardId,wantCardId,status:"pending",createdAt:new Date(now).toISOString(),expiresAt:new Date(now+48*60*60*1000).toISOString()},now);
+      }else{
+        if(!["accept","decline","cancel"].includes(input.action))throw new Error("Unknown trade action.");
+        result=resolveQuackverseTrade(collections,String(input.offerId??""),actorId,input.action,now);
       }
-      if(!["accept","decline","cancel"].includes(input.action))throw new Error("Unknown trade action.");
-      const offer=resolveQuackverseTrade(collections,String(input.offerId??""),actorId,input.action,now);
-      this.put(tenant,"@arcade","collections",collections);this.db.exec("COMMIT");return offer;
+      this.put(tenant,"@arcade","collections",collections);
+      this.db.prepare("INSERT INTO nebula_quackverse_trade_receipts VALUES(?,?,?,?)").run(tenant,actorId,requestId,JSON.stringify(result));
+      this.db.exec("COMMIT");return result;
     }catch(error){this.db.exec("ROLLBACK");throw error;}
   }
   private seat(state:QuackverseSavedState,user:string){if(state.claimedPlayers.playerOne===user)return "playerOne" as const;if(state.claimedPlayers.playerTwo===user)return "playerTwo" as const;throw new Error("Join a Quackverse seat first with spmt quackverse join.");}
