@@ -7,6 +7,7 @@ export interface StreamWeaverStellaLoungeHostStateV1 {
   tenantId:string;
   nextAt:number;
   leaseUntil:number;
+  slotId:number;
   lastSpokeAt:number;
   lastTopic?:string;
   recentTopics:string[];
