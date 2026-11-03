@@ -166,6 +166,7 @@ export class SupervisedChatGatewayService {
   private readonly getNebulaArcadeAccessToken?: () => Promise<string>;
   private readonly nebulaArcade?: NebulaArcadeProviderRuntime;
   private readonly discordDashboard: NebulaDiscordDashboardEgressV1;
+  private readonly discordDriver: ReturnType<typeof createFirstPartyChatProviderAdapters>["discord"];
   constructor(private readonly options: ChatGatewayWorkerEnvironmentV1, fetchImpl?: typeof fetch) {
     this.getAccessToken = createChatGatewayWorkerTokenProvider({ spmtOrigin: options.spmtOrigin, credential: options.credential, ...(fetchImpl ? { fetchImpl } : {}) });
     const client = new SpmtClient({ baseUrl: options.spmtOrigin, appId: "chat-gateway", getAccessToken: this.getAccessToken, ...(fetchImpl ? { fetchImpl } : {}) });
@@ -173,6 +174,7 @@ export class SupervisedChatGatewayService {
     if(options.streamweaver)this.tiktok=new TikTokLiveIngestor(new StreamWeaverTikTokStore(options.streamweaver.databasePath),event=>client.ingestTikTokLiveEvent(event.tenantId,event),options.operationMode==="active",createTikTokConnection,Date.now,tenant=>client.getTikTokLiveAccess(tenant).then(value=>value.enabled));
     this.simulationWorker = new SimulationRoomWorker(client, new SimulationRoomRuntime({ directory: join(dirname(options.databasePath), "simulation-rooms"), ...(options.nebulaArcade?.publicOrigin ? { publicOrigin: options.nebulaArcade.publicOrigin } : {}), ...(options.streamweaver ? { streamweaverDatabasePath: options.streamweaver.databasePath } : {}), publish: (event, key) => client.publishSimulationRoomEvent(String((event.data as Record<string, unknown>)?.tenantId ?? ""), event, key) }), `${options.workerId}-simulation`);
     const adapters = createFirstPartyChatProviderAdapters(fetchImpl ? { fetch: async (url, init) => fetchImpl(url, init) } : {});
+    this.discordDriver = adapters.discord;
     this.chatStore = new SqliteChatGatewayStore(options.databasePath);
     const egressMode = options.operationMode === "active" ? "provider" as const : "shadow" as const;
     const publishShadow = async (message: import("./index.js").ShadowChatMessageV1) => {
@@ -368,7 +370,7 @@ export class SupervisedChatGatewayService {
         if(operation==="create-thread"){
           if(threadId)throw new Error("Forum thread creation must target a parent channel, not an existing thread");
           const name=boundedInput(input.name,"name",100),content=boundedInput(input.content,"content",1900);
-          const created=await adapters.discord.createDiscordForumThread({tenantId:job.tenantId,connectionId,channelId,name,content});
+          const created=await this.discordDriver.createDiscordForumThread({tenantId:job.tenantId,connectionId,channelId,name,content});
           if(!job.leaseId)throw new Error("Commlink forum egress job lease is unavailable");
           await this.connectionClient.succeedExecutionJob(job.tenantId,job.id,workerId,job.leaseId,job.fencingEpoch,{schemaVersion:1,provider:"discord",operation:"create-thread",threadId:created.threadId,messageId:created.messageId});
           report.sent+=1;continue;
