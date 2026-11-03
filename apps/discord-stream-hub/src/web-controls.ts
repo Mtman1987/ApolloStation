@@ -266,6 +266,7 @@ export class DshWebControls {
       if (request.method === "GET" && url.pathname === "/api/discord-stream-hub/control/shoutouts") return sendJson(response, 200, await this.shoutoutView(request, context));
       if (request.method !== "POST") return sendJson(response, 405, { error: "method_not_allowed" });
       requireSameOrigin(request);
+      const body = await readJsonBody(request);
       if(url.pathname==="/api/discord-stream-hub/control/raid-pile/join"||url.pathname==="/api/discord-stream-hub/control/raid-pile/leave"||url.pathname==="/api/discord-stream-hub/control/raid-pile/advance"){
         const store=this.requireRaidPile(),actor=String(context.session.actorId??"");
         if(url.pathname.endsWith("/join")){const linked=await this.raidPileIdentity(context,request);const result=store.join(context.tenantId,{userId:actor,twitchLogin:linked.twitchLogin,displayName:linked.displayName});return sendJson(response,200,{...result,message:result.duplicate?"You are already in the Raid Pile.":"You joined the Raid Pile."});}
@@ -274,7 +275,6 @@ export class DshWebControls {
         const target=this.requireCalendar().once(context.tenantId,`raid-pile-advance:${this.requestKey(context,body)??requestId}`,()=>store.advance(context.tenantId,pileId,"manual"));
         return sendJson(response,200,{target:target??null,piles:store.piles(context.tenantId),message:target?`Next announced target: ${target.displayName}. Twitch raid remains voluntary.`:"No other live member is available."});
       }
-      const body = await readJsonBody(request);
       if(url.pathname==="/api/discord-stream-hub/control/raid-train/publish"){
         this.requireOwner(context);requireSameOrigin(request);
         if(this.options.operationMode!=="active"||!this.liveDiscord||!this.raidTrain)throw new Error("Live Raid Train publishing is unavailable");
@@ -311,7 +311,7 @@ export class DshWebControls {
         if(channel.guild_id!==sourceGuild)throw new Error("Source channel does not belong to the selected server");
         const publicSource=isPublicDshForumSource(guild,channel);
         const messageId=snowflake(body.messageId,"messageId"),author=record(body.author)??{};
-        const event:DshForumForwardMutationV1={tenantId:context.tenantId,guildId:sourceGuild,channelId,channelName:String(channel.name??channelId),channelType:Number(channel.type??0),messageId,authorId:String(author.id??"unknown"),authorName:String(author.global_name??author.username??body.authorName??"Discord member"),...(typeof author.avatarUrl==="string"?{authorAvatar:author.avatarUrl}:{}),content:String(body.content??""),...(Array.isArray(body.attachments)?{attachments:body.attachments as DshForumForwardMutationV1["attachments"]}:{}),...(Array.isArray(body.embeds)?{embeds:body.embeds as DshForumForwardMutationV1["embeds"]}:{}),sourceMessageUrl:"https://discord.com/channels/"+sourceGuild+"/"+channelId+"/"+messageId,occurredAt:String(body.occurredAt??this.now()),sourceIsPublic:publicSource,authorIsBot:Boolean(author.bot),originatedFromForwarder:Boolean(body.originatedFromForwarder),operation:body.operation==="edit"||body.operation==="delete"?body.operation:"create"};
+        const event:DshForumForwardMutationV1={tenantId:context.tenantId,guildId:sourceGuild,channelId,channelName:String(channel.name??channelId),channelType:Number(channel.type??0),messageId,authorId:String(author.id??"unknown"),authorName:String(author.global_name??author.username??body.authorName??"Discord member"),...(typeof author.avatarUrl==="string"?{authorAvatar:author.avatarUrl}:{}),content:String(body.content??""),...(Array.isArray(body.attachments)?{attachments:body.attachments as NonNullable<DshForumForwardMutationV1["attachments"]>:{}),...(Array.isArray(body.embeds)?{embeds:body.embeds as NonNullable<DshForumForwardMutationV1["embeds"]>}:{}),sourceMessageUrl:"https://discord.com/channels/"+sourceGuild+"/"+channelId+"/"+messageId,occurredAt:String(body.occurredAt??this.now()),sourceIsPublic:publicSource,authorIsBot:Boolean(author.bot),originatedFromForwarder:Boolean(body.originatedFromForwarder),operation:body.operation==="edit"||body.operation==="delete"?body.operation:"create"};
         const result=await this.forumForwarding.apply(event);
         if((result.status==="forwarded"||result.status==="edited"||result.status==="deleted")&&this.client)await forwardDshForumPost(this.client,context.tenantId,{sourceApp:"discord-stream-hub",sourceServerId:sourceGuild,sourceChannelId:channelId,sourceChannelName:event.channelName,sourceMessageId:messageId,sourceMessageUrl:event.sourceMessageUrl,authorId:event.authorId,authorName:event.authorName,title:guild.name+" / #"+event.channelName,content:event.content,postedAt:event.occurredAt,attachments:event.attachments??[],embeds:event.embeds??[],operation:event.operation});
         return sendJson(response,200,{result});
@@ -605,7 +605,7 @@ export class DshWebControls {
         const roleId=signal[2]!,roles=await this.liveDiscord.listGuildRoles(tenant.tenantId,guildId),role=roles.find(item=>item.id===roleId&&!item.managed&&item.name.toLowerCase()==="signal seeker");
         if(!role)return ephemeral("This Signal Seeker role is no longer configured. Ask a moderator to republish the panel.");
         const [member,identity]=await Promise.all([this.liveDiscord.getGuildMember(tenant.tenantId,guildId,userId),resolveProviderIdentity(this.client!,tenant.tenantId,"discord",userId).catch(()=>undefined)]);
-        const winnerRole=roles.find(item=>item.name.toLowerCase()==="voidwalker"),isWinner=Boolean(winnerRole&&member.roles?.includes(winnerRole.id));
+        const winnerRole=roles.find(item=>item.name.toLowerCase()==="voidwalker"),isWinner=Boolean(winnerRole&&member?.roles?.includes(winnerRole.id));
         if(signal[1]==="join"&&isWinner)return ephemeral("You already hold the Voidwalker title; the Signal Seeker role is reserved for the active hunt.");
         const enabled=signal[1]==="join";
         await this.liveDiscord.setGuildMemberRole(tenant.tenantId,guildId,userId,roleId,enabled);
@@ -634,7 +634,7 @@ export class DshWebControls {
 
   private async pointsView(tenantId:string,userId:string){
     if(!this.client)return{leaderboard:[],me:null};
-    const service=new DshPointsService(this.client,tenantId),members=new Map(this.members(tenantId).map(member=>[member.canonicalUserId,member.displayName]));
+    const service=new DshPointsService(this.client,tenantId),members=new Map(this.members(tenantId).map(member=>[member.canonicalUserId,member.displayName??member.twitchLogin]));
     const [rows,me]=await Promise.all([service.getLeaderboard(50).catch(()=>[]),userId?service.getUserRank(userId).catch(()=>null):Promise.resolve(null)]);
     return{leaderboard:rows.map(row=>({...row,displayName:members.get(row.userId)??row.userId})),me};
   }
@@ -790,7 +790,7 @@ export class DshWebControls {
       if(!person)continue;
       const discordIds=person.providers.filter(link=>link.provider==="discord").map(link=>link.providerUserId);if(!discordIds.length)continue;
       matched=true;
-      for(const guildId of tenant.discordGuildIds){
+      for(const guildId of tenant.discordGuildIds??[]){
         const roleList=await this.liveDiscord.listGuildRoles(tenant.tenantId,guildId);
         let role=roleList.find(item=>!item.managed&&item.name.toLowerCase()==="signal seeker");
         if(!role)role=await this.liveDiscord.createGuildRole(tenant.tenantId,guildId,{name:"Signal Seeker",color:0x5865f2,mentionable:true,hoist:false});
