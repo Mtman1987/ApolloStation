@@ -1,6 +1,63 @@
 # Apollo continuation follow-up — 2026-11-03
 
-## Latest repo state — authoritative at handoff refresh
+## Current continuation — refreshed after PR #398
+
+**Fetch main before continuing.** Current main HEAD is
+`20c23a73f90ec82250aedd26aab02eb0fba30811` (squash merge of PR #398).
+There are no open PRs at this refresh.
+
+### Completed in PR #398
+
+- StreamWeaver persona instructions now optionally request one final avatar
+  gesture tag from a bounded allowlist. Long tenant instructions are not
+  truncated to make room for the hint.
+- The durable persona reply reconciler strips a valid tag from public chat
+  text, sends the clean reply through existing Chat Gateway egress, then
+  publishes a tenant-scoped `streamweaver.avatar.updated.v1` event using a
+  stable idempotency key. A retry cannot duplicate the visible gesture event.
+- The native avatar overlay validates the gesture allowlist and animates the
+  existing 2D image or 3D model container once. Consumed gesture events are not
+  replayed on later polls or after speech playback.
+- The workspace build exposed pre-existing compile blockers that were fixed in
+  the same PR: the Nebula provider now imports its check-in bonus award helper;
+  StreamWeaver imports the shared bonus-awarder type and reads the actual
+  donor invocation `channelId` field instead of a nonexistent `message` field.
+
+### Validation evidence
+
+- GitHub Actions run
+  [#41739055863](https://github.com/Mtman1987/ApolloStation/actions/runs/41739055863)
+  completed **successfully** on PR #398.
+- That run completed `npm run build` and the focused PR regressions:
+  `streamweaver-rides.test.mjs`,
+  `streamweaver-chat-gateway.test.mjs`, and
+  `streamweaver-overlay-widgets.test.mjs`.
+- The full manual StreamWeaver suite was **not** run in that final PR check.
+  An earlier attempt to run the broader set found two existing failures in
+  `streamweaver-provider-runtime.test.mjs` (sandbox-path expectation and
+  production Restream handler expectation). They were outside PR #398 and remain
+  unverified; do not claim the full suite passes.
+- `.github/workflows/streamweaver-parity-validation.yml` now runs the focused
+  suite on matching pull requests while preserving the broader manual
+  `workflow_dispatch` suite. The temporary branch-only push trigger was removed.
+
+### Next continuation
+
+1. Compare the donor Voice Commander listener/transcript cadence with Apollo's
+   mounted assistant client and Chat Gateway paths. Verify what is already
+   implemented before adding another listener.
+2. TTS remains a separate gap. Apollo's speech worker currently exposes
+   Deepgram/EdenAI provider paths; the user requires no paid voices/AI. Do not
+   wire automatic speech to those paid providers. Find or build a genuinely
+   no-cost route before enabling spoken persona replies.
+3. Continue StreamWeaver parity, then Nebula/Chat Tag, then Discord Stream Hub.
+   Preserve Restream and OverlayBay and keep Lounge continuity safe.
+4. Keep repo-to-repo only: no Fly.io, deploy, restart, secret, volume, or live
+   provider changes.
+
+---
+
+## Previous snapshot — before PR #398
 
 **Fetch main before making changes.** The latest observed main HEAD is
 fe0a36d49cd5f9ad2d87174303a3e394b4db7842 (PR #397 merge).
