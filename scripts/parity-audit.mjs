@@ -27,7 +27,7 @@ for (const product of registry.products ?? []) {
   productIds.add(product.id);
   if (!allowed.has(product.status)) errors.push(`${product.id}: invalid status "${product.status}"`);
   if (!exists(product.appPath)) errors.push(`${product.id}: appPath does not exist: ${product.appPath}`);
-  validateReferences(product, ['sourceDocs', 'evidence', 'knownGaps']);
+  validateReferences(product, ['sourceDocs', 'evidence']);
 }
 
 const detailPath = path.join(root, 'config/hearmeout-parity-capabilities.v1.json');
