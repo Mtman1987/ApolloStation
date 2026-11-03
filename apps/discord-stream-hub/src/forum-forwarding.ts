@@ -24,8 +24,10 @@ export function normalizeDshForwardedForumPost(value:unknown):DshForwardedForumP
 export const DSH_FORUM_POST_MUTATED="dsh.forum.post-mutated.v1";
 export async function forwardDshForumPost(client:SpmtClient,tenantId:string,value:unknown){
   const post=normalizeDshForwardedForumPost(value),origin={provider:"discord",channelId:post.sourceChannelId,messageId:post.sourceMessageId,authorId:post.authorId,authorName:post.authorName,...(post.sourceMessageUrl?{sourceUrl:post.sourceMessageUrl}:{}),sourceApp:post.sourceApp};
-  if(post.operation==="delete"||post.operation==="edit")await client.mutateCommlinkForumImport(tenantId,{operation:post.operation,origin,...(post.operation==="edit"?{title:post.title,body:post.content}:{})});
-  else await client.createCommlinkForumPost(tenantId,{title:post.title,body:post.content||"[Discord forum post]",origin});
+  const create=()=>client.createCommlinkForumPost(tenantId,{title:post.title,body:post.content||"[Discord forum post]",origin});
+  if(post.operation==="delete"){try{await client.mutateCommlinkForumImport(tenantId,{operation:"delete",origin});}catch(error){if((error as {status?:number})?.status!==404)throw error;}}
+  else if(post.operation==="edit"){try{await client.mutateCommlinkForumImport(tenantId,{operation:"edit",origin,title:post.title,body:post.content});}catch(error){if((error as {status?:number})?.status!==404)throw error;await create();}}
+  else await create();
   const eventType=post.operation==="create"?DSH_FORUM_POST_FORWARDED:DSH_FORUM_POST_MUTATED;
   const key=post.operation==="create"?`dsh-forum:${post.sourceApp}:${post.sourceServerId}:${post.sourceChannelId}:${post.sourceMessageId}`:`dsh-forum-mutation:${post.sourceApp}:${post.sourceServerId}:${post.sourceChannelId}:${post.sourceMessageId}:${post.operation}:${post.postedAt??"unknown"}`;
   const result=await client.publishEvent(tenantId,eventType,{schemaVersion:1,...post,forwardedAt:new Date().toISOString()},key);
