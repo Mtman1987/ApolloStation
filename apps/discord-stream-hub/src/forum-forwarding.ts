@@ -126,13 +126,15 @@ export class DshForumForwardingStore {
 
 type DshForumDiscordPort = Pick<DshDiscordApi,"getChannel"|"createForumThread"|"createThreadMessage"|"editThreadMessage"|"deleteThreadMessage"|"setThreadArchived">;
 
+export function dshForumThreadCreationIdempotencyKey(tenantId:string,forumId:string,sourceGuildId:string,sourceChannelId:string){return `thread:${tenantId}:${forumId}:${sourceGuildId}:${sourceChannelId}`;}
+
 /** DSH submits destination writes as durable jobs; Chat Gateway alone owns Discord credentials and egress. */
 class DshCommlinkForumDiscordPort implements DshForumDiscordPort {
   constructor(private readonly client:SpmtClient,private readonly reads:DshDiscordApi){}
   getChannel(tenantId:string,channelId:string){return this.reads.getChannel(tenantId,channelId);}
   async createForumThread(tenantId:string,forumId:string,name:string,message:Record<string,unknown>){
     const content=String(message.content??"Forwarded Discord messages").slice(0,1900);
-    const result=await this.submit(tenantId,"create-thread",forumId,{name,content},`thread:${forumId}:${name}:${content}`);
+    const idempotencyKey=String(message.idempotencyKey??`thread:${forumId}:${name}:${content}`);const result=await this.submit(tenantId,"create-thread",forumId,{name,content},idempotencyKey);
     return{threadId:String(result.threadId),messageId:String(result.messageId)};
   }
   async createThreadMessage(tenantId:string,threadId:string,payload:Record<string,unknown>){
@@ -225,7 +227,7 @@ export class DshForumForwardingService {
     if(forum.guild_id!==rule.destinationGuildId||![15,16].includes(Number(forum.type)))throw new Error("Destination must be a forum or media channel in the configured server");
     this.store.setThread(event.tenantId,event.guildId,event.channelId,null,true,this.now());
     try{
-      const created=await this.discord.createForumThread(event.tenantId,rule.forumChannelId,event.channelName.slice(0,100),{content:"Forwarded messages from #"+event.channelName,allowed_mentions:{parse:[]}});
+      const created=await this.discord.createForumThread(event.tenantId,rule.forumChannelId,event.channelName.slice(0,100),{content:"Forwarded messages from #"+event.channelName,allowed_mentions:{parse:[]},idempotencyKey:dshForumThreadCreationIdempotencyKey(event.tenantId,rule.forumChannelId,event.guildId,event.channelId)});
       this.store.setThread(event.tenantId,event.guildId,event.channelId,created.threadId,false,this.now());
       return created.threadId;
     }catch(error){
