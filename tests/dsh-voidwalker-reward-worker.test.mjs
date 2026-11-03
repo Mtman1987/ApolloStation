@@ -17,7 +17,7 @@ test("Voidwalker role grant precedes clue-role removal and uses scoped Discord g
   assert.ok(titleGrant >= 0);
   assert.ok(remove > titleGrant);
   assert.match(source, /"guilds:write"/);
-  assert.match(source, /"signal seeker","signal hunter"/);
+  assert.match(source, /"signal seeker"\s*,\s*"signal hunter"/);
 });
 
 test("reward delivery keeps durable local receipts and is safe to retry", () => {
