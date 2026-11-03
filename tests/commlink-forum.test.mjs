@@ -38,7 +38,7 @@ test("forum API requires a user session and scopes every operation to the select
   response=await call("tenant-a","/v1/commlink/forums/"+post.id+"/replies",{method:"POST",token:"bob",body:{body:"Reply"}});
   assert.equal(response.status,201);const reply=(await response.json()).reply;
   response=await call("tenant-a","/v1/commlink/forums/"+post.id+"/replies/"+reply.id,{method:"PATCH",token:"alice",body:{body:"not yours"}});
-  assert.equal(response.status,400);assert.match((await response.json()).message,/Only the reply author/);
+  assert.equal(response.status,403);assert.match((await response.json()).message,/Only the reply author/);
   response=await call("tenant-a","/v1/commlink/forums/"+post.id);assert.equal((await response.json()).post.replyCount,1);
  }finally{await new Promise(resolve=>server.close(resolve));store.close()}
 });
