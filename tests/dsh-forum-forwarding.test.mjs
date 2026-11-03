@@ -1,12 +1,19 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {forwardDshForumPost,importDshDiscordForumThreads,importDshDiscordForumThreadMessage,DshForumForwardingStore,DshForumForwardingWorker} from "../apps/discord-stream-hub/dist/forum-forwarding.js";
+import {forwardDshForumPost,importDshDiscordForumThreads,importDshDiscordForumThreadMessage,DshForumForwardingStore,DshForumForwardingWorker,dshForumThreadCreationIdempotencyKey} from "../apps/discord-stream-hub/dist/forum-forwarding.js";
 
 const source={sourceApp:"discord-stream-hub",sourceServerId:"123456",sourceChannelId:"234567",sourceChannelName:"general",sourceMessageId:"345678",sourceMessageUrl:"https://discord.com/channels/123456/234567/345678",authorId:"456789",authorName:"Viewer",title:"Community / #general",content:"Hello community",postedAt:"2026-11-03T12:00:00.000Z"};
 function client(){
  const calls=[];
  return {calls,async createCommlinkForumPost(...args){calls.push(["create",...args]);return {post:{id:"native-post"}};},async mutateCommlinkForumImport(...args){calls.push(["mutate",...args]);return {deleted:true,id:"native-post"};},async publishEvent(...args){calls.push(["event",...args]);return {duplicate:false,event:{id:"event-1"}};}};
 }
+test("forum thread creation idempotency is isolated by source channel",()=>{
+ const first=dshForumThreadCreationIdempotencyKey("tenant-a","forum-1","guild-1","channel-1");
+ const second=dshForumThreadCreationIdempotencyKey("tenant-a","forum-1","guild-1","channel-2");
+ const replay=dshForumThreadCreationIdempotencyKey("tenant-a","forum-1","guild-1","channel-1");
+ assert.notEqual(first,second);assert.equal(first,replay);
+});
+
 test("DSH forum create imports a native Commlink post before publishing the legacy event",async()=>{
  const spmt=client();const result=await forwardDshForumPost(spmt,"tenant-a",source);
  assert.equal(result.accepted,true);assert.equal(spmt.calls[0][0],"create");
