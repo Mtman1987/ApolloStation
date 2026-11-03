@@ -59,7 +59,7 @@ test("Nebula provider runtime exposes the configured tenant check-in bonus servi
   const directory = mkdtempSync(join(tmpdir(), "nebula-provider-checkin-")), path = join(directory, "nebula.sqlite");
   const runtime = new NebulaArcadeProviderRuntime({
     databasePath: path,
-    config: { schemaVersion: 1, tenants: [{ tenantId: "tenant", channels: [] }] },
+    config: { schemaVersion: 1, revision: "test", tenants: [{ tenantId: "tenant", pinUserId: "spmt:pin", channels: [] }] },
     client: { spendXp: async () => ({}), awardXp: async () => ({}) },
     egress: { send: async () => ({ providerMessageId: "message" }) },
     simulation: true,
