@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { spawn } from 'node:child_process';
 import type { IncomingMessage,ServerResponse } from 'node:http';
 import { Resvg } from '@resvg/resvg-js';
-import { DSH_BANNER_VARIANTS, type DshBannerVariantV1 } from './banner-policy.js';
+import { DSH_BANNER_VARIANTS, DSH_BANNER_FPS, DSH_BANNER_DURATION_SECONDS, type DshBannerVariantV1 } from './banner-policy.js';
 import type { DshBannerRenderRequestV1, DshBannerRendererV1 } from './banner-generation.js';
 import type { SpmtClient } from '@spmt/sdk';
 import { DshCardPackExecutionWorker,SqliteDshCardPackRenderStore,type DshCardPackRendererV1 } from './card-pack-render.js';
