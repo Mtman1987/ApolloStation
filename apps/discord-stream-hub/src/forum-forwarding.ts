@@ -198,6 +198,7 @@ export class DshForumForwardingWorker {
   private readonly service:DshForumForwardingService;
   constructor(private readonly store:DshForumForwardingStore,private readonly client:SpmtClient,private readonly discord:DshDiscordApi,private readonly allowedGuilds:(tenant:string)=>string[]){this.service=new DshForumForwardingService(store,discord);}
   async runOnce(tenant:string){
+    const canonicalRules=await this.client.listCommlinkForumForwardRules(tenant);this.store.replaceRules(tenant,canonicalRules.rules);
     let cursor=this.store.cursor(tenant),processed=0,forwarded=0;
     for(let page=0;page<10;page++){
       const events=await this.client.listEvents(tenant,{sourceAppId:"chat-gateway",afterId:cursor,limit:200});
