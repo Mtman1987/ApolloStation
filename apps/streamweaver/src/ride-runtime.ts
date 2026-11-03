@@ -9,6 +9,7 @@ import {StreamWeaverRewardRuntime} from './reward-runtime.js';
 import {STREAMWEAVER_KNOWN_BOTS} from './shoutout-store.js';
 export type StreamRideLookup=(tenant:string)=>Promise<StreamRideRider[]>;
 export interface StreamRideRequest {tenantId:string;actorId:string;displayName:string;source:string;requestId:string;currency:'streamer'|'spmt';maxSpmtCost?:number;rewardId?:string;}
+export type NebulaCheckinBonusAwarder=(input:{tenantId:string;awardId:string;channel:string;userId:string;username:string;displayName:string})=>Promise<{amount:number;balance:number;duplicate:boolean}>;
 const hash=(value:string)=>createHash('sha256').update(value).digest('hex');
 /** Intersection uses existing canonical links, never matching display names or minting identities. */
 export function activeRideLookup(store:StreamWeaverCommunityStore,twitch:Pick<StreamWeaverTwitchCommandAdapter,'chatters'>,client:SpmtClient):StreamRideLookup{return async tenant=>{
@@ -19,7 +20,7 @@ export function activeRideLookup(store:StreamWeaverCommunityStore,twitch:Pick<St
  for(let i=0;i<chatters.length;i+=5){const ids=await Promise.all(chatters.slice(i,i+5).map(c=>resolve('twitch',c.id)));for(const id of ids)if(id&&members.has(id))present.add(id)}
  const riders=[...present].map(id=>members.get(id)!);if(riders.length>200)throw Error('A ride supports at most 200 linked active riders');return riders;
 }}
-export async function runStreamRide(store:StreamWeaverCommunityStore,economy:SqliteStreamWeaverEconomyStore,client:SpmtClient,lookup:StreamRideLookup|undefined,active:boolean,input:StreamRideRequest){
+export async function runStreamRide(store:StreamWeaverCommunityStore,economy:SqliteStreamWeaverEconomyStore,client:SpmtClient,lookup:StreamRideLookup|undefined,active:boolean,input:StreamRideRequest,awardNebulaCheckinBonus?:NebulaCheckinBonusAwarder){
  if(!active||!lookup)throw Error('Live rides are unavailable in this environment');if(!input.actorId)throw Error('Link your account before launching a ride');if(!input.requestId||input.requestId.length>500)throw Error('Ride request identifier is required');
  const settings=store.rides.settings(input.tenantId);if(!settings.enabled)throw Error('Rides are disabled');const id=hash(input.requestId),signature=JSON.stringify([input.actorId,input.source,input.currency,input.rewardId??'']),key=`ride:${id}`;
  let attempt=store.rides.attempt(input.tenantId,id);if(attempt&&attempt.signature!==signature)throw Error('Ride identifier conflicts with another request');if(attempt?.result)return attempt.result;
@@ -29,8 +30,14 @@ export async function runStreamRide(store:StreamWeaverCommunityStore,economy:Sql
  attempt=store.rides.reserveFrontSeat(input.tenantId,id);const winner=attempt.winner!,bonusKey=`ride-front-seat:${id}`;
  economy.transaction(()=>{const prior=economy.getReceipt(input.tenantId,bonusKey);if(prior)return;if(!winner.userId)throw Error('Front-seat account is unavailable');const wallet=economy.adjustBalance(input.tenantId,winner.userId,100,true);economy.putReceipt(input.tenantId,{operationId:bonusKey,kind:'ride-front-seat',result:{userId:winner.userId,balance:wallet.balance,bonus:100},createdAt:new Date().toISOString()});},{operationId:bonusKey,actorId:attempt.actorId,reason:'space-mountain-front-seat'});
  for(const rider of attempt.riders)store.checkin(input.tenantId,attempt.actorId,`ride:${hash(rider.userId)}`,attempt.source,`${key}:${hash(rider.userId)}`,{id:`ride:${hash(rider.userId)}`,name:rider.displayName,kind:'community',imageUrl:rider.imageUrl,inviteUrl:''},undefined,false);
- const text=`${attempt.displayName} launched Space Mountain with ${attempt.riders.length} riders. Front seat: ${winner.displayName} (+100 streamer points)!`,result={state:'complete' as const,text,count:attempt.riders.length,frontSeat:winner.displayName,bonus:100};
- store.enqueue(input.tenantId,key,'streamweaver.checkin.v1',{bulk:true,names:attempt.riders.map(r=>r.displayName),count:result.count,frontSeat:winner.displayName,frontSeatBonusPoints:100,text,partner:{name:winner.displayName,imageUrl:winner.imageUrl,kind:'community'}});
- if(store.checkinSettings(input.tenantId).enabled)store.requestTask(input.tenantId,`${key}:greeting`,{action:'checkin-greeting',displayName:attempt.displayName,partner:{name:`Space Mountain with ${result.count} riders; front seat ${winner.displayName} (+100 streamer points)`,kind:'community',inviteUrl:''}});
+ const channel=String(input.channel||input.tenantId),awardId="streamweaver-ride:"+id,username=winner.displayName.toLowerCase().replace(/[^a-z0-9_]/g,"").slice(0,25)||"member";
+ let nebulaBonusStatus:'awarded'|'pending'|'not-configured'='not-configured',nebulaBonusPoints=0;
+ const bonusInput={tenantId:input.tenantId,awardId,channel,userId:winner.userId,username,displayName:winner.displayName};
+ if(awardNebulaCheckinBonus){try{const awarded=await awardNebulaCheckinBonus(bonusInput);nebulaBonusStatus='awarded';nebulaBonusPoints=awarded.amount;}catch{nebulaBonusStatus='pending';store.requestTask(input.tenantId,"nebula-checkin-bonus:"+id,{action:'nebula-checkin-bonus',...bonusInput});}}
+ const nebulaText=nebulaBonusStatus==='awarded'?' +100 Nebula Arcade points':nebulaBonusStatus==='pending'?' · Nebula Arcade bonus pending retry':'';
+ const text=attempt.displayName+" launched Space Mountain with "+attempt.riders.length+" riders. Front seat: "+winner.displayName+" (+100 streamer points"+nebulaText+")!";
+ const result={state:'complete' as const,text,count:attempt.riders.length,frontSeat:winner.displayName,frontSeatUserId:winner.userId,rideId:id,bonus:100,nebulaBonusPoints,nebulaBonusStatus};
+ store.enqueue(input.tenantId,key,'streamweaver.checkin.v1',{bulk:true,names:attempt.riders.map(r=>r.displayName),count:result.count,frontSeat:winner.displayName,frontSeatUserId:winner.userId,frontSeatBonusPoints:100,nebulaBonusPoints,nebulaBonusStatus,text,partner:{name:winner.displayName,imageUrl:winner.imageUrl,kind:'community'}});
+ if(store.checkinSettings(input.tenantId).enabled)store.requestTask(input.tenantId,key+":greeting",{action:'checkin-greeting',displayName:attempt.displayName,partner:{name:"Space Mountain with "+result.count+" riders; front seat "+winner.displayName+" (+100 streamer points"+nebulaText+")",kind:'community',inviteUrl:''}});
  return store.rides.complete(input.tenantId,id,result);
 }
