@@ -24,14 +24,14 @@ export function normalizeDshForwardedForumPost(value:unknown):DshForwardedForumP
 export const DSH_FORUM_POST_MUTATED="dsh.forum.post-mutated.v1";
 export async function forwardDshForumPost(client:SpmtClient,tenantId:string,value:unknown){
   const post=normalizeDshForwardedForumPost(value),origin={provider:"discord",channelId:post.sourceChannelId,...(post.sourceThreadId?{threadId:post.sourceThreadId}:{}),messageId:post.sourceMessageId,authorId:post.authorId,authorName:post.authorName,...(post.sourceMessageUrl?{sourceUrl:post.sourceMessageUrl}:{}),sourceApp:post.sourceApp};
-  const create=()=>client.createCommlinkForumPost(tenantId,{title:post.title,body:post.content||"[Discord forum post]",origin});
+  const create=()=>client.createCommlinkForumPost(tenantId,{title:post.title,body:post.content||"[Discord forum post]",origin});let native:Awaited<ReturnType<typeof create>>|undefined;
   if(post.operation==="delete"){try{await client.mutateCommlinkForumImport(tenantId,{operation:"delete",origin});}catch(error){if((error as {status?:number})?.status!==404)throw error;}}
-  else if(post.operation==="edit"){try{await client.mutateCommlinkForumImport(tenantId,{operation:"edit",origin,title:post.title,body:post.content});}catch(error){if((error as {status?:number})?.status!==404)throw error;await create();}}
-  else await create();
+  else if(post.operation==="edit"){try{const result=await client.mutateCommlinkForumImport(tenantId,{operation:"edit",origin,title:post.title,body:post.content});native=result.post?{post:result.post}:undefined;}catch(error){if((error as {status?:number})?.status!==404)throw error;native=await create();}}
+  else native=await create();
   const eventType=post.operation==="create"?DSH_FORUM_POST_FORWARDED:DSH_FORUM_POST_MUTATED;
   const key=post.operation==="create"?`dsh-forum:${post.sourceApp}:${post.sourceServerId}:${post.sourceChannelId}:${post.sourceMessageId}`:`dsh-forum-mutation:${post.sourceApp}:${post.sourceServerId}:${post.sourceChannelId}:${post.sourceMessageId}:${post.operation}:${post.postedAt??"unknown"}`;
   const result=await client.publishEvent(tenantId,eventType,{schemaVersion:1,...post,forwardedAt:new Date().toISOString()},key);
-  return {accepted:true,duplicate:result.duplicate,event:result.event};
+  return {accepted:true,duplicate:result.duplicate,event:result.event,...(native?.post?{post:native.post}:{})};
 }
 
 /** Imports a Discord forum and its thread replies into SPMT-owned Commlink records. */
@@ -51,11 +51,7 @@ export async function importDshDiscordForumThreads(client:SpmtClient,discord:Dsh
     const text=(message:any)=>{const content=String(message.content??"").trim(),attachments=Array.isArray(message.attachments)?message.attachments.flatMap((a:any)=>{const url=forumHttps(a.url);return url?[url]:[]}):[];return [content,...attachments].filter(Boolean).join("\n")||"[Discord attachment]";};
     const starterAuthor=author(starter),threadTitle=String(thread.name??"Discord forum post").slice(0,300),starterUrl="https://discord.com/channels/"+guildKey+"/"+thread.id+"/"+starter.id;
     const imported=await forwardDshForumPost(client,tenantId,{sourceApp:"discord-stream-hub",sourceServerId:guildKey,sourceChannelId:forumKey,sourceChannelName:String(forum.name??forumKey),sourceThreadId:String(thread.id),sourceMessageId:String(starter.id),sourceMessageUrl:starterUrl,authorId:starterAuthor.id,authorName:starterAuthor.name,title:threadTitle,content:text(starter),postedAt:starter.timestamp??new Date().toISOString(),attachments:starter.attachments??[],embeds:starter.embeds??[]});
-    const post=imported.event?.payload?.post??undefined;
-    const native=await client.listCommlinkForumPosts(tenantId,{limit:100});
-    const originKey=[forumKey,String(thread.id),String(starter.id)].join(":");
-    const parent=native.posts.find((item:any)=>{const o=item.origin??{};return [o.channelId,o.threadId??"",o.messageId].join(":")===originKey;});
-    const postId=parent?.id??post?.id;if(!postId)throw new Error("SPMT did not return the imported forum post");posts++;
+    const postId=imported.post?.id;if(!postId)throw new Error("SPMT did not return the imported forum post");posts++;
     for(const message of messages.slice(1)){if(!message?.id)continue;const a=author(message);await client.createCommlinkForumReply(tenantId,postId,{body:text(message),origin:{provider:"discord",channelId:forumKey,threadId:String(thread.id),messageId:String(message.id),authorId:a.id,authorName:a.name,sourceUrl:"https://discord.com/channels/"+guildKey+"/"+thread.id+"/"+message.id,sourceApp:"discord-stream-hub"}});replies++;}
   }
   return {forumId:forumKey,threadsDiscovered:byId.size,postsImported:posts,repliesImported:replies,skippedThreads:skipped,truncatedThreads};
