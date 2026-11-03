@@ -362,9 +362,12 @@ export class SupervisedChatGatewayService {
       if(!job)break;
       report.observed+=1;
       try{
-        const input=job.input,connectionId=requiredInput(input.connectionId,"connectionId"),channelId=requiredInput(input.channelId,"channelId");
-        const configured=this.connectionStore.get(job.tenantId,"discord",connectionId);
-        if(!configured||!configured.desired||configured.channelId!==channelId)throw new Error("The selected Discord parent channel is not an active Chat Gateway connection");
+        const input=job.input,channelId=requiredInput(input.channelId,"channelId");
+        const requestedConnectionId=input.connectionId===undefined||input.connectionId===""?undefined:requiredInput(input.connectionId,"connectionId");
+        const candidates=this.connectionStore.list(job.tenantId).filter(item=>item.provider==="discord"&&item.desired&&item.channelId===channelId);
+        const configured=requestedConnectionId?this.connectionStore.get(job.tenantId,"discord",requestedConnectionId):(candidates.length===1?candidates[0]:undefined);
+        if(!configured||!configured.desired||configured.channelId!==channelId)throw new Error("The selected Discord parent channel must match exactly one active Chat Gateway connection");
+        const connectionId=configured.connectionId;
         const threadId=input.threadId===undefined?undefined:requiredInput(input.threadId,"threadId");
         const operation=input.operation===undefined?"upsert":input.operation;
         if(operation==="create-thread"){
