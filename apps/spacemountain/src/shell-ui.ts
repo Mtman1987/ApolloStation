@@ -91,7 +91,7 @@ export class SpaceMountainShellUi {
   updateWorkspace(workspace: Record<string, unknown>, tenantOutputs: SpaceMountainShellSnapshotV1["tenantOutputs"]) { if (workspace.revision === this.snapshot.workspace?.revision) return; this.snapshot = { ...this.snapshot, workspace, ...(tenantOutputs ? { tenantOutputs } : {}) }; this.base.updateWorkspace(workspace, tenantOutputs); this.overlayBay.update(this.snapshot); }
   update(snapshot: SpaceMountainShellSnapshotV1) { this.snapshot = snapshot; this.base.update(snapshot); this.overlayBay.update(snapshot); this.applyShellGeometry(); this.syncAppFrame(); this.applyAppSurfaceManifest(); }
   updateEvents(events: Array<Record<string, unknown>>) { this.snapshot = { ...this.snapshot, events }; this.base.updateEvents(events); }
-  updateForumPosts(forumPosts: Array<Record<string, unknown>>) { this.snapshot = { ...this.snapshot, forumPosts }; this.base.updateForumPosts(forumPosts); }
+  updateForumPosts(forumPosts: object[]) { this.snapshot = { ...this.snapshot, forumPosts: forumPosts as Array<Record<string, unknown>> }; this.base.updateForumPosts(forumPosts); }
   updatePersonalUsage(usage: SpaceMountainShellSnapshotV1["usage"]) { this.base.updatePersonalUsage(usage); if (usage) this.snapshot = { ...this.snapshot, usage }; this.appFrameHost?.sync(); }
   destroy() { this.observer?.disconnect(); this.observer = undefined; if (this.surfaceListener) window.removeEventListener("message", this.surfaceListener); this.surfaceListener = undefined; if (this.geometryListener) { window.removeEventListener("resize", this.geometryListener); window.visualViewport?.removeEventListener("resize", this.geometryListener); } this.geometryListener = undefined; this.stopAppFrame(); this.base.destroy(); }
 
