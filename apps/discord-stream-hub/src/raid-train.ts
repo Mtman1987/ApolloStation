@@ -30,7 +30,7 @@ export class DshRaidTrainStore {
   const slots=this.schedule(tenant,guild,date),claimed=slots.filter(s=>s.claimed),available=slots.filter(s=>!s.claimed),fields:any[]=[];
   if(claimed.length)fields.push({name:"🚂 Claimed slots",value:claimed.map(s=>`${String(s.hour).padStart(2,"0")}:00 — ${s.displayName}`).join("\\n").slice(0,1024),inline:true});
   if(available.length)fields.push({name:"⏰ Available slots",value:available.slice(0,10).map(s=>`${String(s.hour).padStart(2,"0")}:00`).join(", ")+(available.length>10?` +${available.length-10} more`:""),inline:true});
-  return{embeds:[{title:`🚂 Raid Train · ${date}`,description:"Reserve an hourly slot to lead the community raid train.",color:0xff4500,fields,footer:{text:`${claimed.length}/24 slots claimed · UTC · future dates only`},timestamp:this.now()}],allowed_mentions:{parse:[]}};
+  return{embeds:[{title:`🚂 Raid Train · ${date}`,description:"Reserve an hourly slot to lead the community raid train.",color:0xff4500,fields,footer:{text:`${claimed.length}/24 slots claimed · UTC · future dates only`},timestamp:this.now()}],components:[{type:1,components:[{type:2,style:1,label:"Sign up",custom_id:`raidtrain:signup:${guild}:${date}`},{type:2,style:2,label:"Refresh schedule",custom_id:`raidtrain:view:${guild}:${date}`},{type:2,style:4,label:"Cancel my slot",custom_id:`raidtrain:cancel:${guild}:${date}`}]}],allowed_mentions:{parse:[]}};
  }
 }
 function validDate(value:string){if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(value)||new Date(value+"T00:00:00Z").toISOString().slice(0,10)!==value)throw Error("Choose a valid UTC date");}
