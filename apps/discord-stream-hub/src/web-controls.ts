@@ -65,6 +65,10 @@ export class DshWebControls {
   private readonly shoutouts?: DshShoutoutGenerationStore;
   private readonly clipGifs?: SqliteDshClipGifStore;
   private readonly signalControlStore?:SqliteDshSignalControlStore;
+  private readonly signalSeekers?:SqliteDshSignalSeekerStore;
+  private readonly forumForwardingStore?:DshForumForwardingStore;
+  private readonly raidPile?:DshRaidPileStore;
+  private readonly raidTrain?:DshRaidTrainStore;
   private readonly config?: DshLiveRuntimeConfigV1;
   private readonly discord?: DshSimulationRoomDiscordTransport;
   private client?:SpmtClient;
