@@ -1,0 +1,100 @@
+name: Apollo donor parity evidence (nightly)
+
+on:
+  schedule:
+    - cron: "35 8 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apollo-parity-nightly
+  cancel-in-progress: false
+
+jobs:
+  evidence:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - donor: hearmeout
+            repository: Mtman1987/hearmeout-main
+            apollo_app: apps/hearmeout
+          - donor: streamweaver
+            repository: Mtman1987/streamweaver
+            apollo_app: apps/streamweaver
+          - donor: discord-stream-hub
+            repository: Mtman1987/DiscordStreamHub
+            apollo_app: apps/discord-stream-hub
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out Apollo tooling
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Check out donor at current main
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ matrix.repository }}
+          ref: main
+          path: donor-source
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Build Apollo
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run build
+
+      - name: Inventory both repositories and compare
+        env:
+          DONOR_REPOSITORY: ${{ matrix.repository }}
+          APOLLO_APP: ${{ matrix.apollo_app }}
+        run: |
+          set -euo pipefail
+          DONOR_SHA="$(git -C donor-source rev-parse HEAD)"
+          APOLLO_SHA="$(git rev-parse HEAD)"
+          export DONOR_COMMIT_SHA="$DONOR_SHA"
+          node scripts/parity-donor-inventory.mjs --root donor-source --repository "$DONOR_REPOSITORY" --ref "main@$DONOR_SHA" --output donor-inventory.json
+          export DONOR_COMMIT_SHA="$APOLLO_SHA"
+          node scripts/parity-donor-inventory.mjs --root "$APOLLO_APP" --repository "Mtman1987/ApolloStation" --ref "$APOLLO_SHA:$APOLLO_APP" --output apollo-inventory.json
+          node scripts/parity-compare-inventories.mjs donor-inventory.json apollo-inventory.json parity-comparison.json
+          {
+            echo "## Nightly parity evidence: ${{ matrix.donor }}"
+            echo
+            echo "- Donor commit: $DONOR_SHA"
+            echo "- Apollo commit: $APOLLO_SHA"
+            echo "- Candidate comparison only; no parity claim"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: REA donor static analysis
+        run: npm run parity:rea -- donor-source > donor-rea-analysis.json
+
+      - name: REA Apollo static analysis
+        env:
+          APOLLO_APP: ${{ matrix.apollo_app }}
+        run: npm run parity:rea -- "$APOLLO_APP/dist" > apollo-rea-analysis.json
+
+      - name: Upload nightly evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-parity-${{ matrix.donor }}-${{ github.run_id }}
+          path: |
+            donor-inventory.json
+            apollo-inventory.json
+            parity-comparison.json
+            donor-rea-analysis.json
+            apollo-rea-analysis.json
+          if-no-files-found: warn
+          retention-days: 14
