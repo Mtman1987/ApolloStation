@@ -45,7 +45,7 @@ test("gateway consumer persists summon scope and invokes the configured persona 
     assert.equal(invoked.length, 2);
     assert.equal(invoked[1].idempotencyKey, "streamweaver-persona:viewer-1");
     assert.equal(invoked[1].conversationId, "streamweaver:persona-athena:chat:twitch:guest-channel");
-    assert.deepEqual(invoked[1].presentation, { personaId: "persona-athena", displayName: "Athena", instructions: "Use Athena's configured warm, mythic presentation.", memoryPolicy: "conversation" });
+    assert.deepEqual(invoked[1].presentation, { personaId: "persona-athena", displayName: "Athena", instructions: "Use Athena's configured warm, mythic presentation.\n\nOptionally append one final avatar tag when it fits naturally: [wave_gesture], [blow_kiss_gesture], [spin_gesture], [playful_tilt_gesture], [laugh_gesture], [happy_gesture], [dance_gesture], [look_gesture], or [applaud_gesture]. Use sparingly; never include a tag mid-reply.", memoryPolicy: "conversation" });
     assert.equal(sent.length, 0);
     assert.equal(store.getReply("owner-1").jobId, "job-1");
     assert.equal(store.getReply("viewer-1").state, "pending");
@@ -135,7 +135,7 @@ test("the public SPMT adapter preserves user, conversation, metering, and stable
   const input = planStreamWeaverPersonaRoute(delivery("adapter-1", 0, "@athena status", { channelId: "home-channel" }), config).invocation;
   assert.deepEqual(await runtime.invoke(input), { status: "accepted", jobId: "job-adapter-1" });
   assert.equal(calls[0][0], "tenant-a");
-  assert.deepEqual(calls[0][1], { userId: "viewer-1", message: "status", surface: "stream", conversationId: "streamweaver:persona-athena:chat:twitch:home-channel", routingPreference: "automatic", remember: true, presentation: { personaId: "persona-athena", displayName: "Athena", instructions: "Use Athena's configured warm, mythic presentation.", memoryPolicy: "conversation" } });
+  assert.deepEqual(calls[0][1], { userId: "viewer-1", message: "status", surface: "stream", conversationId: "streamweaver:persona-athena:chat:twitch:home-channel", routingPreference: "automatic", remember: true, presentation: { personaId: "persona-athena", displayName: "Athena", instructions: "Use Athena's configured warm, mythic presentation.\n\nOptionally append one final avatar tag when it fits naturally: [wave_gesture], [blow_kiss_gesture], [spin_gesture], [playful_tilt_gesture], [laugh_gesture], [happy_gesture], [dance_gesture], [look_gesture], or [applaud_gesture]. Use sparingly; never include a tag mid-reply.", memoryPolicy: "conversation" } });
   assert.equal(calls[0][2], "streamweaver-persona:adapter-1");
 });
 
