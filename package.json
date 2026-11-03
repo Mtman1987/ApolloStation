@@ -35,7 +35,8 @@
     "parity:audit": "node scripts/parity-audit.mjs",
     "parity:rea": "node scripts/parity-rea.mjs",
     "parity:donor-inventory": "node scripts/parity-donor-inventory.mjs",
-    "parity:compare": "node scripts/parity-compare-inventories.mjs"
+    "parity:compare": "node scripts/parity-compare-inventories.mjs",
+    "parity:prepare-port": "node scripts/parity-prepare-port.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",
