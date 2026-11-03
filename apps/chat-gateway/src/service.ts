@@ -386,7 +386,11 @@ export class SupervisedChatGatewayService {
           const previousMessageId=input.previousMessageId===undefined?undefined:requiredInput(input.previousMessageId,"previousMessageId");
           const previousTransport=input.previousTransport;
           if(previousTransport!==undefined&&previousTransport!=="webhook"&&previousTransport!=="bot")throw new Error("Discord forum previous transport is invalid");
-          const result=await this.discordDashboard.upsertDiscordDashboard({schemaVersion:1,tenantId:job.tenantId,connectionId,channelId,...(threadId?{threadId}:{}),webhookName:"SpaceMountain Commlink",...(previousMessageId?{previousMessageId}:{}),...(previousTransport?{previousTransport}:{}),payload:{embeds:[{title,url:sourceUrl,description:content,color:5793266,fields:[],author:{name:`Originally posted by ${author}`},footer:{text:"SpaceMountain Commlink · Discord source attribution"},timestamp:new Date().toISOString()}],components:[],allowed_mentions:{parse:[]}}});
+          const suppliedPayload=input.payload&&typeof input.payload==="object"&&!Array.isArray(input.payload)?JSON.parse(JSON.stringify(input.payload)):undefined;
+          if(suppliedPayload&&JSON.stringify(suppliedPayload).length>50_000)throw new Error("Commlink forum rich payload is too large");
+          const payload=suppliedPayload?{...suppliedPayload,allowed_mentions:{parse:[]}}:{embeds:[{title,url:sourceUrl,description:content,color:5793266,fields:[],author:{name:`Originally posted by ${author}`},footer:{text:"SpaceMountain Commlink · Discord source attribution"},timestamp:new Date().toISOString()}],components:[],allowed_mentions:{parse:[]}};
+          if(!Array.isArray(payload.embeds)||payload.embeds.length>10)throw new Error("Commlink forum embed payload is invalid");
+          const result=await this.discordDashboard.upsertDiscordDashboard({schemaVersion:1,tenantId:job.tenantId,connectionId,channelId,...(threadId?{threadId}:{}),webhookName:"SpaceMountain Commlink",...(previousMessageId?{previousMessageId}:{}),...(previousTransport?{previousTransport}:{}),payload:payload as any});
           if(!job.leaseId)throw new Error("Commlink forum egress job lease is unavailable");
           await this.connectionClient.succeedExecutionJob(job.tenantId,job.id,workerId,job.leaseId,job.fencingEpoch,{schemaVersion:1,provider:"discord",providerMessageId:result.providerMessageId,transport:result.transport,operation:"upsert"});
           report.sent+=1;continue;
