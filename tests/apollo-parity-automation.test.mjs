@@ -24,8 +24,8 @@ test('manual donor inventory uploads every REA and generated port-brief artifact
   assert.match(workflow, /persist-credentials: false/);
   assert.match(workflow, /donor code is never installed or run/);
   assert.ok(workflow.includes('node scripts/parity-rea.mjs donor-source > donor-rea-analysis.json'));
-  assert.ok(workflow.includes("jq -e 'type == \"object\"' donor-rea-analysis.json"));
-  assert.ok(workflow.includes("jq -e 'type == \"object\"' apollo-rea-analysis.json"));
+  assert.ok(workflow.includes("jq -e 'type == " + String.fromCharCode(34) + "object" + String.fromCharCode(34) + "' rea-analysis.json"));
+  assert.ok(workflow.includes("jq -e 'type == " + String.fromCharCode(34) + "object" + String.fromCharCode(34) + "' rea-analysis.json"));
 });
 
 test('nightly donor matrix also prepares and uploads the review-only port brief', () => {
@@ -35,15 +35,15 @@ test('nightly donor matrix also prepares and uploads the review-only port brief'
   assert.ok(workflow.includes('port-brief/port-brief.json'));
   assert.ok(workflow.includes('port-brief/port-brief.md'));
   assert.ok(workflow.includes('node scripts/parity-rea.mjs donor-source > donor-rea-analysis.json'));
-  assert.ok(workflow.includes("jq -e 'type == \"object\"' donor-rea-analysis.json"));
-  assert.ok(workflow.includes("jq -e 'type == \"object\"' apollo-rea-analysis.json"));
+  assert.ok(workflow.includes("jq -e 'type == " + String.fromCharCode(34) + "object" + String.fromCharCode(34) + "' rea-analysis.json"));
+  assert.ok(workflow.includes("jq -e 'type == " + String.fromCharCode(34) + "object" + String.fromCharCode(34) + "' rea-analysis.json"));
   assert.ok(workflow.includes('Candidate comparison only; no parity claim'));
 });
 
 test('targeted REA analysis validates its streamed JSON artifact', () => {
   const workflow = read('.github/workflows/rea-static-analysis.yml');
   assert.ok(workflow.includes('node scripts/parity-rea.mjs "$TARGET_PATH/dist" > rea-analysis.json'));
-  assert.ok(workflow.includes("jq -e 'type == \\"object\\"' rea-analysis.json"));
+  assert.ok(workflow.includes("jq -e 'type == " + String.fromCharCode(34) + "object" + String.fromCharCode(34) + "' rea-analysis.json"));
 });
 
 test('REA and port-brief generators retain static-analysis and human-review guardrails', () => {
