@@ -320,7 +320,7 @@ export function parseNebulaTagCommandText(message: string): NebulaTagParsedComma
   const name = parsed.command === "commands" ? "help" : parsed.command;
   if (!name) return null;
   if (["join", "leave", "status", "score", "rank", "players", "sleep", "wake", "rules", "help", "info"].includes(name)) {
-    return { kind: name as Exclude<NebulaTagParsedCommandV1["kind"], "tag" | "pass" | "grant-pass" | "toggle-away"> };
+    return ["join","leave","status","score","rank","players","sleep","wake","rules","help","info"].includes(name) ? { kind: name as "join"|"leave"|"status"|"score"|"rank"|"players"|"sleep"|"wake"|"rules"|"help"|"info" } : null;
   }
   if (name === "whosit") return { kind: "status" };
   if (name === "stats") return { kind: "score" };
