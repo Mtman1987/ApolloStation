@@ -66,7 +66,8 @@ export class DshWebControls {
   private readonly clipGifs?: SqliteDshClipGifStore;
   private readonly signalControlStore?:SqliteDshSignalControlStore;
   private readonly signalSeekers?:SqliteDshSignalSeekerStore;
-  private readonly forumForwardingStore?:DshForumForwardingStore;\n  private readonly forumForwarding?:DshForumForwardingService;
+  private readonly forumForwardingStore?:DshForumForwardingStore;
+  private readonly forumForwarding?:DshForumForwardingService;
   private readonly raidPile?:DshRaidPileStore;
   private readonly raidTrain?:DshRaidTrainStore;
   private readonly config?: DshLiveRuntimeConfigV1;
@@ -111,7 +112,8 @@ export class DshWebControls {
         if (scheme !== "Bot" && scheme !== "Bearer") throw new Error("Discord grant authorization scheme is invalid");
         return { authorization: `${scheme} ${grant.credential.accessToken}`, expiresAt: grant.expiresAt };
       } };
-      const liveDiscord = new DshDiscordApi(grants, options.fetchImpl);\n      if(this.forumForwardingStore)this.forumForwarding=new DshForumForwardingService(this.forumForwardingStore,liveDiscord);
+      const liveDiscord = new DshDiscordApi(grants, options.fetchImpl);
+      if(this.forumForwardingStore)this.forumForwarding=new DshForumForwardingService(this.forumForwardingStore,liveDiscord);
       this.client=client;this.liveDiscord=liveDiscord;
       if(options.databasePath&&this.config){this.voidwalkerRewards=new DshVoidwalkerRewardWorker(client,liveDiscord,new SqliteDshVoidwalkerRewardStore(options.databasePath),this.config.tenants, this.now, options.operationMode==="read-only");this.voidwalkerRewards.start();}
       if(this.forumForwardingStore)this.forumForwarding=new DshForumForwardingService(this.forumForwardingStore,liveDiscord,this.now);
