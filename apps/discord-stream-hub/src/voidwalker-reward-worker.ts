@@ -47,7 +47,7 @@ export class SqliteDshVoidwalkerRewardStore {
 /** SPMT achievement events determine eligibility; Discord mutations use scoped provider grants. */
 export class DshVoidwalkerRewardWorker {
   private running = false;
-  private timer?: ReturnType<typeof setInterval>;
+  private timer: ReturnType<typeof setInterval>|undefined;
   constructor(private readonly client:SpmtClient,private readonly discord:DshDiscordApi,private readonly store:SqliteDshVoidwalkerRewardStore,private readonly tenants:Tenant[],private readonly now=()=>new Date().toISOString(),private readonly readOnly=false) {}
   start() { if(this.timer||this.readOnly)return; void this.drain(); this.timer=setInterval(()=>{void this.drain();},30_000); this.timer.unref?.(); }
   close() { if(this.timer)clearInterval(this.timer); this.timer=undefined; this.store.close(); }
@@ -76,12 +76,12 @@ export class DshVoidwalkerRewardWorker {
         if(this.store.delivered(tenant.tenantId,userId,guildId))continue;
         try{
           const roleId=await this.ensureRole(tenant.tenantId,guildId);
-          const member=await this.discord.request<{roles?:string[]}>(tenant.tenantId,`/guilds/${guildId}/members/${discordId}`,"GET",undefined,"guilds:read");
+          const member=await this.discord.getGuildMember(tenant.tenantId,guildId,discordId);
           if(!Array.isArray(member?.roles))throw new Error("Discord member roles are unavailable");
-          if(!member.roles.includes(roleId))await this.discord.request(tenant.tenantId,`/guilds/${guildId}/members/${discordId}/roles/${roleId}`,"PUT",undefined,"guilds:write");
-          const roles=await this.discord.request<Array<{id:string;name:string}>>(tenant.tenantId,`/guilds/${guildId}/roles`,"GET",undefined,"guilds:read");
+          if(!member.roles.includes(roleId))await this.discord.addGuildMemberRole(tenant.tenantId,guildId,discordId,roleId);
+          const roles=await this.discord.listGuildRoles(tenant.tenantId,guildId);
           if(!Array.isArray(roles))throw new Error("Discord guild roles are unavailable");
-          for(const role of roles)if(role.id!==roleId&&member.roles.includes(role.id)&&["signal seeker","signal hunter"].includes(role.name.toLowerCase()))await this.discord.request(tenant.tenantId,`/guilds/${guildId}/members/${discordId}/roles/${role.id}`,"DELETE",undefined,"guilds:write");
+          for(const role of roles)if(role.id!==roleId&&member.roles.includes(role.id)&&["signal seeker","signal hunter"].includes(role.name.toLowerCase()))await this.discord.removeGuildMemberRole(tenant.tenantId,guildId,discordId,role.id);
           this.store.success({tenantId:tenant.tenantId,userId,guildId,discordUserId:discordId,roleId,now:this.now()});
         }catch(error){complete=false;this.store.failure({tenantId:tenant.tenantId,userId,guildId,discordUserId:discordId,error:error instanceof Error?error.message:"Discord reward delivery failed",now:this.now()});}
       }
@@ -90,11 +90,11 @@ export class DshVoidwalkerRewardWorker {
   }
   private async ensureRole(tenantId:string,guildId:string) {
     const cached=this.store.roleId(tenantId,guildId);
-    const roles=await this.discord.request<Array<{id:string;name:string;managed?:boolean}>>(tenantId,`/guilds/${guildId}/roles`,"GET",undefined,"guilds:read");
+    const roles=await this.discord.listGuildRoles(tenantId,guildId);
     if(!Array.isArray(roles))throw new Error("Discord guild roles are unavailable");
     const existing=roles.find(role=>role.id===cached)||roles.find(role=>role.name.toLowerCase()===TITLE.toLowerCase());
     if(existing?.managed)throw new Error("Voidwalker role is managed by another integration");
-    const role=existing||await this.discord.request<{id:string}>(tenantId,`/guilds/${guildId}/roles`,"POST",{name:TITLE,color:0x8b5cf6,permissions:"0",mentionable:false,hoist:false},"guilds:write");
+    const role=existing||await this.discord.createGuildRole(tenantId,guildId,{name:TITLE,color:0x8b5cf6,permissions:"0",mentionable:false,hoist:false});
     if(!role?.id)throw new Error("Discord did not confirm the Voidwalker role");
     this.store.rememberRole(tenantId,guildId,role.id,this.now());
     return role.id;
