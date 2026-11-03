@@ -45,7 +45,7 @@ test("gateway consumer persists summon scope and invokes the configured persona 
     assert.equal(invoked.length, 2);
     assert.equal(invoked[1].idempotencyKey, "streamweaver-persona:viewer-1");
     assert.equal(invoked[1].conversationId, "streamweaver:persona-athena:chat:twitch:guest-channel");
-    assert.deepEqual(invoked[1].presentation, { personaId: "persona-athena", displayName: "Athena", instructions: "Use Athena's configured warm, mythic presentation.\n\nOptionally append one final avatar tag when it fits naturally: [wave_gesture], [blow_kiss_gesture], [spin_gesture], [playful_tilt_gesture], [laugh_gesture], [happy_gesture], [dance_gesture], [look_gesture], or [applaud_gesture]. Use sparingly; never include a tag mid-reply.", memoryPolicy: "conversation" });
+    assert.deepEqual(invoked[1].presentation, { personaId: "persona-athena", displayName: "Athena", instructions: "Use Athena's configured warm, mythic presentation.", memoryPolicy: "conversation" });
     assert.equal(sent.length, 0);
     assert.equal(store.getReply("owner-1").jobId, "job-1");
     assert.equal(store.getReply("viewer-1").state, "pending");
