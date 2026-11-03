@@ -4,6 +4,14 @@ on:
   schedule:
     - cron: "35 8 * * *"
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/apollo-parity-nightly.yml'
+      - '.github/workflows/apollo-donor-inventory.yml'
+      - 'scripts/parity-*.mjs'
+      - 'config/apollo-donor-sources.v1.json'
+      - 'config/apollo-parity-capabilities.v1.json'
 
 permissions:
   contents: read
