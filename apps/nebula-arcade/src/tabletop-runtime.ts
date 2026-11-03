@@ -1,10 +1,11 @@
 import { parseNebulaMessage } from "./game-hub.js";
 import { DatabaseSync } from "node:sqlite";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { NormalizedChatMessageV1 } from "@spmt/contracts";
 import { defaultBingoState, normalizeBingoState, getPersonalBingoBoard, personalBingoView, setPersonalBingoCenter, claimPersonalBingoSquare, resetPersonalBingoProgress, type BingoStateV1 } from "./bingo-game.js";
-import { defaultQuackverseState, normalizeQuackverseState, normalizeQuackverseCollection, claimQuackverseSeat, recordQuackversePack, type QuackverseSavedState } from "./quackverse-state.js";
+import { defaultQuackverseState, normalizeQuackverseState, normalizeQuackverseCollection, claimQuackverseSeat, recordQuackversePack, type QuackverseSavedState, type QuackverseCollectionState } from "./quackverse-state.js";
 import { openQuackverseBoosterPack, addQuackverseCardToDeck, removeQuackverseCardFromDeck, saveQuackverseDeck, activateQuackverseDeck } from "./quackverse-packs.js";
+import { offerQuackverseTrade, resolveQuackverseTrade, spareQuackverseCopies } from "./quackverse-trades.js";
 import { applyQuackverseGameAction, refreshTurnResources, type QuackverseGameAction } from "./quackverse-engine.js";
 import { normalizeNebulaGameRuntimeState, joinNebulaGame, awardNebulaGamePoints, recordNebulaGameWin } from "./game-runtime.js";
 import { SqliteNebulaGameRuntimeStore } from "./game-runtime-store.js";
@@ -116,6 +117,32 @@ export class SqliteNebulaTabletopRuntime {
       }
       this.db.prepare("INSERT INTO nebula_tabletop_receipts VALUES(?,?,?)").run(message.tenantId,id,response);this.db.exec("COMMIT");return response;
     } catch(error) {this.db.exec("ROLLBACK");return error instanceof Error?error.message:String(error);}
+  }
+  tradeSnapshot(tenant:string,actorId:string,players:Record<string,{username?:string;displayName?:string}>={},now=Date.now()){
+    const raw=this.read(tenant,"@arcade","collections") as Record<string,QuackverseCollectionState>|undefined,collections=Object.fromEntries(Object.entries(raw??{}).map(([id,value])=>[id,normalizeQuackverseCollection(value,new Date(now))]));
+    const name=(id:string)=>players[`spmt:${id}`]?.username||players[`spmt:${id}`]?.displayName||players[id]?.username||players[id]?.displayName||id;
+    const offers=Object.values(collections).flatMap(collection=>collection.tradeOffers??[]).filter(offer=>offer.fromId===actorId||offer.toId===actorId).sort((a,b)=>Date.parse(b.createdAt)-Date.parse(a.createdAt));
+    const candidates=Object.entries(collections).filter(([id,collection])=>id!==actorId&&collection.cards.length>0).map(([userId,collection])=>({userId,username:name(userId),spareCards:[...new Set(collection.cards)].map(cardId=>({cardId,quantity:spareQuackverseCopies(collection,cardId)})).filter(card=>card.quantity>0)})).filter(player=>player.spareCards.length>0);
+    const own=collections[actorId]??normalizeQuackverseCollection(undefined,new Date(now));
+    return {offers,candidates,spareCards:[...new Set(own.cards)].map(cardId=>({cardId,quantity:spareQuackverseCopies(own,cardId)})).filter(card=>card.quantity>0)};
+  }
+  trade(tenant:string,actorId:string,actorName:string,input:{action:"offer"|"accept"|"decline"|"cancel";toId?:string;giveCardId?:number;wantCardId?:number;offerId?:string},players:Record<string,{username?:string;displayName?:string}>={},now=Date.now()){
+    this.db.exec("BEGIN IMMEDIATE");
+    try{
+      const raw=this.read(tenant,"@arcade","collections") as Record<string,QuackverseCollectionState>|undefined,collections=Object.fromEntries(Object.entries(raw??{}).map(([id,value])=>[id,normalizeQuackverseCollection(value,new Date(now))]));
+      if(input.action==="offer"){
+        const toId=String(input.toId??"").trim(),giveCardId=Number(input.giveCardId),wantCardId=Number(input.wantCardId);
+        if(!collections[actorId])throw new Error("Open a Quackverse pack before offering a trade.");
+        if(!collections[toId])throw new Error("Choose a player with a Quackverse collection.");
+        if(!quackverseCards.some(card=>card.id===giveCardId)||!quackverseCards.some(card=>card.id===wantCardId))throw new Error("Choose valid Quackverse cards.");
+        const toName=players[`spmt:${toId}`]?.username||players[`spmt:${toId}`]?.displayName||players[toId]?.username||players[toId]?.displayName||toId;
+        const offer=offerQuackverseTrade(collections,{id:randomUUID(),fromId:actorId,toId,fromName:actorName,toName,giveCardId,wantCardId,status:"pending",createdAt:new Date(now).toISOString(),expiresAt:new Date(now+48*60*60*1000).toISOString()},now);
+        this.put(tenant,"@arcade","collections",collections);this.db.exec("COMMIT");return offer;
+      }
+      if(!["accept","decline","cancel"].includes(input.action))throw new Error("Unknown trade action.");
+      const offer=resolveQuackverseTrade(collections,String(input.offerId??""),actorId,input.action,now);
+      this.put(tenant,"@arcade","collections",collections);this.db.exec("COMMIT");return offer;
+    }catch(error){this.db.exec("ROLLBACK");throw error;}
   }
   private seat(state:QuackverseSavedState,user:string){if(state.claimedPlayers.playerOne===user)return "playerOne" as const;if(state.claimedPlayers.playerTwo===user)return "playerTwo" as const;throw new Error("Join a Quackverse seat first with spmt quackverse join.");}
   private requireModerator(message:NormalizedChatMessageV1){if(!message.actor.roles.some(role=>["broadcaster","moderator"].includes(role)))throw new Error("Only the broadcaster or a moderator can change the shared game.");}
