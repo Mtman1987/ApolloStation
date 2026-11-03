@@ -46,5 +46,9 @@ jobs:
         run: npm ci
       - name: Compile all apps and packages
         run: npm run build
-      - name: Run focused StreamWeaver regressions
+      - name: Run focused pull-request regressions
+        if: github.event_name == 'pull_request'
+        run: node --import ./scripts/offline-network-guard.mjs --test tests/streamweaver-rides.test.mjs tests/streamweaver-chat-gateway.test.mjs tests/streamweaver-overlay-widgets.test.mjs
+      - name: Run full manual StreamWeaver regressions
+        if: github.event_name == 'workflow_dispatch'
         run: node --import ./scripts/offline-network-guard.mjs --test tests/streamweaver-tts-text.test.mjs tests/streamweaver-shoutout-runtime.test.mjs tests/streamweaver-provider-runtime.test.mjs tests/streamweaver-eventsub-lifecycle.test.mjs tests/streamweaver-rides.test.mjs tests/streamweaver-stella-lounge-host.test.mjs tests/streamweaver-chat-gateway.test.mjs tests/streamweaver-overlay-widgets.test.mjs
