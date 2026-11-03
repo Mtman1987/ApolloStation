@@ -42,3 +42,20 @@ test("forum API requires a user session and scopes every operation to the select
   response=await call("tenant-a","/v1/commlink/forums/"+post.id);assert.equal((await response.json()).post.replyCount,1);
  }finally{await new Promise(resolve=>server.close(resolve));store.close()}
 });
+
+test("provider-origin replay is idempotent and cannot collide across tenants",()=>{
+ const store=new CommlinkForumStore(":memory:");
+ try{
+  const origin={provider:"discord",channelId:"forum-channel",threadId:"thread-42",messageId:"starter-1"};
+  const first=store.createPost("tenant-a","bridge","Imported topic","Original content",origin);
+  const replay=store.createPost("tenant-a","bridge","Imported topic","Original content",origin);
+  const otherTenant=store.createPost("tenant-b","bridge","Imported topic","Original content",origin);
+  assert.equal(replay.id,first.id);
+  assert.notEqual(otherTenant.id,first.id);
+  assert.equal(store.resolveOrigin("tenant-a","discord","forum-channel","thread-42","starter-1","post"),first.id);
+  const replyOrigin={provider:"discord",channelId:"forum-channel",threadId:"thread-42",messageId:"reply-9"};
+  const reply=store.createReply("tenant-a",first.id,"bridge","Imported reply",replyOrigin);
+  const replayReply=store.createReply("tenant-a",first.id,"bridge","Imported reply",replyOrigin);
+  assert.equal(replayReply.id,reply.id);
+ }finally{store.close()}
+});
