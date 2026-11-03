@@ -1,12 +1,23 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {forwardDshForumPost,importDshDiscordForumThreads,importDshDiscordForumThreadMessage,DshForumForwardingStore,DshForumForwardingWorker,dshForumThreadCreationIdempotencyKey} from "../apps/discord-stream-hub/dist/forum-forwarding.js";
+import {forwardDshForumPost,importDshDiscordForumThreads,importDshDiscordForumThreadMessage,DshForumForwardingStore,DshForumForwardingWorker,DshCommlinkForumDiscordPort,dshForumThreadCreationIdempotencyKey} from "../apps/discord-stream-hub/dist/forum-forwarding.js";
 
 const source={sourceApp:"discord-stream-hub",sourceServerId:"123456",sourceChannelId:"234567",sourceChannelName:"general",sourceMessageId:"345678",sourceMessageUrl:"https://discord.com/channels/123456/234567/345678",authorId:"456789",authorName:"Viewer",title:"Community / #general",content:"Hello community",postedAt:"2026-11-03T12:00:00.000Z"};
 function client(){
  const calls=[];
  return {calls,async createCommlinkForumPost(...args){calls.push(["create",...args]);return {post:{id:"native-post"}};},async mutateCommlinkForumImport(...args){calls.push(["mutate",...args]);return {deleted:true,id:"native-post"};},async publishEvent(...args){calls.push(["event",...args]);return {duplicate:false,event:{id:"event-1"}};}};
 }
+test("forum edit retries reuse a receipt but distinct edits get distinct receipts",async()=>{
+ const keys=[],client={async createExecutionJob(_tenant,_input,key){keys.push(key);return{job:{id:"job-edit"}};},async getExecutionJob(){return{state:"succeeded",result:{}};}};
+ const discord={async getChannel(){return{id:"thread-1",parent_id:"forum-1",guild_id:"guild-1",type:11};}};
+ const port=new DshCommlinkForumDiscordPort(client,discord);
+ const first={embeds:[{url:"https://discord.com/channels/1/2/3",description:"first edit"}]};
+ await port.editThreadMessage("tenant-a","thread-1","message-1",first);
+ await port.editThreadMessage("tenant-a","thread-1","message-1",first);
+ await port.editThreadMessage("tenant-a","thread-1","message-1",{embeds:[{url:"https://discord.com/channels/1/2/3",description:"second edit"}]});
+ assert.equal(keys.length,3);assert.equal(keys[0],keys[1]);assert.notEqual(keys[1],keys[2]);
+});
+
 test("forum thread creation idempotency is isolated by source channel",()=>{
  const first=dshForumThreadCreationIdempotencyKey("tenant-a","forum-1","guild-1","channel-1");
  const second=dshForumThreadCreationIdempotencyKey("tenant-a","forum-1","guild-1","channel-2");
