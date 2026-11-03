@@ -229,7 +229,7 @@ export class SupervisedDshLiveService {
     if(options.operationMode==="active"&&options.publicOrigin)this.nebulaMedia=new DshNebulaMediaWorker(this.client,{databasePath:options.databasePath,publicOrigin:options.publicOrigin,workerId:`${options.workerId}-nebula-media`,tenantIds:options.config.tenants.map(tenant=>tenant.tenantId),sourceOrigins:(process.env.DSH_MEDIA_SOURCE_ORIGINS||"").split(",").filter(Boolean)},fetchImpl);
     const nebulaOrigin=String(process.env.NEBULA_ARCADE_PUBLIC_ORIGIN??"").trim();
     if(this.nebulaMedia&&nebulaOrigin){const manifestUrl=new URL("/v1/nebula/gameplay/showcase-manifest",nebulaOrigin);this.nebulaGameplayCapture=new DshNebulaGameplayCaptureWorker(options.databasePath,manifestUrl.toString(),new DshPlaywrightNebulaGameplayRenderer({executablePath:process.env.CHROMIUM_EXECUTABLE_PATH||undefined}),fetchImpl);}
-    this.activityStore=new DshMemberActivityStore(options.databasePath);this.activity=new DshMemberActivityWorker(this.activityStore,this.client,options.config,async(tenant,eventId,message)=>{await this.mtFixIt.handle(tenant,eventId,message);});
+    this.activityStore=new DshMemberActivityStore(options.databasePath);this.activity=new DshMemberActivityWorker(this.activityStore,this.client,options.config,async(tenant,eventId,message)=>{await this.mtFixIt.handle(tenant,eventId,message);},this.pointsRouter);
     this.settings = new DshTenantSettingsStore(options.databasePath, now);
     this.memberDirectory = new DshMemberDirectoryStore(options.databasePath, options.config, this.settings);
     const directory = this.directory = new ConfigDirectory(options.config, this.settings, this.memberDirectory);
