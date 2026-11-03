@@ -4,7 +4,7 @@ import type {SpmtClient} from "@spmt/sdk";
 import {DshSpmtIdentityResolver} from "./provider-identity.js";
 import type {DshLiveRuntimeConfigV1} from "./live-worker.js";
 
-export interface DshMessageObservation {provider:string;guildId?:string;channelId:string;messageId:string;occurredAt:string;actor:{providerUserId:string;username:string;displayName?:string;isBot:boolean};}
+export interface DshMessageObservation {provider:string;guildId?:string;channelId:string;messageId:string;occurredAt:string;text?:string;actor:{providerUserId:string;username:string;displayName?:string;isBot:boolean};}
 /** Activity is a derived count, never a second shared message history or identity owner. */
 export class DshMemberActivityStore {
   private readonly db:DatabaseSync;
@@ -36,14 +36,17 @@ export class DshMemberActivityStore {
 
 export class DshMemberActivityWorker {
   private readonly identities:DshSpmtIdentityResolver;
-  constructor(private readonly store:DshMemberActivityStore,private readonly client:SpmtClient,private readonly config:DshLiveRuntimeConfigV1){this.identities=new DshSpmtIdentityResolver(client);}
+  constructor(private readonly store:DshMemberActivityStore,private readonly client:SpmtClient,private readonly config:DshLiveRuntimeConfigV1,private readonly onMessage?:(tenantId:string,eventId:string,message:DshMessageObservation)=>Promise<void>){this.identities=new DshSpmtIdentityResolver(client);}
   async runOnce(tenant:string){const owner=randomUUID();if(!this.store.acquire(tenant,owner))return {processed:0,busy:true};let processed=0;
     try {for(let page=0;page<20;page++){
       this.store.renew(tenant,owner);const events=await this.client.listEvents(tenant,{type:"spmt.chat.message.received.v1",sourceAppId:"chat-gateway",afterId:this.store.cursor(tenant).eventId,limit:200});
       if(!events.length)break;
+      const eligibleChannels=[...new Set(events.map(event=>event.payload as DshMessageObservation).filter(message=>message?.provider==="discord"&&!message.actor?.isBot&&Boolean(message.guildId&&this.config.tenants.find(t=>t.tenantId===tenant)?.discordGuildIds?.includes(message.guildId))).map(message=>message.channelId))];
+      const channelMessages=new Map<string,Map<string,string>>();
+      for(const channelId of eligibleChannels){const rows=await this.client.listCommlinkLiveChat(tenant,{provider:"discord",channelId,limit:500});channelMessages.set(channelId,new Map(rows.map(row=>[row.messageId,row.text])));}
       for(const event of events){this.store.renew(tenant,owner);if(typeof event.id!=="string"||event.tenantId!==tenant||event.type!=="spmt.chat.message.received.v1"||event.sourceAppId!=="chat-gateway")throw Error("Activity source is invalid");
-        const message=event.payload as DshMessageObservation,eligible=message?.provider==="discord"&&!message.actor?.isBot&&Boolean(message.guildId&&this.config.tenants.find(t=>t.tenantId===tenant)?.discordGuildIds?.includes(message.guildId));
-        if(eligible){const identity=await this.identities.resolveOrGrandfather({tenantId:tenant,provider:"discord",providerUserId:message.actor.providerUserId,username:message.actor.username,...(message.actor.displayName?{displayName:message.actor.displayName}:{})});this.store.advance(tenant,owner,event.id,message,identity.userId);}
+        const observed=event.payload as DshMessageObservation,message={...observed,text:observed.text??channelMessages.get(observed.channelId)?.get(observed.messageId)??""},eligible=message?.provider==="discord"&&!message.actor?.isBot&&Boolean(message.guildId&&this.config.tenants.find(t=>t.tenantId===tenant)?.discordGuildIds?.includes(message.guildId));
+        if(eligible){const identity=await this.identities.resolveOrGrandfather({tenantId:tenant,provider:"discord",providerUserId:message.actor.providerUserId,username:message.actor.username,...(message.actor.displayName?{displayName:message.actor.displayName}:{})});if(/^!mtfixit(?:\s|$)/i.test(message.text))await this.onMessage?.(tenant,event.id,message);this.store.advance(tenant,owner,event.id,message,identity.userId);}
         else this.store.advance(tenant,owner,event.id);processed++;
       }
       if(events.length<200)break;

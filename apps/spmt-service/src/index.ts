@@ -673,7 +673,7 @@ function seedSandboxFixtures(control: ControlService, data: PlatformDataService,
     description: "The Green command bridge for SPMT identity, Shipyard, Commlink, workspace, and Stellar Core surfaces.",
     version: "0.1.0-sandbox",
     launchUrl: new URL("/", publicBaseUrl).toString(),
-    allowedScopes: ["workspace:read", "xp:read", "apps:read", "apps:install", "entitlements:read", "usage:read", "events:read", "commlink:read", "notifications:read", "assistants:read", "assistants:invoke", "stellar:context:read", "stellar:capabilities:read", "operations:logs:read", "operations:coder:read", "operations:coder:invoke"],
+    allowedScopes: ["workspace:read", "xp:read", "apps:read", "apps:install", "entitlements:read", "usage:read", "events:read", "commlink:read", "notifications:read", "assistants:read", "assistants:invoke", "stellar:context:read", "stellar:capabilities:read", "operations:logs:read", "operations:logs:write", "operations:coder:read", "operations:coder:invoke"],
     surfaces: ["shell", "standalone"],
     status: "active",
   });

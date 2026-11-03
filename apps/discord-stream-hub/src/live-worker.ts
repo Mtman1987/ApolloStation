@@ -4,6 +4,7 @@ import { SqliteDshRoleAwareBannerService, DshRoleAwareBannerMediaSource } from "
 import { DshClipAcquisitionWorker } from "./clip-acquisition.js";
 import { SqliteDshClipGifStore, DshClipGifSpotlightMediaSource } from "./clip-gif-library.js";
 import { SqliteDshSignalSeekerStore, dshSignalSeekerPanelPayload, dshSignalDropInteractionPayload, dshSignalDropClue } from "./signal-seeker.js";
+import { DshMtFixItIntake } from "./mtfixit-intake.js";
 import { DshMemberDirectoryStore, DshMemberDirectoryWorker } from "./member-directory.js";
 import {DshOnboardingPanel} from "./onboarding-panel.js";
 import { DshMemberActivityStore, DshMemberActivityWorker } from "./member-activity.js";
@@ -191,6 +192,7 @@ export class SupervisedDshLiveService {
   private readonly onboarding?:DshOnboardingPanel;
   private readonly activityStore:DshMemberActivityStore;
   private readonly activity:DshMemberActivityWorker;
+  private readonly mtFixIt:DshMtFixItIntake;
   private readonly forumForwardingStore:DshForumForwardingStore;
   private readonly forumForwardingWorker:DshForumForwardingWorker;
   private readonly signalSeekers:SqliteDshSignalSeekerStore;
@@ -227,7 +229,7 @@ export class SupervisedDshLiveService {
     if(options.operationMode==="active"&&options.publicOrigin)this.nebulaMedia=new DshNebulaMediaWorker(this.client,{databasePath:options.databasePath,publicOrigin:options.publicOrigin,workerId:`${options.workerId}-nebula-media`,tenantIds:options.config.tenants.map(tenant=>tenant.tenantId),sourceOrigins:(process.env.DSH_MEDIA_SOURCE_ORIGINS||"").split(",").filter(Boolean)},fetchImpl);
     const nebulaOrigin=String(process.env.NEBULA_ARCADE_PUBLIC_ORIGIN??"").trim();
     if(this.nebulaMedia&&nebulaOrigin){const manifestUrl=new URL("/v1/nebula/gameplay/showcase-manifest",nebulaOrigin);this.nebulaGameplayCapture=new DshNebulaGameplayCaptureWorker(options.databasePath,manifestUrl.toString(),new DshPlaywrightNebulaGameplayRenderer({executablePath:process.env.CHROMIUM_EXECUTABLE_PATH||undefined}),fetchImpl);}
-    this.activityStore=new DshMemberActivityStore(options.databasePath);this.activity=new DshMemberActivityWorker(this.activityStore,this.client,options.config);
+    this.activityStore=new DshMemberActivityStore(options.databasePath);this.activity=new DshMemberActivityWorker(this.activityStore,this.client,options.config,async(tenant,eventId,message)=>{await this.mtFixIt.handle(tenant,eventId,message);});
     this.settings = new DshTenantSettingsStore(options.databasePath, now);
     this.memberDirectory = new DshMemberDirectoryStore(options.databasePath, options.config, this.settings);
     const directory = this.directory = new ConfigDirectory(options.config, this.settings, this.memberDirectory);
@@ -235,6 +237,7 @@ export class SupervisedDshLiveService {
     this.raidPile = new DshRaidPileStore(options.databasePath, tenantId => { const saved=this.settings.read(tenantId); return { maxSize:saved.raidPileMaxSize??DEFAULT_DSH_RAID_PILE_SETTINGS.maxSize, minSize:saved.raidPileMinSize??DEFAULT_DSH_RAID_PILE_SETTINGS.minSize, pointsReward:saved.raidPilePointsReward??DEFAULT_DSH_RAID_PILE_SETTINGS.pointsReward, handoffHours:saved.raidPileHandoffHours??DEFAULT_DSH_RAID_PILE_SETTINGS.handoffHours, monthlyStrikeLimit:saved.raidPileMonthlyStrikeLimit??DEFAULT_DSH_RAID_PILE_SETTINGS.monthlyStrikeLimit }; }, now);
     this.messages = new SqliteDshDiscordMessageStore(options.databasePath);
     const liveDiscord = this.liveDiscord = new DshDiscordApi(new SpmtDshDiscordGrantSource(this.client, directory), fetchImpl);
+    this.mtFixIt=new DshMtFixItIntake(this.client,liveDiscord,options.databasePath);
     this.signalSeekers = new SqliteDshSignalSeekerStore(options.databasePath, now);
     this.forumForwardingStore=new DshForumForwardingStore(options.databasePath);
     this.forumForwardingWorker=new DshForumForwardingWorker(this.forumForwardingStore,this.client,liveDiscord,tenantId=>options.config.tenants.find(tenant=>tenant.tenantId===tenantId)?.discordGuildIds??[]);
@@ -359,7 +362,7 @@ export class SupervisedDshLiveService {
       let failed = false;
       try { await this.nebulaMediaCycle; await this.calendarCycle; await activeCycle; } catch (error) { failure = error; failed = true; }
       this.nebulaMedia?.close();this.nebulaGameplayCapture?.close();this.clipSpotlightMedia.close();this.clipAcquisition.close();this.roleBanners?.close();
-      this.memberDirectory.close();this.settings.close();this.raidPile.close();this.cleanup.close();this.activityStore.close();this.forumForwardingStore.close();this.signalSeekers.close();
+      this.memberDirectory.close();this.settings.close();this.raidPile.close();this.cleanup.close();this.activityStore.close();this.mtFixIt.close();this.forumForwardingStore.close();this.signalSeekers.close();
       try { this.messages.close(); } catch (error) { if (!failed) { failure = error; failed = true; } }
       try { this.calendarSync?.close(); this.calendar.close(); } catch (error) { if (!failed) { failure = error; failed = true; } }
       try { this.applications.close(); } catch (error) { if (!failed) { failure = error; failed = true; } }
