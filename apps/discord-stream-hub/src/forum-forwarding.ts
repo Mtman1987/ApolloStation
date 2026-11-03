@@ -221,7 +221,27 @@ export class DshForumForwardingService {
       return target.id;
     }
     const saved=this.store.getThread(event.tenantId,event.guildId,event.channelId);
-    if(saved?.pending)throw new Error("Forum thread creation has an unknown result; reconcile before retrying to avoid duplicates");
+    const marker="SPMT forwarding key: "+createHash("sha256").update([event.tenantId,event.guildId,event.channelId,rule.forumChannelId].join(":")).digest("hex").slice(0,24);
+    if(saved?.pending){
+      const active=await this.discord.listActiveThreads(event.tenantId,event.guildId),candidates=new Map<string,any>();
+      for(const thread of Array.isArray(active.threads)?active.threads:[])if(thread?.parent_id===rule.forumChannelId&&typeof thread.id==="string")candidates.set(thread.id,thread);
+      let before:string|undefined;
+      for(let page=0;page<10;page++){
+        const archived=await this.discord.listArchivedForumThreads(event.tenantId,rule.forumChannelId,before);
+        for(const thread of Array.isArray(archived.threads)?archived.threads:[])if(thread?.parent_id===rule.forumChannelId&&typeof thread.id==="string")candidates.set(thread.id,thread);
+        if(!archived.has_more||!Array.isArray(archived.threads)||!archived.threads.length)break;
+        const oldest=archived.threads.at(-1),next=String(oldest?.thread_metadata?.archive_timestamp??"");
+        if(!next||next===before)break;before=next;
+      }
+      for(const candidate of candidates.values()){
+        const starter=await this.discord.getChannelMessage(event.tenantId,candidate.id,candidate.id).catch(()=>undefined);
+        if(String(starter?.content??"").includes(marker)){
+          this.store.setThread(event.tenantId,event.guildId,event.channelId,candidate.id,false,this.now());
+          return candidate.id;
+        }
+      }
+      throw new Error("Forum thread creation has an unknown result; no matching source marker is visible yet, so retry is fenced to prevent duplicates");
+    }
     if(saved?.thread_id){
       const target=await this.discord.getChannel(event.tenantId,saved.thread_id);
       if(target.guild_id!==rule.destinationGuildId||target.parent_id!==rule.forumChannelId||![10,11,12].includes(Number(target.type)))throw new Error("Saved forwarding thread is outside the configured destination");
@@ -232,7 +252,7 @@ export class DshForumForwardingService {
     if(forum.guild_id!==rule.destinationGuildId||![15,16].includes(Number(forum.type)))throw new Error("Destination must be a forum or media channel in the configured server");
     this.store.setThread(event.tenantId,event.guildId,event.channelId,null,true,this.now());
     try{
-      const created=await this.discord.createForumThread(event.tenantId,rule.forumChannelId,event.channelName.slice(0,100),{content:"Forwarded messages from #"+event.channelName,allowed_mentions:{parse:[]},idempotencyKey:dshForumThreadCreationIdempotencyKey(event.tenantId,rule.forumChannelId,event.guildId,event.channelId)});
+      const created=await this.discord.createForumThread(event.tenantId,rule.forumChannelId,event.channelName.slice(0,100),{content:"Forwarded messages from #"+event.channelName+"\\n\\nSPMT forwarding key: "+createHash("sha256").update([event.tenantId,event.guildId,event.channelId,rule.forumChannelId].join(":")).digest("hex").slice(0,24),allowed_mentions:{parse:[]},idempotencyKey:dshForumThreadCreationIdempotencyKey(event.tenantId,rule.forumChannelId,event.guildId,event.channelId)});
       this.store.setThread(event.tenantId,event.guildId,event.channelId,created.threadId,false,this.now());
       return created.threadId;
     }catch(error){
