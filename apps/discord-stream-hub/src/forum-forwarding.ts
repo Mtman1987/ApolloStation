@@ -22,6 +22,7 @@ export function normalizeDshForwardedForumPost(value:unknown):DshForwardedForumP
 }
 export async function forwardDshForumPost(client:SpmtClient,tenantId:string,value:unknown){
   const post=normalizeDshForwardedForumPost(value);
+  await client.createCommlinkForumPost(tenantId,{title:post.title,body:post.content||"[Discord forum post]",origin:{provider:"discord",channelId:post.sourceChannelId,messageId:post.sourceMessageId,authorId:post.authorId,authorName:post.authorName,...(post.sourceMessageUrl?{sourceUrl:post.sourceMessageUrl}:{}),sourceApp:post.sourceApp}});
   const result=await client.publishEvent(tenantId,DSH_FORUM_POST_FORWARDED,{schemaVersion:1,...post,forwardedAt:new Date().toISOString()},`dsh-forum:${post.sourceApp}:${post.sourceServerId}:${post.sourceChannelId}:${post.sourceMessageId}`);
   return {accepted:true,duplicate:result.duplicate,event:result.event};
 }

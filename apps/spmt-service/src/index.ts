@@ -795,7 +795,7 @@ function ensureStreamWeaverIdentity(auth: AuthService, credential: string) {
   auth.reconcileServiceIdentity({ serviceId: "streamweaver", credential, scopes, tenantMode: "any" });
 }
 function ensureDshIdentity(auth: AuthService, credential: string, production:boolean) {
-  auth.reconcileServiceIdentity({ serviceId: "discord-stream-hub", credential, scopes: ["events:read", "assistants:invoke", "jobs:write", "identity:read", "providers:grant", "events:write", "jobs:read", "jobs:work", "runtime:write", ...(production?["xp:read","xp:write","identity:write","identity:onboard"]:[])], tenantMode: "any" });
+  auth.reconcileServiceIdentity({ serviceId: "discord-stream-hub", credential, scopes: ["events:read", "assistants:invoke", "jobs:write", "identity:read", "providers:grant", "events:write", "jobs:read", "jobs:work", "runtime:write", "commlink:write", ...(production?["xp:read","xp:write","identity:write","identity:onboard"]:[])], tenantMode: "any" });
 }
 function ensureNebulaArcadeIdentity(auth: AuthService, credential: string) {
   auth.reconcileServiceIdentity({ serviceId: "nebula-arcade", credential, scopes: ["events:write", "xp:write", "runtime:write", "jobs:read", "jobs:write"], tenantMode: "any" });

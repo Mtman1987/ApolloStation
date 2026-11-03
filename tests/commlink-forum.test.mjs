@@ -32,7 +32,9 @@ test("forum API requires a user session and scopes every operation to the select
  const call=(tenant,path,{method="GET",token="alice",body}={})=>fetch(base+path,{method,headers:{"x-spmt-tenant":tenant,authorization:"Bearer "+token,"content-type":"application/json"},...(body?{body:JSON.stringify(body)}:{})});
  try{
   assert.equal((await fetch(base+"/v1/commlink/forums",{headers:{"x-spmt-tenant":"tenant-a"}})).status,401);
-  let response=await call("tenant-a","/v1/commlink/forums",{method:"POST",body:{title:"Topic",body:"Hello"}});
+  let response=await call("tenant-a","/v1/commlink/forums",{method:"POST",body:{title:"Forged source",body:"Nope",origin:{provider:"discord",channelId:"channel",messageId:"message"}}});
+  assert.equal(response.status,403);
+  response=await call("tenant-a","/v1/commlink/forums",{method:"POST",body:{title:"Topic",body:"Hello"}});
   assert.equal(response.status,201);const post=(await response.json()).post;
   response=await call("tenant-b","/v1/commlink/forums/"+post.id);assert.equal((await response.json()).post,undefined);
   response=await call("tenant-a","/v1/commlink/forums/"+post.id+"/replies",{method:"POST",token:"bob",body:{body:"Reply"}});
@@ -58,4 +60,19 @@ test("provider-origin replay is idempotent and cannot collide across tenants",()
   const replayReply=store.createReply("tenant-a",first.id,"bridge","Imported reply",replyOrigin);
   assert.equal(replayReply.id,reply.id);
  }finally{store.close()}
+});
+
+test("scoped DSH service can import only provider-attributed forum posts",async()=>{
+ const store=new CommlinkForumStore(":memory:");
+ const api=new CommlinkForumApi({store,auth:{authorize:(token)=>({actorType:token==="service"?"service":"user",actorId:token==="service"?"discord-stream-hub":"alice"})},control:{getTenant:()=>({status:"active",ownerUserId:"owner"})},accessToken:req=>req.headers.authorization?.replace(/^Bearer /,"")});
+ const server=createServer((req,res)=>void api.handle(req,res,new URL(req.url,"http://localhost")));
+ await new Promise(resolve=>server.listen(0,"127.0.0.1",resolve));const base="http://127.0.0.1:"+server.address().port;
+ const call=(body)=>fetch(base+"/v1/commlink/forums",{method:"POST",headers:{"x-spmt-tenant":"tenant-a",authorization:"Bearer service","content-type":"application/json"},body:JSON.stringify(body)});
+ try{
+  let response=await call({title:"No source",body:"Unattributed"});assert.equal(response.status,403);
+  response=await call({title:"Imported Discord topic",body:"Hello from Discord",origin:{provider:"discord",channelId:"forum-channel",messageId:"message-1",authorId:"discord-user",authorName:"Viewer",sourceUrl:"https://discord.com/channels/g/c/m",sourceApp:"discord-stream-hub"}});
+  assert.equal(response.status,201);const post=(await response.json()).post;
+  assert.equal(post.authorUserId,"discord-stream-hub");assert.equal(post.origin.authorName,"Viewer");
+  response=await fetch(base+"/v1/commlink/forums",{headers:{"x-spmt-tenant":"tenant-a",authorization:"Bearer service"}});assert.equal(response.status,403);
+ }finally{await new Promise(resolve=>server.close(resolve));store.close()}
 });
