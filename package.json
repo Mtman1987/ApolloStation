@@ -33,7 +33,8 @@
     "validate:local": "node scripts/validate-local.mjs",
     "setup:browser": "node scripts/setup-local-browser.mjs",
     "parity:audit": "node scripts/parity-audit.mjs",
-    "parity:rea": "node scripts/parity-rea.mjs"
+    "parity:rea": "node scripts/parity-rea.mjs",
+    "parity:donor-inventory": "node scripts/parity-donor-inventory.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",

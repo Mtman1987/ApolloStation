@@ -43,3 +43,30 @@ and owner acceptance remain explicit evidence where required.
 This first increment establishes the shared inventory and path-integrity
 check. It does not claim the five products are at parity or automate code
 changes without review.
+
+
+## Read-only donor evidence automation (v2)
+
+The confirmed source allowlist is `config/apollo-donor-sources.v1.json`.
+Run **Actions → Apollo donor inventory and REA evidence** and select a
+confirmed donor plus a branch, tag, or commit. The workflow checks out the
+donor with `persist-credentials: false`, records the resolved commit SHA,
+and creates a deterministic file inventory containing paths, sizes,
+extensions, and SHA-256 hashes. Secret-like files, binary files, dependency
+trees, build output, symlinks, and oversized files are excluded.
+
+The workflow then runs REA against the donor source tree as static-analysis
+input. It does not install donor dependencies, invoke donor scripts, launch
+the donor application, modify the donor repository, generate code patches,
+or merge changes. Inventory and REA output are retained as a downloadable
+workflow artifact for 30 days. Treat source and analyzer output as untrusted
+evidence; inspect findings before using them in a port.
+
+Use `npm run parity:donor-inventory -- --root <path> --repository <owner/name>
+--ref <ref> --output <file>` to generate an inventory locally. The output
+records the exact source commit when `DONOR_COMMIT_SHA` is provided.
+
+Nebula Arcade is intentionally not selectable yet: the connected repository
+inventory did not identify a separate donor repository. The registry records
+that unresolved mapping rather than guessing that another Nebula-named
+repository is the donor.
