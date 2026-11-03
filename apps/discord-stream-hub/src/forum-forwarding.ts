@@ -211,7 +211,16 @@ export class DshForumForwardingWorker {
             const record=records.find(row=>row.messageId===payload.messageId);
             if(record&&this.allowedGuilds(tenant).includes(record.guildId??String(payload.guildId??""))){
               const messageChannel=await this.discord.getChannel(tenant,record.channelId);
-              if(Number(messageChannel.type)!==12){
+              let forumThreadHandled=false;
+              if(Number(messageChannel.type)===11&&messageChannel.parent_id){
+                const parentChannel=await this.discord.getChannel(tenant,String(messageChannel.parent_id));
+                if([15,16].includes(Number(parentChannel.type))){
+                  const operation=item.type==="spmt.chat.message.mutated.v1"?(payload.operation==="delete"?"delete":payload.operation==="edit"?"edit":"create"):"create";
+                  if(await importDshDiscordForumThreadMessage(this.client,this.discord,tenant,record.guildId??String(payload.guildId??""),parentChannel,messageChannel,record,operation))forwarded++;
+                  forumThreadHandled=true;
+                }
+              }
+              if(Number(messageChannel.type)!==12&&!forumThreadHandled){
                 let sourceChannel=messageChannel;
                 if([10,11].includes(Number(messageChannel.type))&&messageChannel.parent_id)sourceChannel=await this.discord.getChannel(tenant,messageChannel.parent_id);
                 if(![15,16].includes(Number(sourceChannel.type))){
