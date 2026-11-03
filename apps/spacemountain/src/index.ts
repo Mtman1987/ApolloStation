@@ -57,6 +57,7 @@ export interface SpaceMountainShellSnapshotV1 {
   entitlements: Array<Record<string, unknown>>;
   usage?: PersonalUsageSummaryV1;
   events: Array<Record<string, unknown>>;
+  forumPosts?: Array<Record<string, unknown>>;
   conversations: Array<Record<string, unknown>>;
   commlinkRecipients: Array<{ userId: string; username: string; displayName: string }>;
   messages?: Array<Record<string, unknown>>;
@@ -124,6 +125,7 @@ export class SpaceMountainShellController {
       entitlements: this.spmt.listEntitlements(input.tenantId),
       usage: this.spmt.getPersonalUsage?.(input.tenantId) ?? Promise.reject(new Error("Personal usage is unavailable")),
       events: this.spmt.listEvents(input.tenantId, { limit: 100 }),
+      forumPosts: this.spmt.listCommlinkForumPosts?.(input.tenantId,{limit:50}) ?? Promise.resolve({posts:[]}),
       commlink: conversationsTask,
       commlinkRecipients: this.spmt.findCommlinkRecipients?.(input.tenantId) ?? Promise.resolve([]),
       commlinkMessages: messagesTask,
@@ -206,6 +208,7 @@ export class SpaceMountainShellController {
       entitlements: records(values.get("entitlements")),
       ...(isPersonalUsage(values.get("usage")) ? { usage: values.get("usage") as PersonalUsageSummaryV1 } : {}),
       events: records(values.get("events")),
+      forumPosts: records(record(values.get("forumPosts"))?.posts),
       conversations: records(values.get("commlink")),
       commlinkRecipients: commlinkRecipients(values.get("commlinkRecipients")),
       messages: records(values.get("commlinkMessages")),
