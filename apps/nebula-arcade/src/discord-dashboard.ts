@@ -114,7 +114,8 @@ export function buildNebulaDiscordDashboard(
   }];
   const components: NebulaDiscordDashboardPayloadV1["components"][number]["components"] = [];
   if (gamesUrl) components.push({ type: 2, style: 5, label: "Open all 20 games", emoji: { name: "🎮" }, url: gamesUrl });
-  const cleanMosaic = (value: unknown, limit = 180) => String(value ?? "").replace(/([\\`*_~|>])/g, "\\\\$1").replace(/[\\r\\n]/g, " ").slice(0, limit);\n  const mosaicChannel = String(options.mosaicChannel || "").replace(/^#/, "").trim().toLowerCase();
+  const cleanMosaic = (value: unknown, limit = 180) => String(value ?? "").replace(/[\r\n]/g, " ").slice(0, limit);
+  const mosaicChannel = String(options.mosaicChannel || "").replace(/^#/, "").trim().toLowerCase();
   const mosaicUrl = origin && mosaicChannel ? new URL(`/overlay/mosaic?channel=${encodeURIComponent(mosaicChannel)}`, origin).toString() : undefined;
   if (options.mosaic) {
     const art = options.mosaic.artwork;
