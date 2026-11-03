@@ -37,7 +37,7 @@ import { DshSimulationRoomDiscordTransport } from "./simulation-room.js";
 import { DshTenantSettingsStore } from './settings.js';
 import { dshShoutoutGroupSlug } from './shoutout-groups.js';
 import { dshSystemLiveChannelByLogin } from "./system-live-channels.js";
-import { DshRaidPileStore, DEFAULT_DSH_RAID_PILE_SETTINGS } from "./raid-pile.js";
+import { DshRaidPileStore, DEFAULT_DSH_RAID_PILE_SETTINGS } from "./raid-pile.js";\nimport { DshRaidTrainStore, type DshRaidTrainSignupV1 } from "./raid-train.js";
 import { DshPointsEventRouter, type DshProviderPointsEventV1 } from "./points-event-router.js";
 import { DshPointsService } from "./points.js";
 import { DshSpmtIdentityResolver } from "./provider-identity.js";
@@ -209,7 +209,7 @@ export class SupervisedDshLiveService {
   private readonly clipAcquisition:DshClipAcquisitionWorker;
   private readonly suiteActions: DshSuiteActionWorker;
   private readonly settings: DshTenantSettingsStore;
-  private readonly raidPile: DshRaidPileStore;
+  private readonly raidPile: DshRaidPileStore;\n  private readonly raidTrain: DshRaidTrainStore;
   private readonly identities: DshSpmtIdentityResolver;
   private readonly pointsRouter: DshPointsEventRouter;
   private readonly directory: ConfigDirectory;
@@ -232,7 +232,7 @@ export class SupervisedDshLiveService {
     this.memberDirectory = new DshMemberDirectoryStore(options.databasePath, options.config, this.settings);
     const directory = this.directory = new ConfigDirectory(options.config, this.settings, this.memberDirectory);
     this.monitor = new SqliteDshLiveMonitor(options.databasePath, options.config.pollIntervalSeconds * 1_000);
-    this.raidPile = new DshRaidPileStore(options.databasePath, tenantId => { const saved=this.settings.read(tenantId); return { maxSize:saved.raidPileMaxSize??DEFAULT_DSH_RAID_PILE_SETTINGS.maxSize, minSize:saved.raidPileMinSize??DEFAULT_DSH_RAID_PILE_SETTINGS.minSize, pointsReward:saved.raidPilePointsReward??DEFAULT_DSH_RAID_PILE_SETTINGS.pointsReward, handoffHours:saved.raidPileHandoffHours??DEFAULT_DSH_RAID_PILE_SETTINGS.handoffHours, monthlyStrikeLimit:saved.raidPileMonthlyStrikeLimit??DEFAULT_DSH_RAID_PILE_SETTINGS.monthlyStrikeLimit }; }, now);
+    this.raidTrain = new DshRaidTrainStore(options.databasePath, now);\n    this.raidPile = new DshRaidPileStore(options.databasePath, tenantId => { const saved=this.settings.read(tenantId); return { maxSize:saved.raidPileMaxSize??DEFAULT_DSH_RAID_PILE_SETTINGS.maxSize, minSize:saved.raidPileMinSize??DEFAULT_DSH_RAID_PILE_SETTINGS.minSize, pointsReward:saved.raidPilePointsReward??DEFAULT_DSH_RAID_PILE_SETTINGS.pointsReward, handoffHours:saved.raidPileHandoffHours??DEFAULT_DSH_RAID_PILE_SETTINGS.handoffHours, monthlyStrikeLimit:saved.raidPileMonthlyStrikeLimit??DEFAULT_DSH_RAID_PILE_SETTINGS.monthlyStrikeLimit }; }, now);
     this.messages = new SqliteDshDiscordMessageStore(options.databasePath);
     const liveDiscord = this.liveDiscord = new DshDiscordApi(new SpmtDshDiscordGrantSource(this.client, directory), fetchImpl);
     this.signalSeekers = new SqliteDshSignalSeekerStore(options.databasePath, now);
@@ -348,7 +348,7 @@ export class SupervisedDshLiveService {
     await this.runtime.flush(tenantId);
   }
   async runNebulaMedia(signal:AbortSignal){const combined=AbortSignal.any([signal,this.nebulaMediaAbort.signal]);this.nebulaMediaCycle=Promise.all([this.nebulaMedia?.run(combined),this.nebulaGameplayCapture?.run(combined)]).then(()=>undefined);await this.nebulaMediaCycle;}
-  runSuiteActions(signal: AbortSignal) { return this.suiteActions.run(signal); }
+  runSuiteActions(signal: AbortSignal) { return this.suiteActions.run(signal); }\n  raidTrainSchedule(tenant:string,guild:string,date:string){this.requireGuild(tenant,guild);return this.raidTrain.schedule(tenant,guild,date);}\n  raidTrainSignup(tenant:string,guild:string,date:string,hour:number,member:DshRaidTrainSignupV1){this.requireGuild(tenant,guild);return this.raidTrain.signup(tenant,guild,date,hour,member);}\n  raidTrainCancel(tenant:string,guild:string,date:string,hour:number,actor:string,owner=false){this.requireGuild(tenant,guild);return this.raidTrain.cancel(tenant,guild,date,hour,actor,owner);}\n  raidTrainPayload(tenant:string,guild:string,date:string){this.requireGuild(tenant,guild);return this.raidTrain.publishPayload(tenant,guild,date);}\n  private requireGuild(tenant:string,guild:string){if(!this.options.config.tenants.some(t=>t.tenantId===tenant&&t.discordGuildIds?.includes(guild)))throw Error("Choose a Discord server configured for this tenant");}
   close() {
     if (this.closing) return this.closing;
     this.closed = true;
@@ -359,7 +359,7 @@ export class SupervisedDshLiveService {
       let failed = false;
       try { await this.nebulaMediaCycle; await this.calendarCycle; await activeCycle; } catch (error) { failure = error; failed = true; }
       this.nebulaMedia?.close();this.nebulaGameplayCapture?.close();this.clipSpotlightMedia.close();this.clipAcquisition.close();this.roleBanners?.close();
-      this.memberDirectory.close();this.settings.close();this.raidPile.close();this.cleanup.close();this.activityStore.close();this.forumForwardingStore.close();this.signalSeekers.close();
+      this.memberDirectory.close();this.settings.close();this.raidPile.close();this.raidTrain.close();this.cleanup.close();this.activityStore.close();this.forumForwardingStore.close();this.signalSeekers.close();
       try { this.messages.close(); } catch (error) { if (!failed) { failure = error; failed = true; } }
       try { this.calendarSync?.close(); this.calendar.close(); } catch (error) { if (!failed) { failure = error; failed = true; } }
       try { this.applications.close(); } catch (error) { if (!failed) { failure = error; failed = true; } }
