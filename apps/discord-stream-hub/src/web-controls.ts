@@ -35,6 +35,7 @@ import { DshSimulationRoomDiscordTransport } from "./simulation-room.js";
 import { DshTenantSettingsStore } from "./settings.js";
 import { DshPointsService } from "./points.js";
 import { dshSignalSeekerPanelPayload, dshSignalDropInteractionPayload, dshSignalDropClue, SqliteDshSignalSeekerStore } from "./signal-seeker.js";
+import { DshVoidwalkerRewardWorker, SqliteDshVoidwalkerRewardStore } from "./voidwalker-reward-worker.js";
 
 export interface DshWebControlOptionsV1 {
   spmtOrigin: string;
@@ -72,6 +73,7 @@ export class DshWebControls {
   private onboarding?:DshOnboardingPanel;
   private delivery?:DshCalendarDelivery;
   private liveDiscord?:DshDiscordApi;
+  private voidwalkerRewards?:DshVoidwalkerRewardWorker;
   private readonly now: () => string;
 
   constructor(private readonly options: DshWebControlOptionsV1) {
@@ -107,13 +109,14 @@ export class DshWebControls {
       } };
       const liveDiscord = new DshDiscordApi(grants, options.fetchImpl);
       this.client=client;this.liveDiscord=liveDiscord;
+      if(options.databasePath&&this.config){this.voidwalkerRewards=new DshVoidwalkerRewardWorker(client,liveDiscord,new SqliteDshVoidwalkerRewardStore(options.databasePath),this.config.tenants, this.now, options.operationMode==="read-only");this.voidwalkerRewards.start();}
       if(this.forumForwardingStore)this.forumForwarding=new DshForumForwardingService(this.forumForwardingStore,liveDiscord,this.now);
       this.discord = new DshSimulationRoomDiscordTransport(liveDiscord, client, { guildIds: (tenantId) => this.config?.tenants.find((tenant) => tenant.tenantId === tenantId)?.discordGuildIds ?? [], now: this.now, liveWrites: options.operationMode !== "read-only" });
       if(this.calendar&&this.messages){this.sync=new DshCalendarSync(options.databasePath!,this.calendar,this.discord,this.now,options.publicOrigin);if(this.config&&options.publicOrigin)this.onboarding=new DshOnboardingPanel(this.calendar,this.messages,this.discord,client,this.config,options.publicOrigin,this.now);if(this.config)this.partners=new DshPartnerSchedules(this.calendar,this.messages,client,this.config,this.discord,options.fetchImpl,this.now,(tenant,guild)=>this.members(tenant,guild));this.delivery=new DshCalendarDelivery(this.calendar,this.messages,this.discord,this.now,client,options.operationMode==="read-only");}
     }
   }
 
-  close() { this.memberDirectory?.close();this.activity?.close();this.cleanup?.close();this.monitor?.close(); this.calendar?.close(); this.settings?.close(); this.messages?.close(); this.applications?.close(); this.shoutouts?.close();this.signalSeekers?.close();this.forumForwardingStore?.close();this.raidPile?.close();this.raidTrain?.close();this.clipGifs?.close();this.signalControlStore?.close(); }
+  close() { this.voidwalkerRewards?.close();this.memberDirectory?.close();this.activity?.close();this.cleanup?.close();this.monitor?.close(); this.calendar?.close(); this.settings?.close(); this.messages?.close(); this.applications?.close(); this.shoutouts?.close();this.signalSeekers?.close();this.forumForwardingStore?.close();this.raidPile?.close();this.raidTrain?.close();this.clipGifs?.close();this.signalControlStore?.close(); }
 
   async handle(request: IncomingMessage, response: ServerResponse, url: URL): Promise<boolean> {
     if(url.pathname==="/api/internal/media/clip"){
