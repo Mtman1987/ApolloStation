@@ -1,4 +1,4 @@
-import { readdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 const inputDir = process.argv[2] ?? "release-validation/logs";
@@ -85,5 +85,6 @@ if (triageRows.length) {
 }
 if (missing.length) lines.push("No log was produced for shard(s): " + missing.join(", ") + ". Inspect those Actions jobs for dependency, build, cancellation, or timeout errors.", "");
 if (rows.length === 0) lines.push("No shard logs were available. Inspect the four test jobs directly.", "");
+await mkdir(path.dirname(outputFile), { recursive: true });
 await writeFile(outputFile, lines.join("\n") + "\n");
 console.log(`Wrote ${outputFile}; diagnostic execution: ${completed ? "PASS" : "INCOMPLETE"}; test failures: ${total("fail")}`);
