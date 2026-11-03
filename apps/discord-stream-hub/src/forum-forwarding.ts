@@ -128,7 +128,7 @@ export class DshForumForwardingStore {
 }
 
 
-type DshForumDiscordPort = Pick<DshDiscordApi,"getChannel"|"createForumThread"|"createThreadMessage"|"editThreadMessage"|"deleteThreadMessage"|"setThreadArchived">;
+type DshForumDiscordPort = Pick<DshDiscordApi,"getChannel"|"getChannelMessage"|"listActiveThreads"|"listArchivedForumThreads"|"createForumThread"|"createThreadMessage"|"editThreadMessage"|"deleteThreadMessage"|"setThreadArchived">;
 
 export function dshForumThreadCreationIdempotencyKey(tenantId:string,forumId:string,sourceGuildId:string,sourceChannelId:string){return `thread:${tenantId}:${forumId}:${sourceGuildId}:${sourceChannelId}`;}
 
