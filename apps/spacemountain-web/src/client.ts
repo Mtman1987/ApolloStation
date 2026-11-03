@@ -700,8 +700,10 @@ async function watchEvents() {
   if (!currentPrincipal || loading || watchingEvents || document.visibilityState !== "visible") return;
   watchingEvents = true;
   try {
-    const events = await spmt.listEvents(currentPrincipal.tenantIds[0]!, { limit: 100 });
+    const tenantId = currentPrincipal.tenantIds[0]!;
+    const [events, forum] = await Promise.all([spmt.listEvents(tenantId, { limit: 100 }), spmt.listCommlinkForumPosts(tenantId, { limit: 50 })]);
     shellUi?.updateEvents(events);
+    shellUi?.updateForumPosts(forum.posts);
   } catch { /* Retain the last authorized feed through brief event-service interruptions. */ }
   finally { watchingEvents = false; }
 }
