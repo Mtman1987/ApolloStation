@@ -189,7 +189,7 @@ export class DshForumForwardingService {
     if([10,11,12,15,16].includes(event.channelType))return{status:"skipped" as const,reason:"thread-or-forum-source"};
     const rule=this.store.getRule(event.tenantId,event.guildId);if(!rule)return{status:"unconfigured" as const};
     if(rule.paused)return{status:"skipped" as const,reason:"paused"};
-    if(rule.restrictToWhitelist&&rule.sourceChannelWhitelist.length&&!rule.sourceChannelWhitelist.includes(event.channelId))return{status:"skipped" as const,reason:"not-whitelisted"};
+    if(rule.restrictToWhitelist&&!rule.sourceChannelWhitelist.includes(event.channelId))return{status:"skipped" as const,reason:"not-whitelisted"};
     const prior=this.store.getMessage(event.tenantId,event.guildId,event.channelId,event.messageId),operation=event.operation??"create";
     if(operation==="delete"){
       if(!prior||prior.deleted)return{status:"duplicate" as const};
