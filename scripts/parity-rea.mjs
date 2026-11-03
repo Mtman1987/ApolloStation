@@ -38,8 +38,9 @@ const result = spawnSync('npx', [
   target,
   '--json'
 ], {
-  encoding: 'utf8',
-  maxBuffer: 50 * 1024 * 1024,
+  // Stream full Evidence to stdout so the workflow can redirect it to an artifact.
+  // REA application reports can exceed the old 50 MiB in-memory buffer limit.
+  stdio: 'inherit',
   timeout: 10 * 60 * 1000,
   windowsHide: true
 });
@@ -47,6 +48,9 @@ const result = spawnSync('npx', [
 if (result.error) {
   console.error(`Unable to run REA: ${result.error.message}`);
   process.exit(1);
+}
+if (result.status !== 0) {
+  process.exit(result.status ?? 1);
 }
 if (result.status !== 0) {
   if (result.stdout) console.error(result.stdout);
