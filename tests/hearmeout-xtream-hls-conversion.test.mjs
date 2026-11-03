@@ -7,6 +7,7 @@ import {mkdtemp,readFile,writeFile,rm,stat} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createHearMeOutWebServer} from '../apps/hearmeout/dist/web-server-v3.js';
+import {SqliteHearMeOutRoomMediaRuntime} from '../apps/hearmeout/dist/room-media-core.js';
 import {ensureXtreamHls} from '../apps/hearmeout/dist/xtream-hls.js';
 
 const command=promisify(execFile);
@@ -20,7 +21,7 @@ test('uncached episode converts once, reaches EOF and serves playable HLS throug
  const keys=['HEARMEOUT_HLS_DIR','HEARMEOUT_XTREAM_BASE_URL','HEARMEOUT_XTREAM_USERNAME','HEARMEOUT_XTREAM_PASSWORD','WATCH_HLS_MAX_JOBS'];
  const previous=Object.fromEntries(keys.map(key=>[key,process.env[key]]));
  const originalLog=console.log,logs=[],acquisitions=[];
- let provider,host,conversion;
+ let provider,host,conversion,rooms;
  try{
   const sourcePath=join(root,'source.mp4');
   await command('ffmpeg',['-hide_banner','-loglevel','error','-f','lavfi','-i','color=c=blue:s=160x90:r=25',
@@ -46,7 +47,12 @@ test('uncached episode converts once, reaches EOF and serves playable HLS throug
   process.env.HEARMEOUT_XTREAM_PASSWORD='fixture-secret';
   process.env.WATCH_HLS_MAX_JOBS='1';
   console.log=(...args)=>{logs.push(args.map(String).join(' '));};
-  host=createHearMeOutWebServer({databasePath:join(root,'rooms.sqlite'),spmtOrigin:'http://127.0.0.1:1',port:0});
+  const databasePath=join(root,'rooms.sqlite');
+  rooms=new SqliteHearMeOutRoomMediaRuntime(databasePath);
+  const principal={tenantId:'crew',userId:'owner',displayName:'Owner',roles:['owner']};
+  rooms.createRoom(principal,{roomId:'hls-public',name:'HLS Public',privacy:'public',operationId:'create-hls-room'});
+  rooms.enqueue(principal,{roomId:'hls-public',lane:'movie',item:{itemId:'episode-77-mp4',type:'movie',title:'Episode 77',source:'xtream',playbackUrl:'/api/watch/xtream/hls/episode-77-mp4/index.m3u8'},operationId:'queue-hls-episode'});
+  host=createHearMeOutWebServer({databasePath,spmtOrigin:'http://127.0.0.1:1',port:0});
   await host.listen();
   const streamId='episode-77-mp4',base=`http://127.0.0.1:${host.server.address().port}`;
   const indexUrl=new URL(`/api/watch/xtream/hls/${streamId}/index.m3u8`,base);
@@ -95,6 +101,7 @@ test('uncached episode converts once, reaches EOF and serves playable HLS throug
  }finally{
   console.log=originalLog;
   await host?.close();
+  rooms?.close();
   if(provider){provider.closeAllConnections();await new Promise(resolve=>provider.close(resolve));}
   for(const key of keys){if(previous[key]===undefined)delete process.env[key];else process.env[key]=previous[key];}
   await rm(root,{recursive:true,force:true});
