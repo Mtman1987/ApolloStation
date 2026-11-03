@@ -22,7 +22,7 @@ export class StreamWeaverCommunityRuntime {
     if(invocation.canonicalTrigger==="!stats")return this.watchtime(invocation);
     return undefined;
   }
-  async checkin(input:{tenantId:string;actorId:string;linked:boolean;displayName?:string;partnerId:string;source:string;requestId:string;currency:"streamer"|"spmt";maxSpmtCost?:number}){
+  async checkin(input:{tenantId:string;actorId:string;linked:boolean;displayName?:string;partnerId:string;source:string;requestId:string;currency:"streamer"|"spmt";maxSpmtCost?:number;channel?:string}){
     if(input.currency==="spmt"&&!this.allowSpmtPayments)throw new Error("SPMT payments are disabled in this environment");
     const attempt=this.store.prepareCheckin(input.tenantId,input.actorId,input.partnerId,input.source,input.requestId,input.currency);
     if(attempt.reward){
@@ -42,7 +42,7 @@ export class StreamWeaverCommunityRuntime {
   ride(input:import("./ride-runtime.js").StreamRideRequest){return runStreamRide(this.store,this.economy,this.client,this.rideLookup,this.allowSpmtPayments,input,this.awardNebulaCheckinBonus);}
   async redeem(invocation:StreamWeaverDonorCommandInvocationV1){
     const args=[...invocation.args],rewardId=invocation.canonicalTrigger==="!redeem"?(args.shift()??""):invocation.canonicalTrigger.replace(/^!/,"");
-    const result=await this.redeemReward({tenantId:invocation.tenantId,requestId:invocation.deliveryId,rewardId,userId:invocation.actor.userId??"",displayName:invocation.actor.displayName,currency:args[0]?.toLowerCase()==="spmt"?"spmt":"streamer",...(args[1]?{maxSpmtCost:Number(args[1])}:{})});
+    const result=await this.redeemReward({tenantId:invocation.tenantId,requestId:invocation.deliveryId,rewardId,userId:invocation.actor.userId??"",displayName:invocation.actor.displayName,currency:args[0]?.toLowerCase()==="spmt"?"spmt":"streamer",channel:invocation.message.channelId,...(args[1]?{maxSpmtCost:Number(args[1])}:{})});
     return result.state==="complete"?result.text:`Reward declined: ${result.message}`;
   }
   async redeemReward(input:{tenantId:string;requestId:string;rewardId:string;userId:string;displayName:string;currency:"streamer"|"spmt";maxSpmtCost?:number}){
