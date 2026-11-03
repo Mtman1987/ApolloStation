@@ -67,6 +67,7 @@ export interface StreamWeaverProviderRuntimeOptionsV1 {
   connections?:Array<{tenantId:string;provider:string;connectionId:string;channelId:string;desired:boolean}>;
   allowTwitchMedia?: boolean;
   spaceMountainGoLive?: { channelId: string; start: () => Promise<SpaceMountainGoLiveResult> };
+  restreamControl?: { origin: string; credential: string };
 }
 
 /** Owns StreamWeaver's app-private chat state while Chat Gateway owns sockets. */
@@ -181,7 +182,44 @@ export class StreamWeaverProviderRuntime {
       assistant:async ({delivery,prompt,requestId})=>{if(options.simulation)return{status:"accepted",jobId:`simulation:assistant:${createHash("sha256").update(requestId+prompt).digest("hex")}`};if(options.allowAssistant===false)return {status:"unavailable",reason:"External assistant execution is disabled in this environment."};const userId=delivery.message.actor.canonicalUserId;if(!userId)return {status:"unavailable",reason:"Link your chat account to SPMT before using assistant flows."};const persona=this.settings.get(delivery.message.tenantId),intent=streamWeaverResearchIntent(prompt),preferences=this.runtimeSettings.research(delivery.message.tenantId);return options.client.invokeCommunityAssistant(delivery.message.tenantId,{userId,message:prompt,...(intent.kind==="query"&&preferences.enabled?{research:{...preferences,query:intent.query}}:{}),surface:"stream",conversationId:`streamweaver:flow:${requestId}`,routingPreference:"automatic",remember:false,...(persona?{presentation:{personaId:persona.personaId,displayName:persona.displayName,instructions:persona.instructions,memoryPolicy:persona.memoryPolicy}}:{})},`streamweaver-assistant:${requestId}`);},
     });
     const economy = new MultiTenantStreamWeaverEconomyCommandConsumer(this.economy, options.client, identities, this.commandState, egress, options.nowMs, Math.random);
-    const goLiveConfig = options.spaceMountainGoLive;
+    const restreamControl = options.restreamControl;
+    const goLiveConnection = (options.connections ?? []).find(connection => connection.tenantId === "spacemountainlive" && connection.provider === "twitch" && connection.desired);
+    const goLiveConfig = options.spaceMountainGoLive ?? (restreamControl && goLiveConnection && this.twitch && options.allowProviderWrites === true ? {
+      channelId: goLiveConnection.channelId,
+      start: async (): Promise<SpaceMountainGoLiveResult> => {
+        const verify = () => this.twitch!.uptime("spacemountainlive");
+        try {
+          const alreadyLive = await verify();
+          if (alreadyLive) return { ok: true, state: "already_live", startedAt: alreadyLive.startedAt, verifiedAt: new Date().toISOString() };
+        } catch {
+          return { ok: false, state: "verification_unavailable" };
+        }
+        try {
+          const response = await (options.providerFetch ?? fetch)(`${restreamControl.origin}/restream/start`, {
+            method: "POST",
+            headers: { authorization: `Bearer ${restreamControl.credential}`, accept: "application/json" },
+            redirect: "manual",
+            signal: AbortSignal.timeout(30_000),
+          });
+          if (!response.ok) return { ok: false, state: "start_failed" };
+        } catch {
+          return { ok: false, state: "service_unavailable" };
+        }
+        const deadline = Date.now() + 90_000;
+        let verificationFailed = false;
+        while (Date.now() < deadline) {
+          try {
+            const live = await verify();
+            verificationFailed = false;
+            if (live) return { ok: true, state: "live", startedAt: live.startedAt, verifiedAt: new Date().toISOString() };
+          } catch {
+            verificationFailed = true;
+          }
+          await new Promise(resolve => setTimeout(resolve, 2_000));
+        }
+        return { ok: false, state: verificationFailed ? "verification_unavailable" : "not_live" };
+      },
+    } : undefined);
     const spaceMountainGoLive: StreamWeaverProviderConsumerV1 | undefined = goLiveConfig ? {
       id: "streamweaver.spacemountain-golive",
       accepts: (message) => message.provider === "twitch" && message.tenantId === "spacemountainlive" && message.channelId === goLiveConfig.channelId && /^!golive$/i.test(message.text.trim()),
