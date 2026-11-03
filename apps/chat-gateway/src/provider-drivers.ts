@@ -73,46 +73,57 @@ export class DiscordGatewayProviderDriver implements ProviderConnectionDriverV1,
    * stays inside Chat Gateway; Nebula supplies only presentation and identity.
    */
   async upsertDiscordDashboard(message: NebulaDiscordDashboardPublishV1): Promise<NebulaDiscordDashboardResultV1> {
-    if (message.schemaVersion !== 1 || !/^\d{5,30}$/.test(message.channelId)) throw new Error("Nebula Discord dashboard target is invalid");
+    if (message.schemaVersion !== 1 || !/^\d{5,30}$/.test(message.channelId) || (message.threadId !== undefined && !/^\d{5,30}$/.test(message.threadId))) throw new Error("Nebula Discord dashboard target is invalid");
     const active = this.active.get(connectionKey({ tenantId: message.tenantId, provider: "discord", connectionId: message.connectionId }));
     if (!active || active.connection.channelId !== message.channelId) throw new Error("Discord dashboard connection is unavailable");
+    const targetChannelId = message.threadId ?? message.channelId;
+    if (message.threadId) await this.assertForumThreadTarget(active, message.channelId, message.threadId);
+    const threadQuery = message.threadId ? `?thread_id=${encodeURIComponent(message.threadId)}` : "";
     const webhookName = cleanDiscordWebhookName(message.webhookName);
     const avatarUrl = message.avatarUrl ? cleanHttpsUrl(message.avatarUrl, "Discord dashboard avatar") : undefined;
     const prior = message.previousMessageId && /^\d{5,30}$/.test(message.previousMessageId) ? message.previousMessageId : undefined;
     if (prior && message.previousTransport === "webhook") {
       const webhook = await this.getOrCreateWebhook(active, webhookName).catch(() => undefined);
       if (webhook) {
-        const response = await this.fetchImpl(`${DISCORD_API_ORIGIN}/webhooks/${webhook.id}/${webhook.token}/messages/${prior}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: webhookName, ...(avatarUrl ? { avatar_url: avatarUrl } : {}), ...message.payload }) });
+        const response = await this.fetchImpl(`${DISCORD_API_ORIGIN}/webhooks/${webhook.id}/${webhook.token}/messages/${prior}${threadQuery}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: webhookName, ...(avatarUrl ? { avatar_url: avatarUrl } : {}), ...message.payload }) });
         if (response.ok) return { providerMessageId: prior, transport: "webhook" };
         if (response.status !== 404) throw new Error(`Discord message update failed (${response.status})`);
       }
     }
     if (prior && message.previousTransport === "bot") {
-      const response = await this.fetchImpl(`${DISCORD_API_ORIGIN}/channels/${message.channelId}/messages/${prior}`, { method: "PATCH", headers: { Authorization: `Bot ${active.accessToken}`, "Content-Type": "application/json" }, body: JSON.stringify(message.payload) });
+      const response = await this.fetchImpl(`${DISCORD_API_ORIGIN}/channels/${targetChannelId}/messages/${prior}`, { method: "PATCH", headers: { Authorization: `Bot ${active.accessToken}`, "Content-Type": "application/json" }, body: JSON.stringify(message.payload) });
       if (response.ok) return { providerMessageId: prior, transport: "bot" };
       if (response.status !== 404) throw new Error(`Discord message update failed (${response.status})`);
     }
     const webhook = await this.getOrCreateWebhook(active, webhookName).catch(() => undefined);
     if (webhook) {
-      const response = await this.fetchImpl(`${DISCORD_API_ORIGIN}/webhooks/${webhook.id}/${webhook.token}?wait=true`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: webhookName, ...(avatarUrl ? { avatar_url: avatarUrl } : {}), ...message.payload }) });
+      const response = await this.fetchImpl(`${DISCORD_API_ORIGIN}/webhooks/${webhook.id}/${webhook.token}?wait=true${message.threadId ? `&thread_id=${encodeURIComponent(message.threadId)}` : ""}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: webhookName, ...(avatarUrl ? { avatar_url: avatarUrl } : {}), ...message.payload }) });
       if (response.ok) {
         const id = scalarString(record(await response.json())?.id);
         if (id) return { providerMessageId: id, transport: "webhook" };
       } else await response.text().catch(() => "");
     }
-    const fallback = await this.fetchImpl(`${DISCORD_API_ORIGIN}/channels/${message.channelId}/messages`, { method: "POST", headers: { Authorization: `Bot ${active.accessToken}`, "Content-Type": "application/json" }, body: JSON.stringify(message.payload) });
+    const fallback = await this.fetchImpl(`${DISCORD_API_ORIGIN}/channels/${targetChannelId}/messages`, { method: "POST", headers: { Authorization: `Bot ${active.accessToken}`, "Content-Type": "application/json" }, body: JSON.stringify(message.payload) });
     if (!fallback.ok) throw new Error(`Discord dashboard send failed with status ${fallback.status}`);
     const id = scalarString(record(await fallback.json())?.id);
     if (!id) throw new Error("Discord dashboard send returned no message id");
     return { providerMessageId: id, transport: "bot" };
   }
 
-  async deleteDiscordMessage(input:{tenantId:string;connectionId:string;channelId:string;messageId:string;transport:"webhook"|"bot"}){
-    if(!/^\d{5,30}$/.test(input.messageId)||!/^\d{5,30}$/.test(input.channelId))throw new Error("Invalid Discord media message");
+  async deleteDiscordMessage(input:{tenantId:string;connectionId:string;channelId:string;threadId?:string;messageId:string;transport:"webhook"|"bot"}){
+    if(!/^\d{5,30}$/.test(input.messageId)||!/^\d{5,30}$/.test(input.channelId)||(input.threadId!==undefined&&!/^\d{5,30}$/.test(input.threadId)))throw new Error("Invalid Discord media message");
     const active=this.active.get(connectionKey({...input,provider:"discord"}));if(!active||active.connection.channelId!==input.channelId)throw new Error("Discord connection unavailable");
+    if(input.threadId)await this.assertForumThreadTarget(active,input.channelId,input.threadId);
+    const targetChannelId=input.threadId??input.channelId;
     const webhook=input.transport==="webhook"?await this.getOrCreateWebhook(active,"Nebula Arcade"):undefined;
-    const url=webhook?`${DISCORD_API_ORIGIN}/webhooks/${webhook.id}/${webhook.token}/messages/${input.messageId}`:`${DISCORD_API_ORIGIN}/channels/${input.channelId}/messages/${input.messageId}`;
+    const url=webhook?`${DISCORD_API_ORIGIN}/webhooks/${webhook.id}/${webhook.token}/messages/${input.messageId}${input.threadId?`?thread_id=${encodeURIComponent(input.threadId)}`:""}`:`${DISCORD_API_ORIGIN}/channels/${targetChannelId}/messages/${input.messageId}`;
     const response=await this.fetchImpl(url,{method:"DELETE",headers:webhook?{}:{Authorization:`Bot ${active.accessToken}`}});if(!response.ok&&response.status!==404)throw new Error(`Discord media cleanup failed (${response.status})`);
+  }
+  private async assertForumThreadTarget(active: ActiveConnection, parentChannelId: string, threadId: string): Promise<void> {
+    const response = await this.fetchImpl(`${DISCORD_API_ORIGIN}/channels/${encodeURIComponent(threadId)}`, { method: "GET", headers: { Authorization: `Bot ${active.accessToken}` } });
+    if (!response.ok) throw new Error(`Discord forum thread lookup failed (${response.status})`);
+    const thread = record(await response.json());
+    if (stringValue(thread?.parent_id) !== parentChannelId || ![10, 11, 12].includes(numberValue(thread?.type) ?? -1)) throw new Error("Discord thread is not beneath the configured parent channel");
   }
   private async getOrCreateWebhook(active: ActiveConnection, webhookName: string) {
     const key = connectionKey(active.connection);
