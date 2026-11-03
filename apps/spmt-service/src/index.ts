@@ -522,9 +522,9 @@ export function createSpmtService(options: SpmtServiceOptions) {
           if (provider && !["twitch", "discord", "kick", "youtube", "social-stream", "tiktok"].includes(provider)) return json(response, 400, { error: "invalid_provider" });
           const limitValue = url.searchParams.get("limit");
           const limit = limitValue === null ? undefined : Number(limitValue);
-          return json(response, 200, commlinkLiveChat.list({ tenantId, ...(provider ? { provider: provider as ChatProviderV1 | "social-stream" | "tiktok" } : {}), ...(url.searchParams.get("channelId") ? { channelId: url.searchParams.get("channelId")! } : {}), ...(url.searchParams.get("search") ? { search: url.searchParams.get("search")! } : {}), ...(limit === undefined ? {} : { limit }) }));
+          return json(response, 200, commlinkLiveChat.list({ tenantId, ...(provider ? { provider: provider as ChatProviderV1 | "social-stream" | "tiktok" } : {}), ...(url.searchParams.get("channelId") ? { channelId: url.searchParams.get("channelId")! } : {}), ...(url.searchParams.get("messageId") ? { messageId: url.searchParams.get("messageId")! } : {}), ...(url.searchParams.get("search") ? { search: url.searchParams.get("search")! } : {}), ...(limit === undefined ? {} : { limit }) }));
         } catch (error) {
-          if (error instanceof Error && /limit|channelId|provider/.test(error.message)) return json(response, 400, { error: "invalid_query", message: error.message });
+          if (error instanceof Error && /limit|channelId|messageId|provider/.test(error.message)) return json(response, 400, { error: "invalid_query", message: error.message });
           return json(response, 403, { error: "forbidden" });
         }
       }
