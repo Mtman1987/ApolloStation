@@ -15,6 +15,7 @@ for (let i = 2; i < process.argv.length; i += 1) {
 const root = path.resolve(args.get('root') ?? '');
 const repository = args.get('repository');
 const ref = args.get('ref');
+const appPath = args.get('app-path');
 const output = path.resolve(args.get('output') ?? 'donor-inventory.json');
 const repositoryParts = typeof repository === 'string' ? repository.split('/') : [];
 const validRepository = repositoryParts.length === 2 && repositoryParts.every(part => /^[A-Za-z0-9_.-]+$/.test(part) && part !== '.' && part !== '..');
@@ -77,6 +78,7 @@ const report = {
   provenance: {
     repository,
     ref,
+    ...(appPath ? { appPath } : {}),
     commit: process.env.DONOR_COMMIT_SHA ?? null,
     inventoryOnly: true,
     donorCodeExecuted: false
