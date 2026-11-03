@@ -36,7 +36,7 @@ export class NebulaControlSurface {
   if(path==='trade'){
     const action=String(body.action||'');
     if(!['offer','accept','decline','cancel'].includes(action))throw new Error('Choose offer, accept, decline or cancel');
-    const result=this.tabletop.trade(tenant,player.userId,player.username,{action:action as 'offer'|'accept'|'decline'|'cancel',...(body.toId===undefined?{}:{toId:String(body.toId)}),...(body.giveCardId===undefined?{}:{giveCardId:Number(body.giveCardId)}),...(body.wantCardId===undefined?{}:{wantCardId:Number(body.wantCardId)}),...(body.offerId===undefined?{}:{offerId:String(body.offerId)})},this.games.get(tenant).players);
+    const result=this.tabletop.trade(tenant,player.userId,player.username,{action:action as 'offer'|'accept'|'decline'|'cancel',...(body.toId===undefined?{}:{toId:String(body.toId)}),...(body.giveCardId===undefined?{}:{giveCardId:Number(body.giveCardId)}),...(body.wantCardId===undefined?{}:{wantCardId:Number(body.wantCardId)}),...(body.offerId===undefined?{}:{offerId:String(body.offerId)}),...(body.requestId===undefined?{}:{requestId:String(body.requestId)})},this.games.get(tenant).players);
     return {result,quackverseTrades:this.tabletop.tradeSnapshot(tenant,player.userId,this.games.get(tenant).players)};
   }
   if(path==='enrollment')return this.network.enroll(`spmt:${player.userId}`,body.enrolled!==false);
