@@ -8,6 +8,7 @@ import {handleMediaProxyRoute,YoutubeStreamRegistry,YOUTUBE_STREAM_TTL_MS,YOUTUB
 // its signature, and any cookie stay out of responses and out of forwarded headers.
 
 const VID='dQw4w9WgXcQ';
+const SCOPE={tenantId:'tenant-a',userId:'u1'};
 const SECRET_SIG='SECRETSIG123';
 const CDN=`https://rr1---sn-test.googlevideo.com/videoplayback?id=${VID}&sig=${SECRET_SIG}&mime=audio%2Fmp4`;
 const VIDEO_CDN=`https://rr1---sn-test.googlevideo.com/videoplayback?id=${VID}&sig=${SECRET_SIG}&mime=video%2Fmp4`;
@@ -16,7 +17,7 @@ function harness({authed=true,fetchImpl,registry=new YoutubeStreamRegistry()}={}
  const calls=[];
  const fetchRecorder=async(input,init)=>{calls.push({url:String(input),init});return fetchImpl?fetchImpl(String(input),init):new Response('',{status:500})};
  const deps={
-  authenticate:async()=>{if(!authed)throw new Error('no session');return{userId:'u1'}},
+  authenticate:async()=>{if(!authed)throw new Error('no session');return{...SCOPE}},
   fetchImpl:fetchRecorder,
   youtubeStreams:registry,
  };
@@ -45,7 +46,7 @@ const partial=(body,contentType,range)=>new Response(body,{status:206,headers:{'
 test('every youtube stream route refuses an unauthenticated caller before any upstream call',async()=>{
  const h=await harness({authed:false,fetchImpl:()=>partial('x','audio/mp4','bytes 0-0/1')});
  try{
-  h.registry.put(VID,'audio',new URL(CDN));
+  h.registry.put(VID,'audio',new URL(CDN),SCOPE);
   const reg=await register(h,{videoId:VID,kind:'audio',url:CDN});
   assert.equal(reg.status,401);
   for(const path of [`/api/hearmeout/youtube-audio/proxy?videoId=${VID}`,`/api/hearmeout/youtube-video/proxy?videoId=${VID}`]){
@@ -127,12 +128,13 @@ test('proxy forwards one bounded window and never the whole file',async()=>{
   return partial('abcd','audio/mp4; codecs="mp4a.40.2"',`bytes 0-3/${YOUTUBE_STREAM_WINDOW_BYTES*50}`);
  }});
  try{
-  h.registry.put(VID,'audio',new URL(CDN));
+  h.registry.put(VID,'audio',new URL(CDN),SCOPE);
   const r=await call(h,`/api/hearmeout/youtube-audio/proxy?videoId=${VID}`);
   assert.equal(r.status,206);
   assert.equal(r.body,'abcd');
   assert.equal(r.headers.get('content-range'),`bytes 0-3/${YOUTUBE_STREAM_WINDOW_BYTES*50}`);
-  assert.equal(r.headers.get('cache-control'),'no-store');
+  assert.equal(r.headers.get('cache-control'),'private, no-store');
+  assert.equal(r.headers.get('vary'),'Cookie, Authorization');
   assert.equal(r.headers.get('access-control-allow-origin'),null);
   assert.equal(r.body.includes(SECRET_SIG),false);
   assert.equal(h.calls.length,1);
@@ -143,7 +145,7 @@ test('proxy caps a client range to one window and forwards no cookie or authoriz
  let seen;
  const h=await harness({fetchImpl:(url,init)=>{seen=init;return partial('z','audio/mp4','bytes 100-100/999999999')}});
  try{
-  h.registry.put(VID,'audio',new URL(CDN));
+  h.registry.put(VID,'audio',new URL(CDN),SCOPE);
   const r=await call(h,`/api/hearmeout/youtube-audio/proxy?videoId=${VID}`,{headers:{range:'bytes=100-',cookie:'spmt=secret',authorization:'Bearer abc'}});
   assert.equal(r.status,206);
   assert.equal(seen.headers.range,`bytes=100-${100+YOUTUBE_STREAM_WINDOW_BYTES-1}`);
@@ -155,7 +157,7 @@ test('proxy caps a client range to one window and forwards no cookie or authoriz
 test('proxy refuses an upstream that ignores the range instead of streaming the whole file',async()=>{
  const h=await harness({fetchImpl:()=>new Response('FULLFILE'.repeat(1000),{status:200,headers:{'content-type':'audio/mp4'}})});
  try{
-  h.registry.put(VID,'audio',new URL(CDN));
+  h.registry.put(VID,'audio',new URL(CDN),SCOPE);
   const r=await call(h,`/api/hearmeout/youtube-audio/proxy?videoId=${VID}`);
   assert.equal(r.status,502);
   assert.equal(r.body.includes('FULLFILE'),false);
@@ -166,7 +168,7 @@ test('proxy refuses an upstream that ignores the range instead of streaming the 
 test('proxy refuses an upstream response of the wrong media type',async()=>{
  const h=await harness({fetchImpl:()=>partial('x','text/html','bytes 0-0/10')});
  try{
-  h.registry.put(VID,'audio',new URL(CDN));
+  h.registry.put(VID,'audio',new URL(CDN),SCOPE);
   const r=await call(h,`/api/hearmeout/youtube-audio/proxy?videoId=${VID}`);
   assert.equal(r.status,502);
  }finally{await h.close()}
@@ -178,7 +180,7 @@ test('proxy refuses a redirect off the YouTube hosts and does not fetch the targ
   return partial('x','audio/mp4','bytes 0-0/10');
  }});
  try{
-  h.registry.put(VID,'audio',new URL(CDN));
+  h.registry.put(VID,'audio',new URL(CDN),SCOPE);
   const r=await call(h,`/api/hearmeout/youtube-audio/proxy?videoId=${VID}`);
   assert.equal(r.status,403);
   assert.equal(h.calls.some(c=>c.url.includes('internal.example.test')),false);
@@ -188,10 +190,10 @@ test('proxy refuses a redirect off the YouTube hosts and does not fetch the targ
 test('video proxy serves only video registrations',async()=>{
  const h=await harness({fetchImpl:()=>partial('v','video/mp4','bytes 0-0/10')});
  try{
-  h.registry.put(VID,'audio',new URL(CDN));
+  h.registry.put(VID,'audio',new URL(CDN),SCOPE);
   const r=await call(h,`/api/hearmeout/youtube-video/proxy?videoId=${VID}`);
   assert.equal(r.status,404);
-  h.registry.put(VID,'video',new URL(VIDEO_CDN));
+  h.registry.put(VID,'video',new URL(VIDEO_CDN),SCOPE);
   const ok=await call(h,`/api/hearmeout/youtube-video/proxy?videoId=${VID}`);
   assert.equal(ok.status,206);
   assert.equal(ok.headers.get('content-type'),'video/mp4');
@@ -201,16 +203,16 @@ test('video proxy serves only video registrations',async()=>{
 test('registry expires entries after the TTL and caps its size',()=>{
  let now=1_000;
  const registry=new YoutubeStreamRegistry(()=>now);
- registry.put(VID,'audio',new URL(CDN));
- assert.ok(registry.get(VID,'audio'));
+ registry.put(VID,'audio',new URL(CDN),SCOPE);
+ assert.ok(registry.get(VID,'audio',SCOPE));
  now+=YOUTUBE_STREAM_TTL_MS;
- assert.equal(registry.get(VID,'audio'),undefined);
+ assert.equal(registry.get(VID,'audio',SCOPE),undefined);
 
  const capped=new YoutubeStreamRegistry(()=>now);
  for(let i=0;i<YOUTUBE_STREAM_MAX_ENTRIES+10;i+=1){
-  capped.put(`vid_${String(i).padStart(7,'0')}`,'audio',new URL(CDN));
+  capped.put(`vid_${String(i).padStart(7,'0')}`,'audio',new URL(CDN),SCOPE);
  }
  assert.equal(capped.size(),YOUTUBE_STREAM_MAX_ENTRIES);
- assert.equal(capped.get('vid_0000000','audio'),undefined);
- assert.ok(capped.get(`vid_${String(YOUTUBE_STREAM_MAX_ENTRIES+9).padStart(7,'0')}`,'audio'));
+ assert.equal(capped.get('vid_0000000','audio',SCOPE),undefined);
+ assert.ok(capped.get(`vid_${String(YOUTUBE_STREAM_MAX_ENTRIES+9).padStart(7,'0')}`,'audio',SCOPE));
 });

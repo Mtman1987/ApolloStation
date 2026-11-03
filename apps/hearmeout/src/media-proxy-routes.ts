@@ -188,7 +188,7 @@ function matchRoute(method: string, pathname: string): Handler | undefined {
   if (method === 'GET' && pathname === '/api/hearmeout/youtube-audio/proxy') return youtubeStreamProxy('audio');
   if (method === 'GET' && pathname === '/api/hearmeout/youtube-video/proxy') return youtubeStreamProxy('video');
   if (method === 'GET' && pathname === '/api/watch/xtream/status') return xtreamStatus;
-  if (method === 'GET' && /^/api/watch/xtream/direct-test/[^/]+$/.test(pathname)) return xtreamDirectTest;
+  if (method === 'GET' && /^\/api\/watch\/xtream\/direct-test\/[^/]+$/.test(pathname)) return xtreamDirectTest;
   return undefined;
 }
 
@@ -241,16 +241,14 @@ function rewriteManifest(manifest: string, upstreamUrl: URL, proxyPath: string):
     return `${proxyPath}?url=${encodeURIComponent(absolute)}`;
   };
   return manifest
-    .split(/?
-/)
+    .split(/\r?\n/)
     .map(line => {
       const trimmed = line.trim();
       if (!trimmed) return line;
       if (trimmed.startsWith('#')) return line.replace(/URI="([^"]+)"/g, (_m, value: string) => `URI="${proxied(value)}"`);
       return proxied(trimmed);
     })
-    .join('
-');
+    .join('\n');
 }
 
 function downloadFilename(url: URL): string {
@@ -443,7 +441,7 @@ function youtubeStreamProxy(kind: YoutubeStreamKind): Handler {
 
 // Turns any Range header into one window of at most YOUTUBE_STREAM_WINDOW_BYTES.
 function windowedRange(header: string | null): string {
-  const match = header ? /^bytes=(d+)-(d*)$/i.exec(header.trim()) : null;
+  const match = header ? /^bytes=(\d+)-(\d*)$/i.exec(header.trim()) : null;
   const start = match ? Number(match[1]) : 0;
   if (!Number.isSafeInteger(start)) return `bytes=0-${YOUTUBE_STREAM_WINDOW_BYTES - 1}`;
   const windowEnd = start + YOUTUBE_STREAM_WINDOW_BYTES - 1;
@@ -479,7 +477,7 @@ const xtreamStatus: Handler = async (_request, response, _url, deps) => {
 
 const xtreamDirectTest: Handler = async (_request, response, url, deps) => {
   const streamId = decodeURIComponent(url.pathname.slice('/api/watch/xtream/direct-test/'.length)).trim();
-  if (!/^d{1,20}$/.test(streamId)) return sendJson(response, 400, { ok: false, error: 'Use a numeric VOD stream ID.' });
+  if (!/^\d{1,20}$/.test(streamId)) return sendJson(response, 400, { ok: false, error: 'Use a numeric VOD stream ID.' });
   if (!deps.xtreamVodUrl) return sendJson(response, 503, { ok: false, error: 'Provider probe is unavailable' });
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
