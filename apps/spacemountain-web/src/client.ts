@@ -176,6 +176,8 @@ async function loadShell() {
       onSearchCommlink: (query) => void searchCommlink(query),
       onSendCommlinkMessage: (conversation, text) => sendCommlinkMessage(conversation, text),
       onComposeCommlinkMail: (recipientUserIds, subject, text) => composeCommlinkMail(recipientUserIds, subject, text),
+      onCreateForumPost: async (title, body) => { await spmt.createCommlinkForumPost(principal.tenantIds[0]!, { title, body }); const result = await spmt.listCommlinkForumPosts(principal.tenantIds[0]!, { limit: 50 }); shellUi?.updateForumPosts(result.posts); },
+      onCreateForumReply: async (postId, body) => { await spmt.createCommlinkForumReply(principal.tenantIds[0]!, postId, { body }); const result = await spmt.listCommlinkForumPosts(principal.tenantIds[0]!, { limit: 50 }); shellUi?.updateForumPosts(result.posts); },
       onMarkAllCommlinkRead: () => void markAllCommlinkRead(),
       onInvokeStella: (message, conversationId, routingPreference, remember) => void invokeStella(message, conversationId, routingPreference, remember),
       onExportStellarData: () => void exportStellarData(),
