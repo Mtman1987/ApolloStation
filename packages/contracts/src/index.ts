@@ -547,6 +547,7 @@ export interface CommlinkLiveChatQueryV1 {
   tenantId: string;
   provider?: ChatProviderV1 | "social-stream" | "tiktok";
   channelId?: string;
+  messageId?: string;
   search?: string;
   limit?: number;
 }
