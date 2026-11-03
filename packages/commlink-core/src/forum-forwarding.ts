@@ -4,10 +4,10 @@ export type CommlinkForumForwardRuleV1={schemaVersion:1;tenantId:string;sourceGu
 function snowflake(value:unknown,name:string){const v=String(value??"");if(v.length<5||v.length>30||Array.from(v).some(c=>c<"0"||c>"9"))throw Error("Invalid forum forwarding "+name);return v;}
 export function validateCommlinkForumForwardRule(value:CommlinkForumForwardRuleV1):CommlinkForumForwardRuleV1{
  if(!value||value.schemaVersion!==1||typeof value.paused!=="boolean"||typeof value.restrictToWhitelist!=="boolean"||!Array.isArray(value.sourceChannelWhitelist)||value.sourceChannelWhitelist.length>500)throw Error("Invalid forum forwarding rule");
- const sourceGuildId=snowflake(value.sourceGuildId,"source guild"),destinationGuildId=snowflake(value.destinationGuildId,"destination guild"),forumChannelId=snowflake(value.mode==="single-thread"?value.sharedThreadId:value.forumChannelId,value.mode==="single-thread"?"shared thread":"forum channel");
  if(value.mode!=="per-channel"&&value.mode!=="single-thread")throw Error("Invalid forum forwarding mode");
+ const sourceGuildId=snowflake(value.sourceGuildId,"source guild"),destinationGuildId=snowflake(value.destinationGuildId,"destination guild"),forumChannelId=snowflake(value.forumChannelId,"forum channel"),sharedThreadId=value.mode==="single-thread"?snowflake(value.sharedThreadId,"shared thread"):undefined;
  const sourceChannelWhitelist=[...new Set(value.sourceChannelWhitelist.map(v=>snowflake(v,"source channel")))];
- return {...value,sourceGuildId,destinationGuildId,forumChannelId,...(value.mode==="single-thread"?{sharedThreadId:forumChannelId}:{}),sourceChannelWhitelist};
+ return {...value,sourceGuildId,destinationGuildId,forumChannelId,...(sharedThreadId?{sharedThreadId}:{}),sourceChannelWhitelist};
 }
 export class CommlinkForumForwardingStore{
  private readonly db:DatabaseSync;
