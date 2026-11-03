@@ -32,7 +32,9 @@ test("forum API requires a user session and scopes every operation to the select
  const call=(tenant,path,{method="GET",token="alice",body}={})=>fetch(base+path,{method,headers:{"x-spmt-tenant":tenant,authorization:"Bearer "+token,"content-type":"application/json"},...(body?{body:JSON.stringify(body)}:{})});
  try{
   assert.equal((await fetch(base+"/v1/commlink/forums",{headers:{"x-spmt-tenant":"tenant-a"}})).status,401);
-  let response=await call("tenant-a","/v1/commlink/forums",{method:"POST",body:{title:"Topic",body:"Hello"}});
+  let response=await call("tenant-a","/v1/commlink/forums",{method:"POST",body:{title:"Forged source",body:"Nope",origin:{provider:"discord",channelId:"channel",messageId:"message"}}});
+  assert.equal(response.status,403);
+  response=await call("tenant-a","/v1/commlink/forums",{method:"POST",body:{title:"Topic",body:"Hello"}});
   assert.equal(response.status,201);const post=(await response.json()).post;
   response=await call("tenant-b","/v1/commlink/forums/"+post.id);assert.equal((await response.json()).post,undefined);
   response=await call("tenant-a","/v1/commlink/forums/"+post.id+"/replies",{method:"POST",token:"bob",body:{body:"Reply"}});
