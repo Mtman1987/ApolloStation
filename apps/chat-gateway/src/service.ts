@@ -2,6 +2,7 @@ import {TikTokLiveIngestor,createTikTokConnection} from "./tiktok-live.js";
 import {StreamWeaverTikTokStore} from "@spmt/streamweaver";
 import { SimulationRoomRuntime, SimulationRoomWorker } from "./simulation-runtime.js";
 import { basename, isAbsolute, dirname, join, resolve } from "node:path";
+import { createHash } from "node:crypto";
 import { createSpmtCommlinkLiveChatConsumer } from "@spmt/commlink-core";
 import { SpmtClient } from "@spmt/sdk";
 import { PollinationsStreamWeaverImageProvider, CloudflareStreamWeaverImageProvider, EdenStreamWeaverImageProvider, StreamWeaverGenerationStore, NodeSeaArtCommandRunner, SeaArtCliProvider, StreamWeaverImageGenerationService, StreamWeaverImageWorker, StreamWeaverProviderRuntime, StreamWeaverSuiteActionJobExecutor, StreamWeaverAvatarWorker, BlenderAvatarGeometry, StreamWeaverRuntimeSettingsStore, type StreamWeaverBotActionExecutorV1 } from "@spmt/streamweaver";
@@ -379,8 +380,11 @@ export class SupervisedChatGatewayService {
           report.sent+=1;continue;
         }else if(operation==="create-thread"){
           if(threadId)throw new Error("Forum thread creation must target a parent channel, not an existing thread");
-          const name=boundedInput(input.name,"name",100),content=boundedInput(input.content,"content",1900);
-          const created=await this.discordDriver.createDiscordForumThread({tenantId:job.tenantId,connectionId,channelId,name,content});
+          const name=boundedInput(input.name,"name",100),sourceContent=boundedInput(input.content,"content",1900);
+          // Discord has no create-thread idempotency contract; reconcile a stable job marker first.
+          const marker="||SPMT egress key: "+createHash("sha256").update(job.tenantId+":"+job.id).digest("hex").slice(0,24)+"||";
+          const content=sourceContent.slice(0,Math.max(1,1890-marker.length))+"\n\n"+marker;
+          const created=await this.discordDriver.createDiscordForumThread({tenantId:job.tenantId,connectionId,channelId,name,content,idempotencyMarker:marker});
           if(!job.leaseId)throw new Error("Commlink forum egress job lease is unavailable");
           await this.connectionClient.succeedExecutionJob(job.tenantId,job.id,workerId,job.leaseId,job.fencingEpoch,{schemaVersion:1,provider:"discord",operation:"create-thread",threadId:created.threadId,messageId:created.messageId});
           report.sent+=1;continue;
