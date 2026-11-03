@@ -57,6 +57,20 @@ export async function importDshDiscordForumThreads(client:SpmtClient,discord:Dsh
   return {forumId:forumKey,threadsDiscovered:byId.size,postsImported:posts,repliesImported:replies,skippedThreads:skipped,truncatedThreads};
 }
 
+
+/** Applies one live Discord forum-thread message to its native Commlink post or reply. */
+export async function importDshDiscordForumThreadMessage(client:SpmtClient,discord:DshDiscordApi,tenantId:string,guildId:string,forum:any,thread:any,record:any,operation:"create"|"edit"|"delete"="create"){
+  if(record.isBot)return false;const threadId=String(thread.id??""),forumId=String(forum.id??""),messageId=String(record.messageId??"");if(!threadId||!forumId||!messageId)return false;
+  const starterId=threadId,starterUrl="https://discord.com/channels/"+guildId+"/"+threadId+"/"+starterId;
+  let starter:any;if(operation==="delete"&&messageId===starterId)starter={id:starterId,content:record.text,author:{id:record.providerUserId,username:record.displayName??record.username},timestamp:record.occurredAt};else starter=await discord.getChannelMessage(tenantId,threadId,starterId);
+  if(!starter?.id)return false;const starterAuthor={id:String(starter.author?.id??"unknown"),name:String(starter.author?.global_name??starter.author?.username??"Discord member")};
+  const body=(value:string,attachments:any[]=[])=>[String(value??"").trim(),...attachments.flatMap(a=>{const url=forumHttps(a.url??a.proxyUrl);return url?[url]:[];})].filter(Boolean).join("\n")||"[Discord attachment]";
+  let parent:any;try{parent=await forwardDshForumPost(client,tenantId,{sourceApp:"discord-stream-hub",sourceServerId:guildId,sourceChannelId:forumId,sourceChannelName:String(forum.name??forumId),sourceThreadId:threadId,sourceMessageId:starterId,sourceMessageUrl:starterUrl,authorId:starterAuthor.id,authorName:starterAuthor.name,title:String(thread.name||"Discord forum post").slice(0,300),content:body(String(starter.content??""),starter.attachments??[]),postedAt:starter.timestamp??record.occurredAt,attachments:starter.attachments??[],embeds:starter.embeds??[],...(messageId===starterId?{operation}:{})});}catch(error){if(messageId!==starterId&&(error as Error)?.message?.includes("already deleted"))return true;throw error;}
+  if(messageId===starterId)return true;const origin={provider:"discord",channelId:forumId,threadId,messageId,authorId:String(record.providerUserId??"unknown"),authorName:String(record.displayName??record.username??"Discord member"),sourceUrl:"https://discord.com/channels/"+guildId+"/"+threadId+"/"+messageId,sourceApp:"discord-stream-hub"};
+  if(operation==="delete"){try{await client.mutateCommlinkForumImport(tenantId,{kind:"reply",operation:"delete",origin});}catch(error){if((error as {status?:number})?.status!==404)throw error;}return true;}
+  if(operation==="edit"){try{await client.mutateCommlinkForumImport(tenantId,{kind:"reply",operation:"edit",origin,body:body(record.text,record.rich?.attachments??[])});}catch(error){if((error as {status?:number})?.status!==404)throw error;await client.createCommlinkForumReply(tenantId,parent.post!.id,{body:body(record.text,record.rich?.attachments??[]),origin});}return true;}
+  await client.createCommlinkForumReply(tenantId,parent.post!.id,{body:body(record.text,record.rich?.attachments??[]),origin});return true;
+}
 export type DshForumForwardRuleV1 = {
   schemaVersion:1; tenantId:string; sourceGuildId:string; destinationGuildId:string; forumChannelId:string;
   mode:"per-channel"|"single-thread"; sharedThreadId?:string; paused:boolean;
@@ -197,7 +211,16 @@ export class DshForumForwardingWorker {
             const record=records.find(row=>row.messageId===payload.messageId);
             if(record&&this.allowedGuilds(tenant).includes(record.guildId??String(payload.guildId??""))){
               const messageChannel=await this.discord.getChannel(tenant,record.channelId);
-              if(Number(messageChannel.type)!==12){
+              let forumThreadHandled=false;
+              if(Number(messageChannel.type)===11&&messageChannel.parent_id){
+                const parentChannel=await this.discord.getChannel(tenant,String(messageChannel.parent_id));
+                if([15,16].includes(Number(parentChannel.type))){
+                  const operation=item.type==="spmt.chat.message.mutated.v1"?(payload.operation==="delete"?"delete":payload.operation==="edit"?"edit":"create"):"create";
+                  if(await importDshDiscordForumThreadMessage(this.client,this.discord,tenant,record.guildId??String(payload.guildId??""),parentChannel,messageChannel,record,operation))forwarded++;
+                  forumThreadHandled=true;
+                }
+              }
+              if(Number(messageChannel.type)!==12&&!forumThreadHandled){
                 let sourceChannel=messageChannel;
                 if([10,11].includes(Number(messageChannel.type))&&messageChannel.parent_id)sourceChannel=await this.discord.getChannel(tenant,messageChannel.parent_id);
                 if(![15,16].includes(Number(sourceChannel.type))){

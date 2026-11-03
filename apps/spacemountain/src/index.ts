@@ -125,7 +125,7 @@ export class SpaceMountainShellController {
       entitlements: this.spmt.listEntitlements(input.tenantId),
       usage: this.spmt.getPersonalUsage?.(input.tenantId) ?? Promise.reject(new Error("Personal usage is unavailable")),
       events: this.spmt.listEvents(input.tenantId, { limit: 100 }),
-      forumPosts: this.spmt.listCommlinkForumPosts?.(input.tenantId,{limit:50}) ?? Promise.resolve({posts:[]}),
+      forumPosts: this.spmt.listCommlinkForumPosts?.(input.tenantId,{limit:50}).then(async result=>({posts:[...await Promise.all(result.posts.slice(0,4).map(async post=>({...post,replies:(await this.spmt.getCommlinkForumPost(input.tenantId,post.id)).replies}))),...result.posts.slice(4)]})) ?? Promise.resolve({posts:[]}),
       commlink: conversationsTask,
       commlinkRecipients: this.spmt.findCommlinkRecipients?.(input.tenantId) ?? Promise.resolve([]),
       commlinkMessages: messagesTask,

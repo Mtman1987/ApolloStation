@@ -698,14 +698,16 @@ async function logout() {
   showAuth("Signed out of the isolated sandbox.");
 }
 
+async function fetchForumPosts(tenantId:string){const result=await spmt.listCommlinkForumPosts(tenantId,{limit:50});const details=await Promise.all(result.posts.slice(0,4).map(async post=>({...post,replies:(await spmt.getCommlinkForumPost(tenantId,post.id)).replies})));return [...details,...result.posts.slice(4)];}
+
 async function watchEvents() {
   if (!currentPrincipal || loading || watchingEvents || document.visibilityState !== "visible") return;
   watchingEvents = true;
   try {
     const tenantId = currentPrincipal.tenantIds[0]!;
-    const [eventsResult, forumResult] = await Promise.allSettled([spmt.listEvents(tenantId, { limit: 100 }), spmt.listCommlinkForumPosts(tenantId, { limit: 50 })]);
+    const [eventsResult, forumResult] = await Promise.allSettled([spmt.listEvents(tenantId, { limit: 100 }), fetchForumPosts(tenantId)]);
     if (eventsResult.status === "fulfilled") shellUi?.updateEvents(eventsResult.value);
-    if (forumResult.status === "fulfilled") shellUi?.updateForumPosts(forumResult.value.posts);
+    if (forumResult.status === "fulfilled") shellUi?.updateForumPosts(forumResult.value);
   } catch { /* Retain the last authorized feed through brief event-service interruptions. */ }
   finally { watchingEvents = false; }
 }

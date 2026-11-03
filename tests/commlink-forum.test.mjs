@@ -78,6 +78,8 @@ test("scoped DSH service can import only provider-attributed forum posts",async(
   let replyResponse=await createReply();assert.equal(replyResponse.status,201);const importedReply=(await replyResponse.json()).reply;
   replyResponse=await createReply();assert.equal((await replyResponse.json()).reply.id,importedReply.id);
   const mutate=body=>fetch(base+"/v1/commlink/forums/import-mutations",{method:"POST",headers:{"x-spmt-tenant":"tenant-a",authorization:"Bearer service","content-type":"application/json"},body:JSON.stringify(body)});
+  response=await mutate({kind:"reply",operation:"edit",origin:replyOrigin,body:"Edited reply"});assert.equal(response.status,200);assert.equal((await response.json()).reply.body,"Edited reply");
+  response=await mutate({kind:"reply",operation:"delete",origin:replyOrigin});assert.equal(response.status,200);
   response=await mutate({operation:"edit",origin:post.origin,title:"Updated from Discord",body:"Edited body"});assert.equal(response.status,200);assert.equal((await response.json()).post.body,"Edited body");
   response=await mutate({operation:"delete",origin:post.origin});assert.equal(response.status,200);assert.equal((await response.json()).deleted,true);
   response=await mutate({operation:"delete",origin:post.origin});assert.equal(response.status,200);
@@ -97,5 +99,20 @@ test("trusted provider edits and deletes update native posts and replay safely",
   assert.equal(store.mutateImportedPost("tenant-a",origin,"delete").id,created.id);
   assert.equal(store.getPost("tenant-a",created.id),undefined);
   assert.throws(()=>store.createPost("tenant-a","discord-stream-hub","Original title","Original body",origin),/already deleted/);
+ }finally{store.close()}
+});
+
+test("trusted imported reply edits and deletes are idempotent",()=>{
+ const store=new CommlinkForumStore(":memory:");
+ try{
+  const postOrigin={provider:"discord",channelId:"forum",threadId:"thread",messageId:"starter"};
+  const post=store.createPost("tenant-a","discord-stream-hub","Thread","Starter",postOrigin);
+  const replyOrigin={provider:"discord",channelId:"forum",threadId:"thread",messageId:"reply"};
+  const reply=store.createReply("tenant-a",post.id,"discord-stream-hub","First reply",replyOrigin);
+  const edited=store.mutateImportedReply("tenant-a",replyOrigin,"edit","Updated reply");
+  assert.equal(edited.reply.body,"Updated reply");
+  assert.equal(store.mutateImportedReply("tenant-a",replyOrigin,"delete").id,reply.id);
+  assert.equal(store.mutateImportedReply("tenant-a",replyOrigin,"delete").id,reply.id);
+  assert.throws(()=>store.createReply("tenant-a",post.id,"discord-stream-hub","First reply",replyOrigin),/already deleted/);
  }finally{store.close()}
 });
