@@ -365,7 +365,14 @@ export class SupervisedChatGatewayService {
         if(!configured||!configured.desired||configured.channelId!==channelId)throw new Error("The selected Discord parent channel is not an active Chat Gateway connection");
         const threadId=input.threadId===undefined?undefined:requiredInput(input.threadId,"threadId");
         const operation=input.operation===undefined?"upsert":input.operation;
-        if(operation==="delete"){
+        if(operation==="create-thread"){
+          if(threadId)throw new Error("Forum thread creation must target a parent channel, not an existing thread");
+          const name=boundedInput(input.name,"name",100),content=boundedInput(input.content,"content",1900);
+          const created=await adapters.discord.createDiscordForumThread({tenantId:job.tenantId,connectionId,channelId,name,content});
+          if(!job.leaseId)throw new Error("Commlink forum egress job lease is unavailable");
+          await this.connectionClient.succeedExecutionJob(job.tenantId,job.id,workerId,job.leaseId,job.fencingEpoch,{schemaVersion:1,provider:"discord",operation:"create-thread",threadId:created.threadId,messageId:created.messageId});
+          report.sent+=1;continue;
+        }else if(operation==="delete"){
           const messageId=requiredInput(input.messageId,"messageId"),transport=input.transport;
           if(transport!=="webhook"&&transport!=="bot")throw new Error("Discord forum delete transport is invalid");
           if(!this.discordDashboard.deleteDiscordMessage)throw new Error("Discord forum delete is not supported by the active provider adapter");
