@@ -23,7 +23,7 @@ export interface ChatGatewayWorkerEnvironmentV1 {
   workerId: string;
   connections: ProviderConnectionConfigV1[];
   reconcileMs: number;
-  streamweaver?: { databasePath: string; credential: string; image?: { token: string; modelNo: string; modelVerNo: string; binary: string; edenKey?:string;edenModel?:string;cloudflareAccountId?:string;cloudflareToken?:string;pollinationsToken?:string };avatar?:{outboundEnabled:boolean;blenderBinary:string;geometryScriptPath:string} };
+  streamweaver?: { databasePath: string; credential: string; image?: { token: string; modelNo: string; modelVerNo: string; binary: string; edenKey?:string;edenModel?:string;cloudflareAccountId?:string;cloudflareToken?:string;pollinationsToken?:string };avatar?:{outboundEnabled:boolean;blenderBinary:string;geometryScriptPath:string};restreamControl?:{origin:string;credential:string} };
   nebulaArcade?: { databasePath: string; credential: string; configPath: string; config: NebulaArcadeProviderConfigV1; publicOrigin?: string; gameplayOrigin?: string; webhookName: string; avatarUrl?: string };
 }
 
@@ -50,6 +50,10 @@ export function validateChatGatewayWorkerEnvironment(environment: NodeJS.Process
   const streamweaverEnabled = environment.STREAMWEAVER_PROVIDER_RUNTIME_ENABLED === "1";
   const streamweaverCredential = environment.STREAMWEAVER_WORKER_CREDENTIAL;
   const streamweaverDatabasePath = environment.STREAMWEAVER_DATABASE_PATH;
+  const restreamOriginValue = environment.STREAMWEAVER_RESTREAM_CONTROL_ORIGIN;
+  const restreamCredential = environment.STREAMWEAVER_RESTREAM_CONTROL_CREDENTIAL;
+  if (Boolean(restreamOriginValue) !== Boolean(restreamCredential)) throw new Error("StreamWeaver Restream control origin and credential must be configured together");
+  if (runtimeMode === "sandbox" && (restreamOriginValue || restreamCredential)) throw new Error("Sandbox StreamWeaver rejects live Restream control");
   if (!streamweaverEnabled && (streamweaverCredential || streamweaverDatabasePath)) throw new Error("StreamWeaver provider runtime settings require STREAMWEAVER_PROVIDER_RUNTIME_ENABLED=1");
   let streamweaver: ChatGatewayWorkerEnvironmentV1["streamweaver"];
   if (streamweaverEnabled) {
@@ -77,7 +81,9 @@ export function validateChatGatewayWorkerEnvironment(environment: NodeJS.Process
     if(runtimeMode==="sandbox"&&avatarRiggingEnabled&&!sandboxAvatarOutbound)throw Error("Sandbox StreamWeaver rejects avatar rigging without the dedicated avatar AI exception");
     let avatar:NonNullable<NonNullable<ChatGatewayWorkerEnvironmentV1["streamweaver"]>["avatar"]>|undefined;
     if(avatarRiggingEnabled){const geometryScriptPath=environment.STREAMWEAVER_AVATAR_GEOMETRY_SCRIPT??resolve("apps/streamweaver/scripts/avatar_geometry.py");if(!isAbsolute(geometryScriptPath))throw Error("Avatar geometry script path must be absolute");avatar={outboundEnabled:operationMode==="active"||sandboxAvatarOutbound,geometryScriptPath,blenderBinary:environment.STREAMWEAVER_BLENDER_BINARY||"blender"};}
-    streamweaver = { databasePath: streamweaverDatabasePath, credential: streamweaverCredential, ...(image?{image}:{}),...(avatar?{avatar}:{}) };
+    const restreamControl = restreamOriginValue && restreamCredential ? { origin: httpsOrigin(restreamOriginValue, "STREAMWEAVER_RESTREAM_CONTROL_ORIGIN"), credential: restreamCredential } : undefined;
+    if (restreamControl && restreamCredential!.length < 32) throw new Error("A 32+ character STREAMWEAVER_RESTREAM_CONTROL_CREDENTIAL is required");
+    streamweaver = { databasePath: streamweaverDatabasePath, credential: streamweaverCredential, ...(image?{image}:{}),...(avatar?{avatar}:{}),...(restreamControl?{restreamControl}:{}) };
   }
   const nebulaEnabled = environment.NEBULA_ARCADE_PROVIDER_RUNTIME_ENABLED === "1";
   const nebulaCredential = environment.NEBULA_ARCADE_WORKER_CREDENTIAL;
@@ -269,7 +275,7 @@ export class SupervisedChatGatewayService {
           return { response: message };
         }
       } };
-      this.streamweaver = new StreamWeaverProviderRuntime({ databasePath: options.streamweaver.databasePath, client: streamweaverClient, connections:options.connections, allowTwitchMedia: options.runtimeMode !== "production", botActions: guardedSuiteActions, providerGrants:client,allowProviderWrites:egressMode==="provider",allowAssistant: !options.liveIngressEnabled, egress: { send: (message) => { if (!connectedGateway) throw new Error("Chat Gateway egress is not ready"); return connectedGateway.send(message); } } });
+      this.streamweaver = new StreamWeaverProviderRuntime({ databasePath: options.streamweaver.databasePath, client: streamweaverClient, connections:options.connections, allowTwitchMedia: options.runtimeMode !== "production", botActions: guardedSuiteActions, providerGrants:client, ...(options.streamweaver.restreamControl ? { restreamControl: options.streamweaver.restreamControl } : {}), ...(fetchImpl ? { providerFetch: fetchImpl } : {}),allowProviderWrites:egressMode==="provider",allowAssistant: !options.liveIngressEnabled, egress: { send: (message) => { if (!connectedGateway) throw new Error("Chat Gateway egress is not ready"); return connectedGateway.send(message); } } });
       if(options.streamweaver.image&&options.operationMode==="active") {
         const image=options.streamweaver.image,providers=[...(image.cloudflareAccountId&&image.cloudflareToken?[new CloudflareStreamWeaverImageProvider(image.cloudflareAccountId,image.cloudflareToken,fetchImpl)]:[]),...(image.token?[new SeaArtCliProvider(image.token,new NodeSeaArtCommandRunner(image.binary))]:[]),...(image.edenKey?[new EdenStreamWeaverImageProvider(image.edenKey,image.edenModel,fetchImpl)]:[]),...(image.pollinationsToken?[new PollinationsStreamWeaverImageProvider(image.pollinationsToken,fetchImpl)]:[])],tenantIds=[...new Set(options.connections.map(connection=>connection.tenantId))];
         const enhancer={enhance:async(prompt:string,input?:import("@spmt/streamweaver").SeaArtImageRequestV1)=>{
