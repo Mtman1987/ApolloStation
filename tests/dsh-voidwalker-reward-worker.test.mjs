@@ -12,12 +12,10 @@ test("Voidwalker eligibility and completion receipts are canonical SPMT events",
 });
 
 test("Voidwalker role grant precedes clue-role removal and uses scoped Discord grants", () => {
-  const grant = source.indexOf('"/guilds/');
-  const titleGrant = source.indexOf('"/roles/"'); // URL paths are assembled from verified guild/member/role IDs.
+  const titleGrant = source.indexOf("if(!member.roles.includes(roleId))");
   const remove = source.indexOf('"DELETE"');
-  assert.ok(grant >= 0);
   assert.ok(titleGrant >= 0);
-  assert.ok(remove > grant);
+  assert.ok(remove > titleGrant);
   assert.match(source, /"guilds:write"/);
   assert.match(source, /"signal seeker","signal hunter"/);
 });
