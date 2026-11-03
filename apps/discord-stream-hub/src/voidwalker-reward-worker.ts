@@ -14,6 +14,7 @@ export class SqliteDshVoidwalkerRewardStore {
   constructor(path: string) {
     this.db = new DatabaseSync(path, { timeout: 5000 });
     this.db.exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;");
+    this.db.exec(`CREATE TABLE IF NOT EXISTS dsh_voidwalker_roles (tenant_id TEXT NOT NULL,guild_id TEXT NOT NULL,role_id TEXT NOT NULL,updated_at TEXT NOT NULL,PRIMARY KEY(tenant_id,guild_id)) STRICT;`);
     this.db.exec(`CREATE TABLE IF NOT EXISTS dsh_voidwalker_rewards (
       tenant_id TEXT NOT NULL, user_id TEXT NOT NULL, guild_id TEXT NOT NULL,
       discord_user_id TEXT NOT NULL, role_id TEXT, delivered_at TEXT,
@@ -23,10 +24,10 @@ export class SqliteDshVoidwalkerRewardStore {
   }
   close() { this.db.close(); }
   roleId(tenantId:string,guildId:string) {
-    return (this.db.prepare("SELECT role_id AS roleId FROM dsh_voidwalker_rewards WHERE tenant_id=? AND guild_id=? AND role_id IS NOT NULL LIMIT 1").get(tenantId,guildId) as {roleId:string}|undefined)?.roleId;
+    return (this.db.prepare("SELECT role_id AS roleId FROM dsh_voidwalker_roles WHERE tenant_id=? AND guild_id=?").get(tenantId,guildId) as {roleId:string}|undefined)?.roleId;
   }
   rememberRole(tenantId:string,guildId:string,roleId:string,now:string) {
-    this.db.prepare("UPDATE dsh_voidwalker_rewards SET role_id=?,updated_at=? WHERE tenant_id=? AND guild_id=?").run(roleId,now,tenantId,guildId);
+    this.db.prepare("INSERT INTO dsh_voidwalker_roles(tenant_id,guild_id,role_id,updated_at) VALUES(?,?,?,?) ON CONFLICT(tenant_id,guild_id) DO UPDATE SET role_id=excluded.role_id,updated_at=excluded.updated_at").run(tenantId,guildId,roleId,now);
   }
   delivered(tenantId:string,userId:string,guildId:string) {
     return Boolean(this.db.prepare("SELECT 1 FROM dsh_voidwalker_rewards WHERE tenant_id=? AND user_id=? AND guild_id=? AND delivered_at IS NOT NULL").get(tenantId,userId,guildId));
