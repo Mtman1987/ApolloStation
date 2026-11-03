@@ -8,22 +8,29 @@ export interface DshForwardedForumPostV1 {
   title:string;content:string;category?:string;postedAt?:string;
   embeds?:Array<Record<string,unknown>>;attachments?:Array<Record<string,unknown>>;
   mentionedUsers?:Array<Record<string,unknown>>;
+  operation?:"create"|"edit"|"delete";
 }
 function forumHttps(value:unknown):string|undefined{try{const url=new URL(String(value??""));return url.protocol==="https:"&&!url.username&&!url.password&&url.href.length<=2048?url.href:undefined;}catch{return undefined;}}
 function forumText(value:unknown,max:number){const result=String(value??"").trim();if(!result||result.length>max||result.includes("\0"))throw new Error("Forwarded forum post contains invalid text");return result;}
 function forumList(value:unknown,max:number){if(value===undefined||value===null)return[];if(!Array.isArray(value)||value.length>max)throw new Error("Forwarded forum post contains too many rich items");return value.map(item=>{if(!item||typeof item!=="object"||Array.isArray(item))throw new Error("Forwarded forum rich item is invalid");const encoded=JSON.stringify(item);if(encoded.length>12000)throw new Error("Forwarded forum rich item is too large");return JSON.parse(encoded) as Record<string,unknown>;});}
 export function normalizeDshForwardedForumPost(value:unknown):DshForwardedForumPostV1{
   if(!value||typeof value!=="object"||Array.isArray(value))throw new Error("Forwarded forum post is required");
-  const item=value as Record<string,unknown>,postedAt=item.postedAt===undefined?undefined:forumText(item.postedAt,60);
+  const item=value as Record<string,unknown>,operation=item.operation===undefined?"create":item.operation,postedAt=item.postedAt===undefined?undefined:forumText(item.postedAt,60);if(operation!=="create"&&operation!=="edit"&&operation!=="delete")throw new Error("Forwarded forum operation is invalid");
   if(postedAt&&!Number.isFinite(Date.parse(postedAt)))throw new Error("Forwarded forum post time is invalid");
   const sourceMessageUrl=item.sourceMessageUrl===undefined?undefined:forumText(item.sourceMessageUrl,2048);
   if(sourceMessageUrl&&!forumHttps(sourceMessageUrl))throw new Error("Forwarded forum source URL must use credential-free HTTPS");
-  return {sourceApp:forumText(item.sourceApp,80),sourceServerId:forumText(item.sourceServerId,120),sourceChannelId:forumText(item.sourceChannelId,120),sourceChannelName:forumText(item.sourceChannelName,120),sourceMessageId:forumText(item.sourceMessageId,120),...(sourceMessageUrl?{sourceMessageUrl}:{}),authorId:forumText(item.authorId,120),authorName:forumText(item.authorName,120),title:forumText(item.title,300),content:forumText(item.content,12000),...(item.category===undefined?{}:{category:forumText(item.category,100)}),...(postedAt?{postedAt}:{}),embeds:forumList(item.embeds,10),attachments:forumList(item.attachments,20),mentionedUsers:forumList(item.mentionedUsers,50)};
+  return {sourceApp:forumText(item.sourceApp,80),sourceServerId:forumText(item.sourceServerId,120),sourceChannelId:forumText(item.sourceChannelId,120),sourceChannelName:forumText(item.sourceChannelName,120),sourceMessageId:forumText(item.sourceMessageId,120),...(sourceMessageUrl?{sourceMessageUrl}:{}),authorId:forumText(item.authorId,120),authorName:forumText(item.authorName,120),title:forumText(item.title,300),content:operation==="delete"?String(item.content??"").slice(0,12000):forumText(item.content,12000),...(item.category===undefined?{}:{category:forumText(item.category,100)}),...(postedAt?{postedAt}:{}),embeds:forumList(item.embeds,10),attachments:forumList(item.attachments,20),mentionedUsers:forumList(item.mentionedUsers,50),operation};
 }
+export const DSH_FORUM_POST_MUTATED="dsh.forum.post-mutated.v1";
 export async function forwardDshForumPost(client:SpmtClient,tenantId:string,value:unknown){
-  const post=normalizeDshForwardedForumPost(value);
-  await client.createCommlinkForumPost(tenantId,{title:post.title,body:post.content||"[Discord forum post]",origin:{provider:"discord",channelId:post.sourceChannelId,messageId:post.sourceMessageId,authorId:post.authorId,authorName:post.authorName,...(post.sourceMessageUrl?{sourceUrl:post.sourceMessageUrl}:{}),sourceApp:post.sourceApp}});
-  const result=await client.publishEvent(tenantId,DSH_FORUM_POST_FORWARDED,{schemaVersion:1,...post,forwardedAt:new Date().toISOString()},`dsh-forum:${post.sourceApp}:${post.sourceServerId}:${post.sourceChannelId}:${post.sourceMessageId}`);
+  const post=normalizeDshForwardedForumPost(value),origin={provider:"discord",channelId:post.sourceChannelId,messageId:post.sourceMessageId,authorId:post.authorId,authorName:post.authorName,...(post.sourceMessageUrl?{sourceUrl:post.sourceMessageUrl}:{}),sourceApp:post.sourceApp};
+  const create=()=>client.createCommlinkForumPost(tenantId,{title:post.title,body:post.content||"[Discord forum post]",origin});
+  if(post.operation==="delete"){try{await client.mutateCommlinkForumImport(tenantId,{operation:"delete",origin});}catch(error){if((error as {status?:number})?.status!==404)throw error;}}
+  else if(post.operation==="edit"){try{await client.mutateCommlinkForumImport(tenantId,{operation:"edit",origin,title:post.title,body:post.content});}catch(error){if((error as {status?:number})?.status!==404)throw error;await create();}}
+  else await create();
+  const eventType=post.operation==="create"?DSH_FORUM_POST_FORWARDED:DSH_FORUM_POST_MUTATED;
+  const key=post.operation==="create"?`dsh-forum:${post.sourceApp}:${post.sourceServerId}:${post.sourceChannelId}:${post.sourceMessageId}`:`dsh-forum-mutation:${post.sourceApp}:${post.sourceServerId}:${post.sourceChannelId}:${post.sourceMessageId}:${post.operation}:${post.postedAt??"unknown"}`;
+  const result=await client.publishEvent(tenantId,eventType,{schemaVersion:1,...post,forwardedAt:new Date().toISOString()},key);
   return {accepted:true,duplicate:result.duplicate,event:result.event};
 }
 

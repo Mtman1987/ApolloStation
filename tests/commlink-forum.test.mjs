@@ -73,6 +73,25 @@ test("scoped DSH service can import only provider-attributed forum posts",async(
   response=await call({title:"Imported Discord topic",body:"Hello from Discord",origin:{provider:"discord",channelId:"forum-channel",messageId:"message-1",authorId:"discord-user",authorName:"Viewer",sourceUrl:"https://discord.com/channels/g/c/m",sourceApp:"discord-stream-hub"}});
   assert.equal(response.status,201);const post=(await response.json()).post;
   assert.equal(post.authorUserId,"discord-stream-hub");assert.equal(post.origin.authorName,"Viewer");
+  const mutate=body=>fetch(base+"/v1/commlink/forums/import-mutations",{method:"POST",headers:{"x-spmt-tenant":"tenant-a",authorization:"Bearer service","content-type":"application/json"},body:JSON.stringify(body)});
+  response=await mutate({operation:"edit",origin:post.origin,title:"Updated from Discord",body:"Edited body"});assert.equal(response.status,200);assert.equal((await response.json()).post.body,"Edited body");
+  response=await mutate({operation:"delete",origin:post.origin});assert.equal(response.status,200);assert.equal((await response.json()).deleted,true);
+  response=await mutate({operation:"delete",origin:post.origin});assert.equal(response.status,200);
+  response=await fetch(base+"/v1/commlink/forums/import-mutations",{method:"POST",headers:{"x-spmt-tenant":"tenant-a",authorization:"Bearer alice","content-type":"application/json"},body:JSON.stringify({operation:"delete",origin:post.origin})});assert.equal(response.status,403);
   response=await fetch(base+"/v1/commlink/forums",{headers:{"x-spmt-tenant":"tenant-a",authorization:"Bearer service"}});assert.equal(response.status,403);
  }finally{await new Promise(resolve=>server.close(resolve));store.close()}
+});
+
+test("trusted provider edits and deletes update native posts and replay safely",()=>{
+ const store=new CommlinkForumStore(":memory:");
+ try{
+  const origin={provider:"discord",channelId:"forum-channel",messageId:"message-7",authorId:"viewer",authorName:"Viewer"};
+  const created=store.createPost("tenant-a","discord-stream-hub","Original title","Original body",origin);
+  const edited=store.mutateImportedPost("tenant-a",origin,"edit",{title:"Edited title",body:"Edited body"});
+  assert.equal(edited.post.title,"Edited title");assert.equal(edited.post.body,"Edited body");
+  const deleted=store.mutateImportedPost("tenant-a",origin,"delete");assert.equal(deleted.deleted,true);
+  assert.equal(store.mutateImportedPost("tenant-a",origin,"delete").id,created.id);
+  assert.equal(store.getPost("tenant-a",created.id),undefined);
+  assert.throws(()=>store.createPost("tenant-a","discord-stream-hub","Original title","Original body",origin),/already deleted/);
+ }finally{store.close()}
 });
