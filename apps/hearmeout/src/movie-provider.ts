@@ -39,7 +39,7 @@ export class HearMeOutMovieProvider {
     throw Error('The IPTV provider is still preparing that movie. Retry your selection');
   }
   private legacyRead(url:URL,timeout:number){
-    const origin=this.legacyOrigin!;if(url.origin!==origin||url.username||url.password||url.hash||!(/^\/api\/watch\/search$/.test(url.pathname)||/^\/api\/watch\/xtream\/hls\/(?:vod-\d+|episode-\d+-[a-z0-9]+)\/[A-Za-z0-9_-]+\.(?:m3u8|ts)$/.test(url.pathname)))throw Error('Invalid IPTV provider route');
+    const origin=this.legacyOrigin!;if(url.origin!==origin||url.username||url.password||url.hash||!(/^\/api\/watch\/search$/.test(url.pathname)||/^\/api\/internal\/watch\/search$/.test(url.pathname)||/^\/api\/watch\/xtream\/hls\/(?:vod-\d+|episode-\d+-[a-z0-9]+)\/[A-Za-z0-9_-]+\.(?:m3u8|ts)$/.test(url.pathname)))throw Error('Invalid IPTV provider route');
     return (this.legacyFetch??fetch)(url,{method:'GET',redirect:'manual',headers:{accept:'application/json, application/vnd.apple.mpegurl','user-agent':'HearMeOut/1.0',...(url.pathname==='/api/internal/watch/search'&&this.legacyAuthorization?{authorization:this.legacyAuthorization}:{})},signal:AbortSignal.timeout(timeout)});
   }
 }
