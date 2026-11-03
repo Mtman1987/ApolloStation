@@ -1,5 +1,11 @@
 # ApolloStation AI continuation handoff — 2026-11-03
 
+> **Superseded status snapshot — read the latest continuation first.**
+> The current repo handoff is [APOLLO_PARITY_HANDOFF_2026-11-03_FOLLOWUP.md](APOLLO_PARITY_HANDOFF_2026-11-03_FOLLOWUP.md).
+> It was refreshed after PRs #388–#397 merged and records main HEAD
+> `fe0a36d49cd5f9ad2d87174303a3e394b4db7842`. Fetch main before work.
+> The historical baseline and pending statuses below are not current authority.
+
 **Repository:** `Mtman1987/ApolloStation`  
 **Authority:** `main`  
 **Last observed baseline HEAD:** `15c806750c2b70aa1dec10d5aa3dae2343035298`
