@@ -1,7 +1,38 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { buildXpIdempotencyKey, mappedXpAwardV1 } from "../packages/sdk/dist/index.js";
-import { DshPointsService, DEFAULT_DSH_LEADERBOARD_SETTINGS, calculateDshPoints, manifest } from "../apps/discord-stream-hub/dist/index.js";
+import { DshPointsService, DshWebControls, buildDshLeaderboardPayload, DEFAULT_DSH_LEADERBOARD_SETTINGS, calculateDshPoints, manifest } from "../apps/discord-stream-hub/dist/index.js";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+test("DSH leaderboard cards use canonical lifetime XP and expose safe rank controls", () => {
+  const payload = buildDshLeaderboardPayload([
+    { rank: 1, userId: "user-1", displayName: "Captain", lifetimeXp: 1200, spendableXp: 200, level: 4 },
+    { rank: 2, userId: "user-2", displayName: "Crew", lifetimeXp: 900, spendableXp: 50, level: 3 },
+  ], "123456789012345", "2026-11-03T20:00:00.000Z");
+  assert.equal(payload.embeds[0].title, "🏆 Community Leaderboard");
+  assert.match(payload.embeds[0].description, /Captain.*1,200 Lifetime XP/);
+  assert.match(payload.embeds[0].description, /Crew.*900 Lifetime XP/);
+  assert.match(payload.embeds[0].fields[0].value, /Lifetime XP/);
+  assert.deepEqual(payload.components[0].components.map(button => button.custom_id), ["check_rank_123456789012345", "points_info_123456789012345"]);
+  assert.deepEqual(payload.allowed_mentions, { parse: [] });
+  assert.deepEqual(buildDshLeaderboardPayload([], "simulation-guild", "2026-11-03T20:00:00.000Z", false).components, []);
+  assert.throws(() => buildDshLeaderboardPayload([], "not-a-discord-id"), /Discord server ID/);
+});
+
+test("DSH signed rank controls provide canonical points guidance and fail closed without a wallet client", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "dsh-leaderboard-controls-"));
+  const configPath = join(directory, "dsh-runtime.json"), databasePath = join(directory, "dsh.sqlite");
+  writeFileSync(configPath, JSON.stringify({ schemaVersion: 1, pollIntervalSeconds: 60, tenants: [{ tenantId: "tenant-a", twitchProviderUserId: "twitch-owner", discordProviderUserId: "discord-bot", discordGuildIds: ["123456789012345"], branding: { communityMemberName: "Crew" }, members: [] }] }));
+  const controls = new DshWebControls({ spmtOrigin: "http://127.0.0.1:3000", databasePath, runtimeConfigPath: configPath, operationMode: "read-only" });
+  try {
+    const info = await controls.interaction({ type: 3, guild_id: "123456789012345", user: { id: "223456789012345" }, data: { custom_id: "points_info_123456789012345" } });
+    assert.match(info.data.content, /Lifetime XP determines your community rank/);
+    const rank = await controls.interaction({ type: 3, guild_id: "123456789012345", user: { id: "223456789012345" }, data: { custom_id: "check_rank_123456789012345" } });
+    assert.match(rank.data.content, /canonical SPMT wallet is temporarily unavailable/);
+  } finally { controls.close(); rmSync(directory, { recursive: true, force: true }); }
+});
 
 test("DSH donor point calculations retain event settings and bits-per-100 behavior", () => {
   const settings = DEFAULT_DSH_LEADERBOARD_SETTINGS;
