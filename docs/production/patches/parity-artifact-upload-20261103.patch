@@ -1,0 +1,43 @@
+diff --git a/.github/workflows/apollo-donor-inventory.yml b/.github/workflows/apollo-donor-inventory.yml
+index 25665a4..93cb749 100644
+--- a/.github/workflows/apollo-donor-inventory.yml
++++ b/.github/workflows/apollo-donor-inventory.yml
+@@ -123,7 +123,7 @@ jobs:
+         if: always()
+         uses: actions/upload-artifact@v4
+         with:
+-          name: parity-evidence-${{ inputs.donor }}-${{ inputs.apollo_app }}
++          name: parity-evidence-${{ inputs.donor }}-${{ github.run_id }}
+           path: |
+             donor-inventory.json
+             apollo-inventory.json
+diff --git a/tests/apollo-parity-automation.test.mjs b/tests/apollo-parity-automation.test.mjs
+index ac6f5ac..635ed9c 100644
+--- a/tests/apollo-parity-automation.test.mjs
++++ b/tests/apollo-parity-automation.test.mjs
+@@ -30,6 +30,25 @@ test('manual donor inventory uploads every REA and generated port-brief artifact
+   }
+ });
+ 
++test('manual evidence names are upload-safe and unique without losing app provenance', () => {
++  const workflow = read('.github/workflows/apollo-donor-inventory.yml');
++  const section = workflow.slice(workflow.indexOf('- name: Upload complete parity evidence bundle'));
++  const template = section.match(/^\s+name: (.+)$/m)?.[1];
++  assert.equal(template, 'parity-evidence-${{ inputs.donor }}-${{ github.run_id }}');
++  const names = new Set();
++  for (const donor of ['hearmeout', 'streamweaver', 'discord-stream-hub']) {
++    for (const runId of ['41706393191', '41706393224']) {
++      const name = template.replace('${{ inputs.donor }}', donor).replace('${{ github.run_id }}', runId);
++      assert.doesNotMatch(name, /["<>|:*?\\/\r\n]/, 'artifact name contains a forbidden character');
++      assert.equal(names.has(name), false, 'separate dispatches must not collide');
++      names.add(name);
++    }
++  }
++  assert.ok(workflow.includes('APOLLO_APP: ${{ inputs.apollo_app }}'));
++  assert.ok(workflow.includes('--ref "$GITHUB_SHA:$APOLLO_APP" --app-path "$APOLLO_APP"'));
++  assert.ok(workflow.includes('export DONOR_COMMIT_SHA="$(git rev-parse HEAD)"'));
++});
++
+ test('nightly donor matrix also prepares and uploads the review-only port brief', () => {
+   const workflow = read('.github/workflows/apollo-parity-nightly.yml');
+   assert.ok(workflow.includes('Prepare reviewable Apollo port brief'));
