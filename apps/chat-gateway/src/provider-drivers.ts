@@ -124,7 +124,8 @@ export class DiscordGatewayProviderDriver implements ProviderConnectionDriverV1,
     if(marker){
       const token=marker.startsWith("||SPMT egress key: ")&&marker.endsWith("||")?marker.slice(19,-2):"";
       if(!/^[a-f0-9]{24}$/.test(token)||!content.includes(marker))throw new Error("Discord forum idempotency marker is invalid");
-      const recovered=await this.findDiscordForumThreadByMarker(active,input.channelId,scalarString(parent?.guild_id),marker);
+      const guildId=scalarString(parent?.guild_id);if(!guildId)throw new Error("Discord forum parent has no valid guild ID for recovery");
+      const recovered=await this.findDiscordForumThreadByMarker(active,input.channelId,guildId,marker);
       if(recovered)return recovered;
     }
     const response=await this.fetchImpl(DISCORD_API_ORIGIN+"/channels/"+encodeURIComponent(input.channelId)+"/threads",{method:"POST",headers:{Authorization:"Bot "+active.accessToken,"Content-Type":"application/json"},body:JSON.stringify({name,auto_archive_duration:1440,message:{content,allowed_mentions:{parse:[]}}})});
