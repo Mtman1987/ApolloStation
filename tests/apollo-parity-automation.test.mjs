@@ -23,6 +23,9 @@ test('manual donor inventory uploads every REA and generated port-brief artifact
   assert.equal(section.includes(String.fromCharCode(92) + 'n'), false, 'artifact paths must not be encoded as literal backslash-n text');
   assert.match(workflow, /persist-credentials: false/);
   assert.match(workflow, /donor code is never installed or run/);
+  assert.ok(workflow.includes('node scripts/parity-rea.mjs donor-source > donor-rea-analysis.json'));
+  assert.ok(workflow.includes("jq -e 'type == \"object\"' donor-rea-analysis.json"));
+  assert.ok(workflow.includes("jq -e 'type == \"object\"' apollo-rea-analysis.json"));
 });
 
 test('nightly donor matrix also prepares and uploads the review-only port brief', () => {
@@ -31,6 +34,9 @@ test('nightly donor matrix also prepares and uploads the review-only port brief'
   assert.ok(workflow.includes('node scripts/parity-prepare-port.mjs parity-comparison.json config/apollo-parity-capabilities.v1.json port-brief'));
   assert.ok(workflow.includes('port-brief/port-brief.json'));
   assert.ok(workflow.includes('port-brief/port-brief.md'));
+  assert.ok(workflow.includes('node scripts/parity-rea.mjs donor-source > donor-rea-analysis.json'));
+  assert.ok(workflow.includes("jq -e 'type == \"object\"' donor-rea-analysis.json"));
+  assert.ok(workflow.includes("jq -e 'type == \"object\"' apollo-rea-analysis.json"));
   assert.ok(workflow.includes('Candidate comparison only; no parity claim'));
 });
 
