@@ -139,8 +139,8 @@ exit 0
   process.env.HEARMEOUT_XTREAM_PASSWORD='fixture-password';
   await ensureXtreamHls('episode-7-mkv');
   const dir=join(hls,'episode-7-mkv');
-  assert.match(await readFile(join(dir,'index.m3u8'),'utf8'),/stream_v0\\.m3u8/);
-  assert.match(await readFile(join(dir,'stream_v0.m3u8'),'utf8'),/stream_v0_seg_00000\\.ts/);
+  assert.match(await readFile(join(dir,'index.m3u8'),'utf8'),/stream_v0\.m3u8/);
+  assert.match(await readFile(join(dir,'stream_v0.m3u8'),'utf8'),/stream_v0_seg_00000\.ts/);
   assert.equal(await readFile(join(dir,'stream_v0_seg_00000.ts'),'utf8'),'fixture-segment');
   await ensureXtreamHls('episode-7-mkv');
   assert.equal((await readFile(count,'utf8')).trim().split(/\\r?\\n/).length,1,'valid cache is not reconverted');
