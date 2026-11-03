@@ -100,12 +100,17 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Analyze donor JavaScript with REA
-        run: npm run parity:rea -- donor-source > donor-rea-analysis.json
+        run: node scripts/parity-rea.mjs donor-source > donor-rea-analysis.json
 
       - name: Analyze built Apollo JavaScript with REA
         env:
           APOLLO_APP: ${{ inputs.apollo_app }}
-        run: npm run parity:rea -- "$APOLLO_APP/dist" > apollo-rea-analysis.json
+        run: node scripts/parity-rea.mjs "$APOLLO_APP/dist" > apollo-rea-analysis.json
+
+      - name: Validate REA JSON evidence
+        run: |
+          jq -e 'type == "object"' donor-rea-analysis.json >/dev/null
+          jq -e 'type == "object"' apollo-rea-analysis.json >/dev/null
 
       - name: Prepare reviewable Apollo port brief
         if: always()
