@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import {createHash} from "node:crypto";
 import {forwardDshForumPost,importDshDiscordForumThreads,importDshDiscordForumThreadMessage,DshForumForwardingStore,DshForumForwardingWorker,DshForumForwardingService,DshCommlinkForumDiscordPort,dshForumThreadCreationIdempotencyKey} from "../apps/discord-stream-hub/dist/forum-forwarding.js";
 
 const source={sourceApp:"discord-stream-hub",sourceServerId:"123456",sourceChannelId:"234567",sourceChannelName:"general",sourceMessageId:"345678",sourceMessageUrl:"https://discord.com/channels/123456/234567/345678",authorId:"456789",authorName:"Viewer",title:"Community / #general",content:"Hello community",postedAt:"2026-11-03T12:00:00.000Z"};
@@ -53,6 +54,20 @@ test("forum worker lease prevents concurrent replay and releases safely",()=>{
   assert.equal(store.acquireWorkerLease("tenant-a","worker-2",now,later),false);
   store.releaseWorkerLease("tenant-a","worker-1");
   assert.equal(store.acquireWorkerLease("tenant-a","worker-2",now,later),true);
+ }finally{store.close();}
+});
+
+test("pending forum thread creation reconciles by deterministic starter marker",async()=>{
+ const store=new DshForumForwardingStore(":memory:"),sent=[];
+ const rule={schemaVersion:1,tenantId:"tenant-a",sourceGuildId:"123456",destinationGuildId:"654321",forumChannelId:"765432",mode:"per-channel",paused:false,restrictToWhitelist:false,sourceChannelWhitelist:[]};
+ store.putRule(rule);store.setThread("tenant-a","123456","234567",null,true,"2026-11-03T12:00:00.000Z");
+ const marker="SPMT forwarding key: "+createHash("sha256").update(["tenant-a","123456","234567","765432"].join(":")).digest("hex").slice(0,24);
+ const discord={async getChannel(_tenant,id){return{id,guild_id:"654321",type:11,parent_id:"765432",name:"general"};},async listActiveThreads(){return{threads:[{id:"777777",parent_id:"765432"}]};},async listArchivedForumThreads(){return{threads:[],has_more:false};},async getChannelMessage(){return{id:"777777",content:"Forwarded messages\\n\\n"+marker};},async createThreadMessage(_tenant,thread,payload){sent.push({thread,payload});return"888888";}};
+ try{
+  const service=new DshForumForwardingService(store,discord);
+  const result=await service.apply({tenantId:"tenant-a",guildId:"123456",channelId:"234567",channelName:"general",channelType:0,messageId:"345678",authorId:"456789",authorName:"Viewer",content:"Hello",occurredAt:"2026-11-03T12:00:00.000Z",sourceIsPublic:true});
+  assert.equal(result.status,"forwarded");assert.equal(result.threadId,"777777");assert.equal(sent[0].thread,"777777");
+  assert.deepEqual(store.getThread("tenant-a","123456","234567"),{thread_id:"777777",pending:0});
  }finally{store.close();}
 });
 
