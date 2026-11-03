@@ -20,7 +20,7 @@ import { DshCalendarDelivery } from "./calendar-delivery.js";
 import { respondDshCalendarInteraction } from "./calendar-interactions.js";
 import { resolveProviderIdentity, listCommunityIdentities } from "@spmt/sdk/provider-identity";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { dshCaptainParticipation, renderDshCalendarPng } from "./calendar-presentation.js";
+import { dshCaptainParticipation, renderDshCalendarPng, renderDshLeaderboardPng } from "./calendar-presentation.js";
 import { buildDshTierShoutout, DSH_LIVE_EMBED_TEMPLATES, dshShoutoutView, type DshShoutoutView } from "./shoutout-presentation.js";
 import { DshShoutoutGenerationStore } from "./shoutout-generation.js";
 import { fetchAppPlatformSnapshot, fetchAppSessionContext, readJsonBody, requireSameOrigin, safeError, sendJson } from "@spmt/app-foundation/product-web";
@@ -650,7 +650,9 @@ export class DshWebControls {
     const guild=this.guild(context.tenantId,body.serverId),channelId=snowflake(body.channelId,"channelId");
     await this.validateDestination(context.tenantId,guild,channelId);
     const rows=await new DshPointsService(this.client,context.tenantId).getLeaderboard(50),members=new Map(this.members(context.tenantId).map(member=>[member.canonicalUserId,member.displayName??member.twitchLogin])),leaderboard=rows.map(row=>({...row,displayName:members.get(row.userId)??row.userId}));
-    const payload=buildDshLeaderboardPayload(leaderboard,guild,this.now(),!isSimulationDiscordId(guild));
+    const updatedAt=this.now(),interactive=!isSimulationDiscordId(guild),tenant=this.config?.tenants.find(item=>item.tenantId===context.tenantId);
+    const image=interactive?renderDshLeaderboardPng(leaderboard,{communityName:tenant?.branding.communityMemberName??"Community",updatedAt}):undefined;
+    const payload={...buildDshLeaderboardPayload(leaderboard,guild,updatedAt,interactive,Boolean(image)),...(image?{leaderboardImage:image}:{})};
     const messageId=await this.upsertDiscord(context.tenantId,"leaderboard",guild,channelId,payload);
     return sendJson(response,200,{schemaVersion:1,messageId,channelId,entries:leaderboard.length,...(isSimulationDiscordId(guild)?{shadowRoomId:(await this.discord?.target(context.tenantId,guild))?.roomId}:{})});
   }
