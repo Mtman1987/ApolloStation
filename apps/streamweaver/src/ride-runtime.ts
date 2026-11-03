@@ -8,7 +8,7 @@ import type {StreamRideRider} from './ride-store.js';
 import {StreamWeaverRewardRuntime} from './reward-runtime.js';
 import {STREAMWEAVER_KNOWN_BOTS} from './shoutout-store.js';
 export type StreamRideLookup=(tenant:string)=>Promise<StreamRideRider[]>;
-export interface StreamRideRequest {tenantId:string;actorId:string;displayName:string;source:string;requestId:string;currency:'streamer'|'spmt';maxSpmtCost?:number;rewardId?:string;}
+export interface StreamRideRequest {tenantId:string;actorId:string;displayName:string;source:string;requestId:string;currency:'streamer'|'spmt';maxSpmtCost?:number;rewardId?:string;channel?:string;}
 export type NebulaCheckinBonusAwarder=(input:{tenantId:string;awardId:string;channel:string;userId:string;username:string;displayName:string})=>Promise<{amount:number;balance:number;duplicate:boolean}>;
 const hash=(value:string)=>createHash('sha256').update(value).digest('hex');
 /** Intersection uses existing canonical links, never matching display names or minting identities. */
