@@ -703,9 +703,9 @@ async function watchEvents() {
   watchingEvents = true;
   try {
     const tenantId = currentPrincipal.tenantIds[0]!;
-    const [events, forum] = await Promise.all([spmt.listEvents(tenantId, { limit: 100 }), spmt.listCommlinkForumPosts(tenantId, { limit: 50 })]);
-    shellUi?.updateEvents(events);
-    shellUi?.updateForumPosts(forum.posts);
+    const [eventsResult, forumResult] = await Promise.allSettled([spmt.listEvents(tenantId, { limit: 100 }), spmt.listCommlinkForumPosts(tenantId, { limit: 50 })]);
+    if (eventsResult.status === "fulfilled") shellUi?.updateEvents(eventsResult.value);
+    if (forumResult.status === "fulfilled") shellUi?.updateForumPosts(forumResult.value.posts);
   } catch { /* Retain the last authorized feed through brief event-service interruptions. */ }
   finally { watchingEvents = false; }
 }
