@@ -124,6 +124,8 @@ jobs:
             apollo-inventory.json
             parity-comparison.json
             donor-rea-analysis.json
-            apollo-rea-analysis.json\n            port-brief/port-brief.json\n            port-brief/port-brief.md
+            apollo-rea-analysis.json
+            port-brief/port-brief.json
+            port-brief/port-brief.md
           if-no-files-found: warn
           retention-days: 30
