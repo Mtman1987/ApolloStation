@@ -99,3 +99,18 @@ test("trusted provider edits and deletes update native posts and replay safely",
   assert.throws(()=>store.createPost("tenant-a","discord-stream-hub","Original title","Original body",origin),/already deleted/);
  }finally{store.close()}
 });
+
+test("trusted imported reply edits and deletes are idempotent",()=>{
+ const store=new CommlinkForumStore(":memory:");
+ try{
+  const postOrigin={provider:"discord",channelId:"forum",threadId:"thread",messageId:"starter"};
+  const post=store.createPost("tenant-a","discord-stream-hub","Thread","Starter",postOrigin);
+  const replyOrigin={provider:"discord",channelId:"forum",threadId:"thread",messageId:"reply"};
+  const reply=store.createReply("tenant-a",post.id,"discord-stream-hub","First reply",replyOrigin);
+  const edited=store.mutateImportedReply("tenant-a",replyOrigin,"edit","Updated reply");
+  assert.equal(edited.reply.body,"Updated reply");
+  assert.equal(store.mutateImportedReply("tenant-a",replyOrigin,"delete").id,reply.id);
+  assert.equal(store.mutateImportedReply("tenant-a",replyOrigin,"delete").id,reply.id);
+  assert.throws(()=>store.createReply("tenant-a",post.id,"discord-stream-hub","First reply",replyOrigin),/already deleted/);
+ }finally{store.close()}
+});
