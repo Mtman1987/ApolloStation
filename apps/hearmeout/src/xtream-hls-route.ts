@@ -10,10 +10,17 @@ const CORS = {
   'access-control-allow-headers': 'content-type, range',
 };
 
+// Global stream paths may be authorized through private room membership. A shared
+// cache must never replay bytes without running that authorization again.
+const PRIVATE_MEDIA_HEADERS = {
+  'cache-control': 'private, no-store',
+  'vary': 'Cookie, Authorization',
+};
+
 export const XTREAM_HLS_PATH = /^\/api\/watch\/xtream\/hls\/([^/]+)\/([^/]+)$/;
 
 function sendJson(response: ServerResponse, status: number, body: unknown, extra: Record<string, string> = {}) {
-  response.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', ...CORS, ...extra });
+  response.writeHead(status, { 'content-type': 'application/json; charset=utf-8', ...PRIVATE_MEDIA_HEADERS, ...CORS, ...extra });
   response.end(JSON.stringify(body));
 }
 
@@ -42,12 +49,15 @@ export async function handleXtreamHlsRequest(request: IncomingMessage, response:
       sendJson(response, 403, { error: 'playback_forbidden' });
       return true;
     }
-    try { await authorize(request, streamId); }
-    catch (error) {
-      const status = Number((error as { status?: unknown })?.status);
-      sendJson(response, status === 401 || status === 403 || status === 404 ? status : 403, { error: status === 404 ? 'playback_not_active' : 'playback_forbidden' });
-      return true;
-    }
+    const authorizePlayback = async () => {
+      try { await authorize(request, streamId); return true; }
+      catch (error) {
+        const status = Number((error as { status?: unknown })?.status);
+        sendJson(response, status === 401 || status === 403 || status === 404 ? status : 403, { error: status === 404 ? 'playback_not_active' : 'playback_forbidden' });
+        return false;
+      }
+    };
+    if (!await authorizePlayback()) return true;
     if (file === 'index.m3u8') {
       ensureXtreamHls(streamId).catch(() => {});
       const ready = await waitForXtreamHlsIndex(streamId);
@@ -82,7 +92,9 @@ export async function handleXtreamHlsRequest(request: IncomingMessage, response:
         if (line.trim() && !line.startsWith('#') && !valid(line.trim())) throw Error('Invalid manifest child');
         for (const child of line.matchAll(/URI="([^"]*)"/g)) if (!valid(child[1]!)) throw Error('Invalid manifest child');
       }
-      response.writeHead(200, { ...CORS, 'content-type': hlsFile.contentType, 'content-length': String(Buffer.byteLength(body)), 'cache-control': 'no-store' });
+      // Preparation and manifest reads can outlive a membership or playback grant.
+      if (!await authorizePlayback()) return true;
+      response.writeHead(200, { ...CORS, ...PRIVATE_MEDIA_HEADERS, 'content-type': hlsFile.contentType, 'content-length': String(Buffer.byteLength(body)) });
       response.end(body);
       return true;
     }
@@ -105,10 +117,11 @@ export async function handleXtreamHlsRequest(request: IncomingMessage, response:
     response.once('close', cancel);
     stream.once('close', () => response.off('close', cancel));
     stream.once('error', () => response.destroy());
+    if (!await authorizePlayback()) { stream.destroy(); return true; }
     response.writeHead(status, {
       'content-type': hlsFile.contentType,
       'content-length': String(length),
-      'cache-control': file.endsWith('.m3u8') ? 'no-store' : 'public, max-age=3600',
+      ...PRIVATE_MEDIA_HEADERS,
       ...CORS,
       ...rangeHeaders,
     });
