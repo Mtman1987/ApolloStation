@@ -31,6 +31,9 @@ test("forum forwarding rules API permits only owner or scoped DSH service",async
   let response=await call("member","/v1/commlink/forum-forwarding/rules",{method:"PUT",body:JSON.stringify({rule:perChannel})});assert.equal(response.status,403);
   response=await call("owner","/v1/commlink/forum-forwarding/rules",{method:"PUT",body:JSON.stringify({rule:perChannel})});assert.equal(response.status,200);
   response=await call("service","/v1/commlink/forum-forwarding/rules");assert.equal(response.status,200);assert.equal((await response.json()).rules.length,1);
+  response=await call("owner","/v1/commlink/forum-forwarding/state?sourceGuildId=123456&sourceChannelId=234567");assert.equal(response.status,403);
+  response=await call("service","/v1/commlink/forum-forwarding/state?sourceGuildId=123456&sourceChannelId=234567",{method:"PUT",body:JSON.stringify({thread:{sourceGuildId:"123456",sourceChannelId:"234567",destinationThreadId:"345678",pending:false,updatedAt:"2026-11-03T12:00:00.000Z"},receipt:{sourceGuildId:"123456",sourceChannelId:"234567",sourceMessageId:"456789",destinationThreadId:"345678",destinationMessageId:"567890",deleted:false,updatedAt:"2026-11-03T12:00:00.000Z"}})});assert.equal(response.status,200);
+  response=await call("service","/v1/commlink/forum-forwarding/state?sourceGuildId=123456&sourceChannelId=234567&sourceMessageId=456789");assert.equal(response.status,200);const state=await response.json();assert.equal(state.thread.destinationThreadId,"345678");assert.equal(state.receipt.destinationMessageId,"567890");
   response=await call("owner","/v1/commlink/forum-forwarding/rules/123456",{method:"DELETE"});assert.equal(response.status,200);assert.equal((await response.json()).deleted,true);
  }finally{await new Promise(resolve=>server.close(resolve));store.close()}
 });
