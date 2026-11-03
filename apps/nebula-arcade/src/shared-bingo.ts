@@ -159,6 +159,7 @@ export function suggestNebulaSharedBingoPhrase(runtime:NebulaGameRuntimeStateV1,
   if(square.status!=="stella"&&square.status!=="open"&&square.status!=="replacement")return{changed:settled.changed,outcome:"unavailable" as const,blocked:settled.blocked};
   const joined=joinNebulaGame(runtime,{...input,gameId:"bingo"},new Date(now));
   if(joined.player.gamePointsBalance<NEBULA_SHARED_BINGO_PHRASE_CHANGE_COST)return{changed:settled.changed,outcome:"insufficient" as const,balance:joined.player.gamePointsBalance,cost:NEBULA_SHARED_BINGO_PHRASE_CHANGE_COST,blocked:settled.blocked};
+  if(!joined.membership)return{changed:settled.changed,outcome:"unavailable" as const,blocked:settled.blocked};
   spendNebulaGamePoints(runtime,joined.player,NEBULA_SHARED_BINGO_PHRASE_CHANGE_COST,"Bingo phrase change",new Date(now));
   square.originalPhrase ||= square.phrase;square.phrase=phrase;square.status="replacement";square.suggestedBy=joined.player.id;
   delete square.triggeredAt;delete square.claimUntil;joined.membership.lastActiveAt=new Date(now).toISOString();participant(game,joined.player).actions+=1;game.updatedAt=new Date(now).toISOString();
@@ -168,6 +169,7 @@ export function suggestNebulaSharedBingoPhrase(runtime:NebulaGameRuntimeStateV1,
 export function buyNebulaSharedBingoStellaFlip(runtime:NebulaGameRuntimeStateV1,game:NebulaSharedBingoStateV1,input:{channel:string;coordinate:unknown;userId?:unknown;username?:unknown;displayName?:unknown},now=Date.now()) {
   const parsed=parseNebulaSharedBingoCoordinate(input.coordinate);if(!parsed)return{changed:false,outcome:"invalid" as const};
   const settled=settleNebulaSharedBingoClaims(game,now),square=game.squares[parsed.index];
+  if(!square)return{changed:settled.changed,outcome:"invalid" as const};
   if(game.completedAt)return{changed:settled.changed,outcome:"complete" as const};
   if(square.status!=="stella")return{changed:settled.changed,outcome:"unavailable" as const};
   const joined=joinNebulaGame(runtime,{...input,gameId:"bingo"},new Date(now));
@@ -180,6 +182,7 @@ export function buyNebulaSharedBingoStellaFlip(runtime:NebulaGameRuntimeStateV1,
 
 export function buyNebulaSharedBingoCenterFree(runtime:NebulaGameRuntimeStateV1,game:NebulaSharedBingoStateV1,input:{channel:string;userId?:unknown;username?:unknown;displayName?:unknown},now=Date.now()) {
   const settled=settleNebulaSharedBingoClaims(game,now),square=game.squares[12];
+  if(!square)return{changed:settled.changed,outcome:"invalid" as const};
   if(game.completedAt)return{changed:settled.changed,outcome:"complete" as const};
   if(square.status==="chat")return{changed:settled.changed,outcome:"unavailable" as const};
   const joined=joinNebulaGame(runtime,{...input,gameId:"bingo"},new Date(now));
