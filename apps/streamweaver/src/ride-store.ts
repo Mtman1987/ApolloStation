@@ -2,7 +2,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {randomInt} from 'node:crypto';
 import type {StreamRedeem} from './community-store.js';
 export interface StreamRideRider {userId:string;displayName:string;imageUrl:string;}
-export interface StreamRideAttempt {signature:string;actorId:string;displayName:string;source:string;currency:'streamer'|'spmt';streamSession:string;reward:StreamRedeem;riders:StreamRideRider[];winner?:StreamRideRider;result?:{state:'complete';text:string;count:number;frontSeat:string;frontSeatUserId:string;rideId:string;bonus:number;nebulaBonusPoints?:number;nebulaBonusStatus?:'awarded'|'pending'|'not-configured'};}
+export interface StreamRideAttempt {signature:string;actorId:string;displayName:string;source:string;currency:'streamer'|'spmt';streamSession:string;reward:StreamRedeem;riders:StreamRideRider[];winner?:StreamRideRider;result?:{state:'complete';text:string;count:number;frontSeat:string;frontSeatUserId?:string;rideId?:string;bonus:number;nebulaBonusPoints?:number;nebulaBonusStatus?:'awarded'|'pending'|'not-configured'};}
 export class StreamWeaverRideStore {
  private readonly db:DatabaseSync;
  constructor(path:string){this.db=new DatabaseSync(path,{timeout:5000});this.db.exec(`PRAGMA journal_mode=WAL;CREATE TABLE IF NOT EXISTS sw_ride_settings(tenant TEXT PRIMARY KEY,body TEXT NOT NULL);CREATE TABLE IF NOT EXISTS sw_ride_attempts(tenant TEXT NOT NULL,id TEXT NOT NULL,body TEXT NOT NULL,PRIMARY KEY(tenant,id));CREATE TABLE IF NOT EXISTS sw_ride_front_seats(tenant TEXT PRIMARY KEY,body TEXT NOT NULL);`)}
