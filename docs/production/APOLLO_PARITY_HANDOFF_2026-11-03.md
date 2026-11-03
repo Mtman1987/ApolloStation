@@ -6,11 +6,11 @@
 
 ## Current revision and validation
 
-- Latest code commit validated: `36978cf` — `fix(dsh): proxy forum recovery reads through Discord adapter`. Current `main` also includes the handoff-only documentation commit `c14f12d`.
-- This fixes the missing forwarding methods in the DSH Discord egress adapter: `getChannelMessage`, `listActiveThreads`, and `listArchivedForumThreads`. The forum recovery service called these methods, but the adapter did not proxy them, causing the shared TypeScript build to fail before shard tests ran.
-- Post-fix Oracle release validation: [run 41695920142](https://github.com/Mtman1987/ApolloStation/actions/runs/41695920142) — **SUCCESS**. All four full-test shards and the aggregate release validation report completed successfully. The shared build and all assigned tests passed.
-- Pre-fix validation [run 41693901506](https://github.com/Mtman1987/ApolloStation/actions/runs/41693901506) failed on `af4a38cf`. The adapter proxy fix is the follow-up.
-- Branch cleanup [run 41695920173](https://github.com/Mtman1987/ApolloStation/actions/runs/41695920173) was in progress; it is housekeeping, not release validation.
+- Latest code/test revision: `9ca93bf` — `test(dsh): include guild ID in signal drop fixture`.
+- DSH forum adapter repair `36978cf` proxies `getChannelMessage`, `listActiveThreads`, and `listArchivedForumThreads`; it removed the earlier shared TypeScript build blocker.
+- Latest full diagnostic run: [41699667192](https://github.com/Mtman1987/ApolloStation/actions/runs/41699667192) — **PASS / all four shards completed**. It executed 1,450 cases: 1,439 passed and 11 assertion failures were recorded. The aggregate PASS means all shards and the report completed; it does not mean every assertion passed.
+- Targeted suites passed in that run: Chat Gateway provider drivers 10/10; DSH forum forwarding 12/12; DSH member activity 4/4; DSH signal drops 3/3; DSH shoutout presentation and partner schedule checks passed; DSH Voidwalker role-ordering and community-control checks passed.
+- The 11 remaining diagnostics are outside the forum-create recovery change: HearMeOut playback/watch-route failures, two Chat Gateway OAuth tests reporting missing `jobs:work`, Nebula browser script syntax failures, and parity-inventory/audit path mismatches. See run artifact for exact stacks.
 
 ## Forum authority work already on main
 
@@ -24,13 +24,23 @@ The current Commlink / DSH / Chat Gateway port includes:
 
 These are code-port statements, not live-provider acceptance claims.
 
+## Chat Gateway forum-create recovery
+
+- `apps/chat-gateway/src/service.ts` derives a stable 24-hex marker from `tenantId + job.id` and appends it as a Discord spoiler token to the forum starter message.
+- `apps/chat-gateway/src/provider-drivers.ts` checks the exact parent forum before creating. It scans active guild threads and bounded pages of archived public forum threads, reads each candidate starter message, and returns the original thread/message IDs when the marker is found.
+- Recovery fails closed if active/archived listing or starter lookup is unavailable, the archive scan exceeds its bound, or the parent lacks a valid guild ID. It does not silently create after an incomplete scan.
+- `tests/chat-provider-drivers.test.mjs` simulates a successful remote create followed by a lost durable receipt, archives the thread before retry, and verifies retry recovers the original IDs with no second POST. A distinct marker creates a distinct thread. All 10 provider-driver tests passed.
+- The worker renews the durable job lease before and during a potentially slow create, then checks lease health before recording success. This reduces lease-expiry overlap; it does not provide a Discord server-side uniqueness guarantee if a worker loses its lease while a remote request is already in flight.
+- Key commits: `71618bf` job marker; `c18d0f3` provider reconciliation; `0672e49` initial regression; `93d7291` in-flight lease heartbeat; `4e70e65` guild-ID validation; `ee931ee` archived-thread regression.
+- Related DSH test and parity corrections: `3cbda13` plain-object thread state; `76a1a08` activity-worker client fixture; `973d961` community-worker service stubs; `90471ab` restored donor tier/banner behavior; `9ca93bf` signal-drop guild fixture.
+- This closes the retry-after-uncertain-create path covered by tests. It does not prove live Discord acceptance; keep this capability `ported-unverified`.
+
 ## Immediate next steps
 
-1. Close the Chat Gateway create-thread crash window. In `apps/chat-gateway/src/service.ts`, the worker calls `createDiscordForumThread` and then persists `succeedExecutionJob`. A crash after Discord accepts the create but before the success receipt is persisted may cause a retry to create a duplicate.
-3. Inspect the provider driver and execution-job contract before choosing a fix. Prefer deterministic remote-operation reconciliation using a stable marker/nonce and exact parent-channel scope. Do not claim Discord provides an idempotency guarantee unless the API contract and implementation prove it.
-4. Add a regression that simulates remote creation succeeding, then success-receipt persistence failing; retry the same durable job and assert exactly one remote thread exists and the original identifiers are recovered. Also cover an absent remote thread and a distinct operation key.
-5. Validate the integrated DSH + Chat Gateway lifecycle: retry/fencing, lease expiry, archive, edit/delete, and marker reconciliation.
-6. Record exact CI and live-acceptance evidence in the relevant parity tracker. Keep this capability `ported-unverified` until an authorized live Discord connection has been exercised after deployment.
+1. Resolve the two Chat Gateway OAuth test failures reporting missing `jobs:work`; verify whether test credentials or service identity scope wiring is wrong before changing runtime authorization.
+2. Continue the remaining HearMeOut and Nebula diagnostic failures as separate parity tasks; do not mix unrelated changes into forum recovery.
+3. Validate the integrated DSH + Chat Gateway lifecycle against an authorized Discord connection: retry/fencing, lease expiry, archived-thread recovery, edit/delete, and marker reconciliation.
+4. Record exact CI and live-acceptance evidence in the parity tracker. Keep this capability `ported-unverified` until an authorized live Discord connection has been exercised after deployment.
 
 ## Boundaries — do not cross
 
@@ -45,8 +55,9 @@ These are code-port statements, not live-provider acceptance claims.
 - `apps/chat-gateway/src/service.ts`
 - `apps/chat-gateway/src/provider-drivers.ts`
 - `tests/dsh-forum-forwarding.test.mjs`
+- `tests/chat-provider-drivers.test.mjs`
 - `docs/donor-audits/FEATURE_PARITY_REVIEW_2026-09-12.md`
 
 ## Resume instruction
 
-The adapter fix is validated green on run 41695920142. Chat Gateway create-thread marker/reconciliation, regression, and in-flight lease renewal are committed; complete run 41697741577 before moving on.
+The Chat Gateway forum-create retry recovery and DSH integration tests are in place. Continue with the two missing-scope OAuth test failures, then proceed through the remaining parity gaps. Keep live-provider status `ported-unverified` until an authorized Discord rehearsal is complete.
