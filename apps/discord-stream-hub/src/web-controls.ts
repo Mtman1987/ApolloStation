@@ -649,10 +649,10 @@ export class DshWebControls {
     if(!this.client)throw new Error("Connect DSH before publishing the canonical XP leaderboard");
     const guild=this.guild(context.tenantId,body.serverId),channelId=snowflake(body.channelId,"channelId");
     await this.validateDestination(context.tenantId,guild,channelId);
-    const view=await this.pointsView(context.tenantId,"");
-    const payload=buildDshLeaderboardPayload(view.leaderboard,guild,this.now(),!isSimulationDiscordId(guild));
+    const rows=await new DshPointsService(this.client,context.tenantId).getLeaderboard(50),members=new Map(this.members(context.tenantId).map(member=>[member.canonicalUserId,member.displayName??member.twitchLogin])),leaderboard=rows.map(row=>({...row,displayName:members.get(row.userId)??row.userId}));
+    const payload=buildDshLeaderboardPayload(leaderboard,guild,this.now(),!isSimulationDiscordId(guild));
     const messageId=await this.upsertDiscord(context.tenantId,"leaderboard",guild,channelId,payload);
-    return sendJson(response,200,{schemaVersion:1,messageId,channelId,entries:view.leaderboard.length,...(isSimulationDiscordId(guild)?{shadowRoomId:(await this.discord?.target(context.tenantId,guild))?.roomId}:{})});
+    return sendJson(response,200,{schemaVersion:1,messageId,channelId,entries:leaderboard.length,...(isSimulationDiscordId(guild)?{shadowRoomId:(await this.discord?.target(context.tenantId,guild))?.roomId}:{})});
   }
   private async pointsView(tenantId:string,userId:string){
     if(!this.client)return{leaderboard:[],me:null};
