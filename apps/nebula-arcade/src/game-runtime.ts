@@ -43,7 +43,7 @@ export function joinNebulaGame(state:NebulaGameRuntimeStateV1,input:{userId?:unk
 }
 export function leaveNebulaGame(state:NebulaGameRuntimeStateV1,playerId:string,gameId:string,now=new Date()){const m=state.players[playerId]?.joinedGames?.[gameId];if(!m?.active)return false;m.active=false;m.lastActiveAt=now.toISOString();return true;}
 function append(state:NebulaGameRuntimeStateV1,e:NebulaGameLedgerEntryV1){state.ledger.push(e);state.ledger=state.ledger.slice(-NEBULA_GAME_LEDGER_LIMIT);}
-export function awardNebulaGamePoints(state:NebulaGameRuntimeStateV1,player:NebulaGamePlayerV1,amountValue:number,reason:string,extra:{gameId?:string;channel?:string}={},now=new Date()){
+export function awardNebulaGamePoints(state:NebulaGameRuntimeStateV1,player:NebulaGamePlayerV1,amountValue:number,reason:string,extra:{gameId?:string;channel?:string;sourceId?:string}={},now=new Date()){
   const amount=Math.max(0,Math.floor(Number(amountValue||0)));if(!amount)return player;player.gamePointsBalance+=amount;player.lifetimeEarned+=amount;append(state,{at:now.toISOString(),playerId:player.id,amount,reason:String(reason||"gameplay").slice(0,160),...extra});return player;
 }
 export function awardNebulaCheckinBonus(state:NebulaGameRuntimeStateV1,input:{awardId:unknown;channel:unknown;userId:unknown;username?:unknown;displayName?:unknown},now=new Date()){
