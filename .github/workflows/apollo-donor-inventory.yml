@@ -88,7 +88,7 @@ jobs:
           export DONOR_COMMIT_SHA="$DONOR_SHA"
           node scripts/parity-donor-inventory.mjs --root donor-source --repository "$DONOR_REPOSITORY" --ref "$DONOR_REF" --output donor-inventory.json
           export DONOR_COMMIT_SHA="$(git rev-parse HEAD)"
-          node scripts/parity-donor-inventory.mjs --root "$APOLLO_APP" --repository "Mtman1987/ApolloStation" --ref "$GITHUB_SHA:$APOLLO_APP" --output apollo-inventory.json
+          node scripts/parity-donor-inventory.mjs --root "$APOLLO_APP" --repository "Mtman1987/ApolloStation" --ref "$GITHUB_SHA:$APOLLO_APP" --app-path "$APOLLO_APP" --output apollo-inventory.json
           node scripts/parity-compare-inventories.mjs donor-inventory.json apollo-inventory.json parity-comparison.json
           {
             echo "## Donor ↔ Apollo evidence"
