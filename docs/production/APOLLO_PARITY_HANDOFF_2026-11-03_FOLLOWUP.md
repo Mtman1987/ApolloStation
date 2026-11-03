@@ -2,10 +2,10 @@
 
 ## Current continuation — refreshed after PR #398
 
-**Fetch main before continuing.** Current main HEAD is
-`e12d1a42f76e627205f6c5e93361cd85b02d1238` (this handoff refresh); PR #398's
-code was squash-merged at `20c23a73f90ec82250aedd26aab02eb0fba30811`.
-There are no open PRs at this refresh.
+**Fetch main before continuing.** PR #398's code was squash-merged at
+`20c23a73f90ec82250aedd26aab02eb0fba30811`. This follow-up refresh is
+documentation-only; fetch main to resolve the current HEAD. There were no open
+PRs at this refresh.
 
 ### Completed in PR #398
 
