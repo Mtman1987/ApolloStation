@@ -2,6 +2,15 @@ name: StreamWeaver parity validation
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - feat/streamweaver-avatar-gesture-replies
+    paths:
+      - apps/streamweaver/src/chat-gateway-consumer.ts
+      - apps/streamweaver/src/overlay-widgets.ts
+      - tests/streamweaver-chat-gateway.test.mjs
+      - tests/streamweaver-overlay-widgets.test.mjs
+      - .github/workflows/streamweaver-parity-validation.yml
   pull_request:
     paths:
       - apps/streamweaver/src/chat-gateway-consumer.ts
