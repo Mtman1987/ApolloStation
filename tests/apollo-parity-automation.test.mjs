@@ -25,8 +25,9 @@ test('manual donor inventory uploads every REA and generated port-brief artifact
   assert.match(workflow, /donor code is never installed or run/);
   assert.ok(workflow.includes('node scripts/parity-rea.mjs donor-source > donor-rea-analysis.json'));
   assert.ok(workflow.includes('--app-path "$APOLLO_APP" --output apollo-inventory.json'));
-  assert.ok(workflow.includes("jq -e 'type == " + String.fromCharCode(34) + "object" + String.fromCharCode(34) + "' rea-analysis.json"));
-  assert.ok(workflow.includes("jq -e 'type == " + String.fromCharCode(34) + "object" + String.fromCharCode(34) + "' rea-analysis.json"));
+  for (const artifact of ['donor-rea-analysis.json', 'apollo-rea-analysis.json']) {
+    assert.ok(workflow.includes(`jq -e 'type == "object"' ${artifact} >/dev/null`), 'missing JSON validation: ' + artifact);
+  }
 });
 
 test('nightly donor matrix also prepares and uploads the review-only port brief', () => {
@@ -37,8 +38,9 @@ test('nightly donor matrix also prepares and uploads the review-only port brief'
   assert.ok(workflow.includes('port-brief/port-brief.md'));
   assert.ok(workflow.includes('node scripts/parity-rea.mjs donor-source > donor-rea-analysis.json'));
   assert.ok(workflow.includes('--app-path "$APOLLO_APP" --output apollo-inventory.json'));
-  assert.ok(workflow.includes("jq -e 'type == " + String.fromCharCode(34) + "object" + String.fromCharCode(34) + "' rea-analysis.json"));
-  assert.ok(workflow.includes("jq -e 'type == " + String.fromCharCode(34) + "object" + String.fromCharCode(34) + "' rea-analysis.json"));
+  for (const artifact of ['donor-rea-analysis.json', 'apollo-rea-analysis.json']) {
+    assert.ok(workflow.includes(`jq -e 'type == "object"' ${artifact} >/dev/null`), 'missing JSON validation: ' + artifact);
+  }
   assert.ok(workflow.includes('Candidate comparison only; no parity claim'));
   assert.ok(workflow.includes('push:'));
   assert.ok(workflow.includes("'scripts/parity-*.mjs'"));
