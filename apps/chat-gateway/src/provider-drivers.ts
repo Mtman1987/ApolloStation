@@ -127,6 +127,15 @@ export class DiscordGatewayProviderDriver implements ProviderConnectionDriverV1,
     return{threadId,messageId};
   }
 
+  async setDiscordForumThreadArchived(input:{tenantId:string;connectionId:string;channelId:string;threadId:string;archived:boolean}):Promise<void>{
+    if(!/^\\d{5,30}$/.test(input.channelId)||!/^\\d{5,30}$/.test(input.threadId))throw new Error("Discord forum archive target is invalid");
+    const active=this.active.get(connectionKey({...input,provider:"discord"}));
+    if(!active||active.connection.channelId!==input.channelId)throw new Error("Discord forum connection is unavailable");
+    await this.assertForumThreadTarget(active,input.channelId,input.threadId);
+    const response=await this.fetchImpl(`${DISCORD_API_ORIGIN}/channels/${encodeURIComponent(input.threadId)}`,{method:"PATCH",headers:{Authorization:`Bot ${active.accessToken}`,"Content-Type":"application/json"},body:JSON.stringify({archived:input.archived})});
+    if(!response.ok)throw new Error(`Discord forum thread archive update failed (${response.status})`);
+  }
+
   async deleteDiscordMessage(input:{tenantId:string;connectionId:string;channelId:string;threadId?:string;messageId:string;transport:"webhook"|"bot"}){
     if(!/^\d{5,30}$/.test(input.messageId)||!/^\d{5,30}$/.test(input.channelId)||(input.threadId!==undefined&&!/^\d{5,30}$/.test(input.threadId)))throw new Error("Invalid Discord media message");
     const active=this.active.get(connectionKey({...input,provider:"discord"}));if(!active||active.connection.channelId!==input.channelId)throw new Error("Discord connection unavailable");
