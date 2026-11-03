@@ -28,6 +28,19 @@ test("an enabled forum whitelist with no entries fails closed",async()=>{
  }finally{store.close();}
 });
 
+test("a second forum worker run cannot replay the same tenant concurrently",async()=>{
+ const store=new DshForumForwardingStore(":memory:");let release;const waiting=new Promise(resolve=>{release=resolve;});
+ let entered;const started=new Promise(resolve=>{entered=resolve;});
+ const client={async listCommlinkForumForwardRules(){return{rules:[]};},async listEvents(){entered();await waiting;return[];}};
+ const worker=new DshForumForwardingWorker(store,client,{},()=>[]);
+ try{
+  const first=worker.runOnce("tenant-a");await started;
+  const second=await worker.runOnce("tenant-a");
+  assert.equal(second.busy,true);assert.equal(second.processed,0);
+  release();const result=await first;assert.equal(result.busy,undefined);assert.equal(result.processed,0);
+ }finally{release();store.close();}
+});
+
 test("forum worker lease prevents concurrent replay and releases safely",()=>{
  const store=new DshForumForwardingStore(":memory:");
  try{
