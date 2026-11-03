@@ -66,7 +66,7 @@ export class DshWebControls {
   private readonly clipGifs?: SqliteDshClipGifStore;
   private readonly signalControlStore?:SqliteDshSignalControlStore;
   private readonly signalSeekers?:SqliteDshSignalSeekerStore;
-  private readonly forumForwardingStore?:DshForumForwardingStore;
+  private readonly forumForwardingStore?:DshForumForwardingStore;\n  private readonly forumForwarding?:DshForumForwardingService;
   private readonly raidPile?:DshRaidPileStore;
   private readonly raidTrain?:DshRaidTrainStore;
   private readonly config?: DshLiveRuntimeConfigV1;
