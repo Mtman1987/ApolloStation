@@ -43,7 +43,10 @@ jobs:
           TARGET_PATH: ${{ inputs.target_path }}
         run: |
           set -euo pipefail
-          npm run parity:rea -- "$TARGET_PATH/dist" > rea-analysis.json
+          node scripts/parity-rea.mjs "$TARGET_PATH/dist" > rea-analysis.json
+
+      - name: Validate REA JSON evidence
+        run: jq -e 'type == "object"' rea-analysis.json >/dev/null
 
       - name: Publish analysis summary
         if: always()
