@@ -154,7 +154,8 @@ export function suggestNebulaSharedBingoPhrase(runtime:NebulaGameRuntimeStateV1,
   const phrase=String(input.phrase??"").replace(/[\u0000-\u001f\u007f]/g," ").replace(/\s+/g," ").trim().slice(0,80);
   if(phrase.length<2||DISALLOWED_PHRASE.test(phrase))return{changed:false,outcome:"inappropriate" as const};
   const settled=settleNebulaSharedBingoClaims(game,now),square=game.squares[parsed.index];
-  if(!square)return{changed:settled.changed,outcome:"invalid" as const};\n  if(!square)return{changed:settled.changed,outcome:"invalid" as const};
+  if(!square)return{changed:settled.changed,outcome:"invalid" as const};
+  if(!square)return{changed:settled.changed,outcome:"invalid" as const};
   if(game.completedAt)return{changed:settled.changed,outcome:"complete" as const};
   if(square.status!=="stella"&&square.status!=="open"&&square.status!=="replacement")return{changed:settled.changed,outcome:"unavailable" as const,blocked:settled.blocked};
   const joined=joinNebulaGame(runtime,{...input,gameId:"bingo"},new Date(now));
