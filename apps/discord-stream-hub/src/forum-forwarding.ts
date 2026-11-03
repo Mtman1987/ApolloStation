@@ -229,8 +229,16 @@ export class DshForumForwardingWorker {
                   const guild=await this.discord.getGuild(tenant,record.guildId??String(payload.guildId??""));
                   const attachments=(record.rich?.attachments??[]).map(item=>({url:item.url,filename:item.name,contentType:item.contentType}));
                   const embeds=(record.rich?.embeds??[]).map(item=>({title:item.title,description:item.description,url:item.url,imageUrl:item.imageUrl,thumbnailUrl:item.thumbnailUrl}));
-                  const result=await this.service.apply({tenantId:tenant,guildId:record.guildId??String(payload.guildId),channelId:sourceChannel.id,channelName:String(sourceChannel.name??sourceChannel.id),channelType:Number(sourceChannel.type??0),messageId:record.messageId,authorId:record.providerUserId,authorName:record.displayName??record.username,content:record.text,attachments,embeds,sourceMessageUrl:"https://discord.com/channels/"+(record.guildId??String(payload.guildId))+"/"+record.channelId+"/"+record.messageId,occurredAt:record.occurredAt,sourceIsPublic:isPublicDshForumSource(guild,sourceChannel),authorIsBot:record.isBot,operation:item.type==="spmt.chat.message.mutated.v1"?(payload.operation==="delete"?"delete":"edit"):"create"});
-                  if(result.status==="forwarded")forwarded++;
+                  const guildId=record.guildId??String(payload.guildId),forwardEvent={tenantId:tenant,guildId,channelId:sourceChannel.id,channelName:String(sourceChannel.name??sourceChannel.id),channelType:Number(sourceChannel.type??0),messageId:record.messageId,authorId:record.providerUserId,authorName:record.displayName??record.username,content:record.text,attachments,embeds,sourceMessageUrl:"https://discord.com/channels/"+guildId+"/"+record.channelId+"/"+record.messageId,occurredAt:record.occurredAt,sourceIsPublic:isPublicDshForumSource(guild,sourceChannel),authorIsBot:record.isBot,operation:item.type==="spmt.chat.message.mutated.v1"?(payload.operation==="delete"?"delete":"edit"):"create"} as DshForumForwardMutationV1;
+                  const remoteState=await this.client.getCommlinkForumForwardState(tenant,guildId,sourceChannel.id,record.messageId);
+                  if(remoteState.thread)this.store.setThread(tenant,guildId,sourceChannel.id,remoteState.thread.destinationThreadId,remoteState.thread.pending,remoteState.thread.updatedAt);
+                  if(remoteState.receipt)this.store.setMessage({tenant,guild:guildId,channel:sourceChannel.id,message:record.messageId,thread:remoteState.receipt.destinationThreadId,forwarded:remoteState.receipt.destinationMessageId,deleted:remoteState.receipt.deleted,now:remoteState.receipt.updatedAt});
+                  let result:any;
+                  try{result=await this.service.apply(forwardEvent);}finally{
+                    const thread=this.store.getThread(tenant,guildId,sourceChannel.id),receipt=this.store.getMessage(tenant,guildId,sourceChannel.id,record.messageId);
+                    if(thread||receipt)await this.client.putCommlinkForumForwardState(tenant,{...(thread?{thread:{sourceGuildId:guildId,sourceChannelId:sourceChannel.id,destinationThreadId:thread.thread_id,pending:Boolean(thread.pending),updatedAt:new Date().toISOString()}}:{}),...(receipt?{receipt:{sourceGuildId:guildId,sourceChannelId:sourceChannel.id,sourceMessageId:record.messageId,destinationThreadId:receipt.thread_id,destinationMessageId:receipt.forwarded_message_id,deleted:Boolean(receipt.deleted),updatedAt:new Date().toISOString()}}:{})});
+                  }
+                  if(result?.status==="forwarded")forwarded++;
                 }
               }
             }
