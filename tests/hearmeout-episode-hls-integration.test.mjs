@@ -125,7 +125,11 @@ for arg in "$@"; do
  output="$arg"
 done
 dir=$(dirname "$output")
-segment=$(printf '%s' "$segment_pattern" | sed 's/%v/0/g; s/%05d/00000/g')
+case "$segment_pattern" in
+ */stream_%v_seg_%05d.ts) ;;
+ *) exit 9;;
+esac
+segment="$dir/stream_v0_seg_00000.ts"
 printf '#EXTM3U\\n#EXT-X-STREAM-INF:BANDWIDTH=128000\\nstream_v0.m3u8\\n' > "$dir/index.m3u8"
 printf '#EXTM3U\\n#EXTINF:6,\\nstream_v0_seg_00000.ts\\n#EXT-X-ENDLIST\\n' > "$dir/stream_v0.m3u8"
 printf 'fixture-segment' > "$segment"
