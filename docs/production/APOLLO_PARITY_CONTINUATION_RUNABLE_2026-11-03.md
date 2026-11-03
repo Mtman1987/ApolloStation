@@ -3,6 +3,12 @@
 Read after [the follow-up handoff](APOLLO_PARITY_HANDOFF_2026-11-03_FOLLOWUP.md).
 Fetch current main before resuming. This document is a status snapshot, not a parity claim.
 
+## Newer continuation — read first
+
+[Authenticated media proxy continuation](APOLLO_MEDIA_PROXY_CONTINUATION_2026-11-03.md) records PR #386 merged on main at ebcf466, private Watch/YouTube cache policy, tenant/user-scoped stream registry, and preparation-time session revalidation. It also supersedes the pending baseline Oracle status below: run 41710521401 actually recorded 1,458 passes and 3 failures from two stale HLS header assertions plus the enclosing test. Those assertions are repaired in #386, with stricter private/no-store and Vary expectations. New-code Oracle 41713920282 remained in progress at inspection; no findings/pass claim yet.
+
+The rest is the earlier increment's historical snapshot. Its test results belong only to the recorded revision. Follow the linked newer handoff for next work and current status.
+
 ## Merged repository work
 
 - PR [#384](https://github.com/Mtman1987/ApolloStation/pull/384): durable workflow/test repair patch and handoff, merged at `069c6ddffef99838e3a3fe7154c5c45779a5c1ff`.
