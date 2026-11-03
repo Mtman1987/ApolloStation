@@ -135,14 +135,22 @@ class DshCommlinkForumDiscordPort implements DshForumDiscordPort {
     return{threadId:String(result.threadId),messageId:String(result.messageId)};
   }
   async createThreadMessage(tenantId:string,threadId:string,payload:Record<string,unknown>){
-    const result=await this.submit(tenantId,"upsert",threadId,this.messageInput(payload),`create:${threadId}:${this.sourceKey(payload)}`);
+    const target=await this.threadTarget(tenantId,threadId);
+    const result=await this.submit(tenantId,"upsert",target.parentId,{...this.messageInput(payload),threadId},`create:${threadId}:${this.sourceKey(payload)}`);
     return String(result.providerMessageId);
   }
   async editThreadMessage(tenantId:string,threadId:string,messageId:string,payload:Record<string,unknown>){
-    await this.submit(tenantId,"upsert",threadId,{...this.messageInput(payload),previousMessageId:messageId},`edit:${threadId}:${messageId}:${this.sourceKey(payload)}`);
+    const target=await this.threadTarget(tenantId,threadId);
+    await this.submit(tenantId,"upsert",target.parentId,{...this.messageInput(payload),threadId,previousMessageId:messageId},`edit:${threadId}:${messageId}:${this.sourceKey(payload)}`);
   }
   async deleteThreadMessage(tenantId:string,threadId:string,messageId:string){
-    await this.submit(tenantId,"delete",threadId,{messageId,transport:"webhook"},`delete:${threadId}:${messageId}`);
+    const target=await this.threadTarget(tenantId,threadId);
+    await this.submit(tenantId,"delete",target.parentId,{threadId,messageId,transport:"webhook"},`delete:${threadId}:${messageId}`);
+  }
+  private async threadTarget(tenantId:string,threadId:string){
+    const thread=await this.reads.getChannel(tenantId,threadId),parentId=String(thread.parent_id??"");
+    if(!parentId)throw new Error("Destination thread has no parent channel");
+    return{parentId};
   }
   setThreadArchived(tenantId:string,threadId:string,archived:boolean){return this.reads.setThreadArchived(tenantId,threadId,archived);}
   private messageInput(payload:Record<string,unknown>){
