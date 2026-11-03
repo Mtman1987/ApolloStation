@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {forwardDshForumPost,importDshDiscordForumThreads,importDshDiscordForumThreadMessage,DshForumForwardingStore,DshForumForwardingWorker,DshCommlinkForumDiscordPort,dshForumThreadCreationIdempotencyKey} from "../apps/discord-stream-hub/dist/forum-forwarding.js";
+import {forwardDshForumPost,importDshDiscordForumThreads,importDshDiscordForumThreadMessage,DshForumForwardingStore,DshForumForwardingWorker,DshForumForwardingService,DshCommlinkForumDiscordPort,dshForumThreadCreationIdempotencyKey} from "../apps/discord-stream-hub/dist/forum-forwarding.js";
 
 const source={sourceApp:"discord-stream-hub",sourceServerId:"123456",sourceChannelId:"234567",sourceChannelName:"general",sourceMessageId:"345678",sourceMessageUrl:"https://discord.com/channels/123456/234567/345678",authorId:"456789",authorName:"Viewer",title:"Community / #general",content:"Hello community",postedAt:"2026-11-03T12:00:00.000Z"};
 function client(){
@@ -16,6 +16,16 @@ test("forum edit retries reuse a receipt but distinct edits get distinct receipt
  await port.editThreadMessage("tenant-a","thread-1","message-1",first);
  await port.editThreadMessage("tenant-a","thread-1","message-1",{embeds:[{url:"https://discord.com/channels/1/2/3",description:"second edit"}]});
  assert.equal(keys.length,3);assert.equal(keys[0],keys[1]);assert.notEqual(keys[1],keys[2]);
+});
+
+test("an enabled forum whitelist with no entries fails closed",async()=>{
+ const store=new DshForumForwardingStore(":memory:");
+ try{
+  const service=new DshForumForwardingService(store,{async getChannel(){throw new Error("no destination lookup expected");},async createForumThread(){throw new Error("no delivery expected");},async createThreadMessage(){throw new Error("no delivery expected");},async editThreadMessage(){throw new Error("no delivery expected");},async deleteThreadMessage(){throw new Error("no delivery expected");},async setThreadArchived(){throw new Error("no delivery expected");}});
+  service.configure({schemaVersion:1,tenantId:"tenant-a",sourceGuildId:"123456",destinationGuildId:"654321",forumChannelId:"765432",mode:"per-channel",paused:false,restrictToWhitelist:true,sourceChannelWhitelist:[]});
+  const result=await service.apply({tenantId:"tenant-a",guildId:"123456",channelId:"234567",channelName:"general",channelType:0,messageId:"345678",authorId:"456789",authorName:"Viewer",content:"hello",occurredAt:"2026-11-03T12:00:00.000Z",sourceIsPublic:true});
+  assert.deepEqual(result,{status:"skipped",reason:"not-whitelisted"});
+ }finally{store.close();}
 });
 
 test("forum thread creation idempotency is isolated by source channel",()=>{
