@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {createServer} from "node:http";
+import {mkdtempSync,rmSync} from "node:fs";
+import {tmpdir} from "node:os";
+import {join} from "node:path";
 import {CommlinkForumStore} from "../packages/commlink-core/dist/index.js";
 import {CommlinkForumApi} from "../apps/spmt-service/dist/commlink-forum-api.js";
 
@@ -60,6 +63,22 @@ test("provider-origin replay is idempotent and cannot collide across tenants",()
   const replayReply=store.createReply("tenant-a",first.id,"bridge","Imported reply",replyOrigin);
   assert.equal(replayReply.id,reply.id);
  }finally{store.close()}
+});
+
+test("provider-origin receipts survive separate forum store connections",()=>{
+ const directory=mkdtempSync(join(tmpdir(),"commlink-forum-"));
+ const path=join(directory,"forum.sqlite"),firstStore=new CommlinkForumStore(path),secondStore=new CommlinkForumStore(path);
+ try{
+  const origin={provider:"discord",channelId:"forum-channel",threadId:"thread-shared",messageId:"starter-shared"};
+  const first=firstStore.createPost("tenant-a","discord-stream-hub","Imported topic","Original",origin);
+  const replay=secondStore.createPost("tenant-a","discord-stream-hub","Imported topic","Original",origin);
+  assert.equal(replay.id,first.id);
+  assert.equal(secondStore.listPosts("tenant-a").length,1);
+  const postReply=firstStore.createReply("tenant-a",first.id,"discord-stream-hub","Imported reply",{...origin,messageId:"reply-shared"});
+  const replyReplay=secondStore.createReply("tenant-a",first.id,"discord-stream-hub","Imported reply",{...origin,messageId:"reply-shared"});
+  assert.equal(replyReplay.id,postReply.id);
+  assert.equal(secondStore.listReplies("tenant-a",first.id).length,1);
+ }finally{firstStore.close();secondStore.close();rmSync(directory,{recursive:true,force:true});}
 });
 
 test("scoped DSH service can import only provider-attributed forum posts",async()=>{
