@@ -45,10 +45,10 @@ test('Quackverse trade desk is connected to authenticated browser actions and sh
  try{
   controls.tabletop.importData('tenant',{collections:{alice:normalizeQuackverseCollection({cards:[1,1,3],deck:[1]}),bob:normalizeQuackverseCollection({cards:[2,2,4],deck:[2]})}});
   const before=await controls.handle('GET','state',{},alice);assert.equal(before.quackverseTrades.candidates[0].userId,'bob');
-  const offered=await controls.handle('POST','trade',{action:'offer',toId:'bob',giveCardId:3,wantCardId:4},alice);assert.equal(offered.result.status,'pending');
-  await assert.rejects(()=>controls.handle('POST','trade',{action:'accept',offerId:offered.result.id},alice),/other player/);
+  const offered=await controls.handle('POST','trade',{action:'offer',toId:'bob',giveCardId:3,wantCardId:4,requestId:'browser-offer'},alice);assert.equal(offered.result.status,'pending');
+  await assert.rejects(()=>controls.handle('POST','trade',{action:'accept',offerId:offered.result.id,requestId:'unauthorized-accept'},alice),/other player/);
   const incoming=await controls.handle('GET','state',{},bob);assert.equal(incoming.quackverseTrades.offers[0].fromId,'alice');
-  const accepted=await controls.handle('POST','trade',{action:'accept',offerId:offered.result.id},bob);assert.equal(accepted.result.status,'accepted');
+  const accepted=await controls.handle('POST','trade',{action:'accept',offerId:offered.result.id,requestId:'browser-accept'},bob);assert.equal(accepted.result.status,'accepted');
   const aliceAfter=await controls.handle('GET','state',{},alice),bobAfter=await controls.handle('GET','state',{},bob);
   assert.deepEqual(aliceAfter.tabletop.collection.cards.sort(),[1,1,4]);assert.deepEqual(bobAfter.tabletop.collection.cards.sort(),[2,2,3]);
   assert.equal(aliceAfter.quackverseTrades.offers[0].status,'accepted');
