@@ -78,6 +78,8 @@ test("scoped DSH service can import only provider-attributed forum posts",async(
   let replyResponse=await createReply();assert.equal(replyResponse.status,201);const importedReply=(await replyResponse.json()).reply;
   replyResponse=await createReply();assert.equal((await replyResponse.json()).reply.id,importedReply.id);
   const mutate=body=>fetch(base+"/v1/commlink/forums/import-mutations",{method:"POST",headers:{"x-spmt-tenant":"tenant-a",authorization:"Bearer service","content-type":"application/json"},body:JSON.stringify(body)});
+  response=await mutate({kind:"reply",operation:"edit",origin:replyOrigin,body:"Edited reply"});assert.equal(response.status,200);assert.equal((await response.json()).reply.body,"Edited reply");
+  response=await mutate({kind:"reply",operation:"delete",origin:replyOrigin});assert.equal(response.status,200);
   response=await mutate({operation:"edit",origin:post.origin,title:"Updated from Discord",body:"Edited body"});assert.equal(response.status,200);assert.equal((await response.json()).post.body,"Edited body");
   response=await mutate({operation:"delete",origin:post.origin});assert.equal(response.status,200);assert.equal((await response.json()).deleted,true);
   response=await mutate({operation:"delete",origin:post.origin});assert.equal(response.status,200);
