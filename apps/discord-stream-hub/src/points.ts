@@ -208,7 +208,7 @@ export class DshPointsService {
 
 export function buildDshLeaderboardPayload(rows:Array<{rank:number;displayName?:string;userId:string;lifetimeXp:number;spendableXp:number;level:number}>,guildId:string,updatedAt=new Date().toISOString(),interactive=true){
   const guild=String(guildId??"").trim();
-  if(!/^\d{5,30}$/.test(guild))throw new Error("A Discord server ID is required for the leaderboard");
+  if(!guild||(interactive&&!/^\d{5,30}$/.test(guild)))throw new Error("A Discord server ID is required for the leaderboard");
   const safe=(value:unknown)=>String(value??"Unknown").replace(/[\r\n]/g," ").slice(0,80);
   const medals=["🥇","🥈","🥉"];
   const top=rows.slice(0,10).map((row,index)=>(medals[index]??("#"+row.rank))+" **"+safe(row.displayName||row.userId)+"** · "+Math.max(0,Math.trunc(row.lifetimeXp)).toLocaleString("en-US")+" Lifetime XP").join("\n")||"No XP activity yet. Start participating to appear here.";
