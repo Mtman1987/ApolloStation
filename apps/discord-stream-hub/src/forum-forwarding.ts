@@ -4,7 +4,7 @@ import { DshDiscordApi, DshDiscordError } from "./discord-live-publisher.js";
 export const DSH_FORUM_POST_FORWARDED="dsh.forum.post-forwarded.v1";
 export interface DshForwardedForumPostV1 {
   sourceApp:string;sourceServerId:string;sourceChannelId:string;sourceChannelName:string;
-  sourceMessageId:string;sourceMessageUrl?:string;authorId:string;authorName:string;
+  sourceMessageId:string;sourceThreadId?:string;sourceMessageUrl?:string;authorId:string;authorName:string;
   title:string;content:string;category?:string;postedAt?:string;
   embeds?:Array<Record<string,unknown>>;attachments?:Array<Record<string,unknown>>;
   mentionedUsers?:Array<Record<string,unknown>>;
@@ -19,11 +19,11 @@ export function normalizeDshForwardedForumPost(value:unknown):DshForwardedForumP
   if(postedAt&&!Number.isFinite(Date.parse(postedAt)))throw new Error("Forwarded forum post time is invalid");
   const sourceMessageUrl=item.sourceMessageUrl===undefined?undefined:forumText(item.sourceMessageUrl,2048);
   if(sourceMessageUrl&&!forumHttps(sourceMessageUrl))throw new Error("Forwarded forum source URL must use credential-free HTTPS");
-  return {sourceApp:forumText(item.sourceApp,80),sourceServerId:forumText(item.sourceServerId,120),sourceChannelId:forumText(item.sourceChannelId,120),sourceChannelName:forumText(item.sourceChannelName,120),sourceMessageId:forumText(item.sourceMessageId,120),...(sourceMessageUrl?{sourceMessageUrl}:{}),authorId:forumText(item.authorId,120),authorName:forumText(item.authorName,120),title:forumText(item.title,300),content:operation==="delete"?String(item.content??"").slice(0,12000):forumText(item.content,12000),...(item.category===undefined?{}:{category:forumText(item.category,100)}),...(postedAt?{postedAt}:{}),embeds:forumList(item.embeds,10),attachments:forumList(item.attachments,20),mentionedUsers:forumList(item.mentionedUsers,50),operation};
+  return {sourceApp:forumText(item.sourceApp,80),sourceServerId:forumText(item.sourceServerId,120),sourceChannelId:forumText(item.sourceChannelId,120),sourceChannelName:forumText(item.sourceChannelName,120),sourceMessageId:forumText(item.sourceMessageId,120),...(item.sourceThreadId===undefined?{}:{sourceThreadId:forumText(item.sourceThreadId,120)}),...(sourceMessageUrl?{sourceMessageUrl}:{}),authorId:forumText(item.authorId,120),authorName:forumText(item.authorName,120),title:forumText(item.title,300),content:operation==="delete"?String(item.content??"").slice(0,12000):forumText(item.content,12000),...(item.category===undefined?{}:{category:forumText(item.category,100)}),...(postedAt?{postedAt}:{}),embeds:forumList(item.embeds,10),attachments:forumList(item.attachments,20),mentionedUsers:forumList(item.mentionedUsers,50),operation};
 }
 export const DSH_FORUM_POST_MUTATED="dsh.forum.post-mutated.v1";
 export async function forwardDshForumPost(client:SpmtClient,tenantId:string,value:unknown){
-  const post=normalizeDshForwardedForumPost(value),origin={provider:"discord",channelId:post.sourceChannelId,messageId:post.sourceMessageId,authorId:post.authorId,authorName:post.authorName,...(post.sourceMessageUrl?{sourceUrl:post.sourceMessageUrl}:{}),sourceApp:post.sourceApp};
+  const post=normalizeDshForwardedForumPost(value),origin={provider:"discord",channelId:post.sourceChannelId,...(post.sourceThreadId?{threadId:post.sourceThreadId}:{}),messageId:post.sourceMessageId,authorId:post.authorId,authorName:post.authorName,...(post.sourceMessageUrl?{sourceUrl:post.sourceMessageUrl}:{}),sourceApp:post.sourceApp};
   const create=()=>client.createCommlinkForumPost(tenantId,{title:post.title,body:post.content||"[Discord forum post]",origin});
   if(post.operation==="delete"){try{await client.mutateCommlinkForumImport(tenantId,{operation:"delete",origin});}catch(error){if((error as {status?:number})?.status!==404)throw error;}}
   else if(post.operation==="edit"){try{await client.mutateCommlinkForumImport(tenantId,{operation:"edit",origin,title:post.title,body:post.content});}catch(error){if((error as {status?:number})?.status!==404)throw error;await create();}}
@@ -32,6 +32,33 @@ export async function forwardDshForumPost(client:SpmtClient,tenantId:string,valu
   const key=post.operation==="create"?`dsh-forum:${post.sourceApp}:${post.sourceServerId}:${post.sourceChannelId}:${post.sourceMessageId}`:`dsh-forum-mutation:${post.sourceApp}:${post.sourceServerId}:${post.sourceChannelId}:${post.sourceMessageId}:${post.operation}:${post.postedAt??"unknown"}`;
   const result=await client.publishEvent(tenantId,eventType,{schemaVersion:1,...post,forwardedAt:new Date().toISOString()},key);
   return {accepted:true,duplicate:result.duplicate,event:result.event};
+}
+
+/** Imports a Discord forum and its thread replies into SPMT-owned Commlink records. */
+export async function importDshDiscordForumThreads(client:SpmtClient,discord:DshDiscordApi,tenantId:string,guildId:string,forumId:string){
+  const guildKey=forumText(guildId,120),forumKey=forumText(forumId,120),guild=await discord.getGuild(tenantId,guildKey),forum=await discord.getChannel(tenantId,forumKey);
+  if(forum.guild_id!==guild.id||![15,16].includes(Number(forum.type)))throw new Error("Choose a forum or media channel in the selected Discord server");
+  const byId=new Map<string,any>(),active=await discord.listActiveThreads(tenantId,guildKey);
+  for(const thread of Array.isArray(active.threads)?active.threads:[])if(thread?.parent_id===forumKey&&typeof thread.id==="string")byId.set(thread.id,thread);
+  let before:string|undefined,archivePages=0;
+  while(archivePages<10){const page=await discord.listArchivedForumThreads(tenantId,forumKey,before);for(const thread of Array.isArray(page.threads)?page.threads:[])if(thread?.parent_id===forumKey&&typeof thread.id==="string")byId.set(thread.id,thread);archivePages++;if(!page.has_more||!Array.isArray(page.threads)||!page.threads.length)break;const oldest=page.threads.at(-1),next=String(oldest?.thread_metadata?.archive_timestamp??"");if(!next||next===before)break;before=next;}
+  let posts=0,replies=0,skipped=0,truncatedThreads=0;
+  for(const thread of byId.values()){
+    const messages:any[]=[],seen=new Set<string>();let messageBefore:string|undefined,pages=0;
+    while(pages<10){const rows=await discord.listChannelMessages(tenantId,thread.id,messageBefore);if(!rows.length)break;for(const row of rows){if(typeof row?.id==="string"&&!seen.has(row.id)){seen.add(row.id);messages.push(row);}}pages++;if(rows.length<100)break;const oldest=rows.at(-1)?.id;if(typeof oldest!=="string"||oldest===messageBefore)break;messageBefore=oldest;if(pages===10)truncatedThreads++;}
+    messages.sort((a,b)=>BigInt(a.id)<BigInt(b.id)?-1:BigInt(a.id)>BigInt(b.id)?1:0);const starter=messages[0];if(!starter?.id){skipped++;continue;}
+    const author=(message:any)=>({id:String(message.author?.id??"unknown"),name:String(message.author?.global_name??message.author?.username??"Discord member")});
+    const text=(message:any)=>{const content=String(message.content??"").trim(),attachments=Array.isArray(message.attachments)?message.attachments.flatMap((a:any)=>{const url=forumHttps(a.url);return url?[url]:[]}):[];return [content,...attachments].filter(Boolean).join("\n")||"[Discord attachment]";};
+    const starterAuthor=author(starter),threadTitle=String(thread.name??"Discord forum post").slice(0,300),starterUrl="https://discord.com/channels/"+guildKey+"/"+thread.id+"/"+starter.id;
+    const imported=await forwardDshForumPost(client,tenantId,{sourceApp:"discord-stream-hub",sourceServerId:guildKey,sourceChannelId:forumKey,sourceChannelName:String(forum.name??forumKey),sourceThreadId:String(thread.id),sourceMessageId:String(starter.id),sourceMessageUrl:starterUrl,authorId:starterAuthor.id,authorName:starterAuthor.name,title:threadTitle,content:text(starter),postedAt:starter.timestamp??new Date().toISOString(),attachments:starter.attachments??[],embeds:starter.embeds??[]});
+    const post=imported.event?.payload?.post??undefined;
+    const native=await client.listCommlinkForumPosts(tenantId,{limit:100});
+    const originKey=[forumKey,String(thread.id),String(starter.id)].join(":");
+    const parent=native.posts.find((item:any)=>{const o=item.origin??{};return [o.channelId,o.threadId??"",o.messageId].join(":")===originKey;});
+    const postId=parent?.id??post?.id;if(!postId)throw new Error("SPMT did not return the imported forum post");posts++;
+    for(const message of messages.slice(1)){if(!message?.id)continue;const a=author(message);await client.createCommlinkForumReply(tenantId,postId,{body:text(message),origin:{provider:"discord",channelId:forumKey,threadId:String(thread.id),messageId:String(message.id),authorId:a.id,authorName:a.name,sourceUrl:"https://discord.com/channels/"+guildKey+"/"+thread.id+"/"+message.id,sourceApp:"discord-stream-hub"}});replies++;}
+  }
+  return {forumId:forumKey,threadsDiscovered:byId.size,postsImported:posts,repliesImported:replies,skippedThreads:skipped,truncatedThreads};
 }
 
 export type DshForumForwardRuleV1 = {
