@@ -1,6 +1,7 @@
 import { assertAppModuleManifestV1, createAppCatalogRegistrationV1, type AppCatalogRegistrationV1, type AppModuleManifestV1 } from "@spmt/contracts";
 import { SpmtClient } from "@spmt/sdk";
 import { NEBULA_ARCADE_ROUND_COMPLETED, NEBULA_TAG_TAG_COMPLETED } from "@spmt/nebula-arcade";
+import { DSH_FORUM_POST_FORWARDED } from "./forum-forwarding.js";
 export * from "./live-monitor.js";
 export * from "./twitch-live-poller.js";
 export * from "./discord-live-publisher.js";
