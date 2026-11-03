@@ -252,7 +252,7 @@ export class DshForumForwardingService {
     if(forum.guild_id!==rule.destinationGuildId||![15,16].includes(Number(forum.type)))throw new Error("Destination must be a forum or media channel in the configured server");
     this.store.setThread(event.tenantId,event.guildId,event.channelId,null,true,this.now());
     try{
-      const created=await this.discord.createForumThread(event.tenantId,rule.forumChannelId,event.channelName.slice(0,100),{content:"Forwarded messages from #"+event.channelName+"\\n\\nSPMT forwarding key: "+createHash("sha256").update([event.tenantId,event.guildId,event.channelId,rule.forumChannelId].join(":")).digest("hex").slice(0,24),allowed_mentions:{parse:[]},idempotencyKey:dshForumThreadCreationIdempotencyKey(event.tenantId,rule.forumChannelId,event.guildId,event.channelId)});
+      const created=await this.discord.createForumThread(event.tenantId,rule.forumChannelId,event.channelName.slice(0,100),{content:"Forwarded messages from #"+event.channelName+"\n\nSPMT forwarding key: "+createHash("sha256").update([event.tenantId,event.guildId,event.channelId,rule.forumChannelId].join(":")).digest("hex").slice(0,24),allowed_mentions:{parse:[]},idempotencyKey:dshForumThreadCreationIdempotencyKey(event.tenantId,rule.forumChannelId,event.guildId,event.channelId)});
       this.store.setThread(event.tenantId,event.guildId,event.channelId,created.threadId,false,this.now());
       return created.threadId;
     }catch(error){
