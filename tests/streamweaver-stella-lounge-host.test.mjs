@@ -16,6 +16,9 @@ test("Stella sends bounded ambient host messages only when Space Mountain is liv
     random: () => 0,
   });
   try {
+    const startup = await host.runOnce(500);
+    assert.equal(startup.attempted, 0);
+    assert.equal(hostStore.view("spacemountainlive").nextAt, 360_500);
     hostStore.setNextAt("spacemountainlive", 1_000);
     const first = await host.runOnce(1_000);
     assert.deepEqual(first, { attempted: 1, sent: 1, skipped: 0, failed: 0 });
