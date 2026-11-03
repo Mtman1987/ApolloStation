@@ -143,7 +143,7 @@ exit 0
   assert.match(await readFile(join(dir,'stream_v0.m3u8'),'utf8'),/stream_v0_seg_00000\.ts/);
   assert.equal(await readFile(join(dir,'stream_v0_seg_00000.ts'),'utf8'),'fixture-segment');
   await ensureXtreamHls('episode-7-mkv');
-  assert.equal((await readFile(count,'utf8')).trim().split(/\\r?\\n/).length,1,'valid cache is not reconverted');
+  assert.equal((await readFile(count,'utf8')).trim().split(/\r?\n/).length,1,'valid cache is not reconverted');
  }finally{
   for(const [key,value] of [['PATH',previous.PATH],['HEARMEOUT_HLS_DIR',previous.HLS],['HEARMEOUT_XTREAM_BASE_URL',previous.BASE],['HEARMEOUT_XTREAM_USERNAME',previous.USER],['HEARMEOUT_XTREAM_PASSWORD',previous.PASS]]){if(value===undefined)delete process.env[key];else process.env[key]=value;}
   await rm(root,{recursive:true,force:true});
