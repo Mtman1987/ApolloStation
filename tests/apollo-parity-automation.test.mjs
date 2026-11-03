@@ -38,6 +38,8 @@ test('nightly donor matrix also prepares and uploads the review-only port brief'
   assert.ok(workflow.includes("jq -e 'type == " + String.fromCharCode(34) + "object" + String.fromCharCode(34) + "' rea-analysis.json"));
   assert.ok(workflow.includes("jq -e 'type == " + String.fromCharCode(34) + "object" + String.fromCharCode(34) + "' rea-analysis.json"));
   assert.ok(workflow.includes('Candidate comparison only; no parity claim'));
+  assert.ok(workflow.includes('push:'));
+  assert.ok(workflow.includes("'scripts/parity-*.mjs'"));
 });
 
 test('targeted REA analysis validates its streamed JSON artifact', () => {
