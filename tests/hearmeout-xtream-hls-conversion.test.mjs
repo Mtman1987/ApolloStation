@@ -49,7 +49,7 @@ test('uncached episode converts once, reaches EOF and serves playable HLS throug
   console.log=(...args)=>{logs.push(args.map(String).join(' '));};
   const databasePath=join(root,'rooms.sqlite');
   rooms=new SqliteHearMeOutRoomMediaRuntime(databasePath);
-  const principal={tenantId:'crew',userId:'owner',displayName:'Owner',roles:['owner']};
+  const principal={tenantId:'crew',userId:'owner',displayName:'Owner',roles:['member']};
   rooms.createRoom(principal,{roomId:'hls-public',name:'HLS Public',privacy:'public',operationId:'create-hls-room'});
   rooms.enqueue(principal,{roomId:'hls-public',lane:'movie',item:{itemId:'episode-77-mp4',type:'movie',title:'Episode 77',source:'xtream',playbackUrl:'/api/watch/xtream/hls/episode-77-mp4/index.m3u8'},operationId:'queue-hls-episode'});
   host=createHearMeOutWebServer({databasePath,spmtOrigin:'http://127.0.0.1:1',port:0});
