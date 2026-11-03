@@ -39,7 +39,7 @@ const result = spawnSync('npx', [
   '--json'
 ], {
   // Stream full Evidence to stdout so the workflow can redirect it to an artifact.
-  // REA application reports can exceed the old 50 MiB in-memory buffer limit.
+  // REA reports can exceed the old 50 MiB in-memory buffer limit.
   stdio: 'inherit',
   timeout: 10 * 60 * 1000,
   windowsHide: true
@@ -51,18 +51,4 @@ if (result.error) {
 }
 if (result.status !== 0) {
   process.exit(result.status ?? 1);
-}
-if (result.status !== 0) {
-  if (result.stdout) console.error(result.stdout);
-  if (result.stderr) console.error(result.stderr);
-  process.exit(result.status ?? 1);
-}
-
-try {
-  const report = JSON.parse(result.stdout);
-  process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
-} catch {
-  console.error('REA did not return valid JSON. Raw output was withheld from stdout; inspect the command diagnostics.');
-  if (result.stderr) console.error(result.stderr);
-  process.exit(1);
 }
