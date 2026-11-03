@@ -1,11 +1,10 @@
-import {createHash,randomUUID} from "node:crypto";
+import {randomUUID} from "node:crypto";
 import {DatabaseSync} from "node:sqlite";
 
 export type CommlinkForumPostV1={id:string;tenantId:string;authorUserId:string;title:string;body:string;createdAt:string;updatedAt:string;deletedAt?:string;origin?:{provider:string;channelId:string;threadId?:string;messageId?:string};replyCount:number};
 export type CommlinkForumReplyV1={id:string;tenantId:string;postId:string;authorUserId:string;body:string;createdAt:string;updatedAt:string;deletedAt?:string;origin?:{provider:string;channelId:string;threadId?:string;messageId?:string}};
 const clean=(value:unknown,max:number)=>String(value??"").replace(/\0/g,"").trim().slice(0,max);
 const id=(value:unknown)=>{const v=clean(value,160);if(!/^[A-Za-z0-9._:@/-]{1,160}$/.test(v))throw Error("Forum identifier is invalid");return v};
-const hash=(value:string)=>createHash("sha256").update(value).digest("hex");
 function origin(value:unknown):CommlinkForumPostV1["origin"]{if(!value||typeof value!=="object")return;const o=value as Record<string,unknown>,provider=clean(o.provider,40),channelId=clean(o.channelId,160),threadId=clean(o.threadId,160),messageId=clean(o.messageId,200);if(!provider||!channelId||(!threadId&&!messageId))return;return {provider,channelId,...(threadId?{threadId}:{}),...(messageId?{messageId}:{})};}
 
 /** SPMT-owned native forum authority. Provider IDs are immutable origin metadata, never local identity. */
