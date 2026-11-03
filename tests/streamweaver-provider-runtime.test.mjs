@@ -165,6 +165,13 @@ test("SpaceMountainLive !golive is wired to provider ingress and only reports ve
     await gateway.ingest(envelope({ tenantId: "spacemountainlive", provider: "twitch", connectionId: "tw-main", channelId: "provider-channel", messageId: "golive-2", text: "!golive", roles: ["member"], providerUserId: "viewer-id", canonicalUserId: "viewer-id", username: "viewer", displayName: "Viewer" }));
     assert.equal(starts, 1);
     assert.equal(sent.length, 2);
+
+    // The reserved owner command is Twitch-only. A Discord message cannot
+    // borrow the system tenant/channel labels to invoke the Restream control.
+    const crossProvider = await gateway.ingest(envelope({ tenantId: "spacemountainlive", provider: "discord", connectionId: "discord-main", channelId: "provider-channel", messageId: "golive-discord-1", text: "!golive", roles: ["broadcaster", "member"], providerUserId: "twitch-owner-id", canonicalUserId: "owner-id", username: "spacemountainlive", displayName: "SpaceMountainLive" }));
+    assert.equal(crossProvider.delivery.attempted, 0);
+    assert.equal(starts, 1);
+    assert.equal(sent.length, 2);
   } finally {
     runtime.close(); gatewayStore.close(); rmSync(dir, { recursive: true, force: true });
   }
