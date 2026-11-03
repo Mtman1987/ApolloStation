@@ -93,6 +93,7 @@ export class CommlinkLiveChatStore {
     const params: Array<string | number> = [query.tenantId];
     if (query.provider) { if(!["social-stream","tiktok"].includes(query.provider))assertProvider(query.provider); where.push("provider = ?"); params.push(query.provider); }
     if (query.channelId) { requireId(query.channelId, "channelId"); where.push("channel_id = ?"); params.push(query.channelId); }
+    if (query.messageId) { requireId(query.messageId, "messageId"); where.push("message_id = ?"); params.push(query.messageId); }
     if (query.search) {
       const search = query.search.trim().slice(0, 200);
       if (search) { where.push("(text LIKE ? ESCAPE '\\' OR username LIKE ? ESCAPE '\\')"); const pattern = `%${escapeLike(search)}%`; params.push(pattern, pattern); }
