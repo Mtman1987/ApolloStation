@@ -4,7 +4,7 @@ export class DshNebulaGameplayCaptureWorker {
  private readonly store:SqliteDshNebulaGameplayStore;
  private readonly capture:DshNebulaGameplayCaptureService;
  private lastRun=0;
- private inFlight?:Promise<unknown>;
+ private inFlight:Promise<unknown>|undefined;
  constructor(path:string,private readonly manifestUrl:string,renderer:DshNebulaGameplayRendererV1,private readonly fetchImpl:typeof fetch=fetch,private readonly now:()=>number=Date.now){
   const url=new URL(manifestUrl);if(url.protocol!=="https:"||url.username||url.password||url.search||url.hash)throw new Error("Nebula gameplay manifest URL must be credential-free HTTPS");
   this.store=new SqliteDshNebulaGameplayStore(path);this.capture=new DshNebulaGameplayCaptureService(this.store,renderer,()=>new Date(this.now()).toISOString());
