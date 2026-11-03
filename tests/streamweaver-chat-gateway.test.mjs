@@ -6,7 +6,7 @@ import test from "node:test";
 import { SpmtStreamWeaverPersonaRuntime, SqliteStreamWeaverSummonStore, StreamWeaverChatGatewayConsumer, StreamWeaverPersonaReplyReconciler, planStreamWeaverPersonaRoute } from "../apps/streamweaver/dist/index.js";
 
 const at = (minute) => new Date(Date.UTC(2026, 7, 23, 16, minute)).toISOString();
-const config = { schemaVersion: 1, tenantId: "tenant-a", personaId: "persona-athena", displayName: "Athena", aliases: ["athena", "annie", "athenabot87"], ownerCanonicalUserId: "owner-mt", homeChannelIds: ["home-channel"], summonWindowMs: 10 * 60 * 1000, instructions: "Use Athena's configured warm, mythic presentation.", memoryPolicy: "conversation" };
+const config = { schemaVersion: 1, tenantId: "tenant-a", personaId: "persona-athena", displayName: "Athena", aliases: ["athena", "annie", "athenabot87"], ownerCanonicalUserId: "owner-mt", homeChannelIds: ["home-channel"], summonWindowMs: 10 * 60 * 1000, instructions: "Use Athena's configured warm, mythic presentation.\n\nOptionally append one final avatar tag when it fits naturally: [wave_gesture], [blow_kiss_gesture], [spin_gesture], [playful_tilt_gesture], [laugh_gesture], [happy_gesture], [dance_gesture], [look_gesture], or [applaud_gesture]. Use sparingly; never include a tag mid-reply.", memoryPolicy: "conversation" };
 function delivery(id, minute, text, extra = {}) {
   return { schemaVersion: 1, deliveryId: id, consumerId: "streamweaver.persona", attempts: 0, message: { schemaVersion: 1, tenantId: "tenant-a", provider: "twitch", connectionId: "twitch-main", channelId: "guest-channel", messageId: id, text, occurredAt: at(minute), actor: { providerUserId: "provider-user", canonicalUserId: "viewer-1", username: "viewer", isBot: false, roles: ["member"] }, mentions: [], ...extra } };
 }
@@ -137,4 +137,31 @@ test("the public SPMT adapter preserves user, conversation, metering, and stable
   assert.equal(calls[0][0], "tenant-a");
   assert.deepEqual(calls[0][1], { userId: "viewer-1", message: "status", surface: "stream", conversationId: "streamweaver:persona-athena:chat:twitch:home-channel", routingPreference: "automatic", remember: true, presentation: { personaId: "persona-athena", displayName: "Athena", instructions: "Use Athena's configured warm, mythic presentation.", memoryPolicy: "conversation" } });
   assert.equal(calls[0][2], "streamweaver-persona:adapter-1");
+});
+
+
+test("persona replies strip a valid avatar gesture tag and publish one tenant-scoped overlay event", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "spmt-streamweaver-gesture-"));
+  const store = new SqliteStreamWeaverSummonStore(join(dir, "summons.db"));
+  const sent = [], events = [];
+  const reply = { schemaVersion: 1, tenantId: "tenant-a", deliveryId: "gesture-1", jobId: "job-gesture", displayName: "Athena", provider: "twitch", connectionId: "twitch-main", channelId: "home-channel", replyToMessageId: "gesture-1", createdAt: at(1) };
+  const job = { id: "job-gesture", tenantId: "tenant-a", ownerAppId: "stellar-core", capabilityId: "stellar-core.ai-chat.v1", requestedByType: "service", requestedById: "streamweaver", input: { callerAppId: "streamweaver" }, state: "succeeded", result: { kind: "stellar-chat-result.v1", text: "Welcome aboard, crew! [wave_gesture]" } };
+  const reconciler = new StreamWeaverPersonaReplyReconciler(store, {
+    getExecutionJob: async () => job,
+    publishEvent: async (...args) => { events.push(args); }
+  }, { send: async message => { sent.push(message); return { providerMessageId: "gesture-out" }; } }, { now: () => at(2) });
+  try {
+    store.enqueueReply(reply);
+    const report = await reconciler.runOnce("tenant-a");
+    assert.deepEqual(report, { observed: 1, waiting: 0, sent: 1, deferred: 0, rejected: 0 });
+    assert.equal(sent[0].text, "Welcome aboard, crew!");
+    assert.equal(sent[0].idempotencyKey, "streamweaver-persona-result:gesture-1");
+    assert.equal(events.length, 1);
+    assert.equal(events[0][0], "tenant-a");
+    assert.equal(events[0][1], "streamweaver.avatar.updated.v1");
+    assert.deepEqual(events[0][2], { displayName: "Athena", gesture: "wave_gesture" });
+    assert.equal(events[0][3], "streamweaver-avatar-gesture:gesture-1");
+    assert.equal(store.getReply("gesture-1").state, "sent");
+    assert.deepEqual(await reconciler.runOnce("tenant-a"), { observed: 0, waiting: 0, sent: 0, deferred: 0, rejected: 0 });
+  } finally { store.close(); rmSync(dir, { recursive: true, force: true }); }
 });
