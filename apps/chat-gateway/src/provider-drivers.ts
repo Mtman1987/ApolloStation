@@ -110,6 +110,23 @@ export class DiscordGatewayProviderDriver implements ProviderConnectionDriverV1,
     return { providerMessageId: id, transport: "bot" };
   }
 
+  async createDiscordForumThread(input:{tenantId:string;connectionId:string;channelId:string;name:string;content:string}):Promise<{threadId:string;messageId:string}>{
+    if(!/^\\d{5,30}$/.test(input.channelId))throw new Error("Discord forum parent channel is invalid");
+    const active=this.active.get(connectionKey({...input,provider:"discord"}));
+    if(!active||active.connection.channelId!==input.channelId)throw new Error("Discord forum connection is unavailable");
+    const parentResponse=await this.fetchImpl(`${DISCORD_API_ORIGIN}/channels/${encodeURIComponent(input.channelId)}`,{method:"GET",headers:{Authorization:`Bot ${active.accessToken}`}});
+    if(!parentResponse.ok)throw new Error(`Discord forum parent lookup failed (${parentResponse.status})`);
+    const parent=record(await parentResponse.json());
+    if(![15,16].includes(numberValue(parent?.type)??-1))throw new Error("Configured destination is not a Discord forum or media channel");
+    const name=String(input.name??"").trim().slice(0,100),content=String(input.content??"").trim().slice(0,1900);
+    if(!name||!content)throw new Error("Discord forum thread name and starter content are required");
+    const response=await this.fetchImpl(`${DISCORD_API_ORIGIN}/channels/${encodeURIComponent(input.channelId)}/threads`,{method:"POST",headers:{Authorization:`Bot ${active.accessToken}`,"Content-Type":"application/json"},body:JSON.stringify({name,auto_archive_duration:1440,message:{content,allowed_mentions:{parse:[]}}})});
+    if(!response.ok)throw new Error(`Discord forum thread creation failed (${response.status})`);
+    const created=record(await response.json()),threadId=scalarString(created?.id),messageId=scalarString(record(created?.message)?.id);
+    if(!threadId||!messageId)throw new Error("Discord forum thread creation returned incomplete identifiers");
+    return{threadId,messageId};
+  }
+
   async deleteDiscordMessage(input:{tenantId:string;connectionId:string;channelId:string;threadId?:string;messageId:string;transport:"webhook"|"bot"}){
     if(!/^\d{5,30}$/.test(input.messageId)||!/^\d{5,30}$/.test(input.channelId)||(input.threadId!==undefined&&!/^\d{5,30}$/.test(input.threadId)))throw new Error("Invalid Discord media message");
     const active=this.active.get(connectionKey({...input,provider:"discord"}));if(!active||active.connection.channelId!==input.channelId)throw new Error("Discord connection unavailable");
