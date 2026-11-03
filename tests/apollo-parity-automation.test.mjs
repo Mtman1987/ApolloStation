@@ -40,6 +40,12 @@ test('nightly donor matrix also prepares and uploads the review-only port brief'
   assert.ok(workflow.includes('Candidate comparison only; no parity claim'));
 });
 
+test('targeted REA analysis validates its streamed JSON artifact', () => {
+  const workflow = read('.github/workflows/rea-static-analysis.yml');
+  assert.ok(workflow.includes('node scripts/parity-rea.mjs "$TARGET_PATH/dist" > rea-analysis.json'));
+  assert.ok(workflow.includes("jq -e 'type == \\"object\\"' rea-analysis.json"));
+});
+
 test('REA and port-brief generators retain static-analysis and human-review guardrails', () => {
   const rea = read('scripts/parity-rea.mjs');
   const brief = read('scripts/parity-prepare-port.mjs');
