@@ -1,0 +1,19 @@
+import type {IncomingMessage,ServerResponse} from "node:http";
+import type {AuthService} from "@spmt/auth-core";
+import type {ControlService} from "@spmt/control-core";
+import {CommlinkForumStore} from "@spmt/commlink-core";
+export class CommlinkForumApi{
+ constructor(private readonly options:{store:CommlinkForumStore;auth:AuthService;control:ControlService;accessToken(request:IncomingMessage):string|undefined}){}
+ async handle(request:IncomingMessage,response:ServerResponse,url:URL){
+  const m=/^\/v1\/commlink\/forums(?:\/([A-Za-z0-9._:@-]{1,160})(?:\/replies(?:\/([A-Za-z0-9._:@-]{1,160}))?)?)?$/.exec(url.pathname);if(!m)return false;
+  try{const token=this.options.accessToken(request),tenant=String(request.headers["x-spmt-tenant"]??"");if(!token||!tenant)return json(response,401,{message:"Sign in to access forums"});const principal=this.options.auth.authorize(token,request.method==="GET"?"commlink:read":"commlink:write",tenant),workspace=this.options.control.getTenant(tenant);if(principal.actorType!=="user"||workspace.status!=="active")return json(response,403,{message:"Forum access denied"});const postId=m[1],replyId=m[2];
+   if(request.method==="GET"){if(replyId){const parent=this.options.store.getPost(tenant,postId!);if(!parent)return json(response,404,{message:"Forum post not found"});const reply=this.options.store.listReplies(tenant,postId!,200).find(r=>r.id===replyId);return reply?json(response,200,{reply}):json(response,404,{message:"Forum reply not found"});}if(postId){const post=this.options.store.getPost(tenant,postId);if(!post)return json(response,404,{message:"Forum post not found"});return json(response,200,{post,replies:this.options.store.listReplies(tenant,postId,200)});}return json(response,200,{posts:this.options.store.listPosts(tenant,Math.min(100,Number(url.searchParams.get("limit")??50)),url.searchParams.get("before")??undefined)});}
+   if(request.method==="POST"){const b=await readJson(request);if(!postId)return json(response,201,{post:this.options.store.createPost(tenant,principal.actorId,String(b.title??""),String(b.body??""),b.origin)});return json(response,201,{reply:this.options.store.createReply(tenant,postId,principal.actorId,String(b.body??""),b.origin)});}
+   if(request.method==="PATCH"){const b=await readJson(request);if(replyId)return json(response,200,{reply:this.options.store.editReply(tenant,replyId,principal.actorId,String(b.body??""))});if(postId)return json(response,200,{post:this.options.store.editPost(tenant,postId,principal.actorId,{...(typeof b.title==="string"?{title:b.title}:{}),...(typeof b.body==="string"?{body:b.body}:{})})});}
+   if(request.method==="DELETE"){if(replyId)return json(response,200,this.options.store.deleteReply(tenant,replyId,principal.actorId));if(postId)return json(response,200,this.options.store.deletePost(tenant,postId,principal.actorId));}
+   return json(response,405,{message:"Method is not supported"});
+  }catch(error){const message=error instanceof Error?error.message:"Forum request failed",status=/not found/i.test(message)?404:/Only the/.test(message)?403:400;return json(response,status,{message});}
+ }
+}
+async function readJson(request:IncomingMessage){let size=0;const chunks:Buffer[]=[];for await(const c of request){size+=c.length;if(size>16000)throw Error("Forum request is too large");chunks.push(Buffer.from(c));}const b=JSON.parse(Buffer.concat(chunks).toString());if(!b||typeof b!=="object"||Array.isArray(b))throw Error("Expected an object");return b as Record<string,unknown>;}
+function json(response:ServerResponse,status:number,value:unknown){response.writeHead(status,{"content-type":"application/json","cache-control":"no-store"});response.end(JSON.stringify(value));return true;}

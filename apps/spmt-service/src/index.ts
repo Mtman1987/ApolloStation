@@ -7,7 +7,8 @@ import {normalizeCommlinkProviderMutation,type CommlinkProviderMutationV1} from 
 import {YouTubeOAuthApi} from "./youtube-oauth-api.js";
 import {StellarPublicMemory} from "@spmt/stellar-core";
 import {CommlinkSocialStreamApi} from "./social-stream-api.js";
-import {CommlinkSocialStreamStore} from "@spmt/commlink-core";
+import {CommlinkForumApi} from "./commlink-forum-api.js";
+import {CommlinkSocialStreamStore,CommlinkForumStore} from "@spmt/commlink-core";
 import {StellarSpeechPresence} from "@spmt/stellar-core";
 import { CommlinkOperatorApi } from "./commlink-operator-api.js";
 import { CommlinkOperatorStore } from "@spmt/commlink-core";
@@ -138,10 +139,12 @@ export function createSpmtService(options: SpmtServiceOptions) {
   const api = new PlatformApiAdapter(operations);
   const publicPersonas=new PublicPersonaApi({path:options.databasePath,auth,authority,control,runtime:communityAssistant,accessToken});
   const socialStreamStore=new CommlinkSocialStreamStore(options.databasePath);
+  const commlinkForumStore=new CommlinkForumStore(options.databasePath);
   const operatorApi = new CommlinkOperatorApi({store:commlinkOperator,chat:commlinkLiveChat,auth,control,authority,accessToken,resolveReferences:(tenant,references)=>humanReferenceResolver.resolveMany(tenant,references)});
   const operatorTimer=setInterval(()=>{for(const tenant of store.listTenants())if(tenant.status === "active")try{operatorApi.publish(tenant.id);}catch{/* A failed publication retries with the same revision. */}},1000);operatorTimer.unref();
   const mediaApi = new SpmtMediaApi({ assets: mediaAssets, auth, control, jobs: platformStore, publicBaseUrl, accessToken, limitBytes: (tenantId) => (billing.manifest.plans.find(plan => plan.planId === billingPlan(control.listEntitlements(tenantId)))?.limits["storage-gb"] ?? 0) * 1024 ** 3 });
   const socialStreamApi=new CommlinkSocialStreamApi({store:socialStreamStore,chat:commlinkLiveChat,operator:commlinkOperator,auth,control,accessToken,publish:tenant=>{operatorApi.publish(tenant)}});
+  const commlinkForumApi=new CommlinkForumApi({store:commlinkForumStore,auth,control,accessToken});
   const publicMemory=new StellarPublicMemory(options.databasePath,executionJobs,communityAssistant,tenant=>commlinkLiveChat.list({tenantId:tenant,limit:500}),tenant=>control.getTenant(tenant).ownerUserId);
   const twitchBots=new TwitchBotApi({databasePath:options.databasePath,auth,authority,control,publicBaseUrl,enabled:runtimeMode==="production",fetchImpl,accessToken,roles:parseTwitchBotRoles(JSON.stringify(options.twitchBotRoles??[])),...(providerCredentials?{credentials:providerCredentials}:{}),...(accountProviderOAuthClient(options,"twitch")?{client:accountProviderOAuthClient(options,"twitch")!}:{})});
   const youtubeOAuth=new YouTubeOAuthApi({databasePath:options.databasePath,auth,authority,control,publicBaseUrl,enabled:runtimeMode==="production",fetchImpl,accessToken,...(providerCredentials?{credentials:providerCredentials}:{}),...(options.providerOAuthClients?.youtube?{client:options.providerOAuthClients.youtube}:{})});
@@ -191,6 +194,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
       if (await twitchBots.handle(request,response,url)) return;
       if (await youtubeOAuth.handle(request,response,url)) return;
       if (await assistantApi.handle(request,response,url)) return;
+      if (await commlinkForumApi.handle(request,response,url)) return;
       if (await socialStreamApi.handle(request,response,url)) return;
       if (await operatorApi.handle(request,response,url)) return;
 

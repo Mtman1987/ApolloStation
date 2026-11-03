@@ -167,3 +167,5 @@ export * from './social-stream.js';
 function mutationKey(record:Pick<CommlinkLiveChatRecordV1,"tenantId"|"provider"|"connectionId"|"channelId"|"messageId">){return JSON.stringify([record.tenantId,record.provider,record.connectionId,record.channelId,record.messageId]);}
 
 export * from "./tiktok.js";
+
+export * from "./forum.js";
