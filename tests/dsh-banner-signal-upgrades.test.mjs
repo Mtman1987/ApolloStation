@@ -38,7 +38,7 @@ test("Signal drops ping only opt-in role and accept exactly one identity-bound c
   const store = new SqliteDshSignalSeekerStore(path.join(dir, "signal.sqlite"));
   try {
     store.setSeeking({ tenantId: "tenant-a", providerUserId: "123456", canonicalUserId: "user-1", enabled: true, at: "2026-08-29T12:00:00Z" });
-    store.createDrop({ dropId: "drop-1", tenantId: "tenant-a", channelId: "12345", messageId: "67890", roleId: "12345", signalUrl: "https://spmt.live/signal/drop-1", now: "2026-08-29T12:00:00Z" });
+    store.createDrop({ dropId: "drop-1", tenantId: "tenant-a", guildId: "98765", channelId: "12345", messageId: "67890", roleId: "12345", signalUrl: "https://spmt.live/signal/drop-1", now: "2026-08-29T12:00:00Z" });
     const first = store.claim({ dropId: "drop-1", tenantId: "tenant-a", providerUserId: "123456", canonicalUserId: "user-1", at: "2026-08-29T12:01:00Z" });
     const second = store.claim({ dropId: "drop-1", tenantId: "tenant-a", providerUserId: "234567", canonicalUserId: "user-2", at: "2026-08-29T12:02:00Z" });
     assert.equal(first.won, true);
