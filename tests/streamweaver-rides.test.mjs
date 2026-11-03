@@ -28,7 +28,7 @@ test('Space Mountain front-seat Nebula bonus retries durably and updates the rid
  const store=new StreamWeaverCommunityStore(':memory:'),economy=new SqliteStreamWeaverEconomyStore(':memory:'),shoutouts=new SqliteStreamWeaverShoutoutStore(':memory:');let initialCalls=0;
  try{
   setup(store);economy.setBalance('tenant','payer',500);
-  const runtime=new StreamWeaverCommunityRuntime(store,economy,{},true,true,async()=>riders,async input=>{initialCalls++;assert.equal(input.awardId.startsWith('streamweaver-ride:'),true);if(initialCalls===1)throw Error('Nebula Arcade temporarily unavailable');return{amount:100,balance:100,duplicate:false};});
+  const runtime=new StreamWeaverCommunityRuntime(store,economy,{},true,true,async()=>riders,async input=>{initialCalls++;assert.equal(input.awardId.startsWith('streamweaver-ride:'),true);assert.equal(input.channel,'123456789');assert.ok(riders.some(rider=>rider.userId===input.userId));assert.ok(input.displayName);if(initialCalls===1)throw Error('Nebula Arcade temporarily unavailable');return{amount:100,balance:100,duplicate:false};});
   const input={...request,requestId:'nebula-front-seat-retry',channel:'123456789'},first=await runtime.ride(input);
   assert.equal(first.state,'complete');assert.equal(first.nebulaBonusStatus,'pending');assert.ok(first.frontSeatUserId);assert.equal(store.pendingTasks()[0].body.action,'nebula-checkin-bonus');
   const presentation=new StreamWeaverPresentationRuntime({store,shoutoutStore:shoutouts,twitch:{},client:{},personas:{get:()=>undefined},connections:[],egress:{send:async()=>({})},awardNebulaCheckinBonus:async task=>{assert.equal(task.awardId.startsWith('streamweaver-ride:'),true);return{amount:100,balance:100,duplicate:false};}});
