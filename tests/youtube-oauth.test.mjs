@@ -38,7 +38,7 @@ test('YouTube owner chat consent seals credentials and drives scoped discovery a
 
 test('Chat Gateway discovers OAuth connections, opens its driver and closes on disconnect',async()=>fixture(async f=>{
  const pending=await f.begin('owner','chat');assert.equal(new URL((await f.callback('owner',pending)).headers.get('location')).searchParams.get('providerLinked'),'youtube');
- const credential='gateway-test-credential-at-least-32-characters';f.service.auth.registerServiceIdentity({serviceId:'chat-gateway',credential,scopes:['providers:grant'],tenantMode:'any'});
+ const credential='gateway-test-credential-at-least-32-characters';f.service.auth.registerServiceIdentity({serviceId:'chat-gateway',credential,scopes:['jobs:read','jobs:work','providers:grant'],tenantMode:'any'});
  const gateway=new SupervisedChatGatewayService({runtimeMode:'production',operationMode:'active',liveIngressEnabled:false,spmtOrigin:f.base,databasePath:join(f.dir,'gateway.sqlite'),credential,workerId:'youtube-test',connections:[],reconcileMs:1000});
  let opened=0,closed=0;gateway.supervisor.drivers.set('youtube',{provider:'youtube',async open(input){assert.equal(input.connection.providerAccountId,'UCowner');assert.equal(input.accessToken,'youtube-access-token-for-tests-only');opened++;return {close(){closed++}}}});
  try{const first=await gateway.reconcile();assert.equal(first.connections.connected,1,JSON.stringify(first));assert.equal(opened,1);await gateway.reconcile();assert.equal(opened,1);
