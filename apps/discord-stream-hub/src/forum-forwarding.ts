@@ -129,7 +129,7 @@ type DshForumDiscordPort = Pick<DshDiscordApi,"getChannel"|"createForumThread"|"
 export function dshForumThreadCreationIdempotencyKey(tenantId:string,forumId:string,sourceGuildId:string,sourceChannelId:string){return `thread:${tenantId}:${forumId}:${sourceGuildId}:${sourceChannelId}`;}
 
 /** DSH submits destination writes as durable jobs; Chat Gateway alone owns Discord credentials and egress. */
-class DshCommlinkForumDiscordPort implements DshForumDiscordPort {
+export class DshCommlinkForumDiscordPort implements DshForumDiscordPort {
   constructor(private readonly client:SpmtClient,private readonly reads:DshDiscordApi){}
   getChannel(tenantId:string,channelId:string){return this.reads.getChannel(tenantId,channelId);}
   async createForumThread(tenantId:string,forumId:string,name:string,message:Record<string,unknown>){
@@ -144,7 +144,8 @@ class DshCommlinkForumDiscordPort implements DshForumDiscordPort {
   }
   async editThreadMessage(tenantId:string,threadId:string,messageId:string,payload:Record<string,unknown>){
     const target=await this.threadTarget(tenantId,threadId);
-    await this.submit(tenantId,"upsert",target.parentId,{...this.messageInput(payload),threadId,previousMessageId:messageId},`edit:${threadId}:${messageId}:${this.sourceKey(payload)}`);
+    const revision=createHash("sha256").update(JSON.stringify(payload)).digest("hex");
+    await this.submit(tenantId,"upsert",target.parentId,{...this.messageInput(payload),threadId,previousMessageId:messageId},`edit:${threadId}:${messageId}:${revision}`);
   }
   async deleteThreadMessage(tenantId:string,threadId:string,messageId:string){
     const target=await this.threadTarget(tenantId,threadId);
