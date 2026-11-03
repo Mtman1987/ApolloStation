@@ -41,9 +41,12 @@ export class DshMemberActivityWorker {
     try {for(let page=0;page<20;page++){
       this.store.renew(tenant,owner);const events=await this.client.listEvents(tenant,{type:"spmt.chat.message.received.v1",sourceAppId:"chat-gateway",afterId:this.store.cursor(tenant).eventId,limit:200});
       if(!events.length)break;
+      const eligibleChannels=[...new Set(events.map(event=>event.payload as DshMessageObservation).filter(message=>message?.provider==="discord"&&!message.actor?.isBot&&Boolean(message.guildId&&this.config.tenants.find(t=>t.tenantId===tenant)?.discordGuildIds?.includes(message.guildId))).map(message=>message.channelId))];
+      const channelMessages=new Map<string,Map<string,string>>();
+      for(const channelId of eligibleChannels){const rows=await this.client.listCommlinkLiveChat(tenant,{provider:"discord",channelId,limit:500});channelMessages.set(channelId,new Map(rows.map(row=>[row.messageId,row.text])));}
       for(const event of events){this.store.renew(tenant,owner);if(typeof event.id!=="string"||event.tenantId!==tenant||event.type!=="spmt.chat.message.received.v1"||event.sourceAppId!=="chat-gateway")throw Error("Activity source is invalid");
-        const message=event.payload as DshMessageObservation,eligible=message?.provider==="discord"&&!message.actor?.isBot&&Boolean(message.guildId&&this.config.tenants.find(t=>t.tenantId===tenant)?.discordGuildIds?.includes(message.guildId));
-        if(eligible){const identity=await this.identities.resolveOrGrandfather({tenantId:tenant,provider:"discord",providerUserId:message.actor.providerUserId,username:message.actor.username,...(message.actor.displayName?{displayName:message.actor.displayName}:{})});if(/^!mtfixit(?:\s|$)/i.test(String(message.text??"")))await this.onMessage?.(tenant,event.id,message);this.store.advance(tenant,owner,event.id,message,identity.userId);}
+        const observed=event.payload as DshMessageObservation,message={...observed,text:observed.text??channelMessages.get(observed.channelId)?.get(observed.messageId)??""},eligible=message?.provider==="discord"&&!message.actor?.isBot&&Boolean(message.guildId&&this.config.tenants.find(t=>t.tenantId===tenant)?.discordGuildIds?.includes(message.guildId));
+        if(eligible){const identity=await this.identities.resolveOrGrandfather({tenantId:tenant,provider:"discord",providerUserId:message.actor.providerUserId,username:message.actor.username,...(message.actor.displayName?{displayName:message.actor.displayName}:{})});if(/^!mtfixit(?:\s|$)/i.test(message.text))await this.onMessage?.(tenant,event.id,message);this.store.advance(tenant,owner,event.id,message,identity.userId);}
         else this.store.advance(tenant,owner,event.id);processed++;
       }
       if(events.length<200)break;
