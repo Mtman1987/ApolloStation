@@ -85,6 +85,13 @@ jobs:
           APOLLO_APP: ${{ matrix.apollo_app }}
         run: npm run parity:rea -- "$APOLLO_APP/dist" > apollo-rea-analysis.json
 
+      - name: Prepare reviewable Apollo port brief
+        if: always()
+        run: |
+          if [ -f parity-comparison.json ]; then
+            node scripts/parity-prepare-port.mjs parity-comparison.json config/apollo-parity-capabilities.v1.json port-brief
+          fi
+
       - name: Upload nightly evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -96,5 +103,7 @@ jobs:
             parity-comparison.json
             donor-rea-analysis.json
             apollo-rea-analysis.json
+            port-brief/port-brief.json
+            port-brief/port-brief.md
           if-no-files-found: warn
           retention-days: 14
