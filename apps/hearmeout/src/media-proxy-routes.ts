@@ -50,12 +50,17 @@ const YOUTUBE_VIDEO_ID_RE = /^[A-Za-z0-9_-]{11}$/;
 
 export type YoutubeStreamKind = 'audio' | 'video';
 
+export interface YoutubeStreamScope {
+  tenantId: string;
+  userId: string;
+}
+
 interface YoutubeStreamEntry {
   url: URL;
   expiresAt: number;
 }
 
-// In-memory map of registered CDN URLs, keyed by video and kind. Entries expire after
+// In-memory map of registered CDN URLs, keyed by tenant, user, video and kind. Entries expire after
 // the TTL and the oldest entry is dropped when the cap is reached. The CDN URL never
 // leaves this map; clients only receive a proxy path.
 export class YoutubeStreamRegistry {
@@ -63,27 +68,32 @@ export class YoutubeStreamRegistry {
 
   constructor(private readonly now: () => number = Date.now) {}
 
-  put(videoId: string, kind: YoutubeStreamKind, url: URL): void {
+  put(videoId: string, kind: YoutubeStreamKind, url: URL, scope: YoutubeStreamScope): void {
     this.sweep();
-    const key = `${kind}:${videoId}`;
+    const key = this.key(videoId, kind, scope);
     this.entries.delete(key);
     while (this.entries.size >= YOUTUBE_STREAM_MAX_ENTRIES) {
       const oldest = this.entries.keys().next().value;
       if (oldest === undefined) break;
       this.entries.delete(oldest);
     }
-    this.entries.set(key, { url, expiresAt: this.now() + YOUTUBE_STREAM_TTL_MS });
+    this.entries.set(key, { url: new URL(url), expiresAt: this.now() + YOUTUBE_STREAM_TTL_MS });
   }
 
-  get(videoId: string, kind: YoutubeStreamKind): URL | undefined {
-    const key = `${kind}:${videoId}`;
+  get(videoId: string, kind: YoutubeStreamKind, scope: YoutubeStreamScope): URL | undefined {
+    const key = this.key(videoId, kind, scope);
     const entry = this.entries.get(key);
     if (!entry) return undefined;
     if (this.now() >= entry.expiresAt) {
       this.entries.delete(key);
       return undefined;
     }
-    return entry.url;
+    return new URL(entry.url);
+  }
+
+  private key(videoId: string, kind: YoutubeStreamKind, scope: YoutubeStreamScope): string {
+    if (!streamScope(scope)) throw new Error('YouTube stream scope is required');
+    return JSON.stringify([scope.tenantId, scope.userId, kind, videoId]);
   }
 
   size(): number {
@@ -101,7 +111,35 @@ export class YoutubeStreamRegistry {
 
 const youtubeStreams = new YoutubeStreamRegistry();
 
-type Handler = (request: IncomingMessage, response: ServerResponse, url: URL, deps: MediaProxyDeps) => Promise<void>;
+type Handler = (request: IncomingMessage, response: ServerResponse, url: URL, deps: MediaProxyDeps, session: unknown) => Promise<void>;
+
+function streamScope(session: unknown): YoutubeStreamScope | undefined {
+  if (!session || typeof session !== 'object') return undefined;
+  const value = session as Record<string, unknown>;
+  if (typeof value.tenantId !== 'string' || !value.tenantId.trim() ||
+      typeof value.userId !== 'string' || !value.userId.trim()) return undefined;
+  return { tenantId: value.tenantId, userId: value.userId };
+}
+
+// Preparation may outlive the initial session check. Recheck before committing
+// media bytes or a registration, and cancel the acquired body on refusal.
+async function allowDelivery(request: IncomingMessage, response: ServerResponse, deps: MediaProxyDeps, session: unknown, upstream?: Response): Promise<boolean> {
+  let current: unknown;
+  try {
+    current = await deps.authenticate(request);
+  } catch {
+    current = undefined;
+  }
+  const initialScope = streamScope(session);
+  const currentScope = streamScope(current);
+  const changed = initialScope && (!currentScope || initialScope.tenantId !== currentScope.tenantId || initialScope.userId !== currentScope.userId);
+  if (!current || changed) {
+    await upstream?.body?.cancel().catch(() => {});
+    sendJson(response, current ? 403 : 401, { error: current ? 'Media session changed' : 'Sign in before using media routes' });
+    return false;
+  }
+  return true;
+}
 
 export function watchAllowedHosts(extra: string[] = []): Set<string> {
   const hosts = new Set([...DEFAULT_WATCH_HOSTS, ...extra.map(host => host.trim().toLowerCase()).filter(Boolean)]);
@@ -124,6 +162,10 @@ export async function handleMediaProxyRoute(
 ): Promise<boolean> {
   const route = matchRoute(request.method ?? 'GET', url.pathname);
   if (!route) return false;
+  // Every matched route is authenticated: success, ranges and failures must not
+  // be replayed by a shared cache. Upstream cache directives are never inherited.
+  response.setHeader('cache-control', 'private, no-store');
+  response.setHeader('vary', 'Cookie, Authorization');
   let session: unknown;
   try {
     session = await deps.authenticate(request);
@@ -135,7 +177,7 @@ export async function handleMediaProxyRoute(
     sendJson(response, 401, { error: 'Sign in before using media routes' });
     return true;
   }
-  await route(request, response, url, deps);
+  await route(request, response, url, deps, session);
   return true;
 }
 
@@ -218,7 +260,7 @@ function safeContentType(value: string | null): string {
   return String(value || 'unknown').split(';')[0]!.trim().slice(0, 100);
 }
 
-const watchProxy: Handler = async (request, response, url, deps) => {
+const watchProxy: Handler = async (request, response, url, deps, session) => {
   const rawUrl = url.searchParams.get('url');
   const download = url.searchParams.get('download') === '1';
   if (!rawUrl) return sendJson(response, 400, { error: 'Missing url' });
@@ -246,18 +288,20 @@ const watchProxy: Handler = async (request, response, url, deps) => {
     const finalUrl = upstreamUrl;
     if (isManifest(finalUrl, contentType)) {
       const manifest = rewriteManifest(await upstream.text(), finalUrl, url.pathname);
+      if (!await allowDelivery(request, response, deps, session)) return;
       const headers: Record<string, string> = {
         'content-type': 'application/vnd.apple.mpegurl',
-        'cache-control': 'no-store',
+        'cache-control': 'private, no-store',
         'access-control-allow-origin': '*',
       };
       if (download) headers['content-disposition'] = `attachment; filename="${downloadFilename(finalUrl)}"`;
       response.writeHead(200, headers);
       return void response.end(manifest);
     }
+    if (!await allowDelivery(request, response, deps, session, upstream)) return;
     const headers: Record<string, string> = {
       'content-type': contentType || 'application/octet-stream',
-      'cache-control': 'public, max-age=300',
+      'cache-control': 'private, no-store',
       'access-control-allow-origin': '*',
       'x-content-type-options': 'nosniff',
     };
@@ -274,7 +318,7 @@ const watchProxy: Handler = async (request, response, url, deps) => {
   }
 };
 
-const youtubeProxy: Handler = async (request, response, _url, deps) => {
+const youtubeProxy: Handler = async (request, response, _url, deps, session) => {
   if (!sameOrigin(request)) return sendJson(response, 403, { error: 'Cross-origin request refused' });
   let body: unknown;
   try {
@@ -301,8 +345,9 @@ const youtubeProxy: Handler = async (request, response, _url, deps) => {
           Array.isArray(entry) && String(entry[0]).toLowerCase() === 'range' && typeof entry[1] === 'string')?.[1] ?? null
       : null;
     const upstream = await fetchChecked(target, isAllowedYoutubeHost, { range, method, signal: controller.signal }, deps.fetchImpl ?? fetch);
-    const headers: Record<string, string> = { 'access-control-allow-origin': '*', 'cache-control': 'no-store' };
-    for (const name of ['content-type', 'content-length', 'cache-control', 'accept-ranges', 'content-range']) {
+    if (!await allowDelivery(request, response, deps, session, upstream)) return;
+    const headers: Record<string, string> = { 'access-control-allow-origin': '*', 'cache-control': 'private, no-store' };
+    for (const name of ['content-type', 'content-length', 'accept-ranges', 'content-range']) {
       const found = upstream.headers.get(name);
       if (found) headers[name] = found;
     }
@@ -318,7 +363,9 @@ const youtubeProxy: Handler = async (request, response, _url, deps) => {
 };
 
 // Registers a checked CDN URL for one video. The client gets back a proxy path, never the URL.
-const youtubeStreamRegister: Handler = async (request, response, _url, deps) => {
+const youtubeStreamRegister: Handler = async (request, response, _url, deps, session) => {
+  const scope = streamScope(session);
+  if (!scope) return sendJson(response, 403, { error: 'Media tenant and user are required' });
   if (!sameOrigin(request)) return sendJson(response, 403, { error: 'Cross-origin request refused' });
   let body: unknown;
   try {
@@ -343,17 +390,20 @@ const youtubeStreamRegister: Handler = async (request, response, _url, deps) => 
   const mime = target.searchParams.get('mime') ?? '';
   if (kind === 'audio' && mime.startsWith('video/')) return sendJson(response, 415, { error: 'Audio stream required' });
   if (kind === 'video' && mime.startsWith('audio/')) return sendJson(response, 415, { error: 'Video stream required' });
-  (deps.youtubeStreams ?? youtubeStreams).put(videoId, kind, target);
+  if (!await allowDelivery(request, response, deps, session)) return;
+  (deps.youtubeStreams ?? youtubeStreams).put(videoId, kind, target, scope);
   sendJson(response, 200, { ok: true, proxyPath: `/api/hearmeout/youtube-${kind}/proxy?videoId=${videoId}` });
 };
 
 // Serves one bounded byte window of a registered stream. Every hop is checked, the
 // response must be a 206 of the expected media type, and cookies are never forwarded.
 function youtubeStreamProxy(kind: YoutubeStreamKind): Handler {
-  return async (request, response, url, deps) => {
+  return async (request, response, url, deps, session) => {
+    const scope = streamScope(session);
+    if (!scope) return sendJson(response, 403, { error: 'Media tenant and user are required' });
     const videoId = url.searchParams.get('videoId') ?? '';
     if (!YOUTUBE_VIDEO_ID_RE.test(videoId)) return sendJson(response, 400, { error: 'Invalid videoId' });
-    const stored = (deps.youtubeStreams ?? youtubeStreams).get(videoId, kind);
+    const stored = (deps.youtubeStreams ?? youtubeStreams).get(videoId, kind, scope);
     if (!stored) return sendJson(response, 404, { error: 'No stream registered for this video' });
     const controller = new AbortController();
     response.on('close', () => controller.abort());
@@ -371,11 +421,12 @@ function youtubeStreamProxy(kind: YoutubeStreamKind): Handler {
         await upstream.body?.cancel().catch(() => {});
         return sendJson(response, 502, { error: 'Upstream did not return a valid media window' });
       }
+      if (!await allowDelivery(request, response, deps, session, upstream)) return;
       const headers: Record<string, string> = {
         'content-type': contentType,
         'content-range': contentRange,
         'accept-ranges': 'bytes',
-        'cache-control': 'no-store',
+        'cache-control': 'private, no-store',
         'x-content-type-options': 'nosniff',
       };
       const length = upstream.headers.get('content-length');
@@ -512,7 +563,7 @@ function sendJson(response: ServerResponse, status: number, value: unknown): voi
   response.writeHead(status, {
     'content-type': 'application/json; charset=utf-8',
     'content-length': body.byteLength,
-    'cache-control': 'no-store',
+    'cache-control': 'private, no-store',
     'x-content-type-options': 'nosniff',
   });
   response.end(body);

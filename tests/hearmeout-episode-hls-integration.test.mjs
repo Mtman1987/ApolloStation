@@ -58,7 +58,8 @@ test('requested episode delivers its Apollo HLS ladder and bounded ranges withou
 
   await t.test('master and child resolve inside Apollo and deliver actual bytes',async()=>{
    const index=await fetch(indexUrl);
-   assert.equal(index.status,200);assert.equal(index.headers.get('cache-control'),'no-store');
+   assert.equal(index.status,200);assert.equal(index.headers.get('cache-control'),'private, no-store');
+   assert.equal(index.headers.get('vary'),'Cookie, Authorization');
    assert.equal(await index.text(),master);
    const variantUrl=new URL('stream_video.m3u8',indexUrl);
    const playlist=await fetch(variantUrl);assert.equal(playlist.status,200);
@@ -81,7 +82,8 @@ test('requested episode delivers its Apollo HLS ladder and bounded ranges withou
    for(const range of ['bytes=99-','bytes=-0','bytes=-','bytes=4-2','bytes=0-1,4-5','bytes=9007199254740992-']){
     const response=await fetch(segmentUrl,{headers:{range}});assert.equal(response.status,416,range);
     assert.equal(response.headers.get('content-range'),'bytes */8');
-    assert.equal(response.headers.get('cache-control'),'no-store');await response.text();
+    assert.equal(response.headers.get('cache-control'),'private, no-store');
+    assert.equal(response.headers.get('vary'),'Cookie, Authorization');await response.text();
    }
    const missing=await fetch(new URL('absent.ts',indexUrl));assert.equal(missing.status,404);await missing.text();
    const malformed=await fetch(base+'/api/watch/xtream/hls/episode-7-mkv/%ZZ.ts');
@@ -113,7 +115,7 @@ test('episode HLS conversion runs the real FFmpeg orchestration and reuses a val
  try{
   await mkdir(bin,{recursive:true});
   const ffprobe=join(bin,'ffprobe'),ffmpeg=join(bin,'ffmpeg');
-  await writeFile(ffprobe, '#!/bin/sh\\nprintf \'%s\\n\' \'{"streams":[{"index":0,"codec_type":"video"},{"index":1,"codec_type":"audio","tags":{"language":"eng"}}]}\'\\n');
+  await writeFile(ffprobe, `#!/bin/sh\\nprintf '%s\\n' '{"streams":[{"index":0,"codec_type":"video"},{"index":1,"codec_type":"audio","tags":{"language":"eng"}}]}'\\n`);
   await writeFile(ffmpeg,`#!/bin/sh
 printf 'run\\n' >> '${count}'
 segment_pattern=''
