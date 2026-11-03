@@ -788,7 +788,7 @@ export class DshWebControls {
         after=directory.nextAfterUserId;
       }
       if(!person)continue;
-      const discordIds=person.providers.filter(link=>link.provider==="discord").map(link=>link.providerUserId);if(!discordIds.length)continue;
+      const discordIds=person.providers.filter((link:{provider:string;providerUserId:string})=>link.provider==="discord").map((link:{provider:string;providerUserId:string})=>link.providerUserId);if(!discordIds.length)continue;
       matched=true;
       for(const guildId of tenant.discordGuildIds??[]){
         const roleList=await this.liveDiscord.listGuildRoles(tenant.tenantId,guildId);
