@@ -129,7 +129,7 @@ export class DshWebControls {
       if(!this.authorizeWorker(request))return sendJson(response,401,{message:"Unauthorized"});
       try{
         if(this.options.operationMode!=="active"||!this.clipGifs||!this.config)return sendJson(response,503,{message:"Clip media ingestion is unavailable"});
-        const tenantId=String(url.searchParams.get("tenantId")??"").trim(),tenant=this.config?.tenants.find(item=>item.tenantId===tenantId);
+        const tenantId=String(url.searchParams.get("tenantId")??"").trim(),tenant=this.config.tenants.find(item=>item.tenantId===tenantId);
         if(!tenant)return sendJson(response,403,{message:"Unknown DSH tenant"});
         const streamerLogin=String(url.searchParams.get("streamerLogin")??"").trim().toLowerCase(),clipId=String(url.searchParams.get("clipId")??"").trim(),durationSeconds=Number(url.searchParams.get("durationSeconds")??"60");
         if(!/^[a-z0-9_]{1,32}$/.test(streamerLogin)||!/^[A-Za-z0-9_-]{1,120}$/.test(clipId)||!Number.isFinite(durationSeconds)||durationSeconds<1||durationSeconds>60)return sendJson(response,400,{message:"Invalid clip metadata"});
@@ -268,7 +268,7 @@ export class DshWebControls {
       const body = await readJsonBody(request);
       if(url.pathname==="/api/discord-stream-hub/control/raid-pile/join"||url.pathname==="/api/discord-stream-hub/control/raid-pile/leave"||url.pathname==="/api/discord-stream-hub/control/raid-pile/advance"){
         const store=this.requireRaidPile(),actor=String(context.session.actorId??"");
-        if(url.pathname.endsWith("/join")){const linked=await this.raidPileIdentity(context,request);const result=store.join(context.tenantId,{userId:actor,twitchLogin:linked.twitchLogin,displayName:linked.displayName});return sendJson(response,200,{...result,message:result.duplicate?"You are already in the Raid Pile.":"You joined the Raid Pile."});}
+        if(url.pathname.endsWith("/join")){const linked=await this.raidPileIdentity(context,request);const result=store.join(context.tenantId,{userId:actor,twitchLogin:linked.twitchLogin,displayName:linked.displayName??linked.twitchLogin});return sendJson(response,200,{...result,message:result.duplicate?"You are already in the Raid Pile.":"You joined the Raid Pile."});}
         if(url.pathname.endsWith("/leave")){const result=store.leave(context.tenantId,actor);return sendJson(response,200,{...result,message:result.removed?"You left the Raid Pile.":"You were not in the Raid Pile."});}
         this.requireOwner(context);const pileId=text(body.pileId,"pileId",180),requestId=text(body.requestId,"requestId",120);
         const target=this.requireCalendar().once(context.tenantId,`raid-pile-advance:${this.requestKey(context,body)??requestId}`,()=>store.advance(context.tenantId,pileId,"manual"));
