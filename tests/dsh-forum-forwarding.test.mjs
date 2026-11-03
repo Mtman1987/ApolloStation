@@ -28,6 +28,21 @@ test("an enabled forum whitelist with no entries fails closed",async()=>{
  }finally{store.close();}
 });
 
+test("forum worker lease prevents concurrent replay and releases safely",()=>{
+ const store=new DshForumForwardingStore(":memory:");
+ try{
+  const now="2026-11-03T12:00:00.000Z",later="2026-11-03T12:15:00.000Z";
+  assert.equal(store.acquireWorkerLease("tenant-a","worker-1",now,later),true);
+  assert.equal(store.acquireWorkerLease("tenant-a","worker-2",now,later),false);
+  assert.equal(store.renewWorkerLease("tenant-a","worker-2","2026-11-03T12:30:00.000Z"),false);
+  assert.equal(store.renewWorkerLease("tenant-a","worker-1","2026-11-03T12:30:00.000Z"),true);
+  store.releaseWorkerLease("tenant-a","worker-2");
+  assert.equal(store.acquireWorkerLease("tenant-a","worker-2",now,later),false);
+  store.releaseWorkerLease("tenant-a","worker-1");
+  assert.equal(store.acquireWorkerLease("tenant-a","worker-2",now,later),true);
+ }finally{store.close();}
+});
+
 test("forum thread creation idempotency is isolated by source channel",()=>{
  const first=dshForumThreadCreationIdempotencyKey("tenant-a","forum-1","guild-1","channel-1");
  const second=dshForumThreadCreationIdempotencyKey("tenant-a","forum-1","guild-1","channel-2");
