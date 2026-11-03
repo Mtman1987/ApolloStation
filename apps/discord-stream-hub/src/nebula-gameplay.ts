@@ -9,7 +9,8 @@ import {
   type NebulaGameplayManifestV1,
 } from "@spmt/nebula-arcade";
 
-export type { NebulaGameplayManifestV1 } from "@spmt/nebula-arcade";\nexport const DSH_NEBULA_GAMEPLAY_BATCH_SIZE = 1;
+export type { NebulaGameplayManifestV1 } from "@spmt/nebula-arcade";
+export const DSH_NEBULA_GAMEPLAY_BATCH_SIZE = 1;
 export const DSH_NEBULA_GAMEPLAY_MAX_BYTES = 50 * 1_024 * 1_024;
 
 export interface DshNebulaGameplayItemV1 extends NebulaGameplayManifestGameV1 {
