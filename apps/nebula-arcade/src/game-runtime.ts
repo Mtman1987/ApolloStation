@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { NEBULA_ARCADE_GAMES, parseNebulaMessage } from "./game-hub.js";
 import { canonicalNebulaGameId } from "./legacy-nebula-migration.js";
 
@@ -8,11 +9,12 @@ export const NEBULA_GAME_LEDGER_LIMIT = 500;
 export type NebulaGameMembershipV1 = { joinedAt:string; lastActiveAt?:string; lastScoreAt?:string; active:boolean; score:number; wins:number; plays:number };
 export type NebulaGamePlayerV1 = { id:string; username:string; displayName:string; gamePointsBalance:number; lifetimeEarned:number; lifetimeSpent:number; lastPointsAwardAt?:string; joinedGames:Record<string,NebulaGameMembershipV1> };
 export type NebulaGameChannelSettingsV1 = { extraGameIds:string[]; stoppedGameIds:string[]; updatedAt?:string };
-export type NebulaGameLedgerEntryV1 = { at:string; playerId:string; amount:number; reason:string; gameId?:string; channel?:string };
-export type NebulaGameRuntimeStateV1 = { channels:Record<string,NebulaGameChannelSettingsV1>; players:Record<string,NebulaGamePlayerV1>; ledger:NebulaGameLedgerEntryV1[]; processedCommandIds:string[] };
+export type NebulaGameLedgerEntryV1 = { at:string; playerId:string; amount:number; reason:string; gameId?:string; channel?:string; sourceId?:string };
+export type NebulaCheckinBonusReceiptV1 = { awardId:string; channel:string; playerId:string; amount:number; balance:number; at:string };
+export type NebulaGameRuntimeStateV1 = { channels:Record<string,NebulaGameChannelSettingsV1>; players:Record<string,NebulaGamePlayerV1>; ledger:NebulaGameLedgerEntryV1[]; processedCommandIds:string[]; checkinBonusReceipts:Record<string,NebulaCheckinBonusReceiptV1> };
 
 const GAME_IDS = new Set(NEBULA_ARCADE_GAMES.map((game)=>game.id));
-export function defaultNebulaGameRuntimeState():NebulaGameRuntimeStateV1{return{channels:{},players:{},ledger:[],processedCommandIds:[]};}
+export function defaultNebulaGameRuntimeState():NebulaGameRuntimeStateV1{return{channels:{},players:{},ledger:[],processedCommandIds:[],checkinBonusReceipts:{}};}
 export function normalizeNebulaChannel(value:unknown){return String(value??"").trim().toLowerCase().replace(/^#/,"").slice(0,80);}
 export function normalizeNebulaPlayerId(userId:unknown,username?:unknown){const raw=String(userId??"").trim().replace(/^user_/,"");if(raw)return/^(?:spmt|provider|twitch|discord|kick):/.test(raw)?raw:`twitch:${raw}`;const login=normalizeNebulaChannel(username);return login?`login:${login}`:"";}
 export function normalizeNebulaGameIds(values:unknown,limit=50,stored=false){const list=Array.isArray(values)?values:[];return[...new Set(list.map((value)=>stored?canonicalNebulaGameId(value):String(value??"").trim().toLowerCase()).filter((id)=>GAME_IDS.has(id)))].slice(0,limit);}
@@ -22,7 +24,8 @@ export function normalizeNebulaGameRuntimeState(value:Partial<NebulaGameRuntimeS
   const players:Record<string,NebulaGamePlayerV1>={};for(const[k,v]of Object.entries(value?.players??{})){const id=String(v?.id||k).trim();if(!id)continue;const joinedGames:Record<string,NebulaGameMembershipV1>={};for(const[g,m]of Object.entries(v?.joinedGames??{})){const gameId=canonicalNebulaGameId(g);if(GAME_IDS.has(gameId))joinedGames[gameId]=membership(m);}players[id]={id,username:normalizeNebulaChannel(v?.username),displayName:String(v?.displayName||v?.username||id).trim().slice(0,80),gamePointsBalance:Math.max(0,Number(v?.gamePointsBalance||0)),lifetimeEarned:Math.max(0,Number(v?.lifetimeEarned||0)),lifetimeSpent:Math.max(0,Number(v?.lifetimeSpent||0)),...(v?.lastPointsAwardAt?{lastPointsAwardAt:String(v.lastPointsAwardAt)}:{}),joinedGames};}
   const ledger=Array.isArray(value?.ledger)?value.ledger.slice(-NEBULA_GAME_LEDGER_LIMIT).map((entry)=>({...entry,...(entry.gameId?{gameId:canonicalNebulaGameId(entry.gameId)}:{})})):[];
   const processedCommandIds=Array.isArray(value?.processedCommandIds)?[...new Set(value.processedCommandIds.map((item)=>String(item??"").trim()).filter(Boolean))].slice(-500):[];
-  return{channels,players,ledger,processedCommandIds};
+  const checkinBonusReceipts:Record<string,NebulaCheckinBonusReceiptV1>={};for(const[key,receipt]of Object.entries(value?.checkinBonusReceipts??{}).slice(-10_000)){const awardId=String(receipt?.awardId??"").trim(),channel=normalizeNebulaChannel(receipt?.channel),playerId=String(receipt?.playerId??"").trim(),amount=Math.max(0,Math.floor(Number(receipt?.amount??0))),balance=Math.max(0,Math.floor(Number(receipt?.balance??0))),at=String(receipt?.at??"");if(key&&awardId&&channel&&playerId&&amount&&Number.isFinite(Date.parse(at)))checkinBonusReceipts[key]={awardId,channel,playerId,amount,balance,at};}
+  return{channels,players,ledger,processedCommandIds,checkinBonusReceipts};
 }
 export function claimNebulaGameCommand(state:NebulaGameRuntimeStateV1,commandIdValue:unknown){const commandId=String(commandIdValue??"").trim();if(!commandId||commandId.length>240||/[\r\n\0]/.test(commandId))throw new Error("Nebula command id is invalid");if(state.processedCommandIds.includes(commandId))return false;state.processedCommandIds=[...state.processedCommandIds,commandId].slice(-500);return true;}
 export function getNebulaChannelSettings(state:NebulaGameRuntimeStateV1,channelValue:unknown){const channel=normalizeNebulaChannel(channelValue);if(!channel)throw new Error("Nebula channel is required");const current=state.channels[channel]??{extraGameIds:[],stoppedGameIds:[]};current.extraGameIds=normalizeNebulaGameIds(current.extraGameIds);current.stoppedGameIds=normalizeNebulaGameIds(current.stoppedGameIds);state.channels[channel]=current;return current;}
@@ -40,8 +43,20 @@ export function joinNebulaGame(state:NebulaGameRuntimeStateV1,input:{userId?:unk
 }
 export function leaveNebulaGame(state:NebulaGameRuntimeStateV1,playerId:string,gameId:string,now=new Date()){const m=state.players[playerId]?.joinedGames?.[gameId];if(!m?.active)return false;m.active=false;m.lastActiveAt=now.toISOString();return true;}
 function append(state:NebulaGameRuntimeStateV1,e:NebulaGameLedgerEntryV1){state.ledger.push(e);state.ledger=state.ledger.slice(-NEBULA_GAME_LEDGER_LIMIT);}
-export function awardNebulaGamePoints(state:NebulaGameRuntimeStateV1,player:NebulaGamePlayerV1,amountValue:number,reason:string,extra:{gameId?:string;channel?:string}={},now=new Date()){
+export function awardNebulaGamePoints(state:NebulaGameRuntimeStateV1,player:NebulaGamePlayerV1,amountValue:number,reason:string,extra:{gameId?:string;channel?:string;sourceId?:string}={},now=new Date()){
   const amount=Math.max(0,Math.floor(Number(amountValue||0)));if(!amount)return player;player.gamePointsBalance+=amount;player.lifetimeEarned+=amount;append(state,{at:now.toISOString(),playerId:player.id,amount,reason:String(reason||"gameplay").slice(0,160),...extra});return player;
+}
+export function awardNebulaCheckinBonus(state:NebulaGameRuntimeStateV1,input:{awardId:unknown;channel:unknown;userId:unknown;username?:unknown;displayName?:unknown},now=new Date()){
+  const awardId=String(input.awardId??"").trim(),channel=normalizeNebulaChannel(input.channel),playerId=normalizeNebulaPlayerId(input.userId,input.username);
+  if(!awardId||awardId.length>180||/[\\r\\n\\0]/.test(awardId)||!channel||!playerId)throw new Error("A valid channel, player and check-in award ID are required.");
+  state.checkinBonusReceipts??={};
+  const receiptId=createHash("sha256").update(channel+":"+awardId).digest("hex"),prior=state.checkinBonusReceipts[receiptId];
+  if(prior){if(prior.playerId!==playerId)throw new Error("This check-in bonus was already credited to another player.");return{...prior,duplicate:true};}
+  const player=getOrCreateNebulaPlayer(state,{userId:playerId,username:input.username,displayName:input.displayName}),amount=100;
+  awardNebulaGamePoints(state,player,amount,"Chat Tag front-seat check-in bonus",{channel,sourceId:receiptId},now);
+  const receipt={awardId,channel,playerId:player.id,amount,balance:player.gamePointsBalance,at:now.toISOString()};
+  state.checkinBonusReceipts[receiptId]=receipt;
+  return{...receipt,duplicate:false};
 }
 export function spendNebulaGamePoints(state:NebulaGameRuntimeStateV1,player:NebulaGamePlayerV1,amountValue:number,reason:string,now=new Date()){
   const amount=Math.max(1,Math.floor(Number(amountValue||0)));if(player.gamePointsBalance<amount)throw new Error("Not enough Games Points.");player.gamePointsBalance-=amount;player.lifetimeSpent+=amount;append(state,{at:now.toISOString(),playerId:player.id,amount:-amount,reason:String(reason||"Nebula Arcade purchase").slice(0,160)});return player;

@@ -1,9 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   NEBULA_GAME_POINTS_INTERVAL_MS,
   NEBULA_GAME_SCORE_INTERVAL_MS,
   awardNebulaGamePoints,
+  awardNebulaCheckinBonus,
+  SqliteNebulaGameRuntimeStore,
+  NebulaArcadeProviderRuntime,
   defaultNebulaGameRuntimeState,
   getNebulaGameStats,
   joinNebulaGame,
@@ -22,6 +28,49 @@ test("Nebula shared runtime starts and stops any catalog game per channel", () =
   assert.deepEqual(resolveNebulaChannelGameIds(state, "CAPTAIN").sort(), ["chatgarden", "wordstorm"]);
   setNebulaChannelGameRunning(state, "captain", "chatgarden", false);
   assert.deepEqual(resolveNebulaChannelGameIds(state, "captain"), ["wordstorm"]);
+});
+
+test("Chat Tag front-seat check-in bonus credits 100 Nebula points exactly once across restart", () => {
+  const directory = mkdtempSync(join(tmpdir(), "nebula-checkin-bonus-")), path = join(directory, "nebula.sqlite");
+  let store = new SqliteNebulaGameRuntimeStore(path);
+  const input = { awardId: "streamweaver-ride:ride-1", channel: "123456789", userId: "spmt:canonical-member", username: "captain", displayName: "Captain" };
+  try {
+    const first = store.update("tenant", state => awardNebulaCheckinBonus(state, input, new Date("2026-11-03T20:00:00.000Z"))).result;
+    assert.equal(first.amount, 100);
+    assert.equal(first.balance, 100);
+    assert.equal(first.duplicate, false);
+    const state = store.get("tenant");
+    assert.equal(state.players["spmt:canonical-member"].gamePointsBalance, 100);
+    assert.equal(state.players["spmt:canonical-member"].lifetimeEarned, 100);
+    assert.equal(state.ledger.filter(entry => entry.reason === "Chat Tag front-seat check-in bonus").length, 1);
+    assert.ok(state.ledger.at(-1).sourceId);
+    store.close();
+    store = new SqliteNebulaGameRuntimeStore(path);
+    const duplicate = store.update("tenant", state => awardNebulaCheckinBonus(state, input)).result;
+    assert.equal(duplicate.duplicate, true);
+    assert.equal(duplicate.balance, 100);
+    assert.equal(store.get("tenant").ledger.filter(entry => entry.reason === "Chat Tag front-seat check-in bonus").length, 1);
+    assert.throws(() => store.update("tenant", state => awardNebulaCheckinBonus(state, { ...input, userId: "spmt:other-member" })), /already credited to another player/);
+    assert.equal(store.get("tenant").players["spmt:other-member"], undefined);
+  } finally { store.close(); rmSync(directory, { recursive: true, force: true }); }
+});
+
+test("Nebula provider runtime exposes the configured tenant check-in bonus service", () => {
+  const directory = mkdtempSync(join(tmpdir(), "nebula-provider-checkin-")), path = join(directory, "nebula.sqlite");
+  const runtime = new NebulaArcadeProviderRuntime({
+    databasePath: path,
+    config: { schemaVersion: 1, revision: "test", tenants: [{ tenantId: "tenant", pinUserId: "spmt:pin", channels: [] }] },
+    client: { spendXp: async () => ({}), awardXp: async () => ({}) },
+    egress: { send: async () => ({ providerMessageId: "message" }) },
+    simulation: true,
+  });
+  try {
+    const award = runtime.awardCheckinBonus({ tenantId: "tenant", awardId: "streamweaver-ride:provider-test", channel: "123456789", userId: "spmt:canonical-member", username: "captain", displayName: "Captain" });
+    assert.equal(award.amount, 100);
+    assert.equal(award.balance, 100);
+    assert.equal(runtime.awardCheckinBonus({ tenantId: "tenant", awardId: "streamweaver-ride:provider-test", channel: "123456789", userId: "spmt:canonical-member", username: "captain", displayName: "Captain" }).duplicate, true);
+    assert.throws(() => runtime.awardCheckinBonus({ tenantId: "not-configured", awardId: "ride", channel: "123456789", userId: "spmt:other", username: "other" }), /tenant is not configured/);
+  } finally { runtime.close(); rmSync(directory, { recursive: true, force: true }); }
 });
 
 test("Nebula membership records join leave plays and rejoin", () => {

@@ -1,6 +1,6 @@
 import { StreamWeaverBotActionReplies } from "./bot-action-replies.js";
 import { normalizeTextForTTS } from "./tts-text.js";
-import {activeRideLookup} from "./ride-runtime.js";
+import {activeRideLookup, type NebulaCheckinBonusAwarder} from "./ride-runtime.js";
 import {executePokemonCommand} from "./pokemon-commands.js";
 import {awardStreamWeaverProviderEvent} from "./provider-event-awards.js";
 import { SqliteStreamWeaverShoutoutStore, STREAMWEAVER_KNOWN_BOTS } from "./shoutout-store.js";
@@ -68,6 +68,7 @@ export interface StreamWeaverProviderRuntimeOptionsV1 {
   allowTwitchMedia?: boolean;
   spaceMountainGoLive?: { channelId: string; start: () => Promise<SpaceMountainGoLiveResult> };
   restreamControl?: { origin: string; credential: string };
+  awardNebulaCheckinBonus?: NebulaCheckinBonusAwarder;
 }
 
 /** Owns StreamWeaver's app-private chat state while Chat Gateway owns sockets. */
@@ -137,9 +138,9 @@ export class StreamWeaverProviderRuntime {
     }};
     const grants=options.providerGrants?new SpmtStreamWeaverTwitchGrantSource(options.providerGrants,tenant=>this.runtimeSettings.twitchBroadcaster(tenant),options.allowProviderWrites===true):undefined;
     if(grants){this.twitch=new StreamWeaverTwitchCommandAdapter(grants,options.providerFetch);if(options.allowProviderWrites===true)this.eventsub=new StreamWeaverTwitchEventSub(options.databasePath,grants,options.providerFetch);}
-    if(this.twitch&&options.allowProviderWrites===true)this.presentation=new StreamWeaverPresentationRuntime({store:this.community,shoutoutStore:this.shoutoutStore,twitch:this.twitch,client:options.client,personas:this.settings,connections:options.connections??[],egress:options.egress});
+    if(this.twitch&&options.allowProviderWrites===true)this.presentation=new StreamWeaverPresentationRuntime({store:this.community,shoutoutStore:this.shoutoutStore,twitch:this.twitch,client:options.client,personas:this.settings,connections:options.connections??[],egress:options.egress,...(options.awardNebulaCheckinBonus?{awardNebulaCheckinBonus:options.awardNebulaCheckinBonus}:{})});
     this.messageObservers.push({id:"streamweaver.welcome",observe:message=>{if(message.provider==="twitch"&&!message.actor.isBot&&!STREAMWEAVER_KNOWN_BOTS.has(message.actor.username.toLowerCase()))this.community.welcome(message.tenantId,message.provider,message.actor.providerUserId,message.actor.displayName??message.actor.username,message.actor.username);}});
-    const community=new StreamWeaverCommunityRuntime(this.community,this.economy,options.client,options.allowAssistant!==false,options.simulation!==true&&options.allowProviderWrites===true,this.twitch?activeRideLookup(this.community,this.twitch,options.client):undefined);
+    const community=new StreamWeaverCommunityRuntime(this.community,this.economy,options.client,options.allowAssistant!==false,options.simulation!==true&&options.allowProviderWrites===true,this.twitch?activeRideLookup(this.community,this.twitch,options.client):undefined,options.awardNebulaCheckinBonus);
     const services = new DefaultStreamWeaverDonorCommandServices({
       watchtime:{execute:i=>community.watchtime(i)},community:{execute:i=>community.community(i)},redeems:{execute:i=>community.redeem(i)},translation:this.translationRuntime,
       ...(this.twitch?{twitch:this.twitch}:{}),
@@ -288,7 +289,7 @@ export class StreamWeaverProviderRuntime {
       if(!canonicalUserId)outcome={accepted:false,text:"Reward declined: link your Twitch account to SPMT before redeeming."};
       else if(!redeem.enabled)outcome={accepted:false,text:"Reward declined: this reward is paused."};
       else {
-        const runtime=new StreamWeaverCommunityRuntime(this.community,this.economy,this.options.client,this.options.allowAssistant!==false,this.options.simulation!==true&&this.options.allowProviderWrites===true,this.twitch?activeRideLookup(this.community,this.twitch,this.options.client):undefined);
+        const runtime=new StreamWeaverCommunityRuntime(this.community,this.economy,this.options.client,this.options.allowAssistant!==false,this.options.simulation!==true&&this.options.allowProviderWrites===true,this.twitch?activeRideLookup(this.community,this.twitch,this.options.client):undefined,this.options.awardNebulaCheckinBonus);
         const args=event.input.trim().split(/\s+/),currency=args[0]?.toLowerCase()==="spmt"?"spmt":"streamer";
         if(redeem.acceptance==="spmt"&&currency!=="spmt")outcome={accepted:false,text:"Reward declined: this reward requires an explicit SPMT payment. Use the reward desk to confirm the XP price."};
         else if(redeem.acceptance==="streamer"&&currency==="spmt")outcome={accepted:false,text:"Reward declined: the streamer accepts only their own points for this reward."};
