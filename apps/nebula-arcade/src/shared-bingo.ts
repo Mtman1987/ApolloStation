@@ -137,7 +137,8 @@ function completeIfWon(runtime:NebulaGameRuntimeStateV1,game:NebulaSharedBingoSt
 export function claimNebulaSharedBingoSquare(runtime:NebulaGameRuntimeStateV1,game:NebulaSharedBingoStateV1,input:{channel:string;coordinate:unknown;userId?:unknown;username?:unknown;displayName?:unknown},now=Date.now()) {
   const parsed=parseNebulaSharedBingoCoordinate(input.coordinate);if(!parsed)return{changed:false,outcome:"invalid" as const};
   const settled=settleNebulaSharedBingoClaims(game,now),square=game.squares[parsed.index];
-  if(!square)return{changed:settled.changed,outcome:"invalid" as const,blocked:settled.blocked};\n  if(game.completedAt)return{changed:settled.changed,outcome:"complete" as const,blocked:settled.blocked};
+  if(!square)return{changed:settled.changed,outcome:"invalid" as const,blocked:settled.blocked};
+  if(game.completedAt)return{changed:settled.changed,outcome:"complete" as const,blocked:settled.blocked};
   if(square.status!=="pending"||!square.claimUntil||Date.parse(square.claimUntil)<=now)return{changed:settled.changed,outcome:square.status==="stella"?"blocked" as const:"not-triggered" as const,blocked:settled.blocked};
   const joined=joinNebulaGame(runtime,{...input,gameId:"bingo"},new Date(now)),replacement=Boolean(square.suggestedBy);
   square.status="chat";square.claimedBy=joined.player.id;delete square.claimUntil;
@@ -153,7 +154,8 @@ export function suggestNebulaSharedBingoPhrase(runtime:NebulaGameRuntimeStateV1,
   const phrase=String(input.phrase??"").replace(/[\u0000-\u001f\u007f]/g," ").replace(/\s+/g," ").trim().slice(0,80);
   if(phrase.length<2||DISALLOWED_PHRASE.test(phrase))return{changed:false,outcome:"inappropriate" as const};
   const settled=settleNebulaSharedBingoClaims(game,now),square=game.squares[parsed.index];
-  if(!square)return{changed:settled.changed,outcome:"invalid" as const};\n  if(!square)return{changed:settled.changed,outcome:"invalid" as const};\n  if(game.completedAt)return{changed:settled.changed,outcome:"complete" as const};
+  if(!square)return{changed:settled.changed,outcome:"invalid" as const};\n  if(!square)return{changed:settled.changed,outcome:"invalid" as const};
+  if(game.completedAt)return{changed:settled.changed,outcome:"complete" as const};
   if(square.status!=="stella"&&square.status!=="open"&&square.status!=="replacement")return{changed:settled.changed,outcome:"unavailable" as const,blocked:settled.blocked};
   const joined=joinNebulaGame(runtime,{...input,gameId:"bingo"},new Date(now));
   if(joined.player.gamePointsBalance<NEBULA_SHARED_BINGO_PHRASE_CHANGE_COST)return{changed:settled.changed,outcome:"insufficient" as const,balance:joined.player.gamePointsBalance,cost:NEBULA_SHARED_BINGO_PHRASE_CHANGE_COST,blocked:settled.blocked};
