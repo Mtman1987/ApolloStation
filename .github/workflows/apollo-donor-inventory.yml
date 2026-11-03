@@ -16,18 +16,27 @@ on:
         required: true
         default: main
         type: string
+      apollo_app:
+        description: Apollo app to compare
+        required: true
+        type: choice
+        options:
+          - apps/hearmeout
+          - apps/streamweaver
+          - apps/nebula-arcade
+          - apps/discord-stream-hub
 
 permissions:
   contents: read
 
 concurrency:
-  group: apollo-donor-inventory-${{ inputs.donor }}
+  group: apollo-donor-inventory-${{ inputs.donor }}-${{ inputs.apollo_app }}
   cancel-in-progress: false
 
 jobs:
-  inventory:
+  evidence:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - name: Check out Apollo tooling
         uses: actions/checkout@v4
@@ -60,42 +69,54 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 24
+          cache: npm
 
-      - name: Record donor provenance and file inventory
+      - name: Build Apollo (donor code is never installed or run)
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run build
+
+      - name: Inventory exact donor and Apollo source commits
         env:
-          DONOR_COMMIT_SHA: ${{ github.event.repository.default_branch }}
           DONOR_REPOSITORY: ${{ steps.donor.outputs.repository }}
           DONOR_REF: ${{ inputs.donor_ref }}
+          APOLLO_APP: ${{ inputs.apollo_app }}
         run: |
           set -euo pipefail
-          SHA="$(git -C donor-source rev-parse HEAD)"
-          export DONOR_COMMIT_SHA="$SHA"
-          node scripts/parity-donor-inventory.mjs \
-            --root donor-source \
-            --repository "$DONOR_REPOSITORY" \
-            --ref "$DONOR_REF" \
-            --output donor-inventory.json
+          DONOR_SHA="$(git -C donor-source rev-parse HEAD)"
+          export DONOR_COMMIT_SHA="$DONOR_SHA"
+          node scripts/parity-donor-inventory.mjs --root donor-source --repository "$DONOR_REPOSITORY" --ref "$DONOR_REF" --output donor-inventory.json
+          export DONOR_COMMIT_SHA="$(git rev-parse HEAD)"
+          node scripts/parity-donor-inventory.mjs --root "$APOLLO_APP" --repository "Mtman1987/ApolloStation" --ref "$GITHUB_SHA:$APOLLO_APP" --output apollo-inventory.json
+          node scripts/parity-compare-inventories.mjs donor-inventory.json apollo-inventory.json parity-comparison.json
           {
-            echo "## Read-only donor inventory"
+            echo "## Donor ↔ Apollo evidence"
             echo
-            echo "- Donor: $DONOR_REPOSITORY"
-            echo "- Requested ref: $DONOR_REF"
-            echo "- Resolved commit: $SHA"
-            echo "- Source execution: disabled"
+            echo "- Donor: $DONOR_REPOSITORY@$DONOR_SHA"
+            echo "- Apollo: $GITHUB_SHA ($APOLLO_APP)"
+            echo "- Donor source execution: disabled"
+            echo "- Comparison: path/hash heuristic only; not parity proof"
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Run REA static analysis against donor source
-        run: |
-          set -euo pipefail
-          npm run parity:rea -- donor-source > donor-rea-analysis.json
+      - name: Analyze donor JavaScript with REA
+        run: npm run parity:rea -- donor-source > donor-rea-analysis.json
 
-      - name: Upload donor evidence
+      - name: Analyze built Apollo JavaScript with REA
+        env:
+          APOLLO_APP: ${{ inputs.apollo_app }}
+        run: npm run parity:rea -- "$APOLLO_APP/dist" > apollo-rea-analysis.json
+
+      - name: Upload complete parity evidence bundle
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: donor-evidence-${{ inputs.donor }}
+          name: parity-evidence-${{ inputs.donor }}-${{ inputs.apollo_app }}
           path: |
             donor-inventory.json
+            apollo-inventory.json
+            parity-comparison.json
             donor-rea-analysis.json
+            apollo-rea-analysis.json
           if-no-files-found: warn
           retention-days: 30
