@@ -1,0 +1,64 @@
+name: HearMeOut room player browser acceptance
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/hearmeout-room-player-browser.yml'
+      - 'apps/hearmeout/src/room-media-browser.ts'
+      - 'apps/hearmeout/src/playback-source.ts'
+      - 'apps/hearmeout/src/web-server-v3.ts'
+      - 'apps/hearmeout/src/xtream-hls.ts'
+      - 'apps/hearmeout/src/xtream-hls-route.ts'
+      - 'apps/hearmeout/src/room-broadcast.ts'
+      - 'apps/hearmeout/src/broadcast-window.ts'
+      - 'scripts/test-hmo-media-browser.mjs'
+      - 'scripts/test-hmo-hls-browser.mjs'
+      - 'scripts/test-media-binaries.mjs'
+      - 'package-lock.json'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hearmeout-room-player-browser
+  cancel-in-progress: false
+
+jobs:
+  browser-acceptance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out Apollo
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Install Chromium and browser dependencies
+        run: npx playwright install --with-deps chromium
+
+      - name: Install FFmpeg for local HLS fixture
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes ffmpeg
+          ffmpeg -version
+          ffprobe -version
+
+      - name: Build Apollo browser assets
+        run: npm run build
+
+      - name: Verify two-browser room media synchronization
+        run: node scripts/test-hmo-media-browser.mjs
+
+      - name: Verify real FFmpeg HLS playback in Chromium
+        run: node scripts/test-hmo-hls-browser.mjs
