@@ -384,8 +384,16 @@ export class SupervisedChatGatewayService {
           // Discord has no create-thread idempotency contract; reconcile a stable job marker first.
           const marker="||SPMT egress key: "+createHash("sha256").update(job.tenantId+":"+job.id).digest("hex").slice(0,24)+"||";
           const content=sourceContent.slice(0,Math.max(1,1890-marker.length))+"\n\n"+marker;
-          const created=await this.discordDriver.createDiscordForumThread({tenantId:job.tenantId,connectionId,channelId,name,content,idempotencyMarker:marker});
           if(!job.leaseId)throw new Error("Commlink forum egress job lease is unavailable");
+          await this.connectionClient.heartbeatExecutionJob(job.tenantId,job.id,workerId,job.leaseId,job.fencingEpoch,{percent:25,message:"Preparing Discord forum thread create"},30_000);
+          let heartbeatFailure:unknown;
+          const heartbeatTimer=setInterval(()=>{void this.connectionClient.heartbeatExecutionJob(job.tenantId,job.id,workerId,job.leaseId!,job.fencingEpoch,{percent:60,message:"Discord forum thread create in progress"},30_000).then(()=>{heartbeatFailure=undefined;}).catch(error=>{heartbeatFailure=error;});},10_000);
+          let created:{threadId:string;messageId:string};
+          try{
+            created=await this.discordDriver.createDiscordForumThread({tenantId:job.tenantId,connectionId,channelId,name,content,idempotencyMarker:marker});
+            if(heartbeatFailure)throw new Error("Commlink forum egress lease heartbeat failed during Discord create");
+            await this.connectionClient.heartbeatExecutionJob(job.tenantId,job.id,workerId,job.leaseId,job.fencingEpoch,{percent:90,message:"Discord forum thread found or created"},30_000);
+          }finally{clearInterval(heartbeatTimer);}
           await this.connectionClient.succeedExecutionJob(job.tenantId,job.id,workerId,job.leaseId,job.fencingEpoch,{schemaVersion:1,provider:"discord",operation:"create-thread",threadId:created.threadId,messageId:created.messageId});
           report.sent+=1;continue;
         }else if(operation==="delete"){
