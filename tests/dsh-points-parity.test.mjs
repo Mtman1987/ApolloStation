@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { buildXpIdempotencyKey, mappedXpAwardV1 } from "../packages/sdk/dist/index.js";
-import { DshPointsService, DshWebControls, buildDshLeaderboardPayload, DEFAULT_DSH_LEADERBOARD_SETTINGS, calculateDshPoints, manifest } from "../apps/discord-stream-hub/dist/index.js";
+import { DshPointsService, DshWebControls, buildDshLeaderboardPayload, renderDshLeaderboardPng, renderDshLeaderboardSvg, dshDiscordRequestBody, DEFAULT_DSH_LEADERBOARD_SETTINGS, calculateDshPoints, manifest } from "../apps/discord-stream-hub/dist/index.js";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -19,6 +19,24 @@ test("DSH leaderboard cards use canonical lifetime XP and expose safe rank contr
   assert.deepEqual(payload.allowed_mentions, { parse: [] });
   assert.deepEqual(buildDshLeaderboardPayload([], "simulation-guild", "2026-11-03T20:00:00.000Z", false).components, []);
   assert.throws(() => buildDshLeaderboardPayload([], "not-a-discord-id"), /Discord server ID/);
+});
+
+test("DSH leaderboard image is rendered locally and uploaded as a Discord attachment", async () => {
+  const rows = [{ rank: 1, userId: "user-1", displayName: "<@everyone> Captain", lifetimeXp: 1200, spendableXp: 200, level: 4 }];
+  const svg = renderDshLeaderboardSvg(rows, { communityName: "Crew & Friends", updatedAt: "2026-11-03T20:00:00.000Z" });
+  assert.match(svg, /Crew &amp; Friends/);
+  assert.match(svg, /&lt;@everyone&gt; Captain/);
+  const png = renderDshLeaderboardPng(rows, { communityName: "Crew & Friends", updatedAt: "2026-11-03T20:00:00.000Z" });
+  assert.deepEqual([...png.slice(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+  const payload = buildDshLeaderboardPayload(rows, "123456789012345", "2026-11-03T20:00:00.000Z", true, true);
+  const request = await dshDiscordRequestBody({ ...payload, leaderboardImage: png });
+  assert.ok(request.body instanceof FormData);
+  const json = JSON.parse(request.body.get("payload_json"));
+  assert.equal(json.embeds[0].image.url, "attachment://community-leaderboard.png");
+  assert.deepEqual(json.attachments, [{ id: 0, filename: "community-leaderboard.png" }]);
+  const file = request.body.get("files[0]");
+  assert.equal(file.type, "image/png");
+  assert.ok(file.size > 1000);
 });
 
 test("DSH signed rank controls provide canonical points guidance and fail closed without a wallet client", async () => {

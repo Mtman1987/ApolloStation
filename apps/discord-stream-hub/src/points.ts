@@ -206,7 +206,7 @@ export class DshPointsService {
   }
 }
 
-export function buildDshLeaderboardPayload(rows:Array<{rank:number;displayName?:string;userId:string;lifetimeXp:number;spendableXp:number;level:number}>,guildId:string,updatedAt=new Date().toISOString(),interactive=true){
+export function buildDshLeaderboardPayload(rows:Array<{rank:number;displayName?:string;userId:string;lifetimeXp:number;spendableXp:number;level:number}>,guildId:string,updatedAt=new Date().toISOString(),interactive=true,imageAttachment=false){
   const guild=String(guildId??"").trim();
   if(!guild||(interactive&&!/^\d{5,30}$/.test(guild)))throw new Error("A Discord server ID is required for the leaderboard");
   const safe=(value:unknown)=>String(value??"Unknown").replace(/[\r\n]/g," ").slice(0,80);
@@ -216,6 +216,7 @@ export function buildDshLeaderboardPayload(rows:Array<{rank:number;displayName?:
     embeds:[{
       title:"🏆 Community Leaderboard",
       description:top,
+      ...(imageAttachment?{image:{url:"attachment://community-leaderboard.png"}}:{}),
       color:0x667eea,
       fields:[{name:"How ranking works",value:"Rank is based on Lifetime XP. Spending XP does not lower your rank.",inline:false},{name:"Updated",value:new Date(updatedAt).toLocaleString("en-US",{timeZone:"UTC",dateStyle:"medium",timeStyle:"short"})+" UTC",inline:true}],
       footer:{text:"Canonical SPMT XP · DSH does not keep a separate points balance"},
