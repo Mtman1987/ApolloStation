@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { SpmtClient } from "@spmt/sdk";
 import { DatabaseSync } from "node:sqlite";
 import { DshDiscordApi, DshDiscordError } from "./discord-live-publisher.js";
@@ -122,7 +123,57 @@ export class DshForumForwardingStore {
   setMessage(v:{tenant:string;guild:string;channel:string;message:string;thread:string;forwarded:string;deleted:boolean;now:string}){this.db.prepare("INSERT INTO dsh_forum_messages VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(tenant_id,source_guild_id,source_channel_id,source_message_id) DO UPDATE SET thread_id=excluded.thread_id,forwarded_message_id=excluded.forwarded_message_id,deleted=excluded.deleted,updated_at=excluded.updated_at").run(v.tenant,v.guild,v.channel,v.message,v.thread,v.forwarded,v.deleted?1:0,v.now);}
 }
 
+
 type DshForumDiscordPort = Pick<DshDiscordApi,"getChannel"|"createForumThread"|"createThreadMessage"|"editThreadMessage"|"deleteThreadMessage"|"setThreadArchived">;
+
+/** DSH submits destination writes as durable jobs; Chat Gateway alone owns Discord credentials and egress. */
+class DshCommlinkForumDiscordPort implements DshForumDiscordPort {
+  constructor(private readonly client:SpmtClient,private readonly reads:DshDiscordApi){}
+  getChannel(tenantId:string,channelId:string){return this.reads.getChannel(tenantId,channelId);}
+  async createForumThread(tenantId:string,forumId:string,name:string,message:Record<string,unknown>){
+    const content=String(message.content??"Forwarded Discord messages").slice(0,1900);
+    const result=await this.submit(tenantId,"create-thread",forumId,{name,content},`thread:${forumId}:${name}:${content}`);
+    return{threadId:String(result.threadId),messageId:String(result.messageId)};
+  }
+  async createThreadMessage(tenantId:string,threadId:string,payload:Record<string,unknown>){
+    const target=await this.threadTarget(tenantId,threadId);
+    const result=await this.submit(tenantId,"upsert",target.parentId,{...this.messageInput(payload),threadId},`create:${threadId}:${this.sourceKey(payload)}`);
+    return String(result.providerMessageId);
+  }
+  async editThreadMessage(tenantId:string,threadId:string,messageId:string,payload:Record<string,unknown>){
+    const target=await this.threadTarget(tenantId,threadId);
+    await this.submit(tenantId,"upsert",target.parentId,{...this.messageInput(payload),threadId,previousMessageId:messageId},`edit:${threadId}:${messageId}:${this.sourceKey(payload)}`);
+  }
+  async deleteThreadMessage(tenantId:string,threadId:string,messageId:string){
+    const target=await this.threadTarget(tenantId,threadId);
+    await this.submit(tenantId,"delete",target.parentId,{threadId,messageId,transport:"webhook"},`delete:${threadId}:${messageId}`);
+  }
+  private async threadTarget(tenantId:string,threadId:string){
+    const thread=await this.reads.getChannel(tenantId,threadId),parentId=String(thread.parent_id??"");
+    if(!parentId)throw new Error("Destination thread has no parent channel");
+    return{parentId};
+  }
+  async setThreadArchived(tenantId:string,threadId:string,archived:boolean){
+    const target=await this.threadTarget(tenantId,threadId);
+    await this.submit(tenantId,"archive-thread",target.parentId,{threadId,archived},`archive:${threadId}:${archived}`);
+  }
+  private messageInput(payload:Record<string,unknown>){
+    const embeds=Array.isArray(payload.embeds)?payload.embeds:[],first=(embeds[0]&&typeof embeds[0]==="object"?embeds[0]:{}) as Record<string,unknown>,author=(first.author&&typeof first.author==="object"?first.author:{}) as Record<string,unknown>;
+    return{title:String(first.title??"Forwarded Discord message").slice(0,256),content:String(first.description??"Forwarded Discord message").slice(0,3800)||"Forwarded Discord message",authorName:String(author.name??"Discord member").slice(0,100),...(typeof first.url==="string"?{sourceUrl:first.url}:{}),payload};
+  }
+  private sourceKey(payload:Record<string,unknown>){const embeds=Array.isArray(payload.embeds)?payload.embeds:[],first=(embeds[0]&&typeof embeds[0]==="object"?embeds[0]:{}) as Record<string,unknown>;return String(first.url??first.timestamp??JSON.stringify(payload).slice(0,180));}
+  private async submit(tenantId:string,operation:"create-thread"|"upsert"|"delete"|"archive-thread",targetId:string,details:Record<string,unknown>,key:string):Promise<Record<string,unknown>>{
+    const result=await this.client.createExecutionJob(tenantId,{ownerAppId:"discord-stream-hub",capabilityId:"commlink.discord.forum-egress.v1",executionOwner:"chat-gateway",meteredResource:"hosted-worker-minutes",usageQuantity:1,executionTarget:"sprite",meteringTarget:"hosted",input:{schemaVersion:1,operation,channelId:targetId,...details}},`commlink-forum-egress:${tenantId}:${createHash("sha256").update(key).digest("hex")}`);
+    const jobId=String((result.job as any)?.id??"");if(!jobId)throw new Error("Chat Gateway did not accept the Commlink forum egress job");
+    for(let attempt=0;attempt<120;attempt++){
+      const job=await this.client.getExecutionJob(tenantId,jobId);
+      if(job.state==="succeeded")return (job.result??{}) as Record<string,unknown>;
+      if(["failed","cancelled","dead-letter"].includes(job.state))throw new Error(String(job.error?.message??"Chat Gateway Commlink forum egress failed"));
+      await new Promise(resolve=>setTimeout(resolve,500));
+    }
+    throw new Error("Chat Gateway Commlink forum egress is still pending; retry will use the same idempotency key");
+  }
+}
 
 /** Actual Discord forum delivery: per-source/single-thread routing, rich media, edits, deletes and loop prevention. */
 export class DshForumForwardingService {
@@ -197,7 +248,7 @@ export function buildDshForumDiscordPayload(event:DshForumForwardMutationV1):Rec
 
 export class DshForumForwardingWorker {
   private readonly service:DshForumForwardingService;
-  constructor(private readonly store:DshForumForwardingStore,private readonly client:SpmtClient,private readonly discord:DshDiscordApi,private readonly allowedGuilds:(tenant:string)=>string[]){this.service=new DshForumForwardingService(store,discord);}
+  constructor(private readonly store:DshForumForwardingStore,private readonly client:SpmtClient,private readonly discord:DshDiscordApi,private readonly allowedGuilds:(tenant:string)=>string[]){this.service=new DshForumForwardingService(store,new DshCommlinkForumDiscordPort(client,discord));}
   async runOnce(tenant:string){
     const canonicalRules=await this.client.listCommlinkForumForwardRules(tenant);this.store.replaceRules(tenant,canonicalRules.rules);
     let cursor=this.store.cursor(tenant),processed=0,forwarded=0;

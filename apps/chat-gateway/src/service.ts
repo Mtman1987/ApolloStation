@@ -362,12 +362,22 @@ export class SupervisedChatGatewayService {
       if(!job)break;
       report.observed+=1;
       try{
-        const input=job.input,connectionId=requiredInput(input.connectionId,"connectionId"),channelId=requiredInput(input.channelId,"channelId");
-        const configured=this.connectionStore.get(job.tenantId,"discord",connectionId);
-        if(!configured||!configured.desired||configured.channelId!==channelId)throw new Error("The selected Discord parent channel is not an active Chat Gateway connection");
+        const input=job.input,channelId=requiredInput(input.channelId,"channelId");
+        const requestedConnectionId=input.connectionId===undefined||input.connectionId===""?undefined:requiredInput(input.connectionId,"connectionId");
+        const candidates=this.connectionStore.list(job.tenantId).filter(item=>item.provider==="discord"&&item.desired&&item.channelId===channelId);
+        const configured=requestedConnectionId?this.connectionStore.get(job.tenantId,"discord",requestedConnectionId):(candidates.length===1?candidates[0]:undefined);
+        if(!configured||!configured.desired||configured.channelId!==channelId)throw new Error("The selected Discord parent channel must match exactly one active Chat Gateway connection");
+        const connectionId=configured.connectionId;
         const threadId=input.threadId===undefined?undefined:requiredInput(input.threadId,"threadId");
         const operation=input.operation===undefined?"upsert":input.operation;
-        if(operation==="create-thread"){
+        if(operation==="archive-thread"){
+          if(!threadId)throw new Error("Forum thread archive requires a thread ID");
+          if(typeof input.archived!=="boolean")throw new Error("Forum thread archive flag is invalid");
+          await this.discordDriver.setDiscordForumThreadArchived({tenantId:job.tenantId,connectionId,channelId,threadId,archived:input.archived});
+          if(!job.leaseId)throw new Error("Commlink forum egress job lease is unavailable");
+          await this.connectionClient.succeedExecutionJob(job.tenantId,job.id,workerId,job.leaseId,job.fencingEpoch,{schemaVersion:1,provider:"discord",operation:"archive-thread",threadId,archived:input.archived});
+          report.sent+=1;continue;
+        }else if(operation==="create-thread"){
           if(threadId)throw new Error("Forum thread creation must target a parent channel, not an existing thread");
           const name=boundedInput(input.name,"name",100),content=boundedInput(input.content,"content",1900);
           const created=await this.discordDriver.createDiscordForumThread({tenantId:job.tenantId,connectionId,channelId,name,content});
@@ -386,7 +396,11 @@ export class SupervisedChatGatewayService {
           const previousMessageId=input.previousMessageId===undefined?undefined:requiredInput(input.previousMessageId,"previousMessageId");
           const previousTransport=input.previousTransport;
           if(previousTransport!==undefined&&previousTransport!=="webhook"&&previousTransport!=="bot")throw new Error("Discord forum previous transport is invalid");
-          const result=await this.discordDashboard.upsertDiscordDashboard({schemaVersion:1,tenantId:job.tenantId,connectionId,channelId,...(threadId?{threadId}:{}),webhookName:"SpaceMountain Commlink",...(previousMessageId?{previousMessageId}:{}),...(previousTransport?{previousTransport}:{}),payload:{embeds:[{title,url:sourceUrl,description:content,color:5793266,fields:[],author:{name:`Originally posted by ${author}`},footer:{text:"SpaceMountain Commlink · Discord source attribution"},timestamp:new Date().toISOString()}],components:[],allowed_mentions:{parse:[]}}});
+          const suppliedPayload=input.payload&&typeof input.payload==="object"&&!Array.isArray(input.payload)?JSON.parse(JSON.stringify(input.payload)):undefined;
+          if(suppliedPayload&&JSON.stringify(suppliedPayload).length>50_000)throw new Error("Commlink forum rich payload is too large");
+          const payload=suppliedPayload?{...suppliedPayload,allowed_mentions:{parse:[]}}:{embeds:[{title,url:sourceUrl,description:content,color:5793266,fields:[],author:{name:`Originally posted by ${author}`},footer:{text:"SpaceMountain Commlink · Discord source attribution"},timestamp:new Date().toISOString()}],components:[],allowed_mentions:{parse:[]}};
+          if(!Array.isArray(payload.embeds)||payload.embeds.length>10)throw new Error("Commlink forum embed payload is invalid");
+          const result=await this.discordDashboard.upsertDiscordDashboard({schemaVersion:1,tenantId:job.tenantId,connectionId,channelId,...(threadId?{threadId}:{}),webhookName:"SpaceMountain Commlink",...(previousMessageId?{previousMessageId}:{}),...(previousTransport?{previousTransport}:{}),payload:payload as any});
           if(!job.leaseId)throw new Error("Commlink forum egress job lease is unavailable");
           await this.connectionClient.succeedExecutionJob(job.tenantId,job.id,workerId,job.leaseId,job.fencingEpoch,{schemaVersion:1,provider:"discord",providerMessageId:result.providerMessageId,transport:result.transport,operation:"upsert"});
           report.sent+=1;continue;
