@@ -7,6 +7,7 @@ export interface StreamWeaverStellaLoungeHostStateV1 {
   tenantId:string;
   nextAt:number;
   leaseUntil:number;
+  slotId:number;
   lastSpokeAt:number;
   lastTopic?:string;
   recentTopics:string[];
@@ -18,20 +19,20 @@ export interface StreamWeaverStellaLoungeHostReportV1 { attempted:number;sent:nu
 /** A bounded, non-generative Stella host loop. It uses live Twitch/Community state and Chat Gateway egress; no paid AI or direct provider socket. */
 export class SqliteStreamWeaverStellaLoungeHostStore {
   private readonly db:DatabaseSync;
-  constructor(path:string){if(!path)throw new Error("Stella Lounge Host database path is required");this.db=new DatabaseSync(path,{timeout:5_000});this.db.exec("PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS sw_stella_lounge_host(tenant TEXT PRIMARY KEY,body TEXT NOT NULL) STRICT;");}
+  constructor(path:string){if(!path)throw new Error("Stella Lounge Host database path is required");this.db=new DatabaseSync(path);this.db.exec("PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS sw_stella_lounge_host(tenant TEXT PRIMARY KEY,body TEXT NOT NULL) STRICT;");}
   close(){this.db.close();}
   view(tenantId:string):StreamWeaverStellaLoungeHostStateV1{
     const tenant=cleanTenant(tenantId),row=this.db.prepare("SELECT body FROM sw_stella_lounge_host WHERE tenant=?").get(tenant) as {body:string}|undefined;
-    if(!row)return{tenantId:tenant,nextAt:0,leaseUntil:0,lastSpokeAt:0,recentTopics:[],updatedAt:new Date(0).toISOString()};
+    if(!row)return{tenantId:tenant,nextAt:0,leaseUntil:0,slotId:0,lastSpokeAt:0,recentTopics:[],updatedAt:new Date(0).toISOString()};
     const value=JSON.parse(row.body) as Partial<StreamWeaverStellaLoungeHostStateV1>;
-    return{tenantId:tenant,nextAt:Math.max(0,Number(value.nextAt)||0),leaseUntil:Math.max(0,Number(value.leaseUntil)||0),lastSpokeAt:Math.max(0,Number(value.lastSpokeAt)||0),...(value.lastTopic?{lastTopic:String(value.lastTopic).slice(0,40)}:{}),recentTopics:Array.isArray(value.recentTopics)?value.recentTopics.map(String).slice(-4):[],...(value.lastMessage?{lastMessage:String(value.lastMessage).slice(0,240)}:{}),updatedAt:String(value.updatedAt||new Date(0).toISOString())};
+    return{tenantId:tenant,nextAt:Math.max(0,Number(value.nextAt)||0),leaseUntil:Math.max(0,Number(value.leaseUntil)||0),slotId:Math.max(0,Number(value.slotId)||0),lastSpokeAt:Math.max(0,Number(value.lastSpokeAt)||0),...(value.lastTopic?{lastTopic:String(value.lastTopic).slice(0,40)}:{}),recentTopics:Array.isArray(value.recentTopics)?value.recentTopics.map(String).slice(-4):[],...(value.lastMessage?{lastMessage:String(value.lastMessage).slice(0,240)}:{}),updatedAt:String(value.updatedAt||new Date(0).toISOString())};
   }
   claim(tenantId:string,nowMs:number,initialDelayMs:number):StreamWeaverStellaLoungeHostStateV1|undefined{
-    this.db.exec("BEGIN IMMEDIATE");try{const current=this.view(tenantId);if(current.nextAt===0){this.save({...current,nextAt:nowMs+Math.max(0,initialDelayMs),updatedAt:new Date(nowMs).toISOString()});this.db.exec("COMMIT");return undefined;}if(current.nextAt>nowMs||current.leaseUntil>nowMs){this.db.exec("COMMIT");return undefined;}const claimed={...current,leaseUntil:nowMs+120_000,updatedAt:new Date(nowMs).toISOString()};this.save(claimed);this.db.exec("COMMIT");return claimed;}catch(error){this.db.exec("ROLLBACK");throw error;}
+    this.db.exec("BEGIN IMMEDIATE");try{const current=this.view(tenantId);if(current.nextAt===0){this.save({...current,nextAt:nowMs+Math.max(0,initialDelayMs),updatedAt:new Date(nowMs).toISOString()});this.db.exec("COMMIT");return undefined;}if(current.nextAt>nowMs||current.leaseUntil>nowMs){this.db.exec("COMMIT");return undefined;}const claimed={...current,slotId:current.slotId||current.nextAt,leaseUntil:nowMs+120_000,updatedAt:new Date(nowMs).toISOString()};this.save(claimed);this.db.exec("COMMIT");return claimed;}catch(error){this.db.exec("ROLLBACK");throw error;}
   }
-  complete(tenantId:string,nowMs:number,topic:string,message:string,nextAt:number){const current=this.view(tenantId);this.save({...current,leaseUntil:0,lastSpokeAt:nowMs,lastTopic:topic,recentTopics:[...current.recentTopics,topic].slice(-4),lastMessage:message.slice(0,240),nextAt,updatedAt:new Date(nowMs).toISOString()});}
+  complete(tenantId:string,nowMs:number,topic:string,message:string,nextAt:number){const current=this.view(tenantId);this.save({...current,leaseUntil:0,slotId:0,lastSpokeAt:nowMs,lastTopic:topic,recentTopics:[...current.recentTopics,topic].slice(-4),lastMessage:message.slice(0,240),nextAt,updatedAt:new Date(nowMs).toISOString()});}
   defer(tenantId:string,nowMs:number,retryMs:number){const current=this.view(tenantId);this.save({...current,leaseUntil:0,nextAt:nowMs+Math.max(1,retryMs),updatedAt:new Date(nowMs).toISOString()});}
-  setNextAt(tenantId:string,nextAt:number){const current=this.view(tenantId);this.save({...current,nextAt:Math.max(0,nextAt),leaseUntil:0});}
+  setNextAt(tenantId:string,nextAt:number){const current=this.view(tenantId);this.save({...current,nextAt:Math.max(0,nextAt),leaseUntil:0,slotId:0});}
   private save(value:StreamWeaverStellaLoungeHostStateV1){this.db.prepare("INSERT INTO sw_stella_lounge_host(tenant,body) VALUES(?,?) ON CONFLICT(tenant) DO UPDATE SET body=excluded.body").run(value.tenantId,JSON.stringify(value));}
 }
 
@@ -44,7 +45,7 @@ export class StreamWeaverStellaLoungeHost {
     const report:StreamWeaverStellaLoungeHostReportV1={attempted:0,sent:0,skipped:0,failed:0},allowed=new Set(this.options.tenants??["spacemountainlive"]),connections=new Map<string,{tenantId:string;connectionId:string;channelId:string}>();
     for(const connection of this.options.connections)if(connection.desired&&connection.provider==="twitch"&&allowed.has(connection.tenantId)&&!connections.has(connection.tenantId))connections.set(connection.tenantId,connection);
     for(const connection of connections.values()){
-      const claimed=this.options.store.claim(connection.tenantId,nowMs,this.delay());if(!claimed)continue;
+      let claimed:StreamWeaverStellaLoungeHostStateV1|undefined;try{claimed=this.options.store.claim(connection.tenantId,nowMs,this.delay());}catch{report.failed++;continue;}if(!claimed)continue;
       report.attempted++;
       try{
         const stream=await this.options.twitch.uptime(connection.tenantId);
@@ -52,7 +53,7 @@ export class StreamWeaverStellaLoungeHost {
         if(this.options.community.program(connection.tenantId)){this.options.store.defer(connection.tenantId,nowMs,180_000);report.skipped++;continue;}
         const planned=buildStellaAmbientMessage(stream,this.options.community,connection.tenantId,claimed.recentTopics);
         if(!planned){this.options.store.defer(connection.tenantId,nowMs,180_000);report.skipped++;continue;}
-        await this.options.egress.send({schemaVersion:1,tenantId:connection.tenantId,provider:"twitch",connectionId:connection.connectionId,channelId:connection.channelId,text:planned.text,idempotencyKey:"stella-lounge-host:"+connection.tenantId+":"+claimed.nextAt});
+        await this.options.egress.send({schemaVersion:1,tenantId:connection.tenantId,provider:"twitch",connectionId:connection.connectionId,channelId:connection.channelId,text:planned.text,idempotencyKey:"stella-lounge-host:"+connection.tenantId+":"+(claimed.slotId||claimed.nextAt)});
         this.options.store.complete(connection.tenantId,nowMs,planned.topic,planned.text,nowMs+this.delay());report.sent++;
       }catch{this.options.store.defer(connection.tenantId,nowMs,60_000);report.failed++;}
     }
