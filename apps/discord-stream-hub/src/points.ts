@@ -216,6 +216,7 @@ export function buildDshLeaderboardPayload(rows:Array<{rank:number;displayName?:
     embeds:[{
       title:"🏆 Community Leaderboard",
       description:top,
+      ...(imageAttachment?{image:{url:"attachment://community-leaderboard.png"}}:{}),
       color:0x667eea,
       fields:[{name:"How ranking works",value:"Rank is based on Lifetime XP. Spending XP does not lower your rank.",inline:false},{name:"Updated",value:new Date(updatedAt).toLocaleString("en-US",{timeZone:"UTC",dateStyle:"medium",timeStyle:"short"})+" UTC",inline:true}],
       footer:{text:"Canonical SPMT XP · DSH does not keep a separate points balance"},
