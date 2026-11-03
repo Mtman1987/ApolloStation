@@ -8,6 +8,8 @@ on:
     paths:
       - apps/streamweaver/src/chat-gateway-consumer.ts
       - apps/streamweaver/src/overlay-widgets.ts
+      - apps/streamweaver/src/community-runtime.ts
+      - apps/nebula-arcade/src/provider-runtime.ts
       - tests/streamweaver-chat-gateway.test.mjs
       - tests/streamweaver-overlay-widgets.test.mjs
       - .github/workflows/streamweaver-parity-validation.yml
@@ -15,6 +17,8 @@ on:
     paths:
       - apps/streamweaver/src/chat-gateway-consumer.ts
       - apps/streamweaver/src/overlay-widgets.ts
+      - apps/streamweaver/src/community-runtime.ts
+      - apps/nebula-arcade/src/provider-runtime.ts
       - tests/streamweaver-chat-gateway.test.mjs
       - tests/streamweaver-overlay-widgets.test.mjs
       - .github/workflows/streamweaver-parity-validation.yml
