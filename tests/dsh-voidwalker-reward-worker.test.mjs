@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 
 const source = fs.readFileSync(new URL("../apps/discord-stream-hub/src/voidwalker-reward-worker.ts", import.meta.url), "utf8");
+const discordSource = fs.readFileSync(new URL("../apps/discord-stream-hub/src/discord-live-publisher.ts", import.meta.url), "utf8");
 
 test("Voidwalker eligibility and completion receipts are canonical SPMT events", () => {
   assert.match(source, /ecosystem\.easter-eggs\.completed\.v1/);
@@ -16,7 +17,7 @@ test("Voidwalker role grant precedes clue-role removal and uses scoped Discord g
   const remove = source.indexOf("await this.discord.removeGuildMemberRole");
   assert.ok(titleGrant >= 0);
   assert.ok(remove > titleGrant);
-  assert.match(source, /"guilds:write"/);
+  assert.match(discordSource, /"guilds:write"/);
   assert.match(source, /"signal seeker"\s*,\s*"signal hunter"/);
 });
 
