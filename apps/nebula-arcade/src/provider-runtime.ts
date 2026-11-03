@@ -10,7 +10,7 @@ import { SqliteNebulaGameActionStore, validateNebulaGameAction } from "./game-ac
 import { NEBULA_ARCADE_GAMES, parseNebulaMessage, resolveNebulaCommand, type NebulaCommandTargetV1 } from "./game-hub.js";
 import { NEBULA_CONTINUATION_GAMES, nebulaGuideReplies } from "./game-guide.js";
 import { SqliteNebulaArcadeActivityStore } from "./arcade-activity.js";
-import { claimNebulaGameCommand, getNebulaGameStats, getOrCreateNebulaPlayer, joinNebulaGame, leaveNebulaGame, normalizeNebulaPlayerId, recordNebulaGameChatActivity, resolveNebulaChannelGameIds, setNebulaChannelGameRunning } from "./game-runtime.js";
+import { awardNebulaCheckinBonus, claimNebulaGameCommand, getNebulaGameStats, getOrCreateNebulaPlayer, joinNebulaGame, leaveNebulaGame, normalizeNebulaPlayerId, recordNebulaGameChatActivity, resolveNebulaChannelGameIds, setNebulaChannelGameRunning } from "./game-runtime.js";
 import { SqliteNebulaGameRuntimeStore } from "./game-runtime-store.js";
 import { buildNebulaDiscordDashboard, nebulaDiscordDashboardSignature, SqliteNebulaDiscordDashboardStore, type NebulaDiscordDashboardEgressV1 } from "./discord-dashboard.js";
 import { isNebulaChannelOptedOut, NebulaTagExperienceService, SqliteNebulaTagExperienceStore } from "./nebula-tag-experience.js";
