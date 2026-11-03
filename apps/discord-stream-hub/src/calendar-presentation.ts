@@ -56,7 +56,7 @@ export async function renderDshCalendarPng(events:readonly CommunityCalendarView
 }
 export interface DshLeaderboardImageEntryV1 { rank:number; displayName?:string; userId:string; lifetimeXp:number; spendableXp:number; level:number; }
 export function renderDshLeaderboardSvg(rows:readonly DshLeaderboardImageEntryV1[],options:{communityName?:string;updatedAt?:string}={}){
-  const escape=(value:unknown)=>String(value??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&apos;").replace(/[\r\n]/g," ").slice(0,100);
+  const escape=(value:unknown)=>String(value??"").replace(/[\r\n]/g," ").slice(0,100).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&apos;");
   const community=escape(options.communityName||"Community"),updated=escape(new Date(options.updatedAt??new Date().toISOString()).toLocaleString("en-US",{timeZone:"UTC",dateStyle:"medium",timeStyle:"short"})+" UTC");
   const entries=rows.slice(0,10),cards=entries.map((row,index)=>{
     const y=310+index*96,rank=String(row.rank||index+1).padStart(2,"0"),name=escape(row.displayName||row.userId||"Unknown"),lifetime=Math.max(0,Math.trunc(Number(row.lifetimeXp)||0)).toLocaleString("en-US"),spendable=Math.max(0,Math.trunc(Number(row.spendableXp)||0)).toLocaleString("en-US"),level=Math.max(1,Math.trunc(Number(row.level)||1));
