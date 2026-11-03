@@ -124,7 +124,7 @@ export class StreamWeaverPersonaReplyReconciler {
   private readonly now: () => string;
   private readonly retryDelayMs: number;
   private readonly requesterAppId: string;
-  constructor(private readonly store: SqliteStreamWeaverSummonStore, private readonly client: Pick<StreamWeaverAssistantClientV1, "getExecutionJob"> & { publishEvent?: (tenantId: string, type: string, payload: unknown, idempotencyKey: string) => Promise<unknown> }, private readonly egress: StreamWeaverChatEgressV1, options: { now?: () => string; retryDelayMs?: number; requesterAppId?: string } = {}) {
+  constructor(private readonly store: SqliteStreamWeaverSummonStore, private readonly client: Pick<StreamWeaverAssistantClientV1, "getExecutionJob"> & { publishEvent?: (tenantId: string, type: string, payload: Record<string, unknown>, idempotencyKey: string) => Promise<unknown> }, private readonly egress: StreamWeaverChatEgressV1, options: { now?: () => string; retryDelayMs?: number; requesterAppId?: string } = {}) {
     this.now = options.now ?? (() => new Date().toISOString());
     this.retryDelayMs = options.retryDelayMs ?? 1_000;
     this.requesterAppId = options.requesterAppId ?? "streamweaver";
