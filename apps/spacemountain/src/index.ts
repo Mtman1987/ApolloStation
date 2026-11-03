@@ -181,7 +181,7 @@ export class SpaceMountainShellController {
       entitlements: source(failures, ["entitlements"]),
       usage: source(failures, ["usage"]),
       events: source(failures, ["events"]),
-      commlink: source(failures, ["commlink", "commlinkRecipients", "commlinkMessages", "commlinkLive"]),
+      commlink: source(failures, ["commlink", "commlinkRecipients", "commlinkMessages", "commlinkLive", "forumPosts"]),
       notifications: source(failures, ["notifications"]),
       stellar: source(failures, ["stellarContext", "stellarCapabilities"]),
       operations: source(failures, ["operationsAccess", "operationsLogs", "operationsCoder", "operationsCoderJobs"]),
