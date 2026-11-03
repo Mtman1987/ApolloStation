@@ -22,7 +22,7 @@ export interface DshDiscordBrandingSourceV1 { getBranding(tenantId:string):Promi
 export interface DshSpotlightMediaSourceV1 { getImage(input:{tenantId:string;member:DshLiveMemberV1;stream:DshTwitchStreamV1}):Promise<string|undefined>|string|undefined; }
 export interface DshRoleBannerSourceV1 { getBannerUrl(input:{tenantId:string;member:DshLiveMemberV1}):Promise<string|undefined>|string|undefined; }
 
-export interface DshTrackedDiscordMessageV1 { tenantId:string; kind:"shoutout"|"spotlight"|"calendar"|"applications"|"guest-shoutout"|"partner-calendar"|"onboarding"|"raid-pile"; key:string; channelId:string; messageId:string; updatedAt:string; }
+export interface DshTrackedDiscordMessageV1 { tenantId:string; kind:"shoutout"|"spotlight"|"calendar"|"applications"|"guest-shoutout"|"partner-calendar"|"onboarding"|"raid-pile"|"leaderboard"; key:string; channelId:string; messageId:string; updatedAt:string; }
 
 export class SqliteDshDiscordMessageStore {
   private readonly db:DatabaseSync;

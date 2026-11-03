@@ -33,7 +33,7 @@ import { DshDiscordApi, DshDiscordError, SqliteDshDiscordMessageStore, type DshD
 import { createDshWorkerTokenProvider, loadDshLiveRuntimeConfig, type DshLiveRuntimeConfigV1 } from "./live-worker.js";
 import { DshSimulationRoomDiscordTransport } from "./simulation-room.js";
 import { DshTenantSettingsStore } from "./settings.js";
-import { DshPointsService } from "./points.js";
+import { DshPointsService, buildDshLeaderboardPayload } from "./points.js";
 import { dshSignalSeekerPanelPayload, dshSignalDropInteractionPayload, dshSignalDropClue, SqliteDshSignalSeekerStore } from "./signal-seeker.js";
 import { DshVoidwalkerRewardWorker, SqliteDshVoidwalkerRewardStore } from "./voidwalker-reward-worker.js";
 
@@ -387,6 +387,7 @@ export class DshWebControls {
       if (url.pathname === "/api/discord-stream-hub/control/calendar/mission") return await this.mission(response, context, body,request);
       if (url.pathname === "/api/discord-stream-hub/control/calendar/publish") return await this.publishCalendar(response, context, body);
       if (url.pathname === "/api/discord-stream-hub/control/applications/publish") return await this.publishApplications(response, context, body);
+      if (url.pathname === "/api/discord-stream-hub/control/points/leaderboard/publish") return await this.publishLeaderboard(response, context, body);
 
       if (url.pathname === "/api/discord-stream-hub/control/signal-seeker/drop") {
         this.requireOwner(context);
@@ -547,6 +548,7 @@ export class DshWebControls {
     if(!this.config)return undefined;
     await this.sweepSignalDrops();
     const customId=String(interaction.data?.custom_id??""),signal=/^signal_seekers:(join|leave):(\d{5,30})$/.exec(customId);
+    const leaderboard=/^(check_rank|points_info)_(\d{5,30})$/.exec(customId);
 
     const raidTrain=/^raid_(signup|view|cancel|day)_(\d{4}-\d{2}-\d{2})$/.exec(customId),raidSlot=/^raid_slot_(\d{4}-\d{2}-\d{2})_(\d{2})$/.exec(customId),raidCancelSlot=/^raid_cancel_slot_(\d{4}-\d{2}-\d{2})_(\d{2})$/.exec(customId);
     if(interaction.type===3&&(raidTrain||raidSlot||raidCancelSlot)){
@@ -612,6 +614,17 @@ export class DshWebControls {
         return ephemeral(enabled?"🥚 You are now a Signal Seeker. You will be notified when a new Signal appears.":"You left the Signal Seekers. You can rejoin any time from this panel.");
       }catch(error){return ephemeral(safeError(error));}
     }
+    if(interaction.type===3&&leaderboard){
+      const guildId=String(interaction.guild_id??""),userId=String(interaction.member?.user?.id??interaction.user?.id??""),tenant=this.config.tenants.find(item=>item.discordGuildIds?.includes(guildId));
+      const ephemeral=(content:string)=>({type:4,data:{flags:64,content,allowed_mentions:{parse:[]}}});
+      if(!tenant||!/^\d{5,30}$/.test(guildId)||!/^[0-9]{5,30}$/.test(userId))return ephemeral("This leaderboard belongs to a Discord server that is not connected to DSH.");
+      if(leaderboard[1]==="points_info")return ephemeral("🏆 **How Points Work**\nLifetime XP determines your community rank. Spendable XP is available for supported community rewards; spending it does not reduce your Lifetime XP rank. DSH reads the canonical SPMT wallet—there is no separate DSH points balance.");
+      if(!this.client)return ephemeral("The canonical SPMT wallet is temporarily unavailable.");
+      try{
+        const identity=await resolveProviderIdentity(this.client,tenant.tenantId,"discord",userId),rank=await new DshPointsService(this.client,tenant.tenantId).getUserRank(identity.userId);
+        return ephemeral("🏆 **Your Rank:** #"+rank.rank+"\n📊 **Lifetime XP:** "+rank.lifetimeXp.toLocaleString("en-US")+"\n💠 **Spendable XP:** "+rank.points.toLocaleString("en-US")+"\n⭐ **Level:** "+rank.level);
+      }catch(error){return ephemeral(error instanceof Error?error.message:"Your SPMT wallet could not be loaded.");}
+    }
     if(!this.calendar)return undefined;
     if(this.onboarding){const result=await this.onboarding.interaction(interaction);if(result)return result;}
     if(this.partners){const result=await respondDshPartnerSchedule({schedules:this.partners,config:this.config,now:this.now,resolve:async(tenant,id)=>{if(!this.client)throw Error("Connect DSH first");const identity=await resolveProviderIdentity(this.client,tenant,"discord",id);return {userId:identity.userId,role:identity.tenantRole??null};}},interaction);if(result)return result;}
@@ -631,6 +644,16 @@ export class DshWebControls {
     return sendJson(response, 200, { schemaVersion: 1, messageId, channelId, ...(isSimulationDiscordId(serverId) ? {shadowRoomId:(await this.discord?.target(context.tenantId,serverId))?.roomId} : {}) });
   }
 
+  private async publishLeaderboard(response:ServerResponse,context:SessionContext,body:Record<string,unknown>){
+    this.requireOwner(context);
+    if(!this.client)throw new Error("Connect DSH before publishing the canonical XP leaderboard");
+    const guild=this.guild(context.tenantId,body.serverId),channelId=snowflake(body.channelId,"channelId");
+    await this.validateDestination(context.tenantId,guild,channelId);
+    const rows=await new DshPointsService(this.client,context.tenantId).getLeaderboard(50),members=new Map(this.members(context.tenantId).map(member=>[member.canonicalUserId,member.displayName??member.twitchLogin])),leaderboard=rows.map(row=>({...row,displayName:members.get(row.userId)??row.userId}));
+    const payload=buildDshLeaderboardPayload(leaderboard,guild,this.now(),!isSimulationDiscordId(guild));
+    const messageId=await this.upsertDiscord(context.tenantId,"leaderboard",guild,channelId,payload);
+    return sendJson(response,200,{schemaVersion:1,messageId,channelId,entries:leaderboard.length,...(isSimulationDiscordId(guild)?{shadowRoomId:(await this.discord?.target(context.tenantId,guild))?.roomId}:{})});
+  }
   private async pointsView(tenantId:string,userId:string){
     if(!this.client)return{leaderboard:[],me:null};
     const service=new DshPointsService(this.client,tenantId),members=new Map(this.members(tenantId).map(member=>[member.canonicalUserId,member.displayName??member.twitchLogin]));
@@ -675,7 +698,7 @@ export class DshWebControls {
     return sendJson(response, 200, next);
   }
 
-  private async upsertDiscord(tenantId: string, kind: "calendar" | "applications", key: string, channelId: string, payload: Record<string, unknown>) {
+  private async upsertDiscord(tenantId: string, kind: "calendar" | "applications" | "leaderboard", key: string, channelId: string, payload: Record<string, unknown>) {
     if (!this.discord || !this.messages) throw new Error("Connect the DSH Discord bot before publishing");
     const tracked = this.messages.get(tenantId, kind, key);
     if (tracked && tracked.channelId === channelId) {
