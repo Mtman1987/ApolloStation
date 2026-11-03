@@ -110,21 +110,60 @@ export class DiscordGatewayProviderDriver implements ProviderConnectionDriverV1,
     return { providerMessageId: id, transport: "bot" };
   }
 
-  async createDiscordForumThread(input:{tenantId:string;connectionId:string;channelId:string;name:string;content:string}):Promise<{threadId:string;messageId:string}>{
-    if(!/^\\d{5,30}$/.test(input.channelId))throw new Error("Discord forum parent channel is invalid");
+  async createDiscordForumThread(input:{tenantId:string;connectionId:string;channelId:string;name:string;content:string;idempotencyMarker?:string}):Promise<{threadId:string;messageId:string}>{
+    if(!/^[0-9]{5,30}$/.test(input.channelId))throw new Error("Discord forum parent channel is invalid");
     const active=this.active.get(connectionKey({...input,provider:"discord"}));
     if(!active||active.connection.channelId!==input.channelId)throw new Error("Discord forum connection is unavailable");
-    const parentResponse=await this.fetchImpl(`${DISCORD_API_ORIGIN}/channels/${encodeURIComponent(input.channelId)}`,{method:"GET",headers:{Authorization:`Bot ${active.accessToken}`}});
-    if(!parentResponse.ok)throw new Error(`Discord forum parent lookup failed (${parentResponse.status})`);
+    const parentResponse=await this.fetchImpl(DISCORD_API_ORIGIN+"/channels/"+encodeURIComponent(input.channelId),{method:"GET",headers:{Authorization:"Bot "+active.accessToken}});
+    if(!parentResponse.ok)throw new Error("Discord forum parent lookup failed ("+parentResponse.status+")");
     const parent=record(await parentResponse.json());
     if(![15,16].includes(numberValue(parent?.type)??-1))throw new Error("Configured destination is not a Discord forum or media channel");
     const name=String(input.name??"").trim().slice(0,100),content=String(input.content??"").trim().slice(0,1900);
     if(!name||!content)throw new Error("Discord forum thread name and starter content are required");
-    const response=await this.fetchImpl(`${DISCORD_API_ORIGIN}/channels/${encodeURIComponent(input.channelId)}/threads`,{method:"POST",headers:{Authorization:`Bot ${active.accessToken}`,"Content-Type":"application/json"},body:JSON.stringify({name,auto_archive_duration:1440,message:{content,allowed_mentions:{parse:[]}}})});
-    if(!response.ok)throw new Error(`Discord forum thread creation failed (${response.status})`);
+    const marker=input.idempotencyMarker?.trim();
+    if(marker){
+      const token=marker.startsWith("||SPMT egress key: ")&&marker.endsWith("||")?marker.slice(19,-2):"";
+      if(!/^[a-f0-9]{24}$/.test(token)||!content.includes(marker))throw new Error("Discord forum idempotency marker is invalid");
+      const recovered=await this.findDiscordForumThreadByMarker(active,input.channelId,scalarString(parent?.guild_id),marker);
+      if(recovered)return recovered;
+    }
+    const response=await this.fetchImpl(DISCORD_API_ORIGIN+"/channels/"+encodeURIComponent(input.channelId)+"/threads",{method:"POST",headers:{Authorization:"Bot "+active.accessToken,"Content-Type":"application/json"},body:JSON.stringify({name,auto_archive_duration:1440,message:{content,allowed_mentions:{parse:[]}}})});
+    if(!response.ok)throw new Error("Discord forum thread creation failed ("+response.status+")");
     const created=record(await response.json()),threadId=scalarString(created?.id),messageId=scalarString(record(created?.message)?.id);
     if(!threadId||!messageId)throw new Error("Discord forum thread creation returned incomplete identifiers");
     return{threadId,messageId};
+  }
+
+  /** Bounded exact-parent scan for a prior uncertain forum create. */
+  private async findDiscordForumThreadByMarker(active:ActiveConnection,parentId:string,guildId:string,marker:string):Promise<{threadId:string;messageId:string}|undefined>{
+    if(!/^[0-9]{5,30}$/.test(guildId))throw new Error("Discord forum parent has no valid guild ID for recovery");
+    const headers={Authorization:"Bot "+active.accessToken};
+    const activeResponse=await this.fetchImpl(DISCORD_API_ORIGIN+"/guilds/"+encodeURIComponent(guildId)+"/threads/active",{method:"GET",headers});
+    if(!activeResponse.ok)throw new Error("Discord active forum thread recovery failed ("+activeResponse.status+")");
+    const activeBody=record(await activeResponse.json()),threads:Record<string,unknown>[]=[];
+    if(Array.isArray(activeBody?.threads))for(const item of activeBody.threads){const thread=record(item);if(scalarString(thread?.parent_id)===parentId&&scalarString(thread?.id))threads.push(thread!);}
+    let before:string|undefined;
+    for(let page=0;page<10;page++){
+      const query=new URLSearchParams({limit:"100"});if(before)query.set("before",before);
+      const response=await this.fetchImpl(DISCORD_API_ORIGIN+"/channels/"+encodeURIComponent(parentId)+"/threads/archived/public?"+query.toString(),{method:"GET",headers});
+      if(!response.ok)throw new Error("Discord archived forum thread recovery failed ("+response.status+")");
+      const body=record(await response.json()),rows=Array.isArray(body?.threads)?body.threads:[];
+      for(const item of rows){const thread=record(item);if(scalarString(thread?.parent_id)===parentId&&scalarString(thread?.id))threads.push(thread!);}
+      if(!body?.has_more||!rows.length)break;
+      const last=record(rows[rows.length-1]),next=scalarString(record(last?.thread_metadata)?.archive_timestamp);
+      if(!next||next===before)throw new Error("Discord archived forum recovery cursor did not advance");
+      before=next;if(page===9)throw new Error("Discord archived forum recovery exceeded its safe scan limit");
+    }
+    const seen=new Set<string>();
+    for(const thread of threads){
+      const threadId=scalarString(thread.id);if(!threadId||seen.has(threadId))continue;seen.add(threadId);
+      const response=await this.fetchImpl(DISCORD_API_ORIGIN+"/channels/"+encodeURIComponent(threadId)+"/messages/"+encodeURIComponent(threadId),{method:"GET",headers});
+      if(response.status===404)continue;
+      if(!response.ok)throw new Error("Discord forum starter recovery failed ("+response.status+")");
+      const starter=record(await response.json()),messageId=scalarString(starter?.id);
+      if(messageId&&typeof starter?.content==="string"&&starter.content.includes(marker))return{threadId,messageId};
+    }
+    return undefined;
   }
 
   async setDiscordForumThreadArchived(input:{tenantId:string;connectionId:string;channelId:string;threadId:string;archived:boolean}):Promise<void>{
