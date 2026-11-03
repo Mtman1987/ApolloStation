@@ -6,7 +6,7 @@ import type { DshDiscordApi } from "./discord-live-publisher.js";
 const COMPLETED = "ecosystem.easter-eggs.completed.v1";
 const DELIVERED = "ecosystem.easter-eggs.discord-reward-delivered.v1";
 const TITLE = "Voidwalker";
-type Tenant = { tenantId: string; discordGuildIds: string[] };
+type Tenant = { tenantId: string; discordGuildIds?: string[] };
 type Event = { sourceAppId?: string; type?: string; payload?: Record<string, unknown> };
 
 export class SqliteDshVoidwalkerRewardStore {
@@ -70,8 +70,9 @@ export class DshVoidwalkerRewardWorker {
       if(!userId||confirmed.has(userId))continue;
       const discordId=byUser.get(userId)?.providers.find(provider=>provider.provider==="discord")?.providerUserId;
       if(!discordId)continue;
-      let complete=tenant.discordGuildIds.length>0;
-      for(const guildId of tenant.discordGuildIds){
+      const guildIds=tenant.discordGuildIds??[];
+      let complete=guildIds.length>0;
+      for(const guildId of guildIds){
         if(this.store.delivered(tenant.tenantId,userId,guildId))continue;
         try{
           const roleId=await this.ensureRole(tenant.tenantId,guildId);
@@ -79,6 +80,7 @@ export class DshVoidwalkerRewardWorker {
           if(!Array.isArray(member?.roles))throw new Error("Discord member roles are unavailable");
           if(!member.roles.includes(roleId))await this.discord.request(tenant.tenantId,`/guilds/${guildId}/members/${discordId}/roles/${roleId}`,"PUT",undefined,"guilds:write");
           const roles=await this.discord.request<Array<{id:string;name:string}>>(tenant.tenantId,`/guilds/${guildId}/roles`,"GET",undefined,"guilds:read");
+          if(!Array.isArray(roles))throw new Error("Discord guild roles are unavailable");
           for(const role of roles)if(role.id!==roleId&&member.roles.includes(role.id)&&["signal seeker","signal hunter"].includes(role.name.toLowerCase()))await this.discord.request(tenant.tenantId,`/guilds/${guildId}/members/${discordId}/roles/${role.id}`,"DELETE",undefined,"guilds:write");
           this.store.success({tenantId:tenant.tenantId,userId,guildId,discordUserId:discordId,roleId,now:this.now()});
         }catch(error){complete=false;this.store.failure({tenantId:tenant.tenantId,userId,guildId,discordUserId:discordId,error:error instanceof Error?error.message:"Discord reward delivery failed",now:this.now()});}
@@ -89,6 +91,7 @@ export class DshVoidwalkerRewardWorker {
   private async ensureRole(tenantId:string,guildId:string) {
     const cached=this.store.roleId(tenantId,guildId);
     const roles=await this.discord.request<Array<{id:string;name:string;managed?:boolean}>>(tenantId,`/guilds/${guildId}/roles`,"GET",undefined,"guilds:read");
+    if(!Array.isArray(roles))throw new Error("Discord guild roles are unavailable");
     const existing=roles.find(role=>role.id===cached)||roles.find(role=>role.name.toLowerCase()===TITLE.toLowerCase());
     if(existing?.managed)throw new Error("Voidwalker role is managed by another integration");
     const role=existing||await this.discord.request<{id:string}>(tenantId,`/guilds/${guildId}/roles`,"POST",{name:TITLE,color:0x8b5cf6,permissions:"0",mentionable:false,hoist:false},"guilds:write");
