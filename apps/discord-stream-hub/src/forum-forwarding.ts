@@ -9,6 +9,7 @@ export interface DshForwardedForumPostV1 {
   embeds?:Array<Record<string,unknown>>;attachments?:Array<Record<string,unknown>>;
   mentionedUsers?:Array<Record<string,unknown>>;
 }
+function forumHttps(value:unknown):string|undefined{try{const url=new URL(String(value??""));return url.protocol==="https:"&&!url.username&&!url.password&&url.href.length<=2048?url.href:undefined;}catch{return undefined;}}
 function forumText(value:unknown,max:number){const result=String(value??"").trim();if(!result||result.length>max||result.includes("\0"))throw new Error("Forwarded forum post contains invalid text");return result;}
 function forumList(value:unknown,max:number){if(value===undefined||value===null)return[];if(!Array.isArray(value)||value.length>max)throw new Error("Forwarded forum post contains too many rich items");return value.map(item=>{if(!item||typeof item!=="object"||Array.isArray(item))throw new Error("Forwarded forum rich item is invalid");const encoded=JSON.stringify(item);if(encoded.length>12000)throw new Error("Forwarded forum rich item is too large");return JSON.parse(encoded) as Record<string,unknown>;});}
 export function normalizeDshForwardedForumPost(value:unknown):DshForwardedForumPostV1{
@@ -16,7 +17,7 @@ export function normalizeDshForwardedForumPost(value:unknown):DshForwardedForumP
   const item=value as Record<string,unknown>,postedAt=item.postedAt===undefined?undefined:forumText(item.postedAt,60);
   if(postedAt&&!Number.isFinite(Date.parse(postedAt)))throw new Error("Forwarded forum post time is invalid");
   const sourceMessageUrl=item.sourceMessageUrl===undefined?undefined:forumText(item.sourceMessageUrl,2048);
-  if(sourceMessageUrl){const url=new URL(sourceMessageUrl);if(url.protocol!=="https:")throw new Error("Forwarded forum source URL must use HTTPS");}
+  if(sourceMessageUrl&&!forumHttps(sourceMessageUrl))throw new Error("Forwarded forum source URL must use credential-free HTTPS");
   return {sourceApp:forumText(item.sourceApp,80),sourceServerId:forumText(item.sourceServerId,120),sourceChannelId:forumText(item.sourceChannelId,120),sourceChannelName:forumText(item.sourceChannelName,120),sourceMessageId:forumText(item.sourceMessageId,120),...(sourceMessageUrl?{sourceMessageUrl}:{}),authorId:forumText(item.authorId,120),authorName:forumText(item.authorName,120),title:forumText(item.title,300),content:forumText(item.content,12000),...(item.category===undefined?{}:{category:forumText(item.category,100)}),...(postedAt?{postedAt}:{}),embeds:forumList(item.embeds,10),attachments:forumList(item.attachments,20),mentionedUsers:forumList(item.mentionedUsers,50)};
 }
 export async function forwardDshForumPost(client:SpmtClient,tenantId:string,value:unknown){
@@ -34,7 +35,7 @@ export type DshForumForwardMutationV1 = {
   tenantId:string; guildId:string; channelId:string; channelName:string; channelType:number;
   messageId:string; authorId:string; authorName:string; authorAvatar?:string; content:string;
   attachments?:Array<{url?:string;proxyUrl?:string;filename?:string;contentType?:string}>;
-  embeds?:Array<{title?:string;description?:string;url?:string;imageUrl?:string}>;
+  embeds?:Array<{title?:string;description?:string;url?:string;imageUrl?:string;thumbnailUrl?:string}>;
   sourceMessageUrl?:string; occurredAt:string; sourceIsPublic:boolean;
   authorIsBot?:boolean; originatedFromForwarder?:boolean; operation?:"create"|"edit"|"delete";
 };
@@ -137,13 +138,15 @@ export class DshForumForwardingService {
   }
 }
 export function buildDshForumDiscordPayload(event:DshForumForwardMutationV1):Record<string,unknown>{
-  const attachments=(event.attachments??[]).filter(a=>typeof(a.url??a.proxyUrl)==="string").slice(0,10),embeds=(event.embeds??[]).slice(0,3);
+  const attachments=(event.attachments??[]).flatMap(a=>{const url=forumHttps(a.url??a.proxyUrl);return url?[{...a,url}]:[];}).slice(0,10),sourceEmbeds=(event.embeds??[]).slice(0,5);
   const fields:Array<{name:string;value:string}>=[];
-  if(attachments.length)fields.push({name:"Attachments",value:attachments.map(a=>"[Open "+String(a.filename||"attachment").slice(0,80)+"]("+String(a.url??a.proxyUrl)+")").join("\\n").slice(0,1024)});
-  for(const e of embeds)if(e.title||e.description)fields.push({name:String(e.title||"Source embed").slice(0,256),value:String(e.description||e.url||"Embedded content").slice(0,1024)});
-  const image=attachments.find(a=>String(a.contentType??"").startsWith("image/"))?.url??embeds.find(e=>e.imageUrl)?.imageUrl;
-  const embed:Record<string,unknown>={author:{name:event.authorName,...(event.authorAvatar?{icon_url:event.authorAvatar}:{})},description:(event.content||"").slice(0,4000)||"\u200b",color:0x5865f2,footer:{text:"Discord · #"+event.channelName},timestamp:event.occurredAt,...(event.sourceMessageUrl?{url:event.sourceMessageUrl}:{}),...(image?{image:{url:image}}:{}),...(fields.length?{fields:fields.slice(0,10)}:{})};
-  return{embeds:[embed],allowed_mentions:{parse:[]}};
+  if(attachments.length)fields.push({name:"Attachments",value:attachments.map(a=>"[Open "+String(a.filename||"attachment").slice(0,80)+"]("+String(a.url??a.proxyUrl)+")").join("\n").slice(0,1024)});
+  for(const e of sourceEmbeds)if(e.title||e.description)fields.push({name:String(e.title||"Source embed").slice(0,256),value:String(e.description||e.url||"Embedded content").slice(0,1024)});
+  const imageUrls=[...new Set([...attachments.filter(a=>String(a.contentType??"").startsWith("image/")).map(a=>a.url??a.proxyUrl),...sourceEmbeds.flatMap(e=>[forumHttps(e.imageUrl),forumHttps(e.thumbnailUrl)])].filter((url):url is string=>typeof url==="string"))];
+  const embed:Record<string,unknown>={author:{name:event.authorName,...(event.authorAvatar?{icon_url:event.authorAvatar}:{})},description:(event.content||"").slice(0,4000)||"\u200b",color:0x5865f2,footer:{text:"Discord · #"+event.channelName},timestamp:event.occurredAt,...(forumHttps(event.sourceMessageUrl)?{url:forumHttps(event.sourceMessageUrl)}:{}),...(imageUrls[0]?{image:{url:imageUrls[0]}}:{}),...(fields.length?{fields:fields.slice(0,10)}:{})};
+  const sourceMedia=sourceEmbeds.map(e=>({...(e.title?{title:String(e.title).slice(0,256)}:{}),...(e.description?{description:String(e.description).slice(0,3500)}:{}),...(forumHttps(e.url)?{url:forumHttps(e.url)}:{}),...(forumHttps(e.imageUrl)?{image:{url:forumHttps(e.imageUrl)}}:{}),...(forumHttps(e.thumbnailUrl)?{thumbnail:{url:forumHttps(e.thumbnailUrl)}}:{})})).filter(e=>Object.keys(e).length>0);
+  const extraImages=imageUrls.slice(1,5).map(url=>({image:{url}}));
+  return{embeds:[embed,...sourceMedia,...extraImages].slice(0,10),allowed_mentions:{parse:[]}};
 }
 
 export class DshForumForwardingWorker {
@@ -168,8 +171,9 @@ export class DshForumForwardingWorker {
                 if([10,11].includes(Number(messageChannel.type))&&messageChannel.parent_id)sourceChannel=await this.discord.getChannel(tenant,messageChannel.parent_id);
                 if(![15,16].includes(Number(sourceChannel.type))){
                   const guild=await this.discord.getGuild(tenant,record.guildId??String(payload.guildId??""));
-                  const attachments=(record.rich?.attachments??[]).map(item=>({url:item.url,filename:item.name}));
-                  const result=await this.service.apply({tenantId:tenant,guildId:record.guildId??String(payload.guildId),channelId:sourceChannel.id,channelName:String(sourceChannel.name??sourceChannel.id),channelType:Number(sourceChannel.type??0),messageId:record.messageId,authorId:record.providerUserId,authorName:record.displayName??record.username,content:record.text,attachments,sourceMessageUrl:"https://discord.com/channels/"+(record.guildId??String(payload.guildId))+"/"+record.channelId+"/"+record.messageId,occurredAt:record.occurredAt,sourceIsPublic:isPublicDshForumSource(guild,sourceChannel),authorIsBot:record.isBot,operation:item.type==="spmt.chat.message.mutated.v1"?(payload.operation==="delete"?"delete":"edit"):"create"});
+                  const attachments=(record.rich?.attachments??[]).map(item=>({url:item.url,filename:item.name,contentType:item.contentType}));
+                  const embeds=(record.rich?.embeds??[]).map(item=>({title:item.title,description:item.description,url:item.url,imageUrl:item.imageUrl,thumbnailUrl:item.thumbnailUrl}));
+                  const result=await this.service.apply({tenantId:tenant,guildId:record.guildId??String(payload.guildId),channelId:sourceChannel.id,channelName:String(sourceChannel.name??sourceChannel.id),channelType:Number(sourceChannel.type??0),messageId:record.messageId,authorId:record.providerUserId,authorName:record.displayName??record.username,content:record.text,attachments,embeds,sourceMessageUrl:"https://discord.com/channels/"+(record.guildId??String(payload.guildId))+"/"+record.channelId+"/"+record.messageId,occurredAt:record.occurredAt,sourceIsPublic:isPublicDshForumSource(guild,sourceChannel),authorIsBot:record.isBot,operation:item.type==="spmt.chat.message.mutated.v1"?(payload.operation==="delete"?"delete":"edit"):"create"});
                   if(result.status==="forwarded")forwarded++;
                 }
               }

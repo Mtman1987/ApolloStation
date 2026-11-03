@@ -73,7 +73,7 @@ export class CommlinkLiveChatStore {
   private applyMutation(id:string){
     const source=this.db.prepare("SELECT body FROM commlink_live_chat WHERE id=?").get(id);if(!source)return undefined;
     let record=JSON.parse(String(source.body)) as CommlinkLiveChatRecordV1;const patch=this.db.prepare("SELECT body FROM commlink_provider_mutations WHERE id=?").get(mutationKey(record));if(!patch)return record;const value=JSON.parse(String(patch.body)) as CommlinkProviderMutationV1;
-    record=value.operation==="delete"?{...record,text:"[Message removed]",rich:{source:"discord",eventType:"delete",attachments:[],deleted:true}}:{...record,...(value.text!==undefined?{text:value.text||"[Message has no text]"}:{}),...(value.rich?{rich:value.rich}:{})};
+    record=value.operation==="delete"?{...record,text:"[Message removed]",rich:{source:"discord",eventType:"delete",attachments:[],embeds:[],deleted:true}}:{...record,...(value.text!==undefined?{text:value.text||"[Message has no text]"}:{}),...(value.rich?{rich:{source:value.rich.source,eventType:value.rich.eventType,attachments:value.rich.attachments??record.rich?.attachments??[],...(value.rich.embeds!==undefined?{embeds:value.rich.embeds}:record.rich?.embeds!==undefined?{embeds:record.rich.embeds}:{}),...(value.rich.donation!==undefined?{donation:value.rich.donation}:record.rich?.donation!==undefined?{donation:record.rich.donation}:{}),...(value.rich.membership!==undefined?{membership:value.rich.membership}:record.rich?.membership!==undefined?{membership:record.rich.membership}:{})}}:{})};
     this.db.prepare("UPDATE commlink_live_chat SET text=?,body=? WHERE id=?").run(record.text,JSON.stringify(record),id);return record;
   }
 

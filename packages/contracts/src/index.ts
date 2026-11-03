@@ -525,7 +525,7 @@ export interface CommlinkTikTokEventV1 {
 /** Public, credential-free Commlink projection of one normalized provider message. */
 export interface CommlinkLiveChatRecordV1 {
   guildId?:string;
-  rich?: {source:string;eventType:string;attachments:Array<{url:string;name:string}>;donation?:string;membership?:string;deleted?:boolean};
+  rich?: {source:string;eventType:string;attachments?:Array<{url:string;name:string;contentType?:string;size?:number}>;embeds?:Array<{title?:string;description?:string;url?:string;imageUrl?:string;thumbnailUrl?:string}>;donation?:string;membership?:string;deleted?:boolean};
   schemaVersion: 1;
   tenantId: string;
   provider: ChatProviderV1 | "social-stream" | "tiktok";
@@ -636,10 +636,11 @@ export function assertDeviceRelayCommandV1(value: DeviceRelayCommandV1): DeviceR
   return value;
 }
 
-export function normalizeCommlinkRichContent(value:NonNullable<CommlinkLiveChatRecordV1["rich"]>){
- if(!value||typeof value!=="object"||typeof value.source!=="string"||value.source.length>100||typeof value.eventType!=="string"||value.eventType.length>100||!Array.isArray(value.attachments)||value.attachments.length>12)throw Error("Chat rich content is invalid");
- const attachments=value.attachments.map(a=>{const url=new URL(a.url);if(url.protocol!=="https:"||url.username||url.password||url.href.length>2048||typeof a.name!=="string"||a.name.length>150)throw Error("Chat attachment is invalid");return {url:url.href,name:a.name}});
- return {source:value.source,eventType:value.eventType,attachments,...(typeof value.donation==="string"?{donation:value.donation.slice(0,100)}:{}),...(typeof value.membership==="string"?{membership:value.membership.slice(0,100)}:{})};
+export function normalizeCommlinkRichContent(value:{source:string;eventType:string;attachments?:Array<{url:string;name:string;contentType?:string;size?:number}>;embeds?:Array<{title?:string;description?:string;url?:string;imageUrl?:string;thumbnailUrl?:string}>;donation?:string;membership?:string}){
+ if(!value||typeof value!=="object"||typeof value.source!=="string"||value.source.length>100||typeof value.eventType!=="string"||value.eventType.length>100||(value.attachments!==undefined&&(!Array.isArray(value.attachments)||value.attachments.length>12))||(value.embeds!==undefined&&(!Array.isArray(value.embeds)||value.embeds.length>5)))throw Error("Chat rich content is invalid");
+ const attachments=value.attachments?.map(a=>{const url=new URL(a.url);if(url.protocol!=="https:"||url.username||url.password||url.href.length>2048||typeof a.name!=="string"||a.name.length>150)throw Error("Chat attachment is invalid");if(a.contentType!==undefined&&(typeof a.contentType!=="string"||a.contentType.length>120))throw Error("Chat attachment content type is invalid");if(a.size!==undefined&&(!Number.isSafeInteger(a.size)||a.size<0))throw Error("Chat attachment size is invalid");return {url:url.href,name:a.name,...(a.contentType?{contentType:a.contentType}:{}),...(a.size!==undefined?{size:a.size}:{})}});
+ const embeds=value.embeds?.map(item=>{const checked={} as {title?:string;description?:string;url?:string;imageUrl?:string;thumbnailUrl?:string};for(const key of ["title","description"] as const){const v=item[key];if(v!==undefined){if(typeof v!=="string"||v.length>(key==="title"?256:1800))throw Error("Chat embed text is invalid");checked[key]=v;}}for(const key of ["url","imageUrl","thumbnailUrl"] as const){const v=item[key];if(v!==undefined){const url=new URL(v);if(url.protocol!=="https:"||url.username||url.password||url.href.length>2048)throw Error("Chat embed media URL is invalid");checked[key]=url.href;}}return checked;});
+ return {source:value.source,eventType:value.eventType,...(attachments?{attachments}:{}),...(embeds?{embeds}:{}),...(typeof value.donation==="string"?{donation:value.donation.slice(0,100)}:{}),...(typeof value.membership==="string"?{membership:value.membership.slice(0,100)}:{})};
 }
 
 export function assertNormalizedChatMessageV1(value: NormalizedChatMessageV1): NormalizedChatMessageV1 {
@@ -1154,7 +1155,7 @@ function contractStrings(value: unknown): value is string[] { return Array.isArr
 /** Provider corrections change public presentation only; they are never command inputs. */
 export interface CommlinkProviderMutationV1 {
   schemaVersion:1; tenantId:string; provider:"discord"; connectionId:string; channelId:string; messageId:string;
-  operation:"edit"|"delete"; occurredAt:string; text?:string; rich?:NonNullable<CommlinkLiveChatRecordV1["rich"]>;
+  operation:"edit"|"delete"; occurredAt:string; text?:string; rich?:{source:string;eventType:string;attachments?:Array<{url:string;name:string;contentType?:string;size?:number}>;embeds?:Array<{title?:string;description?:string;url?:string;imageUrl?:string;thumbnailUrl?:string}>;donation?:string;membership?:string};
 }
 export function normalizeCommlinkProviderMutation(value:CommlinkProviderMutationV1):CommlinkProviderMutationV1 {
   if(!value||value.schemaVersion!==1||value.provider!=="discord"||!["edit","delete"].includes(value.operation))throw Error("Chat mutation is invalid");
