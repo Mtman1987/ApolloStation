@@ -114,17 +114,17 @@ export function buildNebulaDiscordDashboard(
   }];
   const components: NebulaDiscordDashboardPayloadV1["components"][number]["components"] = [];
   if (gamesUrl) components.push({ type: 2, style: 5, label: "Open all 20 games", emoji: { name: "🎮" }, url: gamesUrl });
-  const mosaicChannel = String(options.mosaicChannel || "").replace(/^#/, "").trim().toLowerCase();
+  const cleanMosaic = (value: unknown, limit = 180) => String(value ?? "").replace(/([\\`*_~|>])/g, "\\\\$1").replace(/[\\r\\n]/g, " ").slice(0, limit);\n  const mosaicChannel = String(options.mosaicChannel || "").replace(/^#/, "").trim().toLowerCase();
   const mosaicUrl = origin && mosaicChannel ? new URL(`/overlay/mosaic?channel=${encodeURIComponent(mosaicChannel)}`, origin).toString() : undefined;
   if (options.mosaic) {
     const art = options.mosaic.artwork;
     const mosaicFields: NebulaDiscordEmbedFieldV1[] = [
-      { name: "Artwork", value: art ? clean(art.theme, 180) : "Waiting for a community theme", inline: true },
+      { name: "Artwork", value: art ? cleanMosaic(art.theme, 180) : "Waiting for a community theme", inline: true },
       { name: "Progress", value: art ? `${art.progressPercent}% · ${art.progress}/${art.total} matching cells · Board ${art.activeBoard}/4` : "No active artwork yet", inline: true },
       { name: "Queue", value: `${options.mosaic.queueLength} request(s)`, inline: true },
     ];
     embeds.push({
-      title: `🎨 Nebula Mosaic · #${clean(mosaicChannel || "channel", 80)}`,
+      title: `🎨 Nebula Mosaic · #${cleanMosaic(mosaicChannel || "channel", 80)}`,
       ...(mosaicUrl ? { url: mosaicUrl } : {}),
       description: art ? `Community painting is ${art.status}. Paint with \`!mosaic paint A1 red\` in chat.` : "Queue a community artwork theme with !mosaic <theme>.",
       color: 0x00d9ff, fields: mosaicFields,
