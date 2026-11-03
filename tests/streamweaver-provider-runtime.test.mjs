@@ -6,7 +6,7 @@ import test from "node:test";
 import { ChatGatewayRuntime, SqliteChatGatewayStore } from "../apps/chat-gateway/dist/index.js";
 import { SupervisedChatGatewayService, validateChatGatewayWorkerEnvironment } from "../apps/chat-gateway/dist/service.js";
 import { createSpmtService } from "../apps/spmt-service/dist/index.js";
-import { StreamWeaverFlowPackageStore, StreamWeaverPersonaSettingsStore, StreamWeaverProviderRuntime } from "../apps/streamweaver/dist/index.js";
+import { StreamWeaverFlowPackageStore, StreamWeaverPersonaSettingsStore, StreamWeaverProviderRuntime, StreamWeaverRuntimeSettingsStore } from "../apps/streamweaver/dist/index.js";
 
 const iso = (seconds = 0) => new Date(Date.parse("2026-08-29T08:00:00.000Z") + seconds * 1_000).toISOString();
 
@@ -144,6 +144,61 @@ test("StreamWeaver commands and persona results traverse one restart-safe provid
     const bot = await gateway.ingest(envelope({ messageId: "bot-1", text: "Athena hello", isBot: true }));
     assert.equal(bot.delivery.attempted, 0);
   } finally { runtime.close(); gatewayStore.close(); rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("production Restream configuration builds a verified Go Live handler without an injected test adapter", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "spmt-streamweaver-golive-production-"));
+  const databasePath = join(dir, "streamweaver.sqlite");
+  const gatewayPath = join(dir, "gateway.sqlite");
+  const settings = new StreamWeaverRuntimeSettingsStore(databasePath);
+  settings.setTwitchBroadcaster("spacemountainlive", "100");
+  settings.close();
+  const sent = [];
+  const calls = [];
+  let live = false;
+  let gateway;
+  const client = {
+    async issueProviderGrant(...args) {
+      calls.push(["grant", ...args]);
+      return { expiresAt: "2099-01-01T00:00:00Z", credential: { accessToken: "short-lived-provider-grant", metadata: { clientId: "shared-client" } } };
+    },
+    async request() { throw new Error("unexpected SPMT request"); },
+    async awardXp() { throw new Error("unexpected XP award"); },
+    async invokeCommunityAssistant() { throw new Error("unexpected assistant call"); },
+    async getExecutionJob() { throw new Error("unexpected execution job"); },
+  };
+  const runtime = new StreamWeaverProviderRuntime({
+    databasePath, client, egress: { send: (message) => gateway.send(message) },
+    connections: [{ tenantId: "spacemountainlive", provider: "twitch", connectionId: "tw-main", channelId: "provider-channel", desired: true }],
+    allowProviderWrites: true,
+    restreamControl: { origin: "https://lounge.example", credential: "r".repeat(40) },
+    providerFetch: async (url, init) => {
+      const parsed = new URL(url);
+      if (parsed.origin === "https://lounge.example") {
+        assert.equal(parsed.pathname, "/restream/start");
+        assert.equal(init.method, "POST");
+        assert.equal(init.headers.authorization, `Bearer ${"r".repeat(40)}`);
+        calls.push(["restream-start"]);
+        live = true;
+        return Response.json({ ok: true });
+      }
+      assert.equal(parsed.origin, "https://api.twitch.tv");
+      assert.equal(parsed.pathname, "/helix/streams");
+      assert.equal(init.headers.authorization, "Bearer short-lived-provider-grant");
+      return Response.json({ data: live ? [{ id: "stream-1", started_at: iso(), title: "Live", game_name: "Just Chatting", viewer_count: 12 }] : [] });
+    },
+  });
+  const gatewayStore = new SqliteChatGatewayStore(gatewayPath);
+  gateway = new ChatGatewayRuntime(gatewayStore, runtime.consumers, [{ provider: "twitch", async send(message) { sent.push(structuredClone(message)); return { providerMessageId: `twitch-out-${sent.length}` }; } }]);
+  try {
+    const accepted = await gateway.ingest(envelope({ tenantId: "spacemountainlive", provider: "twitch", connectionId: "tw-main", channelId: "provider-channel", messageId: "golive-production-1", text: "!golive", roles: ["broadcaster"], providerUserId: "100", canonicalUserId: "owner-id", username: "spacemountainlive" }));
+    assert.equal(accepted.delivery.delivered, 1);
+    assert.equal(calls.filter(call => call[0] === "restream-start").length, 1);
+    assert.equal(calls.filter(call => call[0] === "grant").length, 2);
+    assert.match(sent.at(-1).text, /Twitch confirms SpaceMountainLive is live/);
+  } finally {
+    runtime.close(); gatewayStore.close(); rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("SpaceMountainLive !golive is wired to provider ingress and only reports verified start results", async () => {
