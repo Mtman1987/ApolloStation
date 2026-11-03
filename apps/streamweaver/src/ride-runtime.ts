@@ -33,7 +33,7 @@ export async function runStreamRide(store:StreamWeaverCommunityStore,economy:Sql
  const channel=String(input.channel||input.tenantId),awardId="streamweaver-ride:"+id,username=winner.displayName.toLowerCase().replace(/[^a-z0-9_]/g,"").slice(0,25)||"member";
  let nebulaBonusStatus:'awarded'|'pending'|'not-configured'='not-configured',nebulaBonusPoints=0;
  const bonusInput={tenantId:input.tenantId,awardId,channel,userId:winner.userId,username,displayName:winner.displayName};
- if(awardNebulaCheckinBonus){try{const awarded=await awardNebulaCheckinBonus(bonusInput);nebulaBonusStatus='awarded';nebulaBonusPoints=awarded.amount;}catch{nebulaBonusStatus='pending';store.requestTask(input.tenantId,"nebula-checkin-bonus:"+id,{action:'nebula-checkin-bonus',...bonusInput});}}
+ if(awardNebulaCheckinBonus){try{const awarded=await awardNebulaCheckinBonus(bonusInput);nebulaBonusStatus='awarded';nebulaBonusPoints=awarded.amount;}catch{nebulaBonusStatus='pending';store.requestTask(input.tenantId,"nebula-checkin-bonus:"+id,{action:'nebula-checkin-bonus',rideId:id,...bonusInput});}}
  const nebulaText=nebulaBonusStatus==='awarded'?' +100 Nebula Arcade points':nebulaBonusStatus==='pending'?' · Nebula Arcade bonus pending retry':'';
  const text=attempt.displayName+" launched Space Mountain with "+attempt.riders.length+" riders. Front seat: "+winner.displayName+" (+100 streamer points"+nebulaText+")!";
  const result={state:'complete' as const,text,count:attempt.riders.length,frontSeat:winner.displayName,frontSeatUserId:winner.userId,rideId:id,bonus:100,nebulaBonusPoints,nebulaBonusStatus};
