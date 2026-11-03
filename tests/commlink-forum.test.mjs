@@ -73,6 +73,10 @@ test("scoped DSH service can import only provider-attributed forum posts",async(
   response=await call({title:"Imported Discord topic",body:"Hello from Discord",origin:{provider:"discord",channelId:"forum-channel",messageId:"message-1",authorId:"discord-user",authorName:"Viewer",sourceUrl:"https://discord.com/channels/g/c/m",sourceApp:"discord-stream-hub"}});
   assert.equal(response.status,201);const post=(await response.json()).post;
   assert.equal(post.authorUserId,"discord-stream-hub");assert.equal(post.origin.authorName,"Viewer");
+  const replyOrigin={provider:"discord",channelId:"forum-channel",threadId:"thread-1",messageId:"reply-1",authorId:"reply-author",authorName:"Reply Author"};
+  const createReply=()=>fetch(base+"/v1/commlink/forums/"+post.id+"/replies",{method:"POST",headers:{"x-spmt-tenant":"tenant-a",authorization:"Bearer service","content-type":"application/json"},body:JSON.stringify({body:"Imported reply",origin:replyOrigin})});
+  let replyResponse=await createReply();assert.equal(replyResponse.status,201);const importedReply=(await replyResponse.json()).reply;
+  replyResponse=await createReply();assert.equal((await replyResponse.json()).reply.id,importedReply.id);
   const mutate=body=>fetch(base+"/v1/commlink/forums/import-mutations",{method:"POST",headers:{"x-spmt-tenant":"tenant-a",authorization:"Bearer service","content-type":"application/json"},body:JSON.stringify(body)});
   response=await mutate({operation:"edit",origin:post.origin,title:"Updated from Discord",body:"Edited body"});assert.equal(response.status,200);assert.equal((await response.json()).post.body,"Edited body");
   response=await mutate({operation:"delete",origin:post.origin});assert.equal(response.status,200);assert.equal((await response.json()).deleted,true);

@@ -49,6 +49,7 @@ export class DshDiscordApi {
       deleteMessage:(tenant,channel,id)=>this.deleteMessage(tenant,channel,id),
     };
   }
+  async listChannelMessages(tenantId:string,channelId:string,before?:string){const query=new URLSearchParams({limit:"100"});if(before)query.set("before",snowflake(before,"before"));const rows=await this.request<any[]>(tenantId,`/channels/${snowflake(channelId,"channelId")}/messages?${query}`,"GET",undefined,"channels:read");if(!Array.isArray(rows)||rows.length>100)throw new Error("Discord returned an invalid message history page");return rows;}
   async getChannel(tenantId:string,channelId:string){return (await this.request<any>(tenantId,"/channels/"+snowflake(channelId,"channelId"),"GET",undefined,"channels:read"))!;}
   async listActiveThreads(tenantId:string,guildId:string){return await this.request<any>(tenantId,"/guilds/"+snowflake(guildId,"guildId")+"/threads/active","GET",undefined,"channels:read")??{threads:[]};}
   async listArchivedForumThreads(tenantId:string,forumId:string,before?:string){const query=new URLSearchParams({limit:"100"});if(before)query.set("before",before);return await this.request<any>(tenantId,"/channels/"+snowflake(forumId,"channelId")+"/threads/archived/public?"+query.toString(),"GET",undefined,"channels:read")??{threads:[],has_more:false};}

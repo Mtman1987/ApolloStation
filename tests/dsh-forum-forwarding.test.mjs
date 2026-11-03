@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {forwardDshForumPost} from "../apps/discord-stream-hub/dist/forum-forwarding.js";
+import {forwardDshForumPost,importDshDiscordForumThreads} from "../apps/discord-stream-hub/dist/forum-forwarding.js";
 
 const source={sourceApp:"discord-stream-hub",sourceServerId:"123456",sourceChannelId:"234567",sourceChannelName:"general",sourceMessageId:"345678",sourceMessageUrl:"https://discord.com/channels/123456/234567/345678",authorId:"456789",authorName:"Viewer",title:"Community / #general",content:"Hello community",postedAt:"2026-11-03T12:00:00.000Z"};
 function client(){
@@ -20,4 +20,14 @@ test("DSH forum edit and delete synchronize the native record and publish mutati
  const deleted=client();await forwardDshForumPost(deleted,"tenant-a",{...source,operation:"delete",content:"",postedAt:"2026-11-03T12:02:00.000Z"});
  assert.equal(deleted.calls[0][0],"mutate");assert.equal(deleted.calls[0][2].operation,"delete");
  assert.equal(deleted.calls[1][2],"dsh.forum.post-mutated.v1");
+});
+
+test("Discord forum import creates native topics and ordered native replies",async()=>{
+ const calls=[];
+ const client={async createCommlinkForumPost(tenant,input){calls.push(["post",tenant,input]);return {post:{id:"native-1"}};},async createCommlinkForumReply(tenant,postId,input){calls.push(["reply",tenant,postId,input]);return {reply:{id:"reply-1"}};},async publishEvent(...args){calls.push(["event",...args]);return {duplicate:false,event:{id:"event-1"}};}};
+ const discord={async getGuild(){return {id:"guild-1",name:"Guild"};},async getChannel(){return {id:"forum-1",guild_id:"guild-1",name:"introductions",type:15};},async listActiveThreads(){return {threads:[{id:"thread-1",parent_id:"forum-1",name:"Welcome"}]};},async listArchivedForumThreads(){return {threads:[],has_more:false};},async listChannelMessages(_tenant,_thread,before){assert.equal(before,undefined);return [{id:"300000",timestamp:"2026-11-03T12:02:00.000Z",content:"A reply",author:{id:"user-2",username:"Second"}},{id:"200000",timestamp:"2026-11-03T12:01:00.000Z",content:"Starter post",author:{id:"user-1",username:"First"}}];}};
+ const result=await importDshDiscordForumThreads(client,discord,"tenant-a","guild-1","forum-1");
+ assert.equal(result.threadsDiscovered,1);assert.equal(result.postsImported,1);assert.equal(result.repliesImported,1);
+ assert.equal(calls[0][0],"post");assert.equal(calls[0][2].origin.threadId,"thread-1");assert.equal(calls[0][2].body,"Starter post");
+ assert.equal(calls[2][0],"reply");assert.equal(calls[2][2],"native-1");assert.equal(calls[2][3].origin.messageId,"300000");
 });
