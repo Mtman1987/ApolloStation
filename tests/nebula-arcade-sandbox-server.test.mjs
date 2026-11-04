@@ -13,7 +13,7 @@ test("Nebula Arcade sandbox keeps the tag game functional while all games report
   try {
     await host.listen(); const origin = originFor(host.server);
     const health = await fetch(`${origin}/health/ready`);
-    assert.deepEqual(await health.json(), { ready: true, app: "nebula-arcade", runtimeMode: "sandbox", gameMixStoreReady: true, gameMixStoreMode: "sqlite", outboundIntegrations: "disabled", buildSha: "test-sha" });
+    assert.deepEqual(await health.json(), { ready: true, app: "nebula-arcade", runtimeMode: "sandbox", gameMixStoreReady: true, gameMixStoreMode: "sqlite", mosaicControlStoreReady: true, mosaicControlStoreMode: "sqlite", outboundIntegrations: "disabled", buildSha: "test-sha" });
 
     const home = await (await fetch(origin)).text();
     assert.match(home, /NEBULA(?:\s|<span>)+ARCADE/);
