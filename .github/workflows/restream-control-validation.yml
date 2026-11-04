@@ -1,0 +1,55 @@
+name: Restream control service validation
+
+on:
+  push:
+    branches:
+      - main
+      - feat/oracle-restream-control-service
+    paths:
+      - "services/restream-control/**"
+      - "infra/oracle/restream-control.compose.yml"
+      - "infra/oracle/prepare-restream-profile-volume.sh"
+      - "infra/oracle/restream-control.env.example"
+      - ".github/workflows/restream-control-validation.yml"
+  pull_request:
+    paths:
+      - "services/restream-control/**"
+      - "infra/oracle/restream-control.compose.yml"
+      - "infra/oracle/prepare-restream-profile-volume.sh"
+      - "infra/oracle/restream-control.env.example"
+      - ".github/workflows/restream-control-validation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install service dependencies
+        working-directory: services/restream-control
+        run: npm install --omit=dev --no-audit --no-fund
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: "true"
+      - name: Run Restream API and safety tests
+        working-directory: services/restream-control
+        run: npm test
+      - name: Validate Compose service topology
+        env:
+          RESTREAM_CONTROL_CREDENTIAL: rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr
+          RESTREAM_PROFILE_HOST_PATH: /tmp/restream-profile
+          RESTREAM_TLS_CERT_HOST_PATH: /tmp/restream-control.crt
+          RESTREAM_TLS_KEY_HOST_PATH: /tmp/restream-control.key
+        run: docker compose --file infra/oracle/restream-control.compose.yml config --quiet
+      - name: Check volume preflight shell syntax
+        run: bash -n infra/oracle/prepare-restream-profile-volume.sh
+      - name: Build isolated browser controller image
+        run: docker build --file services/restream-control/Dockerfile --tag apollo-restream-control:ci .

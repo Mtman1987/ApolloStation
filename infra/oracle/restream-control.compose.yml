@@ -1,0 +1,62 @@
+services:
+  restream-control:
+    build:
+      context: ../..
+      dockerfile: services/restream-control/Dockerfile
+    image: apollo-restream-control:local
+    container_name: apollo-restream-control
+    init: true
+    restart: unless-stopped
+    environment:
+      PORT: "3018"
+      HOST: "0.0.0.0"
+      RESTREAM_CONTROL_CREDENTIAL: ${RESTREAM_CONTROL_CREDENTIAL:?Set a dedicated 32+ character receiver credential}
+      RESTREAM_PROFILE_DIR: /var/lib/restream-profile
+      RESTREAM_PROFILE_VOLUME_MARKER: /var/lib/restream-profile/.restream-profile-volume
+      RESTREAM_TLS_CERT_FILE: /run/secrets/restream-control.crt
+      RESTREAM_TLS_KEY_FILE: /run/secrets/restream-control.key
+      RESTREAM_AUTOMATION_ENABLED: ${RESTREAM_AUTOMATION_ENABLED:-false}
+      PUPPETEER_EXECUTABLE_PATH: /usr/bin/chromium
+    volumes:
+      - type: bind
+        source: ${RESTREAM_PROFILE_HOST_PATH:?Mount the encrypted OCI profile volume on the host first}
+        target: /var/lib/restream-profile
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${RESTREAM_TLS_CERT_HOST_PATH:?Mount the private TLS certificate on the host}
+        target: /run/secrets/restream-control.crt
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${RESTREAM_TLS_KEY_HOST_PATH:?Mount the private TLS key on the host}
+        target: /run/secrets/restream-control.key
+        read_only: true
+        bind:
+          create_host_path: false
+    expose:
+      - "3018"
+    shm_size: 512m
+    mem_limit: 2g
+    cpus: 1.0
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+      - /run:size=16m,mode=0755
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      - apollo-private
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('node:https').get({hostname:'127.0.0.1',port:3018,path:'/healthz',rejectUnauthorized:false},r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+networks:
+  apollo-private:
+    external: true
