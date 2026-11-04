@@ -61,6 +61,8 @@ jobs:
         run: npm ci
       - name: Compile all apps and packages
         run: npm run build
+      - name: Validate local Kokoro worker syntax
+        run: python3 -m py_compile apps/stellar-core/kokoro/server.py
       - name: Run focused pull-request regressions
         if: github.event_name == 'pull_request'
         run: node --import ./scripts/offline-network-guard.mjs --test tests/streamweaver-rides.test.mjs tests/streamweaver-chat-gateway.test.mjs tests/streamweaver-overlay-widgets.test.mjs tests/streamweaver-pollinations.test.mjs tests/stellar-speech-target.test.mjs tests/stellar-kokoro.test.mjs tests/streamweaver-port-runtime.test.mjs tests/mountainview-commander-listener.test.mjs tests/mountainview-commander-browser.test.mjs tests/mountainview-companion-platform.test.mjs
