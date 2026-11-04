@@ -30,5 +30,14 @@ jobs:
       - name: Run Restream API and safety tests
         working-directory: services/restream-control
         run: npm test
+      - name: Validate Compose service topology
+        env:
+          RESTREAM_CONTROL_CREDENTIAL: ${{ secrets.RESTREAM_CONTROL_CREDENTIAL || 'r'.repeat(48) }}
+          RESTREAM_PROFILE_HOST_PATH: /tmp/restream-profile
+          RESTREAM_TLS_CERT_HOST_PATH: /tmp/restream-control.crt
+          RESTREAM_TLS_KEY_HOST_PATH: /tmp/restream-control.key
+        run: docker compose --file infra/oracle/restream-control.compose.yml config --quiet
+      - name: Check volume preflight shell syntax
+        run: bash -n infra/oracle/prepare-restream-profile-volume.sh
       - name: Build isolated browser controller image
         run: docker build --file services/restream-control/Dockerfile --tag apollo-restream-control:ci .
