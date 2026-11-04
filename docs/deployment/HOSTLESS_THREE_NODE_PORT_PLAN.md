@@ -1,6 +1,6 @@
 # Hostless Three-Node Portability Plan
 
-Status: implementation plan on `hostless-three-node-port`; no production deployment or application behavior changed.
+Status: portability implementation in progress on `hostless-three-node-port`; no production deployment, Hostless resources, production data writes, or Fly.io operations performed.
 
 ## Non-negotiable goals
 
@@ -75,7 +75,12 @@ OverlayBay and Restream must be mapped to their actual existing Apollo modules a
 
 ## First implementation slice
 
-Implement the service inventory and role-specific launch contracts first. Keep the existing Sprite launcher unchanged so local regression workflows remain available. Do not introduce a Hostless deployment file that automatically provisions multiple resources until the resource plan and exact Hostless schema are validated.
+- Documented the initial service inventory and three-node topology on this branch.
+- Updated the SpaceMountain integrated ingress proxy so configured remote service origins can use HTTPS with normal certificate verification. Plain HTTP remains accepted only for loopback development targets. Origins containing credentials, paths, queries, or fragments are rejected.
+- Removed hop-by-hop request and response headers at the proxy boundary. Existing local loopback routing remains supported for current single-host regression runs.
+- Added a regression test proving that a non-loopback cleartext HTTP service origin is rejected. Existing overlay proxy tests continue to cover local loopback behavior.
+
+The source and test changes are committed to this branch. CI status has not yet been returned for the latest commit, so this slice is not marked tested or production-ready. Keep the existing Sprite launcher unchanged so local regression workflows remain available. Do not introduce a Hostless deployment file that automatically provisions multiple resources until the resource plan and exact Hostless schema are validated.
 
 ## Known blockers / decisions
 
