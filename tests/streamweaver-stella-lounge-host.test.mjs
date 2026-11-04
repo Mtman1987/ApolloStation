@@ -150,3 +150,23 @@ test("Stella releases a failed event lease so EventSub retry can deliver with th
     assert.equal(keys[0], keys[1]);
   } finally { host.close(); community.close(); }
 });
+
+
+test("Stella acknowledges gifted subscriptions without invoking a generative provider", async () => {
+  const community = new StreamWeaverCommunityStore(":memory:");
+  const hostStore = new SqliteStreamWeaverStellaLoungeHostStore(":memory:");
+  const messages = [];
+  const host = new StreamWeaverStellaLoungeHost({
+    store: hostStore, community,
+    twitch: { uptime: async () => ({ id: "stream-1", startedAt: "2026-11-04T12:00:00.000Z", title: "Space Mountain", gameName: "Just Chatting", viewerCount: 42 }) },
+    connections: [{ tenantId: "spacemountainlive", provider: "twitch", connectionId: "twitch-connection", channelId: "123456789", desired: true }],
+    egress: { send: async message => { messages.push(message); return {}; } },
+    random: () => 0,
+  });
+  try {
+    const result = await host.reactToEvent({ tenantId: "spacemountainlive", eventId: "gift-bomb-1", kind: "gift-bomb", actor: "GiftCaptain", amount: 5 }, 1_000);
+    assert.equal(result.delivered, true);
+    assert.match(result.text, /GiftCaptain just gifted 5 subscriptions/);
+    assert.equal(messages.length, 1);
+  } finally { host.close(); community.close(); }
+});
