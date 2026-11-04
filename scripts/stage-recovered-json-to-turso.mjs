@@ -18,11 +18,16 @@ import { TursoHttpAdapter } from "./migrate-sqlite-to-turso.mjs";
 
 const TABLE = "apollo_recovered_json_stage_v1";
 const BATCH_SIZE = 20;
-const SENSITIVE_KEY = /^(?:access[_-]?token|refresh[_-]?token|id[_-]?token|token|api[_-]?key|client[_-]?secret|secret|password|authorization|webhook[_-]?url|private[_-]?key)$/i;
-const SENSITIVE_PATH = /(^|\/)(?:tokens?|secrets?|credentials?)(\/|$)/i;
+const SENSITIVE_KEY = /(?:^|_)(?:access_?tokens?|refresh_?tokens?|id_?tokens?|tokens?|api_?keys?|client_?secrets?|secrets?|passwords?|authorization|webhooks?|private_?keys?|credentials?)(?:_|$)/i;
+const SENSITIVE_PATH = /(^|\/)(?:tokens?|secrets?|credentials?|webhooks?|vault)(?:\/|\.|$)/i;
 
 function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
+}
+
+function isSensitiveKey(key) {
+  const normalized = String(key).replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase();
+  return SENSITIVE_KEY.test(normalized);
 }
 
 function redact(value) {
@@ -30,7 +35,7 @@ function redact(value) {
   if (!value || typeof value !== "object") return value;
   const output = {};
   for (const [key, child] of Object.entries(value)) {
-    output[key] = SENSITIVE_KEY.test(key) ? "[REDACTED]" : redact(child);
+    output[key] = isSensitiveKey(key) ? "[REDACTED]" : redact(child);
   }
   return output;
 }
@@ -174,7 +179,7 @@ function parseArgs(argv) {
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === "--apply") options.apply = true;
-    else if (arg === "--legacy-nebula-root") options.legacyNebulaRoot = argv[++i] ?? "";
+    else if (arg === "--legacy-nebula-root" || arg === "--chat-tag-root") options.legacyNebulaRoot = argv[++i] ?? "";
     else if (arg === "--streamweaver-root") options.streamWeaverRoot = argv[++i] ?? "";
     else if (arg === "--help") options.help = true;
     else throw new Error(`Unknown argument: ${arg}`);
@@ -185,14 +190,14 @@ function parseArgs(argv) {
 async function main() {
   const options = parseArgs(process.argv.slice(2));
   if (options.help || (!options.legacyNebulaRoot && !options.streamWeaverRoot)) {
-    process.stdout.write("Usage: node scripts/stage-recovered-json-to-turso.mjs [--legacy-nebula-root DIR] [--streamweaver-root DIR] [--apply]\nDry-run by default. Stages redacted JSON source documents in a dedicated raw table; it does not normalize or assign records to Apollo domain tables.\n");
+    process.stdout.write("Usage: node scripts/stage-recovered-json-to-turso.mjs [--chat-tag-root DIR] (alias: --legacy-nebula-root) [--streamweaver-root DIR] [--apply]\nDry-run by default. Stages redacted JSON source documents in a dedicated raw table; it does not normalize or assign records to Apollo domain tables.\n");
     return;
   }
   const records = await buildRecoveredJsonManifest(options);
-  const adapter = new TursoHttpAdapter({
+  const adapter = options.apply ? new TursoHttpAdapter({
     url: process.env.TURSO_DATABASE_URL ?? "",
     authToken: process.env.TURSO_AUTH_TOKEN ?? "",
-  });
+  }) : undefined;
   const result = await stageRecoveredJson({
     records, adapter, apply: options.apply,
     onProgress: (event) => process.stdout.write(JSON.stringify(event) + "\n"),
