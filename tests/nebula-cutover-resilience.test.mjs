@@ -26,12 +26,12 @@ test('production readiness checks the internal runtime and persisted state',asyn
   const t=temp();const host=createNebulaArcadeLiveHost({databasePath:t.path,tenantId:'tenant',channelId:'room',spmtOrigin:'http://spmt.example',publicOrigin:'https://arcade.example',credential:'service-credential-that-is-long-enough',host:'127.0.0.1',port:0,buildSha:'cutover-test'});
   try{
     await host.listen();const origin=`http://127.0.0.1:${host.server.address().port}`;
-    let response=await fetch(origin+'/health/ready');assert.equal(response.status,200);const ready=await response.json();assert.equal(ready.buildSha,'cutover-test');assert.equal(ready.mosaicStoreReady,true);assert.equal(ready.mosaicStoreMode,'sqlite');assert.equal(ready.gameMixStoreReady,true);assert.equal(ready.gameMixStoreMode,'sqlite');
+    let response=await fetch(origin+'/health/ready');assert.equal(response.status,200);const ready=await response.json();assert.equal(ready.buildSha,'cutover-test');assert.equal(ready.mosaicStoreReady,true);assert.equal(ready.mosaicStoreMode,'sqlite');assert.equal(ready.mosaicControlStoreReady,true);assert.equal(ready.mosaicControlStoreMode,'sqlite');assert.equal(ready.gameMixStoreReady,true);assert.equal(ready.gameMixStoreMode,'sqlite');
     const previousRequireTurso=process.env.NEBULA_ARCADE_REQUIRE_TURSO;
     try{
       process.env.NEBULA_ARCADE_REQUIRE_TURSO='1';
       response=await fetch(origin+'/health/ready');assert.equal(response.status,503);
-      const blocked=await response.json();assert.equal(blocked.mosaicStoreMode,'sqlite');assert.equal(blocked.gameMixStoreMode,'sqlite');assert.equal(blocked.mosaicStoreRequired,true);assert.equal(blocked.gameMixStoreRequired,true);assert.equal(blocked.ready,false);
+      const blocked=await response.json();assert.equal(blocked.mosaicStoreMode,'sqlite');assert.equal(blocked.mosaicControlStoreMode,'sqlite');assert.equal(blocked.mosaicControlStoreReady,true);assert.equal(blocked.gameMixStoreMode,'sqlite');assert.equal(blocked.mosaicStoreRequired,true);assert.equal(blocked.gameMixStoreRequired,true);assert.equal(blocked.ready,false);
     }finally{
       if(previousRequireTurso===undefined)delete process.env.NEBULA_ARCADE_REQUIRE_TURSO;else process.env.NEBULA_ARCADE_REQUIRE_TURSO=previousRequireTurso;
     }
