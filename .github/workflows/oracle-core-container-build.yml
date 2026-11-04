@@ -7,6 +7,11 @@ on:
       - feat/oracle-core-runtime-image
     paths:
       - "infra/oracle/Dockerfile.apollo"
+      - "infra/oracle/apollo-core.compose.yml"
+      - "infra/oracle/Caddyfile.apollo"
+      - "infra/oracle/prepare-apollo-data-volume.sh"
+      - "infra/oracle/apollo.env.example"
+      - "apps/hearmeout/legacy-worker/**"
       - ".dockerignore"
       - "package.json"
       - "package-lock.json"
@@ -40,6 +45,19 @@ jobs:
         run: docker build --file infra/oracle/Dockerfile.apollo --build-arg BUILD_SHA=${GITHUB_SHA} --tag apollo-core:ci .
       - name: Verify production entrypoints and runtime tools
         run: |
-          docker run --rm --entrypoint node apollo-core:ci -e "const fs=require('node:fs'); const files=['apps/spmt-service/dist/provider-identity-start.js','apps/spacemountain-web/dist/integrated-server.js','apps/chat-gateway/dist/service-start.js','apps/streamweaver/dist/web-server.js','apps/discord-stream-hub/dist/web-server.js','apps/discord-stream-hub/dist/live-worker-start.js','apps/nebula-arcade/dist/nebula-arcade-live-server.js','apps/stellar-core/dist/worker-start.js']; for (const file of files) if (!fs.existsSync(file)) throw new Error('Missing production entrypoint: '+file); console.log('All core production entrypoints exist');"
+          docker run --rm --entrypoint node apollo-core:ci -e "const fs=require('node:fs'); const files=['apps/spmt-service/dist/provider-identity-start.js','apps/spacemountain-web/dist/integrated-server.js','apps/chat-gateway/dist/service-start.js','apps/streamweaver/dist/web-server.js','apps/discord-stream-hub/dist/web-server.js','apps/discord-stream-hub/dist/live-worker-start.js','apps/nebula-arcade/dist/nebula-arcade-live-server.js','apps/stellar-core/dist/worker-start.js','apps/hearmeout/dist/web-server-start.js']; for (const file of files) if (!fs.existsSync(file)) throw new Error('Missing production entrypoint: '+file); console.log('All core production entrypoints exist');"
           docker run --rm --entrypoint node apollo-core:ci -e "require('node:sqlite'); require('playwright'); console.log('SQLite and Playwright runtime dependencies load');"
           docker run --rm --entrypoint /bin/sh apollo-core:ci -c "ffmpeg -version >/dev/null && chromium --version"
+      - name: Validate single-host Apollo Compose topology
+        run: |
+          cp infra/oracle/apollo.env.example infra/oracle/apollo.env
+          docker compose --env-file infra/oracle/apollo.env --file infra/oracle/apollo-core.compose.yml config --quiet
+          bash -n infra/oracle/prepare-apollo-data-volume.sh
+          bash -n infra/oracle/prepare-restream-profile-volume.sh
+      - name: Validate Caddy routing configuration
+        run: |
+          mkdir -p /tmp/apollo-caddy-tls
+          openssl req -x509 -newkey rsa:2048 -nodes -keyout /tmp/apollo-caddy-tls/restream-control.key -out /tmp/apollo-caddy-tls/restream-control.crt -subj "/CN=restream-internal.example.com" -days 1
+          docker run --rm --env-file infra/oracle/apollo.env.example -v "$PWD/infra/oracle/Caddyfile.apollo:/etc/caddy/Caddyfile:ro" -v "/tmp/apollo-caddy-tls/restream-control.crt:/etc/caddy/tls/restream-control.crt:ro" -v "/tmp/apollo-caddy-tls/restream-control.key:/etc/caddy/tls/restream-control.key:ro" caddy:2.10-alpine caddy validate --config /etc/caddy/Caddyfile
+      - name: Build HearMeOut Lounge worker image
+        run: docker build --file apps/hearmeout/legacy-worker/Dockerfile --tag apollo-hearmeout-lounge:ci apps/hearmeout/legacy-worker
