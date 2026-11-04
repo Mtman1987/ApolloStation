@@ -70,7 +70,9 @@ test("Game Mix importer creates an isolated target table, copies rows and verifi
   const source = sourceFixture();
   const destination = new FakeTurso();
   try {
-    const before = new DatabaseSync(source.path, { readOnly: true }).prepare("SELECT COUNT(*) AS count FROM nebula_game_mixes").get().count;
+    const beforeDb = new DatabaseSync(source.path, { readOnly: true });
+    const before = beforeDb.prepare("SELECT COUNT(*) AS count FROM nebula_game_mixes").get().count;
+    beforeDb.close();
     const result = await migrateNebulaGameMixTable({ sourcePath: source.path, adapter: destination, apply: true });
     assert.equal(result.applied, true);
     assert.equal(result.verified, true);
