@@ -45,6 +45,9 @@ test("execution jobs meter once, reject embedded secrets, fence workers, and exp
   assert.equal(completed.progress.percent, 100);
   assert.equal("leaseId" in completed, false);
   assert.deepEqual(transitions.map((entry) => entry[1]), ["queued", "leased", "running", "succeeded"]);
+  const hostedJobs = new ExecutionJobService({ store: new MemoryExecutionJobStore(), usage, resolvePlan: () => "creator", now: () => at, idFactory: () => "job_hosted_1" });
+  const hosted = hostedJobs.create({ ...input, idempotencyKey: "hosted-target", executionTarget: "hosted" }).job;
+  assert.equal(hostedJobs.claim({ tenantId: "tenant-a", executionOwner: "stellar-core", workerId: "hosted-worker", executionTarget: "hosted" })?.id, hosted.id);
 });
 
 test("paid Companion-local jobs remain unmetered against hosted caps while still appearing in Account usage", () => {
