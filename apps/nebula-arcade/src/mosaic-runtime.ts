@@ -7,6 +7,7 @@ import {
   validateMosaicTheme, type MosaicArtwork, type MosaicBrushDirection, type MosaicColorCode,
 } from "./mosaic-core.js";
 import { SqliteNebulaMosaicStore } from "./mosaic-store.js";
+import { AsyncNebulaMosaicRecordStore } from "./mosaic-record-store.js";
 
 export type MosaicGenerationResult = { target: MosaicColorCode[]; provider?: string; sourceImageUrl?: string };
 export type MosaicGenerator = (theme: string, context?: { tenantId: string; channel: string }) => Promise<MosaicGenerationResult>;
@@ -22,30 +23,36 @@ function mosaicBody(value: string): string | null {
 export type MosaicXpAward = (tenantId: string, playerId: string, delta: number, reason: string, idempotencyKey: string, options?: { eventType?: string; metadata?: Record<string, unknown> }) => Promise<{ duplicate?: boolean }>;
 export type MosaicXpSpend = (tenantId: string, playerId: string, amount: number, eventType: string, idempotencyKey: string, metadata?: Record<string, unknown>) => Promise<{ duplicate?: boolean }>;
 export class NebulaMosaicRuntime {
-  private readonly store: SqliteNebulaMosaicStore;
+  private readonly store: SqliteNebulaMosaicStore | AsyncNebulaMosaicRecordStore;
   private readonly generate: MosaicGenerator | undefined;
   private readonly requestXpCost: number;
   private readonly awardXp: MosaicXpAward | undefined;
   private readonly spendXp: MosaicXpSpend | undefined;
-  constructor(databasePath: string, generate?: MosaicGenerator, options: { requestXpCost?: number; awardXp?: MosaicXpAward; spendXp?: MosaicXpSpend } = {}) {
-    this.store = new SqliteNebulaMosaicStore(databasePath);
+  constructor(databasePath: string, generate?: MosaicGenerator, options: { requestXpCost?: number; awardXp?: MosaicXpAward; spendXp?: MosaicXpSpend; storeMode?: "sqlite" | "turso"; tursoUrl?: string; tursoAuthToken?: string } = {}) {
+    const storeMode = options.storeMode ?? (process.env.NEBULA_ARCADE_MOSAIC_STORE === "turso" ? "turso" : "sqlite");
+    this.store = storeMode === "turso"
+      ? new AsyncNebulaMosaicRecordStore({ mode: "turso", ...(options.tursoUrl ? { url: options.tursoUrl } : {}), ...(options.tursoAuthToken ? { authToken: options.tursoAuthToken } : {}) })
+      : new SqliteNebulaMosaicStore(databasePath);
     this.generate = generate;
     this.requestXpCost = Math.max(0, Math.floor(Number(options.requestXpCost ?? 0)));
     this.awardXp = options.awardXp;
     this.spendXp = options.spendXp;
   }
-  close() { this.store.close(); }
-  snapshot(tenantId: string, channel: string, now = Date.now()) {
-    return mosaicPublicSnapshot(this.store.get(tenantId, channel), now);
+  async initialize() {
+    if (this.store instanceof AsyncNebulaMosaicRecordStore) await this.store.initialize();
+  }
+  async close() { await this.store.close(); }
+  async snapshot(tenantId: string, channel: string, now = Date.now()) {
+    return mosaicPublicSnapshot(await this.store.get(tenantId, channel), now);
   }
   async processNext(tenantId: string, channel: string, now = Date.now()): Promise<{ started: boolean; error?: string }> {
     if (!this.generate) return { started: false, error: "Mosaic image generation is not configured." };
-    const claim = this.store.update(tenantId, channel, (state) => claimNextMosaicRequest(state, now), now);
+    const claim = await this.store.update(tenantId, channel, (state) => claimNextMosaicRequest(state, now), now);
     const request = claim.result;
     if (!request) return { started: false };
     try {
       const generated = await this.generate(request.theme, { tenantId: String(tenantId), channel: String(channel) });
-      this.store.update(tenantId, channel, (state) => {
+      await this.store.update(tenantId, channel, (state) => {
         installMosaicQueueTemplate(state, request.id, generated.target, {
           ...(generated.provider ? { provider: generated.provider } : {}),
           ...(generated.sourceImageUrl ? { sourceImageUrl: generated.sourceImageUrl } : {}),
@@ -55,7 +62,7 @@ export class NebulaMosaicRuntime {
       return { started: true };
     } catch (error) {
       const message = error instanceof Error ? error.message : "Mosaic generation failed.";
-      this.store.update(tenantId, channel, (state) => failMosaicQueueRequest(state, request.id, message, Date.now()), Date.now());
+      await this.store.update(tenantId, channel, (state) => failMosaicQueueRequest(state, request.id, message, Date.now()), Date.now());
       return { started: true, error: message.slice(0, 180) };
     }
   }
@@ -85,7 +92,7 @@ export class NebulaMosaicRuntime {
         return { handled: true, reply: `The ${this.requestXpCost.toLocaleString()} SPMT XP charge could not be completed, so nothing was queued.` };
       }
     }
-    const result = this.store.update(input.tenantId, input.channel, (state) => {
+    const result = await this.store.update(input.tenantId, input.channel, (state) => {
       const current = state.current;
       const paint = parseMosaicPaintCommand(input.text);
       if (paint) {
@@ -180,6 +187,6 @@ export class NebulaMosaicRuntime {
     } else if (result.result.queued) {
       reply += " The request is saved, but the image-generation runner is not configured yet.";
     }
-    return { handled: true, reply, generated, state: this.snapshot(input.tenantId, input.channel, now) };
+    return { handled: true, reply, generated, state: await this.snapshot(input.tenantId, input.channel, now) };
   }
 }
