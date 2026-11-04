@@ -18,14 +18,19 @@ import { TursoHttpAdapter } from "./migrate-sqlite-to-turso.mjs";
 
 const TABLE = "apollo_recovered_json_stage_v1";
 const BATCH_SIZE = 20;
-const SENSITIVE_KEY = /^(?:access[_-]?token|refresh[_-]?token|id[_-]?token|token|api[_-]?key|client[_-]?secret|secret|password|authorization|webhook[_-]?url|private[_-]?key)$/i;
-const SENSITIVE_PATH = /(^|\/)(?:tokens?|secrets?|credentials?)(\/|$)/i;
+const SENSITIVE_KEY = /(?:^|_)(?:access_?tokens?|refresh_?tokens?|id_?tokens?|tokens?|api_?keys?|client_?secrets?|secrets?|passwords?|authorization|webhooks?|private_?keys?|credentials?)(?:_|$)/i;
+const SENSITIVE_PATH = /(^|\/)(?:tokens?|secrets?|credentials?|webhooks?|vault)(?:\/|\.|$)/i;
 
 function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
 }
 
-function isSensitiveKey(key) {\n  const normalized = String(key).replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase();\n  return SENSITIVE_KEY.test(normalized);\n}\n\nfunction redact(value) {
+function isSensitiveKey(key) {
+  const normalized = String(key).replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase();
+  return SENSITIVE_KEY.test(normalized);
+}
+
+function redact(value) {
   if (Array.isArray(value)) return value.map(redact);
   if (!value || typeof value !== "object") return value;
   const output = {};
