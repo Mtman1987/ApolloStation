@@ -222,55 +222,43 @@ export const EDENAI_VOICE_OPTIONS: TTSVoiceOption[] = [
   },
 ];
 
-export const TTS_VOICE_OPTIONS = [...KOKORO_VOICE_OPTIONS];
+export const TTS_VOICE_OPTIONS = [...KOKORO_VOICE_OPTIONS, ...DEEPGRAM_VOICE_OPTIONS, ...EDENAI_VOICE_OPTIONS];
 export const DEFAULT_TTS_PROVIDER: TTSProvider = 'kokoro';
 export const DEFAULT_TTS_VOICE = 'kokoro:af_heart';
 
 const LEGACY_VOICE_MAP: Record<string, string> = {
-  'openai:nova': 'kokoro:af_heart',
-  'openai:shimmer': 'kokoro:af_bella',
-  'openai:alloy': 'kokoro:af_heart',
-  'openai:echo': 'kokoro:am_michael',
-  'openai:fable': 'kokoro:am_puck',
-  'openai:onyx': 'kokoro:am_fenrir',
-  nova: 'kokoro:af_heart',
-  shimmer: 'kokoro:af_bella',
-  alloy: 'kokoro:af_heart',
-  echo: 'kokoro:am_michael',
-  fable: 'kokoro:am_puck',
-  onyx: 'kokoro:am_fenrir',
-  'edenai:google:female': 'kokoro:af_heart',
-  'edenai:google:male': 'kokoro:am_michael',
-  'edenai:microsoft:female': 'kokoro:af_bella',
-  'edenai:microsoft:male': 'kokoro:am_michael',
-  'edenai:amazon:female': 'kokoro:af_nicole',
-  'edenai:amazon:male': 'kokoro:am_fenrir',
-  athena: 'kokoro:af_heart',
-  'deepgram:athena': 'kokoro:af_heart',
-  'deepgram/aura-2:athena': 'kokoro:af_heart',
-  'aura-2-athena-en': 'kokoro:af_heart',
-  apollo: 'kokoro:am_michael',
-  odysseus: 'kokoro:am_fenrir',
-  theia: 'kokoro:af_bella',
-  'deepgram:aura-2:athena': 'kokoro:af_heart',
-  'deepgram:aura-2:apollo': 'kokoro:am_michael',
-  'deepgram:aura-2:odysseus': 'kokoro:am_fenrir',
-  'deepgram:aura-2:theia': 'kokoro:af_bella',
-  'edenai:openai:nova': 'kokoro:af_heart',
-  'edenai:openai:shimmer': 'kokoro:af_bella',
-  'edenai:openai:echo': 'kokoro:am_michael',
-  'edenai:openai:fable': 'kokoro:am_puck',
-  'edenai:openai:onyx': 'kokoro:am_fenrir',
-  'edenai:google:en-US-Wavenet-F': 'kokoro:af_heart',
-  'edenai:google:en-US-Wavenet-D': 'kokoro:am_michael',
-  'edenai:microsoft:en-US-JennyNeural': 'kokoro:af_bella',
-  'edenai:microsoft:en-US-GuyNeural': 'kokoro:am_michael',
-  'edenai:amazon:Ruth': 'kokoro:af_nicole',
-  'edenai:amazon:Joanna': 'kokoro:af_heart',
-  'edenai:amazon:Matthew': 'kokoro:am_fenrir',
+  'openai:nova': 'edenai:openai:nova',
+  'openai:shimmer': 'edenai:openai:shimmer',
+  'openai:alloy': 'edenai:openai:nova',
+  'openai:echo': 'edenai:openai:echo',
+  'openai:fable': 'edenai:openai:fable',
+  'openai:onyx': 'edenai:openai:onyx',
+  nova: 'edenai:openai:nova',
+  shimmer: 'edenai:openai:shimmer',
+  alloy: 'edenai:openai:nova',
+  echo: 'edenai:openai:echo',
+  fable: 'edenai:openai:fable',
+  onyx: 'edenai:openai:onyx',
+  'edenai:google:female': 'edenai:google:en-US-Wavenet-F',
+  'edenai:google:male': 'edenai:google:en-US-Wavenet-D',
+  'edenai:microsoft:female': 'edenai:microsoft:en-US-JennyNeural',
+  'edenai:microsoft:male': 'edenai:microsoft:en-US-GuyNeural',
+  'edenai:amazon:female': 'edenai:amazon:Ruth',
+  'edenai:amazon:male': 'edenai:amazon:Matthew',
+  athena: ATHENA_CANONICAL_TTS_VOICE,
+  'deepgram:athena': ATHENA_CANONICAL_TTS_VOICE,
+  'deepgram/aura-2:athena': ATHENA_CANONICAL_TTS_VOICE,
+  'aura-2-athena-en': ATHENA_CANONICAL_TTS_VOICE,
+  apollo: 'deepgram:aura-2:apollo',
+  odysseus: 'deepgram:aura-2:odysseus',
+  theia: 'deepgram:aura-2:theia',
 };
 
-export function normalizeTtsProvider(_provider: unknown): TTSProvider { return DEFAULT_TTS_PROVIDER; }
+export function normalizeTtsProvider(provider: unknown): TTSProvider {
+  const value = String(provider || '').trim().toLowerCase();
+  if (value === 'deepgram' || value === 'edenai' || value === 'kokoro') return value;
+  return DEFAULT_TTS_PROVIDER;
+}
 
 export function isSupportedTtsVoice(voice: string | undefined | null): boolean {
   const value = String(voice ?? "").trim().toLowerCase();
