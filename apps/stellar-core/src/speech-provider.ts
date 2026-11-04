@@ -13,6 +13,19 @@ export class StellarSpeechProvider {
     this.fetchImpl = options.fetchImpl ?? fetch;
   }
   configured() { return this.options.enabled !== false && Boolean(this.options.deepgramKey || this.options.edenKey || this.options.kokoroUrl); }
+  async healthy() {
+    if (!this.configured()) return false;
+    if (this.options.kokoroUrl && !this.options.deepgramKey && !this.options.edenKey) {
+      try {
+        const endpoint = kokoroEndpoint(this.options.kokoroUrl).replace("/v1/audio/speech", "/health");
+        const response = await this.fetchImpl(endpoint, { method: "GET", redirect: "error", signal: AbortSignal.timeout(3_000) });
+        if (!response.ok) return false;
+        const value = await response.json() as Record<string, unknown>;
+        return value.ok === true && value.model === "kokoro-82m-onnx";
+      } catch { return false; }
+    }
+    return Boolean(this.options.deepgramKey || this.options.edenKey);
+  }
   voices() { return TTS_VOICE_OPTIONS.map(v => ({ id: v.id, label: v.label, provider: v.provider, description: v.description })); }
   async synthesize(text: string, voiceId = DEFAULT_TTS_VOICE, tenantId = "") {
     if (!this.configured()) throw new StellarSpeechError("Speech providers are not configured");
