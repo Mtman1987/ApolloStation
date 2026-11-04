@@ -71,3 +71,22 @@ The Nebula live host uses the selected Mosaic backend for both chat/runtime stat
 
 
 The production gate `NEBULA_ARCADE_REQUIRE_TURSO=1` now requires **both** Nebula Mosaic and Game Mix to select Turso. Mosaic uses `NEBULA_ARCADE_MOSAIC_STORE=turso` with `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN`. Game Mix uses `NEBULA_ARCADE_TURSO_DATABASE_URL` and `NEBULA_ARCADE_TURSO_AUTH_TOKEN`. The readiness response exposes `mosaicStoreMode`, `gameMixStoreMode`, and `gameMixStoreReady`; it returns HTTP 503 if either remains on SQLite. The base Nebula host probes the Game Mix store, so a configured-but-unreachable Turso database fails readiness. This gate does not migrate existing Game Mix rows: import and verify any legacy mixes before enabling the Turso backend.
+
+
+## Nebula Game Mix table import
+
+The generic `db:migrate:turso` command requires a completely empty destination and must not be used against a Turso database that already contains Mosaic records. For Game Mixes, use the table-scoped importer instead. It reads only `nebula_game_mixes`, runs SQLite `quick_check`, preserves the existing tenant/mix keys and layer JSON, and verifies the destination row count and SHA-256 content digest. It permits unrelated tables such as Mosaic records to remain in the same Turso database, but refuses to overwrite or merge into a non-empty `nebula_game_mixes` table.
+
+Dry-run (no Turso credentials or writes):
+
+```sh
+npm run db:migrate:nebula-game-mixes:turso -- --source /absolute/path/to/nebula.sqlite
+```
+
+Apply only after the dry-run report matches the intended source. Set `NEBULA_ARCADE_TURSO_DATABASE_URL` and `NEBULA_ARCADE_TURSO_AUTH_TOKEN` in the shell, then run:
+
+```sh
+npm run db:migrate:nebula-game-mixes:turso -- --source /absolute/path/to/nebula.sqlite --apply
+```
+
+The destination table must be empty. The source is opened read-only and is never modified. Do not enable `NEBULA_ARCADE_REQUIRE_TURSO=1` until the import reports `verified: true` and the deployed readiness endpoint reports all three stores ready in Turso mode.

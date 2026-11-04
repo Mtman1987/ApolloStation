@@ -39,6 +39,7 @@
     "parity:prepare-port": "node scripts/parity-prepare-port.mjs",
     "persistence:audit": "node scripts/audit-sqlite-usage.mjs",
     "db:migrate:turso": "node scripts/migrate-sqlite-to-turso.mjs",
+    "db:migrate:nebula-game-mixes:turso": "node scripts/migrate-nebula-game-mixes-to-turso.mjs",
     "db:stage-recovered-json:turso": "node scripts/stage-recovered-json-to-turso.mjs",
     "db:test:turso:live": "node --test tests/turso-live-runtime.test.mjs"
   },
