@@ -1,4 +1,4 @@
-import { assertAppModuleManifestV1, createAppCatalogRegistrationV1, type AppCatalogRegistrationV1, type AppModuleManifestV1, type CommunityAssistantInvocationV1 } from "@spmt/contracts";
+import { assertAppModuleManifestV1, createAppCatalogRegistrationV1, type AppCatalogRegistrationV1, type AppModuleManifestV1, type CommunityAssistantInvocationV1, type ExecutionTargetV1 } from "@spmt/contracts";
 import { ExecutionJobError, ExecutionJobService } from "@spmt/execution-core";
 import { STELLAR_CHAT_CAPABILITY_ID, STELLAR_CHAT_REQUEST_KIND, type StellarRouteDecisionV1 } from "./contracts.js";
 
@@ -6,8 +6,8 @@ export { STELLAR_CHAT_CAPABILITY_ID, STELLAR_CHAT_REQUEST_KIND, STELLAR_CHAT_RES
 export { StellarDataPrivacyService, STELLAR_CHAT_METADATA_KIND, STELLAR_EPHEMERAL_RETENTION_MS, STELLAR_METADATA_RETENTION_MS, STELLAR_RAW_RETENTION_MS } from "./privacy.js";
 
 export class StellarCommunityAssistantRuntime {
-  constructor(private readonly jobs: ExecutionJobService, private readonly options: { enabled: boolean; resolveRoute?: (input: CommunityAssistantInvocationV1) => StellarRouteDecisionV1 }) {}
-  status() { return this.options.enabled && this.jobs.hasReadyWorker({ executionOwner: "stellar-core", executionTarget: "sprite", capabilityId: STELLAR_CHAT_CAPABILITY_ID }) ? { availability: "available" as const } : { availability: "unavailable" as const, unavailableReason: "Stellar Core has no fresh healthy hosted inference worker" }; }
+  constructor(private readonly jobs: ExecutionJobService, private readonly options: { enabled: boolean; executionTarget?: ExecutionTargetV1; resolveRoute?: (input: CommunityAssistantInvocationV1) => StellarRouteDecisionV1 }) {}
+  status() { return this.options.enabled && this.jobs.hasReadyWorker({ executionOwner: "stellar-core", executionTarget: this.options.executionTarget ?? "sprite", capabilityId: STELLAR_CHAT_CAPABILITY_ID }) ? { availability: "available" as const } : { availability: "unavailable" as const, unavailableReason: "Stellar Core has no fresh healthy hosted inference worker" }; }
   accept(input: CommunityAssistantInvocationV1) {
     if (!this.options.enabled) throw new Error("Stellar Core inference is unavailable");
     const routingPreference = input.routingPreference ?? "automatic";
@@ -19,7 +19,7 @@ export class StellarCommunityAssistantRuntime {
       if (JSON.stringify(replayIdentity) !== JSON.stringify(originalIdentity)) throw new ExecutionJobError("conflict", "Stellar chat idempotency key was reused with different input");
       return { jobId: existing.id, executionTarget: existing.executionTarget, meteringTarget: existing.meteringTarget, routingPreference, ...(typeof existing.input.fallbackReason === "string" ? { fallbackReason: existing.input.fallbackReason } : {}) };
     }
-    const route = this.options.resolveRoute?.(input) ?? { executionTarget: "sprite" as const, meteringTarget: "hosted" as const };
+    const route = this.options.resolveRoute?.(input) ?? { executionTarget: this.options.executionTarget ?? "sprite", meteringTarget: "hosted" as const };
     const created = this.jobs.create({
       tenantId: input.tenantId, ownerAppId: "stellar-core", capabilityId: STELLAR_CHAT_CAPABILITY_ID, executionOwner: "stellar-core",
       requestedByType: input.requestedByType, requestedById: input.requestedById, billedUserId: input.userId,
