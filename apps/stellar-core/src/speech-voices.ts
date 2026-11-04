@@ -268,7 +268,7 @@ const LEGACY_VOICE_MAP: Record<string, string> = {
   'edenai:amazon:Ruth': 'kokoro:af_nicole',
   'edenai:amazon:Joanna': 'kokoro:af_heart',
   'edenai:amazon:Matthew': 'kokoro:am_fenrir',
-};;
+};
 
 export function normalizeTtsProvider(_provider: unknown): TTSProvider { return DEFAULT_TTS_PROVIDER; }
 
