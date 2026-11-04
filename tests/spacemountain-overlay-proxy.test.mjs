@@ -125,12 +125,12 @@ test("multi-node ingress accepts HTTPS service origins", async () => {
 test("production integrated gateway accepts HTTPS origins for the three-node services", () => {
   const checked = validateIntegratedWebEnvironment({
     SPMT_RUNTIME_MODE: "production",
-    SPMT_ORIGIN: "http://127.0.0.1:3000",
+    SPMT_ORIGIN: "https://spmt.example.test",
     NEBULA_ARCADE_ORIGIN: "https://nebula.example.test",
     STREAMWEAVER_WEB_ORIGIN: "https://streamweaver.example.test",
     DSH_WEB_ORIGIN: "https://discord.example.test",
   });
-  assert.equal(checked.spmtOrigin, "http://127.0.0.1:3000");
+  assert.equal(checked.spmtOrigin, "https://spmt.example.test");
   assert.equal(checked.nebulaArcadeOrigin, "https://nebula.example.test");
   assert.equal(checked.greenAppOrigins.streamweaver, "https://streamweaver.example.test");
   assert.equal(checked.greenAppOrigins["discord-stream-hub"], "https://discord.example.test");
@@ -139,6 +139,14 @@ test("production integrated gateway accepts HTTPS origins for the three-node ser
     SPMT_ORIGIN: "http://spmt.example.test",
   }), /must use HTTPS/);
   assert.throws(() => validateIntegratedWebEnvironment({ SPMT_RUNTIME_MODE: "production", SPMT_ORIGIN: "http://127.0.0.1:3000" }), /NEBULA_ARCADE_ORIGIN is required/);
+});
+
+test("production integrated gateway starts with a remote HTTPS SPMT origin", async () => {
+  const web = createIntegratedSpaceMountainWebHost({ spmtOrigin: "https://spmt.example.test", host: "127.0.0.1", port: 0 });
+  try {
+    await web.listen();
+    assert.equal(web.server.listening, true);
+  } finally { await web.close(); }
 });
 
 test("integrated gateway proxies StreamWeaver web paths to its configured HTTPS node", async () => {

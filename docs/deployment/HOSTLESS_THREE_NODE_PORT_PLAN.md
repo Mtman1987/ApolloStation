@@ -87,7 +87,7 @@ This is a logical ownership map, not proof that the current Hostless free CPU/RA
 ### Cross-account contract variables
 
 Use explicit HTTPS origins in production, never localhost for cross-account traffic. Exact variable names must be wired and validated by the relevant runtime before deployment:
-- Account 2/3 -> Account 1: `SPMT_ORIGIN` (and public `SPMT_PUBLIC_ORIGIN` where browser links are required).
+- Account 2/3 -> Account 1: `SPMT_ORIGIN`; SPMT's configured public origin is `SPMT_PUBLIC_URL`.
 - Account 2 -> Account 1: SPMT/SpaceMountain HTTPS origins and distinct Chat Gateway, StreamWeaver and Nebula service credentials.
 - Account 3 -> Account 1/2: SPMT and Node 2 Nebula/StreamWeaver HTTPS service origins plus DSH's own credential and tenant grants.
 - Browser -> Account 1: SpaceMountain public origin; browser navigation must not expose worker credentials.

@@ -9,7 +9,6 @@ export type StreamWeaverMosaicGeneratorOptions = {
   fallbackProviders?: string[];
   fetchImpl?: typeof fetch;
 };
-const DEFAULT_STREAMWEAVER_URL = "https://streamweaver-new.fly.dev";
 const VERIFIED_FREE_IMAGE_PROVIDERS = new Set(["pollinations"]);
 const NEGATIVE_PROMPT = "unrelated subject, substituted subject, people, animals, collage, multiple main subjects, text, letters, numbers, UI, controls, grid labels, gradients, blur, watermark, logo";
 
@@ -68,8 +67,11 @@ function safeImageUrl(value: unknown, base: URL): URL {
 export function createStreamWeaverMosaicGenerator(options: StreamWeaverMosaicGeneratorOptions = {}): MosaicGenerator | undefined {
   const serviceToken = String(options.serviceToken ?? process.env.MOSAIC_STREAMWEAVER_SERVICE_TOKEN ?? "").trim();
   if (!serviceToken) return undefined;
-  const base = new URL(String(options.streamWeaverUrl ?? process.env.STREAMWEAVER_URL ?? DEFAULT_STREAMWEAVER_URL).replace(/\/$/, "") + "/");
-  if (base.protocol !== "https:" || base.username || base.password) throw new Error("StreamWeaver Mosaic URL must be a credential-free HTTPS origin.");
+  const streamWeaverUrl = String(options.streamWeaverUrl ?? process.env.STREAMWEAVER_URL ?? "").trim();
+  if (!streamWeaverUrl) throw new Error("STREAMWEAVER_URL is required when Mosaic generation is enabled.");
+  let base: URL;
+  try { base = new URL(streamWeaverUrl); } catch { throw new Error("StreamWeaver Mosaic URL must be a credential-free HTTPS origin."); }
+  if (base.protocol !== "https:" || base.username || base.password || base.pathname !== "/" || base.search || base.hash) throw new Error("StreamWeaver Mosaic URL must be a credential-free HTTPS origin.");
   const fetchImpl = options.fetchImpl ?? fetch;
   const configuredProvider = String(options.provider ?? process.env.MOSAIC_IMAGE_PROVIDER ?? "pollinations").trim().toLowerCase();
   const configuredFallbacks = options.fallbackProviders ?? String(process.env.MOSAIC_IMAGE_FALLBACK_PROVIDERS || "pollinations").split(",").map((item) => item.trim().toLowerCase()).filter(Boolean);

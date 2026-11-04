@@ -86,7 +86,7 @@ export interface SpaceMountainWebHostOptions {
 }
 
 export function createSpaceMountainWebHost(options: SpaceMountainWebHostOptions) {
-  const spmtOrigin = requireLoopbackOrigin(options.spmtOrigin);
+  const spmtOrigin = requireServiceOrigin(options.spmtOrigin);
   const fetchImpl = options.fetchImpl ?? fetch;
   const buildSha = options.buildSha ?? "dev";
   const nebulaArcadeOrigin = options.nebulaArcadeOrigin ? requireServiceOrigin(options.nebulaArcadeOrigin) : undefined;

@@ -6,7 +6,20 @@ import { MOSAIC_CELL_COUNT } from "../apps/nebula-arcade/dist/mosaic-core.js";
 
 test("Mosaic generator stays disabled without a service token and rejects unverified paid providers", () => {
   assert.equal(createStreamWeaverMosaicGenerator({ serviceToken: "" }), undefined);
-  assert.throws(() => createStreamWeaverMosaicGenerator({ serviceToken: "test-token", provider: "openai" }), /potentially paid/);
+  assert.throws(() => createStreamWeaverMosaicGenerator({ serviceToken: "test-token", streamWeaverUrl: "https://streamweaver.example", provider: "openai" }), /potentially paid/);
+});
+
+test("Mosaic generation requires an explicit StreamWeaver origin instead of falling back to another host", () => {
+  const previous = process.env.STREAMWEAVER_URL;
+  delete process.env.STREAMWEAVER_URL;
+  try {
+    assert.throws(() => createStreamWeaverMosaicGenerator({ serviceToken: "test-token" }), /STREAMWEAVER_URL is required/);
+    assert.throws(() => createStreamWeaverMosaicGenerator({ serviceToken: "test-token", streamWeaverUrl: "http://streamweaver.example" }), /credential-free HTTPS origin/);
+    assert.throws(() => createStreamWeaverMosaicGenerator({ serviceToken: "test-token", streamWeaverUrl: "https://streamweaver.example/private-path" }), /credential-free HTTPS origin/);
+  } finally {
+    if (previous === undefined) delete process.env.STREAMWEAVER_URL;
+    else process.env.STREAMWEAVER_URL = previous;
+  }
 });
 
 test("Mosaic generator calls the configured free provider and quantizes image pixels to 2,000 cells", async () => {
@@ -15,11 +28,11 @@ test("Mosaic generator calls the configured free provider and quantizes image pi
   const fetchImpl = async (input, init = {}) => {
     const url = String(input);
     requests.push({ url, init });
-    if (url.endsWith("/api/ai/image")) return new Response(JSON.stringify({ ok: true, data: { persistedImageUrl: "https://streamweaver-new.fly.dev/mosaic.png", provider: "pollinations" } }), { status: 200, headers: { "content-type": "application/json" } });
+    if (url.endsWith("/api/ai/image")) return new Response(JSON.stringify({ ok: true, data: { persistedImageUrl: "https://streamweaver.example/mosaic.png", provider: "pollinations" } }), { status: 200, headers: { "content-type": "application/json" } });
     if (url.endsWith("/mosaic.png")) return new Response(png, { status: 200, headers: { "content-type": "image/png" } });
     throw new Error("Unexpected test URL");
   };
-  const generate = createStreamWeaverMosaicGenerator({ serviceToken: "test-token", streamWeaverUrl: "https://streamweaver-new.fly.dev", provider: "pollinations", fallbackProviders: [], fetchImpl });
+  const generate = createStreamWeaverMosaicGenerator({ serviceToken: "test-token", streamWeaverUrl: "https://streamweaver.example", provider: "pollinations", fallbackProviders: [], fetchImpl });
   const result = await generate("red pixel dragon", { tenantId: "tenant-a", channel: "main" });
   assert.equal(result.provider, "pollinations");
   assert.equal(result.target.length, MOSAIC_CELL_COUNT);
@@ -34,6 +47,6 @@ test("Mosaic generator calls the configured free provider and quantizes image pi
 
 test("Mosaic generator rejects image URLs outside the HTTPS allowlist", async () => {
   const fetchImpl = async () => new Response(JSON.stringify({ ok: true, data: { persistedImageUrl: "https://evil.example/mosaic.png" } }), { status: 200, headers: { "content-type": "application/json" } });
-  const generate = createStreamWeaverMosaicGenerator({ serviceToken: "test-token", provider: "pollinations", fallbackProviders: [], fetchImpl });
+  const generate = createStreamWeaverMosaicGenerator({ serviceToken: "test-token", streamWeaverUrl: "https://streamweaver.example", provider: "pollinations", fallbackProviders: [], fetchImpl });
   await assert.rejects(() => generate("pixel fox", { tenantId: "tenant-a", channel: "main" }), /outside the configured HTTPS download allowlist/);
 });
