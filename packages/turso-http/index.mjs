@@ -89,10 +89,20 @@ export class TursoHttpAdapter {
     if (!["deferred", "immediate", "exclusive"].includes(mode)) throw new Error("Unsupported Turso transaction mode");
     let baton = null;
     let active = false;
+    let serial = Promise.resolve();
+    let queuedFailure;
     const send = async (requests, close = false) => {
       const response = await this.request(requests, baton, close);
       baton = response.baton;
       return response.results;
+    };
+    const enqueue = (requests) => {
+      const operation = serial.then(async () => {
+        if (queuedFailure) throw queuedFailure;
+        return send(requests);
+      });
+      serial = operation.then(() => undefined, (error) => { queuedFailure ??= error; });
+      return operation;
     };
     try {
       const begin = await send([statementRequest({ sql: `BEGIN ${mode.toUpperCase()}` })]);
@@ -102,18 +112,20 @@ export class TursoHttpAdapter {
       const tx = {
         execute: async (sql, args = [], wantRows = false) => {
           if (!active) throw new Error("Turso transaction is no longer active");
-          const results = await send([statementRequest({ sql, args, wantRows })]);
+          const results = await enqueue([statementRequest({ sql, args, wantRows })]);
           return decodeStatementResult(results[0]);
         },
         pipeline: async (statements) => {
           if (!active) throw new Error("Turso transaction is no longer active");
           if (!statements.length) return [];
-          const results = await send(statements.map(statementRequest));
+          const results = await enqueue(statements.map(statementRequest));
           if (results.length !== statements.length) throw new Error("Turso returned an incomplete transaction pipeline");
           return results.map(decodeStatementResult);
         },
       };
       const value = await work(tx);
+      await serial;
+      if (queuedFailure) throw queuedFailure;
       const commit = await send([statementRequest({ sql: "COMMIT" })]);
       decodeStatementResult(commit[0]);
       active = false;
@@ -122,6 +134,7 @@ export class TursoHttpAdapter {
     } catch (error) {
       if (active && baton) {
         try {
+          await serial;
           const rollback = await send([statementRequest({ sql: "ROLLBACK" })]);
           decodeStatementResult(rollback[0]);
           if (baton) await send([], true);
