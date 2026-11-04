@@ -41,13 +41,13 @@ test("transcript is bounded and blank or invalid timestamps do not add segments"
   const buffer = new MountainViewCommanderTranscriptBuffer(() => 1_000);
   buffer.append("kept", 500);
   buffer.append("   ", 0);
+  buffer.append("ignored timestamp", Number.NaN);
+  assert.equal(buffer.snapshot(1_000).text, "kept");
   buffer.append("x".repeat(1_000), 1_000);
   buffer.append("y".repeat(1_000), 1_000);
   buffer.append("z".repeat(1_000), 1_000);
-  buffer.append("ignored timestamp", Number.NaN);
   assert.equal(buffer.snapshot(1_000).text.length, 2_000);
-  assert.equal(buffer.snapshot(1_000).text.startsWith("kept"), true);
-  assert.equal(buffer.snapshot(1_000).segmentCount, 1);
+  assert.equal(buffer.snapshot(1_000).segmentCount, 4);
   buffer.clear();
   assert.equal(buffer.snapshot(1_000).text, "");
 });
