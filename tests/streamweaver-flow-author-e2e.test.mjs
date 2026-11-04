@@ -33,7 +33,7 @@ const cases=[
     request:"Build !askship so Stellar answers the question, Athena speaks the answer, and the answer is also posted in chat.",
     package:flow("askship","Ask and speak",[
       action("answer","ai-response",{input:"Answer this viewer clearly: %args%",saveAs:"answer"}),
-      action("speak","speak",{text:"{{answer}}",voice:"deepgram:aura-2:athena"}),
+      action("speak","speak",{text:"{{answer}}",voice:"kokoro:af_heart"}),
       action("reply","send-chat",{text:"{{answer}}"}),
     ]),
   },
