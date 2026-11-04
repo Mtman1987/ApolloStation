@@ -102,12 +102,12 @@ export class StellarSpeechProvider {
       method: "POST",
       headers: { authorization: `Bearer ${this.options.kokoroToken}`, "content-type": "application/json", accept: "audio/wav" },
       body: JSON.stringify({ input: text, voice }),
-    });
+    }, 120_000);
     if (!(response.headers.get("content-type") ?? "").toLowerCase().startsWith("audio/wav")) throw new StellarSpeechError("Local Kokoro returned non-WAV content", true);
     return response;
   }
-  private async request(url: string, init: RequestInit) {
-    const response = await this.fetchImpl(url, { ...init, redirect: "error", signal: AbortSignal.timeout(30_000) });
+  private async request(url: string, init: RequestInit, timeoutMs = 30_000) {
+    const response = await this.fetchImpl(url, { ...init, redirect: "error", signal: AbortSignal.timeout(timeoutMs) });
     if (!response.ok) throw new StellarSpeechError(`Speech provider returned HTTP ${response.status}`, response.status === 429 || response.status >= 500);
     return response;
   }
