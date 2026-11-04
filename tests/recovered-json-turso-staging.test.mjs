@@ -91,3 +91,28 @@ test("dry-run stages nothing and apply is idempotent but rejects changed source"
     /refusing overwrite/,
   );
 });
+
+test("redacts plural and camelCase credential containers in recovered Chat Tag state", async () => {
+  const root = await mkdtemp(join(tmpdir(), "apollo-chat-tag-secrets-"));
+  try {
+    await mkdir(join(root, "data"), { recursive: true });
+    const secrets = [
+      "twitch-access-secret-value",
+      "twitch-refresh-secret-value",
+      "discord-webhook-secret-value",
+    ];
+    await writeFile(join(root, "data", "app-state.json"), JSON.stringify({
+      botRuntime: { tokens: { TWITCH_BOT_TOKEN: secrets[0], TWITCH_BOT_REFRESH_TOKEN: secrets[1] } },
+      discordWebhooks: { "channel-1": { id: "channel-1", token: secrets[2], channelId: "channel-1" } },
+      nested: { clientSecret: "nested-client-secret-value", webhookUrl: "nested-webhook-url-value" },
+    }));
+    const records = await buildRecoveredJsonManifest({ legacyNebulaRoot: root });
+    const payload = records[0].payload;
+    for (const secret of [...secrets, "nested-client-secret-value", "nested-webhook-url-value"]) {
+      assert.ok(!payload.includes(secret), "payload must not contain credential material");
+    }
+    assert.ok((payload.match(/\\[REDACTED\\]/g) ?? []).length >= 4);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
