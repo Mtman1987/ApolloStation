@@ -5,7 +5,7 @@ import {AuthDeniedError,type AuthService} from '@spmt/auth-core';
 import type {AuthorityService} from '@spmt/authority-core';
 import type {ControlService} from '@spmt/control-core';
 import type {CommunityAssistantRuntimeV1} from '@spmt/platform-ops';
-import {TTS_VOICE_OPTIONS} from '@spmt/stellar-core';
+import {KOKORO_VOICE_OPTIONS} from '@spmt/stellar-core';
 const ROOT='/v1/assistant/public-personas';
 type Published={tenantId:string;owner:string;personaId:string;sourcePersonaId:string;displayName:string;aliases:string[];instructions:string;voice:string;avatarUrl?:string;idleAvatarUrl?:string;talkingAvatarUrl?:string;revision:number;enabled:boolean};
 /** Explicit owner-published snapshots. Instructions stay private to canonical job construction. */
@@ -18,7 +18,7 @@ export class PublicPersonaApi {
  private metadata(p:Published){return {personaId:p.personaId,targetTenantId:p.tenantId,sourcePersonaId:p.sourcePersonaId,displayName:p.displayName,wakeNames:[p.displayName,...p.aliases],voice:p.voice,...(p.avatarUrl?{avatarUrl:p.avatarUrl}:{}),...(p.idleAvatarUrl?{idleAvatarUrl:p.idleAvatarUrl}:{}),...(p.talkingAvatarUrl?{talkingAvatarUrl:p.talkingAvatarUrl}:{}),revision:p.revision,canInvite:this.eligible(p),canTalk:this.eligible(p)&&this.options.runtime.status().availability==='available',transportHealthy:false};}
  async handle(req:IncomingMessage,res:ServerResponse,url:URL){if(url.pathname!==ROOT&&url.pathname!==ROOT+'/invocations')return false;
   try{const token=this.options.accessToken(req),tenant=typeof req.headers['x-spmt-tenant']==='string'?req.headers['x-spmt-tenant']:'';if(!token||!tenant)return json(res,401,{message:'Sign in to a workspace'});const metadataRead=req.method==='GET'&&url.pathname===ROOT&&url.searchParams.get('own')!=='true',actor=this.options.auth.authorize(token,metadataRead?'assistants:read':'assistants:invoke',tenant);if(actor.actorType!=='user'&&!(metadataRead&&actor.actorId==='hearmeout'))return json(res,403,{message:'Use your signed-in account'});const workspace=this.options.control.getTenant(tenant);if(workspace.status!=='active')return json(res,403,{message:'Workspace is suspended'});
-   if(req.method==='GET'&&url.pathname===ROOT){if(url.searchParams.get('own')==='true'){if(workspace.ownerUserId!==actor.actorId)return json(res,403,{message:'Only the owner can manage public sharing'});const own=this.all().find(p=>p.tenantId===tenant);return json(res,200,{published:own?{...this.metadata(own),enabled:this.eligible(own)}:null,voices:TTS_VOICE_OPTIONS.map(v=>({id:v.id,label:v.label}))});}return json(res,200,{personas:this.all().filter(p=>this.eligible(p)).map(p=>this.metadata(p)).sort((a,b)=>a.displayName.localeCompare(b.displayName))});}
+   if(req.method==='GET'&&url.pathname===ROOT){if(url.searchParams.get('own')==='true'){if(workspace.ownerUserId!==actor.actorId)return json(res,403,{message:'Only the owner can manage public sharing'});const own=this.all().find(p=>p.tenantId===tenant);return json(res,200,{published:own?{...this.metadata(own),enabled:this.eligible(own)}:null,voices:KOKORO_VOICE_OPTIONS.map(v=>({id:v.id,label:v.label}))});}return json(res,200,{personas:this.all().filter(p=>this.eligible(p)).map(p=>this.metadata(p)).sort((a,b)=>a.displayName.localeCompare(b.displayName))});}
    if(req.method!=='POST')return json(res,405,{message:'Use GET or POST'});if(req.headers.origin&&new URL(req.headers.origin).host!==req.headers.host)return json(res,403,{message:'Use this workspace to change personas'});
    const body=await read(req);
    if(url.pathname===ROOT+'/invocations'){
