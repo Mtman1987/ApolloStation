@@ -46,7 +46,7 @@ The documented account-wide pool is 0.5 vCPU / 1 GiB RAM / 512 MiB database stor
 - The current supervised runtime is `scripts/sprites/run-supervised-sandbox.mjs`. It starts many child processes in one host and wires them through loopback origins.
 - That launcher has Sprite-specific URL validation and execution assumptions, sets some internal services to `127.0.0.1`, and includes a HearMeOut execution target default of Fly. It is not a Hostless entrypoint.
 - SPMT currently uses the SQLite authority adapter and a local `DATABASE_PATH`. The storage/recovery policy explicitly requires a single writable authority and SQLite-consistent backup/restore.
-- No PostgreSQL authority adapter has yet been verified. Do not point a SQLite-backed service at a PostgreSQL URL or assume a database swap is a configuration-only change.
+- No PostgreSQL authority adapter has yet been verified. The current authority/auth/control/usage store contracts are synchronous, and the SQLite adapter performs synchronous transactions (`BEGIN IMMEDIATE`) around synchronous reads and writes. A network PostgreSQL driver is asynchronous, so this is not a drop-in SQL-dialect conversion: a real migration requires an async contract refactor through the authority/auth/control call graph, plus explicit transaction, idempotency, locking, and retry semantics. Do not point a SQLite-backed service at a PostgreSQL URL or assume a database swap is a configuration-only change.
 
 ## Target topology
 
@@ -85,7 +85,7 @@ The source and test changes are committed to this branch. CI status has not yet 
 ## Known blockers / decisions
 
 - Multiple-account eligibility for one owner is not explicitly resolved by the retrieved public docs; keep this as a policy risk, not an assumption of guaranteed extra capacity.
-- The free database allowance is only 512 MiB per account and shares CPU/RAM with apps. The current SQLite authority cannot be assumed to work with managed PostgreSQL without an adapter.
+- The free database allowance is only 512 MiB per account and shares CPU/RAM with apps. The current synchronous SQLite authority contracts cannot be assumed to work with managed PostgreSQL; migration requires an async API refactor, not merely a new adapter.
 - Hostless persistent volumes are separately charged. This plan therefore requires a proven managed-database route for authoritative state or another verified zero-cost durable storage option.
 - Three small resource pools are not automatically enough for all services. Measure actual build/runtime memory and CPU, then schedule/partition workloads accordingly.
 - Hostless builds are not charged according to its current docs, but runtime and database usage above entitlement is billed.
