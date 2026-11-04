@@ -23,7 +23,7 @@ const PROVIDER_ENV_NAMES = ["TWITCH_CLIENT_ID", "TWITCH_CLIENT_SECRET", "TWITCH_
 const GAME_IDS = new Set(NEBULA_ARCADE_GAMES.map((game) => game.id));
 const OVERLAY_FLOW_FIX_CSS = `body{display:flex;flex-direction:column;align-items:flex-end;justify-content:flex-end;gap:10px;padding:24px}.nebula-output-layer{z-index:auto}.nebula-output-placeholder{position:relative;inset:auto;width:auto;height:auto;flex:0 0 auto}`;
 
-export interface NebulaArcadeSandboxHostOptions { databasePath: string; tenantId: string; channelId: string; channels?: string[]; pinUserId?: string; publicOrigin?: string; port?: number; host?: string; buildSha?: string; gameMixTursoDatabaseUrl?: string; gameMixTursoAuthToken?: string; authenticate?: import("./control-surface.js").NebulaBrowserAuth; client?: SpmtClient; }
+export interface NebulaArcadeSandboxHostOptions { databasePath: string; tenantId: string; channelId: string; channels?: string[]; pinUserId?: string; publicOrigin?: string; port?: number; host?: string; buildSha?: string; gameMixTursoDatabaseUrl?: string; gameMixTursoAuthToken?: string; mosaicStoreMode?: "sqlite" | "turso"; mosaicTursoDatabaseUrl?: string; mosaicTursoAuthToken?: string; authenticate?: import("./control-surface.js").NebulaBrowserAuth; client?: SpmtClient; }
 
 export function createNebulaArcadeSandboxHost(options: NebulaArcadeSandboxHostOptions) {
   const gameStore = new SqliteNebulaTagStore(options.databasePath);

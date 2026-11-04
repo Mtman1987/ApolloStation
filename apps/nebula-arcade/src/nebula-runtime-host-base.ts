@@ -19,6 +19,7 @@ import { TursoHttpAdapter } from "@spmt/turso-http";
 import { getNebulaGameStats, joinNebulaGame, leaveNebulaGame, normalizeNebulaPlayerId, resolveNebulaChannelGameIds, setNebulaChannelGameRunning } from "./game-runtime.js";
 import { SqliteNebulaGameRuntimeStore } from "./game-runtime-store.js";
 import { SqliteNebulaMosaicStore } from "./mosaic-store.js";
+import { AsyncNebulaMosaicRecordStore } from "./mosaic-record-store.js";
 import { findMosaicArtwork, mosaicPublicSnapshot, mosaicTemplate, publishMosaic, resumeMosaicProject, sharedMosaicProjects, startMosaicProject } from "./mosaic-core.js";
 import { mosaicTemplatePng } from "./mosaic-export.js";
 import { NEBULA_MOSAIC_OVERLAY_JS, renderNebulaMosaicOverlay } from "./mosaic-overlay.js";
@@ -41,9 +42,16 @@ export function createNebulaArcadeSandboxHost(options: NebulaArcadeSandboxHostOp
     : new AsyncSqliteNebulaGameMixStore(options.databasePath);
   const activity = new SqliteNebulaArcadeActivityStore(options.databasePath);
   const policy = new SqliteNebulaTagExperienceStore(options.databasePath);
-  const mosaics = new SqliteNebulaMosaicStore(options.databasePath);
+  const mosaicTursoDatabaseUrl = options.mosaicTursoDatabaseUrl ?? process.env.TURSO_DATABASE_URL;
+  const mosaicTursoAuthToken = options.mosaicTursoAuthToken ?? process.env.TURSO_AUTH_TOKEN;
+  if (Boolean(mosaicTursoDatabaseUrl) !== Boolean(mosaicTursoAuthToken)) throw new Error("Nebula Mosaic Turso URL and token must be configured together");
+  const mosaicStoreMode = options.mosaicStoreMode ?? (process.env.NEBULA_ARCADE_MOSAIC_STORE === "turso" ? "turso" : "sqlite");
+  if (mosaicStoreMode === "turso" && (!mosaicTursoDatabaseUrl || !mosaicTursoAuthToken)) throw new Error("Nebula Mosaic Turso mode requires TURSO_DATABASE_URL and TURSO_AUTH_TOKEN");
+  const mosaics = mosaicStoreMode === "turso"
+    ? new AsyncNebulaMosaicRecordStore({ mode: "turso", url: mosaicTursoDatabaseUrl!, authToken: mosaicTursoAuthToken! })
+    : new SqliteNebulaMosaicStore(options.databasePath);
   const allowedMosaicChannels = new Set([options.channelId, ...(options.channels ?? [])].map((channel) => String(channel).replace(/^#/, "").trim().toLowerCase()));
-  const mosaicGallery = () => [...allowedMosaicChannels].flatMap((channel) => sharedMosaicProjects(mosaics.get(options.tenantId, channel)).map((project) => ({ ...project, channel }))).sort((a, b) => b.publishedAt.localeCompare(a.publishedAt));
+  const mosaicGallery = async () => (await Promise.all([...allowedMosaicChannels].map(async (channel) => sharedMosaicProjects(await mosaics.get(options.tenantId, channel)).map((project) => ({ ...project, channel }))))).flat().sort((a, b) => b.publishedAt.localeCompare(a.publishedAt));
   const controls=new NebulaControlSurface(options);
   let corePort = 0;
 
@@ -53,8 +61,9 @@ export function createNebulaArcadeSandboxHost(options: NebulaArcadeSandboxHostOp
       if(request.method==="GET"&&url.pathname==="/health/ready"){
         runtime.integrityCheck();
         if (!(await mixes.health()).ready) throw new NebulaHostError(503, "Nebula Game Mix persistence is unavailable");
+        if (!(await mosaics.health()).ready) throw new NebulaHostError(503, "Nebula Mosaic control persistence is unavailable");
         if(!corePort||!core.server.listening)throw new NebulaHostError(503,"Nebula Arcade core runtime is unavailable");
-        return json(response,200,{ready:true,app:"nebula-arcade",runtimeMode:options.authenticate?"production":"sandbox",gameMixStoreReady:true,gameMixStoreMode:options.gameMixTursoDatabaseUrl&&options.gameMixTursoAuthToken?"turso":"sqlite",...(!options.authenticate?{outboundIntegrations:"disabled"}:{}),buildSha:options.buildSha??"dev"});
+        return json(response,200,{ready:true,app:"nebula-arcade",runtimeMode:options.authenticate?"production":"sandbox",gameMixStoreReady:true,gameMixStoreMode:options.gameMixTursoDatabaseUrl&&options.gameMixTursoAuthToken?"turso":"sqlite",mosaicControlStoreReady:true,mosaicControlStoreMode:mosaicStoreMode,...(!options.authenticate?{outboundIntegrations:"disabled"}:{}),buildSha:options.buildSha??"dev"});
       }
       if(url.pathname===APP_PATH&&url.searchParams.get("action")==="control"){
         const player=options.authenticate?await options.authenticate(request):{userId:"sandbox-player",username:"sandbox-player",moderator:true};
@@ -81,7 +90,7 @@ export function createNebulaArcadeSandboxHost(options: NebulaArcadeSandboxHostOp
         const channel = String(url.searchParams.get("channel") || options.channelId).replace(/^#/, "").trim().toLowerCase();
         if (!allowedMosaicChannels.has(channel)) throw new NebulaHostError(404, "Mosaic channel not found");
         const sharedId = String(url.searchParams.get("shared") || url.searchParams.get("selected") || "");
-        const gallery = mosaicGallery();
+        const gallery = await mosaicGallery();
         const selected = sharedId ? gallery.find((item) => item.id === sharedId) : undefined;
         if (sharedId && !selected) throw new NebulaHostError(404, "This painting is no longer shared");
         const format = url.searchParams.get("format");
@@ -90,7 +99,7 @@ export function createNebulaArcadeSandboxHost(options: NebulaArcadeSandboxHostOp
           if (!template) {
             const player = options.authenticate ? await options.authenticate(request) : { userId: "sandbox-player", username: "sandbox-player", moderator: true };
             if (!player.moderator) throw new NebulaHostError(403, "Moderator permission required");
-            const artwork = findMosaicArtwork(mosaics.get(options.tenantId, channel), String(url.searchParams.get("artworkId") || ""));
+            const artwork = findMosaicArtwork(await mosaics.get(options.tenantId, channel), String(url.searchParams.get("artworkId") || ""));
             if (artwork) template = mosaicTemplate(artwork);
           }
           if (!template) throw new NebulaHostError(404, "Painting not found");
@@ -108,7 +117,7 @@ export function createNebulaArcadeSandboxHost(options: NebulaArcadeSandboxHostOp
         const publicRead = url.searchParams.get("scope") === "gallery" || Boolean(sharedId);
         if (!publicRead) player = options.authenticate ? await options.authenticate(request) : { userId: "sandbox-player", username: "sandbox-player", moderator: true };
         const canManage = player?.moderator === true;
-        const ownState = canManage ? mosaics.get(options.tenantId, channel) : undefined;
+        const ownState = canManage ? await mosaics.get(options.tenantId, channel) : undefined;
         const ownArtwork = ownState ? [ownState.current, ...ownState.saves].filter((art, index, items) => art && items.findIndex((item) => item?.id === art.id) === index) : [];
         const own = ownArtwork.map((art) => ({ id: art!.id, theme: art!.theme, status: art!.status, sharedId: gallery.find((item) => item.channel === channel && item.artworkId === art!.id)?.id || "" }));
         const publicProjects = gallery.slice(0, 100).map((item) => ({ id: item.id, channel: item.channel, theme: item.template.theme, paletteId: item.template.paletteId, publishedAt: item.publishedAt }));
@@ -122,9 +131,9 @@ export function createNebulaArcadeSandboxHost(options: NebulaArcadeSandboxHostOp
         const channel = String(body.channel || options.channelId).replace(/^#/, "").trim().toLowerCase();
         if (!allowedMosaicChannels.has(channel)) throw new NebulaHostError(404, "Mosaic channel not found");
         const sharedId = String(body.shared || "");
-        const selectedShared = sharedId ? mosaicGallery().find((item) => item.id === sharedId) : undefined;
+        const selectedShared = sharedId ? (await mosaicGallery()).find((item) => item.id === sharedId) : undefined;
         try {
-          const updated = mosaics.update(options.tenantId, channel, (state) => {
+          const updated = await mosaics.update(options.tenantId, channel, (state) => {
             const action = String(body.action || "");
             if (action === "resume") return resumeMosaicProject(state, String(body.artworkId || ""), body.replace === true);
             if (action === "publish" || action === "unpublish") {
@@ -145,7 +154,7 @@ export function createNebulaArcadeSandboxHost(options: NebulaArcadeSandboxHostOp
       if (request.method === "GET" && url.pathname === "/v1/nebula/mosaic/snapshot") {
         const channel = String(url.searchParams.get("channel") || options.channelId).replace(/^#/, "").trim().toLowerCase();
         if (!allowedMosaicChannels.has(channel)) throw new NebulaHostError(404, "Mosaic channel not found");
-        return json(response, 200, mosaicPublicSnapshot(mosaics.get(options.tenantId, channel)));
+        return json(response, 200, mosaicPublicSnapshot(await mosaics.get(options.tenantId, channel)));
       }
       if (request.method === "GET" && url.pathname === "/v1/nebula/game-inputs") { const feed=inputs.list(options.tenantId,options.channelId); return json(response,200,{inputs:feed,tabletop:tabletop.snapshot(options.tenantId,options.channelId)}); }
       if (request.method === "GET" && url.pathname === "/assets/nebula-arcade/widget-stage.js") return javascript(response,NEBULA_WIDGET_STAGE_JS);
@@ -189,8 +198,8 @@ export function createNebulaArcadeSandboxHost(options: NebulaArcadeSandboxHostOp
 
   return {
     server,
-    async listen() { await mixes.initialize(); await core.listen(); const address = core.server.address(); if (!address || typeof address === "string") throw new Error("Nebula Arcade core host did not bind a TCP port"); corePort = address.port; await listen(server, options.port ?? 8080, options.host ?? "0.0.0.0"); },
-    async close() { if (server.listening) await close(server); controls.close(); activity.close(); policy.close(); mosaics.close(); await mixes.close(); actions.close(); runtime.close(); inputs.close(); tabletop.close(); await core.close(); },
+    async listen() { if (mosaics instanceof AsyncNebulaMosaicRecordStore) await mosaics.initialize(); await mixes.initialize(); await core.listen(); const address = core.server.address(); if (!address || typeof address === "string") throw new Error("Nebula Arcade core host did not bind a TCP port"); corePort = address.port; await listen(server, options.port ?? 8080, options.host ?? "0.0.0.0"); },
+    async close() { if (server.listening) await close(server); controls.close(); activity.close(); policy.close(); await mosaics.close(); await mixes.close(); actions.close(); runtime.close(); inputs.close(); tabletop.close(); await core.close(); },
   };
 }
 
