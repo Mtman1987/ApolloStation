@@ -14,7 +14,7 @@ Status: initial static inventory from ApolloStation `main`; confirm against runt
 | Process | Current entrypoint | Current state |
 |---|---|---|
 | SPMT authority/API/output gateway | `apps/spmt-service/dist/provider-identity-start.js` | Requires `DATABASE_PATH`, 32-byte webhook key, and optional provider/service credentials. Uses SQLite authority adapter. |
-| SpaceMountain integrated web gateway | `apps/spacemountain-web/dist/integrated-server.js` | Requires SPMT origin; currently accepts app origins through a proxy that explicitly restricts targets to loopback HTTP. |
+| SpaceMountain integrated web gateway | `apps/spacemountain-web/dist/integrated-server.js` | Requires SPMT origin; the Hostless portability branch now validates configured origins at startup and supports remote HTTPS targets while retaining loopback HTTP for local development. |
 
 Important: SPMT's service process can bind to `0.0.0.0` via `SPMT_HOST`, but its authority store is SQLite. The existing storage policy requires a single writable authority. A Hostless deploy without a durable database path is not safe.
 
@@ -39,7 +39,7 @@ The supervisor currently passes local SPMT and local app URLs. Those must become
 ## Cross-node incompatibilities confirmed
 
 1. The Sprite supervisor assumes one host and wires most services through loopback origins.
-2. The SpaceMountain integrated gateway's `proxyDirect` helper rejects any target except loopback HTTP. It cannot currently proxy Node 2/3 services over HTTPS.
+2. The SpaceMountain integrated gateway's cross-node proxy gap has a first implementation on `hostless-three-node-port`: remote HTTPS origins are accepted with standard TLS certificate verification; non-loopback HTTP and malformed origins fail startup. Regression tests were added, but have not yet run in CI.
 3. SPMT authority and multiple app-owned stores use SQLite. Hostless temporary app disk is not a durable store; persistent volumes are separately priced.
 4. Nebula's live server currently opens local SQLite stores directly, so it is not stateless simply because player identity comes from SPMT.
 5. HearMeOut execution worker defaults to `fly` unless explicitly configured; it is not part of the first deployment slice and must never silently target Fly during Hostless work.
@@ -48,7 +48,7 @@ The supervisor currently passes local SPMT and local app URLs. Those must become
 
 1. Keep the existing local/Sprite supervisor intact.
 2. Add a Hostless role entrypoint for the canonical authority only after a durable zero-cost data strategy is proven.
-3. Refactor and test the SpaceMountain gateway to proxy only explicitly configured HTTPS service origins (retaining loopback HTTP for local development); strip hop-by-hop headers and preserve browser auth/cookies safely.
+3. Complete CI verification of the SpaceMountain HTTPS proxy change, including TLS forwarding, browser auth/cookies, redirects, and health checks.
 4. Add explicit Node 2 and Node 3 process entrypoints with no implicit localhost defaults.
 5. Replace or externally centralize each app-owned SQLite store before moving that app to an ephemeral Hostless app filesystem.
 6. Run all cross-node tests and restore drills before a deployment or traffic cutover.
