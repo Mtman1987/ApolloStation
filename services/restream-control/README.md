@@ -27,9 +27,11 @@ Mount a dedicated encrypted OCI block volume at the host path used for `RESTREAM
 
 Attach this container to the existing external Docker network `apollo-private`, also used by StreamWeaver. The compose file deliberately does not publish port 3018 on the host. Do not expose Chromium remote debugging, Xvfb, screenshots, cookies or profile files.
 
-The service itself listens on HTTPS and requires a certificate/key pair mounted read-only at `RESTREAM_TLS_CERT_FILE` and `RESTREAM_TLS_KEY_FILE`. Use a certificate trusted by the Apollo runtime with the private DNS name in its SAN. The existing StreamWeaver production origin validator requires credential-free HTTPS. Do not configure the client with internal plaintext HTTP in production. Keep the dedicated credential server-side and reject redirects.
+The service itself listens on HTTPS and requires a certificate/key pair mounted read-only at `RESTREAM_TLS_CERT_FILE` and `RESTREAM_TLS_KEY_FILE`. Use a certificate trusted by the Apollo runtime with the private DNS name in its SAN; ensure the key is readable by container UID 10001 but not by other host users. Copy `infra/oracle/restream-control.env.example` to a private env file, generate the credential with `openssl rand -hex 32`, and never commit the populated file. The existing StreamWeaver production origin validator requires credential-free HTTPS. Do not configure the client with internal plaintext HTTP in production. Keep the dedicated credential server-side and reject redirects.
 
 ## Verification and cutover
+
+Create the private network once with `docker network create apollo-private`, then build and validate with `docker compose --env-file infra/oracle/restream-control.env --file infra/oracle/restream-control.compose.yml config` and `docker compose --env-file infra/oracle/restream-control.env --file infra/oracle/restream-control.compose.yml up -d --build`. Run these only after the volume and TLS mounts exist; they are deployment commands, not CI actions.
 
 1. Build the image and run the API tests.
 2. Provision and mount the encrypted persistent volume; verify it is the mounted filesystem and seed the signed-in profile securely.
