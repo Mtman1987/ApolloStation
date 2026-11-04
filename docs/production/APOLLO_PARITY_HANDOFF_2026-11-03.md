@@ -2,8 +2,9 @@
 
 > **Superseded status snapshot — read the latest continuation first.**
 > The current repo handoff is [APOLLO_PARITY_HANDOFF_2026-11-03_FOLLOWUP.md](APOLLO_PARITY_HANDOFF_2026-11-03_FOLLOWUP.md).
-> It was refreshed after PRs #388–#397 merged and records main HEAD
-> `fe0a36d49cd5f9ad2d87174303a3e394b4db7842`. Fetch main before work.
+> It was refreshed after PR #399 added the Commander MT listener and records
+> its successful build/test evidence. PR #399's merge commit is
+> `9330f522f1c1eaabf7241db55efa80dac0bf1a92`. Fetch main before work.
 > The historical baseline and pending statuses below are not current authority.
 
 **Repository:** `Mtman1987/ApolloStation`  
