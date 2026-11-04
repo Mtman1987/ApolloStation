@@ -86,7 +86,7 @@ async function acquireProfileLock(profileDir) {
   try {
     await stat(marker);
   } catch {
-    throw new Error('Persistent Restream profile volume marker is missing');
+    throw new Error('Persistent Restream profile volume marker is missing; refusing ephemeral storage');
   }
   const lockPath = join(profileDir, '.restream-control.lock');
   const handle = await open(lockPath, 'wx', 0o600).catch(error => {
