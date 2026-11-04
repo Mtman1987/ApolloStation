@@ -1,24 +1,39 @@
 import { createProductAppWebServer, fetchAppSessionContext, productAppSnapshotHandler, productAppSnapshotSources, readJsonBody, requireSameOrigin, sendJson, type ProductAppWebDescriptorV1 } from "@spmt/app-foundation/product-web";
 import { appSurfaceBrowserJs, productSurfaceManifest } from "@spmt/app-foundation/surface-client";
 import { SqliteMountainViewDeviceStore, type MountainViewDeviceCapabilityV1, type MountainViewDeviceKindV1 } from "./device-runtime.js";
+import { SpmtClient } from "@spmt/sdk";
+import { MountainViewPlatformClient } from "./platform-client.js";
 
 const DESCRIPTOR:ProductAppWebDescriptorV1={appId:"mountainview",name:"MountainView",kicker:"MOBILE RELAY",tagline:"Carry voice, QR, camera captures and approved controls between paired mobile devices and the ecosystem.",description:"MountainView owns mobile and wearable relay workflows while SPMT owns shared identity and device authorization.",sceneUrl:"/assets/product/mountainview-background.webp",sections:[
   {id:"devices",label:"Devices",title:"Device Pairing",body:"Pair approved phones, Bluetooth headsets, glasses and camera relays to this SPMT identity.",glyph:"◇",appOwnedData:true},
   {id:"scan",label:"Scan QR",title:"QR Scanner",body:"Validated captures become bounded MountainView events instead of arbitrary browser actions.",glyph:"▦",appOwnedData:true},
   {id:"camera",label:"Camera",title:"Camera Capture",body:"Images stay associated with the paired device and the MountainView private capture history.",glyph:"◉",appOwnedData:true},
+  {id:"voice",label:"Voice",title:"Commander MT",body:"Speak a wake phrase, then a command. The listener processes a rolling 60-second transcript in 10-second cycles and routes through MountainView’s authenticated SPMT command pipeline.",glyph:")))",appOwnedData:true,emptyTitle:"Voice listener idle",emptyBody:"Start the listener and say Commander MT followed by a command.",contractNote:"Browser speech recognition is used; no paid AI or TTS provider is called. Destructive suite actions pause for explicit confirmation."},
   {id:"voice",label:"Voice",title:"Voice Routing",body:"Voice intent can route toward Hear Me Out, StreamWeaver, DSH, Nebula or Companion through registered capabilities.",glyph:")))",signals:[{source:"events",label:"Voice events",keywords:["voice","intent","route","relay"]},{source:"jobs",label:"Voice jobs",keywords:["voice","intent","route","relay"]},{source:"stellarCapabilities",label:"Stellar routes",keywords:["voice","intent","route","relay"]},{source:"workers",label:"Relay workers",keywords:["voice","intent","route","relay"]}],emptyTitle:"No voice route published",emptyBody:"No matching voice intent, job, Stellar capability or worker is currently available.",contractNote:"MountainView routes only through registered capabilities. It does not infer that HearMeOut, StreamWeaver, DSH, Nebula or Companion is reachable."}
 ]};
-const SURFACE=productSurfaceManifest({appId:DESCRIPTOR.appId,sceneUrl:DESCRIPTOR.sceneUrl,sections:DESCRIPTOR.sections,shortcuts:[{id:"devices",label:"Devices",pageId:"devices"},{id:"scan",label:"Scan QR",pageId:"scan"},{id:"camera",label:"Camera",pageId:"camera"}]});
+const SURFACE=productSurfaceManifest({appId:DESCRIPTOR.appId,sceneUrl:DESCRIPTOR.sceneUrl,sections:DESCRIPTOR.sections,shortcuts:[{id:"devices",label:"Devices",pageId:"devices"},{id:"scan",label:"Scan QR",pageId:"scan"},{id:"camera",label:"Camera",pageId:"camera"},{id:"voice",label:"Voice",pageId:"voice"}]});
 
 export function createMountainViewWebServer(options:{spmtOrigin:string;databasePath:string;port?:number;host?:string;buildSha?:string}){
   const store=new SqliteMountainViewDeviceStore(options.databasePath);
   const snapshot=productAppSnapshotHandler({appId:"mountainview",spmtOrigin:options.spmtOrigin,sources:productAppSnapshotSources(DESCRIPTOR)});
   return createProductAppWebServer({descriptor:DESCRIPTOR,port:options.port,host:options.host,buildSha:options.buildSha,close:()=>store.close(),browserJs:appSurfaceBrowserJs(SURFACE)+MOUNTAINVIEW_BROWSER_JS,handleApi:async(request,response,url)=>{
     if(await snapshot(request,response,url))return true;
-    if(!url.pathname.startsWith("/api/mountainview/devices"))return false;
+    if(!url.pathname.startsWith("/api/mountainview/"))return false;
     const platform=await fetchAppSessionContext({appId:"mountainview",spmtOrigin:options.spmtOrigin,request});
     const userId=typeof platform.session.actorId==="string"?platform.session.actorId:"";
     if(!userId)return sendJson(response,401,{error:"sign_in_required"});
+    if(request.method==="POST"&&url.pathname==="/api/mountainview/voice/route"){
+      requireSameOrigin(request);const body=await readJsonBody(request),transcript=String(body.transcript??"").replace(/\\s+/g," ").trim();
+      if(!transcript||transcript.length>2_000)return sendJson(response,400,{error:"invalid_transcript",message:"A command transcript of 1–2000 characters is required"});
+      const idempotencyKey=String(body.idempotencyKey??"").trim();if(!/^[A-Za-z0-9._:@/-]{8,200}$/.test(idempotencyKey))return sendJson(response,400,{error:"invalid_idempotency_key"});
+      const cookie=request.headers.cookie??"";
+      const client=new SpmtClient({baseUrl:options.spmtOrigin,appId:"mountainview",fetchImpl:(input,init={})=>{const headers=new Headers(init.headers);if(cookie)headers.set("cookie",cookie);return fetch(input,{...init,headers,redirect:"manual"});}});
+      const devices=await client.listDevices(platform.tenantId),companion=devices.find(device=>device.kind==="companion"&&device.userId===userId&&!device.revokedAt);
+      const roleMap=platform.session.tenantRoles&&typeof platform.session.tenantRoles==="object"?platform.session.tenantRoles as Record<string,unknown>:{};
+      const rawRole=roleMap[platform.tenantId],role=["member","moderator","admin","owner"].includes(String(rawRole))?String(rawRole) as "member"|"moderator"|"admin"|"owner":"member";
+      const routed=await new MountainViewPlatformClient(client).routeVoice(transcript,{schemaVersion:1,tenantId:platform.tenantId,userId,username:typeof platform.session.username==="string"?platform.session.username:userId,role,...(companion?{targetCompanionDeviceId:companion.deviceId}:{})},{idempotencyKey,confirmed:body.confirmed===true});
+      return sendJson(response,200,routed);
+    }
     if(request.method==="GET"&&url.pathname==="/api/mountainview/devices")return sendJson(response,200,{devices:store.list(platform.tenantId,userId),captures:store.listCaptures(platform.tenantId,userId,20)});
     if(request.method==="POST"&&url.pathname==="/api/mountainview/devices"){requireSameOrigin(request);const body=await readJsonBody(request);const capabilities:MountainViewDeviceCapabilityV1[]=Array.isArray(body.capabilities)?body.capabilities.filter((item):item is MountainViewDeviceCapabilityV1=>typeof item==="string"&&["voice","camera","qr","media-control"].includes(item)):["voice","qr"];const device=store.pair({tenantId:platform.tenantId,userId,name:String(body.name??"MountainView device"),kind:String(body.kind??"phone") as MountainViewDeviceKindV1,capabilities});return sendJson(response,201,device);}
     const revoke=url.pathname.match(/^\/api\/mountainview\/devices\/([^/]+)\/revoke$/);if(request.method==="POST"&&revoke){requireSameOrigin(request);return sendJson(response,200,{revoked:store.revoke(platform.tenantId,userId,decodeURIComponent(revoke[1]!))});}
