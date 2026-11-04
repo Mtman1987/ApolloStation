@@ -124,5 +124,6 @@ function buildStellaEventMessage(event:StreamWeaverStellaLoungeEventV1):string{
     case "milestone":return ("That's a milestone worth celebrating, "+name+"! Thanks for being part of the Lounge.").slice(0,240);
   }
 }
-\nfunction cleanTenant(value:string){const tenant=String(value??"").trim();if(!/^[A-Za-z0-9._:@/-]{1,180}$/.test(tenant))throw new Error("Stella Lounge Host tenant is invalid");return tenant;}
+
+function cleanTenant(value:string){const tenant=String(value??"").trim();if(!/^[A-Za-z0-9._:@/-]{1,180}$/.test(tenant))throw new Error("Stella Lounge Host tenant is invalid");return tenant;}
 function cleanPublic(value:unknown,limit:number){return String(value??"").replace(/[\r\n]/g," ").replace(/\s+/g," ").trim().slice(0,limit)||"the stream";}
