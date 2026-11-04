@@ -10,6 +10,17 @@ import wave
 health = json.load(urllib.request.urlopen('http://localhost:8080/health', timeout=10))
 assert health['ready'] and health['cpuThreads'] == 2
 
+unauthorized = urllib.request.Request(
+    'http://localhost:8080/v1/audio/speech',
+    data=b'{}',
+    headers={'Content-Type': 'application/json'},
+)
+try:
+    urllib.request.urlopen(unauthorized, timeout=10)
+    raise AssertionError('unauthenticated synthesis request was accepted')
+except urllib.error.HTTPError as error:
+    assert error.code == 401
+
 for voice in ('af_heart', 'af_nicole', 'am_puck', 'bf_emma', 'bm_george'):
     request = urllib.request.Request(
         'http://localhost:8080/v1/audio/speech',
