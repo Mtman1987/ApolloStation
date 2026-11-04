@@ -1,3 +1,4 @@
+import { parseExecutionTargetV1 } from "@spmt/contracts";
 import { createHash, randomUUID } from "node:crypto";
 import type { SpmtClient } from "@spmt/sdk";
 import { DatabaseSync } from "node:sqlite";
@@ -173,7 +174,7 @@ export class DshCommlinkForumDiscordPort implements DshForumDiscordPort {
   }
   private sourceKey(payload:Record<string,unknown>){const embeds=Array.isArray(payload.embeds)?payload.embeds:[],first=(embeds[0]&&typeof embeds[0]==="object"?embeds[0]:{}) as Record<string,unknown>;return String(first.url??first.timestamp??JSON.stringify(payload).slice(0,180));}
   private async submit(tenantId:string,operation:"create-thread"|"upsert"|"delete"|"archive-thread",targetId:string,details:Record<string,unknown>,key:string):Promise<Record<string,unknown>>{
-    const result=await this.client.createExecutionJob(tenantId,{ownerAppId:"discord-stream-hub",capabilityId:"commlink.discord.forum-egress.v1",executionOwner:"chat-gateway",meteredResource:"hosted-worker-minutes",usageQuantity:1,executionTarget:"sprite",meteringTarget:"hosted",input:{schemaVersion:1,operation,channelId:targetId,...details}},`commlink-forum-egress:${tenantId}:${createHash("sha256").update(key).digest("hex")}`);
+    const result=await this.client.createExecutionJob(tenantId,{ownerAppId:"discord-stream-hub",capabilityId:"commlink.discord.forum-egress.v1",executionOwner:"chat-gateway",meteredResource:"hosted-worker-minutes",usageQuantity:1,executionTarget:parseExecutionTargetV1(process.env.STELLAR_EXECUTION_TARGET),meteringTarget:"hosted",input:{schemaVersion:1,operation,channelId:targetId,...details}},`commlink-forum-egress:${tenantId}:${createHash("sha256").update(key).digest("hex")}`);
     const jobId=String((result.job as any)?.id??"");if(!jobId)throw new Error("Chat Gateway did not accept the Commlink forum egress job");
     for(let attempt=0;attempt<120;attempt++){
       const job=await this.client.getExecutionJob(tenantId,jobId);
