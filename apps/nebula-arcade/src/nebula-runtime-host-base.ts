@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { NebulaControlSurface } from "./control-surface.js";
 import { renderNebulaControlPage, NEBULA_CONTROL_JS } from "./control-page.js";
+import { NEBULA_MOSAIC_LIBRARY_JS } from "./mosaic-library.js";
 import { applyNebulaWidgetSettings } from "./game-settings.js";
 import { SqliteNebulaArcadeActivityStore, NEBULA_ACTIVITY_CSS, NEBULA_ACTIVITY_HTML, NEBULA_ACTIVITY_JS } from "./arcade-activity.js";
 import { SqliteNebulaTagExperienceStore, isNebulaChannelOptedOut } from "./nebula-tag-experience.js";
@@ -17,7 +18,8 @@ import { SqliteNebulaGameMixStore, type NebulaGameMixV1 } from "./game-mixes.js"
 import { getNebulaGameStats, joinNebulaGame, leaveNebulaGame, normalizeNebulaPlayerId, resolveNebulaChannelGameIds, setNebulaChannelGameRunning } from "./game-runtime.js";
 import { SqliteNebulaGameRuntimeStore } from "./game-runtime-store.js";
 import { SqliteNebulaMosaicStore } from "./mosaic-store.js";
-import { mosaicPublicSnapshot } from "./mosaic-core.js";
+import { findMosaicArtwork, mosaicPublicSnapshot, mosaicTemplate, publishMosaic, resumeMosaicProject, sharedMosaicProjects, startMosaicProject } from "./mosaic-core.js";
+import { mosaicTemplatePng } from "./mosaic-export.js";
 import { NEBULA_MOSAIC_OVERLAY_JS, renderNebulaMosaicOverlay } from "./mosaic-overlay.js";
 import { buildNebulaGameplayManifest, NEBULA_GAMEPLAY_SHOWCASE_CSS, renderNebulaGameplayCapturePage } from "./gameplay-showcase.js";
 import { createNebulaArcadeSandboxHost as createNebulaArcadeCoreHost, validateNebulaArcadeSandboxEnvironment, type NebulaArcadeSandboxHostOptions } from "./nebula-arcade-core-server.js";
@@ -37,6 +39,7 @@ export function createNebulaArcadeSandboxHost(options: NebulaArcadeSandboxHostOp
   const policy = new SqliteNebulaTagExperienceStore(options.databasePath);
   const mosaics = new SqliteNebulaMosaicStore(options.databasePath);
   const allowedMosaicChannels = new Set([options.channelId, ...(options.channels ?? [])].map((channel) => String(channel).replace(/^#/, "").trim().toLowerCase()));
+  const mosaicGallery = () => [...allowedMosaicChannels].flatMap((channel) => sharedMosaicProjects(mosaics.get(options.tenantId, channel)).map((project) => ({ ...project, channel }))).sort((a, b) => b.publishedAt.localeCompare(a.publishedAt));
   const controls=new NebulaControlSurface(options);
   let corePort = 0;
 
@@ -60,13 +63,79 @@ export function createNebulaArcadeSandboxHost(options: NebulaArcadeSandboxHostOp
         const ids=(url.searchParams.get("ids")||"").split(",").map(Number).slice(0,9);return json(response,200,{cards:ids.map(id=>({...controls.art.prompt(id).card,artUrl:controls.art.get(options.tenantId,id).url??`/apps/nebula-arcade?action=card-art&cardId=${id}`}))});
       }
       if(request.method==="GET"&&url.pathname==="/assets/nebula-arcade/control.js")return javascript(response,NEBULA_CONTROL_JS);
-      if(request.method==="GET"&&url.pathname===APP_PATH&&( ["controls","stats","art"].includes(url.searchParams.get("view")||"") || url.searchParams.get("view")==="game"&&["bingo","quackverse"].includes(url.searchParams.get("game")||"")))return html(response,200,renderNebulaControlPage(url.searchParams.get("view")||"game",url.searchParams.get("game")||"quackverse"));
+      if(request.method==="GET"&&url.pathname==="/assets/nebula-arcade/mosaic-library.js")return javascript(response,NEBULA_MOSAIC_LIBRARY_JS);
+      if(request.method==="GET"&&url.pathname===APP_PATH&&( ["controls","stats","art","mosaic"].includes(url.searchParams.get("view")||"") || url.searchParams.get("view")==="game"&&["bingo","quackverse"].includes(url.searchParams.get("game")||"")))return html(response,200,renderNebulaControlPage(url.searchParams.get("view")||"game",url.searchParams.get("game")||"quackverse"));
       if (request.method === "GET" && url.pathname === "/assets/nebula-arcade/widgets/thirdparty/three.min.js") { response.writeHead(200, { "content-type":"text/javascript; charset=utf-8", "cache-control":"public,max-age=86400", "access-control-allow-origin":"*" }); response.end(nebulaThreeJs()); return; }
       if (request.method === "GET" && url.pathname === "/assets/nebula-arcade/mosaic-overlay.js") return javascript(response, NEBULA_MOSAIC_OVERLAY_JS);
       if (request.method === "GET" && url.pathname === "/overlay/mosaic") {
         const channel = String(url.searchParams.get("channel") || options.channelId).replace(/^#/, "").trim().toLowerCase();
         if (!allowedMosaicChannels.has(channel)) throw new NebulaHostError(404, "Mosaic channel not found");
         return html(response, 200, renderNebulaMosaicOverlay(channel));
+      }
+      if (url.pathname === APP_PATH && url.searchParams.get("action") === "mosaic-projects" && request.method === "GET") {
+        const channel = String(url.searchParams.get("channel") || options.channelId).replace(/^#/, "").trim().toLowerCase();
+        if (!allowedMosaicChannels.has(channel)) throw new NebulaHostError(404, "Mosaic channel not found");
+        const sharedId = String(url.searchParams.get("shared") || url.searchParams.get("selected") || "");
+        const gallery = mosaicGallery();
+        const selected = sharedId ? gallery.find((item) => item.id === sharedId) : undefined;
+        if (sharedId && !selected) throw new NebulaHostError(404, "This painting is no longer shared");
+        const format = url.searchParams.get("format");
+        if (format) {
+          let template = selected?.template;
+          if (!template) {
+            const player = options.authenticate ? await options.authenticate(request) : { userId: "sandbox-player", username: "sandbox-player", moderator: true };
+            if (!player.moderator) throw new NebulaHostError(403, "Moderator permission required");
+            const artwork = findMosaicArtwork(mosaics.get(options.tenantId, channel), String(url.searchParams.get("artworkId") || ""));
+            if (artwork) template = mosaicTemplate(artwork);
+          }
+          if (!template) throw new NebulaHostError(404, "Painting not found");
+          if (format === "json") {
+            response.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "content-disposition": 'attachment; filename="nebula-mosaic.json"' });
+            response.end(JSON.stringify(template)); return;
+          }
+          if (format === "png") {
+            response.writeHead(200, { "content-type": "image/png", "cache-control": "no-store", "content-disposition": 'attachment; filename="nebula-mosaic.png"' });
+            response.end(mosaicTemplatePng(template)); return;
+          }
+          throw new NebulaHostError(400, "Choose PNG or JSON");
+        }
+        let player: Awaited<ReturnType<NonNullable<typeof options.authenticate>>> | null = null;
+        const publicRead = url.searchParams.get("scope") === "gallery" || Boolean(sharedId);
+        if (!publicRead) player = options.authenticate ? await options.authenticate(request) : { userId: "sandbox-player", username: "sandbox-player", moderator: true };
+        const canManage = player?.moderator === true;
+        const ownState = canManage ? mosaics.get(options.tenantId, channel) : undefined;
+        const ownArtwork = ownState ? [ownState.current, ...ownState.saves].filter((art, index, items) => art && items.findIndex((item) => item?.id === art.id) === index) : [];
+        const own = ownArtwork.map((art) => ({ id: art!.id, theme: art!.theme, status: art!.status, sharedId: gallery.find((item) => item.channel === channel && item.artworkId === art!.id)?.id || "" }));
+        const publicProjects = gallery.slice(0, 100).map((item) => ({ id: item.id, channel: item.channel, theme: item.template.theme, paletteId: item.template.paletteId, publishedAt: item.publishedAt }));
+        return json(response, 200, { own, gallery: publicProjects, selected: selected ? { id: selected.id, channel: selected.channel, theme: selected.template.theme, paletteId: selected.template.paletteId, publishedAt: selected.publishedAt } : null, canManage });
+      }
+      if (url.pathname === APP_PATH && url.searchParams.get("action") === "mosaic-projects" && request.method === "POST") {
+        requireSameOrigin(request);
+        const player = options.authenticate ? await options.authenticate(request) : { userId: "sandbox-player", username: "sandbox-player", moderator: true };
+        if (!player.moderator) throw new NebulaHostError(403, "Moderator permission required");
+        const body = await readJson(request, 100_000);
+        const channel = String(body.channel || options.channelId).replace(/^#/, "").trim().toLowerCase();
+        if (!allowedMosaicChannels.has(channel)) throw new NebulaHostError(404, "Mosaic channel not found");
+        const sharedId = String(body.shared || "");
+        const selectedShared = sharedId ? mosaicGallery().find((item) => item.id === sharedId) : undefined;
+        try {
+          const updated = mosaics.update(options.tenantId, channel, (state) => {
+            const action = String(body.action || "");
+            if (action === "resume") return resumeMosaicProject(state, String(body.artworkId || ""), body.replace === true);
+            if (action === "publish" || action === "unpublish") {
+              const artworkId = String(body.artworkId || selectedShared?.artworkId || "");
+              return publishMosaic(state, artworkId, action === "publish");
+            }
+            if (action === "start" || action === "import") {
+              const artwork = body.artworkId ? findMosaicArtwork(state, String(body.artworkId)) : undefined;
+              const template = action === "import" ? body.template : selectedShared?.template || (artwork ? mosaicTemplate(artwork) : undefined);
+              if (!template) throw new Error("Painting not found");
+              return startMosaicProject(state, template, body.replace === true);
+            }
+            throw new Error("Choose a valid project action");
+          });
+          return json(response, 200, { ok: true, result: updated.result });
+        } catch (error) { throw new NebulaHostError(400, error instanceof Error ? error.message : "Painting could not be updated"); }
       }
       if (request.method === "GET" && url.pathname === "/v1/nebula/mosaic/snapshot") {
         const channel = String(url.searchParams.get("channel") || options.channelId).replace(/^#/, "").trim().toLowerCase();
