@@ -8,7 +8,7 @@ export function encodeHranaValue(value) {
   }
   if (typeof value === "string") return { type: "text", value };
   if (value instanceof Uint8Array) return { type: "blob", base64: Buffer.from(value).toString("base64") };
-  throw new Error(`Unsupported Turso parameter type: ${typeof value}`);
+  throw new Error(`Unsupported SQLite value type: ${typeof value}`);
 }
 
 export function decodeHranaValue(value) {
