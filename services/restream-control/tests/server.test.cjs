@@ -102,5 +102,7 @@ test('browser controller rejects non-Restream destinations and temporary profile
   assert.equal(allowedRestreamHost('https://accounts.restream.io/login'), true);
   assert.equal(allowedRestreamHost('https://restream.io.evil.example/'), false);
   assert.equal(allowedRestreamHost('https://example.com/'), false);
+  assert.equal(allowedRestreamHost('http://app.restream.io/channel'), false);
+  assert.equal(allowedRestreamHost('https://user:pass@app.restream.io/channel'), false);
   assert.throws(() => createRestreamControl({ chromiumPath: '/usr/bin/chromium', puppeteer: {}, profileDir: '' }), /explicit absolute persistent-volume path/);
 });
