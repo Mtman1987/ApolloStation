@@ -279,11 +279,15 @@ export class StreamWeaverProviderRuntime {
     if(this.options.allowProviderWrites!==true)return;
     const tenants=this.community.configuredTenants();
     if(this.twitch&&Date.now()-this.lastWatchPoll>=60000){this.lastWatchPoll=Date.now();for(const tenant of tenants)try{const stream=await this.twitch.uptime(tenant);if(stream){this.community.saveSettings(tenant,{welcomeSession:`twitch:${stream.id}`});this.community.recordWatchtime(tenant,"twitch",await this.twitch.chatters(tenant));}}catch{/* Missing grants do not fabricate watchtime. */}}
-    await this.eventsub?.reconcile(tenants.map(tenantId=>({tenantId,types:[...this.community.awards(tenantId).filter(a=>a.enabled&&a.event.startsWith("twitch:")).map(a=>a.event.slice(7)),...this.community.bindings(tenantId).filter(b=>b.enabled).map(b=>b.event),...this.community.redeems(tenantId).filter(r=>r.enabled&&r.rewardId).map(r=>`reward:${r.rewardId}`)]})).filter(t=>t.types.length),event=>this.deliverProviderEvent(event));
+    await this.eventsub?.reconcile(tenants.map(tenantId=>({tenantId,types:[...(tenantId==="spacemountainlive"?["raid","follow","subscribe","resubscribe","gift-bomb","cheer"]:[]),...this.community.awards(tenantId).filter(a=>a.enabled&&a.event.startsWith("twitch:")).map(a=>a.event.slice(7)),...this.community.bindings(tenantId).filter(b=>b.enabled).map(b=>b.event),...this.community.redeems(tenantId).filter(r=>r.enabled&&r.rewardId).map(r=>`reward:${r.rewardId}`)]})).filter(t=>t.types.length),event=>this.deliverProviderEvent(event));
   }
   private async deliverProviderEvent(event:StreamWeaverTwitchEvent){
     const connection=this.options.connections?.find(c=>c.tenantId===event.tenantId&&c.provider==="twitch"&&c.desired);
     if(!connection)throw new Error("Configure a Twitch chat destination for provider events");
+    if(event.tenantId==="spacemountainlive"&&this.stellaLoungeHost){
+      const kind=event.type==="raid"?"raid":event.type==="follow"?"follow":event.type==="subscribe"||event.type==="resubscribe"?"subscribe":event.type==="gift-bomb"?"gift-bomb":event.type==="cheer"?"cheer":undefined;
+      if(kind)await this.stellaLoungeHost.reactToEvent({tenantId:event.tenantId,eventId:event.id,kind,actor:event.displayName||event.username,...(kind==="raid"?{viewers:event.units}:{}),...(kind==="cheer"||kind==="gift-bomb"?{amount:event.units}:{})}).catch(()=>undefined);
+    }
     const canonicalUserId=event.userId?await new StreamWeaverSpmtIdentityResolver(this.options.client).resolve({tenantId:event.tenantId,provider:"twitch",providerUserId:event.userId,username:event.username,displayName:event.displayName}):undefined;
     const source=event.redemptionId?`twitch-reward:${event.redemptionId}`:`eventsub:${event.id}`,eventName=event.rewardId?`reward:${event.rewardId}`:event.type;
     if(event.type!=="reward")awardStreamWeaverProviderEvent(this.community,this.economy,{tenantId:event.tenantId,event:`twitch:${event.type}`,sourceId:source,userId:canonicalUserId??"",units:event.units??1});
