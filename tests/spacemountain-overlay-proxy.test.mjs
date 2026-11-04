@@ -95,3 +95,21 @@ test("unavailable overlay service returns a transparent 503", async () => {
     assert.match(await response.text(), /background:transparent/);
   } finally { await web.close(); }
 });
+
+
+test("multi-node ingress refuses cleartext remote service origins", async () => {
+  const web = createIntegratedSpaceMountainWebHost({
+    spmtOrigin: "http://spmt.example.test",
+    host: "127.0.0.1",
+    port: 0,
+  });
+  try {
+    await web.listen();
+    const response = await fetch(`${origin(web.server)}/v1/overlay/tenant-a/public`);
+    assert.equal(response.status, 500);
+    assert.deepEqual(await response.json(), {
+      error: "parity_gateway_failure",
+      message: "Parity proxy targets must use HTTPS, or loopback HTTP for local development",
+    });
+  } finally { await web.close(); }
+});
