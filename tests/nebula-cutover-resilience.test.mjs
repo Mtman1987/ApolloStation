@@ -31,7 +31,7 @@ test('production readiness checks the internal runtime and persisted state',asyn
     try{
       process.env.NEBULA_ARCADE_REQUIRE_TURSO='1';
       response=await fetch(origin+'/health/ready');assert.equal(response.status,503);
-      const blocked=await response.json();assert.equal(blocked.mosaicStoreMode,'sqlite');assert.equal(blocked.mosaicStoreRequired,true);
+      const blocked=await response.json();assert.equal(blocked.mosaicStoreMode,'sqlite');assert.equal(blocked.gameMixStoreMode,'sqlite');assert.equal(blocked.mosaicStoreRequired,true);assert.equal(blocked.gameMixStoreRequired,true);assert.equal(blocked.ready,false);
     }finally{
       if(previousRequireTurso===undefined)delete process.env.NEBULA_ARCADE_REQUIRE_TURSO;else process.env.NEBULA_ARCADE_REQUIRE_TURSO=previousRequireTurso;
     }
