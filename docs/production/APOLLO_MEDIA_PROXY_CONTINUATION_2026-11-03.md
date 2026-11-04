@@ -6,7 +6,7 @@ Read after APOLLO_PARITY_CONTINUATION_RUNABLE_2026-11-03.md. Fetch current main 
 
 PR [#386](https://github.com/Mtman1987/ApolloStation/pull/386) merged at **ebcf46627b4ace6f04cd1a6e2e63c1826ce5985c**. Fetched main and verified the merge commit is on main. All source, diagnostic regressions and this handoff are durable in the repository.
 
-Post-merge Oracle [41713920282](https://github.com/Mtman1987/ApolloStation/actions/runs/41713920282) runs against that exact code SHA. At inspection it was **in progress**, with preparation completed and all four shards started. No report artifact existed yet. New test findings/build success remain unverified; do not turn this pending status into a pass claim.
+Post-merge Oracle [41713920282](https://github.com/Mtman1987/ApolloStation/actions/runs/41713920282) completed/success against that exact code SHA. On 2026-11-04, downloaded and read consolidated report artifact **13268722598**: **1,468 passed / 0 failed / 0 cancelled / 0 skipped**, all four shards COMPLETE (357, 363, 400 and 348 cases). This supersedes the earlier pending status. Evidence applies to ebcf466 only, not later main revisions or live deployment.
 
 ## Baseline findings inspected
 
@@ -29,7 +29,7 @@ Exact fetched remote source and both updated existing fixtures matched reviewed 
 
 ## Remaining work and boundaries
 
-1. Inspect the complete post-merge Oracle 41713920282 report and actual findings. Fix root causes and merge promptly per AGENTS.md; do not weaken tests or wait for PR checks.
+1. Complete post-merge Oracle 41713920282 report inspected: zero findings at ebcf466. Continue from the [Hostless follow-up](APOLLO_HOSTLESS_CONTINUATION_2026-11-04.md); inspect each later main revision's diagnostics separately per AGENTS.md.
 2. Existing workflow upload-name patch remains stored but inactive; authorized workflow-write access and fresh evidence sweeps are still separate work.
 3. Watch manifest size/time limits, redirect-relative resolution, generic upstream error sanitization, exact byte-window response bounds and registry per-tenant quotas deserve separate bounded reviews. Global cap may evict another tenant's entry but cannot expose its URL.
 4. Tenant/user scope is not room-membership authorization. Generic Watch/YouTube proxy routes still authenticate users rather than enforce a room ACL; no full room authorization claim.
