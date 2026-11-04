@@ -16,6 +16,9 @@ on:
       - apps/streamweaver/src/image-worker.ts
       - apps/chat-gateway/src/service.ts
       - apps/stellar-core/src/worker-start.ts
+      - apps/stellar-core/src/index.ts
+      - apps/spmt-service/src/index.ts
+      - apps/spmt-service/src/assistant-api.ts
       - apps/stellar-core/src/speech-worker.ts
       - apps/stellar-core/src/speech-provider.ts
       - apps/stellar-core/src/speech-voices.ts
@@ -23,6 +26,7 @@ on:
       - apps/stellar-core/kokoro/**
       - tests/streamweaver-pollinations.test.mjs
       - tests/stellar-speech-target.test.mjs
+      - tests/stellar-hosted-readiness.test.mjs
       - tests/stellar-kokoro.test.mjs
       - tests/streamweaver-port-runtime.test.mjs
       - tests/streamweaver-checkin-presentation.test.mjs
@@ -75,7 +79,7 @@ jobs:
         run: python3 -m py_compile apps/stellar-core/kokoro/server.py
       - name: Run focused pull-request regressions
         if: github.event_name == 'pull_request'
-        run: node --import ./scripts/offline-network-guard.mjs --test tests/streamweaver-rides.test.mjs tests/streamweaver-chat-gateway.test.mjs tests/streamweaver-overlay-widgets.test.mjs tests/streamweaver-pollinations.test.mjs tests/stellar-speech-target.test.mjs tests/stellar-kokoro.test.mjs tests/streamweaver-port-runtime.test.mjs tests/streamweaver-checkin-presentation.test.mjs tests/streamweaver-flow-author-e2e.test.mjs tests/mountainview-commander-listener.test.mjs tests/mountainview-commander-browser.test.mjs tests/mountainview-companion-platform.test.mjs
+        run: node --import ./scripts/offline-network-guard.mjs --test tests/streamweaver-rides.test.mjs tests/streamweaver-chat-gateway.test.mjs tests/streamweaver-overlay-widgets.test.mjs tests/streamweaver-pollinations.test.mjs tests/stellar-speech-target.test.mjs tests/stellar-hosted-readiness.test.mjs tests/stellar-kokoro.test.mjs tests/streamweaver-port-runtime.test.mjs tests/streamweaver-checkin-presentation.test.mjs tests/streamweaver-flow-author-e2e.test.mjs tests/mountainview-commander-listener.test.mjs tests/mountainview-commander-browser.test.mjs tests/mountainview-companion-platform.test.mjs
       - name: Run full manual StreamWeaver regressions
         if: github.event_name == 'workflow_dispatch'
         run: node --import ./scripts/offline-network-guard.mjs --test tests/streamweaver-tts-text.test.mjs tests/streamweaver-shoutout-runtime.test.mjs tests/streamweaver-provider-runtime.test.mjs tests/streamweaver-eventsub-lifecycle.test.mjs tests/streamweaver-rides.test.mjs tests/streamweaver-stella-lounge-host.test.mjs tests/streamweaver-chat-gateway.test.mjs tests/streamweaver-overlay-widgets.test.mjs
