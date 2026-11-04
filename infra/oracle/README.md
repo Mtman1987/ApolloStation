@@ -6,7 +6,7 @@ This is the initial, deliberately small OCI foundation for the permanent Apollo 
 
 1. Create the Oracle Cloud account and choose the home region.
 2. Create a compartment dedicated to Apollo.
-3. Create an API signing key and OCI CLI profile; keep the private key outside this repository.
+3. Create an API signing key; keep the private key outside this repository. Terraform reads the tenancy/user OCIDs, key fingerprint, region, and private-key path from your local `terraform.tfvars`. An OCI CLI profile is optional for separate CLI inspection.
 4. Select a currently available Ubuntu ARM64 image OCID in that region.
 5. Create an SSH key and set `admin_cidr` to your own fixed public IP.
 6. Copy `terraform.tfvars.example` to `terraform.tfvars`, fill values locally, and review `terraform plan`.

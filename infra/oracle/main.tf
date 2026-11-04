@@ -39,7 +39,12 @@ resource "oci_core_network_security_group_security_rule" "https" {
   protocol                  = "6"
   source                    = "0.0.0.0/0"
   source_type               = "CIDR_BLOCK"
-  tcp_options { destination_port_range { min = 443 max = 443 } }
+  tcp_options {
+    destination_port_range {
+      min = 443
+      max = 443
+    }
+  }
 }
 
 resource "oci_core_network_security_group_security_rule" "http" {
@@ -48,7 +53,12 @@ resource "oci_core_network_security_group_security_rule" "http" {
   protocol                  = "6"
   source                    = "0.0.0.0/0"
   source_type               = "CIDR_BLOCK"
-  tcp_options { destination_port_range { min = 80 max = 80 } }
+  tcp_options {
+    destination_port_range {
+      min = 80
+      max = 80
+    }
+  }
 }
 
 resource "oci_core_network_security_group_security_rule" "ssh" {
@@ -57,7 +67,12 @@ resource "oci_core_network_security_group_security_rule" "ssh" {
   protocol                  = "6"
   source                    = var.admin_cidr
   source_type               = "CIDR_BLOCK"
-  tcp_options { destination_port_range { min = 22 max = 22 } }
+  tcp_options {
+    destination_port_range {
+      min = 22
+      max = 22
+    }
+  }
 }
 
 resource "oci_core_network_security_group_security_rule" "egress" {
@@ -106,7 +121,7 @@ resource "oci_core_instance" "apollo" {
 
   metadata = {
     ssh_authorized_keys = var.ssh_public_key
-    user_data = base64encode(file("${path.module}/cloud-init.yaml"))
+    user_data           = base64encode(file("${path.module}/cloud-init.yaml"))
   }
 
   preserve_boot_volume = true
@@ -116,4 +131,7 @@ output "apollo_public_ip" {
   value       = oci_core_instance.apollo.public_ip
   description = "Public IP for DNS A records after the host is provisioned."
 }
-output "apollo_private_ip" { value = oci_core_instance.apollo.private_ip }
+
+output "apollo_private_ip" {
+  value = oci_core_instance.apollo.private_ip
+}
