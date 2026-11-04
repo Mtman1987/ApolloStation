@@ -25,7 +25,8 @@ export class MountainViewCommanderTranscriptBuffer {
 
   append(value: string, at = this.nowMs()) {
     const text = String(value ?? "").replace(/\s+/g, " ").trim().slice(0, 1_000);
-    if (!text || !Number.isFinite(at)) return this.snapshot(at);
+    if (!Number.isFinite(at)) return this.snapshot(this.nowMs());
+    if (!text) return this.snapshot(at);
     this.segments.push({ at, text });
     this.prune(at);
     while (this.segments.length > 12) this.segments.shift();
@@ -68,7 +69,7 @@ export class MountainViewCommanderTranscriptBuffer {
 
   private prune(at: number) {
     const cutoff = at - MOUNTAINVIEW_COMMANDER_POLICY_V1.transcriptWindowMs;
-    this.segments = this.segments.filter((item) => item.at >= cutoff && item.at <= at + 5_000);
+    this.segments = this.segments.filter((item) => item.at > cutoff && item.at <= at + 5_000);
     if (this.segments.length === 0) this.lastConsumedWakeAt = -1;
   }
 }
