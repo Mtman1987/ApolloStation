@@ -17,7 +17,7 @@ export interface StreamWeaverStellaLoungeHostStateV1 {
   updatedAt:string;
 }
 export interface StreamWeaverStellaLoungeHostReportV1 { attempted:number;sent:number;skipped:number;failed:number; }
-export type StreamWeaverStellaLoungeEventV1={tenantId:string;eventId:string;kind:"raid"|"follow"|"subscribe"|"cheer"|"game-winner"|"game-play"|"game-round"|"milestone";actor?:string;viewers?:number;amount?:number;game?:string;detail?:string};
+export type StreamWeaverStellaLoungeEventV1={tenantId:string;eventId:string;kind:"raid"|"follow"|"subscribe"|"cheer"|"gift-bomb"|"game-winner"|"game-play"|"game-round"|"milestone";actor?:string;viewers?:number;amount?:number;game?:string;detail?:string};
 
 /** A bounded, non-generative Stella host loop. It uses live Twitch/Community state and Chat Gateway egress; no paid AI or direct provider socket. */
 export class SqliteStreamWeaverStellaLoungeHostStore {
@@ -74,7 +74,7 @@ export class StreamWeaverStellaLoungeHost {
     if(!connection)return{delivered:false,reason:"no-twitch-egress"};
     const eventId=String(event.eventId??"").trim().slice(0,180),actor=cleanEventValue(event.actor,45),kind=event.kind;
     if(!eventId)return{delivered:false,reason:"event-id-required"};
-    const priority=kind==="raid"||kind==="game-winner"||kind==="milestone"?90:kind==="subscribe"||kind==="cheer"?72:kind==="follow"?60:64;
+    const priority=kind==="raid"||kind==="gift-bomb"||kind==="game-winner"||kind==="milestone"?90:kind==="subscribe"||kind==="cheer"?72:kind==="follow"?60:64;
     const state=this.options.store.view(tenantId);
     if(state.speakerSpeakingUntil>nowMs&&priority<90)return{delivered:false,reason:"streamer-speaking"};
     if(priority<90&&nowMs-state.lastSpokeAt<12_000)return{delivered:false,reason:"speech-cooldown"};
@@ -117,6 +117,7 @@ function buildStellaEventMessage(event:StreamWeaverStellaLoungeEventV1):string{
     case "follow":return ("Welcome aboard, "+(actor||"new Passenger")+"! Glad you found SpaceMountainLive—make yourself at home.").slice(0,240);
     case "subscribe":return ("Big thanks to "+name+" for the support. You're helping keep the Lounge lights on.").slice(0,240);
     case "cheer":return ("That "+(amount?amount.toLocaleString("en-US")+"-bit ":"")+"cheer from "+name+" just sent extra energy through the Lounge. Thank you!").slice(0,240);
+    case "gift-bomb":return (name+" just gifted "+(amount?amount.toLocaleString("en-US")+" subscriptions":"subscriptions")+" to the Lounge crew. That is an incredible welcome aboard!").slice(0,240);
     case "game-winner":return ("Well played, "+name+"—you took the "+(game||"game")+" win. The Lounge has a new story.").slice(0,240);
     case "game-play":return ("Nice move, "+name+"! That "+(game||"game")+" play deserves a spotlight moment.").slice(0,240);
     case "game-round":return ("A new round of "+(game||"the Lounge game")+" is underway."+(detail?" "+detail:" The Lounge is watching.")).slice(0,240);
