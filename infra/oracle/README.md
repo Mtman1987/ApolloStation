@@ -35,6 +35,22 @@ The resulting public IP is an origin target only. Do not point production DNS at
 - Use OCI Vault for runtime secrets; inject them at deployment time, never into images or Git.
 - Use encrypted block volumes/Object Storage for durable databases and media. Back up before every migration.
 
+## Local speech worker topology
+
+The no-cost Kokoro TTS implementation lives in `workers/free-tts/`. Its Dockerfile
+downloads the pinned ONNX model and voice pack during image build, verifies both
+SHA-256 digests, and performs a real startup inference before the health endpoint
+reports ready. The Compose fragment exposes port 8080 only to its private Compose
+network; it does not publish a host port.
+
+When the final Oracle Compose stack is assembled, include the `kokoro-tts`
+service on the internal application network and run the compiled Stellar speech
+worker with `STELLAR_KOKORO_TTS_URL=http://kokoro-tts:8080`,
+`SPMT_ORIGIN`, and the existing `STELLAR_WORKER_CREDENTIAL`. That worker reports
+`executionTarget=self-hosted` and only the TTS synthesis capability. It is not a
+Sprite worker. Paid transcription remains a separate opt-in capability and is
+not required for local Kokoro synthesis.
+
 ## Scope boundary
 
 This foundation does not yet deploy the application stack. The service topology and per-app container entrypoints must be reconciled against the actual Apollo package scripts and worker requirements before we add a production Compose manifest. Do not expose database, Redis, worker or internal API ports publicly.
