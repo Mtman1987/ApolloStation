@@ -20,6 +20,12 @@ on:
       - tests/streamweaver-chat-gateway.test.mjs
       - tests/streamweaver-overlay-widgets.test.mjs
       - .github/workflows/streamweaver-parity-validation.yml
+      - packages/contracts/src/index.ts
+      - packages/execution-core/src/index.ts
+      - packages/platform-ops/src/index.ts
+      - packages/mcp/src/index.ts
+      - tests/functional-foundation.test.mjs
+      - tests/functional-foundation-api.test.mjs
 
 permissions:
   contents: read
