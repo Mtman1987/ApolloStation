@@ -11,7 +11,6 @@
  * records are accepted, conflicting records are rejected, never overwritten.
  */
 import { createHash } from "node:crypto";
-import { createReadStream } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { resolve, relative, sep, join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -183,7 +182,7 @@ function parseArgs(argv) {
 async function main() {
   const options = parseArgs(process.argv.slice(2));
   if (options.help || (!options.chatTagRoot && !options.streamWeaverRoot)) {
-    process.stdout.write("Usage: node scripts/stage-recovered-json-to-turso.mjs [--chat-tag-root DIR] [--streamweaver-root DIR] [--apply]\\nDry-run by default. Stages redacted JSON source documents in a dedicated raw table; it does not normalize or assign records to Apollo domain tables.\\n");
+    process.stdout.write("Usage: node scripts/stage-recovered-json-to-turso.mjs [--chat-tag-root DIR] [--streamweaver-root DIR] [--apply]\nDry-run by default. Stages redacted JSON source documents in a dedicated raw table; it does not normalize or assign records to Apollo domain tables.\n");
     return;
   }
   const records = await buildRecoveredJsonManifest(options);
@@ -193,14 +192,14 @@ async function main() {
   });
   const result = await stageRecoveredJson({
     records, adapter, apply: options.apply,
-    onProgress: (event) => process.stdout.write(JSON.stringify(event) + "\\n"),
+    onProgress: (event) => process.stdout.write(JSON.stringify(event) + "\n"),
   });
-  process.stdout.write(JSON.stringify(result, null, 2) + "\\n");
+  process.stdout.write(JSON.stringify(result, null, 2) + "\n");
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   main().catch((error) => {
-    process.stderr.write("Recovered JSON staging failed: " + error.message + "\\n");
+    process.stderr.write("Recovered JSON staging failed: " + error.message + "\n");
     process.exitCode = 1;
   });
 }
