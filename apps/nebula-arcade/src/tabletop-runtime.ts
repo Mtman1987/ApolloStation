@@ -128,7 +128,7 @@ export class SqliteNebulaTabletopRuntime {
   }
   trade(tenant:string,actorId:string,actorName:string,input:{action:"offer"|"accept"|"decline"|"cancel";toId?:string;giveCardId?:number;wantCardId?:number;offerId?:string;requestId?:string},players:Record<string,{username?:string;displayName?:string}>={},now=Date.now()){
     const requestId=String(input.requestId??"").trim()||randomUUID();
-    if(requestId.length>160||/[\\r\\n\\0]/.test(requestId))throw new Error("A valid trade request ID is required.");
+    if(requestId.length>160||/[\r\n\0].test(requestId))throw new Error("A valid trade request ID is required.");
     this.db.exec("BEGIN IMMEDIATE");
     try{
       const prior=this.db.prepare("SELECT result FROM nebula_quackverse_trade_receipts WHERE tenant_id=? AND actor_id=? AND request_id=?").get(tenant,actorId,requestId) as {result:string}|undefined;
