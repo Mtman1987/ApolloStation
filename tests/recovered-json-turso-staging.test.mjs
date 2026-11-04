@@ -49,7 +49,7 @@ test("StreamWeaver tenant directories are kept distinct and token path is skippe
 
 test("dry-run stages nothing and apply is idempotent but rejects changed source", async () => {
   const records = [{
-    source: "chat-tag", tenant: "legacy-global", path: "data/app-state.json",
+    source: "nebula-legacy-global", tenant: "legacy-global", path: "data/app-state.json",
     sourceHash: "source-hash", payloadHash: "payload-hash", payload: '{"ok":true}',
   }];
   const rows = new Map();
@@ -63,14 +63,17 @@ test("dry-run stages nothing and apply is idempotent but rejects changed source"
     async execute(sql, args = [], wantRows = false) {
       calls.push(sql);
       if (sql.startsWith("SELECT source, tenant_key, source_path")) {
-        const row = rows.get(args.join("|"));
-        return { rows: row ? [[row.sourceHash, row.payloadHash]] : [] };
+        return {
+          rows: [...rows.entries()].map(([key, row]) => [
+            ...key.split("|"), row.sourceHash, row.payloadHash,
+          ]),
+        };
       }
       if (sql.startsWith("INSERT INTO")) {
         rows.set(args.slice(0, 3).join("|"), { sourceHash: args[3], payloadHash: args[4] });
         return { rows: [], affectedRows: 1 };
       }
-      if (sql.startsWith("SELECT source, COUNT(*)")) return { rows: [["chat-tag", rows.size]] };
+      if (sql.startsWith("SELECT source, COUNT(*)")) return { rows: [["nebula-legacy-global", rows.size]] };
       return { rows: [], affectedRows: 0 };
     },
   };
@@ -82,7 +85,7 @@ test("dry-run stages nothing and apply is idempotent but rejects changed source"
   assert.equal(rows.size, 1);
   const second = await stageRecoveredJson({ records, adapter, apply: true });
   assert.equal(rows.size, 1);
-  assert.equal(second.destinationCounts["chat-tag"], 1);
+  assert.equal(second.destinationCounts["nebula-legacy-global"], 1);
   await assert.rejects(
     stageRecoveredJson({ records: [{ ...records[0], payloadHash: "different" }], adapter, apply: true }),
     /refusing overwrite/,
