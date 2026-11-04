@@ -67,4 +67,4 @@ The smoke test uses a random synthetic namespace under `apollo-live-smoke`, chec
 A green smoke test proves the deployed process can reach Turso. It does not by itself prove that every application domain store has been migrated.
 
 
-The Nebula live host readiness endpoint now includes `mosaicStoreReady` and `mosaicStoreMode`, and returns HTTP 503 if the selected Mosaic persistence backend cannot pass its health check. On Hostless Node 2, the expected response is `mosaicStoreMode: "turso"` and `mosaicStoreReady: true`; `"sqlite"` means the deployment has not switched Mosaic to Turso yet.
+The Nebula live host readiness endpoint now includes `mosaicStoreReady` and `mosaicStoreMode`, and returns HTTP 503 if the selected Mosaic persistence backend cannot pass its health check. On Hostless Node 2, set `NEBULA_ARCADE_MOSAIC_STORE=turso` and `NEBULA_ARCADE_REQUIRE_TURSO=1`. The expected response is `mosaicStoreMode: "turso"`, `mosaicStoreReady: true`, and `ready: true`. With the requirement enabled, a local SQLite fallback reports HTTP 503 rather than appearing deploy-ready.
