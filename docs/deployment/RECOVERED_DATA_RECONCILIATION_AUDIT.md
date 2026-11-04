@@ -41,7 +41,7 @@ Preserve the original global snapshot as an immutable legacy source. Normalize t
 
 ## StreamWeaver findings
 
-The nested archive has 5,909 tar entries (5,070 regular files) and 57 directories under `data/runtime/tenants`, plus one separate legacy tree under `data/tenants`.
+The nested archive has 5,909 tar entries (5,908 regular files). Of those, 5,070 files are under `data/runtime/tenants`, which contains 57 distinct tenant-directory IDs; a separate legacy tree under `data/tenants/94371378` contains another 36 files.
 
 Direct path-based counting in this archive found:
 
