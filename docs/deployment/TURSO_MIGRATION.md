@@ -33,7 +33,7 @@ Stop the service that owns the source database first so the source cannot change
 node scripts/migrate-sqlite-to-turso.mjs --source /absolute/path/to/source.sqlite --apply
 ```
 
-The importer refuses a non-empty destination, never deletes or changes the source, copies table definitions and rows (including BLOB values), recreates indexes/views/triggers after data load, and verifies every table's row count plus `PRAGMA foreign_key_check`. It stops on the first SQL or verification error. Use one empty Turso database per independently owned SQLite file.
+The importer refuses a non-empty destination, never deletes or changes the source, copies table definitions and rows (including BLOB values and 64-bit integers), preserves `AUTOINCREMENT` sequence high-water marks and `user_version`, recreates indexes/views/triggers after data load, and verifies every table's row count plus `PRAGMA foreign_key_check`. It stops on the first SQL or verification error. Use one empty Turso database per independently owned SQLite file.
 
 ## Runtime integration status
 
