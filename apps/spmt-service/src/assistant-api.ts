@@ -1,12 +1,13 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { AuthDeniedError, type AuthService } from "@spmt/auth-core";
+import type { ExecutionTargetV1 } from "@spmt/contracts";
 import type { ControlService } from "@spmt/control-core";
 import type { ExecutionJobService } from "@spmt/execution-core";
 import type { SqliteMediaAssetStore } from "@spmt/platform-data-sqlite";
 import { StellarAssistantStore, StellarPrivateAssistant, StellarPublicMemory, StellarSpeechPresence, STELLAR_CHAT_CAPABILITY_ID, STELLAR_SPEECH_CAPABILITIES, TTS_VOICE_OPTIONS } from "@spmt/stellar-core";
 
 export class SpmtAssistantApi {
-  constructor(private readonly options: { store: StellarAssistantStore; publicMemory?:StellarPublicMemory; speechPresence?:StellarSpeechPresence; privateAssistant?:StellarPrivateAssistant; auth: AuthService; control: ControlService; jobs: ExecutionJobService; assets: SqliteMediaAssetStore; enabled: boolean; accessToken(request: IncomingMessage): string | undefined }) {}
+  constructor(private readonly options: { store: StellarAssistantStore; publicMemory?:StellarPublicMemory; speechPresence?:StellarSpeechPresence; privateAssistant?:StellarPrivateAssistant; auth: AuthService; control: ControlService; jobs: ExecutionJobService; assets: SqliteMediaAssetStore; enabled: boolean; executionTarget?: ExecutionTargetV1; accessToken(request: IncomingMessage): string | undefined }) {}
   async handle(request: IncomingMessage, response: ServerResponse, url: URL) {
     if (!url.pathname.startsWith("/v1/assistant/")) return false;
     try {
@@ -23,8 +24,8 @@ export class SpmtAssistantApi {
       const user = principal.actorId, path = url.pathname.slice("/v1/assistant/".length);
       if (request.method === "GET") {
         if (path === "speech/status") return json(response,200,{
-          synthesis:this.options.enabled&&this.options.jobs.hasReadyWorker({executionOwner:"stellar-core",executionTarget:"sprite",capabilityId:STELLAR_SPEECH_CAPABILITIES[0]!}),
-          transcription:this.options.enabled&&this.options.jobs.hasReadyWorker({executionOwner:"stellar-core",executionTarget:"sprite",capabilityId:STELLAR_SPEECH_CAPABILITIES[1]!}),
+          synthesis:this.options.enabled&&this.options.jobs.hasReadyWorker({executionOwner:"stellar-core",executionTarget:this.options.executionTarget ?? "sprite",capabilityId:STELLAR_SPEECH_CAPABILITIES[0]!}),
+          transcription:this.options.enabled&&this.options.jobs.hasReadyWorker({executionOwner:"stellar-core",executionTarget:this.options.executionTarget ?? "sprite",capabilityId:STELLAR_SPEECH_CAPABILITIES[1]!}),
         });
         if(path==="public-memory"){if(this.options.control.getTenant(tenant).ownerUserId!==user)return json(response,403,{message:"Only the workspace owner can manage public memory"});return json(response,200,{memories:this.options.publicMemory?.list(tenant)??[]});}
         if(path==="streams"){if(this.options.control.getTenant(tenant).ownerUserId!==user)return json(response,403,{message:"Only the workspace owner can inspect stream listeners"});return json(response,200,{listeners:this.options.speechPresence?.list(tenant)??[],widgets:this.options.control.listOverlayWidgets(tenant,"streamweaver").filter(w=>w.manifest.widgetId==="tts-player"),generatedAt:new Date().toISOString()});}
@@ -72,7 +73,7 @@ export class SpmtAssistantApi {
       if (!["speech/synthesize","speech/transcribe"].includes(path)) return json(response,404,{message:"Assistant route was not found"});
       if (!this.options.enabled) return json(response,503,{message:"External speech is disabled in this environment"});
       const capabilityId = path.endsWith("synthesize") ? STELLAR_SPEECH_CAPABILITIES[0]! : STELLAR_SPEECH_CAPABILITIES[1]!;
-      if (!this.options.jobs.hasReadyWorker({executionOwner:"stellar-core",executionTarget:"sprite",capabilityId})) return json(response,503,{message:"No speech worker is currently available"});
+      if (!this.options.jobs.hasReadyWorker({executionOwner:"stellar-core",executionTarget:this.options.executionTarget ?? "sprite",capabilityId})) return json(response,503,{message:"No speech worker is currently available"});
       const appId = header(request,"x-spmt-app") ?? "streamweaver";
       if (!this.options.control.listInstalls(tenant).some(i=>i.appId===appId&&i.enabled)) return json(response,403,{message:"Enable the source app in this workspace"});
       const input: Record<string,unknown> = {kind:"stellar.speech.request.v1",remember:false,mediaVisibility:"private"};
@@ -90,7 +91,7 @@ export class SpmtAssistantApi {
       if (!idempotencyKey || idempotencyKey.length > 200) return json(response,400,{message:"A request identifier is required"});
       const prior=this.options.jobs.findIdempotent(tenant,appId,user,idempotencyKey);
       if(prior&&(prior.capabilityId!==capabilityId||JSON.stringify(prior.input)!==JSON.stringify(input)))return json(response,409,{message:"Request identifier already used with different speech"});
-      const result=this.options.jobs.create({tenantId:tenant,ownerAppId:appId,executionOwner:"stellar-core",capabilityId,requestedByType:"user",requestedById:user,billedUserId:user,meteredResource:"hosted-worker-minutes",usageQuantity:1,executionTarget:"sprite",meteringTarget:"hosted",idempotencyKey,input});
+      const result=this.options.jobs.create({tenantId:tenant,ownerAppId:appId,executionOwner:"stellar-core",capabilityId,requestedByType:"user",requestedById:user,billedUserId:user,meteredResource:"hosted-worker-minutes",usageQuantity:1,executionTarget:this.options.executionTarget ?? "sprite",meteringTarget:"hosted",idempotencyKey,input});
       return json(response,202,{job:result.job});
     } catch(error) { return json(response,error instanceof AuthDeniedError?403:400,{message:error instanceof AuthDeniedError?"Assistant access denied":error instanceof Error?error.message:"Assistant request failed"}); }
   }

@@ -44,7 +44,7 @@ import {
 } from "@spmt/provider-grants-core";
 import { PlatformApiAdapter } from "@spmt/api-adapter";
 import { HealthRegistry } from "@spmt/runtime";
-import { assertAppCatalogRegistrationV1, assertBillingManifestV1, assertNormalizedChatMessageV1, BILLING_PLAN_IDS, type AppCatalogRegistrationV1, type BillingManifestV1, type BillingPlanIdV1, type ChatProviderV1, type NormalizedChatMessageV1 } from "@spmt/contracts";
+import { assertAppCatalogRegistrationV1, assertBillingManifestV1, assertNormalizedChatMessageV1, BILLING_PLAN_IDS, type AppCatalogRegistrationV1, type BillingManifestV1, type BillingPlanIdV1, type ChatProviderV1, type NormalizedChatMessageV1, type ExecutionTargetV1 } from "@spmt/contracts";
 import { STELLAR_CHAT_CAPABILITY_ID, StellarCommunityAssistantRuntime, StellarDataPrivacyService } from "@spmt/stellar-core";
 
 const USER_SCOPES = ["media:read","media:write","identity:read","identity:write","workspace:read","workspace:write","xp:read","apps:read","apps:install","entitlements:read","usage:read","events:read","jobs:read","jobs:write","commlink:read","commlink:write","notifications:read","notifications:write","devices:read","devices:pair","devices:command","webhooks:read","webhooks:write","assistants:read","assistants:invoke","stellar:context:read","stellar:context:write","stellar:capabilities:read","stellar:data:read","stellar:data:write"];
@@ -74,6 +74,7 @@ export interface SpmtServiceOptions {
   providerOAuthClients?: ProviderOAuthClientsV1;
   twitchBotRoles?: TwitchBotRole[];
   stellarChatEnabled?: boolean;
+  stellarExecutionTarget?: ExecutionTargetV1;
   speechEnabled?: boolean;
   stellarWorkerCredential?: string;
   chatGatewayEnabled?: boolean;
@@ -90,6 +91,8 @@ export interface SpmtServiceOptions {
 
 export function createSpmtService(options: SpmtServiceOptions) {
   const runtimeMode = options.runtimeMode ?? "production";
+  const stellarExecutionTarget = (options.stellarExecutionTarget ?? process.env.STELLAR_EXECUTION_TARGET ?? "sprite") as ExecutionTargetV1;
+  if (!["sprite", "fly", "companion", "hosted"].includes(stellarExecutionTarget)) throw new Error("STELLAR_EXECUTION_TARGET is invalid");
   if (runtimeMode === "sandbox" && (options.twitchClientId || options.twitchClientSecret || options.discordBotToken || options.sendDiscordDm)) {
     throw new Error("Sandbox mode rejects Twitch and Discord provider integrations");
   }
@@ -134,7 +137,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
   if (options.nebulaArcadeWorkerCredential) ensureNebulaArcadeIdentity(auth, options.nebulaArcadeWorkerCredential);
   if (options.hearMeOutRuntimeEnabled && (!options.hearMeOutWorkerCredential || options.hearMeOutWorkerCredential.length < 32)) throw new Error("An enabled HearMeOut runtime requires a 32+ character service credential");
   if (options.hearMeOutWorkerCredential) ensureHearMeOutIdentity(auth, options.hearMeOutWorkerCredential);
-  const communityAssistant = options.communityAssistant ?? new StellarCommunityAssistantRuntime(executionJobs, { enabled: Boolean(options.stellarChatEnabled), resolveRoute: (input) => resolveStellarRoute(control, executionJobs, input.tenantId, input.routingPreference ?? "automatic") });
+  const communityAssistant = options.communityAssistant ?? new StellarCommunityAssistantRuntime(executionJobs, { enabled: Boolean(options.stellarChatEnabled), executionTarget: stellarExecutionTarget, resolveRoute: (input) => resolveStellarRoute(control, executionJobs, input.tenantId, input.routingPreference ?? "automatic", stellarExecutionTarget) });
   const stellarPrivacy = new StellarDataPrivacyService(executionJobs, data, {assistantStore});
   const operations = new PlatformOperations(auth, authority, control, data, communityAssistant, options.coderRuntime, executionJobs, stellarPrivacy);
   const api = new PlatformApiAdapter(operations);
@@ -151,7 +154,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
   const publicMemory=new StellarPublicMemory(options.databasePath,executionJobs,communityAssistant,tenant=>commlinkLiveChat.list({tenantId:tenant,limit:500}),tenant=>control.getTenant(tenant).ownerUserId);
   const twitchBots=new TwitchBotApi({databasePath:options.databasePath,auth,authority,control,publicBaseUrl,enabled:runtimeMode==="production",fetchImpl,accessToken,roles:parseTwitchBotRoles(JSON.stringify(options.twitchBotRoles??[])),...(providerCredentials?{credentials:providerCredentials}:{}),...(accountProviderOAuthClient(options,"twitch")?{client:accountProviderOAuthClient(options,"twitch")!}:{})});
   const youtubeOAuth=new YouTubeOAuthApi({databasePath:options.databasePath,auth,authority,control,publicBaseUrl,enabled:runtimeMode==="production",fetchImpl,accessToken,...(providerCredentials?{credentials:providerCredentials}:{}),...(options.providerOAuthClients?.youtube?{client:options.providerOAuthClients.youtube}:{})});
-  const assistantApi = new SpmtAssistantApi({store:assistantStore,publicMemory,speechPresence,privateAssistant:new StellarPrivateAssistant(assistantStore,executionJobs,communityAssistant),auth,control,jobs:executionJobs,assets:mediaAssets,enabled:runtimeMode === "production" || options.speechEnabled === true,accessToken});
+  const assistantApi = new SpmtAssistantApi({store:assistantStore,publicMemory,speechPresence,privateAssistant:new StellarPrivateAssistant(assistantStore,executionJobs,communityAssistant),auth,control,jobs:executionJobs,assets:mediaAssets,enabled:runtimeMode === "production" || options.speechEnabled === true,executionTarget:stellarExecutionTarget,accessToken});
   mediaAssets.sweep();
   const mediaSweepTimer = setInterval(() => {mediaAssets.sweep();socialStreamStore.sweepPrivate();}, 15 * 60_000); mediaSweepTimer.unref();
   const health = new HealthRegistry();
@@ -213,7 +216,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
       }
       if (request.method === "GET" && url.pathname === "/health/stellar") {
         const status = communityAssistant.status();
-        const workers = executionJobs.listWorkers({ executionOwner: "stellar-core", executionTarget: "sprite", capabilityId: STELLAR_CHAT_CAPABILITY_ID, freshOnly: true });
+        const workers = executionJobs.listWorkers({ executionOwner: "stellar-core", executionTarget: stellarExecutionTarget, capabilityId: STELLAR_CHAT_CAPABILITY_ID, freshOnly: true });
         return json(response, status.availability === "available" ? 200 : 503, { schemaVersion: 1, availability: status.availability, ...(status.availability === "unavailable" ? { reason: status.unavailableReason } : {}), workers: workers.map((worker) => ({ workerId: worker.workerId, state: worker.state, providerHealthy: worker.providerHealthy, executionTarget: worker.executionTarget, lastHeartbeatAt: worker.lastHeartbeatAt, leaseExpiresAt: worker.leaseExpiresAt, metrics: worker.metrics })), buildSha: options.buildSha ?? "dev" });
       }
 
@@ -780,13 +783,13 @@ function billingPlan(entitlements: Array<{ key: string; value: string | number |
   for (const entitlement of entitlements) if (["billing.plan", "billing-plan", "plan", "tier"].includes(entitlement.key) && typeof entitlement.value === "string" && (BILLING_PLAN_IDS as readonly string[]).includes(entitlement.value)) return entitlement.value as BillingPlanIdV1;
   return "free";
 }
-function resolveStellarRoute(control: ControlService, jobs: ExecutionJobService, tenantId: string, preference: "automatic" | "hosted" | "companion") {
+function resolveStellarRoute(control: ControlService, jobs: ExecutionJobService, tenantId: string, preference: "automatic" | "hosted" | "companion", executionTarget: ExecutionTargetV1 = "sprite") {
   const plan = billingPlan(control.listEntitlements(tenantId));
   const companionInstalled = control.listInstalls(tenantId).some((install) => install.appId === "companion" && install.enabled);
   const companionReady = companionInstalled && jobs.hasReadyWorker({ executionOwner: "stellar-core", executionTarget: "companion", capabilityId: STELLAR_CHAT_CAPABILITY_ID, tenantId });
   if (preference === "companion" && plan !== "free" && companionReady) return { executionTarget: "companion" as const, meteringTarget: "companion" as const };
-  if (preference === "companion") return { executionTarget: "sprite" as const, meteringTarget: "hosted" as const, fallbackReason: plan === "free" ? "Companion routing requires a paid plan; hosted routing was selected." : "Companion is not connected and ready; hosted routing was selected." };
-  return { executionTarget: "sprite" as const, meteringTarget: "hosted" as const };
+  if (preference === "companion") return { executionTarget, meteringTarget: "hosted" as const, fallbackReason: plan === "free" ? "Companion routing requires a paid plan; hosted routing was selected." : "Companion is not connected and ready; hosted routing was selected." };
+  return { executionTarget, meteringTarget: "hosted" as const };
 }
 function ensureStellarWorkerIdentity(auth: AuthService, credential: string) {
   auth.reconcileServiceIdentity({ serviceId: "stellar-core", credential, scopes: ["jobs:read", "jobs:work", "stellar:context:read", "media:read", "media:write", "events:write"], tenantMode: "any" });
