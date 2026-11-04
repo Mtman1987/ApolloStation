@@ -94,4 +94,6 @@ test("Mosaic library page and browser script expose import, resume, share and ex
   assert.match(NEBULA_MOSAIC_LIBRARY_JS, /Share to gallery/);
   assert.match(NEBULA_MOSAIC_LIBRARY_JS, /Download PNG/);
   assert.match(NEBULA_MOSAIC_LIBRARY_JS, /Import a downloaded project/);
+  assert.match(NEBULA_MOSAIC_LIBRARY_JS, /Copy share link/);
+  assert.match(NEBULA_MOSAIC_LIBRARY_JS, /Open share page/);
 });
