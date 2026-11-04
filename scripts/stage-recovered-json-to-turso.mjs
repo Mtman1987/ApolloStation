@@ -125,26 +125,30 @@ export async function stageRecoveredJson({ records, adapter, apply = false, onPr
     PRIMARY KEY(source, tenant_key, source_path)
   ) STRICT`);
 
+  const existingResult = await adapter.execute(
+    `SELECT source, tenant_key, source_path, source_sha256, payload_sha256 FROM ${TABLE}`,
+    [], true,
+  );
+  const existing = new Map(existingResult.rows.map((row) => [
+    `${row[0]}\\0${row[1]}\\0${row[2]}`,
+    { sourceHash: row[3], payloadHash: row[4] },
+  ]));
   const pending = [];
   for (const record of records) {
-    const existing = await adapter.execute(
-      `SELECT source_sha256, payload_sha256 FROM ${TABLE} WHERE source=? AND tenant_key=? AND source_path=?`,
-      [record.source, record.tenant, record.path], true,
-    );
-    if (existing.rows.length) {
-      const [sourceHash, payloadHash] = existing.rows[0];
-      if (sourceHash !== record.sourceHash || payloadHash !== record.payloadHash) {
+    const key = `${record.source}\\0${record.tenant}\\0${record.path}`;
+    const prior = existing.get(key);
+    if (prior) {
+      if (prior.sourceHash !== record.sourceHash || prior.payloadHash !== record.payloadHash) {
         throw new Error(`Conflicting staged source already exists: ${record.source}/${record.path}; refusing overwrite`);
       }
       continue;
     }
     pending.push(record);
-    if (pending.length >= BATCH_SIZE) {
-      await insertBatch(adapter, pending.splice(0));
-      onProgress({ phase: "stage", staged: true });
-    }
   }
-  if (pending.length) await insertBatch(adapter, pending);
+  for (let offset = 0; offset < pending.length; offset += BATCH_SIZE) {
+    await insertBatch(adapter, pending.slice(offset, offset + BATCH_SIZE));
+    onProgress({ phase: "stage", staged: Math.min(offset + BATCH_SIZE, pending.length), total: pending.length });
+  }
   const verification = await adapter.execute(
     `SELECT source, COUNT(*) FROM ${TABLE} GROUP BY source`, [], true,
   );
@@ -157,13 +161,12 @@ export async function stageRecoveredJson({ records, adapter, apply = false, onPr
 }
 
 async function insertBatch(adapter, records) {
-  for (const record of records) {
-    await adapter.execute(
-      `INSERT INTO ${TABLE}(source,tenant_key,source_path,source_sha256,payload_sha256,payload_json)
-       VALUES(?,?,?,?,?,?)`,
-      [record.source, record.tenant, record.path, record.sourceHash, record.payloadHash, record.payload],
-    );
-  }
+  const statements = records.map((record) => ({
+    sql: `INSERT INTO ${TABLE}(source,tenant_key,source_path,source_sha256,payload_sha256,payload_json)
+          VALUES(?,?,?,?,?,?)`,
+    args: [record.source, record.tenant, record.path, record.sourceHash, record.payloadHash, record.payload],
+  }));
+  await adapter.pipeline(statements);
 }
 
 function parseArgs(argv) {
