@@ -117,7 +117,7 @@ function validateKokoroOrigin(value: string): URL {
   let url: URL;
   try { url = new URL(value); } catch { throw new StellarSpeechError("Local Kokoro URL is invalid"); }
   const host = url.hostname.toLowerCase();
-  const privateIpv4 = /^(?:127\\.|10\\.|192\\.168\\.|172\\.(?:1[6-9]|2[0-9]|3[01])\\.)/.test(host);
+  const privateIpv4 = /^(?:127\.|10\.|192\.168\.|172\.(?:1[6-9]|2[0-9]|3[01])\.)/.test(host);
   const internalName = host === "localhost" || host === "kokoro" || host === "stellar-kokoro" || host.endsWith(".internal") || host.endsWith(".local");
   if (url.protocol !== "http:" || !(privateIpv4 || internalName) || url.port !== "8080" || url.username || url.password || (url.pathname !== "/" && url.pathname !== "") || url.search || url.hash) {
     throw new StellarSpeechError("Local Kokoro URL must be an internal HTTP service on port 8080");
