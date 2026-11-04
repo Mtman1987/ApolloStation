@@ -6,12 +6,12 @@ const { tmpdir } = require('node:os');
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-function createSpotlightBroadcast({ chromiumPath, puppeteer, spotlightEndpoint = 'https://discord-stream-hub-new.fly.dev/api/community-spotlight' }) {
+function createSpotlightBroadcast({ chromiumPath, puppeteer, spotlightEndpoint = '' }) {
   let root, display, pulse, browser, page, host, encoder, startTask, activationTask, warningTimer, active = false, activated = false, failure = '', currentLogin = '';
   let init = Buffer.alloc(0), pending = Buffer.alloc(0), fragment = [], fragmentsSent = 0, lastFragmentAt = 0;
   const viewers = new Set();
   const children = [];
-  const profileDir = process.env.SPOTLIGHT_PROFILE_DIR || (process.env.FLY_APP_NAME ? '/data/spotlight-chromium' : join(tmpdir(), 'hmo-spotlight-chromium'));
+  const profileDir = process.env.SPOTLIGHT_PROFILE_DIR || join(tmpdir(), 'hmo-spotlight-chromium');
 
   function child(command, args, options = {}) {
     const proc = spawn(command, args, { stdio: ['ignore', 'ignore', 'pipe'], ...options });
@@ -31,6 +31,7 @@ function createSpotlightBroadcast({ chromiumPath, puppeteer, spotlightEndpoint =
   }
 
   async function ensureSource() {
+    if (!spotlightEndpoint) throw Error('SPOTLIGHT_ENDPOINT is required for the spotlight broadcaster');
     if (active && page && encoder && encoder.exitCode === null && Date.now() - lastFragmentAt < 15000) return;
     if (startTask) return startTask;
     startTask = (async () => {
