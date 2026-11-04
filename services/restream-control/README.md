@@ -21,7 +21,7 @@ The process requires an absolute profile path and the volume marker, creates an 
 
 ## Persistent profile
 
-Mount a dedicated encrypted OCI block volume at the host path used for `RESTREAM_PROFILE_HOST_PATH`. Run `sudo RESTREAM_PROFILE_HOST_PATH=/the/mount infra/oracle/prepare-restream-profile-volume.sh`; it refuses to create the marker unless the supplied path is itself a mount point. The container receives that path at `/var/lib/restream-profile`. Do not use anonymous container storage or the container layer. Provision the authenticated browser profile only through the owner's approved secure process. Never commit, upload to chat, or log cookies or profile contents. A fresh profile reports `login_required` until the owner signs in.
+Mount a dedicated encrypted OCI block volume at the host path used for `RESTREAM_PROFILE_HOST_PATH`. Run `sudo env RESTREAM_PROFILE_HOST_PATH=/the/mount bash infra/oracle/prepare-restream-profile-volume.sh`; it refuses to create the marker unless the supplied path is itself a mount point. The container receives that path at `/var/lib/restream-profile`. Do not use anonymous container storage or the container layer. Provision the authenticated browser profile only through the owner's approved secure process. Never commit, upload to chat, or log cookies or profile contents. A fresh profile reports `login_required` until the owner signs in.
 
 ## Network and StreamWeaver
 
