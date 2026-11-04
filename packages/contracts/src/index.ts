@@ -10,6 +10,11 @@ export const WORKLOAD_CLASSES = ["core", "elastic-http", "queue-worker", "bot-so
 export type WorkloadClassV1 = (typeof WORKLOAD_CLASSES)[number];
 export const EXECUTION_TARGETS = ["sprite", "fly", "companion", "hosted"] as const;
 export type ExecutionTargetV1 = (typeof EXECUTION_TARGETS)[number];
+export function parseExecutionTargetV1(value: unknown, fallback: ExecutionTargetV1 = "sprite", name = "execution target"): ExecutionTargetV1 {
+  if (value === undefined || value === null || value === "") return fallback;
+  if (typeof value !== "string" || !(EXECUTION_TARGETS as readonly string[]).includes(value)) throw new Error(`${name} is invalid`);
+  return value as ExecutionTargetV1;
+}
 
 export interface RuntimePolicyV1 {
   schemaVersion: 1;
