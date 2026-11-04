@@ -4,7 +4,7 @@ import { SqliteNebulaTabletopRuntime } from "./tabletop-runtime.js";
 import { SqliteNebulaGameInputStore } from "./game-inputs.js";
 import { readFileSync } from "node:fs";
 import { basename, isAbsolute } from "node:path";
-import { parseExecutionTargetV1, type ExecutionTargetV1, type NormalizedChatDeliveryV1, type NormalizedChatMessageV1, type OutboundChatMessageV1 } from "@spmt/contracts";
+import type { ExecutionTargetV1, NormalizedChatDeliveryV1, NormalizedChatMessageV1, OutboundChatMessageV1 } from "@spmt/contracts";
 import type { SpmtClient } from "@spmt/sdk";
 import { SqliteNebulaGameActionStore, validateNebulaGameAction } from "./game-actions.js";
 import { NEBULA_ARCADE_GAMES, parseNebulaMessage, resolveNebulaCommand, type NebulaCommandTargetV1 } from "./game-hub.js";
