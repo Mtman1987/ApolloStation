@@ -80,9 +80,9 @@ A successful one-time import does not prove the hostless runtime can save new da
 
 | Part | Status |
 |---|---|
-| 1. SQLite migration adapter | Implemented on PR #413; CI passing. Live Turso transfer not run. |
-| 1. Chat Tag JSON + StreamWeaver tenant import | Planned/tracked in issue #415; not yet imported. |
-| 2. Apollo async runtime persistence contract | Tracked in issue #414; not complete. |
+| 1. SQLite migration adapter | Implemented on PR #413; focused adapter CI is being revalidated after extracting the shared client. Live Turso transfer not run. |
+| 1. Chat Tag JSON + StreamWeaver tenant import | Redacted, tenant-preserving raw staging utility implemented; source-to-domain reconciliation and live import remain outstanding. |
+| 2. Apollo async runtime persistence contract | Shared async Turso client with baton-based interactive transactions implemented; application store/caller migrations and SQLite parity tests remain outstanding. |
 | 3. Hostless Turso connection and release verification | Not configured or tested yet. |
 
 The current work is preparation and safe tooling. No Turso destination has been written and no production runtime has been switched.
