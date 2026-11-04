@@ -90,3 +90,25 @@ test("Turso transaction rejects invalid modes", async () => {
   });
   await assert.rejects(adapter.transaction(async () => undefined, { mode: "unsafe" }), /Unsupported Turso transaction mode/);
 });
+
+test("parallel transaction calls are serialized on the same Hrana stream", async () => {
+  const calls = [];
+  const batons = ["stream-1", "stream-2", "stream-3", null];
+  const adapter = new TursoHttpAdapter({
+    url: "libsql://apollo.example.turso.io",
+    authToken: "test-only",
+    fetchImpl: async (_url, init) => {
+      calls.push(JSON.parse(init.body));
+      return response(batons[calls.length - 1], [ok()]);
+    },
+  });
+  await adapter.transaction(async (tx) => {
+    await Promise.all([
+      tx.execute("INSERT INTO probe(id) VALUES (?)", ["one"]),
+      tx.execute("INSERT INTO probe(id) VALUES (?)", ["two"]),
+    ]);
+  });
+  assert.deepEqual(calls.map((call) => call.baton), [null, "stream-1", "stream-2", "stream-3"]);
+  assert.deepEqual(calls.slice(1, 3).map((call) => call.requests[0].stmt.args[0].value), ["one", "two"]);
+  assert.equal(calls[3].requests[0].stmt.sql, "COMMIT");
+});
