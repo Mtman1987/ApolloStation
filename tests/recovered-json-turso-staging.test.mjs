@@ -72,7 +72,7 @@ test("dry-run stages nothing and apply is idempotent but rejects changed source"
       if (sql.startsWith("SELECT source, tenant_key, source_path")) {
         return {
           rows: [...rows.entries()].map(([key, row]) => [
-            ...key.split("\\u0000"), row.sourceHash, row.payloadHash, row.schemaVersion, row.recordCountsJson,
+            ...key.split("\u0000"), row.sourceHash, row.payloadHash, row.schemaVersion, row.recordCountsJson,
           ]),
         };
       }
@@ -85,7 +85,7 @@ test("dry-run stages nothing and apply is idempotent but rejects changed source"
         };
       }
       if (sql.startsWith("INSERT INTO")) {
-        rows.set(args.slice(0, 3).join("\\u0000"), {
+        rows.set(args.slice(0, 3).join("\u0000"), {
           source: args[0], tenant: args[1], path: args[2], sourceHash: args[3], payloadHash: args[4],
           schemaVersion: args[5], recordCountsJson: args[6],
         });
