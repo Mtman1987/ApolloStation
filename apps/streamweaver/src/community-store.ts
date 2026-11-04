@@ -1,3 +1,4 @@
+import { normalizeKokoroVoice } from "@spmt/stellar-core";
 import {StreamWeaverRideStore} from "./ride-store.js";
 import { DatabaseSync } from "node:sqlite";
 import { createHash } from "node:crypto";
@@ -109,8 +110,8 @@ export class StreamWeaverCommunityStore {
       this.db.exec("COMMIT");return result;
     }catch(error){this.db.exec("ROLLBACK");throw error;}
   }
-  checkinSettings(tenant:string):StreamCheckinSettings{return this.list<StreamCheckinSettings>(tenant,"checkin-settings")[0]??{enabled:false,aiEnabled:false,ttsEnabled:false,discordEnabled:false,greeting:"Welcome {user}! You checked in with {partner}.",prompt:"Write a short, warm public check-in greeting.",voice:"kokoro:af_heart"};}
-  saveCheckinSettings(tenant:string,input:StreamCheckinSettings){for(const key of ["enabled","aiEnabled","ttsEnabled","discordEnabled"] as const)if(typeof input[key]!=="boolean")throw Error("Choose valid check-in presentation settings");const value={enabled:input.enabled,aiEnabled:input.aiEnabled,ttsEnabled:input.ttsEnabled,discordEnabled:input.discordEnabled,greeting:text(input.greeting,1000),prompt:text(input.prompt,2000),voice:text(input.voice,128)};this.save(tenant,"checkin-settings","main",value);return value;}
+  checkinSettings(tenant:string):StreamCheckinSettings{const saved=this.list<StreamCheckinSettings>(tenant,"checkin-settings")[0];return saved?{...saved,voice:normalizeKokoroVoice(saved.voice)}:{enabled:false,aiEnabled:false,ttsEnabled:false,discordEnabled:false,greeting:"Welcome {user}! You checked in with {partner}.",prompt:"Write a short, warm public check-in greeting.",voice:"kokoro:af_heart"};}
+  saveCheckinSettings(tenant:string,input:StreamCheckinSettings){for(const key of ["enabled","aiEnabled","ttsEnabled","discordEnabled"] as const)if(typeof input[key]!=="boolean")throw Error("Choose valid check-in presentation settings");const value={enabled:input.enabled,aiEnabled:input.aiEnabled,ttsEnabled:input.ttsEnabled,discordEnabled:input.discordEnabled,greeting:text(input.greeting,1000),prompt:text(input.prompt,2000),voice:normalizeKokoroVoice(text(input.voice,128))};this.save(tenant,"checkin-settings","main",value);return value;}
   checkinGreeting(tenant:string,key:string):{jobId?:string;text?:string;failed?:boolean}|undefined{const row=this.db.prepare("SELECT body FROM sw_community_config WHERE tenant=? AND kind='checkin-greeting' AND id=?").get(tenant,key);return row?JSON.parse(String(row.body)):undefined;}
   saveCheckinGreeting(tenant:string,key:string,value:{jobId?:string;text?:string;failed?:boolean}){this.save(tenant,"checkin-greeting",key,value);}
   bulkCheckin(tenant:string,actor:string,sourceInput:string,requestId:string,entries:Array<{id:string;name:string}>,frontSeatId?:string){
