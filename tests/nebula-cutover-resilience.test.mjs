@@ -27,6 +27,11 @@ test('production readiness checks the internal runtime and persisted state',asyn
   try{
     await host.listen();const origin=`http://127.0.0.1:${host.server.address().port}`;
     let response=await fetch(origin+'/health/ready');assert.equal(response.status,200);const ready=await response.json();assert.equal(ready.buildSha,'cutover-test');assert.equal(ready.mosaicStoreReady,true);assert.equal(ready.mosaicStoreMode,'sqlite');
+    const previousRequireTurso=process.env.NEBULA_ARCADE_REQUIRE_TURSO;
+    process.env.NEBULA_ARCADE_REQUIRE_TURSO='1';
+    response=await fetch(origin+'/health/ready');assert.equal(response.status,503);
+    const blocked=await response.json();assert.equal(blocked.mosaicStoreMode,'sqlite');assert.equal(blocked.mosaicStoreRequired,true);
+    if(previousRequireTurso===undefined)delete process.env.NEBULA_ARCADE_REQUIRE_TURSO;else process.env.NEBULA_ARCADE_REQUIRE_TURSO=previousRequireTurso;
     const db=new DatabaseSync(t.path);db.prepare("INSERT INTO nebula_game_runtime VALUES('broken','default','{','2026-01-01T00:00:00.000Z')").run();db.close();
     response=await fetch(origin+'/health/ready');assert.equal(response.status,503);assert.equal((await response.json()).ready,false);
   }finally{await host.close();t.close();}
