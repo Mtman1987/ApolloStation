@@ -17,9 +17,11 @@ function setup(gameIds=ids){
  return {path,sent,activity,feed,games,async send(text,{user='alice',channel='chat-a',at=epoch,roles=['member'],sourceChannelId,isBot=false}={}){const id=String(++serial);await runtime.consumers[0].deliver({schemaVersion:1,deliveryId:id,consumerId:'nebula.arcade.provider-ingress',attempt:1,message:{schemaVersion:1,tenantId:'tenant-a',provider:'twitch',connectionId:'tw',channelId:channel,messageId:id,text,occurredAt:new Date(at).toISOString(),...(sourceChannelId?{sourceChannelId}:{}),actor:{providerUserId:user,canonicalUserId:user,username:user,displayName:user,roles,isBot},mentions:[]}})},restart(){runtime.close();runtime=new NebulaArcadeProviderRuntime(options)},close(){runtime.close();activity.close();feed.close();games.close();rmSync(dir,{recursive:true,force:true})}};
 }
 test('only a complete leading spmt token enters Nebula; compact and spaced names share guides',()=>{
- for(const text of ['!join','!accept','!pack','orange is my favorite','spmtpack','@spmt join','!spmt join','try spmt help'])assert.equal(parseNebulaMessage(text),null,text);
+ for(const text of ['!join','!accept','!pack','orange is my favorite','spmtpack','!spmt join','try spmt help'])assert.equal(parseNebulaMessage(text),null,text);
  for(const game of NEBULA_ARCADE_GAMES)for(const name of [game.id,game.name,game.name.replaceAll(' ','-'),game.name.replaceAll(' ','_')])for(const command of ['help','rules','commands','join'])assert.equal(parseNebulaMessage(`SPMT ${name} ${command}`).gameId,game.id);
  for(const name of ['tag','chattag','chat tag','chat-tag'])assert.deepEqual(nebulaGuideReplies(`spmt ${name} rules`,[], 'https://spmt.example'),nebulaGuideReplies('spmt tag rules',[],'https://spmt.example'));
+ assert.deepEqual(parseNebulaMessage('@spmt join'),{body:'join',gameId:'tag',command:'join',args:[]});
+ assert.deepEqual(parseNebulaMessage('@spmt tag @alice'),{body:'tag @alice',gameId:'tag',command:'tag',args:['@alice']});
  assert.equal(parseNebulaMessage('spmt tag @alice').command,'tag');
 });
 test('global help and rules list active games and link the full guide',()=>{
