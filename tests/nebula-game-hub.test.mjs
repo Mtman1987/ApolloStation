@@ -11,6 +11,8 @@ test("Nebula Arcade exposes twenty peer games with no featured ordering metadata
 
 test("Nebula Arcade tag game keeps its simple commands while other games use distinct public verbs", () => {
   assert.deepEqual(routeNebulaCommand("spmt join", ["tag", "bingo", "petrace", "wordstorm"]), [{ gameId: "tag", command: "join", args: [] }]);
+  assert.deepEqual(routeNebulaCommand("@spmt join", ["tag", "bingo", "petrace", "wordstorm"]), [{ gameId: "tag", command: "join", args: [] }]);
+  assert.deepEqual(routeNebulaCommand("@spmt tag @user", ["tag"]), [{ gameId: "tag", command: "tag", args: ["@user"] }]);
   assert.equal(resolveNebulaCommand("spmt card", ["tag", "bingo"]).targets[0].gameId, "bingo");
   assert.equal(resolveNebulaCommand("spmt pet dog", ["petrace"]).targets[0].gameId, "petrace");
   assert.equal(resolveNebulaCommand("spmt storm", ["wordstorm"]).targets[0].gameId, "wordstorm");
