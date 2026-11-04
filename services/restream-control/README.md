@@ -12,20 +12,22 @@ It ports the donor Puppeteer/Xvfb controller and its exact visible-button checks
 
 - `RESTREAM_CONTROL_CREDENTIAL`: dedicated random 32+ character secret; never reuse an SPMT, DSH, StreamWeaver or HearMeOut credential.
 - `RESTREAM_PROFILE_DIR=/var/lib/restream-profile`: absolute path on the mounted persistent volume.
+- `RESTREAM_PROFILE_VOLUME_MARKER=/var/lib/restream-profile/.restream-profile-volume`: marker file required at startup; prepare it only after verifying the host mount.
+- `RESTREAM_TLS_CERT_FILE` and `RESTREAM_TLS_KEY_FILE`: absolute paths to a private-CA certificate/key mounted read-only into the container.
 - `RESTREAM_AUTOMATION_ENABLED=false`: remains false until the owner-authorized rehearsal is complete.
 - `PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium`.
 
-The process requires an absolute profile path, creates an exclusive lock in the profile volume and refuses a second controller. If forcibly killed and a lock remains, first verify that no controller is running, then remove `.restream-control.lock` from the mounted profile volume. Never remove it while a controller may still be active.
+The process requires an absolute profile path and the volume marker, creates an exclusive lock in the profile volume and refuses a second controller. If forcibly killed and a lock remains, first verify that no controller is running, then remove `.restream-control.lock` from the mounted profile volume. Never remove it while a controller may still be active.
 
 ## Persistent profile
 
-Mount a dedicated encrypted OCI block volume at the host path used for `RESTREAM_PROFILE_HOST_PATH`. The container receives it at `/var/lib/restream-profile`. The process creates the directory with restrictive permissions; production orchestration must verify the actual block-volume mount before starting it. Do not use anonymous container storage or the container layer. Provision the authenticated browser profile only through the owner's approved secure process. Never commit, upload to chat, or log cookies or profile contents. A fresh profile reports `login_required` until the owner signs in.
+Mount a dedicated encrypted OCI block volume at the host path used for `RESTREAM_PROFILE_HOST_PATH`. Run `sudo RESTREAM_PROFILE_HOST_PATH=/the/mount infra/oracle/prepare-restream-profile-volume.sh`; it refuses to create the marker unless the supplied path is itself a mount point. The container receives that path at `/var/lib/restream-profile`. Do not use anonymous container storage or the container layer. Provision the authenticated browser profile only through the owner's approved secure process. Never commit, upload to chat, or log cookies or profile contents. A fresh profile reports `login_required` until the owner signs in.
 
 ## Network and StreamWeaver
 
-Attach this container to the private Docker network used by StreamWeaver. Do not publish port 3018 on the public host. Do not expose Chromium remote debugging, Xvfb, screenshots, cookies or profile files.
+Attach this container to the existing external Docker network `apollo-private`, also used by StreamWeaver. The compose file deliberately does not publish port 3018 on the host. Do not expose Chromium remote debugging, Xvfb, screenshots, cookies or profile files.
 
-The existing StreamWeaver production origin validator requires credential-free HTTPS. Therefore connect StreamWeaver through a trusted private HTTPS service endpoint or service-mesh TLS proxy. Do not configure the client with internal plaintext HTTP in production. Keep the dedicated credential server-side and reject redirects.
+The service itself listens on HTTPS and requires a certificate/key pair mounted read-only at `RESTREAM_TLS_CERT_FILE` and `RESTREAM_TLS_KEY_FILE`. Use a certificate trusted by the Apollo runtime with the private DNS name in its SAN. The existing StreamWeaver production origin validator requires credential-free HTTPS. Do not configure the client with internal plaintext HTTP in production. Keep the dedicated credential server-side and reject redirects.
 
 ## Verification and cutover
 
