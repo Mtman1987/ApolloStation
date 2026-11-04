@@ -38,4 +38,4 @@ jobs:
       - name: Compile workspace
         run: npm run build
       - name: Run Commander MT and MountainView route regressions
-        run: node --import ./scripts/offline-network-guard.mjs --test tests/mountainview-commander-listener.test.mjs tests/mountainview-commander-browser.test.mjs tests/mountainview-companion-platform.test.mjs
+        run: node --import ./scripts/offline-network-guard.mjs --test tests/mountainview-commander-listener.test.mjs tests/mountainview-commander-browser.test.mjs tests/mountainview-command-parity.test.mjs tests/mountainview-device-runtime.test.mjs tests/mountainview-companion-platform.test.mjs
