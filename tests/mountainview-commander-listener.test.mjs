@@ -52,12 +52,12 @@ test("transcript is bounded and blank or invalid timestamps do not add segments"
   assert.equal(buffer.snapshot(1_000).text, "");
 });
 
-test("destructive suite voice actions require confirmation before a job is created", async () => {
+test("broadcast suite voice actions require confirmation before a job is created", async () => {
   const calls = [];
   const client = { createSuiteActionJob: async (...args) => { calls.push(args); return { job: { id: "job-confirmed" }, duplicate: false }; } };
   const platform = new MountainViewPlatformClient(client, () => "2026-11-03T00:00:00.000Z", () => "voice-command-1");
   const context = { schemaVersion: 1, tenantId: "tenant-a", userId: "user-a", role: "owner" };
-  const command = "delete the discord message 123456789012345";
+  const command = "deploy admin calendar";
   const pending = await platform.routeVoice(command, context, { idempotencyKey: "commander-test-0001" });
   assert.equal(pending.status, "confirmation-required");
   assert.equal(calls.length, 0);
