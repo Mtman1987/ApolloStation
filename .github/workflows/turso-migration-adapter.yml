@@ -1,6 +1,7 @@
 name: Turso migration adapter
 
 on:
+  workflow_dispatch:
   pull_request:
     paths:
       - "scripts/migrate-sqlite-to-turso.mjs"
