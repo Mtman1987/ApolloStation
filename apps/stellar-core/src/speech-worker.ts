@@ -15,10 +15,12 @@ export class StellarSpeechWorker {
   constructor(private readonly client: SpmtClient, private readonly provider: StellarSpeechProvider, private readonly workerId: string, options: { executionTarget?: ExecutionTargetV1; capabilityIds?: string[] } = {}) { this.executionTarget = options.executionTarget ?? "sprite"; this.capabilityIds = options.capabilityIds ?? STELLAR_SPEECH_CAPABILITIES; }
   async runOnce() {
     if (!this.provider.configured()) return;
+    const providerHealthy = await this.provider.healthy();
     if (Date.now() - this.lastReport > 10_000) {
-      await this.client.reportExecutionWorker({ executionOwner: "stellar-core", workerId: this.workerId, executionTarget: this.executionTarget, state: "ready", providerHealthy: true, capabilityIds: this.capabilityIds, leaseMs: 30_000, startedAt: this.startedAt, metrics: {...this.metrics} });
+      await this.client.reportExecutionWorker({ executionOwner: "stellar-core", workerId: this.workerId, executionTarget: this.executionTarget, state: providerHealthy ? "ready" : "degraded", providerHealthy, capabilityIds: this.capabilityIds, leaseMs: 30_000, startedAt: this.startedAt, metrics: {...this.metrics} });
       this.lastReport = Date.now();
     }
+    if (!providerHealthy) return;
     const job = await this.client.claimAnyExecutionJob(this.workerId, this.executionTarget, { executionOwner: "stellar-core", capabilityIds: this.capabilityIds, leaseMs: 900_000 });
     if (!job?.leaseId) return;
     const lease = [job.tenantId, job.id, this.workerId, job.leaseId, job.fencingEpoch] as const;
