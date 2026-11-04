@@ -13,12 +13,26 @@ services:
       RESTREAM_CONTROL_CREDENTIAL: ${RESTREAM_CONTROL_CREDENTIAL:?Set a dedicated 32+ character receiver credential}
       RESTREAM_PROFILE_DIR: /var/lib/restream-profile
       RESTREAM_PROFILE_VOLUME_MARKER: /var/lib/restream-profile/.restream-profile-volume
+      RESTREAM_TLS_CERT_FILE: /run/secrets/restream-control.crt
+      RESTREAM_TLS_KEY_FILE: /run/secrets/restream-control.key
       RESTREAM_AUTOMATION_ENABLED: ${RESTREAM_AUTOMATION_ENABLED:-false}
       PUPPETEER_EXECUTABLE_PATH: /usr/bin/chromium
     volumes:
       - type: bind
         source: ${RESTREAM_PROFILE_HOST_PATH:?Mount the encrypted OCI profile volume on the host first}
         target: /var/lib/restream-profile
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${RESTREAM_TLS_CERT_HOST_PATH:?Mount the private TLS certificate on the host}
+        target: /run/secrets/restream-control.crt
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${RESTREAM_TLS_KEY_HOST_PATH:?Mount the private TLS key on the host}
+        target: /run/secrets/restream-control.key
+        read_only: true
         bind:
           create_host_path: false
     expose:
@@ -37,7 +51,7 @@ services:
     networks:
       - apollo-private
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3018/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      test: ["CMD", "node", "-e", "require('node:https').get({hostname:'127.0.0.1',port:3018,path:'/healthz',rejectUnauthorized:false},r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
       interval: 30s
       timeout: 5s
       retries: 3
