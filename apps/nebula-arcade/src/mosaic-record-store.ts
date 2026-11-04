@@ -1,4 +1,5 @@
-import { createAsyncJsonRecordStore, type AsyncJsonRecordStore } from "@spmt/async-json-store/factory";
+import { createAsyncJsonRecordStore } from "@spmt/async-json-store/factory";
+import type { AsyncJsonRecordStore } from "@spmt/async-json-store";
 import { createMosaicQueueState, type MosaicQueueState } from "./mosaic-core.js";
 import { normalizeMosaicQueueState } from "./mosaic-store.js";
 
