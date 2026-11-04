@@ -224,6 +224,30 @@ export function createSpaceMountainWebHost(options: SpaceMountainWebHostOptions)
   };
 }
 
+export function validateIntegratedWebEnvironment(environment: NodeJS.ProcessEnv) {
+  const runtimeMode = environment.SPMT_RUNTIME_MODE;
+  if (runtimeMode === "sandbox") return validateSandboxWebEnvironment(environment);
+  if (runtimeMode !== "production") throw new Error("SPMT_RUNTIME_MODE must be production or sandbox");
+  const serviceOrigin = (value: string, name: string) => {
+    let url: URL;
+    try { url = new URL(value); } catch { throw new Error(`${name} must be an absolute URL`); }
+    const loopback = ["127.0.0.1", "localhost", "[::1]"].includes(url.hostname);
+    if (url.protocol !== "https:" && !(url.protocol === "http:" && loopback)) throw new Error(`${name} must use HTTPS, or loopback HTTP for a co-located service`);
+    if (url.username || url.password || url.pathname !== "/" || url.search || url.hash) throw new Error(`${name} must be a credential-free origin`);
+    return url.origin;
+  };
+  const greenAppOrigins: Partial<Record<"discord-stream-hub" | "streamweaver" | "hearmeout" | "mountainview" | "companion", string>> = {};
+  for (const [appId, name] of [["discord-stream-hub", "DSH_WEB_ORIGIN"], ["streamweaver", "STREAMWEAVER_WEB_ORIGIN"], ["hearmeout", "HEARMEOUT_WEB_ORIGIN"], ["mountainview", "MOUNTAINVIEW_WEB_ORIGIN"], ["companion", "COMPANION_WEB_ORIGIN"]] as const) {
+    const value = environment[name];
+    if (value) greenAppOrigins[appId] = serviceOrigin(value, name);
+  }
+  return {
+    spmtOrigin: serviceOrigin(environment.SPMT_ORIGIN ?? "", "SPMT_ORIGIN"),
+    ...(environment.NEBULA_ARCADE_ORIGIN ? { nebulaArcadeOrigin: serviceOrigin(environment.NEBULA_ARCADE_ORIGIN, "NEBULA_ARCADE_ORIGIN") } : {}),
+    ...(Object.keys(greenAppOrigins).length ? { greenAppOrigins } : {}),
+  };
+}
+
 export function validateSandboxWebEnvironment(environment: NodeJS.ProcessEnv) {
   if (environment.SPMT_RUNTIME_MODE !== "sandbox") throw new Error("SPMT_RUNTIME_MODE=sandbox is required");
   if (environment.SPMT_OUTBOUND_MODE !== "disabled") throw new Error("SPMT_OUTBOUND_MODE=disabled is required");
