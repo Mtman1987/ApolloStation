@@ -13,6 +13,9 @@ test("Nebula Arcade tag game keeps its simple commands while other games use dis
   assert.deepEqual(routeNebulaCommand("spmt join", ["tag", "bingo", "petrace", "wordstorm"]), [{ gameId: "tag", command: "join", args: [] }]);
   assert.deepEqual(routeNebulaCommand("@spmt join", ["tag", "bingo", "petrace", "wordstorm"]), [{ gameId: "tag", command: "join", args: [] }]);
   assert.deepEqual(routeNebulaCommand("@spmt tag @user", ["tag"]), [{ gameId: "tag", command: "tag", args: ["@user"] }]);
+  assert.deepEqual(routeNebulaCommand("@spmt arcade join", ["tag"]), [{ gameId: "tag", command: "join", args: [] }]);
+  assert.deepEqual(routeNebulaCommand("@spmt", ["tag"]), []);
+  assert.deepEqual(routeNebulaCommand("@spmt arcade", ["tag"]), []);
   assert.equal(resolveNebulaCommand("spmt card", ["tag", "bingo"]).targets[0].gameId, "bingo");
   assert.equal(resolveNebulaCommand("spmt pet dog", ["petrace"]).targets[0].gameId, "petrace");
   assert.equal(resolveNebulaCommand("spmt storm", ["wordstorm"]).targets[0].gameId, "wordstorm");
