@@ -18,7 +18,7 @@ import { SqliteNebulaGameMixStore, type NebulaGameMixV1 } from "./game-mixes.js"
 import { getNebulaGameStats, joinNebulaGame, leaveNebulaGame, normalizeNebulaPlayerId, resolveNebulaChannelGameIds, setNebulaChannelGameRunning } from "./game-runtime.js";
 import { SqliteNebulaGameRuntimeStore } from "./game-runtime-store.js";
 import { SqliteNebulaMosaicStore } from "./mosaic-store.js";
-import { findMosaicArtwork, mosaicPublicSnapshot, mosaicTemplate, publishMosaic, resumeMosaicProject, sharedMosaicProjects, startMosaicProject, validateMosaicTemplate } from "./mosaic-core.js";
+import { findMosaicArtwork, mosaicPublicSnapshot, mosaicTemplate, publishMosaic, resumeMosaicProject, sharedMosaicProjects, startMosaicProject } from "./mosaic-core.js";
 import { mosaicTemplatePng } from "./mosaic-export.js";
 import { NEBULA_MOSAIC_OVERLAY_JS, renderNebulaMosaicOverlay } from "./mosaic-overlay.js";
 import { buildNebulaGameplayManifest, NEBULA_GAMEPLAY_SHOWCASE_CSS, renderNebulaGameplayCapturePage } from "./gameplay-showcase.js";
@@ -128,7 +128,7 @@ export function createNebulaArcadeSandboxHost(options: NebulaArcadeSandboxHostOp
             }
             if (action === "start" || action === "import") {
               const artwork = body.artworkId ? findMosaicArtwork(state, String(body.artworkId)) : undefined;
-              const template = action === "import" ? validateMosaicTemplate(body.template) : selectedShared?.template || (artwork ? mosaicTemplate(artwork) : undefined);
+              const template = action === "import" ? body.template : selectedShared?.template || (artwork ? mosaicTemplate(artwork) : undefined);
               if (!template) throw new Error("Painting not found");
               return startMosaicProject(state, template, body.replace === true);
             }
