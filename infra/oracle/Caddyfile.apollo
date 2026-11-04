@@ -1,0 +1,40 @@
+{$SPMT_PUBLIC_HOST} {
+  encode zstd gzip
+  reverse_proxy spacemountain-web:8080
+}
+
+{$SPMT_API_HOST} {
+  encode zstd gzip
+  reverse_proxy spmt-service:3000
+}
+
+{$NEBULA_PUBLIC_HOST} {
+  encode zstd gzip
+  reverse_proxy nebula-live:3100
+}
+
+{$STREAMWEAVER_PUBLIC_HOST} {
+  encode zstd gzip
+  reverse_proxy streamweaver-web:3202
+}
+
+{$DSH_PUBLIC_HOST} {
+  encode zstd gzip
+  reverse_proxy dsh-web:3201
+}
+
+{$HEARMEOUT_PUBLIC_HOST} {
+  encode zstd gzip
+  reverse_proxy hearmeout-web:3200
+}
+
+{$RESTREAM_PRIVATE_HOST} {
+  tls /etc/caddy/tls/restream-control.crt /etc/caddy/tls/restream-control.key
+  @public not remote_ip private_ranges
+  respond @public 403
+  reverse_proxy https://restream-control:3018 {
+    transport http {
+      tls_server_name {$RESTREAM_PRIVATE_HOST}
+    }
+  }
+}
