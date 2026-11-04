@@ -24,9 +24,14 @@ export function encodeHranaValue(value) {
   throw new Error(`Unsupported SQLite value type: ${typeof value}`);
 }
 
-function decodeHranaValue(value) {
+export function decodeHranaValue(value) {
   if (!value || value.type === "null") return null;
-  if (value.type === "integer") return Number(value.value);
+  if (value.type === "integer") {
+    const integer = BigInt(value.value);
+    return integer <= BigInt(Number.MAX_SAFE_INTEGER) && integer >= BigInt(Number.MIN_SAFE_INTEGER)
+      ? Number(integer)
+      : integer;
+  }
   if (value.type === "float") return value.value;
   if (value.type === "text") return value.value;
   if (value.type === "blob") return Buffer.from(value.base64, "base64");
