@@ -1,29 +1,35 @@
 import type { SpmtClient } from "@spmt/sdk";
+import type { ExecutionTargetV1 } from "@spmt/contracts";
+import { DEFAULT_TTS_VOICE } from "./speech-voices.js";
 import { StellarSpeechError, StellarSpeechProvider } from "./speech-provider.js";
 
-export const STELLAR_SPEECH_CAPABILITIES = ["stellar.speech.synthesize.v1", "stellar.speech.transcribe.v1"];
+export const STELLAR_SPEECH_SYNTHESIS_CAPABILITY = "stellar.speech.synthesize.v1";
+export const STELLAR_SPEECH_TRANSCRIPTION_CAPABILITY = "stellar.speech.transcribe.v1";
+export const STELLAR_SPEECH_CAPABILITIES = [STELLAR_SPEECH_SYNTHESIS_CAPABILITY, STELLAR_SPEECH_TRANSCRIPTION_CAPABILITY];
 export class StellarSpeechWorker {
+  private readonly executionTarget: ExecutionTargetV1;
+  private readonly capabilityIds: string[];
   private lastReport = 0;
   private readonly metrics={completedJobs:0,failedJobs:0,inputUnits:0,outputUnits:0};
   private readonly startedAt = new Date().toISOString();
-  constructor(private readonly client: SpmtClient, private readonly provider: StellarSpeechProvider, private readonly workerId: string) {}
+  constructor(private readonly client: SpmtClient, private readonly provider: StellarSpeechProvider, private readonly workerId: string, options: { executionTarget?: ExecutionTargetV1; capabilityIds?: string[] } = {}) { this.executionTarget = options.executionTarget ?? "sprite"; this.capabilityIds = options.capabilityIds ?? STELLAR_SPEECH_CAPABILITIES; }
   async runOnce() {
     if (!this.provider.configured()) return;
     if (Date.now() - this.lastReport > 10_000) {
-      await this.client.reportExecutionWorker({ executionOwner: "stellar-core", workerId: this.workerId, executionTarget: "sprite", state: "ready", providerHealthy: true, capabilityIds: STELLAR_SPEECH_CAPABILITIES, leaseMs: 30_000, startedAt: this.startedAt, metrics: {...this.metrics} });
+      await this.client.reportExecutionWorker({ executionOwner: "stellar-core", workerId: this.workerId, executionTarget: this.executionTarget, state: "ready", providerHealthy: true, capabilityIds: this.capabilityIds, leaseMs: 30_000, startedAt: this.startedAt, metrics: {...this.metrics} });
       this.lastReport = Date.now();
     }
-    const job = await this.client.claimAnyExecutionJob(this.workerId, "sprite", { executionOwner: "stellar-core", capabilityIds: STELLAR_SPEECH_CAPABILITIES, leaseMs: 900_000 });
+    const job = await this.client.claimAnyExecutionJob(this.workerId, this.executionTarget, { executionOwner: "stellar-core", capabilityIds: this.capabilityIds, leaseMs: 900_000 });
     if (!job?.leaseId) return;
     const lease = [job.tenantId, job.id, this.workerId, job.leaseId, job.fencingEpoch] as const;
     const mediaLease = { jobId: job.id, leaseId: job.leaseId, fencingEpoch: job.fencingEpoch };
     try {
       if (job.input.simulation === true || typeof job.input.simulationRoomId === "string") throw new StellarSpeechError("Speech providers are disabled for simulation jobs");
       await this.client.heartbeatExecutionJob(...lease, { percent: 10, message: "Processing speech" }, 900_000);
-      if (job.capabilityId === "stellar.speech.synthesize.v1") {
-        const result = await this.provider.synthesize(String(job.input.text ?? ""), String(job.input.voice ?? "deepgram:aura-2:athena"), job.tenantId);
+      if (job.capabilityId === STELLAR_SPEECH_SYNTHESIS_CAPABILITY) {
+        const result = await this.provider.synthesize(String(job.input.text ?? ""), String(job.input.voice ?? DEFAULT_TTS_VOICE), job.tenantId);
         this.metrics.inputUnits+=String(job.input.text??"").length;this.metrics.outputUnits+=result.bytes.byteLength;
-        const asset = await this.client.uploadMediaAsset(job.tenantId, { name: "spoken-reply.mp3", contentType: result.contentType, purpose: "speech", expiresInSeconds: 3600 }, result.bytes, `speech:${job.id}`, mediaLease);
+        const asset = await this.client.uploadMediaAsset(job.tenantId, { name: result.contentType === "audio/wav" ? "spoken-reply.wav" : "spoken-reply.mp3", contentType: result.contentType, purpose: "speech", expiresInSeconds: 3600 }, result.bytes, `speech:${job.id}`, mediaLease);
         let mediaUrl:string|undefined;
         if(job.input.mediaVisibility==="public"&&job.ownerAppId==="streamweaver") {
           const published=await this.client.publishMediaAsset(job.tenantId,asset.id,mediaLease);mediaUrl=published.publicUrl;
