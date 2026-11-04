@@ -40,6 +40,12 @@ test("Nebula Arcade tag-game command words and canonical module prefix remain re
   assert.deepEqual(parseNebulaTagCommandText("@spmt sleep"), { kind: "sleep" });
   assert.deepEqual(parseNebulaTagCommandText("@spmt wake"), { kind: "wake" });
   assert.deepEqual(parseNebulaTagCommandText("@spmt help"), { kind: "help" });
+  assert.deepEqual(parseNebulaTagCommandText("@spmt rules"), { kind: "rules" });
+  assert.deepEqual(parseNebulaTagCommandText("@spmt rank"), { kind: "rank" });
+  assert.deepEqual(parseNebulaTagCommandText("@spmt players"), { kind: "players" });
+  assert.deepEqual(parseNebulaTagCommandText("@spmt stats"), { kind: "score" });
+  assert.deepEqual(parseNebulaTagCommandText("@spmt whosit"), { kind: "status" });
+  assert.deepEqual(parseNebulaTagCommandText("@spmt givepass @TargetUser"), { kind: "grant-pass", targetUsername: "targetuser" });
   assert.deepEqual(parseNebulaTagCommandText("SPMT tag @TargetUser"), { kind: "tag", targetUsername: "targetuser" });
   assert.deepEqual(parseNebulaTagCommandText("spmt pass target"), { kind: "pass", targetUsername: "target" });
   assert.deepEqual(parseNebulaTagCommandText("spmt givepass @target"), { kind: "grant-pass", targetUsername: "target" });
