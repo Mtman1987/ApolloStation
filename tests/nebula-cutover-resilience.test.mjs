@@ -26,7 +26,7 @@ test('production readiness checks the internal runtime and persisted state',asyn
   const t=temp();const host=createNebulaArcadeLiveHost({databasePath:t.path,tenantId:'tenant',channelId:'room',spmtOrigin:'http://spmt.example',publicOrigin:'https://arcade.example',credential:'service-credential-that-is-long-enough',host:'127.0.0.1',port:0,buildSha:'cutover-test'});
   try{
     await host.listen();const origin=`http://127.0.0.1:${host.server.address().port}`;
-    let response=await fetch(origin+'/health/ready');assert.equal(response.status,200);assert.equal((await response.json()).buildSha,'cutover-test');
+    let response=await fetch(origin+'/health/ready');assert.equal(response.status,200);const ready=await response.json();assert.equal(ready.buildSha,'cutover-test');assert.equal(ready.mosaicStoreReady,true);assert.equal(ready.mosaicStoreMode,'sqlite');
     const db=new DatabaseSync(t.path);db.prepare("INSERT INTO nebula_game_runtime VALUES('broken','default','{','2026-01-01T00:00:00.000Z')").run();db.close();
     response=await fetch(origin+'/health/ready');assert.equal(response.status,503);assert.equal((await response.json()).ready,false);
   }finally{await host.close();t.close();}
