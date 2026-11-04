@@ -32,10 +32,10 @@ test("avatar worker rigs the uploaded GLB directly and activates the output",asy
   };
   const geometry={rig:async bytes=>{rigInput=Buffer.from(bytes);return{glb:outputGlb,validation}}};
   try{
-    const worker=new StreamWeaverAvatarWorker(client,geometry,{workerId:"avatar",activate:async(...args)=>activated.push(args)});
+    const worker=new StreamWeaverAvatarWorker(client,geometry,{workerId:"avatar",executionTarget:"hosted",activate:async(...args)=>activated.push(args)});
     await worker.runOnce();
     assert.deepEqual(rigInput,glb);
-    assert.equal(calls.find(call=>call[0]==="claim")[2],"fly");
+    assert.equal(calls.find(call=>call[0]==="claim")[2],"hosted");
     assert.equal(calls.at(-1)[0],"succeeded");
     assert.equal(activated[0][1].modelUrl,"https://media.test/rigged-avatar.glb");
     assert.equal(events[0][1],"streamweaver.avatar.model.updated.v1");
@@ -79,7 +79,7 @@ test("Blender rigging consumes the existing GLB directly, bounds jaw weights to 
   assert.match(rigScript,/lower_jaw_z = pivot_world\.z - head_height \* 0\.38/);
   assert.match(rigScript,/unrigged full-body character/);assert.match(rigScript,/no recognizable Head bone/);assert.match(rigScript,/Refusing to assign the whole mesh to the head/);assert.doesNotMatch(rigScript,/head_group\.add\(\[v\.index for v in obj\.data\.vertices\], 1\.0, "REPLACE"\)/);
   assert.doesNotMatch(rigScript,/view-\{String\(index\)/);
-  assert.match(webControls,/executionTarget:"fly",meteringTarget:"hosted",input:\{schemaVersion:1,modelAssetId\}/);
+  assert.match(webControls,/executionTarget:parseExecutionTargetV1\(process\.env\.STELLAR_EXECUTION_TARGET\),meteringTarget:"hosted",input:\{schemaVersion:1,modelAssetId\}/);
 });
 
 test("shared media accepts a bounded GLB avatar",()=>{const directory=mkdtempSync(join(tmpdir(),"avatar-media-")),store=new SqliteMediaAssetStore(join(directory,"media.sqlite"));try{const asset=store.upload({tenantId:"tenant",ownerUserId:"owner",sourceAppId:"streamweaver",idempotencyKey:"avatar",limitBytes:1024,name:"avatar.glb",contentType:"model/gltf-binary",purpose:"avatar"},glb);assert.equal(asset.contentType,"model/gltf-binary");}finally{store.close();rmSync(directory,{recursive:true,force:true})}});
