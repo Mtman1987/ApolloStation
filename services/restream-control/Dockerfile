@@ -1,6 +1,7 @@
 FROM node:22-bookworm-slim
 
 ENV NODE_ENV=production \
+    HOME=/tmp/restream-home \
     PUPPETEER_SKIP_DOWNLOAD=true \
     PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium \
     RESTREAM_PROFILE_DIR=/var/lib/restream-profile \
