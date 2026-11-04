@@ -8,6 +8,15 @@ on:
       - apps/streamweaver/src/overlay-widgets.ts
       - apps/streamweaver/src/community-runtime.ts
       - apps/nebula-arcade/src/provider-runtime.ts
+      - apps/mountainview/src/commander-listener.ts
+      - apps/mountainview/src/index.ts
+      - apps/mountainview/src/platform-client.ts
+      - apps/mountainview/src/voice-router.ts
+      - apps/mountainview/src/web-server.ts
+      - tests/mountainview-commander-listener.test.mjs
+      - tests/mountainview-commander-browser.test.mjs
+      - tests/mountainview-companion-platform.test.mjs
+      - .github/workflows/mountainview-commander-validation.yml
       - tests/streamweaver-chat-gateway.test.mjs
       - tests/streamweaver-overlay-widgets.test.mjs
       - .github/workflows/streamweaver-parity-validation.yml
@@ -37,7 +46,7 @@ jobs:
         run: npm run build
       - name: Run focused pull-request regressions
         if: github.event_name == 'pull_request'
-        run: node --import ./scripts/offline-network-guard.mjs --test tests/streamweaver-rides.test.mjs tests/streamweaver-chat-gateway.test.mjs tests/streamweaver-overlay-widgets.test.mjs
+        run: node --import ./scripts/offline-network-guard.mjs --test tests/streamweaver-rides.test.mjs tests/streamweaver-chat-gateway.test.mjs tests/streamweaver-overlay-widgets.test.mjs tests/mountainview-commander-listener.test.mjs tests/mountainview-commander-browser.test.mjs tests/mountainview-companion-platform.test.mjs
       - name: Run full manual StreamWeaver regressions
         if: github.event_name == 'workflow_dispatch'
         run: node --import ./scripts/offline-network-guard.mjs --test tests/streamweaver-tts-text.test.mjs tests/streamweaver-shoutout-runtime.test.mjs tests/streamweaver-provider-runtime.test.mjs tests/streamweaver-eventsub-lifecycle.test.mjs tests/streamweaver-rides.test.mjs tests/streamweaver-stella-lounge-host.test.mjs tests/streamweaver-chat-gateway.test.mjs tests/streamweaver-overlay-widgets.test.mjs
