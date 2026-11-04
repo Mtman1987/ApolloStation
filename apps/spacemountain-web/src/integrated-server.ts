@@ -86,7 +86,7 @@ function validateProxyOrigin(originValue:string){
   if(target.protocol!=="https:"&&!(target.protocol==="http:"&&loopback))throw new Error("Parity proxy targets must use HTTPS, or loopback HTTP for local development");
   return target;
 }
-function stripHopByHopHeaders(headers:Record<string,string|string[]|number|undefined>){
+export function stripHopByHopHeaders(headers:Record<string,string|string[]|number|undefined>){
   const connection=headers.connection;
   const connectionTokens=Array.isArray(connection)?connection.join(","):typeof connection==="string"?connection:"";
   for(const token of connectionTokens.split(",")){

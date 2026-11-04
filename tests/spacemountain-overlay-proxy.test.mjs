@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import test from "node:test";
 import { createSpaceMountainWebHost, validateIntegratedWebEnvironment } from "../apps/spacemountain-web/dist/server.js";
-import { createIntegratedSpaceMountainWebHost } from "../apps/spacemountain-web/dist/integrated-server.js";
+import { createIntegratedSpaceMountainWebHost, stripHopByHopHeaders } from "../apps/spacemountain-web/dist/integrated-server.js";
 import { createSpmtOutputGateway } from "../apps/spmt-service/dist/output-gateway.js";
 
 function origin(server) { return `http://127.0.0.1:${server.address().port}`; }
@@ -173,4 +173,30 @@ test("integrated gateway keeps sandbox origins loopback-only", () => {
     SPMT_ORIGIN: "http://127.0.0.1:3000",
     DSH_WEB_ORIGIN: "http://discord.example.test",
   }), /resolve to loopback/);
+});
+
+
+test("ingress proxy strips standard and Connection-nominated hop-by-hop headers", () => {
+  const headers = {
+    connection: "keep-alive, x-private-hop",
+    "keep-alive": "timeout=5",
+    "x-private-hop": "must-not-cross-node",
+    "proxy-authenticate": "Basic realm=internal",
+    "proxy-authorization": "Basic secret",
+    te: "trailers",
+    trailer: "x-checksum",
+    "transfer-encoding": "chunked",
+    upgrade: "websocket",
+    "proxy-connection": "keep-alive",
+    "content-type": "application/json",
+    "content-length": "12",
+    authorization: "Bearer service-token",
+  };
+  stripHopByHopHeaders(headers);
+  for (const name of ["connection", "keep-alive", "x-private-hop", "proxy-authenticate", "proxy-authorization", "te", "trailer", "transfer-encoding", "upgrade", "proxy-connection"]) {
+    assert.equal(headers[name], undefined, name);
+  }
+  assert.equal(headers["content-type"], "application/json");
+  assert.equal(headers["content-length"], "12");
+  assert.equal(headers.authorization, "Bearer service-token");
 });
