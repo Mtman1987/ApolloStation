@@ -1,6 +1,6 @@
 # External database strategy for ApolloStation
 
-Status: design decision and migration gate; no provider account, database, credential, or production data was created or changed.
+Status: design decision and migration gate. As of 2026-11-04, the owner has created one Turso pilot database (`apollo-persistence-spike`, `aws-us-east-1`) and three Hostless accounts for the agreed Core / Live+Games / Discord roles. No recovered data has been imported, no production credential has been added to source control, and no Hostless app resource or production deployment has been provisioned.
 
 ## Decision
 

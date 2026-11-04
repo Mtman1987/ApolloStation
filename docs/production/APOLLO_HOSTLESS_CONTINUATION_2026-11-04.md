@@ -61,3 +61,41 @@ Oracle Terraform and Compose remain preserved alternative-hosting artifacts, not
 2. Generate the committed runtime-only inventory, reconcile per-app owner/DB-path mappings and select the smallest low-risk external-store adapter proof. Keep local SQLite fixtures as the reference; prove transactions, retry/idempotency, export/restore before migration.
 3. Add role-specific packaging only after durable storage is proven. Preserve Node 2 co-location and Node 1 canonical authority; synthetic cross-node acceptance must cover login, roles, chat/event delivery, game state, Discord output, overlays and restart recovery.
 4. Configure secrets only through authorized provider secret settings; do not solicit or commit credentials in chat. Cutover and paid infrastructure still require explicit approval.
+
+
+## Persistence migration continuation — 2026-11-04 late update
+
+This section supersedes any earlier pending status for the Turso adapter and Nebula Mosaic pilot. It does not claim a production cutover.
+
+### Merged main milestones
+
+- **PR #413** merged at `65088535353bf47a7ad47503629fa7f6a6d5ea76`: shared async Turso/libSQL HTTP client, generic async JSON record-store contract with local SQLite reference backend, SQLite transfer utility, and Chat Tag/StreamWeaver raw JSON staging utility.
+- **PR #417** merged at `805b63f850049047f6b14c4cc24d8ece2f5e99c7`: Nebula Mosaic-only async Turso runtime integration. It does not migrate Nebula Tag/player/economy/game state or any other app's synchronous SQLite stores.
+- **PR #419** merged at `8cea5f90e91fbcf1f4b34f65881875d94dfaad01`: fixes sensitive-field redaction for plural/camelCase token and webhook containers; accepts the documented `--chat-tag-root` flag; and makes default staging dry-run work without Turso credentials or network access. Its full offline-network regression workflow passed.
+
+### Recovered archive evidence
+
+- Immutable source ZIPs and nested application archives were read into separate working copies; original archives remain unchanged.
+- Chat Tag source: 16 valid JSON documents, zero parse failures, four documents containing redacted fields; all remain one `legacy-global` staging scope.
+- StreamWeaver source: 5,731 candidate JSON documents after sensitive-path exclusions, zero parse failures, 251 documents containing redacted fields, 58 staging scopes (57 runtime tenant IDs plus `__global__`).
+- StreamWeaver has five same-broadcaster-name directory pairs whose overlapping files differ; keep those directory IDs separate.
+- The Chat Tag `users` map provides 13 exact legacy Twitch-ID matches to StreamWeaver tenant-directory IDs, and all 13 agree on configured Twitch broadcaster username. This is only a partial legacy crosswalk; it is not canonical SPMT tenant ownership.
+- See [the full reconciliation audit](../deployment/RECOVERED_DATA_RECONCILIATION_AUDIT.md) and issue #415.
+
+### Current external database and Hostless placement
+
+- The verified Turso database is `apollo-persistence-spike` in `aws-us-east-1`; it was empty at last verification. No recovered JSON or SQLite data has been imported.
+- The owner has created three Hostless accounts and connected them to GitHub. Preserve the agreed logical roles: Account 1 Core (SPMT authority / SpaceMountain / OverlayBay), Account 2 Live + Games (Chat Gateway + StreamWeaver + Nebula co-located), Account 3 Discord/community (DSH + DSH-owned Lounge state).
+- The Turso adapter and Mosaic pilot are code-ready for a protected-secret connectivity test, not a claim that the three Hostless nodes are deployable. The only Nebula store currently selectable for Turso is Mosaic; all Tag/player/game/economy and other domain stores remain on existing SQLite implementations.
+- Do not change Fly.io, provision paid Hostless resources, move production traffic, or import ambiguous data.
+
+### Next actions in order
+
+1. Complete CI for PR #418 (the sanitized source audit / crosswalk report) and merge it once green.
+2. Run the credential-free JSON staging dry-run against the separate extracted roots. Expected counts are 16 Chat Tag and 5,731 StreamWeaver candidate documents; no Turso connection is created during dry-run.
+3. Configure only protected server-side Node 2 Turso variables for the Mosaic pilot: `NEBULA_ARCADE_MOSAIC_STORE=turso`, `TURSO_DATABASE_URL`, and `TURSO_AUTH_TOKEN`. Run `APOLLO_TURSO_LIVE_TEST=1 npm run db:test:turso:live` in the protected Hostless runtime. The live test uses synthetic records only and must prove fresh-client read-back and rollback before any staging apply.
+4. If the live smoke test passes, stage recovered JSON only into `apollo_recovered_json_stage_v1` with `--apply`; do not convert records into domain tables until the SPMT tenant crosswalk, non-empty destination check, and restore/rollback plan are approved.
+5. Continue the async migration service-by-service, next prioritizing Nebula Tag/player/game state and StreamWeaver. Migrate callers with the store; never swap a `DatabaseSync` path for a Turso URL.
+6. Only after all DB-owning services have durable storage and cross-node restart/restore tests pass should Hostless role-specific entrypoints and production cutover be considered.
+
+The three Hostless accounts are deployment nodes, not three Turso databases. The current Turso endpoint is one shared staging/pilot database; service-prefixed namespaces reduce key collisions but do not replace per-service authorization, tenant checks, or a future least-privilege database split.
