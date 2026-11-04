@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "pollIntervalSeconds": 600,
+  "tenants": [
+    {
+      "tenantId": "replace-with-spmt-tenant-id",
+      "twitchProviderUserId": "replace-with-linked-twitch-provider-user-id",
+      "discordProviderUserId": "replace-with-linked-discord-provider-user-id",
+      "discordGuildIds": ["replace-with-discord-guild-id"],
+      "branding": {
+        "communityMemberName": "Community Member",
+        "spotlightChannelId": "replace-with-spotlight-channel-id"
+      },
+      "members": []
+    }
+  ]
+}
