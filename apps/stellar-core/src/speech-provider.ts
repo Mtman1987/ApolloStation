@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { ATHENA_CANONICAL_TTS_VOICE, getTtsVoiceOption, TTS_VOICE_OPTIONS } from "./speech-voices.js";
+import { DEFAULT_TTS_VOICE, getTtsVoiceOption, isSupportedTtsVoice } from "./speech-voices.js";
 
 export class StellarSpeechError extends Error {
   constructor(message: string, readonly retryable = false) { super(message); }
@@ -14,11 +14,11 @@ export class StellarSpeechProvider {
   }
   configured() { return this.options.enabled !== false && Boolean(this.options.deepgramKey || this.options.edenKey || this.options.kokoroUrl); }
   voices() { return TTS_VOICE_OPTIONS.map(v => ({ id: v.id, label: v.label, provider: v.provider, description: v.description })); }
-  async synthesize(text: string, voiceId = ATHENA_CANONICAL_TTS_VOICE, tenantId = "") {
+  async synthesize(text: string, voiceId = DEFAULT_TTS_VOICE, tenantId = "") {
     if (!this.configured()) throw new StellarSpeechError("Speech providers are not configured");
     text = boundedText(text, 20_000);
     const voice = getTtsVoiceOption(voiceId);
-    if (!TTS_VOICE_OPTIONS.some(v => v.id === voiceId) && !["athena", "apollo", "odysseus", "theia"].includes(voiceId)) throw new StellarSpeechError("Choose a supported voice");
+    if (!isSupportedTtsVoice(voiceId)) throw new StellarSpeechError("Choose a supported voice");
     const chunks = splitSpeech(text), output: Buffer[] = [], providers: string[] = [];
     if (voice.provider === "kokoro" || (!this.options.deepgramKey && !this.options.edenKey && this.options.kokoroUrl)) {
       if (!this.options.kokoroUrl) throw new StellarSpeechError("The local Kokoro speech worker is not configured");
