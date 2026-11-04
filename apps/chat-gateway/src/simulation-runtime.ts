@@ -9,7 +9,7 @@ import { SqliteAuthorityStore } from "@spmt/authority-sqlite";
 import { PlatformOperations } from "@spmt/platform-ops";
 import { PlatformApiAdapter } from "@spmt/api-adapter";
 import { SpmtClient } from "@spmt/sdk";
-import { simulationDiscordIds, SIMULATION_ROOM_INPUT_CAPABILITY, assertSimulationRoomInputV1, type ExecutionJobV1, type SimulationRoomEventV1, type SimulationRoomInputJobV1 } from "@spmt/contracts";
+import { simulationDiscordIds, SIMULATION_ROOM_INPUT_CAPABILITY, assertSimulationRoomInputV1, parseExecutionTargetV1, type ExecutionTargetV1, type ExecutionJobV1, type SimulationRoomEventV1, type SimulationRoomInputJobV1 } from "@spmt/contracts";
 import { StreamWeaverProviderRuntime, StreamWeaverBotActionConsumer, StreamWeaverFlowPackageStore, legacyCommunityPackages, SqliteStreamWeaverEconomyStore, type StreamWeaverBotActionExecutorV1 } from "@spmt/streamweaver";
 import { NebulaArcadeProviderRuntime, NEBULA_ARCADE_GAMES, SqliteNebulaGameInputStore, SqliteNebulaTabletopRuntime, SqliteNebulaTagStore, SqliteNebulaTagExperienceStore, buildNebulaTagOverlaySnapshot } from "@spmt/nebula-arcade";
 import { DshBotActionAdapter, DshSuiteActionOperations, respondDshApplicationInteraction, respondDshCalendarInteraction, DshCalendarDelivery, SqliteDshLiveMonitor, SqliteDshDiscordMessageStore, SqliteDshCalendarStore, SqliteDshApplicationStore, type DshDiscordTransportV1, type DshBotActionIdV1 } from "@spmt/discord-stream-hub";
@@ -183,10 +183,10 @@ export class SimulationRoomRuntime {
 
 export class SimulationRoomWorker {
   private readonly startedAt = new Date().toISOString();
-  constructor(private readonly client: SpmtClient, private readonly runtime: SimulationRoomRuntime, private readonly workerId: string) {}
+  constructor(private readonly client: SpmtClient, private readonly runtime: SimulationRoomRuntime, private readonly workerId: string, private readonly executionTarget: ExecutionTargetV1 = parseExecutionTargetV1(process.env.STELLAR_EXECUTION_TARGET)) {}
   async runOnce() {
-    await this.client.reportExecutionWorker({ executionOwner: "chat-gateway", workerId: this.workerId, executionTarget: "sprite", state: "ready", capabilityIds: [SIMULATION_ROOM_INPUT_CAPABILITY], providerHealthy: true, startedAt: this.startedAt, leaseMs: 60_000, metrics: { completedJobs: 0, failedJobs: 0, inputUnits: 0, outputUnits: 0 } });
-    const job = await this.client.claimAnyExecutionJob(this.workerId, "sprite", { executionOwner: "chat-gateway", capabilityIds: [SIMULATION_ROOM_INPUT_CAPABILITY], leaseMs: 600_000 });
+    await this.client.reportExecutionWorker({ executionOwner: "chat-gateway", workerId: this.workerId, executionTarget: this.executionTarget, state: "ready", capabilityIds: [SIMULATION_ROOM_INPUT_CAPABILITY], providerHealthy: true, startedAt: this.startedAt, leaseMs: 60_000, metrics: { completedJobs: 0, failedJobs: 0, inputUnits: 0, outputUnits: 0 } });
+    const job = await this.client.claimAnyExecutionJob(this.workerId, this.executionTarget, { executionOwner: "chat-gateway", capabilityIds: [SIMULATION_ROOM_INPUT_CAPABILITY], leaseMs: 600_000 });
     if (!job?.leaseId) return;
     const lease = [job.tenantId, job.id, this.workerId, job.leaseId, job.fencingEpoch] as const;
     const heartbeat = setInterval(() => { void this.client.heartbeatExecutionJob(...lease, undefined, 600_000).catch(() => undefined); }, 30_000);
