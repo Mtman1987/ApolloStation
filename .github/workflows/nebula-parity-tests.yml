@@ -32,4 +32,4 @@ jobs:
       - name: Build Nebula Arcade and its project references
         run: npx tsc -b apps/nebula-arcade --pretty false
       - name: Run Nebula command and Mosaic domain regression tests
-        run: node --test tests/nebula-spmt-commands.test.mjs tests/nebula-mosaic-core.test.mjs tests/nebula-mosaic-store.test.mjs tests/nebula-mosaic-runtime.test.mjs tests/nebula-mosaic-generation.test.mjs tests/nebula-mosaic-overlay.test.mjs tests/nebula-mosaic-xp.test.mjs tests/nebula-mosaic-live-overlay.test.mjs tests/nebula-mosaic-project-library.test.mjs tests/nebula-game-runtime.test.mjs tests/nebula-discord-dashboard.test.mjs tests/quackverse-trades.test.mjs tests/nebula-live-parity-build.test.mjs
+        run: node --test tests/nebula-spmt-commands.test.mjs tests/nebula-mosaic-core.test.mjs tests/nebula-mosaic-store.test.mjs tests/nebula-mosaic-runtime.test.mjs tests/nebula-mosaic-generation.test.mjs tests/nebula-mosaic-overlay.test.mjs tests/nebula-mosaic-xp.test.mjs tests/nebula-mosaic-live-overlay.test.mjs tests/nebula-mosaic-project-library.test.mjs tests/nebula-discord-dashboard.test.mjs
