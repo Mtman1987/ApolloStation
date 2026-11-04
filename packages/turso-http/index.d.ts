@@ -1,6 +1,6 @@
 export type TursoValue = null | string | number | bigint | Uint8Array;
 export interface TursoStatement { sql: string; args?: TursoValue[]; wantRows?: boolean; }
-export interface TursoStatementResult { rows: unknown[][]; affectedRows: number; }
+export interface TursoStatementResult { columns: string[]; rows: unknown[][]; affectedRows: number; }
 export interface TursoTransaction {
   execute(sql: string, args?: TursoValue[], wantRows?: boolean): Promise<TursoStatementResult>;
   pipeline(statements: TursoStatement[]): Promise<TursoStatementResult[]>;
