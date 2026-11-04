@@ -63,3 +63,148 @@ The first spike should **not** use SPMT authority, provider credentials, Chat Ga
 - A provider's compatibility or limits are inferred from the phrase "SQLite-compatible" without running ApolloStation's own tests.
 
 This audit changes no production settings and creates no external database resources.
+
+
+## Expanded source-search inventory (2026-11-04)
+
+A repository-wide GitHub code search for `DatabaseSync` returned at least 100 matching source files (the search request was capped at 100 results). This is a lower bound, not a complete count. The returned paths are listed below so the migration work can be tracked against concrete source files. Some files contain multiple stores; others use the API for read-only validation or recovery rather than a live application store. Each still needs classification by database path and lifecycle.
+
+### scripts/nebula-release-check.mjs
+- `scripts/nebula-release-check.mjs`
+
+### apps/hearmeout
+- `apps/hearmeout/src/watch-state.ts`
+- `apps/hearmeout/src/persona-room.ts`
+- `apps/hearmeout/src/room-assistant-jobs.ts`
+- `apps/hearmeout/src/persistent-migration.ts`
+- `apps/hearmeout/src/room-persona-speech.ts`
+- `apps/hearmeout/src/voice-bridge.ts`
+- `apps/hearmeout/src/broadcast-program.ts`
+- `apps/hearmeout/src/web-server-v2.ts`
+- `apps/hearmeout/src/room-media-core.ts`
+- `apps/hearmeout/src/web-server-v3.ts`
+
+### apps/streamweaver
+- `apps/streamweaver/src/ride-store.ts`
+- `apps/streamweaver/src/tiktok-store.ts`
+- `apps/streamweaver/src/research-mode.ts`
+- `apps/streamweaver/src/runtime-settings.ts`
+- `apps/streamweaver/src/bot-action-replies.ts`
+- `apps/streamweaver/src/generation-settings.ts`
+- `apps/streamweaver/src/social-reaction-store.ts`
+- `apps/streamweaver/src/bic-store.ts`
+- `apps/streamweaver/src/shoutout-store.ts`
+- `apps/streamweaver/src/twitch-eventsub.ts`
+- `apps/streamweaver/src/bot-relay.ts`
+- `apps/streamweaver/src/pokemon-store.ts`
+- `apps/streamweaver/src/translation-runtime.ts`
+- `apps/streamweaver/src/stella-lounge-host.ts`
+- `apps/streamweaver/src/command-router.ts`
+- `apps/streamweaver/src/economy.ts`
+- `apps/streamweaver/src/secure-choice.ts`
+- `apps/streamweaver/src/community-store.ts`
+- `apps/streamweaver/src/flow-packages.ts`
+- `apps/streamweaver/src/chat-gateway-consumer.ts`
+
+### apps/nebula-arcade
+- `apps/nebula-arcade/src/game-inputs.ts`
+- `apps/nebula-arcade/src/overlay-scenes.ts`
+- `apps/nebula-arcade/src/game-runtime-store.ts`
+- `apps/nebula-arcade/src/mosaic-store.ts`
+- `apps/nebula-arcade/src/quackverse-art-store.ts`
+- `apps/nebula-arcade/src/arcade-activity.ts`
+- `apps/nebula-arcade/src/legacy-nebula-migration.ts`
+- `apps/nebula-arcade/src/game-actions.ts`
+- `apps/nebula-arcade/src/game-mixes.ts`
+- `apps/nebula-arcade/src/arcade-network.ts`
+- `apps/nebula-arcade/src/nebula-tag-runtime.ts`
+- `apps/nebula-arcade/src/discord-dashboard.ts`
+- `apps/nebula-arcade/src/live-migration.ts`
+- `apps/nebula-arcade/src/nebula-tag-experience.ts`
+- `apps/nebula-arcade/src/tabletop-runtime.ts`
+
+### scripts/inspect-hearmeout-blue-db.mjs
+- `scripts/inspect-hearmeout-blue-db.mjs`
+
+### packages/authority-sqlite
+- `packages/authority-sqlite/src/recovery.ts`
+- `packages/authority-sqlite/src/index.ts`
+
+### apps/discord-stream-hub
+- `apps/discord-stream-hub/src/lounge-host.ts`
+- `apps/discord-stream-hub/src/lounge-state.ts`
+- `apps/discord-stream-hub/src/mtfixit-intake.ts`
+- `apps/discord-stream-hub/src/channel-cleanup.ts`
+- `apps/discord-stream-hub/src/raid-pile-relay.ts`
+- `apps/discord-stream-hub/src/raid-train.ts`
+- `apps/discord-stream-hub/src/banner-generation.ts`
+- `apps/discord-stream-hub/src/clip-gif-library.ts`
+- `apps/discord-stream-hub/src/shoutout-generation.ts`
+- `apps/discord-stream-hub/src/signal-control.ts`
+- `apps/discord-stream-hub/src/member-activity.ts`
+- `apps/discord-stream-hub/src/signal-seeker.ts`
+- `apps/discord-stream-hub/src/voidwalker-reward-worker.ts`
+- `apps/discord-stream-hub/src/lounge-overlay.ts`
+- `apps/discord-stream-hub/src/nebula-gameplay.ts`
+- `apps/discord-stream-hub/src/lounge-avatar.ts`
+- `apps/discord-stream-hub/src/card-pack-render.ts`
+- `apps/discord-stream-hub/src/member-directory.ts`
+- `apps/discord-stream-hub/src/raid-pile.ts`
+- `apps/discord-stream-hub/src/guest-shoutouts.ts`
+- `apps/discord-stream-hub/src/applications.ts`
+- `apps/discord-stream-hub/src/calendar.ts`
+- `apps/discord-stream-hub/src/live-monitor.ts`
+- `apps/discord-stream-hub/src/proposal-controls.ts`
+- `apps/discord-stream-hub/src/nebula-media-worker.ts`
+- `apps/discord-stream-hub/src/forum-forwarding.ts`
+- `apps/discord-stream-hub/src/discord-live-publisher.ts`
+
+### apps/companion
+- `apps/companion/src/workflow-store-sqlite.ts`
+- `apps/companion/src/device-relay.ts`
+
+### apps/stellar-core
+- `apps/stellar-core/src/public-memory.ts`
+- `apps/stellar-core/src/assistant-store.ts`
+
+### packages/commlink-core
+- `packages/commlink-core/src/social-stream.ts`
+- `packages/commlink-core/src/forum-forwarding.ts`
+- `packages/commlink-core/src/index.ts`
+- `packages/commlink-core/src/forum.ts`
+- `packages/commlink-core/src/operator.ts`
+
+### scripts/build-hearmeout-blue-migration-bundle.mjs
+- `scripts/build-hearmeout-blue-migration-bundle.mjs`
+
+### scripts/sprites
+- `scripts/sprites/retire-hearmeout-deployment-sample.mjs`
+- `scripts/sprites/install-hearmeout-cutover.mjs`
+
+### apps/mountainview
+- `apps/mountainview/src/device-runtime.ts`
+
+### apps/spmt-service
+- `apps/spmt-service/src/public-persona-api.ts`
+- `apps/spmt-service/src/youtube-oauth-api.ts`
+- `apps/spmt-service/src/twitch-bot-api.ts`
+
+### packages/app-foundation
+- `packages/app-foundation/src/index.ts`
+
+### apps/chat-gateway
+- `apps/chat-gateway/src/index.ts`
+- `apps/chat-gateway/src/connection-supervisor.ts`
+- `apps/chat-gateway/src/simulation-runtime.ts`
+
+### packages/platform-data-sqlite
+- `packages/platform-data-sqlite/src/media-assets.ts`
+- `packages/platform-data-sqlite/src/index.ts`
+
+### packages/account-recovery-core
+- `packages/account-recovery-core/src/index.ts`
+
+### packages/provider-grants-core
+- `packages/provider-grants-core/src/credential-authority.ts`
+
+**Important correction to the earlier summary:** this inventory proves the persistence surface is broader than the priority apps alone. It includes Commlink, MountainView, Stellar Core, Companion, HearMeOut, and Discord Stream Hub subsystems. Do not migrate only the obvious top-level database while leaving auxiliary processes pointing at old local paths; the runtime service inventory and per-app database ownership map must be reconciled before cutover.
