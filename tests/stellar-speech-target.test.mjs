@@ -13,7 +13,7 @@ test("Stellar speech worker reports and claims the configured hosted execution t
     async succeedExecutionJob(...args) { completed.push(args.at(-1)); },
     async failExecutionJob(...args) { assert.fail(JSON.stringify(args)); },
   };
-  const provider = { configured: () => true, async synthesize() { return { bytes: Buffer.from("audio"), contentType: "audio/wav", voice: "kokoro:af_heart", providers: ["kokoro"] }; } };
+  const provider = { configured: () => true, capabilities: () => ["stellar.speech.synthesize.v1", "stellar.speech.transcribe.v1"], defaultVoice: () => "kokoro:af_heart", async synthesize() { return { bytes: Buffer.from("audio"), contentType: "audio/wav", voice: "kokoro:af_heart", providers: ["kokoro"] }; } };
   const worker = new StellarSpeechWorker(client, provider, "stellar-hosted-speech", "hosted");
   await worker.runOnce();
   assert.equal(reported[0].executionTarget, "hosted");
