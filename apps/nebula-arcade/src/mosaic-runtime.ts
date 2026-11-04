@@ -24,6 +24,7 @@ export type MosaicXpAward = (tenantId: string, playerId: string, delta: number, 
 export type MosaicXpSpend = (tenantId: string, playerId: string, amount: number, eventType: string, idempotencyKey: string, metadata?: Record<string, unknown>) => Promise<{ duplicate?: boolean }>;
 export class NebulaMosaicRuntime {
   private readonly store: SqliteNebulaMosaicStore | AsyncNebulaMosaicRecordStore;
+  readonly storeMode: "sqlite" | "turso";
   private readonly generate: MosaicGenerator | undefined;
   private readonly requestXpCost: number;
   private readonly awardXp: MosaicXpAward | undefined;
@@ -31,6 +32,7 @@ export class NebulaMosaicRuntime {
   constructor(databasePath: string, generate?: MosaicGenerator, options: { requestXpCost?: number; awardXp?: MosaicXpAward; spendXp?: MosaicXpSpend; storeMode?: "sqlite" | "turso"; tursoUrl?: string; tursoAuthToken?: string } = {}) {
     const storeMode = options.storeMode ?? process.env.NEBULA_ARCADE_MOSAIC_STORE ?? "sqlite";
     if (storeMode !== "sqlite" && storeMode !== "turso") throw new Error("NEBULA_ARCADE_MOSAIC_STORE must be sqlite or turso");
+    this.storeMode = storeMode;
     this.store = storeMode === "turso"
       ? new AsyncNebulaMosaicRecordStore({ mode: "turso", ...(options.tursoUrl ? { url: options.tursoUrl } : {}), ...(options.tursoAuthToken ? { authToken: options.tursoAuthToken } : {}) })
       : new SqliteNebulaMosaicStore(databasePath);
@@ -43,6 +45,10 @@ export class NebulaMosaicRuntime {
     if (this.store instanceof AsyncNebulaMosaicRecordStore) await this.store.initialize();
   }
   async close() { await this.store.close(); }
+  async health(): Promise<{ ready: boolean; mode: "sqlite" | "turso" }> {
+    try { return { ready: (await this.store.health()).ready === true, mode: this.storeMode }; }
+    catch { return { ready: false, mode: this.storeMode }; }
+  }
   async snapshot(tenantId: string, channel: string, now = Date.now()) {
     return mosaicPublicSnapshot(await this.store.get(tenantId, channel), now);
   }
