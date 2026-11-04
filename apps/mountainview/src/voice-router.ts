@@ -25,7 +25,7 @@ export function planMountainViewVoiceCommand(transcript: string, context: Mounta
   if (suiteAction) {
     const descriptor = SPMT_SUITE_ACTION_CATALOG.find((item) => item.id === suiteAction.action)!;
     const targetAppId = suiteAction.action.startsWith("dsh.") ? "discord-stream-hub" : suiteAction.action.startsWith("hmo.") ? "hearmeout" : "streamweaver";
-    return { kind: "route", targetAppId, action: suiteAction.action, payload: { ...suiteAction.args, ...(targetAppId === "hearmeout" && context.hearMeOutRoomId && !suiteAction.args.roomId ? { roomId: context.hearMeOutRoomId } : {}) }, risk: descriptor.risk === "read" ? "low" : descriptor.risk === "write" ? "medium" : "high", requiresConfirmation: false, reason: "This command uses the shared SPMT suite-action pipeline" };
+    return { kind: "route", targetAppId, action: suiteAction.action, payload: { ...suiteAction.args, ...(targetAppId === "hearmeout" && context.hearMeOutRoomId && !suiteAction.args.roomId ? { roomId: context.hearMeOutRoomId } : {}) }, risk: descriptor.risk === "read" ? "low" : descriptor.risk === "write" ? "medium" : "high", requiresConfirmation: descriptor.risk !== "read" && descriptor.risk !== "write", reason: "This command uses the shared SPMT suite-action pipeline" };
   }
 
   const image = text.match(/\b(?:generate|make|create|draw)\s+(?:me\s+)?(?:an?\s+)?(?:ai\s+)?(?:image|picture|photo|artwork|illustration)\s*(?:of|showing|for)?\s+(.+?)\s*$/i);
