@@ -13,7 +13,9 @@ test("Chat Tag JSON remains one legacy-global source and secrets are redacted", 
   try {
     await mkdir(join(root, "data"), { recursive: true });
     await writeFile(join(root, "data", "app-state.json"), JSON.stringify({
-      tagPlayers: [{ id: "p1" }],
+      schemaVersion: 2,
+      tagPlayers: { p1: { id: "p1" }, p2: { id: "p2" } },
+      tagHistory: [{ id: "h1" }, { id: "h2" }],
       token: "do-not-store",
       nested: { clientSecret: "also-do-not-store" },
     }));
@@ -24,6 +26,8 @@ test("Chat Tag JSON remains one legacy-global source and secrets are redacted", 
     const state = records.find((record) => record.path.endsWith("app-state.json"));
     assert.ok(state.payload.includes("[REDACTED]"));
     assert.ok(!state.payload.includes("do-not-store"));
+    assert.equal(state.schemaVersion, "2");
+    assert.deepEqual(state.recordCounts, { tagPlayers: 2, tagHistory: 2, nested: 1 });
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -53,7 +57,7 @@ test("StreamWeaver tenant directories are kept distinct and token path is skippe
 test("dry-run stages nothing and apply is idempotent but rejects changed source", async () => {
   const records = [{
     source: "nebula-legacy-global", tenant: "legacy-global", path: "data/app-state.json",
-    sourceHash: "source-hash", payloadHash: "payload-hash", payload: '{"ok":true}',
+    sourceHash: "source-hash", payloadHash: "payload-hash", schemaVersion: "1", recordCounts: { players: 1 }, payload: '{"ok":true}',
   }];
   const rows = new Map();
   const calls = [];
@@ -68,15 +72,25 @@ test("dry-run stages nothing and apply is idempotent but rejects changed source"
       if (sql.startsWith("SELECT source, tenant_key, source_path")) {
         return {
           rows: [...rows.entries()].map(([key, row]) => [
-            ...key.split("\u0000"), row.sourceHash, row.payloadHash,
+            ...key.split("\\u0000"), row.sourceHash, row.payloadHash, row.schemaVersion, row.recordCountsJson,
+          ]),
+        };
+      }
+      if (sql.startsWith("SELECT tenant_key, source_path")) {
+        const source = args[0];
+        return {
+          rows: [...rows.entries()].filter(([, row]) => row.source === source).map(([, row]) => [
+            row.tenant, row.path, row.sourceHash, row.payloadHash, row.schemaVersion, row.recordCountsJson,
           ]),
         };
       }
       if (sql.startsWith("INSERT INTO")) {
-        rows.set(args.slice(0, 3).join("\u0000"), { sourceHash: args[3], payloadHash: args[4] });
+        rows.set(args.slice(0, 3).join("\\u0000"), {
+          source: args[0], tenant: args[1], path: args[2], sourceHash: args[3], payloadHash: args[4],
+          schemaVersion: args[5], recordCountsJson: args[6],
+        });
         return { rows: [], affectedRows: 1 };
       }
-      if (sql.startsWith("SELECT source, COUNT(*)")) return { rows: [["nebula-legacy-global", rows.size]] };
       return { rows: [], affectedRows: 0 };
     },
   };
