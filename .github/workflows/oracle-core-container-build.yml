@@ -13,6 +13,9 @@ on:
       - "infra/oracle/apollo.env.example"
       - "apps/hearmeout/legacy-worker/**"
       - "services/free-tts/**"
+      - "infra/oracle/prepare-restream-profile-volume.sh"
+      - "services/restream-control/**"
+      - "config/**"
       - ".dockerignore"
       - "package.json"
       - "package-lock.json"
@@ -23,6 +26,10 @@ on:
   pull_request:
     paths:
       - "infra/oracle/Dockerfile.apollo"
+      - "infra/oracle/prepare-restream-profile-volume.sh"
+      - "services/restream-control/**"
+      - "services/free-tts/**"
+      - "config/**"
       - "infra/oracle/apollo-core.compose.yml"
       - "infra/oracle/Caddyfile.apollo"
       - "infra/oracle/prepare-apollo-data-volume.sh"
