@@ -71,6 +71,7 @@ export class NebulaArcadeProviderRuntime {
   private readonly gameStore: SqliteNebulaGameRuntimeStore;
   private readonly actionStore: SqliteNebulaGameActionStore;
   private readonly mosaicRuntime: NebulaMosaicRuntime;
+  private readonly mosaicReady: Promise<void>;
   private readonly dashboardStore?: SqliteNebulaDiscordDashboardStore;
   private readonly tagRuntime: NebulaTagRuntime;
   private readonly experiences = new Map<string, NebulaTagExperienceService>();
@@ -88,6 +89,7 @@ export class NebulaArcadeProviderRuntime {
     this.gameStore = new SqliteNebulaGameRuntimeStore(options.databasePath);
     this.actionStore = new SqliteNebulaGameActionStore(options.databasePath);
     this.mosaicRuntime = new NebulaMosaicRuntime(options.databasePath, createStreamWeaverMosaicGenerator(), { requestXpCost: Math.max(0, Math.floor(Number(process.env.MOSAIC_REQUEST_XP_COST || 0))), spendXp: (tenantId, userId, amount, eventType, idempotencyKey, metadata) => options.client.spendXp(tenantId, userId, amount, eventType, idempotencyKey, metadata), awardXp: (tenantId, userId, delta, reason, idempotencyKey, awardOptions) => options.client.awardXp(tenantId, userId, delta, reason, idempotencyKey, awardOptions) });
+    this.mosaicReady = this.mosaicRuntime.initialize();
     if (options.discordDashboard) this.dashboardStore = new SqliteNebulaDiscordDashboardStore(options.databasePath);
     this.tagRuntime = new NebulaTagRuntime(this.tagStore, options.client);
     for (const tenant of options.config.tenants) {
@@ -111,6 +113,7 @@ export class NebulaArcadeProviderRuntime {
     return result;
   }
   async reconcile() {
+    await this.mosaicReady;
     const delivery = { attempted: 0, delivered: 0, failed: 0 };
     for (const tenant of this.options.config.tenants) {
       await this.flushAnnouncements(tenant.tenantId);
@@ -139,12 +142,14 @@ export class NebulaArcadeProviderRuntime {
     const dashboard = await this.publishDashboards(false);
     return { schemaVersion: 1 as const, configuredTenants: this.options.config.tenants.length, configuredChannels: this.channels.size, tagDelivery: delivery, dashboard, rotation: rotations.length?{status:"reconciled",results:rotations}:{status:"presence-required",reason:"Automatic Tag rotation is fenced until a fresh canonical presence snapshot is available."} };
   }
-  close() {
+  async close() {
     if (this.closed) return;
     this.closed = true;
-    this.media.close();this.network.close();this.tabletop.close(); this.inputStore.close(); this.activity.close(); this.dashboardStore?.close(); this.actionStore.close(); this.mosaicRuntime.close(); this.gameStore.close(); this.experienceStore.close(); this.tagStore.close();
+    await this.mosaicReady;
+    this.media.close();this.network.close();this.tabletop.close(); this.inputStore.close(); this.activity.close(); this.dashboardStore?.close(); this.actionStore.close(); await this.mosaicRuntime.close(); this.gameStore.close(); this.experienceStore.close(); this.tagStore.close();
   }
   private async deliver(delivery: NormalizedChatDeliveryV1) {
+    await this.mosaicReady;
     if (this.closed) throw new Error("Nebula Arcade provider runtime is closed");
     const message=delivery.message, channel=this.channels.get(messageKey(message)), experience=this.experiences.get(message.tenantId);
     if (!channel || !experience || message.actor.isBot) return;
@@ -332,12 +337,13 @@ export class NebulaArcadeProviderRuntime {
     return report;
   }
   private async publishDashboard(tenantId: string, channel: NebulaArcadeProviderChannelV1, force: boolean) {
+    await this.mosaicReady;
     if (!this.options.discordDashboard || !this.dashboardStore || channel.provider !== "discord") return false;
     if (isNebulaChannelOptedOut(this.experienceStore,tenantId,channel.channelId,channel.stateChannelId)) return false;
     const state = this.tagRuntime.getState(tenantId).state;
     const generatedAt = this.options.now?.() ?? new Date().toISOString();
     const activeIds = resolveNebulaChannelGameIds(this.gameStore.get(tenantId), channel.stateChannelId, channel.enabledGameIds);
-    const mosaic = activeIds.includes("pixelbattle") ? this.mosaicRuntime.snapshot(tenantId, channel.stateChannelId, Date.parse(generatedAt)) : undefined;
+    const mosaic = activeIds.includes("pixelbattle") ? await this.mosaicRuntime.snapshot(tenantId, channel.stateChannelId, Date.parse(generatedAt)) : undefined;
     const signature = nebulaDiscordDashboardSignature(state, Date.parse(generatedAt), mosaic);
     const key = channelKey(tenantId, channel.provider, channel.connectionId, channel.channelId);
     if (!force && this.dashboardSignatures.get(key) === signature) return false;
