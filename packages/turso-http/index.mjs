@@ -117,14 +117,14 @@ export class TursoHttpAdapter {
       const commit = await send([statementRequest({ sql: "COMMIT" })]);
       decodeStatementResult(commit[0]);
       active = false;
-      if (baton) await send([{ type: "close" }], true);
+      if (baton) await send([], true);
       return value;
     } catch (error) {
       if (active && baton) {
         try {
           const rollback = await send([statementRequest({ sql: "ROLLBACK" })]);
           decodeStatementResult(rollback[0]);
-          if (baton) await send([{ type: "close" }], true);
+          if (baton) await send([], true);
         } catch {
           // Preserve the original failure. A broken network may make rollback
           // confirmation impossible; callers must treat the outcome as unknown.
