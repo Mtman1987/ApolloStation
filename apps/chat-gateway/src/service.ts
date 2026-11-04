@@ -447,7 +447,7 @@ export class SupervisedChatGatewayService {
   async close() { await this.tiktok?.close();await this.supervisor.stop(); this.nebulaArcade?.close(); this.streamweaver?.close(); this.generationSettings?.close();this.streamweaverAvatarSettings?.close(); this.connectionStore.close(); this.chatStore.close(); }
 }
 
-function loopbackOrigin(value: string) { const url = new URL(value); if (url.protocol !== "http:" || !["127.0.0.1", "localhost", "::1"].includes(url.hostname) || url.username || url.password || url.pathname !== "/" || url.search || url.hash) throw new Error("SPMT_ORIGIN must be a credential-free loopback HTTP origin"); return url.origin; }
+function loopbackOrigin(value: string) { const url = new URL(value); const clean = !url.username && !url.password && url.pathname === "/" && !url.search && !url.hash; const loopback = ["127.0.0.1", "localhost", "::1"].includes(url.hostname); if (!clean || !(url.protocol === "https:" || (url.protocol === "http:" && loopback))) throw new Error("SPMT_ORIGIN must be a credential-free HTTPS origin or loopback HTTP origin"); return url.origin; }
 function httpsOrigin(value: string, name: string) { const url = new URL(value); if (url.protocol !== "https:" || url.username || url.password || url.pathname !== "/" || url.search || url.hash) throw new Error(`${name} must be a credential-free HTTPS origin`); return url.origin; }
 function httpsAssetUrl(value: string, name: string) { const url = new URL(value); if (url.protocol !== "https:" || url.username || url.password) throw new Error(`${name} must be a credential-free HTTPS URL`); return url.toString(); }
 function requireId(value: string, name: string) { if (!value || !/^[A-Za-z0-9._:@/-]{1,300}$/.test(value)) throw new Error(`${name} is invalid`); }
