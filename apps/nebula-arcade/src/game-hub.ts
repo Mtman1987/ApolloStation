@@ -56,9 +56,15 @@ const ACTION_ALIASES = new Map<string, { gameId: string; command: string }>([
 
 /** The only public chat namespace. Never reinterpret another bot's !commands. */
 export function parseNebulaMessage(text: string) {
-  const match = /^spmt(?:\s+([\s\S]*))?$/i.exec(String(text || "").trim());
-  if (!match) return null;
-  const words = (match[1] ?? "").trim().split(/\s+/).filter(Boolean);
+  const input = String(text || "").trim();
+  const legacyTagMatch = /^@spmt(?:\s+([\s\S]*))?$/i.exec(input);
+  const match = legacyTagMatch ? null : /^spmt(?:\s+([\s\S]*))?$/i.exec(input);
+  if (!legacyTagMatch && !match) return null;
+  const words = ((legacyTagMatch?.[1] ?? match?.[1]) ?? "").trim().split(/\s+/).filter(Boolean);
+  if (legacyTagMatch) {
+    if (words[0]?.toLowerCase() === "arcade") words.shift();
+    return { body: words.join(" "), gameId: "tag", command: words[0]?.toLowerCase() ?? "", args: words.slice(1) };
+  }
   if (words[0]?.toLowerCase() === "arcade") words.shift();
   for (let length = Math.min(3, words.length); length > 0; length--) {
     const normalized = normalizeGameId(words.slice(0, length).join(" "));
