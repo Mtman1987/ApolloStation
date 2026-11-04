@@ -1,3 +1,4 @@
+import { parseExecutionTargetV1 } from "@spmt/contracts";
 export type StreamWeaverCardPackGameV1 = "pokemon" | "quackverse";
 export interface StreamWeaverCardPackCardV1 { id?: string; number?: string; name: string; rarity?: string; setCode?: string; imageUrl: string; }
 export interface StreamWeaverCardPackOpenedEventV1 { schemaVersion: 1; eventId: string; type: "card-pack-opened"; game: StreamWeaverCardPackGameV1; username: string; setName: string; cards: StreamWeaverCardPackCardV1[]; featureCard?: StreamWeaverCardPackCardV1; openedAt: string; }
