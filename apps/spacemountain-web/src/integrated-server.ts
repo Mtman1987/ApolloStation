@@ -1,5 +1,6 @@
 import { attachHearMeOutRtcProxy } from "./rtc-upgrade-proxy.js";
 import { createServer, request as httpRequest, type IncomingMessage, type ServerResponse } from "node:http";
+import { request as httpsRequest } from "node:https";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createIntegratedSpaceMountainWebHost as createBaseIntegratedHost, type IntegratedSpaceMountainWebHostOptions as BaseIntegratedSpaceMountainWebHostOptions } from "./integrated-server-base.js";
@@ -60,7 +61,34 @@ export function createIntegratedSpaceMountainWebHost(options:IntegratedSpaceMoun
 }
 
 function greenAppForPath(pathname:string):GreenAppId|undefined{for(const appId of GREEN_APP_IDS)if(pathname===`/apps/${appId}`||pathname.startsWith(`/apps/${appId}/`)||pathname===`/api/${appId}`||pathname.startsWith(`/api/${appId}/`)||pathname===`/health/${appId}`)return appId;return undefined;}
-function proxyDirect(request:IncomingMessage,response:ServerResponse,originValue:string,path:string,rewriteOrigin:boolean){const target=new URL(originValue);if(target.protocol!=="http:"||!["127.0.0.1","localhost","[::1]"].includes(target.hostname))throw new Error("Internal parity proxy targets must be loopback HTTP");const headers={...request.headers};delete headers.connection;headers.host=target.host;if(rewriteOrigin&&headers.origin)headers.origin=target.origin;const upstream=httpRequest({hostname:target.hostname.replace(/^\[|\]$/g,""),port:Number(target.port||80),path,method:request.method,headers},(incoming)=>{response.writeHead(incoming.statusCode??502,incoming.headers);incoming.pipe(response);});upstream.on("error",(error)=>response.headersSent?response.destroy(error):json(response,502,{error:"internal_proxy_unavailable",message:error.message}));request.pipe(upstream);}
+function proxyDirect(request:IncomingMessage,response:ServerResponse,originValue:string,path:string,rewriteOrigin:boolean){
+  const target=new URL(originValue);
+  const loopback=["127.0.0.1","localhost","[::1]"].includes(target.hostname);
+  if(target.username||target.password||target.search||target.hash||target.pathname!=="/")throw new Error("Parity proxy origins must be plain origins without credentials, paths, queries, or fragments");
+  if(target.protocol!=="https:"&&!(target.protocol==="http:"&&loopback))throw new Error("Parity proxy targets must use HTTPS, or loopback HTTP for local development");
+  const headers={...request.headers};
+  stripHopByHopHeaders(headers);
+  headers.host=target.host;
+  if(rewriteOrigin&&headers.origin)headers.origin=target.origin;
+  const requestOptions={hostname:target.hostname.replace(/^\\[|\\]$/g,""),port:Number(target.port||(target.protocol==="https:"?443:80)),path,method:request.method,headers};
+  const send=target.protocol==="https:"?httpsRequest:httpRequest;
+  const upstream=send(requestOptions,(incoming)=>{
+    const responseHeaders={...incoming.headers};
+    stripHopByHopHeaders(responseHeaders);
+    response.writeHead(incoming.statusCode??502,responseHeaders);
+    incoming.pipe(response);
+  });
+  upstream.on("error",(error)=>response.headersSent?response.destroy(error):json(response,502,{error:"internal_proxy_unavailable",message:error.message}));
+  request.pipe(upstream);
+}
+function stripHopByHopHeaders(headers:Record<string,string|string[]|number|undefined>){
+  const connection=headers.connection;
+  for(const token of (Array.isArray(connection)?connection.join(","):connection??"").split(",")){
+    const name=token.trim().toLowerCase();
+    if(name)delete headers[name];
+  }
+  for(const name of ["connection","keep-alive","proxy-authenticate","proxy-authorization","te","trailer","transfer-encoding","upgrade","proxy-connection"])delete headers[name];
+}
 function proxyInner(request:IncomingMessage,response:ServerResponse,port:number){if(!port)throw new Error("SpaceMountain parity base host is not ready");const headers={...request.headers};delete headers.connection;const upstream=httpRequest({hostname:"127.0.0.1",port,path:request.url??"/",method:request.method,headers},(incoming)=>{response.writeHead(incoming.statusCode??502,incoming.headers);incoming.pipe(response);});upstream.on("error",(error)=>response.headersSent?response.destroy(error):json(response,502,{error:"base_host_unavailable",message:error.message}));request.pipe(upstream);}
 function listen(server:ReturnType<typeof createServer>,port:number,host:string){return new Promise<void>((done,reject)=>{server.once("error",reject);server.listen(port,host,()=>{server.off("error",reject);done();});});}function close(server:ReturnType<typeof createServer>){return new Promise<void>((done,reject)=>server.close((error)=>error?reject(error):done()));}function json(response:ServerResponse,status:number,value:unknown){const body=Buffer.from(JSON.stringify(value));response.writeHead(status,{"content-type":"application/json; charset=utf-8","content-length":String(body.byteLength),"cache-control":"no-store"});response.end(body);}
 
