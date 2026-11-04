@@ -77,3 +77,21 @@ test('reset bounds hold time and acknowledges only a verified live transition', 
   assert.equal(good.status, 200);
   assert.equal(received, 7000);
 });
+
+test('profile lock requires the mounted-volume marker and prevents duplicate owners', async t => {
+  const { mkdtemp, writeFile, readFile, rm } = require('node:fs/promises');
+  const { tmpdir } = require('node:os');
+  const { join } = require('node:path');
+  const { acquireProfileLock } = require('../src/server');
+  const directory = await mkdtemp(join(tmpdir(), 'apollo-restream-profile-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  await assert.rejects(acquireProfileLock(directory), /volume marker is missing/);
+  await writeFile(join(directory, '.restream-profile-volume'), 'persistent-volume\n', { mode: 0o600 });
+  const release = await acquireProfileLock(directory);
+  await assert.rejects(acquireProfileLock(directory), /already owned/);
+  const lock = JSON.parse(await readFile(join(directory, '.restream-control.lock'), 'utf8'));
+  assert.equal(lock.pid, process.pid);
+  await release();
+  const nextRelease = await acquireProfileLock(directory);
+  await nextRelease();
+});
