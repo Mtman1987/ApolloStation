@@ -40,12 +40,24 @@ export function createIntegratedSpaceMountainWebHost(options: IntegratedSpaceMou
   };
 }
 
+const HOP_BY_HOP_HEADERS = new Set([
+  "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
+  "te", "trailer", "transfer-encoding", "upgrade",
+]);
+function stripHopByHopHeaders<T extends Record<string, string | string[] | number | undefined>>(headers: T): T {
+  const result = { ...headers } as T;
+  const connection = result.connection;
+  const nominated = (Array.isArray(connection) ? connection.join(",") : String(connection ?? ""))
+    .split(",").map((name) => name.trim().toLowerCase()).filter(Boolean);
+  for (const name of [...HOP_BY_HOP_HEADERS, ...nominated]) delete (result as Record<string, unknown>)[name];
+  return result;
+}
+
 function proxyToInner(request: IncomingMessage, response: ServerResponse, port: number) {
   if (!port) throw new Error("Integrated SpaceMountain inner host is not ready");
-  const headers = { ...request.headers } as Record<string, string | string[] | undefined>;
-  delete headers.connection;
+  const headers = stripHopByHopHeaders({ ...request.headers });
   const upstream = httpRequest({ hostname: "127.0.0.1", port, path: request.url ?? "/", method: request.method, headers }, (incoming) => {
-    response.writeHead(incoming.statusCode ?? 502, incoming.headers);
+    response.writeHead(incoming.statusCode ?? 502, stripHopByHopHeaders(incoming.headers));
     incoming.pipe(response);
   });
   upstream.on("error", (error) => response.headersSent ? response.destroy(error) : json(response, 502, { error: "inner_host_unavailable", message: error.message }));

@@ -2,6 +2,18 @@ name: Discord Stream Hub parity validation
 
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - "apps/discord-stream-hub/**"
+      - "apps/nebula-arcade/**"
+      - "apps/chat-gateway/**"
+      - "apps/streamweaver/**"
+      - "tests/dsh-*.test.mjs"
+      - "tests/nebula-*.test.mjs"
+      - "tests/streamweaver-*.test.mjs"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/dsh-parity-validation.yml"
 
 permissions:
   contents: read

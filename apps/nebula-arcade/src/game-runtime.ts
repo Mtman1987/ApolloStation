@@ -48,12 +48,12 @@ export function awardNebulaGamePoints(state:NebulaGameRuntimeStateV1,player:Nebu
 }
 export function awardNebulaCheckinBonus(state:NebulaGameRuntimeStateV1,input:{awardId:unknown;channel:unknown;userId:unknown;username?:unknown;displayName?:unknown},now=new Date()){
   const awardId=String(input.awardId??"").trim(),channel=normalizeNebulaChannel(input.channel),playerId=normalizeNebulaPlayerId(input.userId,input.username);
-  if(!awardId||awardId.length>180||/[\\r\\n\\0]/.test(awardId)||!channel||!playerId)throw new Error("A valid channel, player and check-in award ID are required.");
+  if(!awardId||awardId.length>180||(awardId.includes("\r")||awardId.includes("\n")||awardId.includes("\0"))||!channel||!playerId)throw new Error("A valid channel, player and check-in award ID are required.");
   state.checkinBonusReceipts??={};
   const receiptId=createHash("sha256").update(channel+":"+awardId).digest("hex"),prior=state.checkinBonusReceipts[receiptId];
   if(prior){if(prior.playerId!==playerId)throw new Error("This check-in bonus was already credited to another player.");return{...prior,duplicate:true};}
   const player=getOrCreateNebulaPlayer(state,{userId:playerId,username:input.username,displayName:input.displayName}),amount=100;
-  awardNebulaGamePoints(state,player,amount,"Chat Tag front-seat check-in bonus",{channel,sourceId:receiptId},now);
+  awardNebulaGamePoints(state,player,amount,"Front-seat check-in bonus",{channel,sourceId:receiptId},now);
   const receipt={awardId,channel,playerId:player.id,amount,balance:player.gamePointsBalance,at:now.toISOString()};
   state.checkinBonusReceipts[receiptId]=receipt;
   return{...receipt,duplicate:false};

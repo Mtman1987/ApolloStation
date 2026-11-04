@@ -77,7 +77,7 @@ export class StreamWeaverStellaLoungeHost {
     const priority=kind==="raid"||kind==="gift-bomb"||kind==="game-winner"||kind==="milestone"?90:kind==="subscribe"||kind==="cheer"?72:kind==="follow"?60:64;
     const state=this.options.store.view(tenantId);
     if(state.speakerSpeakingUntil>nowMs&&priority<90)return{delivered:false,reason:"streamer-speaking"};
-    if(priority<90&&nowMs-state.lastSpokeAt<12_000)return{delivered:false,reason:"speech-cooldown"};
+    if(priority<90&&state.lastSpokeAt>0&&nowMs-state.lastSpokeAt<12_000)return{delivered:false,reason:"speech-cooldown"};
     let stream:StreamWeaverTwitchStreamV1|undefined;
     try{stream=await this.options.twitch.uptime(tenantId);}catch{return{delivered:false,reason:"stream-status-unavailable"};}
     if(!stream)return{delivered:false,reason:"stream-offline"};

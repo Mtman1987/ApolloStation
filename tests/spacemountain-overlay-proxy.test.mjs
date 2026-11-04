@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import test from "node:test";
-import { createSpaceMountainWebHost } from "../apps/spacemountain-web/dist/server.js";
-import { createIntegratedSpaceMountainWebHost } from "../apps/spacemountain-web/dist/integrated-server.js";
+import { createSpaceMountainWebHost, validateIntegratedWebEnvironment } from "../apps/spacemountain-web/dist/server.js";
+import { createIntegratedSpaceMountainWebHost, stripHopByHopHeaders } from "../apps/spacemountain-web/dist/integrated-server.js";
 import { createSpmtOutputGateway } from "../apps/spmt-service/dist/output-gateway.js";
 
 function origin(server) { return `http://127.0.0.1:${server.address().port}`; }
@@ -94,4 +94,109 @@ test("unavailable overlay service returns a transparent 503", async () => {
     assert.equal(response.headers.get("x-frame-options"), null);
     assert.match(await response.text(), /background:transparent/);
   } finally { await web.close(); }
+});
+
+
+test("multi-node ingress refuses cleartext remote service origins at startup", () => {
+  assert.throws(() => createIntegratedSpaceMountainWebHost({
+    spmtOrigin: "http://spmt.example.test",
+    host: "127.0.0.1",
+    port: 0,
+  }), /Parity proxy targets must use HTTPS, or loopback HTTP for local development/);
+});
+
+
+test("multi-node ingress accepts HTTPS service origins", async () => {
+  const web = createIntegratedSpaceMountainWebHost({
+    spmtOrigin: "http://127.0.0.1:1",
+    nebulaArcadeOrigin: "https://127.0.0.1:1",
+    host: "127.0.0.1",
+    port: 0,
+  });
+  try {
+    await web.listen();
+    const response = await fetch(`${origin(web.server)}/v1/nebula/game-actions`);
+    assert.equal(response.status, 502);
+    assert.equal((await response.json()).error, "internal_proxy_unavailable");
+  } finally { await web.close(); }
+});
+
+
+test("production integrated gateway accepts HTTPS origins for the three-node services", () => {
+  const checked = validateIntegratedWebEnvironment({
+    SPMT_RUNTIME_MODE: "production",
+    SPMT_ORIGIN: "http://127.0.0.1:3000",
+    NEBULA_ARCADE_ORIGIN: "https://nebula.example.test",
+    STREAMWEAVER_WEB_ORIGIN: "https://streamweaver.example.test",
+    DSH_WEB_ORIGIN: "https://discord.example.test",
+  });
+  assert.equal(checked.spmtOrigin, "http://127.0.0.1:3000");
+  assert.equal(checked.nebulaArcadeOrigin, "https://nebula.example.test");
+  assert.equal(checked.greenAppOrigins.streamweaver, "https://streamweaver.example.test");
+  assert.equal(checked.greenAppOrigins["discord-stream-hub"], "https://discord.example.test");
+  assert.throws(() => validateIntegratedWebEnvironment({
+    SPMT_RUNTIME_MODE: "production",
+    SPMT_ORIGIN: "http://spmt.example.test",
+  }), /must use HTTPS/);
+  assert.throws(() => validateIntegratedWebEnvironment({ SPMT_RUNTIME_MODE: "production", SPMT_ORIGIN: "http://127.0.0.1:3000" }), /NEBULA_ARCADE_ORIGIN is required/);
+});
+
+test("integrated gateway proxies StreamWeaver web paths to its configured HTTPS node", async () => {
+  const web = createIntegratedSpaceMountainWebHost({
+    spmtOrigin: "http://127.0.0.1:1",
+    greenAppOrigins: { streamweaver: "https://127.0.0.1:1" },
+    host: "127.0.0.1",
+    port: 0,
+  });
+  try {
+    await web.listen();
+    const response = await fetch(`${origin(web.server)}/apps/streamweaver`);
+    assert.equal(response.status, 502);
+    assert.equal((await response.json()).error, "internal_proxy_unavailable");
+  } finally { await web.close(); }
+});
+
+
+test("integrated gateway keeps sandbox origins loopback-only", () => {
+  const checked = validateIntegratedWebEnvironment({
+    SPMT_RUNTIME_MODE: "sandbox",
+    SPMT_OUTBOUND_MODE: "disabled",
+    SPMT_SANDBOX_ID: "apollo-sandbox",
+    SPMT_ORIGIN: "http://127.0.0.1:3000",
+    DSH_WEB_ORIGIN: "http://127.0.0.1:3201",
+  });
+  assert.equal(checked.greenAppOrigins["discord-stream-hub"], "http://127.0.0.1:3201");
+  assert.throws(() => validateIntegratedWebEnvironment({
+    SPMT_RUNTIME_MODE: "sandbox",
+    SPMT_OUTBOUND_MODE: "disabled",
+    SPMT_SANDBOX_ID: "apollo-sandbox",
+    SPMT_ORIGIN: "http://127.0.0.1:3000",
+    DSH_WEB_ORIGIN: "http://discord.example.test",
+  }), /resolve to loopback/);
+});
+
+
+test("ingress proxy strips standard and Connection-nominated hop-by-hop headers", () => {
+  const headers = {
+    connection: "keep-alive, x-private-hop",
+    "keep-alive": "timeout=5",
+    "x-private-hop": "must-not-cross-node",
+    "proxy-authenticate": "Basic realm=internal",
+    "proxy-authorization": "Basic secret",
+    te: "trailers",
+    trailer: "x-checksum",
+    "transfer-encoding": "chunked",
+    upgrade: "websocket",
+    "proxy-connection": "keep-alive",
+    "content-type": "application/json",
+    "content-length": "12",
+    authorization: "Bearer service-token",
+  };
+  stripHopByHopHeaders(headers);
+  for (const name of ["connection", "keep-alive", "x-private-hop", "proxy-authenticate", "proxy-authorization", "te", "trailer", "transfer-encoding", "upgrade", "proxy-connection"]) {
+    assert.equal(headers[name], undefined, name);
+  }
+  assert.equal(headers["content-type"], "application/json");
+  assert.equal(headers["content-length"], "12");
+  assert.equal(headers.authorization, "Bearer service-token");
 });

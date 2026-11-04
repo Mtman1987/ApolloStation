@@ -24,6 +24,18 @@ test("Chat Gateway validates and returns the shared hosted execution target", ()
   assert.equal(config.executionTarget, "hosted");
 });
 
+test("Chat Gateway accepts credential-free remote HTTPS SPMT origins but rejects remote HTTP and URL credentials", () => {
+  const base = {
+    CHAT_GATEWAY_DATABASE_PATH: "/tmp/chat-gateway-hosted.sqlite",
+    CHAT_GATEWAY_WORKER_CREDENTIAL: "chat-gateway-test-credential-123456",
+    CHAT_GATEWAY_CONNECTIONS: "[]",
+  };
+  assert.equal(validateChatGatewayWorkerEnvironment({ ...base, SPMT_ORIGIN: "https://spmt.example" }).spmtOrigin, "https://spmt.example");
+  assert.equal(validateChatGatewayWorkerEnvironment({ ...base, SPMT_ORIGIN: "http://127.0.0.1:3000" }).spmtOrigin, "http://127.0.0.1:3000");
+  assert.throws(() => validateChatGatewayWorkerEnvironment({ ...base, SPMT_ORIGIN: "http://spmt.example" }), /HTTPS origin or loopback HTTP origin/);
+  assert.throws(() => validateChatGatewayWorkerEnvironment({ ...base, SPMT_ORIGIN: "https://user:pass@spmt.example" }), /HTTPS origin or loopback HTTP origin/);
+});
+
 test("StreamWeaver image and avatar workers report and claim the configured hosted target", async () => {
   const calls = [];
   const client = {

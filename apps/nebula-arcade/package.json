@@ -6,7 +6,8 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
-    "build": "tsc -b"
+    "build": "tsc -b",
+    "start": "node dist/nebula-arcade-live-server.js"
   },
   "dependencies": {
     "@spmt/contracts": "0.1.0",

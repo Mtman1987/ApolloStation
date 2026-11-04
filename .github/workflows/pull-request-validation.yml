@@ -2,6 +2,20 @@ name: ApolloStation pull-request validation
 
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - "apps/spacemountain-web/**"
+      - "apps/nebula-arcade/**"
+      - "apps/streamweaver/**"
+      - "apps/chat-gateway/**"
+      - "apps/discord-stream-hub/**"
+      - "tests/*.test.mjs"
+      - "docs/deployment/**"
+      - "tests/spacemountain-overlay-proxy.test.mjs"
+      - "package.json"
+      - "package-lock.json"
+      - "tsconfig.base.json"
+      - ".github/workflows/pull-request-validation.yml"
 
 permissions:
   contents: read
@@ -24,6 +38,8 @@ jobs:
           cache: npm
       - name: Install locked dependencies
         run: npm ci
+      - name: Inventory SQLite persistence usage
+        run: node scripts/audit-sqlite-usage.mjs --json > /tmp/apollo-sqlite-audit.json && node -e "const r=require('/tmp/apollo-sqlite-audit.json'); console.log(JSON.stringify(r.totals, null, 2))"
       - name: Install local media test tools
         run: |
           sudo apt-get update

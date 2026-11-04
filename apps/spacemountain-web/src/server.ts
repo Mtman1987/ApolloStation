@@ -89,7 +89,7 @@ export function createSpaceMountainWebHost(options: SpaceMountainWebHostOptions)
   const spmtOrigin = requireLoopbackOrigin(options.spmtOrigin);
   const fetchImpl = options.fetchImpl ?? fetch;
   const buildSha = options.buildSha ?? "dev";
-  const nebulaArcadeOrigin = options.nebulaArcadeOrigin ? requireLoopbackOrigin(options.nebulaArcadeOrigin) : undefined;
+  const nebulaArcadeOrigin = options.nebulaArcadeOrigin ? requireServiceOrigin(options.nebulaArcadeOrigin) : undefined;
   const server = createServer(async (request, response) => {
     const nonce = randomBytes(18).toString("base64url");
     applySecurityHeaders(response, nonce);
@@ -221,6 +221,45 @@ export function createSpaceMountainWebHost(options: SpaceMountainWebHostOptions)
     server,
     listen() { return new Promise<void>((done, reject) => { server.once("error", reject); server.listen(options.port ?? 8080, options.host ?? "0.0.0.0", () => { server.off("error", reject); done(); }); }); },
     close() { return new Promise<void>((done, reject) => server.close((error) => error ? reject(error) : done())); },
+  };
+}
+
+export function validateIntegratedWebEnvironment(environment: NodeJS.ProcessEnv): {
+  spmtOrigin: string;
+  nebulaArcadeOrigin?: string;
+  greenAppOrigins?: Partial<Record<"discord-stream-hub" | "streamweaver" | "hearmeout" | "mountainview" | "companion", string>>;
+  candidateManifest?: AppCatalogRegistrationV1;
+} {
+  const runtimeMode = environment.SPMT_RUNTIME_MODE;
+  if (runtimeMode === "sandbox") {
+    const checked = validateSandboxWebEnvironment(environment);
+    const greenAppOrigins: NonNullable<ReturnType<typeof validateIntegratedWebEnvironment>["greenAppOrigins"]> = {};
+    for (const [appId, name] of [["discord-stream-hub", "DSH_WEB_ORIGIN"], ["streamweaver", "STREAMWEAVER_WEB_ORIGIN"], ["hearmeout", "HEARMEOUT_WEB_ORIGIN"], ["mountainview", "MOUNTAINVIEW_WEB_ORIGIN"], ["companion", "COMPANION_WEB_ORIGIN"]] as const) {
+      const value = environment[name];
+      if (value) greenAppOrigins[appId] = requireLoopbackOrigin(value);
+    }
+    return { ...checked, ...(Object.keys(greenAppOrigins).length ? { greenAppOrigins } : {}) };
+  }
+  if (runtimeMode !== "production") throw new Error("SPMT_RUNTIME_MODE must be production or sandbox");
+  const serviceOrigin = (value: string, name: string) => {
+    let url: URL;
+    try { url = new URL(value); } catch { throw new Error(`${name} must be an absolute URL`); }
+    const loopback = ["127.0.0.1", "localhost", "[::1]"].includes(url.hostname);
+    if (url.protocol !== "https:" && !(url.protocol === "http:" && loopback)) throw new Error(`${name} must use HTTPS, or loopback HTTP for a co-located service`);
+    if (url.username || url.password || url.pathname !== "/" || url.search || url.hash) throw new Error(`${name} must be a credential-free origin`);
+    return url.origin;
+  };
+  serviceOrigin(environment.SPMT_ORIGIN ?? "", "SPMT_ORIGIN");
+  for (const name of ["NEBULA_ARCADE_ORIGIN", "STREAMWEAVER_WEB_ORIGIN", "DSH_WEB_ORIGIN"] as const) if (!environment[name]) throw new Error(`${name} is required for the production three-node gateway`);
+  const greenAppOrigins: Partial<Record<"discord-stream-hub" | "streamweaver" | "hearmeout" | "mountainview" | "companion", string>> = {};
+  for (const [appId, name] of [["discord-stream-hub", "DSH_WEB_ORIGIN"], ["streamweaver", "STREAMWEAVER_WEB_ORIGIN"], ["hearmeout", "HEARMEOUT_WEB_ORIGIN"], ["mountainview", "MOUNTAINVIEW_WEB_ORIGIN"], ["companion", "COMPANION_WEB_ORIGIN"]] as const) {
+    const value = environment[name];
+    if (value) greenAppOrigins[appId] = serviceOrigin(value, name);
+  }
+  return {
+    spmtOrigin: serviceOrigin(environment.SPMT_ORIGIN ?? "", "SPMT_ORIGIN"),
+    ...(environment.NEBULA_ARCADE_ORIGIN ? { nebulaArcadeOrigin: serviceOrigin(environment.NEBULA_ARCADE_ORIGIN, "NEBULA_ARCADE_ORIGIN") } : {}),
+    ...(Object.keys(greenAppOrigins).length ? { greenAppOrigins } : {}),
   };
 }
 
@@ -496,6 +535,14 @@ function requireSameOrigin(request: IncomingMessage) {
   let origin: URL;
   try { origin = new URL(value); } catch { throw new WebHostError(403, "Request origin is invalid"); }
   if (!["http:", "https:"].includes(origin.protocol) || origin.host !== host) throw new WebHostError(403, "Cross-origin mutation is blocked");
+}
+
+function requireServiceOrigin(value: string) {
+  let url: URL;
+  try { url = new URL(value); } catch { throw new Error("Nebula Arcade origin must be an absolute URL"); }
+  if (url.protocol !== "https:" && !(url.protocol === "http:" && ["127.0.0.1", "localhost", "[::1]"].includes(url.hostname))) throw new Error("Nebula Arcade origin must use HTTPS, or loopback HTTP for local development");
+  if (url.username || url.password || url.pathname !== "/" || url.search || url.hash) throw new Error("Nebula Arcade origin must be a credential-free origin");
+  return url.origin;
 }
 
 function requireLoopbackOrigin(value: string) {
