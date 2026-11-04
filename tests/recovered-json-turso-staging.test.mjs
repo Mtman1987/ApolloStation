@@ -15,7 +15,7 @@ test("Chat Tag JSON remains one legacy-global source and secrets are redacted", 
       nested: { clientSecret: "also-do-not-store" },
     }));
     await writeFile(join(root, "data", "revoked-accounts.json"), "[]");
-    const records = await buildRecoveredJsonManifest({ chatTagRoot: root });
+    const records = await buildRecoveredJsonManifest({ legacyNebulaRoot: root });
     assert.equal(records.length, 2);
     assert.ok(records.every((record) => record.tenant === "legacy-global"));
     const state = records.find((record) => record.path.endsWith("app-state.json"));
@@ -65,12 +65,12 @@ test("dry-run stages nothing and apply is idempotent but rejects changed source"
       if (sql.startsWith("SELECT source, tenant_key, source_path")) {
         return {
           rows: [...rows.entries()].map(([key, row]) => [
-            ...key.split("|"), row.sourceHash, row.payloadHash,
+            ...key.split("\u0000"), row.sourceHash, row.payloadHash,
           ]),
         };
       }
       if (sql.startsWith("INSERT INTO")) {
-        rows.set(args.slice(0, 3).join("|"), { sourceHash: args[3], payloadHash: args[4] });
+        rows.set(args.slice(0, 3).join("\u0000"), { sourceHash: args[3], payloadHash: args[4] });
         return { rows: [], affectedRows: 1 };
       }
       if (sql.startsWith("SELECT source, COUNT(*)")) return { rows: [["nebula-legacy-global", rows.size]] };
