@@ -1,5 +1,5 @@
 import { StellarSpeechProvider } from "./speech-provider.js";
-import { StellarSpeechWorker } from "./speech-worker.js";
+import { StellarSpeechWorker, STELLAR_SPEECH_TRANSCRIPTION_CAPABILITY } from "./speech-worker.js";
 import {BraveStellarSearchProvider,StellarResearchService} from "./research.js";
 import { readFile } from "node:fs/promises";
 import { SpmtClient } from "@spmt/sdk";
@@ -18,7 +18,8 @@ const client = new SpmtClient({ baseUrl: spmtOrigin, appId: "stellar-core", getA
 const provider = openAiKey ? new OpenAiResponsesChatProvider({ apiKey: openAiKey, model }) : new OpenAiCompatibleChatProvider({ origin: providerOrigin, model });
 const research=new StellarResearchService(process.env.SPMT_OUTBOUND_MODE!=="disabled"&&process.env.STELLAR_BRAVE_SEARCH_CREDENTIAL?new BraveStellarSearchProvider(process.env.STELLAR_BRAVE_SEARCH_CREDENTIAL):undefined);
 const worker = new StellarChatWorker(client, provider, { workerId, executionTarget,research });
-const speech = new StellarSpeechWorker(client, new StellarSpeechProvider({ enabled: process.env.SPMT_OUTBOUND_MODE !== "disabled" || process.env.SPMT_SPEECH_OUTBOUND_ENABLED === "1", ...(process.env.DEEPGRAM_API_KEY ? { deepgramKey: process.env.DEEPGRAM_API_KEY } : {}), ...(process.env.EDENAI_API_KEY ? { edenKey: process.env.EDENAI_API_KEY } : {}) }), `${workerId}-speech`);
+const speechTranscriptionEnabled = process.env.SPMT_SPEECH_TRANSCRIPTION_ENABLED === "1" && (process.env.SPMT_OUTBOUND_MODE !== "disabled" || process.env.SPMT_SPEECH_OUTBOUND_ENABLED === "1");
+const speechTranscription = new StellarSpeechWorker(client, new StellarSpeechProvider({ enabled: speechTranscriptionEnabled, ...(process.env.DEEPGRAM_API_KEY ? { deepgramKey: process.env.DEEPGRAM_API_KEY } : {}), ...(process.env.EDENAI_API_KEY ? { edenKey: process.env.EDENAI_API_KEY } : {}) }), `${workerId}-speech-transcription`, { executionTarget, capabilityIds: [STELLAR_SPEECH_TRANSCRIPTION_CAPABILITY] });
 const controller = new AbortController();
 const startedAt = new Date().toISOString();
 const startedMs = Date.now();
@@ -26,7 +27,7 @@ let coldStartMs: number | undefined;
 process.once("SIGTERM", () => controller.abort());
 process.once("SIGINT", () => controller.abort());
 process.stdout.write(`Stellar Core ${executionTarget} worker started\n`);
-await Promise.all([worker.run(controller.signal), speech.run(controller.signal), reportReadiness(controller.signal)]);
+await Promise.all([worker.run(controller.signal), speechTranscription.run(controller.signal), reportReadiness(controller.signal)]);
 
 async function reportReadiness(signal: AbortSignal) {
   while (!signal.aborted) {
