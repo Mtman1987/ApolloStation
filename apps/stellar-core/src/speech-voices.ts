@@ -1,4 +1,4 @@
-export type TTSProvider = 'edenai' | 'deepgram';
+export type TTSProvider = 'edenai' | 'deepgram' | 'kokoro';
 export type EdenAITTSProvider = 'google' | 'microsoft' | 'amazon' | 'openai';
 export type TTSVoiceGender = 'MALE' | 'FEMALE';
 
@@ -9,12 +9,22 @@ export type TTSVoiceOption = {
   providerLabel: string;
   gender: 'Male' | 'Female';
   description: string;
-  edenaiProvider: EdenAITTSProvider;
-  edenaiOption: TTSVoiceGender;
-  edenaiVoiceModel: string;
+  edenaiProvider?: EdenAITTSProvider;
+  edenaiOption?: TTSVoiceGender;
+  edenaiVoiceModel?: string;
+  kokoroVoice?: string;
   deepgramModel?: string;
   livekitDescriptor?: string;
 };
+
+export const KOKORO_VOICE_OPTIONS: TTSVoiceOption[] = [
+  { id: 'kokoro:af_heart', label: 'Athena · Kokoro (local)', provider: 'kokoro', providerLabel: 'Kokoro ONNX · local', gender: 'Female', description: 'Free local neural speech; no paid voice API.', kokoroVoice: 'af_heart' },
+  { id: 'kokoro:af_bella', label: 'Bella · Kokoro (local)', provider: 'kokoro', providerLabel: 'Kokoro ONNX · local', gender: 'Female', description: 'Warm local neural voice.', kokoroVoice: 'af_bella' },
+  { id: 'kokoro:af_nicole', label: 'Nicole · Kokoro (local)', provider: 'kokoro', providerLabel: 'Kokoro ONNX · local', gender: 'Female', description: 'Clear local neural voice.', kokoroVoice: 'af_nicole' },
+  { id: 'kokoro:am_michael', label: 'Apollo · Kokoro (local)', provider: 'kokoro', providerLabel: 'Kokoro ONNX · local', gender: 'Male', description: 'Free local neural speech; no paid voice API.', kokoroVoice: 'am_michael' },
+  { id: 'kokoro:am_puck', label: 'Puck · Kokoro (local)', provider: 'kokoro', providerLabel: 'Kokoro ONNX · local', gender: 'Male', description: 'Expressive local neural voice.', kokoroVoice: 'am_puck' },
+  { id: 'kokoro:am_fenrir', label: 'Fenrir · Kokoro (local)', provider: 'kokoro', providerLabel: 'Kokoro ONNX · local', gender: 'Male', description: 'Deeper local neural voice.', kokoroVoice: 'am_fenrir' },
+];
 
 export const ATHENA_CANONICAL_TTS_VOICE = 'deepgram:aura-2:athena';
 export const ATHENA_DEEPGRAM_TTS_MODEL = 'aura-2-athena-en';
@@ -212,9 +222,9 @@ export const EDENAI_VOICE_OPTIONS: TTSVoiceOption[] = [
   },
 ];
 
-export const TTS_VOICE_OPTIONS = [...DEEPGRAM_VOICE_OPTIONS, ...EDENAI_VOICE_OPTIONS];
-export const DEFAULT_TTS_PROVIDER: TTSProvider = 'edenai';
-export const DEFAULT_TTS_VOICE = 'edenai:openai:nova';
+export const TTS_VOICE_OPTIONS = [...KOKORO_VOICE_OPTIONS, ...DEEPGRAM_VOICE_OPTIONS, ...EDENAI_VOICE_OPTIONS];
+export const DEFAULT_TTS_PROVIDER: TTSProvider = 'kokoro';
+export const DEFAULT_TTS_VOICE = 'kokoro:af_heart';
 
 const LEGACY_VOICE_MAP: Record<string, string> = {
   'openai:nova': 'edenai:openai:nova',
@@ -245,7 +255,9 @@ const LEGACY_VOICE_MAP: Record<string, string> = {
 };
 
 export function normalizeTtsProvider(provider: unknown): TTSProvider {
-  return String(provider || '').trim().toLowerCase() === 'deepgram' ? 'deepgram' : DEFAULT_TTS_PROVIDER;
+  const value = String(provider || '').trim().toLowerCase();
+  if (value === 'deepgram' || value === 'edenai' || value === 'kokoro') return value;
+  return DEFAULT_TTS_PROVIDER;
 }
 
 export function normalizeTtsVoice(voice: string | undefined | null, _provider: TTSProvider = DEFAULT_TTS_PROVIDER): string {
@@ -260,7 +272,7 @@ export function normalizeTtsVoice(voice: string | undefined | null, _provider: T
   const lower = trimmed.toLowerCase();
   if (lower.includes('female')) return DEFAULT_TTS_VOICE;
   if (lower.includes('male') || ['charon', 'fenrir', 'puck', 'orus', 'algieba'].includes(lower)) {
-    return 'edenai:openai:onyx';
+    return 'kokoro:am_michael';
   }
   return DEFAULT_TTS_VOICE;
 }
@@ -274,9 +286,10 @@ export function getProviderForVoice(voice: string | undefined | null, fallback: 
   return getTtsVoiceOption(voice, fallback)?.provider || fallback;
 }
 
-export function getFallbackVoiceForProvider(_provider: TTSProvider, selectedVoice?: string | null): string {
+export function getFallbackVoiceForProvider(provider: TTSProvider, selectedVoice?: string | null): string {
   const selected = getTtsVoiceOption(selectedVoice);
-  return selected.gender === 'Male' ? 'edenai:openai:onyx' : DEFAULT_TTS_VOICE;
+  if (provider === 'kokoro') return selected.gender === 'Male' ? 'kokoro:am_michael' : DEFAULT_TTS_VOICE;
+  return selected.gender === 'Male' ? 'edenai:openai:onyx' : 'edenai:openai:nova';
 }
 
 // Backward-compatible exports used by older workflow/config callers.
