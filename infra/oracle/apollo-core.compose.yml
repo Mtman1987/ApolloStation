@@ -5,8 +5,6 @@ x-apollo-core: &apollo-core
   build:
     context: ../..
     dockerfile: infra/oracle/Dockerfile.apollo
-  env_file:
-    - ./apollo.env
   init: true
   restart: unless-stopped
   read_only: true
@@ -35,6 +33,21 @@ services:
       DATABASE_PATH: /var/lib/apollo/data/spmt.sqlite
       SPMT_DATABASE_PATH: /var/lib/apollo/data/spmt.sqlite
       SPMT_PUBLIC_URL: https://${SPMT_PUBLIC_HOST:?Set SPMT_PUBLIC_HOST}
+      SPMT_WEBHOOK_KEY: ${SPMT_WEBHOOK_KEY:?Set SPMT_WEBHOOK_KEY}
+      SPMT_PROVIDER_CREDENTIAL_KEY: ${SPMT_PROVIDER_CREDENTIAL_KEY:?Set SPMT_PROVIDER_CREDENTIAL_KEY}
+      SPMT_PUBLIC_ORIGIN: https://${SPMT_PUBLIC_HOST:?Set SPMT_PUBLIC_HOST}
+      TWITCH_CLIENT_ID: ${TWITCH_CLIENT_ID:-}
+      TWITCH_CLIENT_SECRET: ${TWITCH_CLIENT_SECRET:-}
+      TWITCH_BOT_OAUTH_TOKEN: ${TWITCH_BOT_OAUTH_TOKEN:-}
+      SPMT_TWITCH_BOT_ROLES: ${SPMT_TWITCH_BOT_ROLES:-}
+      DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID:-}
+      DISCORD_CLIENT_SECRET: ${DISCORD_CLIENT_SECRET:-}
+      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:-}
+      DISCORD_PUBLIC_KEY: ${DISCORD_PUBLIC_KEY:-}
+      KICK_CLIENT_ID: ${KICK_CLIENT_ID:-}
+      KICK_CLIENT_SECRET: ${KICK_CLIENT_SECRET:-}
+      YOUTUBE_CLIENT_ID: ${YOUTUBE_CLIENT_ID:-}
+      YOUTUBE_CLIENT_SECRET: ${YOUTUBE_CLIENT_SECRET:-}
       SPMT_STELLAR_CHAT_ENABLED: "1"
       STELLAR_WORKER_CREDENTIAL: ${STELLAR_WORKER_CREDENTIAL:?Set STELLAR_WORKER_CREDENTIAL}
       SPMT_SPEECH_ENABLED: "1"
@@ -189,8 +202,6 @@ services:
       context: ../..
       dockerfile: services/free-tts/Dockerfile
     image: apollo-kokoro:local
-    env_file:
-      - ./apollo.env
     init: true
     restart: unless-stopped
     environment:
@@ -258,8 +269,6 @@ services:
       context: ../../apps/hearmeout/legacy-worker
       dockerfile: Dockerfile
     image: apollo-hearmeout-lounge-worker:local
-    env_file:
-      - ./apollo.env
     init: true
     restart: unless-stopped
     environment:
@@ -290,8 +299,6 @@ services:
       context: ../..
       dockerfile: services/restream-control/Dockerfile
     image: apollo-restream-control:local
-    env_file:
-      - ./apollo.env
     init: true
     restart: unless-stopped
     environment:
@@ -334,8 +341,6 @@ services:
 
   caddy:
     image: caddy:2.10-alpine
-    env_file:
-      - ./apollo.env
     restart: unless-stopped
     ports:
       - "80:80"
