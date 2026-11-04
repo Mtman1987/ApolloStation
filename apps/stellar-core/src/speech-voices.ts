@@ -287,6 +287,12 @@ export function getTtsVoiceOption(voice: string | undefined | null, provider: TT
   return TTS_VOICE_OPTIONS.find((option) => option.id === normalized) || TTS_VOICE_OPTIONS[0]!;
 }
 
+export function normalizeKokoroVoice(value: string | undefined | null): string {
+  const voice = getTtsVoiceOption(value);
+  if (voice.provider === "kokoro" && voice.kokoroVoice) return voice.id;
+  return voice.gender === "Male" ? "kokoro:am_michael" : DEFAULT_TTS_VOICE;
+}
+
 export function getProviderForVoice(voice: string | undefined | null, fallback: TTSProvider = DEFAULT_TTS_PROVIDER): TTSProvider {
   return getTtsVoiceOption(voice, fallback)?.provider || fallback;
 }
