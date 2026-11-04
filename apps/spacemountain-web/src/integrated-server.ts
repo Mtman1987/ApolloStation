@@ -19,6 +19,7 @@ export interface IntegratedSpaceMountainWebHostOptions extends BaseIntegratedSpa
 export function createIntegratedSpaceMountainWebHost(options:IntegratedSpaceMountainWebHostOptions){
   if(options.hearMeOutActivityClientId&&!/^\d{5,30}$/.test(options.hearMeOutActivityClientId))throw new Error("Invalid HearMeOut Activity client ID");
   const activityOrigin=options.hearMeOutActivityClientId?`https://${options.hearMeOutActivityClientId}.discordsays.com`:undefined;
+  for(const origin of [options.spmtOrigin,options.nebulaArcadeOrigin,...Object.values(options.greenAppOrigins??{})])if(origin)validateProxyOrigin(origin);
   const base=createBaseIntegratedHost({...options,port:0,host:"127.0.0.1"});let basePort=0;
   const outer=createServer(async(request,response)=>{try{const url=new URL(request.url??"/","http://spacemountain.parity");
     // Validate the browser origin before rewriting it for a loopback app.
@@ -62,10 +63,7 @@ export function createIntegratedSpaceMountainWebHost(options:IntegratedSpaceMoun
 
 function greenAppForPath(pathname:string):GreenAppId|undefined{for(const appId of GREEN_APP_IDS)if(pathname===`/apps/${appId}`||pathname.startsWith(`/apps/${appId}/`)||pathname===`/api/${appId}`||pathname.startsWith(`/api/${appId}/`)||pathname===`/health/${appId}`)return appId;return undefined;}
 function proxyDirect(request:IncomingMessage,response:ServerResponse,originValue:string,path:string,rewriteOrigin:boolean){
-  const target=new URL(originValue);
-  const loopback=["127.0.0.1","localhost","[::1]"].includes(target.hostname);
-  if(target.username||target.password||target.search||target.hash||target.pathname!=="/")throw new Error("Parity proxy origins must be plain origins without credentials, paths, queries, or fragments");
-  if(target.protocol!=="https:"&&!(target.protocol==="http:"&&loopback))throw new Error("Parity proxy targets must use HTTPS, or loopback HTTP for local development");
+  const target=validateProxyOrigin(originValue);
   const headers={...request.headers};
   stripHopByHopHeaders(headers);
   headers.host=target.host;
@@ -80,6 +78,13 @@ function proxyDirect(request:IncomingMessage,response:ServerResponse,originValue
   const upstream=target.protocol==="https:"?httpsRequest(requestOptions,handleResponse):httpRequest(requestOptions,handleResponse);
   upstream.on("error",(error)=>response.headersSent?response.destroy(error):json(response,502,{error:"internal_proxy_unavailable",message:error.message}));
   request.pipe(upstream);
+}
+function validateProxyOrigin(originValue:string){
+  const target=new URL(originValue);
+  const loopback=["127.0.0.1","localhost","[::1]"].includes(target.hostname);
+  if(target.username||target.password||target.search||target.hash||target.pathname!=="/")throw new Error("Parity proxy origins must be plain origins without credentials, paths, queries, or fragments");
+  if(target.protocol!=="https:"&&!(target.protocol==="http:"&&loopback))throw new Error("Parity proxy targets must use HTTPS, or loopback HTTP for local development");
+  return target;
 }
 function stripHopByHopHeaders(headers:Record<string,string|string[]|number|undefined>){
   const connection=headers.connection;
