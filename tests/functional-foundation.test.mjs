@@ -34,8 +34,6 @@ test("execution jobs meter once, reject embedded secrets, fence workers, and exp
   assert.equal(usage.summary("tenant-a", "user-a", "creator", at).resources.find((item) => item.resource === "ai-chat-requests").hosted, 1);
   assert.throws(() => jobs.create({ ...input, idempotencyKey: "unsafe", input: { accessToken: "never-store-me" } }), (error) => error instanceof ExecutionJobError && error.code === "invalid");
   assert.equal(jobs.claim({ tenantId: "tenant-a", executionOwner: "stellar-core", workerId: "worker-a", executionTarget: "fly" }), undefined);
-  const hosted = jobs.create({ ...input, idempotencyKey: "hosted-target", executionTarget: "hosted" }).job;
-  assert.equal(jobs.claim({ tenantId: "tenant-a", executionOwner: "stellar-core", workerId: "hosted-worker", executionTarget: "hosted" })?.id, hosted.id);
   const claimed = jobs.claim({ tenantId: "tenant-a", executionOwner: "stellar-core", workerId: "worker-a", executionTarget: "sprite" });
   assert.equal(claimed.state, "leased");
   const running = jobs.heartbeat({ tenantId: "tenant-a", jobId: claimed.id, workerId: "worker-a", leaseId: claimed.leaseId, fencingEpoch: claimed.fencingEpoch, progress: { percent: 35, message: "Reading context" } });
@@ -47,6 +45,9 @@ test("execution jobs meter once, reject embedded secrets, fence workers, and exp
   assert.equal(completed.progress.percent, 100);
   assert.equal("leaseId" in completed, false);
   assert.deepEqual(transitions.map((entry) => entry[1]), ["queued", "leased", "running", "succeeded"]);
+  const hostedJobs = new ExecutionJobService({ store: new MemoryExecutionJobStore(), usage, resolvePlan: () => "creator", now: () => at, idFactory: () => "job_hosted_1" });
+  const hosted = hostedJobs.create({ ...input, idempotencyKey: "hosted-target", executionTarget: "hosted" }).job;
+  assert.equal(hostedJobs.claim({ tenantId: "tenant-a", executionOwner: "stellar-core", workerId: "hosted-worker", executionTarget: "hosted" })?.id, hosted.id);
 });
 
 test("paid Companion-local jobs remain unmetered against hosted caps while still appearing in Account usage", () => {
