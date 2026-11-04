@@ -33,8 +33,10 @@ function normalizeLabel(value) {
 
 function allowedRestreamHost(value) {
   try {
-    const host = new URL(value).hostname.toLowerCase();
-    return host === 'restream.io' || host.endsWith('.restream.io');
+    const url = new URL(value);
+    const host = url.hostname.toLowerCase();
+    return url.protocol === 'https:' && !url.username && !url.password
+      && (host === 'restream.io' || host.endsWith('.restream.io'));
   } catch {
     return false;
   }
