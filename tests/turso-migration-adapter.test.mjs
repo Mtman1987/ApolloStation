@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { encodeHranaValue, normalizeTursoUrl } from "../scripts/migrate-sqlite-to-turso.mjs";
+import { decodeHranaValue, encodeHranaValue, normalizeTursoUrl } from "../scripts/migrate-sqlite-to-turso.mjs";
 
 test("encodes SQLite scalar values for Hrana", () => {
   assert.deepEqual(encodeHranaValue(null), { type: "null" });
@@ -29,4 +29,12 @@ test("normalizes Turso URLs to the authenticated Hrana endpoint", () => {
     "https://example.turso.io/v2/pipeline",
   );
   assert.throws(() => normalizeTursoUrl("http://example.turso.io"), /must use libsql/);
+});
+
+
+test("decodes Hrana integers without losing 64-bit precision", () => {
+  assert.equal(decodeHranaValue({ type: "integer", value: "9223372036854775807" }), 9223372036854775807n);
+  assert.equal(decodeHranaValue({ type: "integer", value: "-9223372036854775808" }), -9223372036854775808n);
+  assert.equal(decodeHranaValue({ type: "integer", value: "9007199254740991" }), 9007199254740991);
+  assert.equal(decodeHranaValue({ type: "integer", value: "42" }), 42);
 });
