@@ -1,0 +1,371 @@
+name: apollo
+
+x-apollo-core: &apollo-core
+  image: apollo-core:local
+  build:
+    context: ../..
+    dockerfile: infra/oracle/Dockerfile.apollo
+  env_file:
+    - ./apollo.env
+  init: true
+  restart: unless-stopped
+  read_only: true
+  tmpfs:
+    - /tmp:size=512m,mode=1777
+  security_opt:
+    - no-new-privileges:true
+  volumes:
+    - type: bind
+      source: ${APOLLO_DATA_HOST_PATH:?Set APOLLO_DATA_HOST_PATH to the prepared encrypted data volume}
+      target: /var/lib/apollo
+      bind:
+        create_host_path: false
+  networks:
+    - apollo-private
+
+services:
+  spmt-service:
+    <<: *apollo-core
+    command: apps/spmt-service/dist/provider-identity-start.js
+    environment:
+      PORT: "3000"
+      SPMT_HOST: "0.0.0.0"
+      SPMT_RUNTIME_MODE: production
+      SPMT_OUTBOUND_MODE: ${SPMT_OUTBOUND_MODE:-active}
+      DATABASE_PATH: /var/lib/apollo/data/spmt.sqlite
+      SPMT_DATABASE_PATH: /var/lib/apollo/data/spmt.sqlite
+      SPMT_PUBLIC_URL: https://${SPMT_PUBLIC_HOST:?Set SPMT_PUBLIC_HOST}
+      SPMT_STELLAR_CHAT_ENABLED: "1"
+      STELLAR_WORKER_CREDENTIAL: ${STELLAR_WORKER_CREDENTIAL:?Set STELLAR_WORKER_CREDENTIAL}
+      SPMT_SPEECH_ENABLED: "1"
+      SPMT_CHAT_GATEWAY_ENABLED: "1"
+      CHAT_GATEWAY_WORKER_CREDENTIAL: ${CHAT_GATEWAY_WORKER_CREDENTIAL:?Set CHAT_GATEWAY_WORKER_CREDENTIAL}
+      SPMT_STREAMWEAVER_PROVIDER_RUNTIME_ENABLED: "1"
+      STREAMWEAVER_WORKER_CREDENTIAL: ${STREAMWEAVER_WORKER_CREDENTIAL:?Set STREAMWEAVER_WORKER_CREDENTIAL}
+      SPMT_DSH_LIVE_RUNTIME_ENABLED: "1"
+      DSH_WORKER_CREDENTIAL: ${DSH_WORKER_CREDENTIAL:?Set DSH_WORKER_CREDENTIAL}
+      SPMT_NEBULA_ARCADE_PROVIDER_RUNTIME_ENABLED: "1"
+      NEBULA_ARCADE_WORKER_CREDENTIAL: ${NEBULA_ARCADE_WORKER_CREDENTIAL:?Set NEBULA_ARCADE_WORKER_CREDENTIAL}
+      SPMT_HEARMEOUT_RUNTIME_ENABLED: "1"
+      HEARMEOUT_WORKER_CREDENTIAL: ${HEARMEOUT_WORKER_CREDENTIAL:?Set HEARMEOUT_WORKER_CREDENTIAL}
+    expose:
+      - "3000"
+
+  spacemountain-web:
+    <<: *apollo-core
+    command: apps/spacemountain-web/dist/integrated-server.js
+    environment:
+      PORT: "8080"
+      HOST: "0.0.0.0"
+      SPMT_RUNTIME_MODE: production
+      SPMT_OUTBOUND_MODE: ${SPMT_OUTBOUND_MODE:-active}
+      SPMT_ORIGIN: https://${SPMT_API_HOST:?Set SPMT_API_HOST}
+      NEBULA_ARCADE_ORIGIN: https://${NEBULA_PUBLIC_HOST:?Set NEBULA_PUBLIC_HOST}
+      STREAMWEAVER_WEB_ORIGIN: https://${STREAMWEAVER_PUBLIC_HOST:?Set STREAMWEAVER_PUBLIC_HOST}
+      DSH_WEB_ORIGIN: https://${DSH_PUBLIC_HOST:?Set DSH_PUBLIC_HOST}
+      HEARMEOUT_WEB_ORIGIN: https://${HEARMEOUT_PUBLIC_HOST:?Set HEARMEOUT_PUBLIC_HOST}
+    expose:
+      - "8080"
+    depends_on:
+      spmt-service:
+        condition: service_started
+
+  chat-gateway:
+    <<: *apollo-core
+    command: apps/chat-gateway/dist/service-start.js
+    environment:
+      HOST: "0.0.0.0"
+      SPMT_RUNTIME_MODE: production
+      SPMT_OUTBOUND_MODE: ${SPMT_OUTBOUND_MODE:-active}
+      SPMT_ORIGIN: https://${SPMT_API_HOST:?Set SPMT_API_HOST}
+      CHAT_GATEWAY_DATABASE_PATH: /var/lib/apollo/data/chat-gateway.sqlite
+      CHAT_GATEWAY_WORKER_CREDENTIAL: ${CHAT_GATEWAY_WORKER_CREDENTIAL:?Set CHAT_GATEWAY_WORKER_CREDENTIAL}
+      CHAT_GATEWAY_CONNECTIONS: ${CHAT_GATEWAY_CONNECTIONS:-[]}
+      CHAT_GATEWAY_RECONCILE_MS: ${CHAT_GATEWAY_RECONCILE_MS:-1000}
+      STREAMWEAVER_PROVIDER_RUNTIME_ENABLED: "1"
+      STREAMWEAVER_DATABASE_PATH: /var/lib/apollo/data/streamweaver.sqlite
+      STREAMWEAVER_WORKER_CREDENTIAL: ${STREAMWEAVER_WORKER_CREDENTIAL:?Set STREAMWEAVER_WORKER_CREDENTIAL}
+      STREAMWEAVER_RESTREAM_CONTROL_ORIGIN: https://${RESTREAM_PRIVATE_HOST:?Set RESTREAM_PRIVATE_HOST}
+      STREAMWEAVER_RESTREAM_CONTROL_CREDENTIAL: ${RESTREAM_CONTROL_CREDENTIAL:?Set RESTREAM_CONTROL_CREDENTIAL}
+      NEBULA_ARCADE_PROVIDER_RUNTIME_ENABLED: "1"
+      NEBULA_ARCADE_DATABASE_PATH: /var/lib/apollo/data/nebula-arcade.sqlite
+      NEBULA_ARCADE_WORKER_CREDENTIAL: ${NEBULA_ARCADE_WORKER_CREDENTIAL:?Set NEBULA_ARCADE_WORKER_CREDENTIAL}
+      NEBULA_ARCADE_RUNTIME_CONFIG_PATH: /var/lib/apollo/config/nebula-arcade-runtime.production.json
+      NEBULA_ARCADE_PUBLIC_ORIGIN: https://${NEBULA_PUBLIC_HOST:?Set NEBULA_PUBLIC_HOST}
+      NEBULA_GAMEPLAY_PUBLIC_ORIGIN: https://${NEBULA_PUBLIC_HOST:?Set NEBULA_PUBLIC_HOST}
+      NEBULA_ARCADE_WEBHOOK_NAME: ${NEBULA_ARCADE_WEBHOOK_NAME:-Nebula Arcade}
+      STELLAR_EXECUTION_TARGET: hosted
+    depends_on:
+      spmt-service:
+        condition: service_started
+
+  streamweaver-web:
+    <<: *apollo-core
+    command: apps/streamweaver/dist/web-server.js
+    environment:
+      PORT: "3202"
+      HOST: "0.0.0.0"
+      SPMT_RUNTIME_MODE: production
+      SPMT_OUTBOUND_MODE: ${SPMT_OUTBOUND_MODE:-active}
+      SPMT_ORIGIN: https://${SPMT_API_HOST:?Set SPMT_API_HOST}
+      STREAMWEAVER_DATABASE_PATH: /var/lib/apollo/data/streamweaver.sqlite
+      STREAMWEAVER_WORKER_CREDENTIAL: ${STREAMWEAVER_WORKER_CREDENTIAL:?Set STREAMWEAVER_WORKER_CREDENTIAL}
+      CHAT_GATEWAY_CONNECTIONS: ${CHAT_GATEWAY_CONNECTIONS:-[]}
+    expose:
+      - "3202"
+    depends_on:
+      spmt-service:
+        condition: service_started
+
+  dsh-web:
+    <<: *apollo-core
+    command: apps/discord-stream-hub/dist/web-server.js
+    environment:
+      PORT: "3201"
+      HOST: "0.0.0.0"
+      SPMT_RUNTIME_MODE: production
+      SPMT_OUTBOUND_MODE: ${SPMT_OUTBOUND_MODE:-active}
+      SPMT_ORIGIN: https://${SPMT_API_HOST:?Set SPMT_API_HOST}
+      SPMT_PUBLIC_ORIGIN: https://${SPMT_PUBLIC_HOST:?Set SPMT_PUBLIC_HOST}
+      DSH_DATABASE_PATH: /var/lib/apollo/data/discord-stream-hub.sqlite
+      DSH_RUNTIME_CONFIG_PATH: /var/lib/apollo/config/discord-stream-hub-runtime.production.json
+      DSH_WORKER_CREDENTIAL: ${DSH_WORKER_CREDENTIAL:?Set DSH_WORKER_CREDENTIAL}
+      DSH_SERVICE_SECRET: ${DSH_SERVICE_SECRET:?Set DSH_SERVICE_SECRET}
+      DSH_DISCORD_PUBLIC_KEY: ${DSH_DISCORD_PUBLIC_KEY:?Set DSH_DISCORD_PUBLIC_KEY}
+      DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID:?Set DISCORD_CLIENT_ID}
+    expose:
+      - "3201"
+    depends_on:
+      spmt-service:
+        condition: service_started
+
+  dsh-worker:
+    <<: *apollo-core
+    command: apps/discord-stream-hub/dist/live-worker-start.js
+    environment:
+      SPMT_RUNTIME_MODE: production
+      SPMT_OUTBOUND_MODE: ${SPMT_OUTBOUND_MODE:-active}
+      SPMT_ORIGIN: https://${SPMT_API_HOST:?Set SPMT_API_HOST}
+      SPMT_PUBLIC_ORIGIN: https://${SPMT_PUBLIC_HOST:?Set SPMT_PUBLIC_HOST}
+      DSH_DATABASE_PATH: /var/lib/apollo/data/discord-stream-hub.sqlite
+      DSH_RUNTIME_CONFIG_PATH: /var/lib/apollo/config/discord-stream-hub-runtime.production.json
+      DSH_WORKER_CREDENTIAL: ${DSH_WORKER_CREDENTIAL:?Set DSH_WORKER_CREDENTIAL}
+      STELLAR_EXECUTION_TARGET: hosted
+      CHROMIUM_EXECUTABLE_PATH: /usr/bin/chromium
+    depends_on:
+      spmt-service:
+        condition: service_started
+      dsh-web:
+        condition: service_started
+
+  nebula-live:
+    <<: *apollo-core
+    command: apps/nebula-arcade/dist/nebula-arcade-live-server.js
+    environment:
+      PORT: "3100"
+      HOST: "0.0.0.0"
+      SPMT_ORIGIN: https://${SPMT_API_HOST:?Set SPMT_API_HOST}
+      NEBULA_ARCADE_DATABASE_PATH: /var/lib/apollo/data/nebula-arcade.sqlite
+      NEBULA_ARCADE_WORKER_CREDENTIAL: ${NEBULA_ARCADE_WORKER_CREDENTIAL:?Set NEBULA_ARCADE_WORKER_CREDENTIAL}
+      NEBULA_ARCADE_TENANT_ID: ${NEBULA_ARCADE_TENANT_ID:?Set NEBULA_ARCADE_TENANT_ID}
+      NEBULA_ARCADE_CHANNEL_ID: ${NEBULA_ARCADE_CHANNEL_ID:?Set NEBULA_ARCADE_CHANNEL_ID}
+      NEBULA_ARCADE_RUNTIME_CONFIG_PATH: /var/lib/apollo/config/nebula-arcade-runtime.production.json
+      NEBULA_ARCADE_PUBLIC_ORIGIN: https://${NEBULA_PUBLIC_HOST:?Set NEBULA_PUBLIC_HOST}
+    expose:
+      - "3100"
+    depends_on:
+      spmt-service:
+        condition: service_started
+
+  stellar-worker:
+    <<: *apollo-core
+    command: apps/stellar-core/dist/worker-start.js
+    environment:
+      SPMT_ORIGIN: https://${SPMT_API_HOST:?Set SPMT_API_HOST}
+      SPMT_OUTBOUND_MODE: ${SPMT_OUTBOUND_MODE:-active}
+      STELLAR_WORKER_CREDENTIAL: ${STELLAR_WORKER_CREDENTIAL:?Set STELLAR_WORKER_CREDENTIAL}
+      STELLAR_EXECUTION_TARGET: hosted
+      STELLAR_PROVIDER_ORIGIN: ${STELLAR_PROVIDER_ORIGIN:-}
+      STELLAR_PROVIDER_MODEL: ${STELLAR_PROVIDER_MODEL:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      STELLAR_KOKORO_URL: ${STELLAR_KOKORO_URL:-}
+      STELLAR_KOKORO_AUTH_TOKEN: ${STELLAR_KOKORO_AUTH_TOKEN:-}
+    depends_on:
+      spmt-service:
+        condition: service_started
+
+  hearmeout-web:
+    <<: *apollo-core
+    command: apps/hearmeout/dist/web-server-start.js
+    environment:
+      PORT: "3200"
+      HOST: "0.0.0.0"
+      SPMT_OUTBOUND_MODE: ${SPMT_OUTBOUND_MODE:-active}
+      SPMT_ORIGIN: https://${SPMT_API_HOST:?Set SPMT_API_HOST}
+      HEARMEOUT_ROOM_DATABASE_PATH: /var/lib/apollo/data/hearmeout.sqlite
+      HEARMEOUT_WORKER_CREDENTIAL: ${HEARMEOUT_WORKER_CREDENTIAL:?Set HEARMEOUT_WORKER_CREDENTIAL}
+      HEARMEOUT_ACTIVITY_TENANT_ID: ${HEARMEOUT_ACTIVITY_TENANT_ID:?Set HEARMEOUT_ACTIVITY_TENANT_ID}
+      HEARMEOUT_SINGLE_BROADCAST: "1"
+      HEARMEOUT_BROADCAST_EXECUTION_USER_ID: ${HEARMEOUT_BROADCAST_EXECUTION_USER_ID:?Set HEARMEOUT_BROADCAST_EXECUTION_USER_ID}
+      HEARMEOUT_BROADCAST_CACHE_PATH: /var/lib/apollo/media/hearmeout-broadcast
+      HEARMEOUT_FFMPEG_BINARY: /usr/bin/ffmpeg
+      DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID:?Set DISCORD_CLIENT_ID}
+      DISCORD_PUBLIC_KEY: ${DISCORD_PUBLIC_KEY:?Set DISCORD_PUBLIC_KEY}
+    expose:
+      - "3200"
+    depends_on:
+      spmt-service:
+        condition: service_started
+
+  hearmeout-lounge-worker:
+    build:
+      context: ../../apps/hearmeout/legacy-worker
+      dockerfile: Dockerfile
+    image: apollo-hearmeout-lounge-worker:local
+    env_file:
+      - ./apollo.env
+    init: true
+    restart: unless-stopped
+    environment:
+      PORT: "3002"
+      HOST: "0.0.0.0"
+      APP_URL: https://${HEARMEOUT_PUBLIC_HOST:?Set HEARMEOUT_PUBLIC_HOST}
+      HMO_WORKER_ROLE: lounge
+      HMO_WORKER_SHARED_SECRET: ${HEARMEOUT_WORKER_CREDENTIAL:?Set HEARMEOUT_WORKER_CREDENTIAL}
+      HMO_LOUNGE_DIRECT_ONLY: ${HMO_LOUNGE_DIRECT_ONLY:-true}
+      MUSIC_CACHE_DIR: /data/media/music
+      EXTRACTOR_USER_DATA_DIR: /data/media/yt-dlp-profile
+      STREAMWEAVER_INTERNAL_ORIGIN: https://${STREAMWEAVER_PUBLIC_HOST:?Set STREAMWEAVER_PUBLIC_HOST}
+      RESTREAM_AUTOMATION_ENABLED: "false"
+    volumes:
+      - type: bind
+        source: ${APOLLO_DATA_HOST_PATH:?Set APOLLO_DATA_HOST_PATH}
+        target: /data
+        bind:
+          create_host_path: false
+    networks:
+      - apollo-private
+    depends_on:
+      hearmeout-web:
+        condition: service_started
+
+  restream-control:
+    build:
+      context: ../..
+      dockerfile: services/restream-control/Dockerfile
+    image: apollo-restream-control:local
+    env_file:
+      - ./apollo.env
+    init: true
+    restart: unless-stopped
+    environment:
+      PORT: "3018"
+      HOST: "0.0.0.0"
+      RESTREAM_CONTROL_CREDENTIAL: ${RESTREAM_CONTROL_CREDENTIAL:?Set RESTREAM_CONTROL_CREDENTIAL}
+      RESTREAM_PROFILE_DIR: /var/lib/restream-profile
+      RESTREAM_PROFILE_VOLUME_MARKER: /var/lib/restream-profile/.restream-profile-volume
+      RESTREAM_TLS_CERT_FILE: /run/secrets/restream-control.crt
+      RESTREAM_TLS_KEY_FILE: /run/secrets/restream-control.key
+      RESTREAM_AUTOMATION_ENABLED: ${RESTREAM_AUTOMATION_ENABLED:-false}
+      PUPPETEER_EXECUTABLE_PATH: /usr/bin/chromium
+    volumes:
+      - type: bind
+        source: ${RESTREAM_PROFILE_HOST_PATH:?Set RESTREAM_PROFILE_HOST_PATH}
+        target: /var/lib/restream-profile
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${RESTREAM_TLS_CERT_HOST_PATH:?Set RESTREAM_TLS_CERT_HOST_PATH}
+        target: /run/secrets/restream-control.crt
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${RESTREAM_TLS_KEY_HOST_PATH:?Set RESTREAM_TLS_KEY_HOST_PATH}
+        target: /run/secrets/restream-control.key
+        read_only: true
+        bind:
+          create_host_path: false
+    expose:
+      - "3018"
+    shm_size: 512m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      - apollo-private
+
+  caddy:
+    image: caddy:2.10-alpine
+    env_file:
+      - ./apollo.env
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - type: bind
+        source: ./Caddyfile.apollo
+        target: /etc/caddy/Caddyfile
+        read_only: true
+      - type: bind
+        source: ${APOLLO_DATA_HOST_PATH:?Set APOLLO_DATA_HOST_PATH}/caddy-data
+        target: /data
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${APOLLO_DATA_HOST_PATH:?Set APOLLO_DATA_HOST_PATH}/caddy-config
+        target: /config
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${RESTREAM_TLS_CERT_HOST_PATH:?Set RESTREAM_TLS_CERT_HOST_PATH}
+        target: /etc/caddy/tls/restream-control.crt
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${RESTREAM_TLS_KEY_HOST_PATH:?Set RESTREAM_TLS_KEY_HOST_PATH}
+        target: /etc/caddy/tls/restream-control.key
+        read_only: true
+        bind:
+          create_host_path: false
+    environment:
+      SPMT_PUBLIC_HOST: ${SPMT_PUBLIC_HOST:?Set SPMT_PUBLIC_HOST}
+      SPMT_API_HOST: ${SPMT_API_HOST:?Set SPMT_API_HOST}
+      NEBULA_PUBLIC_HOST: ${NEBULA_PUBLIC_HOST:?Set NEBULA_PUBLIC_HOST}
+      STREAMWEAVER_PUBLIC_HOST: ${STREAMWEAVER_PUBLIC_HOST:?Set STREAMWEAVER_PUBLIC_HOST}
+      DSH_PUBLIC_HOST: ${DSH_PUBLIC_HOST:?Set DSH_PUBLIC_HOST}
+      HEARMEOUT_PUBLIC_HOST: ${HEARMEOUT_PUBLIC_HOST:?Set HEARMEOUT_PUBLIC_HOST}
+      RESTREAM_PRIVATE_HOST: ${RESTREAM_PRIVATE_HOST:?Set RESTREAM_PRIVATE_HOST}
+    networks:
+      apollo-private:
+        aliases:
+          - ${SPMT_PUBLIC_HOST:?Set SPMT_PUBLIC_HOST}
+          - ${SPMT_API_HOST:?Set SPMT_API_HOST}
+          - ${NEBULA_PUBLIC_HOST:?Set NEBULA_PUBLIC_HOST}
+          - ${STREAMWEAVER_PUBLIC_HOST:?Set STREAMWEAVER_PUBLIC_HOST}
+          - ${DSH_PUBLIC_HOST:?Set DSH_PUBLIC_HOST}
+          - ${HEARMEOUT_PUBLIC_HOST:?Set HEARMEOUT_PUBLIC_HOST}
+          - ${RESTREAM_PRIVATE_HOST:?Set RESTREAM_PRIVATE_HOST}
+    depends_on:
+      spacemountain-web:
+        condition: service_started
+      spmt-service:
+        condition: service_started
+      nebula-live:
+        condition: service_started
+      streamweaver-web:
+        condition: service_started
+      dsh-web:
+        condition: service_started
+      hearmeout-web:
+        condition: service_started
+      restream-control:
+        condition: service_started
+
+networks:
+  apollo-private:
+    external: true
