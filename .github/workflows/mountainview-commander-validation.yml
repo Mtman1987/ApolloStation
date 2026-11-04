@@ -9,6 +9,7 @@ on:
       - apps/mountainview/src/voice-router.ts
       - apps/mountainview/src/web-server.ts
       - tests/mountainview-commander-listener.test.mjs
+      - tests/mountainview-commander-browser.test.mjs
       - tests/mountainview-companion-platform.test.mjs
       - .github/workflows/mountainview-commander-validation.yml
   workflow_dispatch:
@@ -37,4 +38,4 @@ jobs:
       - name: Compile workspace
         run: npm run build
       - name: Run Commander MT and MountainView route regressions
-        run: node --import ./scripts/offline-network-guard.mjs --test tests/mountainview-commander-listener.test.mjs tests/mountainview-companion-platform.test.mjs
+        run: node --import ./scripts/offline-network-guard.mjs --test tests/mountainview-commander-listener.test.mjs tests/mountainview-commander-browser.test.mjs tests/mountainview-companion-platform.test.mjs
