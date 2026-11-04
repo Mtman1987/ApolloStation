@@ -38,16 +38,23 @@ The supervisor currently passes local SPMT and local app URLs. Those must become
 
 ## Additional app-owned SQLite state discovered
 
-A source scan found more persistent stores than the initial entrypoint-only inventory. This is an initial list, not a complete schema census:
+A repository-wide source search found a broad set of SQLite-backed modules. This is a source-path inventory, not proof that every module owns a separate database file; several may share a configured SQLite path, and some entries are maintenance/migration utilities. Trace each constructor to its production composition and actual path before changing storage.
 
-| Priority area | SQLite-backed store modules observed | State class |
-|---|---|---|
-| Chat Gateway | `apps/chat-gateway/src/index.ts` | Connection/provider and chat-gateway runtime state |
-| StreamWeaver | `apps/streamweaver/src/bic-store.ts`, `ride-store.ts`, `tiktok-store.ts` | Tenant counters, ride attempts/front-seat state, TikTok config/status/outbox |
-| Discord Stream Hub / Lounge | `apps/discord-stream-hub/src/live-monitor.ts`, `lounge-state.ts`, `lounge-host.ts` | Live member/spotlight/shoutout state, shared Lounge presentation state, Stella host state |
-| Nebula Arcade | `apps/nebula-arcade/src/mosaic-store.ts`, `game-runtime-store.ts`, `game-actions.ts`, `game-inputs.ts` | Mosaic artwork/queue, game runtime state, action history, provider-neutral game input feed |
+| Domain | SQLite-backed modules observed |
+|---|---|
+| Chat Gateway | `apps/chat-gateway/src/index.ts` |
+| StreamWeaver | `bot-relay.ts`, `bic-store.ts`, `ride-store.ts`, `tiktok-store.ts`, `research-mode.ts`, `pokemon-store.ts`, `command-router.ts`, `shoutout-store.ts`, `twitch-eventsub.ts`, `runtime-settings.ts`, `stella-lounge-host.ts`, `bot-action-replies.ts`, `generation-settings.ts`, `translation-runtime.ts`, `secure-choice.ts` (all under `apps/streamweaver/src/`) |
+| Discord Stream Hub / Lounge | `live-monitor.ts`, `lounge-state.ts`, `lounge-host.ts`, `raid-pile.ts`, `raid-train.ts`, `applications.ts`, `lounge-avatar.ts`, `signal-seeker.ts`, `signal-control.ts` (under `apps/discord-stream-hub/src/`) |
+| Nebula Arcade | `game-mixes.ts`, `game-inputs.ts`, `game-actions.ts`, `mosaic-store.ts`, `overlay-scenes.ts`, `arcade-network.ts`, `live-migration.ts`, `arcade-activity.ts`, `discord-dashboard.ts`, `game-runtime-store.ts`, `nebula-tag-runtime.ts` (under `apps/nebula-arcade/src/`) |
+| HearMeOut | `watch-state.ts`, `voice-bridge.ts`, `persona-room.ts`, `broadcast-program.ts`, `room-assistant-jobs.ts`, `room-persona-speech.ts`, `persistent-migration.ts` (under `apps/hearmeout/src/`) |
+| Companion | `device-relay.ts`, `workflow-store-sqlite.ts` (under `apps/companion/src/`) |
+| Commlink | `packages/commlink-core/src/index.ts`, `forum.ts`, `operator.ts`, `social-stream.ts` |
+| MountainView | `apps/mountainview/src/device-runtime.ts` |
+| Stellar Core | `apps/stellar-core/src/public-memory.ts`, `assistant-store.ts` |
+| SPMT provider/runtime modules | `apps/spmt-service/src/twitch-bot-api.ts`, `youtube-oauth-api.ts`, `public-persona-api.ts` |
+| Shared authority | `packages/authority-sqlite/src/index.ts`, `recovery.ts` |
 
-Other app-owned stores were also found in StreamWeaver, HearMeOut, Companion, MountainView, Commlink, and Nebula modules. Before moving any service, enumerate every store constructor and its actual path wiring; multiple stores may share one SQLite file, but that must be verified from the server composition rather than assumed. Each store needs an owner, durability classification, backup/restore plan, and cross-node access strategy. Do not delete or reset any of these files during portability work.
+This search found stateful modules in nearly every major ecosystem area, not just the canonical SPMT authority. Each needs an owner, data classification (authoritative, reconstructible cache, event history, or ephemeral), actual configured path, durability requirement, backup/restore plan, and cross-node access strategy. Do not move, reset, or silently reinitialize any of these files during portability work.
 
 ## Cross-node incompatibilities confirmed
 
