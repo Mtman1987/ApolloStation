@@ -63,7 +63,8 @@ export function parseNebulaMessage(text: string) {
   const words = ((legacyTagMatch?.[1] ?? match?.[1]) ?? "").trim().split(/\s+/).filter(Boolean);
   if (legacyTagMatch) {
     if (words[0]?.toLowerCase() === "arcade") words.shift();
-    return { body: words.join(" "), gameId: "tag", command: words[0]?.toLowerCase() ?? "", args: words.slice(1) };
+    if (words.length === 0) return null;
+    return { body: words.join(" "), gameId: "tag", command: words[0]!.toLowerCase(), args: words.slice(1) };
   }
   if (words[0]?.toLowerCase() === "arcade") words.shift();
   for (let length = Math.min(3, words.length); length > 0; length--) {
