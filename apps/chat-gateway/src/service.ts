@@ -11,7 +11,7 @@ import { ChatGatewayRuntime, SqliteChatGatewayStore, createShadowChatProviderSen
 import { ChatProviderConnectionSupervisor, SqliteProviderConnectionStore, type ProviderConnectionConfigV1 } from "./connection-supervisor.js";
 import { createFirstPartyChatProviderAdapters } from "./provider-drivers.js";
 import { SpmtChatProviderGrantSource } from "./spmt-provider-grants.js";
-import { spmtSuiteActionDescriptor, type SpmtOperationModeV1 } from "@spmt/contracts";
+import { spmtSuiteActionDescriptor, type ExecutionTargetV1, type SpmtOperationModeV1 } from "@spmt/contracts";
 
 export interface ChatGatewayWorkerEnvironmentV1 {
   runtimeMode: "production" | "sandbox";
@@ -23,7 +23,7 @@ export interface ChatGatewayWorkerEnvironmentV1 {
   workerId: string;
   connections: ProviderConnectionConfigV1[];
   reconcileMs: number;
-  streamweaver?: { databasePath: string; credential: string; image?: { token: string; modelNo: string; modelVerNo: string; binary: string; edenKey?:string;edenModel?:string;cloudflareAccountId?:string;cloudflareToken?:string;pollinationsToken?:string };avatar?:{outboundEnabled:boolean;blenderBinary:string;geometryScriptPath:string};restreamControl?:{origin:string;credential:string} };
+  streamweaver?: { databasePath: string; credential: string; image?: { token: string; modelNo: string; modelVerNo: string; binary: string; executionTarget: ExecutionTargetV1; edenKey?:string;edenModel?:string;cloudflareAccountId?:string;cloudflareToken?:string;pollinationsToken?:string };avatar?:{outboundEnabled:boolean;blenderBinary:string;geometryScriptPath:string};restreamControl?:{origin:string;credential:string} };
   nebulaArcade?: { databasePath: string; credential: string; configPath: string; config: NebulaArcadeProviderConfigV1; publicOrigin?: string; gameplayOrigin?: string; webhookName: string; avatarUrl?: string };
 }
 
@@ -60,6 +60,9 @@ export function validateChatGatewayWorkerEnvironment(environment: NodeJS.Process
     if (!streamweaverCredential || streamweaverCredential.length < 32) throw new Error("A 32+ character STREAMWEAVER_WORKER_CREDENTIAL is required");
     if (!streamweaverDatabasePath || !isAbsolute(streamweaverDatabasePath)) throw new Error("STREAMWEAVER_DATABASE_PATH must be absolute");
     if (runtimeMode === "sandbox" && !basename(streamweaverDatabasePath).toLowerCase().includes("sandbox")) throw new Error("Sandbox StreamWeaver requires a sandbox-named database");
+    const imageExecutionTargetValue=environment.STREAMWEAVER_IMAGE_EXECUTION_TARGET??"sprite";
+    if(!["sprite","fly","companion","hosted"].includes(imageExecutionTargetValue))throw new Error("STREAMWEAVER_IMAGE_EXECUTION_TARGET is invalid");
+    const imageExecutionTarget=imageExecutionTargetValue as ExecutionTargetV1;
     const imageValues=[environment.STREAMWEAVER_SEAART_CLI_TOKEN,environment.STREAMWEAVER_SEAART_MODEL_NO,environment.STREAMWEAVER_SEAART_MODEL_VER_NO].filter(Boolean);
     if(imageValues.length!==0&&imageValues.length!==3)throw new Error("StreamWeaver SeaArt token, model, and model version must be configured together");
     if(runtimeMode==="sandbox"&&imageValues.length)throw new Error("Sandbox StreamWeaver rejects external image generation");
@@ -68,11 +71,12 @@ export function validateChatGatewayWorkerEnvironment(environment: NodeJS.Process
     const cloudflareAccountId=environment.STREAMWEAVER_CLOUDFLARE_ACCOUNT_ID,cloudflareToken=environment.STREAMWEAVER_CLOUDFLARE_API_TOKEN;
     if(Boolean(cloudflareAccountId)!==Boolean(cloudflareToken)||cloudflareAccountId&&!/^[a-f0-9]{32}$/i.test(cloudflareAccountId))throw Error("Configure a valid Cloudflare account ID and API token together");
     if(runtimeMode==="sandbox"&&cloudflareToken)throw Error("Sandbox StreamWeaver rejects external image generation");
-    let image:NonNullable<NonNullable<ChatGatewayWorkerEnvironmentV1["streamweaver"]>["image"]>|undefined=imageValues.length?{token:String(environment.STREAMWEAVER_SEAART_CLI_TOKEN),modelNo:modelIdentifier(environment.STREAMWEAVER_SEAART_MODEL_NO,"STREAMWEAVER_SEAART_MODEL_NO"),modelVerNo:modelIdentifier(environment.STREAMWEAVER_SEAART_MODEL_VER_NO,"STREAMWEAVER_SEAART_MODEL_VER_NO"),binary:environment.STREAMWEAVER_SEAART_CLI_BINARY||"seaart",...(edenKey?{edenKey,edenModel:environment.STREAMWEAVER_EDENAI_IMAGE_MODEL||"image/generation/stabilityai"}:{})}:edenKey?{token:"",modelNo:"",modelVerNo:"",binary:"seaart",edenKey,edenModel:environment.STREAMWEAVER_EDENAI_IMAGE_MODEL||"image/generation/stabilityai"}:undefined;
-    if(cloudflareAccountId&&cloudflareToken){image??={token:"",modelNo:"",modelVerNo:"",binary:"seaart"};image.cloudflareAccountId=cloudflareAccountId;image.cloudflareToken=cloudflareToken;}
+    let image:NonNullable<NonNullable<ChatGatewayWorkerEnvironmentV1["streamweaver"]>["image"]>|undefined=imageValues.length?{token:String(environment.STREAMWEAVER_SEAART_CLI_TOKEN),modelNo:modelIdentifier(environment.STREAMWEAVER_SEAART_MODEL_NO,"STREAMWEAVER_SEAART_MODEL_NO"),modelVerNo:modelIdentifier(environment.STREAMWEAVER_SEAART_MODEL_VER_NO,"STREAMWEAVER_SEAART_MODEL_VER_NO"),binary:environment.STREAMWEAVER_SEAART_CLI_BINARY||"seaart",executionTarget:imageExecutionTarget,...(edenKey?{edenKey,edenModel:environment.STREAMWEAVER_EDENAI_IMAGE_MODEL||"image/generation/stabilityai"}:{})}:edenKey?{token:"",modelNo:"",modelVerNo:"",binary:"seaart",executionTarget:imageExecutionTarget,edenKey,edenModel:environment.STREAMWEAVER_EDENAI_IMAGE_MODEL||"image/generation/stabilityai"}:undefined;
+    if(image)image.executionTarget=imageExecutionTarget;
+    if(cloudflareAccountId&&cloudflareToken){image??={token:"",modelNo:"",modelVerNo:"",binary:"seaart",executionTarget:imageExecutionTarget};image.cloudflareAccountId=cloudflareAccountId;image.cloudflareToken=cloudflareToken;}
     const pollinationsToken=environment.STREAMWEAVER_POLLINATIONS_API_KEY;
     if(runtimeMode==="sandbox"&&pollinationsToken)throw Error("Sandbox StreamWeaver rejects external image generation");
-    if(pollinationsToken){image??={token:"",modelNo:"",modelVerNo:"",binary:"seaart"};image.pollinationsToken=pollinationsToken;}
+    if(pollinationsToken){image??={token:"",modelNo:"",modelVerNo:"",binary:"seaart",executionTarget:imageExecutionTarget};image.pollinationsToken=pollinationsToken;}
     const avatarRiggingEnabled=environment.STREAMWEAVER_AVATAR_RIGGING_ENABLED==="1";
     const sandboxAvatarOutbound=environment.SPMT_AVATAR_AI_OUTBOUND_MODE==="enabled";
     if(sandboxAvatarOutbound&&runtimeMode!=="sandbox")throw Error("SPMT_AVATAR_AI_OUTBOUND_MODE is a sandbox-only exception");
@@ -284,7 +288,7 @@ export class SupervisedChatGatewayService {
           if(request.status!=="accepted")return prompt;
           for(let i=0;i<90;i++){const job=await streamweaverClient.getExecutionJob(input.tenantId,request.jobId);if(job.state==="succeeded")return String(job.result?.text??prompt);if(["failed","cancelled","dead-letter"].includes(job.state))return prompt;await new Promise(resolve=>setTimeout(resolve,1000));}return prompt;
         }};
-        this.streamweaverImage=new StreamWeaverImageWorker(streamweaverClient,new StreamWeaverImageGenerationService(providers,enhancer),{workerId:`${options.workerId}-image`,modelNo:image.modelNo,modelVerNo:image.modelVerNo,settings:generationSettings,...(fetchImpl?{fetchImpl}:{}),...(tenantIds.length?{tenantIds}:{})});
+        this.streamweaverImage=new StreamWeaverImageWorker(streamweaverClient,new StreamWeaverImageGenerationService(providers,enhancer),{workerId:`${options.workerId}-image`,modelNo:image.modelNo,modelVerNo:image.modelVerNo,executionTarget:image.executionTarget,settings:generationSettings,...(fetchImpl?{fetchImpl}:{}),...(tenantIds.length?{tenantIds}:{})});
       }
       if(options.streamweaver.avatar?.outboundEnabled){
         const avatar=options.streamweaver.avatar,settings=this.streamweaverAvatarSettings=new StreamWeaverRuntimeSettingsStore(options.streamweaver.databasePath),tenantIds=[...new Set(options.connections.map(connection=>connection.tenantId))];
