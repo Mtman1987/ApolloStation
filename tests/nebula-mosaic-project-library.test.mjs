@@ -46,7 +46,8 @@ test("Mosaic library supports private saves, publish, public gallery, JSON/PNG e
     const endpoint = origin + "/apps/nebula-arcade?action=mosaic-projects";
     const owner = { cookie: "owner-session", origin, "content-type": "application/json" };
     const imported = await fetch(endpoint, { method: "POST", headers: owner, body: JSON.stringify({ action: "import", channel: "room-a", template }) });
-    assert.equal(imported.status, 200);
+    const importedBody = await imported.json();
+    assert.equal(imported.status, 200, JSON.stringify(importedBody));
     const library = await (await fetch(endpoint + "&channel=room-a", { headers: { cookie: "owner-session" } })).json();
     assert.equal(library.canManage, true);
     assert.equal(library.own.length, 1);
