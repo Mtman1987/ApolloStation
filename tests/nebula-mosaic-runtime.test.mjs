@@ -74,3 +74,7 @@ test("Mosaic chat runtime rejects moderator-only queue actions from regular play
     runtime.close();
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
+
+test("Mosaic runtime rejects unknown persistence modes instead of silently falling back to SQLite", () => {
+  assert.throws(() => new NebulaMosaicRuntime(":memory:", undefined, { storeMode: "remote" }), /NEBULA_ARCADE_MOSAIC_STORE must be sqlite or turso/);
+});
