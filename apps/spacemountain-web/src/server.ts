@@ -224,9 +224,22 @@ export function createSpaceMountainWebHost(options: SpaceMountainWebHostOptions)
   };
 }
 
-export function validateIntegratedWebEnvironment(environment: NodeJS.ProcessEnv) {
+export function validateIntegratedWebEnvironment(environment: NodeJS.ProcessEnv): {
+  spmtOrigin: string;
+  nebulaArcadeOrigin?: string;
+  greenAppOrigins?: Partial<Record<"discord-stream-hub" | "streamweaver" | "hearmeout" | "mountainview" | "companion", string>>;
+  candidateManifest?: AppCatalogRegistrationV1;
+} {
   const runtimeMode = environment.SPMT_RUNTIME_MODE;
-  if (runtimeMode === "sandbox") return validateSandboxWebEnvironment(environment);
+  if (runtimeMode === "sandbox") {
+    const checked = validateSandboxWebEnvironment(environment);
+    const greenAppOrigins: NonNullable<ReturnType<typeof validateIntegratedWebEnvironment>["greenAppOrigins"]> = {};
+    for (const [appId, name] of [["discord-stream-hub", "DSH_WEB_ORIGIN"], ["streamweaver", "STREAMWEAVER_WEB_ORIGIN"], ["hearmeout", "HEARMEOUT_WEB_ORIGIN"], ["mountainview", "MOUNTAINVIEW_WEB_ORIGIN"], ["companion", "COMPANION_WEB_ORIGIN"]] as const) {
+      const value = environment[name];
+      if (value) greenAppOrigins[appId] = requireLoopbackOrigin(value);
+    }
+    return { ...checked, ...(Object.keys(greenAppOrigins).length ? { greenAppOrigins } : {}) };
+  }
   if (runtimeMode !== "production") throw new Error("SPMT_RUNTIME_MODE must be production or sandbox");
   const serviceOrigin = (value: string, name: string) => {
     let url: URL;
