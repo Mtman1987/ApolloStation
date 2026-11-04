@@ -72,7 +72,7 @@ export class StreamWeaverStellaLoungeHost {
     if(!allowed.has(tenantId))return{delivered:false,reason:"tenant-not-allowed"};
     const connection=this.options.connections.find(item=>item.tenantId===tenantId&&item.provider==="twitch"&&item.desired);
     if(!connection)return{delivered:false,reason:"no-twitch-egress"};
-    const eventId=String(event.eventId??"").trim().slice(0,180),actor=cleanPublic(event.actor,45),kind=event.kind;
+    const eventId=String(event.eventId??"").trim().slice(0,180),actor=cleanEventValue(event.actor,45),kind=event.kind;
     if(!eventId)return{delivered:false,reason:"event-id-required"};
     const priority=kind==="raid"||kind==="game-winner"||kind==="milestone"?90:kind==="subscribe"||kind==="cheer"?72:kind==="follow"?60:64;
     const state=this.options.store.view(tenantId);
@@ -109,16 +109,17 @@ function buildStellaAmbientMessage(stream:StreamWeaverTwitchStreamV1,community:S
   return selected?{topic:selected.topic,text:selected.text.slice(0,240)}:undefined;
 }
 
+function cleanEventValue(value:unknown,limit:number){return String(value??"").replace(/[\\r\\n]/g," ").replace(/\\s+/g," ").trim().slice(0,limit);}
 function buildStellaEventMessage(event:StreamWeaverStellaLoungeEventV1):string{
-  const actor=cleanPublic(event.actor,45),name=actor||"the community",game=cleanPublic(event.game,50),detail=cleanPublic(event.detail,90),viewers=Math.max(0,Math.floor(Number(event.viewers)||0)),amount=Math.max(0,Math.floor(Number(event.amount)||0));
+  const actor=cleanEventValue(event.actor,45),name=actor||"the community",game=cleanEventValue(event.game,50),detail=cleanEventValue(event.detail,90),viewers=Math.max(0,Math.floor(Number(event.viewers)||0)),amount=Math.max(0,Math.floor(Number(event.amount)||0));
   switch(event.kind){
     case "raid":return ("Welcome "+name+(viewers?" and "+viewers.toLocaleString("en-US")+" raiders":"")+" aboard SpaceMountainLive! Grab a seat and say hello—Stella has the bridge.").slice(0,240);
-    case "follow":return ("Welcome aboard, "+name+"! Glad you found SpaceMountainLive—make yourself at home.").slice(0,240);
+    case "follow":return ("Welcome aboard, "+(actor||"new Passenger")+"! Glad you found SpaceMountainLive—make yourself at home.").slice(0,240);
     case "subscribe":return ("Big thanks to "+name+" for the support. You're helping keep the Lounge lights on.").slice(0,240);
     case "cheer":return ("That "+(amount?amount.toLocaleString("en-US")+"-bit ":"")+"cheer from "+name+" just sent extra energy through the Lounge. Thank you!").slice(0,240);
     case "game-winner":return ("Well played, "+name+"—you took the "+(game||"game")+" win. The Lounge has a new story.").slice(0,240);
     case "game-play":return ("Nice move, "+name+"! That "+(game||"game")+" play deserves a spotlight moment.").slice(0,240);
-    case "game-round":return (name+" is underway in "+(game||"the Lounge")+"."+(detail?" "+detail:"")).slice(0,240);
+    case "game-round":return ("A new round of "+(game||"the Lounge game")+" is underway."+(detail?" "+detail:" The Lounge is watching.")).slice(0,240);
     case "milestone":return ("That's a milestone worth celebrating, "+name+"! Thanks for being part of the Lounge.").slice(0,240);
   }
 }
