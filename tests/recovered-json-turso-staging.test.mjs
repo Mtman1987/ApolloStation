@@ -111,7 +111,7 @@ test("redacts plural and camelCase credential containers in recovered Chat Tag s
     for (const secret of [...secrets, "nested-client-secret-value", "nested-webhook-url-value"]) {
       assert.ok(!payload.includes(secret), "payload must not contain credential material");
     }
-    assert.ok((payload.match(/\\[REDACTED\\]/g) ?? []).length >= 4);
+    assert.ok((payload.match(/\[REDACTED\]/g) ?? []).length >= 4);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
