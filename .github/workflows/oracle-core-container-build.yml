@@ -1,0 +1,45 @@
+name: Oracle core runtime image
+
+on:
+  push:
+    branches:
+      - main
+      - feat/oracle-core-runtime-image
+    paths:
+      - "infra/oracle/Dockerfile.apollo"
+      - ".dockerignore"
+      - "package.json"
+      - "package-lock.json"
+      - "packages/**"
+      - "apps/**"
+      - "scripts/build-rtc-browser.mjs"
+      - ".github/workflows/oracle-core-container-build.yml"
+  pull_request:
+    paths:
+      - "infra/oracle/Dockerfile.apollo"
+      - ".dockerignore"
+      - "package.json"
+      - "package-lock.json"
+      - "packages/**"
+      - "apps/**"
+      - "scripts/build-rtc-browser.mjs"
+      - ".github/workflows/oracle-core-container-build.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Build production monorepo image
+        run: docker build --file infra/oracle/Dockerfile.apollo --build-arg BUILD_SHA=${GITHUB_SHA} --tag apollo-core:ci .
+      - name: Verify production entrypoints and runtime tools
+        run: |
+          docker run --rm --entrypoint node apollo-core:ci -e "const fs=require('node:fs'); const files=['apps/spmt-service/dist/provider-identity-start.js','apps/spacemountain-web/dist/integrated-server.js','apps/chat-gateway/dist/service-start.js','apps/streamweaver/dist/web-server.js','apps/discord-stream-hub/dist/web-server.js','apps/discord-stream-hub/dist/live-worker-start.js','apps/nebula-arcade/dist/nebula-arcade-live-server.js','apps/stellar-core/dist/worker-start.js']; for (const file of files) if (!fs.existsSync(file)) throw new Error('Missing production entrypoint: '+file); console.log('All core production entrypoints exist');"
+          docker run --rm --entrypoint node apollo-core:ci -e "require('node:sqlite'); require('playwright'); console.log('SQLite and Playwright runtime dependencies load');"
+          docker run --rm --entrypoint /bin/sh apollo-core:ci -c "ffmpeg -version >/dev/null && chromium --version"
