@@ -39,6 +39,7 @@ function decodeStatementResult(item) {
   if (item?.type !== "ok") throw new Error(`Turso SQL error: ${item?.error?.message ?? "unknown error"}`);
   const result = item.response?.result;
   return {
+    columns: (result?.cols ?? []).map((column) => String(column.name ?? "")),
     rows: (result?.rows ?? []).map((row) => row.map(decodeHranaValue)),
     affectedRows: Number(result?.affected_row_count ?? 0),
   };
