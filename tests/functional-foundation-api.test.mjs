@@ -33,7 +33,8 @@ function setup() {
   auth.registerServiceIdentity({ serviceId: "chat-gateway", credential: "chat-worker-secret-123456", scopes: ["jobs:read", "jobs:work"], tenantMode: "allow-list", tenantIds: ["tenant-a"] });
   auth.registerServiceIdentity({ serviceId: "streamweaver", credential: "streamweaver-worker-secret-123456", scopes: ["jobs:read"], tenantMode: "allow-list", tenantIds: ["tenant-a"] });
   const usage = new MonetizationService(assertBillingManifestV1(JSON.parse(readFileSync(new URL("../config/billing-plans.v1.json", import.meta.url), "utf8"))), store, () => at);
-  const jobs = new ExecutionJobService({ store: platformStore, usage, resolvePlan: () => "creator", now: () => at, idFactory: () => "job_api_1", onTransition: (job) => data.createOperationsLog({ tenantId: job.tenantId, sourceAppId: job.ownerAppId, reporterId: "spmt-execution", level: job.state === "failed" ? "error" : "info", kind: `execution.${job.state}`, summary: `${job.capabilityId} is ${job.state}`, labels: ["execution-job"], idempotencyKey: `${job.id}:${job.state}:${job.fencingEpoch}:${job.updatedAt}` }) });
+  let jobSequence = 0;
+  const jobs = new ExecutionJobService({ store: platformStore, usage, resolvePlan: () => "creator", now: () => at, idFactory: () => `job_api_${++jobSequence}`, onTransition: (job) => data.createOperationsLog({ tenantId: job.tenantId, sourceAppId: job.ownerAppId, reporterId: "spmt-execution", level: job.state === "failed" ? "error" : "info", kind: `execution.${job.state}`, summary: `${job.capabilityId} is ${job.state}`, labels: ["execution-job"], idempotencyKey: `${job.id}:${job.state}:${job.fencingEpoch}:${job.updatedAt}` }) });
   const operations = new PlatformOperations(auth, authority, control, data, undefined, undefined, jobs), api = new PlatformApiAdapter(operations);
   const fetchImpl = async (url, init = {}) => { const parsed = new URL(String(url)), headers = Object.fromEntries(new Headers(init.headers).entries()); let body; if (typeof init.body === "string" && init.body) body = JSON.parse(init.body); const response = api.handle({ method: init.method ?? "GET", path: `${parsed.pathname}${parsed.search}`, headers, ...(body === undefined ? {} : { body }) }); return new Response(JSON.stringify(response.body ?? null), { status: response.status, headers: { "content-type": "application/json" } }); };
   const userA = auth.issueHumanSession({ userId: "user-a", scopes: ["jobs:read", "jobs:write"], tenantIds: ["tenant-a"] }).accessToken;
@@ -54,7 +55,9 @@ test("public API and SDK carry one metered job through create, lease, progress, 
     assert.equal(duplicate.duplicate, true);
     assert.equal((await runSpmtCli(["jobs", "list", "tenant-a"], env.userA)).length, 1);
     const mcp = new SpmtMcpServer(env.operations), listedTools = mcp.handle({ jsonrpc: "2.0", id: 1, method: "tools/list" }, { accessToken: env.userAToken, protocolVersion: SPMT_MCP_PROTOCOL_VERSION });
-    assert.ok(listedTools.result.tools.some((tool) => tool.name === "spmt.jobs.create" && tool.inputSchema.required.includes("meteringTarget")));
+    const createTool = listedTools.result.tools.find((tool) => tool.name === "spmt.jobs.create");
+    assert.ok(createTool.inputSchema.required.includes("meteringTarget"));
+    assert.ok(createTool.inputSchema.properties.executionTarget.enum.includes("hosted"));
     const mcpJobs = mcp.handle({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "spmt.jobs.list", arguments: { tenantId: "tenant-a" } } }, { accessToken: env.userAToken, protocolVersion: SPMT_MCP_PROTOCOL_VERSION });
     assert.equal(mcpJobs.result.structuredContent.length, 1);
     const claimed = await env.worker.claimAnyExecutionJob("stellar-instance-1", "sprite", { capabilityIds: ["stellar.chat"] });
@@ -67,6 +70,11 @@ test("public API and SDK carry one metered job through create, lease, progress, 
     assert.equal((await env.userA.getExecutionJob("tenant-a", claimed.id)).result.messageId, "reply-1");
     assert.equal(env.usage.summary("tenant-a", "user-a", "creator", at).resources.find((item) => item.resource === "ai-chat-requests").hosted, 1);
     assert.deepEqual(env.data.listOperationsLogs("tenant-a", { sourceAppId: "stellar-core" }).map((item) => item.kind).sort(), ["execution.leased", "execution.queued", "execution.running", "execution.succeeded"]);
+    const hostedCreated = await env.userA.createExecutionJob("tenant-a", { ownerAppId: "stellar-core", capabilityId: "stellar.chat", executionOwner: "stellar-core", billedUserId: "user-a", meteredResource: "ai-chat-requests", usageQuantity: 1, executionTarget: "hosted", meteringTarget: "hosted", input: { message: "Hosted worker path" } }, "api-hosted-job");
+    assert.equal(hostedCreated.job.executionTarget, "hosted");
+    const hostedClaimed = await env.worker.claimAnyExecutionJob("hosted-instance-1", "hosted", { capabilityIds: ["stellar.chat"] });
+    assert.equal(hostedClaimed.id, hostedCreated.job.id);
+    assert.equal((await env.worker.succeedExecutionJob("tenant-a", hostedClaimed.id, "hosted-instance-1", hostedClaimed.leaseId, hostedClaimed.fencingEpoch, { messageId: "hosted-reply" })).state, "succeeded");
     env.platformStore.close();
     const restored = new SqlitePlatformDataStore(env.databasePath);
     assert.equal(restored.getExecutionJob(claimed.id).state, "succeeded");
