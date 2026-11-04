@@ -1,0 +1,32 @@
+name: Oracle Terraform validation
+
+on:
+  pull_request:
+    paths:
+      - "infra/oracle/**"
+      - ".github/workflows/oracle-terraform-validation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.10.5
+          terraform_wrapper: false
+      - name: Check Terraform formatting
+        run: terraform fmt -check -recursive infra/oracle
+      - name: Initialize without a backend
+        working-directory: infra/oracle
+        run: terraform init -backend=false -input=false
+      - name: Validate Oracle foundation
+        working-directory: infra/oracle
+        run: terraform validate -no-color
