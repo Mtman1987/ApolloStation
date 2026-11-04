@@ -249,6 +249,7 @@ export function validateIntegratedWebEnvironment(environment: NodeJS.ProcessEnv)
     if (url.username || url.password || url.pathname !== "/" || url.search || url.hash) throw new Error(`${name} must be a credential-free origin`);
     return url.origin;
   };
+  serviceOrigin(environment.SPMT_ORIGIN ?? "", "SPMT_ORIGIN");
   for (const name of ["NEBULA_ARCADE_ORIGIN", "STREAMWEAVER_WEB_ORIGIN", "DSH_WEB_ORIGIN"] as const) if (!environment[name]) throw new Error(`${name} is required for the production three-node gateway`);
   const greenAppOrigins: Partial<Record<"discord-stream-hub" | "streamweaver" | "hearmeout" | "mountainview" | "companion", string>> = {};
   for (const [appId, name] of [["discord-stream-hub", "DSH_WEB_ORIGIN"], ["streamweaver", "STREAMWEAVER_WEB_ORIGIN"], ["hearmeout", "HEARMEOUT_WEB_ORIGIN"], ["mountainview", "MOUNTAINVIEW_WEB_ORIGIN"], ["companion", "COMPANION_WEB_ORIGIN"]] as const) {
