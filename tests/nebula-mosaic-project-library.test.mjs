@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import vm from "node:vm";
-import { createNebulaArcadeSandboxHost, mosaicTemplatePng, NEBULA_MOSAIC_LIBRARY_JS } from "../apps/nebula-arcade/dist/index.js";
+import { mosaicTemplatePng, NEBULA_MOSAIC_LIBRARY_JS } from "../apps/nebula-arcade/dist/index.js";
+import { createNebulaArcadeSandboxHost } from "../apps/nebula-arcade/dist/nebula-runtime-host-base.js";
 
 const template = {
   format: "nebula-mosaic", version: 1, width: 40, height: 50,
