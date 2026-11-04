@@ -85,7 +85,6 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError, AttributeError, TypeError):
             return self.reply(400, b'{"error":"invalid request"}')
         if not inference_lock.acquire(blocking=False):
-            self.send_header if False else None
             return self.reply(429, b'{"error":"voice worker busy"}')
         try:
             language = "en-gb" if voice.startswith(("bf_", "bm_")) else "en-us"
