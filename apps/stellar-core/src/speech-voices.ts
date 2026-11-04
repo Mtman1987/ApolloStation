@@ -229,7 +229,8 @@ const KOKORO_VOICE_ROWS: Array<[string, string, "Male" | "Female"]> = [
   ['bf_alice', 'Alice (UK)', 'Female'], ['bf_isabella', 'Isabella (UK)', 'Female'],
   ['bf_lily', 'Lily (UK)', 'Female'], ['bm_daniel', 'Daniel (UK)', 'Male'],
   ['bm_fable', 'Fable (UK)', 'Male'], ['bm_lewis', 'Lewis (UK)', 'Male'],
-].map(([name, label, gender]) => ({
+];
+export const KOKORO_VOICE_OPTIONS: TTSVoiceOption[] = KOKORO_VOICE_ROWS.map(([name, label, gender]) => ({
   id: `kokoro:${name}`, label, provider: "kokoro", providerLabel: "Kokoro local CPU", gender,
   description: "Local neural voice; no per-character provider charge", edenaiProvider: "openai",
   edenaiOption: gender === "Male" ? "MALE" : "FEMALE", edenaiVoiceModel: name,
