@@ -82,7 +82,7 @@ test("Turso transaction callback exceptions trigger rollback and preserve the or
   assert.equal(calls[1].requests[0].stmt.sql, "ROLLBACK");
 });
 
-test("Turso transaction rejects invalid modes and use after completion", async () => {
+test("Turso transaction rejects invalid modes", async () => {
   const adapter = new TursoHttpAdapter({
     url: "libsql://apollo.example.turso.io",
     authToken: "test-only",
