@@ -1,3 +1,4 @@
+import { parseExecutionTargetV1, type ExecutionTargetV1 } from "@spmt/contracts";
 import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 
