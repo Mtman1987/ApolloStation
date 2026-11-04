@@ -88,7 +88,8 @@ function validateProxyOrigin(originValue:string){
 }
 function stripHopByHopHeaders(headers:Record<string,string|string[]|number|undefined>){
   const connection=headers.connection;
-  for(const token of (Array.isArray(connection)?connection.join(","):connection??"").split(",")){
+  const connectionTokens=Array.isArray(connection)?connection.join(","):typeof connection==="string"?connection:"";
+  for(const token of connectionTokens.split(",")){
     const name=token.trim().toLowerCase();
     if(name)delete headers[name];
   }
