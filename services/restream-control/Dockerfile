@@ -4,6 +4,7 @@ ENV NODE_ENV=production \
     PUPPETEER_SKIP_DOWNLOAD=true \
     PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium \
     RESTREAM_PROFILE_DIR=/var/lib/restream-profile \
+    RESTREAM_PROFILE_VOLUME_MARKER=/var/lib/restream-profile/.restream-profile-volume \
     RESTREAM_AUTOMATION_ENABLED=false
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
