@@ -25,12 +25,12 @@ function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
 }
 
-function redact(value) {
+function isSensitiveKey(key) {\n  const normalized = String(key).replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase();\n  return SENSITIVE_KEY.test(normalized);\n}\n\nfunction redact(value) {
   if (Array.isArray(value)) return value.map(redact);
   if (!value || typeof value !== "object") return value;
   const output = {};
   for (const [key, child] of Object.entries(value)) {
-    output[key] = SENSITIVE_KEY.test(key) ? "[REDACTED]" : redact(child);
+    output[key] = isSensitiveKey(key) ? "[REDACTED]" : redact(child);
   }
   return output;
 }
@@ -174,7 +174,7 @@ function parseArgs(argv) {
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === "--apply") options.apply = true;
-    else if (arg === "--legacy-nebula-root") options.legacyNebulaRoot = argv[++i] ?? "";
+    else if (arg === "--legacy-nebula-root" || arg === "--chat-tag-root") options.legacyNebulaRoot = argv[++i] ?? "";
     else if (arg === "--streamweaver-root") options.streamWeaverRoot = argv[++i] ?? "";
     else if (arg === "--help") options.help = true;
     else throw new Error(`Unknown argument: ${arg}`);
@@ -185,7 +185,7 @@ function parseArgs(argv) {
 async function main() {
   const options = parseArgs(process.argv.slice(2));
   if (options.help || (!options.legacyNebulaRoot && !options.streamWeaverRoot)) {
-    process.stdout.write("Usage: node scripts/stage-recovered-json-to-turso.mjs [--legacy-nebula-root DIR] [--streamweaver-root DIR] [--apply]\nDry-run by default. Stages redacted JSON source documents in a dedicated raw table; it does not normalize or assign records to Apollo domain tables.\n");
+    process.stdout.write("Usage: node scripts/stage-recovered-json-to-turso.mjs [--chat-tag-root DIR] (alias: --legacy-nebula-root) [--streamweaver-root DIR] [--apply]\nDry-run by default. Stages redacted JSON source documents in a dedicated raw table; it does not normalize or assign records to Apollo domain tables.\n");
     return;
   }
   const records = await buildRecoveredJsonManifest(options);
