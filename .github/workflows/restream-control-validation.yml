@@ -9,11 +9,14 @@ on:
       - "services/restream-control/**"
       - "infra/oracle/restream-control.compose.yml"
       - "infra/oracle/prepare-restream-profile-volume.sh"
+      - "infra/oracle/restream-control.env.example"
       - ".github/workflows/restream-control-validation.yml"
   pull_request:
     paths:
       - "services/restream-control/**"
       - "infra/oracle/restream-control.compose.yml"
+      - "infra/oracle/prepare-restream-profile-volume.sh"
+      - "infra/oracle/restream-control.env.example"
       - ".github/workflows/restream-control-validation.yml"
   workflow_dispatch:
 
