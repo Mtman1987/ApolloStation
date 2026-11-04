@@ -61,6 +61,39 @@ Runs Nebula Arcade / Chat Tag and community-facing services such as Lounge integ
 
 OverlayBay and Restream must be mapped to their actual existing Apollo modules and dependencies during the service inventory before they are assigned or declared complete. HearMeOut remains lower migration priority and must not displace the first three priorities.
 
+## Three-account deployment shape (the intended upload target)
+
+The three Hostless accounts are treated as three independently deployed nodes of one application. Account numbers below are labels only; assign the actual account login to each role in the Hostless dashboard. Do not create resources until the account owner confirms the multi-account policy and each account's free allowance.
+
+| Hostless account role | Primary responsibility | Services hosted together | Data owner |
+|---|---|---|---|
+| Account 1 — Core | Identity, roles, canonical authority, public routing | SPMT authority/API, SpaceMountain ingress and OverlayBay scene API | SPMT authority DB; OverlayBay scene DB |
+| Account 2 — Live | Streaming and chat transport | Chat Gateway, StreamWeaver provider runtime, Discord Stream Hub live worker/web | Chat Gateway DB; StreamWeaver DB; DSH DB |
+| Account 3 — Games | Gameplay and community | Nebula Arcade / Chat Tag, game-facing community endpoints and Lounge integration | Nebula DB; any DSH-owned Lounge state remains with DSH on Account 2 |
+
+This is a logical ownership map, not proof that the current Hostless free CPU/RAM quota can run all assigned processes. Build and runtime measurements must decide whether the assignments fit. If not, reduce idle process duplication or move a whole DB-owning app to another role; never split one SQLite database between accounts.
+
+### How the three parts become one ecosystem
+
+- **One identity:** Account 1 is the only canonical SPMT authority. Accounts 2 and 3 authenticate as distinct service identities and request user/tenant authorization from it; they do not create local shadow accounts or roles.
+- **One public front door:** SpaceMountain on Account 1 routes browser traffic to the correct public HTTPS origins. Browser cookies remain scoped to the public domain design; worker credentials stay server-side.
+- **Live path:** StreamWeaver and Chat Gateway on Account 2 use SPMT grants and tenant-scoped service APIs. Chat delivery receipts remain in the Chat Gateway DB. StreamWeaver owns its community/game/economy and host state.
+- **Game path:** Nebula on Account 3 validates canonical tenant/user context with Account 1 and consumes provider/chat events through the authenticated Account 2 contracts. Points, cards, check-ins, Mosaic projects and game progress remain in the Nebula DB.
+- **Discord/Lounge path:** DSH owns Discord receipts, outbox, tenant configuration and its Lounge runtime state. Nebula/StreamWeaver call it through the existing authenticated service contracts; do not fork Discord state into the Nebula DB.
+- **Overlay path:** OverlayBay scene authoring stays with Account 1; it receives authenticated event/data inputs from the other nodes and publishes through SpaceMountain.
+- **Restream path:** StreamWeaver's Go Live command calls a separately authenticated Restream control receiver. That receiver still needs a durable private browser profile and a verified runtime; it is not considered deployed merely because the caller exists.
+
+### Cross-account contract variables
+
+Use explicit HTTPS origins in production, never localhost for cross-account traffic. Exact variable names must be wired and validated by the relevant runtime before deployment:
+- Account 2/3 -> Account 1: `SPMT_ORIGIN` (and public `SPMT_PUBLIC_ORIGIN` where browser links are required).
+- Account 2 -> Account 1/3: the configured SpaceMountain/DSH/Nebula public origins and distinct service credentials; never one shared node token.
+- Account 3 -> Account 2: Chat Gateway/DSH HTTPS service origins plus their existing per-service credentials and tenant grants.
+- Browser -> Account 1: SpaceMountain public origin; browser navigation must not expose worker credentials.
+- Account 2 -> Restream receiver: `STREAMWEAVER_RESTREAM_CONTROL_ORIGIN` and `STREAMWEAVER_RESTREAM_CONTROL_CREDENTIAL`, with a separate receiver credential and strict redirect handling.
+
+A cross-account smoke test must prove the full chain, not just three green health pages: sign in once; resolve the same tenant and role on all nodes; send a test chat event; observe it in StreamWeaver and Nebula; trigger a synthetic game action; verify its Discord/Commlink output; load and update an OverlayBay scene; restart each node and verify the same durable state and idempotency receipts. Run this first with synthetic tenants and outbound side effects disabled.
+
 ## Required portability work
 
 1. **Service inventory:** enumerate every runnable server/worker, its package dependencies, environment variables, ports, health endpoints, database files, outbound providers, and current localhost assumptions.
