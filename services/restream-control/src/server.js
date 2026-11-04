@@ -1,6 +1,7 @@
 'use strict';
 
 const express = require('express');
+const { createServer: createHttpsServer } = require('node:https');
 const { timingSafeEqual } = require('node:crypto');
 const { mkdir, open, readFile, stat, unlink } = require('node:fs/promises');
 const { isAbsolute, join } = require('node:path');
@@ -113,11 +114,15 @@ async function start() {
     puppeteer,
     profileDir,
   });
+  const certFile = String(process.env.RESTREAM_TLS_CERT_FILE || '');
+  const keyFile = String(process.env.RESTREAM_TLS_KEY_FILE || '');
+  if (!isAbsolute(certFile) || !isAbsolute(keyFile)) throw new Error('RESTREAM_TLS_CERT_FILE and RESTREAM_TLS_KEY_FILE must be absolute mounted secret paths');
   const app = createRestreamService({
     control, credential,
     automationEnabled: process.env.RESTREAM_AUTOMATION_ENABLED === 'true',
   });
-  const server = app.listen(Number(process.env.PORT || 3018), process.env.HOST || '0.0.0.0');
+  const server = createHttpsServer({ cert: await require('node:fs/promises').readFile(certFile), key: await require('node:fs/promises').readFile(keyFile) }, app);
+  server.listen(Number(process.env.PORT || 3018), process.env.HOST || '0.0.0.0');
   let closing = false;
   const shutdown = async () => {
     if (closing) return;
