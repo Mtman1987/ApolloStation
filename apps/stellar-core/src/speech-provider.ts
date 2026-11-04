@@ -9,10 +9,19 @@ export class StellarSpeechError extends Error {
 export class StellarSpeechProvider {
   private readonly cooldowns = new Map<string, number>();
   private readonly fetchImpl: typeof fetch;
-  constructor(private readonly options: { deepgramKey?: string; edenKey?: string; enabled?: boolean; fetchImpl?: typeof fetch; now?: () => number }) {
+  private readonly kokoroUrl?: URL;
+  constructor(private readonly options: { deepgramKey?: string; edenKey?: string; enabled?: boolean; kokoroOrigin?: string; kokoroToken?: string; fetchImpl?: typeof fetch; now?: () => number }) {
     this.fetchImpl = options.fetchImpl ?? fetch;
+    if (options.kokoroOrigin || options.kokoroToken) {
+      if (!options.kokoroOrigin || !options.kokoroToken || options.kokoroToken.length < 32) throw new StellarSpeechError("Local Kokoro requires an internal URL and a 32+ character service token");
+      this.kokoroUrl = validateKokoroOrigin(options.kokoroOrigin);
+    }
   }
-  configured() { return this.options.enabled !== false && Boolean(this.options.deepgramKey || this.options.edenKey); }
+  configured() { return this.localKokoroConfigured() || this.options.enabled !== false && Boolean(this.options.deepgramKey || this.options.edenKey); }
+  private localKokoroConfigured() { return Boolean(this.kokoroUrl && this.options.kokoroToken); }
+  transcriptionConfigured() { return this.options.enabled !== false && Boolean(this.options.deepgramKey || this.options.edenKey); }
+  capabilities() { return [...(this.configured() ? ["stellar.speech.synthesize.v1"] : []), ...(this.transcriptionConfigured() ? ["stellar.speech.transcribe.v1"] : [])]; }
+  defaultVoice() { return this.localKokoroConfigured() ? "kokoro:af_heart" : ATHENA_CANONICAL_TTS_VOICE; }
   voices() { return TTS_VOICE_OPTIONS.map(v => ({ id: v.id, label: v.label, provider: v.provider, description: v.description })); }
   async synthesize(text: string, voiceId = ATHENA_CANONICAL_TTS_VOICE, tenantId = "") {
     if (!this.configured()) throw new StellarSpeechError("Speech providers are not configured");
@@ -21,40 +30,49 @@ export class StellarSpeechProvider {
     if (!TTS_VOICE_OPTIONS.some(v => v.id === voiceId) && !["athena", "apollo", "odysseus", "theia"].includes(voiceId)) throw new StellarSpeechError("Choose a supported voice");
     const chunks = splitSpeech(text), output: Buffer[] = [], providers: string[] = [];
     for (const chunk of chunks) {
-      const routes = voice.provider === "deepgram" ? ["deepgram", "edenai"] : ["edenai"];
       let audio: Buffer | undefined;
-      for (const route of routes) {
-        const key = route === "deepgram" ? this.options.deepgramKey : this.options.edenKey;
-        if (!key) continue;
-        const identity = `${tenantId}:${voice.id}:${route}:${createHash("sha256").update(key).digest("hex")}`;
-        const now = this.options.now?.() ?? Date.now();
-        if ((this.cooldowns.get(identity) ?? 0) > now) continue;
-        try {
-          if (route === "deepgram") {
-            const response = await this.request(`https://api.deepgram.com/v1/speak?model=${encodeURIComponent(voice.deepgramModel!)}&encoding=mp3`, { method: "POST", headers: { authorization: `Token ${key}`, "content-type": "application/json" }, body: JSON.stringify({ text: chunk }) });
-            audio = await audioBytes(response);
-          } else {
-            const deepgram = voice.provider === "deepgram";
-            const response = await this.request(deepgram ? "https://api.edenai.run/v3/universal-ai" : "https://api.edenai.run/v2/audio/text_to_speech", { method: "POST", headers: { authorization: `Bearer ${key}`, "content-type": "application/json" }, body: JSON.stringify(deepgram ? { model: "audio/tts/deepgram/aura-2", input: { text: chunk, voice: voice.deepgramModel, audio_format: "mp3" } } : { providers: voice.edenaiProvider, language: "en", text: chunk, option: voice.edenaiOption, audio_format: "mp3", settings: { [voice.edenaiProvider]: voice.edenaiVoiceModel } }) });
-            const result = await response.json() as Record<string, any>;
-            if (deepgram && (result.status !== "success" || result.provider !== "deepgram")) throw new StellarSpeechError("Speech provider did not return the selected voice", true);
-            const url = deepgram ? result.output?.audio_resource_url : result[voice.edenaiProvider]?.audio_resource_url;
-            audio = await audioBytes(await this.request(providerMediaUrl(url), {}));
+      if (voice.provider === "kokoro") {
+        if (!this.localKokoroConfigured()) throw new StellarSpeechError("Local Kokoro is not configured");
+        const response = await this.requestKokoro(chunk, voice.id.slice("kokoro:".length));
+        audio = await audioBytes(response);
+        if (audio.subarray(0, 4).toString() !== "RIFF") throw new StellarSpeechError("Local Kokoro returned invalid WAV audio", true);
+        providers.push("kokoro");
+      } else {
+        if (this.options.enabled === false) throw new StellarSpeechError("Paid speech providers are disabled");
+        const routes = voice.provider === "deepgram" ? ["deepgram", "edenai"] : ["edenai"];
+        for (const route of routes) {
+          const key = route === "deepgram" ? this.options.deepgramKey : this.options.edenKey;
+          if (!key) continue;
+          const identity = `${tenantId}:${voice.id}:${route}:${createHash("sha256").update(key).digest("hex")}`;
+          const now = this.options.now?.() ?? Date.now();
+          if ((this.cooldowns.get(identity) ?? 0) > now) continue;
+          try {
+            if (route === "deepgram") {
+              const response = await this.request(`https://api.deepgram.com/v1/speak?model=${encodeURIComponent(voice.deepgramModel!)}&encoding=mp3`, { method: "POST", headers: { authorization: `Token ${key}`, "content-type": "application/json" }, body: JSON.stringify({ text: chunk }) });
+              audio = await audioBytes(response);
+            } else {
+              const deepgram = voice.provider === "deepgram";
+              const response = await this.request(deepgram ? "https://api.edenai.run/v3/universal-ai" : "https://api.edenai.run/v2/audio/text_to_speech", { method: "POST", headers: { authorization: `Bearer ${key}`, "content-type": "application/json" }, body: JSON.stringify(deepgram ? { model: "audio/tts/deepgram/aura-2", input: { text: chunk, voice: voice.deepgramModel, audio_format: "mp3" } } : { providers: voice.edenaiProvider, language: "en", text: chunk, option: voice.edenaiOption, audio_format: "mp3", settings: { [voice.edenaiProvider]: voice.edenaiVoiceModel } }) });
+              const result = await response.json() as Record<string, any>;
+              if (deepgram && (result.status !== "success" || result.provider !== "deepgram")) throw new StellarSpeechError("Speech provider did not return the selected voice", true);
+              const url = deepgram ? result.output?.audio_resource_url : result[voice.edenaiProvider]?.audio_resource_url;
+              audio = await audioBytes(await this.request(providerMediaUrl(url), {}));
+            }
+            providers.push(route); this.cooldowns.delete(identity); break;
+          } catch {
+            this.cooldowns.set(identity, now + 30_000);
+            if (this.cooldowns.size > 2000) for (const [id, expiry] of this.cooldowns) if (expiry <= now) this.cooldowns.delete(id);
           }
-          providers.push(route); this.cooldowns.delete(identity); break;
-        } catch {
-          this.cooldowns.set(identity, now + 30_000);
-          if (this.cooldowns.size > 2000) for (const [id, expiry] of this.cooldowns) if (expiry <= now) this.cooldowns.delete(id);
         }
       }
       if (!audio) throw new StellarSpeechError("The selected voice is temporarily unavailable from its configured providers", true);
       output.push(audio);
       if (output.reduce((n, b) => n + b.length, 0) > 8 * 1024 * 1024) throw new StellarSpeechError("Speech audio exceeds the shared media limit");
     }
-    return { bytes: Buffer.concat(output), contentType: "audio/mpeg", voice: voice.id, providers: [...new Set(providers)] };
+    return { bytes: Buffer.concat(output), contentType: voice.provider === "kokoro" ? "audio/wav" : "audio/mpeg", voice: voice.id, providers: [...new Set(providers)] };
   }
   async transcribe(bytes: Uint8Array, contentType: string) {
-    if (!this.configured()) throw new StellarSpeechError("Speech providers are not configured");
+    if (!this.transcriptionConfigured()) throw new StellarSpeechError("Transcription providers are not configured");
     if (!bytes.byteLength || bytes.byteLength > 8 * 1024 * 1024 || !["audio/webm", "audio/ogg", "audio/wav", "audio/mpeg"].includes(contentType)) throw new StellarSpeechError("Choose a supported recording up to 8 MiB");
     if (this.options.deepgramKey) {
       try {
@@ -79,12 +97,34 @@ export class StellarSpeechProvider {
     }
     throw new StellarSpeechError("Transcription timed out", true);
   }
+  private async requestKokoro(text: string, voice: string) {
+    const response = await this.request(new URL("/v1/audio/speech", this.kokoroUrl!).toString(), {
+      method: "POST",
+      headers: { authorization: `Bearer ${this.options.kokoroToken}`, "content-type": "application/json", accept: "audio/wav" },
+      body: JSON.stringify({ input: text, voice }),
+    });
+    if (!(response.headers.get("content-type") ?? "").toLowerCase().startsWith("audio/wav")) throw new StellarSpeechError("Local Kokoro returned non-WAV content", true);
+    return response;
+  }
   private async request(url: string, init: RequestInit) {
     const response = await this.fetchImpl(url, { ...init, redirect: "error", signal: AbortSignal.timeout(30_000) });
     if (!response.ok) throw new StellarSpeechError(`Speech provider returned HTTP ${response.status}`, response.status === 429 || response.status >= 500);
     return response;
   }
 }
+
+function validateKokoroOrigin(value: string): URL {
+  let url: URL;
+  try { url = new URL(value); } catch { throw new StellarSpeechError("Local Kokoro URL is invalid"); }
+  const host = url.hostname.toLowerCase();
+  const privateIpv4 = /^(?:127\\.|10\\.|192\\.168\\.|172\\.(?:1[6-9]|2[0-9]|3[01])\\.)/.test(host);
+  const internalName = host === "localhost" || host === "kokoro" || host === "stellar-kokoro" || host.endsWith(".internal") || host.endsWith(".local");
+  if (url.protocol !== "http:" || !(privateIpv4 || internalName) || url.port !== "8080" || url.username || url.password || (url.pathname !== "/" && url.pathname !== "") || url.search || url.hash) {
+    throw new StellarSpeechError("Local Kokoro URL must be an internal HTTP service on port 8080");
+  }
+  return new URL("http://" + url.host);
+}
+
 export function splitSpeech(text: string): string[] {
   const chunks: string[] = []; let remaining = text.trim();
   while (remaining.length > 1900) { let at = remaining.lastIndexOf(" ", 1900); if (at < 950) at = 1900; chunks.push(remaining.slice(0, at)); remaining = remaining.slice(at).trimStart(); }
