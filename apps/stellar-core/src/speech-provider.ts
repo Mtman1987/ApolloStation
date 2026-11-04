@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { DEFAULT_TTS_VOICE, getTtsVoiceOption, isSupportedTtsVoice } from "./speech-voices.js";
+import { DEFAULT_TTS_VOICE, KOKORO_VOICE_OPTIONS, getTtsVoiceOption, isSupportedTtsVoice } from "./speech-voices.js";
 
 export class StellarSpeechError extends Error {
   constructor(message: string, readonly retryable = false) { super(message); }
@@ -26,7 +26,7 @@ export class StellarSpeechProvider {
     }
     return Boolean(this.options.deepgramKey || this.options.edenKey);
   }
-  voices() { return TTS_VOICE_OPTIONS.map(v => ({ id: v.id, label: v.label, provider: v.provider, description: v.description })); }
+  voices() { return KOKORO_VOICE_OPTIONS.map(v => ({ id: v.id, label: v.label, provider: v.provider, description: v.description })); }
   async synthesize(text: string, voiceId = DEFAULT_TTS_VOICE, tenantId = "") {
     if (!this.configured()) throw new StellarSpeechError("Speech providers are not configured");
     text = boundedText(text, 20_000);
