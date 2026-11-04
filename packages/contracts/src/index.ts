@@ -8,7 +8,7 @@ export type RuntimeStateV1 = "starting" | "ready" | "degraded" | "draining" | "u
 
 export const WORKLOAD_CLASSES = ["core", "elastic-http", "queue-worker", "bot-socket", "room-session", "heavy-job"] as const;
 export type WorkloadClassV1 = (typeof WORKLOAD_CLASSES)[number];
-export const EXECUTION_TARGETS = ["sprite", "fly", "companion"] as const;
+export const EXECUTION_TARGETS = ["sprite", "fly", "companion", "self-hosted"] as const;
 export type ExecutionTargetV1 = (typeof EXECUTION_TARGETS)[number];
 
 export interface RuntimePolicyV1 {
