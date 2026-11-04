@@ -168,7 +168,7 @@ test("production Restream configuration builds a verified Go Live handler withou
     async getExecutionJob() { throw new Error("unexpected execution job"); },
   };
   const runtime = new StreamWeaverProviderRuntime({
-    databasePath, client, egress: { send: (message) => gateway.send(message) },
+    databasePath, client, providerGrants: client, egress: { send: (message) => gateway.send(message) },
     connections: [{ tenantId: "spacemountainlive", provider: "twitch", connectionId: "tw-main", channelId: "provider-channel", desired: true }],
     allowProviderWrites: true,
     restreamControl: { origin: "https://lounge.example", credential: "r".repeat(40) },
