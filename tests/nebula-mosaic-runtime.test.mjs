@@ -18,16 +18,16 @@ test("Mosaic chat runtime persists queued requests and never claims generation w
     assert.equal(result.generated, false);
     const duplicate = await runtime.handle({ tenantId: "tenant-a", channel: "#main", playerId: "player-b", username: "owl2", text: "!mosaic OWL IN SPACE", now: 1500 });
     assert.match(duplicate.reply, /already active or queued/);
-    assert.equal(runtime.snapshot("tenant-a", "main").queueLength, 1);
+    assert.equal(await runtime.snapshot("tenant-a", "main").queueLength, 1);
     runtime.close();
 
     runtime = new NebulaMosaicRuntime(path);
-    const snapshot = runtime.snapshot("tenant-a", "main", 2000);
+    const snapshot = await runtime.snapshot("tenant-a", "main", 2000);
     assert.equal(snapshot.queueLength, 1);
     assert.equal(snapshot.queue[0]?.theme, "owl in space");
     const removed = await runtime.handle({ tenantId: "tenant-a", channel: "main", playerId: "mod", username: "mod", text: "!mosaic remove 1", moderator: true, now: 3000 });
     assert.match(removed.reply, /Removed Mosaic request/);
-    assert.equal(runtime.snapshot("tenant-a", "main").queueLength, 0);
+    assert.equal(await runtime.snapshot("tenant-a", "main").queueLength, 0);
     runtime.close();
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
@@ -70,7 +70,7 @@ test("Mosaic chat runtime rejects moderator-only queue actions from regular play
     await runtime.handle({ tenantId: "tenant-a", channel: "main", playerId: "player-a", username: "owl", text: "!mosaic owl", now: 1000 });
     const result = await runtime.handle({ tenantId: "tenant-a", channel: "main", playerId: "player-a", username: "owl", text: "!mosaic clear", now: 2000 });
     assert.match(result.reply, /Only a broadcaster or moderator/);
-    assert.equal(runtime.snapshot("tenant-a", "main").queueLength, 1);
+    assert.equal(await runtime.snapshot("tenant-a", "main").queueLength, 1);
     runtime.close();
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
