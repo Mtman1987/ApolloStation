@@ -70,7 +70,7 @@ function proxyDirect(request:IncomingMessage,response:ServerResponse,originValue
   stripHopByHopHeaders(headers);
   headers.host=target.host;
   if(rewriteOrigin&&headers.origin)headers.origin=target.origin;
-  const requestOptions={hostname:target.hostname.replace(/^\\[|\\]$/g,""),port:Number(target.port||(target.protocol==="https:"?443:80)),path,method:request.method,headers};
+  const requestOptions={hostname:target.hostname.replace(/^\[|\]$/g,""),port:Number(target.port||(target.protocol==="https:"?443:80)),path,method:request.method,headers};
   const send=target.protocol==="https:"?httpsRequest:httpRequest;
   const upstream=send(requestOptions,(incoming)=>{
     const responseHeaders={...incoming.headers};
