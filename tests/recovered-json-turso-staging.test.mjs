@@ -3,6 +3,9 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+const execFileAsync = promisify(execFile);
 import { buildRecoveredJsonManifest, stageRecoveredJson } from "../scripts/stage-recovered-json-to-turso.mjs";
 
 test("Chat Tag JSON remains one legacy-global source and secrets are redacted", async () => {
@@ -112,6 +115,24 @@ test("redacts plural and camelCase credential containers in recovered Chat Tag s
       assert.ok(!payload.includes(secret), "payload must not contain credential material");
     }
     assert.ok((payload.match(/\[REDACTED\]/g) ?? []).length >= 4);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("CLI dry-run needs no Turso credentials and accepts documented Chat Tag flag", async () => {
+  const root = await mkdtemp(join(tmpdir(), "apollo-chat-tag-cli-"));
+  try {
+    await mkdir(join(root, "data"), { recursive: true });
+    await writeFile(join(root, "data", "app-state.json"), JSON.stringify({ tagPlayers: [] }));
+    const script = new URL("../scripts/stage-recovered-json-to-turso.mjs", import.meta.url);
+    const { stdout } = await execFileAsync(process.execPath, [script.pathname, "--chat-tag-root", root], {
+      env: { ...process.env, TURSO_DATABASE_URL: "", TURSO_AUTH_TOKEN: "" },
+    });
+    const result = JSON.parse(stdout);
+    assert.equal(result.applied, false);
+    assert.equal(result.files, 1);
+    assert.equal(result.bySource["nebula-legacy-global"], 1);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
