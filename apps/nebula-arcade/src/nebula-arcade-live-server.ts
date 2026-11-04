@@ -48,8 +48,13 @@ export function createNebulaArcadeLiveHost(options:{databasePath:string;tenantId
   }
   if(url.pathname==='/health/ready'){
     if(!basePort||!base.server.listening)throw new Error('Nebula Arcade core runtime is unavailable');
-    const ready=await probeReady(basePort);
-    response.writeHead(ready.status,{'content-type':'application/json','cache-control':'no-store'});response.end(ready.body);return;
+    const [ready,mosaicHealth]=await Promise.all([probeReady(basePort),mosaic.health()]);
+    const requireTurso=process.env.NEBULA_ARCADE_REQUIRE_TURSO==='1';
+    const storeModeReady=!requireTurso||mosaicHealth.mode==='turso';
+    const status=ready.status===200&&mosaicHealth.ready&&storeModeReady?200:503;
+    let body:Record<string,unknown>={};try{body=JSON.parse(ready.body) as Record<string,unknown>;}catch{}
+    response.writeHead(status,{'content-type':'application/json','cache-control':'no-store'});
+    response.end(JSON.stringify({...body,ready:status===200,mosaicStoreReady:mosaicHealth.ready,mosaicStoreMode:mosaicHealth.mode,mosaicStoreRequired:requireTurso}));return;
   }
   if(url.pathname.startsWith('/v1/nebula-arcade/support')){const principal=await authenticate(request);if(!principal.moderator)throw new Error('Moderator permission required');}
   const proxyHeaders={...request.headers};if(rewritten)delete proxyHeaders["transfer-encoding"];
