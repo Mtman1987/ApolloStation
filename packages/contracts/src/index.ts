@@ -1144,7 +1144,7 @@ export function assertCapabilityWiringManifestV1(value: CapabilityWiringManifest
     if (!Array.isArray(capability.surfaces) || !capability.surfaces.length || capability.surfaces.some((surface) => !isSurfaceModeV1(surface))) throw new Error("Capability surfaces are invalid");
     if (!contractStrings(capability.entryPoints) || !capability.contract?.trim() || !contractStrings(capability.evidence)) throw new Error("Capability wiring references are invalid");
     if (capability.meteredResource !== null && !(METERED_RESOURCES as readonly string[]).includes(capability.meteredResource)) throw new Error("Capability metered resource is invalid");
-    if (!Array.isArray(capability.executionTargets) || !capability.executionTargets.length || capability.executionTargets.some((target) => target !== "sprite" && target !== "fly" && target !== "companion")) throw new Error("Capability execution targets are invalid");
+    if (!Array.isArray(capability.executionTargets) || !capability.executionTargets.length || capability.executionTargets.some((target) => target !== "sprite" && target !== "fly" && target !== "companion" && target !== "self-hosted")) throw new Error("Capability execution targets are invalid");
     if (!(CAPABILITY_ROUTE_MODES as readonly string[]).includes(capability.routeMode) || !(CAPABILITY_WIRING_STATES as readonly string[]).includes(capability.state) || !capability.migration?.trim()) throw new Error("Capability wiring state is invalid");
   }
   return value;
