@@ -25,6 +25,8 @@ on:
       - tests/stellar-speech-target.test.mjs
       - tests/stellar-kokoro.test.mjs
       - tests/streamweaver-port-runtime.test.mjs
+      - tests/streamweaver-checkin-presentation.test.mjs
+      - tests/streamweaver-flow-author-e2e.test.mjs
       - apps/streamweaver/src/community-runtime.ts
       - apps/nebula-arcade/src/provider-runtime.ts
       - apps/mountainview/src/commander-listener.ts
