@@ -56,6 +56,18 @@ A repository-wide source search found a broad set of SQLite-backed modules. This
 
 This search found stateful modules in nearly every major ecosystem area, not just the canonical SPMT authority. Each needs an owner, data classification (authoritative, reconstructible cache, event history, or ephemeral), actual configured path, durability requirement, backup/restore plan, and cross-node access strategy. Do not move, reset, or silently reinitialize any of these files during portability work.
 
+## Database-path composition confirmed
+
+The source composition shows that several stores are grouped into one SQLite file per app runtime, rather than one file per store:
+
+- **StreamWeaver provider runtime:** its provider runtime constructs the community/ride, shoutout, Pokémon, persona settings, summons, command state, economy, relay, flow packages, runtime settings, research, Bic, social reaction, translation, secure-choice, bot-action-reply, Twitch EventSub, and Stella Lounge-host stores using the same `options.databasePath`. Its web server separately accepts optional `STREAMWEAVER_DATABASE_PATH` for the secure-choice web surface. Confirm whether the web process and worker receive the same durable file or use a deliberately shared API before splitting them.
+- **Nebula provider runtime:** network, tabletop, input feed, activity, tag, experience, game runtime, action history, Mosaic, media, and optional Discord dashboard stores are composed around the same `options.databasePath`. The standalone live server also opens network/Mosaic state at its configured `NEBULA_ARCADE_DATABASE_PATH`. These are not safe to place on unrelated ephemeral node disks.
+- **Discord Stream Hub worker:** member activity, tenant settings, member directory, live monitor, raid pile, Discord message receipts, MtFixIt intake, signal seekers, forum forwarding, cleanup, clip/GIF, role-banner, calendar, and application stores are composed from the same `options.databasePath`. The web process uses `DSH_DATABASE_PATH` for its media, gameplay, application, and workflow stores.
+- **Lounge overlay:** broadcast, Lounge context, Stella host, and avatar state are composed from one supplied SQLite path.
+- **Chat Gateway:** `SqliteChatGatewayStore` and `SqliteProviderConnectionStore` are separate stores; the service composition receives the database path for its message store and a separately configured connection store. Verify exact production path wiring before assuming a single file.
+
+This gives us a safer migration unit: preserve each app's existing database file as a complete unit first, rather than splitting tables by module. It does **not** yet prove cross-process concurrent access is safe on Hostless storage. If web and worker processes must both mutate the same SQLite file on different machines, a local volume is not a distributed database; keep them co-located behind one owner or migrate their store APIs to a network database with transaction-safe semantics.
+
 ## Cross-node incompatibilities confirmed
 
 1. The Sprite supervisor assumes one host and wires most services through loopback origins.
