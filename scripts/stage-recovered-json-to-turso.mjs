@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /**
- * Stage recovered Chat Tag and StreamWeaver JSON into a dedicated Turso
+ * Stage recovered Nebula legacy and StreamWeaver JSON into a dedicated Turso
  * raw-source table. This deliberately does not write Apollo domain tables.
  *
  * Expected extracted roots:
- *   --chat-tag-root <directory containing data/app-state.json>
+ *   --legacy-nebula-root <directory containing legacy Nebula app-state.json>
  *   --streamweaver-root <directory containing data/runtime/...>
  *
  * Dry-run is the default. --apply is resumable: identical source/path/hash
@@ -88,9 +88,9 @@ async function collect(source, root) {
   return records;
 }
 
-export async function buildRecoveredJsonManifest({ chatTagRoot, streamWeaverRoot }) {
+export async function buildRecoveredJsonManifest({ legacyNebulaRoot, streamWeaverRoot }) {
   const records = [];
-  if (chatTagRoot) records.push(...await collect("nebula-legacy-global", resolve(chatTagRoot)));
+  if (legacyNebulaRoot) records.push(...await collect("nebula-legacy-global", resolve(legacyNebulaRoot)));
   if (streamWeaverRoot) records.push(...await collect("streamweaver", resolve(streamWeaverRoot)));
   if (!records.length) throw new Error("Provide at least one extracted source root");
   const keys = new Set();
@@ -170,11 +170,11 @@ async function insertBatch(adapter, records) {
 }
 
 function parseArgs(argv) {
-  const options = { apply: false, chatTagRoot: "", streamWeaverRoot: "" };
+  const options = { apply: false, legacyNebulaRoot: "", streamWeaverRoot: "" };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === "--apply") options.apply = true;
-    else if (arg === "--chat-tag-root") options.chatTagRoot = argv[++i] ?? "";
+    else if (arg === "--legacy-nebula-root") options.legacyNebulaRoot = argv[++i] ?? "";
     else if (arg === "--streamweaver-root") options.streamWeaverRoot = argv[++i] ?? "";
     else if (arg === "--help") options.help = true;
     else throw new Error(`Unknown argument: ${arg}`);
@@ -184,8 +184,8 @@ function parseArgs(argv) {
 
 async function main() {
   const options = parseArgs(process.argv.slice(2));
-  if (options.help || (!options.chatTagRoot && !options.streamWeaverRoot)) {
-    process.stdout.write("Usage: node scripts/stage-recovered-json-to-turso.mjs [--chat-tag-root DIR] [--streamweaver-root DIR] [--apply]\nDry-run by default. Stages redacted JSON source documents in a dedicated raw table; it does not normalize or assign records to Apollo domain tables.\n");
+  if (options.help || (!options.legacyNebulaRoot && !options.streamWeaverRoot)) {
+    process.stdout.write("Usage: node scripts/stage-recovered-json-to-turso.mjs [--legacy-nebula-root DIR] [--streamweaver-root DIR] [--apply]\nDry-run by default. Stages redacted JSON source documents in a dedicated raw table; it does not normalize or assign records to Apollo domain tables.\n");
     return;
   }
   const records = await buildRecoveredJsonManifest(options);
