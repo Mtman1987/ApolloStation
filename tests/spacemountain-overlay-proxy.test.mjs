@@ -108,13 +108,14 @@ test("multi-node ingress refuses cleartext remote service origins at startup", (
 
 test("multi-node ingress accepts HTTPS service origins", async () => {
   const web = createIntegratedSpaceMountainWebHost({
-    spmtOrigin: "https://127.0.0.1:1",
+    spmtOrigin: "http://127.0.0.1:1",
+    nebulaArcadeOrigin: "https://127.0.0.1:1",
     host: "127.0.0.1",
     port: 0,
   });
   try {
     await web.listen();
-    const response = await fetch(`${origin(web.server)}/v1/overlay/tenant-a/public`);
+    const response = await fetch(`${origin(web.server)}/v1/nebula/game-actions`);
     assert.equal(response.status, 502);
     assert.equal((await response.json()).error, "internal_proxy_unavailable");
   } finally { await web.close(); }
