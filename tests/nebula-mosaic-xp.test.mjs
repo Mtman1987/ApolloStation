@@ -47,7 +47,7 @@ test("Mosaic refuses to queue when the canonical XP spend fails", async t => {
   });
   assert.match(result.reply, /charge could not be completed/i);
   assert.equal(calls.filter(call => call[0] === "spend").length, 1);
-  assert.equal(await runtime.snapshot("tenant-a", "channel-a").queue.length, 0);
+  assert.equal((await runtime.snapshot("tenant-a", "channel-a")).queue.length, 0);
 });
 
 test("Mosaic status and invalid theme commands never spend XP", async t => {
@@ -71,5 +71,5 @@ test("Mosaic refuses charged requests without a stable provider message ID", asy
   });
   assert.match(result.reply, /stable message ID is unavailable/i);
   assert.equal(calls.length, 0);
-  assert.equal(await runtime.snapshot("tenant-a", "channel-a").queue.length, 0);
+  assert.equal((await runtime.snapshot("tenant-a", "channel-a")).queue.length, 0);
 });
