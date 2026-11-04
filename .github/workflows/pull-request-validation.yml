@@ -38,6 +38,8 @@ jobs:
           cache: npm
       - name: Install locked dependencies
         run: npm ci
+      - name: Inventory SQLite persistence usage
+        run: npm run persistence:audit -- --json > /tmp/apollo-sqlite-audit.json && node -e "const r=require('/tmp/apollo-sqlite-audit.json'); console.log(JSON.stringify(r.totals, null, 2))"
       - name: Install local media test tools
         run: |
           sudo apt-get update
