@@ -12,6 +12,7 @@ on:
       - "infra/oracle/prepare-apollo-data-volume.sh"
       - "infra/oracle/apollo.env.example"
       - "apps/hearmeout/legacy-worker/**"
+      - "services/free-tts/**"
       - ".dockerignore"
       - "package.json"
       - "package-lock.json"
@@ -66,3 +67,18 @@ jobs:
           docker run --rm --env-file infra/oracle/apollo.env.example -v "$PWD/infra/oracle/Caddyfile.apollo:/etc/caddy/Caddyfile:ro" -v "/tmp/apollo-caddy-tls/restream-control.crt:/etc/caddy/tls/restream-control.crt:ro" -v "/tmp/apollo-caddy-tls/restream-control.key:/etc/caddy/tls/restream-control.key:ro" caddy:2.10-alpine caddy validate --config /etc/caddy/Caddyfile
       - name: Build HearMeOut Lounge worker image
         run: docker build --file apps/hearmeout/legacy-worker/Dockerfile --tag apollo-hearmeout-lounge:ci apps/hearmeout/legacy-worker
+      - name: Build and smoke-test private Kokoro CPU service
+        env:
+          KOKORO_SERVICE_TOKEN: rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr
+        run: |
+          docker build --file services/free-tts/Dockerfile --tag apollo-kokoro:ci .
+          docker run --rm --detach --name apollo-kokoro-ci -p 127.0.0.1:8080:8080 -e KOKORO_SERVICE_TOKEN="$KOKORO_SERVICE_TOKEN" apollo-kokoro:ci
+          trap 'docker rm --force apollo-kokoro-ci >/dev/null 2>&1 || true' EXIT
+          for attempt in $(seq 1 45); do
+            state=$(docker inspect --format '{{.State.Health.Status}}' apollo-kokoro-ci 2>/dev/null || echo starting)
+            if [ "$state" = healthy ]; then break; fi
+            if [ "$state" = unhealthy ] || [ "$(docker inspect --format '{{.State.Running}}' apollo-kokoro-ci)" != true ]; then docker logs apollo-kokoro-ci; exit 1; fi
+            sleep 2
+          done
+          test "$(docker inspect --format '{{.State.Health.Status}}' apollo-kokoro-ci)" = healthy
+          python3 services/free-tts/smoke.py
