@@ -184,6 +184,33 @@ services:
       spmt-service:
         condition: service_started
 
+  kokoro:
+    build:
+      context: ../..
+      dockerfile: services/free-tts/Dockerfile
+    image: apollo-kokoro:local
+    env_file:
+      - ./apollo.env
+    init: true
+    restart: unless-stopped
+    environment:
+      HOST: "0.0.0.0"
+      KOKORO_SERVICE_TOKEN: ${STELLAR_KOKORO_AUTH_TOKEN:?Set STELLAR_KOKORO_AUTH_TOKEN}
+      MODEL_PATH: /models/kokoro-v1.0.onnx
+      VOICES_PATH: /models/voices-v1.0.bin
+    expose:
+      - "8080"
+    read_only: true
+    tmpfs:
+      - /tmp:size=128m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 2g
+    networks:
+      - apollo-private
+
   stellar-worker:
     <<: *apollo-core
     command: apps/stellar-core/dist/worker-start.js
@@ -195,11 +222,13 @@ services:
       STELLAR_PROVIDER_ORIGIN: ${STELLAR_PROVIDER_ORIGIN:-}
       STELLAR_PROVIDER_MODEL: ${STELLAR_PROVIDER_MODEL:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      STELLAR_KOKORO_URL: ${STELLAR_KOKORO_URL:-}
-      STELLAR_KOKORO_AUTH_TOKEN: ${STELLAR_KOKORO_AUTH_TOKEN:-}
+      STELLAR_KOKORO_URL: http://kokoro:8080
+      STELLAR_KOKORO_AUTH_TOKEN: ${STELLAR_KOKORO_AUTH_TOKEN:?Set STELLAR_KOKORO_AUTH_TOKEN}
     depends_on:
       spmt-service:
         condition: service_started
+      kokoro:
+        condition: service_healthy
 
   hearmeout-web:
     <<: *apollo-core
