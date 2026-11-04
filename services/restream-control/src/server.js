@@ -108,20 +108,21 @@ async function start() {
   if (credential.length < 32) throw new Error('RESTREAM_CONTROL_CREDENTIAL must be at least 32 characters');
   const profileDir = String(process.env.RESTREAM_PROFILE_DIR || '');
   if (!isAbsolute(profileDir)) throw new Error('RESTREAM_PROFILE_DIR must be an absolute mounted-volume path');
+  const certFile = String(process.env.RESTREAM_TLS_CERT_FILE || '');
+  const keyFile = String(process.env.RESTREAM_TLS_KEY_FILE || '');
+  if (!isAbsolute(certFile) || !isAbsolute(keyFile)) throw new Error('RESTREAM_TLS_CERT_FILE and RESTREAM_TLS_KEY_FILE must be absolute mounted secret paths');
+  const tls = { cert: await require('node:fs/promises').readFile(certFile), key: await require('node:fs/promises').readFile(keyFile) };
   const releaseLock = await acquireProfileLock(profileDir);
   const control = createRestreamControl({
     chromiumPath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
     puppeteer,
     profileDir,
   });
-  const certFile = String(process.env.RESTREAM_TLS_CERT_FILE || '');
-  const keyFile = String(process.env.RESTREAM_TLS_KEY_FILE || '');
-  if (!isAbsolute(certFile) || !isAbsolute(keyFile)) throw new Error('RESTREAM_TLS_CERT_FILE and RESTREAM_TLS_KEY_FILE must be absolute mounted secret paths');
   const app = createRestreamService({
     control, credential,
     automationEnabled: process.env.RESTREAM_AUTOMATION_ENABLED === 'true',
   });
-  const server = createHttpsServer({ cert: await require('node:fs/promises').readFile(certFile), key: await require('node:fs/promises').readFile(keyFile) }, app);
+  const server = createHttpsServer(tls, app);
   server.listen(Number(process.env.PORT || 3018), process.env.HOST || '0.0.0.0');
   let closing = false;
   const shutdown = async () => {
