@@ -56,16 +56,11 @@ export class StellarSpeechProvider {
           if (this.cooldowns.size > 2000) for (const [id, expiry] of this.cooldowns) if (expiry <= now) this.cooldowns.delete(id);
         }
       }
-      if (!audio && this.options.kokoroUrl) {
-        const localVoice = resolveKokoroVoice(voice);
-        audio = await this.requestKokoro(chunk, localVoice);
-        providers.push("kokoro");
-      }
       if (!audio) throw new StellarSpeechError("The selected voice is temporarily unavailable from its configured providers", true);
       output.push(audio);
       if (output.reduce((n, b) => n + b.length, 0) > 8 * 1024 * 1024) throw new StellarSpeechError("Speech audio exceeds the shared media limit");
     }
-    return { bytes: Buffer.concat(output), contentType: providers.includes("kokoro") ? "audio/wav" : "audio/mpeg", voice: providers.includes("kokoro") ? `kokoro:${resolveKokoroVoice(voice)}` : voice.id, providers: [...new Set(providers)] };
+    return { bytes: Buffer.concat(output), contentType: "audio/mpeg", voice: voice.id, providers: [...new Set(providers)] };
   }
   async transcribe(bytes: Uint8Array, contentType: string) {
     if (!this.options.deepgramKey && !this.options.edenKey) throw new StellarSpeechError("Speech transcription providers are not configured");
