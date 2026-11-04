@@ -18,23 +18,23 @@ Status: initial static inventory from ApolloStation `main`; confirm against runt
 
 Important: SPMT's service process can bind to `0.0.0.0` via `SPMT_HOST`, but its authority store is SQLite. The existing storage policy requires a single writable authority. A Hostless deploy without a durable database path is not safe.
 
-## Node 2 — streaming and media
+## Node 2 — live + games data plane (mandatory co-location)
 
 | Process | Current entrypoint | Current state |
 |---|---|---|
-| Chat Gateway | `apps/chat-gateway/dist/service-start.js` | Worker/service config includes a local SQLite database path and SPMT origin. |
-| StreamWeaver web | `apps/streamweaver/dist/web-server.js` | Reads `SPMT_ORIGIN`, `PORT`, `HOST`, optional `STREAMWEAVER_DATABASE_PATH` and worker credential. |
-| Discord Stream Hub web | `apps/discord-stream-hub/dist/web-server.js` | App-owned SQLite stores and runtime config; separate live worker entrypoint. |
-| Discord Stream Hub worker | `apps/discord-stream-hub/dist/live-worker-start.js` | Validates worker environment, runs live, suite, calendar, and Nebula media loops. |
+| Chat Gateway + embedded provider consumers | `apps/chat-gateway/dist/service-start.js` | Constructs StreamWeaver and Nebula provider runtimes in-process; owns Chat Gateway receipts and provider connection state. |
+| StreamWeaver web/provider state | `apps/streamweaver/dist/web-server.js` + Chat Gateway provider runtime | Web and provider runtime use StreamWeaver-owned SQLite state; preserve the existing owner boundary. |
+| Nebula live server/provider state | `apps/nebula-arcade/dist/nebula-arcade-live-server.js` + Chat Gateway provider runtime | Both open Nebula network/Mosaic/game stores at the configured Nebula SQLite path. They must be co-located with Chat Gateway's embedded Nebula runtime. |
 
-The supervisor currently passes local SPMT and local app URLs. Those must become explicit remote HTTPS origins with service authentication. App-owned state must be classified individually; it cannot be left on ephemeral filesystem if it is authoritative.
+**Do not split these processes across Hostless accounts.** `apps/chat-gateway/src/service.ts` directly constructs `StreamWeaverProviderRuntime` and `NebulaArcadeProviderRuntime`, registers their consumers in the chat delivery pipeline, and calls Nebula's check-in bonus method from StreamWeaver. A remote Nebula process cannot replace this in-process runtime without a real event-ingress/API extraction preserving tenant scope, event order, delivery IDs, idempotency, retries, and outbound callbacks.
 
-## Node 3 — games and community
+## Node 3 — Discord/community delivery and auxiliary execution
 
 | Process | Current entrypoint | Current state |
 |---|---|---|
-| Nebula Arcade live server | `apps/nebula-arcade/dist/nebula-arcade-live-server.js` | Uses SPMT session/service-token APIs, but local SQLite network and Mosaic stores; requires tenant/channel, public origin, and service credential. |
-| Lounge / OverlayBay / Restream | To be mapped from actual package and runtime entrypoints | Do not claim parity or assign workloads until exact code and state ownership are inventoried. |
+| Discord Stream Hub web | `apps/discord-stream-hub/dist/web-server.js` | DSH-owned SQLite stores and runtime config. |
+| Discord Stream Hub worker | `apps/discord-stream-hub/dist/live-worker-start.js` | Validates worker environment; runs live, suite, calendar, and Nebula media loops. Any Nebula data access must use a remote authenticated API, not a shared SQLite path. |
+| Restream receiver | `apps/hearmeout/legacy-worker/src/server.js` (legacy location) | Existing Puppeteer/Chromium/Xvfb receiver; not Hostless-ready until persistent private browser-profile storage and runtime proof exist. |
 
 ## Cross-cutting feature ownership (verified from current source)
 
@@ -93,3 +93,8 @@ This gives us a safer migration unit: preserve each app's existing database file
 4. Add explicit Node 2 and Node 3 process entrypoints with no implicit localhost defaults.
 5. Replace or externally centralize each app-owned SQLite store before moving that app to an ephemeral Hostless app filesystem.
 6. Run all cross-node tests and restore drills before a deployment or traffic cutover.
+
+
+## Mandatory co-location rule (2026-11-04)
+
+The original draft placed Nebula on Node 3 and Chat Gateway on Node 2. That is invalid: Chat Gateway constructs Nebula and StreamWeaver provider runtimes inside `apps/chat-gateway/src/service.ts`. The Nebula provider runtime and `nebula-arcade-live-server.ts` both open the Nebula SQLite database. Until a remote provider-ingress boundary is implemented and tested, the entire Chat Gateway + StreamWeaver + Nebula runtime/data plane belongs on Node 2. Node 3 is reserved for DSH and independent auxiliary services. If DSH's Nebula-media worker requires direct Nebula DB access, it remains blocked from Node 3 until replaced with a scoped HTTPS API. This is source-derived, not proof of quota fit.

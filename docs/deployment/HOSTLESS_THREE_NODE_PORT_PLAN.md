@@ -53,11 +53,13 @@ The documented account-wide pool is 0.5 vCPU / 1 GiB RAM / 512 MiB database stor
 ### Node 1 — Core authority and public gateway
 Owns the single writable SPMT authority, identity/roles, app registry, core APIs, and the primary public ingress. Only one instance may write the authoritative state. The canonical data store must be durable and restorable without a paid volume.
 
-### Node 2 — Streaming and media services
-Runs the independently deployable Chat Gateway, StreamWeaver, Discord Stream Hub, and their required workers. These services call Node 1 through authenticated HTTPS APIs; no process assumes Node 1 is reachable at localhost. Media caches and generated segments are ephemeral and bounded; user-owned or authoritative data is not silently discarded.
+### Node 2 — Live event and gameplay data plane (co-location boundary)
+Runs Chat Gateway, StreamWeaver provider runtime/web, and Nebula Arcade provider runtime together with the Nebula live server until their database ownership is deliberately refactored. `apps/chat-gateway/src/service.ts` constructs both `StreamWeaverProviderRuntime` and `NebulaArcadeProviderRuntime`, pushes their consumers into the Chat Gateway, and calls Nebula check-in bonus logic from StreamWeaver. The Nebula provider runtime and `nebula-arcade-live-server.ts` both open `NEBULA_ARCADE_DATABASE_PATH`. These processes must remain on the same node/filesystem for their respective SQLite owners. Chat Gateway, StreamWeaver, and Nebula retain distinct SPMT service identities and separate database files.
 
-### Node 3 — Games and community services
-Runs Nebula Arcade / Chat Tag and community-facing services such as Lounge integrations. It calls the canonical authority and streaming APIs through authenticated HTTPS contracts. It must not create a second writable copy of SPMT authority.
+### Node 3 — Discord/community delivery and auxiliary execution
+Runs Discord Stream Hub web/worker with its DSH-owned database, plus independently deployable auxiliary services (including the Restream control receiver only after its durable browser-profile requirements are met). It connects to Node 1 authority and Node 2 event/game APIs through authenticated HTTPS contracts. It must not open or share Node 2 SQLite files. DSH Nebula-media integration must call the Nebula service contract, not become a second local Nebula database writer.
+
+This is the safe first partition, not proof that quota is sufficient. If DSH's current integration requires local Nebula database access, that dependency must be replaced by an authenticated API before Node 3 can run it. Do not split the Nebula provider runtime away from Chat Gateway as a shortcut.
 
 OverlayBay and Restream must be mapped to their actual existing Apollo modules and dependencies during the service inventory before they are assigned or declared complete. HearMeOut remains lower migration priority and must not displace the first three priorities.
 
@@ -68,8 +70,8 @@ The three Hostless accounts are treated as three independently deployed nodes of
 | Hostless account role | Primary responsibility | Services hosted together | Data owner |
 |---|---|---|---|
 | Account 1 — Core | Identity, roles, canonical authority, public routing | SPMT authority/API, SpaceMountain ingress and OverlayBay scene API | SPMT authority DB; OverlayBay scene DB |
-| Account 2 — Live | Streaming and chat transport | Chat Gateway, StreamWeaver provider runtime, Discord Stream Hub live worker/web | Chat Gateway DB; StreamWeaver DB; DSH DB |
-| Account 3 — Games | Gameplay and community | Nebula Arcade / Chat Tag, game-facing community endpoints and Lounge integration | Nebula DB; any DSH-owned Lounge state remains with DSH on Account 2 |
+| Account 2 — Live + Games data plane | Provider chat, StreamWeaver and Nebula gameplay | Chat Gateway worker, StreamWeaver web/provider runtime, Nebula provider runtime and Nebula live server | Chat Gateway DB + provider-connection DB; StreamWeaver DB; Nebula DB |
+| Account 3 — Discord/community delivery | Discord workflows and auxiliary execution | Discord Stream Hub web/worker, DSH-owned Lounge state, Restream receiver only after durable-profile port | DSH DB/runtime config; separately owned Restream profile storage |
 
 This is a logical ownership map, not proof that the current Hostless free CPU/RAM quota can run all assigned processes. Build and runtime measurements must decide whether the assignments fit. If not, reduce idle process duplication or move a whole DB-owning app to another role; never split one SQLite database between accounts.
 
@@ -77,9 +79,8 @@ This is a logical ownership map, not proof that the current Hostless free CPU/RA
 
 - **One identity:** Account 1 is the only canonical SPMT authority. Accounts 2 and 3 authenticate as distinct service identities and request user/tenant authorization from it; they do not create local shadow accounts or roles.
 - **One public front door:** SpaceMountain on Account 1 routes browser traffic to the correct public HTTPS origins. Browser cookies remain scoped to the public domain design; worker credentials stay server-side.
-- **Live path:** StreamWeaver and Chat Gateway on Account 2 use SPMT grants and tenant-scoped service APIs. Chat delivery receipts remain in the Chat Gateway DB. StreamWeaver owns its community/game/economy and host state.
-- **Game path:** Nebula on Account 3 validates canonical tenant/user context with Account 1 and consumes provider/chat events through the authenticated Account 2 contracts. Points, cards, check-ins, Mosaic projects and game progress remain in the Nebula DB.
-- **Discord/Lounge path:** DSH owns Discord receipts, outbox, tenant configuration and its Lounge runtime state. Nebula/StreamWeaver call it through the existing authenticated service contracts; do not fork Discord state into the Nebula DB.
+- **Live + game path:** Chat Gateway, StreamWeaver and Nebula runtimes share the Node 2 process boundary where required, but retain distinct SPMT identities and SQLite databases. Normalized provider events flow through the existing in-process consumer chain, preserving order and delivery/idempotency behavior. Nebula's live HTTP server is co-located with the Nebula DB owner.
+- **Discord/Lounge path:** DSH on Account 3 owns Discord receipts, outbox, tenant configuration and Lounge runtime state. Cross-node Nebula media/game operations must use authenticated APIs; no DSH process may open the Nebula SQLite file.
 - **Overlay path:** OverlayBay scene authoring stays with Account 1; it receives authenticated event/data inputs from the other nodes and publishes through SpaceMountain.
 - **Restream path:** StreamWeaver's Go Live command calls a separately authenticated Restream control receiver. That receiver still needs a durable private browser profile and a verified runtime; it is not considered deployed merely because the caller exists.
 
@@ -87,8 +88,8 @@ This is a logical ownership map, not proof that the current Hostless free CPU/RA
 
 Use explicit HTTPS origins in production, never localhost for cross-account traffic. Exact variable names must be wired and validated by the relevant runtime before deployment:
 - Account 2/3 -> Account 1: `SPMT_ORIGIN` (and public `SPMT_PUBLIC_ORIGIN` where browser links are required).
-- Account 2 -> Account 1/3: the configured SpaceMountain/DSH/Nebula public origins and distinct service credentials; never one shared node token.
-- Account 3 -> Account 2: Chat Gateway/DSH HTTPS service origins plus their existing per-service credentials and tenant grants.
+- Account 2 -> Account 1: SPMT/SpaceMountain HTTPS origins and distinct Chat Gateway, StreamWeaver and Nebula service credentials.
+- Account 3 -> Account 1/2: SPMT and Node 2 Nebula/StreamWeaver HTTPS service origins plus DSH's own credential and tenant grants.
 - Browser -> Account 1: SpaceMountain public origin; browser navigation must not expose worker credentials.
 - Account 2 -> Restream receiver: `STREAMWEAVER_RESTREAM_CONTROL_ORIGIN` and `STREAMWEAVER_RESTREAM_CONTROL_CREDENTIAL`, with a separate receiver credential and strict redirect handling.
 
@@ -135,3 +136,8 @@ The source and test changes are committed to `hostless-three-node-port`. On comm
 - [ ] Core, StreamWeaver, Nebula/Chat Tag, and Discord Stream Hub end-to-end flows pass.
 - [ ] All deployed resources stay inside verified free entitlements and show $0.00.
 - [ ] No functionality is removed merely to fit the hosting platform.
+
+
+## Critical co-location correction (2026-11-04)
+
+The earlier draft's Account 2 / Account 3 split was invalid and is superseded by the topology above. Static source inspection of `apps/chat-gateway/src/service.ts` proves that the Chat Gateway process directly constructs `StreamWeaverProviderRuntime` and `NebulaArcadeProviderRuntime`, attaches their consumers, and wires StreamWeaver's Nebula check-in bonus callback to the in-process Nebula runtime. `apps/nebula-arcade/src/nebula-arcade-live-server.ts` independently opens Nebula network and Mosaic stores at the same configured database path. A split that puts Chat Gateway on one account and Nebula on another severs this in-process contract and/or creates multiple SQLite writers. The safe initial placement co-locates Chat Gateway + StreamWeaver + Nebula provider runtime/web/database owners on Account 2; Account 3 owns DSH and its own state. A future extraction of Nebula event ingress is a separate architecture project requiring authenticated tenant-scoped ingress, durable idempotency, event ordering, retry/outbox semantics, and cross-node end-to-end tests. No partial HTTP endpoint or proxy-only change is sufficient.
