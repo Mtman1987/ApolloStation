@@ -214,7 +214,7 @@ export const EDENAI_VOICE_OPTIONS: TTSVoiceOption[] = [
 
 
 // Local CPU-only Kokoro voices. These IDs never route to paid providers.
-export const KOKORO_VOICE_OPTIONS: TTSVoiceOption[] = [
+const KOKORO_VOICE_ROWS: Array<[string, string, "Male" | "Female"]> = [
   ['af_heart', 'Heart', 'Female'], ['af_bella', 'Bella', 'Female'],
   ['af_nicole', 'Nicole', 'Female'], ['af_kore', 'Kore', 'Female'],
   ['af_sarah', 'Sarah', 'Female'], ['af_aoede', 'Aoede', 'Female'],
@@ -230,12 +230,9 @@ export const KOKORO_VOICE_OPTIONS: TTSVoiceOption[] = [
   ['bf_lily', 'Lily (UK)', 'Female'], ['bm_daniel', 'Daniel (UK)', 'Male'],
   ['bm_fable', 'Fable (UK)', 'Male'], ['bm_lewis', 'Lewis (UK)', 'Male'],
 ].map(([name, label, gender]) => ({
-  id: `kokoro:${name}`, label, provider: 'kokoro' as TTSProvider,
-  providerLabel: 'Kokoro local CPU', gender: gender as 'Male' | 'Female',
-  description: 'Local neural voice; no per-character provider charge',
-  edenaiProvider: 'openai' as EdenAITTSProvider,
-  edenaiOption: gender === 'Male' ? 'MALE' as TTSVoiceGender : 'FEMALE' as TTSVoiceGender,
-  edenaiVoiceModel: name,
+  id: `kokoro:${name}`, label, provider: "kokoro", providerLabel: "Kokoro local CPU", gender,
+  description: "Local neural voice; no per-character provider charge", edenaiProvider: "openai",
+  edenaiOption: gender === "Male" ? "MALE" : "FEMALE", edenaiVoiceModel: name,
 }));
 
 export const TTS_VOICE_OPTIONS = [...KOKORO_VOICE_OPTIONS, ...DEEPGRAM_VOICE_OPTIONS, ...EDENAI_VOICE_OPTIONS];
