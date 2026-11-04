@@ -18,6 +18,12 @@ These commands run from the repository root after `npm run build`. The monorepo 
 - Nebula's standalone live service previously allowed arbitrary HTTP SPMT origins and URLs containing credentials or paths. It now accepts HTTPS, or loopback HTTP for local development, and rejects non-origin URL components before opening state.
 - Nebula Mosaic generation previously defaulted to `https://streamweaver-new.fly.dev`. When generation is enabled it now requires an explicit, credential-free HTTPS `STREAMWEAVER_URL`; there is no silent Fly fallback. Tests cover missing, insecure, malformed, and explicit test origins.
 
+## Validation
+
+- `npm run build` passed after the source changes.
+- The focused portability suite passed **21/21 tests**.
+- The subsequent full offline run reported **1,522 passed and 2 failed out of 1,524**. Both failures were pre-existing test fixtures using remote HTTP SPMT origins; those fixtures were changed to HTTPS, and the two affected test files plus the new origin test then passed **22/22**. The full suite was not rerun after those fixture-only corrections, so a clean full-suite result is not claimed.
+
 ## Hostless configuration facts verified
 
 The current Hostless documentation describes a `hostless.yaml` with build command, working directory, build context, start command, scaling bounds, health check, workers, and cron jobs. The default file path is the repository-root `hostless.yaml`, and an app can select a different file path in its settings. For this monorepo, any per-resource configuration must use repository root as build context. Hostless injects `PORT`, and its documentation requires web processes to bind to `0.0.0.0`. Environment variables and secrets are configured in the Hostless dashboard; they must not be placed in YAML, build arguments, or browser-visible frontend variables.

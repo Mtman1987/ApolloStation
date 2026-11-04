@@ -23,7 +23,7 @@ test('corrupted shared game state fails closed and is never replaced with empty 
 });
 
 test('production readiness checks the internal runtime and persisted state',async()=>{
-  const t=temp();const host=createNebulaArcadeLiveHost({databasePath:t.path,tenantId:'tenant',channelId:'room',spmtOrigin:'http://spmt.example',publicOrigin:'https://arcade.example',credential:'service-credential-that-is-long-enough',host:'127.0.0.1',port:0,buildSha:'cutover-test'});
+  const t=temp();const host=createNebulaArcadeLiveHost({databasePath:t.path,tenantId:'tenant',channelId:'room',spmtOrigin:'https://spmt.example',publicOrigin:'https://arcade.example',credential:'service-credential-that-is-long-enough',host:'127.0.0.1',port:0,buildSha:'cutover-test'});
   try{
     await host.listen();const origin=`http://127.0.0.1:${host.server.address().port}`;
     let response=await fetch(origin+'/health/ready');assert.equal(response.status,200);assert.equal((await response.json()).buildSha,'cutover-test');
