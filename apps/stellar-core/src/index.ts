@@ -46,6 +46,7 @@ export const manifest = assertAppModuleManifestV1({
   workers: [
     { id: "stellar-qwen-worker", role: "hosted chat inference", execution: "elastic", canonicalAuthority: false },
     { id: "stellar-companion-worker", role: "local chat inference", execution: "local", canonicalAuthority: false },
+    { id: "stellar-kokoro-speech-worker", role: "self-hosted local Kokoro speech synthesis", execution: "local", canonicalAuthority: false },
   ],
 } satisfies AppModuleManifestV1);
 
