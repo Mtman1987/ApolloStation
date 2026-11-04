@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { NebulaControlSurface } from "./control-surface.js";
 import { renderNebulaControlPage, NEBULA_CONTROL_JS } from "./control-page.js";
+import { NEBULA_MOSAIC_LIBRARY_JS } from "./mosaic-library.js";
 import { applyNebulaWidgetSettings } from "./game-settings.js";
 import { SqliteNebulaArcadeActivityStore, NEBULA_ACTIVITY_CSS, NEBULA_ACTIVITY_HTML, NEBULA_ACTIVITY_JS } from "./arcade-activity.js";
 import { SqliteNebulaTagExperienceStore, isNebulaChannelOptedOut } from "./nebula-tag-experience.js";
@@ -62,7 +63,8 @@ export function createNebulaArcadeSandboxHost(options: NebulaArcadeSandboxHostOp
         const ids=(url.searchParams.get("ids")||"").split(",").map(Number).slice(0,9);return json(response,200,{cards:ids.map(id=>({...controls.art.prompt(id).card,artUrl:controls.art.get(options.tenantId,id).url??`/apps/nebula-arcade?action=card-art&cardId=${id}`}))});
       }
       if(request.method==="GET"&&url.pathname==="/assets/nebula-arcade/control.js")return javascript(response,NEBULA_CONTROL_JS);
-      if(request.method==="GET"&&url.pathname===APP_PATH&&( ["controls","stats","art"].includes(url.searchParams.get("view")||"") || url.searchParams.get("view")==="game"&&["bingo","quackverse"].includes(url.searchParams.get("game")||"")))return html(response,200,renderNebulaControlPage(url.searchParams.get("view")||"game",url.searchParams.get("game")||"quackverse"));
+      if(request.method==="GET"&&url.pathname==="/assets/nebula-arcade/mosaic-library.js")return javascript(response,NEBULA_MOSAIC_LIBRARY_JS);
+      if(request.method==="GET"&&url.pathname===APP_PATH&&( ["controls","stats","art","mosaic"].includes(url.searchParams.get("view")||"") || url.searchParams.get("view")==="game"&&["bingo","quackverse"].includes(url.searchParams.get("game")||"")))return html(response,200,renderNebulaControlPage(url.searchParams.get("view")||"game",url.searchParams.get("game")||"quackverse"));
       if (request.method === "GET" && url.pathname === "/assets/nebula-arcade/widgets/thirdparty/three.min.js") { response.writeHead(200, { "content-type":"text/javascript; charset=utf-8", "cache-control":"public,max-age=86400", "access-control-allow-origin":"*" }); response.end(nebulaThreeJs()); return; }
       if (request.method === "GET" && url.pathname === "/assets/nebula-arcade/mosaic-overlay.js") return javascript(response, NEBULA_MOSAIC_OVERLAY_JS);
       if (request.method === "GET" && url.pathname === "/overlay/mosaic") {
