@@ -82,4 +82,5 @@ test("async JSON record store rejects use before initialization and invalid tena
   await assert.rejects(store.get("players", "tenant-a", "player-1"), /not been initialized/);
   await store.initialize();
   await assert.rejects(store.put("players", "", "player-1", {}), /tenantId/);
+  await assert.rejects(store.put("players", "tenant-a", "undefined", undefined), /JSON serializable/);
 });
