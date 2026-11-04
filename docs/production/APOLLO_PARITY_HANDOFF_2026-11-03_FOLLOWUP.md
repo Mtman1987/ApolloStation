@@ -50,9 +50,19 @@ separate; fetch main for the current HEAD. The open-PR query returned none.
    Voice Commander response path. The MountainView listener is now present;
    do not duplicate it in StreamWeaver. Keep voice action routing through
    authenticated app contracts.
-2. TTS remains a separate gap. Do not wire paid Deepgram/EdenAI voices or
-   external speech providers under the user's no-paid-AI requirement. Identify
-   a genuinely no-cost path before enabling spoken persona replies.
+2. TTS remains a separate gap. Donor StreamWeaver has a local Kokoro ONNX
+   worker in `workers/free-tts/server.py`, pinned requirements, a 2-thread
+   CPU cap, startup smoke inference, bounded loopback WAV responses, and
+   SHA-256-pinned model/voice files in its Dockerfile. Apollo's
+   `StellarSpeechProvider` still supports Deepgram/EdenAI only; no Kokoro
+   catalog, worker package, model pinning or startup path is present.
+   Apollo's speech worker also hardcodes the legacy `sprite` execution target.
+   Do not port it by silently enabling paid providers or reporting an Oracle
+   worker as Sprite. First resolve how a no-cost Kokoro worker fits the
+   intended Oracle/Companion execution topology; keep TTS-only capability
+   reporting separate from paid transcription/STT. Do not enable spoken
+   persona replies until a local worker is healthy and a WAV response is
+   validated.
 3. Continue StreamWeaver parity, then Nebula/Chat Tag, then Discord Stream Hub.
    Preserve Restream and OverlayBay and keep Lounge continuity safe.
 4. Keep repo-to-repo only: no Fly.io, deploy, restart, secret, volume, or live
