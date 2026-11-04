@@ -139,7 +139,7 @@ export function createSpmtService(options: SpmtServiceOptions) {
   if (options.hearMeOutWorkerCredential) ensureHearMeOutIdentity(auth, options.hearMeOutWorkerCredential);
   const communityAssistant = options.communityAssistant ?? new StellarCommunityAssistantRuntime(executionJobs, { enabled: Boolean(options.stellarChatEnabled), executionTarget: stellarExecutionTarget, resolveRoute: (input) => resolveStellarRoute(control, executionJobs, input.tenantId, input.routingPreference ?? "automatic", stellarExecutionTarget) });
   const stellarPrivacy = new StellarDataPrivacyService(executionJobs, data, {assistantStore});
-  const operations = new PlatformOperations(auth, authority, control, data, communityAssistant, options.coderRuntime, executionJobs, stellarPrivacy);
+  const operations = new PlatformOperations(auth, authority, control, data, communityAssistant, options.coderRuntime, executionJobs, stellarPrivacy, stellarExecutionTarget);
   const api = new PlatformApiAdapter(operations);
   const publicPersonas=new PublicPersonaApi({path:options.databasePath,auth,authority,control,runtime:communityAssistant,accessToken});
   const socialStreamStore=new CommlinkSocialStreamStore(options.databasePath);
