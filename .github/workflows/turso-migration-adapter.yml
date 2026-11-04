@@ -1,0 +1,30 @@
+name: Turso migration adapter
+
+on:
+  pull_request:
+    paths:
+      - "scripts/migrate-sqlite-to-turso.mjs"
+      - "tests/turso-migration-adapter.test.mjs"
+      - ".github/workflows/turso-migration-adapter.yml"
+  push:
+    branches: [main]
+    paths:
+      - "scripts/migrate-sqlite-to-turso.mjs"
+      - "tests/turso-migration-adapter.test.mjs"
+      - ".github/workflows/turso-migration-adapter.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  adapter-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Run focused adapter tests
+        run: node --test tests/turso-migration-adapter.test.mjs
+      - name: Check migration CLI syntax
+        run: node --check scripts/migrate-sqlite-to-turso.mjs
