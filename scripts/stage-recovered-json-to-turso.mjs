@@ -1,0 +1,206 @@
+#!/usr/bin/env node
+/**
+ * Stage recovered Chat Tag and StreamWeaver JSON into a dedicated Turso
+ * raw-source table. This deliberately does not write Apollo domain tables.
+ *
+ * Expected extracted roots:
+ *   --chat-tag-root <directory containing data/app-state.json>
+ *   --streamweaver-root <directory containing data/runtime/...>
+ *
+ * Dry-run is the default. --apply is resumable: identical source/path/hash
+ * records are accepted, conflicting records are rejected, never overwritten.
+ */
+import { createHash } from "node:crypto";
+import { createReadStream } from "node:fs";
+import { readdir, readFile } from "node:fs/promises";
+import { resolve, relative, sep, join } from "node:path";
+import { pathToFileURL } from "node:url";
+import { TursoHttpAdapter } from "./migrate-sqlite-to-turso.mjs";
+
+const TABLE = "apollo_recovered_json_stage_v1";
+const BATCH_SIZE = 20;
+const SENSITIVE_KEY = /^(?:access[_-]?token|refresh[_-]?token|id[_-]?token|token|api[_-]?key|client[_-]?secret|secret|password|authorization|webhook[_-]?url|private[_-]?key)$/i;
+const SENSITIVE_PATH = /(^|\/)(?:tokens?|secrets?|credentials?)(\/|$)/i;
+
+function sha256(value) {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function redact(value) {
+  if (Array.isArray(value)) return value.map(redact);
+  if (!value || typeof value !== "object") return value;
+  const output = {};
+  for (const [key, child] of Object.entries(value)) {
+    output[key] = SENSITIVE_KEY.test(key) ? "[REDACTED]" : redact(child);
+  }
+  return output;
+}
+
+async function walkJson(root) {
+  const found = [];
+  async function visit(directory) {
+    const entries = await readdir(directory, { withFileTypes: true });
+    entries.sort((a, b) => a.name.localeCompare(b.name));
+    for (const entry of entries) {
+      const absolute = join(directory, entry.name);
+      if (entry.isSymbolicLink()) continue;
+      if (entry.isDirectory()) await visit(absolute);
+      else if (entry.isFile() && entry.name.toLowerCase().endsWith(".json")) {
+        const path = relative(root, absolute).split(sep).join("/");
+        if (!SENSITIVE_PATH.test(path)) found.push({ absolute, path });
+      }
+    }
+  }
+  await visit(root);
+  return found;
+}
+
+function tenantFor(source, path) {
+  const parts = path.split("/");
+  if (source === "chat-tag") return "legacy-global";
+  const runtimeTenant = parts.findIndex((part, index) => part === "tenants" && parts[index - 1] === "runtime");
+  if (runtimeTenant >= 0 && parts[runtimeTenant + 1]) return parts[runtimeTenant + 1];
+  const appTenant = parts.findIndex((part, index) => part === "tenants" && parts[index - 1] === "data");
+  if (appTenant >= 0 && parts[appTenant + 1]) return parts[appTenant + 1];
+  return "__global__";
+}
+
+async function collect(source, root) {
+  const files = await walkJson(root);
+  const records = [];
+  for (const file of files) {
+    const raw = await readFile(file.absolute);
+    let parsed;
+    try {
+      parsed = JSON.parse(raw.toString("utf8"));
+    } catch {
+      throw new Error(`Invalid JSON in ${source}/${file.path}; refusing partial staging`);
+    }
+    const payload = JSON.stringify(redact(parsed));
+    records.push({
+      source,
+      tenant: tenantFor(source, file.path),
+      path: file.path,
+      sourceHash: sha256(raw),
+      payloadHash: sha256(payload),
+      payload,
+    });
+  }
+  return records;
+}
+
+export async function buildRecoveredJsonManifest({ chatTagRoot, streamWeaverRoot }) {
+  const records = [];
+  if (chatTagRoot) records.push(...await collect("chat-tag", resolve(chatTagRoot)));
+  if (streamWeaverRoot) records.push(...await collect("streamweaver", resolve(streamWeaverRoot)));
+  if (!records.length) throw new Error("Provide at least one extracted source root");
+  const keys = new Set();
+  for (const record of records) {
+    const key = `${record.source}\0${record.tenant}\0${record.path}`;
+    if (keys.has(key)) throw new Error(`Duplicate source path in manifest: ${record.source}/${record.path}`);
+    keys.add(key);
+  }
+  return records;
+}
+
+export async function stageRecoveredJson({ records, adapter, apply = false, onProgress = () => {} }) {
+  const bySource = {};
+  for (const record of records) bySource[record.source] = (bySource[record.source] ?? 0) + 1;
+  const tenants = [...new Set(records.filter((r) => r.source === "streamweaver").map((r) => r.tenant))].sort();
+  const summary = {
+    files: records.length,
+    bySource,
+    streamWeaverTenants: tenants.length,
+    redactedRecords: records.filter((r) => r.payload.includes("[REDACTED]")).length,
+  };
+  if (!apply) return { ...summary, applied: false };
+
+  await adapter.execute(`CREATE TABLE IF NOT EXISTS ${TABLE} (
+    source TEXT NOT NULL,
+    tenant_key TEXT NOT NULL,
+    source_path TEXT NOT NULL,
+    source_sha256 TEXT NOT NULL,
+    payload_sha256 TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    staged_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY(source, tenant_key, source_path)
+  ) STRICT`);
+
+  const pending = [];
+  for (const record of records) {
+    const existing = await adapter.execute(
+      `SELECT source_sha256, payload_sha256 FROM ${TABLE} WHERE source=? AND tenant_key=? AND source_path=?`,
+      [record.source, record.tenant, record.path], true,
+    );
+    if (existing.rows.length) {
+      const [sourceHash, payloadHash] = existing.rows[0];
+      if (sourceHash !== record.sourceHash || payloadHash !== record.payloadHash) {
+        throw new Error(`Conflicting staged source already exists: ${record.source}/${record.path}; refusing overwrite`);
+      }
+      continue;
+    }
+    pending.push(record);
+    if (pending.length >= BATCH_SIZE) {
+      await insertBatch(adapter, pending.splice(0));
+      onProgress({ phase: "stage", staged: true });
+    }
+  }
+  if (pending.length) await insertBatch(adapter, pending);
+  const verification = await adapter.execute(
+    `SELECT source, COUNT(*) FROM ${TABLE} GROUP BY source`, [], true,
+  );
+  return {
+    ...summary,
+    applied: true,
+    verified: true,
+    destinationCounts: Object.fromEntries(verification.rows.map(([source, count]) => [source, Number(count)])),
+  };
+}
+
+async function insertBatch(adapter, records) {
+  for (const record of records) {
+    await adapter.execute(
+      `INSERT INTO ${TABLE}(source,tenant_key,source_path,source_sha256,payload_sha256,payload_json)
+       VALUES(?,?,?,?,?,?)`,
+      [record.source, record.tenant, record.path, record.sourceHash, record.payloadHash, record.payload],
+    );
+  }
+}
+
+function parseArgs(argv) {
+  const options = { apply: false, chatTagRoot: "", streamWeaverRoot: "" };
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (arg === "--apply") options.apply = true;
+    else if (arg === "--chat-tag-root") options.chatTagRoot = argv[++i] ?? "";
+    else if (arg === "--streamweaver-root") options.streamWeaverRoot = argv[++i] ?? "";
+    else if (arg === "--help") options.help = true;
+    else throw new Error(`Unknown argument: ${arg}`);
+  }
+  return options;
+}
+
+async function main() {
+  const options = parseArgs(process.argv.slice(2));
+  if (options.help || (!options.chatTagRoot && !options.streamWeaverRoot)) {
+    process.stdout.write("Usage: node scripts/stage-recovered-json-to-turso.mjs [--chat-tag-root DIR] [--streamweaver-root DIR] [--apply]\\nDry-run by default. Stages redacted JSON source documents in a dedicated raw table; it does not normalize or assign records to Apollo domain tables.\\n");
+    return;
+  }
+  const records = await buildRecoveredJsonManifest(options);
+  const adapter = new TursoHttpAdapter({
+    url: process.env.TURSO_DATABASE_URL ?? "",
+    authToken: process.env.TURSO_AUTH_TOKEN ?? "",
+  });
+  const result = await stageRecoveredJson({
+    records, adapter, apply: options.apply,
+    onProgress: (event) => process.stdout.write(JSON.stringify(event) + "\\n"),
+  });
+  process.stdout.write(JSON.stringify(result, null, 2) + "\\n");
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  main().catch((error) => {
+    process.stderr.write("Recovered JSON staging failed: " + error.message + "\\n");
+    process.exitCode = 1;
+  });
+}
