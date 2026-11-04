@@ -150,7 +150,7 @@ export class StreamWeaverWebControls {
         if(["say","shoutout","voice-shoutout","brb-start","brb-stop","create-twitch-reward"].includes(String(body.action))){
           if(this.operationMode!=="active")throw new Error("Live stream presentation is disabled in this environment");
           const action=String(body.action),payload:Record<string,unknown>={action};
-          if(action==="say"){payload.text=text(body.text,"text",5000);payload.voice=optionalText(body.voice,128)||"deepgram:aura-2:athena";}
+          if(action==="say"){payload.text=text(body.text,"text",5000);payload.voice=optionalText(body.voice,128)||"kokoro:af_heart";}
           if(action.includes("shoutout"))payload.username=text(body.username,"username",120).replace(/^@/,"");
           if(action==="create-twitch-reward") {const reward=this.community.redeems(context.tenantId).find(r=>r.id===body.rewardId);if(!reward)throw new Error("Choose a configured reward");payload.rewardId=reward.id;}
           return sendJson(response,202,this.community.requestTask(context.tenantId,String(body.requestId??""),payload));
