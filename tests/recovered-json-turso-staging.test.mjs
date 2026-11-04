@@ -151,3 +151,23 @@ test("CLI dry-run needs no Turso credentials and accepts documented Chat Tag fla
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("apply fails closed when a staged manifest row is missing from destination verification", async () => {
+  const records = [{
+    source: "nebula-legacy-global", tenant: "legacy-global", path: "data/app-state.json",
+    sourceHash: "source-hash", payloadHash: "payload-hash", schemaVersion: "2",
+    recordCounts: { tagPlayers: 1 }, payload: '{"tagPlayers":{"p1":{}}}',
+  }];
+  const adapter = {
+    async execute(sql) {
+      if (sql.startsWith("SELECT source, tenant_key, source_path")) return { rows: [] };
+      if (sql.startsWith("SELECT tenant_key, source_path")) return { rows: [] };
+      return { rows: [], affectedRows: 0 };
+    },
+    async pipeline() { return []; },
+  };
+  await assert.rejects(
+    stageRecoveredJson({ records, adapter, apply: true }),
+    /Destination verification failed/,
+  );
+});
