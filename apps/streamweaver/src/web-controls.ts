@@ -1,3 +1,4 @@
+import { parseExecutionTargetV1 } from "@spmt/contracts";
 import {activeRideLookup} from "./ride-runtime.js";
 import {StreamWeaverTwitchCommandAdapter} from "./twitch-command-adapter.js";
 import {SpmtStreamWeaverTwitchGrantSource} from "./twitch-grants.js";
@@ -111,7 +112,7 @@ export class StreamWeaverWebControls {
         if(!Array.isArray(mediaAssetIds)||mediaAssetIds.length>4||mediaAssetIds.some(id=>typeof id!=="string"||!/^[a-f0-9-]{36}$/.test(id)))throw Error("Choose at most four reference images");
         if(mediaAssetIds.length&&(settings.provider!=="cloudflare"||!settings.cloudflareModel?.includes("/flux-2-klein-")))throw Error("Save Cloudflare Klein as your private image model before attaching references");
         for(const id of mediaAssetIds){const asset=await this.deviceApi(request,context,undefined,"/v1/media/assets/"+id);if(asset.tenantId!==context.tenantId||asset.ownerUserId!==this.actor(context).id||asset.contentType!=="image/png")throw Error("Reference image is unavailable for this account");}
-        const result=await this.requireClient().createExecutionJob(context.tenantId,{ownerAppId:"streamweaver",capabilityId:"streamweaver.image.generate.v1",executionOwner:"streamweaver",billedUserId:this.actor(context).id,meteredResource:"image-generations",usageQuantity:settings.count,executionTarget:"sprite",meteringTarget:"hosted",input:{prompt,generationSettings:settings,mediaVisibility:"private",...(mediaAssetIds.length?{mediaAssetIds}:{})}},idempotency(body.requestId,"image-studio"));
+        const result=await this.requireClient().createExecutionJob(context.tenantId,{ownerAppId:"streamweaver",capabilityId:"streamweaver.image.generate.v1",executionOwner:"streamweaver",billedUserId:this.actor(context).id,meteredResource:"image-generations",usageQuantity:settings.count,executionTarget:parseExecutionTargetV1(process.env.STELLAR_EXECUTION_TARGET),meteringTarget:"hosted",input:{prompt,generationSettings:settings,mediaVisibility:"private",...(mediaAssetIds.length?{mediaAssetIds}:{})}},idempotency(body.requestId,"image-studio"));
         return sendJson(response,202,{jobId:result.job.id});
       }
       if(url.pathname==="/api/streamweaver/control/stream-operations/shoutout-audit"){
@@ -411,7 +412,7 @@ export class StreamWeaverWebControls {
       const sourceId=body.packageId===undefined?undefined:identifier(body.packageId,"packageId"),source=sourceId?this.requireFlows().get(context.tenantId,sourceId):undefined;
       if(sourceId&&(!source||source.author.id!==userId||source.visibility!=="private"))throw Error("Select one of your saved private flows before requesting an edit");
       if(source&&body.expectedUpdatedAt!==source.updatedAt)throw Error("Save or reopen the current flow before requesting an AI edit");
-      const result=await client.createExecutionJob(context.tenantId,{ownerAppId:"streamweaver",capabilityId:FLOW_AUTHOR_CAPABILITY,executionOwner:"streamweaver",billedUserId:userId,meteredResource:"ai-chat-requests",usageQuantity:1,executionTarget:"sprite",meteringTarget:"hosted",input:{idea,displayName:this.actor(context).displayName,devices,connections,...(source?{sourcePackageId:source.packageId,sourceRevision:source.updatedAt}:{})}},idempotency(body.idempotencyKey,"streamweaver-flow-ai"));
+      const result=await client.createExecutionJob(context.tenantId,{ownerAppId:"streamweaver",capabilityId:FLOW_AUTHOR_CAPABILITY,executionOwner:"streamweaver",billedUserId:userId,meteredResource:"ai-chat-requests",usageQuantity:1,executionTarget:parseExecutionTargetV1(process.env.STELLAR_EXECUTION_TARGET),meteringTarget:"hosted",input:{idea,displayName:this.actor(context).displayName,devices,connections,...(source?{sourcePackageId:source.packageId,sourceRevision:source.updatedAt}:{})}},idempotency(body.idempotencyKey,"streamweaver-flow-ai"));
       return sendJson(response,202,{status:"accepted",jobId:result.job.id,model:source?"gpt-5.6-luna":"gpt-5.6-sol"});
     }
     const prompt=buildStreamWeaverAiFlowPrompt(idea,{devices,connections});
