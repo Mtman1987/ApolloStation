@@ -71,13 +71,13 @@ function proxyDirect(request:IncomingMessage,response:ServerResponse,originValue
   headers.host=target.host;
   if(rewriteOrigin&&headers.origin)headers.origin=target.origin;
   const requestOptions={hostname:target.hostname.replace(/^\[|\]$/g,""),port:Number(target.port||(target.protocol==="https:"?443:80)),path,method:request.method,headers};
-  const send=target.protocol==="https:"?httpsRequest:httpRequest;
-  const upstream=send(requestOptions,(incoming)=>{
+  const handleResponse=(incoming:import("node:http").IncomingMessage)=>{
     const responseHeaders={...incoming.headers};
     stripHopByHopHeaders(responseHeaders);
     response.writeHead(incoming.statusCode??502,responseHeaders);
     incoming.pipe(response);
-  });
+  };
+  const upstream=target.protocol==="https:"?httpsRequest(requestOptions,handleResponse):httpRequest(requestOptions,handleResponse);
   upstream.on("error",(error)=>response.headersSent?response.destroy(error):json(response,502,{error:"internal_proxy_unavailable",message:error.message}));
   request.pipe(upstream);
 }
