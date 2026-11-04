@@ -272,7 +272,17 @@ services:
     image: apollo-hearmeout-lounge-worker:local
     init: true
     restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=512m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     environment:
+      HOME: /data
+      XDG_CACHE_HOME: /data/cache
+      TMPDIR: /tmp
       PORT: "3002"
       HOST: "0.0.0.0"
       APP_URL: https://${HEARMEOUT_PUBLIC_HOST:?Set HEARMEOUT_PUBLIC_HOST}
@@ -302,6 +312,9 @@ services:
     image: apollo-restream-control:local
     init: true
     restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=512m,mode=1777
     environment:
       PORT: "3018"
       HOST: "0.0.0.0"
