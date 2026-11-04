@@ -1,0 +1,56 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtempSync,rmSync} from 'node:fs';
+import {Script} from 'node:vm';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {createSpmtService} from '../apps/spmt-service/dist/index.js';
+import {createDiscordStreamHubWebServer} from '../apps/discord-stream-hub/dist/web-server.js';
+import {SpmtClient} from '../packages/sdk/dist/index.js';
+import {simulationDiscordIds} from '../packages/contracts/dist/index.js';
+
+for(const operationMode of ['active','read-only']) test(`DSH ${operationMode} selectors publish calendar and application embeds into a chosen room without a Discord account`,async()=>{
+ const dir=mkdtempSync(join(tmpdir(),'dsh-shadow-controls-'));
+ const service=createSpmtService({databasePath:join(dir,'authority.sqlite'),webhookKey:Buffer.alloc(32,31),host:'127.0.0.1',port:0,runtimeMode:'sandbox'});
+ let web;
+ try{
+  service.authority.ensureUser('owner');
+  service.control.registerTenant({tenantId:'tenant-a',ownerUserId:'owner',displayName:'Test'});
+  service.data.registerUser({userId:'owner',username:'tester',displayName:'Tester',password:'test-only-password-123',tenantIds:['tenant-a']});
+  service.auth.registerServiceIdentity({serviceId:'discord-stream-hub',credential:'test-dsh-service-credential-123',tenantMode:'allow-list',tenantIds:['tenant-a'],scopes:['events:read','events:write']});
+  const token=service.auth.issueHumanSession({userId:'owner',tenantIds:['tenant-a'],scopes:['*']}).accessToken;
+  await service.listen();
+  const origin=`http://127.0.0.1:${service.server.address().port}`;
+  const client=new SpmtClient({baseUrl:origin,appId:'spacemountain',getAccessToken:()=>token});
+  const room=await client.createSimulationRoom('tenant-a','My test room','create-room');
+  const other=await client.createSimulationRoom('tenant-a','Another room','other-room');
+  const ids=simulationDiscordIds('tenant-a',room.roomId),otherIds=simulationDiscordIds('tenant-a',other.roomId);
+  const outbound=[];
+  web=createDiscordStreamHubWebServer({spmtOrigin:origin,databasePath:join(dir,'dsh.sqlite'),credential:'test-dsh-service-credential-123',host:'127.0.0.1',port:0,operationMode,fetchImpl:async(url,init)=>{assert.equal(new URL(url).origin,origin,'No request may reach Discord');outbound.push(String(url));return fetch(url,init);}});
+  await web.listen();
+  const base=`http://127.0.0.1:${web.server.address().port}`;
+  const headers={cookie:`spmt_token=${token}`,'x-spmt-tenant':'tenant-a',origin:base,'content-type':'application/json'};
+  const html=await (await fetch(base)).text();
+  for(const [,script] of html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)) new Script(script);
+  const get=async(path)=>{const response=await fetch(base+path,{headers});const value=await response.json();assert.equal(response.status,200,JSON.stringify(value));return value;};
+  const initial=await get('/api/discord-stream-hub/control');
+  assert.equal(initial.guilds.length,2);assert.ok(initial.guilds.every(g=>g.shadow));
+  const selected=await get('/api/discord-stream-hub/control?guildId='+ids.guildId);
+  assert.equal(selected.selectedShadowRoomId,room.roomId);
+  assert.equal(selected.channels[0].id,ids.channelId);
+  const post=async(path,body)=>{const response=await fetch(base+'/api/discord-stream-hub/control/'+path,{method:'POST',headers,body:JSON.stringify(body)});return{status:response.status,value:await response.json()};};
+  const application=await post('applications/publish',{serverId:ids.guildId,channelId:ids.channelId});
+  assert.equal(application.status,200,JSON.stringify(application.value));assert.equal(application.value.shadowRoomId,room.roomId);
+  const calendar=await post('calendar/publish',{serverId:ids.guildId,channelId:ids.channelId,month:'2026-09'});
+  assert.equal(calendar.status,200,JSON.stringify(calendar.value));
+  const events=await client.listSimulationRoomEvents('tenant-a',{roomId:room.roomId,lane:'chat'});
+  assert.equal(events.length,2);assert.ok(events.every(e=>e.payload.data.explicitRoom));
+  assert.ok(events.some(e=>e.payload.data.payload.calendar?.month==='2026-09'));
+  assert.ok(events.some(e=>JSON.stringify(e.payload.data.payload.components).includes('application_inquiry')));
+  assert.equal((await post('applications/publish',{serverId:ids.guildId,channelId:otherIds.channelId})).status,400);
+  await client.deleteSimulationRoom('tenant-a',room.roomId,'delete-room');
+  const stale=await post('applications/publish',{serverId:ids.guildId,channelId:ids.channelId});
+  assert.equal(stale.status,400);assert.match(stale.value.message,/no longer available/);
+  assert.deepEqual((await client.listSimulationRooms('tenant-a')).map(r=>r.roomId),[other.roomId]);
+ }finally{if(web)await web.close();await service.close();rmSync(dir,{recursive:true,force:true});}
+});

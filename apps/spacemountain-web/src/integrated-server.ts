@@ -1,0 +1,115 @@
+import { attachHearMeOutRtcProxy } from "./rtc-upgrade-proxy.js";
+import { createServer, request as httpRequest, type IncomingMessage, type ServerResponse } from "node:http";
+import { request as httpsRequest } from "node:https";
+import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
+import { createIntegratedSpaceMountainWebHost as createBaseIntegratedHost, type IntegratedSpaceMountainWebHostOptions as BaseIntegratedSpaceMountainWebHostOptions } from "./integrated-server-base.js";
+import { validateIntegratedWebEnvironment } from "./server.js";
+
+const SPMT_OVERLAY=/^\/v1\/overlay(?:\/|$)/;
+const NEBULA_RUNTIME=/^(?:\/v1\/nebula\/(?:game-actions|game-mixes|game-mix-state)(?:\/|$)|\/assets\/nebula-game-mix\.js$|\/overlay\/game-mix\/)/;
+const GREEN_APP_IDS=["discord-stream-hub","streamweaver","hearmeout","mountainview","companion"] as const;
+type GreenAppId=typeof GREEN_APP_IDS[number];
+
+export interface IntegratedSpaceMountainWebHostOptions extends BaseIntegratedSpaceMountainWebHostOptions {
+  greenAppOrigins?:Partial<Record<GreenAppId,string>>;
+  hearMeOutActivityClientId?:string;
+}
+
+export function createIntegratedSpaceMountainWebHost(options:IntegratedSpaceMountainWebHostOptions){
+  if(options.hearMeOutActivityClientId&&!/^\d{5,30}$/.test(options.hearMeOutActivityClientId))throw new Error("Invalid HearMeOut Activity client ID");
+  const activityOrigin=options.hearMeOutActivityClientId?`https://${options.hearMeOutActivityClientId}.discordsays.com`:undefined;
+  for(const origin of [options.spmtOrigin,options.nebulaArcadeOrigin,...Object.values(options.greenAppOrigins??{})])if(origin)validateProxyOrigin(origin);
+  const base=createBaseIntegratedHost({...options,port:0,host:"127.0.0.1"});let basePort=0;
+  const outer=createServer(async(request,response)=>{try{const url=new URL(request.url??"/","http://spacemountain.parity");
+    // Validate the browser origin before rewriting it for a loopback app.
+    if (!["GET", "HEAD", "OPTIONS"].includes(request.method ?? "GET") && request.headers.origin) {
+      let sameOrigin = false;
+      try { const origin = new URL(request.headers.origin); sameOrigin = ["http:", "https:"].includes(origin.protocol) && origin.host === request.headers.host; } catch {}
+      // Discord changes Host to the mapped Sprite while retaining its iframe
+      // Origin. This public request route uses the configured Activity identity.
+      const activityRequest=request.method==='POST'&&/^\/api\/watch\/broadcast\/(?:requests|rooms|control|youtube\/[A-Za-z0-9_-]{11}\/(?:audio|video))$/.test(url.pathname)&&activityOrigin!==undefined&&request.headers.origin===activityOrigin;
+      if (!sameOrigin&&!activityRequest) return json(response, 403, { error: "cross_origin_request", message: "Open this action from the signed-in app." });
+    }
+
+    if(request.method === "GET" && url.pathname === "/sandbox/health") {
+      const fetchHealth = async (origin: string, path: string) => {
+        try {
+          const result = await (options.fetchImpl ?? fetch)(`${origin}${path}`, {signal: AbortSignal.timeout(5000), redirect: "manual"});
+          return {ready: result.ok, detail: await result.json()};
+        } catch { return {ready: false, detail: {error: "Health endpoint unavailable"}}; }
+      };
+      const [core, ...apps] = await Promise.all([
+        fetchHealth(`http://127.0.0.1:${basePort}`, "/sandbox/health"),
+        ...Object.entries(options.greenAppOrigins ?? {}).map(async ([appId, origin]) => ({appId, ...await fetchHealth(origin, "/health/ready")})),
+      ]);
+      const ready = core.ready && apps.every(app => app.ready);
+      return json(response, ready ? 200 : 503, {...core.detail, ready, apps: Object.fromEntries(apps.map(({appId, ...health}) => [appId, health]))});
+    }
+
+    if(request.method==="GET"&&(url.pathname==="/apps/companion"||url.pathname==="/apps/mountainview")) { response.writeHead(302,{location:url.pathname==="/apps/companion"?"/downloads/companion":"/downloads/mountainview","cache-control":"no-store"}); response.end(); return; }
+    if(SPMT_OVERLAY.test(url.pathname))return proxyDirect(request,response,options.spmtOrigin,url.pathname+url.search,true);
+    if(NEBULA_RUNTIME.test(url.pathname)&&options.nebulaArcadeOrigin)return proxyDirect(request,response,options.nebulaArcadeOrigin,url.pathname+url.search,true);
+    const activityPath = url.pathname === '/activity' || url.pathname === '/activity-lite' || url.pathname === '/watch' || url.pathname === '/lounge-media/player' || url.pathname === '/spotlight-media' || url.pathname.startsWith('/spotlight-media/') || url.pathname.startsWith('/api/spotlight-media/') || url.pathname.startsWith('/api/watch/broadcast/') || (url.pathname === '/' && url.searchParams.has('frame_id')) || url.pathname === '/api/watch/activity-default' || /^\/api\/watch\/sessions\/[^/]+\/(?:state|broadcast\/[^/]+|screen\/[a-f0-9-]{36}\/[^/]+)$/.test(url.pathname) || url.pathname === '/api/discord/interactions';
+    const app=activityPath?'hearmeout':greenAppForPath(url.pathname);if(app&&options.greenAppOrigins?.[app]){
+      const path=url.pathname===`/health/${app}`?"/health/ready":url.pathname+url.search;
+      return proxyDirect(request,response,options.greenAppOrigins[app]!,path,true);
+    }
+    return proxyInner(request,response,basePort);
+  }catch(error){if(!response.headersSent)json(response,500,{error:"parity_gateway_failure",message:error instanceof Error?error.message:"unknown error"});else response.destroy(error instanceof Error?error:undefined);}});
+  const closeRtc=attachHearMeOutRtcProxy(outer,options.greenAppOrigins?.hearmeout);
+  return{server:outer,async listen(){await base.listen();const address=base.server.address();if(!address||typeof address==="string")throw new Error("SpaceMountain parity base host did not bind a TCP port");basePort=address.port;await listen(outer,options.port??8080,options.host??"0.0.0.0");},async close(){closeRtc();if(outer.listening)await close(outer);await base.close();}};
+}
+
+function greenAppForPath(pathname:string):GreenAppId|undefined{for(const appId of GREEN_APP_IDS)if(pathname===`/apps/${appId}`||pathname.startsWith(`/apps/${appId}/`)||pathname===`/api/${appId}`||pathname.startsWith(`/api/${appId}/`)||pathname===`/health/${appId}`)return appId;return undefined;}
+function proxyDirect(request:IncomingMessage,response:ServerResponse,originValue:string,path:string,rewriteOrigin:boolean){
+  const target=validateProxyOrigin(originValue);
+  const headers={...request.headers};
+  stripHopByHopHeaders(headers);
+  headers.host=target.host;
+  if(rewriteOrigin&&headers.origin)headers.origin=target.origin;
+  const requestOptions={hostname:target.hostname.replace(/^\[|\]$/g,""),port:Number(target.port||(target.protocol==="https:"?443:80)),path,method:request.method,headers};
+  const handleResponse=(incoming:import("node:http").IncomingMessage)=>{
+    const responseHeaders={...incoming.headers};
+    stripHopByHopHeaders(responseHeaders);
+    response.writeHead(incoming.statusCode??502,responseHeaders);
+    incoming.pipe(response);
+  };
+  const upstream=target.protocol==="https:"?httpsRequest(requestOptions,handleResponse):httpRequest(requestOptions,handleResponse);
+  upstream.on("error",(error)=>response.headersSent?response.destroy(error):json(response,502,{error:"internal_proxy_unavailable",message:error.message}));
+  request.pipe(upstream);
+}
+function validateProxyOrigin(originValue:string){
+  const target=new URL(originValue);
+  const loopback=["127.0.0.1","localhost","[::1]"].includes(target.hostname);
+  if(target.username||target.password||target.search||target.hash||target.pathname!=="/")throw new Error("Parity proxy origins must be plain origins without credentials, paths, queries, or fragments");
+  if(target.protocol!=="https:"&&!(target.protocol==="http:"&&loopback))throw new Error("Parity proxy targets must use HTTPS, or loopback HTTP for local development");
+  return target;
+}
+export function stripHopByHopHeaders(headers:Record<string,string|string[]|number|undefined>){
+  const connection=headers.connection;
+  const connectionTokens=Array.isArray(connection)?connection.join(","):typeof connection==="string"?connection:"";
+  for(const token of connectionTokens.split(",")){
+    const name=token.trim().toLowerCase();
+    if(name)delete headers[name];
+  }
+  for(const name of ["connection","keep-alive","proxy-authenticate","proxy-authorization","te","trailer","transfer-encoding","upgrade","proxy-connection"])delete headers[name];
+}
+function proxyInner(request:IncomingMessage,response:ServerResponse,port:number){
+  if(!port)throw new Error("SpaceMountain parity base host is not ready");
+  const headers={...request.headers};
+  // The in-process hop is still an HTTP proxy boundary. Strip every hop-by-hop
+  // header (including headers nominated by Connection), not just Connection.
+  stripHopByHopHeaders(headers);
+  const upstream=httpRequest({hostname:"127.0.0.1",port,path:request.url??"/",method:request.method,headers},(incoming)=>{
+    const responseHeaders={...incoming.headers};
+    stripHopByHopHeaders(responseHeaders);
+    response.writeHead(incoming.statusCode??502,responseHeaders);
+    incoming.pipe(response);
+  });
+  upstream.on("error",(error)=>response.headersSent?response.destroy(error):json(response,502,{error:"base_host_unavailable",message:error.message}));
+  request.pipe(upstream);
+}
+function listen(server:ReturnType<typeof createServer>,port:number,host:string){return new Promise<void>((done,reject)=>{server.once("error",reject);server.listen(port,host,()=>{server.off("error",reject);done();});});}function close(server:ReturnType<typeof createServer>){return new Promise<void>((done,reject)=>server.close((error)=>error?reject(error):done()));}function json(response:ServerResponse,status:number,value:unknown){const body=Buffer.from(JSON.stringify(value));response.writeHead(status,{"content-type":"application/json; charset=utf-8","content-length":String(body.byteLength),"cache-control":"no-store"});response.end(body);}
+
+if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){const checked=validateIntegratedWebEnvironment(process.env);const host=createIntegratedSpaceMountainWebHost({spmtOrigin:checked.spmtOrigin,port:Number(process.env.PORT??8080),host:process.env.HOST??"0.0.0.0",buildSha:process.env.BUILD_SHA??"dev",...(process.env.HEARMEOUT_ACTIVITY_CLIENT_ID?{hearMeOutActivityClientId:process.env.HEARMEOUT_ACTIVITY_CLIENT_ID}:{}),...(checked.nebulaArcadeOrigin?{nebulaArcadeOrigin:checked.nebulaArcadeOrigin}:{}),...(checked.greenAppOrigins?{greenAppOrigins:checked.greenAppOrigins}:{}),...(checked.candidateManifest?{candidateManifest:checked.candidateManifest}:{})});await host.listen();}

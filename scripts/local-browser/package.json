@@ -1,0 +1,8 @@
+{
+  "name": "apollo-local-browser",
+  "private": true,
+  "version": "1.0.0",
+  "dependencies": {
+    "@sparticuz/chromium": "153.0.0"
+  }
+}

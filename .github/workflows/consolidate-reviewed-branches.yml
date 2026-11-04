@@ -1,0 +1,64 @@
+name: Consolidate reviewed branches
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - docs/production/branch-consolidation-2026-09-06.json
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apollo-reviewed-branch-cleanup
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Verify preservation and remove only reviewed branch heads
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync, appendFileSync } from 'node:fs';
+          import { execFileSync } from 'node:child_process';
+          const git = (...args) => execFileSync('git', args, { encoding: 'utf8' }).trim();
+          const manifest = JSON.parse(readFileSync('docs/production/branch-consolidation-2026-09-06.json', 'utf8'));
+          if (manifest.schemaVersion !== 1 || !Array.isArray(manifest.branches) || manifest.branches.length !== 23) throw new Error('Unexpected preservation inventory');
+          git('fetch', 'origin', 'main');
+          git('merge-base', '--is-ancestor', process.env.GITHUB_SHA, 'origin/main');
+          git('merge-base', '--is-ancestor', manifest.baseMain, process.env.GITHUB_SHA);
+          const remote = new Map(git('ls-remote', '--heads', 'origin').split('\n').filter(Boolean).map(line => {
+            const [sha, ref] = line.split(/\s+/); return [ref, sha];
+          }));
+          const reviewed = new Set(), pending = [];
+          for (const item of manifest.branches) {
+            const ref = `refs/heads/${item.branch}`;
+            if (item.branch === 'main' || reviewed.has(ref) || !/^[0-9a-f]{40}$/.test(item.head)) throw new Error('Invalid reviewed branch');
+            git('check-ref-format', ref);
+            reviewed.add(ref);
+            if (/^[0-9a-f]{40}$/.test(item.preservedBy)) git('merge-base', '--is-ancestor', item.preservedBy, process.env.GITHUB_SHA);
+            else if (item.preservedBy === 'ancestor of main') git('merge-base', '--is-ancestor', item.head, process.env.GITHUB_SHA);
+            else if (item.preservedBy !== 'current cleanup commit' || item.disposition !== 'consolidated and repaired') throw new Error('Missing preservation evidence');
+            const actual = remote.get(ref);
+            if (!actual) continue;
+            if (actual !== item.head) throw new Error(`Refusing to delete changed branch ${item.branch}`);
+            pending.push({ ref, sha: actual });
+          }
+          if (pending.length) {
+            const leases = pending.map(item => `--force-with-lease=${item.ref}:${item.sha}`);
+            const deletions = pending.map(item => `:${item.ref}`);
+            git('push', '--atomic', ...leases, 'origin', ...deletions);
+          }
+          const remaining = git('ls-remote', '--heads', 'origin').split('\n').filter(Boolean).map(line => line.split(/\s+/)[1]);
+          const summary = `Deleted ${pending.length} reviewed branches. Remaining heads: ${remaining.join(', ')}.\n`;
+          console.log(summary);
+          appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
+          if (remaining.some(ref => reviewed.has(ref))) throw new Error('A reviewed branch still exists');
+          NODE

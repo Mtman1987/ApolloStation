@@ -1,0 +1,50 @@
+import { StellarSpeechProvider } from "./speech-provider.js";
+import { StellarSpeechWorker } from "./speech-worker.js";
+import {BraveStellarSearchProvider,StellarResearchService} from "./research.js";
+import { readFile } from "node:fs/promises";
+import { SpmtClient } from "@spmt/sdk";
+import { STELLAR_CHAT_CAPABILITY_ID } from "./contracts.js";
+import type { ExecutionTargetV1 } from "@spmt/contracts";
+import { OpenAiCompatibleChatProvider, OpenAiResponsesChatProvider, StellarChatWorker, createStellarWorkerTokenProvider } from "./worker.js";
+
+const spmtOrigin = process.env.SPMT_ORIGIN ?? "";
+const providerOrigin = process.env.STELLAR_PROVIDER_ORIGIN ?? "";
+const credential = process.env.STELLAR_WORKER_CREDENTIAL ?? "";
+const openAiKey = process.env.OPENAI_API_KEY ?? "";
+const model = process.env.OPENAI_CHAT_MODEL ?? process.env.STELLAR_PROVIDER_MODEL ?? "gpt-5.6-luna";
+const executionTargetValue = process.env.STELLAR_EXECUTION_TARGET ?? "sprite";
+if (!(["sprite", "fly", "companion", "hosted"] as const).includes(executionTargetValue as ExecutionTargetV1)) throw new Error("STELLAR_EXECUTION_TARGET is invalid");
+const executionTarget = executionTargetValue as ExecutionTargetV1;
+if (!spmtOrigin || (!openAiKey && !providerOrigin) || credential.length < 32) throw new Error("SPMT_ORIGIN, an inference provider, and a 32+ character STELLAR_WORKER_CREDENTIAL are required");
+const workerId = process.env.STELLAR_WORKER_ID ?? `stellar-${executionTarget}-${process.pid}`;
+const client = new SpmtClient({ baseUrl: spmtOrigin, appId: "stellar-core", getAccessToken: createStellarWorkerTokenProvider({ spmtOrigin, credential }) });
+const provider = openAiKey ? new OpenAiResponsesChatProvider({ apiKey: openAiKey, model }) : new OpenAiCompatibleChatProvider({ origin: providerOrigin, model });
+const research=new StellarResearchService(process.env.SPMT_OUTBOUND_MODE!=="disabled"&&process.env.STELLAR_BRAVE_SEARCH_CREDENTIAL?new BraveStellarSearchProvider(process.env.STELLAR_BRAVE_SEARCH_CREDENTIAL):undefined);
+const worker = new StellarChatWorker(client, provider, { workerId, executionTarget,research });
+const kokoroUrl = process.env.STELLAR_KOKORO_URL;
+const kokoroToken = process.env.STELLAR_KOKORO_AUTH_TOKEN;
+if (Boolean(kokoroUrl) !== Boolean(kokoroToken) || (kokoroToken && kokoroToken.length < 32)) throw new Error("STELLAR_KOKORO_URL and a 32+ character STELLAR_KOKORO_AUTH_TOKEN must be configured together");
+const speech = new StellarSpeechWorker(client, new StellarSpeechProvider({ enabled: process.env.SPMT_OUTBOUND_MODE !== "disabled" && process.env.SPMT_SPEECH_OUTBOUND_ENABLED === "1", ...(process.env.DEEPGRAM_API_KEY ? { deepgramKey: process.env.DEEPGRAM_API_KEY } : {}), ...(process.env.EDENAI_API_KEY ? { edenKey: process.env.EDENAI_API_KEY } : {}), ...(kokoroUrl && kokoroToken ? { kokoroOrigin: kokoroUrl, kokoroToken } : {}) }), `${workerId}-speech`, executionTarget);
+const controller = new AbortController();
+const startedAt = new Date().toISOString();
+const startedMs = Date.now();
+let coldStartMs: number | undefined;
+process.once("SIGTERM", () => controller.abort());
+process.once("SIGINT", () => controller.abort());
+process.stdout.write(`Stellar Core ${executionTarget} worker started\n`);
+await Promise.all([worker.run(controller.signal), speech.run(controller.signal), reportReadiness(controller.signal)]);
+
+async function reportReadiness(signal: AbortSignal) {
+  while (!signal.aborted) {
+    const providerHealthy = await provider.healthy();
+    if (providerHealthy && coldStartMs === undefined) coldStartMs = Date.now() - startedMs;
+    const memoryRssBytes = await providerRssBytes(process.env.STELLAR_PROVIDER_PID);
+    try {
+      await client.reportExecutionWorker({ executionOwner: "stellar-core", workerId, executionTarget, state: providerHealthy ? "ready" : coldStartMs === undefined ? "starting" : "degraded", capabilityIds: [STELLAR_CHAT_CAPABILITY_ID], providerHealthy, startedAt, metrics: { ...worker.metrics(), ...(coldStartMs === undefined ? {} : { coldStartMs }), ...(memoryRssBytes === undefined ? {} : { memoryRssBytes }) }, leaseMs: 30_000 });
+    } catch { /* SPMT may still be starting; the next leased report retries safely. */ }
+    await pause(10_000, signal);
+  }
+}
+
+async function providerRssBytes(value: string | undefined) { if (!value || !/^\d+$/.test(value)) return undefined; try { const status = await readFile(`/proc/${value}/status`, "utf8"); const match = /^VmRSS:\s+(\d+)\s+kB$/m.exec(status); return match ? Number(match[1]) * 1024 : undefined; } catch { return undefined; } }
+function pause(ms: number, signal: AbortSignal) { return new Promise<void>((resolve) => { if (signal.aborted) return resolve(); const timer = setTimeout(resolve, ms); signal.addEventListener("abort", () => { clearTimeout(timer); resolve(); }, { once: true }); }); }

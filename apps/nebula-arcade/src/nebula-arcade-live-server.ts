@@ -1,0 +1,61 @@
+import { loadNebulaArcadeProviderConfig } from "./provider-runtime.js";
+import { SqliteNebulaNetwork } from "./arcade-network.js";
+import { createServer,request as httpRequest,type IncomingMessage } from 'node:http';
+import { resolve,isAbsolute } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { SpmtClient } from '@spmt/sdk';
+import { createNebulaArcadeSandboxHost } from './nebula-arcade-sandbox-server.js';
+import { NebulaMosaicRuntime } from './mosaic-runtime.js';
+import { renderNebulaMosaicOverlay, NEBULA_MOSAIC_OVERLAY_JS } from './mosaic-overlay.js';
+import type { NebulaBrowserAuth } from './control-surface.js';
+
+/** Production front door: actor and roles come exclusively from the canonical SPMT session. */
+export function createNebulaArcadeLiveHost(options:{databasePath:string;tenantId:string;channelId:string;channels?:string[];spmtOrigin:string;publicOrigin:string;credential:string;port?:number;host?:string;fetchImpl?:typeof fetch;buildSha?:string}){
+ const fetchImpl=options.fetchImpl??fetch;
+ const origin=new URL(options.spmtOrigin);if(!['http:','https:'].includes(origin.protocol)||origin.username||origin.password)throw new Error('Invalid SPMT origin');
+ let token:string|undefined,tokenUntil=0;
+ const client=new SpmtClient({baseUrl:origin.origin,appId:'nebula-arcade',fetchImpl,getAccessToken:async()=>{if(token&&Date.now()<tokenUntil)return token;const response=await fetchImpl(`${origin.origin}/v1/auth/service-token`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({serviceId:'nebula-arcade',credential:options.credential}),signal:AbortSignal.timeout(10000)});if(!response.ok)throw new Error('Nebula service authorization unavailable');const body=await response.json() as {accessToken?:string;token?:string;accessExpiresAt?:string};token=body.accessToken??body.token;if(!token)throw new Error('Nebula service token missing');tokenUntil=body.accessExpiresAt?Date.parse(body.accessExpiresAt)-30000:Date.now()+60000;return token;}});
+ const authenticate:NebulaBrowserAuth=async(request)=>{if(!request.headers.cookie&&!request.headers.authorization)throw new Error('Sign in to Nebula Arcade');const response=await fetchImpl(`${origin.origin}/v1/session`,{headers:{accept:'application/json','x-spmt-app':'nebula-arcade',...(request.headers.cookie?{cookie:request.headers.cookie}:{}),...(request.headers.authorization?{authorization:request.headers.authorization}:{})},redirect:'error',signal:AbortSignal.timeout(5000)});if(!response.ok)throw new Error('Sign in to Nebula Arcade');const principal=await response.json() as {actorId:string;username?:string;displayName?:string;tenantIds:string[];tenantRoles?:Record<string,string>};if(!principal.actorId||!principal.tenantIds?.includes(options.tenantId))throw new Error('This arcade is outside your workspace');return{userId:principal.actorId,username:principal.username||principal.displayName||principal.actorId,moderator:['owner','admin','moderator'].includes(principal.tenantRoles?.[options.tenantId]||'')};};
+ const policy=new SqliteNebulaNetwork(options.databasePath);
+ const mosaic=new NebulaMosaicRuntime(options.databasePath);
+ const mosaicChannels=new Set([options.channelId,...(options.channels??[])].map(value=>String(value||'').trim()).filter(Boolean));
+ const base=createNebulaArcadeSandboxHost({...options,port:0,host:'127.0.0.1',authenticate,client});let basePort=0;
+ const server=createServer(async(request,response)=>{try{
+  const url=new URL(request.url||'/','http://nebula.local');
+  if(request.method==='GET'&&(url.pathname==='/mosaic'||url.pathname==='/mosaic-overlay')){
+    const channel=String(url.searchParams.get('channel')||options.channelId).trim();
+    if(!mosaicChannels.has(channel)){response.writeHead(404,{'content-type':'application/json','cache-control':'no-store'});response.end(JSON.stringify({error:'not_found'}));return;}
+    response.writeHead(200,{'content-type':'text/html; charset=utf-8','cache-control':'no-store'});
+    response.end(renderNebulaMosaicOverlay(channel));return;
+  }
+  if(request.method==='GET'&&url.pathname==='/assets/nebula-arcade/mosaic-overlay.js'){
+    response.writeHead(200,{'content-type':'text/javascript; charset=utf-8','cache-control':'public, max-age=300'});
+    response.end(NEBULA_MOSAIC_OVERLAY_JS);return;
+  }
+  if(request.method==='GET'&&url.pathname==='/v1/nebula/mosaic/snapshot'){
+    const channel=String(url.searchParams.get('channel')||options.channelId).trim();
+    if(!mosaicChannels.has(channel)){response.writeHead(404,{'content-type':'application/json','cache-control':'no-store'});response.end(JSON.stringify({error:'not_found'}));return;}
+    response.writeHead(200,{'content-type':'application/json; charset=utf-8','cache-control':'no-store'});
+    response.end(JSON.stringify(mosaic.snapshot(options.tenantId,channel)));return;
+  }
+  let rewritten:Buffer|undefined;
+  if(request.method!=="GET"&&request.method!=="HEAD"&&!(url.pathname==='/apps/nebula-arcade'&&url.searchParams.get('action')==='control')){
+    const actor=await authenticate(request),overlay=url.pathname.includes('overlay-scenes')||url.pathname.includes('game-mixes')||url.searchParams.get('action')==='game-mixes'||url.searchParams.get('action')==='overlay-scenes';
+    if(!overlay&&!['/v1/nebula/game-actions','/v1/nebula-arcade/tag/message','/v1/nebula-arcade/tag/rotation'].includes(url.pathname))throw new Error('Unknown arcade mutation');
+    if((overlay||url.pathname.endsWith('/rotation'))&&!actor.moderator)throw new Error('Moderator permission required');
+    if(policy.blocked(options.tenantId,actor.userId,actor.username,options.channelId))throw new Error('This player or channel is excluded');
+    if(!overlay){let size=0;const chunks:Buffer[]=[];for await(const chunk of request){const part=Buffer.from(chunk);size+=part.length;if(size>65536)throw new Error('Request is too large');chunks.push(part);}const body=JSON.parse(Buffer.concat(chunks).toString('utf8'));Object.assign(body,{liveUserIds:policy.presence(options.tenantId)?.liveUserIds??[],userId:actor.userId,username:actor.username,displayName:actor.username,channel:options.channelId,isBroadcaster:false,isAdmin:false,isModerator:actor.moderator,roles:actor.moderator?['moderator']:['member'],occurredAt:new Date().toISOString()});rewritten=Buffer.from(JSON.stringify(body));}
+  }
+  if(url.pathname==='/health/ready'){
+    if(!basePort||!base.server.listening)throw new Error('Nebula Arcade core runtime is unavailable');
+    const ready=await probeReady(basePort);
+    response.writeHead(ready.status,{'content-type':'application/json','cache-control':'no-store'});response.end(ready.body);return;
+  }
+  if(url.pathname.startsWith('/v1/nebula-arcade/support')){const principal=await authenticate(request);if(!principal.moderator)throw new Error('Moderator permission required');}
+  const proxyHeaders={...request.headers};if(rewritten)delete proxyHeaders["transfer-encoding"];
+  const upstream=httpRequest({hostname:'127.0.0.1',port:basePort,path:request.url,method:request.method,headers:{...proxyHeaders,...(rewritten?{"content-length":String(rewritten.length)}:{})}},incoming=>{response.writeHead(incoming.statusCode||502,incoming.headers);incoming.pipe(response)});upstream.on('error',()=>{if(!response.headersSent)response.writeHead(502);response.end();});if(rewritten)upstream.end(rewritten);else request.pipe(upstream);
+ }catch(error){const denied=error instanceof Error&&/sign in|permission|outside your workspace|excluded/i.test(error.message);response.writeHead(denied?403:503,{'content-type':'application/json','cache-control':'no-store'});response.end(JSON.stringify({error:denied?'forbidden':'unavailable',message:error instanceof Error?error.message:'Nebula Arcade unavailable'}));}});
+ return{server,async listen(){await base.listen();const address=base.server.address();if(!address||typeof address==='string')throw new Error('Nebula host failed');basePort=address.port;await new Promise<void>(resolve=>server.listen(options.port??3100,options.host??'127.0.0.1',resolve));},async close(){if(server.listening)await new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()));await base.close();policy.close();mosaic.close();}};
+}
+function probeReady(port:number){return new Promise<{status:number;body:string}>((resolve)=>{const request=httpRequest({hostname:'127.0.0.1',port,path:'/health/ready',method:'GET',timeout:3000},response=>{const chunks:Buffer[]=[];response.on('data',chunk=>chunks.push(Buffer.from(chunk)));response.on('end',()=>{const status=response.statusCode===200?200:503,raw=Buffer.concat(chunks).toString('utf8');if(status===200)return resolve({status,body:raw});let parsed:Record<string,unknown>={};try{parsed=JSON.parse(raw);}catch{}resolve({status,body:JSON.stringify({...parsed,ready:false,app:'nebula-arcade'})});});});request.on('timeout',()=>request.destroy(new Error('Nebula readiness timed out')));request.on('error',error=>resolve({status:503,body:JSON.stringify({ready:false,app:'nebula-arcade',message:error.message})}));request.end();});}
+if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){const env=process.env,databasePath=env.NEBULA_ARCADE_DATABASE_PATH||'',credential=env.NEBULA_ARCADE_WORKER_CREDENTIAL||'';if(!isAbsolute(databasePath)||credential.length<32||!env.NEBULA_ARCADE_TENANT_ID||!env.NEBULA_ARCADE_CHANNEL_ID||!env.SPMT_ORIGIN||!env.NEBULA_ARCADE_PUBLIC_ORIGIN)throw new Error('Production Nebula requires database, tenant, channel, SPMT/public origins and service credential');const host=createNebulaArcadeLiveHost({databasePath,credential,...(env.NEBULA_ARCADE_RUNTIME_CONFIG_PATH?{channels:loadNebulaArcadeProviderConfig(env.NEBULA_ARCADE_RUNTIME_CONFIG_PATH).tenants.find(tenant=>tenant.tenantId===env.NEBULA_ARCADE_TENANT_ID)?.channels.map(channel=>channel.stateChannelId)??[]}:{}),tenantId:env.NEBULA_ARCADE_TENANT_ID,channelId:env.NEBULA_ARCADE_CHANNEL_ID,spmtOrigin:env.SPMT_ORIGIN,publicOrigin:env.NEBULA_ARCADE_PUBLIC_ORIGIN,port:Number(env.PORT||3100),host:env.HOST||'0.0.0.0',buildSha:env.BUILD_SHA||'dev'});await host.listen();let stopping=false;for(const signal of ['SIGINT','SIGTERM'] as const)process.once(signal,()=>{if(stopping)return;stopping=true;void host.close();});}

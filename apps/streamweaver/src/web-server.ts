@@ -1,0 +1,105 @@
+import { randomBytes } from "node:crypto";
+import { renderAvatarStudioPage } from "./avatar-studio.js";
+import {streamWeaverTikTokBrowserJs} from "./tiktok-client.js";
+import {streamWeaverCheckinRoleBrowserJs} from "./checkin-role-client.js";
+import {streamWeaverPokemonCatalogBrowserJs} from "./pokemon-catalog-client.js";
+import {streamWeaverPublicPersonaBrowserJs} from "./public-persona-client.js";
+import {streamWeaverPublicMemoryBrowserJs} from "./public-memory-client.js";
+import { streamWeaverPointsRateBrowserJs } from "./points-rate-client.js";
+import { streamWeaverOperationsBrowserJs } from "./stream-operations-client.js";
+import { streamWeaverPokemonBrowserJs } from "./pokemon-client.js";
+import { streamWeaverChatDeskBrowserJs } from "./chat-desk-client.js";
+import { streamWeaverAssistantBrowserJs } from "./assistant-client.js";
+import { streamWeaverPrivateAssistantBrowserJs } from "./private-assistant-client.js";
+import { streamWeaverGenerationBrowserJs } from "./generation-client.js";
+import {proxyAppMedia} from "@spmt/app-foundation/media-proxy";
+import {streamWeaverAssetsBrowserJs} from "./assets-client.js";
+import {streamWeaverResearchBrowserJs} from "./research-client.js";
+import { createProductAppWebServer, productAppSnapshotHandler, productAppSnapshotSources, type ProductAppCatalogItemV1, type ProductAppWebDescriptorV1 } from "@spmt/app-foundation/product-web";
+import { appSurfaceBrowserJs, productSurfaceManifest } from "@spmt/app-foundation/surface-client";
+import type { SpmtOperationModeV1 } from "@spmt/contracts";
+import { streamWeaverMediaBrowserJs } from "./media-client.js";
+import { streamWeaverBrowserJs } from "./web-client.js";
+import { STREAMWEAVER_DONOR_COMMANDS } from "./donor-command-catalog.js";
+import { STREAMWEAVER_OVERLAYS } from "./overlay-runtime.js";
+import { StreamWeaverWebControls, parseStreamWeaverWebConnections } from "./web-controls.js";
+import { StreamWeaverSecureChoiceWeb } from "./secure-choice.js";
+
+const COMMAND_UI: Array<{ trigger: string; family: string; aliases: readonly string[]; cooldownSeconds: number }> = [];
+const commandTriggers = new Set<string>();
+for (const command of STREAMWEAVER_DONOR_COMMANDS) {
+  if ((command.matcher ?? "command") !== "command" || commandTriggers.has(command.trigger) || command.trigger.startsWith("!__")) continue;
+  commandTriggers.add(command.trigger);
+  COMMAND_UI.push({ trigger: command.trigger, family: command.family, aliases: command.aliases ?? [], cooldownSeconds: command.cooldownSeconds ?? 0 });
+}
+const OVERLAY_CATALOG: ProductAppCatalogItemV1[] = Object.values(STREAMWEAVER_OVERLAYS).map((overlay) => ({ title: overlay.id, detail: overlay.purpose, meta: `${overlay.width}×${overlay.height} · ${overlay.events.join(", ")}`, badge: overlay.transparent ? "Transparent" : "Opaque" }));
+
+export const STREAMWEAVER_WEB_DESCRIPTOR: ProductAppWebDescriptorV1 = {
+  appId: "streamweaver",
+  name: "StreamWeaver",
+  kicker: "STREAM AUTOMATION",
+  tagline: "Talk, automate, route chat, shape your persona, and run stream tools from one creator cockpit.",
+  description: "StreamWeaver owns tenant-configured automation while shared identity, jobs, provider grants, Stellar Core and workspace stay canonical in SPMT.",
+  sceneUrl: "/assets/product/streamweaver-background.webp",
+  sections: [
+    {id:"streamops",label:"Stream Operations",title:"Rewards, Welcomes & Check-ins",body:"Configure stream events and community operations.",glyph:"✦",appOwnedData:true,navigationGroup:"Manage"},
+    {id:"chatdesk",label:"Chat Desk",title:"Shared Chat Desk",body:"Pin, queue and feature chat through Commlink.",glyph:"↔",appOwnedData:true,navigationGroup:"Connections & Output"},
+    {id:"assistant",label:"Speech & Notes",title:"Voice and Private Notes",body:"Choose your voice, transcribe recordings and keep private notes.",glyph:"◉",appOwnedData:true,navigationGroup:"Assistant"},
+    { id: "setup", label: "Setup Guide", title: "Start With Only What You Choose", body: "New StreamWeaver tenants begin with zero command flows. Choose community flows, connect accounts and bot channels, learn Voice Commander, then add the ecosystem Public/Personal overlays.", glyph: "✓", appOwnedData: true },
+    { id: "community", label: "Community Flows", title: "Browse, Import & Share Flows", body: "One feature is one portable JSON package. Install only the flows you want, export them, or publish your own for the community.", glyph: "◎", appOwnedData: true, navigationGroup:"Commands" },
+    { id: "builder", label: "Flow Builder", title: "Create & Edit Commands", body: "Build a command, arrange its action steps, or ask the shared assistant for a private draft.", glyph: "✧", appOwnedData: true, navigationGroup:"Commands" },
+    { id: "commands", label: "My Commands", title: "My Commands & Flows", body: "Manage installed commands, pause flows, customize copies and inspect their steps.", glyph: ">", appOwnedData: true, navigationGroup:"Commands" },
+    { id: "voice", label: "Voice Commander", title: "Voice Commander", body: "Dictate to your private persona or send speech to a connected Twitch or Discord channel. Recording begins only when you press the microphone.", glyph: "◉", appOwnedData: true, navigationGroup:"Assistant" },
+    { id: "persona", label: "Bot & Persona", title: "Bot & Persona", body: "Set the name, summon aliases, home channels, instructions and memory boundary for this tenant's assistant presentation.", glyph: "✦", appOwnedData: true, navigationGroup:"Assistant" },
+    { id:"research",label:"Research",title:"Questions & Knowledge",body:"Choose knowledge packs and approved live sources. Research runs through the shared assistant.",glyph:"?",appOwnedData:true,navigationGroup:"Assistant" },
+    { id: "integrations", label: "Accounts & Chat", title: "Connected Accounts & Channels", body: "See the difference between personal provider identities and active bot channel connections, then manage identities in Account.", glyph: "↔", appOwnedData: true, navigationGroup:"Connections & Output" },
+    { id: "devices", label: "Devices & OBS", title: "Devices & OBS", body: "Authorize selected actions on your paired Companion devices, then use them in your flows.", glyph: "▱", appOwnedData:true, navigationGroup:"Connections & Output" },
+    { id: "media", label: "Media & Mixer", title: "Media & Mixer", body: "Control your HearMeOut room queues while configuring StreamWeaver.", glyph: "♫", appOwnedData:true, navigationGroup:"Connections & Output" },
+    { id: "overlays", label: "Overlays", title: "Stream Outputs", body: "Compose your stream through the shared Overlay Bay and test outputs in Simulation Rooms.", glyph: "▣", appOwnedData:true, navigationGroup:"Connections & Output", signals:[{source:"overlayWidgets",label:"Registered widgets"},{source:"overlayOutputs",label:"Issued outputs"}] },
+    { id:"generation",label:"Image Studio",title:"Image Studio",body:"Generate private images with your preferred settings.",glyph:"▧",appOwnedData:true,navigationGroup:"Connections & Output" },
+    { id:"assets",label:"Media Files",title:"Shared Media Files",body:"Store private recordings, avatars and generated media in your shared workspace.",glyph:"▧",appOwnedData:true,navigationGroup:"Connections & Output" },
+    { id: "economy", label: "Points", title: "Streamer Points", body: "Manage your points and see their current value compared with SPMT XP.", glyph: "$", appOwnedData: true, navigationGroup:"Manage" },
+    { id: "activity", label: "Activity", title: "Command Run History", body: "Inspect actual command inputs, ordered steps, results and failures.", glyph: "◷", appOwnedData:true, navigationGroup:"Manage" },
+    { id: "games", appOwnedData:true, label: "Games", title: "Pokémon, Packs & Gym", body: "Collections, packs, trading, teams and gym battles remain tenant-bound under StreamWeaver.", glyph: "○", navigationGroup:"Manage", signals: [{ source: "events", label: "Game activity", keywords: ["pokemon", "pokémon", "pack", "card", "trade", "gym", "battle"] }, { source: "jobs", label: "Game jobs", keywords: ["pokemon", "pack", "card", "trade", "gym"] }], emptyTitle: "No game activity published", emptyBody: "No collection, pack, trade, team or gym activity is currently published." },
+  ],
+};
+
+const SURFACE = productSurfaceManifest({ appId: STREAMWEAVER_WEB_DESCRIPTOR.appId, sceneUrl: STREAMWEAVER_WEB_DESCRIPTOR.sceneUrl, sections: STREAMWEAVER_WEB_DESCRIPTOR.sections, shortcuts: [{ id: "setup", label: "Continue Setup", pageId: "setup" }, { id: "builder", label: "Build a Flow With AI", pageId: "builder" }, { id: "voice", label: "Open Voice Commander", pageId: "voice" }, { id: "community", label: "Browse Community Flows", pageId: "community" }] });
+
+export interface StreamWeaverWebServerOptionsV1 { openAiKey?:string; privateAiDraftsEnabled?:boolean; avatarBuildEnabled?:boolean; spmtOrigin: string; publicOrigin?:string; port?: number; host?: string; buildSha?: string; databasePath?: string; credential?: string; connectionsJson?: string; operationMode?: SpmtOperationModeV1; fetchImpl?: typeof fetch; }
+
+export function createStreamWeaverWebServer(options: StreamWeaverWebServerOptionsV1) {
+  const snapshot = productAppSnapshotHandler({ appId: "streamweaver", spmtOrigin: options.spmtOrigin, sources: productAppSnapshotSources(STREAMWEAVER_WEB_DESCRIPTOR) });
+  const controls = new StreamWeaverWebControls({ ...options, connections: parseStreamWeaverWebConnections(options.connectionsJson) });
+  const secureChoice=options.databasePath?new StreamWeaverSecureChoiceWeb({databasePath:options.databasePath,spmtOrigin:options.spmtOrigin,publicOrigin:options.publicOrigin??process.env.STREAMWEAVER_PUBLIC_ORIGIN??options.spmtOrigin}):undefined;
+  return createProductAppWebServer({ descriptor: STREAMWEAVER_WEB_DESCRIPTOR, port: options.port, host: options.host, buildSha: options.buildSha, extraCss: STREAMWEAVER_CONTROL_CSS + STREAMWEAVER_FLOW_CSS, browserJs: appSurfaceBrowserJs(SURFACE) + streamWeaverBrowserJs() + streamWeaverPublicPersonaBrowserJs() + streamWeaverMediaBrowserJs() + streamWeaverResearchBrowserJs() + streamWeaverAssetsBrowserJs() + streamWeaverAssistantBrowserJs() + streamWeaverPrivateAssistantBrowserJs() + streamWeaverPublicMemoryBrowserJs() + streamWeaverGenerationBrowserJs() + streamWeaverChatDeskBrowserJs() + streamWeaverPokemonBrowserJs() + streamWeaverPokemonCatalogBrowserJs() + streamWeaverOperationsBrowserJs() + streamWeaverCheckinRoleBrowserJs() + streamWeaverPointsRateBrowserJs() + streamWeaverTikTokBrowserJs(), handleApi: async (request, response, url) => {
+    if (request.method === "GET" && ["/avatar-studio", "/apps/streamweaver/avatar-studio"].includes(url.pathname)) {
+      const nonce = randomBytes(18).toString("base64");
+      response.writeHead(200, {
+        "content-type": "text/html; charset=utf-8",
+        "cache-control": "no-store",
+        "referrer-policy": "no-referrer",
+        "x-content-type-options": "nosniff",
+        "content-security-policy": `default-src 'none'; script-src 'nonce-${nonce}' https://cdn.jsdelivr.net https://three.ws; style-src 'unsafe-inline'; img-src 'self' data: https: blob:; media-src 'self' https: blob:; connect-src 'self' https: ws: wss: blob:; font-src 'self' https://cdn.jsdelivr.net; base-uri 'none'; form-action 'self'; frame-ancestors 'self'; object-src 'none'`
+      });
+      response.end(renderAvatarStudioPage(nonce));
+      return true;
+    }
+    return await proxyAppMedia({appId:"streamweaver",spmtOrigin:options.spmtOrigin,request,response,url,...(options.fetchImpl?{fetchImpl:options.fetchImpl}:{})}) || await secureChoice?.handle(request,response,url) || await controls.handle(request, response, url) || await snapshot(request, response, url);
+  }, close: () => {secureChoice?.close();controls.close();} });
+}
+
+const STREAMWEAVER_CONTROL_CSS = `
+.tabs{align-self:stretch;align-content:center;max-height:calc(100dvh - 48px);overflow:auto}.tabs-group{display:grid;gap:4px;border-top:1px solid var(--spmt-border);padding-top:5px}.tabs-group summary{cursor:pointer;padding:5px 9px;color:var(--spmt-muted);font-size:10px;font-weight:900;letter-spacing:.08em;text-transform:uppercase}.tabs-group:not([open]) summary{color:var(--spmt-ink)}@media(max-width:760px){.tabs-group{display:flex;border-top:0;border-left:1px solid var(--spmt-border);padding:0 0 0 5px}.tabs-group summary{display:none}.tabs-group:not([open])>*:not(summary){display:flex}}
+.sw-badge.read-only{border-color:#22c55e;color:#bbf7d0;background:color-mix(in srgb,#16a34a 18%,transparent)}
+.sw-shell{display:grid;gap:14px;min-width:0}.sw-shell>*{min-width:0}.sw-shell fieldset{min-width:0;margin:0}.sw-shell pre{white-space:pre-wrap;overflow-wrap:anywhere}.sw-dialog{max-width:min(680px,90vw);max-height:85dvh;overflow:auto;border:1px solid var(--spmt-border);border-radius:18px;background:var(--spmt-surface-depth-4);color:var(--spmt-ink)}.sw-dialog::backdrop{background:#000a}.sw-dialog pre{white-space:pre-wrap;overflow-wrap:anywhere}.sw-shell details>summary{cursor:pointer}.sw-history{white-space:pre-wrap}.sw-card{display:grid;gap:10px;padding:14px;border:1px solid var(--spmt-border);border-radius:16px;background:var(--spmt-surface-depth-4)}.sw-card h3,.sw-card p{margin:0}.sw-card p,.sw-muted{color:var(--spmt-muted);line-height:1.45}.sw-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(250px,100%),1fr));gap:10px}.sw-badge{width:max-content;padding:4px 8px;border:1px solid var(--spmt-border);border-radius:999px;color:var(--spmt-muted);font-size:10px;text-transform:uppercase}.sw-form{display:grid;gap:9px}.sw-form.two{grid-template-columns:repeat(2,minmax(0,1fr))}.sw-form label{display:grid;gap:5px;color:var(--spmt-muted);font-size:11px}.sw-form input,.sw-form textarea,.sw-form select,.sw-search{box-sizing:border-box;width:100%;min-height:40px;padding:9px;border:1px solid var(--spmt-border);border-radius:11px;background:var(--spmt-surface-depth-3);color:var(--spmt-ink)}.sw-form textarea{min-height:90px;resize:vertical}.sw-span{grid-column:1/-1}.sw-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.sw-actions .button{min-height:40px}.sw-status{min-height:18px;color:var(--spmt-muted);font-size:11px}.sw-status[data-state="ready"]{color:#bbf7d0}.sw-status[data-state="error"]{color:#fecaca}.sw-commander{display:grid;grid-template-columns:auto minmax(0,1fr);gap:16px;align-items:start}.sw-mic{width:92px;height:92px;border-radius:50%;font-size:28px}.sw-mic[data-recording="true"]{background:#b91c1c;box-shadow:0 0 0 8px color-mix(in srgb,#ef4444 18%,transparent)}.sw-history{display:grid;gap:7px;max-height:230px;overflow:auto}.sw-history article{padding:9px;border-left:3px solid var(--spmt-accent);border-radius:9px;background:var(--spmt-surface-depth-3)}.sw-toolbar{display:grid;grid-template-columns:1fr 170px;gap:8px}.sw-catalog{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:8px}.sw-command{display:grid;gap:5px;padding:10px;border:1px solid var(--spmt-border);border-radius:13px;background:var(--spmt-surface-depth-4)}.sw-command code{font-size:14px;color:var(--spmt-ink)}.sw-command small{color:var(--spmt-muted)}.sw-connection{display:grid;grid-template-columns:auto minmax(0,1fr);gap:10px;align-items:center}.sw-provider{width:38px;height:38px;display:grid;place-items:center;border-radius:12px;background:color-mix(in srgb,var(--spmt-accent) 20%,var(--spmt-surface-depth-3));font-weight:900}.sw-wallet{font-size:30px;font-weight:900}.sw-check{display:flex!important;grid-template-columns:auto 1fr!important;align-items:center;gap:8px!important}.sw-check input{width:auto;min-height:auto}.sw-owner[hidden]{display:none!important}@media(max-width:720px){.sw-form.two,.sw-toolbar,.sw-commander{grid-template-columns:1fr}.sw-span{grid-column:auto}.sw-mic{width:74px;height:74px}.sw-actions .button{flex:1}.sw-catalog{grid-template-columns:1fr}}
+`;
+
+const STREAMWEAVER_FLOW_CSS = `
+.sw-flow-lead{display:grid;gap:8px;padding:16px;border:1px solid color-mix(in srgb,var(--spmt-accent) 52%,var(--spmt-border));border-radius:18px;background:linear-gradient(135deg,color-mix(in srgb,var(--spmt-accent) 15%,var(--spmt-surface-depth-4)),var(--spmt-surface-depth-4))}.sw-flow-lead h3,.sw-flow-lead p{margin:0}.sw-flow-count{font-size:clamp(28px,7vw,54px);font-weight:950;line-height:1}.sw-flow-library{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(250px,100%),1fr));gap:10px}.sw-flow-card{display:grid;grid-template-rows:auto auto 1fr auto;gap:8px;padding:13px;border:1px solid var(--spmt-border);border-radius:15px;background:var(--spmt-surface-depth-4)}.sw-flow-card h3,.sw-flow-card p{margin:0}.sw-flow-card p,.sw-flow-card small{color:var(--spmt-muted);line-height:1.4}.sw-flow-meta{display:flex;gap:6px;flex-wrap:wrap}.sw-flow-meta span{padding:3px 7px;border-radius:999px;background:var(--spmt-surface-depth-3);font-size:10px}.sw-flow-steps{display:grid;gap:8px}.sw-flow-step{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:center;padding:12px;border:1px solid var(--spmt-border);border-radius:14px;background:var(--spmt-surface-depth-4)}.sw-flow-step>i{width:28px;height:28px;display:grid;place-items:center;border-radius:50%;background:var(--spmt-surface-depth-3);font-style:normal;font-weight:900}.sw-flow-step[data-complete="true"]>i{background:#166534;color:#dcfce7}.sw-flow-step strong,.sw-flow-step small{display:block}.sw-flow-step small{color:var(--spmt-muted);margin-top:3px}.sw-flow-code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--spmt-ink)}.sw-flow-empty{display:grid;gap:8px;padding:22px;border:1px dashed var(--spmt-border);border-radius:16px;text-align:center;color:var(--spmt-muted)}.sw-flow-status{min-height:20px;color:var(--spmt-muted)}.sw-flow-status[data-state="ready"]{color:#bbf7d0}.sw-flow-status[data-state="error"]{color:#fecaca}.sw-flow-card .button,.sw-flow-step .button{text-decoration:none;text-align:center}@media(max-width:620px){.sw-flow-step{grid-template-columns:auto 1fr}.sw-flow-step .button{grid-column:1/-1}.sw-flow-library{grid-template-columns:1fr}}
+`;
+
+if (process.env.SPMT_ORIGIN) {
+  const host = createStreamWeaverWebServer({ ...(process.env.OPENAI_API_KEY?{openAiKey:process.env.OPENAI_API_KEY}:{}), privateAiDraftsEnabled: process.env.SPMT_RUNTIME_MODE === "sandbox" && process.env.STREAMWEAVER_PRIVATE_AI_DRAFTS_ENABLED === "1", avatarBuildEnabled: process.env.STREAMWEAVER_AVATAR_BUILD_ENABLED === "1" && process.env.STREAMWEAVER_AVATAR_RIGGING_ENABLED === "1" && (process.env.SPMT_OUTBOUND_MODE !== "disabled" || process.env.SPMT_AVATAR_AI_OUTBOUND_MODE === "enabled"), spmtOrigin: process.env.SPMT_ORIGIN, ...(process.env.STREAMWEAVER_PUBLIC_ORIGIN?{publicOrigin:process.env.STREAMWEAVER_PUBLIC_ORIGIN}:{}), port: Number(process.env.PORT ?? 3202), host: process.env.HOST ?? "0.0.0.0", buildSha: process.env.BUILD_SHA ?? "dev", operationMode: process.env.SPMT_OUTBOUND_MODE === "disabled" ? "read-only" : "active", ...(process.env.STREAMWEAVER_DATABASE_PATH ? { databasePath: process.env.STREAMWEAVER_DATABASE_PATH } : {}), ...(process.env.STREAMWEAVER_WORKER_CREDENTIAL ? { credential: process.env.STREAMWEAVER_WORKER_CREDENTIAL } : {}), ...(process.env.CHAT_GATEWAY_CONNECTIONS ? { connectionsJson: process.env.CHAT_GATEWAY_CONNECTIONS } : {}) });
+  await host.listen();
+}

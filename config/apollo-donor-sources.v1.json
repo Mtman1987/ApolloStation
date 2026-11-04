@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "updatedAt": "2026-11-03",
+  "policy": {
+    "donorRepositoriesAreReadOnly": true,
+    "executeDonorCode": false,
+    "allowAutomaticPorting": false,
+    "requireHumanReviewBeforeMerge": true
+  },
+  "sources": [
+    {
+      "id": "hearmeout",
+      "name": "HearMeOut",
+      "repository": "Mtman1987/hearmeout-main",
+      "defaultRef": "main",
+      "status": "confirmed"
+    },
+    {
+      "id": "streamweaver",
+      "name": "StreamWeaver",
+      "repository": "Mtman1987/streamweaver",
+      "defaultRef": "main",
+      "status": "confirmed"
+    },
+    {
+      "id": "discord-stream-hub",
+      "name": "Discord StreamHub",
+      "repository": "Mtman1987/DiscordStreamHub",
+      "defaultRef": "main",
+      "status": "confirmed"
+    },
+    {
+      "id": "nebula-arcade",
+      "name": "Nebula Arcade",
+      "repository": null,
+      "defaultRef": null,
+      "status": "unresolved",
+      "note": "No separate Nebula Arcade donor repository was found in the connected repository inventory. Do not substitute Nebula-Link without owner confirmation."
+    }
+  ]
+}

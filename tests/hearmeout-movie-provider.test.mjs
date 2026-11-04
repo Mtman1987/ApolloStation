@@ -1,0 +1,74 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import {mkdtemp,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {HearMeOutMovieProvider,hearMeOutMovieProviderUrl} from '../apps/hearmeout/dist/movie-provider.js';
+import {createSpmtService} from '../apps/spmt-service/dist/index.js';
+import {SpmtClient} from '../packages/sdk/dist/index.js';
+import {HearMeOutExecutionWorker} from '../apps/hearmeout/dist/execution-worker.js';
+import {HearMeOutWorkerMusicCatalog} from '../apps/hearmeout/dist/worker-music-catalog.js';
+import {HearMeOutWorkerMediaCache} from '../apps/hearmeout/dist/worker-media-cache.js';
+import {hearMeOutCatalogRegistration} from '../apps/hearmeout/dist/index.js';
+import {createHearMeOutWebServer} from '../apps/hearmeout/dist/web-server-v3.js';
+
+const providerOrigin='https://hearmeout-main.fly.dev';
+const matches=[{id:'xtream-vod-1',title:'First matching movie',year:2001,overview:'First'},{id:'xtream-vod-42',title:'Chosen matching movie',year:2002,overview:'Second',quality:'1080p'}, {id:'youtube-trailer',title:'Unrelated fallback',playbackUrl:'https://private.example/secret'}];
+
+test('Apollo movie search and resolve stay on the local HLS route without donor fetches or eager acquisition',async()=>{
+ const catalogSearchCalls=[];
+ const ranked=[
+  {item:{id:'xtream-vod-42',type:'movie',title:'Chosen Apollo movie',year:2024,runtime:'2h',source:'Xtream',poster:'',playbackUrl:'/activity-provider/xtream/vod/42',overview:'Apollo-owned result',metadata:{quality:'1080p'}},score:99,reasons:['title']},
+  {item:{id:'xtream-live-9',type:'live',title:'Live channel',year:2026,runtime:'live',source:'Xtream',poster:'',playbackUrl:'/activity-provider/xtream/live/9',overview:'Not a movie'},score:80,reasons:['title']},
+  {item:{id:'xtream-vod-43',type:'movie',title:'Second Apollo movie',year:2023,runtime:'1h',source:'Xtream',poster:'',playbackUrl:'/activity-provider/xtream/vod/43',overview:'Also playable'},score:70,reasons:['title']},
+ ];
+ const provider=new HearMeOutMovieProvider(undefined,undefined,'',async query=>{catalogSearchCalls.push(query);return ranked;});
+ assert.deepEqual(await provider.search('Apollo movie'),[
+  {itemId:'xtream-vod-42',title:'Chosen Apollo movie',overview:'Apollo-owned result',year:2024,quality:'1080p'},
+  {itemId:'xtream-vod-43',title:'Second Apollo movie',overview:'Also playable',year:2023},
+ ]);
+ const selected=await provider.resolve('Apollo movie','xtream-vod-42');
+ assert.deepEqual(selected,{itemId:'xtream-vod-42',title:'Chosen Apollo movie',type:'movie',source:'iptv',playbackUrl:'/api/watch/xtream/hls/vod-42/index.m3u8'});
+ assert.deepEqual(catalogSearchCalls,['Apollo movie','Apollo movie','Apollo movie']);
+ await assert.rejects(()=>provider.resolve('Apollo movie','xtream-vod-999'),/no longer in the search results/);
+});
+
+test('IPTV searches and selected preparation use existing provider routes, without starting the first match',async()=>{
+ const calls=[];
+ const provider=new HearMeOutMovieProvider(providerOrigin,async(url,init)=>{calls.push(new URL(url).pathname);assert.equal(init.method,'GET');assert.equal(init.redirect,'manual');return new Response(new URL(url).pathname==='/api/watch/search'?JSON.stringify({results:matches}):'#EXTM3U\npart001.ts');});
+ assert.deepEqual((await provider.search('A movie')).map(x=>x.itemId),['xtream-vod-1','xtream-vod-42']);
+ assert.deepEqual(calls,['/api/watch/search']);
+ const selected=await provider.resolve('A movie','xtream-vod-42');assert.equal(selected.title,'Chosen matching movie');assert.equal(selected.playbackUrl,providerOrigin+'/api/watch/xtream/hls/vod-42/index.m3u8');
+ await assert.rejects(()=>provider.resolve('A movie','xtream-vod-999'),/no longer in the search results/);
+ assert.equal(calls.filter(x=>x.includes('/hls/')).length,1);
+ for(const url of [providerOrigin+'/api/watch/search?q=test',providerOrigin+'/api/watch/xtream/hls/vod-42/stream_video.m3u8?machine=abc123'])assert.ok(hearMeOutMovieProviderUrl(url));
+ for(const path of ['/api/watch/search?q=test&token=secret','/api/watch/xtream/hls/vod-42/index.m3u8?source=https://other.example','/api/watch/sessions/create','/api/watch/xtream/hls/vod-42/../private.ts'])assert.equal(hearMeOutMovieProviderUrl(providerOrigin+path),undefined);
+ const failed=new HearMeOutMovieProvider(providerOrigin,async()=>new Response('private provider credential',{status:403}));
+ await assert.rejects(()=>failed.search('A movie'),error=>error.message==='The IPTV movie search returned HTTP 403');
+});
+
+test('guest movie search and explicit selection cross real SPMT jobs without creating an HMO room or playing on search',{timeout:20000},async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'hmo-movie-jobs-')),credential='movie-broadcast-test-credential-123456789',clientId='1279582181768957963',guildId='123456789012345678',channelId='234567890123456789';
+ const spmt=createSpmtService({runtimeMode:'sandbox',databasePath:join(dir,'spmt.sqlite'),webhookKey:Buffer.alloc(32,7),port:0,hearMeOutRuntimeEnabled:true,hearMeOutWorkerCredential:credential});
+ const stop=new AbortController();let host,workerTask;const prepared=[];
+ try{
+  spmt.authority.ensureUser('owner');spmt.control.registerTenant({tenantId:'tenant',ownerUserId:'owner',displayName:'Test'});
+  spmt.control.registerApp(hearMeOutCatalogRegistration('https://apollo.example/apps/hearmeout'));spmt.control.installApp('tenant','hearmeout');
+  await spmt.listen();const spmtOrigin='http://127.0.0.1:'+spmt.server.address().port;
+  const client=new SpmtClient({baseUrl:spmtOrigin,appId:'hearmeout',getAccessToken:()=>spmt.auth.issueServiceAccess('hearmeout',credential).accessToken});
+  const provider=new HearMeOutMovieProvider(providerOrigin,async url=>{const path=new URL(url).pathname;if(path==='/api/watch/search')return Response.json({results:matches});prepared.push(path);return new Response('#EXTM3U\npart001.ts');});
+  const worker=new HearMeOutExecutionWorker(client,{workerId:'movie-test',executionTarget:'sprite',tenantIds:['tenant'],capabilities:['hearmeout.movie.search','hearmeout.movie.resolve'],catalog:new HearMeOutWorkerMusicCatalog({catalogFile:join(dir,'catalog.json')}),cache:new HearMeOutWorkerMediaCache({cacheDir:join(dir,'cache')}),movieProvider:provider});
+  await worker.report(new Date().toISOString());workerTask=worker.run(stop.signal,10);
+  host=createHearMeOutWebServer({spmtOrigin,databasePath:join(dir,'rooms.sqlite'),port:0,credential,operationMode:'read-only',singleBroadcast:{tenantId:'tenant',executionUserId:'owner'},activity:{tenantId:'tenant',clientId,guildIds:[guildId]}});await host.listen();
+  const base='http://127.0.0.1:'+host.server.address().port,context=`guildId=${guildId}&channelId=${channelId}`;
+  const created=await fetch(base+`/api/watch/broadcast/rooms?${context}`,{method:'POST',headers:{'content-type':'application/json','idempotency-key':'movie-party'},body:JSON.stringify({name:'Movie test party'})});assert.equal(created.status,201,await created.clone().text());const party=await created.json();
+  const scoped=`roomId=${encodeURIComponent(party.roomId)}&${context}`;
+  const search=await fetch(base+`/api/watch/broadcast/movies?q=A%20movie&${scoped}`);assert.equal(search.status,200,await search.clone().text());const cookie=search.headers.get('set-cookie').split(';')[0];assert.equal((await search.json()).items.length,2);
+  assert.equal((await(await fetch(base+`/api/watch/broadcast/state?${scoped}`)).json()).current,null);assert.deepEqual(prepared,[]);
+  const request=(selectedItemId,key='chosen')=>fetch(base+`/api/watch/broadcast/requests?${scoped}`,{method:'POST',headers:{cookie,origin:base,'content-type':'application/json','idempotency-key':key},body:JSON.stringify({query:'A movie',lane:'movie',...(selectedItemId?{selectedItemId}:{})})});
+  const noChoice=await request(undefined,'no-choice');assert.equal(noChoice.status,400);assert.match((await noChoice.json()).error,/choose a movie/i);assert.deepEqual(prepared,[]);
+  const response=await request('xtream-vod-42');assert.equal(response.status,201,await response.clone().text());const state=await response.json();assert.equal(state.sessionId,party.roomId);assert.equal(state.current.item.itemId,'xtream-vod-42');assert.equal(state.current.item.title,'Chosen matching movie');assert.equal(state.queue.length,0);
+  assert.equal((await request('xtream-vod-42')).status,201);assert.equal((await request('xtream-vod-1')).status,400);assert.deepEqual(prepared,['/api/watch/xtream/hls/vod-42/index.m3u8']);
+  const jobs=await client.listExecutionJobs('tenant',{executionOwner:'hearmeout'});assert.equal(jobs.length,2);assert.ok(jobs.every(job=>job.billedUserId==='owner'&&job.state==='succeeded'));assert.deepEqual(new Set(jobs.map(job=>job.capabilityId)),new Set(['hearmeout.movie.search','hearmeout.movie.resolve']));
+ }finally{stop.abort();await workerTask;await host?.close();await spmt.close();await rm(dir,{recursive:true,force:true});}
+});

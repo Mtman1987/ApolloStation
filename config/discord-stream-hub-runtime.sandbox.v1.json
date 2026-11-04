@@ -1,0 +1,5 @@
+{
+  "schemaVersion": 1,
+  "pollIntervalSeconds": 600,
+  "tenants": []
+}

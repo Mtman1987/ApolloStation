@@ -1,0 +1,1174 @@
+export * from "./media.js";
+export const SPMT_PROTOCOL_VERSION = 1 as const;
+
+export const SURFACE_MODES = ["shell", "standalone", "overlay", "popout"] as const;
+export type SurfaceModeV1 = (typeof SURFACE_MODES)[number];
+
+export type RuntimeStateV1 = "starting" | "ready" | "degraded" | "draining" | "unavailable";
+
+export const WORKLOAD_CLASSES = ["core", "elastic-http", "queue-worker", "bot-socket", "room-session", "heavy-job"] as const;
+export type WorkloadClassV1 = (typeof WORKLOAD_CLASSES)[number];
+export const EXECUTION_TARGETS = ["sprite", "fly", "companion", "hosted"] as const;
+export type ExecutionTargetV1 = (typeof EXECUTION_TARGETS)[number];
+export function parseExecutionTargetV1(value: unknown, fallback: ExecutionTargetV1 = "sprite", name = "execution target"): ExecutionTargetV1 {
+  if (value === undefined || value === null || value === "") return fallback;
+  if (typeof value !== "string" || !(EXECUTION_TARGETS as readonly string[]).includes(value)) throw new Error(`${name} is invalid`);
+  return value as ExecutionTargetV1;
+}
+
+export interface RuntimePolicyV1 {
+  schemaVersion: 1;
+  revision: string;
+  workloadId: string;
+  ownerAppId: string;
+  class: WorkloadClassV1;
+  executionTarget: ExecutionTargetV1;
+  minimumCapacity: number;
+  maximumCapacity: number;
+  idleSeconds: number;
+  targetConcurrency: number;
+  maximumHourlyCostUsd: number;
+  stopMode: "stop" | "suspend";
+  uniqueConsumer: boolean;
+  maximumLeaseSeconds?: number;
+  restartIntervalSeconds?: number;
+  productionMutationEnabled: boolean;
+}
+
+export interface RuntimeObservationV1 {
+  schemaVersion: 1;
+  workloadId: string;
+  generation: string;
+  observedAt: string;
+  runningCapacity: number;
+  healthyCapacity: number;
+  stoppedCapacity: number;
+  activeRequests: number;
+  requestRate: number;
+  queueDepth: number;
+  activeSessions: number;
+  activeConnections: number;
+  activeLeases: number;
+  oldestDemandSeconds: number;
+  uncheckpointedWork: boolean;
+  duplicateConsumers: boolean;
+  estimatedHourlyCostUsd: number;
+  circuitBreakerOpen: boolean;
+  restartDue?: boolean;
+}
+
+export const FLEET_ACTIONS = ["none", "start", "create", "drain-stop", "restart", "blocked", "external"] as const;
+export type FleetActionV1 = (typeof FLEET_ACTIONS)[number];
+export interface FleetDecisionV1 {
+  schemaVersion: 1;
+  workloadId: string;
+  generation: string;
+  policyRevision: string;
+  observedCapacity: number;
+  desiredCapacity: number;
+  action: FleetActionV1;
+  reason: string;
+  idempotencyKey: string;
+  decidedAt: string;
+  productionMutationAllowed: boolean;
+}
+
+export interface FleetActionLeaseV1 {
+  schemaVersion: 1;
+  workloadId: string;
+  holderId: string;
+  fencingEpoch: number;
+  acquiredAt: string;
+  expiresAt: string;
+}
+
+export interface FleetProjectionV1 {
+  schemaVersion: 1;
+  workloadId: string;
+  generation: string;
+  policyRevision: string;
+  state: "observed" | "dry-run" | "applying" | "verified" | "rolled-back" | "blocked";
+  observedCapacity: number;
+  desiredCapacity: number;
+  healthyCapacity: number;
+  action: FleetActionV1;
+  reason: string;
+  fencingEpoch?: number;
+  productionMutationAllowed: boolean;
+  updatedAt: string;
+}
+
+export const BILLING_PLAN_IDS = ["free", "creator", "pro", "agency"] as const;
+export type BillingPlanIdV1 = (typeof BILLING_PLAN_IDS)[number];
+export const METERED_RESOURCES = ["workspaces", "connected-providers", "hosted-rooms", "hosted-worker-minutes", "ai-chat-requests", "ai-coding-requests", "image-generations", "hosted-voice-minutes", "xbox-session-minutes", "storage-gb"] as const;
+export type MeteredResourceV1 = (typeof METERED_RESOURCES)[number];
+
+export interface BillingPlanV1 {
+  schemaVersion: 1;
+  planId: BillingPlanIdV1;
+  name: string;
+  monthlyPriceUsd: number;
+  limits: Record<MeteredResourceV1, number>;
+  companionLocalProcessing: "fair-use" | "unmetered-local";
+  hardStopAtLimit: true;
+}
+
+export interface BillingManifestV1 {
+  schemaVersion: 1;
+  revision: string;
+  currency: "USD";
+  warningThresholds: [0.7, 0.9, 1];
+  plans: BillingPlanV1[];
+}
+
+export interface UsageEventV1 {
+  schemaVersion: 1;
+  tenantId: string;
+  userId: string;
+  planId: BillingPlanIdV1;
+  period: string;
+  resource: MeteredResourceV1;
+  quantity: number;
+  operation: "consume" | "release";
+  executionTarget: "hosted" | "companion";
+  idempotencyKey: string;
+  occurredAt: string;
+}
+
+export interface PersonalUsageResourceV1 {
+  resource: MeteredResourceV1;
+  hosted: number;
+  companion: number;
+  limit: number;
+  percent: number;
+  warning: 0 | 70 | 90 | 100;
+}
+
+export interface PersonalUsageSummaryV1 {
+  schemaVersion: 1;
+  userId: string;
+  period: string;
+  limitsEnforced?: boolean;
+  plan: { planId: BillingPlanIdV1; name: string; monthlyPriceUsd: number; companionLocalProcessing: "fair-use" | "unmetered-local" };
+  resources: PersonalUsageResourceV1[];
+}
+
+export interface UsageDecisionV1 {
+  schemaVersion: 1;
+  tenantId: string;
+  planId: BillingPlanIdV1;
+  period: string;
+  resource: MeteredResourceV1;
+  executionTarget: "hosted" | "companion";
+  allowed: boolean;
+  used: number;
+  requested: number;
+  limit: number | null;
+  warning: 0 | 70 | 90 | 100;
+  reason: string;
+}
+
+export const EXECUTION_JOB_STATES = ["queued", "leased", "running", "succeeded", "failed", "cancelled", "dead-letter"] as const;
+export type ExecutionJobStateV1 = (typeof EXECUTION_JOB_STATES)[number];
+
+export interface ExecutionJobProgressV1 {
+  percent: number;
+  message?: string;
+  updatedAt: string;
+}
+
+/**
+ * Shared durable envelope for asynchronous work. App-specific payload and result
+ * contracts remain owned by the app identified by ownerAppId/capabilityId.
+ */
+export interface ExecutionJobV1 {
+  schemaVersion: 1;
+  id: string;
+  tenantId: string;
+  ownerAppId: string;
+  capabilityId: string;
+  executionOwner: string;
+  requestedByType: "user" | "service";
+  requestedById: string;
+  billedUserId: string;
+  planId: BillingPlanIdV1;
+  meteredResource: MeteredResourceV1;
+  usageQuantity: number;
+  executionTarget: ExecutionTargetV1;
+  meteringTarget: "hosted" | "companion";
+  idempotencyKey: string;
+  input: Record<string, unknown>;
+  state: ExecutionJobStateV1;
+  attempt: number;
+  fencingEpoch: number;
+  leaseId?: string;
+  leaseOwner?: string;
+  leaseExpiresAt?: string;
+  progress?: ExecutionJobProgressV1;
+  result?: Record<string, unknown>;
+  error?: { code: string; message: string; retryable: boolean };
+  correlationId?: string;
+  createdAt: string;
+  updatedAt: string;
+  startedAt?: string;
+  completedAt?: string;
+}
+
+export interface ExecutionWorkerMetricsV1 {
+  coldStartMs?: number;
+  lastLatencyMs?: number;
+  completedJobs: number;
+  failedJobs: number;
+  inputUnits: number;
+  outputUnits: number;
+  throughputUnitsPerSecond?: number;
+  memoryRssBytes?: number;
+}
+
+/** Ephemeral, leased evidence from an authenticated execution worker. */
+export interface ExecutionWorkerProjectionV1 {
+  schemaVersion: 1;
+  executionOwner: string;
+  workerId: string;
+  executionTarget: ExecutionTargetV1;
+  state: RuntimeStateV1;
+  capabilityIds: string[];
+  tenantIds?: string[];
+  providerHealthy: boolean;
+  startedAt: string;
+  lastHeartbeatAt: string;
+  leaseExpiresAt: string;
+  metrics: ExecutionWorkerMetricsV1;
+}
+
+export interface ExecutionJobCreateV1 {
+  schemaVersion: 1;
+  ownerAppId: string;
+  capabilityId: string;
+  executionOwner: string;
+  billedUserId?: string;
+  meteredResource: MeteredResourceV1;
+  usageQuantity: number;
+  executionTarget: ExecutionTargetV1;
+  meteringTarget: "hosted" | "companion";
+  input: Record<string, unknown>;
+}
+
+export const SPMT_SUITE_ACTION_CATALOG = Object.freeze([
+  suiteAction("dsh.shoutouts.active.read", "read", "member"), suiteAction("dsh.shoutouts.live.read", "read", "member"), suiteAction("dsh.shoutouts.post", "broadcast", "moderator"), suiteAction("dsh.message.delete", "write", "admin"),
+  suiteAction("dsh.moderation.preview", "read", "admin"), suiteAction("dsh.moderation.execute", "write", "admin"),
+  suiteAction("dsh.shoutouts.guest.remove", "write", "moderator"),
+  suiteAction("dsh.calendar.raid.read", "read", "member"), suiteAction("dsh.calendar.raid.reserve", "write", "member"), suiteAction("dsh.calendar.raid.cancel", "write", "member"),
+  suiteAction("dsh.calendar.read", "read", "member"), suiteAction("dsh.calendar.captain.read", "read", "member"), suiteAction("dsh.calendar.captain.create", "write", "member"), suiteAction("dsh.calendar.event.create", "write", "admin"), suiteAction("dsh.calendar.deploy", "broadcast", "admin"), suiteAction("dsh.calendar.refresh", "write", "admin"),
+  suiteAction("dsh.applications.read", "read", "admin"), suiteAction("dsh.applications.deploy", "broadcast", "admin"), suiteAction("dsh.applications.decide", "write", "owner"),
+  suiteAction("hmo.rooms.read", "read", "member"), suiteAction("hmo.media.state.read", "read", "member"), suiteAction("hmo.media.request", "write", "member"), suiteAction("hmo.media.control", "write", "moderator"), suiteAction("hmo.bot.control", "write", "member"), suiteAction("hmo.voice.bridge.state", "read", "member"), suiteAction("hmo.voice.bridge.control", "write", "member"),
+  suiteAction("sw.image.generate", "write", "member"),
+] as const);
+export type SpmtSuiteActionIdV1 = typeof SPMT_SUITE_ACTION_CATALOG[number]["id"];
+export type SpmtSuiteActionRiskV1 = "read" | "write" | "broadcast";
+export type SpmtOperationModeV1 = "active" | "read-only";
+export type SpmtSuiteActionActorRoleV1 = "guest" | "member" | "moderator" | "admin" | "owner";
+export type SpmtSuiteActionSourceV1 = "chat" | "voice-commander" | "mountainview" | "hearmeout" | "companion" | "api" | "mcp";
+export interface SpmtSuiteActionJobInputV1 {
+  schemaVersion: 1;
+  action: SpmtSuiteActionIdV1;
+  args: Record<string, string>;
+  actor: { userId: string; username: string; role: SpmtSuiteActionActorRoleV1 };
+  source: { kind: SpmtSuiteActionSourceV1; provider?: ChatProviderV1; guildId?: string; channelId?: string; connectionId?: string; requestId?: string; roomId?: string; deviceId?: string; simulation?: boolean };
+}
+export const SPMT_SUITE_ACTION_CAPABILITIES = Object.freeze({ dsh: "dsh.suite-action.v1", hearmeout: "hearmeout.suite-action.v1", image: "streamweaver.image.generate.v1" } as const);
+export function spmtSuiteActionDescriptor(action: SpmtSuiteActionIdV1) { return SPMT_SUITE_ACTION_CATALOG.find((item) => item.id === action)!; }
+export function spmtSuiteActionAllowed(mode: SpmtOperationModeV1, action: SpmtSuiteActionIdV1) { return mode === "active" || spmtSuiteActionDescriptor(action).risk === "read"; }
+export function spmtSuiteActionCapabilityId(action: SpmtSuiteActionIdV1) { return action === "sw.image.generate" ? SPMT_SUITE_ACTION_CAPABILITIES.image : `${action}.v1`; }
+export function routeSpmtSuiteAction(action: SpmtSuiteActionIdV1) {
+  if (action.startsWith("dsh.")) return { executionOwner: "discord-stream-hub", capabilityId: spmtSuiteActionCapabilityId(action), meteredResource: "hosted-worker-minutes" as const };
+  if (action.startsWith("hmo.")) return { executionOwner: "hearmeout", capabilityId: spmtSuiteActionCapabilityId(action), meteredResource: "hosted-worker-minutes" as const };
+  return { executionOwner: "streamweaver", capabilityId: SPMT_SUITE_ACTION_CAPABILITIES.image, meteredResource: "image-generations" as const };
+}
+export function assertSpmtSuiteActionJobInputV1(value: unknown): SpmtSuiteActionJobInputV1 {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Suite action input must be an object");
+  const input = value as Partial<SpmtSuiteActionJobInputV1>, descriptor = SPMT_SUITE_ACTION_CATALOG.find((item) => item.id === input.action);
+  if (input.schemaVersion !== 1 || !descriptor) throw new Error("Suite action is invalid");
+  if (!input.args || typeof input.args !== "object" || Array.isArray(input.args) || Object.entries(input.args).some(([key, item]) => !/^[A-Za-z0-9._-]{1,100}$/.test(key) || typeof item !== "string" || item.length > 5_000 || /\0/.test(item))) throw new Error("Suite action arguments are invalid");
+  if (!input.actor || !input.actor.userId?.trim() || !input.actor.username?.trim() || !["guest", "member", "moderator", "admin", "owner"].includes(input.actor.role ?? "")) throw new Error("Suite action actor is invalid");
+  if (suiteRoleLevel(input.actor.role!) < suiteRoleLevel(descriptor.minimumRole)) throw new Error(`${input.action} requires ${descriptor.minimumRole} access`);
+  if (!input.source || !["chat", "voice-commander", "mountainview", "hearmeout", "companion", "api", "mcp"].includes(input.source.kind ?? "")) throw new Error("Suite action source is invalid");
+  if (input.source.simulation !== undefined && typeof input.source.simulation !== "boolean") throw new Error("Suite action simulation marker is invalid");
+  return structuredClone(input as SpmtSuiteActionJobInputV1);
+}
+
+function suiteAction<const I extends string>(id: I, risk: SpmtSuiteActionRiskV1, minimumRole: SpmtSuiteActionActorRoleV1) { return { id, risk, minimumRole }; }
+function suiteRoleLevel(role: SpmtSuiteActionActorRoleV1) { return { guest: 0, member: 1, moderator: 2, admin: 3, owner: 4 }[role]; }
+
+export const PROVIDER_GRANT_PROVIDERS = ["discord", "twitch", "kick", "xbox", "github", "livekit", "youtube"] as const;
+export type ProviderGrantProviderV1 = (typeof PROVIDER_GRANT_PROVIDERS)[number];
+
+export interface ProviderGrantRequestV1 {
+  schemaVersion: 1;
+  tenantId: string;
+  requesterAppId: string;
+  provider: ProviderGrantProviderV1;
+  providerUserId: string;
+  capabilityId: string;
+  requiredScopes: string[];
+  ttlSeconds?: number;
+}
+
+/** Returned only to the authorized service that requested it. Never persist or log credential. */
+export interface IssuedProviderGrantV1 {
+  schemaVersion: 1;
+  grantId: string;
+  tenantId: string;
+  requesterAppId: string;
+  provider: ProviderGrantProviderV1;
+  providerUserId: string;
+  capabilityId: string;
+  grantedScopes: string[];
+  credential: { accessToken: string; metadata: Record<string, string> };
+  issuedAt: string;
+  expiresAt: string;
+}
+
+export type AppSettingsSubjectV1 = "user" | "tenant";
+export type AppSettingsFieldTypeV1 = "boolean" | "string" | "number" | "enum";
+
+export interface AppSettingsFieldV1 {
+  key: string;
+  label: string;
+  description: string;
+  type: AppSettingsFieldTypeV1;
+  sensitive: boolean;
+  required?: boolean;
+  defaultValue?: boolean | string | number;
+  options?: Array<{ value: string; label: string }>;
+  minimum?: number;
+  maximum?: number;
+}
+
+export interface AppSettingsDefinitionV1 {
+  schemaVersion: 1;
+  appId: string;
+  settingsVersion: number;
+  subject: AppSettingsSubjectV1;
+  fields: AppSettingsFieldV1[];
+}
+
+/** Sensitive values are never returned; configuredSecretKeys reports presence only. */
+export interface AppSettingsDocumentV1 {
+  schemaVersion: 1;
+  appId: string;
+  tenantId: string;
+  subject: AppSettingsSubjectV1;
+  subjectId: string;
+  settingsVersion: number;
+  revision: number;
+  values: Record<string, boolean | string | number>;
+  configuredSecretKeys: string[];
+  updatedAt: string;
+}
+
+export interface AppSettingsPatchV1 {
+  schemaVersion: 1;
+  expectedRevision: number;
+  values?: Record<string, boolean | string | number | null>;
+  secrets?: Record<string, string | null>;
+}
+
+export const CAPABILITY_ROUTE_MODES = ["green-only", "shadow", "green-primary-with-fallback", "disabled"] as const;
+export type CapabilityRouteModeV1 = (typeof CAPABILITY_ROUTE_MODES)[number];
+export const CAPABILITY_WIRING_STATES = ["scaffolded", "wired", "verified", "cutover-ready"] as const;
+export type CapabilityWiringStateV1 = (typeof CAPABILITY_WIRING_STATES)[number];
+
+export interface CapabilityWiringV1 {
+  capabilityId: string;
+  ownerAppId: string;
+  dataOwner: string;
+  executionOwner: string;
+  surfaces: SurfaceModeV1[];
+  entryPoints: string[];
+  contract: string;
+  meteredResource: MeteredResourceV1 | null;
+  executionTargets: ExecutionTargetV1[];
+  routeMode: CapabilityRouteModeV1;
+  state: CapabilityWiringStateV1;
+  migration: string;
+  evidence: string[];
+}
+
+export interface CapabilityWiringManifestV1 {
+  schemaVersion: 1;
+  revision: string;
+  capabilities: CapabilityWiringV1[];
+}
+
+export function assertBillingManifestV1(value: BillingManifestV1): BillingManifestV1 {
+  if (value.schemaVersion !== 1 || value.currency !== "USD" || !value.revision || value.revision.trim() !== value.revision || value.revision.length > 200) throw new Error("Billing manifest identity is invalid");
+  if (value.warningThresholds.join(",") !== "0.7,0.9,1" || value.plans.length !== BILLING_PLAN_IDS.length) throw new Error("Billing manifest thresholds or plan count is invalid");
+  const seen = new Set<string>();
+  for (const plan of value.plans) {
+    if (plan.schemaVersion !== 1 || !(BILLING_PLAN_IDS as readonly string[]).includes(plan.planId) || seen.has(plan.planId)) throw new Error("Billing plan identity is invalid");
+    seen.add(plan.planId);
+    if (!plan.name || !Number.isFinite(plan.monthlyPriceUsd) || plan.monthlyPriceUsd < 0 || plan.hardStopAtLimit !== true) throw new Error("Billing plan price or stop policy is invalid");
+    for (const resource of METERED_RESOURCES) if (!Number.isSafeInteger(plan.limits[resource]) || plan.limits[resource] < 0) throw new Error(`Billing limit ${resource} is invalid`);
+  }
+  if (BILLING_PLAN_IDS.some((id) => !seen.has(id))) throw new Error("Billing manifest is missing a canonical plan");
+  return value;
+}
+
+export function assertRuntimePolicyV1(value: RuntimePolicyV1): RuntimePolicyV1 {
+  if (value.schemaVersion !== 1 || !(WORKLOAD_CLASSES as readonly string[]).includes(value.class) || !(EXECUTION_TARGETS as readonly string[]).includes(value.executionTarget)) throw new Error("Runtime policy version, class, or target is invalid");
+  for (const field of [value.revision, value.workloadId, value.ownerAppId]) if (!field || field.trim() !== field || field.length > 200) throw new Error("Runtime policy identity is invalid");
+  for (const count of [value.minimumCapacity, value.maximumCapacity, value.idleSeconds, value.targetConcurrency]) if (!Number.isSafeInteger(count) || count < 0) throw new Error("Runtime policy capacity or timing is invalid");
+  if (value.minimumCapacity > value.maximumCapacity || value.targetConcurrency < 1 || !Number.isFinite(value.maximumHourlyCostUsd) || value.maximumHourlyCostUsd < 0) throw new Error("Runtime policy bounds are invalid");
+  if (value.stopMode === "suspend" && value.executionTarget !== "fly") throw new Error("Only a measured Fly workload may use suspend mode");
+  if (value.executionTarget === "companion" && value.productionMutationEnabled) throw new Error("Rotator cannot mutate Companion capacity");
+  return value;
+}
+
+export const CHAT_PROVIDERS = ["twitch", "discord", "kick", "youtube"] as const;
+export type ChatProviderV1 = (typeof CHAT_PROVIDERS)[number];
+
+/** Shared, tenant-scoped test surface used by app builders without contacting a real provider. */
+export const SPMT_SIMULATION_ROOM_EVENT = "spmt.simulation-room.event.v1" as const;
+export const SPMT_SIMULATION_ROOM_DELETED = "spmt.simulation-room.deleted.v1" as const;
+export const SIMULATION_ROOM_INPUT_CAPABILITY = "chat-gateway.simulation-input.v1" as const;
+export interface SimulationRoomInputV1 { roomId: string; provider: "twitch" | "discord" | "kick"; message: string; interaction?: { customId: string; values?: Record<string,string> }; }
+export interface SimulationRoomInputJobV1 extends SimulationRoomInputV1 {
+  schemaVersion: 1;
+  epoch?: string;
+  actor: { userId: string; username: string; role: "owner" | "member" };
+  appIds: string[];
+}
+export function assertSimulationRoomInputV1(value: unknown): SimulationRoomInputV1 {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Room input is required");
+  const input = value as SimulationRoomInputV1;
+  if (typeof input.roomId !== "string" || !input.roomId.trim() || input.roomId !== input.roomId.trim() || input.roomId.length > 200 || /[\r\n\0]/.test(input.roomId)) throw new Error("Room ID is invalid");
+  if (!["twitch", "discord", "kick"].includes(input.provider)) throw new Error("Choose a stream or Discord chat provider");
+  if (typeof input.message !== "string" || !input.message.trim() || input.message.length > 5000 || /\0/.test(input.message)) throw new Error("Enter a message up to 5000 characters");
+  if (input.interaction !== undefined) {
+    if (input.provider !== "discord" || !input.interaction || typeof input.interaction !== "object" || !/^(?:application_(?:inquiry|start|submit):(?:mod|partner|dev):\d{5,30}|calendar:(?:captain|mission|previous|next|captain-submit|mission-submit):\d{5,30}:\d{4}-(?:0[1-9]|1[0-2]))$/.test(input.interaction.customId)) throw new Error("Discord interaction is invalid");
+    const values = input.interaction.values;
+    if (values !== undefined && (!values || typeof values !== "object" || Array.isArray(values) || Object.keys(values).length > 5 || Object.entries(values).some(([key,value]) => !/^[a-z0-9_-]{1,80}$/i.test(key) || typeof value !== "string" || value.length > 1000))) throw new Error("Discord form answers are invalid");
+    return { roomId: input.roomId, provider: input.provider, message: input.message.trim(), interaction: { customId: input.interaction.customId, ...(values ? { values: { ...values } } : {}) } };
+  }
+  return { roomId: input.roomId, provider: input.provider, message: input.message.trim() };
+}
+export const SIMULATION_ROOM_LANES = ["chat", "overlay", "game", "app"] as const;
+export type SimulationRoomLaneV1 = (typeof SIMULATION_ROOM_LANES)[number];
+export type SimulationRoomDirectionV1 = "ingress" | "egress" | "preview";
+
+export interface SimulationRoomEventV1 {
+  schemaVersion: 1;
+  roomId: string;
+  roomName?: string;
+  lane: SimulationRoomLaneV1;
+  direction: SimulationRoomDirectionV1;
+  title: string;
+  body: string;
+  occurredAt: string;
+  provider?: ChatProviderV1;
+  connectionId?: string;
+  channelId?: string;
+  replyToMessageId?: string;
+  artifactUrl?: string;
+  data?: Record<string, unknown>;
+}
+
+/** Reserved 24-digit IDs cannot collide with Discord's unsigned 64-bit snowflakes.
+ * Every app uses the same tenant/room mapping, including interactive embed tests. */
+export function simulationDiscordIds(tenantId: string, roomId: string) {
+  const id = (lane: string) => {
+    let hash = 14695981039346656037n;
+    for (const byte of new TextEncoder().encode(`${tenantId}\0${roomId}\0${lane}`)) hash = BigInt.asUintN(64, (hash ^ BigInt(byte)) * 1099511628211n);
+    return `9999${hash.toString().padStart(20, "0")}`;
+  };
+  return { guildId: id("guild"), channelId: id("discord") };
+}
+export function isSimulationDiscordId(value: string) { return /^9999\d{20}$/.test(value); }
+
+export interface SimulationRoomSummaryV1 {
+  roomId: string;
+  name: string;
+  eventCount: number;
+  lastActivityAt: string;
+  lanes: SimulationRoomLaneV1[];
+  sourceAppIds: string[];
+}
+
+export interface NebulaProviderSupportEventV1 { kind:"subscription"|"resub"|"gift-subscriptions"|"cheer"|"raid"; amount:number; }
+
+export interface NormalizedChatMessageV1 {
+  guildId?:string;
+  rich?:CommlinkLiveChatRecordV1["rich"];
+  supportEvent?:NebulaProviderSupportEventV1;
+  schemaVersion: 1;
+  tenantId: string;
+  provider: ChatProviderV1;
+  connectionId: string;
+  channelId: string;
+  sourceChannelId?: string;
+  messageId: string;
+  text: string;
+  occurredAt: string;
+  actor: {
+    providerUserId: string;
+    canonicalUserId?: string;
+    username: string;
+    displayName?: string;
+    avatarUrl?: string;
+    isBot: boolean;
+    roles: Array<"broadcaster" | "moderator" | "member">;
+  };
+  mentions: Array<{ token: string; providerUserId: string; canonicalUserId?: string; username: string }>;
+}
+
+export interface CommlinkTikTokEventV1 {
+  schemaVersion:1;tenantId:string;connectionId:string;channelId:string;messageId:string;occurredAt:string;
+  kind:"chat"|"gift"|"follow"|"share"|"like"|"viewers";userId:string;username:string;displayName:string;text:string;quantity?:number;diamondCost?:number;totalLikes?:number;
+}
+
+/** Public, credential-free Commlink projection of one normalized provider message. */
+export interface CommlinkLiveChatRecordV1 {
+  guildId?:string;
+  rich?: {source:string;eventType:string;attachments?:Array<{url:string;name:string;contentType?:string;size?:number}>;embeds?:Array<{title?:string;description?:string;url?:string;imageUrl?:string;thumbnailUrl?:string}>;donation?:string;membership?:string;deleted?:boolean};
+  schemaVersion: 1;
+  tenantId: string;
+  provider: ChatProviderV1 | "social-stream" | "tiktok";
+  connectionId: string;
+  channelId: string;
+  sourceChannelId?: string;
+  messageId: string;
+  occurredAt: string;
+  text: string;
+  providerUserId: string;
+  canonicalUserId?: string;
+  username: string;
+  displayName?: string;
+  isBot: boolean;
+  roles: Array<"broadcaster" | "moderator" | "member">;
+}
+
+export interface CommlinkLiveChatQueryV1 {
+  tenantId: string;
+  provider?: ChatProviderV1 | "social-stream" | "tiktok";
+  channelId?: string;
+  messageId?: string;
+  search?: string;
+  limit?: number;
+}
+
+export interface NormalizedChatDeliveryV1 {
+  schemaVersion: 1;
+  deliveryId: string;
+  consumerId: string;
+  message: NormalizedChatMessageV1;
+  attempts: number;
+}
+
+export interface OutboundChatMessageV1 {
+  schemaVersion: 1;
+  tenantId: string;
+  provider: ChatProviderV1;
+  connectionId: string;
+  channelId: string;
+  text: string;
+  idempotencyKey: string;
+  replyToMessageId?: string;
+}
+
+export const DEVICE_COMMAND_CAPABILITIES = ["obs.scene", "obs.stream", "overlay.window", "media.playback", "local.transcode"] as const;
+export type DeviceCommandCapabilityV1 = (typeof DEVICE_COMMAND_CAPABILITIES)[number];
+
+export const PAIRED_DEVICE_KINDS = ["companion", "phone", "bluetooth-headset", "glasses", "camera", "other"] as const;
+export type PairedDeviceKindV1 = (typeof PAIRED_DEVICE_KINDS)[number];
+export const DEVICE_AUTOMATION_ACTIONS = {"obs.scene.set":"obs.scene","obs.source.visibility.set":"obs.scene","media.play":"media.playback","media.pause":"media.playback","media.seek":"media.playback","media.volume.set":"media.playback","media.mute.set":"media.playback"} as const;
+export function assertDeviceAutomationPayload(action:string,value:Record<string,unknown>):Record<string,unknown>{
+  if(!Object.hasOwn(DEVICE_AUTOMATION_ACTIONS,action))throw new Error("Unsupported device automation action");
+  const name=(key:string)=>{const result=String(value[key]??"").trim();if(!result||result.length>200||/[\r\n\0]/.test(result))throw new Error(`Device ${key} is required`);return result};
+  if(action==="obs.scene.set")return{sceneName:name("sceneName")};
+  if(action==="obs.source.visibility.set"){if(typeof value.visible!=="boolean")throw new Error("Device visible must be boolean");return{sceneName:name("sceneName"),sourceName:name("sourceName"),visible:value.visible};}
+  const inputName=name("inputName");
+  if(action==="media.volume.set"){const volume=Number(value.volume);if(!Number.isFinite(volume)||volume<0||volume>1)throw new Error("Device volume must be from 0 to 1");return{inputName,volume};}
+  if(action==="media.seek"){const positionMs=Number(value.positionMs);if(!Number.isSafeInteger(positionMs)||positionMs<0)throw new Error("Device positionMs must be nonnegative milliseconds");return{inputName,positionMs};}
+  if(action==="media.mute.set"){if(typeof value.muted!=="boolean")throw new Error("Device muted must be boolean");return{inputName,muted:value.muted};}
+  return{inputName};
+}
+export interface DeviceAutomationGrantV1 { grantId:string; appId:string; actions:Array<keyof typeof DEVICE_AUTOMATION_ACTIONS>; grantedAt:string; }
+export interface PairedDeviceV1 {
+  schemaVersion: 1;
+  tenantId: string;
+  userId: string;
+  deviceId: string;
+  name: string;
+  kind: PairedDeviceKindV1;
+  capabilities: DeviceCommandCapabilityV1[];
+  automationGrants?:DeviceAutomationGrantV1[];
+  pairedAt: string;
+  lastSeenAt: string;
+  revokedAt?: string;
+}
+
+export interface DeviceRelayCommandV1 {
+  schemaVersion: 1;
+  tenantId: string;
+  commandId: string;
+  idempotencyKey: string;
+  sourceAppId: string;
+  targetDeviceId: string;
+  capability: DeviceCommandCapabilityV1;
+  action: string;
+  payload: Record<string, unknown>;
+  requestedByUserId: string;
+  requestedAt: string;
+  requiresConfirmation: boolean;
+  confirmed: boolean;
+}
+
+export interface DeviceRelayReceiptV1 {
+  schemaVersion: 1;
+  tenantId: string;
+  commandId: string;
+  targetDeviceId: string;
+  status: "completed" | "rejected" | "unavailable";
+  detail: string;
+  completedAt: string;
+}
+
+export function assertDeviceRelayCommandV1(value: DeviceRelayCommandV1): DeviceRelayCommandV1 {
+  if (value.schemaVersion !== 1 || !(DEVICE_COMMAND_CAPABILITIES as readonly string[]).includes(value.capability)) throw new Error("Device relay command version or capability is invalid");
+  for (const [name, field] of [["tenantId", value.tenantId], ["commandId", value.commandId], ["idempotencyKey", value.idempotencyKey], ["sourceAppId", value.sourceAppId], ["targetDeviceId", value.targetDeviceId], ["action", value.action], ["requestedByUserId", value.requestedByUserId]] as const) if (!field || field.trim() !== field || field.length > 200) throw new Error(`${name} is invalid`);
+  if (!Number.isFinite(Date.parse(value.requestedAt)) || typeof value.payload !== "object" || value.payload === null || Array.isArray(value.payload) || typeof value.requiresConfirmation !== "boolean" || typeof value.confirmed !== "boolean") throw new Error("Device relay command body is invalid");
+  if (value.requiresConfirmation && !value.confirmed) throw new Error("Device relay command requires confirmation");
+  return value;
+}
+
+export function normalizeCommlinkRichContent(value:{source:string;eventType:string;attachments?:Array<{url:string;name:string;contentType?:string;size?:number}>;embeds?:Array<{title?:string;description?:string;url?:string;imageUrl?:string;thumbnailUrl?:string}>;donation?:string;membership?:string}){
+ if(!value||typeof value!=="object"||typeof value.source!=="string"||value.source.length>100||typeof value.eventType!=="string"||value.eventType.length>100||(value.attachments!==undefined&&(!Array.isArray(value.attachments)||value.attachments.length>12))||(value.embeds!==undefined&&(!Array.isArray(value.embeds)||value.embeds.length>5)))throw Error("Chat rich content is invalid");
+ const attachments=value.attachments?.map(a=>{const url=new URL(a.url);if(url.protocol!=="https:"||url.username||url.password||url.href.length>2048||typeof a.name!=="string"||a.name.length>150)throw Error("Chat attachment is invalid");if(a.contentType!==undefined&&(typeof a.contentType!=="string"||a.contentType.length>120))throw Error("Chat attachment content type is invalid");if(a.size!==undefined&&(!Number.isSafeInteger(a.size)||a.size<0))throw Error("Chat attachment size is invalid");return {url:url.href,name:a.name,...(a.contentType?{contentType:a.contentType}:{}),...(a.size!==undefined?{size:a.size}:{})}});
+ const embeds=value.embeds?.map(item=>{const checked={} as {title?:string;description?:string;url?:string;imageUrl?:string;thumbnailUrl?:string};for(const key of ["title","description"] as const){const v=item[key];if(v!==undefined){if(typeof v!=="string"||v.length>(key==="title"?256:1800))throw Error("Chat embed text is invalid");checked[key]=v;}}for(const key of ["url","imageUrl","thumbnailUrl"] as const){const v=item[key];if(v!==undefined){const url=new URL(v);if(url.protocol!=="https:"||url.username||url.password||url.href.length>2048)throw Error("Chat embed media URL is invalid");checked[key]=url.href;}}return checked;});
+ return {source:value.source,eventType:value.eventType,...(attachments?{attachments}:{}),...(embeds?{embeds}:{}),...(typeof value.donation==="string"?{donation:value.donation.slice(0,100)}:{}),...(typeof value.membership==="string"?{membership:value.membership.slice(0,100)}:{})};
+}
+
+export function assertNormalizedChatMessageV1(value: NormalizedChatMessageV1): NormalizedChatMessageV1 {
+  if (value.schemaVersion !== 1 || !(CHAT_PROVIDERS as readonly string[]).includes(value.provider)) throw new Error("Normalized chat message version or provider is invalid");
+  for (const [name, field] of [["tenantId", value.tenantId], ["connectionId", value.connectionId], ["channelId", value.channelId], ["messageId", value.messageId], ["actor.providerUserId", value.actor?.providerUserId], ["actor.username", value.actor?.username]] as const) {
+    if (!field || field.trim() !== field || field.length > 200) throw new Error(`${name} is invalid`);
+  }
+  if(value.guildId!==undefined&&(value.provider!=="discord"||!/^\d{5,30}$/.test(value.guildId)))throw Error("Chat guild is invalid");
+  if(value.rich)normalizeCommlinkRichContent(value.rich);
+  if(value.supportEvent&&(value.provider!=="twitch"||!["subscription","resub","gift-subscriptions","cheer","raid"].includes(value.supportEvent.kind)||!Number.isSafeInteger(value.supportEvent.amount)||value.supportEvent.amount<1))throw new Error("Provider support event is invalid");
+  if (!value.text || value.text.length > 8_000) throw new Error("Chat message text is invalid");
+  if (!Number.isFinite(Date.parse(value.occurredAt))) throw new Error("Chat message occurredAt is invalid");
+  if (value.actor.avatarUrl) {
+    const avatar = new URL(value.actor.avatarUrl);
+    if (avatar.protocol !== "https:" || avatar.username || avatar.password) throw new Error("Chat actor avatarUrl must use credential-free HTTPS");
+  }
+  if (typeof value.actor.isBot !== "boolean" || !Array.isArray(value.actor.roles) || value.actor.roles.some((role) => !["broadcaster", "moderator", "member"].includes(role)) || !Array.isArray(value.mentions)) throw new Error("Chat actor, roles, and mentions are invalid");
+  for (const mention of value.mentions) if (!mention.token || !mention.providerUserId || !mention.username) throw new Error("Chat mention is invalid");
+  return value;
+}
+
+export function assertSimulationRoomEventV1(value: SimulationRoomEventV1): SimulationRoomEventV1 {
+  if (value.schemaVersion !== 1 || !(SIMULATION_ROOM_LANES as readonly string[]).includes(value.lane) || !["ingress", "egress", "preview"].includes(value.direction)) throw new Error("Simulation room event version, lane, or direction is invalid");
+  for (const [name, field] of [["roomId", value.roomId], ["title", value.title]] as const) if (!field || field.trim() !== field || field.length > (name === "title" ? 160 : 200)) throw new Error(`Simulation room ${name} is invalid`);
+  if (!value.body || value.body.length > 8_000 || !Number.isFinite(Date.parse(value.occurredAt))) throw new Error("Simulation room event body or time is invalid");
+  if (value.roomName !== undefined && (typeof value.roomName !== "string" || !value.roomName.trim() || value.roomName.trim() !== value.roomName || value.roomName.length > 160)) throw new Error("Simulation room name is invalid");
+  if (value.provider && !(CHAT_PROVIDERS as readonly string[]).includes(value.provider)) throw new Error("Simulation room provider is invalid");
+  for (const [name, field] of [["connectionId", value.connectionId], ["channelId", value.channelId], ["replyToMessageId", value.replyToMessageId]] as const) if (field !== undefined && (!field || field.trim() !== field || field.length > 200)) throw new Error(`Simulation room ${name} is invalid`);
+  if (value.artifactUrl) {
+    const url = new URL(value.artifactUrl);
+    if (url.protocol !== "https:" || url.username || url.password) throw new Error("Simulation room artifactUrl must use credential-free HTTPS");
+  }
+  if (value.data !== undefined) {
+    if (!value.data || typeof value.data !== "object" || Array.isArray(value.data) || JSON.stringify(value.data).length > simulationDataLimit(value)) throw new Error("Simulation room data is invalid");
+    rejectSimulationSecrets(value.data);
+  }
+  return value;
+}
+
+function simulationDataLimit(value:SimulationRoomEventV1){
+  const payload=value.data?.payload as Record<string,unknown>|undefined,calendar=payload?.calendar as Record<string,unknown>|undefined;
+  if(value.provider!=="discord"||!calendar)return 32_000;
+  if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(String(calendar.month))||!/^\d{4}-\d{2}-\d{2}$/.test(String(calendar.today))||!Array.isArray(calendar.events)||calendar.events.length>500)throw new Error("Calendar preview is invalid");
+  for(const raw of calendar.events){const e=raw as Record<string,unknown>;if(!e||!["event","captains-log"].includes(String(e.type))||typeof e.id!=="string"||e.id.length>180||typeof e.eventName!=="string"||e.eventName.length>120||typeof e.description!=="string"||e.description.length>2000||typeof e.username!=="string"||e.username.length>80||!/^\d{4}-\d{2}-\d{2}$/.test(String(e.dayKey))||!Number.isFinite(Date.parse(String(e.eventDateTime)))||e.userAvatar&&(!/^https:\/\//.test(String(e.userAvatar))||String(e.userAvatar).length>500))throw new Error("Calendar preview item is invalid");}
+  return 512_000;
+}
+
+function rejectSimulationSecrets(value: unknown, depth = 0): void {
+  if (depth > 8) throw new Error("Simulation room data is too deeply nested");
+  if (Array.isArray(value)) { for (const item of value) rejectSimulationSecrets(item, depth + 1); return; }
+  if (!value || typeof value !== "object") return;
+  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+    if (/(?:^|[_-])(token|secret|password|credential|authorization|cookie)(?:$|[_-])/i.test(key)) throw new Error("Simulation room data may not contain credentials or secrets");
+    rejectSimulationSecrets(item, depth + 1);
+  }
+}
+
+export type AppIntegrationStateV1 = "native" | "connected" | "declared" | "unavailable" | "not-applicable";
+
+export interface AppWorkerManifestV1 {
+  id: string;
+  role: string;
+  execution: "anchored" | "leased" | "elastic" | "local";
+  canonicalAuthority: false;
+}
+
+export interface AppModuleManifestV1 {
+  schemaVersion: 1;
+  manifestVersion: "spmt.app-manifest/v1";
+  id: string;
+  name: string;
+  description: string;
+  capabilities: string[];
+  surfaces: SurfaceModeV1[];
+  requiredScopes: string[];
+  eventTypes: string[];
+  integration: Record<string, AppIntegrationStateV1>;
+  workers: AppWorkerManifestV1[];
+}
+
+/** Public catalog record supplied by an app through the SPMT SDK. */
+export interface AppCatalogRegistrationV1 {
+  appId: string;
+  name: string;
+  description: string;
+  version: string;
+  launchUrl: string;
+  iconUrl?: string;
+  allowedScopes: string[];
+  surfaces: Array<"shell" | "standalone" | "overlay" | "popout">;
+  status: "active" | "disabled";
+}
+
+/**
+ * Canonical app-catalog contract used by SpaceMountain-owned and external apps alike.
+ * Publisher trust and scope approval live in SPMT authorization; the manifest itself is host-neutral.
+ */
+export function assertAppCatalogRegistrationV1(value: unknown): AppCatalogRegistrationV1 {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("App catalog manifest must be an object");
+  const item = value as Record<string, unknown>;
+  const appId = appCatalogText(item.appId, "appId", 200);
+  if (!/^[A-Za-z0-9._:@/-]+$/.test(appId)) throw new Error("appId contains unsupported characters");
+  const name = appCatalogText(item.name, "name", 120);
+  const description = appCatalogText(item.description, "description", 1000);
+  const version = appCatalogText(item.version, "version", 80);
+  const launchUrl = appCatalogUrl(item.launchUrl, "launchUrl");
+  const iconUrl = item.iconUrl === undefined || item.iconUrl === "" ? undefined : appCatalogUrl(item.iconUrl, "iconUrl");
+  const allowedScopes = appCatalogStringArray(item.allowedScopes, "allowedScopes").map((scope) => scope.trim()).filter(Boolean);
+  if (allowedScopes.some((scope) => scope.length > 120 || !/^[A-Za-z0-9.*:_-]+$/.test(scope))) throw new Error("allowedScopes contains an invalid scope");
+  const declaredSurfaces = appCatalogStringArray(item.surfaces, "surfaces");
+  const supportedSurfaces = new Set(["shell", "standalone", "overlay", "popout"]);
+  if (!declaredSurfaces.length || declaredSurfaces.some((surface) => !supportedSurfaces.has(surface))) throw new Error("surfaces must contain at least one supported surface");
+  if (item.status !== "active" && item.status !== "disabled") throw new Error("status must be active or disabled");
+  return {
+    appId, name, description, version, launchUrl, ...(iconUrl ? { iconUrl } : {}),
+    allowedScopes: [...new Set(allowedScopes)].sort(),
+    surfaces: [...new Set(declaredSurfaces)] as AppCatalogRegistrationV1["surfaces"],
+    status: item.status,
+  };
+}
+
+/** Build a catalog record from the same public contract external developers submit. */
+export function createAppCatalogRegistrationV1(
+  app: Pick<AppModuleManifestV1, "id" | "name" | "description" | "requiredScopes" | "surfaces">,
+  input: { version: string; launchUrl: string; iconUrl?: string; allowedScopes?: string[]; surfaces?: AppCatalogRegistrationV1["surfaces"]; status?: AppCatalogRegistrationV1["status"] },
+): AppCatalogRegistrationV1 {
+  return assertAppCatalogRegistrationV1({
+    appId: app.id,
+    name: app.name,
+    description: app.description,
+    version: input.version,
+    launchUrl: input.launchUrl,
+    ...(input.iconUrl ? { iconUrl: input.iconUrl } : {}),
+    allowedScopes: input.allowedScopes ?? [...app.requiredScopes],
+    surfaces: input.surfaces ?? [...app.surfaces],
+    status: input.status ?? "active",
+  });
+}
+
+function appCatalogText(value: unknown, name: string, max: number): string {
+  if (typeof value !== "string" || !value.trim() || value.trim() !== value || value.length > max) throw new Error(`${name} is required and must be at most ${max} characters`);
+  return value;
+}
+function appCatalogStringArray(value: unknown, name: string): string[] {
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) throw new Error(`${name} must be an array of strings`);
+  return value as string[];
+}
+function appCatalogUrl(value: unknown, name: string): string {
+  const text = appCatalogText(value, name, 2048);
+  let url: URL;
+  try { url = new URL(text); } catch { throw new Error(`${name} must be an absolute URL`); }
+  const local = url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "::1" || url.hostname === "[::1]";
+  if (url.protocol !== "https:" && !local) throw new Error(`${name} must use HTTPS outside localhost`);
+  if (url.username || url.password) throw new Error(`${name} may not contain embedded credentials`);
+  return url.toString();
+}
+
+export function assertAppModuleManifestV1(value: AppModuleManifestV1): AppModuleManifestV1 {
+  if (value.schemaVersion !== 1 || value.manifestVersion !== "spmt.app-manifest/v1") throw new Error("Unsupported app manifest version");
+  if (!value.id || !value.name || !value.description) throw new Error("App manifest identity is incomplete");
+  for (const field of [value.capabilities, value.surfaces, value.requiredScopes, value.eventTypes]) {
+    if (!Array.isArray(field) || new Set(field).size !== field.length) throw new Error("App manifest arrays must contain unique values");
+  }
+  if (value.workers.some((worker) => worker.canonicalAuthority !== false)) throw new Error("Workers cannot own canonical ecosystem state");
+  return value;
+}
+
+export const COMMUNITY_ASSISTANT_ID = "spmt.community-assistant" as const;
+export const COMMUNITY_ASSISTANT_DISPLAY_NAME = "Stella" as const;
+export const ASSISTANT_SURFACES = ["app", "commlink", "stream", "standalone", "developer"] as const;
+export type AssistantSurfaceV1 = (typeof ASSISTANT_SURFACES)[number];
+export const ASSISTANT_MEMORY_POLICIES = ["off", "conversation"] as const;
+export type AssistantMemoryPolicyV1 = (typeof ASSISTANT_MEMORY_POLICIES)[number];
+
+/** App-owned presentation data. SPMT derives sourceAppId from the authenticated service. */
+export interface CommunityAssistantPresentationInputV1 {
+  personaId: string;
+  displayName: string;
+  instructions: string;
+  memoryPolicy: AssistantMemoryPolicyV1;
+}
+
+export interface CommunityAssistantPresentationV1 extends CommunityAssistantPresentationInputV1 {
+  sourceAppId: string;
+}
+
+export interface CommunityAssistantDescriptorV1 {
+  schemaVersion: 1;
+  id: typeof COMMUNITY_ASSISTANT_ID;
+  displayName: typeof COMMUNITY_ASSISTANT_DISPLAY_NAME;
+  role: "community-assistant";
+  executionOwner: "stellar-core";
+  availability: "available" | "unavailable";
+  requiredScopes: ["assistants:invoke"];
+  unavailableReason?: string;
+}
+
+export interface AssistantResearchOptionsV1 { enabled:boolean; liveSearchEnabled:boolean; knowledgePacks:string[]; sourceAllowlist:string[]; maxResults:number; cacheMinutes:number; }
+export interface AssistantResearchRequestV1 extends AssistantResearchOptionsV1 { query:string; }
+export function normalizeAssistantResearchOptions(value:unknown):AssistantResearchOptionsV1 {
+  if(!value||typeof value!=="object"||Array.isArray(value))throw new Error("Research settings must be an object");
+  const input=value as Record<string,unknown>,flag=(key:string,fallback:boolean)=>{if(input[key]===undefined)return fallback;if(typeof input[key]!=="boolean")throw new Error(`Research ${key} must be boolean`);return input[key] as boolean;};
+  const list=(key:string,max:number,pattern:RegExp)=>{if(input[key]===undefined)return [];if(!Array.isArray(input[key])||input[key].length>max)throw new Error(`Research ${key} is invalid`);return [...new Set((input[key] as unknown[]).map(value=>{if(typeof value!=="string"||!pattern.test(value.trim().toLowerCase()))throw new Error(`Research ${key} contains an invalid entry`);return value.trim().toLowerCase();}))];};
+  const integer=(key:string,fallback:number,min:number,max:number)=>{const n=input[key]===undefined?fallback:Number(input[key]);if(!Number.isSafeInteger(n)||n<min||n>max)throw new Error(`Research ${key} must be from ${min} to ${max}`);return n;};
+  return{enabled:flag("enabled",true),liveSearchEnabled:flag("liveSearchEnabled",false),knowledgePacks:list("knowledgePacks",20,/^[a-z0-9][a-z0-9_-]{0,79}$/),sourceAllowlist:list("sourceAllowlist",50,/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/),maxResults:integer("maxResults",5,1,8),cacheMinutes:integer("cacheMinutes",15,0,1440)};
+}
+export function assertAssistantResearchRequest(value:unknown):AssistantResearchRequestV1 {
+  const settings=normalizeAssistantResearchOptions(value),query=(value as Record<string,unknown>).query;
+  if(typeof query!=="string"||!query.trim()||query.length>2000||/\0/.test(query))throw new Error("Research query must be from 1 to 2000 characters");
+  return{...settings,query:query.trim()};
+}
+
+export interface CommunityAssistantInvocationV1 {
+  schemaVersion: 1;
+  tenantId: string;
+  userId: string;
+  requestedByType: "user" | "service";
+  requestedById: string;
+  callerAppId: string;
+  message: string;
+  surface: AssistantSurfaceV1;
+  routingPreference?: "automatic" | "hosted" | "companion";
+  remember?: boolean;
+  presentation?: CommunityAssistantPresentationV1;
+  research?: AssistantResearchRequestV1;
+  idempotencyKey: string;
+  conversationId?: string;
+  correlationId?: string;
+}
+
+export type CommunityAssistantInvocationResultV1 =
+  | {
+      schemaVersion: 1;
+      assistantId: typeof COMMUNITY_ASSISTANT_ID;
+      displayName: typeof COMMUNITY_ASSISTANT_DISPLAY_NAME;
+      status: "accepted";
+      jobId: string;
+      executionTarget?: ExecutionTargetV1;
+      meteringTarget?: "hosted" | "companion";
+      routingPreference?: "automatic" | "hosted" | "companion";
+      fallbackReason?: string;
+    }
+  | {
+      schemaVersion: 1;
+      assistantId: typeof COMMUNITY_ASSISTANT_ID;
+      displayName: typeof COMMUNITY_ASSISTANT_DISPLAY_NAME;
+      status: "unavailable";
+      reason: string;
+    };
+
+export const OPERATIONS_LOG_LEVELS = ["info", "warn", "error", "critical"] as const;
+export type OperationsLogLevelV1 = (typeof OPERATIONS_LOG_LEVELS)[number];
+
+export interface OperationsLogV1 {
+  schemaVersion: 1;
+  id: string;
+  tenantId: string;
+  sourceAppId: string;
+  reporterId: string;
+  level: OperationsLogLevelV1;
+  kind: string;
+  summary: string;
+  detail?: string;
+  labels: string[];
+  correlationId?: string;
+  occurredAt: string;
+  recordedAt: string;
+}
+
+export interface CoderEvidenceV1 {
+  logId: string;
+  sourceAppId: string;
+  level: OperationsLogLevelV1;
+  kind: string;
+  summary: string;
+  occurredAt: string;
+  correlationId?: string;
+}
+
+export const CODER_JOB_STATES = ["draft", "queued", "running", "succeeded", "failed", "cancelled"] as const;
+export type CoderJobStateV1 = (typeof CODER_JOB_STATES)[number];
+
+export interface CoderJobV1 {
+  schemaVersion: 1;
+  id: string;
+  tenantId: string;
+  targetAppId: string;
+  requestedByType: "user" | "service";
+  requestedById: string;
+  prompt: string;
+  evidence: CoderEvidenceV1[];
+  state: CoderJobStateV1;
+  runtimeJobId?: string;
+  unavailableReason?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CoderDescriptorV1 {
+  schemaVersion: 1;
+  id: "spmt.operations.coder";
+  executionOwner: "mtman-machine-rotator";
+  availability: "available" | "unavailable";
+  requiredScopes: ["operations:logs:read", "operations:coder:invoke"];
+  unavailableReason?: string;
+}
+
+export interface ShellLayoutMetricsV1 {
+  schemaVersion: 1;
+  headerHeight: number;
+  safeTop: number;
+  safeRight: number;
+  safeBottom: number;
+  safeLeft: number;
+  availableWidth: number;
+  availableHeight: number;
+  measuredAt: string;
+}
+
+export interface ThemeTokensV1 {
+  schemaVersion: 1;
+  background: string;
+  surface: string;
+  text: string;
+  accent: string;
+  radius: string;
+  density: "compact" | "comfortable" | "spacious";
+  motion: "full" | "reduced" | "none";
+}
+
+export interface ScopeGrantV1 {
+  scope: string;
+  granted: boolean;
+}
+
+export interface AppFrameLaunchV1 {
+  schemaVersion: 1;
+  launchId: string;
+  appId: string;
+  surfaceMode: SurfaceModeV1;
+  tenantId?: string;
+  requestedScopes: string[];
+}
+
+export type OverlayWidgetKindV1 = "iframe" | "native" | "media" | "text" | "status";
+
+export interface OverlayWidgetManifestV1 {
+  schemaVersion: 1;
+  appId: string;
+  widgetId: string;
+  title: string;
+  kind: OverlayWidgetKindV1;
+  rendererUrl: string;
+  previewUrl?: string;
+  requiredScopes: string[];
+  supportsAudio: boolean;
+  supportsInteraction: boolean;
+  defaultAspectRatio?: string;
+}
+
+export interface RegisteredOverlayWidgetV1 {
+  schemaVersion: 1;
+  tenantId: string;
+  manifest: OverlayWidgetManifestV1;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface OverlayOutputGrantV1 {
+  schemaVersion: 1;
+  grantId: string;
+  tenantId: string;
+  appId: string;
+  widgetId: string;
+  viewerUserId?: string;
+  createdByUserId: string;
+  createdAt: string;
+  expiresAt: string;
+  revokedAt?: string;
+}
+
+/** Returned only when a grant is issued. The opaque browser-source URL cannot be recovered later. */
+export interface IssuedOverlayOutputGrantV1 {
+  schemaVersion: 1;
+  grant: OverlayOutputGrantV1;
+  browserSourceUrl: string;
+}
+
+/** Verified server-side identity passed to an overlay renderer; never accepted from URL parameters. */
+export interface OverlayOutputPrincipalV1 {
+  schemaVersion: 1;
+  grantId: string;
+  tenantId: string;
+  appId: string;
+  widgetId: string;
+  viewerUserId?: string;
+}
+
+/** Internal mount result. The output gateway renders this target instead of redirecting the browser. */
+export interface OverlayOutputResolutionV1 {
+  schemaVersion: 1;
+  principal: OverlayOutputPrincipalV1;
+  rendererUrl: string;
+}
+
+export interface AppRuntimeProjectionV1 {
+  schemaVersion: 1;
+  tenantId: string;
+  appId: string;
+  state: RuntimeStateV1;
+  detail?: string;
+  updatedAt: string;
+}
+
+export type EmbedBridgeMessageV1 =
+  | { protocol: "spmt.embed"; version: 1; type: "host.hello"; launch: AppFrameLaunchV1 }
+  | { protocol: "spmt.embed"; version: 1; type: "child.ready"; appId: string }
+  | { protocol: "spmt.embed"; version: 1; type: "session.changed"; authenticated: boolean; userId?: string; tenantId?: string }
+  | { protocol: "spmt.embed"; version: 1; type: "theme.changed"; theme: ThemeTokensV1 }
+  | { protocol: "spmt.embed"; version: 1; type: "layout.changed"; layout: ShellLayoutMetricsV1 }
+  | { protocol: "spmt.embed"; version: 1; type: "capabilities.changed"; grants: ScopeGrantV1[] }
+  | { protocol: "spmt.embed"; version: 1; type: "runtime.changed"; state: RuntimeStateV1; detail?: string }
+  | { protocol: "spmt.embed"; version: 1; type: "navigation.open"; url: string; target: "shell" | "direct" | "popout" };
+
+export function isSurfaceModeV1(value: unknown): value is SurfaceModeV1 {
+  return typeof value === "string" && (SURFACE_MODES as readonly string[]).includes(value);
+}
+
+export function isShellLayoutMetricsV1(value: unknown): value is ShellLayoutMetricsV1 {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Record<string, unknown>;
+  return candidate.schemaVersion === 1 &&
+    ["headerHeight", "safeTop", "safeRight", "safeBottom", "safeLeft", "availableWidth", "availableHeight"].every(
+      (key) => typeof candidate[key] === "number" && Number.isFinite(candidate[key]) && (candidate[key] as number) >= 0,
+    ) && typeof candidate.measuredAt === "string";
+}
+
+export function isEmbedBridgeMessageV1(value: unknown): value is EmbedBridgeMessageV1 {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Record<string, unknown>;
+  if (candidate.protocol !== "spmt.embed" || candidate.version !== 1 || typeof candidate.type !== "string") return false;
+  switch (candidate.type) {
+    case "host.hello":
+      return !!candidate.launch && typeof candidate.launch === "object";
+    case "child.ready":
+      return typeof candidate.appId === "string";
+    case "session.changed":
+      return typeof candidate.authenticated === "boolean";
+    case "theme.changed":
+      return !!candidate.theme && typeof candidate.theme === "object";
+    case "layout.changed":
+      return isShellLayoutMetricsV1(candidate.layout);
+    case "capabilities.changed":
+      return Array.isArray(candidate.grants);
+    case "runtime.changed":
+      return typeof candidate.state === "string";
+    case "navigation.open":
+      return typeof candidate.url === "string" && typeof candidate.target === "string";
+    default:
+      return false;
+  }
+}
+
+export function assertOverlayWidgetManifestV1(value: OverlayWidgetManifestV1): OverlayWidgetManifestV1 {
+  if (value.schemaVersion !== 1) throw new Error("Unsupported overlay widget manifest version");
+  if (!value.appId || !value.widgetId || !value.title || !value.rendererUrl) throw new Error("Overlay widget manifest is incomplete");
+  if (!["iframe", "native", "media", "text", "status"].includes(value.kind)) throw new Error("Overlay widget kind is invalid");
+  if (!Array.isArray(value.requiredScopes) || value.requiredScopes.some((scope) => typeof scope !== "string" || !scope.trim())) throw new Error("Overlay widget requiredScopes are invalid");
+  if (typeof value.supportsAudio !== "boolean" || typeof value.supportsInteraction !== "boolean") throw new Error("Overlay widget capabilities are invalid");
+  if (!value.rendererUrl.startsWith("https://") && !value.rendererUrl.startsWith("http://localhost")) {
+    throw new Error("Overlay rendererUrl must be HTTPS outside local development");
+  }
+  if (value.previewUrl && !value.previewUrl.startsWith("https://") && !value.previewUrl.startsWith("http://localhost")) throw new Error("Overlay previewUrl must be HTTPS outside local development");
+  return value;
+}
+
+export function assertAppSettingsDefinitionV1(value: AppSettingsDefinitionV1): AppSettingsDefinitionV1 {
+  if (value.schemaVersion !== 1 || !contractId(value.appId) || !Number.isSafeInteger(value.settingsVersion) || value.settingsVersion < 1) throw new Error("App settings definition is invalid");
+  if (value.subject !== "user" && value.subject !== "tenant") throw new Error("App settings subject is invalid");
+  if (!Array.isArray(value.fields) || value.fields.length > 100) throw new Error("App settings fields are invalid");
+  const keys = new Set<string>();
+  for (const field of value.fields) {
+    if (!contractId(field.key) || keys.has(field.key) || !field.label?.trim() || !field.description?.trim()) throw new Error("App settings field is invalid or duplicated");
+    keys.add(field.key);
+    if (!["boolean", "string", "number", "enum"].includes(field.type) || typeof field.sensitive !== "boolean") throw new Error("App settings field type is invalid");
+    if (field.sensitive && field.defaultValue !== undefined) throw new Error("Sensitive app settings cannot declare defaults");
+    if (field.type === "enum" && (!field.options?.length || field.options.some((option) => !option.value || !option.label))) throw new Error("Enum app settings require options");
+    if (field.type !== "enum" && field.options !== undefined) throw new Error("Only enum app settings may declare options");
+    if ((field.minimum !== undefined && !Number.isFinite(field.minimum)) || (field.maximum !== undefined && !Number.isFinite(field.maximum)) || (field.minimum !== undefined && field.maximum !== undefined && field.minimum > field.maximum)) throw new Error("App settings numeric bounds are invalid");
+  }
+  return value;
+}
+
+export function assertCapabilityWiringManifestV1(value: CapabilityWiringManifestV1): CapabilityWiringManifestV1 {
+  if (value.schemaVersion !== 1 || !value.revision?.trim() || !Array.isArray(value.capabilities) || !value.capabilities.length) throw new Error("Capability wiring manifest is invalid");
+  const ids = new Set<string>();
+  for (const capability of value.capabilities) {
+    if (!contractId(capability.capabilityId) || ids.has(capability.capabilityId) || !contractId(capability.ownerAppId) || !contractId(capability.dataOwner) || !contractId(capability.executionOwner)) throw new Error("Capability wiring identity is invalid or duplicated");
+    ids.add(capability.capabilityId);
+    if (!Array.isArray(capability.surfaces) || !capability.surfaces.length || capability.surfaces.some((surface) => !isSurfaceModeV1(surface))) throw new Error("Capability surfaces are invalid");
+    if (!contractStrings(capability.entryPoints) || !capability.contract?.trim() || !contractStrings(capability.evidence)) throw new Error("Capability wiring references are invalid");
+    if (capability.meteredResource !== null && !(METERED_RESOURCES as readonly string[]).includes(capability.meteredResource)) throw new Error("Capability metered resource is invalid");
+    if (!Array.isArray(capability.executionTargets) || !capability.executionTargets.length || capability.executionTargets.some((target) => target !== "sprite" && target !== "fly" && target !== "companion" && target !== "hosted")) throw new Error("Capability execution targets are invalid");
+    if (!(CAPABILITY_ROUTE_MODES as readonly string[]).includes(capability.routeMode) || !(CAPABILITY_WIRING_STATES as readonly string[]).includes(capability.state) || !capability.migration?.trim()) throw new Error("Capability wiring state is invalid");
+  }
+  return value;
+}
+
+function contractId(value: unknown): value is string { return typeof value === "string" && /^[A-Za-z0-9._:@/-]{1,200}$/.test(value); }
+function contractStrings(value: unknown): value is string[] { return Array.isArray(value) && value.length > 0 && value.every((item) => typeof item === "string" && item.trim() && item.length <= 500); }
+
+/** Provider corrections change public presentation only; they are never command inputs. */
+export interface CommlinkProviderMutationV1 {
+  schemaVersion:1; tenantId:string; provider:"discord"; connectionId:string; channelId:string; messageId:string;
+  operation:"edit"|"delete"; occurredAt:string; text?:string; rich?:{source:string;eventType:string;attachments?:Array<{url:string;name:string;contentType?:string;size?:number}>;embeds?:Array<{title?:string;description?:string;url?:string;imageUrl?:string;thumbnailUrl?:string}>;donation?:string;membership?:string};
+}
+export function normalizeCommlinkProviderMutation(value:CommlinkProviderMutationV1):CommlinkProviderMutationV1 {
+  if(!value||value.schemaVersion!==1||value.provider!=="discord"||!["edit","delete"].includes(value.operation))throw Error("Chat mutation is invalid");
+  for(const id of [value.tenantId,value.connectionId,value.channelId,value.messageId])if(typeof id!=="string"||!/^[A-Za-z0-9._:@/-]{1,200}$/.test(id))throw Error("Chat mutation identifier is invalid");
+  if(typeof value.occurredAt!=="string"||!Number.isFinite(Date.parse(value.occurredAt)))throw Error("Chat mutation time is invalid");
+  if(value.text!==undefined&&(typeof value.text!=="string"||value.text.length>8000))throw Error("Chat mutation text is invalid");
+  const rich=value.rich?normalizeCommlinkRichContent(value.rich):undefined;
+  if(value.operation==="edit"&&value.text===undefined&&!rich)throw Error("Chat mutation has no changed fields");
+  return {schemaVersion:1,tenantId:value.tenantId,provider:"discord",connectionId:value.connectionId,channelId:value.channelId,messageId:value.messageId,operation:value.operation,occurredAt:new Date(value.occurredAt).toISOString(),...(value.operation==="edit"&&value.text!==undefined?{text:value.text}:{}),...(value.operation==="edit"&&rich?{rich}:{})};
+}

@@ -1,0 +1,66 @@
+name: KeenTools approved-reference head reconstruction
+run-name: KeenTools head reconstruction from approved relit PNGs
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: keentools-approved-reference-reconstruction
+  cancel-in-progress: false
+
+jobs:
+  reconstruct:
+    name: Verify approved references and reconstruct head
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Verify all approved reference files before any API call
+        run: |
+          node --version
+          node --input-type=module <<'NODE'
+          import { readFile } from "node:fs/promises";
+          import { createHash } from "node:crypto";
+          import { join } from "node:path";
+          // The ten approved PNGs are committed at the repository root; read them in place.
+          const dir = ".";
+          const expected = {
+            "01_front.png": "2332fd678836f3d3c99a3a9f7676c312fbcaf386565ef3418503c7b2aef41787",
+            "02_front_left_45.png": "9020e1f6f223f5bcc37b4d09970f5558fe05fbea5c661f11308df9564dd20739",
+            "03_front_right_45.png": "655d7eb3912a8387d52925f38f8670dcacefa5f57ed20e7788674d4df885cd88",
+            "04_left_profile.png": "a6aabc95ce1e30f7b94da4627e691f94d734404e3e3fbd0ad5dbbd89ed5dfa01",
+            "05_right_profile.png": "ff9dd763c045b7df009eeb54be51bf66e993ce3c5f65532d53e849ed015563b3",
+            "06_back.png": "684b4557317e67f0be165afe96604151665a66ba91651153389c19246c01b690",
+            "07_back_left_45.png": "53e660e26830bde93ee135ec380cbaeb9e3f738691eca512be447706ebbbcf3e",
+            "08_back_right_45.png": "8823fe4106eaa439b2d933d2099949de4f728fe0b2a88ff1fe2b84561553704e",
+            "09_top_of_head.png": "da3e748876edf30db2efd8e116ebbd092560be8bb220c26c08f8388fc758014a",
+            "10_lower_face_jaw_detail.png": "4d453c304c9b527d2da68a7f42489e1e5dcb31dab7911ffa381f02987b5f670c"
+          };
+          const actual = (await import("node:fs/promises")).readdir;
+          for (const [name, hash] of Object.entries(expected)) {
+            const bytes = await readFile(join(dir, name)).catch(() => { throw new Error("Approved image missing: " + join(dir, name) + "; no KeenTools API call was made."); });
+            if (bytes.subarray(0, 8).toString("hex") !== "89504e470d0a1a0a" || createHash("sha256").update(bytes).digest("hex") !== hash) {
+              throw new Error("Wrong or modified reference: " + name + "; no KeenTools API call was made.");
+            }
+          }
+          console.log("All ten approved relit reference PNGs verified by SHA-256.");
+          NODE
+
+      - name: Reconstruct with the second KeenTools account
+        env:
+          STREAMWEAVER_KEENTOOLS_API_KEY_SECOND: ${{ secrets.STREAMWEAVER_KEENTOOLS_API_KEY_SECOND }}
+        run: node .github/scripts/keentools-manual-reconstruct.mjs
+
+      - name: Upload generated head GLB
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: neon-lock-in-gamer-keentools-head
+          path: keentools-output/
+          if-no-files-found: error
+          retention-days: 14

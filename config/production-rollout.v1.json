@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 1,
+  "revision": "apollo-parallel-release-2026-09-12",
+  "strategy": "parallel-app-cutover",
+  "global": {
+    "publicShellEnabled": false,
+    "productionTrafficMoved": false,
+    "liveMutationAllowed": false,
+    "blueRetirementAllowed": false,
+    "automaticPromotionAllowed": false,
+    "defaultProductionAuthority": "blue",
+    "emergencyRollbackAuthority": "blue"
+  },
+  "publicPreviewGates": {
+    "releaseBuild": { "state": "passed", "evidence": "GitHub Actions run 34677301646 promoted main commit 64d540deb3d37cbcefb518e70e2fe20391c736b7" },
+    "releaseHealth": { "state": "passed", "evidence": "GitHub Actions run 34677468532 verified the active release and bounded health routes" },
+    "publicIngress": { "state": "pending", "evidence": "Permanent public ingress and certificates have not been selected and verified" },
+    "isolatedPreviewStorage": { "state": "pending", "evidence": "Public preview storage, backup, and isolated restore still require proof" },
+    "abuseAndCostBounds": { "state": "pending", "evidence": "Public signup rate limits, quotas, and alert thresholds still require live proof" }
+  },
+  "cohorts": [
+    {
+      "id": "ecosystem-core",
+      "order": 0,
+      "units": ["spmt-authority", "spacemountain-shell", "commlink", "stellar-core", "mission-control"],
+      "status": "protected-preview",
+      "nextCandidate": false,
+      "productionAuthority": "blue",
+      "greenMode": "isolated",
+      "shadowSideEffectsAllowed": false,
+      "rollbackTarget": "blue",
+      "gates": { "inventory": "pending", "dataReconciliation": "pending", "externalIntegration": "pending", "rollback": "pending", "ownerAcceptance": "pending" }
+    },
+    {
+      "id": "hearmeout",
+      "order": 10,
+      "units": ["hearmeout"],
+      "status": "blocked",
+      "nextCandidate": true,
+      "productionAuthority": "blue",
+      "greenMode": "shadow",
+      "shadowSideEffectsAllowed": false,
+      "rollbackTarget": "blue",
+      "gates": { "inventory": "pending", "dataReconciliation": "pending", "externalIntegration": "pending", "rollback": "pending", "ownerAcceptance": "pending" }
+    },
+    {
+      "id": "discord-stream-hub",
+      "order": 20,
+      "units": ["discord-stream-hub"],
+      "status": "queued",
+      "nextCandidate": false,
+      "productionAuthority": "blue",
+      "greenMode": "shadow",
+      "shadowSideEffectsAllowed": false,
+      "rollbackTarget": "blue",
+      "gates": { "inventory": "pending", "dataReconciliation": "pending", "externalIntegration": "pending", "rollback": "pending", "ownerAcceptance": "pending" }
+    },
+    {
+      "id": "bounded-clients",
+      "order": 30,
+      "units": ["mountainview", "companion"],
+      "status": "queued",
+      "nextCandidate": false,
+      "productionAuthority": "blue",
+      "greenMode": "shadow",
+      "shadowSideEffectsAllowed": false,
+      "rollbackTarget": "blue",
+      "gates": { "inventory": "pending", "dataReconciliation": "pending", "externalIntegration": "pending", "rollback": "pending", "ownerAcceptance": "pending" }
+    },
+    {
+      "id": "nebula-arcade",
+      "order": 40,
+      "units": ["nebula-arcade"],
+      "status": "queued",
+      "nextCandidate": false,
+      "productionAuthority": "blue",
+      "greenMode": "shadow",
+      "shadowSideEffectsAllowed": false,
+      "rollbackTarget": "blue",
+      "gates": { "inventory": "pending", "dataReconciliation": "pending", "externalIntegration": "pending", "rollback": "pending", "ownerAcceptance": "pending" }
+    },
+    {
+      "id": "streamweaver",
+      "order": 50,
+      "units": ["streamweaver"],
+      "status": "queued",
+      "nextCandidate": false,
+      "productionAuthority": "blue",
+      "greenMode": "shadow",
+      "shadowSideEffectsAllowed": false,
+      "rollbackTarget": "blue",
+      "gates": { "inventory": "pending", "dataReconciliation": "pending", "externalIntegration": "pending", "rollback": "pending", "ownerAcceptance": "pending" }
+    }
+  ]
+}

@@ -1,0 +1,73 @@
+name: REA static application analysis
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_path:
+        description: Apollo application tree to inspect
+        required: true
+        type: choice
+        options:
+          - apps/hearmeout
+          - apps/streamweaver
+          - apps/nebula-arcade
+          - apps/discord-stream-hub
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rea-static-analysis-${{ inputs.target_path }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out Apollo
+        uses: actions/checkout@v4
+
+      - name: Set up supported Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Build Apollo application JavaScript
+        run: |
+          npm ci
+          npm run build
+
+      - name: Run REA static analysis
+        env:
+          TARGET_PATH: ${{ inputs.target_path }}
+        run: |
+          set -euo pipefail
+          node scripts/parity-rea.mjs "$TARGET_PATH/dist" > rea-analysis.json
+
+      - name: Validate REA JSON evidence
+        run: jq -e 'type == "object"' rea-analysis.json >/dev/null
+
+      - name: Publish analysis summary
+        if: always()
+        run: |
+          {
+            echo "## REA static analysis"
+            echo
+            echo "Target: `${{ inputs.target_path }}`"
+            echo
+            if [ -s rea-analysis.json ]; then
+              echo "REA produced a JSON report. Download the workflow artifact for full details."
+            else
+              echo "No JSON report was produced. Review the step logs for diagnostics."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload REA report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rea-static-analysis
+          path: rea-analysis.json
+          if-no-files-found: warn
+          retention-days: 14

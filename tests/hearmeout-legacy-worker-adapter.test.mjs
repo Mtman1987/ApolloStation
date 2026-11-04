@@ -1,0 +1,114 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { HttpHearMeOutVoiceBridgeWorker, HttpHearMeOutVoiceBridgeWorkerError } from "../apps/hearmeout/dist/index.js";
+
+import { hearMeOutProviderRoomName } from "../apps/hearmeout/dist/room-identity.js";
+const providerRoomId = hearMeOutProviderRoomName("tenant-a", "discord-activity");
+const base = { tenantId: "tenant-a", roomId: "discord-activity" };
+
+test("legacy HMO worker adapter sends bounded authenticated requests without credentials in URLs", async () => {
+  const calls = [];
+  const worker = new HttpHearMeOutVoiceBridgeWorker({
+    workerOrigin: "https://worker.example",
+    getAuthorization: () => "Bearer canary-worker-secret-value",
+    fetchImpl: async (url, init) => {
+      calls.push({ url: String(url), init });
+      return new Response(JSON.stringify({ success: true, running: true, discordReceiveGain: JSON.parse(init.body || "{}").discordReceiveGain }), { status: 200, headers: { "content-type": "application/json" } });
+    },
+  });
+
+  await worker.start({ ...base, guildId: "123456789012345678", voiceChannelId: "987654321098765432", audioProfile: "clean", discordReceiveGain: 1 });
+  await worker.setRoomOutbound({ ...base, roomVoiceOutboundEnabled: false });
+  await worker.setAudioProfile({ ...base, audioProfile: "resilient" });
+  await worker.stop(base);
+
+  assert.equal(calls.length, 4);
+  assert.equal(calls[0].url, "https://worker.example/voice-bridge");
+  assert.equal(calls[0].init.method, "POST");
+  assert.equal(calls[0].init.headers.authorization, "Bearer canary-worker-secret-value");
+  assert.equal(calls[0].init.redirect, "manual");
+  assert.deepEqual(JSON.parse(calls[0].init.body), {
+    action: "start",
+    roomId: providerRoomId,
+    guildId: "123456789012345678",
+    voiceChannelId: "987654321098765432",
+    audioProfile: "clean",
+    discordReceiveGain: 1,
+  });
+  assert.ok(calls.every((call) => !call.url.includes("canary-worker-secret-value")));
+  assert.deepEqual(JSON.parse(calls[1].init.body), { roomId: providerRoomId, roomVoiceOutboundEnabled: false });
+  assert.deepEqual(JSON.parse(calls[2].init.body), { roomId: providerRoomId, audioProfile: "resilient" });
+  assert.deepEqual(JSON.parse(calls[3].init.body), { action: "stop", roomId: providerRoomId });
+});
+
+test("legacy HMO worker adapter status uses query only for room identity and refuses redirects", async () => {
+  let seen;
+  const worker = new HttpHearMeOutVoiceBridgeWorker({
+    workerOrigin: "https://worker.example/",
+    getAuthorization: async () => "Bearer canary-worker-secret-value",
+    fetchImpl: async (url, init) => {
+      seen = { url: String(url), init };
+      return new Response("", { status: 302, headers: { location: "https://other.example" } });
+    },
+  });
+  await assert.rejects(() => worker.status(base), /redirect refused/);
+  assert.equal(seen.url, `https://worker.example/voice-bridge?roomId=${providerRoomId}`);
+  assert.equal(seen.init.headers.authorization, "Bearer canary-worker-secret-value");
+});
+
+test("legacy HMO worker adapter rejects unsafe origins and redacts worker error detail", async () => {
+  assert.throws(() => new HttpHearMeOutVoiceBridgeWorker({ workerOrigin: "http://worker.example", getAuthorization: () => "Bearer canary-worker-secret-value" }), /credential-free HTTPS/);
+  assert.throws(() => new HttpHearMeOutVoiceBridgeWorker({ workerOrigin: "https://user:pass@worker.example", getAuthorization: () => "Bearer canary-worker-secret-value" }), /credential-free HTTPS/);
+  assert.throws(() => new HttpHearMeOutVoiceBridgeWorker({ workerOrigin: "https://worker.example/private", getAuthorization: () => "Bearer canary-worker-secret-value" }), /credential-free HTTPS/);
+
+  const worker = new HttpHearMeOutVoiceBridgeWorker({
+    workerOrigin: "https://worker.example",
+    getAuthorization: () => "Bearer canary-worker-secret-value",
+    fetchImpl: async () => new Response(JSON.stringify({ error: "authorization=super-secret-token failed" }), { status: 503, headers: { "content-type": "application/json" } }),
+  });
+  await assert.rejects(
+    () => worker.stop(base),
+    (error) => error instanceof HttpHearMeOutVoiceBridgeWorkerError && error.status === 503 && /authorization=\[redacted\]/.test(error.message) && !error.message.includes("super-secret-token"),
+  );
+});
+
+test("legacy HMO worker adapter validates Discord and authorization inputs before provider calls", async () => {
+  let calls = 0;
+  const worker = new HttpHearMeOutVoiceBridgeWorker({
+    workerOrigin: "https://worker.example",
+    getAuthorization: () => "Bearer too-short",
+    fetchImpl: async () => { calls += 1; return new Response("{}", { status: 200 }); },
+  });
+  await assert.rejects(() => worker.status(base), /authorization is unavailable/);
+  assert.throws(() => worker.start({ ...base, guildId: "abc", voiceChannelId: "987654321098765432", audioProfile: "clean", discordReceiveGain: 1 }), /guildId must be a Discord snowflake/);
+  assert.equal(calls, 0);
+});
+
+test("HTTP adapter applies nondefault gain and verifies the worker's actual response", async () => {
+  const calls = [];
+  const worker = new HttpHearMeOutVoiceBridgeWorker({ workerOrigin: "https://worker.example", getAuthorization: () => "Bearer canary-worker-secret-value", fetchImpl: async (url, init) => {
+    const body = JSON.parse(init.body); calls.push({ url: String(url), body });
+    return Response.json({ success: true, status: { running: true, discordReceiveGain: body.discordReceiveGain } });
+  } });
+  await worker.start({ ...base, guildId: "123456789012345678", voiceChannelId: "987654321098765432", audioProfile: "clean", discordReceiveGain: 0.7 });
+  await worker.setDiscordReceiveGain({ ...base, discordReceiveGain: 0.6 });
+  assert.equal(calls[0].body.discordReceiveGain, 0.7);
+  assert.deepEqual(calls[1], { url: "https://worker.example/voice-bridge/receive-gain", body: { roomId: providerRoomId, discordReceiveGain: 0.6 } });
+});
+
+test("an old worker or a success-false response cannot masquerade as applied gain", async () => {
+  for (const payload of [{ success: true, status: { running: true } }, { success: true, status: { discordReceiveGain: 0.32 } }, { success: false, message: "Bridge failed to start", status: { discordReceiveGain: 0.6 } }]) {
+    const worker = new HttpHearMeOutVoiceBridgeWorker({ workerOrigin: "https://worker.example", getAuthorization: () => "Bearer canary-worker-secret-value", fetchImpl: async () => Response.json(payload) });
+    await assert.rejects(worker.setDiscordReceiveGain({ ...base, discordReceiveGain: 0.6 }), /did not confirm|Bridge failed/);
+  }
+});
+
+test("a started worker with an unsupported gain contract is stopped before reporting failure", async () => {
+  const actions = [];
+  const worker = new HttpHearMeOutVoiceBridgeWorker({ workerOrigin: "https://worker.example", getAuthorization: () => "Bearer canary-worker-secret-value", fetchImpl: async (_url, init) => {
+    actions.push(JSON.parse(init.body).action);
+    return Response.json({ success: true, status: { running: true } });
+  } });
+  await assert.rejects(worker.start({ ...base, guildId: "123456789012345678", voiceChannelId: "987654321098765432", audioProfile: "clean", discordReceiveGain: 0.6 }), /did not confirm/);
+  assert.deepEqual(actions, ["start", "stop"]);
+});

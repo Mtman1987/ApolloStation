@@ -1,0 +1,144 @@
+{
+  "schemaVersion": 1,
+  "baseMain": "28a8b1bac3e28c2059ede01ff10cdf2e3c495160",
+  "branches": [
+    {
+      "branch": "architecture-reset-2026-08-30",
+      "head": "6e25a4dd5e07798d457fb176d2b01edf9a1ec464",
+      "preservedBy": "4d8d945e0e46b33ab53a91c0228d3eb550066716",
+      "disposition": "already on main"
+    },
+    {
+      "branch": "feat/quackverse-external-art-rebuild-20260831",
+      "head": "e5961e202509af137a0dc0cf43acb1dded75a116",
+      "preservedBy": "ancestor of main",
+      "disposition": "already on main"
+    },
+    {
+      "branch": "feat/stellar-streamweaver-flow-coder",
+      "head": "228a37fbc437bd31c1ae8f81be539f309d273306",
+      "preservedBy": "28a8b1bac3e28c2059ede01ff10cdf2e3c495160",
+      "disposition": "already on main"
+    },
+    {
+      "branch": "feature/hearmeout-room-console",
+      "head": "1f33d72720ec08b5a79e7e19e28f370258bd1ea8",
+      "preservedBy": "ccd1365416ae0600f94b3ae3e4cf3e0b28dae012",
+      "disposition": "already on main"
+    },
+    {
+      "branch": "fix/app-owned-scenes-and-collapsed-header",
+      "head": "ecc0f72203c4d269c91b501d401bf84a0a798dc4",
+      "preservedBy": "99d837178e15d124158da522add71e1b6af34bd5",
+      "disposition": "already on main"
+    },
+    {
+      "branch": "fix/appframe-first-paint-transparency",
+      "head": "491cd8af17155e07b8ae2e17552dd006ee28cdcf",
+      "preservedBy": "fc07b5009aa21ef2dc0afe86646299009d5539b6",
+      "disposition": "already on main"
+    },
+    {
+      "branch": "fix/appframe-mobile-transparency",
+      "head": "749a687c23a66ecf3686eaefe18ae2037919c583",
+      "preservedBy": "0c30526230f8c523992f81fd68fe29fb3bbb1038",
+      "disposition": "already on main"
+    },
+    {
+      "branch": "fix/fixed-mobile-shell-geometry",
+      "head": "9b7619e04e1f43d08c28026e3965a03f5f3448a4",
+      "preservedBy": "b98ac1fdeaf46bb01b19de87407bef59f0658d61",
+      "disposition": "already on main"
+    },
+    {
+      "branch": "fix/hearmeout-browse-room-state",
+      "head": "ed6c172fccaee68b1e97ce7a097350cacfae18d8",
+      "preservedBy": "e9e68d6ae67197ada35f526f11458a914352103d",
+      "disposition": "already on main"
+    },
+    {
+      "branch": "fix/hearmeout-green-sprite-surface",
+      "head": "7f9bb02263deea43bb2a07565de06c2c9e6948e7",
+      "preservedBy": "ae626b6c3c9e8b834b32301a8cfe7b6d285c0cb9",
+      "disposition": "already on main"
+    },
+    {
+      "branch": "fix/hearmeout-real-surface-theme-parity",
+      "head": "f9a783d2159f509438a8897032421e1a71083f9b",
+      "preservedBy": "d9c3fb622eb4c252a2ff949ee291f8c3c3fb2a49",
+      "disposition": "already on main"
+    },
+    {
+      "branch": "fix/shell-geometry-and-transparent-scenes",
+      "head": "fd5ea0be2c8609250e5803dbca24d86fad98d061",
+      "preservedBy": "d311d75cb7eaf0507acb0bfc87f708c9cb39d8a5",
+      "disposition": "already on main"
+    },
+    {
+      "branch": "fix/shipyard-shell-scene",
+      "head": "6339bc8e41ccc60839aa32db6f159187c99365cb",
+      "preservedBy": "a80f6ccd694f0ecbe1d168808c50c07bc60852c5",
+      "disposition": "already on main"
+    },
+    {
+      "branch": "fix/sprite-supervisor-test-ports",
+      "head": "570679a96ddb92cfb8f40c96c8a78bde4ee1a61b",
+      "preservedBy": "0114adb19be327ec20efa15b7e07a422d0a3769d",
+      "disposition": "already on main"
+    },
+    {
+      "branch": "fix/sprite-test-port-isolation",
+      "head": "dc34b9feecd03493e0f4c18aedacd392ac5208e3",
+      "preservedBy": "74859a38cab100782263e93f08f4e6b9d69fdfa6",
+      "disposition": "already on main"
+    },
+    {
+      "branch": "fix/unify-appframe-hearmeout",
+      "head": "21168c107fcdc3f37062e38212ccb5d573b2c38a",
+      "preservedBy": "ancestor of main",
+      "disposition": "already on main"
+    },
+    {
+      "branch": "fix/verify-appframe-cohort-build",
+      "head": "4478fc45c7e28d9ddd6cac8f48b4ffe7b9bb74fa",
+      "preservedBy": "3e0d66067d5e74d876dd00d293f883c749c551ff",
+      "disposition": "already on main"
+    },
+    {
+      "branch": "hmo-live-canary-groundwork-2026-08-30",
+      "head": "846828830a1e8b2224122b8a557efe85da8f6848",
+      "preservedBy": "ancestor of main",
+      "disposition": "already on main"
+    },
+    {
+      "branch": "hotfix/spmt-browser-surface-import",
+      "head": "a65b8e2c5be87488a16ee230fa9aab5583da40bd",
+      "preservedBy": "0af3aefb1905d54877857223372220fbc695452d",
+      "disposition": "already on main"
+    },
+    {
+      "branch": "parity/dsh-community-workflows-20260906",
+      "head": "b44b309779f8d23169df16289c9200da7b41b030",
+      "preservedBy": "current cleanup commit",
+      "disposition": "consolidated and repaired"
+    },
+    {
+      "branch": "ui/app-surface-contract-pass",
+      "head": "4b228bd25e023c394d3611d31ee15fa43cd1cfb0",
+      "preservedBy": "9ef36834c85fa37a0e7bf71e7ecb6045151c1bdf",
+      "disposition": "already on main"
+    },
+    {
+      "branch": "ui/hearmeout-bot-hub",
+      "head": "559dc34d8cbb4fe157a494c53ef03bf7960c1690",
+      "preservedBy": "f30a7f5c6039a7aff10dc3e382425d279c356feb",
+      "disposition": "already on main"
+    },
+    {
+      "branch": "ui/hearmeout-compact-room-dock",
+      "head": "e9e68d6ae67197ada35f526f11458a914352103d",
+      "preservedBy": "ancestor of main",
+      "disposition": "already on main"
+    }
+  ]
+}

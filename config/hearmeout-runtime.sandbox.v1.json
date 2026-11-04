@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "revision": "sandbox-zero-tenant",
+  "pollMs": 1000,
+  "capabilities": ["hearmeout.music.search", "hearmeout.music.remember"],
+  "tenants": []
+}

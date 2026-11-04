@@ -1,0 +1,96 @@
+{
+  "rules": [
+    {
+      "domain": "github.com",
+      "action": "allow"
+    },
+    {
+      "domain": "*.github.com",
+      "action": "allow"
+    },
+    {
+      "domain": "githubusercontent.com",
+      "action": "allow"
+    },
+    {
+      "domain": "*.githubusercontent.com",
+      "action": "allow"
+    },
+    {
+      "domain": "npmjs.org",
+      "action": "allow"
+    },
+    {
+      "domain": "*.npmjs.org",
+      "action": "allow"
+    },
+    {
+      "domain": "huggingface.co",
+      "action": "allow"
+    },
+    {
+      "domain": "*.huggingface.co",
+      "action": "allow"
+    },
+    {
+      "domain": "hf.co",
+      "action": "allow"
+    },
+    {
+      "domain": "*.hf.co",
+      "action": "allow"
+    },
+    {
+      "domain": "spmt.live",
+      "action": "allow"
+    },
+    {
+      "domain": "streamweaver-new.fly.dev",
+      "action": "allow"
+    },
+    {
+      "domain": "api.openai.com",
+      "action": "allow"
+    },
+    {
+      "domain": "hmo-dj-worker.fly.dev",
+      "action": "allow"
+    },
+    {
+      "domain": "youtube.com",
+      "action": "allow"
+    },
+    {
+      "domain": "*.youtube.com",
+      "action": "allow"
+    },
+    {
+      "domain": "youtu.be",
+      "action": "allow"
+    },
+    {
+      "domain": "*.googlevideo.com",
+      "action": "allow"
+    },
+    {
+      "domain": "*.ytimg.com",
+      "action": "allow"
+    },
+    {
+      "domain": "youtubei.googleapis.com",
+      "action": "allow"
+    },
+    {
+      "domain": "storage.googleapis.com",
+      "action": "allow"
+    },
+    {
+      "domain": "hearmeout-main.fly.dev",
+      "action": "allow"
+    },
+    {
+      "domain": "*",
+      "action": "deny"
+    }
+  ]
+}

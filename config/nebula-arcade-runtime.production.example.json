@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "revision": "nebula-release-2026-09-05",
+  "tenants": [{
+    "tenantId": "replace-with-spmt-tenant-id",
+    "pinUserId": "replace-with-canonical-pin-user-id",
+    "autoJoinLivePlayers": false,
+    "supportChannelId": "123456789012345678",
+    "packChannelId": "234567890123456789",
+    "channels": [
+      { "provider": "twitch", "connectionId": "nebula-twitch", "channelId": "streamer_login", "stateChannelId": "streamer_login", "enabledGameIds": ["tag", "bingo", "quackverse", "wordchain"] },
+      { "provider": "discord", "connectionId": "nebula-support", "channelId": "123456789012345678", "stateChannelId": "streamer_login", "enabledGameIds": ["tag", "bingo", "quackverse", "wordchain"] },
+      { "provider": "discord", "connectionId": "nebula-packs", "channelId": "234567890123456789", "stateChannelId": "streamer_login", "enabledGameIds": ["tag", "bingo", "quackverse", "wordchain"] }
+    ]
+  }]
+}

@@ -1,0 +1,25 @@
+name: HearMeOut legacy worker validation
+
+on:
+  # Manual diagnostic only. The regression test is part of the canonical
+  # four-shard release suite and must not be a separate PR/merge check.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  worker-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/hearmeout/legacy-worker/package-lock.json
+      - name: Run worker regression tests
+        run: npm ci --prefix apps/hearmeout/legacy-worker && npm test --prefix apps/hearmeout/legacy-worker
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: "1"

@@ -1,0 +1,104 @@
+name: StreamWeaver parity validation
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - apps/streamweaver/src/chat-gateway-consumer.ts
+      - apps/streamweaver/src/overlay-widgets.ts
+      - apps/streamweaver/src/shoutout-store.ts
+      - apps/streamweaver/src/community-store.ts
+      - apps/streamweaver/src/stream-presentation-runtime.ts
+      - apps/streamweaver/src/web-controls.ts
+      - apps/streamweaver/src/provider-runtime.ts
+      - apps/streamweaver/src/stella-lounge-host.ts
+      - apps/streamweaver/src/stream-operations-client.ts
+      - apps/streamweaver/src/web-client.ts
+      - apps/streamweaver/src/image-worker.ts
+      - apps/streamweaver/src/checkin-presentation.ts
+      - apps/streamweaver/src/card-pack-event.ts
+      - apps/streamweaver/src/avatar-worker.ts
+      - apps/discord-stream-hub/src/suite-action-worker.ts
+      - apps/discord-stream-hub/src/card-pack-render.ts
+      - apps/discord-stream-hub/src/quackverse-art.ts
+      - apps/discord-stream-hub/src/lounge-avatar.ts
+      - apps/discord-stream-hub/src/nebula-media-worker.ts
+      - apps/discord-stream-hub/src/live-worker.ts
+      - apps/discord-stream-hub/src/forum-forwarding.ts
+      - apps/nebula-arcade/src/media-delivery.ts
+      - apps/nebula-arcade/src/quackverse-art-job.ts
+      - apps/chat-gateway/src/service.ts
+      - apps/chat-gateway/src/simulation-runtime.ts
+      - apps/stellar-core/src/worker-start.ts
+      - apps/stellar-core/src/index.ts
+      - apps/spmt-service/src/index.ts
+      - apps/spmt-service/src/assistant-api.ts
+      - apps/stellar-core/src/speech-worker.ts
+      - apps/stellar-core/src/speech-provider.ts
+      - apps/stellar-core/src/speech-voices.ts
+      - apps/stellar-core/src/assistant-store.ts
+      - apps/stellar-core/kokoro/**
+      - tests/streamweaver-pollinations.test.mjs
+      - tests/stellar-speech-target.test.mjs
+      - tests/stellar-hosted-readiness.test.mjs
+      - tests/stellar-kokoro.test.mjs
+      - tests/streamweaver-port-runtime.test.mjs
+      - tests/hosted-worker-target.test.mjs
+      - tests/streamweaver-avatar-pipeline.test.mjs
+      - tests/dsh-channel-cleanup-parity.test.mjs
+      - tests/nebula-arcade-provider-runtime.test.mjs
+      - tests/streamweaver-checkin-presentation.test.mjs
+      - tests/streamweaver-flow-author-e2e.test.mjs tests/streamweaver-stella-lounge-host.test.mjs
+      - tests/streamweaver-stella-lounge-host.test.mjs
+      - apps/streamweaver/src/community-runtime.ts
+      - apps/nebula-arcade/src/provider-runtime.ts
+      - apps/mountainview/src/commander-listener.ts
+      - apps/mountainview/src/index.ts
+      - apps/mountainview/src/platform-client.ts
+      - apps/mountainview/src/voice-router.ts
+      - apps/mountainview/src/web-server.ts
+      - tests/mountainview-commander-listener.test.mjs
+      - tests/mountainview-commander-browser.test.mjs
+      - tests/mountainview-companion-platform.test.mjs
+      - .github/workflows/mountainview-commander-validation.yml
+      - tests/streamweaver-chat-gateway.test.mjs
+      - tests/streamweaver-overlay-widgets.test.mjs
+      - .github/workflows/streamweaver-parity-validation.yml
+      - packages/contracts/src/index.ts
+      - packages/execution-core/src/index.ts
+      - packages/platform-ops/src/index.ts
+      - packages/mcp/src/index.ts
+      - tests/functional-foundation.test.mjs
+      - tests/functional-foundation-api.test.mjs
+
+permissions:
+  contents: read
+
+concurrency:
+  group: streamweaver-parity-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  offline-parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Compile all apps and packages
+        run: npm run build
+      - name: Validate local Kokoro worker syntax
+        run: python3 -m py_compile apps/stellar-core/kokoro/server.py
+      - name: Run focused pull-request regressions
+        if: github.event_name == 'pull_request'
+        run: node --import ./scripts/offline-network-guard.mjs --test tests/streamweaver-rides.test.mjs tests/streamweaver-chat-gateway.test.mjs tests/streamweaver-overlay-widgets.test.mjs tests/streamweaver-pollinations.test.mjs tests/stellar-speech-target.test.mjs tests/stellar-hosted-readiness.test.mjs tests/stellar-kokoro.test.mjs tests/streamweaver-port-runtime.test.mjs tests/hosted-worker-target.test.mjs tests/streamweaver-avatar-pipeline.test.mjs tests/dsh-channel-cleanup-parity.test.mjs tests/nebula-arcade-provider-runtime.test.mjs tests/functional-foundation-api.test.mjs tests/streamweaver-checkin-presentation.test.mjs tests/streamweaver-flow-author-e2e.test.mjs tests/mountainview-commander-listener.test.mjs tests/mountainview-commander-browser.test.mjs tests/mountainview-companion-platform.test.mjs
+      - name: Run full manual StreamWeaver regressions
+        if: github.event_name == 'workflow_dispatch'
+        run: node --import ./scripts/offline-network-guard.mjs --test tests/streamweaver-tts-text.test.mjs tests/streamweaver-shoutout-runtime.test.mjs tests/streamweaver-provider-runtime.test.mjs tests/streamweaver-eventsub-lifecycle.test.mjs tests/streamweaver-rides.test.mjs tests/streamweaver-stella-lounge-host.test.mjs tests/streamweaver-chat-gateway.test.mjs tests/streamweaver-overlay-widgets.test.mjs

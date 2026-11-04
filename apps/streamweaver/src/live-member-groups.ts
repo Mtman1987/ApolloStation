@@ -1,0 +1,14 @@
+export const STREAMWEAVER_LIVE_MEMBER_GROUP_ORDER = ["Crew", "Partners", "Honored Guests", "Raid Pile", "Everyone Else"] as const;
+export type StreamWeaverLiveMemberGroupV1 = typeof STREAMWEAVER_LIVE_MEMBER_GROUP_ORDER[number];
+export interface StreamWeaverLiveMemberSummaryV1 { canonicalUserId: string; displayName: string; provider: string; channelUrl: string; group?: string; title?: string; gameName?: string; viewerCount?: number; }
+export interface StreamWeaverLiveMemberGroupSummaryV1 { group: StreamWeaverLiveMemberGroupV1; count: number; members: StreamWeaverLiveMemberSummaryV1[]; }
+
+export function groupStreamWeaverLiveMembers(members: readonly StreamWeaverLiveMemberSummaryV1[]): StreamWeaverLiveMemberGroupSummaryV1[] {
+  const output = new Map<StreamWeaverLiveMemberGroupV1, StreamWeaverLiveMemberSummaryV1[]>(STREAMWEAVER_LIVE_MEMBER_GROUP_ORDER.map((group) => [group, []]));
+  for (const member of members) output.get(group(member.group))!.push(validate(member));
+  return STREAMWEAVER_LIVE_MEMBER_GROUP_ORDER.map((name) => ({ group: name, count: output.get(name)!.length, members: output.get(name)!.sort((a, b) => b.viewerCount! - a.viewerCount! || a.displayName.localeCompare(b.displayName)) })).filter((item) => item.count > 0);
+}
+export function formatStreamWeaverLiveMemberGroups(groups: readonly StreamWeaverLiveMemberGroupSummaryV1[]) { if (!groups.length) return "Nobody in the community is live right now."; return groups.map((entry) => `${entry.group}: ${entry.members.map((member) => `${member.displayName}${member.gameName ? ` (${member.gameName})` : ""}${member.viewerCount ? ` · ${member.viewerCount} viewers` : ""}`).join(", ")}`).join("\n"); }
+function group(value: unknown): StreamWeaverLiveMemberGroupV1 { const match = STREAMWEAVER_LIVE_MEMBER_GROUP_ORDER.find((candidate) => candidate.toLowerCase() === String(value ?? "").trim().toLowerCase()); return match ?? "Everyone Else"; }
+function validate(value: StreamWeaverLiveMemberSummaryV1): StreamWeaverLiveMemberSummaryV1 { const url = new URL(value.channelUrl); if (url.protocol !== "https:" || url.username || url.password) throw new Error("Live-member channel URL is invalid"); const viewerCount = Number.isSafeInteger(value.viewerCount) && value.viewerCount! >= 0 ? value.viewerCount! : 0; return { canonicalUserId: clean(value.canonicalUserId, 200), displayName: clean(value.displayName, 120), provider: clean(value.provider, 40), channelUrl: url.toString(), ...(value.group ? { group: value.group.slice(0, 80) } : {}), ...(value.title ? { title: value.title.slice(0, 300) } : {}), ...(value.gameName ? { gameName: value.gameName.slice(0, 120) } : {}), viewerCount }; }
+function clean(value: string, max: number) { const output = String(value ?? "").replace(/\s+/g, " ").trim().slice(0, max); if (!output) throw new Error("Live-member field is invalid"); return output; }

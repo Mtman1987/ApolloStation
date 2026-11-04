@@ -1,0 +1,136 @@
+# HearMeOut parity handoff
+
+Last updated: 2026-11-02. Read this before continuing parity work.
+
+## Goal and operating rules
+
+Continue porting required behavior from the read-only HearMeOut donor into
+`Mtman1987/ApolloStation` `main`. The scope and exclusions remain in
+[`HEARMEOUT_SCOPE.md`](HEARMEOUT_SCOPE.md); route dispositions are tracked in
+[`HEARMEOUT_ROUTE_COVERAGE.md`](HEARMEOUT_ROUTE_COVERAGE.md) and the
+[`HEARMEOUT_PARITY_LEDGER.md`](HEARMEOUT_PARITY_LEDGER.md).
+
+- Work in Apollo only; donor checkouts are read-only and must not be run.
+- Follow `AGENTS.md`: merge completed, reviewed PRs promptly, then use the
+  post-merge main workflow as diagnostic feedback. Do not weaken tests to hide
+  a real defect.
+- Do not run local builds, typechecks, or tests for this continuation; use the
+  Oracle workflow on main. Never report a test as passing unless its workflow
+  result confirms it.
+- Do not deploy or make live configuration changes as part of this repo task.
+- Preserve provider credentials, signed URLs, and raw upstream URLs on the
+  server side. Review origin/tenant boundaries, ranges, redirects, timeouts,
+  response bounds, and cancellation before changing media routes.
+
+## Current repository and completed increment
+
+- Verified baseline `main`: `244f2f029547e8c50b33edffd8947a000208fe15`
+  (`fix(hearmeout): exercise episode HLS delivery and secure stream responses`, PR #322).
+- The latest Oracle validation is
+  [40911859354](https://github.com/Mtman1987/ApolloStation/actions/runs/40911859354):
+  completed/success on that exact SHA; all four shards and aggregate report passed.
+- This continuation merged PR #316 (resolver replay regression), #317
+  (production route fix), and #318 (verification/handoff documentation).
+- Run [40754875281](https://github.com/Mtman1987/ApolloStation/actions/runs/40754875281)
+  exposed the underlying bug: the mounted room media route performed provider
+  resolution before ordinary enqueue, bypassing the durable `enqueueResolved`
+  receipt. PR #317 now routes query and YouTube URL requests through that
+  receipt; direct user-owned media URLs keep ordinary enqueue. Same-key replay
+  avoids new provider jobs, and changed intent under the same key is rejected
+  before resolution. Run
+  [40755646722](https://github.com/Mtman1987/ApolloStation/actions/runs/40755646722)
+  verified the fix (1,404/1,404); 40756147169 verified the final main revision.
+- PR #320 adds no-network contract tests for the mounted XTREAM HLS handler:
+  OPTIONS preflight, non-GET rejection, and unrelated-path decline. Oracle run
+  40906472006 confirms these and the full suite pass. This small route-method
+  subtask is **DONE**; it does not verify actual accepted-episode media delivery.
+- The working tree was clean on `main` at the recorded revision.
+
+## Next action
+
+### Previous increment (PR #322; Oracle verified 2026-11-02)
+
+`tests/hearmeout-episode-hls-integration.test.mjs` now exercises an authenticated
+room request through the real Watch runtime, then fetches its Apollo-owned
+master, variant and segment through the mounted web server and real disk HLS
+handler. Catalog lookup and donor acquisition are injected; cached fixture bytes
+are not proof of FFmpeg conversion, browser decoding or live provider playback.
+
+The companion route repair adds exact single byte ranges (206/416), bounds
+manifests to 1 MiB, rejects non-local manifest children, sanitizes route errors,
+and closes file streams on viewer disconnect. It preserves public Activity HLS
+compatibility; it does not establish room/tenant authorization for that route.
+Malformed references and unsafe/oversized manifests have focused regressions.
+No local build, typecheck or tests were run. Oracle 40911859354 confirms this
+cached-fixture request/delivery increment. It does not prove acquisition or conversion.
+
+### Current increment (2026-11-02; Oracle pending)
+
+`tests/hearmeout-xtream-hls-conversion.test.mjs` starts with an empty HLS directory
+and drives four simultaneous requests through the mounted Apollo HLS handler.
+The normal Xtream URL builder acquires synthetic media from a loopback HTTP
+fixture using real ffprobe and FFmpeg. Assertions cover one converter, finite
+VOD completion/ENDLIST, delivered H.264 video and AAC audio, and exact segment
+ranges. This is not live provider, browser, room authorization or Watch request
+preparation evidence. No donor is run and no production config is changed.
+
+The converter repair registers jobs before asynchronous cache/setup operations,
+limits EOF reconnect to live streams (finite episodes must release their slot),
+bounds readiness manifest reads, limits ffprobe to 30 seconds, and avoids
+retaining credential-bearing child-process diagnostics. This increment remains
+**ported-unverified** until its post-merge main Oracle run confirms it.
+
+The donor-side manifest preparation mismatch is being removed in the current
+increment: Watch queueing now emits the Apollo HLS path directly, and the HLS
+handler owns acquisition/conversion. Its route regression confirms no donor
+fetch during queueing. The local FFmpeg conversion test remains synthetic-source
+evidence, not live provider/browser playback.
+
+After Oracle, record the result and continue with real provider acquisition and
+conversion, room/tenant media authorization, browser playback, and the remaining
+queue/progress ordering decision. P08 and HMO-011 remain open. The `/watch/accept`
+stored-recommendation path is not covered by this request-path increment;
+Internet Archive remains excluded. YouTube HLS parity also remains open.
+
+Continue the open Watch/media parity. The next concrete bounded target is the
+accepted-episode Xtream HLS integration:
+
+1. Re-read `HMO-009-WATCH-STATE-GAP.md`, the HLS rows in
+   `HEARMEOUT_ROUTE_COVERAGE.md`, and current tests/handlers in Apollo and the
+   donor before proposing implementation.
+2. Trace a real accepted episode/request through the mounted Apollo route,
+   worker HLS handler, manifest-child rewriting, byte-range forwarding, error
+   handling, and browser consumer. The route-method test is done; this actual
+   end-to-end stream path is still open.
+3. Add a focused regression for the accepted episode's Apollo-owned HLS path
+   and relevant credential/URL boundary. Do not expose donor hostnames, provider
+   URLs, or credentials to the browser. Do not blindly copy the donor route.
+4. Merge first per `AGENTS.md`, then inspect the main Oracle report and record
+   the result in the relevant gap document.
+
+The accepted-episode-through-HLS streaming test, the
+`recordQueued` versus enqueue failure ordering decision, Internet Archive
+fallback (explicitly excluded by scope), remaining API route dispositions,
+session revocation, and Twitch redirect registration remain open. Do not imply
+that HMO-011 or P08 is complete.
+
+## Key references
+
+- `AGENTS.md` — merge-first and repair workflow.
+- `docs/donor-parity/HEARMEOUT_SCOPE.md` — owner-approved boundaries/exclusions.
+- `docs/donor-parity/HEARMEOUT_PARITY_LEDGER.md` — parity status and current
+  findings.
+- `docs/donor-parity/HMO_011_UI_CONTRACTS.md` — verified UI/API contract work.
+- `docs/donor-parity/HMO-009-WATCH-STATE-GAP.md` — Watch state, route, and
+  remaining end-to-end HLS gaps.
+- `tests/hearmeout-media-resolution.test.mjs` — resolver retry integration
+  regression added in PR #316.
+
+
+## Apollo-owned Watch movie catalog increment (2026-11-02; PR #326 open)
+
+PR #326 removes the production execution worker's donor movie-provider origin binding. Movie search now reads the ranked Apollo Xtream catalog and exposes only xtream-vod-* results. Explicit selection is revalidated against the catalog and resolves to Apollo's local /api/watch/xtream/hls/vod-*/index.m3u8 route; HLS acquisition remains lazy and belongs to the mounted Apollo handler. The old origin-based adapter constructor remains only for isolated legacy integration fixtures, not the production worker.
+
+A deterministic Apollo-mode adapter regression now covers VOD-only filtering, selection validation, local HLS route mapping, and no eager acquisition. This branch has no Actions check runs yet: the repository's pull-request-validation.yml workflow is manual-dispatch only. PR #326 is open and unmerged pending an Oracle/offline validation run and real configured Xtream provider verification. Do not treat the test source as executed proof.
+
+Still open after this increment: actual configured-provider catalog lookup and HLS acquisition/conversion, browser decoding, room/tenant authorization for manifest and segment requests, synchronized Watch pause/resume/seek semantics, late-join clock behavior, and reconnect/queue progression. The current shared program control contract only implements skip/clear; do not claim full synchronized transport parity.

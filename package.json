@@ -1,0 +1,49 @@
+{
+  "name": "spmt-ecosystem-core",
+  "version": "0.8.0",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "tsc -b packages/contracts packages/commlink-core packages/monetization packages/execution-core packages/provider-grants-core packages/app-foundation packages/embed packages/sdk packages/runtime packages/ui packages/authority-core packages/auth-core packages/control-core packages/outbox-core packages/platform-data-core packages/platform-data-sqlite packages/account-recovery-core packages/authority-sqlite packages/recovery-core packages/platform-ops packages/api-adapter packages/cli packages/mcp apps/reference-app apps/spmt-service apps/spacemountain apps/spacemountain-web apps/commlink apps/stellar-core apps/mission-control apps/nebula-arcade apps/chat-gateway apps/discord-stream-hub apps/streamweaver apps/hearmeout apps/mountainview apps/companion && node scripts/build-rtc-browser.mjs",
+    "test": "npm run build && node --test tests/*.test.mjs",
+    "test:sprite": "npm run build && node --test --test-concurrency=1 tests/*.test.mjs",
+    "test:offline": "npm run build && node --import ./scripts/offline-network-guard.mjs --test tests/*.test.mjs",
+    "companion:obs": "node scripts/run-companion-obs.mjs",
+    "nebula:check": "node scripts/nebula-release-check.mjs",
+    "nebula:import": "node scripts/nebula-import-live.mjs",
+    "nebula:serve": "node apps/nebula-arcade/dist/nebula-arcade-live-server.js",
+    "sandbox:run": "node scripts/sprites/run-supervised-sandbox.mjs",
+    "sandbox:nebula-arcade": "node scripts/sprites/run-supervised-sandbox.mjs --app nebula-arcade",
+    "provider:rehearse": "node scripts/provider-live-rehearsal.mjs",
+    "cutover:audit": "node scripts/audit-live-slices.mjs",
+    "release:audit": "node scripts/audit-production-rollout.mjs",
+    "typecheck": "tsc -b packages/contracts packages/commlink-core packages/monetization packages/execution-core packages/provider-grants-core packages/app-foundation packages/embed packages/sdk packages/runtime packages/ui packages/authority-core packages/auth-core packages/control-core packages/outbox-core packages/platform-data-core packages/platform-data-sqlite packages/account-recovery-core packages/authority-sqlite packages/recovery-core packages/platform-ops packages/api-adapter packages/cli packages/mcp apps/reference-app apps/spmt-service apps/spacemountain apps/spacemountain-web apps/commlink apps/stellar-core apps/mission-control apps/chat-gateway apps/nebula-arcade apps/discord-stream-hub apps/streamweaver apps/hearmeout apps/mountainview apps/companion --pretty false",
+    "clean": "tsc -b packages/contracts packages/commlink-core packages/monetization packages/execution-core packages/provider-grants-core packages/app-foundation packages/embed packages/sdk packages/runtime packages/ui packages/authority-core packages/auth-core packages/control-core packages/outbox-core packages/platform-data-core packages/platform-data-sqlite packages/account-recovery-core packages/authority-sqlite packages/recovery-core packages/platform-ops packages/api-adapter packages/cli packages/mcp apps/reference-app apps/spmt-service apps/spacemountain apps/spacemountain-web apps/commlink apps/stellar-core apps/mission-control apps/chat-gateway apps/nebula-arcade apps/discord-stream-hub apps/streamweaver apps/hearmeout apps/mountainview apps/companion --clean",
+    "test:hmo-persona-browser": "npm run build && node scripts/test-hmo-persona-audio-browser.mjs",
+    "test:hmo-media-browser": "npm run build && node scripts/test-hmo-media-browser.mjs",
+    "test:rtc-browser": "npm run build && node scripts/test-rtc-browser.mjs",
+    "agents:install": "python3 scripts/agents/bootstrap.py",
+    "agents:inspect": "python3 scripts/agents/openai_runner.py inspect",
+    "agents:check-openai": "python3 scripts/agents/openai_runner.py check-openai",
+    "agents:chat": "python3 scripts/agents/openai_runner.py chat",
+    "agents:test": "python3 scripts/agents/test_runner.py",
+    "validate:local": "node scripts/validate-local.mjs",
+    "setup:browser": "node scripts/setup-local-browser.mjs",
+    "parity:audit": "node scripts/parity-audit.mjs",
+    "parity:rea": "node scripts/parity-rea.mjs",
+    "parity:donor-inventory": "node scripts/parity-donor-inventory.mjs",
+    "parity:compare": "node scripts/parity-compare-inventories.mjs",
+    "parity:prepare-port": "node scripts/parity-prepare-port.mjs",
+    "persistence:audit": "node scripts/audit-sqlite-usage.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "@types/ws": "^8.18.1",
+    "esbuild": "^0.25.12",
+    "playwright": "^1.62.1",
+    "typescript": "^5.9.2"
+  }
+}
