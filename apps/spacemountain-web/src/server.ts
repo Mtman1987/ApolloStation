@@ -89,7 +89,7 @@ export function createSpaceMountainWebHost(options: SpaceMountainWebHostOptions)
   const spmtOrigin = requireLoopbackOrigin(options.spmtOrigin);
   const fetchImpl = options.fetchImpl ?? fetch;
   const buildSha = options.buildSha ?? "dev";
-  const nebulaArcadeOrigin = options.nebulaArcadeOrigin ? requireLoopbackOrigin(options.nebulaArcadeOrigin) : undefined;
+  const nebulaArcadeOrigin = options.nebulaArcadeOrigin ? requireServiceOrigin(options.nebulaArcadeOrigin) : undefined;
   const server = createServer(async (request, response) => {
     const nonce = randomBytes(18).toString("base64url");
     applySecurityHeaders(response, nonce);
@@ -496,6 +496,14 @@ function requireSameOrigin(request: IncomingMessage) {
   let origin: URL;
   try { origin = new URL(value); } catch { throw new WebHostError(403, "Request origin is invalid"); }
   if (!["http:", "https:"].includes(origin.protocol) || origin.host !== host) throw new WebHostError(403, "Cross-origin mutation is blocked");
+}
+
+function requireServiceOrigin(value: string) {
+  let url: URL;
+  try { url = new URL(value); } catch { throw new Error("Nebula Arcade origin must be an absolute URL"); }
+  if (url.protocol !== "https:" && !(url.protocol === "http:" && ["127.0.0.1", "localhost", "[::1]"].includes(url.hostname))) throw new Error("Nebula Arcade origin must use HTTPS, or loopback HTTP for local development");
+  if (url.username || url.password || url.pathname !== "/" || url.search || url.hash) throw new Error("Nebula Arcade origin must be a credential-free origin");
+  return url.origin;
 }
 
 function requireLoopbackOrigin(value: string) {
