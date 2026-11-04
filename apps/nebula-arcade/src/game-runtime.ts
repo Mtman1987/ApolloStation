@@ -53,7 +53,7 @@ export function awardNebulaCheckinBonus(state:NebulaGameRuntimeStateV1,input:{aw
   const receiptId=createHash("sha256").update(channel+":"+awardId).digest("hex"),prior=state.checkinBonusReceipts[receiptId];
   if(prior){if(prior.playerId!==playerId)throw new Error("This check-in bonus was already credited to another player.");return{...prior,duplicate:true};}
   const player=getOrCreateNebulaPlayer(state,{userId:playerId,username:input.username,displayName:input.displayName}),amount=100;
-  awardNebulaGamePoints(state,player,amount,"Chat Tag front-seat check-in bonus",{channel,sourceId:receiptId},now);
+  awardNebulaGamePoints(state,player,amount,"Front-seat check-in bonus",{channel,sourceId:receiptId},now);
   const receipt={awardId,channel,playerId:player.id,amount,balance:player.gamePointsBalance,at:now.toISOString()};
   state.checkinBonusReceipts[receiptId]=receipt;
   return{...receipt,duplicate:false};
