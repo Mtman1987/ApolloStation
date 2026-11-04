@@ -35,7 +35,9 @@ test("every executable integration names Nebula Arcade as the sole current owner
     const relativePath = relative(new URL("..", import.meta.url).pathname, file);
     // The parity tracker is audit history, not executable configuration. It
     // intentionally records the legacy identity in historical PR descriptions.
-    return relativePath !== "config/apollo-parity-tracker.v1.json" && forbidden.test(source) ? [relativePath] : [];
+    // This one-shot archival importer names the legacy source format; it is not an executable app integration.
+    const migrationOnly = relativePath === "scripts/stage-recovered-json-to-turso.mjs";
+    return relativePath !== "config/apollo-parity-tracker.v1.json" && !migrationOnly && forbidden.test(source) ? [relativePath] : [];
   });
   assert.deepEqual(leaks, [], `obsolete Games Hub identity leaked into executable files: ${leaks.join(", ")}`);
 
