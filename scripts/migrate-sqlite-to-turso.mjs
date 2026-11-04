@@ -148,7 +148,8 @@ export async function migrateSqliteFile({ sourcePath, adapter, apply = false, on
       if (!columns.length) continue;
       const columnSql = columns.map(quoteIdentifier).join(", ");
       const placeholders = columns.map(() => "?").join(", ");
-      const select = db.prepare(`SELECT ${columnSql} FROM ${quoteIdentifier(table.name)}`);\n      select.setReadBigInts(true);
+      const select = db.prepare(`SELECT ${columnSql} FROM ${quoteIdentifier(table.name)}`);
+      select.setReadBigInts(true);
       let pending = [];
       for (const row of select.iterate()) {
         pending.push({
