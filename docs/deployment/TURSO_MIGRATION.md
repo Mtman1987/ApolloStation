@@ -7,7 +7,7 @@ ApolloStation will use the user's Turso account as its persistent database desti
 The migration adapter transfers existing recovered application data into Turso without changing the source archives.
 
 Current implementation:
-- `scripts/migrate-sqlite-to-turso.mjs` provides a Node.js Hrana HTTP adapter for Turso Cloud.
+- `packages/turso-http/` provides a reusable async Hrana HTTP client for Turso Cloud, including interactive transaction streams that retain a single baton across sequential requests and roll back on callback/statement failures. The SQLite importer uses this shared client.
 - SQLite sources are opened read-only and checked with `PRAGMA quick_check`.
 - The destination must be empty; the importer refuses to overwrite an existing database.
 - Schema, rows, BLOBs, 64-bit integers, AUTOINCREMENT high-water marks, and `user_version` are copied and verified.
