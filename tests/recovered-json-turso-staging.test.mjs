@@ -55,6 +55,11 @@ test("dry-run stages nothing and apply is idempotent but rejects changed source"
   const rows = new Map();
   const calls = [];
   const adapter = {
+    async pipeline(statements) {
+      const results = [];
+      for (const statement of statements) results.push(await this.execute(statement.sql, statement.args ?? [], statement.wantRows ?? false));
+      return results;
+    },
     async execute(sql, args = [], wantRows = false) {
       calls.push(sql);
       if (sql.startsWith("SELECT source_sha256")) {
