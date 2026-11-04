@@ -61,7 +61,7 @@ export function createNebulaArcadeLiveHost(options:{databasePath:string;tenantId
     const storeModeReady=!requireTurso||(mosaicHealth.mode==='turso'&&mosaicControlStoreMode==='turso'&&gameMixStoreMode==='turso');
     const status=ready.status===200&&mosaicHealth.ready&&storeModeReady?200:503;
     response.writeHead(status,{'content-type':'application/json','cache-control':'no-store'});
-    response.end(JSON.stringify({...body,ready:status===200,mosaicStoreReady:mosaicHealth.ready,mosaicStoreMode:mosaicHealth.mode,mosaicControlStoreReady,mosaicControlStoreMode,gameMixStoreMode,gameMixStoreReady,storesRequiredByTursoGate:requireTurso,mosaicStoreRequired:requireTurso,gameMixStoreRequired:requireTurso}));return;
+    response.end(JSON.stringify({...body,ready:status===200,mosaicStoreReady:mosaicHealth.ready,mosaicStoreMode:mosaicHealth.mode,mosaicControlStoreReady,mosaicControlStoreMode,gameMixStoreMode,gameMixStoreReady,storesRequiredByTursoGate:requireTurso,mosaicStoreRequired:requireTurso,mosaicControlStoreRequired:requireTurso,gameMixStoreRequired:requireTurso}));return;
   }
   if(url.pathname.startsWith('/v1/nebula-arcade/support')){const principal=await authenticate(request);if(!principal.moderator)throw new Error('Moderator permission required');}
   const proxyHeaders={...request.headers};if(rewritten)delete proxyHeaders["transfer-encoding"];
