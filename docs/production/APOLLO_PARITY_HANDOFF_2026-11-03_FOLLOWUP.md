@@ -1,72 +1,67 @@
 # Apollo continuation follow-up — 2026-11-03
 
-## Current continuation — refreshed after PR #399
+## Current continuation — refreshed after PR #400
 
-**Fetch main before continuing.** PR #399 was squash-merged at
-`9330f522f1c1eaabf7241db55efa80dac0bf1a92`. This documentation refresh is
-separate; fetch main for the current HEAD. The open-PR query returned none.
+**Current main HEAD:** `f1525c00f272e455f1e3bab0c58b0070f926f151` (PR #400 squash merge). Fetch main again
+before continuing.
 
-### Completed in PR #399 — Commander MT listener
+### Completed in PR #400 — Nebula Mosaic project library
 
-- Added the `Commander MT` wake phrase and a bounded transcript policy:
-  ten-second processing cycles, a rolling sixty-second window, and a
-  2,000-character transcript cap. The buffer handles a wake phrase split over
-  adjacent segments and consumes each detected wake event once.
-- Added a visible MountainView Voice page listener using the browser's
-  `SpeechRecognition` / `webkitSpeechRecognition` engine. The page pauses
-  listening when hidden; this is a foreground browser feature, not an
-  always-on background phone service.
-- MountainView stores no microphone audio. Recognized text remains in the page
-  until the user taps Route. Browser speech-recognition support varies; manual
-  transcript entry remains available where the API is unavailable.
-- Routed recognized commands through MountainView's authenticated SPMT session
-  and existing suite-action / Companion pipeline. Existing tenant, user, role,
-  device and capability checks remain authoritative.
-- Broadcast/high-impact allowlisted actions require a second explicit
-  confirmation before job creation. Unknown commands return a clarification
-  rather than being treated as arbitrary code or shell instructions.
-- No paid AI, TTS, audio synthesis, provider credential, deploy, Fly.io action,
-  or runtime/secret change was made. This is deterministic voice-command
-  routing, not yet a full conversational Athena voice assistant or spoken reply.
+- Added the production Mosaic Library controller page with private saved
+  paintings, resume, fresh-copy, publish/unpublish, a shared gallery, JSON
+  import/export, 800x1000 PNG downloads, share-page links and copy-link action.
+- Added tenant-scoped project APIs limited to configured arcade channels.
+  Unauthenticated reads are restricted to explicitly shared gallery projects;
+  mutations require the authenticated broadcaster/moderator role.
+- Shared gallery discovery is limited to channels in the same tenant; no
+  cross-tenant project leakage. Starting a copy does not modify the original.
+- PNG rendering uses a dependency-free Node encoder; no Sharp/native image
+  dependency was added.
+- Existing Mosaic domain/game runtime, Tag, Quackverse, Bingo and art
+  management surfaces remain in place.
 
 ### Validation evidence
 
-- Dedicated MountainView validation run
-  [#41758409794](https://github.com/Mtman1987/ApolloStation/actions/runs/41758409794)
-  completed successfully: workspace build plus **17/17 MountainView tests
-  passed**, including the browser page, rolling transcript, cross-segment wake
-  phrase, confirmation gate, Companion bootstrap and device isolation.
-- Combined parity validation run
-  [#41758409915](https://github.com/Mtman1987/ApolloStation/actions/runs/41758409915)
-  completed successfully: workspace build plus **26/26 focused StreamWeaver
-  and MountainView regressions passed**.
-- PR [#399](https://github.com/Mtman1987/ApolloStation/pull/399) is merged and
-  the open-PR query returned none. No deployment or live microphone acceptance
-  test was performed.
+- GitHub Actions run
+  [#41759869075](https://github.com/Mtman1987/ApolloStation/actions/runs/41759869075)
+  passed the Nebula project build and all focused command, Mosaic domain,
+  API/auth, import/export, PNG, gallery, cross-room copy and controller UI
+  regressions.
+- The first CI attempts exposed a test-fixture import issue and a double
+  validation of imported Mosaic templates. Both were corrected; the final
+  run above passed.
+- No production deployment or live tenant acceptance was performed.
 
 ### Next continuation
 
-1. Continue StreamWeaver donor parity, especially the private assistant and
-   Voice Commander response path. The MountainView listener is now present;
-   do not duplicate it in StreamWeaver. Keep voice action routing through
-   authenticated app contracts.
-2. TTS remains a separate gap. Donor StreamWeaver has a local Kokoro ONNX
-   worker in `workers/free-tts/server.py`, pinned requirements, a 2-thread
-   CPU cap, startup smoke inference, bounded loopback WAV responses, and
-   SHA-256-pinned model/voice files in its Dockerfile. Apollo's
-   `StellarSpeechProvider` still supports Deepgram/EdenAI only; no Kokoro
-   catalog, worker package, model pinning or startup path is present.
-   Apollo's speech worker also hardcodes the legacy `sprite` execution target.
-   Do not port it by silently enabling paid providers or reporting an Oracle
-   worker as Sprite. First resolve how a no-cost Kokoro worker fits the
-   intended Oracle/Companion execution topology; keep TTS-only capability
-   reporting separate from paid transcription/STT. Do not enable spoken
-   persona replies until a local worker is healthy and a WAV response is
-   validated.
-3. Continue StreamWeaver parity, then Nebula/Chat Tag, then Discord Stream Hub.
-   Preserve Restream and OverlayBay and keep Lounge continuity safe.
-4. Keep repo-to-repo only: no Fly.io, deploy, restart, secret, volume, or live
-   provider changes.
+1. Finish the remaining Nebula/Chat Tag parity audit, especially Quackverse
+   card-art controls and any remaining Mosaic art/paint administration gaps.
+   Avoid rebuilding the Quackverse trade desk (#392), Mosaic Discord cards
+   (#393), leaderboard work (#394-395), Space Mountain reward retry (#396),
+   Commander avatar gestures (#398), or Commander MT listener (#399).
+2. Then move to Discord Stream Hub parity. Preserve existing Restream and
+   OverlayBay functionality and keep Lounge continuity safe.
+3. TTS remains a separate StreamWeaver gap. Donor StreamWeaver has a local
+   Kokoro ONNX worker in `workers/free-tts/server.py`, pinned dependencies,
+   a 2-thread CPU cap, startup smoke inference, bounded loopback WAV responses,
+   and SHA-256-pinned model/voice files in its Dockerfile. Apollo's
+   `StellarSpeechProvider` supports Deepgram/EdenAI only; no Kokoro worker,
+   voice catalog, model pinning or startup path exists. Apollo's speech worker
+   hardcodes the legacy `sprite` execution target. Do not port it by silently
+   enabling paid providers or reporting an Oracle worker as Sprite. Resolve
+   the intended Oracle/Companion execution topology first; keep TTS-only
+   capability reporting separate from paid transcription/STT.
+
+### Priority and boundaries
+
+Continue StreamWeaver parity first, then Nebula/Chat Tag, then Discord Stream
+Hub. Preserve Restream and OverlayBay, and do not destabilize Lounge continuity.
+All work remains GitHub repo-to-repo only: no Fly.io, deployment, restart,
+secret, volume or live provider changes. Do not equate a merged PR with live
+acceptance.
+
+---
+
 
 ---
 
