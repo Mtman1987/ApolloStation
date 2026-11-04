@@ -29,7 +29,8 @@ export class NebulaMosaicRuntime {
   private readonly awardXp: MosaicXpAward | undefined;
   private readonly spendXp: MosaicXpSpend | undefined;
   constructor(databasePath: string, generate?: MosaicGenerator, options: { requestXpCost?: number; awardXp?: MosaicXpAward; spendXp?: MosaicXpSpend; storeMode?: "sqlite" | "turso"; tursoUrl?: string; tursoAuthToken?: string } = {}) {
-    const storeMode = options.storeMode ?? (process.env.NEBULA_ARCADE_MOSAIC_STORE === "turso" ? "turso" : "sqlite");
+    const storeMode = options.storeMode ?? process.env.NEBULA_ARCADE_MOSAIC_STORE ?? "sqlite";
+    if (storeMode !== "sqlite" && storeMode !== "turso") throw new Error("NEBULA_ARCADE_MOSAIC_STORE must be sqlite or turso");
     this.store = storeMode === "turso"
       ? new AsyncNebulaMosaicRecordStore({ mode: "turso", ...(options.tursoUrl ? { url: options.tursoUrl } : {}), ...(options.tursoAuthToken ? { authToken: options.tursoAuthToken } : {}) })
       : new SqliteNebulaMosaicStore(databasePath);
