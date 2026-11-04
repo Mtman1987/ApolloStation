@@ -38,7 +38,8 @@
     "parity:compare": "node scripts/parity-compare-inventories.mjs",
     "parity:prepare-port": "node scripts/parity-prepare-port.mjs",
     "persistence:audit": "node scripts/audit-sqlite-usage.mjs",
-    "db:migrate:turso": "node scripts/migrate-sqlite-to-turso.mjs"
+    "db:migrate:turso": "node scripts/migrate-sqlite-to-turso.mjs",
+    "db:stage-recovered-json:turso": "node scripts/stage-recovered-json-to-turso.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",
