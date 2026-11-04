@@ -36,7 +36,7 @@ export class SqliteStreamWeaverShoutoutStore {
   close(): void { this.db.close(); }
   settings(tenant:string):StreamWeaverShoutoutSettings {
     const saved=this.operation(safeId(tenant,"tenantId"),"settings")??{};
-    return {aiEnabled:false,prompt:"Give this streamer a warm, concise shoutout. Use only the supplied profile facts; do not invent their games or achievements.",greeting:"Welcome, @{user}! Glad you’re here!",cooldownMinutes:720,voice:"deepgram:aura-2:athena",discordEnabled:true,...saved,excluded:this.excluded(tenant)} as StreamWeaverShoutoutSettings;
+    return {aiEnabled:false,prompt:"Give this streamer a warm, concise shoutout. Use only the supplied profile facts; do not invent their games or achievements.",greeting:"Welcome, @{user}! Glad you’re here!",cooldownMinutes:720,voice:"kokoro:af_heart",discordEnabled:true,...saved,excluded:this.excluded(tenant)} as StreamWeaverShoutoutSettings;
   }
   saveSettings(tenant:string,input:Partial<StreamWeaverShoutoutSettings>){
     const value={...this.settings(tenant),...input};
