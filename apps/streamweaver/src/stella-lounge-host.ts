@@ -109,7 +109,7 @@ function buildStellaAmbientMessage(stream:StreamWeaverTwitchStreamV1,community:S
   return selected?{topic:selected.topic,text:selected.text.slice(0,240)}:undefined;
 }
 
-function cleanEventValue(value:unknown,limit:number){return String(value??"").replace(/[\\r\\n]/g," ").replace(/\\s+/g," ").trim().slice(0,limit);}
+function cleanEventValue(value:unknown,limit:number){return String(value??"").replace(/[\r\n]/g," ").replace(/\s+/g," ").trim().slice(0,limit);}
 function buildStellaEventMessage(event:StreamWeaverStellaLoungeEventV1):string{
   const actor=cleanEventValue(event.actor,45),name=actor||"the community",game=cleanEventValue(event.game,50),detail=cleanEventValue(event.detail,90),viewers=Math.max(0,Math.floor(Number(event.viewers)||0)),amount=Math.max(0,Math.floor(Number(event.amount)||0));
   switch(event.kind){
