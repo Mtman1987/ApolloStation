@@ -20,7 +20,7 @@ import { SPMT_MCP_PROTOCOL_VERSION, SpmtMcpServer } from "../packages/mcp/dist/i
 
 const at = "2026-08-28T12:00:00.000Z";
 
-function setup() {
+function setup(executionTarget = "sprite") {
   const dir = mkdtempSync(join(tmpdir(), "spmt-functional-api-")), databasePath = join(dir, "foundation.sqlite");
   const store = new SqliteAuthorityStore(databasePath), platformStore = new SqlitePlatformDataStore(databasePath);
   const authority = new AuthorityService({ store, now: () => at }), auth = new AuthService({ store, now: () => at }), control = new ControlService({ store, now: () => at });
@@ -35,7 +35,7 @@ function setup() {
   const usage = new MonetizationService(assertBillingManifestV1(JSON.parse(readFileSync(new URL("../config/billing-plans.v1.json", import.meta.url), "utf8"))), store, () => at);
   let jobSequence = 0;
   const jobs = new ExecutionJobService({ store: platformStore, usage, resolvePlan: () => "creator", now: () => at, idFactory: () => `job_api_${++jobSequence}`, onTransition: (job) => data.createOperationsLog({ tenantId: job.tenantId, sourceAppId: job.ownerAppId, reporterId: "spmt-execution", level: job.state === "failed" ? "error" : "info", kind: `execution.${job.state}`, summary: `${job.capabilityId} is ${job.state}`, labels: ["execution-job"], idempotencyKey: `${job.id}:${job.state}:${job.fencingEpoch}:${job.updatedAt}` }) });
-  const operations = new PlatformOperations(auth, authority, control, data, undefined, undefined, jobs), api = new PlatformApiAdapter(operations);
+  const operations = new PlatformOperations(auth, authority, control, data, undefined, undefined, jobs, undefined, executionTarget), api = new PlatformApiAdapter(operations);
   const fetchImpl = async (url, init = {}) => { const parsed = new URL(String(url)), headers = Object.fromEntries(new Headers(init.headers).entries()); let body; if (typeof init.body === "string" && init.body) body = JSON.parse(init.body); const response = api.handle({ method: init.method ?? "GET", path: `${parsed.pathname}${parsed.search}`, headers, ...(body === undefined ? {} : { body }) }); return new Response(JSON.stringify(response.body ?? null), { status: response.status, headers: { "content-type": "application/json" } }); };
   const userA = auth.issueHumanSession({ userId: "user-a", scopes: ["jobs:read", "jobs:write"], tenantIds: ["tenant-a"] }).accessToken;
   const userB = auth.issueHumanSession({ userId: "user-b", scopes: ["jobs:read", "jobs:write"], tenantIds: ["tenant-a"] }).accessToken;
@@ -121,4 +121,21 @@ test("a service can read only the cross-owner execution jobs it requested", asyn
 
 test('canonical image suite actions derive publication permission and simulation cannot request it',()=>{
  for(const simulation of [false,true]){const env=setup();try{const mcp=new SpmtMcpServer(env.operations),created=mcp.handle({jsonrpc:'2.0',id:1,method:'tools/call',params:{name:'spmt.suite-actions.create',arguments:{tenantId:'tenant-a',ownerAppId:'streamweaver',idempotencyKey:'image-publication',input:{schemaVersion:1,action:'sw.image.generate',args:{prompt:'Mountain'},actor:{userId:'spoofed',username:'spoofed',role:'owner'},source:{kind:'chat',simulation},mediaVisibility:'public'}}}},{accessToken:env.userAToken,protocolVersion:SPMT_MCP_PROTOCOL_VERSION});const job=created.result.structuredContent.job;assert.equal(job.billedUserId,'user-a');assert.equal(job.input.mediaVisibility,simulation?'private':'public');}finally{env.platformStore.close();env.store.close();rmSync(env.dir,{recursive:true,force:true})}}
+});
+
+test("priority suite-action jobs use the configured hosted target", () => {
+  const env = setup("hosted");
+  try {
+    const mcp = new SpmtMcpServer(env.operations);
+    const created = mcp.handle({
+      jsonrpc: "2.0", id: 41, method: "tools/call",
+      params: { name: "spmt.suite-actions.create", arguments: {
+        tenantId: "tenant-a", ownerAppId: "streamweaver", idempotencyKey: "hosted-suite-action-1",
+        input: { schemaVersion: 1, action: "sw.image.generate", args: { prompt: "A mountain sunrise" }, actor: { userId: "spoofed", username: "spoofed", role: "guest" }, source: { kind: "mcp" } },
+      } },
+    }, { accessToken: env.userAToken, protocolVersion: SPMT_MCP_PROTOCOL_VERSION });
+    const job = created.result.structuredContent.job;
+    assert.equal(job.executionOwner, "streamweaver");
+    assert.equal(job.executionTarget, "hosted");
+  } finally { env.platformStore.close(); env.store.close(); rmSync(env.dir, { recursive: true, force: true }); }
 });

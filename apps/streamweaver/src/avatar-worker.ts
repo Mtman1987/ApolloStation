@@ -1,3 +1,4 @@
+import { parseExecutionTargetV1, type ExecutionTargetV1 } from "@spmt/contracts";
 import type {ExecutionJobV1} from "@spmt/contracts";
 import type {SpmtClient} from "@spmt/sdk";
 import type {StreamWeaverAvatarGeometryV1} from "./avatar-geometry.js";
@@ -11,11 +12,11 @@ export interface StreamWeaverAvatarWorkerClientV1 {claimAnyExecutionJob:SpmtClie
  */
 export class StreamWeaverAvatarWorker {
   private completed=0;private failed=0;private lastReport=0;private readonly startedAt=new Date().toISOString();
-  constructor(private readonly client:StreamWeaverAvatarWorkerClientV1,private readonly geometry:StreamWeaverAvatarGeometryV1,private readonly options:{workerId:string;tenantIds?:string[];activate:(tenantId:string,input:{modelUrl:string;modelAssetId:string;previewUrl?:string})=>Promise<void>}){}
+  constructor(private readonly client:StreamWeaverAvatarWorkerClientV1,private readonly geometry:StreamWeaverAvatarGeometryV1,private readonly options:{workerId:string;tenantIds?:string[];executionTarget?:ExecutionTargetV1;activate:(tenantId:string,input:{modelUrl:string;modelAssetId:string;previewUrl?:string})=>Promise<void>}){}
   addTenant(tenantId:string){if(this.options.tenantIds&&!this.options.tenantIds.includes(tenantId))this.options.tenantIds.push(tenantId);}
-  report(){this.lastReport=Date.now();return this.client.reportExecutionWorker({executionOwner:"streamweaver",workerId:this.options.workerId,executionTarget:"fly",state:"ready",capabilityIds:[STREAMWEAVER_AVATAR_BUILD_CAPABILITY],...(this.options.tenantIds?{tenantIds:this.options.tenantIds}:{}),providerHealthy:true,startedAt:this.startedAt,leaseMs:30_000,metrics:{completedJobs:this.completed,failedJobs:this.failed,inputUnits:0,outputUnits:0}});}
+  report(){this.lastReport=Date.now();return this.client.reportExecutionWorker({executionOwner:"streamweaver",workerId:this.options.workerId,executionTarget:this.options.executionTarget??parseExecutionTargetV1(process.env.STELLAR_EXECUTION_TARGET),state:"ready",capabilityIds:[STREAMWEAVER_AVATAR_BUILD_CAPABILITY],...(this.options.tenantIds?{tenantIds:this.options.tenantIds}:{}),providerHealthy:true,startedAt:this.startedAt,leaseMs:30_000,metrics:{completedJobs:this.completed,failedJobs:this.failed,inputUnits:0,outputUnits:0}});}
   async run(signal:AbortSignal,pollMs=1_000){while(!signal.aborted){if(!await this.runOnce())await wait(pollMs,signal);}}
-  async runOnce(){if(Date.now()-this.lastReport>=15_000)await this.report();const job=await this.client.claimAnyExecutionJob(this.options.workerId,"fly",{executionOwner:"streamweaver",capabilityIds:[STREAMWEAVER_AVATAR_BUILD_CAPABILITY],leaseMs:30*60_000});if(!job)return undefined;await this.execute(job);return job.id;}
+  async runOnce(){if(Date.now()-this.lastReport>=15_000)await this.report();const job=await this.client.claimAnyExecutionJob(this.options.workerId,this.options.executionTarget??parseExecutionTargetV1(process.env.STELLAR_EXECUTION_TARGET),{executionOwner:"streamweaver",capabilityIds:[STREAMWEAVER_AVATAR_BUILD_CAPABILITY],leaseMs:30*60_000});if(!job)return undefined;await this.execute(job);return job.id;}
   private async execute(job:ExecutionJobV1){
     if(!job.leaseId)throw Error("Claimed avatar job has no lease");
     const lease=[job.tenantId,job.id,this.options.workerId,job.leaseId,job.fencingEpoch] as const,context={jobId:job.id,leaseId:job.leaseId,fencingEpoch:job.fencingEpoch};

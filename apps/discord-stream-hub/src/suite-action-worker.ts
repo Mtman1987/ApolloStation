@@ -1,11 +1,11 @@
-import { assertSpmtSuiteActionJobInputV1, spmtSuiteActionCapabilityId, type ExecutionJobV1 } from "@spmt/contracts";
+import { assertSpmtSuiteActionJobInputV1, parseExecutionTargetV1, spmtSuiteActionCapabilityId, type ExecutionTargetV1, type ExecutionJobV1 } from "@spmt/contracts";
 import type { PublishSimulationRoomEventInputV1 } from "@spmt/sdk";
 import { DSH_BOT_ACTIONS, DshBotActionAdapter, type DshBotActionIdV1 } from "./bot-action-adapter.js";
 
 const DSH_SUITE_ACTION_CAPABILITIES = DSH_BOT_ACTIONS.map(spmtSuiteActionCapabilityId);
 
 export interface DshSuiteActionWorkerClientV1 {
-  claimAnyExecutionJob(workerId: string, executionTarget: "sprite", options: { executionOwner: string; capabilityIds: string[]; leaseMs: number }): Promise<ExecutionJobV1 | null>;
+  claimAnyExecutionJob(workerId: string, executionTarget: ExecutionTargetV1, options: { executionOwner: string; capabilityIds: string[]; leaseMs: number }): Promise<ExecutionJobV1 | null>;
   heartbeatExecutionJob?(tenantId:string,jobId:string,workerId:string,leaseId:string,fencingEpoch:number,progress:{percent:number;message:string},leaseMs:number):Promise<unknown>;
   succeedExecutionJob(tenantId: string, jobId: string, workerId: string, leaseId: string, fencingEpoch: number, result: Record<string, unknown>): Promise<unknown>;
   failExecutionJob(tenantId: string, jobId: string, workerId: string, leaseId: string, fencingEpoch: number, code: string, message: string, retryable: boolean): Promise<unknown>;
@@ -18,10 +18,10 @@ export class DshSuiteActionWorker {
   private failedJobs = 0;
   private readonly startedAt = new Date().toISOString();
   private lastReportAt = 0;
-  constructor(private readonly client: DshSuiteActionWorkerClientV1, private readonly adapter: DshBotActionAdapter, private readonly options: { workerId: string; tenantIds: string[] }) {}
+  constructor(private readonly client: DshSuiteActionWorkerClientV1, private readonly adapter: DshBotActionAdapter, private readonly options: { workerId: string; tenantIds: string[]; executionTarget?: ExecutionTargetV1 }) {}
   async runOnce() {
     await this.reportIfDue();
-    const job = await this.client.claimAnyExecutionJob(this.options.workerId, "sprite", { executionOwner: "discord-stream-hub", capabilityIds: DSH_SUITE_ACTION_CAPABILITIES, leaseMs: 300_000 });
+    const job = await this.client.claimAnyExecutionJob(this.options.workerId, this.options.executionTarget ?? parseExecutionTargetV1(process.env.STELLAR_EXECUTION_TARGET), { executionOwner: "discord-stream-hub", capabilityIds: DSH_SUITE_ACTION_CAPABILITIES, leaseMs: 300_000 });
     if (!job) return undefined;
     if (!job.leaseId) throw new Error("Claimed DSH suite-action job has no lease");
     const lease = [job.tenantId, job.id, this.options.workerId, job.leaseId, job.fencingEpoch] as const;
@@ -41,7 +41,7 @@ export class DshSuiteActionWorker {
     return job.id;
   }
   async run(signal: AbortSignal, pollMs = 500) { while (!signal.aborted) { if (!await this.runOnce()) await pause(pollMs, signal); } }
-  async report() { this.lastReportAt = Date.now(); return this.client.reportExecutionWorker({ executionOwner: "discord-stream-hub", workerId: this.options.workerId, executionTarget: "sprite", state: "ready", capabilityIds: DSH_SUITE_ACTION_CAPABILITIES, ...(this.options.tenantIds.length ? { tenantIds: this.options.tenantIds } : {}), providerHealthy: true, startedAt: this.startedAt, leaseMs: 30_000, metrics: { completedJobs: this.completedJobs, failedJobs: this.failedJobs, inputUnits: 0, outputUnits: 0 } }); }
+  async report() { this.lastReportAt = Date.now(); return this.client.reportExecutionWorker({ executionOwner: "discord-stream-hub", workerId: this.options.workerId, executionTarget: this.options.executionTarget ?? parseExecutionTargetV1(process.env.STELLAR_EXECUTION_TARGET), state: "ready", capabilityIds: DSH_SUITE_ACTION_CAPABILITIES, ...(this.options.tenantIds.length ? { tenantIds: this.options.tenantIds } : {}), providerHealthy: true, startedAt: this.startedAt, leaseMs: 30_000, metrics: { completedJobs: this.completedJobs, failedJobs: this.failedJobs, inputUnits: 0, outputUnits: 0 } }); }
   private reportIfDue() { return Date.now() - this.lastReportAt >= 15_000 ? this.report() : Promise.resolve(undefined); }
 }
 

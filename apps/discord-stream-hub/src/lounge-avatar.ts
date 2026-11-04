@@ -1,5 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
-import type { ExecutionJobV1 } from "@spmt/contracts";
+import { parseExecutionTargetV1, type ExecutionJobV1, type ExecutionTargetV1 } from "@spmt/contracts";
 
 export const DSH_LOUNGE_AVATAR_RENDER_CAPABILITY = "dsh.lounge-avatar.render.v1";
 export const DSH_STELLA_AVATAR_FPS = 30;
@@ -121,16 +121,16 @@ export interface DshLoungeAvatarPublisherV1 {
   publish(input: { tenantId: string; state: DshStellaAvatarStateV1; gif: Uint8Array }): Promise<{ url: string }>;
 }
 export interface DshLoungeAvatarExecutionClientV1 {
-  claimAnyExecutionJob(workerId: string, target: "sprite", options: { executionOwner: string; capabilityIds: string[]; leaseMs: number }): Promise<ExecutionJobV1 | null>;
+  claimAnyExecutionJob(workerId: string, target: ExecutionTargetV1, options: { executionOwner: string; capabilityIds: string[]; leaseMs: number }): Promise<ExecutionJobV1 | null>;
   heartbeatExecutionJob(tenantId: string, jobId: string, workerId: string, leaseId: string, fencingEpoch: number, progress: { percent: number; message: string }, leaseMs: number): Promise<unknown>;
   succeedExecutionJob(tenantId: string, jobId: string, workerId: string, leaseId: string, fencingEpoch: number, result: Record<string, unknown>): Promise<unknown>;
   failExecutionJob(tenantId: string, jobId: string, workerId: string, leaseId: string, fencingEpoch: number, code: string, message: string, retryable: boolean): Promise<unknown>;
 }
 
 export class DshLoungeAvatarExecutionWorker {
-  constructor(private readonly client: DshLoungeAvatarExecutionClientV1, private readonly source: DshLoungeAvatarSourceV1, private readonly renderer: DshLoungeAvatarRendererV1, private readonly publisher: DshLoungeAvatarPublisherV1, private readonly store: SqliteDshLoungeAvatarStore, private readonly workerId: string, private readonly now: () => string = () => new Date().toISOString()) {}
+  constructor(private readonly client: DshLoungeAvatarExecutionClientV1, private readonly source: DshLoungeAvatarSourceV1, private readonly renderer: DshLoungeAvatarRendererV1, private readonly publisher: DshLoungeAvatarPublisherV1, private readonly store: SqliteDshLoungeAvatarStore, private readonly workerId: string, private readonly now: () => string = () => new Date().toISOString(), private readonly executionTarget: ExecutionTargetV1 = parseExecutionTargetV1(process.env.STELLAR_EXECUTION_TARGET)) {}
   async runOnce() {
-    const job = await this.client.claimAnyExecutionJob(this.workerId, "sprite", { executionOwner: "discord-stream-hub", capabilityIds: [DSH_LOUNGE_AVATAR_RENDER_CAPABILITY], leaseMs: 20 * 60_000 });
+    const job = await this.client.claimAnyExecutionJob(this.workerId, this.executionTarget, { executionOwner: "discord-stream-hub", capabilityIds: [DSH_LOUNGE_AVATAR_RENDER_CAPABILITY], leaseMs: 20 * 60_000 });
     if (!job) return undefined;
     await this.execute(job); return job.id;
   }
@@ -165,7 +165,7 @@ export class DshLoungeAvatarExecutionWorker {
 export interface DshLoungeAvatarJobClientV1 { createExecutionJob(tenantId: string, input: Record<string, unknown>, idempotencyKey: string, correlationId?: string): Promise<{ job: unknown; duplicate: boolean }>; }
 export function requestDshLoungeAvatarRender(client: DshLoungeAvatarJobClientV1, input: { tenantId: string; billedUserId: string; sourceImageUrl: string; revision?: string }) {
   const tenantId = clean(input.tenantId, "tenantId"), billedUserId = clean(input.billedUserId, "billedUserId"), sourceImageUrl = safeUrl(input.sourceImageUrl), revision = clean(input.revision ?? "athena-robot-v3", "revision");
-  return client.createExecutionJob(tenantId, { ownerAppId: "discord-stream-hub", executionOwner: "discord-stream-hub", capabilityId: DSH_LOUNGE_AVATAR_RENDER_CAPABILITY, billedUserId, meteredResource: "hosted-worker-minutes", usageQuantity: 1, executionTarget: "sprite", meteringTarget: "hosted", input: { schemaVersion: 1, sourceImageUrl, source: "athena-robot-pet", revision, fps: 30 } }, `dsh-lounge-avatar:${tenantId}:${revision}`, `lounge-avatar:${revision}`);
+  return client.createExecutionJob(tenantId, { ownerAppId: "discord-stream-hub", executionOwner: "discord-stream-hub", capabilityId: DSH_LOUNGE_AVATAR_RENDER_CAPABILITY, billedUserId, meteredResource: "hosted-worker-minutes", usageQuantity: 1, executionTarget: parseExecutionTargetV1(process.env.STELLAR_EXECUTION_TARGET), meteringTarget: "hosted", input: { schemaVersion: 1, sourceImageUrl, source: "athena-robot-pet", revision, fps: 30 } }, `dsh-lounge-avatar:${tenantId}:${revision}`, `lounge-avatar:${revision}`);
 }
 
 function validateManifest(value: DshLoungeAvatarManifestV1): DshLoungeAvatarManifestV1 {

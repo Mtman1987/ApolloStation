@@ -18,7 +18,7 @@ import { DshCalendarDelivery } from "./calendar-delivery.js";
 import { DshCalendarSync } from "./calendar-sync.js";
 import { readFileSync } from "node:fs";
 import { basename, isAbsolute } from "node:path";
-import type { SpmtOperationModeV1 } from "@spmt/contracts";
+import { parseExecutionTargetV1, type ExecutionTargetV1, type SpmtOperationModeV1 } from "@spmt/contracts";
 import { SpmtApiError, SpmtClient, buildXpIdempotencyKey } from "@spmt/sdk";
 import {
   DshDiscordApi,
@@ -69,6 +69,7 @@ export interface DshLiveWorkerEnvironmentV1 {
   configPath: string;
   credential: string;
   workerId: string;
+  executionTarget?: ExecutionTargetV1;
   applicationInteractionsReady: boolean;
   config: DshLiveRuntimeConfigV1;
 }
@@ -222,11 +223,12 @@ export class SupervisedDshLiveService {
   private closing: Promise<void> | undefined;
   private closed = false;
   constructor(private readonly options: DshLiveWorkerEnvironmentV1, fetchImpl: typeof fetch = fetch, private readonly now: () => string = () => new Date().toISOString()) {
+    const executionTarget = options.executionTarget ?? parseExecutionTargetV1(process.env.STELLAR_EXECUTION_TARGET);
     this.getAccessToken = createDshWorkerTokenProvider({ spmtOrigin: options.spmtOrigin, credential: options.credential, fetchImpl });
     this.client = new SpmtClient({ baseUrl: options.spmtOrigin, appId: "discord-stream-hub", getAccessToken: this.getAccessToken, fetchImpl });
     this.identities = new DshSpmtIdentityResolver(this.client);
     this.pointsRouter = new DshPointsEventRouter(this.identities, tenantId => new DshPointsService(this.client,tenantId,{getSettings:id=>{const saved=this.settings.read(id);return {raidPoints:saved.raidPoints,followPoints:saved.followPoints,subPoints:saved.subPoints,giftedSubPoints:saved.giftedSubPoints,bitPoints:saved.bitPoints,chatActivityPoints:saved.chatActivityPoints,firstMessagePoints:saved.firstMessagePoints,messageReactionPoints:saved.messageReactionPoints,adminEventPoints:saved.adminEventPoints,adminLogPoints:saved.adminLogPoints,adminMessagePoints:saved.adminMessagePoints};}}));
-    if(options.operationMode==="active"&&options.publicOrigin)this.nebulaMedia=new DshNebulaMediaWorker(this.client,{databasePath:options.databasePath,publicOrigin:options.publicOrigin,workerId:`${options.workerId}-nebula-media`,tenantIds:options.config.tenants.map(tenant=>tenant.tenantId),sourceOrigins:(process.env.DSH_MEDIA_SOURCE_ORIGINS||"").split(",").filter(Boolean)},fetchImpl);
+    if(options.operationMode==="active"&&options.publicOrigin)this.nebulaMedia=new DshNebulaMediaWorker(this.client,{databasePath:options.databasePath,publicOrigin:options.publicOrigin,workerId:`${options.workerId}-nebula-media`,tenantIds:options.config.tenants.map(tenant=>tenant.tenantId),executionTarget,sourceOrigins:(process.env.DSH_MEDIA_SOURCE_ORIGINS||"").split(",").filter(Boolean)},fetchImpl);
     const nebulaOrigin=String(process.env.NEBULA_ARCADE_PUBLIC_ORIGIN??"").trim();
     if(this.nebulaMedia&&nebulaOrigin){const manifestUrl=new URL("/v1/nebula/gameplay/showcase-manifest",nebulaOrigin);this.nebulaGameplayCapture=new DshNebulaGameplayCaptureWorker(options.databasePath,manifestUrl.toString(),new DshPlaywrightNebulaGameplayRenderer(process.env.CHROMIUM_EXECUTABLE_PATH?{executablePath:process.env.CHROMIUM_EXECUTABLE_PATH}:{}),fetchImpl);}
     this.activityStore=new DshMemberActivityStore(options.databasePath);this.activity=new DshMemberActivityWorker(this.activityStore,this.client,options.config,async(tenant,eventId,message)=>{await this.mtFixIt.handle(tenant,eventId,message);},this.pointsRouter);
@@ -260,7 +262,7 @@ export class SupervisedDshLiveService {
     this.applications = new SqliteDshApplicationStore(options.databasePath);
     this.applicationDecisions=new DshApplicationDecisionService(this.applications,{discord,publicOrigin:options.publicOrigin,preview:options.operationMode==="read-only",now});
     const operations = new DshSuiteActionOperations({ memberSource:(tenant,guild)=>directory.members(tenant,guild), cleanup:this.cleanup,cleanupLiveWrites:options.operationMode==="active",guestLookup:async(tenantId,twitchLogin)=>{const grant=await twitchGrants.getGrant(tenantId);if(grant.status!=="ready")throw Error(grant.reason);return twitch.getGuest({...grant,twitchLogin});},config: options.config, monitor: this.monitor, messages: this.messages, calendar: this.calendar, applications: this.applications, discord, simulationDiscord, applicationInteractionsReady: options.applicationInteractionsReady, ...(options.publicOrigin?{publicOrigin:options.publicOrigin}:{}), now });
-    this.suiteActions = new DshSuiteActionWorker(this.client, new DshBotActionAdapter(operations), { workerId: `${options.workerId}-suite-actions`, tenantIds: options.config.tenants.map((tenant) => tenant.tenantId) });
+    this.suiteActions = new DshSuiteActionWorker(this.client, new DshBotActionAdapter(operations), { workerId: `${options.workerId}-suite-actions`, tenantIds: options.config.tenants.map((tenant) => tenant.tenantId), executionTarget });
   }
   async ready() { await this.getAccessToken(); return { schemaVersion: 1 as const, workerId: this.options.workerId, operationMode: this.options.operationMode, liveIngressEnabled: this.options.liveIngressEnabled, egressMode: this.options.operationMode === "read-only" ? "shadow" as const : "provider" as const, configuredTenants: this.options.config.tenants.length, pollIntervalSeconds: this.options.config.pollIntervalSeconds }; }
   async runOnce(scheduled = false): Promise<{ schemaVersion: 1; skipped: boolean; results: DshLiveWorkerTenantResultV1[] }> {
