@@ -1,7 +1,6 @@
 const { spawn } = require('node:child_process');
 const { mkdir } = require('node:fs/promises');
-const { tmpdir } = require('node:os');
-const { join } = require('node:path');
+const { isAbsolute } = require('node:path');
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -41,8 +40,8 @@ function allowedRestreamHost(value) {
   }
 }
 
-function createRestreamControl({ chromiumPath, puppeteer }) {
-  const profileDir = process.env.RESTREAM_PROFILE_DIR || (process.env.FLY_APP_NAME ? '/data/restream-chromium' : join(tmpdir(), 'hmo-restream-chromium'));
+function createRestreamControl({ chromiumPath, puppeteer, profileDir }) {
+  if (typeof profileDir !== 'string' || !isAbsolute(profileDir)) throw Error('RESTREAM_PROFILE_DIR must be an explicit absolute persistent-volume path');
   const controlUrl = process.env.RESTREAM_CONTROL_URL || 'https://app.restream.io/channel';
   let display;
   let browser;
