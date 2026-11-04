@@ -1,6 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
 import { randomUUID } from "node:crypto";
-import { KOKORO_VOICE_OPTIONS, DEFAULT_TTS_VOICE, normalizeTtsVoice } from "./speech-voices.js";
+import { KOKORO_VOICE_OPTIONS, DEFAULT_TTS_VOICE, normalizeKokoroVoice } from "./speech-voices.js";
 
 export interface AssistantPreferences { voice: string; ttsEnabled: boolean; gifEnabled: boolean; gifAssetId?: string; remember: boolean; }
 export interface AssistantNote { id: string; subject: string; title: string; content: string; updatedAt: string; }
@@ -34,7 +34,7 @@ export class StellarAssistantStore {
   }
   preferences(tenant: string, user: string): AssistantPreferences {
     const row = this.db.prepare("SELECT body FROM stellar_preferences WHERE tenant=? AND user_id=?").get(tenant,user);
-    return row ? { ...JSON.parse(String(row.body)), voice: normalizeTtsVoice(JSON.parse(String(row.body)).voice) } : { voice: DEFAULT_TTS_VOICE, ttsEnabled: false, gifEnabled: true, remember: false };
+    return row ? { ...JSON.parse(String(row.body)), voice: normalizeKokoroVoice(JSON.parse(String(row.body)).voice) } : { voice: DEFAULT_TTS_VOICE, ttsEnabled: false, gifEnabled: true, remember: false };
   }
   savePreferences(tenant: string, user: string, input: Partial<AssistantPreferences>) {
     const next = this.preferences(tenant,user);
