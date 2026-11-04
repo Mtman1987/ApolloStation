@@ -42,12 +42,13 @@ export function createNebulaArcadeSandboxHost(options: NebulaArcadeSandboxHostOp
     : new AsyncSqliteNebulaGameMixStore(options.databasePath);
   const activity = new SqliteNebulaArcadeActivityStore(options.databasePath);
   const policy = new SqliteNebulaTagExperienceStore(options.databasePath);
-  if (Boolean(options.mosaicTursoDatabaseUrl) !== Boolean(options.mosaicTursoAuthToken)) throw new Error("Nebula Mosaic Turso URL and token must be configured together");
-  const mosaicStoreMode = options.mosaicStoreMode ?? "sqlite";
-  if (mosaicStoreMode === "turso" && (!options.mosaicTursoDatabaseUrl || !options.mosaicTursoAuthToken)) throw new Error("Nebula Mosaic Turso mode requires TURSO_DATABASE_URL and TURSO_AUTH_TOKEN");
+  const mosaicTursoDatabaseUrl = options.mosaicTursoDatabaseUrl ?? process.env.TURSO_DATABASE_URL;
+  const mosaicTursoAuthToken = options.mosaicTursoAuthToken ?? process.env.TURSO_AUTH_TOKEN;
+  if (Boolean(mosaicTursoDatabaseUrl) !== Boolean(mosaicTursoAuthToken)) throw new Error("Nebula Mosaic Turso URL and token must be configured together");
+  const mosaicStoreMode = options.mosaicStoreMode ?? (process.env.NEBULA_ARCADE_MOSAIC_STORE === "turso" ? "turso" : "sqlite");
+  if (mosaicStoreMode === "turso" && (!mosaicTursoDatabaseUrl || !mosaicTursoAuthToken)) throw new Error("Nebula Mosaic Turso mode requires TURSO_DATABASE_URL and TURSO_AUTH_TOKEN");
   const mosaics = mosaicStoreMode === "turso"
-    ? new AsyncNebulaMosaicRecordStore({ mode: "turso", url: options.mosaicTursoDatabaseUrl, authToken: options.mosaicTursoAuthToken })
-    : new SqliteNebulaMosaicStore(options.databasePath);
+    ? new AsyncNebulaMosaicRecordStore({ mode: "turso", url: mosaicTursoDatabaseUrl, authToken: mosaicTursoAuthToken })    : new SqliteNebulaMosaicStore(options.databasePath);
   const allowedMosaicChannels = new Set([options.channelId, ...(options.channels ?? [])].map((channel) => String(channel).replace(/^#/, "").trim().toLowerCase()));
   const mosaicGallery = async () => (await Promise.all([...allowedMosaicChannels].map(async (channel) => sharedMosaicProjects(await mosaics.get(options.tenantId, channel)).map((project) => ({ ...project, channel }))))).flat().sort((a, b) => b.publishedAt.localeCompare(a.publishedAt));
   const controls=new NebulaControlSurface(options);
