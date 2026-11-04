@@ -490,7 +490,7 @@ export class StreamWeaverWebControls {
       return reply( result.status === "accepted" ? 202 : 503, { ...result, kind: "assistant", destination });
     }
     const connection = this.connection(context.tenantId, destination, body.connectionId);
-    const result = await client.createExecutionJob(context.tenantId, { ownerAppId: "streamweaver", capabilityId: "streamweaver.voice-egress.v1", executionOwner: "streamweaver", billedUserId: userId, meteredResource: "hosted-worker-minutes", usageQuantity: 1, executionTarget: "sprite", meteringTarget: "hosted", input: { schemaVersion: 1, destination, connectionId: connection.connectionId, channelId: connection.channelId, text: message, actorUserId: userId } }, idempotency(body.idempotencyKey, "streamweaver-voice-egress"));
+    const result = await client.createExecutionJob(context.tenantId, { ownerAppId: "streamweaver", capabilityId: "streamweaver.voice-egress.v1", executionOwner: "streamweaver", billedUserId: userId, meteredResource: "hosted-worker-minutes", usageQuantity: 1, executionTarget: parseExecutionTargetV1(process.env.STELLAR_EXECUTION_TARGET), meteringTarget: "hosted", input: { schemaVersion: 1, destination, connectionId: connection.connectionId, channelId: connection.channelId, text: message, actorUserId: userId } }, idempotency(body.idempotencyKey, "streamweaver-voice-egress"));
     return reply( 202, { schemaVersion: 1, kind: "egress", destination, duplicate: result.duplicate, jobId: result.job.id, state: result.job.state });
   }
 
