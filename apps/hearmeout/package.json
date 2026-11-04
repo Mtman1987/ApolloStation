@@ -6,7 +6,8 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
-    "build": "tsc -b && node ../../scripts/build-rtc-browser.mjs"
+    "build": "tsc -b && node ../../scripts/build-rtc-browser.mjs",
+    "start:web": "node dist/web-server-start.js"
   },
   "dependencies": {
     "@spmt/app-foundation": "0.1.0",
