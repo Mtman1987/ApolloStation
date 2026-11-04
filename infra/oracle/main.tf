@@ -121,7 +121,7 @@ resource "oci_core_instance" "apollo" {
 
   metadata = {
     ssh_authorized_keys = var.ssh_public_key
-    user_data = base64encode(file("${path.module}/cloud-init.yaml"))
+    user_data           = base64encode(file("${path.module}/cloud-init.yaml"))
   }
 
   preserve_boot_volume = true
@@ -131,6 +131,7 @@ output "apollo_public_ip" {
   value       = oci_core_instance.apollo.public_ip
   description = "Public IP for DNS A records after the host is provisioned."
 }
+
 output "apollo_private_ip" {
   value = oci_core_instance.apollo.private_ip
 }
