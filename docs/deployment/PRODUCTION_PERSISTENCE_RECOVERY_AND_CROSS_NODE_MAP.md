@@ -69,8 +69,8 @@ No production backup/restore drill is marked complete by this document. The foll
 
 Existing contracts found in source:
 - StreamWeaver's Go Live flow calls `POST /restream/start` with `Authorization: Bearer <STREAMWEAVER_RESTREAM_CONTROL_CREDENTIAL>`, manual redirect handling, then verifies the live state.
-- The Chat Gateway environment validator currently requires `SPMT_ORIGIN` to be a credential-free loopback HTTP origin, even in production. This is a hard blocker to Node 2 calling Node 1 over HTTPS.
-- Discord Stream Hub live worker and HearMeOut workers have similar loopback-only SPMT origin validators. All cross-node clients must be reviewed together; changing only the ingress proxy is insufficient.
+- The first cross-node origin portability slice now accepts credential-free HTTPS origins (with standard platform TLS verification) or loopback HTTP in Chat Gateway, Discord Stream Hub live worker, HearMeOut execution/web workers, and Stellar Core worker. Non-loopback HTTP and origin userinfo/path/query/fragment are rejected. Chat Gateway has a focused regression test for HTTPS acceptance and remote-HTTP/credential rejection.
+- This does not complete cross-node wiring: the SpaceMountain gateway and every other client/worker origin validator still need a complete call-site audit; service-to-service authentication, redirect policy, tenant scope, and end-to-end three-node tests remain release gates.
 - Existing worker identities are created/validated by SPMT using distinct service credentials (Chat Gateway, StreamWeaver, DSH, Nebula, HearMeOut, Stellar). Preserve distinct identities and tenant scopes; do not reuse one shared "node token".
 - The Restream control receiver already exists as Express routes in `apps/hearmeout/legacy-worker/src/server.js` and browser automation in `apps/hearmeout/legacy-worker/src/restream-control.js`. It is **not** an absent feature; it is an unported deployment component. It depends on Puppeteer/Chromium, Xvfb, a persistent authenticated browser profile, and the legacy worker's `authorizeWorker` middleware. Its current default profile can fall back to OS temp storage, which is not acceptable for a durable authenticated session. The worker also has a legacy Fly-specific profile default. Do not enable it on Hostless or remove the old receiver until a dedicated receiver is ported and tested.
 
@@ -103,7 +103,7 @@ The receiver should become an explicit StreamWeaver/Restream-control service mod
 - [ ] Backup tooling with SQLite-consistent snapshot, checksums and immutable generations.
 - [ ] Restore drill against copies for every authoritative app DB.
 - [ ] Rollback drill with write fencing and synthetic cutover.
-- [ ] Production HTTPS SPMT origin support across all cross-node workers.
+- [ ] Complete production HTTPS SPMT origin support across all remaining clients and proxy entrypoints (first worker slice implemented; CI pending).
 - [ ] Three-node service identity and end-to-end network tests.
 - [ ] Restream receiver port, durable profile, target-runtime browser proof and integration tests.
 - [ ] Hostless resource/storage/cost policy verified before provisioning.
