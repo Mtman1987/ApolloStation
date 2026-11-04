@@ -2,6 +2,14 @@ name: ApolloStation pull-request validation
 
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - "apps/spacemountain-web/**"
+      - "tests/spacemountain-overlay-proxy.test.mjs"
+      - "package.json"
+      - "package-lock.json"
+      - "tsconfig.base.json"
+      - ".github/workflows/pull-request-validation.yml"
 
 permissions:
   contents: read
